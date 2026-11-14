@@ -2151,7 +2151,7 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
 
     def test_both_formats_use_shared_scene_and_failure_preserves_partial_root(self):
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
-        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs', 'missing_msk', 'missing_revocation', 'missing_sidecars', 'sidecar_member_missing', 'sidecar_revocation_missing', 'missing_composition_browser', 'bad_composition_browser', 'grant_residue'):
+        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs', 'missing_tiff_states', 'metadata_content_read', 'missing_msk', 'missing_revocation', 'missing_sidecars', 'sidecar_member_missing', 'sidecar_revocation_missing', 'missing_composition_browser', 'bad_composition_browser', 'grant_residue'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'media-1',
                        'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27', 'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'isolated',
@@ -2174,9 +2174,18 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                     if source_format == 'tiff' and failure != 'missing_nfs':
                         report['nfs_tiff_authorization'] = {
                             'result': 'passed', 'range_statuses': {'before_grant': 403, 'granted': 206, 'expired': 403},
+                            'permission_states': {phase: {'meta': status, 'preview': status, 'range': stream,
+                                'state': state, 'projection_verified': True} for phase, status, stream, state in (
+                                ('metadata_only', 200, 403, 'metadata'), ('read_active', 200, 206, 'read'),
+                                ('read_withdrawn', 200, 403, 'metadata'), ('all_withdrawn', 404, 403, 'none'),
+                                ('expired', 404, 403, 'none'))},
                             'expired_meta_status': 404, 'natural_expiry_verified': True,
                             'source_unchanged': True, 'zero_current_grants': True,
                         }
+                    if source_format == 'tiff' and failure == 'missing_tiff_states':
+                        report['nfs_tiff_authorization'].pop('permission_states')
+                    if source_format == 'tiff' and failure == 'metadata_content_read':
+                        report['nfs_tiff_authorization']['permission_states']['metadata_only']['range'] = 206
                     if source_format == 'tiff' and failure != 'missing_msk':
                         report['nfs_tiff_msk'] = {
                             'result': 'passed', 'source_unchanged': True, 'zero_current_grants': True,

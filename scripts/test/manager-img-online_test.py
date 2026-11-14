@@ -149,61 +149,99 @@ class ManagerIMGTests(unittest.TestCase):
         item = {'id': 5, 'item_type': 'file', 'full_name': IMG.NFS_TIFF_NAME, 'fingerprint': fingerprint}
         receipt = {'request_id': 'read-command', 'item_fingerprint': fingerprint,
                    'boundary_hash': 'a' * 64, 'expires_at': expiry.isoformat()}
-        for invalid in ('', 'browser', 'withdrawn'):
+        for invalid in ('', 'browser', 'withdrawn', 'metadata_leak', 'read_missing_url',
+                        'hidden_leak', 'downgrade_leak', 'expired_visible', 'wrong_image_target', 'metadata_url'):
             with self.subTest(invalid=invalid):
                 client, issuer, auth = mock.Mock(), mock.Mock(), mock.Mock()
                 auth.operator, auth.recipient, auth.base = '11', '22', '/api/v1/system/engines/3'
                 auth.target.return_value = grants.file_target(3, IMG.NFS_TIFF_NAME, 'nfs')
-                auth.grants, auth.confirmed = ['read-command'], {'read-command'}
-                auth.grant.side_effect = [{'request_id': 'metadata-command'}, receipt]
-                issuer.request.side_effect = [
-                    OWNER.Response(200, {'triggered_by': 11, 'metadata': {'items_scanned': 1}}, {}),
-                    OWNER.Response(200, {'total': 1, 'data': [{**receipt, 'action': 'read',
-                        'revocation': {} if invalid == 'withdrawn' else None}]}, {}),
-                    OWNER.Response(200, {'total': 0, 'data': []}, {}),
-                ] if invalid != 'browser' else [
-                    OWNER.Response(200, {'triggered_by': 11, 'metadata': {'items_scanned': 1}}, {}),
-                    OWNER.Response(200, {'total': 0, 'data': []}, {}),
-                ]
-                client.request.side_effect = [
-                    OWNER.Response(404, {}, {}),
-                    OWNER.Response(403, {'error': 'denied'}, {}),
-                    OWNER.Response(206, {}, {'Content-Range': 'bytes 0-63/128'}, raw[:64]),
-                    OWNER.Response(403, {'error': 'denied'}, {}),
-                    OWNER.Response(404, {}, {}),
-                ]
+                auth.grants, auth.confirmed = [], set()
+                state = {'metadata': False, 'read': False, 'withdrawn': False, 'expired': False}
+                def grant(model, *, action='read', expires_at=None):
+                    command = ('metadata-command' if action == 'metadata_read' else
+                               'read-command' if expires_at else 'probe-command')
+                    state['metadata' if action == 'metadata_read' else 'read'] = True
+                    auth.grants.append(command); auth.confirmed.add(command)
+                    return receipt if expires_at else {'request_id': command}
+                def revoke(command):
+                    auth.grants.remove(command); auth.confirmed.remove(command)
+                    state['metadata' if command == 'metadata-command' else 'read'] = False
+                    state['withdrawn'] = True
+                auth.grant.side_effect, auth.revoke.side_effect = grant, revoke
+                def issuer_request(method, path, statuses, body=None):
+                    if '/executions/' in path:
+                        payload = {'triggered_by': 11, 'metadata': {'items_scanned': 1}}
+                    elif '/history?' in path:
+                        payload = {'total': 1, 'data': [{**receipt, 'action': 'read',
+                            'revocation': {} if invalid == 'withdrawn' else None}]}
+                    else: payload = {'total': 0, 'data': []}
+                    return OWNER.Response(200, payload, {})
+                issuer.request.side_effect = issuer_request
+                def request(method, path, statuses, **kwargs):
+                    visible = state['metadata'] or state['read']
+                    if invalid == 'expired_visible' and state['expired']: visible = True
+                    if 'storage-stream' in path:
+                        status = 206 if state['read'] else 403
+                        response = OWNER.Response(status, {} if status == 206 else {'error': 'denied'},
+                            {'Content-Range': 'bytes 0-63/128'} if status == 206 else {}, raw[:64] if status == 206 else b'')
+                    elif '/preview?' in path:
+                        payload = {'error': 'not found'}
+                        if visible:
+                            payload = {'preview_type': 'unsupported', 'data': {'rows': [], 'item_meta': {
+                                'attributes': [{'key': 'schema_version', 'value': 1}, {'key': 'item', 'value': {
+                                    'data_type': 'media', 'format': 'tiff', 'layout': 'single'}}]}}, 'metadata': {}}
+                            if state['read']:
+                                payload = {'preview_type': 'object', 'data': {'object': {'attributes': {
+                                    'item': {'layout': 'single'}, 'storage': {'size': 128}}, 'content': {
+                                    'kind': 'image', 'preview_material': 'url', 'metadata': {'width': 240, 'height': 120},
+                                    'url': '/api/v1/manager/storage-stream?' + IMG.urlencode({
+                                        'locator': OWNER.build_item_locator(3, item), 'storage_ref': IMG.NFS_TIFF_NAME})}}}}
+                                if invalid == 'read_missing_url': payload['data']['object']['content'].pop('url')
+                                if invalid == 'wrong_image_target': payload['data']['object']['content']['url'] += '-other'
+                            elif invalid == 'metadata_leak' or invalid == 'downgrade_leak' and state['withdrawn']:
+                                payload['data']['item_meta']['attributes'].append({'key': 'storage', 'value': {'sha256': 'private'}})
+                            if invalid == 'metadata_url' and not state['read']: payload['metadata']['url'] = '/private'
+                        elif invalid == 'hidden_leak': payload['full_name'] = IMG.NFS_TIFF_NAME
+                        response = OWNER.Response(200 if visible else 404, payload, {'Cache-Control': 'no-store'})
+                    else: response = OWNER.Response(200 if visible else 404, {} if visible else {'error': 'hidden'}, {})
+                    if response.status not in statuses: raise OWNER.SuiteError('unexpected status')
+                    return response
+                client.request.side_effect = request
                 evidence = {'source_format': 'tiff', 'identity': {'principal_id': '22'}, 'run_id': 'run', 'cases': []}
                 report = {}
                 def browser(data):
                     outcome = browser_report(data)
                     nfs = data['nfs_tiff_authorization']
                     if invalid != 'browser':
-                        outcome['nfs_tiff_authorization'] = {
-                            'locator': nfs['locator'], 'item_id': 5, 'range_status': 206, 'pixels_verified': True,
-                        }
+                        outcome['nfs_tiff_authorization'] = {'locator': nfs['locator'], 'item_id': 5,
+                            'range_status': 206, 'pixels_verified': True}
                     return outcome
+                def expire(_): state.update(read=False, expired=True)
                 with mock.patch.object(grants, 'ModelSourceAuthorization', return_value=auth), \
                      mock.patch.object(OWNER, 'GatewayClient', return_value=issuer), \
                      mock.patch.object(OWNER, 'wait_for_meta_scan', return_value='scan'), \
                      mock.patch.object(OWNER, 'find_fixture_item', return_value=item), \
                      mock.patch.object(IMG, 'seed_nfs_tiff', return_value=SimpleNamespace(read_bytes=lambda: raw)), \
-                     mock.patch.object(IMG, 'datetime') as clock, mock.patch.object(IMG.time, 'sleep'):
+                     mock.patch.object(IMG, 'datetime') as clock, mock.patch.object(IMG.time, 'sleep', side_effect=expire):
                     clock.now.side_effect = [now, now if invalid == 'browser' else expiry + timedelta(seconds=1)]
                     if invalid:
                         with self.assertRaises(OWNER.SuiteError):
                             IMG.verify_nfs_tiff_authorization(OWNER, env, client, evidence, raw, browser, report, 30)
                     else:
                         IMG.verify_nfs_tiff_authorization(OWNER, env, client, evidence, raw, browser, report, 30)
-                auth.revoke.assert_called_once_with('metadata-command')
                 auth.cleanup.assert_called_once()
                 self.assertEqual(report['result'], 'failed' if invalid else 'passed')
                 if not invalid:
+                    self.assertEqual([c.args[0] for c in auth.revoke.call_args_list], ['probe-command', 'metadata-command'])
                     self.assertEqual(report['range_statuses'], {'before_grant': 403, 'granted': 206, 'expired': 403})
+                    self.assertEqual(report['permission_states'], {
+                        phase: {'meta': meta, 'preview': meta, 'range': stream, 'state': mode, 'projection_verified': True}
+                        for phase, meta, stream, mode in [('metadata_only', 200, 403, 'metadata'),
+                            ('read_active', 200, 206, 'read'), ('read_withdrawn', 200, 403, 'metadata'),
+                            ('all_withdrawn', 404, 403, 'none'), ('expired', 404, 403, 'none')]})
                     self.assertEqual(auth.grants, [])
                     self.assertTrue(report['natural_expiry_verified'])
                     self.assertTrue(report['zero_current_grants'])
-                self.assertEqual([call.kwargs for call in client.request.call_args_list if 'storage-stream' in call.args[1]],
-                    [{'headers': {'Range': 'bytes=0-63'}}] * (2 if invalid == 'browser' else 3))
 
     def test_four_member_grant_uses_complete_meta_boundary_and_rejects_missing_sidecars(self):
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')

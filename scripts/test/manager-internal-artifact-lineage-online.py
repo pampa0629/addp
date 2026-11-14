@@ -2483,6 +2483,13 @@ def run_native_raster_media_case(repository, environment, client, identity):
                 or nfs_tiff.get("expired_meta_status") != 404
                 or any(nfs_tiff.get(key) is not True for key in ("natural_expiry_verified", "source_unchanged", "zero_current_grants"))):
             raise SuiteError("native raster media requires complete NFS TIFF authorization evidence")
+        expected_states = {
+            phase: {'meta': status, 'preview': status, 'range': stream, 'state': state, 'projection_verified': True}
+            for phase, status, stream, state in (('metadata_only', 200, 403, 'metadata'),
+                ('read_active', 200, 206, 'read'), ('read_withdrawn', 200, 403, 'metadata'),
+                ('all_withdrawn', 404, 403, 'none'), ('expired', 404, 403, 'none'))}
+        if nfs_tiff.get('permission_states') != expected_states:
+            raise SuiteError('native raster media requires complete TIFF preview permission states')
         for profile, member_count, invalid_pixels in (('msk', 2, 257), ('sidecars', 4, 1)):
             composition = report['tiff'].get('nfs_tiff_' + profile, {})
             items = composition.get('items', [])

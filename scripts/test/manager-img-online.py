@@ -12,7 +12,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 
 SOURCES = (
@@ -121,13 +121,12 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
         item = owner.find_fixture_item(client, engine, NFS_TIFF_NAME, 'NFS TIFF')
         if item['item_type'] != 'file' or item['fingerprint'] != fingerprint:
             raise owner.SuiteError('NFS TIFF DataItem does not match the approved boundary')
-        auth.revoke(metadata_grant['request_id'])
         locator = owner.build_item_locator(engine, item)
         item_path = f"/api/v1/meta/items/{item['id']}"
         range_path = '/api/v1/manager/storage-stream?' + urlencode({'locator': locator, 'storage_ref': NFS_TIFF_NAME})
-        report.update(item_id=item['id'], locator=locator, metadata_grant_withdrawn=metadata_grant['request_id'])
+        report.update(item_id=item['id'], locator=locator, permission_states={})
 
-        def check_range(phase, status):
+        def check_range(phase, status, *, record=True):
             response = client.request('GET', range_path, (status,), headers={'Range': 'bytes=0-63'})
             content_range = next((value for key, value in response.headers.items() if key.lower() == 'content-range'), None)
             if status == 206:
@@ -135,9 +134,60 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
                     raise owner.SuiteError('NFS TIFF Range bytes or Content-Range differ from the owned source')
             elif content_range is not None or not isinstance(response.payload, dict) or not response.payload.get('error'):
                 raise owner.SuiteError('denied NFS TIFF Range returned an invalid error or byte response')
-            report['range_statuses'][phase] = response.status
+            if record:
+                report['range_statuses'][phase] = response.status
+            return response.status
 
-        client.request('GET', item_path, (404,))
+        def check_preview(phase, state):
+            visible, readable = state != 'none', state == 'read'
+            meta = client.request('GET', item_path, (200 if visible else 404,))
+            preview = client.request('GET', '/api/v1/manager/preview?' + urlencode({'locator': locator}),
+                                     (200 if visible else 404,))
+            if next((v for k, v in preview.headers.items() if k.lower() == 'cache-control'), None) != 'no-store':
+                raise owner.SuiteError('NFS TIFF preview response is cacheable')
+            body = preview.payload
+            if not isinstance(body, dict):
+                raise owner.SuiteError('NFS TIFF preview did not return a JSON object')
+            if not visible:
+                if set(body) != {'error'} or not body['error']:
+                    raise owner.SuiteError('NFS TIFF hidden preview leaked target facts')
+            elif not readable:
+                data = body.get('data', {})
+                item_meta = data.get('item_meta', {})
+                attrs = {entry['key']: entry['value'] for entry in item_meta.get('attributes', [])}
+                if (body.get('preview_type') != 'unsupported' or data.get('object') is not None
+                        or data.get('rows') != [] or item_meta.get('row_count') is not None
+                        or attrs != {'schema_version': 1, 'item': {'data_type': 'media', 'format': 'tiff', 'layout': 'single'}}
+                        or body.get('metadata', {}).get('size_bytes') is not None
+                        or body.get('metadata', {}).get('item_count') is not None
+                        or any('\"' + key + '\"' in json.dumps(body) for key in
+                               ('storage', 'content_versions', 'physical_path', 'sha256', 'url', 'statistics', 'summary'))):
+                    raise owner.SuiteError('NFS TIFF metadata-only preview exceeded the structural allowlist')
+            else:
+                obj = body.get('data', {}).get('object', {})
+                attrs = obj.get('attributes', {})
+                image = obj.get('content', {})
+                content_url = urlsplit(str(image.get('url', '')))
+                if (body.get('preview_type') != 'object' or attrs.get('item', {}).get('layout') != 'single'
+                        or attrs.get('item', {}).get('refs') or image.get('kind') != 'image'
+                        or image.get('preview_material') != 'url' or not attrs.get('storage')
+                        or content_url.scheme or content_url.netloc or content_url.path != '/api/v1/manager/storage-stream'
+                        or parse_qs(content_url.query) != {'locator': [locator], 'storage_ref': [NFS_TIFF_NAME]}
+                        or image.get('metadata', {}).get('width') != 240 or image.get('metadata', {}).get('height') != 120):
+                    raise owner.SuiteError('NFS TIFF read preview lost its controlled image contract')
+            # Reuse the byte/error oracle without changing the legacy expiry evidence.
+            range_status = check_range(phase, 206 if readable else 403, record=False)
+            report['permission_states'][phase] = {'meta': meta.status, 'preview': preview.status,
+                'range': range_status, 'state': state, 'projection_verified': True}
+
+        check_preview('metadata_only', 'metadata')
+        probe = auth.grant(model)
+        check_preview('read_active', 'read')
+        auth.revoke(probe['request_id'])
+        check_preview('read_withdrawn', 'metadata')
+        auth.revoke(metadata_grant['request_id'])
+        report['metadata_grant_withdrawn'] = metadata_grant['request_id']
+        check_preview('all_withdrawn', 'none')
         check_range('before_grant', 403)
         expiry = datetime.now(timezone.utc) + timedelta(seconds=90)
         receipt = auth.grant(model, expires_at=expiry)
@@ -149,6 +199,7 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
         time.sleep(max(0, expiry.timestamp() - time.time()) + 0.1)
         check_range('expired', 403)
         report['expired_meta_status'] = client.request('GET', item_path, (404,)).status
+        check_preview('expired', 'none')
     finally:
         try:
             if receipt is not None and datetime.now(timezone.utc) >= expiry:
