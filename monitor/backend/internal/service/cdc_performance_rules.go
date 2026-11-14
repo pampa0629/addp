@@ -132,7 +132,9 @@ func advanceCDCWindow(rule models.AlertRule, row commonClient.TransferCDCRiskIte
 		return w
 	}
 	if bad {
-		w.RecoverySince = nil
+		if rule.RuleType != models.AlertRuleCDCStalled {
+			w.RecoverySince = nil
+		}
 		if w.TriggerSince == nil {
 			w.TriggerSince = &at
 		}
@@ -142,6 +144,7 @@ func advanceCDCWindow(rule models.AlertRule, row commonClient.TransferCDCRiskIte
 		}
 		if at.Sub(*w.TriggerSince) >= time.Duration(seconds)*time.Second {
 			w.Active = true
+			w.RecoverySince = nil
 		}
 	} else {
 		w.TriggerSince = nil
@@ -153,7 +156,7 @@ func advanceCDCWindow(rule models.AlertRule, row commonClient.TransferCDCRiskIte
 		if at.Sub(*w.RecoverySince) >= time.Minute {
 			w.Active = false
 		}
-	} else {
+	} else if rule.RuleType != models.AlertRuleCDCStalled {
 		w.RecoverySince = nil
 	}
 	w.State = "healthy"

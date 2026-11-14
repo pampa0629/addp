@@ -118,6 +118,9 @@ func TestIntegrationPostgresCDCPerformanceRules(t *testing.T) {
 		t.Fatal("unknown recovered", err)
 	}
 	for sec := 345; sec <= 435; sec += 15 {
+		feed(sec, int64(sec/30)*30, 1, int64(sec), 20, "running", false)
+	}
+	for sec := 450; sec <= 510; sec += 15 {
 		feed(sec, int64(sec), 0, int64(sec), 20, "running", false)
 	}
 	for _, old := range incidents {
@@ -131,7 +134,7 @@ func TestIntegrationPostgresCDCPerformanceRules(t *testing.T) {
 	if err = db.Where("tenant_id=? AND rule_type=?", tenant, models.AlertRuleCDCBacklog).First(&backlogRule).Error; err != nil {
 		t.Fatal(err)
 	}
-	for sec := 450; sec <= 750; sec += 15 {
+	for sec := 525; sec <= 825; sec += 15 {
 		feed(sec, int64(sec), 3, int64(sec), 20, "running", false)
 	}
 	var editedIncident models.AlertIncident
@@ -140,7 +143,7 @@ func TestIntegrationPostgresCDCPerformanceRules(t *testing.T) {
 	}
 	assertRuleOutboxCounts(t, db, editedIncident.ID, 1, 1, 0)
 	limit := "9007199254740993"
-	updated, err := rules.Update(context.Background(), UpdateAlertRuleInput{TenantID: tenant, ID: backlogRule.ID, BacklogThreshold: &limit}, at.Add(765*time.Second))
+	updated, err := rules.Update(context.Background(), UpdateAlertRuleInput{TenantID: tenant, ID: backlogRule.ID, BacklogThreshold: &limit}, at.Add(840*time.Second))
 	if err != nil || updated.BacklogThreshold != limit || updated.CDCWindow.Active || updated.CDCWindow.TriggerSince != nil || updated.CDCWindow.ResetAt == nil {
 		t.Fatal("rule edit retained old evidence", err)
 	}
@@ -149,7 +152,7 @@ func TestIntegrationPostgresCDCPerformanceRules(t *testing.T) {
 	}
 	assertRuleOutboxCounts(t, db, editedIncident.ID, 2, 2, 0)
 	invalid := "01"
-	if _, err = rules.Update(context.Background(), UpdateAlertRuleInput{TenantID: tenant, ID: backlogRule.ID, BacklogThreshold: &invalid}, at.Add(766*time.Second)); !errors.Is(err, ErrAlertRuleInvalid) {
+	if _, err = rules.Update(context.Background(), UpdateAlertRuleInput{TenantID: tenant, ID: backlogRule.ID, BacklogThreshold: &invalid}, at.Add(841*time.Second)); !errors.Is(err, ErrAlertRuleInvalid) {
 		t.Fatal("invalid edit admitted", err)
 	}
 

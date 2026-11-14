@@ -201,3 +201,34 @@ func TestCDCPerformanceThresholdEqualityAndSchemaPause(t *testing.T) {
 		t.Fatal("schema block did not pause consumer evaluation", w)
 	}
 }
+
+func TestCDCConsumerRecoveryAllowsBatchedCommitsButRequiresNewProgress(t *testing.T) {
+	now := time.Now().UTC()
+	rule := models.AlertRule{RuleType: models.AlertRuleCDCStalled, CDCWindow: models.CDCPerformanceWindow{Generation: 1, Active: true, PreviousValue: "10"}}
+	feed := func(sec int, offset string) {
+		at := now.Add(time.Duration(sec) * time.Second)
+		row := commonClient.TransferCDCRiskItem{State: "observing", Generation: 1, ConsumptionState: "running", InitialSnapshotCompleted: performanceSnapshotCompleted(), BufferSample: &commonClient.CDCBufferSample{CommittedOffset: offset, LagOffsets: "3", SampledAt: at, ExpiresAt: at.Add(30 * time.Second)}}
+		rule.CDCWindow = advanceCDCWindow(rule, row, at)
+	}
+	feed(0, "10")
+	feed(15, "11")
+	feed(30, "11")
+	feed(45, "12")
+	feed(60, "12")
+	if !rule.CDCWindow.Active {
+		t.Fatal("recovery before a 60s window")
+	}
+	feed(75, "13")
+	if rule.CDCWindow.Active {
+		t.Fatal("normal 30s batches never recovered")
+	}
+	rule.CDCWindow.Active = true
+	feed(90, "14")
+	for sec := 105; sec <= 285; sec += 15 {
+		feed(sec, "14")
+	}
+	feed(300, "15")
+	if !rule.CDCWindow.Active {
+		t.Fatal("one pulse after another 180s stall falsely recovered")
+	}
+}

@@ -549,7 +549,7 @@ Transfer 的同一机器入口采用 v3 单一路线，增加当前消费状态�
 本地实际执行记录（均经根 Make 标准入口，日志位于 `/tmp/addp-cdc-performance-*`）：
 
 - Common／Transfer／Monitor Go T1 通过；覆盖精确 DTO、180／300 秒边界、重复旧值、有效期缺口、中断前旧样本、计数重置、跨代次隔离、暂停保持、恢复及 Owner 当前目标的 Tenant／源能力过滤。
-- `make test-transfer-postgres` 和 `make test-monitor-postgres` 通过。新增 `TestIntegrationPostgresCDCPerformanceRules` 使用受控 Owner 事实和推进的采样时间，实际核对三种规则的持久窗口、唯一 warning、暂停／未知保持、健康关闭及每项唯一 opened／resolved 通知 outbox；还核对精确阈值修改清空旧窗口、非法修改拒绝。此为真实 PostgreSQL 事务 T2，不是等待真实 3／5 分钟的 T4 或外部通知实收。
+- `make test-transfer-postgres` 和 `make test-monitor-postgres` 通过。新增 `TestIntegrationPostgresCDCPerformanceRules` 使用受控 Owner 事实和推进的采样时间，实际核对三种规则的持久窗口、唯一 warning、暂停／未知保持、30 秒批次提交的恢复、健康关闭及每项唯一 opened／resolved 通知 outbox；还核对精确阈值修改清空旧窗口、非法修改拒绝。此为真实 PostgreSQL 事务 T2，不是等待真实 3／5 分钟的 T4 或外部通知实收。
 - `make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS=cdc-risk-alerts.spec.js`：153 项单元、9 项受控浏览器断言及构建通过。新增中英文暂停提示、当前 CDC 目标的规则选项、精确大整数阈值经真实表单保存的请求载荷、warning 约束及任务权限链接。
 - `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cdc-native` 实际通过。独占 Connect／PostgreSQL／消息代理证明新增活动计数随第二次 WAL 事件推进、事件年龄可读、LastEvent 请求被 403 拒绝；既有实际采样、126 项 CDC Prometheus 查询、单源故障隔离和恢复继续通过。结束输出确认自有容器／网络／卷及临时文件零残留，未接管个人 Infra。
 - 既有 `make test-transfer-continuous-online-runner` 的 127 项与 System fixture Go 测试通过；原 Hosted 指标断言同步公开 DTO 字段，没有放宽字段闭集。前端 CI 登记 27 项及 21 个前端登记检查通过；两模块 Swagger 生成和路由覆盖通过。现有 owner Go／PostgreSQL／前端及 CDC native 门禁已覆盖本批路径，无需新增入口或 workflow。
