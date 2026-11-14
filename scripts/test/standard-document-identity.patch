@@ -1,0 +1,22 @@
+--- a/system/backend/cmd/online-test-fixture/main.go
++++ b/system/backend/cmd/online-test-fixture/main.go
+@@ -369,0 +370,2 @@
++	case "standard-document-storage":
++		return []string{"standard.document.create", "standard.document.read", "standard.document.update", "standard.document.delete"}, nil
+@@ -724,0 +727,13 @@
++	if *suite == "standard-document-storage" {
++		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
++		if err != nil {
++			return err
++		}
++		reader, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
++			foreignTenant.ID, reserve.PrincipalID, "external-online-standard-reader", []string{"standard.document.read"})
++		if err != nil {
++			return err
++		}
++		values["ADDP_ONLINE_STANDARD_FOREIGN_TOKEN"] = reader.AccessToken
++		values["ADDP_ONLINE_STANDARD_FOREIGN_TENANT_ID"] = fmt.Sprint(foreignTenant.ID)
++	}
+@@ -1763,0 +1779,2 @@
++		"ADDP_ONLINE_STANDARD_FOREIGN_TOKEN",
++		"ADDP_ONLINE_STANDARD_FOREIGN_TENANT_ID",

@@ -367,8 +367,6 @@ var readWorkflowConsumerPermissions = []string{
 
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
-	case "standard-document-storage":
-		return []string{"standard.document.create", "standard.document.read", "standard.document.update", "standard.document.delete"}, nil
 	case executionTraceLocalSuite:
 		return append([]string(nil), executionTraceLocalPermissions...), nil
 	case "execution-events-pagination":
@@ -724,19 +722,6 @@ func run(args []string, environment []string) error {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
-	if *suite == "standard-document-storage" {
-		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
-		if err != nil {
-			return err
-		}
-		reader, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			foreignTenant.ID, reserve.PrincipalID, "external-online-standard-reader", []string{"standard.document.read"})
-		if err != nil {
-			return err
-		}
-		values["ADDP_ONLINE_STANDARD_FOREIGN_TOKEN"] = reader.AccessToken
-		values["ADDP_ONLINE_STANDARD_FOREIGN_TENANT_ID"] = fmt.Sprint(foreignTenant.ID)
-	}
 	if registryPlatformToken != "" {
 		values["ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN"] = registryPlatformToken
 	}
@@ -1776,8 +1761,6 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_APPROVER_USERNAME",
 		"ADDP_ONLINE_TEST_APPROVER_PASSWORD",
-		"ADDP_ONLINE_STANDARD_FOREIGN_TOKEN",
-		"ADDP_ONLINE_STANDARD_FOREIGN_TENANT_ID",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_USER_USERNAME",
 		"ADDP_ONLINE_TEST_USER_PASSWORD",

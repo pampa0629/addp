@@ -22,7 +22,7 @@ application_owned=1
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -standard
-# Only the identity fixture comes from the acceptance checkout.
-run_logged bash -c 'cd "$1/system/backend" && go run ./cmd/online-test-fixture --suite standard-document-storage --output "$2"' _ "$HARNESS" "$IDENTITY_ENV"
+# The fixture uses the pinned product IAM and a scenario-only command patch.
+run_logged bash -c 'cd "$1/system/backend" && go run ./cmd/online-test-fixture --suite standard-document-storage --output "$2"' _ "$RUNNER_TEMP/standard-http-identity" "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged make -C "$HARNESS" test-online "ONLINE_SUITE=$ONLINE_SUITE"

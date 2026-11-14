@@ -491,6 +491,9 @@ jobs:
           git merge-base --is-ancestor "$STANDARD_HTTP_SOURCE_COMMIT" "$GITHUB_SHA"
           git clone --shared --no-checkout . "$RUNNER_TEMP/standard-http-product"
           git -C "$RUNNER_TEMP/standard-http-product" checkout --detach "$STANDARD_HTTP_SOURCE_COMMIT"
+          git clone --shared --no-checkout "$RUNNER_TEMP/standard-http-product" "$RUNNER_TEMP/standard-http-identity"
+          git -C "$RUNNER_TEMP/standard-http-identity" checkout --detach "$STANDARD_HTTP_SOURCE_COMMIT"
+          git -C "$RUNNER_TEMP/standard-http-identity" apply --unidiff-zero "$GITHUB_WORKSPACE/scripts/test/standard-document-identity.patch"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: system/backend/go.mod
