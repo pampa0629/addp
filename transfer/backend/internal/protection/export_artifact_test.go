@@ -140,9 +140,23 @@ func testExportProtectionLifecycle(t *testing.T, db *gorm.DB) {
 	upsert := func(p dataprotection.Projection) {
 		apply(dataprotection.ProjectionChange{ChangeID: uuid.NewString(), Operation: dataprotection.ChangeOperationUpsert, Projection: &p})
 	}
+	workflow := newExport(nil)
+	workflowLease, err := execution.LeaseFromExecution(*workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflowCtx := WithExportExecution(execution.ContextWithLease(t.Context(), workflowLease), workflow)
+	if err := gate.PrepareWorkflowResultExport(workflowCtx, uint(tenant), []dataprotection.ResourceReference{target, other}); err != nil {
+		t.Fatal(err)
+	}
+	check(workflow, true)
 	unmanaged := newExport([]dataprotection.ResourceReference{target})
 	check(unmanaged, true)
 	upsert(projection(other, 1))
+	check(workflow, false)
+	if err := gate.PrepareWorkflowResultExport(workflowCtx, uint(tenant), []dataprotection.ResourceReference{target, other}); err == nil {
+		t.Fatal("derived table accepted a managed source")
+	}
 	check(unmanaged, true)
 	p := projection(target, 1)
 	upsert(p)

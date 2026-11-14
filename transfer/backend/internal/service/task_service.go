@@ -418,6 +418,9 @@ func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
 }
 
 func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, config map[string]interface{}, batchSize int) error {
+	if _, present := config["workflow_result"]; present {
+		return ErrInvalidTaskConfig
+	}
 	if _, present := config["filegdb_source"]; present {
 		return ErrInvalidTaskConfig
 	}
@@ -591,7 +594,15 @@ func (s *TaskService) CreateAdHocExecution(
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
-	if fileGDBArchive {
+	if req.Config.WorkflowResult != nil {
+		if source != "develop" || req.ExportSession == nil || req.ExecutionAuthorization != nil || req.FileGDBActor != nil || req.AutoScanMetadata {
+			return nil, commonAPI.ErrForbidden
+		}
+		spec, err := planner.ParseTableExportTaskSpec(config, batchSize)
+		if err != nil || planner.ValidateWorkflowResultExport(spec, tenantID) != nil || !time.Now().Before(req.Config.WorkflowResult.ExpiresAt) {
+			return nil, ErrInvalidTaskConfig
+		}
+	} else if fileGDBArchive {
 		if _, err := planner.ParseTableExportTaskSpec(config, batchSize); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
 		}

@@ -132,6 +132,8 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 - 服务代发导出必须按已认证 Client ID 推导 Manager／Develop owner，再从 System 活动模块注册信息解析 Backend 地址，使用 Transfer tenant Service Token 核验导出会话、预绑定 execution UUID、完整请求摘要和待执行状态。核验得到的用户只写入 `triggered_by`，不能写入执行授权 actor 字段。请求不接受自报用户或回调地址；无来源的机器执行不声明人类发起用户，不能为旧记录猜测归属。
 
+Develop 完整当次工作流表格也走同一导出会话和 bounded `sync`：私有 `workflow_result` 只允许已认证 Develop 的精确一次性会话，普通任务定义拒绝该字段。JSON 交接输入按摘要和原截止读取，复用原 TableReader / CSV Writer；记录全部来源的 export 保护，任一受管来源拒绝整表。Worker 结束删除交接输入，下载由 Develop 逐次核验原用户与原明细期限；细则见[专业表格受控导出](../docs/spec/workflow/Develop资源与执行.md#工作流专业表格受控导出)。
+
 ### 通用执行约束
 
 主题导航：[配置、Provider 与 API 维护](#配置provider-与-api-维护)、[bounded 读写与恢复](#bounded-读写与恢复)、[成果事实与初始授权](#成果事实与初始授权)、[单次目标覆盖与稳定输出](#单次目标覆盖与稳定输出)、[continuous 运行、提交与观测](#continuous-运行提交与观测)、[业务 Kafka DLQ 与 replay](#业务-kafka-dlq-与-replay)、[CDC 捕获与审批](#cdc-捕获与审批)、[任务删除与物理清理](#任务删除与物理清理)、[写后扫描触发与范围](#写后扫描触发与范围)。

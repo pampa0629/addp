@@ -230,6 +230,8 @@ definitions:
         items:
           $ref: '#/definitions/client.TransferExecutionTransform'
         type: array
+      workflow_result:
+        $ref: '#/definitions/client.WorkflowResultExportSource'
     type: object
   client.TransferExecutionEndpoint:
     properties:
@@ -350,6 +352,27 @@ definitions:
         type: array
       source_locator:
         type: string
+    type: object
+  client.WorkflowResultExportSource:
+    properties:
+      attempt:
+        type: integer
+      columns:
+        items:
+          type: string
+        type: array
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+      row_count:
+        type: integer
+      sha256:
+        type: string
+      targets:
+        items:
+          $ref: '#/definitions/dataprotection.ResourceReference'
+        type: array
     type: object
   dataprotection.FieldRoleChoice:
     properties:

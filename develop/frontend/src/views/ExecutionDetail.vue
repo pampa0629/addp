@@ -163,6 +163,10 @@
                       <el-button :loading="professionalLoading" @click="loadProfessionalResult">
                         {{ t('develop.executionDetail.readProfessionalResult') }}
                       </el-button>
+                      <el-button v-if="professionalResult && authStore.hasPermission('develop.task.execute')"
+                        :loading="workflowExportLoading" @click="workflowExportVisible = true">
+                        {{ t('develop.executionDetail.exportProfessionalResult') }}
+                      </el-button>
                       <span v-if="professionalResult" class="professional-expiry">
                         {{ t('develop.executionDetail.resultValidUntil', { time: formatTime(professionalResult.plaintext_expires_at) }) }}
                       </span>
@@ -234,6 +238,9 @@
         </el-tab-pane>
 
       </el-tabs>
+      <ExportDialog v-model="workflowExportVisible" :formats="['csv']"
+        :default-file-name="`workflow_${executionId}.csv`" :exporting="workflowExportLoading"
+        :hint="t('develop.executionDetail.exportProfessionalHint')" @confirm="submitWorkflowExport" />
     </div>
   </div>
 </template>
@@ -248,16 +255,19 @@ import {
   getExecution,
   getExecutionLogs,
   getQueryResult,
+  createQueryExport,
+  getQueryExport,
   retryExecution
 } from '@/api/execution'
 import QueryResult from '@/components/QueryResult.vue'
+import client from '@/api/client'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
 import { queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
 import { createQueryPlaintextRefresh } from '@/utils/queryPlaintextRefresh.mjs'
 import { workflowProfessionalResult, workflowNumericColumns, workflowColumnSum } from '@/utils/workflowProfessionalResult.mjs'
 import { useAuthStore } from '@/store/auth'
-import { createLatestRequestScope, ExecutionFailure, formatLocatorDisplayPath, listResourceTreeEngines, MonitorExecutionsButton, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
+import { createLatestRequestScope, ExportDialog, downloadAuthenticatedExport, waitForExportSession, ExecutionFailure, formatLocatorDisplayPath, listResourceTreeEngines, MonitorExecutionsButton, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -340,6 +350,40 @@ const professionalLoading = ref(false)
 const professionalUnavailable = ref(false)
 const sumColumn = ref('')
 const professionalRequests = createLatestRequestScope()
+const workflowExportRequests = createLatestRequestScope()
+const workflowExportVisible = ref(false)
+const workflowExportLoading = ref(false)
+function stopWorkflowExport() {
+  workflowExportRequests.invalidate()
+  workflowExportVisible.value = false
+  workflowExportLoading.value = false
+}
+async function submitWorkflowExport({ format, fileName }) {
+  if (!professionalResult.value || workflowExportLoading.value) return
+  const id = executionId.value
+  const ticket = workflowExportRequests.invalidate()
+  workflowExportLoading.value = true
+  try {
+    await workflowExportRequests.request(async ({ signal }) => {
+      const created = await createQueryExport(id, { format, file_name: fileName }, { signal })
+      if (!workflowExportRequests.current(ticket)) return
+      if (!created?.id) throw new Error(t('develop.queryResult.exportSessionIdMissing'))
+      workflowExportVisible.value = false
+      const ready = await waitForExportSession(session => getQueryExport(session, { signal }), created.id, {
+        signal, failedMessage: t('develop.queryResult.exportFullFailed'), timeoutMessage: t('develop.queryResult.exportTimeout')
+      })
+      if (!workflowExportRequests.current(ticket)) return
+      await downloadAuthenticatedExport(client, ready, { signal, failedMessage: t('develop.queryResult.exportFullFailed') })
+      if (workflowExportRequests.current(ticket)) ElMessage.success(t('develop.queryResult.exportDownloaded'))
+    })
+  } catch (error) {
+    if (workflowExportRequests.current(ticket) && error?.name !== 'AbortError') {
+      ElMessage.error(error?.response?.data?.error || error?.message || t('develop.queryResult.exportFullFailed'))
+    }
+  } finally {
+    if (workflowExportRequests.current(ticket)) workflowExportLoading.value = false
+  }
+}
 const numericColumns = computed(() => workflowNumericColumns(professionalResult.value))
 const professionalSum = computed(() => workflowColumnSum(professionalResult.value, sumColumn.value))
 const canReadWorkflowTable = computed(() => execution.value?.task_type === 'workflow'
@@ -347,6 +391,7 @@ const canReadWorkflowTable = computed(() => execution.value?.task_type === 'work
   && ['dataframe', 'geodataframe'].includes(workflowFinalResult.value?.runtime_type)
   && authStore.hasPermission('develop.task.read') && authStore.hasPermission('develop.data_read.execute'))
 function clearProfessionalValues() {
+  stopWorkflowExport()
   professionalResult.value = null
   sumColumn.value = ''
 }
@@ -663,6 +708,7 @@ onMounted(async () => {
 onUnmounted(() => {
   professionalRefresh.dispose()
   professionalRequests.dispose()
+  workflowExportRequests.dispose()
   clearProfessionalValues()
   stopAutoRefresh()
 })

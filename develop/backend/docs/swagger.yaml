@@ -2754,12 +2754,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: 使用已成功查询 execution 的冻结查询与参数创建一次性 Transfer execution，结果暂存到 infra
-        并通过导出会话下载。| Create a one-off Transfer execution from the frozen query and
-        parameters of a successful query execution, stage it in infra, and download
-        it through the export session.
+      description: 使用成功查询快照或完整当次工作流表格创建一次性 Transfer 导出；工作流下载不得超过原明细截止且逐次核验来源与保护。|
+        Export a successful query snapshot or complete current workflow table through
+        one-off Transfer execution; workflow delivery rechecks source access and protection
+        and ends at the original result deadline.
       parameters:
-      - description: 查询执行 ID | Query execution ID
+      - description: 本人查询或工作流执行 ID | Own query or workflow execution ID
         in: path
         name: execution_id
         required: true
@@ -2840,7 +2840,7 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: 导出全部查询结果 | Export all query results
+      summary: 导出全部当次结果 | Export all current results
       tags:
       - Execution
       x-addp-auth-mode: permission
@@ -3015,8 +3015,8 @@ paths:
       - develop.task.read
   /exports/{id}:
     get:
-      description: 复核原查询 execution 的当前本人专业读取权。| Recheck current professional read
-        access to the original own query execution.
+      description: 复核原 execution 的当前本人专业读取权。| Recheck current professional read access
+        to the original own execution.
       parameters:
       - description: 导出会话 ID | Export session ID
         in: path
@@ -3066,7 +3066,7 @@ paths:
   /exports/{id}/file:
     get:
       description: |-
-        路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.
+        路径绑定 Resource Ticket 验证后，仍复核原 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own execution.
         所有文件交付前复核 Transfer 当前保护状态，失效返回409/export_protection_changed并要求重新导出。角色专用文件同时核验当前 User 资格。| All artifacts recheck current Transfer protection; invalid protection returns 409/export_protection_changed and requires a fresh export. Role-specific files also verify the current User.
       parameters:
       - description: 导出会话 ID | Export session ID

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
@@ -78,13 +79,14 @@ type QueryInputSpec struct {
 }
 
 type TableExportTaskSpec struct {
-	FileGDBSource *execution.FileGDBExportSource `json:"filegdb_source,omitempty"`
-	Runtime       RuntimeSpec                    `json:"runtime"`
-	Load          LoadSpec                       `json:"load"`
-	Source        EndpointSpec                   `json:"source"`
-	Target        EndpointSpec                   `json:"target,omitempty"`
-	Transforms    []TransformSpec                `json:"transforms,omitempty"`
-	BatchSize     int                            `json:"batch_size,omitempty"`
+	WorkflowResult *client.WorkflowResultExportSource `json:"workflow_result,omitempty"`
+	FileGDBSource  *execution.FileGDBExportSource     `json:"filegdb_source,omitempty"`
+	Runtime        RuntimeSpec                        `json:"runtime"`
+	Load           LoadSpec                           `json:"load"`
+	Source         EndpointSpec                       `json:"source"`
+	Target         EndpointSpec                       `json:"target,omitempty"`
+	Transforms     []TransformSpec                    `json:"transforms,omitempty"`
+	BatchSize      int                                `json:"batch_size,omitempty"`
 }
 
 type RuntimeSpec struct {
@@ -1369,6 +1371,11 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 }
 
 func validateTableTransferSpec(spec TableExportTaskSpec) error {
+	if spec.WorkflowResult != nil {
+		if err := ValidateWorkflowResultExport(spec, 0); err != nil {
+			return err
+		}
+	}
 	if spec.Runtime.Boundary != runtimeBoundaryBounded {
 		return fmt.Errorf("runtime.boundary must be %q, got %q", runtimeBoundaryBounded, spec.Runtime.Boundary)
 	}

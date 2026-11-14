@@ -637,6 +637,8 @@
       "tabInputs": "输入参数",
       "tabError": "错误信息",
       "workflowResult": "工作流执行结果",
+      "exportProfessionalResult": "导出当次明细",
+      "exportProfessionalHint": "导出全部当次明细，下载有效期与本次结果一致。",
       "readProfessionalResult": "查看当次明细",
       "resultValidUntil": "有效至 {time}",
       "professionalUnavailable": "当次明细已过期或暂不可读取。请确认当前读取权限；需要新结果时手动重新执行。",

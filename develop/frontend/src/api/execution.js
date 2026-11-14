@@ -3,10 +3,10 @@ import client from './client'
 // 创建 ad-hoc execution
 export const createExecution = (payload) => client.post('/develop/executions', payload)
 
-// 基于已完成查询的冻结执行快照创建一次性完整结果导出
+// 从成功查询快照或完整当次工作流表格创建正式导出会话
 export const createQueryExport = (id, payload, config) => client.post(`/develop/executions/${id}/exports`, payload, config)
 
-// 获取一次性查询导出会话状态
+// 获取本人正式导出会话状态
 export const getQueryExport = (id, config) => client.get(`/develop/exports/${id}`, config)
 
 // 获取执行详情

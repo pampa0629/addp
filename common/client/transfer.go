@@ -87,13 +87,14 @@ type CreateTransferExecutionRequest struct {
 }
 
 type TransferExecutionConfig struct {
-	FileGDBSource *execution.FileGDBExportSource `json:"filegdb_source,omitempty"`
-	Runtime       TransferExecutionRuntime       `json:"runtime"`
-	Load          TransferExecutionLoad          `json:"load"`
-	Source        TransferExecutionEndpoint      `json:"source"`
-	Target        TransferExecutionEndpoint      `json:"target"`
-	Transforms    []TransferExecutionTransform   `json:"transforms,omitempty"`
-	BatchSize     int                            `json:"batch_size,omitempty"`
+	WorkflowResult *WorkflowResultExportSource    `json:"workflow_result,omitempty"`
+	FileGDBSource  *execution.FileGDBExportSource `json:"filegdb_source,omitempty"`
+	Runtime        TransferExecutionRuntime       `json:"runtime"`
+	Load           TransferExecutionLoad          `json:"load"`
+	Source         TransferExecutionEndpoint      `json:"source"`
+	Target         TransferExecutionEndpoint      `json:"target"`
+	Transforms     []TransferExecutionTransform   `json:"transforms,omitempty"`
+	BatchSize      int                            `json:"batch_size,omitempty"`
 }
 
 type TransferExecutionRuntime struct {

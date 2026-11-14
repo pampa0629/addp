@@ -2,12 +2,15 @@ package exportartifact
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/engine/plugin"
 	"io"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -256,6 +259,7 @@ type Service struct {
 type ProtectionValidator func(context.Context, *commonClient.TransferSourceProtectionSelection) error
 
 type CreateRequest struct {
+	WorkflowTable      *plugin.WorkflowTableResult
 	AuthorizeExecution func(context.Context, string, commonClient.TransferExecutionConfig) (*commonClient.IssuedExecutionAuthorization, error)
 	AdmitFileGDB       func(context.Context, string, commonClient.TransferExecutionConfig) error
 	FileGDBActor       *commonClient.FileGDBExportActor
@@ -338,6 +342,30 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 		Format: string(formatType), FileName: downloadName, TargetParentLocator: parentLocator,
 		TargetLocator: targetLocator, Status: StatusPending, TransferExecutionID: uuid.NewString(),
 	}
+	var privateInputPath string
+	dispatched := false
+	if config.WorkflowResult != nil {
+		source := config.WorkflowResult
+		data, err := commonClient.WorkflowResultExportRows(req.WorkflowTable)
+		if err != nil || source.Validate() != nil || source.ExecutionID != req.SourceRef || source.SHA256 != commonClient.WorkflowResultRowsDigest(data) || req.WorkflowTable.RowCount != source.RowCount || !slices.Equal(req.WorkflowTable.Columns, source.Columns) || !now.Before(source.ExpiresAt) || formatType != format.FormatCSV || s.owner != "develop" {
+			return nil, errors.New("workflow export input is unavailable")
+		}
+		privateInputPath = strings.Trim(prefix, "/") + "/workflow-result.json"
+		config.Source = commonClient.TransferExecutionEndpoint{Locator: InfraObjectLocator(s.bucket, privateInputPath), DataType: "table", Representation: "encoded", Format: "json"}
+		defer func() {
+			if !dispatched {
+				cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+				defer cancel()
+				_ = s.minio.RemoveObject(cleanup, s.bucket, privateInputPath, minio.RemoveObjectOptions{})
+			}
+		}()
+		_, err = s.minio.PutObject(ctx, s.bucket, privateInputPath, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: "application/json"})
+		if err != nil {
+			return nil, errors.New("stage workflow export input")
+		}
+	} else if req.WorkflowTable != nil {
+		return nil, errors.New("unexpected workflow export table")
+	}
 	transferRequest := &commonClient.CreateTransferExecutionRequest{
 		Name: executionName, Config: config, AutoScanMetadata: false, BatchSize: 1000, TenantID: req.TenantID,
 		FileGDBActor: req.FileGDBActor,
@@ -391,6 +419,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 			return nil, err
 		}
 	}
+	dispatched = true
 	return s.response(session), nil
 }
 
@@ -516,7 +545,8 @@ func (s *Service) response(session *Session) *SessionResponse {
 }
 
 type artifactRef struct {
-	Path      string `json:"path"`
+	Path string `json:"path"
+ "slices"`
 	Role      string `json:"role,omitempty"`
 	Required  bool   `json:"required,omitempty"`
 	Primary   bool   `json:"primary,omitempty"`

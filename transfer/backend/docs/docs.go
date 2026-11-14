@@ -3557,6 +3557,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/client.TransferExecutionTransform"
                     }
+                },
+                "workflow_result": {
+                    "$ref": "#/definitions/client.WorkflowResultExportSource"
                 }
             }
         },
@@ -3739,6 +3742,38 @@ const docTemplate = `{
                 },
                 "source_locator": {
                     "type": "string"
+                }
+            }
+        },
+        "client.WorkflowResultExportSource": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.ResourceReference"
+                    }
                 }
             }
         },

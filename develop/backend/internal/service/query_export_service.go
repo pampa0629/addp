@@ -54,7 +54,13 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 	}
 	repo, readCtx := s.executor.professionalExecutionRepository(ctx, tenantID)
 	execution, err := repo.GetByExecutionID(readCtx, strings.TrimSpace(executionID), int(tenantID))
-	if err != nil || execution.Module != commonExecution.ModuleDevelop || execution.TaskType != commonExecution.TaskTypeQuery {
+	if err != nil || execution.Module != commonExecution.ModuleDevelop {
+		return nil, ErrQueryExportNotFound
+	}
+	if execution.TaskType == commonExecution.TaskTypeWorkflow {
+		return s.createWorkflowExport(ctx, execution.ExecutionID, req, tenantID, userID)
+	}
+	if execution.TaskType != commonExecution.TaskTypeQuery {
 		return nil, ErrQueryExportNotFound
 	}
 	if execution.Status != commonExecution.ExecutionStatusSuccess {
@@ -191,14 +197,28 @@ func queryExportIdentityProjection(columns []string) []commonClient.TransferExec
 }
 
 func (s *QueryExportService) Get(ctx context.Context, id, tenantID, userID uint) (*models.CreateQueryExportResponse, error) {
-	response, err := s.artifacts.Get(ctx, id, tenantID, userID, s.validateProtection)
+	response, _, err := s.currentExportSession(ctx, id, tenantID, userID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.executor.GetExecution(ctx, response.SourceRef, tenantID); err != nil {
-		return nil, exportartifact.ErrSessionNotFound
-	}
 	return queryExportResponse(response), nil
+}
+func (s *QueryExportService) currentExportSession(ctx context.Context, id, tenantID, userID uint) (*exportartifact.SessionResponse, *models.ExecutionWithDevTask, error) {
+	response, err := s.artifacts.Get(ctx, id, tenantID, userID, s.validateProtection)
+	if err != nil {
+		return nil, nil, err
+	}
+	original, err := s.executor.GetExecution(ctx, response.SourceRef, tenantID)
+	if err != nil {
+		return nil, nil, exportartifact.ErrSessionNotFound
+	}
+	if original.TaskType == commonExecution.TaskTypeWorkflow {
+		bearer, _ := ctx.Value(exportUserTokenKey{}).(string)
+		if _, err := s.executor.workflowResultResponse(ctx, original, tenantID, bearer); err != nil {
+			return nil, nil, exportartifact.ErrSessionNotFound
+		}
+	}
+	return response, original, nil
 }
 
 func (s *QueryExportService) ResolveExecutionSource(ctx context.Context, id, tenantID uint, request commonClient.ExportExecutionSourceRequest) (*commonClient.ExportExecutionSource, error) {
@@ -206,10 +226,25 @@ func (s *QueryExportService) ResolveExecutionSource(ctx context.Context, id, ten
 }
 
 func (s *QueryExportService) Open(ctx context.Context, id, tenantID, userID uint) (*exportartifact.File, error) {
-	if _, err := s.Get(ctx, id, tenantID, userID); err != nil {
+	response, original, err := s.currentExportSession(ctx, id, tenantID, userID)
+	if err != nil {
 		return nil, err
 	}
-	return s.artifacts.Open(ctx, id, tenantID, userID, s.validateProtection)
+	file, err := s.artifacts.Open(ctx, id, tenantID, userID, s.validateProtection)
+	if err != nil {
+		return nil, err
+	}
+	if original.TaskType == commonExecution.TaskTypeWorkflow {
+		facts, _ := executionUserFacts(ctx)
+		_, actor, _, _ := executionActorIDs(facts)
+		entry := s.executor.workflowResults.get(response.SourceRef, original.Attempt, tenantID, actor)
+		if entry == nil {
+			file.Reader.Close()
+			return nil, exportartifact.ErrSessionNotFound
+		}
+		file.Reader = workflowExportDeadlineReader{ReadCloser: file.Reader, expires: entry.expires}
+	}
+	return file, nil
 }
 
 func queryExportResponse(response *exportartifact.SessionResponse) *models.CreateQueryExportResponse {

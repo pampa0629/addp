@@ -44,7 +44,7 @@ for (const locale of ['zh-cn', 'en']) test(`professional workflow rows, explicit
   const next = section.locator('.btn-next'); await next.click()
   await expect(section.locator('.tabular-result-renderer')).toContainText('30')
   await expect(section.getByTestId('professional-sum')).toContainText(String(sum))
-  await expect(section.getByRole('button', { name: /下载|导出|Download|Export/ })).toHaveCount(0)
+  await expect(section.getByRole('button', { name: locale === 'en' ? 'Export current details' : '导出当次明细', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath(`workflow-professional-${locale}-desktop.png`), fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(section).toBeVisible()
@@ -136,4 +136,61 @@ test('current permission changes clear visible professional details immediately'
   })
   await expect(page.locator('.workflow-professional-table')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '查看当次明细', exact: true })).toHaveCount(0)
+})
+
+for (const locale of ['zh-cn', 'en']) test(`formal workflow export downloads server CSV in ${locale}`, async ({ page }) => {
+  const deadline = new Date(Date.now() + 60000).toISOString()
+  await fixture(page, locale, route => json(route, live(ID, deadline)))
+  let submitted, reads = 0
+  const session = { id: 71, status: 'success', file_name: 'workflow.csv', download_url: '/api/v1/develop/exports/71/file' }
+  await page.route('**/api/v1/develop/**/exports', route => { submitted = route.request().postDataJSON(); return json(route, { ...session, status: 'pending' }) })
+  await page.route('**/api/v1/develop/exports/71', route => { reads++; return json(route, session) })
+  const csv = ['instance_id,score,footprint', ...rows.map(row => `${row.instance_id},${row.score},${row.footprint}`)].join('\n')
+  await page.route('**/api/v1/develop/exports/71/file', route => route.fulfill({ contentType: 'text/csv', body: csv }))
+  await page.goto(`/executions/${ID}`)
+  await page.getByRole('button', { name: locale === 'en' ? 'View current details' : '查看当次明细', exact: true }).click()
+  await page.getByRole('button', { name: locale === 'en' ? 'Export current details' : '导出当次明细', exact: true }).click()
+  const download = page.waitForEvent('download')
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Start Export' : '开始导出', exact: true }).click()
+  const file = await download
+  const { readFile } = await import('node:fs/promises')
+  expect(await readFile(await file.path(), 'utf8')).toBe(csv)
+  expect(file.suggestedFilename()).toBe('workflow.csv')
+  expect(Object.keys(submitted).sort()).toEqual(['file_name', 'format'])
+  expect(submitted.format).toBe('csv'); expect(reads).toBe(1)
+})
+
+test('workflow export shows current protection refusal instead of downloading JSON', async ({ page }) => {
+  await fixture(page, 'zh-cn', route => json(route, live(ID, new Date(Date.now() + 60000).toISOString())))
+  const session = { id: 72, status: 'success', file_name: 'workflow.csv', download_url: '/api/v1/develop/exports/72/file' }
+  await page.route('**/api/v1/develop/**/exports', route => json(route, session))
+  await page.route('**/api/v1/develop/exports/72', route => json(route, session))
+  await page.route('**/api/v1/develop/exports/72/file', route => json(route, { error: '保护规则已更新，请重新导出', error_code: 'export_protection_changed' }, 409))
+  let downloads = 0; page.on('download', () => downloads++)
+  await page.goto(`/executions/${ID}`)
+  await page.getByRole('button', { name: '查看当次明细', exact: true }).click()
+  await page.getByRole('button', { name: '导出当次明细', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '开始导出', exact: true }).click()
+  await expect(page.locator('.el-message')).toContainText('保护规则已更新，请重新导出')
+  expect(downloads).toBe(0)
+})
+
+test('leaving workflow results stops in-flight export observation and late download', async ({ page }) => {
+  await fixture(page, 'zh-cn', route => json(route, live(ID, new Date(Date.now() + 60000).toISOString())))
+  let pending, release, statusReads = 0, downloads = 0
+  page.on('download', () => downloads++)
+  await page.route('**/api/v1/develop/**/exports', async route => {
+    pending = true; await new Promise(resolve => { release = resolve })
+    await json(route, { id: 73, status: 'success', download_url: '/api/v1/develop/exports/73/file' })
+  })
+  await page.route('**/api/v1/develop/exports/73', route => { statusReads++; return json(route, {}) })
+  await page.goto(`/executions/${ID}`)
+  await page.getByRole('button', { name: '查看当次明细', exact: true }).click()
+  await page.getByRole('button', { name: '导出当次明细', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '开始导出', exact: true }).click()
+  await expect.poll(() => pending).toBe(true)
+  await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); await router.push('/executions/another') })
+  release()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(statusReads).toBe(0); expect(downloads).toBe(0)
 })

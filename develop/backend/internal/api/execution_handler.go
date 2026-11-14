@@ -69,13 +69,13 @@ func (h *ExecutionHandler) ResolveExportExecutionSource(c *gin.Context) {
 	exportartifact.ServeExecutionSource(c, h.queryExports)
 }
 
-// CreateQueryExport 基于成功查询 execution 创建全部结果导出会话。
-// @Summary 导出全部查询结果 | Export all query results
-// @Description 使用已成功查询 execution 的冻结查询与参数创建一次性 Transfer execution，结果暂存到 infra 并通过导出会话下载。| Create a one-off Transfer execution from the frozen query and parameters of a successful query execution, stage it in infra, and download it through the export session.
+// CreateQueryExport 基于成功查询或完整当次工作流表格创建导出会话。
+// @Summary 导出全部当次结果 | Export all current results
+// @Description 使用成功查询快照或完整当次工作流表格创建一次性 Transfer 导出；工作流下载不得超过原明细截止且逐次核验来源与保护。| Export a successful query snapshot or complete current workflow table through one-off Transfer execution; workflow delivery rechecks source access and protection and ends at the original result deadline.
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param execution_id path string true "查询执行 ID | Query execution ID"
+// @Param execution_id path string true "本人查询或工作流执行 ID | Own query or workflow execution ID"
 // @Param body body models.CreateQueryExportRequest true "导出格式与文件名 | Export format and file name"
 // @Success 202 {object} models.CreateQueryExportResponse
 // @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；export_protection_changed：保护已变化，请重新导出 | Role eligibility unavailable, masking method invalid, or export protection changed; export again"
@@ -134,9 +134,9 @@ func queryExportCreateError(c *gin.Context, err error) {
 	}
 }
 
-// GetQueryExport 获取当前用户的查询导出会话。
+// GetQueryExport 获取当前用户的结果导出会话。
 // @Summary 获取查询导出会话 | Get query export session
-// @Description 复核原查询 execution 的当前本人专业读取权。| Recheck current professional read access to the original own query execution.
+// @Description 复核原 execution 的当前本人专业读取权。| Recheck current professional read access to the original own execution.
 // @Tags Execution
 // @Produce json
 // @Param id path int true "导出会话 ID | Export session ID"
@@ -164,7 +164,7 @@ func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 
 // DownloadQueryExport 下载当前用户已完成的查询导出文件。
 // @Summary 下载查询导出文件 | Download query export file
-// @Description 路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.
+// @Description 路径绑定 Resource Ticket 验证后，仍复核原 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own execution.
 // @Tags Execution
 // @Produce octet-stream
 // @Param id path int true "导出会话 ID | Export session ID"

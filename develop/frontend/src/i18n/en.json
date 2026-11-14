@@ -626,6 +626,8 @@
       "tabInputs": "Inputs",
       "tabError": "Error",
       "workflowResult": "Workflow Execution Result",
+      "exportProfessionalResult": "Export current details",
+      "exportProfessionalHint": "Export all current rows. Download availability ends with this result.",
       "readProfessionalResult": "View current details",
       "resultValidUntil": "Available until {time}",
       "professionalUnavailable": "Current details have expired or are unavailable. Check current read access; execute manually when new results are needed.",

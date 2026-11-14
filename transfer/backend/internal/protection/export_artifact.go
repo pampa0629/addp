@@ -190,3 +190,15 @@ func (ExportArtifactBarrier) ApplyProjectionChanges(ctx context.Context, tx *gor
 		}
 	}
 }
+
+// Complete derived workflow tables have no proven per-column source lineage.
+// Reject any managed source and capture every source's export projection identity.
+func (g *Gate) PrepareWorkflowResultExport(ctx context.Context, tenant uint, targets []dataprotection.ResourceReference) error {
+	if g == nil || g.store == nil || len(targets) == 0 {
+		return dataprotection.ErrNotReady
+	}
+	if err := g.store.RequireUnmanaged(ctx, int64(tenant), targets, time.Now().UTC()); err != nil {
+		return err
+	}
+	return captureExportTargets(ctx, g.store, int64(tenant), targets)
+}

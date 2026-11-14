@@ -188,7 +188,7 @@ GeoPython 的 NFS 单文件 GeoPackage 与 MinIO 单文件 GeoJSON 共用执行�
 
 只读私有工作流的最终非几何表格通过既有 `GET /api/v1/develop/executions/{execution_id}/result` 交付本人专业结果。Develop 在原有效 lease、来源保护及读取观察内取回 Runtime 有界完整表格，最多暂存 5 分钟且不超过原 EA 截止；每进程最多 128 份、每份 64 KiB。不持久化行值，不写入执行历史、日志、Monitor、TaskProvider 或 Orchestrator；这些入口继续只保留计算类型和行数摘要。读取先按原 execution 核验当前 Tenant、User、Membership、授权版本及 `develop.task.read + develop.data_read.execute`，再用当前普通 User 凭据经 System `/engine-access/read-checks/develop-workflow-result` 核验实际来源完整 ReadSet 的当前 read Grant，并在 Develop 当前数据保护内交付。受保护来源、权限撤销、暂存过期或进程重启均拒绝明细，不回退到历史原值、不自动重算；不新增用户 Permission 或 Grant。Runtime 与 Develop 临时数据分别按原清理及有界暂存期限释放，读取不延长暂存。
 
-执行详情页显式读取本人当次明细，复用共享表格和分页；仅允许用户选择实际完整表格中的有限数值列求和，不推断业务字段或单位，不将实例面积之和解释为去重面积。浏览器独立保存当次结果，最多每 5 秒通过同一专业入口复核，按服务端截止独立清空；复核失败、身份或权限变化、切换 execution／离开结果页／卸载时立即清空并丢弃在途旧响应，不把明细写回历史或浏览器持久存储。过期只提示当次明细不可用，不自动重算。首期只做展示与合计，下载后续接正式导出出口，不用客户端 CSV 绕过导出保护。
+执行详情页显式读取本人当次明细，复用共享表格和分页；仅允许用户选择实际完整表格中的有限数值列求和，不推断业务字段或单位，不将实例面积之和解释为去重面积。浏览器独立保存当次结果，最多每 5 秒通过同一专业入口复核，按服务端截止独立清空；复核失败、身份或权限变化、切换 execution／离开结果页／卸载时立即清空并丢弃在途旧响应，不把明细写回历史或浏览器持久存储。过期只提示当次明细不可用，不自动重算。下载复用正式 `POST /executions/{execution_id}/exports`、Common 导出会话及 Transfer bounded ad-hoc sync；仅接受完整、有界、只读的当次专业表格，首期格式为 CSV，不用客户端 CSV 绕过导出保护。
 
 GeoJSON 保留原 8 MiB 上限、WGS84 FeatureCollection 内容约束及读取前后 ETag／长度／修改时间一致性检查；GeoPackage 保留独立文件、事务关联文件与原生结构检查。两者都按实际读取时的当前授权、租约和来源版本校验，不将读取一致性结论作为 Grant 条件。新增 MinIO GeoJSON 输入本阶段只读；保存仍只允许原 NFS GeoPackage 来源的精确新建链，不扩展输出范围。
 
@@ -255,3 +255,11 @@ MinIO 连接唯一来自本次已授权的存储 Engine；Spark 集群连接不�
 使用与 Spark/Hadoop 版本匹配的 S3A Magic Committer。成功须核验提交标记、全部 Parquet 分片的 schema 和真实行数，再返回稳定 outputs 并触发异步 Meta 扫描。失败清理只读取本次独占目录中的 Magic Committer `.pending` / `.pendingset` 记录，先用 Hadoop 校验全部记录并核对 bucket、目标 key 的目录边界及 upload ID，再精确取消这些上传并删除本次目录。不使用 MinIO 的目录前缀 multipart 列表作为清理证据。没有 pending 记录时，只有有效的 Magic 提交成功标记允许删除已提交成果；记录缺失且没有成功标记、记录损坏或取消失败时，报告“清理未核验”并保留目录和记录。清理只保证已记录上传，不承诺发现崩溃前未落盘的上传；不删除父目录、兄弟成果或 bucket 范围的上传。进程被强制终止时可能残留目录，不承诺自动恢复。普通 Parquet 多对象写入不具备数据集级原子可见性；独立扫描或外部读取仍可能看到提交中的对象，不能宣称 PostgreSQL 式事务发布。自动 Meta 扫描失败不改写已完成的存储提交事实。
 
 受控 GeoPackage 的标准 T4 runner 在首个业务提交前归档合成源原件、大小/SHA256、完整独立物理 oracle、当前真实 User AuthContext、Tenant/Engine/Runtime 与完整请求 DAG/精确来源范围；提交返回后先落盘原 execution 编号，再读取批准或等待状态。未返回的 execution/EA/Scope 标记尚未观察，不推造编号；早期失败同样保留阶段记录和错误，按原撤权清理路径退出，不重发业务提交。
+
+### 工作流专业表格受控导出
+
+用户显式创建导出时，Develop 按原 execution 的当前本人专业读取契约核验完整来源 ReadSet 和本地保护，冻结当次完整表格、attempt、原截止时间及精确来源身份。Common 将 JSON 交接输入放在该唯一导出会话的 infra 前缀内，摘要和专业结果引用进入完整 Transfer 请求摘要；行值不进入 execution、会话记录、日志或 TaskProvider。Transfer 只接受 Develop 服务经精确会话来源核验的此类一次性执行，任务定义与普通用户配置不得声明该私有来源。输入是有界完整计算结果，不是查询的截断预览，不重跑 DAG 或重新读取航片。
+
+Transfer 复用 JSON TableReader、既有表格 pipeline 与 CSV Writer，读取前核验交接输入摘要、执行绑定和原截止时间；按 Develop 已证明的全部来源 DataItem 记录自己的 export 保护事实。首期没有可证明的输出字段血缘，因此任一来源被保护时拒绝整个导出，不按结果列名推断或借用 query/preview 规则。输入在本次 Worker 结束时删除；失败或进程退出的残留继续由同前缀导出暂存清理负责。
+
+创建、状态与文件交付沿当前用户的既有读取/执行 Permission、原 Tenant/User/Membership/授权版本及来源 read Grant。状态和下载均要求原专业明细仍在有效期，且 Transfer 文件保护记录当前有效；不延长原最多 5 分钟期限，重启丢失专业缓存也拒绝下载，不保存 User Token、不新增权限或业务 DataItem。文件暂存的物理清理沿既有导出清理策略，访问截止与物理删除分别认定。前端复用唯一导出对话框、轮询和认证 Blob 下载，页面失效时取消观测，服务端不自动重算。

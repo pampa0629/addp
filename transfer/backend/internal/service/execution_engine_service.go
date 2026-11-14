@@ -180,6 +180,9 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		return fmt.Errorf("assert bounded execution ownership: %w", err)
 	}
 
+	if task.Config["workflow_result"] != nil {
+		defer s.cleanupWorkflowResultInput(ctx, execution)
+	}
 	rawSpec, rawErr := planner.ParseRawCopyTaskSpec(task.Config)
 	if rawErr == nil {
 		if s.protectionGate == nil {
@@ -218,10 +221,12 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.attachSourceMetaAttributes(ctx, task, &spec); err != nil {
-		wrapped := fmt.Errorf("load source meta item attributes: %w", err)
-		s.updateExecutionError(ctx, task, executionID, wrapped)
-		return wrapped
+	if spec.WorkflowResult == nil {
+		if err := s.attachSourceMetaAttributes(ctx, task, &spec); err != nil {
+			wrapped := fmt.Errorf("load source meta item attributes: %w", err)
+			s.updateExecutionError(ctx, task, executionID, wrapped)
+			return wrapped
+		}
 	}
 	targetOverride, hasTargetOverride, overrideErr := executionTargetOverrideLocator(execution.Metadata)
 	if overrideErr != nil {
@@ -329,6 +334,16 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
 	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": map[string]interface{}{"execution_upper_bound": metrics.UpperBound}}); err != nil {
 		s.logger.Warn("failed to persist watermark upper bound", "error", err, "execution_id", executionID)
+	}
+	if spec.WorkflowResult != nil {
+		gate, ok := s.protectionGate.(workflowExportGate)
+		if !ok || !time.Now().Before(spec.WorkflowResult.ExpiresAt) {
+			return fmt.Errorf("%w: workflow result expired", executor.ErrProtectionPreparation)
+		}
+		current, err := gate.ExportArtifactCurrent(ctx, int64(task.TenantID), execution.ExecutionID)
+		if err != nil || !current {
+			return fmt.Errorf("%w: workflow export protection changed", executor.ErrProtectionPreparation)
+		}
 	}
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
@@ -540,7 +555,9 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
 		return nil, nil, fmt.Errorf("configure instance table providers: %w", err)
 	}
-	if planner.IsInfraLocatorURI(spec.Source.Locator) {
+	if spec.WorkflowResult != nil {
+		err = s.configureWorkflowResultExport(ctx, task, execution, spec, buildResult, tableExecutor)
+	} else if planner.IsInfraLocatorURI(spec.Source.Locator) {
 		if buildResult.Plan.Source.Kind != executor.TableEndpointEncoded {
 			return nil, nil, fmt.Errorf("%w: invalid private source kind", executor.ErrProtectionPreparation)
 		}
@@ -1733,6 +1750,13 @@ func cleanPathValue(value interface{}) string {
 // Verify the frozen execution before metadata inspection and again before data reads.
 func (s *ExecutionEngineService) verifyInfraImportSource(ctx context.Context, current *commonExecution.TaskExecution, locator string) (*commonClient.ManagerImportSource, error) {
 	if !planner.IsInfraLocatorURI(locator) {
+		return nil, nil
+	}
+	if current != nil && current.ExecutionConfig["workflow_result"] != nil {
+		spec, err := planner.ParseTableExportTaskSpec(current.ExecutionConfig, 1000)
+		if err != nil || current.Source != "develop" || current.SourceTaskID != nil || planner.ValidateWorkflowResultExport(spec, uint(current.TenantID)) != nil || locator != spec.Source.Locator {
+			return nil, fmt.Errorf("%w: workflow input binding", executor.ErrProtectionPreparation)
+		}
 		return nil, nil
 	}
 	deny := func() error {
