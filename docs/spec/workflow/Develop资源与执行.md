@@ -188,6 +188,8 @@ GeoPython 的 NFS 单文件 GeoPackage 与 MinIO 单文件 GeoJSON 共用执行�
 
 只读私有工作流的最终非几何表格通过既有 `GET /api/v1/develop/executions/{execution_id}/result` 交付本人专业结果。Develop 在原有效 lease、来源保护及读取观察内取回 Runtime 有界完整表格，最多暂存 5 分钟且不超过原 EA 截止；每进程最多 128 份、每份 64 KiB。不持久化行值，不写入执行历史、日志、Monitor、TaskProvider 或 Orchestrator；这些入口继续只保留计算类型和行数摘要。读取先按原 execution 核验当前 Tenant、User、Membership、授权版本及 `develop.task.read + develop.data_read.execute`，再用当前普通 User 凭据经 System `/engine-access/read-checks/develop-workflow-result` 核验实际来源完整 ReadSet 的当前 read Grant，并在 Develop 当前数据保护内交付。受保护来源、权限撤销、暂存过期或进程重启均拒绝明细，不回退到历史原值、不自动重算；不新增用户 Permission 或 Grant。Runtime 与 Develop 临时数据分别按原清理及有界暂存期限释放，读取不延长暂存。
 
+执行详情页显式读取本人当次明细，复用共享表格和分页；仅允许用户选择实际完整表格中的有限数值列求和，不推断业务字段或单位，不将实例面积之和解释为去重面积。浏览器独立保存当次结果，最多每 5 秒通过同一专业入口复核，按服务端截止独立清空；复核失败、身份或权限变化、切换 execution／离开结果页／卸载时立即清空并丢弃在途旧响应，不把明细写回历史或浏览器持久存储。过期只提示当次明细不可用，不自动重算。首期只做展示与合计，下载后续接正式导出出口，不用客户端 CSV 绕过导出保护。
+
 GeoJSON 保留原 8 MiB 上限、WGS84 FeatureCollection 内容约束及读取前后 ETag／长度／修改时间一致性检查；GeoPackage 保留独立文件、事务关联文件与原生结构检查。两者都按实际读取时的当前授权、租约和来源版本校验，不将读取一致性结论作为 Grant 条件。新增 MinIO GeoJSON 输入本阶段只读；保存仍只允许原 NFS GeoPackage 来源的精确新建链，不扩展输出范围。
 
 沿[授权上下文 5.2.4](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)及[Runtime 私有文件协议](HTTP协议.md#工作流执行私有文件)，Develop 在同一 Owner 事务保存原 `common.task_executions` pending 及 `develop.file_executions` 私有记录。根手动执行使用当前 User 凭据签发；手动 Orchestrator 子执行使用同 Tenant 固定 Develop Service 调用同一签发机制的父执行入口，System 依据 common 权威父子行解析真实触发用户，核验相同 Actor／成员关系／授权版本及当前权限。子执行冻结父执行 UUID、attempt 与 lease 摘要；签发、准入与每次实际读取都核验同一父执行仍手动运行、租约有效且未换代，不以 Service 身份替代用户数据权限。本阶段子执行只读，不新增业务输出或定时任务准入。

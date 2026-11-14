@@ -18,5 +18,5 @@ export const getExecutionLogs = (id) => client.get(`/develop/executions/${id}/lo
 // 重试执行
 export const retryExecution = (id) => client.post(`/develop/executions/${id}/retry`)
 
-// 当次查询结果，仅工作台使用；历史详情继续使用 getExecution。
-export const getQueryResult = (id) => client.get(`/develop/executions/${id}/result`)
+// 当次本人查询或私有工作流结果；历史摘要继续使用 getExecution。
+export const getQueryResult = (id, config) => client.get(`/develop/executions/${id}/result`, config)

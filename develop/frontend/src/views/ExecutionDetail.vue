@@ -158,6 +158,33 @@
                     </div>
                     <pre v-else class="workflow-final-result-json">{{ workflowFinalResultText }}</pre>
                   </div>
+                  <section v-if="canReadWorkflowTable" class="workflow-professional-result">
+                    <div class="workflow-professional-toolbar">
+                      <el-button :loading="professionalLoading" @click="loadProfessionalResult">
+                        {{ t('develop.executionDetail.readProfessionalResult') }}
+                      </el-button>
+                      <span v-if="professionalResult" class="professional-expiry">
+                        {{ t('develop.executionDetail.resultValidUntil', { time: formatTime(professionalResult.plaintext_expires_at) }) }}
+                      </span>
+                    </div>
+                    <el-alert v-if="professionalUnavailable" type="info" show-icon :closable="false"
+                      :title="t('develop.executionDetail.professionalUnavailable')" />
+                    <template v-if="professionalResult">
+                      <div class="workflow-professional-toolbar">
+                        <el-select v-model="sumColumn" clearable :aria-label="t('develop.executionDetail.sumColumn')"
+                          :placeholder="t('develop.executionDetail.sumColumn')" class="sum-column-select">
+                          <el-option v-for="column in numericColumns" :key="column" :label="column" :value="column" />
+                        </el-select>
+                        <span v-if="sumColumn" class="professional-sum" data-testid="professional-sum">
+                          {{ t('develop.executionDetail.columnSum', { column: sumColumn }) }}:
+                          {{ professionalSum === null ? t('develop.executionDetail.sumUnavailable') : professionalSum }}
+                        </span>
+                      </div>
+                      <div class="workflow-professional-table">
+                        <QueryResult :result="professionalResult" />
+                      </div>
+                    </template>
+                  </section>
                 </div>
               </div>
 
@@ -220,17 +247,22 @@ import { Refresh, Loading } from '@element-plus/icons-vue'
 import {
   getExecution,
   getExecutionLogs,
+  getQueryResult,
   retryExecution
 } from '@/api/execution'
 import QueryResult from '@/components/QueryResult.vue'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
 import { queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
-import { ExecutionFailure, formatLocatorDisplayPath, listResourceTreeEngines, MonitorExecutionsButton, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
+import { createQueryPlaintextRefresh } from '@/utils/queryPlaintextRefresh.mjs'
+import { workflowProfessionalResult, workflowNumericColumns, workflowColumnSum } from '@/utils/workflowProfessionalResult.mjs'
+import { useAuthStore } from '@/store/auth'
+import { createLatestRequestScope, ExecutionFailure, formatLocatorDisplayPath, listResourceTreeEngines, MonitorExecutionsButton, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 // 状态管理
 const execution = ref(null)
@@ -303,9 +335,60 @@ const workflowFinalResultText = computed(() => JSON.stringify(workflowFinalResul
 let refreshTimer = null
 let executionReadGeneration = 0
 const executionId = computed(() => route.params.execution_id)
+const professionalResult = ref(null)
+const professionalLoading = ref(false)
+const professionalUnavailable = ref(false)
+const sumColumn = ref('')
+const professionalRequests = createLatestRequestScope()
+const numericColumns = computed(() => workflowNumericColumns(professionalResult.value))
+const professionalSum = computed(() => workflowColumnSum(professionalResult.value, sumColumn.value))
+const canReadWorkflowTable = computed(() => execution.value?.task_type === 'workflow'
+  && execution.value?.status === 'success' && workflowOutputRows.value.length === 0
+  && ['dataframe', 'geodataframe'].includes(workflowFinalResult.value?.runtime_type)
+  && authStore.hasPermission('develop.task.read') && authStore.hasPermission('develop.data_read.execute'))
+function clearProfessionalValues() {
+  professionalResult.value = null
+  sumColumn.value = ''
+}
+const professionalRefresh = createQueryPlaintextRefresh({
+  fetchExecution: id => professionalRequests.request(config => getQueryResult(id, config)),
+  normalize: value => workflowProfessionalResult(value, executionId.value),
+  onResult: value => { professionalResult.value = value },
+  onClear: () => { clearProfessionalValues(); professionalUnavailable.value = true }
+})
+function stopProfessionalResult() {
+  professionalRequests.invalidate()
+  professionalRefresh.stop()
+  clearProfessionalValues()
+  professionalLoading.value = false
+  professionalUnavailable.value = false
+}
+async function loadProfessionalResult() {
+  stopProfessionalResult()
+  if (!canReadWorkflowTable.value || activeTab.value !== 'result') return
+  const id = executionId.value
+  const ticket = professionalRequests.invalidate()
+  professionalLoading.value = true
+  try {
+    const value = await professionalRequests.request(config => getQueryResult(id, config))
+    if (!professionalRequests.current(ticket)) return
+    const result = workflowProfessionalResult(value, id)
+    if (Date.parse(result.plaintext_expires_at) <= Date.now()) throw Error('workflow_result_unavailable')
+    professionalResult.value = result
+    professionalRefresh.schedule(result)
+  } catch {
+    if (professionalRequests.current(ticket)) {
+      clearProfessionalValues()
+      professionalUnavailable.value = true
+    }
+  } finally {
+    if (professionalRequests.current(ticket)) professionalLoading.value = false
+  }
+}
 
 // 加载执行详情
 const loadExecution = async (silent = false) => {
+  if (!silent) stopProfessionalResult()
   const generation = ++executionReadGeneration
   try {
     const data = await getExecution(executionId.value)
@@ -321,6 +404,7 @@ const loadExecution = async (silent = false) => {
   } catch (error) {
     if (generation !== executionReadGeneration) return
     if ([403, 404].includes(error.response?.status)) {
+      stopProfessionalResult()
       executionReadGeneration++
       execution.value = null
       logs.value = []
@@ -496,6 +580,7 @@ const handleRefresh = async () => {
 }
 
 const handleTabChange = async (tab) => {
+  if (tab !== 'result') stopProfessionalResult()
   const routeState = resolveExecutionDetailRouteState({ tab })
   const location = { path: route.path, query: routeState.query }
   if (router.resolve(location).fullPath !== route.fullPath) {
@@ -550,7 +635,11 @@ watch(() => route.query, () => {
   if (routeDataReady) restoreExecutionRoute()
 })
 
+watch(activeTab, tab => { if (tab !== 'result') stopProfessionalResult() })
+watch(() => JSON.stringify(authStore.authContext), () => stopProfessionalResult())
+
 watch(executionId, async () => {
+  stopProfessionalResult()
   if (!routeDataReady) return
   stopAutoRefresh()
   execution.value = null
@@ -572,6 +661,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  professionalRefresh.dispose()
+  professionalRequests.dispose()
+  clearProfessionalValues()
   stopAutoRefresh()
 })
 </script>
@@ -651,6 +743,18 @@ onUnmounted(() => {
   margin: 0;
   color: var(--addp-text-primary);
 }
+
+.workflow-professional-result { margin-top: 16px; min-width: 0; }
+.workflow-professional-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
+.workflow-professional-toolbar > .el-button { max-width: 100%; height: auto; min-height: 32px; white-space: normal; }
+.workflow-professional-toolbar > .el-button :deep(span) { overflow-wrap: anywhere; }
+.sum-column-select { width: 220px; max-width: 100%; }
+.professional-expiry { color: var(--addp-text-secondary); overflow-wrap: anywhere; }
+.professional-sum { color: var(--addp-text-primary); overflow-wrap: anywhere; }
+.workflow-professional-table { height: 440px; min-width: 0; }
+.workflow-professional-table :deep(.result-summary) { min-width: 0; overflow: hidden; }
+.workflow-professional-table :deep(.result-summary > .el-tag) { max-width: 100%; white-space: normal; height: auto; }
+.workflow-professional-table :deep(.result-table) { min-width: 0; }
 
 .workflow-result-heading {
   display: flex;
