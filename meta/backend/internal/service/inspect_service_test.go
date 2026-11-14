@@ -5,11 +5,11 @@ import "testing"
 func TestParseInfraLocatorParsesMinioObject(t *testing.T) {
 	t.Parallel()
 
-	loc, err := parseInfraLocator("addp-infra://minio/manager/tenant_7/import/20260621/u1/roads.shp?type=object")
+	loc, err := parseInfraLocator("addp-infra://object/manager/tenant_7/import/20260621/u1/roads.shp?type=object")
 	if err != nil {
 		t.Fatalf("parseInfraLocator() error = %v", err)
 	}
-	if loc.Kind != "minio" || loc.Namespace != "manager" {
+	if loc.Kind != "object" || loc.Namespace != "manager" {
 		t.Fatalf("locator kind/namespace = %q/%q", loc.Kind, loc.Namespace)
 	}
 	if got := loc.Path; len(got) != 5 || got[0] != "tenant_7" || got[4] != "roads.shp" {

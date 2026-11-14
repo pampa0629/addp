@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/infra/objectstore"
+	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/addp/common/schema"
 
@@ -68,6 +71,13 @@ func main() {
 	protectionGate := transferprotection.NewGate(protectionStore, transferprotection.EngineDescriptorLookup(systemRuntimeClient))
 	executionEngineService := service.NewExecutionEngineService(taskRepo, repository.NewSyncStateRepository(db), executionService, systemClient, systemRuntimeClient, metaClient)
 	executionEngineService.SetImportSourceVerifier(commonClient.NewManagerImportSourceClient(systemRuntimeClient, tokenSource))
+	areaCtx, cancelArea := context.WithTimeout(context.Background(), 30*time.Second)
+	area, err := objectbootstrap.OpenContentArea(areaCtx, objectstore.Manager)
+	cancelArea()
+	if err != nil {
+		log.Fatalf("bind Transfer object area: %v", err)
+	}
+	executionEngineService.SetObjectArea(area)
 	executionEngineService.SetConfig(cfg)
 	executionEngineService.SetProtectionGate(protectionGate)
 	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{

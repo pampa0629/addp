@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	objectminio "github.com/addp/common/infra/objectstore/minio"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -57,7 +58,7 @@ func TestWorkflowExportStagesOnlyDigestBoundCompleteTableAndCleansFailedDispatch
 			if scenario == "dispatch_failed" {
 				transfer.err = io.ErrUnexpectedEOF
 			}
-			service := NewService(transfer, NewGormStore(db, "sessions"), m, "manager", "develop", "/exports")
+			service := NewService(transfer, NewGormStore(db, "sessions"), objectminio.New(m, "manager"), "manager", "develop", "/exports")
 			table := &plugin.WorkflowTableResult{SchemaVersion: "addp.workflow.table-result/v1", Columns: []string{"surface"}, Rows: []map[string]interface{}{{"surface": 42.375}}, RowCount: 1}
 			data, _ := client.WorkflowResultExportRows(table)
 			binding := &client.WorkflowResultExportSource{ExecutionID: uuid.NewString(), Attempt: 1, ExpiresAt: time.Now().Add(time.Minute), Columns: table.Columns, RowCount: 1, SHA256: client.WorkflowResultRowsDigest(data), Targets: []dataprotection.ResourceReference{{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "source"}}}

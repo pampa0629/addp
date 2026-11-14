@@ -14,7 +14,7 @@ import (
 func TestInvalidObjectAreaConfiguration(t *testing.T) {
 	for _, tc := range []struct{ provider, binding, area string }{
 		{"other", "", "standard"}, {"minio", "manager=wrong", "standard"}, {"minio", "standard=", "standard"},
-		{"minio", "standard=one,manager=two", "standard"}, {"minio", "", "manager"},
+		{"minio", "standard=one,manager=two", "standard"}, {"minio", "manager=other", "manager"},
 	} {
 		t.Setenv("ADDP_INFRA_OBJECTSTORE_PROVIDER", tc.provider)
 		t.Setenv("ADDP_INFRA_OBJECTSTORE_BINDINGS", tc.binding)

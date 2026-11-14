@@ -11,6 +11,8 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/infra/objectstore"
+	objectminio "github.com/addp/common/infra/objectstore/minio"
 	commonModels "github.com/addp/common/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -45,7 +47,7 @@ func (s *transferStub) GetExecution(_ context.Context, id string, _ uint) (*comm
 	return &commonClient.TransferExecutionResponse{Status: StatusPending}, nil
 }
 
-func testMinIOClient(t *testing.T) *minio.Client {
+func testMinIOClient(t *testing.T) objectstore.ContentArea {
 	t.Helper()
 	client, err := minio.New("127.0.0.1:1", &minio.Options{
 		Creds: credentials.NewStaticV4("test", "test-secret", ""),
@@ -53,7 +55,7 @@ func testMinIOClient(t *testing.T) *minio.Client {
 	if err != nil {
 		t.Fatalf("create minio client: %v", err)
 	}
-	return client
+	return objectminio.New(client, "manager")
 }
 
 func TestCreateOwnsInfraTargetAndDisablesMetadataScan(t *testing.T) {
@@ -83,7 +85,7 @@ func TestCreateOwnsInfraTargetAndDisablesMetadataScan(t *testing.T) {
 	if request == nil || request.TenantID != 7 || request.AutoScanMetadata {
 		t.Fatalf("transfer request = %#v", request)
 	}
-	if !strings.HasPrefix(request.Config.Target.ParentLocator, "addp-infra://minio/manager/tenant_7/export/develop/") {
+	if !strings.HasPrefix(request.Config.Target.ParentLocator, "addp-infra://object/manager/tenant_7/export/develop/") {
 		t.Fatalf("target parent locator = %q", request.Config.Target.ParentLocator)
 	}
 	if request.Config.Target.Locator != "" || request.Config.Target.Name != "orders.csv" {
@@ -151,7 +153,7 @@ func TestGormStoreScopesSessionByTenantAndUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewGormStore(db, "export_sessions")
-	session := &Session{TenantID: 7, UserID: 9, SourceRef: "source", Format: "csv", FileName: "data.csv", TargetParentLocator: "addp-infra://minio/manager/tenant_7/export/develop/session?type=prefix", TargetLocator: "addp-infra://minio/manager/tenant_7/export/develop/session/data.csv?type=object", TransferExecutionID: "transfer-1", Status: StatusPending}
+	session := &Session{TenantID: 7, UserID: 9, SourceRef: "source", Format: "csv", FileName: "data.csv", TargetParentLocator: "addp-infra://object/manager/tenant_7/export/develop/session?type=prefix", TargetLocator: "addp-infra://object/manager/tenant_7/export/develop/session/data.csv?type=object", TransferExecutionID: "transfer-1", Status: StatusPending}
 	if err := store.Create(context.Background(), session); err != nil {
 		t.Fatal(err)
 	}
@@ -192,11 +194,11 @@ func TestCreateKeepsFailedSessionForCleanupWhenTransferCreationFails(t *testing.
 }
 
 func TestManifestKeepsMultiFileExportAsZip(t *testing.T) {
-	session := &Session{Format: string(format.FormatShapefile), FileName: "roads.zip", TargetLocator: "addp-infra://minio/manager/tenant_7/export/manager/session/roads.shp?type=object"}
+	session := &Session{Format: string(format.FormatShapefile), FileName: "roads.zip", TargetLocator: "addp-infra://object/manager/tenant_7/export/manager/session/roads.shp?type=object"}
 	manifestJSON := buildManifest(session, map[string]interface{}{
 		"target_refs": []interface{}{
-			map[string]interface{}{"path": "tenant_7/export/manager/session/roads.shp", "role": "main", "required": true, "primary": true, "extension": ".shp"},
-			map[string]interface{}{"path": "tenant_7/export/manager/session/roads.shx", "role": "shx", "required": true, "extension": ".shx"},
+			map[string]interface{}{"path": "manager/tenant_7/export/manager/session/roads.shp", "role": "main", "required": true, "primary": true, "extension": ".shp"},
+			map[string]interface{}{"path": "manager/tenant_7/export/manager/session/roads.shx", "role": "shx", "required": true, "extension": ".shx"},
 		},
 	})
 	manifest := manifestFromJSON(commonModels.JSONMap(manifestJSON))
@@ -209,18 +211,18 @@ func TestManifestKeepsMultiFileExportAsZip(t *testing.T) {
 }
 
 func TestInfraObjectPathValidatesBucket(t *testing.T) {
-	got, err := InfraObjectPath("addp-infra://minio/manager/tenant_7/export/develop/session/data.csv?type=object", "manager")
+	got, err := InfraObjectPath("addp-infra://object/manager/tenant_7/export/develop/session/data.csv?type=object", "manager")
 	if err != nil || got != "tenant_7/export/develop/session/data.csv" {
 		t.Fatalf("InfraObjectPath() = %q, %v", got, err)
 	}
-	if _, err := InfraObjectPath("addp-infra://minio/other/tenant_7/export/data.csv?type=object", "manager"); err == nil {
+	if _, err := InfraObjectPath("addp-infra://object/other/tenant_7/export/data.csv?type=object", "manager"); err == nil {
 		t.Fatal("InfraObjectPath() accepted a different bucket")
 	}
 }
 
 func TestFileGDBManifestRequiresExactPublishedArchive(t *testing.T) {
 	const archive = "manager/tenant_7/export/manager/session/roads.gdb.zip"
-	session := &Session{Format: string(format.FormatFileGDB), FileName: "roads.gdb.zip", TargetLocator: "addp-infra://minio/" + archive + "?type=object"}
+	session := &Session{Format: string(format.FormatFileGDB), FileName: "roads.gdb.zip", TargetLocator: "addp-infra://object/" + archive + "?type=object"}
 	ref := func(name string, primary bool) map[string]interface{} {
 		return map[string]interface{}{"path": name, "role": "main", "required": true, "primary": primary}
 	}
@@ -239,7 +241,16 @@ func TestFileGDBManifestRequiresExactPublishedArchive(t *testing.T) {
 	}
 	manifest := manifestFromJSON(buildManifest(session, map[string]interface{}{"target_refs": []interface{}{ref(archive, true)}}))
 	if manifest.Layout != format.LayoutSingle || manifest.Download.Kind != "stream" || manifest.Download.FileName != session.FileName ||
-		manifest.PrimaryRef != archive {
+		manifest.PrimaryRef != strings.TrimPrefix(archive, "manager/") {
 		t.Fatalf("FileGDB export must stream the published archive: %#v", manifest)
+	}
+}
+
+func TestFileGDBManifestKeepsDecodedObjectKey(t *testing.T) {
+	key := "tenant_7/export/manager/session/汉字 +%.gdb.zip"
+	session := &Session{Format: string(format.FormatFileGDB), FileName: "汉字 +%.gdb.zip", TargetLocator: objectstore.ObjectURI(objectstore.Manager, key)}
+	manifest := manifestFromJSON(buildManifest(session, map[string]interface{}{"target_refs": []map[string]interface{}{{"path": "manager/" + key, "required": true, "primary": true, "role": "main"}}}))
+	if manifest.PrimaryRef != key {
+		t.Fatalf("lost decoded key %+v", manifest)
 	}
 }

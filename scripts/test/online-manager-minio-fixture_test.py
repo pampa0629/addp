@@ -38,7 +38,7 @@ class ManagerPDFPhysicalFixtureTest(unittest.TestCase):
                 'bucket': 'business', 'object': 'source.pptx', 'sha256': hashlib.sha256(b'source').hexdigest()},
                 'infra': {'endpoint': 'infra', 'access_key': 'test', 'secret_key': 'test'}}
             (root / 'config.json').write_text(json.dumps(config))
-            request = {'locator': 'addp-infra://minio/manager/tenant_7/document-preview/fp/slides.pdf?type=object',
+            request = {'locator': 'addp-infra://object/manager/tenant_7/document-preview/fp/slides.pdf?type=object',
                 'tenant_id': 7, 'fingerprint': 'fp', 'size_bytes': 4}
             (root / 'manager-raster-request.json').write_text(json.dumps(request))
             present, source, residual = True, b'source', []

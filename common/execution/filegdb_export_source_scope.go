@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"net/url"
 	"path"
 	"reflect"
 	"strings"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/resourcetree"
 )
 
@@ -98,10 +98,9 @@ func NewFileGDBExportReadScope(raw json.RawMessage) (*FileGDBExportReadScope, er
 		return nil, errFileGDBExportSourceScope
 	}
 	parent, _ := target["parent_locator"].(string)
-	u, err := url.Parse(parent)
+	u, err := objectstore.Parse(parent)
 	name, _ := target["name"].(string)
-	if err != nil || u.Scheme != "addp-infra" || u.Host != "minio" || u.User != nil ||
-		u.RawQuery != "type=prefix" || u.Fragment != "" || strings.Trim(u.Path, "/") == "" ||
+	if err != nil || u.Area != objectstore.Manager || u.Type != "prefix" ||
 		!strings.HasSuffix(name, ".gdb.zip") || name == ".gdb.zip" || name != path.Base(name) || strings.ContainsRune(name, '\\') {
 		return nil, errFileGDBExportSourceScope
 	}

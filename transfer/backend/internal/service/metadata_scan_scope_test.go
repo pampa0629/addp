@@ -28,7 +28,7 @@ func TestNativeTargetMetadataScanSubmitsOnlyTableLeaf(t *testing.T) {
 			{"missing_name", "addp://engine/9/path/public?type=schema", "", ""},
 			{"no_engine", "addp://engine/0/path/public?type=schema", "roads", ""},
 			{"missing_parent", "", "roads", ""},
-			{"content_parent", "addp://engine/9/path/exports?type=directory", "roads", ""},
+			{"content_parent", "addp://engine/9/path/exports?type=prefix", "roads", ""},
 		} {
 			t.Run(entry+"/"+tc.name, func(t *testing.T) {
 				var body struct {

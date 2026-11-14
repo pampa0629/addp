@@ -4,46 +4,26 @@ import (
 	"fmt"
 	"strings"
 
-	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/infra/objectstore"
+	objectcontent "github.com/addp/common/infra/objectstore/contentadapter"
 )
 
-type InfraEngineConfig struct {
-	MinioEndpoint  string
-	MinioAccessKey string
-	MinioSecretKey string
-	MinioUseSSL    bool
-}
-
-type InfraEngineResolver struct {
-	cfg InfraEngineConfig
-}
+type InfraEngineConfig struct{ ObjectArea objectstore.ContentArea }
+type InfraEngineResolver struct{ cfg InfraEngineConfig }
 
 func NewInfraEngineResolver(cfg InfraEngineConfig) *InfraEngineResolver {
 	return &InfraEngineResolver{cfg: cfg}
 }
-
 func (r *InfraEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, error) {
-	if r == nil {
-		return EngineBinding{}, fmt.Errorf("infra engine resolver is required")
+	if r == nil || r.cfg.ObjectArea == nil {
+		return EngineBinding{}, fmt.Errorf("platform object area is unavailable")
 	}
-	switch strings.TrimSpace(ref.Type) {
-	case infraEngineRefType("minio"):
-		if strings.TrimSpace(r.cfg.MinioEndpoint) == "" {
-			return EngineBinding{}, fmt.Errorf("infra minio endpoint is required")
-		}
-		return EngineBinding{
-			Type:       "minio",
-			PluginType: "minio",
-			ConnInfo: engineplugin.ConnectionInfo{
-				"endpoint":   r.cfg.MinioEndpoint,
-				"access_key": r.cfg.MinioAccessKey,
-				"secret_key": r.cfg.MinioSecretKey,
-				"use_ssl":    r.cfg.MinioUseSSL,
-			},
-		}, nil
-	default:
+	if ref.Type != "infra:object" {
 		return EngineBinding{}, fmt.Errorf("unsupported infra engine ref type %q", ref.Type)
 	}
+	provider := &objectcontent.Provider{Name: objectstore.Manager, Store: r.cfg.ObjectArea}
+	caps := provider.Capabilities()
+	return EngineBinding{Type: provider.Type(), PluginType: provider.Type(), BoundProvider: provider, Capabilities: &caps}, nil
 }
 
 type HybridEngineResolver struct {

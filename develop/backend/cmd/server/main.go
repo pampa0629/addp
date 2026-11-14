@@ -18,6 +18,8 @@ import (
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/infra/objectstore"
+	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/develop/backend/internal/api"
@@ -27,8 +29,6 @@ import (
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/addp/develop/backend/internal/worker"
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -152,19 +152,19 @@ func main() {
 	}
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, serviceTokenSource)
-	minioConfig := commonConfig.LoadBuiltinMinIOConfig()
-	minioClient, err := minio.New(minioConfig.Endpoint, &minio.Options{
-		Creds: credentials.NewStaticV4(minioConfig.AccessKey, minioConfig.SecretKey, ""), Secure: minioConfig.UseSSL,
-	})
+	areaCtx, cancelArea := context.WithTimeout(context.Background(), 30*time.Second)
+	area, err := objectbootstrap.OpenContentArea(areaCtx, objectstore.Manager)
+	cancelArea()
 	if err != nil {
-		log.Fatalf("Develop 导出暂存 MinIO 初始化失败: %v", err)
+		log.Fatalf("bind Develop export area: %v", err)
 	}
+	managerContent := area
 	exportStore := exportartifact.NewGormStore(db, "develop.export_sessions")
-	exportService := exportartifact.NewService(transferClient, exportStore, minioClient, "manager", "develop", "/api/v1/develop/exports")
+	exportService := exportartifact.NewService(transferClient, exportStore, managerContent, "manager", "develop", "/api/v1/develop/exports")
 	queryExportService := service.NewQueryExportService(devExecutor, exportService)
 
 	cleanupService := service.NewCleanupService(db, systemServiceClient)
-	cleanupService.SetExportArtifacts(exportStore, minioClient, "manager", exportartifact.CleanupOptions{})
+	cleanupService.SetExportArtifacts(exportStore, managerContent, "manager", exportartifact.CleanupOptions{})
 	if err := cleanupService.Start(context.Background()); err != nil {
 		log.Printf("Develop 资源回收服务启动失败: %v", err)
 	}

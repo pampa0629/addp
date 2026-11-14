@@ -5,7 +5,25 @@
 
 set -euo pipefail
 
+source_root=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --source-root) source_root="${2:?--source-root requires a checkout path}"; shift 2 ;;
+        *) echo 'usage: develop-postgres-gate.sh [--source-root checkout]' >&2; exit 2 ;;
+    esac
+done
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+SOURCE_ROOT=$(cd "${source_root:-$ROOT_DIR}" && pwd -P)
+source_checkout=$(git -C "$SOURCE_ROOT" rev-parse --show-toplevel)
+source_commit=$(git -C "$SOURCE_ROOT" rev-parse HEAD)
+if [ "$source_checkout" != "$SOURCE_ROOT" ] ||
+   ! git -C "$ROOT_DIR" merge-base --is-ancestor "$source_commit" HEAD ||
+   ! [ -f "$SOURCE_ROOT/develop/backend/go.mod" ] ||
+   ! grep -qx 'module github.com/addp/develop/backend' "$SOURCE_ROOT/develop/backend/go.mod"; then
+    echo '--source-root must be an ADDP checkout whose commit belongs to this repository' >&2
+    exit 2
+fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-develop-postgres.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -21,7 +39,7 @@ case "$database" in *test*|*disposable*) ;; *) echo "DEVELOP_POSTGRES_TEST_DSN m
 source "$ROOT_DIR/scripts/infra/ports.sh"
 addp_infra_verify_test_postgres_dsn "$DEVELOP_POSTGRES_TEST_DSN"
 
-cd "$ROOT_DIR/develop/backend"
+cd "$SOURCE_ROOT/develop/backend"
 go test ./internal/repository \
     -run '^(TestFileExecutionAgainstPostgres|TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres|TestQueryExecutionEventsAgainstPostgres|TestExecutionPolicyMigrationAgainstPostgres|TestQueryResultMigrationAgainstPostgres)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/develop.log"

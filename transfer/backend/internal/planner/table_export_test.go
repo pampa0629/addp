@@ -412,11 +412,11 @@ func TestBuildExpectedQueryReadSetRejectsBranchAnchorWithoutInputs(t *testing.T)
 }
 
 func TestParseInfraLocatorURIForMinioObject(t *testing.T) {
-	loc, err := ParseInfraLocatorURI("addp-infra://minio/manager/tenant_7/import/20260619/upload/roads.shp?type=object")
+	loc, err := ParseInfraLocatorURI("addp-infra://object/manager/tenant_7/import/20260619/upload/roads.shp?type=object")
 	if err != nil {
 		t.Fatalf("ParseInfraLocatorURI failed: %v", err)
 	}
-	if loc.Kind != "minio" || loc.Namespace != "manager" || loc.Type != resourcetree.TypeObject {
+	if loc.Kind != "object" || loc.Namespace != "manager" || loc.Type != resourcetree.TypeObject {
 		t.Fatalf("locator = %#v, want minio manager object locator", loc)
 	}
 	if got := strings.Join(loc.Path, "/"); got != "tenant_7/import/20260619/upload/roads.shp" {
@@ -436,7 +436,7 @@ func TestParseInfraLocatorURIForMinioObject(t *testing.T) {
 }
 
 func TestInfraLocatorChildPreservesInfraScheme(t *testing.T) {
-	parent, err := ParseInfraLocatorURI("addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix")
+	parent, err := ParseInfraLocatorURI("addp-infra://object/manager/tenant_1/export/20260902/session-id?type=prefix")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,16 +444,16 @@ func TestInfraLocatorChildPreservesInfraScheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := child.ToURI(), "addp-infra://minio/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object"; got != want {
+	if got, want := child.ToURI(), "addp-infra://object/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object"; got != want {
 		t.Fatalf("child locator = %q, want %q", got, want)
 	}
-	if got := parent.ToURI(); got != "addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix" {
+	if got := parent.ToURI(); got != "addp-infra://object/manager/tenant_1/export/20260902/session-id?type=prefix" {
 		t.Fatalf("parent locator mutated: %q", got)
 	}
 }
 
 func TestInfraLocatorChildRejectsNestedName(t *testing.T) {
-	parent, err := ParseInfraLocatorURI("addp-infra://minio/manager/export?type=prefix")
+	parent, err := ParseInfraLocatorURI("addp-infra://object/manager/export?type=prefix")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2339,11 +2339,11 @@ func bucketLocator(engineID uint, bucket string) string {
 }
 
 func infraObjectLocator(bucket, path string) string {
-	return "addp-infra://minio/" + bucket + "/" + strings.Trim(path, "/") + "?type=object"
+	return "addp-infra://object/" + bucket + "/" + strings.Trim(path, "/") + "?type=object"
 }
 
 func infraPrefixLocator(bucket, prefix string) string {
-	return "addp-infra://minio/" + bucket + "/" + strings.Trim(prefix, "/") + "?type=prefix"
+	return "addp-infra://object/" + bucket + "/" + strings.Trim(prefix, "/") + "?type=prefix"
 }
 
 func setFileTarget(spec *TableExportTaskSpec, engineID uint, fullPath string) {

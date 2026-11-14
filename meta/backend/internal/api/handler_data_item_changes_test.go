@@ -56,7 +56,7 @@ func TestDataItemChangesRouteRequiresCatalogServiceAndTenantPermission(t *testin
 	scanService := service.NewScanService(db, engineService)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemServer.URL
-	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
+	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil))
 
 	success := performDataItemChangesRequest(router, "catalog-token", "")
 	if success.Code != http.StatusOK {

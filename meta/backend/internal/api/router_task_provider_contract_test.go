@@ -26,7 +26,7 @@ func TestMetaTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing.T) 
 	scanService := service.NewScanService(db, engineService)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = authServer.URL
-	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
+	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil))
 
 	for _, test := range []struct {
 		name, path, token string

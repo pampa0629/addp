@@ -483,7 +483,7 @@ func transferCleanupTableLocator(engineID uint, schema string, table string) str
 }
 
 func transferCleanupDirectoryLocator(engineID uint, path string) string {
-	return "addp://engine/" + uintText(engineID) + "/path/" + path + "?type=directory"
+	return "addp://engine/" + uintText(engineID) + "/path/" + path + "?type=prefix"
 }
 
 func uintText(value uint) string {

@@ -19,10 +19,10 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/mimetype"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
@@ -104,9 +104,9 @@ func NormalizeCleanupOptions(opts CleanupOptions) CleanupOptions {
 // CleanupExpiredOnce removes expired staged objects and their control-plane
 // sessions. Both Manager and Develop call this implementation so retention and
 // deletion semantics cannot drift between export entry points.
-func CleanupExpiredOnce(ctx context.Context, store Store, minioClient *minio.Client, bucket string, opts CleanupOptions, now time.Time) (CleanupResult, error) {
+func CleanupExpiredOnce(ctx context.Context, store Store, objectArea objectstore.ContentArea, areaName string, opts CleanupOptions, now time.Time) (CleanupResult, error) {
 	result := CleanupResult{}
-	if store == nil || minioClient == nil || strings.Trim(bucket, "/") == "" {
+	if store == nil || objectArea == nil || strings.Trim(areaName, "/") == "" {
 		return result, errors.New("export artifact cleanup is not configured")
 	}
 	opts = NormalizeCleanupOptions(opts)
@@ -128,12 +128,12 @@ func CleanupExpiredOnce(ctx context.Context, store Store, minioClient *minio.Cli
 			if session == nil {
 				continue
 			}
-			prefix, err := SessionObjectPrefix(session, bucket)
+			prefix, err := SessionObjectPrefix(session, areaName)
 			if err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("resolve export session %d prefix: %w", session.ID, err))
 				continue
 			}
-			deleted, err := deleteObjectPrefix(ctx, minioClient, strings.Trim(bucket, "/"), strings.Trim(prefix, "/")+"/")
+			deleted, err := deleteObjectPrefix(ctx, objectArea, strings.Trim(prefix, "/")+"/")
 			if err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("delete export session %d objects: %w", session.ID, err))
 				continue
@@ -154,25 +154,26 @@ func CleanupExpiredOnce(ctx context.Context, store Store, minioClient *minio.Cli
 	}
 }
 
-func deleteObjectPrefix(ctx context.Context, minioClient *minio.Client, bucket, prefix string) (int, error) {
+func deleteObjectPrefix(ctx context.Context, objectArea objectstore.ContentArea, prefix string) (int, error) {
 	prefix = strings.TrimPrefix(strings.TrimSpace(prefix), "/")
 	if prefix == "" {
 		return 0, nil
 	}
 	deleted := 0
-	objects := minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true})
-	for object := range objects {
-		if object.Err != nil {
-			return deleted, object.Err
+	objects, err := objectArea.List(ctx, prefix)
+	if err != nil {
+		return 0, err
+	}
+	for _, object := range objects {
+		if !strings.HasPrefix(object.Path, prefix) {
+			return deleted, errors.New("object is outside cleanup prefix")
 		}
-		if strings.TrimSpace(object.Key) == "" {
-			continue
-		}
-		if err := minioClient.RemoveObject(ctx, bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
+		if err := objectArea.Delete(ctx, object.Path); err != nil {
 			return deleted, err
 		}
 		deleted++
 	}
+
 	return deleted, nil
 }
 
@@ -189,7 +190,17 @@ func EnsureStore(db *gorm.DB, table string) error {
 	if db == nil || strings.TrimSpace(table) == "" {
 		return errors.New("export session database and table are required")
 	}
-	return db.Table(strings.TrimSpace(table)).AutoMigrate(&Session{})
+	if err := db.Table(strings.TrimSpace(table)).AutoMigrate(&Session{}); err != nil {
+		return err
+	}
+	var active int64
+	if err := db.Table(table).Where("target_locator LIKE ? OR target_parent_locator LIKE ?", "addp-infra://minio/%", "addp-infra://minio/%").Count(&active).Error; err != nil {
+		return err
+	}
+	if active != 0 {
+		return fmt.Errorf("%s contains %d legacy export sessions; let sessions expire and clean them with the previous version before upgrading", table, active)
+	}
+	return nil
 }
 
 func (s *GormStore) Create(ctx context.Context, session *Session) error {
@@ -250,8 +261,8 @@ type TransferClient interface {
 type Service struct {
 	transfer     TransferClient
 	store        Store
-	minio        *minio.Client
-	bucket       string
+	area         objectstore.ContentArea
+	areaName     string
 	owner        string
 	downloadBase string
 }
@@ -292,16 +303,16 @@ type File struct {
 	ContentType string
 }
 
-func NewService(transfer TransferClient, store Store, minioClient *minio.Client, bucket, owner, downloadBase string) *Service {
+func NewService(transfer TransferClient, store Store, objectArea objectstore.ContentArea, areaName, owner, downloadBase string) *Service {
 	return &Service{
-		transfer: transfer, store: store, minio: minioClient,
-		bucket: strings.Trim(bucket, "/"), owner: strings.Trim(strings.TrimSpace(owner), "/"),
+		transfer: transfer, store: store, area: objectArea,
+		areaName: strings.Trim(areaName, "/"), owner: strings.Trim(strings.TrimSpace(owner), "/"),
 		downloadBase: strings.TrimRight(strings.TrimSpace(downloadBase), "/"),
 	}
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionResponse, error) {
-	if s == nil || s.transfer == nil || s.store == nil || s.minio == nil || s.bucket == "" || s.owner == "" {
+	if s == nil || s.transfer == nil || s.store == nil || s.area == nil || s.areaName == "" || s.owner == "" {
 		return nil, errors.New("export artifact service is not configured")
 	}
 	if req.TenantID == 0 || req.UserID == 0 || strings.TrimSpace(req.SourceRef) == "" {
@@ -326,8 +337,8 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 		downloadName = targetName
 	}
 	objectPath := strings.Trim(prefix, "/") + "/" + targetName
-	parentLocator := InfraPrefixLocator(s.bucket, prefix)
-	targetLocator := InfraObjectLocator(s.bucket, objectPath)
+	parentLocator := InfraPrefixLocator(s.areaName, prefix)
+	targetLocator := InfraObjectLocator(s.areaName, objectPath)
 
 	config := req.ExecutionConfig
 	config.Target.ParentLocator = parentLocator
@@ -351,15 +362,15 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 			return nil, errors.New("workflow export input is unavailable")
 		}
 		privateInputPath = strings.Trim(prefix, "/") + "/workflow-result.json"
-		config.Source = commonClient.TransferExecutionEndpoint{Locator: InfraObjectLocator(s.bucket, privateInputPath), DataType: "table", Representation: "encoded", Format: "json"}
+		config.Source = commonClient.TransferExecutionEndpoint{Locator: InfraObjectLocator(s.areaName, privateInputPath), DataType: "table", Representation: "encoded", Format: "json"}
 		defer func() {
 			if !dispatched {
 				cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 				defer cancel()
-				_ = s.minio.RemoveObject(cleanup, s.bucket, privateInputPath, minio.RemoveObjectOptions{})
+				_ = s.area.Delete(cleanup, privateInputPath)
 			}
 		}()
-		_, err = s.minio.PutObject(ctx, s.bucket, privateInputPath, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: "application/json"})
+		err = s.area.Put(ctx, privateInputPath, bytes.NewReader(data), int64(len(data)), "application/json")
 		if err != nil {
 			return nil, errors.New("stage workflow export input")
 		}
@@ -465,15 +476,15 @@ func (s *Service) Open(ctx context.Context, id, tenantID, userID uint, validate 
 	if manifest.Layout == format.LayoutMulti || manifest.Download.Kind == "zip" || isMultiFormat(format.FormatType(session.Format)) {
 		return s.openZip(ctx, session, manifest)
 	}
-	objectPath, err := InfraObjectPath(session.TargetLocator, s.bucket)
+	objectPath, err := InfraObjectPath(session.TargetLocator, s.areaName)
 	if err != nil {
 		return nil, err
 	}
-	object, err := s.minio.GetObject(ctx, s.bucket, objectPath, minio.GetObjectOptions{})
+	object, err := s.area.Open(ctx, objectPath)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := object.Stat(); err != nil {
+	if _, err := s.area.Stat(ctx, objectPath); err != nil {
 		_ = object.Close()
 		return nil, err
 	}
@@ -572,8 +583,9 @@ func buildManifest(session *Session, metadata map[string]interface{}) commonMode
 	refs := targetRefs(metadata)
 	formatType := format.FormatType(session.Format)
 	if formatType == format.FormatFileGDB {
-		objectPath, err := InfraObjectPath(session.TargetLocator, "")
-		expectedRef := strings.TrimPrefix(strings.SplitN(session.TargetLocator, "?", 2)[0], "addp-infra://minio/")
+		target, err := objectstore.Parse(session.TargetLocator)
+		objectPath := target.Key
+		expectedRef := target.Area + "/" + target.Key
 		if err != nil || !strings.HasSuffix(objectPath, format.FileGDBArchiveSuffix) || len(refs) != 1 ||
 			refs[0].Path != expectedRef || !refs[0].Required || !refs[0].Primary {
 			return commonModels.JSONMap{}
@@ -582,11 +594,24 @@ func buildManifest(session *Session, metadata map[string]interface{}) commonMode
 	if len(refs) == 0 && !isMultiFormat(formatType) {
 		objectPath, err := InfraObjectPath(session.TargetLocator, "")
 		if err == nil {
-			refs = []artifactRef{{Path: objectPath, Role: "main", Required: true, Primary: true, Extension: format.NormalizeExtension(path.Ext(objectPath)), Entry: path.Base(session.FileName)}}
+			refs = []artifactRef{{Path: objectstore.Manager + "/" + objectPath, Role: "main", Required: true, Primary: true, Extension: format.NormalizeExtension(path.Ext(objectPath)), Entry: path.Base(session.FileName)}}
 		}
 	}
 	if len(refs) == 0 {
 		return commonModels.JSONMap{}
+	}
+	prefix, err := SessionObjectPrefix(session, objectstore.Manager)
+	if err != nil {
+		return commonModels.JSONMap{}
+	}
+	for i := range refs {
+		if !strings.HasPrefix(refs[i].Path, objectstore.Manager+"/") {
+			return commonModels.JSONMap{}
+		}
+		refs[i].Path = strings.TrimPrefix(refs[i].Path, objectstore.Manager+"/")
+		if !insidePrefix(refs[i].Path, prefix) {
+			return commonModels.JSONMap{}
+		}
 	}
 	multi := isMultiFormat(formatType)
 	manifest := artifactManifest{SchemaVersion: manifestVersion, DataType: "table", Format: session.Format, Layout: format.LayoutSingle, BaseName: strings.TrimSuffix(path.Base(session.FileName), path.Ext(session.FileName)), Refs: refs}
@@ -645,7 +670,7 @@ func (s *Service) openZip(ctx context.Context, session *Session, manifest artifa
 	if len(manifest.Refs) == 0 {
 		return nil, ErrNotReady
 	}
-	prefix, err := SessionObjectPrefix(session, s.bucket)
+	prefix, err := SessionObjectPrefix(session, s.areaName)
 	if err != nil {
 		return nil, err
 	}
@@ -658,7 +683,7 @@ func (s *Service) openZip(ctx context.Context, session *Session, manifest artifa
 	}
 	availableRefs := make([]artifactRef, 0, len(manifest.Refs))
 	for _, ref := range manifest.Refs {
-		if _, err := s.minio.StatObject(ctx, s.bucket, ref.Path, minio.StatObjectOptions{}); err != nil {
+		if _, err := s.area.Stat(ctx, ref.Path); err != nil {
 			if ref.Required {
 				return nil, err
 			}
@@ -681,12 +706,12 @@ func (s *Service) openZip(ctx context.Context, session *Session, manifest artifa
 func (s *Service) writeZip(ctx context.Context, writer io.Writer, refs []artifactRef) error {
 	zipWriter := zip.NewWriter(writer)
 	for _, ref := range refs {
-		object, err := s.minio.GetObject(ctx, s.bucket, ref.Path, minio.GetObjectOptions{})
+		object, err := s.area.Open(ctx, ref.Path)
 		if err != nil {
 			_ = zipWriter.Close()
 			return err
 		}
-		if _, err := object.Stat(); err != nil {
+		if _, err := s.area.Stat(ctx, ref.Path); err != nil {
 			_ = object.Close()
 			_ = zipWriter.Close()
 			return err
@@ -711,42 +736,31 @@ func (s *Service) writeZip(ctx context.Context, writer io.Writer, refs []artifac
 	return zipWriter.Close()
 }
 
-func InfraPrefixLocator(bucket, prefix string) string {
-	return fmt.Sprintf("addp-infra://minio/%s/%s?type=prefix", strings.Trim(bucket, "/"), strings.Trim(prefix, "/"))
+func InfraPrefixLocator(area, prefix string) string { return objectstore.PrefixURI(area, prefix) }
+func InfraObjectLocator(area, key string) string    { return objectstore.ObjectURI(area, key) }
+func InfraObjectPath(locator, expectedArea string) (string, error) {
+	ref, err := objectstore.Parse(locator)
+	if err != nil {
+		return "", err
+	}
+	if expectedArea != "" && ref.Area != expectedArea {
+		return "", errors.New("export artifact area mismatch")
+	}
+	return ref.Key, nil
 }
 
-func InfraObjectLocator(bucket, objectPath string) string {
-	return fmt.Sprintf("addp-infra://minio/%s/%s?type=object", strings.Trim(bucket, "/"), strings.Trim(objectPath, "/"))
-}
-
-func InfraObjectPath(locator, expectedBucket string) (string, error) {
-	const prefix = "addp-infra://minio/"
-	if !strings.HasPrefix(strings.TrimSpace(locator), prefix) {
-		return "", errors.New("invalid infra minio locator")
-	}
-	withoutQuery := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(locator), prefix), "?", 2)[0]
-	parts := strings.SplitN(withoutQuery, "/", 2)
-	if len(parts) != 2 || strings.Trim(parts[0], "/") == "" || strings.Trim(parts[1], "/") == "" {
-		return "", errors.New("invalid infra minio locator")
-	}
-	if expected := strings.Trim(expectedBucket, "/"); expected != "" && expected != strings.Trim(parts[0], "/") {
-		return "", errors.New("export artifact bucket mismatch")
-	}
-	return strings.Trim(parts[1], "/"), nil
-}
-
-func SessionObjectPrefix(session *Session, expectedBucket string) (string, error) {
+func SessionObjectPrefix(session *Session, expectedArea string) (string, error) {
 	if session == nil {
 		return "", errors.New("export session is required")
 	}
 	if parent := strings.TrimSpace(session.TargetParentLocator); parent != "" {
-		objectPath, err := InfraObjectPath(parent, expectedBucket)
+		objectPath, err := InfraObjectPath(parent, expectedArea)
 		if err != nil {
 			return "", err
 		}
 		return strings.Trim(objectPath, "/"), nil
 	}
-	objectPath, err := InfraObjectPath(session.TargetLocator, expectedBucket)
+	objectPath, err := InfraObjectPath(session.TargetLocator, expectedArea)
 	if err != nil {
 		return "", err
 	}

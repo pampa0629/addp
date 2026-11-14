@@ -193,19 +193,19 @@ class FakeGatewayClient:
         if task_type == SUITE.RASTER_TASK_TYPE:
             model = self.raster
             item_id = model['item_id']; fingerprint = model['fingerprint']; locator = model['locator']
-            output = f'addp-infra://minio/manager/tenant_42/cog/{fingerprint}/source.cog.tif?type=object'
+            output = f'addp-infra://object/manager/tenant_42/cog/{fingerprint}/source.cog.tif?type=object'
         elif task_type == SUITE.MODEL_TASK_TYPE:
             model = self.models[format_name]
             item_id = model["item_id"]
             fingerprint = model["fingerprint"]
             locator = model["locator"]
-            output = f"addp-infra://minio/manager/tenant_42/model3d-quick-view/{fingerprint}/model.glb?type=object"
+            output = f"addp-infra://object/manager/tenant_42/model3d-quick-view/{fingerprint}/model.glb?type=object"
         elif task_type == SUITE.PPTX_TASK_TYPE:
             item_id = self.pptx_item_id
             fingerprint = self.pptx_fingerprint
             locator = self.pptx_locator
             output = (
-                "addp-infra://minio/manager/tenant_42/document-preview/92/"
+                "addp-infra://object/manager/tenant_42/document-preview/92/"
                 "addp_online_preview_fixture.pdf?type=object"
             )
         else:
@@ -213,7 +213,7 @@ class FakeGatewayClient:
             fingerprint = self.pointcloud_fingerprint
             locator = self.pointcloud_locator
             output = (
-                "addp-infra://minio/manager/tenant_42/point-cloud-copc/91/"
+                "addp-infra://object/manager/tenant_42/point-cloud-copc/91/"
                 "pdal_las12_format0.copc.laz?type=object"
             )
         execution = {
@@ -639,7 +639,7 @@ class ManagedArtifactPhysicalEvidenceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             environment = {'ADDP_ONLINE_SECRET_DIR': directory, 'ADDP_ONLINE_ARTIFACT_DIR': directory,
                            'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'private-token'}
-            request = {'locator': 'addp-infra://minio/manager/owned.pdf?type=object'}
+            request = {'locator': 'addp-infra://object/manager/owned.pdf?type=object'}
             for action, evidence in (
                 ('pdf-verify', {'object_present': True, 'source_sha256': 'a' * 64, 'size_bytes': 123}),
                 ('pdf-deleted', {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}),
@@ -1624,7 +1624,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 }],
                 "outputs": [{
                     "port": "result",
-                    "locator": output_locator or "addp-infra://minio/manager/tenant_42/point-cloud-copc/source/source.copc.laz?type=object",
+                    "locator": output_locator or "addp-infra://object/manager/tenant_42/point-cloud-copc/source/source.copc.laz?type=object",
                 }],
                 "operations": [{
                     "kind": "derive",

@@ -126,6 +126,7 @@ type FieldMappingSpec struct {
 }
 
 type EngineBinding struct {
+	BoundProvider engineplugin.EnginePlugin
 	EngineVersion int64
 	Type          string
 	ConnInfo      engineplugin.ConnectionInfo
@@ -1992,7 +1993,7 @@ func effectiveEngineCapabilities(binding EngineBinding) *engineplugin.EngineCapa
 	if strings.TrimSpace(engineType) == "" {
 		return nil
 	}
-	registered, err := engineplugin.Get(engineType)
+	registered, err := binding.Provider()
 	if err != nil || registered == nil {
 		return nil
 	}
@@ -2571,4 +2572,11 @@ func stringValue(values map[string]interface{}, key string) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(typed))
 	}
+}
+
+func (b EngineBinding) Provider() (engineplugin.EnginePlugin, error) {
+	if b.BoundProvider != nil {
+		return b.BoundProvider, nil
+	}
+	return engineplugin.Get(effectiveEngineType(b, EngineRef{}))
 }

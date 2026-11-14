@@ -3977,7 +3977,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         owner.write_text(
             "addp.lineage-facts/v1 /api/v1/meta/scan/run/manual "
             "/api/v1/monitor/executions/by-execution-id/ "
-            "addp-infra://minio/manager/tenant_ /api/v1/manager/point_cloud_copc/ "
+            "addp-infra://object/manager/tenant_ /api/v1/manager/point_cloud_copc/ "
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
@@ -4664,6 +4664,9 @@ class ExecutionRunnerCIRegistrationTest(unittest.TestCase):
             ("        id: selection", "        if: false\n        id: selection"),
             ("          ADDP_CI_BEFORE:", "          ADDP_CI_FORCE: true\n          ADDP_CI_BEFORE:"),
             ("actions/setup-node@", "unregistered/action@"),
+            ("actions/setup-go@", "unregistered/action@"),
+            ("go-version-file: system/backend/go.mod", "go-version: 1.26"),
+            ("            common/go.sum", "            unrelated/go.sum"),
             ("make test-execution-online-ci-runner", "make test-cleanup-native-online-runner"),
             ("make test-execution-online-ci-runner", "make test-execution-online-ci-runner || true"),
             ("make check-node-runtime", "true"),

@@ -12,7 +12,7 @@ import (
 func TestMySQLSourceCanPlanFileGDBArchiveWithoutReprojection(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Source.Locator = tableLocator(1, "business", "projected_locations")
-	spec.Target.ParentLocator = "addp-infra://minio/manager/tenant_7/export/session?type=prefix"
+	spec.Target.ParentLocator = "addp-infra://object/manager/tenant_7/export/session?type=prefix"
 	spec.Target.Format = format.FormatFileGDB
 	spec.Target.Name = "locations.gdb.zip"
 	spatial := datatype.NewSingleGeometrySpatialInfo("location", "Point", 3857, 2)
@@ -20,7 +20,7 @@ func TestMySQLSourceCanPlanFileGDBArchiveWithoutReprojection(t *testing.T) {
 	spec.Source.Attributes = tableSourceAttributes("single", "table", "business/projected_locations", nil,
 		[]map[string]interface{}{{"name": "location", "type": "geometry"}}, datatype.SpatialInfoPayload(spatial))
 	resolver := NewHybridEngineResolver(StaticEngineResolver{1: nativeTableSourceBinding("mysql")},
-		NewInfraEngineResolver(InfraEngineConfig{MinioEndpoint: "localhost:9000"}))
+		NewInfraEngineResolver(InfraEngineConfig{ObjectArea: testInfraArea(t)}))
 
 	build, err := BuildTableTransferPlan(spec, resolver)
 	if err != nil {
@@ -43,13 +43,13 @@ func TestMySQLSourceCanPlanFileGDBArchiveWithoutReprojection(t *testing.T) {
 
 func TestFileGDBArchiveUsesExactInfraObjectAndNativeCRS(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
-	spec.Target.ParentLocator = "addp-infra://minio/manager/tenant_7/export/session?type=prefix"
+	spec.Target.ParentLocator = "addp-infra://object/manager/tenant_7/export/session?type=prefix"
 	spec.Target.Format = format.FormatFileGDB
 	spec.Target.Name = "roads.gdb.zip"
 	spatial := datatype.NewSingleGeometrySpatialInfo("route_shape", "Point", 3857, 2)
 	spec.Source.Attributes = tableSourceAttributes("single", "table", "public/roads", nil, []map[string]interface{}{{"name": "route_shape", "type": "geometry"}}, datatype.SpatialInfoPayload(spatial))
 	resolver := NewHybridEngineResolver(StaticEngineResolver{1: nativeTableSourceBinding("postgresql")},
-		NewInfraEngineResolver(InfraEngineConfig{MinioEndpoint: "localhost:9000"}))
+		NewInfraEngineResolver(InfraEngineConfig{ObjectArea: testInfraArea(t)}))
 	build, err := BuildTableTransferPlan(spec, resolver)
 	if err != nil {
 		t.Fatal(err)

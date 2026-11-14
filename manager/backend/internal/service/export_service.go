@@ -16,10 +16,10 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/format"
+	"github.com/addp/common/infra/objectstore"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
-	"github.com/minio/minio-go/v7"
 )
 
 var (
@@ -66,10 +66,10 @@ type ExportFile = exportartifact.File
 type ExportExecutionSourceRequest = commonClient.ExportExecutionSourceRequest
 type ExportExecutionSource = commonClient.ExportExecutionSource
 
-func NewExportService(systemClient SystemClient, transferClient exportartifact.TransferClient, sessionStore exportartifact.Store, minioClient *minio.Client, minioBucket string) *ExportService {
+func NewExportService(systemClient SystemClient, transferClient exportartifact.TransferClient, sessionStore exportartifact.Store, objectArea objectstore.ContentArea, areaName string) *ExportService {
 	return &ExportService{
 		systemClient: systemClient,
-		artifacts:    exportartifact.NewService(transferClient, sessionStore, minioClient, minioBucket, "manager", "/api/v1/manager/exports"),
+		artifacts:    exportartifact.NewService(transferClient, sessionStore, objectArea, areaName, "manager", "/api/v1/manager/exports"),
 	}
 }
 

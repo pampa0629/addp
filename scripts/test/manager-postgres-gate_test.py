@@ -27,18 +27,23 @@ import json, os, sys
 from pathlib import Path
 a=sys.argv[1:]; p=Path(os.environ['FAKE_STATE'])
 s=json.loads(p.read_text()) if p.exists() else {'image':False,'container':False,'network':False,'calls':[]}
+full=s
+objects=bool(os.environ.get('MANAGER_OBJECT_TEST_IMAGE'))
+if objects: s=full.setdefault('objects',{'image':False,'container':False,'network':False,'calls':[]})
 s['calls'].append(a); mode=os.environ.get('FAKE_MODE','')
+if mode.startswith('objects-'): mode=mode[8:] if objects else ''
 def finish(out='', code=0):
-    p.write_text(json.dumps(s)); print(out) if out else None; sys.exit(code)
+    p.write_text(json.dumps(full)); print(out) if out else None; sys.exit(code)
 if a[0]=='compose':
     assert a[1:3]==['--env-file','/dev/null'] and a[3]=='-p' and a[5]=='-f'
     op=a[7]; s['owner']=os.environ['MANAGER_PG_TEST_OWNER']
-    s['tag']=os.environ['MANAGER_PG_TEST_IMAGE']; s['project']=a[4]
+    s['tag']=os.environ.get('MANAGER_OBJECT_TEST_IMAGE') or os.environ['MANAGER_PG_TEST_IMAGE']; s['project']=a[4]
     if op=='build':
         s['image']=True; finish(code=1 if mode=='build-fail' else 0)
     if op=='up':
         s.update(container=True,network=True); finish(code=1 if mode=='up-fail' else 0)
     if op=='ps': finish('c'*64)
+    if op=='port': finish('127.0.0.1:19000')
     if op=='exec':
         s['probe_sql']=sys.stdin.read()
         if mode=='probe-fail': finish(code=1)
@@ -75,10 +80,13 @@ import json, os, signal, sys
 from pathlib import Path
 p=Path(os.environ['FAKE_STATE']); s=json.loads(p.read_text()); s.setdefault('go',[]).append(sys.argv[1:]);p.write_text(json.dumps(s))
 mode=os.environ.get('FAKE_MODE','')
+if mode.startswith('objects-'): mode=mode[8:] if './infra/objectstore/...' in sys.argv else ''
 if mode in ('term','int'): os.kill(os.getppid(),signal.SIGTERM if mode=='term' else signal.SIGINT);sys.exit(0)
 if mode=='go-fail': sys.exit(1)
 if mode=='skip': print('--- SKIP: TestIntegrationPostgresManagerCleanupProductionRepositories (0.01s)');sys.exit(0)
 if mode=='no-tests': print('testing: warning: no tests to run');sys.exit(0)
+if './infra/objectstore/...' in sys.argv:
+    print('--- PASS: TestManagerObjectAreaAgainstMinIO (0.01s)\n--- PASS: TestExportAreaAgainstMinIO (0.01s)');sys.exit(0)
 tests=['ExecutionReadIsolation'] if './internal/api' in sys.argv else ['CleanupProductionRepositories','CleanupRuntimeAtomicity','ContentSnapshots']
 for t in tests: print('--- PASS: TestIntegrationPostgresManager'+t+' (0.01s)')
 '''
@@ -96,11 +104,12 @@ class ManagerPostgresGateTest(unittest.TestCase):
         self.base = Path(self.temp.name).resolve()
         self.repo = self.base / "repo"
         for name in ("scripts/test/manager-postgres-gate.sh", "scripts/infra/ports.sh",
-                     "scripts/utils/observability-env.sh"):
+                     "scripts/utils/observability-env.sh", "scripts/test/manager-objectstore-gate.sh"):
             target = self.repo / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, target)
         (self.repo / "manager/backend").mkdir(parents=True)
+        (self.repo / "common").mkdir()
         binary = self.base / "fake-bin"
         binary.mkdir()
         for name, source in {"docker": DOCKER, "go": GO,
@@ -150,9 +159,20 @@ class ManagerPostgresGateTest(unittest.TestCase):
         self.assertEqual("0.8.0", self.proof["vector_version"])
         self.assertNotIn("password", json.dumps(self.proof))
         self.assertIn("ROLLBACK;", self.state["probe_sql"])
-        self.assertEqual(2, len(self.state["go"]))
+        self.assertEqual(3, len(self.state["go"]))
+        for kind in ("image", "container", "network"):
+            self.assertFalse(self.state["objects"][kind])
         self.assertEqual(["test", "-p", "1", "./internal/repository", "./internal/service", "./internal/preview", "-run", "^TestIntegrationPostgresManager", "-count=1", "-v"], self.state["go"][0])
         self.assertIn("^TestIntegrationPostgresManagerExecutionReadIsolation$", self.state["go"][1])
+
+    def test_object_failure_skip_and_empty_run_fail_and_clean(self):
+        for mode in ("objects-build-fail", "objects-up-fail", "objects-go-fail", "objects-skip", "objects-no-tests", "objects-term", "objects-int"):
+            with self.subTest(mode=mode):
+                (self.base / "state.json").unlink(missing_ok=True)
+                result=self.run_gate(mode)
+                self.assert_cleaned(result)
+                for kind in ("image", "container", "network"):
+                    self.assertFalse(self.state["objects"][kind])
 
     def test_preparation_failure_always_cleans_owned_resources(self):
         for mode in ("build-fail", "up-fail", "probe-fail", "wrong-vector", "wrong-postgres", "probe-residue"):
@@ -178,7 +198,7 @@ class ManagerPostgresGateTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertTrue(self.state["container"])
         self.assertEqual("failed", self.proof["cleanup"])
-        self.assertEqual(0, self.proof["test_exit_code"])
+        self.assertEqual(1, self.proof["test_exit_code"]) # owned MinIO cleanup also failed
 
     def test_foreign_resource_prevents_compose_deletion(self):
         for mode in ("foreign-container", "foreign-network"):
@@ -213,7 +233,7 @@ class ManagerPostgresGateTest(unittest.TestCase):
         spec.loader.exec_module(changed)
         for path in ("scripts/test/manager-postgres-gate.sh", "scripts/infra/Dockerfile.postgres",
                      "scripts/test/docker-compose.manager-postgres-t2.yml", "scripts/test/manager-postgres-gate_test.py",
-                     "scripts/test/native-effect-proxy.py"):
+                     "scripts/test/native-effect-proxy.py", "scripts/test/manager-objectstore-gate.sh", "scripts/infra/Dockerfile.minio"):
             with self.subTest(path=path):
                 self.assertIn("manager", changed.affected_modules(ROOT, [path]))
                 commands = [s.command for s in changed.plan_changed(ROOT, [path])]

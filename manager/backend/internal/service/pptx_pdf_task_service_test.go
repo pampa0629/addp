@@ -136,7 +136,7 @@ func TestPPTXPDFExecutionMetadataIncludesManagedArtifactLineage(t *testing.T) {
 	if len(facts.Inputs) != 1 || facts.Inputs[0].Locator != "addp://engine/12/path/addp/doc/slides.pptx?type=object&item_id=77" || facts.Inputs[0].ItemID == nil || *facts.Inputs[0].ItemID != 77 {
 		t.Fatalf("inputs = %#v", facts.Inputs)
 	}
-	if len(facts.Outputs) != 1 || facts.Outputs[0].Locator != "addp-infra://minio/manager/tenant_7/document-preview/pptx-fingerprint/slides.pdf?type=object" {
+	if len(facts.Outputs) != 1 || facts.Outputs[0].Locator != "addp-infra://object/manager/tenant_7/document-preview/pptx-fingerprint/slides.pdf?type=object" {
 		t.Fatalf("outputs = %#v", facts.Outputs)
 	}
 	if len(facts.Operations) != 1 || facts.Operations[0].Operator != commonExecution.TaskTypePPTXPDFGeneration || facts.Operations[0].Kind != "derive" {

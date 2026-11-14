@@ -37,6 +37,7 @@ func TestMetaRoutesRejectLegacyInternalAuthenticationWithoutAuthContextLookup(t 
 		nil,
 		nil,
 		modulelifecycle.NewStandalone("meta"),
+		service.NewInspectService(nil),
 	)
 
 	response := httptest.NewRecorder()

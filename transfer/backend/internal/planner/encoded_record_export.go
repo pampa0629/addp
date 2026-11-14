@@ -23,6 +23,8 @@ type EncodedRecordExportTaskSpec struct {
 }
 
 type EncodedRecordExportBuildResult struct {
+	SourceEngine     EngineBinding
+	TargetEngine     EngineBinding
 	SourceEngineType string
 	TargetEngineType string
 	Plan             executor.EncodedRecordExportPlan
@@ -93,7 +95,7 @@ func BuildEncodedRecordExportPlan(spec EncodedRecordExportTaskSpec, resolver Eng
 		return nil, fmt.Errorf("build encoded record target path: %w", err)
 	}
 	return &EncodedRecordExportBuildResult{
-		SourceEngineType: effectiveEngineType(sourceEngine, sourceRef),
+		SourceEngine: sourceEngine, TargetEngine: targetEngine, SourceEngineType: effectiveEngineType(sourceEngine, sourceRef),
 		TargetEngineType: effectiveEngineType(targetEngine, targetRef),
 		Plan: executor.EncodedRecordExportPlan{
 			Source: executor.EncodedRecordExportEndpointPlan{

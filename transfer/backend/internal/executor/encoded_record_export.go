@@ -59,6 +59,9 @@ func NewEncodedRecordExportExecutor(sourceEngineType, targetEngineType string) (
 	if err != nil {
 		return nil, fmt.Errorf("get target engine plugin %q: %w", targetEngineType, err)
 	}
+	return NewEncodedRecordExportExecutorWithProviders(sourcePlugin, targetPlugin)
+}
+func NewEncodedRecordExportExecutorWithProviders(sourcePlugin, targetPlugin engineplugin.EnginePlugin) (*EncodedRecordExportExecutor, error) {
 	exec := &EncodedRecordExportExecutor{}
 	exec.SourceRecordReader, _ = sourcePlugin.(engineplugin.EncodedRecordReadSessionProvider)
 	exec.TargetContentWriter, _ = targetPlugin.(engineplugin.ContentWritableProvider)

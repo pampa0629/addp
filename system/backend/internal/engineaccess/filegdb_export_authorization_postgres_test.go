@@ -101,7 +101,7 @@ func exerciseFileGDBExportAuthorization(t *testing.T, db *gorm.DB, path plugin.E
 			ExecutionConfig: models.JSONMap{
 				"runtime": map[string]any{"boundary": "bounded"}, "load": map[string]any{"mode": "snapshot"},
 				"source":         map[string]any{"locator": locator, "data_type": "table", "representation": "native"},
-				"target":         map[string]any{"parent_locator": "addp-infra://minio/manager/private?type=prefix", "name": "roads.gdb.zip", "data_type": "table", "representation": "encoded", "format": "filegdb"},
+				"target":         map[string]any{"parent_locator": "addp-infra://object/manager/private?type=prefix", "name": "roads.gdb.zip", "data_type": "table", "representation": "encoded", "format": "filegdb"},
 				"filegdb_source": execution.FileGDBExportSource{EngineVersion: strconv.FormatInt(engineVersion, 10), Binding: binding},
 			},
 		}

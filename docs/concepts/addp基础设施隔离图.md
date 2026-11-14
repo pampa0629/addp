@@ -168,31 +168,9 @@ graph TB
 
 通用形式：
 
-```text
-addp-infra://{infra_kind}/{namespace}/{path...}?type={resource_type}
-```
+平台对象引用采用 `addp-infra://object/{area}/{key...}?type=object|prefix`，区域在进程启动时绑定具体实现。`manager` 区域默认映射 `manager` 桶，供 Manager 导入及 Manager／Develop 导出使用。区域引用与实际桶名独立；部署例外本批仅支持 `standard`。
 
-| 组成 | 说明 |
-|---|---|
-| `infra_kind` | 基础设施类型，例如 `minio`、`postgres`、`redis`、`meilisearch`。 |
-| `namespace` | infra 内部命名空间。对 MinIO 是 bucket；对 PostgreSQL 可是 schema；对 Redis 可是 key namespace；对 Meilisearch 可是 index。 |
-| `path` | namespace 内部路径或对象名。 |
-| `type` | infra resource type，例如 `object`、`prefix`、`table`、`key`、`index`。 |
-
-第一阶段执行链路只支持 `addp-infra://minio/...` 的 `object` / `prefix`，用于 Manager import source 和 Manager export target：
-
-```text
-addp-infra://minio/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object
-addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
-```
-
-约束：
-
-1. infra MinIO 使用 `.env` 中系统 MinIO 配置，即 19000-19001 的 ADDP infra MinIO。
-2. infra MinIO 不在 System engines 中登记，也不得被用户选择为业务数据引擎。
-3. infra 暂存对象不写入 Meta node / item，不参与资源树展示或业务库扫描。
-4. Manager 拥有自身 import / export 暂存对象的生命周期和 cleanup；Transfer 只按 locator 读取或写入，不承担 Manager 暂存清理职责。
-5. `addp-infra://` 的设计不能假设 infra 只有 MinIO；新增 infra kind 前必须先补规范，再接入对应模块。
+对象存储凭据由部署提供；内部对象不登记为业务 Engine。上传与导出访问分别由来源 Owner 核验租户、用户、任务／执行、摘要及当前资格。Transfer 负责执行读写，暂存生命周期由对应 Owner 与 Common 共享导出服务维护。正式路径与既有数据升级规则见[Infra 路径规范](../spec/addp存储引擎路径体系规范.md#addp-infra-locator-与业务-resourcelocator-的边界)。
 
 **3. Redis Key 命名规范**:
 - 格式: `{module}:{middleware}:{function}:{id}`

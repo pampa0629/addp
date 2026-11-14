@@ -58,6 +58,9 @@ func NewRawCopyExecutor(sourceEngineType, targetEngineType string) (*RawCopyExec
 	if err != nil {
 		return nil, fmt.Errorf("get target engine plugin %q: %w", targetEngineType, err)
 	}
+	return NewRawCopyExecutorWithProviders(sourcePlugin, targetPlugin)
+}
+func NewRawCopyExecutorWithProviders(sourcePlugin, targetPlugin engineplugin.EnginePlugin) (*RawCopyExecutor, error) {
 	exec := &RawCopyExecutor{}
 	exec.SourceContentReader, _ = sourcePlugin.(engineplugin.ContentReadableProvider)
 	exec.TargetContentWriter, _ = targetPlugin.(engineplugin.ContentWritableProvider)

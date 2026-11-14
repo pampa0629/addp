@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
+objectminio "github.com/addp/common/infra/objectstore/minio"
 )
 
 type exportOwnerRegistry struct{ url string }
@@ -59,7 +60,7 @@ func TestExportExecutionUsesOwnerVerifiedInitiatorAndOwnAdHocIsolation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner := exportartifact.NewService(dispatch, store, minioClient, "manager", "manager", "/exports")
+	owner := exportartifact.NewService(dispatch, store, objectminio.New(minioClient,"manager"), "manager", "manager", "/exports")
 	authServer := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{"Bearer transfer-service": {ClientID: "addp-transfer", Permissions: []string{"manager.export_provenance.read"}}})
 	defer authServer.Close()
 	router := gin.New()

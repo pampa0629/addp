@@ -24,7 +24,7 @@ func (v *importSourceVerifierStub) VerifyImportSource(_ context.Context, tenant 
 	return result, v.err
 }
 func TestImportSourceRequiresCurrentCompleteActorTaskAndLease(t *testing.T) {
-	source := "addp-infra://minio/manager/tenant_7/import/date/upload/roads.shp?type=object"
+	source := "addp-infra://object/manager/tenant_7/import/date/upload/roads.shp?type=object"
 	for _, kind := range []string{"valid", "missing_actor", "contradictory_actor", "tenant", "task", "status", "lease", "lease_owner", "attempt", "continuous", "owner_denied", "wrong_uploader", "wrong_source"} {
 		t.Run(kind, func(t *testing.T) {
 			principal, membership, version := int64(31), int64(41), int64(2)

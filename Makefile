@@ -552,7 +552,7 @@ test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal 与 
 test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 Decimal 和类型感知 JSON 写入
 	@bash scripts/test/common-clickhouse-decimal-gate.sh
 
-test-manager-postgres: ## 使用测试 PostGIS 数据库运行 Manager 统一任务、几何声明与清理集成门禁
+test-manager-postgres: ## 使用测试 PostGIS 与独占 MinIO 运行 Manager 任务、对象区域、导出和清理集成门禁
 	@bash scripts/test/manager-postgres-gate.sh $(MANAGER_POSTGRES_TEST_ARGS)
 
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
@@ -584,7 +584,7 @@ test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约
 	@bash scripts/test/catalog-postgres-gate.sh
 
 test-develop-postgres: ## 使用测试 PostgreSQL 数据库运行 Develop schema 与目录变化集成门禁
-	@bash scripts/test/develop-postgres-gate.sh
+	@bash scripts/test/develop-postgres-gate.sh $(DEVELOP_POSTGRES_TEST_ARGS)
 
 test-model-postgres: ## 使用一次性 PostgreSQL 数据库运行 Model 物化与事务集成门禁
 	@bash scripts/test/model-postgres-gate.sh
@@ -1773,7 +1773,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-execution-online-ci-syntax test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-monitor-traces-local-runner ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
 
@@ -1801,9 +1801,11 @@ test-monitor-traces-local: ## 人工运行正式身份的本机隔离执行 Trac
 	@python3 scripts/test/monitor-traces-local-gate.py
 
 test-monitor-traces-local-runner: ## 验证本地 Trace 准入、资源守卫、身份及清理，不启动服务
+	@node --test scripts/test/execution-navigation-local_test.mjs
 	@python3 -m unittest scripts/test/monitor-traces-local-gate_test.py scripts/test/monitor-traces-local-online_test.py scripts/ci/check-execution-trace-local-registration_test.py
 	@node --check --input-type=module < console/frontend/e2e/online/execution-trace-local.spec.js
 	@node --check console/frontend/e2e/online/execution-trace-local-support.mjs
+	@node --check console/frontend/e2e/online/execution-navigation-local-support.mjs
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'ExecutionTrace|ProtectionReadiness' -count=1
 

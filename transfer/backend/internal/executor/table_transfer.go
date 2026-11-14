@@ -182,6 +182,11 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 		return nil, fmt.Errorf("get target engine plugin %q: %w", targetEngineType, err)
 	}
 
+	return NewTableTransferExecutorWithProviders(sourcePlugin, targetPlugin, sourceFormat, targetFormat)
+}
+
+func NewTableTransferExecutorWithProviders(sourcePlugin, targetPlugin engineplugin.EnginePlugin, sourceFormat, targetFormat format.FormatType) (*TableTransferExecutor, error) {
+
 	executor := &TableTransferExecutor{}
 	executor.SourceCatalogFacts, _ = sourcePlugin.(engineplugin.EngineCatalogFactsProvider)
 	executor.TargetCatalogFacts, _ = targetPlugin.(engineplugin.EngineCatalogFactsProvider)

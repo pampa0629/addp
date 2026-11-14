@@ -19,6 +19,7 @@
 | `neo4j` | Neo4j | EngineCatalogProvider + QueryRuntimeProvider + GraphQueryProvider |
 | `minio` | MinIO | EngineCatalogProvider + ContentReadableProvider |
 | `s3` | Amazon S3 | EngineCatalogProvider + ContentReadableProvider |
+| `rustfs` | RustFS | EngineCatalogProvider + EngineCatalogFactsProvider + ContentReadableProvider + RangeReadableProvider + ContentWritableProvider + ResourceDeleteProvider |
 | `nfs` | NFS 文件系统 | EngineCatalogProvider + ContentReadableProvider |
 
 ---
@@ -416,27 +417,22 @@ Kafka topic locator 的 path 必须且只能有一个业务 segment；topic 名�
 
 ### ADDP infra locator 与业务 ResourceLocator 的边界
 
-`addp://engine/...` 只定位用户可访问的数据引擎资源。ADDP 系统基础设施资源使用内部 `addp-infra://` locator，不属于本章定义的业务 ResourceLocator。
+平台对象使用内部 `addp-infra://object/{area}/{key...}?type=object|prefix`。`area` 为逻辑区域，部署在进程启动时将其绑定到对象存储实现和物理桶。Manager 导入及 Manager／Develop 导出共用 `manager` 区域，默认映射同名桶。部署例外当前仅允许 `standard`，`manager` 暂按同名映射启动。
 
 ```text
-addp-infra://{infra_kind}/{namespace}/{path...}?type={resource_type}
+addp-infra://object/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object
+addp-infra://object/manager/tenant_7/export/develop/20260622/export-uuid?type=prefix
 ```
 
-第一阶段已使用的 infra locator 形态：
+路径段各编码、解码一次；空段、`.`、`..`、编码后的路径分隔符及未知 type 必须拒绝。对象要求非空键。前缀与对象保持不同类型，派生子项通过公共引用契约完成。
 
-```text
-addp-infra://minio/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object
-addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
-```
+1. 对象引用只定位内部内容；上传者、租户、任务、执行、会话及当前保护资格分别由 Owner 在操作处核验。
+2. 引用不携带业务 engine ID 或对象存储凭据；内部暂存对象不进入业务资源树和 Meta 持久扫描。
+3. Transfer、Meta 复用公共区域内容／目录适配和原有格式 Reader／Writer。物理桶只在具体对象存储适配内定位。
+4. 导出继续使用 `auto_scan_metadata=false`；导入后业务目标扫描使用实际业务 locator。
+5. 导入由 Manager 保存上传者、文件组成摘要和绑定任务；Transfer 在实际读取时核对当前执行与该来源。导出按已认证 Service Client 推导 Manager／Develop owner，核对预绑定 execution 和完整请求摘要，下载与清理限制在会话范围。
+6. 升级先停止相关新提交、排空活动执行，等待短期导出会话到期并清理。各 owner 协同转换可变上传来源及持久任务定义，全部核对完成后启用新表示。冻结执行、授权摘要、审计和存证保留原字节。旧产品名 URI 只由一次升级工具处理。
 
-边界规则：
-
-1. `addp-infra://` 只在后端模块间契约中使用，例如 Manager 调用 Transfer sync 时传递导入 source 或导出 target。
-2. infra locator 不携带 `engine_id`、`node_id` 或 `item_id`，不得进入前端资源树定位、Meta 扫描定位或用户可见资源选择。
-3. infra MinIO 使用系统基础设施 MinIO 配置，不通过 System engines 解析，不产生业务 engine 记录。
-4. Transfer endpoint 解析层可以把 `addp-infra://minio/...` 绑定到 infra MinIO 的 engine binding 和 catalog path，后续执行链路仍复用通用 content reader / writer 和 format reader / writer，不在 planner / executor 为 Manager 导入导出建立专用格式分支。
-5. 导出到 infra 暂存时 `auto_scan_metadata=false`；导入到业务库后是否扫描目标由 Transfer / Meta 正常任务链路处理。
-6. Manager 导入暂存来源由 Manager 保存真实上传者和绑定任务；Transfer 在实际读取前通过 Owner 核验同租户、同上传者、同任务和准确 locator。路径和 UUID 本身不是读取许可；未核验的 Infra 来源不得跳过业务保护后直接读取。
 
 ---
 

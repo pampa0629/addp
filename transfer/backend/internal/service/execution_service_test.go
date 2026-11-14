@@ -355,7 +355,7 @@ func TestWriteBoundedExecutionOutputsPersistsInfraCreatedTargetContract(t *testi
 		ctx,
 		uint(execution.ID),
 		"",
-		"addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix",
+		"addp-infra://object/manager/tenant_1/export/20260902/session-id?type=prefix",
 		"Persons.ejsonl",
 		2188,
 	); err != nil {
@@ -370,7 +370,7 @@ func TestWriteBoundedExecutionOutputsPersistsInfraCreatedTargetContract(t *testi
 	if !ok {
 		t.Fatalf("metadata.outputs = %#v, want object", stored.Metadata["outputs"])
 	}
-	if outputs["target_locator"] != "addp-infra://minio/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object" {
+	if outputs["target_locator"] != "addp-infra://object/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object" {
 		t.Fatalf("outputs.target_locator = %#v", outputs["target_locator"])
 	}
 	if outputs["row_count"] != float64(2188) {

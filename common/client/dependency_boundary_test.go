@@ -20,7 +20,10 @@ func TestClientDependencyBoundary(t *testing.T) {
 		}
 		if dependency == "github.com/addp/common/dataitem" ||
 			dependency == "github.com/addp/common/format" || strings.HasPrefix(dependency, "github.com/addp/common/format/") ||
-			strings.HasPrefix(dependency, "github.com/addp/common/engine/plugins/") {
+			strings.HasPrefix(dependency, "github.com/addp/common/engine/plugins/") ||
+			strings.HasPrefix(dependency, "github.com/addp/common/infra/objectstore/contentadapter") ||
+			strings.HasPrefix(dependency, "github.com/addp/common/infra/objectstore/minio") ||
+			strings.HasPrefix(dependency, "github.com/minio/minio-go/") {
 			t.Errorf("HTTP client imports content implementation: %s", dependency)
 		}
 	}

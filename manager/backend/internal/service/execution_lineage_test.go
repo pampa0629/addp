@@ -20,7 +20,7 @@ func TestManagerInfraObjectLineageRefUsesCanonicalInfraLocator(t *testing.T) {
 	if ref.Port != managerLineageOutputPort {
 		t.Fatalf("port = %q", ref.Port)
 	}
-	if ref.Locator != "addp-infra://minio/manager/tenant_7/raster-cog/source/result.tif?type=object" {
+	if ref.Locator != "addp-infra://object/manager/tenant_7/raster-cog/source/result.tif?type=object" {
 		t.Fatalf("locator = %q", ref.Locator)
 	}
 }
@@ -34,14 +34,14 @@ func TestManagerInfraLineageRefKeepsMultiObjectArtifactAsPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("managerInfraLineageRef: %v", err)
 	}
-	if ref.Locator != "addp-infra://minio/manager/tenant_7/model3d-tiles/source/3d_tiles?type=prefix" {
+	if ref.Locator != "addp-infra://object/manager/tenant_7/model3d-tiles/source/3d_tiles?type=prefix" {
 		t.Fatalf("locator = %q", ref.Locator)
 	}
 }
 
 func TestManagerExecutionLineageUsesSharedContract(t *testing.T) {
 	input := managerItemLineageRef("addp://engine/12/path/outdoor/roads?type=table&item_id=9", "fp-roads", 9)
-	output := managerResourceLineageRef(managerLineageOutputPort, "addp-infra://minio/manager/result.pmtiles?type=object")
+	output := managerResourceLineageRef(managerLineageOutputPort, "addp-infra://object/manager/result.pmtiles?type=object")
 	metadata := managerExecutionLineage(commonModels.JSONMap{"kept": true}, "vector_tile_cache_generation", []commonExecution.LineageResourceRef{input}, []commonExecution.LineageResourceRef{output}, "", "scan-1")
 
 	payload, err := json.Marshal(metadata["lineage_facts"])

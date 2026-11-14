@@ -1,7 +1,7 @@
 package service
 
 import (
-	"fmt"
+	"github.com/addp/common/infra/objectstore"
 	"strings"
 
 	commonExecution "github.com/addp/common/execution"
@@ -69,10 +69,11 @@ func managerInfraLineageRef(storageRef, defaultBucket, resourceType string) (com
 	if resourceType == "" {
 		resourceType = "object"
 	}
-	return managerResourceLineageRef(
-		managerLineageOutputPort,
-		fmt.Sprintf("addp-infra://minio/%s/%s?type=%s", strings.Trim(bucket, "/"), strings.Trim(objectName, "/"), resourceType),
-	), nil
+	value, err := (objectstore.Ref{Area: bucket, Key: strings.Trim(objectName, "/"), Type: resourceType}).URI()
+	if err != nil {
+		return commonExecution.LineageResourceRef{}, err
+	}
+	return managerResourceLineageRef(managerLineageOutputPort, value), nil
 }
 
 func managerExecutionLineage(

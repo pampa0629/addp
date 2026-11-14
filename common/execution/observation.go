@@ -362,6 +362,7 @@ func diagnosticSteps(value interface{}) ([]DiagnosticStep, bool) {
 	return steps, truncated
 }
 
+// Historical frozen locators are displayed as stored, including prior provider names.
 func safeLineageResource(ref LineageResourceRef) LineageResourceRef {
 	ref.SchemaSnapshot = nil
 	ref.Port = SafeDiagnosticText(ref.Port)
@@ -371,7 +372,7 @@ func safeLineageResource(ref LineageResourceRef) LineageResourceRef {
 		if resource, err := resourcetree.ParseURI(ref.Locator); err == nil {
 			// Re-encode only canonical locator fields, discarding arbitrary query data.
 			ref.Locator = resource.ToURI()
-		} else if uri, err := url.Parse(ref.Locator); err == nil && uri.Scheme == "addp-infra" && uri.Host == "minio" && uri.User == nil && uri.Fragment == "" && (uri.Query().Get("type") == "object" || uri.Query().Get("type") == "prefix") {
+		} else if uri, err := url.Parse(ref.Locator); err == nil && uri.Scheme == "addp-infra" && (uri.Host == "object" || uri.Host == "minio") && uri.User == nil && uri.Fragment == "" && (uri.Query().Get("type") == "object" || uri.Query().Get("type") == "prefix") {
 			uri.RawQuery = url.Values{"type": []string{uri.Query().Get("type")}}.Encode()
 			ref.Locator = uri.String()
 		} else {

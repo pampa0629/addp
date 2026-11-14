@@ -12,6 +12,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/exportartifact"
+	objectminio "github.com/addp/common/infra/objectstore/minio"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/minio/minio-go/v7"
@@ -47,7 +48,7 @@ func newQueryExportServiceForTest(t *testing.T, db *gorm.DB, repository *commonE
 	artifacts := exportartifact.NewService(
 		transfer,
 		exportartifact.NewGormStore(db, "export_sessions"),
-		minioClient,
+		objectminio.New(minioClient, "manager"),
 		"manager",
 		"develop",
 		"/api/v1/develop/exports",
@@ -180,7 +181,7 @@ func TestQueryExportUsesFrozenSuccessfulExecutionSnapshot(t *testing.T) {
 		queryInputs[1].Name != "persons" || queryInputs[1].Locator != "addp://engine/11/path/public/persons?type=table&item_id=23" {
 		t.Fatalf("query inputs = %#v", queryInputs)
 	}
-	if !strings.HasPrefix(request.Config.Target.ParentLocator, "addp-infra://minio/manager/tenant_7/export/develop/") || request.Config.Target.Name != "orders.csv" {
+	if !strings.HasPrefix(request.Config.Target.ParentLocator, "addp-infra://object/manager/tenant_7/export/develop/") || request.Config.Target.Name != "orders.csv" {
 		t.Fatalf("target = %#v", request.Config.Target)
 	}
 	if request.AutoScanMetadata {

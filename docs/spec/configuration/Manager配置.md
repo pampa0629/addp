@@ -9,7 +9,7 @@ Manager 的 Shapefile 导入不是由 Manager 自己解析写库。Manager 只�
 ```json
 {
   "source": {
-    "locator": "addp-infra://minio/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object",
+    "locator": "addp-infra://object/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object",
     "data_type": "table",
     "representation": "encoded",
     "format": "shapefile"
@@ -17,7 +17,7 @@ Manager 的 Shapefile 导入不是由 Manager 自己解析写库。Manager 只�
 }
 ```
 
-Manager 上传导入文件时写入 ADDP infra MinIO 的 `manager` bucket，并通过 `addp-infra://minio/manager/...` locator 调用 Transfer。infra MinIO 不进入 System engines，上传暂存对象也不进入 Meta。
+Manager 上传导入文件时请求 Common 的 `manager` 逻辑区域，在启动时绑定到同名 MinIO 桶，并通过 `addp-infra://object/manager/...` locator 调用 Transfer。逻辑区域不进入 System engines，上传暂存对象也不进入 Meta。
 对于 Shapefile 多文件上传，source locator 指向 primary `.shp`；同 basename 的 `.dbf`、`.shx`、`.prj`、`.cpg` 等组件随同写入同一暂存目录，由 Transfer 按格式能力读取相关 refs。
 
 相关环境变量：

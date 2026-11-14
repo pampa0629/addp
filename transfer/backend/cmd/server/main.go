@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/infra/objectstore"
+	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"log"
 	"net"
 	"os"
@@ -147,6 +149,13 @@ func main() {
 		nil,
 	)
 	executionEngineService.SetImportSourceVerifier(commonClient.NewManagerImportSourceClient(systemRuntimeClient, serviceTokenSource))
+	areaCtx, cancelArea := context.WithTimeout(context.Background(), 30*time.Second)
+	area, err := objectbootstrap.OpenContentArea(areaCtx, objectstore.Manager)
+	cancelArea()
+	if err != nil {
+		log.Fatalf("bind Transfer object area: %v", err)
+	}
+	executionEngineService.SetObjectArea(area)
 	executionEngineService.SetConfig(cfg)
 	executionEngineService.SetProtectionGate(protectionGate)
 	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{
@@ -322,6 +331,9 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 			return fmt.Errorf("auto-migrate transfer models: %w", err)
 		}
 
+		if err := transferRepo.MigrateInfraObjectReferences(tx); err != nil {
+			return err
+		}
 		if err := cleanup.MigrateResults(tx, "transfer"); err != nil {
 			return err
 		}

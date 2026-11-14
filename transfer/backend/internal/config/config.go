@@ -80,11 +80,6 @@ type Config struct {
 	ContinuousRuntimeStopTimeout       time.Duration
 	ContinuousRuntimeStopPollInterval  time.Duration
 	MetaScanClaimTTL                   time.Duration
-
-	BuiltinMinioEndpoint  string
-	BuiltinMinioAccessKey string
-	BuiltinMinioSecretKey string
-	BuiltinMinioUseSSL    bool
 }
 
 func (c Config) ValidateContinuousRuntime() error {
@@ -191,12 +186,6 @@ func Load() *Config {
 		ContinuousRuntimeStopPollInterval:  commonConfig.GetEnvDuration("TRANSFER_CONTINUOUS_RUNTIME_STOP_POLL_INTERVAL", "250ms"),
 		MetaScanClaimTTL:                   commonConfig.GetEnvDuration("TRANSFER_META_SCAN_CLAIM_TTL", "2m"),
 	}
-
-	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
-	cfg.BuiltinMinioEndpoint = minioCfg.Endpoint
-	cfg.BuiltinMinioAccessKey = minioCfg.AccessKey
-	cfg.BuiltinMinioSecretKey = minioCfg.SecretKey
-	cfg.BuiltinMinioUseSSL = minioCfg.UseSSL
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL

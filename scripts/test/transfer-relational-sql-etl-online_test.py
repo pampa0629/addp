@@ -641,7 +641,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
     def test_import_requires_actual_parent_and_current_user_without_manual_rescan(self):
         parent, child_id = str(uuid.uuid4()), str(uuid.uuid4())
         task = {"task_type": "sync", "auto_scan_metadata": True, "config": {
-            "runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"}, "source": {"locator": "addp-infra://minio/manager/private/points.shp?type=object"}, "target": {"policy": {"apply_mode": "replace"}}}}
+            "runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"}, "source": {"locator": "addp-infra://object/manager/private/points.shp?type=object"}, "target": {"policy": {"apply_mode": "replace"}}}}
         transfer = {"records_read": 2, "records_written": 2, "metadata": {
             "metadata_scan": {"status": "submitted", "attempt": 0, "execution_id": child_id}}}
         child = {"module": "meta", "source": "transfer", "parent_execution_id": parent,

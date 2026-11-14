@@ -17,7 +17,7 @@ func ValidateWorkflowResultExport(spec TableExportTaskSpec, tenant uint) error {
 		return fmt.Errorf("invalid workflow result export shape")
 	}
 	parent, err := ParseInfraLocatorURI(spec.Target.ParentLocator)
-	if err != nil || parent.Kind != "minio" || len(parent.Path) != 5 || parent.Type != resourcetree.TypePrefix || parent.Path[1] != "export" || parent.Path[2] != "develop" {
+	if err != nil || parent.Kind != "object" || len(parent.Path) != 5 || parent.Type != resourcetree.TypePrefix || parent.Path[1] != "export" || parent.Path[2] != "develop" {
 		return fmt.Errorf("invalid workflow export prefix")
 	}
 	if tenant != 0 && parent.Path[0] != fmt.Sprintf("tenant_%d", tenant) {

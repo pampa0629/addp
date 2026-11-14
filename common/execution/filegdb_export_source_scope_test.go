@@ -29,7 +29,7 @@ func TestFileGDBExportScopeBindsExactSourceAndEntireConfig(t *testing.T) {
 				t.Fatal(err)
 			}
 			source := map[string]any{"locator": "addp://engine/4/path/business/roads?type=table", "data_type": "table", "representation": "native"}
-			output := map[string]any{"parent_locator": "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
+			output := map[string]any{"parent_locator": "addp-infra://object/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
 				"data_type": "table", "representation": "encoded", "format": "filegdb"}
 			config := map[string]any{
 				"runtime": map[string]any{"boundary": "bounded"}, "load": map[string]any{"mode": "snapshot"},

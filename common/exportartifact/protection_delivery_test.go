@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/client"
+	objectminio "github.com/addp/common/infra/objectstore/minio"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/driver/sqlite"
@@ -46,11 +47,11 @@ func TestExportDeliveryRechecksProtectionBeforeStatusAndObjectRead(t *testing.T)
 	store := NewGormStore(db, "exports")
 	valid := true
 	transfer := &transferStub{result: &client.TransferExecutionResponse{Status: StatusSuccess, ExportProtectionCurrent: &valid}}
-	svc := NewService(transfer, store, clientMinIO, "manager", "manager", "/exports")
+	svc := NewService(transfer, store, objectminio.New(clientMinIO, "manager"), "manager", "manager", "/exports")
 	sessionCount := 0
 	newSession := func() *Session {
 		sessionCount++
-		item := &Session{TenantID: 7, UserID: 9, SourceRef: "source", Format: "csv", FileName: "data.csv", TargetLocator: "addp-infra://minio/manager/tenant_7/export/manager/session/data.csv?type=object", Status: StatusSuccess, TransferExecutionID: fmt.Sprintf("execution-%d", sessionCount)}
+		item := &Session{TenantID: 7, UserID: 9, SourceRef: "source", Format: "csv", FileName: "data.csv", TargetLocator: "addp-infra://object/manager/tenant_7/export/manager/session/data.csv?type=object", Status: StatusSuccess, TransferExecutionID: fmt.Sprintf("execution-%d", sessionCount)}
 		if err := store.Create(t.Context(), item); err != nil {
 			t.Fatal(err)
 		}

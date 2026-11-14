@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/exportartifact"
+	objectminio "github.com/addp/common/infra/objectstore/minio"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
@@ -77,7 +78,7 @@ func TestWorkflowExportUsesCurrentOwnerCompleteSourcesAndOriginalDeadline(t *tes
 		t.Fatal(err)
 	}
 	defer e.workflowResults.remove(item.ExecutionID, lease.Token)
-	service := NewQueryExportService(e, exportartifact.NewService(transfer, exportartifact.NewGormStore(db, "export_sessions"), m, "manager", "develop", "/exports"))
+	service := NewQueryExportService(e, exportartifact.NewService(transfer, exportartifact.NewGormStore(db, "export_sessions"), objectminio.New(m, "manager"), "manager", "develop", "/exports"))
 	facts := authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute", "develop.task.execute"})
 	ctx := WithExportUserToken(WithExecutionAuthContext(t.Context(), facts), "addp_at_current")
 	created, err := service.Create(ctx, item.ExecutionID, models.CreateQueryExportRequest{FileName: "areas"}, 7, 9)

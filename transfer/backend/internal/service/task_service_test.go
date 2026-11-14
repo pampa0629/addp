@@ -37,7 +37,7 @@ func TestValidateNewTaskConfigAcceptsRawCopy(t *testing.T) {
 			"format":         string(format.FormatPDF),
 		},
 		"target": map[string]interface{}{
-			"parent_locator": "addp://engine/2/path/backup?type=directory",
+			"parent_locator": "addp://engine/2/path/backup?type=prefix",
 			"name":           "a.pdf",
 			"representation": "encoded",
 			"policy":         map[string]interface{}{"apply_mode": "replace"},
@@ -56,7 +56,7 @@ func TestValidateNewTaskConfigAcceptsEncodedRecordExport(t *testing.T) {
 			"locator": "addp://engine/11/path/Outdoor/Persons?type=collection", "data_type": "unknown", "representation": "native",
 		},
 		"target": map[string]interface{}{
-			"parent_locator": "addp://engine/2/path/exports?type=directory", "name": "Persons.ejsonl",
+			"parent_locator": "addp://engine/2/path/exports?type=prefix", "name": "Persons.ejsonl",
 			"data_type": "unknown", "representation": "encoded", "format": "mongodb_extended_jsonl",
 			"policy": map[string]interface{}{"apply_mode": "replace"},
 		},
@@ -77,7 +77,7 @@ func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"parent_locator": "addp://engine/2/path/exports?type=directory",
+			"parent_locator": "addp://engine/2/path/exports?type=prefix",
 			"name":           "roads.csv",
 			"data_type":      "table",
 			"representation": "encoded",
@@ -99,7 +99,7 @@ func TestValidateNewTaskConfigAcceptsQueryCSVExportWithIdentityProjection(t *tes
 			"query": map[string]interface{}{"language": "sql", "statement": "SELECT id, total FROM public.orders"},
 		},
 		"target": map[string]interface{}{
-			"parent_locator": "addp-infra://minio/manager/tenant_7/export/develop/run-1?type=prefix", "name": "orders.csv",
+			"parent_locator": "addp-infra://object/manager/tenant_7/export/develop/run-1?type=prefix", "name": "orders.csv",
 			"data_type": "table", "representation": "encoded", "format": string(format.FormatCSV),
 			"policy": map[string]interface{}{"apply_mode": "replace"},
 		},
@@ -131,7 +131,7 @@ func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
 				Locator: "addp://engine/1/path/public/orders?type=table", DataType: "table", Representation: "native",
 			},
 			Target: commonClient.TransferExecutionEndpoint{
-				ParentLocator: "addp://engine/2/path/exports?type=directory", Name: "orders.csv",
+				ParentLocator: "addp://engine/2/path/exports?type=prefix", Name: "orders.csv",
 				DataType: "table", Representation: "encoded", Format: "csv",
 				Policy: map[string]interface{}{"apply_mode": "replace"},
 			},
@@ -175,7 +175,7 @@ func TestCreateAdHocFileGDBFreezesVerifiedActorAndWaitsForAuthorization(t *testi
 			FileGDBSource: &commonExecution.FileGDBExportSource{EngineVersion: "8", Binding: binding},
 			Runtime:       commonClient.TransferExecutionRuntime{Boundary: "bounded"}, Load: commonClient.TransferExecutionLoad{Mode: "snapshot"},
 			Source: commonClient.TransferExecutionEndpoint{Locator: "addp://engine/5/path/business/roads?type=table", DataType: "table", Representation: "native"},
-			Target: commonClient.TransferExecutionEndpoint{ParentLocator: "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix",
+			Target: commonClient.TransferExecutionEndpoint{ParentLocator: "addp-infra://object/manager/tenant_7/export/manager/session?type=prefix",
 				Name: "roads.gdb.zip", DataType: "table", Representation: "encoded", Format: "filegdb", Policy: map[string]any{"apply_mode": "replace"}},
 		},
 	}
@@ -884,7 +884,7 @@ func validTableTransferTaskConfig() map[string]interface{} {
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"parent_locator": "addp://engine/2/path/exports?type=directory",
+			"parent_locator": "addp://engine/2/path/exports?type=prefix",
 			"name":           "roads.csv",
 			"data_type":      "table",
 			"representation": "encoded",

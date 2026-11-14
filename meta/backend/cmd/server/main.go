@@ -12,6 +12,8 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
+	"github.com/addp/common/infra/objectstore"
+	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
@@ -152,7 +154,15 @@ func main() {
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("meta", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient, lifecycleController, lineageService)
+	areaCtx, cancelArea := context.WithTimeout(context.Background(), 30*time.Second)
+	area, err := objectbootstrap.OpenContentArea(areaCtx, objectstore.Manager)
+	cancelArea()
+	if err != nil {
+		logger.L().Error("bind Meta object area", "error", err)
+		os.Exit(1)
+	}
+	inspectService := service.NewInspectService(area)
+	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient, lifecycleController, inspectService, lineageService)
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

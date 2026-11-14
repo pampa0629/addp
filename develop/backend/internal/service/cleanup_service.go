@@ -14,10 +14,10 @@ import (
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
-	"github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
@@ -25,20 +25,20 @@ type CleanupService struct {
 	db            *gorm.DB
 	runtime       *cleanup.Runner
 	exportStore   exportartifact.Store
-	minioClient   *minio.Client
-	minioBucket   string
+	objectArea    objectstore.ContentArea
+	areaName      string
 	exportCleanup exportartifact.CleanupOptions
 	log           *slog.Logger
 	stopCh        chan struct{}
 }
 
-func (s *CleanupService) SetExportArtifacts(store exportartifact.Store, minioClient *minio.Client, bucket string, opts exportartifact.CleanupOptions) {
+func (s *CleanupService) SetExportArtifacts(store exportartifact.Store, objectArea objectstore.ContentArea, bucket string, opts exportartifact.CleanupOptions) {
 	if s == nil {
 		return
 	}
 	s.exportStore = store
-	s.minioClient = minioClient
-	s.minioBucket = strings.Trim(bucket, "/")
+	s.objectArea = objectArea
+	s.areaName = strings.Trim(bucket, "/")
 	s.exportCleanup = exportartifact.NormalizeCleanupOptions(opts)
 }
 
@@ -59,7 +59,7 @@ func (s *CleanupService) Start(ctx context.Context) error {
 	if err := s.runtime.Start(ctx); err != nil {
 		return err
 	}
-	if s.exportStore != nil && s.minioClient != nil && s.minioBucket != "" {
+	if s.exportStore != nil && s.objectArea != nil && s.areaName != "" {
 		go s.runExportSessionCleanup(ctx)
 	}
 	return nil
@@ -93,7 +93,7 @@ func (s *CleanupService) runExportSessionCleanup(ctx context.Context) {
 }
 
 func (s *CleanupService) cleanupExportSessionsOnce(ctx context.Context) {
-	result, err := exportartifact.CleanupExpiredOnce(ctx, s.exportStore, s.minioClient, s.minioBucket, s.exportCleanup, time.Now())
+	result, err := exportartifact.CleanupExpiredOnce(ctx, s.exportStore, s.objectArea, s.areaName, s.exportCleanup, time.Now())
 	if err != nil {
 		s.log.Warn("清理导出暂存失败", "error", err)
 		return

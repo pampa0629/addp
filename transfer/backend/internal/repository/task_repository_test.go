@@ -173,7 +173,7 @@ func testBoundedClaimWaitsForFileGDBSourceAuthorization(t *testing.T, db *gorm.D
 			"runtime": map[string]any{"boundary": "bounded"}, "load": map[string]any{"mode": "snapshot"},
 			"filegdb_source": commonExecution.FileGDBExportSource{EngineVersion: "1", Binding: binding},
 			"source":         map[string]any{"locator": "addp://engine/5/path/business/roads?type=table", "data_type": "table", "representation": "native"},
-			"target": map[string]any{"parent_locator": "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
+			"target": map[string]any{"parent_locator": "addp-infra://object/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
 				"data_type": "table", "representation": "encoded", "format": "filegdb"},
 		},
 		Metadata:    commonModels.JSONMap{models.ExportProtectionMetadataKey: &models.ExportProtectionReceipt{}},

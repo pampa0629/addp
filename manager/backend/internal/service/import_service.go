@@ -19,10 +19,10 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
 )
 
 var (
@@ -45,8 +45,8 @@ type ImportSourceStore interface {
 
 type ImportService struct {
 	sourceStore                   ImportSourceStore
-	minioClient                   *minio.Client
-	minioBucket                   string
+	objectArea                    objectstore.Area
+	areaName                      string
 	transferClient                importTransferClient
 	vectorMaterializedViewCleaner importVectorMaterializedViewCleaner
 }
@@ -62,15 +62,15 @@ type importVectorMaterializedViewCleaner interface {
 
 // NewImportService 创建导入服务
 func NewImportService(
-	minioClient *minio.Client,
-	minioBucket string,
+	objectArea objectstore.Area,
+	areaName string,
 	transferClient importTransferClient,
 	vectorMaterializedViewCleaner importVectorMaterializedViewCleaner,
 	sourceStore ImportSourceStore,
 ) *ImportService {
 	return &ImportService{sourceStore: sourceStore,
-		minioClient:                   minioClient,
-		minioBucket:                   minioBucket,
+		objectArea:                    objectArea,
+		areaName:                      areaName,
 		transferClient:                transferClient,
 		vectorMaterializedViewCleaner: vectorMaterializedViewCleaner,
 	}
@@ -144,10 +144,7 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	manifest := make(map[string]string, len(files))
 	for filename, content := range files {
 		objectKey := prefix + filename
-		_, err := s.minioClient.PutObject(ctx, s.minioBucket, objectKey,
-			bytes.NewReader(content), int64(len(content)),
-			minio.PutObjectOptions{ContentType: "application/octet-stream"},
-		)
+		err := s.objectArea.Put(ctx, objectKey, bytes.NewReader(content), int64(len(content)), "application/octet-stream")
 		if err != nil {
 			return nil, fmt.Errorf("failed to upload %s to MinIO: %w", filename, err)
 		}
@@ -160,7 +157,7 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	if s.sourceStore == nil {
 		return nil, fmt.Errorf("%w: import source store unavailable", ErrImportSubmission)
 	}
-	if err := s.sourceStore.Create(ctx, &models.ImportSource{UploadUUID: uploadUUID, TenantID: req.TenantID, UploaderID: req.UploaderID, Files: manifest, SourceLocator: managerInfraMinioObjectLocator(s.minioBucket, sourceObjectPath)}); err != nil {
+	if err := s.sourceStore.Create(ctx, &models.ImportSource{UploadUUID: uploadUUID, TenantID: req.TenantID, UploaderID: req.UploaderID, Files: manifest, SourceLocator: managerInfraObjectLocator(s.areaName, sourceObjectPath)}); err != nil {
 		return nil, fmt.Errorf("%w: persist upload source: %w", ErrImportSubmission, err)
 	}
 
@@ -214,7 +211,7 @@ func (s *ImportService) buildShapefileImportTaskConfig(sourceObjectPath string, 
 		options["encoding"] = strings.TrimSpace(req.Encoding)
 	}
 	source := map[string]interface{}{
-		"locator":        managerInfraMinioObjectLocator(s.minioBucket, sourceObjectPath),
+		"locator":        managerInfraObjectLocator(s.areaName, sourceObjectPath),
 		"data_type":      "table",
 		"representation": "encoded",
 		"format":         "shapefile",
@@ -252,8 +249,8 @@ func managerImportStagingPrefix(tenantID uint, uploadUUID string, now time.Time)
 	return fmt.Sprintf("tenant_%d/import/%s/%s/", tenantID, now.Format("20060102"), uploadUUID)
 }
 
-func managerInfraMinioObjectLocator(bucket, objectPath string) string {
-	return fmt.Sprintf("addp-infra://minio/%s/%s?type=object", strings.Trim(bucket, "/"), strings.Trim(objectPath, "/"))
+func managerInfraObjectLocator(areaName, objectPath string) string {
+	return objectstore.ObjectURI(strings.Trim(areaName, "/"), strings.Trim(objectPath, "/"))
 }
 
 // extractShapefileZip 从 ZIP 包中解压 Shapefile 相关文件

@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient, lifecycle *modulelifecycle.Controller, lineageServices ...*service.LineageService) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemServiceClient, lifecycle *modulelifecycle.Controller, inspectService *service.InspectService, lineageServices ...*service.LineageService) *gin.Engine {
 	router := modulelifecycle.NewRouter()
 	router.Use(i18nmiddleware.I18nMiddleware())
 
@@ -36,7 +36,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	if len(lineageServices) > 0 && lineageServices[0] != nil {
 		lineageService = lineageServices[0]
 	}
-	inspectService := service.NewInspectService(cfg)
 
 	// 创建Handler
 	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService, lineageService)

@@ -22,7 +22,7 @@ func TestUploadIdentificationSeparatesManagerMutationAndSystemRead(t *testing.T)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = identity.URL
 	engines := service.NewEngineService(nil, nil)
-	router := SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
+	router := SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil))
 	id := uuid.NewString()
 	path := "/api/v1/meta/runtime/manager-uploads/" + id + "/basic-scan"
 	for _, c := range []struct {

@@ -135,6 +135,8 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-manager-backend:${IMAGE_TAG:-latest}
     container_name: manager-backend
     environment:
+      - ADDP_INFRA_OBJECTSTORE_PROVIDER=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}
+      - ADDP_INFRA_OBJECTSTORE_BINDINGS=${ADDP_INFRA_OBJECTSTORE_BINDINGS:-}
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
@@ -200,6 +202,12 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-backend:${IMAGE_TAG:-latest}
     container_name: meta-backend
     environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
+      - ADDP_INFRA_OBJECTSTORE_PROVIDER=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}
+      - ADDP_INFRA_OBJECTSTORE_BINDINGS=${ADDP_INFRA_OBJECTSTORE_BINDINGS:-}
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
@@ -218,10 +226,6 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
-      - META_MINIO_ENDPOINT=minio:9000
-      - META_MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - META_MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - META_MINIO_USE_SSL=false
       - MANAGER_URL=http://manager-backend:8081
       - SYSTEM_URL=http://system-backend:8180
       - DEVELOP_URL=http://develop-backend:8185
@@ -319,6 +323,12 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-backend:${IMAGE_TAG:-latest}
     container_name: transfer-backend
     environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
+      - ADDP_INFRA_OBJECTSTORE_PROVIDER=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}
+      - ADDP_INFRA_OBJECTSTORE_BINDINGS=${ADDP_INFRA_OBJECTSTORE_BINDINGS:-}
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
@@ -407,6 +417,12 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-bounded-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
+      - ADDP_INFRA_OBJECTSTORE_PROVIDER=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}
+      - ADDP_INFRA_OBJECTSTORE_BINDINGS=${ADDP_INFRA_OBJECTSTORE_BINDINGS:-}
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
@@ -559,6 +575,12 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-develop-backend:${IMAGE_TAG:-latest}
     container_name: develop-backend
     environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
+      - ADDP_INFRA_OBJECTSTORE_PROVIDER=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}
+      - ADDP_INFRA_OBJECTSTORE_BINDINGS=${ADDP_INFRA_OBJECTSTORE_BINDINGS:-}
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}

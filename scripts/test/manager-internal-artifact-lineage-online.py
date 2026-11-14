@@ -829,7 +829,7 @@ def validate_lineage(
             raise SuiteError(f"execution lineage input {key} is invalid")
     output_ref = _object(outputs[0], "execution lineage output")
     output_locator = output_ref.get("locator")
-    expected_prefix = f"addp-infra://minio/manager/tenant_{tenant_id}/{output_prefix}/"
+    expected_prefix = f"addp-infra://object/manager/tenant_{tenant_id}/{output_prefix}/"
     if output_ref.get("port") != "result" or not isinstance(output_locator, str) or not output_locator.startswith(expected_prefix):
         raise SuiteError(f"execution lineage output is not the Manager infra {output_label} artifact")
     parsed_output = urllib.parse.urlsplit(output_locator)

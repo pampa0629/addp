@@ -36,7 +36,7 @@ func Bind(ctx context.Context, area, bucket string, cfg config.BuiltinMinIOConfi
 	} else if !exists {
 		log.Printf("object area %q, MinIO bucket %q: bucket missing", area, bucket)
 	}
-	return &areaStore{client: client, bucket: bucket}, nil
+	return New(client, bucket), nil
 }
 
 func (s *areaStore) Put(ctx context.Context, key string, body io.Reader, size int64, mediaType string) error {
@@ -61,4 +61,31 @@ func (s *areaStore) Open(ctx context.Context, key string) (io.ReadCloser, error)
 
 func (s *areaStore) Delete(ctx context.Context, key string) error {
 	return s.client.RemoveObject(ctx, s.bucket, key, sdk.RemoveObjectOptions{})
+}
+
+func (s *areaStore) OpenRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, error) {
+	opts := sdk.GetObjectOptions{}
+	end := int64(-1)
+	if length > 0 {
+		end = offset + length - 1
+	}
+	if err := opts.SetRange(offset, end); err != nil {
+		return nil, err
+	}
+	return s.client.GetObject(ctx, s.bucket, key, opts)
+}
+func (s *areaStore) List(ctx context.Context, prefix string) ([]contentio.Ref, error) {
+	var refs []contentio.Ref
+	for o := range s.client.ListObjects(ctx, s.bucket, sdk.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if o.Err != nil {
+			return nil, o.Err
+		}
+		refs = append(refs, contentio.NewRef(o.Key, contentio.RoleMain))
+	}
+	return refs, ctx.Err()
+}
+
+// New wraps an existing client for callers that already own its transport settings.
+func New(client *sdk.Client, bucket string) objectstore.ContentArea {
+	return &areaStore{client: client, bucket: bucket}
 }

@@ -50,7 +50,7 @@ func TestCollectExecutionLineageRouteRequiresDevelopServiceAndIsIdempotent(t *te
 	lineageService := service.NewLineageService(db, engineService)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = systemServer.URL
-	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), lineageService)
+	router := SetupRouter(cfg, db, engineService, scanService, nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil), lineageService)
 
 	first := performLineageCollectionRequest(router, "execution-1", "develop-token")
 	if first.Code != http.StatusOK {

@@ -38,7 +38,7 @@ func TestPrepareFileGDBExportIssuesAsCurrentUserAndBindsExactSource(t *testing.T
 			engine := &commonModels.Engine{ID: 5, EngineType: engineType, Version: 8}
 			req := &ExportRequest{TenantID: 7, UserID: 31, UserCredential: "addp_at_filegdb_user"}
 			create := exportartifact.CreateRequest{ExecutionConfig: buildTableExportExecutionConfig(
-				locator, "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix", "roads.gdb.zip", format.FormatFileGDB)}
+				locator, "addp-infra://object/manager/tenant_7/export/manager/session?type=prefix", "roads.gdb.zip", format.FormatFileGDB)}
 			executionID := uuid.NewString()
 			var scope *execution.FileGDBExportReadScope
 			system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +92,7 @@ func TestPrepareFileGDBExportIssuesAsCurrentUserAndBindsExactSource(t *testing.T
 func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 	config := buildTableExportExecutionConfig(
 		"addp://engine/8/path/public/roads?type=table&item_id=54",
-		"addp-infra://minio/manager/tenant_7/export/20260620/session-1?type=prefix",
+		"addp-infra://object/manager/tenant_7/export/20260620/session-1?type=prefix",
 		"roads.geojson",
 		format.FormatGeoJSON,
 	)
@@ -109,7 +109,7 @@ func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 		t.Fatalf("source config = %#v", source)
 	}
 	target := config.Target
-	if target.ParentLocator != "addp-infra://minio/manager/tenant_7/export/20260620/session-1?type=prefix" ||
+	if target.ParentLocator != "addp-infra://object/manager/tenant_7/export/20260620/session-1?type=prefix" ||
 		target.Name != "roads.geojson" || target.Representation != "encoded" || target.Format != "geojson" {
 		t.Fatalf("target config = %#v", target)
 	}
@@ -125,7 +125,7 @@ func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 func TestBuildEncodedRecordExportTaskConfigUsesNativeCollectionShape(t *testing.T) {
 	config := buildEncodedRecordExportExecutionConfig(
 		"addp://engine/11/path/Outdoor/Persons?type=collection&item_id=81",
-		"addp-infra://minio/manager/tenant_7/export/20260902/session-1?type=prefix",
+		"addp-infra://object/manager/tenant_7/export/20260902/session-1?type=prefix",
 		"Persons.ejsonl",
 		format.FormatMongoDBExtendedJSONL,
 	)

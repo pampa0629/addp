@@ -18,13 +18,14 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/format"
+	objectminio "github.com/addp/common/infra/objectstore/minio"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 func TestBuildShapefileImportTaskConfigUsesEndpointSpec(t *testing.T) {
-	service := &ImportService{minioBucket: "manager"}
+	service := &ImportService{areaName: "manager"}
 	req := &ImportShapefileRequest{
 		TargetEngineID: 7,
 		Encoding:       "GBK",
@@ -42,7 +43,7 @@ func TestBuildShapefileImportTaskConfigUsesEndpointSpec(t *testing.T) {
 	if source["representation"] != "encoded" || source["format"] != "shapefile" {
 		t.Fatalf("source = %#v, want encoded shapefile", source)
 	}
-	if source["locator"] != "addp-infra://minio/manager/tenant_1/import/20260619/upload/roads.shp?type=object" {
+	if source["locator"] != "addp-infra://object/manager/tenant_1/import/20260619/upload/roads.shp?type=object" {
 		t.Fatalf("source locator = %#v, want infra manager object locator", source["locator"])
 	}
 	sourceOptions := source["options"].(map[string]interface{})
@@ -66,8 +67,8 @@ func TestImportShapefileCleansVectorMaterializedViewsBeforeUpload(t *testing.T) 
 		t.Fatalf("new minio client: %v", err)
 	}
 	service := &ImportService{
-		minioClient:                   minioClient,
-		minioBucket:                   "manager",
+		objectArea:                    objectminio.New(minioClient, "manager"),
+		areaName:                      "manager",
 		vectorMaterializedViewCleaner: cleaner,
 	}
 	req := &ImportShapefileRequest{
@@ -95,7 +96,7 @@ func TestImportShapefileStopsWhenVectorMaterializedViewCleanupFails(t *testing.T
 	cleaner := &recordingImportOptimizationCleaner{err: errors.New("cleanup failed")}
 	transferClient := &recordingImportTransferClient{}
 	service := &ImportService{
-		minioBucket:                   "manager",
+		areaName:                      "manager",
 		transferClient:                transferClient,
 		vectorMaterializedViewCleaner: cleaner,
 	}
@@ -118,7 +119,7 @@ func TestImportShapefileStopsWhenVectorMaterializedViewCleanupFails(t *testing.T
 }
 
 func TestBuildShapefileImportTaskConfigUsesTargetNodeLocator(t *testing.T) {
-	service := &ImportService{minioBucket: "manager"}
+	service := &ImportService{areaName: "manager"}
 	req := &ImportShapefileRequest{
 		TargetEngineID:    7,
 		TargetNodeLocator: "addp://engine/7/path/app?type=database&node_id=3",
@@ -132,7 +133,7 @@ func TestBuildShapefileImportTaskConfigUsesTargetNodeLocator(t *testing.T) {
 }
 
 func TestBuildShapefileImportTaskConfigSkipsEncodingWhenCPGExists(t *testing.T) {
-	service := &ImportService{minioBucket: "manager"}
+	service := &ImportService{areaName: "manager"}
 	req := &ImportShapefileRequest{
 		TargetEngineID: 7,
 		Encoding:       "GBK",
@@ -268,10 +269,10 @@ func TestHasShapefileCPG(t *testing.T) {
 }
 
 func TestManagerInfraMinioObjectLocatorNormalizesPath(t *testing.T) {
-	got := managerInfraMinioObjectLocator("manager", "/tenant_7/import/20260619/upload/roads.shp")
-	want := "addp-infra://minio/manager/tenant_7/import/20260619/upload/roads.shp?type=object"
+	got := managerInfraObjectLocator("manager", "/tenant_7/import/20260619/upload/roads.shp")
+	want := "addp-infra://object/manager/tenant_7/import/20260619/upload/roads.shp?type=object"
 	if got != want {
-		t.Fatalf("managerInfraMinioObjectLocator() = %q, want %q", got, want)
+		t.Fatalf("managerInfraObjectLocator() = %q, want %q", got, want)
 	}
 }
 
@@ -383,7 +384,7 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 			if request.TaskType != "sync" || request.AutoScanMetadata == nil || !*request.AutoScanMetadata || request.TenantID != 0 {
 				t.Error("task identity, automatic scan or trusted tenant contract differs")
 			}
-			if config.Source.Format != "shapefile" || config.Source.Representation != "encoded" || !strings.HasPrefix(config.Source.Locator, "addp-infra://minio/manager/tenant_7/import/") || config.Target.ParentLocator != "addp://engine/8/path/public?type=schema" || config.Target.Name != "roads" {
+			if config.Source.Format != "shapefile" || config.Source.Representation != "encoded" || !strings.HasPrefix(config.Source.Locator, "addp-infra://object/manager/tenant_7/import/") || config.Target.ParentLocator != "addp://engine/8/path/public?type=schema" || config.Target.Name != "roads" {
 				t.Errorf("wrong submitted source/target: %#v", config)
 			}
 			w.WriteHeader(201)
@@ -407,7 +408,7 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewImportService(minioClient, "manager", client.NewTransferClient(transfer.URL, nil), nil, store)
+	service := NewImportService(objectminio.New(minioClient, "manager"), "manager", client.NewTransferClient(transfer.URL, nil), nil, store)
 	result, err := service.ImportShapefile(context.Background(), &ImportShapefileRequest{Files: completeImportShapefileUploadFiles("roads"), TargetEngineID: 8, TargetSchema: "public", TargetTable: "roads", TenantID: 7, UploaderID: 31}, "current-user")
 	if err != nil {
 		t.Fatal(err)

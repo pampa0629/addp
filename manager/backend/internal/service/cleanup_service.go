@@ -12,16 +12,17 @@ import (
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
-	"github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
 type CleanupService struct {
+	exportArea          objectstore.ContentArea
 	db                  *gorm.DB
 	search              *HybridSearchService
 	runtime             *cleanup.Runner
@@ -41,7 +42,6 @@ type CleanupService struct {
 	pointCloudCOPCSvc   *PointCloudCOPCTaskService
 	pptxPDFSvc          *PPTXPDFTaskService
 	exportRepo          *repository.ExportSessionRepository
-	minioClient         *minio.Client
 	minioBucket         string
 	exportCleanup       ExportCleanupOptions
 	log                 *slog.Logger
@@ -87,7 +87,7 @@ func NewCleanupService(
 	pointCloudCOPCSvc *PointCloudCOPCTaskService,
 	pptxPDFSvc *PPTXPDFTaskService,
 	exportRepo *repository.ExportSessionRepository,
-	minioClient *minio.Client,
+	exportArea objectstore.ContentArea,
 	minioBucket string,
 	exportCleanup ExportCleanupOptions,
 ) *CleanupService {
@@ -109,7 +109,7 @@ func NewCleanupService(
 		pointCloudCOPCSvc:   pointCloudCOPCSvc,
 		pptxPDFSvc:          pptxPDFSvc,
 		exportRepo:          exportRepo,
-		minioClient:         minioClient,
+		exportArea:          exportArea,
 		minioBucket:         strings.Trim(minioBucket, "/"),
 		exportCleanup:       exportCleanup,
 		log:                 logger.With("component", "manager_cleanup_service"),
@@ -140,7 +140,7 @@ func (s *CleanupService) Start(ctx context.Context) error {
 	if err := s.runtime.Start(ctx); err != nil {
 		return err
 	}
-	if s.exportRepo != nil && s.minioClient != nil && s.minioBucket != "" {
+	if s.exportRepo != nil && s.exportArea != nil && s.minioBucket != "" {
 		go s.runExportSessionCleanup(ctx)
 		s.log.Info("Manager 导出暂存清理已启动")
 	}
@@ -176,10 +176,10 @@ func (s *CleanupService) runExportSessionCleanup(ctx context.Context) {
 }
 
 func (s *CleanupService) cleanupExportSessionsOnce(ctx context.Context) {
-	if s == nil || s.exportRepo == nil || s.minioClient == nil || s.minioBucket == "" {
+	if s == nil || s.exportRepo == nil || s.exportArea == nil || s.minioBucket == "" {
 		return
 	}
-	result, err := exportartifact.CleanupExpiredOnce(ctx, s.exportRepo, s.minioClient, s.minioBucket, s.exportCleanup, time.Now())
+	result, err := exportartifact.CleanupExpiredOnce(ctx, s.exportRepo, s.exportArea, s.minioBucket, s.exportCleanup, time.Now())
 	if err != nil {
 		s.log.Warn("清理导出暂存失败", "error", err)
 		return

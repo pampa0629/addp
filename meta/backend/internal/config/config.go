@@ -28,12 +28,6 @@ type Config struct {
 	BoundedLeaseDuration     time.Duration
 	BoundedHeartbeatInterval time.Duration
 	BoundedClaimInterval     time.Duration
-
-	// 平台内置 MinIO（用于 no-persist inspect 等内部读取）
-	BuiltinMinioEndpoint  string
-	BuiltinMinioAccessKey string
-	BuiltinMinioSecretKey string
-	BuiltinMinioUseSSL    bool
 }
 
 func LoadConfig() *Config {
@@ -64,12 +58,6 @@ func LoadConfig() *Config {
 	cfg.BoundedLeaseDuration = commonConfig.GetEnvDuration("META_BOUNDED_LEASE_DURATION", "2m")
 	cfg.BoundedHeartbeatInterval = commonConfig.GetEnvDuration("META_BOUNDED_HEARTBEAT_INTERVAL", "30s")
 	cfg.BoundedClaimInterval = commonConfig.GetEnvDuration("META_BOUNDED_CLAIM_INTERVAL", "1s")
-
-	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
-	cfg.BuiltinMinioEndpoint = minioCfg.Endpoint
-	cfg.BuiltinMinioAccessKey = minioCfg.AccessKey
-	cfg.BuiltinMinioSecretKey = minioCfg.SecretKey
-	cfg.BuiltinMinioUseSSL = minioCfg.UseSSL
 
 	return cfg
 }

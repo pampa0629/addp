@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/addp/common/infra/objectstore"
 	"github.com/google/uuid"
 )
 
@@ -22,8 +22,8 @@ type ManagerImportSourceRequest struct {
 
 func (r ManagerImportSourceRequest) Validate() error {
 	id, err := uuid.Parse(r.ExecutionID)
-	source, sourceErr := url.Parse(r.SourceLocator)
-	if err != nil || id == uuid.Nil || id.String() != r.ExecutionID || r.TaskID == 0 || r.PrincipalID <= 0 || sourceErr != nil || source.Scheme != "addp-infra" || source.Host != "minio" || source.User != nil || source.Fragment != "" || source.Query().Get("type") != "object" || r.SourceLocator != strings.TrimSpace(r.SourceLocator) {
+	source, sourceErr := objectstore.Parse(r.SourceLocator)
+	if err != nil || id == uuid.Nil || id.String() != r.ExecutionID || r.TaskID == 0 || r.PrincipalID <= 0 || sourceErr != nil || source.Area != objectstore.Manager || source.Type != "object" || r.SourceLocator != strings.TrimSpace(r.SourceLocator) {
 		return errors.New("invalid import source verification request")
 	}
 	return nil

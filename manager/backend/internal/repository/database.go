@@ -44,6 +44,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := exportartifact.EnsureStore(db, "manager.export_sessions"); err != nil {
 		return nil, fmt.Errorf("failed to ensure export session store: %w", err)
 	}
+	if err := migrateImportObjectReferences(db); err != nil {
+		return nil, err
+	}
 	if err := dropLegacyExportSessionTransferTaskID(db); err != nil {
 		return nil, fmt.Errorf("failed to remove legacy export session transfer task identity: %w", err)
 	}

@@ -17,6 +17,8 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/infra/objectstore"
+	objectcontent "github.com/addp/common/infra/objectstore/contentadapter"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/planner"
@@ -51,7 +53,7 @@ func TestWorkflowExportInputVerifiesConsumedBytesAndDeadline(t *testing.T) {
 	provider := newWorkflowInputFixture(t, `[{"area":42.375}]`)
 	path := plugin.ObjectItemPath(0, "manager", "input.json")
 	source := &client.WorkflowResultExportSource{ExpiresAt: time.Now().Add(time.Minute), SHA256: client.WorkflowResultRowsDigest([]byte(provider.data))}
-	reader := workflowInputReader{binding: source, path: path}
+	reader := workflowInputReader{ContentReadableProvider: &objectcontent.Provider{Name: objectstore.Manager, Store: testInfraArea(t, plugin.GetString(provider.conn, "endpoint"))}, binding: source, path: path}
 	stream, err := reader.OpenContent(t.Context(), provider.conn, path, plugin.ReadOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -99,15 +101,15 @@ func TestWorkflowResultUsesExistingJSONToCSVTablePipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	build, err := planner.BuildTableTransferPlan(spec, planner.NewInfraEngineResolver(planner.InfraEngineConfig{MinioEndpoint: plugin.GetString(provider.conn, "endpoint"), MinioAccessKey: "test", MinioSecretKey: "test-secret"}))
+	build, err := planner.BuildTableTransferPlan(spec, planner.NewInfraEngineResolver(planner.InfraEngineConfig{ObjectArea: testInfraArea(t, plugin.GetString(provider.conn, "endpoint"))}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	codec, err := executor.NewTableTransferExecutor(build.SourceEngineType, build.TargetEngineType, build.Plan.Source.Format, build.Plan.Target.Format)
+	codec, err := executor.NewTableTransferExecutorWithProviders(build.SourceEngine.BoundProvider, build.TargetEngine.BoundProvider, build.Plan.Source.Format, build.Plan.Target.Format)
 	if err != nil {
 		t.Fatal(err)
 	}
-	codec.SourceContentReader = workflowInputReader{StoreProvider: codec.SourceContentReader, binding: spec.WorkflowResult, path: build.Plan.Source.Path}
+	codec.SourceContentReader = workflowInputReader{ContentReadableProvider: codec.SourceContentReader, binding: spec.WorkflowResult, path: build.Plan.Source.Path}
 	target := &workflowCSVTarget{}
 	codec.TargetContentWriter = target
 	codec.TargetDeleteProvider = target

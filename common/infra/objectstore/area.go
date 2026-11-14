@@ -17,3 +17,10 @@ type Area interface {
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
 }
+
+// ContentArea supports the content and directory operations needed by formats.
+type ContentArea interface {
+	Area
+	OpenRange(ctx context.Context, key string, offset, length int64) (io.ReadCloser, error)
+	List(ctx context.Context, prefix string) ([]contentio.Ref, error)
+}

@@ -66,7 +66,7 @@ func TestFileGDBWorkerChecksCurrentLeaseAndLockedSource(t *testing.T) {
 				ExecutionConfig: commonModels.JSONMap{
 					"runtime": map[string]any{"boundary": "bounded"}, "load": map[string]any{"mode": "snapshot"},
 					"source": map[string]any{"locator": "addp://engine/5/path/business/roads?type=table", "data_type": "table", "representation": "native"},
-					"target": map[string]any{"parent_locator": "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
+					"target": map[string]any{"parent_locator": "addp-infra://object/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
 						"data_type": "table", "representation": "encoded", "format": "filegdb"},
 					"filegdb_source": commonExecution.FileGDBExportSource{EngineVersion: "8", Binding: binding},
 				},
@@ -641,7 +641,7 @@ func TestNativeTargetScanTargetsIgnoresEncodedMultiObjectTarget(t *testing.T) {
 
 func TestNativeTargetScanTargetsIgnoresEncodedFileTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		ParentLocator: "addp://engine/9/path/exports?type=directory",
+		ParentLocator: "addp://engine/9/path/exports?type=prefix",
 		Name:          "abc.shp",
 	}
 
@@ -776,17 +776,11 @@ func TestAttachEncodedRecordSourceMetaAttributesLoadsProtectionSchema(t *testing
 func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t *testing.T) {
 	const sourceType = "manager-infra-export-source-test"
 	sourcePlugin := &managerInfraExportSourcePlugin{}
-	targetPlugin := &managerInfraExportTargetPlugin{}
-	previousMinIO, previousMinIOErr := engineplugin.Get("minio")
+	targetPlugin := &managerInfraExportArea{}
 	engineplugin.Register(sourcePlugin)
-	engineplugin.Register(targetPlugin)
 	t.Cleanup(func() {
 		engineplugin.Unregister(sourceType)
-		if previousMinIOErr == nil {
-			engineplugin.Register(previousMinIO)
-		} else {
-			engineplugin.Unregister("minio")
-		}
+
 	})
 
 	config := map[string]interface{}{
@@ -796,7 +790,7 @@ func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t 
 			"locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657", "data_type": "unknown", "representation": "native",
 		},
 		"target": map[string]interface{}{
-			"parent_locator": "addp-infra://minio/manager/tenant_7/export/20260902/session-id?type=prefix",
+			"parent_locator": "addp-infra://object/manager/tenant_7/export/20260902/session-id?type=prefix",
 			"name":           "Persons.ejsonl", "data_type": "unknown", "representation": "encoded", "format": "mongodb_extended_jsonl",
 			"policy": map[string]interface{}{"apply_mode": "replace"},
 		},
@@ -833,7 +827,7 @@ func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t 
 	sourceCaps.Storage.Store.EncodedRecordReadSession = &engineplugin.EncodedRecordReadSessionCapability{Formats: []string{"mongodb_extended_jsonl"}}
 	resolver := planner.NewHybridEngineResolver(
 		planner.StaticEngineResolver{11: {Type: sourceType, EngineID: 11, Capabilities: &sourceCaps}},
-		planner.NewInfraEngineResolver(planner.InfraEngineConfig{MinioEndpoint: "test-minio:9000", MinioAccessKey: "test", MinioSecretKey: "test"}),
+		planner.NewInfraEngineResolver(planner.InfraEngineConfig{ObjectArea: targetPlugin}),
 	)
 
 	if err := engineService.executeCommonEncodedRecordExportTask(t.Context(), &task, uint(execution.ID), spec, resolver); err != nil {
@@ -854,7 +848,7 @@ func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t 
 	if !ok {
 		t.Fatalf("metadata.outputs = %#v", stored.Metadata["outputs"])
 	}
-	if outputs["target_locator"] != "addp-infra://minio/manager/tenant_7/export/20260902/session-id/Persons.ejsonl?type=object" {
+	if outputs["target_locator"] != "addp-infra://object/manager/tenant_7/export/20260902/session-id/Persons.ejsonl?type=object" {
 		t.Fatalf("outputs.target_locator = %#v", outputs["target_locator"])
 	}
 	if outputs["row_count"] != float64(1) {
@@ -868,7 +862,7 @@ func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t 
 	if err := json.Unmarshal(lineagePayload, &lineage); err != nil {
 		t.Fatal(err)
 	}
-	if len(lineage.Outputs) != 1 || lineage.Outputs[0].Locator != "addp-infra://minio/manager/tenant_7/export/20260902/session-id/Persons.ejsonl?type=object" {
+	if len(lineage.Outputs) != 1 || lineage.Outputs[0].Locator != "addp-infra://object/manager/tenant_7/export/20260902/session-id/Persons.ejsonl?type=object" {
 		t.Fatalf("lineage outputs = %#v", lineage.Outputs)
 	}
 }
@@ -913,48 +907,9 @@ func (s *managerInfraExportRecordSession) ReadBatch(context.Context, int) (*engi
 }
 func (*managerInfraExportRecordSession) Close(context.Context) error { return nil }
 
-type managerInfraExportTargetPlugin struct {
+type managerInfraExportArea struct {
 	deletedBeforeWrite bool
 	content            []byte
-}
-
-func (*managerInfraExportTargetPlugin) Type() string { return "minio" }
-func (*managerInfraExportTargetPlugin) DisplayName() string {
-	return "Manager infra export target test"
-}
-func (*managerInfraExportTargetPlugin) EngineOrigin() string { return "general" }
-func (*managerInfraExportTargetPlugin) TestConnection(context.Context, engineplugin.ConnectionInfo) error {
-	return nil
-}
-func (*managerInfraExportTargetPlugin) ValidateConnectionInfo(engineplugin.ConnectionInfo) error {
-	return nil
-}
-func (*managerInfraExportTargetPlugin) DefaultPort() int          { return 0 }
-func (*managerInfraExportTargetPlugin) RequiredFields() []string  { return nil }
-func (*managerInfraExportTargetPlugin) SensitiveFields() []string { return nil }
-func (*managerInfraExportTargetPlugin) Capabilities() engineplugin.EngineCapabilities {
-	return engineplugin.NewObjectCapabilities("minio")
-}
-func (*managerInfraExportTargetPlugin) StoreSemantics() engineplugin.StoreSemantics {
-	return engineplugin.StoreSemantics{}
-}
-func (p *managerInfraExportTargetPlugin) DeleteResource(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath) error {
-	p.deletedBeforeWrite = true
-	p.content = nil
-	return nil
-}
-func (p *managerInfraExportTargetPlugin) CreateContent(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath, engineplugin.WriteOptions) (io.WriteCloser, error) {
-	return &managerInfraExportWriter{target: p}, nil
-}
-
-type managerInfraExportWriter struct {
-	bytes.Buffer
-	target *managerInfraExportTargetPlugin
-}
-
-func (w *managerInfraExportWriter) Close() error {
-	w.target.content = append([]byte(nil), w.Bytes()...)
-	return nil
 }
 
 func TestTargetLineageLocatorBuildsCreatedTableIdentity(t *testing.T) {
@@ -967,10 +922,10 @@ func TestTargetLineageLocatorBuildsCreatedTableIdentity(t *testing.T) {
 
 func TestTargetLineageLocatorBuildsInfraObjectIdentity(t *testing.T) {
 	got := targetLineageLocator(
-		"addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix",
+		"addp-infra://object/manager/tenant_1/export/20260902/session-id?type=prefix",
 		"Persons.ejsonl",
 	)
-	want := "addp-infra://minio/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object"
+	want := "addp-infra://object/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object"
 	if got != want {
 		t.Fatalf("targetLineageLocator() = %q, want %q", got, want)
 	}
@@ -1107,4 +1062,30 @@ func newProducedScanTestService(t *testing.T, baseURL, locator string) (*Executi
 		}
 	}
 	return engineService, uint(exec.ID)
+}
+
+func (p *managerInfraExportArea) Put(_ context.Context, _ string, r io.Reader, _ int64, _ string) error {
+	b, err := io.ReadAll(r)
+	p.content = b
+	return err
+}
+func (p *managerInfraExportArea) Delete(context.Context, string) error {
+	p.deletedBeforeWrite = true
+	p.content = nil
+	return nil
+}
+func (p *managerInfraExportArea) Open(context.Context, string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(p.content)), nil
+}
+func (p *managerInfraExportArea) OpenRange(ctx context.Context, key string, _, _ int64) (io.ReadCloser, error) {
+	return p.Open(ctx, key)
+}
+func (p *managerInfraExportArea) Stat(context.Context, string) (*contentio.Stat, error) {
+	if p.content == nil {
+		return nil, contentio.ErrContentNotFound
+	}
+	return &contentio.Stat{Exists: true, Size: int64(len(p.content))}, nil
+}
+func (p *managerInfraExportArea) List(context.Context, string) ([]contentio.Ref, error) {
+	return nil, nil
 }

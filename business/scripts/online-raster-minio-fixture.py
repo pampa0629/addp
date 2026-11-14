@@ -1555,7 +1555,7 @@ def manager_pdf_worker(action, path):
     request = json.loads((root / 'manager-raster-request.json').read_text())
     parsed = urlsplit(request['locator'])
     prefix = f"/manager/tenant_{request['tenant_id']}/document-preview/{request['fingerprint']}/"
-    if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio'
+    if (parsed.scheme != 'addp-infra' or parsed.netloc != 'object'
             or not parsed.path.startswith(prefix) or not parsed.path.endswith('.pdf')
             or parse_qs(parsed.query) != {'type': ['object']}):
         raise FixtureError('Manager PDF output is not owned by this run')
@@ -1900,7 +1900,7 @@ def manager_img_worker(action, path):
         case, srid, transform = matches[0]
         parsed = urlsplit(request['locator'])
         prefix = f"/manager/tenant_{request['tenant_id']}/cog/{request['fingerprint']}/"
-        if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio' or not parsed.path.startswith(prefix)
+        if (parsed.scheme != 'addp-infra' or parsed.netloc != 'object' or not parsed.path.startswith(prefix)
                 or parse_qs(parsed.query) != {'type': ['object']} or not parsed.path.endswith('.cog.tif')):
             raise FixtureError('Manager IMG output is not owned by this run')
         key = unquote(parsed.path.removeprefix('/manager/'))
@@ -1956,7 +1956,7 @@ def manager_tiff_composition_output(action, request, client):
     from urllib.parse import urlsplit, parse_qs, unquote
     parsed = urlsplit(request['locator'])
     prefix = f"/manager/tenant_{request['tenant_id']}/cog/{request['fingerprint']}/"
-    if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio' or not parsed.path.startswith(prefix)
+    if (parsed.scheme != 'addp-infra' or parsed.netloc != 'object' or not parsed.path.startswith(prefix)
             or parse_qs(parsed.query) != {'type': ['object']} or not parsed.path.endswith('.cog.tif')):
         raise FixtureError('TIFF composition COG output is not owned by this run')
     key = unquote(parsed.path.removeprefix('/manager/'))
@@ -2020,7 +2020,7 @@ def manager_worker(action, path):
         request = json.loads((root / 'manager-raster-request.json').read_text())
         parsed = urlsplit(request['locator'])
         prefix = f"/manager/tenant_{request['tenant_id']}/cog/{request['fingerprint']}/"
-        if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio' or not parsed.path.startswith(prefix)
+        if (parsed.scheme != 'addp-infra' or parsed.netloc != 'object' or not parsed.path.startswith(prefix)
                 or parse_qs(parsed.query) != {'type': ['object']} or not parsed.path.endswith('.cog.tif')):
             raise FixtureError('Manager raster output is not owned by this run')
         key = unquote(parsed.path.removeprefix('/manager/'))

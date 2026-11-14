@@ -46,7 +46,7 @@ func TestInfraInspectRequiresTransferTenantServiceBeforeReadingBody(t *testing.T
 	engine := service.NewEngineService(db, nil)
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = system.URL
-	router := SetupRouter(cfg, db, engine, service.NewScanService(db, engine), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
+	router := SetupRouter(cfg, db, engine, service.NewScanService(db, engine), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil))
 	for credential := range contexts {
 		t.Run(credential, func(t *testing.T) {
 			body := &inspectRequestBody{Reader: strings.NewReader(`{"locator":"invalid"}`)}

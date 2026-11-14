@@ -19,6 +19,8 @@ type RawCopyTaskSpec struct {
 }
 
 type RawCopyBuildResult struct {
+	SourceEngine     EngineBinding
+	TargetEngine     EngineBinding
 	SourceEngineType string
 	TargetEngineType string
 	Plan             executor.RawCopyPlan
@@ -90,7 +92,7 @@ func BuildRawCopyPlan(spec RawCopyTaskSpec, resolver EngineResolver) (*RawCopyBu
 		return nil, fmt.Errorf("build raw copy target path: %w", err)
 	}
 	return &RawCopyBuildResult{
-		SourceEngineType: sourceType,
+		SourceEngine: sourceEngine, TargetEngine: targetEngine, SourceEngineType: sourceType,
 		TargetEngineType: targetType,
 		Plan: executor.RawCopyPlan{
 			Source: executor.RawCopyEndpointPlan{

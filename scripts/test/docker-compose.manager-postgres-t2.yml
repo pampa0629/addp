@@ -25,6 +25,29 @@ services:
       interval: 2s
       timeout: 2s
       retries: 60
+  minio:
+    image: ${MANAGER_OBJECT_TEST_IMAGE:-addp-manager-objects-unstarted}
+    build:
+      context: ../infra
+      dockerfile: Dockerfile.minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MANAGER_OBJECT_TEST_USER:-unstarted}
+      MINIO_ROOT_PASSWORD: ${MANAGER_OBJECT_TEST_PASSWORD:-unstarted}
+    labels:
+      addp.test-owner: manager-postgres
+      addp.test-run: ${MANAGER_PG_TEST_OWNER:?owned run required}
+    ports:
+      - "127.0.0.1::9000"
+    tmpfs:
+      - /data
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
 networks:
   default:
     labels:

@@ -470,8 +470,8 @@ func TestExportSessionCleanupPrefixUsesParentLocator(t *testing.T) {
 	t.Parallel()
 
 	session := &models.ExportSession{
-		TargetParentLocator: "addp-infra://minio/manager/tenant_7/export/20260620/session-1?type=prefix",
-		TargetLocator:       "addp-infra://minio/manager/tenant_7/export/20260620/session-1/roads.csv?type=object",
+		TargetParentLocator: "addp-infra://object/manager/tenant_7/export/20260620/session-1?type=prefix",
+		TargetLocator:       "addp-infra://object/manager/tenant_7/export/20260620/session-1/roads.csv?type=object",
 	}
 	got, err := exportartifact.SessionObjectPrefix(session, "manager")
 	if err != nil {
@@ -486,7 +486,7 @@ func TestExportSessionCleanupPrefixRejectsDifferentBucket(t *testing.T) {
 	t.Parallel()
 
 	session := &models.ExportSession{
-		TargetParentLocator: "addp-infra://minio/other/tenant_7/export/20260620/session-1?type=prefix",
+		TargetParentLocator: "addp-infra://object/other/tenant_7/export/20260620/session-1?type=prefix",
 	}
 	if _, err := exportartifact.SessionObjectPrefix(session, "manager"); err == nil {
 		t.Fatal("exportSessionCleanupPrefix() accepted different bucket")

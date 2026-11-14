@@ -24,6 +24,7 @@ import (
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/production"
@@ -38,6 +39,7 @@ import (
 
 // ExecutionEngineService executes Transfer tasks through common engine/format.
 type ExecutionEngineService struct {
+	objectArea           objectstore.ContentArea
 	taskRepo             *repository.TaskRepository
 	syncStateRepo        *repository.SyncStateRepository
 	executionService     *ExecutionService
@@ -404,12 +406,7 @@ func (s *ExecutionEngineService) infraEngineResolver() *planner.InfraEngineResol
 	if s == nil || s.cfg == nil {
 		return nil
 	}
-	return planner.NewInfraEngineResolver(planner.InfraEngineConfig{
-		MinioEndpoint:  s.cfg.BuiltinMinioEndpoint,
-		MinioAccessKey: s.cfg.BuiltinMinioAccessKey,
-		MinioSecretKey: s.cfg.BuiltinMinioSecretKey,
-		MinioUseSSL:    s.cfg.BuiltinMinioUseSSL,
-	})
+	return planner.NewInfraEngineResolver(planner.InfraEngineConfig{ObjectArea: s.objectArea})
 }
 
 func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(ctx context.Context, task *models.TransferTask, spec *planner.RawCopyTaskSpec) error {
@@ -542,12 +539,15 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	}
 	buildResult.Plan.ProgressCallback = s.tableProgressCallback(task, executionID)
 
-	tableExecutor, err := executor.NewTableTransferExecutor(
-		buildResult.SourceEngineType,
-		buildResult.TargetEngineType,
-		buildResult.Plan.Source.Format,
-		buildResult.Plan.Target.Format,
-	)
+	sourceProvider, err := buildResult.SourceEngine.Provider()
+	if err != nil {
+		return nil, nil, err
+	}
+	targetProvider, err := buildResult.TargetEngine.Provider()
+	if err != nil {
+		return nil, nil, err
+	}
+	tableExecutor, err := executor.NewTableTransferExecutorWithProviders(sourceProvider, targetProvider, buildResult.Plan.Source.Format, buildResult.Plan.Target.Format)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create common table transfer executor: %w", err)
 	}
@@ -1088,7 +1088,15 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	}
 	buildResult.Plan.ProgressCallback = s.rawCopyProgressCallback(task, executionID)
 
-	rawCopyExecutor, err := executor.NewRawCopyExecutor(buildResult.SourceEngineType, buildResult.TargetEngineType)
+	sourceProvider, err := buildResult.SourceEngine.Provider()
+	if err != nil {
+		return err
+	}
+	targetProvider, err := buildResult.TargetEngine.Provider()
+	if err != nil {
+		return err
+	}
+	rawCopyExecutor, err := executor.NewRawCopyExecutorWithProviders(sourceProvider, targetProvider)
 	if err != nil {
 		wrapped := fmt.Errorf("create common raw copy executor: %w", err)
 		s.updateExecutionError(ctx, task, executionID, wrapped)
@@ -1143,7 +1151,15 @@ func (s *ExecutionEngineService) executeCommonEncodedRecordExportTask(ctx contex
 		return wrapped
 	}
 
-	recordExecutor, err := executor.NewEncodedRecordExportExecutor(buildResult.SourceEngineType, buildResult.TargetEngineType)
+	sourceProvider, err := buildResult.SourceEngine.Provider()
+	if err != nil {
+		return err
+	}
+	targetProvider, err := buildResult.TargetEngine.Provider()
+	if err != nil {
+		return err
+	}
+	recordExecutor, err := executor.NewEncodedRecordExportExecutorWithProviders(sourceProvider, targetProvider)
 	if err != nil {
 		wrapped := fmt.Errorf("create encoded record export executor: %w", err)
 		s.updateExecutionError(ctx, task, executionID, wrapped)
@@ -1788,3 +1804,5 @@ func (s *ExecutionEngineService) verifyInfraImportSource(ctx context.Context, cu
 	}
 	return result, nil
 }
+
+func (s *ExecutionEngineService) SetObjectArea(area objectstore.ContentArea) { s.objectArea = area }

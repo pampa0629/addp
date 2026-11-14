@@ -2,10 +2,10 @@ package planner
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/resourcetree"
 )
 
@@ -19,21 +19,14 @@ type InfraLocator struct {
 }
 
 func (l *InfraLocator) ToURI() string {
-	if l == nil || strings.TrimSpace(l.Kind) == "" || strings.TrimSpace(l.Namespace) == "" || l.Type == "" {
+	if l == nil || l.Kind != "object" {
 		return ""
 	}
-	parts := make([]string, 0, len(l.Path)+1)
-	parts = append(parts, strings.TrimSpace(l.Namespace))
-	parts = append(parts, l.Path...)
-	locator := &url.URL{
-		Scheme: infraLocatorScheme,
-		Host:   strings.TrimSpace(l.Kind),
-		Path:   "/" + strings.Join(parts, "/"),
+	value, err := (objectstore.Ref{Area: l.Namespace, Key: strings.Join(l.Path, "/"), Type: string(l.Type)}).URI()
+	if err != nil {
+		return ""
 	}
-	query := locator.Query()
-	query.Set("type", string(l.Type))
-	locator.RawQuery = query.Encode()
-	return locator.String()
+	return value
 }
 
 func (l *InfraLocator) Child(name string, resourceType resourcetree.ResourceType) (*InfraLocator, error) {
@@ -65,46 +58,11 @@ func IsInfraLocatorURI(value string) bool {
 }
 
 func ParseInfraLocatorURI(value string) (*InfraLocator, error) {
-	parsed, err := url.Parse(strings.TrimSpace(value))
+	ref, err := objectstore.Parse(value)
 	if err != nil {
-		return nil, fmt.Errorf("invalid infra locator: %w", err)
+		return nil, err
 	}
-	if parsed.Scheme != infraLocatorScheme {
-		return nil, fmt.Errorf("invalid infra locator scheme: expected %q, got %q", infraLocatorScheme, parsed.Scheme)
-	}
-
-	kind := strings.TrimSpace(parsed.Host)
-	if kind == "" {
-		return nil, fmt.Errorf("infra locator kind is required")
-	}
-
-	rawParts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	parts := make([]string, 0, len(rawParts))
-	for _, part := range rawParts {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		decoded, err := url.PathUnescape(part)
-		if err != nil {
-			return nil, fmt.Errorf("decode infra locator path segment %q: %w", part, err)
-		}
-		parts = append(parts, decoded)
-	}
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("infra locator namespace is required")
-	}
-
-	resourceType := resourcetree.ResourceType(parsed.Query().Get("type"))
-	if resourceType == "" {
-		return nil, fmt.Errorf("infra locator type is required")
-	}
-
-	return &InfraLocator{
-		Kind:      kind,
-		Namespace: parts[0],
-		Path:      parts[1:],
-		Type:      resourceType,
-	}, nil
+	return &InfraLocator{Kind: "object", Namespace: ref.Area, Path: strings.Split(ref.Key, "/"), Type: resourcetree.ResourceType(ref.Type)}, nil
 }
 
 func (l *InfraLocator) EngineRef() EngineRef {
@@ -119,29 +77,29 @@ func (l *InfraLocator) EngineCatalogPath() (engineplugin.EngineCatalogPath, erro
 		return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra locator is required")
 	}
 	switch strings.ToLower(strings.TrimSpace(l.Kind)) {
-	case "minio":
-		return l.minioCatalogPath()
+	case "object":
+		return l.objectCatalogPath()
 	default:
 		return engineplugin.EngineCatalogPath{}, fmt.Errorf("unsupported infra kind %q", l.Kind)
 	}
 }
 
-func (l *InfraLocator) minioCatalogPath() (engineplugin.EngineCatalogPath, error) {
-	bucket := strings.TrimSpace(l.Namespace)
-	if bucket == "" {
-		return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra minio locator bucket is required")
+func (l *InfraLocator) objectCatalogPath() (engineplugin.EngineCatalogPath, error) {
+	area := strings.TrimSpace(l.Namespace)
+	if area == "" {
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra object locator area is required")
 	}
 	objectPath := strings.Join(l.Path, "/")
 	switch l.Type {
 	case resourcetree.TypeObject:
 		if strings.TrimSpace(objectPath) == "" {
-			return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra minio object locator path is required")
+			return engineplugin.EngineCatalogPath{}, fmt.Errorf("infra object locator path is required")
 		}
-		return engineplugin.ObjectItemPath(0, bucket, objectPath), nil
-	case resourcetree.TypePrefix, resourcetree.TypeDirectory:
-		return engineplugin.ObjectDirectoryPath(0, bucket, objectPath), nil
+		return engineplugin.ObjectItemPath(0, area, objectPath), nil
+	case resourcetree.TypePrefix:
+		return engineplugin.ObjectDirectoryPath(0, area, objectPath), nil
 	default:
-		return engineplugin.EngineCatalogPath{}, fmt.Errorf("unsupported infra minio locator type %q", l.Type)
+		return engineplugin.EngineCatalogPath{}, fmt.Errorf("unsupported infra object locator type %q", l.Type)
 	}
 }
 

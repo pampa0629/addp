@@ -17,6 +17,8 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/events"
+	"github.com/addp/common/infra/objectstore"
+	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
@@ -325,6 +327,13 @@ func main() {
 	tileCacheTaskSvc.SetTileCacheCleaner(spatialPreviewService)
 	var registration *commonClient.ModuleRegistrationLifecycle
 	embeddingTaskScheduler := service.NewEmbeddingTaskScheduler(embeddingTaskSvc)
+	areaCtx, cancelArea := context.WithTimeout(context.Background(), 30*time.Second)
+	managerArea, err := objectbootstrap.OpenContentArea(areaCtx, objectstore.Manager)
+	cancelArea()
+	if err != nil {
+		log.Fatalf("bind Manager object area: %v", err)
+	}
+	managerContent := managerArea
 	cleanupSvc := service.NewCleanupService(
 		db,
 		searchService,
@@ -343,7 +352,7 @@ func main() {
 		pointCloudCOPCTaskSvc,
 		pptxPDFTaskSvc,
 		exportSessionRepo,
-		minioClient,
+		managerContent,
 		minioBucket,
 		service.ExportCleanupOptions{
 			SuccessRetention: cfg.ExportCleanup.SuccessRetention,
@@ -373,7 +382,7 @@ func main() {
 	// 初始化数据导入服务（Shapefile → business-postgres）
 	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, serviceTokenSource)
 	importService := service.NewImportService(
-		minioClient,
+		managerContent,
 		minioBucket,
 		transferClient,
 		vectorMaterializedViewTaskSvc,
@@ -388,7 +397,7 @@ func main() {
 		systemClient,
 		transferClient,
 		exportSessionRepo,
-		minioClient,
+		managerContent,
 		minioBucket,
 	)
 	exportService.SetFileGDBAuthorization(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil), transferClient)

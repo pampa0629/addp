@@ -123,7 +123,7 @@ func TestImportSourceProductionRouteRequiresTransferAndPrivateExactBinding(t *te
 		_ = json.NewEncoder(w).Encode(value)
 	}))
 	defer system.Close()
-	store := &apiImportSourceStore{source: client.ManagerImportSource{TenantID: 7, UploaderID: 31, TaskID: 42, SourceLocator: "addp-infra://minio/manager/tenant_7/import/day/upload/roads.shp?type=object"}}
+	store := &apiImportSourceStore{source: client.ManagerImportSource{TenantID: 7, UploaderID: 31, TaskID: 42, SourceLocator: "addp-infra://object/manager/tenant_7/import/day/upload/roads.shp?type=object"}}
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = system.URL
 	router := SetupRouter(NewCleanupResultHandler(nil), cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,

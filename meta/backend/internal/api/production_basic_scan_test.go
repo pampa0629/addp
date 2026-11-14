@@ -32,7 +32,7 @@ func testProductionScanRoute(t *testing.T, depth string) {
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = identity.URL
 	engines := service.NewEngineService(nil, nil)
-	router := SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
+	router := SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil))
 	id := uuid.NewString()
 	base := "/api/v1/meta/runtime/productions/transfer/" + id + "/" + id + "/" + depth + "-scan"
 	for _, tc := range []struct {
@@ -83,7 +83,7 @@ func testProductionScanRoute(t *testing.T, depth string) {
 	user := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer user": {"meta.scan_task.execute"}})
 	defer user.Close()
 	cfg.SystemServiceURL = user.URL
-	router = SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
+	router = SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil))
 	req := httptest.NewRequest(http.MethodPost, base, nil)
 	req.Header.Set("Authorization", "Bearer user")
 	response := httptest.NewRecorder()

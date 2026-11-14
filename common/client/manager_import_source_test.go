@@ -11,7 +11,7 @@ import (
 )
 
 func TestManagerImportSourceClientBindsCurrentExecutionAndRejectsUntrustedResponses(t *testing.T) {
-	request := ManagerImportSourceRequest{ExecutionID: uuid.NewString(), TaskID: 9, PrincipalID: 31, SourceLocator: "addp-infra://minio/manager/tenant_7/import/date/upload/roads.shp?type=object"}
+	request := ManagerImportSourceRequest{ExecutionID: uuid.NewString(), TaskID: 9, PrincipalID: 31, SourceLocator: "addp-infra://object/manager/tenant_7/import/date/upload/roads.shp?type=object"}
 	for _, kind := range []string{"valid", "tenant", "uploader", "task", "locator", "redirect"} {
 		t.Run(kind, func(t *testing.T) {
 			redirected := false

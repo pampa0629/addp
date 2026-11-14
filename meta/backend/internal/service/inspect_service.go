@@ -3,14 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"path"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/infra/objectstore"
+	objectcontent "github.com/addp/common/infra/objectstore/contentadapter"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -20,7 +20,7 @@ import (
 const infraLocatorScheme = "addp-infra"
 
 type InspectService struct {
-	cfg *config.Config
+	provider *objectcontent.Provider
 }
 
 type InspectRequest struct {
@@ -45,8 +45,8 @@ type infraLocator struct {
 	Type      resourcetree.ResourceType
 }
 
-func NewInspectService(cfg *config.Config) *InspectService {
-	return &InspectService{cfg: cfg}
+func NewInspectService(area objectstore.ContentArea) *InspectService {
+	return &InspectService{provider: &objectcontent.Provider{Name: objectstore.Manager, Store: area}}
 }
 
 func (s *InspectService) Inspect(ctx context.Context, tenantID uint, req InspectRequest) (*InspectResult, error) {
@@ -54,42 +54,23 @@ func (s *InspectService) Inspect(ctx context.Context, tenantID uint, req Inspect
 	if err != nil {
 		return nil, err
 	}
-	if loc.Kind != "minio" {
+	if loc.Kind != "object" {
 		return nil, fmt.Errorf("unsupported infra locator kind %q", loc.Kind)
 	}
-	return s.inspectBuiltinMinIO(ctx, tenantID, loc, req)
+	return s.inspectObjectArea(ctx, tenantID, loc, req)
 }
 
-func (s *InspectService) inspectBuiltinMinIO(ctx context.Context, tenantID uint, loc *infraLocator, req InspectRequest) (*InspectResult, error) {
-	if s == nil || s.cfg == nil {
-		return nil, fmt.Errorf("inspect service config is required")
+func (s *InspectService) inspectObjectArea(ctx context.Context, tenantID uint, loc *infraLocator, req InspectRequest) (*InspectResult, error) {
+	if s == nil || s.provider == nil || s.provider.Store == nil {
+		return nil, fmt.Errorf("inspect object area is unavailable")
 	}
-	if strings.TrimSpace(s.cfg.BuiltinMinioEndpoint) == "" {
-		return nil, fmt.Errorf("builtin minio endpoint is required")
-	}
-	enginePlugin, err := plugin.Get("minio")
-	if err != nil {
-		return nil, fmt.Errorf("minio plugin is not registered: %w", err)
-	}
-	contentReader, ok := enginePlugin.(plugin.ContentReadableProvider)
-	if !ok {
-		return nil, fmt.Errorf("minio plugin does not implement ContentReadableProvider")
-	}
-	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
-	if !ok {
-		return nil, fmt.Errorf("minio plugin does not implement EngineCatalogProvider")
-	}
-
-	connInfo := plugin.ConnectionInfo{
-		"endpoint":   s.cfg.BuiltinMinioEndpoint,
-		"access_key": s.cfg.BuiltinMinioAccessKey,
-		"secret_key": s.cfg.BuiltinMinioSecretKey,
-		"use_ssl":    s.cfg.BuiltinMinioUseSSL,
-	}
+	contentReader := s.provider
+	catalogProvider := s.provider
+	connInfo := plugin.ConnectionInfo{}
 	resource := &commonModels.Engine{
 		ID:             0,
-		Name:           "builtin-minio",
-		EngineType:     "minio",
+		Name:           "platform-objects",
+		EngineType:     s.provider.Type(),
 		ConnectionInfo: map[string]interface{}(connInfo),
 		TenantID:       &tenantID,
 	}
@@ -107,11 +88,11 @@ func (s *InspectService) inspectBuiltinMinIO(ctx context.Context, tenantID uint,
 
 func (s *InspectService) refGroupFromInfraObject(ctx context.Context, catalogProvider plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo, loc *infraLocator) (models.ScanRefGroup, error) {
 	if loc == nil || loc.Type != resourcetree.TypeObject {
-		return models.ScanRefGroup{}, fmt.Errorf("inspect locator must be an infra minio object")
+		return models.ScanRefGroup{}, fmt.Errorf("inspect locator must be an platform area object")
 	}
 	objectPath := strings.Join(loc.Path, "/")
 	if strings.TrimSpace(objectPath) == "" {
-		return models.ScanRefGroup{}, fmt.Errorf("infra minio object path is required")
+		return models.ScanRefGroup{}, fmt.Errorf("platform area object path is required")
 	}
 	dir := strings.Trim(path.Dir(objectPath), ".")
 	if dir == "/" {
@@ -200,42 +181,11 @@ func inspectFirstObjectRefGroup(ctx context.Context, resource *commonModels.Engi
 }
 
 func parseInfraLocator(value string) (*infraLocator, error) {
-	parsed, err := url.Parse(strings.TrimSpace(value))
+	ref, err := objectstore.Parse(value)
 	if err != nil {
-		return nil, fmt.Errorf("invalid infra locator: %w", err)
+		return nil, err
 	}
-	if parsed.Scheme != infraLocatorScheme {
-		return nil, fmt.Errorf("invalid infra locator scheme %q", parsed.Scheme)
-	}
-	kind := strings.ToLower(strings.TrimSpace(parsed.Host))
-	if kind == "" {
-		return nil, fmt.Errorf("infra locator kind is required")
-	}
-	rawParts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	parts := make([]string, 0, len(rawParts))
-	for _, part := range rawParts {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		decoded, err := url.PathUnescape(part)
-		if err != nil {
-			return nil, fmt.Errorf("decode infra locator path segment %q: %w", part, err)
-		}
-		parts = append(parts, decoded)
-	}
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("infra locator namespace is required")
-	}
-	locType := resourcetree.ResourceType(parsed.Query().Get("type"))
-	if locType == "" {
-		return nil, fmt.Errorf("infra locator type is required")
-	}
-	return &infraLocator{
-		Kind:      kind,
-		Namespace: parts[0],
-		Path:      parts[1:],
-		Type:      locType,
-	}, nil
+	return &infraLocator{Kind: "object", Namespace: ref.Area, Path: strings.Split(ref.Key, "/"), Type: resourcetree.ResourceType(ref.Type)}, nil
 }
 
 func detectedItemPhysicalPath(item *metaitem.DetectedItem, fallback string) string {

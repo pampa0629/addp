@@ -1,0 +1,20 @@
+package service
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/addp/common/infra/objectstore"
+	objectminio "github.com/addp/common/infra/objectstore/minio"
+	sdk "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+)
+
+func testInfraArea(t *testing.T, endpoint string) objectstore.ContentArea {
+	t.Helper()
+	client, err := sdk.New(strings.TrimPrefix(endpoint, "http://"), &sdk.Options{Creds: credentials.NewStaticV4("test", "test-secret", ""), Region: "us-east-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return objectminio.New(client, "manager")
+}

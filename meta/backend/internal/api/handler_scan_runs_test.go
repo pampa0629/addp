@@ -195,7 +195,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	engine := service.NewEngineService(db, commonclient.NewSystemServiceClient(system.URL, tokens, system.Client()))
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = system.URL
-	router := SetupRouter(cfg, db, engine, service.NewScanService(db, engine), nil, service.NewScanExecutionService(db, nil, engine, nil), nil, nil, modulelifecycle.NewStandalone("meta"))
+	router := SetupRouter(cfg, db, engine, service.NewScanService(db, engine), nil, service.NewScanExecutionService(db, nil, engine, nil), nil, nil, modulelifecycle.NewStandalone("meta"), service.NewInspectService(nil))
 
 	for _, path := range []string{"/api/v1/meta/scan/run/manual", "/api/v1/meta/items/8/refresh"} {
 		for _, value := range []string{`"false-private"`, `1`} {
