@@ -60,7 +60,7 @@ func main() {
 		"db", cfg.PostgresDB)
 
 	// 初始化数据库
-	db, err := repository.InitDB(cfg.DatabaseURL)
+	db, err := repository.InitDB(cfg)
 	if err != nil {
 		logger.L().Error("数据库初始化失败", "error", err)
 		os.Exit(1)

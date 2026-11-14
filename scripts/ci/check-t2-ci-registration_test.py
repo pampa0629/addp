@@ -920,7 +920,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "    'TestExecutionAuthorizationFactsMigrationAgainstPostgres',\n"
                 "    'TestExecutionEventsAgainstPostgres', 'TestExecutionEventRetentionAgainstPostgres',\n"
                 "    'TestExecutionRetentionAssessmentAgainstPostgres', 'TestExecutionLifecycleAgainstPostgres',\n"
-                "    'TestPostgresCleanupProfessionalResultAtomicity',\n"
+                "    'TestBoundConnectionAgainstPostgres', 'TestPostgresCleanupProfessionalResultAtomicity',\n"
                 "    'TestExportExecutionSourceAgainstPostgres',\n"
                 "    'TestProjectionStoreSchemaContractAgainstPostgres',\n"
                 "    'TestTableResultAgainstPostgres', 'TestIntegrationPostgresGraphTargetContract',\n"
@@ -1035,11 +1035,21 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
             "test", "./execution", "-run", "^TestExecutionLifecycleAgainstPostgres$",
             "-count=1", "-v",
         ]
-        self.assertEqual(calls, [expected, [
+        self.assertEqual(calls, [[
+            "test", "./infra/bootstrap", "-run", "^TestBoundConnectionAgainstPostgres$",
+            "-count=1", "-v",
+        ], expected, [
             "test", "./cleanup", "-run", "^TestPostgresCleanupProfessionalResultAtomicity$",
             "-count=1", "-v",
         ]])
         self.assertIn("not the full gate", result.stdout)
+
+    def test_bootstrap_connection_requires_its_exact_postgres_case(self):
+        for outcome in ("missing", "skip", "suffix", "child", "child-skip"):
+            with self.subTest(outcome=outcome):
+                result, _ = self.run_gate_fixture(outcome, affected_test="TestBoundConnectionAgainstPostgres")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Common bootstrap PostgreSQL gate", result.stderr)
 
     def test_cleanup_atomicity_runs_once_with_the_same_dsn_in_full_and_lifecycle_groups(self) -> None:
         for group in ("all", "execution-lifecycle"):

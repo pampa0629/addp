@@ -159,6 +159,18 @@ run_execution_postgres() {
     elif [ "$test_group" = execution-events ]; then
         execution_pattern='^TestExecution(Events|EventRetention)AgainstPostgres$'
     fi
+    if [ "$test_group" != execution-events ]; then
+        (cd "$SOURCE_ROOT/common" && ADDP_INFRA_DATABASE_PROVIDER=postgres \
+            ADDP_TEST_POSTGRES_HOST="$postgres_host" ADDP_TEST_POSTGRES_PORT="$postgres_port" \
+            ADDP_TEST_POSTGRES_USER="$postgres_user" ADDP_TEST_POSTGRES_PASSWORD="$postgres_password" \
+            ADDP_TEST_POSTGRES_DATABASE="$database" ADDP_TEST_POSTGRES_SSLMODE="$postgres_sslmode" \
+            go test ./infra/bootstrap -run '^TestBoundConnectionAgainstPostgres$' -count=1 -v) \
+            2>&1 | tee "$WORK_DIR/bootstrap.log"
+        if grep -q -- '--- SKIP:' "$WORK_DIR/bootstrap.log" || ! grep -q -- '^--- PASS: TestBoundConnectionAgainstPostgres ' "$WORK_DIR/bootstrap.log"; then
+            echo 'Common bootstrap PostgreSQL gate requires the real bound connection test without skips' >&2
+            return 1
+        fi
+    fi
     (cd "$SOURCE_ROOT/common" && ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
         go test ./execution -run "$execution_pattern" -count=1 -v) \
         2>&1 | tee "$WORK_DIR/common-execution-postgres.log"

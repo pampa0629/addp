@@ -8,6 +8,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
 	"gorm.io/gorm"
@@ -17,11 +18,14 @@ func (s *ScanExecutionService) ClaimNextBoundedExecution(ctx context.Context, wo
 	var execution *commonExecution.TaskExecution
 	var lease *commonExecution.Lease
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var err error
-		execution, lease, err = claimEligibleMetaScan(ctx, tx, commonExecution.ClaimOptions{
+		candidate, err := repository.NextScanCandidate(ctx, tx)
+		if err != nil || candidate == nil {
+			return err
+		}
+		execution, lease, err = commonExecution.ClaimPending(ctx, tx, *candidate, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleMeta, TaskType: commonExecution.TaskTypeScan,
 			WorkerID: workerID, LeaseDuration: leaseDuration,
-		})
+		}, nil)
 		if err == nil && execution != nil {
 			err = commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"})
 		}

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanresource"
+	"github.com/addp/meta/internal/scantask"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -125,6 +127,41 @@ func TestProductionBasicScanAgainstPostgres(t *testing.T) {
 	if err := db.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("summary_conflict_rolls_back_claim_and_event", func(t *testing.T) {
+		tx := db.Begin()
+		if tx.Error != nil {
+			t.Fatal(tx.Error)
+		}
+		defer tx.Rollback()
+		if err := tx.AutoMigrate(&models.ScanTask{}); err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		task := models.ScanTask{TenantID: 7, EngineID: 9, Name: "claim rollback"}
+		if err := tx.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		item := scantask.NewTaskExecution(&task, 1, "s3", execution.TriggerTypeManual, execution.ModuleMeta, nil, now)
+		if err := tx.Create(item).Error; err != nil {
+			t.Fatal(err)
+		}
+		svc := NewScanExecutionService(tx, nil, nil, nil)
+		claimed, lease, err := svc.ClaimNextBoundedExecution(t.Context(), "summary-conflict", now, time.Minute)
+		if err == nil || !strings.Contains(err.Error(), "summary no longer matches execution "+item.ExecutionID) || claimed != nil || lease != nil {
+			t.Fatalf("expected summary conflict, got %v, %v, %v", claimed, lease, err)
+		}
+		var stored execution.TaskExecution
+		if err := tx.Where("execution_id = ?", item.ExecutionID).Take(&stored).Error; err != nil {
+			t.Fatal(err)
+		}
+		if stored.Status != execution.ExecutionStatusPending || stored.Attempt != item.Attempt || stored.LeaseToken != nil || stored.StartedAt != nil {
+			t.Fatalf("claim survived rollback: status=%s attempt=%d", stored.Status, stored.Attempt)
+		}
+		var events int64
+		if err := tx.Model(&execution.Event{}).Where("execution_id=? AND kind=?", item.ExecutionID, "started").Count(&events).Error; err != nil || events != 0 {
+			t.Fatalf("started events=%d err=%v", events, err)
+		}
+	})
 	exerciseProductionDeepScan(t, db, true)
 	testProductionBasicScan(t, db, true)
 	tx := db.Begin()

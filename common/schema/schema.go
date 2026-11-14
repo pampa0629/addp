@@ -20,32 +20,7 @@ func Migrate(db *gorm.DB, name string, version int64, apply func(*gorm.DB) error
 	if db == nil || db.Dialector.Name() != "postgres" || !namePattern.MatchString(name) || version < 1 || apply == nil {
 		return fmt.Errorf("invalid PostgreSQL schema migration contract: %q version %d", name, version)
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "addp.schema/"+name).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS " + name).Error; err != nil {
-			return err
-		}
-		table := name + ".startup_schema_revision"
-		if err := tx.Exec("CREATE TABLE IF NOT EXISTS " + table + " (singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton), version BIGINT NOT NULL)").Error; err != nil {
-			return err
-		}
-		var current int64
-		if err := tx.Raw("SELECT COALESCE(MAX(version), 0) FROM " + table).Scan(&current).Error; err != nil {
-			return err
-		}
-		if current > version {
-			return fmt.Errorf("schema %s version %d is newer than this process requires (%d)", name, current, version)
-		}
-		if current == version {
-			return nil
-		}
-		if err := apply(tx); err != nil {
-			return fmt.Errorf("migrate schema %s to %d: %w", name, version, err)
-		}
-		return tx.Exec("INSERT INTO "+table+" (singleton, version) VALUES (TRUE, ?) ON CONFLICT (singleton) DO UPDATE SET version = EXCLUDED.version", version).Error
-	})
+	return migratePostgres(db, name, version, apply)
 }
 
 // Require performs no DDL or data writes. Standalone Workers fail before claiming work.

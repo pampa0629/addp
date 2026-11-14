@@ -119,6 +119,8 @@ ResourceTree 是树展示组件；ResourceTreePicker 是表单级资源选择封
 
 资源选择的默认策略是“先过滤、后禁选”：明确不应出现的资源优先由业务侧通过 `nodeFilter` 排除；只有需要保留上下文时才使用 `selectableFilter` 让节点留在树中但不可提交。
 
+System 和 Meta 的平台数据库在进程启动时通过 `common/infra/bootstrap.OpenDatabase` 装配。它接受 `common/infra/database.Config` 和 GORM 选项，返回可传递事务的 GORM 会话。当前 PG 连接参数转换归 `common/infra/database/postgres`。
+
 共享执行记录和后台心跳的 schema 初始化由 System Backend 独占调用，领域模型及迁移实现仍归 `common/execution`、`common/runtimehealth`。其他 Backend 和 Worker 通过 `common/schema.Require` 只读校验版本；业务 schema 版本由各模块独立声明。数据库连接本身不得隐式触发 Worker 迁移。
 
 ### 不透明查询令牌

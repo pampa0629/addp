@@ -111,6 +111,24 @@ func exerciseProductionDeepScan(t *testing.T, db *gorm.DB, concurrent bool) {
 				t.Fatalf("deep claimed while basic running: %+v %v", blocked, err)
 			}
 			if outcome == "success" {
+				// The blocked dependency is older than this independent scan.
+				other := execution.TaskExecution{TenantID: int(tenant), ExecutionID: uuid.NewString(), Module: execution.ModuleMeta,
+					TaskType: execution.TaskTypeScan, Source: execution.ModuleMeta, TriggerType: execution.TriggerTypeManual,
+					Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded}
+				if err := db.Create(&other).Error; err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					for _, model := range []any{&execution.Event{}, &execution.TaskExecution{}} {
+						if err := db.Where("tenant_id=? AND execution_id=?", tenant, other.ExecutionID).Delete(model).Error; err != nil {
+							t.Error(err)
+						}
+					}
+				})
+				eligible, _, err := svc.ClaimNextBoundedExecution(t.Context(), "eligible-worker", time.Now(), time.Minute)
+				if err != nil || eligible == nil || eligible.ExecutionID != other.ExecutionID {
+					t.Fatalf("blocked deep scan prevented independent claim: %+v %v", eligible, err)
+				}
 				seedAuthorizationFacts(t, db, "schema", "table", engineID)
 			}
 			if err := db.Model(&execution.TaskExecution{}).Where("execution_id=?", basic.ExecutionID).Update("status", outcome).Error; err != nil {

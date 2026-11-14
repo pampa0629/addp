@@ -90,24 +90,3 @@ func (s *ScanExecutionService) checkProductionBasicDependency(ctx context.Contex
 	_, err = s.productionIdentification(ctx, db, basic, uint(run.TenantID), receipt.Reference)
 	return err
 }
-
-// Kept local to Meta: Common continues to own the actual claim and lease.
-func claimEligibleMetaScan(ctx context.Context, tx *gorm.DB, options execution.ClaimOptions) (*execution.TaskExecution, *execution.Lease, error) {
-	var candidate execution.TaskExecution
-	query := tx.Model(&execution.TaskExecution{}).
-		Where("module=? AND task_type=? AND execution_boundary=? AND status=?", execution.ModuleMeta, execution.TaskTypeScan, execution.ExecutionBoundaryBounded, execution.ExecutionStatusPending).
-		Where(`NOT EXISTS (SELECT 1 FROM common.task_executions AS basic
- WHERE basic.execution_id = task_executions.execution_config->>'production_basic_execution_id'
- AND basic.tenant_id = task_executions.tenant_id AND basic.module = 'meta' AND basic.task_type = 'scan'
- AND basic.status IN ('pending','running'))`).
-		Order("created_at ASC, id ASC")
-	if tx.Dialector.Name() == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
-	}
-	if err := query.Take(&candidate).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, nil
-	} else if err != nil {
-		return nil, nil, err
-	}
-	return execution.ClaimPending(ctx, tx, execution.PendingIdentity{ExecutionID: candidate.ExecutionID, TenantID: candidate.TenantID, Module: candidate.Module, TaskType: candidate.TaskType, Source: candidate.Source}, options, nil)
-}

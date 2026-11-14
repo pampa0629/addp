@@ -100,13 +100,11 @@ func claim(ctx context.Context, db *gorm.DB, options ClaimOptions, identity *Pen
 		if identity != nil {
 			query = query.Where("execution_id = ? AND tenant_id = ? AND task_type = ? AND source = ?", identity.ExecutionID, identity.TenantID, identity.TaskType, identity.Source)
 		}
-		if tx.Dialector.Name() == "postgres" {
-			locking := clause.Locking{Strength: "UPDATE"}
-			if identity == nil {
-				locking.Options = "SKIP LOCKED"
-			}
-			query = query.Clauses(locking)
+		locking := clause.Locking{Strength: "UPDATE"}
+		if identity == nil {
+			locking.Options = "SKIP LOCKED"
 		}
+		query = query.Clauses(locking)
 		var candidate TaskExecution
 		result := query.Order("created_at ASC, id ASC").Limit(1).Find(&candidate)
 		if result.Error != nil {
@@ -131,8 +129,8 @@ func claim(ctx context.Context, db *gorm.DB, options ClaimOptions, identity *Pen
 		token := uuid.NewString()
 		expiresAt := now.Add(options.LeaseDuration)
 		update := tx.Session(&gorm.Session{}).Model(&TaskExecution{}).Where("execution_id = ? AND tenant_id = ? AND status = ?", candidate.ExecutionID, candidate.TenantID, ExecutionStatusPending)
-		if notAfter != nil && tx.Dialector.Name() == "postgres" {
-			update = update.Where("clock_timestamp() < ?", *notAfter)
+		if notAfter != nil {
+			update = update.Where("? < ?", leaseClockValue(tx, now), *notAfter)
 		}
 		result = update.Updates(map[string]interface{}{"status": ExecutionStatusRunning, "started_at": now, "updated_at": now, "attempt": gorm.Expr("attempt + 1"), "lease_owner": options.WorkerID, "lease_token": token, "lease_expires_at": expiresAt})
 		if err := requireOwnedRow(result, candidate.ExecutionID, "claim"); err != nil {
@@ -153,19 +151,6 @@ func claim(ctx context.Context, db *gorm.DB, options ClaimOptions, identity *Pen
 		return nil, nil, err
 	}
 	return item, lease, nil
-}
-
-// DatabaseNow is the shared lifecycle clock. PostgreSQL never trusts worker time.
-func DatabaseNow(db *gorm.DB) (time.Time, error) {
-	if db == nil {
-		return time.Time{}, fmt.Errorf("execution database is required")
-	}
-	if db.Dialector.Name() != "postgres" {
-		return time.Now().UTC(), nil
-	}
-	var now time.Time
-	err := db.Session(&gorm.Session{NewDB: true}).Raw("SELECT clock_timestamp()").Scan(&now).Error
-	return now.UTC(), err
 }
 
 func RenewLease(ctx context.Context, db *gorm.DB, lease Lease, duration time.Duration) error {
@@ -227,9 +212,7 @@ func FindExpiredForUpdate(ctx context.Context, tx *gorm.DB, options ExpiredOptio
 	if options.Source != "" {
 		query = query.Where("source = ?", options.Source)
 	}
-	if tx.Dialector.Name() == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
-	}
+	query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 	var items []TaskExecution
 	if err := query.Find(&items).Error; err != nil {
 		return nil, err
@@ -420,9 +403,7 @@ func lockAttempt(ctx context.Context, tx *gorm.DB, lease Lease, expired bool) (*
 		return nil, time.Time{}, fmt.Errorf("execution requires a complete bounded lease")
 	}
 	query := ownedExecution(tx.WithContext(ctx).Session(&gorm.Session{}), lease)
-	if tx.Dialector.Name() == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
+	query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	var item TaskExecution
 	if err := query.First(&item).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -443,22 +424,6 @@ func lockAttempt(ctx context.Context, tx *gorm.DB, lease Lease, expired bool) (*
 
 func ownedExecution(db *gorm.DB, lease Lease) *gorm.DB {
 	return db.Session(&gorm.Session{}).Model(&TaskExecution{}).Where("execution_id = ? AND tenant_id = ? AND execution_boundary = ? AND status = ? AND attempt = ? AND lease_token = ? AND lease_owner = ?", lease.ExecutionID, lease.TenantID, ExecutionBoundaryBounded, ExecutionStatusRunning, lease.Attempt, lease.Token, lease.Owner)
-}
-
-func ownedActiveExecution(db *gorm.DB, lease Lease, now time.Time) *gorm.DB {
-	query := ownedExecution(db, lease)
-	if db.Dialector.Name() == "postgres" {
-		return query.Where("lease_expires_at > clock_timestamp()")
-	}
-	return query.Where("lease_expires_at > ?", now.UTC())
-}
-
-func ownedExpiredExecution(db *gorm.DB, lease Lease, now time.Time) *gorm.DB {
-	query := ownedExecution(db, lease)
-	if db.Dialector.Name() == "postgres" {
-		return query.Where("lease_expires_at <= clock_timestamp()")
-	}
-	return query.Where("lease_expires_at <= ?", now.UTC())
 }
 
 func requireOwnedRow(result *gorm.DB, executionID, operation string) error {

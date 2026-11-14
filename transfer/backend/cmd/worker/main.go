@@ -17,6 +17,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	commonRepo "github.com/addp/common/repository"
@@ -121,7 +122,7 @@ func main() {
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := commonRepo.OpenDatabase(commonRepo.DatabaseConfig{
+	db, err := commonRepo.OpenDatabase(database.Config{
 		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
 		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
 	})

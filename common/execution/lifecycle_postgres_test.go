@@ -71,6 +71,19 @@ func TestExecutionLifecycleAgainstPostgres(t *testing.T) {
 		}
 		return item
 	}
+	t.Run("owner_filter_preserved", func(t *testing.T) {
+		item := fixture(t)
+		scoped := db.Where("execution_id <> ?", item.ExecutionID)
+		claimed, lease, err := ClaimNext(t.Context(), scoped, options(item))
+		if err != nil || claimed != nil || lease != nil || read(t, item.ExecutionID).Status != ExecutionStatusPending {
+			t.Fatalf("ClaimNext lost owner filter: claim=%v lease=%v err=%v", claimed, lease, err)
+		}
+		identity := PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Source: item.Source}
+		claimed, lease, err = ClaimPending(t.Context(), scoped, identity, options(item), nil)
+		if !errors.Is(err, commonapi.ErrConflict) || claimed != nil || lease != nil || read(t, item.ExecutionID).Status != ExecutionStatusPending {
+			t.Fatalf("ClaimPending lost owner filter: claim=%v lease=%v err=%v", claimed, lease, err)
+		}
+	})
 	t.Run("single_claim_and_terminal_clock", func(t *testing.T) {
 		item := fixture(t)
 		// PostgreSQL timestamps have microsecond precision. Compare the stored

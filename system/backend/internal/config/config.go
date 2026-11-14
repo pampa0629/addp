@@ -16,7 +16,6 @@ import (
 type Config struct {
 	Env                         string
 	ServerAddr                  string
-	DatabaseURL                 string
 	EncryptionKey               []byte
 	OAuthUserCodePepper         []byte
 	OAuthPreviousUserCodePepper []byte
@@ -109,7 +108,6 @@ func Load() *Config {
 	cfg := &Config{
 		Env:                         env,
 		ServerAddr:                  serverAddr,
-		DatabaseURL:                 "", // PostgreSQL 不使用此字段
 		EncryptionKey:               encryptionKey,
 		OAuthUserCodePepper:         loadOAuthUserCodePepper(env, "OAUTH_USER_CODE_PEPPER", true),
 		OAuthPreviousUserCodePepper: loadOAuthUserCodePepper(env, "OAUTH_PREVIOUS_USER_CODE_PEPPER", false),

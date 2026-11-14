@@ -4,56 +4,20 @@ import (
 	"fmt"
 	"log"
 
-	"gorm.io/driver/postgres"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
+	"github.com/addp/common/schema"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-
-	commonConfig "github.com/addp/common/config"
-	"github.com/addp/common/schema"
 )
 
-// DatabaseConfig holds database connection configuration
-type DatabaseConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	DBName   string
-	Schema   string // PostgreSQL schema for multi-tenancy
-	SSLMode  string // default: "disable"
-}
-
 // OpenDatabase opens a connection without DDL; safe for Worker startup.
-func OpenDatabase(cfg DatabaseConfig) (*gorm.DB, error) {
-	if cfg.SSLMode == "" {
-		cfg.SSLMode = "disable"
-	}
-
-	// Build DSN
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
-		commonConfig.GetTimezone(),
-	)
-
-	// Add search_path if schema is specified
-	if cfg.Schema != "" {
-		dsn += fmt.Sprintf(" search_path=%s", cfg.Schema)
-	}
-
-	// Connect to database
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
-	}
-
-	return db, nil
+func OpenDatabase(cfg database.Config) (*gorm.DB, error) {
+	return bootstrap.OpenDatabase(cfg, &gorm.Config{Logger: logger.Default.LogMode(logger.Info)})
 }
 
 // InitDatabase is the Backend initialization entry; Workers use OpenDatabase.
-func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
+func InitDatabase(cfg database.Config, models ...interface{}) (*gorm.DB, error) {
 	db, err := OpenDatabase(cfg)
 	if err != nil {
 		return nil, err
@@ -62,7 +26,7 @@ func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
 		return nil, err
 	}
 	if cfg.Schema != "" {
-		if err := db.Exec("CREATE SCHEMA IF NOT EXISTS " + cfg.Schema).Error; err != nil {
+		if err := schema.EnsureNamespace(db, cfg.Schema); err != nil {
 			return nil, err
 		}
 	}
@@ -96,7 +60,7 @@ func InitDatabaseWithConfig(cfg interface {
 	GetDBName() string
 	GetDBSchema() string
 }, models ...interface{}) (*gorm.DB, error) {
-	dbConfig := DatabaseConfig{
+	dbConfig := database.Config{
 		Host:     cfg.GetDBHost(),
 		Port:     cfg.GetDBPort(),
 		User:     cfg.GetDBUser(),

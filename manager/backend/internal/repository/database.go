@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/cleanup"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/infra/database"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
@@ -16,7 +17,7 @@ import (
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Use common repository InitDatabase
 	// Note: Manager needs access to manager, meta, and system schemas
-	dbConfig := commonRepo.DatabaseConfig{
+	dbConfig := database.Config{
 		Host:     cfg.DBHost,
 		Port:     cfg.DBPort,
 		User:     cfg.DBUser,

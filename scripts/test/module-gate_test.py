@@ -39,6 +39,7 @@ COMMON_POSTGRES_SUCCESS_OUTPUT = (
     f"{POSTGRES_OUTPUT_REWRITE_PASS}"
     "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
     "--- PASS: TestExecutionLifecycleAgainstPostgres (0.01s)\n"
+    "--- PASS: TestBoundConnectionAgainstPostgres (0.01s)\n"
     "--- PASS: TestPostgresCleanupProfessionalResultAtomicity (0.01s)\n"
     + "".join(f"--- PASS: {name} (0.01s)\n" for name in GRAPH_POSTGRES_SERVICE_PASSES)
     + "PASS"
@@ -323,8 +324,8 @@ class ModuleGateTest(unittest.TestCase):
     def test_common_postgres_snapshot_selection_and_failure_propagation(self) -> None:
         expected = [["-m", "scripts.test.raster-workflow-capacity-online_test", "--postgres"]]
         for arguments, go_count, selected in (
-            ([], 8, True),
-            (["--test", "all"], 8, True),
+            ([], 9, True),
+            (["--test", "all"], 9, True),
             (["--test", "online-capacity-snapshots"], 0, True),
             (["--test", "query-read-set"], 1, False),
         ):
@@ -345,7 +346,7 @@ class ModuleGateTest(unittest.TestCase):
     def test_common_postgres_group_preserves_full_default_and_scopes_explicitly(self) -> None:
         result, calls = self._run_common_postgres_group([])
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(8, len(calls))
+        self.assertEqual(9, len(calls))
         self.assertIn("TestIntegrationPostgresCatalogPreciseReadOnly", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)", calls[0])
@@ -355,15 +356,16 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("./format/plugins/kml", calls[0])
         self.assertIn("TestIntegrationPostgresKMLWriter", calls[0])
         self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
-        self.assertIn("./execution", calls[1])
-        self.assertEqual("test ./execution -run ^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment|Lifecycle)AgainstPostgres$ -count=1 -v", calls[1])
-        self.assertEqual("test ./cleanup -run ^TestPostgresCleanupProfessionalResultAtomicity$ -count=1 -v", calls[2])
-        self.assertIn("./exportartifact", calls[3])
-        self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[3])
-        self.assertIn("./dataprotection/projectionstore", calls[4])
-        self.assertIn("./dbbridge", calls[5])
-        self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[6])
-        self.assertEqual(GRAPH_POSTGRES_SERVICE_CALL, calls[7])
+        self.assertEqual("test ./infra/bootstrap -run ^TestBoundConnectionAgainstPostgres$ -count=1 -v", calls[1])
+        self.assertIn("./execution", calls[2])
+        self.assertEqual("test ./execution -run ^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment|Lifecycle)AgainstPostgres$ -count=1 -v", calls[2])
+        self.assertEqual("test ./cleanup -run ^TestPostgresCleanupProfessionalResultAtomicity$ -count=1 -v", calls[3])
+        self.assertIn("./exportartifact", calls[4])
+        self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[4])
+        self.assertIn("./dataprotection/projectionstore", calls[5])
+        self.assertIn("./dbbridge", calls[6])
+        self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[7])
+        self.assertEqual(GRAPH_POSTGRES_SERVICE_CALL, calls[8])
 
 
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
@@ -378,7 +380,7 @@ class ModuleGateTest(unittest.TestCase):
         explicit, explicit_calls = self._run_common_postgres_group(["--test", "all"])
         self.assertEqual(0, default.returncode, default.stderr)
         self.assertEqual(0, explicit.returncode, explicit.stderr)
-        self.assertEqual(8, len(explicit_calls))
+        self.assertEqual(9, len(explicit_calls))
         self.assertEqual(default_calls, explicit_calls)
 
     def test_common_postgres_retention_group_is_exactly_scoped(self) -> None:
@@ -390,7 +392,7 @@ class ModuleGateTest(unittest.TestCase):
     def test_common_postgres_retention_requires_marker_and_refuses_skips(self) -> None:
         marker = "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)"
         for arguments, count, error in (
-            ([], 2, "Common execution PostgreSQL gate"),
+            ([], 3, "Common execution PostgreSQL gate"),
             (["--test", "execution-retention"], 1, "Common execution retention gate"),
         ):
             for output in (

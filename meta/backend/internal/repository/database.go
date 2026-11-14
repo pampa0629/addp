@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/cleanup"
 	"github.com/addp/common/schema"
 
+	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
@@ -24,7 +25,7 @@ func InitDatabase(cfg *config.Config, retireCollectionApproval func(*gorm.DB) er
 	}
 
 	// Use common repository InitDatabase
-	dbConfig := commonRepo.DatabaseConfig{
+	dbConfig := database.Config{
 		Host:     cfg.DBHost,
 		Port:     cfg.DBPort,
 		User:     cfg.DBUser,
