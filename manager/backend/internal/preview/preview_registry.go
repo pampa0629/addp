@@ -38,8 +38,10 @@ type PreviewRequest struct {
 	// CheckTableSchema validates live native-table facts before reading rows.
 	// The HTTP owner binds local protection; providers do not own its rules.
 	CheckTableSchema func([]datatype.FieldInfo) error
-	Locator          string
-	Engine           *models.Engine
+	// CheckNativeTableRead binds the current User source check for admitted native tables.
+	CheckNativeTableRead func(context.Context, plugin.EngineCatalogPath) error
+	Locator              string
+	Engine               *models.Engine
 	// EnginePlugin is resolved for this concrete Engine Instance. Database
 	// previews must use it instead of looking up a plugin by engine type.
 	EnginePlugin    plugin.EnginePlugin

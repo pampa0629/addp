@@ -584,3 +584,73 @@ var _ plugin.EngineCatalogModelProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.EngineCatalogFactsProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.BatchReadableProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.TableReadSessionProvider = (*recordingDatabasePreviewPlugin)(nil)
+
+func TestNativeReadOnlyPreviewChecksSourceBeforeFactsAndBeforeRows(t *testing.T) {
+	for _, engineType := range []string{"gaussdb", "starrocks"} {
+		for _, mode := range []string{"missing", "denied", "unavailable", "revoked", "allowed"} {
+			t.Run(engineType+"/"+mode, func(t *testing.T) {
+				count := int64(1)
+				reader := &recordingDatabasePreviewPlugin{engineType: engineType,
+					catalogFacts: &plugin.EngineCatalogFacts{Table: &datatype.TableInfo{RowCount: &count,
+						Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}}}},
+					batchData: &plugin.BatchData{Rows: []map[string]interface{}{{"id": int64(1)}}}}
+				previous, previousErr := plugin.Get(engineType)
+				plugin.Register(reader)
+				defer func() {
+					if previousErr == nil {
+						plugin.Register(previous)
+					} else {
+						plugin.Unregister(engineType)
+					}
+				}()
+				path := plugin.TabularItemPath(8, "schema", "business", "source")
+				req := &PreviewRequest{Engine: &models.Engine{ID: 8, EngineType: engineType}, EnginePlugin: reader,
+					Schema: "business", Table: "source", ProviderPath: path, Page: 1, PageSize: 20}
+				calls := 0
+				denied := errors.New("source read denied")
+				unavailable := errors.New("source checker unavailable")
+				if mode != "missing" {
+					req.CheckNativeTableRead = func(_ context.Context, actual plugin.EngineCatalogPath) error {
+						calls++
+						if !reflect.DeepEqual(actual, path) {
+							t.Fatal("source check changed the exact table")
+						}
+						if calls == 1 && len(reader.describePaths) != 0 {
+							t.Fatal("source facts read before authorization")
+						}
+						if len(reader.readBatchCalls) != 0 {
+							t.Fatal("rows read before authorization")
+						}
+						if mode == "denied" || mode == "revoked" && calls == 2 {
+							return denied
+						}
+						if mode == "unavailable" {
+							return unavailable
+						}
+						return nil
+					}
+				}
+				result, err := (&DatabaseTablePreviewProvider{}).Preview(context.Background(), req)
+				if mode == "allowed" {
+					if err != nil || result == nil || len(result.Rows) != 1 || calls != 2 || len(reader.readBatchCalls) != 1 {
+						t.Fatalf("allowed preview: result=%#v err=%v checks=%d reads=%d", result, err, calls, len(reader.readBatchCalls))
+					}
+					return
+				}
+				want := denied
+				if mode == "missing" {
+					want = ErrSourceAuthorizationRequired
+				}
+				if mode == "unavailable" {
+					want = unavailable
+				}
+				if result != nil || !errors.Is(err, want) || len(reader.readBatchCalls) != 0 {
+					t.Fatalf("denied preview returned data: result=%#v err=%v reads=%d", result, err, len(reader.readBatchCalls))
+				}
+				if mode != "revoked" && len(reader.describePaths) != 0 {
+					t.Fatal("denied preview read source statistics or schema")
+				}
+			})
+		}
+	}
+}

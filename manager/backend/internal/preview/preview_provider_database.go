@@ -50,6 +50,17 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if plug == nil {
 		return nil, fmt.Errorf("resolved engine provider is required for database table preview")
 	}
+	// These admitted ordinary-table providers use their native read route.
+	// Unlike PostgreSQL, that route does not call executePrepared.
+	checkNativeRead := plug.Type() == "gaussdb" || plug.Type() == "starrocks"
+	if checkNativeRead {
+		if req.CheckNativeTableRead == nil {
+			return nil, ErrSourceAuthorizationRequired
+		}
+		if err := req.CheckNativeTableRead(ctx, req.ProviderPath); err != nil {
+			return nil, err
+		}
+	}
 	if plug.Type() == "postgresql" && req.executePrepared == nil {
 		return nil, ErrSourceAuthorizationRequired
 	}
@@ -152,6 +163,12 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	limit := pageSize
 	if total == nil {
 		limit++
+	}
+
+	if checkNativeRead {
+		if err := req.CheckNativeTableRead(ctx, req.ProviderPath); err != nil {
+			return nil, err
+		}
 	}
 
 	// 6. 执行分页查询

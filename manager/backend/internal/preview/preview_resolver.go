@@ -124,6 +124,7 @@ type PreviewResolverRequest struct {
 	TrajectorySelection     *models.TrajectorySelection
 	CheckTrajectoryRead     func() error
 	CheckWholeContainerRead func(context.Context, plugin.EngineCatalogPath) error
+	CheckNativeTableRead    func(context.Context, plugin.EngineCatalogPath) error
 	CheckTableSchema        func([]datatype.FieldInfo) error
 	Locator                 *resourcetree.ResourceLocator // 资源定位符
 	Engine                  *commonModels.Engine          // 引擎信息
@@ -731,32 +732,33 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 	}
 
 	return &PreviewRequest{
-		Locator:             req.Locator.ToURI(),
-		KeyValueOptions:     req.KeyValueOptions,
-		TrajectorySelection: req.TrajectorySelection,
-		CheckTrajectoryRead: req.CheckTrajectoryRead,
-		CheckTableSchema:    req.CheckTableSchema,
-		Engine:              managerEngine,
-		EnginePlugin:        plug,
-		Schema:              schema,
-		Table:               table,
-		Page:                page,
-		PageSize:            pageSize,
-		TenantID:            req.TenantID,
-		ItemFingerprint:     req.ItemFingerprint,
-		ItemType:            req.ItemType,
-		ItemRowCount:        req.ItemRowCount,
-		ScannedDepth:        req.scannedDepth(),
-		NodeType:            string(req.Locator.Type),
-		ProviderPath:        providerPath,
-		PhysicalPath:        req.PhysicalPath,
-		ScopePath:           req.ScopePath,
-		ChildName:           req.ChildName,
-		RefPath:             req.RefPath,
-		NestedChildPath:     req.NestedChildPath,
-		GraphSample:         req.GraphSample.Clone(),
-		DataScope:           req.DataScope,
-		Attributes:          req.MetadataAttributes(),
+		Locator:              req.Locator.ToURI(),
+		KeyValueOptions:      req.KeyValueOptions,
+		TrajectorySelection:  req.TrajectorySelection,
+		CheckTrajectoryRead:  req.CheckTrajectoryRead,
+		CheckTableSchema:     req.CheckTableSchema,
+		CheckNativeTableRead: req.CheckNativeTableRead,
+		Engine:               managerEngine,
+		EnginePlugin:         plug,
+		Schema:               schema,
+		Table:                table,
+		Page:                 page,
+		PageSize:             pageSize,
+		TenantID:             req.TenantID,
+		ItemFingerprint:      req.ItemFingerprint,
+		ItemType:             req.ItemType,
+		ItemRowCount:         req.ItemRowCount,
+		ScannedDepth:         req.scannedDepth(),
+		NodeType:             string(req.Locator.Type),
+		ProviderPath:         providerPath,
+		PhysicalPath:         req.PhysicalPath,
+		ScopePath:            req.ScopePath,
+		ChildName:            req.ChildName,
+		RefPath:              req.RefPath,
+		NestedChildPath:      req.NestedChildPath,
+		GraphSample:          req.GraphSample.Clone(),
+		DataScope:            req.DataScope,
+		Attributes:           req.MetadataAttributes(),
 	}, nil
 }
 

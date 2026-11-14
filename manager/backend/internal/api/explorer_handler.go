@@ -253,6 +253,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			}
 			return h.previewSourceChecker.ObserveCurrentSourceRead(ctx, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), []plugin.EngineCatalogPath{root})
 		}
+		req.CheckNativeTableRead = req.CheckWholeContainerRead
 		checker := h.previewSourceChecker
 		if req.Engine.EngineType == "postgresql" {
 			checker = managerprotection.PreviewSourceCheckFunc(func(ctx context.Context, credential string, paths []plugin.EngineCatalogPath) error {
