@@ -1184,6 +1184,11 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 	@python3 -m unittest scripts/test/transfer-continuous-events-online_test.py scripts/test/continuous-execution-faults_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-hosted-continuous-gate_test.py scripts/test/online-engine-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-meta-scan-claim-online-runner
+test-meta-scan-claim-online-runner: ## 验证单次 Meta 扫描 Hosted 租约与事件证据
+	@bash -n scripts/test/online-hosted-meta-scan-gate.sh
+	@python3 -m unittest scripts/test/meta-scan-claim-online_test.py
+
 .PHONY: test-pg-authorization-online-runner
 test-pg-authorization-online-runner: test-online-registration-unit test-online-dispatcher-unit ## 验证 PG 源授权 Online 场景、隔离和清理
 	@python3 -m unittest scripts/test/metadata-refresh-scope-online_test.py
@@ -1214,7 +1219,7 @@ test-online-registration-unit:
 
 .NOTPARALLEL: test-catalog-domain-online-runner test-execution-online-ci-runner test-graph-online-runner test-manager-online-runner test-online-runner test-raster-online-runner test-security-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-node-metrics-online-runner test-transfer-online-runner test-highgo-online-runner test-platform-administrator-online-runner
 
-test-online-runner: test-ontology-online-runner test-opengauss-online-runner test-execution-retention-online-runner test-execution-events-pagination-runner test-catalog-domain-online-runner test-workflow-runtime-health-online-runner test-sql-pool-online-runner test-starrocks-online-runner test-ftp-online-runner test-common-gaussdb-unit test-security-online-runner test-highgo-online-runner test-pg-authorization-online-runner test-transfer-continuous-online-runner test-transfer-online-runner test-node-metrics-online-runner test-platform-administrator-online-runner test-hdfs-online-runner test-raster-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-elasticsearch-online-runner test-orchestrator-online-runner test-manager-online-runner test-quality-online-runner test-online-dispatcher-unit test-online-registration-unit ## 运行 Online 分发器和预检器的确定性测试
+test-online-runner: test-meta-scan-claim-online-runner test-ontology-online-runner test-opengauss-online-runner test-execution-retention-online-runner test-execution-events-pagination-runner test-catalog-domain-online-runner test-workflow-runtime-health-online-runner test-sql-pool-online-runner test-starrocks-online-runner test-ftp-online-runner test-common-gaussdb-unit test-security-online-runner test-highgo-online-runner test-pg-authorization-online-runner test-transfer-continuous-online-runner test-transfer-online-runner test-node-metrics-online-runner test-platform-administrator-online-runner test-hdfs-online-runner test-raster-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-elasticsearch-online-runner test-orchestrator-online-runner test-manager-online-runner test-quality-online-runner test-online-dispatcher-unit test-online-registration-unit ## 运行 Online 分发器和预检器的确定性测试
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
