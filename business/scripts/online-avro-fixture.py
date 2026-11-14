@@ -231,9 +231,9 @@ def worker(request):
             plain = [name for name in expected_types if name not in TIMESTAMPS]
             assert table.select(plain).to_pylist() == [{name:value[name] for name in plain} for value in expected_rows], 'output_values'
             physical_schema = pq.ParquetFile(io.BytesIO(raw)).schema
-            for name, (unit, _, _) in TIMESTAMPS.items():
-                assert table[name].cast(pa.int64()).to_pylist() == [value[name] for value in expected_rows], 'output_ticks'
-                column = physical_schema.column(table.column_names.index(name))
+            for field_name, (unit, _, _) in TIMESTAMPS.items():
+                assert table[field_name].cast(pa.int64()).to_pylist() == [value[field_name] for value in expected_rows], 'output_ticks'
+                column = physical_schema.column(table.column_names.index(field_name))
                 logical = json.loads(column.logical_type.to_json())
                 assert column.physical_type == 'INT64' and logical.get('Type') == 'Timestamp' and logical.get('isAdjustedToUTC') is True, 'output_temporal_annotation'
                 assert logical.get('timeUnit') == {'ms':'milliseconds','us':'microseconds','ns':'nanoseconds'}[unit], 'output_temporal_annotation'

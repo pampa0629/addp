@@ -1,4 +1,6 @@
 """Exercise the table fixture's physical oracle with actual Arrow and Parquet."""
+import base64
+import hashlib
 import importlib.util
 import io
 from pathlib import Path
@@ -75,6 +77,12 @@ def test_hosted_avro_actual_parquet_oracle_and_cleanup(avro_physical):
     write_outputs()
     proof = FIXTURE.worker(dict(request, action='verify'))
     assert proof['sources_unchanged'] and len(proof['outputs']) == 6
+    expected = [f'avro-output/from-{storage}-{codec}.parquet' for storage in ('minio', 'nfs') for codec in FIXTURE.CODECS]
+    assert [entry['object'] for entry in proof['outputs']] == expected
+    for entry in proof['outputs']:
+        raw = base64.b64decode(entry['content_base64'], validate=True)
+        assert raw == objects[entry['object']]
+        assert entry['sha256'] == hashlib.sha256(raw).hexdigest()
     assert all(p['all_values_and_nulls_verified'] and p['size_bytes'] > 0 for p in proof['outputs'])
     assert FIXTURE.worker(dict(request, action='delete')) == {'objects_removed': True, 'files_removed': True, 'outputs_removed': True}
     assert not objects and not (Path(request['nfs_root']) / 'avro').exists()
