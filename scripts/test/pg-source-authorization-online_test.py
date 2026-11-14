@@ -3373,6 +3373,63 @@ class PGPersistentNodeScopeTest(unittest.TestCase):
 
 
 class ManagerPGWireContractTest(unittest.TestCase):
+    def test_runtime_login_uses_only_the_formal_tenant_selector(self):
+        original = ONLINE.API.GatewayClient('http://127.0.0.1:8000', '', 10)
+        identity = {'principal': {'type': 'service_principal', 'id': '99'},
+                    'client': {'client_id': 'addp-manager'},
+                    'context': {'type': 'tenant', 'tenant_id': '3'},
+                    'authorization': {'role_assignments': [
+                        {'scope': {'type': 'tenant', 'tenant_id': '3'},
+                         'permissions': ['system.manager_pg_read_check.execute']}]}}
+        runtime = Mock()
+        runtime.request.return_value.payload = identity
+        calls = []
+        def oauth(method, path, expected, **kwargs):
+            calls.append((method, path, expected, kwargs))
+            form = parse_qs(kwargs['encoded_body'].decode())
+            # The formal OAuth Tenant Context selector accepts tenant_id alone.
+            self.assertEqual(form, {'grant_type': ['client_credentials'], 'audience': ['addp.api'],
+                                    'scope': ['addp.api'], 'tenant_id': ['3']})
+            return SimpleNamespace(payload={'access_token': 'addp_sat_runtime', 'token_type': 'Bearer'})
+        with patch.dict(ONLINE.os.environ, {'MANAGER_SERVICE_CLIENT_SECRET': 'fixture-secret'}), \
+             patch.object(original, 'request', side_effect=oauth), \
+             patch.object(ONLINE.API, 'GatewayClient', return_value=runtime) as create:
+            self.assertEqual(ONLINE.manager_pg_runtime(original, 3), (runtime, '99'))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:3], ('POST', '/api/v1/system/oauth/token', (200,)))
+        self.assertEqual(calls[0][3]['content_type'], 'application/x-www-form-urlencoded')
+        self.assertEqual(calls[0][3]['authorization_header'],
+                         'Basic ' + ONLINE.base64.b64encode(b'addp-manager:fixture-secret').decode())
+        create.assert_called_once_with(original.base_url, 'addp_sat_runtime', original.timeout)
+        runtime.request.assert_called_once_with('GET', '/api/v1/system/auth/context', (200,))
+        self.assertEqual(original.token, '')
+
+    def test_runtime_login_rejects_wrong_machine_tenant_or_permission_without_retry(self):
+        identity = {'principal': {'type': 'service_principal', 'id': '99'},
+                    'client': {'client_id': 'addp-manager'},
+                    'context': {'type': 'tenant', 'tenant_id': '3'},
+                    'authorization': {'role_assignments': [
+                        {'scope': {'type': 'tenant', 'tenant_id': '3'},
+                         'permissions': ['system.manager_pg_read_check.execute']}]}}
+        for change in ('principal', 'client', 'tenant', 'context', 'role_scope', 'permission', 'transport'):
+            with self.subTest(change=change):
+                current = deepcopy(identity)
+                if change == 'principal': current['principal']['type'] = 'user'
+                if change == 'client': current['client']['client_id'] = 'addp-meta'
+                if change == 'tenant': current['context']['tenant_id'] = '4'
+                if change == 'context': current['context']['type'] = 'platform'
+                if change == 'role_scope': current['authorization']['role_assignments'][0]['scope']['tenant_id'] = '4'
+                if change == 'permission': current['authorization']['role_assignments'][0]['permissions'] = []
+                original, runtime = Mock(), Mock()
+                original.request.return_value.payload = {'access_token': 'addp_sat_runtime', 'token_type': 'Bearer'}
+                runtime.request.return_value.payload = current
+                if change == 'transport': original.request.side_effect = ONLINE.SuiteError('token request failed')
+                with patch.dict(ONLINE.os.environ, {'MANAGER_SERVICE_CLIENT_SECRET': 'fixture-secret'}), \
+                     patch.object(ONLINE.API, 'GatewayClient', return_value=runtime):
+                    with self.assertRaises(ONLINE.SuiteError): ONLINE.manager_pg_runtime(original, 3)
+                self.assertEqual(original.request.call_count, 1)
+                self.assertEqual(runtime.request.call_count, 0 if change == 'transport' else 1)
+
     def test_handoff_uses_machine_transport_and_complete_frozen_sources(self):
         user=SimpleNamespace(token='addp_at_original')
         runtime=Mock()

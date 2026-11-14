@@ -1881,7 +1881,7 @@ def manager_pg_runtime(login, tenant):
     basic = base64.b64encode(('addp-manager:' + secret).encode()).decode()
     payload = login.request('POST', '/api/v1/system/oauth/token', (200,),
                             encoded_body=urlencode({'grant_type': 'client_credentials', 'audience': 'addp.api',
-                                                    'scope': 'addp.api', 'context_type': 'tenant',
+                                                    'scope': 'addp.api',
                                                     'tenant_id': str(tenant)}).encode(),
                             content_type='application/x-www-form-urlencoded',
                             authorization_header='Basic ' + basic).payload
