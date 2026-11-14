@@ -1890,6 +1890,11 @@ class PGReadLoadTest(unittest.TestCase):
         self.assertEqual(evidence['profile'], 'full')
         self.assertTrue(evidence['audit_observer_enabled'])
         self.assertTrue(evidence['audit_observation']['connection_closed'])
+        control = evidence['outsider_control']
+        self.assertEqual(set(control), {'started_unix_ns', 'finished_unix_ns', 'status'})
+        self.assertEqual(control['status'], 403)
+        self.assertLessEqual(control['started_unix_ns'], control['finished_unix_ns'])
+        self.assertEqual(sum(not reader for reader, _ in self.reads), 1)
         self.assertEqual([(cell['mode'], cell['concurrency_limit']) for cell in evidence['cells']],
             [('single_target', 1), ('single_target', 5), ('single_target', 10),
              ('two_target_batch', 1), ('two_target_batch', 5), ('two_target_batch', 10), ('two_target_separate', 1)])
@@ -2028,12 +2033,15 @@ class PGReadLoadTest(unittest.TestCase):
 class PGLoadAuditWindowTest(unittest.TestCase):
     def fixture(self):
         start = datetime(2026, 10, 22, tzinfo=timezone.utc).timestamp() * 1000000000
-        result = {'cells': [{'rounds': [{'http_attempted_count': count,
+        result = {'outsider_control': {'started_unix_ns': start - 20000000,
+            'finished_unix_ns': start - 10000000, 'status': 403}, 'cells': [{'rounds': [{'http_attempted_count': count,
             'requests': [{'started_unix_ns': start + offset, 'finished_unix_ns': start + offset + 10000000}]}]}
             for count, offset in ((2, 0), (1, 20000000))]}
-        audits = [{'id': index, 'request_id': str(ONLINE.uuid.uuid4()), 'created_at':
+        audits = [{'id': index, 'request_id': str(ONLINE.uuid.uuid4()), 'http_status': 200, 'created_at':
             datetime.fromtimestamp((start + offset) / 1000000000, timezone.utc).isoformat()}
             for index, offset in enumerate((1000000, 2000000, 21000000))]
+        audits.append({'id': 99, 'request_id': str(ONLINE.uuid.uuid4()), 'http_status': 403,
+            'created_at': datetime.fromtimestamp((start - 19000000) / 1000000000, timezone.utc).isoformat()})
         return result, audits
 
     def test_commit_order_is_not_individual_request_order(self):
@@ -2041,6 +2049,25 @@ class PGLoadAuditWindowTest(unittest.TestCase):
         ONLINE.verify_load_audit_windows(result, list(reversed(audits)))
         self.assertEqual(result['audit_correlation'], 'cell_time_windows_only_not_individual_requests')
         self.assertNotIn('request_id', result['cells'][0]['rounds'][0]['requests'][0])
+        self.assertEqual(result['outsider_control']['audit_id'], 99)
+        self.assertEqual(result['outsider_control']['request_id'], audits[-1]['request_id'])
+
+    def test_denied_control_is_unique_bound_and_never_hides_extra_audits(self):
+        for fault in ('missing_control', 'control_allowed', 'control_outside', 'extra_denied',
+                      'sample_denied', 'unknown_control_status', 'control_window_overlap'):
+            with self.subTest(fault=fault):
+                result, audits = self.fixture()
+                if fault == 'missing_control': audits.pop()
+                elif fault == 'control_allowed': audits[-1]['http_status'] = 200
+                elif fault == 'control_outside': audits[-1]['created_at'] = '2026-10-21T23:59:59+00:00'
+                elif fault == 'extra_denied':
+                    audits.append(dict(audits[-1], id=100, request_id=str(ONLINE.uuid.uuid4())))
+                elif fault == 'sample_denied': audits[0]['http_status'] = 403
+                elif fault == 'unknown_control_status': result['outsider_control']['status'] = 500
+                else:
+                    result['outsider_control']['finished_unix_ns'] = result['cells'][0]['rounds'][0]['requests'][0]['finished_unix_ns']
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.verify_load_audit_windows(result, audits)
 
     def test_missing_duplicate_or_outside_audits_fail_closed(self):
         for fault in ('missing', 'duplicate_request', 'duplicate_id', 'outside', 'timezone'):
@@ -2062,7 +2089,7 @@ class PGLoadAuditWindowTest(unittest.TestCase):
     def test_observation_phase_keeps_separate_file_and_bounded_query(self):
         load = ONLINE.AuditLatencyObservation({}, '33', phase='load')
         serial = ONLINE.AuditLatencyObservation({}, '33')
-        self.assertEqual((load.file, load.audit_limit), ('pg-load-waits.jsonl', 2641))
+        self.assertEqual((load.file, load.audit_limit), ('pg-load-waits.jsonl', 2642))
         self.assertEqual((serial.file, serial.audit_limit), ('pg-audit-waits.jsonl', 1531))
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.AuditLatencyObservation({}, '33', phase='arbitrary')

@@ -237,7 +237,8 @@ class AuditLatencyObservation:
         require(re.fullmatch(r'[1-9][0-9]*', principal) is not None, 'invalid audit observation principal')
         require(phase in {'serial', 'load'}, 'invalid audit observation phase')
         self.file = 'pg-audit-waits.jsonl' if phase == 'serial' else 'pg-load-waits.jsonl'
-        self.audit_limit = 1531 if phase == 'serial' else LOAD_ROUNDS * (LOAD_SAMPLES + LOAD_WARMUPS) * 8 + 1
+        # Sampling, one denied control, and one extra row to detect overflow.
+        self.audit_limit = 1531 if phase == 'serial' else LOAD_ROUNDS * (LOAD_SAMPLES + LOAD_WARMUPS) * 8 + 2
         self.principal = principal
         self.process = self.thread = self.stream = None
         self.stop = threading.Event()
@@ -400,7 +401,7 @@ class AuditLatencyObservation:
             self.sample()
             # Only metadata for this fixture principal, exact route and window.
             self.evidence['audit_rows'] = self.query(f"""SELECT COALESCE(json_agg(row_to_json(s)), '[]'::json) FROM (
-                SELECT id,request_id,created_at,(details->>'duration_ms')::bigint AS pre_audit_ms FROM system.audit_logs
+                SELECT id,request_id,created_at,http_status,(details->>'duration_ms')::bigint AS pre_audit_ms FROM system.audit_logs
                 WHERE principal_id={self.principal} AND event_name='http.request.completed'
                 AND http_method='POST' AND resource_path='{READ_CHECK}' AND created_at>='{self.started}'::timestamptz
                 ORDER BY id LIMIT {self.audit_limit}) s;""")
@@ -430,25 +431,37 @@ def bind_audit_requests(requests, audits):
 
 def verify_load_audit_windows(result, audits):
     expected = sum(row['http_attempted_count'] for cell in result['cells'] for row in cell['rounds'])
-    require(len(audits) == expected and len({row['request_id'] for row in audits}) == expected
-            and len({row['id'] for row in audits}) == expected,
+    require(len(audits) == expected + 1 and len({row['request_id'] for row in audits}) == expected + 1
+            and len({row['id'] for row in audits}) == expected + 1,
             'read load audit count or identity differs')
-    matched = set()
+    timed = []
+    for audit in audits:
+        stamp = datetime.fromisoformat(audit['created_at'].replace('Z', '+00:00'))
+        require(stamp.tzinfo is not None and re.fullmatch('[a-f0-9-]{36}', audit['request_id']) is not None,
+                'invalid read load audit metadata')
+        timed.append((audit, stamp.timestamp() * 1000000000))
+    control = result['outsider_control']
+    require(control['status'] == 403 and control['started_unix_ns'] <= control['finished_unix_ns'],
+            'invalid read load denied control')
+    denied = [audit for audit, stamp in timed if control['started_unix_ns'] - 1000000
+              <= stamp <= control['finished_unix_ns'] + 1000000]
+    require(len(denied) == 1 and denied[0]['http_status'] == 403,
+            'read load denied control audit differs')
+    matched = {denied[0]['id']}
     for cell in result['cells']:
         requests = [row for round_ in cell['rounds'] for row in round_['requests']]
         start = min(row['started_unix_ns'] for row in requests) - 1000000
         end = max(row['finished_unix_ns'] for row in requests) + 1000000
         selected = []
-        for audit in audits:
-            stamp = datetime.fromisoformat(audit['created_at'].replace('Z', '+00:00'))
-            require(stamp.tzinfo is not None and re.fullmatch('[a-f0-9-]{36}', audit['request_id']) is not None,
-                    'invalid read load audit metadata')
-            if start <= stamp.timestamp() * 1000000000 <= end:
+        for audit, stamp in timed:
+            if start <= stamp <= end:
+                require(audit['http_status'] == 200, 'read load sampled audit was not allowed')
                 selected.append(audit['id'])
         require(len(selected) == sum(row['http_attempted_count'] for row in cell['rounds'])
                 and not matched.intersection(selected), 'read load audit cell window differs')
         matched.update(selected)
-    require(len(matched) == expected, 'read load audit outside measurement windows')
+    require(len(matched) == expected + 1, 'read load audit outside measurement windows')
+    control.update(audit_id=denied[0]['id'], request_id=denied[0]['request_id'])
     result['audit_correlation'] = 'cell_time_windows_only_not_individual_requests'
 
 
@@ -2176,7 +2189,10 @@ class Lifecycle:
         baseline = snapshot()
         targets = [path for path, _, _ in bindings]
         source_map = {json.dumps(path, sort_keys=True): binding for path,binding in zip(targets,pg_read_bindings(targets,[facts for _,facts,_ in bindings]))}
+        control_start = time.time_ns()
         self.require_batch_denied(self.outsider, targets)
+        result['outsider_control'] = {'started_unix_ns': control_start,
+            'finished_unix_ns': time.time_ns(), 'status': 403}
         result['outsider_batch_denied'] = True
         modes = [('single_target', [[targets[0]]])]
         if profile == 'full':
