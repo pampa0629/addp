@@ -104,6 +104,7 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     # GeoPython's Native tests import the same independent physical fixture and
     # scene definitions as Raster T4; changing only those must still run GDAL.
     if any(path in {
+        "business/scripts/online-vector-topology-fixture.py",
         "business/scripts/online-raster-minio-fixture.py",
         "business/scripts/online-raster-capacity-fixture.py",
         "business/scripts/online-raster-contour-fixture.py",

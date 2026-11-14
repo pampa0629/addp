@@ -8346,8 +8346,8 @@ def test_dissolve_t4_two_success_eight_refusals_four_saves_and_ogr(tmp_path,prob
     with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.DISSOLVE_CASE)
 
 
-@pytest.mark.parametrize('problem',[None,'coordinate','identity','order','null','boolean_type','extra_output','source_changed','collection_member','stage_permissions','stage_residual'])
-def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,problem):
+@pytest.mark.parametrize('problem',[None,'observer_uid','coordinate','identity','order','null','boolean_type','extra_output','source_changed','collection_member','stage_permissions','stage_residual'])
+def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,problem,monkeypatch):
     import importlib
     from osgeo import ogr
     f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
@@ -8361,7 +8361,15 @@ def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,pro
                 name=task['params'].pop('target_name');task['params'].pop('target_parent_locator');task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
         return value
     result=execute_workflow(definition());assert result['status']=='success',result
-    native=f.worker('verify',tmp_path,f.DIFFERENCE_CASE);assert native['sources']==seed['sources']
+    if problem=='observer_uid':
+        publisher_uid=tmp_path.stat().st_uid
+        with monkeypatch.context()as observer:
+            observer.setattr(f.os,'getuid',lambda:publisher_uid+1)
+            native=f.worker('verify',tmp_path,f.DIFFERENCE_CASE)
+        assert native['publication_staging']['publisher_uid']==publisher_uid
+        assert native['publication_staging']['observer_uid']==publisher_uid+1
+    else:native=f.worker('verify',tmp_path,f.DIFFERENCE_CASE)
+    assert native['sources']==seed['sources']
     table=native['targets'][f.DIFFERENCE_TARGET];assert table['feature_count']==9
     assert {row['geometry']['type']for row in table['features']}=={'Point','LineString','Polygon','MultiPoint','MultiLineString','MultiPolygon','GeometryCollection'}
     assert table['features'][2]['geometry']['coordinates']==[[[400,0],[401,0]],[[404,0],[406,0]]]
@@ -8369,6 +8377,7 @@ def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,pro
     assert loaded.grade.dtype=='Int64'and loaded.enabled.dtype=='boolean'
     assert loaded.a_key.tolist()==[r['properties']['a_key']for r in f.difference_features('result')]
     assert loaded.geometry.name!='geometry'and 'geometry'in loaded.columns and 'source_id'not in loaded.columns
+    if problem=='observer_uid':return
     if problem is None:
         for spec in f.DIFFERENCE_FAILURES:
             negative_workflow = definition(spec[0])
@@ -11168,8 +11177,8 @@ def test_polygon_adjacency_no_tolerance_and_all_adjacent_pairs():
     assert list(zip(result.source_id_a,result.source_id_b,result.shared_length))==[(0,1,1.),(0,2,1.)]
 
 
-@pytest.mark.parametrize('problem',[None,'coordinate','identity','length','order','field_type','extra_output','source_changed','missing_part','tiny_edge','stage_permissions','stage_residual'])
-def test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr(tmp_path,problem):
+@pytest.mark.parametrize('problem',[None,'observer_uid','coordinate','identity','length','order','field_type','extra_output','source_changed','missing_part','tiny_edge','stage_permissions','stage_residual'])
+def test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr(tmp_path,problem,monkeypatch):
     import importlib
     from osgeo import ogr
     f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
@@ -11183,12 +11192,21 @@ def test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr(tmp_path,p
                 name=task['params'].pop('target_name');task['params'].pop('target_parent_locator');task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
         return value
     result=execute_workflow(definition());assert result['status']=='success',result
-    native=f.worker('verify',tmp_path,f.ADJACENCY_CASE);assert native['sources']==seed['sources']
+    if problem=='observer_uid':
+        publisher_uid=tmp_path.stat().st_uid
+        with monkeypatch.context()as observer:
+            observer.setattr(f.os,'getuid',lambda:publisher_uid+1)
+            native=f.worker('verify',tmp_path,f.ADJACENCY_CASE)
+        assert native['publication_staging']['publisher_uid']==publisher_uid
+        assert native['publication_staging']['observer_uid']==publisher_uid+1
+    else:native=f.worker('verify',tmp_path,f.ADJACENCY_CASE)
+    assert native['sources']==seed['sources']
     table=native['targets'][f.ADJACENCY_TARGET];assert table['feature_count']==5
     assert [row['properties']['shared_length']for row in table['features']]==[2.,2.,8.,3.,2**-40]
     source=get_operator('load')(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path=f.ADJACENCY_SOURCES[0])
     assert source.geometry.name=='source_shape' and source['geometry'].iloc[0]=='business-0'
     assert source.parcel_key.dtype=='Int64' and pd.isna(source.note.iloc[1])
+    if problem=='observer_uid':return
     if problem is None:
         for spec in f.ADJACENCY_FAILURES:
             negative=definition(spec[0]);assert [t['operator']for t in negative['tasks']]==['check_polygon_adjacency','load']

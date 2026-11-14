@@ -826,14 +826,26 @@ def mixed_overlay_worker(action,root,case):
         return result
     if action!='verify':raise FixtureError('unknown mixed fixture action')
     inventory=['.addp-online-owner','outputs',*names]
+    staging_observation=None
     if case in FILE_PUBLICATION_CASES:
         stage=root/'.addp-publication'
-        if stage.is_symlink() or not stage.is_dir() or stage.stat().st_mode & 0o777 != 0o700 or stage.stat().st_uid!=os.getuid() or list(stage.iterdir()):
-            raise FixtureError('file publication staging must be owned, 0700 and empty after publication')
+        # The host entrance verified this root's publisher ownership. The
+        # read-only OGR worker can run under a different container UID.
+        staging_observation={'publisher_uid':root.stat().st_uid,'observer_uid':os.getuid(),
+            'staging_uid':None,'mode':None,'is_directory':False,'is_symlink':stage.is_symlink(),'empty':None}
+        if not staging_observation['is_symlink'] and stage.is_dir():
+            observed=stage.stat()
+            staging_observation.update(is_directory=True,staging_uid=observed.st_uid,mode=observed.st_mode & 0o7777)
+            if observed.st_uid==staging_observation['publisher_uid'] and staging_observation['mode']==0o700:
+                staging_observation['empty']=not any(stage.iterdir())
+        if staging_observation['empty'] is not True:
+            raise FixtureError('file publication staging must be owned, 0700 and empty after publication: '+json.dumps(staging_observation,sort_keys=True))
         inventory.append(stage.name)
     if sorted(p.name for p in root.iterdir())!=sorted(inventory)or sorted(p.name for p in(root/'outputs').iterdir())!=[target]:raise FixtureError('mixed exact inventory differs')
-    return {'sources':{name:digest(root/name)for name in names},'source_tables':{name:verify_mixed_overlay(root/name,kind,case)for name,kind in zip(names,profile['kinds'])},
+    result={'sources':{name:digest(root/name)for name in names},'source_tables':{name:verify_mixed_overlay(root/name,kind,case)for name,kind in zip(names,profile['kinds'])},
         'targets':{target:verify_mixed_overlay(root/'outputs'/target,'result',case)},'exact_inventory_verified':True}
+    if staging_observation is not None:result['publication_staging']=staging_observation
+    return result
 
 
 DIFFERENCE_CASE = 'geometry-difference'

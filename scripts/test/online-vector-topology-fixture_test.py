@@ -226,6 +226,52 @@ class TopologyFixtureTest(unittest.TestCase):
             (secret/'topology-root').unlink(); (secret/'topology-root').symlink_to(secret/'missing')
             with self.assertRaises(m.FixtureError): m.NFSExport('topology', m.command).owned_root(secret, 'topology-1-1')
 
+    def test_file_staging_owner_is_publisher_root_not_container_observer_uid(self):
+        for case in m.FILE_PUBLICATION_CASES:
+            with self.subTest(case=case),tempfile.TemporaryDirectory()as directory:
+                root=Path(directory);(root/'outputs').mkdir();(root/'.addp-online-owner').touch()
+                stage=root/'.addp-publication';stage.mkdir(mode=0o700)
+                profile=m.mixed_fixture_profile(case)
+                for name in profile['sources']:(root/name).write_bytes(b'synthetic source')
+                (root/'outputs'/profile['target']).write_bytes(b'synthetic result')
+                publisher_uid=root.stat().st_uid;observer_uid=publisher_uid+1
+                with patch.object(m.os,'getuid',return_value=observer_uid),patch.object(m,'verify_mixed_overlay',return_value={'verified':True}):
+                    result=m.mixed_overlay_worker('verify',root,case)
+                self.assertTrue(result['exact_inventory_verified'])
+                self.assertEqual(result['publication_staging']['publisher_uid'],publisher_uid)
+                self.assertEqual(result['publication_staging']['observer_uid'],observer_uid)
+                self.assertEqual(result['publication_staging']['staging_uid'],publisher_uid)
+                self.assertEqual(stage.stat().st_mode & 0o777,0o700)
+                self.assertEqual(list(stage.iterdir()),[])
+
+    def test_file_staging_still_refuses_wrong_owner_mode_residual_missing_file_and_link(self):
+        for case in m.FILE_PUBLICATION_CASES:
+            for problem in ['owner','permissions','special_mode','residual','missing','file','symlink']:
+                with self.subTest(case=case,problem=problem),tempfile.TemporaryDirectory()as directory:
+                    root=Path(directory);stage=root/'.addp-publication';stage.mkdir(mode=0o700)
+                    publisher_uid=root.stat().st_uid;observer_uid=publisher_uid+1
+                    if problem=='permissions':stage.chmod(0o755)
+                    elif problem=='special_mode':stage.chmod(0o1700)
+                    elif problem=='residual':(stage/'pending.tmp').write_bytes(b'not published')
+                    elif problem in ['missing','file','symlink']:
+                        stage.rmdir()
+                        if problem=='file':stage.write_bytes(b'not a directory')
+                        elif problem=='symlink':stage.symlink_to(root,target_is_directory=True)
+                    original=Path.stat
+                    def stat(path,*args,**kwargs):
+                        value=original(path,*args,**kwargs)
+                        if path==stage and problem=='owner':
+                            fields=list(value);fields[4]=observer_uid;return os.stat_result(fields)
+                        return value
+                    with patch.object(m.os,'getuid',return_value=observer_uid),patch.object(Path,'stat',stat),patch.object(m,'verify_mixed_overlay')as oracle:
+                        with self.assertRaises(m.FixtureError)as caught:m.mixed_overlay_worker('verify',root,case)
+                        oracle.assert_not_called()
+                    observed=json.loads(str(caught.exception).split(': ',1)[1])
+                    self.assertEqual(observed['publisher_uid'],publisher_uid)
+                    self.assertEqual(observed['observer_uid'],observer_uid)
+                    self.assertIsNot(observed['empty'],True)
+                    if problem=='owner':self.assertEqual(observed['staging_uid'],observer_uid)
+
     def test_runtime_worker_refuses_a_foreign_run_before_execution(self):
         info = {'Config': {'Labels': {'com.addp.online-runtime': m.SUITE, 'com.addp.online-run-id': 'foreign'}, 'Cmd': ['sh','container_entrypoint.sh']}}
         with patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='topology-1-1'), patch.object(m, 'command', return_value=json.dumps([info])) as command:
