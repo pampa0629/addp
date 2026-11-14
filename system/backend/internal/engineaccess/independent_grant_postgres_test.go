@@ -3,12 +3,14 @@ package engineaccess
 import (
 	"context"
 	"errors"
-	"github.com/addp/common/dataitem/authorizationfacts/factstest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
@@ -518,6 +520,89 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			if _, err := service.RevokeGrant(ctx, withdraw); err != nil {
 				t.Fatal(err)
 			}
+		})
+
+		assertIssueCounts := func(t *testing.T, id uuid.UUID, want int64) {
+			t.Helper()
+			var grants, audits int64
+			if err := db.WithContext(ctx).Model(&sourceGrant{}).Where("request_id = ?", id).Count(&grants).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.WithContext(ctx).Table("system.audit_logs").Where("event_name = ? AND entity_id = ?", "system.engine_access_grant.issued", id.String()).Count(&audits).Error; err != nil {
+				t.Fatal(err)
+			}
+			if grants != want || audits != want {
+				t.Fatalf("request %s: grants=%d, issuance audits=%d, want %d each", id, grants, audits, want)
+			}
+		}
+		t.Run("issuance audit failure rolls back grant", func(t *testing.T) {
+			command := input
+			recipient, _ := newUser(t, time.Hour)
+			command.RequestID, command.RecipientID = uuid.New(), recipient.PrincipalID
+			// An empty HTTP correlation ID violates the audit table's CHECK.
+			empty := ""
+			command.Audit.RequestID = &empty
+			_, err := service.CreateIndependentGrant(ctx, command)
+			if !errors.Is(err, commonapi.ErrBadRequest) || !strings.Contains(err.Error(), "audit_logs_request_id_check") {
+				t.Fatalf("expected audit request_id constraint violation, got %v", err)
+			}
+			assertIssueCounts(t, command.RequestID, 0)
+		})
+		t.Run("same request concurrent issuance and conflicting replay", func(t *testing.T) {
+			command := input
+			recipient, _ := newUser(t, time.Hour)
+			command.RequestID, command.RecipientID = uuid.New(), recipient.PrincipalID
+			engine, err := NewRepository(db).engine(ctx, tenantID, command.EngineID, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var arrivals atomic.Int32
+			ready := make(chan struct{})
+			// Both callers must observe empty history before either starts writing.
+			verifier := independentVerifierFunc(func(c context.Context, _ int64, _ engineplugin.EngineCatalogPath) (int64, error) {
+				if arrivals.Add(1) == 2 {
+					close(ready)
+				}
+				select {
+				case <-ready:
+					return engine.Version, nil
+				case <-c.Done():
+					return 0, c.Err()
+				}
+			})
+			concurrent := NewService(NewRepository(db), func(*models.Engine) bool { return true }).WithAuthorizationFactsReader(reader).WithIndependentTargetVerifier(verifier)
+			type outcome struct {
+				grant *SourceGrantView
+				err   error
+			}
+			results := make(chan outcome, 2)
+			for i := 0; i < 2; i++ {
+				go func() {
+					grant, err := concurrent.CreateIndependentGrant(ctx, command)
+					results <- outcome{grant, err}
+				}()
+			}
+			first, second := <-results, <-results
+			for _, result := range []outcome{first, second} {
+				if result.err != nil || result.grant == nil || result.grant.RequestID != command.RequestID || result.grant.GrantedAt.IsZero() {
+					t.Fatalf("request %s: grant=%+v err=%v", command.RequestID, result.grant, result.err)
+				}
+			}
+			if !first.grant.GrantedAt.Equal(second.grant.GrantedAt) {
+				t.Fatalf("different issuance times: %v, %v", first.grant.GrantedAt, second.grant.GrantedAt)
+			}
+			assertIssueCounts(t, command.RequestID, 1)
+
+			changed := command
+			changed.Reason += " (changed)"
+			if _, err := concurrent.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrIndependentGrantConflict) {
+				t.Fatalf("changed command: %v", err)
+			}
+			saved, err := concurrent.repository.findSourceGrant(ctx, command.RequestID)
+			if err != nil || saved.Reason == nil || *saved.Reason != command.Reason {
+				t.Fatalf("original grant after conflict: %+v err=%v", saved, err)
+			}
+			assertIssueCounts(t, command.RequestID, 1)
 		})
 
 		beforeRetry := calls

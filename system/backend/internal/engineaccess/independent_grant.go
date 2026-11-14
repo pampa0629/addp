@@ -195,7 +195,7 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	recipient := &fulfillmentRequest{TenantID: row.TenantID, RecipientType: row.RecipientType, RecipientID: row.RecipientID}
 	err = s.withEngineManagementRecipientScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessGrantCreate, true, recipient,
 		func(tx *Repository, check func() error, subject *lockedFulfillmentRecipient) error {
-			if err := tx.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "engine_access_request|"+row.RequestID.String()).Error; err != nil {
+			if err := tx.lockAccessRequest(ctx, row.RequestID); err != nil {
 				return err
 			}
 			if err := check(); err != nil {

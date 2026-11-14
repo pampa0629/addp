@@ -256,8 +256,7 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 	}
 	// Request before target, everywhere. This also detects reuse across tenants
 	// or targets without allowing their independent locks to race an INSERT.
-	if err := r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
-		"engine_access_request|"+request.RequestID.String()).Error; err != nil {
+	if err := r.lockAccessRequest(ctx, request.RequestID); err != nil {
 		return nil, err
 	}
 	if err := r.lockFulfillmentTarget(ctx, request.TenantID, path); err != nil {

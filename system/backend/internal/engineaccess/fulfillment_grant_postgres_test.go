@@ -218,10 +218,11 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				t.Fatal(tx.Error)
 			}
 			defer tx.Rollback()
-			if err := NewRepository(tx).lockFulfillmentTarget(ctx, actor.TenantID, path); err != nil {
+			repo := NewRepository(tx)
+			if err := repo.lockAccessRequest(ctx, id); err != nil {
 				t.Fatal(err)
 			}
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "engine_access_request|"+id.String()).Error; err != nil {
+			if err := repo.lockFulfillmentTarget(ctx, actor.TenantID, path); err != nil {
 				t.Fatal(err)
 			}
 			if err := tx.Create(&sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}).Error; err != nil {

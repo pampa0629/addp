@@ -246,7 +246,7 @@ func (s *Service) writeAcceptedGrant(ctx context.Context, actor FulfillmentRunti
 		if err != nil {
 			return err
 		}
-		if err := tx.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "engine_access_request|"+id.String()).Error; err != nil {
+		if err := tx.lockAccessRequest(ctx, id); err != nil {
 			return err
 		}
 		if err := tx.lockFulfillmentTarget(ctx, request.TenantID, path); err != nil {
