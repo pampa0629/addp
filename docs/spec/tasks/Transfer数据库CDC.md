@@ -267,6 +267,7 @@ capture supervisor 先在同一事务登记 generation 与对应 provider 子事
 
 - `pause` 只停止目标应用 runtime，Debezium connector 继续捕获并把变化写入 Infra Kafka；正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口。connector、Kafka 或网络故障时，还必须按 provider 独立观测 PostgreSQL slot/WAL、MySQL binlog 保留或 Oracle redo/archive log 容量风险。
 - pause 的无损恢复只在 connector 健康且 committed position 未被 Kafka retention 清除时成立，不是无限期保证。暂停期间必须继续观测 connector 状态、slot/WAL lag、topic 容量和 committed position 的 retention horizon。
+- 暂停／恢复请求只执行控制动作和必要的只读 Connector／源端健康检查，不调用周期观测发布，也不通过控制请求写入健康／失败快照。后台 Capture 采样统一发布当前代次的周期观测，首次创建代次的准备与初始事实仍由 Start 完成。控制检查结束后重新读取当前 generation 及 cleaning／cleanup_failed／stopped 状态；期间仅观测版本推进不阻断控制，代次变化或已进入不可逆停止则拒绝。后台观测继续使用原 generation CAS，禁止跨终态写回，不新增自动重试、锁或版本字段。
 
 #### PostgreSQL 任务源端指标
 

@@ -109,7 +109,10 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 		resource.PostgreSQL.SlotOwned, resource.PostgreSQL.PublicationOwned = true, true
 	}
 	if resource.Status == models.CaptureStatusRunning {
-		if _, err := s.Refresh(ctx, resource); err == nil {
+		if _, _, err := s.probeHealth(ctx, resource); err == nil {
+			if err := s.checkControlGeneration(ctx, resource); err != nil {
+				return nil, err
+			}
 			return resource, nil
 		}
 	}
@@ -180,48 +183,66 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 	return resource, nil
 }
 
-// Pause 只观测 connector；不得暂停捕获。
+// Pause checks health without publishing observations or pausing capture.
 func (s *Supervisor) Pause(ctx context.Context, task *models.TransferTask) error {
-	resource, err := s.store.GetLatest(ctx, task.ID, task.TenantID)
+	resource, err := s.controlResource(ctx, task.ID, task.TenantID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if resource.Status == models.CaptureStatusStopped {
-		return repository.ErrCaptureTerminal
+	if _, _, err := s.probeHealth(ctx, resource); err != nil {
+		return err
 	}
-	_, err = s.Refresh(ctx, resource)
-	return err
+	return s.checkControlGeneration(ctx, resource)
 }
 
 func (s *Supervisor) Resume(ctx context.Context, task *models.TransferTask) error {
-	resource, err := s.store.GetLatest(ctx, task.ID, task.TenantID)
+	resource, err := s.controlResource(ctx, task.ID, task.TenantID)
 	if err != nil {
 		return err
 	}
-	if resource.Status == models.CaptureStatusStopped {
-		return repository.ErrCaptureTerminal
-	}
 	status, err := s.connect.Status(ctx, resource.ConnectorName)
 	if err != nil {
-		s.failConnector(ctx, resource, nil, err)
 		return err
 	}
 	if status.ConnectorState == "PAUSED" {
 		if err := s.connect.Resume(ctx, resource.ConnectorName); err != nil {
-			s.failConnector(ctx, resource, status, err)
 			return err
 		}
 		status, err = s.waitRunning(ctx, resource.ConnectorName)
 		if err != nil {
-			s.failConnector(ctx, resource, status, err)
 			return err
 		}
 	}
-	_, err = s.Refresh(ctx, resource)
-	return err
+	if _, _, err := s.probeHealth(ctx, resource); err != nil {
+		return err
+	}
+	return s.checkControlGeneration(ctx, resource)
+}
+
+func (s *Supervisor) controlResource(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error) {
+	resource, err := s.store.GetLatest(ctx, taskID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	switch resource.Status {
+	case models.CaptureStatusCleaning, models.CaptureStatusCleanupFailed, models.CaptureStatusStopped:
+		return nil, repository.ErrCaptureTerminal
+	}
+	return resource, nil
+}
+
+func (s *Supervisor) checkControlGeneration(ctx context.Context, checked *models.CaptureResource) error {
+	current, err := s.controlResource(ctx, checked.TaskID, checked.TenantID)
+	if err != nil {
+		return err
+	}
+	if current.ID != checked.ID || current.Generation != checked.Generation {
+		return fmt.Errorf("capture generation changed during control")
+	}
+	return nil
 }
 
 func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) (failure error) {
@@ -363,32 +384,17 @@ func (s *Supervisor) Get(ctx context.Context, taskID, tenantID uint) (*models.Ca
 }
 
 func (s *Supervisor) Refresh(ctx context.Context, resource *models.CaptureResource) (*ConnectorStatus, error) {
-	status, err := s.connect.Status(ctx, resource.ConnectorName)
+	status, plan, err := s.probeHealth(ctx, resource)
 	if err != nil {
-		s.failConnector(ctx, resource, nil, err)
-		return nil, err
-	}
-	connectorError := strings.TrimSpace(status.Error)
-	if !connectorHealthy(status) {
-		if connectorError == "" {
-			connectorError = fmt.Sprintf("connector=%s tasks=%v", status.ConnectorState, status.TaskStates)
+		if !connectorHealthy(status) {
+			s.failConnector(ctx, resource, status, err)
+		} else {
+			s.failSource(ctx, resource, status, err)
 		}
-		err := fmt.Errorf("Kafka Connect connector is not healthy: %s", connectorError)
-		s.failConnector(ctx, resource, status, err)
 		return status, err
 	}
-	plan, err := s.plans.ResolveForObservation(ctx, resource)
-	if err != nil {
-		s.failSource(ctx, resource, status, err)
-		return status, err
-	}
-	if err := s.probeSource(ctx, plan, resource); err != nil {
-		s.failSource(ctx, resource, status, err)
-		return status, err
-	}
-	if connectorError == "" {
-		connectorError = ""
-	} else {
+	connectorError := ""
+	if strings.TrimSpace(status.Error) != "" {
 		connectorError = fmt.Sprintf("connector=%s tasks=%v", status.ConnectorState, status.TaskStates)
 	}
 	now := time.Now()
@@ -402,6 +408,30 @@ func (s *Supervisor) Refresh(ctx context.Context, resource *models.CaptureResour
 		return nil, err
 	}
 	return status, nil
+}
+
+// probeHealth shares the same read-only checks between controls and sampling.
+func (s *Supervisor) probeHealth(ctx context.Context, resource *models.CaptureResource) (*ConnectorStatus, *CapturePlan, error) {
+	status, err := s.connect.Status(ctx, resource.ConnectorName)
+	if err != nil {
+		return nil, nil, err
+	}
+	connectorError := strings.TrimSpace(status.Error)
+	if !connectorHealthy(status) {
+		if connectorError == "" {
+			connectorError = fmt.Sprintf("connector=%s tasks=%v", status.ConnectorState, status.TaskStates)
+		}
+		err := fmt.Errorf("Kafka Connect connector is not healthy: %s", connectorError)
+		return status, nil, err
+	}
+	plan, err := s.plans.ResolveForObservation(ctx, resource)
+	if err != nil {
+		return status, nil, err
+	}
+	if err := s.probeSource(ctx, plan, resource); err != nil {
+		return status, plan, err
+	}
+	return status, plan, nil
 }
 
 func (s *Supervisor) observeSource(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource, sampledAt time.Time, fields map[string]interface{}) {

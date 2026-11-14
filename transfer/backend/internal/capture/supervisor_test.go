@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,7 +121,7 @@ func TestCaptureSupervisorRefreshRequiresConnectorAndSourceHealth(t *testing.T) 
 	}
 }
 
-func TestCaptureSupervisorResumeRecordsConnectorFailureFacts(t *testing.T) {
+func TestCaptureSupervisorResumeLeavesFailurePublicationToSampling(t *testing.T) {
 	store := &fakeCaptureStore{resource: &models.CaptureResource{
 		ID: 1, TaskID: 3, TenantID: 2, SourceType: models.CaptureSourcePostgreSQL,
 		SourceEngineID: 12, SourceDatabase: "business", SourceConnectionFingerprint: "fingerprint",
@@ -137,8 +138,176 @@ func TestCaptureSupervisorResumeRecordsConnectorFailureFacts(t *testing.T) {
 	if err := supervisor.Resume(context.Background(), &models.TransferTask{ID: 3, TenantID: 2}); err == nil {
 		t.Fatal("Resume() succeeded with an unhealthy connector")
 	}
+	if store.resource.Status != models.CaptureStatusRunning || store.resource.ResourceVersion != 1 || store.resource.ConnectorStatus != "" {
+		t.Fatalf("Resume() published observations: %+v", store.resource)
+	}
+	if _, err := supervisor.Refresh(context.Background(), store.resource); err == nil {
+		t.Fatal("sampling accepted an unhealthy connector")
+	}
 	if store.resource.Status != models.CaptureStatusFailed || store.resource.ConnectorStatus != "FAILED" {
 		t.Fatalf("resource after connector failure = %+v", store.resource)
+	}
+}
+
+func TestCaptureControlsCheckSourceWithoutPublishing(t *testing.T) {
+	for _, action := range []string{"pause", "resume"} {
+		t.Run(action, func(t *testing.T) {
+			store := &fakeCaptureStore{resource: &models.CaptureResource{
+				ID: 1, TaskID: 3, TenantID: 2, Generation: 1, ConnectorName: "owned",
+				Status: models.CaptureStatusRunning, ResourceVersion: 1,
+			}}
+			source := &fakeSourceResources{probeErr: errors.New("source unavailable")}
+			s, _ := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{}}, &fakeConnectControl{state: "RUNNING"}, &fakeTopicControl{}, source, SupervisorConfig{
+				TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second,
+				StatusPollInterval: time.Millisecond, MonitorInterval: time.Second,
+			}, slog.Default())
+			task := &models.TransferTask{ID: 3, TenantID: 2}
+			control := s.Pause
+			if action == "resume" {
+				control = s.Resume
+			}
+			if err := control(context.Background(), task); !errors.Is(err, source.probeErr) {
+				t.Fatalf("source check = %v", err)
+			}
+			if source.probeCalls != 1 || store.resource.ResourceVersion != 1 || store.resource.Status != models.CaptureStatusRunning {
+				t.Fatalf("control published source health: calls=%d resource=%+v", source.probeCalls, store.resource)
+			}
+			if _, err := s.Refresh(context.Background(), store.resource); !errors.Is(err, source.probeErr) || store.resource.Status != models.CaptureStatusFailed {
+				t.Fatalf("background source failure publication = %v, %+v", err, store.resource)
+			}
+		})
+	}
+}
+
+func TestCaptureControlsRejectStopBeforeConnectorActions(t *testing.T) {
+	for _, status := range []models.CaptureStatus{models.CaptureStatusCleaning, models.CaptureStatusCleanupFailed, models.CaptureStatusStopped} {
+		store := &fakeCaptureStore{resource: &models.CaptureResource{ID: 1, TaskID: 3, TenantID: 2, Status: status}}
+		connect := &fakeConnectControl{state: "PAUSED"}
+		source := &fakeSourceResources{}
+		s, _ := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{}}, connect, &fakeTopicControl{}, source, SupervisorConfig{
+			TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second,
+			StatusPollInterval: time.Millisecond, MonitorInterval: time.Second,
+		}, slog.Default())
+		for _, control := range []func(context.Context, *models.TransferTask) error{s.Pause, s.Resume} {
+			if err := control(context.Background(), &models.TransferTask{ID: 3, TenantID: 2}); !errors.Is(err, repository.ErrCaptureTerminal) {
+				t.Fatalf("control after %s = %v", status, err)
+			}
+		}
+		if source.probeCalls != 0 || connect.resumeCalls != 0 || store.resource.Status != status {
+			t.Fatalf("control touched terminal generation %s", status)
+		}
+	}
+}
+
+// The real repository returns detached snapshots and advances the stored CAS version.
+type controlCaptureStore struct {
+	*fakeCaptureStore
+	mu      sync.Mutex
+	updates int
+}
+
+func (f *controlCaptureStore) GetLatest(ctx context.Context, task, tenant uint) (*models.CaptureResource, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, err := f.fakeCaptureStore.GetLatest(ctx, task, tenant)
+	if err != nil {
+		return nil, err
+	}
+	copy := *r
+	return &copy, nil
+}
+
+func (f *controlCaptureStore) Update(ctx context.Context, id uint, version uint64, fields map[string]interface{}) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updates++
+	if err := f.fakeCaptureStore.Update(ctx, id, version, fields); err != nil {
+		return err
+	}
+	f.resource.ResourceVersion++
+	return nil
+}
+
+type controlProbeKey struct{}
+
+type controlSourceProbe struct {
+	fakeSourceResources
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *controlSourceProbe) Probe(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error {
+	if ctx.Value(controlProbeKey{}) == true {
+		close(s.entered)
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return s.fakeSourceResources.Probe(ctx, plan, resource)
+}
+
+func TestCaptureControlsKeepSamplingCASAndRecheckGeneration(t *testing.T) {
+	for _, action := range []string{"pause", "resume"} {
+		for _, change := range []string{"observation", "cleaning", "cleanup_failed", "stopped", "generation"} {
+			t.Run(action+"/"+change, func(t *testing.T) {
+				store := &controlCaptureStore{fakeCaptureStore: &fakeCaptureStore{resource: &models.CaptureResource{
+					ID: 1, TaskID: 3, TenantID: 2, Generation: 1, SourceType: models.CaptureSourcePostgreSQL,
+					ConnectorName: "owned", Status: models.CaptureStatusRunning, ResourceVersion: 103,
+				}}}
+				source := &controlSourceProbe{entered: make(chan struct{}), release: make(chan struct{})}
+				s, err := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{}}, &fakeConnectControl{state: "RUNNING"}, &fakeTopicControl{}, source, SupervisorConfig{
+					TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second,
+					StatusPollInterval: time.Millisecond, MonitorInterval: time.Second, SourceProbeTimeout: 5 * time.Second,
+				}, slog.Default())
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx := context.WithValue(context.Background(), controlProbeKey{}, true)
+				done := make(chan error, 1)
+				go func() {
+					task := &models.TransferTask{ID: 3, TenantID: 2}
+					if action == "pause" {
+						done <- s.Pause(ctx, task)
+					} else {
+						done <- s.Resume(ctx, task)
+					}
+				}()
+				select {
+				case <-source.entered:
+				case <-time.After(5 * time.Second):
+					t.Fatal("control did not reach its read-only source probe")
+				}
+				// Publish a real Refresh result while the user probe holds version 103.
+				latest, err := store.GetLatest(context.Background(), 3, 2)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.Refresh(context.Background(), latest); err != nil {
+					t.Fatal(err)
+				}
+				store.mu.Lock()
+				if change == "generation" {
+					store.resource.ID++
+					store.resource.Generation++
+				} else if change != "observation" {
+					store.resource.Status = models.CaptureStatus(change)
+					store.resource.ResourceVersion++
+				}
+				store.mu.Unlock()
+				close(source.release)
+				if err := <-done; (err == nil) != (change == "observation") {
+					t.Fatalf("control after %s: %v", change, err)
+				}
+				if store.updates != 1 {
+					t.Fatalf("control competed with the sampling writer: %d writes", store.updates)
+				}
+				if store.resource.HealthObservation == nil || store.resource.ResourceVersion < 104 {
+					t.Fatalf("sampling publication disappeared: %+v", store.resource)
+				}
+			})
+		}
 	}
 }
 
