@@ -350,3 +350,22 @@ System 测试 helper 创建同租户和跨租户身份后，遗漏了 `writeEnvi
 | 浏览器后页修订 | 单一凭据绑定回归先失败，修复后以 Node 24.19.0 在隔离输入通过 25 项 Python。复用共享客户端既有轮换、旧 Token 401、主体或租户变化拒绝回归。只变更两个 Online 脚本／回归文件，输入摘要与提交一致。证据为 `/tmp/addp-event-browser-runner-{red,node24,isolated}.log`、`/tmp/addp-event-browser-validation-source.json`。 |
 
 第三轮通过限定于合成 Meta 执行、Common 真实 lease 写入、Owner 读取及 Console 页面。未覆盖实际扫描 Worker、其他 Owner／专业节点、持续 Worker 并发、重启／故障恢复、规模容量、Owner 释放与消费者引用裁决、180 天概览删除、专业结果期限或生产 T5。原记录中的清单第 327／328／329 行仍为部分实现。持续写入期间的续页与刷新另见[后续 Hosted 尝试](#持续写入期间续页与刷新首次-hosted2026-11-07)。
+
+
+## 2026-11-14 最近执行直达与同次结果回跳（T1／T2／T3）
+
+正式契约先提交于 `f9b3bcba1`，核心实现为 `341f24328`；最终功能与 CI 配置取证源码为 `9cb8b4e8c06313f5213930fd96476ebb07389e0f`。任务行按同 Tenant／Develop／任务类型／任务定义的 `created_at DESC, id DESC` 直达最近受理的 execution，包含 pending／running，不按旧执行完成或领取顺序替换。Monitor 保留通用详情；Develop 结果页仅保留识别摘要、专业结果、日志与冻结输入，返回同 UUID 及原筛选／分页；无监控读取权的菜单不留空项。四个任务读取入口在执行事实查询失败时返回安全 500，确无任务仍为 404；不返回旧缓存或数据库错误。
+
+| 固定源码 Linux 门禁 | 实际结果 |
+| --- | --- |
+| [Develop 前端](https://github.com/pampa0629/addp/actions/runs/43579351187/job/132400529770) | 单测、320 项浏览器回归及构建成功；日志包含两项最小权限菜单用例。 |
+| [Console 前端](https://github.com/pampa0629/addp/actions/runs/43579351187/job/132400529787) | 284 项单测、361 项浏览器回归及构建、整 Job 均成功；日志逐项包含 pending／running／success 的任务→Monitor→结果页→刷新及同次回跳。 |
+| [Monitor 前端](https://github.com/pampa0629/addp/actions/runs/43579351187/job/132400529845) | 154 项单测、863 项浏览器回归及构建成功；新增 403／404／503 读取拒绝均保持原 UUID、不替换为列表中的其他记录。 |
+| [Develop PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43579351144/job/132407503241) | 完整标准门禁通过、无 SKIP；`latest_task_includes_pending_and_running` 明确 PASS，覆盖跨 Tenant／模块／类型排除、无事实清空缓存、旧完成不换记录、相同时间按 ID 裁决。 |
+| [Execution runner](https://github.com/pampa0629/addp/actions/runs/43579351187/job/132400529277) | 207＋19＋28＋158＋35＝447 项 Python 与登记实际通过。 |
+
+[全仓 Go](https://github.com/pampa0629/addp/actions/runs/43579351187/job/132400529500) 中 Develop API／repository／service 包实际通过；作业随后因 Security 的 `go.mod/go.sum` 依赖清单漂移失败，不能记为全仓通过。[Platform consistency](https://github.com/pampa0629/addp/actions/runs/43579351187/job/132400529800) 实际通过 227 项 Trace runner Python、登记与 System 身份夹具 Go，随后在 `test-dev-lifecycle` 因 Security 缺少 MinIO 依赖校验项失败；尚未执行到共享前端与前端 CI 登记检查。因此 `make test-common-frontend` 的 379 项、`make test-frontend-ci-registration` 的 27 项本轮只有本地通过证据，不冒充 Linux 通过。范围外依赖文件未修改。
+
+本轮首个 Linux 白空格前置失败保留，已在 `2542e819c` 删除新增文件尾部空行；该版本 Console 虽完成 361 项回归及构建，仍因整 Job 的 20 分钟上限取消，未记为门禁通过。最终源码只把 Console 整 Job 明确为 30 分钟，Monitor 40 分钟及其他默认 20 分钟不变；正式规范、登记检查和反例测试同次同步，单例断言、并发与真实验收预算均未改动。已被最终源码替代、尚未执行的 `00d01f792` 两组重复作业取消，不计通过；原失败日志保留。
+
+本地最终 `make test-develop-frontend` 320 项及构建通过；Monitor 为完整 860 项加新增三项拒绝专项及构建，最终 Linux 一次执行了全部 863 项。共享工作区 Console 本地为 284＋373 项及构建，包含其他会话的未提交用例；发布快照的 Linux 为上述 284＋361，不混用计数。此次仅为隔离 HTTP 夹具 T3、Go／受控离线 T1 和真实 PG T2；未重启个人服务、未触发 Hosted、未运行新的正式用户真实链路，其他会话改动未纳入提交。下一步先补被平台前置失败阻断的本轮共享前端／登记检查 Linux 实证；新的本机隔离真实窗口仍须单独确认。
