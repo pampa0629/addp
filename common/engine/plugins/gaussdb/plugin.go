@@ -34,13 +34,14 @@ var systemSchemas = []string{
 }
 
 var (
-	_ plugin.ConnectionProbeProvider    = (*Plugin)(nil)
-	_ plugin.EnginePlugin               = (*Plugin)(nil)
-	_ plugin.ConnectionPoolPlugin       = (*Plugin)(nil)
-	_ plugin.EngineCatalogFactsProvider = (*Plugin)(nil)
-	_ plugin.TableReadSessionProvider   = (*Plugin)(nil)
-	_ plugin.QueryReadSessionProvider   = (*Plugin)(nil)
-	_ plugin.SQLQueryRuntimeProvider    = (*Plugin)(nil)
+	_ plugin.ConnectionProbeProvider         = (*Plugin)(nil)
+	_ plugin.EnginePlugin                    = (*Plugin)(nil)
+	_ plugin.ConnectionPoolPlugin            = (*Plugin)(nil)
+	_ plugin.EngineCatalogFactsProvider      = (*Plugin)(nil)
+	_ plugin.TableReadSessionProvider        = (*Plugin)(nil)
+	_ plugin.GuardedTableReadSessionProvider = (*Plugin)(nil)
+	_ plugin.QueryReadSessionProvider        = (*Plugin)(nil)
+	_ plugin.SQLQueryRuntimeProvider         = (*Plugin)(nil)
 )
 
 func init()                            { plugin.Register(&Plugin{}) }
@@ -50,8 +51,9 @@ func (p *Plugin) EngineOrigin() string { return "general" }
 func (p *Plugin) protocol() *postgresql.PostgreSQLPlugin {
 	return postgresql.NewProtocolCompatiblePlugin(postgresql.ProtocolIdentity{
 		EngineType: p.Type(), DisplayName: p.DisplayName(), DriverName: "gaussdb", DefaultPort: p.DefaultPort(), DefaultSSLMode: "disable",
-		CatalogFacts:            p.Capabilities().Storage.Facts,
-		AdditionalSystemSchemas: append([]string(nil), systemSchemas...),
+		CatalogFacts:             p.Capabilities().Storage.Facts,
+		AdditionalSystemSchemas:  append([]string(nil), systemSchemas...),
+		TableReadCatalogCheckSQL: guardedTableCatalogSQL,
 	})
 }
 func (p *Plugin) ConnectionSpec() plugin.ConnectionSpec {
@@ -202,4 +204,8 @@ func (p *Plugin) ReadBatch(ctx context.Context, info plugin.ConnectionInfo, path
 }
 func (p *Plugin) OpenTableReadSession(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	return p.protocol().OpenTableReadSession(ctx, info, path, opts)
+}
+
+func (p *Plugin) OpenGuardedTableReadSession(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+	return p.protocol().OpenGuardedNonSpatialTablePageSession(ctx, info, path, opts, authorize)
 }

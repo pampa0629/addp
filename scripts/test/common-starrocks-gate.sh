@@ -29,7 +29,7 @@ python3 "$ROOT_DIR/business/starrocks/admission.py" start
 export ADDP_STARROCKS_INTEGRATION=1
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/certification/starrocks -run '^TestAdmission' -count=1 -v) 2>&1 | tee "$ARTIFACT_DIR/admission.log"
 ! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/admission.log"
-for required in PreparedReadPrecisionAndLeastPrivilege ValidatedStatementAndNativeTransactionBoundary NativeVisibleCatalogAndFieldFacts NativeDecimalProtocolLengths; do
+for required in PreparedReadPrecisionAndLeastPrivilege ValidatedStatementAndNativeTransactionBoundary NativeVisibleCatalogAndFieldFacts NativeDecimalProtocolLengths PreparedSourceReplacementIsNotBound; do
     grep -q -- "--- PASS: TestAdmission${required} " "$ARTIFACT_DIR/admission.log" || {
         echo "StarRocks admission requires the actual ${required} test" >&2
         exit 1
@@ -52,6 +52,8 @@ Path(sys.argv[1]).write_text(json.dumps({
     'scope': 'native protocol, shared SQL guard, single-statement prepared read and visible catalog',
     'explicit_transaction_prepared_query': False,
     'cross_statement_snapshot': False,
+    'guarded_read_binding': False,
+    'prepared_source_replacement': 'native_reanalysis_reads_replacement_view',
 }, indent=2))
 POLICY
 python3 - "$ARTIFACT_DIR/provider-policy.json" <<'POLICY'

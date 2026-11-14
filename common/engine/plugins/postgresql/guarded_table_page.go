@@ -12,7 +12,7 @@ import (
 
 // The protocol adapter opts into this proof explicitly. It does not inherit
 // PostgreSQL's arbitrary-query or PostGIS certification.
-func proveGuardedNonSpatialTable(ctx context.Context, tx *sql.Tx, path plugin.EngineCatalogPath) (*plugin.QueryReadSet, error) {
+func (p *PostgreSQLPlugin) proveGuardedNonSpatialTable(ctx context.Context, tx *sql.Tx, path plugin.EngineCatalogPath) (*plugin.QueryReadSet, error) {
 	parts := path.Segments
 	if len(parts) != 3 || parts[0] != (plugin.EngineCatalogSegment{Kind: "server", Term: "server"}) ||
 		parts[1].Kind != plugin.EngineCatalogKindNamespace || parts[1].Term != plugin.EngineCatalogTermSchema ||
@@ -32,7 +32,11 @@ func proveGuardedNonSpatialTable(ctx context.Context, tx *sql.Tx, path plugin.En
 		return nil, fmt.Errorf("%w: lock native table: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}
 	var safe bool
-	err = tx.QueryRowContext(ctx, guardedNonSpatialTableSQL, parts[1].Name, parts[2].Name).Scan(&safe)
+	proof := guardedNonSpatialTableSQL
+	if p.identity != nil && p.identity.TableReadCatalogCheckSQL != "" {
+		proof = p.identity.TableReadCatalogCheckSQL
+	}
+	err = tx.QueryRowContext(ctx, proof, parts[1].Name, parts[2].Name).Scan(&safe)
 	if err != nil {
 		return nil, fmt.Errorf("%w: prove locked native table: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}

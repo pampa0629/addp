@@ -41,6 +41,18 @@ func TestGaussDBReadOnlySurface(t *testing.T) {
 }
 func implements[T any](p any) bool { _, ok := p.(T); return ok }
 
+func TestGaussDBGuardedPreviewContract(t *testing.T) {
+	guarded, ok := any(&Plugin{}).(plugin.GuardedTableReadSessionProvider)
+	if !ok {
+		t.Fatal("GaussDB ordinary preview must use the shared guarded table contract")
+	}
+	for _, opts := range []plugin.TableReadSessionOptions{{}, {Page: &plugin.CatalogTablePageOptions{Limit: 1}, Query: "SELECT * FROM source"}} {
+		if session, err := guarded.OpenGuardedTableReadSession(t.Context(), nil, plugin.EngineCatalogPath{}, opts, nil); session != nil || !errors.Is(err, plugin.ErrQueryReadSetUnresolved) {
+			t.Fatalf("unbound page accepted before I/O: %v", err)
+		}
+	}
+}
+
 func TestGaussDBDriverCoexistence(t *testing.T) {
 	if _, present := os.LookupEnv("GOENV_REGIST_ALL"); present {
 		t.Fatal("GOENV_REGIST_ALL must not be required")

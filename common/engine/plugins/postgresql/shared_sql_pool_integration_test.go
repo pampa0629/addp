@@ -88,6 +88,11 @@ func TestIntegrationPostgresSharedSQLPool(t *testing.T) {
 		}
 	})
 	t.Run("native catalog cancellation and recovery", func(t *testing.T) {
+		// The previous canceled native query can discard its physical
+		// connection. Establish a warm one before the SQL-stage deadline.
+		if _, err := run(ctx, 2, next); err != nil {
+			t.Fatalf("prepare acquired catalog SQL control: %v", err)
+		}
 		callbacks := provider.tabularCatalogCallbacks()
 		callbacks.GetTable = func(ctx context.Context, db *gorm.DB, _, name string) (*datatype.TableInfo, error) {
 			var ignored any

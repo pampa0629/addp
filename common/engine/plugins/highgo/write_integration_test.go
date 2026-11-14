@@ -372,7 +372,9 @@ func TestIntegrationHighGoSharedSQLPoolTimeout(t *testing.T) {
 	}
 	const engineID = 987657
 	ctx = plugin.WithPoolEngineVersion(ctx, engineID, 1)
-	info["pool_max_open_conns"], info["pool_max_idle_conns"] = 1, 0
+	// Reuse the connection returned by the queue control before starting the
+	// SQL deadline; a cold authentication timeout is an acquisition result.
+	info["pool_max_open_conns"], info["pool_max_idle_conns"] = 1, 1
 	t.Cleanup(func() {
 		if err := plugin.ClosePool(engineID); err != nil {
 			t.Errorf("close owned pool: %v", err)
@@ -400,6 +402,9 @@ func TestIntegrationHighGoSharedSQLPoolTimeout(t *testing.T) {
 	}
 	if err := borrowed.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if db.Stats().Idle != 1 {
+		t.Fatal("SQL timeout control requires the released warm connection")
 	}
 	query, stop := context.WithTimeout(ctx, 150*time.Millisecond)
 	started := time.Now()

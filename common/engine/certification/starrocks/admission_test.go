@@ -110,6 +110,72 @@ func TestAdmissionGuardRejectsSideEffects(t *testing.T) {
 	}
 }
 
+// This is a negative admission control, not a guarded Provider implementation.
+// Replace a catalog-checked base table with a view before executing its native
+// prepared statement. Distinct values make re-analysis observable without a
+// timing-dependent race or an application permission change.
+func TestAdmissionPreparedSourceReplacementIsNotBound(t *testing.T) {
+	owner := connect(t, false)
+	reader := connect(t, true)
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	const source = "addp_acceptance.binding_probe"
+	const dependency = "addp_acceptance.binding_dependency"
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 15*time.Second)
+		defer stop()
+		for _, statement := range []string{"DROP VIEW IF EXISTS " + source, "DROP TABLE IF EXISTS " + source, "DROP TABLE IF EXISTS " + dependency} {
+			if _, err := owner.ExecContext(cleanup, statement); err != nil {
+				t.Errorf("owned binding fixture cleanup failed: %v", err)
+			}
+		}
+	})
+	for _, statement := range []string{
+		"CREATE TABLE " + source + "(id BIGINT) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1')",
+		"CREATE TABLE " + dependency + "(id BIGINT) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1')",
+		"INSERT INTO " + source + " VALUES (101)",
+		"INSERT INTO " + dependency + " VALUES (777)",
+		"GRANT SELECT ON TABLE " + source + " TO USER fixture_reader",
+		"GRANT SELECT ON TABLE " + dependency + " TO USER fixture_reader",
+	} {
+		if _, err := owner.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conn, err := reader.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var kind string
+	if err := conn.QueryRowContext(ctx, "SELECT table_type FROM information_schema.tables WHERE table_schema='addp_acceptance' AND table_name='binding_probe'").Scan(&kind); err != nil || kind != "BASE TABLE" {
+		t.Fatalf("positive base-table catalog control: %q %v", kind, err)
+	}
+	prepared, err := conn.PrepareContext(ctx, "SELECT id FROM "+source+" WHERE id>=?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	var original int64
+	if err := prepared.QueryRowContext(ctx, int64(0)).Scan(&original); err != nil || original != 101 {
+		t.Fatalf("positive native prepared control: %d %v", original, err)
+	}
+	for _, statement := range []string{
+		"DROP TABLE " + source,
+		"CREATE VIEW " + source + " AS SELECT id FROM " + dependency,
+		"GRANT SELECT ON VIEW " + source + " TO USER fixture_reader",
+	} {
+		if _, err := owner.ExecContext(ctx, statement); err != nil {
+			t.Fatalf("owned source replacement did not complete after PREPARE: %v", err)
+		}
+	}
+	var replacement int64
+	if err := prepared.QueryRowContext(ctx, int64(0)).Scan(&replacement); err != nil || replacement != 777 {
+		t.Fatalf("fixed 3.5.21 prepared source boundary changed; re-audit before claiming a binding: value=%d err=%v", replacement, err)
+	}
+	t.Log("READ_BINDING_NOT_ADMITTED: catalog BASE TABLE and prepared result 101 became a VIEW reading dependency value 777 on the same connection; no native source fence")
+}
+
 func TestAdmissionValidatedStatementAndNativeTransactionBoundary(t *testing.T) {
 	db := connect(t, false)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)

@@ -55,7 +55,11 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
             'ADDP_ONLINE_HOST':'1','ADDP_ONLINE_HOSTED':'1','ONLINE_SUITE_INPUT':'gaussdb-consumer-flow',
             'ADDP_ONLINE_ARTIFACT_DIR':str(self.host.artifacts),'ADDP_ONLINE_SECRET_DIR':str(self.host.secrets),
             'ADDP_TEST_GATE_TRACE':str(self.host.trace),'ADDP_TEST_BACKGROUND_PIDS':str(self.host.background_pids),**overrides}
-        return subprocess.run(['bash','scripts/test/online-hosted-gaussdb-gate.sh']+(['--check-only'] if check else []),cwd=self.host.repository,env=environment,capture_output=True,text=True,timeout=20)
+        try:
+            return subprocess.run(['bash','scripts/test/online-hosted-gaussdb-gate.sh']+(['--check-only'] if check else []),cwd=self.host.repository,env=environment,capture_output=True,text=True,timeout=20)
+        except subprocess.TimeoutExpired as error:
+            trace=self.host.trace.read_text() if self.host.trace.exists() else '(trace not created)'
+            self.fail(f'Hosted GaussDB fixture exceeded its unchanged 20s budget; stage trace:\n{trace}\nstdout={error.stdout!r}\nstderr={error.stderr!r}')
 
     def test_success_registers_two_engines_and_checks_native_then_cleans_everything(self):
         # Override the inherited two-engine case: GaussDB admits only reads.

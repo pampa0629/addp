@@ -727,7 +727,7 @@ func (s *guardedPreviewTestSession) ReadBatch(context.Context, int) (*plugin.Bat
 func (*guardedPreviewTestSession) Close(context.Context) error { return nil }
 
 func TestDatabasePreviewGuardedSourceBinding(t *testing.T) {
-	for _, kind := range []string{"mysql", "highgo", "future-guarded"} {
+	for _, kind := range []string{"mysql", "highgo", "gaussdb", "future-guarded"} {
 		for _, mode := range []string{"allowed", "revoked", "schema-rejected", "wrong-table", "wrong-engine", "extra-source", "missing-proof"} {
 			t.Run(kind+"/"+mode, func(t *testing.T) {
 				path := plugin.TabularItemPath(8, "schema", "business", "base")

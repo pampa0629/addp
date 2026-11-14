@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +35,179 @@ func integrationInfo(t *testing.T) plugin.ConnectionInfo {
 		t.Fatal(err)
 	}
 	return descriptor.Info
+}
+
+func TestIntegrationGaussDBGuardedTablePage(t *testing.T) {
+	info := integrationInfo(t)
+	p := &Plugin{}
+	guarded, ok := any(p).(plugin.GuardedTableReadSessionProvider)
+	if !ok {
+		t.Fatal("native GaussDB guarded preview is not connected")
+	}
+	const engineID = uint(987643)
+	ctx := plugin.WithPoolEngineVersion(t.Context(), engineID, 1)
+	info = maps.Clone(info)
+	info["pool_max_open_conns"], info["pool_max_idle_conns"] = 1, 1
+	t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
+	path := plugin.TabularItemPath(engineID, "schema", "addp_acceptance", "source")
+	opts := plugin.TableReadSessionOptions{Page: &plugin.CatalogTablePageOptions{Limit: 1, Predicate: `"id" = $1`, Args: []any{int64(9007199254740993)}}}
+	checks := 0
+	check := func(_ context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		checks++
+		if set == nil || len(set.Paths) != 1 || !reflect.DeepEqual(set.Paths[0], path) || len(fields) != 4 ||
+			fields[2].Precision != 38 || fields[2].Scale != 18 || !fields[0].PrimaryKey || !fields[1].PrimaryKey {
+			t.Fatalf("native locked source/fields: %#v %#v", set, fields)
+		}
+		return nil
+	}
+	denied := errors.New("current source or live schema denied")
+	if session, err := guarded.OpenGuardedTableReadSession(ctx, info, path, opts, func(c context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		_ = check(c, set, fields)
+		return denied
+	}); session != nil || !errors.Is(err, denied) {
+		t.Fatalf("authorization refusal opened content: %v", err)
+	}
+	// Disagreeing name/id order proves that pagination uses the native
+	// composite key (name,id), not column declaration order (id,name).
+	if _, err := gaussDBFixtureSQL(t, `INSERT INTO addp_acceptance.source VALUES (9007199254740994,'A guarded order',0,NULL);`); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := gaussDBFixtureSQL(t, `DELETE FROM addp_acceptance.source WHERE id=9007199254740994;`); err != nil {
+			t.Error(err)
+		}
+	}()
+	for offset, expected := range []int64{9007199254740994, 2} {
+		page := plugin.TableReadSessionOptions{Page: &plugin.CatalogTablePageOptions{Limit: 1, Offset: int64(offset)}}
+		s, e := guarded.OpenGuardedTableReadSession(ctx, info, path, page, check)
+		if e != nil {
+			t.Fatal(e)
+		}
+		batch, e := s.ReadBatch(ctx, 10)
+		closeErr := s.Close(ctx)
+		if e != nil || closeErr != nil || len(batch.Rows) != 1 || batch.Offset != int64(offset) || fmt.Sprint(batch.Rows[0]["id"]) != fmt.Sprint(expected) {
+			t.Fatalf("native composite-key page %d: %#v read=%v close=%v", offset, batch, e, closeErr)
+		}
+	}
+	if _, err := gaussDBFixtureSQL(t, `DELETE FROM addp_acceptance.source WHERE id=9007199254740994;`); err != nil {
+		t.Fatal(err)
+	}
+	session, err := guarded.OpenGuardedTableReadSession(ctx, info, path, opts, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+	batch, err := session.ReadBatch(ctx, 10)
+	if err != nil || len(batch.Rows) != 1 || fmt.Sprint(batch.Rows[0]["id"]) != "9007199254740993" ||
+		fmt.Sprint(batch.Rows[0]["amount"]) != "12345678901234567890.123456789012345678" || batch.Rows[0]["name"] != "高斯正式接入中文" {
+		t.Fatalf("bounded native page: %#v %v", batch, err)
+	}
+	set, err := session.(plugin.ReadSessionEvidence).ReadSet(ctx)
+	if err != nil || set == nil || len(set.Paths) != 1 || !reflect.DeepEqual(set.Paths[0], path) {
+		t.Fatalf("same-session read evidence: %#v %v", set, err)
+	}
+	// The same owned DDL must fail while the read lock is held, then succeed
+	// after Close. Server statement_timeout prevents leaving a queued ALTER.
+	const alter = `SET statement_timeout=150; ALTER TABLE addp_acceptance.source ADD COLUMN guarded_probe INT;`
+	if _, err := gaussDBFixtureSQL(t, alter); err == nil {
+		t.Fatal("native DDL replaced the authorized schema before session close")
+	}
+	if err := session.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gaussDBFixtureSQL(t, alter+` ALTER TABLE addp_acceptance.source DROP COLUMN guarded_probe;`); err != nil {
+		t.Fatalf("owned DDL control did not recover after close: %v", err)
+	}
+	pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: engineID, EngineType: p.Type(), Version: 1, ConnectionInfo: info}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := pool.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	borrowed, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer borrowed.Close()
+	wait, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	_, err = guarded.OpenGuardedTableReadSession(wait, info, path, opts, check)
+	cancel()
+	if plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeConnectionAcquisitionTimeout || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("native page bypassed shared pool budget: %v", err)
+	}
+	if err := borrowed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	opts.Page.Args = []any{int64(2)}
+	session, err = guarded.OpenGuardedTableReadSession(ctx, info, path, opts, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(context.Background())
+	batch, err = session.ReadBatch(ctx, 1)
+	if err != nil || len(batch.Rows) != 1 || batch.Rows[0]["name"] != "保留尾空格  " || batch.Rows[0]["optional_text"] != nil {
+		t.Fatalf("same-pool recovery lost native values: %#v %v", batch, err)
+	}
+	if err := session.Close(ctx); err != nil || db.Stats().InUse != 0 || db.PingContext(ctx) != nil {
+		t.Fatalf("guarded reader closed or leaked shared pool: %v", err)
+	}
+	if _, err := gaussDBFixtureSQL(t, `CREATE VIEW addp_acceptance.guarded_view AS SELECT * FROM addp_acceptance.source; GRANT SELECT ON addp_acceptance.guarded_view TO fixture_reader;`); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := gaussDBFixtureSQL(t, `DROP VIEW addp_acceptance.guarded_view;`); err != nil {
+			t.Error(err)
+		}
+	}()
+	before := checks
+	view := plugin.TabularItemPath(engineID, "schema", "addp_acceptance", "guarded_view")
+	if s, e := guarded.OpenGuardedTableReadSession(ctx, info, view, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
+		t.Fatalf("view reached guarded authorization: %v", e)
+	}
+	if _, err := gaussDBFixtureSQL(t, `CREATE ROW LEVEL SECURITY POLICY guarded_policy ON addp_acceptance.source USING (id > 0);`); err != nil {
+		t.Fatalf("native RLS control setup: %v", err)
+	}
+	defer func() {
+		if _, err := gaussDBFixtureSQL(t, `DROP ROW LEVEL SECURITY POLICY IF EXISTS guarded_policy ON addp_acceptance.source;`); err != nil {
+			t.Error(err)
+		}
+	}()
+	if s, e := guarded.OpenGuardedTableReadSession(ctx, info, path, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
+		t.Fatalf("native RLS table reached guarded authorization: %v", e)
+	}
+	if _, err := gaussDBFixtureSQL(t, `CREATE TABLE addp_acceptance.guarded_partition(id INT) PARTITION BY RANGE(id) (PARTITION p1 VALUES LESS THAN(100)); GRANT SELECT ON addp_acceptance.guarded_partition TO fixture_reader;`); err != nil {
+		t.Fatalf("native partition control setup: %v", err)
+	}
+	defer func() {
+		if _, err := gaussDBFixtureSQL(t, `DROP TABLE addp_acceptance.guarded_partition;`); err != nil {
+			t.Error(err)
+		}
+	}()
+	partition := plugin.TabularItemPath(engineID, "schema", "addp_acceptance", "guarded_partition")
+	if s, e := guarded.OpenGuardedTableReadSession(ctx, info, partition, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
+		t.Fatalf("native partition table reached guarded authorization: %v", e)
+	}
+}
+
+// Reuse the fixture owner's label-checked local socket operation. No owner
+// password is exported to Go or to the ordinary platform/browser account.
+func gaussDBFixtureSQL(t *testing.T, statement string) (string, error) {
+	t.Helper()
+	script, err := filepath.Abs("../../../../business/scripts/online-gaussdb-consumer-fixture.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(t.Context(), "python3", "-c", `import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('owned_gaussdb_fixture',sys.argv[1])
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+state=json.loads((module.directory()/'gaussdb-state.json').read_text())
+print(module.sql(state,sys.stdin.read()))`, script)
+	command.Stdin = strings.NewReader(statement)
+	returnBytes, err := command.Output()
+	return string(returnBytes), err
 }
 func TestIntegrationGaussDBCatalogAndPreciseValues(t *testing.T) {
 	info := integrationInfo(t)

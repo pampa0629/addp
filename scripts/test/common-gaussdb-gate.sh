@@ -32,4 +32,9 @@ python3 "$ROOT_DIR/business/scripts/online-gaussdb-consumer-fixture.py" start
 export ADDP_GAUSSDB_INTEGRATION=1
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/gaussdb -run '^TestIntegrationGaussDB' -count=1 -v) 2>&1 | tee "$ARTIFACT_DIR/provider.log"
 ! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/provider.log"
-grep -q -- '--- PASS: TestIntegrationGaussDB' "$ARTIFACT_DIR/provider.log"
+for required in CatalogAndPreciseValues PreparedReadAndCancellation GuardedTablePage; do
+  grep -q -- "--- PASS: TestIntegrationGaussDB${required} " "$ARTIFACT_DIR/provider.log" || {
+    echo "GaussDB Provider requires the actual ${required} test" >&2
+    exit 1
+  }
+done

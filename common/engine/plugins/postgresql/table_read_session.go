@@ -30,7 +30,7 @@ func (p *PostgreSQLPlugin) OpenGuardedTableReadSession(ctx context.Context, conn
 }
 
 // OpenGuardedNonSpatialTablePageSession is explicitly forwarded only by
-// independently certified non-spatial protocol plugins (currently HighGo).
+// independently certified non-spatial protocol plugins (HighGo and GaussDB).
 func (p *PostgreSQLPlugin) OpenGuardedNonSpatialTablePageSession(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
 	if authorize == nil || opts.Page == nil || opts.Page.Limit <= 0 || opts.Page.Offset < 0 ||
 		opts.Query != "" || len(opts.Args) != 0 || len(opts.Hints) != 0 {
@@ -115,7 +115,7 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	var readSet *plugin.QueryReadSet
 	if authorize != nil {
 		if opts.Page != nil {
-			readSet, err = proveGuardedNonSpatialTable(ctx, tx, path)
+			readSet, err = p.proveGuardedNonSpatialTable(ctx, tx, path)
 		} else {
 			readSet, err = proveGuardedPostGISTable(ctx, tx, path)
 		}
@@ -227,11 +227,13 @@ func postgresReadSessionQuery(ctx context.Context, db interface {
 		}
 		// Resolve primary-key order in this same locked transaction rather
 		// than trusting an earlier catalog response from another connection.
-		keyRows, err := db.QueryContext(ctx, `SELECT a.attname FROM pg_catalog.pg_index i
-JOIN pg_catalog.pg_class c ON c.oid=i.indrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-CROSS JOIN LATERAL pg_catalog.unnest(i.indkey) WITH ORDINALITY k(attnum,position)
-JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum=k.attnum
-WHERE i.indisprimary AND n.nspname=$1 AND c.relname=$2 ORDER BY k.position`, schema, table)
+		keyRows, err := db.QueryContext(ctx, `SELECT a.attname FROM (
+ SELECT pk.conrelid,pk.conkey,generate_subscripts(pk.conkey,1) AS ord
+ FROM pg_catalog.pg_constraint pk
+ JOIN pg_catalog.pg_class c ON c.oid=pk.conrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+ WHERE pk.contype='p' AND n.nspname=$1 AND c.relname=$2
+) k JOIN pg_catalog.pg_attribute a ON a.attrelid=k.conrelid AND a.attnum=k.conkey[k.ord]
+ORDER BY k.ord`, schema, table)
 		if err != nil {
 			return "", nil, nil, "", err
 		}
