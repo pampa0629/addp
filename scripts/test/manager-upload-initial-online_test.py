@@ -124,7 +124,7 @@ class UploadAcceptanceTest(unittest.TestCase):
                    'ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN': 'outsider', 'ADDP_ONLINE_ARTIFACT_DIR': str(base)}
             with mock.patch.object(SCENE, 'owned_directory', return_value=root), \
                  mock.patch.object(API, 'GatewayClient', side_effect=server.client), \
-                 mock.patch.object(SCENE, 'runtime_client', return_value=server.client('', 'runtime', 30)), \
+                 mock.patch.object(API, 'manager_service_client', return_value=(server.client('', 'runtime', 30), {})), \
                  mock.patch.object(API, 'wait_manager_read_boundary'), \
                  mock.patch.object(SCENE.REFRESH, 'PersistedScanObservation', return_value=server), \
                  mock.patch.object(SCENE.FILES, 'exact_user_principal', side_effect=lambda c, *_: '31' if c.token == 'user' else '32'):
@@ -190,9 +190,9 @@ class UploadAcceptanceTest(unittest.TestCase):
             runtime.request.return_value.payload = value
             with mock.patch.object(API, 'GatewayClient', side_effect=[oauth, runtime]):
                 if mutation:
-                    with self.assertRaises(API.SuiteError): SCENE.runtime_client({'GATEWAY_URL': 'http://localhost', 'MANAGER_SERVICE_CLIENT_SECRET': 'private'}, 7)
+                    with self.assertRaises(API.SuiteError): API.manager_service_client({'GATEWAY_URL': 'http://localhost', 'MANAGER_SERVICE_CLIENT_SECRET': 'private'}, 7)
                 else:
-                    self.assertIs(SCENE.runtime_client({'GATEWAY_URL': 'http://localhost', 'MANAGER_SERVICE_CLIENT_SECRET': 'private'}, 7), runtime)
+                    self.assertEqual(API.manager_service_client({'GATEWAY_URL': 'http://localhost', 'MANAGER_SERVICE_CLIENT_SECRET': 'private'}, 7), (runtime, value))
                     form = parse_qs(oauth.request.call_args.kwargs['encoded_body'].decode())
                     self.assertEqual(form, {'grant_type': ['client_credentials'], 'scope': ['addp.api'], 'audience': ['addp.api'], 'tenant_id': ['7']})
 

@@ -2739,10 +2739,28 @@ class FilePublicationInitializer:
         return SimpleNamespace(payload=copy.deepcopy(data))
 
 
+class FilePublicationFactReader:
+    def __init__(self, consumer):
+        self.consumer=consumer;self.calls=[];self.mutate=None;self.denied=False
+        self.identity={'principal':{'type':'service_principal','id':'44'},'token':{'type':'service_access_token'},
+            'context':{'type':'tenant','tenant_id':'2'},'client':{'client_id':'addp-manager'},
+            'authorization':{'role_assignments':[{'role_key':'tenant.manager_runtime','permissions':['meta.catalog.read']}]}}
+    def request(self, method, path, expected):
+        self.calls.append((method,path))
+        if self.denied:raise m.online_api.SuiteError('read denied')
+        assert method=='GET' and path.startswith('/api/v1/meta/items/')
+        item=next(v for v in [*self.consumer.sources,*self.consumer.outputs]if v['id']==int(path.rsplit('/',1)[1]))
+        value=copy.deepcopy(item)
+        if self.mutate:self.mutate(value)
+        return SimpleNamespace(payload=value)
+
+
 class FormalFileClient(OverlayClient):
     def __init__(self,case):
         super().__init__(case);self.scans=[];self.grants={};self.issuer=FilePublicationInitializer(self)
         self.success['metadata'].pop('result')  # The product contract no longer supplies meta_scan_runs.
+        for item in [*self.sources,*self.outputs]:item.update(tenant_id=2,engine_id=3,scanned_depth='deep')
+        self.observer=FilePublicationFactReader(self)
     def request(self,method,path,expected,body=None):
         if path.endswith('/auth/context'):
             response=super().request(method,path,expected,body);response.payload['principal']['id']='33';return response
@@ -2756,7 +2774,14 @@ class FormalFileClient(OverlayClient):
         if path.endswith('/meta/executions/overlay-output-scan'):
             return SimpleNamespace(payload=dict(execution_id='overlay-output-scan',status='success',tenant_id=self.scan_tenant,triggered_by=self.scan_actor,source='develop',parent_execution_id=self.run_id,
                 scan_context=dict(scan_depth='basic',engine_id=3)))
-        return super().request(method,path,expected,body)
+        response=super().request(method,path,expected,body)
+        if path.startswith('/api/v1/meta/items/'):
+            value=response.payload
+            value.pop('size_bytes',None);value.pop('row_count',None)
+            for child in value['attributes']['type_info']['container']['children']:
+                for key in list(child):
+                    if key not in ('name','child_kind','data_type'):child.pop(key)
+        return response
 
 
 class DifferenceClient(FormalFileClient):
@@ -2768,7 +2793,7 @@ class DifferenceOnlineTest(unittest.TestCase):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup);self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DIFFERENCE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
     def run_case(self,client=None,physical=difference_physical,browser=lambda *a:a[2]):
         client=client or DifferenceClient()
-        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer):
+        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
             return m.run_scenario(Path('.'),self.env,client,physical,browser)
     def test_difference_one_success_four_failures_single_scan_and_two_source_edges(self):
         client=DifferenceClient();report=self.run_case(client);self.assertEqual((report['result'],report['schema_version']),('passed','addp.geometry-difference/v1'))
@@ -2851,7 +2876,7 @@ class DifferenceOnlineTest(unittest.TestCase):
 
     def test_difference_stages_keep_basic_grants_approval_and_deep_separate(self):
         client=DifferenceClient();report=self.run_case(client)
-        stages=[row['stage'] for row in report['publication']['stages']]
+        stages=[row['stage'] for row in report['publication']['stages'] if row['stage']!='meta_facts_observed']
         self.assertEqual(stages[:3],['source_basic_identified','source_read_granted','source_deep_inspected'])
         self.assertEqual(stages[15:22],['before_business_submit','execution_submitted','approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
         self.assertEqual(stages[-3:],['source_grants_revoked','materialized_result_still_readable','all_grants_revoked'])
@@ -3197,7 +3222,7 @@ class AdjacencyOnlineTest(unittest.TestCase):
         self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ADJACENCY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
     def run_case(self,client=None,physical=None,browser=lambda *a:a[2]):
         client=client or AdjacencyClient()
-        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer):
+        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
             return m.run_scenario(Path('.'),self.env,client,physical or(lambda *a:mixed_physical(m.fixture.ADJACENCY_CASE)),browser)
     def test_adjacency_single_source_one_save_four_readonly_failures_scans_and_identity(self):
         client=AdjacencyClient();report=self.run_case(client)
@@ -3233,7 +3258,7 @@ class AdjacencyOnlineTest(unittest.TestCase):
     def test_adjacency_formal_stages_separate_initializer_and_business_identity_and_scans(self):
         client=AdjacencyClient();report=self.run_case(client);publication=report['publication']
         self.assertEqual((publication['schema_version'],publication['case'],publication['result']),('addp.polygon-adjacency-publication/v1',m.fixture.ADJACENCY_CASE,'passed'))
-        stages=[r['stage']for r in publication['stages']]
+        stages=[r['stage']for r in publication['stages']if r['stage']!='meta_facts_observed']
         self.assertEqual(stages[:15],['source_basic_identified','source_read_granted','source_deep_inspected']*5)
         self.assertEqual(stages[15:22],['before_business_submit','execution_submitted','approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
         self.assertEqual(stages[-3:],['source_grants_revoked','materialized_result_still_readable','all_grants_revoked'])
@@ -3390,3 +3415,62 @@ for(const edges of[[],[edge,edge],[{...edge,source:{item_id:11}}]])assert.throws
 '''
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.adjacency_features('result')),(repo/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+
+class FilePublicationMachineFactsTest(unittest.TestCase):
+    def exercise(self, kind, mutate=None, browser=None):
+        owner=DifferenceOnlineTest() if kind=='difference' else AdjacencyOnlineTest()
+        owner.setUp();self.addCleanup(owner.doCleanups)
+        client=DifferenceClient() if kind=='difference' else AdjacencyClient()
+        if mutate:mutate(client)
+        report=owner.run_case(client,**({'browser':browser}if browser else{}))
+        return client,report
+
+    def test_structure_only_user_and_separate_machine_facts_for_both_cases(self):
+        for kind in ('difference','adjacency'):
+            with self.subTest(kind=kind):
+                client,report=self.exercise(kind)
+                self.assertTrue(all('size_bytes'not in s['before']for s in report['sources']))
+                self.assertNotIn('size_bytes',report['outputs'][0]['before'])
+                self.assertEqual({p for _,p in client.observer.calls},{'/api/v1/meta/items/'+str(i)for i in [10,11,12,13,14,30]})
+                self.assertTrue(all(method=='GET'for method,_ in client.observer.calls))
+                self.assertEqual(report['publication']['meta_fact_observer']['client']['client_id'],'addp-manager')
+                snapshots=[v for v in report['publication']['stages']if v['stage']=='meta_facts_observed']
+                self.assertEqual(len([v for v in snapshots if v['phase']=='source_prepared']),5)
+                self.assertTrue(all(v['snapshot']['size_bytes']==98304 for v in snapshots))
+                self.assertNotIn('meta_fact_observer',report['browser'])
+                self.assertNotIn('snapshot',json.dumps(report['browser']))
+                self.assertEqual(report['publication']['pending_grants'],[])
+
+    def test_wrong_machine_qualification_refuses_before_source_or_business_writes(self):
+        for mutate in [lambda c:c.observer.identity['authorization']['role_assignments'][0].update(permissions=[]),
+                       lambda c:c.observer.identity['authorization']['role_assignments'][0].update(role_key='tenant.other_runtime')]:
+            owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);client=AdjacencyClient();mutate(client)
+            with self.assertRaises(m.SuiteError):owner.run_case(client)
+            self.assertFalse(client.executions);self.assertFalse(client.issuer.scans)
+
+    def test_wrong_fact_identity_and_denied_read_never_submit_business(self):
+        for mutate in [lambda v:v.update(tenant_id=1),lambda v:v.update(engine_id=4),lambda v:v.update(id=True),
+                       lambda v:v.update(fingerprint='other'),lambda v:v.update(full_name='sibling.gpkg'),lambda v:v.update(scanned_at='other')]:
+            owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);client=AdjacencyClient();client.observer.mutate=mutate
+            with self.assertRaises(m.SuiteError):owner.run_case(client)
+            self.assertFalse(client.executions);self.assertTrue(all(v['revocation']is not None for v in client.grants.values()))
+        owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);client=AdjacencyClient();client.observer.denied=True
+        with self.assertRaises(m.SuiteError):owner.run_case(client)
+        self.assertFalse(client.executions)
+
+    def test_missing_and_inexact_machine_statistics_still_fail_strict_oracle(self):
+        for mutate in [lambda v:v.pop('size_bytes'),lambda v:v.update(size_bytes=True),lambda v:v.update(size_bytes=1),
+                       lambda v:v['attributes']['type_info']['container']['children'][0].pop('row_count'),
+                       lambda v:v['attributes']['type_info']['container']['children'][0].update(column_count=5.0)]:
+            owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);client=AdjacencyClient();client.observer.mutate=mutate
+            with self.assertRaises(m.SuiteError):owner.run_case(client)
+            self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),1)
+
+    def test_observer_scope_refuses_other_path_before_http(self):
+        owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);client=AdjacencyClient()
+        with patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
+            publication=m._FilePublication(owner.env,client,m.fixture.ADJACENCY_CASE)
+        item=copy.deepcopy(client.sources[0]);item['full_name']='outside.gpkg'
+        with self.assertRaises(m.SuiteError):publication.fact_snapshot(3,item,'outside.gpkg','source_prepared')
+        self.assertFalse(client.observer.calls)

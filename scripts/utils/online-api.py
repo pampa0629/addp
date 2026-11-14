@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -87,6 +88,30 @@ class GatewayClient:
             shape = "object" if response_type is dict else "array"
             raise SuiteError(f"{method} {path} response must be a JSON {shape}")
         return Response(status=status, payload=payload)
+
+
+def manager_service_client(environment, tenant):
+    """Use the existing Manager Tenant Service; return its observed identity separately."""
+    secret = environment.get('MANAGER_SERVICE_CLIENT_SECRET')
+    if not secret:
+        raise SuiteError('Manager service credential missing')
+    client = GatewayClient(environment['GATEWAY_URL'], '', 30)
+    auth = 'Basic ' + base64.b64encode(('addp-manager:' + secret).encode()).decode()
+    response = client.request('POST', '/api/v1/system/oauth/token', (200,), encoded_body=urllib.parse.urlencode({
+        'grant_type': 'client_credentials', 'scope': 'addp.api', 'audience': 'addp.api',
+        'tenant_id': str(tenant)}).encode(),
+        content_type='application/x-www-form-urlencoded', authorization_header=auth).payload
+    if not isinstance(response.get('access_token'), str) or not response['access_token']:
+        raise SuiteError('Runtime token missing')
+    runtime = GatewayClient(environment['GATEWAY_URL'], response['access_token'], 30)
+    identity = runtime.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    if not (identity.get('principal', {}).get('type') == 'service_principal'
+            and identity.get('token', {}).get('type') == 'service_access_token'
+            and identity.get('context', {}).get('type') == 'tenant'
+            and identity.get('context', {}).get('tenant_id') == str(tenant)
+            and identity.get('client', {}).get('client_id') == 'addp-manager'):
+        raise SuiteError('Runtime identity mismatch')
+    return runtime, identity
 
 
 FORBIDDEN_ADMIN_ROLES = {

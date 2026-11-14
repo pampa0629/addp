@@ -1,6 +1,5 @@
 """Hosted NFS committed-upload -> Meta -> canonical Grant acceptance."""
 from __future__ import annotations
-import base64
 import hashlib
 import importlib
 import json
@@ -53,26 +52,6 @@ def multipart(engine, files):
     return b''.join(chunks), 'multipart/form-data; boundary=' + boundary
 
 
-def runtime_client(environment, tenant):
-    secret = environment.get('MANAGER_SERVICE_CLIENT_SECRET')
-    require(bool(secret), 'Manager service credential missing')
-    client = API.GatewayClient(environment['GATEWAY_URL'], '', 30)
-    auth = 'Basic ' + base64.b64encode(('addp-manager:' + secret).encode()).decode()
-    response = client.request('POST', '/api/v1/system/oauth/token', (200,), encoded_body=urlencode({
-        'grant_type': 'client_credentials', 'scope': 'addp.api', 'audience': 'addp.api',
-        'tenant_id': str(tenant)}).encode(),
-        content_type='application/x-www-form-urlencoded', authorization_header=auth).payload
-    require(isinstance(response.get('access_token'), str) and response['access_token'], 'Runtime token missing')
-    runtime = API.GatewayClient(environment['GATEWAY_URL'], response['access_token'], 30)
-    identity = runtime.request('GET', '/api/v1/system/auth/context', (200,)).payload
-    require(identity.get('principal', {}).get('type') == 'service_principal'
-            and identity.get('token', {}).get('type') == 'service_access_token'
-            and identity.get('context', {}).get('type') == 'tenant'
-            and identity.get('context', {}).get('tenant_id') == str(tenant)
-            and identity.get('client', {}).get('client_id') == 'addp-manager', 'Runtime identity mismatch')
-    return runtime
-
-
 def wait_upload(client, upload_id, deadline):
     while time.monotonic() < deadline:
         state = client.request('GET', '/api/v1/manager/uploads/' + upload_id, (200,)).payload
@@ -107,7 +86,7 @@ def run(repository, environment, owner):
     principal = FILES.exact_user_principal(client, tenant, PERMISSIONS)
     other = FILES.exact_user_principal(outsider, tenant, PERMISSIONS)
     require(principal != other and tenant > 1, 'isolated upload users required')
-    runtime = runtime_client(environment, tenant)
+    runtime, _ = API.manager_service_client(environment, tenant)
     observer = REFRESH.PersistedScanObservation(tenant, engine, 'nfs')
     base = f'/api/v1/system/engines/{engine}/access_grants'
     report = dict(schema_version='addp.manager-upload-initial/v1', suite='manager-internal-artifact-lineage', case='nfs-upload-initial',

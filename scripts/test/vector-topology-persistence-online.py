@@ -15,6 +15,7 @@ obj, array, positive = raster.obj, raster.array, raster.positive
 SUITE = fixture.SUITE
 PERMISSIONS = raster.PERMISSIONS | {'manager.data_item.read'}
 vector = importlib.import_module('scripts.utils.online_vector_persistence')
+online_api = importlib.import_module('scripts.utils.online-api')
 scan_ids = importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 
 
@@ -810,6 +811,17 @@ class _FilePublication:
         self.issuer = raster.GatewayClient(env['GATEWAY_URL'], token, 30)
         self.tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'difference Tenant')
         self.registration = registration
+        try:
+            self.observer, context = online_api.manager_service_client(env, self.tenant)
+        except online_api.SuiteError as error:
+            raise SuiteError('topology Meta fact observer unavailable') from error
+        roles=obj(context.get('authorization'),'Meta fact observer authorization').get('role_assignments')
+        if not isinstance(roles,list) or not any(isinstance(role,dict) and role.get('role_key')=='tenant.manager_runtime'
+                and 'meta.catalog.read' in role.get('permissions',[]) for role in roles):
+            raise SuiteError('topology Meta fact observer requires the existing Manager runtime qualification')
+        self.evidence['meta_fact_observer'] = context
+        self.fact_paths = {*profile['sources'], 'outputs/'+profile['target']}
+        self.fact_baselines = {}
         self.grants = registration.ExactFileReadGrants(self.issuer, consumer, self.tenant,
                         scan_preparation=True, approval_preparation=True, on_change=self.pending)
         self.target = None
@@ -834,6 +846,26 @@ class _FilePublication:
         deep = support.wait_for_meta_scan(self.issuer, engine, time.monotonic()+remaining(), depth='deep', scope={'targets':[scope]})
         self.record(dict(stage='source_deep_inspected', target=scope, execution_id=deep))
         return deep
+
+    def fact_snapshot(self, engine, visible, name, phase):
+        # This is the machine facts boundary, never a replacement for the User view.
+        if (name not in self.fact_paths or type(visible.get('id')) is not int or visible['id']<=0
+                or type(visible.get('tenant_id')) is not int or visible['tenant_id']!=self.tenant
+                or type(visible.get('engine_id')) is not int or visible['engine_id']!=engine
+                or visible.get('full_name')!=name or visible.get('item_type')!='file'
+                or not isinstance(visible.get('fingerprint'),str) or not visible['fingerprint']):
+            raise SuiteError('topology Meta fact target is outside the exact visible file scope')
+        try:
+            snapshot=self.observer.request('GET',f'/api/v1/meta/items/{visible["id"]}',(200,)).payload
+        except online_api.SuiteError as error:
+            raise SuiteError('topology Meta fact read unavailable') from error
+        self.record(dict(stage='meta_facts_observed',phase=phase,item_id=visible['id'],snapshot=snapshot))
+        if (not isinstance(snapshot,dict) or any(type(snapshot.get(k)) is not int for k in ('id','tenant_id','engine_id'))
+                or any(snapshot.get(k)!=visible.get(k) for k in ('id','tenant_id','engine_id','item_type','full_name','fingerprint','scanned_at','scanned_depth'))
+                or snapshot.get('attributes',{}).get('item')!=visible.get('attributes',{}).get('item')):
+            raise SuiteError('topology Meta fact identity or scan binding differs')
+        self.fact_baselines.setdefault(visible['id'],snapshot)
+        return snapshot
 
     def before_submit(self, identity, engine, runtime, sources, definition, *, failure=None):
         # Current public identity contains no bearer secret. Preserve the full
@@ -930,6 +962,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         scan=(publication.source(engine,name,scope,remaining) if publication else support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]}))
         item=support.find_fixture_item(client,engine,name,'mixed overlay source')
         before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        if publication:publication.fact_snapshot(engine,before,name,'source_prepared')
         graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=downstream',(200,)).payload,'mixed overlay resource preflight')
         if graph.get('truncated') is not False:raise SuiteError('mixed overlay requires complete authorized source lineage before execution')
         preflight.append({'source_item_id':item['id'],'graph':graph})
@@ -983,12 +1016,13 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     native=physical_runner(repository,env)
     if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(names) or set(native.get('targets',{}))!={target_name}:raise SuiteError('mixed overlay physical inventory differs')
     for source,kind in zip(sources,profile['kinds']):
-        rows=features(kind);before=source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        rows=features(kind);before=publication.fact_baselines[source['id']] if publication else source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
         if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=len(rows) or type(children[0].get('column_count')) is not int or children[0]['column_count']!=len(rows[0]['properties'])+2:raise SuiteError('mixed overlay source Meta size/rows/columns differ')
     item=support.find_fixture_item(client,engine,'outputs/'+target_name,'mixed overlay output')
     detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'mixed overlay output Meta')
-    physical=native['targets'][target_name];sizes=validate_item(detail,physical,target_name)
-    child=detail['attributes']['type_info']['container']['children'][0]
+    statistics=publication.fact_snapshot(engine,detail,'outputs/'+target_name,'result_prepared') if publication else detail
+    physical=native['targets'][target_name];sizes=validate_item(statistics,physical,target_name)
+    child=statistics['attributes']['type_info']['container']['children'][0]
     if type(child.get('row_count')) is not int or child['row_count']!=count or type(child.get('column_count')) is not int or child['column_count']!=len(features('result')[0]['properties'])+2:raise SuiteError('mixed overlay output rows/columns differ')
     output={'name':target_name,'port':'result','locator':target,'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes}
     def unchanged_meta():
@@ -996,6 +1030,10 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         for entry in [*sources,output]:
             item_id=entry.get('item_id',entry.get('id'));after=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
             if after!=entry['before']:raise SuiteError('mixed overlay source or result Meta changed')
+            if publication:
+                name=entry['name'] if entry in sources else 'outputs/'+entry['name']
+                snapshot=publication.fact_snapshot(engine,after,name,'unchanged_check')
+                if snapshot!=publication.fact_baselines[item_id]:raise SuiteError('mixed overlay source or result Meta changed')
             result[entry['name']]=after
         return result
     checkpoint.update(outputs=[output],physical=native,stable_outputs=execution['outputs'])
