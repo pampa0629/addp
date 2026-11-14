@@ -129,7 +129,7 @@ NC4外部/复杂组成拒绝由GeoPython原生T1及Linux产品构建验证分别
 | `full` | 原完整模型、授权、点云、文档及其他既有断言；[部署、模型转换与通用清理](#部署模型转换与通用清理)。 |
 | `native-raster-media` | 本节下述 IMG／JPEG2000、[Surfer GRD](#surfer-grd-读取)及 [TIFF 无定位小图](#tiff-无定位小图的-cog-布局回归)；不执行模型、点云、文档或结构化数据业务。 |
 | `native-table-orc` | [ORC 单文件表格](#orc-单文件表格-hosted)：NFS／MinIO 预览、页面与原件、Transfer→Parquet；嵌套只读范围与批量传输范围分别判定。 |
-| `native-table-avro` | [Avro 单文件表格](#avro-单文件表格读取)：三种 codec、基础标量、日期／定点小数及UTC时间戳、嵌套只读／批量拒绝、分页／原件契约和跨批 Transfer→Parquet，保持平面单文件只读。 |
+| `native-table-avro` | [Avro 单文件表格](#avro-单文件表格读取)：三种 codec、基础标量、日期／定点小数及UTC时间戳、嵌套只读／批量拒绝、分页／原件契约；平面单文件保留跨批 Transfer→Parquet，嵌套单独验证只读边界。 |
 | `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六份源的分页与 Transfer→Parquet，MinIO 原件下载与 NFS 下载拒绝分别核对；Grant、六任务及物理源／成果分别清理。 |
 | `delimited-read-settings` | [CSV／TSV GB18030 读取设置](#csvtsv-gb18030-独立读取设置-case)：NFS／MinIO 编码、表头切换、分页、重开及原件；撤销 Grant 并清理精确源，不创建派生产物，不替代 Transfer T4。 |
 | `native-netcdf` | [NetCDF 单文件只读](#netcdf-单文件只读)：变量／切片、页面与原件；无任务或业务产物，不伪造缓存及任务删除证明。 |
