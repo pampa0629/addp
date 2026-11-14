@@ -680,3 +680,22 @@ Artifact `14108023879` 的 SHA-256 为 `25d18507e050769161ea0156774c85b4e424f747
 修订仅调整验收编排：正式 Pause 后从原 Owner API 读取同任务／同 generation 的当前 last_execution_id，等待该执行 cancelled；若 UUID 替换，额外核对旧执行仍 failed、新执行同任务且 recovered_from_execution_id 精确指向旧执行，保存恢复关联及新 UUID。最终 cdc_stop／Owner-Monitor 投影比较沿该真实暂停 UUID。无恢复时走同一当前执行路径；陌生或不符来源拒绝，不新增 Grant、恢复操作、预算或成功兜底。`make test-transfer-continuous-online-runner` 的 138 项及 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-current-execution-runner.log`，覆盖未替换、明确恢复关联及陌生来源拒绝，原失败与 cleanup 继续保留。该暂停绑定修订尚未取得新的完整 Hosted 结果。
 
 领域性能／风险包装清理及 task 3／2 正式删除读回均 passed，原硬退出 task 1 按场景由部署销毁，residual_resources=expected_deployment_residuals=1、uncertain_mutation=false；外层 cleanup=passed、infra_cleanup=zero_residuals。本机只读复核 `/tmp/addp-cdc-performance-preserved-after-hosted-43589946577.log` 证明原 task46／task58 两个逻辑槽仍保留且不活跃，task61 定义仍 running、全局身份槽仍活跃。个人环境未接受本轮故障注入、任务操作或重启。
+
+
+### CDC 性能、后继风险、重建与 scheduled 完整 Hosted 通过（2026-11-14）
+
+按用户本次明确复跑授权，固定 `4741647a91fec3aea39280fddc1d611cefc2cc53` 的 [Run 43599194584／Job 132460107141](https://github.com/pampa0629/addp/actions/runs/43599194584/job/132460107141) 与实际 Run Hosted continuous execution Online gate 均 success。该提交包含暂停绑定修订 `7742440fa`；验证基线 871dcd805 至该候选只有文档推进，CDC 场景、最小权限、原生夹具、Hosted 编排和预算输入不变，开跑前 `make test-transfer-continuous-online-runner` 的 138 项及 System 身份夹具 Go 测试通过（`/tmp/addp-cdc-hosted-resume-runner.log`），固定摘要 `/tmp/addp-cdc-hosted-resume-candidate.json`。所有参与服务的原始 preflight Git SHA 与该候选一致，repository_clean=true。
+
+Artifact `14115449615`，7835428 字节，SHA-256=`f429550acd7ce2ce8084807451eb3941536051f083f3b320954e59eb64a16a66`；下载摘要及 ZIP CRC 均核对通过，原件、完整 suite／外层报告及复核摘要保留在 `/tmp/addp-cdc-hosted-43599194584/`，原始 Job 日志 `/tmp/addp-cdc-hosted-43599194584-job.log`。suite 与外层 result 均 passed，22 项检查全部完成且唯一，7 份真实 Console 回执均 passed。业务场景耗时 1116422 毫秒，保持原 1450 秒场景／1500 秒分发预算。此前各轮取消、构建失败、子阶段部分通过和组合失败均保留原结论，不用本轮追认。
+
+- **性能告警**：同一 PostgreSQL task 3／generation 1 的消费停滞 incident 2、捕获延迟 incident 5 实际 warning/open；有效窗口分别约 238.800589 秒、180.004045 秒，符合原 180 秒规则。独立新鲜缺样后，32 秒内 16 次检查保持两条规则 unknown、原 acknowledged 事件与 LastObservedAt，不发送关闭通知。故障解除、原 CPU／Connector 配置恢复和目标锁释放后，同一事件 resolved；健康新事件计数 51433→51503、延迟 <=30 秒覆盖约 75.000040 秒。四条 opened／resolved 签名实收与 delivered 审计全部匹配，HTTP 202。清除 60000 条源工作量后，取得新鲜 committed/latest=120126/120126、lag=0，精确三字段两行目标核验通过；CPU、配置、规则和临时源记录清理读回均通过。
+- **后继当前执行与捕获失败**：任务在原生故障期间自动恢复，从 `9fd9c33b-20b3-45f5-ab02-a2b83602617f` 生成 `f0b933e1-2dc7-4840-bda7-3e14614a79a4`。正式 Pause 后核对该当前执行 cancelled，明确原执行仍 failed、恢复来源精确匹配，最终 Owner／Monitor 投影继续沿真实暂停 UUID；不改写旧执行终态。捕获持续失败 warning incident 24 的真实失败样本跨度约 75.125502 秒，达到 60 秒阈值；16 次缺样保持、新鲜健康关闭及两条签名通知实收通过，fault_cleanup=passed。
+- **不可恢复风险**：消息最早可恢复位点 120127 超过已提交位点 120126，buffer incident 28 打开；本轮 owned 源槽缺失打开 source incident 30。源库采样中断期间连续 16 次保持同一已确认事件及最后观测时间，恢复采样后明确故障仍在。正式不可逆 Stop 关闭原两事件，四条 opened／resolved 签名实收和 delivered 审计匹配；没有把缺样、重新可读或停止任务表述为旧数据自动恢复。
+- **独立任务重建**：正式新建 task 4／generation 1、新目标和 execution `356b95ae-a898-4b8e-963e-c31a00531fe1`，完整三字段 snapshot、槽／WAL、捕获延迟与缓冲健康及积压归零均通过；原事件保持 resolved。随后正式停止新任务并验证源槽、publication 清理，未恢复已停止的旧任务。
+- **scheduled 与扫描授权**：task 5 的真实 scheduled execution `95f06e08-44e0-4764-bb54-eb31be0cee30` 成功，basic=`57de112f-9480-4cd7-8498-d1cf97443235`、deep=`6e65ef71-1641-4b8a-a4df-a1f279238bb7` 两次扫描具有独立 UUID 且均完成，父执行／原发起人 Principal 55 正确，父读取允许、对等 User 读取拒绝。精确目标范围、物理行集、原 sibling／祖先不变和 schedule 已暂停均通过；删除定义后的授权历史读取也通过。
+
+本轮共 10 条唯一签名通知实际送达，delivery UUID 和 event UUID 均各自唯一：性能 4 条、捕获失败 2 条、不可恢复风险 4 条。性能的消费 opened／resolved delivery 为 `ba02ccf7-23c9-4181-aecd-4e9f0eba579e`／`918d00e0-7b33-422d-9c9d-69ba588cf356`，延迟分别为 `7825dcc9-d5e4-4253-90c6-129aa250c934`／`f6299f25-7638-47f5-a4d6-599be92f67e6`；其余对应 UUID 保留在完整报告各 capture_failure／risk 节点。接收端验证 HMAC、时间戳、准确任务／incident／event，返回 202，正式审计逐条 delivered，不以 outbox 创建或 mock 回执代替实收。
+
+清理任务 5／4／3／2 均经正式 API 删除并读回 404；两条 CDC 的源槽及 publication 清理通过，Webhook 目标删除、接收端关闭，所有 cleanup_failures 为空、uncertain_mutation=false。原硬退出 Kafka task 1 按原场景保留至部署销毁，因此领域 residual_resources=expected_deployment_residuals=1；外层 cleanup=passed、infra_cleanup=zero_residuals，不将该领域预期保留项混写成领域零项。个人环境在操作前后均只读核对：task46／task58 两个原逻辑槽仍保留且不活跃，task61 仍 running、其全局身份槽仍活跃，前后分别见 `/tmp/addp-cdc-hosted-resume-preserved-before.log` 和 `/tmp/addp-cdc-hosted-43599194584/preserved-after.log`，没有接管个人服务或操作这些任务／槽。
+
+本轮证明同一隔离套件内的 PostgreSQL 任务、两条默认性能告警、捕获失败及上述不可恢复风险、任务重建、scheduled basic→deep 和签名 Webhook 闭环；任务可选积压阈值持续 300 秒的实故障 T4 尚未覆盖。既有 SQL T2、受控前端或其他 Provider 的专业指标不随本轮升级为已做真实故障或生产 T5 验收。
