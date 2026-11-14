@@ -25,12 +25,21 @@ type metadataCheckFixture struct {
 	wrongTarget bool
 }
 
+func (f *metadataCheckFixture) CheckManagerObjectPreview(_ context.Context, credential string, request authorization.SourceMetadataCheckRequest) (*authorization.SourceObjectPreviewCheck, error) {
+	f.calls++
+	target := request.Targets[0]
+	if f.wrongTarget {
+		target.EngineID++
+	}
+	return &authorization.SourceObjectPreviewCheck{ObservedAt: time.Now(), Targets: []authorization.SourceVisibilityTargetCheck{{SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: target, Visible: true}, ItemFingerprint: commonmodels.GenerateItemFingerprint(target.EngineID, target.StringPath())}}}, nil
+}
+
 func (f *metadataCheckFixture) CheckManagerSearchRead(_ context.Context, credential string, request authorization.SourceSearchCheckRequest) (*authorization.SourceSearchCheck, error) {
 	f.calls++
 	if credential != "addp_at_test" && credential != "addp_dat_test" {
 		panic("wrong search credential")
 	}
-	return &authorization.SourceSearchCheck{ObservedAt: time.Now(), ObservationTag: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", Targets: []authorization.SourceSearchTargetCheck{{
+	return &authorization.SourceSearchCheck{ObservedAt: time.Now(), ObservationTag: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", Targets: []authorization.SourceVisibilityTargetCheck{{
 		SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: request.Targets[0], Visible: true},
 		ItemFingerprint:           commonmodels.GenerateItemFingerprint(request.Targets[0].EngineID, request.Targets[0].StringPath()),
 	}}}, nil
@@ -262,6 +271,9 @@ func TestLineageMetadataCheckUsesLineagePermissionWithoutDelegation(t *testing.T
 			current := sourceReadCheckAuth()
 			current.Token.Type = tc.token
 			current.Authorization.RoleAssignments[0].Permissions = []string{tc.permission}
+			if tc.permission == "" {
+				current.Authorization.RoleAssignments = []authorization.RoleAssignment{}
+			}
 			if tc.token == middleware.IAMTokenTypeDelegatedAccess {
 				current.Client.Audiences = []string{"meta"}
 				current.Client.ScopeMode = "restricted"
@@ -321,6 +333,80 @@ func TestManagerSearchRequiresExplicitObservationFields(t *testing.T) {
 			router.ServeHTTP(response, httptest.NewRequest("POST", "/", strings.NewReader(tc.body)))
 			if response.Code != tc.status {
 				t.Fatalf("status=%d want=%d", response.Code, tc.status)
+			}
+		})
+	}
+}
+
+func TestManagerObjectPreviewCheckHasPreviewQualificationOnly(t *testing.T) {
+	target := plugin.FileItemPath(14, "images/private.tif")
+	for _, tc := range []struct {
+		name, audience, scope, permission string
+		targets                           []plugin.EngineCatalogPath
+		wrong                             bool
+		status                            int
+	}{
+		{name: "ordinary without Meta or search", permission: engineaccess.ManagerPreviewReadPermission, status: 200},
+		{name: "preview delegate", audience: "manager", scope: "data.preview", permission: engineaccess.ManagerPreviewReadPermission, status: 200},
+		{name: "search delegate", audience: "manager", scope: "data.search", permission: engineaccess.ManagerPreviewReadPermission, status: 403},
+		{name: "Meta delegate", audience: "meta", scope: "resource.children.list", permission: engineaccess.ManagerPreviewReadPermission, status: 403},
+		{name: "search function only", permission: engineaccess.ManagerSearchPermission, status: 403},
+		{name: "Meta function only", permission: engineaccess.MetaCatalogReadPermission, status: 403},
+		{name: "no function", status: 403},
+		{name: "node", permission: engineaccess.ManagerPreviewReadPermission, targets: []plugin.EngineCatalogPath{plugin.FileDirectoryPath(14, "images")}, status: 400},
+		{name: "multiple", permission: engineaccess.ManagerPreviewReadPermission, targets: []plugin.EngineCatalogPath{target, plugin.FileItemPath(14, "images/other.tif")}, status: 400},
+		{name: "mismatched observation", permission: engineaccess.ManagerPreviewReadPermission, wrong: true, status: 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := sourceReadCheckAuth()
+			current.Authorization.RoleAssignments[0].Permissions = []string{tc.permission}
+			if tc.permission == "" {
+				current.Authorization.RoleAssignments = []authorization.RoleAssignment{}
+			}
+			token := "addp_at_test"
+			if tc.audience != "" {
+				current.Token.Type = middleware.IAMTokenTypeDelegatedAccess
+				current.Client.Audiences = []string{tc.audience}
+				current.Client.ScopeMode = "restricted"
+				current.Client.Scopes = []string{tc.scope}
+				current.Delegation = &authorization.DelegationFacts{DelegatedByClientID: *current.Client.ClientID, AgentRunID: "run", ToolCallID: "call"}
+				token = "addp_dat_test"
+			}
+			auth, err := middleware.NewIAMAuthenticationMiddleware(iamActorResolver{authContext: &current})
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeOAuthAccess)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := &metadataCheckFixture{wrongTarget: tc.wrong}
+			router := gin.New()
+			if err := RegisterEngineAccessMetadataCheckRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: auth, UserAccessCredential: credential}, &EngineAccessMetadataCheckHandler{service: fixture}); err != nil {
+				t.Fatal(err)
+			}
+			targets := tc.targets
+			if targets == nil {
+				targets = []plugin.EngineCatalogPath{target}
+			}
+			body, _ := json.Marshal(authorization.SourceMetadataCheckRequest{Targets: targets})
+			req := httptest.NewRequest("POST", "/api/v1/system/engine-access/metadata-checks/manager-object-preview", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, req)
+			if response.Code != tc.status {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, tc.status, response.Body.String())
+			}
+			if tc.status == 200 {
+				var result authorization.SourceObjectPreviewCheck
+				if json.Unmarshal(response.Body.Bytes(), &result) != nil || !result.Matches(authorization.SourceMetadataCheckRequest{Targets: targets}) || result.Targets[0].ContentReadable || response.Header().Get("Cache-Control") != "no-store" {
+					t.Fatal("invalid visibility")
+				}
+			}
+			if tc.status == 403 || tc.status == 400 {
+				if fixture.calls != 0 {
+					t.Fatal("invalid caller reached service")
+				}
 			}
 		})
 	}

@@ -21,6 +21,7 @@ import (
 )
 
 type metaMetadataCheckService interface {
+	CheckManagerObjectPreview(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceObjectPreviewCheck, error)
 	CheckMetaLineageRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckMetaMetadataRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckManagerSearchRead(context.Context, string, authorization.SourceSearchCheckRequest) (*authorization.SourceSearchCheck, error)
@@ -78,6 +79,15 @@ func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMR
 		return err
 	}
 	api.POST("/engine-access/metadata-checks/meta-lineage", runtime.Authentication, runtime.UserAccessCredential, tenant, lineagePermission, handler.CheckMetaLineage)
+	previewPermission, err := middleware.NewIAMPermissionGuard(engineaccess.ManagerPreviewReadPermission)
+	if err != nil {
+		return err
+	}
+	previewDelegate, err := sharedauth.NewDelegatedRouteGuard(sharedauth.DelegatedRouteGuardConfig{Audience: "manager", RequiredScopes: []string{"data.preview"}, RequiredPermissions: []string{engineaccess.ManagerPreviewReadPermission}})
+	if err != nil {
+		return err
+	}
+	api.POST("/engine-access/metadata-checks/manager-object-preview", runtime.Authentication, credential, tenant, previewDelegate, previewPermission, handler.CheckManagerObjectPreview)
 	searchPermission, err := middleware.NewIAMPermissionGuard(engineaccess.ManagerSearchPermission)
 	if err != nil {
 		return err
@@ -212,4 +222,39 @@ func bindSearchCheck(c *gin.Context) (authorization.SourceSearchCheckRequest, bo
 		return request, false
 	}
 	return request, true
+}
+
+// CheckManagerObjectPreview godoc
+// @Summary 检查 Manager 对象预览可见性 | Check Manager object preview visibility
+// @Description 当前 Tenant User 或唯一 manager audience、data.preview Scope 委托，固定核验 manager.data_item.read。单个存储叶子分别返回元数据可见和内容可读，隐藏项不返回指纹，不授予读取或可缓存许可；不改变 Meta 查询和检索资格 | Current Tenant User or sole manager audience and data.preview delegate; checks fixed manager.data_item.read. Observes metadata visibility and content readability for one storage leaf, hides invisible fingerprints and grants no read authority or cacheable lease. Meta query and search qualifications are unchanged
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body authorization.SourceMetadataCheckRequest true "单个类型化存储叶子，不支持 query 参数 | One typed storage leaf; no query parameters"
+// @Success 200 {object} authorization.SourceObjectPreviewCheck "当次预览可见性 | Current preview visibility"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "核验失败 | Check failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
+// @Router /engine-access/metadata-checks/manager-object-preview [post]
+func (h *EngineAccessMetadataCheckHandler) CheckManagerObjectPreview(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	request, ok := bindMetadataCheck(c)
+	if !ok {
+		return
+	}
+	if !request.ValidObjectPreview() {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	result, err := h.service.CheckManagerObjectPreview(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if !result.Matches(request) {
+		respondIAMError(c, errors.New("incomplete preview observation"))
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,5 +113,79 @@ func TestLineageVisibilityUsesFixedPurposeAndRejectsDelegates(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("unexpected requests: %d", calls)
+	}
+}
+
+func TestManagerObjectPreviewUsesFixedOriginalCredentialAndStrictObservation(t *testing.T) {
+	target := plugin.FileItemPath(14, "images/private.tif")
+	for _, tc := range []struct {
+		name, corrupt string
+		status        int
+		want          error
+	}{
+		{"hidden", "hidden", 200, nil}, {"metadata only", "", 200, nil}, {"read", "read", 200, nil},
+		{"wrong target", "target", 200, ErrMetadataQueryUnavailable}, {"missing result", "missing", 200, ErrMetadataQueryUnavailable},
+		{"hidden fingerprint", "hidden-fp", 200, ErrMetadataQueryUnavailable}, {"hidden readable", "hidden-read", 200, ErrMetadataQueryUnavailable},
+		{"bad fingerprint", "fp", 200, ErrMetadataQueryUnavailable}, {"no time", "time", 200, ErrMetadataQueryUnavailable},
+		{"unauthorized", "", 401, ErrMetadataCredentialRejected}, {"forbidden", "", 403, ErrMetadataQueryDenied},
+		{"outage", "", 503, ErrMetadataQueryUnavailable}, {"redirect", "", 307, ErrMetadataQueryUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/metadata-checks/manager-object-preview" || r.Header.Get("X-Tenant-ID") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "Bearer addp_dat_preview" {
+					t.Error("wrong preview credential/route")
+				}
+				var request authorization.SourceMetadataCheckRequest
+				if json.NewDecoder(r.Body).Decode(&request) != nil || !request.ValidObjectPreview() {
+					t.Fatal("invalid request")
+				}
+				result := authorization.SourceObjectPreviewCheck{ObservedAt: time.Now(), Targets: []authorization.SourceVisibilityTargetCheck{{SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: target, Visible: true}, ItemFingerprint: strings.Repeat("a", 64)}}}
+				switch tc.corrupt {
+				case "hidden":
+					result.Targets[0].Visible = false
+					result.Targets[0].ItemFingerprint = ""
+				case "read":
+					result.Targets[0].ContentReadable = true
+				case "target":
+					result.Targets[0].Target.EngineID++
+				case "missing":
+					result.Targets = nil
+				case "hidden-fp":
+					result.Targets[0].Visible = false
+				case "hidden-read":
+					result.Targets[0].Visible = false
+					result.Targets[0].ItemFingerprint = ""
+					result.Targets[0].ContentReadable = true
+				case "fp":
+					result.Targets[0].ItemFingerprint = "private"
+				case "time":
+					result.ObservedAt = time.Time{}
+				}
+				w.Header().Set("Location", "/never")
+				w.WriteHeader(tc.status)
+				json.NewEncoder(w).Encode(result)
+			}))
+			defer server.Close()
+			c := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("must-not-substitute"), server.Client())
+			for i := 1; i <= 2; i++ {
+				result, err := c.CheckManagerObjectPreview(t.Context(), "addp_dat_preview", []plugin.EngineCatalogPath{target})
+				if !errors.Is(err, tc.want) || calls != i || tc.want != nil && result != nil {
+					t.Fatalf("err=%v calls=%d result=%+v", err, calls, result)
+				}
+			}
+			for _, targets := range [][]plugin.EngineCatalogPath{nil, {target, target}, {plugin.FileDirectoryPath(14, "images")}, {plugin.TabularItemPath(2, "schema", "public", "people")}} {
+				if _, err := c.CheckManagerObjectPreview(t.Context(), "addp_at_user", targets); !errors.Is(err, ErrMetadataQueryDenied) {
+					t.Fatal("non-single-leaf accepted", err)
+				}
+			}
+			if _, err := c.CheckManagerObjectPreview(t.Context(), "addp_sat_service", []plugin.EngineCatalogPath{target}); !errors.Is(err, ErrMetadataCredentialRejected) {
+				t.Fatal("machine substituted", err)
+			}
+			if calls != 2 {
+				t.Fatal("invalid input reached transport")
+			}
+		})
 	}
 }

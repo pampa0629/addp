@@ -29,6 +29,16 @@ func qualifyManagerSearchRead(current shared.AuthContext) error {
 }
 
 func (s *Service) checkManagerSearchTargets(ctx context.Context, credential string, tenant int64, request shared.SourceMetadataCheckRequest) (*shared.SourceSearchCheck, error) {
+	result, err := s.checkSourceVisibilityTargets(ctx, credential, tenant, request, qualifyManagerSearchRead)
+	if err != nil {
+		return nil, err
+	}
+	return &shared.SourceSearchCheck{ObservedAt: result.ObservedAt, Targets: result.Targets}, nil
+}
+
+// Both fixed operations observe metadata/content rules in the same final
+// snapshot. Only their required function and delegated scope differ.
+func (s *Service) checkSourceVisibilityTargets(ctx context.Context, credential string, tenant int64, request shared.SourceMetadataCheckRequest, qualify func(shared.AuthContext) error) (*shared.SourceObjectPreviewCheck, error) {
 	if s == nil || s.repository == nil || s.repository.db == nil {
 		return nil, errSourceReadRules
 	}
@@ -41,7 +51,7 @@ func (s *Service) checkManagerSearchTargets(ctx context.Context, credential stri
 	}
 	started := time.Now()
 	if len(request.Targets) == 0 {
-		currentTenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyManagerSearchRead)
+		currentTenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualify)
 		if err != nil {
 			return nil, err
 		}
@@ -49,7 +59,7 @@ func (s *Service) checkManagerSearchTargets(ctx context.Context, credential stri
 			return nil, commonapi.ErrForbidden
 		}
 		now, err := s.repository.wallClock(ctx)
-		return &shared.SourceSearchCheck{ObservedAt: now, Targets: []shared.SourceSearchTargetCheck{}}, err
+		return &shared.SourceObjectPreviewCheck{ObservedAt: now, Targets: []shared.SourceVisibilityTargetCheck{}}, err
 	}
 	started = time.Now()
 	bindings, err := s.resolveMetadataBindings(ctx, tenant, request.Targets)
@@ -60,7 +70,7 @@ func (s *Service) checkManagerSearchTargets(ctx context.Context, credential stri
 		return nil, err
 	}
 	started = time.Now()
-	result := &shared.SourceSearchCheck{Targets: make([]shared.SourceSearchTargetCheck, len(bindings))}
+	result := &shared.SourceObjectPreviewCheck{Targets: make([]shared.SourceVisibilityTargetCheck, len(bindings))}
 	var paths []plugin.EngineCatalogPath
 	var rules []sourceRuleTarget
 	metadataPositions := make([]int, len(bindings))
@@ -99,7 +109,7 @@ func (s *Service) checkManagerSearchTargets(ctx context.Context, credential stri
 			timing.rulePreparation = time.Since(started)
 		}
 		started = time.Now()
-		currentTenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyManagerSearchRead)
+		currentTenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualify)
 		if timing != nil {
 			timing.observedCredential = time.Since(started)
 		}
@@ -124,7 +134,7 @@ func (s *Service) checkManagerSearchTargets(ctx context.Context, credential stri
 		return nil, err
 	}
 	started = time.Now()
-	observation, err := s.repository.observePreparedSourceRules(ctx, shared.SourceAccessMetadataRead, paths, nil, batch, tenant, resolve, qualifyManagerSearchRead, nil)
+	observation, err := s.repository.observePreparedSourceRules(ctx, shared.SourceAccessMetadataRead, paths, nil, batch, tenant, resolve, qualify, nil)
 	if timing != nil {
 		timing.ruleObservation = time.Since(started)
 	}
@@ -141,4 +151,26 @@ func (s *Service) checkManagerSearchTargets(ctx context.Context, credential stri
 		}
 	}
 	return result, nil
+}
+
+// CheckManagerObjectPreview is a fixed visibility observation, not source read
+// authorization and not a Meta query or search capability.
+func (s *Service) CheckManagerObjectPreview(ctx context.Context, credential string, request shared.SourceMetadataCheckRequest) (*shared.SourceObjectPreviewCheck, error) {
+	if !request.ValidObjectPreview() {
+		return nil, commonapi.ErrBadRequest
+	}
+	if s == nil || s.repository == nil || s.repository.db == nil {
+		return nil, errSourceReadRules
+	}
+	resolve := func(auth *iam.AuthContextService) (*shared.AuthContext, error) {
+		return resolveSearchCredential(ctx, auth, credential)
+	}
+	tenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyManagerPreviewRead)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repository.checkSourceAccessAction(ctx, tenant, int64(request.Targets[0].EngineID), shared.SourceAccessMetadataRead); err != nil {
+		return nil, err
+	}
+	return s.checkSourceVisibilityTargets(ctx, credential, tenant, request, qualifyManagerPreviewRead)
 }

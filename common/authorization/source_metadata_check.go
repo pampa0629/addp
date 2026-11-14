@@ -57,27 +57,55 @@ func (r *SourceMetadataCheck) Matches(request SourceMetadataCheckRequest) bool {
 
 // SourceSearchCheck is a point-in-time observation for the fixed Manager search operation.
 type SourceSearchCheck struct {
-	ObservedAt     time.Time                 `json:"observed_at"`
-	Targets        []SourceSearchTargetCheck `json:"targets"`
-	ObservationTag string                    `json:"observation_tag"`
+	ObservedAt     time.Time                     `json:"observed_at"`
+	Targets        []SourceVisibilityTargetCheck `json:"targets"`
+	ObservationTag string                        `json:"observation_tag"`
 }
 
-type SourceSearchTargetCheck struct {
+type SourceVisibilityTargetCheck struct {
 	SourceMetadataTargetCheck
 	ContentReadable bool   `json:"content_readable"`
 	ItemFingerprint string `json:"item_fingerprint,omitempty"`
 }
 
 func (r *SourceSearchCheck) Matches(request SourceSearchCheckRequest) bool {
-	if r == nil || r.ObservedAt.IsZero() || !request.Valid() || !ValidSearchObservationTag(r.ObservationTag) || len(r.Targets) != len(request.Targets) || request.ExpectedObservationTag != nil && *request.ExpectedObservationTag != r.ObservationTag {
+	if r == nil || r.ObservedAt.IsZero() || !request.Valid() || !ValidSearchObservationTag(r.ObservationTag) || request.ExpectedObservationTag != nil && *request.ExpectedObservationTag != r.ObservationTag {
 		return false
 	}
-	for i, target := range r.Targets {
+	return visibilityTargetsMatch(r.Targets, request.Targets)
+}
+
+// SourceObjectPreviewCheck observes visibility for one fixed Manager preview.
+// It carries no reusable authorization or source content facts.
+type SourceObjectPreviewCheck struct {
+	ObservedAt time.Time                     `json:"observed_at"`
+	Targets    []SourceVisibilityTargetCheck `json:"targets"`
+}
+
+func (r SourceMetadataCheckRequest) ValidObjectPreview() bool {
+	if !r.Valid() || len(r.Targets) != 1 {
+		return false
+	}
+	target := r.Targets[0]
+	leaf := target.Segments[len(target.Segments)-1]
+	return leaf.Term == plugin.EngineCatalogTermFile && leaf.Kind == plugin.EngineCatalogKindFile ||
+		leaf.Term == plugin.EngineCatalogTermObject && leaf.Kind == plugin.EngineCatalogKindObject
+}
+
+func (r *SourceObjectPreviewCheck) Matches(request SourceMetadataCheckRequest) bool {
+	return r != nil && !r.ObservedAt.IsZero() && request.ValidObjectPreview() && visibilityTargetsMatch(r.Targets, request.Targets)
+}
+
+func visibilityTargetsMatch(targets []SourceVisibilityTargetCheck, expectedTargets []plugin.EngineCatalogPath) bool {
+	if len(targets) != len(expectedTargets) {
+		return false
+	}
+	for i, target := range targets {
 		if target.ContentReadable && !target.Visible {
 			return false
 		}
 		actual, err := EncodeSharingTarget(target.Target)
-		expected, expectedErr := EncodeSharingTarget(request.Targets[i])
+		expected, expectedErr := EncodeSharingTarget(expectedTargets[i])
 		if err != nil || expectedErr != nil || string(actual) != string(expected) {
 			return false
 		}

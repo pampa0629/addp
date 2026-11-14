@@ -103,3 +103,16 @@ func (c *SystemServiceClient) checkSourceVisibility(ctx context.Context, credent
 	}
 	return nil
 }
+
+// CheckManagerObjectPreview uses the original User or exact data.preview
+// delegate. Service credentials never substitute for user visibility.
+func (c *SystemServiceClient) CheckManagerObjectPreview(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) (*authorization.SourceObjectPreviewCheck, error) {
+	if !(authorization.SourceMetadataCheckRequest{Targets: targets}).ValidObjectPreview() {
+		return nil, ErrMetadataQueryDenied
+	}
+	var result authorization.SourceObjectPreviewCheck
+	if err := c.checkSourceVisibility(ctx, credential, targets, "/api/v1/system/engine-access/metadata-checks/manager-object-preview", true, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}

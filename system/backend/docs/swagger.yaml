@@ -420,6 +420,15 @@ definitions:
       target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
     type: object
+  authorization.SourceObjectPreviewCheck:
+    properties:
+      observed_at:
+        type: string
+      targets:
+        items:
+          $ref: '#/definitions/authorization.SourceVisibilityTargetCheck'
+        type: array
+    type: object
   authorization.SourceSearchCheck:
     properties:
       observation_tag:
@@ -428,7 +437,7 @@ definitions:
         type: string
       targets:
         items:
-          $ref: '#/definitions/authorization.SourceSearchTargetCheck'
+          $ref: '#/definitions/authorization.SourceVisibilityTargetCheck'
         type: array
     type: object
   authorization.SourceSearchCheckRequest:
@@ -442,7 +451,7 @@ definitions:
           $ref: '#/definitions/plugin.EngineCatalogPath'
         type: array
     type: object
-  authorization.SourceSearchTargetCheck:
+  authorization.SourceVisibilityTargetCheck:
     properties:
       content_readable:
         type: boolean
@@ -7702,6 +7711,63 @@ paths:
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: self
+  /engine-access/metadata-checks/manager-object-preview:
+    post:
+      consumes:
+      - application/json
+      description: 当前 Tenant User 或唯一 manager audience、data.preview Scope 委托，固定核验
+        manager.data_item.read。单个存储叶子分别返回元数据可见和内容可读，隐藏项不返回指纹，不授予读取或可缓存许可；不改变 Meta
+        查询和检索资格 | Current Tenant User or sole manager audience and data.preview delegate;
+        checks fixed manager.data_item.read. Observes metadata visibility and content
+        readability for one storage leaf, hides invisible fingerprints and grants
+        no read authority or cacheable lease. Meta query and search qualifications
+        are unchanged
+      parameters:
+      - description: 单个类型化存储叶子，不支持 query 参数 | One typed storage leaf; no query parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.SourceMetadataCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当次预览可见性 | Current preview visibility
+          schema:
+            $ref: '#/definitions/authorization.SourceObjectPreviewCheck'
+        "400":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 检查 Manager 对象预览可见性 | Check Manager object preview visibility
+      tags:
+      - 源数据读取检查 | Source Data Read Checks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
   /engine-access/metadata-checks/manager-search:
     post:
       consumes:

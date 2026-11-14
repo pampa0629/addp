@@ -388,6 +388,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal(err)
 				}
 				read(currentRequest, false)
+				if kind == "nfs" && format == "tiff" {
+					exerciseObjectPreviewVisibility(t, db, service, ctx, actor, reader, session.AccessToken, primary, current)
+				}
 				prior, err := repo.findSourceGrant(ctx, grantA.RequestID)
 				if err != nil || !equalJSON(prior.FileComposition, grantA.FileComposition) || prior.BoundaryHash != *original.BoundaryHash {
 					t.Fatal("old approved composition was overwritten", err)

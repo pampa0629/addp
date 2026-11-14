@@ -30,7 +30,7 @@ func (f searchVisibilityFixture) CheckManagerSearchRead(_ context.Context, crede
 		if visible {
 			fp, _ = authorizationfacts.PrimaryCandidateFingerprint(path)
 		}
-		result.Targets = append(result.Targets, authorization.SourceSearchTargetCheck{
+		result.Targets = append(result.Targets, authorization.SourceVisibilityTargetCheck{
 			SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: path, Visible: visible}, ContentReadable: readable, ItemFingerprint: fp,
 		})
 	}

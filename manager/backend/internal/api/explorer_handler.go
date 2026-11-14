@@ -13,6 +13,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
@@ -54,6 +55,11 @@ type ExplorerHandler struct {
 	protectionStore      explorerProtectionStore
 	previewSourceChecker managerprotection.PreviewSourceChecker
 	pgSourceChecker      *commonClient.SystemServiceClient
+	objectPreviewChecker objectPreviewVisibilityChecker
+}
+
+type objectPreviewVisibilityChecker interface {
+	CheckManagerObjectPreview(context.Context, string, []plugin.EngineCatalogPath) (*authorization.SourceObjectPreviewCheck, error)
 }
 
 type explorerProtectionStore interface {
@@ -83,6 +89,10 @@ func (h *ExplorerHandler) SetPGSourceChecker(checker *commonClient.SystemService
 	h.pgSourceChecker = checker
 }
 
+func (h *ExplorerHandler) SetObjectPreviewChecker(checker objectPreviewVisibilityChecker) {
+	h.objectPreviewChecker = checker
+}
+
 func bearerToken(c *gin.Context) string {
 	authHeader := c.GetHeader("Authorization")
 	parts := strings.SplitN(authHeader, " ", 2)
@@ -98,6 +108,7 @@ func bearerToken(c *gin.Context) string {
 // @Description 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more
 // @Description Redis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only
 // @Description 键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample
+// @Description NFS TIFF 对象预览按当前原用户分别检查元数据与读取权；仅元数据时返回白名单结构、不返回统计、摘要或内容地址；交付完整结果前重新核验 | NFS TIFF object previews check current original-user metadata and read access separately. Metadata-only results contain whitelisted structure, without statistics, digests or content addresses; full delivery rechecks current access
 // @Description PostgreSQL 使用当前用户或委托工具凭据核验不可变分页计划的全部来源，并应用本地字段保护；未授权来源或依赖无法证明时拒绝读取 | PostgreSQL checks every source of an immutable page plan with the current user or delegated tool credential and applies local field protection; unauthorized or unprovable sources are rejected before reading
 // @Param key_cursor query string false "键空间浏览游标 | Keyspace browse cursor"
 // @Param key_name query string false "规范内容键令牌 k:Base64URL | Canonical content key token k:Base64URL"
@@ -197,6 +208,20 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		req.KeyValueOptions = plugin.KeyValueReadOptions{Key: c.Query("key_name"), Cursor: c.Query("key_cursor"), Prefix: c.Query("key_prefix")}
 		if (req.KeyValueOptions.Key != "" || req.KeyValueOptions.Cursor != "" || req.KeyValueOptions.Prefix != "") && (req.ItemType != "keyspace" || (req.KeyValueOptions.Key != "" && (req.KeyValueOptions.Cursor != "" || req.KeyValueOptions.Prefix != ""))) {
 			err = plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid keyspace content selection"))
+		}
+	}
+	// Internal Meta access is not user-visible authorization. Only the admitted
+	// NFS TIFF object path is changed in this batch.
+	objectVisibility := err == nil && req.RequiresObjectPreviewVisibility()
+	if objectVisibility {
+		readable, checkErr := h.checkObjectPreviewVisibility(c, req)
+		if checkErr != nil {
+			writeObjectPreviewVisibilityError(c, checkErr)
+			return
+		}
+		if !readable {
+			writePreviewResult(c, h.previewResolver.MetadataOnlyObjectPreview(req), nil, dataprotection.SubjectReference{}, nil)
+			return
 		}
 	}
 	var result *preview.PreviewResult
@@ -330,6 +355,17 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			return
 		}
 	}
+	if objectVisibility {
+		readable, checkErr := h.checkObjectPreviewVisibility(c, req)
+		if checkErr != nil {
+			writeObjectPreviewVisibilityError(c, checkErr)
+			return
+		}
+		if !readable {
+			writePreviewResult(c, h.previewResolver.MetadataOnlyObjectPreview(req), nil, dataprotection.SubjectReference{}, nil)
+			return
+		}
+	}
 	writePreviewResult(c, result, protectionRules, protectionSubject, protectionProjections)
 }
 
@@ -363,11 +399,11 @@ func writePreviewSourceError(c *gin.Context, err error) bool {
 
 func writePreviewAuthorizationError(c *gin.Context, err error) bool {
 	switch {
-	case errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected):
+	case errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected), errors.Is(err, commonClient.ErrMetadataCredentialRejected):
 		managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
-	case errors.Is(err, commonClient.ErrManagerPreviewReadDenied), errors.Is(err, preview.ErrSourceAuthorizationRequired):
+	case errors.Is(err, commonClient.ErrMetadataQueryDenied), errors.Is(err, commonClient.ErrManagerPreviewReadDenied), errors.Is(err, preview.ErrSourceAuthorizationRequired):
 		accessDeniedToEngine(c)
-	case errors.Is(err, commonClient.ErrManagerPreviewReadUnavailable), errors.Is(err, preview.ErrPreviewMetadataUnavailable):
+	case errors.Is(err, commonClient.ErrMetadataQueryUnavailable), errors.Is(err, commonClient.ErrManagerPreviewReadUnavailable), errors.Is(err, preview.ErrPreviewMetadataUnavailable):
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, commoni18n.MsgAuthorizationServiceUnavailable), "error_code": "authorization_service_unavailable"})
 	case errors.Is(err, managerprotection.ErrRequired):
 		protectionRequired(c)
@@ -696,4 +732,31 @@ func streamContentTypeIsInline(contentType string) bool {
 			strings.HasPrefix(normalized, "audio/") ||
 			strings.HasPrefix(normalized, "text/")
 	}
+}
+
+func (h *ExplorerHandler) checkObjectPreviewVisibility(c *gin.Context, req *preview.PreviewResolverRequest) (bool, error) {
+	if h.objectPreviewChecker == nil {
+		return false, commonClient.ErrMetadataQueryUnavailable
+	}
+	target := plugin.FileItemPath(req.Engine.ID, req.ItemFullName)
+	request := authorization.SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{target}}
+	result, err := h.objectPreviewChecker.CheckManagerObjectPreview(c.Request.Context(), bearerToken(c), request.Targets)
+	if err != nil {
+		return false, err
+	}
+	if !result.Matches(request) {
+		return false, commonClient.ErrMetadataQueryUnavailable
+	}
+	if !result.Targets[0].Visible || result.Targets[0].ItemFingerprint != req.ItemFingerprint {
+		return false, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorNotFound, errors.New("preview target unavailable"))
+	}
+	return result.Targets[0].ContentReadable, nil
+}
+
+func writeObjectPreviewVisibilityError(c *gin.Context, err error) {
+	if writePreviewAuthorizationError(c, err) || writeCatalogPreviewError(c, err) {
+		return
+	}
+	// Never expose a dependency error or the prepared internal Meta record.
+	writePreviewAuthorizationError(c, commonClient.ErrMetadataQueryUnavailable)
 }

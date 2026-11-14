@@ -1239,3 +1239,33 @@ func mapToMetaAttributes(attrs map[string]interface{}) []models.MetaAttribute {
 	}
 	return result
 }
+
+// RequiresObjectPreviewVisibility uses the formal Meta identity, not the caller
+// extension or locator kind. Other engine/format admission remains unchanged.
+func (req *PreviewResolverRequest) RequiresObjectPreviewVisibility() bool {
+	return req != nil && req.Engine != nil && req.Engine.EngineType == "nfs" && req.MetaItem != nil &&
+		isContentFileItemType(req.ItemType) && formatNameFromMetaAttributes(req.MetadataAttributes()) == "tiff"
+}
+
+// MetadataOnlyObjectPreview constructs an allowlist from scratch. Do not strip
+// fields from the full provider response: new provider fields must stay private.
+func (r *PreviewResolver) MetadataOnlyObjectPreview(req *PreviewResolverRequest) *PreviewResult {
+	attrs := req.MetadataAttributes()
+	safe := map[string]interface{}{"item": map[string]interface{}{
+		"data_type": itemDataTypeFromMetaAttributes(attrs), "format": formatNameFromMetaAttributes(attrs), "layout": itemLayoutFromMetaAttributes(attrs),
+	}}
+	// A schema version is a scalar declaration, never a raw attribute subtree.
+	switch version := attrs["schema_version"].(type) {
+	case float64:
+		safe["schema_version"] = version
+	case int:
+		safe["schema_version"] = version
+	}
+	metadata := &PreviewMetadata{Locator: req.Locator.ToURI(), EngineName: req.Engine.Name, ResourceType: req.Engine.EngineType,
+		MetaScanned: true, ScannedDepth: req.scannedDepth(), ItemID: req.MetaItemID, FullName: req.ItemFullName,
+		ItemFingerprint: req.ItemFingerprint, EngineType: req.Engine.EngineType}
+	data := &models.TablePreview{Mode: "unsupported", Columns: []string{}, Rows: []map[string]interface{}{}, GeometryColumns: []string{},
+		ItemMeta: &models.EngineCatalogFacts{Fingerprint: req.ItemFingerprint, ItemType: req.ItemType, ItemTypeI18nKey: "engine.term." + req.ItemType,
+			FullName: req.ItemFullName, Attributes: mapToMetaAttributes(safe), ScannedAt: req.Metadata.LastScanAt, ScannedDepth: req.scannedDepth()}}
+	return &PreviewResult{PreviewType: "unsupported", Data: data, Metadata: metadata}
+}

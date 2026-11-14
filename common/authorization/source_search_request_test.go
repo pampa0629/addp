@@ -25,7 +25,7 @@ func TestSearchObservationAllowsEmptyBasisWithoutRelaxingMetadataChecks(t *testi
 	request.ExpectedObservationTag = nil
 	target := plugin.TabularItemPath(12, "schema", "public", "table")
 	request.Targets = []plugin.EngineCatalogPath{target}
-	response.Targets = []SourceSearchTargetCheck{{SourceMetadataTargetCheck: SourceMetadataTargetCheck{Target: target, Visible: true}, ItemFingerprint: strings.Repeat("a", 64)}}
+	response.Targets = []SourceVisibilityTargetCheck{{SourceMetadataTargetCheck: SourceMetadataTargetCheck{Target: target, Visible: true}, ItemFingerprint: strings.Repeat("a", 64)}}
 	if !response.Matches(request) {
 		t.Fatal("valid bound identity rejected")
 	}
