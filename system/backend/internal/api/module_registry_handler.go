@@ -42,9 +42,124 @@ func NewModuleRegistryHandler(registry *service.ModuleRegistryService, encryptio
 	return &ModuleRegistryHandler{service: registry, runtimeLogs: service.NewRuntimeLogService(os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"), encryptionKey)}
 }
 
+// GetDeclaration godoc
+// @Summary 读取本模块发布基线 | Get module declaration
+// @Tags 部署声明 | Deployment declarations
+// @Security BearerAuth
+// @Produce json
+// @Param module_name path string true "模块名称 | Module name"
+// @Success 200 {object} models.ModuleDeclarationView
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.module_declaration.publish"]
+// @Router /deployment/module_declarations/{module_name} [get]
+func (h *ModuleRegistryHandler) GetDeclaration(c *gin.Context) {
+	name := c.Param("module_name")
+	if err := iamServiceHasClient(c, "addp-"+name+"-publisher"); err != nil {
+		respondModuleRegistryIAMError(c, err)
+		return
+	}
+	definition, err := h.service.GetDeclaration(name)
+	if err != nil {
+		respondDeclarationError(c, err)
+		return
+	}
+	c.JSON(200, definition.Declaration())
+}
+
+// CreateDeclaration godoc
+// @Summary 首次发布模块声明 | Create module declaration
+// @Tags 部署声明 | Deployment declarations
+// @Security BearerAuth
+// @Produce json
+// @Accept json
+// @Param request body models.ModuleDeclarationCreate true "模块声明 | Module declaration"
+// @Success 201 {object} models.ModuleDeclarationView
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.module_declaration.publish"]
+// @Router /deployment/module_declarations [post]
+func (h *ModuleRegistryHandler) CreateDeclaration(c *gin.Context) {
+	var req models.ModuleDeclarationCreate
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 65536)
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || binding.Validator.ValidateStruct(&req) != nil {
+		respondDeclarationError(c, service.ErrInvalidModuleRegistration)
+		return
+	}
+	name := req.ModuleName
+	if err := iamServiceHasClient(c, "addp-"+name+"-publisher"); err != nil {
+		respondModuleRegistryIAMError(c, err)
+		return
+	}
+	definition, err := h.service.PublishDeclaration(name, 0, req.ModuleDeclarationFields)
+	if err != nil {
+		respondDeclarationError(c, err)
+		return
+	}
+	c.JSON(201, definition.Declaration())
+}
+
+// UpdateDeclaration godoc
+// @Summary 按版本完整替换模块声明 | Update module declaration
+// @Tags 部署声明 | Deployment declarations
+// @Security BearerAuth
+// @Produce json
+// @Param module_name path string true "模块名称 | Module name"
+// @Accept json
+// @Param request body models.ModuleDeclarationUpdate true "模块声明 | Module declaration"
+// @Success 200 {object} models.ModuleDeclarationView
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.module_declaration.publish"]
+// @Router /deployment/module_declarations/{module_name} [put]
+func (h *ModuleRegistryHandler) UpdateDeclaration(c *gin.Context) {
+	var req models.ModuleDeclarationUpdate
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 65536)
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || binding.Validator.ValidateStruct(&req) != nil {
+		respondDeclarationError(c, service.ErrInvalidModuleRegistration)
+		return
+	}
+	name := c.Param("module_name")
+	if err := iamServiceHasClient(c, "addp-"+name+"-publisher"); err != nil {
+		respondModuleRegistryIAMError(c, err)
+		return
+	}
+	definition, err := h.service.PublishDeclaration(name, req.Version, req.ModuleDeclarationFields)
+	if err != nil {
+		respondDeclarationError(c, err)
+		return
+	}
+	c.JSON(200, definition.Declaration())
+}
+
+func respondDeclarationError(c *gin.Context, err error) {
+	status, msg, code := http.StatusInternalServerError, sysi18n.MsgInternalError, "module_declaration_failed"
+	switch {
+	case errors.Is(err, service.ErrModuleDefinitionVersionConflict):
+		status, msg, code = http.StatusConflict, sysi18n.MsgModuleVersionConflict, "resource_version_conflict"
+	case errors.Is(err, commonapi.ErrNotFound):
+		status, msg, code = http.StatusNotFound, sysi18n.MsgModuleNotFound, "module_definition_not_found"
+	case errors.Is(err, service.ErrInvalidModuleRegistration):
+		status, msg, code = http.StatusBadRequest, sysi18n.MsgModuleDeclarationInvalid, "module_declaration_invalid"
+	}
+	respondModuleRegistryError(c, status, commoni18n.T(c, msg), code)
+}
+
 // RegisterService godoc
 // @Summary      注册当前运行模块 | Register current runtime module
-// @Description  平台 Service Principal 只能注册与自身 OAuth Client 对应的模块定义和当前进程实例；注册不覆盖管理员 enabled 状态 | A platform service principal can only register its matching module definition and current process instance; registration never overrides administrator enabled state
+// @Description  平台运行身份在已发布的模块定义下登记当前实例 | Register the current instance against its published module definition
 // @Tags         运行时注册 | Runtime Registry
 // @Accept       json
 // @Produce      json
@@ -54,6 +169,7 @@ func NewModuleRegistryHandler(registry *service.ModuleRegistryService, encryptio
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.runtime_registry.update"]
@@ -72,6 +188,10 @@ func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 	authContext, _ := middleware.IAMAuthContextFromGin(c)
 	req.RegistrationClientID = *authContext.Client.ClientID
 	if err := h.service.Register(&req); err != nil {
+		if errors.Is(err, service.ErrModuleDeclarationNotPublished) {
+			respondModuleRegistryError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgModuleDeclarationMissing), "module_declaration_not_published")
+			return
+		}
 		if errors.Is(err, service.ErrInvalidModuleRegistration) {
 			respondModuleRegistryError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid), moduleRegistrationInvalidErrorCode)
 			return

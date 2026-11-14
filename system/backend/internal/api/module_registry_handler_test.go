@@ -34,17 +34,17 @@ func TestModuleRegistryRuntimeErrorsExposeStableCodes(t *testing.T) {
 		router := newModuleRegistryRuntimeTestRouter(t, "addp-meta")
 		response := performModuleRegistryRequest(router, http.MethodPost, "/runtime/modules", `{
 			"module_name":"manager","instance_id":"manager-1","role":"backend",
-			"module_url":"http://manager:8080","route_prefix":"/manager",
+			"module_url":"http://manager:8080",
 			"process_started_at":"2026-09-29T00:00:00Z"
 		}`)
 		assertModuleRegistryErrorCode(t, response, http.StatusForbidden, moduleRegistryForbiddenErrorCode)
 	})
 
-	t.Run("gateway ingress accepts an empty route prefix", func(t *testing.T) {
+	t.Run("gateway ingress registers without a route prefix", func(t *testing.T) {
 		router := newModuleRegistryRuntimeTestRouter(t, "addp-gateway")
 		response := performModuleRegistryRequest(router, http.MethodPost, "/runtime/modules", `{
 			"module_name":"gateway","instance_id":"gateway-1","role":"ingress",
-			"module_url":"http://gateway:8000","route_prefix":"",
+			"module_url":"http://gateway:8000",
 			"process_started_at":"2026-09-29T00:00:00Z"
 		}`)
 		if response.Code != http.StatusOK {
@@ -74,6 +74,16 @@ func newModuleRegistryRuntimeTestRouter(t *testing.T, clientID string) *gin.Engi
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	for _, module := range []string{"gateway"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	handler := NewModuleRegistryHandler(registry, []byte("test-key"))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -122,9 +132,19 @@ func TestUpdateModulePlatformUsesOptimisticVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	for _, module := range []string{"manager"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "manager", InstanceID: "manager-backend-1", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://manager:8080", RoutePrefix: "/manager",
+		ModuleURL: "http://manager:8080",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -173,9 +193,19 @@ func TestUpdateModulePlatformRejectsSystem(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	for _, module := range []string{"system"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "system", InstanceID: "system-backend-1", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://system:8180", RoutePrefix: "/system",
+		ModuleURL: "http://system:8180",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -212,10 +242,20 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	for _, module := range []string{"manager", "meta"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, instanceID := range []string{"manager-a", "manager-b"} {
 		if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 			ModuleName: "manager", InstanceID: instanceID, Role: models.ModuleRuntimeRoleBackend,
-			ModuleURL: "http://" + instanceID + ":8081", RoutePrefix: "/manager",
+			ModuleURL:    "http://" + instanceID + ":8081",
 			HostNodeName: "host-" + instanceID, RuntimeHostname: "container-" + instanceID,
 			HostNodeIPs: []string{"192.0.2.7", "2001:db8::1"},
 		}); err != nil {
@@ -224,7 +264,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	}
 	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "meta", InstanceID: "meta-a", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://meta.local:8082", RoutePrefix: "/meta",
+		ModuleURL:      "http://meta.local:8082",
 		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:19101/metrics"},
 	}); err != nil {
 		t.Fatal(err)

@@ -1,0 +1,63 @@
+{
+  "module_name": "transfer",
+  "route_prefix": "/transfer",
+  "configuration_management": {
+    "schema_version": "addp.configuration-management/v1",
+    "entries": [
+      {
+        "id": "transfer.configuration",
+        "owner_module": "transfer",
+        "scope_types": [
+          "platform_only"
+        ],
+        "frontend_route": "/configuration/transfer",
+        "read_permission": "transfer.configuration.read",
+        "update_permission": "transfer.configuration.update"
+      }
+    ]
+  },
+  "task_provider": {
+    "display_name": "数据传输",
+    "description": "数据同步任务",
+    "task_list_endpoint": "/api/v1/transfer/task-provider/tasks",
+    "task_detail_endpoint": "/api/v1/transfer/task-provider/tasks/{task_type}/{id}",
+    "task_execute_endpoint": "/api/v1/transfer/task-provider/tasks/{task_type}/{id}/execute",
+    "task_status_endpoint": "/api/v1/transfer/task-provider/executions/{execution_id}",
+    "capabilities": {
+      "schema_version": "task.capabilities/v2",
+      "task_capabilities": [
+        {
+          "create_url": "/transfer/tasks/create",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "执行 Transfer 同步任务定义",
+          "display_name": "数据同步",
+          "edit_url": "/transfer/tasks/:id/edit",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": true,
+          "type": "sync"
+        }
+      ],
+      "x_change_detection": [
+        "watermark"
+      ],
+      "x_features": [
+        "async",
+        "restartable_retry",
+        "watermark_resume",
+        "field_mapping",
+        "scheduled"
+      ],
+      "x_load_modes": [
+        "snapshot",
+        "incremental"
+      ],
+      "x_runtime_boundaries": [
+        "bounded"
+      ]
+    }
+  }
+}

@@ -52,8 +52,7 @@ func main() {
 	defer stop()
 	registrationDone := systemServiceClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
 		ModuleName: commonExecution.ModuleQuality, InstanceID: buildinfo.ProcessInstanceID(),
-		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/quality",
-		Metadata: map[string]interface{}{
+		Role: commonClient.ModuleRuntimeRoleWorker, Metadata: map[string]interface{}{
 			"runtime_name": "quality-bounded",
 			"capacity":     cfg.WorkerConcurrency,
 		},

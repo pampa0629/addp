@@ -47,4 +47,5 @@ ARG BUILD_ARCH=amd64
 ARG BUILD_TYPE=release
 ARG GOOS=linux
 COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+COPY agent/module-declaration.json /app/module-declaration.json
 ENTRYPOINT ["/app/runtime-log", "launch", "--module", "agent", "--role", "backend", "--"]

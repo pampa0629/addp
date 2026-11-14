@@ -20,8 +20,6 @@ from api.runs import ErrorResponse
 from api.inference_scenario_bindings import router as inference_scenario_bindings_router
 from utils.llm import AgentInferenceService
 from addp_common.client import (
-    ConfigurationManagementDeclaration,
-    ConfigurationManagementEntry,
     ModuleRegistration,
     ModuleRegistryClient,
 )
@@ -136,19 +134,10 @@ def _module_registration() -> ModuleRegistration:
     return ModuleRegistration(
         module_name="agent",
         module_url=service_url,
-        route_prefix="/agent",
+
         health_check_url=f"{service_url}/health/ready",
         metadata={"module": "agent", "language": "python"},
-        configuration_management=ConfigurationManagementDeclaration(entries=[
-            ConfigurationManagementEntry(
-                id="agent.configuration",
-                owner_module="agent",
-                scope_types=["platform_default_with_tenant_override"],
-                frontend_route="/configuration/agent",
-                read_permission="agent.configuration.read",
-                update_permission="agent.configuration.update",
-            ),
-        ]),
+
     )
 
 

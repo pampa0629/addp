@@ -13,7 +13,12 @@ fail() {
 
 [ "${ADDP_ONLINE_HOST:-}" = "1" ] ||
   fail "ADDP_ONLINE_HOST must be exactly 1"
+operation=stop
 force=0
+if [ "${1:-}" = --pause ] || [ "${1:-}" = --resume ]; then
+  operation=$1; shift
+  [ "${1:-}" = -manager ] || fail "pause/resume requires the managed Manager"
+fi
 if [ "${1:-}" = "--force" ]; then
   force=1
   shift
@@ -25,9 +30,9 @@ case "$1" in
     module=system
     expected_command='\.dev-bins/addp-system([[:space:]]|$)'
     ;;
-  -manager)
-    module=manager
-    expected_command='\.dev-bins/addp-manager([[:space:]]|$)'
+  -manager|-catalog)
+    module="${1#-}"
+    expected_command="\.dev-bins/addp-${module}([[:space:]]|$)"
     ;;
   -meta-worker-1|-meta-worker-2)
     module="${1#-}"
@@ -79,6 +84,11 @@ fi
 expected_cwd="$ROOT_DIR"
 [ "$module" != copilot-backend ] || expected_cwd="$ROOT_DIR/copilot/backend"
 [ "$process_cwd" = "$expected_cwd" ] || fail "PID $pid does not belong to this checkout"
+
+case "$operation" in
+  --pause) kill -STOP "$pid"; exit 0 ;;
+  --resume) kill -CONT "$pid"; exit 0 ;;
+esac
 
 if [ "$force" -eq 1 ]; then
   kill -KILL "$pid"

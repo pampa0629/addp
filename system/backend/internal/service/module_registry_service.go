@@ -20,6 +20,7 @@ import (
 )
 
 var ErrInvalidModuleRegistration = errors.New("invalid module registration")
+var ErrModuleDeclarationNotPublished = repository.ErrModuleDeclarationNotPublished
 var ErrModuleDefinitionVersionConflict = errors.New("module definition version conflict")
 var ErrBootstrapModuleImmutable = errors.New("platform bootstrap module enabled state is immutable")
 var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime instance query")
@@ -72,6 +73,45 @@ func (s *ModuleRegistryService) ObservabilityIdentities(ctx context.Context) (*c
 	return result, err
 }
 
+func (s *ModuleRegistryService) GetDeclaration(name string) (*models.ModuleDefinition, error) {
+	return s.repo.GetDeclaration(name)
+}
+func (s *ModuleRegistryService) PublishDeclaration(name string, version int64, fields models.ModuleDeclarationFields) (*models.ModuleDefinition, error) {
+	if name == "" || fields.RoutePrefix == nil || len(*fields.RoutePrefix) > 50 || strings.TrimSpace(*fields.RoutePrefix) != *fields.RoutePrefix ||
+		(name == "gateway" && (*fields.RoutePrefix != "" || fields.ConfigurationManagement != nil || fields.TaskProvider != nil)) || (name != "gateway" && !strings.HasPrefix(*fields.RoutePrefix, "/")) {
+		return nil, ErrInvalidModuleRegistration
+	}
+	if err := commonconfiguration.ValidateManagementDeclaration(name, fields.ConfigurationManagement); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
+	}
+	if fields.ConfigurationManagement != nil {
+		keys := make(map[string]struct{}, len(fields.ConfigurationManagement.Entries)*2)
+		for _, entry := range fields.ConfigurationManagement.Entries {
+			keys[entry.ReadPermission] = struct{}{}
+			keys[entry.UpdatePermission] = struct{}{}
+		}
+		permissionKeys := make([]string, 0, len(keys))
+		for key := range keys {
+			permissionKeys = append(permissionKeys, key)
+		}
+		owned, err := s.repo.AreActivePermissionsOwnedBy(name, permissionKeys)
+		if err != nil {
+			return nil, fmt.Errorf("validate configuration management permissions: %w", err)
+		}
+		if !owned {
+			return nil, fmt.Errorf("%w: configuration management permissions must be active and owned by %q", ErrInvalidModuleRegistration, name)
+		}
+	}
+	if err := taskprovider.ValidateDeclaration(fields.TaskProvider); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
+	}
+	definition, err := s.repo.PublishDeclaration(name, version, fields)
+	if errors.Is(err, repository.ErrModuleDefinitionVersionConflict) {
+		return nil, ErrModuleDefinitionVersionConflict
+	}
+	return definition, err
+}
+
 func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) error {
 	if req != nil && req.NodeID != "" {
 		if err := validateNodeID(req.NodeID); err != nil {
@@ -98,7 +138,6 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	}
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
 	req.ModuleURL = strings.TrimRight(strings.TrimSpace(req.ModuleURL), "/")
-	req.RoutePrefix = strings.TrimSpace(req.RoutePrefix)
 	req.HealthCheckURL = strings.TrimRight(strings.TrimSpace(req.HealthCheckURL), "/")
 	if req.ModuleName == "" || req.InstanceID == "" || req.Role == "" || req.ProcessStartedAt.IsZero() {
 		return fmt.Errorf("%w: module_name, instance_id, role and process_started_at are required", ErrInvalidModuleRegistration)
@@ -109,43 +148,14 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 		return fmt.Errorf("%w: invalid module runtime role", ErrInvalidModuleRegistration)
 	}
 	if req.Role == models.ModuleRuntimeRoleIngress {
-		if req.ModuleName != "gateway" || req.RoutePrefix != "" || req.ModuleURL == "" || req.ConfigurationManagement != nil || req.TaskProvider != nil {
+		if req.ModuleName != "gateway" || req.ModuleURL == "" {
 			return fmt.Errorf("%w: ingress must be gateway without a business route or module declarations", ErrInvalidModuleRegistration)
 		}
 	} else if req.ModuleName == "gateway" {
 		return fmt.Errorf("%w: gateway may only register as ingress", ErrInvalidModuleRegistration)
-	} else if req.RoutePrefix == "" {
-		return fmt.Errorf("%w: route_prefix is required", ErrInvalidModuleRegistration)
 	}
 	if req.Role == models.ModuleRuntimeRoleBackend && req.ModuleURL == "" {
 		return fmt.Errorf("%w: backend module_url is required", ErrInvalidModuleRegistration)
-	}
-	if err := commonconfiguration.ValidateManagementDeclaration(req.ModuleName, req.ConfigurationManagement); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
-	}
-	if req.ConfigurationManagement != nil {
-		keys := make(map[string]struct{}, len(req.ConfigurationManagement.Entries)*2)
-		for _, entry := range req.ConfigurationManagement.Entries {
-			keys[entry.ReadPermission] = struct{}{}
-			keys[entry.UpdatePermission] = struct{}{}
-		}
-		permissionKeys := make([]string, 0, len(keys))
-		for key := range keys {
-			permissionKeys = append(permissionKeys, key)
-		}
-		owned, err := s.repo.AreActivePermissionsOwnedBy(req.ModuleName, permissionKeys)
-		if err != nil {
-			return fmt.Errorf("validate configuration management permissions: %w", err)
-		}
-		if !owned {
-			return fmt.Errorf("%w: configuration management permissions must be active and owned by %q", ErrInvalidModuleRegistration, req.ModuleName)
-		}
-	}
-	if req.Role != models.ModuleRuntimeRoleBackend && req.TaskProvider != nil {
-		return fmt.Errorf("%w: only backend instances may publish task_provider", ErrInvalidModuleRegistration)
-	}
-	if err := taskprovider.ValidateDeclaration(req.TaskProvider); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
 	}
 	if _, err := s.repo.Register(req, s.leaseDuration); err != nil {
 		if errors.Is(err, repository.ErrProcessMetricsDeclarationImmutable) {

@@ -10,6 +10,7 @@ import (
 
 func TestModuleNodeDeclarationsStayImmutableAndUseCurrentAuthorization(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
+	publishForTest(t, registry, "manager")
 	if err := db.AutoMigrate(&models.HostNode{}); err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +24,7 @@ func TestModuleNodeDeclarationsStayImmutableAndUseCurrentAuthorization(t *testin
 	if err := db.Create(&second).Error; err != nil {
 		t.Fatal(err)
 	}
-	request := &models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "a", Role: "worker", RoutePrefix: "/manager", ProcessStartedAt: time.Now().UTC(), NodeID: first.NodeID, RegistrationClientID: "addp-manager"}
+	request := &models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "a", Role: "worker", ProcessStartedAt: time.Now().UTC(), NodeID: first.NodeID, RegistrationClientID: "addp-manager"}
 	register := func() {
 		t.Helper()
 		if err := registry.Register(request); err != nil {

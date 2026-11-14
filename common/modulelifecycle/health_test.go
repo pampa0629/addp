@@ -92,7 +92,7 @@ func TestBusinessReadinessReportsRegistrationLifecycle(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	client := commonclient.NewSystemServiceClient(system.URL, healthTestTokenSource{}, system.Client())
 	registration := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{
-		ModuleName: "meta", ModuleURL: "http://meta:8082", RoutePrefix: "/meta",
+		ModuleName: "meta", ModuleURL: "http://meta:8082",
 	})
 	controller := NewBusiness("meta", commonclient.ModuleRuntimeRoleBackend)
 	controller.AttachRegistration(registration)

@@ -14,14 +14,12 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonconfiguration "github.com/addp/common/configuration"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	_ "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/api"
-	monitorauthorization "github.com/addp/monitor/internal/authorization"
 	"github.com/addp/monitor/internal/config"
 	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/service"
@@ -259,12 +257,8 @@ func main() {
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
 	registration := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-		ModuleName: "monitor", ModuleURL: serviceURL, RoutePrefix: "/monitor", HealthCheckURL: serviceURL + "/health/ready",
+		ModuleName: "monitor", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
 		Metadata: map[string]interface{}{"module": "monitor"},
-		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
-			ID: "monitor.configuration", OwnerModule: "monitor", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/monitor",
-			ReadPermission: monitorauthorization.PermissionMonitorConfigurationRead, UpdatePermission: monitorauthorization.PermissionMonitorConfigurationUpdate,
-		}}},
 	})
 	lifecycleController.AttachRegistration(registration)
 	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)

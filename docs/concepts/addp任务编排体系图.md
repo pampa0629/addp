@@ -55,13 +55,13 @@ graph TB
         Instances --> Projection
     end
 
-    Meta --> |模块注册 + capabilities| Definitions
-    Transfer --> |模块注册 + capabilities| Definitions
-    Develop --> |模块注册 + capabilities| Definitions
-    Manager --> |模块注册 + capabilities| Definitions
-    Quality --> |模块注册 + capabilities| Definitions
-    Graph --> |模块注册 + capabilities| Definitions
-    OrchestratorProvider --> |模块注册 + capabilities| Definitions
+    Meta --> |部署发布 capabilities| Definitions
+    Transfer --> |部署发布 capabilities| Definitions
+    Develop --> |部署发布 capabilities| Definitions
+    Manager --> |部署发布 capabilities| Definitions
+    Quality --> |部署发布 capabilities| Definitions
+    Graph --> |部署发布 capabilities| Definitions
+    OrchestratorProvider --> |部署发布 capabilities| Definitions
 
     subgraph "任务编排 (Orchestrator 模块)"
         Orchestrator[Orchestrator 模块]
@@ -92,8 +92,8 @@ graph TB
 
 ### 任务库工作原理
 
-**步骤 1: 模块注册时一并发布任务能力**
-- Backend 通过唯一的模块注册调用同时发布运行实例和可选 TaskProvider 声明，不存在独立 TaskProvider 注册路径
+**步骤 1: 部署时发布模块任务能力**
+- 部署流程从模块制品发布可选 TaskProvider 声明，Backend 监听成功后登记实例
 - 声明保存在 `module_definitions.task_provider`，包括标准 API endpoint，以及 `task_capabilities[]` 中的任务类型、定义 schema、执行 schema 和调度/取消能力
 - Provider ID 复用稳定的模块定义 ID；重复相同声明是幂等的，只有声明变化才递增模块版本
 

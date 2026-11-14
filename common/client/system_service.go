@@ -234,6 +234,20 @@ func (c *SystemServiceClient) AppendTenantAuditEvent(ctx context.Context, reques
 	return c.doTenantJSON(ctx, http.MethodPost, "/api/v1/system/tenant/audit/events", request, nil)
 }
 
+const moduleDeclarationsPath = "/api/v1/system/deployment/module_declarations"
+
+func (c *SystemServiceClient) GetModuleDeclaration(ctx context.Context, module string, result any) error {
+	return c.doPlatformJSON(ctx, http.MethodGet, moduleDeclarationsPath+"/"+url.PathEscape(module), nil, result)
+}
+
+func (c *SystemServiceClient) CreateModuleDeclaration(ctx context.Context, declaration any) error {
+	return c.doPlatformJSON(ctx, http.MethodPost, moduleDeclarationsPath, declaration, nil)
+}
+
+func (c *SystemServiceClient) UpdateModuleDeclaration(ctx context.Context, module string, declaration any) error {
+	return c.doPlatformJSON(ctx, http.MethodPut, moduleDeclarationsPath+"/"+url.PathEscape(module), declaration, nil)
+}
+
 func (c *SystemServiceClient) RegisterModule(ctx context.Context, request *ModuleRegistrationRequest) error {
 	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/modules", request, nil)
 }
@@ -391,11 +405,11 @@ func (c *SystemServiceClient) ValidateAPIConsumerCredential(
 
 func (c *SystemServiceClient) RegisterAndHeartbeatWithMetadata(
 	ctx context.Context,
-	moduleName, moduleURL, routePrefix string,
+	moduleName, moduleURL string,
 	metadata map[string]interface{},
 ) *ModuleRegistrationLifecycle {
 	return c.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
-		ModuleName: moduleName, ModuleURL: moduleURL, RoutePrefix: routePrefix,
+		ModuleName: moduleName, ModuleURL: moduleURL,
 		HealthCheckURL: moduleURL + "/health/ready", Metadata: metadata,
 	})
 }
@@ -667,6 +681,10 @@ func moduleRegistryErrorRetryable(err error, heartbeat bool) bool {
 	}
 	statusCode, ok := SystemAPIStatusCode(err)
 	if ok {
+		if !heartbeat && statusCode == http.StatusConflict {
+			code, _ := SystemAPIErrorCode(err)
+			return code == "module_declaration_not_published"
+		}
 		if heartbeat && statusCode == http.StatusNotFound {
 			return true
 		}

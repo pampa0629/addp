@@ -1,0 +1,4 @@
+{
+  "module_name": "security",
+  "route_prefix": "/security"
+}

@@ -164,14 +164,8 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
-	taskProvider, err := service.TaskProviderDeclaration()
-	if err != nil {
-		logger.L().Error("构建 TaskProvider 声明失败", "error", err)
-		os.Exit(1)
-	}
 	registration = systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-		ModuleName: "meta", ModuleURL: serviceURL, RoutePrefix: "/meta", HealthCheckURL: serviceURL + "/health/ready",
-		TaskProvider: taskProvider,
+		ModuleName: "meta", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
 		Metadata: map[string]interface{}{
 			"module": "meta",
 			"capabilities": map[string]interface{}{

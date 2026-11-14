@@ -114,7 +114,7 @@ func run() error {
 	serverDone := make(chan error, 1)
 	go func() { err := server.Serve(listener); serverDone <- err; stop() }()
 	serviceURL := commonconfig.BuildServiceURL(commonconfig.GetServiceHost(), cfg.Port)
-	registration := system.RegisterAndHeartbeatWithMetadata(ctx, "ontology", serviceURL, "/ontology", map[string]interface{}{"module": "ontology"})
+	registration := system.RegisterAndHeartbeatWithMetadata(ctx, "ontology", serviceURL, map[string]interface{}{"module": "ontology"})
 	lifecycle.AttachRegistration(registration)
 	modulelifecycle.CancelRuntimeOnFatal(registration, stop)
 	canWork := func() bool {

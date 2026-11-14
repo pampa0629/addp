@@ -16,11 +16,11 @@ class _RegistryClient:
 
 class ModuleLifecycleTest(unittest.IsolatedAsyncioTestCase):
     def test_health_uses_registration_process_start(self):
-        registration = ModuleRegistration(module_name="agent", module_url="http://agent:8190", route_prefix="/agent")
+        registration = ModuleRegistration(module_name="agent", module_url="http://agent:8190")
         self.assertEqual(live_response("agent")["started_at"], registration.process_started_at)
 
     def test_readiness_depends_only_on_local_checks(self):
-        registration = ModuleRegistration(module_name="agent", module_url="http://agent:8190", route_prefix="/agent")
+        registration = ModuleRegistration(module_name="agent", module_url="http://agent:8190")
         registry = Mock()
         for state in ("starting", "registered", "recovering", "failed", "stopped"):
             registry.snapshot.return_value.state = state
@@ -43,7 +43,7 @@ class ModuleLifecycleTest(unittest.IsolatedAsyncioTestCase):
         registration = ModuleRegistration(
             module_name="agent",
             module_url=f"http://127.0.0.1:{port}",
-            route_prefix="/agent",
+
         )
         task = asyncio.create_task(
             register_after_listener(client, registration, port, retry_interval=0.01)

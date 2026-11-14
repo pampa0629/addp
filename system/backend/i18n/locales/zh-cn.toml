@@ -134,6 +134,12 @@ other = "心跳更新成功"
 [system.module.deleted]
 other = "模块注销成功"
 
+[system.module.declaration_invalid]
+other = "模块声明无效"
+
+[system.module.declaration_missing]
+other = "模块声明尚未发布"
+
 [system.module.registration_invalid]
 other = "模块运行实例注册信息无效"
 

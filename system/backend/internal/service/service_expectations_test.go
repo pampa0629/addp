@@ -56,6 +56,7 @@ func TestServiceExpectationParserRejectsIncompleteAliasedOrInventedIntent(t *tes
 
 func TestServiceGroupsUseFormalLeasesAndPurposeWithoutRequiringMetricsOrHostBinding(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
+	publishForTest(t, registry, "meta", "transfer")
 	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func TestServiceGroupsUseFormalLeasesAndPurposeWithoutRequiringMetricsOrHostBind
 	write()
 	register := func(module, id, role, purpose string) {
 		t.Helper()
-		req := &models.ModuleRegistrationRequest{ModuleName: module, InstanceID: id, Role: role, RoutePrefix: "/" + module,
+		req := &models.ModuleRegistrationRequest{ModuleName: module, InstanceID: id, Role: role,
 			ProcessStartedAt: time.Now().Add(-time.Minute).UTC(), Metadata: map[string]any{"runtime_name": purpose}}
 		if role == "backend" {
 			req.ModuleURL = "http://example.test"

@@ -12,7 +12,7 @@ TaskProvider 是模块的一种角色，不是独立业务 owner，也不是独�
 
 TaskProvider 按模块声明，不按任务类型注册。一个模块只有一个 provider，并通过 `task_capabilities[]` 声明多个任务类型能力。Provider 的稳定 ID 就是模块定义 ID；重复发布相同声明必须幂等，不递增模块定义版本，声明实际变化时才递增模块定义版本，且不得覆盖管理员 `enabled`。
 
-模块 Backend 必须通过唯一的模块注册请求同时发布模块实例和可选 TaskProvider 声明，不得再调用独立 TaskProvider 注册入口。只有 Backend 可以发布、更新或撤销该角色：Backend 注册不携带声明表示模块不再提供 TaskProvider 角色；Worker、Scheduler 不携带 Provider 声明，也不得清空 Backend 已发布的声明。模块进程离线时声明继续保留，但 Provider 变为不可用；后续任一 Backend 重新注册并取得有效租约后立即恢复可用。
+部署流程使用模块专属发布身份，在完整模块声明中发布、更新或撤销 TaskProvider。省略 `task_provider` 即撤销该能力。进程只登记自己的实例；模块离线时保留声明，有效 Backend 租约恢复后重新可用。
 
 `task_capabilities[]` 只声明已经存在持久任务定义并能通过标准任务 endpoint 被 Orchestrator 引用的类型。仅提供即时 API、没有任务定义的 ad-hoc execution type 不得为了统一监控而注册空任务列表或伪任务详情；它只需写入 `common.task_executions` 并由 owner 提供自身即时执行入口。
 
@@ -56,7 +56,7 @@ owner 应将整组 TaskProvider 端点挂载在独立路由空间，并以专用
 
 所有 TaskProvider 声明必须使用独立 `/task-provider/` 路由空间和以上 endpoint 后缀语义；公共声明校验器必须拒绝落在人用路由空间的声明。取消接口不是必选能力；未声明支持取消的任务类型不得注册或展示取消入口。确需处理现有路径时，只能作为入口层迁移工作，不得形成长期双轨命名。
 
-System 的模块注册入口接收 TaskProvider 声明时必须校验标准 endpoint：任务详情和执行 endpoint 必须包含 `{task_type}` 与 `{id}`，执行状态 endpoint 必须包含 `{execution_id}`，并且必须分别使用 `/tasks`、`/tasks/{task_type}/{id}`、`/tasks/{task_type}/{id}/execute`、`/executions/{execution_id}` 和 `/executions/{execution_id}/cancel` 标准后缀；前缀只用于 owner 模块和独立 TaskProvider 路由空间，不得发明 `/scan/runs/{execution_id}`、`/tasks/{id}/run` 等私有或旧后缀。Orchestrator 调用 provider 时只替换 `{task_type}`、`{id}`、`{execution_id}` 三类标准占位符；模块私有 UI 或 CRUD 路径可以继续使用 `:id`、`:task_id` 等前端或 Gin 写法，但不得进入 TaskProvider endpoint 契约。
+System 的模块声明发布入口接收 TaskProvider 声明时必须校验标准 endpoint：任务详情和执行 endpoint 必须包含 `{task_type}` 与 `{id}`，执行状态 endpoint 必须包含 `{execution_id}`，并且必须分别使用 `/tasks`、`/tasks/{task_type}/{id}`、`/tasks/{task_type}/{id}/execute`、`/executions/{execution_id}` 和 `/executions/{execution_id}/cancel` 标准后缀；前缀只用于 owner 模块和独立 TaskProvider 路由空间，不得发明 `/scan/runs/{execution_id}`、`/tasks/{id}/run` 等私有或旧后缀。Orchestrator 调用 provider 时只替换 `{task_type}`、`{id}`、`{execution_id}` 三类标准占位符；模块私有 UI 或 CRUD 路径可以继续使用 `:id`、`:task_id` 等前端或 Gin 写法，但不得进入 TaskProvider endpoint 契约。
 
 ### 标准响应体
 
@@ -201,7 +201,7 @@ Orchestrator 保存编排和执行前共用同一参数校验路径：用具体�
 
 ### capabilities.task_capabilities
 
-模块注册发布 TaskProvider 角色声明时必须使用 `task.capabilities/v2` schema，并声明稳定的 `task_capabilities[]` 任务类型能力数组：
+部署流程发布 TaskProvider 角色声明时必须使用 `task.capabilities/v2` schema，并声明稳定的 `task_capabilities[]` 任务类型能力数组：
 
 ```json
 {
@@ -241,7 +241,7 @@ Orchestrator 保存编排和执行前共用同一参数校验路径：用具体�
 
 1. `schema_version` 必须为 `task.capabilities/v2`。
 2. `create_url` 和 `edit_url` 属于具体 `task_type`，不得放在 provider 顶层。
-3. System 模块注册入口必须校验 capabilities schema，不符合规范的 TaskProvider 声明不得发布成功。
+3. System 模块声明发布入口必须校验 capabilities schema，不符合规范的 TaskProvider 声明不得发布成功。
 4. `task_type` 是 provider 对外契约，不能随 UI 文案变化；不得使用大写、短横线、空格或本地化文本。
 5. provider 顶层私有扩展字段必须使用 `x_` 前缀，例如 `x_owner_features`；未加 `x_` 前缀的未知顶层字段必须被 System 注册入口拒绝，避免与未来标准字段冲突。`task_capabilities[]` 内部只允许本文列出的标准字段，不允许私有扩展字段；任务类型级扩展需要先修订 capabilities 规范。
 6. `definition_schema` 必须声明为 JSON 对象 schema，最小值为 `{ "type": "object" }`。System 注册入口以及任务详情契约校验必须复用平台可理解的 JSON Schema 子集：允许 `type`、`title`、`description`、`properties`、`required`、`enum`、`default`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`format`；不得使用 `$ref`、`oneOf`、`anyOf`、`allOf`、`not` 等复杂组合或远程引用。
@@ -256,7 +256,7 @@ Orchestrator 保存编排和执行前共用同一参数校验路径：用具体�
 15. `edit_url` 是 `task.capabilities/v2` 的任务定义入口字段，不承诺任务定义一定可修改。来源驱动且定义不可变的任务必须在该 URL 展示带稳定任务 ID 的只读定义；不得把结果筛选页、无任务身份的模块首页或 Data Explorer 通用入口冒充任务定义入口。
 16. 来源驱动任务的 `create_url` 可以指向 owner 的来源选择页，由用户选择源对象后通过 owner 领域动作派生任务定义。此类任务不得同时保留允许调用方直接提交私有任务配置的第二套创建或更新 API。
 
-`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v2`、标准任务列表响应 `{items,total,page,page_size}`、任务级 `execution_contract` 和输入参数实例。System 模块注册入口、Monitor 的能力声明校验、Orchestrator 的任务发现、编排保存和执行前校验必须按各自职责复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities、为每个任务生成精确契约并实现标准 endpoint；`common/taskprovider` 不访问 System 模块控制面，不调用 owner 模块，也不处理执行调度。
+`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v2`、标准任务列表响应 `{items,total,page,page_size}`、任务级 `execution_contract` 和输入参数实例。System 模块声明发布入口、Monitor 的能力声明校验、Orchestrator 的任务发现、编排保存和执行前校验必须按各自职责复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities、为每个任务生成精确契约并实现标准 endpoint；`common/taskprovider` 不访问 System 模块控制面，不调用 owner 模块，也不处理执行调度。
 
 当前不应默认打开任何模块的 `supports_cancel=true`。标准取消能力必须先在专题中确认 worker 中断、资源清理、状态一致落库、重复取消幂等和可观测诊断等前置条件，再单独更新对应模块能力声明。
 

@@ -100,11 +100,24 @@ func assertOfflineTimeQueryAgainstPostgres(t *testing.T, db *gorm.DB) {
 	defer tx.Rollback()
 	repo := repository.NewModuleRegistryRepository(tx)
 	registry := service.NewModuleRegistryService(repo)
+	for _, module := range []string{"manager"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if existing, e := registry.GetDeclaration(module); e == nil {
+			version = existing.Version
+		}
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	now := time.Now().UTC().Truncate(time.Second)
 	offlineAt := now.Add(-5 * time.Minute)
 	if err := registry.Register(&models.ModuleRegistrationRequest{
 		ModuleName: "manager", InstanceID: "offline-time-postgres-probe", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://manager.local:8081", RoutePrefix: "/manager", ProcessStartedAt: now.Add(-7 * 24 * time.Hour),
+		ModuleURL: "http://manager.local:8081", ProcessStartedAt: now.Add(-7 * 24 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
 	}

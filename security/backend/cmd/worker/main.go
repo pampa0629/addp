@@ -55,7 +55,7 @@ func main() {
 		log.Fatalf("Security discovery runner configuration failed: %v", err)
 	}
 	client := commonclient.NewSystemServiceClient(cfg.SystemURL, tokens, nil)
-	registration := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "security", InstanceID: buildinfo.ProcessInstanceID(), RoutePrefix: "/security", Role: commonclient.ModuleRuntimeRoleWorker, Metadata: map[string]interface{}{"module": "security", "role": "worker", "runtime_name": commonexecution.TaskTypeSensitiveDataDiscovery, "capacity": 1, "capabilities": map[string]interface{}{"detection": map[string]interface{}{"enabled": true}}}})
+	registration := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "security", InstanceID: buildinfo.ProcessInstanceID(), Role: commonclient.ModuleRuntimeRoleWorker, Metadata: map[string]interface{}{"module": "security", "role": "worker", "runtime_name": commonexecution.TaskTypeSensitiveDataDiscovery, "capacity": 1, "capabilities": map[string]interface{}{"detection": map[string]interface{}{"enabled": true}}}})
 	modulelifecycle.CancelRuntimeOnFatal(registration, stop)
 	runner.Run(ctx, registration.IsRegistered)
 	<-registration.Done()

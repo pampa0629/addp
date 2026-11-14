@@ -1,0 +1,200 @@
+{
+  "module_name": "manager",
+  "route_prefix": "/manager",
+  "configuration_management": {
+    "schema_version": "addp.configuration-management/v1",
+    "entries": [
+      {
+        "id": "manager.configuration",
+        "owner_module": "manager",
+        "scope_types": [
+          "platform_default_with_tenant_override"
+        ],
+        "frontend_route": "/configuration/manager",
+        "read_permission": "manager.configuration.read",
+        "update_permission": "manager.configuration.update"
+      }
+    ]
+  },
+  "task_provider": {
+    "display_name": "数据管理",
+    "description": "矢量物化视图、矢量瓦片缓存、栅格快显、三维模型、点云、PPTX PDF 和空间业务数据生成任务",
+    "task_list_endpoint": "/api/v1/manager/task-provider/tasks",
+    "task_detail_endpoint": "/api/v1/manager/task-provider/tasks/{task_type}/{id}",
+    "task_execute_endpoint": "/api/v1/manager/task-provider/tasks/{task_type}/{id}/execute",
+    "task_status_endpoint": "/api/v1/manager/task-provider/executions/{execution_id}",
+    "capabilities": {
+      "schema_version": "task.capabilities/v2",
+      "task_capabilities": [
+        {
+          "create_url": "/manager/tasks/spatial?task_type=image_segmentation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "按文字提示将 GeoTIFF 实例轮廓保存为业务 GeoJSON",
+          "display_name": "影像实例分割",
+          "edit_url": "/manager/tasks/spatial?task_type=image_segmentation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "image_segmentation"
+        },
+        {
+          "create_url": "/manager/tasks/spatial?task_type=vector_tile_set_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "将空间数据项生成为 Business 存储中的 PMTiles v3 数据项",
+          "display_name": "矢量瓦片生成",
+          "edit_url": "/manager/tasks/spatial?task_type=vector_tile_set_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "vector_tile_set_generation"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=vector_tile_cache_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "为空间数据项生成可复用的瓦片缓存结果",
+          "display_name": "瓦片缓存生成",
+          "edit_url": "/manager/tasks/quick-view?task_type=vector_tile_cache_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "vector_tile_cache_generation"
+        },
+        {
+          "create_url": "/manager/tasks/embedding?create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "对数据项执行向量化并生成可检索向量结果",
+          "display_name": "向量化",
+          "edit_url": "/manager/tasks/embedding?task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": true,
+          "type": "embedding"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=vector_materialized_view_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "为 PostGIS 空间数据项创建可复用的 3857 矢量物化视图目标",
+          "display_name": "矢量物化视图",
+          "edit_url": "/manager/tasks/quick-view?task_type=vector_materialized_view_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "vector_materialized_view_generation"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=raster_cog_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "为 TIFF/GeoTIFF 数据项生成或登记 Manager 受管的 COG",
+          "display_name": "栅格快显 COG 生成",
+          "edit_url": "/manager/tasks/quick-view?task_type=raster_cog_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "raster_cog_generation"
+        },
+        {
+          "create_url": "/manager/tasks/spatial?task_type=raster_mosaic_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "从资源树 node 选择一批 TIFF/GeoTIFF，生成写入业务存储的 raster_mosaic 数据集",
+          "display_name": "栅格 mosaic 生成",
+          "edit_url": "/manager/tasks/spatial?task_type=raster_mosaic_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "raster_mosaic_generation"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=model3d_tiles_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "将 OSGB Scene 生成 3D Tiles 或 S3M 快显结果并写入 Manager infra MinIO",
+          "display_name": "分块三维模型瓦片生成",
+          "edit_url": "/manager/tasks/quick-view?task_type=model3d_tiles_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "model3d_tiles_generation"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=model_3d_glb_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "将 OSGB、glTF、FBX、OBJ、STL 或 IFC 三维模型转换为 Manager 受管的 GLB 快显 artifact",
+          "display_name": "三维模型 GLB 快显生成",
+          "edit_url": "/manager/tasks/quick-view?task_type=model_3d_glb_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "model_3d_glb_generation"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=gaussian_splat_ksplat_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "将 3DGS 高斯泼溅数据转换或发布为 Manager 受管的 KSplat 快显 artifact",
+          "display_name": "3DGS - KSplat 快显生成",
+          "edit_url": "/manager/tasks/quick-view?task_type=gaussian_splat_ksplat_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "gaussian_splat_ksplat_generation"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=point_cloud_copc_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "将 LAS、LAZ、E57、PCD 或 XYZ 点云转换为 Manager 受管的 COPC 快显 artifact",
+          "display_name": "点云 COPC 快显生成",
+          "edit_url": "/manager/tasks/quick-view?task_type=point_cloud_copc_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "point_cloud_copc_generation"
+        },
+        {
+          "create_url": "/manager/tasks/quick-view?task_type=pptx_pdf_generation&create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "将 PPTX 转换为 Manager 受管的 PDF 快显 artifact",
+          "display_name": "PPTX 静态 PDF 快显生成",
+          "edit_url": "/manager/tasks/quick-view?task_type=pptx_pdf_generation&task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "pptx_pdf_generation"
+        }
+      ]
+    }
+  }
+}

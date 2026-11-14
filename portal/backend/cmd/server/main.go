@@ -65,7 +65,7 @@ func main() {
 	}()
 
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.Port)
-	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "portal", serviceURL, "/portal", nil)
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "portal", serviceURL, nil)
 	lifecycleController.AttachRegistration(registration)
 	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	<-runtimeContext.Done()

@@ -28,21 +28,28 @@ func taskProviderModuleRegistryForTest(t *testing.T) (*gorm.DB, *ModuleRegistryS
 }
 
 func taskProviderModuleRequestForTest() *models.ModuleRegistrationRequest {
-	capabilities := commonmodels.JSONString(`{"schema_version":"task.capabilities/v2","task_capabilities":[{"type":"scan","display_name":"Scan","description":"Scan metadata","definition_schema":{"type":"object"},"supports_schedule":false,"supports_cancel":false,"supports_inline_execution":false,"create_url":"/meta/scan","edit_url":"/meta/scan?id=:id","deprecated":false}]}`)
 	return &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "meta", InstanceID: "meta-a", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://meta-a:8082", RoutePrefix: "/meta",
-		TaskProvider: &commonmodels.TaskProviderDeclaration{
-			DisplayName: "Meta", Description: "Metadata tasks",
-			TaskListEndpoint: "/api/v1/meta/task-provider/tasks", TaskDetailEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}",
-			TaskExecuteEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}/execute", TaskStatusEndpoint: "/api/v1/meta/task-provider/executions/{execution_id}",
-			Capabilities: &capabilities,
-		},
+		ModuleURL: "http://meta-a:8082",
 	}
+}
+
+func providerFields() models.ModuleDeclarationFields {
+	capabilities := commonmodels.JSONString(`{"schema_version":"task.capabilities/v2","task_capabilities":[{"type":"scan","display_name":"Scan","description":"Scan metadata","definition_schema":{"type":"object"},"supports_schedule":false,"supports_cancel":false,"supports_inline_execution":false,"create_url":"/meta/scan","edit_url":"/meta/scan?id=:id","deprecated":false}]}`)
+	prefix := "/meta"
+	return models.ModuleDeclarationFields{RoutePrefix: &prefix, TaskProvider: &commonmodels.TaskProviderDeclaration{
+		DisplayName: "Meta", Description: "Metadata tasks",
+		TaskListEndpoint: "/api/v1/meta/task-provider/tasks", TaskDetailEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}/execute", TaskStatusEndpoint: "/api/v1/meta/task-provider/executions/{execution_id}",
+		Capabilities: &capabilities,
+	}}
 }
 
 func TestTaskProviderProjectionKeepsDeclarationAndResolvesCurrentBackend(t *testing.T) {
 	db, modules := taskProviderModuleRegistryForTest(t)
+	if _, err := modules.PublishDeclaration("meta", 0, providerFields()); err != nil {
+		t.Fatal(err)
+	}
 	providers := NewTaskProviderService(modules)
 	request := taskProviderModuleRequestForTest()
 	if err := modules.Register(request); err != nil {
@@ -72,6 +79,9 @@ func TestTaskProviderProjectionKeepsDeclarationAndResolvesCurrentBackend(t *test
 
 func TestTaskProviderProjectionReturnsAllCurrentBackendsInStableOrder(t *testing.T) {
 	_, modules := taskProviderModuleRegistryForTest(t)
+	if _, err := modules.PublishDeclaration("meta", 0, providerFields()); err != nil {
+		t.Fatal(err)
+	}
 	providers := NewTaskProviderService(modules)
 	first := taskProviderModuleRequestForTest()
 	first.InstanceID = "meta-b"
@@ -96,95 +106,40 @@ func TestTaskProviderProjectionReturnsAllCurrentBackendsInStableOrder(t *testing
 	}
 }
 
-func TestTaskProviderDeclarationIsPartOfModuleVersion(t *testing.T) {
-	_, modules := taskProviderModuleRegistryForTest(t)
+func TestReconnectingInstancesCannotRepublishOrWithdrawCapabilities(t *testing.T) {
+	_, registry := taskProviderModuleRegistryForTest(t)
+	fields := providerFields()
+	if _, err := registry.PublishDeclaration("meta", 0, fields); err != nil {
+		t.Fatal(err)
+	}
 	request := taskProviderModuleRequestForTest()
-	if err := modules.Register(request); err != nil {
+	if err := registry.Register(request); err != nil {
 		t.Fatal(err)
 	}
-	if err := modules.Register(request); err != nil {
-		t.Fatal(err)
-	}
-	module, _ := modules.GetModule("meta")
-	if module.Version != 1 {
-		t.Fatalf("idempotent declaration version = %d, want 1", module.Version)
-	}
-	request.TaskProvider.Description = "Updated metadata tasks"
-	if err := modules.Register(request); err != nil {
-		t.Fatal(err)
-	}
-	module, _ = modules.GetModule("meta")
-	if module.Version != 2 || module.TaskProvider.Description != "Updated metadata tasks" {
-		t.Fatalf("updated module = %#v", module)
-	}
-}
-
-func TestExistingModuleMayPublishTaskProviderDeclaration(t *testing.T) {
-	db, modules := taskProviderModuleRegistryForTest(t)
-	request := taskProviderModuleRequestForTest()
-	if err := db.Create(&models.ModuleDefinition{
-		ModuleName:  request.ModuleName,
-		RoutePrefix: request.RoutePrefix,
-		Enabled:     true,
-		Version:     1,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-
-	if err := modules.Register(request); err != nil {
-		t.Fatal(err)
-	}
-	module, err := modules.GetModule(request.ModuleName)
+	fields.TaskProvider.Description = "Updated tasks"
+	published, err := registry.PublishDeclaration("meta", 1, fields)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if module.TaskProvider == nil || module.TaskProvider.DisplayName != request.TaskProvider.DisplayName || module.Version != 2 {
-		t.Fatalf("module after publishing TaskProvider = %#v", module)
-	}
-
-	if err := modules.Register(request); err != nil {
+	if err := registry.Register(request); err != nil {
 		t.Fatal(err)
 	}
-	module, err = modules.GetModule(request.ModuleName)
-	if err != nil {
+	worker := *request
+	worker.Role = "worker"
+	worker.InstanceID = "worker"
+	if err := registry.Register(&worker); err != nil {
 		t.Fatal(err)
 	}
-	if module.Version != 2 {
-		t.Fatalf("idempotent TaskProvider publication version = %d, want 2", module.Version)
+	current, err := registry.GetModule("meta")
+	if err != nil || current.Version != published.Version || current.TaskProvider.Description != "Updated tasks" {
+		t.Fatalf("reconnected: %+v %v", current, err)
 	}
-}
-
-func TestBackendMayWithdrawTaskProviderButWorkerCannot(t *testing.T) {
-	_, modules := taskProviderModuleRegistryForTest(t)
-	request := taskProviderModuleRequestForTest()
-	if err := modules.Register(request); err != nil {
+	fields.TaskProvider = nil
+	if _, err := registry.PublishDeclaration("meta", published.Version, fields); err != nil {
 		t.Fatal(err)
 	}
-
-	workerRequest := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
-		ModuleName: request.ModuleName, InstanceID: "meta-worker-a", Role: models.ModuleRuntimeRoleWorker,
-		RoutePrefix: request.RoutePrefix,
-	}
-	if err := modules.Register(workerRequest); err != nil {
-		t.Fatal(err)
-	}
-	module, err := modules.GetModule(request.ModuleName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if module.TaskProvider == nil || module.Version != 1 {
-		t.Fatalf("worker registration changed declaration: %#v", module)
-	}
-
-	request.TaskProvider = nil
-	if err := modules.Register(request); err != nil {
-		t.Fatal(err)
-	}
-	module, err = modules.GetModule(request.ModuleName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if module.TaskProvider != nil || module.Version != 2 {
-		t.Fatalf("backend withdrawal did not remove declaration: %#v", module)
+	current, err = registry.GetModule("meta")
+	if err != nil || current.Version != 3 || current.TaskProvider != nil {
+		t.Fatalf("withdrawn: %+v %v", current, err)
 	}
 }

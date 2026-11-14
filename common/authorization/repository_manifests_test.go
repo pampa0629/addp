@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 550 {
-		t.Fatalf("descriptor count = %d, want 550", len(descriptors))
+	if len(descriptors) != 551 {
+		t.Fatalf("descriptor count = %d, want 551", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if (descriptor.Key == "system.workflow_private_files.execute" || descriptor.Key == "system.manager_pg_read_check.execute") && (descriptor.OwnerModule != "system" || descriptor.Action != "execute" || descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
@@ -166,8 +166,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 		}
 	}
-	if len(roles) != 75 {
-		t.Fatalf("role count = %d, want 75", len(roles))
+	if len(roles) != 76 {
+		t.Fatalf("role count = %d, want 76", len(roles))
 	}
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.engine_lifecycle_operator", []string{"user"})
 	assertRepositoryRoleScopes(t, roles, "tenant.engine_lifecycle_operator", []string{"tenant"})

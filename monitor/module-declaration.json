@@ -1,0 +1,19 @@
+{
+  "module_name": "monitor",
+  "route_prefix": "/monitor",
+  "configuration_management": {
+    "schema_version": "addp.configuration-management/v1",
+    "entries": [
+      {
+        "id": "monitor.configuration",
+        "owner_module": "monitor",
+        "scope_types": [
+          "platform_only"
+        ],
+        "frontend_route": "/configuration/monitor",
+        "read_permission": "monitor.configuration.read",
+        "update_permission": "monitor.configuration.update"
+      }
+    ]
+  }
+}

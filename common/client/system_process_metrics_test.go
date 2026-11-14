@@ -29,7 +29,7 @@ func TestOptionalProcessSourceFailureDoesNotBlockRegistration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	lifecycle := client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{ModuleName: "monitor", Role: "worker", RoutePrefix: "/monitor", ProcessMetrics: &models.ProcessMetricsDeclaration{SchemaVersion: models.ProcessMetricsSchema, Endpoint: "https://other:18100/metrics"}})
+	lifecycle := client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{ModuleName: "monitor", Role: "worker", ProcessMetrics: &models.ProcessMetricsDeclaration{SchemaVersion: models.ProcessMetricsSchema, Endpoint: "https://other:18100/metrics"}})
 	select {
 	case request := <-registered:
 		if request.ProcessMetrics != nil || request.InstanceID == "" {

@@ -1,0 +1,40 @@
+{
+  "module_name": "graph",
+  "route_prefix": "/graph",
+  "task_provider": {
+    "display_name": "知识图谱",
+    "description": "知识图谱构建任务",
+    "task_list_endpoint": "/api/v1/graph/task-provider/tasks",
+    "task_detail_endpoint": "/api/v1/graph/task-provider/tasks/{task_type}/{id}",
+    "task_execute_endpoint": "/api/v1/graph/task-provider/tasks/{task_type}/{id}/execute",
+    "task_status_endpoint": "/api/v1/graph/task-provider/executions/{execution_id}",
+    "capabilities": {
+      "schema_version": "task.capabilities/v2",
+      "task_capabilities": [
+        {
+          "create_url": "/graph/graphs",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "执行 Graph 知识图谱构建任务",
+          "display_name": "图谱构建",
+          "edit_url": "/graph/graphs/:graph_id/build/tasks/:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "kg_build"
+        }
+      ],
+      "x_features": [
+        "async",
+        "kg_build",
+        "review_queue"
+      ],
+      "x_supported_source_models": [
+        "document",
+        "object_catalog"
+      ]
+    }
+  }
+}

@@ -259,9 +259,9 @@ if [ "$EXACT_PROCESS" = true ]; then
     exit 1
   }
   case "$SELECTED_MODULE" in
-    system|manager|gateway|copilot) ;;
+    system|manager|gateway|copilot|catalog) ;;
     *)
-      echo "❌ --exact-process 必须且只能选择 -system、-manager、-gateway 或 -copilot" >&2
+      echo "❌ --exact-process 必须且只能选择 -system、-manager、-gateway、-catalog 或 -copilot" >&2
       exit 1
       ;;
   esac
@@ -406,6 +406,9 @@ else
         ;;
       manager)
         START_MANAGER_BACKEND=true
+        ;;
+      catalog)
+        START_CATALOG_BACKEND=true
         ;;
       copilot)
         START_COPILOT_BACKEND=true
@@ -1070,6 +1073,22 @@ done
 
 MAX_WAIT=60
 
+# Only the deployment entrypoint holds publisher credentials. Exact-process acceptance controls publication explicitly.
+declaration_modules=()
+if [ "${ONLINE_SUITE:-}" != module-registry-recovery ] || [ "$EXACT_PROCESS" != true ]; then
+  if [ "$START_SYSTEM_BACKEND" = true ]; then declaration_modules+=(system); fi
+  for declaration_file in */module-declaration.json; do
+    module_name=${declaration_file%/*}
+    [ "$module_name" != system ] || continue
+    flag=START_$(printf '%s' "$module_name" | tr '[:lower:]' '[:upper:]')_BACKEND
+    if [ "$module_name" = gateway ]; then flag=START_GATEWAY; fi
+    if [ "${!flag:-false}" = true ]; then declaration_modules+=("$module_name"); fi
+  done
+  if [ "${#declaration_modules[@]}" -gt 0 ]; then
+    python3 scripts/prod/publish-module-declarations.py --prepare "${declaration_modules[@]}" || exit 1
+  fi
+fi
+
 # 2. 启动 System Backend
 if [ "$START_SYSTEM_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 2/7: 启动 System Backend${NC}"
@@ -1096,6 +1115,11 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
 else
   echo -e "${YELLOW}Step 2/7: 跳过 System Backend${NC}"
   echo ""
+fi
+
+if [ "${#declaration_modules[@]}" -gt 0 ]; then
+    python3 scripts/prod/publish-module-declarations.py --provision "${declaration_modules[@]}" || exit 1
+    python3 scripts/prod/publish-module-declarations.py "${declaration_modules[@]}" || exit 1
 fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)

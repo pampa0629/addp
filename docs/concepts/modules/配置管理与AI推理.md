@@ -46,7 +46,7 @@ flowchart LR
 | owner 模块 | 定义、校验、保存、应用并审计本模块的普通运行配置 | 把部署配置或 Secret 混入普通配置表 |
 | 部署系统 | 提供端口、数据库、基础设施地址和 Secret 等 Bootstrap 输入 | 作为 owner 普通运行配置的 fallback |
 
-模块启动后可以随模块注册发布自己的配置管理入口。每个模块对外发布一个稳定的模块级入口；模块内的多个配置域在该入口页面内部通过 Tab 或分组组织。System 只接受 owner 与当前 Service Principal 一致的声明，并按稳定 entry id 幂等更新；声明不携带具体配置定义和值。Console 只负责统一入口和上下文分区，配置页面及 API 保持模块独立运行能力。
+部署流程随模块声明发布配置管理入口。每个模块对外发布一个稳定的模块级入口；模块内的多个配置域在该入口页面内部通过 Tab 或分组组织。System 只接受 owner 与当前 Service Principal 一致的声明，并按稳定 entry id 幂等更新；声明不携带具体配置定义和值。Console 只负责统一入口和上下文分区，配置页面及 API 保持模块独立运行能力。
 
 Platform Realm 只展示平台配置入口，Tenant Context 只展示当前 Tenant 配置入口。owner API 必须执行最终上下文和 Permission 校验；System 的通用平台配置 Permission 不能绕过业务模块自己的配置 Permission。
 

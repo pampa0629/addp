@@ -136,6 +136,42 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	router.Use(runtime.OAuthFailureAudit)
 	router.POST("/api/v1/system/oauth/token", runtime.OAuthHandler.Token)
 
+	publisherSecret := "independent-manager-deployment-secret-0123456789"
+	if err := provisioner.ProvisionPublisher(ctx, "addp-manager-publisher", publisherSecret); err != nil {
+		t.Fatal(err)
+	}
+	publisherToken := decodeIAMAccessToken(t, performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-manager-publisher", publisherSecret))
+	publisherContext, err := runtime.AuthContextService.ResolveAccessToken(ctx, publisherToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignments := publisherContext.Authorization.RoleAssignments
+	if publisherContext.Context.Type != "platform" || len(assignments) != 1 || !slices.Equal(assignments[0].Permissions, []string{"system.module_declaration.publish"}) {
+		t.Fatalf("unexpected module publisher authority: %+v", assignments)
+	}
+
+	t.Run("publisher and runtime enforce module and operation ownership", func(t *testing.T) {
+		productRouter := SetupRouter(db, testIAMRuntimeConfig())
+		runtimeToken := decodeIAMAccessToken(t, performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-manager", secrets["addp-manager"]))
+		for _, c := range []struct{ token, method, path, body string }{
+			{publisherToken, "GET", "/deployment/module_declarations/meta", ""},
+			{publisherToken, "POST", "/deployment/module_declarations", `{"module_name":"meta","route_prefix":"/meta"}`},
+			{runtimeToken, "GET", "/deployment/module_declarations/manager", ""},
+			{runtimeToken, "POST", "/deployment/module_declarations", `{"module_name":"manager","route_prefix":"/manager"}`},
+			{publisherToken, "POST", "/runtime/modules", `{}`},
+			{publisherToken, "PUT", "/platform/modules/manager", `{"version":1,"enabled":false}`},
+		} {
+			req := httptest.NewRequest(c.method, "/api/v1/system"+c.path, strings.NewReader(c.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+c.token)
+			response := httptest.NewRecorder()
+			productRouter.ServeHTTP(response, req)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("%s %s: status %d body %s", c.method, c.path, response.Code, response.Body.String())
+			}
+		}
+	})
+
 	wrongTenantResponse := performIAMOAuthClientCredentialsRequest(t, router, secrets["addp-manager"], otherTenantID)
 	if wrongTenantResponse.Code != http.StatusBadRequest {
 		t.Fatalf("wrong tenant token status = %d body=%s", wrongTenantResponse.Code, wrongTenantResponse.Body.String())

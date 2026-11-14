@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -14,6 +15,18 @@ import (
 	"gorm.io/gorm"
 )
 
+func systemDeclaration(t *testing.T) models.ModuleDeclarationCreate {
+	t.Helper()
+	raw, err := os.ReadFile("../../../module-declaration.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var declaration models.ModuleDeclarationCreate
+	if err = json.Unmarshal(raw, &declaration); err != nil {
+		t.Fatal(err)
+	}
+	return declaration
+}
 func TestSystemRegistrationDeclarationIsValid(t *testing.T) {
 	t.Setenv("ADDP_HOST_NODE_NAME", "system-host")
 	hostname, err := os.Hostname()
@@ -24,13 +37,13 @@ func TestSystemRegistrationDeclarationIsValid(t *testing.T) {
 	if request.ModuleName != "system" || request.Role != "backend" || request.ModuleURL != "http://localhost:8180" {
 		t.Fatalf("unexpected System registration endpoint: %+v", request)
 	}
-	if err := commonconfiguration.ValidateManagementDeclaration(request.ModuleName, request.ConfigurationManagement); err != nil {
+	if err := commonconfiguration.ValidateManagementDeclaration(request.ModuleName, systemDeclaration(t).ConfigurationManagement); err != nil {
 		t.Fatalf("System configuration management declaration is invalid: %v", err)
 	}
 	if request.HostNodeName != "system-host" || request.RuntimeHostname != hostname {
 		t.Fatalf("System node identity = %#v", request)
 	}
-	entries := request.ConfigurationManagement.Entries
+	entries := systemDeclaration(t).ConfigurationManagement.Entries
 	if len(entries) != 2 {
 		t.Fatalf("unexpected System configuration management route: %+v", entries)
 	}
@@ -75,7 +88,7 @@ func TestSystemRegistrationDeregistersBeforeLifecycleCompletes(t *testing.T) {
 	if err := db.Exec(`CREATE TABLE permissions (permission_key text PRIMARY KEY, owner_module text NOT NULL, status text NOT NULL)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range request.ConfigurationManagement.Entries {
+	for _, entry := range systemDeclaration(t).ConfigurationManagement.Entries {
 		for _, permission := range []string{entry.ReadPermission, entry.UpdatePermission} {
 			if err := db.Exec(`INSERT INTO permissions (permission_key, owner_module, status) VALUES (?, ?, 'active')`, permission, request.ModuleName).Error; err != nil {
 				t.Fatal(err)
@@ -85,6 +98,18 @@ func TestSystemRegistrationDeregistersBeforeLifecycleCompletes(t *testing.T) {
 	done, err := startSystemRegistration(ctx, registry, request)
 	if err != nil {
 		t.Fatal(err)
+	}
+	decl := systemDeclaration(t)
+	if _, err = registry.PublishDeclaration("system", 0, decl.ModuleDeclarationFields); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		current, err := registry.GetModule("system")
+		if err == nil && len(current.Instances) == 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	before, err := registry.GetModule("system")
 	if err != nil {

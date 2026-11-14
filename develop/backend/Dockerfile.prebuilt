@@ -21,4 +21,5 @@ EXPOSE 8185
 CMD ["./server"]
 
 COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+COPY develop/module-declaration.json /app/module-declaration.json
 ENTRYPOINT ["/app/runtime-log", "launch", "--module", "develop", "--role", "backend", "--"]

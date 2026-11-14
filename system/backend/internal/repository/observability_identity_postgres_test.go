@@ -64,6 +64,34 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	if err := runner.Run(ctx); err != nil {
 		t.Fatal("migration idempotence", err)
 	}
+	t.Run("publishers and administrator share one definition version", func(t *testing.T) {
+		registry := repository.NewModuleRegistryRepository(db)
+		prefix := "/concurrency"
+		fields := models.ModuleDeclarationFields{RoutePrefix: &prefix}
+		create := func() error { _, err := registry.PublishDeclaration("concurrency", 0, fields); return err }
+		race := func(first, second func() error) {
+			start := make(chan struct{})
+			results := make(chan error, 2)
+			for _, action := range []func() error{first, second} {
+				go func() { <-start; results <- action() }()
+			}
+			close(start)
+			a, b := <-results, <-results
+			if !(a == nil && errors.Is(b, repository.ErrModuleDefinitionVersionConflict) || b == nil && errors.Is(a, repository.ErrModuleDefinitionVersionConflict)) {
+				t.Fatalf("expected one commit and one conflict, got %v, %v", a, b)
+			}
+		}
+		race(create, create)
+		newPrefix := "/upgraded"
+		race(func() error {
+			_, err := registry.PublishDeclaration("concurrency", 1, models.ModuleDeclarationFields{RoutePrefix: &newPrefix})
+			return err
+		}, func() error { _, _, err := registry.UpdateEnabled("concurrency", false, 1); return err })
+		current, err := registry.GetDeclaration("concurrency")
+		if err != nil || current.Version != 2 || current.Enabled != (current.RoutePrefix == newPrefix) {
+			t.Fatalf("unexpected version or mixed commit: %+v %v", current, err)
+		}
+	})
 	var count int64
 	if err := db.Raw(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id=rp.role_id JOIN permissions p ON p.id=rp.permission_id WHERE p.permission_key='system.observability_identity.read' AND r.role_key='platform.monitor_runtime' AND r.tenant_id IS NULL`).Scan(&count).Error; err != nil || count != 1 {
 		t.Fatalf("monitor grant=%d %v", count, err)
@@ -88,7 +116,20 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 		}
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "worker-one", Role: "worker", RoutePrefix: "/manager", NodeID: node.NodeID, RegistrationClientID: "addp-manager", ProcessStartedAt: time.Now().UTC()}); err != nil {
+	for _, module := range []string{"manager", "meta", "monitor", "standard", "transfer"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if existing, e := registry.GetDeclaration(module); e == nil {
+			version = existing.Version
+		}
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "worker-one", Role: "worker", NodeID: node.NodeID, RegistrationClientID: "addp-manager", ProcessStartedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	var before models.ModuleRuntimeInstance
@@ -214,7 +255,7 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	}
 	// A native process has no invented VM binding. Re-registration uses the
 	// same nanosecond start identity even though PostgreSQL stores microseconds.
-	process := &models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC(), RegistrationClientID: "addp-monitor",
+	process := &models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", ProcessStartedAt: time.Now().UTC(), RegistrationClientID: "addp-monitor",
 		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics", Cgroup: &commonmodels.CgroupIdentity{BootID: "11111111-1111-4111-8111-111111111111", CgroupID: "100", PIDNamespaceID: "200"}}}
 	for i := 0; i < 2; i++ {
 		if err := registry.Register(process); err != nil {
@@ -255,7 +296,7 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	}
 	// Newer undeclared instances must not bury the declared source after paging.
 	for _, id := range []string{"unobserved-a", "unobserved-b", "unobserved-c"} {
-		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: id, Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC()}); err != nil {
+		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: id, Role: "worker", ProcessStartedAt: time.Now().UTC()}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -341,7 +382,7 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 				{ModuleName: "transfer", Role: "worker", RuntimeName: "sync", ExpectedReplicas: 1, DesiredState: "running", ChangedAt: at},
 			}}
 		for _, row := range []struct{ module, id, purpose string }{{"meta", "group-scan-one", "scan"}, {"meta", "group-scan-two", "scan"}, {"transfer", "group-sync", "sync"}, {"transfer", "group-continuous", "continuous_sync"}} {
-			if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: row.module, InstanceID: row.id, Role: "worker", RoutePrefix: "/" + row.module, ProcessStartedAt: at, Metadata: map[string]any{"runtime_name": row.purpose}}); err != nil {
+			if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: row.module, InstanceID: row.id, Role: "worker", ProcessStartedAt: at, Metadata: map[string]any{"runtime_name": row.purpose}}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -400,7 +441,7 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 			t.Fatalf("planned stop: %+v", row)
 		}
 		plan.Groups[0].DesiredState = "running"
-		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "group-unknown-purpose", Role: "worker", RoutePrefix: "/meta", ProcessStartedAt: at}); err != nil {
+		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "group-unknown-purpose", Role: "worker", ProcessStartedAt: at}); err != nil {
 			t.Fatal(err)
 		}
 		if row := readGroups().Groups[0]; row.State != "unknown" || row.Reason != "runtime_name_unavailable" {
@@ -469,7 +510,7 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 		expect("readiness_timeout")
 		if err := view.Register(&models.ModuleRegistrationRequest{
 			ModuleName: "standard", InstanceID: "startup-retry-backend", Role: "backend",
-			RoutePrefix: "/standard", ModuleURL: "http://127.0.0.1:8110", ProcessStartedAt: time.Now().UTC(),
+			ModuleURL: "http://127.0.0.1:8110", ProcessStartedAt: time.Now().UTC(),
 		}); err != nil {
 			t.Fatal(err)
 		}

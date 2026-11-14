@@ -1,6 +1,9 @@
 package service
 
 import (
+	"encoding/json"
+	commonmodels "github.com/addp/common/models"
+	"os"
 	"testing"
 
 	"github.com/addp/common/taskprovider"
@@ -24,4 +27,16 @@ func TestQualityTaskProviderDeclaration(t *testing.T) {
 		declaration.TaskStatusEndpoint != "/api/v1/quality/task-provider/executions/{execution_id}" {
 		t.Fatalf("TaskProvider endpoints are not isolated: %#v", declaration)
 	}
+}
+
+func QualityTaskProviderDeclaration() (*commonmodels.TaskProviderDeclaration, error) {
+	data, err := os.ReadFile("../../../module-declaration.json")
+	if err != nil {
+		return nil, err
+	}
+	var artifact struct {
+		TaskProvider *commonmodels.TaskProviderDeclaration `json:"task_provider"`
+	}
+	err = json.Unmarshal(data, &artifact)
+	return artifact.TaskProvider, err
 }

@@ -163,9 +163,7 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 
 	registration := systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-		ModuleName: "model", ModuleURL: serviceURL, RoutePrefix: "/model", HealthCheckURL: serviceURL + "/health/ready",
-		TaskProvider: service.ModelTaskProviderDeclaration(),
-
+		ModuleName: "model", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
 		Metadata: map[string]interface{}{
 			"module": "model",
 			"capabilities": map[string]interface{}{

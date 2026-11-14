@@ -1,0 +1,29 @@
+{
+  "module_name": "system",
+  "route_prefix": "/system",
+  "configuration_management": {
+    "schema_version": "addp.configuration-management/v1",
+    "entries": [
+      {
+        "id": "system.iam_security_policy",
+        "owner_module": "system",
+        "scope_types": [
+          "platform_only"
+        ],
+        "frontend_route": "/system/configuration",
+        "read_permission": "iam.security_policy.read",
+        "update_permission": "iam.security_policy.update"
+      },
+      {
+        "id": "system.engine_raster_policy",
+        "owner_module": "system",
+        "scope_types": [
+          "platform_default_with_tenant_override"
+        ],
+        "frontend_route": "/system/configuration",
+        "read_permission": "system.engine_raster_policy.read",
+        "update_permission": "system.engine_raster_policy.update"
+      }
+    ]
+  }
+}

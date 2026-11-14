@@ -31,6 +31,8 @@ func TestModuleRegistryRetryClassificationIsAnExplicitAllowlist(t *testing.T) {
 		{name: "network error", err: &url.Error{Op: "Post", URL: "http://system", Err: context.DeadlineExceeded}, want: true},
 		{name: "retryable token error", err: &ServiceTokenError{Code: "unavailable", Retryable: true}, want: true},
 		{name: "deterministic token error", err: &ServiceTokenError{Code: "rejected"}, want: false},
+		{name: "waiting for declaration", err: &SystemAPIError{StatusCode: 409, ErrorCode: "module_declaration_not_published"}, want: true},
+		{name: "other registration conflict", err: &SystemAPIError{StatusCode: 409, ErrorCode: "resource_version_conflict"}, want: false},
 		{name: "registration 429", err: &SystemAPIError{StatusCode: http.StatusTooManyRequests}, want: true},
 		{name: "registration 400", err: &SystemAPIError{StatusCode: http.StatusBadRequest}, want: false},
 		{name: "heartbeat 404", err: &SystemAPIError{StatusCode: http.StatusNotFound}, heartbeat: true, want: true},
@@ -234,7 +236,7 @@ func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 	defer cancel()
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
 	lifecycle := client.RegisterAndHeartbeat(ctx, &ModuleRegistrationRequest{
-		ModuleName: "manager", ModuleURL: "http://manager:8080", RoutePrefix: "/manager",
+		ModuleName: "manager", ModuleURL: "http://manager:8080",
 		Metadata: map[string]interface{}{"version": "test"},
 	})
 	select {
@@ -329,7 +331,7 @@ func TestRegisterAndHeartbeatReregistersImmediatelyAndDeregistersOnShutdown(t *t
 	ctx, cancel := context.WithCancel(context.Background())
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
 	lifecycle := client.registerAndHeartbeat(ctx, &ModuleRegistrationRequest{
-		ModuleName: "manager", ModuleURL: "http://manager:8081", RoutePrefix: "/manager",
+		ModuleName: "manager", ModuleURL: "http://manager:8081",
 	}, time.Millisecond, 2*time.Millisecond, time.Millisecond)
 	select {
 	case <-reregistered:
@@ -384,7 +386,7 @@ func TestRegisterAndHeartbeatDeterministicRejectionFailsWithoutRetry(t *testing.
 
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
 	lifecycle := client.registerAndHeartbeat(context.Background(), &ModuleRegistrationRequest{
-		ModuleName: "meta", ModuleURL: "http://meta:8082", RoutePrefix: "/meta",
+		ModuleName: "meta", ModuleURL: "http://meta:8082",
 	}, time.Millisecond, 2*time.Millisecond, time.Millisecond)
 	select {
 	case err := <-lifecycle.Fatal():

@@ -30,6 +30,7 @@ func newObservationRegistry(t *testing.T) (*ModuleRegistryService, *repository.M
 
 func TestGatewayIngressIsObservableButNeverRoutable(t *testing.T) {
 	registry, _, _ := newObservationRegistry(t)
+	publishForTest(t, registry, "gateway")
 	startedAt := time.Now().Add(-26 * time.Hour).UTC().Truncate(time.Second)
 	request := &models.ModuleRegistrationRequest{
 		ModuleName: "gateway", InstanceID: "gateway-a", Role: models.ModuleRuntimeRoleIngress,
@@ -58,8 +59,7 @@ func TestGatewayIngressIsObservableButNeverRoutable(t *testing.T) {
 	}
 	for _, invalid := range []*models.ModuleRegistrationRequest{
 		{ModuleName: "manager", InstanceID: "other-ingress", Role: models.ModuleRuntimeRoleIngress, ModuleURL: "http://manager", ProcessStartedAt: startedAt},
-		{ModuleName: "gateway", InstanceID: "gateway-backend", Role: models.ModuleRuntimeRoleBackend, ModuleURL: "http://gateway", RoutePrefix: "/gateway", ProcessStartedAt: startedAt},
-		{ModuleName: "gateway", InstanceID: "gateway-routed", Role: models.ModuleRuntimeRoleIngress, ModuleURL: "http://gateway", RoutePrefix: "/gateway", ProcessStartedAt: startedAt},
+		{ModuleName: "gateway", InstanceID: "gateway-backend", Role: models.ModuleRuntimeRoleBackend, ModuleURL: "http://gateway", ProcessStartedAt: startedAt},
 	} {
 		if err := registry.Register(invalid); !errors.Is(err, ErrInvalidModuleRegistration) {
 			t.Fatalf("invalid ingress registration error = %v", err)
@@ -72,10 +72,11 @@ func TestGatewayIngressIsObservableButNeverRoutable(t *testing.T) {
 
 func TestRuntimeObservationDistinguishesGracefulFromLeaseExpiry(t *testing.T) {
 	registry, repo, db := newObservationRegistry(t)
+	publishForTest(t, registry, "manager")
 	startedAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
 	request := &models.ModuleRegistrationRequest{
 		ModuleName: "manager", InstanceID: "manager-a", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://manager:8081", RoutePrefix: "/manager", ProcessStartedAt: startedAt,
+		ModuleURL: "http://manager:8081", ProcessStartedAt: startedAt,
 	}
 	if err := registry.Register(request); err != nil {
 		t.Fatal(err)
@@ -139,6 +140,7 @@ func boolPointer(value bool) *bool { return &value }
 
 func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t *testing.T) {
 	registry, repo, db := newObservationRegistry(t)
+	publishForTest(t, registry, "manager", "meta")
 	now := time.Now().Truncate(time.Second)
 	from, to := now.Add(-time.Hour), now.Add(-time.Minute)
 	for _, fixture := range []struct {
@@ -159,7 +161,7 @@ func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t 
 	} {
 		if err := registry.Register(&models.ModuleRegistrationRequest{
 			ModuleName: fixture.module, InstanceID: fixture.id, Role: fixture.role,
-			ModuleURL: "http://manager.local:8081", RoutePrefix: "/" + fixture.module,
+			ModuleURL:        "http://manager.local:8081",
 			ProcessStartedAt: now.Add(-7 * 24 * time.Hour), HostNodeName: "host-a",
 		}); err != nil {
 			t.Fatal(err)
@@ -266,8 +268,9 @@ func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t 
 
 func TestRuntimeNodesLocateWorkersWithoutChangingRoutingFacts(t *testing.T) {
 	registry, repo, _ := newObservationRegistry(t)
+	publishForTest(t, registry, "manager", "meta")
 	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "worker-a", Role: models.ModuleRuntimeRoleWorker,
-		RoutePrefix: "/meta", ProcessStartedAt: time.Now(), HostNodeName: " host-a ", RuntimeHostname: " container-a "}
+		ProcessStartedAt: time.Now(), HostNodeName: " host-a ", RuntimeHostname: " container-a "}
 	if err := registry.Register(request); err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +313,7 @@ func TestRuntimeNodesLocateWorkersWithoutChangingRoutingFacts(t *testing.T) {
 	}
 
 	backend := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "backend-a", Role: models.ModuleRuntimeRoleBackend,
-		RoutePrefix: "/meta", ModuleURL: "http://meta.local:8082", ProcessStartedAt: time.Now(), HostNodeName: "host-a"}
+		ModuleURL: "http://meta.local:8082", ProcessStartedAt: time.Now(), HostNodeName: "host-a"}
 	if err := registry.Register(backend); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +338,8 @@ func TestRuntimeNodesLocateWorkersWithoutChangingRoutingFacts(t *testing.T) {
 
 func TestHostNodeIPsAreIndependentCanonicalRuntimeObservations(t *testing.T) {
 	registry, repo, _ := newObservationRegistry(t)
-	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "worker-ip", Role: "worker", RoutePrefix: "/meta", ProcessStartedAt: time.Now(), HostNodeName: "host-a", HostNodeIPs: []string{" 192.0.2.7 ", "2001:0DB8::1", "::ffff:192.0.2.7"}}
+	publishForTest(t, registry, "meta")
+	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "worker-ip", Role: "worker", ProcessStartedAt: time.Now(), HostNodeName: "host-a", HostNodeIPs: []string{" 192.0.2.7 ", "2001:0DB8::1", "::ffff:192.0.2.7"}}
 	if err := registry.Register(request); err != nil {
 		t.Fatal(err)
 	}

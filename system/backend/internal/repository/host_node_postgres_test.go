@@ -172,7 +172,20 @@ func TestHostNodeIdentityVersionAndBindingAgainstPostgres(t *testing.T) {
 		t.Fatalf("updates success=%d conflict=%d", succeeded, conflicted)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	request := &models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "host-node-test", Role: "worker", RoutePrefix: "/manager", NodeID: node.NodeID, RegistrationClientID: "addp-manager", ProcessStartedAt: time.Now().UTC()}
+	for _, module := range []string{"manager"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if existing, e := registry.GetDeclaration(module); e == nil {
+			version = existing.Version
+		}
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := &models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "host-node-test", Role: "worker", NodeID: node.NodeID, RegistrationClientID: "addp-manager", ProcessStartedAt: time.Now().UTC()}
 	if err := registry.Register(request); err != nil {
 		t.Fatal(err)
 	}

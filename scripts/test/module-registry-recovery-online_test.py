@@ -417,7 +417,6 @@ class ModuleRegistryRecoveryOnlineTest(unittest.TestCase):
 
         self.assertEqual(registration.module_name, "manager")
         self.assertEqual(registration.role, "backend")
-        self.assertEqual(registration.route_prefix, "/api/v1/manager")
         self.assertEqual(registration.health_check_url, "http://127.0.0.1:19081/health/ready")
         self.assertEqual(registration.metadata["online_run_id"], "run-42")
 

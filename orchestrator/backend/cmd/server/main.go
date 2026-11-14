@@ -127,14 +127,8 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerPort)
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if cfg.SystemServiceURL != "" {
-		provider, err := service.OrchestratorTaskProviderDeclaration()
-		if err != nil {
-			log.Fatalf("构建 Orchestrator TaskProvider 声明失败: %v", err)
-		}
 		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "orchestrator", ModuleURL: serviceURL, RoutePrefix: "/orchestrator",
-			HealthCheckURL: serviceURL + "/health/ready", Metadata: map[string]interface{}{"module": "orchestrator"},
-			TaskProvider: provider,
+			ModuleName: "orchestrator", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready", Metadata: map[string]interface{}{"module": "orchestrator"},
 		})
 		lifecycleController.AttachRegistration(registration)
 		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)

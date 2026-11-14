@@ -1,0 +1,4 @@
+{
+  "module_name": "catalog",
+  "route_prefix": "/catalog"
+}

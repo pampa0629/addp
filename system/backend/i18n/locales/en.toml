@@ -134,6 +134,12 @@ other = "Heartbeat updated successfully"
 [system.module.deleted]
 other = "Module unregistered successfully"
 
+[system.module.declaration_invalid]
+other = "Invalid module declaration"
+
+[system.module.declaration_missing]
+other = "The module declaration has not been published"
+
 [system.module.registration_invalid]
 other = "The module runtime instance registration is invalid"
 

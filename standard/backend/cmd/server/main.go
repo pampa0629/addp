@@ -13,8 +13,8 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
-	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/objectstore"
+	"github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
@@ -152,7 +152,7 @@ func main() {
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "standard", serviceURL, "/standard", map[string]interface{}{
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "standard", serviceURL, map[string]interface{}{
 		"module": "standard",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{

@@ -229,21 +229,20 @@ func (c *SystemClient) doTenantJSONWithPayload(ctx context.Context, method, path
 // ModuleRegistrationRequest is the shared request model for the
 // Bearer-only SystemServiceClient platform registration API.
 type ModuleRegistrationRequest struct {
-	NodeID                  string                                     `json:"node_id,omitempty"`
-	ModuleName              string                                     `json:"module_name"`
-	InstanceID              string                                     `json:"instance_id"`
-	Role                    string                                     `json:"role"`
-	ModuleURL               string                                     `json:"module_url"`
-	RoutePrefix             string                                     `json:"route_prefix"`
-	HealthCheckURL          string                                     `json:"health_check_url,omitempty"`
-	HostNodeName            string                                     `json:"host_node_name"`
-	HostNodeIPs             []string                                   `json:"host_node_ips"`
-	RuntimeHostname         string                                     `json:"runtime_hostname"`
-	ProcessStartedAt        time.Time                                  `json:"process_started_at"`
-	Metadata                map[string]interface{}                     `json:"metadata,omitempty"`
-	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
-	TaskProvider            *models.TaskProviderDeclaration            `json:"task_provider,omitempty"`
-	ProcessMetrics          *models.ProcessMetricsDeclaration          `json:"process_metrics,omitempty"`
+	NodeID     string `json:"node_id,omitempty"`
+	ModuleName string `json:"module_name"`
+	InstanceID string `json:"instance_id"`
+	Role       string `json:"role"`
+	ModuleURL  string `json:"module_url"`
+
+	HealthCheckURL   string                 `json:"health_check_url,omitempty"`
+	HostNodeName     string                 `json:"host_node_name"`
+	HostNodeIPs      []string               `json:"host_node_ips"`
+	RuntimeHostname  string                 `json:"runtime_hostname"`
+	ProcessStartedAt time.Time              `json:"process_started_at"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+
+	ProcessMetrics *models.ProcessMetricsDeclaration `json:"process_metrics,omitempty"`
 }
 
 const (

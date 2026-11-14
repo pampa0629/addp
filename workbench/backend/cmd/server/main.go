@@ -69,7 +69,7 @@ func main() {
 	}()
 
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.Port)
-	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "workbench", serviceURL, "/workbench", map[string]interface{}{"module": "workbench"})
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "workbench", serviceURL, map[string]interface{}{"module": "workbench"})
 	lifecycle.AttachRegistration(registration)
 	modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	<-runtimeContext.Done()

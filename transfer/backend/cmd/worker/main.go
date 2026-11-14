@@ -91,8 +91,7 @@ func main() {
 	defer stop()
 	registrationDone := systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
 		ModuleName: commonExecution.ModuleTransfer, InstanceID: buildinfo.ProcessInstanceID(),
-		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/transfer",
-		Metadata: map[string]interface{}{
+		Role: commonClient.ModuleRuntimeRoleWorker, Metadata: map[string]interface{}{
 			"runtime_name": commonExecution.TaskTypeSync,
 			"capacity":     cfg.BoundedWorkerConcurrency,
 		},

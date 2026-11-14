@@ -78,6 +78,8 @@ const (
 	MsgModuleRegistered             = "system.module.registered"
 	MsgModuleHeartbeat              = "system.module.heartbeat"
 	MsgModuleDeleted                = "system.module.deleted"
+	MsgModuleDeclarationInvalid     = "system.module.declaration_invalid"
+	MsgModuleDeclarationMissing     = "system.module.declaration_missing"
 	MsgModuleRegistrationInvalid    = "system.module.registration_invalid"
 	MsgModuleRuntimeInstanceMissing = "system.module.runtime_instance_missing"
 	MsgModuleVersionConflict        = "system.module.version_conflict"

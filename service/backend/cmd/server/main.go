@@ -11,7 +11,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
@@ -19,7 +18,6 @@ import (
 	"github.com/addp/common/modulelifecycle"
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/service/internal/api"
-	serviceauthorization "github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
 	serviceprotection "github.com/addp/service/internal/protection"
 	"github.com/addp/service/internal/repository"
@@ -214,11 +212,8 @@ func main() {
 	if cfg.SystemServiceURL != "" {
 		serviceHost := commonConfig.GetServiceHost()
 		serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, RoutePrefix: "/service", HealthCheckURL: serviceURL + "/health/ready",
-			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
-				ID: "service.configuration", OwnerModule: "service", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/service",
-				ReadPermission: serviceauthorization.PermissionServiceConfigurationRead, UpdatePermission: serviceauthorization.PermissionServiceConfigurationUpdate,
-			}}},
+		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{ModuleName: "service", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
+
 			Metadata: map[string]interface{}{
 				"module": "service",
 				"capabilities": map[string]interface{}{

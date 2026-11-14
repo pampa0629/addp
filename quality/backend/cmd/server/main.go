@@ -122,13 +122,8 @@ func main() {
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	provider, err := service.QualityTaskProviderDeclaration()
-	if err != nil {
-		log.Fatalf("构建 Quality TaskProvider 声明失败: %v", err)
-	}
 	registration := systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-		ModuleName: "quality", ModuleURL: serviceURL, RoutePrefix: "/quality", HealthCheckURL: serviceURL + "/health/ready",
-		TaskProvider: provider,
+		ModuleName: "quality", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
 		Metadata: map[string]interface{}{
 			"module": "quality",
 			"capabilities": map[string]interface{}{

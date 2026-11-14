@@ -567,6 +567,14 @@ check_service_changed() {
             ;;
     esac
 
+    case "$service" in
+      *-backend|gateway)
+        local declaration="${service%-backend}/module-declaration.json"
+        [ -f "$declaration" ] || return 1
+        [ ! "$declaration" -nt "$cache_file" ] || return 1
+        ;;
+    esac
+
     # Compare with last build time
     case "$service" in
       *-backend|*-worker|gateway)

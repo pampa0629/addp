@@ -22,13 +22,16 @@ func iamTenantUserActor(c *gin.Context) (uint, uint, error) {
 }
 
 func iamServiceOwnsModule(c *gin.Context, moduleName string) error {
+	return iamServiceHasClient(c, "addp-"+strings.TrimSpace(moduleName))
+}
+
+func iamServiceHasClient(c *gin.Context, clientID string) error {
 	authContext, exists := middleware.IAMAuthContextFromGin(c)
 	if !exists {
 		return commonapi.ErrUnauthorized
 	}
-	moduleName = strings.TrimSpace(moduleName)
 	if authContext.Principal.Type != "service_principal" ||
-		authContext.Client.ClientID == nil || *authContext.Client.ClientID != "addp-"+moduleName {
+		authContext.Client.ClientID == nil || *authContext.Client.ClientID != clientID {
 		return commonapi.ErrForbidden
 	}
 	return nil

@@ -13,7 +13,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
@@ -22,7 +21,6 @@ import (
 	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/develop/backend/internal/api"
-	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
 	developprotection "github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
@@ -237,18 +235,9 @@ func main() {
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if cfg.SystemServiceURL != "" {
-		taskProvider, err := service.DevelopTaskProviderDeclaration()
-		if err != nil {
-			log.Fatalf("构建 Develop TaskProvider 声明失败: %v", err)
-		}
 		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "develop", ModuleURL: serviceURL, RoutePrefix: "/develop", HealthCheckURL: serviceURL + "/health/ready",
-			TaskProvider: taskProvider,
-			Metadata:     map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
-			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
-				ID: "develop.configuration", OwnerModule: "develop", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/configuration/develop",
-				ReadPermission: developauthorization.PermissionDevelopConfigurationRead, UpdatePermission: developauthorization.PermissionDevelopConfigurationUpdate,
-			}}},
+			ModuleName: "develop", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
+			Metadata: map[string]interface{}{"capabilities": map[string]interface{}{"cleanup_executor": map[string]interface{}{"enabled": true, "causes": []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted}}}},
 		})
 		lifecycleController.AttachRegistration(registration)
 		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)

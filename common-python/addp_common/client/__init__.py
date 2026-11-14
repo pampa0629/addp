@@ -43,8 +43,6 @@ from .service import (
     StructuredQueryRequest,
 )
 from .module_registry import (
-    ConfigurationManagementDeclaration,
-    ConfigurationManagementEntry,
     ModuleRegistration,
     ModuleRegistrationSnapshot,
     ModuleRegistryAPIError,
@@ -89,8 +87,6 @@ __all__ = [
     "RerankDocument",
     "RerankResponse",
     "ResolveProfileResponse",
-    "ConfigurationManagementDeclaration",
-    "ConfigurationManagementEntry",
     "ModuleRegistration",
     "ModuleRegistrationSnapshot",
     "ModuleRegistryAPIError",

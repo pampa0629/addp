@@ -204,7 +204,7 @@ Topic 选择、尾部有界样本与用户确认映射的操作规则见[配置�
 
 - 通用执行告警只允许消费 `common.task_executions` 公共事实。
 - 各 owner 模块负责写入真实 execution 状态、开始/结束时间和安全错误摘要；Monitor 不得读取 owner 任务表、结果表、worker 私有租约或运行时内部状态补判失败。
-- System 只负责保存模块注册时发布的 TaskProvider 角色声明、解析当前 Backend 租约、认证和操作审计，不成为告警事实或规则 owner。
+- System 只负责保存部署流程发布的 TaskProvider 角色声明、解析当前 Backend 租约、认证和操作审计，不成为告警事实或规则 owner。
 
 #### 规则目标与最新根执行模式
 

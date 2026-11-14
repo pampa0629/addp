@@ -47,6 +47,9 @@ def select_services(
     hosted = available - HOSTED_RUNNER_EXCLUSIONS
 
     for changed_path in changed_paths:
+        if changed_path.endswith("/module-declaration.json"):
+            module = changed_path.split("/")[0]
+            selected.update({module if module == "gateway" else module + "-backend"} & hosted)
         if changed_path == ".dockerignore":
             selected.update(hosted)
             continue

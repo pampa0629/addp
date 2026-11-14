@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -58,24 +59,98 @@ func registeredHost(moduleURL, healthCheckURL string) string {
 	return strings.ToLower(parsed.Hostname())
 }
 
-// Register 原子维护持久定义和当前进程实例；不覆盖管理员 enabled 状态。
+// PublishDeclaration changes only publisher-owned fields under the same row lock as administrator updates.
+func (r *ModuleRegistryRepository) PublishDeclaration(name string, version int64, fields models.ModuleDeclarationFields) (*models.ModuleDefinition, error) {
+	var definition models.ModuleDefinition
+	var configuration, provider datatypes.JSON
+	var err error
+	if fields.ConfigurationManagement != nil {
+		if configuration, err = marshalRegistryJSON(fields.ConfigurationManagement); err != nil {
+			return nil, err
+		}
+	}
+	if fields.TaskProvider != nil {
+		if provider, err = marshalRegistryJSON(fields.TaskProvider); err != nil {
+			return nil, err
+		}
+	}
+	err = r.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		if version == 0 {
+			definition = models.ModuleDefinition{ModuleName: name, Enabled: true, RoutePrefix: *fields.RoutePrefix, ConfigurationManagement: configuration, TaskProvider: provider, Version: 1, DeclarationPublishedAt: &now}
+			created := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "module_name"}}, DoNothing: true}).Create(&definition)
+			if created.Error != nil {
+				return created.Error
+			}
+			if created.RowsAffected == 0 {
+				return ErrModuleDefinitionVersionConflict
+			}
+			return nil
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("module_name = ?", name).First(&definition).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if definition.Version != version {
+			return ErrModuleDefinitionVersionConflict
+		}
+		routeChanged := definition.RoutePrefix != *fields.RoutePrefix
+		if definition.DeclarationPublishedAt != nil && !routeChanged && equalDeclarationJSON(definition.ConfigurationManagement, configuration) && equalDeclarationJSON(definition.TaskProvider, provider) {
+			return nil
+		}
+		if err := tx.Model(&definition).Updates(map[string]any{
+			"route_prefix": *fields.RoutePrefix, "configuration_management": configuration, "task_provider": provider,
+			"version": version + 1, "declaration_published_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		if routeChanged && definition.Enabled {
+			var active int64
+			if err := tx.Model(&models.ModuleRuntimeInstance{}).Where("module_definition_id = ? AND role = ? AND status = ? AND lease_expires_at > ?", definition.ID, models.ModuleRuntimeRoleBackend, models.ModuleRuntimeStatusUp, now).Count(&active).Error; err != nil {
+				return err
+			}
+			if active > 0 {
+				if err := bumpModuleRegistryRevision(tx, now); err != nil {
+					return err
+				}
+			}
+		}
+		return tx.First(&definition, definition.ID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &definition, nil
+}
+
+// PostgreSQL JSONB can reorder keys and insert whitespace on read.
+func equalDeclarationJSON(left, right datatypes.JSON) bool {
+	if bytes.Equal(left, right) {
+		return true
+	}
+	var a, b any
+	decode := func(raw datatypes.JSON, value *any) error {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		return decoder.Decode(value)
+	}
+	return decode(left, &a) == nil && decode(right, &b) == nil && reflect.DeepEqual(a, b)
+}
+
+func (r *ModuleRegistryRepository) GetDeclaration(name string) (*models.ModuleDefinition, error) {
+	var definition models.ModuleDefinition
+	if err := r.db.Where("module_name = ?", name).First(&definition).Error; err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	return &definition, nil
+}
+
+var ErrModuleDeclarationNotPublished = errors.New("module declaration not published")
+
+// Register records the process lease against a published definition.
 func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationRequest, leaseDuration time.Duration) (bool, error) {
 	metadata, err := marshalRegistryJSON(req.Metadata)
 	if err != nil {
 		return false, err
-	}
-	configuration, err := marshalRegistryJSON(req.ConfigurationManagement)
-	if err != nil {
-		return false, err
-	}
-	// A typed nil marshals to JSON null, whereas an absent declaration is SQL
-	// NULL. Keep the owner declaration canonical so re-registration is a no-op.
-	var taskProvider datatypes.JSON
-	if req.TaskProvider != nil {
-		taskProvider, err = marshalRegistryJSON(req.TaskProvider)
-		if err != nil {
-			return false, err
-		}
 	}
 	hostNodeIPs, err := marshalRegistryJSON(req.HostNodeIPs)
 	if err != nil {
@@ -84,51 +159,13 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 	now := time.Now()
 	changed := false
 	err = r.db.Transaction(func(tx *gorm.DB) error {
-		candidate := models.ModuleDefinition{
-			ModuleName: req.ModuleName, RoutePrefix: req.RoutePrefix, Enabled: true,
-			Version: 1, ConfigurationManagement: configuration, TaskProvider: taskProvider,
-		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "module_name"}},
-			DoNothing: true,
-		}).Create(&candidate).Error; err != nil {
-			return err
-		}
 		var definition models.ModuleDefinition
-		if err := tx.Where("module_name = ?", req.ModuleName).First(&definition).Error; err != nil {
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("module_name = ?", req.ModuleName).First(&definition).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && definition.DeclarationPublishedAt == nil) {
+			return ErrModuleDeclarationNotPublished
+		}
+		if err != nil {
 			return err
-		}
-		// Serialize first registration and re-registration of one definition,
-		// including previously absent instances. An upsert alone cannot prove
-		// the immutable process declaration when two creates race.
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", definition.ID).First(&definition).Error; err != nil {
-			return err
-		}
-		definitionUpdates := map[string]interface{}{}
-		routeChanged := false
-		if definition.RoutePrefix != req.RoutePrefix {
-			definitionUpdates["route_prefix"] = req.RoutePrefix
-			routeChanged = true
-		}
-		// Worker/Scheduler 不携带模块级声明，不能因此清空 Backend 已发布的定义。
-		if req.ConfigurationManagement != nil && !bytes.Equal(definition.ConfigurationManagement, configuration) {
-			definitionUpdates["configuration_management"] = configuration
-		}
-		// Backend 是 TaskProvider 角色声明的唯一发布者。Backend 显式不携带声明
-		// 表示撤销该角色；Worker/Scheduler 的 nil 只表示不参与声明维护。
-		if req.Role == models.ModuleRuntimeRoleBackend && !bytes.Equal(definition.TaskProvider, taskProvider) {
-			if req.TaskProvider == nil {
-				definitionUpdates["task_provider"] = nil
-			} else {
-				definitionUpdates["task_provider"] = taskProvider
-			}
-		}
-		if len(definitionUpdates) > 0 {
-			definitionUpdates["version"] = gorm.Expr("version + 1")
-			definitionUpdates["updated_at"] = now
-			if err := tx.Model(&models.ModuleDefinition{}).Where("id = ?", definition.ID).Updates(definitionUpdates).Error; err != nil {
-				return err
-			}
 		}
 		var previous models.ModuleRuntimeInstance
 		instanceQuery := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -153,16 +190,6 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 		if definition.Enabled && instanceChanged &&
 			(req.Role == models.ModuleRuntimeRoleBackend || previous.Role == models.ModuleRuntimeRoleBackend) {
 			changed = true
-		}
-		if definition.Enabled && routeChanged {
-			var activeBackendCount int64
-			if err := tx.Model(&models.ModuleRuntimeInstance{}).
-				Where("module_definition_id = ? AND role = ? AND status = ? AND lease_expires_at > ?", definition.ID,
-					models.ModuleRuntimeRoleBackend, models.ModuleRuntimeStatusUp, now).
-				Count(&activeBackendCount).Error; err != nil {
-				return err
-			}
-			changed = changed || activeBackendCount > 0
 		}
 		instance := models.ModuleRuntimeInstance{
 			ProcessMetrics:     req.ProcessMetrics,

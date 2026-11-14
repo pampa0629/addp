@@ -1,0 +1,31 @@
+{
+  "module_name": "orchestrator",
+  "route_prefix": "/orchestrator",
+  "task_provider": {
+    "display_name": "任务编排",
+    "description": "跨模块任务编排和调度任务",
+    "task_list_endpoint": "/api/v1/orchestrator/task-provider/tasks",
+    "task_detail_endpoint": "/api/v1/orchestrator/task-provider/tasks/{task_type}/{id}",
+    "task_execute_endpoint": "/api/v1/orchestrator/task-provider/tasks/{task_type}/{id}/execute",
+    "task_status_endpoint": "/api/v1/orchestrator/task-provider/executions/{execution_id}",
+    "capabilities": {
+      "schema_version": "task.capabilities/v2",
+      "task_capabilities": [
+        {
+          "create_url": "/orchestrator/orchestrations/new",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "执行已保存的 Orchestrator 编排定义",
+          "display_name": "任务编排",
+          "edit_url": "/orchestrator/orchestrations/:id/edit",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": true,
+          "type": "orchestration"
+        }
+      ]
+    }
+  }
+}

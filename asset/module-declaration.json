@@ -1,0 +1,4 @@
+{
+  "module_name": "asset",
+  "route_prefix": "/asset"
+}

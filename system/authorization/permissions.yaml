@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 47
+manifest_version: 48
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -1298,6 +1298,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.meta_collection.execute.name
     description_i18n_key: permissions.system.meta_collection.execute.description
+  - key: system.module_declaration.publish
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.module_declaration.publish.name
+    description_i18n_key: permissions.system.module_declaration.publish.description
   - key: system.module_log_source.create
     allowed_scope_types: [platform]
     risk_level: medium

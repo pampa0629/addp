@@ -52,6 +52,11 @@ class SelectImageServicesTest(unittest.TestCase):
             "FROM scratch\nCOPY common-python /common-python\n",
         )
 
+    def test_module_declaration_selects_owner_image(self):
+        selected = MODULE.select_services(self.repository, self.registrations, {"meta/module-declaration.json"})
+        self.assertIn("meta-backend", selected)
+        self.assertNotIn("meta-worker", selected)
+
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 

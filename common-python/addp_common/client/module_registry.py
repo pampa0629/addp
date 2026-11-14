@@ -21,7 +21,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .service_token import OAuthServiceTokenSource, ServiceTokenError
 
 
-MANAGEMENT_SCHEMA_VERSION = "addp.configuration-management/v1"
 logger = logging.getLogger("addp.module_registry")
 _PROCESS_INSTANCE_LOCK = threading.Lock()
 _PROCESS_INSTANCE_PID = 0
@@ -61,20 +60,6 @@ class _ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ConfigurationManagementEntry(_ContractModel):
-    id: str
-    owner_module: str
-    scope_types: list[str]
-    frontend_route: str
-    read_permission: str
-    update_permission: str
-
-
-class ConfigurationManagementDeclaration(_ContractModel):
-    schema_version: str = MANAGEMENT_SCHEMA_VERSION
-    entries: list[ConfigurationManagementEntry] = Field(min_length=1)
-
-
 def _runtime_hostname() -> str:
     try:
         return socket.gethostname().strip()
@@ -93,7 +78,6 @@ class ModuleRegistration(_ContractModel):
     instance_id: str = Field(default_factory=_process_instance_id, min_length=1, max_length=100)
     role: Literal["backend", "worker", "scheduler"] = "backend"
     module_url: str
-    route_prefix: str
     health_check_url: str = ""
     host_node_name: str = Field(default_factory=lambda: os.environ.get("ADDP_HOST_NODE_NAME", "").strip(), max_length=255)
     runtime_hostname: str = Field(default_factory=_runtime_hostname, max_length=255)
@@ -116,7 +100,6 @@ class ModuleRegistration(_ContractModel):
 
     process_started_at: str = Field(default=PROCESS_STARTED_AT)
     metadata: dict[str, object] = Field(default_factory=dict)
-    configuration_management: ConfigurationManagementDeclaration | None = None
     process_metrics: ProcessMetricsDeclaration | None = None
 
 
@@ -287,6 +270,8 @@ class ModuleRegistryClient:
     @staticmethod
     def _retryable(exc: Exception, *, heartbeat: bool) -> bool:
         if isinstance(exc, ModuleRegistryAPIError):
+            if not heartbeat and exc.status_code == 409:
+                return exc.error_code == "module_declaration_not_published"
             if heartbeat and exc.status_code == 404:
                 return True
             return exc.status_code == 429 or exc.status_code >= 500
@@ -377,7 +362,6 @@ class ModuleRegistryClient:
                     instance_id=instance_id,
                     role=role,
                     module_url="",
-                    route_prefix="",
                 ),
                 exc,
             )

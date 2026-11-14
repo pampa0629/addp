@@ -705,6 +705,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | module definition | 模块定义 | System 按稳定 `module_name` 保存的持久模块身份、路由声明和业务模块的管理员启用意图。 | 进程离线不删除；业务模块的管理员写操作使用聚合根 `version` 做并发控制。System 与 Gateway 定义的 `enabled` 固定为 true。 |
+| module declaration | 模块声明 | 模块负责人随制品交付的路由前缀、配置管理入口和 TaskProvider 能力，存于 System 的模块定义。 | [第二阶段契约](../spec/api/健康与平台控制面.md#第二阶段模块声明发布契约)由部署流程发布，管理员维护启用意图，运行进程登记实例。 |
 | module runtime instance | 模块运行实例 | Backend、Worker、Scheduler 或 Ingress 一次具体进程登记及其短期租约。 | 健康由心跳和租约计算；正常注销记录 `graceful`，租约超时记录 `lease_expired`，后者仅表示失联，不能证明进程崩溃。进程运行时长以进程启动时间计算，模块定义更新时间和首次注册时间不得替代。管理员不能手工改成在线，实例也不拥有独立并发版本。 |
 | process metrics declaration | 进程采集声明 | 当前模块运行实例通过部署显式启用的受保护自身进程采集端点声明。 | System 持有私有声明；不进入普通实例 DTO，不从业务 URL 推断。自身资源观测不要求有效主机关联，仍要求当前实例、准入来源与用户授权；主机关系失效不能借历史关系计算宿主占比。 |
 | development process metrics plan | 开发进程采集计划 | 标准开发启动入口为具体启动单元分配独立进程采集配置的部署输入。 | 当前启动单元使用已有生命周期进程名称；不等于业务 role 或进程级 instance_id。启动时派生该进程的 SDK 输入；同类型多副本须各有独立启动单元、端点和证书，计划本身不提供多副本启动或任务分配。 |

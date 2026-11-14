@@ -95,6 +95,14 @@ func NewServiceCredentialProvisioner(repository *Repository, now func() time.Tim
 	return &ServiceCredentialProvisioner{repository: repository, now: now}, nil
 }
 
+// ProvisionPublisher runs only in the deployment credential preparation command.
+func (s *ServiceCredentialProvisioner) ProvisionPublisher(ctx context.Context, clientID, secret string) error {
+	if !strings.HasPrefix(clientID, "addp-") || !strings.HasSuffix(clientID, "-publisher") || strings.TrimSpace(secret) != secret || len(secret) < 32 || len(secret) > 72 {
+		return commonapi.ErrBadRequest
+	}
+	return s.repository.Transaction(ctx, func(tx *Repository) error { return s.applyClient(ctx, tx, clientID, secret) })
+}
+
 func (s *ServiceCredentialProvisioner) Apply(ctx context.Context, secrets map[string]string) error {
 	if err := validateBuiltinServiceSecrets(secrets); err != nil {
 		return err

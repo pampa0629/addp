@@ -3331,6 +3331,50 @@ definitions:
     - node_kind
     - version
     type: object
+  github_com_addp_system_internal_models.ModuleDeclarationCreate:
+    properties:
+      configuration_management:
+        $ref: '#/definitions/configuration.ManagementDeclaration'
+      module_name:
+        maxLength: 50
+        type: string
+      route_prefix:
+        type: string
+      task_provider:
+        $ref: '#/definitions/models.TaskProviderDeclaration'
+    required:
+    - module_name
+    - route_prefix
+    type: object
+  github_com_addp_system_internal_models.ModuleDeclarationUpdate:
+    properties:
+      configuration_management:
+        $ref: '#/definitions/configuration.ManagementDeclaration'
+      route_prefix:
+        type: string
+      task_provider:
+        $ref: '#/definitions/models.TaskProviderDeclaration'
+      version:
+        type: integer
+    required:
+    - route_prefix
+    - version
+    type: object
+  github_com_addp_system_internal_models.ModuleDeclarationView:
+    properties:
+      configuration_management:
+        type: object
+      declaration_published_at:
+        type: string
+      module_name:
+        type: string
+      route_prefix:
+        type: string
+      task_provider:
+        type: object
+      version:
+        type: integer
+    type: object
   github_com_addp_system_internal_models.ModuleDefinitionCreateRequest:
     properties:
       enabled:
@@ -3433,8 +3477,6 @@ definitions:
     type: object
   github_com_addp_system_internal_models.ModuleRegistrationRequest:
     properties:
-      configuration_management:
-        $ref: '#/definitions/configuration.ManagementDeclaration'
       health_check_url:
         type: string
       host_node_ips:
@@ -3460,12 +3502,8 @@ definitions:
         type: string
       role:
         type: string
-      route_prefix:
-        type: string
       runtime_hostname:
         type: string
-      task_provider:
-        $ref: '#/definitions/models.TaskProviderDeclaration'
     required:
     - instance_id
     - module_name
@@ -7718,6 +7756,145 @@ paths:
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: self
+  /deployment/module_declarations:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 模块声明 | Module declaration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ModuleDeclarationCreate'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ModuleDeclarationView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 首次发布模块声明 | Create module declaration
+      tags:
+      - 部署声明 | Deployment declarations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.module_declaration.publish
+  /deployment/module_declarations/{module_name}:
+    get:
+      parameters:
+      - description: 模块名称 | Module name
+        in: path
+        name: module_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ModuleDeclarationView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取本模块发布基线 | Get module declaration
+      tags:
+      - 部署声明 | Deployment declarations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.module_declaration.publish
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 模块名称 | Module name
+        in: path
+        name: module_name
+        required: true
+        type: string
+      - description: 模块声明 | Module declaration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ModuleDeclarationUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ModuleDeclarationView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 按版本完整替换模块声明 | Update module declaration
+      tags:
+      - 部署声明 | Deployment declarations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.module_declaration.publish
   /engine-access/metadata-checks/manager-navigation:
     post:
       consumes:
@@ -15278,10 +15455,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: 平台 Service Principal 只能注册与自身 OAuth Client 对应的模块定义和当前进程实例；注册不覆盖管理员
-        enabled 状态 | A platform service principal can only register its matching module
-        definition and current process instance; registration never overrides administrator
-        enabled state
+      description: 平台运行身份在已发布的模块定义下登记当前实例 | Register the current instance against
+        its published module definition
       parameters:
       - description: 模块注册信息 | Module registration
         in: body
@@ -15311,6 +15486,10 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "500":

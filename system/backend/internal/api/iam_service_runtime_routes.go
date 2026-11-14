@@ -80,6 +80,16 @@ func RegisterIAMServiceRuntimeRoutes(
 		return err
 	}
 
+	publish, err := middleware.NewIAMPermissionGuard("system.module_declaration.publish")
+	if err != nil {
+		return err
+	}
+	declarations := api.Group("/deployment/module_declarations")
+	declarations.Use(runtime.Authentication, runtime.ServiceCredential, platformContext, publish)
+	declarations.GET("/:module_name", moduleHandler.GetDeclaration)
+	declarations.POST("", moduleHandler.CreateDeclaration)
+	declarations.PUT("/:module_name", moduleHandler.UpdateDeclaration)
+
 	runtimeRoutes := api.Group("/runtime")
 	runtimeRoutes.Use(runtime.Authentication, runtime.ServiceCredential)
 	platformRoutes := runtimeRoutes.Group("")

@@ -160,14 +160,8 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	var registration *commonClient.ModuleRegistrationLifecycle
 	if cfg.SystemServiceURL != "" {
-		provider, err := service.GraphTaskProviderDeclaration()
-		if err != nil {
-			logger.Error("构建 Graph TaskProvider 声明失败", "error", err)
-			os.Exit(1)
-		}
 		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "graph", ModuleURL: serviceURL, RoutePrefix: "/graph", HealthCheckURL: serviceURL + "/health/ready",
-			TaskProvider: provider,
+			ModuleName: "graph", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
 			Metadata: map[string]interface{}{
 				"module": "graph",
 				"capabilities": map[string]interface{}{

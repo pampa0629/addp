@@ -169,7 +169,7 @@
 
 不得使用 `context.Background()` 启动进程级注册，不得在端口绑定之前注册，也不得为了“注册成功”在入口同步阻塞等待 System。
 
-本地启动编排与构建身份见[生命周期规范](addp开发服务生命周期与构建身份规范.md)；注册状态、健康端点与 Ready 门禁语义见[健康与平台控制面规范](api/健康与平台控制面.md#进程存活与模块就绪端点)。
+本地启动编排与构建身份见[生命周期规范](addp开发服务生命周期与构建身份规范.md)；注册状态、健康端点与 Ready 门禁语义见[健康与平台控制面规范](api/健康与平台控制面.md#进程存活与模块就绪端点)。模块根目录的 `module-declaration.json`、制品交付、发布身份和空库启动顺序见[模块声明发布契约](api/健康与平台控制面.md#第二阶段模块声明发布契约)。
 
 ## 开发工作流
 
@@ -339,10 +339,10 @@ export default createAPIClient(() => useAuthStore(), {
 
 **测试验证**:
 - [ ] 实际持久写出业务 DataItem 时，按[统一产出办理规则](addp授权上下文规范.md#558-任务产出数据与初始使用权)登记生产 owner，接入成果回执、Meta 限定识别、System 唯一初始签发及后台续办；同 owner 新算子复用协议，不另建作者 ACL 或逐算子机器权限。实际来源 ReadSet 与同次读取 Engine 版本一并冻结，不从当前配置或血缘补造；后台复用统一核清与续办协议。覆盖部分成功、父任务失败后的已提交成果、来源／边界、幂等与撤权重放，并同步标准 Make／CI 门禁；尚未接通或验收必须明确记录
-- [ ] System 不可达时模块 `/health/live` 通过、`/health/ready` 返回 503，业务路由返回 `module_not_ready`
-- [ ] System 恢复后同一 `instance_id` 自动注册，`/health/ready` 恢复 200
+- [ ] System 不可达但业务 Backend 自身就绪时，`/health/live` 与 `/health/ready` 均返回 200，直连业务请求继续走原授权链
+- [ ] System 恢复后，同一 `instance_id` 自动完成登记，`registration_state` 恢复为 `registered`
 - [ ] 数据库表创建在正确的 schema
-- [ ] 模块注册到 Gateway 成功
+- [ ] 实例向 System 注册成功，Gateway 可发现已启用业务模块中具有有效租约的 Backend
 - [ ] 前端可以访问后端 API
 - [ ] Console 可以嵌入模块前端
 - [ ] 按[主题验证清单](../../common-frontend/docs/frontend-style/主题接入.md#验证清单)实际切换 Console 主题，核对模块界面与组件变化

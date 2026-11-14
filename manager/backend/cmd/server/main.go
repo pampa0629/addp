@@ -15,14 +15,12 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/manager/internal/api"
-	managerauthorization "github.com/addp/manager/internal/authorization"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/objectcontent"
@@ -554,15 +552,8 @@ func main() {
 		return
 	}
 	if systemServiceClient != nil {
-		taskProvider, err := service.ManagerTaskProviderDeclaration()
-		if err != nil {
-			logger.L().Error("构建 Manager TaskProvider 声明失败", "error", err)
-			os.Exit(1)
-		}
 		registration = systemServiceClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "manager", ModuleURL: serviceURL, RoutePrefix: "/manager",
-			HealthCheckURL: serviceURL + "/health/ready",
-			TaskProvider:   taskProvider,
+			ModuleName: "manager", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
 			Metadata: map[string]interface{}{
 				"capabilities": map[string]interface{}{
 					"cleanup_executor": map[string]interface{}{
@@ -570,14 +561,6 @@ func main() {
 						"causes":  []string{events.CleanupCauseEngineDeleting, events.CleanupCauseTenantDeleted},
 					},
 				},
-			},
-			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
-				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-				Entries: []commonconfiguration.ManagementEntry{{
-					ID: "manager.configuration", OwnerModule: "manager",
-					ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/configuration/manager",
-					ReadPermission: managerauthorization.PermissionManagerConfigurationRead, UpdatePermission: managerauthorization.PermissionManagerConfigurationUpdate,
-				}},
 			},
 		})
 		lifecycleController.AttachRegistration(registration)

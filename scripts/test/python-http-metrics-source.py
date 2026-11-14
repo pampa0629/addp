@@ -158,7 +158,7 @@ def produce(index,root,stage):
     deployment=json.loads(config.read_text())
     os.environ['ADDP_PROCESS_METRICS_DEPLOYMENTS']=json.dumps([deployment])
     os.environ['ADDP_OBSERVABILITY_TRACES_ENABLED']='false'
-    registration=ModuleRegistration(module_name=deployment['module_name'],instance_id='python-http-'+str(index),module_url='http://127.0.0.1:18080',route_prefix='/fixture')
+    registration=ModuleRegistration(module_name=deployment['module_name'],instance_id='python-http-'+str(index),module_url='http://127.0.0.1:18080')
     stage('metrics')
     source=start_optional(registration)
     if source is None:raise RuntimeError('python_http_source_failed')

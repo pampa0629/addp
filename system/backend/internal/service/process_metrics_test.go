@@ -15,10 +15,11 @@ import (
 
 func TestProcessMetricsRegistrationIsImmutableAndPrivate(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
+	publishForTest(t, registry, "monitor")
 	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
-	request := models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC().Truncate(time.Microsecond),
+	request := models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", ProcessStartedAt: time.Now().UTC().Truncate(time.Microsecond),
 		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics", Cgroup: &commonmodels.CgroupIdentity{BootID: "11111111-1111-4111-8111-111111111111", CgroupID: "100", PIDNamespaceID: "200"}}}
 	if err := registry.Register(&request); err != nil {
 		t.Fatal(err)
@@ -74,6 +75,7 @@ func TestProcessMetricsRegistrationIsImmutableAndPrivate(t *testing.T) {
 
 func TestProcessMetricsProjectionDoesNotRequireHostBinding(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
+	publishForTest(t, registry, "monitor")
 	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,7 @@ func TestProcessMetricsProjectionDoesNotRequireHostBinding(t *testing.T) {
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatal(err)
 	}
-	base := models.ModuleRegistrationRequest{ModuleName: "monitor", Role: "worker", RoutePrefix: "/monitor", RegistrationClientID: "addp-monitor", ProcessStartedAt: time.Now().UTC(),
+	base := models.ModuleRegistrationRequest{ModuleName: "monitor", Role: "worker", RegistrationClientID: "addp-monitor", ProcessStartedAt: time.Now().UTC(),
 		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics"}}
 	for _, subject := range []struct{ id, node string }{{"unbound", ""}, {"bound", node.NodeID}, {"unknown-host", uuid.NewString()}} {
 		r := base

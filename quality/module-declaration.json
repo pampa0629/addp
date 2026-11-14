@@ -1,0 +1,40 @@
+{
+  "module_name": "quality",
+  "route_prefix": "/quality",
+  "task_provider": {
+    "display_name": "数据质量",
+    "description": "数据质量检查与质量检查方案",
+    "task_list_endpoint": "/api/v1/quality/task-provider/tasks",
+    "task_detail_endpoint": "/api/v1/quality/task-provider/tasks/{task_type}/{id}",
+    "task_execute_endpoint": "/api/v1/quality/task-provider/tasks/{task_type}/{id}/execute",
+    "task_status_endpoint": "/api/v1/quality/task-provider/executions/{execution_id}",
+    "capabilities": {
+      "schema_version": "task.capabilities/v2",
+      "task_capabilities": [
+        {
+          "create_url": "/quality/plans?create=1",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "对所选正式物理表执行类型化质量断言",
+          "display_name": "质量检查",
+          "edit_url": "/quality/plans?task_id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "quality_plan"
+        }
+      ],
+      "x_features": [
+        "async",
+        "quality_rules",
+        "issue_generation",
+        "quality_plan"
+      ],
+      "x_supported_source_models": [
+        "tabular_catalog"
+      ]
+    }
+  }
+}

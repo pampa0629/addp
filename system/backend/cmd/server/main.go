@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,13 +12,11 @@ import (
 
 	"github.com/addp/common/buildinfo"
 	commonConfig "github.com/addp/common/config"
-	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/httptrace"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/processmetrics"
 	"github.com/addp/system/internal/api"
-	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
@@ -38,6 +38,13 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and an ADDP opaque access token.
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "provision-module-publisher" || os.Args[1] == "publish-module-declaration") {
+		if err := runModuleDeployment(os.Args[1:], os.Stdin); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
 	commonConfig.InitLogger(nil)
@@ -194,14 +201,14 @@ func startSystemRegistration(ctx context.Context, registry *service.ModuleRegist
 	if source != nil {
 		request.ProcessMetrics = source.Declaration()
 	}
-	if err := registry.Register(request); err != nil {
+	registrationErr := registry.Register(request)
+	if registrationErr != nil && !errors.Is(registrationErr, service.ErrModuleDeclarationNotPublished) {
 		stopTrace()
 		if source != nil {
 			_ = source.Close()
 		}
-		return nil, err
+		return nil, registrationErr
 	}
-	logger.L().Info("System 模块注册成功", "url", request.ModuleURL)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -209,6 +216,21 @@ func startSystemRegistration(ctx context.Context, registry *service.ModuleRegist
 		if source != nil {
 			defer source.Close()
 		}
+		delay := time.Second
+		for errors.Is(registrationErr, service.ErrModuleDeclarationNotPublished) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
+			}
+			registrationErr = registry.Register(request)
+			delay = min(2*delay, 10*time.Second)
+		}
+		if registrationErr != nil {
+			logger.L().Error("System 自登记失败", "error", registrationErr)
+			return
+		}
+		logger.L().Info("System 模块注册成功", "url", request.ModuleURL)
 		defer func() {
 			if err := registry.Deregister(request.ModuleName, request.InstanceID); err != nil {
 				logger.L().Error("System 模块注销失败", "error", err)
@@ -240,27 +262,10 @@ func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleR
 		InstanceID:       instanceID,
 		Role:             models.ModuleRuntimeRoleBackend,
 		ModuleURL:        serviceURL,
-		RoutePrefix:      "/system",
 		HealthCheckURL:   serviceURL + "/health/ready",
 		ProcessStartedAt: buildinfo.ProcessStartedAt(),
 		Metadata: map[string]interface{}{
 			"module": "system",
-		},
-		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
-			SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-			Entries: []commonconfiguration.ManagementEntry{{
-				ID: "system.iam_security_policy", OwnerModule: "system",
-				ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
-				FrontendRoute:    "/system/configuration",
-				ReadPermission:   systemauthorization.PermissionIamSecurityPolicyRead,
-				UpdatePermission: systemauthorization.PermissionIamSecurityPolicyUpdate,
-			}, {
-				ID: "system.engine_raster_policy", OwnerModule: "system",
-				ScopeTypes:       []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride},
-				FrontendRoute:    "/system/configuration",
-				ReadPermission:   systemauthorization.PermissionSystemEngineRasterPolicyRead,
-				UpdatePermission: systemauthorization.PermissionSystemEngineRasterPolicyUpdate,
-			}},
 		},
 	}
 }

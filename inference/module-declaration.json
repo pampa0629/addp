@@ -1,0 +1,19 @@
+{
+  "module_name": "inference",
+  "route_prefix": "/inference",
+  "configuration_management": {
+    "schema_version": "addp.configuration-management/v1",
+    "entries": [
+      {
+        "id": "inference.configuration",
+        "owner_module": "inference",
+        "scope_types": [
+          "platform_default_with_tenant_override"
+        ],
+        "frontend_route": "/inference/settings/models",
+        "read_permission": "inference.provider.read",
+        "update_permission": "inference.provider.update"
+      }
+    ]
+  }
+}

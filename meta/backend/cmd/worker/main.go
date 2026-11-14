@@ -85,8 +85,7 @@ func main() {
 	defer stop()
 	registrationDone := systemClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
 		ModuleName: commonExecution.ModuleMeta, InstanceID: buildinfo.ProcessInstanceID(),
-		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/meta",
-		Metadata: map[string]interface{}{
+		Role: commonClient.ModuleRuntimeRoleWorker, Metadata: map[string]interface{}{
 			"runtime_name": commonExecution.TaskTypeScan,
 			"capacity":     cfg.ConcurrentTasks,
 		},

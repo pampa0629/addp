@@ -21,6 +21,8 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "postgres-source:$1" >> "$ADDP_TEST_GATE_TRACE"
         ''')
+        self.host._write_repository_script("scripts/prod/publish-module-declarations.py",
+                                           "import sys\nprint(sys.argv[1:])\n")
         shutil.copy2(SCRIPT, self.host.repository / "scripts/test/online-hosted-public-origin-gate.sh")
         shutil.copy2(OVERLAY, self.host.repository / "scripts/test/docker-compose.public-origin-t4.yml")
         (self.host.repository / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")

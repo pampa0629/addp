@@ -152,7 +152,7 @@ func main() {
 	// 模块注册 + 心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "asset", serviceURL, "/asset", map[string]interface{}{
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "asset", serviceURL, map[string]interface{}{
 		"module": "asset",
 		"capabilities": map[string]interface{}{
 			"cleanup_executor": map[string]interface{}{

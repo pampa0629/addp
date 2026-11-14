@@ -127,7 +127,7 @@ class CollectorLimits(unittest.TestCase):
             with self.assertRaises(ValueError):source.deployment(json.dumps([entry]),'agent','backend')
         for raw in (json.dumps([d,d]),json.dumps([d])+' []','['+' '* (256<<10)+']'):
             with self.assertRaises(ValueError):source.deployment(raw,'agent','backend')
-        r=ModuleRegistration(module_name='agent',module_url='http://localhost:1',route_prefix='/agent')
+        r=ModuleRegistration(module_name='agent',module_url='http://localhost:1')
         self.assertNotIn('process_metrics',r.model_dump(exclude_none=True))
         with patch.dict(os.environ,{source.ENV:json.dumps([d])}),patch.object(source,'source_tls',side_effect=ValueError('SECRET')):
             self.assertIsNone(source.start_optional(r))
@@ -176,7 +176,7 @@ class SourceContract(unittest.TestCase):
             server=root/'source';server.mkdir(mode=0o700)
             for name in ('ca.crt','server.crt','server.key'):shutil.copy(root/name,server/name)
             sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close()
-            reg=ModuleRegistration(module_name='agent',module_url='http://localhost:1',route_prefix='/agent')
+            reg=ModuleRegistration(module_name='agent',module_url='http://localhost:1')
             entry={'module_name':'agent','role':'backend','listen':f'127.0.0.1:{port}','endpoint':f'https://127.0.0.1:{port}/metrics','tls_dir':str(server)}
             m=HTTPMetrics();m.activate()
             with patch.dict(os.environ,{source.ENV:json.dumps([entry])}),patch.object(source,'process',return_value=m):

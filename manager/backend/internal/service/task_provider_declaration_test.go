@@ -1,6 +1,9 @@
 package service
 
 import (
+	"encoding/json"
+	commonmodels "github.com/addp/common/models"
+	"os"
 	"strings"
 	"testing"
 
@@ -68,4 +71,16 @@ func TestManagerTaskProviderDeclaration(t *testing.T) {
 	if declaration.TaskListEndpoint != want["list"] || declaration.TaskDetailEndpoint != want["detail"] || declaration.TaskExecuteEndpoint != want["execute"] || declaration.TaskStatusEndpoint != want["status"] {
 		t.Fatalf("TaskProvider endpoints = %#v, want %#v", declaration, want)
 	}
+}
+
+func ManagerTaskProviderDeclaration() (*commonmodels.TaskProviderDeclaration, error) {
+	data, err := os.ReadFile("../../../module-declaration.json")
+	if err != nil {
+		return nil, err
+	}
+	var artifact struct {
+		TaskProvider *commonmodels.TaskProviderDeclaration `json:"task_provider"`
+	}
+	err = json.Unmarshal(data, &artifact)
+	return artifact.TaskProvider, err
 }

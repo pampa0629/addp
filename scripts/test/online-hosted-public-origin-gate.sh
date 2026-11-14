@@ -99,6 +99,11 @@ run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backends,$fr
 
 application_owned=1
 run_logged compose_app up -d --no-deps --wait system-backend
+IFS=, read -r -a backend_services <<< "$backends"
+declaration_modules=("${backend_services[@]%-backend}")
+publisher=(python3 scripts/prod/publish-module-declarations.py --compose-file "$ROOT_DIR/docker-compose.yml" --compose-file "$COMPOSE_OVERLAY")
+run_logged "${publisher[@]}" --provision "${declaration_modules[@]}"
+run_logged "${publisher[@]}" "${declaration_modules[@]}"
 run_logged compose_app up -d --no-deps --wait security-backend
 run_logged compose_app up -d --no-deps --wait gateway console system-frontend
 run_logged compose_app up -d --no-deps --wait meta-backend

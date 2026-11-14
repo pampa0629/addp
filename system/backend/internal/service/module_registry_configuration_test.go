@@ -38,6 +38,11 @@ func TestListConfigurationManagementEntriesFiltersContextPermissionAndModuleStat
 		configurationRegistration("quality", commonconfiguration.ScopePlatformOnly),
 	}
 	for index := range registrations {
+		owner := registrations[index].ModuleName
+		scopes := []string{commonconfiguration.ScopePlatformOnly, commonconfiguration.ScopeTenantOnly, commonconfiguration.ScopePlatformDefaultWithTenantOverride, commonconfiguration.ScopePlatformOnly}
+		if _, err := registryService.PublishDeclaration(owner, 0, configurationFields(owner, scopes[index])); err != nil {
+			t.Fatal(err)
+		}
 		if err := registryService.Register(&registrations[index]); err != nil {
 			t.Fatalf("register %s: %v", registrations[index].ModuleName, err)
 		}
@@ -121,10 +126,10 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	registry := NewModuleRegistryService(repo)
 	for name, request := range map[string]*models.ModuleRegistrationRequest{
 		"unknown role": {
-			ModuleName: "manager", InstanceID: "invalid-role", Role: "api", RoutePrefix: "/manager", ProcessStartedAt: time.Now(),
+			ModuleName: "manager", InstanceID: "invalid-role", Role: "api", ProcessStartedAt: time.Now(),
 		},
 		"backend without URL": {
-			ModuleName: "manager", InstanceID: "invalid-backend", Role: models.ModuleRuntimeRoleBackend, RoutePrefix: "/manager", ProcessStartedAt: time.Now(),
+			ModuleName: "manager", InstanceID: "invalid-backend", Role: models.ModuleRuntimeRoleBackend, ProcessStartedAt: time.Now(),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -135,19 +140,13 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	}
 	backend := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "manager", InstanceID: "backend-a", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://manager-a:8080", RoutePrefix: "/manager",
-		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
-			SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-			Entries: []commonconfiguration.ManagementEntry{{
-				ID: "manager.configuration", OwnerModule: "manager",
-				ScopeTypes:    []string{commonconfiguration.ScopePlatformOnly},
-				FrontendRoute: "/manager/settings", ReadPermission: "manager.configuration.read",
-				UpdatePermission: "manager.configuration.update",
-			}},
-		},
+		ModuleURL: "http://manager-a:8080",
 	}
 	worker := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
-		ModuleName: "manager", InstanceID: "worker-a", Role: models.ModuleRuntimeRoleWorker, RoutePrefix: "/manager",
+		ModuleName: "manager", InstanceID: "worker-a", Role: models.ModuleRuntimeRoleWorker,
+	}
+	if _, err := registry.PublishDeclaration("manager", 0, configurationFields("manager", commonconfiguration.ScopePlatformOnly)); err != nil {
+		t.Fatal(err)
 	}
 	if err := registry.Register(backend); err != nil {
 		t.Fatal(err)
@@ -220,11 +219,12 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 		t.Fatal(err)
 	}
 	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	publishForTest(t, registry, "manager", "service")
 	register := func(instanceID, role, moduleURL string) {
 		t.Helper()
 		if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 			ModuleName: "manager", InstanceID: instanceID, Role: role,
-			ModuleURL: moduleURL, RoutePrefix: "/manager",
+			ModuleURL: moduleURL,
 		}); err != nil {
 			t.Fatalf("register %s: %v", instanceID, err)
 		}
@@ -246,7 +246,7 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 	register("scheduler-current", models.ModuleRuntimeRoleScheduler, "")
 	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "service", InstanceID: "service-old", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://service-old:8086", RoutePrefix: "/service",
+		ModuleURL: "http://service-old:8086",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -340,9 +340,10 @@ func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapsho
 	}
 	repo := repository.NewModuleRegistryRepository(db)
 	registry := NewModuleRegistryService(repo)
+	publishForTest(t, registry, "manager")
 	registration := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "manager", InstanceID: "manager-a", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://manager-a:8081", RoutePrefix: "/manager",
+		ModuleURL: "http://manager-a:8081",
 	}
 
 	if err := registry.Register(registration); err != nil {
@@ -433,6 +434,10 @@ func TestModuleDefinitionAdminUpdateUsesVersionAndKeepsRegistrationIdempotent(t 
 		t.Fatal(err)
 	}
 	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	fields := configurationFields("manager", commonconfiguration.ScopePlatformOnly)
+	if _, err := registry.PublishDeclaration("manager", 0, fields); err != nil {
+		t.Fatal(err)
+	}
 	registration := configurationRegistration("manager", commonconfiguration.ScopePlatformOnly)
 	if err := registry.Register(&registration); err != nil {
 		t.Fatal(err)
@@ -472,8 +477,8 @@ func TestModuleDefinitionAdminUpdateUsesVersionAndKeepsRegistrationIdempotent(t 
 		t.Fatalf("idempotent registration changed administrator state: %#v", afterIdempotentRegistration)
 	}
 
-	registration.RoutePrefix = "/manager-v2"
-	if err := registry.Register(&registration); err != nil {
+	*fields.RoutePrefix = "/manager-v2"
+	if _, err := registry.PublishDeclaration("manager", 2, fields); err != nil {
 		t.Fatal(err)
 	}
 	afterDeclarationChange, err := registry.GetModule("manager")
@@ -494,25 +499,39 @@ func TestModuleDefinitionAdminUpdateUsesVersionAndKeepsRegistrationIdempotent(t 
 
 func configurationRegistration(owner, scopeType string) models.ModuleRegistrationRequest {
 	return models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
-		ModuleName:  owner,
-		InstanceID:  owner + "-backend-test",
-		Role:        models.ModuleRuntimeRoleBackend,
-		ModuleURL:   "http://" + owner + ":8080",
-		RoutePrefix: "/" + owner,
-		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
-			SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-			Entries: []commonconfiguration.ManagementEntry{{
-				ID:               owner + ".configuration",
-				OwnerModule:      owner,
-				ScopeTypes:       []string{scopeType},
-				FrontendRoute:    "/" + owner + "/settings/configuration",
-				ReadPermission:   owner + ".configuration.read",
-				UpdatePermission: owner + ".configuration.update",
-			}},
-		},
+		ModuleName: owner,
+		InstanceID: owner + "-backend-test",
+		Role:       models.ModuleRuntimeRoleBackend,
+		ModuleURL:  "http://" + owner + ":8080",
 	}
 }
 
+func configurationFields(owner, scopeType string) models.ModuleDeclarationFields {
+	prefix := "/" + owner
+	return models.ModuleDeclarationFields{RoutePrefix: &prefix, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
+		SchemaVersion: commonconfiguration.ManagementSchemaVersion,
+		Entries: []commonconfiguration.ManagementEntry{{
+			ID:               owner + ".configuration",
+			OwnerModule:      owner,
+			ScopeTypes:       []string{scopeType},
+			FrontendRoute:    "/" + owner + "/settings/configuration",
+			ReadPermission:   owner + ".configuration.read",
+			UpdatePermission: owner + ".configuration.update",
+		}},
+	}}
+}
+func publishForTest(t *testing.T, registry *ModuleRegistryService, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		prefix := "/" + name
+		if name == "gateway" {
+			prefix = ""
+		}
+		if _, err := registry.PublishDeclaration(name, 0, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 func seedManagementPermissions(t *testing.T, db *gorm.DB, owners ...string) {
 	t.Helper()
 	if err := db.Exec(`CREATE TABLE permissions (permission_key text PRIMARY KEY, owner_module text NOT NULL, status text NOT NULL)`).Error; err != nil {
@@ -547,23 +566,20 @@ func TestModuleRegistrationChecksPermissionCatalogOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	request := models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
-		ModuleName: "system", InstanceID: "system-test", Role: models.ModuleRuntimeRoleBackend,
-		ModuleURL: "http://localhost:8180", RoutePrefix: "/system",
-		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
-			SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-			Entries: []commonconfiguration.ManagementEntry{{
-				ID: "system.iam_security_policy", OwnerModule: "system",
-				ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/system/iam/security",
-				ReadPermission: "iam.security_policy.read", UpdatePermission: "iam.security_policy.update",
-			}},
-		},
-	}
-	if err := registry.Register(&request); err != nil {
+	prefix := "/system"
+	fields := models.ModuleDeclarationFields{RoutePrefix: &prefix, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
+		SchemaVersion: commonconfiguration.ManagementSchemaVersion,
+		Entries: []commonconfiguration.ManagementEntry{{
+			ID: "system.iam_security_policy", OwnerModule: "system",
+			ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/system/iam/security",
+			ReadPermission: "iam.security_policy.read", UpdatePermission: "iam.security_policy.update",
+		}},
+	}}
+	if _, err := registry.PublishDeclaration("system", 0, fields); err != nil {
 		t.Fatalf("System permission namespace differs from owner but catalog authorizes it: %v", err)
 	}
-	request.ConfigurationManagement.Entries[0].UpdatePermission = "manager.configuration.update"
-	if err := registry.Register(&request); !errors.Is(err, ErrInvalidModuleRegistration) {
+	fields.ConfigurationManagement.Entries[0].UpdatePermission = "manager.configuration.update"
+	if _, err := registry.PublishDeclaration("system", 1, fields); !errors.Is(err, ErrInvalidModuleRegistration) {
 		t.Fatalf("cross-owner permission error = %v, want invalid registration", err)
 	}
 }
@@ -607,23 +623,30 @@ func TestCatalogDeploymentDeclarationDoesNotCreateRuntimeOrOverwriteIntent(t *te
 				t.Fatal("conflict changed registry revision")
 			}
 			// A real owner registration may publish runtime facts but must preserve administrator intent.
-			registration := models.ModuleRegistrationRequest{ModuleName: "catalog", RoutePrefix: "/catalog", InstanceID: "catalog-1", Role: models.ModuleRuntimeRoleBackend, ModuleURL: "http://catalog:8192", ProcessStartedAt: time.Now()}
+			registration := models.ModuleRegistrationRequest{ModuleName: "catalog", InstanceID: "catalog-1", Role: models.ModuleRuntimeRoleBackend, ModuleURL: "http://catalog:8192", ProcessStartedAt: time.Now()}
+			if err := registry.Register(&registration); !errors.Is(err, ErrModuleDeclarationNotPublished) {
+				t.Fatal(err)
+			}
+			prefix := "/catalog"
+			if _, err := registry.PublishDeclaration("catalog", 1, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+				t.Fatal(err)
+			}
 			if err := registry.Register(&registration); err != nil {
 				t.Fatal(err)
 			}
 			got, err := registry.GetModule("catalog")
-			if err != nil || got.Enabled != enabled || got.Version != 1 {
+			if err != nil || got.Enabled != enabled || got.Version != 2 {
 				t.Fatalf("registration changed intent: %#v, %v", got, err)
 			}
 			changed, err := registry.UpdateModuleDefinition("catalog", &models.ModuleDefinitionUpdateRequest{Enabled: &opposite, Version: got.Version})
-			if err != nil || changed.Enabled != opposite || changed.Version != 2 {
+			if err != nil || changed.Enabled != opposite || changed.Version != 3 {
 				t.Fatalf("update = %#v, %v", changed, err)
 			}
 			if err := registry.Register(&registration); err != nil {
 				t.Fatal(err)
 			}
 			got, err = registry.GetModule("catalog")
-			if err != nil || got.Enabled != opposite || got.Version != 2 {
+			if err != nil || got.Enabled != opposite || got.Version != 3 {
 				t.Fatalf("reregistration changed intent: %#v, %v", got, err)
 			}
 		})

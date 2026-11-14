@@ -9,8 +9,6 @@ from pydantic import ValidationError
 import httpx
 
 from addp_common.client import (
-    ConfigurationManagementDeclaration,
-    ConfigurationManagementEntry,
     ModuleRegistration,
     ModuleRegistryAPIError,
     ModuleRegistryClient,
@@ -22,12 +20,12 @@ from addp_common.client import (
 class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
     def test_registration_collects_runtime_and_deployment_nodes(self):
         with patch.dict("os.environ", {"ADDP_HOST_NODE_NAME": " host-a ", "ADDP_HOST_NODE_IPS": "192.0.2.7,2001:0DB8::1,::ffff:192.0.2.7"}), patch("socket.gethostname", return_value="container-a"):
-            registration = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+            registration = ModuleRegistration(module_name="agent", module_url="http://agent")
         self.assertEqual(registration.host_node_name, "host-a")
         self.assertEqual(registration.host_node_ips, ["192.0.2.7", "2001:db8::1"])
         self.assertEqual(registration.runtime_hostname, "container-a")
         with patch.dict("os.environ", {"ADDP_HOST_NODE_NAME": "", "ADDP_HOST_NODE_IPS": ""}), patch("socket.gethostname", side_effect=OSError("unavailable")):
-            unknown = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+            unknown = ModuleRegistration(module_name="agent", module_url="http://agent")
         self.assertEqual(unknown.host_node_name, "")
         self.assertEqual(unknown.runtime_hostname, "")
         self.assertEqual(unknown.host_node_ips, [])
@@ -35,17 +33,17 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
     def test_optional_node_id_is_explicit_and_invalid_values_do_not_block_registration(self):
         for value in ("", "secret-invalid-value", "00000000-0000-0000-0000-000000000000", "urn:uuid:550e8400-e29b-41d4-a716-446655440000"):
             with self.subTest(value=value), patch.dict("os.environ", {"ADDP_HOST_NODE_ID": value}):
-                registration = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+                registration = ModuleRegistration(module_name="agent", module_url="http://agent")
                 self.assertEqual(registration.node_id, "")
         with patch.dict("os.environ", {"ADDP_HOST_NODE_ID": " 550E8400-E29B-41D4-A716-446655440000 "}):
-            registration = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+            registration = ModuleRegistration(module_name="agent", module_url="http://agent")
             self.assertEqual(registration.node_id, "550e8400-e29b-41d4-a716-446655440000")
 
     def test_host_node_ips_reject_invalid_deployment_addresses(self):
         for value in ("host-a", "192.0.2.7:80", "192.0.2.0/24", "fe80::1%en0", "192.0.2.7,"):
             with self.subTest(value=value), patch.dict("os.environ", {"ADDP_HOST_NODE_IPS": value}):
                 with self.assertRaises(ValidationError):
-                    ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+                    ModuleRegistration(module_name="agent", module_url="http://agent")
 
     def test_retry_classification_is_an_explicit_allowlist(self):
         request = httpx.Request("POST", "http://system/api/v1/system/runtime/modules")
@@ -71,7 +69,7 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
         registration = ModuleRegistration(
             module_name="agent",
             module_url="http://agent:8190",
-            route_prefix="/agent",
+
         )
         error = ServiceTokenError(
             "service_token_response_malformed",
@@ -129,14 +127,8 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(payload["host_node_ips"], registration.host_node_ips)
                 self.assertEqual(payload["process_started_at"], registration.process_started_at)
                 datetime.fromisoformat(payload["process_started_at"])
-                self.assertEqual(
-                    payload["configuration_management"]["schema_version"],
-                    "addp.configuration-management/v1",
-                )
-                self.assertEqual(
-                    payload["configuration_management"]["entries"][0]["frontend_route"],
-                    "/configuration/agent/inference",
-                )
+                self.assertNotIn("configuration_management", payload)
+                self.assertNotIn("route_prefix", payload)
                 return httpx.Response(200, json={})
             if request.url.path == "/api/v1/system/runtime/modules/heartbeat":
                 payload = json.loads(request.content)
@@ -170,17 +162,7 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
         registration = ModuleRegistration(
             module_name="agent",
             module_url="http://agent:8190",
-            route_prefix="/agent",
-            configuration_management=ConfigurationManagementDeclaration(entries=[
-                ConfigurationManagementEntry(
-                    id="agent.inference_bindings",
-                    owner_module="agent",
-                    scope_types=["platform_default_with_tenant_override"],
-                    frontend_route="/configuration/agent/inference",
-                    read_permission="agent.configuration.read",
-                    update_permission="agent.configuration.update",
-                ),
-            ]),
+
         )
         try:
             await client.register(registration)
@@ -196,12 +178,12 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
         first = ModuleRegistration(
             module_name="agent",
             module_url="http://agent:8190",
-            route_prefix="/agent",
+
         )
         second = ModuleRegistration(
             module_name="copilot",
             module_url="http://copilot:8087",
-            route_prefix="/copilot",
+
         )
 
         uuid.UUID(first.instance_id)
@@ -244,7 +226,7 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
         registration = ModuleRegistration(
             module_name="agent",
             module_url="http://agent:8190",
-            route_prefix="/agent",
+
         )
         task = asyncio.create_task(client.run(registration, interval=60.0))
         try:
@@ -303,7 +285,7 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
         registration = ModuleRegistration(
             module_name="agent",
             module_url="http://agent:8190",
-            route_prefix="/agent",
+
         )
         task = asyncio.create_task(client.run(registration, interval=0.01))
         try:
@@ -384,7 +366,7 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
         registration = ModuleRegistration(
             module_name="agent",
             module_url="http://agent:8190",
-            route_prefix="/agent",
+
         )
         try:
             with self.assertRaises(ModuleRegistryAPIError) as captured_error:

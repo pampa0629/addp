@@ -1,0 +1,31 @@
+{
+  "module_name": "model",
+  "route_prefix": "/model",
+  "task_provider": {
+    "display_name": "数据建模",
+    "description": "已审批逻辑表的目标表创建与结构校验",
+    "task_list_endpoint": "/api/v1/model/task-provider/tasks",
+    "task_detail_endpoint": "/api/v1/model/task-provider/tasks/{task_type}/{id}",
+    "task_execute_endpoint": "/api/v1/model/task-provider/tasks/{task_type}/{id}/execute",
+    "task_status_endpoint": "/api/v1/model/task-provider/executions/{execution_id}",
+    "capabilities": {
+      "schema_version": "task.capabilities/v2",
+      "task_capabilities": [
+        {
+          "create_url": "/modeling/logical-tables",
+          "definition_schema": {
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "创建或校验已审批逻辑表的目标物理表，保留已有数据",
+          "display_name": "逻辑表建表",
+          "edit_url": "/modeling/logical-tables/:id?tab=physical-target",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "logical_table_materialization"
+        }
+      ]
+    }
+  }
+}

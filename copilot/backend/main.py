@@ -7,8 +7,6 @@ from addp_common.runtime_logging import setup_runtime_logging
 setup_runtime_logging()
 from contextlib import asynccontextmanager
 from addp_common.client import (
-    ConfigurationManagementDeclaration,
-    ConfigurationManagementEntry,
     ModuleRegistration,
     ModuleRegistryClient,
 )
@@ -37,19 +35,10 @@ _public_base_url = f"http://{settings.service_host}:{settings.port}"
 _registration = ModuleRegistration(
     module_name="copilot",
     module_url=_public_base_url,
-    route_prefix="/copilot",
+
     health_check_url=f"{_public_base_url}/health/ready",
     metadata={"module": "copilot", "language": "python"},
-    configuration_management=ConfigurationManagementDeclaration(entries=[
-        ConfigurationManagementEntry(
-            id="copilot.configuration",
-            owner_module="copilot",
-            scope_types=["platform_default_with_tenant_override"],
-            frontend_route="/configuration/copilot",
-            read_permission="copilot.configuration.read",
-            update_permission="copilot.configuration.update",
-        ),
-    ]),
+
 )
 _registry_client: ModuleRegistryClient | None = None
 

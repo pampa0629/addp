@@ -1,0 +1,295 @@
+{
+  "module_name": "develop",
+  "route_prefix": "/develop",
+  "configuration_management": {
+    "schema_version": "addp.configuration-management/v1",
+    "entries": [
+      {
+        "id": "develop.configuration",
+        "owner_module": "develop",
+        "scope_types": [
+          "platform_default_with_tenant_override"
+        ],
+        "frontend_route": "/configuration/develop",
+        "read_permission": "develop.configuration.read",
+        "update_permission": "develop.configuration.update"
+      }
+    ]
+  },
+  "task_provider": {
+    "display_name": "数据开发",
+    "description": "SQL 查询、工作流和脚本开发任务",
+    "task_list_endpoint": "/api/v1/develop/task-provider/tasks",
+    "task_detail_endpoint": "/api/v1/develop/task-provider/tasks/{task_type}/{id}",
+    "task_execute_endpoint": "/api/v1/develop/task-provider/tasks/{task_type}/{id}/execute",
+    "task_status_endpoint": "/api/v1/develop/task-provider/executions/{execution_id}",
+    "capabilities": {
+      "schema_version": "task.capabilities/v2",
+      "task_capabilities": [
+        {
+          "create_url": "/develop/sql?action=create",
+          "definition_schema": {
+            "additionalProperties": true,
+            "description": "Develop 任务定义归 Develop 模块所有；该 schema 只描述跨模块可展示的公开摘要字段，不用于 Orchestrator 渲染完整编辑表单。",
+            "properties": {
+              "content": {
+                "additionalProperties": true,
+                "properties": {
+                  "query": {
+                    "title": "查询语句",
+                    "type": "string"
+                  },
+                  "query_type": {
+                    "description": "sql, mql, cypher, es_dsl",
+                    "enum": [
+                      "sql",
+                      "mql",
+                      "cypher",
+                      "es_dsl"
+                    ],
+                    "title": "查询类型",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "query",
+                  "query_type"
+                ],
+                "title": "公开内容摘要",
+                "type": "object"
+              },
+              "description": {
+                "title": "描述",
+                "type": "string"
+              },
+              "display_name": {
+                "title": "展示名称",
+                "type": "string"
+              },
+              "execution_config": {
+                "additionalProperties": true,
+                "title": "执行配置摘要",
+                "type": "object"
+              },
+              "name": {
+                "title": "任务名称",
+                "type": "string"
+              },
+              "task_type": {
+                "default": "query",
+                "enum": [
+                  "query"
+                ],
+                "title": "任务类型",
+                "type": "string"
+              },
+              "timeout": {
+                "minimum": 0,
+                "title": "超时时间",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "task_type"
+            ],
+            "title": "Develop 任务定义公开摘要",
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "执行 SQL 查询开发任务",
+          "display_name": "查询任务",
+          "edit_url": "/develop/sql?action=edit&id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "query"
+        },
+        {
+          "create_url": "/develop/workflow?action=create",
+          "definition_schema": {
+            "additionalProperties": true,
+            "description": "Develop 任务定义归 Develop 模块所有；该 schema 只描述跨模块可展示的公开摘要字段，不用于 Orchestrator 渲染完整编辑表单。",
+            "properties": {
+              "content": {
+                "additionalProperties": true,
+                "properties": {
+                  "inputs": {
+                    "additionalProperties": true,
+                    "title": "输入参数摘要",
+                    "type": "object"
+                  },
+                  "workflow_definition": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "tasks": {
+                        "items": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "depends_on": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "title": "前驱任务 ID",
+                              "type": "array"
+                            },
+                            "id": {
+                              "title": "任务 ID",
+                              "type": "string"
+                            },
+                            "operator": {
+                              "title": "算子名称",
+                              "type": "string"
+                            },
+                            "params": {
+                              "additionalProperties": true,
+                              "title": "算子参数",
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "operator",
+                            "params",
+                            "depends_on"
+                          ],
+                          "type": "object"
+                        },
+                        "title": "工作流任务列表",
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "tasks"
+                    ],
+                    "title": "工作流定义摘要",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "workflow_definition"
+                ],
+                "title": "公开内容摘要",
+                "type": "object"
+              },
+              "description": {
+                "title": "描述",
+                "type": "string"
+              },
+              "display_name": {
+                "title": "展示名称",
+                "type": "string"
+              },
+              "execution_config": {
+                "additionalProperties": true,
+                "title": "执行配置摘要",
+                "type": "object"
+              },
+              "name": {
+                "title": "任务名称",
+                "type": "string"
+              },
+              "task_type": {
+                "default": "workflow",
+                "enum": [
+                  "workflow"
+                ],
+                "title": "任务类型",
+                "type": "string"
+              },
+              "timeout": {
+                "minimum": 0,
+                "title": "超时时间",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "task_type"
+            ],
+            "title": "Develop 任务定义公开摘要",
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "执行 Develop 工作流任务",
+          "display_name": "工作流任务",
+          "edit_url": "/develop/workflow?action=edit&id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "workflow"
+        },
+        {
+          "create_url": "/develop/notebook?action=create",
+          "definition_schema": {
+            "additionalProperties": true,
+            "description": "Develop 任务定义归 Develop 模块所有；该 schema 只描述跨模块可展示的公开摘要字段，不用于 Orchestrator 渲染完整编辑表单。",
+            "properties": {
+              "content": {
+                "additionalProperties": true,
+                "properties": {
+                  "notebook_path": {
+                    "title": "Notebook 路径",
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "additionalProperties": true,
+                    "title": "脚本参数摘要",
+                    "type": "object"
+                  }
+                },
+                "required": [],
+                "title": "公开内容摘要",
+                "type": "object"
+              },
+              "description": {
+                "title": "描述",
+                "type": "string"
+              },
+              "display_name": {
+                "title": "展示名称",
+                "type": "string"
+              },
+              "execution_config": {
+                "additionalProperties": true,
+                "title": "执行配置摘要",
+                "type": "object"
+              },
+              "name": {
+                "title": "任务名称",
+                "type": "string"
+              },
+              "task_type": {
+                "default": "script",
+                "enum": [
+                  "script"
+                ],
+                "title": "任务类型",
+                "type": "string"
+              },
+              "timeout": {
+                "minimum": 0,
+                "title": "超时时间",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "task_type"
+            ],
+            "title": "Develop 任务定义公开摘要",
+            "type": "object"
+          },
+          "deprecated": false,
+          "description": "执行脚本开发任务；当前由 Jupyter Notebook runtime 承载",
+          "display_name": "脚本任务",
+          "edit_url": "/develop/notebook?action=edit&id=:id",
+          "supports_cancel": false,
+          "supports_inline_execution": false,
+          "supports_schedule": false,
+          "type": "script"
+        }
+      ]
+    }
+  }
+}

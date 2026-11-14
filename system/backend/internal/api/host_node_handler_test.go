@@ -167,6 +167,10 @@ func TestModuleRegistrationUsesVerifiedClientAndRejectsInjectedSource(t *testing
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	prefix := "/manager"
+	if _, err := registry.PublishDeclaration("manager", 0, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+		t.Fatal(err)
+	}
 	h := NewModuleRegistryHandler(registry, []byte("test-key"))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -176,7 +180,7 @@ func TestModuleRegistrationUsesVerifiedClientAndRejectsInjectedSource(t *testing
 		c.Next()
 	})
 	router.POST("/runtime/modules", h.RegisterService)
-	payload := map[string]interface{}{"node_id": node.NodeID, "module_name": "manager", "instance_id": "a", "role": "worker", "route_prefix": "/manager", "process_started_at": time.Now().UTC()}
+	payload := map[string]interface{}{"node_id": node.NodeID, "module_name": "manager", "instance_id": "a", "role": "worker", "process_started_at": time.Now().UTC()}
 	send := func(want int) {
 		t.Helper()
 		data, _ := json.Marshal(payload)

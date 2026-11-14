@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/addp/common/taskprovider"
 	"strings"
 	"testing"
 
@@ -433,7 +434,15 @@ func TestValidateExpectedDevTaskTypeRejectsProviderMismatch(t *testing.T) {
 }
 
 func TestWorkflowTaskDefinitionSchemaRequiresCanonicalTasks(t *testing.T) {
-	schema := workflowTaskDefinitionSchema()
+	declaration, err := DevelopTaskProviderDeclaration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := taskprovider.ParseCapabilities(string(*declaration.Capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := capabilities.CapabilityFor("workflow").DefinitionSchema
 	properties := schema["properties"].(map[string]interface{})
 	content := properties["content"].(map[string]interface{})
 	contentProperties := content["properties"].(map[string]interface{})

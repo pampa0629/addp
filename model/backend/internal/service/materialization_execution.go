@@ -259,9 +259,3 @@ func (s *MaterializationService) recoverMaterializationExecutions(ctx context.Co
 		log.Printf("model materialization recovery: %v", err)
 	}
 }
-
-func ModelTaskProviderDeclaration() *commonModels.TaskProviderDeclaration {
-	raw, _ := json.Marshal(map[string]interface{}{"schema_version": "task.capabilities/v2", "task_capabilities": []map[string]interface{}{{"type": MaterializationTaskType, "display_name": "逻辑表建表", "description": "创建或校验已审批逻辑表的目标物理表，保留已有数据", "definition_schema": map[string]interface{}{"type": "object"}, "supports_schedule": false, "supports_cancel": false, "supports_inline_execution": false, "create_url": "/modeling/logical-tables", "edit_url": "/modeling/logical-tables/:id?tab=physical-target", "deprecated": false}}})
-	capabilities := commonModels.JSONString(raw)
-	return &commonModels.TaskProviderDeclaration{DisplayName: "数据建模", Description: "已审批逻辑表的目标表创建与结构校验", TaskListEndpoint: "/api/v1/model/task-provider/tasks", TaskDetailEndpoint: "/api/v1/model/task-provider/tasks/{task_type}/{id}", TaskExecuteEndpoint: "/api/v1/model/task-provider/tasks/{task_type}/{id}/execute", TaskStatusEndpoint: "/api/v1/model/task-provider/executions/{execution_id}", Capabilities: &capabilities}
-}

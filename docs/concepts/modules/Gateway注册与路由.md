@@ -22,7 +22,7 @@ graph TB
     end
 
     subgraph "2. System 模块注册中心"
-        SystemReg --> DefinitionTable[(module_definitions<br/>持久模块身份/路由/声明)]
+        Deployment[部署流程] -->|发布模块声明| DefinitionTable[(module_definitions<br/>持久模块身份/路由/声明)]
         SystemReg --> InstanceTable[(module_runtime_instances<br/>实例端点/角色/租约)]
         SystemReg --> RevisionTable[(module_registry_state<br/>路由拓扑修订号)]
         DefinitionTable --> RegAPI[注册 API<br/>/api/v1/system/runtime/modules/*]
@@ -60,12 +60,14 @@ graph TB
 
 ### 核心机制说明
 
+部署流程发布声明，各实例向 System 注册并主动续租。身份、字段和顺序见[模块声明发布契约](../../spec/api/健康与平台控制面.md#第二阶段模块声明发布契约)。
+
 **1. 持久模块定义**:
 - `module_definitions` 保存稳定 `module_name`、路由前缀、管理员启用状态和配置管理入口声明；模块进程离线不会删除该定义。Gateway Ingress 无业务路由前缀，定义的 `route_prefix` 为空。
 - 业务模块的 `enabled` 是管理员意图，与实例心跳健康独立。禁用业务模块时所有实例即使仍有心跳也不得进入 Gateway 路由或 Console 动态入口。System 和 Gateway 是引导控制面与平台入口，其 `enabled` 固定为 true，不接受管理员禁用；自注册实例只供运行观测。Gateway 通过部署提供的 `SYSTEM_URL` 直接访问 System。
-- 模块首次注册创建定义；后续注册按 `module_name` 幂等更新允许由 owner 发布的声明，不改变定义 ID。
-- 模块定义是可变持久化主资源，使用正整数 `version` 进行乐观并发控制。平台系统管理员通过 `/api/v1/system/platform/modules` 读取定义和实例投影，只能通过带 `version` 的更新请求修改业务模块的 `enabled`；System 与 Gateway 的 `enabled` 不可修改。路由前缀和配置入口声明仍由 owner 注册发布，不提供管理员手工编辑路径。
-- 相同 owner 声明的重复注册保持幂等且不递增 `version`；路由前缀或配置入口声明实际变化时，System 原子更新声明并递增 `version`，同时保持管理员 `enabled` 不变。
+- 部署方用模块专属发布身份创建或更新定义。实例在定义尚未发布时等待，发布后沿用原进程身份登记。
+- 模块定义是可变持久化主资源，使用正整数 `version` 进行乐观并发控制。平台系统管理员通过 `/api/v1/system/platform/modules` 读取定义和实例投影，只能通过带 `version` 的更新请求修改业务模块的 `enabled`；System 与 Gateway 的 `enabled` 不可修改。路由前缀和配置入口声明由模块专属部署身份发布，不提供管理员手工编辑路径。
+- 携带当前版本重复发布相同声明保持幂等且不递增 `version`；路由前缀、配置入口或任务能力声明实际变化时，System 原子更新声明并递增 `version`，同时保持管理员 `enabled` 不变。
 
 **2. 临时运行实例租约**:
 - 每个 Backend、Worker、Scheduler 或 Gateway Ingress 进程启动时生成本次进程唯一的 `instance_id`，并以 `module_name + instance_id` 注册到 `module_runtime_instances`，同时提交本次进程启动时间。
@@ -77,6 +79,7 @@ graph TB
 
 **3. 周期心跳机制**:
 - 模块每 **10 秒**发送一次心跳到 System
+- Backend 登记的 `health_check_url` 指向自身 `/health/ready`。System 的注册表定时扫描租约截止时间，以心跳续租判定实例在线；扫描过程不轮询该 URL。部署探针可直接检查 Ready，Monitor 也会按 TaskProvider 的有效 Backend 端点探测 Ready，探测结果不会续租。
 - System 将超过租约超时时间未心跳的运行实例标记为 `down` 并记录 `lease_expired` 与到期时间，但不删除运行实例历史，也不删除持久模块定义。正常注销记录 `graceful` 与注销时间。`lease_expired` 表示失联或疑似异常退出，不证明进程崩溃。
 - 同一进程恢复时复用原 `instance_id`；重新注册成功后恢复为 `up` 并清除离线原因。新进程必须使用新的 `instance_id`。
 - 可重试的心跳失败（含返回实例不存在）后，Go 与 Python 公共客户端的下一次请求必须幂等重注册；可重试的注册失败使用有界退避，不能继续发送必然失败的心跳直到租约过期。

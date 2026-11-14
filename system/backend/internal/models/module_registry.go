@@ -24,6 +24,7 @@ const (
 
 // ModuleDefinition 是稳定模块身份和管理员意图，不随进程上下线改变。
 type ModuleDefinition struct {
+	DeclarationPublishedAt  *time.Time              `json:"declaration_published_at"`
 	ID                      uint                    `gorm:"primaryKey" json:"id"`
 	ModuleName              string                  `gorm:"uniqueIndex;not null;size:50" json:"module_name"`
 	RoutePrefix             string                  `gorm:"not null;size:50" json:"route_prefix"`
@@ -80,24 +81,51 @@ type ModuleRegistryState struct {
 
 func (ModuleRegistryState) TableName() string { return "module_registry_state" }
 
+// ModuleDeclarationFields is the complete set of fields owned by the module publisher.
+// A pointer distinguishes the Gateway's explicit empty prefix from an omitted field.
+type ModuleDeclarationFields struct {
+	RoutePrefix             *string                                    `json:"route_prefix" binding:"required"`
+	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
+	TaskProvider            *commonmodels.TaskProviderDeclaration      `json:"task_provider,omitempty"`
+}
+type ModuleDeclarationCreate struct {
+	ModuleName string `json:"module_name" binding:"required,max=50"`
+	ModuleDeclarationFields
+}
+type ModuleDeclarationUpdate struct {
+	Version int64 `json:"version" binding:"required,gt=0"`
+	ModuleDeclarationFields
+}
+type ModuleDeclarationView struct {
+	ModuleName              string         `json:"module_name"`
+	RoutePrefix             string         `json:"route_prefix"`
+	ConfigurationManagement datatypes.JSON `json:"configuration_management" swaggertype:"object"`
+	TaskProvider            datatypes.JSON `json:"task_provider" swaggertype:"object"`
+	Version                 int64          `json:"version"`
+	DeclarationPublishedAt  *time.Time     `json:"declaration_published_at"`
+}
+
+func (d ModuleDefinition) Declaration() ModuleDeclarationView {
+	return ModuleDeclarationView{ModuleName: d.ModuleName, RoutePrefix: d.RoutePrefix, ConfigurationManagement: d.ConfigurationManagement, TaskProvider: d.TaskProvider, Version: d.Version, DeclarationPublishedAt: d.DeclarationPublishedAt}
+}
+
 type ModuleRegistrationRequest struct {
 	NodeID string `json:"node_id,omitempty"`
 	// RegistrationClientID is supplied only by verified authentication or the trusted System bootstrap.
-	RegistrationClientID    string                                     `json:"-" swaggerignore:"true"`
-	ModuleName              string                                     `json:"module_name" binding:"required"`
-	InstanceID              string                                     `json:"instance_id" binding:"required"`
-	Role                    string                                     `json:"role" binding:"required"`
-	ModuleURL               string                                     `json:"module_url"`
-	RoutePrefix             string                                     `json:"route_prefix"`
-	HealthCheckURL          string                                     `json:"health_check_url"`
-	HostNodeName            string                                     `json:"host_node_name"`
-	HostNodeIPs             []string                                   `json:"host_node_ips"`
-	RuntimeHostname         string                                     `json:"runtime_hostname"`
-	ProcessStartedAt        time.Time                                  `json:"process_started_at" binding:"required"`
-	Metadata                map[string]interface{}                     `json:"metadata"`
-	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management"`
-	TaskProvider            *commonmodels.TaskProviderDeclaration      `json:"task_provider"`
-	ProcessMetrics          *commonmodels.ProcessMetricsDeclaration    `json:"process_metrics,omitempty"`
+	RegistrationClientID string `json:"-" swaggerignore:"true"`
+	ModuleName           string `json:"module_name" binding:"required"`
+	InstanceID           string `json:"instance_id" binding:"required"`
+	Role                 string `json:"role" binding:"required"`
+	ModuleURL            string `json:"module_url"`
+
+	HealthCheckURL   string                 `json:"health_check_url"`
+	HostNodeName     string                 `json:"host_node_name"`
+	HostNodeIPs      []string               `json:"host_node_ips"`
+	RuntimeHostname  string                 `json:"runtime_hostname"`
+	ProcessStartedAt time.Time              `json:"process_started_at" binding:"required"`
+	Metadata         map[string]interface{} `json:"metadata"`
+
+	ProcessMetrics *commonmodels.ProcessMetricsDeclaration `json:"process_metrics,omitempty"`
 }
 
 type HeartbeatRequest struct {

@@ -1,6 +1,9 @@
 package service
 
 import (
+	"encoding/json"
+	commonmodels "github.com/addp/common/models"
+	"os"
 	"testing"
 
 	"github.com/addp/common/taskprovider"
@@ -35,4 +38,16 @@ func TestTransferTaskProviderDeclaration(t *testing.T) {
 			t.Errorf("%s endpoint = %q, want %q", name, gotEndpoints[name], want)
 		}
 	}
+}
+
+func TransferTaskProviderDeclaration() (*commonmodels.TaskProviderDeclaration, error) {
+	data, err := os.ReadFile("../../../module-declaration.json")
+	if err != nil {
+		return nil, err
+	}
+	var artifact struct {
+		TaskProvider *commonmodels.TaskProviderDeclaration `json:"task_provider"`
+	}
+	err = json.Unmarshal(data, &artifact)
+	return artifact.TaskProvider, err
 }

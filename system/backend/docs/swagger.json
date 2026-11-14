@@ -1458,6 +1458,222 @@
                 "x-addp-auth-mode": "self"
             }
         },
+        "/deployment/module_declarations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "部署声明 | Deployment declarations"
+                ],
+                "summary": "首次发布模块声明 | Create module declaration",
+                "parameters": [
+                    {
+                        "description": "模块声明 | Module declaration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleDeclarationCreate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleDeclarationView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.module_declaration.publish"
+                ]
+            }
+        },
+        "/deployment/module_declarations/{module_name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "部署声明 | Deployment declarations"
+                ],
+                "summary": "读取本模块发布基线 | Get module declaration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名称 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleDeclarationView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.module_declaration.publish"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "部署声明 | Deployment declarations"
+                ],
+                "summary": "按版本完整替换模块声明 | Update module declaration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名称 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "模块声明 | Module declaration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleDeclarationUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleDeclarationView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.module_declaration.publish"
+                ]
+            }
+        },
         "/engine-access/metadata-checks/manager-navigation": {
             "post": {
                 "security": [
@@ -12526,7 +12742,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "平台 Service Principal 只能注册与自身 OAuth Client 对应的模块定义和当前进程实例；注册不覆盖管理员 enabled 状态 | A platform service principal can only register its matching module definition and current process instance; registration never overrides administrator enabled state",
+                "description": "平台运行身份在已发布的模块定义下登记当前实例 | Register the current instance against its published module definition",
                 "consumes": [
                     "application/json"
                 ],
@@ -12577,6 +12793,12 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -22566,6 +22788,72 @@
                 }
             }
         },
+        "github_com_addp_system_internal_models.ModuleDeclarationCreate": {
+            "type": "object",
+            "required": [
+                "module_name",
+                "route_prefix"
+            ],
+            "properties": {
+                "configuration_management": {
+                    "$ref": "#/definitions/configuration.ManagementDeclaration"
+                },
+                "module_name": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "route_prefix": {
+                    "type": "string"
+                },
+                "task_provider": {
+                    "$ref": "#/definitions/models.TaskProviderDeclaration"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.ModuleDeclarationUpdate": {
+            "type": "object",
+            "required": [
+                "route_prefix",
+                "version"
+            ],
+            "properties": {
+                "configuration_management": {
+                    "$ref": "#/definitions/configuration.ManagementDeclaration"
+                },
+                "route_prefix": {
+                    "type": "string"
+                },
+                "task_provider": {
+                    "$ref": "#/definitions/models.TaskProviderDeclaration"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.ModuleDeclarationView": {
+            "type": "object",
+            "properties": {
+                "configuration_management": {
+                    "type": "object"
+                },
+                "declaration_published_at": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "route_prefix": {
+                    "type": "string"
+                },
+                "task_provider": {
+                    "type": "object"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.ModuleDefinitionCreateRequest": {
             "type": "object",
             "required": [
@@ -22727,9 +23015,6 @@
                 "role"
             ],
             "properties": {
-                "configuration_management": {
-                    "$ref": "#/definitions/configuration.ManagementDeclaration"
-                },
                 "health_check_url": {
                     "type": "string"
                 },
@@ -22767,14 +23052,8 @@
                 "role": {
                     "type": "string"
                 },
-                "route_prefix": {
-                    "type": "string"
-                },
                 "runtime_hostname": {
                     "type": "string"
-                },
-                "task_provider": {
-                    "$ref": "#/definitions/models.TaskProviderDeclaration"
                 }
             }
         },

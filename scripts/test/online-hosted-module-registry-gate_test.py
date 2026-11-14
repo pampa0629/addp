@@ -28,6 +28,13 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
         ''')
         self.host._executable('python3', '''
             #!/usr/bin/env bash
+            if [ "$1" = scripts/test/module-declaration-online.py ]; then
+              echo "declaration:$2:$3" >> "$ADDP_TEST_GATE_TRACE"; exit 0
+            fi
+            if [ "$1" = scripts/prod/publish-module-declarations.py ]; then
+              if [ "$2" = --provision ]; then echo "provision" >> "$ADDP_TEST_GATE_TRACE"; exit 0; fi
+              echo "publish:gateway" >> "$ADDP_TEST_GATE_TRACE"; exit 0
+            fi
             if [ "$1" = scripts/test/module-lifecycle-process-online.py ]; then
               [ "$ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN" = platform-token ] || exit 1
               phase=$3
@@ -83,6 +90,17 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
         expected += ['stop-exact:-gateway', 'stop-exact:-system']
         expected += [action.replace('-manager', '-copilot') for action in cycle]
         expected += ['application-stop', 'infra-down']
+        expected[2:2] = ['provision', 'declaration:system-cold:system', 'declaration:catalog-prebuilt:catalog',
+                         'publish:gateway', 'start:--exact-process -catalog', 'start:--exact-process -gateway',
+                         'declaration:catalog-running:catalog','stop-exact:-catalog','stop-exact:-gateway']
+        for module, position in [('manager', 0), ('copilot', 1)]:
+            index = [i for i, action in enumerate(expected) if action == 'observe:backend-registered'][position]
+            expected.insert(index, 'declaration:waiting:' + module)
+        index = expected.index('observe:system-interrupted') + 1
+        expected.insert(index, 'stop-exact:--pause -manager')
+        index = expected.index('observe:system-recovered')
+        expected[index:index] = ['declaration:manager-upgrade:manager', 'stop-exact:--resume -manager']
+        expected.insert(expected.index('observe:system-recovered') + 1, 'declaration:manager-reconnected:manager')
         self.assertEqual(actions, expected)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals', (self.host.artifacts / 'summary.txt').read_text())

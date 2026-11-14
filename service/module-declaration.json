@@ -1,0 +1,19 @@
+{
+  "module_name": "service",
+  "route_prefix": "/service",
+  "configuration_management": {
+    "schema_version": "addp.configuration-management/v1",
+    "entries": [
+      {
+        "id": "service.configuration",
+        "owner_module": "service",
+        "scope_types": [
+          "platform_only"
+        ],
+        "frontend_route": "/configuration/service",
+        "read_permission": "service.configuration.read",
+        "update_permission": "service.configuration.update"
+      }
+    ]
+  }
+}

@@ -64,7 +64,17 @@ func TestRuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity(
 				t.Fatal(err)
 			}
 			registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-			if err = registry.Register(&models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "old", Role: "backend", ModuleURL: "http://manager:8081", RoutePrefix: "/manager", ProcessStartedAt: time.Now()}); err != nil {
+			for _, module := range []string{"manager"} {
+				prefix := "/" + module
+				if module == "gateway" {
+					prefix = ""
+				}
+				version := int64(0)
+				if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err = registry.Register(&models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: "old", Role: "backend", ModuleURL: "http://manager:8081", ProcessStartedAt: time.Now()}); err != nil {
 				t.Fatal(err)
 			}
 			if err = db.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", "old").Updates(map[string]any{"status": "down", "lease_expires_at": time.Now().Add(-time.Hour)}).Error; err != nil {

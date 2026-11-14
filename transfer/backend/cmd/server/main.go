@@ -13,7 +13,6 @@ import (
 	"github.com/addp/common/cleanup"
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
@@ -25,7 +24,6 @@ import (
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/schema"
 	"github.com/addp/transfer/internal/api"
-	transferauthorization "github.com/addp/transfer/internal/authorization"
 	"github.com/addp/transfer/internal/capture"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
@@ -248,13 +246,8 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	if systemRuntimeClient != nil {
-		taskProvider, err := service.TransferTaskProviderDeclaration()
-		if err != nil {
-			log.Fatalf("构建 Transfer TaskProvider 声明失败: %v", err)
-		}
 		registration = systemRuntimeClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
-			ModuleName: "transfer", ModuleURL: serviceURL, RoutePrefix: "/transfer", HealthCheckURL: serviceURL + "/health/ready",
-			TaskProvider: taskProvider,
+			ModuleName: "transfer", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready",
 			Metadata: map[string]interface{}{
 				"module": "transfer",
 				"capabilities": map[string]interface{}{
@@ -264,10 +257,6 @@ func main() {
 					},
 				},
 			},
-			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{
-				ID: "transfer.configuration", OwnerModule: "transfer", ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/configuration/transfer",
-				ReadPermission: transferauthorization.PermissionTransferConfigurationRead, UpdatePermission: transferauthorization.PermissionTransferConfigurationUpdate,
-			}}},
 		})
 		lifecycleController.AttachRegistration(registration)
 		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)

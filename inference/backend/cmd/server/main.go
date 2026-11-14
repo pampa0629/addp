@@ -12,12 +12,10 @@ import (
 
 	commonclient "github.com/addp/common/client"
 	commonconfig "github.com/addp/common/config"
-	commonconfiguration "github.com/addp/common/configuration"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/inference/i18n"
 	"github.com/addp/inference/internal/api"
-	inferenceauthorization "github.com/addp/inference/internal/authorization"
 	"github.com/addp/inference/internal/config"
 	"github.com/addp/inference/internal/models"
 	"github.com/addp/inference/internal/repository"
@@ -91,7 +89,7 @@ func register(ctx context.Context, cfg *config.Config) *commonclient.ModuleRegis
 	client := commonclient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 	host := commonconfig.GetServiceHost()
 	url := commonconfig.BuildServiceURL(host, cfg.Port)
-	registration := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, RoutePrefix: "/inference", HealthCheckURL: url + "/health/ready", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}, ConfigurationManagement: &commonconfiguration.ManagementDeclaration{SchemaVersion: commonconfiguration.ManagementSchemaVersion, Entries: []commonconfiguration.ManagementEntry{{ID: "inference.configuration", OwnerModule: "inference", ScopeTypes: []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride}, FrontendRoute: "/inference/settings/models", ReadPermission: inferenceauthorization.PermissionInferenceProviderRead, UpdatePermission: inferenceauthorization.PermissionInferenceProviderUpdate}}}})
+	registration := client.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "inference", ModuleURL: url, HealthCheckURL: url + "/health/ready", Metadata: map[string]interface{}{"runtime_api": "addp.inference/v1"}})
 	port, err := strconv.Atoi(cfg.Port)
 	if err != nil || port <= 0 || port > 65535 {
 		log.Printf("inference runtime engine registration disabled: invalid port %q", cfg.Port)

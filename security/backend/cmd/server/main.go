@@ -86,7 +86,7 @@ func main() {
 		}
 	}()
 	serviceURL := commonconfig.BuildServiceURL(commonconfig.GetServiceHost(), cfg.Port)
-	registration := systemClient.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "security", ModuleURL: serviceURL, RoutePrefix: "/security", HealthCheckURL: serviceURL + "/health/ready", Metadata: map[string]interface{}{"module": "security"}})
+	registration := systemClient.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "security", ModuleURL: serviceURL, HealthCheckURL: serviceURL + "/health/ready", Metadata: map[string]interface{}{"module": "security"}})
 	lifecycle.AttachRegistration(registration)
 	modulelifecycle.CancelRuntimeOnFatal(registration, stop)
 	<-ctx.Done()

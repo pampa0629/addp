@@ -7209,7 +7209,20 @@ func TestModuleRuntimeHostNodeIPsForwardMigrationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(store))
-	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "ip-worker", Role: "worker", RoutePrefix: "/meta", ProcessStartedAt: time.Now(), HostNodeName: "host-a", HostNodeIPs: []string{"192.0.2.7", "2001:0DB8::1"}}
+	for _, module := range []string{"meta"} {
+		prefix := "/" + module
+		if module == "gateway" {
+			prefix = ""
+		}
+		version := int64(0)
+		if existing, e := registry.GetDeclaration(module); e == nil {
+			version = existing.Version
+		}
+		if _, err := registry.PublishDeclaration(module, version, models.ModuleDeclarationFields{RoutePrefix: &prefix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "ip-worker", Role: "worker", ProcessStartedAt: time.Now(), HostNodeName: "host-a", HostNodeIPs: []string{"192.0.2.7", "2001:0DB8::1"}}
 	if err := registry.Register(request); err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,7 @@ HOSTED_FIXTURE_CONTAINERS=()
 stop_online_fixture() { return 0; }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export MANAGER_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export CATALOG_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export COPILOT_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export GATEWAY_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export ADDP_HOST_NODE_IPS=127.0.0.1
@@ -17,6 +18,19 @@ application_owned=1
 # Bootstrap identities before the Manager-first scenario, then stop System.
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite module-registry-recovery --output "$1"' _ "$IDENTITY_ENV"
+declaration_phase() (
+  source "$IDENTITY_ENV"
+  run_logged python3 scripts/test/module-declaration-online.py "$@"
+)
+run_logged python3 scripts/prod/publish-module-declarations.py --provision --credential-dir "$ADDP_ONLINE_SECRET_DIR/publishers" system gateway catalog manager copilot
+declaration_phase system-cold system
+declaration_phase catalog-prebuilt catalog
+run_logged python3 scripts/prod/publish-module-declarations.py --credential-dir "$ADDP_ONLINE_SECRET_DIR/publishers" gateway
+run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -catalog
+run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
+declaration_phase catalog-running catalog
+run_logged bash scripts/dev/stop-exact-process.sh -catalog
+run_logged bash scripts/dev/stop-exact-process.sh -gateway
 run_logged bash scripts/dev/stop-exact-process.sh -system
 observe_module_lifecycle() {
   local phase=$1
@@ -79,6 +93,7 @@ run_backend_lifecycle() {
   backend_instance_id=$(module_lifecycle_instance_id business-before-system)
 
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
+  declaration_phase waiting "$backend_module"
   observe_with_identity backend-registered "$process_timeout" "$backend_instance_id"
 
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
@@ -86,10 +101,18 @@ run_backend_lifecycle() {
 
   run_logged bash scripts/dev/stop-exact-process.sh -system
   observe_with_identity system-interrupted "$lease_timeout" "$backend_instance_id"
+  if [ "$backend_module" = manager ]; then
+    run_logged bash scripts/dev/stop-exact-process.sh --pause -manager
+  fi
 
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
+  if [ "$backend_module" = manager ]; then
+    declaration_phase manager-upgrade manager
+    run_logged bash scripts/dev/stop-exact-process.sh --resume -manager
+  fi
   observe_with_identity system-recovered "$process_timeout" "$backend_instance_id" gateway-established
 
+  if [ "$backend_module" = manager ]; then declaration_phase manager-reconnected manager; fi
   run_logged bash scripts/dev/stop-exact-process.sh --force -"$backend_module"
   observe_with_identity backend-abnormally-stopped "$lease_timeout" "$backend_instance_id" system-recovered
 

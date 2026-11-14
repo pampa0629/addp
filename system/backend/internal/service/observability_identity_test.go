@@ -16,6 +16,7 @@ import (
 
 func TestObservabilityIdentitiesUseCurrentIntentBindingAndLease(t *testing.T) {
 	registry, _, db := newObservationRegistry(t)
+	publishForTest(t, registry, "gateway", "manager")
 	if err := db.AutoMigrate(&models.HostNode{}, &models.EngineDeployment{}); err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +30,7 @@ func TestObservabilityIdentitiesUseCurrentIntentBindingAndLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, role := range []string{"backend", "worker", "scheduler"} {
-		request := &models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: role, Role: role, RoutePrefix: "/manager", ProcessStartedAt: time.Now().UTC(), NodeID: node.NodeID, RegistrationClientID: "addp-manager"}
+		request := &models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: role, Role: role, ProcessStartedAt: time.Now().UTC(), NodeID: node.NodeID, RegistrationClientID: "addp-manager"}
 		if role == "backend" {
 			request.ModuleURL = "http://example.test"
 		}
@@ -42,7 +43,7 @@ func TestObservabilityIdentitiesUseCurrentIntentBindingAndLease(t *testing.T) {
 	}
 	registerExcluded := func(id, declared, client string) {
 		t.Helper()
-		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: id, Role: "worker", RoutePrefix: "/manager", ProcessStartedAt: time.Now().UTC(), NodeID: declared, RegistrationClientID: client}); err != nil {
+		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "manager", InstanceID: id, Role: "worker", ProcessStartedAt: time.Now().UTC(), NodeID: declared, RegistrationClientID: client}); err != nil {
 			t.Fatal(err)
 		}
 	}

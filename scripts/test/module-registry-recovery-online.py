@@ -33,7 +33,6 @@ class Registration:
     instance_id: str
     role: str
     module_url: str
-    route_prefix: str
     health_check_url: str
     metadata: dict[str, object]
     process_started_at: str = PROCESS_STARTED_AT
@@ -50,7 +49,6 @@ class Probe:
             instance_id=self.instance_id,
             role="backend",
             module_url=self.module_url,
-            route_prefix="/api/v1/manager",
             health_check_url=f"{self.module_url}/health/ready",
             metadata={"online_run_id": run_id, "release": release},
         )
@@ -227,7 +225,6 @@ class RegistryClient:
                 "instance_id": registration.instance_id,
                 "role": registration.role,
                 "module_url": registration.module_url,
-                "route_prefix": registration.route_prefix,
                 "health_check_url": registration.health_check_url,
                 "metadata": registration.metadata,
                 "process_started_at": registration.process_started_at,

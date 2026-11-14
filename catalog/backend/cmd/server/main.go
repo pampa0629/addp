@@ -113,7 +113,7 @@ func main() {
 	}()
 
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.Port)
-	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "catalog", serviceURL, "/catalog", map[string]interface{}{
+	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "catalog", serviceURL, map[string]interface{}{
 		"module": "catalog",
 	})
 	lifecycle.AttachRegistration(registration)

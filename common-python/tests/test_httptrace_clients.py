@@ -89,7 +89,7 @@ async def test_registry_and_service_consumer_requests_use_configured_origins():
     consumer = ServiceConsumerClient("http://gateway", user_token="addp_at_user", transport=httpx.MockTransport(handler))
     try:
         with traced_request() as (parent, exporter):
-            await registry.register(ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent"))
+            await registry.register(ModuleRegistration(module_name="agent", module_url="http://agent"))
             page = await consumer.list_services()
             assert page.total == 0
             for request in requests:

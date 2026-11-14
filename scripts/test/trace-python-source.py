@@ -23,7 +23,7 @@ def main():
     target = os.environ["TRACE_T2_NEXT"]
     registration = ModuleRegistration(
         module_name="copilot", instance_id="t2-copilot", module_url="http://127.0.0.1:1",
-        route_prefix="/copilot", health_check_url="http://127.0.0.1:1/health/ready",
+        health_check_url="http://127.0.0.1:1/health/ready",
     )
     close_trace = start_optional(registration)
     client = httpx.AsyncClient(transport=trace_transport(target), timeout=5, trust_env=False)
