@@ -9,6 +9,7 @@
 | 阅读目的 | 正文入口 |
 | --- | --- |
 | 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
+| bounded Worker 领取、Scheduler 定时触发与在途任务 | [bounded 领取与定时触发](#bounded-领取与定时触发) |
 | continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
 | 业务 Kafka 来源、显式映射、目标账本、CAS 与位置恢复 | [来源配置与目标提交](#continuous-来源配置与目标提交) |
 | 分区位置、窗口估算、retention／checkpoint 与安全样本 | [采样与健康诊断](#continuous-采样与健康诊断) |
@@ -42,6 +43,19 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 5. 同一增量任务默认只允许一个 active execution 推进主状态；任务 claim 与 pending execution 创建必须在同一数据库事务中完成。
 6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。PostgreSQL/MySQL/OceanBase/TiDB/openGauss watermark 只支持 resume，不支持 replay，OceanBase/TiDB/openGauss 限非空间表。
 7. TaskProvider capability 只能声明已真实实现并验证的边界；不具备真实 worker 中断、资源释放和一致落库能力时必须 `supports_cancel=false`，也不得保留只改数据库状态的伪取消入口。
+
+## Bounded 领取与定时触发
+
+本地和 Compose 的资格取自 System 注册状态。待实施的企业试点沿用下列 Transfer 事务与执行租约，资格来源和停领时刻按[控制面契约](../api/健康与平台控制面.md#transfer-后台工作资格试点)判定。
+
+| 职责 | 每笔新工作发起前 | 数据库提交的结果 |
+| --- | --- | --- |
+| 独立 bounded Worker | 每个执行槽在领取一条 `pending` 前检查本进程的 Worker 资格。停领后，队列中的任务可供其他有资格的 Worker 领取。 | Transfer 原子领取并取得本次 `attempt` 和 `lease_token`，事务成功后才开始执行。Scheduler 停触发期间，Worker 仍可消费已有的 `pending`。 |
+| Backend 内嵌 Scheduler | 每个到期项在发起触发事务前检查所在进程的 Scheduler 资格，包括已扫描且正在核验授权的候选项。 | Transfer 按既有授权及任务启用、到期和并发条件，在同一事务创建 `pending` 并推进 `next_run_at`。即使所有 Worker 都已停领，调度事务仍可提交。未发起或回滚的触发保留原到期项，恢复后沿用原调度规则。 |
+
+治理失联或资格撤销只关闭新工作入口。已领取的任务在其业务授权、截止时间和当前 execution 租约均允许时，可用原 attempt 继续执行、续租、写进度和终态。执行租约失效时，旧 Worker 停止推进，续租、进度和终态写入按数据库权威时间、当前 attempt 和 token 拒绝。Transfer 对过期的 bounded running execution 按现有策略收敛为失败，后续按任务支持的显式重试规则处理，不能因治理恢复自动重放。
+
+正常退出时按 Transfer 的停机语义中断或收敛在途运行。只有持有效执行租约才可提交相应终态；未能合法提交的 running 记录走既有过期恢复。收到退出信号本身不能写入 `cancelled`，执行租约也不承诺外部已提交效果可回滚。数据库时钟和写入规则见[公共执行租约规范](执行记录与租约.md#公共写入入口与权威时间)。试点证据见 [Transfer 后台工作资格试点验收](../testing/scenarios/部署与执行恢复.md#transfer-后台工作资格试点验收)。
 
 ## Transfer continuous sync v1 契约
 
