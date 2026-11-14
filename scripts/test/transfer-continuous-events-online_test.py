@@ -1238,6 +1238,37 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual([p for method,p in calls if method=='DELETE'],[M.RULES+'/1',M.RULES+'/2'])
         self.assertNotEqual(proof['performance']['result'],'passed')
 
+    def test_performance_backpressure_keeps_capture_running_and_restores_native_faults(self):
+        import io
+        commands, actions, definitions = [], [], []
+        state={'done':False}
+        lock=SimpleNamespace(stdin=io.BytesIO(),stdout=io.BytesIO(b'ADDP_CDC_PERFORMANCE_LOCKED\n'),
+            poll=lambda:0 if state['done'] else None,
+            wait=lambda **kwargs:state.update(done=True))
+        def command(args,**kwargs):
+            commands.append(args)
+            return SimpleNamespace(stdout=b'2000000000\n' if args[1]=='inspect' else b'')
+        client=SimpleNamespace(request=lambda *args,**kwargs:SimpleNamespace(payload=[]))
+        def mutate(actor,path,body,status):
+            definitions.append(body);return {'id':len(definitions)}
+        def stage(value):
+            if value=='performance_trigger':raise M.SuiteError('stop after native backpressure')
+        proof={}
+        with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
+             patch.object(M,'until',return_value={'initial_snapshot_completed':True,'lag_offsets':'0'}), \
+             patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
+             patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
+             patch.object(M.time,'monotonic',side_effect=[0,100]), \
+             patch.object(M,'physical',side_effect=lambda action:actions.append(action) or True), \
+             self.assertRaisesRegex(M.SuiteError,'stop after native backpressure'):
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage)
+        self.assertFalse(any(args[1] in ('pause','exec') for args in commands))
+        self.assertIn(['docker','update','--cpus','0.025','owned-connect'],commands)
+        self.assertIn(['docker','update','--cpus','2.0','owned-connect'],commands)
+        self.assertEqual(actions,['performance-fill','performance-clear'])
+        self.assertTrue(state['done'])
+        self.assertEqual(proof['performance']['cleanup'],'passed')
+
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \
              self.assertRaises(Exception):

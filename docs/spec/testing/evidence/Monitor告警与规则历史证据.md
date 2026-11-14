@@ -579,3 +579,12 @@ Transfer 的同一机器入口采用 v3 单一路线，增加当前消费状态�
 用户随后全量重启。本机 Transfer build `20261114T040827Z-transfer-25772-lr5NeE`、Monitor build `20261114T040817Z-monitor-25772-mofwuc` 均 ready，构建 SHA `990cd2c4dfd1ec7d6bfcd7cf21f223fe2943f078` 已包含修订 `468c78aef5561b53b386e015849b1c4a6ab9fc89`。只读核对确认开发库 Transfer startup revision=13，task 61／generation 1 的 health_observation 从 12:13:09 持续推进至 12:28:39（Asia/Shanghai），均为 healthy、failed_since=null，并具有新的 30 秒有效期；此前缺列导致健康事实无法落库的问题已在个人运行环境核对通过。
 
 任务缓冲仍为 committed/latest/earliest=10/10/0、lag=0；旧位置无初始快照完成标记，仍为 false，没有回填或据此推定性能规则可正常评估。两个原逻辑槽 task46/task58 均保留且不活跃，专用 task61 槽保留且活跃。全量重启的 Infra MinIO 恢复失败另经只读排查，确认为本地 Trace 辅助容器继承正式部署标签；当前核验与精确 mTLS 样本见[来源证据](Monitor采集来源与引擎指标历史证据.md#infra-minio-恢复被隔离辅助容器标签干扰2026-11-14)。本轮未操作现有任务或规则，不将健康事实落库补证扩展为新性能规则触发、恢复或通知实收通过。
+
+
+### CDC 持续性能 Hosted 首次准备取消（2026-11-14）
+
+修订 `36d44f33e80a46ad729812603711775342763a04` 补充同一 Hosted suite 的正式性能规则、目标表锁、原生 Connect CPU 限制、定量源事件、缺样保持、恢复和四条签名通知核对。准备版本地 131 项 runner 与 System 身份夹具 Go 测试通过；场景预算 1450 秒、分发预算 1500 秒，产品 180 秒触发与 60 秒恢复窗口不变，个人任务和逻辑槽不在故障范围。
+
+[Run 43565365504／Job 132357928330](https://github.com/pampa0629/addp/actions/runs/43565365504/job/132357928330) 固定该 SHA，随后主动取消，不计通过或业务失败。编排复核发现预先暂停 Connector 75 秒会引入已有捕获失败告警，破坏后继原捕获失败场景的无既往事件前提；修订为保持 Connector 运行，仅使用真实 CPU 压力和源事件形成延迟，不删除原捕获断言、不伪造指标或改阈值。新行为回归在生成事件后注入观察中断，核对未暂停捕获、恢复原 CPU、释放锁会话、删除规则和临时源记录；修正版本地 132 项及 System 身份夹具 Go 测试通过。
+
+取消 Artifact `14101999389` 的 SHA-256 为 `93d3c225de4848a9e8786a1a4ff3d2c9c4d04c2531f79a13fee1d975438ab56c`，下载摘要与 ZIP CRC 均核对通过。Artifact 只有 readiness 与设施镜像构建日志，尚未生成业务或完整清理报告；不认定性能断言、通知实收或零残留通过。原件 `/tmp/addp-cdc-performance-hosted-43565365504.zip`，解包 `/tmp/addp-cdc-performance-hosted-43565365504/`；确定性门禁日志 `/tmp/addp-cdc-performance-hosted-runner-final.log`、`/tmp/addp-cdc-performance-hosted-runner-v2-corrected.log`。个人开发环境在首次调度前只读确认 task46／task58 两个原槽与 task61 活跃槽均保留，记录 `/tmp/addp-cdc-performance-hosted-preserved-before.log`。

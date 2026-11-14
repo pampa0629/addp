@@ -532,16 +532,12 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
     evidence = proof['performance'] = {'result': 'failed', 'trigger_seconds': 180,
                                      'source_rows': 60000, 'throttled_nano_cpus': 25000000}
     rules, paused, lock = {}, set(), None
-    source_dirty = throttled = connector_paused = False
+    source_dirty = throttled = False
     original_cpu = None
     samples = []
 
     def docker(*args):
         return subprocess.run(['docker', *args], check=True, capture_output=True, timeout=15).stdout.decode().strip()
-
-    def control(action):
-        docker('exec', connect, 'curl', '-fsS', '--max-time', '10', '-X', 'PUT',
-               'http://127.0.0.1:8083/connectors/' + binding['connector'] + '/' + action)
 
     def rule_rows():
         rows = client.request('GET', RULES, (200,), response_type=list).payload
@@ -596,22 +592,18 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         lock.stdin.flush()
         require(select.select([lock.stdout], [], [], 10)[0]
                 and lock.stdout.readline().strip() == b'ADDP_CDC_PERFORMANCE_LOCKED', 'owned target lock not established')
-        connector_paused = True
-        control('pause')
         throttled = True
         docker('update', '--cpus', '0.025', connect)
         source_dirty = True
         require(physical('performance-fill'), 'bounded performance workload failed')
         evidence['workload_committed_at'] = datetime.now(timezone.utc).isoformat()
         stage('performance_wal_wait')
-        # Create actual source age before resuming its real streaming reader.
+        # Keep capture running: native CPU pressure creates age without a second failure signal.
         deadline = time.monotonic() + 75
         while time.monotonic() < deadline:
             require(not cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES),
                     'performance warning opened before its 180-second evidence window')
             time.sleep(2)
-        control('resume')
-        connector_paused = False
         stage('performance_trigger')
         def opened():
             current = sample()
@@ -712,11 +704,6 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                     docker('unpause', identity)
                 except Exception:
                     errors.append('component_unpause_failed')
-        if connector_paused:
-            try:
-                control('resume')
-            except Exception:
-                errors.append('connector_restore_failed')
         if throttled and original_cpu is not None:
             try:
                 docker('update', '--cpus', str(original_cpu / 1000000000), connect)
