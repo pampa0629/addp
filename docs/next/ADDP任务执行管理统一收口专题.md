@@ -312,7 +312,7 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 <a id="tenant-stage-chain-acceptance"></a>
 
-### 正式用户阶段追踪真实链路验收方案（已实施；首轮真实窗口失败，后续运行另行确认）
+### 正式用户阶段追踪真实链路验收方案（已实施；本机凭据准备仍阻断，后续运行另行确认）
 
 本节记录前述最小切片的已确认运行验收范围，不变更产品权限、采样或Owner边界。建议复用[正式身份本机隔离闭环](../spec/addp平台运行观测规范.md#正式身份的本机隔离闭环)及唯一人工入口 `make test-monitor-traces-local`：租户trace-stages请求与执行详情浏览器断言已接入，原平台独立校核保留，相关自然Linux门禁已通过。2026-11-14用户随后单独批准一次原范围本机隔离真实验收，该轮已在准备阶段失败并清理；授权不扩展为重试、续窗、下一轮或个人服务操作，后续真实运行仍须另行确认。
 
@@ -389,7 +389,18 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 **固定源码Linux CI已收口。** `4b4c3975799dd0f3a97c3be7b2c8e1cfcfa9963e`、push／attempt 1 的三个相关执行Job均到成功终态：[Platform consistency](https://github.com/pampa0629/addp/actions/runs/43536539805/job/132266825020)于北京时间09:42:42完成，日志09:13:52明确记录凭据runner整组222项Python全部OK，无跳过，后续登记、System身份夹具Go及169项生命周期回归通过；固定源码的标准入口无名称过滤、模块无load_tests／skip，新增6个无条件方法确实纳入该次整组执行，不能只依据Job绿或源码登记推定。[Execution runner](https://github.com/pampa0629/addp/actions/runs/43536539805/job/132266825193)于09:10:49完成，selected=true，207＋19＋158＋35＝419项Python及登记通过。[Trace T2](https://github.com/pampa0629/addp/actions/runs/43536539623/job/132270120130)于09:13:26完成，实际使用新fixture，回执16步全部完成、step=finalize／error_category=none，TestOwnedTracePipeline通过，末尾确认容器／网络／卷及临时文件零残留。这是Linux真实Trace T2证据，不是正式Tenant业务用户验收或Hosted。
 
-原始日志、固定源码方法／输入清单及核验摘要保留于`/tmp/addp-4b4c39757-linux-ci/{platform.log,execution.log,trace-t2.log,selection.log,source-manifest.json,audit.json,latest.json}`（目录0700、文件0600）。本轮仅只读跟进既有CI并补证据，无需代码修复、未重跑CI；首轮报告SHA256再次核对未变，其失败阶段和根因未明的结论保留，其他会话改动保留，未重启个人服务、运行Hosted或追加真实窗口。本次诊断实现及Linux门禁缺口已关闭；剩余为首轮本机凭据失败的实际根因，以及未进入的正式身份／业务／租户阶段／Console链路。下一步建议单独确认携带新诊断的一次本机隔离真实验收，启动前核对固定源码和既有输入，保持原身份权限、采样、预算及清理范围，不把Linux成功外推为本机根因已修复。
+原始日志、固定源码方法／输入清单及核验摘要保留于`/tmp/addp-4b4c39757-linux-ci/{platform.log,execution.log,trace-t2.log,selection.log,source-manifest.json,audit.json,latest.json}`（目录0700、文件0600）。本轮仅只读跟进既有CI并补证据，无需代码修复、未重跑CI；首轮报告SHA256再次核对未变，其失败阶段和根因未明的结论保留，其他会话改动保留，未重启个人服务、运行Hosted或追加真实窗口。本次诊断实现及Linux门禁缺口已关闭；后继本机单轮复验与原因核对见下，Linux成功不外推为本机链路已通过。
+
+
+**携新诊断本机单轮复验（2026-11-14，失败终态）。** 用户另行批准一次后，先核对当前`8be7ef2c20de434c86454b4e60b6fc7cfa39b4de`与已验CI的`4b4c39757`：40项专项输入逐字节一致、均无未提交改动；其间其他会话的结果导出／CDC等已提交改动未改变本轮身份夹具、阶段追踪读取、样本、采样、预算或清理入口。不将旧SHA的CI结果记为新HEAD全部代码已验证。本轮固定8be，仅由原Make入口建立已提交私有源码快照，不混入其他会话在制改动。
+
+`make test-monitor-traces-local`实际仅调用1次，原四身份／11项业务权限、60分钟、8 CPU／12 GiB、4 GiB停止线、四秒检查及查询／浏览器预算不变。窗口为北京时间09:52:56.757367—09:53:05.116420，共8.358316秒，run为`addp-trace-local-c5250c3e909f4b2e9e71359dc07f4666`，Make退出2。本轮首失败仍为`isolated_deployment_credentials / command_failed_1`；完整诊断回执明确`completed_steps=[prepare]`、`step=ca_server`、`error_category=openssl_command_failed`，即第一条自签CA的OpenSSL调用失败、凭据fixture退出1；OpenSSL原始子进程码未单独归档。尚未进入其他CA／CSR、配置渲染、构建、依赖就绪或正式身份／业务／阶段／Console断言。`resource_samples=[]`，不记资源峰值／停止线实测通过；A1—A6未运行，A7仅外层清理完成，无正式定义或会话可验。
+
+原报告`cleanup.zero_owned_resources=true, failures=[]`；按本轮精确标签／名称另行只读复核容器、网络、卷、镜像标签、builder及私有工作目录均0，未删除共享缓存或他人对象。脱敏报告、起止、源码核对、清理和诊断保留于`/tmp/addp-tenant-stage-real-diag-20261114-4wvaifaw/{report.json,window.json,preflight.json,audit.json,diagnosis.json,run.log}`，目录0700／文件0600；preflight输入摘要来自启动前Git核对，不冒充提前失败时未写出的构建回执。报告SHA256为`47f1668a7ed8ad916c89796e7ad068641a4cf207171936a616201ef26e0e1335`。首轮旧报告SHA256仍为`8d5dcaa733d2c1ba4c3e6d43423fa30a2c369089d9aee2e58db6e4d412eae662`，未改写或补算。
+
+**原因与证据限度。** 退出后只读查询版本／文件事实：当前PATH选中Homebrew OpenSSL 4.1.0，OPENSSLDIR为`/opt/homebrew/etc/openssl@4`，其`openssl.cnf`不存在；fixture未传`-config`，runner窄环境未传`OPENSSL_CONF`。对应版本[req.c](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/req.c#L532)先读取默认配置，失败即沿初始退出码1返回；[配置加载实现](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/lib/apps.c#L339)打开文件失败返回空。由实际ca_server失败、宿主文件事实和该版本源码，原因已收敛为fixture隐式依赖宿主默认OpenSSL配置，而本机缺少该文件；这不是原stderr逐字还原，也未通过重放／AB生成验证。原OpenSSL正文仍被原实现丢弃，未恢复或归档私钥／证书；没有重放证书命令、修改宿主配置、切换工具链、重启个人服务、运行Hosted或追加下一轮。
+
+**下一步建议。** 参照已有`generate-trace-config.py`开发准备的单一路径，让本轮fixture在私有目录内创建最小OpenSSL配置，并显式绑定其自身req／子进程；保持原九次操作、证书用途／算法／有效期、身份、采样、等待及清理不变，先补确定性与受控离线门禁。该配置修复尚未实施；不通过给宿主补文件或切换openssl版本绕过。修复通过后，新的本机真实窗口仍须单独确认，正式身份／业务／阶段／Console链路仍未覆盖。
 
 ## 七、确认范围与协作分工
 
