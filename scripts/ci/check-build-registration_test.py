@@ -47,10 +47,11 @@ class BuildRegistrationTest(unittest.TestCase):
         self.assertTrue(any(path + ": auxiliary Dockerfile is missing" in error
                             for error in MODULE.validate_registration(self.repository)))
 
-    def test_agent_image_cache_observes_skill_changes_and_removals(self):
+    def test_agent_image_cache_observes_declaration_and_skill_changes(self):
         script = (SCRIPT.parents[2] / "scripts/build/build-images.sh").read_text(encoding="utf-8")
         function = "check_service_changed() {" + script.split("check_service_changed() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
         self._write("agent/backend/main.py", "# fixture\n")
+        self._write("agent/module-declaration.json", '{"module_name":"agent","route_prefix":"/agent"}\n')
         self._write("dist/release-linux-arm64/runtime-log", "fixture\n")
         self._write("skills/fixture/SKILL.md", "fixture\n")
         self._write(".build-cache/agent-backend-latest.timestamp", "200\n")
@@ -69,7 +70,14 @@ class BuildRegistrationTest(unittest.TestCase):
         def check():
             return subprocess.run(["bash", "-c", command], cwd=self.repository, env=environment, capture_output=True).returncode
 
+        declaration = self.repository / "agent/module-declaration.json"
+        stamp = self.repository / ".build-cache/agent-backend-latest.timestamp"
+        os.utime(stamp, (200, 200))
+        os.utime(declaration, (100, 100))
         self.assertEqual(check(), 0)
+        os.utime(declaration, (300, 300))
+        self.assertEqual(check(), 1)
+        os.utime(declaration, (100, 100))
         skill = self.repository / "skills/fixture/SKILL.md"
         os.utime(skill, (300, 300))
         self.assertEqual(check(), 1)
