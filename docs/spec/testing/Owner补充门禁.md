@@ -15,7 +15,7 @@
 
 状态：2026-10-29五项设计、正式契约／矩阵及父关闭／子领取与未领取拒绝细则均已获用户确认；安全展示及读取顺序／视图变化与Graph领域边界细则、C5j—C5m均已确认。牵头会话统一实施与相关门禁；当前矩阵已有实现与部分测试；新增定位列只认定源码和入口，不代表全部条件或当前HEAD的CI已通过，新Hosted单独确认。以下是最小必需断言及拟复用标准入口，不是既有通过清单，不替代实际验证结果。执行规则分别以[Graph构建任务](../tasks/模块任务契约.md#graph-构建任务)、[公共lease](../tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[Cleanup持久协议](../addp-cleanup体系规范.md#持久队列与完成回执)为唯一事实源，不在测试文档复制状态机。
 
-| 编号 | 最小场景及判定 | 层级／主责 | 标准入口与边界 | 源码定位／待补项（2026-11-08，不等于运行通过） |
+| 编号 | 最小场景及判定 | 层级／主责 | 标准入口与边界 | 源码定位／待补项（2026-11-14复核，不等于当前HEAD全部通过） |
 | --- | --- | --- | --- | --- |
 | G1 | 用户／TaskProvider创建仅落唯一pending；提交后进程退出仍可发现，未claim不创建运行体／外部操作 | T1、PG T2；Graph＋Common | `make test-module MODULE=graph`；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 扩既有Graph PG用例；现有入队竞争不等于监督器故障通过 | StartSupervisor与PendingInputAndAdmission已定位；进程退出／重启的T4证据待取得。 |
 | G2 | 双Backend竞争只一方claim；attempt／token／started_at与任务摘要同事务；任一步注入失败整体回滚 | PG T2；Common原语、Graph组合 | 上述Graph PG入口及`make test-common-postgres`；Common共享变化按真实消费者扩散，不只跑Graph分组 | ExactClaimAndCancellation 验证双领取。ClaimSummaryRollback 以 PostgreSQL 触发器在公共领取已写入后使任务摘要失败，核对三张表回滚、失败不返回租约及原执行仍可首次领取。 |
@@ -67,13 +67,15 @@ C5a—C5m的公共投影、读取和共享组件已接线；现有用例仅覆�
 | C5d | Owner网络失败／超时／非法范围与合法零grant区分：前者整份聚合503、清除旧详情，无部分授权／旧缓存；后者只按真实范围过滤，不装成服务故障 | System／Monitor BFF授权T1、T3；真实故障另计T4 | System PG有Owner错误／合法空范围区分；503清空详情及真实故障T4待补。 |
 | C5e | P锁内claim未提交时只读查询跨deadline，仍可能见C pending：无未开始肯定标签；父关闭或Owner拒绝提交后才可按各自事实展示；GET零更新锁／零状态写入 | Common投影T1、System／Monitor真实PG交错T2，双连接门闩 | 公共deadline-alone T1及Monitor跨提交一致快照PG已定位；claim未提交场景待补。 |
 | C5f | 跨Tenant／错P/C／旧Redis来源／缺证明／曾运行／父临时无lease不生成闭合标签；未知schema、字段、类型或枚举组合拒绝，响应不含原metadata／错误文本／路径／凭据 | Common＋各读取边界；T1与PG T2 | 公共binding与共享cleanupObservation非法schema／字段／曾运行反例已定位；完整组合未齐。 |
-| C5g | 读取后撤权、401／403／404／Owner503、切换User／Tenant／execution及迟到响应：清空旧投影并停止相应刷新，旧标签不恢复；快照不写回父结论 | System／Monitor页面T3及授权T1 | 页面代际失效及浏览器刷新／分页撤权runner存在；401以外及身份切换的消费者T3／T4未齐。 |
-| C5h | 中英文共享同一说明码／组件；pending／failed状态及统计不被标签改写，无100%／0秒运行／继续领取倒计时／重试删除按钮；父旧timeout与当前子事实分开展示 | 共享前端＋System／Monitor T3；Common投影T1 | CleanupAdmission／CleanupModuleResults及唯一所有权／双语T1已定位；页面完整交互T3未齐。 |
+| C5g | 读取后撤权、401／403／404／Owner503、切换User／Tenant／execution及迟到响应：清空旧投影并停止相应刷新，旧标签不恢复；快照不写回父结论 | System／Monitor页面T3及授权T1 | System Cleanup T3已有503、非法attempt清除、父失效后迟到专业响应丢弃及User／Tenant切换；Monitor有closed pending清除及通用401／403／404／503失效。它们不等于Cleanup各组合已齐：父撤权404且不补查子、合法Owner拒绝整体替换、running矛盾、独立子读取和跨凭据T4仍缺专用证据。 |
+| C5h | 中英文共享同一说明码／组件；pending／failed状态及统计不被标签改写，无100%／0秒运行／继续领取倒计时／重试删除按钮；父旧timeout与当前子事实分开展示 | 共享前端＋System／Monitor T3；Common投影T1 | CleanupAdmission／CleanupModuleResults及唯一所有权／双语T1已定位；System已有真实pending／无开始时间／无结果与父timeout分开展示的受控T3，Monitor已有对应closed pending场景。两消费者双语及全部状态／按钮／计数交互尚非全矩阵通过。 |
 | C5i | System原父入口合法但不属Owner协议凭据集合：保留父自身合法读取，省略可选模块概览且不称成功空集合；协议支持身份的Owner故障不得退回此省略；Monitor既有第一方限制不扩大 | System凭据／Owner范围T1、Monitor拒绝T1及页面T3 | CleanupReader.OwnerProtocol及System／Monitor范围拒绝已接；跨凭据页面组合待证。 |
 | C5j | Owner HTTP完成后才建立公共事实只读一致快照，不持PG事务／P/C更新锁等HTTP；候选发现后新增而未裁决的Owner导致本次聚合失败，零部分响应／零状态写入；状态与说明同快照 | System／Monitor授权T1与真实PG交错T2，Common纯投影T1 | 读取授权先于快照的代码及一致快照PG已定位；新增未裁决Owner的专用PG反例未定位。 |
 | C5k | 合法可读空集合、凭据不适用而省略概览、缺证明而省略说明、非法说明对象四者区分；不输出“无回收影响”或隐藏子计数；不同请求的列表／详情／树不拼成联合证据 | System／Monitor DTO与页面T3，Common闭合校验T1 | 共享parseCleanupExecutions区分省略／空／非法；“无影响”页面语义T3待补。 |
-| C5l | closed pending→Owner拒绝整体替换；撤去P读取权时原父详情404须清空且不自动补查C，独立合法C请求只给C说明；同C出现running／attempt>0等矛盾时移除旧标签、保留真实状态并记录完整性诊断；迟到旧请求不复活标签，父截止结论不变 | Common纯投影T1、System／Monitor授权T1与页面T3；并发事实用PG T2 | 页面有请求代际／清空逻辑，Monitor PG含父隐藏；完整替换／矛盾移除／迟到消费者T3待补。 |
+| C5l | closed pending→Owner拒绝整体替换；撤去P读取权时原父详情404须清空且不自动补查C，独立合法C请求只给C说明；同C出现running／attempt>0等矛盾时移除旧标签、保留真实状态并记录完整性诊断；迟到旧请求不复活标签，父截止结论不变 | Common纯投影T1、System／Monitor授权T1与页面T3；并发事实用PG T2 | 页面有请求代际／清空逻辑，Monitor PG含父隐藏；System已有非法attempt清旧标签与迟到专业响应反例。合法closed pending→Owner拒绝、父404不自动补查C及独立子说明、running矛盾和两消费者迟到组合仍待专用T3，不能借通用execution拒绝测试关闭本项。 |
 | C5m | Graph未领取Cleanup拒绝不改G、构建／审核或操作证据；System／Monitor标签不推导远端停止、已核清、业务图为空或可重新开放，不产生写动作／额外权限或私表读取 | Graph Owner T1／PG T2，System／Monitor响应及共享前端T3 | Graph parent_closed四模式含PG，组件只解释不写；真实服务／页面组合T4未证。 |
+
+2026-11-14 对账：已完成项、固定源码Linux结果及逐项剩余清单以[专题第六节](../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)为当前索引；G2／G3／G8／G9、已列C2／C3／C4子场景不重复开发。新的最近执行／同次回跳真实验收补充仅为[待确认方案](../../next/ADDP任务执行管理统一收口专题.md#九最近执行与同次回跳的真实验收补充方案待确认未实施运行)，不改本表的Cleanup安全契约，也不计真实证据。
 
 职责以角色划分，不因本表派发或授予实现权：统一主责维护Common公共原语与整体迁移，Graph维护私有监督器／准入／操作证据，System维护闭合请求及父子创建／汇总，Ontology继续独占修订发布，Monitor只核安全读取，Make／CI／选择／登记由统一CI负责人单一整合。本文与正式契约已由Graph文档会话交接并经用户确认；统一主责接管契约及实施，未取得的新接口／权限决定仍须用户确认。
 

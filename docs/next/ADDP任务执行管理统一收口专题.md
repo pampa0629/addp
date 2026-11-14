@@ -1,8 +1,8 @@
 # ADDP 任务执行管理统一收口专题
 
-更新时间：2026-11-08
+更新时间：2026-11-14
 
-**当前状态：公共执行、Graph 基础持久运行、十个 Cleanup Owner 及安全读取已接线；Manager 三项及 Transfer 三项原生 Hosted 已验收。Manager 迟到 writer 仅完成 runner／CI，尚未 Hosted。剩余开发是明确的竞争／展示／原生故障用例和切换准备，逐项见第六节；Graph 恢复证据 Provider、可信原生绑定和正向 reopen 继续暂缓。**
+**当前状态：公共执行、Graph 基础持久运行、十个 Cleanup Owner 及安全读取已接线。Common／System 父子 PG、Graph 已列竞争与原 scan 比对、最近执行导航及共享前端独立 Linux 检查已有固定源码通过证据；Manager 三项、Transfer 三项原生清理及后继 Kafka／CDC 整套验收已分别通过。剩余为第六节列明的专用测试缺口、真实验收与待讨论操作；Manager 迟到 writer 未 Hosted，正式用户阶段追踪仍保留 causal-link 首失败。第九节导航真实验收补充仅为待确认方案，未实施或运行。Graph 高级恢复继续暂缓。**
 
 本专题保留当前方案、已确认边界、关键证据及剩余工作。逐轮排队快照、命令流水、临时测试计数和重复失败过程已合并；历史原件沿固定提交、GitHub Run／Job 和原有私有证据目录追溯。整理不改变契约，也不将历史失败或未运行项改记为通过。
 
@@ -139,7 +139,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 对账口径与已落地项
 
-2026-11-08原对账基线为 `31a653f7639821ae83ad88ba06397a08b2984b4f`；本轮父子PG增补及Linux结果归属 `839a4d6c0178fbb02d7c2620ff06ec815b337a0c`。共享工作区其它会话未提交改动不计交付。逐项要求G1—G9、C1—C6、V1、C2a—C2j及C5a—C5m共39项的代码／用例定位见[Owner矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。定位列只证明源码和入口存在，部分用例不等于全行覆盖；以下实际结果仅归属于列明的固定源码，不升格为当前HEAD或全模块最新验收。原对账轮只读核证、未新运行T1／T2；后续父子PG补测见下方“本轮PG增补验证”。均未新增Hosted或环境切换。
+2026-11-14 按当前已提交源码、标准入口和已归档固定版本证据重新对账；检索起点为 `4741647a9`，其它会话未提交改动不计交付，也未纳入本轮文档提交。2026-11-08 的 `31a653f76`／`839a4d6c0` 仅保留为早期对账／父子 PG 基线。G1—G9、C1—C6、V1、C2a—C2j 与 C5a—C5m 的逐项要求沿[Owner 矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)核对；源码存在、专用用例覆盖、固定 SHA 实际运行和真实服务验收分别认定。本轮只读核对并修订文档，验证仅执行文档链接检查和标准变化选择触发的平台检查，没有新跑 Graph PG／原生引擎、浏览器、Hosted 或本机真实窗口；复核的五个官方 Job 的源码与 success 终态和既有原始记录匹配，未把旧证据升格为当前 HEAD 全部通过。
 
 | 项目 | 已定位代码／标准门禁 | 实际证据与剩余边界 |
 | --- | --- | --- |
@@ -154,22 +154,38 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | Graph／Cleanup受控故障runner | `graph-execution-online.py`、`cleanup-execution-online.py`及浏览器撤权脚本已登记；`make test-graph-online-runner`／Execution runner | 受控提取、十Owner逻辑结果、Owner故障、截止、撤权／分页／迟到响应均有runner；本专题尚无这两个profile的固定源码Hosted通过记录，不重复开发已存在入口 |
 | Neo4j身份反例T2 | `make test-common-neo4j`固定5.26.24、九阶段；启动与清理夹具已修正 | `9cc552de2` [Linux T2](https://github.com/pampa0629/addp/actions/runs/42216557525/job/127891879034) 实际success、九阶段、0SKIP、zero_residuals；后继包含19e，旧启动故障已关闭，不再列待办；高级恢复能力未实现 |
 
-本次对Common、System Cleanup、Monitor及Neo4j重新读取官方Job／原日志，确认具体用例／阶段和固定SHA；六个已验收原生Hosted及迟到writer runner复核Job元数据并对照原报告记录。历史失败仍保留，当前缺少独立用例的项标为“未定位”，不推断产品必有漏洞，也不计全矩阵通过。范围外SQL pool Node前置失败不列为本会话开发待办。
+### 本次新增关闭的记录缺口
+
+| 已完成项 | 固定源码与实际证据 | 对账结论 |
+| --- | --- | --- |
+| Common／Graph 原 scan 基线 | `c05f2292c` 的 [完整 Common PG](https://github.com/pampa0629/addp/actions/runs/43351341944/job/131643546461) 与 Go workspace 已通过，原始 PG 含 Common 14 项、Graph 原组及新增 6／2 项，见下方实施验证 | 删除“固定源码 Linux 须单独核验”的过时待办；不关闭新图创建提交窗口或其它锁排列 |
+| 最近执行直达、Monitor／Develop 分工及同次回跳 | `9cb8b4e8c` 的 Develop／Console／Monitor 前端、Develop PG 和 Execution runner 分项已实际通过；`307de5e6b` 的 [Develop 前端](https://github.com/pampa0629/addp/actions/runs/43590178112/job/132433054640) 实际 320 项浏览器及构建通过、selected=true，包含标签顶部位置回归 | 产品实现与受控 T1／T2／T3 已交付；新鲜排队中／运行中的正式用户完整导航仍缺真实证据，不重复开发页面 |
+| 共享前端与前端 CI 登记 | `2d5e63d43` 的 [共享前端](https://github.com/pampa0629/addp/actions/runs/43586730624/job/132422749269) 379 项及[前端登记](https://github.com/pampa0629/addp/actions/runs/43586730624/job/132422749381) 34 项／21 前端实际通过，均独立 Job、selected=true | 两项 Linux 执行证据已补齐，不再受原平台聚合前置失败阻断；不改写原聚合失败 |
+| Transfer CDC 审批精度与两条 Kafka 路径 | `b3d1b86c1` 的真实 PG／Go T1 已通过；后继 `d12e8279b` 的 [Hosted 19 项](https://github.com/pampa0629/addp/actions/runs/43253234380/job/131304474365) 全部通过，正常退出业务删除／DLQ 缺失／历史可读、硬终止恢复／唯一终态／拒删及零派发、外层零残留均有记录 | §8.45 的旧“仅本地／待 Hosted”只属于前轮，已由后继闭环补齐；不承诺硬终止缺退出证明后也可删除 |
+
+上述前端和 Transfer 原始结果详见[Monitor 执行历史证据](../spec/testing/evidence/Monitor执行监控与留存历史证据.md)；较早失败、跳过、缺失回执及首次现场保持，不以新文档或外层清理覆盖。范围外 Security 依赖、SQL pool、指标夹具等 CI 失败不由本会话接管，也不作为本会话待开发项。
+
+本轮文档验证：新增本地链接／锚点9项及本轮 `git diff --check` 通过。仅含三份自有文档的隔离副本执行 `make test-changed`，识别0个业务模块后按现行规则触发 `make test-platform`；首轮因副本缺历史Git对象在来源校验失败，补齐只读历史后该前置通过。后继聚合在既有 `metrics-http-budget_test.py::test_native_timeout_reaps_owned_group_without_completing_the_stage` 报临时pid文件缺失（169项中1个error），**整项未通过**；未安装／未选择的PostgreSQL指标恢复不计通过，不接管该范围外用例。原日志为 `/tmp/addp-execution-doc-audit-changed-first.log`、`/tmp/addp-execution-doc-audit-changed.log`；没有以历史CI替代本次聚合结果。文档核对与待确认方案不依赖改动该用例。
 
 ### 准确剩余清单与推进顺序
 
-| 顺序 | 事项／性质 | 具体交付与完成条件 |
-| --- | --- | --- |
-| P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚，以及 C2d/f/g 的公共锁等待、非法绑定及子执行残留事实，见 [Common／System PG 两批验证](#本轮-pg-增补验证)。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；[Cleanup 与普通构建／重跑入队竞争](#graph-入队与-cleanup-竞争-pg-增补验证)新增四项真实 PG，并修正关闭后旧快照错误准入。[任务／材料删除与 Cleanup 竞争](#graph-任务材料删除与-cleanup-竞争-pg-增补验证)再补八项真实 PG。[图配置删除与 Cleanup 竞争](#graph-图配置删除与-cleanup-竞争-pg-增补验证)补零／一张剩余图下八项真实 PG。[已领取子执行与父截止关闭](#graph-cleanup-已领取子执行与父关闭-pg-增补验证)再补四项真实 PG。[最终子终态更新失败](#graph-cleanup-最终子终态更新回滚-pg-增补验证)补父正常／父截止两项，实际结果见下。剩余 C3/C2j 的其他跨类／外键排列及 C4 其他最终事务与候选漂移验证；目标重绑按原边界另议。[C4 scan 后候选漂移](#graph-scan-后候选漂移核查与已确认方案)已用真实 Graph PG 复现：validation 后经生产入口新增任务，execute 仍成功归档图谱。System 复扫能发现其观察前的变化，未覆盖该后续窗口；已确认严格摘要相等与原 scan 回执方案，正式契约已统一，本地修复与验证结果见下，固定源码Linux结果须单独核验 |
-| P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
-| 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
-| P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
-| P4 | Quality新实现复验准备，证据核对 | 历史bounded-recovery只属于原源码；先核本轮输入能否复用，存在变化才补夹具／门禁，不预设所有Owner须重跑或重新开发 |
-| P5 | 旧协议切换，工具及运维准备 | 尚未定位已登记的一次性切换入口。先刷新只读清单、引用与活动／unknown事实，再准备默认只读、绑定清单摘要的入口及标准夹具演练；不得在本轮直接删除／重启。确有新操作范围或接口／权限歧义先讨论，实际窗口单独确认 |
-| 暂缓 | Graph高级恢复，未实施功能 | 恢复证据Provider、可信原生身份绑定、正向reopen继续搁置；System永久登记身份不替代物理代际、准确操作结果和停止证明；现有缺证据409及隔离不变 |
+“缺专用用例”不等于已证明生产缺陷；只有复现或已确认安全／一致性要求才进入修复。以下逐项替代原 P1a—P5 的粗略待办，已完成部分不继续累计。
 
-共享环境切换顺序保持：刷新只读清单 → 准备默认只读、绑定清单摘要的一次性入口并在标准夹具演练 → 明确窗口和操作范围 → 用户停止旧受理／旧运行体 → 无活动和unknown后准确清理 → 用户标准脚本启动 → 核新协议与旧路径退出。历史“9父＋63子／11个Redis键”仅为旧快照，不作当前删除输入；不创建第三个本地测试database，不模糊删除、不恢复旧兼容路线。
+| 顺序／性质 | 剩余事项与定位 | 下一交付及关闭条件 |
+| --- | --- | --- |
+| 1／待确认方案 | 最近执行（pending／running／success）到 Monitor、Develop 结果与同次回跳的真实导航。现有 `execution-result-navigation.spec.js` 是受控 T3；真实 `execution-trace-local.spec.js` 只在业务终态后按 UUID 直入 Monitor | 按第九节确认新增自有样本、调用和观察窗口，再补唯一 runner、确定性回归及登记；不改权限、策略、采样或旧首失败，不在本轮运行 |
+| 2／待单次真实运行 | 正式用户阶段追踪：`25a62c07c` 的 causal-link 分步诊断、首失败落盘及对应 Linux 已完成；上一实跑仍停在 causal-link，精确原因未知 | 原两组样本、四身份、11 项业务权限、采样、预算和清理不变；新的真实窗口单独确认，先读首失败再决定修复，不从合成用例宣称根因解决 |
+| 3／基础 PG 缺口 | C2j／C3 其它跨类与外键锁排列；C4 新建图配置在目标核验与提交间的窗口、其它最终事务竞争。`KnowledgeGraphService.Create` 先解析／探测目标，`KnowledgeGraphRepository.Create` 直接插入；现有删除、入队与 scan 漂移用例不覆盖此窗口 | 下一小切片先明确新图与同目标关闭的准入关系，真实双连接 PG 验证两序及回滚；若需要新增 Engine／Graph 跨模块提交权威先讨论。目标重绑、deleting 显式重评估／确认同样是待设计事项，不从现有 execute／Restore 推导可用 |
+| 4／消费者 T3 与读取 PG 缺口 | C5g／h／k／l 的 Cleanup 专用组合仍未齐。System 已有 503、非法 attempt、迟到专业响应和身份切换；Monitor 已有 closed pending 清除及通用 401／403／404／503 失效，不能把这些当作全部 Cleanup 组合 | 补父详情撤权 404 且不自动补查子、closed pending→Owner 合法拒绝／running 矛盾的整体替换、空／省略／非法／隐藏计数区别和两消费者双语展示。C5e 的 claim 未提交跨截止、C5j 的 HTTP 裁决后新增未裁决 Owner 仍缺专用真实 PG；复用现有共享组件与标准入口 |
+| 5／待单次 Hosted | Manager late writer 的 runner、12 类反例与 `9cd0b267d` Linux 408 项已完成；§8.44 尚无该 case 的真实通过记录 | 单独确认后按原 11 项、权限／预算／精确资源及控制恢复／零残留验收；不重跑已通过的 success／object／index 三项 |
+| 6／已实现 runner，真实覆盖待补 | Graph／Cleanup 受控故障 profile 已有入口、控制与报告，尚无本专题可归属的固定源码完整 Hosted 通过记录；G6 原生回包丢失／两引擎效果与停止事实仍缺专用证据 | 对照实际 profile 补缺而非重建；受控提取／HTTP 与真实原生效果分别计证。平台上下文／审计／父子树及跨 Owner 离线恢复不得从原生 Manager／Transfer 个例外推；新增 Provider 信任边界先讨论 |
+| 7／历史证据适用性 | Quality `1471f8fc8` 的 [bounded-recovery Hosted](https://github.com/pampa0629/addp/actions/runs/40653912002) 已通过，但其后 Quality Worker／启动及 Common 执行输入有变更；已有当前产品路径，非待重新实现 | 保留旧 SHA 的通过，先据固定输入闭包核对后继 T0／T2 是否覆盖同一恢复资格、租约与旧写拒绝。未取得本轮完整恢复真实证据，不盲目要求所有 Owner 重跑；是否新跑 Quality 另行确认 |
+| 8／运维准备，非已授权操作 | 旧协议一次性切换：在现有 `scripts/` 和登记中未定位标准切换入口；原研发旧数据清理许可不包含当前活动／unknown 的准确删除范围 | 后续先刷新只读清单、引用和未决事实，再讨论绑定清单摘要的单一演练／切换入口；不新增兼容路线。实际环境窗口、停旧受理、清理、标准启动均须另行确认 |
+| 暂缓／不计本轮阻塞 | Graph 高级恢复：恢复证据 Provider、可信原生绑定、正向 reopen；Transfer 硬终止后允许删除的生产核清；历史／closed Tenant 治理 | 均未获本轮实施许可；System 永久登记 ID 不替代原物理代际／效果／停止证明。缺证据继续拒绝，不以本次导航或 PG 补测绕开 |
+
+Common／System P1a 已补的父子竞争、重复拒绝及事务回滚在下节各自固定源码证据下关闭；剩余 C2j／跨 Owner T4 已分别列入第 3／6 项，不把“矩阵未穷尽”当作重建公共协议理由。本轮优先第 1 项方案与文档收口；其余按上述小切片推进或等待专项授权，不启动新的运行。
+
+共享环境切换的后续顺序仍是：刷新只读清单 → 确认单一演练入口及范围 → 单独确认窗口 → 用户停止旧受理／旧运行体 → 无活动与 unknown 后准确清理 → 用户标准脚本启动 → 核新协议与旧路径退出。历史“9 父＋63 子／11 个 Redis 键”仅是旧快照，不作当前删除输入；不创建第三个本地测试 database，不模糊删除、不自行重启。
 
 ### 本轮 PG 增补验证
 
@@ -616,14 +632,83 @@ Job原始日志、固定源码／用例清单及核验摘要留在`/tmp/addp-25a
 
 部署限 120 分钟、业务限 900 秒、上传 barrier 限 180 秒、旧租约收敛限 90 秒，其他就绪和评估上限沿用原约定。barrier 过期即失败退出，不续期、不重发。退出须恢复本轮暂停的实例、释放本轮 barrier 并清理本轮资源。完整验收规则见 [T4 原生 Cleanup 规范](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)。
 
-### 8.45 Transfer CDC 审批精度与 Kafka 旧会话（验收已确认，产品核清待讨论）
+### 8.45 Transfer CDC 审批精度与 Kafka 旧会话（后继 19 项已通过；额外核清待讨论）
 
 [固定源码 Hosted 证据](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-10-固定源码复验)中，Kafka 持续写入、故障恢复及旧游标／浏览器核验通过，整套停在 CDC 审批补扫 claim。真实 PostgreSQL 回归使用同一纳秒样本，旧路径以 `.299069081` 生成来源，存储后读回 `.299069000`，claim 事务报冲突。审批更新现在以 `UPDATE … RETURNING` 取同一行的实际应用时间，按既有事务写来源，领取继续做精确比较。回归同时核对审批回滚、claim、完成及安全投影。标准 `make test-transfer-postgres` 本地与固定 `b3d1b86c1` 的 Linux CI 均通过 21 个主用例，零跳过。Linux Transfer Go T1 已实际执行通过。 [Linux PostgreSQL](https://github.com/pampa0629/addp/actions/runs/42820637708/job/129855701128) · [Linux Go T1](https://github.com/pampa0629/addp/actions/runs/42820637751/job/129844991841)
 
 同一 Hosted 中，Kafka 旧 Worker 经 pidfd 验证已退出，替代 Worker 恢复；旧 invocation 有会话创建记录，缺少原运行体退出确认。业务删除在外部操作登记前等待所有历史会话，最终拒绝。现行 [Transfer 停止与 Cleanup 约束](../spec/addp-cleanup体系规范.md#十五已确认决策)只承认原 `Run` 返回后的停止证明。租约失效解决谁能继续推进执行，不能授权删除 DLQ。独占部署整体销毁的零残留与业务删除结果分别记账。
 
-**已确认分开验证两条路径**。正常退出用独立自有 Kafka 任务，核对 invocation 停止回执、正式删除、精确 DLQ 资源缺失及授权历史仍可读。硬终止场景继续核验恢复和唯一终态，并以当前契约核验删除失败关闭、任务仍存在、未登记或派发本轮 DLQ 删除及外层销毁零残留。两组分别出具回执，不将硬终止后的销毁计为业务删除成功。两条路径已接入既有 runner。本地专项通过 98 项 Python 测试、脚本语法检查和 System 身份夹具 Go 测试。新路径的真实 Hosted 运行单独确认。
+**已确认分开验证两条路径**。正常退出用独立自有 Kafka 任务，核对 invocation 停止回执、正式删除、精确 DLQ 资源缺失及授权历史仍可读。硬终止场景继续核验恢复和唯一终态，并以当前契约核验删除失败关闭、任务仍存在、未登记或派发本轮 DLQ 删除及外层销毁零残留。两组分别出具回执，不将硬终止后的销毁计为业务删除成功。两条路径当时已接入既有 runner，本地专项通过 98 项 Python、语法及身份夹具 Go；该时点的“待真实运行”已由后继固定源码验收补齐，不再作为当前待办。
 
 固定 `e613a7381` 的 Linux Online 登记检查及 Execution online CI runner 通过。Platform consistency 随后在运行日志／指标生命周期测试失败，未运行到完整 Online 聚合，新增 Kafka 98 项仍只有本地专项结果。Transfer Go 与 PostgreSQL 按路径跳过，CDC 生产代码与前述 `b3d1b86c1` 相同，沿用其实际通过证据。 [Execution online runner](https://github.com/pampa0629/addp/actions/runs/42829768747/job/129876456020) · [Platform 登记与后续失败](https://github.com/pampa0629/addp/actions/runs/42829768747/job/129876456038)
 
+**后继已闭环。** `d12e8279b3dacb87f9fc196aa3f2ddb79598e0dd` 的 [Run 43253234380／Job 131304474365](https://github.com/pampa0629/addp/actions/runs/43253234380/job/131304474365) 于 2026-11-13 实际通过整套 19 项；CDC 审批、basic／deep 串接、正常 Kafka 退出后的正式删除／准确 DLQ 缺失／授权历史读取，以及强退后的恢复／唯一终态／缺退出确认拒删／零删除派发均有回执，外层清理零残留。原阶段“98 项只有本地”、先前失败及旧拒删保留为历史，不能据后继通过改写。完整结果与适用范围见[后继证据](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环)；本轮只对账，不重跑。
+
 **如产品需要硬终止后仍可删除**，另立核清契约。由可信部署控制面提供绑定原主机／运行单元代次与确切进程的退出证明，由 Transfer 绑定 Tenant、task、execution、owner、fencing token 核验，单独保存核清事实。还须证明准确 DLQ 上该 invocation 的在途写入已排空或被原生围栏拒绝，且未遗留未知外部效果；进程退出证据单独不够。匹配全部证据后才允许既有授权入口重新显式提交删除，沿原 task 锁、外部操作登记、未知效果隔离和目标不存在核验。错代际、失联、过期、作用域不符和证据不可用继续阻断。现有 System 实例心跳及 Hosted pidfd 私有观察均不足以直接承担此产品信任边界。生产证据来源、权限及核清操作另议。
+
+## 九、最近执行与同次回跳的真实验收补充方案（待确认，未实施／运行）
+
+### 9.1 目标与既有覆盖
+
+正式产品契约沿[执行监控的 Develop 专业详情导航](../spec/tasks/执行监控.md#develop-专业详情导航)：最近执行按同 Tenant／Develop／任务类型／任务定义的 `created_at DESC, id DESC` 选最近受理，包含 pending／running，不能退到旧成功记录；Monitor 展示通用事实，Develop 只展示该次专业结果、日志和冻结输入；返回保持同 UUID 与原 Monitor 筛选／分页。标签位于内容上方，切换和刷新保留本次路由。
+
+已有证据：Develop PG 验证最近受理及旧完成不换记录；`console/frontend/e2e/execution-result-navigation.spec.js` 对 pending／running／success 验证模块 iframe、结果页、日志、刷新、返回及浏览器后退／前进；`307de5e6b` 的 320 项 Linux 浏览器与构建含顶部标签回归。它们均不替代正式 User 的真实服务链路。
+
+现有真实入口是 `make test-monitor-traces-local`，实现为 `monitor-traces-local-gate.py`／`monitor-traces-local-online.py` 与 `execution-trace-local.spec.js`。原业务先等两组编排及 Develop 子执行终结，再打开浏览器，租户场景按 UUID 直接进入 Monitor；没有经过任务行最近执行、Develop 结果页或非终态导航。本方案补已有入口，不增加旁路 Make／workflow，不接管个人部署。
+
+### 9.2 保持的身份、部署与证据边界
+
+- 复用原四身份。业务 User 仍仅原 11 项：`orchestrator.workflow.create/read/delete/execute`、`develop.task.create/read/delete/execute`、`develop.data_read.execute`、`monitor.execution.read`、`system.execution_authorization.create`；由真实密码／MFA／AuthContext 确认本次 Tenant、User 和准确集合，不增配置、平台 Trace／日志或 task.update 权限。准备 User 继续独占合成 Engine 的准备与删除；平台诊断 User 仍只核原阶段追踪，不能代业务 User 走导航。
+- 沿原仓库外私有源码副本、独占平台库／`trace_fixture`、产品镜像、Nginx→Gateway→Owner 及 Console iframe。新源码在实施、确定性门禁和提交后才冻结完整 SHA／输入摘要；现在不预填一个已验收版本。原租户／引擎／运行实例归属任一不符即拒绝，不连接个人服务或共享 addp-postgres。
+- 原两组成功／失败编排、四个 execution、四个阶段浏览器样本、A1—A7、causal-link 首失败保全及精确检查点不变；不以新增导航样本替换原可读／自然缺样候选。新样本只证明导航，不产生新的 Trace 缺样或父子隔离结论。
+- 不改查询并发策略、资源配额、采样、时钟、产品等待期限和清理语义；不暂停／终止 Backend／Worker、不改 execution 私有列、不拦截或伪造正式 API 返回，不通过执行结果缓存造 pending／running。
+
+### 9.3 推荐样本：沿原单 Engine 额度产生真实排队
+
+固定隔离部署的默认 `develop.execution_policy` 为每 Backend Query 总并发20、单 Engine并发5，均为正；参见[执行策略](../spec/configuration/执行与模块策略.md#develop-配置字段与范围)。业务 User 没有 `develop.configuration.read/update`，不得为验证擅自授予或调用该接口。实施前应将默认值来源、单 Develop Backend 及本轮新部署未修改策略纳入源码／生命周期准入；运行中按以下五个实际 running 及目标实际 pending 核验调度，不凭默认数值推导状态。准入不能证明上述隔离条件则停止，不自动读取私表或修改策略。
+
+新增最多 **6 个 Develop query 定义、7 次正式执行提交**，无新增编排定义：5 个占位定义各执行1次，1个导航定义先成功1次再受理1次。连同原阶段样本，整轮最多8个Develop定义、2个编排定义，11个execution（2个父＋9个Develop执行）；不存在第8次导航提交、自动重试或额外候选。全部定义由同一原业务User创建，绑定同一本轮自有 PostgreSQL Engine。
+
+候选合成只读 SQL 固定为 `SELECT 42 AS fixture_value FROM pg_catalog.pg_sleep(20)`；结果最多一行，不读取业务表、不建表、不写业务数据，执行 timeout 仍为原30秒。它是待验证的固定夹具输入：先补当前 Develop preflight／Provider 的确定性契约用例，确认受控准备和冻结路径接受后，未来真实运行仍必须经正式预检／授权。任何拒绝保持首失败，不换SQL、加权限或在真实窗口临时修样本。原 User 执行结束后既有的有界结果保存不是新增业务数据写入。
+
+| 次序 | 准备与真实事实 | 观察目标 |
+| --- | --- | --- |
+| 1 | 创建导航定义，正式提交一次并等其 success；记录旧 UUID 与实际受理顺序 | 同一任务确有可读的旧成功，后续不能退回它；不更新任务定义或冻结输入 |
+| 2 | 创建五个独立占位定义，分别提交并核对准确 UUID 的 running；然后立即第二次提交导航定义 | 由产品调度返回目标 pending，任务行 last_execution_id 必须等于该次202受理的 UUID；只观察，不能靠睡眠时长推断排队 |
+| 3 | 在目标仍 pending 的有限窗口走完整导航并回跳 | started_at为空、attempt=0、无有效运行租约／已完成结果；不显示旧成功结果 |
+| 4 | 占位查询自然结束，目标被真实 claim；不再提交新执行或改配置 | 同一 UUID 变 running，开始时间由实际领取产生、attempt=1；再走同一导航，仍无旧结果 |
+| 5 | 目标自然 success；五个占位执行也须逐一终态核对 | 同一 UUID 的结果恰为一行42，旧成功UUID与当前分开；第三次导航、标签和返回均通过 |
+
+五个占位查询只使用本轮既有额度，全部纳入取消／终态／定义清理与资源采样，不是容量测试。不得改为大量查询“撞中”排队。pending 或 running 在入口到回跳间先变化，记录 `state_window_lost` 并失败，不把终态导航计作非终态通过，也不续窗／补交执行。此方法依赖可观察的有限窗口，不能保证首次一定命中；这种未覆盖必须如实报告。
+
+### 9.4 每个状态的导航与断言
+
+三个状态均由同一真实租户浏览器会话完成，不用平台账号或后台API响应代替页面点击。原平台／阶段浏览器步骤先执行；其失败立即停止，新增样本不用于绕过旧 causal-link。只有前缀通过且剩余预算足够，才创建导航样本。
+
+| 编号 | 必需断言 |
+| --- | --- |
+| N1 最近受理 | 从 `/develop/tasks` 定位准确导航定义，点击行内“最近执行”。与正式受理回执及当前任务读取事实核对，路由、Monitor详情和Owner事实均为新 UUID，任务定义／类型／Tenant准确，旧success不被选中；顶部模块级执行列表仍是独立入口 |
+| N2 同次通用详情 | Console真实iframe中打开该 UUID；pending／running／success来自真实Owner投影，身份、创建／开始时间与attempt语义一致，不制造开始时间或把页面读取当作状态推进 |
+| N3 结果页直达 | 点击“查看执行结果”，到 `/develop/executions/{同一UUID}`，`return_to` 保存本次Monitor URL；不回任务管理或任务编辑器。pending／running不出现旧UUID结果；success只有本次一行42，输入与执行日志各自属本次UUID |
+| N4 顶部标签与刷新 | 结果／日志／输入三个标签几何位置均在内容上方，切换后UUID不变；在日志或输入标签刷新，URL中的tab与return_to、实际选中项仍一致。真实环境沿原截图／trace／video关闭策略，仅保存安全断言回执 |
+| N5 同次回跳 | “返回本次执行”回到原Monitor URL并打开同UUID详情；使用实际合法的 `module=develop`、`task_type=query`、准确source_task_id、page=1／page_size=20作为上下文，分别核参数语义与页面筛选／分页。无需造150条执行来验证第3页；第3页编码／恢复沿已有T3证明 |
+| N6 历史与读取边界 | 后退／前进仍在同一执行详情和结果页间；原旧成功仍能独立读取，不能改写其时间／结果或将新结果串给旧UUID。只读取本轮自有定义／执行，不读取其他Tenant或新增撤权身份 |
+| N7 零额外命令 | 页面操作只读取／导航，不点击执行、重跑、删除或编辑；新增导航期间trace-stages请求计数不增加，不消耗原四次阶段显式打开。夹具新增正式执行提交恰为7次，未知受理立即停而不补交。pending／running各自入口与回跳处的实际读取仍为目标状态，否则未覆盖 |
+| N8 分层清理 | 六个新定义按原User的task.delete逐个正式删除并读回404；所有七个执行先核终态。现有Develop查询没有可复用的取消HTTP入口，本方案不新增接口／权限；失败退出时在原总截止内等产品自身终态，再按正式规则删除。无法确认终态或删除时保留领域清理失败，原外层独占部署销毁另记，不能推断远端已停；会话注销、未知结果与外层容器／卷／目录零残留分别报告 |
+
+范围限这三个状态的真实happy path及结果身份。读取拒绝403／404／503、迟到响应、跨Tenant、父可读子不可读、四主题、目标物理代际等继续引用既有分层证据或独立缺口，不扩本轮身份／故障／验收结论。
+
+### 9.5 时间、调用、安全报告与清理
+
+- 整轮仍最多3600秒、8 CPU／12 GiB、4 GiB停止线；原采样与阶段观测保持5%／慢1秒／尾120秒、125秒自然等待、90秒阶段窗口／至多14次阶段API与4次阶段显式打开。新增导航不消费或重置这组采样候选，也不在新慢查询后重复等待尾采样。
+- 浏览器仍为单个240秒测试／300秒容器；导航组在该原窗口内最多120秒，开始前须保留120秒加至少10秒注销／首失败落盘余量，不足则准备失败且不创建额外样本。pending／running各完整导航最多15秒，本组单个正式控制请求最多5秒且服从剩余时间，deadline取全局／组／状态中最早值。原步骤超时不可借本组延长。
+- 夹具控制最多6次定义创建、7次执行提交，状态轮询全组至多45次精确GET、间隔至少2秒，三个状态的额外对照读取合计至多12次；所有等待共用上述120秒，不并行扇出轮询。页面自然读取另按原页面逻辑和120秒上限计数留证，不能宣称固定请求总数；超出已确认的阶段请求上限则失败。清理删除／404核验及原会话注销沿原总截止与清理边界，不算业务通过证据。
+- 报告只新增固定导航阶段、三种状态命中、UUID／本轮任务绑定、断言布尔值、请求数量与封闭错误类别；原首失败文件仍独占、0600、有界、fsync、不覆盖。不能只保存最终success而丢pending／running首失败；正常缺样不等于错误，新增导航失败也不降格为正常缺样。原始响应、SQL正文／参数、Token、私有路径、Trace技术引用和浏览器抓包不归档。
+- 浏览器内新增资源需要供宿主退出清理：在原本轮私有目录增加一个最多4 KiB、0600的 `navigation-ownership.json`，仅含本轮Tenant／User／Engine绑定、六个定义和七次提交的序号／意图摘要／已确认ID／未知标记；原子替换并fsync，先落意图再提交，收到准确回执后补已知ID。宿主finally沿此唯一台账回收已知资源；受理后尚未来得及记ID的崩溃仍算未知，不能宣称领域清理通过。该文件不含Token／SQL／原始响应，是本方案待确认的私有清理输出，不是新产品实体／API，不复用或覆盖原首失败文件；完成安全汇总后随原私有目录销毁。受理不明保留原意图与清理缺口，不另造ID重试。最终清理涵盖新增六定义／七执行、原四身份／会话、Engine及全部本轮独占资源，不扩大到个人数据或旧失败目录。旧三轮首失败报告及其哈希保持，零残留不替代业务／API清理回执。
+
+### 9.6 确认后的实施与验收顺序
+
+1. **本次只整理文档。** 待确认的变化是新增六定义／七次提交、20秒只读夹具、120秒内的导航观察及明确请求上限，以及一个4 KiB内的私有清理台账；原权限、查询timeout、并发策略、资源／整轮／浏览器／采样预算不变。不因本方案已写入文档就运行或更改产品。
+2. 方案确认后，沿现有host／业务／浏览器实现新增阶段、唯一规范的私有导航输入及封闭报告，不保留旧schema兼容路线。补输入拒绝、样本归属、额度前置、旧success不替代、非终态窗口丢失、预算不足、受理不明、首失败与精确清理的确定性回归。先证明固定SQL经过当前preflight／Provider契约，不靠实际窗口试错后放宽。
+3. 更新原 `OWN_INPUTS`、输入摘要与在线登记的真实闭包，包含新消费的TaskManagement／ExecutionDetail、共享Monitor导航／return_to、Console iframe／路由、fixture及相关依赖声明；复用原自动选择，不增workflow或复制测试入口。沿 `make test-monitor-traces-local-runner`、`make test-console-frontend`、`make test-develop-frontend` 及实际受影响的登记／共享门禁验证并提交，跟进相关Linux实际执行结果；不将跳过或旧输入通过计为新方案通过。
+4. 之后另行提交固定源码、完整输入摘要、身份／样本／调用与预算、资源归属及清理清单供**单次真实运行确认**。本方案不是运行授权；不得自动新开窗口、Hosted、环境切换、重启个人服务或追加下一轮。Graph高级恢复继续暂缓。

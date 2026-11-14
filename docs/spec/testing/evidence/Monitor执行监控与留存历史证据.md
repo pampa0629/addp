@@ -382,4 +382,13 @@ System 测试 helper 创建同租户和跨租户身份后，遗漏了 `writeEnvi
 
 本地共享工作区及仅包含已提交源码与本轮改动的隔离副本，均沿上述两个标准入口通过 379／34 项；新增 Job 的 YAML 解析及本轮差异白空格检查通过。登记反例覆盖 Job 缺失／重复、依赖聚合、条件跳过、遗漏或吞掉标准命令失败、错误摘要、运行环境与预算漂移、Node 准备晚于测试。两项 Job 排队后实际运行的原始 JSON、日志和 SHA-256 审计保存在 `/tmp/addp-independent-frontend-ci-2d5e63d43/`，目录 0700、文件 0600。
 
-至此，上节两项“只有本地证据”的缺口已由本轮固定源码的 Linux 实际执行补齐；不改写前轮 Platform consistency／全仓 Go 的失败结果，也不据此声明全仓 CI 通过。本轮未修改或接管 Security 依赖，其他会话改动保留，未安装共享库 `node_modules`，未重启服务、触发 Hosted 或追加真实运行。剩余为新的正式用户隔离真实链路验收，仍需单独确认；本轮 T0／T1 不改变此前真实验收的首失败和未完成项。
+至此，上节两项“只有本地证据”的缺口已由本轮固定源码的 Linux 实际执行补齐；不改写前轮 Platform consistency／全仓 Go 的失败结果，也不据此声明全仓 CI 通过。本轮未修改或接管 Security 依赖，其他会话改动保留，未安装共享库 `node_modules`，未重启服务、触发 Hosted 或追加真实运行。该导航切片剩余为新的正式用户隔离真实链路验收，仍需单独确认；本轮 T0／T1 不改变此前真实验收的首失败和未完成项。
+
+
+## 2026-11-14 Develop 结果页标签顶部排列（T1／T3）
+
+固定修复 `307de5e6b77adc51435bd36f189003a55bb9f92a` 只删除 ExecutionDetail 对 `.el-tabs` 的 `display:block` 覆盖，恢复 Element Plus 默认顶部排列；业务结果、读取权限和同次回跳不变。既有专业结果浏览器用例增加中英文、宽／窄屏及结果／日志／输入切换后的几何位置断言。旧布局以相同断言实际两项失败；修复后完整 `make test-develop-frontend` 本地通过单元、320项浏览器及构建。
+
+[Run 43590178112／Develop Job 132433054640](https://github.com/pampa0629/addp/actions/runs/43590178112/job/132433054640) 的源码与修复完整 SHA 一致，Job已实际 success；原始日志核对 `make test-develop-frontend`、320 passed（13.6分钟）、构建成功（18.22秒）、`selected=true / success`，不是路径跳过。日志保存于 `/tmp/addp-develop-tabs-top-linux.log`，本地原失败及完整门禁分别为 `/tmp/addp-develop-tabs-top-red.log`、`/tmp/addp-develop-tabs-top-gate.log`。本轮只记录受控T3及构建，不升级为正式用户真实服务验收。
+
+2026-11-14 文档对账将上述结果、`2d5e63d43` 两项独立检查及Transfer后继19项闭环归回[专题当前清单](../../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)。[导航真实验收补充](../../../next/ADDP任务执行管理统一收口专题.md#九最近执行与同次回跳的真实验收补充方案待确认未实施运行)仅为待确认方案；本轮未实施导航样本、启动产品部署／真实窗口、重启个人服务或触发Hosted，Graph高级恢复继续暂缓，其他会话改动保留。
