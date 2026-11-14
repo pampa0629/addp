@@ -86,17 +86,17 @@ def test_real_stack_records_ready_rejection_auth_stream_and_failure():
             patch.object(runtime, "tracer", return_value=provider.get_tracer("copilot-test")),
         ):
             client = TestClient(main.app, raise_server_exceptions=False)
-            response = client.get("/api/v1/copilot/settings/inference-bindings/sql")
+            with patch.object(main, "ready_response", return_value=({}, False)):
+                response = client.get("/api/v1/copilot/settings/inference-bindings/sql")
             assert response.status_code == 503
             assert response.json()["error_code"] == "module_not_ready"
             assert response.headers.get("x-request-id")
-            with patch.object(main, "ready_response", return_value=({}, True)):
-                denied = client.get("/api/v1/copilot/settings/inference-bindings/sql")
-                assert denied.status_code == 401
-                streamed = client.get("/__trace_stream")
-                assert streamed.content == b"firstsecond"
-                failure = client.get("/__trace_fail")
-                assert failure.status_code == 500
+            denied = client.get("/api/v1/copilot/settings/inference-bindings/sql")
+            assert denied.status_code == 401
+            streamed = client.get("/__trace_stream")
+            assert streamed.content == b"firstsecond"
+            failure = client.get("/__trace_fail")
+            assert failure.status_code == 500
             assert runtime.correlation() == {}
         spans = exporter.get_finished_spans()
         assert len(spans) == 4

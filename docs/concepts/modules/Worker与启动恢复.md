@@ -99,7 +99,7 @@ graph TB
 
 ## 模块启动与恢复
 
-ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System 之前被操作系统或容器调度器创建，但只能保持 Alive/Not Ready 并后台注册；对平台业务可用性而言，System 是所有业务模块、Gateway 和 Python 应用的必要先行控制面：
+标准部署通常优先启动基础设施和 System。业务 Backend 可先于 System 启动并按自身条件进入 HTTP Ready，注册客户端在后台建立租约。
 
 ```
 1. 基础设施层（必须最先就绪）
@@ -108,10 +108,10 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
    ├─ MinIO
    └─ Meilisearch
 
-2. 控制面（必须先 Ready）
+2. 控制面（提供注册、认证与路由快照）
    └─ System Backend（认证中心、模块注册中心、引擎注册表）
 
-3. 业务模块层（进程可并行创建，System Ready 后才能 Ready）
+3. 业务模块层（进程可并行创建，按自身条件进入 HTTP Ready）
    ├─ Manager Backend
    ├─ Meta Backend + Worker
    ├─ Catalog Backend
@@ -131,7 +131,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
    ├─ Spark Workflow 运行时
    └─ Jupyter 脚本运行时
 
-5. Python 应用层（独立进程，同样依赖 System 才能 Ready）
+5. Python 应用层（独立进程，沿用公共 HTTP Ready 契约）
    ├─ Agent Backend
    └─ Copilot Backend
 
@@ -160,11 +160,11 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 | 约束 | 说明 |
 |------|------|
 | **Infra → 使用该 Infra 的进程** | PostgreSQL、Redis、MinIO、Meilisearch 等部署基础设施可以是进程自身的硬依赖；Infra 不属于 Engine Instance 启动解耦范围。 |
-| **业务模块 ↔ System** | 业务进程的 Alive 不依赖 System 当时可达；Ready 强依赖当前进程已成功注册。注册客户端在后台对瞬时故障有界退避重试，System 恢复后使用同一进程级 `instance_id` 自动注册并恢复 Ready。 |
+| **业务模块 ↔ System** | 业务进程的 Alive 不依赖 System 当时可达；HTTP Ready 取决于自身就绪检查。注册客户端在后台对瞬时故障有界退避重试，System 恢复后使用同一进程级 `instance_id` 自动建立租约。 |
 | **Gateway ↔ 业务模块** | Gateway 在 System 可达后以 `revision=0` 取得完整路由快照，随后长轮询更新；它不要求业务模块预先启动。模块稍后注册、租约失效或重新注册时，路由池自动收敛。 |
-| **System 暂时不可达** | 模块在注册或心跳失败被观测后转为 Not Ready，但进程保持 Alive 并重试注册。Gateway 只保留最近一次仍在本地租约有效期内的快照；租约失效后请求返回 503，不回退到硬编码模块地址。 |
+| **System 暂时不可达** | 可重试的注册或心跳失败触发后台重注册，HTTP Ready 继续报告本地就绪情况。Gateway 只保留最近一次仍在本地租约有效期内的快照；租约失效后请求返回 503，不回退到硬编码模块地址。 |
 | **扩展运行时与 Engine Instance** | Runtime 自身就绪后异步注册；零个 Engine Instance 是合法状态，业务模块启动不得依赖任何内置或外部引擎存在。 |
-| **Agent / Copilot 独立进程** | Python 应用与 Go 模块共用同一模块注册和 Ready 契约；进程可以在任意时刻创建，但 System 注册成功前不得接受业务流量。运行时调用其他业务模块时仍只失败当前请求，不改变本模块 Ready。 |
+| **Agent / Copilot 独立进程** | Python 应用与 Go 模块共用同一模块注册和 Ready 契约；进程通过自身就绪检查后可接受直连请求，认证授权按业务接口执行。运行时调用其他业务模块时仍只失败当前请求，不改变本模块 Ready。 |
 | **Catalog ↔ 专业模块** | Catalog 拉取 Meta DataItem 变化并按需读取 Standard、System 等 owner 事实；这些调用失败只造成同步滞后或当前业务请求失败，不改变 Catalog Ready。Manager、Asset 调用 Catalog 也遵循同一软依赖边界，禁止回退旧发现路径。 |
 | **Ontology ↔ 专业模块** | 除 System 外所有业务模块均为按需协作来源，不影响 Ontology Ready。自有定义可独立建模、发布和试算；显式引用或读取 owner 不可用时只阻断本次依赖操作，保留来源身份及错误，不切换到同名来源。数据绑定不要求先建立 CatalogEntry；运行事实须来自授权读取，不能由 LLM 或目录摘要代替。 |
 | **Security ↔ 专业模块** | Security 只精确读取显式纳管目标的 Meta / Owner 必要事实，不全量扫描；参与 Owner 后台拉取投影变化并本地执行。这些调用是运行软依赖，不改变任一模块 Ready；已纳管资源投影失效时 Owner 必须拒绝，不回退明文。Catalog Frontend 可按当前 User AuthContext 直读 Security 摘要，Catalog Backend 不代理、不复制且不依赖 Security Ready。 |

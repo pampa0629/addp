@@ -57,7 +57,7 @@
 7. **启动依赖边界**
    - ✅ Backend 和附属 Worker 必须支持零 Engine Instance 启动并进入各自正常空闲状态
    - ✅ 模块可以把自身必需 Infra 作为启动或 readiness 条件；Infra 不属于 Engine Instance 启动解耦范围
-   - ✅ 业务进程可在 System 不可达时保持 Alive 并后台恢复注册，但必须在 System 注册成功后才能 Ready
+   - ✅ 业务进程可在 System 不可达时保持 Alive 并后台恢复注册，HTTP Ready 只看自身就绪条件
    - ✅ 其他业务模块不可达只失败依赖该能力的具体请求或 execution，不得成为本模块 Ready 条件
    - ✅ 引擎缺失、离线或能力不匹配只失败实际使用该引擎的请求或 execution
    - ✅ Engine Runtime 在自身服务就绪后异步自注册，注册失败不得阻塞 Runtime readiness
@@ -158,7 +158,7 @@
 
 ### 统一模块生命周期接入
 
-在 `cmd/server/main.go` 中使用统一模块生命周期能力，不得只调用注册函数却不把注册状态接入 Ready 门禁。启动顺序固定为：
+在 `cmd/server/main.go` 中使用统一模块生命周期能力，在 Ready 响应中报告注册状态，并按自身就绪条件执行 HTTP 门禁。启动顺序固定为：
 
 1. 校验部署配置并初始化自身必需 Infra；
 2. 创建可取消的进程信号 Context；
@@ -277,11 +277,11 @@ export default createAPIClient(() => useAuthStore(), {
 
 按[数据库接入要求](#后端接入步骤)检查 DSN 的 owner `search_path` 与迁移目标。发现表落入 `public` 时，先查清现有数据和迁移状态，再由 owner 处理；不要以追加第二套启动建表路径掩盖问题。
 
-### 错误 6: 模块 Alive 但未 Ready，Gateway 无法路由
+### 错误 6: 模块直连就绪但 Gateway 无法路由
 
-**现象**: `/health/live` 返回 200，但 `/health/ready` 返回 503，Gateway 无法路由请求
+**现象**: 直连 `/health/ready` 返回 200，通过 Gateway 访问却提示模块不可用。
 
-**原因**: 模块尚未向 System 成功注册，或心跳失败后正处于 `recovering`
+**原因**: 本地检查已通过，但 Gateway 只能选择已启用模块且租约有效的 Backend。检查 `registration_state`、管理员启用状态及 Gateway 当前路由快照。
 
 注册与心跳失败的诊断、重试分类和敏感信息边界见[模块注册排查](../guide/troubleshooting/认证与引擎注册.md#模块注册与心跳失败)。
 

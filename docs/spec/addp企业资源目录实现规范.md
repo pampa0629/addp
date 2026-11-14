@@ -927,7 +927,7 @@ Manager 内容索引固定使用独立配置 `MEILISEARCH_MANAGER_CONTENT_INDEX`
 - BasePath：`/api/v1/catalog`；Console 模块前缀：`/catalog`；
 - 必需 Infra：Catalog PostgreSQL Schema；第一阶段企业搜索启用后 Meilisearch 也属于本模块必需 Infra；
 - System URL 和 `CATALOG_SERVICE_CLIENT_SECRET` 来自根环境配置；Meta / Standard URL 是运行时软依赖配置，不参与 Ready；
-- 进程使用 `/health/live` 和 `/health/ready`，只有自身 Infra 正常且 System 注册成功后 Ready；
+- 进程使用 `/health/live` 和 `/health/ready`，自身必需 Infra 正常后 Ready，另行上报 System 注册状态；
 - Meta、Standard、Manager、Asset 不可达不得出现在 Ready 必需检查中。
 
 `addp-catalog` 必须作为内置 Tenant Runtime Service Principal / OAuth Client 由 System 唯一供应。Catalog 不接受内部 API Key 或 Tenant Header。

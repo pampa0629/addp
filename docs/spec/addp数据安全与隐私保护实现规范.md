@@ -44,7 +44,7 @@
 | Backend 角色 | 管理 API、策略编译、投影变化流和激活协调 |
 | Worker 角色 | 有界敏感发现 execution，无独立 HTTP 端口 |
 
-Backend 和 Worker 都必须支持零 Engine Instance 启动。自身 PostgreSQL 和必需 Infra 可以构成 Ready 条件；System 注册是业务进程 Ready 的唯一控制面强依赖。Meta、Catalog、Manager、Standard、Model、Transfer、Develop 和 Service 不可达只失败相关操作或延迟同步，不影响 Security 启动和 Ready。
+Backend 和 Worker 都必须支持零 Engine Instance 启动。自身 PostgreSQL 和必需 Infra 可以构成 Ready 条件；System 注册状态作为 HTTP 诊断字段，Worker 仍按注册资格领取。Meta、Catalog、Manager、Standard、Model、Transfer、Develop 和 Service 不可达只失败相关操作或延迟同步，不影响 Security 启动和 Ready。
 
 Security Worker 首期执行 `task_type=sensitive_data_discovery` 的 ad-hoc bounded execution，`source_task_id` 保存触发该执行的 ProtectionEnrollment ID。当前不建立可调度的扫描任务定义，也不发布 TaskProvider；未来出现可重用、可编排的明确需求时先修订本规范。
 

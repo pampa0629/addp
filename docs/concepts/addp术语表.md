@@ -70,7 +70,7 @@
 | EngineCatalogFacts | 引擎目录事实 | Engine 对 Engine Catalog entry 直接知道的结构、存储、索引和原生事实详情。 | 回答“这个条目自身有哪些事实”；详情事实必须落在 `Table`、`Graph`、`Storage`、`Indexes` 等显式字段；不保留兜底 attributes / stats。 |
 | LeafCount | 叶子数量摘要 | Engine Catalog branch 下直接 leaf 条目的数量摘要。 | 只用于低成本列表展示和扫描计划提示；例如 schema 下表数量、database 下 collection 数量。不是递归总量，也不是 Meta item 计数。 |
 | Enterprise Catalog | 企业资源目录 | 在各专业模块事实之上，对数据项、标准、指标、模型、服务和数据应用等企业资源建立稳定目录身份、业务语义关联、责任、治理状态、跨模块关系和权限感知发现视图的能力。 | `Catalog` 表示系统化登记和发现，不表示树形分类；不是 Engine Catalog、引擎资源树或资产目录的副本。 |
-| Catalog module | Catalog 模块 | ADDP 中实现 Enterprise Catalog 的独立 owner 模块。 | 除 System 和自身必需 Infra 外，不把其他业务模块可达性作为启动或 Ready 强依赖。 |
+| Catalog module | Catalog 模块 | ADDP 中实现 Enterprise Catalog 的独立 owner 模块。 | HTTP Ready 由自身必需 Infra 决定，模块注册状态独立报告。 |
 | CatalogEntry | 企业资源目录条目 | Catalog 模块中代表一项企业资源的稳定目录身份。 | 可以绑定 Meta DataItem、Standard 标准或指标、Model 模型、Service 服务、Workbench 数据应用等专业资源；业务语义、责任和治理历史随该身份延续。 |
 | domain overview | 业务域总览 | Catalog 按精确业务域组合展示当前用户可见资源、目录治理与有证据的标准引用的独立读视图；引用标明本域、其他业务域、公共或未确认归属。 | 与资源浏览分工；不复制专业事实、不承担跨模块审批，不把责任归属当作标准使用关系。 |
 | recommended CatalogEntry successor | 企业目录推荐继任项 | Catalog 在弃用一个 CatalogEntry 时，可选指定的同 Tenant 推荐替代条目。 | 前后两个 CatalogEntry 是不同且继续有效的企业身份；旧条目保留详情和审计，不像 `merged` 一样重定向到规范身份。 |
@@ -396,7 +396,7 @@
 | service group expectation | 服务组运行预期 | 标准部署入口对同一模块、Backend／Worker 角色及用途声明的预期副本数与运行意图。 | 部署入口是唯一发布者；Backend 用途为空，Worker 采用正式登记的 runtime_name，不同用途不能互相替代。预期运行和计划停用不从存活进程、指标或模块启用状态反推。System 只读核验并汇总正式租约，未知不等于零在线，也不自动恢复告警。 |
 | backend startup failure | 后端启动失败 | 标准启动入口在某次具体启动尝试中确认的 Backend 构建失败、进程退出或等待就绪超时。 | 部署结果独立于运行预期和实例租约。首次未登记、未执行或缺少证据时，不推断失败。 |
 | process liveness | 进程存活状态 | 进程的 HTTP 服务是否已监听并能响应最小本地检查。 | 只表达 Alive，不读取 System、其他业务模块或可选 Engine Instance，也不表示已注册、可路由或可处理业务请求。 |
-| module readiness | 模块就绪状态 | 某个模块运行实例是否已满足自身必需 Infra，并成功在 System 建立当前进程租约。 | System 是业务模块 Ready 的唯一控制面强依赖；其他业务模块和可选 Engine Instance 不得进入 readiness 条件。只有 `registered` 注册生命周期状态可使实例 Ready。 |
+| module readiness | 模块就绪状态 | 业务 Backend 能否通过自身就绪检查并接受 HTTP 请求。 | 注册状态仅供 HTTP 诊断。Gateway 另以首个完整路由快照判断就绪，Worker 按原领取条件工作。 |
 | module registration lifecycle state | 模块注册生命周期状态 | 进程内公共注册客户端对当前 `instance_id` 注册与恢复阶段的瞬时观测。 | 唯一取值集是 `starting`、`registered`、`recovering`、`failed`、`stopped`；它不落库，不替代 System 中的模块定义、运行实例和租约事实。 |
 | module routability | 模块可路由状态 | Gateway 能否从 System 最新有效快照中为模块选出 Backend 实例。 | 必须满足 `enabled + backend + up + lease valid`；Ready 是进程自身的服务资格，Routable 还受管理员 `enabled` 意图和 Gateway 快照收敛影响，两者不得混用。 |
 | dispatcher | 投递器 | 从 owner outbox 或 delivery 队列领取待发送事项并调用外部接收方的后台角色。 | Monitor Webhook/邮件 dispatcher 不执行业务任务，不创建业务 execution；投递记录和重试状态归 Monitor outbox。 |

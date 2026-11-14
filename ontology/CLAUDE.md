@@ -39,7 +39,7 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 
 2026-10-03 明确三层：平台能力语义辅助 Agent 选择功能，租户领域语义说明业务概念与规则，运行时业务事实支撑具体对象判断。当前覆盖原生 Tenant 定义、手工假设性试算、首个平台 Transfer 能力的部署发布、PG 权威版本选择及 FalkorDB 依赖消费，以及平台用户只读核实；Tenant 专业来源引用、本体数据绑定和可信业务事实求值仍未实现。
 
-Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 System 外，不假定任何业务模块存在或被用户使用。Meta、Standard、Model、Quality、Catalog、Manager、Develop、Service、Agent 等只在使用其能力的请求中经正式 Client SDK/API 协作，不进入启动/Ready 检查。远端不可达、无权限、没有内容和版本变化按 owner 契约明确表达，不自动换源、不把错误当作无数据。
+Ontology 自身 PG 和 FalkorDB 构成 HTTP Ready 前置；除 System 外，不假定任何业务模块存在或被用户使用。Meta、Standard、Model、Quality、Catalog、Manager、Develop、Service、Agent 等只在使用其能力的请求中经正式 Client SDK/API 协作，不进入启动/Ready 检查。远端不可达、无权限、没有内容和版本变化按 owner 契约明确表达，不自动换源、不把错误当作无数据。
 
 本体数据绑定目标由 Ontology 唯一管理，固定本体修订与类/属性、读取 owner 来源及输出契约、对象身份、类型化路径、转换语义和绑定版本；Catalog 提供可选企业身份、责任与治理关联，不维护第二份可编辑绑定。Catalog StandardMapping 与 Model 概念实现映射仍属于各自 owner。绑定不持有业务凭据、不执行查询、不代表事实已观察；用户业务数据继续由数据读取 owner 授权访问。首个真实切片为单条 Outdoor 活动的有效性判断，目标契约见[后续设计的绑定、可信求值与准入](../docs/next/ADDP%20Ontology最小设计契约.md)，不能把当前试算接口当作真实求值入口。
 
@@ -137,7 +137,7 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 新增消费链路沿用 `make test-module MODULE=ontology` 的 T1/T2、`make test-agent-eval`（含 Common Python）、`make test-copilot` 与 System IAM `--package migration --test ontology-backend` 标准门禁。Skill/eval/SDK 路径由现有共享影响矩阵和 CI 自动发现；无新增外部依赖或 CI Job。本地真实身份联调已通过，正式 T4 仍未通过。
 
-`internal/falkor` 提供唯一的 go-redis 薄适配及确定性图投影构建/全量校验；投影执行器连接首次发布/失败重建准入、Common 租约、构建前/激活前 System 授权消费和 PG 激活指针。Backend 绑定 HTTP 后异步注册，Ready 同时验证 PG、FalkorDB 非零查询预算及 System 注册，只有 Ready 才领取；退出等待在途执行与注销。
+`internal/falkor` 提供唯一的 go-redis 薄适配及确定性图投影构建/全量校验；投影执行器连接首次发布/失败重建准入、Common 租约、构建前/激活前 System 授权消费和 PG 激活指针。Backend 绑定 HTTP 后异步注册，Ready 同时验证 PG、FalkorDB 非零查询预算，只有本地就绪且 System 注册成功才领取；退出等待在途执行与注销。
 
 - 自有类、属性、继承和关系声明的严格校验；拒绝环、悬空引用、继承属性歧义及不一致逆关系。
 - 确定修订的不可变内存快照；规范化 JSON 和 SHA-256 摘要包含租户、本体、修订、内核契约与编译器版本。它不是数据库发布成功的凭证。
@@ -216,7 +216,7 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 - System 向前迁移 `000153` 登记 read/update 与 Platform Runtime，`000201` 仅为 `platform.ontology_runtime` 增加 `ontology.platform_definition.publish`；既有角色绑定触发器推进授权版本，不修改已发布迁移。Ontology owner 使用 schema v6。
 - 平台机器发布核验复用 Common System Client SDK，只接受已编译能力修订摘要；System 固定 `addp-ontology` Platform Service 凭据和发布权限，不接受 User/Tenant/委托凭据，不缓存授权观察。启动发布器已装配该 Authorizer，管理员无发布权限。详见[本体定义与发布规范的平台机器发布](../docs/spec/addp本体定义与发布规范.md#七平台记录机器发布与激活)。
 - `PlatformPublisher.Publish` 是最多 45 秒的内部同步机器入口：记录前、构图前、激活前均重新核验，同身份修订仅复用精确字节/摘要。每次使用新 generation；新尝试取代旧 building fence，旧尝试不能迟到激活；只激活最后记录修订，阻止旧部署回滚。复用唯一 Falkor Build/Verify，平台图使用 `ontology:p:`，包含概念、多语言名称及显式关系；完整操作契约仍在 PG。ready、active 和审计同事务提交，失败保留旧版本，取消不后台补写；没有 Tenant execution、自动重放或取消路径删图。PG `platform_publication` 子测试与 Falkor 门禁的 `platform_publication_real_graph` 自动覆盖，详见 1.10。
-- 启动先绑定 HTTP 并发起 System 注册，独立且退出时等待的 `PublishOnReady` 编译部署包、等待既有 Ready 后只发布一次；失败只记安全日志，不阻断 Tenant 功能，不自动重放。`GET /platform/capabilities/{capability}` 由 PG active 选择确定版本，再全量核对投影并查询一跳操作依赖与两跳入口组/Tool，按同版冻结定义补全文本和顺序；图调用不持有 PG 事务，总读取最多 5 秒。没有记录 404，尚未激活 409，损坏或图失败 500。响应字段及 32 KiB 限制不变；不缓存、不回退源 JSON 或 PG 图遍历。投影结构变化通过同修订新 generation 发布，不覆盖旧图或增加兼容分支。当前不是跨能力检索或自动规划，真实部署消费待加载新服务后验证，详见 1.11、5.1.2。
+- 启动先绑定 HTTP 并发起 System 注册，独立且退出时等待的 `PublishOnReady` 编译部署包、等待自身就绪且注册成功后只发布一次；失败只记安全日志，不阻断 Tenant 功能，不自动重放。`GET /platform/capabilities/{capability}` 由 PG active 选择确定版本，再全量核对投影并查询一跳操作依赖与两跳入口组/Tool，按同版冻结定义补全文本和顺序；图调用不持有 PG 事务，总读取最多 5 秒。没有记录 404，尚未激活 409，损坏或图失败 500。响应字段及 32 KiB 限制不变；不缓存、不回退源 JSON 或 PG 图遍历。投影结构变化通过同修订新 generation 发布，不覆盖旧图或增加兼容分支。当前不是跨能力检索或自动规划，真实部署消费待加载新服务后验证，详见 1.11、5.1.2。
 
 ### 标准门禁
 

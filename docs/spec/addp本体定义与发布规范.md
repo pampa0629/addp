@@ -12,7 +12,7 @@
 
 Agent 将三层组合：平台能力语义辅助选择合法操作，领域语义说明业务含义与规则，运行时事实支撑具体判断。静态能力定义不证明对应模块已部署、Tool 可执行或用户有权限；本体关系声明也不证明实例关系已经存在。
 
-Ontology 不假设除 System 之外的任何业务模块已经部署或被用户使用，Agent 本身也不是 Ontology 的运行前置。自身 PG、FalkorDB 是必需 Infra；统一生命周期下 Alive 不要求 System 当时可达，Ready 要求自身 Infra 正常及 System 当前注册成功。其他业务模块不可达不影响 Ontology 启动、Ready、自有定义编辑发布或手工试算。
+Ontology 不假设除 System 之外的任何业务模块已经部署或被用户使用，Agent 本身也不是 Ontology 的运行前置。自身 PG、FalkorDB 是必需 Infra；统一生命周期下 Alive 不要求 System 当时可达，HTTP Ready 要求自身必需 Infra 正常。其他业务模块不可达不影响 Ontology 启动、Ready、自有定义编辑发布或手工试算。
 
 跨模块协作按明确操作通过正式 Client SDK/API 发起，不跨 Schema、不保存业务连接凭据，不因 SDK 可导入就认为远端能力存在。依赖只约束使用它的请求：引用某个 Standard 修订或读取某个来源时，该 owner 缺席、不可达或拒绝访问应明确阻断本次操作，不能阻断无关本体功能。稳定 owner 引用和已发布内容不得静默改绑其他来源。
 
@@ -88,7 +88,7 @@ Backend 使用 Go/Gin，端口 8195，唯一 API 前缀 `/api/v1/ontology`，不
 
 发布/重建先提交 PG 意图，再在同一请求栈内签发并附加授权，成功返回 202（仅表示已准入，不表示 active）。准入失败返回 502 和稳定 `projection_admission_failed`，同时返回已提交的 revision/version/generation/execution_id；调用方必须按身份重新查询，不得盲重试发布。原修订不会因准入失败解冻，后续遵循显式失败重建。请求/进程中断产生的未准入 pending 不被领取，当前不自动补签或重放，可撤回修订；无授权 pending 的自动超时收敛不在当前机制范围。
 
-Backend 使用统一 Lifecycle，绑定监听后异步注册；Ready 同时要求 PG、带非零查询上限的 FalkorDB 和 System 注册有效。Supervisor 只在 Ready 时领取；退出停止领取、取消并等待在途执行，限时关闭 HTTP，再等待注销。部署仅使用独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`、`INFRA_FALKORDB_PASSWORD` 与部署地址，不注册 Business Engine。
+Backend 使用统一 Lifecycle，绑定监听后异步注册；Ready 同时要求 PG、带非零查询上限的 FalkorDB 就绪。Supervisor 只在自身就绪且 System 注册有效时领取；退出停止领取、取消并等待在途执行，限时关闭 HTTP，再等待注销。部署仅使用独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`、`INFRA_FALKORDB_PASSWORD` 与部署地址，不注册 Business Engine。
 
 最小门禁为 T0 权限/Swagger/构建与生命周期登记、T1 正式路由鉴权与严格 DTO、T2 PG/FalkorDB 原有状态机及读取隔离。真实 System/Gateway 跨进程体验另需 T4，不以进程内认证夹具冒充已上线。
 
@@ -162,7 +162,7 @@ Ontology schema 6 向前调整新记录的快照约束；保留历史字节和�
 - `ontology:p:` 命名空间构建独立投影，复用唯一 Build/Verify 并全量核验。激活按能力头、不可变修订、投影加锁，比较最后修订、当前 generation、building、摘要与基线；仅最新记录修订可激活，ready、active、机器审计同事务提交。网络调用不持有 PG 行锁。
 - 任一构图、核验、撤权、取消、并发或审计失败均保留旧 active。中断不自动重放或删除图，暂留 building 由下一次部署尝试取代；历史图清理另行实施。
 
-Backend 启动绑定 HTTP、发起 System 注册后，在独立且退出时等待的 goroutine 中编译随部署交付的定义；仅当既有 Lifecycle Ready（自身 PG/FalkorDB 正常、System 注册成功）时进行一次平台发布。当前部署包只有 Transfer 创建能力。等待阶段可取消；发布仍走上述机器准入与 generation fencing，失败不在后台自动重放，后续部署/重启才产生新的尝试。日志只给稳定结果分类，不泄露原始错误、定义、凭据或图 key。平台发布失败不改变 Backend 的通用 Ready 或 Tenant Supervisor；已有平台 active 继续可读，首次失败则没有可消费定义。
+Backend 启动绑定 HTTP、发起 System 注册后，在独立且退出时等待的 goroutine 中编译随部署交付的定义；仅当自身 PG/FalkorDB 正常且 System 注册成功时进行一次平台发布。当前部署包只有 Transfer 创建能力。等待阶段可取消；发布仍走上述机器准入与 generation fencing，失败不在后台自动重放，后续部署/重启才产生新的尝试。日志只给稳定结果分类，不泄露原始错误、定义、凭据或图 key。平台发布失败不改变 Backend 的通用 Ready 或 Tenant Supervisor；已有平台 active 继续可读，首次失败则没有可消费定义。
 
 `GET /platform/capabilities/{capability}` 保留现有 Tenant User / 精确 Delegated Tool 与 `ontology.semantic.read` 边界，响应字段和 32 KiB 上限不变，不新增管理员写接口。同一只读可重复读 PG 事务核对 capability head、active 修订及 ready generation 的身份、摘要和激活基线，再 Restore 并按下节查询同版图依赖。平台定义是全局平台内容，读取不伪造 Platform Actor 或 Tenant=0，也不访问其他 owner schema。API 只接受规范能力身份及无 query 的请求；没有记录 404，无 active 409，损坏或图读取失败 500，不缓存、不回退。200 的 revision/digest 表示 PG 选择时点的 active 静态定义，不证明 Tool 可用、用户可执行或后续操作仍适用。
 

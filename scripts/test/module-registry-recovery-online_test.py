@@ -68,7 +68,8 @@ class ProcessFakeClient:
     def __init__(
         self,
         *,
-        manager_ready: bool,
+        registration_state: str = "registered",
+        manager_ready: bool = True,
         system_available: bool,
         gateway_available: bool,
         gateway_manager_present: bool = False,
@@ -79,6 +80,7 @@ class ProcessFakeClient:
         read_permission=True,
         ignore_time_to=False,
     ) -> None:
+        self.registration_state = registration_state
         self.manager_ready = manager_ready
         self.system_available = system_available
         self.gateway_available = gateway_available
@@ -108,9 +110,7 @@ class ProcessFakeClient:
                         "status": "ready" if self.manager_ready else "not_ready",
                         "module": "manager",
                         "instance_id": self.instance_id,
-                        "registration_state": (
-                            "registered" if self.manager_ready else "recovering"
-                        ),
+                        "registration_state": self.registration_state,
                     },
                 )
             if path == "/":
@@ -441,7 +441,7 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
             (
                 "business-before-system",
                 ProcessFakeClient(
-                    manager_ready=False,
+                    registration_state="starting",
                     system_available=False,
                     gateway_available=False,
                 ),
@@ -450,7 +450,6 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
             (
                 "manager-registered",
                 ProcessFakeClient(
-                    manager_ready=True,
                     system_available=True,
                     gateway_available=False,
                 ),
@@ -459,7 +458,6 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
             (
                 "gateway-established",
                 ProcessFakeClient(
-                    manager_ready=True,
                     system_available=True,
                     gateway_available=True,
                     gateway_manager_present=True,
@@ -469,7 +467,7 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
             (
                 "system-interrupted",
                 ProcessFakeClient(
-                    manager_ready=False,
+                    registration_state="recovering",
                     system_available=False,
                     gateway_available=True,
                     gateway_manager_present=False,
@@ -479,7 +477,6 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
             (
                 "system-recovered",
                 ProcessFakeClient(
-                    manager_ready=True,
                     system_available=True,
                     gateway_available=True,
                     gateway_manager_present=True,
@@ -495,12 +492,21 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
                     report["manager"]["instance_id"], PROCESS_INSTANCE_ID
                 )
 
+    def test_registration_recovery_requires_local_readiness_and_current_state(self):
+        client = ProcessFakeClient(system_available=False, gateway_available=True,
+                                   registration_state="recovering", manager_ready=False)
+        with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "HTTP 503"):
+            self._observe("system-interrupted", client, PROCESS_INSTANCE_ID)
+        client.manager_ready = True
+        client.registration_state = "registered"
+        with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "registration_state"):
+            self._observe("system-interrupted", client, PROCESS_INSTANCE_ID)
+
     def test_rejects_instance_change_and_stale_gateway_route(self) -> None:
         with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "instance_id changed"):
             self._observe(
                 "system-recovered",
                 ProcessFakeClient(
-                    manager_ready=True,
                     system_available=True,
                     gateway_available=True,
                     gateway_manager_present=True,
@@ -512,7 +518,7 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
             self._observe(
                 "system-interrupted",
                 ProcessFakeClient(
-                    manager_ready=False,
+                    registration_state="recovering",
                     system_available=False,
                     gateway_available=True,
                     gateway_manager_present=True,
@@ -522,7 +528,6 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
 
     def test_requires_current_checkout_build_identity(self) -> None:
         client = ProcessFakeClient(
-            manager_ready=True,
             system_available=True,
             gateway_available=True,
             gateway_manager_present=True,
@@ -547,7 +552,7 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
     def _fault_client(self, phase, **overrides):
         old = instance_record(status="down", reason="lease_expired")
         new = instance_record("manager-runtime-new", newer=True)
-        defaults = dict(manager_ready=True, system_available=True, gateway_available=True,
+        defaults = dict(system_available=True, gateway_available=True,
                         manager_available=phase == "manager-restarted",
                         gateway_manager_present=phase == "manager-restarted")
         if phase == "manager-restarted":

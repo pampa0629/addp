@@ -17,9 +17,12 @@ type healthTestTokenSource struct{}
 func (healthTestTokenSource) Token(context.Context, uint) (string, error)   { return "token", nil }
 func (healthTestTokenSource) PlatformToken(context.Context) (string, error) { return "token", nil }
 
-func TestBusinessHealthAndReadyGateFollowRegistration(t *testing.T) {
+func TestBusinessHealthAndReadyGateUseLocalChecksBeforeRegistration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	controller := NewBusiness("meta", commonclient.ModuleRuntimeRoleBackend)
+	localCheck := StaticCheck("local_dependencies", true, "")
+	controller := NewBusiness("meta", commonclient.ModuleRuntimeRoleBackend, func(ctx context.Context) CheckResult {
+		return localCheck(ctx)
+	})
 	router := gin.New()
 	controller.RegisterHealthRoutes(router)
 	router.Use(controller.RequireReady())
@@ -40,18 +43,39 @@ func TestBusinessHealthAndReadyGateFollowRegistration(t *testing.T) {
 
 	ready := httptest.NewRecorder()
 	router.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
-	if ready.Code != http.StatusServiceUnavailable {
-		t.Fatalf("ready status before registration = %d", ready.Code)
+	if ready.Code != http.StatusOK {
+		t.Fatalf("ready before registration = %d %s", ready.Code, ready.Body.String())
+	}
+	var body ReadyResponse
+	if err := json.Unmarshal(ready.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.InstanceID == "" || body.InstanceID != liveBody["instance_id"] {
+		t.Fatalf("ready instance ID = %q, live = %v", body.InstanceID, liveBody["instance_id"])
+	}
+	if body.RegistrationState != commonclient.ModuleRegistrationStarting || body.Status != "ready" || len(body.Checks) != 1 || body.Checks[0].Name != "local_dependencies" {
+		t.Fatalf("ready body = %#v", body)
 	}
 
 	business := httptest.NewRecorder()
 	router.ServeHTTP(business, httptest.NewRequest(http.MethodGet, "/api/v1/meta/items", nil))
-	if business.Code != http.StatusServiceUnavailable || business.Body.String() != "{\"error\":\"module is not ready\",\"error_code\":\"module_not_ready\"}" {
+	if business.Code != http.StatusNoContent {
+		t.Fatalf("business before registration = %d", business.Code)
+	}
+	localCheck = StaticCheck("local_dependencies", false, "local_dependencies_unavailable")
+	ready = httptest.NewRecorder()
+	router.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if ready.Code != http.StatusServiceUnavailable {
+		t.Fatalf("ready with failed local check = %d", ready.Code)
+	}
+	business = httptest.NewRecorder()
+	router.ServeHTTP(business, httptest.NewRequest(http.MethodGet, "/api/v1/meta/items", nil))
+	if business.Code != http.StatusServiceUnavailable || business.Body.String() != `{"error":"module is not ready","error_code":"module_not_ready"}` {
 		t.Fatalf("business response = %d %s", business.Code, business.Body.String())
 	}
 }
 
-func TestBusinessBecomesReadyFromTheRegistrationLifecycle(t *testing.T) {
+func TestBusinessReadinessReportsRegistrationLifecycle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.Method {
@@ -87,6 +111,10 @@ func TestBusinessBecomesReadyFromTheRegistrationLifecycle(t *testing.T) {
 	case <-registration.Done():
 	case <-time.After(time.Second):
 		t.Fatal("registration lifecycle did not stop")
+	}
+	response, ready = controller.Readiness(context.Background())
+	if !ready || response.RegistrationState != commonclient.ModuleRegistrationStopped {
+		t.Fatalf("stopped registration changed HTTP readiness: %#v", response)
 	}
 }
 

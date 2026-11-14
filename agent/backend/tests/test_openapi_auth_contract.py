@@ -85,10 +85,10 @@ class AgentOpenAPIContractTests(unittest.TestCase):
 
         assert live.status_code == 200
         assert live.json()["status"] == "live"
-        assert ready.status_code == 503
+        assert ready.status_code == 200
+        assert ready.json()["status"] == "ready"
         assert ready.json()["registration_state"] == "starting"
-        assert business.status_code == 503
-        assert business.json()["error_code"] == "module_not_ready"
+        assert business.status_code == 401
 
     def test_ready_agent_http_permission_statuses_use_addp_errors(self):
         from fastapi.testclient import TestClient

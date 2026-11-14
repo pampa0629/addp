@@ -80,7 +80,7 @@ graph TB
 - System 将超过租约超时时间未心跳的运行实例标记为 `down` 并记录 `lease_expired` 与到期时间，但不删除运行实例历史，也不删除持久模块定义。正常注销记录 `graceful` 与注销时间。`lease_expired` 表示失联或疑似异常退出，不证明进程崩溃。
 - 同一进程恢复时复用原 `instance_id`；重新注册成功后恢复为 `up` 并清除离线原因。新进程必须使用新的 `instance_id`。
 - 可重试的心跳失败（含返回实例不存在）后，Go 与 Python 公共客户端的下一次请求必须幂等重注册；可重试的注册失败使用有界退避，不能继续发送必然失败的心跳直到租约过期。
-- 公共客户端必须发布 `starting|registered|recovering|failed|stopped` 五态进程内快照。首次注册成功进入 `registered`；可重试的心跳失败进入 `recovering`，重注册成功后回到 `registered`；确定性拒绝进入 `failed` 并按下条规则终止。该快照只供本进程就绪判断，不落库、不发布第二套注册事实。
+- 公共客户端必须发布 `starting|registered|recovering|failed|stopped` 五态进程内快照。首次注册成功进入 `registered`；可重试的心跳失败进入 `recovering`，重注册成功后回到 `registered`；确定性拒绝进入 `failed` 并按下条规则终止。该快照用于 HTTP 注册诊断与后台工作领取判断，不落库、不发布第二套注册事实。
 - 连接失败、超时、`429`、`5xx`，以及 Token Endpoint 返回 `200` 但响应 JSON 无法完整解析的瞬时协议故障是可重试故障；严格刷新凭据后仍然出现的 `400`、`401`、`403`，或 Token JSON 可解析但字段、类型、Scope、有效期不符合 Service Access Token 契约等确定性拒绝，必须进入 `failed` 并终止进程，不得无限重试永不可成功的配置。
 - 模块正常退出时应注销本次 `instance_id`；异常退出仍由租约到期收敛。
 - Go 进程入口必须把同一个可取消的信号 Context 传给公共注册客户端；客户端返回生命周期完成信号，入口在关闭资源和退出进程前必须等待该信号，确保限时注销请求已经结束。不得用 `context.Background()` 承载进程级注册生命周期，也不得用 `os.Exit` 绕过等待与清理。
@@ -115,7 +115,7 @@ ADDP 必须分开以下四个状态，不再使用含义不明的“启动成功
 | 状态 | 唯一判断 | 消费方 |
 | --- | --- | --- |
 | Alive | HTTP 进程已监听并能处理本地存活请求 | 进程管理器、容器存活探针、T4 构建身份预检 |
-| Ready | 自身必需 Infra 已就绪，且业务模块当前注册生命周期为 `registered` | 部署就绪探针、开发启动脚本、业务路由门禁 |
+| Ready | 业务 Backend 自身就绪检查通过 | 部署就绪探针、开发启动脚本、业务路由门禁 |
 | Registered | System 已为当前 `module_name + instance_id` 建立或续期租约 | 当前进程注册生命周期、System 模块管理 |
 | Routable | System 快照中实例满足 `enabled + backend + up + lease valid`，并已被 Gateway 应用 | Gateway |
 
@@ -125,11 +125,11 @@ Backend 的公开健康端点只保留两个唯一语义：
 - `GET /health/ready`：Ready 时返回 `200` 和 `status=ready`；否则返回 `503` 和 `status=not_ready`。响应包含 `module`、`role`、`instance_id`、`registration_state`、统一构建身份及受限的 `checks[]`；检查项只暴露稳定 `name/status/error_code`，不返回凭据、连接串或原始下游错误。
 - 旧 `/health` 不再保留；各模块、Monitor、注册的 `health_check_url`、开发脚本、Compose/部署探针和 T4 预检必须在同一次实施中切换，不得保留别名或 fallback。
 
-Backend 必须在健康路由之后、所有业务路由之前安装统一 Ready 门禁；未 Ready 时直连业务请求也返回 `503 module_not_ready`，不得借直连地址绕过 System 注册资格。Gateway 仍只依据 System 租约路由，不在每个请求前额外探测 Ready；System 不可达后的短暂观测延迟由 10 秒心跳和 30 秒租约边界收敛。
+Backend 必须在健康路由之后、所有业务路由之前安装统一 Ready 门禁；未 Ready 时直连业务请求也返回 `503 module_not_ready`。本地检查通过的直连请求继续走原认证授权链。Gateway 仍只依据 System 租约路由，不在每个请求前额外探测 Ready；System 不可达后的短暂观测延迟由 10 秒心跳和 30 秒租约边界收敛。
 
 Worker 和 Scheduler 不为健康检查额外分配 HTTP 端口。它们必须先完成自身必需 Infra 初始化，再注册实例；未进入 `registered` 或心跳失败进入 `recovering` 时，不得领取新 execution、创建新调度执行或接受新工作。已在执行的工作按 owner execution lease 和授权契约收敛，不因模块心跳一次失败就无条件中止。自身必需 Infra 出现无法恢复的故障时，必须停止心跳、注销并退出，不得以有效租约伪装可工作。
 
-System 是唯一例外：其 Ready 只依赖自身必需 Infra、迁移和 IAM/bootstrap 事实，不依赖它向自己注册。Gateway 的 Ready 要求已从 System 成功应用至少一次完整模块路由快照；业务模块不得把任何其他业务模块的可达性纳入 Ready。
+System 的 Ready 只依赖自身必需 Infra、迁移和 IAM/bootstrap 事实，不依赖它向自己注册。Gateway 的 Ready 要求已从 System 成功应用至少一次完整模块路由快照；业务模块不得把任何其他业务模块的可达性纳入 Ready。
 
 ### 路由请求流程
 

@@ -117,7 +117,10 @@ func run() error {
 	registration := system.RegisterAndHeartbeatWithMetadata(ctx, "ontology", serviceURL, "/ontology", map[string]interface{}{"module": "ontology"})
 	lifecycle.AttachRegistration(registration)
 	modulelifecycle.CancelRuntimeOnFatal(registration, stop)
-	canWork := func() bool { _, ready := lifecycle.Readiness(ctx); return ready }
+	canWork := func() bool {
+		health, ready := lifecycle.Readiness(ctx)
+		return ready && health.RegistrationState == client.ModuleRegistrationRegistered
+	}
 	publicationDone := make(chan struct{})
 	go func() {
 		defer close(publicationDone)

@@ -77,19 +77,19 @@ class AgentTraceHTTPTests(unittest.TestCase):
                 patch.object(runtime, "tracer", return_value=provider.get_tracer("agent-test")),
             ):
                 client = TestClient(main.app, raise_server_exceptions=False)
-                response = client.get("/api/v1/agent/sessions")
+                with patch.object(main, "ready_response", return_value=({}, False)):
+                    response = client.get("/api/v1/agent/sessions")
                 self.assertEqual(response.status_code, 503)
                 self.assertEqual(response.json()["error_code"], "module_not_ready")
                 self.assertTrue(response.headers.get("x-request-id"))
-                with patch.object(main, "ready_response", return_value=({}, True)):
-                    denied = client.get("/api/v1/agent/sessions")
-                    self.assertEqual(denied.status_code, 401)
-                    context = AuthorizationContext(principal_id=12, tenant_id=3, tenant_membership_id=8)
-                    with patch("middleware.auth.resolve_authorization_context", new=AsyncMock(return_value=context)):
-                        stream_response = client.get("/__trace_stream", headers={"Authorization": "Bearer controlled"})
-                        self.assertEqual(stream_response.content, b"firstsecond")
-                        failure = client.get("/__trace_fail", headers={"Authorization": "Bearer controlled"})
-                        self.assertEqual(failure.status_code, 500)
+                denied = client.get("/api/v1/agent/sessions")
+                self.assertEqual(denied.status_code, 401)
+                context = AuthorizationContext(principal_id=12, tenant_id=3, tenant_membership_id=8)
+                with patch("middleware.auth.resolve_authorization_context", new=AsyncMock(return_value=context)):
+                    stream_response = client.get("/__trace_stream", headers={"Authorization": "Bearer controlled"})
+                    self.assertEqual(stream_response.content, b"firstsecond")
+                    failure = client.get("/__trace_fail", headers={"Authorization": "Bearer controlled"})
+                    self.assertEqual(failure.status_code, 500)
                 self.assertEqual(runtime.correlation(), {})
             spans = exporter.get_finished_spans()
             self.assertEqual(len(spans), 4)

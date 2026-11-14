@@ -16,7 +16,7 @@
 
 `module-registry-recovery` 的环境字段沿[macOS 场景准备](Online编排与观测.md#按场景补充)，完整必需项以[Host Gate](../test/online-host-gate.sh)为准；模块服务凭据使用既有 `MANAGER_SERVICE_CLIENT_SECRET`，正式进程与探针的分工见[注册恢复场景](../../docs/spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)。
 
-Host Gate 先通过受保护的正式进程入口依次启动 Manager、System、Gateway，验证 Manager 在 System 前为 Alive/Not Ready 且业务路由返回 `module_not_ready`，System 到达后以同一 `instance_id` Ready，Gateway 首个快照建立路由；随后停止 System，等待 Manager 转为 Not Ready、租约路由消失，再恢复 System 并验证 Manager 和 Gateway 无需重启即恢复。五个阶段分别写入 `module-lifecycle-*.json`。
+Host Gate 先通过受保护的正式进程入口依次启动 Manager、System、Gateway，验证 Manager 在 System 前为 Ready/starting 且直连公开入口可用，System 到达后同一 `instance_id` 进入 registered，Gateway 首个快照建立路由；随后停止 System，验证 Manager 保持 Ready 并报告 recovering、租约路由消失，再恢复 System 并验证 Manager 和 Gateway 无需重启即恢复。五个阶段分别写入 `module-lifecycle-*.json`。
 
 正式 Manager 优雅停止后，owner 套件再使用 `addp-manager` Platform Service Principal 获取短期 Token，经 System 正式注册、心跳和注销 API验证两个回环探针的幂等注册、租约失效、同 ID 恢复、双实例路由、发布元数据更新、优雅注销和零活跃实例残留。`ADDP_ONLINE_PROCESS_TIMEOUT_SECONDS`、`ADDP_ONLINE_ROUTE_TIMEOUT_SECONDS` 和 `ADDP_ONLINE_LEASE_TIMEOUT_SECONDS` 分别控制正式进程、路由和租约收敛上限。
 

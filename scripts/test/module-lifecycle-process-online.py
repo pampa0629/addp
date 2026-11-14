@@ -136,7 +136,7 @@ def _manager_state(
     client: Client,
     manager_url: str,
     *,
-    ready: bool,
+    registration_state: str,
     expected_instance_id: str | None,
     expected_git_commit: str | None,
 ) -> dict[str, object]:
@@ -144,11 +144,11 @@ def _manager_state(
     if live.get("status") != "live" or live.get("module") != "manager":
         raise ObservationError("Manager liveness contract is invalid")
     _validate_build_identity(live, "Manager", expected_git_commit)
-    expected_status = 200 if ready else 503
-    readiness = _response(client, manager_url, "/health/ready", expected_status)
-    expected_readiness = "ready" if ready else "not_ready"
-    if readiness.get("status") != expected_readiness:
-        raise ObservationError(f"Manager readiness is not {expected_readiness}")
+    readiness = _response(client, manager_url, "/health/ready", 200)
+    if readiness.get("status") != "ready":
+        raise ObservationError("Manager local readiness is not ready")
+    if readiness.get("registration_state") != registration_state:
+        raise ObservationError(f"Manager registration_state is not {registration_state}")
     instance_id = readiness.get("instance_id")
     if not isinstance(instance_id, str) or not instance_id:
         raise ObservationError("Manager readiness does not expose instance_id")
@@ -156,19 +156,16 @@ def _manager_state(
         raise ObservationError(
             f"Manager instance_id changed from {expected_instance_id} to {instance_id}"
         )
-    business = _response(client, manager_url, "/", 200 if ready else 503)
-    if ready:
-        if business.get("message") != "Manager 数据管理服务":
-            raise ObservationError("Manager business route did not recover")
-    elif business.get("error_code") != "module_not_ready":
-        raise ObservationError("Manager business route did not enforce module_not_ready")
+    business = _response(client, manager_url, "/", 200)
+    if business.get("message") != "Manager 数据管理服务":
+        raise ObservationError("Manager direct business route is unavailable")
     return {
         "live": True,
-        "ready": ready,
+        "ready": True,
         "process_started_at": live.get("started_at"),
         "instance_id": instance_id,
         "registration_state": readiness.get("registration_state"),
-        "business_route_status": 200 if ready else 503,
+        "business_route_status": 200,
     }
 
 
@@ -347,7 +344,7 @@ def observe_once(
         manager = _manager_state(
             client,
             manager_url,
-            ready=False,
+            registration_state="starting",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
         )
@@ -360,7 +357,7 @@ def observe_once(
         manager = _manager_state(
             client,
             manager_url,
-            ready=True,
+            registration_state="registered",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
         )
@@ -372,7 +369,7 @@ def observe_once(
         manager = _manager_state(
             client,
             manager_url,
-            ready=True,
+            registration_state="registered",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
         )
@@ -389,7 +386,7 @@ def observe_once(
         manager = _manager_state(
             client,
             manager_url,
-            ready=False,
+            registration_state="recovering",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
         )
@@ -429,7 +426,7 @@ def observe_once(
         manager = _manager_state(
             client,
             manager_url,
-            ready=True,
+            registration_state="registered",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
         )

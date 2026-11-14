@@ -35,26 +35,20 @@ def ready_response(
 ) -> tuple[dict[str, object], bool]:
     snapshot = registry_client.snapshot(registration) if registry_client else None
     state = snapshot.state if snapshot else "starting"
-    registration_error = snapshot.error_code if snapshot else ""
-    ready = local_ready and state == "registered"
     checks = [{
         "name": "local_dependencies",
         "status": "ready" if local_ready else "not_ready",
         **({"error_code": "local_dependencies_unavailable"} if not local_ready else {}),
-    }, {
-        "name": "system_registration",
-        "status": "ready" if state == "registered" else "not_ready",
-        **({"error_code": registration_error or "system_registration_unavailable"} if state != "registered" else {}),
     }]
     return ({
-        "status": "ready" if ready else "not_ready",
+        "status": "ready" if local_ready else "not_ready",
         "module": module,
         "role": registration.role,
         "instance_id": registration.instance_id,
         "registration_state": state,
         "checks": checks,
         **_build_identity(),
-    }, ready)
+    }, local_ready)
 
 
 class ModuleReadyMiddleware:

@@ -116,7 +116,7 @@ func (c *Controller) Readiness(ctx context.Context) (ReadyResponse, bool) {
 	response := ReadyResponse{
 		Status:            "ready",
 		Module:            c.module,
-		Checks:            make([]CheckResult, 0, len(c.checks)+1),
+		Checks:            make([]CheckResult, 0, len(c.checks)),
 		BuildID:           health.BuildID,
 		GitCommit:         health.GitCommit,
 		SourceFingerprint: health.SourceFingerprint,
@@ -138,7 +138,7 @@ func (c *Controller) Readiness(ctx context.Context) (ReadyResponse, bool) {
 		registration := c.registration
 		c.mu.RUnlock()
 		snapshot := commonclient.ModuleRegistrationSnapshot{
-			Role: c.role, State: commonclient.ModuleRegistrationStarting,
+			Role: c.role, InstanceID: health.InstanceID, State: commonclient.ModuleRegistrationStarting,
 		}
 		if registration != nil {
 			snapshot = registration.Snapshot()
@@ -146,16 +146,6 @@ func (c *Controller) Readiness(ctx context.Context) (ReadyResponse, bool) {
 		response.Role = snapshot.Role
 		response.InstanceID = snapshot.InstanceID
 		response.RegistrationState = snapshot.State
-		registrationCheck := CheckResult{Name: "system_registration", Status: CheckReady}
-		if snapshot.State != commonclient.ModuleRegistrationRegistered {
-			ready = false
-			registrationCheck.Status = CheckNotReady
-			registrationCheck.ErrorCode = snapshot.ErrorCode
-			if registrationCheck.ErrorCode == "" {
-				registrationCheck.ErrorCode = "system_registration_unavailable"
-			}
-		}
-		response.Checks = append(response.Checks, registrationCheck)
 	}
 	if !ready {
 		response.Status = "not_ready"
