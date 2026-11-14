@@ -1355,7 +1355,7 @@ def manager_target(config, *, cog=True, corrupt=None):
     key = f'tenant_42/cog/{fingerprint}/source.cog.tif'
     LocalMinio.objects['infra', 'manager', key] = raw
     request = {'tenant_id': 42, 'fingerprint': fingerprint,
-               'locator': f'addp-infra://minio/manager/{key}?type=object',
+               'locator': f'addp-infra://object/manager/{key}?type=object',
                'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
     fixture.private_json(config.parent / 'manager-raster-request.json', request)
     return request, key
@@ -1387,6 +1387,22 @@ def test_manager_cog_rejects_size_hash_or_foreign_locator(manager_physical, fiel
     (manager_physical.parent / 'manager-raster-request.json').unlink()
     fixture.private_json(manager_physical.parent / 'manager-raster-request.json', request)
     with pytest.raises(fixture.FixtureError):
+        fixture.manager_worker('verify', manager_physical)
+
+
+@pytest.mark.parametrize(('original', 'replacement'), [
+    ('://object/', '://minio/'),
+    ('/manager/', '/standard/'),
+    ('tenant_42/', 'tenant_43/'),
+    ('e' * 64, 'f' * 64),
+])
+def test_manager_cog_rejects_engine_specific_or_foreign_reference(manager_physical, original, replacement):
+    request, _ = manager_target(manager_physical)
+    request['locator'] = request['locator'].replace(original, replacement, 1)
+    path = manager_physical.parent / 'manager-raster-request.json'
+    path.unlink()
+    fixture.private_json(path, request)
+    with pytest.raises(fixture.FixtureError, match='output is not owned by this run'):
         fixture.manager_worker('verify', manager_physical)
 
 
@@ -1456,7 +1472,7 @@ def manager_img_target(config, case, corrupt=None, source_format='img'):
     key = f'tenant_42/cog/{fingerprint}/{case}.cog.tif'
     LocalMinio.objects['infra', 'manager', key] = raw
     request = {'source_format': source_format, 'source_case': case, 'tenant_id': 42, 'fingerprint': fingerprint,
-               'locator': f'addp-infra://minio/manager/{key}?type=object', 'size_bytes': len(raw),
+               'locator': f'addp-infra://object/manager/{key}?type=object', 'size_bytes': len(raw),
                'sha256': hashlib.sha256(raw).hexdigest()}
     fixture.private_json(config.parent / 'manager-raster-request.json', request)
     return request, key
@@ -2638,7 +2654,7 @@ def test_manager_msk_complete_source_and_cog_oracle(manager_physical, tmp_path, 
     key = f'tenant_42/cog/{fp}/msk.cog.tif'
     LocalMinio.objects['infra', 'manager', key] = raw
     request = {'tenant_id': 42, 'fingerprint': fp, 'source_format': 'tiff', 'source_case': 'msk',
-               'locator': f'addp-infra://minio/manager/{key}?type=object',
+               'locator': f'addp-infra://object/manager/{key}?type=object',
                'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
     fixture.private_json(manager_physical.parent / 'manager-raster-request.json', request)
     if fault:
@@ -2688,7 +2704,7 @@ def test_manager_tiff_four_member_sidecars_source_and_cog_oracle(manager_physica
     key = f'tenant_42/cog/{fp}/sidecars.cog.tif'
     LocalMinio.objects['infra', 'manager', key] = raw
     request = {'tenant_id': 42, 'fingerprint': fp, 'source_format': 'tiff', 'source_case': 'sidecars',
-               'locator': f'addp-infra://minio/manager/{key}?type=object',
+               'locator': f'addp-infra://object/manager/{key}?type=object',
                'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
     fixture.private_json(manager_physical.parent / 'manager-raster-request.json', request)
     if fault:
