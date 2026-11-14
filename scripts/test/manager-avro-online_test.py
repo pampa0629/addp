@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
@@ -24,10 +25,11 @@ class Client:
     def item(self, engine, full_name, *_):
         codec = Path(full_name).stem
         item_id = engine * 10 + FIXTURE.CODECS.index(codec)
-        fields = [{'name': f['name'], 'type': {'long': 'bigint', 'boolean': 'bool'}.get(
-            f['type'][1] if isinstance(f['type'], list) else f['type'],
-            f['type'][1] if isinstance(f['type'], list) else f['type']), 'nullable': isinstance(f['type'], list)}
-            for f in FIXTURE.SCHEMA['fields']]
+        expected = [('id', 'bigint', False), ('small', 'int', False), ('flag', 'bool', True),
+                    ('label', 'string', True), ('ratio', 'float', False), ('value', 'double', False),
+                    ('payload', 'bytes', True), ('day', 'date', True), ('amount', 'decimal', True), ('fixed_amount', 'decimal', True)]
+        fields = [dict(name=name, type=kind, nullable=nullable, **({'precision':38,'scale':6} if kind == 'decimal' else {}))
+                  for name, kind, nullable in expected]
         result = {'id': item_id, 'engine_id': engine, 'full_name': full_name, 'fingerprint': str(item_id),
                   'attributes': {'item': {'format': 'avro', 'data_type': 'table', 'layout': 'single'},
                                  'type_info': {'table': {'fields': fields}}}}
@@ -46,6 +48,8 @@ class Client:
             if self.failure == 'page':
                 result['data']['rows'][0]['id'] = 9007199254740992
         elif '/manager/downloads/file?' in path:
+            if expected == (403,):
+                return SimpleNamespace(status=403, headers={'Content-Type':'application/json'}, payload={'error':'denied'})
             codec = next(c for c in FIXTURE.CODECS if c + '.avro' in path)
             return SimpleNamespace(raw=FIXTURE.source_bytes(codec) + (b'bad' if self.failure == 'download' else b''))
         elif method == 'POST' and path.endswith('/task-definitions'):
@@ -102,9 +106,9 @@ class AvroSceneTest(unittest.TestCase):
             for case in context['cases']:
                 (root / f'avro-{case["storage"]}-{case["codec"]}-page2.png').write_bytes(b'\x89PNG\r\n\x1a\nfixture')
                 rows.append({'locator': case['locator'], 'page_button_verified': failure != 'browser',
-                             'values_verified': True, 'download_sha256': case['spec']['sha256'],
-                             'download_size': case['spec']['size_bytes']})
-            return {'schema_version': 'addp.manager-avro-browser/v1', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': rows}
+                             'values_verified': True, **({'original_download_disabled':True} if case['storage'] == 'nfs' else
+                             {'download_sha256': case['spec']['sha256'], 'download_size': case['spec']['size_bytes']})})
+            return {'schema_version': 'addp.manager-avro-browser/v2', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': rows}
 
         environment = {'ADDP_ONLINE_MANAGER_CASE': 'native-table-avro', 'ADDP_ONLINE_ARTIFACT_DIR': str(root),
             'GATEWAY_URL': 'http://fixture', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'consumer',
@@ -137,7 +141,7 @@ class AvroSceneTest(unittest.TestCase):
                 self.assertEqual(client.deleted, list(reversed(client.tasks)))
 
     def test_page_validation_rejects_wrong_total_and_binary_or_bigint_corruption(self):
-        for key, value in [('id', 9007199254740992), ('payload', 'bad')]:
+        for key, value in [('id', 9007199254740992), ('payload', 'bad'), ('day', '1970-01-01'), ('amount', '0.000000'), ('fixed_amount', '0.000000')]:
             rows = [FIXTURE.public_row(i) for i in range(20, 40)]
             rows[0][key] = value
             with self.assertRaises(ValueError):
@@ -148,6 +152,15 @@ class AvroSceneTest(unittest.TestCase):
         for action in ('seed', 'verify', 'delete', 'foreign'):
             with self.assertRaises(ValueError):
                 FIXTURE.physical(action, Path('/tmp'), {})
+
+    def test_browser_logical_oracle_matches_all_fixture_values(self):
+        repository = Path(__file__).resolve().parents[2]
+        source = (repository / 'console/frontend/e2e/online/manager-avro.spec.js').read_text()
+        start = source.index('function expectedRow(')
+        function = source[start:source.index('\ntest(', start)]
+        script = function + "\nconsole.log(JSON.stringify(Array.from({length:2503},(_,i)=>expectedRow(i))))"
+        completed = subprocess.run(['node', '--input-type=module', '-e', script], check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(completed.stdout), [FIXTURE.public_row(i) for i in range(FIXTURE.COUNT)])
 
     def test_standard_avro_header_codec_and_repeatability(self):
         specs = FIXTURE.sources()

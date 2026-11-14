@@ -47,7 +47,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     client = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
     initializer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
     tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Avro tenant')
-    report = {'schema_version': 'addp.manager-avro/v1', 'case': 'native-table-avro',
+    report = {'schema_version': 'addp.manager-avro/v2', 'case': 'native-table-avro',
               'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed', 'cases': []}
     report['identity'] = owner.validate_user_identity(client, tenant, PERMISSIONS)
     grants = REGISTRATION.ExactFileMetadataGrants(initializer, client, tenant, scan_preparation=True)
@@ -77,8 +77,10 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 fields = attrs.get('type_info', {}).get('table', {}).get('fields', [])
                 require([(f['name'], f['type']) for f in fields] == [
                     ('id', 'bigint'), ('small', 'int'), ('flag', 'bool'), ('label', 'string'),
-                    ('ratio', 'float'), ('value', 'double'), ('payload', 'bytes')], 'Avro declared fields differ')
-                require([f.get('nullable', False) for f in fields] == [False, False, True, True, False, False, True], 'Avro schema nullability differs')
+                    ('ratio', 'float'), ('value', 'double'), ('payload', 'bytes'),
+                    ('day', 'date'), ('amount', 'decimal'), ('fixed_amount', 'decimal')], 'Avro declared fields differ')
+                require([f.get('nullable', False) for f in fields] == [False, False, True, True, False, False, True, True, True, True], 'Avro schema nullability differs')
+                require(all(f.get('precision') == 38 and f.get('scale') == 6 for f in fields[-2:]), 'Avro decimal definition lost precision or scale')
                 locator = owner.build_item_locator(engine, item)
                 case = {'storage': storage, 'codec': spec['codec'], 'locator': locator,
                         'item_id': item['id'], 'spec': spec, 'metadata_grant': receipt, 'pages': []}
@@ -90,10 +92,20 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     table = validate_page(preview, page, 20)
                     case['pages'].append({'page': page, 'rows': len(table['rows']), 'values_verified': True})
                 stage = 'original_download'
-                raw = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': locator}), (200,)).raw
-                require(len(raw) == spec['size_bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'Avro original differs')
-                (artifact / f'avro-source-{storage}-{spec["name"]}').write_bytes(raw)
-                case['original_download_verified'] = True
+                download_path = '/api/v1/manager/downloads/file?' + urlencode({'locator': locator})
+                if storage == 'nfs':
+                    denied = client.request('GET', download_path, (403,))
+                    headers = {key.lower(): value for key, value in denied.headers.items()}
+                    require(denied.status == 403 and headers.get('content-type', '').startswith('application/json')
+                            and 'content-disposition' not in headers and isinstance(denied.payload, dict)
+                            and set(denied.payload) == {'error'} and isinstance(denied.payload['error'], str)
+                            and denied.payload['error'], 'Avro NFS original download must return a JSON denial without an attachment')
+                    case['original_download_denied'] = {'http_status': 403, 'json_error': True, 'attachment': False}
+                else:
+                    raw = client.request('GET', download_path, (200,)).raw
+                    require(len(raw) == spec['size_bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'Avro original differs')
+                    (artifact / f'avro-source-{storage}-{spec["name"]}').write_bytes(raw)
+                    case['original_download_verified'] = True
                 stage = 'transfer_batch'
                 target = f'from-{storage}-{spec["codec"]}.parquet'
                 body = task_body(locator, f'addp://engine/{environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"]}/path/{bucket}/avro-output?type=prefix', target)
@@ -136,12 +148,18 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-avro.spec.js', '--config=playwright.online.config.js'],
                            cwd=Path(repository) / 'console/frontend', env=dict(browser_env, ADDP_ONLINE_MANAGER_AVRO_JSON=json.dumps(context)), check=True)
             browser = json.loads((artifact / 'manager-avro-browser.json').read_text())
-        require(browser.get('schema_version') == 'addp.manager-avro-browser/v1' and browser.get('result') == 'passed'
+        require(browser.get('schema_version') == 'addp.manager-avro-browser/v2' and browser.get('result') == 'passed'
                 and browser.get('run_id') == report['run_id'] and len(browser.get('cases', [])) == 6, 'Avro browser incomplete')
         for case, observed in zip(report['cases'], browser['cases'], strict=True):
             require(observed.get('locator') == case['locator'] and observed.get('page_button_verified') is True
-                    and observed.get('values_verified') is True and observed.get('download_sha256') == case['spec']['sha256']
-                    and observed.get('download_size') == case['spec']['size_bytes'], 'Avro browser lost values or original bytes')
+                    and observed.get('values_verified') is True, 'Avro browser lost page values')
+            if case['storage'] == 'nfs':
+                require(observed.get('original_download_disabled') is True
+                        and 'download_sha256' not in observed and 'download_size' not in observed,
+                        'Avro NFS browser download must remain disabled')
+            else:
+                require(observed.get('download_sha256') == case['spec']['sha256']
+                        and observed.get('download_size') == case['spec']['size_bytes'], 'Avro browser original differs')
             screenshot = artifact / f'avro-{case["storage"]}-{case["codec"]}-page2.png'
             require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), 'Avro screenshot missing')
         report.update(browser=browser, result='passed')

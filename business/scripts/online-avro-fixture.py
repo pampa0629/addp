@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+import datetime
+from decimal import Decimal
 import hashlib
 import io
 import json
@@ -18,16 +20,28 @@ SCHEMA = {'type': 'record', 'name': 'AvroScalars', 'fields': [
     {'name': 'label', 'type': ['null', 'string']},
     {'name': 'ratio', 'type': 'float'}, {'name': 'value', 'type': 'double'},
     {'name': 'payload', 'type': ['null', 'bytes']},
+    {'name': 'day', 'type': ['null', {'type': 'int', 'logicalType': 'date'}]},
+    {'name': 'amount', 'type': ['null', {'type': 'bytes', 'logicalType': 'decimal', 'precision': 38, 'scale': 6}]},
+    {'name': 'fixed_amount', 'type': ['null', {'type': 'fixed', 'name': 'FixedAmount', 'size': 16, 'logicalType': 'decimal', 'precision': 38, 'scale': 6}]},
 ]}
 
 
 def row(index):
+    days = [datetime.date(1, 1, 1), datetime.date(9999, 12, 31), datetime.date(2000, 2, 29), datetime.date(1969, 12, 31)]
+    day = days[index] if index < 4 else datetime.date(1970, 1, 1) + datetime.timedelta(days=index - 1251)
+    unscaled = (10**38 - 10**7 + index * 100) * (-1 if index % 2 else 1)
+    def exact(value):
+        digits = str(abs(value)).zfill(7)
+        return Decimal(('-' if value < 0 else '') + digits[:-6] + '.' + digits[-6:])
     return {'id': (-1 if index % 2 else 1) * (2**53 + 1 + index),
             'small': index - 1251,
             'flag': None if index % 7 == 0 else index % 2 == 0,
             'label': None if index % 11 == 0 else '' if index % 5 == 0 else f'设备-{index:04d}',
             'ratio': index / 4, 'value': -index / 2,
-            'payload': None if index % 13 == 0 else b'' if index % 3 == 0 else bytes([0, index % 256, 255])}
+            'payload': None if index % 13 == 0 else b'' if index % 3 == 0 else bytes([0, index % 256, 255]),
+            'day': None if index > 3 and index % 17 == 0 else day,
+            'amount': None if index % 19 == 0 else exact(unscaled),
+            'fixed_amount': None if index % 23 == 0 else exact(-unscaled)}
 
 
 def public_row(index):
@@ -35,6 +49,11 @@ def public_row(index):
     result['id'] = str(result['id'])
     if result['payload'] is not None:
         result['payload'] = base64.b64encode(result['payload']).decode()
+    if result['day'] is not None:
+        result['day'] = result['day'].isoformat()
+    for name in ('amount', 'fixed_amount'):
+        if result[name] is not None:
+            result[name] = format(result[name], 'f')
     return result
 
 
@@ -80,6 +99,25 @@ def source_bytes(codec):
             raw.extend(number(0 if v is None else 1))
             if v is not None:
                 raw.extend(blob(v))
+            for name in ('day', 'amount', 'fixed_amount'):
+                v = value[name]
+                raw.extend(number(0 if v is None else 1))
+                if v is not None:
+                    if name == 'day':
+                        raw.extend(number((v - datetime.date(1970, 1, 1)).days))
+                    else:
+                        # Decimal's tuple is exact; scaleb/int arithmetic would
+                        # round this 38-digit value under the default context.
+                        parts = v.as_tuple()
+                        integer = int(''.join(map(str, parts.digits))) * (-1 if parts.sign else 1)
+                        if name == 'fixed_amount':
+                            raw.extend(integer.to_bytes(16, 'big', signed=True))
+                        else:
+                            width = max(1, (integer.bit_length() + 8) // 8)
+                            encoded = integer.to_bytes(width, 'big', signed=True)
+                            if i % 5 == 0:
+                                encoded = (b'\xff' if integer < 0 else b'\0') + encoded
+                            raw.extend(blob(encoded))
         payload = bytes(raw)
         if codec == 'deflate':
             compressor = zlib.compressobj(wbits=-15)
@@ -152,12 +190,13 @@ def worker(request):
             raw = remote(name)
             table = pq.read_table(io.BytesIO(raw))
             expected_types = {'id': pa.int64(), 'small': pa.int32(), 'flag': pa.bool_(), 'label': pa.string(),
-                              'ratio': pa.float32(), 'value': pa.float64(), 'payload': pa.binary()}
+                              'ratio': pa.float32(), 'value': pa.float64(), 'payload': pa.binary(), 'day': pa.date32(),
+                              'amount': pa.decimal128(38, 6), 'fixed_amount': pa.decimal128(38, 6)}
             # The existing parquet-go Group writer emits fields by name. Bind
             # every type and value by its name rather than the OCF ordinal.
             assert table.column_names == sorted(expected_types) and table.num_rows == COUNT, 'output_fields'
             assert all(table.schema.field(name).type == kind and table.schema.field(name).nullable ==
-                       (name in {'flag', 'label', 'payload'}) for name, kind in expected_types.items()), 'output_types'
+                       (name in {'flag', 'label', 'payload', 'day', 'amount', 'fixed_amount'}) for name, kind in expected_types.items()), 'output_types'
             assert table.to_pylist() == [row(i) for i in range(COUNT)], 'output_values'
             facts.append({'object': name, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                           'all_values_and_nulls_verified': True, 'content_base64': base64.b64encode(raw).decode()})

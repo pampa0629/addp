@@ -48,9 +48,10 @@ def avro_physical(tmp_path, monkeypatch):
 
     monkeypatch.setitem(sys.modules, 'minio', types.SimpleNamespace(Minio=Client))
     request = {'nfs_root': str(tmp_path), 'storage': {'endpoint': 'fixture', 'access_key': 'test', 'secret_key': 'test', 'bucket': 'fixture'}}
-    schema = pa.schema([pa.field(name, kind, nullable=name in {'flag', 'label', 'payload'})
+    schema = pa.schema([pa.field(name, kind, nullable=name in {'flag', 'label', 'payload', 'day', 'amount', 'fixed_amount'})
                         for name, kind in [('id', pa.int64()), ('small', pa.int32()), ('flag', pa.bool_()), ('label', pa.string()),
-                                           ('ratio', pa.float32()), ('value', pa.float64()), ('payload', pa.binary())]])
+                                           ('ratio', pa.float32()), ('value', pa.float64()), ('payload', pa.binary()),
+                                           ('day', pa.date32()), ('amount', pa.decimal128(38, 6)), ('fixed_amount', pa.decimal128(38, 6))]])
     schema = pa.schema(sorted(schema, key=lambda field: field.name))
 
     def write_outputs(change=None):
@@ -78,7 +79,7 @@ def test_hosted_avro_actual_parquet_oracle_and_cleanup(avro_physical):
     assert not objects and not (Path(request['nfs_root']) / 'avro').exists()
 
 
-@pytest.mark.parametrize('mutation', ['bigint', 'empty_bytes', 'source', 'field'])
+@pytest.mark.parametrize('mutation', ['bigint', 'empty_bytes', 'date', 'decimal', 'fixed_decimal', 'source', 'field'])
 def test_hosted_avro_oracle_rejects_real_parquet_or_source_corruption(avro_physical, mutation):
     request, objects, write_outputs = avro_physical
     FIXTURE.worker(dict(request, action='seed'))
@@ -86,6 +87,11 @@ def test_hosted_avro_oracle_rejects_real_parquet_or_source_corruption(avro_physi
         write_outputs(lambda rows: rows[0].update(id=9007199254740992))
     elif mutation == 'empty_bytes':
         write_outputs(lambda rows: rows[3].update(payload=None))
+    elif mutation == 'date':
+        write_outputs(lambda rows: rows[0].update(day=FIXTURE.row(2)['day']))
+    elif mutation in {'decimal', 'fixed_decimal'}:
+        column = 'amount' if mutation == 'decimal' else 'fixed_amount'
+        write_outputs(lambda rows: rows[1].update({column: FIXTURE.row(2)[column]}))
     elif mutation == 'source':
         write_outputs()
         objects['avro/null.avro'] += b'changed'

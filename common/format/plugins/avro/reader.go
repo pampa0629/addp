@@ -135,7 +135,11 @@ func newReader(ctx context.Context, input io.Reader) (*tableReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.codec, err = goavro.NewCodec(string(raw))
+	physical, err := physicalRecordSchema(r.schema)
+	if err != nil {
+		return nil, err
+	}
+	r.codec, err = goavro.NewCodec(physical)
 	if err != nil {
 		return nil, fmt.Errorf("Avro schema: %w", err)
 	}
@@ -163,6 +167,8 @@ func recordSchema(raw []byte) ([]datatype.FieldInfo, map[string]interface{}, err
 	}
 	fields := make([]datatype.FieldInfo, 0, len(list))
 	seen := map[string]bool{}
+	named := map[string]datatype.FieldInfo{}
+	namespace := recordNamespace(schema)
 	for i, item := range list {
 		field, ok := item.(map[string]interface{})
 		if !ok {
@@ -190,19 +196,14 @@ func recordSchema(raw []byte) ([]datatype.FieldInfo, map[string]interface{}, err
 			}
 			nullable = true
 		}
-		if obj, ok := value.(map[string]interface{}); ok {
-			if _, exists := obj["logicalType"]; exists {
-				return nil, nil, fmt.Errorf("Avro logical types are unsupported")
-			}
-			value = obj["type"]
-		}
-		native, _ := value.(string)
-		kind := map[string]datatype.FieldType{"boolean": datatype.FieldTypeBool, "int": datatype.FieldTypeInt, "long": datatype.FieldTypeBigInt, "float": datatype.FieldTypeFloat, "double": datatype.FieldTypeDouble, "bytes": datatype.FieldTypeBytes, "string": datatype.FieldTypeString}[native]
-		if kind == "" {
-			return nil, nil, fmt.Errorf("unsupported Avro field type for %q", name)
+		definition, err := fieldDefinition(value, namespace, named)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Avro field %q: %w", name, err)
 		}
 		comment, _ := field["doc"].(string)
-		fields = append(fields, datatype.FieldInfo{Name: name, Type: kind, NativeType: native, Nullable: nullable, Comment: comment, OrdinalPosition: i + 1})
+		definition.Name, definition.Nullable = name, nullable
+		definition.Comment, definition.OrdinalPosition = comment, i+1
+		fields = append(fields, definition)
 	}
 	return fields, schema, nil
 }
@@ -394,6 +395,11 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			}
 			if field.Type == datatype.FieldTypeString && value != nil && !utf8.ValidString(value.(string)) {
 				r.failed = fmt.Errorf("invalid Avro UTF-8 string")
+				return nil, r.failed
+			}
+			value, err = logicalFieldValue(value, field)
+			if err != nil {
+				r.failed = fmt.Errorf("Avro field %q: %w", field.Name, err)
 				return nil, r.failed
 			}
 			record[field.Name] = value

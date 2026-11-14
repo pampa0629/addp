@@ -6,11 +6,20 @@ import { browserAPIFromResponse, json, login } from './transfer-browser-support.
 
 function expectedRow(i) {
   const value = (9007199254740993n + BigInt(i)) * (i % 2 ? -1n : 1n)
+  const date = i < 4 ? ['0001-01-01', '9999-12-31', '2000-02-29', '1969-12-31'][i]
+    : new Date(Date.UTC(1970, 0, 1) + (i - 1251) * 86400000).toISOString().slice(0, 10)
+  const unscaled = (10n ** 38n - 10n ** 7n + BigInt(i) * 100n) * (i % 2 ? -1n : 1n)
+  const decimal = n => {
+    const digits = (n < 0n ? -n : n).toString().padStart(7, '0')
+    return (n < 0n ? '-' : '') + digits.slice(0, -6) + '.' + digits.slice(-6)
+  }
   return { id: value.toString(), small: i - 1251,
     flag: i % 7 === 0 ? null : i % 2 === 0,
     label: i % 11 === 0 ? null : i % 5 === 0 ? '' : `设备-${String(i).padStart(4, '0')}`,
-    ratio: i / 4, value: -i / 2,
-    payload: i % 13 === 0 ? null : i % 3 === 0 ? '' : Buffer.from([0, i % 256, 255]).toString('base64') }
+    ratio: i / 4, value: i === 0 ? 0 : -i / 2,
+    payload: i % 13 === 0 ? null : i % 3 === 0 ? '' : Buffer.from([0, i % 256, 255]).toString('base64'),
+    day: i > 3 && i % 17 === 0 ? null : date,
+    amount: i % 19 === 0 ? null : decimal(unscaled), fixed_amount: i % 23 === 0 ? null : decimal(-unscaled) }
 }
 
 test('ordinary user pages and downloads six Avro scalar sources', async ({ page }) => {
@@ -55,6 +64,22 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
         const offset = second.data.page_size
         expect(second.data.rows).toEqual(Array.from({ length: second.data.rows.length }, (_, n) => expectedRow(offset + n)))
         await expect(frame.getByText(expectedRow(offset).id, { exact: true }).first()).toBeVisible()
+        for (const field of ['day', 'amount', 'fixed_amount']) {
+          const value = second.data.rows.find(row => row[field] !== null)[field]
+          const cell = frame.getByText(value, { exact: true }).first()
+          await cell.scrollIntoViewIfNeeded()
+          await expect(cell).toBeVisible()
+        }
+        if (source.storage === 'nfs') {
+          const actions = await json(await api.get('/api/v1/manager/resource-actions', {
+            params: { locator: source.locator }
+          }), 'Avro current browser download capability')
+          expect(actions.actions.download.supported).toBe(false)
+          await expect(frame.getByRole('button', { name: /^(下载|Download)$/ })).toHaveCount(0)
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.codec}-page2.png`) })
+          cases.push({ locator: source.locator, page_button_verified: true, values_verified: true, original_download_disabled: true })
+          continue
+        }
         const ready = page.waitForEvent('download')
         await frame.getByRole('button', { name: /^(下载|Download)$/ }).click()
         const download = await ready
@@ -76,7 +101,7 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
     passed = true
   } finally {
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-avro-browser.json'), JSON.stringify({
-      schema_version: 'addp.manager-avro-browser/v1', result: passed ? 'passed' : 'failed',
+      schema_version: 'addp.manager-avro-browser/v2', result: passed ? 'passed' : 'failed',
       run_id: context.run_id, cases,
     }, null, 2) + '\n')
   }
