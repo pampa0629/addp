@@ -334,64 +334,10 @@ class OnlineHostGateTest(unittest.TestCase):
             )
             raise
 
-    def test_dispatches_registered_suite_and_always_stops_application(self) -> None:
-        result = self._run("module-registry-recovery")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.command_log.read_text(encoding="utf-8").splitlines(),
-            [
-                "stop",
-                "infra-up",
-                "start:--exact-process --wait-live -manager",
-                "observe:business-before-system",
-                "start:--exact-process -system",
-                "observe:manager-registered",
-                "start:--exact-process -gateway",
-                "observe:gateway-established",
-                "stop-exact:-system",
-                "observe:system-interrupted",
-                "start:--exact-process -system",
-                "observe:system-recovered",
-                "stop-exact:--force -manager",
-                "observe:manager-abnormally-stopped",
-                "start:--exact-process -manager",
-                "observe:manager-restarted",
-                "stop-exact:-manager",
-                "observe:manager-gracefully-stopped",
-                "make:test-online:ONLINE_SUITE=module-registry-recovery",
-                "stop",
-            ],
-        )
-        summary = (self.artifacts / "summary.txt").read_text(encoding="utf-8")
-        self.assertIn("suite=module-registry-recovery", summary)
-        self.assertIn("result=passed", summary)
-        self.assertIn("cleanup=passed", summary)
-        self.assertIn("process_lifecycle=passed", summary)
-        self.assertTrue((self.artifacts / "online-gate.log").is_file())
-        self.assertTrue(
-            (self.artifacts / "module-lifecycle-system-recovered.json").is_file()
-        )
-
-    def test_fault_phase_failure_still_cleans_up_and_fails_report(self):
-        result = self._run("module-registry-recovery", ADDP_TEST_FAIL_PHASE="manager-abnormally-stopped")
+    def test_registry_suite_uses_hosted_profile(self):
+        result = self._run("module-registry-recovery", "--check-only")
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.command_log.read_text().splitlines()[-1], "stop")
-        summary = (self.artifacts / "summary.txt").read_text()
-        self.assertIn("result=failed", summary)
-        self.assertIn("cleanup=passed", summary)
-        self.assertNotIn("process_lifecycle=passed", summary)
-
-    def test_module_observer_configuration_required_before_lifecycle(self):
-        original = self.env_file.read_text()
-        for variable in ("ADDP_HOST_NODE_IPS", "ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN"):
-            with self.subTest(variable=variable):
-                self.env_file.write_text("\n".join(line for line in original.splitlines()
-                                                     if not line.startswith(variable + "=")) + "\n")
-                result = self._run("module-registry-recovery")
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(variable, result.stderr)
-                self.assertFalse(self.command_log.exists())
+        self.assertFalse(self.command_log.exists())
 
     def test_metric_lifecycle_has_no_self_hosted_route(self) -> None:
         result = self._run("metric-service-revision-lifecycle", "--check-only")
@@ -653,14 +599,14 @@ class OnlineHostGateTest(unittest.TestCase):
                 self.assertFalse(self.command_log.exists())
 
     def test_check_only_writes_readiness_without_lifecycle_action(self) -> None:
-        result = self._run("module-registry-recovery", "--check-only")
+        result = self._run("standard-model-reference-deletion", "--check-only")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("readiness check passed", result.stdout)
         self.assertFalse(self.command_log.exists())
         readiness = (self.artifacts / "readiness.txt").read_text(encoding="utf-8")
         self.assertIn("schema_version=addp.online-host-readiness/v1", readiness)
-        self.assertIn("suite=module-registry-recovery", readiness)
+        self.assertIn("suite=standard-model-reference-deletion", readiness)
         self.assertIn("repository_clean=true", readiness)
         self.assertIn("database=addp_online", readiness)
         self.assertIn("lifecycle=not-started", readiness)
@@ -675,24 +621,24 @@ class OnlineHostGateTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        result = self._run("module-registry-recovery", "--check-only")
+        result = self._run("standard-model-reference-deletion", "--check-only")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         readiness = (self.artifacts / "readiness.txt").read_text(encoding="utf-8")
-        self.assertIn("suite=module-registry-recovery", readiness)
-        self.assertIn("start_target=-system", readiness)
+        self.assertIn("suite=standard-model-reference-deletion", readiness)
+        self.assertIn("start_target=-model", readiness)
         self.assertFalse(stale_artifacts.exists())
 
     def test_env_file_cannot_supply_lifecycle_control_values(self) -> None:
         self.env_file.write_text(
             self.env_file.read_text(encoding="utf-8")
-            + "ONLINE_SUITE=module-registry-recovery\n"
+            + "ONLINE_SUITE=standard-model-reference-deletion\n"
             + f"ADDP_ONLINE_ARTIFACT_DIR={self.artifacts}\n",
             encoding="utf-8",
         )
 
         result = self._run(
-            "module-registry-recovery",
+            "standard-model-reference-deletion",
             "--check-only",
             ONLINE_SUITE="",
             ADDP_ONLINE_ARTIFACT_DIR="",
@@ -703,7 +649,7 @@ class OnlineHostGateTest(unittest.TestCase):
         self.assertFalse(self.artifacts.exists())
 
     def test_rejects_non_dedicated_host_before_any_lifecycle_action(self) -> None:
-        result = self._run("module-registry-recovery", ADDP_ONLINE_HOST="0")
+        result = self._run("standard-model-reference-deletion", ADDP_ONLINE_HOST="0")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ADDP_ONLINE_HOST", result.stderr)
@@ -711,7 +657,7 @@ class OnlineHostGateTest(unittest.TestCase):
 
     def test_rejects_non_macos_host_before_any_lifecycle_action(self) -> None:
         result = self._run(
-            "module-registry-recovery", ADDP_TEST_UNAME_S="Linux"
+            "standard-model-reference-deletion", ADDP_TEST_UNAME_S="Linux"
         )
 
         self.assertNotEqual(result.returncode, 0)
@@ -725,7 +671,7 @@ class OnlineHostGateTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        result = self._run("module-registry-recovery")
+        result = self._run("standard-model-reference-deletion")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires GATEWAY_URL", result.stderr)
@@ -738,7 +684,7 @@ class OnlineHostGateTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        result = self._run("module-registry-recovery")
+        result = self._run("standard-model-reference-deletion")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("POSTGRES_DB must be exactly addp_online", result.stderr)
@@ -747,7 +693,7 @@ class OnlineHostGateTest(unittest.TestCase):
     def test_rejects_repository_env_and_repository_owned_secret_file(self) -> None:
         repository_env = self.repository / ".env"
         repository_env.write_text("ADDP_ONLINE_TEST=1\n", encoding="utf-8")
-        result = self._run("module-registry-recovery")
+        result = self._run("standard-model-reference-deletion")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("仓库根 .env", result.stderr)
         repository_env.unlink()
@@ -755,14 +701,14 @@ class OnlineHostGateTest(unittest.TestCase):
         internal_env = self.repository / "online.env"
         internal_env.write_text("ADDP_ONLINE_TEST=1\n", encoding="utf-8")
         result = self._run(
-            "module-registry-recovery", ADDP_ONLINE_ENV_FILE=str(internal_env)
+            "standard-model-reference-deletion", ADDP_ONLINE_ENV_FILE=str(internal_env)
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("仓库外", result.stderr)
 
     def test_cleanup_failure_fails_gate(self) -> None:
         result = self._run(
-            "module-registry-recovery", ADDP_TEST_STOP_FAIL="1"
+            "standard-model-reference-deletion", ADDP_TEST_STOP_FAIL="1"
         )
 
         self.assertNotEqual(result.returncode, 0)

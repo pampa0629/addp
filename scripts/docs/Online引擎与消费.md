@@ -14,7 +14,7 @@
 
 ### 模块注册恢复
 
-`module-registry-recovery` 的环境字段沿[macOS 场景准备](Online编排与观测.md#按场景补充)，完整必需项以[Host Gate](../test/online-host-gate.sh)为准；模块服务凭据使用既有 `MANAGER_SERVICE_CLIENT_SECRET`，正式进程与探针的分工见[注册恢复场景](../../docs/spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)。
+`module-registry-recovery` 使用唯一 Hosted Ubuntu profile，入口为 `scripts/test/online-hosted-module-registry-gate.sh`，由 workflow 临时准备身份、服务凭据、节点 IP 与 Infra。正式进程及清理契约见[注册恢复场景](../../docs/spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)。
 
 Host Gate 先通过受保护的正式进程入口依次启动 Manager、System、Gateway，验证 Manager 在 System 前为 Ready/starting 且直连公开入口可用，System 到达后同一 `instance_id` 进入 registered，Gateway 首个快照建立路由；随后停止 System，验证 Manager 保持 Ready 并报告 recovering、租约路由消失，再恢复 System 并验证 Manager 和 Gateway 无需重启即恢复。五个阶段分别写入 `module-lifecycle-*.json`。
 

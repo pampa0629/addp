@@ -368,22 +368,25 @@ def validate_workflow_runtime_health_profile(repository: Path, registered: set[s
 def validate_module_registry_process_profile(repository: Path, registered: set[str]) -> None:
     if "module-registry-recovery" not in registered:
         return
-    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    gate = repository / "scripts/test/online-hosted-module-registry-gate.sh"
+    if not gate.is_file():
+        raise RegistrationError("module-registry-recovery process profile is missing Hosted gate")
+    host_gate = gate.read_text(encoding="utf-8")
     required_fragments = (
         "bash scripts/dev/start.sh --exact-process --wait-live -manager",
-        "observe_module_lifecycle business-before-system",
+        "observe_with_identity business-before-system",
         "bash scripts/dev/start.sh --exact-process -system",
-        "observe_module_lifecycle manager-registered",
+        "observe_with_identity manager-registered",
         "bash scripts/dev/start.sh --exact-process -gateway",
-        "observe_module_lifecycle gateway-established",
+        "observe_with_identity gateway-established",
         "bash scripts/dev/stop-exact-process.sh -system",
-        "observe_module_lifecycle system-interrupted",
-        "observe_module_lifecycle system-recovered",
+        "observe_with_identity system-interrupted",
+        "observe_with_identity system-recovered",
         "bash scripts/dev/stop-exact-process.sh --force -manager",
-        "observe_module_lifecycle manager-abnormally-stopped",
-        "observe_module_lifecycle manager-restarted",
-        "observe_module_lifecycle manager-gracefully-stopped",
-        "ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN",
+        "observe_with_identity manager-abnormally-stopped",
+        "observe_with_identity manager-restarted",
+        "observe_with_identity manager-gracefully-stopped",
+        'source "$IDENTITY_ENV"',
         "ADDP_HOST_NODE_IPS",
         "bash scripts/dev/stop-exact-process.sh -manager",
     )

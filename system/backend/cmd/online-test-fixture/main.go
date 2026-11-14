@@ -459,7 +459,7 @@ func suitePermissions(suite string) ([]string, error) {
 			return nil, errors.New("unsupported Manager Online acceptance case")
 		}
 		return managerArtifactPermissions, nil
-	case "compose-public-origin", "workflow-runtime-health-recovery":
+	case "module-registry-recovery", "compose-public-origin", "workflow-runtime-health-recovery":
 		return nil, nil
 	default:
 		return nil, errors.New("unsupported Online identity fixture suite")
@@ -611,6 +611,15 @@ func run(args []string, environment []string) error {
 		return preparePlatformMetricsIdentities(db, cfg, *output)
 	}
 
+	var registryPlatformToken string
+	if *suite == "module-registry-recovery" {
+		var err error
+		registryPlatformToken, err = prepareModuleRegistryPlatform(context.Background(), db, cfg)
+		if err != nil {
+			return err
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	repository := iam.NewRepository(db)
@@ -711,6 +720,9 @@ func run(args []string, environment []string) error {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
+	if registryPlatformToken != "" {
+		values["ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN"] = registryPlatformToken
+	}
 	if *suite == "security-mysql-owner-protection" {
 		reader, assignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-security-role-reader", securityRoleReaderPermissions)
@@ -1682,6 +1694,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_GOV_SUCCESSOR_USERNAME",
 		"ADDP_ONLINE_GOV_SUCCESSOR_PASSWORD",
 		"ADDP_ONLINE_GOV_SUCCESSOR_TOTP",
+		"ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN",
 		"ADDP_ONLINE_METRICS_ADMIN_USERNAME",
 		"ADDP_ONLINE_METRICS_ADMIN_PASSWORD",
 		"ADDP_ONLINE_METRICS_ADMIN_TOTP",

@@ -3268,7 +3268,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_module_profile_requires_force_stage_and_observer_configuration(self):
         source = Path(__file__).resolve().parents[2]
-        paths = ("scripts/test/online-host-gate.sh", "scripts/dev/stop-exact-process.sh",
+        paths = ("scripts/test/online-hosted-module-registry-gate.sh", "scripts/dev/stop-exact-process.sh",
                  "scripts/test/module-lifecycle-process-online.py", "scripts/dev/start.sh")
         for relative in paths:
             target = self.repository / relative
@@ -3278,8 +3278,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         host = self.repository / paths[0]
         original = host.read_text()
         for fragment in ("bash scripts/dev/stop-exact-process.sh --force -manager",
-                         "observe_module_lifecycle manager-restarted",
-                         "ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN", "ADDP_HOST_NODE_IPS"):
+                         "observe_with_identity manager-restarted",
+                         'source "$IDENTITY_ENV"', "ADDP_HOST_NODE_IPS"):
             with self.subTest(fragment=fragment):
                 host.write_text(original.replace(fragment, "REMOVED"))
                 with self.assertRaisesRegex(CHECK.RegistrationError, "process profile is missing"):
