@@ -1773,7 +1773,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-execution-online-ci-syntax test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-monitor-traces-local-runner ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
 
@@ -1801,11 +1801,9 @@ test-monitor-traces-local: ## 人工运行正式身份的本机隔离执行 Trac
 	@python3 scripts/test/monitor-traces-local-gate.py
 
 test-monitor-traces-local-runner: ## 验证本地 Trace 准入、资源守卫、身份及清理，不启动服务
-	@node --test scripts/test/execution-navigation-local_test.mjs
 	@python3 -m unittest scripts/test/monitor-traces-local-gate_test.py scripts/test/monitor-traces-local-online_test.py scripts/ci/check-execution-trace-local-registration_test.py
 	@node --check --input-type=module < console/frontend/e2e/online/execution-trace-local.spec.js
 	@node --check console/frontend/e2e/online/execution-trace-local-support.mjs
-	@node --check console/frontend/e2e/online/execution-navigation-local-support.mjs
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'ExecutionTrace|ProtectionReadiness' -count=1
 

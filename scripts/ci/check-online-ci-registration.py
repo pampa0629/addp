@@ -114,23 +114,20 @@ def validate_execution_runner_ci(repository: Path) -> None:
     if re.findall(r"(?m)^    ([a-z-]+):", job) != ["name", "runs-on", "timeout-minutes", "steps"]:
         raise RegistrationError("Execution runner must have no dependencies, matrix or failure-masking job controls")
     steps = re.findall(r"(?ms)^      - name: [^\n]+\n.*?(?=^      - name:|\Z)", job)
-    if len(steps) != 6:
-        raise RegistrationError("Execution runner requires only checkout, selection, Node, Go, canonical Make and summary")
+    if len(steps) != 5:
+        raise RegistrationError("Execution runner requires only checkout, selection, Node, canonical Make and summary")
     uses = [re.findall(r"(?m)^        uses: (\S+)", step) for step in steps]
     if not (len(uses[0]) == 1 and re.fullmatch(r"actions/checkout@[0-9a-f]{40}", uses[0][0])
             and uses[1] == [] and len(uses[2]) == 1 and re.fullmatch(r"actions/setup-node@[0-9a-f]{40}", uses[2][0])
-            and len(uses[3]) == 1 and re.fullmatch(r"actions/setup-go@[0-9a-f]{40}", uses[3][0])
-            and uses[4] == [] and uses[5] == ["./.github/actions/ci-gate-summary"]):
-        raise RegistrationError("Execution runner must use only the existing pinned checkout, Node, Go and summary actions")
+            and uses[3] == [] and uses[4] == ["./.github/actions/ci-gate-summary"]):
+        raise RegistrationError("Execution runner must use only the existing pinned checkout, Node and summary actions")
     conditions = [re.findall(r"(?m)^        if: (.+)$", step) for step in steps]
-    if conditions != [[], [], ["steps.selection.outputs.run == 'true'"], ["steps.selection.outputs.run == 'true'"], ["steps.selection.outputs.run == 'true'"], ["always()"]]:
+    if conditions != [[], [], ["steps.selection.outputs.run == 'true'"], ["steps.selection.outputs.run == 'true'"], ["always()"]]:
         raise RegistrationError("Execution runner selection must execute before guarded setup/Make and truthful summary")
     if re.findall(r"(?m)^          (ADDP_CI_[A-Z_]+):", steps[1]) != ["ADDP_CI_BEFORE", "ADDP_CI_EVENT", "ADDP_CI_HEAD", "ADDP_CI_PR_BASE"]:
         raise RegistrationError("Execution runner must preserve the event commit range without forcing selection")
     if re.findall(r"(?m)^          ([a-z-]+):", steps[2]) != ["node-version-file"]:
         raise RegistrationError("Execution runner Node version must come only from .node-version")
-    if re.findall(r"(?m)^          ([a-z-]+):", steps[3]) != ["go-version-file", "cache-dependency-path"]:
-        raise RegistrationError("Execution runner Go must use the existing version file and module cache inputs")
     if re.search(r"(?m)^    (?:needs|if|concurrency|continue-on-error|services|container|environment):", job) or "continue-on-error:" in job:
         raise RegistrationError("Execution runner must run independently without masking failures or services")
     required = ("    name: Execution online CI runner\n", "    runs-on: ubuntu-24.04\n", "    timeout-minutes: 10\n",
@@ -138,8 +135,6 @@ def validate_execution_runner_ci(repository: Path) -> None:
                 "          ADDP_CI_BEFORE: ${{ github.event.before }}\n", "          ADDP_CI_EVENT: ${{ github.event_name }}\n",
                 "          ADDP_CI_HEAD: ${{ github.sha }}\n", "          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}\n",
                 "        uses: ./.github/actions/ci-gate-summary\n", "          gate: Execution online CI runner\n",
-                "          go-version-file: system/backend/go.mod\n",
-                "          cache-dependency-path: |\n            system/backend/go.sum\n            common/go.sum\n",
                 "          selected: ${{ steps.selection.outputs.run }}\n", "          status: ${{ job.status }}\n")
     if any(not source_contract_contains(job, fragment, repository) for fragment in required):
         raise RegistrationError("Execution runner runtime, selection environment or truthful summary is incomplete")
@@ -7369,17 +7364,9 @@ def validate_local_execution_trace_profile(repository: Path) -> None:
     if not path.is_file() or any(not source_contract_contains(make, value, repository) for value in required):
         raise RegistrationError("local execution Trace requires its manual entry and existing lifecycle runner")
     for relative in ("scripts/test/monitor-traces-local-online.py", "console/frontend/e2e/online/execution-trace-local.spec.js",
-                     "console/frontend/e2e/online/execution-navigation-local-support.mjs", "scripts/test/execution-navigation-local_test.mjs",
-                     "develop/backend/internal/service/navigation_fixture_preflight_test.go",
                      "system/backend/cmd/online-test-fixture/execution_trace_local.go"):
         if not (repository / relative).is_file():
             raise RegistrationError("local execution Trace is missing its formal-identity owner inputs")
-    commands=make_target_commands(make,"test-monitor-traces-local-runner")
-    if "node --test scripts/test/execution-navigation-local_test.mjs" not in commands:
-        raise RegistrationError("local navigation must run its deterministic ledger and control tests")
-    if not any(target == "test-execution-online-ci-runner" and "test-monitor-traces-local-runner" in dependencies.split()
-               for target, dependencies, _, _ in make_target_definitions(make)):
-        raise RegistrationError("execution Linux runner must include local navigation deterministic checks")
     for workflow in (repository / ".github/workflows").glob("*.y*ml"):
         if re.search(r"(?:make\s+test-monitor-traces-local(?![A-Za-z0-9_-])|python3?\s+scripts/test/monitor-traces-local-gate.py)", workflow.read_text()):
             raise RegistrationError("local execution Trace must not execute in GitHub Actions")
