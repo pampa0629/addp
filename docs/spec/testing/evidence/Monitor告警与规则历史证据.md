@@ -661,3 +661,22 @@ Artifact `14108023879` 的 SHA-256 为 `25d18507e050769161ea0156774c85b4e424f747
 本次修订只改变夹具取证方式：源记录清理后等待 sampled_at 严格晚于清理时间、仍在有效期内的零积压样本；三字段实物终态在数据库内对按主键排序的最多三行判定精确两行及原值，沿原 psql 投影保留 NULL／空字符串语义，只读回一个布尔值。保留缺失、多余、重复和错值拒绝，不扩大原等待预算或操作范围；另细分源清理、清理追平和目标核验阶段并保存各自结果。`make test-transfer-continuous-online-runner` 的 137 项与 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-bounded-oracle-runner-final.log`；回归覆盖旧零值拒绝、清理后新鲜样本、超期样本拒绝、实际执行有界 SQL 的精确行集及大行剩余、静默失败。SQL 夹具回归为受控驱动，不替代后继真实 PostgreSQL T4 终态核验。
 
 本轮性能 finally、风险包装及 task 3／2 正式删除读回均 passed，CPU、Connector、规则、源临时记录和 Webhook 目标按原清理路径恢复／移除。原硬退出 task 1 按场景留到部署销毁，领域 residual_resources=expected_deployment_residuals=1、uncertain_mutation=false；外层 cleanup=passed、infra_cleanup=zero_residuals。前置 17 项及 7 份 Console 回执通过，后继旧捕获失败／不可恢复风险／重建与 scheduled 阶段尚未运行到。当前已取得性能告警触发、缺样保持、恢复关闭和四条外部通知实证，完整 suite 与修订后的精确实物终态仍待后继运行，不将 finally 或部署零残留当作整套通过。
+
+
+### CDC 性能阶段完整通过、组合套件后继暂停绑定旧执行（2026-11-14）
+
+固定 `ccaa259faf2bf56f3db57d54d05a62af60f895a2` 的 [Run 43589946577／Job 132432342692](https://github.com/pampa0629/addp/actions/runs/43589946577/job/132432342692) 的 `cdc_risk_closure.performance.result=passed`，性能阶段 cleanup=passed；整套仍 failure，失败阶段为后继原风险场景的 buffer_pause、`unexpected_terminal_status`。前置 17 项及 7 份 Console 回执通过，不能将性能子阶段通过写成整个组合 suite 通过。原始 preflight 与所选服务 Git SHA 均为 ccaa259fa。Artifact `14113078585` 的 SHA-256 为 `580ea02ba24ec6bcfabe993a7cbc7ef94b69fe1fcd57eddb4d57e06b19a03068`，下载摘要与 ZIP CRC 均核对通过，原件与完整报告 `/tmp/addp-cdc-performance-hosted-43589946577/`，Job 日志 `/tmp/addp-cdc-performance-43589946577-job.log`。
+
+性能阶段的实证完整覆盖原断言：
+
+- 消费停滞 warning incident 1、捕获延迟 warning incident 5 实际打开；最新有效窗口分别约 253.093055 秒和 195.006040 秒，达到原 180 秒要求，捕获有实际新事件推进且延迟 >60 秒。
+- 两项独立观测的新鲜 unavailable 后，连续 32 秒／16 次保持两条规则 unknown、同一 acknowledged 事件与 LastObservedAt，没有恢复通知。
+- 解除原生故障后，同一 incident 1／5 resolved。健康新事件计数 52576→52640，延迟 <=30 秒的实际样本覆盖约 74.894982 秒，满足原 60 秒恢复窗口。
+- 四条唯一签名 Webhook 均实际返回 202，并与正式 delivered 审计逐条匹配。消费 opened／resolved delivery 为 `0c115b5e-f1b3-40af-8ee1-9ba6e582b95a`／`bb35de16-ca03-49bb-a7e6-4f6e19955fea`；延迟分别为 `9f3b93f7-1364-485c-b837-861d1ac5320c`／`66be0755-36d3-46b5-8922-18286a8b568c`。
+- `source_rows_cleared=true`，清理后的新鲜缓冲 sampled_at=`12:06:07.344601795Z`、committed/latest=120104/120104、lag=0；`target_rowset_verified=true`，数据库侧有界核验取得原精确三字段两行结果。CPU、Connector 配置与规则读回恢复／删除均 true，性能 cleanup_failures 为空。
+
+后继失败根因另行认定：原生消息代理故障后，Transfer 自动恢复生成 execution `e3259b2c-998b-4bb4-be98-2c987ce1328a`，持久恢复事实精确指向原 `5e14a96c-428b-4a92-9dde-704d0c1ff6b5`，reason=execution_failed。正式 Pause 作用于当前执行，旧夹具却等待原 UUID 变为 cancelled，触发 unexpected_terminal_status。任务及 capture generation 未因自动恢复改变；不能将原失败执行改写为取消，也不能删除旧暂停断言。
+
+修订仅调整验收编排：正式 Pause 后从原 Owner API 读取同任务／同 generation 的当前 last_execution_id，等待该执行 cancelled；若 UUID 替换，额外核对旧执行仍 failed、新执行同任务且 recovered_from_execution_id 精确指向旧执行，保存恢复关联及新 UUID。最终 cdc_stop／Owner-Monitor 投影比较沿该真实暂停 UUID。无恢复时走同一当前执行路径；陌生或不符来源拒绝，不新增 Grant、恢复操作、预算或成功兜底。`make test-transfer-continuous-online-runner` 的 138 项及 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-current-execution-runner.log`，覆盖未替换、明确恢复关联及陌生来源拒绝，原失败与 cleanup 继续保留。该暂停绑定修订尚未取得新的完整 Hosted 结果。
+
+领域性能／风险包装清理及 task 3／2 正式删除读回均 passed，原硬退出 task 1 按场景由部署销毁，residual_resources=expected_deployment_residuals=1、uncertain_mutation=false；外层 cleanup=passed、infra_cleanup=zero_residuals。本机只读复核 `/tmp/addp-cdc-performance-preserved-after-hosted-43589946577.log` 证明原 task46／task58 两个逻辑槽仍保留且不活跃，task61 定义仍 running、全局身份槽仍活跃。个人环境未接受本轮故障注入、任务操作或重启。

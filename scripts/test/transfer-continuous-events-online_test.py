@@ -1193,7 +1193,9 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
     def test_fault_batch_waits_for_a_sample_after_pause_and_preserves_failure_during_cleanup(self):
         from types import SimpleNamespace
         client = unittest.mock.Mock()
-        client.request.side_effect = [SimpleNamespace(payload={}), SimpleNamespace(payload=[])]
+        client.request.side_effect = [SimpleNamespace(payload={'id':7,'desired_state':'paused',
+            'last_execution_id':UUID,'capture':{'generation':1}}),
+            SimpleNamespace(payload={}), SimpleNamespace(payload=[])]
         receiver = unittest.mock.Mock(secret='private', url='http://127.0.0.1:12345/cdc-risk')
         healthy = {'generation':1, 'buffer':{'committed_offset':'9'}}
         settled = {'generation':1, 'buffer':{'committed_offset':'10'}}
@@ -1212,6 +1214,43 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(report['cdc_risk_closure']['stage'],'buffer_growth')
         self.assertEqual(report['cdc_risk_closure']['cleanup'],'passed')
         receiver.close.assert_called_once()
+
+    def test_risk_pause_uses_recovered_execution_and_refuses_unrelated_origin(self):
+        recovered='bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
+        for wrong_origin in (False,True):
+            with self.subTest(wrong_origin=wrong_origin):
+                client=unittest.mock.Mock()
+                client.request.side_effect=[SimpleNamespace(payload={'id':7,'desired_state':'paused',
+                    'last_execution_id':recovered,'capture':{'generation':1}}),
+                    SimpleNamespace(payload={}),SimpleNamespace(payload=[])]
+                receiver=unittest.mock.Mock(secret='private',url='http://127.0.0.1:12345/cdc-risk')
+                cancelled={'task_id':7,'status':'cancelled','metadata':
+                    {'recovered_from_execution_id':recovered if wrong_origin else UUID,'recovery_reason':'execution_failed'}}
+                report={'executions':[UUID]}
+                with patch.object(M,'cdc_task_sample',return_value={'generation':1}), \
+                     patch.object(M,'cdc_capture_binding',return_value={}), \
+                     patch.object(M,'CDCRiskReceiver',return_value=receiver), \
+                     patch.object(M,'cdc_risk_alerts',return_value={}), \
+                     patch.object(M,'verify_cdc_performance'), \
+                     patch.object(M,'wait_status',return_value=cancelled) as wait, \
+                     patch.object(M,'detail',return_value={'task_id':7,'status':'failed'}) as original, \
+                     patch.object(M,'verify_capture_failure',side_effect=M.SuiteError('injected next phase')), \
+                     self.assertRaisesRegex(M.SuiteError,'exact recovery origin' if wrong_origin else 'injected next phase'):
+                    M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
+                        lambda *args:{'id':1},None,None,report,lambda:None)
+                wait.assert_called_once_with(client,recovered,'cancelled')
+                original.assert_called_once_with(client,UUID)
+                self.assertEqual(report['cdc_risk_closure']['paused_execution_id'],recovered)
+                self.assertEqual(report['cdc_risk_closure']['cleanup'],'passed')
+                if not wrong_origin:
+                    self.assertEqual(report['cdc_risk_closure']['execution_recovery'],
+                        {'from_execution_id':UUID,'execution_id':recovered,'previous_status':'failed','reason':'execution_failed'})
+                    self.assertEqual(report['executions'],[UUID,recovered])
+                else:
+                    self.assertNotIn('execution_recovery',report['cdc_risk_closure'])
+                    self.assertEqual(report['executions'],[UUID])
+                self.assertNotIn('private',json.dumps(report))
+                receiver.close.assert_called_once()
 
     def test_replacement_uses_new_target_and_irreversible_cdc_cleanup_confirmation(self):
         original = M.task_config('cdc', 10, 11)

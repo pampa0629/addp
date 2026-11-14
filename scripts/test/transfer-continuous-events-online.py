@@ -852,7 +852,23 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
                                mutate, delivered, receiver, proof, stage)
         stage('buffer_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
-        wait_status(client, execution_id, 'cancelled')
+        paused_task = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
+        require(paused_task.get('id') == task_id and paused_task.get('desired_state') == 'paused'
+                and (paused_task.get('capture') or {}).get('generation') == generation,
+                'risk pause changed task or capture identity')
+        paused_execution = canonical_uuid(paused_task.get('last_execution_id'))
+        cancelled = wait_status(client, paused_execution, 'cancelled')
+        proof['paused_execution_id'] = paused_execution
+        if paused_execution != execution_id:
+            previous = detail(client, execution_id)
+            require(previous.get('task_id') == task_id and previous.get('status') == 'failed'
+                    and cancelled.get('task_id') == task_id
+                    and cancelled.get('metadata', {}).get('recovered_from_execution_id') == execution_id,
+                    'risk pause execution lacks its exact recovery origin')
+            proof['execution_recovery'] = {'from_execution_id': execution_id, 'execution_id': paused_execution,
+                'previous_status': previous['status'], 'reason': cancelled['metadata'].get('recovery_reason')}
+            if paused_execution not in report['executions']:
+                report['executions'].append(paused_execution)
         verify_capture_failure(client, task_id, generation, binding, mutate, delivered, receiver, proof, stage)
         stage('buffer_pause_settled')
         settled_after = datetime.now(timezone.utc)
@@ -958,6 +974,7 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
         proof.update(replacement_generation=new['generation'], replacement_execution_id=new_execution,
                      original_incident_ids={k: v['id'] for k, v in opened.items()}, result='passed')
         stage('completed')
+        return paused_execution
     finally:
         original_failure = sys.exc_info()[0] is not None
         cleanup_errors = []
@@ -2101,13 +2118,13 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('initial_scans_preserve_sibling_and_ancestors')
         name = next(name for task, kind, name in tasks if task == cdc_task)
         phase('cdc_risk')
-        verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
-                                mutate, create, launch, report, checkpoint)
+        cdc_paused = verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
+                                            mutate, create, launch, report, checkpoint)
         report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')
-        wait_status(client, cdc_resumed, 'cancelled')
-        compare(cdc_resumed, 'cancelled')
+        wait_status(client, cdc_paused, 'cancelled')
+        compare(cdc_paused, 'cancelled')
         require(physical('verify-clean'), 'CDC capture resources survived confirmed stop')
         stopped_capture = client.request('GET', f'{OWNER}/task-definitions/{cdc_task}', (200,)).payload.get('capture') or {}
         require(stopped_capture.get('status') == 'stopped' and all(field in stopped_capture and stopped_capture[field] is None
