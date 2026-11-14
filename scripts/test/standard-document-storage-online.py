@@ -3,8 +3,11 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
+from pathlib import Path
 from importlib import import_module
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 api = import_module("scripts.utils.online-api")
 
 
