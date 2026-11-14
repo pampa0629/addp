@@ -36,6 +36,10 @@
         "readyPath": "/e2e/fixtures/auth-fixture.html?role=health"
       },
       {
+        "module": "manager",
+        "readyPath": "/module-ui/manager/login"
+      },
+      {
         "module": "service",
         "readyPath": "/e2e/service-fixture/e2e/query-form.html",
         "base": "/e2e/service-fixture/"

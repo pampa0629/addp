@@ -157,7 +157,7 @@ type Pagination struct {
 
 // PreviewResult 预览结果（新结构）
 type PreviewResult struct {
-	PreviewType string      `json:"preview_type"` // "table"/"object"/"node"/"unsupported"
+	PreviewType string      `json:"preview_type"` // "table"/"object"/"node"/"unsupported"/"metadata_only"
 	Data        interface{} `json:"data"`         // 预览数据
 
 	// 预览上下文元数据
@@ -1264,8 +1264,8 @@ func (r *PreviewResolver) MetadataOnlyObjectPreview(req *PreviewResolverRequest)
 	metadata := &PreviewMetadata{Locator: req.Locator.ToURI(), EngineName: req.Engine.Name, ResourceType: req.Engine.EngineType,
 		MetaScanned: true, ScannedDepth: req.scannedDepth(), ItemID: req.MetaItemID, FullName: req.ItemFullName,
 		ItemFingerprint: req.ItemFingerprint, EngineType: req.Engine.EngineType}
-	data := &models.TablePreview{Mode: "unsupported", Columns: []string{}, Rows: []map[string]interface{}{}, GeometryColumns: []string{},
+	data := &models.TablePreview{Mode: "metadata_only", Columns: []string{}, Rows: []map[string]interface{}{}, GeometryColumns: []string{},
 		ItemMeta: &models.EngineCatalogFacts{Fingerprint: req.ItemFingerprint, ItemType: req.ItemType, ItemTypeI18nKey: "engine.term." + req.ItemType,
 			FullName: req.ItemFullName, Attributes: mapToMetaAttributes(safe), ScannedAt: req.Metadata.LastScanAt, ScannedDepth: req.scannedDepth()}}
-	return &PreviewResult{PreviewType: "unsupported", Data: data, Metadata: metadata}
+	return &PreviewResult{PreviewType: "metadata_only", Data: data, Metadata: metadata}
 }

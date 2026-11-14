@@ -344,6 +344,7 @@ func SetupRouter(
 
 		// Quick View API：统一 ResourceLocator 入口
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
+		quickViewHandler.SetObjectPreviewChecker(systemServiceClient)
 		quickViewHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 		if taskProviderHandler != nil {
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)

@@ -2877,7 +2877,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more\nRedis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only\n键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample\nNFS TIFF 对象预览按当前原用户分别检查元数据与读取权；仅元数据时返回白名单结构、不返回统计、摘要或内容地址；交付完整结果前重新核验 | NFS TIFF object previews check current original-user metadata and read access separately. Metadata-only results contain whitelisted structure, without statistics, digests or content addresses; full delivery rechecks current access\nPostgreSQL 使用当前用户或委托工具凭据核验不可变分页计划的全部来源，并应用本地字段保护；未授权来源或依赖无法证明时拒绝读取 | PostgreSQL checks every source of an immutable page plan with the current user or delegated tool credential and applies local field protection; unauthorized or unprovable sources are rejected before reading\n表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response\n文件表始终多读一行核对真实 has_more，防止扫描后增长的源被误认为完整；探测行不返回 | File tables always probe one extra row for real has_more, including when a scanned exact count exists; the probe row is excluded\nCSV/TSV 已扫描稀疏索引在读前和读后核对源版本；变化或绑定不完整返回 409/preview_source_refresh_required，提示刷新元数据；源事实不可读返回 503/preview_source_unavailable，不返回部分数据 | CSV/TSV sparse indexes verify source versions before and after reading; changed or incomplete bindings return 409/preview_source_refresh_required; unavailable source facts return 503/preview_source_unavailable; no partial data is returned\n表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure\nbigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric\n范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected\nClickHouse 已声明的二进制列在保护后以 Base64 字符串返回，空字节为空串，SQL NULL 为 null，保护文本保持原样 | Declared ClickHouse binary cells use Base64 strings after protection, empty bytes use an empty string, SQL NULL remains null, and protected text is unchanged",
+                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more\nRedis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only\n键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample\nNFS TIFF 对象预览按当前原用户分别检查元数据与读取权；仅元数据时以metadata_only返回白名单结构、不返回统计、摘要或内容地址；交付完整结果前重新核验 | NFS TIFF object previews check current original-user metadata and read access separately. Metadata-only results use metadata_only and contain whitelisted structure, without statistics, digests or content addresses; full delivery rechecks current access\nPostgreSQL 使用当前用户或委托工具凭据核验不可变分页计划的全部来源，并应用本地字段保护；未授权来源或依赖无法证明时拒绝读取 | PostgreSQL checks every source of an immutable page plan with the current user or delegated tool credential and applies local field protection; unauthorized or unprovable sources are rejected before reading\n表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response\n文件表始终多读一行核对真实 has_more，防止扫描后增长的源被误认为完整；探测行不返回 | File tables always probe one extra row for real has_more, including when a scanned exact count exists; the probe row is excluded\nCSV/TSV 已扫描稀疏索引在读前和读后核对源版本；变化或绑定不完整返回 409/preview_source_refresh_required，提示刷新元数据；源事实不可读返回 503/preview_source_unavailable，不返回部分数据 | CSV/TSV sparse indexes verify source versions before and after reading; changed or incomplete bindings return 409/preview_source_refresh_required; unavailable source facts return 503/preview_source_unavailable; no partial data is returned\n表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure\nbigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric\n范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected\nClickHouse 已声明的二进制列在保护后以 Base64 字符串返回，空字节为空串，SQL NULL 为 null，保护文本保持原样 | Declared ClickHouse binary cells use Base64 strings after protection, empty bytes use an empty string, SQL NULL remains null, and protected text is unchanged",
                 "produces": [
                     "application/json"
                 ],
@@ -3373,7 +3373,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.\n源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.\nFTP 的 GLB 生成动作适用于 IFC／3DS／DAE／OBJ；使用 System 实际引擎类型判断，不接受调用者自报类型，也不以 Grant 是否存在决定能力。 | FTP GLB generation actions apply to IFC/3DS/DAE/OBJ, using the actual System engine type rather than caller labels or Grant availability.",
+                "description": "NFS TIFF按原用户当前System裁决返回：不可见404，仅元数据为metadata_only最小能力且不返回内容事实；完整结果交付前重核 | NFS TIFF checks current original-user System visibility: hidden targets return 404, metadata_only contains no content facts, full results recheck current access\n以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.\n源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.\nFTP 的 GLB 生成动作适用于 IFC／3DS／DAE／OBJ；使用 System 实际引擎类型判断，不接受调用者自报类型，也不以 Grant 是否存在决定能力。 | FTP GLB generation actions apply to IFC/3DS/DAE/OBJ, using the actual System engine type rather than caller labels or Grant availability.",
                 "produces": [
                     "application/json"
                 ],
@@ -3404,6 +3404,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "身份凭据无效 | Invalid credentials",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
                         "description": "无权访问 | Access denied",
                         "schema": {
@@ -3420,6 +3427,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "授权检查暂不可用 | Authorization check unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

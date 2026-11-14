@@ -663,6 +663,7 @@ const selectedContentActive = computed(() => Boolean(
 ))
 const profileSupported = computed(() => {
   const preview = props.profilePreviewData || props.previewData
+  if (preview?.mode === 'metadata_only') return false
   if (selectedContentActive.value) {
     return String(preview?.mode || '').toLowerCase() === 'table' &&
       !String(preview?.preview_kind || '').toLowerCase().startsWith('graph_')

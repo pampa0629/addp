@@ -73,6 +73,7 @@ func quickViewActionLocatorError(c *gin.Context, err error) {
 }
 
 type QuickViewHandler struct {
+	objectPreviewChecker       objectPreviewVisibilityChecker
 	service                    *service.QuickViewService
 	previewResolver            *preview.PreviewResolver
 	mvtService                 *service.UnifiedMVTService
@@ -86,6 +87,10 @@ type QuickViewHandler struct {
 	pptxPDFTaskSvc             *service.PPTXPDFTaskService
 	taskDefinitionRepo         *repository.TaskDefinitionRepository
 	notifyExecutionEnqueued    func()
+}
+
+func (h *QuickViewHandler) SetObjectPreviewChecker(checker objectPreviewVisibilityChecker) {
+	h.objectPreviewChecker = checker
 }
 
 func NewQuickViewHandler(service *service.QuickViewService, previewResolver *preview.PreviewResolver, mvtService *service.UnifiedMVTService, _ *redis.Client) *QuickViewHandler {
@@ -190,6 +195,7 @@ type RebindManagedQuickViewTaskResponse struct {
 }
 
 // GetQuickViewCapabilityByLocator 获取 locator 快显能力
+// @Description NFS TIFF按原用户当前System裁决返回：不可见404，仅元数据为metadata_only最小能力且不返回内容事实；完整结果交付前重核 | NFS TIFF checks current original-user System visibility: hidden targets return 404, metadata_only contains no content facts, full results recheck current access
 // @Summary 获取 locator 快显能力 | Get locator quick view capability
 // @Description 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.
 // @Description 源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.
@@ -199,25 +205,64 @@ type RebindManagedQuickViewTaskResponse struct {
 // @Param locator query string true "资源定位符URI | Resource locator URI"
 // @Success 200 {object} service.QuickViewCapability "快显能力状态 | Quick view capability state"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "身份凭据无效 | Invalid credentials"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 503 {object} map[string]interface{} "授权检查暂不可用 | Authorization check unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /quick-view/capability [get]
 // @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
+	commonapi.NoStore(c)
 	locator := strings.TrimSpace(c.Query("locator"))
 	if locator == "" {
 		missingLocator(c)
 		return
 	}
-	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantIDFromContext(c), locator)
+	tenant := tenantIDFromContext(c)
+	req, err := h.quickViewRequestForLocator(c.Request.Context(), tenant, locator)
 	if err != nil {
 		quickViewLocatorError(c, err)
 		return
 	}
+	restricted := req.RequiresObjectPreviewVisibility()
+	if restricted {
+		readable, err := checkObjectPreviewVisibility(c, req, h.objectPreviewChecker)
+		if err != nil {
+			writeObjectPreviewVisibilityError(c, err)
+			return
+		}
+		if !readable {
+			c.JSON(http.StatusOK, metadataOnlyQuickViewCapability(req))
+			return
+		}
+	}
+	capability, err := h.quickViewCapabilityForRequest(c.Request.Context(), tenant, req)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	if restricted {
+		readable, err := checkObjectPreviewVisibility(c, req, h.objectPreviewChecker)
+		if err != nil {
+			writeObjectPreviewVisibilityError(c, err)
+			return
+		}
+		if !readable {
+			capability = metadataOnlyQuickViewCapability(req)
+		}
+	}
 	c.JSON(http.StatusOK, capability)
+}
+
+// Construct the metadata projection without building source/derived content facts.
+func metadataOnlyQuickViewCapability(req *preview.PreviewResolverRequest) *service.QuickViewCapability {
+	return &service.QuickViewCapability{TenantID: *req.TenantID, Locator: req.Locator.ToURI(),
+		ItemFingerprint: req.ItemFingerprint, SourceEngineID: req.Engine.ID, SourceKind: "raster",
+		PreferredMode: "basic_preview", RecommendedMode: "basic_preview", ActiveMode: "basic_preview",
+		AvailableActions: []string{}, Status: "metadata_only"}
 }
 
 // ExecuteQuickViewAction 执行 locator 快显动作
@@ -877,10 +922,15 @@ func isDegradedTileStatus(status string) bool {
 }
 
 func (h *QuickViewHandler) quickViewCapabilityForLocator(ctx context.Context, tenantID *uint, locator string) (*service.QuickViewCapability, error) {
-	source, err := h.quickViewSourceForLocator(ctx, tenantID, locator)
+	req, err := h.quickViewRequestForLocator(ctx, tenantID, locator)
 	if err != nil {
 		return nil, err
 	}
+	return h.quickViewCapabilityForRequest(ctx, tenantID, req)
+}
+
+func (h *QuickViewHandler) quickViewCapabilityForRequest(ctx context.Context, tenantID *uint, req *preview.PreviewResolverRequest) (*service.QuickViewCapability, error) {
+	source := quickViewSourceFromMeta(req)
 	h.attachRenderableExtent(ctx, tenantID, &source)
 	h.attachRealtimeTileTarget(ctx, tenantID, &source)
 	capability, err := h.service.BuildCapabilityFromSource(ctx, source)
@@ -952,26 +1002,34 @@ func (h *QuickViewHandler) resolveRealtimeTileTarget(ctx context.Context, tenant
 }
 
 func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenantID *uint, locator string) (service.QuickViewSource, error) {
-	if h.previewResolver == nil {
-		return service.QuickViewSource{}, errors.New("preview resolver not initialized")
-	}
-	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(ctx, locator, 1, 1, "", "", "", plugin.GraphSampleFilter{}, tenantID)
+	req, err := h.quickViewRequestForLocator(ctx, tenantID, locator)
 	if err != nil {
 		return service.QuickViewSource{}, err
 	}
+	return quickViewSourceFromMeta(req), nil
+}
+
+func (h *QuickViewHandler) quickViewRequestForLocator(ctx context.Context, tenantID *uint, locator string) (*preview.PreviewResolverRequest, error) {
+	if h.previewResolver == nil {
+		return nil, errors.New("preview resolver not initialized")
+	}
+	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(ctx, locator, 1, 1, "", "", "", plugin.GraphSampleFilter{}, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	if req.MetaItemID == nil || *req.MetaItemID == 0 {
-		return service.QuickViewSource{}, preview.ErrPreviewRequiresScannedMeta
+		return nil, preview.ErrPreviewRequiresScannedMeta
 	}
 	if req.Metadata == nil || req.Metadata.EngineID != req.Engine.ID ||
 		(req.Metadata.TenantID != 0 && req.Metadata.TenantID != *tenantID) {
-		return service.QuickViewSource{}, preview.ErrEngineAccessDenied
+		return nil, preview.ErrEngineAccessDenied
 	}
 	// Resolve both identity and facts from the same Meta item, not a caller-supplied path.
 	req.Locator = resourcetree.LocatorFromFullName(req.Engine.ID, req.Engine.EngineType, req.ItemType, req.ItemFullName, req.MetaItemID)
 	if req.Locator == nil {
-		return service.QuickViewSource{}, preview.ErrPreviewRequiresScannedMeta
+		return nil, preview.ErrPreviewRequiresScannedMeta
 	}
-	return quickViewSourceFromMeta(req), nil
+	return req, nil
 }
 
 func (h *QuickViewHandler) createQuickViewTask(

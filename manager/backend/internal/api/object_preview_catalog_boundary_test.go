@@ -128,7 +128,7 @@ func TestNFSTIFFObjectPreviewCatalogPermissionTransitions(t *testing.T) {
 			}
 			if !tc.readable {
 				wantAttributes := map[string]interface{}{"schema_version": float64(1), "item": map[string]interface{}{"data_type": "media", "format": "tiff", "layout": "single"}}
-				if body.PreviewType != "unsupported" || body.Data.Object != nil || !reflect.DeepEqual(gotAttributes, wantAttributes) || body.Metadata["size_bytes"] != nil || body.Metadata["item_count"] != nil {
+				if body.PreviewType != "metadata_only" || body.Data.Object != nil || !reflect.DeepEqual(gotAttributes, wantAttributes) || body.Metadata["size_bytes"] != nil || body.Metadata["item_count"] != nil {
 					t.Fatalf("metadata-only response exceeded structural allowlist: %s", response.Body.String())
 				}
 				return

@@ -1191,6 +1191,11 @@ jobs:
         with:
           frontend-directory: ${{ matrix.module }}/frontend
 
+      - name: Install Manager dependencies for Console metadata access integration
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: manager/frontend
+        run: npm ci
+
       - name: Install Develop dependencies for Console execution result navigation
         if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
         working-directory: develop/frontend

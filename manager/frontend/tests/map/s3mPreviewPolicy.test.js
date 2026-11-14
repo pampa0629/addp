@@ -43,7 +43,8 @@ const s3mParserSource = readFileSync(
 describe('S3M preview policy', () => {
   it('keeps the source item format beside the title and the quick-view format with the actions', () => {
     const headerStart = previewPanelSource.indexOf('<div class="header-left">')
-    const headerEnd = previewPanelSource.indexOf('<div class="panel-actions">', headerStart)
+    const headerEnd = previewPanelSource.indexOf('class="panel-actions"', headerStart)
+    expect(headerEnd).toBeGreaterThan(headerStart)
     const header = previewPanelSource.slice(headerStart, headerEnd)
     const actionsEnd = previewPanelSource.indexOf('</div>', headerEnd)
     const actions = previewPanelSource.slice(headerEnd, actionsEnd)

@@ -155,7 +155,7 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
                 data = body.get('data', {})
                 item_meta = data.get('item_meta', {})
                 attrs = {entry['key']: entry['value'] for entry in item_meta.get('attributes', [])}
-                if (body.get('preview_type') != 'unsupported' or data.get('object') is not None
+                if (body.get('preview_type') != 'metadata_only' or data.get('mode') != 'metadata_only' or data.get('object') is not None
                         or data.get('rows') != [] or item_meta.get('row_count') is not None
                         or attrs != {'schema_version': 1, 'item': {'data_type': 'media', 'format': 'tiff', 'layout': 'single'}}
                         or body.get('metadata', {}).get('size_bytes') is not None

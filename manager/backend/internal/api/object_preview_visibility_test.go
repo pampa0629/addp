@@ -153,11 +153,11 @@ func TestNFSTIFFObjectPreviewVisibilityAndFinalRecheck(t *testing.T) {
 				}
 				return
 			}
-			if body["preview_type"] != "unsupported" {
+			if body["preview_type"] != "metadata_only" {
 				t.Fatal("metadata was routed to content preview")
 			}
 			data := body["data"].(map[string]interface{})
-			if data["object"] != nil || data["item_meta"] == nil || len(data["rows"].([]interface{})) != 0 {
+			if data["mode"] != "metadata_only" || data["object"] != nil || data["item_meta"] == nil || len(data["rows"].([]interface{})) != 0 {
 				t.Fatal("unsafe metadata-only shape")
 			}
 			meta := data["item_meta"].(map[string]interface{})

@@ -1262,6 +1262,8 @@
       "loadingSchemaGraph": "Loading schema graph...",
       "noSchemaData": "No schema data available",
       "selectDataToPreview": "Select data to preview",
+      "metadataOnlyTitle": "Metadata access only",
+      "metadataOnlyDescription": "You can view properties. Content previews, downloads and statistics require data read access.",
       "unsupportedFileType": "Unsupported File Type",
       "unsupportedFileTypeDetail": "Preview is not supported for .{ext} files",
       "s3mLoading": "Loading S3M scene...",

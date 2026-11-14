@@ -53,7 +53,7 @@
             </el-tooltip>
           </div>
         </div>
-        <div class="panel-actions">
+        <div v-if="!isMetadataOnly && ((previewData && !store.previewError) || showDelimitedReadSettings)" class="panel-actions">
           <StaticTrajectoryPreview v-if="showStaticTrajectory" :key="selectedNode.locator" :load-table="loadStaticTrajectoryTable" />
           <template v-if="showDelimitedReadSettings">
             <el-select v-model="csvEncoding" size="small" class="csv-encoding-select"
@@ -335,6 +335,12 @@
     <div v-else-if="!previewData && !showQuickViewRenderer && !showModel3DTaskPrompt" class="empty-state">
       <p v-if="loading" role="status" data-testid="preview-loading">{{ t('common.loading') }}</p>
       <el-empty v-else :description="emptyDescription" />
+    </div>
+
+    <div v-else-if="isMetadataOnly" class="empty-state" data-testid="metadata-only-preview" role="status">
+      <el-empty :description="t('manager.explorer.metadataOnlyTitle')">
+        <p>{{ t('manager.explorer.metadataOnlyDescription') }}</p>
+      </el-empty>
     </div>
 
     <!-- 无可用预览组件 -->
@@ -898,6 +904,7 @@ const refKey = computed(() => {
 })
 
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
+const isMetadataOnly = computed(() => previewMode.value === 'metadata_only')
 const objectData = computed(() => props.previewData?.object || {})
 const graphSample = computed(() => props.previewData?.graph || null)
 const graphSampleNodes = computed(() => (Array.isArray(graphSample.value?.nodes) ? graphSample.value.nodes : []))
@@ -1624,6 +1631,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
+  if (isMetadataOnly.value) return null
   if ((!hasGeometry.value && !isRasterCOGSourceNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()

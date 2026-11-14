@@ -1262,6 +1262,8 @@
       "loadingSchemaGraph": "正在加载 Schema 图...",
       "noSchemaData": "暂无 Schema 数据",
       "selectDataToPreview": "请选择数据进行预览",
+      "metadataOnlyTitle": "仅可查看元数据",
+      "metadataOnlyDescription": "当前仅有元数据查看权限，可查看属性；内容预览、下载和统计需要数据读取权限。",
       "unsupportedFileType": "不支持的文件类型",
       "unsupportedFileTypeDetail": "不支持预览 .{ext} 文件",
       "s3mLoading": "正在加载 S3M 场景...",

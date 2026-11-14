@@ -187,7 +187,7 @@ class ManagerIMGTests(unittest.TestCase):
                     elif '/preview?' in path:
                         payload = {'error': 'not found'}
                         if visible:
-                            payload = {'preview_type': 'unsupported', 'data': {'rows': [], 'item_meta': {
+                            payload = {'preview_type': 'metadata_only', 'data': {'mode': 'metadata_only', 'rows': [], 'item_meta': {
                                 'attributes': [{'key': 'schema_version', 'value': 1}, {'key': 'item', 'value': {
                                     'data_type': 'media', 'format': 'tiff', 'layout': 'single'}}]}}, 'metadata': {}}
                             if state['read']:
