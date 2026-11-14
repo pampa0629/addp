@@ -129,11 +129,11 @@
                 {{ t('develop.taskManagement.edit') }}
               </el-button>
               <MonitorExecutionsButton module="develop" scope="execution" :execution-id="row.last_execution_id || ''" size="small">{{ t('develop.taskManagement.latestExecution') }}</MonitorExecutionsButton>
-              <el-dropdown trigger="click">
+              <el-dropdown v-if="authStore.hasPermission('monitor.execution.read') || authStore.hasPermission('develop.task.delete')" trigger="click">
                 <el-button size="small">{{ t('develop.taskManagement.moreActions') }}</el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item>
+                    <el-dropdown-item v-if="authStore.hasPermission('monitor.execution.read')">
                       <MonitorExecutionsButton module="develop" :task-type="row.dev_type" :source-task-id="row.id" scope="task" text>{{ t('develop.taskManagement.executionRecords') }}</MonitorExecutionsButton>
                     </el-dropdown-item>
                     <el-dropdown-item v-if="authStore.hasPermission('develop.task.delete')" @click="handleDelete(row)">{{ t('develop.taskManagement.delete') }}</el-dropdown-item>

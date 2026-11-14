@@ -265,3 +265,21 @@ for (const status of ['pending','running']) test(`latest ${status} execution ope
  await rows.first().getByRole('button',{name:'最近执行',exact:true}).click()
  await expect(page).toHaveURL('/monitor/executions?execution_id=latest-'+status)
 })
+
+for (const canDelete of [false, true]) test(`task action menu has no empty entries without Monitor access (delete: ${canDelete})`, async ({ page }) => {
+  await installMockBackend(page)
+  const context = structuredClone(developAuthContext)
+  context.authorization.role_assignments[0].permissions = ['develop.task.read', ...(canDelete ? ['develop.task.delete'] : [])]
+  await page.route('**/api/v1/system/auth/context', route => fulfillJSON(route, context))
+  await page.goto('/tasks')
+  const row = page.locator('.el-table__body-wrapper tbody tr').first()
+  await expect(row).toBeVisible()
+  await expect(row.getByRole('button', { name: '最近执行', exact: true })).toHaveCount(0)
+  if (!canDelete) await expect(row.getByRole('button', { name: '更多', exact: true })).toHaveCount(0)
+  else {
+    await row.getByRole('button', { name: '更多', exact: true }).click()
+    const menu = page.locator('.el-dropdown-menu:visible')
+    await expect(menu).toBeVisible()
+    await expect(menu.getByRole('menuitem')).toHaveText(['删除'])
+  }
+})
