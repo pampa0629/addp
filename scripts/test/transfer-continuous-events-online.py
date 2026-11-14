@@ -741,10 +741,19 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                      - datetime.fromisoformat(good[0]['sampled_at'].replace('Z', '+00:00'))).total_seconds() >= 60,
                 'delay closed without 60 seconds of fresh healthy events')
         evidence['resolved_deliveries'] = until(lambda: delivered(closed, 'resolved'))
+        stage('performance_source_cleanup')
         require(physical('performance-clear'), 'performance source rows survived cleanup')
         source_dirty = False
-        until(lambda: (v := sample()['buffer_observation']) and v.get('lag_offsets') == '0', timeout=180)
+        evidence['source_rows_cleared'] = True
+        cleared_at = datetime.now(timezone.utc)
+        stage('performance_cleanup_catchup')
+        def cleanup_caught_up():
+            value = cdc_risk_sample(client, task_id, generation, 'buffer_observation', 'available', after=cleared_at)
+            return value if value and value.get('lag_offsets') == '0' else None
+        evidence['cleanup_buffer_sample'] = until(cleanup_caught_up, timeout=180)
+        stage('performance_target_verification')
         until(lambda: physical('verify-cdc-altered'))
+        evidence['target_rowset_verified'] = True
         evidence['result'] = 'passed'
     finally:
         failure = sys.exc_info()[0] is not None

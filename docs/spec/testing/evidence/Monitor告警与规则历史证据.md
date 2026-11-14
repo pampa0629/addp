@@ -643,3 +643,21 @@ Artifact `14108023879` 的 SHA-256 为 `25d18507e050769161ea0156774c85b4e424f747
 固定候选 `69a570e6f4d06870d44cb8ffb75336b0b3dde14e` 同时包含上述修复和 CDC `9fcaff49f`。CDC suite、原生业务夹具、Hosted 编排、断言、权限要求、1450／1500 秒预算及清理范围与原候选一致；System 身份夹具仅有其他 suite 的移除，当前提交中的 CDC 135 项与 System 身份夹具 Go 测试重新通过（`/tmp/addp-cdc-performance-post-bootstrap-runner.log`），`GOFLAGS=-mod=readonly make test-module MODULE=security GO_ONLY=1` 通过（`/tmp/addp-cdc-performance-security-bootstrap-go.log`）。精确候选及夹具摘要保存于 `/tmp/addp-cdc-performance-bootstrap-candidate.json`。共享修复的 [Go workspace Job 132404894253](https://github.com/pampa0629/addp/actions/runs/43580789482/job/132404894253) 和 [Product binary build Job 132404894123](https://github.com/pampa0629/addp/actions/runs/43580789482/job/132404894123) 均固定 7af201a28、对应实际测试／Compile all product binaries 步骤 success；不是当前 69a 候选整批 CI 或 CDC 业务通过。
 
 按原“在隔离环境完成性能告警联验”授权，保持同一套件及原规则，在单写入者发布锁内核对候选后发起唯一后继 [Run 43583934313／Job 132414317856](https://github.com/pampa0629/addp/actions/runs/43583934313/job/132414317856)，headSha 精确为 69a570e6f，当前 queued。没有重试／取消其他作业，不改写 43577910665 的构建失败和业务未执行事实；新运行的业务断言、通知及清理须另取原始证据。发起前只读复核个人 task61 仍 running、全局身份槽活跃，task46／task58 两个原槽保留且不活跃，记录 `/tmp/addp-cdc-performance-preserved-before-hosted-43583934313.log`。
+
+
+### CDC 性能告警业务闭环实证与尾部实物核验超时（2026-11-14）
+
+固定 `69a570e6f4d06870d44cb8ffb75336b0b3dde14e` 的 [Run 43583934313／Job 132414317856](https://github.com/pampa0629/addp/actions/runs/43583934313/job/132414317856) 已越过共享构建阻断、实际执行 CDC。整套仍 failure，`cdc_risk/subprocess_failed`、阶段 performance_recovery；不能写成整个 suite 通过。Artifact `14111196287` 的 SHA-256 为 `b6cf4cecaf40e77a7d0430bc67c66c9845ce9f14aa09bf0112bb64da36f5b2a4`，下载摘要与 ZIP CRC 均核对通过，原件及完整报告 `/tmp/addp-cdc-performance-hosted-43583934313/`，原始 Job 日志 `/tmp/addp-cdc-performance-43583934313-job.log`。
+
+本轮的独立业务实证已经覆盖请求的四个环节：
+
+- 实际 quota=3000／100000，60000 条专用源事件成功提交。目标提交停在 11，13 个活动样本的事件计数 749→5993、捕获延迟 70.231→251.431 秒；消费停滞 incident 2 与捕获延迟 incident 6 为 warning。捕获窗口 `10:59:26.429208187Z → 11:02:26.436312443Z` 达到约 180.007104 秒，消费窗口最新有效跨度约 241.200961 秒，均满足原 180 秒标准。
+- 分别取得暂停后的新鲜 delay／buffer unavailable；两条规则均 unknown，连续 32 秒、16 次检查保持同一 acknowledged incident、LastObservedAt 不变，无 resolved 实收。
+- 恢复组件、原 CPU 和 Connector 配置、释放目标锁后，仍为同一 incident 2／6 的 resolved。新事件计数 53796→53858 的健康延迟均 <=30 秒，`11:04:26.487887998Z → 11:05:41.429360227Z` 覆盖约 74.941473 秒；原运行样本 committed/latest=60080/60080、60094/60094，积压归零。
+- 两条 opened 和两条 resolved 均为唯一签名实收、HTTP 202，且与正式 delivered 审计匹配。消费 opened／resolved delivery 为 `dcbd2c44-89e2-4c24-9ba1-b1ef3caf3461`／`c39ebed7-d9c3-4c67-b904-453863b79eb0`；延迟分别为 `71152357-de24-44f8-83d6-de6fdc4d4f79`／`282383ac-f917-44a5-9f19-20717082fa3e`。
+
+尾部失败发生在上述断言及四条实收之后。原日志中 `11:05:49.766360026Z` 已完成 Webhook 审计读取；源清理成功后 `11:05:50.079056840Z` 的 Owner GET 仍可读到清理前 `11:05:41.459130309Z` 的零积压样本。旧夹具随即执行 `verify-cdc-altered` 的整表三字段文本读回，把尚未消费完删除事件的大批长行传到宿主，并在既有 20 秒子进程上限退出。期间真实缓冲在 `11:05:56.685196270Z` 为 committed/latest=67854/95194、lag=27340，到 `11:06:11.539572543Z` 已为 120102/120102、lag=0。不能把清理前尚有效的零值当作清理完成证据，也不能用后来的积压归零追认失败的实物核验已通过。
+
+本次修订只改变夹具取证方式：源记录清理后等待 sampled_at 严格晚于清理时间、仍在有效期内的零积压样本；三字段实物终态在数据库内对按主键排序的最多三行判定精确两行及原值，沿原 psql 投影保留 NULL／空字符串语义，只读回一个布尔值。保留缺失、多余、重复和错值拒绝，不扩大原等待预算或操作范围；另细分源清理、清理追平和目标核验阶段并保存各自结果。`make test-transfer-continuous-online-runner` 的 137 项与 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-bounded-oracle-runner-final.log`；回归覆盖旧零值拒绝、清理后新鲜样本、超期样本拒绝、实际执行有界 SQL 的精确行集及大行剩余、静默失败。SQL 夹具回归为受控驱动，不替代后继真实 PostgreSQL T4 终态核验。
+
+本轮性能 finally、风险包装及 task 3／2 正式删除读回均 passed，CPU、Connector、规则、源临时记录和 Webhook 目标按原清理路径恢复／移除。原硬退出 task 1 按场景留到部署销毁，领域 residual_resources=expected_deployment_residuals=1、uncertain_mutation=false；外层 cleanup=passed、infra_cleanup=zero_residuals。前置 17 项及 7 份 Console 回执通过，后继旧捕获失败／不可恢复风险／重建与 scheduled 阶段尚未运行到。当前已取得性能告警触发、缺样保持、恢复关闭和四条外部通知实证，完整 suite 与修订后的精确实物终态仍待后继运行，不将 finally 或部署零残留当作整套通过。

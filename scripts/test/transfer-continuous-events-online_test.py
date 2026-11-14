@@ -1156,6 +1156,24 @@ class CDCTaskObservationTest(unittest.TestCase):
 
 
 class CDCRiskAcceptanceTest(unittest.TestCase):
+    def test_cleanup_risk_readback_rejects_cached_zero_before_clear_and_accepts_fresh_sample(self):
+        now=M.datetime.now(M.timezone.utc)
+        cleared=now-timedelta(seconds=10)
+        stale={'status':'available','lag_offsets':'0','sampled_at':(cleared-timedelta(seconds=1)).isoformat(),
+               'expires_at':(now+timedelta(seconds=30)).isoformat()}
+        fresh={**stale,'sampled_at':(cleared+timedelta(seconds=1)).isoformat()}
+        expired={**stale,'sampled_at':(now-timedelta(seconds=60)).isoformat(),
+                 'expires_at':(now-timedelta(seconds=30)).isoformat()}
+        replies=[SimpleNamespace(payload={'capture':{'generation':1,'buffer_observation':value}})
+                 for value in (stale,fresh,expired)]
+        request=unittest.mock.Mock(side_effect=replies)
+        client=SimpleNamespace(request=request)
+        read=lambda:M.cdc_risk_sample(client,7,1,'buffer_observation','available',after=cleared)
+        self.assertIsNone(read())
+        self.assertEqual(read(),fresh)
+        self.assertIsNone(read())
+        self.assertTrue(all(call.args[:2]==('GET',M.OWNER+'/task-definitions/7') for call in request.call_args_list))
+
     def test_capture_fault_failure_restores_connector_and_preserves_original_error(self):
         for cleanup_fails in [False, True]:
             proof = {}

@@ -24,7 +24,7 @@ class ContinuousPhysicalFixtureTest(unittest.TestCase):
         self.executable('stat', '#!/usr/bin/env python3\nimport os,sys\nprint(oct(os.stat(sys.argv[-1]).st_mode & 0o777)[2:])\n')
         self.executable('sleep', '#!/bin/sh\nexit 0\n')
         self.executable('docker', '''#!/usr/bin/env python3
-import json,os,sys
+import json,os,re,sqlite3,sys
 from pathlib import Path
 args=sys.argv[1:]
 root=Path(os.environ['FAKE_ROOT'])
@@ -51,6 +51,22 @@ elif args[0]=='exec' and 'psql' in args:
     elif '-c' in args:
         sql=args[args.index('-c')+1]
         if 'pg_replication_slots' in sql: print(os.environ.get('RESIDUAL_CAPTURE','0'))
+        elif 'AS actual' in sql:
+            if os.environ.get('PHYSICAL_QUERY_FAIL'): raise SystemExit('private business query details')
+            rows=[row.split('|') for row in os.environ.get('PHYSICAL_ROWS','').splitlines()]
+            if any(len(row)!=3 for row in rows):
+                print('f'); raise SystemExit(0)
+            db=sqlite3.connect(':memory:')
+            db.execute("ATTACH DATABASE ':memory:' AS public")
+            table=re.search(r'FROM public\\.(\\w+)',sql).group(1)
+            db.execute('CREATE TABLE public.'+table+' (id BIGINT,label TEXT,scan_extra TEXT)')
+            db.executemany('INSERT INTO public.'+table+' VALUES(?,?,?)',
+                [(int(row[0]),row[1],row[2] if row[2] or os.environ.get('PHYSICAL_EMPTY_STRING') else None) for row in rows])
+            db.executemany('INSERT INTO public.'+table+' VALUES(?,?,?)',
+                [(100001+i,'private-large-row'*512,None) for i in range(int(os.environ.get('PHYSICAL_SURPLUS_ROWS','0')))])
+            # Execute the fixture's SQL, including its cardinality and value predicates.
+            print('t' if db.execute(sql.split(';',1)[1]).fetchone()[0] else 'f')
+            db.close()
         elif 'SELECT id,label' in sql:
             if os.environ.get('PHYSICAL_QUERY_FAIL'): raise SystemExit('private business query details')
             print(os.environ.get('PHYSICAL_ROWS',''))
@@ -180,6 +196,27 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr)
         self.assertEqual(rebuilt.stdout, '')
         self.assertNotEqual(self.run_fixture('verify-cdc-rebuilt', PHYSICAL_ROWS='1|business-value-sentinel-updated\n3|business-value-sentinel-inserted').returncode, 0)
+
+    def test_additive_oracle_bounds_large_surplus_and_rejects_missing_duplicate_and_wrong_values(self):
+        rows = '1|business-value-sentinel-updated|business-value-sentinel-added\n3|business-value-sentinel-inserted|'
+        for action in ('verify-cdc-altered','verify-cdc-rebuilt'):
+            with self.subTest(action=action):
+                self.assertEqual(self.run_fixture(action,PHYSICAL_ROWS=rows,PHYSICAL_EMPTY_STRING='1').returncode,0)
+                for values in (rows.splitlines()[0], rows+'\n'+rows.splitlines()[1],
+                               rows.replace('sentinel-inserted','sentinel-wrong')):
+                    result=self.run_fixture(action,PHYSICAL_ROWS=values)
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertEqual(result.stdout,'');self.assertEqual(result.stderr,'')
+                result=self.run_fixture(action,PHYSICAL_ROWS=rows,PHYSICAL_SURPLUS_ROWS='128')
+                self.assertNotEqual(result.returncode,0)
+                self.assertEqual(result.stdout,'');self.assertEqual(result.stderr,'')
+                result=self.run_fixture(action,PHYSICAL_ROWS=rows,PHYSICAL_QUERY_FAIL='1')
+                self.assertNotEqual(result.returncode,0)
+                self.assertEqual(result.stdout,'');self.assertEqual(result.stderr,'')
+        calls=[json.loads(line) for line in self.trace.read_text().splitlines()]
+        queries=[call[call.index('-c')+1] for call in calls if '-c' in call and 'AS actual' in call[call.index('-c')+1]]
+        self.assertTrue(queries)
+        self.assertTrue(all('ORDER BY id LIMIT 3' in sql and "statement_timeout='3s'" in sql for sql in queries))
 
     def test_source_observer_is_readonly_exact_named_and_refuses_foreign_or_wildcard(self):
         native = json.dumps({'identity_matches':True, 'slot_active':True, 'wal_status':'reserved',

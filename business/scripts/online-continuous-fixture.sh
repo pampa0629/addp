@@ -173,9 +173,15 @@ SQL
   verify-cdc-altered|verify-cdc-rebuilt)
     table=continuous_cdc_target
     [ "$action" != verify-cdc-rebuilt ] || table=continuous_cdc_rebuilt_target
-    actual=$(psql_owned -c "SELECT id,label,scan_extra FROM public.$table ORDER BY id" 2>/dev/null) || exit 1
-    [ "$actual" = '1|business-value-sentinel-updated|business-value-sentinel-added
-3|business-value-sentinel-inserted|' ] || exit 1
+    # The third row proves any surplus without exporting the temporary large workload.
+    actual=$(psql_owned -q -c "SET statement_timeout='3s';
+SELECT count(*)=2
+ AND count(*) FILTER (WHERE id=1 AND label='business-value-sentinel-updated'
+                      AND scan_extra='business-value-sentinel-added')=1
+ AND count(*) FILTER (WHERE id=3 AND label='business-value-sentinel-inserted'
+                      AND COALESCE(scan_extra,'')='')=1
+FROM (SELECT id,label,scan_extra FROM public.$table ORDER BY id LIMIT 3) AS actual;" 2>/dev/null) || exit 1
+    [ "$actual" = t ] || exit 1
     ;;
   verify-kafka-initial|verify-kafka-recovered|verify-cdc-initial|verify-cdc-mutated)
     case "$action" in
