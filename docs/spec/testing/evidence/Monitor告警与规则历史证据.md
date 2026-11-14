@@ -529,3 +529,12 @@ task 5／4／3／2 正式删除并读回 404，两个 CDC Stop 的源槽／publi
 本地验证：Common／Transfer／Monitor Go T1、Transfer／Monitor 标准 PostgreSQL T2、Monitor 前端单元与构建及 5 项受控浏览器断言通过；既有 runner 的 127 项和 System fixture Go 测试通过，前端 CI 登记 27 项及 21 个前端登记检查通过，Transfer Swagger 生成与覆盖检查通过。自然 CI 中 [Transfer Go／Job 132024127532](https://github.com/pampa0629/addp/actions/runs/43465701064/job/132024127532)、[Transfer PostgreSQL／Job 132024534745](https://github.com/pampa0629/addp/actions/runs/43465700862/job/132024534745)、[Monitor PostgreSQL／Job 132024533550](https://github.com/pampa0629/addp/actions/runs/43465700862/job/132024533550) 实际 success。Platform consistency Job 132024127283 失败于无关 vector-topology current-source 夹具断言，Monitor 前端 CI 随后 cancelled；未修复或重跑该无关范围，不将被取消的门禁或父 workflow 记为通过。
 
 本轮真实故障覆盖 Connector PAUSED，Task FAILED、PostgreSQL Connected=false、59 秒不触发、未知后重新计时及过期中断由本地确定性测试覆盖，不外推各变体均已做 Hosted 故障注入。下一优先级为明确任务级持续延迟／积压告警的阈值和暂停语义，尚未实施；历史趋势及其他 Provider 专业指标仍按原清单推进。
+
+
+### CDC 捕获持续失败前端自然 CI 后继补证（2026-11-14）
+
+[Platform schedule Run 43529330175／Job 132242828016](https://github.com/pampa0629/addp/actions/runs/43529330175/job/132242828016) 固定 `dc767b5f04037b3aed46ae03cd8f02994bd54948`、attempt 1，实际 `Run Monitor frontend gate` 成功；`Report skipped Monitor frontend gate` 为 skipped，不能将摘要或未选中门禁作为本次通过依据。原始日志中 `make test-monitor-frontend` 完整执行：152 项单元测试通过，fail／cancelled／skipped 均为 0；844 项浏览器测试全部通过，随后 Vite 构建成功。其中包括 `cdc-risk-alerts.spec.js` 的中英文任务代次／跳转、权限隐藏以及捕获持续失败 warning 两种语言断言。
+
+独立比对原实现 `e2455d7307fd47f032e36ad43c3b5d3ff318cba0` 至本次受测 SHA：`monitor/frontend/`、`common-frontend/`、`.node-version`、根 `Makefile`、`scripts/test/module-gate.sh`、`scripts/test/frontend-browser-gate.mjs` 和 `scripts/utils/node-runtime.sh` 均无差异。本次现有自然 CI 可补齐前述 Monitor 前端 CI 缺口；原 Run 43465701064／Job 132024127425 的 cancelled 及执行到 840/844 的记录继续保留，不改写为 success，不用后继结果追认原运行完成。
+
+本次仅只读复核现有 GitHub Job／Run、原始日志和源码差异并补充归属证据，没有重跑测试、新增 Hosted 或操作服务。重新下载的完整日志与协调留存原件逐字节一致，SHA-256 为 `53447e066d917f89d5517adb530b571ba08036f780991cbd7e2cadc6034e2f24`，核对副本 `/tmp/addp-monitor-132242828016-verified.log`，原件及身份记录 `/tmp/addp-ci-0820-1114-egvmtvoq/`。前述 60 秒告警 Hosted 与原不可恢复风险闭环的验收范围保持；持续延迟／积压告警仍未实施，需独立确认阈值和暂停语义。
