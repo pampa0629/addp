@@ -223,7 +223,7 @@ def archive_state(repository, environment, proc_root=Path('/proc')):
     return {'pid': int(pid), 'open_archives': archives}
 
 
-def verify_outages(repository, environment, client, locator, current, snapshot, preview, download):
+def verify_outages(repository, environment, client, locator, current, snapshot, preview, download, *, meta_scan):
     API = __import__('importlib').import_module('scripts.utils.online-api')
     before, source, result = current(), snapshot(), []
     rules = rule_snapshot(before)
@@ -233,11 +233,15 @@ def verify_outages(repository, environment, client, locator, current, snapshot, 
         with interruption(repository, environment, module) as observation:
             response = preview(client, locator, 'added_points', (500, 502, 503, 504))
             archive_failure = download(client, (500, 502, 503, 504), 'fault-' + module)
+            if module == 'nfs':
+                observation['meta_scan_failure'] = meta_scan('unavailable')
             during = current()
             require(rule_snapshot(during) == rules, 'service outage changed the original Grant')
         API.wait_manager_read_boundary(client, int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID']), time.monotonic() + 120)
         preview(client, locator, 'added_points', 200, 1)
         archive_recovered = download(client, 200, 'recovered-' + module)
+        if module == 'nfs':
+            observation['meta_explicit_reexecution'] = meta_scan('recovered')
         recovered = current()
         require(rule_snapshot(recovered) == rules and snapshot() == source, 'recovery changed source or original Grant')
         after = health.request('GET', '/health/ready', (200,)).payload

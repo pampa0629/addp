@@ -23,6 +23,7 @@ REGISTRATION = importlib.import_module('scripts.test.online-engine-registration'
 PERMISSIONS = {'manager.content.read', 'manager.data_item.read', 'meta.catalog.read',
                'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'}
 OUTSIDER_PERMISSIONS = {'manager.content.read', 'manager.data_item.read', 'meta.catalog.read'}
+ISSUER_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {'meta.scan_task.execute', 'meta.scan_task.read'}
 NAME = 'authorization.gdb'
 FUTURE_NAME = 'authorization-future.gdb'
 EMPTY_NAME = 'authorization-empty'
@@ -38,7 +39,8 @@ REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_ch
     'ungranted_directory_download_denied', 'directory_download_same_grant_and_new_child',
     'directory_download_account_isolation', 'directory_download_revoke_expiry',
     'directory_download_failure_cleanup_and_recovery', 'real_browser_directory_download_saved',
-    'real_browser_ungranted_revoked_expired_denied', 'real_browser_child_cells_and_switch', 'real_browser_child_pagination_and_reset'} | ROOT_CHECKS
+    'real_browser_ungranted_revoked_expired_denied', 'real_browser_child_cells_and_switch',
+    'real_browser_child_pagination_and_reset', 'meta_scan_failure_explicit_reexecution'} | ROOT_CHECKS
 
 
 def require(value, message):
@@ -82,8 +84,8 @@ class Authorization(FILES.ModelSourceAuthorization):
     def __init__(self, issuer, consumer, report):
         super().__init__(issuer, consumer, report, source_type='nfs',
                          consumer_permissions=PERMISSIONS,
-                         issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS |
-                            {'meta.scan_task.execute', 'meta.scan_task.read'})
+                         issuer_permissions=ISSUER_PERMISSIONS)
+        self.issuer_token = issuer.token
         self.target = lambda _: target(self.engine_id)
         self.frozen = None
         self.exact_records = {}
@@ -387,6 +389,93 @@ def verify_account_isolation(authorization, client, outsider, outsider_id, locat
     return observation
 
 
+def verify_explicit_meta_scan(authorization, report, repository, phase):
+    """The isolated fault and the explicit new request are separate executions."""
+    require(phase in {'unavailable', 'recovered'}, 'unknown Meta recovery phase')
+    issuer = authorization.issuer
+    proof = report.setdefault('meta_explicit_reexecution', {})
+    key = 'failed' if phase == 'unavailable' else 'recovered'
+    require(key not in proof and (phase == 'unavailable' or 'failed' in proof), 'Meta recovery phase repeated or out of order')
+    require(issuer.token == authorization.issuer_token and
+            FILES.exact_user_principal(issuer, report['tenant_id'], ISSUER_PERMISSIONS) == authorization.operator,
+            'Meta reexecution changed its current User or credential')
+    body = dict(engine_id=authorization.engine_id, scan_depth='basic', trigger_type='manual',
+                source='meta', force=True, catalog_paths=[NAME])
+    record = proof[key] = {'request': body, 'submission': 'explicit_manual'}
+    deadline = time.monotonic() + 180
+    created = issuer.request('POST', '/api/v1/meta/scan/run/manual', (201,), body).payload
+    execution_id = created.get('execution_id')
+    require(isinstance(execution_id, str) and str(uuid.UUID(execution_id)) == execution_id,
+            'Meta reexecution did not return an exact execution UUID')
+    record['execution_id'] = execution_id
+    require(type(created.get('max_attempts')) is int and created['max_attempts'] > 0,
+            'Meta execution omitted its configured lease attempt limit')
+    record['configured_max_attempts'] = created['max_attempts']
+    if phase == 'recovered':
+        require(execution_id != proof['failed']['execution_id'], 'Meta recovery reused the failed execution')
+    while time.monotonic() < deadline:
+        row = issuer.request('GET', f'/api/v1/meta/executions/{execution_id}', (200,)).payload
+        require(row.get('execution_id') == execution_id and row.get('tenant_id') == report['tenant_id']
+                and row.get('triggered_by') == int(authorization.operator) and row.get('module') == 'meta'
+                and row.get('task_type') == 'scan' and row.get('source') == 'meta' and row.get('trigger_type') == 'manual'
+                and row.get('source_task_id') is None and row.get('parent_execution_id') is None
+                and row.get('retry_of_execution_id') is None
+                and row.get('attempt') == (0 if row.get('status') == 'pending' else 1)
+                and row.get('max_attempts') == record['configured_max_attempts']
+                and row.get('execution_boundary') == 'bounded'
+                and row.get('scan_context') == {'engine_id': authorization.engine_id, 'scan_depth': 'basic'},
+                'Meta reexecution changed its User, engine, depth or independent attempt')
+        record['execution'] = row
+        if row.get('status') in {'pending', 'running'}:
+            time.sleep(1)
+            continue
+        require(row.get('status') == ('failed' if phase == 'unavailable' else 'success'),
+                'Meta explicit request ended with an unexpected terminal status')
+        break
+    else:
+        raise ValueError('Meta explicit request exceeded its original 180-second budget')
+    counts = row.get('metadata', {})
+    require(counts.get('items_scanned') == (0 if phase == 'unavailable' else 1)
+            and counts.get('catalog_nodes_scanned') == (0 if phase == 'unavailable' else 1),
+            'Meta explicit request scanned an unexpected scope')
+    if phase == 'unavailable':
+        details = row.get('error_details', {})
+        require(details.get('category') in {'connection_failed', 'execution_failed'}
+                and details.get('failed_targets_count') == 1, 'Meta fault was not one source target failure')
+        # Tie the failure to this execution's real transport error. The public
+        # execution projection intentionally does not expose raw source errors.
+        while time.monotonic() < deadline:
+            for path in sorted((repository / 'logs/runtime/meta').glob('*/*.jsonl')):
+                for number, line in enumerate(path.read_text().splitlines(), 1):
+                    if execution_id not in line:
+                        continue
+                    message = json.loads(line).get('message', '')
+                    if not message.startswith('{'):
+                        continue
+                    event = json.loads(message)
+                    error = event.get('error', '')
+                    kinds = {'broken pipe': 'broken_pipe', 'connection reset by peer': 'connection_reset',
+                             'connection refused': 'connection_refused', 'EOF': 'eof'}
+                    kind = next((kind for text, kind in kinds.items() if text in error), None)
+                    nfs_operation = ('failed to list directory ' + NAME + ':') in error or 'NFS connection failed:' in error
+                    if event.get('execution_id') == execution_id and (' ' + NAME + ':') in error and kind and nfs_operation:
+                        record['source_failure'] = dict(execution_id=execution_id, kind=kind,
+                            log_file=str(path.relative_to(repository)), line=number,
+                            sha256=hashlib.sha256(line.encode()).hexdigest())
+            if 'source_failure' in record:
+                break
+            time.sleep(.2)
+        require('source_failure' in record, 'Meta source failure lacks exact execution transport evidence')
+    else:
+        failed = proof['failed']
+        observed = issuer.request('GET', f"/api/v1/meta/executions/{failed['execution_id']}", (200,)).payload
+        require(observed == failed['execution'] and issuer.token == authorization.issuer_token,
+                'Meta recovery rewrote the failure or changed credential')
+        proof.update(result='passed', same_credential=True, failed_terminal_preserved=True,
+                     distinct_executions=True, automatic_retries=0)
+    return record
+
+
 def verify_engine_root(authorization, client, outsider, report, physical, owner):
     """One recursive root rule; precise and empty-node sources remain independent."""
     engine, issuer = authorization.engine_id, authorization.issuer
@@ -668,7 +757,10 @@ def run(repository, environment, owner):
         # Product lifetime and source-connectivity faults have no authority to revoke a Grant.
         fault = importlib.import_module('scripts.test.manager-filegdb-physical')
         report['outages'] = fault.verify_outages(repository, environment, client, locator,
-            lambda: authorization.current(), lambda: physical('snapshot'), preview, download)
+            lambda: authorization.current(), lambda: physical('snapshot'), preview, download,
+            meta_scan=lambda phase: verify_explicit_meta_scan(authorization, report, repository, phase))
+        require(report.get('meta_explicit_reexecution', {}).get('result') == 'passed', 'Meta reexecution incomplete')
+        check('meta_scan_failure_explicit_reexecution')
         check('manager_crash_and_source_disconnect_recovered_same_grant')
         check('directory_download_failure_cleanup_and_recovery')
         authorization.revoke(first['request_id'])

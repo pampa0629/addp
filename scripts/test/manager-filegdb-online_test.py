@@ -681,6 +681,74 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close(); thread.join()
 
+    def test_meta_explicit_reexecution_preserves_failed_terminal_and_uses_new_identity_check(self):
+        self.explicit_meta_flow()
+
+    def test_meta_reexecution_rejects_wrong_identity_status_scope_or_hidden_retry(self):
+        for fault in ('first_success', 'permission_denied', 'wrong_user', 'credential', 'same_execution',
+                      'wrong_scope', 'automatic_attempt', 'retry_of', 'recovery_failed', 'history_changed',
+                      'missing_source_proof', 'wrong_source_execution', 'wrong_source_target', 'other_component',
+                      'submit_denied', 'queued_alias'):
+            with self.subTest(fault=fault), self.assertRaises((ValueError, M.API.SuiteError)):
+                self.explicit_meta_flow(fault)
+
+    def explicit_meta_flow(self, fault=None):
+        auth = authorization(); auth.issuer.token = 'issuer-token'; auth.issuer_token = auth.issuer.token
+        failed_id = '11111111-1111-4111-8111-111111111111'
+        success_id = failed_id if fault == 'same_execution' else '22222222-2222-4222-8222-222222222222'
+        identities = [dict(execution_id=failed_id, status='failed'), dict(execution_id=success_id, status='success')]
+        for row in identities:
+            row.update(tenant_id=2, module='meta', task_type='scan', source='meta', trigger_type='manual',
+                triggered_by=9, attempt=1, max_attempts=3, execution_boundary='bounded',
+                scan_context={'engine_id': 7, 'scan_depth': 'basic'},
+                metadata={'items_scanned': 0 if row['status']=='failed' else 1, 'catalog_nodes_scanned': 0 if row['status']=='failed' else 1})
+        identities[0]['error_details']={'category':'execution_failed','failed_targets_count':1}
+        if fault=='first_success': identities[0]['status']='success'
+        if fault=='permission_denied':identities[0]['error_details']['category']='permission_denied'
+        if fault=='wrong_scope':identities[1]['scan_context']['engine_id']=8
+        if fault=='automatic_attempt':identities[1]['attempt']=2
+        if fault=='retry_of':identities[1]['retry_of_execution_id']=failed_id
+        if fault=='recovery_failed':identities[1]['status']='failed'
+        posts=[]; gets={}
+        def request(method,path,statuses,body=None):
+            if method=='POST':
+                self.assertEqual(path,'/api/v1/meta/scan/run/manual');self.assertEqual(statuses,(201,))
+                self.assertEqual(body,dict(engine_id=7,scan_depth='basic',trigger_type='manual',source='meta',force=True,catalog_paths=[M.NAME]))
+                posts.append(body)
+                if fault=='submit_denied':raise M.API.SuiteError('unexpected status 403 at GatewayClient boundary')
+                if fault=='credential' and len(posts)==2:auth.issuer.token='changed'
+                return SimpleNamespace(payload={'execution_id':identities[len(posts)-1]['execution_id'],'max_attempts':3})
+            self.assertEqual(method,'GET');self.assertEqual(statuses,(200,))
+            row=identities[0] if path.endswith(failed_id) else identities[1]
+            gets[path]=gets.get(path,0)+1
+            if gets[path]==1:row=dict(row,status='pending',attempt=0)
+            if fault=='queued_alias' and gets[path]==1:row['status']='queued'
+            if fault=='history_changed' and len(posts)==2 and path.endswith(failed_id):row=dict(row,status='success')
+            return SimpleNamespace(payload=deepcopy(row))
+        auth.issuer.request.side_effect=request
+        report={'tenant_id':2,'engine_id':7,'checks':[]}
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); log=root/'logs/runtime/meta/worker/run.jsonl';log.parent.mkdir(parents=True)
+            error='failed to list directory '+M.NAME+': write tcp 127.0.0.1:1->127.0.0.1:2049: write: broken pipe'
+            if fault=='wrong_source_target':error=error.replace(M.NAME,'foreign-'+M.NAME)
+            if fault=='other_component':error='database '+M.NAME+': connection refused'
+            message={'execution_id':success_id if fault=='wrong_source_execution' else failed_id,'error':error}
+            if fault!='missing_source_proof':log.write_text(json.dumps({'message':json.dumps(message)})+'\n')
+            users=['9','8' if fault=='wrong_user' else '9']
+            with patch.object(M.FILES,'exact_user_principal',side_effect=users) as principal, \
+                    patch.object(M.time,'sleep'), patch.object(M.time,'monotonic',side_effect=range(0,1000000)):
+                M.verify_explicit_meta_scan(auth,report,root,'unavailable')
+                M.verify_explicit_meta_scan(auth,report,root,'recovered')
+            self.assertEqual(principal.call_count,2)
+            self.assertEqual(len(posts),2)
+            proof=report['meta_explicit_reexecution']
+            self.assertEqual(proof['failed']['execution']['status'],'failed')
+            self.assertEqual(proof['recovered']['execution']['status'],'success')
+            self.assertEqual(proof['result'],'passed');self.assertTrue(proof['same_credential'])
+            self.assertNotIn('issuer-token',json.dumps(report))
+            self.assertEqual(identities[0]['status'],'failed')
+            return report
+
     def test_outage_compares_rules_while_preserving_each_query_observation(self):
         self.outage_observations()
 
@@ -712,16 +780,29 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         before = dict(instance_id='before', git_commit='sha', build_id='build', source_fingerprint='fp')
         after = dict(before, instance_id='after')
         health = Mock(); health.request.side_effect = [SimpleNamespace(payload=value) for value in (before, after, after)]
+        active = {'module': None}
         @contextmanager
         def interruption(*args):
-            yield {'module': args[-1]}
+            active['module'] = args[-1]
+            try:
+                yield {'module': args[-1]}
+            finally:
+                active['module'] = None
         current = Mock(side_effect=observations)
         download = Mock(side_effect=lambda actor, status, phase: {'status': status if isinstance(status, int) else 503})
+        def meta_observation(phase):
+            self.assertEqual(active['module'], 'nfs' if phase == 'unavailable' else None)
+            return {'phase': phase}
+        meta_scan = Mock(side_effect=meta_observation)
         with patch.object(M.API, 'GatewayClient', return_value=health), \
                 patch.object(M.API, 'wait_manager_read_boundary'), patch.object(P, 'interruption', interruption):
             evidence = P.verify_outages(Path('/unused'), {'MANAGER_URL': 'http://unused',
                 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '7'}, Mock(), 'locator', current,
-                lambda: {'a.gdbtable': 'same-sha'}, Mock(return_value={'status': 503}), download)
+                lambda: {'a.gdbtable': 'same-sha'}, Mock(return_value={'status': 503}), download, meta_scan=meta_scan)
+        self.assertEqual([call.args[0] for call in meta_scan.call_args_list], ['unavailable', 'recovered'])
+        self.assertNotIn('meta_scan_failure', evidence[0])
+        self.assertEqual(evidence[1]['meta_scan_failure'], {'phase': 'unavailable'})
+        self.assertEqual(evidence[1]['meta_explicit_reexecution'], {'phase': 'recovered'})
         self.assertEqual(observations, original)  # Raw timestamps remain available for independent review.
         for index, outage in enumerate(evidence):
             self.assertTrue(outage['same_grant']); self.assertTrue(outage['source_unchanged'])
@@ -732,6 +813,27 @@ class FileGDBAcceptanceTest(unittest.TestCase):
             self.assertEqual(outage['recovered_archive']['status'], 200)
         self.assertEqual([call.args[2] for call in download.call_args_list],
                          ['fault-manager', 'recovered-manager', 'fault-nfs', 'recovered-nfs'])
+
+    def test_meta_failure_proof_error_stops_requests_but_still_recovers_the_nfs_fixture(self):
+        recovered = []
+        @contextmanager
+        def interruption(*args):
+            try:
+                yield {'module': args[-1]}
+            finally:
+                recovered.append(args[-1])
+        before = dict(instance_id='before', git_commit='sha', build_id='build', source_fingerprint='fp')
+        health = Mock(); health.request.side_effect = [SimpleNamespace(payload=before),
+            SimpleNamespace(payload=dict(before, instance_id='after'))]
+        meta_scan = Mock(side_effect=ValueError('missing source proof'))
+        with patch.object(M.API, 'GatewayClient', return_value=health), \
+                patch.object(M.API, 'wait_manager_read_boundary'), patch.object(P, 'interruption', interruption):
+            with self.assertRaisesRegex(ValueError, 'missing source proof'):
+                P.verify_outages(Path('/unused'), {'MANAGER_URL': 'http://unused',
+                    'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '7'}, Mock(), 'locator',
+                    lambda: {'data': [], 'total': 0}, lambda: {}, Mock(), Mock(), meta_scan=meta_scan)
+        self.assertEqual(recovered, ['manager', 'nfs'])
+        meta_scan.assert_called_once_with('unavailable')
 
     def test_nfs_daemon_stop_is_not_accepted_when_actual_mount_is_still_readable(self):
         with tempfile.TemporaryDirectory() as directory:
