@@ -699,3 +699,17 @@ Artifact `14115449615`，7835428 字节，SHA-256=`f429550acd7ce2ce8084807451eb3
 清理任务 5／4／3／2 均经正式 API 删除并读回 404；两条 CDC 的源槽及 publication 清理通过，Webhook 目标删除、接收端关闭，所有 cleanup_failures 为空、uncertain_mutation=false。原硬退出 Kafka task 1 按原场景保留至部署销毁，因此领域 residual_resources=expected_deployment_residuals=1；外层 cleanup=passed、infra_cleanup=zero_residuals，不将该领域预期保留项混写成领域零项。个人环境在操作前后均只读核对：task46／task58 两个原逻辑槽仍保留且不活跃，task61 仍 running、其全局身份槽仍活跃，前后分别见 `/tmp/addp-cdc-hosted-resume-preserved-before.log` 和 `/tmp/addp-cdc-hosted-43599194584/preserved-after.log`，没有接管个人服务或操作这些任务／槽。
 
 本轮证明同一隔离套件内的 PostgreSQL 任务、两条默认性能告警、捕获失败及上述不可恢复风险、任务重建、scheduled basic→deep 和签名 Webhook 闭环；任务可选积压阈值持续 300 秒的实故障 T4 尚未覆盖。既有 SQL T2、受控前端或其他 Provider 的专业指标不随本轮升级为已做真实故障或生产 T5 验收。
+
+
+### 可选积压 300 秒实故障触发与暂停保持通过，恢复被版本冲突阻断（2026-11-14）
+
+本轮固定源码 `1957da7b230897c3adacd8e0cc54695023c99556` 的 [Hosted 43605219535 / Job 132478327770](https://github.com/pampa0629/addp/actions/runs/43605219535/job/132478327770) 实际执行 `transfer-continuous-events`，结果 failed，停止于 `cdc_risk/performance_task_resume`。外层业务场景耗时 650436ms；未扩大原 1450／1500 秒预算，未改变权限、告警持续时间、真实事件源或个人任务。Artifact `14119285284`（4916519 bytes）的 SHA-256 `81dc1d97c27e935a3ad70798122270f19a88e2d596d2afc09cfded74b54cc461` 与下载内容匹配，ZIP CRC 通过。完整报告与原日志位于 `/tmp/addp-cdc-backlog-hosted-43605219535/`；以下部分通过不计为整套通过。
+
+- 任务 3／generation 1 显式创建可选 `cdc_backlog_high` warning，精确阈值字符串 `256`。同一专用目标锁、Connect CFS quota 3000 和 60000 条源事件形成原生积压；事件 17 的新鲜积压为 11283，持续窗口从 14:48:07.853976614Z 到 14:53:13.055409939Z，约 305.201433 秒。规则与事件的阈值、300 秒持续时间及 generation 绑定均匹配。两条默认性能规则同轮打开，消费停滞／捕获延迟窗口分别约 335.000028／270.000266 秒。
+- 三条 opened 通知逐一完成 HMAC 实收、202 回执及 delivered 审计；可选积压的 delivery=`75991a99-8b58-4590-b2ad-724a3fef2e19`，event=`52ab2f77-0e04-428f-9b83-fa9751050079`。正式 Pause 后，原执行 `0734251b-1ffd-4ab9-94bb-8f4170a67af5` cancelled，积压与消费停滞保持 acknowledged、LastObservedAt 不变，连续 32 秒完成 16 次检查，待触发／恢复窗口清空且没有关闭通知；捕获延迟继续按原条件评估。
+- 正式 Resume 于 14:54:06.937Z 开始，约 2028ms 后 HTTP 500，request_id=`e56d1c4c-1809-43b5-b505-b925c5dccfdf`。Transfer `Supervisor.Resume` 调用 `Refresh`，将用户控制请求变为一次观测写入：请求读取 resource_version=103；后台采样先后以 103、104、105 更新成功；请求最后仍按 103 更新，SQL rows=0。`CaptureRepository.Update` 对此返回 version conflict，沿 Resume 返回 500。后台采样与控制请求共享观测版本的写入冲突已有实际证据；不将其解释为告警阈值、目标锁超时或单纯容量问题，不通过重试、改采样频率或扩大时间预算制造通过。产品职责收敛方案仍待确认，尚未实施。
+- 可选积压的缺样保持、严格低于半阈值持续 60 秒恢复关闭及 resolved 通知没有到达；后继风险／重建／scheduled 也未在本轮继续，不能由旧轮或 T0 追认为通过。
+
+领域 cleanup=passed：三条规则删除读回、源临时记录、事务锁、CPU、Connector 配置均清理或恢复；Webhook 目标删除且接收端关闭，任务 3／2 删除后读回不存在。硬退出 Kafka task 1 按原场景保留至部署销毁，因此领域 residual_resources=expected_deployment_residuals=1。失败请求仍保留 uncertain_mutation=true，不以清理成功改写请求结果；外层 summary 的 cleanup=passed、infra_cleanup=zero_residuals 单独认定。个人环境只读前后对照一致：task61 仍 running，task46／task58 两个原槽仍不活跃并保留，全局身份活动槽仍活跃；未对这些任务和逻辑槽执行控制或写入。
+
+同一候选的最终标准 `make test-transfer-continuous-online-runner` 在固定提交临时检出中通过：139 项 Python（45.888s）、Node／Shell 语法及 System 身份夹具 Go（1.257s）。此前本机标准复核分别出现 1、8、2 项既有替身夹具超时，单项／17 项夹具和带进程观察的 139 项诊断通过后，再经未改变预算、环境配置或测试逻辑的标准入口通过。超时根因尚未定位，不将最终通过表述为已经修复该环境问题；日志保留在 `/tmp/addp-cdc-backlog-runner.log`、`/tmp/addp-cdc-backlog-candidate-runner.log`、`/tmp/addp-cdc-backlog-candidate-steady-runner.log` 和 `/tmp/addp-cdc-backlog-candidate-final-standard.log`。验收编排及其反例已提交，产品修复另行确认。
