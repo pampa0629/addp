@@ -5,37 +5,54 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"github.com/addp/common/dataprotection"
-	"github.com/addp/common/exportartifact"
-	"github.com/addp/common/resourcetree"
-	"github.com/addp/transfer/internal/executor"
-	"github.com/addp/transfer/internal/planner"
-	"github.com/google/uuid"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/resourcetree"
+	"github.com/addp/transfer/internal/executor"
+	"github.com/addp/transfer/internal/planner"
+	"github.com/google/uuid"
 )
 
-type workflowInputProvider struct {
-	plugin.ContentReadableProvider
+type workflowInputFixture struct {
 	data  string
 	opens int
+	conn  plugin.ConnectionInfo
 }
 
-func (p *workflowInputProvider) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
-	p.opens++
-	return io.NopCloser(strings.NewReader(p.data)), nil
+func newWorkflowInputFixture(t *testing.T, data string) *workflowInputFixture {
+	t.Helper()
+	fixture := &workflowInputFixture{data: data}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("location") {
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprint(w, `<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/">us-east-1</LocationConstraint>`)
+			return
+		}
+		fixture.opens++
+		w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+		w.Header().Set("Content-Length", fmt.Sprint(len(fixture.data)))
+		fmt.Fprint(w, fixture.data)
+	}))
+	t.Cleanup(server.Close)
+	fixture.conn = plugin.ConnectionInfo{"endpoint": server.URL, "access_key": "test", "secret_key": "test-secret"}
+	return fixture
 }
 func TestWorkflowExportInputVerifiesConsumedBytesAndDeadline(t *testing.T) {
-	provider := &workflowInputProvider{data: `[{"area":42.375}]`}
-	path := plugin.FileItemPath(0, "input.json")
+	provider := newWorkflowInputFixture(t, `[{"area":42.375}]`)
+	path := plugin.ObjectItemPath(0, "manager", "input.json")
 	source := &client.WorkflowResultExportSource{ExpiresAt: time.Now().Add(time.Minute), SHA256: client.WorkflowResultRowsDigest([]byte(provider.data))}
-	reader := workflowInputReader{ContentReadableProvider: provider, binding: source, path: path}
-	stream, err := reader.OpenContent(t.Context(), nil, path, plugin.ReadOptions{})
+	reader := workflowInputReader{binding: source, path: path}
+	stream, err := reader.OpenContent(t.Context(), provider.conn, path, plugin.ReadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,12 +62,12 @@ func TestWorkflowExportInputVerifiesConsumedBytesAndDeadline(t *testing.T) {
 		t.Fatal("changed bytes")
 	}
 	provider.data = `[{"area":99}]`
-	if _, err := reader.OpenContent(t.Context(), nil, path, plugin.ReadOptions{}); err == nil {
+	if _, err := reader.OpenContent(t.Context(), provider.conn, path, plugin.ReadOptions{}); err == nil {
 		t.Fatal("accepted changed input")
 	}
 	source.ExpiresAt = time.Now().Add(-time.Second)
 	before := provider.opens
-	if _, err := reader.OpenContent(t.Context(), nil, path, plugin.ReadOptions{}); err == nil || provider.opens != before {
+	if _, err := reader.OpenContent(t.Context(), provider.conn, path, plugin.ReadOptions{}); err == nil || provider.opens != before {
 		t.Fatal("opened expired input")
 	}
 }
@@ -70,6 +87,7 @@ func (p *workflowCSVTarget) DeleteResource(context.Context, plugin.ConnectionInf
 }
 func TestWorkflowResultUsesExistingJSONToCSVTablePipeline(t *testing.T) {
 	data := `[{"instance_id":1,"surface":42.375},{"instance_id":2,"surface":9.125}]`
+	provider := newWorkflowInputFixture(t, data)
 	parent := exportartifact.InfraPrefixLocator("manager", "tenant_7/export/develop/20261114/"+uuid.NewString())
 	source, _ := planner.ParseInfraLocatorURI(parent)
 	input, _ := source.Child("workflow-result.json", resourcetree.TypeObject)
@@ -81,7 +99,7 @@ func TestWorkflowResultUsesExistingJSONToCSVTablePipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	build, err := planner.BuildTableTransferPlan(spec, planner.NewInfraEngineResolver(planner.InfraEngineConfig{MinioEndpoint: "127.0.0.1:1", MinioAccessKey: "test", MinioSecretKey: "test-secret"}))
+	build, err := planner.BuildTableTransferPlan(spec, planner.NewInfraEngineResolver(planner.InfraEngineConfig{MinioEndpoint: plugin.GetString(provider.conn, "endpoint"), MinioAccessKey: "test", MinioSecretKey: "test-secret"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +107,7 @@ func TestWorkflowResultUsesExistingJSONToCSVTablePipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &workflowInputProvider{data: data}
-	codec.SourceContentReader = workflowInputReader{ContentReadableProvider: provider, binding: spec.WorkflowResult, path: build.Plan.Source.Path}
+	codec.SourceContentReader = workflowInputReader{StoreProvider: codec.SourceContentReader, binding: spec.WorkflowResult, path: build.Plan.Source.Path}
 	target := &workflowCSVTarget{}
 	codec.TargetContentWriter = target
 	codec.TargetDeleteProvider = target

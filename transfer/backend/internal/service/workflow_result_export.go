@@ -10,10 +10,12 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/objectstore"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	miniogo "github.com/minio/minio-go/v7"
 )
 
 type workflowExportGate interface {
@@ -23,7 +25,7 @@ type workflowExportGate interface {
 
 // Every actual open verifies the bounded JSON bytes consumed by the existing codec.
 type workflowInputReader struct {
-	plugin.ContentReadableProvider
+	plugin.StoreProvider
 	binding *client.WorkflowResultExportSource
 	path    plugin.EngineCatalogPath
 }
@@ -32,7 +34,12 @@ func (r workflowInputReader) OpenContent(ctx context.Context, conn plugin.Connec
 	if path.StringPath() != r.path.StringPath() || !time.Now().Before(r.binding.ExpiresAt) {
 		return nil, fmt.Errorf("workflow input expired or changed")
 	}
-	stream, err := r.ContentReadableProvider.OpenContent(ctx, conn, path, opts)
+	storage, err := objectstore.NewClient(conn, false, true)
+	if err != nil {
+		return nil, err
+	}
+	bucket, key := objectstore.SplitBucketPrefix(path.StringPath())
+	stream, err := storage.GetObject(ctx, bucket, key, miniogo.GetObjectOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +62,7 @@ func (s *ExecutionEngineService) configureWorkflowResultExport(ctx context.Conte
 	if err := gate.PrepareWorkflowResultExport(ctx, task.TenantID, spec.WorkflowResult.Targets); err != nil {
 		return err
 	}
-	table.SourceContentReader = workflowInputReader{ContentReadableProvider: table.SourceContentReader, binding: spec.WorkflowResult, path: build.Plan.Source.Path}
+	table.SourceContentReader = workflowInputReader{StoreProvider: table.SourceContentReader, binding: spec.WorkflowResult, path: build.Plan.Source.Path}
 	return nil
 }
 

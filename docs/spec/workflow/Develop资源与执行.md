@@ -260,6 +260,8 @@ MinIO 连接唯一来自本次已授权的存储 Engine；Spark 集群连接不�
 
 用户显式创建导出时，Develop 按原 execution 的当前本人专业读取契约核验完整来源 ReadSet 和本地保护，冻结当次完整表格、attempt、原截止时间及精确来源身份。Common 将 JSON 交接输入放在该唯一导出会话的 infra 前缀内，摘要和专业结果引用进入完整 Transfer 请求摘要；行值不进入 execution、会话记录、日志或 TaskProvider。Transfer 只接受 Develop 服务经精确会话来源核验的此类一次性执行，任务定义与普通用户配置不得声明该私有来源。输入是有界完整计算结果，不是查询的截断预览，不重跑 DAG 或重新读取航片。
 
+交接输入属于导出会话的 Infra 暂存对象，由 Transfer 使用已配置的 Infra 对象客户端读取精确对象；业务存储的 ContentReadableProvider 及 QueryReadSet 仍只用于已登记业务 Engine，不能为暂存对象伪造 Engine 身份。
+
 Transfer 复用 JSON TableReader、既有表格 pipeline 与 CSV Writer，读取前核验交接输入摘要、执行绑定和原截止时间；按 Develop 已证明的全部来源 DataItem 记录自己的 export 保护事实。首期没有可证明的输出字段血缘，因此任一来源被保护时拒绝整个导出，不按结果列名推断或借用 query/preview 规则。输入在本次 Worker 结束时删除；失败或进程退出的残留继续由同前缀导出暂存清理负责。
 
 创建、状态与文件交付沿当前用户的既有读取/执行 Permission、原 Tenant/User/Membership/授权版本及来源 read Grant。状态和下载均要求原专业明细仍在有效期，且 Transfer 文件保护记录当前有效；不延长原最多 5 分钟期限，重启丢失专业缓存也拒绝下载，不保存 User Token、不新增权限或业务 DataItem。文件暂存的物理清理沿既有导出清理策略，访问截止与物理删除分别认定。前端复用唯一导出对话框、轮询和认证 Blob 下载，页面失效时取消观测，服务端不自动重算。
