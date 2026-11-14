@@ -93,6 +93,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             targets = [f'addp://engine/{engine}/path/{prefix}avro/{s["name"]}?type=' + ('object' if storage == 'minio' else 'file') for s in seed['sources']+seed['nested_sources']]
             owner.wait_for_meta_scan(initializer, engine, time.monotonic() + 180, scope={'targets': targets})
             for spec in seed['sources']+seed['nested_sources']:
+                stage = 'metadata_scan'
                 full_name = prefix + 'avro/' + spec['name']
                 receipt = grants.grant(engine, full_name, storage, data_type='table', format_name='avro', layout='single')
                 item = owner.find_fixture_item(client, engine, full_name, 'Avro ' + storage)
@@ -103,7 +104,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 nested=spec.get('nested') is True
                 if nested:
                     require(declared_field_facts(fields)==nested_field_facts(), 'Avro nested declared type tree differs')
-                    require(attrs.get('format_info',{}).get('avro',{}).get('schema')==FIXTURE.NESTED_SCHEMA, 'Avro nested source schema changed')
+                    require('format_info' not in attrs, 'Avro user metadata exposed private source facts')
                 else:
                     require([(f['name'], f['type']) for f in fields] == [
                         ('id', 'bigint'), ('small', 'int'), ('flag', 'bool'), ('label', 'string'),
@@ -164,7 +165,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     require(status not in {'failed', 'cancelled', 'timeout'} and time.monotonic() < deadline, 'Avro Transfer did not succeed')
                     time.sleep(1)
                 case['transfer'] = {'execution_id': execution_id, 'records_read': 0 if nested else FIXTURE.COUNT, 'records_written': 0 if nested else FIXTURE.COUNT,
-                                    'status': 'failed' if nested else 'success', **({'nested_refusal_verified':True} if nested else {})}
+                                    'status': 'failed' if nested else 'success', **({'nested_refusal_verified':True, 'rejection_reason':execution['error_msg']} if nested else {})}
                 require(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload == detail, 'Avro read modified metadata')
         stage = 'physical_verification'
         verified = physical('verify')

@@ -198,6 +198,7 @@ func TestAvroArrayLegalBlocksAndInvalidFraming(t *testing.T) {
 }
 func TestAvroNestedSchemaRejectionsAndBudgets(t *testing.T) {
 	schemas := []string{
+		`{"type":"record","name":"R","fields":[{"name":"detail","type":{"type":"record","name":"N","fields":[{"name":"a.x","type":"long"}]}}]}`,
 		`{"type":"record","name":"bad-name","fields":[{"name":"x","type":"long"}]}`,
 		`{"type":"record","namespace":"a..b","name":"R","fields":[{"name":"x","type":"long"}]}`,
 		`{"type":"record","name":"R","fields":[{"name":"f","type":{"type":"fixed","name":"bad-name","size":8,"logicalType":"decimal","precision":18}}]}`,

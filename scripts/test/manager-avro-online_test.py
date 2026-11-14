@@ -41,8 +41,8 @@ class Client:
             if self.failure == 'nested-meta': fields[2]['element']['type'] = 'string'
         result = {'id': item_id, 'engine_id': engine, 'full_name': full_name, 'fingerprint': str(item_id),
                   'attributes': {'item': {'format': 'avro', 'data_type': 'table', 'layout': 'single'},
-                                 'type_info': {'table': {'fields': fields}},
-                                 **({'format_info':{'avro':{'schema':FIXTURE.NESTED_SCHEMA}}} if nested else {})}}
+                                 'type_info': {'table': {'fields': fields}}}}
+        if nested and self.failure == 'nested-private-facts': result['attributes']['format_info']={'avro':{'schema':FIXTURE.NESTED_SCHEMA}}
         self.items[item_id] = result
         return result
 
@@ -158,7 +158,7 @@ class AvroSceneTest(unittest.TestCase):
         self.assertEqual(client.assert_body['config']['source']['format'], 'avro')
 
     def test_failures_cannot_pass_and_always_clean_owned_sources_and_tasks(self):
-        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup', 'nested-meta', 'nested-page', 'nested-transfer', 'nested-reason', 'nested-count', 'nested-browser', 'nested-output'):
+        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup', 'nested-meta', 'nested-private-facts', 'nested-page', 'nested-transfer', 'nested-reason', 'nested-count', 'nested-browser', 'nested-output'):
             with self.subTest(failure=failure):
                 client, actions, report = self.run_scene(failure)
                 self.assertEqual(report['result'], 'failed')

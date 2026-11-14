@@ -1,15 +1,21 @@
 package metaenrich
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	avroformat "github.com/addp/common/format/plugins/avro"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/metaquery"
+	"github.com/addp/meta/internal/models"
 )
 
 func TestAvroDeepScanUsesSharedTableDescription(t *testing.T) {
@@ -63,5 +69,19 @@ func TestAvroNestedMetadataPreservesDeclaredFields(t *testing.T) {
 	}
 	if info.Fields[3].Element.Element.Type != datatype.FieldTypeBigInt || info.Fields[4].Element.Precision != 38 {
 		t.Fatal("array element metadata lost")
+	}
+	description, err := avroformat.NewPlugin().DescribeTable(t.Context(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, _ := json.Marshal(description.FormatInfo["schema"])
+	stored, _ := json.Marshal(commonJSON.Section(enriched.Attributes, "format_info.avro.schema"))
+	if !bytes.Equal(source, stored) {
+		t.Fatal("stored source schema changed")
+	}
+	public := metaquery.MetadataOnlyItem(models.MetaItemLite{Attributes: enriched.Attributes})
+	projected := datatype.TableInfoFromPayload(commonJSON.Section(public.Attributes, "type_info.table"), "")
+	if projected == nil || !reflect.DeepEqual(projected.Fields, info.Fields) || projected.RowCount != nil || public.Attributes["format_info"] != nil {
+		t.Fatal("user metadata must retain the declared tree without raw source facts")
 	}
 }

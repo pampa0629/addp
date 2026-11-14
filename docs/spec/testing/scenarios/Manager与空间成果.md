@@ -223,7 +223,7 @@ Hosted 限于受验的有界单文件读取与原件下载；近 NoData 误掩�
 
 2026-11-14确认新增六份嵌套源：NFS／MinIO各null／deflate／snappy，2503行／源，与原六份平面文件分开保留。嵌套根五字段包括id、可空detail、可空record数组items、多维可空数组grid和具名fixed decimal数组fixed_values；覆盖NULL对象／全NULL对象、NULL／空数组／NULL元素、大整数、Decimal(38,6)、日期、三单位UTC与二进制。独立Python OCF按合法单／多／负块数组编码，保留平面三文件原字节哈希。
 
-同一native-table-avro case提升根与浏览器回执至v4，旧v3不证明嵌套已验。原cases仍为六个平面源及六次成功转存，新增nested_cases六源：Meta完整声明、API三页、实际分页、四类结构单元格的只读JSON对话框完整值、原件契约分别验证；六次嵌套Transfer须因preview-only边界失败且公开读写行数为0，目标物理命名空间仅含原六份Parquet及原marker，不允许生成任何嵌套目标。十二任务／十二精确metadata Grant／十二源及六成果均清理，原十一／十三项权限、角色、Grant规则、预算和部署不变。该预期拒绝不是整场失败，错误原因或物理输出不符则整场失败；实现及本机通过不计Hosted通过。
+同一native-table-avro case提升根与浏览器回执至v4，旧v3不证明嵌套已验。原cases仍为六个平面源及六次成功转存，新增nested_cases六源：Meta用户结构投影的完整字段树（不要求原始format_info；存储schema原样保留由Meta原生回归及物理原件单列取证）、API三页、实际分页、四类结构单元格的只读JSON对话框完整值、原件契约分别验证；六次嵌套Transfer须因preview-only边界失败且公开读写行数为0，目标物理命名空间仅含原六份Parquet及原marker，不允许生成任何嵌套目标。十二任务／十二精确metadata Grant／十二源及六成果均清理，原十一／十三项权限、角色、Grant规则、预算和部署不变。该预期拒绝不是整场失败，错误原因或物理输出不符则整场失败；实现及本机通过不计Hosted通过。
 
 
 该 case 覆盖现有OCF平坦标量及可空字段，并于2026-11-14扩展 date、bytes decimal、fixed decimal（precision=38、scale=6）；分别覆盖null/deflate/snappy三种codec，每份2503行、多个OCF块。日期含0001／9999年边界、闰日和纪元前；小数含正负大值、尾零、NULL及合法符号扩展，保持独立编码。 本轮再加入三种UTC时间戳（毫秒／微秒／纳秒），保留原十字段，合计十三字段；覆盖零／负计数、0001／9999年毫秒／微秒边界、超JavaScript安全整数的计数、纳秒int64最小／最大值与NULL。源独立按Avro long编码，不经浮点或时间对象。

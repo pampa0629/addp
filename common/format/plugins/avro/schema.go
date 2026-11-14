@@ -153,7 +153,7 @@ func (p *schemaParser) parse(value interface{}, namespace string, depth int) (*v
 				return nil, fmt.Errorf("invalid Avro field")
 			}
 			name, _ := f["name"].(string)
-			if name == "" || seen[name] {
+			if !avroFullName.MatchString(name) || strings.Contains(name, ".") || seen[name] {
 				return nil, fmt.Errorf("invalid or duplicate Avro field name")
 			}
 			seen[name] = true
