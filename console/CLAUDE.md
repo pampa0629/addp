@@ -96,3 +96,5 @@ Manager 的 `manager-internal-artifact-lineage` Hosted suite 使用同一普通�
 PPTX PDF 与 COG 的物理观察结果在同一次检查完成后分别写入 `manager-artifact-physical-<action>.json`，即使后续浏览器验收失败也保留原始观察证据；领域清理仍由原删除接口执行，不得以 Hosted Infra 的最终销毁替代对象不存在与源文件保留检查。
 
 浏览器验收复用现有认证测试 helper 区分匿名初始化与已认证消费：首次登录前，无 Refresh Cookie 的 `POST /api/v1/system/refresh` 401 单独计入报告，最多一次；首个带 Token 的认证上下文请求起，任何 API 失败仍使验收失败。其他匿名 API 错误、刷新 403／500、登录后的刷新 401 及非原生匿名刷新诊断的 warning／error 均不得排除。
+
+执行导航回归在既有 Console 隔离门禁中加载真实 Develop／Monitor 页面，核对最近 pending／running UUID、单历史、结果页瘦身、受限 return_to、刷新及前进后退。Develop 前端变更会选中 Console，CI 同步准备 Develop 锁定依赖；HTTP 全部为只读夹具，不执行任务或访问个人服务。

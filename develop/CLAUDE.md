@@ -138,7 +138,7 @@ Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规�
 
 Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthContext 加载后按侧栏顺序选择第一个有权进入的页面：`/sql`、`/notebook`、`/workflow`、`/tasks`。页面准入复用 Console 权限映射；均不可访问时进入 `/forbidden`。显式业务地址仍按原目标独立校验权限。
 
-Develop 前端不提供模块级执行列表。任务行“执行记录”用同一共享按钮按任务类型与 ID 定位 Monitor；Monitor 的独立“查看专业详情”返回本人领域执行页，入口不依赖失败状态。`/develop/tasks` 和 Notebook 工作区使用 `MonitorExecutionsButton(module=develop)` 进入统一 Monitor，并按 `task_type`、`source_task_id` 收窄范围。`/develop/executions/:execution_id` 仅保留查询、工作流和脚本的领域结果、日志与重试详情，不复制 Monitor 的通用执行列表、统计或筛选器。
+Develop 前端不提供模块级执行列表。任务行“最近执行”按批量投影的最近受理 execution UUID 直达 Monitor，包含 pending／running；次要“历史记录”仍按任务范围筛选。Monitor“查看执行结果”进入本人领域结果页；该页以受限 return_to 或同一 UUID 返回 Monitor，不重复完整通用详情，入口不依赖失败状态。`/develop/tasks` 和 Notebook 工作区使用 `MonitorExecutionsButton(module=develop)` 进入统一 Monitor，并按 `task_type`、`source_task_id` 收窄范围。`/develop/executions/:execution_id` 仅保留查询、工作流和脚本的领域结果、日志与重试详情，不复制 Monitor 的通用执行列表、统计或筛选器。
 
 查询和工作流编辑器统一使用共享 `useUnsavedChangesGuard`，删除原模块内路由确认与 beforeunload 实现；修改状态仍由编辑器定义。Console 导航与 standalone 导航消费同一共享保护契约。
 

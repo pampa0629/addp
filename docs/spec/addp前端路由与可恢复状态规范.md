@@ -219,3 +219,5 @@ Model ER 图的 `domain_id` 省略表示等待选择，`all` 表示显式全域�
 
 
 Monitor容量规则挂载定位仍使用`/monitor/platform-alerts?tab=rules`，唯一附加筛选为`node_id/metric_key/device/mountpoint/fstype`。挂载入口显式带入主机UUID、固定容量指标及完整三元组；保存稳定身份而非未保存表单。字段一旦出现须完整合法，重复／缺失／非法输入保留为拒绝条件并显示错误，禁止删掉筛选后查询全部规则；刷新及规则分页保留，切离rules页移除。导航沿唯一模块桥push，浏览器返回原主机上下文；无当前采样仍可按原规则read权限查看，写入权限及停用／缺样语义不变。
+
+Develop 执行结果页 `/develop/executions/:execution_id` 的 `return_to` 只承载同一 UUID 的 Monitor `/monitor/executions` 规范地址及已登记列表筛选／分页。它不是任意返回 URL；外站、其他路径、重复参数、未知字段或不同 UUID 均拒绝。无参数的直接深链回到该次 Monitor 详情，不回到任务历史。
