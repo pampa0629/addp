@@ -21,7 +21,7 @@ func (s *TaskService) ReadCDCRisks(ctx context.Context, afterID uint) (*commonCl
 	result := &commonClient.TransferCDCRisks{SchemaVersion: commonClient.TransferCDCRiskSchema, ObservedAt: now, Items: make([]commonClient.TransferCDCRiskItem, 0, len(tasks)), NextAfterID: afterID, HasMore: more}
 	for i := range tasks {
 		task := &tasks[i]
-		row := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, State: "unknown", Capture: commonClient.CDCCaptureObservation{State: "unknown"}, Source: commonClient.CDCRiskObservation{State: "unknown"}, Buffer: commonClient.CDCRiskObservation{State: "unknown"}}
+		row := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, State: "unknown", TaskName: task.Name, ConsumptionState: "unknown", Capture: commonClient.CDCCaptureObservation{State: "unknown"}, Source: commonClient.CDCRiskObservation{State: "unknown"}, Buffer: commonClient.CDCRiskObservation{State: "unknown"}}
 		if s.captureControl != nil {
 			capture, err := s.captureControl.Get(ctx, task.ID, task.TenantID)
 			if err == nil && capture != nil {
@@ -36,7 +36,7 @@ func (s *TaskService) ReadCDCRisks(ctx context.Context, afterID uint) (*commonCl
 
 func cdcTaskRisks(task *models.TransferTask, capture *models.CaptureResource, now time.Time) commonClient.TransferCDCRiskItem {
 	unknown := commonClient.CDCRiskObservation{State: "unknown"}
-	result := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, Generation: capture.Generation, State: "unknown", Source: unknown, Buffer: unknown, Capture: commonClient.CDCCaptureObservation{State: "unknown"}}
+	result := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, Generation: capture.Generation, State: "unknown", TaskName: task.Name, ConsumptionState: "unknown", SourceType: string(capture.SourceType), Source: unknown, Buffer: unknown, Capture: commonClient.CDCCaptureObservation{State: "unknown"}}
 	if capture.Status == models.CaptureStatusStopped {
 		result.State = "closed"
 		return result
@@ -46,7 +46,20 @@ func cdcTaskRisks(task *models.TransferTask, capture *models.CaptureResource, no
 	}
 	result.ExecutionID = *task.LastExecutionID
 	result.State = "observing"
+	result.ConsumptionState = string(task.DesiredState)
+	if task.Status == "blocked" {
+		result.ConsumptionState = "blocked"
+	}
 	summary := models.NewCaptureSummary(capture)
+	if b := summary.BufferObservation; b != nil && !b.SampledAt.After(now) && b.ExpiresAt.After(now) {
+		result.InitialSnapshotCompleted = b.InitialSnapshotCompleted
+	}
+	if b := summary.BufferObservation; b != nil && b.Status == "available" && b.RecoveryState == "available" && b.CommittedOffset != nil && b.LagOffsets != nil && !b.SampledAt.After(now) && b.ExpiresAt.After(now) {
+		result.BufferSample = &commonClient.CDCBufferSample{CommittedOffset: *b.CommittedOffset, LagOffsets: *b.LagOffsets, SampledAt: b.SampledAt, ExpiresAt: b.ExpiresAt}
+	}
+	if d := summary.DelayObservation; d != nil && d.Status == "available" && d.Connected != nil && *d.Connected && d.DelaySeconds != nil && d.EventCount != nil && d.LastEventAgeSeconds != nil && !d.SampledAt.After(now) && d.ExpiresAt.After(now) {
+		result.DelaySample = &commonClient.CDCDelaySample{DelaySeconds: *d.DelaySeconds, EventCount: *d.EventCount, LastEventAgeSeconds: *d.LastEventAgeSeconds, SampledAt: d.SampledAt, ExpiresAt: d.ExpiresAt}
+	}
 	if value := summary.HealthObservation; value != nil && !value.SampledAt.IsZero() && !value.SampledAt.After(now) && value.ExpiresAt.After(now) && (value.State == "healthy" || value.State == "failed") {
 		result.Capture = commonClient.CDCCaptureObservation{State: value.State, Reason: value.Reason, FailedSince: value.FailedSince, SampledAt: &value.SampledAt, ExpiresAt: &value.ExpiresAt}
 	}

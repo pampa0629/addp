@@ -15,7 +15,7 @@ import (
 
 const cdcCaptureTriggerSeconds = 60
 
-var cdcRiskCodes = []string{"cdc_source_recovery_lost", "cdc_buffer_recovery_lost", "cdc_capture_failed"}
+var cdcRiskCodes = []string{"cdc_source_recovery_lost", "cdc_buffer_recovery_lost", "cdc_capture_failed", "cdc_consumer_stalled", "cdc_capture_delayed", "cdc_backlog_high"}
 
 type cdcRiskReader interface {
 	ReadCDCRisks(context.Context, uint) (*commonClient.TransferCDCRisks, error)
@@ -34,7 +34,8 @@ func (s *AlertService) evaluateCDCRisks(ctx context.Context, now time.Time) ([]a
 		all = append(all, incident.Fingerprint)
 	}
 	if s.cdcRiskReader == nil {
-		return nil, all, nil
+		_, _, err := s.evaluateCDCPerformanceRules(ctx, nil, false, now)
+		return nil, all, err
 	}
 	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -44,7 +45,8 @@ func (s *AlertService) evaluateCDCRisks(ctx context.Context, now time.Time) ([]a
 		page, err := s.cdcRiskReader.ReadCDCRisks(probe, after)
 		if err != nil {
 			slog.Warn("CDC task risk inventory unavailable; existing incidents retained")
-			return nil, all, nil
+			_, _, err := s.evaluateCDCPerformanceRules(ctx, nil, false, now)
+			return nil, all, err
 		}
 		rows = append(rows, page.Items...)
 		if !page.HasMore {
@@ -103,5 +105,6 @@ func (s *AlertService) evaluateCDCRisks(ctx context.Context, now time.Time) ([]a
 			signals = append(signals, activeAlertSignal{TenantID: int(row.TenantID), Module: "transfer", TaskType: "sync", SourceTaskID: strconv.FormatUint(uint64(row.TaskID), 10), ExecutionID: row.ExecutionID, Code: cdcRiskCodes[2], Severity: monitorModels.AlertSeverityWarning, Fingerprint: fingerprint, Details: commonModels.JSONMap{"generation": strconv.FormatUint(row.Generation, 10), "reason": capture.Reason, "sampled_at": capture.SampledAt.UTC().Format(time.RFC3339Nano), "failed_since": capture.FailedSince.UTC().Format(time.RFC3339Nano), "trigger_seconds": cdcCaptureTriggerSeconds}})
 		}
 	}
-	return signals, preserve, nil
+	more, keep, err := s.evaluateCDCPerformanceRules(ctx, rows, true, now)
+	return append(signals, more...), append(preserve, keep...), err
 }

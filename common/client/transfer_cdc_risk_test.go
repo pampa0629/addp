@@ -20,7 +20,7 @@ func TestCDCRiskClientUsesOnlyPlatformCredentialAndClosedProjection(t *testing.T
 	now := time.Now().UTC()
 	expiry := now.Add(time.Minute)
 	risk := CDCRiskObservation{State: "active", Reason: "wal_lost", SampledAt: &now, ExpiresAt: &expiry}
-	row := TransferCDCRiskItem{TenantID: 2, TaskID: 7, Generation: 3, ExecutionID: "bb706a62-4256-453e-b471-0dbdbb305c53", State: "observing", Capture: CDCCaptureObservation{State: "unknown"}, Source: risk, Buffer: CDCRiskObservation{State: "unknown"}}
+	row := TransferCDCRiskItem{TenantID: 2, TaskID: 7, Generation: 3, ExecutionID: "bb706a62-4256-453e-b471-0dbdbb305c53", State: "observing", ConsumptionState: "running", Capture: CDCCaptureObservation{State: "unknown"}, Source: risk, Buffer: CDCRiskObservation{State: "unknown"}}
 	reply := TransferCDCRisks{SchemaVersion: TransferCDCRiskSchema, ObservedAt: now, Items: []TransferCDCRiskItem{row}, NextAfterID: 7}
 	code := 200
 	calls := 0
@@ -55,7 +55,7 @@ func TestCDCCaptureClientRejectsInvalidFailureEvidenceAndOldVersion(t *testing.T
 	now := time.Now().UTC()
 	since := now.Add(-time.Minute)
 	expiry := now.Add(time.Minute)
-	row := TransferCDCRiskItem{TenantID: 2, TaskID: 7, Generation: 1, ExecutionID: "bb706a62-4256-453e-b471-0dbdbb305c53", State: "observing", Source: CDCRiskObservation{State: "unknown"}, Buffer: CDCRiskObservation{State: "unknown"}, Capture: CDCCaptureObservation{State: "failed", Reason: "source_disconnected", FailedSince: &since, SampledAt: &now, ExpiresAt: &expiry}}
+	row := TransferCDCRiskItem{TenantID: 2, TaskID: 7, Generation: 1, ExecutionID: "bb706a62-4256-453e-b471-0dbdbb305c53", State: "observing", ConsumptionState: "running", Source: CDCRiskObservation{State: "unknown"}, Buffer: CDCRiskObservation{State: "unknown"}, Capture: CDCCaptureObservation{State: "failed", Reason: "source_disconnected", FailedSince: &since, SampledAt: &now, ExpiresAt: &expiry}}
 	reply := TransferCDCRisks{SchemaVersion: TransferCDCRiskSchema, ObservedAt: now, NextAfterID: 7, Items: []TransferCDCRiskItem{row}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(reply) }))
 	defer server.Close()
@@ -74,5 +74,33 @@ func TestCDCCaptureClientRejectsInvalidFailureEvidenceAndOldVersion(t *testing.T
 	reply.SchemaVersion = "transfer.cdc_risk_observations/v1"
 	if _, err := client.ReadCDCRisks(context.Background(), 0); err == nil {
 		t.Fatal("old CDC observation contract accepted")
+	}
+}
+
+func TestCDCPerformanceClientRejectsMalformedPositionAndActivityFacts(t *testing.T) {
+	now := time.Now().UTC()
+	expiry := now.Add(time.Minute)
+	row := TransferCDCRiskItem{TenantID: 2, TaskID: 7, Generation: 1, ExecutionID: "bb706a62-4256-453e-b471-0dbdbb305c53", State: "observing", ConsumptionState: "running", Source: CDCRiskObservation{State: "unknown"}, Buffer: CDCRiskObservation{State: "unknown"}, Capture: CDCCaptureObservation{State: "unknown"}, BufferSample: &CDCBufferSample{CommittedOffset: "9007199254740993", LagOffsets: "3", SampledAt: now, ExpiresAt: expiry}, DelaySample: &CDCDelaySample{DelaySeconds: 80, EventCount: "9007199254740993", LastEventAgeSeconds: 1, SampledAt: now, ExpiresAt: expiry}}
+	reply := TransferCDCRisks{SchemaVersion: TransferCDCRiskSchema, ObservedAt: now, Items: []TransferCDCRiskItem{row}, NextAfterID: 7}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(reply) }))
+	defer server.Close()
+	client := NewTransferClient(server.URL, cdcRiskToken{})
+	if _, err := client.ReadCDCRisks(context.Background(), 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(){func() { reply.Items[0].BufferSample.LagOffsets = "01" }, func() { reply.Items[0].BufferSample.LagOffsets = "9223372036854775808" }, func() {
+		reply.Items[0].BufferSample.LagOffsets = "3"
+		reply.Items[0].DelaySample.LastEventAgeSeconds = -1
+	}, func() {
+		reply.Items[0].DelaySample.LastEventAgeSeconds = 1
+		reply.Items[0].ConsumptionState = "foreign"
+	}, func() {
+		reply.Items[0].ConsumptionState = "running"
+		reply.SchemaVersion = "transfer.cdc_risk_observations/v2"
+	}} {
+		mutate()
+		if _, err := client.ReadCDCRisks(context.Background(), 0); err == nil {
+			t.Fatal("invalid performance evidence accepted")
+		}
 	}
 }

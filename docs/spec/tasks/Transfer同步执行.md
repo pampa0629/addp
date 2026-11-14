@@ -370,6 +370,18 @@ Transfer 提供唯一机器读取入口 `GET /runtime/cdc-risk-observations?afte
 
 T0/T1 覆盖共享 DTO、持续时间及中断语义，Transfer／Monitor PostgreSQL T2 验证存储和告警通知事务，受控前端验证文案与权限；既有 transfer-continuous-events Hosted 沿原身份与总预算验证真实捕获暂停、缺样保持、恢复和签名通知。不得操作个人任务或源槽。
 
+#### CDC 任务持续性能告警（2026-11-14 已确认）
+
+复用 Monitor 租户任务规则、权限、incident/event 与通知，不在 Transfer 保存业务阈值。按任务启用 `cdc_consumer_stalled`（存在积压且已提交位置连续 180 秒不前进）、`cdc_capture_delayed`（事件持续推进的有效延迟样本 >60 秒，连续 180 秒）和可选 `cdc_backlog_high`（精确 offset 距离大于任务配置的 backlog_threshold，连续 300 秒）。三项仅 warning；前两项无业务数量配置，第三项由用户填写十进制字符串阈值，10000 仅为表单建议，不自动创建或启用规则。现有非 continuous 终态规则仍只适用于原目标。
+
+消费停滞在积压为零时明确恢复；否则提交持续推进 60 秒才恢复。延迟须有新事件证明 <=30 秒持续 60 秒才恢复；偏高积压须严格低于阈值一半持续 60 秒才恢复。持续窗口只累计不同、时间递增且有效期相接的样本，重复读取不推进；缺样、过期、时钟倒退、计数器重置和 generation 变化中断窗口。未知或事件空闲不关闭已有事件。初始快照未提交完成时不评估性能异常。
+
+正式 pause 或等待 Schema 审批只暂停消费停滞及积压规则，清空待触发／待恢复窗口；保留已打开事件及 LastObservedAt，不因暂停发送关闭或重复通知。页面明确暂停评估，恢复运行后从新窗口开始；捕获延迟、捕获失败和不可恢复风险仍按其原条件评估。Stop 完成或当前完整清单明确移除目标结束事件；读取失败不按缺失恢复。
+
+原 Transfer 机器入口升级为 `transfer.cdc_risk_observations/v3` 单一路线，安全投影新增当前 desired_state、是否 schema blocked、任务名称及实际 source_type、缓冲位点与初始快照提交完成标记、延迟及事件活动事实。活动只从本 Connector streaming MBean 的 TotalNumberOfEventsSeen／MilliSecondsSinceLastEvent 白名单取得，不读取 LastEvent 或消息正文。Transfer 持久发布精确计数与采样时间；Monitor 的规则行持久保存当前 generation、上个有效样本、连续触发／恢复窗口及评估说明，重启不能把停机时间算作持续证据。事件与阈值公开值均为安全摘要，不公开内部资源名。
+
+API 沿现有 alert-rules 的 CRUD，增加 backlog_threshold 和只读 CDC 评估摘要；规则目标从 Owner 当前 CDC 清单取得，不用已结束 execution 推断当前 CDC 类型；前端按目标展示可用类型，捕获延迟规则仅开放已有定向活动观测的 PostgreSQL 源端，后端同样拒绝其他源端配置本规则。任务代次去重、编辑／禁用规则结束旧事件、TaskHistory 读取、通知 outbox 沿原机制；规则与当前版本在落事件处再次核对。T1 覆盖时间边界及暂停／未知，标准 Transfer／Monitor PostgreSQL T2 覆盖持久、隔离、生命周期和通知；受控浏览器覆盖中英文配置与状态。既有 CDC 指标／JMX 门禁覆盖白名单，CI 自动发现现有 owner 路径，不新增测试入口。
+
 #### Schema change 公共事实投影
 
 - 数据库 CDC schema change 的跨模块公共事实固定写入触发阻塞的 execution `metadata.continuous.schema_change`。

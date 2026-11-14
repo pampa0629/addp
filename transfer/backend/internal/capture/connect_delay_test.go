@@ -25,14 +25,14 @@ func TestConnectDelayUsesExactTaskIdentityAndRejectsUnmatchedResponses(t *testin
 		if json.NewDecoder(r.Body).Decode(&request) != nil {
 			t.Fatal("invalid body")
 		}
-		if request.MBean != "debezium.postgres:context=streaming,server=addp-cdc-task-a-g1,type=connector-metrics" || len(request.Attribute) != 2 || request.Attribute[0] != "Connected" || request.Attribute[1] != "MilliSecondsBehindSource" {
+		if request.MBean != "debezium.postgres:context=streaming,server=addp-cdc-task-a-g1,type=connector-metrics" || len(request.Attribute) != 4 || request.Attribute[2] != "TotalNumberOfEventsSeen" || request.Attribute[3] != "MilliSecondsSinceLastEvent" || request.Attribute[0] != "Connected" || request.Attribute[1] != "MilliSecondsBehindSource" {
 			t.Error("not a fixed exact-task query")
 		}
 		if mode == "foreign" {
 			request.MBean = "debezium.postgres:context=streaming,server=other,type=connector-metrics"
 		}
 		status := 200
-		var value any = map[string]any{"Connected": true, "MilliSecondsBehindSource": 125}
+		var value any = map[string]any{"Connected": true, "MilliSecondsBehindSource": 125, "TotalNumberOfEventsSeen": 9007199254740993, "MilliSecondsSinceLastEvent": 250}
 		if mode == "negative" {
 			value = map[string]any{"Connected": true, "MilliSecondsBehindSource": -2}
 		}
@@ -72,6 +72,9 @@ func TestConnectDelayUsesExactTaskIdentityAndRejectsUnmatchedResponses(t *testin
 	}{{"valid", "available", delayFloat(.125)}, {"negative", "available", delayFloat(-.002)}, {"sentinel", "available", nil}, {"disconnected", "available", nil}, {"absent", "no_sample", nil}} {
 		mode = entry.mode
 		value, e := client.Delay(context.Background(), "addp-cdc-task-a-g1")
+		if entry.mode == "valid" && (value.EventCount == nil || *value.EventCount != "9007199254740993" || value.LastEventAgeSeconds == nil || *value.LastEventAgeSeconds != .25) {
+			t.Fatal("activity facts lost precision", value)
+		}
 		if e != nil || value.Status != entry.status {
 			t.Fatalf("%s: %v %+v", mode, e, value)
 		}

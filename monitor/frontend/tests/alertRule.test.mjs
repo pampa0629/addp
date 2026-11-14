@@ -30,3 +30,11 @@ test('normalizes non-threshold rules and route identities', () => {
   }, { module: 'develop', task_type: 'workflow', source_task_id: 'abc' })
   assert.equal(payload.failure_threshold, 1)
 })
+
+
+test('CDC backlog preserves exact offset threshold and forces warning', () => {
+ const payload=buildAlertRulePayload({name:'backlog',rule_type:'cdc_backlog_high',backlog_threshold:'9007199254740993',failure_threshold:8,severity:'critical',enabled:true,routes:[]},{module:'transfer',task_type:'sync',source_task_id:'7'})
+ assert.equal(payload.backlog_threshold,'9007199254740993')
+ assert.equal(payload.severity,'warning')
+ assert.equal(payload.failure_threshold,1)
+})

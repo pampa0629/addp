@@ -72,7 +72,7 @@ func (s *AlertService) AuthorizeReadRequest(ctx context.Context, query *Executio
 // before the safe execution projection was introduced.
 func safeAlertForRead(alert monitorModels.AlertIncident) monitorModels.AlertIncident {
 	details := models.JSONMap{}
-	for _, key := range strings.Fields("latest_status failure_count failure_threshold timeout_ms error health not_before generation schema_version provider status capture_position current_position earliest_available_position position_headroom earliest_available_at window_seconds fra_used_percent fra_reclaimable_percent sampled_at request_id from_revision to_revision detected_at scope source_partition source_offset missing_fields unexpected_fields incompatible_fields") {
+	for _, key := range strings.Fields("evaluation_state delay_seconds lag_offsets backlog_threshold trigger_seconds latest_status failure_count failure_threshold timeout_ms error health not_before generation schema_version provider status capture_position current_position earliest_available_position position_headroom earliest_available_at window_seconds fra_used_percent fra_reclaimable_percent sampled_at request_id from_revision to_revision detected_at scope source_partition source_offset missing_fields unexpected_fields incompatible_fields") {
 		switch value := alert.Details[key].(type) {
 		case string:
 			if key == "error" {

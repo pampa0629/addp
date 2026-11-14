@@ -1094,7 +1094,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-monitor 平台服务身份读取当前 CDC 任务风险与捕获健康 v2 清单，包含连续明确失败起点，不含业务数据或私有捕获资源。| Only the addp-monitor platform Service reads the v2 CDC risk and capture health inventory, including the confirmed failure start time, without business data or private capture resources.",
+                "description": "仅 addp-monitor 平台服务身份读取当前 CDC 任务风险、捕获健康与性能事实 v3 清单，包含连续失败起点、位点及事件活动，不含业务数据或私有捕获资源。| Only the addp-monitor platform Service reads the v3 CDC risk, capture health and performance inventory, including the failure start, buffer positions and event activity, without business data or private capture resources.",
                 "produces": [
                     "application/json"
                 ],
@@ -3343,6 +3343,23 @@ const docTemplate = `{
                 }
             }
         },
+        "client.CDCBufferSample": {
+            "type": "object",
+            "properties": {
+                "committed_offset": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "lag_offsets": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                }
+            }
+        },
         "client.CDCCaptureObservation": {
             "type": "object",
             "properties": {
@@ -3359,6 +3376,26 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.CDCDelaySample": {
+            "type": "object",
+            "properties": {
+                "delay_seconds": {
+                    "type": "number"
+                },
+                "event_count": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "last_event_age_seconds": {
+                    "type": "number"
+                },
+                "sampled_at": {
                     "type": "string"
                 }
             }
@@ -3484,8 +3521,17 @@ const docTemplate = `{
                 "buffer": {
                     "$ref": "#/definitions/client.CDCRiskObservation"
                 },
+                "buffer_sample": {
+                    "$ref": "#/definitions/client.CDCBufferSample"
+                },
                 "capture": {
                     "$ref": "#/definitions/client.CDCCaptureObservation"
+                },
+                "consumption_state": {
+                    "type": "string"
+                },
+                "delay_sample": {
+                    "$ref": "#/definitions/client.CDCDelaySample"
                 },
                 "execution_id": {
                     "type": "string"
@@ -3494,14 +3540,23 @@ const docTemplate = `{
                     "type": "string",
                     "example": ""
                 },
+                "initial_snapshot_completed": {
+                    "type": "boolean"
+                },
                 "source": {
                     "$ref": "#/definitions/client.CDCRiskObservation"
+                },
+                "source_type": {
+                    "type": "string"
                 },
                 "state": {
                     "type": "string"
                 },
                 "task_id": {
                     "type": "integer"
+                },
+                "task_name": {
+                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "integer"
@@ -4100,6 +4155,9 @@ const docTemplate = `{
                 "expires_at": {
                     "type": "string"
                 },
+                "initial_snapshot_completed": {
+                    "type": "boolean"
+                },
                 "lag_offsets": {
                     "type": "string"
                 },
@@ -4126,8 +4184,14 @@ const docTemplate = `{
                 "delay_seconds": {
                     "type": "number"
                 },
+                "event_count": {
+                    "type": "string"
+                },
                 "expires_at": {
                     "type": "string"
+                },
+                "last_event_age_seconds": {
+                    "type": "number"
                 },
                 "sampled_at": {
                     "type": "string"

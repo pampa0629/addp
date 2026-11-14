@@ -49,6 +49,9 @@ func cdcRiskTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`CREATE TABLE monitor.alert_rules (id INTEGER PRIMARY KEY, enabled BOOLEAN, rule_type TEXT)`).Error; err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 

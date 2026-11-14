@@ -156,7 +156,7 @@ def check_native_cdc():
     register('cdc-fixture', 'cdc_source')
     wait(lambda: task('cdc-fixture', 'RUNNING'), 'running connector task')
     stream = 'debezium.postgres:type=connector-metrics,context=streaming,server=cdc_source'
-    fields = ['Connected', 'MilliSecondsBehindSource']
+    fields = ['Connected', 'MilliSecondsBehindSource', 'TotalNumberOfEventsSeen', 'MilliSecondsSinceLastEvent']
     wait(lambda: (mbean(stream, fields) or {}).get('Connected') is True, 'streaming MBean and database connection')
     pg('INSERT INTO cdc_fixture VALUES (1);')
     task_metrics = mbean('kafka.connect:type=connector-task-metrics,connector=cdc-fixture,task=0',
@@ -194,6 +194,11 @@ def check_native_cdc():
 
     assert consume() == '0', 'first CDC record offset differs'
     sample = mbean(stream, fields)
+    assert type(sample.get('TotalNumberOfEventsSeen')) is int and sample['TotalNumberOfEventsSeen'] >= 1
+    assert type(sample.get('MilliSecondsSinceLastEvent')) is int and sample['MilliSecondsSinceLastEvent'] >= 0
+    activity_before = sample['TotalNumberOfEventsSeen']
+    denied_event = json.loads(run('cdc-connect', 'curl', '-sS', '--max-time', '5', '-H', 'Content-Type: application/json', '--data-binary', '@-', 'http://127.0.0.1:8778/jolokia/', data=json.dumps({'type':'read','mbean':stream,'attribute':'LastEvent'})))
+    assert denied_event['status'] == 403 and 'value' not in denied_event, 'JMX exposed event content'
     assert type(sample.get('MilliSecondsBehindSource')) is int and sample['MilliSecondsBehindSource'] >= 0
     delayed = source('cdc-connect-source')
     assert isinstance(delayed, dict) and delayed['addp_cdc_connect_source_delay_connectors'] == '1'
@@ -203,6 +208,8 @@ def check_native_cdc():
     assert source('cdc-redpanda-source')['addp_cdc_redpanda_consumer_group_pending_records'] == '0'
     pg('INSERT INTO cdc_fixture VALUES (2);')
     wait(lambda: lag_is(1), 'second WAL event creates one pending broker record')
+    wait(lambda: (mbean(stream, fields) or {}).get('TotalNumberOfEventsSeen', 0) > activity_before, 'second WAL event advances the exact Connector activity counter')
+    print('CDC activity T2: counter progression, event age and LastEvent denial verified', flush=True)
     wait(lambda: metric_lag_is(1), 'native public metrics show one pending record', seconds=25)
     assert source('cdc-redpanda-source')['addp_cdc_redpanda_consumer_group_pending_records'] == '1'
     assert consume() == '1', 'second CDC record offset differs'

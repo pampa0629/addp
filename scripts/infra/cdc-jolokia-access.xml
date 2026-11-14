@@ -12,6 +12,8 @@
       <name>debezium.postgres:type=connector-metrics,context=streaming,server=*</name>
       <attribute mode="read">Connected</attribute>
       <attribute mode="read">MilliSecondsBehindSource</attribute>
+      <attribute mode="read">TotalNumberOfEventsSeen</attribute>
+      <attribute mode="read">MilliSecondsSinceLastEvent</attribute>
     </mbean>
   </allow>
 </restrict>

@@ -10,7 +10,7 @@ import (
 
 // ReadCDCRisks reads task observations for the Monitor evaluator.
 // @Summary 读取 CDC 任务风险观测 | Read CDC task risk observations
-// @Description 仅 addp-monitor 平台服务身份读取当前 CDC 任务风险与捕获健康 v2 清单，包含连续明确失败起点，不含业务数据或私有捕获资源。| Only the addp-monitor platform Service reads the v2 CDC risk and capture health inventory, including the confirmed failure start time, without business data or private capture resources.
+// @Description 仅 addp-monitor 平台服务身份读取当前 CDC 任务风险、捕获健康与性能事实 v3 清单，包含连续失败起点、位点及事件活动，不含业务数据或私有捕获资源。| Only the addp-monitor platform Service reads the v3 CDC risk, capture health and performance inventory, including the failure start, buffer positions and event activity, without business data or private capture resources.
 // @Tags 运行时 | Runtime
 // @Produce json
 // @Param after_id query int false "上一页最后一个任务 ID，首批为0，每批最多100项 | Last task ID from the previous page, initially zero; at most 100 items per page"

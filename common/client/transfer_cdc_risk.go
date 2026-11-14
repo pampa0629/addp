@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"github.com/addp/common/httptrace"
 )
 
-const TransferCDCRiskSchema = "transfer.cdc_risk_observations/v2"
+const TransferCDCRiskSchema = "transfer.cdc_risk_observations/v3"
 const TransferCDCRiskBatchSize = 100
 
 type CDCRiskObservation struct {
@@ -31,7 +32,27 @@ type CDCCaptureObservation struct {
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 }
 
+type CDCBufferSample struct {
+	CommittedOffset string    `json:"committed_offset"`
+	LagOffsets      string    `json:"lag_offsets"`
+	SampledAt       time.Time `json:"sampled_at"`
+	ExpiresAt       time.Time `json:"expires_at"`
+}
+type CDCDelaySample struct {
+	DelaySeconds        float64   `json:"delay_seconds"`
+	EventCount          string    `json:"event_count"`
+	LastEventAgeSeconds float64   `json:"last_event_age_seconds"`
+	SampledAt           time.Time `json:"sampled_at"`
+	ExpiresAt           time.Time `json:"expires_at"`
+}
 type TransferCDCRiskItem struct {
+	TaskName                 string           `json:"task_name"`
+	SourceType               string           `json:"source_type"`
+	InitialSnapshotCompleted *bool            `json:"initial_snapshot_completed"`
+	ConsumptionState         string           `json:"consumption_state"`
+	BufferSample             *CDCBufferSample `json:"buffer_sample"`
+	DelaySample              *CDCDelaySample  `json:"delay_sample"`
+
 	Capture     CDCCaptureObservation `json:"capture"`
 	TenantID    uint                  `json:"tenant_id"`
 	TaskID      uint                  `json:"task_id"`
@@ -100,6 +121,9 @@ func (c *TransferClient) ReadCDCRisks(ctx context.Context, afterID uint) (*Trans
 		if item.State == "observing" && (item.Generation == 0 || !nonzeroExecutionUUID(item.ExecutionID)) {
 			return nil, errors.New("invalid CDC generation identity")
 		}
+		if item.ConsumptionState != "running" && item.ConsumptionState != "paused" && item.ConsumptionState != "blocked" && item.ConsumptionState != "stopped" && item.ConsumptionState != "unknown" {
+			return nil, errors.New("invalid CDC consumption state")
+		}
 		for _, risk := range []CDCRiskObservation{item.Source, item.Buffer} {
 			if risk.State != "active" && risk.State != "clear" && risk.State != "unknown" {
 				return nil, errors.New("invalid CDC risk state")
@@ -120,6 +144,19 @@ func (c *TransferClient) ReadCDCRisks(ctx context.Context, afterID uint) (*Trans
 		}
 		if capture.State != "failed" && (capture.FailedSince != nil || capture.Reason != "") {
 			return nil, errors.New("invalid CDC capture failure scope")
+		}
+		if b := item.BufferSample; b != nil {
+			committed, e1 := strconv.ParseInt(b.CommittedOffset, 10, 64)
+			lag, e2 := strconv.ParseInt(b.LagOffsets, 10, 64)
+			if e1 != nil || e2 != nil || committed < 0 || lag < 0 || strconv.FormatInt(committed, 10) != b.CommittedOffset || strconv.FormatInt(lag, 10) != b.LagOffsets || b.SampledAt.IsZero() || !b.ExpiresAt.After(b.SampledAt) {
+				return nil, errors.New("invalid CDC buffer sample")
+			}
+		}
+		if d := item.DelaySample; d != nil {
+			count, e := strconv.ParseInt(d.EventCount, 10, 64)
+			if e != nil || count < 0 || strconv.FormatInt(count, 10) != d.EventCount || math.IsNaN(d.DelaySeconds) || math.IsInf(d.DelaySeconds, 0) || math.IsNaN(d.LastEventAgeSeconds) || math.IsInf(d.LastEventAgeSeconds, 0) || d.LastEventAgeSeconds < 0 || d.SampledAt.IsZero() || !d.ExpiresAt.After(d.SampledAt) {
+				return nil, errors.New("invalid CDC activity sample")
+			}
 		}
 		if item.Source.State == "active" && item.Source.Reason != "slot_missing" && item.Source.Reason != "wal_lost" || item.Buffer.State == "active" && item.Buffer.Reason != "buffer_position_lost" {
 			return nil, errors.New("invalid CDC risk reason")

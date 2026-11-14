@@ -32,19 +32,20 @@ type observationSignal struct {
 }
 
 type activeAlertSignal struct {
-	TenantID      int
-	Module        string
-	TaskType      string
-	SourceTaskID  string
-	ExecutionID   string
-	AlertRuleID   *uint
-	RuleID        string
-	RuleName      string
-	RuleThreshold int
-	Code          string
-	Severity      string
-	Details       commonModels.JSONMap
-	Fingerprint   string
+	TenantID             int
+	Module               string
+	TaskType             string
+	SourceTaskID         string
+	ExecutionID          string
+	AlertRuleID          *uint
+	RuleID               string
+	RuleName             string
+	RuleBacklogThreshold string
+	RuleThreshold        int
+	Code                 string
+	Severity             string
+	Details              commonModels.JSONMap
+	Fingerprint          string
 }
 
 type AlertService struct {
@@ -138,6 +139,9 @@ func (s *AlertService) evaluateRuleSignals(ctx context.Context) ([]activeAlertSi
 	signals := make([]activeAlertSignal, 0, len(rules))
 	for i := range rules {
 		rule := rules[i]
+		if monitorModels.IsCDCPerformanceRule(rule.RuleType) {
+			continue
+		}
 		var latestExecution commonExecution.TaskExecution
 		err := s.db.WithContext(ctx).
 			Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ?", rule.TenantID, rule.Module, rule.TaskType, rule.SourceTaskID).
@@ -270,12 +274,14 @@ func validateRuleSignalTx(tx *gorm.DB, signal activeAlertSignal) (activeAlertSig
 	}
 	if !rule.Enabled || rule.RuleID != signal.RuleID || rule.TenantID != signal.TenantID ||
 		rule.Module != signal.Module || rule.TaskType != signal.TaskType || rule.SourceTaskID != signal.SourceTaskID ||
-		rule.RuleType != signal.Code || rule.FailureThreshold != signal.RuleThreshold {
+		rule.RuleType != signal.Code || rule.BacklogThreshold != signal.RuleBacklogThreshold || rule.FailureThreshold != signal.RuleThreshold {
 		return activeAlertSignal{}, false, nil
 	}
 	signal.RuleName = rule.Name
 	signal.Severity = rule.Severity
-	signal.Fingerprint = ruleAlertFingerprint(rule)
+	if !monitorModels.IsCDCPerformanceRule(rule.RuleType) {
+		signal.Fingerprint = ruleAlertFingerprint(rule)
+	}
 	return signal, true, nil
 }
 

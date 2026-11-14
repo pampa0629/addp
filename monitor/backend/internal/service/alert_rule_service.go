@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
@@ -46,6 +49,7 @@ type CreateAlertRuleInput struct {
 	SourceTaskName   string
 	RuleType         string
 	FailureThreshold int
+	BacklogThreshold string
 	Severity         string
 	Enabled          bool
 	Routes           []AlertRuleRouteInput
@@ -61,16 +65,19 @@ type UpdateAlertRuleInput struct {
 	SourceTaskName   *string
 	RuleType         *string
 	FailureThreshold *int
+	BacklogThreshold *string
 	Severity         *string
 	Enabled          *bool
 	Routes           *[]AlertRuleRouteInput
 }
 
 type AlertRuleTarget struct {
-	Module         string `json:"module"`
-	TaskType       string `json:"task_type"`
-	SourceTaskID   string `json:"source_task_id"`
-	SourceTaskName string `json:"source_task_name,omitempty"`
+	Module                string `json:"module"`
+	TaskType              string `json:"task_type"`
+	SourceTaskID          string `json:"source_task_id"`
+	CaptureDelayAvailable bool   `json:"capture_delay_available,omitempty"`
+	CDC                   bool   `json:"cdc,omitempty"`
+	SourceTaskName        string `json:"source_task_name,omitempty"`
 }
 
 func (s *AlertRuleService) List(ctx context.Context, tenantID int) ([]monitorModels.AlertRule, error) {
@@ -85,21 +92,36 @@ func (s *AlertRuleService) ListTargets(ctx context.Context, tenantID int) ([]Ale
 	if err != nil {
 		return nil, err
 	}
-	var targets []AlertRuleTarget
-	latestIDs := s.db.WithContext(ctx).Table("common.task_executions").Select("MAX(id)").
-		Where("tenant_id = ? AND source_task_id IS NOT NULL AND source_task_id <> ''", tenantID).
-		Where("parent_execution_id IS NULL").Group("module, task_type, source_task_id")
-	query := s.db.WithContext(ctx).Table("common.task_executions").
-		Select("module, task_type, source_task_id, COALESCE(source_task_name, '') AS source_task_name").
-		Where("id IN (?)", latestIDs).Where(nonContinuousExecutionCondition(s.db)).
-		Order("module, task_type, source_task_id")
-	if err := query.Scan(&targets).Error; err != nil {
+	latestIDs := s.db.WithContext(ctx).Table("common.task_executions").Select("MAX(id)").Where("tenant_id = ? AND source_task_id IS NOT NULL AND source_task_id <> ''", tenantID).Where("parent_execution_id IS NULL").Group("module, task_type, source_task_id")
+	var executions []commonExecution.TaskExecution
+	if err := s.db.WithContext(ctx).Where("id IN (?)", latestIDs).Order("module,task_type,source_task_id").Find(&executions).Error; err != nil {
 		return nil, err
 	}
-	filtered := make([]AlertRuleTarget, 0, len(targets))
-	for _, target := range targets {
-		if activeTaskTypes.Contains(target.Module, target.TaskType) {
-			filtered = append(filtered, target)
+	filtered := []AlertRuleTarget{}
+	for _, e := range executions {
+		if activeTaskTypes.Contains(e.Module, e.TaskType) && !isContinuousExecution(e) {
+			name := ""
+			if e.SourceTaskName != nil {
+				name = *e.SourceTaskName
+			}
+			filtered = append(filtered, AlertRuleTarget{Module: e.Module, TaskType: e.TaskType, SourceTaskID: *e.SourceTaskID, SourceTaskName: name})
+		}
+	}
+	if activeTaskTypes.Contains("transfer", "sync") && s.alertService != nil && s.alertService.cdcRiskReader != nil {
+		rows, err := s.currentCDCTargets(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			taskID := strconv.FormatUint(uint64(row.TaskID), 10)
+			current := filtered[:0]
+			for _, target := range filtered {
+				if target.Module != "transfer" || target.TaskType != "sync" || target.SourceTaskID != taskID {
+					current = append(current, target)
+				}
+			}
+			filtered = current
+			filtered = append(filtered, AlertRuleTarget{Module: "transfer", TaskType: "sync", SourceTaskID: strconv.FormatUint(uint64(row.TaskID), 10), SourceTaskName: row.TaskName, CDC: true, CaptureDelayAvailable: row.SourceType == "postgresql"})
 		}
 	}
 	return filtered, nil
@@ -133,6 +155,25 @@ func (s *AlertRuleService) Create(ctx context.Context, input CreateAlertRuleInpu
 }
 
 func (s *AlertRuleService) Update(ctx context.Context, input UpdateAlertRuleInput, now time.Time) (*monitorModels.AlertRule, error) {
+	var before monitorModels.AlertRule
+	if err := s.db.WithContext(ctx).Where("id=? AND tenant_id=?", input.ID, input.TenantID).First(&before).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAlertRuleNotFound
+		}
+		return nil, err
+	}
+	code := before.RuleType
+	if input.RuleType != nil {
+		code = *input.RuleType
+	}
+	var cdcTargets []commonClient.TransferCDCRiskItem
+	if monitorModels.IsCDCPerformanceRule(code) && (input.Module != nil || input.TaskType != nil || input.SourceTaskID != nil || input.RuleType != nil || input.Enabled != nil && *input.Enabled && !before.Enabled) {
+		var err error
+		cdcTargets, err = s.currentCDCTargets(ctx, input.TenantID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var updated monitorModels.AlertRule
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var rule monitorModels.AlertRule
@@ -146,7 +187,7 @@ func (s *AlertRuleService) Update(ctx context.Context, input UpdateAlertRuleInpu
 		if noAlertRuleUpdates(input) {
 			return ErrAlertRuleInvalid
 		}
-		next, routes, routesChanged, err := s.normalizeUpdateInput(tx, rule, input)
+		next, routes, routesChanged, err := s.normalizeUpdateInput(tx, rule, input, cdcTargets)
 		if err != nil {
 			return err
 		}
@@ -161,16 +202,21 @@ func (s *AlertRuleService) Update(ctx context.Context, input UpdateAlertRuleInpu
 		}
 		semanticChanged := rule.Module != next.Module || rule.TaskType != next.TaskType ||
 			rule.SourceTaskID != next.SourceTaskID || rule.RuleType != next.RuleType ||
-			rule.FailureThreshold != next.FailureThreshold || (rule.Enabled && !next.Enabled)
+			rule.BacklogThreshold != next.BacklogThreshold || rule.FailureThreshold != next.FailureThreshold || (rule.Enabled && !next.Enabled)
 		if semanticChanged {
+			next.CDCWindow = monitorModels.CDCPerformanceWindow{ResetAt: &now}
 			if err := s.alertService.resolveRuleIncidentsTx(tx, rule.ID, now); err != nil {
 				return err
 			}
 		}
+		windowJSON, err := json.Marshal(next.CDCWindow)
+		if err != nil {
+			return err
+		}
 		updates := map[string]interface{}{
 			"name": next.Name, "module": next.Module, "task_type": next.TaskType,
 			"source_task_id": next.SourceTaskID, "source_task_name": next.SourceTaskName,
-			"rule_type": next.RuleType, "failure_threshold": next.FailureThreshold,
+			"rule_type": next.RuleType, "failure_threshold": next.FailureThreshold, "backlog_threshold": next.BacklogThreshold, "cdc_window": string(windowJSON),
 			"severity": next.Severity, "enabled": next.Enabled, "updated_at": now,
 		}
 		if err := tx.Model(&monitorModels.AlertRule{}).Where("id = ?", rule.ID).Updates(updates).Error; err != nil {
@@ -226,22 +272,34 @@ func (s *AlertRuleService) normalizeCreateInput(db *gorm.DB, input CreateAlertRu
 	if err != nil {
 		return monitorModels.AlertRule{}, nil, err
 	}
-	if err := s.validateAlertRuleTarget(db, input.TenantID, module, taskType, sourceTaskID); err != nil {
+	if err := s.validateTypedAlertRuleTarget(db, input.TenantID, module, taskType, sourceTaskID, ruleType); err != nil {
+		return monitorModels.AlertRule{}, nil, err
+	}
+	if err := normalizeCDCBacklog(ruleType, input.BacklogThreshold); err != nil {
 		return monitorModels.AlertRule{}, nil, err
 	}
 	routes, err := s.normalizeRoutes(db, input.TenantID, input.Routes)
 	if err != nil {
 		return monitorModels.AlertRule{}, nil, err
 	}
+	window := monitorModels.CDCPerformanceWindow{}
+	if monitorModels.IsCDCPerformanceRule(ruleType) {
+		now := time.Now().UTC()
+		window.ResetAt = &now
+	}
 	return monitorModels.AlertRule{
-		RuleID: uuid.NewString(), TenantID: input.TenantID, Name: name, Module: module,
+		CDCWindow: window,
+		RuleID:    uuid.NewString(), TenantID: input.TenantID, Name: name, Module: module,
 		TaskType: taskType, SourceTaskID: sourceTaskID, SourceTaskName: sourceTaskName,
-		RuleType: ruleType, FailureThreshold: threshold, Severity: severity, Enabled: input.Enabled,
+		BacklogThreshold: input.BacklogThreshold, RuleType: ruleType, FailureThreshold: threshold, Severity: severity, Enabled: input.Enabled,
 	}, routes, nil
 }
 
-func (s *AlertRuleService) normalizeUpdateInput(db *gorm.DB, rule monitorModels.AlertRule, input UpdateAlertRuleInput) (monitorModels.AlertRule, []AlertRuleRouteInput, bool, error) {
+func (s *AlertRuleService) normalizeUpdateInput(db *gorm.DB, rule monitorModels.AlertRule, input UpdateAlertRuleInput, cdcTargets []commonClient.TransferCDCRiskItem) (monitorModels.AlertRule, []AlertRuleRouteInput, bool, error) {
 	next := rule
+	if input.BacklogThreshold != nil {
+		next.BacklogThreshold = *input.BacklogThreshold
+	}
 	if input.Name != nil {
 		next.Name = *input.Name
 	}
@@ -279,8 +337,15 @@ func (s *AlertRuleService) normalizeUpdateInput(db *gorm.DB, rule monitorModels.
 	next.Name, next.Module, next.TaskType, next.SourceTaskID = name, module, taskType, sourceTaskID
 	next.SourceTaskName, next.RuleType, next.FailureThreshold, next.Severity = sourceTaskName, ruleType, threshold, severity
 	targetChanged := rule.Module != module || rule.TaskType != taskType || rule.SourceTaskID != sourceTaskID
-	if targetChanged || (!rule.Enabled && next.Enabled) {
-		if err := s.validateAlertRuleTarget(db, input.TenantID, module, taskType, sourceTaskID); err != nil {
+	if err := normalizeCDCBacklog(ruleType, next.BacklogThreshold); err != nil {
+		return monitorModels.AlertRule{}, nil, false, err
+	}
+	if targetChanged || rule.RuleType != ruleType || (!rule.Enabled && next.Enabled) {
+		if monitorModels.IsCDCPerformanceRule(ruleType) {
+			if !validCDCTarget(cdcTargets, sourceTaskID, ruleType) {
+				return monitorModels.AlertRule{}, nil, false, ErrAlertRuleInvalid
+			}
+		} else if err := s.validateAlertRuleTarget(db, input.TenantID, module, taskType, sourceTaskID); err != nil {
 			return monitorModels.AlertRule{}, nil, false, err
 		}
 	}
@@ -349,6 +414,11 @@ func normalizeAlertRuleFields(name, module, taskType, sourceTaskID, sourceTaskNa
 		return "", "", "", "", "", "", 0, "", ErrAlertRuleInvalid
 	}
 	switch ruleType {
+	case monitorModels.AlertRuleCDCStalled, monitorModels.AlertRuleCDCDelayed, monitorModels.AlertRuleCDCBacklog:
+		if module != "transfer" || taskType != "sync" || severity != "warning" {
+			return "", "", "", "", "", "", 0, "", ErrAlertRuleInvalid
+		}
+		threshold = 1
 	case monitorModels.AlertRuleLastTerminalFailed, monitorModels.AlertRuleLastTerminalTimeout:
 		threshold = 1
 	case monitorModels.AlertRuleConsecutiveFailures:
@@ -363,7 +433,7 @@ func normalizeAlertRuleFields(name, module, taskType, sourceTaskID, sourceTaskNa
 
 func noAlertRuleUpdates(input UpdateAlertRuleInput) bool {
 	return input.Name == nil && input.Module == nil && input.TaskType == nil && input.SourceTaskID == nil &&
-		input.SourceTaskName == nil && input.RuleType == nil && input.FailureThreshold == nil &&
+		input.SourceTaskName == nil && input.RuleType == nil && input.BacklogThreshold == nil && input.FailureThreshold == nil &&
 		input.Severity == nil && input.Enabled == nil && input.Routes == nil
 }
 
@@ -452,4 +522,73 @@ func isContinuousExecution(execution commonExecution.TaskExecution) bool {
 	}
 	_, hasContinuous := execution.Metadata["continuous"]
 	return hasContinuous
+}
+
+func normalizeCDCBacklog(code, value string) error {
+	if code != monitorModels.AlertRuleCDCBacklog {
+		if value != "" {
+			return ErrAlertRuleInvalid
+		}
+		return nil
+	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n < 1 || strconv.FormatInt(n, 10) != value {
+		return ErrAlertRuleInvalid
+	}
+	return nil
+}
+func (s *AlertRuleService) validateTypedAlertRuleTarget(db *gorm.DB, tenant int, module, taskType, taskID, code string) error {
+	if !monitorModels.IsCDCPerformanceRule(code) {
+		return s.validateAlertRuleTarget(db, tenant, module, taskType, taskID)
+	}
+	types, err := s.activeTaskTypes()
+	if err != nil {
+		return err
+	}
+	if !types.Contains(module, taskType) {
+		return ErrAlertRuleInvalid
+	}
+	rows, err := s.currentCDCTargets(db.Statement.Context, tenant)
+	if err != nil {
+		return err
+	}
+	if validCDCTarget(rows, taskID, code) {
+		return nil
+	}
+	return ErrAlertRuleInvalid
+}
+
+func (s *AlertRuleService) currentCDCTargets(ctx context.Context, tenant int) ([]commonClient.TransferCDCRiskItem, error) {
+	if s.alertService == nil || s.alertService.cdcRiskReader == nil {
+		return nil, commonClient.ErrExecutionOwnerUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	targets := []commonClient.TransferCDCRiskItem{}
+	var after uint
+	for {
+		page, err := s.alertService.cdcRiskReader.ReadCDCRisks(ctx, after)
+		if err != nil {
+			return nil, commonClient.ErrExecutionOwnerUnavailable
+		}
+		for _, row := range page.Items {
+			if row.TenantID == uint(tenant) && row.Generation > 0 && row.State != "closed" {
+				targets = append(targets, row)
+			}
+		}
+		if !page.HasMore {
+			break
+		}
+		after = page.NextAfterID
+	}
+	return targets, nil
+}
+
+func validCDCTarget(rows []commonClient.TransferCDCRiskItem, taskID, code string) bool {
+	for _, row := range rows {
+		if strconv.FormatUint(uint64(row.TaskID), 10) == taskID && (code != monitorModels.AlertRuleCDCDelayed || row.SourceType == "postgresql") {
+			return true
+		}
+	}
+	return false
 }

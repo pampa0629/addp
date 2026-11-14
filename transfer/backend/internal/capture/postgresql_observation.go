@@ -142,6 +142,7 @@ func (s *Supervisor) observePostgreSQLTask(ctx context.Context, resource *models
 		delay.Status = value.Status
 		delay.Connected = value.Connected
 		delay.DelaySeconds = value.Seconds
+		delay.EventCount, delay.LastEventAgeSeconds = value.EventCount, value.LastEventAgeSeconds
 	}
 	return s.advance(ctx, resource, map[string]interface{}{"postgresql_observation": sourceObservationMap(pg), "delay_observation": sourceObservationMap(delay)})
 }

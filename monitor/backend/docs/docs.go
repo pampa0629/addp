@@ -7424,6 +7424,39 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_models.CDCPerformanceWindow": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "previous_value": {
+                    "type": "string"
+                },
+                "recovery_since": {
+                    "type": "string"
+                },
+                "reset_at": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "trigger_since": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_models.EmailDelivery": {
             "type": "object",
             "properties": {
@@ -8439,6 +8472,12 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_service.AlertRuleTarget": {
             "type": "object",
             "properties": {
+                "capture_delay_available": {
+                    "type": "boolean"
+                },
+                "cdc": {
+                    "type": "boolean"
+                },
                 "module": {
                     "type": "string"
                 },
@@ -10728,6 +10767,12 @@ const docTemplate = `{
         "internal_api.AlertRuleResponse": {
             "type": "object",
             "properties": {
+                "backlog_threshold": {
+                    "type": "string"
+                },
+                "cdc_evaluation": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.CDCPerformanceWindow"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -10790,6 +10835,10 @@ const docTemplate = `{
                 "task_type"
             ],
             "properties": {
+                "backlog_threshold": {
+                    "type": "string",
+                    "example": "10000"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -10816,7 +10865,10 @@ const docTemplate = `{
                     "enum": [
                         "last_terminal_failed",
                         "last_terminal_timeout",
-                        "consecutive_failures"
+                        "consecutive_failures",
+                        "cdc_consumer_stalled",
+                        "cdc_capture_delayed",
+                        "cdc_backlog_high"
                     ]
                 },
                 "severity": {
@@ -11453,6 +11505,9 @@ const docTemplate = `{
         "internal_api.UpdateAlertRuleRequest": {
             "type": "object",
             "properties": {
+                "backlog_threshold": {
+                    "type": "string"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -11476,7 +11531,10 @@ const docTemplate = `{
                     "enum": [
                         "last_terminal_failed",
                         "last_terminal_timeout",
-                        "consecutive_failures"
+                        "consecutive_failures",
+                        "cdc_consumer_stalled",
+                        "cdc_capture_delayed",
+                        "cdc_backlog_high"
                     ]
                 },
                 "severity": {

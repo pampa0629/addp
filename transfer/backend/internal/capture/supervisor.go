@@ -17,7 +17,7 @@ import (
 
 type ResourceStore interface {
 	ClaimPostgreSQLResources(context.Context, *models.CaptureResource) error
-	BufferCommittedOffset(context.Context, *models.CaptureResource) (*int64, error)
+	BufferCommittedPosition(context.Context, *models.CaptureResource) (*int64, bool, error)
 	RunCleanupOperation(context.Context, *models.CaptureResource, string, any, func(context.Context) error) error
 	BeginGeneration(ctx context.Context, identity repository.CaptureIdentity) (*models.CaptureResource, error)
 	GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error)

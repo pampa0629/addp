@@ -521,7 +521,7 @@
     },
     "alert_rule": {
       "title": "Generic Task Alert Rules",
-      "description": "Evaluate real task execution terminal states. Continuous sync tasks keep their dedicated runtime alerts.",
+      "description": "Configure task terminal-state or sustained CDC performance alerts.",
       "create": "Add Rule",
       "edit": "Edit",
       "delete": "Delete",
@@ -531,7 +531,7 @@
       "name": "Rule Name",
       "target": "Task",
       "target_placeholder": "Select an existing task",
-      "target_help": "Only root tasks with stable identities are shown. Continuous sync sessions and ad-hoc executions are excluded.",
+      "target_help": "Choose a root task with a stable identity. CDC tasks support consumption stall, capture delay and backlog rules.",
       "rule_type": "Condition",
       "failure_threshold": "Consecutive Count",
       "routes": "Notification Destinations",
@@ -547,12 +547,32 @@
       "rule_types": {
         "last_terminal_failed": "Latest execution failed",
         "last_terminal_timeout": "Latest execution timed out",
-        "consecutive_failures": "Consecutive failures or timeouts"
+        "consecutive_failures": "Consecutive failures or timeouts",
+        "cdc_consumer_stalled": "CDC target consumption stalled",
+        "cdc_capture_delayed": "CDC capture persistently delayed",
+        "cdc_backlog_high": "CDC backlog persistently high"
       },
       "validation": {
         "name": "Enter a rule name",
         "target": "Select a task",
-        "rule_type": "Select a condition"
+        "rule_type": "Select a condition",
+        "backlog_threshold": "Enter an integer from 1 to 9223372036854775807"
+      },
+      "backlog_threshold": "Backlog threshold (offset distance)",
+      "performance_help": {
+        "cdc_consumer_stalled": "Warn when backlog exists and commits do not advance for 3 minutes. Evaluation pauses with target consumption.",
+        "cdc_capture_delayed": "Warn when advancing events remain over 60 seconds behind for 3 minutes. Idle or missing samples do not accumulate time.",
+        "cdc_backlog_high": "Warn above the threshold for 5 minutes; recover below half for 1 minute. Evaluation pauses with target consumption."
+      },
+      "evaluation_states": {
+        "unknown": "Observation unknown",
+        "paused": "Task paused; evaluation paused",
+        "idle": "No new events",
+        "initializing": "Initial snapshot in progress",
+        "closed": "Closed",
+        "healthy": "No anomaly observed",
+        "active": "Alert active",
+        "pending": "Awaiting sustained evidence"
       }
     },
     "notification": {
@@ -1816,7 +1836,6 @@
       "groups": {
         "pgActivity": "Resources and activity",
         "pgReplication": "Logical replication",
-
         "resources": "Resources and connections",
         "throughput": "Throughput and hits",
         "persistence": "Persistence status",

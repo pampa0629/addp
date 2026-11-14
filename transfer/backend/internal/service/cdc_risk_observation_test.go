@@ -89,3 +89,20 @@ func TestCDCCaptureHealthProjectionRequiresFreshCurrentGeneration(t *testing.T) 
 		})
 	}
 }
+
+func TestCDCPerformanceProjectionKeepsActivityWhenBrokerUnavailable(t *testing.T) {
+	now := time.Now().UTC()
+	id := "bb706a62-4256-453e-b471-0dbdbb305c53"
+	task := &models.TransferTask{ID: 7, TenantID: 2, Status: models.TaskStatusBlocked, DesiredState: models.TaskDesiredStatePaused, LastExecutionID: &id}
+	sample := now.Format(time.RFC3339Nano)
+	expiry := now.Add(time.Minute).Format(time.RFC3339Nano)
+	resource := &models.CaptureResource{Generation: 3, Status: models.CaptureStatusRunning, SourceType: models.CaptureSourcePostgreSQL, BufferObservation: models.JSONMap{"status": "unavailable", "initial_snapshot_completed": true, "sampled_at": sample, "expires_at": expiry}, DelayObservation: models.JSONMap{"status": "available", "connected": true, "delay_seconds": 80, "event_count": "9007199254740993", "last_event_age_seconds": 1, "sampled_at": sample, "expires_at": expiry}}
+	row := cdcTaskRisks(task, resource, now)
+	if row.ConsumptionState != "blocked" || row.BufferSample != nil || row.InitialSnapshotCompleted == nil || !*row.InitialSnapshotCompleted || row.DelaySample == nil || row.DelaySample.EventCount != "9007199254740993" {
+		t.Fatalf("independent projection=%#v", row)
+	}
+	row = cdcTaskRisks(task, resource, now.Add(2*time.Minute))
+	if row.InitialSnapshotCompleted != nil || row.DelaySample != nil {
+		t.Fatal("expired activity published")
+	}
+}

@@ -62,3 +62,8 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 bounded 恢复时间由三组回归覆盖。[Common 租约回归](../../common/execution/lease_test.go)验证首次与再次 claim、恢复排队及旧运行体写入拒绝，沿 `make test-module MODULE=common GO_ONLY=1` 发现。[Quality 事件回归](../../quality/backend/internal/repository/plan_events_test.go)用 SQLite／PostgreSQL 核对恢复摘要，并确认排队失败时没有沿用旧开始时间或耗时，PostgreSQL 沿 `make test-quality-postgres` 发现。[Monitor 时间聚合回归](../backend/internal/repository/execution_runtime_metrics_repository_postgres_test.go)沿模块 PostgreSQL 门禁验证恢复排队、再次运行与完成、排队失败的统计结果，沿用现有排队和运行时长公式。Hosted 与生产环境的重启恢复须有独立验收证据。
 
 验收结论须对应固定源码、实际执行项与完整证据，旧样本数量、成功率、缓存命中率或日期标记不能代替当前验收。真实 System / Gateway / Owner / Worker 链路仍按对应 T4 场景核对，生产部署不由单元测试或历史通过结论外推。端口、启动与重启沿[端口规范](../../docs/spec/addp端口分配.md)和[部署指南](../../docs/guide/addp部署和开发步骤.md)，需要重启时由用户执行标准生命周期命令。
+
+
+### CDC 任务性能规则
+
+现有 alert-rules 增加消费停滞、捕获持续延迟及可选积压偏高三种 CDC 任务规则，仅 warning。`monitor.alert_rules.backlog_threshold` 保存精确十进制 offset 距离，`cdc_window` JSONB 保存当前代次的有效样本、连续触发／恢复窗口和安全评估说明；由既有 Monitor store AutoMigrate 管理，不新增公共存储。评估写入不修改用户配置的 updated_at。配置与落事件分别按现有职责核对，通知沿原事务 outbox。阈值、暂停及缺样处理以[正式契约](../../docs/spec/tasks/Transfer同步执行.md#cdc-任务持续性能告警2026-11-14-已确认)为准，实际通过范围见 Monitor 告警历史证据。

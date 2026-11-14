@@ -538,3 +538,20 @@ task 5／4／3／2 正式删除并读回 404，两个 CDC Stop 的源槽／publi
 独立比对原实现 `e2455d7307fd47f032e36ad43c3b5d3ff318cba0` 至本次受测 SHA：`monitor/frontend/`、`common-frontend/`、`.node-version`、根 `Makefile`、`scripts/test/module-gate.sh`、`scripts/test/frontend-browser-gate.mjs` 和 `scripts/utils/node-runtime.sh` 均无差异。本次现有自然 CI 可补齐前述 Monitor 前端 CI 缺口；原 Run 43465701064／Job 132024127425 的 cancelled 及执行到 840/844 的记录继续保留，不改写为 success，不用后继结果追认原运行完成。
 
 本次仅只读复核现有 GitHub Job／Run、原始日志和源码差异并补充归属证据，没有重跑测试、新增 Hosted 或操作服务。重新下载的完整日志与协调留存原件逐字节一致，SHA-256 为 `53447e066d917f89d5517adb530b571ba08036f780991cbd7e2cadc6034e2f24`，核对副本 `/tmp/addp-monitor-132242828016-verified.log`，原件及身份记录 `/tmp/addp-ci-0820-1114-egvmtvoq/`。前述 60 秒告警 Hosted 与原不可恢复风险闭环的验收范围保持；持续延迟／积压告警仍未实施，需独立确认阈值和暂停语义。
+
+
+### CDC 持续性能规则本地门禁（2026-11-14）
+
+按本轮确认的方案，Monitor 在原任务规则上增加 `cdc_consumer_stalled`（存在积压且提交位置 180 秒不推进）、`cdc_capture_delayed`（有新事件推进的延迟 >60 秒持续 180 秒）及可选 `cdc_backlog_high`（超过任务配置 offset 距离 300 秒）。三项只 warning。恢复分别为积压归零或连续推进 60 秒、新事件证明延迟 <=30 秒持续 60 秒、积压严格低于阈值一半持续 60 秒。默认不创建个人任务规则，不修改个人任务配置、进度或逻辑槽。
+
+Transfer 的同一机器入口采用 v3 单一路线，增加当前消费状态、初始快照提交阶段、位点、实际源类型和定向事件活动事实。Jolokia 只增加 TotalNumberOfEventsSeen／MilliSecondsSinceLastEvent 两项白名单；事件计数按精确字符串公开，不读取 LastEvent。规则目标来自 Owner 当前清单，按 Tenant 和当前代次过滤；捕获延迟仅向已有活动指标的 PostgreSQL 源开放，前后端同时约束。Monitor 规则行持久保存窗口及中断边界，反复读取同一快照、空闲、缺样、过期、时钟倒退、计数器重置和代次变化都不冒充持续证据。暂停目标消费或 Schema blocked 仅暂停消费停滞／积压评估，保留原事件和 LastObservedAt；捕获规则继续独立评估。
+
+本地实际执行记录（均经根 Make 标准入口，日志位于 `/tmp/addp-cdc-performance-*`）：
+
+- Common／Transfer／Monitor Go T1 通过；覆盖精确 DTO、180／300 秒边界、重复旧值、有效期缺口、中断前旧样本、计数重置、跨代次隔离、暂停保持、恢复及 Owner 当前目标的 Tenant／源能力过滤。
+- `make test-transfer-postgres` 和 `make test-monitor-postgres` 通过。新增 `TestIntegrationPostgresCDCPerformanceRules` 使用受控 Owner 事实和推进的采样时间，实际核对三种规则的持久窗口、唯一 warning、暂停／未知保持、健康关闭及每项唯一 opened／resolved 通知 outbox；还核对精确阈值修改清空旧窗口、非法修改拒绝。此为真实 PostgreSQL 事务 T2，不是等待真实 3／5 分钟的 T4 或外部通知实收。
+- `make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS=cdc-risk-alerts.spec.js`：153 项单元、9 项受控浏览器断言及构建通过。新增中英文暂停提示、当前 CDC 目标的规则选项、精确大整数阈值经真实表单保存的请求载荷、warning 约束及任务权限链接。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cdc-native` 实际通过。独占 Connect／PostgreSQL／消息代理证明新增活动计数随第二次 WAL 事件推进、事件年龄可读、LastEvent 请求被 403 拒绝；既有实际采样、126 项 CDC Prometheus 查询、单源故障隔离和恢复继续通过。结束输出确认自有容器／网络／卷及临时文件零残留，未接管个人 Infra。
+- 既有 `make test-transfer-continuous-online-runner` 的 127 项与 System fixture Go 测试通过；原 Hosted 指标断言同步公开 DTO 字段，没有放宽字段闭集。前端 CI 登记 27 项及 21 个前端登记检查通过；两模块 Swagger 生成和路由覆盖通过。现有 owner Go／PostgreSQL／前端及 CDC native 门禁已覆盖本批路径，无需新增入口或 workflow。
+
+本轮未运行新的 Hosted 性能故障场景，不把原 60 秒捕获失败、不可恢复风险闭环、指标 native T2 或受控通知 outbox当成本批性能告警的跨模块实故障／Webhook 实收通过。新白名单在个人运行中的 Connect 尚未加载，只读精确属性请求仍返回 403；需由用户重启 Kafka Connect，并因 `common/` 契约变化全量重启 ADDP 后核对任务页、当前规则和样本。现有任务及源槽未写入或清理。后续先完成新版本实际读取，再安排独立性能告警联验，不扩大原 Hosted 的通过范围。

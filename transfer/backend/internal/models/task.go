@@ -384,14 +384,15 @@ type CaptureHealthObservation struct {
 
 // CaptureBufferObservation is a task-level metadata-only sample, never an execution result.
 type CaptureBufferObservation struct {
-	Status          string    `json:"status"`
-	SampledAt       time.Time `json:"sampled_at"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	EarliestOffset  *string   `json:"earliest_offset"`
-	LatestOffset    *string   `json:"latest_offset"`
-	CommittedOffset *string   `json:"committed_offset"`
-	LagOffsets      *string   `json:"lag_offsets"`
-	RecoveryState   string    `json:"recovery_state"`
+	InitialSnapshotCompleted *bool     `json:"initial_snapshot_completed"`
+	Status                   string    `json:"status"`
+	SampledAt                time.Time `json:"sampled_at"`
+	ExpiresAt                time.Time `json:"expires_at"`
+	EarliestOffset           *string   `json:"earliest_offset"`
+	LatestOffset             *string   `json:"latest_offset"`
+	CommittedOffset          *string   `json:"committed_offset"`
+	LagOffsets               *string   `json:"lag_offsets"`
+	RecoveryState            string    `json:"recovery_state"`
 }
 
 type CapturePostgreSQLObservation struct {
@@ -407,11 +408,13 @@ type CapturePostgreSQLObservation struct {
 	RiskState              string    `json:"risk_state"`
 }
 type CaptureDelayObservation struct {
-	Status       string    `json:"status"`
-	Connected    *bool     `json:"connected"`
-	DelaySeconds *float64  `json:"delay_seconds"`
-	SampledAt    time.Time `json:"sampled_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	EventCount          *string   `json:"event_count"`
+	LastEventAgeSeconds *float64  `json:"last_event_age_seconds"`
+	Status              string    `json:"status"`
+	Connected           *bool     `json:"connected"`
+	DelaySeconds        *float64  `json:"delay_seconds"`
+	SampledAt           time.Time `json:"sampled_at"`
+	ExpiresAt           time.Time `json:"expires_at"`
 }
 
 func captureObservationSummary[T any](resource *CaptureResource, value JSONMap) *T {

@@ -798,9 +798,9 @@ def cdc_task_sample(client, task_id, engine_id, generation=None, *, after=None):
     allowed = {
         'postgresql_observation': {'status', 'sampled_at', 'expires_at', 'slot_active', 'wal_status',
             'retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes', 'wal_keep_unlimited', 'risk_state'},
-        'delay_observation': {'status', 'sampled_at', 'expires_at', 'connected', 'delay_seconds'},
+        'delay_observation': {'status', 'sampled_at', 'expires_at', 'connected', 'delay_seconds', 'event_count', 'last_event_age_seconds'},
         'buffer_observation': {'status', 'sampled_at', 'expires_at', 'earliest_offset', 'latest_offset',
-            'committed_offset', 'lag_offsets', 'recovery_state'},
+            'committed_offset', 'lag_offsets', 'recovery_state', 'initial_snapshot_completed'},
     }
     now = datetime.now(timezone.utc)
     for field, keys in allowed.items():

@@ -51,19 +51,19 @@ func TestIntegrationPostgresCDCBufferObservation(t *testing.T) {
 	}
 	repo := NewCaptureRepository(db)
 	ctx := context.Background()
-	if value, e := repo.BufferCommittedOffset(ctx, &resource); e != nil || value != nil {
+	if value, _, e := repo.BufferCommittedPosition(ctx, &resource); e != nil || value != nil {
 		t.Fatalf("no commit: %v %v", value, e)
 	}
-	state := models.SyncState{TaskID: task.ID, SourceIdentity: resource.SourceIdentity, Partition: "0", PositionType: "kafka_offset", PositionVersion: "v1", Position: models.JSONMap{"type": "kafka_offset", "version": "v1", "partition": "0", "values": map[string]string{"next_offset": "9007199254740993"}}}
+	state := models.SyncState{TaskID: task.ID, SourceIdentity: resource.SourceIdentity, Partition: "0", PositionType: "kafka_offset", PositionVersion: "v1", Position: models.JSONMap{"type": "kafka_offset", "version": "v1", "partition": "0", "values": map[string]string{"next_offset": "9007199254740993", "initial_snapshot_completed": "true"}}}
 	if err = db.Create(&state).Error; err != nil {
 		t.Fatal(err)
 	}
-	if value, e := repo.BufferCommittedOffset(ctx, &resource); e != nil || value == nil || *value != 9007199254740993 {
+	if value, completed, e := repo.BufferCommittedPosition(ctx, &resource); e != nil || !completed || value == nil || *value != 9007199254740993 {
 		t.Fatalf("exact commit: %v %v", value, e)
 	}
 	foreign := resource
 	foreign.SourceIdentity = "foreign"
-	if value, e := repo.BufferCommittedOffset(ctx, &foreign); e != nil || value != nil {
+	if value, _, e := repo.BufferCommittedPosition(ctx, &foreign); e != nil || value != nil {
 		t.Fatalf("foreign identity: %v %v", value, e)
 	}
 	observation := models.JSONMap{"status": "unavailable", "recovery_state": "unknown", "sampled_at": "2026-11-12T00:00:00Z", "expires_at": "2026-11-12T00:01:00Z"}

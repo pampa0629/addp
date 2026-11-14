@@ -467,8 +467,8 @@ func (f *fakeCaptureStore) RunCleanupOperation(ctx context.Context, _ *models.Ca
 func (f *fakeTopicControl) BufferOffsets(context.Context, string) (int64, int64, error) {
 	return f.earliest, f.latest, f.bufferErr
 }
-func (f *fakeCaptureStore) BufferCommittedOffset(context.Context, *models.CaptureResource) (*int64, error) {
-	return f.committed, f.committedErr
+func (f *fakeCaptureStore) BufferCommittedPosition(context.Context, *models.CaptureResource) (*int64, bool, error) {
+	return f.committed, f.committed != nil, f.committedErr
 }
 
 func (f *fakeCaptureStore) ClaimPostgreSQLResources(_ context.Context, resource *models.CaptureResource) error {

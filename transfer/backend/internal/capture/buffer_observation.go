@@ -15,8 +15,9 @@ func (s *Supervisor) observeBuffer(ctx context.Context, resource *models.Capture
 	observation := models.CaptureBufferObservation{Status: "unavailable", SampledAt: now, ExpiresAt: now.Add(2 * s.config.MonitorInterval), RecoveryState: "unknown"}
 	// Read the target-committed position first, so concurrent progress cannot put
 	// this observation ahead of the subsequently sampled broker end.
-	committed, err := s.store.BufferCommittedOffset(probeCtx, resource)
+	committed, snapshotCompleted, err := s.store.BufferCommittedPosition(probeCtx, resource)
 	if err == nil {
+		observation.InitialSnapshotCompleted = &snapshotCompleted
 		earliest, latest, readErr := s.topics.BufferOffsets(probeCtx, resource.TopicName)
 		err = readErr
 		if err == nil && earliest >= 0 && latest >= earliest && (committed == nil || *committed <= latest) {

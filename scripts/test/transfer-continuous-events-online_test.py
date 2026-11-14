@@ -954,9 +954,9 @@ class CDCTaskObservationTest(unittest.TestCase):
         pg = {'status': 'available', **times, 'slot_active': True, 'wal_status': 'reserved',
               'retained_wal_bytes': '9007199254740993', 'unacknowledged_wal_bytes': '42',
               'safe_wal_size_bytes': None, 'wal_keep_unlimited': True, 'risk_state': 'reserved'}
-        delay = {'status': 'available', **times, 'connected': True, 'delay_seconds': None}
+        delay = {'status': 'available', **times, 'connected': True, 'event_count': '1', 'last_event_age_seconds': 0.1, 'delay_seconds': None}
         buffer = {'status': 'available', **times, 'earliest_offset': '0', 'latest_offset': '4',
-                  'committed_offset': '4', 'lag_offsets': '0', 'recovery_state': 'available'}
+                  'committed_offset': '4', 'lag_offsets': '0', 'initial_snapshot_completed': True, 'recovery_state': 'available'}
         return {'id': 7, 'last_execution_id': UUID, 'desired_state': 'running',
                 'config': {'source': {'locator': 'addp://engine/10/path/public/continuous_source?type=table'}},
                 'capture': {'source_type': 'postgresql', 'generation': 1, 'status': 'running',

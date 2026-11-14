@@ -521,7 +521,7 @@
     },
     "alert_rule": {
       "title": "通用任务告警规则",
-      "description": "根据任务的真实执行终态判定告警；持续同步任务继续使用专用运行告警。",
+      "description": "按任务配置执行终态或 CDC 持续性能告警。",
       "create": "新增规则",
       "edit": "编辑",
       "delete": "删除",
@@ -531,7 +531,7 @@
       "name": "规则名称",
       "target": "任务",
       "target_placeholder": "选择一个已有任务",
-      "target_help": "只显示具有稳定任务身份的根任务，不包含持续同步会话和临时执行。",
+      "target_help": "选择具有稳定身份的根任务；CDC 任务可配置消费停滞、捕获延迟和积压规则。",
       "rule_type": "触发条件",
       "failure_threshold": "连续次数",
       "routes": "通知目标",
@@ -547,12 +547,32 @@
       "rule_types": {
         "last_terminal_failed": "最近一次执行失败",
         "last_terminal_timeout": "最近一次执行超时",
-        "consecutive_failures": "连续执行失败或超时"
+        "consecutive_failures": "连续执行失败或超时",
+        "cdc_consumer_stalled": "CDC 目标消费停滞",
+        "cdc_capture_delayed": "CDC 捕获持续延迟",
+        "cdc_backlog_high": "CDC 积压持续偏高"
       },
       "validation": {
         "name": "请输入规则名称",
         "target": "请选择任务",
-        "rule_type": "请选择触发条件"
+        "rule_type": "请选择触发条件",
+        "backlog_threshold": "请输入 1 至 9223372036854775807 的整数"
+      },
+      "backlog_threshold": "积压阈值（offset 距离）",
+      "performance_help": {
+        "cdc_consumer_stalled": "存在积压且提交位置连续 3 分钟不前进时警告；任务暂停时暂停评估。",
+        "cdc_capture_delayed": "新事件的捕获延迟超过 60 秒持续 3 分钟时警告；空闲和缺样不累计。",
+        "cdc_backlog_high": "超过配置阈值持续 5 分钟时警告，低于阈值一半持续 1 分钟恢复；任务暂停时暂停评估。"
+      },
+      "evaluation_states": {
+        "unknown": "观测未知",
+        "paused": "任务暂停，暂停评估",
+        "idle": "暂无新事件",
+        "initializing": "初始快照中",
+        "closed": "已结束",
+        "healthy": "未发现异常",
+        "active": "告警中",
+        "pending": "等待持续条件"
       }
     },
     "notification": {
@@ -1816,7 +1836,6 @@
       "groups": {
         "pgActivity": "资源与活动",
         "pgReplication": "逻辑复制",
-
         "resources": "资源与连接",
         "throughput": "吞吐与命中",
         "persistence": "持久化状态",

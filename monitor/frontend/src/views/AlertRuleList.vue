@@ -25,6 +25,8 @@
         <el-table-column :label="t('monitor.alert_rule.rule_type')" min-width="180">
           <template #default="{ row }">
             {{ ruleTypeText(row.rule_type) }}
+            <span v-if="row.rule_type === 'cdc_backlog_high'"> ({{ row.backlog_threshold }})</span>
+            <span v-if="row.cdc_evaluation?.state"> · {{ t(`monitor.alert_rule.evaluation_states.${row.cdc_evaluation.state}`) }}</span>
             <span v-if="row.rule_type === 'consecutive_failures'"> ({{ row.failure_threshold }})</span>
           </template>
         </el-table-column>
@@ -76,13 +78,17 @@
         </el-form-item>
         <el-form-item :label="t('monitor.alert_rule.rule_type')" prop="rule_type">
           <el-select v-model="form.rule_type" class="full-width">
-            <el-option v-for="ruleType in ALERT_RULE_TYPES" :key="ruleType" :value="ruleType" :label="ruleTypeText(ruleType)" />
+            <el-option v-for="ruleType in availableRuleTypes" :key="ruleType" :value="ruleType" :label="ruleTypeText(ruleType)" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.rule_type === 'consecutive_failures'" :label="t('monitor.alert_rule.failure_threshold')" prop="failure_threshold">
           <el-input-number v-model="form.failure_threshold" :min="2" :max="20" controls-position="right" />
         </el-form-item>
-        <el-form-item :label="t('monitor.alert.severity')" prop="severity">
+        <el-form-item v-if="form.rule_type === 'cdc_backlog_high'" :label="t('monitor.alert_rule.backlog_threshold')" prop="backlog_threshold">
+          <el-input v-model="form.backlog_threshold" inputmode="numeric" />
+        </el-form-item>
+        <div v-if="CDC_RULE_TYPES.includes(form.rule_type)" class="form-help">{{ t(`monitor.alert_rule.performance_help.${form.rule_type}`) }}</div>
+        <el-form-item v-if="!CDC_RULE_TYPES.includes(form.rule_type)" :label="t('monitor.alert.severity')" prop="severity">
           <el-radio-group v-model="form.severity">
             <el-radio-button value="warning">{{ t('monitor.alert.severity_values.warning') }}</el-radio-button>
             <el-radio-button value="critical">{{ t('monitor.alert.severity_values.critical') }}</el-radio-button>
@@ -112,7 +118,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, watch, onMounted, reactive, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -127,7 +133,7 @@ import {
   updateAlertRule
 } from '@/api/monitor'
 import {
-  ALERT_RULE_TYPES,
+  ALERT_RULE_TYPES, CDC_RULE_TYPES,
   alertRuleRouteKey,
   alertRuleTargetKey,
   buildAlertRulePayload
@@ -146,13 +152,14 @@ const editingRule = ref(null)
 const formRef = ref(null)
 const form = reactive({
   name: '', target_key: '', rule_type: 'last_terminal_failed', failure_threshold: 2,
-  severity: 'warning', enabled: true, routes: []
+  backlog_threshold: '10000', severity: 'warning', enabled: true, routes: []
 })
 
 const formRules = computed(() => ({
   name: [{ required: true, message: t('monitor.alert_rule.validation.name'), trigger: 'blur' }],
   target_key: [{ required: true, message: t('monitor.alert_rule.validation.target'), trigger: 'change' }],
-  rule_type: [{ required: true, message: t('monitor.alert_rule.validation.rule_type'), trigger: 'change' }]
+  rule_type: [{ required: true, message: t('monitor.alert_rule.validation.rule_type'), trigger: 'change' }],
+  backlog_threshold: [{ validator: (_rule, value, callback) => { if (form.rule_type === 'cdc_backlog_high' && (!/^[1-9][0-9]*$/.test(value) || BigInt(value) < 1n || BigInt(value) > 9223372036854775807n)) callback(new Error(t('monitor.alert_rule.validation.backlog_threshold'))); else callback() }, trigger: 'blur' }]
 }))
 
 const destinationNames = computed(() => {
@@ -162,6 +169,8 @@ const destinationNames = computed(() => {
   return names
 })
 
+const availableRuleTypes = computed(() => { const target=targets.value.find(item => targetKey(item) === form.target_key); return target?.cdc ? CDC_RULE_TYPES.filter(code => code !== 'cdc_capture_delayed' || target.capture_delay_available) : ALERT_RULE_TYPES })
+watch(availableRuleTypes, types => { if (!types.includes(form.rule_type)) form.rule_type = types[0] })
 function targetKey(target) { return alertRuleTargetKey(target) }
 function targetLabel(target) {
   const name = target.source_task_name || target.source_task_id
@@ -191,7 +200,7 @@ async function loadData() {
 function resetForm() {
   Object.assign(form, {
     name: '', target_key: '', rule_type: 'last_terminal_failed', failure_threshold: 2,
-    severity: 'warning', enabled: true, routes: []
+    backlog_threshold: '10000', severity: 'warning', enabled: true, routes: []
   })
   formRef.value?.clearValidate()
 }
@@ -209,6 +218,7 @@ function openEditDialog(rule) {
     target_key: alertRuleTargetKey(rule),
     rule_type: rule.rule_type,
     failure_threshold: rule.failure_threshold,
+    backlog_threshold: rule.backlog_threshold || '10000',
     severity: rule.severity,
     enabled: rule.enabled,
     routes: (rule.routes || []).map(alertRuleRouteKey)

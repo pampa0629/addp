@@ -23,7 +23,8 @@ type CreateAlertRuleRequest struct {
 	TaskType         string                        `json:"task_type" binding:"required" example:"sync"`
 	SourceTaskID     string                        `json:"source_task_id" binding:"required" example:"43"`
 	SourceTaskName   string                        `json:"source_task_name" example:"生产数据同步"`
-	RuleType         string                        `json:"rule_type" binding:"required" enums:"last_terminal_failed,last_terminal_timeout,consecutive_failures"`
+	RuleType         string                        `json:"rule_type" binding:"required" enums:"last_terminal_failed,last_terminal_timeout,consecutive_failures,cdc_consumer_stalled,cdc_capture_delayed,cdc_backlog_high"`
+	BacklogThreshold string                        `json:"backlog_threshold" example:"10000"`
 	FailureThreshold int                           `json:"failure_threshold" example:"3"`
 	Severity         string                        `json:"severity" binding:"required" enums:"warning,critical"`
 	Enabled          *bool                         `json:"enabled" binding:"required"`
@@ -36,7 +37,8 @@ type UpdateAlertRuleRequest struct {
 	TaskType         *string                        `json:"task_type,omitempty"`
 	SourceTaskID     *string                        `json:"source_task_id,omitempty"`
 	SourceTaskName   *string                        `json:"source_task_name,omitempty"`
-	RuleType         *string                        `json:"rule_type,omitempty" enums:"last_terminal_failed,last_terminal_timeout,consecutive_failures"`
+	RuleType         *string                        `json:"rule_type,omitempty" enums:"last_terminal_failed,last_terminal_timeout,consecutive_failures,cdc_consumer_stalled,cdc_capture_delayed,cdc_backlog_high"`
+	BacklogThreshold *string                        `json:"backlog_threshold,omitempty"`
 	FailureThreshold *int                           `json:"failure_threshold,omitempty"`
 	Severity         *string                        `json:"severity,omitempty" enums:"warning,critical"`
 	Enabled          *bool                          `json:"enabled,omitempty"`
@@ -123,7 +125,7 @@ func (h *AlertRuleHandler) CreateAlertRule(c *gin.Context) {
 	rule, err := h.service.Create(c.Request.Context(), service.CreateAlertRuleInput{
 		TenantID: tenantID, Name: request.Name, Module: request.Module, TaskType: request.TaskType,
 		SourceTaskID: request.SourceTaskID, SourceTaskName: request.SourceTaskName, RuleType: request.RuleType,
-		FailureThreshold: request.FailureThreshold, Severity: request.Severity, Enabled: *request.Enabled, Routes: request.Routes,
+		BacklogThreshold: request.BacklogThreshold, FailureThreshold: request.FailureThreshold, Severity: request.Severity, Enabled: *request.Enabled, Routes: request.Routes,
 	})
 	if handleAlertRuleError(c, err) {
 		return
@@ -159,7 +161,7 @@ func (h *AlertRuleHandler) UpdateAlertRule(c *gin.Context) {
 	rule, err := h.service.Update(c.Request.Context(), service.UpdateAlertRuleInput{
 		TenantID: tenantID, ID: id, Name: request.Name, Module: request.Module, TaskType: request.TaskType,
 		SourceTaskID: request.SourceTaskID, SourceTaskName: request.SourceTaskName, RuleType: request.RuleType,
-		FailureThreshold: request.FailureThreshold, Severity: request.Severity, Enabled: request.Enabled, Routes: request.Routes,
+		BacklogThreshold: request.BacklogThreshold, FailureThreshold: request.FailureThreshold, Severity: request.Severity, Enabled: request.Enabled, Routes: request.Routes,
 	}, time.Now())
 	if handleAlertRuleError(c, err) {
 		return

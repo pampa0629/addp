@@ -1,7 +1,7 @@
 import { identity } from './monitoring-targets.fixture'
 const executionID = '10000000-0000-4000-8000-000000000001'
 export function task(id=7) { return { id, name: `Orders CDC ${id}`, task_type:'sync', status:'running', desired_state:'running', last_execution_id: executionID, config:{runtime:{boundary:'continuous'},load:{change_detection:{type:'cdc'}},source:{locator:`addp://engine/2/path/public/orders_${id}?type=table`},target:{parent_locator:'addp://engine/3/path/sales?type=schema',name:`orders_copy_${id}`}},capture:{generation:1,status:'running',buffer_observation:null,source_type:'postgresql',postgresql_observation:null,delay_observation:null,connector_status:'RUNNING',source_status:'ONLINE',last_observed_at:'2026-11-12T02:00:00Z'} } }
-export async function cdcTaskBackend(page,{locale='zh-cn',permissions=['transfer.task.read','monitor.execution.read'],alerts=[]}={}) {
+export async function cdcTaskBackend(page,{locale='zh-cn',permissions=['transfer.task.read','monitor.execution.read'],alerts=[],rules=[],targets=[]}={}) {
  let mode='',held=null,release
  const calls=[]
  await page.addInitScript(lang=>localStorage.setItem('addp-lang',lang),locale)
@@ -13,8 +13,11 @@ export async function cdcTaskBackend(page,{locale='zh-cn',permissions=['transfer
   else if(path.endsWith('/system/users/me'))body={id:9,username:'fixture-user'}
   else if(path.endsWith('/system/auth/context'))body=identity(permissions,{type:'tenant',tenant_id:'1',tenant_membership_id:'1'})
   else {
-   calls.push({path,params:Object.fromEntries(url.searchParams)})
+   calls.push({path,params:Object.fromEntries(url.searchParams),method:route.request().method(),body:route.request().postDataJSON()})
    if(mode==='denied'){status=403;body={error_code:'permission_denied'}}
+   else if(path.endsWith('/monitor/alert-rule-targets')) body=targets
+   else if(path.endsWith('/monitor/alert-rules')) {if(route.request().method()==='POST'){body={...route.request().postDataJSON(),id:1};rules.push(body);status=201}else body=rules}
+   else if(path.endsWith('/monitor/webhook-destinations') || path.endsWith('/monitor/email-destinations')) body=[]
    else if(path.endsWith('/monitor/alerts')) body={data:alerts,total:alerts.length,page:1,page_size:20}
    else if(path.endsWith('/transfer/task-definitions')) body={items:mode==='empty'?[]:[task(7),task(8)],total:mode==='empty'?0:2,page:Number(url.searchParams.get('page')),page_size:20}
    else if(path.includes('/transfer/task-definitions/')){body=task(Number(path.split('/').at(-1)));if(mode.startsWith('source-')){

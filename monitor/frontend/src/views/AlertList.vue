@@ -31,6 +31,7 @@
             <div v-if="row.rule_name" class="rule-name">{{ row.rule_name }}</div>
             <div v-if="cdcRiskCodes.includes(row.signal_code)" class="rule-name" data-testid="cdc-alert-reason">
               {{ t('monitor.alert.cdc_generation', { generation: row.details?.generation }) }}
+              <span v-if="row.details?.evaluation_state" data-testid="cdc-performance-evaluation"> · {{ t(`monitor.alert_rule.evaluation_states.${row.details.evaluation_state}`) }}</span>
               <span v-if="row.signal_code === 'cdc_capture_failed'" data-testid="cdc-capture-failure-duration"> · {{ t('monitor.alert.capture_failure_duration', { seconds: row.details?.trigger_seconds }) }}</span>
               <span v-if="cdcRiskReasons.includes(row.details?.reason)"> · {{ t(`monitor.alert.cdc_reasons.${row.details.reason}`) }}</span>
             </div>
@@ -85,7 +86,7 @@ const { t, te } = useI18n()
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
-const cdcRiskCodes = ['cdc_source_recovery_lost', 'cdc_buffer_recovery_lost', 'cdc_capture_failed']
+const cdcRiskCodes = ['cdc_source_recovery_lost', 'cdc_buffer_recovery_lost', 'cdc_capture_failed', 'cdc_consumer_stalled', 'cdc_capture_delayed', 'cdc_backlog_high']
 const cdcRiskReasons = ['slot_missing', 'wal_lost', 'buffer_position_lost', 'connector_not_running', 'task_not_running', 'source_disconnected']
 const resolveRouteState = routeQuery => resolveMonitorTabRouteState(routeQuery, ['incidents', 'rules'], 'incidents')
 const activeView = ref(resolveRouteState(route.query).tab)
@@ -108,7 +109,7 @@ function search() { pagination.page = 1; loadAlerts() }
 function alertStatusText(status) { return status ? t(`monitor.alert.status_values.${status}`) : '-' }
 function signalText(code) {
   if (!code) return '-'
-  if (['last_terminal_failed', 'last_terminal_timeout', 'consecutive_failures'].includes(code)) {
+  if (['last_terminal_failed', 'last_terminal_timeout', 'consecutive_failures', 'cdc_consumer_stalled', 'cdc_capture_delayed', 'cdc_backlog_high'].includes(code)) {
     return t(`monitor.alert_rule.rule_types.${code}`)
   }
   const key = `monitor.execution.detail.continuous.signals.${code}.title`

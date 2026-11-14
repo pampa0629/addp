@@ -50,7 +50,7 @@ func TestAlertEvaluationOpensResolvesAndReopensIncident(t *testing.T) {
 	if err := db.Exec(`CREATE TABLE monitor.alert_rules (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id TEXT NOT NULL UNIQUE, tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL, module TEXT NOT NULL, task_type TEXT NOT NULL, source_task_id TEXT NOT NULL,
-		source_task_name TEXT, rule_type TEXT NOT NULL, failure_threshold INTEGER NOT NULL,
+		backlog_threshold TEXT NOT NULL DEFAULT '', cdc_window JSON NOT NULL DEFAULT '{}', source_task_name TEXT, rule_type TEXT NOT NULL, failure_threshold INTEGER NOT NULL,
 		severity TEXT NOT NULL, enabled BOOLEAN NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL
 	)`).Error; err != nil {
 		t.Fatal(err)

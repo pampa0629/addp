@@ -39,3 +39,39 @@ for (const locale of ['zh-cn', 'en']) test(`Capture failure warning uses current
   await expect(page.getByTestId('cdc-capture-failure-duration')).toContainText('60')
   await expect(page.getByTestId('cdc-alert-open-task')).toHaveCount(1)
 })
+
+
+for (const locale of ['zh-cn', 'en']) test(`CDC performance alerts retain pause and task permissions (${locale})`, async ({ page }) => {
+  const warning = { ...alerts[0], signal_code: 'cdc_consumer_stalled', severity: 'warning',
+    details: { generation: '3', evaluation_state: 'paused', trigger_seconds: 180, lag_offsets: '3' } }
+  await cdcTaskBackend(page, { locale, alerts: [warning], permissions: ['monitor.alert_rule.read', 'monitor.alert_incident.read', 'monitor.execution.read', 'transfer.task.read'] })
+  await page.goto('/alerts')
+  await expect(page.getByText(locale === 'en' ? 'CDC target consumption stalled' : 'CDC 目标消费停滞', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('cdc-performance-evaluation')).toContainText(locale === 'en' ? 'Task paused' : '任务暂停')
+  await expect(page.getByTestId('cdc-alert-open-task')).toHaveCount(1)
+})
+
+for (const locale of ['zh-cn', 'en']) test(`CDC rule form selects only current target policies (${locale})`, async ({ page }) => {
+  const state=await cdcTaskBackend(page, { locale, targets: [{module:'transfer',task_type:'sync',source_task_id:'7',source_task_name:'Orders CDC',cdc:true,capture_delay_available:true}],
+    permissions: ['monitor.alert_rule.read','monitor.alert_rule.create','monitor.notification_destination.read','monitor.alert_incident.read'] })
+  await page.goto('/alerts?tab=rules')
+  await page.getByRole('button', { name: locale === 'en' ? 'Add Rule' : '新增规则', exact:true }).click()
+  const dialog=page.getByRole('dialog')
+  await dialog.locator('input').first().fill('Backlog Acceptance')
+  await dialog.locator('.el-select').first().click()
+  await page.getByRole('option', {name:'Orders CDC (transfer / sync / 7)',exact:true}).click()
+  await dialog.locator('.el-select').nth(1).click()
+  await expect(page.getByRole('option', {name:locale==='en'?'CDC target consumption stalled':'CDC 目标消费停滞',exact:true})).toBeVisible()
+  await page.getByRole('option', {name:locale==='en'?'CDC backlog persistently high':'CDC 积压持续偏高',exact:true}).click()
+  const threshold=dialog.locator('input[inputmode="numeric"]')
+  await expect(threshold).toHaveValue('10000')
+  await threshold.fill('9007199254740993')
+  await expect(threshold).toHaveValue('9007199254740993')
+  await expect(dialog.getByText(locale==='en'?'Critical':'严重',{exact:true})).toHaveCount(0)
+  await dialog.getByRole('button',{name:locale==='en'?'Save':'保存',exact:true}).click()
+  await expect(dialog).toHaveCount(0)
+  const saved=state.calls.find(row=>row.method==='POST' && row.path.endsWith('/monitor/alert-rules')).body
+  expect(saved.backlog_threshold).toBe('9007199254740993')
+  expect(saved.rule_type).toBe('cdc_backlog_high')
+  expect(saved.severity).toBe('warning')
+})

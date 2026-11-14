@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 )
 
 var exactMetricServer = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,255}$`)
@@ -18,7 +19,7 @@ func (c *ConnectClient) Delay(ctx context.Context, name string) (*CaptureDelay, 
 		return nil, fmt.Errorf("capture delay unavailable")
 	}
 	bean := "debezium.postgres:context=streaming,server=" + name + ",type=connector-metrics"
-	body, _ := json.Marshal(map[string]any{"type": "read", "mbean": bean, "attribute": []string{"Connected", "MilliSecondsBehindSource"}})
+	body, _ := json.Marshal(map[string]any{"type": "read", "mbean": bean, "attribute": []string{"Connected", "MilliSecondsBehindSource", "TotalNumberOfEventsSeen", "MilliSecondsSinceLastEvent"}})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.metricsURL+"/jolokia/", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -45,6 +46,8 @@ func (c *ConnectClient) Delay(ctx context.Context, name string) (*CaptureDelay, 
 		Value *struct {
 			Connected *bool    `json:"Connected"`
 			Delay     *float64 `json:"MilliSecondsBehindSource"`
+			Count     *int64   `json:"TotalNumberOfEventsSeen"`
+			Age       *int64   `json:"MilliSecondsSinceLastEvent"`
 		} `json:"value"`
 	}
 	if json.Unmarshal(raw, &value) != nil || value.Request.MBean != bean {
@@ -64,6 +67,10 @@ func (c *ConnectClient) Delay(ctx context.Context, name string) (*CaptureDelay, 
 	if ms != -1 && *value.Value.Connected {
 		seconds := ms / 1000
 		result.Seconds = &seconds
+	}
+	if value.Value.Count != nil && *value.Value.Count >= 0 && value.Value.Age != nil && *value.Value.Age >= 0 {
+		count, age := strconv.FormatInt(*value.Value.Count, 10), float64(*value.Value.Age)/1000
+		result.EventCount, result.LastEventAgeSeconds = &count, &age
 	}
 	return result, nil
 }

@@ -276,7 +276,7 @@ Capture 后台按当前 generation 保存的 source identity、连接 fingerprin
 
 风险只按 PostgreSQL 15 原生 wal_status 表达 reserved／extended／unreserved／lost；缺失为 unknown。不新增统一容量阈值，不将 inactive 推断为日志丢失；unreserved 表示所需 WAL 不再保证保留，lost 表示槽已不可用。这与 Kafka 消息恢复窗口分开，不推断整条链路可恢复。事实口径见 [PostgreSQL replication slots](https://www.postgresql.org/docs/15/view-pg-replication-slots.html)。
 
-`capture.delay_observation` 独立发布 PostgreSQL Debezium 当前 Connector 的 status、connected、delay_seconds、sampled_at、expires_at。Transfer 通过显式私有 Jolokia URL，精确读取当前持久 Connector（同其 topic.prefix）的 streaming MBean 两个白名单属性 Connected／MilliSecondsBehindSource，不使用组件最大值，不读消息正文。-1 为尚无延迟样本，其他负值原样保留表示时钟偏差；此值为最近事件在源端发生到 Connector 处理的时间差，不是持续增长的空闲时长、复制确认时间或目标端到端延迟。未发现 MBean 为 no_sample，失败为 unavailable；不回用旧数值，不自动重试。来源见 [Debezium PostgreSQL monitoring](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-monitoring)。
+`capture.delay_observation` 独立发布 PostgreSQL Debezium 当前 Connector 的 status、connected、delay_seconds、sampled_at、expires_at。Transfer 通过显式私有 Jolokia URL，精确读取当前持久 Connector（同其 topic.prefix）的 streaming MBean 四个白名单属性 Connected／MilliSecondsBehindSource／TotalNumberOfEventsSeen／MilliSecondsSinceLastEvent，不使用组件最大值，不读消息正文。-1 为尚无延迟样本，其他负值原样保留表示时钟偏差；此值为最近事件在源端发生到 Connector 处理的时间差，不是持续增长的空闲时长、复制确认时间或目标端到端延迟。event_count 使用精确十进制字符串，last_event_age_seconds 表示距最近处理事件时间；两者仅用于判别新事件、空闲和计数器重置，不读取 LastEvent 或消息正文。重复读取同一事件的高延迟不构成持续延迟。未发现 MBean 为 no_sample，失败为 unavailable；不回用旧数值，不自动重试。来源见 [Debezium PostgreSQL monitoring](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-monitoring)。
 
 两份快照沿既有 generation CAS 持久化并通过原任务读取权限发布；在两次 Capture 采样间隔后过期。源 SQL 和 JMX 独立失败，单项缺样不隐藏另一项有效结果；终止／清理状态不再发布当前指标。MySQL／Oracle 返回空的 PostgreSQL 专属指标，不伪造同类能力。前后端、Swagger、Transfer Go／PostgreSQL T2、JMX 白名单及生命周期、Monitor CDC 浏览器门禁同次覆盖；真实部署与事件采样需应用配置后另核。
 
@@ -286,7 +286,7 @@ Capture 后台按当前 generation 保存的 source identity、连接 fingerprin
 
 Transfer Capture 后台按现有 MonitorInterval 对当前可观测 generation 持续只读采样其单分区 data topic 的最早保留位置及末端位置，并读取本任务／source identity／partition 0 的同步主状态；不读取消息正文、不加入消费组、不提交 offset、不启动 execution。此观测独立于 Connector／源连接健康，即使捕获故障也继续核对已经缓冲的消息。暂停停止目标应用而不停止该观测。
 
-最新快照保存在当前 capture resource 的 `buffer_observation`，沿正式任务详情／列表的 `capture.buffer_observation` 安全投影发布，权限沿用 `transfer.task.read`。只含 status、sampled_at、expires_at、earliest_offset、latest_offset、committed_offset、lag_offsets 和 recovery_state，不输出 Topic、Group、Connector、连接或原始错误。数值使用十进制字符串，避免 JavaScript 精度丢失；lag_offsets 为 offset 距离，不等同业务行数或精确消息数。先读取 committed position，再读取消息末端，允许并发消费下保守高估本次积压，不宣称跨系统原子快照。
+最新快照保存在当前 capture resource 的 `buffer_observation`，沿正式任务详情／列表的 `capture.buffer_observation` 安全投影发布，权限沿用 `transfer.task.read`。只含 status、sampled_at、expires_at、earliest_offset、latest_offset、committed_offset、lag_offsets、recovery_state 和 initial_snapshot_completed，不输出 Topic、Group、Connector、连接或原始错误。数值使用十进制字符串，避免 JavaScript 精度丢失；lag_offsets 为 offset 距离，不等同业务行数或精确消息数。先读取 committed position，再读取消息末端，允许并发消费下保守高估本次积压，不宣称跨系统原子快照。initial_snapshot_completed 从同一次可信已提交位置的 initial_snapshot_completed 标记取得；该位置读取失败为 null。消息代理端点不可用时仍保留该次已核对的初始快照阶段，捕获活动和延迟不依赖消息缓冲查询成功。
 
 `recovery_state=available` 表示提交位置位于保留范围；`lost` 表示恢复起点早于最早保留位置；没有已提交位置时，generation 自建空 topic 的初始起点为 0，最早位置为 0 时为 `not_started`，大于 0 时为 `lost`。采样失败或位置异常为 `unknown/status=unavailable`，以本次缺样替换旧值；不把未知解释为零或健康。当前终止／清理状态不发布运行观测；CAS 拒绝跨生命周期发布。快照在两次采样间隔后过期，Monitor 显示过期并隐藏数值。只判断恢复起点是否被保留，不估算剩余秒数，不推断目标已经完成或源日志仍可恢复。
 

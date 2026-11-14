@@ -33,9 +33,11 @@ type ConnectorOffsets struct {
 }
 
 type CaptureDelay struct {
-	Status    string
-	Connected *bool
-	Seconds   *float64
+	Status              string
+	Connected           *bool
+	Seconds             *float64
+	EventCount          *string
+	LastEventAgeSeconds *float64
 }
 
 type ConnectControl interface {

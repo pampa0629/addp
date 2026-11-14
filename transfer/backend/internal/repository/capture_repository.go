@@ -246,22 +246,22 @@ func mysqlConnectorServerID(captureResourceID uint) (uint32, error) {
 	return uint32(captureResourceID), nil
 }
 
-// BufferCommittedOffset reads only the current generation's source position.
-func (r *CaptureRepository) BufferCommittedOffset(ctx context.Context, resource *models.CaptureResource) (*int64, error) {
+// BufferCommittedPosition reads only the current generation's source position.
+func (r *CaptureRepository) BufferCommittedPosition(ctx context.Context, resource *models.CaptureResource) (*int64, bool, error) {
 	var state models.SyncState
 	err := r.db.WithContext(ctx).Where("task_id = ? AND source_identity = ? AND partition = ?", resource.TaskID, resource.SourceIdentity, "0").First(&state).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(state.Position) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	data, err := json.Marshal(state.Position)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var position struct {
 		Type      string            `json:"type"`
@@ -270,16 +270,16 @@ func (r *CaptureRepository) BufferCommittedOffset(ctx context.Context, resource 
 		Values    map[string]string `json:"values"`
 	}
 	if err = json.Unmarshal(data, &position); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if position.Type != "kafka_offset" || position.Version != "v1" || position.Partition != "0" {
-		return nil, fmt.Errorf("invalid CDC committed position")
+		return nil, false, fmt.Errorf("invalid CDC committed position")
 	}
 	offset, err := strconv.ParseInt(position.Values["next_offset"], 10, 64)
 	if err != nil || offset < 0 {
-		return nil, fmt.Errorf("invalid CDC committed offset")
+		return nil, false, fmt.Errorf("invalid CDC committed offset")
 	}
-	return &offset, nil
+	return &offset, position.Values["initial_snapshot_completed"] == "true", nil
 }
 
 // ClaimPostgreSQLResources records verified namespace reservation before Connect can create objects.
