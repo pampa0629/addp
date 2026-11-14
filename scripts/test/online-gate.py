@@ -65,6 +65,10 @@ SUITES: Mapping[str, Suite] = {
         command=("bash", "-c", 'exec "$ADDP_ONLINE_SECRET_DIR/observer/bin/python" scripts/test/workflow-runtime-health-recovery-online.py'),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL")),
     ),
+    "standard-document-storage": Suite(
+        command=(sys.executable, str(Path(__file__).with_name("standard-document-storage-online.py").resolve())),
+        services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("standard", "STANDARD_URL")),
+    ),
     "meta-scan-claim": Suite(
         command=(sys.executable, str(Path(__file__).with_name("meta-scan-claim-online.py").resolve())),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("meta", "META_URL")),
@@ -1378,10 +1382,10 @@ def run_online(
         available = ", ".join(sorted(suites)) or "none"
         raise OnlineGateError(f"unknown ONLINE_SUITE {suite_name!r}; registered suites: {available}")
 
-    if suite_name == "meta-scan-claim":
+    if suite_name in {"meta-scan-claim", "standard-document-storage"}:
         # The harness lives at the dispatch SHA. Preflight and all product
         # processes must instead identify the clean, pinned product checkout.
-        repository = Path(environment["RUNNER_TEMP"]) / "meta-scan-product"
+        repository = Path(environment["RUNNER_TEMP"]) / ("meta-scan-product" if suite_name == "meta-scan-claim" else "standard-http-product")
     profile = execution_profile(suite_name, environment)
     if suite_name == 'highgo-consumer-flow':
         highgo_case = environment.get('ADDP_ONLINE_HIGHGO_CASE', 'business')

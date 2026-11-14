@@ -1187,7 +1187,7 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 .PHONY: test-meta-scan-claim-online-runner
 test-meta-scan-claim-online-runner: ## 验证单次 Meta 扫描 Hosted 租约与事件证据
 	@bash -n scripts/test/online-hosted-meta-scan-gate.sh
-	@python3 -m unittest scripts/test/meta-scan-claim-online_test.py
+	@python3 -m unittest scripts/test/meta-scan-claim-online_test.py scripts/test/standard-document-storage-online_test.py
 
 .PHONY: test-pg-authorization-online-runner
 test-pg-authorization-online-runner: test-online-registration-unit test-online-dispatcher-unit ## 验证 PG 源授权 Online 场景、隔离和清理
