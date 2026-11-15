@@ -213,3 +213,59 @@ export async function assertCDCTaskMonitoring(page, frame, binding, phase, execu
   checks.push('no_samples')
   return checks
 }
+
+export async function assertCDCTaskHistory(page, frame, binding) {
+  const path = `/api/v1/transfer/task-definitions/${binding.task_id}/cdc-metric-history`
+  const response = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname === path)
+  await frame.getByRole('button', { name: '刷新', exact: true }).click()
+  const value = await json(await response, 'CDC history response')
+  expect(value.task_id).toBe(binding.task_id)
+  expect(value.generation).toBe(binding.generation)
+  expect(value.step_seconds).toBe(60)
+  expect(value.points).toHaveLength(60)
+  const values = value.points.map(point => {
+    const sample = point.buffer_observation
+    if (!point.recorded_at || sample?.status !== 'available' || Date.parse(sample.expires_at) <= Date.parse(point.recorded_at)) return null
+    return sample.lag_offsets === null ? null : Number(sample.lag_offsets)
+  })
+  const gap = value.points.findIndex(point => Date.parse(point.timestamp) === Date.parse(binding.gap_timestamp))
+  expect(gap).toBeGreaterThan(0)
+  expect(value.points[gap].recorded_at).not.toBeNull()
+  expect(values[gap]).toBeNull()
+  const high = values.findIndex((number, index) => index < gap && number > 256)
+  const zero = values.findIndex((number, index) => index > gap && number === 0)
+  expect(high).toBeGreaterThanOrEqual(0)
+  expect(zero).toBeGreaterThan(gap)
+  const chart = frame.getByTestId('cdc-task-history-chart')
+  await chart.scrollIntoViewIfNeeded()
+  await expect(chart.locator('canvas')).toBeVisible()
+  await expect(frame.getByTestId('cdc-task-history-error')).toHaveCount(0)
+  await expect(frame.getByTestId('cdc-task-history-precision')).toHaveCount(0)
+  // Read the already loaded ECharts module, without exposing a product debug API.
+  const rendered = () => chart.evaluate(async (element, indices) => {
+    const url = performance.getEntriesByType('resource').find(entry => /\/echarts_core\.js(?:\?|$)/.test(entry.name))?.name
+    if (!url) throw new Error('loaded ECharts module missing; resource count=' + performance.getEntriesByType('resource').length)
+    const { getInstanceByDom } = await import(url)
+    const instance = getInstanceByDom(element)
+    if (!instance) return null
+    const option = instance.getOption(), series = option.series[0]
+    return { type: series.type, connectNulls: series.connectNulls, values: series.data,
+      coordinates: indices.map(index => instance.convertToPixel({ seriesIndex: 0 }, [index, series.data[index] ?? 0])),
+      gapText: series.tooltip.valueFormatter(null, indices[1]), name: series.name }
+  }, [high, gap, zero])
+  await expect.poll(async () => (await rendered())?.values).toEqual(values)
+  const actual = await rendered()
+  expect(actual.type).toBe('line')
+  expect(actual.connectNulls).toBe(false)
+  expect(actual.gapText).toContain('—')
+  const box = await chart.boundingBox()
+  for (const [position, index] of [[0, high], [2, zero]]) {
+    const [x, y] = actual.coordinates[position]
+    expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true)
+    await page.mouse.move(box.x + x, box.y + y)
+    await expect(chart).toContainText(actual.name + values[index].toLocaleString('zh-CN'))
+  }
+  await expect(frame.getByTestId('cdc-task-chain')).not.toContainText('business-value-sentinel')
+  return ['task_identity', 'history_api_matches_chart', 'history_backlog_growth_then_zero',
+    'history_fault_gap_not_connected', 'history_tooltips', 'no_samples']
+}

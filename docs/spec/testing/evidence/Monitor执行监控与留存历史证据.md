@@ -440,3 +440,12 @@ Artifact `14144985129`（9343437 bytes）的下载内容与 API SHA-256 `0730bac
 故障与领域 cleanup=passed、cleanup_failures=[]、uncertain_mutation=false。CPU、Connector 配置、源临时记录、目标锁及告警规则恢复或清理，目标精确行集核对通过，Webhook 目标删除、接收端关闭。任务 5／4／3／2 经正式 API 删除且读回不存在，本轮 CDC 槽／publication 随原清理契约核对；硬退出 Kafka task 1 按原场景保留至部署销毁，因此领域 residual_resources=expected_deployment_residuals=1。外层 `summary.txt` 另行确认 cleanup=passed、infra_cleanup=zero_residuals，不把预期领域保留项称为领域零项。
 
 个人环境只读前后结果完全一致：task61 仍 running，task46／task58 两个原逻辑槽仍保留且不活跃，全局身份活动槽仍活跃。AI 未操作个人任务、槽或服务。本轮补齐新增任务历史的 Hosted API 实故障断言；个人 Chrome 页面、独立历史图表实故障 DOM、七天自然留存／长期容量和生产 T5 不在此次通过范围。触发前暂停窗口重置仍只有 T2 证据，不由本轮已打开事件的暂停保持追认。
+
+
+### CDC 历史图表实故障页面断言准备（2026-11-15）
+
+用户授权补齐同一实故障中的租户历史图表验收。本批只修改既有 Runner、Console 浏览器验收与共用 CDC 夹具，不改产品接口、权限、采样频率或个人任务。性能缺样阶段在原 32 秒告警保持核对后，最多再等待 88 秒，要求本次故障后已完成分钟留下有 recorded_at 的真实缺样观测，再恢复原故障。最后新增同一任务／generation 的 `cdc_history` 页面阶段：正式普通 User 通过真实 Console 打开任务历史，逐点对照公开 API 与已渲染 ECharts 实例，确认故障前积压 >256、故障分钟 null、后继零值、connectNulls=false、缺样提示以及鼠标悬浮高值／零值；通过后只保存图表局部截图。沿原 1450／1500 秒总预算和清理，不把任务创建前空白视为故障断点。
+
+本地标准 `make test-transfer-continuous-online-runner` 通过 142 项 Python、既有 Node／Shell 语法与 System 身份夹具 Go，包含错任务历史／故障前空档拒绝及新页面回执的租户、完整断言和结果核验。`make test-console-frontend CONSOLE_FRONTEND_BROWSER_ARGS='e2e/cdc-resource-navigation.spec.js'` 通过 285 项 T1、8 项受控浏览器及构建；新增用例直接复用 Hosted 图表断言，实际读取 Canvas 实例并以鼠标核对 tooltip。`make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS='e2e/cdc-task-history.spec.js e2e/cdc-tasks.spec.js e2e/cdc-resources.spec.js e2e/cdc-risk-alerts.spec.js'` 通过 156 项 T1、29 项浏览器及构建。`make test-t2-ci-registration` 通过 87＋10 项及登记比较；原 suite、Console／Monitor 自动发现和标准入口均已覆盖，无新增 CI 路线。
+
+首次把 Console helper 直接导入 Monitor 测试触发两份 Playwright 加载，移至原 Console CDC 导航用例后消除；首次新增页面断言又因默认资源计时缓冲区未保留已加载 ECharts 模块而失败。修订仅在验收浏览器扩大 Resource Timing 缓冲区至 5000，读取实际已加载模块，不增加产品调试接口。单项诊断与上述标准专项随后通过；首败保留于 `/tmp/addp-cdc-history-chart-local-t3.log` 和 `...-console-t3.log`，最终收据为 `...-runner-final.log`、`...-console-final.log`、`...-monitor-final.log` 和 `...-registration.log`。这批是本地 Runner／受控页面证据，新源码的真实 Hosted 图表结果仍须单独取得，不由上轮历史 API 的通过追认。

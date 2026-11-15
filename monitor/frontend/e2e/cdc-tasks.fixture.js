@@ -30,6 +30,12 @@ export async function cdcTaskBackend(page,{locale='zh-cn',permissions=['transfer
       const at=new Date(start+5000).toISOString(),expires=new Date(start+35000).toISOString()
       Object.assign(points[0],{recorded_at:at,consumption_state:'paused',buffer_observation:{status:'available',sampled_at:at,expires_at:expires,earliest_offset:'0',latest_offset:mode==='history-large'?'9007199254740993':'10',committed_offset:'0',lag_offsets:mode==='history-large'?'9007199254740993':'10',recovery_state:'available'}})
      }
+     if(mode==='history-fault') {
+      for (const [index, lag] of [[5,'300'],[6,null],[7,'0']]) {
+       const at=new Date(start+index*60000+5000).toISOString(),expires=new Date(start+index*60000+35000).toISOString()
+       Object.assign(points[index],{recorded_at:at,consumption_state:'running',buffer_observation:lag===null?null:{status:'available',sampled_at:at,expires_at:expires,earliest_offset:'0',latest_offset:lag,committed_offset:'0',lag_offsets:lag,recovery_state:'available'}})
+      }
+     }
      body={task_id:Number(path.split('/').at(-2)),generation:Number(url.searchParams.get('generation')),start:new Date(start).toISOString(),end:new Date(end).toISOString(),queried_at:new Date().toISOString(),step_seconds:step,points}
     }
    }

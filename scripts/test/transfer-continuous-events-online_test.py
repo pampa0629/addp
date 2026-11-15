@@ -723,6 +723,40 @@ class ContinuousRunnerTest(unittest.TestCase):
                 launch.assert_not_called()
             self.assertFalse(list(secret.iterdir()))
 
+    def test_history_browser_binds_generation_gap_and_requires_all_chart_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); artifacts=root/'artifacts'; artifacts.mkdir()
+            secret=root/'private'; secret.mkdir()
+            subject={'tenant_id':'2','principal_id':'33'}
+            binding={'task_id':7,'generation':1,'gap_timestamp':'2026-11-15T03:07:00Z'}
+            checks=['task_identity','history_api_matches_chart','history_backlog_growth_then_zero',
+                    'history_fault_gap_not_connected','history_tooltips','no_samples']
+            receipt={'schema_version':'addp.continuous-execution-browser/v1','phase':'cdc_history','run_id':'run-1',
+                     'tenant_id':'2','principal_id':'33','execution_ids':[UUID],'checks':checks,'result':'passed'}
+            class Process:
+                def __init__(self,args,**kwargs):
+                    environment=kwargs['env']
+                    assert json.loads(environment['ADDP_CONTINUOUS_BROWSER_HISTORY'])==binding
+                    assert 'ADDP_CONTINUOUS_BROWSER_CDC' not in environment
+                    (artifacts/'continuous-browser-cdc_history.json').write_text(json.dumps(receipt))
+                def poll(self): return 0
+                def wait(self,timeout): return 0
+            env={'ADDP_ONLINE_ARTIFACT_DIR':str(artifacts),'ADDP_ONLINE_TEST_USER_USERNAME':'consumer',
+                 'ADDP_ONLINE_TEST_USER_PASSWORD':'private-password'}
+            with patch.dict(os.environ,env),patch.object(M.subprocess,'Popen',Process):
+                proof=M.run_browser('cdc_history',[UUID],subject,'run-1',secret,metric_history=binding)
+                self.assertEqual(proof['checks'],checks)
+                for change in [{'tenant_id':'9'},{'checks':checks[:-1]},{'result':'failed'}]:
+                    original=receipt.copy();receipt.update(change)
+                    with self.subTest(change=change),self.assertRaises(M.SuiteError):
+                        M.run_browser('cdc_history',[UUID],subject,'run-1',secret,metric_history=binding)
+                    receipt.clear();receipt.update(original)
+            for invalid in [None,{**binding,'generation':0},{**binding,'raw_response':{}}]:
+                with patch.object(M.subprocess,'Popen') as launch,self.assertRaises(M.SuiteError):
+                    M.run_browser('cdc_history',[UUID],subject,'run-1',secret,metric_history=invalid)
+                launch.assert_not_called()
+            self.assertFalse(list(secret.iterdir()))
+
     def test_browser_rejects_invalid_phase_identity_and_action_before_launch(self):
         with patch.object(M.subprocess, 'Popen') as launch:
             for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None), ('live', [UUID], lambda: None),
@@ -1432,6 +1466,16 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 return SimpleNamespace(payload={})
             if path == M.RULES:
                 return SimpleNamespace(payload=[] if state['deleted'] else rules())
+            if '/cdc-metric-history?' in path:
+                state['clock'] += 60
+                q = M.urllib.parse.parse_qs(M.urllib.parse.urlparse(path).query)
+                end = M.datetime.fromisoformat(q['end'][0])
+                at = end - timedelta(seconds=1)
+                if invalid == 'history_pre_fault':
+                    at = base - timedelta(seconds=1)
+                return SimpleNamespace(payload={'task_id':8 if invalid=='history_identity' else 7,'generation':1,
+                    'points':[{'timestamp':at.replace(second=0,microsecond=0).isoformat(),
+                               'recorded_at':at.isoformat(),'buffer_observation':None}]})
             self.assertEqual(path,M.OWNER+'/task-definitions/7')
             state['clock'] += 0.01
             if state['phase'] == 'performance_recovery':
@@ -1471,7 +1515,9 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         delivered = unittest.mock.Mock(return_value=[{'signed_receipt_verified':True}]*3)
         launch = unittest.mock.Mock(return_value=resumed)
         error = {'early':'real sustained window','threshold':'optional threshold',
-                 'pause_changed':'pause changed confirmed','half':'did not converge before the deadline'}.get(invalid)
+                 'pause_changed':'pause changed confirmed','half':'did not converge before the deadline',
+                 'history_identity':'fault history task identity changed',
+                 'history_pre_fault':'did not converge before the deadline'}.get(invalid)
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
              patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
@@ -1497,6 +1543,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(value['unknown_hold_checks'],16)
         self.assertEqual(value['pause_hold_checks'],16)
         self.assertEqual(set(value['missing_samples']),{'buffer_observation','delay_observation'})
+        self.assertIn('recorded_at',value['history_gap'])
         self.assertEqual(value['trigger_seconds']['cdc_backlog_high'],300)
         self.assertEqual(value['resumed_execution_id'],launch.return_value)
         launch.assert_called_once_with(7,'resume')
@@ -1506,7 +1553,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertGreaterEqual(len(value['backlog_recovery_samples']),5)
 
     def test_backlog_guards_refuse_short_window_wrong_threshold_changed_pause_and_half_boundary(self):
-        for invalid in ('early','threshold','pause_changed','half'):
+        for invalid in ('early','threshold','pause_changed','half','history_identity','history_pre_fault'):
             with self.subTest(invalid=invalid):
                 value,*_ = self.performance_orchestration(invalid=invalid)
                 self.assertEqual(value['result'],'failed')

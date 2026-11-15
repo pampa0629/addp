@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { assertCDCTaskMonitoring } from './online/transfer-browser-support'
+import { assertCDCTaskHistory, assertCDCTaskMonitoring } from './online/transfer-browser-support'
 import { cdcBackend } from '../../../monitor/frontend/e2e/cdc-resources.fixture'
 import { cdcTaskBackend, task } from '../../../monitor/frontend/e2e/cdc-tasks.fixture'
 
@@ -90,4 +90,15 @@ for (const phase of ['cdc_initial', 'cdc_growth', 'cdc_resumed']) test(`CDC Host
   await assertCDCTaskMonitoring(page, frame, binding, phase, executionID)
   // The historical execution fixture has lag=3; it cannot stand in for current lag=0.
   await expect(frame.getByTestId('cdc-task-lag')).toHaveText('3')
+})
+
+test('Hosted history assertion reads the actual canvas, growth, zero and interior missing interval', async ({ page }) => {
+ await page.addInitScript(()=>performance.setResourceTimingBufferSize(5000))
+ const state=await cdcTaskBackend(page);state.setMode('history-fault')
+ await page.goto('/monitor/cdc-resources?view=tasks&task_id=7&refresh=off')
+ const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+ await expect(frame.getByTestId('cdc-task-history-chart')).toBeVisible()
+ const request=state.calls.find(v=>v.path.endsWith('/cdc-metric-history'))
+ const gap=new Date(Date.parse(request.params.start)+6*60000).toISOString()
+ expect(await assertCDCTaskHistory(page,frame,{task_id:7,generation:1,gap_timestamp:gap})).toContain('history_tooltips')
 })

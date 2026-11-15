@@ -761,6 +761,26 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             time.sleep(2)
         evidence['unknown_hold_checks'] = checks
 
+        # Preserve a completed minute from this same real outage for the chart.
+        # A task-created-before-window gap is not evidence of fault-time missing data.
+        def history_gap():
+            end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            query = urllib.parse.urlencode({'generation': generation,
+                'start': (end - timedelta(hours=1)).isoformat(), 'end': end.isoformat()})
+            value = client.request('GET', f'{OWNER}/task-definitions/{task_id}/cdc-metric-history?{query}', (200,)).payload
+            require(value['task_id'] == task_id and value['generation'] == generation,
+                    'fault history task identity changed')
+            for point in value['points']:
+                if point['recorded_at'] is None:
+                    continue
+                at = datetime.fromisoformat(point['recorded_at'].replace('Z', '+00:00'))
+                observation = point['buffer_observation']
+                if at > missing_after and (observation is None or observation['status'] != 'available'
+                        or cdc_sample_time(observation, at) is None):
+                    return {'timestamp': point['timestamp'], 'recorded_at': point['recorded_at']}
+            return None
+        evidence['history_gap'] = until(history_gap, timeout=88)
+
         stage('performance_recovery')
         for identity in (broker, connect):
             docker('unpause', identity)
@@ -1763,7 +1783,7 @@ def observe_browser_owner_outage(control, marker, process, faults):
     return proof
 
 
-def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None, finish=None, cdc=None):
+def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None, finish=None, cdc=None, metric_history=None):
     cdc_phase = phase in {'cdc_initial', 'cdc_growth', 'cdc_resumed'}
     require(cdc_phase == (cdc is not None), 'CDC browser task binding changed')
     if cdc_phase:
@@ -1773,7 +1793,14 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                 and all(isinstance(cdc[key], str) and re.fullmatch(r'0|[1-9][0-9]*', cdc[key]) for key in ('committed_offset', 'latest_offset', 'lag_offsets'))
                 and int(cdc['latest_offset']) - int(cdc['committed_offset']) == int(cdc['lag_offsets'])
                 and cdc['lag_offsets'] == ('3' if phase == 'cdc_growth' else '0'), 'CDC browser observation invalid')
-    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed'}, 'unknown browser phase')
+    require((phase == 'cdc_history') == (metric_history is not None), 'history browser binding changed')
+    if metric_history is not None:
+        require(type(metric_history) is dict and set(metric_history) == {'task_id', 'generation', 'gap_timestamp'}
+                and all(type(metric_history[k]) is int and metric_history[k] > 0 for k in ('task_id', 'generation'))
+                and isinstance(metric_history['gap_timestamp'], str)
+                and datetime.fromisoformat(metric_history['gap_timestamp'].replace('Z', '+00:00')).tzinfo is not None,
+                'history browser observation invalid')
+    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history'}, 'unknown browser phase')
     require((action is not None) == (phase in {'live', 'revocation'}), 'browser action binding changed')
     require((faults is not None) == (phase == 'owner_unavailable'), 'browser Owner fault binding changed')
     require((finish is not None) == (phase == 'live'), 'browser terminal action binding changed')
@@ -1786,6 +1813,8 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
         'recovery': ['old_failure', 'recovery_source', 'record_failure_code', 'no_samples'],
         'revocation': ['previously_readable', 'old_content_cleared', 'fresh_monitor_only_denied', 'no_samples'],
         'owner_unavailable': OWNER_OUTAGE_CHECKS,
+        'cdc_history': ['task_identity', 'history_api_matches_chart', 'history_backlog_growth_then_zero',
+                        'history_fault_gap_not_connected', 'history_tooltips', 'no_samples'],
         **{name: ['task_identity', 'task_source_slot_wal', 'task_capture_delay', 'task_buffer_positions', 'execution_binding', 'no_samples'] for name in ('cdc_initial', 'cdc_growth', 'cdc_resumed')},
     }[phase]
     evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / f'continuous-browser-{phase}.json'
@@ -1801,6 +1830,8 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                            ADDP_CONTINUOUS_BROWSER_PASSWORD=os.environ[f'ADDP_ONLINE_{prefix}_USER_PASSWORD'])
         if cdc_phase:
             environment['ADDP_CONTINUOUS_BROWSER_CDC'] = json.dumps(cdc)
+        if metric_history is not None:
+            environment['ADDP_CONTINUOUS_BROWSER_HISTORY'] = json.dumps(metric_history)
         marker = {'run_id': run_id, 'phase': phase, 'execution_id': execution_ids[0]}
         # Raw Playwright output may contain login fill arguments; keep it private.
         with (control / 'output.log').open('w') as output:
@@ -2244,6 +2275,10 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
                                             mutate, create, launch, report, checkpoint)
         report['cdc_task_metric_history'] = verify_cdc_metric_history(client, cdc_task, report['cdc_risk_closure']['generation'])
         report['checks'].append('cdc_task_metric_history_safe_generation_backlog_growth_recovery_wal_delay')
+        report['browser_cdc_history'] = run_browser('cdc_history', [cdc_paused], report['consumer_identity'], run_id, faults.secret,
+            metric_history={'task_id': cdc_task, 'generation': report['cdc_risk_closure']['generation'],
+                            'gap_timestamp': report['cdc_risk_closure']['performance']['history_gap']['timestamp']})
+        report['checks'].append('cdc_history_chart_real_growth_zero_and_fault_gap')
         report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
         report['checks'].append('cdc_optional_backlog_300s_pause_missing_hold_60s_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
