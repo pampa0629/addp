@@ -21,12 +21,12 @@ def require(value, message):
         raise ValueError(message)
 
 
-def validate_page(preview, page, size, *, nested=False, enumeration=False):
+def validate_page(preview, page, size, *, nested=False, enumeration=False, mapping=False):
     table = preview.get('data', {})
     start = (page - 1) * size
     require(preview.get('preview_type') == 'table' and table.get('total') == FIXTURE.COUNT
             and table.get('has_more') is (start + size < FIXTURE.COUNT)
-            and table.get('rows') == [(FIXTURE.enum_public_row if enumeration else FIXTURE.nested_public_row if nested else FIXTURE.public_row)(i) for i in range(start, min(start + size, FIXTURE.COUNT))],
+            and table.get('rows') == [(FIXTURE.map_public_row if mapping else FIXTURE.enum_public_row if enumeration else FIXTURE.nested_public_row if nested else FIXTURE.public_row)(i) for i in range(start, min(start + size, FIXTURE.COUNT))],
             'Avro table page lost values, precision or continuation')
     return table
 
@@ -52,6 +52,7 @@ def declared_field_facts(fields):
         value={k:v for k,v in field.items() if k in keys}
         if 'fields' in field:value['fields']=declared_field_facts(field['fields'])
         if 'element' in field:value['element']=declared_field_facts([field['element']])[0]
+        if 'map_value' in field:value['map_value']=declared_field_facts([field['map_value']])[0]
         result.append(value)
     return result
 
@@ -69,8 +70,23 @@ def enum_field_facts():
     ]
 
 
+
+def map_field_facts():
+    def field(name,kind,native,nullable=False,**extra):
+        return dict(({'name':name} if name else {}),type=kind,native_type=native,nullable=nullable,**extra)
+    def mapping(name,value,nullable=False):return field(name,'json','map',nullable,map_value=value)
+    integer=lambda nullable=False:field('','bigint','long',nullable)
+    enumeration=field('','string','enum',enum={'name':'demo.MapState','symbols':['z','A','a']})
+    detail=field('','json','example.MapDetail',True,fields=[field('uid','bigint','long'),
+        field('amount','decimal','bytes',precision=38,scale=6),field('day','date','int'),
+        field('stamp','timestamp','long',temporal={'unit':'ns','timezone':'UTC'}),field('payload','bytes','bytes')])
+    return [field('id','bigint','long'),mapping('metrics',integer(True),True),mapping('details',detail),mapping('states',enumeration),
+        field('groups','array','array',element_type='json',element=mapping('',field('','array','array',element_type='string',element=dict(enumeration,nullable=True)))),
+        mapping('nested',mapping('',integer(True)))]
+
+
 REFUSAL_MESSAGES = {kind+'_preview_only': 'execute common table transfer plan: open table source: open encoded source table reader: '
-                    + f'Avro {kind} fields support preview only; batch transfer is not supported' for kind in ('nested','enum')}
+                    + f'Avro {kind} fields support preview only; batch transfer is not supported' for kind in ('nested','enum','map')}
 
 
 def verify_runtime_refusals(repository, execution_ids, tenant, *, timeout=10):
@@ -126,8 +142,8 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     client = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
     initializer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
     tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Avro tenant')
-    report = {'schema_version': 'addp.manager-avro/v5', 'case': 'native-table-avro',
-              'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed', 'cases': [], 'nested_cases': [], 'enum_cases': []}
+    report = {'schema_version': 'addp.manager-avro/v6', 'case': 'native-table-avro',
+              'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed', 'cases': [], 'nested_cases': [], 'enum_cases': [], 'map_cases': []}
     report['identity'] = owner.validate_user_identity(client, tenant, PERMISSIONS)
     grants = REGISTRATION.ExactFileMetadataGrants(initializer, client, tenant, scan_preparation=True)
     tasks = []
@@ -136,7 +152,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     try:
         seeded = True
         seed = physical('seed')
-        require(seed == {'sources': FIXTURE.sources(), 'nested_sources': FIXTURE.nested_sources(), 'enum_sources': FIXTURE.enum_sources(), 'count': FIXTURE.COUNT}, 'Avro physical seed differs')
+        require(seed == {'sources': FIXTURE.sources(), 'nested_sources': FIXTURE.nested_sources(), 'enum_sources': FIXTURE.enum_sources(), 'map_sources': FIXTURE.map_sources(), 'count': FIXTURE.COUNT}, 'Avro physical seed differs')
         report['source'] = seed
         bucket = environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']
         for storage, engine, prefix in [
@@ -144,9 +160,9 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             ('nfs', owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'], 'NFS'), ''),
         ]:
             stage = 'metadata_scan'
-            targets = [f'addp://engine/{engine}/path/{prefix}avro/{s["name"]}?type=' + ('object' if storage == 'minio' else 'file') for s in seed['sources']+seed['nested_sources']+seed['enum_sources']]
+            targets = [f'addp://engine/{engine}/path/{prefix}avro/{s["name"]}?type=' + ('object' if storage == 'minio' else 'file') for s in seed['sources']+seed['nested_sources']+seed['enum_sources']+seed['map_sources']]
             owner.wait_for_meta_scan(initializer, engine, time.monotonic() + 180, scope={'targets': targets})
-            for spec in seed['sources']+seed['nested_sources']+seed['enum_sources']:
+            for spec in seed['sources']+seed['nested_sources']+seed['enum_sources']+seed['map_sources']:
                 stage = 'metadata_scan'
                 full_name = prefix + 'avro/' + spec['name']
                 receipt = grants.grant(engine, full_name, storage, data_type='table', format_name='avro', layout='single')
@@ -157,8 +173,12 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 fields = attrs.get('type_info', {}).get('table', {}).get('fields', [])
                 enumeration=spec.get('enum') is True
                 nested=spec.get('nested') is True
-                readonly=nested or enumeration
-                if enumeration:
+                mapping=spec.get('map') is True
+                readonly=nested or enumeration or mapping
+                if mapping:
+                    require(declared_field_facts(fields)==map_field_facts(), 'Avro map value type declaration differs')
+                    require('format_info' not in attrs, 'Avro user metadata exposed private source facts')
+                elif enumeration:
                     require(declared_field_facts(fields)==enum_field_facts(), 'Avro enum declared names or symbols differ')
                     require('format_info' not in attrs, 'Avro user metadata exposed private source facts')
                 elif nested:
@@ -177,15 +197,16 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 locator = owner.build_item_locator(engine, item)
                 case = {'storage': storage, 'codec': spec['codec'], 'locator': locator,
                         'item_id': item['id'], 'spec': spec, 'metadata_grant': receipt, 'pages': []}
-                (report['enum_cases'] if enumeration else report['nested_cases'] if nested else report['cases']).append(case)
+                (report['map_cases'] if mapping else report['enum_cases'] if enumeration else report['nested_cases'] if nested else report['cases']).append(case)
                 case['nested']=nested
                 case['enum']=enumeration
-                (artifact / f'avro-{storage}-{"enum-" if enumeration else "nested-" if nested else ""}{spec["codec"]}-meta.json').write_text(json.dumps(detail, ensure_ascii=False, indent=2) + '\n')
+                case['map']=mapping
+                (artifact / f'avro-{storage}-{"map-" if mapping else "enum-" if enumeration else "nested-" if nested else ""}{spec["codec"]}-meta.json').write_text(json.dumps(detail, ensure_ascii=False, indent=2) + '\n')
                 stage = 'paged_preview'
                 for page in (1, 2, 126):
                     preview = client.request('GET', '/api/v1/manager/preview?' + urlencode({'locator': locator, 'page': page, 'page_size': 20}), (200,)).payload
-                    table = validate_page(preview, page, 20, nested=nested, enumeration=enumeration)
-                    page_file = f'avro-{storage}-{"enum-" if enumeration else "nested-" if nested else ""}{spec["codec"]}-page{page}.json'
+                    table = validate_page(preview, page, 20, nested=nested, enumeration=enumeration, mapping=mapping)
+                    page_file = f'avro-{storage}-{"map-" if mapping else "enum-" if enumeration else "nested-" if nested else ""}{spec["codec"]}-page{page}.json'
                     (artifact / page_file).write_text(json.dumps(preview, ensure_ascii=False, indent=2) + '\n')
                     case['pages'].append({'page': page, 'rows': len(table['rows']), 'values_verified': True, 'archive_file': page_file})
                 stage = 'original_download'
@@ -204,7 +225,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     (artifact / f'avro-source-{storage}-{spec["name"]}').write_bytes(raw)
                     case['original_download_verified'] = True
                 stage = 'transfer_batch'
-                target = f'{"rejected-enum-" if enumeration else "rejected-nested-" if nested else ""}from-{storage}-{spec["codec"]}.parquet'
+                target = f'{"rejected-map-" if mapping else "rejected-enum-" if enumeration else "rejected-nested-" if nested else ""}from-{storage}-{spec["codec"]}.parquet'
                 body = task_body(locator, f'addp://engine/{environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"]}/path/{bucket}/avro-output?type=prefix', target)
                 created = client.request('POST', '/api/v1/transfer/task-definitions', (201,), body).payload
                 task_id = owner.positive_int(created.get('id'), 'Avro task')
@@ -233,8 +254,8 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                                     'status': 'failed' if readonly else 'success', **({'public_failure_category':'execution_failed'} if readonly else {})}
                 require(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload == detail, 'Avro read modified metadata')
         stage = 'runtime_refusal_verification'
-        rejected = report['nested_cases'] + report['enum_cases']
-        refused = {case['transfer']['execution_id']:('enum' if case.get('enum') else 'nested')+'_preview_only' for case in rejected}
+        rejected = report['nested_cases'] + report['enum_cases'] + report['map_cases']
+        refused = {case['transfer']['execution_id']:('map' if case.get('map') else 'enum' if case.get('enum') else 'nested')+'_preview_only' for case in rejected}
         proofs = (runtime_refusal_runner or verify_runtime_refusals)(Path(repository), refused, tenant)
         require([proof.get('execution_id') for proof in proofs] == list(refused)
                 and all(proof.get('kind') == refused[proof['execution_id']] for proof in proofs), 'Avro runtime refusals differ')
@@ -247,6 +268,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
         require(verified.get('sources_unchanged') is True and len(verified.get('outputs', [])) == 6, 'Avro output/source proof incomplete')
         require(verified.get('nested_outputs_absent') is True and verified.get('nested_sources_verified') == 6, 'Avro nested physical proof incomplete')
         require(verified.get('enum_outputs_absent') is True and verified.get('enum_sources_verified') == 6, 'Avro enum physical proof incomplete')
+        require(verified.get('map_outputs_absent') is True and verified.get('map_sources_verified') == 6, 'Avro map physical proof incomplete')
         expected = {f'avro-output/from-{s}-{c}.parquet' for s in ('minio', 'nfs') for c in FIXTURE.CODECS}
         require({v.get('object') for v in verified['outputs']} == expected, 'Avro output identities differ')
         for output in verified['outputs']:
@@ -261,7 +283,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     for v in verified['outputs']), 'Avro native timestamp proof incomplete')
         report['physical'] = verified
         stage = 'browser'
-        context = {'run_id': report['run_id'], 'identity': report['identity'], 'cases': report['cases'], 'nested_cases':report['nested_cases'], 'enum_cases':report['enum_cases']}
+        context = {'run_id': report['run_id'], 'identity': report['identity'], 'cases': report['cases'], 'nested_cases':report['nested_cases'], 'enum_cases':report['enum_cases'], 'map_cases':report['map_cases']}
         if browser_runner:
             browser = browser_runner(context)
         else:
@@ -269,9 +291,9 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-avro.spec.js', '--config=playwright.online.config.js'],
                            cwd=Path(repository) / 'console/frontend', env=dict(browser_env, ADDP_ONLINE_MANAGER_AVRO_JSON=json.dumps(context)), check=True)
             browser = json.loads((artifact / 'manager-avro-browser.json').read_text())
-        require(browser.get('schema_version') == 'addp.manager-avro-browser/v5' and browser.get('result') == 'passed'
-                and browser.get('run_id') == report['run_id'] and len(browser.get('cases', [])) == 6 and len(browser.get('nested_cases', [])) == 6 and len(browser.get('enum_cases', [])) == 6, 'Avro browser incomplete')
-        for case, observed in zip(report['cases']+report['nested_cases']+report['enum_cases'], browser['cases']+browser['nested_cases']+browser['enum_cases'], strict=True):
+        require(browser.get('schema_version') == 'addp.manager-avro-browser/v6' and browser.get('result') == 'passed'
+                and browser.get('run_id') == report['run_id'] and len(browser.get('cases', [])) == 6 and len(browser.get('nested_cases', [])) == 6 and len(browser.get('enum_cases', [])) == 6 and len(browser.get('map_cases', [])) == 6, 'Avro browser incomplete')
+        for case, observed in zip(report['cases']+report['nested_cases']+report['enum_cases']+report['map_cases'], browser['cases']+browser['nested_cases']+browser['enum_cases']+browser['map_cases'], strict=True):
             require(observed.get('locator') == case['locator'] and observed.get('page_button_verified') is True
                     and observed.get('values_verified') is True, 'Avro browser lost page values')
             if case.get('nested'):
@@ -280,6 +302,11 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 require(observed.get('enum_declaration_verified') is True and observed.get('structured_dialogs_verified') is True, 'Avro enum declaration or dialogs not verified')
                 declaration_image = artifact / f'avro-{case["storage"]}-enum-{case["codec"]}-declaration.png'
                 require(declaration_image.is_file() and declaration_image.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), 'Avro enum declaration screenshot missing')
+            if case.get('map'):
+                require(observed.get('map_declaration_verified') is True and observed.get('structured_dialogs_verified') is True, 'Avro map declaration or dialogs not verified')
+                for suffix in ('declaration','detail'):
+                    image = artifact / f'avro-{case["storage"]}-map-{case["codec"]}-{suffix}.png'
+                    require(image.is_file() and image.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), 'Avro map screenshot missing')
             if case['storage'] == 'nfs':
                 require(observed.get('original_download_disabled') is True
                         and 'download_sha256' not in observed and 'download_size' not in observed,
@@ -287,7 +314,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             else:
                 require(observed.get('download_sha256') == case['spec']['sha256']
                         and observed.get('download_size') == case['spec']['size_bytes'], 'Avro browser original differs')
-            screenshot = artifact / f'avro-{case["storage"]}-{"enum-" if case.get("enum") else "nested-" if case.get("nested") else ""}{case["codec"]}-page2.png'
+            screenshot = artifact / f'avro-{case["storage"]}-{"map-" if case.get("map") else "enum-" if case.get("enum") else "nested-" if case.get("nested") else ""}{case["codec"]}-page2.png'
             require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), 'Avro screenshot missing')
             if case.get('nested'):
                 detail_image = artifact / f'avro-{case["storage"]}-nested-{case["codec"]}-detail.png'

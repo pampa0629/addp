@@ -208,7 +208,7 @@ func TestAvroNestedSchemaRejectionsAndBudgets(t *testing.T) {
 		`{"type":"record","name":"R","fields":[{"name":"v","type":["null","R"]}]}`,
 		`{"type":"record","name":"R","fields":[{"name":"v","type":{"type":"record","name":"E","fields":[]}}]}`,
 		`{"type":"record","name":"R","fields":[{"name":"v","type":{"type":"array","items":["int","string"]}}]}`,
-		`{"type":"record","name":"R","fields":[{"name":"v","type":{"type":"array","items":{"type":"map","values":"int"}}}]}`,
+		`{"type":"record","name":"R","fields":[{"name":"v","type":{"type":"array","items":{"type":"map","values":["int","string"]}}}]}`,
 		`{"type":"record","name":"R","fields":[{"name":"v","type":{"type":"record","name":"N","fields":[{"name":"x","type":{"type":"long","logicalType":"local-timestamp-nanos"}}]}}]}`,
 	}
 	typ := `"long"`

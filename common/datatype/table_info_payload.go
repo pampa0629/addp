@@ -109,6 +109,10 @@ func normalizeFieldInfo(field FieldInfo) FieldInfo {
 		field.Fields[i] = normalizeFieldInfo(field.Fields[i])
 		field.Fields[i].Name = name
 	}
+	if field.MapValue != nil {
+		value := normalizeFieldInfo(*field.MapValue)
+		field.MapValue = &value
+	}
 	if field.Element != nil {
 		element := normalizeFieldInfo(*field.Element)
 		field.Element = &element

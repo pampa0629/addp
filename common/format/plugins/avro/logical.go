@@ -174,6 +174,8 @@ func physicalRecordSchema(schema map[string]interface{}, plan *valueSchema) (str
 						field["type"] = physicalType(field["type"], namespace)
 					}
 				}
+			case "map":
+				value["values"] = physicalType(value["values"], namespace)
 			case "array":
 				value["items"] = physicalType(value["items"], namespace)
 			default:
@@ -253,6 +255,16 @@ func (n *valueSchema) convert(value interface{}) (interface{}, error) {
 	switch n.field.Type {
 	case datatype.FieldTypeJSON:
 		record := value.(map[string]interface{})
+		if n.field.MapValue != nil {
+			for key, item := range record {
+				converted, err := n.item.convert(item)
+				if err != nil {
+					return nil, err
+				}
+				record[key] = converted
+			}
+			return record, nil
+		}
 		for _, child := range n.children {
 			converted, err := child.convert(record[child.field.Name])
 			if err != nil {

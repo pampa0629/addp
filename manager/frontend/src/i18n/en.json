@@ -1869,6 +1869,7 @@
         },
         "tableColumns": {
           "enumeration": "Enumeration",
+          "mapValue": "Map value type",
           "name": "Name",
           "fieldName": "Field",
           "fieldType": "Field Type",

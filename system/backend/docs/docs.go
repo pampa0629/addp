@@ -19520,6 +19520,9 @@ const docTemplate = `{
                 "generation_expression": {
                     "type": "string"
                 },
+                "map_value": {
+                    "$ref": "#/definitions/datatype.FieldInfo"
+                },
                 "name": {
                     "type": "string"
                 },

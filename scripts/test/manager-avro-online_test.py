@@ -27,8 +27,9 @@ class Client:
         stem = Path(full_name).stem
         nested = stem.startswith('nested-')
         enumeration = stem.startswith('enum-')
-        codec = stem.removeprefix('nested-').removeprefix('enum-')
-        item_id = engine * 10 + FIXTURE.CODECS.index(codec) + (6 if enumeration else 3 if nested else 0)
+        mapping = stem.startswith('map-')
+        codec = stem.removeprefix('nested-').removeprefix('enum-').removeprefix('map-')
+        item_id = engine * 10 + FIXTURE.CODECS.index(codec) + (9 if mapping else 6 if enumeration else 3 if nested else 0)
         expected = [('id', 'bigint', False), ('small', 'int', False), ('flag', 'bool', True),
                     ('label', 'string', True), ('ratio', 'float', False), ('value', 'double', False),
                     ('payload', 'bytes', True), ('day', 'date', True), ('amount', 'decimal', True), ('fixed_amount', 'decimal', True),
@@ -43,6 +44,9 @@ class Client:
         if enumeration:
             fields = SCENE.enum_field_facts()
             if self.failure == 'enum-meta':fields[1]['enum']['symbols'].reverse()
+        if mapping:
+            fields = SCENE.map_field_facts()
+            if self.failure == 'map-meta':fields[1]['map_value']['type']='string'
         result = {'id': item_id, 'engine_id': engine, 'full_name': full_name, 'fingerprint': str(item_id),
                   'attributes': {'item': {'format': 'avro', 'data_type': 'table', 'layout': 'single'},
                                  'type_info': {'table': {'fields': fields}}}}
@@ -57,12 +61,14 @@ class Client:
             q = parse_qs(urlsplit(path).query)
             nested = 'nested-' in q['locator'][0]
             enumeration = 'enum-' in q['locator'][0]
+            mapping = 'map-' in q['locator'][0]
             page = int(q['page'][0])
             start = (page - 1) * 20
             result = {'preview_type': 'table', 'data': {'total': FIXTURE.COUNT, 'has_more': page != 126,
-                      'rows': [(FIXTURE.enum_public_row if enumeration else FIXTURE.nested_public_row if nested else FIXTURE.public_row)(i) for i in range(start, min(start + 20, FIXTURE.COUNT))]}}
+                      'rows': [(FIXTURE.map_public_row if mapping else FIXTURE.enum_public_row if enumeration else FIXTURE.nested_public_row if nested else FIXTURE.public_row)(i) for i in range(start, min(start + 20, FIXTURE.COUNT))]}}
             if self.failure == 'nested-page' and nested:
                 result['data']['rows'][0]['id'] = 9007199254740992
+            if mapping and self.failure == 'map-page':result['data']['rows'][0]['nested']['outer']['']='rounded'
             if enumeration and self.failure == 'enum-page':result['data']['rows'][0]['state']='invalid'
             if self.failure == 'page':
                 result['data']['rows'][0]['id'] = 9007199254740992
@@ -70,7 +76,7 @@ class Client:
             if expected == (403,):
                 return SimpleNamespace(status=403, headers={'Content-Type':'application/json'}, payload={'error':'denied'})
             codec = next(c for c in FIXTURE.CODECS if c + '.avro' in path)
-            return SimpleNamespace(raw=(FIXTURE.enum_source_bytes if 'enum-' in path else FIXTURE.nested_source_bytes if 'nested-' in path else FIXTURE.source_bytes)(codec) + (b'bad' if self.failure == 'download' else b''))
+            return SimpleNamespace(raw=(FIXTURE.map_source_bytes if 'map-' in path else FIXTURE.enum_source_bytes if 'enum-' in path else FIXTURE.nested_source_bytes if 'nested-' in path else FIXTURE.source_bytes)(codec) + (b'bad' if self.failure == 'download' else b''))
         elif method == 'POST' and path.endswith('/task-definitions'):
             self.tasks.append(len(self.tasks) + 1)
             self.assert_body = body
@@ -80,7 +86,7 @@ class Client:
             result = {'execution_id': 'execution-' + path.split('/')[-2]}
         elif '/transfer/executions/' in path:
             body = self.task_bodies[int(path.rsplit('-',1)[1])]
-            nested = 'nested-' in body['config']['source']['locator'] or 'enum-' in body['config']['source']['locator']
+            nested = 'nested-' in body['config']['source']['locator'] or 'enum-' in body['config']['source']['locator'] or 'map-' in body['config']['source']['locator']
             result = {'status':'failed' if (nested and self.failure != 'nested-transfer') or self.failure == 'transfer' else 'success',
                       'records_read':0 if nested else FIXTURE.COUNT, 'records_written': (1 if self.failure == 'nested-count' else 0) if nested else FIXTURE.COUNT,
                       'error_details':{'category':'connection_failed' if self.failure == 'nested-reason' else 'execution_failed'}}
@@ -124,6 +130,7 @@ class AvroRuntimeRefusalProofTest(unittest.TestCase):
     def test_exact_worker_tenant_and_persisted_refusal(self):
         self.proof()
         self.proof(kind='enum_preview_only')
+        self.proof(kind='map_preview_only')
 
     def test_wrong_scope_role_reason_missing_and_duplicate_evidence_fail(self):
         for fault in ('execution', 'tenant', 'module', 'role', 'reason', 'uncommitted', 'missing', 'duplicate'):
@@ -149,10 +156,10 @@ class AvroSceneTest(unittest.TestCase):
             if action == 'seed':
                 if failure == 'seed':
                     raise ValueError('seed failed')
-                return {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'enum_sources':FIXTURE.enum_sources(), 'count': FIXTURE.COUNT}
+                return {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'enum_sources':FIXTURE.enum_sources(), 'map_sources':FIXTURE.map_sources(), 'count': FIXTURE.COUNT}
             if action == 'verify':
                 raw = b'parquet'
-                return {'sources_unchanged': True, 'nested_sources_verified':6, 'nested_outputs_absent':failure != 'nested-output', 'enum_sources_verified':6, 'enum_outputs_absent':failure != 'enum-output', 'outputs': [
+                return {'sources_unchanged': True, 'nested_sources_verified':6, 'nested_outputs_absent':failure != 'nested-output', 'enum_sources_verified':6, 'enum_outputs_absent':failure != 'enum-output', 'map_sources_verified':6, 'map_outputs_absent':failure != 'map-output', 'outputs': [
                     {'object': f'avro-output/from-{s}-{c}.parquet', 'size_bytes': len(raw),
                      'sha256': hashlib.sha256(raw).hexdigest(), 'content_base64': base64.b64encode(raw).decode(),
                      'all_values_and_nulls_verified': failure != 'physical', 'native_timestamp_ticks_verified': failure != 'ticks',
@@ -161,19 +168,21 @@ class AvroSceneTest(unittest.TestCase):
             return {'objects_removed': True, 'files_removed': True, 'outputs_removed': failure != 'cleanup'}
 
         def browser(context):
-            outcomes = {'cases':[], 'nested_cases':[], 'enum_cases':[]}
+            outcomes = {'cases':[], 'nested_cases':[], 'enum_cases':[], 'map_cases':[]}
             for name in outcomes:
                 for case in context[name]:
                     nested = case.get('nested') is True
                     enumeration = case.get('enum') is True
-                    prefix = f'avro-{case["storage"]}-' + ('enum-' if enumeration else 'nested-' if nested else '') + case['codec']
+                    mapping = case.get('map') is True
+                    prefix = f'avro-{case["storage"]}-' + ('map-' if mapping else 'enum-' if enumeration else 'nested-' if nested else '') + case['codec']
                     (root / (prefix+'-page2.png')).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
                     if nested:(root / (prefix+'-detail.png')).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
-                    if enumeration:(root / (prefix+'-declaration.png')).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
+                    if enumeration or mapping:(root / (prefix+'-declaration.png')).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
+                    if mapping:(root / (prefix+'-detail.png')).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
                     outcomes[name].append({'locator':case['locator'],'page_button_verified':failure != 'browser',
-                        'values_verified':True, **({'enum_declaration_verified':failure != 'enum-browser', 'structured_dialogs_verified':True} if enumeration else {}), **({'nested_values_verified':True,'structured_dialogs_verified':failure != 'nested-browser'} if nested else {}),
+                        'values_verified':True, **({'map_declaration_verified':failure != 'map-browser','structured_dialogs_verified':True} if mapping else {}), **({'enum_declaration_verified':failure != 'enum-browser', 'structured_dialogs_verified':True} if enumeration else {}), **({'nested_values_verified':True,'structured_dialogs_verified':failure != 'nested-browser'} if nested else {}),
                         **({'original_download_disabled':True} if case['storage']=='nfs' else {'download_sha256':case['spec']['sha256'],'download_size':case['spec']['size_bytes']})})
-            return {'schema_version':'addp.manager-avro-browser/v5','result':'passed','run_id':'manager-1-1',**outcomes}
+            return {'schema_version':'addp.manager-avro-browser/v6','result':'passed','run_id':'manager-1-1',**outcomes}
 
         environment = {'ADDP_ONLINE_MANAGER_CASE': 'native-table-avro', 'ADDP_ONLINE_ARTIFACT_DIR': str(root),
             'GATEWAY_URL': 'http://fixture', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'consumer',
@@ -195,16 +204,18 @@ class AvroSceneTest(unittest.TestCase):
         self.assertEqual(len(report['cases']), 6)
         self.assertEqual(len(report['nested_cases']), 6)
         self.assertEqual(len(report['enum_cases']), 6)
+        self.assertEqual(len(report['map_cases']), 6)
+        self.assertTrue(all(c['transfer']['rejection_reason']=='map_preview_only' for c in report['map_cases']))
         self.assertTrue(all(c['transfer']['rejection_reason']=='enum_preview_only' for c in report['enum_cases']))
         self.assertTrue(all(c['transfer']['preview_only_refusal_verified'] for c in report['nested_cases']))
-        self.assertEqual(len(client.tasks), 18)
+        self.assertEqual(len(client.tasks), 24)
         self.assertEqual(len(report['physical']['outputs']), 6)
         self.assertEqual(client.deleted, list(reversed(client.tasks)))
         self.assertEqual(actions, ['seed', 'verify', 'delete'])
         self.assertEqual(client.assert_body['config']['source']['format'], 'avro')
 
     def test_failures_cannot_pass_and_always_clean_owned_sources_and_tasks(self):
-        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup', 'nested-meta', 'nested-private-facts', 'nested-page', 'nested-transfer', 'nested-reason', 'nested-count', 'nested-browser', 'nested-output', 'runtime-refusal', 'legacy-error', 'missing-count', 'enum-meta', 'enum-page', 'enum-browser', 'enum-output'):
+        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup', 'nested-meta', 'nested-private-facts', 'nested-page', 'nested-transfer', 'nested-reason', 'nested-count', 'nested-browser', 'nested-output', 'runtime-refusal', 'legacy-error', 'missing-count', 'enum-meta', 'enum-page', 'enum-browser', 'enum-output', 'map-meta', 'map-page', 'map-browser', 'map-output'):
             with self.subTest(failure=failure):
                 client, actions, report = self.run_scene(failure)
                 self.assertEqual(report['result'], 'failed')
@@ -239,6 +250,13 @@ class AvroSceneTest(unittest.TestCase):
         functions = source[start:source.index('\ntest(',start)]
         result = subprocess.run(['node','--input-type=commonjs','-e',functions+'\nconsole.log(JSON.stringify(Array.from({length:2503},(_,i)=>expectedEnumRow(i))))'],check=True,capture_output=True,text=True)
         self.assertEqual(json.loads(result.stdout),[FIXTURE.enum_public_row(i) for i in range(2503)])
+
+    def test_browser_map_oracle_matches_all_fixture_values(self):
+        source = (Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/manager-avro.spec.js').read_text()
+        start = source.index('function expectedRow(')
+        functions = source[start:source.index('\ntest(',start)]
+        result = subprocess.run(['node','--input-type=commonjs','-e',functions+'\nconsole.log(JSON.stringify(Array.from({length:2503},(_,i)=>expectedMapRow(i))))'],check=True,capture_output=True,text=True)
+        self.assertEqual(json.loads(result.stdout),[FIXTURE.map_public_row(i) for i in range(2503)])
 
     def test_fixture_profile_and_unknown_case_rejected_before_launch(self):
         self.assertEqual(OWNER.manager_case({'ADDP_ONLINE_MANAGER_CASE': 'native-table-avro'}), 'native-table-avro')

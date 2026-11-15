@@ -12,7 +12,7 @@ import (
 func TestMetadataProjectionPreservesNestedStructureWithoutContentOrMutation(t *testing.T) {
 	secret := "private-content-marker"
 	leaf := datatype.FieldInfo{Enum: &datatype.EnumInfo{Name: "example.State", Symbols: []string{"z", "A", "a"}}, Name: "value", Type: datatype.FieldTypeString, NativeType: "enum", Comment: secret, DefaultExpression: secret, GenerationExpression: secret}
-	field := datatype.FieldInfo{Name: "nested", Fields: []datatype.FieldInfo{leaf}, Element: &leaf, Comment: secret}
+	field := datatype.FieldInfo{Name: "nested", Fields: []datatype.FieldInfo{leaf}, Element: &leaf, MapValue: &leaf, Comment: secret}
 	count := int64(91)
 	item := models.MetaItemLite{ID: 3, TenantID: 7, EngineID: 9, NodeID: 2, Name: "visible", FullName: "public.visible", Fingerprint: "fp", RowCount: &count, SizeBytes: &count,
 		Attributes: map[string]interface{}{
@@ -40,7 +40,7 @@ func TestMetadataProjectionPreservesNestedStructureWithoutContentOrMutation(t *t
 	if table == nil || len(table.Fields) != 1 || len(table.Fields[0].Fields) != 1 || table.Fields[0].Element == nil || table.Fields[0].Fields[0].NativeType != "enum" || table.Fields[0].Element.Name != "value" {
 		t.Fatalf("nested schema lost: %s", encoded)
 	}
-	for _, f := range []datatype.FieldInfo{table.Fields[0].Fields[0], *table.Fields[0].Element} {
+	for _, f := range []datatype.FieldInfo{table.Fields[0].Fields[0], *table.Fields[0].Element, *table.Fields[0].MapValue} {
 		if f.Enum == nil || f.Enum.Name != "example.State" || strings.Join(f.Enum.Symbols, ",") != "z,A,a" {
 			t.Fatalf("enum structure lost: %#v", f)
 		}

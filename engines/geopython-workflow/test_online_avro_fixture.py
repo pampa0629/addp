@@ -73,7 +73,7 @@ def avro_physical(tmp_path, monkeypatch):
 def test_hosted_avro_actual_parquet_oracle_and_cleanup(avro_physical):
     request, objects, write_outputs = avro_physical
     seeded = FIXTURE.worker(dict(request, action='seed'))
-    assert seeded == {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'enum_sources':FIXTURE.enum_sources(), 'count': 2503}
+    assert seeded == {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'enum_sources':FIXTURE.enum_sources(), 'map_sources':FIXTURE.map_sources(), 'count': 2503}
     write_outputs()
     proof = FIXTURE.worker(dict(request, action='verify'))
     assert proof['sources_unchanged'] and len(proof['outputs']) == 6
@@ -149,15 +149,16 @@ def test_hosted_avro_cleanup_preserves_an_unclaimed_directory(avro_physical):
     assert objects == {'avro/null.avro': b'foreign'}
 
 
-@pytest.mark.parametrize('mutation',['nested_source','nested_output','enum_source','enum_output'])
+@pytest.mark.parametrize('mutation',['nested_source','nested_output','enum_source','enum_output','map_source','map_output'])
 def test_hosted_avro_nested_source_and_no_output_proof(avro_physical,mutation):
     request,objects,write_outputs=avro_physical
     FIXTURE.worker(dict(request,action='seed'));write_outputs()
-    if mutation in {'nested_source','enum_source'}:objects['avro/'+('enum-' if mutation=='enum_source' else 'nested-')+'null.avro']+=b'changed'
-    else:objects['avro-output/rejected-'+('enum-' if mutation=='enum_output' else 'nested-')+'from-minio-null.parquet']=b'unexpected'
-    with pytest.raises(AssertionError,match='source_changed' if mutation in {'nested_source','enum_source'} else 'unexpected_nested_output'):
+    if mutation in {'nested_source','enum_source','map_source'}:objects['avro/'+('map-' if mutation=='map_source' else 'enum-' if mutation=='enum_source' else 'nested-')+'null.avro']+=b'changed'
+    else:objects['avro-output/rejected-'+('map-' if mutation=='map_output' else 'enum-' if mutation=='enum_output' else 'nested-')+'from-minio-null.parquet']=b'unexpected'
+    with pytest.raises(AssertionError,match='source_changed' if mutation in {'nested_source','enum_source','map_source'} else 'unexpected_nested_output'):
         FIXTURE.worker(dict(request,action='verify'))
     # Remove only this test's injected object so normal cleanup can prove ownership.
     objects.pop('avro-output/rejected-nested-from-minio-null.parquet',None)
     objects.pop('avro-output/rejected-enum-from-minio-null.parquet',None)
+    objects.pop('avro-output/rejected-map-from-minio-null.parquet',None)
     FIXTURE.worker(dict(request,action='delete'));assert not objects

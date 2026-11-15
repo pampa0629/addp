@@ -1869,6 +1869,7 @@
         },
         "tableColumns": {
           "enumeration": "枚举声明",
+          "mapValue": "映射值类型",
           "name": "名称",
           "fieldName": "字段名",
           "fieldType": "字段类型",

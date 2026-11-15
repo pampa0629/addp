@@ -377,3 +377,19 @@ async function openAttributes(page, locale, attributes, respondMetadata = json) 
 function json(route, body) {
   return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
 }
+
+for (const locale of ['zh-cn', 'en']) {
+  test(`preserves declared Map value types without fixing observed keys in ${locale}`, async ({ page }) => {
+    const mapValue = { type: 'bigint', native_type: 'long', nullable: true }
+    const fields = [{ name: 'metrics', type: 'json', native_type: 'map', nullable: true, map_value: mapValue }]
+    await openAttributes(page, locale, {
+      item: { data_type: 'table', format: 'avro', layout: 'single' }, type_info: { table: { fields } }
+    })
+    await expect(page.getByRole('columnheader', { name: locale === 'zh-cn' ? '映射值类型' : 'Map value type', exact: true })).toBeVisible()
+    await expect(page.getByText(JSON.stringify(mapValue), { exact: true }).first()).toBeVisible()
+    await page.getByRole('button', { name: /JSON/ }).click()
+    const attrs = JSON.parse(await page.locator('.attribute-json').innerText())
+    expect(attrs.type_info.table.fields).toEqual(fields)
+    expect(attrs.type_info.table.fields[0].fields).toBeUndefined()
+  })
+}

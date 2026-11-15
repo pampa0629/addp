@@ -29,8 +29,8 @@ func wireLong(raw []byte) (int64, []byte, error) {
 	return 0, nil, fmt.Errorf("Avro integer overflow")
 }
 
-// Validate source framing before the codec allocates arrays. Unlike whole-datum
-// re-encoding, this accepts every legal array block representation and verifies
+// Validate source framing before the codec allocates arrays/maps. Unlike whole-datum
+// re-encoding, this accepts legal collection block representations and verifies
 // the negative-block byte length that the fixed upstream codec discards.
 func (n *valueSchema) scan(raw []byte, visits *int, structured bool) ([]byte, error) {
 	if structured {
@@ -66,6 +66,9 @@ func (n *valueSchema) scan(raw []byte, visits *int, structured bool) ([]byte, er
 	}
 	switch n.field.Type {
 	case datatype.FieldTypeJSON:
+		if n.field.MapValue != nil {
+			return n.scanCollection(raw, visits)
+		}
 		for _, child := range n.children {
 			before := len(raw)
 			complex := child.field.Type == datatype.FieldTypeJSON || child.field.Type == datatype.FieldTypeArray
@@ -80,44 +83,7 @@ func (n *valueSchema) scan(raw []byte, visits *int, structured bool) ([]byte, er
 		}
 		return raw, nil
 	case datatype.FieldTypeArray:
-		for {
-			count, rest, err := wireLong(raw)
-			if err != nil {
-				return nil, err
-			}
-			raw = rest
-			if count == 0 {
-				return raw, nil
-			}
-			end := -1
-			if count < 0 {
-				if count == math.MinInt64 {
-					return nil, fmt.Errorf("Avro array count exceeds budget")
-				}
-				count = -count
-				size, rest, err := wireLong(raw)
-				if err != nil {
-					return nil, err
-				}
-				if size < 0 || size > int64(len(rest)) {
-					return nil, fmt.Errorf("invalid Avro array block size")
-				}
-				raw = rest
-				end = len(raw) - int(size)
-			}
-			if count > int64(maxStructureValues-*visits) {
-				return nil, fmt.Errorf("Avro array count exceeds value budget")
-			}
-			for i := int64(0); i < count; i++ {
-				raw, err = n.item.scan(raw, visits, true)
-				if err != nil {
-					return nil, err
-				}
-			}
-			if end >= 0 && len(raw) != end {
-				return nil, fmt.Errorf("Avro array block size mismatch")
-			}
-		}
+		return n.scanCollection(raw, visits)
 	case datatype.FieldTypeBool:
 		if len(raw) == 0 || raw[0] > 1 {
 			return nil, fmt.Errorf("invalid Avro boolean")
@@ -156,4 +122,57 @@ func (n *valueSchema) scan(raw []byte, visits *int, structured bool) ([]byte, er
 		return rest[int(size):], nil
 	}
 	return nil, fmt.Errorf("unsupported Avro wire type")
+}
+
+// scanCollection validates array/map block framing before codec allocation.
+func (n *valueSchema) scanCollection(raw []byte, visits *int) ([]byte, error) {
+	for {
+		count, rest, err := wireLong(raw)
+		if err != nil {
+			return nil, err
+		}
+		raw = rest
+		if count == 0 {
+			return raw, nil
+		}
+		end := -1
+		if count < 0 {
+			if count == math.MinInt64 {
+				return nil, fmt.Errorf("Avro collection count exceeds budget")
+			}
+			count = -count
+			size, rest, err := wireLong(raw)
+			if err != nil {
+				return nil, err
+			}
+			if size < 0 || size > int64(len(rest)) {
+				return nil, fmt.Errorf("invalid Avro collection block size")
+			}
+			raw = rest
+			end = len(raw) - int(size)
+		}
+		remaining := maxStructureValues - *visits
+		if n.field.MapValue != nil {
+			remaining /= 2 // Each map entry visits both a key and a value.
+		}
+		if count > int64(remaining) {
+			return nil, fmt.Errorf("Avro collection count exceeds value budget")
+		}
+		for i := int64(0); i < count; i++ {
+			if n.field.MapValue != nil {
+				key := valueSchema{field: datatype.FieldInfo{Type: datatype.FieldTypeString}, nullBranch: -1}
+				raw, err = key.scan(raw, visits, true)
+				if err != nil {
+					return nil, err
+				}
+			}
+			raw, err = n.item.scan(raw, visits, true)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if end >= 0 && len(raw) != end {
+			return nil, fmt.Errorf("Avro collection block size mismatch")
+		}
+	}
 }

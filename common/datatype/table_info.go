@@ -31,6 +31,7 @@ type FieldInfo struct {
 	ElementType          FieldType   `json:"element_type,omitempty"`
 	Fields               []FieldInfo `json:"fields,omitempty"`
 	Element              *FieldInfo  `json:"element,omitempty"`
+	MapValue             *FieldInfo  `json:"map_value,omitempty"`
 	NativeType           string      `json:"native_type,omitempty"`
 	Nullable             bool        `json:"nullable"`
 	PrimaryKey           bool        `json:"primary_key,omitempty"`
@@ -96,6 +97,9 @@ func CloneFieldInfos(fields []FieldInfo) []FieldInfo {
 		if fields[i].Temporal != nil {
 			temporal := *fields[i].Temporal
 			result[i].Temporal = &temporal
+		}
+		if fields[i].MapValue != nil {
+			result[i].MapValue = &CloneFieldInfos([]FieldInfo{*fields[i].MapValue})[0]
 		}
 		if fields[i].Element != nil {
 			result[i].Element = &CloneFieldInfos([]FieldInfo{*fields[i].Element})[0]

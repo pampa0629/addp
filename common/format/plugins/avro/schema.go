@@ -219,6 +219,16 @@ func (p *schemaParser) parse(value interface{}, namespace string, depth int) (*v
 		p.named[full] = node
 		return node, nil
 	}
+	if kind == "map" {
+		item, err := p.parse(object["values"], namespace, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		value := item.field
+		value.Name = ""
+		value.OrdinalPosition = 0
+		return &valueSchema{field: datatype.FieldInfo{Type: datatype.FieldTypeJSON, NativeType: "map", MapValue: &value}, nullBranch: -1, item: item}, nil
+	}
 	if kind == "array" {
 		item, err := p.parse(object["items"], namespace, depth+1)
 		if err != nil {

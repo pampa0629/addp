@@ -112,7 +112,7 @@ func fieldValueForJSON(field FieldInfo, value interface{}, depth int, queryGeome
 	case FieldTypeDecimal:
 		return decimalJSONText(value)
 	case FieldTypeJSON:
-		if len(field.Fields) == 0 {
+		if len(field.Fields) == 0 && field.MapValue == nil {
 			return value, nil
 		}
 		object, ok := value.(map[string]interface{})
@@ -125,7 +125,11 @@ func fieldValueForJSON(field FieldInfo, value interface{}, depth int, queryGeome
 			byName[child.Name] = child
 		}
 		for name, item := range object {
-			converted, err := fieldValueForJSON(byName[name], item, depth+1, queryGeometry)
+			child := byName[name]
+			if field.MapValue != nil {
+				child = *field.MapValue
+			}
+			converted, err := fieldValueForJSON(child, item, depth+1, queryGeometry)
 			if err != nil {
 				return nil, err
 			}

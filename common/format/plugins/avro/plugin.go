@@ -49,6 +49,9 @@ func (p *Plugin) open(ctx context.Context, input io.Reader, options *format.Pars
 	}
 	if !preview {
 		for _, f := range r.fields {
+			if f.MapValue != nil {
+				return nil, fmt.Errorf("Avro map fields support preview only; batch transfer is not supported")
+			}
 			if f.Enum != nil {
 				return nil, fmt.Errorf("Avro enum fields support preview only; batch transfer is not supported")
 			}

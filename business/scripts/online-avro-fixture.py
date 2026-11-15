@@ -334,6 +334,84 @@ def enum_sources():
              'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
             for c in CODECS for raw in [enum_source_bytes(c)]]
 
+# Map keys are content, never a declared record field list. Older source bytes above stay unchanged.
+MAP_KEYS = ['', 'sensor.A', 'a/b', '中文 ', '__proto__', 'constructor']
+MAP_SCHEMA = {'type':'record','name':'example.MapRows','fields':[
+    {'name':'id','type':'long'},
+    {'name':'metrics','type':['null',{'type':'map','values':['null','long']}]},
+    {'name':'details','type':{'type':'map','values':['null',{'type':'record','name':'MapDetail','fields':[
+        {'name':'uid','type':'long'}, {'name':'amount','type':{'type':'bytes','logicalType':'decimal','precision':38,'scale':6}},
+        {'name':'day','type':{'type':'int','logicalType':'date'}}, {'name':'stamp','type':{'type':'long','logicalType':'timestamp-nanos'}},
+        {'name':'payload','type':'bytes'}]}]}},
+    {'name':'states','type':{'type':'map','values':{'type':'enum','name':'demo.MapState','symbols':['z','A','a']}}},
+    {'name':'groups','type':{'type':'array','items':{'type':'map','values':{'type':'array','items':['null','demo.MapState']}}}},
+    {'name':'nested','type':{'type':'map','values':{'type':'map','values':['long','null']}}},
+]}
+
+def map_row(index):
+    base=row(index)
+    # Always non-null logical values in this detail; other cases exercise NULL values/containers.
+    return {'id':base['id'],
+            'metrics':None if index%7==0 else {} if index%5==0 else {key:None if n%3==1 else base['id']+n for n,key in enumerate(MAP_KEYS)},
+            'details':{'内容':{'uid':base['id'],'amount':row(index + 1 if index%19==0 else index)['amount'],'day':datetime.date(1969,12,31),
+                              'stamp':TIMESTAMPS['stamp_ns'][1][index%8],'payload':bytes([0,255,index%256])},'none':None},
+            'states':{'z':ENUM_SYMBOLS[index%3],'A':ENUM_SYMBOLS[(index+1)%3]},
+            'groups':[{}, {'a.b':[None,ENUM_SYMBOLS[index%3]]}],
+            'nested':{'outer':{'':base['id'],'nil':None},'empty':{}}}
+
+def map_public_row(index):
+    value=map_row(index); detail=value['details']['内容']
+    return {'id':str(value['id']),
+            'metrics':None if value['metrics'] is None else {k:None if v is None else str(v) for k,v in value['metrics'].items()},
+            'details':{'内容':{'uid':str(detail['uid']),'amount':format(detail['amount'],'f'),'day':detail['day'].isoformat(),
+                              'stamp':utc_text(detail['stamp'],'ns'),'payload':base64.b64encode(detail['payload']).decode()},'none':None},
+            'states':value['states'],'groups':value['groups'],
+            'nested':{'outer':{'':str(value['id']),'nil':None},'empty':{}}}
+
+def map_source_bytes(codec):
+    if codec not in CODECS:raise ValueError('unsupported Avro fixture codec')
+    sync=hashlib.sha256(('addp-avro-map-fixture-'+codec).encode()).digest()[:16]
+    metadata={'avro.schema':json.dumps(MAP_SCHEMA,separators=(',',':')).encode(),'avro.codec':codec.encode()}
+    out=b'Obj\x01'+number(2)+b''.join(blob(k.encode())+blob(v) for k,v in metadata.items())+number(0)+sync
+    def optional(value,encode,null=0):
+        return number(null if value is None else 1-null)+(b'' if value is None else encode(value))
+    def entries(values,encode,mode,keys=True):
+        items=list(values.items()) if keys else list(values)
+        groups=[items] if mode%3==0 else [items[:1],items[1:]]
+        result=b''
+        for group in groups:
+            if not group:continue
+            raw=b''.join(blob(k.encode())+encode(v) for k,v in group) if keys else b''.join(encode(v) for v in group)
+            result+=(number(-len(group))+number(len(raw)) if mode%3==2 else number(len(group)))+raw
+        return result+number(0)
+    def detail(v):
+        d=v['amount'].as_tuple();integer=int(''.join(map(str,d.digits)))*(-1 if d.sign else 1)
+        raw=integer.to_bytes(max(1,(integer.bit_length()+8)//8),'big',signed=True)
+        return number(v['uid'])+blob(raw)+number((v['day']-datetime.date(1970,1,1)).days)+number(v['stamp'])+blob(v['payload'])
+    for start in range(0,COUNT,257):
+        raw=b''
+        for i in range(start,min(start+257,COUNT)):
+            v=map_row(i)
+            raw+=number(v['id'])+optional(v['metrics'],lambda x:entries(x,lambda y:optional(y,number),i))
+            raw+=entries(v['details'],lambda x:optional(x,detail),i)
+            raw+=entries(v['states'],lambda x:number(ENUM_SYMBOLS.index(x)),i)
+            raw+=entries(v['groups'],lambda x:entries(x,lambda y:entries(y,lambda z:optional(z,lambda e:number(ENUM_SYMBOLS.index(e))),i+1,False),i),i,False)
+            raw+=entries(v['nested'],lambda x:entries(x,lambda y:optional(y,number,1),i+1),i)
+        payload=raw
+        if codec=='deflate':
+            compressor=zlib.compressobj(wbits=-15);payload=compressor.compress(raw)+compressor.flush()
+        elif codec=='snappy':
+            n=len(raw)-1;width=max(1,(n.bit_length()+7)//8)
+            tag=bytes([n<<2]) if n<60 else bytes([(59+width)<<2])+n.to_bytes(width,'little')
+            payload=unsigned(len(raw))+tag+raw+struct.pack('>I',zlib.crc32(raw))
+        out+=number(min(257,COUNT-start))+blob(payload)+sync
+    return out
+
+def map_sources():
+    return [{'codec':c,'name':'map-'+c+'.avro','map':True,'count':COUNT,'schema':MAP_SCHEMA,
+             'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()} for c in CODECS for raw in [map_source_bytes(c)]]
+
+
 def worker(request):
     from minio import Minio
     access = request['storage']
@@ -359,28 +437,28 @@ def worker(request):
         assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'existing_outputs'
         directory.mkdir(exist_ok=False)
         with marker.open('x') as out:
-            out.write('addp.avro-fixture/v3')
-        for spec in sources()+nested_sources()+enum_sources():
-            raw = (enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec'])
+            out.write('addp.avro-fixture/v4')
+        for spec in sources()+nested_sources()+enum_sources()+map_sources():
+            raw = (map_source_bytes if spec.get('map') else enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec'])
             path = directory / spec['name']
             path.write_bytes(raw)
             path.chmod(0o644)
             client.put_object(bucket, 'avro/' + path.name, io.BytesIO(raw), len(raw), content_type='application/avro')
         client.put_object(bucket, 'avro-output/.keep', io.BytesIO(b''), 0)
-        return {'sources': sources(), 'nested_sources':nested_sources(), 'enum_sources':enum_sources(), 'count': COUNT}
+        return {'sources': sources(), 'nested_sources':nested_sources(), 'enum_sources':enum_sources(), 'map_sources':map_sources(), 'count': COUNT}
     if action not in {'verify', 'delete'}:
         raise ValueError('unknown Avro fixture action')
     if not directory.exists() and action == 'delete':
         assert not list(client.list_objects(bucket, prefix='avro/', recursive=True)), 'unowned_inputs'
         assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'unowned_outputs'
         return {'objects_removed': True, 'files_removed': True, 'outputs_removed': True}
-    assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v3', 'fixture_ownership'
-    assert all(not (directory / v['name']).is_symlink() for v in sources()+nested_sources()+enum_sources()), 'source_symlink'
+    assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v4', 'fixture_ownership'
+    assert all(not (directory / v['name']).is_symlink() for v in sources()+nested_sources()+enum_sources()+map_sources()), 'source_symlink'
     if action == 'verify':
         import pyarrow as pa
         import pyarrow.parquet as pq
-        for spec in sources()+nested_sources()+enum_sources():
-            assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == (enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec']), 'source_changed'
+        for spec in sources()+nested_sources()+enum_sources()+map_sources():
+            assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == (map_source_bytes if spec.get('map') else enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec']), 'source_changed'
         assert {x.object_name for x in client.list_objects(bucket,prefix='avro-output/',recursive=True)}==set(outputs+['avro-output/.keep']), 'unexpected_nested_output'
         facts = []
         expected_rows = [row(i) for i in range(COUNT)]
@@ -408,11 +486,11 @@ def worker(request):
             facts.append({'object': name, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                           'all_values_and_nulls_verified': True, 'native_timestamp_ticks_verified': True,
                           'timestamp_units': {name:unit for name,(unit,_,_) in TIMESTAMPS.items()}, 'content_base64': base64.b64encode(raw).decode()})
-        return {'sources_unchanged': True, 'nested_outputs_absent':True, 'nested_sources_verified':6, 'enum_sources_verified':6, 'enum_outputs_absent':True, 'outputs': facts}
+        return {'sources_unchanged': True, 'nested_outputs_absent':True, 'nested_sources_verified':6, 'enum_sources_verified':6, 'enum_outputs_absent':True, 'map_sources_verified':6, 'map_outputs_absent':True, 'outputs': facts}
     if action == 'delete':
-        for name in outputs + ['avro-output/.keep'] + ['avro/' + v['name'] for v in sources()+nested_sources()+enum_sources()]:
+        for name in outputs + ['avro-output/.keep'] + ['avro/' + v['name'] for v in sources()+nested_sources()+enum_sources()+map_sources()]:
             client.remove_object(bucket, name)
-        for spec in sources()+nested_sources()+enum_sources():
+        for spec in sources()+nested_sources()+enum_sources()+map_sources():
             (directory / spec['name']).unlink(missing_ok=True)
         marker.unlink()
         if directory.exists():
