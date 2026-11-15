@@ -20,12 +20,12 @@ func TestEngineListFiltersCurrentUserBeforeDeliveringNames(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest("GET", "/engines", nil)
 	c.Request.Header.Set("Authorization", "Bearer addp_at_user")
-	engines := []*models.Engine{{ID: 1, EngineType: "postgresql"}, {ID: 2, EngineType: "nfs"}, {ID: 3, EngineType: "minio"}, {ID: 4, EngineType: "mysql"}}
+	engines := []*models.Engine{{ID: 1, EngineType: "postgresql"}, {ID: 2, EngineType: "nfs"}, {ID: 3, EngineType: "minio"}, {ID: 4, EngineType: "mysql"}, {ID: 5, EngineType: "mongodb"}, {ID: 6, EngineType: "neo4j"}}
 	mode := 0
 	calls := 0
 	h := &ExplorerHandler{navigationChecker: navigationCheckFunc(func(ctx context.Context, token string, q authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
 		calls++
-		if token != "addp_at_user" || !q.Valid() || len(q.Targets) != 3 {
+		if token != "addp_at_user" || !q.Valid() || len(q.Targets) != 6 {
 			t.Fatal("wrong identity or candidate batch")
 		}
 		if mode == 3 {
@@ -40,7 +40,7 @@ func TestEngineListFiltersCurrentUserBeforeDeliveringNames(t *testing.T) {
 	for _, step := range []struct {
 		mode int
 		ids  []uint
-	}{{0, []uint{4}}, {1, []uint{1, 2, 3, 4}}, {2, []uint{2, 4}}, {0, []uint{4}}} {
+	}{{0, nil}, {1, []uint{1, 2, 3, 4, 5, 6}}, {2, []uint{2}}, {0, nil}} {
 		mode = step.mode
 		got, err := h.filterVisibleEngines(c, engines)
 		if err != nil || len(got) != len(step.ids) {
@@ -58,5 +58,14 @@ func TestEngineListFiltersCurrentUserBeforeDeliveringNames(t *testing.T) {
 	}
 	if calls != 5 {
 		t.Fatal("stale engine visibility reused")
+	}
+}
+
+func TestUnknownCatalogCannotBypassEngineVisibility(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/engines", nil)
+	got, err := (&ExplorerHandler{}).filterVisibleEngines(c, []*models.Engine{{ID: 8, EngineType: "unregistered-catalog"}})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("unchecked engine disclosed: %+v %v", got, err)
 	}
 }

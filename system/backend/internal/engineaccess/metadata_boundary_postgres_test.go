@@ -165,6 +165,12 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 							t.Fatalf("visible=%v result=%+v err=%v", want, result, err)
 						}
 					}
+					root := plugin.EngineCatalogPath{Version: target.Version, EngineID: target.EngineID, Segments: append([]plugin.EngineCatalogSegment(nil), target.Segments[:1]...)}
+					navigation := shared.SourceNavigationCheckRequest{Targets: []plugin.EngineCatalogPath{root}}
+					visible, err := service.CheckManagerNavigation(ctx, credential, navigation)
+					if err != nil || !visible.MatchesNavigation(navigation) || visible.Targets[0].Visible != want {
+						t.Fatalf("engine root visible=%v result=%+v err=%v", want, visible, err)
+					}
 				}
 				check(false)
 				command := CreateIndependentGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: uuid.New(), CatalogPath: target, ItemFingerprint: facts.ItemFingerprint, ExpectedBoundaryHash: hash, RecipientType: "user", RecipientID: reader.PrincipalID, Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "View metadata only"}

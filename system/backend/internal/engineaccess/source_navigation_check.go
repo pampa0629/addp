@@ -23,7 +23,6 @@ const navigationGrantsSQL = `WITH input AS MATERIALIZED (
  JOIN recipients r ON r.recipient_type=g.recipient_type AND r.recipient_id=g.recipient_id
  JOIN system.engines e ON e.id=g.engine_id AND e.tenant_id=g.tenant_id
  WHERE g.engine_id IN ? AND e.lifecycle_state='active' AND e.deleted_at IS NULL
- AND e.engine_type IN ('postgresql','nfs','minio')
  AND g.action IN ('metadata_read','read') AND ` + sourceGrantCurrentPredicate
 
 func (s *Service) CheckManagerNavigation(ctx context.Context, credential string, q shared.SourceNavigationCheckRequest) (*shared.SourceMetadataCheck, error) {

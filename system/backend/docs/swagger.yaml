@@ -7912,10 +7912,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 当前用户的有效个人和组织 Grant 决定 PG、NFS、MinIO 引擎根可见性；跨 Meta 查询后重核。结果不包含授权来源、内容或可缓存许可
-        | Current personal and organization Grants determine PG, NFS and MinIO root
-        visibility, rechecked after Meta queries. Returns no Grant provenance, content
-        or reusable lease
+      description: 当前用户的有效个人和组织 Grant 决定全部存储引擎的根可见性；沿现有精确项或已准入节点来源核验，跨 Meta 查询后重核。结果不包含授权来源、内容或可缓存许可
+        | Current personal and organization Grants determine all storage engine root
+        visibility through existing exact-item or admitted node sources, rechecked
+        after Meta queries. Returns no Grant provenance, content or reusable lease
       parameters:
       - description: 1 至 200 个引擎根 | 1 to 200 engine roots
         in: body

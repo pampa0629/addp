@@ -404,3 +404,25 @@ func TestGrantedEmptyNodesAndIndependentItemSurviveRootRevocation(t *testing.T) 
 		})
 	}
 }
+
+func TestEveryEngineHidesItsUnauthorizedEmptyRoot(t *testing.T) {
+	for _, kind := range []string{"postgresql", "nfs", "minio", "mysql", "mongodb", "neo4j", "redis", "elasticsearch", "kafka", "ftp", "hdfs", "highgo", "gaussdb", "starrocks"} {
+		t.Run(kind, func(t *testing.T) {
+			model, err := dbbridge.EngineCatalogModel(kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := &resourcetree.TreeNode{ID: "root", Type: model.RootTerm, Locator: resourcetree.EngineRootLocatorForType(9, resourcetree.ResourceType(model.RootTerm)), Metadata: map[string]interface{}{"engine_type": kind, "item_count": 19}}
+			result, err := filterMetadataResourceTree(t.Context(), root, 9, func(context.Context, uint) (plugin.EngineCatalogPath, error) {
+				t.Fatal("empty root enumerated items")
+				return plugin.EngineCatalogPath{}, nil
+			}, func(context.Context, []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+				t.Fatal("empty root checked items")
+				return nil, nil
+			})
+			if err != nil || result != nil {
+				t.Fatalf("unauthorized %s root disclosed: %+v %v", kind, result, err)
+			}
+		})
+	}
+}

@@ -265,7 +265,7 @@ func (h *EngineAccessMetadataCheckHandler) CheckManagerObjectPreview(c *gin.Cont
 
 // CheckManagerNavigation godoc
 // @Summary 检查数据探查引擎可见性 | Check explorer engine visibility
-// @Description 当前用户的有效个人和组织 Grant 决定 PG、NFS、MinIO 引擎根可见性；跨 Meta 查询后重核。结果不包含授权来源、内容或可缓存许可 | Current personal and organization Grants determine PG, NFS and MinIO root visibility, rechecked after Meta queries. Returns no Grant provenance, content or reusable lease
+// @Description 当前用户的有效个人和组织 Grant 决定全部存储引擎的根可见性；沿现有精确项或已准入节点来源核验，跨 Meta 查询后重核。结果不包含授权来源、内容或可缓存许可 | Current personal and organization Grants determine all storage engine root visibility through existing exact-item or admitted node sources, rechecked after Meta queries. Returns no Grant provenance, content or reusable lease
 // @Tags 源数据读取检查 | Source Data Read Checks
 // @Accept json
 // @Produce json

@@ -3,21 +3,22 @@ package api
 import (
 	"github.com/addp/common/authorization"
 	commonclient "github.com/addp/common/client"
-	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 )
 
-// Filter only the admitted profiles. Other engine behavior is outside this change.
+// Engine visibility observes current sources independently of node Grant admission.
 func (h *ExplorerHandler) filterVisibleEngines(c *gin.Context, engines []*models.Engine) ([]*models.Engine, error) {
 	targets := []plugin.EngineCatalogPath{}
 	pending := map[uint]bool{}
 	for _, engine := range engines {
-		if root, ok := authorizationfacts.NavigationRoot(engine.EngineType, engine.ID); ok {
-			targets = append(targets, root)
-			pending[engine.ID] = false
+		model, err := dbbridge.EngineCatalogModel(engine.EngineType)
+		if err != nil {
+			continue
 		}
+		targets = append(targets, plugin.EngineCatalogRootPath(model, engine.ID))
 	}
 	for offset := 0; offset < len(targets); offset += 200 {
 		end := offset + 200
@@ -41,7 +42,7 @@ func (h *ExplorerHandler) filterVisibleEngines(c *gin.Context, engines []*models
 	}
 	result := make([]*models.Engine, 0, len(engines))
 	for _, engine := range engines {
-		if visible, checked := pending[engine.ID]; !checked || visible {
+		if pending[engine.ID] {
 			result = append(result, engine)
 		}
 	}

@@ -488,7 +488,7 @@ func queryCSV(c *gin.Context, key string) []string {
 // ListEngines 获取存储引擎选择项
 // GET /api/explorer/engines
 // @Summary 获取引擎列表 | List engines
-// @Description 获取当前租户存储引擎；PG、NFS、MinIO 仅返回当前用户有有效数据范围的引擎，离线获权引擎可见且禁选 | List current Tenant storage engines; PG, NFS and MinIO require a current authorized data range. Authorized offline engines remain visible and disabled
+// @Description 获取当前租户中当前用户有有效元数据查看或读取来源的存储引擎；离线获权引擎可见且禁选 | List current Tenant storage engines with a current metadata-viewing or data-reading source for the User. Authorized offline engines remain visible and disabled
 // @Tags Manager
 // @Produce json
 // @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"

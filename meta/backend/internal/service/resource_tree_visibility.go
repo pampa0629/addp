@@ -136,8 +136,8 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 			}
 		}
 	}
-	var prune func(*resourcetree.TreeNode, bool) (*resourcetree.TreeNode, int)
-	prune = func(node *resourcetree.TreeNode, isRoot bool) (*resourcetree.TreeNode, int) {
+	var prune func(*resourcetree.TreeNode) (*resourcetree.TreeNode, int)
+	prune = func(node *resourcetree.TreeNode) (*resourcetree.TreeNode, int) {
 		if node == nil {
 			return nil, 0
 		}
@@ -149,13 +149,13 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 		children := []*resourcetree.TreeNode{}
 		count := 0
 		for _, child := range node.Children {
-			safe, n := prune(child, false)
+			safe, n := prune(child)
 			if safe != nil {
 				children = append(children, safe)
 				count += n
 			}
 		}
-		if (!isRoot || managedRoot) && !isItem && len(children) == 0 && !navigation[node.Locator] {
+		if !isItem && len(children) == 0 && !navigation[node.Locator] {
 			return nil, 0
 		}
 		if isItem {
@@ -175,7 +175,7 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 		safe.Metadata["has_children"] = safe.HasChildren
 		return safe, count
 	}
-	safe, _ := prune(root, true)
+	safe, _ := prune(root)
 	return safe, nil
 }
 
