@@ -1184,6 +1184,10 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 	@python3 -m unittest scripts/test/transfer-continuous-events-online_test.py scripts/test/continuous-execution-faults_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-hosted-continuous-gate_test.py scripts/test/online-engine-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-infra-object-barrier-postgres
+test-infra-object-barrier-postgres: ## 用独占 PG 验证新建目标的领取观察屏障并自动清理
+	@python3 -m scripts.test.infra-object-storage-online_test --postgres-barrier
+
 .PHONY: test-infra-object-online-runner
 test-infra-object-online-runner: ## 验证固定版本对象存储 T4 编排与观察器拒绝条件
 	@bash -n scripts/test/online-hosted-infra-object-gate.sh scripts/test/infra-object-source-fixture.sh

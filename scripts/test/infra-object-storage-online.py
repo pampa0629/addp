@@ -34,6 +34,8 @@ READER_PERMISSIONS = {"manager.derived_artifact.read", "develop.task.read", "dev
                       "develop.data_read.execute", "transfer.task.read", "transfer.task.execute",
                       "system.execution_authorization.create"}
 TABLE = "object_import_points"
+SOURCE_CONTAINER = "addp-object-online-disposable"
+SOURCE_DATABASE = "object_fixture"
 
 
 def require(ok, message):
@@ -59,10 +61,10 @@ def pg(sql, *, write=False, source=False):
     command = ["docker", "exec", "-i"]
     if not write:
         command += ["-e", "PGOPTIONS=-c default_transaction_read_only=on"]
-    command += ["addp-object-online-disposable" if source else "addp-postgres",
+    command += [SOURCE_CONTAINER if source else "addp-postgres",
                 "psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-U",
                 "postgres" if source else os.environ["POSTGRES_USER"], "-d",
-                "object_fixture" if source else "addp_online"]
+                SOURCE_DATABASE if source else "addp_online"]
     result = subprocess.run(command, input=sql, text=True, capture_output=True, timeout=10)
     require(result.returncode == 0, "physical database observation failed")
     return json.loads(result.stdout) if result.stdout.strip() else None
@@ -103,15 +105,16 @@ def identity(client, tenant, permissions):
 
 
 @contextmanager
-def hold_target():
-    # A bounded fixture-only relation lock exposes actual Worker acquisition;
-    # it neither manufactures execution rows nor changes the source bytes.
-    process = subprocess.Popen(["docker", "exec", "-i", "addp-object-online-disposable", "psql",
-                                "-XqAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "object_fixture"],
+def hold_target(*, creating=False):
+    # Only the disposable business PG is blocked. New targets must stay absent
+    # so the real creation receipt and initial authorization remain eligible.
+    process = subprocess.Popen(["docker", "exec", "-i", SOURCE_CONTAINER, "psql",
+                                "-XqAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", SOURCE_DATABASE],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
+        lock = "pg_catalog.pg_class IN SHARE MODE" if creating else f"public.{TABLE} IN ACCESS EXCLUSIVE MODE"
         process.stdin.write("BEGIN; SET LOCAL idle_in_transaction_session_timeout='60s'; "
-                            f"LOCK TABLE public.{TABLE} IN ACCESS EXCLUSIVE MODE; SELECT 'locked';\n")
+                            f"LOCK TABLE {lock}; SELECT 'locked';\n")
         process.stdin.flush()
         require(select.select([process.stdout], [], [], 8)[0]
                 and process.stdout.readline().strip() == "locked", "source barrier failed")
@@ -197,6 +200,24 @@ def execution_proof(execution_id, tenant, principal, *, source, task_id=None):
     return row
 
 
+def wait_initial_authorization(client, execution_id, task_id, report):
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        current = client.request("GET", f"/api/v1/transfer/executions/{execution_id}", (200,)).payload
+        require(current.get("execution_id") == execution_id and current.get("task_id") == task_id
+                and current.get("status") == "success", "initial authorization execution binding differs")
+        state = current.get("metadata", {}).get("initial_authorization")
+        require(isinstance(state, dict) and set(state) <= {"status", "code"},
+                "successful new production omitted public initial authorization")
+        report["initial_authorization"] = dict(state)
+        require(state.get("status") in {"pending", "issued"}, "initial production authorization rejected")
+        if state["status"] == "issued":
+            report["authorization_observed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            return
+        time.sleep(.5)
+    raise api.SuiteError("initial production authorization did not reach issued")
+
+
 def read_imported_item_locator(client, engine):
     items = client.request("GET", f"/api/v1/meta/engines/{engine}/items?branch=public", (200,), response_type=list).payload
     matches = [item for item in items if item.get("full_name") == "public." + TABLE and item.get("item_type") == "table"]
@@ -213,7 +234,9 @@ def import_once(client, engine, tenant, principal, report):
             f'--{boundary}\r\nContent-Disposition: form-data; name="target_table"\r\n\r\n{TABLE}\r\n'
             f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="points.zip"\r\n'
             'Content-Type: application/zip\r\n\r\n').encode() + archive + f"\r\n--{boundary}--\r\n".encode()
-    with hold_target():
+    require(pg(f"SELECT to_json(to_regclass('public.{TABLE}') IS NULL)", source=True) is True,
+            "import target must initially be absent")
+    with hold_target(creating=True):
         submitted = client.request("POST", "/api/v1/manager/imports", (202,), encoded_body=body,
                                    content_type="multipart/form-data; boundary=" + boundary).payload
         report.update(upload_uuid=uuid(submitted["upload_uuid"]), task_id=positive(submitted["transfer_task_id"]),
@@ -264,6 +287,7 @@ def import_once(client, engine, tenant, principal, report):
                   coordinates=coordinates, summary={"last_execution_id": task["last_execution_id"], "last_execution_status": task["last_execution_status"]},
                   meta_scan_execution_id=child_id,
                   terminal=execution_proof(report["execution_id"], tenant, principal, source="transfer", task_id=report["task_id"]))
+    wait_initial_authorization(client, report["execution_id"], report["task_id"], report)
     locator, item_id = read_imported_item_locator(client, engine)
     report.update(target_item_id=item_id, target_locator=locator)
     return locator

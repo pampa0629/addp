@@ -23,6 +23,7 @@ export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=2400
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/engine.json"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
+run_logged make -C "$HARNESS" test-infra-object-barrier-postgres
 fixture_owned=1
 run_logged bash "$HARNESS/scripts/test/infra-object-source-fixture.sh" start
 application_owned=1

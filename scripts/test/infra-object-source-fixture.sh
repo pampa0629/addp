@@ -36,10 +36,7 @@ CREATE EXTENSION postgis;
 CREATE ROLE object_operator LOGIN PASSWORD :'reader_password';
 GRANT CONNECT ON DATABASE object_fixture TO object_operator;
 GRANT USAGE, CREATE ON SCHEMA public TO object_operator;
-SET ROLE object_operator;
--- An empty target allows a short relation lock to expose the real import
--- Worker's running lease before its replace operation. No fixture rows exist.
-CREATE TABLE public.object_import_points (id integer, label text, shape geometry(Point,4326));
+-- The real Worker must create the absent target and its creation witness.
 SQL
 python3 - <<'PY'
 import json, os

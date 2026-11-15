@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
+import secrets
 import unittest
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
@@ -40,6 +42,29 @@ class ObserverTest(unittest.TestCase):
         client.request.return_value = SimpleNamespace(payload=[{key: value for key, value in item.items() if key != "id"}])
         with self.assertRaises(scenario.etl.SUPPORT.SuiteError):
             scenario.read_imported_item_locator(client, 3)
+
+    def test_initial_authorization_waits_only_for_pending_and_binds_execution(self):
+        current = {"execution_id": EXECUTION, "task_id": 3, "status": "success",
+                   "metadata": {"initial_authorization": {"status": "pending"}}}
+        issued = copy.deepcopy(current)
+        issued["metadata"]["initial_authorization"] = {"status": "issued"}
+        client = unittest.mock.Mock()
+        client.request.side_effect = [SimpleNamespace(payload=current), SimpleNamespace(payload=issued)]
+        report = {}
+        with patch.object(scenario.time, "sleep"):
+            scenario.wait_initial_authorization(client, EXECUTION, 3, report)
+        self.assertEqual(report["initial_authorization"], {"status": "issued"})
+        self.assertIn("authorization_observed_at", report)
+        for invalid in (current | {"metadata": {}}, current | {"task_id": 4},
+                        current | {"metadata": {"initial_authorization": {"status": "denied"}}}):
+            client.request.side_effect = None
+            client.request.return_value = SimpleNamespace(payload=invalid)
+            with self.assertRaises(scenario.api.SuiteError):
+                scenario.wait_initial_authorization(client, EXECUTION, 3, {})
+        client.request.return_value = SimpleNamespace(payload=current)
+        with patch.object(scenario.time, "monotonic", side_effect=[0, 181]):
+            with self.assertRaises(scenario.api.SuiteError):
+                scenario.wait_initial_authorization(client, EXECUTION, 3, {})
 
     def test_two_session_age_is_atomic_and_scoped(self):
         rows = {"manager": session("manager", 11), "develop": session("develop", 12)}
@@ -130,6 +155,9 @@ class ObserverTest(unittest.TestCase):
         self.assertNotIn("keepalive.sh", host)
         self.assertNotIn("restart.sh", host)
         self.assertNotIn("RETENTION=", host)
+        self.assertIn("test-infra-object-barrier-postgres", host)
+        fixture = (ROOT / "scripts/test/infra-object-source-fixture.sh").read_text()
+        self.assertNotIn("CREATE TABLE", fixture)
 
     def test_source_fixture_refuses_non_hosted_execution_before_docker(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/test/infra-object-source-fixture.sh"), "start"],
@@ -185,5 +213,82 @@ else:
         self.assertNotIn('git -C "$RUNNER_TEMP/infra-object-product" apply', job)
 
 
+def verify_barrier_postgres():
+    """Use the actual observer barrier on an owned PG, never the shared Infra."""
+    container = "addp-object-barrier-" + secrets.token_hex(6)
+    process = None
+    owned = False
+    def sql(statement):
+        result = subprocess.run(["docker", "exec", "-i", container, "psql", "-XqAt", "-v", "ON_ERROR_STOP=1",
+                                 "-U", "postgres", "-d", "addp_test"], input=statement, text=True,
+                                capture_output=True, timeout=8)
+        if result.returncode:
+            raise RuntimeError("barrier verification SQL failed")
+        return result.stdout.strip()
+    try:
+        environment = dict(os.environ, POSTGRES_PASSWORD=secrets.token_hex(24))
+        subprocess.run(["docker", "run", "-d", "--name", container,
+                        "--label", "com.addp.test=infra-object-barrier", "-e", "POSTGRES_PASSWORD",
+                        "-e", "POSTGRES_DB=addp_test", "addp-postgres-pgvector:latest"],
+                       env=environment, capture_output=True, check=True, timeout=30)
+        owned = True
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                if sql("SELECT current_database()") == "addp_test":
+                    break
+            except RuntimeError:
+                pass
+            time.sleep(.5)
+        else:
+            raise RuntimeError("owned PG readiness timed out")
+        sql("CREATE EXTENSION postgis; CREATE ROLE object_operator; "
+            "GRANT USAGE, CREATE ON SCHEMA public TO object_operator;")
+        with patch.object(scenario, "SOURCE_CONTAINER", container), patch.object(scenario, "SOURCE_DATABASE", "addp_test"):
+            assert scenario.pg(f"SELECT to_json(to_regclass('public.{scenario.TABLE}') IS NULL)", source=True) is True
+            with scenario.hold_target(creating=True):
+                # This is the provider's catalog existence read under its actual role.
+                assert sql("SET ROLE object_operator; SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c "
+                           "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+                           f"WHERE n.nspname='public' AND c.relname='{scenario.TABLE}')") == "f"
+                process = subprocess.Popen(["docker", "exec", "-i", container, "psql", "-XqAt", "-v", "ON_ERROR_STOP=1",
+                                            "-U", "postgres", "-d", "addp_test"], stdin=subprocess.PIPE,
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process.stdin.write("SET ROLE object_operator; SET statement_timeout='20s'; "
+                                    f"CREATE TABLE public.{scenario.TABLE} (id integer,label text,shape geometry(Point,4326));\n")
+                process.stdin.close()
+                deadline = time.monotonic() + 8
+                while time.monotonic() < deadline:
+                    waiting = sql("SELECT count(*) FROM pg_locks WHERE relation='pg_catalog.pg_class'::regclass "
+                                  "AND mode='RowExclusiveLock' AND NOT granted")
+                    if waiting == "1":
+                        break
+                    if process.poll() is not None:
+                        raise RuntimeError("CREATE was not blocked by the actual barrier")
+                    time.sleep(.1)
+                else:
+                    raise RuntimeError("catalog creation wait not observed")
+                assert sql(f"SELECT to_regclass('public.{scenario.TABLE}') IS NULL") == "t"
+            assert process.wait(timeout=8) == 0, "CREATE did not complete after barrier release"
+            assert sql(f"SELECT to_regclass('public.{scenario.TABLE}') IS NOT NULL") == "t"
+        print("barrier=passed catalog_read=passed create_wait=observed release=passed target=created")
+    finally:
+        if owned:
+            subprocess.run(["docker", "rm", "-fv", container], capture_output=True, check=True, timeout=20)
+            result = subprocess.run(["docker", "container", "inspect", container], capture_output=True, timeout=8)
+            if result.returncode == 0:
+                raise RuntimeError("owned PG container remains")
+            print("barrier_infra_cleanup=zero_residuals")
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            process.stdout.close()
+            process.stderr.close()
+
+
 if __name__ == "__main__":
-    unittest.main()
+    if sys.argv[1:] == ["--postgres-barrier"]:
+        verify_barrier_postgres()
+    else:
+        unittest.main()
