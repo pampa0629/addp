@@ -2759,7 +2759,10 @@ class FormalFileClient(OverlayClient):
     def __init__(self,case):
         super().__init__(case);self.scans=[];self.grants={};self.issuer=FilePublicationInitializer(self)
         self.success['metadata'].pop('result')  # The product contract no longer supplies meta_scan_runs.
-        for item in [*self.sources,*self.outputs]:item.update(tenant_id=2,engine_id=3,scanned_depth='deep')
+        for item in [*self.sources,*self.outputs]:
+            item.update(tenant_id=2,engine_id=3,scanned_depth='deep')
+            item['attributes']['item'].update(file_count=1,refs=[dict(extension='.gpkg',path=item['full_name'],
+                primary=True,required=True,role='container')])
         self.observer=FilePublicationFactReader(self)
     def request(self,method,path,expected,body=None):
         if path.endswith('/auth/context'):
@@ -2778,6 +2781,8 @@ class FormalFileClient(OverlayClient):
         if path.startswith('/api/v1/meta/items/'):
             value=response.payload
             value.pop('size_bytes',None);value.pop('row_count',None)
+            identity=value['attributes']['item']
+            value['attributes']['item']={key:identity[key]for key in ('data_type','format','layout')if key in identity}
             for child in value['attributes']['type_info']['container']['children']:
                 for key in list(child):
                     if key not in ('name','child_kind','data_type'):child.pop(key)
@@ -3438,6 +3443,14 @@ class FilePublicationMachineFactsTest(unittest.TestCase):
                 snapshots=[v for v in report['publication']['stages']if v['stage']=='meta_facts_observed']
                 self.assertEqual(len([v for v in snapshots if v['phase']=='source_prepared']),5)
                 self.assertTrue(all(v['snapshot']['size_bytes']==98304 for v in snapshots))
+                for entry in [*report['sources'],*report['outputs']]:
+                    self.assertEqual(set(entry['before']['attributes']['item']),{'data_type','format','layout'})
+                for entry in snapshots:
+                    descriptor=entry['snapshot']['attributes']['item']
+                    self.assertEqual(set(descriptor),{'data_type','format','layout','file_count','refs'})
+                    self.assertEqual(descriptor['file_count'],1)
+                    self.assertEqual(descriptor['refs'],[dict(extension='.gpkg',path=entry['snapshot']['full_name'],
+                        primary=True,required=True,role='container')])
                 self.assertNotIn('meta_fact_observer',report['browser'])
                 self.assertNotIn('snapshot',json.dumps(report['browser']))
                 self.assertEqual(report['publication']['pending_grants'],[])
@@ -3465,7 +3478,11 @@ class FilePublicationMachineFactsTest(unittest.TestCase):
                  lambda v:v.update(fingerprint='foreign-fingerprint'),
                  lambda v:v.update(full_name='foreign.gpkg'),lambda v:v.update(item_type='table'),
                  lambda v:v.update(scanned_at='foreign-scan-version'),lambda v:v.update(scanned_depth='basic'),
-                 lambda v:v['attributes']['item'].update(format='foreign-format')]
+                 lambda v:v['attributes']['item'].update(format='foreign-format'),
+                 lambda v:v['attributes']['item'].update(data_type='table'),
+                 lambda v:v['attributes']['item'].update(layout='multi'),
+                 lambda v:v['attributes']['item'].pop('format'),
+                 lambda v:v['attributes'].update(item=None),lambda v:v['attributes'].update(item=[])]
         marker='FOREIGN_META_RESPONSE_PRIVATE_MARKER'
         for kind in ('difference','adjacency'):
             for change in changes:
@@ -3490,6 +3507,66 @@ class FilePublicationMachineFactsTest(unittest.TestCase):
                     self.assertEqual(rejected,[{'stage':'meta_facts_rejected','phase':'source_prepared',
                                                'item_id':10,'reason':'identity_or_scan_binding_differs'}])
                     self.assertFalse(any(v['stage']=='meta_facts_observed'for v in publication['stages']))
+
+    def test_authoritative_source_composition_is_required_despite_matching_public_descriptor(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration')
+        changes=[lambda f:f.update(basis_state='incomplete'),lambda f:f['boundary'].update(layout='multi'),
+                 lambda f:f['boundary']['file_composition'].update(format='geojson'),
+                 lambda f:f['boundary']['file_composition']['refs'].append(copy.deepcopy(f['boundary']['file_composition']['refs'][0])),
+                 lambda f:f['boundary']['file_composition']['refs'][0].update(required=False),
+                 lambda f:f['boundary']['file_composition']['refs'][0].update(primary=False),
+                 lambda f:f['boundary']['file_composition']['refs'][0]['target']['segments'][1].update(name='other.gpkg')]
+        for kind in ('difference','adjacency'):
+            for change in changes:
+                with self.subTest(kind=kind,change=change):
+                    owner=DifferenceOnlineTest() if kind=='difference' else AdjacencyOnlineTest()
+                    owner.setUp();self.addCleanup(owner.doCleanups)
+                    client=DifferenceClient() if kind=='difference' else AdjacencyClient()
+                    client.issuer.mutate_facts=change
+                    with self.assertRaisesRegex(registration.MetadataGrantError,'complete_file_boundary_required'):
+                        owner.run_case(client)
+                    self.assertFalse(client.executions);self.assertFalse(client.grants);self.assertFalse(client.observer.calls)
+
+    def test_initial_result_grant_keeps_authoritative_composition_validation_and_cleanup(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration')
+        changes=[lambda c:c.update(format='geojson'),lambda c:c['refs'].clear(),
+                 lambda c:c['refs'].append(copy.deepcopy(c['refs'][0])),
+                 lambda c:c['refs'][0].update(required=False),lambda c:c['refs'][0].update(primary=False),
+                 lambda c:c['refs'][0]['target']['segments'][1].update(name='other.gpkg')]
+        for kind in ('difference','adjacency'):
+            for change in changes:
+                with self.subTest(kind=kind,change=change):
+                    owner=DifferenceOnlineTest() if kind=='difference' else AdjacencyOnlineTest()
+                    owner.setUp();self.addCleanup(owner.doCleanups)
+                    client=DifferenceClient() if kind=='difference' else AdjacencyClient();original=client.issuer.request
+                    def request(method,path,expected,body=None):
+                        response=original(method,path,expected,body)
+                        if '/access_grants/history?'in path:
+                            row=response.payload['data'][0]
+                            row['file_composition']=copy.deepcopy(row['file_composition'])
+                            change(row['file_composition'])
+                        return response
+                    client.issuer.request=request
+                    with self.assertRaisesRegex(registration.MetadataGrantError,'initial_grant_boundary_mismatch'):
+                        owner.run_case(client)
+                    self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),1)
+                    self.assertTrue(all(v['revocation']is not None for v in client.grants.values()))
+                    publication=json.loads((Path(owner.directory.name)/('topology-'+client.profile['prefix']+'-publication.json')).read_text())
+                    self.assertEqual(publication['pending_grants'],[])
+
+    def test_full_machine_composition_remains_in_unchanged_snapshot_oracle(self):
+        for kind in ('difference','adjacency'):
+            for change in [lambda v:v['attributes']['item'].update(file_count=2),
+                           lambda v:v['attributes']['item']['refs'][0].update(path='other.gpkg')]:
+                with self.subTest(kind=kind,change=change):
+                    owner=DifferenceOnlineTest() if kind=='difference' else AdjacencyOnlineTest()
+                    owner.setUp();self.addCleanup(owner.doCleanups)
+                    client=DifferenceClient() if kind=='difference' else AdjacencyClient()
+                    def mutate(value):
+                        if value['id']==10 and sum(path=='/api/v1/meta/items/10'for _,path in client.observer.calls)>1:change(value)
+                    client.observer.mutate=mutate
+                    with self.assertRaisesRegex(m.SuiteError,'source or result Meta changed'):owner.run_case(client)
+                    self.assertTrue(all(v['revocation']is not None for v in client.grants.values()))
 
     def test_missing_and_inexact_machine_statistics_still_fail_strict_oracle(self):
         for mutate in [lambda v:v.pop('size_bytes'),lambda v:v.update(size_bytes=True),lambda v:v.update(size_bytes=1),

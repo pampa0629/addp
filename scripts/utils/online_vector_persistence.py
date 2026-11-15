@@ -29,7 +29,7 @@ def validate_item(item, physical, name):
         raise SuiteError('physical file and Meta sizes must be equal positive integers with a scan timestamp')
     attrs = obj(item.get('attributes'), 'GeoPackage attributes')
     descriptor = obj(attrs.get('item'), 'item facts')
-    if descriptor != {'layout': 'single', 'data_type': 'container', 'format': 'geopackage'}:
+    if any(descriptor.get(key) != value for key,value in {'layout': 'single', 'data_type': 'container', 'format': 'geopackage'}.items()):
         raise SuiteError('GeoPackage must be registered as one container file')
     types = obj(attrs.get('type_info'), 'type facts')
     children = array(obj(types.get('container'), 'container facts').get('children'), 'container children')
