@@ -102,10 +102,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 }
 
 func (s *Supervisor) claimAvailable(ctx context.Context) error {
-	if s.canClaim != nil && !s.canClaim() {
-		return nil
-	}
 	for s.activeCount() < s.cfg.Capacity {
+		if s.canClaim != nil && !s.canClaim() {
+			return nil
+		}
 		claim, err := s.repo.ClaimNext(ctx, s.cfg.OwnerInstanceID, s.cfg.LeaseDuration)
 		if err != nil {
 			return err

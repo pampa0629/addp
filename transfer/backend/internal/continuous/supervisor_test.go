@@ -52,6 +52,53 @@ func TestSupervisorDoesNotClaimUntilRegistrationGateRecovers(t *testing.T) {
 	}
 }
 
+func TestSupervisorRechecksRegistrationBetweenClaims(t *testing.T) {
+	registered := true
+	claims := 0
+	store := &fakeLeaseStore{
+		claim:    &repository.RuntimeLeaseClaim{Task: models.TransferTask{ID: 46}},
+		finished: make(chan finishCall, 1),
+		onClaim: func() {
+			claims++
+			registered = false
+		},
+	}
+	started := make(chan context.Context, 1)
+	runner := SessionRunnerFunc(func(ctx context.Context, _ repository.RuntimeLeaseClaim) error {
+		started <- ctx
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	supervisor, err := NewSupervisor(store, runner, Config{
+		OwnerInstanceID: "worker-a", Capacity: 2, LeaseDuration: time.Hour,
+		HeartbeatInterval: time.Minute, ClaimInterval: time.Second,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supervisor.SetClaimGate(func() bool { return registered })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer func() {
+		cancel()
+		supervisor.wg.Wait()
+	}()
+
+	if err := supervisor.claimAvailable(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if claims != 1 {
+		t.Fatalf("ClaimNext called %d times, want only the claim issued before registration closed", claims)
+	}
+	select {
+	case session := <-started:
+		if session.Err() != nil {
+			t.Fatalf("already claimed session was cancelled: %v", session.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("already claimed session did not start")
+	}
+}
+
 func TestSupervisorCancelsSessionWhenDesiredStateStopsRenewal(t *testing.T) {
 	store := &fakeLeaseStore{
 		claim: &repository.RuntimeLeaseClaim{
@@ -258,9 +305,13 @@ type fakeLeaseStore struct {
 	desiredState models.TaskDesiredState
 	finished     chan finishCall
 	claimCalled  chan struct{}
+	onClaim      func()
 }
 
 func (f *fakeLeaseStore) ClaimNext(context.Context, string, time.Duration) (*repository.RuntimeLeaseClaim, error) {
+	if f.onClaim != nil {
+		f.onClaim()
+	}
 	if f.claimCalled != nil {
 		select {
 		case f.claimCalled <- struct{}{}:
