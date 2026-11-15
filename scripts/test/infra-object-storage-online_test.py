@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 scenario = import_module("scripts.test.infra-object-storage-online")
@@ -23,6 +25,22 @@ def session(owner, identity):
 
 
 class ObserverTest(unittest.TestCase):
+    def test_imported_source_uses_the_persisted_meta_item_identity(self):
+        item = {"id": 17, "full_name": "public." + scenario.TABLE, "item_type": "table"}
+        client = unittest.mock.Mock()
+        client.request.return_value = SimpleNamespace(payload=[item])
+        locator, item_id = scenario.read_imported_item_locator(client, 3)
+        self.assertEqual(item_id, 17)
+        self.assertEqual(parse_qs(urlsplit(locator).query), {"type": ["table"], "item_id": ["17"]})
+        client.request.assert_called_once_with("GET", "/api/v1/meta/engines/3/items?branch=public", (200,), response_type=list)
+        for items in ([], [item, item]):
+            client.request.return_value = SimpleNamespace(payload=items)
+            with self.assertRaises(scenario.api.SuiteError):
+                scenario.read_imported_item_locator(client, 3)
+        client.request.return_value = SimpleNamespace(payload=[{key: value for key, value in item.items() if key != "id"}])
+        with self.assertRaises(scenario.etl.SUPPORT.SuiteError):
+            scenario.read_imported_item_locator(client, 3)
+
     def test_two_session_age_is_atomic_and_scoped(self):
         rows = {"manager": session("manager", 11), "develop": session("develop", 12)}
         sql = scenario.age_sql(rows)

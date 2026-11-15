@@ -197,6 +197,14 @@ def execution_proof(execution_id, tenant, principal, *, source, task_id=None):
     return row
 
 
+def read_imported_item_locator(client, engine):
+    items = client.request("GET", f"/api/v1/meta/engines/{engine}/items?branch=public", (200,), response_type=list).payload
+    matches = [item for item in items if item.get("full_name") == "public." + TABLE and item.get("item_type") == "table"]
+    require(len(matches) == 1, "import must identify one persisted Meta DataItem")
+    item = matches[0]
+    return etl.SUPPORT.build_item_locator(engine, item), item["id"]
+
+
 def import_once(client, engine, tenant, principal, report):
     archive = etl.import_shapefile_zip()
     boundary = "addp-object-t4-" + uuid4().hex
@@ -256,7 +264,9 @@ def import_once(client, engine, tenant, principal, report):
                   coordinates=coordinates, summary={"last_execution_id": task["last_execution_id"], "last_execution_status": task["last_execution_status"]},
                   meta_scan_execution_id=child_id,
                   terminal=execution_proof(report["execution_id"], tenant, principal, source="transfer", task_id=report["task_id"]))
-    return f"addp://engine/{engine}/path/public/{TABLE}?type=table"
+    locator, item_id = read_imported_item_locator(client, engine)
+    report.update(target_item_id=item_id, target_locator=locator)
+    return locator
 
 
 def session_row(owner, session_id):
@@ -458,4 +468,6 @@ if __name__ == "__main__":
     try:
         main(evidence)
     finally:
-        print(json.dumps(evidence, ensure_ascii=False, sort_keys=True))
+        encoded = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+        (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "infra-object-storage-evidence.json").write_text(encoded)
+        print(encoded)
