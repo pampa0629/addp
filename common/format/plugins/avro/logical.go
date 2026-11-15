@@ -129,7 +129,11 @@ func physicalRecordSchema(schema map[string]interface{}, plan *valueSchema) (str
 	var collect func(*valueSchema)
 	collect = func(node *valueSchema) {
 		if node.codecName != "" {
-			names[node.field.NativeType] = node.codecName
+			name := node.field.NativeType
+			if node.field.Enum != nil {
+				name = node.field.Enum.Name
+			}
+			names[name] = node.codecName
 		}
 		for _, child := range node.children {
 			collect(child)
@@ -156,7 +160,7 @@ func physicalRecordSchema(schema map[string]interface{}, plan *valueSchema) (str
 			delete(value, "scale")
 			typ, _ := value["type"].(string)
 			switch typ {
-			case "record", "fixed":
+			case "record", "fixed", "enum":
 				if declared, ok := value["namespace"].(string); ok {
 					namespace = declared
 				}

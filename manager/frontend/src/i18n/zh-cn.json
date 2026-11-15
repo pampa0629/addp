@@ -1864,6 +1864,7 @@
           "graphRelationshipShapes": "关系类型"
         },
         "tableColumns": {
+          "enumeration": "枚举声明",
           "name": "名称",
           "fieldName": "字段名",
           "fieldType": "字段类型",

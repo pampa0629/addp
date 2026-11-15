@@ -48,8 +48,16 @@ function expectedNestedRow(i) {
     grid: i % 11 === 0 ? null : [[flat.id, null], [], null], fixed_values: [null, flat.fixed_amount] }
 }
 
-test('ordinary user pages and downloads six Avro scalar sources', async ({ page }) => {
-  test.setTimeout(300_000)
+function expectedEnumRow(i) {
+  const symbols = ['z', 'A', 'a']
+  const state = symbols[i % 3]
+  const optional = i % 7 === 0 ? null : symbols[(i + 1) % 3]
+  return { id: expectedRow(i).id, state, optional, detail: { state: symbols[(i + 2) % 3] },
+    items: i % 5 === 0 ? [] : [state, null, optional], other: i % 2 === 0 ? 'OFF' : 'ON' }
+}
+
+test('ordinary user previews flat, nested and Enum Avro sources', async ({ page }) => {
+  test.setTimeout(420_000)
   const env = process.env
   const context = JSON.parse(env.ADDP_ONLINE_MANAGER_AVRO_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
@@ -57,15 +65,17 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
     'minio/null', 'minio/deflate', 'minio/snappy', 'nfs/null', 'nfs/deflate', 'nfs/snappy',
   ])
   expect(context.nested_cases.map(s => `${s.storage}/${s.codec}`)).toEqual(context.cases.map(s => `${s.storage}/${s.codec}`))
+  expect(context.enum_cases.map(s => `${s.storage}/${s.codec}`)).toEqual(context.cases.map(s => `${s.storage}/${s.codec}`))
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id,
     permissions: new Set(context.identity.permissions_verified) }
   expect(identity.permissions.size).toBe(11)
   const cases = []
   const nestedCases = []
+  const enumCases = []
   let passed = false
   try {
     await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
-    for (const source of [...context.cases, ...context.nested_cases]) {
+    for (const source of [...context.cases, ...context.nested_cases, ...context.enum_cases]) {
       const observed = page.waitForResponse(response => {
         const u = new URL(response.url())
         return u.pathname === '/api/v1/manager/preview' && u.searchParams.get('locator') === source.locator
@@ -90,7 +100,7 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
         expect(second.data.page).toBe(2)
         expect(second.data.total).toBe(2503)
         const offset = second.data.page_size
-        expect(second.data.rows).toEqual(Array.from({ length: second.data.rows.length }, (_, n) => (source.nested ? expectedNestedRow : expectedRow)(offset + n)))
+        expect(second.data.rows).toEqual(Array.from({ length: second.data.rows.length }, (_, n) => (source.enum ? expectedEnumRow : source.nested ? expectedNestedRow : expectedRow)(offset + n)))
         await expect(frame.getByText(expectedRow(offset).id, { exact: true }).first()).toBeVisible()
         if (source.nested) {
           const detailIndex = second.data.rows.findIndex(row => row.detail?.uid && row.items?.length && row.grid?.length && row.fixed_values?.length)
@@ -105,6 +115,32 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
             await dialog.locator('.el-dialog__headerbtn').click()
             await expect(dialog).not.toBeVisible()
           }
+        } else if (source.enum) {
+          const detailRow = frame.locator('.el-table__body tr').nth(1)
+          for (const [index, field] of ['detail', 'items'].entries()) {
+            await detailRow.locator('button.structured-cell').nth(index).click()
+            const dialog = frame.getByRole('dialog', { name: field, exact: true })
+            await expect(dialog).toBeVisible()
+            await expect(dialog.locator('.structured-value-json')).toHaveText(JSON.stringify(second.data.rows[1][field], null, 2))
+            await dialog.locator('.el-dialog__headerbtn').click()
+            await expect(dialog).not.toBeVisible()
+          }
+          await frame.getByRole('tab', { name: /^(属性|Attributes)$/ }).click()
+          await expect(frame.getByRole('columnheader', { name: /^(枚举声明|Enumeration)$/ })).toBeVisible()
+          await frame.getByRole('button', { name: /JSON/ }).click()
+          const attrsDialog = frame.locator('.attribute-json')
+          await expect(attrsDialog).toBeVisible()
+          const attrs = JSON.parse(await attrsDialog.innerText())
+          const fields = attrs.type_info.table.fields
+          const enumeration = { name: 'demo.State', symbols: ['z', 'A', 'a'] }
+          for (const f of [fields[1], fields[2], fields[3].fields[0], fields[4].element]) expect(f.enum).toEqual(enumeration)
+          expect(fields[5].enum).toEqual({ name: 'other.State', symbols: ['OFF', 'ON'] })
+          expect(attrs.format_info).toBeUndefined()
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-enum-${source.codec}-declaration.png`), animations: 'disabled' })
+          await attrsDialog.locator('xpath=ancestor::div[contains(@class,"el-dialog")]').locator('.el-dialog__headerbtn').click()
+          await frame.getByRole('tab', { name: /^(预览|Preview)$/ }).click()
+          await expect(frame.getByRole('columnheader', { name: 'id', exact: true })).toBeVisible()
+          await expect(frame.getByText(expectedRow(offset).id, { exact: true }).first()).toBeVisible()
         } else {
           for (const field of ['day', 'amount', 'fixed_amount', 'stamp_ms', 'stamp_us', 'stamp_ns']) {
             const value = second.data.rows.find(row => row[field] !== null)[field]
@@ -113,15 +149,15 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
             await expect(cell).toBeVisible()
           }
         }
-        const outcomes = source.nested ? nestedCases : cases
-        const nestedProof = source.nested ? { nested_values_verified: true, structured_dialogs_verified: true } : {}
+        const outcomes = source.enum ? enumCases : source.nested ? nestedCases : cases
+        const nestedProof = source.enum ? { enum_declaration_verified: true, structured_dialogs_verified: true } : source.nested ? { nested_values_verified: true, structured_dialogs_verified: true } : {}
         if (source.storage === 'nfs') {
           const actions = await json(await api.get('/api/v1/manager/resource-actions', {
             params: { locator: source.locator }
           }), 'Avro current browser download capability')
           expect(actions.actions.download.supported).toBe(false)
           await expect(frame.getByRole('button', { name: /^(下载|Download)$/ })).toHaveCount(0)
-          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.nested ? 'nested-' : ''}${source.codec}-page2.png`) })
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.enum ? 'enum-' : source.nested ? 'nested-' : ''}${source.codec}-page2.png`) })
           outcomes.push({ ...nestedProof, locator: source.locator, page_button_verified: true, values_verified: true, original_download_disabled: true })
           continue
         }
@@ -137,7 +173,7 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
           const hash = createHash('sha256').update(raw).digest('hex')
           expect(raw.length).toBe(source.spec.size_bytes)
           expect(hash).toBe(source.spec.sha256)
-          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.nested ? 'nested-' : ''}${source.codec}-page2.png`) })
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.enum ? 'enum-' : source.nested ? 'nested-' : ''}${source.codec}-page2.png`) })
           outcomes.push({ ...nestedProof, locator: source.locator, page_button_verified: true, values_verified: true,
             download_sha256: hash, download_size: raw.length })
         } finally { await download.delete() }
@@ -146,8 +182,8 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
     passed = true
   } finally {
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-avro-browser.json'), JSON.stringify({
-      schema_version: 'addp.manager-avro-browser/v4', result: passed ? 'passed' : 'failed',
-      run_id: context.run_id, cases, nested_cases: nestedCases,
+      schema_version: 'addp.manager-avro-browser/v5', result: passed ? 'passed' : 'failed',
+      run_id: context.run_id, cases, nested_cases: nestedCases, enum_cases: enumCases,
     }, null, 2) + '\n')
   }
 })

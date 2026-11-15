@@ -85,3 +85,41 @@ func TestAvroNestedMetadataPreservesDeclaredFields(t *testing.T) {
 		t.Fatal("user metadata must retain the declared tree without raw source facts")
 	}
 }
+func TestAvroEnumMetadataPreservesDeclaredNamesAndCandidates(t *testing.T) {
+	data, err := os.ReadFile("../../../../common/format/plugins/avro/testdata/synthetic-enum.avro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := int64(len(data))
+	item := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{Layout: format.LayoutSingle, DataType: datatype.Table, Format: "avro", PrimaryContentPath: "nested.avro", SizeBytes: &size}, PhysicalPath: "nested.avro"}
+	enriched, ok, err := EnrichSingleTableFileItem(t.Context(), staticContentReader{content: string(data)}, nil, 1, item, "nested.avro", size, false, "", nil, func(path string) plugin.EngineCatalogPath { return plugin.FileItemPath(1, path) })
+	if err != nil || !ok {
+		t.Fatalf("nested metadata %v", err)
+	}
+	info := datatype.TableInfoFromPayload(commonJSON.Section(enriched.Attributes, "type_info.table"), "")
+	if info == nil || *info.RowCount != 43 || len(info.Fields) != 6 {
+		t.Fatalf("enum schema lost: %#v", info)
+	}
+	for _, f := range []datatype.FieldInfo{info.Fields[1], info.Fields[2], info.Fields[3].Fields[0], *info.Fields[4].Element} {
+		if f.Type != datatype.FieldTypeString || f.Enum == nil || f.Enum.Name != "demo.State" || !reflect.DeepEqual(f.Enum.Symbols, []string{"z", "A", "a"}) {
+			t.Fatalf("enum declaration lost: %#v", f)
+		}
+	}
+	if info.Fields[5].Enum.Name != "other.State" {
+		t.Fatal("enum names conflated")
+	}
+	description, err := avroformat.NewPlugin().DescribeTable(t.Context(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, _ := json.Marshal(description.FormatInfo["schema"])
+	stored, _ := json.Marshal(commonJSON.Section(enriched.Attributes, "format_info.avro.schema"))
+	if !bytes.Equal(source, stored) {
+		t.Fatal("stored source schema changed")
+	}
+	public := metaquery.MetadataOnlyItem(models.MetaItemLite{Attributes: enriched.Attributes})
+	projected := datatype.TableInfoFromPayload(commonJSON.Section(public.Attributes, "type_info.table"), "")
+	if projected == nil || !reflect.DeepEqual(projected.Fields, info.Fields) || projected.RowCount != nil || public.Attributes["format_info"] != nil {
+		t.Fatal("user metadata must retain the declared tree without raw source facts")
+	}
+}

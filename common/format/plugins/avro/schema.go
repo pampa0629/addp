@@ -61,6 +61,9 @@ func recordSchema(raw []byte) ([]datatype.FieldInfo, map[string]interface{}, *va
 }
 func validateSchemaSize(n *valueSchema, depth int, count *int) error {
 	*count++
+	if n.field.Enum != nil {
+		*count += len(n.field.Enum.Symbols)
+	}
 	if depth > maxStructureDepth || *count > maxFields {
 		return fmt.Errorf("Avro schema exceeds structure budget")
 	}
@@ -170,6 +173,49 @@ func (p *schemaParser) parse(value interface{}, namespace string, depth int) (*v
 		}
 		delete(p.active, full)
 		node.codecName = fmt.Sprintf("addp.avro.Type%d", len(p.named))
+		p.named[full] = node
+		return node, nil
+	}
+	if kind == "enum" {
+		name, _ := object["name"].(string)
+		if name == "" || primitiveTypeName(name[strings.LastIndexByte(name, '.')+1:]) {
+			return nil, fmt.Errorf("invalid Avro enum name")
+		}
+		if raw, present := object["namespace"]; present {
+			var ok bool
+			namespace, ok = raw.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid Avro enum namespace")
+			}
+		}
+		full := qualifiedName(name, namespace)
+		if !avroFullName.MatchString(full) {
+			return nil, fmt.Errorf("invalid Avro enum fullname")
+		}
+		if p.active[full] || p.named[full] != nil {
+			return nil, fmt.Errorf("duplicate Avro named declaration")
+		}
+		values, ok := object["symbols"].([]interface{})
+		if !ok || len(values) == 0 || len(values) > maxFields {
+			return nil, fmt.Errorf("Avro enum requires 1..%d symbols", maxFields)
+		}
+		symbols := make([]string, len(values))
+		seen := make(map[string]bool, len(values))
+		for i, value := range values {
+			symbol, ok := value.(string)
+			if !ok || !avroFullName.MatchString(symbol) || strings.Contains(symbol, ".") || seen[symbol] {
+				return nil, fmt.Errorf("invalid or duplicate Avro enum symbol")
+			}
+			symbols[i] = symbol
+			seen[symbol] = true
+		}
+		if value, present := object["default"]; present {
+			symbol, ok := value.(string)
+			if !ok || !seen[symbol] {
+				return nil, fmt.Errorf("Avro enum default is not a declared symbol")
+			}
+		}
+		node := &valueSchema{field: datatype.FieldInfo{Type: datatype.FieldTypeString, NativeType: "enum", Enum: &datatype.EnumInfo{Name: full, Symbols: symbols}}, codecName: fmt.Sprintf("addp.avro.Type%d", len(p.named)), nullBranch: -1}
 		p.named[full] = node
 		return node, nil
 	}

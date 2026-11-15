@@ -70,3 +70,30 @@ func TestAvroNestedPreviewUsesRegisteredReaderAndPublicValues(t *testing.T) {
 		t.Fatal("nested null elements lost")
 	}
 }
+
+func TestAvroEnumPreviewPreservesDeclaredCandidates(t *testing.T) {
+	data, err := os.ReadFile("../../../../common/format/plugins/avro/testdata/synthetic-enum.avro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := format.GetTableInfoProvider(format.FormatAvro)
+	sample, _ := format.GetTableSampleReader(format.FormatAvro)
+	p := &FileTablePreviewProvider{}
+	req := &PreviewRequest{Page: 2, PageSize: 20, Table: "enum.avro"}
+	result, err := p.previewStreamable(t.Context(), staticContentReader{content: data}, "", "enum.avro", format.FormatAvro, info, sample, mustFileParseOptions(t, p, format.FormatAvro, req), req)
+	if err != nil || result.Total == nil || *result.Total != 43 || len(result.Rows) != 20 || !result.HasMore {
+		t.Fatalf("enum preview %#v %v", result, err)
+	}
+	for _, f := range []datatype.FieldInfo{result.Fields[1], result.Fields[2], result.Fields[3].Fields[0], *result.Fields[4].Element} {
+		if f.Enum == nil || f.Enum.Name != "demo.State" || len(f.Enum.Symbols) != 3 || f.Enum.Symbols[0] != "z" || f.Enum.Symbols[1] != "A" {
+			t.Fatalf("enum field lost: %#v", f)
+		}
+	}
+	public, err := datatype.RowsForJSON(result.Fields, result.Rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public[0]["id"] != "9007199254741013" || public[0]["state"] != "a" || public[1]["optional"] != nil || public[0]["detail"].(map[string]interface{})["state"] != "A" {
+		t.Fatalf("enum values changed: %#v", public[:2])
+	}
+}

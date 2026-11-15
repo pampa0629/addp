@@ -202,6 +202,15 @@ definitions:
       policy_revision:
         type: integer
     type: object
+  datatype.EnumInfo:
+    properties:
+      name:
+        type: string
+      symbols:
+        items:
+          type: string
+        type: array
+    type: object
   datatype.FieldInfo:
     properties:
       comment:
@@ -212,6 +221,8 @@ definitions:
         $ref: '#/definitions/datatype.FieldInfo'
       element_type:
         $ref: '#/definitions/datatype.FieldType'
+      enum:
+        $ref: '#/definitions/datatype.EnumInfo'
       fields:
         items:
           $ref: '#/definitions/datatype.FieldInfo'

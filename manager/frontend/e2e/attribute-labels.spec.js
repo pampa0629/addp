@@ -336,6 +336,26 @@ for (const unavailable of [false, true]) {
   })
 }
 
+for (const locale of ['zh-cn', 'en']) {
+  test(`preserves declared Enum names and ordered symbols in ${locale}`, async ({ page }) => {
+    const enumeration = { name: 'demo.State', symbols: ['z', 'A', 'a'] }
+    const scalar = { name: 'state', type: 'string', native_type: 'enum', nullable: true, enum: enumeration }
+    const fields = [scalar,
+      { name: 'detail', type: 'json', fields: [scalar] },
+      { name: 'items', type: 'array', element_type: 'string', element: { ...scalar, name: '' } }]
+    await openAttributes(page, locale, {
+      item: { data_type: 'table', format: 'avro', layout: 'single' }, type_info: { table: { fields } }
+    })
+    await expect(page.getByRole('columnheader', { name: locale === 'zh-cn' ? '枚举声明' : 'Enumeration', exact: true })).toBeVisible()
+    await expect(page.getByText(JSON.stringify(enumeration), { exact: true }).first()).toBeVisible()
+    await page.getByRole('button', { name: locale === 'zh-cn' ? '查看 JSON' : 'View JSON', exact: true }).click()
+    const jsonValue = page.locator('.attribute-json')
+    await expect(jsonValue).toBeVisible()
+    const declared = JSON.parse(await jsonValue.innerText()).type_info.table.fields
+    for (const field of [declared[0], declared[1].fields[0], declared[2].element]) expect(field.enum).toEqual(enumeration)
+  })
+}
+
 async function openAttributes(page, locale, attributes, respondMetadata = json) {
   const locator = 'addp://engine/12/path/sample?type=file&item_id=1201'
   const node = { id: locator, locator, label: 'sample', type: 'file', metadata: { item_id: 1201 } }

@@ -52,6 +52,12 @@ func (n *valueSchema) scan(raw []byte, visits *int, structured bool) ([]byte, er
 			return raw, nil
 		}
 	}
+	if n.field.Enum != nil {
+		// Framing enforces the canonical integer representation. The fixed codec
+		// alone checks symbol membership when decoding this index.
+		_, rest, err := wireLong(raw)
+		return rest, err
+	}
 	if n.fixedSize > 0 {
 		if len(raw) < n.fixedSize {
 			return nil, fmt.Errorf("truncated Avro fixed")

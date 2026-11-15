@@ -4473,6 +4473,20 @@ const docTemplate = `{
                 }
             }
         },
+        "datatype.EnumInfo": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -4487,6 +4501,9 @@ const docTemplate = `{
                 },
                 "element_type": {
                     "$ref": "#/definitions/datatype.FieldType"
+                },
+                "enum": {
+                    "$ref": "#/definitions/datatype.EnumInfo"
                 },
                 "fields": {
                     "type": "array",

@@ -1864,6 +1864,7 @@
           "graphRelationshipShapes": "Relationship Types"
         },
         "tableColumns": {
+          "enumeration": "Enumeration",
           "name": "Name",
           "fieldName": "Field",
           "fieldType": "Field Type",

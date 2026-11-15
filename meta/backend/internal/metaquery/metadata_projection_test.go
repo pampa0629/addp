@@ -11,7 +11,7 @@ import (
 
 func TestMetadataProjectionPreservesNestedStructureWithoutContentOrMutation(t *testing.T) {
 	secret := "private-content-marker"
-	leaf := datatype.FieldInfo{Name: "value", Type: datatype.FieldTypeInt, NativeType: "int4", Comment: secret, DefaultExpression: secret, GenerationExpression: secret}
+	leaf := datatype.FieldInfo{Enum: &datatype.EnumInfo{Name: "example.State", Symbols: []string{"z", "A", "a"}}, Name: "value", Type: datatype.FieldTypeString, NativeType: "enum", Comment: secret, DefaultExpression: secret, GenerationExpression: secret}
 	field := datatype.FieldInfo{Name: "nested", Fields: []datatype.FieldInfo{leaf}, Element: &leaf, Comment: secret}
 	count := int64(91)
 	item := models.MetaItemLite{ID: 3, TenantID: 7, EngineID: 9, NodeID: 2, Name: "visible", FullName: "public.visible", Fingerprint: "fp", RowCount: &count, SizeBytes: &count,
@@ -37,8 +37,18 @@ func TestMetadataProjectionPreservesNestedStructureWithoutContentOrMutation(t *t
 		t.Fatal("container structure lost")
 	}
 	table := tableInfoFromMetaAttributes(safe.Attributes)
-	if table == nil || len(table.Fields) != 1 || len(table.Fields[0].Fields) != 1 || table.Fields[0].Element == nil || table.Fields[0].Fields[0].NativeType != "int4" || table.Fields[0].Element.Name != "value" {
+	if table == nil || len(table.Fields) != 1 || len(table.Fields[0].Fields) != 1 || table.Fields[0].Element == nil || table.Fields[0].Fields[0].NativeType != "enum" || table.Fields[0].Element.Name != "value" {
 		t.Fatalf("nested schema lost: %s", encoded)
+	}
+	for _, f := range []datatype.FieldInfo{table.Fields[0].Fields[0], *table.Fields[0].Element} {
+		if f.Enum == nil || f.Enum.Name != "example.State" || strings.Join(f.Enum.Symbols, ",") != "z,A,a" {
+			t.Fatalf("enum structure lost: %#v", f)
+		}
+	}
+	direct := metadataOnlyFields([]datatype.FieldInfo{leaf})
+	direct[0].Enum.Symbols[0] = "changed"
+	if leaf.Enum.Symbols[0] != "z" {
+		t.Fatal("projection shares enum symbols")
 	}
 	if safe.ID != item.ID || safe.Fingerprint != item.Fingerprint || safe.FullName != item.FullName || !strings.Contains(string(encoded), `"srid":4326`) {
 		t.Fatalf("identity/CRS lost: %s", encoded)

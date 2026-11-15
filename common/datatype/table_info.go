@@ -17,6 +17,12 @@ type TableInfo struct {
 	Native            map[string]interface{} `json:"native,omitempty"`
 }
 
+// EnumInfo preserves a source-declared enumeration, not observed values or a governed code set.
+type EnumInfo struct {
+	Name    string   `json:"name"`
+	Symbols []string `json:"symbols"`
+}
+
 // FieldInfo describes a common field or property semantic model.
 type FieldInfo struct {
 	Name                 string      `json:"name,omitempty"`
@@ -38,6 +44,7 @@ type FieldInfo struct {
 	GenerationExpression string      `json:"generation_expression,omitempty"`
 
 	Temporal *TemporalInfo `json:"temporal,omitempty"`
+	Enum     *EnumInfo     `json:"enum,omitempty"`
 }
 
 // Clone returns a deep copy of TableInfo.
@@ -81,6 +88,11 @@ func CloneFieldInfos(fields []FieldInfo) []FieldInfo {
 	for i := range result {
 		result[i].Path = append([]string(nil), fields[i].Path...)
 		result[i].Fields = CloneFieldInfos(fields[i].Fields)
+		if fields[i].Enum != nil {
+			enumeration := *fields[i].Enum
+			enumeration.Symbols = append([]string(nil), fields[i].Enum.Symbols...)
+			result[i].Enum = &enumeration
+		}
 		if fields[i].Temporal != nil {
 			temporal := *fields[i].Temporal
 			result[i].Temporal = &temporal

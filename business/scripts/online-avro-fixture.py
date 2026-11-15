@@ -265,6 +265,75 @@ def nested_sources():
             for c in CODECS for raw in [nested_source_bytes(c)]]
 
 
+
+ENUM_SYMBOLS = ['z', 'A', 'a']
+ENUM_SCHEMA = {'type':'record','name':'EnumRows','namespace':'demo','fields':[
+ {'name':'id','type':'long'},
+ {'name':'state','type':{'type':'enum','name':'State','symbols':ENUM_SYMBOLS,'default':'A'}},
+ {'name':'optional','type':['null','State']},
+ {'name':'detail','type':{'type':'record','name':'Detail','fields':[{'name':'state','type':'State'}]}},
+ {'name':'items','type':{'type':'array','items':['State','null']}},
+ {'name':'other','type':{'type':'enum','name':'other.State','symbols':['OFF','ON']}}
+]}
+
+
+def enum_row(i):
+    state = ENUM_SYMBOLS[i % 3]
+    optional = None if i % 7 == 0 else ENUM_SYMBOLS[(i + 1) % 3]
+    return {'id':row(i)['id'], 'state':state, 'optional':optional,
+            'detail':{'state':ENUM_SYMBOLS[(i + 2) % 3]},
+            'items':[] if i % 5 == 0 else [state,None,optional],
+            'other':['OFF','ON'][i % 2]}
+
+
+def enum_public_row(i):
+    value = enum_row(i)
+    value['id'] = str(value['id'])
+    return value
+
+
+def enum_source_bytes(codec):
+    # Independent OCF construction, preserving the original twelve sources.
+    if codec not in CODECS:
+        raise ValueError('unsupported Avro fixture codec')
+    sync = hashlib.sha256(('addp-avro-enum-' + codec).encode()).digest()[:16]
+    metadata = {'avro.schema':json.dumps(ENUM_SCHEMA,separators=(',',':')).encode(),'avro.codec':codec.encode()}
+    result = b'Obj\x01' + number(len(metadata))
+    for key,value in metadata.items():
+        result += blob(key.encode()) + blob(value)
+    result += number(0) + sync
+    for start in range(0,COUNT,257):
+        raw = bytearray()
+        for i in range(start,min(start+257,COUNT)):
+            value = enum_row(i)
+            raw.extend(number(value['id']) + number(ENUM_SYMBOLS.index(value['state'])))
+            raw.extend(number(0 if value['optional'] is None else 1))
+            if value['optional'] is not None:raw.extend(number(ENUM_SYMBOLS.index(value['optional'])))
+            raw.extend(number(ENUM_SYMBOLS.index(value['detail']['state'])))
+            if value['items']:
+                raw.extend(number(len(value['items'])))
+                for item in value['items']:
+                    raw.extend(number(1 if item is None else 0))
+                    if item is not None:raw.extend(number(ENUM_SYMBOLS.index(item)))
+            raw.extend(number(0) + number(['OFF','ON'].index(value['other'])))
+        payload = bytes(raw)
+        if codec == 'deflate':
+            compressor = zlib.compressobj(wbits=-15)
+            payload = compressor.compress(payload)+compressor.flush()
+        elif codec == 'snappy':
+            n = len(payload)-1
+            width = max(1,(n.bit_length()+7)//8)
+            tag = bytes([n<<2]) if n<60 else bytes([(59+width)<<2])+n.to_bytes(width,'little')
+            payload = unsigned(len(payload))+tag+payload+struct.pack('>I',zlib.crc32(payload))
+        result += number(min(257,COUNT-start)) + blob(payload) + sync
+    return result
+
+
+def enum_sources():
+    return [{'codec':c,'name':'enum-'+c+'.avro','count':COUNT,'schema':ENUM_SCHEMA,'enum':True,
+             'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+            for c in CODECS for raw in [enum_source_bytes(c)]]
+
 def worker(request):
     from minio import Minio
     access = request['storage']
@@ -290,28 +359,28 @@ def worker(request):
         assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'existing_outputs'
         directory.mkdir(exist_ok=False)
         with marker.open('x') as out:
-            out.write('addp.avro-fixture/v2')
-        for spec in sources()+nested_sources():
-            raw = (nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec'])
+            out.write('addp.avro-fixture/v3')
+        for spec in sources()+nested_sources()+enum_sources():
+            raw = (enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec'])
             path = directory / spec['name']
             path.write_bytes(raw)
             path.chmod(0o644)
             client.put_object(bucket, 'avro/' + path.name, io.BytesIO(raw), len(raw), content_type='application/avro')
         client.put_object(bucket, 'avro-output/.keep', io.BytesIO(b''), 0)
-        return {'sources': sources(), 'nested_sources':nested_sources(), 'count': COUNT}
+        return {'sources': sources(), 'nested_sources':nested_sources(), 'enum_sources':enum_sources(), 'count': COUNT}
     if action not in {'verify', 'delete'}:
         raise ValueError('unknown Avro fixture action')
     if not directory.exists() and action == 'delete':
         assert not list(client.list_objects(bucket, prefix='avro/', recursive=True)), 'unowned_inputs'
         assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'unowned_outputs'
         return {'objects_removed': True, 'files_removed': True, 'outputs_removed': True}
-    assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v2', 'fixture_ownership'
-    assert all(not (directory / v['name']).is_symlink() for v in sources()+nested_sources()), 'source_symlink'
+    assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v3', 'fixture_ownership'
+    assert all(not (directory / v['name']).is_symlink() for v in sources()+nested_sources()+enum_sources()), 'source_symlink'
     if action == 'verify':
         import pyarrow as pa
         import pyarrow.parquet as pq
-        for spec in sources()+nested_sources():
-            assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == (nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec']), 'source_changed'
+        for spec in sources()+nested_sources()+enum_sources():
+            assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == (enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec']), 'source_changed'
         assert {x.object_name for x in client.list_objects(bucket,prefix='avro-output/',recursive=True)}==set(outputs+['avro-output/.keep']), 'unexpected_nested_output'
         facts = []
         expected_rows = [row(i) for i in range(COUNT)]
@@ -339,11 +408,11 @@ def worker(request):
             facts.append({'object': name, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                           'all_values_and_nulls_verified': True, 'native_timestamp_ticks_verified': True,
                           'timestamp_units': {name:unit for name,(unit,_,_) in TIMESTAMPS.items()}, 'content_base64': base64.b64encode(raw).decode()})
-        return {'sources_unchanged': True, 'nested_outputs_absent':True, 'nested_sources_verified':6, 'outputs': facts}
+        return {'sources_unchanged': True, 'nested_outputs_absent':True, 'nested_sources_verified':6, 'enum_sources_verified':6, 'enum_outputs_absent':True, 'outputs': facts}
     if action == 'delete':
-        for name in outputs + ['avro-output/.keep'] + ['avro/' + v['name'] for v in sources()+nested_sources()]:
+        for name in outputs + ['avro-output/.keep'] + ['avro/' + v['name'] for v in sources()+nested_sources()+enum_sources()]:
             client.remove_object(bucket, name)
-        for spec in sources()+nested_sources():
+        for spec in sources()+nested_sources()+enum_sources():
             (directory / spec['name']).unlink(missing_ok=True)
         marker.unlink()
         if directory.exists():

@@ -1022,6 +1022,7 @@ const fieldTooltipKeys = {
 const boxedNestedGroupKeys = new Set(['native', 'source'])
 
 const tableColumnLabelKeys = {
+  enum: 'manager.explorer.attributes.tableColumns.enumeration',
   name: 'manager.explorer.attributes.tableColumns.name',
   type: 'manager.explorer.attributes.tableColumns.type',
   element_type: 'manager.explorer.attributes.tableColumns.elementType',
@@ -1376,7 +1377,7 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
 }
 
 const buildFieldTable = (pathParts, rows) => {
-  const preferredColumns = ['name', 'path', 'type', 'element_type', 'native_type', 'nullable', 'primary_key', 'comment']
+  const preferredColumns = ['name', 'path', 'type', 'element_type', 'native_type', 'enum', 'nullable', 'primary_key', 'comment']
   const table = buildObjectArrayTable(pathParts, rows, preferredColumns, 'fields')
   return {
     ...table,
@@ -1511,6 +1512,7 @@ const tableColumnLabel = (profile, column) => {
 }
 
 const tableColumnMinWidth = (pathParts, column) => {
+  if (column === 'enum') return 360
   if (isGraphNodeShapesTable(pathParts)) {
     return ({
       name: 180,
