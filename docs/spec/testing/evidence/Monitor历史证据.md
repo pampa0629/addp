@@ -7,23 +7,21 @@
 
 ## 按主题查阅
 
-| 主题 | 专题范围 |
+| 主题 | 结论与验收边界入口 |
 | --- | --- |
-| [综合验收](Monitor综合验收历史证据.md) | 跨主题汇总，另见[Metrics 原生 CI 分组](Monitor综合验收历史证据.md#metrics-原生-ci-预算与互补分组)、[前端门禁超时复核](Monitor综合验收历史证据.md#monitor-前端整套门禁超时复核2026-11-010e69a25b1)、[分项与未通过范围](Monitor综合验收历史证据.md#分项与未通过范围) |
-| [节点与主机资源](Monitor节点与主机资源历史证据.md) | 主机列表、资源趋势、设备与文件系统视图、探针预算，另见[采集与挂载](Monitor节点与主机资源历史证据.md#采集与挂载)、[容量状态](Monitor节点与主机资源历史证据.md#容量状态)、[前台刷新](Monitor节点与主机资源历史证据.md#前台刷新)、[Safari 缩放](Monitor节点与主机资源历史证据.md#safari-缩放) |
-| [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、发现生命周期，另见[服务筛选与分页恢复](Monitor实例与服务发现历史证据.md#服务筛选与分页恢复证据导航)、[实例 cgroup](Monitor实例与服务发现历史证据.md#服务实例-cgroup-证据导航)、[服务组部署预期与运行确认](Monitor实例与服务发现历史证据.md#服务组部署预期与运行确认证据导航) |
-| [告警与规则](Monitor告警与规则历史证据.md) | [名称检索与前端 CI](Monitor告警与规则历史证据.md#alert-evidence-name)、[服务组失联](Monitor告警与规则历史证据.md#alert-evidence-availability)、[文件系统容量告警](Monitor告警与规则历史证据.md#alert-evidence-filesystem)、[实例 CPU／RSS 告警](Monitor告警与规则历史证据.md#alert-evidence-process)，另收录筛选、排序与刷新 |
-| [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与[正式身份本地窗口总览](MonitorTrace与日志历史证据.md#正式身份本地窗口总览) |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接，另见[正式 full 失败入口](#正式-http-full-失败入口)和[停源历史趋势](#停源实例-http-历史趋势) |
-| [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | [PostgreSQL 来源与身份](Monitor采集来源与引擎指标历史证据.md#pg-source-history)、[Redis 来源与专业查询](Monitor采集来源与引擎指标历史证据.md#redis-source-history)（本机纳管、主机关联、实际采样及 AOF 开启时的当前值与近五分钟内存趋势见[Business Redis Safari 复验](Monitor采集来源与引擎指标历史证据.md#business-redis-平台接入和-safari-复验2026-11-06)）、[MinIO 采样与专业查询](Monitor采集来源与引擎指标历史证据.md#minio-source-history)、[引擎页面、导航与刷新](Monitor采集来源与引擎指标历史证据.md#engine-ui-history)，另收录统一采集、主机恢复与部署分组 |
-| MinIO 分项证据 | [实源 T2 的 Docker 只读发现及 System 独立验证](Monitor采集来源与引擎指标历史证据.md#minio-自动发现与-system-精确来源关联2026-11-02)、[固定 PromQL 与受控页面](Monitor采集来源与引擎指标历史证据.md#minio-固定查询与专业监控页面2026-11-02)、[本机 Infra Safari 页面与趋势](Monitor采集来源与引擎指标历史证据.md#infra-minio-重新应用后的-safari-真实页面与趋势交互2026-11-04) |
-| 采集来源 Compose 分组 | [分组门禁、首败与清理](Monitor采集来源与引擎指标历史证据.md#采集来源统一-compose-分组2026-11-05)、[个人 Desktop 应用与恢复复验](Monitor采集来源与引擎指标历史证据.md#个人-desktop-统一分组应用与恢复复验2026-11-05) |
-| 启动观测与主机恢复 | [启动前序失败与末尾摘要的归因](Monitor采集来源与引擎指标历史证据.md#启动前序失败与末尾现况的提示归因2026-11-05)、[主机恢复误拒绝与本机全量启动摘要复验](Monitor采集来源与引擎指标历史证据.md#主机恢复的空dns表示差异误拒绝2026-11-05) |
-| [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存，见[按验收范围查阅](Monitor执行监控与留存历史证据.md#按验收范围查阅) |
-| 执行监控分项证据 | [Owner 503 与同进程恢复](Monitor执行监控与留存历史证据.md#owner-503-与同进程恢复)、[180 天概览只读评估](Monitor执行监控与留存历史证据.md#执行概览只读维护真实进程验收2026-10-25)、[30 天过程事件物理清理](Monitor执行监控与留存历史证据.md#30-天过程事件清理真实进程验收2026-10-26)、[小时周期与连续批次](Monitor执行监控与留存历史证据.md#小时周期与连续批次真实进程验收2026-10-26)、[大量事件分页与截断](Monitor执行监控与留存历史证据.md#大量事件分页与截断真实入口验收通过限定范围2026-10-26)、[持续写入期间续页与刷新的两次 Hosted 尝试](Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07) |
-| [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时，见[按诊断问题查阅](Monitor部署与前置诊断历史证据.md#按诊断问题查阅) |
+| [综合验收](Monitor综合验收历史证据.md) | [跨主题业务覆盖](Monitor综合验收历史证据.md#跨主题业务覆盖)、[Metrics 实源 T2](Monitor综合验收历史证据.md#metrics-分组的实源-t2)、[前端门禁与超时](Monitor综合验收历史证据.md#前端门禁与超时结论)、[构建与隔离](Monitor综合验收历史证据.md#构建与隔离工具)、[未覆盖项](Monitor综合验收历史证据.md#后续待办) |
+| [节点与主机资源](Monitor节点与主机资源历史证据.md) | [采集与挂载](Monitor节点与主机资源历史证据.md#采集与挂载)、[容量状态](Monitor节点与主机资源历史证据.md#容量状态)、[前台刷新](Monitor节点与主机资源历史证据.md#前台刷新)、[Safari 缩放](Monitor节点与主机资源历史证据.md#safari-缩放) |
+| [实例与服务发现](Monitor实例与服务发现历史证据.md) | [多 Worker 与副本隔离](Monitor实例与服务发现历史证据.md#多-worker-与副本隔离)、[筛选与分页](Monitor实例与服务发现历史证据.md#服务筛选与分页恢复证据导航)、[实例 cgroup](Monitor实例与服务发现历史证据.md#服务实例-cgroup-证据导航)、[部署预期与运行确认](Monitor实例与服务发现历史证据.md#服务组部署预期与运行确认证据导航) |
+| [告警与规则](Monitor告警与规则历史证据.md) | [检索、排序与页面](Monitor告警与规则历史证据.md#alert-evidence-name)、[服务组失联](Monitor告警与规则历史证据.md#alert-evidence-availability)、[文件系统容量](Monitor告警与规则历史证据.md#alert-evidence-filesystem)、[实例 CPU／RSS](Monitor告警与规则历史证据.md#alert-evidence-process)、[CDC 风险与性能](Monitor告警与规则历史证据.md#alert-evidence-cdc) |
+| [Trace 与日志](MonitorTrace与日志历史证据.md) | [SDK 与执行关联](MonitorTrace与日志历史证据.md#trace-sdk-conclusions)、[本地容量基线](MonitorTrace与日志历史证据.md#http-追踪隔离容量基线本地)、[正式身份本机闭环](MonitorTrace与日志历史证据.md#正式身份本机闭环)、[Manager 部分通过与待办](MonitorTrace与日志历史证据.md#trace-manager-partial-conclusions) |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | [来源与公共 mTLS](MonitorHTTP质量与采样历史证据.md#http-history-sources)、[采样与编译协调](MonitorHTTP质量与采样历史证据.md#http-history-sampling)、[Linux 关键证据](MonitorHTTP质量与采样历史证据.md#http-history-ci-polls)、[正式产品与待办](MonitorHTTP质量与采样历史证据.md#http-history-product-windows)、[停源历史趋势](#停源实例-http-历史趋势) |
+| [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | [PostgreSQL](Monitor采集来源与引擎指标历史证据.md#pg-source-history)、[共享目录限制](Monitor采集来源与引擎指标历史证据.md#pg-directory-history)、[Redis](Monitor采集来源与引擎指标历史证据.md#redis-source-history)、[MinIO](Monitor采集来源与引擎指标历史证据.md#minio-source-history)、[引擎页面](Monitor采集来源与引擎指标历史证据.md#engine-ui-history) |
+| 来源恢复与联合核验 | [统一采集与主机恢复](Monitor采集来源与引擎指标历史证据.md#source-lifecycle-history)、[证书预检与实际载入](Monitor采集来源与引擎指标历史证据.md#source-tls-conclusions)、[七来源与 Safari](Monitor采集来源与引擎指标历史证据.md#seven-sources-live-conclusions)、[MinIO 辅助标签故障](Monitor采集来源与引擎指标历史证据.md#minio-helper-label-conclusions) |
+| [执行读取与事件](Monitor执行监控与留存历史证据.md) | [Owner 裁决与故障恢复](Monitor执行监控与留存历史证据.md#continuous-诊断与-owner-不可用)、[事件分页与持续写入](Monitor执行监控与留存历史证据.md#事件分页与持续写入)；分项通过、整套失败与后续闭环按各自证据认定。 |
+| 执行留存与统计 | [30 天事件物理清理](Monitor执行监控与留存历史证据.md#30-天过程事件清理)、[180 天概览只读评估](Monitor执行监控与留存历史证据.md#180-天概览只读评估)、[小时周期](Monitor执行监控与留存历史证据.md#小时周期与连续批次)、[统计与导航](Monitor执行监控与留存历史证据.md#统计与同次执行导航)、[CDC 指标与七天历史](Monitor执行监控与留存历史证据.md#cdc-任务指标与七天历史) |
+| [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | [资源守卫](Monitor部署与前置诊断历史证据.md#资源守卫诊断)、[Docker 等待归属](Monitor部署与前置诊断历史证据.md#docker-cli-与-daemon-取证)、[Compose 超时](Monitor部署与前置诊断历史证据.md#compose-配置超时)、[浏览器与 MinIO 前置](Monitor部署与前置诊断历史证据.md#浏览器与-minio-前置结论)、[未解决事项](Monitor部署与前置诊断历史证据.md#未解决事项与后续待办) |
 
-各专题按固定源码、环境和尝试记录结果。失败、取消、跳过、未运行与分项成功分别认定。
+表中仅定位各主题的结论与实际边界，固定源码、关键证据及未覆盖项由对应专题维护。失败、取消、跳过、未运行与分项成功分别认定，不将本机、受控 T3、实源 T2 和 Hosted T4 合并为整套通过。
 
 ## 正式 HTTP full 失败入口
 
