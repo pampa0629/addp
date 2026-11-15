@@ -173,7 +173,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 | 顺序／性质 | 剩余事项与定位 | 下一交付及关闭条件 |
 | --- | --- | --- |
-| 1／诊断已补，待Linux及单次真实复验 | 最近执行（pending／running／success）到 Monitor、Develop 结果与同次回跳。runner、私有台账、确定性及 Linux 已完成；§9.8 单次实跑止于原成功样本 HTTP 503，新导航未开始 | 已补既有请求的固定操作及封闭失败类别，见9.9；不增加请求、等待、候选、权限或预算。待当前门禁及固定源码Linux证据齐备后，再单独核准后继真实窗口 |
+| 1／诊断与Linux已补，待单次真实复验 | 最近执行（pending／running／success）到 Monitor、Develop 结果与同次回跳。runner、私有台账、确定性及 Linux 已完成；§9.8 单次实跑止于原成功样本 HTTP 503，新导航未开始 | 已补既有请求的固定操作及封闭失败类别，见9.9；不增加请求、等待、候选、权限或预算。本机及固定源码Linux已通过，再单独核准后继真实窗口 |
 | 2／待单次真实运行 | 正式用户阶段追踪：`25a62c07c` 的 causal-link 分步诊断、首失败落盘及对应 Linux 已完成；此前实跑停在 causal-link，精确原因未知；§9.8 本轮前置 HTTP 503，未重到该阶段 | 原两组样本、四身份、11 项业务权限、采样、预算和清理不变；新的真实窗口单独确认，先读首失败再决定修复，不从合成用例宣称根因解决 |
 | 3／基础 PG 缺口 | C2j／C3 其它跨类与外键锁排列；C4 新建图配置在目标核验与提交间的窗口、其它最终事务竞争。`KnowledgeGraphService.Create` 先解析／探测目标，`KnowledgeGraphRepository.Create` 直接插入；现有删除、入队与 scan 漂移用例不覆盖此窗口 | 下一小切片先明确新图与同目标关闭的准入关系，真实双连接 PG 验证两序及回滚；若需要新增 Engine／Graph 跨模块提交权威先讨论。目标重绑、deleting 显式重评估／确认同样是待设计事项，不从现有 execute／Restore 推导可用 |
 | 4／消费者 T3 与读取 PG 缺口 | C5g／h／k／l 的 Cleanup 专用组合仍未齐。System 已有 503、非法 attempt、迟到专业响应和身份切换；Monitor 已有 closed pending 清除及通用 401／403／404／503 失效，不能把这些当作全部 Cleanup 组合 | 补父详情撤权 404 且不自动补查子、closed pending→Owner 合法拒绝／running 矛盾的整体替换、空／省略／非法／隐藏计数区别和两消费者双语展示。C5e 的 claim 未提交跨截止、C5j 的 HTTP 裁决后新增未裁决 Owner 仍缺专用真实 PG；复用现有共享组件与标准入口 |
@@ -757,4 +757,6 @@ Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的当前 Pr
 
 沿正式运行观测契约补 `bounded_query_failure`，只记录 success／failure 样本、七个固定请求操作及五类封闭失败类别；同次 HTTP 异常可附状态码和规范错误码，不记录 URL、正文、异常原文、身份或凭据。首失败冻结并在正式清理前进入总报告，清理失败不覆盖；原异常、退出码、请求序列、等待、四身份／权限、采样、预算及清理保持。新增确定性用例覆盖各操作故障、失败样本与诊断子执行读取、类别与脱敏、首次失败保持、正常序列相等，以及清理失败后私有运行目录删除仍保留外部回执。
 
-本批只补诊断和门禁，不修猜测的503根因，不重跑真实窗口；§9.8首失败原件保持。标准入口为 `make test-monitor-traces-local-runner`，已由既有Execution runner路径选择和 `make test-execution-online-ci-runner`接入，无需新增入口或Job。本机隔离检出已完整通过该标准入口：登记28＋158项及一致性检查、导航Node 16项、专项Python 240项（含本批五项）、System身份夹具及Develop只读准备用例，语法检查通过。初次无Git索引的归档副本在登记检查失败，已保留日志，不计通过；改用隔离Git检出后完整退出0。固定源码Linux证据待发布后核验；原causal-link和三状态导航仍待另行确认的真实验收。
+本批只补诊断和门禁，不修猜测的503根因，不重跑真实窗口；§9.8首失败原件保持。标准入口为 `make test-monitor-traces-local-runner`，已由既有Execution runner路径选择和 `make test-execution-online-ci-runner`接入，无需新增入口或Job。本机隔离检出已完整通过该标准入口：登记28＋158项及一致性检查、导航Node 16项、专项Python 240项（含本批五项）、System身份夹具及Develop只读准备用例，语法检查通过。初次无Git索引的归档副本在登记检查失败，已保留日志，不计通过；改用隔离Git检出后完整退出0。
+
+固定源码 `f4f8d0fb1a123b06d98029f290386f948ab5794e` 的 [Linux Execution runner 43673678196／132689047896](https://github.com/pampa0629/addp/actions/runs/43673678196/job/132689047896) 已实际成功终态，`selected: true`；原始Job日志逐项确认新增五项均ok、专项240项、导航16项、登记28＋158项及上述Go夹具通过，不扩大为整条Platform CI通过。发布源码与已验证65项输入逐项相等，合并SHA-256为 `c7370ba9d4e0a49c5b6571a90a2c2e635a506d777f17d803a6232a7f1fbd6f50`；本机／Linux原件及输入清单位于 `/tmp/addp-bounded-request-validation-ipk0a92o/`。原causal-link和三状态导航仍待另行确认的真实验收，本轮未追加实跑。
