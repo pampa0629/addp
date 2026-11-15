@@ -45,6 +45,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 ## 前端共享与导航
 
 - 遵守[可恢复路由规范](../docs/spec/addp前端路由与可恢复状态规范.md)，模块内导航只通过 [moduleNavigation.js](frontend/src/utils/moduleNavigation.js)；Console 跳转保持 iframe、单历史和返回筛选上下文。
+- 页面路由统一按需加载；进入一个页面不预先加载仪表盘、主机、服务、通知等其他页面及其重型依赖。沿原认证守卫、路径和 Console iframe，不增加第二条测试或产品入口；标准 T3 核对目标页的实际模块请求。
 - 独立根入口在 AuthContext 加载后依次选择有权进入的平台节点资源、采集配置、仪表盘、执行记录、告警、通知；无可进入页时显示无权限，显式地址保持原样。
 - 执行详情唯一地址为 `/monitor/executions?execution_id={execution_uuid}`：打开用 push，关闭清除 execution_id 用 replace，前进/后退同步详情。默认 incidents/webhook 页签省略 tab，rules/email 等非默认值使用 replace。
 - 通知唯一入口 `/notifications`；平台事件、通知及主机/HTTP 规则唯一入口 `/platform-alerts`。System 保留主机与日志诊断、来源策略和带上下文跳转，不恢复旧日志管理或 webhooks 路由。

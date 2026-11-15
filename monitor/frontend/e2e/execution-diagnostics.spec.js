@@ -50,6 +50,11 @@ async function installBackend(page, { empty = false, unavailable = false, events
 }
 
 test('execution filters query immediately and return to the first page', async ({ page }) => {
+  const loadedViews = new Set()
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (path.includes('/src/views/')) loadedViews.add(path.split('/').at(-1))
+  })
   await installBackend(page)
   const queries = []
   await page.route('**/api/v1/monitor/executions?*', route => {
@@ -59,6 +64,7 @@ test('execution filters query immediately and return to the first page', async (
   })
   await page.goto('/executions')
   await expect(page.locator('.el-pagination__total')).toContainText('42')
+  expect([...loadedViews]).toEqual(['ExecutionList.vue'])
   await expect(page.getByRole('button', { name: '查询', exact: true })).toHaveCount(0)
 
   await page.locator('.el-pager').getByText('2', { exact: true }).click()

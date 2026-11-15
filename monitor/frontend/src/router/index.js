@@ -2,20 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { createAuthGuard } from '@common-ui'
 import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { useAuthStore } from '../store/auth'
-import Dashboard from '../views/Dashboard.vue'
-import ExecutionList from '../views/ExecutionList.vue'
-import AlertList from '../views/AlertList.vue'
-import NotificationList from '../views/NotificationList.vue'
-import Login from '../views/Login.vue'
-import MonitoringTargets from '../views/MonitoringTargets.vue'
-import NodeResources from '../views/NodeResources.vue'
-import ProcessResources from '../views/ProcessResources.vue'
 
 const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: Login,
+    component: () => import('../views/Login.vue'),
     meta: { requiresAuth: false }
   },
   {
@@ -34,42 +26,42 @@ const routes = [
   { path: '/resource-overview', name: 'ResourceOverview', component: () => import('../views/ResourceOverview.vue') },
   { path: '/engine-resources', name: 'EngineResources', component: () => import('../views/EngineResources.vue') },
   {
-    path: '/service-resources', name: 'ProcessResources', component: ProcessResources
+    path: '/service-resources', name: 'ProcessResources', component: () => import('../views/ProcessResources.vue')
   },
   {
-    path: '/node-resources', name: 'NodeResources', component: NodeResources
+    path: '/node-resources', name: 'NodeResources', component: () => import('../views/NodeResources.vue')
   },
   {
-    path: '/node-resources/:node_id', name: 'NodeResourceDetail', component: NodeResources
+    path: '/node-resources/:node_id', name: 'NodeResourceDetail', component: () => import('../views/NodeResources.vue')
   },
   {
-    path: '/monitoring-targets', name: 'MonitoringTargets', component: MonitoringTargets
+    path: '/monitoring-targets', name: 'MonitoringTargets', component: () => import('../views/MonitoringTargets.vue')
   },
   {
-    path: '/monitoring-targets/new', name: 'MonitoringTargetNew', component: MonitoringTargets
+    path: '/monitoring-targets/new', name: 'MonitoringTargetNew', component: () => import('../views/MonitoringTargets.vue')
   },
   {
-    path: '/monitoring-targets/:id', name: 'MonitoringTargetDetail', component: MonitoringTargets
+    path: '/monitoring-targets/:id', name: 'MonitoringTargetDetail', component: () => import('../views/MonitoringTargets.vue')
   },
   {
     path: '/dashboard',
     name: 'Dashboard',
-    component: Dashboard
+    component: () => import('../views/Dashboard.vue')
   },
   {
     path: '/executions',
     name: 'ExecutionList',
-    component: ExecutionList
+    component: () => import('../views/ExecutionList.vue')
   },
   {
     path: '/alerts',
     name: 'AlertList',
-    component: AlertList
+    component: () => import('../views/AlertList.vue')
   },
   {
     path: '/notifications',
     name: 'NotificationList',
-    component: NotificationList
+    component: () => import('../views/NotificationList.vue')
   }
 ]
 

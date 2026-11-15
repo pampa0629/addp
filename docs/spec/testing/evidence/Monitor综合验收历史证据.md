@@ -173,3 +173,16 @@
 | 固定 Linux 完整门禁 | `3f281d49c7c3533a347db4a270d090cabfd63301`。[Monitor 前端 Job 125102562739](https://github.com/pampa0629/addp/actions/runs/41391135443/job/125102562739) 的 592 项浏览器用例、Vite 构建及整 Job 均通过，覆盖原三项。 | [固定源码、原始日志与历史取消](Monitor部署与前置诊断历史证据.md#后续-linux-完整前端门禁回传2026-11-02) |
 
 原本机整套门禁仍记失败。本机复验只覆盖三项受控 T3，Linux 结论限于固定 Job。真实 Safari、Redis／MinIO 来源及 Hosted 另按各自证据认定。
+
+
+## Monitor 40 分钟门禁的无关页面预载修正（2026-11-15）
+
+固定 `9cf429c4a9a0ffc84f06e5971bed254c7e935faa` 的 [Run 43677094511 / Job 132699526760](https://github.com/pampa0629/addp/actions/runs/43677094511/job/132699526760) attempt 1 因整 Job 达到 40 分钟被取消；check-run annotation 明确为 `The job has exceeded the maximum execution time of 40m0s`。原日志拆分为准备 83.798 秒、浏览器 2320.653 秒（865 项全部通过），Vite 构建启动 1.965 秒后取消，不能记为构建或整门禁成功。旧同类超时 Job 132652837639 与其后曾通过的 Job 132653230279 均保持原结果，不由历史通过覆盖本次失败。
+
+对照固定 `7ee65635e` 的已通过日志，相关前端、隔离入口与 865 项源码未变；本次浏览器整体耗时增加约 22%。`execution-diagnostics` 的 7.6 分钟是 244 项用例累计，`host-trend-interactions` 的 5.1 分钟是 52 项交互累计，不是单用例卡住。冷导航诊断实际观察到：仅打开 `/executions` 也会请求 11 个不同页面模块、5 个 ECharts 入口，load 时已记录 269 个非 API 请求。根因中的确定问题是 Router 仍静态导入八个页面及其子页，使每个新浏览器上下文重复准备无关页面；没有据此推断 Runner 的 CPU／内存异常或把全部耗时波动归为同一个原因。
+
+修正只将这八个页面统一到 Monitor 已使用的路由按需加载方式，路径、认证守卫、落地优先级、并发与时限不变，旧静态导入删除。既有执行筛选用例补实际请求断言：进入执行列表只加载 ExecutionList 页面；旧源码明确因额外 10 个页面请求失败，修后原筛选／分页／重置与新增断言一并通过。原图例、悬浮、缩放、等待、重试规则和全部 865 项保持；本地同组构建入口 JS 观察值从 2862.16kB 降至 1505.78kB，不将此大小变化直接当作 Linux 耗时保证。
+
+在以 `5d83ebcc38eef4ee367557deb81aee9f682385bb` 为基线、只叠加本批三个文件的仓库外隔离检出验证：`make test-monitor-frontend` 完整通过 156 项单元、865 项浏览器（25.9 分钟）、构建（3.61 秒）及标准退出清理；`make test-console-frontend CONSOLE_FRONTEND_BROWSER_ARGS='e2e/cdc-resource-navigation.spec.js e2e/monitoring-target-navigation.spec.js'` 通过 285 项单元、13 项 iframe 导航及构建。正式 Make 入口、自动用例发现与现有 Monitor 40 分钟 CI 登记已覆盖，无需修改 Makefile 或 workflow。未重启个人服务、操作任务／逻辑槽／keepalive／数据卷，也不提高功能清单比例。
+
+原始超时、annotation、阶段拆分及逐用例对照收据分别保存在 `/tmp/addp-monitor-frontend-timeout-original-job.log`、`...-original-annotations.json`、`...-stage-times.json` 和 `...-case-times.json`；诊断／红绿回归分别为 `...-navigation-baseline.log`、`...-lazy-red.log`、`...-lazy-green.log`；隔离检出与输入哈希见 `...-validation.json`，完整门禁为 `...-full-local.log` 和 `...-console-scope.log`。本地结论只覆盖上述输入与标准 T3／构建，固定修复的自然 Linux CI 仍须单独核对完整执行与清理，不重复派发或取消正常运行。
