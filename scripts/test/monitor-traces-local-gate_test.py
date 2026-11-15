@@ -579,7 +579,7 @@ class PublicAPTBuildEvidence(unittest.TestCase):
             'E: Could not connect to deb.debian.org:80',
             'E: Could not connect to http://user:SECRET@private.invalid:80',
         ]
-        for body in ('\n'.join(lines*20),'\n'.join(reversed(lines))):
+        for body in ('\n'.join(lines*3),'\n'.join(reversed(lines))):
             with self.subTest(repeated=len(body)):
                 diagnostic=m.public_build_failure_diagnostic(self.output(body))
                 transport=diagnostic['apt']['transport']
@@ -727,6 +727,86 @@ class PublicAPTBuildEvidence(unittest.TestCase):
             v=m.public_build_failure_diagnostic(raw)
         self.assertEqual(v['status'],'over_budget');self.assertEqual(v['apt']['signature_kinds'],[])
 
+    def test_native_prerequisite_messages_survive_owned_error_continuations(self):
+        cases=(
+            ("Couldn't create temporary file /PRIVATE/apt.conf.SECRET for passing config to apt-key",'temporary_config_failed'),
+            ("Couldn't create tempfile names for passing config to apt-key",'temporary_config_failed'),
+            ('Could not create temporary gpg home directory in /PRIVATE (wrong permissions?)','temporary_keyring_failed'),
+            ('Splitting up /PRIVATE into data and signature failed','signature_split_failed'),
+            ("Splitting of clearsigned file /PRIVATE failed as it doesn't contain all expected parts",'signature_split_failed'),
+            ("Could not execute 'apt-key' to verify signature (is gnupg installed?)",'verifier_execution_failed'),
+            ('Unknown error executing apt-key','verifier_execution_failed'),
+            ("Signed file isn't valid, got 'PRIVATE' (does the network require authentication?)",'signed_file_invalid'),
+            ('Hash Sum mismatch','hash_mismatch'),('Size mismatch','size_mismatch'))
+        for message,kind in cases:
+            for body in ('Err:1 http://deb.debian.org/debian/dists/bookworm/InRelease\n  '+message,
+                         'W: GPG error: http://deb.debian.org/debian bookworm InRelease: '+message,
+                         'E: '+message):
+                with self.subTest(kind=kind,body=body):
+                    value=m.public_build_failure_diagnostic(self.output(body))
+                    apt=value['apt']
+                    self.assertEqual(apt['prerequisite_kinds'],[kind])
+                    self.assertIn(kind,apt['error_sequence'][-1]['signals'])
+                    for secret in ('PRIVATE','SECRET','http://','apt.conf','gnupg','/usr/'):
+                        self.assertNotIn(secret,json.dumps(apt))
+
+    def test_error_sequence_keeps_observation_order_without_selecting_a_cause(self):
+        body=("Err:1 http://deb.debian.org/debian/dists/bookworm/InRelease\n"
+              "  Couldn't create temporary file /PRIVATE for passing config to apt-key\n"
+              "E: The repository 'http://deb.debian.org/debian bookworm InRelease' is not signed.\n"
+              "Err:2 http://security.debian.org/debian-security/dists/bookworm-security/InRelease\n"
+              "  502 Bad Gateway [IP: PRIVATE]\n"
+              "E: Failed to fetch http://security.debian.org/debian-security/dists/bookworm-security/InRelease 502 Bad Gateway")
+        apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+        self.assertEqual([r['kind'] for r in apt['error_sequence']],['fetch','continuation','error','fetch','continuation','error'])
+        self.assertEqual(apt['error_sequence'][0]['signals'],['unclassified'])
+        self.assertEqual(apt['error_sequence'][1]['signals'],['temporary_config_failed'])
+        self.assertIn('unsigned_repository',apt['error_sequence'][2]['signals'])
+        self.assertEqual(apt['error_sequence'][4]['http_statuses'],[502])
+        self.assertEqual(apt['prerequisite_kinds'],['temporary_config_failed'])
+        self.assertEqual(apt['http_statuses'],[502])
+        self.assertNotIn('root_cause',apt)
+
+    def test_prerequisites_never_adopt_success_packages_urls_commands_or_unowned_lines(self):
+        message="Couldn't create temporary file /PRIVATE for passing config to apt-key"
+        for body in ('Get:1 PRIVATE\n  '+message,'E: Unable to locate package '+message,
+                     'E: Failed to fetch http://private.invalid/'+message.replace(' ','_'),
+                     'ERROR: process "echo '+message+'"', 'Reading package lists...\n  '+message):
+            apt=m.public_build_failure_diagnostic(self.output(body))['apt']
+            self.assertEqual(apt['prerequisite_kinds'],[])
+            self.assertFalse(any('temporary_config_failed' in row['signals'] for row in apt['error_sequence']))
+        raw=self.output('E: PRIVATE',prefix='#2 [1/2] RUN apt-get update\n#2 1.0 E: '+message)
+        self.assertEqual(m.public_build_failure_diagnostic(raw)['apt']['prerequisite_kinds'],[])
+        raw=self.output('E: PRIVATE').replace(b'#7 ERROR:', ('unowned '+message+'\n#7 ERROR:').encode())
+        self.assertEqual(m.public_build_failure_diagnostic(raw)['apt']['prerequisite_kinds'],[])
+
+    def test_prerequisite_continuations_stop_at_original_context_boundaries(self):
+        message="  Couldn't create temporary file /PRIVATE for passing config to apt-key"
+        for boundary in ('','Get:1 PRIVATE','  Hit:1 PRIVATE','  Ign:1 PRIVATE','Reading package lists...',
+                         '[3/9] RUN echo PRIVATE','ERROR: process "PRIVATE"'):
+            apt=m.public_build_failure_diagnostic(self.output('Err:1 PRIVATE\n'+boundary+'\n'+message))['apt']
+            self.assertEqual(apt['prerequisite_kinds'],[])
+        for boundary in ('#2 1.0 PRIVATE','unowned PRIVATE'):
+            raw=self.output('Err:1 PRIVATE').replace(b'#7 ERROR:',(boundary+'\n#7 1.0 '+message+'\n#7 ERROR:').encode())
+            self.assertEqual(m.public_build_failure_diagnostic(raw)['apt']['prerequisite_kinds'],[])
+
+    def test_error_sequence_limits_clear_all_diagnostics_instead_of_truncating(self):
+        body='\n'.join('E: Unclassified PRIVATE' for _ in range(16))
+        value=m.public_build_failure_diagnostic(self.output(body))
+        self.assertEqual(value['status'],'complete')
+        self.assertEqual(len(value['apt']['error_sequence']),16)
+        self.assertTrue(all(r=={'kind':'error','signals':['unclassified'],'http_statuses':[]} for r in value['apt']['error_sequence']))
+        self.assertLessEqual(len(json.dumps(value,separators=(',',':')).encode()),4096)
+        value=m.public_build_failure_diagnostic(self.output(body+'\nE: PRIVATE'))
+        self.assertEqual(value['status'],'over_budget');self.assertEqual(value['limits_exceeded'],['apt_error_records'])
+        self.assertEqual(value['apt']['error_sequence'],[]);self.assertEqual(value['apt']['prerequisite_kinds'],[])
+        for raw in (b'',self.output('E: PRIVATE')+self.output('E: PRIVATE',step='8'),b'x'*131073):
+            apt=m.public_build_failure_diagnostic(raw)['apt']
+            self.assertEqual(apt['error_sequence'],[]);self.assertEqual(apt['prerequisite_kinds'],[])
+        with mock.patch.object(m.json,'dumps',return_value='x'*4097):
+            value=m.public_build_failure_diagnostic(self.output('E: Hash Sum mismatch'))
+        self.assertEqual(value['apt']['error_sequence'],[]);self.assertEqual(value['apt']['prerequisite_kinds'],[])
+
     def test_proxy_facts_keep_validated_sources_but_no_values_or_secrets(self):
         daemon=m.build_proxy_facts({'HTTP_PROXY':'http://http.docker.internal:3128','HTTPS_PROXY':'http://http.docker.internal:3128'},'docker_info')
         client=m.build_proxy_facts({'HTTP_PROXY':'http://127.0.0.1:17890'},'host_environment')
@@ -744,7 +824,7 @@ class PublicAPTBuildEvidence(unittest.TestCase):
         self.assertEqual(v['status'],'over_budget');self.assertEqual(v['limits_exceeded'],['structured_bytes'])
 
     def test_failed_command_preserves_first_error_hash_and_proxy_provenance(self):
-        raw=self.output('E: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease Could not connect to http.docker.internal:3128, connection timed out')
+        raw=self.output("E: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease Could not connect to http.docker.internal:3128, connection timed out\nE: Couldn't create temporary file /PRIVATE for passing config to apt-key")
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.phase='product_image_agent_backend'
             life.build_proxy_provenance={'run_build_args':m.build_proxy_facts({'HTTP_PROXY':'http://http.docker.internal:3128'},'docker_info')}
@@ -756,6 +836,9 @@ class PublicAPTBuildEvidence(unittest.TestCase):
             self.assertEqual(life.last_failure['exit_code'],2)
             self.assertEqual(life.last_failure['output_sha256'],__import__('hashlib').sha256(raw).hexdigest())
             self.assertEqual(life.last_failure['public_build']['apt']['phase'],'index_download')
+            self.assertEqual(life.last_failure['public_build']['apt']['prerequisite_kinds'],['temporary_config_failed'])
+            self.assertIn('temporary_config_failed',life.last_failure['public_build']['apt']['error_sequence'][-1]['signals'])
+            self.assertNotIn('PRIVATE',json.dumps(life.last_failure))
             self.assertEqual(life.last_failure['public_build']['apt']['transport']['endpoint'],'desktop_proxy')
             self.assertEqual(life.last_failure['public_build']['proxy_provenance']['run_build_args']['http'],'desktop_internal')
 

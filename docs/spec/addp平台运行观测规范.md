@@ -867,6 +867,10 @@ APT只解析唯一失败RUN步骤的带步骤编号输出。明确错误行及�
 
 本批仍限128 KiB整份输入、4 KiB整组诊断，保留原集合、首因／哈希、四秒、资源及清理边界。代理日志中的502只作为离线候选线索，不能回填构建APT状态、签名子类或FROM摘要；旧报告不追填新字段。先修规范与确定性门禁，不改任何产品Dockerfile、APT源／包／重试／签名校验、基础镜像或代理策略，不重试构建或新开本地窗口，不运行Hosted／容量／定时。
 
+2026-11-15确认同次APT失败的前序安全取证：沿唯一失败RUN的同一错误上下文，增加 `apt.prerequisite_kinds` 和 `apt.error_sequence`。前序类别仅为 temporary_config_failed、temporary_keyring_failed、signature_split_failed、verifier_execution_failed、signed_file_invalid、hash_mismatch、size_mismatch；分别只识别APT原生的临时配置／密钥目录创建、签名拆分、apt-key执行、签名文件格式、哈希和大小错误固定消息，不推断权限、磁盘、网络或代理根因。新固定消息可作为明确错误行或已建立错误上下文的缩进续行，仍在空行、其他步骤、成功输出、普通进度和命令回显处中断。规则对照[APT 2.6.1签名辅助源码](https://github.com/Debian/apt/blob/2.6.1/apt-pkg/contrib/gpgv.cc)、[校验方法](https://github.com/Debian/apt/blob/2.6.1/methods/gpgv.cc)、[apt-key](https://github.com/Debian/apt/blob/2.6.1/cmdline/apt-key.in)及[下载错误](https://github.com/Debian/apt/blob/2.6.1/apt-pkg/acquire-item.cc)构造受控离线用例，不据此声称历史镜像的APT版本或根因已知。
+
+error_sequence最多16条，保留已识别错误记录的原输出顺序，每条仅含kind（fetch／warning／error／continuation）、signals（上述前序、既有错误／签名类别或unclassified）及明确HTTP状态数组；无法分类的明确错误记unclassified，不能导出原文、路径、URL、包名、密钥或附带值。数组顺序只证明记录先后，不证明不同源之间的因果关系，不选择第一条／最后一条作为根因。前序汇总去重，缺失／不可归属为空；超过16条或原128 KiB输入／4 KiB整组输出限制时，整组诊断标记over_budget并清空新增集合，不截断后称完整。原output_sha256、首失败与退出码保持，不另存原始日志，不读取额外文件或追加命令／探针／等待／重试；原源、代理、签名校验、采样、预算和清理不变，旧报告不回填，新的真实运行另行确认。
+
 2026-11-04用户确认产品构建步骤的有界增量观测，替换超时后整份文本进度提取，不保留旧读取／哈希／截断分类路线。只限非采样线程、当次product_image_*服务和精确make build-images原命令；复用原等待循环，在同一捕获文件的连续字节偏移增量读取，每轮最多32 KiB、全命令累计8 MiB、单行含换行最多4 KiB、内部最多64个编号步骤。使用位置读取不改变原输出文件偏移；不新增进程、线程、Docker／网络请求，不改通用build-images脚本及日志转发。正常非零构建仍沿原128 KiB public_build错误分类，不用增量状态替代错误归属。
 
 每个完整步骤标题只在内存分为apt／python_dependency／common_package／verification／other，状态为running／done／cached／error／canceled；标题重复、未知编号终态或观察到捕获缩短／偏移缺口记invalid，不根据最后一行、代理CONNECT或包下载正文猜步骤。DONE／CACHED／ERROR结束候选，CANCELED只表示取消观察，仍属未完成候选。摘要最多4 KiB，仅保留计数、封闭类别／状态、当次观测单调端点、扫描字节数和解析实际用量；不输出步骤号、命令、包名、URL、路径或原文。观测端点是宿主等待循环看到该行的时刻，不是BuildKit执行起止或实际网络耗时。

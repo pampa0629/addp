@@ -803,13 +803,13 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
            'limits_exceeded':[], 'reasons':['unclassified'],'steps':[], 'inputs':[],
            'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
            'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'signature_kinds':[], 'http_statuses':[], 'sources':[],
-                  'transport':dict(unknown_transport)},
+                  'transport':dict(unknown_transport),'prerequisite_kinds':[], 'error_sequence':[]},
            'base':{'status':'unavailable','kind':None,'resolved_digest':None}, 'proxy_provenance':proxies}
     def over_budget(reason):
         return {**value,'status':'over_budget','limits_exceeded':[reason], 'reasons':['unclassified'],
                 'steps':[], 'inputs':[], 'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
                 'apt':{'status':'unavailable','phase':'unknown','error_kinds':[], 'signature_kinds':[], 'http_statuses':[], 'sources':[],
-                       'transport':dict(unknown_transport)},
+                       'transport':dict(unknown_transport),'prerequisite_kinds':[], 'error_sequence':[]},
                 'base':{'status':'unavailable','kind':None,'resolved_digest':None}}
     if len(raw)>131072:return over_budget('input_bytes')
     text=raw.decode(errors='replace').lower()
@@ -849,6 +849,18 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
         step=next(iter(failed))
         # Preserve indentation after the timestamp. Only explicitly owned error
         # records can introduce continuations; progress/other output closes them.
+        prerequisite_patterns=(
+            ('temporary_config_failed',r"^(?:couldn't create temporary file [^\n]+ for passing config to apt-key|couldn't create tempfile names for passing config to apt-key)(?:[.!]|\s|$)"),
+            ('temporary_keyring_failed',r'^could not create temporary gpg home directory(?:\s|$)'),
+            ('signature_split_failed',r"^(?:splitting up [^\n]+ into data and signature failed|splitting of clearsigned file [^\n]+ failed as it doesn't contain all expected parts)(?:[.!]|\s|$)"),
+            ('verifier_execution_failed',r"^(?:could not execute 'apt-key' to verify signature|unknown error executing apt-key)(?:[.!]|\s|$)"),
+            ('signed_file_invalid',r"^signed file (?:isn't|is not) valid\b"),
+            ('hash_mismatch',r'^hash sum mismatch(?:\s|$)'),
+            ('size_mismatch',r'^size mismatch(?:\s|$)'))
+        def prerequisites(line):
+            message=re.sub(r'^[ew]:\s*','',line.strip())
+            message=re.sub(r'^gpg error: .*?:\s+','',message)
+            return [kind for kind,pattern in prerequisite_patterns if re.search(pattern,message)]
         scoped=[];error_records=[];in_error=False
         error_start=(r"^(?:e:|w:|err:[0-9]+\b|dpkg(?:-deb)?:|failed to fetch|could not|timed out|temporary failure|"
                      r"couldn't connect|failed to connect|unable to connect|error (?:while )?(?:reading|receiving)\b|"
@@ -865,13 +877,16 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
             scoped.append(line)
             if re.match(r'^(?:get:|hit:|ign:)',stripped):
                 in_error=False;continue
-            if re.match(error_start,stripped):
-                error_records.append(line);in_error=True
-            elif in_error and line[:1] in (' ','\t') and re.match(continuation_start,stripped):
-                error_records.append(line)
+            if re.match(error_start,stripped) or (line[:1] not in (' ','\t') and prerequisites(line)):
+                kind=('fetch' if stripped.startswith('err:') else 'warning' if stripped.startswith('w:') else
+                      'continuation' if in_error and line[:1] in (' ','\t') and not stripped.startswith('e:') else 'error')
+                error_records.append((line,kind));in_error=True
+            elif in_error and line[:1] in (' ','\t') and (re.match(continuation_start,stripped) or prerequisites(line)):
+                error_records.append((line,'continuation'))
             else:
                 in_error=False
-        scoped='\n'.join(scoped);error_lines='\n'.join(error_records)
+        if len(error_records)>16:return over_budget('apt_error_records')
+        scoped='\n'.join(scoped);error_lines='\n'.join(line for line,kind in error_records)
         phases=set()
         if re.search(r'(?:failed to fetch|err:[0-9]+)[^\n]*https?://\S*/dists/',error_lines):phases.add('index_download')
         if re.search(r'failed to fetch[^\n]*https?://\S*\.deb(?:\s|$)',error_lines):phases.add('deb_download')
@@ -882,9 +897,11 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
             ('bad_signature',r'(?:^|\n)\s*(?:[ew]:\s*)?badsig\b|\bthe following signatures were invalid:\s*badsig\b|\bat least one invalid signature was encountered\b'),
             ('unsigned_repository',r"(?:^|\n)\s*(?:[ew]:\s*)?(?:the )?repository [^\n]+ is not signed\b"),
             ('invalid_clearsigned',r"(?:^|\n)\s*(?:[ew]:\s*)?clearsigned file (?:isn't|is not) valid\b"))
-        signature_kinds=[kind for kind,pattern in signature_patterns if re.search(pattern,error_lines)]
-        if not signature_kinds and re.search(r"\bthe following signatures (?:couldn't|could not) be verified\b|(?:^|\n)\s*(?:[ew]:\s*)?signatures (?:couldn't|could not) be verified\b",error_lines):
-            signature_kinds=['verification_failed']
+        verification_pattern=r"\bthe following signatures (?:couldn't|could not) be verified\b|(?:^|\n)\s*(?:[ew]:\s*)?signatures (?:couldn't|could not) be verified\b"
+        def signatures(line):
+            specific=[kind for kind,pattern in signature_patterns if re.search(pattern,line)]
+            return specific or (['verification_failed'] if re.search(verification_pattern,line) else [])
+        signature_kinds=signatures(error_lines)
         patterns=(('dns',r'temporary failure resolving|could not resolve|name or service not known'),
                   ('timeout',r'timed out|connection timeout|i/o timeout'),
                   ('connection',r'connection failed|could not connect|failed to connect|connection refused'),
@@ -895,8 +912,18 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
                   ('dpkg',r'dpkg(?:-deb)?:.*error|sub-process .*dpkg.*error'),
                   ('lock',r'could not get lock|unable to acquire[^\n]*lock'),('no_space',r'no space left on device'))
         kinds=[kind for kind,pattern in patterns if (bool(signature_kinds) if kind=='signature' else re.search(pattern,error_lines))]
-        statuses=sorted({int(n)for n in re.findall(r'\b([45][0-9]{2}) (?:bad request|unauthorized|forbidden|not found|proxy authentication required|request timeout|too many requests|internal server error|bad gateway|service unavailable|gateway timeout)\b',error_lines)})
+        http_pattern=r'\b([45][0-9]{2}) (?:bad request|unauthorized|forbidden|not found|proxy authentication required|request timeout|too many requests|internal server error|bad gateway|service unavailable|gateway timeout)\b'
+        statuses=sorted({int(n)for n in re.findall(http_pattern,error_lines)})
         if statuses:kinds.append('http')
+        sequence=[];prerequisite_kinds=set()
+        for line,kind in error_records:
+            prior=prerequisites(line);prerequisite_kinds.update(prior)
+            signed=signatures(line)
+            signals=prior+signed+[name for name,pattern in patterns if (bool(signed) if name=='signature' else re.search(pattern,line))]
+            observed_statuses=sorted({int(n) for n in re.findall(http_pattern,line)})
+            if observed_statuses:signals.append('http')
+            sequence.append({'kind':kind,'signals':list(dict.fromkeys(signals)) or ['unclassified'],
+                             'http_statuses':observed_statuses})
         sources=set()
         suites={'bullseye','bullseye-updates','bullseye-security','bookworm','bookworm-updates','bookworm-security','trixie','trixie-updates','trixie-security'}
         for url in re.findall(r'https?://[^\s]+',scoped):
@@ -927,7 +954,7 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
         connect=r"\b(?:could not|couldn't|failed to|unable to) connect\b(?: to ([^\s(),;]+))?"
         body_read=(r'\b(?:error (?:while )?(?:reading|receiving)|failed to (?:read|receive)|'
                    r'timed out (?:while )?(?:reading|receiving)) (?:the )?(?:response )?body\b(?: from ([^\s(),;]+))?')
-        for line in error_records:
+        for line,kind in error_records:
             line=line.strip()
             for operation,pattern in (('connect',connect),('body_read',body_read)):
                 for match in re.finditer(pattern,line):
@@ -942,7 +969,8 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
         value['apt']={'status':'parsed','phase':next(iter(phases))if len(phases)==1 else'unknown','error_kinds':kinds or ['other'],
                       'signature_kinds':signature_kinds,
                       'http_statuses':statuses,'sources':[{'scheme':scheme,'repository':repository,'suite':suite}for scheme,repository,suite in sorted(sources)],
-                      'transport':transport}
+                      'transport':transport, 'prerequisite_kinds':[kind for kind,pattern in prerequisite_patterns if kind in prerequisite_kinds],
+                      'error_sequence':sequence}
         if len(sources)>8 or len(statuses)>8:return over_budget('apt_collections')
     elif failed & apt_steps:value['apt']['status']='ambiguous'
     if any(len(value[k])>8 for k in ('dockerfile_lines','http_statuses','process_exit_codes')):return over_budget('build_collections')
