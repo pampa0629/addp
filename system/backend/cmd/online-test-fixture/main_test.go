@@ -824,6 +824,28 @@ func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *te
 	}
 }
 
+func TestManagerENVIInitializerBrowserCredentialsStayPrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity.env")
+	values := map[string]string{
+		"ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME": "external-online-source-initializer",
+		"ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD": "test-only'quoted-secret",
+		"UNREGISTERED_PASSWORD":                   "must-not-export",
+	}
+	if err := writeEnvironmentFile(path, values); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("authorizer browser credentials must remain owner-only")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "export ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME='external-online-source-initializer'") ||
+		!strings.Contains(string(data), "export ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD='test-only'\"'\"'quoted-secret'") ||
+		strings.Contains(string(data), "must-not-export") {
+		t.Fatal("authorizer credential export lost its allowlist or shell quoting")
+	}
+}
+
 func TestManagerKMLExportFixtureReducesConsumerAndInitializerPermissions(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "kml-export")
 	actual, err := suitePermissions("manager-internal-artifact-lineage")

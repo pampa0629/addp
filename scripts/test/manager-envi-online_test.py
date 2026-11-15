@@ -23,6 +23,11 @@ class ENVIHostedCaseTest(unittest.TestCase):
         proof.update(result='passed',checks=sorted(CASE.MINIO_ROOT_CHECKS))
         return proof
 
+    @staticmethod
+    def complete_workspace_stage(*args,**kwargs):
+        proof=kwargs['evidence'];proof.update(result='passed',cleanup=dict(zero_current_source_rules=True))
+        return proof
+
     def test_expired_minio_node_cleanup_requires_database_history(self):
         original=dict(request_id='owned',catalog_path={'engine_id':12},node_recursive=False,recipient_type='user',
             recipient_id='33',action='read',expiry_mode='at_time',expires_at='2000-01-01T00:00:00Z',
@@ -168,6 +173,66 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 with self.assertRaises(ValueError):invoke('root-delete')
                 self.assertIn(names['future'],objects)
                 self.assertEqual(objects['sources'],{'envi/'+k:v for k,v in baseline.items()})
+
+    def workspace_scenario(self, directory, fault=None):
+        state={'rows':{},'cleanup':False,'revoked':[]};spec=FIXTURE.sources()[0]
+        class Authorization:
+            engine_id=12;operator='34';recipient='33';base='/api/v1/system/engines/12'
+            def __init__(self):self.grants=[];self.confirmed=set();self.node_receipts={}
+            def cleanup(self):
+                state['cleanup']=True
+                for command in list(self.grants):state['revoked'].append(command);self.grants.remove(command);state['rows'].pop(command,None)
+                if fault=='cleanup':raise ValueError('cleanup failed')
+        auth=Authorization()
+        def request(method,url,statuses):
+            rows=list(state['rows'].values())
+            if '/access_grants/history?' not in url:rows=[row for row in rows if not row.get('revocation')]
+            return SimpleNamespace(payload={'data':rows,'total':len(rows)})
+        auth.issuer=SimpleNamespace(request=request);client=SimpleNamespace(token='same-consumer')
+        env=dict(ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_RUN_ID='manager-42-1',ADDP_ONLINE_TEST_TENANT_ID='2',
+            ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME='issuer',ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD='private-issuer-password',
+            ADDP_ONLINE_TEST_USER_USERNAME='consumer',ADDP_ONLINE_TEST_USER_PASSWORD='private-consumer-password',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='must-not-pass')
+        def runner(args,*,cwd,env,stdout,stderr,check):
+            self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN',env)
+            binding=json.loads(env['ADDP_MINIO_WORKSPACE_BINDING']);commands=[]
+            for index,action in enumerate(('metadata_read','read')):
+                body=dict(request_id=f'00000000-0000-4000-8000-{index+1:012d}',catalog_path=dict(version='catalog.path/v1',engine_id=12,segments=[dict(term='service',kind='service',name='')]),
+                    node_recursive=True,recipient_type='user',recipient_id='33',action=action,expiry_mode='until_revoked',expires_at=None,reason='owned')
+                commands.append(body);state['rows'][body['request_id']]=dict(body,engine_id='12',operator_principal_id='34',approval_mode='independent',revocation={'revoked_at':'2026-11-15T00:00:00Z'})
+            if fault=='unrevoked':state['rows'][commands[1]['request_id']]['revocation']=None
+            Path(env['ADDP_MINIO_WORKSPACE_JOURNAL']).write_text(json.dumps(dict(run_id=binding['run_id'],commands=commands)))
+            bundle=dict(members=spec['members'],size_bytes=4110,sha256='a'*64)
+            proof=dict(binding,schema_version='addp.minio-root-workspace/v1',result='failed' if fault=='browser' else 'passed',phase='read_submit' if fault=='browser' else 'completed',
+                checks=list(CASE.MINIO_WORKSPACE_CHECKS),commands=commands,revocations=[body['request_id']for body in commands],login_requests=2,leaf_fact_reads=0,failures=[],
+                observations=[dict(visible=v,download_status=status,**({'bundle':bundle}if status==200 else {}))for v,status in [(False,None),(True,403),(False,403),(True,200),(False,403)]])
+            if fault=='identity':proof['issuer_id']='999'
+            if fault=='missing_check':proof['checks'].pop()
+            if fault=='bytes':proof['observations'][3]['bundle']['members']={}
+            if fault=='sha':proof['observations'][3]['bundle']['sha256']='Z'*64
+            if fault=='leaf_facts':proof['leaf_fact_reads']=1
+            if fault!='missing_report':Path(directory,'manager-minio-root-workspace.json').write_text(json.dumps(proof))
+            return SimpleNamespace(returncode=int(fault=='browser'))
+        report={}
+        def run():return CASE.verify_minio_root_workspace(Path('/repo'),env,OWNER,client,auth,spec,runner=runner,evidence=report)
+        return run,state,report
+
+    def test_minio_workspace_requires_both_browser_grants_and_formal_revoked_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run,state,report=self.workspace_scenario(directory);self.assertIs(run(),report)
+            self.assertEqual(report['result'],'passed');self.assertEqual(set(report['browser']['checks']),set(CASE.MINIO_WORKSPACE_CHECKS))
+            self.assertEqual(report['cleanup'],dict(zero_current_source_rules=True));self.assertTrue(state['cleanup'])
+            self.assertEqual(state['revoked'],[])
+            self.assertNotIn('private-',json.dumps(report));self.assertNotIn('must-not-pass',json.dumps(report))
+
+    def test_minio_workspace_failures_clean_owned_commands_without_passing_old_scenes(self):
+        for fault in ('identity','missing_check','bytes','sha','leaf_facts','unrevoked','browser','missing_report','cleanup'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                run,state,report=self.workspace_scenario(directory,fault)
+                with self.assertRaises(ValueError):run()
+                self.assertEqual(report['result'],'failed');self.assertTrue(state['cleanup'])
+                self.assertFalse(any(not row.get('revocation') for row in state['rows'].values()))
+                if fault=='unrevoked':self.assertIn('00000000-0000-4000-8000-000000000002',state['revoked'])
+                if fault=='cleanup':self.assertIn('errors',report['cleanup'])
 
     def root_scope_scenario(self, fault=None):
         from datetime import datetime,timezone
@@ -393,7 +458,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='test-envi',GATEWAY_URL='http://fixture',
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
                 ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
-            with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=self.complete_root_stage),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}):
+            with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_root_workspace',side_effect=self.complete_workspace_stage),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=self.complete_root_stage),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}):
                 with self.assertRaisesRegex(RuntimeError,'owned catalog failure'):
                     CASE.run(Path('/repo'),env,owner,physical_runner=physical)
             report=json.loads(Path(directory,'manager-envi.json').read_text())
@@ -404,8 +469,8 @@ class ENVIHostedCaseTest(unittest.TestCase):
         self.assertEqual([r['role']for r in model['composition']],['raster','header'])
 
     def test_root_stage_failure_or_incomplete_proof_stops_old_scenes_and_cleans_seed(self):
-        for mode in ('failed','incomplete'):
-            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as directory:
+        for gate,mode in ((gate,mode) for gate in ('minio_root_workspace','minio_engine_root') for mode in ('failed','incomplete')):
+            with self.subTest(gate=gate,mode=mode),tempfile.TemporaryDirectory() as directory:
                 events=[]
                 class Authorization:
                     operator='34';recipient='33'
@@ -426,12 +491,12 @@ class ENVIHostedCaseTest(unittest.TestCase):
                     ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='manager-42-1',GATEWAY_URL='http://fixture',
                     ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
                     ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
-                with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=root_stage),mock.patch.object(CASE,'verify_minio_node_scope') as old_nodes:
+                with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_root_workspace',side_effect=root_stage if gate=='minio_root_workspace' else self.complete_workspace_stage),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=root_stage if gate=='minio_engine_root' else self.complete_root_stage),mock.patch.object(CASE,'verify_minio_node_scope') as old_nodes:
                     with self.assertRaises(ValueError):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
                     old_nodes.assert_not_called()
                 report=json.loads(Path(directory,'manager-envi.json').read_text())
-                self.assertEqual(report['stage'],'minio-engine-root');self.assertEqual(report['result'],'failed')
-                self.assertEqual(report['minio_engine_root']['phase'],'root_navigation')
+                self.assertEqual(report['stage'],'minio-root-workspace' if gate=='minio_root_workspace' else 'minio-engine-root');self.assertEqual(report['result'],'failed')
+                self.assertEqual(report[gate]['phase'],'root_navigation')
                 self.assertEqual(events,['seed','withdraw','delete'])
 
     def metadata_pair(self,spec,prefix='envi/'):
@@ -552,6 +617,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         identity=dict(principal_id='33',tenant_id='2',permissions_verified=sorted(OWNER.REQUIRED_PERMISSIONS))
         def browser(repo,env,evidence,owner):
             self_test.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN',env);self_test.assertNotIn('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',env)
+            self_test.assertNotIn('ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME',env);self_test.assertNotIn('ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD',env)
             if browser_failure:raise RuntimeError('owned browser failure')
             cases=[]
             for source in evidence['cases']:
@@ -566,7 +632,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         owner=SimpleNamespace(GatewayClient=lambda url,token,*a:issuer if token=='issuer' else client,positive_int=lambda v,*a:int(v),validate_user_identity=lambda *a:identity,REQUIRED_PERMISSIONS=OWNER.REQUIRED_PERMISSIONS,SuiteError=OWNER.SuiteError,
             wait_for_meta_scan=scan,find_fixture_item=find,ArtifactFixture=OWNER.ArtifactFixture,build_item_locator=OWNER.build_item_locator,
             validate_model_bundle=OWNER.validate_model_bundle,generate_raster_cog=generate,cleanup_managed_artifact=cleanup,RASTER_TASK_TYPE=OWNER.RASTER_TASK_TYPE)
-        env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='envi-test',GATEWAY_URL='http://fixture',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='engine',ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
+        env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='envi-test',GATEWAY_URL='http://fixture',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='engine',ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME='issuer-name',ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD='private-authorizer',ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
         def refresh(actor,scanner,tenant,principal,engine,environment,evidence,*,initializer):
             self.assertIs(actor,issuer)
             self.assertIs(scanner,client)
@@ -574,7 +640,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
             self.assertIs(environment,env)
             evidence.update(result='passed',cleanup='zero_current_source_rules_and_active_executions')
             events.append(('scoped-refresh',))
-        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=self.complete_root_stage),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}),mock.patch.object(CASE.REFRESH,'run_nfs_refresh',side_effect=refresh):
+        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_root_workspace',side_effect=self.complete_workspace_stage),mock.patch.object(CASE.MEDIA,'run_browser',browser),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=self.complete_root_stage),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}),mock.patch.object(CASE.REFRESH,'run_nfs_refresh',side_effect=refresh):
             if browser_failure:
                 with self.assertRaisesRegex(RuntimeError,'owned browser failure'):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
                 report=json.loads(Path(directory,'manager-envi.json').read_text())
@@ -598,7 +664,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         for failure in (False,True):
             with self.subTest(failure=failure),tempfile.TemporaryDirectory()as directory:
                 report=self.full_scenario(directory,browser_failure=failure)
-                self.assertEqual(report['schema_version'],'addp.manager-envi/v5')
+                self.assertEqual(report['schema_version'],'addp.manager-envi/v6')
                 self.assertEqual(set(report['minio_engine_root']['checks']),CASE.MINIO_ROOT_CHECKS)
                 self.assertEqual(report['result'],'failed'if failure else 'passed')
                 self.assertEqual(len(report['cases']),6)
@@ -723,7 +789,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         self.assertIn('issuer_permissions=ENVI_INITIALIZER_PERMISSIONS',runner)
         self.assertNotIn('grant.deny(',runner)
         self.assertNotIn('grant.release(',runner)
-        self.assertIn('addp.manager-envi/v5',runner)
+        self.assertIn('addp.manager-envi/v6',runner)
 
     def test_infra_failure_diagnostic_is_owned_bounded_and_redacted(self):
         with tempfile.TemporaryDirectory() as directory:

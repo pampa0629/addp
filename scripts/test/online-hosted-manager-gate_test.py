@@ -298,11 +298,27 @@ class HostedManagerGateTest(unittest.TestCase):
         result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-envi')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         trace=self.host.trace.read_text()
-        for fragment in ('manager-case:native-envi','application-stop','source-fixture:stop','nfs-fixture:stop','infra-down'):
+        for fragment in ('manager-case:native-envi','start:-system','application-stop','source-fixture:stop','nfs-fixture:stop','infra-down'):
             self.assertIn(fragment,trace)
         for fragment in ('start:-pointcloud-workflow','start:-document-workflow','start:-transfer','--services model3d-workflow-engine'):
             self.assertNotIn(fragment,trace)
         self.assertEqual(json.loads((self.host.artifacts/'manager-case.json').read_text())['case'],'native-envi')
+
+    def test_envi_system_frontend_failure_stops_suite_and_cleans_owned_resources(self):
+        self.host._write_repository_script('scripts/dev/start.sh', '''
+            #!/usr/bin/env bash
+            echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
+            [ "$1" != -system ]
+        ''')
+        subprocess.run(['git','add','scripts/dev/start.sh'],cwd=self.host.repository,check=True)
+        subprocess.run(['git','commit','-qm','System frontend failure fixture'],cwd=self.host.repository,check=True)
+        result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-envi')
+        self.assertNotEqual(result.returncode,0)
+        trace=self.host.trace.read_text()
+        for fragment in ('start:-system','application-stop','source-fixture:stop','nfs-fixture:stop','infra-down'):
+            self.assertIn(fragment,trace)
+        self.assertNotIn('make:test-online',trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_native_media_case_is_explicit_and_uses_same_cleanup(self):
         result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media')

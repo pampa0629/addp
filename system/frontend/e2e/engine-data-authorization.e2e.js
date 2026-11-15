@@ -1553,7 +1553,7 @@ for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engin
 
 
 for (const [sourceType, root] of [['postgresql', rootPath], ['nfs', ftpRootPath], ['minio', minioRootPath]]) {
-  test(`entire engine issues one recursive node Grant for ${sourceType}`, async ({ page }) => {
+  for (const [action, label] of [['metadata_read','仅查看元数据'],['read','读取数据（含元数据）']]) test(`entire engine issues one recursive ${action} node Grant for ${sourceType}`, async ({ page }) => {
     const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: sourceType === 'postgresql' ? '' : 'gpkg' })
     await page.goto('/engines/2?tab=data-authorization')
     await openNewAuthorization(page)
@@ -1562,11 +1562,13 @@ for (const [sourceType, root] of [['postgresql', rootPath], ['nfs', ftpRootPath]
     await expect(targets).toContainText('整个引擎（含以后新增的数据项）')
     await expect(targets.getByRole('checkbox')).toBeChecked()
     await expect(targets.getByRole('checkbox')).toBeDisabled()
-    await grantDraft(page)
+    await grantDraft(page, label)
     await confirmGrant(page)
     expect(writes).toHaveLength(1)
-    expect(writes[0].body).toMatchObject({catalog_path: root, node_recursive: true, action: 'read'})
+    expect(writes[0].body).toMatchObject({catalog_path: root, node_recursive: true, action})
     expect(writes[0].body.item_fingerprint).toBeUndefined()
+    await expect(page.getByTestId('source-grant-table-filter')).toHaveValue('')
+    await expect(page.getByTestId('source-grant-list').getByTestId('account-grant-expand')).toHaveCount(1)
     expect(reads.filter(url => url.includes('/authorization-facts'))).toEqual([])
   })
 }

@@ -236,6 +236,9 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = delimited-read-settings ] || [ "$ADDP_ONLINE_
   for start_target in -security -meta -manager -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
+  if [ "$ADDP_ONLINE_MANAGER_CASE" = native-envi ]; then
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -system
+  fi
   nfs_root=$(cat "$ADDP_ONLINE_SECRET_DIR/nfs-root")
   start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,src=$nfs_root,dst=$nfs_root,readonly"
 elif [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ] || [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-avro ] || [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-feather ]; then

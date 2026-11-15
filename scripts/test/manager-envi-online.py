@@ -3,6 +3,10 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import re
+import subprocess
+import tempfile
+import uuid
 from pathlib import Path
 import time
 from datetime import datetime
@@ -184,6 +188,102 @@ def verify_minio_node_scope(client, authorization, engine, bucket, spec, owner, 
             report['result']='failed'
             if failure is None:raise ValueError('MinIO node fixture cleanup failed')
 
+MINIO_WORKSPACE_CHECKS=('root_single_recursive_scope','cancel_without_grant','metadata_submit_and_visibility',
+    'metadata_revoke_hides','read_submit_and_bundle','read_revoke_hides','same_actors_and_exact_commands')
+
+
+def verify_minio_root_workspace(repository,environment,owner,client,authorization,spec,*,runner=subprocess.run,evidence=None):
+    """Real System page writes; existing formal User helper owns failure cleanup."""
+    artifact=Path(environment['ADDP_ONLINE_ARTIFACT_DIR']);report=evidence if evidence is not None else {}
+    report.update(result='incomplete',phase='prepare')
+    engine=authorization.engine_id;credential=client.token
+    root=dict(version='catalog.path/v1',engine_id=engine,segments=[dict(term='service',kind='service',name='')])
+    binding=dict(run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],tenant_id=environment['ADDP_ONLINE_TEST_TENANT_ID'],
+        engine_id=str(engine),issuer_id=authorization.operator,principal_id=authorization.recipient,
+        issuer_permissions=sorted(ENVI_INITIALIZER_PERMISSIONS),consumer_permissions=sorted(owner.REQUIRED_PERMISSIONS),
+        full_name=environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']+'/envi/'+spec['name'],members=spec['members'])
+    query=urlencode(dict(recipient_type='user',recipient_id=authorization.recipient,page_size=100))
+    def page(history=False):
+        value=authorization.issuer.request('GET',authorization.base+'/access_grants'+('/history?' if history else '?')+query,(200,)).payload
+        require(isinstance(value,dict) and isinstance(value.get('data'),list) and value.get('total')==len(value['data'])<=100,
+                'complete workspace source page required')
+        return value['data']
+    failure=None
+    with tempfile.TemporaryDirectory(prefix='addp-minio-workspace-') as private:
+        journal=Path(private)/'commands.json';journal.write_text(json.dumps(dict(run_id=binding['run_id'],commands=[])));journal.chmod(0o600)
+        path=artifact/'manager-minio-root-workspace.json';path.unlink(missing_ok=True)
+        try:
+            require(not page(),'workspace requires zero current source rules')
+            login_keys=('ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME','ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD','ADDP_ONLINE_TEST_USER_USERNAME','ADDP_ONLINE_TEST_USER_PASSWORD')
+            require(all(environment.get(key) for key in login_keys),'workspace browser login credentials required')
+            env={k:v for k,v in environment.items() if not k.endswith('_ACCESS_TOKEN')}
+            env.update(ADDP_MINIO_WORKSPACE_BINDING=json.dumps(binding),ADDP_MINIO_WORKSPACE_JOURNAL=str(journal))
+            report['phase']='browser'
+            with (artifact/'manager-minio-root-workspace-browser.log').open('w') as output:
+                result=runner(['npm','exec','--','playwright','test','e2e/online/manager-minio-root-workspace.spec.js','--config=playwright.online.config.js'],
+                    cwd=repository/'console/frontend',env=env,stdout=output,stderr=subprocess.STDOUT,check=False)
+            require(path.is_file(),'workspace browser report missing')
+            proof=json.loads(path.read_text())
+            require(all(proof.get(k)==v for k,v in binding.items()),'workspace browser changed bound identity or target')
+            require(proof.get('schema_version')=='addp.minio-root-workspace/v1','workspace browser schema differs')
+            report['browser']=proof
+            require(result.returncode==0 and proof.get('result')=='passed' and proof.get('phase')=='completed','workspace browser did not complete')
+            require(proof.get('checks')==list(MINIO_WORKSPACE_CHECKS) and proof.get('login_requests')==2
+                    and proof.get('leaf_fact_reads')==0 and proof.get('failures')==[],'workspace browser checks incomplete')
+            observations=proof.get('observations',[])
+            require([(row.get('visible'),row.get('download_status')) for row in observations]==
+                    [(False,None),(True,403),(False,403),(True,200),(False,403)],'workspace consumer visibility or read boundary differs')
+            bundle=observations[3].get('bundle',{})
+            require(bundle.get('members')==spec['members'] and type(bundle.get('size_bytes'))is int and bundle['size_bytes']>0
+                    and isinstance(bundle.get('sha256'),str) and re.fullmatch('[0-9a-f]{64}',bundle['sha256']),'workspace bundle proof differs')
+            require(client.token==credential,'workspace changed the existing consumer credential')
+            report['result']='passed'
+        except BaseException as error:
+            failure=error;report.update(result='failed',error_type=type(error).__name__);raise
+        finally:
+            cleanup={};errors=[];commands=[]
+            try:
+                saved=json.loads(journal.read_text())
+                require(saved.get('run_id')==binding['run_id'] and isinstance(saved.get('commands'),list) and len(saved['commands'])<=2,'unowned workspace command journal')
+                for command in saved['commands']:
+                    require(isinstance(command,dict) and set(command)=={'request_id','catalog_path','node_recursive','recipient_type','recipient_id','action','expiry_mode','expires_at','reason'}
+                        and str(uuid.UUID(command['request_id']))==command['request_id'] and command['catalog_path']==root
+                        and command['node_recursive'] is True and command['recipient_type']=='user' and command['recipient_id']==authorization.recipient
+                        and command['action'] in {'metadata_read','read'} and command['expiry_mode']=='until_revoked' and command['expires_at']is None
+                        and isinstance(command['reason'],str) and 0<len(command['reason'])<=2000
+                        and not any(row['request_id']==command['request_id'] or row['action']==command['action'] for row in commands),
+                        'workspace command escaped its fixed root or recipient')
+                    commands.append(command)
+                    if command['request_id'] not in authorization.grants:authorization.grants.append(command['request_id'])
+                history=page(True)
+                for command in commands:
+                    rows=[row for row in history if row.get('request_id')==command['request_id']]
+                    require(len(rows)<=1,'workspace command history duplicated')
+                    if not rows:
+                        require(report['result']!='passed','workspace successful command history missing');continue
+                    row=rows[0]
+                    require(all(row.get(k)==v for k,v in command.items()) and row.get('engine_id')==str(engine)
+                        and row.get('operator_principal_id')==authorization.operator and row.get('approval_mode')=='independent'
+                        and not any(row.get(k) for k in ('item_fingerprint','boundary_hash','file_composition','scope','metadata_target')),
+                        'workspace formal history changed root, action or actor')
+                    if row.get('revocation')is not None:
+                        authorization.grants.remove(command['request_id']);authorization.confirmed.discard(command['request_id'])
+                    else:require(report['result']!='passed','workspace page did not revoke its Grant')
+                if report['result']=='passed':
+                    require([row['action']for row in commands]==['metadata_read','read'] and report['browser'].get('commands')==commands
+                        and report['browser'].get('revocations')==[row['request_id']for row in commands],'workspace writes or withdrawals incomplete')
+                report['commands']=commands
+            except Exception as error:errors.append(dict(stage='commands',error_type=type(error).__name__))
+            try:
+                authorization.cleanup();require(not page(),'workspace retained current source rules');cleanup['zero_current_source_rules']=True
+            except Exception as error:errors.append(dict(stage='authorization',error_type=type(error).__name__))
+            report['cleanup']=cleanup
+            if errors:
+                cleanup['errors']=errors;report['result']='failed'
+                if failure is None:raise ValueError('MinIO workspace cleanup or formal history failed')
+    return report
+
+
 MINIO_ROOT_CHECKS={'engine_without_grants_hidden','root_grant_shows_empty_bucket','root_grant_covers_future_bucket_item',
     'root_withdrawal_retains_independent_item','last_empty_bucket_withdrawal_hides_engine','root_natural_expiry_hides_navigation'}
 
@@ -322,7 +422,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     identity=owner.validate_user_identity(client,tenant)
     issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
-    report=dict(source_authorization={'grants':[]},schema_version='addp.manager-envi/v5',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
+    report=dict(source_authorization={'grants':[]},schema_version='addp.manager-envi/v6',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
     grants=[];fixtures=[];seeded=False;stage='seed';failure=None
     timeout=float(environment.get('ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS','180'))
     try:
@@ -340,6 +440,11 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 report.setdefault('source_scans',[]).append(dict(storage=storage,engine_id=engine,phase=phase,catalog_paths=[prefix+'envi'],principal_id=grant.operator if storage=='nfs' else grant.recipient,execution_id=execution))
             stage='scan';scan_source('initial')
             if storage=='minio':
+                stage='minio-root-workspace'
+                workspace=report['minio_root_workspace']={}
+                verify_minio_root_workspace(repository,environment,owner,client,grant,seed['sources'][0],evidence=workspace)
+                require(workspace.get('result')=='passed' and workspace.get('cleanup')==dict(zero_current_source_rules=True),
+                        'MinIO root workspace evidence incomplete')
                 stage='minio-engine-root'
                 root_report=report['minio_engine_root']={}
                 verify_minio_engine_root(client,grant,environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET'],seed['sources'][0],
@@ -441,7 +546,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                         scan_source('header-version-restore')
                     client.request('GET',case['preview_url'],(206,),headers={'Range':'bytes=0-63'})
         stage='browser';evidence=dict(source_format='envi',run_id=report['run_id'],identity=identity,cases=report['cases'])
-        browser_environment={k:v for k,v in environment.items() if k not in {'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}}
+        browser_environment={k:v for k,v in environment.items() if k not in {'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN','ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME','ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD'}}
         browser=browser_runner(evidence) if browser_runner else MEDIA.run_browser(repository,browser_environment,evidence,owner)
         require(browser.get('result')=='passed' and len(browser.get('cases',[]))==6,'complete ENVI browser proof')
         validate_browser(owner,browser,evidence,artifact)

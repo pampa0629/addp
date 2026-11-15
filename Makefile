@@ -1720,6 +1720,7 @@ test-manager-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb-response.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb-preview.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js
+	@node --check --input-type=module < console/frontend/e2e/online/manager-minio-root-workspace.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-tiff-composition.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-avro.spec.js

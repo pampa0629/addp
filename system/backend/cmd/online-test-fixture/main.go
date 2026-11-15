@@ -1157,12 +1157,16 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_ONTOLOGY_READER_ACCESS_TOKEN"] = reader.AccessToken
 	}
 	if sourcePermissions := suiteSourceInitializerPermissions(*suite); len(sourcePermissions) > 0 {
-		sourceInitializer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+		sourceInitializer, _, sourcePassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourceInitializerSupplement(sourcePermissions), directPermissionAdministratorRoleKey)
 		if err != nil {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = sourceInitializer.AccessToken
+		if *suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-envi" {
+			values["ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME"] = "external-online-source-initializer"
+			values["ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD"] = sourcePassword
+		}
 	}
 	if username := lineageReaderUsername(*suite); username != "" {
 		reader, _, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
@@ -1720,6 +1724,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_ONTOLOGY_READER_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
+		"ADDP_ONLINE_MANAGER_AUTHORIZER_USERNAME",
+		"ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD",
 		"ADDP_ONLINE_SECURITY_TRANSFER_ROLE_USERNAME",
 		"ADDP_ONLINE_SECURITY_TRANSFER_ROLE_PASSWORD",
 		"ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME",

@@ -322,7 +322,7 @@ async function create() {
       // Locate only this batch's recipient; keep list filtering server-side.
       filterDraft.recipientType = first.recipientType
       filterDraft.recipientID = first.recipientID
-      filterDraft.tableSearch = captured.length === 1 ? first.targetLabel : ''
+      filterDraft.tableSearch = captured.length === 1 && !first.engineRoot ? first.targetLabel : ''
       filterPath.value = null
       captureFilters()
       saving.value = false; attempt.value = null; emit('busy', false); emit('issued')

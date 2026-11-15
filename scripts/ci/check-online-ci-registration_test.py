@@ -4043,12 +4043,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text((SCRIPT.parents[2]/relative).read_text(),encoding='utf-8')
         owner.write_text(owner.read_text()+"\nif case == 'native-netcdf':\nmanager-netcdf-online\n")
         make.write_text(make.read_text()+'\t@python3 -m unittest scripts/test/manager-netcdf-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-netcdf.spec.js\n')
-        for relative in ('scripts/test/manager-envi-online.py','scripts/test/manager-envi-online_test.py','business/scripts/online-envi-fixture.py','engines/geopython-workflow/test_online_envi_fixture.py'):
+        for relative in ('scripts/test/manager-envi-online.py','scripts/test/manager-envi-online_test.py','business/scripts/online-envi-fixture.py','engines/geopython-workflow/test_online_envi_fixture.py','console/frontend/e2e/online/manager-minio-root-workspace.spec.js','system/backend/cmd/online-test-fixture/main.go'):
             target=self.repository/relative
             target.parent.mkdir(parents=True,exist_ok=True)
             target.write_text((SCRIPT.parents[2]/relative).read_text())
         owner.write_text(owner.read_text()+"\nif case == 'native-envi':\nmanager-envi-online\n")
-        make.write_text(make.read_text()+'\t@python3 -m unittest scripts/test/manager-envi-online_test.py\n\t@echo test_online_envi_fixture.py\n')
+        make.write_text(make.read_text()+'\t@python3 -m unittest scripts/test/manager-envi-online_test.py\n\t@echo test_online_envi_fixture.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-minio-root-workspace.spec.js\n')
         for relative in ('scripts/test/manager-grib-online.py','scripts/test/manager-grib-online_test.py',
                          'business/scripts/online-grib-fixture.py','console/frontend/e2e/online/manager-grib.spec.js',
                          'engines/geopython-workflow/test_online_grib_fixture.py'):
@@ -4110,6 +4110,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (netcdf, 'validate_structural_metadata', 'NetCDF'),
             (self.repository/'scripts/test/manager-envi-online.py','validate_content_metadata','ENVI'),
             (self.repository/'scripts/test/manager-envi-online.py','metadata_details_hidden','ENVI'),
+            (self.repository/'scripts/test/manager-envi-online.py','verify_minio_root_workspace','ENVI'),
+            (self.repository/'scripts/test/manager-envi-online.py','ADDP_MINIO_WORKSPACE_JOURNAL','ENVI'),
+            (self.repository/'console/frontend/e2e/online/manager-minio-root-workspace.spec.js','root_single_recursive_scope','ENVI workspace'),
+            (self.repository/'console/frontend/e2e/online/manager-minio-root-workspace.spec.js','renameSync','ENVI workspace'),
+            (self.repository/'console/frontend/e2e/online/manager-minio-root-workspace.spec.js','source-grant-revoke-confirm','ENVI workspace'),
+            (self.repository/'system/backend/cmd/online-test-fixture/main.go','ADDP_ONLINE_MANAGER_AUTHORIZER_PASSWORD','ENVI workspace'),
             (self.repository/'scripts/test/manager-envi-online.py','verify_minio_engine_root','ENVI'),
             (self.repository/'scripts/test/manager-envi-online.py','root_grant_covers_future_bucket_item','ENVI'),
             (self.repository/'scripts/test/manager-envi-online.py','root_buckets_removed','ENVI'),

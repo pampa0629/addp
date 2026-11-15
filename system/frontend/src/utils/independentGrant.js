@@ -29,6 +29,6 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
   return Object.freeze({ action: fields.action, requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,
     targetLabel: path.segments.filter(segment => segment.name).map(segment => segment.name).join(' / ') || requirement.engine_name || id, recipientLabel: candidate.name,
     recipientType: fields.recipient_type, recipientID: fields.recipient_id, expiresAt, expiryMode: form.expiryMode,
-    nodeRecursive: node ? requirement.node_recursive : undefined, wholeScope: !!requirement.binding?.scope,
+    nodeRecursive: node ? requirement.node_recursive : undefined, engineRoot: node && path.segments.length === 1, wholeScope: !!requirement.binding?.scope,
     compositionPaths: Object.freeze((requirement.binding?.file_composition?.refs || []).map(ref => ref.target.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '))) })
 }
