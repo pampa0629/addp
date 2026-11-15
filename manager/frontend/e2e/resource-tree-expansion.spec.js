@@ -95,8 +95,11 @@ for (const target of ['name', 'folder', 'arrow']) {
     const gate = {}
     backend.childGates.set(prefixLocator, gate)
     await page.goto('/data-explorer')
-    await arrow(page, engines[0].name).click()
-    await arrow(page, 'addp').click()
+    for (const label of [engines[0].name, 'addp']) {
+      await arrow(page, label).click()
+      await expanded(page, label, true)
+      await expect(page.locator('.el-tree-node__children.el-collapse-transition-enter-active')).toHaveCount(0)
+    }
     const control = target === 'arrow' ? arrow(page, 'movie')
       : target === 'folder' ? row(page, 'movie').locator('.node-main > .el-icon')
         : row(page, 'movie').locator('.explorer-node-label__text')
