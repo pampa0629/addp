@@ -96,6 +96,14 @@
 
 额外 `make test-t2-ci-registration` 在既有 Common PG 替身 `test_full_gate_cannot_pass_using_only_the_previous_execution_cases` 的 15 秒子进程超时，87 项中 1 项错误；后续 10 项和登记比较未执行，不计通过，也未修复或重跑该范围。原件 `/tmp/addp-cdc-pretrigger-registration.log`。本批没有新增入口、服务或 CI 路线，既有 CDC Runner 与手工 Hosted 发现已覆盖。此时新源码真实 T4 尚未执行，不能以确定性测试或旧轮通过追认。
 
+### 新增触发前暂停首次 Hosted 失败及参照点修订（2026-11-15）
+
+固定 `501943a075bd328d7033ee82f384fd08d90d1120` 的 [Hosted 43703210703／Job 132778634342](https://github.com/pampa0629/addp/actions/runs/43703210703/job/132778634342) 停在 performance_pending，尚未正式 Pause。三条规则的 incident／event／delivery 均为 0；消费停滞窗口约 90.091 秒、积压窗口约 44.999 秒，均 pending／inactive。锁前 baseline committed=10（10:36:05Z），实际停滞窗口已在 committed=11 上累计（10:36:21Z 至 10:37:51Z）。新加的直接 buffer 核对错误地要求跨这两个阶段与旧基线完全相等；同一有效窗口内停滞不要求锁前采样也有同一位点。最后一次 buffer 未在失败前保存，因此本轮不能认定该条件是唯一失败原因，也不推断具体业务／控制事件。
+
+修订在校验前保存公开安全 buffer，仍要求新鲜 available、实际 offset 积压 >256、目标锁已建立、真实 pending 至少 30 秒、原阈值及完整生命周期零值，只移除跨阶段 committed 恒等的错误前提。正向编排回归明确让初始位点 0、实际 pending 位点 1，避免把锁前正常推进误报为告警错误；恢复窗口及临界前断言不放宽。没有修改产品状态或通过重试隐藏该次失败。
+
+该轮故障／领域 cleanup=passed、uncertain_mutation=false；CPU、Connector、规则、源记录及 Webhook 已恢复／清理，任务 3／2 删除读回不存在，硬退出 Kafka 任务按原约定留给部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。原生 verify-clean、暂停后清窗、恢复累计和后继新检查尚未走到，不计通过。Artifact `14157603649` 已核对 SHA-256 `7a2f22c3cf2619ac14bf7ca3e73cf01196e94ee4e5255b65ea474f184a324de8` 与 ZIP CRC，完整原件位于 `/tmp/addp-cdc-pretrigger-hosted-43703210703/`。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办

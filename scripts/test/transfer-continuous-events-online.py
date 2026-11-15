@@ -724,12 +724,11 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             return rows
         pretrigger['before_pause'] = until(pending, timeout=150)
         pending_buffer = sample()['buffer_observation'] or {}
+        pretrigger['buffer_before_pause'] = pending_buffer
         require(pending_buffer.get('status') == 'available'
                 and cdc_sample_time(pending_buffer, datetime.now(timezone.utc)) is not None
-                and int(pending_buffer['lag_offsets']) > int(CDC_BACKLOG_THRESHOLD)
-                and pending_buffer['committed_offset'] == baseline['committed_offset'],
+                and int(pending_buffer['lag_offsets']) > int(CDC_BACKLOG_THRESHOLD),
                 'pretrigger pending window lacks real locked-consumer backlog')
-        pretrigger['buffer_before_pause'] = pending_buffer
         stage('performance_pretrigger_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
         paused_task = sample()['task_state']

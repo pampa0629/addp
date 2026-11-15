@@ -1556,6 +1556,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             delay = {**fresh,'status':'available','delay_seconds':70,'event_count':'0'}
             if state['phase'] == 'performance_pending':
                 buffer['lag_offsets'] = '1000'
+                buffer['committed_offset'] = '1'
             if state['phase'] == 'performance_trigger':
                 state['clock'] += 15
                 now = Clock.now()
@@ -1630,6 +1631,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(value['resumed_execution_id'],'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb')
         self.assertEqual(launch.call_args_list,[unittest.mock.call(7,'resume')]*2)
         self.assertEqual(value['pretrigger_pause']['result'],'passed')
+        self.assertEqual(value['baseline']['committed_offset'],'0')
+        self.assertEqual(value['pretrigger_pause']['buffer_before_pause']['committed_offset'],'1')
         self.assertEqual(value['pretrigger_pause']['pause_hold_checks'],8)
         self.assertEqual(set(value['pretrigger_pause']['insufficient_last']),M.CDC_PERFORMANCE_CODES-{'cdc_capture_delayed'})
         self.assertEqual(delivered.call_count,2)
