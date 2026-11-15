@@ -49,6 +49,11 @@ def node_sources():
     return {prefix + name: raw for prefix in ('envi/node-future-', 'envi/node-child/future-', 'envi-neighbor/future-')
             for name, raw in pair(spec).items()}
 
+def root_bucket_names(run_id):
+    require(isinstance(run_id,str) and re.fullmatch(r'manager-[0-9]+-[0-9]+',run_id), 'Manager run identity required')
+    suffix=hashlib.sha256(run_id.encode()).hexdigest()[:16]
+    return {kind:'addp-envi-root-'+kind+'-'+suffix for kind in ('empty','future')}
+
 def worker(request):
     from minio import Minio
     storage=request['storage'];client=Minio(storage['endpoint'],access_key=storage['access_key'],secret_key=storage['secret_key'],secure=False)
@@ -61,6 +66,45 @@ def worker(request):
                 try:raw=response.read()
                 finally:response.close();response.release_conn()
                 require(raw==(directory/name).read_bytes()==expected,'source bytes changed')
+    if action in ('root-empty-create','root-future-create','root-delete'):
+        names=root_bucket_names(request['run_id']);marker=root/'.addp-envi-root-buckets.json'
+        require(not marker.is_symlink(),'root bucket ownership marker is a symlink')
+        owned=json.loads(marker.read_text()) if marker.exists() else dict(run_id=request['run_id'],buckets=[])
+        require(owned.get('run_id')==request['run_id'] and isinstance(owned.get('buckets'),list)
+                and len(owned['buckets'])==len(set(owned['buckets']))
+                and set(owned['buckets'])<=set(names.values()),'foreign root bucket ownership')
+        if action!='root-delete':
+            kind='empty' if action=='root-empty-create' else 'future';name=names[kind]
+            require(owned['buckets']==([] if kind=='empty' else [names['empty']])
+                    and not client.bucket_exists(name),'root bucket creation collided or repeated')
+            # Register the intended bucket before an outcome-unknown S3 write.
+            owned['buckets'].append(name);marker.write_text(json.dumps(owned))
+            client.make_bucket(name)
+            if kind=='future':
+                for key,raw in pair(specs[0]).items():
+                    client.put_object(name,key,io.BytesIO(raw),len(raw),content_type='application/octet-stream')
+                for key,expected in pair(specs[0]).items():
+                    response=client.get_object(name,key)
+                    try:require(response.read()==expected,'future root pair bytes changed')
+                    finally:response.close();response.release_conn()
+            require({entry.object_name for entry in client.list_objects(name,recursive=True)}==
+                    (set() if kind=='empty' else set(pair(specs[0]))),'root bucket members differ')
+            verify_sources()
+            return dict(buckets=names,sources_unchanged=True) if kind=='empty' else dict(objects_created=2,sources_unchanged=True)
+        for name in owned['buckets']:
+            if not client.bucket_exists(name):continue
+            expected={} if name==names['empty'] else pair(specs[0])
+            keys={entry.object_name for entry in client.list_objects(name,recursive=True)}
+            require(keys<=set(expected),'unowned object in root bucket; refusing deletion')
+            for key in keys:
+                response=client.get_object(name,key)
+                try:require(response.read()==expected[key],'root cleanup source changed')
+                finally:response.close();response.release_conn()
+            for key in keys:client.remove_object(name,key)
+            client.remove_bucket(name)
+        require(all(not client.bucket_exists(name) for name in names.values()),'root buckets remain')
+        marker.unlink(missing_ok=True);verify_sources()
+        return dict(root_buckets_removed=True,sources_unchanged=True)
     if action=='seed':
         directory.mkdir(mode=0o755,exist_ok=False)
         for spec in specs:
@@ -187,11 +231,11 @@ def capture_infra_diagnostic(environment,*,runner=subprocess.run):
     return evidence
 
 def physical(action,repository,environment,request=None):
-    require(action in ('seed','verify','delete','cog','deleted-cog','residuals','header-layout','header-version','node-create','node-delete'),'unknown physical action')
+    require(action in ('seed','verify','delete','cog','deleted-cog','residuals','header-layout','header-version','node-create','node-delete','root-empty-create','root-future-create','root-delete'),'unknown physical action')
     require(all(environment.get(k)==v for k,v in {'ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','ADDP_ONLINE_MANAGER_CASE':'native-envi'}.items()),'exclusive Hosted ENVI case required')
     state=Path(environment['ADDP_ONLINE_SECRET_DIR'])/'nfs-root';require(not state.is_symlink(),'invalid state');root=Path(state.read_text().strip())
     require(re.fullmatch(r'/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}',str(root)) and not root.is_symlink() and (root/'.addp-online-owner').read_text().strip()==environment['ADDP_ONLINE_TEST_RUN_ID'],'unowned NFS root')
-    config=dict(request or {},action=action,nfs_root=str(root),storage={'endpoint':'127.0.0.1:'+environment['ADDP_ONLINE_MANAGER_MINIO_PORT'],'access_key':environment['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],'secret_key':environment['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],'bucket':environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']})
+    config=dict(request or {},action=action,run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],nfs_root=str(root),storage={'endpoint':'127.0.0.1:'+environment['ADDP_ONLINE_MANAGER_MINIO_PORT'],'access_key':environment['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],'secret_key':environment['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],'bucket':environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']})
     if action in ('cog','deleted-cog','residuals'):
         # Secret values are supplied only on private worker stdin, never reports.
         config['infra']={'endpoint':'127.0.0.1:'+environment['MINIO_API_PORT'],'access_key':environment['MINIO_ROOT_USER'],'secret_key':environment['MINIO_ROOT_PASSWORD'],'bucket':'manager'}

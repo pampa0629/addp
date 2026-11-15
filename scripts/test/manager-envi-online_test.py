@@ -17,6 +17,12 @@ FIXTURE=importlib.import_module('business.scripts.online-envi-fixture')
 OWNER=importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
 CASE=importlib.import_module('scripts.test.manager-envi-online')
 class ENVIHostedCaseTest(unittest.TestCase):
+    @staticmethod
+    def complete_root_stage(*args,**kwargs):
+        proof=kwargs['evidence']
+        proof.update(result='passed',checks=sorted(CASE.MINIO_ROOT_CHECKS))
+        return proof
+
     def test_expired_minio_node_cleanup_requires_database_history(self):
         original=dict(request_id='owned',catalog_path={'engine_id':12},node_recursive=False,recipient_type='user',
             recipient_id='33',action='read',expiry_mode='at_time',expires_at='2000-01-01T00:00:00Z',
@@ -95,6 +101,188 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 objects[key]=FIXTURE.node_sources()[key]
                 self.assertEqual(FIXTURE.worker(dict(args,action='node-delete')),dict(objects_removed=6,sources_unchanged=True))
                 self.assertTrue(all(k.startswith('envi/') and '/'not in k[5:] for k in objects))
+
+    def root_physical_fixture(self,directory,*,failure=None):
+        root=Path(directory);(root/'envi').mkdir()
+        baseline={key:raw for spec in FIXTURE.sources() for key,raw in FIXTURE.pair(spec).items()}
+        for key,raw in baseline.items():(root/'envi'/key).write_bytes(raw)
+        run_id='manager-42-1';names=FIXTURE.root_bucket_names(run_id)
+        objects={'sources':{'envi/'+key:raw for key,raw in baseline.items()}}
+        events=[];test=self
+        class Response(io.BytesIO):
+            def release_conn(self):pass
+        class Storage:
+            def __init__(self,*a,**k):pass
+            def bucket_exists(self,name):return name in objects
+            def make_bucket(self,name):
+                owned=json.loads((root/'.addp-envi-root-buckets.json').read_text())
+                test.assertIn(name,owned['buckets']);test.assertEqual(owned['run_id'],run_id)
+                objects[name]={};events.append(('make',name))
+            def remove_bucket(self,name):test.assertEqual(objects[name],{});del objects[name];events.append(('delete',name))
+            def put_object(self,name,key,stream,size,**kwargs):
+                objects[name][key]=stream.read();test.assertEqual(len(objects[name][key]),size)
+                if failure=='partial_put':raise RuntimeError('partial source write')
+            def get_object(self,name,key):return Response(objects[name][key])
+            def remove_object(self,name,key):del objects[name][key]
+            def list_objects(self,name,*,recursive):return [SimpleNamespace(object_name=k) for k in objects[name]]
+        def invoke(action):
+            request=dict(action=action,run_id=run_id,nfs_root=str(root),storage=dict(endpoint='fixture',access_key='fake',secret_key='fake',bucket='sources'))
+            with mock.patch.dict(sys.modules,{'minio':SimpleNamespace(Minio=Storage)}):return FIXTURE.worker(request)
+        return invoke,names,objects,events,baseline
+
+    def test_root_physical_buckets_are_preregistered_exact_and_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            invoke,names,objects,events,baseline=self.root_physical_fixture(directory)
+            self.assertEqual(invoke('root-empty-create'),dict(buckets=names,sources_unchanged=True))
+            self.assertEqual(objects[names['empty']],{})
+            self.assertEqual(invoke('root-future-create'),dict(objects_created=2,sources_unchanged=True))
+            self.assertEqual(objects[names['future']],FIXTURE.pair(FIXTURE.sources()[0]))
+            self.assertEqual(invoke('root-delete'),dict(root_buckets_removed=True,sources_unchanged=True))
+            self.assertEqual(objects,{'sources':{'envi/'+k:v for k,v in baseline.items()}})
+            self.assertFalse(Path(directory,'.addp-envi-root-buckets.json').exists())
+            self.assertEqual(len([e for e in events if e[0]=='delete']),2)
+
+    def test_root_physical_partial_creation_is_cleaned_without_touching_originals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            invoke,names,objects,events,baseline=self.root_physical_fixture(directory,failure='partial_put')
+            invoke('root-empty-create')
+            with self.assertRaisesRegex(RuntimeError,'partial source write'):invoke('root-future-create')
+            self.assertEqual(len(objects[names['future']]),1)
+            self.assertTrue(invoke('root-delete')['root_buckets_removed'])
+            self.assertEqual(set(objects),{'sources'})
+            self.assertEqual(objects['sources'],{'envi/'+k:v for k,v in baseline.items()})
+
+    def test_root_physical_refuses_foreign_buckets_objects_and_changed_bytes(self):
+        for fault in ('collision','foreign_object','changed_bytes','foreign_owner'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                invoke,names,objects,events,baseline=self.root_physical_fixture(directory)
+                if fault=='collision':
+                    objects[names['empty']]={'foreign':b'preserve'}
+                    with self.assertRaises(ValueError):invoke('root-empty-create')
+                    self.assertEqual(objects[names['empty']],{'foreign':b'preserve'});continue
+                invoke('root-empty-create');invoke('root-future-create')
+                if fault=='foreign_object':objects[names['future']]['foreign']=b'preserve'
+                if fault=='changed_bytes':objects[names['future']]['bsq.img']=b'changed'
+                if fault=='foreign_owner':
+                    Path(directory,'.addp-envi-root-buckets.json').write_text(json.dumps(dict(run_id='manager-999-1',buckets=list(names.values()))))
+                with self.assertRaises(ValueError):invoke('root-delete')
+                self.assertIn(names['future'],objects)
+                self.assertEqual(objects['sources'],{'envi/'+k:v for k,v in baseline.items()})
+
+    def root_scope_scenario(self, fault=None):
+        from datetime import datetime,timezone
+        spec=FIXTURE.sources()[0];run_id='manager-42-1'
+        names=FIXTURE.root_bucket_names(run_id)
+        original='bucket/envi/'+spec['name'];future=names['future']+'/'+spec['name']
+        state={'now':1000.,'records':{},'next':0,'future':False,'empty':False,'deleted':False};events=[]
+        def active():return [r for r in state['records'].values() if r['revocation'] is None and (r['expires_at'] is None or datetime.fromisoformat(r['expires_at']).timestamp()>state['now'])]
+        class Authorization:
+            operator='34';recipient='33';engine_id=12;base='/api/v1/system/engines/12'
+            def node_grant(self,target,*,action,recursive,seconds=300):
+                state['next']+=1
+                row=dict(request_id=str(state['next']),catalog_path=copy.deepcopy(target),node_recursive=recursive,
+                    recipient_type='user',recipient_id=self.recipient,action=action,expiry_mode='until_revoked' if seconds is None else 'at_time',
+                    expires_at=None if seconds is None else datetime.fromtimestamp(state['now']+seconds,timezone.utc).isoformat(),
+                    operator_principal_id=self.operator,revocation=None)
+                state['records'][row['request_id']]=row;events.append(('grant',copy.deepcopy(row)));return copy.deepcopy(row)
+            def grant(self,model):
+                row=self.node_grant(dict(version='catalog.path/v1',engine_id=12,segments=[dict(term=t,kind=t,name=n) for t,n in [('service',''),('bucket','bucket'),('prefix','envi'),('object',spec['name'])]]),action='read',recursive=False,seconds=None)
+                saved=state['records'][row['request_id']];saved['item_fingerprint']=model['fingerprint'];return copy.deepcopy(saved)
+            def revoke(self,command):
+                events.append(('revoke',command))
+                if fault=='root_retained' and command=='1':return
+                state['records'][command]['revocation']={'reason':'owned withdrawal'}
+            def cleanup(self):
+                events.append(('cleanup',))
+                for row in active():row['revocation']={'reason':'owned cleanup'}
+        auth=Authorization()
+        def root_active():return any(len(r['catalog_path']['segments'])==1 for r in active())
+        def leaf_active():return any(r.get('item_fingerprint') for r in active())
+        def empty_active():return root_active() or any(r['catalog_path']['segments'][-1]['name']==names['empty'] for r in active())
+        def issuer_request(method,url,statuses,*args):
+            if '/access_grants/history' in url:
+                rows=copy.deepcopy(list(state['records'].values()))
+                if fault=='forged_expiry':
+                    for row in rows:
+                        if row.get('expires_at') and datetime.fromisoformat(row['expires_at']).timestamp()<=state['now']:row['revocation']={'reason':'forged'}
+                if fault=='future_precise' and state['future']:rows.append(dict(request_id='foreign',item_fingerprint=hashlib.sha256(f'12:{future}'.encode()).hexdigest()))
+                return SimpleNamespace(payload={'data':rows,'total':len(rows)+(fault=='truncated_history')})
+            if '/access_grants?' in url:return SimpleNamespace(payload={'data':copy.deepcopy(active()),'total':len(active())})
+            if '/data-items?' in url:return SimpleNamespace(payload={'data':[dict(full_name=original)],'total':1})
+            if '/meta/executions/' in url:
+                empty='empty-scan' in url
+                return SimpleNamespace(payload={'status':'success','triggered_by':35 if fault=='scan_identity' else 34,'scan_context':{'engine_id':12,'scan_depth':'basic'},'metadata':{'items_scanned':int(not empty or fault=='empty_scan_has_item'),'catalog_nodes_scanned':1}})
+            raise AssertionError((method,url))
+        auth.issuer=SimpleNamespace(request=issuer_request)
+        def user_request(method,url,statuses,*args,**kwargs):
+            if url=='/api/v1/manager/engines':return SimpleNamespace(payload={'data':[{'id':12}] if active() else []})
+            if '/meta/resource-tree/' in url:
+                if not active():return SimpleNamespace(payload={'error':'hidden'})
+                leaves=([original]+([future] if state['future'] else [])) if root_active() else ([original] if leaf_active() else [])
+                if fault=='future_leak' and state['future'] and leaf_active() and not root_active():leaves.append(future)
+                children=[]
+                for i,name in enumerate(leaves):children.append(dict(type='object',metadata={'item_id':i+1,'full_name':name},children=[]))
+                if empty_active() and fault!='empty_hidden':children.append(dict(type='bucket',children=[],hasChildren=False,metadata={'full_name':names['empty'],'item_count':int(fault=='empty_item_count')}))
+                return SimpleNamespace(payload={'metadata':{'engine_id':12},'children':children})
+            if '/manager/downloads/file?' in url:
+                name=parse_qs(urlparse(url).query)['locator'][0];ok=root_active() or name==original and leaf_active()
+                if fault=='independent_read' and not root_active():ok=False
+                status=200 if ok else 403
+                if status not in statuses:raise ValueError('unexpected root content status')
+                data=io.BytesIO()
+                if ok:
+                    with zipfile.ZipFile(data,'w',compression=zipfile.ZIP_DEFLATED) as z:
+                        for key,raw in FIXTURE.pair(spec).items():z.writestr(key,raw)
+                if fault=='credential':client.token='changed'
+                return SimpleNamespace(status=status,payload={} if ok else {'error':'denied'},raw=b'wrong' if fault=='bytes' and ok else data.getvalue())
+            raise AssertionError((method,url))
+        client=SimpleNamespace(token='consumer',request=user_request)
+        def find(actor,engine,name,label):
+            return dict(id=2 if name==future else 1,full_name=name,fingerprint=hashlib.sha256(f'{engine}:{name}'.encode()).hexdigest())
+        def physical(action):
+            events.append((action,))
+            if action=='root-empty-create':
+                state['empty']=True
+                if fault=='empty_create':raise RuntimeError('partial empty bucket')
+                return dict(buckets=names,sources_unchanged=True)
+            if action=='root-future-create':
+                self.assertTrue(root_active());state['future']=True
+                if fault=='future_create':raise RuntimeError('partial future bucket')
+                return dict(objects_created=2,sources_unchanged=True)
+            self.assertEqual(action,'root-delete');state['deleted']=True
+            if fault=='cleanup':raise RuntimeError('owned cleanup failed')
+            return dict(root_buckets_removed=True,sources_unchanged=True)
+        def scan(actor,engine,deadline,*,depth,scope):
+            self.assertIs(actor,auth.issuer);self.assertEqual(depth,'basic')
+            self.assertIn(scope,({'catalog_paths':[names['empty']]},{'catalog_paths':[names['future']]}))
+            events.append(('scan',scope));return 'empty-scan' if scope['catalog_paths']==[names['empty']] else 'future-scan'
+        owner=SimpleNamespace(wait_for_meta_scan=scan,find_fixture_item=find,build_item_locator=lambda engine,item:item['full_name'],validate_model_bundle=OWNER.validate_model_bundle)
+        report={}
+        def run():return CASE.verify_minio_engine_root(client,auth,'bucket',spec,owner,physical,180,run_id,clock=lambda:state['now'],sleep=lambda n:state.update(now=state['now']+n),evidence=report)
+        return run,state,events,report,active
+
+    def test_minio_engine_root_covers_new_bucket_and_preserves_independent_item(self):
+        run,state,events,report,active=self.root_scope_scenario();self.assertIs(run(),report)
+        self.assertEqual(report['result'],'passed');self.assertEqual(set(report['checks']),CASE.MINIO_ROOT_CHECKS)
+        self.assertEqual(len(report['checks']),6);self.assertEqual(active(),[]);self.assertTrue(state['deleted'])
+        self.assertTrue(report['same_credential']);self.assertTrue(report['no_future_leaf_grants'])
+        self.assertTrue(report['natural_expiry_without_revocation'])
+        self.assertEqual(report['baseline_names'],['bucket/envi/bsq.img'])
+        self.assertEqual(report['cleanup'],dict(zero_current_source_rules=True,root_buckets_removed=True,sources_unchanged=True))
+        self.assertLess(next(i for i,e in enumerate(events) if e[0]=='grant'),next(i for i,e in enumerate(events) if e[0]=='root-future-create'))
+
+    def test_minio_engine_root_failures_preserve_assertions_and_cleanup(self):
+        phases=dict(empty_hidden='root_navigation',empty_item_count='root_navigation',root_retained='root_withdrawal',
+            future_leak='root_withdrawal',future_precise='future_read',truncated_history='future_read',forged_expiry='natural_expiry',
+            independent_read='root_withdrawal',bytes='future_read',credential='natural_expiry',empty_create='empty_bucket_create',
+            future_create='future_bucket_create',cleanup='natural_expiry',scan_identity='empty_bucket_scan',empty_scan_has_item='empty_bucket_scan')
+        for fault,phase in phases.items():
+            with self.subTest(fault=fault):
+                run,state,events,report,active=self.root_scope_scenario(fault)
+                with self.assertRaises((ValueError,RuntimeError,zipfile.BadZipFile)):run()
+                self.assertEqual(active(),[]);self.assertTrue(state['deleted']);self.assertEqual(report['result'],'failed')
+                self.assertEqual(report['phase'],phase)
+                if fault=='cleanup':self.assertIn('errors',report['cleanup'])
 
     def node_scope_scenario(self, *, failure=None):
         from datetime import datetime, timezone
@@ -205,7 +393,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
                 ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='test-envi',GATEWAY_URL='http://fixture',
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
                 ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
-            with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}):
+            with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=self.complete_root_stage),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}):
                 with self.assertRaisesRegex(RuntimeError,'owned catalog failure'):
                     CASE.run(Path('/repo'),env,owner,physical_runner=physical)
             report=json.loads(Path(directory,'manager-envi.json').read_text())
@@ -214,6 +402,37 @@ class ENVIHostedCaseTest(unittest.TestCase):
         model=events[1][1]
         self.assertEqual(model['fingerprint'],hashlib.sha256(b'12:bucket/envi/bsq.img').hexdigest())
         self.assertEqual([r['role']for r in model['composition']],['raster','header'])
+
+    def test_root_stage_failure_or_incomplete_proof_stops_old_scenes_and_cleans_seed(self):
+        for mode in ('failed','incomplete'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as directory:
+                events=[]
+                class Authorization:
+                    operator='34';recipient='33'
+                    def __init__(self,*a,**k):pass
+                    def cleanup(self):events.append('withdraw')
+                    def grant(self,*a):raise AssertionError('original exact source phase ran after root failure')
+                client=mock.Mock();client.request.return_value=SimpleNamespace(payload=[])
+                owner=SimpleNamespace(GatewayClient=lambda *a:client,positive_int=lambda v,*a:int(v),
+                    REQUIRED_PERMISSIONS=OWNER.REQUIRED_PERMISSIONS,validate_user_identity=lambda *a:{'principal_id':'33'},
+                    wait_for_meta_scan=lambda *a,**k:'initial-scan')
+                def physical(action,*args):
+                    events.append(action)
+                    return {'sources':FIXTURE.sources()} if action=='seed' else dict(objects_removed=True,files_removed=True)
+                def root_stage(*args,**kwargs):
+                    kwargs['evidence'].update(result=mode,phase='root_navigation',checks=[])
+                    if mode=='failed':raise ValueError('root failure')
+                env=dict(ADDP_ONLINE_MANAGER_CASE='native-envi',ADDP_ONLINE_ARTIFACT_DIR=directory,
+                    ADDP_ONLINE_TEST_TENANT_ID='2',ADDP_ONLINE_TEST_RUN_ID='manager-42-1',GATEWAY_URL='http://fixture',
+                    ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
+                    ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
+                with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=root_stage),mock.patch.object(CASE,'verify_minio_node_scope') as old_nodes:
+                    with self.assertRaises(ValueError):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
+                    old_nodes.assert_not_called()
+                report=json.loads(Path(directory,'manager-envi.json').read_text())
+                self.assertEqual(report['stage'],'minio-engine-root');self.assertEqual(report['result'],'failed')
+                self.assertEqual(report['minio_engine_root']['phase'],'root_navigation')
+                self.assertEqual(events,['seed','withdraw','delete'])
 
     def metadata_pair(self,spec,prefix='envi/'):
         expected=[dict(path=prefix+spec['name'],role='raster',primary=True,required=True),dict(path=prefix+spec['header'],role='header',primary=False,required=True)]
@@ -355,7 +574,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
             self.assertIs(environment,env)
             evidence.update(result='passed',cleanup='zero_current_source_rules_and_active_executions')
             events.append(('scoped-refresh',))
-        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}),mock.patch.object(CASE.REFRESH,'run_nfs_refresh',side_effect=refresh):
+        with mock.patch.object(CASE.GRANTS,'ModelSourceAuthorization',Authorization),mock.patch.object(CASE.MEDIA,'run_browser',browser),mock.patch.object(CASE,'verify_minio_engine_root',side_effect=self.complete_root_stage),mock.patch.object(CASE,'verify_minio_node_scope',return_value={}),mock.patch.object(CASE.REFRESH,'run_nfs_refresh',side_effect=refresh):
             if browser_failure:
                 with self.assertRaisesRegex(RuntimeError,'owned browser failure'):CASE.run(Path('/repo'),env,owner,physical_runner=physical)
                 report=json.loads(Path(directory,'manager-envi.json').read_text())
@@ -379,7 +598,8 @@ class ENVIHostedCaseTest(unittest.TestCase):
         for failure in (False,True):
             with self.subTest(failure=failure),tempfile.TemporaryDirectory()as directory:
                 report=self.full_scenario(directory,browser_failure=failure)
-                self.assertEqual(report['schema_version'],'addp.manager-envi/v4')
+                self.assertEqual(report['schema_version'],'addp.manager-envi/v5')
+                self.assertEqual(set(report['minio_engine_root']['checks']),CASE.MINIO_ROOT_CHECKS)
                 self.assertEqual(report['result'],'failed'if failure else 'passed')
                 self.assertEqual(len(report['cases']),6)
                 self.assertTrue(all(c['original_withdrawal_verified']for c in report['cases']))
@@ -503,7 +723,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
         self.assertIn('issuer_permissions=ENVI_INITIALIZER_PERMISSIONS',runner)
         self.assertNotIn('grant.deny(',runner)
         self.assertNotIn('grant.release(',runner)
-        self.assertIn('addp.manager-envi/v4',runner)
+        self.assertIn('addp.manager-envi/v5',runner)
 
     def test_infra_failure_diagnostic_is_owned_bounded_and_redacted(self):
         with tempfile.TemporaryDirectory() as directory:

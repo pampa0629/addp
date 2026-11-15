@@ -184,6 +184,137 @@ def verify_minio_node_scope(client, authorization, engine, bucket, spec, owner, 
             report['result']='failed'
             if failure is None:raise ValueError('MinIO node fixture cleanup failed')
 
+MINIO_ROOT_CHECKS={'engine_without_grants_hidden','root_grant_shows_empty_bucket','root_grant_covers_future_bucket_item',
+    'root_withdrawal_retains_independent_item','last_empty_bucket_withdrawal_hides_engine','root_natural_expiry_hides_navigation'}
+
+
+def verify_minio_engine_root(client,authorization,bucket,spec,owner,physical,timeout,run_id,*,clock=time.time,sleep=time.sleep,evidence=None):
+    """Exercise the existing service root; no leaf expansion or permission changes."""
+    engine=authorization.engine_id;issuer=authorization.issuer;credential=client.token
+    report=evidence if evidence is not None else {}
+    report.update(result='incomplete',checks=[],observations=[],initializer_principal_id=authorization.operator,
+                  recipient_principal_id=authorization.recipient)
+    buckets=FIXTURE.root_bucket_names(run_id)
+    root=dict(version='catalog.path/v1',engine_id=engine,segments=[dict(term='service',kind='service',name='')])
+    empty=dict(root,segments=root['segments']+[dict(term='bucket',kind='bucket',name=buckets['empty'])])
+    original=bucket+'/envi/'+spec['name'];future=buckets['future']+'/'+spec['name']
+    original_model=dict(format='envi',full_name=original,fingerprint=hashlib.sha256(f'{engine}:{original}'.encode()).hexdigest(),
+        composition=[dict(path=original,role='raster',primary=True,required=True),dict(path=bucket+'/envi/'+spec['header'],role='header',primary=False,required=True)])
+    query=urlencode({'recipient_type':'user','recipient_id':authorization.recipient,'page_size':100})
+    def page(path):
+        value=issuer.request('GET',authorization.base+path,(200,)).payload
+        require(isinstance(value,dict) and isinstance(value.get('data'),list)
+                and value.get('total')==len(value['data'])<=100,'complete root authorization page required')
+        return value
+    def zero():require(page('/access_grants?'+query)['total']==0,'root stage retained current source rules')
+    def history(command):
+        rows=[row for row in page('/access_grants/history?'+query)['data'] if row.get('request_id')==command]
+        require(len(rows)==1,'exact root Grant history required')
+        return rows[0]
+    def navigation(visible,leaves=(),show_empty=False,*,narrow=False):
+        engines=client.request('GET','/api/v1/manager/engines',(200,)).payload.get('data')
+        require(isinstance(engines,list) and sum(row.get('id')==engine for row in engines)==int(visible),'MinIO engine visibility differs')
+        tree=client.request('GET',f'/api/v1/meta/resource-tree/{engine}?expand_depth=4',(200,) if visible else (404,)).payload
+        found=[];branches=[];empty_visible=False
+        if visible:
+            require(tree.get('metadata',{}).get('engine_id')==engine,'MinIO tree changed engine')
+            pending=[tree]
+            while pending:
+                row=pending.pop();meta=row.get('metadata',{});name=meta.get('full_name')
+                if meta.get('item_id'):found.append(name)
+                elif name:branches.append(name)
+                if name==buckets['empty']:
+                    require(row.get('type')=='bucket' and row.get('children')==[] and row.get('hasChildren') is False
+                            and meta.get('item_count')==0 and not meta.get('item_id'),'authorized empty MinIO bucket lost its identity')
+                    empty_visible=True
+                pending.extend(row.get('children',[]))
+        else:require(set(tree)<= {'error','error_code'} and tree.get('error'),'hidden MinIO tree disclosed identity')
+        report['observations'].append(dict(visible=visible,leaf_names=found,empty_visible=empty_visible))
+        require(sorted(found)==sorted(leaves) and empty_visible==show_empty,'MinIO root tree omitted authorized resources or leaked another target')
+        if narrow:
+            allowed={buckets['empty']} if show_empty else set()
+            if original in leaves:allowed.update((bucket,bucket+'/envi'))
+            require(set(branches)<=allowed,'MinIO root withdrawal leaked an unauthorized branch')
+    def scan(name,items):
+        execution=owner.wait_for_meta_scan(issuer,engine,time.monotonic()+timeout,depth='basic',scope={'catalog_paths':[name]})
+        row=issuer.request('GET',f'/api/v1/meta/executions/{execution}',(200,)).payload
+        require(row.get('status')=='success' and row.get('triggered_by')==int(authorization.operator)
+                and row.get('scan_context')=={'engine_id':engine,'scan_depth':'basic'}
+                and row.get('metadata',{}).get('items_scanned')==items and row.get('metadata',{}).get('catalog_nodes_scanned')==1,
+                'MinIO root basic scan changed its identity or scope')
+        return execution
+    def download(item,status):
+        response=client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':owner.build_item_locator(engine,item)}),(status,))
+        observed=dict(item_id=item['id'],full_name=item['full_name'],status=status)
+        if status==200:observed['bundle']=owner.validate_model_bundle(response.raw,spec['members'])
+        else:require(isinstance(response.payload,dict) and set(response.payload)<= {'error','error_code'}
+                and response.payload.get('error'),'root denial leaked content')
+        report.setdefault('downloads',[]).append(observed)
+    created=False;failure=None
+    try:
+        report['phase']='initial_visibility';zero();navigation(False);report['checks'].append('engine_without_grants_hidden')
+        report['phase']='empty_bucket_create';created=True
+        require(physical('root-empty-create')==dict(buckets=buckets,sources_unchanged=True),'empty root bucket creation differs')
+        report['phase']='empty_bucket_scan';report['empty_scan_execution']=scan(buckets['empty'],0)
+        inventory=page('/data-items?page_size=100');baseline=[row['full_name'] for row in inventory['data']]
+        require(original in baseline and future not in baseline,'root future item already identified')
+        report['baseline_names']=list(baseline)
+        report['phase']='root_issuance';grant=authorization.node_grant(root,action='read',recursive=True,seconds=None);report['root_grant']=grant['request_id']
+        item=owner.find_fixture_item(client,engine,original,'MinIO root original ENVI')
+        report['phase']='root_navigation';navigation(True,baseline,True);report['checks'].append('root_grant_shows_empty_bucket')
+        report['phase']='future_bucket_create';require(physical('root-future-create')==dict(objects_created=2,sources_unchanged=True),'future root pair creation differs')
+        report['phase']='future_bucket_scan';report['future_scan_execution']=scan(buckets['future'],1)
+        new_item=owner.find_fixture_item(client,engine,future,'MinIO root future ENVI')
+        report['phase']='future_read';download(new_item,200)
+        require(not any(row.get('item_fingerprint')==new_item['fingerprint'] for row in page('/access_grants/history?'+query)['data']),
+                'future root item acquired an exact Grant')
+        report['no_future_leaf_grants']=True;baseline.append(future);navigation(True,baseline,True)
+        report['checks'].append('root_grant_covers_future_bucket_item')
+        report['phase']='independent_sources';empty_grant=authorization.node_grant(empty,action='metadata_read',recursive=False,seconds=None)
+        leaf=authorization.grant(original_model);saved=history(leaf['request_id'])
+        report.update(empty_grant=empty_grant['request_id'],independent_grant=leaf['request_id'])
+        report['phase']='root_withdrawal';authorization.revoke(grant['request_id'])
+        require(history(grant['request_id']).get('revocation') is not None,'root withdrawal history missing')
+        navigation(True,[original],True,narrow=True);download(item,200);download(new_item,403)
+        require(history(leaf['request_id'])==saved,'root withdrawal changed the independent item history')
+        report['checks'].append('root_withdrawal_retains_independent_item')
+        report['phase']='last_empty_withdrawal';authorization.revoke(leaf['request_id']);navigation(True,[],True,narrow=True)
+        authorization.revoke(empty_grant['request_id']);navigation(False);report['checks'].append('last_empty_bucket_withdrawal_hides_engine')
+        report['phase']='natural_expiry';expiring=authorization.node_grant(root,action='read',recursive=True,seconds=45)
+        report['expiry_grant']=expiring['request_id'];navigation(True,baseline,True);download(new_item,200)
+        expires=datetime.fromisoformat(expiring['expires_at'].replace('Z','+00:00')).timestamp()
+        require(0<expires-clock()<=45,'root expiry exceeded its fixed window')
+        while True:
+            remaining=expires-clock()
+            if remaining<0:break
+            sleep(min(.2,remaining+.01))
+        download(new_item,403);expired=history(expiring['request_id'])
+        require(expired.get('revocation') is None and all(expired.get(k)==expiring[k] for k in
+                ('catalog_path','node_recursive','recipient_type','recipient_id','action','expiry_mode','expires_at','operator_principal_id')),
+                'root expiry changed its history or became a withdrawal')
+        navigation(False);require(client.token==credential,'MinIO root stage changed credential')
+        report.update(same_credential=True,natural_expiry_without_revocation=True)
+        report['checks'].append('root_natural_expiry_hides_navigation')
+        require(len(report['checks'])==len(MINIO_ROOT_CHECKS) and set(report['checks'])==MINIO_ROOT_CHECKS,'root checks incomplete')
+        report['result']='passed';return report
+    except BaseException as error:
+        failure=error;report.update(result='failed',error_type=type(error).__name__);raise
+    finally:
+        cleanup={};errors=[]
+        try:authorization.cleanup();zero();cleanup['zero_current_source_rules']=True
+        except Exception as error:errors.append(dict(stage='authorization',error_type=type(error).__name__))
+        if created:
+            try:
+                physical_cleanup=physical('root-delete')
+                require(physical_cleanup==dict(root_buckets_removed=True,sources_unchanged=True),'root physical cleanup incomplete')
+                cleanup.update(physical_cleanup)
+            except Exception as error:errors.append(dict(stage='buckets',error_type=type(error).__name__))
+        report['cleanup']=cleanup
+        if errors:
+            cleanup['errors']=errors;report['result']='failed'
+            if failure is None:raise ValueError('MinIO root cleanup failed')
+
+
 def run(repository,environment,owner,*,physical_runner=None,browser_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE')=='native-envi','independent ENVI case required')
     physical=physical_runner or (lambda action,request=None:FIXTURE.physical(action,repository,environment,request))
@@ -191,7 +322,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     identity=owner.validate_user_identity(client,tenant)
     issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
-    report=dict(source_authorization={'grants':[]},schema_version='addp.manager-envi/v4',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
+    report=dict(source_authorization={'grants':[]},schema_version='addp.manager-envi/v5',case='native-envi',run_id=environment['ADDP_ONLINE_TEST_RUN_ID'],result='incomplete',identity=identity,cases=[],cleanup={})
     grants=[];fixtures=[];seeded=False;stage='seed';failure=None
     timeout=float(environment.get('ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS','180'))
     try:
@@ -209,6 +340,12 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 report.setdefault('source_scans',[]).append(dict(storage=storage,engine_id=engine,phase=phase,catalog_paths=[prefix+'envi'],principal_id=grant.operator if storage=='nfs' else grant.recipient,execution_id=execution))
             stage='scan';scan_source('initial')
             if storage=='minio':
+                stage='minio-engine-root'
+                root_report=report['minio_engine_root']={}
+                verify_minio_engine_root(client,grant,environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET'],seed['sources'][0],
+                    owner,physical,timeout,report['run_id'],evidence=root_report)
+                require(root_report.get('result')=='passed' and len(root_report.get('checks',[]))==len(MINIO_ROOT_CHECKS)
+                        and set(root_report['checks'])==MINIO_ROOT_CHECKS,'MinIO engine root evidence incomplete')
                 stage='minio-node-scope'
                 # Retain partial evidence even when the new scope scenario fails.
                 node_report=report['minio_node_scope']=dict(checks={},commands=[],cleanup={})
