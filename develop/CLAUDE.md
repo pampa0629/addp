@@ -558,6 +558,9 @@ curl -H "Authorization: Bearer <token>" \
 | Query／Workflow 监督器、过程事件和 Notebook 排队缺口 | [2026-10-13 阶段记录及 10-15 状态核对](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#2026-10-13-执行监督器第一期工作区验证尚未发布) |
 | 图查询工作台旧 v3 验收契约 | [原五 Permission 与浏览器覆盖要求](../docs/spec/testing/evidence/引擎与空间计算历史证据.md#develop-图查询工作台旧-v3-验收契约记录) |
 | 保护拒绝诊断、原值历史与角色资格／导出 | [Develop 查询保护历史记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#develop-查询保护与导出历史记录) |
+| 本机拒绝诊断 | [专题原记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#develop-保护拒绝诊断本机记录)；源码 `23754bafa`；本机观察与 CI 分项分别认定，聚合门禁超时保留，不计 Hosted T4。 |
+| 默认脱敏 Hosted v6 | [专题原记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#develop-默认脱敏-hosted-v6)；源码 `293fdafe2`，[Run 39041158723／Job 117420768709](https://github.com/pampa0629/addp/actions/runs/39041158723/job/117420768709)；到期／撤权后的历史与本机构建 `53be389c5` 的补充核验分开查阅。 |
+| 角色资格与导出 | [专题原记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#develop-角色资格与导出确定性及受控页面)；SQL／MQL 的确定性／受控页面证据；自然到期、409 和真实 T4 未覆盖边界见正文，未列源码／Job 不补推。 |
 
 各记录的源码或原工作区、失败与修复、清理及未覆盖项分别认定；旧契约、排队或分项结果不代表当前 HEAD、完整 T4 或生产验收通过。
 
