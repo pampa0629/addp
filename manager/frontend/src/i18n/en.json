@@ -224,6 +224,8 @@
       "versionConflict": "The configuration changed elsewhere and has been reloaded"
     },
     "segmentationTask": {
+      "baseName": "Base filename",
+      "uniqueResultHint": "Each execution adds a unique identifier and saves a separate result.",
       "text": "Text prompt",
       "target": "Result storage",
       "folder": "Subdirectory (optional)",

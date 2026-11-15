@@ -224,6 +224,8 @@
       "versionConflict": "配置已被其他操作者更新，已重新加载"
     },
     "segmentationTask": {
+      "baseName": "基础文件名",
+      "uniqueResultHint": "每次执行自动追加唯一标识，分别保存结果。",
       "text": "文字提示",
       "target": "结果存储位置",
       "folder": "子目录（可选）",

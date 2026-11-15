@@ -10,7 +10,10 @@
         <ResourceTreePicker v-model="target" mode="node" :initial-locator="initialTarget" :engine-filter="isBusinessMinIO" :selectable-filter="isObjectParent" tree-height="220px" />
       </el-form-item>
       <el-form-item :label="t('manager.segmentationTask.folder')"><el-input v-model="form.folder" /></el-form-item>
-      <el-form-item :label="t('manager.derivedTasks.resultName')"><el-input v-model="form.fileName"><template #append>.geojson</template></el-input></el-form-item>
+      <el-form-item :label="t('manager.segmentationTask.baseName')">
+        <el-input v-model="form.fileName"><template #append>.geojson</template></el-input>
+        <el-text type="info">{{ t('manager.segmentationTask.uniqueResultHint') }}</el-text>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="open = false">{{ t('common.cancel') }}</el-button>
