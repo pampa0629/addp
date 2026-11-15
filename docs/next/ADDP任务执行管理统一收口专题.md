@@ -2,7 +2,7 @@
 
 更新时间：2026-11-15
 
-**当前状态：公共执行、Graph 基础持久运行、十个 Cleanup Owner 及安全读取已接线。Common／System 父子 PG、Graph 已列竞争与原 scan 比对、最近执行导航及共享前端独立 Linux 检查已有固定源码通过证据；Manager 三项、Transfer 三项原生清理及后继 Kafka／CDC 整套验收已分别通过。剩余为第六节列明的专用测试缺口、真实验收与待讨论操作；Manager 迟到 writer 未 Hosted，正式用户阶段追踪仍保留 causal-link 首失败。第九节 runner／私有清理台账、本机专项与相关 Linux 已补齐；2026-11-15 单次实跑在第一组成功样本的 HTTP 503 停止，未进入 causal-link 和三状态导航；后继真实运行仍须单独确认。Graph 高级恢复继续暂缓。**
+**当前状态：公共执行、Graph 基础持久运行、十个 Cleanup Owner 及安全读取已接线。Common／System 父子 PG、Graph 已列竞争与原 scan 比对、最近执行导航及共享前端独立 Linux 检查已有固定源码通过证据；Manager 三项、Transfer 三项原生清理及后继 Kafka／CDC 整套验收已分别通过。剩余为第六节列明的专用测试缺口、真实验收与待讨论操作；Manager 迟到 writer 未 Hosted，正式用户阶段追踪仍保留 causal-link 首失败。第九节 runner／私有清理台账、本机专项与相关 Linux 已补齐；2026-11-15 两次获批窗口分别止于成功样本 HTTP 503 和首个产品镜像的 APT 构建失败，均未进入 causal-link 和三状态导航；前置请求安全诊断及对应Linux已通过，后继真实运行仍须单独确认。Graph 高级恢复继续暂缓。**
 
 本专题保留当前方案、已确认边界、关键证据及剩余工作。逐轮排队快照、命令流水、临时测试计数和重复失败过程已合并；历史原件沿固定提交、GitHub Run／Job 和原有私有证据目录追溯。整理不改变契约，也不将历史失败或未运行项改记为通过。
 
@@ -173,8 +173,8 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 | 顺序／性质 | 剩余事项与定位 | 下一交付及关闭条件 |
 | --- | --- | --- |
-| 1／诊断与Linux已补，待单次真实复验 | 最近执行（pending／running／success）到 Monitor、Develop 结果与同次回跳。runner、私有台账、确定性及 Linux 已完成；§9.8 单次实跑止于原成功样本 HTTP 503，新导航未开始 | 已补既有请求的固定操作及封闭失败类别，见9.9；不增加请求、等待、候选、权限或预算。本机及固定源码Linux已通过，再单独核准后继真实窗口 |
-| 2／待单次真实运行 | 正式用户阶段追踪：`25a62c07c` 的 causal-link 分步诊断、首失败落盘及对应 Linux 已完成；此前实跑停在 causal-link，精确原因未知；§9.8 本轮前置 HTTP 503，未重到该阶段 | 原两组样本、四身份、11 项业务权限、采样、预算和清理不变；新的真实窗口单独确认，先读首失败再决定修复，不从合成用例宣称根因解决 |
+| 1／诊断与Linux已补，待单次真实复验 | 最近执行（pending／running／success）到 Monitor、Develop 结果与同次回跳。runner、私有台账、确定性及 Linux 已完成；§9.8 止于原成功样本 HTTP 503；携带诊断的§9.10窗口更早止于APT镜像构建，新导航均未开始 | 已补既有请求的固定操作及封闭失败类别，见9.9；不增加请求、等待、候选、权限或预算。本机及固定源码Linux已通过；先收敛同次APT失败的安全证据缺口，再单独核准后继真实窗口 |
+| 2／待单次真实运行 | 正式用户阶段追踪：`25a62c07c` 的 causal-link 分步诊断、首失败落盘及对应 Linux 已完成；此前实跑停在 causal-link，精确原因未知；§9.8／9.10分别前置HTTP 503和构建失败，均未重到该阶段 | 原两组样本、四身份、11 项业务权限、采样、预算和清理不变；新的真实窗口单独确认，先读首失败再决定修复，不从合成用例宣称根因解决 |
 | 3／基础 PG 缺口 | C2j／C3 其它跨类与外键锁排列；C4 新建图配置在目标核验与提交间的窗口、其它最终事务竞争。`KnowledgeGraphService.Create` 先解析／探测目标，`KnowledgeGraphRepository.Create` 直接插入；现有删除、入队与 scan 漂移用例不覆盖此窗口 | 下一小切片先明确新图与同目标关闭的准入关系，真实双连接 PG 验证两序及回滚；若需要新增 Engine／Graph 跨模块提交权威先讨论。目标重绑、deleting 显式重评估／确认同样是待设计事项，不从现有 execute／Restore 推导可用 |
 | 4／消费者 T3 与读取 PG 缺口 | C5g／h／k／l 的 Cleanup 专用组合仍未齐。System 已有 503、非法 attempt、迟到专业响应和身份切换；Monitor 已有 closed pending 清除及通用 401／403／404／503 失效，不能把这些当作全部 Cleanup 组合 | 补父详情撤权 404 且不自动补查子、closed pending→Owner 合法拒绝／running 矛盾的整体替换、空／省略／非法／隐藏计数区别和两消费者双语展示。C5e 的 claim 未提交跨截止、C5j 的 HTTP 裁决后新增未裁决 Owner 仍缺专用真实 PG；复用现有共享组件与标准入口 |
 | 5／待单次 Hosted | Manager late writer 的 runner、12 类反例与 `9cd0b267d` Linux 408 项已完成；§8.44 尚无该 case 的真实通过记录 | 单独确认后按原 11 项、权限／预算／精确资源及控制恢复／零残留验收；不重跑已通过的 success／object／index 三项 |
@@ -711,7 +711,7 @@ Job原始日志、固定源码／用例清单及核验摘要留在`/tmp/addp-25a
 1. **方案已确认，本轮只实施 runner 与确定性门禁。** 新增六定义／七次提交、20秒只读夹具、120秒导航观察及请求上限、4 KiB私有清理台账均沿本节；原权限、查询timeout、并发策略、资源／整轮／浏览器／采样预算不变。新的真实运行另行确认。
 2. **已实施并验证。** 沿现有host／业务／浏览器实现新增阶段、唯一规范的私有导航输入及封闭报告，不保留旧schema兼容路线。补输入拒绝、样本归属、额度前置、旧success不替代、非终态窗口丢失、预算不足、受理不明、首失败与精确清理的确定性回归。先证明固定SQL经过当前preflight／Provider契约，不靠实际窗口试错后放宽。
 3. **已接线并取得 Linux 证据。** 更新原 `OWN_INPUTS`、输入摘要与在线登记的真实闭包，包含新消费的TaskManagement／ExecutionDetail、共享Monitor导航／return_to、Console iframe／路由、fixture及相关依赖声明；复用原自动选择，不增workflow或复制测试入口。沿 `make test-monitor-traces-local-runner`、`make test-console-frontend`、`make test-develop-frontend` 及实际受影响的登记／共享门禁验证并提交，跟进相关Linux实际执行结果；不将跳过或旧输入通过计为新方案通过。
-4. **本轮单次授权已使用，见9.8；后继真实运行未授权。** 后继仍需核准固定源码、完整输入摘要、身份／样本／调用与预算、资源归属及清理清单供**单次真实运行确认**。本方案不是运行授权；不得自动新开窗口、Hosted、环境切换、重启个人服务或追加下一轮。Graph高级恢复继续暂缓。
+4. **9.8／9.10两次单次授权均已使用；后继真实运行未授权。** 后继仍需核准固定源码、完整输入摘要、身份／样本／调用与预算、资源归属及清理清单供**单次真实运行确认**。本方案不是运行授权；不得自动新开窗口、Hosted、环境切换、重启个人服务或追加下一轮。Graph高级恢复继续暂缓。
 
 
 ### 9.7 本轮实施与证据边界
@@ -738,7 +738,7 @@ Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的当前 Pr
 
 跳过单列：`fd0fcad58` 的 Develop Job 132484137460 为 `selected: false`，不计一次通过；已核对两次源码之间 `develop/frontend/` 与 `common-frontend/` 无变化，保留前一 SHA 的实际全量证据。`e145319cd` 的本次五个相关 Job 同样均到实际成功终态；不扩大为其它 Job 或整条 Platform CI 通过。
 
-本批开发与确定性／Linux 缺口已关闭，不外推为真实验收通过；后继获批单次窗口的实际结果见9.8。Graph 高级恢复继续暂缓，不重启个人服务、不触发 Hosted，也不自动追加真实运行。
+本批开发与确定性／Linux 缺口已关闭，不外推为真实验收通过；后继获批窗口的实际结果见9.8及9.10。Graph 高级恢复继续暂缓，不重启个人服务、不触发 Hosted，也不自动追加真实运行。
 
 
 ### 9.8 单次本机隔离实跑：成功样本前置 HTTP 503（2026-11-15）
@@ -759,4 +759,14 @@ Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的当前 Pr
 
 本批只补诊断和门禁，不修猜测的503根因，不重跑真实窗口；§9.8首失败原件保持。标准入口为 `make test-monitor-traces-local-runner`，已由既有Execution runner路径选择和 `make test-execution-online-ci-runner`接入，无需新增入口或Job。本机隔离检出已完整通过该标准入口：登记28＋158项及一致性检查、导航Node 16项、专项Python 240项（含本批五项）、System身份夹具及Develop只读准备用例，语法检查通过。初次无Git索引的归档副本在登记检查失败，已保留日志，不计通过；改用隔离Git检出后完整退出0。
 
-固定源码 `f4f8d0fb1a123b06d98029f290386f948ab5794e` 的 [Linux Execution runner 43673678196／132689047896](https://github.com/pampa0629/addp/actions/runs/43673678196/job/132689047896) 已实际成功终态，`selected: true`；原始Job日志逐项确认新增五项均ok、专项240项、导航16项、登记28＋158项及上述Go夹具通过，不扩大为整条Platform CI通过。发布源码与已验证65项输入逐项相等，合并SHA-256为 `c7370ba9d4e0a49c5b6571a90a2c2e635a506d777f17d803a6232a7f1fbd6f50`；本机／Linux原件及输入清单位于 `/tmp/addp-bounded-request-validation-ipk0a92o/`。原causal-link和三状态导航仍待另行确认的真实验收，本轮未追加实跑。
+固定源码 `f4f8d0fb1a123b06d98029f290386f948ab5794e` 的 [Linux Execution runner 43673678196／132689047896](https://github.com/pampa0629/addp/actions/runs/43673678196/job/132689047896) 已实际成功终态，`selected: true`；原始Job日志逐项确认新增五项均ok、专项240项、导航16项、登记28＋158项及上述Go夹具通过，不扩大为整条Platform CI通过。发布源码与已验证65项输入逐项相等，合并SHA-256为 `c7370ba9d4e0a49c5b6571a90a2c2e635a506d777f17d803a6232a7f1fbd6f50`；本机／Linux原件及输入清单位于 `/tmp/addp-bounded-request-validation-ipk0a92o/`。该诊断开发批未实跑；后继获批单次窗口见9.10，原causal-link和三状态导航仍未复验。
+
+### 9.10 携带诊断的单次实跑：首个产品镜像 APT 失败（2026-11-15）
+
+北京时间17:29:58—17:37:32，唯一调用 `make test-monitor-traces-local`，使用9.9的固定源码 `f4f8d0fb1` 与65项摘要；仓库外干净检出的main准确指向该完整SHA，运行前后文件哈希均一致，共享工作区的后继提交及其他会话改动保留。run 为 `addp-trace-local-1215186d58704e9fbfa85d5d3c4c36ad`，耗时453.521秒，Make退出2，总报告failed；未追加窗口、重启个人服务或触发Hosted。
+
+**首失败：** `product_image_system_backend`／`command_failed_2`。同次BuildKit封闭诊断指向 `system/backend/Dockerfile.prebuilt:3` 的APT安装步骤：`phase=index_download`、`error_kinds=[signature,download]`、`signature_kinds=[unsigned_repository]`，该RUN进程退出100。源类别为原HTTP Debian bookworm／updates／security；基础镜像摘要为 `sha256:9b67294679b30e5d6ab257b40594feeb4a4b81f7fcf4131f4decf0d6a212a9b0`。代理来源记录为Docker info提供的desktop_internal和宿主CLI的loopback，但未取得HTTP状态或可确认的失败操作／端点，不能推断代理或签名故障的更深层根因。原输出仅留SHA-256 `028ea67fcad21d9bbc045ecd3c025f024fdfae190ff670375afe1867a34a8193`，不补造已随退出销毁的原始构建日志。
+
+**覆盖边界：** 凭据16步完成，独占依赖已就绪；入口已走完原生编译及Go缓存回收，首个产品镜像即失败。未进入产品部署、正式身份登录／AuthContext、成功／失败业务样本、causal-link或三状态导航；本轮没有HTTP 503或新增请求诊断的真实复验结论。构建异常时原总报告尚未写入input_sha256表，保持原件不补填；固定源码与65项运行前后核对另留独立清单。资源守卫111份完整样本，无守卫失败；累计CPU硬限峰值7.45、内存硬限8576 MiB，计量占用峰值3642957824字节（约3.393 GiB），硬限不代表实际CPU／内存使用率。
+
+**清理与下一步：** 原入口外层清理回执通过，独立只读核验本轮容器／网络／卷、builder容器／状态卷、镜像标签和运行目录均0；业务层未进入，不以外层清零替代定义删除、登出或导航清理验收。30个既有证据文件哈希全部未变。本轮证据 `/tmp/addp-bounded-query-real-20261115-re92xu6m/`（目录0700／文件0600）保留preflight、65项清单、唯一调用／退出、原window.json／run.log及独立audit.json；原报告SHA-256为 `eca427e7736e2900b04323e81cb850c25cf539410b9b834ddadd3de5c65b0464`，固定源码检出继续保留。下一小切片建议先明确同次APT失败的有界安全取证，沿原源、代理与签名契约补齐可验证的前序下载／签名原因；确定性门禁通过后，再单独确认真实窗口。
