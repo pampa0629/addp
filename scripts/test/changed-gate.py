@@ -200,6 +200,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if "orchestrator" in roots:
         affected.add("quality")
 
+    # Console's preview permission gate mounts the real Manager iframe.
+    if any(path.startswith("manager/frontend/") for path in files):
+        affected.add("console")
+
     # Console's iframe browser gate mounts the real Service query editor.
     if any(path.startswith("service/frontend/") for path in files):
         affected.add("console")

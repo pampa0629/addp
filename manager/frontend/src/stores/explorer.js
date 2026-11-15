@@ -10,6 +10,7 @@ import {
   withTransientRetry
 } from '@addp/common-frontend'
 import client from '@/api/client'
+import { previewFailureFromError } from '@/utils/previewFailure'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { mergeAncestorChainIntoResourceTree, mergeResourceNodeFacts } from '@/utils/tileCacheResourceTree'
 
@@ -600,21 +601,8 @@ export const useExplorerStore = defineStore('explorer', {
         return this.previewData
       } catch (error) {
         if (!isCurrentRequest()) return null
-        const status = error.response?.status || 0
-        const errorCode = error.response?.data?.error_code
-        let timeoutReason = ''
-        if (status === 504) {
-          timeoutReason = errorCode === 'preview_connection_acquisition_timeout' ? 'connection_acquisition_timeout'
-            : errorCode === 'preview_sql_execution_timeout' ? 'sql_execution_timeout' : 'timeout'
-        } else if (!status && ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code)) {
-          timeoutReason = 'timeout'
-        }
-        this.previewError = {
-          status,
-          code: typeof errorCode === 'string' ? errorCode : '',
-          ...(timeoutReason ? { timeoutReason } : {})
-        }
-        if (timeoutReason) return null
+        this.previewError = previewFailureFromError(error)
+        if (this.previewError.timeoutReason) return null
         console.error('加载预览失败:', error)
         throw error
       } finally {

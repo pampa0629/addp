@@ -1553,6 +1553,10 @@
         }
       },
       "previewFailure": {
+        "inaccessible": {
+          "title": "无法访问该资源",
+          "description": "资源可能已移除，或你暂无查看权限。请核对链接或联系管理员。"
+        },
         "sourceRefresh": {
           "title": "请刷新元数据后继续预览",
           "description": "源文件已变化或读取索引缺少源版本信息。请刷新当前数据项的元数据，重建索引后再预览。"

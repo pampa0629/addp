@@ -20,7 +20,7 @@ function tinyTIFF() {
   bytes[200] = 32; bytes[201] = 224
   return bytes
 }
-async function install(page, locale, { delayedCapability } = {}) {
+async function install(page, locale, { delayedCapability, resolvedBeforeDenial = false } = {}) {
   const state = { access: 'metadata', requests: [], writes: [], released: false }
   const raw = tinyTIFF()
   const context = { type: 'tenant', tenant_id: '1' }
@@ -40,9 +40,12 @@ async function install(page, locale, { delayedCapability } = {}) {
         'manager.derived_artifact.read', 'manager.derived_artifact.create'] }] } })
     if (method !== 'GET') { state.writes.push({ method, path }); return json({ error: 'unexpected mutation' }, 403) }
     if (path === '/api/v1/manager/engines') return json({ data: [{ id: 9, name: 'Metadata NFS', engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online' }] })
-    if (path.endsWith('/ancestors')) return json({ target_locator: LOCATOR, ancestors: [root, node] })
-    if (path.endsWith('/node')) return json({ parent_locator: ROOT, children: [node] })
-    if (path === '/api/v1/meta/resource-tree/9') return json(root)
+    if (path.endsWith('/ancestors')) {
+      if (state.access === 'none' && !resolvedBeforeDenial) return json({ error: 'node not found' }, 404)
+      return json({ target_locator: LOCATOR, ancestors: [root, node] })
+    }
+    if (path.endsWith('/node')) return json({ parent_locator: ROOT, children: state.access === 'none' && !resolvedBeforeDenial ? [] : [node] })
+    if (path === '/api/v1/meta/resource-tree/9') return json(state.access === 'none' && !resolvedBeforeDenial ? { ...root, hasChildren: false, children: [] } : root)
     if (path === '/api/v1/meta/items/1') return state.access === 'none' ? json({ error: 'hidden' }, 404) : json({ id: 1, ...itemMeta, attributes: attrs })
     if (path === '/api/v1/manager/resource-actions') {
       // A former read capability must not override the current metadata-only preview.
@@ -146,3 +149,33 @@ test('late read capability cannot restore content after a metadata downgrade', a
   expect(contentRequests(state).filter(r => r.access === 'metadata')).toEqual([])
   expect(state.writes).toEqual([])
 })
+
+for (const locale of ['zh-cn', 'en']) for (const boundary of ['ancestors', 'preview']) {
+  test(`${locale}: ${boundary} 404 has a persistent safe resource message in Console`, async ({ page }) => {
+    // In the preview case the navigation facts resolved before the target became unavailable.
+    const state = await install(page, locale, { resolvedBeforeDenial: boundary === 'preview' })
+    state.access = 'none'
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(LOCATOR)}`)
+    const manager = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const failure = manager.getByTestId('preview-failure')
+    await expect(failure).toBeVisible()
+    await expect(failure).toContainText(locale === 'zh-cn' ? '无法访问该资源' : 'Resource unavailable')
+    await expect(failure).toContainText(locale === 'zh-cn' ? '资源可能已移除，或你暂无查看权限' : 'may have been removed, or you may not have permission')
+    await expect(manager.locator('.el-message--error')).toHaveCount(0)
+    await expect(manager.getByText(locale === 'zh-cn' ? '请选择数据进行预览' : 'Select data to preview', { exact: true })).toHaveCount(0)
+    await expect(manager.locator('.preview-content, .panel-actions, .attributes-panel')).toHaveCount(0)
+    expect(state.requests.some(r => r.path.endsWith('/manager/preview'))).toBe(boundary === 'preview')
+    expect(contentRequests(state)).toEqual([])
+    expect(state.writes).toEqual([])
+    if (boundary === 'ancestors') {
+      await expect(manager.getByText(NAME, { exact: true })).toHaveCount(0)
+      await manager.locator('.el-tree-node__content').filter({ hasText: /^\s*Metadata NFS\s*$/ }).click()
+      await expect(failure).toHaveCount(0)
+    } else {
+      state.access = 'metadata'
+      await manager.getByText(NAME, { exact: true }).click()
+      await metadataOnly(manager, locale === 'zh-cn' ? '仅可查看元数据' : 'Metadata access only')
+      await expect(failure).toHaveCount(0)
+    }
+  })
+}

@@ -319,16 +319,12 @@
       </div>
     </template>
 
-    <!-- 无选择节点 -->
-    <div v-if="!selectedNode" class="empty-state">
-      <el-empty :description="t('manager.explorer.selectDataToPreview')" />
-    </div>
-
     <!-- 请求失败不是空数据；持久展示直到重新请求或改选资源。 -->
-    <div v-else-if="store.previewError" class="empty-state" role="alert" data-testid="preview-failure">
-      <el-empty :description="previewFailureText.title">
-        <p>{{ previewFailureText.description }}</p>
-      </el-empty>
+    <PreviewFailure v-if="store.previewError" :failure="store.previewError" />
+
+    <!-- 无选择节点 -->
+    <div v-else-if="!selectedNode" class="empty-state">
+      <el-empty :description="t('manager.explorer.selectDataToPreview')" />
     </div>
 
     <!-- 等待预览响应或暂无预览数据 -->
@@ -536,6 +532,7 @@ import { StaticTrajectoryPreview } from '@common-ui-map'
 import { canPreviewStaticTrajectory, readStaticTrajectoryTable } from '@/utils/staticTrajectoryPreview'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
+import PreviewFailure from './PreviewFailure.vue'
 import MAXConversionOptions from '@/components/tasks/MAXConversionOptions.vue'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
@@ -629,28 +626,7 @@ const props = defineProps({
 
 const emit = defineEmits(['page-change', 'navigate', 'child-change', 'item-refreshed'])
 const store = useExplorerStore()
-const previewFailureKind = computed(() => {
-  const status = store.previewError?.status
-  if (status === 409 && store.previewError.code === 'preview_source_refresh_required') return 'sourceRefresh'
-  if (status === 503 && store.previewError.code === 'preview_source_unavailable') return 'sourceUnavailable'
-  if (status === 422 && store.previewError.code === 'preview_text_encoding_invalid') return 'textEncoding'
-  if (status === 403) {
-    return store.previewError.code === 'security_protection_required' ? 'protected' : 'forbidden'
-  }
-  if (status === 0 || [502, 503, 504].includes(status)) return 'unavailable'
-  return 'failed'
-})
-const previewFailureText = computed(() => {
-  const reason = store.previewError?.timeoutReason
-  if (reason) {
-    return {
-      title: t(`common.executionFailure.reasons.${reason}`),
-      description: t(`common.executionFailure.actions.${reason}`)
-    }
-  }
-  const key = `manager.explorer.previewFailure.${previewFailureKind.value}`
-  return { title: t(`${key}.title`), description: t(`${key}.description`) }
-})
+
 const activeMultiRefPath = ref('')
 const activeGraphSampleKey = ref('')
 const activeGraphSampleKind = ref('')

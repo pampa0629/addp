@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useExplorerStore } from '../../src/stores/explorer'
@@ -11,12 +12,23 @@ const preview = { mode: 'table', columns: ['id'], rows: [{ id: 1 }], total: 1 }
 const failure = status => ({ response: { status, data: { error: 'request refused' } } })
 
 describe('explorer preview failure state', () => {
+  it('uses one preview failure renderer for resource location and content preview', () => {
+    const consumers = ['views/DataExplorer.vue', 'components/explorer/PreviewPanel.vue']
+    for (const path of consumers) {
+      const source = readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8')
+      expect(source).toMatch(/import PreviewFailure from ['"][^'"]*PreviewFailure.vue['"]/)
+      expect(source).toContain('<PreviewFailure ')
+      expect(source).not.toContain('const previewFailureKind =')
+      expect(source).not.toContain('const previewFailureText =')
+    }
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
   })
 
-  it.each([403, 500, 503])('keeps HTTP %s distinct from an empty preview and clears old data', async status => {
+  it.each([403, 404, 500, 503])('keeps HTTP %s distinct from an empty preview and clears old data', async status => {
     const store = useExplorerStore()
     store.previewData = preview
     mocks.get.mockRejectedValueOnce(failure(status))

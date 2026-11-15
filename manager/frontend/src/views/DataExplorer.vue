@@ -29,7 +29,8 @@
 
       <!-- 右侧预览面板（独立滚动容器） -->
       <div class="preview-container">
-        <div v-if="selectedEngineUnavailable" class="engine-unavailable-panel">
+        <PreviewFailure v-if="locatorFailure" :failure="locatorFailure" />
+        <div v-else-if="selectedEngineUnavailable" class="engine-unavailable-panel">
           <el-alert
             :title="t('manager.explorer.engineUnavailableTitle')"
             type="warning"
@@ -106,6 +107,8 @@ import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
 import EnginePanel from '@/components/explorer/EnginePanel.vue'
 import NodePanel from '@/components/explorer/NodePanel.vue'
 import ItemPanel from '@/components/explorer/ItemPanel.vue'
+import PreviewFailure from '@/components/explorer/PreviewFailure.vue'
+import { previewFailureFromError } from '@/utils/previewFailure'
 import Splitter from '@/components/explorer/Splitter.vue'
 import { openConsoleRoute, useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
@@ -133,6 +136,10 @@ function startTreeResize(event) {
 const route = useRoute()
 const router = useRouter()
 const store = useExplorerStore()
+const locatorFailure = ref(null)
+const recordPreviewFailure = (error) => {
+  if (!store.previewError) locatorFailure.value = previewFailureFromError(error)
+}
 const activeTab = ref(resolveDataExplorerRouteState(route.query).tab)
 const itemMetadataRevision = ref(0)
 const refreshingCatalog = ref(false)
@@ -261,6 +268,7 @@ const handleCatalogRefresh = async () => {
 const handleNodeSelect = async ({ node, locator }, options = {}) => {
   try {
     const loc = parseLocator(locator)
+    locatorFailure.value = null
     store.clearPreview()
     store.selectNodeContext(node, locator)
     if (options.updateRoute !== false) {
@@ -284,8 +292,7 @@ const handleNodeSelect = async ({ node, locator }, options = {}) => {
   } catch (error) {
     if (store.selectedLocator !== locator) return
     console.error('加载节点数据失败:', error)
-    const errorMessage = error.response?.data?.error || error.message
-    ElMessage.error(errorMessage)
+    recordPreviewFailure(error)
   }
 }
 
@@ -303,6 +310,8 @@ const handleSearchResultSelect = async (result) => {
     return
   }
 
+  locatorFailure.value = null
+  store.reset()
   try {
     const revealed = await store.revealLocator(locator)
     if (!revealed) return
@@ -313,7 +322,7 @@ const handleSearchResultSelect = async (result) => {
     ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
     console.error('定位资源失败:', error)
-    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
+    recordPreviewFailure(error)
   }
 }
 
@@ -329,7 +338,7 @@ const handlePageChange = async (payload) => {
   try {
     await store.loadPreview(store.selectedLocator, page, store.selectedChildName, store.selectedRefPath, store.selectedNestedChildPath, store.selectedChildKey)
   } catch (error) {
-    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
+    recordPreviewFailure(error)
   }
 }
 
@@ -338,7 +347,7 @@ const handlePreviewRefresh = async () => {
   try {
     await store.reloadPreview()
   } catch (error) {
-    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
+    recordPreviewFailure(error)
   }
 }
 
@@ -363,7 +372,7 @@ const handleChildChange = async (payload) => {
     }
     await store.loadPreview(store.selectedLocator, 1, childName, refPath, nestedChildPath, childKey)
   } catch (error) {
-    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
+    recordPreviewFailure(error)
   }
 }
 
@@ -428,6 +437,8 @@ const ensureEnginesLoaded = () => {
 }
 
 const locateRouteLocator = async (targetLocator, options = {}) => {
+  locatorFailure.value = null
+  store.reset()
   const loc = parseLocator(targetLocator)
   if (!loc?.engineId) {
     console.warn('[DataExplorer] 无效 locator:', targetLocator)
@@ -544,7 +555,7 @@ watch(() => route.query.locator, async (locator) => {
     await locateRouteLocator(targetLocator)
   } catch (error) {
     console.error('[DataExplorer] 定位失败:', error)
-    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
+    recordPreviewFailure(error)
   }
 }, { immediate: true })
 

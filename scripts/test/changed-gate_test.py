@@ -279,6 +279,17 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["agent", "console"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["agent"], MODULE.affected_modules(self.repository, ["agent/backend/api/chat.py"]))
 
+    def test_manager_frontend_changes_include_console_preview_permission_gate(self) -> None:
+        for name in ("manager", "console"):
+            path = self.repository / name / "frontend/package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("manager/frontend/src/views/DataExplorer.vue", "manager/frontend/src/components/explorer/PreviewFailure.vue", "manager/frontend/package-lock.json"):
+            with self.subTest(path=path):
+                self.assertEqual(["console", "manager"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["manager"], MODULE.affected_modules(self.repository, ["manager/backend/internal/api/explorer_handler.go"]))
+
     def test_login_adapter_changes_select_cross_module_component_gate(self) -> None:
         for name in ("agent", "manager", "portal"):
             path = self.repository / name / "frontend/package.json"

@@ -1553,6 +1553,10 @@
         }
       },
       "previewFailure": {
+        "inaccessible": {
+          "title": "Resource unavailable",
+          "description": "The resource may have been removed, or you may not have permission to view it. Check the link or contact an administrator."
+        },
         "sourceRefresh": {
           "title": "Refresh metadata to continue previewing",
           "description": "The source changed or its read index has no source version. Refresh this data item's metadata to rebuild the index before previewing again."

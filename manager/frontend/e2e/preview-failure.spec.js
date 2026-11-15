@@ -22,6 +22,7 @@ for (const locale of ['zh-cn', 'en']) {
   })
 
   for (const [status, code, zh, en] of [
+    [404, '', '无法访问该资源', 'Resource unavailable'],
     [403, '', '无权读取此数据项', 'No permission to read this data item'],
     [403, 'security_protection_required', '数据保护阻止预览', 'Preview blocked by data protection'],
     [403, 'another_denial', '无权读取此数据项', 'No permission to read this data item'],
@@ -42,6 +43,11 @@ for (const locale of ['zh-cn', 'en']) {
       const failure = page.getByTestId('preview-failure')
       await expect(failure).toBeVisible()
       await expect(failure).toContainText(locale === 'zh-cn' ? zh : en)
+      if (status === 404) {
+        await expect(failure).toContainText(locale === 'zh-cn' ? '资源可能已移除，或你暂无查看权限' : 'may have been removed, or you may not have permission')
+        await expect(page.locator('.el-message--error')).toHaveCount(0)
+        await expect(page.getByText(locale === 'zh-cn' ? '请选择数据进行预览' : 'Select data to preview', { exact: true })).toHaveCount(0)
+      }
       if (status === 504) {
         await expect(page.locator('.el-message--error')).toHaveCount(0)
         await expect(failure).not.toContainText('Preview request failed')
