@@ -409,4 +409,18 @@ System 测试 helper 创建同租户和跨租户身份后，遗漏了 `writeEnvi
 
 首次前端全量尝试因新增用例误用既有标签名而失败，修正标签后又定位到 Element Select 内部只读 input 被标签遮挡；用例改为点击用户实际可点的选择框，不使用 force 或修改共享样式。首轮全量在保留失败收据后中止（88 通过、1 失败、1 中断、775 未运行），不记为全量通过；上述 CDC 专项是修订后实际全部通过的范围。日志分别保留于 `/tmp/addp-cdc-history-monitor-frontend.log`、`/tmp/addp-cdc-history-monitor-cdc.log` 和最终 `...-monitor-cdc-final.log`。后端、PG、Swagger 与 Runner 收据为 `/tmp/addp-cdc-history-transfer-isolated-go.log`、`/tmp/addp-cdc-history-transfer-postgres-final.log`、`/tmp/addp-cdc-history-swagger-final.log`、`/tmp/addp-cdc-history-swagger-coverage-final.log` 和 `/tmp/addp-cdc-history-runner-final.log`。
 
-本批新增历史断言尚未实际运行 Hosted，当前个人运行进程也尚未核对已加载 schema version 15；旧 `668187692` 的告警 Hosted 通过不追认为历史趋势验收。需由用户通过标准入口重启 Transfer 后开始产生真实历史，再核对固定新源码的真实页面／Hosted。七天自然留存、长期容量和生产 T5 仍无独立证据。只读 Infra 状态核对仍有 task46／task58 两个原槽及全局身份活跃槽；本轮未修改个人任务、槽、Connector 或已有来源。
+完成上述本地门禁时，新增历史断言尚未实际运行 Hosted，个人进程也尚未核对已加载 schema version 15；旧 `668187692` 的告警 Hosted 通过不追认为历史趋势验收。其后的 Linux CI 与用户重启实源收据见下文；固定新源码的真实页面／Hosted 仍须分别核对。七天自然留存、长期容量和生产 T5 仍无独立证据。只读 Infra 状态核对仍有 task46／task58 两个原槽及全局身份活跃槽；本轮未修改个人任务、槽、Connector 或已有来源。
+
+
+固定实现 `aa483b1eca5261513930885af341ed37fdfbe8c6` 的自然 Linux 门禁已核对原始日志：
+
+- [Transfer Go / Job 132633681544](https://github.com/pampa0629/addp/actions/runs/43655726840/job/132633681544) 实际运行 `make test-module MODULE=transfer GO_ONLY=1` 并 success。
+- [Transfer PG15 / Job 132633925096](https://github.com/pampa0629/addp/actions/runs/43655726864/job/132633925096) 实际运行 `make test-transfer-postgres` 并 success，新 `TestIntegrationPostgresCDCMetricHistory` 实际通过（0.22 秒），无跳过。
+- [Monitor 前端 / Job 132633681680](https://github.com/pampa0629/addp/actions/runs/43655726840/job/132633681680) 实际运行完整 `make test-monitor-frontend`：156 项 T1、865 项浏览器（34.7 分钟）和构建全部通过，未只按本地 CDC 专项外推。
+- [Platform / Job 132633681460](https://github.com/pampa0629/addp/actions/runs/43655726840/job/132633681460) 实际 `make test-platform` success，日志包含本轮 141 项 Runner 及 T2 CI 登记通过；[Transfer 前端 / Job 132633681757](https://github.com/pampa0629/addp/actions/runs/43655726840/job/132633681757) 的 75 项浏览器及构建也通过。只认定列明 Job，不替其他未核对作业背书。
+
+原始日志位于 `/tmp/addp-cdc-history-ci-transfer-go.log`、`...-ci-transfer-postgres.log`、`...-ci-monitor-frontend.log`、`...-ci-platform.log` 和 `...-ci-transfer-frontend.log`。各 Job checkout 均为完整固定 SHA。
+
+用户执行标准 Transfer 重启后，个人环境只读核对 schema=15、task61 仍 running、当前 generation=1。2026-11-15 08:48 至 08:53（Asia/Shanghai）的六个分钟各一份持久历史，最新三份均为积压 0、源槽 active=true、WAL 保留 16768 bytes、risk_state=reserved；延迟没有有效数值，沿 null 保留。接入前 schema=14 的只读收据为 `/tmp/addp-cdc-history-preserved.json`，启用后为 `/tmp/addp-cdc-history-live-storage.log` 和 `...-live-samples.log`。两个原 task46／task58 槽仍在且不活跃，全局身份槽仍活跃；AI 未启停／修改任务、槽、Connector 或来源，没有为形成图形写入业务事件。
+
+本次 Chrome 自动化的 inventory 与精确标签连接分别在 30 秒／20 秒超时；没有 reload 页面或把其他身份作为验收。个人 Tenant 页面及公开历史 API 的身份实操仍未核对，不能由个人数据库样本和固定 CI 浏览器拼接认定。新增历史 Hosted 断言、七天自然留存与长期容量也仍待独立验收。

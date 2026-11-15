@@ -91,6 +91,8 @@ Redis 专业采集由部署侧 `backend/internal/redissource` 提供。适用范
 
 持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`；显式容量基线使用 `make test-monitor-traces MONITOR_TRACES_TEST_ARGS=--capacity`，负载、资源上限及外推判定沿运行观测规范 6.5（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。定位单个浏览器场景可传入 `MONITOR_FRONTEND_BROWSER_ARGS='--grep CDC'`，仍由标准隔离入口启动；筛选运行仅证明所选场景，默认及 CI 不传此参数以运行完整浏览器门禁。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
 
+CDC 性能规则的持久化定向回归使用 `make test-monitor-postgres MONITOR_POSTGRES_TEST_ARGS=--case=cdc-performance`，沿同一测试库归属核验及拒绝跳过规则；无参数仍执行完整 Monitor PostgreSQL 门禁。Go T1 入口主动移除集成环境，不能作为此 T2 的替代。
+
 租户事件的 `TestIntegrationPostgresExecutionEventVisibility` 沿既有 PostgreSQL 服务测试自动发现，覆盖真实 SQL 上的 Owner 范围、历史／本人一次性执行、列表与统计总数、跨租户／类型／子执行隔离、三页事件游标、30 天读取窗口，以及翻页前撤权和 Owner 故障后重新授权。Owner HTTP 为受控协议夹具，仅计 T2，不代表真实 System／Gateway／Worker 的 T4，也不代表事件物理清理或 180 天概览删除已验收。
 
 Transfer continuous 场景要求在同一 Kafka 任务持续写入期间沿原游标续读，对照 Monitor 与 Owner 的完整事件顺序，并在 Console 核对自动续页、手动刷新和 Worker 失联后原执行的失败诊断及唯一终态事件。两轮已归档的 Hosted 分别停在整引擎扫描和目录基线读取，均未创建 Kafka 任务，上述断言均未执行。确定性 runner 的结果单独记录。历史租户日志终审核验了固定版本的两页事件及撤权后旧游标拒绝。留存另按 30 天事件物理清理与 180 天概览只读评估各自的证据认定。[现行 Transfer continuous 验收场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [持续写入两轮 Hosted 结果](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审) · [留存证据](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#按验收范围查阅)

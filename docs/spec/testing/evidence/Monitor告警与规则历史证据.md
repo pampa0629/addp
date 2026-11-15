@@ -743,3 +743,14 @@ Artifact `14122462773`（8759262 bytes）下载后核对 SHA-256 `ad64a068803840
 故障与领域 cleanup=passed，所有 cleanup_failures 为空、uncertain_mutation=false。三条临时性能规则、源批量记录、目标锁、CPU 配额、Connector 配置、Webhook 目标及接收端均已清理或恢复。任务 5／4／3／2 经正式 API 删除且读回不存在，两个本轮 CDC 的源槽与 publication 清理通过。硬退出 Kafka task 1 按既有场景保留至部署销毁，领域 residual_resources=expected_deployment_residuals=1；外层 summary 的 cleanup=passed、infra_cleanup=zero_residuals 单独核对，不把预期领域保留项伪称领域零项。
 
 个人环境前后只读结果一致：task61 仍 running，task46／task58 两个原逻辑槽保留且不活跃，全局身份槽仍活跃；没有操作个人服务、任务或逻辑槽。此轮证明当前 PostgreSQL 任务的三类性能告警、捕获失败及已列明的不可恢复风险、重建、scheduled 扫描与签名通知闭环；不外推其他源类型、生产 T5、任务历史指标查询或尚未执行的暂停前待触发窗口重置 T4（后者仍由现有 T2 验证）。
+
+
+### 触发前暂停与评估器重建：持久化补证（2026-11-15）
+
+盘点确认原 `TestIntegrationPostgresCDCPerformanceRules` 在三条事件打开之后才 Pause，不能作为“触发前窗口被清空、重建评估器后重新累计”的独立证明。本批只扩展同一 T2：消费停滞和积压先累计 150 秒，真实 PG 中确认待触发窗口存在且无 incident／event／delivery；暂停后窗口及恢复窗口均为空、仍无事件通知；重新构造 AlertService，观察恢复运行，再累计完整的新窗口，不足 180 秒时三类生命周期仍为零，最终沿原 180／300 秒阈值打开事件并继续原暂停、缺样、恢复、通知事务及规则编辑断言。产品逻辑、阈值和持续时间未改，不操作个人任务或源槽。
+
+首次完整 `make test-monitor-postgres` 未通过：新增测试的初版时间序列把恢复后首次无效观测计入了 300 秒，实际只有 285 秒有效跨度，导致只打开两条规则；同时既有 `TestIntegrationPostgresHTTPRulePolicyCASAndExpiredCompletionLease` 失败。首败原始日志保留于 `/tmp/addp-cdc-pending-pause-monitor-postgres.log`；后者不属本次 CDC 改动，未修复或据此宣称完整门禁通过。修订测试序列单独观察恢复状态后再取满新窗口，没有缩短产品时长。一次经 Go T1 入口尝试的定向执行被其主动移除集成环境而 SKIP，收据为 `/tmp/addp-cdc-pending-pause-targeted-postgres.log`，不计通过。
+
+现有标准 PG 入口新增固定 `--case=cdc-performance` 选项，根 Makefile 用 `MONITOR_POSTGRES_TEST_ARGS` 传入；无参数仍为原完整 PostgreSQL 套件，CI 默认范围不缩小。未知 case 在连接测试库前以 2 拒绝；定向仍检查真实 Infra 测试库归属、使用 `addp_test`，并拒绝 SKIP／无匹配测试。`make test-monitor-postgres MONITOR_POSTGRES_TEST_ARGS=--case=cdc-performance` 实际执行该用例并通过（0.86 秒），原告警生命周期／缺样保持／恢复关闭／通知事务断言继续通过；日志 `/tmp/addp-cdc-pending-pause-targeted-postgres-final.log`。标准 Monitor Go T1 另行核对，不把此定向结果记为完整 Monitor PG 或真实故障 Hosted 通过。触发前正式 Pause／Resume 的实故障 T4 仍是后续事项。
+
+`make test-module MODULE=monitor GO_ONLY=1` 通过（`/tmp/addp-cdc-pending-pause-monitor-go-final.log`）；更新标准入口后的 `make test-t2-ci-registration` 通过 87＋10 项检查与登记比较（`/tmp/addp-cdc-pending-pause-registration.log`）。默认完整 PG 门禁的既有 HTTP CAS 失败保留为未通过，不由定向 CDC 成功抵消。

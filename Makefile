@@ -458,7 +458,7 @@ test-orchestrator-postgres: ## 使用隔离 PostgreSQL 验证 Orchestrator 领�
 
 .PHONY: test-monitor-postgres
 test-monitor-postgres: ## 使用隔离 PostgreSQL 验证 Monitor 读取隔离、执行聚合及通知链路
-	@bash scripts/test/monitor-postgres-gate.sh
+	@bash scripts/test/monitor-postgres-gate.sh $(MONITOR_POSTGRES_TEST_ARGS)
 
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
 	@bash scripts/test/common-postgres-gate.sh $(COMMON_POSTGRES_TEST_ARGS)

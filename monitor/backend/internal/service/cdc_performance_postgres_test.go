@@ -82,8 +82,48 @@ func TestIntegrationPostgresCDCPerformanceRules(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// An unfinished trigger window must not survive pause or evaluator restart.
+	for sec := 0; sec <= 150; sec += 15 {
+		feed(sec, 10, 3, int64(sec+1), 20, "running", false)
+	}
+	assertNoLifecycle := func() {
+		t.Helper()
+		for _, model := range []any{&models.AlertIncident{}, &models.AlertEvent{}, &models.WebhookDelivery{}} {
+			var count int64
+			if err := db.Model(model).Where("tenant_id=?", tenant).Count(&count).Error; err != nil || count != 0 {
+				t.Fatalf("pending window emitted lifecycle %T count=%d err=%v", model, count, err)
+			}
+		}
+	}
+	assertNoLifecycle()
+	var pending []models.AlertRule
+	if err = db.Where("tenant_id=? AND rule_type IN ?", tenant, []string{models.AlertRuleCDCStalled, models.AlertRuleCDCBacklog}).Find(&pending).Error; err != nil || len(pending) != 2 {
+		t.Fatal("unfinished rules", err)
+	}
+	for _, rule := range pending {
+		if rule.CDCWindow.Active || rule.CDCWindow.TriggerSince == nil {
+			t.Fatalf("no pending evidence before pause: %+v", rule.CDCWindow)
+		}
+	}
+	feed(165, 10, 3, 166, 20, "paused", false)
+	if err = db.Where("tenant_id=? AND rule_type IN ?", tenant, []string{models.AlertRuleCDCStalled, models.AlertRuleCDCBacklog}).Find(&pending).Error; err != nil || len(pending) != 2 {
+		t.Fatal("pending rules", err)
+	}
+	for _, rule := range pending {
+		if rule.CDCWindow.State != "paused" || rule.CDCWindow.Active || rule.CDCWindow.TriggerSince != nil || rule.CDCWindow.RecoverySince != nil {
+			t.Fatalf("pause retained pending evidence: %+v", rule.CDCWindow)
+		}
+	}
+	assertNoLifecycle()
+	alerts = NewAlertService(db, NewNotificationService(web, nil))
+	// Observe the resumed state before collecting a complete new trigger window.
+	feed(180, 10, 3, 181, 20, "running", false)
+	at = at.Add(195 * time.Second)
 	for sec := 0; sec <= 300; sec += 15 {
 		feed(sec, 10, 3, int64(sec+1), 80, "running", false)
+		if sec == 150 {
+			assertNoLifecycle()
+		}
 	}
 	var incidents []models.AlertIncident
 	if err = db.Where("tenant_id=? AND signal_code IN ?", tenant, cdcPerformanceCodes).Order("id").Find(&incidents).Error; err != nil || len(incidents) != 3 {
