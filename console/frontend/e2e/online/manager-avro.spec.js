@@ -135,7 +135,10 @@ test('ordinary user previews flat, nested and Enum Avro sources', async ({ page 
           const enumeration = { name: 'demo.State', symbols: ['z', 'A', 'a'] }
           for (const f of [fields[1], fields[2], fields[3].fields[0], fields[4].element]) expect(f.enum).toEqual(enumeration)
           expect(fields[5].enum).toEqual({ name: 'other.State', symbols: ['OFF', 'ON'] })
-          expect(attrs.format_info).toBeUndefined()
+          // Meta's metadata-only API is checked separately by the owner case.
+          // This User also has source read access: the authorized Manager preview
+          // attaches complete item facts, whose schema must match this source.
+          expect(attrs.format_info.avro.schema).toEqual(source.spec.schema)
           await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-enum-${source.codec}-declaration.png`), animations: 'disabled' })
           await attrsDialog.locator('xpath=ancestor::div[contains(@class,"el-dialog")]').locator('.el-dialog__headerbtn').click()
           await frame.getByRole('tab', { name: /^(预览|Preview)$/ }).click()
