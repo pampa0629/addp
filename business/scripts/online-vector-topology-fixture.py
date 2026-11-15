@@ -2574,31 +2574,71 @@ def runtime_worker(action, root):
         evidence_directory = checks / f'{len(list(checks.iterdir()))+1:04d}'
         evidence_directory.mkdir()
         if case in FILE_PUBLICATION_CASES:
-            archive_before_verification(root, evidence_directory, case, os.environ['ADDP_ONLINE_TEST_RUN_ID'])
+            capture_declared_target(root, evidence_directory, case, os.environ['ADDP_ONLINE_TEST_RUN_ID'])
     return json.loads(command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), case],
                               input=Path(__file__).read_text(), evidence_directory=evidence_directory))
 
 
-def archive_before_verification(root, directory, case, run_id):
-    """Capture only the declared output; its validity is still the OGR oracle's job."""
+def capture_declared_target(root, directory, case, run_id, *, phase='before_verification'):
+    """Retain one exact raw output, independently of its validity or publication state."""
+    if case not in FILE_PUBLICATION_CASES:
+        raise FixtureError('raw target capture requires a formal file publication case')
+    if directory.is_symlink():
+        raise FixtureError('target capture must not follow an evidence directory symlink')
+    if (directory/'target-capture.json').exists() or (directory/'target-capture.json').is_symlink():
+        raise FileExistsError('refusing to replace an existing target capture')
     name = mixed_fixture_profile(case)['target']
     source = root / 'outputs' / name
     target = {'name':name, 'state':'missing'}
-    unsafe = (root/'outputs').is_symlink() or source.is_symlink()
-    if unsafe or (source.exists() and not source.is_file()):
-        target['state'] = 'not_regular'
-    elif source.is_file():
-        value = source.read_bytes()
-        # Each observation is immutable, including empty or malformed outputs.
-        with (directory/name).open('xb') as stream:
-            stream.write(value)
-        target.update(state='captured', size_bytes=len(value), sha256=hashlib.sha256(value).hexdigest())
-    with (directory/'before-verification.json').open('x') as stream:
-        json.dump({'schema_version':'addp.topology-before-physical/v1', 'case':case,
-                   'run_id':run_id, 'owned_root':str(root), 'result':'incomplete',
-                   'stage':'before_verification', 'target':target}, stream, ensure_ascii=False, indent=2)
+    try:
+        unsafe = ((root/'outputs').is_symlink() or source.is_symlink()
+                  or ((root/'outputs').exists() and not (root/'outputs').is_dir()))
+        if unsafe or (source.exists() and not source.is_file()):
+            target['state'] = 'not_regular'
+        elif source.is_file():
+            target['state'] = 'copy_failed'
+            target['operation'] = 'read'
+            value = source.read_bytes()
+            target.update(size_bytes=len(value),sha256=hashlib.sha256(value).hexdigest(),operation='write')
+            # Exclusive creation preserves each observation, even malformed bytes.
+            with (directory/name).open('xb') as stream:
+                stream.write(value)
+            target['operation'] = 'verify_copy'
+            copied = (directory/name).read_bytes()
+            if copied != value:
+                raise FixtureError('raw target evidence copy differs')
+            target.pop('operation')
+            target['state'] = 'captured_empty' if not value else 'captured'
+    except Exception as error:
+        target['error_type'] = type(error).__name__
+        target['error'] = str(error)
+        raise
+    finally:
+        with (directory/'target-capture.json').open('x') as stream:
+            json.dump({'schema_version':'addp.topology-target-capture/v1', 'case':case,
+                       'run_id':run_id, 'owned_root':str(root), 'result':'incomplete',
+                       'stage':phase, 'target':target}, stream, ensure_ascii=False, indent=2)
     if target['state'] == 'not_regular':
         raise FixtureError('physical evidence must not follow a non-regular output')
+    return target
+
+
+def capture_publication(env, phase):
+    """Host boundary shared by business failure and final owned-root cleanup."""
+    case = topology_case(env)
+    if case not in FILE_PUBLICATION_CASES or phase not in {'before_grant_cleanup','before_owned_root_cleanup'}:
+        raise FixtureError('target capture case or exit phase differs')
+    export = NFSExport('topology', command, publication_staging=True)
+    secret = export.guard(env)
+    run_id = env['ADDP_ONLINE_TEST_RUN_ID']
+    root = export.owned_root(secret, run_id)
+    artifacts = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    captures = artifacts/'topology-target-captures'
+    if artifacts.is_symlink() or captures.is_symlink():
+        raise FixtureError('target capture must not follow an archive symlink')
+    directory = captures/phase
+    directory.mkdir(parents=True)
+    return capture_declared_target(root,directory,case,run_id,phase=phase)
 
 
 def archive_physical_evidence(root, directory, result, case=None, *, sources_only=False):
@@ -2629,6 +2669,15 @@ def main(action):
     export = NFSExport('topology', command, publication_staging=case in FILE_PUBLICATION_CASES)
     secret = export.guard(os.environ)
     run_id = os.environ['ADDP_ONLINE_TEST_RUN_ID']
+    if action == 'stop' and case in FILE_PUBLICATION_CASES and (secret/'topology-root').exists():
+        # Capture failure must not skip ownership-checked resource cleanup.
+        try:
+            capture = dict(result='captured',target=capture_publication(dict(os.environ),'before_owned_root_cleanup'))
+        except Exception as error:
+            capture = dict(result='failed',error_type=type(error).__name__,error=str(error))
+            print('Topology final target capture failed: '+json.dumps(capture),file=sys.stderr)
+        result = export.lifecycle(action, secret, run_id)
+        return {**result,'target_capture':capture}
     if action in {'start','stop'}:
         return export.lifecycle(action, secret, run_id)
     root = export.owned_root(secret, run_id)
@@ -2653,6 +2702,8 @@ if __name__ == '__main__':
     try:
         result = worker(sys.argv[2], Path(sys.argv[3]), sys.argv[4] if len(sys.argv)>4 else 'full') if sys.argv[1:2] == ['--worker'] else main(sys.argv[1])
         print(json.dumps(result, sort_keys=True))
+        if result.get('target_capture',{}).get('result') == 'failed':
+            raise SystemExit(1)
     except Exception as error:
         print(f'Topology fixture failed: {type(error).__name__}: {error}', file=sys.stderr)
         raise SystemExit(1)

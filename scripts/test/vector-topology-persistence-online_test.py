@@ -2793,12 +2793,117 @@ class DifferenceClient(FormalFileClient):
     def __init__(self):super().__init__(m.fixture.DIFFERENCE_CASE)
 
 
+class FilePublicationExitCaptureTest(unittest.TestCase):
+    def test_early_failures_capture_exact_result_before_revocation_for_both_cases(self):
+        from contextlib import ExitStack
+        for case in m.fixture.FILE_PUBLICATION_CASES:
+            for stage in ('facts','automatic_basic','initial_grant','deep','monitor'):
+                with self.subTest(case=case,stage=stage),tempfile.TemporaryDirectory()as directory,ExitStack()as stack:
+                    root=Path(directory)/'owned';(root/'outputs').mkdir(parents=True)
+                    artifacts=Path(directory)/'artifacts';artifacts.mkdir()
+                    profile=m.mixed_overlay_profile(case);raw=b'published raw bytes before '+stage.encode()
+                    (root/'outputs'/profile['target']).write_bytes(raw)
+                    env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':case,'ADDP_ONLINE_ARTIFACT_DIR':str(artifacts),
+                         'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
+                    client=FormalFileClient(case);events=[];primary=m.SuiteError('original '+stage+' failure')
+                    def capture(actual,phase):
+                        self.assertEqual(actual,env);events.append('capture')
+                        observation=artifacts/'capture';observation.mkdir()
+                        return m.fixture.capture_declared_target(root,observation,case,env['ADDP_ONLINE_TEST_RUN_ID'],phase=phase)
+                    issuer_request=client.issuer.request
+                    def issuer(method,path,expected,body=None):
+                        if path.endswith('/revoke'):events.append('revoke')
+                        if stage=='deep'and path.endswith('/scan/run/manual')and '/outputs/'in body['targets'][0]:raise primary
+                        return issuer_request(method,path,expected,body)
+                    client.issuer.request=issuer
+                    request=client.request
+                    def consumer(method,path,expected,body=None):
+                        if stage=='monitor'and '/monitor/executions/'in path:raise primary
+                        return request(method,path,expected,body)
+                    client.request=consumer
+                    stack.enter_context(patch.object(m.fixture,'capture_publication',side_effect=capture,create=True))
+                    stack.enter_context(patch.object(m.raster,'GatewayClient',return_value=client.issuer))
+                    stack.enter_context(patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)))
+                    if stage=='facts':stack.enter_context(patch.object(m,'validate_saved_facts',side_effect=primary))
+                    if stage=='automatic_basic':
+                        wait=m.raster.wait_execution
+                        def wait_execution(client,module,*args,**kwargs):
+                            if module=='meta':raise primary
+                            return wait(client,module,*args,**kwargs)
+                        stack.enter_context(patch.object(m.raster,'wait_execution',side_effect=wait_execution))
+                    if stage=='initial_grant':
+                        registration=importlib.import_module('scripts.test.online-engine-registration')
+                        stack.enter_context(patch.object(registration.ExactFileReadGrants,'production_grant',side_effect=primary))
+                    physical=stack.enter_context(patch.object(m,'physical'))
+                    with self.assertRaises(m.SuiteError)as caught:m.run_scenario(Path('.'),env,client,physical,lambda *args:None)
+                    self.assertIs(caught.exception,primary);physical.assert_not_called()
+                    self.assertEqual(events[0],'capture');self.assertIn('revoke',events)
+                    self.assertEqual((artifacts/'capture'/profile['target']).read_bytes(),raw)
+
+    def test_capture_and_cleanup_errors_never_replace_first_business_error(self):
+        import io
+        for case in m.fixture.FILE_PUBLICATION_CASES:
+            with self.subTest(case=case):
+                primary=m.SuiteError('first business failure');events=[];evidence={}
+                def capture(*args):events.append('capture');raise OSError('capture write failure')
+                def cleanup():events.append('cleanup');raise RuntimeError('cleanup failure')
+                publication=SimpleNamespace(evidence=evidence,record=lambda value:events.append(value['stage']),cleanup=cleanup,write=lambda:None,
+                    registration=SimpleNamespace(metadata_error_evidence=lambda error:{'error_type':type(error).__name__,'message':str(error)}))
+                stderr=io.StringIO()
+                with patch.object(m,'_FilePublication',return_value=publication),patch.object(m,'run_mixed_overlay_scenario',side_effect=primary),patch.object(m.fixture,'capture_publication',side_effect=capture,create=True),patch('sys.stderr',stderr):
+                    with self.assertRaises(m.SuiteError)as caught:m.run_prepared_file_scenario(None,{},None,None,None,case)
+                self.assertIs(caught.exception,primary)
+                self.assertEqual(events,['business_failed','capture','cleanup'])
+                self.assertEqual([row['stage']for row in evidence['exit_errors']],['target_capture','grant_cleanup'])
+                self.assertIn('capture write failure',stderr.getvalue());self.assertIn('cleanup failure',stderr.getvalue())
+
+    def test_journal_failure_still_captures_and_cleans_without_masking_primary(self):
+        import io
+        primary=m.SuiteError('first business failure');events=[]
+        def record(value):raise OSError('journal unavailable')
+        def capture(*args):events.append('capture')
+        def cleanup():events.append('cleanup')
+        publication=SimpleNamespace(evidence={},record=record,cleanup=cleanup,write=lambda:None,
+            registration=SimpleNamespace(metadata_error_evidence=lambda error:{'error_type':type(error).__name__}))
+        with patch.object(m,'_FilePublication',return_value=publication),patch.object(m,'run_mixed_overlay_scenario',side_effect=primary),patch.object(m.fixture,'capture_publication',side_effect=capture),patch('sys.stderr',io.StringIO()):
+            with self.assertRaises(m.SuiteError)as caught:m.run_prepared_file_scenario(None,{},None,None,None,m.fixture.ADJACENCY_CASE)
+        self.assertIs(caught.exception,primary);self.assertEqual(events,['capture','cleanup'])
+        self.assertEqual(publication.evidence['exit_errors'][0]['stage'],'business_failure_record')
+
+    def test_real_grant_cleanup_attempts_every_grant_even_when_journal_writes_fail(self):
+        import io
+        for case in m.fixture.FILE_PUBLICATION_CASES:
+            for mode in ('first','every','final'):
+                with self.subTest(case=case,mode=mode),tempfile.TemporaryDirectory()as directory:
+                    client=FormalFileClient(case)
+                    env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':case,'ADDP_ONLINE_ARTIFACT_DIR':directory,
+                        'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
+                    with patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
+                        publication=m._FilePublication(env,client,case)
+                    for name in client.profile['sources']:publication.grants.grant(3,name)
+                    client.issuer.request('POST','/test/develop-geopackage-create-approvals',(201,),{'expires_at':'2027-01-01T00:00:00Z'})
+                    publication.grants.production_grant(3,'outputs/'+client.profile['target'],client.run_id)
+                    publication.target=publication.grants.target(3,'outputs/'+client.profile['target'],'nfs')
+                    self.assertEqual(len(publication.grants.pending),6);write=publication.write;attempts=[]
+                    def journal():
+                        attempts.append('write')
+                        if mode=='every'or(mode=='first'and len(attempts)==1)or(mode=='final'and 'cleanup'in publication.evidence):
+                            raise OSError('journal disk full')
+                        return write()
+                    with patch.object(publication,'write',side_effect=journal),patch('sys.stderr',io.StringIO()),self.assertRaisesRegex(m.SuiteError,'cleanup incomplete'):
+                        publication.cleanup()
+                    self.assertEqual(publication.grants.pending,[])
+                    self.assertTrue(all(row['revocation'] is not None for row in client.grants.values()))
+                    self.assertEqual(sum(path.endswith('/revoke')for _,path,_ in client.issuer.calls),6)
+                    self.assertEqual(publication.evidence['cleanup']['result'],'failed')
+
+
 class DifferenceOnlineTest(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup);self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DIFFERENCE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
     def run_case(self,client=None,physical=difference_physical,browser=lambda *a:a[2]):
         client=client or DifferenceClient()
-        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
+        with patch.object(m.fixture,'capture_publication',return_value={'state':'missing'}),patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
             return m.run_scenario(Path('.'),self.env,client,physical,browser)
     def test_difference_one_success_four_failures_single_scan_and_two_source_edges(self):
         client=DifferenceClient();report=self.run_case(client);self.assertEqual((report['result'],report['schema_version']),('passed','addp.geometry-difference/v1'))
@@ -3227,7 +3332,7 @@ class AdjacencyOnlineTest(unittest.TestCase):
         self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ADJACENCY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
     def run_case(self,client=None,physical=None,browser=lambda *a:a[2]):
         client=client or AdjacencyClient()
-        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
+        with patch.object(m.fixture,'capture_publication',return_value={'state':'missing'}),patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
             return m.run_scenario(Path('.'),self.env,client,physical or(lambda *a:mixed_physical(m.fixture.ADJACENCY_CASE)),browser)
     def test_adjacency_single_source_one_save_four_readonly_failures_scans_and_identity(self):
         client=AdjacencyClient();report=self.run_case(client)

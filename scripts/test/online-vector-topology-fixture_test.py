@@ -10,6 +10,110 @@ from unittest.mock import patch
 m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
+class FilePublicationTargetCaptureTest(unittest.TestCase):
+    def setUp(self):
+        source=tempfile.TemporaryDirectory(prefix='addp-topology-',dir='/tmp');self.addCleanup(source.cleanup)
+        storage=tempfile.TemporaryDirectory();self.addCleanup(storage.cleanup)
+        self.root=Path(source.name).resolve();self.base=Path(storage.name).resolve()
+        self.secret=self.base/'secret';self.secret.mkdir(mode=0o700)
+        (self.secret/'topology-root').write_text(str(self.root))
+        (self.root/'.addp-online-owner').write_text('topology-123-1');(self.root/'outputs').mkdir()
+        self.env=dict(GITHUB_ACTIONS='true',RUNNER_OS='Linux',ADDP_ONLINE_HOST='1',ADDP_ONLINE_HOSTED='1',
+            ADDP_ONLINE_SECRET_DIR=str(self.secret),ADDP_ONLINE_TEST_RUN_ID='topology-123-1',
+            ADDP_ONLINE_ARTIFACT_DIR=str(self.base/'artifacts'),ADDP_ONLINE_TOPOLOGY_CASE=m.ADJACENCY_CASE)
+    def command(self,args,**kwargs):
+        self.assertEqual(args,['uname','-sm']);return 'Linux x86_64'
+    def test_exit_captures_only_declared_bytes_and_never_calls_runtime_or_oracle(self):
+        for case in m.FILE_PUBLICATION_CASES:
+            with self.subTest(case=case):
+                env={**self.env,'ADDP_ONLINE_TOPOLOGY_CASE':case,'ADDP_ONLINE_ARTIFACT_DIR':str(self.base/case)}
+                target=m.mixed_fixture_profile(case)['target'];raw=b'raw invalid file\x00\xff'
+                (self.root/'outputs'/target).write_bytes(raw);(self.root/'outputs'/'outside.gpkg').write_bytes(b'PRIVATE_OUTSIDE')
+                with patch.object(m,'command',side_effect=self.command),patch.object(m,'runtime_worker')as worker:
+                    result=m.capture_publication(env,'before_grant_cleanup')
+                worker.assert_not_called()
+                directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-target-captures'/'before_grant_cleanup'
+                self.assertEqual((directory/target).read_bytes(),raw)
+                self.assertEqual(result['size_bytes'],len(raw));self.assertEqual(result['sha256'],m.hashlib.sha256(raw).hexdigest())
+                self.assertEqual({f.name for f in directory.iterdir()},{target,'target-capture.json'})
+                with patch.object(m,'command',side_effect=self.command),self.assertRaises(FileExistsError):m.capture_publication(env,'before_grant_cleanup')
+                self.assertEqual((directory/target).read_bytes(),raw)
+    def test_missing_empty_nonregular_and_copy_failure_have_distinct_immutable_records(self):
+        target=self.root/'outputs'/m.ADJACENCY_TARGET
+        for state in ('missing','captured_empty','not_regular','copy_failed'):
+            directory=self.base/state;directory.mkdir()
+            if state=='captured_empty':target.write_bytes(b'')
+            elif state=='not_regular':target.unlink();target.mkdir()
+            elif state=='copy_failed':target.rmdir();target.write_bytes(b'raw');(directory/target.name).write_bytes(b'previous evidence')
+            with self.subTest(state=state):
+                if state in ('not_regular','copy_failed'):
+                    with self.assertRaises((m.FixtureError,FileExistsError)):m.capture_declared_target(self.root,directory,m.ADJACENCY_CASE,'topology-123-1')
+                else:m.capture_declared_target(self.root,directory,m.ADJACENCY_CASE,'topology-123-1')
+                record=json.loads((directory/'target-capture.json').read_text());self.assertEqual(record['target']['state'],state)
+                if state=='copy_failed':
+                    self.assertEqual(record['target']['operation'],'write');self.assertEqual((directory/target.name).read_bytes(),b'previous evidence')
+    def test_foreign_owner_and_source_or_archive_symlinks_are_rejected(self):
+        foreign=self.base/'foreign';foreign.write_bytes(b'PRIVATE_FOREIGN_BYTES')
+        target=self.root/'outputs'/m.ADJACENCY_TARGET
+        for mode in ('owner','source_link','outputs_link','archive_link'):
+            with self.subTest(mode=mode),patch.object(m,'command',side_effect=self.command):
+                env={**self.env,'ADDP_ONLINE_ARTIFACT_DIR':str(self.base/('artifacts-'+mode))}
+                if mode=='owner':(self.root/'.addp-online-owner').write_text('topology-999-1')
+                elif mode=='source_link':
+                    (self.root/'.addp-online-owner').write_text('topology-123-1');target.symlink_to(foreign)
+                elif mode=='outputs_link':
+                    target.unlink();(self.root/'outputs').rmdir();(self.root/'outputs').symlink_to(self.base)
+                else:
+                    (self.root/'outputs').unlink();(self.root/'outputs').mkdir();Path(env['ADDP_ONLINE_ARTIFACT_DIR']).symlink_to(self.base,target_is_directory=True)
+                with self.assertRaises(m.FixtureError):m.capture_publication(env,'before_grant_cleanup')
+                self.assertEqual(foreign.read_bytes(),b'PRIVATE_FOREIGN_BYTES')
+        self.assertFalse((self.base/m.ADJACENCY_TARGET).exists())
+    def test_read_and_write_failures_record_the_failed_operation_and_preserve_bytes(self):
+        target=self.root/'outputs'/m.ADJACENCY_TARGET;target.write_bytes(b'original bytes')
+        read_bytes=Path.read_bytes
+        def read(path):
+            if path==target:raise PermissionError('target read denied')
+            return read_bytes(path)
+        directory=self.base/'read-failure';directory.mkdir()
+        with patch.object(Path,'read_bytes',read),self.assertRaises(PermissionError):
+            m.capture_declared_target(self.root,directory,m.ADJACENCY_CASE,'topology-123-1')
+        record=json.loads((directory/'target-capture.json').read_text())['target']
+        self.assertEqual((record['state'],record['operation'],record['error_type']),('copy_failed','read','PermissionError'))
+        self.assertEqual(target.read_bytes(),b'original bytes')
+        directory=self.base/'write-failure';directory.mkdir();open_path=Path.open
+        def denied(path,*args,**kwargs):
+            if path==directory/target.name:raise OSError('archive disk full')
+            return open_path(path,*args,**kwargs)
+        with patch.object(Path,'open',denied),self.assertRaises(OSError):
+            m.capture_declared_target(self.root,directory,m.ADJACENCY_CASE,'topology-123-1')
+        record=json.loads((directory/'target-capture.json').read_text())['target']
+        self.assertEqual((record['state'],record['operation']),('copy_failed','write'))
+        self.assertEqual(record['sha256'],m.hashlib.sha256(b'original bytes').hexdigest())
+        self.assertEqual(target.read_bytes(),b'original bytes')
+    def test_missing_observation_cannot_later_be_filled_or_replaced(self):
+        directory=self.base/'immutable';directory.mkdir();target=self.root/'outputs'/m.ADJACENCY_TARGET
+        m.capture_declared_target(self.root,directory,m.ADJACENCY_CASE,'topology-123-1')
+        original=(directory/'target-capture.json').read_bytes();target.write_bytes(b'later published bytes')
+        with self.assertRaises(FileExistsError):m.capture_declared_target(self.root,directory,m.ADJACENCY_CASE,'topology-123-1')
+        self.assertEqual((directory/'target-capture.json').read_bytes(),original);self.assertFalse((directory/target.name).exists())
+    def test_final_stop_captures_before_root_deletion_and_still_cleans_after_capture_error(self):
+        import shutil
+        target=self.root/'outputs'/m.ADJACENCY_TARGET;target.write_bytes(b'original published target')
+        def stop(export,action,secret,run_id):
+            self.assertEqual(action,'stop')
+            observation=self.base/'artifacts'/'topology-target-captures'/'before_owned_root_cleanup'
+            self.assertEqual((observation/target.name).read_bytes(),b'original published target')
+            shutil.rmtree(self.root)
+            return {'cleanup':'passed','owned_root_removed':True}
+        with patch.dict(os.environ,self.env),patch.object(m,'command',side_effect=self.command),patch.object(m.NFSExport,'lifecycle',autospec=True,side_effect=stop):
+            result=m.main('stop')
+        self.assertEqual(result['cleanup'],'passed');self.assertEqual(result['target_capture']['result'],'captured');self.assertFalse(self.root.exists())
+        self.root.mkdir();(self.root/'.addp-online-owner').write_text('topology-123-1')
+        with patch.dict(os.environ,self.env),patch.object(m,'command',side_effect=self.command),patch.object(m,'capture_publication',side_effect=OSError('archive disk full')),patch.object(m.NFSExport,'lifecycle',return_value={'cleanup':'passed','owned_root_removed':True})as cleanup:
+            result=m.main('stop')
+        cleanup.assert_called_once();self.assertEqual(result['target_capture']['result'],'failed');self.assertEqual(result['cleanup'],'passed')
+
+
 def records(name):
     if name in ('line-chains.gpkg','line-chain-members.gpkg'):
         return m.line_chain_expected_features(members=name=='line-chain-members.gpkg')
@@ -357,7 +461,7 @@ class TopologyFixtureTest(unittest.TestCase):
                 if args[:2]==['docker','inspect']:return json.dumps([info])
                 observation=artifacts/'topology-physical-checks'/'0001'
                 self.assertEqual((observation/m.DIFFERENCE_TARGET).read_bytes(),raw)
-                manifest=json.loads((observation/'before-verification.json').read_text())
+                manifest=json.loads((observation/'target-capture.json').read_text())
                 self.assertEqual(manifest['target']['sha256'],m.hashlib.sha256(raw).hexdigest())
                 self.assertEqual(manifest['result'],'incomplete')
                 self.assertFalse((observation/'outside.gpkg').exists())
@@ -378,12 +482,12 @@ class TopologyFixtureTest(unittest.TestCase):
                 if raw is None:target.unlink()
                 else:target.write_bytes(raw)
                 observation=artifacts/f'{number:04d}';observation.mkdir(parents=True)
-                m.archive_before_verification(root,observation,m.DIFFERENCE_CASE,'topology-123-1')
-                value=json.loads((observation/'before-verification.json').read_text())
-                self.assertEqual(value['target']['state'],'missing'if raw is None else'captured')
+                m.capture_declared_target(root,observation,m.DIFFERENCE_CASE,'topology-123-1')
+                value=json.loads((observation/'target-capture.json').read_text())
+                self.assertEqual(value['target']['state'],'missing'if raw is None else'captured_empty'if not raw else'captured')
                 if raw is not None:self.assertEqual((observation/m.DIFFERENCE_TARGET).read_bytes(),raw)
             self.assertEqual((artifacts/'0002'/m.DIFFERENCE_TARGET).read_bytes(),b'first invalid result')
-            with self.assertRaises(FileExistsError):m.archive_before_verification(root,artifacts/'0002',m.DIFFERENCE_CASE,'topology-123-1')
+            with self.assertRaises(FileExistsError):m.capture_declared_target(root,artifacts/'0002',m.DIFFERENCE_CASE,'topology-123-1')
 
     def test_unverified_snapshot_rejects_symlink_without_reading_foreign_bytes(self):
         with tempfile.TemporaryDirectory()as directory:
@@ -391,7 +495,7 @@ class TopologyFixtureTest(unittest.TestCase):
             foreign=Path(directory)/'foreign';foreign.write_bytes(b'PRIVATE_OUTSIDE_BYTES')
             (root/'outputs'/m.DIFFERENCE_TARGET).symlink_to(foreign)
             observation=Path(directory)/'observation';observation.mkdir()
-            with self.assertRaises(m.FixtureError):m.archive_before_verification(root,observation,m.DIFFERENCE_CASE,'topology-123-1')
+            with self.assertRaises(m.FixtureError):m.capture_declared_target(root,observation,m.DIFFERENCE_CASE,'topology-123-1')
             self.assertNotIn(b'PRIVATE_OUTSIDE_BYTES',b''.join(p.read_bytes()for p in observation.iterdir()if p.is_file()))
 
     def test_physical_archive_retains_verified_bytes_and_refuses_changed_evidence(self):

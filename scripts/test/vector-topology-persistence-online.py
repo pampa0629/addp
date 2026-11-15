@@ -667,11 +667,27 @@ def run_prepared_file_scenario(repository,env,client,physical_runner,browser_run
     publication=_FilePublication(env,client,case)
     try:
         result=run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication)
-    except Exception as error:
-        publication.record(dict(stage='business_failed',error=publication.registration.metadata_error_evidence(error)))
+    except BaseException as error:
+        # Keep the first business failure even when evidence or revocation fails.
+        # Capture raw bytes without requiring any product/scan/OGR validation.
+        for stage, action in (
+                ('business_failure_record',lambda:publication.record(dict(stage='business_failed',error=publication.registration.metadata_error_evidence(error)))),
+                ('target_capture',lambda:fixture.capture_publication(env,'before_grant_cleanup')),
+                ('grant_cleanup',publication.cleanup)):
+            try:
+                action()
+            except Exception as secondary:
+                failure=dict(stage=stage,error=publication.registration.metadata_error_evidence(secondary))
+                publication.evidence.setdefault('exit_errors',[]).append(failure)
+                print('Topology exit failure: '+json.dumps(failure,ensure_ascii=False),file=sys.stderr)
+        try:
+            publication.write()
+        except Exception as secondary:
+            failure=dict(stage='exit_evidence_write',error=publication.registration.metadata_error_evidence(secondary))
+            publication.evidence.setdefault('exit_errors',[]).append(failure)
+            print('Topology exit evidence write failed: '+json.dumps(failure,ensure_ascii=False),file=sys.stderr)
         raise
-    finally:
-        publication.cleanup()
+    publication.cleanup()
     publication.evidence['result']='passed'
     publication.write()
     result['publication']=publication.evidence
@@ -927,9 +943,14 @@ class _FilePublication:
 
     def cleanup(self):
         # Persist observations before revocation, including when business validation failed.
-        self.write()
-        sources = [row for row in self.grants.pending if row['target']!=self.target]
         errors = []
+        try:
+            self.write()
+        except Exception as error:
+            failure=self.registration.metadata_error_evidence(error,'before_grant_cleanup_evidence')
+            errors.append(failure)
+            print('Topology cleanup evidence failure: '+json.dumps(failure),file=sys.stderr)
+        sources = [row for row in self.grants.pending if row['target']!=self.target]
         try:
             self.grants.cleanup(rows=sources)
             self.record(dict(stage='source_grants_revoked'))
@@ -944,7 +965,13 @@ class _FilePublication:
         except Exception as error:
             errors.append(self.registration.metadata_error_evidence(error, 'result_cleanup'))
         self.evidence['cleanup'] = {'result':'failed' if errors else 'passed', 'errors':errors}
-        self.write()
+        try:
+            self.write()
+        except Exception as error:
+            failure=self.registration.metadata_error_evidence(error,'after_grant_cleanup_evidence')
+            errors.append(failure)
+            self.evidence['cleanup']['result']='failed'
+            print('Topology cleanup evidence failure: '+json.dumps(failure),file=sys.stderr)
         if errors:
             raise SuiteError('topology file Grant cleanup incomplete; original evidence retained')
 
