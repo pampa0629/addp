@@ -86,6 +86,16 @@
 
 这仍是受控 Owner 事实的 T2，触发前正式 Pause／Resume 的实故障 T4 尚未完成。后续[七天历史 Hosted](Monitor执行监控与留存历史证据.md#七天-cdc-任务历史的真实-hosted-断言通过2026-11-15)另认定，不反向补齐此场景。
 
+### 触发前暂停的实故障 T4 准备（2026-11-15）
+
+沿同一 PostgreSQL 性能故障加入消费停滞／可选积压的 pending→Pause→Resume：先读到至少 30 秒的真实 pending 和目标锁阻塞下的源端积压，确认尚无 incident／event／投递或签名接收；暂停后两条消费规则 inactive、待触发／恢复窗口清空并保持 16 秒；恢复创建新 execution，generation 不变，原 180／300 秒阈值不变。恢复期间以同一个只读 SQL 快照核对窗口与生命周期计数，要求各自接近原阈值前仍无事件／投递，最后的不足窗口与实际打开窗口必须有同一新 trigger_since。捕获延迟继续独立评估；不重启 Monitor，评估器重建仍只认上方 T2。
+
+复用隔离 Infra owner 的精确 PostgreSQL 容器、既有只读 helper 和正式租户 API，不新增权限、产品接口、任务或探针；只返回本 Tenant／Task／generation／规则／目的地的安全窗口及计数。新 pending 观测替换原 75 秒预热空等，保留原打开后的暂停、缺样、恢复、通知、图表、风险、重建、scheduled 及清理；scenario 1450 秒、分发 1500 秒保持。
+
+冻结检出 `3f812eb686a76e9188943a27189c909aa8aaaa06` 仅叠加本批 Runner／测试／场景文档后，`make test-transfer-continuous-online-runner` 通过 145 项及既有语法、System 身份夹具 Go（`/tmp/addp-cdc-pretrigger-runner-final-isolated.log`）。反例覆盖越权／错规则快照、负计数／私有字段、已有生命周期、暂停保留窗口、恢复复用旧窗口、提前激活／投递，以及缺失临界前有效样本；恢复后的合法 unknown 状态不能冒充有效累计。初版替身阶段和无效时间样本失败原件保留在同前缀 Runner 日志，不计为产品或 Hosted 失败。
+
+额外 `make test-t2-ci-registration` 在既有 Common PG 替身 `test_full_gate_cannot_pass_using_only_the_previous_execution_cases` 的 15 秒子进程超时，87 项中 1 项错误；后续 10 项和登记比较未执行，不计通过，也未修复或重跑该范围。原件 `/tmp/addp-cdc-pretrigger-registration.log`。本批没有新增入口、服务或 CI 路线，既有 CDC Runner 与手工 Hosted 发现已覆盖。此时新源码真实 T4 尚未执行，不能以确定性测试或旧轮通过追认。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办

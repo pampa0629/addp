@@ -1190,6 +1190,34 @@ class CDCTaskObservationTest(unittest.TestCase):
 
 
 class CDCRiskAcceptanceTest(unittest.TestCase):
+    def test_pretrigger_oracle_is_readonly_and_bound_to_owned_rules_and_destination(self):
+        postgres=import_module('scripts.test.execution-retention-readonly-online')
+        row={'window':{'generation':'1','state':'pending','active':False},'incidents':0,'events':0,'deliveries':0}
+        env={'ONLINE_SUITE':M.SUITE,'ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_SCAN_POSTGRES_ID':'a'*64}
+        rules={'cdc_consumer_stalled':11,'cdc_backlog_high':12}
+        with patch.dict(os.environ,env),patch.object(postgres,'sql',return_value=json.dumps({k:row for k in rules})) as sql:
+            self.assertEqual(set(M.cdc_performance_lifecycle(2,7,1,rules,9)),set(rules))
+            query=sql.call_args.args[0]
+            self.assertTrue(query.startswith('BEGIN READ ONLY;'))
+            self.assertNotRegex(query,r'\b(INSERT|UPDATE|DELETE|ALTER|DROP)\b')
+            self.assertEqual(sql.call_args.kwargs,{'expected_suite':M.SUITE,'postgres_id':'a'*64,
+                'variables':{'tenant':2,'task':7,'generation':1,'rules':json.dumps(rules),'destination':9}})
+            for args in [(3,7,1,rules,9),(2,7,0,rules,9),(2,7,1,{'other':11},9),(2,7,1,rules,0)]:
+                with self.subTest(args=args),self.assertRaises(M.SuiteError):
+                    M.cdc_performance_lifecycle(*args)
+            self.assertEqual(sql.call_count,1)
+
+    def test_pretrigger_oracle_rejects_missing_scope_private_fields_and_invalid_counts(self):
+        postgres=import_module('scripts.test.execution-retention-readonly-online')
+        code='cdc_consumer_stalled'
+        row={'window':{'generation':'1','state':'pending','active':False},'incidents':0,'events':0,'deliveries':0}
+        values=[{}, {code:{**row,'events':-1}}, {code:{**row,'events':False}},
+                {code:{**row,'window':{**row['window'],'connector':'private'}}}]
+        env={'ONLINE_SUITE':M.SUITE,'ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_SCAN_POSTGRES_ID':'a'*64}
+        for value in values:
+            with self.subTest(value=value),patch.dict(os.environ,env),patch.object(postgres,'sql',return_value=json.dumps(value)),self.assertRaises(M.SuiteError):
+                M.cdc_performance_lifecycle(2,7,1,{code:11},9)
+
     def test_cleanup_risk_readback_rejects_cached_zero_before_clear_and_accepts_fresh_sample(self):
         now=M.datetime.now(M.timezone.utc)
         cleared=now-timedelta(seconds=10)
@@ -1373,7 +1401,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         def mutate(actor,path,body,status):
             definitions.append(body);return {'id':len(definitions)}
         def stage(value):
-            if value=='performance_trigger':raise M.SuiteError('stop after native backpressure')
+            if value=='performance_pending':raise M.SuiteError('stop after native backpressure')
         proof={}
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M,'until',return_value={'initial_snapshot_completed':True,'lag_offsets':'0'}), \
@@ -1416,6 +1444,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         state = {'phase':'', 'clock':0, 'trigger_reads':0, 'missing_reads':0,
                  'ack':False, 'deleted':False, 'lock_done':False, 'recovery_reads':0}
         resumed = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
+        pending_resumed = 'cccccccc-3333-4333-8333-cccccccccccc'
+        state['running_execution'] = UUID
         command, commands, native = self.performance_native_driver()
         lock = SimpleNamespace(stdin=io.BytesIO(),stdout=io.BytesIO(b'ADDP_CDC_PERFORMANCE_LOCKED\n'),
             poll=lambda:0 if state['lock_done'] else None,
@@ -1429,6 +1459,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         observed = base.isoformat()
         def stage(value):
             state['phase'] = value
+            if value == 'performance_trigger':
+                state['resumed_since'] = Clock.now() + timedelta(seconds=1)
         def rules():
             now = Clock.now()
             phase = state['phase']
@@ -1436,8 +1468,20 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             for index,code in enumerate(sorted(M.CDC_PERFORMANCE_CODES),1):
                 window = {'state':'active','active':True,
                           'trigger_since':(now-timedelta(seconds=M.CDC_PERFORMANCE_SECONDS[code]+1)).isoformat()}
-                if invalid == 'early' and code == 'cdc_backlog_high':
-                    window['trigger_since'] = (now-timedelta(seconds=299)).isoformat()
+                if phase in ('performance_pending','performance_trigger'):
+                    since = base if phase == 'performance_pending' or code == 'cdc_capture_delayed' else state['resumed_since']
+                    if invalid == 'resume_old_window' and code != 'cdc_capture_delayed':
+                        since = base
+                    active = (now-since).total_seconds() >= M.CDC_PERFORMANCE_SECONDS[code]
+                    window = {'state':'active' if active else 'pending','active':active,'generation':'1',
+                              'trigger_since':since.isoformat(),'sampled_at':now.isoformat(),
+                              'expires_at':(now+timedelta(seconds=30)).isoformat()}
+                if invalid == 'early' and code == 'cdc_backlog_high' and phase == 'performance_trigger':
+                    window.update(state='active',active=True)
+                if phase == 'performance_pretrigger_pause' and code != 'cdc_capture_delayed':
+                    window = {'state':'paused','active':False,'generation':'1','reset_at':now.isoformat()}
+                    if invalid == 'pause_retains_pending':
+                        window['trigger_since'] = base.isoformat()
                 if phase == 'performance_task_pause' and code != 'cdc_capture_delayed':
                     window = {'state':'paused','active':True}
                 if phase == 'performance_unknown':
@@ -1449,7 +1493,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                     **({'backlog_threshold':'257' if invalid=='threshold' else '256'} if code=='cdc_backlog_high' else {})})
             return values
         def alerts(*args, **kwargs):
-            if state['phase'] == 'performance_wal_wait' or state['trigger_reads'] < 2:
+            if state['phase'].startswith('performance_pretrigger') or state['phase'] == 'performance_pending' or state['trigger_reads'] < 2:
                 return {}
             status = 'acknowledged' if state['ack'] else 'open'
             if state['phase'] == 'performance_recovery' and state['recovery_reads'] >= 7:
@@ -1459,7 +1503,30 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 'details':{'trigger_seconds':M.CDC_PERFORMANCE_SECONDS[r['rule_type']],
                            'sampled_at':Clock.now().isoformat(),
                            **({'backlog_threshold':'256','lag_offsets':'1000'} if r['rule_type']=='cdc_backlog_high' else {})}}
-                for r in rules()}
+                for r in rules() if state['phase'] != 'performance_trigger' or r['cdc_evaluation']['active']}
+        def lifecycle(tenant, task_id, generation, selected, destination_id):
+            if state['phase'] == 'performance_pending':
+                state['clock'] += 15
+            result = {}
+            for rule in rules():
+                code = rule['rule_type']
+                if code not in selected:
+                    continue
+                window = rule['cdc_evaluation']
+                if state['phase']=='performance_trigger' and state['trigger_reads']==1:
+                    window={'state':'unknown','generation':'1','active':False,'reset_at':Clock.now().isoformat()}
+                if invalid == 'boundary_missing' and state['phase']=='performance_trigger' and code != 'cdc_capture_delayed' and not window['active']:
+                    age=(Clock.now()-state['resumed_since']).total_seconds()
+                    if age >= M.CDC_PERFORMANCE_SECONDS[code]-30:
+                        window={**window,'sampled_at':(Clock.now()-timedelta(seconds=60)).isoformat(),
+                                'expires_at':(Clock.now()-timedelta(seconds=30)).isoformat()}
+                count = int(window.get('active',False)) if state['phase']=='performance_trigger' else 0
+                if invalid == 'premature_lifecycle' and state['phase']=='performance_trigger':
+                    count = 1
+                if invalid == 'preexisting_lifecycle' and state['phase']=='performance_pending':
+                    count = 1
+                result[code] = {'window':deepcopy(window),'incidents':count,'events':count,'deliveries':count}
+            return result
         def request(method, path, *args, **kwargs):
             if method == 'DELETE':
                 state['deleted'] = True
@@ -1485,9 +1552,15 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             fresh = {'sampled_at':now.isoformat(),'expires_at':(now+timedelta(seconds=30)).isoformat()}
             stale = {'sampled_at':(now-timedelta(seconds=60)).isoformat(),
                      'expires_at':(now-timedelta(seconds=30)).isoformat()}
-            buffer = {**fresh,'status':'available','initial_snapshot_completed':True,'lag_offsets':'0'}
+            buffer = {**fresh,'status':'available','initial_snapshot_completed':True,'lag_offsets':'0','committed_offset':'0'}
             delay = {**fresh,'status':'available','delay_seconds':70,'event_count':'0'}
+            if state['phase'] == 'performance_pending':
+                buffer['lag_offsets'] = '1000'
             if state['phase'] == 'performance_trigger':
+                state['clock'] += 15
+                now = Clock.now()
+                fresh = {'sampled_at':now.isoformat(),'expires_at':(now+timedelta(seconds=30)).isoformat()}
+                buffer.update(fresh);delay.update(fresh)
                 state['trigger_reads'] += 1
                 delay['event_count'] = str(state['trigger_reads'])
                 buffer['lag_offsets'] = '1000'
@@ -1502,8 +1575,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             if state['phase'] == 'performance_recovery':
                 delay.update(delay_seconds=20,event_count=str(state['recovery_reads']))
                 buffer['lag_offsets'] = '128' if invalid=='half' else '127'
-            return SimpleNamespace(payload={'desired_state':'paused' if state['phase']=='performance_task_pause' else 'running',
-                'last_execution_id':UUID,'capture':{'generation':1,'buffer_observation':buffer,'delay_observation':delay}})
+            return SimpleNamespace(payload={'desired_state':'paused' if state['phase'] in ('performance_task_pause','performance_pretrigger_pause') else 'running',
+                'last_execution_id':state['running_execution'],'capture':{'generation':1,'buffer_observation':buffer,'delay_observation':delay}})
         def mutate(actor, path, body=None, status=None):
             if path.endswith('/acknowledge'):
                 state['ack'] = True
@@ -1513,15 +1586,24 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             definitions.append(body)
             return {'id':len(definitions)}
         delivered = unittest.mock.Mock(return_value=[{'signed_receipt_verified':True}]*3)
-        launch = unittest.mock.Mock(return_value=resumed)
-        error = {'early':'real sustained window','threshold':'optional threshold',
+        def launch_execution(*args):
+            state['running_execution'] = pending_resumed if state['phase']=='performance_pretrigger_resume' else resumed
+            return state['running_execution']
+        launch = unittest.mock.Mock(side_effect=launch_execution)
+        error = {'early':'full resumed window','threshold':'optional threshold',
                  'pause_changed':'pause changed confirmed','half':'did not converge before the deadline',
                  'history_identity':'fault history task identity changed',
-                 'history_pre_fault':'did not converge before the deadline'}.get(invalid)
+                 'history_pre_fault':'did not converge before the deadline',
+                 'preexisting_lifecycle':'lifecycle was not empty','premature_lifecycle':'lifecycle was not empty',
+                 'pause_retains_pending':'did not converge before the deadline',
+                 'resume_old_window':'reused its pre-pause window',
+                 'boundary_missing':'original threshold boundary'}.get(invalid)
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
              patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
              patch.object(M,'datetime',Clock), patch.object(M,'wait_status',return_value={'status':'cancelled'}), \
+             patch.dict(os.environ,{'ADDP_ONLINE_TEST_TENANT_ID':'2'}), \
+             patch.object(M,'cdc_performance_lifecycle',side_effect=lifecycle), \
              patch.object(M.time,'monotonic',side_effect=lambda:state['clock']), \
              patch.object(M.time,'sleep',side_effect=lambda seconds:state.update(clock=state['clock']+seconds)), \
              patch.object(M,'cdc_risk_alerts',side_effect=alerts),patch.object(M,'physical',return_value=True):
@@ -1545,8 +1627,11 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(set(value['missing_samples']),{'buffer_observation','delay_observation'})
         self.assertIn('recorded_at',value['history_gap'])
         self.assertEqual(value['trigger_seconds']['cdc_backlog_high'],300)
-        self.assertEqual(value['resumed_execution_id'],launch.return_value)
-        launch.assert_called_once_with(7,'resume')
+        self.assertEqual(value['resumed_execution_id'],'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb')
+        self.assertEqual(launch.call_args_list,[unittest.mock.call(7,'resume')]*2)
+        self.assertEqual(value['pretrigger_pause']['result'],'passed')
+        self.assertEqual(value['pretrigger_pause']['pause_hold_checks'],8)
+        self.assertEqual(set(value['pretrigger_pause']['insufficient_last']),M.CDC_PERFORMANCE_CODES-{'cdc_capture_delayed'})
         self.assertEqual(delivered.call_count,2)
         self.assertEqual(value['result'],'passed')
         self.assertEqual(value['backlog_threshold'],'256')
@@ -1554,6 +1639,12 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
 
     def test_backlog_guards_refuse_short_window_wrong_threshold_changed_pause_and_half_boundary(self):
         for invalid in ('early','threshold','pause_changed','half','history_identity','history_pre_fault'):
+            with self.subTest(invalid=invalid):
+                value,*_ = self.performance_orchestration(invalid=invalid)
+                self.assertEqual(value['result'],'failed')
+
+    def test_pretrigger_guards_reject_events_retained_pending_old_windows_and_premature_delivery(self):
+        for invalid in ('preexisting_lifecycle','pause_retains_pending','resume_old_window','premature_lifecycle','boundary_missing'):
             with self.subTest(invalid=invalid):
                 value,*_ = self.performance_orchestration(invalid=invalid)
                 self.assertEqual(value['result'],'failed')

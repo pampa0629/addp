@@ -527,6 +527,53 @@ def verify_capture_failure(client, task_id, generation, binding, mutate, deliver
             raise SuiteError('capture fault cleanup failed')
 
 
+def cdc_performance_lifecycle(tenant, task_id, generation, rules, destination_id):
+    """Independent Infra oracle: one read-only snapshot, only this Hosted task."""
+    require_transfer_fixture(tenant, task_id)
+    postgres_id = os.environ.get('ADDP_ONLINE_SCAN_POSTGRES_ID', '')
+    require(type(generation) is int and generation > 0 and type(destination_id) is int and destination_id > 0
+            and type(rules) is dict and rules and set(rules) <= CDC_PERFORMANCE_CODES
+            and all(type(v) is int and v > 0 for v in rules.values()) and len(set(rules.values())) == len(rules)
+            and re.fullmatch(r'[0-9a-f]{64}', postgres_id), 'performance lifecycle fixture identity mismatch')
+    postgres = import_module('scripts.test.execution-retention-readonly-online')
+    query = """BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+WITH selected AS (
+ SELECT r.id, r.rule_type, r.cdc_window FROM monitor.alert_rules r
+ JOIN jsonb_each_text(:'rules'::jsonb) wanted ON r.id=wanted.value::bigint AND r.rule_type=wanted.key
+ WHERE r.tenant_id=:'tenant'::bigint AND r.module='transfer' AND r.task_type='sync'
+   AND r.source_task_id=:'task'
+), incidents AS (
+ SELECT i.id, i.alert_rule_id FROM monitor.alert_incidents i JOIN selected r ON r.id=i.alert_rule_id
+ WHERE i.tenant_id=:'tenant'::bigint AND i.module='transfer' AND i.task_type='sync'
+   AND i.source_task_id=:'task' AND i.details->>'generation'=:'generation'
+)
+SELECT jsonb_object_agg(r.rule_type, jsonb_build_object('window',r.cdc_window,
+ 'incidents',(SELECT count(*) FROM incidents i WHERE i.alert_rule_id=r.id),
+ 'events',(SELECT count(*) FROM monitor.alert_events e JOIN incidents i ON i.id=e.incident_id
+           WHERE i.alert_rule_id=r.id AND e.tenant_id=:'tenant'::bigint),
+ 'deliveries',(SELECT count(*) FROM monitor.webhook_deliveries d JOIN incidents i ON i.id=d.incident_id
+               WHERE i.alert_rule_id=r.id AND d.tenant_id=:'tenant'::bigint AND d.destination_id=:'destination'::bigint)))
+FROM selected r;
+COMMIT;
+"""
+    try:
+        value = json.loads(postgres.sql(query, expected_suite=SUITE, postgres_id=postgres_id,
+            variables={'tenant':tenant, 'task':task_id, 'generation':generation,
+                       'rules':json.dumps(rules), 'destination':destination_id}))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        raise SuiteError('performance lifecycle snapshot unavailable') from None
+    require(type(value) is dict and set(value) == set(rules), 'performance lifecycle rule scope changed')
+    fields = {'reset_at','generation','sampled_at','expires_at','trigger_since','recovery_since','previous_value','state','active'}
+    for row in value.values():
+        require(type(row) is dict and set(row) == {'window','incidents','events','deliveries'}
+                and type(row['window']) is dict and set(row['window']) <= fields
+                and all(type(row[k]) is int and row[k] >= 0 for k in ('incidents','events','deliveries')),
+                'performance lifecycle exposed invalid fields')
+    assert_safe(value)
+    return value
+
+
 def verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
                            mutate, delivered, receiver, proof, stage, launch):
     """Real bounded workload and native faults, exclusively on this Hosted deployment."""
@@ -540,6 +587,16 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
     source_dirty = throttled = connector_tuned = False
     original_cpu = original_config = None
     samples = []
+    consumption_codes = CDC_PERFORMANCE_CODES - {'cdc_capture_delayed'}
+    pretrigger = evidence['pretrigger_pause'] = {'result': 'failed'}
+
+    def lifecycle(codes):
+        return cdc_performance_lifecycle(int(os.environ['ADDP_ONLINE_TEST_TENANT_ID']), task_id,
+            generation, {code:rules[code] for code in codes}, destination_id)
+
+    def require_empty(rows):
+        require(all(row[key] == 0 for row in rows.values() for key in ('incidents','events','deliveries')),
+                'pretrigger performance lifecycle was not empty')
 
     def docker(*args, data=None):
         return subprocess.run(['docker', *args], input=data, check=True, capture_output=True, timeout=15).stdout.decode().strip()
@@ -645,13 +702,64 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         evidence['source_fill_succeeded'] = physical('performance-fill')
         require(evidence['source_fill_succeeded'], 'bounded performance workload failed')
         evidence['workload_committed_at'] = datetime.now(timezone.utc).isoformat()
-        stage('performance_wal_wait')
-        # Keep capture running: native CPU pressure creates age without a second failure signal.
-        deadline = time.monotonic() + 75
-        while time.monotonic() < deadline:
+        stage('performance_pending')
+        def pending():
+            rows = lifecycle(CDC_PERFORMANCE_CODES)
+            require_empty(rows)
             require(not cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES),
                     'performance warning opened before its sustained evidence window')
+            require(not any(r['signal_code'] in CDC_PERFORMANCE_CODES for r in receiver.snapshot()),
+                    'pretrigger performance notification was received')
+            for code in consumption_codes:
+                window = rows[code]['window']
+                if window.get('state') != 'pending' or window.get('active') or window.get('generation') != str(generation):
+                    return None
+                at = cdc_sample_time(window, datetime.now(timezone.utc))
+                if at is None or not window.get('trigger_since'):
+                    return None
+                elapsed = (at - datetime.fromisoformat(window['trigger_since'].replace('Z', '+00:00'))).total_seconds()
+                require(elapsed < 150, 'pending consumer window too close to opening before pause')
+                if elapsed < 30:
+                    return None
+            return rows
+        pretrigger['before_pause'] = until(pending, timeout=150)
+        pending_buffer = sample()['buffer_observation'] or {}
+        require(pending_buffer.get('status') == 'available'
+                and cdc_sample_time(pending_buffer, datetime.now(timezone.utc)) is not None
+                and int(pending_buffer['lag_offsets']) > int(CDC_BACKLOG_THRESHOLD)
+                and pending_buffer['committed_offset'] == baseline['committed_offset'],
+                'pretrigger pending window lacks real locked-consumer backlog')
+        pretrigger['buffer_before_pause'] = pending_buffer
+        stage('performance_pretrigger_pause')
+        mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
+        paused_task = sample()['task_state']
+        require(paused_task['desired_state'] == 'paused', 'pretrigger task did not pause')
+        pending_execution = canonical_uuid(paused_task['last_execution_id'])
+        wait_status(client, pending_execution, 'cancelled')
+        pretrigger['paused_execution_id'] = pending_execution
+        def pending_cleared():
+            rows = lifecycle(consumption_codes)
+            require_empty(rows)
+            return rows if all(row['window'].get('state') == 'paused'
+                and row['window'].get('generation') == str(generation) and row['window'].get('active') is False
+                and not row['window'].get('trigger_since') and not row['window'].get('recovery_since')
+                for row in rows.values()) else None
+        pretrigger['paused'] = until(pending_cleared)
+        deadline, checks = time.monotonic() + 16, 0
+        while time.monotonic() < deadline:
+            require(pending_cleared(), 'paused pretrigger window was not kept clear')
+            require(not any(r['signal_code'] in consumption_codes for r in receiver.snapshot()),
+                    'paused pretrigger notification was received')
+            checks += 1
             time.sleep(2)
+        pretrigger['pause_hold_checks'] = checks
+        stage('performance_pretrigger_resume')
+        pretrigger['resume_requested_at'] = datetime.now(timezone.utc).isoformat()
+        pending_resumed = launch(task_id, 'resume')
+        require(pending_resumed != pending_execution, 'pretrigger resume reused an ended execution')
+        pretrigger['resumed_execution_id'] = pending_resumed
+        pretrigger['resumed_pending'] = {}
+        pretrigger['insufficient_last'] = {}
         stage('performance_trigger')
         def opened():
             current = sample()
@@ -661,10 +769,35 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 samples.append(current)
                 evidence['samples'] = samples
                 evidence['latest_rule_windows'] = {k: v['cdc_evaluation'] for k, v in rule_rows().items()}
+            rows = lifecycle(consumption_codes)
+            for code, row in rows.items():
+                window = row['window']
+                if not window.get('trigger_since'):
+                    continue
+                at = cdc_sample_time(window, datetime.now(timezone.utc))
+                if at is None:
+                    continue
+                since = datetime.fromisoformat(window['trigger_since'].replace('Z', '+00:00'))
+                require(since > datetime.fromisoformat(pretrigger['resume_requested_at']),
+                        'resumed performance trigger reused its pre-pause window')
+                elapsed = (at - since).total_seconds()
+                if elapsed < CDC_PERFORMANCE_SECONDS[code]:
+                    require(window.get('active') is False, 'performance rule activated before full resumed window')
+                    require_empty({code:row})
+                    pretrigger['resumed_pending'].setdefault(code, row)
+                    pretrigger['insufficient_last'][code] = row
             values = cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES)
             evidence['latest_incidents'] = values
             return values if set(values) == CDC_PERFORMANCE_CODES and all(v['status'] == 'open' for v in values.values()) else None
         active = until(opened, timeout=450)
+        require(set(pretrigger['insufficient_last']) == consumption_codes,
+                'resumed performance windows lacked actual insufficient samples')
+        for code, row in pretrigger['insufficient_last'].items():
+            window = row['window']
+            elapsed = (datetime.fromisoformat(window['sampled_at'].replace('Z', '+00:00'))
+                       - datetime.fromisoformat(window['trigger_since'].replace('Z', '+00:00'))).total_seconds()
+            require(CDC_PERFORMANCE_SECONDS[code] - 30 <= elapsed < CDC_PERFORMANCE_SECONDS[code],
+                    'resumed insufficient evidence did not reach the original threshold boundary')
         windows = rule_rows()
         for code, incident in active.items():
             window = windows[code]['cdc_evaluation']
@@ -674,6 +807,10 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             require(incident['severity'] == 'warning' and incident['details']['trigger_seconds'] == seconds
                     and window['active'] and (at - since).total_seconds() >= seconds,
                     'performance warning lacks its real sustained window')
+            if code in consumption_codes:
+                require(since == datetime.fromisoformat(pretrigger['insufficient_last'][code]['window']['trigger_since'].replace('Z', '+00:00')),
+                        'opened performance window differs from its insufficient evidence')
+        pretrigger['result'] = 'passed'
         backlog = active['cdc_backlog_high']['details']
         require(windows['cdc_backlog_high']['backlog_threshold'] == CDC_BACKLOG_THRESHOLD
                 and backlog['backlog_threshold'] == CDC_BACKLOG_THRESHOLD
@@ -697,7 +834,6 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         paused_execution = canonical_uuid(task_state['last_execution_id'])
         wait_status(client, paused_execution, 'cancelled')
         evidence['paused_execution_id'] = paused_execution
-        consumption_codes = CDC_PERFORMANCE_CODES - {'cdc_capture_delayed'}
         def evaluation_paused():
             rows = rule_rows()
             return all(rows[code]['cdc_evaluation']['state'] == 'paused' for code in consumption_codes)
@@ -2280,6 +2416,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
                             'gap_timestamp': report['cdc_risk_closure']['performance']['history_gap']['timestamp']})
         report['checks'].append('cdc_history_chart_real_growth_zero_and_fault_gap')
         report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
+        report['checks'].append('cdc_pretrigger_pause_empty_lifecycle_and_complete_resumed_windows')
         report['checks'].append('cdc_optional_backlog_300s_pause_missing_hold_60s_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')
