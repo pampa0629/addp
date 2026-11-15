@@ -762,6 +762,7 @@ wait_backend_ready() {
   local module="$1" pid="$2" port="$3" label="$4" request_cap="${5:-$MAX_WAIT}"
   local deadline=$((SECONDS + MAX_WAIT)) remaining request_limit
   while :; do
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then break; fi
     remaining=$((deadline - SECONDS))
     [ "$remaining" -gt 0 ] || break
     request_limit="$remaining"
@@ -1302,20 +1303,16 @@ fi
 start_module_workers() (
   local module="$1" backend_pid="$2" port="$3"
   shift 3
-  local attempt=0 worker binary pid
-  while true; do
-    require_started_process "$module" "$backend_pid" || return 1
-    if curl -fsS --max-time 2 "http://localhost:${port}/health/ready" >/dev/null 2>&1; then
-      require_started_process "$module" "$backend_pid" || return 1
-      break
-    fi
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 30 ]; then
-      echo "✗ ${module} Backend 未就绪，不启动对应 Worker" >&2
-      return 1
-    fi
-    sleep 1
-  done
+  local worker binary pid
+  if ! require_started_process "$module" "$backend_pid"; then
+    report_backend_startup_failure "$module" process_exited
+    return 1
+  fi
+  wait_backend_ready "$module" "$backend_pid" "$port" "$module Backend" || return 1
+  if ! require_started_process "$module" "$backend_pid"; then
+    report_backend_startup_failure "$module" process_exited
+    return 1
+  fi
   for worker in "$@"; do
     if check_service_running "$worker" ""; then
       binary=$(addp_worker_binary "$worker")
@@ -1342,7 +1339,7 @@ require_started_backends() {
 
 TRANSFER_WORKERS=()
 BACKEND_STARTS=()
-WORKER_START_PIDS=()
+HEALTH_CHECK_PIDS=()
 if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
   begin_start_listener_batch
@@ -1564,22 +1561,22 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 每个模块独立等待自己的 Backend，就绪后启动该模块 Worker。
   if [ "$START_META_WORKER" = true ]; then
     start_module_workers meta "$META_PID" "$META_BACKEND_PORT" "${META_WORKER_UNITS[@]}" &
-    WORKER_START_PIDS+=($!)
+    HEALTH_CHECK_PIDS+=($!)
   fi
   if [ "$START_QUALITY_WORKER" = true ]; then
     start_module_workers quality "$QUALITY_PID" "$QUALITY_BACKEND_PORT" "${QUALITY_WORKER_UNITS[@]}" &
-    WORKER_START_PIDS+=($!)
+    HEALTH_CHECK_PIDS+=($!)
   fi
   if [ "$START_SECURITY_WORKER" = true ]; then
     start_module_workers security "$SECURITY_PID" "$SECURITY_BACKEND_PORT" security-worker &
-    WORKER_START_PIDS+=($!)
+    HEALTH_CHECK_PIDS+=($!)
   fi
   TRANSFER_WORKERS=()
   [ "$START_TRANSFER_BOUNDED_WORKER" != true ] || TRANSFER_WORKERS+=("${TRANSFER_BOUNDED_WORKER_UNITS[@]}")
   [ "$START_TRANSFER_CONTINUOUS_WORKER" != true ] || TRANSFER_WORKERS+=("${TRANSFER_CONTINUOUS_WORKER_UNITS[@]}")
   if [ "${#TRANSFER_WORKERS[@]}" -gt 0 ]; then
     start_module_workers transfer "$TRANSFER_PID" "$TRANSFER_BACKEND_PORT" "${TRANSFER_WORKERS[@]}" &
-    WORKER_START_PIDS+=($!)
+    HEALTH_CHECK_PIDS+=($!)
   fi
 
   end_start_listener_batch
@@ -1607,8 +1604,7 @@ fi
 # ============================================================
 if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_WORKBENCH_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
   echo "  [3/3] 并行健康检查..."
-  HEALTH_CHECK_PIDS=()
-
+  # 已排入的 Worker 任务同时负责所属 Backend 的就绪检查。
   if [ "$START_MANAGER_BACKEND" = true ]; then
     if [ "$WAIT_LIVE" = true ]; then
       (
@@ -1629,12 +1625,12 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  if [ "$START_META_BACKEND" = true ]; then
+  if [ "$START_META_BACKEND" = true ] && [ "$START_META_WORKER" != true ]; then
     wait_backend_ready meta "${META_PID:-}" "$META_BACKEND_PORT" "Meta Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  if [ "$START_TRANSFER_BACKEND" = true ]; then
+  if [ "$START_TRANSFER_BACKEND" = true ] && [ "${#TRANSFER_WORKERS[@]}" -eq 0 ]; then
     wait_backend_ready transfer "${TRANSFER_PID:-}" "$TRANSFER_BACKEND_PORT" "Transfer Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
@@ -1669,12 +1665,12 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  if [ "$START_QUALITY_BACKEND" = true ]; then
+  if [ "$START_QUALITY_BACKEND" = true ] && [ "$START_QUALITY_WORKER" != true ]; then
     wait_backend_ready quality "${QUALITY_PID:-}" "$QUALITY_BACKEND_PORT" "Quality Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  if [ "$START_SECURITY_BACKEND" = true ]; then
+  if [ "$START_SECURITY_BACKEND" = true ] && [ "$START_SECURITY_WORKER" != true ]; then
     wait_backend_ready security "${SECURITY_PID:-}" "$SECURITY_BACKEND_PORT" "Security Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
@@ -1727,8 +1723,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   echo ""
 fi
-# 等待所有模块的 Worker 启动任务；父进程从正式 PID 文件回收身份。
-addp_wait_for_parallel_tasks "Worker 启动" "${WORKER_START_PIDS[@]}" || exit 1
+# 父进程从已通过健康检查的启动任务回收 Worker PID。
 if [ "$START_META_WORKER" = true ]; then
   META_WORKER_PID=''
   for unit in "${META_WORKER_UNITS[@]}"; do

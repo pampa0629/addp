@@ -271,7 +271,7 @@ exit "$status"
                         TEST_WAIT_BUDGET=str(case.get("budget", 1)), CURL_ELAPSED=str(case.get("elapsed", 0)),
                         CURL_STATUS=str(case.get("status", 0)), CURL_TRANSIENT=case.get("transient", "false"),
                         START_ONTOLOGY_BACKEND=case.get("selected", "true"),
-                        ONTOLOGY_BACKEND_PORT="32195", ONTOLOGY_PID="12345",
+                        ONTOLOGY_BACKEND_PORT="32195", ONTOLOGY_PID=str(os.getpid()),
                     ), capture_output=True, text=True, timeout=5)
                     wanted_status = case.get("exit", 0)
                     self.assertEqual(result.returncode, wanted_status, result.stdout + result.stderr)
@@ -282,7 +282,7 @@ exit "$status"
                     self.assertEqual(sleeps.read_text().splitlines() if sleeps.exists() else [], [
                         str(at) + "|" + str(seconds) for at, seconds in case.get("sleeps", [])])
                     if wanted_status:
-                        self.assertEqual(failure.read_text().splitlines(), ["ontology|12345|Ontology Backend"])
+                        self.assertEqual(failure.read_text().splitlines(), [f"ontology|{os.getpid()}|Ontology Backend"])
                     else:
                         self.assertFalse(failure.exists())
 

@@ -32,11 +32,15 @@ class StartupResultsTest(unittest.TestCase):
         modules = sorted(set(name.lower() for name in re.findall(
             r'^  if \[ "\$START_([A-Z_]+)_BACKEND" = true \]; then', launch, re.M)))
         self.assertIn('standard', modules)
-        phase = source[source.index('# Phase 3:'):source.index('# 等待所有模块的 Worker 启动任务')]
+        phase = source[source.index('# Phase 3:'):source.index('# 父进程从已通过健康检查')]
         system = source[source.index('# 2. 启动 System Backend'):source.index('# 3. 并行启动所有后端服务')]
         helpers = source[source.index('report_backend_startup_failure()'):source.index('# 编译 Server 二进制')]
+        worker_jobs = launch[launch.index('  # 每个模块独立等待自己的 Backend'):launch.index('  end_start_listener_batch', launch.index('  # 每个模块独立等待自己的 Backend'))]
+        worker_helper = source[source.index('start_module_workers() ('):source.index('require_started_backends()')]
         ports = {module: str(21000 + index) for index, module in enumerate(['system', *modules])}
         cases = [('all-ready', modules, '', 'ready', False),
+                 ('with-workers', ['meta', 'transfer', 'quality', 'security'], '', 'ready', False),
+                 ('failed-worker-owner', ['quality', 'security'], 'security', 'failed', False),
                  ('none-selected', [], '', 'ready', False),
                  ('parallel-failure', ['monitor', 'standard'], 'standard', 'failed', False),
                  ('transient-standard', ['standard'], 'standard', 'transient', False),
@@ -55,6 +59,11 @@ class StartupResultsTest(unittest.TestCase):
 set -eu
 RED= GREEN= YELLOW= NC=
 MAX_WAIT=2
+HEALTH_CHECK_PIDS=()
+TRANSFER_WORKERS=()
+META_WORKER_UNITS=(meta-worker-1) QUALITY_WORKER_UNITS=(quality-worker-1)
+TRANSFER_BOUNDED_WORKER_UNITS=(transfer-bounded-worker-1)
+require_started_process() { kill -0 "$2"; }
 EXACT_PROCESS=false
 python3() { [ "$1" = scripts/prod/publish-module-declarations.py ] && [ "$2" = --prepare ]; }
 check_service_running() { return 1; }
@@ -73,13 +82,16 @@ curl() {
     *) return 0 ;;
   esac
 }
-''' + helpers + '''
+''' + helpers + worker_helper + '''
 report_backend_startup_failure() {
   printf '%s|%s\\n' "$1" "$2" >> "$CASE_ROOT/failures"
 }
-''' + (system if selected == ['system'] else phase) + '\ntouch "$CASE_ROOT/completed"\n'
+''' + (system if selected == ['system'] else worker_jobs + phase) + '\ntouch "$CASE_ROOT/completed"\n'
                     environment = dict(os.environ, CASE_ROOT=str(case), FAIL_PORT=ports.get(failed, '0'),
                                        CURL_MODE=mode, WAIT_LIVE=str(live).lower())
+                    for family in ['META', 'QUALITY', 'SECURITY', 'TRANSFER_BOUNDED', 'TRANSFER_CONTINUOUS']:
+                        enabled = name in ('with-workers', 'failed-worker-owner') and family.split('_')[0].lower() in selected
+                        environment['START_' + family + '_WORKER'] = str(enabled and family != 'TRANSFER_CONTINUOUS').lower()
                     for module in ['system', *modules]:
                         environment.update({
                             'START_' + module.upper() + '_BACKEND': str(module in selected).lower(),

@@ -59,7 +59,7 @@ Python Agent Backend 在自身事务中实现同一 PostgreSQL 协议（`addp.sc
 
 `common` schema 的执行记录及运行心跳由 System Backend 在就绪前统一初始化，领域实现仍归 `common/execution` 和 `common/runtimehealth`；业务 Backend、Worker 只校验公共 schema。连接数据库与执行迁移分离。
 
-开发脚本和 Compose 按模块执行 `Backend /health/ready 成功 → 对应 Worker 启动`。各模块之间保持并行，不等待全平台 Backend 就绪才启动 Worker。等待必须有超时并确认 Backend 进程存活；Backend 失败不得启动其 Worker。Backend readiness 不依赖 Worker，避免循环依赖。Worker 运行后不因所属 Backend 的短暂不可用被强制停止；涉及结构升级时，必须先停止相关 Worker 领取任务并妥善结束在途任务，再迁移和恢复，禁止新旧 schema 程序混跑。
+开发脚本和 Compose 按模块执行 `Backend /health/ready 成功 → 对应 Worker 启动`。各模块之间保持并行，不等待全平台 Backend 就绪才启动 Worker。开发脚本对同一 Backend 只执行一次就绪等待，使用共用的 60 秒总预算。选中 Worker 时，该等待同时决定所属 Worker 能否启动和本次后端就绪检查的结果。启动 Worker 前须确认 Backend 进程仍存活；Backend 失败不得启动其 Worker。Backend readiness 不依赖 Worker，避免循环依赖。Worker 运行后不因所属 Backend 的短暂不可用被强制停止；涉及结构升级时，必须先停止相关 Worker 领取任务并妥善结束在途任务，再迁移和恢复，禁止新旧 schema 程序混跑。
 
 保护投影存储的构造函数只打开并验证已存在的存储，迁移由 owner Backend 显式调用。Meta 外键由已有版本化 SQL 迁移拥有，不得在每次启动时重复追加约束。
 

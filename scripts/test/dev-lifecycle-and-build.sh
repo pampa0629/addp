@@ -2361,10 +2361,11 @@ import os, re, subprocess
 root, fixture = Path(__import__('sys').argv[1]), Path(__import__('sys').argv[2]) / 'worker-order'
 fixture.mkdir()
 source=(root/'scripts/dev/start.sh').read_text()
-helper=source[source.index('start_module_workers() ('):source.index('BACKEND_STARTS=()')]
+helper=source[source.index('report_backend_startup_failure()'):source.index('# 编译 Server 二进制')]
+helper+=source[source.index('start_module_workers() ('):source.index('BACKEND_STARTS=()')]
 for directory in ('.dev-bins','.dev-pids','logs','scripts/dev'):(fixture/directory).mkdir(parents=True)
 __import__('shutil').copyfile(root/'scripts/dev/process-metrics-launch.py', fixture/'scripts/dev/process-metrics-launch.py')
-for name in ('fast-worker','slow-worker','failed-worker'):
+for name in ('fast-worker','slow-worker','failed-worker','delayed-worker'):
  path=fixture/'.dev-bins'/('addp-'+name)
  path.write_text('#!/bin/bash\ntouch "'+name+'-started"\n')
  path.chmod(0o755)
@@ -2373,7 +2374,8 @@ launcher.write_text('#!/bin/bash\n[ "$1" = launch ] || exit 11\n[ "$2" = --modul
 launcher.chmod(0o755)
 # Fast module must launch before the unrelated slow Backend becomes ready.
 body='source '+__import__('shlex').quote(str(root/'scripts/dev/worker-units.sh'))+'\nPROJECT_ROOT='+__import__('shlex').quote(str(fixture))+'''\nset -e
-require_started_process() { [ "$2" != dead ]; }
+MAX_WAIT=60
+require_started_process() { kill -0 "$2" 2>/dev/null; }
 check_service_running() { return 0; }
 curl() { case "$*" in *:1111/*) return 0;; *:2222/*) [ -f slow-ready ];; *) return 1;; esac; }
 wait_for_marker() {
@@ -2384,9 +2386,9 @@ wait_for_marker() {
 }
 '''+helper+'''
 trap 'for path in .dev-pids/*.pid; do [ ! -f "$path" ] || kill "$(cat "$path")" 2>/dev/null || true; done' EXIT
-start_module_workers slow alive 2222 slow-worker &
+start_module_workers slow "$$" 2222 slow-worker &
 slow=$!
-start_module_workers fast alive 1111 fast-worker &
+start_module_workers fast "$$" 1111 fast-worker &
 fast=$!
 wait "$fast"
 wait_for_marker fast-worker-started
@@ -2396,9 +2398,20 @@ wait "$slow"
 wait_for_marker slow-worker-started
 if start_module_workers failed dead 3333 failed-worker; then exit 7; fi
 [ ! -f failed-worker-started ]
+# Instant connection refusals until second 33 reproduce the full-start incident.
+unset SECONDS
+SECONDS=0
+MAX_WAIT=60
+sleep() { SECONDS=$((SECONDS + $1)); }
+curl() { [ "$SECONDS" -ge 33 ]; }
+start_module_workers delayed "$$" 4444 delayed-worker
+unset -f sleep
+wait_for_marker delayed-worker-started
+sleep() { SECONDS=$((SECONDS + $1)); }
 # Backend remains alive but never ready: bounded timeout also prevents Worker launch.
-sleep() { :; }
-if start_module_workers failed alive 3333 failed-worker; then exit 8; fi
+MAX_WAIT=2
+curl() { return 1; }
+if start_module_workers failed "$$" 3333 failed-worker; then exit 8; fi
 [ ! -f failed-worker-started ]
 '''
 environment = dict(os.environ, ADDP_DEV_PROCESS_METRICS_PLAN='', ADDP_PROCESS_METRICS_DEPLOYMENTS='')

@@ -29,9 +29,10 @@ class WorkerUnitsTest(unittest.TestCase):
             shutil.copy2(ROOT / 'scripts/dev' / name, self.root / 'scripts/dev' / name)
         source = (ROOT / 'scripts/dev/start.sh').read_text()
         self.helpers = source[source.index('require_started_process() {'):source.index('# 编译函数:')]
+        self.helpers += source[source.index('report_backend_startup_failure()'):source.index('# 编译 Server 二进制')]
         self.helpers += source[source.index('start_module_workers() ('):source.index('BACKEND_STARTS=()')]
         self.environment = dict(os.environ, PROJECT_ROOT=str(self.root), ROOT_DIR=str(self.root),
-                                ADDP_PROCESS_METRICS_DEPLOYMENTS='',
+                                MAX_WAIT='60', ADDP_PROCESS_METRICS_DEPLOYMENTS='',
                                 ADDP_DEV_PROCESS_METRICS_PLAN='', ADDP_HOST_NODE_ID='test-host')
         self.environment[self.setting] = '2'
         self.environment.pop('TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID', None)
