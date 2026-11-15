@@ -42,6 +42,12 @@ def permissions(context):
     return {p for a in context.get('authorization', {}).get('role_assignments', []) for p in a.get('permissions', [])}
 
 
+BOUNDED_QUERY_OPERATIONS = frozenset({
+    'develop_definition_create', 'orchestration_definition_create', 'orchestration_execute',
+    'parent_execution_read', 'diagnostic_child_execution_read', 'child_execution_read', 'monitor_tree_read',
+})
+
+
 def guard_client(client, life):
     request = client.request
     def guarded(*args, **kwargs):
@@ -56,6 +62,26 @@ def guard_client(client, life):
         except API.SuiteError as error:
             matched=re.fullmatch(r'(?:GET|POST|PUT|DELETE) /\S+ returned HTTP ([1-5][0-9]{2}) \(([a-z][a-z0-9_]*)\)',str(error))
             if matched:life.api_failure={'http_status':int(matched[1]),'error_code':matched[2]}
+            operation=getattr(life,'bounded_query_operation',None)
+            if (getattr(life,'phase','') in ('bounded_query_success','bounded_query_failure') and
+                    operation in BOUNDED_QUERY_OPERATIONS and not hasattr(life,'bounded_query_failure')):
+                method=args[0] if args else kwargs['method']
+                path=args[1] if len(args)>1 else kwargs['path']
+                prefix=f'{method} {path} '
+                message=str(error)
+                detail=message[len(prefix):] if message.startswith(prefix) else ''
+                http=re.fullmatch(r'returned HTTP ([1-5][0-9]{2}) \((.*)\)',detail,re.DOTALL)
+                failure={'sample':life.phase.removeprefix('bounded_query_'),'operation':operation,
+                         'error_category':'request_failed'}
+                if http:
+                    code=http[2]
+                    failure.update(error_category='http_status',http_status=int(http[1]),
+                                   error_code=code if re.fullmatch('[a-z][a-z0-9_]*',code) else 'unknown')
+                elif detail.startswith('transport failed: '):failure['error_category']='transport_failed'
+                elif detail=='returned invalid JSON':failure['error_category']='invalid_json'
+                elif detail in ('response must be a JSON object','response must be a JSON array'):
+                    failure['error_category']='response_shape'
+                life.bounded_query_failure=failure
             raise
         life.check()
         return reply
@@ -431,31 +457,38 @@ def run(life, env, report):
     executions=[]
     for label,sql,expected in [('success','SELECT 1 AS fixture_value','success'),('failure','SELECT 1 / 0 AS fixture_value','failed')]:
         life.phase='bounded_query_'+label
+        life.bounded_query_operation='develop_definition_create'
         task=user.request('POST','/api/v1/develop/task-definitions',(200,),{
             'name':life.run_id+'-'+label,'dev_type':'query','content':{'query':sql,'query_type':'sql'},
             'execution_config':{'engine_id':engine_id},'timeout':30,'editor_layout':{}}).payload
         safe_execution(task)
         task_id=task.get('id');require(isinstance(task_id,int),'query_definition_identity_missing')
         life.local_definitions.append(('/api/v1/develop/task-definitions/',task_id))
+        life.bounded_query_operation='orchestration_definition_create'
         definition=user.request('POST','/api/v1/orchestrator/orchestrations',(201,),{
             'name':life.run_id+'-'+label,'enabled':False,'editor_layout':{},'steps':[{
                 'id':'query','name':'Query','provider':'develop','task_type':'query','task_id':task_id,
                 'parameters':{},'depends_on':[],'timeout':60}]}).payload
         workflow_id=definition.get('id');require(isinstance(workflow_id,int),'orchestration_definition_identity_missing')
         life.local_definitions.append(('/api/v1/orchestrator/orchestrations/',workflow_id))
+        life.bounded_query_operation='orchestration_execute'
         admitted=user.request('POST',f'/api/v1/orchestrator/orchestrations/{workflow_id}/execute',(202,)).payload
         execution_id=admitted.get('execution_id');require(isinstance(execution_id,str),'pending_execution_identity_missing')
+        life.bounded_query_operation='parent_execution_read'
         parent=wait_execution(user,execution_id,'orchestrator')
         if parent['status']!=expected:
             report['execution_failure']=execution_failure_diagnostic(parent)
             diagnostic_child=parent.get('metadata',{}).get('step_results',{}).get('query',{}).get('result',{}).get('execution_id')
             if isinstance(diagnostic_child,str):
+                life.bounded_query_operation='diagnostic_child_execution_read'
                 report['execution_failure']['child']=execution_failure_diagnostic(wait_execution(user,diagnostic_child,'develop'))
         require(parent['status']==expected,'orchestration_terminal_status_mismatch')
         child_id=parent.get('metadata',{}).get('step_results',{}).get('query',{}).get('result',{}).get('execution_id')
         require(isinstance(child_id,str),'child_execution_identity_missing')
+        life.bounded_query_operation='child_execution_read'
         child=wait_execution(user,child_id,'develop')
         require(child['status']==expected and child.get('parent_execution_id')==execution_id,'bounded_child_terminal_mismatch')
+        life.bounded_query_operation='monitor_tree_read'
         projection=user.request('GET',f'/api/v1/monitor/executions/by-execution-id/{execution_id}/tree',(200,)).payload
         safe_execution(projection)
         executions.append({'parent':execution_id,'child':child_id,'expected':expected})

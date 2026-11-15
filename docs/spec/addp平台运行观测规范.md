@@ -835,6 +835,8 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 夹具只创建初始Tenant管理员和原业务用户，不提前授准备角色、不创建准备自定义角色，也不签发会话。入口从真实AuthContext读取准备Membership，核对既有角色的准确权限集合；MFA完成须替换HttpOnly Cookie与Access Token，并验证旧令牌拒绝。自分配前使用真实AAL2及未过期step-up，分配后沿正式Refresh与AuthContext重读同一User／Tenant／Membership和准确角色／权限；完成准备后再次确认普通执行User权限未变。失败诊断仅保留固定操作码／HTTP状态／稳定错误码，不保存密码、TOTP Secret、验证码、Cookie或响应正文。第七窗口的自定义准备角色方案已被本唯一主路径取代，原失败证据仍保留。
 
+本机隔离 bounded query 的既有 HTTP 请求失败时，总报告仅增加 `bounded_query_failure`：样本固定为 success／failure，操作固定为 develop_definition_create、orchestration_definition_create、orchestration_execute、parent_execution_read、diagnostic_child_execution_read、child_execution_read、monitor_tree_read；类别仅为 http_status、transport_failed、invalid_json、response_shape、request_failed。HTTP 状态仅从同次请求异常取得，稳定错误码只接受小写字母开头的字母／数字／下划线，否则记 unknown；无状态依据时不补造。首次请求失败立即冻结，外层在正式清理前写入报告对象，并沿原有退出落盘；清理失败不能覆盖；只用于定位请求边界，不证明故障服务或根因。不保存 URL、参数、请求／响应体、异常正文、令牌或身份引用；不新增请求、探针、等待、重试，不改变原四身份、权限、采样、预算、断言和清理。确定性门禁须逐操作注入失败，核对首失败保存、安全投影和请求序列不变；新的真实运行仍另行确认。
+
 2026-11-13用户确认将租户阶段追踪验收接入同一人工入口，原四身份、11项业务权限、采样、资源及清理范围不变。平台检查点／Trace校核与租户浏览器输入、会话分别隔离，业务User仅经Gateway调用[租户阶段接口](tasks/执行监控.md#租户执行阶段追踪)，不获取平台Trace／日志权限。原成功及受控失败各执行一次，失败父／子latest须与真实Tempo精确terminal逐字段一致；正常缺样仅从本Owner预先固定的失败／成功enqueue候选取得，须有真实检查点及平台精确404印证，不能将错误、无关联或超窗口改成缺样，两个候选均可读则缺样未覆盖、本轮不得判全部通过。
 
 固定125秒尾采样等待后，平台样本可见性与租户阶段读取共用一个最多90秒截止，不另开等待窗；租户读取最多6轮、轮间至少15秒，失败父／子每轮各一次、成功父／子末次各一次，最多14次，加浏览器最多4次显式打开。每次租户请求至多5秒且受全局剩余预算约束，Owner／上游错误立即停止，不重跑业务或调采样。既有请求完成日志按同request_id核对Gateway／Monitor／准确Owner及另一Owner未被调用，不依赖HTTP留样；报告只保留封闭断言与执行身份，原始Trace／Span／实例引用仅当轮私有核对、退出销毁。成功或失败均尝试本轮定义删除和四身份登出，失败如实记录，再由外层仅销毁自有对象；外层零残留不替代正式删除或旧会话拒绝。真实运行仍须单独确认，不因入口或确定性门禁完成而自动执行，细化断言及边界见[专题方案](../next/ADDP任务执行管理统一收口专题.md#tenant-stage-chain-acceptance)。

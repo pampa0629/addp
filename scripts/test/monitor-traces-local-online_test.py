@@ -160,11 +160,12 @@ class FormalAPI:
         value={'execution_id':execution_id,'supported':True,'stages':[{'slot':'enqueue','state':'not_found'},stage]}
         return M.validate_tenant_stages(value,execution_id),'request-'+owner
 
-    def run(self):
-        life = SimpleNamespace(run_id='local-trace-fixture', wait=lambda seconds: self.waits.append(seconds))
+    def run(self, guarded=False):
+        life = SimpleNamespace(request_timeout=lambda:10, check=lambda:None, run_id='local-trace-fixture', wait=lambda seconds: self.waits.append(seconds))
         env = {'POSTGRES_USER': 'fixture', 'POSTGRES_PASSWORD': 'fixture-private-password'}
         report = {}
-        with patch.object(M, 'login', side_effect=lambda env, who, platform=False, life=None: (self.client(who), identity(who))), \
+        self.life, self.report = life, report
+        with patch.object(M, 'login', side_effect=lambda env, who, platform=False, life=None: (M.guard_client(self.client(who),life) if guarded else self.client(who), identity(who))), \
              patch.object(M,'prepare_engine_authority',side_effect=lambda client,context,env,life,report:context), \
              patch.object(M.time, 'monotonic', new=Clock()), patch.object(M.time, 'sleep'):
             with patch.object(M,'tenant_stage_read',side_effect=self.stage_read):
@@ -286,6 +287,105 @@ class LocalExecutionTraceOwnerTests(unittest.TestCase):
         M.guard_client(client,life)
         with self.assertRaises(M.API.SuiteError):client.request('POST','/owned',(201,),{})
         self.assertEqual(life.api_failure,{'http_status':403,'error_code':'permission_denied'})
+
+    def test_each_bounded_request_failure_identifies_operation_without_extra_requests(self):
+        baseline = FormalAPI()
+        baseline.run()
+        cases = (
+            ('develop_definition_create', '/api/v1/develop/task-definitions'),
+            ('orchestration_definition_create', '/api/v1/orchestrator/orchestrations'),
+            ('orchestration_execute', '/api/v1/orchestrator/orchestrations/1/execute'),
+            ('parent_execution_read', '/api/v1/orchestrator/executions/'+EXECUTIONS[('orchestrator','success')]),
+            ('child_execution_read', '/api/v1/develop/executions/'+EXECUTIONS[('develop','success')]),
+            ('monitor_tree_read', '/api/v1/monitor/executions/by-execution-id/'+EXECUTIONS[('orchestrator','success')]+'/tree'),
+        )
+        for operation, path in cases:
+            with self.subTest(operation=operation):
+                server = FormalAPI()
+                request = server.request
+                def fail(who, method, url, expected, body):
+                    reply = request(who, method, url, expected, body)
+                    if url == path:
+                        raise M.API.SuiteError(f'{method} {url} returned HTTP 503 (unknown)')
+                    return reply
+                with patch.object(server, 'request', side_effect=fail), self.assertRaises(M.API.SuiteError):
+                    server.run(guarded=True)
+                self.assertEqual(server.life.bounded_query_failure, {
+                    'sample':'success', 'operation':operation, 'error_category':'http_status',
+                    'http_status':503, 'error_code':'unknown'})
+                self.assertEqual(server.calls, baseline.calls[:len(server.calls)])
+                self.assertEqual(len(server.calls), next(i+1 for i,c in enumerate(baseline.calls) if c[2]==path))
+                self.assertEqual(server.waits, [])
+                self.assertNotIn('executions', server.report)
+
+    def test_diagnostic_child_read_and_failure_sample_keep_exact_operation(self):
+        for sample in ('success','failure'):
+            server = FormalAPI()
+            request = server.request
+            target = EXECUTIONS[('develop',sample)]
+            def fail(who, method, url, expected, body):
+                reply = request(who, method, url, expected, body)
+                if url.endswith('/executions/'+EXECUTIONS[('orchestrator',sample)]):
+                    reply.payload['status'] = 'failed' if sample=='success' else 'success'
+                if url.endswith('/executions/'+target):
+                    raise M.API.SuiteError(f'{method} {url} returned HTTP 503 (owner_unavailable)')
+                return reply
+            with self.subTest(sample=sample), patch.object(server,'request',side_effect=fail), self.assertRaises(M.API.SuiteError):
+                server.run(guarded=True)
+            self.assertEqual(server.life.bounded_query_failure, {
+                'sample':sample, 'operation':'diagnostic_child_execution_read', 'error_category':'http_status',
+                'http_status':503, 'error_code':'owner_unavailable'})
+
+    def test_bounded_failure_categories_are_closed_and_first_failure_is_frozen(self):
+        path = '/api/v1/develop/task-definitions/PRIVATE-IDENTITY?token=PRIVATE-TOKEN'
+        prefix = 'POST '+path+' '
+        cases = (
+            ('returned HTTP 503 (permission_denied)', 'http_status', {'http_status':503,'error_code':'permission_denied'}),
+            ('returned HTTP 503 (PRIVATE SQL password)', 'http_status', {'http_status':503,'error_code':'unknown'}),
+            ('transport failed: PRIVATE password', 'transport_failed', {}),
+            ('returned invalid JSON', 'invalid_json', {}),
+            ('response must be a JSON object', 'response_shape', {}),
+            ('response must be a JSON array', 'response_shape', {}),
+            ('PRIVATE unknown failure', 'request_failed', {}),
+        )
+        for suffix, category, facts in cases:
+            with self.subTest(category=category, suffix=suffix):
+                error = M.API.SuiteError(prefix+suffix)
+                def fail(*args,**kwargs): raise error
+                life = SimpleNamespace(phase='bounded_query_failure', bounded_query_operation='develop_definition_create',
+                                       request_timeout=lambda:10, check=lambda:None)
+                client = M.guard_client(SimpleNamespace(request=fail),life)
+                with self.assertRaises(M.API.SuiteError) as raised:
+                    client.request(method='POST',path=path,expected=(200,),body={'password':'PRIVATE-BODY'})
+                self.assertIs(raised.exception,error)
+                expected = {'sample':'failure','operation':'develop_definition_create','error_category':category,**facts}
+                self.assertEqual(life.bounded_query_failure,expected)
+                life.bounded_query_operation='monitor_tree_read'
+                with self.assertRaises(M.API.SuiteError): client.request('GET','/later-request',(200,))
+                self.assertEqual(life.bounded_query_failure,expected)
+                life.phase='owner_cleanup_and_logout'
+                life.bounded_query_operation='PRIVATE-OPERATION'
+                with self.assertRaises(M.API.SuiteError): client.request('DELETE','/private-cleanup',(204,))
+                self.assertEqual(life.bounded_query_failure,expected)
+                self.assertNotIn('PRIVATE',json.dumps(expected))
+        for phase,operation in (('synthetic_engine_registration','develop_definition_create'),
+                                ('bounded_query_success','PRIVATE-OPERATION')):
+            life=SimpleNamespace(phase=phase,bounded_query_operation=operation,request_timeout=lambda:10,check=lambda:None)
+            client=M.guard_client(SimpleNamespace(request=fail),life)
+            with self.assertRaises(M.API.SuiteError):client.request('POST',path,(200,))
+            self.assertFalse(hasattr(life,'bounded_query_failure'))
+
+    def test_guarded_success_keeps_original_requests_and_does_not_report_failure(self):
+        original, guarded = FormalAPI(), FormalAPI()
+        with patch.object(M,'utc',return_value=STAMP):
+            original_result, original_report = original.run()
+            guarded_result, guarded_report = guarded.run(guarded=True)
+        self.assertEqual(guarded.calls,original.calls)
+        self.assertEqual(guarded_result,original_result)
+        self.assertEqual(guarded_report['assertions'],original_report['assertions'])
+        self.assertEqual(guarded_report['executions'],original_report['executions'])
+        self.assertEqual(guarded.waits,original.waits)
+        self.assertFalse(hasattr(guarded.life,'bounded_query_failure'))
 
     def test_guard_failure_stops_http_before_any_new_business_request(self):
         calls=[]

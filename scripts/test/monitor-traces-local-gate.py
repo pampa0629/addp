@@ -2529,6 +2529,7 @@ def main():
         report.update(stage=life.phase,error_code=str(error) if (isinstance(error,GateError) or type(error).__name__=='LocalTraceAssertionFailure') and re.fullmatch('[a-z0-9_]+',str(error)) else type(error).__name__)
         if hasattr(life,'last_failure'):report['command_failure']=life.last_failure
         if hasattr(life,'api_failure'):report['api_failure']=life.api_failure
+        if hasattr(life,'bounded_query_failure'):report['bounded_query_failure']=life.bounded_query_failure
         diagnostics=[]
         for state in getattr(life,'failed_container_states',[]):
             remaining=MAX_SECONDS-(time.monotonic()-life.started)

@@ -3526,6 +3526,57 @@ class LocalTraceCleanupTests(unittest.TestCase):
 
 
 
+class BoundedQueryFailurePersistenceTests(unittest.TestCase):
+    def test_original_request_failure_survives_cleanup_failure_and_private_directory_removal(self):
+        online = __import__('importlib').import_module('scripts.test.monitor-traces-local-online')
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve()
+            work=root/'private';work.mkdir()
+            life=bare_lifecycle(work)
+            life.started=m.time.monotonic()
+            life.module_commits={}
+            life.input_hashes={}
+            target=root/'result.json'
+            env={'PATH':os.environ['PATH']}
+            original=online.API.SuiteError('POST /private?token=PRIVATE returned HTTP 503 (unknown)')
+            def fail_request(*args,**kwargs):raise original
+            client=online.guard_client(SimpleNamespace(request=mock.Mock(side_effect=fail_request)),life)
+            def run(life,env,report):
+                life.phase='bounded_query_success'
+                life.bounded_query_operation='orchestration_execute'
+                life.local_clients=(client,)
+                client.request('POST','/private?token=PRIVATE',(202,),{'secret':'PRIVATE'})
+            def finish(life,env,report):
+                life.phase='owner_cleanup_and_logout'
+                client.request('DELETE','/private-cleanup',(204,))
+            business=SimpleNamespace(run=mock.Mock(side_effect=run),finish=mock.Mock(side_effect=finish))
+            life.docker=mock.Mock(return_value='aarch64')
+            life.cleanup=mock.Mock(side_effect=lambda:shutil.rmtree(work) or [])
+            with mock.patch.object(m,'Lifecycle',return_value=life),mock.patch.object(m,'effective_docker_endpoint',return_value='unix:///synthetic.sock'), \
+                 mock.patch.object(m,'private_docker_client'),mock.patch.object(m,'validate_profile'), \
+                 mock.patch.object(m,'build',return_value=('fixed-source',env,{})),mock.patch.object(m,'setup',return_value={}), \
+                 mock.patch.object(m,'identity'),mock.patch.object(m,'module',return_value=business), \
+                 mock.patch.dict(m.os.environ,{'MONITOR_TRACE_LOCAL_REPORT':str(target)},clear=True), \
+                 mock.patch.object(m.sys,'argv',['monitor-traces-local-gate.py']),mock.patch('builtins.print'):
+                self.assertEqual(m.main(),1)
+            report=json.loads(target.read_text())
+            self.assertEqual(report['stage'],'bounded_query_success')
+            self.assertEqual(report['error_code'],'SuiteError')
+            self.assertEqual(report['api_failure'],{'http_status':503,'error_code':'unknown'})
+            self.assertEqual(report['bounded_query_failure'],{'sample':'success','operation':'orchestration_execute',
+                             'error_category':'http_status','http_status':503,'error_code':'unknown'})
+            self.assertEqual(report['formal_cleanup'],{'result':'failed','error_code':'formal_cleanup_incomplete'})
+            self.assertEqual(report['cleanup'],{'zero_owned_resources':True,'failures':[]})
+            self.assertEqual(report['result'],'failed')
+            self.assertEqual(target.stat().st_mode & 0o777,0o600)
+            self.assertFalse(work.exists())
+            self.assertNotIn('PRIVATE',target.read_text())
+            self.assertNotIn('browser',report)
+            life.docker.assert_called_once_with('info','--format','{{.Architecture}}')
+            business.finish.assert_called_once()
+            life.cleanup.assert_called_once()
+
+
 class BrowserFirstFailurePersistenceTests(unittest.TestCase):
     def run_browser_failure(self, directory, existing=False):
         root = Path(directory).resolve()
