@@ -186,3 +186,12 @@
 在以 `5d83ebcc38eef4ee367557deb81aee9f682385bb` 为基线、只叠加本批三个文件的仓库外隔离检出验证：`make test-monitor-frontend` 完整通过 156 项单元、865 项浏览器（25.9 分钟）、构建（3.61 秒）及标准退出清理；`make test-console-frontend CONSOLE_FRONTEND_BROWSER_ARGS='e2e/cdc-resource-navigation.spec.js e2e/monitoring-target-navigation.spec.js'` 通过 285 项单元、13 项 iframe 导航及构建。正式 Make 入口、自动用例发现与现有 Monitor 40 分钟 CI 登记已覆盖，无需修改 Makefile 或 workflow。未重启个人服务、操作任务／逻辑槽／keepalive／数据卷，也不提高功能清单比例。
 
 原始超时、annotation、阶段拆分及逐用例对照收据分别保存在 `/tmp/addp-monitor-frontend-timeout-original-job.log`、`...-original-annotations.json`、`...-stage-times.json` 和 `...-case-times.json`；诊断／红绿回归分别为 `...-navigation-baseline.log`、`...-lazy-red.log`、`...-lazy-green.log`；隔离检出与输入哈希见 `...-validation.json`，完整门禁为 `...-full-local.log` 和 `...-console-scope.log`。本地结论只覆盖上述输入与标准 T3／构建，固定修复的自然 Linux CI 仍须单独核对完整执行与清理，不重复派发或取消正常运行。
+
+
+### 固定修复 b14bd9e39 的自然 Linux 完整门禁
+
+唯一有效的本轮结果是固定 `b14bd9e39cee37c3d19eb41cb655c8b84539a17d` 自然 push 触发的 [Run 43687777574 / Job 132731768973](https://github.com/pampa0629/addp/actions/runs/43687777574/job/132731768973)，attempt 1。checkout、ADDP_CI_HEAD 与固定修复一致，selected=true，实际执行原 `make test-monitor-frontend`：156 项单元（零跳过）、单 Worker 的 865 项浏览器、Vite 构建及标准退出清理均通过。整 Job 从 06:57:51Z 到 07:28:57Z，用时 1866 秒（31 分 06 秒），在未改动的 2400 秒上限内完成，保留 8 分 54 秒余量。Console 特有依赖准备及失败证据上传为条件跳过，不计作执行验证；Monitor 必需步骤均 success。
+
+原始日志独立拆分：准备约 50.620 秒、浏览器 1802.159 秒（30.0 分钟）、构建 7.267 秒。按相邻用例起始时间作相同累计口径，execution-diagnostics 为 332.654 秒，host-trend-interactions 为 270.360 秒；旧失败轮相应约 458.1／307.6 秒。此为两次同类 Runner 的实际观察，不将差值全部归于代码或保证后续固定耗时。没有提高时限、并发或资源，没有删除用例／降低断言／引入重试，也没有手工重派发或取消正常 CI。
+
+完整 Job 与 Run 元数据、原始日志和独立验证摘要分别为 `/tmp/addp-monitor-frontend-timeout-ci/job.json`、`run.json`、`job.log` 和 `verified-summary.json`。旧 9cf 超时及旧 2d 同类失败仍保持原结果，不被本次通过覆盖；本轮只认列明 Monitor Job，不替其他模块、父 workflow 或业务 T4 背书。个人开发环境未操作，本次 CI 修正不提高功能清单比例；此前 CDC 业务 T4 的通过范围与未完成事项保持独立。
