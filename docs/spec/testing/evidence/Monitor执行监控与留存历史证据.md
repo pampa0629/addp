@@ -424,3 +424,19 @@ System 测试 helper 创建同租户和跨租户身份后，遗漏了 `writeEnvi
 用户执行标准 Transfer 重启后，个人环境只读核对 schema=15、task61 仍 running、当前 generation=1。2026-11-15 08:48 至 08:53（Asia/Shanghai）的六个分钟各一份持久历史，最新三份均为积压 0、源槽 active=true、WAL 保留 16768 bytes、risk_state=reserved；延迟没有有效数值，沿 null 保留。接入前 schema=14 的只读收据为 `/tmp/addp-cdc-history-preserved.json`，启用后为 `/tmp/addp-cdc-history-live-storage.log` 和 `...-live-samples.log`。两个原 task46／task58 槽仍在且不活跃，全局身份槽仍活跃；AI 未启停／修改任务、槽、Connector 或来源，没有为形成图形写入业务事件。
 
 本次 Chrome 自动化的 inventory 与精确标签连接分别在 30 秒／20 秒超时；没有 reload 页面或把其他身份作为验收。个人 Tenant 页面及公开历史 API 的身份实操仍未核对，不能由个人数据库样本和固定 CI 浏览器拼接认定。新增历史 Hosted 断言、七天自然留存与长期容量也仍待独立验收。
+
+
+### 七天 CDC 任务历史的真实 Hosted 断言通过（2026-11-15）
+
+用户授权后，沿既有手工入口 `gh workflow run online-t4-gates.yml --ref main -f suite=transfer-continuous-events` 实际运行一次。固定源码 `c63888fba953df5545a06b11c7641284c2bbe792` 的 [Hosted 43668756347 / Job 132673890664](https://github.com/pampa0629/addp/actions/runs/43668756347/job/132673890664) 在北京时间 10:38:55–11:16:53 执行并 success；suite 与外层 result 均 passed，场景耗时 1313015ms（约 21 分 53 秒），原 1450／1500 秒预算、权限和故障范围未扩大。preflight 的六个服务源码与该固定 SHA 一致、repository_clean=true；24 个检查和 7 份既有真实 Console 回执全部 passed。新增加的第 24 项为 `cdc_task_metric_history_safe_generation_backlog_growth_recovery_wal_delay`，不由旧轮 23 项通过追认。
+
+Artifact `14144985129`（9343437 bytes）的下载内容与 API SHA-256 `0730bac21ead49dd95c228789ab8b54916c05602c428b309a3147cdd320b8525` 一致，ZIP CRC 通过。报告及独立核对结果保留于 `/tmp/addp-cdc-history-hosted-43668756347/suite-report.json`、`history-verified.json` 和 `verified-summary.json`，原 Job 日志为 `/tmp/addp-cdc-history-hosted-43668756347-job.log`。
+
+- **真实任务历史**：本轮隔离 task 3／generation 1，由原普通 User 沿正式历史 API 读取 02:16–03:16 UTC 的 60 个整分钟网格，其中 19 个区间含实际记录。未记录区间保留空档，不把任务创建前的区间解释为采集丢失，不补零或沿旧 execution 拼值。任务、代次、白名单及各观测的新鲜时间关系均通过。
+- **积压增长与回零**：18 份有效积压样本中，03:00:11.103229 UTC 首次历史高值为 460，超过本任务可选阈值 256；峰值 41744，随后 03:09:08.481071 UTC 的有效历史样本为 0。增长与回零来自同一任务代次的真实故障及正式恢复，不以当前值覆盖历史。
+- **WAL 与捕获延迟**：16 份有效 WAL 历史的保留量为 14200–21641232 bytes，risk_state 均为 reserved；13 份有效延迟历史为 0.005–412.383 秒，其中 6 份超过 60 秒，后继 03:08:08.516041 UTC 的低值为 0.27 秒。各项按自己的采样时刻独立核对；WAL 保留量不等同于目标积压，不要求随消费回零同步下降，也不将此结果外推为磁盘压力或 WAL lost 验证。
+- **原全套闭环**：三类性能告警、捕获失败、不可恢复风险、任务重建及 scheduled 扫描检查均通过；12 条唯一 opened／resolved 通知逐项完成签名实收、202 回执及投递核对。7 份 Console 回执继续覆盖既有实时任务卡片、暂停恢复、Owner 故障与撤权。新增历史断言验证的是租户正式 API 与真实持久样本，不代表历史图表 DOM 已新增真实故障 T4 断言；图表受控 T3 证据仍单列。
+
+故障与领域 cleanup=passed、cleanup_failures=[]、uncertain_mutation=false。CPU、Connector 配置、源临时记录、目标锁及告警规则恢复或清理，目标精确行集核对通过，Webhook 目标删除、接收端关闭。任务 5／4／3／2 经正式 API 删除且读回不存在，本轮 CDC 槽／publication 随原清理契约核对；硬退出 Kafka task 1 按原场景保留至部署销毁，因此领域 residual_resources=expected_deployment_residuals=1。外层 `summary.txt` 另行确认 cleanup=passed、infra_cleanup=zero_residuals，不把预期领域保留项称为领域零项。
+
+个人环境只读前后结果完全一致：task61 仍 running，task46／task58 两个原逻辑槽仍保留且不活跃，全局身份活动槽仍活跃。AI 未操作个人任务、槽或服务。本轮补齐新增任务历史的 Hosted API 实故障断言；个人 Chrome 页面、独立历史图表实故障 DOM、七天自然留存／长期容量和生产 T5 不在此次通过范围。触发前暂停窗口重置仍只有 T2 证据，不由本轮已打开事件的暂停保持追认。
