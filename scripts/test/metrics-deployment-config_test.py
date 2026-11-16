@@ -307,6 +307,26 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 postgres_probe.directory_publication.directory_process_observations(value)
             self.assertNotIn('sentinel',str(caught.exception))
 
+    def test_directory_probe_failure_keeps_phase_without_child_payload(self):
+        probe = postgres_probe.directory_publication
+        launch = subprocess.Popen
+        def child(command, **kwargs):
+            return launch([sys.executable, '-c',
+                           "print('baseline\\t17\\t0.00\\tprivate-sentinel\\tbefore', flush=True)"],
+                          **kwargs)
+        def docker(command, **kwargs):
+            return SimpleNamespace(returncode=int(command[:2] == ['docker', 'inspect']),
+                                   stdout='', stderr='')
+        with mock.patch.object(probe.subprocess, 'Popen', side_effect=child), \
+             mock.patch.object(probe.subprocess, 'run', side_effect=docker):
+            result = probe.run('addp-metrics-t2-' + 'a' * 32)
+        self.assertEqual(result['failure_class'], 'AssertionError')
+        self.assertEqual(result['failure_details']['phase'], 'baseline')
+        self.assertGreater(result['failure_details']['stdout_bytes'], 0)
+        self.assertNotIn('private-sentinel', json.dumps(result))
+        self.assertEqual(result['trials'], [])
+        self.assertTrue(result['cleanup_verified'] and result['temporary_removed'])
+
     def test_hba_readback_failure_restores_the_published_version(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary).resolve()/'authentication'

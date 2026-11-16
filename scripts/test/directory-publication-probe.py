@@ -77,9 +77,11 @@ def directory_process_observations(data):
     return {'single_process':True,'samples':rows}
 
 def observe(command, publish):
-    deadline = time.monotonic()+8
+    started = time.monotonic()
+    deadline = started+8
     process = subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
     data = bytearray()
+    phase = 'baseline'
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout,selectors.EVENT_READ)
@@ -95,13 +97,23 @@ def observe(command, publish):
             # Validate the baseline before changing either test-owned file.
             baseline = bytes(data).split(b'\n',1)[0].decode('ascii').split('\t')
             assert len(baseline)==5 and baseline[0]=='baseline' and baseline[3:]==['before','before'], 'Owned directory baseline unavailable'
+            phase = 'publication'
             publish()
+            phase = 'handshake'
             process.stdin.write(b'published\n');process.stdin.flush()
+            phase = 'observation'
             while receive():
                 pass
+            phase = 'completion'
             remaining = deadline-time.monotonic()
             assert remaining>0 and process.wait(timeout=remaining)==0, 'Owned directory process failed'
             return directory_process_observations(bytes(data))
+    except (OSError,ValueError,AssertionError,subprocess.SubprocessError) as error:
+        error.directory_observation = {
+            'phase':phase, 'elapsed_ms':round((time.monotonic()-started)*1000,2),
+            'stdout_bytes':len(data), 'child_returncode':process.poll(),
+        }
+        raise
     finally:
         try:
             if process.poll() is None:
@@ -161,6 +173,7 @@ def run(project):
                 result['trials'].append(trial)
         except (OSError,ValueError,AssertionError,subprocess.SubprocessError) as error:
             result['failure_class'] = type(error).__name__
+            result['failure_details'] = getattr(error,'directory_observation',None)
         finally:
             cleaned = True
             for name in names:
