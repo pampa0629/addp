@@ -925,15 +925,31 @@ Native与真实跨模块结果分别记账；不计Manager绘制、NFS客户端�
 
 ## raster-focal-statistics-persistence
 
-独立手工 `raster-focal-statistics-persistence`；`make test-raster-focal-statistics-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。 原五项公共前提仍按其[原范围](#独立持久化专项公共前提)执行。
+独立手工专项；标准业务入口 `make test-online ONLINE_SUITE=raster-focal-statistics-persistence`，Runner为 `make test-raster-focal-statistics-online-runner`。准备／成果核验／清理按[邻域共同要求](#邻域与-idw-专项共同要求)；[原五项公共前提](#独立持久化专项公共前提)仍限原范围，Runner／Native分层见[验证入口](#独立持久化专项验证入口)。不登记夜间计划，不改已有栅格T4、权限或跨模块逻辑。
 
-输入为已登记的 EPSG:4326、519×515、多波段及旋转仿射 TIFF；显式选择原始数值波段，源包含合法零、负值、NoData、mask、NaN／正负 Inf、透明及部分透明 alpha，块边界布置无效值，并包含超过窗口的无效孔洞。验证 3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev 六条 COG 保存链；非法波段与窗口不得发布目标或新增扫描。
+### 邻域输入与六条成功链
 
-独立完整窗口 NumPy oracle 不调用产品统计函数，以实际有效邻域核对所有输出像元和 mask；无效中心保持 NoData、边缘不补零，源 raw 值与 scale/offset 分开处理。核对 Float64／NaN NoData、完整旋转网格、COG 布局和金字塔存在；只手工扫描精确源，各成果自动扫描及当前输入active derive按共同要求逐项核对。不认证 Manager 绘制、NFS 客户端写、HTTP Range、业务 DELETE、覆盖冲突、所有窗口组合的跨模块覆盖或容量，不改已有栅格相关 T4、权限或跨模块产品逻辑。
+已登记EPSG:4326、519×515多波段旋转仿射TIFF，显式选原始数值波段。源含合法零／负值、NoData／mask、NaN／正负Inf、透明／部分透明alpha，跨块边界布置无效值，并有大于窗口的无效孔洞。保存六份COG：
 
-标准入口 `make test-online ONLINE_SUITE=raster-focal-statistics-persistence`；专项 Runner 与 Native 分层见[验证入口](#独立持久化专项验证入口)。不登记夜间计划。
+- 3×3 sum、min两条。
+- 5×5 mean、max、stddev三条。
+- 重分类后接3×3 stddev一条。
 
-**固定证据**：`fe0d7cc8e` 的[Hosted Run39228689716／Job117981136802](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802)已核六份COG、三方大小、精确扫描／血缘、源旧不变及全部清理；同源Linux全量1251项与Platform检查通过。仅按该固定范围认定，不外推当前HEAD或其他窗口组合。
+### 非法波段与窗口失败
+
+非法波段和非法窗口各须执行失败，均不得发布目标或新增扫描；已有成果与精确清单不变。
+
+### 独立NumPy核验
+
+完整窗口NumPy oracle不调用产品统计函数，按实际有效邻域核全部输出像元／mask；无效中心保持NoData、边缘不补零，不填无效孔洞。只统计选定波段raw值，scale/offset分开处理，不隐式套用。
+
+核Float64／NaN NoData、完整旋转网格、COG布局及实际金字塔；仅手扫精确源，各成果自动扫描和当前输入active derive按共同要求逐项核验。
+
+### 邻域固定证据与未覆盖范围
+
+`fe0d7cc8e` 的[Hosted Run39228689716／Job117981136802](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802)已核六COG、三方大小、精确扫描／血缘、源及旧成果不变和全部清理；同源Linux全量1251项与Platform检查通过。仅认该固定范围，不推定当前HEAD已重跑。
+
+不认证Manager绘制、NFS客户端写、HTTP Range、业务DELETE、覆盖冲突、所有窗口组合的跨模块覆盖或容量。
 
 ## raster-focal-percentile-persistence
 
