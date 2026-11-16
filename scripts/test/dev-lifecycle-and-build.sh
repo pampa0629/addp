@@ -1540,7 +1540,12 @@ for variable in ('PUBLIC_API_URL', 'CONSOLE_URL', 'MONITOR_CONSOLE_BASE_URL'):
 for folder in ('local', 'prod'):
     start = (root / 'scripts' / folder / 'start.sh').read_text()
     stop = (root / 'scripts' / folder / 'stop.sh').read_text()
-    assert 'docker compose -f docker-compose.runtimes.yml up' in start, folder
+    if folder == 'prod':
+        assert 'runtime_compose() { docker compose -f docker-compose.runtimes.yml -f "$ADDP_RELEASE_DIR/runtimes-images.yml"' in start
+        assert 'runtime_compose up -d --no-build --pull never' in start
+        assert start.index('release-images.py verify') < start.index('bash scripts/infra/up.sh')
+    else:
+        assert 'docker compose -f docker-compose.runtimes.yml up' in start, folder
     assert re.search(r'docker compose -f docker-compose\.runtimes\.yml(?: --env-file \.env)? down', stop), folder
 print('PASS: platform and Runtime Compose projects preserve one public origin and lifecycle')
 PY

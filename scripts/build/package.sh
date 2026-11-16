@@ -376,21 +376,6 @@ transfer_to_server() {
     echo ""
     echo -e "${YELLOW}Transferring to server ${SERVER}...${NC}"
 
-    # Detect local IP for registry access (images mode only)
-    if [ "$MODE" = "images" ]; then
-        LOCAL_IP=$(ip addr show 2>/dev/null | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | cut -d/ -f1 | head -1)
-
-        if [ -z "$LOCAL_IP" ]; then
-            # Fallback for macOS
-            LOCAL_IP=$(ifconfig 2>/dev/null | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1)
-        fi
-
-        if [ -n "$LOCAL_IP" ]; then
-            echo -e "${GREEN}✓ Detected local IP: ${LOCAL_IP}${NC}"
-            echo "REGISTRY_HOST=${LOCAL_IP}" > "$OUTPUT_DIR/.registry_config"
-        fi
-    fi
-
     # Transfer via rsync or scp
     echo -e "${YELLOW}Transferring files...${NC}"
     if command -v rsync &> /dev/null; then
@@ -415,11 +400,8 @@ transfer_to_server() {
     echo "2. Follow deployment instructions in README.md"
     if [ "$MODE" = "images" ]; then
         echo "3. Load images: ./load-images.sh"
-        echo "4. Start infrastructure: bash scripts/infra/up.sh"
-    else
-        echo "3. Pull images: docker compose -f docker-compose.yml pull && docker compose -f docker-compose.runtimes.yml pull"
     fi
-    echo "5. Start services: bash scripts/prod/start.sh"
+    echo "4. Start the prepared release: bash scripts/prod/start.sh"
 }
 
 # Main execution

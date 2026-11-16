@@ -56,7 +56,7 @@ class DeploymentPackageTest(unittest.TestCase):
                         'inputs': release.compose_inputs(), 'projects': projects, 'sources': {}, 'image_ids': {reference: 'sha256:' + 'c' * 64}}
             (prepared / 'manifest.json').write_text(json.dumps(manifest))
             for project, services in projects.items():
-                release.write_override(prepared / (project + '-images.yml'), services)
+                release.write_override(prepared / (project + '-images.yml'), {name: manifest['image_ids'][ref] for name, ref in services.items()})
             package = subprocess.run(['bash', 'scripts/build/package.sh', '--mode', 'registry'], cwd=root,
                                      env=env, capture_output=True, text=True, timeout=60)
             self.assertEqual(package.returncode, 0, package.stderr)

@@ -65,8 +65,11 @@ class InitPostgreSQLTest(unittest.TestCase):
                   exit 0
                 fi
                 if [[ "$*" == *"dpkg -l"* ]]; then
-                  printf 'ii postgis\n'
+                  printf '%s\n' "${ADDP_TEST_POSTGIS_PACKAGE:-ii postgis}"
                   exit 0
+                fi
+                if [[ "$*" == *"pg_available_extensions"* ]]; then
+                  printf 'f\n'
                 fi
                 exit 0
                 """
@@ -80,6 +83,7 @@ class InitPostgreSQLTest(unittest.TestCase):
         *,
         databases_exist: bool = False,
         postgis_exists: bool = False,
+        production_missing: str = "",
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PATH"] = f"{self.fake_bin}:{environment['PATH']}"
@@ -89,7 +93,11 @@ class InitPostgreSQLTest(unittest.TestCase):
         environment["POSTGRES_USER"] = "addp"
         environment["POSTGRES_PASSWORD"] = "addp_password"
         environment["POSTGRES_DB"] = "addp"
-        environment["SKIP_PGVECTOR"] = "true"
+        environment["SKIP_PGVECTOR"] = "false" if production_missing == "vector" else "true"
+        if production_missing:
+            environment["ADDP_RELEASE_MANIFEST"] = "/fixture/manifest.json"
+            if production_missing == "postgis":
+                environment["ADDP_TEST_POSTGIS_PACKAGE"] = "not-installed"
         return subprocess.run(
             ["bash", "scripts/infra/init-postgresql.sh", "--skip-hba"],
             cwd=self.repository,
@@ -125,6 +133,18 @@ class InitPostgreSQLTest(unittest.TestCase):
         self.assertIn("-d addp", schema_commands[0])
         self.assertNotIn("-d addp_test", schema_commands[0])
         self.assertNotIn("-d addp_iam_test", schema_commands[0])
+
+    def test_production_missing_postgis_fails_without_installing_packages(self) -> None:
+        result = self._run(production_missing="postgis")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PostGIS is missing from the prepared", result.stderr)
+        self.assertFalse(any("apt-get" in command for command in self._docker_commands()))
+
+    def test_production_missing_vector_fails_without_compiling_from_source(self) -> None:
+        result = self._run(production_missing="vector")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pgvector is missing from the prepared", result.stderr)
+        self.assertFalse(any("apt-get" in command or "git clone" in command for command in self._docker_commands()))
 
     def test_existing_databases_and_extensions_are_not_recreated(self) -> None:
         result = self._run(databases_exist=True, postgis_exists=True)
