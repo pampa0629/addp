@@ -382,6 +382,8 @@ Meta 向 System 精确投影当前数据项身份、可执行组成边界与基�
 
 RustFS 首版只按上述精确原生对象和 GeoJSON／TIFF 的既有完整组成进行同步内容预览；存储流限定 single DataItem 的主对象，以当前普通 User 调用既有 current-source 读取观察，并在存储事实读取及内容打开前分别重核，不以资源票据读取源内容。不接入组成附件、节点范围 Grant，不自动准入模型转换、COG 生成或其他后台执行用途。
 
+精确原生对象的无组成 `native_target` 只允许 `independent` 签发；完整文件组成继续接受既有 `independent`、`upload_creation`、`task_production` 来源，各来源仍受自身办理及原子结果约束，不因原生对象接入而缩减或扩大。
+
 **模型的精确文件组成表示。** 单体模型保留 `single`，glTF 保留既有 `multi` DataItem，身份均取自主文件，不把 buffer 或贴图另建授权对象。共享 `AuthorizationBoundary` 的原生表／集合与下述精确原生对象使用 `layout=single + native_target`；文件组成使用 `file_composition`；两者与 FileGDB 的 `scope` 严格互斥。已准入模型中的 multi 为 `model_3d/gltf`，主角色为 `manifest`，相关角色为 `buffer`／`image` 及唯一编号；不开放任意 multi 或 whole。批准快照中的固定格式身份唯一确定布局（glTF 与下述 ENVI 为 multi，其余已准入模型为 single），重建边界时必须与 Meta 的真实布局相符，不能按文件数量猜测布局；摘要继续包含真实 layout，既有格式的规范字节与摘要不变。`FileCompositionBoundary` 仅含 `format` 与完整 `refs`；每条 `FileCompositionRef` 含规范 `target: EngineCatalogPath`、`role`、`required`、`primary`，恰有一个必需主文件。主文件与所有引用属于同一 Engine、相同文件／对象路径模型，引用只在主文件父范围内逐一精确核对，不获得父目录读取许可。路径保留名称与大小写，禁止穿越、外部 URI、矛盾重复和目录目标。共享工厂深拷贝并按类型化路径排序、合并完全相同的引用；可信 wire 必须已经规范、完整且唯一，至多 200 个明确文件。空数组不代表组成已确认。文件摘要包括格式、完整路径、角色及必需／主入口语义，排除大小、内容哈希与时间；同一路径内容更新不使摘要改变，组成变化后旧精确 Grant 不覆盖新边界；节点来源另按当前完整边界及范围归属核验。原生边界的规范序列化与摘要不因新增文件表示而变化。纯值类型和摘要不是 Grant、EA 或允许读取的回执；文件事实投影、System 持久化与裁决、执行授权及真实内容 I/O 接线须分别验收，不以共享类型已编译宣称文件权限链完成。事实完整性来源及单体模型规则见[授权资源描述契约](addp元数据扫描机制规范.md#授权资源描述契约)。
 
 **ENVI 栅格扩展（2026-11-02 批准，实施及验收单独登记）。** NFS / MinIO 的 `media/envi/multi` 可沿同一精确文件组成契约扩展准入；仅同目录的一份主数据（`raster`）和一份必需头文件（`header`）。不得借用 Model3D 执行目的、模型白名单或主角色。Meta 完整证明及 System 当前组成裁决是必要前提；批准绑定两份规范文件清单，变化重新批准。旧的单文件或模型批准不覆盖 ENVI；精确项批准不隐含父目录／prefix 许可，显式节点 Grant 则沿本节持续范围规则裁决。Manager COG 源读取及当前普通文件出口须消费同一组成；不能只增加资源选择器选项便宣称接通。原有格式的布局、主角色和摘要不改变；SKP 继续关闭。
