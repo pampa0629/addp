@@ -18,6 +18,7 @@
 | 矢量与地图 | [拓扑持久化](#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
 | 栅格流程与持久化 | [Raster 工作流](#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](#raster-zonal-statistics-persistence) · [邻域统计](#raster-focal-statistics-persistence) · [邻域百分位](#raster-focal-percentile-persistence) · [邻域分类种类数](#raster-focal-variety-persistence) · [筛除分类保护](#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](#raster-thin-persistence) · [边界清理](#raster-boundary-clean-persistence) |
 | 邻域与插值专项 | [三种加权方法共同复核](#三种邻域加权方法的共同复核) · [7×7方窗](#77-像元方窗独立-hosted-验收) · [米制圆窗](#米制圆形邻域统计独立验收) · [多百分位](#邻域多百分位独立保存验收) · [IDW基础](#点数据idw插值独立-hosted-验收) · [最少支撑](#idw最少支撑点数独立-hosted-验收) · [最近N点](#idw最近n个支撑点独立-hosted-验收) · [距离幂次](#idw距离幂次独立-hosted-验收) |
+| 点／线密度专项 | [共同要求与数量矩阵](#点线密度专项共同要求) · [点权重](#点密度显式非负权重独立-hosted-验收) · [点核密度](#米制点核密度独立-hosted-验收) · [线核密度](#米制四次线核密度独立-hosted-验收) · [线权重](#线密度显式非负权重独立-hosted-验收) · [uniform线](#米制圆形线密度栅格独立-hosted-验收) · [uniform点](#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
 | DEM 地形与统计 | [填洼](#raster-fill-depressions-persistence) · [平均曲率](#dem-平均曲率独立-hosted-验收) · [剖面曲率](#dem-剖面曲率独立-hosted-验收) · [切向曲率](#dem-切向曲率独立-hosted-验收) · [平面曲率](#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) |
 | D8 流向与累积 | [流向](#dem-d8-流向持久化) · [汇流累积](#d8-汇流累积持久化) · [加权累积](#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](#d8-下游流长持久化) · [上游最长流长](#d8-上游最长流长持久化) · [汇水分区](#d8-汇水分区持久化) |
@@ -1733,71 +1734,99 @@ A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源�
 
 1.0与1的原始类型区别、非有限JSON、numpy整数、数值极限、无法可靠持久化的非法网格及故障注入单列Native，不修改产品格式支持。本节尚无已核验的真实Hosted通过记录。
 
+## 点线密度专项共同要求
+
+仅下方六个明确引用本节的密度suite适用，不扩大邻域／IDW或其他套件的范围。点、线的单位、核函数、完整源校验及数值边界分别以[点密度契约](../../workflow/栅格算子契约.md#米制圆形点密度栅格)、[线密度契约](../../workflow/栅格算子契约.md#米制圆形线密度栅格)为准。
+
+- **运行**：独立手工Hosted／NFS、同源默认入口产品Runtime、普通User原12权限，4 CPU／2 GiB／无额外swap；各600秒包含首次预期、执行查询、全检、归档与业务清理。准入及外层退出沿[T4规范](../T4-Online验收规范.md)。不接管个人部署、不改产品／原套件／权限，不重试、扩预算或加调度。
+- **完整核验**：每个终态真实重读全部已有COG，核全部像元／mask／合法零、Float64／NaN定义、方法／字段／单位、原六项网格／CRS、COG布局及全部实际nearest概览。artifact＝物理＝Meta相等正整数大小；自动扫描绑定当前父execution／User／Tenant／Engine，点或线源＋模板两输入的内部事实与公开投影分别校验，Monitor单独核对，源与先前成果字节／Meta不变。
+- **独立证据与清理**：每节保留自身oracle，预期一次生成、只读冻结并绑定root／run、全部源hash及夹具源码，不缓存实际成果。按下表归档原COG、全部源、冻结预期、大小／hash清单及Develop／Monitor原始终态响应；数量不替代内容核验。准确核density节点、原始原因和冻结语言，前置失败不充数、反向查询不改旧错。失败零发布／新增扫描／派生血缘；正常、失败和部分启动均核本轮工作区／oracle、NFS、Runtime／镜像／部署及Infra等已声明资源清理，首败与清理结果分别记录。
+- **层级**：专项Runner沿 `make test-raster-online-runner` 聚合，GDAL及污染反例沿 `make test-geopython-workflow`，登记沿 `make test-python-ci-registration`。这些正文定义验收要求；准备／本地通过不证明Linux全量或真实Hosted、UI、容量、稳定吞吐。各节声明的原始类型、异常格式、数值极限、故障注入仍单列Native，不扩格式支持。后续状态见[栅格后续专题](../../../next/栅格算子体系后续专题.md#三后续工作)。
+
+### 密度专项数量矩阵
+
+下表为每个suite独立要求，**不是已通过结果**。每次成功重读1至N份，失败各重读N份；物理调用含首次源／预期基线，COG归档份数与成功链数一致。
+
+| 专项 | 成功链／原COG | 双语准确失败 | 成果全检（成功＋失败） | 物理调用 | 业务执行／原始终态响应 |
+| --- | --- | --- | --- | --- | --- |
+| [点显式权重](#点密度显式非负权重独立-hosted-验收) | 24 | 64 | 300＋1536＝1836 | 89 | 88／176 |
+| [四次点核](#米制点核密度独立-hosted-验收) | 18 | 52 | 171＋936＝1107 | 71 | 70／140 |
+| [四次线核](#米制四次线核密度独立-hosted-验收) | 24 | 60 | 300＋1440＝1740 | 85 | 84／168 |
+| [线显式权重](#线密度显式非负权重独立-hosted-验收) | 16 | 40 | 136＋640＝776 | 57 | 56／112 |
+| [uniform线密度](#米制圆形线密度栅格独立-hosted-验收) | 16 | 40 | 136＋640＝776 | 57 | 56／112 |
+| [uniform点密度](#米制圆形点密度栅格独立-hosted-验收) | 16 | 32 | 136＋512＝648 | 49 | 48／96 |
+
 ## 点密度显式非负权重独立 Hosted 验收
 
-独立手工suite为`raster-point-density-weighted-persistence`，准备门禁`make test-raster-point-density-weighted-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒，包含首次预期生成、运行、核验、归档与清理。Linux全量和实际Hosted由CI协调，不自行触发、不重试、不扩预算；原两套无权重套件保持。
+独立手工 `raster-point-density-weighted-persistence`；`make test-raster-point-density-weighted-online-runner`。准备、核验、归档数量和清理统一按[密度共同要求与矩阵](#点线密度专项共同要求)。
 
 uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、混合非负权重、混合点序倒置、整数权重、同位置实际重复记录、混合权重乘8、全零、保留所选字段的空批、全无效mask／alpha模板、国际英尺矩形横跨512块、美制测量英尺旋转／剪切纵跨512块。实际文件核全1原数值／mask保持、点序／模板隔离相等、整数重复等价及绝对权重比例。夹具独立覆盖精确圆边界及相邻浮点、中心／模板外支持和局部无支持，uniform边界纳入，quartic边界准确零；不按权重总和归一化。省略字段points/m2，选字段weight/m2。
 
 每方法16类各中英文提交，共64次准确density失败：字段null／空／全空白／布尔／数字／列表／对象／缺失字段／活动几何列9类；权重缺失／负数／字符串及范围外缺失／范围外负数5类；零权重非法几何／CRS冲突2类。必须到达指定算子并核原始双语原因，读取／提交前置失败不得充数，反向查询不改冻结语言。布尔／复数／非有限原始权重、宽整数及数值极限、故障注入单列Native，不扩持久化格式。
 
-独立全点Fraction米制距离及2000位Decimal展开核公式预期，不复用产品索引／距离／核助手；冻结预期绑定root／run、全部源hash及夹具源码。核完整像元／mask／合法零、Float64／NaN定义、单位、原网格／CRS、COG布局及所有实际nearest概览；artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前点源及模板两源实际内外血缘／Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘、部分启动及全部退出清理。成功阶段重检300次，失败阶段1536次，共1836次成果全检、89次物理调用。归档24份COG原字节、全部源、冻结oracle、大小／hash清单及88执行的176份Develop／Monitor原始终态响应。准备与本地门禁不计实际Linux全量／Hosted，不计UI、容量或吞吐。
+独立全点Fraction米制距离及2000位Decimal展开核公式预期，不复用产品索引／距离／核助手。
 
 ## 米制点核密度独立 Hosted 验收
 
-独立手工suite为`raster-point-kernel-density-persistence`，准备门禁`make test-raster-point-kernel-density-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒；Linux全量和实际Hosted继续由CI会话协调，不自行触发、不重试、不扩预算，不改产品或原uniform套件。
+独立手工 `raster-point-kernel-density-persistence`；`make test-raster-point-kernel-density-online-runner`。准备、核验、归档数量和清理统一按[密度共同要求与矩阵](#点线密度专项共同要求)。
 
 16条quartic成功COG链：普通点集／逆序／整批三倍重复／中心重合及半径中点剖面4条，半径下邻浮点／等号／上邻浮点3条，模板外正支持／局部无支持／空批3条，全无效模板／mask-alpha-scale-offset忽略2条，非方形横跨512块／旋转兼剪切纵跨512块2条，两种英尺2条；再实际保存默认uniform／显式uniform2条，共18条。中心最大、圆周贡献准确0、无支持为有效0；全部重复XY逐条贡献，不设epsilon、边缘不归一化。实际COG核点序／模板隔离、整批三倍贡献及默认／显式uniform对照；每份全像元仍须精确匹配独立预期。离散中心采样不以整图像元面积加权和等于点数作为断言。
 
-半径null／true／false／0／负数／字符串／列表／对象8类，缺失／空Point／LineString／MultiPoint／范围内三维Point／范围外三维Point6类，CRS不一致／地理CRS2类，method为null／true／false／0／小数1.5／Quartic／gaussian／空字符串／列表／对象10类，共26类×中英文＝52次准确density失败；反向查询不改冻结错误，读取／提交前置失败不得充数。成功终态重读1至18份成果171次，52失败终态各重读18份936次，共1107次真实COG全检／71次物理调用（含初始源基线）。
+半径null／true／false／0／负数／字符串／列表／对象8类，缺失／空Point／LineString／MultiPoint／范围内三维Point／范围外三维Point6类，CRS不一致／地理CRS2类，method为null／true／false／0／小数1.5／Quartic／gaussian／空字符串／列表／对象10类，共26类×中英文＝52次准确density失败；反向查询不改冻结错误，读取／提交前置失败不得充数。
 
-独立全点Fraction米制距离及2000位Decimal展开四次核oracle，不复用产品索引／距离／核计算；只读冻结预期绑定root／run、源hash和夹具源码。严格核全部像元／mask／合法零、Float64／NaN定义／points每平方米、完整原网格／CRS、COG布局及实际nearest概览，artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前两源内外血缘和Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘和部分启动／全部退出清理。归档18份COG原字节、全部源、冻结oracle、大小／hash及70执行的140份Develop／Monitor原始终态响应。
+独立全点Fraction米制距离及2000位Decimal展开四次核oracle，不复用产品索引／距离／核计算。
 
-数值极限、非有限JSON、异常格式、重复索引和故障注入单列Native，不扩大产品格式、权限或UI／容量／吞吐认证；准备／本地门禁不计真实Linux全量或Hosted通过。
+数值极限、非有限JSON、异常格式、重复索引和故障注入单列Native，不扩大产品格式、权限或UI／容量／吞吐认证。
 
 ## 米制四次线核密度独立 Hosted 验收
 
-独立手工suite `raster-line-kernel-density-persistence`，标准准备门禁`make test-raster-line-kernel-density-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap；固定600秒含首次预期生成、执行、全检、原件归档与业务清理，不重试、不扩预算，实际Linux全量／Hosted由CI协调。
+独立手工 `raster-line-kernel-density-persistence`；`make test-raster-line-kernel-density-online-runner`。准备、核验、归档数量和清理统一按[密度共同要求与矩阵](#点线密度专项共同要求)。
 
 24成功：6条uniform实际对照（无权重默认／显式、混合权重默认／显式、全零、相切及相邻浮点组合）；18条quartic（无权重／全1、混合非负／要素逆序、整数权重／实际重复要素、权重乘8／原线折返乘2、等价多部／拆段反向、全零／保留字段空批、全无效mask-alpha模板／边界组合、国际英尺矩形横跨块／美制测量英尺旋转剪切纵跨块、解析直径／偏心弦）。核实际默认／显式uniform逐值一致、quartic全1／整数重复／顺序／多部／细分／模板隔离等价及倍增；实际跨方法见证必须不同。逐原始线段积分，边界核为0、完整圆核归一化、不按要素权重总和或模板边缘重新归一化；无支持和全零保留有效0。
 
 30类各中英文，共60次准确density失败：原加权20类（9类非法字段、5类缺失／负／字符串及范围外坏权重、6类零权重下非法几何／CRS／半径）；新增method的null／true／false／数字／列表／对象／空串／空白／大小写错误／未知值10类，按原JSON值显式提交，不能以默认值替代。严格核源WKB／属性／Schema／CRS、活动几何列shape和相邻浮点保真，不以加载／扫描／提交前置失败充数；错误节点／原因及冻结语言准确，反向查询不改旧失败。
 
-成功累计重读300次、失败60×24＝1440次，共1740次实际COG全检；84次业务执行、168份Develop／Monitor原始终态响应、85次物理调用含初始基线。独立全原始段2000位Decimal的t多项式积分oracle，不复用产品z参数裁圆／根式／权重准入／舍入助手；仅对同一固定精度下的纯标量平方根做有界4096项memo，预期一次生成并只读冻结，绑定root／run、源hash及夹具源码。完整核像元／mask／合法零、Float64／NaN、方法参数省略及实际方法／权重／单位、原网格／CRS、COG及全部实际nearest概览、artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前两源实际内外血缘及Monitor、源／先前成果字节与Meta不变、失败零发布／新增扫描血缘、部分启动及所有退出清理。
+独立全原始段2000位Decimal的t多项式积分oracle，不复用产品z参数裁圆／根式／权重准入／舍入助手；仅对同一固定精度下的纯标量平方根做有界4096项memo。
 
-归档24份COG原字节、全部源、冻结预期、大小／hash和168份原始响应。宽整数、原生布尔／复数／非有限权重、真正数值极限及故障注入继续单列Native；不改产品、原两套uniform Hosted、权限或跨模块逻辑，不计UI／容量／稳定吞吐，准备不计真实Hosted通过。
+另核请求中method省略事实与实际方法／权重／单位，物理／身份及两源血缘沿共同要求。
+
+宽整数、原生布尔／复数／非有限权重、真正数值极限及故障注入继续单列Native；原两套uniform Hosted不被quartic准备记录代验，不改产品、权限或跨模块逻辑。
 
 ## 线密度显式非负权重独立 Hosted 验收
 
-独立手工suite为`raster-line-density-weighted-persistence`，准备门禁`make test-raster-line-density-weighted-online-runner`；复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒，包含首次预期生成、运行、全检、归档和业务清理。实际Linux全量／Hosted交CI协调，不自行触发、不重试、不扩预算，不改产品或原无权重套件。
+独立手工 `raster-line-density-weighted-persistence`；`make test-raster-line-density-weighted-online-runner`。准备、核验、归档数量和清理统一按[密度共同要求与矩阵](#点线密度专项共同要求)。
 
 16条COG成功链：省略字段／全1、混合非负／要素逆序、整数权重／实际重复要素、权重乘8／原线折返、等价多部／拆段反向、全零／保留所选字段空批、全无效mask-alpha模板／相切边界组合、国际英尺矩形横跨块／美制测量英尺旋转剪切纵跨块。实际文件核省略／全1数值及mask相等（单位分别metre/m2与weight/metre）、整数重复等价、顺序／多部／细分／模板隔离相等、×8与折返×2，不归一化。混合线集覆盖重复、部分重叠、闭合自交、折返和模板外圆内段；边界组合含相切／略内／略外／端点接触／无支持／零权重，固定完整圆面积，逐原始段乘原要素权重累计。
 
-每类中英文提交，共20类／40次准确density失败：字段null／空／全空白／布尔／数字／列表／对象／缺失列／活动几何列9类；权重缺失／负数／字符串／范围外缺失／范围外负数5类；零权重Point／整线零长／多部零长分量／范围外Z线／CRS冲突／非法半径6类。先核源WKB／Schema／属性／CRS／实际字段角色与相邻浮点原始值，异常格式归一化或读取／提交前置失败不得充数；准确核节点／原因／冻结提交语言，反向查询不改旧错误。成功阶段重读136次，失败阶段640次，共776次成果全检／57次物理调用（含初始基线），56业务执行／112份Develop与Monitor原始终态响应。
+每类中英文提交，共20类／40次准确density失败：字段null／空／全空白／布尔／数字／列表／对象／缺失列／活动几何列9类；权重缺失／负数／字符串／范围外缺失／范围外负数5类；零权重Point／整线零长／多部零长分量／范围外Z线／CRS冲突／非法半径6类。先核源WKB／Schema／属性／CRS／实际字段角色与相邻浮点原始值，异常格式归一化或读取／提交前置失败不得充数；准确核节点／原因／冻结提交语言，反向查询不改旧错误。
 
-独立全原始段2000位Decimal二次方程oracle，不复用产品索引／投影裁圆／根式区间／权重准入或舍入助手；冻结预期绑定root／run、全部源hash及夹具源码。核完整像元／mask／合法零、Float64／NaN定义、字段绑定／单位、原网格／CRS、COG和所有实际nearest概览；artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前线源＋模板两源实际内外血缘与Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘、部分启动及全部退出清理。归档16份COG原字节、全部源、冻结预期、大小／hash与112份原始响应。原始布尔／复数／非有限权重、宽整数及数值极限、异常持久化格式和故障注入单列Native；不计UI／容量／吞吐，准备不计真实Linux全量或Hosted通过。
+独立全原始段2000位Decimal二次方程oracle，不复用产品索引／投影裁圆／根式区间／权重准入或舍入助手。
+
+原始布尔／复数／非有限权重、宽整数及数值极限、异常持久化格式和故障注入单列Native。
 
 ## 米制圆形线密度栅格独立 Hosted 验收
 
-独立手工suite为`raster-line-density-persistence`，准备门禁`make test-raster-line-density-online-runner`；复用NFS、同源产品默认入口Runtime、普通User原12权限、4CPU／2GiB／无额外swap，业务预算固定600秒，包含首次预期生成、执行、全检、归档和业务清理。Linux全量及实际Hosted仍由CI协调，不自行触发、不重试、不扩预算；不改产品、原点密度套件或权限。
+独立手工 `raster-line-density-persistence`；`make test-raster-line-density-online-runner`。准备、核验、归档数量和清理统一按[密度共同要求与矩阵](#点线密度专项共同要求)。
 
 16条COG成功链：普通／逆序2条，双倍重复／原线折返2条，等价MultiLineString／拆段并反向2条，部分重叠1条，相切／略内／略外／端点接触4条，无支持／合法空集2条，全无效mask-alpha模板1条，国际英尺矩形横跨块／美制测量英尺旋转剪切纵跨块2条。基线含直径、弦、闭合／自交线和模板外圆内段。核实际保存文件的顺序／多部／细分／模板忽略等价，以及重复／折返双倍贡献；每份仍逐像元独立oracle相等。固定完整圆面积，逐原始线段重数累计，相切或无支持为有效0，单位metre/m2。
 
-半径null／true／false／0／负数／字符串／列表／对象8类；缺失几何／空线／Point／Polygon／GeometryCollection／整线零长／多部零长分量／范围内Z线／范围外Z线／范围外零长线10类；不一致／地理CRS2类，共20类×中英文＝40次准确density失败。先完整核源WKB／Schema／属性及CRS事实，异常格式归一化、读取或提交前置失败不得冒充算子拒绝；无法保真须报告，不换负例补数。准确核失败节点／原因／冻结提交语言，反向查询不改旧失败。成功后重读全部已有COG共136次，40失败后各重读16份共640次，合计776次全检／57次物理调用（含初始基线）、56执行／112份Develop及Monitor原始终态响应。
+半径null／true／false／0／负数／字符串／列表／对象8类；缺失几何／空线／Point／Polygon／GeometryCollection／整线零长／多部零长分量／范围内Z线／范围外Z线／范围外零长线10类；不一致／地理CRS2类，共20类×中英文＝40次准确density失败。先完整核源WKB／Schema／属性及CRS事实，异常格式归一化、读取或提交前置失败不得冒充算子拒绝；无法保真须报告，不换负例补数。准确核失败节点／原因／冻结提交语言，反向查询不改旧失败。
 
-独立全线段2000位Decimal二次方程oracle，不复用产品索引／投影裁圆／根式区间或舍入助手；只读冻结root／run／全部源hash／夹具源码。严格核完整像元／mask／零／Float64／NaN定义、metre/m2、原网格／CRS、完整COG及所有实际nearest概览、artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前线源＋模板两源实际内外血缘和Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘与部分启动／所有退出清理。归档16份COG原字节、全部源、冻结预期、大小／hash及112份终态响应。数值极限、不可JSON数值、M维异常格式、故障注入及已有目标写入保护单列Native；不计UI／容量，准备不等于Linux全量或真实Hosted通过。
+独立全线段2000位Decimal二次方程oracle，不复用产品索引／投影裁圆／根式区间或舍入助手。
+
+数值极限、不可JSON数值、M维异常格式、故障注入及已有目标写入保护单列Native。
 
 ## 米制圆形点密度栅格独立 Hosted 验收
 
-独立手工suite为`raster-point-density-persistence`，准备门禁`make test-raster-point-density-online-runner`。复用NFS、同源产品默认入口Runtime、普通User原12权限及4CPU／2GiB／无额外swap，业务预算固定600秒；实际Linux全量和Hosted由CI会话协调，不自行触发、不重试、不扩预算，不改产品逻辑或原套件。
+独立手工 `raster-point-density-persistence`；`make test-raster-point-density-online-runner`。准备、核验、归档数量和清理统一按[密度共同要求与矩阵](#点线密度专项共同要求)。
 
 16条成功COG链：普通点集／倒序／整批三倍重复／像元中心重合点4条，半径略小于／等于／略大于边界3条，模板外支持／局部无支持／空点集3条，全无效模板／mask-alpha及缩放元数据模板2条，非方形横跨512块／旋转兼剪切纵跨512块2条，国际英尺／美制测量英尺2条。所有重复XY逐条计数；像元中心精确米制平方距离小于等于半径平方纳入、不设epsilon，固定完整圆面积分母、不做边缘补偿；模板只给网格和CRS，无支持处有效0、全部成功像元有效。实际保存文件核普通／逆序、普通／全无效模板、普通／mask-alpha相等，以及整批三倍重复与独立计数对应关系；各文件仍须全像元精确oracle相等。
 
-半径null／true／false／0／负数／字符串／列表／对象8类，缺失几何／空Point／LineString／MultiPoint／范围内三维Point／范围外三维Point6类，点模板CRS不一致／地理CRS2类，共16类×中英文＝32次准确density失败。核正确失败节点／原始原因和提交语言冻结，反向查询不改旧错误；读取或提交前置失败不得冒充算子拒绝。成功终态重读1至16份成果（136次），32失败终态各重读16份（512次），共648次真实COG全检／49次物理调用（含初始源基线）。
+半径null／true／false／0／负数／字符串／列表／对象8类，缺失几何／空Point／LineString／MultiPoint／范围内三维Point／范围外三维Point6类，点模板CRS不一致／地理CRS2类，共16类×中英文＝32次准确density失败。核正确失败节点／原始原因和提交语言冻结，反向查询不改旧错误；读取或提交前置失败不得冒充算子拒绝。
 
-独立逐点Fraction oracle精确核全部距离和计数，以Float64 math.pi的精确有理值乘半径平方作为完整圆面积、密度一次舍入；不复用产品索引／距离助手。只读冻结oracle绑定root／run、全部源hash和夹具源码。严格核完整像元／mask／合法零、Float64／NaN定义／points每平方米、原六参数网格／CRS、COG布局及实际nearest概览，artifact＝物理＝Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前点源＋模板两源实际内外血缘和Monitor、源及先前成果字节／Meta不变、失败零发布／新增扫描血缘和部分启动／全部退出清理。归档16份COG原字节、全部源、冻结预期、大小／hash清单及48执行的96份Develop／Monitor原始终态响应。
+独立逐点Fraction oracle精确核全部距离和计数，以Float64 math.pi的精确有理值乘半径平方作为完整圆面积、密度一次舍入；不复用产品索引／距离助手。
 
-非有限JSON、异常持久化格式、重复索引、数值极限和故障注入单列Native；不扩产品格式，不计UI、容量或稳定吞吐，准备／本地门禁不计实际Linux全量或Hosted通过。
+非有限JSON、异常持久化格式、重复索引、数值极限和故障注入单列Native；不扩产品格式。
 
 ## IDW距离幂次独立 Hosted 验收
 
