@@ -535,6 +535,27 @@ Fixture owner幂等准备确定性LAS／多页PPTX，Gateway真实扫描得locat
 
 Business MinIO原样CC-BY-SA-3.0马模型＋自建4×4 RGB(220,30,60)贴图；页面核默认米／手选毫米／显式bitmap映射，正式生成`source_unit=mm`。核审计、5静态网格／12 primitive／444顶点、米制尺寸及真实内嵌像素，不固定跨Blender版本PNG编码hash。Meta仅格式身份；MAX阶段六模型＋点云／PPTX／栅格核九项输入输出血缘／缓存／清理，实际Hosted前不算T4。
 
+### KML／GML／TopoJSON 的 S3 兼容消费
+
+`full`沿[部署与清理](#部署模型转换与通用清理)，Business MinIO／GeoPython产品Runtime、普通User十权限，三份固定hash双图层源；区别于拓扑十一权限。核验差异：
+
+- scope-table为HTTP JSON Base64 EWKB，同一解码入口核原始／刷新几何、类型／完整坐标／Z及独立真实地图／像素，不要求GeoJSON。
+- 未知CRS TopoJSON省略`source_srid/source_crs`（omitempty），`transform_status=unknown_crs`且默认暂停，不虚构SRID 0／4326；核临时选择／清除／切换／重开及原始几何。
+- 活动控件`button.ol-zoom-out`的可访问名“–”而非提示“Zoom out”；中英文T3／Hosted helper各连续点击两次，每次等动画、核缩放减1，再核像素／原几何／实例；刷新与原件下载hash另核。
+- 先Security，标准身份夹具等Manager持久保护投影首同步，预检健康／源码；启动／初始化失败拒入场并清理。扩展最低Owner／browser v13、拒旧版；现行版本按[full固定断言](#表格json-与八模型固定断言)。
+
+`make test-manager-online-runner`核夹具／拒绝／浏览器语法／登记。MinIO只证S3兼容，外部云未验；不登记本项T4通过。
+
+### 设备静态轨迹范围读取
+
+同`full`／Business MinIO／十项User，无新增服务／任务／成果／权限；字段／预算／保护见[Manager预览规范](../../../../manager/docs/数据预览与资源树实现规范.md#六设备静态轨迹预览)。独有断言：
+
+- CSV／records JSON／Point GeoJSON各3000合成点，A／B各1500小时；UTC `[2026-01-01T00:00:00Z,2026-01-02T00:00:00Z)`为双设备48／A24点。独立表单核设备／时间／坐标／像素、请求与`trajectory_scope` selection一致、`complete=true/scanned_rows=3000`。
+- 整文件拒前2000点绘图、保完整性提示，GeoJSON自动CRS不清提示，重开重验。超限API `422/trajectory_point_limit_exceeded`，缩回恢复，不豁免其他业务失败／警告。
+- 三源大小／下载SHA不变，正式下载helper不被探针替代；像素只读复制至独立离屏画布，不改地图／过滤警告。Owner／browser／CI核完整三源、拒缺失／篡改／旧版；历史Owner v9／browser v11仅证当轮。
+
+源删除及领域／物理收尾沿[full](#部署模型转换与通用清理)，Infra不替领域零残留。`make test-manager-online-runner`／`make test-online-runner`核源字节／大小／下载登记、两次生成一致、三格式等价、上述计数及报告拒绝；[历史证据](../验收证据索引.md#manager-静态轨迹历史证据)分本机／Hosted／CI，不以Runner代Hosted。
+
 ### 表格、JSON 与八模型固定断言
 
 full沿原十项普通User，含`manager.content.read`下载及`manager.data_item.update`设置／刷新；Owner拒缺项／多项或管理员角色，不扩个人／生产身份。报告版本由当前Owner／浏览器及CI登记绑定，历史不替当前；下列固定夹具保留，格式产品规则归权威规范。
@@ -626,28 +647,6 @@ MinIO沿同预览／409／刷新／分页／下载断言，只用既有Business�
 | 后继源码`5a5614564b38115b38f4091fc1742a46da5cae0e` | [GeoPython](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242674)4797 passed／21 warnings；[Console](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242861)195单测／219浏览器／build；[Platform](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242706)通过。此前本地未改HMR公共夹具194过／1败仍保留，不倒推本地通过或外推当前main／其他Job。 |
 
 旧构面／修复／吸附／面叠／面缝／悬点／线叠／线内自叠T4不外推新增线交／线内自交；Native／CI不算新真实T4，容量及业务DELETE未由上述清理认证。
-
-### KML／GML／TopoJSON 的 S3 兼容消费
-
-本小节属`manager-internal-artifact-lineage`，同Business MinIO／GeoPython产品Runtime／十项普通User，三份固定hash双图层源；不继承上节拓扑11权限。核验差异：
-
-- scope-table几何为HTTP JSON Base64 EWKB，用同一解码入口核原始／刷新几何、类型／完整坐标／Z，再独立核真实地图／像素，不要求改返GeoJSON。
-- 未知CRS TopoJSON须省略`source_srid/source_crs`（omitempty），`transform_status=unknown_crs`且默认暂停；不虚构source_srid=0／4326。临时选择／清除／切换／重开及原始几何分别核。
-- 活动控件定位`button.ol-zoom-out`，可访问名是“–”而非提示“Zoom out”；同一中英文T3／Hosted helper真实连续点两次，各等动画并核缩放减1，再验像素／原几何／实例。另核普通刷新／原件下载hash。
-- 隔离环境先Security，标准身份夹具等待Manager持久保护投影首同步；预检核健康／源码，启动／初始化失败则拒入场并清理。Owner／browser v13拒旧版，`make test-manager-online-runner`核夹具／拒绝／浏览器语法／登记。
-
-不改血缘实现、服务／权限／workflow；MinIO只证S3兼容，不认证外部云。真实T4按当次源码／报告／清理独立认定，此处不登记通过。
-
-### 设备静态轨迹范围读取
-
-同Manager suite／Business MinIO／十项User，无新增服务／任务／成果／权限。产品字段／预算／保护归[Manager预览规范](../../../../manager/docs/数据预览与资源树实现规范.md#六设备静态轨迹预览)；只读夹具和页面断言为：
-
-- CSV／records JSON／Point GeoJSON各3000合成点，A／B各1500小时；UTC `[2026-01-01T00:00:00Z,2026-01-02T00:00:00Z)`为双设备48／A24点。独立表单核设备／时间／坐标／像素、请求与`trajectory_scope` selection一致、`complete=true/scanned_rows=3000`。
-- 整文件拒前2000点绘图并保完整性提示，GeoJSON自动CRS不清提示，重开重验；同User超限API `422/trajectory_point_limit_exceeded`，缩回恢复，不能统一豁免其他业务失败／警告。
-- 三源大小／下载SHA不变，正式下载helper不被探针替代；像素只读复制至独立离屏画布，不改地图／过滤警告。当前Owner／browser／CI登记核完整三源、拒缺失／篡改／旧版；历史Owner v9／browser v11只识别当轮。
-- 既有生命周期删源，原模型／PPTX／COG／点云领域与物理清理仍保留，Infra不替领域零残留。
-
-源字节／大小／下载登记、两次生成一致／三格式等价及3000／48／24计数／报告拒绝归`make test-manager-online-runner`／`make test-online-runner`；实际范围查[静态轨迹历史证据](../验收证据索引.md#manager-静态轨迹历史证据)，不以runner代手工Hosted。
 
 ### 多距缓冲独立场景
 
