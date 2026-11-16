@@ -4,13 +4,17 @@
 
 ## CI 编排与登记
 
+### 发布、路径选择与调度
+
 共享 `main` 的续办沿用 [统一发布入口](../../../AGENTS.md) 的单写入锁和快进规则。`make test-main-publication` 使用隔离 Git 仓库验证显式续办、基线变化、命令失败和锁竞争，并由 `make test-platform` 进入现有 Platform CI。测试使用本地临时远端。
 
 按路径选择门禁的托管工作流（Platform CI、Release/T2、Quality Smoke）使用独立 Runner 和 Job 独占的 disposable 资源，不设置 workflow 或 job 的 `concurrency` 分组。每次运行保留自己的提交范围与选择结果，由 GitHub Runner 配额排队；后续无关提交不能取消正在执行的门禁，也不能替换待执行门禁。仅将 `cancel-in-progress` 改为 `false` 不足以满足此要求：GitHub 默认仍以新运行替换同组已有的 pending 运行。专用 T4 主机的资源互斥遵循其既有 Job 锁，不套用托管门禁的调度规则。
 
 Push 使用事件的 `before...sha`，PR 使用 base 与本次 SHA 的 merge-base 差异；共享依赖和 owner 声明的测试输入继续由 `changed-gate.py` 统一扩散。文档运行跳过测试只表示该提交未命中路径，不能替代前序代码提交的验收证据。`make test-platform` 的 CI 登记与选择回归约束上述调度，并验证连续相关提交后追加文档、共享依赖、取消/失败/意外跳过的判定；原有超时、owner 清理、零残留核验及 required check 汇总必须保留。
 
-验证调度修复时，应在相关门禁执行和排队期间追加无关文档提交，再核对前序 Job 继续完成、排队 Job 实际启动，以及文档运行只跳过自身未命中的门禁。
+调度回归须在相关门禁运行／排队时追加无关文档提交，证明前序继续、排队实际启动、文档只跳过自身未命中项。
+
+### 独立作业与构建登记
 
 System 与 Transfer 的 Go T1 分别使用 Platform CI 的独立 `System Go CI runner`、`Transfer Go CI runner` Job，按各自 owner／Common 及标准模块入口依赖路径选择，直接复用 `make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=transfer GO_ONLY=1`。两者沿用 Ubuntu 24.04 和 20 分钟预算，由各自 backend/go.mod 确定 Go 版本；因根 Make 入口仍校验 Node 版本，按 `.node-version` 准备固定版本并登记其输入，不绕过前提检查。独立 Job 不依赖 Go workspace 聚合 Job，不启用外部数据库、个人服务或 Hosted 验收；仅证明各自 Go T1，不计为完整模块门禁。聚合 workspace 继续承担全模块依赖及组合测试，其失败保持失败；不能把它在其它 owner 提前退出解释为 System 或 Transfer 已经执行或通过。独立 Job 须同时核对 selected、标准命令和实际终态。
 
@@ -24,6 +28,8 @@ System Cleanup PostgreSQL 的公共DTO回归实际调用Hosted的唯一任务观
 
 Manager Hosted 的 Infra MinIO 构建准备复用固定输入缓存：继续使用原 Dockerfile 与 Infra Compose 构建最终镜像，缓存同时保存带 BuildKit inline 元数据的编译阶段和最终镜像，不改变 Server / mc 源码修订或验收断言。缓存键包含 Linux amd64、构建脚本及全部已跟踪 Infra 构建上下文；只恢复精确键，加载前核对归档摘要，加载后核对镜像身份和架构。热构建必须复用 Dockerfile RUN，并保持两个二进制摘要一致；缓存损坏、缺失的必需热验或构建失败均阻断。独立 Infra MinIO build cache 工作流在全新 Runner 核验复用，原样 Compose 构建仍实际执行。转移归档在产品部署前删除以释放磁盘，仅保存公开固定源码构建层，不保存身份、配置、业务数据或测试结果；构建缓存通过不代表业务 T4 通过。
 
+### 作业预算与聚合复用
+
 <a id="frontend-deterministic-job-budget"></a>
 
 Platform CI 的 `frontend-deterministic` 默认预算为 20 分钟，例外以当前 workflow 矩阵登记为准：
@@ -34,13 +40,15 @@ Platform CI 的 `frontend-deterministic` 默认预算为 20 分钟，例外以�
 | Console 前端 | 30 分钟；唯一 `make test-console-frontend`，两个 Worker 按文件并行，`fullyParallel: false` 保持同文件顺序。 |
 | GeoPython GDAL | 60 分钟；唯一 `make test-geopython-workflow`，四个隔离 Worker，详见下文。 |
 
-预算包含准备、完整测试、构建与退出清理。浏览器 Context 和 HTTP 夹具各自隔离，Vite 只服务源码，端口、缓存与证据由标准入口管理；登记检查必须约束矩阵预算。不删减用例、放宽单用例期限或增加重试。Monitor 曾在 20／30 分钟取消，Console 的 `40254270886`、`40254922673`、`40255039253` 曾在 20 分钟超时，均不能因预算调整改记通过；完整 Linux Job 结果与局部分项、文档选择跳过分别认定。
+预算含准备、完整测试、构建及清理，登记检查约束矩阵预算；Context／HTTP夹具各自隔离，Vite仅服务源码，端口／缓存／证据归标准入口。不得删用例、放宽单例期限或增加重试。Monitor 20／30分钟取消及Console三次20分钟超时（`40254270886`、`40254922673`、`40255039253`）仍是历史失败，调整预算不能改记通过；Linux完整Job、局部分项和文档选择跳过分别认定。
 
 执行管理确定性专项在 Platform CI 中使用独立的 `Execution online CI runner` Job，复用唯一 `make test-execution-online-ci-runner`，不依赖 Platform 聚合 Job 或复制语言测试列表。该 Job 只做现有 Graph／Cleanup 编排、准入、报告、恢复和登记的 T0/T1，不启动产品部署、数据库或 T4；输入闭包由登记检查约束，并复用标准路径选择的 push／PR 差异与 schedule／manual 语义。跳过必须明确 `selected:false`，不替代前序代码的实际执行证据；专项成功也不替代原聚合及 review 的失败结果。原聚合入口与全部断言保留；`Platform consistency` Job 的总预算固定为 60 分钟，包含冷 Swagger 准备、完整 `make test-platform` 和退出清理。除下述 GeoPython 测试进程调度外，各专项 Job、单项测试期限、串行执行与重试策略保持不变，未引入第二套实现或容错放行。
 
 Online 聚合通过 Make 依赖图串行复用公共分发、变更选择、栅格血缘观察和登记检查；同一进程内共享目标只执行一次，单独 owner 入口仍须完整可达。不得以跨运行结果缓存、环境分支跳过或重复实现换取通过。登记负例须先确认基线有效，再实际移除普通目标依赖边；`.PHONY`、`.NOTPARALLEL` 只声明属性，不算执行依赖。原先要求先检查 JavaScript 语法的 owner，仍须将语法预检作为首个串行依赖，保持失败阶段。聚合与独立 Job、各项期限及重试语义分别遵守原预算。
 
 GeoPython 沿唯一 `make test-geopython-workflow` 使用固定四个隔离 pytest Worker 和 worksteal 调度，利用现有公开仓库 `ubuntu-24.04` 标准 Runner 的四个 CPU（[GitHub Runner 规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)），不提高 Runner 规格或 Job 预算，完整 pytest 阶段保持完整收集集合，每个用例实际执行一次；既有 NetCDF 前置子集仍独立执行，pytest-xdist 仅作为测试依赖。Worker 使用各自临时目录，网络夹具须使用动态端口，不共享可变文件或产品服务；产品 Gunicorn 的单 Worker 约束不变。`--max-worker-restart=0` 禁止崩溃后自动重启，任何失败或不完整执行均阻断；不增加重试或放宽资源、像元、耗时及清理断言。序列收集与并发执行的用例集合必须一致，本地优化与 Linux 完整 Job 的通过证据分别记录。
+
+### Workflow 的职责与变更闭包
 
 Workflow 只负责：
 

@@ -8,31 +8,31 @@
 | 门禁类别 | 文内入口 |
 | --- | --- |
 | Runtime 与原生转换 | [Model3D Runtime 确定性门禁](#model3d-runtime-确定性门禁)、[Manager Raster Mosaic 原生 Runtime 门禁](#manager-raster-mosaic-原生-runtime-门禁)、[SuperMap Runtime 确定性门禁](#supermap-runtime-确定性门禁)、[GeoPython Runtime 确定性门禁](#geopython-runtime-确定性门禁)、[Document 原生转换门禁](#document-原生转换门禁) |
-| 基础设施与数据引擎 | [Business Redis 门禁](#business-redis-门禁)、[Elasticsearch 门禁](#elasticsearch-门禁)、[Redis 键值数据集门禁](#redis-键值数据集门禁)、[平台指标设施独占门禁](#平台指标设施独占门禁)、[Spark 数据发布门禁](#spark-数据发布门禁)、[关系型写入与安全诊断门禁](#关系型写入与安全诊断门禁)、[Oracle 原生类型与空间门禁](#oracle-原生类型与空间门禁) |
+| 基础设施与数据引擎 | [FTP／显式 FTPS 准入门禁](#ftp显式-ftps-准入门禁)、[Business Redis 门禁](#business-redis-门禁)、[Elasticsearch 门禁](#elasticsearch-门禁)、[Redis 键值数据集门禁](#redis-键值数据集门禁)、[平台指标设施独占门禁](#平台指标设施独占门禁)、[Spark 联邦查询技术准入](#spark-联邦查询技术准入)、[Spark 数据发布门禁](#spark-数据发布门禁)、[关系型写入与安全诊断门禁](#关系型写入与安全诊断门禁)、[Oracle 原生类型与空间门禁](#oracle-原生类型与空间门禁) |
 | Owner 数据、安全与界面 | [Meta 扫描与结果归属门禁](#meta-扫描与结果归属门禁)、[Security 治理与识别门禁](#security-治理与识别门禁)、[业务图双引擎领域验收](#业务图双引擎领域验收)、[Graph/Cleanup 执行管理最小验证矩阵](#graphcleanup-执行管理最小验证矩阵)、[Manager 预览浏览器门禁](#manager-预览浏览器门禁)、[Manager 快显回归与基准验证](#manager-快显回归与基准验证)、[租户执行过程事件门禁](#租户执行过程事件门禁)、[保护投影与执行诊断门禁](#保护投影与执行诊断门禁) |
 
 ## Graph/Cleanup 执行管理最小验证矩阵
 
-下表定义最小必需断言，定位列只说明已接线的实现、测试及缺口，不是当前 HEAD 或 Hosted 通过清单。执行规则分别以[Graph 构建任务](../tasks/模块任务契约.md#graph-构建任务)、[公共 lease](../tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[Cleanup 持久协议](../addp-cleanup体系规范.md#持久队列与完成回执)为准。
+下表保留最小必需断言、责任层级和标准入口，只摘要既有覆盖与缺口。具体函数、固定源码、增补过程及实际结果统一查[执行管理专题](../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)，不把接线或局部测试记为当前HEAD／Hosted通过。执行规则分别以[Graph 构建任务](../tasks/模块任务契约.md#graph-构建任务)、[公共 lease](../tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[Cleanup 持久协议](../addp-cleanup体系规范.md#持久队列与完成回执)为准。
 
-| 编号 | 最小场景及判定 | 层级／主责 | 标准入口与边界 | 源码定位／待补项（2026-11-14复核，不等于当前HEAD全部通过） |
+| 编号 | 最小场景及判定 | 层级／主责 | 标准入口与边界 | 覆盖摘要／待补项 |
 | --- | --- | --- | --- | --- |
-| G1 | 用户／TaskProvider创建仅落唯一pending；提交后进程退出仍可发现，未claim不创建运行体／外部操作 | T1、PG T2；Graph＋Common | `make test-module MODULE=graph`；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 扩既有Graph PG用例；现有入队竞争不等于监督器故障通过 | StartSupervisor与PendingInputAndAdmission已定位；进程退出／重启的T4证据待取得。 |
-| G2 | 双Backend竞争只一方claim；attempt／token／started_at与任务摘要同事务；任一步注入失败整体回滚 | PG T2；Common原语、Graph组合 | 上述Graph PG入口及`make test-common-postgres`；Common共享变化按真实消费者扩散，不只跑Graph分组 | ExactClaimAndCancellation 验证双领取。ClaimSummaryRollback 以 PostgreSQL 触发器在公共领取已写入后使任务摘要失败，核对三张表回滚、失败不返回租约及原执行仍可首次领取。 |
-| G3 | cancel与claim两种先后：未启动attempt0取消不造开始／耗时；claim先提交则持久受理并等待真实停止；success先提交不得追改 | T1、PG T2；Graph | 同一模块／Graph PG入口；历史缺证、曾启动记录不能套pending例外，HTTP返回明确受理与终态区别 | PG 覆盖 claim 后取消、未 claim 取消及 SuccessCommitsBeforeCancellation。后者用 PostgreSQL 阻塞关系确认取消等待成功事务，提交后返回已有 success，保留结果、摘要和控制记录。 |
-| G4 | 另一Backend受理取消、重复请求、execution已换代、跨Tenant与缺权限均严格绑定；旧task取消不能伤及新执行 | T1、PG T2；Graph／System授权边界 | Graph标准模块与PG门禁；API改变时同次覆盖双语Swagger和授权校验，不借Service身份扩权 | CancelExecution按execution／attempt校验；跨Backend、身份变化由受控runner覆盖，T4未取证。 |
-| G5 | 等待G或业务行锁期间lease到期；旧heartbeat、材料Save、待审项、计数、事件、终态全部拒绝，私有写入不先提交 | PG T2；Common＋Graph | Common／Graph PG入口，真实行锁门闩验证；SQLite或只核execution更新不能代替 | WaitForAdmissionPastLease覆盖材料／审核／进度／终态四类锁后失权；不等于全部锁排列通过。 |
-| G6 | 外部写成功而PG回执丢失、取消超时或旧进程失联：执行失败但效果待核清；禁止自动重放／人工重跑／Cleanup；伪造、错attempt和不完整停止证据拒绝 | T1、PG与原生引擎T2；Graph／Common Provider | 受控Provider/HTTP夹具验证不确定窗口，并复用`make test-common-falkordb`／`make test-common-neo4j`补原生副作用交界；当前断言不充分须同次扩展。真实跨进程在途语义另需T4，不从mock或PG推断远端已停止 | UncertainEffects及持久操作已接；原生丢回包故障runner／证据仍缺，恢复能力暂缓。 |
-| G7 | 旧实例只可追加已绑定的停止证据，不能补结果／改终态；TTL、清lease、进程退出和确认布尔值不能直接解除；核清后不自动继续 | T1、PG T2；Graph | 同Graph入口；核清／重新开放按已确认的独立Permission、原目标和服务端证据契约验证，不增无条件解锁API | known操作核清与拒绝路径有T1／PG；可信绑定及positive reopen暂缓。 |
-| G8 | 材料实际字节摘要、本体执行映射、目标身份变化被拒；活动材料不可删除／覆盖，快照不含秘密；不迁Ontology版本协议 | T1、PG T2；Graph | Graph标准入口；不将输入冻结测试外推为Ontology不可变发布验收 | BuildInputRuntime 用真实 PG 核对材料与 CatalogPath 入队冲突、活动材料拒绝变更、同长度字节变动、冻结本体映射改写及登记版本变化。正常本体编辑后，原执行仍用冻结映射。System 登记和 Copilot 用受控响应，物理代际及原生效果另验。 |
-| G9 | 构建终态后人工审核仍可用；并发批准／拒绝／修改唯一裁决；关闭准入拒新审核、在途结果不明阻清理，原审核结果／已提交图数据不隐式清空 | T1、PG T2；Graph | Graph模块／PG；涉及页面响应时才补相关Console T3；有效原生审核历史不重复运行 | ReviewCommandSurvivesBuildAndBlocksDeletion 已定位；GraphCleanupRuntime/review_cleanup_interleavings 新增六项真实 PG：关闭／审核先提交两序、未决操作及新审核拒绝、已知原命令收尾、关闭／审核回执／最终清理回执回滚。同入口 review_command_competition 再补批准／拒绝／修改九种有序组合，以实际锁等待验证唯一命令及失败方零变更、零额外操作，覆盖错误命令／actor 回执及终态重放拒绝。外部图效果由持久操作夹具代表，真实原生故障仍另验。 |
-| C1 | System创建请求／父／全部expected子pending同事务；同父同Owner唯一，重复来源事件去重，相同ID不同内容拒绝，同参独立合法动作不误合并 | T1、PG T2；System＋Common | `make test-module MODULE=system`及Common PG；`make test-system-cleanup`已登记，运行System service真实PG用例并拒绝skip。IAM PG不替代此入口；不为旧Stream增加Redis协调门禁 | CreateCleanupExecutions及AcceptanceAtomicity／Idempotence已定位；不是待建入口。 |
-| C2 | 子创建／claim失败不执行；P→精确C锁串行化父永久关闭与领取；父临时无lease仅等待；Owner对未领取子仅拒绝为failed，不claim、不造执行回执；已领取子依自身lease收尾，失联不重放 | T1、PG T2；Common＋System＋参与Owner | 下列C2子矩阵细化已确认的[父子协议](../addp-cleanup体系规范.md#父关闭与子领取协议)，已有公共原语与部分PG用例；沿System Cleanup PG与各Owner既有标准入口补齐定位列中的缺口，不把Graph取消例外套用全体Owner | ClaimCleanupChild、公共生命周期与两项PG锁交错已定位；细见C2a—C2j。 |
-| C3 | Graph关闭G先提交再逐项取消，Cleanup与入队／审核／删除／重绑定交错；持G排他不得反锁目标E，无死锁且新请求不能穿透；无控制行不能绕过 | PG T2；Graph＋Common锁后复核 | Graph PG入口扩真实双连接／多事务屏障，禁止用sleep推测先后；所有改变静止性路径纳入同一G | GraphCleanupRuntime 的三阶段／四模式、审核与关闭双序已有真实 PG；同入口再覆盖入队四项（含可重复读旧快照准入修复）、任务／材料删除八项及图配置删除八项。后者覆盖零／一张剩余图、旧／当前版本拒绝、准确剩余范围、删除与回执失败回滚，以及原执行／冻结输入／已知操作保留。各分组和固定源码证据见专题；其他跨类业务行锁排列仍待补，目标重绑按原边界另议。 |
-| C4 | 最终PG清理重核无活动／未决、scan摘要匹配；PG变化／标准metadata回执／子终态任一步失败整体回滚；未停止不得直接改cancelled或删任务 | PG T2；Graph＋Common | Graph PG入口；保留Engine仅归档、Tenant物理仅PG、业务图／MinIO／公共历史不删除断言 | Effect／结果回滚已有 PG；新增在途审核阻清理及审核回执／Cleanup 最终回执失败回滚。terminal_update_rollback 再补父正常／父截止两项：PG 触发器核实归档及专业结果已写入后拒绝末尾公共回执／成功终态 UPDATE，验证同事务整体回滚、原 attempt 失败收敛及已提交关闭／父记录保留；实际结果见专题。原 scan 后漂移已复现并按已确认严格相等契约修复：Common lifecycle/cleanup_scan_baseline 增加14项来源绑定／只读反例；Graph scan_baseline_runtime 六项实际双scan／执行，scan_baseline_final 两项最终复核／空范围。旧删除先提交及重跑移除待审项均改为拒绝旧确认，不撤回已提交事实。固定源码实际结果见专题；新图创建的提交围栏不由此代验。其他最终清理竞争的完整专用反例仍待补。 |
-| C5 | 写入与消费双端核回执schema版本／Tenant／module／父子／action／attempt；缺失／错类型／未知版本或字段／越界／digest不符拒绝，终态不可追加改写；无专业正文或秘密且保留观测namespace，Monitor白名单不自动扩大 | T1、PG T2；Common协议、System、Owner／Monitor读取 | 各Owner标准门禁、`make test-monitor-postgres`；父可读不等于子／专业详情可读，接口变动必须同次迁移消费方 | 回执、System／Monitor快照与共享组件已接；细见C5a—C5m。 |
-| C6 | 父协调截止缺项冻结为timeout，不伪造子终态／回执；合法子之后完成只保留子事实，父不复活；失权子迟到结果拒绝；GET不推进状态，不由另一execute成功推断Engine已deleted | T1、PG T2；System＋Graph | System／Graph门禁；分别保留截止时结论与当前子事实，未有回执不能制造停止或成功证明 | CoordinatorRecovery／AdmissionRace／ReadOnlySnapshot已定位；真实服务间迟到／失权T4待证。 |
-| V1 | 固定SHA下实际跨Backend取消、进程崩溃／暂停失联、外部在途不确定与核清、Cleanup阻断及核清后显式新请求；两个图引擎分别证明，所有首次失败与清理保存 | T4；Graph、System，Common提供机制 | 先补相关`make test-graph-online-runner`断言及生命周期登记，再经单独授权扩既有隔离Hosted；已登记graph-execution受控故障runner，但尚无本文核验的固定源码Hosted通过证据；原生回包丢失与正向恢复仍不在该受控证据内，不重复有效浏览／审核回路、不启动定时 | graph-execution／cleanup-execution已登记；受控与原生分层，完整故障T4未验收。 |
+| G1 | 用户／TaskProvider创建仅落唯一pending；提交后进程退出仍可发现，未claim不创建运行体／外部操作 | T1、PG T2；Graph＋Common | `make test-module MODULE=graph`；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 扩既有Graph PG用例；现有入队竞争不等于监督器故障通过 | 创建／监督器已定位；真实退出／重启T4待验。 |
+| G2 | 双Backend竞争只一方claim；attempt／token／started_at与任务摘要同事务；任一步注入失败整体回滚 | PG T2；Common原语、Graph组合 | 上述Graph PG入口及`make test-common-postgres`；Common共享变化按真实消费者扩散，不只跑Graph分组 | 真实PG双领取与摘要写失败回滚已有用例；核三表回滚、失败无租约且仍可首次claim。 |
+| G3 | cancel与claim两种先后：未启动attempt0取消不造开始／耗时；claim先提交则持久受理并等待真实停止；success先提交不得追改 | T1、PG T2；Graph | 同一模块／Graph PG入口；历史缺证、曾启动记录不能套pending例外，HTTP返回明确受理与终态区别 | PG覆盖领取／取消两序及success先提交；取消返回已有成功且结果／摘要／控制记录不变。 |
+| G4 | 另一Backend受理取消、重复请求、execution已换代、跨Tenant与缺权限均严格绑定；旧task取消不能伤及新执行 | T1、PG T2；Graph／System授权边界 | Graph标准模块与PG门禁；API改变时同次覆盖双语Swagger和授权校验，不借Service身份扩权 | execution／attempt绑定及受控跨Backend已接；真实身份变化T4待验。 |
+| G5 | 等待G或业务行锁期间lease到期；旧heartbeat、材料Save、待审项、计数、事件、终态全部拒绝，私有写入不先提交 | PG T2；Common＋Graph | Common／Graph PG入口，真实行锁门闩验证；SQLite或只核execution更新不能代替 | 材料／审核／进度／终态锁后失权已有PG；不等于全部锁排列。 |
+| G6 | 外部写成功而PG回执丢失、取消超时或旧进程失联：执行失败但效果待核清；禁止自动重放／人工重跑／Cleanup；伪造、错attempt和不完整停止证据拒绝 | T1、PG与原生引擎T2；Graph／Common Provider | 受控Provider/HTTP夹具验证不确定窗口，并复用`make test-common-falkordb`／`make test-common-neo4j`补原生副作用交界；当前断言不充分须同次扩展。真实跨进程在途语义另需T4，不从mock或PG推断远端已停止 | 持久操作及受控不确定窗口已接；原生丢回包runner／证据缺失，恢复暂缓。 |
+| G7 | 旧实例只可追加已绑定的停止证据，不能补结果／改终态；TTL、清lease、进程退出和确认布尔值不能直接解除；核清后不自动继续 | T1、PG T2；Graph | 同Graph入口；核清／重新开放按已确认的独立Permission、原目标和服务端证据契约验证，不增无条件解锁API | known操作核清／拒绝有T1／PG；可信绑定及positive reopen暂缓。 |
+| G8 | 材料实际字节摘要、本体执行映射、目标身份变化被拒；活动材料不可删除／覆盖，快照不含秘密；不迁Ontology版本协议 | T1、PG T2；Graph | Graph标准入口；不将输入冻结测试外推为Ontology不可变发布验收 | PG覆盖入队／活动材料、同长字节及冻结映射／登记漂移；正常编辑仍用冻结映射。System／Copilot受控，物理代际／原生效果另验。 |
+| G9 | 构建终态后人工审核仍可用；并发批准／拒绝／修改唯一裁决；关闭准入拒新审核、在途结果不明阻清理，原审核结果／已提交图数据不隐式清空 | T1、PG T2；Graph | Graph模块／PG；涉及页面响应时才补相关Console T3；有效原生审核历史不重复运行 | PG覆盖关闭／审核两序、在途阻清理、回执回滚及九种审核竞争；外部效果仍为持久操作夹具，原生故障另验。 |
+| C1 | System创建请求／父／全部expected子pending同事务；同父同Owner唯一，重复来源事件去重，相同ID不同内容拒绝，同参独立合法动作不误合并 | T1、PG T2；System＋Common | `make test-module MODULE=system`及Common PG；`make test-system-cleanup`已登记，运行System service真实PG用例并拒绝skip。IAM PG不替代此入口；不为旧Stream增加Redis协调门禁 | 创建原子性与幂等入口已接，不是待建门禁。 |
+| C2 | 子创建／claim失败不执行；P→精确C锁串行化父永久关闭与领取；父临时无lease仅等待；Owner对未领取子仅拒绝为failed，不claim、不造执行回执；已领取子依自身lease收尾，失联不重放 | T1、PG T2；Common＋System＋参与Owner | 下列C2子矩阵细化已确认的[父子协议](../addp-cleanup体系规范.md#父关闭与子领取协议)，已有公共原语与部分PG用例；沿System Cleanup PG与各Owner既有标准入口补齐定位列中的缺口，不把Graph取消例外套用全体Owner | 公共领取与生命周期已接；各交错及缺口见C2a—C2j。 |
+| C3 | Graph关闭G先提交再逐项取消，Cleanup与入队／审核／删除／重绑定交错；持G排他不得反锁目标E，无死锁且新请求不能穿透；无控制行不能绕过 | PG T2；Graph＋Common锁后复核 | Graph PG入口扩真实双连接／多事务屏障，禁止用sleep推测先后；所有改变静止性路径纳入同一G | 入队、任务／材料／图配置删除竞争已有PG，含旧快照拒绝、准确剩余范围与回执回滚／冻结证据保留；跨类锁排列及目标重绑仍另验。 |
+| C4 | 最终PG清理重核无活动／未决、scan摘要匹配；PG变化／标准metadata回执／子终态任一步失败整体回滚；未停止不得直接改cancelled或删任务 | PG T2；Graph＋Common | Graph PG入口；保留Engine仅归档、Tenant物理仅PG、业务图／MinIO／公共历史不删除断言 | PG覆盖在途审核、父正常／截止下末尾回执与终态失败整体回滚；scan漂移按原基线严格相等拒绝，已提交事实不撤回。新图创建围栏与其他最终清理竞争仍待补。 |
+| C5 | 写入与消费双端核回执schema版本／Tenant／module／父子／action／attempt；缺失／错类型／未知版本或字段／越界／digest不符拒绝，终态不可追加改写；无专业正文或秘密且保留观测namespace，Monitor白名单不自动扩大 | T1、PG T2；Common协议、System、Owner／Monitor读取 | 各Owner标准门禁、`make test-monitor-postgres`；父可读不等于子／专业详情可读，接口变动必须同次迁移消费方 | 回执、System／Monitor快照与组件已接；覆盖及缺口见C5a—C5m。 |
+| C6 | 父协调截止缺项冻结为timeout，不伪造子终态／回执；合法子之后完成只保留子事实，父不复活；失权子迟到结果拒绝；GET不推进状态，不由另一execute成功推断Engine已deleted | T1、PG T2；System＋Graph | System／Graph门禁；分别保留截止时结论与当前子事实，未有回执不能制造停止或成功证明 | 恢复／迟到／只读用例已接；真实服务间迟到与失权T4待验。 |
+| V1 | 固定SHA下实际跨Backend取消、进程崩溃／暂停失联、外部在途不确定与核清、Cleanup阻断及核清后显式新请求；两个图引擎分别证明，所有首次失败与清理保存 | T4；Graph、System，Common提供机制 | 先补相关`make test-graph-online-runner`断言及生命周期登记，再经单独授权扩既有隔离Hosted；已登记graph-execution受控故障runner，但尚无本文核验的固定源码Hosted通过证据；原生回包丢失与正向恢复仍不在该受控证据内，不重复有效浏览／审核回路、不启动定时 | 两个suite已登记；受控与原生分层，完整故障T4未验收。 |
 
 定位文件：[Common父子原语](../../../common/execution/cleanup.go)、[公共PG锁交错](../../../common/execution/cleanup_postgres_test.go)、[生命周期PG总入口](../../../common/execution/lifecycle_postgres_test.go)、[Graph执行PG](../../../graph/backend/internal/repository/execution_contract_postgres_test.go)、[Graph Cleanup四模式](../../../graph/backend/internal/service/cleanup_runtime_test.go)、[Graph service PG适配](../../../graph/backend/internal/service/cleanup_runtime_postgres_test.go)、[System Cleanup PG](../../../system/backend/internal/service/cleanup_durable_postgres_test.go)、[Monitor快照PG](../../../monitor/backend/internal/service/cleanup_observation_postgres_test.go)、[共享前端反例](../../../common-frontend/basic/tests/cleanupObservation.test.mjs)。实际Job／源码及推进次序统一见[专题对账](../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)。
 
@@ -40,40 +40,40 @@
 
 下列十项已有公共实现及部分用例，定位列逐项列明覆盖与缺口，不是全部通过清单。补充用例须以真实PG双连接门闩／屏障控制顺序验证提交／回滚及公开结果；不用sleep推测竞争，不单测SQL字符串冒充并发证明。它们细化C2，不新增另一条运行入口；标准入口／包发现适配仍归原CI主责。
 
-| 编号 | 最小交错及判定 | 主要责任／验证层级 | 源码定位／待补项 |
+| 编号 | 最小交错及判定 | 主要责任／验证层级 | 覆盖摘要／待补项 |
 | --- | --- | --- | --- |
-| C2a | 候选发现后父关闭先提交：后续P→C不得claim；Owner拒绝C，attempt0、无started_at／耗时／lease、failed且原因明确未开始，无外部调用 | System＋Common＋Owner；T1与PG T2 | cleanup_lock_order/parent_closure_commits_before_waiting_child已有PG。 |
-| C2b | 子claim先提交后父关闭：仅一次有效claim；合法子可按自身lease收尾，父不取消／改写子；父关闭不得被宣称为实际停止 | System＋Owner；PG T2，外部效果用既有原生T2补证 | child_claim_commits_before_parent_closure以真实PG阻塞链确认子claim先提交，随后父timeout，子仍可提交回执且父不变。 |
-| C2c | 父pending或lease过期但deadline未到：C不claim也不拒绝；System恢复只更换父attempt而不刷新deadline／子集合；窗口恢复后可重新核验准入 | System＋Common；PG T2 | ParentRecoveryAdmission以数据库时间等父失租，核子等待、父换attempt且输入不变、旧父失权及同一C重新准入。 |
-| C2d | 等待P／C／领域锁期间跨过deadline或lease到期：锁后时钟拒绝；无部分摘要、token或业务写入；父锁繁忙被跳过不计关闭／失败 | Common＋Owner；真实行锁PG T2 | clock_rechecked_after_lock 覆盖 P／C／通用 Owner 行锁分别跨过截止或父租约失效的六种组合。截止提交未启动拒绝，父失租而未到截止则等待。Graph 专属领域锁交错仍待补。 |
-| C2e | 候选C已改变、两个父交错或同Owner两实例：仍锁原P与同一C，不让ClaimNext另选其他父子；单次claim或单次拒绝，无C→P死锁 | Common＋System＋Owner；PG T2 | two_parents_same_owner_exact_single_claim覆盖同Tenant两父、同Owner四领取者；PG阻塞链释放后每个准确C仅一方领取，另两方冲突。 |
-| C2f | 错Tenant／module／type／source／父子摘要、缺父、非法deadline：失败关闭且零执行／零拒绝更新；不补造绑定，不借模块字符串授予权限 | System创建约束＋Owner入口＋Common；T1与PG T2 | Common invalid_binding 覆盖 11 种身份、父关联、摘要、来源及截止异常，父活跃／已关闭均失败且不改父子。System InvalidBinding 覆盖父摘要漂移、子摘要漂移、缺预期子，读取失败且协调事务无部分提交。 |
-| C2g | attempt>0的恢复pending、残留lease／started_at、操作证据不完整：拒绝走未领取原语；已运行失联仍按自身围栏失败／核清，不重放 | Common＋Owner；T1与PG T2 | pending_with_prior_operation_facts 用真实失租恢复验证 attempt>0 的 pending，并覆盖 started_at、耗时、三个租约字段、进度与不完整回执。领取与未启动拒绝均冲突，不生成未启动展示。各 Owner 的外部效果核清沿对应专项。 |
-| C2h | 未领取拒绝并发／重复／写失败：只有一次pending→failed，completed_at／安全原因原子；失败回滚，重复不改时间；无cleanup_receipt／假零统计／attempt1事件，观测namespace保留 | Common＋Owner；T1与PG T2 | concurrent_and_duplicate_unstarted_rejection及rejection_outer_rollback／rejection_sql_failure覆盖唯一拒绝、completed_at不变、观测保留、无回执／attempt事件和真实PG写失败回滚。 |
-| C2i | 父冻结缺项后Owner离线恢复／合法子迟到：Owner只拒本模块未领取项；已运行合法完成保留子事实，父结论／观察快照不变；GET零状态写入，父可读不授予子专业详情权 | System＋Owner；PG T2与安全读取T1 | AdmissionRace／ReadOnlySnapshot覆盖迟到不改父与只读；ClosureRollback核截止结论／父终态／审计原子回滚与重复关闭不变；跨Owner离线恢复T4待证。 |
-| C2j | Graph组合P→C→G→T/B；未领取拒绝不改G或业务表；已领取结果只C→G且不回P，父关闭不撤领域证据，最终清理不反锁构建E | Graph＋Common；扩既有Graph PG包／筛选，验证真实外键锁与回滚 | Graph runtime 的 parent_closed／unknown_effect／result_rollback 已接 PG。parent_closure_interleavings 新增四项：实际 C→G 等待期间父截止 timeout 独立提交，继续持 P 行锁仍可完成子成功／失败收尾，父记录与领域证据不被撤销，子回执失败原子回滚。使用 Common 父围栏及受控授权，不代验 System 私有截止快照／审计；其他外键及跨类锁排列仍待补。 |
+| C2a | 候选发现后父关闭先提交：后续P→C不得claim；Owner拒绝C，attempt0、无started_at／耗时／lease、failed且原因明确未开始，无外部调用 | System＋Common＋Owner；T1与PG T2 | 父关闭先提交已有PG。 |
+| C2b | 子claim先提交后父关闭：仅一次有效claim；合法子可按自身lease收尾，父不取消／改写子；父关闭不得被宣称为实际停止 | System＋Owner；PG T2，外部效果用既有原生T2补证 | 真实阻塞链覆盖先claim、父timeout、合法子回执且父不变。 |
+| C2c | 父pending或lease过期但deadline未到：C不claim也不拒绝；System恢复只更换父attempt而不刷新deadline／子集合；窗口恢复后可重新核验准入 | System＋Common；PG T2 | 数据库时钟验证父失租／换attempt、旧父失权和同子重新准入。 |
+| C2d | 等待P／C／领域锁期间跨过deadline或lease到期：锁后时钟拒绝；无部分摘要、token或业务写入；父锁繁忙被跳过不计关闭／失败 | Common＋Owner；真实行锁PG T2 | P／C／通用Owner锁后跨截止或失租六种PG交错；Graph领域锁仍待补。 |
+| C2e | 候选C已改变、两个父交错或同Owner两实例：仍锁原P与同一C，不让ClaimNext另选其他父子；单次claim或单次拒绝，无C→P死锁 | Common＋System＋Owner；PG T2 | 同租户两父、同Owner四领取者已有PG，准确子仅一方领取。 |
+| C2f | 错Tenant／module／type／source／父子摘要、缺父、非法deadline：失败关闭且零执行／零拒绝更新；不补造绑定，不借模块字符串授予权限 | System创建约束＋Owner入口＋Common；T1与PG T2 | Common与System覆盖身份／摘要／预期子绑定拒绝及零部分提交。 |
+| C2g | attempt>0的恢复pending、残留lease／started_at、操作证据不完整：拒绝走未领取原语；已运行失联仍按自身围栏失败／核清，不重放 | Common＋Owner；T1与PG T2 | 真实失租pending及运行／租约／进度／回执残留均拒绝未启动路线；外部效果核清另验。 |
+| C2h | 未领取拒绝并发／重复／写失败：只有一次pending→failed，completed_at／安全原因原子；失败回滚，重复不改时间；无cleanup_receipt／假零统计／attempt1事件，观测namespace保留 | Common＋Owner；T1与PG T2 | 并发／重复拒绝、时间不变、观测保留、无回执／attempt事件及SQL失败回滚已有PG。 |
+| C2i | 父冻结缺项后Owner离线恢复／合法子迟到：Owner只拒本模块未领取项；已运行合法完成保留子事实，父结论／观察快照不变；GET零状态写入，父可读不授予子专业详情权 | System＋Owner；PG T2与安全读取T1 | 迟到、只读、父截止／终态／审计回滚已接；跨Owner离线恢复T4待验。 |
+| C2j | Graph组合P→C→G→T/B；未领取拒绝不改G或业务表；已领取结果只C→G且不回P，父关闭不撤领域证据，最终清理不反锁构建E | Graph＋Common；扩既有Graph PG包／筛选，验证真实外键锁与回滚 | PG覆盖C→G等待中父独立截止、保留父／领域事实及子回执回滚；System私有审计、其他外键／跨类锁不代验。 |
 
-本轮补测仍复用上述Common生命周期PG与 `make test-system-cleanup`。Common另覆盖prepare失败及外层claim事务回滚；System领取竞争改为准确backend PID的PG阻塞屏障，不用50ms推测先后。新增System主测试被标准入口逐项要求PASS，登记反例同时拒绝缺项、skip、错名和仅子项PASS。固定源码与实际结果见[专题记录](../../next/ADDP任务执行管理统一收口专题.md#本轮-pg-增补验证)。
+上述Common生命周期PG与 `make test-system-cleanup` 还须验证prepare失败／外层claim回滚，以及准确backend PID的阻塞屏障；不能用50ms推测竞争。System主测试逐项要求PASS，登记反例拒绝缺项、skip、错名或仅子项PASS。[固定版本与实际结果](../../next/ADDP任务执行管理统一收口专题.md#本轮-pg-增补验证)另行认定。
 
 ### C5协调关闭安全展示子矩阵
 
 C5a—C5m的公共投影、读取和共享组件已接线；现有用例仅覆盖部分组合，定位列保留消费者T3及服务间T4缺口。唯一判据见[安全展示契约](../addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)；复用Common纯投影T1、已有System Cleanup PG入口、`make test-monitor-postgres`及System／Monitor／Graph对应模块标准入口。共享前端文案／组件按真实消费者扩散验证，不新增平行门禁，不重跑有效Hosted。服务跨身份与真实Gateway证据仍单独认定，受控T3不替代它们。
 
-| 编号 | 最小断言 | 层级／责任 | 源码定位／待补项 |
+| 编号 | 最小断言 | 层级／责任 | 覆盖摘要／待补项 |
 | --- | --- | --- | --- |
-| C5a | P/C均可读，P按锁协议已提交终态且同快照C pending0：显示closed_unclaimed，公共status仍pending；不写拒绝、不造运行耗时／回执／零结果 | Common纯投影T1、System／Monitor PG T2；对应页面T3 | ProjectCleanupAdmission与Monitor CleanupObservationSnapshot已定位。 |
-| C5b | Owner已提交failed未领取拒绝：双重可读显示closed_rejected，单独C可读仅rejected_unstarted且无basis／父状态；原C仍failed／attempt0／无运行耗时 | Common＋Graph拒绝事实、System／Monitor；T1、PG T2、T3 | 公共protocol及Monitor PG覆盖闭合／单独C拒绝展示，原状态不变。 |
-| C5c | 仅父可读、子合法范围为空：无隐藏节点／占位／新增隐藏计数／子标签；System可读冻结参与范围不变成子结果，父可读不授专业详情权 | System／Monitor读取授权T1与PG T2，页面T3 | System ReadOnlySnapshot覆盖父读／子过滤；隐藏计数与页面组合T3待补。 |
-| C5d | Owner网络失败／超时／非法范围与合法零grant区分：前者整份聚合503、清除旧详情，无部分授权／旧缓存；后者只按真实范围过滤，不装成服务故障 | System／Monitor BFF授权T1、T3；真实故障另计T4 | System PG有Owner错误／合法空范围区分；503清空详情及真实故障T4待补。 |
-| C5e | P锁内claim未提交时只读查询跨deadline，仍可能见C pending：无未开始肯定标签；父关闭或Owner拒绝提交后才可按各自事实展示；GET零更新锁／零状态写入 | Common投影T1、System／Monitor真实PG交错T2，双连接门闩 | 公共deadline-alone T1及Monitor跨提交一致快照PG已定位；claim未提交场景待补。 |
-| C5f | 跨Tenant／错P/C／旧Redis来源／缺证明／曾运行／父临时无lease不生成闭合标签；未知schema、字段、类型或枚举组合拒绝，响应不含原metadata／错误文本／路径／凭据 | Common＋各读取边界；T1与PG T2 | 公共binding与共享cleanupObservation非法schema／字段／曾运行反例已定位；完整组合未齐。 |
-| C5g | 读取后撤权、401／403／404／Owner503、切换User／Tenant／execution及迟到响应：清空旧投影并停止相应刷新，旧标签不恢复；快照不写回父结论 | System／Monitor页面T3及授权T1 | System Cleanup T3已有503、非法attempt清除、父失效后迟到专业响应丢弃及User／Tenant切换；Monitor有closed pending清除及通用401／403／404／503失效。它们不等于Cleanup各组合已齐：父撤权404且不补查子、合法Owner拒绝整体替换、running矛盾、独立子读取和跨凭据T4仍缺专用证据。 |
-| C5h | 中英文共享同一说明码／组件；pending／failed状态及统计不被标签改写，无100%／0秒运行／继续领取倒计时／重试删除按钮；父旧timeout与当前子事实分开展示 | 共享前端＋System／Monitor T3；Common投影T1 | CleanupAdmission／CleanupModuleResults及唯一所有权／双语T1已定位；System已有真实pending／无开始时间／无结果与父timeout分开展示的受控T3，Monitor已有对应closed pending场景。两消费者双语及全部状态／按钮／计数交互尚非全矩阵通过。 |
-| C5i | System原父入口合法但不属Owner协议凭据集合：保留父自身合法读取，省略可选模块概览且不称成功空集合；协议支持身份的Owner故障不得退回此省略；Monitor既有第一方限制不扩大 | System凭据／Owner范围T1、Monitor拒绝T1及页面T3 | CleanupReader.OwnerProtocol及System／Monitor范围拒绝已接；跨凭据页面组合待证。 |
-| C5j | Owner HTTP完成后才建立公共事实只读一致快照，不持PG事务／P/C更新锁等HTTP；候选发现后新增而未裁决的Owner导致本次聚合失败，零部分响应／零状态写入；状态与说明同快照 | System／Monitor授权T1与真实PG交错T2，Common纯投影T1 | 读取授权先于快照的代码及一致快照PG已定位；新增未裁决Owner的专用PG反例未定位。 |
-| C5k | 合法可读空集合、凭据不适用而省略概览、缺证明而省略说明、非法说明对象四者区分；不输出“无回收影响”或隐藏子计数；不同请求的列表／详情／树不拼成联合证据 | System／Monitor DTO与页面T3，Common闭合校验T1 | 共享parseCleanupExecutions区分省略／空／非法；“无影响”页面语义T3待补。 |
-| C5l | closed pending→Owner拒绝整体替换；撤去P读取权时原父详情404须清空且不自动补查C，独立合法C请求只给C说明；同C出现running／attempt>0等矛盾时移除旧标签、保留真实状态并记录完整性诊断；迟到旧请求不复活标签，父截止结论不变 | Common纯投影T1、System／Monitor授权T1与页面T3；并发事实用PG T2 | 页面有请求代际／清空逻辑，Monitor PG含父隐藏；System已有非法attempt清旧标签与迟到专业响应反例。合法closed pending→Owner拒绝、父404不自动补查C及独立子说明、running矛盾和两消费者迟到组合仍待专用T3，不能借通用execution拒绝测试关闭本项。 |
-| C5m | Graph未领取Cleanup拒绝不改G、构建／审核或操作证据；System／Monitor标签不推导远端停止、已核清、业务图为空或可重新开放，不产生写动作／额外权限或私表读取 | Graph Owner T1／PG T2，System／Monitor响应及共享前端T3 | Graph parent_closed四模式含PG，组件只解释不写；真实服务／页面组合T4未证。 |
+| C5a | P/C均可读，P按锁协议已提交终态且同快照C pending0：显示closed_unclaimed，公共status仍pending；不写拒绝、不造运行耗时／回执／零结果 | Common纯投影T1、System／Monitor PG T2；对应页面T3 | 公共投影与Monitor一致快照已定位。 |
+| C5b | Owner已提交failed未领取拒绝：双重可读显示closed_rejected，单独C可读仅rejected_unstarted且无basis／父状态；原C仍failed／attempt0／无运行耗时 | Common＋Graph拒绝事实、System／Monitor；T1、PG T2、T3 | 闭合／单独子拒绝PG已接，原状态不变。 |
+| C5c | 仅父可读、子合法范围为空：无隐藏节点／占位／新增隐藏计数／子标签；System可读冻结参与范围不变成子结果，父可读不授专业详情权 | System／Monitor读取授权T1与PG T2，页面T3 | 父读／子过滤已接；隐藏计数及页面组合T3待补。 |
+| C5d | Owner网络失败／超时／非法范围与合法零grant区分：前者整份聚合503、清除旧详情，无部分授权／旧缓存；后者只按真实范围过滤，不装成服务故障 | System／Monitor BFF授权T1、T3；真实故障另计T4 | PG区分Owner错误和合法空范围；503清旧详情及真实故障T4待补。 |
+| C5e | P锁内claim未提交时只读查询跨deadline，仍可能见C pending：无未开始肯定标签；父关闭或Owner拒绝提交后才可按各自事实展示；GET零更新锁／零状态写入 | Common投影T1、System／Monitor真实PG交错T2，双连接门闩 | deadline-alone与跨提交快照已接；claim未提交交错待补。 |
+| C5f | 跨Tenant／错P/C／旧Redis来源／缺证明／曾运行／父临时无lease不生成闭合标签；未知schema、字段、类型或枚举组合拒绝，响应不含原metadata／错误文本／路径／凭据 | Common＋各读取边界；T1与PG T2 | 绑定／schema／字段／曾运行反例已接，完整组合未齐。 |
+| C5g | 读取后撤权、401／403／404／Owner503、切换User／Tenant／execution及迟到响应：清空旧投影并停止相应刷新，旧标签不恢复；快照不写回父结论 | System／Monitor页面T3及授权T1 | 两消费者已有部分失效清空T3；父撤权不补子、合法拒绝替换、running矛盾、独立子读及跨凭据T4仍缺。 |
+| C5h | 中英文共享同一说明码／组件；pending／failed状态及统计不被标签改写，无100%／0秒运行／继续领取倒计时／重试删除按钮；父旧timeout与当前子事实分开展示 | 共享前端＋System／Monitor T3；Common投影T1 | 唯一组件／双语T1及部分pending／父timeout受控T3已接；双消费者全部状态／按钮／计数未齐。 |
+| C5i | System原父入口合法但不属Owner协议凭据集合：保留父自身合法读取，省略可选模块概览且不称成功空集合；协议支持身份的Owner故障不得退回此省略；Monitor既有第一方限制不扩大 | System凭据／Owner范围T1、Monitor拒绝T1及页面T3 | 凭据协议范围已接；跨凭据页面组合待验。 |
+| C5j | Owner HTTP完成后才建立公共事实只读一致快照，不持PG事务／P/C更新锁等HTTP；候选发现后新增而未裁决的Owner导致本次聚合失败，零部分响应／零状态写入；状态与说明同快照 | System／Monitor授权T1与真实PG交错T2，Common纯投影T1 | 授权先于快照及一致性PG已接；新增未裁决Owner反例未定位。 |
+| C5k | 合法可读空集合、凭据不适用而省略概览、缺证明而省略说明、非法说明对象四者区分；不输出“无回收影响”或隐藏子计数；不同请求的列表／详情／树不拼成联合证据 | System／Monitor DTO与页面T3，Common闭合校验T1 | 省略／空／非法解析已接；“无影响”页面语义T3待补。 |
+| C5l | closed pending→Owner拒绝整体替换；撤去P读取权时原父详情404须清空且不自动补查C，独立合法C请求只给C说明；同C出现running／attempt>0等矛盾时移除旧标签、保留真实状态并记录完整性诊断；迟到旧请求不复活标签，父截止结论不变 | Common纯投影T1、System／Monitor授权T1与页面T3；并发事实用PG T2 | 通用代际隔离不能关闭本项：合法拒绝替换、父404不补子、独立子读、running矛盾及迟到组合T3仍待补。 |
+| C5m | Graph未领取Cleanup拒绝不改G、构建／审核或操作证据；System／Monitor标签不推导远端停止、已核清、业务图为空或可重新开放，不产生写动作／额外权限或私表读取 | Graph Owner T1／PG T2，System／Monitor响应及共享前端T3 | Graph父关闭四模式含PG、组件只解释；真实服务／页面组合T4待验。 |
 
 已完成项、固定版本 Linux 结果及剩余工作见[专题第六节](../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)，不重复开发已列场景。[最近执行与同次回跳](../../next/ADDP任务执行管理统一收口专题.md#91-目标与既有覆盖)的实施与真实验收另行记录，不改变本表安全契约，也不能用 runner／Linux 通过代替实跑。
 
@@ -139,7 +139,7 @@ Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：�
 
 
 
-Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他厂商真实服务、消费者 T2 与真实 HTTP / Worker T4 仍须由对应标准入口分别验证，不以局部工作区结果宣称完整资源权限闭环。历史结果与范围限制见[其他验收证据索引](验收证据索引.md#addp-验收证据索引)。
+本节未覆盖的厂商真实服务、消费者T2及HTTP／Worker T4分别验收，不从局部结果推断完整权限闭环；[历史结果](验收证据索引.md#addp-验收证据索引)不替代当前验证。
 
 
 ### 用户血缘可见性
@@ -240,6 +240,8 @@ Manager 静态轨迹的确定性回归须覆盖三格式、乱序与时区、Uni
 
 以下工具用于显式配置下的只读性能测量，不是第二套测试门禁，也不单独构成 T0–T5 的通过证据。分层测试仍通过根 Make 标准入口执行；基准样本不接管个人服务，不从固定业务表或开发机规模推断全平台默认值。
 
+历史样本的低层级超时、缺少固定SHA与性能边界见[动态MVT历史基准](验收证据索引.md#manager-动态-mvt-历史基准)；不据此预设生产阈值。
+
 动态 MVT 阈值验证方案：
 
 1. 验证目标不是证明动态 MVT 能覆盖所有数据量，而是确定 capability 可以安全开放的默认边界、提示等级和运行时保护。
@@ -260,7 +262,7 @@ Manager 静态轨迹的确定性回归须覆盖三格式、乱序与时区、Uni
 4. 报告输出 JSON，包含每个场景和瓦片的耗时分位数、错误率、超时率、空瓦片率、MVT 原始大小分位数、连接池等待情况；开启 `explain_analyze` 时附带 PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)` 文本，用于补充扫描行数和 buffer 观察。
 5. 报告必须包含 `recommendations.render_paths`，按 `source_transform_path`、`ready_3857_target` 等渲染路径聚合实测结果，并输出候选 `quick_view_realtime_tile_timeout_ms`、`quick_view_realtime_tile_retry_after_sec`、`retry_policy`、`recommended_action`、`confidence` 和依据。若样本出现超时，应标记 `needs_higher_timeout_rerun`，提示用更高 `timeout_ms` 重跑后再调整部署默认值。
 6. 报告可以包含 `recommendations.multi_scale_candidates`，仅记录后续多尺度快显优化的候选触发事实。候选条件限于可索引 3857 目标在低层级瓦片上仍超时或产生过大的 MVT；当前用户闭环仍是生成瓦片缓存，不新增“多尺度快显优化”入口。
-7. 配置示例：
+7. 单一源表示例（连接只作占位，实际端口按[端口规范](../addp端口分配.md)核对）；ready或外部3857目标按上方矩阵替换场景，目标字段使用实际名称，不再复制第二份完整配置：
 
 ```json
 {
@@ -282,19 +284,8 @@ Manager 静态轨迹的确定性回归须覆盖三格式、乱序与时区、Uni
       "tiles": [
         {"z": 8, "x": 210, "y": 99}
       ]
-    },
-    {
-      "name": "roads vector materialized view target",
-      "target_kind": "source_schema_materialized_view",
-      "schema": "public",
-      "table": "addp_vmv_8f4c6a2d9b1e7c0a5d3f6b42",
-      "geometry_column": "geom_3857",
-      "primary_key": "source_row_id",
-      "srid": 3857,
-      "tiles": [
-        {"z": 8, "x": 210, "y": 99}
-      ]
     }
+
   ]
 }
 ```
