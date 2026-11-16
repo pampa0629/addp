@@ -735,12 +735,33 @@ Develop公开投影不返回 `tenant_id`：成果候选登记前由同一快照�
 
 ### 外部裁剪、轮廓与局部更新
 
-区域外裁剪在聚合之后追加 `clip-outside`：正式源 ResourceLocator 加载原双数据波段 TIFF，`raster_clip(mode=outside)` 使用带孔 Polygon，保留完整 256×256 源网格并直接保存双数据波段及 alpha，不通过选波段省略 alpha 验收。独立行列公式检查外围、孔洞、区域内 NaN、源 NoData 不恢复、255/0 alpha、逐波段 mask、颜色解释及 128×128 nearest 金字塔。每个数据波段有效像元为 53247；先前 24 份成果 SHA、全部源字节和精确对象集合继续核对。严格保持 `size_bytes == physical stat size == Meta DataItem size > 0`，沿用自动扫描、资源级 derive、Monitor 和同一普通 User 的 Console。浏览器总数为 34，最终 25 份 COG；原预算、单项超时和旧场景断言不变。新增测试由既有 `make test-raster-online-runner`、`make test-geopython-workflow`、Platform CI 及手工 `online-t4-gates.yml` 自动覆盖，不新增入口、依赖或 suite。
+原suite、1740秒总预算及各单项期限不变。写出路径复用[成果共同核验](#栅格主场景计算矩阵)：`size_bytes == physical stat size == Meta DataItem size > 0`、自动扫描／资源级derive、Monitor与同一普通User的Console。逐次核源字节、既有成果SHA及精确对象集合；只读路径不造新对象／大小／发布证明。
 
-有效像元轮廓在外裁剪之后追加 `footprint-any` 和 `footprint-all` 只读执行：正式加载双数据波段及 alpha 的确定性 TIFF，省略 validity 验证默认并集，显式 all 验证交集。独立整数像元公式核对完整面覆盖、边界网格、面积和波段独立缺值，不依赖 Polygonize 或生产算子生成期望，不限定合法环的起点和方向。Develop/Monitor/Console 展示同一普通 User 的 GeoJSON 预览，不能生成持久输出、derive 或目标扫描；物理夹具继续保护源和先前 25 份 COG，原严格三方大小规则不变。浏览器为 36 份，COG 仍 25 份；预算、超时、原场景门禁及 CI 登记路径不变。该扩展已在提交 `89e77da9a1bc72ec6c7e1791f2172edbbfdefb28` 的 [Hosted T4 37741228176](https://github.com/pampa0629/addp/actions/runs/37741228176) 通过并独立核对归档；并/交集覆盖分别为 65532/65524 像元，36 份浏览器、25 份 COG 及零残留清理通过。该结果不将同提交 Platform CI 中已取消的 GeoPython 全量 Job 计为通过。
+#### 区域外裁剪：持久化COG
 
-局部更新追加到原 suite 的外裁剪之后：正式加载基底与双数据波段及 alpha 的更新源，裁剪更新源局部范围后显式对齐基底，执行 `raster_update` 并保存带 nearest 金字塔的双波段 COG。独立行列公式验证更新覆盖、区域外和无效更新像元保留基底、合法零、部分 alpha、逐数据波段有效性与源不可变；严格三方大小、原前置成果 SHA 和自动扫描/资源级 derive 保持。两个输入分别绑定来源浏览器证据；浏览器为 38 份、COG 为 26 份，后续只读轮廓查询继续保护全部 26 份成果。入口、预算、单项超时和自动登记路径不变。该扩展已在提交 `53591eba7e749c84849fe2e1ebff4a8ee7a525e9` 的 [Hosted T4 37795049439](https://github.com/pampa0629/addp/actions/runs/37795049439) 通过并独立审计；更新成果 182565 字节、两波段有效数 65535/65536，38 份浏览器、26 份 COG、双来源 derive 及零残留清理通过。同提交 [Platform CI 37794921834](https://github.com/pampa0629/addp/actions/runs/37794921834) 实际执行标准 GeoPython 全量 697 项通过；同提交另一取消运行不计通过。
+聚合后执行 `clip-outside`：正式源ResourceLocator加载双数据波段TIFF，`raster_clip(mode=outside)`使用带孔Polygon，保留完整256×256网格，直接保存双数据波段及alpha，不能选波段省略alpha验收。独立行列公式核外围／孔洞／区域内NaN、源NoData不恢复、255/0 alpha、逐波段mask、颜色解释和128×128 nearest金字塔；每数据波段53247个有效像元。
 
+#### 有效像元轮廓：只读GeoJSON
+
+`footprint-any`／`footprint-all`正式加载双数据波段及alpha的确定性TIFF，省略validity核默认并集，显式all核交集。独立整数像元公式验证完整面覆盖、边界网格／面积及波段独立缺值，不用Polygonize或生产算子生成期望，不限定合法环的起点／方向。
+
+Develop／Monitor／Console核同一普通User的GeoJSON预览；不得生成持久输出、derive或目标扫描。源及已有COG不变，既有成果三方大小规则保持；两项不代表全部后续轮廓扩展。
+
+#### 局部更新：持久化COG
+
+外裁剪后正式加载基底和带双数据波段／alpha的更新源，局部裁剪更新源、显式对齐基底，经 `raster_update` 保存双波段COG及nearest金字塔。独立行列公式核更新覆盖、区域外／无效更新像元保留基底、合法零、部分alpha及逐数据波段有效性；源不可变，两个输入分别绑定来源浏览器证据，自动扫描与双来源derive不能省略。后续只读轮廓继续保护全部既有成果。
+
+#### 阶段清单与固定结果
+
+外裁剪早期为34份浏览器／25份COG，核先前24份；其后轮廓不增产物，更新后查询保护26份。下表36／25、38／26也仅属扩展阶段，当前full另查[固定结果](#栅格主场景固定结果与验收边界)。
+
+| 固定版本与证据 | 已验范围及CI边界 |
+| --- | --- |
+| `89e77da9a1bc72ec6c7e1791f2172edbbfdefb28`，[Hosted T4 37741228176](https://github.com/pampa0629/addp/actions/runs/37741228176) | 已独立核归档：并／交覆盖65532/65524像元、36份浏览器、25份COG及零残留清理。同提交Platform CI中取消的GeoPython全量Job仍不计通过。 |
+| `53591eba7e749c84849fe2e1ebff4a8ee7a525e9`，[Hosted T4 37795049439](https://github.com/pampa0629/addp/actions/runs/37795049439) | 已独立审计：更新成果182565字节、两波段有效数65535/65536，38份浏览器、26份COG、双来源derive及零残留清理。 |
+| 同上源码[Platform CI 37794921834](https://github.com/pampa0629/addp/actions/runs/37794921834) | 标准GeoPython全量实际697项通过；同提交另一取消运行不计通过。 |
+
+验证沿 `make test-raster-online-runner`、`make test-geopython-workflow`、Platform CI与手工 `online-t4-gates.yml`，无新入口／依赖／suite。固定Hosted、CI与取消分列，不代表当前源码已重跑。
 
 ## raster-contour-persistence
 
