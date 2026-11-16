@@ -1440,170 +1440,142 @@ T0/T1沿 `make test-geopython-workflow`、六个受影响Go owner、两组Manage
 
 ## D8流长统一入口的既有验收适配
 
-当前产品仅保留`raster_flow_length_d8`，`method`必填：既有`raster-flow-length-d8-persistence`显式提交`downstream`，既有`raster-flow-length-upstream-d8-persistence`显式提交`upstream_longest`。两套独立六条成功COG链、各14次准确中英失败、600秒预算、普通User原12权限及全部完整像元／mask／米制步长／零值／最长汇合／COG／三方大小／扫描／当前血缘／源及先前成果不变／清理断言均保持；仅更新DAG身份及必填方法，未新增suite或长期脚本。固定`fdbe2d58d55ab2b215a609bfbd58b5c34e7c27ed`的两套实际Hosted已通过：[下游40657243422／122711172418](https://github.com/pampa0629/addp/actions/runs/40657243422/job/122711172418)业务543430毫秒，[上游40657252005／122711199682](https://github.com/pampa0629/addp/actions/runs/40657252005/job/122711199682)业务414932毫秒，各6成功／14准确双语失败、各6次当前扫描／血缘／Monitor和零残留均核。原范围未归档COG，现场逐像元参考回执通过不等于额外离线复算；不计UI、容量、业务DELETE或已有DAG迁移。原独立ID证据保留为历史，不改写为统一入口证明。
+仅保留 `raster_flow_length_d8`，必填method：原下游suite `raster-flow-length-d8-persistence` 提交downstream，原上游 `raster-flow-length-upstream-d8-persistence` 提交upstream_longest。不新增suite／脚本，不自动迁移旧DAG；两套各6成功COG／14准确双语失败及原米制步长、零值／最长汇合断言保持。
 
-固定`093a685b8558b74ecbdccb6b95b026d33af603e9`的[Linux40658271835／122714572426](https://github.com/pampa0629/addp/actions/runs/40658271835/job/122714572426)实际标准Native全量8413通过／44 warnings／1878.67秒；D8另8个自有可执行输入相同，元数据测试仅矢量目录断言变化且相关D8函数AST一致。Hosted源码fdbe中实际条件跳过的Native Job不计通过，此固定093证据也不外推粗糙度或当前HEAD全量。
+固定 `fdbe2d58d55ab2b215a609bfbd58b5c34e7c27ed` 的[下游40657243422／122711172418](https://github.com/pampa0629/addp/actions/runs/40657243422/job/122711172418)、[上游40657252005／122711199682](https://github.com/pampa0629/addp/actions/runs/40657252005/job/122711199682)各完成6成功／14失败、6次扫描／血缘／Monitor与清零，业务543430／414932毫秒。原COG未归档，只认现场物理回执；旧独立ID证据不追认为统一入口，不认证UI／容量／业务DELETE／已有DAG迁移。
 
+[Linux40658271835／122714572426](https://github.com/pampa0629/addp/actions/runs/40658271835/job/122714572426)固定 `093a685b8558b74ecbdccb6b95b026d33af603e9` 的Native全量8413通过：D8另8个可执行输入相同，仅元数据测试矢量目录断言变化且D8 AST一致。fdbe条件跳过的Native不计通过，093也不证明粗糙度或当前HEAD全量。
+
+算法与参数以[栅格算子契约](../../workflow/栅格算子契约.md#栅格计算契约)和[矢量算子契约](../../workflow/矢量算子契约.md)为准，以下仅列验收范围与独立参考。
+
+**以下子专题的共同要求**：仅合并各节已声明的手工隔离Hosted／NFS、同源默认入口Runtime及600秒业务预算，栅格普通User原12权限、矢量拓扑原11权限不互换；来源准备者／metadata_read Grant仍按各节独立限定。不改产品／权限／安全投影／原套件，不重试、扩预算或新增nightly。
+
+- 每次核完整实际成果、源与先前成果原字节／Meta不变、精确父execution／User／Tenant／Engine扫描、当前实际加载输入的内部血缘／公开安全投影／Meta关系及Monitor。COG核原网格／CRS（或明确缺定位）、类型／mask、完整布局及实际概览，artifact＝物理＝Meta正整数大小；CSV／GPKG仅物理＝Meta，不虚构RasterArtifact或把子层重复计大小。
+- 独立oracle不调用产品算法，实际成果逐次重读不缓存；允许的不可变预期缓存绑定本轮／夹具／源hash。按各节数量归档原件／清单／冻结预期，缺失／篡改／额外文件／链接拒绝，不静默修复。仅原已声明套件使用有界只读observer／SQL，公开安全投影不扩大。
+- 失败须到当前指定业务节点及原因／提交语言，前置失败不充数，反向查询不改原错误；零发布／新增扫描／派生血缘。全部退出清所属缓存／工作区、NFS、Runtime／镜像／registry、部署／Infra及已声明Grant，首败与清理错误分别保留，清理失败整套失败；部署销毁不证明业务DELETE。
+
+标准准备沿各节Runner、`make test-raster-online-runner`／既有拓扑入口，真实GDAL及污染反例沿 `make test-geopython-workflow`，输入／选择／登记同次命中，不累计共享测试为唯一数量。正文只保留代表性证据与未完成项：本地／登记、Linux全量、Hosted API、真实页面各按固定版本认定，不证明当前HEAD、容量、任意影像或未列范围。后续状态统一见[栅格专题](../../../next/栅格算子体系后续专题.md#三后续工作)。
 
 ### DEM 地形粗糙度独立 Hosted 验收
 
-独立手工`raster-roughness-persistence`复用Hosted／NFS、同源默认入口Runtime、普通User原12权限及600秒预算。固定13条COG成功链：混合地形（中心极大／极小及正负邻居）、平地、倾斜平面、鞍面、三组单位交叉、填洼、重分类、Int64／UInt64大基值微差、全无效及无完整九点；13类错误各中英文共26次。独立2500位Decimal九点最大值减最小值oracle包含中心，不取半高差、不去趋势，不复用产品函数；数值极限单列Native。
+`raster-roughness-persistence`；准备 `make test-raster-roughness-online-runner`。13条COG链覆盖中心极大／极小及正负邻居、平地／斜面／鞍面、三组单位、填洼／重分类、Int64／UInt64大基值微差、全无效／无完整九点；13类各中英共26准确失败。独立2500位Decimal九点max−min包含中心，不取半差／去趋势，数值极限仅Native。39次调用／429次成果全检，13原COG归档，预期准备及清理计原600秒。
 
-保留完整像元／mask、米制／原网格／CRS、COG／最近邻概览、三方相等正整数大小、精确扫描身份、当前实际输入完整内部血缘／公开安全投影／Meta关系及Monitor；39调用／429次实际成果全检，归档13份COG原字节及大小／hash清单，源与先前成果不变、失败零发布／新增扫描血缘及全部清理严格保持。仅扩展既有受控只读血缘取证的套件白名单；期望缓存绑定本轮／夹具／源hash，不缓存实际成果，所有准备与收尾均计入600秒。
-
-本地标准Native专项224通过／8308筛除（147项产品＋1项元数据＋76项真实GDAL夹具），0失败／跳过，30.94秒；独立runner 88项、受影响TRI／TPI各88项及填挖方89项、完整CI登记56＋10项／11模块通过。各runner共享测试不累加为唯一数量。上述本地证据不替代实际Hosted；本会话不触发／轮询／重跑／设置定时，不计当前HEAD全量、UI、容量或任意影像。标准入口为`make test-raster-roughness-online-runner`，真实GDAL夹具纳入`make test-geopython-workflow`。
-
-固定`60da3691404ee74d3b6789d2948f575be1edef9c`的[唯一Hosted40700360070／122858214770](https://github.com/pampa0629/addp/actions/runs/40700360070/job/122858214770)已完成严格终审：13成功／26准确双语失败、39次物理调用／429次实际成果全检，业务215112毫秒，7服务与默认入口Runtime同源、普通User原12权限保持。13份COG原字节及清单逐一核验，CI会话使用固定提交夹具的独立Decimal参考核全像元／mask、519×515网格／CRS／米制、3级nearest概览及COG布局，含中心极大／极小和两侧邻居的九点max−min样本。13份独占只读内部血缘与公开安全投影分别核，13次当前执行Meta扫描、Monitor、源／先前成果不变、缓存／Runtime工作区移除和部署零残留通过。
-
-官方Artifact12823445733为2937897字节、SHA-256 `84f5f3859f668ddbf11cc17484c74ae23da4eebd574a8d477104e55d641b5e76`；领域会话只读复核官方digest／大小／ZIP CRC、原始日志hash与实际步骤、13原件及13血缘回执字节、矩阵和清理记录，不重复运行计算。源TIFF未归档，离线参考来自固定提交的确定性夹具；不外推数值极限Hosted、页面、容量、业务DELETE或当前HEAD全量。准备源码ae5的原全量Job因范围外矢量断言失败，仍记失败；本次Hosted通过不追认该Job为绿。
-
+固定 `60da3691404ee74d3b6789d2948f575be1edef9c` 的[Hosted40700360070／122858214770](https://github.com/pampa0629/addp/actions/runs/40700360070/job/122858214770)完成上述矩阵、13次扫描／内外血缘与清零，业务215112毫秒。13原件已独立Decimal全像元／mask、519×515／米制／三级nearest及COG复核；源TIFF未归档，离线参考来自固定夹具。准备源码ae5的全量因范围外矢量断言失败仍记失败，不由Hosted追改，不计数值极限Hosted或当前HEAD全量。
 
 ### DEM 三维表面积统计独立 Hosted 验收
 
-独立手工`raster-surface-area-persistence`复用Hosted／NFS、同源默认入口Runtime和普通User原12权限，600秒业务预算。固定12条CSV成功链：平地、倾斜平面、非共面双对角、跨块混合覆盖、三种水平／垂直单位组合、填洼、重分类、Int64／UInt64大基值微差、最小2×2；18类各中英文准确失败共36次。原CSV完整8列按Float64值精确比较，预览依既有double_precision=15序列化逐值精确比较；完整Schema、逐面片独立高精度向量叉积双对角平均、不补外缘／不跨孔洞、严格计数、平方米／无量纲比值均核，数值极限单列Native。
+`raster-surface-area-persistence`；准备 `make test-raster-surface-area-online-runner`。12条CSV链覆盖平地、斜面、非共面双对角、跨块覆盖、三种水平／垂直单位、填洼／重分类、Int64／UInt64微差及最小2×2；18类双语共36失败。完整8列按Float64精确核，预览依double_precision=15另核；独立高精度向量叉积双对角平均，不补外缘／跨孔洞，严格计数、平方米／无量纲比值，数值极限仅Native。
 
-每次成功后重读所有已有CSV（78次），36次失败各重读12份（432次），48调用／510次实际全量成果检查不减少，不缓存实际结果；独立期望采用纯标准库周期计数与逐异常面片修正，保留独立向量叉积，宿主无需新增NumPy／pandas／GDAL依赖。归档12份CSV原字节及大小／hash清单，物理／Meta必须相等正整数大小，不虚构RasterArtifact或第三方大小。精确扫描身份、当前执行实际输入完整内部血缘／公开安全投影／Meta关系／Monitor、源和先前成果不变、失败零发布／新增扫描派生血缘及全部清理严格保持。仅增加既有受控只读取证封闭白名单，不改产品投影／权限；准备、业务和收尾全部计入600秒，不提高预算。
-
-本地标准Native专项184通过／8545筛除／12.14秒，含原114项产品及新增70项真实GDAL夹具，0失败／跳过；独立runner91项、受影响填挖方90项及TPI／TRI／粗糙度各89项、完整登记56＋10项／11模块通过（共享测试不累加唯一数量）。标准`make test-raster-surface-area-online-runner`及原Native recipe／手工CI登记同次接入，nightly关闭。Linux全量及实际Hosted仍由CI会话协调，本会话不派发／轮询／重跑／设置定时，不计UI、容量、任意影像或工程认证。
-
+成功累计78次、失败432次，48调用／510次CSV全检；12原CSV归档。期望为纯标准库周期计数＋异常面片修正，仍用独立叉积，宿主不新增NumPy／pandas／GDAL。物理＝Meta，不虚构RasterArtifact／第三方大小。准备、业务、收尾计600秒；本地专项／Runner已验证，本文未有已核Linux全量或实际Hosted结论。
 
 ### 正交旋转网格通视与可视域独立 Hosted 验收
 
-独立手工 `raster-sight-orthogonal-persistence` 复用同源默认入口GeoPython Runtime、Hosted/NFS与普通User原12权限，600秒业务预算，nightly关闭。首次来源集中扫描由同一隔离租户的来源准备User执行：复用已有授权办理角色及精确13项准备权限（既有11项＋扫描执行／读取），不把引擎管理资格赋给业务User。准备者只扫描本套件固定来源，随后给业务User签发精确、限时metadata_read；不改变产品扫描规则或数据读取资格。来源扫描身份、扫描清单和来源物理／Meta快照绑定准备者；16条业务链及自动成果扫描、当前执行血缘和成果快照绑定原普通User，两类身份及各自清单分别严格核验，拒绝新增扫描和全部授权撤回保持。8组各保存一份通视CSV及一份可视域COG：北向矩形基线、一般正交旋转矩形、90°、180°、子像元/格角格边、NoData/mask/alpha及已知遮挡优先、国际英尺、美制测量英尺跨块；核本轮实际北向与旋转成果对照。半径等号及相邻浮点、重合目标中心、显式第二波段按完整六项仿射与独立逐格矩形相交参考验证。 派发该suite必须显式提供`sight_orthogonal_source_commit`完整40位小写SHA；编排仍从当前main读取，但checkout必须等于所选业务源，且业务源必须为编排提交的祖先。Job分别记录业务源与编排SHA，不允许省略后静默改用main；此输入不影响其他suite。
+`raster-sight-orthogonal-persistence`：来源准备User复用既有办理角色及精确13权限（原11＋扫描执行／读取），仅扫固定来源后给业务User精确限时metadata_read，不给业务User引擎管理权。来源扫描／物理Meta快照绑定准备者；16条业务链／自动扫描／血缘绑定原12权限User，两份清单分别核，所有退出撤精确Grant。
 
-剪切、近似正交、两种单轴镜像、地理坐标、缺CRS、缺定位和退化网格，两算子各中英文提交32次；通视重合端点/半开边界外端点、可视域零半径/范围外观察点再按中英文提交8次，共40次实际业务节点准确拒绝，反向查询不改提交语言。数值极限与故障注入单列Native。
+8组各一CSV通视＋一COG可视域：北向矩形、一般正交旋转、90°／180°、子像元／格角格边、NoData/mask/alpha与遮挡优先、国际／美制测量英尺跨块；显式第二波段，半径等号／邻接浮点及重合中心，以完整六项仿射＋独立逐格矩形相交核北向／旋转对照。
 
-16次成功递增重读136份成果，40次拒绝各重读16份640次，合计776次实际成果全检；预期只冻结一次，实际成果不缓存，准备、56次现场检查及清理均纳入600秒。归档8份CSV和8份COG原字节及大小/SHA-256清单；CSV核完整列序、唯一行、精确距离与三态及真实保存声明，物理=Meta正整数大小；COG核全部像元/mask、六项仿射/CRS/最近邻概览/完整COG，声明=物理=Meta正整数大小。核精确父执行/用户/租户/引擎扫描、本次执行内部及公开血缘/Monitor、源和先前成果原件及Meta不变；失败零发布/新增扫描/派生血缘，所有退出撤回精确限时metadata_read Grant并清理预期缓存/NFS/Runtime/部署/Infra。实际Linux全量和Hosted由CI会话协调，不重试、不扩预算；准备不计通过，不挪用旧固定版本证据，不计UI或容量。
+两算子对剪切／近似正交／双单轴镜像／地理／无CRS／无定位／退化各中英32拒绝，通视重合／半开边界外及可视域零半径／越界再8拒绝，共40准确业务失败。16成功重读136份＋40×16＝640，合计776全检，准备及56现场检查／清理计600秒。归档8CSV／8COG，CSV核列序／唯一行／距离三态及保存声明，COG核像元mask／仿射／CRS／nearest／布局；数值极限／注入仅Native。
 
-固定业务源`d240f16bc`的唯一首跑[Run42448726028/Job128633145625](https://github.com/pampa0629/addp/actions/runs/42448726028/job/128633145625)已失败：编排`f21728b33`的实际检出/祖先检查及7服务同源预检通过，但场景真实main入口缺少os导入，读取环境即NameError，未产生套件报告、8CSV/8COG原件或清单，16/40/776不计通过。原ZIP SHA-256为`05ce83cee84b5dfa395f36609d694aa43f4eda376309fdd41ab06814519da964`；wrapper清理通过/Infra零残留单列，缺精确Grant撤销报告，不补认完整授权清理。缺失导入已修复，现有工作流模拟检查统一经过真实main，16项本地标准场景门禁通过；固定`aeabceb3d`的获批复验[Run42469659281/Job128697238003](https://github.com/pampa0629/addp/actions/runs/42469659281/job/128697238003)在普通业务User首次集中扫描来源时因无引擎管理范围被403拒绝，矩阵及原件未执行／归档；现已按上述准备者／业务User分工修复夹具，本地场景31项与隔离身份Go T1通过，不补认真实验收。任何新业务源码Hosted运行仍须另经用户确认，两个失败Run保留，600秒不扩展。
+派发必填 `sight_orthogonal_source_commit` 为40位小写SHA；当前main供编排，checkout等于所选业务源且为编排祖先，分别记两SHA，不省略回退main，不影响他suite。
+
+| 固定运行 | 首败、修复及未覆盖 |
+| --- | --- |
+| 业务 `d240f16bc`／编排 `f21728b33`：[42448726028／128633145625](https://github.com/pampa0629/addp/actions/runs/42448726028/job/128633145625) | 检出／祖先及7服务预检通过，真实main缺os导入NameError；无套件报告／8CSV8COG清单，16/40/776未验。wrapper清理／Infra清零不补精确Grant撤销报告。 |
+| 修复复验 `aeabceb3d`：[42469659281／128697238003](https://github.com/pampa0629/addp/actions/runs/42469659281/job/128697238003) | 原业务User集中扫源因无引擎管理范围403，矩阵／原件未执行归档。已改上述双身份夹具并经本地场景／隔离身份T1，不计实际通过；新源码Hosted须另确认，两个失败不追改、不扩600秒。 |
 
 ### DEM 单观察点可视域独立 Hosted 验收
 
-独立手工 `raster-viewshed-persistence` 复用 Hosted／NFS、同源默认入口 GeoPython Runtime 和普通 User 原12项权限，业务预算固定600秒，nightly关闭。16条COG成功链覆盖平地、持续贴地、山脊、沿途NoData和已知遮挡优先级、NoData／内置mask／透明及部分透明alpha、半径等号及两侧相邻浮点、重合中心／子像元观察点、半径内无目标、国际英尺／美制测量英尺、填洼接链，以及519×515矩形像元跨块。18类输入各按中英文提交，共36次准确拒绝；核实际可视域失败节点及提交语言，反向查询不得改写。数值极限、异构复数和故障注入单列Native。
+`raster-viewshed-persistence`：16条COG链覆盖平地／持续贴地、山脊、沿途NoData／遮挡优先、mask／透明部分alpha、半径等号邻接浮点、重合／子像元观察点、半径内无目标、国际／美制英尺、填洼接链及519×515矩形像元跨块；18类双语共36准确拒绝，数值极限／异构复数／注入仅Native。
 
-预算内以独立精确矩形裁剪参考冻结期望，仅缓存绑定本轮／夹具／源hash的只读预期，不缓存实际成果。16次成功递增重读136份，36次拒绝各重读16份，共712次实际COG全检；预检及52次现场验证共53次物理调用，所有准备和收尾均计入600秒。逐像元核Byte三态0／1／2、NoData255及完整mask，严格核原六项仿射／CRS、最近邻概览、完整COG，以及artifact／物理／持久化Meta相等正整数大小。归档16份COG原字节及大小／SHA-256清单，原件或清单变化明确失败。
+独立精确矩形裁剪预期，Byte三态0/1/2、NoData255及mask、六项仿射／CRS／nearest／COG精确核。成功136＋失败576＝712次原件全检，预检＋52现场共53物理调用，归档16COG及大小／SHA清单；期望／准备／收尾计600秒。
 
-核源扫描及每个自动成果扫描的精确父执行／用户／租户／引擎，本次实际DEM到成果的内部 `raster_save` 血缘、公开安全投影、Meta关系及Monitor；填洼链仍核原DEM输入。沿用独立源初始化器，仅发放本轮精确NFS文件、限时的metadata_read Grant，并在所有退出撤回；持久化大小和内容事实仅在隔离Hosted内以绑定本轮、普通用户、扫描、执行及目标的有界只读SQL取证，不改产品投影或功能权限。源和先前成果的原件及Meta快照保持，拒绝零发布／新增扫描／派生血缘，预期缓存／工作目录、NFS及Hosted／Infra全部清理。Linux全量及实际Hosted仍由CI会话协调；准备不计为真实通过，不计UI或容量。
+源初始化器只授本轮精确NFS文件限时metadata_read并全部退出撤回；填洼链仍核原DEM的 `raster_save` 输入。持久大小／内容只在隔离Hosted用绑定当轮User／扫描／执行／目标的有界只读SQL取证，不改公开投影／权限。Linux全量及Hosted待协调，准备不计通过。
 
 ### DEM 两点通视独立 Hosted 验收
 
-独立手工 `raster-line-of-sight-persistence` 复用现有 Hosted／NFS、同源默认入口 GeoPython Runtime 和普通 User 原12项权限，业务预算固定600秒。16条CSV成功链覆盖平地、单格山脊、严格贴地及相邻可表示高程、端点触地与持续贴地、格角仅接触与实际穿入、横／纵格边、有限NoData／内置mask／透明alpha、NoData与已知遮挡优先级，以及国际英尺／美制测量英尺和矩形第二波段跨块。18个失败输入分别按中英文提交，共36次准确失败；按本次执行ID核通视节点和完整提交语言诊断，反向查询语言不得改写。数值极限和故障注入单列Native。
+`raster-line-of-sight-persistence`：16条CSV链覆盖平地／山脊、严格贴地及邻接高程、端点触地／持续贴地、格角仅触及实际穿入、横纵格边、NoData／mask／alpha和遮挡优先、国际／美制英尺、矩形第二波段跨块。18类双语共36准确通视失败，数值极限／注入仅Native。
 
-业务前以独立逐格相交参考冻结预期，现场逐字节重读全部已有CSV。16次成功递增复查136份，36次失败各复查16份，合计712次完整成果检查。严格核唯一数据行、列序、精确Float64米制距离和三态，预览沿既有序列化契约另核。归档16份CSV原字节及大小／SHA-256清单，物理与Meta大小须为相等正整数，保存声明精确核目标、类型和写入方式。
-
-核唯一实际DEM到唯一CSV的本次执行内部 `save` 派生、公开安全投影、Meta关系和Monitor。自动扫描核目标、父执行、普通用户、租户及NFS引擎。失败零发布／新增扫描／派生，源和先前成果的物理原件及Meta快照不变，所有退出严格清理。取证只扩展既有受控只读白名单。Linux全量及实际Hosted由CI会话协调，不重试、不扩预算。
+独立逐格相交冻结期望，136＋576＝712次CSV原字节全检，核唯一行／列序／精确Float64米制距离三态，预览按原序列化另核；归档16CSV及清单，保存目标／类型／写方式与物理＝Meta大小准确。唯一实际DEM到CSV核内部 `save`、公开投影／Meta／Monitor，observer仅扩本套件白名单。Linux全量及Hosted待协调，不由本地准备补通过。
 
 ### 地形湿度指数 TWI 独立 Hosted 验收
 
-独立手工`raster-twi-persistence`复用Hosted／NFS、同源默认入口Runtime及普通User原12权限，600秒业务预算、nightly关闭。14成功链覆盖角度／百分比等价、国际英尺／美制测量英尺网格、很小非零坡度、坡度重分类、DEM接两坡度单位、填洼接链（抬洼成平地后TWI全NoData）、Int64／UInt64面积、全无效／不相交覆盖／全零坡度。519×515方形像元、显式第二数据波段，跨512块与各源独立NoData／mask／alpha；输出负指数、合法零与NaN严格核，数值极限及异构复数alpha独立分支仅单列Native，不冒称Hosted。
+`raster-twi-persistence`；准备 `make test-raster-twi-online-runner`。14条链覆盖degree/percent等价、两英尺网格、极小非零坡度、重分类、DEM两坡度单位、填洼（平地后全NoData）、Int64／UInt64面积、全无效／不相交／零坡度。519×515方格、第二波段跨512块、各源独立mask/NoData/alpha；负指数／合法零／NaN分别核。
 
-26类输入故障各中英文提交，共52次准确TWI节点失败；含两角色波段、面积单位缺失／错误、坡度声明／单位冲突、零／负面积、负坡度／90度、九类网格故障、两角色alpha／复数数据、两角色scale／offset。非法值置于另一源无效区仍须拒绝，反向查询不改提交语言。独立200位Decimal Lambert连分式与自然对数oracle不调用产品TWI；逐像元／mask、固定A/d／米制与单位1、原网格／CRS、完整COG及3级nearest概览、artifact／物理／Meta相等正整数大小、精确扫描身份、当前实际全部源内部血缘／公开安全投影／Meta关系／Monitor均为必要断言。
+26类双语共52个TWI节点失败：两角色波段、面积单位、坡度声明冲突、零负面积／负坡度90度、九类网格、alpha/复数及scale/offset；非法值在另一源无效区仍拒绝。独立200位Decimal Lambert连分式＋ln，固定A/d、米制／单位1，数值极限／异构复数alpha仅Native。14成功105＋52×14＝728，66调用／833全检，归档14COG；预期准备至清理计600秒。
 
-14成功后累计105次、52失败后各重读14成果728次，共66调用／833次实际全量成果检查；仅缓存绑定本轮／夹具／源hash的独立期望，不缓存实际成果。归档14份COG原字节及大小／hash清单，旧原件／清单不可静默修复，源及先前成果不变、失败零发布／零新增扫描派生血缘和全部清理严格保持。仅扩展既有受控只读取证的suite白名单，不改产品逻辑、安全投影或权限；准备、业务、收尾全部计入600秒。
-
-本地标准Native专项258项（155产品／103夹具）、TWI标准runner90项及完整Python／Online登记通过；8753筛除不计通过，隔离身份夹具Go T1不等于全量IAM或数据库集成。标准Native recipe、`make test-raster-twi-online-runner`、影响选路与独立手工CI登记已覆盖。
-
-固定源码`128a5330782ec1c0033be2ce14b076392e90f012`的[Hosted运行40818720334／Job123265876421](https://github.com/pampa0629/addp/actions/runs/40818720334/job/123265876421)已完成原始归档审计：7服务与默认入口Runtime同源，普通User原12权限；14成功／52准确双语失败、66次物理调用／833次成果全检，业务421186毫秒，小于600000毫秒预算。三方相等正整数大小、精确扫描身份、当前执行全部源内部血缘／公开安全投影／Meta关系／Monitor、源及先前成果不变、失败零发布和零新增扫描派生血缘、缓存／工作目录及Hosted／Infra零残留均通过。归档artifact `12875286903`含69成员、14原COG及清单和14份血缘原档，CRC、原件大小／SHA256与现场物理回执逐一匹配；归档ZIP SHA256为`65b0ee9ffa4bc768f5a4db2fdc08efb2ef39f3468874fb7b6a2e4382d4a3c627`。Linux全量仍等CI会话回传；数值极限继续单列Native，不计当前HEAD、UI、容量或任意影像认证，也不关闭通用GDAL中止缺陷。
+固定 `128a5330782ec1c0033be2ce14b076392e90f012` 的[Hosted40818720334／123265876421](https://github.com/pampa0629/addp/actions/runs/40818720334/job/123265876421)完成14／52／833、三级nearest、大小／内外血缘／扫描及清零，业务421186毫秒；14COG及血缘原件清单与现场回执匹配。Linux全量仍待回传，隔离身份Go T1不算完整IAM／DB，不计当前HEAD或关闭通用GDAL中止缺陷。
 
 ### 水流功率指数 SPI 独立 Hosted 验收
 
-独立手工`raster-spi-persistence`复用Hosted／NFS、同源默认入口Runtime及普通User原12权限，nightly关闭，600秒业务预算。14成功链涵盖米制degree／percent等价、国际英尺／美制测量英尺网格、很小非零坡度、坡度重分类、DEM接两种坡度单位、真实填洼接链、Int64／UInt64面积、全无效／不相交覆盖／全零坡度。固定原始(A/d)×tanβ与单位metre，不取对数；有效零坡度及填平洼地有效内部为0，原无效和坡度边缘NoData。519×515、显式第二数据波段、跨512块、各源独立NoData／mask／alpha与有效部分透明；数值极限和异构复数alpha独立分支仅单列Native。
+`raster-spi-persistence`；准备 `make test-raster-spi-online-runner`。14条链与TWI相同的单位／源组合，**原始(A/d)×tanβ、单位metre，不取对数**；零坡度／填平洼地有效内部为0，原无效及坡度边缘NoData。519×515第二波段跨512块、独立mask/NoData/alpha／部分透明；数值极限／异构复数仅Native。
 
-26类各中英文共52次准确SPI节点失败：两角色非法波段、面积单位缺失／错误、坡度声明／单位冲突、零／负面积、负坡度／90度、尺寸／原点／CRS／非方形／旋转／南向／地理坐标／无CRS／无网格、两角色alpha／复数数据和两角色scale／offset。非法值在另一源无效区仍拒绝，反向语言查询不改提交错误。独立200位Decimal Lambert连分式与原始乘积oracle不调用产品SPI；完整像元／mask／米制单位／原网格／CRS／全部nearest概览／COG布局、严格artifact／物理／Meta相等正整数大小、精确扫描身份、当前全部实际输入内部血缘／公开安全投影／Meta关系／Monitor必须逐项核。误乘边长、面积计数替代、误取对数、负值、零坡度NoData、小坡度阈值及百分比漏除100必须被反例拒绝。
+26类双语共52个SPI节点失败，包括两角色波段／面积单位／坡度声明、零负面积／负坡度90度、尺寸原点CRS及非方形／旋转／南向／地理／无CRS网格、alpha/复数、scale/offset，另一源无效不掩盖非法值。独立200位Decimal Lambert连分式＋原始乘积；误乘边长、面积计数、取ln、负值、零坡度作NoData、小坡度阈值及percent漏除100均须拒绝。
 
-14成功累计105次、52失败各重读14成果728次，共66次物理调用／833次实际全量成果检查；仅缓存绑定本轮／夹具／全部源hash的独立期望，实际成果每次重读。归档14份COG原字节及大小／SHA-256清单，不接受缺失、篡改、额外项、符号链接或静默修复。源和先前成果不变、失败零发布／新增扫描派生血缘、完整清理均保持；业务期望准备／首次oracle构建／业务／期望清理全部计入600秒；产品构建、部署、源夹具准备与部署拆除仍沿原Hosted外层生命周期单独取证。仅扩展受控只读取证套件白名单，不改SQL、产品、安全投影或权限。
-
-标准入口`make test-raster-spi-online-runner`及既有Native recipe、影响选路、独立手工CI同次登记。本地标准Native受影响专项559项（含新增SPI夹具103项），8692筛除、2条既有pyproj warnings、51.68秒通过；标准SPI runner92项、原TWI runner91项及完整Python／Online登记通过，输入无漂移。较早原栅格runner总入口绑定修正前测试快照，已主动中断，不计全入口通过；新增血缘期望排序修正由最终SPI／TWI标准门禁复核，不重复无关旧套件。准备验证结果见[专题](../../../next/栅格算子体系后续专题.md#三后续工作)；Linux全量和实际Hosted继续由CI会话协调，本地保存不计真实平台通过，不计UI／容量／稳定性能或任意影像认证。
+14成功105＋失败728＝833次全检／66调用，归档14COG，期望首次构建／业务清理计600秒，产品构建／部署／源播种／拆除另记。本地专项及SPI/TWI Runner／登记通过；较早栅格聚合绑定旧快照主动中断，不计全入口通过，最终排序修正按最终专项认定。Linux全量／Hosted待协调，不由本地通过推定平台通过。
 
 ### 分类栅格小斑块筛除独立 Hosted 验收
 
-独立手工`raster-sieve-persistence`复用Hosted／NFS、同源默认入口Runtime和普通User原12权限，nightly关闭，600秒业务预算。6条保存链：旋转多波段直接4邻接、同源8邻接、重分类接筛除、min_pixels=1、无供体且定位缺失、全无效。519×515、显式第二数据波段、跨512块，覆盖合法零／负值／安全大整数、NoData／mask／透明／非有限覆盖及有效部分透明；原始斑块严格小于阈值才替换，等于阈值保留，原始最大直接供体及分类并列、冻结／不传递／不迭代、无供体原值保留分别设见证。
+`raster-sieve-persistence`；准备 `make test-raster-sieve-online-runner`。6条COG链：旋转多波段4邻接／8邻接、重分类、min_pixels=1、无供体无定位、全无效。519×515第二波段跨512块，合法零／负／安全大整数、mask/NoData/alpha／非有限／部分透明；独立BFS＋原始邻界搜索验证严格小于阈值才替换、等值保留、原始最大直接供体／并列规则、冻结不传播不迭代、无供体保留，不调用产品游程／GDAL Sieve。
 
-非法波段、零／负／非整数／布尔阈值、非法值／非整数／布尔邻接、小数分类、正向越界、Int64负向越界与UInt64越界紧邻精确NoData、选择alpha、复数数据14类各中英文共28次准确sieve节点失败；反向查询不得改写提交语言。异构复数alpha独立分支、不可观测的同分类供体行列并列和资源极限单列Native，不扩大Hosted结论。
+14类双语共28个sieve节点失败：波段、零负小数布尔阈值、非法值小数布尔邻接、小数分类、正越界、Int64负及UInt64越界邻接精确NoData、alpha／复数；异构复数alpha、不可观测同分类供体行列并列及资源极限仅Native。6成功21＋28×6＝168，34调用／189全检，归档6COG；源期望准备及业务清理计600秒。
 
-独立逐像元BFS连通与原始邻界搜索不调用产品游程算法或GDAL Sieve，完整分类／mask／原网格／CRS及定位缺失、COG布局和3级nearest概览逐项核验。缺失定位成果在Meta的cog/true/heuristic有界布局提示与无spatial事实按真实契约核验，不伪造CRS／网格；实际COG由GDAL全量布局检查证明。6成功累计21次、28失败各重读6成果168次，共34次物理调用／189次实际全量成果检查。只缓存绑定本轮／夹具／全部源hash的独立期望，实际成果每次重读；6份COG原字节及大小／SHA-256清单归档，缺失／篡改／额外项／符号链接／静默修复拒绝。
-
-artifact／物理／Meta相等正整数大小、精确scan父执行／用户／租户／引擎、当前实际input.source内部血缘／公开安全投影／Meta关系／Monitor、源和旧成果不变、失败零发布／新增扫描派生血缘及所有清理严格保持。只扩展既有受控只读取证套件白名单，不改SQL／产品安全投影／权限／算法或原套件。期望准备／首次BFS构建／业务／期望清理计入600秒；构建部署／源准备／部署拆除沿原外层生命周期分别取证。标准`make test-raster-sieve-online-runner`、Native recipe、影响选路和独立手工CI同次登记；本地准备、Linux与实际Hosted分别记账，实际运行由CI会话协调，不计UI／容量或任意影像认证。
-
+无定位成果只核Meta的cog/true/heuristic有界提示且无spatial，不造CRS／网格；实际COG须GDAL完整布局／三级nearest。血缘只认当前input.source。Linux／Hosted与本地准备分开，本文无已核实际Hosted结论。
 
 ### 算子参数错误独立普通 User 实页
 
-`vector-topology-persistence` 的 `operator-input-diagnostics` case 仅验证新诊断，不执行原成功业务、地图或容量矩阵。沿用一次性 Hosted、非默认 Tenant、普通 User 精确11权限和600秒业务预算。四次真实执行分别触发：多距缓冲普通属性 `distance` 重名、`distances=[true]`、距离计算两份已知投影 CRS 不同、近接检查零容差。每份冻结 DAG 均带下游保存；至少一份将失败节点置于 tasks 数组首位并通过 depends_on 在 load 后调度，严格核节点序号来自冻结数组而非调度顺序。
+`vector-topology-persistence` 的 `operator-input-diagnostics` 只跑4个预期失败，不跑原成功／地图／容量；普通User精确11权限。多距缓冲属性distance重名、distances=[true]、distance两已知投影CRS不一致、近接零容差，各冻结DAG均带save；至少一份失败节点在tasks首位、depends_on使load先行，节点序号必须来自冻结数组。
 
-核 Develop 与 Monitor 实际公开响应的 `develop.workflow.invalid_params`、唯一 v3 execution 阶段及闭合 reason/operator 上下文，不以错误文本推断。四个 UUID 各在 Console 的 Develop 和 Monitor 实页用正常语言菜单切换中英文并刷新，16组展示核受控原因、算子、节点、可选参数/字段、处理建议、UUID和真实剪贴板；同次浏览器读取须绑定同普通 User/Tenant/11权限。无 mock 替换或绕过真实 Worker。仅诊断区域与复制内容按安全字段白名单核对，诊断公开响应不得泄露原生异常、自定义节点名、源值或私有路径；合法源 locator 不作为整份领域响应的泄露判断。
+Develop／Monitor核 `develop.workflow.invalid_params`、唯一v3 execution阶段与闭合reason/operator，不读错误正文猜原因。同四UUID在两实页经正常菜单切中英并刷新，共16组核原因／算子／节点／可选字段参数／建议／UUID／真实剪贴板及同User/Tenant/11权限，禁mock／绕Worker。仅诊断区与复制内容按白名单，禁原生异常／自定义节点名／源值／私路径，合法locator不当整份响应泄漏。
 
-四次预期失败均须无稳定成果、输出 facts、自动成果扫描或当前执行 derive，源文件 SHA/size 和 Meta 前后不变；初始源扫描单独登记，不与成果扫描混同。归档四份冻结定义、原始公开执行/Monitor响应、源 Meta/字节、各语言页面截图及剪贴板文本，最终报告与阶段 incomplete 分开；最后核 owned NFS、Runtime/registry、部署/Infra 清理零残留，清理不认证业务 DELETE。
-
-不覆盖 `distance_to` 活动几何列名为 `distance` 的特殊冲突：当前正式文件读取会规范化内存几何列名，既有 Native/T3 证据保留，不注入内存对象、改 load 或新增数据库来制造实页覆盖。四例是代表性端到端验证，不外推全部11种组合或算子成功计算能力。
-
+四失败无成果／facts／自动扫描／当前derive，初始源扫描分开登记；归档4定义、公开响应、源字节／Meta、各语言截图与剪贴板，最终报告与incomplete分开。`distance_to` 活动几何名distance特殊冲突因正式load归一化未覆盖，保留Native/T3，不注内存／改load／造DB；不外推全部11组合或成功计算。
 
 ### 近接检查独立双源 Point 成果
 
-`vector-topology-persistence` 的 `line-proximity` case 仅运行一条“双源 load → check_line_proximity → save”成功 DAG，普通 User、非默认 Tenant、精确11权限、既有隔离 Hosted 生命周期和600秒业务预算不变。两份独立 GPKG（5源线、9参考要素）均为EPSG:3857，显式容差1米；保存单层 `proximity-points.gpkg`，预期7条Point记录、3个不同原悬点XY。源业务Int64标识采用JSON安全范围内的2^40级、参考标识用字符串，均不同于物理FID；业务note不复制至成果。手写期望覆盖全部候选、不同参考ID的相同几何、同一参考多部件重复去重及等距XY决胜、任一参考精确接触时全部排除、严格边界1不报、精确2^-20小距离以及共享悬点两源分别保留；按原源行和参考行顺序核，不按ID或距离重排。
+`vector-topology-persistence` 的 `line-proximity`，一条双源load→check_line_proximity→save；EPSG:3857的5源线／9参考、容差1米，`proximity-points.gpkg` 为7Point／3悬点XY。业务Int64为JSON安全2^40级、参考String，均非FID，不复制note；手写期望核全部候选、异参考ID同几何、同参考多部件去重／等距XY决胜、任一精确接触全排除、严格边界1不报、2^-20微距、共享悬点分别保留，按原源／参考行序不按ID距离重排。
 
-独立原生读取两源一成果的原始坐标、CRS、字段／类型及顺序：成果 `source_id/reference_id` 保留Int64/String，`distance/nearest_x/nearest_y` 为Float64，活动几何为原悬点而非最近参考位置。保存后只允许一个稳定输出／create事实和一次自动成果扫描，公开严格整数tenant_id/triggered_by必须是同User/Tenant；源初始扫描单独登记，不手工补扫／collect。输入facts按两个显式读取端口与locator核身份，原图精确两条当前execution active derive（两源文件DataItem各到成果文件DataItem），Monitor事实一致。父GPKG文件正整数physical==Meta大小；唯一子层的7行Point/CRS独立核验，不把子层和父文件大小重复累计。
+独立OGR核两源一成果坐标／CRS／字段序类型：source_id/reference_id为Int64/String，distance/nearest_x/nearest_y为Float64，Point为原悬点。一个create／一次同主体自动扫描，两个显式端口locator及两条当前active derive，公开tenant_id／triggered_by核严格整数且同User/Tenant；父文件物理＝Meta、唯一子层7行不重复计大小。初扫另记、不补扫collect。
 
-真实Console成功页、成果属性、Point预览和血缘视图四类截图；每次导航沿实际页面请求核同普通身份。API标准EWKB和OpenLayers内全部7个Point及属性／投影坐标必须精确匹配，保留同位置的多条记录，不能用可见点簇数代替要素数；核实际像素，不能仅确认组件出现。像素读取有要素的可见矢量层绘制画布，按当前点样式的实际填色匹配，至少超过30个非透明像素，不沿用面／线的绿色假设；空白、隐藏图层或颜色不匹配均拒绝。归档两源一成果原字节、源与成果前后Meta、原始扫描/两源血缘/Monitor/预览响应及渲染数据。前后源/成果SHA、Meta不变；最终完整报告与incomplete阶段分离，完整隔离清理零残留不认证业务DELETE。
+真实Console成功／属性／Point／血缘四截图；API EWKB及全部OL七Point属性／精确投影坐标一致，保留同位置记录，不以点簇数代要素数。读取可见矢量层实际填色，>30非透明像素、禁面线绿色假设，空／隐藏／颜色错失败；两源一成果及Meta／响应／渲染归档。空结果／英尺／超JSON整数／容量／内存中间血缘未覆盖。
 
-不重跑原拓扑整包、已过参数失败T4或容量；空结果、英尺及更大整数边界沿原Native限定证据，不外推本case为全部输入或规模认证。case及夹具/runner/browser/Hosted选择/登记和mutation同次接入现有标准入口，无新API、算子或长期脚本。
-
-2026-10-30，固定 `ffa8aed3de8d3c84e5659c4575b30f6f7e8323e4` 的[独立近接 Hosted T4 40995207798](https://github.com/pampa0629/addp/actions/runs/40995207798/job/123866626980) 已通过原始归档独立审计：User33／Tenant2／精确11权限，5条源线与9个参考要素得到7条Point记录、3个原悬点位置；三份原始GPKG逐行OGR核对原生坐标、字段类型、CRS及SHA／大小，保留精确2^-20距离、业务Int64标识和参考顺序。成果98304字节与Meta严格相等，恰有一次公开同主体自动扫描、两条本次execution active derive及一致Monitor，源和成果前后Meta／原字节均未变。标准EWKB、实际OL七要素／属性／精确投影坐标、174个点填色像素、真实G6三节点／两边及成功页／属性／地图／血缘四截图均已核；业务42859ms，小于600秒，最终Owner／browser报告均v1 passed，incomplete检查点只保留阶段含义。NFS/export/owned root、Runtime／registry／部署及Infra清理零残留；不认证业务DELETE、空批、英尺、超JSON安全整数、容量或算子内存中间结果的资源登记，不重复原已通过业务T4。
+固定 `ffa8aed3de8d3c84e5659c4575b30f6f7e8323e4` 的[Hosted40995207798／123866626980](https://github.com/pampa0629/addp/actions/runs/40995207798/job/123866626980)完成上述矩阵：User33/Tenant2、7Point、98304字节、1扫描／2派生、174填色像素及真实G6三节点两边，业务42859ms；最终Owner/browser v1 passed，incomplete只记阶段，原件／Meta不变及隔离清零通过，不认证业务DELETE。
 
 ### 线端延伸独立双源双成果
 
-`vector-topology-persistence` 新增显式 `line-extension` case，仅执行“双源load → extend_line_endpoints → result/details分别save”及一条不可精确表示首次交点的失败DAG，不运行full或任何旧业务／容量。复用Hosted隔离生命周期、普通User／非默认Tenant／精确11权限及600秒业务总预算，无新suite、API、权限或长期入口。成功输入为3857的7条MultiLineString源要素／8部件及14条参考线，max_distance=2；手写期望为7条结果和8条新增LineString明细。覆盖首尾和重复端部顶点、上限等号／略超界、共线入口、首次而非侧向最近／后方目标、同点全部来源、已接触不动、多部件、2^-20正距离、JSON安全Int64业务ID区别FID及可空整型／布尔／字符串。第三份独立参考GPKG只用于制造x=4/3不可无损表示的首次交点，不修改成功双源。三源与两成果均保留原字节供归档后独立OGR逐原坐标、字段类型、方向、顺序、CRS和SHA／大小核验，不调用生产算法生成期望，不舍入或增容差。
+`vector-topology-persistence` 的 `line-extension`：一成功双源load→extend_line_endpoints→result/details各save，一不可精确表示首次交点失败，不跑full／旧业务／容量。3857的7条MultiLineString／8部件、14参考，max_distance=2，期望7结果／8新增LineString。核首尾重复端点、等号／越界、共线入口、首次而非侧向最近／后方、同点全来源、接触不动、多部件、2^-20、JSON安全非FID业务ID与nullable整型布尔字符串。第三独立参考只造x=4/3首次交点，禁舍入／容差，期望不调产品。
 
-成功两份稳定outputs/facts必须为create，两输入端口与locator精确对应、顺序无关，各成果各有两条本次execution active derive共4条；失败参考不混入成功血缘。恰有两次成果自动扫描，公开tenant_id／triggered_by严格整数且同当前User／Tenant，源初始3次扫描分开登记，无手工补扫或collect。父文件Meta与物理严格正整数大小相等，唯一子层行数和列数正确，源及成果前后Meta／原文件不变。失败execution／Monitor同UUID、同主体、固定领域拒绝原因，两个失败保存目标、输出写入事实／派生边／新扫描均不存在，保留原始失败与incomplete检查点，不能当最终通过。
+三源两成果归档、独立OGR核坐标原顶点／方向序／字段CRS。两create、2扫描，公开tenant_id／triggered_by严格整数且同主体；每成果2源派生共4边；失败参考不混成功血缘，初始3扫描另记。失败同UUID Develop/Monitor及owner准确原因，双目标／facts／derive／新扫均无。浏览器核成功失败页、EWKB／FID／全部OL属性顶点投影、两线图／属性／G6边标签；须真实新增长段像素，微距仅证物理／API／OL，不称亚像素独立可见。最终Owner/browser/raw同case/run/execution且passed，源／成果／Meta不变及清零。
 
-真实Console核成功／失败执行页、两成果标准EWKB／FID／业务属性及CRS、OpenLayers全部要素／原顶点与投影坐标、两幅实际线地图和属性／血缘页，实际G6两个来源边与标签可见；原始API／源Meta／图／渲染与截图归档。微小新增段须在物理／API／OL数据保留，不声称其亚像素部分单独可见；地图同时核非空像素及result的明确新增长段，不能只看到原输入就通过。浏览器每次导航绑定实际请求的同一普通身份，失败后扫描库存／物理成果／源Meta不变。完整Owner与browser报告须唯一case/run/execution绑定且passed，清理NFS/export/ownedroot、Runtime/registry、部署及Infra零残留；该清理不认证业务DELETE。夹具、runner、浏览器、Hosted选择、标准入口的既有自动覆盖与CI登记／mutation同次同步；代码及本地验证不计为真实Hosted通过。
-
-2026-10-30，固定 `46300b7efd9055fe9a40039208a5cf6f9b05017d` 的[独立线端延伸 Hosted T4 41032821129](https://github.com/pampa0629/addp/actions/runs/41032821129/job/123986411278) 已通过原始归档独立审计：同User33／Tenant2／精确11权限，三源7／14／1行与两成果7条MultiLineString／8条新增LineString明细；五份原GPKG逐行OGR核对精确坐标、原顶点／方向／部件、双方来源、可空字段类型、3857及SHA／大小，各98304字节与Meta／storage严格相等。恰有两次公开同主体自动扫描、四条本次execution active derive、两份create稳定输出／事实和一致Monitor，源及成果前后原字节／Meta不变；原始EWKB、全部OL要素属性／独立投影坐标、两实际线图和明确新增段像素、两真实血缘tab／G6三节点两边／标签paths及成功失败页共八截图已核。业务51944ms，小于600秒，最终Owner／browser／raw均v1 passed，incomplete检查点仅保留阶段含义；不可无损表示首次交点的同UUID失败DAG无输出写入／扫描，隔离owner日志固定原因已核。NFS/export/ownedroot、Runtime/registry、部署及Infra完整清理零残留，不认证业务DELETE、空批／英尺／超JS安全整数、容量或内存中间成果资源血缘；微小2^-20段保留物理／API／OL数据，不声称其亚像素部分单独可见。原41029102072在首图后因本会话新用例遗漏Canvas观察器初始化失败／清0历史保留，`1b6a16f5a`修复及红绿回归后仅作这次必要复验，不重跑旧已通过业务T4或容量。
-
+固定 `46300b7efd9055fe9a40039208a5cf6f9b05017d` 的[Hosted41032821129／123986411278](https://github.com/pampa0629/addp/actions/runs/41032821129/job/123986411278)通过：三源7/14/1行、双成果7/8行、五原GPKG各98304字节、2扫描／4派生、两实际线图新增段及八截图，业务51944ms，准确失败与清零均核。原41029102072首图后Canvas观察器初始化遗漏失败／清零仍保留，`1b6a16f5a` 修复红绿后仅此复验；不认证业务DELETE、空批／英尺／超JS整数／容量／内存中间血缘。
 
 ### 端点吸附独立线与Point双成果
 
-`vector-topology-persistence` 的独立 `endpoint-snapping` case 只运行一成功与四失败，不运行full、旧业务T4或容量。复用Hosted隔离部署、非默认Tenant、同一普通User精确11权限及600秒业务总预算。成功双源为EPSG:3857，显式容差1，`load → snap_line_endpoints → result/details分别save`；12条MultiLineString源／13部件、14参考要素，手写期望12条线与10条原悬点Point明细。覆盖严格边界及略超界不动、精确接触／闭环／无候选不动、首尾／多部件／连续重复端点、共享悬点所有源端部、同点全部参考及单参考重复段去重、最近目标且不连锁、2^-20精确微距。业务ID为JSON安全Int64且不同于FID，可空Int64／Boolean／String属性留在线成果；明细保原点、双方ID、部件、首尾及移动事实，按原行／部件／首尾／参考行排序。
+`vector-topology-persistence` 的 `endpoint-snapping`：一成功／四失败，3857、容差1，load→snap_line_endpoints→result/details各save。12条MultiLineString／13部件、14参考，手写期望12线／10原悬点Point。核严格边界及略超不动、精确接触／闭环／无候选、首尾／多部件／重复端点、共享悬点全部端部、同点全参考／单参考重复段去重、最近不连锁及2^-20；JSON安全Int64非FID，nullable Int64/Boolean/String留在线，明细保原点／双方ID／部件首尾移动事实，按原行／部件／首尾／参考序，无epsilon或舍入。
 
-额外一份冻结失败源与四份参考分别真实触发等距异点、内部覆盖不能仅端部处理、斜线最近位置不能精确落线、正长度段塌缩；四DAG均带两个下游save，逐次核同User／UUID的Develop与Monitor失败、隔离owner日志准确领域原因，失败目标／输出写入事实／输出derive／新成果扫描均不存在，源与成功成果不变。失败沿现有EXECUTION_FAILED通道，不扩展结构化参数诊断或双文件事务认证。无mock替换生产几何或绕过Worker。
+一失败源＋四参考触发等距异点、内部覆盖非端部处理、斜线最近点不可精确落线、正长度塌缩；每DAG双save，核同User/UUID失败及owner原因，双目标／facts／派生／新扫均无。沿EXECUTION_FAILED，不外推结构化参数或双文件事务；成功双create／2扫描／4当前派生，公开tenant_id／triggered_by严格整数且同主体，五失败输入不入成功图。
 
-成功稳定outputs及facts均两份create，两个load端口与locator精确绑定；恰两次成果自动扫描，公开严格整数tenant_id／triggered_by同主体。每成果均有两源的本execution active derive共四边；五份失败输入不混入成功图。七源与双成果原字节归档，独立OGR核逐原坐标、完整字段类型／空值、部件／方向／顺序及3857；物理与Meta大小严格正整数相等，父文件／唯一子层边界明确，原源及成果／Meta前后不变。期望不调用生产吸附算法、不epsilon／舍入。
+七源＋双成果归档，独立OGR核全坐标／字段空值／部件方向序／CRS和父文件大小，唯一子层不混计；真实Console成功四失败、线／Point地图、属性／G6边标签共11截图，EWKB／全部OL及端点移动／原Point像素核，目标用字段与线对照，微距不称亚像素独立可见。完整报告与incomplete、隔离清零与业务DELETE分别认定。
 
-真实Console核成功及四失败执行页、线与Point双地图、两属性页和实际血缘tab／G6来源边标签；原始EWKB、全部OL几何／属性、线端明确移动见证及原Point像素归档，共11截图。Point在原端点，目标由字段与线成果对照；微距保物理／API／OL，不声明亚像素单独可见。每次导航绑定页面实际请求的同一普通身份。最终Owner／browser／raw报告唯一case/run/execution且passed；阶段incomplete仅保留阶段意义。末轮扫描库存、文件与Meta不变，NFS/export/ownedroot、Runtime/registry、部署／Infra清0，不认证业务DELETE、内存中间资源血缘、空批／英尺／超JS整数或容量。夹具／runner／浏览器／Hosted选择及CI登记mutation同次更新，经新增范围最小标准门禁后仅单次派发此case。
-
-2026-10-30，固定 `182f93649cd1227ef6ff8451fca0902373fbde1b` 的[端点吸附独立普通User Hosted T4 41054235377](https://github.com/pampa0629/addp/actions/runs/41054235377/job/124057611152)已通过原始归档独立审计：同User33／Tenant2／精确11权限，七源与线／Point双成果九份原GPKG各98304字节，逐原坐标、全部属性类型／空值、部件／方向／顺序、3857及SHA／大小与现场／Meta／storage及浏览器后记录严格一致。12条MultiLineString结果／10条原悬点Point明细、双create稳定输出与事实、两次公开同主体自动扫描、四条本次execution active derive及Monitor一致；两原图与实际血缘tab／G6三节点两边／标签paths、原EWKB及全部OL坐标属性精确核对，线端移动像素14与Point图层像素451、两地图／属性／血缘和成功四失败页共11截图已核。四真实失败的准确同UUID owner日志及无输出事实／目标／扫描／derive、扫描库存7→9后不变均通过；源和成果原字节／Meta前后不变。最终Owner／browser／raw唯一v1 passed，业务69915ms，小于600秒，incomplete检查点只保留阶段含义；NFS/export/ownedroot、Runtime/registry/镜像、部署及Infra完整清理零残留。四份独立物理／渲染／截图／清理审计及同SHA Console／Platform CI实际通过；GeoPython全量9994通过／1个未改动的TIFF overview负例失败，交对应owner，不计全量通过；该证据不认证容量、跨文件事务、内存中间血缘、业务DELETE、空批／英尺／超JS整数，微距仅核物理／API／OL数据，不宣称其亚像素部分独立可见。本轮仅单次派发该case，未重跑旧业务T4或容量。
-
-
+固定 `182f93649cd1227ef6ff8451fca0902373fbde1b` 的[Hosted41054235377／124057611152](https://github.com/pampa0629/addp/actions/runs/41054235377/job/124057611152)完成上述矩阵：九原GPKG各98304字节、12线/10点、扫描7→9后不变、2扫描／4派生、移动14／Point451像素及11截图，业务69915ms，准确四失败、原件／Meta不变和清零通过；同SHA Console／Platform通过。GeoPython全量9994通过但1个未改TIFF overview负例失败，仍不计全量通过；无容量／跨文件事务／中间血缘／业务DELETE／空批／英尺／超JS整数认证。
 
 ### 分类小斑块筛除平方米面积阈值独立 Hosted 验收
 
-独立手工`raster-sieve-area-persistence`复用Hosted／NFS、同源默认入口Runtime、非默认Tenant与普通User原12权限，业务预算严格600秒，不加入nightly，不改产品、原筛除／保护套件、权限或安全投影。预算覆盖身份／源核验、首次冻结独立预期生成、全部执行及查询、物理全检、原件归档和缓存清理；部署及隔离生命周期退出另核，超时和清理失败明确失败，不扩预算或自动重试。实际Linux和Hosted仍由CI会话协调，本地准备不计真实Hosted、UI、容量或全量IAM。
+`raster-sieve-area-persistence`；准备 `make test-raster-sieve-area-online-runner`。16条COG：米制4/8邻接＋重分类3；两英尺换算／提前舍入反例2；阈值等号邻接浮点3；等价像元数1；省略／空保护2；1000平方米下10米／30米分辨率2；Int64／UInt64原生NoData2；全无效1。519×515第二波段、北向非方形跨512块，合法零负／mask/alpha、不用scale/offset。三基本链核保护小斑块不替换、达标供体可供给、未达标不供给／桥接，原始大小并列冻结不传播；临界斑块直接邻达标供体、供体恰等阈值也核，防无供体保留掩盖错误。
 
-固定16条成功COG链：米制4／8邻接及重分类接面积筛除3条；国际英尺／美制测量英尺换算及提前舍入反例2条；阈值恰等／上下相邻浮点值3条；等价像元数对照1条；省略／空保护列表2条；相同1000平方米阈值的10米／30米分辨率2条；Int64／UInt64安全分类及原生NoData2条；全无效1条。519×515、显式第二波段、北向非方形主网格，覆盖跨512分块、零／负分类、内部mask、透明／部分透明和未应用的scale/offset；三个基本链内核受保护小斑块不替换、达标保护供体可供给、未达标保护不能供给／桥接、原始大小及并列决胜／不传播。临界小斑块须直接邻接达标供体，另核供体恰等阈值资格，避免无供体保留掩盖数值错误。
+32类双语64准确sieve失败：阈值缺／双传／像元null+面积／反向4；面积null/布尔/零负/串/数组/对象7；地理/无CRS/无定位/双旋转/未知单位/复合CRS7；波段0/alpha/复数及非法小数布尔邻接6；小数/不安全Float64/原生Int64UInt64紧邻NoData越界4；保护null/[{}]/重复/越界4。独立2000位Decimal面积乘积＋BFS原边界，不调产品连通／供体／GDAL Sieve；单位重读原文件，不能用写入前系数。
 
-固定32类各以zh-cn／en提交，共64次准确失败：阈值均缺失／均提供／像元null加合法面积／合法像元加面积null4类；面积null／布尔／零／负／字符串／数组／对象7类；地理CRS／缺CRS／缺定位／两个旋转方向／未知线性单位／复合CRS7类；波段0／alpha／复数数据及非法值／小数／布尔邻接6类；源小数／不安全Float64整数／原生Int64或UInt64 NoData邻接越界值4类；保护null／列表内对象[{}]／重复值／越界值4类。必须准确落在当前sieve任务并匹配原因；前置读取、保存或扫描失败不得充数。反向查询不改提交语言或冻结失败，失败零发布／新增扫描／派生血缘。
+像元mask精确无容差，16成功136＋64×16＝1024，共1160全检；含源基线81轮／80执行，原600秒含身份源／首次期望／查询／归档与缓存清理，部署／外退另记。归档全部源TIFF、16COG及16冻结NPY和SHA清单；源全波段／原生NoData／类型／单位编码／Meta及旧成果不变，内部raster_save/derive与公开operations:null分核，observer仅本suite。
 
-独立2000位Decimal面积乘积、逐像元BFS与原始边界枚举oracle，不调用产品筛除、连通标记／供体或GDAL Sieve；CRS单位按原文件重读事实精确核对，不能用写入前单位系数代替。完整像元／mask无容差比较；只缓存冻结预期，实际成果每轮重读：1+…+16+64×16=1160次成果全检；另含源基线，共81轮物理核对和80次执行。严格核原网格／CRS、Float64／NaN、合法零、COG完整布局／实际nearest概览、artifact／物理／Meta相等正整数大小、自动扫描精确父执行／用户／租户／引擎、当前执行全部实际输入血缘及Monitor；内部raster_save／derive与公开operations:null分别核，受控只读observer仅登记本suite。
-
-归档全部源TIFF、16份COG、16份冻结预期NPY原字节及各自大小／SHA256清单、当前执行封闭血缘回执；源全波段／原生NoData／mask／类型／网格／CRS／单位／编码及Meta、先前成果每轮不变。原件／清单／预期缺失、篡改、额外文件或符号链接均拒绝，不静默重建；私有缓存绑定run／fixture／源hash。部分启动及所有退出严格清理缓存／NFS／Runtime／镜像／registry／部署／Infra自有残留，保留首个失败和收尾错误。
-
-NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alpha、退化网格、数值溢出／下溢和I/O注入继续单列Native证据，不冒充Hosted覆盖。标准准备入口`make test-raster-sieve-area-online-runner`；真实GDAL的16链／64准确失败、独立oracle语义污染、COG／源／缓存及原字节归档破坏拒绝和无仓库依赖stdin Worker进入原`make test-geopython-workflow`，Online／changed gate／手工workflow／严格矩阵删断言拒绝同步登记。原像元和保护套件不替代新面积范围。
+NaN/Infinity、保护[1.0]、混合复数alpha、退化／溢出下溢／I/O注入仅Native。GDAL矩阵／语义污染／归档拒绝及无仓库依赖stdin worker沿原Native，Online/changed/workflow/删断言拒绝同登记；原像元／保护suite不代面积范围，本地准备不算Hosted／UI／容量／全量IAM。
 
 ### 分类小斑块筛除指定类别保护独立 Hosted 验收
 
-整数形式浮点`[1.0]`的严格拒绝单列Native，Hosted对应项改测列表内对象`[{}]`；平台JSON解码／重新编码会规范化整数形式浮点，不能以Native直调拒绝替代Hosted证明。浮点邻接反例使用真正非整数4.5，原16／52／968／600及其余严格断言保持，不修改平台数字传递或产品准入。
+`raster-sieve-protected-persistence`；准备 `make test-raster-sieve-protected-online-runner`。JSON重编码会规范[1.0]，其严格拒绝只记Native，Hosted改测[{}]；浮点邻接用真正非整数4.5，不改平台数字传递／产品准入。
 
-独立手工`raster-sieve-protected-persistence`复用Hosted／NFS、同源产品默认入口Runtime、非默认Tenant及普通User原12权限，业务预算固定600秒，不加入nightly，不改原Sieve矩阵／脚本、产品、安全投影或权限。预算覆盖身份／源初始化、首次独立预期构建、68条执行及查询、全部物理全检／归档与执行／预期缓存清理；部署、静态播种和隔离生命周期退出另核，任一失败整套失败，不自动重试或扩预算。实际Linux和Hosted仍由CI会话协调，本地准备不计真实Hosted、页面、容量或全量IAM。
+16COG：4/8直接保护、重分类、零负保护／供体资格5；省略/空/未命中/正逆序5；全保护/min_pixels=1/无定位无供体/全无效/Int64UInt64安全类6。519×515旋转多波段、第二波段跨512、NoData/mask/alpha及部分透明，不用scale/offset。独立BFS＋原边界核保护小斑块不改、达标供体可供给／未达标不传播、原大小／并列／等阈值／冻结单轮／无供体；省略空未命中合原oracle、顺序两份相等、全保护／阈值1保留有效原像元。
 
-固定16条成功COG：4／8邻接直接保护、重分类接保护、零／负分类保护、独立供体资格场景5条；省略列表、空列表、未命中分类、同列表正／逆序5条；全类别保护、min_pixels=1、缺定位无供体、全无效、Int64／UInt64普通安全分类6条。519×515旋转多波段主样本显式第二波段，覆盖跨512边界、合法零／负分类、NoData／内部mask／透明／非有限覆盖和部分透明，scale/offset不隐式应用。分别以闭式见证核受保护小斑块不替换、达标保护供体可供给、未达标保护不能供给或传播；保留原始大小／并列决胜／阈值相等／单轮冻结／无供体规则。省略、空列表、未命中三份成果与原规则独立oracle一致，列表顺序两份成果逐像元相同；全保护与阈值1保留原有效像元。
+原14类波段／阈值／邻接／分类／alpha复数拒绝，加12类保护null、列表外布尔/整数/串/对象、列表内布尔/对象/小数、正负越界、重复／嵌套，共26类双语52准确失败；不可序列化／极端组合／深嵌套／I/O资源注入仅Native。精确无容差，不调产品游程／并查集／供体／GDAL Sieve；68执行，16成功136＋52×16＝832，共968成果全检，另源基线共69物理轮，基线不计成果数。
 
-保留原14类失败：波段、零／负／小数／布尔阈值、非法值／浮点／布尔邻接、源小数／不安全整数／Int64或UInt64不安全原生分类、alpha和复数。新增12类保护参数失败：null、列表外布尔／整数／字符串／对象、列表内布尔／对象／小数、正／负越界整数、重复值及嵌套列表。26类各zh-cn／en提交，共52次准确失败，必须到达当前sieve任务并匹配精确原因；前置load、保存或扫描失败不得充数。提交语言冻结，反向查询不改错误或执行快照；失败零发布／新增扫描／派生血缘。不可序列化参数、极端数值组合、更深嵌套及I/O／资源注入继续单列Native。
-
-独立逐像元BFS与原始边界枚举oracle，不调用产品游程／并查集／供体或GDAL Sieve；所有像元、mask和分类均精确比较，不放宽容差。只缓存冻结独立预期，实际成果每轮重新读取：16次成功后重读全部已有成果、52次失败后重读全部16份，共1+…+16+52×16=968次实际成果全检；另有首次完整源基线，共69轮物理核对，源基线不计成果全检。严格核Float64／NaN、原网格／CRS及缺定位事实、COG完整布局和实际nearest概览、清除色表／scale-offset、artifact／物理／Meta相等正整数大小、精确自动扫描的父执行／用户／租户／引擎、当前执行全部实际输入血缘／Monitor；内部raster_save／derive与公开operations:null投影分别核对，受控只读取证只登记本suite，不改变安全投影。
-
-归档全部源TIFF、16份COG与16份冻结独立预期NPY原字节及各自大小／SHA256清单，保留当前执行封闭血缘回执。源全波段像元／mask／类型／原生NoData／网格／编码及Meta、先前成果每轮不变；原件／清单／预期缺失、篡改、额外文件或符号链接全部拒绝，不静默重建。私有缓存与run／fixture／源hash绑定，部分启动和所有退出均严格清理NFS／Runtime／镜像／registry／部署／Infra自有残留，首个失败与清理错误同时保留。
-
-标准准备入口`make test-raster-sieve-protected-online-runner`；真实GDAL、52次准确失败、原语义／保护语义污染、COG／缓存／原字节归档破坏拒绝及stdin Worker独立性进入既有`make test-geopython-workflow`。Online／changed gate、独立手工workflow、受控只读observer及精确矩阵／删断言拒绝同步登记。原Sieve6成功／28失败／189全检范围不能替代本保护扩展验收。
-
+原600秒含身份源／首次期望／全部查询全检归档／执行和缓存清理，部署／播种／退出另核。全部源TIFF、16COG、16冻结NPY及大小SHA清单归档；源全波段／类型／原生NoData／编码／Meta与旧成果不变，COG实际nearest及无定位分核，内部raster_save/derive与公开operations:null独立，不扩只读observer。真实GDAL／52失败／语义污染／缓存归档破坏拒绝及stdin worker独立性沿原Native，Online/changed/workflow/删断言拒绝同登记；原Sieve6/28/189不代16/52/968，准备不计真实Hosted。
 
 ## 整幅栅格百分位统计独立 Hosted 验收
 
