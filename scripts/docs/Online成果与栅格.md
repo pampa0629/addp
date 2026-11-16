@@ -10,7 +10,7 @@
 
 现行 suite／case、身份、断言与清理由[Manager 与空间成果正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md)和各 Host Gate 维护；本页保留选定子场景摘要、操作入口及历史证据。独立 case、领域报告、完整 suite 和容量专项分别认定，子场景通过不代表完整 suite 或其他 case 通过。
 
-专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow)。
+专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow) · [邻域统计与 IDW](../../docs/spec/testing/scenarios/邻域统计与IDW.md)。
 
 [Manager 固定版本](#manager-固定版本证据)与[栅格固定版本](#固定版本证据)只覆盖所列源码、运行尝试和当次清理；后续已审计结果见[栅格验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)。容量矩阵是通过条件，早期未注明源码的准备记录不能作为当前版本结果。Runner、Native、Linux、Hosted 和真实页面证据分别记账，未运行、失败、跳过或未覆盖项不计为通过；本次文档整理未运行或刷新任何验收。
 
@@ -111,7 +111,7 @@ Native oracle 自动发现于 `make test-geopython-workflow`，身份夹具与�
 
 本节列出的五个专项，其身份、隔离部署、独立预算与清理要求统一见[独立持久化专项公共前提](../../docs/spec/testing/scenarios/Manager与空间成果.md#独立持久化专项公共前提)，各项独有断言见对应正式场景；Runner／Native 分层与专项命令统一见[验证入口](../../docs/spec/testing/scenarios/Manager与空间成果.md#独立持久化专项验证入口)。固定版本结果与未覆盖范围统一见[验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)；入口登记、早期准备和真实 Hosted 分别记账，不外推为当前 HEAD 通过。
 
-`make test-online ONLINE_SUITE=raster-focal-statistics-persistence` 验证邻域统计的六条 COG 保存链、跨块完整像元／mask、严格三方大小、精确自动扫描、当前执行血缘，非法波段／窗口失败不得发布或新增扫描。固定版本 `fe0d7cc8e` 的[独立 Hosted](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802) 已通过并经归档审计，预检／业务 359770 毫秒，完整结果见[邻域统计正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-focal-statistics-persistence)；同源 Linux 全量 1251 项及 Platform 均通过。
+`make test-online ONLINE_SUITE=raster-focal-statistics-persistence` 验证邻域统计的六条 COG 保存链、跨块完整像元／mask、严格三方大小、精确自动扫描、当前执行血缘，非法波段／窗口失败不得发布或新增扫描。固定版本 `fe0d7cc8e` 的[独立 Hosted](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802) 已通过并经归档审计，预检／业务 359770 毫秒，完整结果见[邻域统计正式场景](../../docs/spec/testing/scenarios/邻域统计与IDW.md#raster-focal-statistics-persistence)；同源 Linux 全量 1251 项及 Platform 均通过。
 
 `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` 验证整数栅格分区统计的四条完整 CSV 保存链、有限预览、严格物理／Meta 大小、自动扫描、血缘与两条非法参数失败清理。不新增 RasterArtifact；实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-zonal-statistics-persistence)。
 
