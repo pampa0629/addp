@@ -457,107 +457,128 @@ MinIO沿同预览／409／刷新／分页／下载断言，只用既有Business�
 
 ## 拓扑构面、面叠面缝、悬点与线叠持久化（vector-topology-persistence）
 
-独立手工 Hosted Linux x86_64 T4，标准入口 `make test-online ONLINE_SUITE=vector-topology-persistence`，复用共享 Hosted 生命周期、NFS export 所有权及正式 GeoPython 产品默认入口。同一成功 execution 的各条分支分别执行线网构面双保存、单要素检查→修复→复查保存、严格参考吸附保存、单图层面叠检查保存、显式覆盖范围的双输入面缝检查保存、关联来源的悬点检查保存及跨要素线叠、线内自叠、不同要素精确点交会检查、交点打断、原始部件连通分组及链路合并双保存。只使用当次 disposable 非默认 Tenant 和同一普通 User，精确 11 项权限：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。Engine 登记身份独立且登记后撤去基础设施 Token；不得扩大业务权限、600 秒预算或复用个人会话。
+### 拓扑持久化公共要求
 
-十五份固定源为 `source.geojson`、`invalid.geojson`、`snap-input.gpkg`、`snap-reference.gpkg`、`overlap-input.gpkg`、`gap-input.gpkg`、`gap-coverage.gpkg`、`dangling-input.gpkg`、`line-overlap-input.gpkg`、`line-self-overlap-input.gpkg`、`line-intersection-input.gpkg`、`line-self-intersection-input.gpkg`、`split-line-input.gpkg`、`line-component-input.gpkg`、`line-chain-input.gpkg`；成功成果严格为 `faces.geojson`、`diagnostics.geojson`、`repaired.geojson`、`snapped.gpkg`、`overlaps.gpkg`、`gaps.gpkg`、`dangling.gpkg`、`line-overlaps.gpkg`、`line-self-overlaps.gpkg`、`line-intersections.gpkg`、`line-self-intersections.gpkg`、`split-lines.gpkg`、`line-components.gpkg`、`line-chains.gpkg`、`line-chain-members.gpkg`。血缘输入按 `input.<读取节点ID>` 与源 locator 精确一一绑定，拒绝缺项、重复、额外输入及端口错绑；数组顺序不作为资源身份，不能要求与源文件清单顺序一致。所有保存均使用 `mode=fail`，十五份稳定 outputs 和 lineage_facts.outputs 必须为 `write_mode=create`。十五成果分别只有一次精确自动扫描，公开 tenant_id/triggered_by 必须为严格正整数且匹配当前 User/Tenant，拒绝私有字段替代、手工补扫、缺失事实或重复扫描。十五份物理与 Meta 大小必须是相等的严格正整数；GPKG 核对文件与唯一子图层的边界。线源→faces/diagnostics、invalid→repaired、两个吸附源→snapped、面源→overlaps、待查面与覆盖范围分别→gaps，悬点线源→dangling，线叠线源→line_overlaps，线内自叠源→line_self_overlaps，线交源→line_intersections，线内自交源→line_self_intersections，打断源→split_lines，分组源→line_components、链路源分别→line_chains/line_chain_members，共十七条当前 execution 的 active derive，Monitor 必须一致。
+本节主场景及下述多距缓冲、重合规整、组合case使用独立手工Hosted Linux x86_64 T4，入口 `make test-online ONLINE_SUITE=vector-topology-persistence`。复用共享生命周期、NFS export所有权和正式GeoPython产品默认入口；当次disposable非默认Tenant、同一普通User、600秒预算及精确11权限不变：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。Engine登记身份独立，登记后撤基础设施Token，不复用个人会话。
 
-独立 GDAL oracle 按显式预定义坐标验证四面四 dangle；自交面修复后保留两行各含两三角面的 MultiPolygon、属性及修复前 false/原因与修复后 true/Valid Geometry。GeoJSON 成果保留文件原 CRS84 声明，Meta 必须为 OGC:CRS84、无虚构 EPSG SRID；地图按原经纬坐标验证 direct_renderable/not_transformed，不临时选 CRS。
+算子准入及算法归[矢量算子契约](../../workflow/矢量算子契约.md)，本页只保留固定夹具与验收差异。以下要求按各case明确的源、端口和计数核验，不能把独立case通过当主场景重验：
 
-严格参考吸附的两份单层 GPKG 源为 EPSG:3857、米单位，五条输入线与六条固定参考线，tolerance=.75 核对原始位置上限、严格边界、等距 XY、不插点和不吸向线段内部，源/属性/行序/XY/CRS 不变。另一个 tolerance=1.25 的失败 DAG 必须以固定 `snapping produced invalid geometries` Owner 原因整批拒绝，失败 execution/Monitor 同 User 且无保存、facts、扫描或源变化；只允许有界观察当前 execution 的隔离 Owner 日志，不重试业务。浏览器之前先保存 `topology-snap-failure.json` 的最小公开观察、原因、Monitor 和未变化扫描清单，result=incomplete，不能替代最终成功。
+- **持久事实**：保存均`mode=fail`，稳定outputs／lineage_facts.outputs均`write_mode=create`。每成果恰一次精确自动扫描，公开`tenant_id/triggered_by`为匹配当前User／Tenant的严格正整数；不读私有字段替代、补扫或接受重复／缺失。物理与Meta大小为相等严格正整数，GPKG区分文件与唯一child边界。
+- **血缘与来源**：输入以`input.<读取节点ID>`精确绑定locator，拒缺项／重复／额外／端口错绑，不按数组顺序认身份。每个源→成果须有本execution的active derive，Monitor与facts一致；文件血缘不代行级`source_id`／members，业务来源不写入Meta技术字段。
+- **独立核验**：固定手写原坐标／属性／类型／行序／关系，经独立原生OGR读取核对，不调用生产算法造期望、不舍入或加容差／精度网格。存储FID与业务ID分开，篡改必须拒绝。每端口在唯一几何类型／数量表登记，API与真实地图共用；未知端口、少／多行或错类型均失败，runner须实际消费该断言。源Meta及源／成果原字节、大小／SHA在浏览器前后保持。
+- **真实页面**：逐次导航从页面自身响应经`browserAPIFromResponse`核当前User／Tenant／11权限，不跨导航持旧Token、mock响应或注入图对象。GPKG用唯一`child_name`、标准EWKB；核完整属性／原坐标及实际OpenLayers要素。显示坐标由独立球面墨卡托oracle算3857→4326→3857，逐值精确比，不用容差。主场景三幅Point图核共享蓝色非透明前景、不计底图水域，其余十二幅线面图核绿色；分别存`point_pixels/green_pixels`，不改产品样式。保留微小原始几何，但不宣称亚像素可单独目视或分辨。
+- **失败与收尾**：计算失败须阻断下游保存、无发布／新增扫描／输出facts，源及成功成果不变；不承诺保存跨文件事务回滚。阶段`incomplete`不替最终Owner／browser完整成功。领域、NFS export／owned root、Runtime／registry、部署／Infra均清理核零残留，清理失败即门禁失败；归档合成原件不是业务残留，部署销毁不认证Manager业务DELETE。未实际运行不计T4，不扩Quality／修复／容量或定时，不重复旧业务与容量矩阵。
 
-面叠源是十二条有效 EPSG:3857 面，显式 parcel_id 唯一非空。真实 `load → check_polygon_overlap(id_field=parcel_id) → save` 必须输出七对：五对普通重叠/包含/完全重复、一对含两个面部分并排除接触线的多部件交集、一对面积 2^-40（约 9.09e-13）且二进制精确可表示的微小重叠。独立静态坐标和面积 oracle 核对双方标识、行序、每对唯一、Float64 面积和 MultiPolygon；共边、共点、孔洞内部不输出，不调用生产算法生成期望。物理层以 OGR 独立验证原几何/3857/七对及精确面积，预览层验证标准 EWKB、精确源坐标/字段/3857；GPKG 自动生成的存储 FID 按 OGR 实际列名核对，不冒充来源业务标识，不能将缺行、重复、错误来源或忽略小面积视为合格。不扩展 Quality 或自动修复。
+### 主场景的固定输入、输出与扫描血缘
 
-面缝两份单层 EPSG:3857 GPKG 源分别为七条待检查面和七条显式覆盖范围面。真实 `load×2 → check_polygon_gap(input_gdf, coverage_gdf) → save` 输出八个独立 Polygon，按稳定位置排序：内部和边缘缺口各一、含两个孔洞的缺口一、待查面孔洞一、点接触和独立多部件三、面积精确为 2^-40 的微小缺口一。范围孔洞是合法留白，完全覆盖的区域、范围外数据不报告；范围重叠及源重复不重复报缺口。独立静态 oracle 逐原始坐标、孔洞、顺序、Float64 gap_area 和 3857 核验，不调用生产融合／差集生成期望，不舍入、不加容差、不自动填补。两个源各有本次 execution 的 active derive 到 gaps，不接受只连一个源或把两源互换。十五成果和十五源前后哈希／大小及 Meta 不变。
+同一成功execution各分支使用以下十五源／十五成果；端口映射及文件名均须精确一致，共十五次自动扫描、十七条当前execution active derive。表内多源均分别连向成果，多输出均分别保留来源：
 
-悬点源为十二条有效 EPSG:3857 线／多线，显式 route_key 是唯一非空字符串，另有 note 属性。固定场景包含孤立线、连续链、T 形、闭环、反向重复线、内部重合段、多部件和间距精确 2^-40 的微小断口。真实 load→check_dangling_points(id_field=route_key)→save 输出十七行 Point＋source_id；闭环和 T 形连接处不报，重复线同点分别关联两个原始 ID，多部件同源同点只报一次，结果 source_id 与 GPKG 自动 FID 分开验证。独立静态原坐标／来源／行序 oracle 使用 OGR GetPoints/GetX/GetY 核验，不调用生产打断或计度算法生成期望，不舍入、不加容差。悬点源到成果有唯一当前 execution active derive，成果仅一次同主体自动扫描且严格大小匹配 Meta；真实预览标准 EWKB、十五幅地图中的 Point 要素、实际显示坐标及像素必须通过。排序静态回归仅导入 geometry-preview-coordinate.js 中唯一的纯数学投影 oracle，不加载含 OpenLayers 解码器的 geometry-preview-support.js，不要求安装前端 node_modules；真实地图与解码验收仍使用相应前端依赖。地图 Point 按完整 source_id＋显示坐标在同一 Node 环境用确定性身份顺序比对，不以浏览器语言排序推断记录匹配，不去重，保留重复线的两个来源；物理和 API 的原始行序仍须精确核对。点图统计共享蓝色 Point 样式的非透明前景像素（不计底图水域），其余十二幅线面图的绿色像素断言保持；原始图分别归档 point_pixels／green_pixels，不改产品样式。十五源十五成果的前后原字节与源 Meta 不变；不扩展吸附、修复或 Quality 结论。
+| 固定源 | 成果／端口 |
+| --- | --- |
+| `source.geojson` | `faces.geojson`、`diagnostics.geojson` |
+| `invalid.geojson` | `repaired.geojson` |
+| `snap-input.gpkg`、`snap-reference.gpkg` | `snapped.gpkg` |
+| `overlap-input.gpkg` | `overlaps.gpkg` |
+| `gap-input.gpkg`、`gap-coverage.gpkg` | `gaps.gpkg` |
+| `dangling-input.gpkg` | `dangling.gpkg` |
+| `line-overlap-input.gpkg` | `line-overlaps.gpkg`（line_overlaps） |
+| `line-self-overlap-input.gpkg` | `line-self-overlaps.gpkg`（line_self_overlaps） |
+| `line-intersection-input.gpkg` | `line-intersections.gpkg`（line_intersections） |
+| `line-self-intersection-input.gpkg` | `line-self-intersections.gpkg`（line_self_intersections） |
+| `split-line-input.gpkg` | `split-lines.gpkg`（split_lines） |
+| `line-component-input.gpkg` | `line-components.gpkg`（line_components） |
+| `line-chain-input.gpkg` | `line-chains.gpkg`、`line-chain-members.gpkg`（line_chains／line_chain_members） |
 
-同一 User 经 Console 检查成功执行、十五幅真实 Manager 地图与塌缩失败页。每次导航读取当前页面自身响应，再通过 browserAPIFromResponse 核同一 User/Tenant/11 权限；不跨导航持旧 Token，不 mock 响应或注入内部图对象。GPKG 预览使用容器唯一 child_name、标准 EWKB，真实 OpenLayers 要素和 EPSG:3857 投影像素同时核验。物理及 API 坐标与源预期精确相等；显示值按共享的独立球面墨卡托数学 oracle 计算 EPSG:3857→4326→3857 后逐值精确比较，不用舍入或容差。面叠／面缝的小面积几何仍须保留，要素数和完整坐标必须正确，像素由实际可见重叠或缺口区域核验。
+### 主场景的独有几何断言
 
-线叠源为十六条有效 EPSG:3857 线／多线，使用显式字符串 route_key，保留 note 原属性。固定九对结果覆盖部分重合、包含、反向重复及三要素逐对、多部件并排除点接触、精确长度 2^-40、源内折返去重和不同采样顶点；孤立自重合、点接触、交叉和相距 2^-40 的平行线不报告。真实 load→check_line_overlap(id_field=route_key)→save 输出九行 MultiLineString＋source_id_a/source_id_b/overlap_length；长度为原坐标单位，双方来源和顺序独立核对，GPKG FID 不能替代业务 ID。独立手写坐标与长度 oracle 使用原生 OGR GetPoints，逐部件核坐标并以独立线段长度验证，不调用生产相交算法生成期望，不舍入或加容差。原始预览 EWKB、双 ID 和长度、真实 OL MultiLineString 坐标及身份、绿色前景像素和截图必须全部通过。微小线段的原始坐标/长度必须保留，但不宣称其亚像素投影必然可单独目视。线叠源到成果只有一条当前执行 active derive，一次同主体自动扫描；源字节/Meta 和成果末轮均不变。此扩展只检查、不修复，不增加权限或场景预算。
+除构面／修复的原CRS84外，下列GPKG均EPSG:3857；线源显式唯一非空字符串`route_key`、面叠显式唯一非空`parcel_id`，`note`等原属性保持。各算子的完整输入拒绝／空批／输出Schema归正式契约，此处固定输入与精确结果如下。
 
-线内自叠源为十五条有效 EPSG:3857 线／多线，显式字符串 route_key 与 note 原属性保持不变。真实 load→check_line_self_overlap(id_field=route_key)→save 输出八行 MultiLineString＋source_id/overlap_length：连续折返、三次经过、不同顶点分段、多部件正长度重合、精确长度 2^-40、夹杂零长度段的折返、同方向重复部件和重复闭环；普通闭环、点自交、近邻线、单纯零长度段、仅端点接触和两个独立但重合的源要素不报告。每个源同一位置只计一次长度，不按经过次数累加。独立手写原坐标／长度 oracle、原生 OGR GetPoints、物理文件篡改负例与实际 EWKB／OpenLayers 来源和几何／绿色像素共同核验，禁止用生产算法生成期望。此源到成果只有一条当前 execution active derive，成果只有一次同主体自动扫描；源 Meta、十五源十五成果原字节前后不变。十五图加成功和塌缩失败页共十七截图；不将亚像素微线宣称为单独目视可见，不扩容差、修复、权限或600秒预算。
+| 分支 | 固定计算与独立断言 |
+| --- | --- |
+| 构面／修复 | GDAL核四面／四dangle；自交面检查→修复→复查后仍两行MultiPolygon，各含两三角面，原属性不变，修复前false／原因、后true／Valid Geometry。GeoJSON保留CRS84声明，Meta为OGC:CRS84、无虚构EPSG SRID，地图`direct_renderable/not_transformed`，不临时选CRS。 |
+| 严格参考吸附 | 五输入线／六参考线、米单位，tolerance=.75核原始位置上限／严格边界／等距XY、不插点或吸向段内部，属性／行序／XY／CRS不变。tolerance=1.25另DAG须以Owner固定`snapping produced invalid geometries`整批失败。 |
+| 面叠 `check_polygon_overlap(id_field=parcel_id)` | 十二有效面→七对MultiPolygon／Float64面积：五普通重叠／包含／全重复、一含两面部分且排接触线的多部件交集、一精确2^-40（约9.09e-13）微叠。核双ID／顺序／每对唯一；共边／共点／孔内不输出，不忽略微面积。 |
+| 面缝 `check_polygon_gap(input_gdf,coverage_gdf)` | 七待查＋七显式覆盖面→八Polygon稳定排序：内／边缺各一、双孔缺口一、待查孔一、点接触及独立多部件三、2^-40微缺一。范围孔是合法留白，完全覆盖／范围外不报，覆盖重叠及源重复不重复报。核原坐标／孔／顺序／Float64 gap_area；两源血缘不可漏／互换，不自动填补。 |
+| 悬点 `check_dangling_points(id_field=route_key)` | 十二有效线／多线→十七Point＋source_id，含孤立／连续链／T形／闭环／反向重复／内部重合／多部件及2^-40断口。闭环／T连接不报；同点重复线保留双来源，同源多部件同点仅一次。OGR GetPoints/GetX/GetY逐坐标／来源／原行序核，不用生产打断／计度造期望。 |
+| 线叠 `check_line_overlap(id_field=route_key)` | 十六有效线／多线→九MultiLineString＋source_id_a/source_id_b/overlap_length；覆盖部分／包含／反向重复／三要素逐对、多部件排点接触、2^-40正长、源内折返去重及不同采样顶点。孤立自叠／点接触／交叉／间距2^-40平行线不报。长度按原单位，用手写坐标及独立线段长度核。 |
+| 线内自叠 `check_line_self_overlap(id_field=route_key)` | 十五有效线／多线→八MultiLineString＋source_id/overlap_length：折返／三次经过／不同分段／多部件正长叠／2^-40／夹零段折返／同向重复部件／重复闭环。同源同位置只计一次长度；普通闭环／点自交／近邻／单零段／仅端点接触／两个独立重合源不报。 |
+| 线交 `check_line_intersection(id_field=route_key)` | 十八有效线／多线→十Point＋双ID：三线同点三对、T形／端点、线点混合中的独立点、重复多部件两交点及间距2^-40双点。重合段端点／近邻／单源自交不报；拒丢点／重复／错配／微点舍入／CRS篡改，双ID仍绑定同一源文件，不虚构双文件血缘。 |
+| 线内自交 `check_line_self_intersection(id_field=route_key)` | 十六有效线／多线→十五Point＋source_id：蝴蝶结／重复到访／跨部件接点／重合覆盖外支线点／重合与独立点并存／微距双点／不同源同XY／跨部件闭环四角。正常折点（含中间零段）、同部件闭环首尾、重复分段／相邻折返覆盖、自叠内部及端点支线、两不同源仅互交不报。原生Point不经默认GeoJSON截断；按源序／XY排序，拒全层去重或错误覆盖点。 |
 
-新增线交源为十八条有效 EPSG:3857 线／多线，显式 route_key 与 note 保持不变。真实 load→check_line_intersection(id_field=route_key)→save 输出十行 Point＋source_id_a/source_id_b：三线同点三对、T形、端点接触、线点混合中的独立交点、重复多部件的两处点交会以及两个间距2^-40的点；重合段端点、近邻间隔和单要素自交不报告。独立手写原坐标／双方ID／逐对顺序 oracle 与原生OGR读取共同核验，并拒绝丢点、重复、错配、FID冒充来源、微点舍入及CRS篡改。文件级只有线交源→交点成果的一条当前 execution active derive；双方业务ID分别与同一原源文件绑定，不虚构两份文件血缘。成果仅一次同主体自动扫描，物理与Meta大小为相等正整数，实际预览EWKB、双来源字段／FID区分、OpenLayers完整身份及坐标和蓝色Point前景像素／截图均必须通过。亚像素间隔不声称单独目视可分；沿用原11权限、600秒及清理边界，不修改源线或修复。
+悬点静态排序回归只导入`geometry-preview-coordinate.js`的纯数学投影，不载含OL解码的`geometry-preview-support.js`，不要求node_modules；真实地图／解码仍需前端依赖。地图Point按完整source_id＋显示坐标在同一Node环境确定性身份排序，不用浏览器语言排序，不去重；物理／API原行序仍精确核。面叠／面缝像素取实际可见区域，完整微几何仍须存在。
 
-新增线内自交源为十六条有效 EPSG:3857 线／多线，显式 route_key 与 note 保持不变。真实 load→check_line_self_intersection(id_field=route_key)→save 输出十五行 Point＋source_id：蝴蝶结、重复到访、跨部件接点、重合覆盖以外的支线交会、重合与独立交点并存、两个间距2^-40的点、两个不同源同XY及跨部件闭环四角。正常折点（含中间零段）、同部件闭环首尾、重复分段路径、相邻折返覆盖，以及自叠线内部与端点的支线交会均不报；两个不同源仅互相交叉也不报。期望为手写原坐标／原ID／源顺序及XY排序，原生OGR Point读值不得经默认GeoJSON截断；缺失、额外、重复、全图层去重、FID冒充来源、错误重合覆盖点或微点舍入均拒绝。文件级只有新源→点成果的一条当前 execution active derive，同主体一次精确自动扫描、正整数physical==Meta、预览标准EWKB／实际FID区分、真实OL来源及坐标、蓝色Point像素和截图都必须通过；只检查不修复，无新权限或预算。
+**交点打断**：`split_line_intersections(id_field=route_key,scope=all)`以十七有效线／多线生成四十三LineString，保留全部原属性、可空note／Int64 grade，追加source_id及从1起part_no/segment_no。手写预期覆盖十字／T／端点／逆向多部件／正常闭环接缝／2^-40片段／重复顶点，以及同源蝴蝶结与跨源同时切分、反向自交闭环原接缝、同XY多次经过的独立路径位置、同源跨部件交会和切点重复原顶点。原方向／每顶点／源部件序／类型／null／编号必须相等，不按全源XY去重漏切；正长重合仍整批拒绝，沿Native负例，不另加T4失败DAG。文件血缘不代片段来源。浏览器须真实控件选每页50，再用同locator／child／page=1／page_size=50页面响应核43行及全部OL属性／方向／坐标，不注状态／另API代页面；旧between T4不认证all。
 
-交点打断分支显式选择 `scope=all`，同一 `split-line-input.gpkg` 扩展为十七条有效 EPSG:3857 线／多线，显式唯一 route_key、可空 note 和 Int64 grade；不增加源文件、成果端口或权限。真实 load→split_line_intersections(id_field=route_key,scope=all)→save 输出四十三行 LineString，逐行保留全部原属性并追加 source_id、从1开始的 part_no/segment_no。手写原坐标预期在原十字／T形／端点／逆向多部件／正常闭环接缝／精确2^-40微小片段／重复顶点基础上，增加同源蝴蝶结与跨要素穿越同时切分、反向自交闭环原接缝、同XY多次经过的独立路径位置、同源多部件交会及切点重复原顶点。原方向、每个原顶点、源／部件顺序、全部来源属性及片段编号严格相等，禁止全源XY去重漏切或用生产算法生成预期，不舍入或加容差。原生OGR核字段类型、null、物理几何／3857与行序；缺少内部切分、合并多次经过、错来源／FID冒充、属性／编号／方向／微点／字段类型／数量或CRS篡改均拒绝。正长度重合仍整批拒绝，原产品Native负例保持，不在T4增加无关失败DAG。文件级仍只有打断源→成果的一条当前execution active derive、一次同主体精确自动扫描及严格正整数physical==Meta；文件血缘不替代逐片段source_id。浏览器先用真实分页控件选择每页50条，再消费同locator／child／page=1／page_size=50的当前页面响应，核43行完整内容；不注入组件状态或用独立API代替页面。真实容器child预览标准EWKB、FID与业务ID区分、全部原属性和片段号、OpenLayers四十三个LineString的完整属性／方向／坐标、绿色像素和截图必须通过。十五源十五成果、源Meta及浏览器前后原字节保持不变。复用原11权限／600秒、Hosted/NFS/默认入口Runtime和清理，原有全部断言保留；不增加容量或其他suite运行。旧between范围已通过T4只认证原范围，不外推本次all。
+**连通分组**：`group_line_components(id_field=route_key)`十一有效源线／多线→十五原LineString部件／九稳定组。含同源三分离部件各组、同源微断口跨组、同源端点相接同组、后到桥接线传递连通，另核T／十字／反向叠／孤立环／源内自交自叠／重复坐标。手写组号／原坐标，按源行／部件序核全部属性、source_id、Int64 part_no/component_id、方向／顶点／闭环接缝及2^-40断口，不按同源强归组。独立OGR／真实保存重载及错组／来源／属性／类型／方向／微点篡改拒绝；端口类型数量严格十五LineString，不能落默认计数。历史v11不含此扩展。
 
-新增连通分组源为十一条有效 EPSG:3857 线／多线，显式唯一 route_key、可空 note 及 Int64 grade。真实 load→group_line_components(id_field=route_key)→save 输出十五条原始 LineString 部件、九个稳定连通组；同一源的三个分离部件分属三组，同源微小断口两部件跨组，而同源端点相接两部件同组。后出现的桥接线按传递连通归组，另覆盖T形、十字、反向重合、孤立闭环、源内自交／自叠和重复坐标。按原源行／部件顺序核对全部属性与source_id、Int64 part_no/component_id、原方向／全部顶点／闭环接缝与精确2^-40断口；预期坐标和组号固定手写，不调用生产分组生成预期，不舍入或按同源强行归组。独立原生OGR、真实保存重载及错组／错来源／属性／字段类型／方向／微点等篡改拒绝必须通过；实际预览EWKB／FID区分、真实OL完整属性和原坐标投影／绿色像素及截图均须通过。文件级只有新源→分组成果的一条当前execution active derive，同主体一次精确自动扫描和严格正整数physical==Meta，十五源十五成果前后及源Meta不变。复用原11权限／600秒及清理，不修复、不生成Quality结论，不重跑容量或无关suite；历史v11运行不认证本次连通分组扩展。
+**链路合并**：`merge_line_chains(id_field=route_key,match_fields=[road,grade])`十六源要素／十八部件→十二LineString链及十八members。源含唯一route_key、可空note／road、Int64 grade；链保共同属性及chain_id/member_count，成员保全部原列及chain_id/member_no/source_part_no/Boolean is_reversed。手写关系覆盖中段最早出现／反向拼接、全图三岔先于属性、属性断链、NULL road一致、同源部件跨链／同链、闭环接缝、内部重复坐标及2^-40断口；OGR核原方向／全部坐标／null／Integer64／Boolean subtype，拒错链／序／反向／类型／微点／CRS／数量。两个成果各一来源关系，不用文件血缘冒充成员。原v12只证当轮，不认证此后范围。
 
-新增链路合并源为十六条有效EPSG:3857线／多线、十八原始部件；唯一route_key、可空note、Int64 grade及可空road均保留。真实load→merge_line_chains(id_field=route_key,match_fields=[road,grade])双输出保存为line-chains.gpkg（十二条LineString及共同属性、chain_id/member_count）和line-chain-members.gpkg（十八原部件及全部原属性、chain_id/member_no/source_part_no/Boolean is_reversed）。手写坐标和逐成员关系覆盖中段最早出现／反向拼接、全图三岔先于属性、属性变化断链、空road一致、同源多部件跨链及同链、闭环接缝、内部重复坐标与精确2^-40断口。独立原生OGR核全部坐标、原方向、来源／null及Integer64／Boolean subtype；任何错链／顺序／反向／属性／类型／微点／CRS／数量均拒绝，不调用生产合并生成预期。双成果各自仅新源→本成果的一条当前execution active derive、一次同主体公开整数扫描与严格正整数physical==Meta；文件级血缘不冒充逐成员业务来源。真实预览标准EWKB／FID区分、两图完整属性和精确OL坐标／绿色像素／截图须通过。十五源十五成果共三十原文件及源Meta前后不变，共十五扫描、十七当前执行derive、十五地图加成功失败页十七截图；沿用原11权限／600秒／生命周期清理，不执行容量或无关suite。旧v12通过仅证明原范围。
+### 主场景报告、失败证据与历史范围
 
-每个成果端口须在唯一几何类型／精确数量表中登记，API 行数和真实 OL 要素类型数量共用该表；连通分组严格为十五个 LineString，不允许落入其他成果的默认数量。未知端口明确失败；标准 runner 直接执行这段真实地图断言，逐端口拒绝少行、多行和错误类型，并验证表与 API／地图两处消费连接。
+完整主场景须十五地图＋成功／塌缩失败页共十七截图。报告唯一`addp.vector-topology-persistence/v14`、`addp.topology-browser/v14`、`addp.topology-checkpoint/v14`，拒v13，Owner／browser／阶段证据均绑定`split_line_scope=all`。有界只观察当前失败execution的隔离Owner日志，不重试业务；浏览器前先存`topology-snap-failure.json`的最小公开观察／固定首因／Monitor／未变扫描清单，`result=incomplete`。
 
-唯一报告版本为 addp.vector-topology-persistence/v14、addp.topology-browser/v14、addp.topology-checkpoint/v14，旧 v13 不接受。Owner、浏览器及阶段证据必须显式绑定 split_line_scope=all。等待血缘前归档 topology-before-lineage.json，保留十五份严格大小/公开扫描身份/物理哈希/稳定outputs与facts及原始 Monitor，标记 incomplete。topology-source-lineage-raw.json/v13 保留十五源原 Meta、十五原图和实际预览响应；topology-physical/ 保留全部十五源十五成果合成原文件，逐个核 SHA/大小并拒绝覆盖不同证据，支持下载后独立 GDAL 复核。浏览器前后源及成果均不变；最终 Owner/browser 完整成功、十五图及退出清理均实际通过才认本轮 T4。
+等待血缘前存`topology-before-lineage.json`，包含十五严格大小／公开扫描身份／物理hash／稳定outputs与facts／原Monitor，仍为incomplete。`topology-source-lineage-raw.json/v13`保十五源原Meta、十五原图和真实预览响应；`topology-physical/`保十五源／十五成果共三十合成原件，逐个SHA／大小核并拒覆盖不同证据，可离线GDAL复核。最终Owner／browser完整成功、十五图与退出清理实际通过才认本轮T4。
 
-2026-10-24，固定源码 `d9a3cec22e12db098182e25bc96a62e0916f5f32`（包含交点打断接入 `90a9eab843ecf38538a601f15dd0add5e9af24a9`）的[普通 User Hosted 40080467804](https://github.com/pampa0629/addp/actions/runs/40080467804/job/120832764807) 已实际通过并完成归档独立复核：User33／Tenant2／精确11权限，十三源十二成果、十二次自动扫描、十四条当前执行 active derive；交点打断十一条源线生成二十条 LineString，来源与全部属性、null、Int64 编号、原方向和顶点、精确 2^-40 片段均保留。成果 GPKG 为 98304 字节，SHA-256 `11939282c30049db0b76856de9ca802334be7f8863a4356a07564eade441c3e9`；二十五份归档原文件及浏览器前后大小／哈希一致。十二份实际 API 和原生 OGR 几何逐行一致，十二幅原始 OL 坐标用独立数学公式复核，交点打断完整属性与方向精确保留；十二幅地图及成功／失败执行页共十四截图已复核。Owner／browser v11 完整成功，checkpoint 的 incomplete 不替代最终报告；预检与业务共 115726 毫秒，塌缩失败无发布／扫描，归属 NFS／部署及 Infra 清理零残留。官方 artifact `12555218473` 的 ZIP SHA-256 为 `53be33fcdc5aa180bf9ebac02b1cebcf4412f0b1051b2e57c1c31e156e43aa90`。
+| 固定版本与最小证据 | 已验结论及限制 |
+| --- | --- |
+| `d9a3cec22e12db098182e25bc96a62e0916f5f32`（含打断接入`90a9eab843ecf38538a601f15dd0add5e9af24a9`）；[Hosted 40080467804／Job120832764807](https://github.com/pampa0629/addp/actions/runs/40080467804/job/120832764807) | 2026-10-24 User33／Tenant2／11权限，v11十三源／十二成果／十二扫描／十四derive；打断仅十一源线→二十LineString，属性／null／Int64编号／方向／顶点／2^-40保持。GPKG98304字节、二十五原件及十二API／OGR／OL几何核对，十二地图＋成功失败页十四截图；115726ms，塌缩无发布／扫描，NFS／部署／Infra清理零残留。artifact12555218473；checkpoint不替最终报告，旧结果不认证当前十五成果／all。 |
+| 后继源码`5a5614564b38115b38f4091fc1742a46da5cae0e` | [GeoPython](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242674)4797 passed／21 warnings；[Console](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242861)195单测／219浏览器／build；[Platform](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242706)通过。此前本地未改HMR公共夹具194过／1败仍保留，不倒推本地通过或外推当前main／其他Job。 |
 
-同次发布后继源码 `5a5614564b38115b38f4091fc1742a46da5cae0e` 的[GeoPython CI](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242674) 实际 4797 passed／21 warnings，[Console CI](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242861) 实际 195 单测／219 浏览器及 build 通过，[Platform consistency](https://github.com/pampa0629/addp/actions/runs/40080291973/job/120832242706) 实际通过。此前固定本地 Console 未修改的公共 HMR 缓存夹具 194 passed／1 failed 保留历史，不倒推为本地通过；不外推当前 main、其他 Job、容量或业务 DELETE，也不宣称亚像素几何可单独目视。
-
-NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零残留；失败清理仍使门禁失败。归档合成字节不是业务目录残留；部署销毁不认证 Manager 业务 DELETE。旧构面/修复/吸附/面叠/面缝/悬点/线叠/线内自叠 T4 不外推线交／线内自交检查，代码与确定性回归不记为新真实 T4，不新增 schedule。
+旧构面／修复／吸附／面叠／面缝／悬点／线叠／线内自叠T4不外推新增线交／线内自交；Native／CI不算新真实T4，容量及业务DELETE未由上述清理认证。
 
 ### KML／GML／TopoJSON 的 S3 兼容消费
 
-容器图层沿既有 scope-table 路线返回 EWKB，HTTP JSON 中的二进制几何为 Base64。浏览器验收须先按该传输契约解码，再逐层核对几何类型、完整源坐标和 Z 维度；地图实例及像素仍独立验证，不能要求产品接口改返 GeoJSON 对象来满足测试。刷新后的响应与报告中的规范化几何使用同一解码入口。
+本小节属`manager-internal-artifact-lineage`，同Business MinIO／GeoPython产品Runtime／十项普通User，三份固定hash双图层源；不继承上节拓扑11权限。核验差异：
 
-`TablePreview` 的零值 `source_srid` 和空 `source_crs` 在 HTTP JSON 中按 `omitempty` 省略。未知 CRS 的固定 TopoJSON 样例必须核对两字段缺省及 `transform_status=unknown_crs`，不能要求虚构 `source_srid=0` 字段或默认 EPSG:4326；本地页面夹具与 Hosted 使用相同的字段缺省契约，临时 CRS 选择及原始几何检查保持。
+- scope-table几何为HTTP JSON Base64 EWKB，用同一解码入口核原始／刷新几何、类型／完整坐标／Z，再独立核真实地图／像素，不要求改返GeoJSON。
+- 未知CRS TopoJSON须省略`source_srid/source_crs`（omitempty），`transform_status=unknown_crs`且默认暂停；不虚构source_srid=0／4326。临时选择／清除／切换／重开及原始几何分别核。
+- 活动控件定位`button.ol-zoom-out`，可访问名是“–”而非提示“Zoom out”；同一中英文T3／Hosted helper真实连续点两次，各等动画并核缩放减1，再验像素／原几何／实例。另核普通刷新／原件下载hash。
+- 隔离环境先Security，标准身份夹具等待Manager持久保护投影首同步；预检核健康／源码，启动／初始化失败则拒入场并清理。Owner／browser v13拒旧版，`make test-manager-online-runner`核夹具／拒绝／浏览器语法／登记。
 
-地图缩小交互按活动 OpenLayers 控件的 `button.ol-zoom-out` 定位，不能把 `Zoom out` 提示文字当成默认按钮的可访问名称（实际为符号“–”）。本地中英文 T3 与 Hosted 复用同一交互帮助函数，连续两次真实点击后分别核对视图缩放级别减少 1 且动画结束，再检查要素像素；原源几何、地图实例及像素断言保持。
-
-复用同一 Manager Hosted suite、GeoPython 产品 Runtime 和隔离 Business MinIO，三份固定哈希双图层源沿用原十项普通 User 权限。Owner/v13、browser/v13 验证图层与源几何、实际地图要素和像素、TopoJSON 未知 CRS 默认暂停、临时选择清除／切换／重开、普通刷新和原文件下载哈希，拒绝旧报告。隔离环境先启动 Security，再由标准身份夹具等待 Manager 持久保护投影首次同步；预检核对 Security 健康和源码身份，启动／初始化失败须拒绝进入场景并清理。标准 `make test-manager-online-runner` 覆盖夹具、拒绝边界、浏览器语法和 CI 登记。
-
-此场景不增加自定义服务、用户权限或 workflow，不改变血缘产品实现；MinIO 只证明 S3 兼容协议，不认证外部云 S3。真实 T4 须按当次源码、报告和清理证据单独认定，此处不登记通过。
+不改血缘实现、服务／权限／workflow；MinIO只证S3兼容，不认证外部云。真实T4按当次源码／报告／清理独立认定，此处不登记通过。
 
 ### 设备静态轨迹范围读取
 
-复用 `manager-internal-artifact-lineage`、当次 Business MinIO 和已批准的十项普通 User 权限，不增加服务、任务、产物或权限。产品字段、预算及保护规则以[Manager 预览规范](../../../../manager/docs/数据预览与资源树实现规范.md#六设备静态轨迹预览)为准。
+同Manager suite／Business MinIO／十项User，无新增服务／任务／成果／权限。产品字段／预算／保护归[Manager预览规范](../../../../manager/docs/数据预览与资源树实现规范.md#六设备静态轨迹预览)；只读夹具和页面断言为：
 
-夹具包含 CSV、records JSON、Point GeoJSON 三份确定性 3000 点合成源，每种源含 A／B 两设备、各 1500 小时采样。UTC `[2026-01-01T00:00:00Z,2026-01-02T00:00:00Z)` 应返回两设备 48 点、单设备 A 24 点。真实 Console 表单必须证明：
+- CSV／records JSON／Point GeoJSON各3000合成点，A／B各1500小时；UTC `[2026-01-01T00:00:00Z,2026-01-02T00:00:00Z)`为双设备48／A24点。独立表单核设备／时间／坐标／像素、请求与`trajectory_scope` selection一致、`complete=true/scanned_rows=3000`。
+- 整文件拒前2000点绘图并保完整性提示，GeoJSON自动CRS不清提示，重开重验；同User超限API `422/trajectory_point_limit_exceeded`，缩回恢复，不能统一豁免其他业务失败／警告。
+- 三源大小／下载SHA不变，正式下载helper不被探针替代；像素只读复制至独立离屏画布，不改地图／过滤警告。当前Owner／browser／CI登记核完整三源、拒缺失／篡改／旧版；历史Owner v9／browser v11只识别当轮。
+- 既有生命周期删源，原模型／PPTX／COG／点云领域与物理清理仍保留，Infra不替领域零残留。
 
-1. 整文件模式拒绝绘制前 2000 点，保留完整性提示；GeoJSON 自动填入源 CRS 不能清除该提示，重新打开仍须重新校验。
-2. 显式设备／时间范围请求与服务端 `trajectory_scope` 的 selection 回显一致，`complete=true`、`scanned_rows=3000`；逐行核对设备、时间、坐标及真实地图像素。
-3. 同一普通 User 的超限 API 请求返回 422 与 `trajectory_point_limit_exceeded`，缩回合法范围后恢复；业务失败或警告不因该预期反例而被统一豁免。
-4. 范围预览前后的原文件大小和下载 SHA-256 不变，正式下载 helper 不由受控探针替代。
-5. 三源证据完整；完整 suite 的报告版本以当前 Owner、浏览器实现和 Online CI 登记为准，拒绝旧版本、缺项或篡改证据。历史 Owner/v9、browser/v11 仅用于识别当次通过报告。
-6. 沿既有生命周期销毁本轮源，并保留原模型、PPTX、COG、点云等场景的领域删除和物理清理断言；Infra 销毁不代替领域零残留。
-
-源生成的字节／大小／下载对象登记、两次生成一致、三格式等价、3000／48／24 点计数和报告拒绝归 `make test-manager-online-runner`／`make test-online-runner`。浏览器像素取证只读复制到独立离屏画布，不修改地图或过滤警告。真实运行沿用原手动 Hosted 入口；最终源码、报告与不覆盖范围见[静态轨迹历史证据](../验收证据索引.md#manager-静态轨迹历史证据)。
-
+源字节／大小／下载登记、两次生成一致／三格式等价及3000／48／24计数／报告拒绝归`make test-manager-online-runner`／`make test-online-runner`；实际范围查[静态轨迹历史证据](../验收证据索引.md#manager-静态轨迹历史证据)，不以runner代手工Hosted。
 
 ### 多距缓冲独立场景
 
-用户确认新增 `topology_case=multi-distance-buffer`，复用 `vector-topology-persistence` 原Hosted生命周期、非默认Tenant普通User精确11权限及600秒预算。仅生成两个EPSG:3857点图层：成功源含两个不同业务ID、非标准活动几何列及可空Integer64/Boolean/String；冲突源另含 `distance` 属性列。成功DAG只执行 `load → batch_buffer(distances=[2,1,2], resolution=1) → save(mode=fail)`，保存单个六行GPKG，完整缓冲而非环带，顺序按距离再源行，重复距离保留。原 full、重合规整和组合case不变，不运行旧业务T4、容量矩阵或受控对照。
+`topology_case=multi-distance-buffer`沿[拓扑公共要求](#拓扑持久化公共要求)，仅两个3857点源／一个六行GPKG，full／规整／组合含义不变。成功源含两个业务ID、非标准活动几何列、可空Integer64／Boolean／String；冲突源另有`distance`列。成功`load→batch_buffer(distances=[2,1,2],resolution=1)→save`是完整缓冲非环带，按距离再源行，重复距离保留。
 
-独立OGR按原生点核六个闭合菱形的精确坐标/方向/顺序、包络、面积、顶点半径、二维有效性、源CRS、Integer64/Boolean/NULL与Real distance；不调用不同版本GEOS重新buffer构造期望，不增加epsilon、舍入或精度网格。原始源及成果字节全量归档，物理大小与Meta为相等严格正整数。成功成果恰有一次同User/Tenant自动扫描、源到成果的一条当前execution active derive，outputs/facts均create且Monitor一致。两源各做一次初始扫描，不把冲突源写入成功执行输入血缘。
+OGR以原点手写六闭合菱形，核精确坐标／方向／序／包络／面积／顶点半径／二维有效／CRS／类型／NULL及Real distance，不跨GEOS版本buffer造期望。两源各一次初扫，成功血缘仅成功源→成果；一成果一次扫描／derive、create、严格正整数大小／Monitor／全原件／前后保持按公共要求。
 
-同User另运行冲突源的DAG，必须在batch_buffer节点以准确distance字段冲突原因失败，下游无文件、无新增扫描或输出facts；两源Meta、源文件和成功成果均不变。不宣称保存跨文件事务。真实Console核成功页、六面地图、重名失败页共三截图，标准EWKB/业务ID与FID区别/全部属性/OL投影数组/像素均须通过；每次导航读取页面自身响应绑定原User/Tenant/11权限，不沿用旧Token。Owner/browser报告为 `addp.topology-buffer/v1` / `addp.topology-buffer-browser/v1`，绑定case/run/身份/当前执行/完整预期；原始预览和血缘图保留，incomplete阶段不代替通过。最终源及成果未变、领域/NFS/export/owned root/Runtime/registry/部署/Infra完整清理零残留；清理不认证业务DELETE。
+冲突源另DAG在batch_buffer以准确distance冲突原因失败，零下游文件／扫描／输出facts，两源Meta及成功成果不变。Console成功页／六面图／重名失败页三截图，核EWKB／FID区别／全属性／OL投影数组／像素。报告`addp.topology-buffer/v1`、`addp.topology-buffer-browser/v1`绑定case／run／身份／当前execution／完整预期，保原始预览／血缘图；incomplete不替最终，收尾按公共规则。
 
-同次沿既有标准runner、Native、Console和workflow登记及mutation回归覆盖新增case，无新suite、权限、产品路径或永久脚本。Native/CI通过不替代这一新增普通用户T4；超JSON安全整数、零负距离、空图层与其他参数边界复用已有确定性证据，不外推为本case新增真实认证。
-
+既有runner／Native／Console／workflow及mutation回归覆盖接线，无新suite／权限／路线／永久脚本。超JSON安全整数、零负距离、空层及其他参数仅沿已有确定性证据，不认证本case新增T4或容量／受控对照。
 
 ### 重合规整独立场景
 
-用户已确认 P0＋P1：`vector-topology-persistence` 新增显式 `topology_case=line-network-normalize`，保留原 `full` 的原业务含义。新场景只生成一个 EPSG:3857 GPKG 源，执行 `load → normalize_line_network(id_field=route_key) → result/members 各自 save(mode=fail)`；不 seed 或执行旧十五源／十五成果场景，不调用旧塌缩负例或容量矩阵。未知 case 在副作用前拒绝；现有根入口、Hosted 生命周期、同源默认入口 Runtime、非默认 Tenant、普通 User 精确11权限与600秒预算不变。Case 由 workflow 输入贯穿 owner、物理夹具、浏览器和报告，不能把本场景成功记为旧整包已重验。Playwright 筛选针对包含文件名前缀的完整标题，按完整用例名的末尾精确匹配；标准 runner 使用真实 `--list` 分别证明 normalize／full 各只选中目标一项，列表验证不执行业务；平台 CI 通过现有前端准备 action 安装 Console／Manager 的已锁定 npm 依赖，不需要安装浏览器或启动服务。
+`topology_case=line-network-normalize`沿[公共要求](#拓扑持久化公共要求)，只一3857 GPKG执行`load→normalize_line_network(id_field=route_key)→result/members各save`，不seed／执行旧十五源成果或塌缩／容量。未知case在副作用前拒绝，workflow输入贯穿owner／物理夹具／浏览器／报告，不算full重验。Playwright按含文件名前缀的完整标题末尾精确选例；runner用真实`--list`证normalize／full各唯一一项，列表不执行业务。平台沿已有前端action装Console／Manager锁定npm依赖，不需浏览器／服务。
 
-源的五个业务 ID 为显式字符串，与存储 FID 区分；覆盖折线原顶点／连续重复坐标、反向部分重合、十字交会、同源多部件多次经过和不同采样顶点。固定手写预期为九条唯一 LineString、十七条经过明细。唯一边只含几何和 Integer64 edge_id／occurrence_count；明细保留全部业务列及 null、Integer64 grade、Boolean enabled，追加来源／部件／原段／片段序号及 Boolean is_reversed。按精确原坐标、方向、行序与关联逐项核验，不用生产算法生成预期、舍入或添加容差。旧 Native 保存断言必须收紧为原 Integer64 物理类型，不再按输入 dtype 接受浮点。
+五显式字符串业务ID与FID分开；折线原顶点／连续重复坐标、反向部分叠／十字、同源多部件多次经过及不同采样点→手写九唯一LineString／十七经过明细。唯一边仅几何＋Integer64 edge_id/occurrence_count；members保全部业务列／null／Integer64 grade／Boolean enabled及来源／部件／原段／片段号／Boolean is_reversed。精确坐标／方向／序／关系核验；Native保存须原Integer64，不按输入dtype接受float。
 
-双保存均使用既有授权与成果主线，稳定 outputs 和 facts 各两份 write_mode=create；各成果恰有同一普通 User／Tenant 的一次精确自动扫描、正整数 physical==Meta 大小以及源到该成果的一条当前 execution active derive。独立原生 OGR 读原始几何／字段类型／CRS，归档一个源与两成果原字节并核浏览器前后不变。两幅真实预览／OpenLayers 地图核全部九／十七行属性、标准 EWKB、FID 区分、EPSG:3857 原坐标的显示投影、要素数、绿色像素与截图。源 Meta 保持不变，Monitor 与执行 facts 一致；业务来源只由 members 表达，不塞入 Meta 技术血缘。
+两成果各一同主体扫描／derive／create／严格大小，原件一源两成果；真实两地图核全九／十七行属性／EWKB／FID／3857投影／绿色像素，源Meta不变、Monitor一致，members业务来源不塞Meta。失败DAG引用不存在来源列，Develop／Monitor须同`develop.workflow.invalid_params`，定义序第2节点`normalize_line_network`报`operator_input_invalid/input_gdf`，不靠日志自由文本；双save零发布／扫描／facts，源／成功成果不变，不承诺保存事务回滚。
 
-同源另提交一次引用不存在来源列的失败 DAG，Develop 与 Monitor 必须公开一致的 `develop.workflow.invalid_params`，诊断绑定定义顺序第 2 个节点 `normalize_line_network` 的 `operator_input_invalid/input_gdf`，不依赖运行日志的自由文本。两个下游 save 都不发布、无新增扫描或输出 facts，原源／成功成果不变；不承诺保存阶段跨文件事务回滚。浏览器核同 User 的成功／失败执行页与两幅地图，共四截图。阶段证据 result=incomplete 不替代最终 `addp.topology-normalize/v1` 和 `addp.topology-normalize-browser/v1` 的 passed；两者显式绑定 case、Run ID、身份、当前执行、源和两端口预期。原始图／预览／OL 与完整物理证据须保留；领域、NFS export／owned root、Runtime／registry、部署／Infra 全部清理零残留，清理不认证业务 DELETE。新场景沿现有标准 runner、Native、Console 及 workflow 登记检查，不新增 suite、权限或容量运行。
-
+成功／失败页＋两图四截图；最终`addp.topology-normalize/v1`、`addp.topology-normalize-browser/v1`显式case／Run ID／身份／execution／源／双端口预期，保原图／预览／OL／物理证据，incomplete不算passed。清理及接线沿公共要求，无新suite／权限／容量。
 
 ### 重合规整与链路合并独立组合
 
-用户确认新增 `topology_case=line-network-normalize-chains`，沿现有 vector-topology-persistence 标准入口与 Hosted 生命周期，只运行一个 EPSG:3857 GPKG 源的 `load → normalize_line_network → merge_line_chains(id_field=edge_id, match_fields=[])`；三份既有 save 分别保存 chains、chain_edges、edge_sources，全部显式依赖合并成功。原 full 与 line-network-normalize 含义不变，不运行旧整包或容量。非默认 Tenant、普通 User 精确11权限和600秒预算不变，无新算子/API/权限。
+`topology_case=line-network-normalize-chains`沿[公共要求](#拓扑持久化公共要求)，一3857源执行`load→normalize_line_network→merge_line_chains(id_field=edge_id,match_fields=[])`；chains／chain_edges／edge_sources三save均显式依赖合并成功。原full／规整含义不变，无新算子／API／权限，不跑旧整包／容量。
 
-夹具11条源要素，独立手写期望为9条链、15条唯一边明细、22条原始经过明细，覆盖共享边、四种方向、分支、闭环、多部件重复、微小断口及零长度原段。业务来源ID用超过32位且在JSON安全整数范围内的2^40级Int64，NULL/Boolean、原业务chain_id/member_no必须保留；Native既有2^60级回归不外推为浏览器超安全整数认证。按同次edge_id核两级关系及方向异或，计数按唯一边与原经过分别核；原始字段不放到主链，业务来源关系不塞进Meta技术血缘。
+十一要素→手写九链／十五唯一边明细／二十二经过明细，覆盖共享边／四方向／分支／闭环／多部件重复／微断口／零长原段。业务ID为超32位但在JSON安全范围内的2^40 Int64；保NULL／Boolean及原业务chain_id/member_no，Native 2^60不证浏览器超安全整数。按同次edge_id核两级关系／方向异或，唯一边与经过分别计数；原属性不进主链、来源关系不塞Meta，正式关系与字段归[显式几何组合](../../workflow/矢量算子契约.md#重合规整与链路合并的显式几何组合)。
 
-每成果必须有一次同User/Tenant自动扫描、严格正整数physical==Meta大小、源到成果的一条当前execution active derive和一致Monitor；三幅真实LineString地图须全量核9/15/22条标准EWKB、字段/原生类型、FID区别、原坐标/OL投影及像素。归档一源三成果原始字节和三份原图/源Meta/原始预览。成功页、三图及失败页共五截图；浏览器前后源文件、源Meta和成果都不变。
+每成果一同主体扫描／derive／严格大小／Monitor，归档一源三成果原件、三原图／源Meta／真实预览。三幅LineString地图核全9/15/22行EWKB／原生类型／FID／原坐标与OL投影／像素；成功／三图／失败页五截图，源及成果前后不变。失败DAG引用不存在合并来源列，Develop／Monitor同`develop.workflow.invalid_params`，定义序第3节点`merge_line_chains`报`operator_input_invalid/input_gdf`；三save零发布／扫描／facts，不承诺保存跨文件事务回滚。Owner／browser绑定case／同run与身份／execution／三精确期望，阶段incomplete不替成功，清理及runner／Native／Console／workflow／mutation接线沿公共要求。
 
-同源另提交一次引用不存在的合并来源列的失败 DAG。Develop 与 Monitor 必须公开一致的 `develop.workflow.invalid_params`，绑定定义顺序第 3 个节点 `merge_line_chains` 的 `operator_input_invalid/input_gdf`。三个下游 save 无发布、无新增扫描和输出 facts；不承诺保存阶段跨文件事务回滚。最终Owner/browser报告绑定独立case、同run/身份/执行/三份精确期望；incomplete仅阶段证据。领域、NFS/export/owned root、Runtime/registry、部署/Infra完整清理零残留，不认证业务DELETE。新增case同次接入既有runner、Native、Console、workflow登记及mutation回归；代码或本地通过不计真实T4通过。
+**固定通过**：`afc6a18aa01338850f690083bc4ba8834ae0d1f6`，[2026-10-27 Hosted40501760127／Job122180927931](https://github.com/pampa0629/addp/actions/runs/40501760127/job/122180927931)，User33／Tenant2／11权限，11源要素→9／15／22、三成果各98304字节等于Meta，三扫描／derive及Monitor一致。独立OGR以原生坐标／类型／精确分数核来源／片段／四方向，EWKB／实际OL／三图像素＋五截图已验；缺列负例零发布／扫描／facts、源／成果保持，业务31562ms、全部退出清理零残留。原扫描库存／逐页身份有同轮断言但未单独归档原库存／AuthContext响应，不认证业务DELETE、亚像素肉眼可见或超JSON安全整数。
 
-2026-10-27，提交 `afc6a18aa01338850f690083bc4ba8834ae0d1f6` 的 [独立组合 Hosted T4 40501760127](https://github.com/pampa0629/addp/actions/runs/40501760127/job/122180927931) 已真实通过：User33／Tenant2／精确11权限，11源要素得到9链／15唯一边／22原始经过；三份98304字节成果的物理大小与Meta一致，三次公开同主体自动扫描、三条当前execution active derive及Monitor一致。归档一源三成果原始字节，独立OGR按原生坐标／类型与精确分数重建来源、片段及四种方向组合；原始EWKB、实际OL数组、三图像素和成功／失败页五截图均核对，合并缺失字段负例无发布／扫描／facts，源和成果前后不变。业务门禁31562ms，NFS/export/owned root、Runtime/registry、部署及Infra清理零残留；不认证业务DELETE，扫描库存和逐页身份为同轮实际断言，原始库存/AuthContext响应未单独归档，不宣称亚像素断口肉眼可见或超JSON安全整数保真。精确同提交 [Console CI](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179912108) 195单测／233浏览器／build通过，[GeoPython CI](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179912720) 7622项／24条警告通过；[平台一致性](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179911829) 因既有Catalog登记函数在四个合成仓库读取缺失Makefile失败，已交公共owner，不能记为整个Platform通过。本轮未重复旧业务T4或容量，组合容量仍未验。
+同SHA [Console](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179912108)195单测／233浏览器／build、[GeoPython](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179912720)7622项／24警告通过；[Platform](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179911829)因Catalog登记在四合成仓库读缺失Makefile失败，原已交公共owner，不算整轮Platform通过。本轮未重验旧业务／容量，组合容量仍未验；本地／代码就绪不算新T4。
 
 ## manager-hybrid-search
 
