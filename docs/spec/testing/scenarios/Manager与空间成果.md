@@ -990,16 +990,35 @@ Native与真实跨模块结果分别记账；不计Manager绘制、NFS客户端�
 
 ## raster-focal-variety-persistence
 
-独立手工 `raster-focal-variety-persistence`；`make test-raster-focal-variety-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。 全部44次执行／查询与首次源及预期准备计入原业务预算。
+独立手工 `raster-focal-variety-persistence`；准备入口 `make test-raster-focal-variety-online-runner`。身份、准备、扫描、大小、源与既有成果不变及残留清理按[共同要求](#邻域与-idw-专项共同要求)。全部44次执行／查询与首次源、预期准备计入原业务预算。
 
-固定16条成功COG链：直接variety的3／5窗口、重分类接variety、零分类、Int64／UInt64安全整数分类、缺定位519×1单行、全无效，以及同源sum／mean／min／max／stddev／mode／median／percentile50原八方法对照。主样本519×515旋转网格、显式第二波段，覆盖跨块、边缘截断、负分类、合法零、孤立有效中心、NoData／mask／透明／非有限覆盖和部分透明，未选第一波段故意含小数；源scale=0、offset=0.5不得隐式应用。直接种类数严格为有效不同分类的正整数，零分类计1；无效中心不填补，50百分位与中位数实际成果相等。Int64／UInt64原生NoData先于Float64转换排除；安全整数邻接极限及复数alpha混合类型继续单列Native，不以Hosted全复数前置失败代替。
+### 种类数成功矩阵与有效性
 
-14类非法输入各中英文提交，共28次准确失败：分类小数、正／负超安全整数、波段0／越界／布尔／字符串、alpha、复数分类、窗口非法值／布尔／字符串、非法method及不适用percentiles参数。逐项定位当前focal任务及精确原因，不接受load／保存／扫描提前失败充数；保留现有诊断的实际语言契约，反向查询不改提交语言或已保存错误。
+固定16条成功COG链：直接variety的3／5窗口、重分类接variety、零分类、Int64／UInt64安全整数分类、缺定位519×1单行、全无效，以及同源sum／mean／min／max／stddev／mode／median／percentile50八方法对照。
 
-独立标量set／Counter／math／statistics／Fraction oracle构建16份不可变预期，不调用产品统计／排序或NumPy百分位函数；预期不由实际成果生成。每次成功后重读所有已有成果，每次失败后重读全部16份，共584次完整像元／mask核验，另加首次完整源基线，合计45轮物理核对。variety及除mean／stddev外对照精确相等；mean／stddev保留rtol=1e-12、atol=1e-12。完整核COG布局、按实际尺寸的nearest概览、Float64／NaN、原网格／CRS、无伪造定位、编码属性、合法零和源全波段／mask。只扫描精确源；内部raster_save／derive、公开operations:null、Meta关系与Monitor分别核验，扫描、大小及源旧不变沿共同要求。
+主样本为519×515旋转网格，显式选第二波段；覆盖跨块、边缘截断、负分类、合法零、孤立有效中心、NoData／mask／透明／非有限覆盖和部分透明。未选第一波段故意含小数；源scale=0、offset=0.5不得隐式应用。
 
-归档10份源TIFF、16份成果COG和16份冻结独立预期NPY原字节及各自大小／SHA256清单，保留当前执行受控只读封闭血缘回执；禁止从结果缓存替代物理重读。预期缓存绑定、归档异常拒绝和本轮残留清理按共同要求。标准准备入口`make test-raster-focal-variety-online-runner`；真实GDAL、准确失败、像元／概览／缓存／原COG和预期归档篡改拒绝接既有`make test-geopython-workflow`。Online／changed gate、独立手工workflow、受控只读observer与CI静态登记同批覆盖。
+种类数是有效不同分类的正整数，零分类计1；无效中心不填补，50百分位与中位数实际成果相等。Int64／UInt64原生NoData先于Float64转换排除。安全整数邻接极限及复数alpha混合类型单列Native，不以Hosted全复数前置失败代替。
 
+### 28次准确失败与诊断归属
+
+14类非法输入各以中英文提交，共28次：分类小数、正／负超安全整数，波段0／越界／布尔／字符串，alpha、复数分类，窗口非法值／布尔／字符串，非法method及不适用percentiles参数。
+
+逐项定位当前focal任务及精确原因，不接受load／保存／扫描提前失败充数；保留诊断的实际语言契约，反向查询不改提交语言或已保存错误。
+
+### 独立预期与584次全检
+
+标量set／Counter／math／statistics／Fraction oracle构建16份不可变预期，不调用产品统计／排序或NumPy百分位函数，预期不由实际成果生成。variety及除mean／stddev外对照精确相等；mean／stddev保留rtol=1e-12、atol=1e-12。
+
+每次成功后重读所有已有成果，16轮累计136次；每次失败后重读全部16份，28轮累计448次，合计584次完整像元／mask核验；另加首次完整源基线，共45轮物理核对。核验完整COG布局、按实际尺寸的nearest概览、Float64／NaN、原网格／CRS、无伪造定位、编码属性、合法零和源全波段／mask，禁止用结果缓存代替物理重读。
+
+只扫描精确源；内部raster_save／derive、公开operations:null、Meta关系与Monitor分别核验，不能由公开投影推断内部血缘缺失。
+
+### 冻结归档与验收边界
+
+归档10份源TIFF、16份成果COG和16份冻结独立预期NPY原字节及各自大小／SHA256清单，保留当前执行受控只读封闭血缘回执；预期缓存绑定、归档异常拒绝沿共同要求。
+
+真实GDAL、准确失败、像元／概览／缓存／原COG和预期归档篡改拒绝接 `make test-geopython-workflow`；Online／changed gate、独立手工workflow、受控只读observer与CI静态登记沿准备入口核对。入口登记和Native覆盖不等于真实Hosted通过，实际验收只按固定版本及运行范围认定。
 
 ## vector-zonal-statistics-persistence
 
