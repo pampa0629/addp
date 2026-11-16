@@ -40,6 +40,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 for arg in "$@"; do
+    if [ "$arg" = "-rustfs" ]; then
+        [ "$#" -eq 1 ] || { echo "-rustfs 必须独立使用" >&2; exit 1; }
+        exec bash "$SCRIPT_DIR/rustfs.sh" start
+    fi
     if [ "$arg" = "-ftp" ]; then
         [ "$#" -eq 1 ] || { echo "-ftp 必须独立使用" >&2; exit 1; }
         exec bash "$SCRIPT_DIR/ftp.sh" start
@@ -176,6 +180,7 @@ for arg in "$@"; do
             ENABLE_NFS=true
             ;;
         -h|--help)
+            echo "  -rustfs                                 # 独立 RustFS profile，不属于 -all"
             echo "  -ftp                                    # 独立 FTP/显式FTPS profile，不属于 -all"
             echo "  -starrocks                               # 独立 StarRocks profile，不属于 -all"
             echo "  -gaussdb                                  # 独立 GaussDB profile，不属于 -all"

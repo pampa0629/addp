@@ -25,7 +25,7 @@
         />
       </div>
       <div v-else-if="imageSrc" class="image-wrapper">
-        <img :src="imageSrc" :alt="fileName" />
+        <img :src="imageSrc" :alt="fileName" @error="imageError = true" />
       </div>
       <div v-else class="placeholder">
         <p class="message">{{ contentMessage }}</p>
@@ -76,14 +76,52 @@ const isTiffImage = computed(() => {
   const format = metadata.value.format || objectData.value.attributes?.item?.format
   return format === 'tiff' || contentType.value === 'image/tiff' || /\.tiff?$/i.test(fileName.value)
 })
-const imageSrc = computed(() => content.value.encoding === 'base64' && content.value.data
-  ? `data:${contentType.value};base64,${content.value.data}` : imageURL.value)
-const contentMessage = computed(() => content.value.text || t('common.imagePreview.unavailable'))
+const imageObjectURL = ref('')
+const imageError = ref(false)
+const imageLoading = ref(false)
+const authenticatedImageURL = computed(() => {
+  try {
+    const url = new URL(imageURL.value, window.location.href)
+    return url.origin === window.location.origin && url.pathname === '/api/v1/manager/storage-stream' ? url.href : ''
+  } catch { return '' }
+})
+const imageSrc = computed(() => imageError.value ? '' : content.value.encoding === 'base64' && content.value.data
+  ? `data:${contentType.value};base64,${content.value.data}` : authenticatedImageURL.value ? imageObjectURL.value : imageURL.value)
+const contentMessage = computed(() => imageLoading.value ? t('common.imagePreview.loading')
+  : imageError.value ? t('common.imagePreview.decodeFailed') : content.value.text || t('common.imagePreview.unavailable'))
 const formattedSize = computed(() => objectData.value.size_bytes ? formatBytes(objectData.value.size_bytes) : '')
 const formattedLimit = computed(() => metadata.value.limit_bytes ? formatBytes(metadata.value.limit_bytes) : '')
 const showMetadata = computed(() => Boolean(formattedSize.value || formattedLimit.value || contentType.value))
 let controller
 let revision = 0
+
+const renderImage = async () => {
+  const current = ++revision
+  controller?.abort()
+  imageLoading.value = false
+  if (!authenticatedImageURL.value || content.value.encoding === 'base64') return
+  controller = new AbortController()
+  const signal = controller.signal
+  imageLoading.value = true
+  try {
+    const token = getAccessToken()
+    const response = await fetch(authenticatedImageURL.value, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include', redirect: 'error', signal
+    })
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error('imageReadFailed')
+    }
+    const blob = await response.blob()
+    if (current !== revision || signal.aborted) return
+    imageObjectURL.value = URL.createObjectURL(blob)
+  } catch {
+    if (current === revision && !signal.aborted) imageError.value = true
+  } finally {
+    if (current === revision) imageLoading.value = false
+  }
+}
 
 const renderTiff = async () => {
   const current = ++revision
@@ -160,10 +198,18 @@ const renderTiff = async () => {
 
 watch(() => [props.data, imageURL.value, pageSummary.value], () => {
   pageIndex.value = 0
-  renderTiff()
+  if (imageObjectURL.value) URL.revokeObjectURL(imageObjectURL.value)
+  imageObjectURL.value = ''
+  imageError.value = false
+  if (isTiffImage.value) renderTiff()
+  else renderImage()
 }, { immediate: true })
 watch(pageIndex, renderTiff)
-onBeforeUnmount(() => { revision++; controller?.abort() })
+onBeforeUnmount(() => {
+  revision++
+  controller?.abort()
+  if (imageObjectURL.value) URL.revokeObjectURL(imageObjectURL.value)
+})
 </script>
 
 <style scoped>

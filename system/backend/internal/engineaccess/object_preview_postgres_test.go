@@ -28,7 +28,7 @@ func exerciseObjectPreviewVisibility(t *testing.T, db *gorm.DB, service *Service
 	command := CreateIndependentGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: uuid.New(), CatalogPath: target, ItemFingerprint: facts.ItemFingerprint, ExpectedBoundaryHash: *facts.BoundaryHash, RecipientType: "user", RecipientID: reader.PrincipalID, Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Object metadata visibility fixture"}
 	grant, err := service.CreateIndependentGrant(ctx, command)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("issue metadata Grant: %v", err)
 	}
 	check(true, false)
 	read := command
@@ -36,7 +36,7 @@ func exerciseObjectPreviewVisibility(t *testing.T, db *gorm.DB, service *Service
 	read.Action = shared.SourceAccessRead
 	content, err := service.CreateIndependentGrant(ctx, read)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("issue read Grant: %v", err)
 	}
 	check(true, true)
 	if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: content.RequestID, Reason: "Withdraw object content"}); err != nil {

@@ -27,10 +27,18 @@ type fileStorageReadChecker interface {
 	CheckManagerFileRead(context.Context, string, commonClient.ManagerFileExpectedSource) error
 }
 
+type objectStorageReadChecker interface {
+	ObserveCurrentSourceRead(context.Context, string, []plugin.EngineCatalogPath) error
+}
+
+func (s *MetadataService) SetObjectSourceReadChecker(checker objectStorageReadChecker) {
+	s.objectSourceChecker = checker
+}
+
 // This credential requirement is also exposed by resource-actions so the page
 // sends the current User through the same authenticated source read path.
 func storageFileSourceRequiresUser(target *StorageDataItem) bool {
-	return target.Descriptor.DataType == datatype.Model3D || target.Descriptor.Format == "envi"
+	return target.EngineType == "rustfs" || target.Descriptor.DataType == datatype.Model3D || target.Descriptor.Format == "envi"
 }
 
 // NFS raw access is limited to formats with a source authorization path.
@@ -48,13 +56,14 @@ func (s *MetadataService) SetFileSourceReadChecker(checker fileStorageReadChecke
 // storageRead is confined to one synchronous request. It never persists the
 // User credential or upgrades a resource ticket to a User source permission.
 type storageRead struct {
-	service    *MetadataService
-	target     *StorageDataItem
-	tenantID   *uint
-	credential string
-	expected   *commonClient.ManagerFileExpectedSource
-	wholeRoot  *plugin.EngineCatalogPath
-	headerSHA  string
+	service      *MetadataService
+	target       *StorageDataItem
+	tenantID     *uint
+	credential   string
+	expected     *commonClient.ManagerFileExpectedSource
+	wholeRoot    *plugin.EngineCatalogPath
+	headerSHA    string
+	objectTarget *plugin.EngineCatalogPath
 }
 
 func (s *MetadataService) prepareStorageRead(ctx context.Context, target *StorageDataItem, tenantID *uint, credential string, human bool, plan *models.DownloadPlan) (*storageRead, error) {
@@ -66,6 +75,25 @@ func (s *MetadataService) prepareStorageRead(ctx context.Context, target *Storag
 		return nil, commonClient.ErrManagerPreviewReadDenied
 	}
 	read := &storageRead{service: s, target: target, tenantID: tenantID}
+	if target.EngineType == "rustfs" {
+		// Synchronous preview reads exactly the scanned primary object. This
+		// admission does not enable composition assets or background tasks.
+		if !human || !strings.HasPrefix(credential, "addp_at_") || strings.ContainsAny(credential, " \t\r\n") {
+			return nil, commonClient.ErrManagerPreviewCredentialRejected
+		}
+		if s.objectSourceChecker == nil {
+			return nil, commonClient.ErrManagerPreviewReadUnavailable
+		}
+		if target.item == nil || target.StorageRef != target.item.FullName || string(target.Descriptor.Layout) != "single" {
+			return nil, commonClient.ErrManagerPreviewReadDenied
+		}
+		primary, err := plugin.ObjectItemPathFromRefPath(target.EngineID, target.item.FullName)
+		if err != nil {
+			return nil, commonClient.ErrManagerPreviewReadDenied
+		}
+		read.objectTarget, read.credential = &primary, credential
+		return read, nil
+	}
 	if target.Descriptor.Format == "filegdb" {
 		return s.prepareWholeStorageRead(read, credential, human)
 	}
@@ -146,6 +174,12 @@ func (r *storageRead) resource(ctx context.Context) (*models.Engine, error) {
 }
 
 func (r *storageRead) check(ctx context.Context, storageRef string) error {
+	if r.objectTarget != nil {
+		if storageRef != r.objectTarget.StringPath() {
+			return commonClient.ErrManagerPreviewReadDenied
+		}
+		return r.service.objectSourceChecker.ObserveCurrentSourceRead(ctx, r.credential, []plugin.EngineCatalogPath{*r.objectTarget})
+	}
 	if r.wholeRoot != nil {
 		return r.checkWhole(ctx, storageRef)
 	}

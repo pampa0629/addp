@@ -12,6 +12,8 @@ Business 的独立采集选择由同一 `business/.env` 中 `ADDP_POSTGRES_METRI
 
 ## Business 数据引擎部署参数
 
+RustFS 使用独立 `rustfs` profile，通过 `business/scripts/start.sh -rustfs` 显式启用，不进入默认启动和 `-all`。Compose 固定官方 1.0.5 多架构镜像及 OCI 摘要；单节点单磁盘数据独占 `rustfs_data` 卷，停止和重建保留卷。部署配置归 `business/.env`：`RUSTFS_ACCESS_KEY` 与 `RUSTFS_SECRET_KEY` 必填，Secret 至少 12 字符，拒绝官方公开默认凭据；`RUSTFS_API_PORT=9004`、`RUSTFS_CONSOLE_PORT=9005` 仅绑定回环，显式冲突失败。沿用官方非 root 启动入口，API `/health` 与 Console `/rustfs/console/health` 均通过才就绪。Business 不调用 System API；部署不自动获得平台引擎插件或数据权限，接入及测试边界见 [Business README](../../../business/README.md#rustfs-business-部署)。
+
 Business MySQL 作为本地 CDC 测试源时使用独立配置文件 `business/.env`：
 
 本地 `business/scripts/start.sh` 将 `POSTGRES_PORT`、`MYSQL_PORT`、`MINIO_API_PORT`、`MINIO_CONSOLE_PORT` 视为首次启动首选值；首次冲突自动选择空闲宿主机端口，成功后固定在 `business/.business-state/ports.env`。已登记的 Engine Instance 不随重启改写物理端点。宿主机开发进程登记实际发布端口；同一 Compose 网络内的进程登记 `business-*` 服务名和固定容器端口。

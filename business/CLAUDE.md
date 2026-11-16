@@ -28,6 +28,7 @@ PostgreSQL 采集账号和固定指标来源由 `scripts/infra/postgres-observat
 - Oracle Free 23ai：普通表、Schema、Oracle Spatial、只读快照、普通表 CDC 与 Oracle Spatial CDC 测试源；ArcGIS SDE 作为后续独立能力路线预留。
 - Redpanda：独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka topic。
 - MinIO：业务对象存储。
+- RustFS 1.0.5：固定官方多架构镜像及 OCI 摘要，独立 `-rustfs` profile，不进入默认启动和 `-all`；API／Console 仅绑定回环 9004／9005，独立持久卷，沿用官方非 root 启动入口。Business 只管理部署，不登记 System Engine。配置与真实存储门禁见 README 的 RustFS 节。
 - HDFS 3.5.0：独立 NameNode/DataNode，Simple 开发实验模式，`/addp/samples` 下 CSV、JSON、Parquet 各 20 条订单，金额合计 2100。通过 `bash scripts/start.sh -hdfs` 启动和幂等初始化；只创建样例，不登记 System 引擎。本机 Docker Desktop 实例的四个端口均绑定 `127.0.0.1`，DataNode 广播稳定主机名 `host.docker.internal`；宿主机须配置对应回环映射，启动前验证。WebHDFS 使用回环端点，System RPC 登记 `hdfs://host.docker.internal:<实际端口>`，换网无需修改连接。不再检测局域网 IP 或使用 `HDFS_SHARED_HOST`。端口为显式部署配置，冲突直接失败，不自动漂移。
 - ClickHouse、MongoDB、Doris：可选业务数据源和分析组件。
 - Spark：Standalone 计算集群，只启动 Master/Worker；不启动 Thrift，不创建固定示例视图，不承担 ADDP 存储职责。标准启动核对 Master 原生状态与在线 Worker，超时失败。

@@ -117,3 +117,60 @@ func TestIndependentWholeFileGDBTargetRequiresExactNFSDirectory(t *testing.T) {
 		})
 	}
 }
+
+func TestRustFSIndependentReadTargetRequiresExactObjectAndCurrentEngine(t *testing.T) {
+	for _, name := range []string{"订单.csv", "城市网点.geojson", "合成高程.tif"} {
+		for _, scenario := range []struct {
+			name   string
+			change func(*models.Engine, *plugin.EngineCatalogPath, *plugin.EngineCatalogEntry)
+			want   error
+		}{
+			{name: "exact object"},
+			{name: "wrong tenant", change: func(e *models.Engine, _ *plugin.EngineCatalogPath, _ *plugin.EngineCatalogEntry) {
+				v := uint(8)
+				e.TenantID = &v
+			}, want: commonapi.ErrForbidden},
+			{name: "disabled engine", change: func(e *models.Engine, _ *plugin.EngineCatalogPath, _ *plugin.EngineCatalogEntry) {
+				e.LifecycleState = "disabled"
+			}, want: commonapi.ErrForbidden},
+			{name: "file model rejected", change: func(_ *models.Engine, p *plugin.EngineCatalogPath, _ *plugin.EngineCatalogEntry) {
+				*p = plugin.FileItemPath(39, "addp-demo/samples/source.csv")
+			}, want: commonapi.ErrForbidden},
+			{name: "different bucket", change: func(_ *models.Engine, _ *plugin.EngineCatalogPath, e *plugin.EngineCatalogEntry) {
+				e.Path = plugin.ObjectItemPath(39, "other", "samples/source.csv")
+			}, want: commonapi.ErrBadRequest},
+			{name: "different object", change: func(_ *models.Engine, _ *plugin.EngineCatalogPath, e *plugin.EngineCatalogEntry) {
+				e.Path = plugin.ObjectItemPath(39, "addp-demo", "samples/other.csv")
+			}, want: commonapi.ErrBadRequest},
+			{name: "branch rejected", change: func(_ *models.Engine, _ *plugin.EngineCatalogPath, e *plugin.EngineCatalogEntry) { e.Role = "branch" }, want: commonapi.ErrBadRequest},
+		} {
+			t.Run(name+"/"+scenario.name, func(t *testing.T) {
+				tenant := uint(7)
+				engine := &models.Engine{ID: 39, TenantID: &tenant, EngineType: "rustfs", LifecycleState: models.EngineLifecycleActive, Version: 23}
+				target := plugin.ObjectItemPath(39, "addp-demo", "samples/"+name)
+				entry := &plugin.EngineCatalogEntry{Path: target, Term: "object", Kind: "object", Role: "leaf"}
+				if scenario.change != nil {
+					scenario.change(engine, &target, entry)
+				}
+				calls := 0
+				verifier := &IndependentGrantTargetVerifier{engines: independentEngineLookup{engine: engine}, resolve: func(_ context.Context, e *models.Engine, p plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+					calls++
+					if e != engine || p.StringPath() != target.StringPath() {
+						t.Fatal("wrong exact lookup")
+					}
+					return entry, nil
+				}}
+				version, err := verifier.VerifyIndependentReadTarget(t.Context(), 7, target)
+				if !errors.Is(err, scenario.want) {
+					t.Fatalf("version=%d err=%v want=%v", version, err, scenario.want)
+				}
+				if scenario.want == nil && (version != 23 || calls != 1) {
+					t.Fatal("exact live target was not verified", version, calls)
+				}
+				if errors.Is(err, commonapi.ErrForbidden) && calls != 0 {
+					t.Fatal("rejected identity queried source")
+				}
+			})
+		}
+	}
+}

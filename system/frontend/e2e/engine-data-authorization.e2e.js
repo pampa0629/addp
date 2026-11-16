@@ -59,16 +59,17 @@ test('all records state filter applies before pagination and survives current vi
 })
 async function fixture(page, { allowed = permissions, conflict = false, denied = false, identityRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', ftp = '', sourceType = 'ftp', factsTarget = null, metadataOnly = false, wholeMetadata = false,
   collection = false, factsHash = 'b'.repeat(64), grantBasisConflict = false } = {}) {
-  const modelRoot = sourceType === 'minio' ? minioRootPath : ftpRootPath
-  const modelBranch = sourceType === 'minio' ? minioBucketPath : ftpDirectoryPath
-  const modelPath = wholeMetadata ? sourceType === 'minio' ? name => ({...minioObjectPath(name),segments:[...minioBucketPath.segments,{term:'prefix',kind:'prefix',name}]}) : gdbPath : ftp === 'gdb' ? gdbPath : sourceType === 'minio' ? minioObjectPath : ftpFilePath
-  const modelKind = sourceType === 'minio' ? 'object' : 'file'
+  const objectSource = ['minio','rustfs'].includes(sourceType)
+  const modelRoot = objectSource ? minioRootPath : ftpRootPath
+  const modelBranch = objectSource ? minioBucketPath : ftpDirectoryPath
+  const modelPath = wholeMetadata ? objectSource ? name => ({...minioObjectPath(name),segments:[...minioBucketPath.segments,{term:'prefix',kind:'prefix',name}]}) : gdbPath : ftp === 'gdb' ? gdbPath : objectSource ? minioObjectPath : ftpFilePath
+  const modelKind = objectSource ? 'object' : 'file'
   const writes = [], reads = []
   const fingerprintOf = target => createHash('sha256').update(`2:${target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.')}`).digest('hex')
   const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : collection ? 'collection' : 'table' })
   const nativeItems = collection ? [collectionPath] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
   const items = ftp ? [modelPath(`model.${ftp}`)] : nativeItems
-  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: sourceType === 'minio' ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: sourceType === 'minio' ? 'bucket' : 'dir' }, ...(ftp === 'gdb' || wholeMetadata ? [{ id: '3', name: `model.${ftp}`, node_type: sourceType === 'minio' ? 'prefix' : 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: collection ? 'Outdoor' : 'outdoor', node_type: collection ? 'database' : 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
+  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: objectSource ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: objectSource ? 'bucket' : 'dir' }, ...(ftp === 'gdb' || wholeMetadata ? [{ id: '3', name: `model.${ftp}`, node_type: objectSource ? 'prefix' : 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: collection ? 'Outdoor' : 'outdoor', node_type: collection ? 'database' : 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
   let grants = [...history], failedGrant = false
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -103,10 +104,10 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
         if (fingerprint !== candidate) return reply({ error: 'Not a model DataItem', error_code: 'authorization_target_not_found' }, 404)
         return reply({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: fingerprint, item_type: modelKind,
           full_name: `Models/model.${ftp}`, basis_state: factsState, boundary_hash: factsState === 'complete' ? 'c'.repeat(64) : null,
-          boundary: factsState === 'complete' ? metadataOnly ? { layout: wholeMetadata ? 'whole' : 'single', metadata_target: {target:primary,layout:wholeMetadata ? 'whole' : 'single',data_type:'container',format:ftp,composition_digest:'a'.repeat(64)} } : ftp === 'gdb' ? { layout: 'whole', scope: { format: 'filegdb', rule_version: 1, root: primary } } : { layout: 'single', file_composition: { format: ftp, refs: [
+          boundary: factsState === 'complete' ? metadataOnly ? { layout: wholeMetadata ? 'whole' : 'single', metadata_target: {target:primary,layout:wholeMetadata ? 'whole' : 'single',data_type:'container',format:ftp,composition_digest:'a'.repeat(64)} } : sourceType === 'rustfs' && ftp === 'csv' ? {layout:'single',native_target:primary} : ftp === 'gdb' ? { layout: 'whole', scope: { format: 'filegdb', rule_version: 1, root: primary } } : { layout: 'single', file_composition: { format: ftp, refs: [
             ...(ftp === 'obj' ? [{ target: modelPath('model.mtl'), role: 'material_library', required: true, primary: false }] : []),
             ...(['3ds', 'dae', 'obj'].includes(ftp) ? [{ target: modelPath('TEST.PNG'), role: 'texture', required: true, primary: false }] : []),
-            { target: primary, role: 'model', required: true, primary: true }
+            { target: primary, role: ftp === 'geojson' ? 'data' : 'model', required: true, primary: true }
           ] } } : null })
       }
       const candidates = collection ? nativeItems : [tablePath, { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }]
@@ -1627,5 +1628,25 @@ test('MinIO prefix and exact item can share a batch without upgrading metadata-o
  await page.getByTestId('source-grant-action').click()
  await expect(page.getByRole('option',{name:'读取数据（含元数据）',exact:true})).toHaveClass(/is-disabled/)
  await page.getByRole('option',{name:'仅查看元数据',exact:true}).click()
+ expect(writes).toEqual([])
+})
+
+for (const format of ['csv','geojson']) test(`RustFS ${format} allows an explicit exact object read without a bucket scope`,async({page})=>{
+ const {writes}=await fixture(page,{allowed:grantPermissions,ftp:format,sourceType:'rustfs'})
+ await selectFTPModel(page,format)
+ await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+ await grantDraft(page)
+ await confirmGrant(page)
+ await expect(page.getByTestId('engine-source-grants')).toContainText('访问授权已签发')
+ expect(writes).toHaveLength(1)
+ expect(writes[0].body).toMatchObject({catalog_path:minioObjectPath(`model.${format}`),action:'read',expected_boundary_hash:'c'.repeat(64),recipient_id:'33'})
+ expect(writes[0].body.node_recursive).toBeUndefined()
+ expect(writes[0].body.file_composition).toBeUndefined()
+})
+test('RustFS metadata-only object cannot elevate to content read',async({page})=>{
+ const {writes}=await fixture(page,{allowed:grantPermissions,ftp:'csv',sourceType:'rustfs',metadataOnly:true})
+ await selectFTPModel(page,'csv')
+ await page.getByTestId('source-grant-action').click()
+ await expect(page.getByRole('option',{name:'读取数据（含元数据）',exact:true})).toHaveAttribute('aria-disabled','true')
  expect(writes).toEqual([])
 })

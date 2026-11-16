@@ -394,7 +394,7 @@ Notebook 消费这些契约时还须遵守：
 | 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、KingbaseES、GaussDB（只读首版）、TiDB、Doris、ClickHouse |
 | 动态 schema 记录集合型 | MongoDB |
 | 图数据库 | Neo4j、FalkorDB |
-| 对象存储 | MinIO、S3 |
+| 对象存储 | MinIO、S3、RustFS |
 | 文件系统 | NFS |
 | 消息流 | Kafka（common 插件与 Transfer keyed JSON -> PostgreSQL/MySQL continuous v1 已实现，Console Wizard 已开放该单一路线） |
 | 工作流运行时 | GeoPython Workflow / Spark Workflow、手动注册的 Math Workflow 参考实现、Model3D Workflow、PointCloud Workflow、SuperMap Workflow，及用户自研扩展工作流运行时 |

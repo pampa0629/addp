@@ -20,6 +20,13 @@ func checkObjectPreviewVisibility(c *gin.Context, req *preview.PreviewResolverRe
 		return false, commonClient.ErrMetadataQueryUnavailable
 	}
 	target := plugin.FileItemPath(req.Engine.ID, req.ItemFullName)
+	if req.ItemType == "object" {
+		var err error
+		target, err = plugin.ObjectItemPathFromRefPath(req.Engine.ID, req.ItemFullName)
+		if err != nil {
+			return false, err
+		}
+	}
 	request := authorization.SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{target}}
 	result, err := checker.CheckManagerObjectPreview(c.Request.Context(), bearerToken(c), request.Targets)
 	if err != nil {

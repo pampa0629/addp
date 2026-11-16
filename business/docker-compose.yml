@@ -289,6 +289,34 @@ services:
       - business-network
     restart: unless-stopped
 
+  # RustFS：独立业务对象存储，本地单节点单磁盘实验。
+  rustfs:
+    image: rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74
+    container_name: business-rustfs
+    profiles: [rustfs]
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOGGER_LEVEL: warn
+    ports:
+      - "127.0.0.1:${RUSTFS_API_PORT:-9004}:9000"
+      - "127.0.0.1:${RUSTFS_CONSOLE_PORT:-9005}:9001"
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 3 http://127.0.0.1:9000/health >/dev/null && curl -fsS --max-time 3 http://127.0.0.1:9001/rustfs/console/health >/dev/null"]
+      interval: 5s
+      timeout: 8s
+      retries: 24
+      start_period: 10s
+    networks: [business-network]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
   # Apache Doris FE (Frontend)
   doris-fe:
     image: apache/doris:doris-all-in-one-2.1.0
@@ -827,6 +855,7 @@ volumes:
   oracle_data:
   supermap_postgresql_data:
   minio_data:
+  rustfs_data:
   mysql_data:
     driver: local
   oceanbase_data:

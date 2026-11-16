@@ -1,5 +1,23 @@
 # Business Database
 
+## RustFS Business 部署
+
+RustFS 使用官方 `rustfs/rustfs:1.0.5` 多架构镜像及固定 OCI 摘要，作为独立 `rustfs` profile，不进入默认启动和 `-all`。单节点单磁盘用于本地业务对象存储实验；数据保存在独立 `rustfs_data` 卷，停止和重建保留数据。容器沿用官方非 root 用户及启动入口，不替换现有 Business MinIO 或 Infra 对象存储。
+
+在 `business/.env` 填写独立的 `RUSTFS_ACCESS_KEY` 和 `RUSTFS_SECRET_KEY`（至少 12 字符），禁止使用官方公开默认凭据。`RUSTFS_API_PORT=9004` 与 `RUSTFS_CONSOLE_PORT=9005` 只绑定 `127.0.0.1`，可显式修改；端口冲突直接失败，不漂移。首次使用可以从 `.env.example` 复制配置，已有文件只补 RustFS 参数，不覆盖其他引擎配置。
+
+```bash
+bash business/scripts/start.sh -rustfs
+bash business/scripts/stop.sh -rustfs
+bash business/scripts/restart.sh -rustfs
+```
+
+默认 S3 API 为 `http://127.0.0.1:9004`，Console 为 `http://127.0.0.1:9005`；同一 Business 网络内使用 `business-rustfs:9000`。启动同时等待 API 与 Console 原生健康检查。Business 不调用 System API、不登记 Engine；System 使用独立 `engine_type=rustfs` 登记，填写实际 endpoint、Access Key／Secret Key 和 `use_ssl=false`；普通用户仍须获得所需平台功能权限及数据授权。Meta 和 Manager 通过通用对象 Provider 扫描和预览，不调用 RustFS 管理接口。普通身份的真实服务页面 T4 与模块 T2 分别认定。
+
+配置和启停反例由 `make test-business-config` 验证；`make test-common-rustfs` 在独占临时 Compose project、随机回环端口和数据卷中验证认证、对象读写及容器重建后的持久化，退出核对零残留。Platform CI 覆盖配置检查，T2 workflow 覆盖真实对象存储验证。
+
+官方来源：[1.0.5 发布](https://github.com/rustfs/rustfs/releases/tag/1.0.5)、[Docker 部署](https://docs.rustfs.com/en/installation/container/docker)。镜像包含 Linux ARM64／amd64，不代表两种架构均已完成平台验收。
+
 ## 部署来源清单
 
 Infra 生命周期管理独立发现进程，Business 和开发启动幂等确保其存在；进程每轮完成后间隔 30 秒刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。

@@ -209,8 +209,8 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			err = plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid keyspace content selection"))
 		}
 	}
-	// Internal Meta access is not user-visible authorization. Only the admitted
-	// NFS TIFF object path is changed in this batch.
+	// Internal Meta access is not user-visible authorization. Object content
+	// uses the current caller's exact DataItem visibility before and after I/O.
 	objectVisibility := err == nil && req.RequiresObjectPreviewVisibility()
 	if objectVisibility {
 		readable, checkErr := checkObjectPreviewVisibility(c, req, h.objectPreviewChecker)

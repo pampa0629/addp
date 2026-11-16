@@ -45,6 +45,44 @@ func TestFileTablePreviewProviderResolveFormatUsesMetaFormat(t *testing.T) {
 	}
 }
 
+func TestJSONLinesFilePreviewUsesStructuredTableReader(t *testing.T) {
+	var content strings.Builder
+	for i := 1; i <= 20; i++ {
+		fmt.Fprintf(&content, "{\"order_id\":\"DEMO%04d\",\"amount\":\"299.00\",\"paid\":true,\"note\":null}\n", i)
+	}
+	for _, name := range []string{"订单.ndjson", "orders.jsonl"} {
+		t.Run(name, func(t *testing.T) {
+			kind := format.DetectFormat(name, nil)
+			attrs := map[string]interface{}{"item": map[string]interface{}{"format": string(kind), "layout": "single", "data_type": "table"}}
+			if !isFileTableFormat(kind, attrs) {
+				t.Fatalf("format %q does not route to file table preview", kind)
+			}
+			infoProvider, err := format.GetTableInfoProvider(kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sampleReader, err := format.GetTableSampleReader(kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := &FileTablePreviewProvider{}
+			preview, err := provider.previewStreamable(context.Background(), staticContentReader{content: []byte(content.String())}, "manager", name, kind, infoProvider, sampleReader, nil,
+				&PreviewRequest{Page: 1, PageSize: 20, Table: name, Attributes: attrs})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if preview.Mode != PreviewModeTable || len(preview.Rows) != 20 || len(preview.Columns) != 4 {
+				t.Fatalf("preview = %#v, want table with 20 rows and 4 columns", preview)
+			}
+			for i, row := range preview.Rows {
+				if row["order_id"] != fmt.Sprintf("DEMO%04d", i+1) || row["amount"] != "299.00" || row["paid"] != true || row["note"] != nil {
+					t.Fatalf("row %d lost structured values: %#v", i, row)
+				}
+			}
+		})
+	}
+}
+
 func TestFileTablePreviewProviderResolveFormatUnknownMetaFormat(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{

@@ -1322,6 +1322,31 @@ jobs:
           gate: Common, Model and Service metric contracts (TiDB 8.5.8)
           status: ${{ job.status }}
 
+  common-rustfs:
+    name: RustFS provider, persistence and consumers (1.0.5)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.manager == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+      - name: Run RustFS gate
+        run: make test-common-rustfs
+      - name: Summarize RustFS gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: RustFS provider, persistence and consumers (1.0.5)
+          status: ${{ job.status }}
+
   business-redis:
     name: Business Redis native fixture contracts (Redis 7.2.13)
     needs: selection

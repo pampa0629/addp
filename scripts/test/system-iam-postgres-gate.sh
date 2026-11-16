@@ -358,8 +358,11 @@ case "$TEST_FILTER" in
         esac
         ;;
     file-composition)
-        [ "$PACKAGE_FILTER" = engineaccess ] || { echo "file-composition requires --package engineaccess" >&2; exit 2; }
-        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^file_composition_source_grants$'
+        case "$PACKAGE_FILTER" in
+            engineaccess) test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^file_composition_source_grants$' ;;
+            migration) test_pattern='^TestExactNativeObjectGrantsForwardMigrationAgainstPostgres$' ;;
+            *) echo "file-composition requires --package engineaccess or migration" >&2; exit 2 ;;
+        esac
         ;;
     manager-search)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-search requires --package engineaccess" >&2; exit 2; }
@@ -432,7 +435,7 @@ case "$TEST_FILTER" in
             echo "source-grant-relations test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets|MinIONodeSourceGrants|RecursiveEngineRoot)ForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets|ExactNativeObjectGrants|MinIONodeSourceGrants|RecursiveEngineRoot)ForwardMigrationAgainstPostgres$'
         ;;
     oauth-client-credentials)
         if [ "$PACKAGE_FILTER" != "api" ]; then

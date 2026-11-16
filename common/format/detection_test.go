@@ -321,6 +321,16 @@ func TestDetectFormat(t *testing.T) {
 	}
 }
 
+func TestDetectJSONLinesExtensions(t *testing.T) {
+	for _, name := range []string{"订单.ndjson", "orders.jsonl", "ORDERS.NDJSON", "ORDERS.JSONL"} {
+		for _, peek := range [][]byte{nil, []byte("{\"id\":1}\n{\"id\":2}\n")} {
+			if got := DetectFormat(name, peek); got != FormatJSON {
+				t.Errorf("DetectFormat(%q, %q) = %q, want json", name, peek, got)
+			}
+		}
+	}
+}
+
 func TestMIMEToFormat(t *testing.T) {
 	tests := []struct {
 		mimeType string

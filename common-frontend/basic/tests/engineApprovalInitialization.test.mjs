@@ -347,3 +347,24 @@ test('metadata-only file and native identities preserve exact targets and reject
   }
  }
 })
+
+
+test('native object approval binds one exact object and rejects wider or ambiguous owner facts', async () => {
+ const target=objectPath('订单.csv')
+ const facts=fp=>({schema_version:'meta.data_item_authorization_facts/v1',engine_id:33,item_type:'object',full_name:'models/scene/订单.csv',item_fingerprint:fp,boundary_hash:'b'.repeat(64),basis_state:'complete',boundary:{layout:'single',native_target:structuredClone(target)}})
+ const binding=await observeNativeApprovalBinding(target,async(_,fp)=>facts(fp))
+ assert.deepEqual(binding.native_target,target)
+ assert.equal(binding.metadata_target,undefined)
+ for(const mutate of [f=>{f.boundary.layout='multi'},f=>{f.full_name='other.csv'},f=>{f.boundary.file_composition={}},f=>{f.boundary.scope={}},f=>{f.boundary.native_target.segments[1].name='other'},f=>{f.boundary.native_target.segments[2].name='..'},f=>{f.item_type='file'},f=>{f.engine_id=34}]) {
+ await assert.rejects(observeNativeApprovalBinding(target,async(_,fp)=>{const f=facts(fp);mutate(f);return f}))
+ }
+ assert.throws(()=>approvedBoundaryFields(objectPath('客户.csv'),binding))
+})
+test('existing GeoJSON and JPEG owner compositions support exact object approval',async()=>{
+ for(const [format,extension,role] of [['geojson','geojson','data'],['jpeg','jpg','image'],['jpeg','jpeg','image']]) {
+ const target=objectPath('sample.'+extension)
+ const binding=await observeNativeApprovalBinding(target,async(_,fp)=>({...objectFacts(fp),boundary:{layout:'single',file_composition:{format,refs:[{target,role,required:true,primary:true}]}}}))
+ assert.equal(binding.file_composition.format,format)
+ assert.throws(()=>approvedBoundaryFields(objectPath('other.'+extension),binding))
+ }
+})

@@ -44,9 +44,10 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 	file := len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)
 	// Complete Meta binding was resolved before this independent structure
 	// check. ENVI has no unique raw extension; never infer its identity here.
-	fileCandidate := engine.EngineType == "nfs" || engine.EngineType == "minio" || commonexecution.ManagerModel3DSourceFormat(engine.EngineType, strings.TrimPrefix(strings.ToLower(pathpkg.Ext(path.StringPath())), "."))
+	objectEngine := engine.EngineType == "minio" || engine.EngineType == "rustfs"
+	fileCandidate := engine.EngineType == "nfs" || objectEngine || commonexecution.ManagerModel3DSourceFormat(engine.EngineType, strings.TrimPrefix(strings.ToLower(pathpkg.Ext(path.StringPath())), "."))
 	if file && (!fileCandidate ||
-		(engine.EngineType == "minio") != (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)) {
+		objectEngine != (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)) {
 		return 0, commonapi.ErrForbidden
 	}
 	wanted, err := shared.EncodeSharingTarget(path)

@@ -27,14 +27,15 @@ import (
 )
 
 type MetadataService struct {
-	metadataRepo       *repository.MetadataRepository
-	systemClient       *commonClient.SystemClient
-	metaClient         *commonClient.MetaClient
-	metaUserClient     *commonClient.MetaScanUserClient
-	previews           *preview.PreviewRegistry
-	content            *objectcontent.ObjectContentRegistry
-	fileSourceChecker  fileStorageReadChecker
-	wholeSourceChecker wholeStorageReadChecker
+	metadataRepo        *repository.MetadataRepository
+	systemClient        *commonClient.SystemClient
+	metaClient          *commonClient.MetaClient
+	metaUserClient      *commonClient.MetaScanUserClient
+	previews            *preview.PreviewRegistry
+	content             *objectcontent.ObjectContentRegistry
+	fileSourceChecker   fileStorageReadChecker
+	wholeSourceChecker  wholeStorageReadChecker
+	objectSourceChecker objectStorageReadChecker
 }
 
 // StorageDataItem is a server-verified storage item identity. Callers must use

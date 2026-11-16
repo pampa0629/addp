@@ -1243,8 +1243,9 @@ func mapToMetaAttributes(attrs map[string]interface{}) []models.MetaAttribute {
 // RequiresObjectPreviewVisibility uses the formal Meta identity, not the caller
 // extension or locator kind. Other engine/format admission remains unchanged.
 func (req *PreviewResolverRequest) RequiresObjectPreviewVisibility() bool {
-	return req != nil && req.Engine != nil && req.Engine.EngineType == "nfs" && req.MetaItem != nil &&
-		isContentFileItemType(req.ItemType) && formatNameFromMetaAttributes(req.MetadataAttributes()) == "tiff"
+	return req != nil && req.Engine != nil && req.MetaItem != nil &&
+		((req.Engine.EngineType == "rustfs" && req.ItemType == "object") ||
+			(req.Engine.EngineType == "nfs" && isContentFileItemType(req.ItemType) && formatNameFromMetaAttributes(req.MetadataAttributes()) == "tiff"))
 }
 
 // MetadataOnlyObjectPreview constructs an allowlist from scratch. Do not strip

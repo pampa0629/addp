@@ -32,6 +32,15 @@ func projectDataItemAuthorizationFacts(item models.MetaItem, observedAt time.Tim
 	err := func() error {
 		layout := commonjson.String(item.Attributes, "item", "layout")
 		if item.ItemType == plugin.EngineCatalogTermFile || item.ItemType == plugin.EngineCatalogTermObject {
+			if item.ItemType == plugin.EngineCatalogTermObject && singleNativeObjectFormat(commonjson.String(item.Attributes, "item", "format")) {
+				if err := projectSingleObjectAuthorizationFacts(lookup, item, facts); err != nil {
+					return err
+				}
+				if facts.BasisState != authorizationfacts.AuthorizationBasisComplete {
+					return projectMetadataAuthorizationFacts(lookup, item, facts)
+				}
+				return nil
+			}
 			if err := projectFileAuthorizationFacts(lookup, item, facts); err != nil {
 				return err
 			}

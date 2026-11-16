@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/nfs"
+	"github.com/addp/common/engine/plugins/rustfs"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
@@ -44,11 +45,17 @@ func (f *objectVisibilityFixture) CheckManagerObjectPreview(_ context.Context, c
 }
 
 type objectVisibilityProvider struct {
+	kind   string
 	calls  int
 	during func()
 }
 
-func (*objectVisibilityProvider) Name() string { return "builtin:file-catalog" }
+func (p *objectVisibilityProvider) Name() string {
+	if p.kind == "rustfs" {
+		return "builtin:object-catalog"
+	}
+	return "builtin:file-catalog"
+}
 func (p *objectVisibilityProvider) Preview(context.Context, *preview.PreviewRequest) (*models.TablePreview, error) {
 	p.calls++
 	if p.during != nil {
@@ -57,16 +64,25 @@ func (p *objectVisibilityProvider) Preview(context.Context, *preview.PreviewRequ
 	return &models.TablePreview{Mode: "object", Columns: []string{}, Rows: []map[string]interface{}{}, Object: &models.ObjectPreview{Path: "images/private.tif", URL: "https://private.invalid/content"}}, nil
 }
 
-func TestNFSTIFFObjectPreviewVisibilityAndFinalRecheck(t *testing.T) {
+func TestObjectPreviewVisibilityAndFinalRecheck(t *testing.T) {
+	for _, kind := range []string{"nfs", "rustfs"} {
+		t.Run(kind, func(t *testing.T) { exerciseObjectPreviewVisibilityAndFinalRecheck(t, kind) })
+	}
+}
+func exerciseObjectPreviewVisibilityAndFinalRecheck(t *testing.T, kind string) {
 	// Formal resolver and HTTP owner; only System observations and Provider I/O
 	// are fixtures. No running service or real authorization is mutated.
-	previous, previousErr := plugin.Get("nfs")
-	plugin.Register(&nfs.NFSPlugin{})
+	previous, previousErr := plugin.Get(kind)
+	if kind == "rustfs" {
+		plugin.Register(&rustfs.RustFSPlugin{})
+	} else {
+		plugin.Register(&nfs.NFSPlugin{})
+	}
 	t.Cleanup(func() {
 		if previousErr == nil {
 			plugin.Register(previous)
 		} else {
-			plugin.Unregister("nfs")
+			plugin.Unregister(kind)
 		}
 	})
 	for _, tc := range []struct {
@@ -97,11 +113,15 @@ func TestNFSTIFFObjectPreviewVisibilityAndFinalRecheck(t *testing.T) {
 			attributes := map[string]interface{}{"schema_version": 1, "item": map[string]interface{}{"data_type": "media", "format": "tiff", "layout": "single", "refs": []map[string]interface{}{{"path": "images/private.tif"}}},
 				"storage":     map[string]interface{}{"physical_path": "images/private.tif", "content_versions": map[string]interface{}{"sha256": "private-version-digest"}},
 				"format_info": map[string]interface{}{"tiff": map[string]interface{}{"page_summary": "private-page-directory"}}, "type_info": map[string]interface{}{"media": map[string]interface{}{"statistics": "private-statistics"}}}
-			item, _ := json.Marshal(map[string]interface{}{"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": "file", "name": "private.tif", "full_name": "images/private.tif", "scanned_depth": "deep", "size_bytes": 987654, "row_count": 12345, "attributes": attributes})
-			provider := &objectVisibilityProvider{}
+			itemType := "file"
+			if kind == "rustfs" {
+				itemType = "object"
+			}
+			item, _ := json.Marshal(map[string]interface{}{"id": 1, "tenant_id": 1, "engine_id": 9, "item_type": itemType, "name": "private.tif", "full_name": "images/private.tif", "scanned_depth": "deep", "size_bytes": 987654, "row_count": 12345, "attributes": attributes})
+			provider := &objectVisibilityProvider{kind: kind}
 			registry := preview.NewPreviewRegistry()
 			registry.Register(provider)
-			resolver := preview.NewPreviewResolver(registry, apiDownloadTestSystemClient(t, 9, "nfs"), apiDownloadTestMetaItemClient(t, string(item)))
+			resolver := preview.NewPreviewResolver(registry, apiDownloadTestSystemClient(t, 9, kind), apiDownloadTestMetaItemClient(t, string(item)))
 			fixture := &objectVisibilityFixture{visible: tc.visible, readable: tc.readable, err: tc.err, wrong: tc.wrong}
 			provider.during = func() {
 				switch tc.during {
@@ -121,7 +141,7 @@ func TestNFSTIFFObjectPreviewVisibilityAndFinalRecheck(t *testing.T) {
 			router := gin.New()
 			router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 33); c.Next() })
 			router.GET("/preview", handler.Preview)
-			req := httptest.NewRequest("GET", "/preview?locator="+urlQueryEscape("addp://engine/9/path/images/private.tif?type=file&item_id=1"), nil)
+			req := httptest.NewRequest("GET", "/preview?locator="+urlQueryEscape("addp://engine/9/path/images/private.tif?type="+itemType+"&item_id=1"), nil)
 			req.Header.Set("Authorization", "Bearer addp_at_original_user")
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, req)

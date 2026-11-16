@@ -65,7 +65,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.json",
 		DataType:       datatype.Document,
 		Layouts:        []string{format.LayoutSingle},
-		Identification: format.FormatIdentification{Extensions: []string{".json"}, MimeTypes: []string{"application/json"}},
+		Identification: format.FormatIdentification{Extensions: []string{".json", ".jsonl", ".ndjson"}, MimeTypes: []string{"application/json"}},
 	}
 }
 

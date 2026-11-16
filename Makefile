@@ -284,7 +284,17 @@ test-deployment-discovery: ## 校验 Infra/Business 只读部署发现与原子�
 	@python3 scripts/test/container-proofs_test.py
 	@bash -n scripts/infra/up.sh scripts/infra/down.sh scripts/dev/start.sh business/scripts/start.sh business/scripts/stop.sh
 
+.PHONY: test-common-rustfs test-common-rustfs-unit
+test-common-rustfs-unit: ## RustFS 连接、部署与独立插件契约
+	@bash -n business/scripts/rustfs.sh scripts/test/common-rustfs-gate.sh
+	@python3 -m unittest scripts/test/business-rustfs_test.py
+	@cd common && GOWORK=off go test ./engine/plugins/objectstore ./engine/plugins/s3 ./engine/plugins/rustfs
+
+test-common-rustfs: ## 独占 RustFS 验证对象 Provider、持久化及 Meta/Manager 消费
+	@bash scripts/test/common-rustfs-gate.sh
+
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@$(MAKE) test-common-rustfs-unit
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["spark-master"]; assert {p["target"] for p in s["ports"]} == {7077,8080}; assert "start-master.sh" in str(s["command"]); assert "thrift" not in str(s["command"]).lower(); assert "init-test-data" not in str(s["command"])'
 	@test ! -e business/spark/init-test-data.sh
 	@$(MAKE) test-deployment-discovery
@@ -398,6 +408,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@python3 -m unittest business/doris/init_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
+	@$(MAKE) test-common-rustfs
 	@$(MAKE) test-agent-postgres
 	@$(MAKE) test-business-redis
 	@$(MAKE) test-common-redis

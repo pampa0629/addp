@@ -30,7 +30,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
 		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
 		t.Run("TIFF PAM SQL contract", func(t *testing.T) { exerciseTIFFCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}, {"nfs", "tiff"}, {"minio", "tiff"}, {"minio", "geojson"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}, {"nfs", "tiff"}, {"minio", "tiff"}, {"minio", "geojson"}, {"rustfs", "csv"}, {"rustfs", "json"}, {"rustfs", "parquet"}, {"rustfs", "text"}, {"rustfs", "png"}, {"rustfs", "geojson"}, {"rustfs", "tiff"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -42,13 +42,13 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal(err)
 				}
 				targetFor := func(name string) plugin.EngineCatalogPath {
-					if kind == "minio" {
+					if kind == "minio" || kind == "rustfs" {
 						return plugin.ObjectItemPath(engine.ID, "models", name)
 					}
 					return plugin.FileItemPath(engine.ID, "models/"+name)
 				}
 				itemType := "file"
-				if kind == "minio" {
+				if kind == "minio" || kind == "rustfs" {
 					itemType = "object"
 				}
 				primary := targetFor("scene." + format)
@@ -65,6 +65,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					primary = plugin.FileDirectoryPath(engine.ID, "models/scene.gdb")
 				}
 				factsFor := func(texture string) authorizationfacts.AuthorizationFacts {
+					if kind == "rustfs" && format != "tiff" && format != "geojson" {
+						return exactNativeObjectFacts(t, primary)
+					}
 					if format == "geopackage" {
 						return *developGeoPackageFacts(t, primary)
 					}
@@ -210,6 +213,11 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				if err != nil || session == nil {
 					t.Fatal("real User session missing", err)
+				}
+				if kind == "rustfs" {
+					exerciseObjectPreviewVisibility(t, db, service, ctx, actor, reader, session.AccessToken, primary, current)
+					exerciseRustFSExactSourceRead(t, service, ctx, actor, reader, session.AccessToken, primary, &current)
+					return
 				}
 				if format == "geopackage" {
 					exerciseGeoPackageGrant(t, db, service, ctx, actor, reader, kind, primary, &current)

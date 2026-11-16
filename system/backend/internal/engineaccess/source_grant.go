@@ -96,6 +96,11 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 		if err != nil || !reflect.DeepEqual(target, primary) {
 			return commonapi.ErrBadRequest
 		}
+	} else if file && primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermObject && len(grant.FileComposition) == 0 {
+		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, NativeTarget: primary}
+		if grant.ApprovalMode != approvalModeIndependent || binding.Validate() != nil {
+			return commonapi.ErrBadRequest
+		}
 	} else if file || len(grant.FileComposition) != 0 {
 		var composition authorizationfacts.FileCompositionBoundary
 		if !file || (grant.ApprovalMode != approvalModeIndependent && grant.ApprovalMode != shared.UploadInitialSource && grant.ApprovalMode != productionApprovalMode) || json.Unmarshal(grant.FileComposition, &composition) != nil {

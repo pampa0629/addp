@@ -232,6 +232,12 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 // an identity input, never a substitute for comparing the complete native path.
 func nativeSingleIdentity(p plugin.EngineCatalogPath) (string, string, error) {
 	invalid := errors.New("unsupported native authorization target")
+	if p.EngineID != 0 && len(p.Segments) >= 3 && p.Segments[len(p.Segments)-1].Term == plugin.EngineCatalogTermObject {
+		if validateFileCompositionTarget(p) != nil {
+			return "", "", invalid
+		}
+		return plugin.EngineCatalogTermObject, p.StringPath(), nil
+	}
 	if p.EngineID == 0 || len(p.Segments) != 3 || p.Segments[1].Name == "" || p.Segments[2].Name == "" {
 		return "", "", invalid
 	}

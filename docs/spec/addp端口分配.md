@@ -64,6 +64,8 @@ HDFS Simple 本机 Docker Desktop 实验实例通过 `business/scripts/start.sh 
 - SuperMap SDX+ for PostgreSQL 专用 PostgreSQL: `5434`
 - MinIO API: `9002`
 - MinIO Console: `9003`
+- RustFS API: `9004`（容器 `9000`，仅回环，`RUSTFS_API_PORT` 显式配置，冲突失败）
+- RustFS Console: `9005`（容器 `9001`，仅回环，`RUSTFS_CONSOLE_PORT` 显式配置，冲突失败）
 - Neo4j Browser: `7474`
 - Neo4j Bolt: `7687`
 - Spark Master: `7077`

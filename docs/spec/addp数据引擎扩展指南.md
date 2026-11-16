@@ -2,6 +2,16 @@
 
 本文只说明新增一种数据引擎时的开发步骤。接口边界见 [addp引擎插件接口规范.md](addp引擎插件接口规范.md)，能力声明结构见 [addp引擎能力声明规范.md](addp引擎能力声明规范.md)，路径规则见 [addp存储引擎路径体系规范.md](addp存储引擎路径体系规范.md)。
 
+## RustFS 接入范围
+
+采用独立 `engine_type=rustfs`、显示名称 RustFS 和 `service → bucket → prefix → object` 目录，连接身份为 endpoint，Access Key／Secret Key 为敏感凭据，`bucket` 为可选连接探针目标而非权限边界。Business 固定官方 1.0.5 镜像与摘要，部署事实见 [Business README](../../business/README.md#rustfs-business-部署)。
+
+首版验证 S3 V4 认证、原生桶／前缀目录、对象事实、完整／范围读取、流式写入及删除，内容识别、Meta 扫描与 Manager 预览沿现有对象 Provider 和共享格式解析器消费。不因协议兼容性继承 MinIO 管理接口、实例概况、采集、事件流、SQL、Spark 或 DuckDB 直连能力。正式登记由 System 现有插件描述和动态 ConnectionSpec 表单承担，不增加类型专用 API。
+
+RustFS 的正式用户预览沿 System 现行精确 DataItem Grant：CSV／JSON／Parquet／文本／PNG 使用 Meta 已确认的单对象 `native_target`；GeoJSON／TIFF 保留原有 `file_composition`。签发适配器在 Meta 边界核对之后，以当前租户、启用引擎和对象路径调用真实 Catalog Provider，精确比对返回对象及引擎版本；不能只验证连接探针或替换该适配器的下层授权测试。不自动签发 Grant，不复用元数据许可读取内容，不新增 bucket/prefix 范围许可；同步读取与后台转换的准入分开验证。
+
+S3 协议目录与内容实现归 `common/engine/plugins/objectstore`，Amazon S3 和 RustFS 仅持有各自类型、连接默认值与能力声明，不跨插件继承、不复制协议实现。真实存储及消费者测试统一由 `make test-common-rustfs` 拥有独占临时 RustFS；配置与启停契约进入 `make test-business-config`。T2 证明 Provider、持久化、System 真实签发对象核验适配器、真实扫描到授权事实投影及 Manager HTTP 内容交付前后的权限观察接线；其中 System 观察在 HTTP 测试中为夹具，真实 User／Grant 生命周期另由 System PostgreSQL 门禁验证。普通身份的真实服务页面 T4 需独立报告，不用协议通过替代。
+
 ---
 
 ## FTP／显式 FTPS 接入范围（2026-10-20 正式只读插件）

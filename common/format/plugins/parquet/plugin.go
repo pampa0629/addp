@@ -584,7 +584,7 @@ func sampleParquetFile(ctx context.Context, file *parquetgo.File, offset, limit 
 func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, fields []datatype.FieldInfo, geometryFields map[string]bool, geometrySRIDs map[string]int, geometryEncoding format.GeometryEncoding, limit int64, result *[]map[string]interface{}) error {
 	temporalFields := make(map[string]datatype.FieldInfo)
 	for _, field := range fields {
-		if field.Temporal != nil {
+		if field.Temporal != nil || field.Type == datatype.FieldTypeDate {
 			temporalFields[field.Name] = field
 		}
 	}
@@ -1780,6 +1780,18 @@ func valueToInterface(v parquetgo.Value, decimal *parquetfmt.DecimalType, geomet
 	}
 	if v.IsNull() {
 		return nil, nil
+	}
+	if temporal.Type == datatype.FieldTypeDate {
+		if v.Kind() != parquetgo.Int32 {
+			return nil, fmt.Errorf("invalid parquet DATE physical type")
+		}
+		// Calendar days are independent of the local timezone and exceed the
+		// range of time.Duration for valid historical dates.
+		date := time.Unix(int64(v.Int32())*86400, 0).UTC()
+		if date.Year() < 1 || date.Year() > 9999 {
+			return nil, fmt.Errorf("parquet DATE is outside years 0001..9999")
+		}
+		return date.Format(time.DateOnly), nil
 	}
 	if geometry {
 		if v.Kind() != parquetgo.ByteArray {

@@ -334,9 +334,11 @@ func TestTableFileResolverRejectsSiblingIndependentParquetFiles(t *testing.T) {
 func TestExtractJSONSingleTableFileItemStrictRequiresRecordCollection(t *testing.T) {
 	reader := staticContentReader{content: `{"name":"plain"}`}
 
-	_, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "plain.json", 10, false)
-	if !format.IsProviderNotApplicableError(err) {
-		t.Fatalf("error = %v, want ProviderNotApplicableError", err)
+	for _, name := range []string{"plain.json", "plain.jsonl", "plain.ndjson"} {
+		_, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, name, 10, false)
+		if !format.IsProviderNotApplicableError(err) {
+			t.Fatalf("%s error = %v, want ProviderNotApplicableError", name, err)
+		}
 	}
 }
 
@@ -511,6 +513,37 @@ func TestExtractJSONSingleTableFileItemStrictAcceptsObjectArray(t *testing.T) {
 	}
 	if spatial := commonJSON.Section(info.Attributes, "capabilities.spatial"); len(spatial) != 0 {
 		t.Fatalf("spatial should be empty: %#v", spatial)
+	}
+}
+
+func TestExtractJSONLinesSingleTableFileItem(t *testing.T) {
+	content := "{\"order_id\":\"DEMO0001\",\"amount\":\"299.00\",\"paid\":true,\"note\":null}\n" +
+		"{\"order_id\":\"DEMO0002\",\"amount\":\"1301.00\",\"paid\":false,\"note\":\"含中文备注\"}\n"
+	for _, name := range []string{"订单.ndjson", "orders.jsonl"} {
+		t.Run(name, func(t *testing.T) {
+			info, err := ExtractSingleTableFileItemStrict(context.Background(), staticContentReader{content: content}, nil, 1, name, int64(len(content)), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.DataType != datatype.Table || info.Format != string(format.FormatJSON) || info.Layout != format.LayoutSingle {
+				t.Fatalf("JSON Lines identity = %#v", info)
+			}
+			table := commonJSON.Section(info.Attributes, "type_info.table")
+			if commonJSON.InterfaceInt64(table["row_count"]) != 2 || len(commonJSON.InterfaceSlice(table["fields"])) != 4 {
+				t.Fatalf("table = %#v, want 2 rows and 4 fields", table)
+			}
+			fields := commonJSON.InterfaceSlice(table["fields"])
+			for _, raw := range fields {
+				field := commonJSON.InterfaceMap(raw)
+				wantType := "string"
+				if field["name"] == "paid" {
+					wantType = "bool"
+				}
+				if field["type"] != wantType || (field["name"] == "note" && field["nullable"] != true) {
+					t.Fatalf("field lost its JSON Lines type or nullability: %#v", field)
+				}
+			}
+		})
 	}
 }
 

@@ -293,7 +293,7 @@ CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
                       AND e.id = target.engine_id AND e.lifecycle_state = 'active'
                       AND (target.requested_action = 'metadata_read' OR
                        ((target.path->'segments'->-1->>'term' <> 'file' OR e.engine_type IN ('ftp','nfs'))
-                       AND (target.path->'segments'->-1->>'term' <> 'object' OR e.engine_type = 'minio')))) THEN 'target_unavailable'
+                       AND (target.path->'segments'->-1->>'term' <> 'object' OR e.engine_type IN ('minio','rustfs'))))) THEN 'target_unavailable'
      WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
      ELSE 'no_grant' END AS reason
 FROM targets target CROSS JOIN input

@@ -261,6 +261,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"nfs":               {origin: "general", family: "file", storage: true},
 		"hdfs":              {origin: "general", family: "file", storage: true},
 		"s3":                {origin: "general", family: "object", storage: true},
+		"rustfs":            {origin: "general", family: "object", storage: true},
 		"duckdb":            {origin: "extension", family: "query_runtime", query: true},
 		"jupyter":           {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},
 		"inference_runtime": {origin: "extension", family: "inference", inference: true},

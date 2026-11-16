@@ -11,7 +11,8 @@ import (
 
 // The standard Meta gate owns addp_test. Fixtures live in a rolled-back
 // transaction; the exercise checks PostgreSQL fact/identity semantics.
-func TestDataItemAuthorizationFactsAgainstPostgres(t *testing.T) {
+func authorizationFactsPostgresDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	dsn := os.Getenv("META_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("requires standard Meta PostgreSQL gate")
@@ -24,7 +25,7 @@ func TestDataItemAuthorizationFactsAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqlDB.Close()
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := execution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +33,7 @@ func TestDataItemAuthorizationFactsAgainstPostgres(t *testing.T) {
 	if tx.Error != nil {
 		t.Fatal(tx.Error)
 	}
-	defer tx.Rollback()
+	t.Cleanup(func() { tx.Rollback() })
 	if err := tx.Exec(`DROP SCHEMA IF EXISTS meta CASCADE; CREATE SCHEMA meta;
 CREATE TABLE meta.meta_node (
 id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, engine_id BIGINT NOT NULL, parent_node_id BIGINT,
@@ -46,6 +47,15 @@ row_count BIGINT, size_bytes BIGINT, data_updated_at TIMESTAMPTZ, scanned_at TIM
 scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ);`).Error; err != nil {
 		t.Fatal(err)
 	}
+	return tx
+}
+
+func TestSingleObjectAuthorizationFactsAgainstPostgres(t *testing.T) {
+	exerciseSingleObjectAuthorizationFacts(t, authorizationFactsPostgresDB(t))
+}
+
+func TestDataItemAuthorizationFactsAgainstPostgres(t *testing.T) {
+	tx := authorizationFactsPostgresDB(t)
 	exerciseAuthorizationFacts(t, tx)
 	exerciseDataItemIdentityQuery(t, tx)
 	exerciseDataItemIdentityDirectChildren(t, tx)
