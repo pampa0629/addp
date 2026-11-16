@@ -225,6 +225,7 @@ EPSG:4326／3857源含七类二维非空几何、内洞／null几何和int32／b
 | `7af201a28f237a0ef88aa27a8129e54042ff5d8f`，dispatch `1082c0ed0cd2359be69841085cf5dbf02a20467e`；43584189240／132415063748／attempt1 | [UTC v3](../evidence/资源读取与预览历史证据.md#utc-时间戳限定正式-hosted-通过)：六源十三字段／15018行原计数／NULL／UTC注解及清理；前两次失败、六截图长值裁切限制保留。 |
 | `c63888fba953df5545a06b11c7641284c2bbe792`；[43668574041／132673333161](https://github.com/pampa0629/addp/actions/runs/43668574041/job/132673333161) | [Enum](../evidence/资源读取与预览历史证据.md#avro-enum-正式-hosted-复验2026-11-15)：十八源、原件、拒绝、六Parquet／清理；首败及视口外声明／过渡帧不作完整视觉证明。 |
 | `9cf429c4a9a0ffc84f06e5971bed254c7e935faa`；[43677124474／132699620936](https://github.com/pampa0629/addp/actions/runs/43677124474/job/132699620936) | [Map](../evidence/资源读取与预览历史证据.md#avro-map-限定正式-hosted2026-11-15)：二十四源、键／类型、分页／原件、十八拒绝、六Parquet／清理；NFS403及截图边界不扩大。 |
+| `57d7fa52a5dd122e167d8e8ae4a7df9716f9bdae`；[43885241459／133361505614](https://github.com/pampa0629/addp/actions/runs/43885241459/job/133361505614) | [普通fixed](../evidence/资源读取与预览历史证据.md#avro-普通-fixed-限定正式-hosted2026-11-16)：三十源、90页1290行、完整名称／精确长度／字节、二十四只读拒绝、六Parquet及清理；NFS403和截图视口边界保留。 |
 
 ### ORC 单文件表格 Hosted
 
