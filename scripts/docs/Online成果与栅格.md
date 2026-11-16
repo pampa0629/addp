@@ -10,7 +10,7 @@
 
 现行 suite／case、身份、断言与清理由[Manager 与空间成果正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md)和各 Host Gate 维护；本页保留选定子场景摘要、操作入口及历史证据。独立 case、领域报告、完整 suite 和容量专项分别认定，子场景通过不代表完整 suite 或其他 case 通过。
 
-专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow) · [邻域统计与 IDW](../../docs/spec/testing/scenarios/邻域统计与IDW.md)。
+专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow) · [邻域统计与 IDW](../../docs/spec/testing/scenarios/邻域统计与IDW.md) · [分区统计](../../docs/spec/testing/scenarios/分区统计.md)。
 
 [Manager 固定版本](#manager-固定版本证据)与[栅格固定版本](#固定版本证据)只覆盖所列源码、运行尝试和当次清理；后续已审计结果见[栅格验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)。容量矩阵是通过条件，早期未注明源码的准备记录不能作为当前版本结果。Runner、Native、Linux、Hosted 和真实页面证据分别记账，未运行、失败、跳过或未覆盖项不计为通过；本次文档整理未运行或刷新任何验收。
 
@@ -113,11 +113,11 @@ Native oracle 自动发现于 `make test-geopython-workflow`，身份夹具与�
 
 `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` 验证邻域统计的六条 COG 保存链、跨块完整像元／mask、严格三方大小、精确自动扫描、当前执行血缘，非法波段／窗口失败不得发布或新增扫描。固定版本 `fe0d7cc8e` 的[独立 Hosted](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802) 已通过并经归档审计，预检／业务 359770 毫秒，完整结果见[邻域统计正式场景](../../docs/spec/testing/scenarios/邻域统计与IDW.md#raster-focal-statistics-persistence)；同源 Linux 全量 1251 项及 Platform 均通过。
 
-`make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` 验证整数栅格分区统计的四条完整 CSV 保存链、有限预览、严格物理／Meta 大小、自动扫描、血缘与两条非法参数失败清理。不新增 RasterArtifact；实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-zonal-statistics-persistence)。
+`make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` 验证整数栅格分区统计的四条完整 CSV 保存链、有限预览、严格物理／Meta 大小、自动扫描、血缘与两条非法参数失败清理。不新增 RasterArtifact；实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/分区统计.md#raster-zonal-statistics-persistence)。
 
 `make test-online ONLINE_SUITE=vector-rasterize-persistence` 验证二维面矢量栅格化的三条 COG 链和非法字段失败清理。实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-rasterize-persistence)。
 
-`make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 验证矢量分区统计的中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘。仅登记入口不代表 T4 通过，实际结果按上述固定版本验收基线核对。场景要求见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-zonal-statistics-persistence)。
+`make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 验证矢量分区统计的中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘。仅登记入口不代表 T4 通过，实际结果按上述固定版本验收基线核对。场景要求见 [Manager 与空间成果](../../docs/spec/testing/scenarios/分区统计.md#vector-zonal-statistics-persistence)。
 
 邻近距离的独立手工入口为 `make test-online ONLINE_SUITE=raster-proximity-persistence`，验证米制多波段与英尺制 UInt32 两条 COG DAG，完整距离／mask／单位／网格、严格三方大小、精确扫描、当前执行单源血缘。场景要求见[邻近距离正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-proximity-persistence)，后续固定版本 Hosted 结果按上述验收基线核对。
 
