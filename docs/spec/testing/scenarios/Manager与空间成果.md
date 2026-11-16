@@ -631,23 +631,59 @@ Meta 夹具仅在当轮 Hosted 独占 `addp_online`、同一非默认 Tenant／�
 
 ### 部署与主场景
 
-栅格工作流 T4 `raster-workflow` 只在 GitHub Hosted `ubuntu-24.04` x86_64 独占部署运行，复用 `scripts/utils/hosted-online.sh`，由根 `make build-images` 构建 GeoPython 产品镜像并以默认入口启动独立 `addp-raster-online-runtime`，不调用 GeoPython 开发启动。共享入口核验实际镜像 ID、默认 command 与提交并保留 Runtime 日志，所有退出路径按当次所有权清理容器和镜像。样例生成与成果物理校验通过 `ADDP_ONLINE_RASTER_RUNTIME_IMAGE` 使用入口本次构建并核验的同一个产品镜像；未传入镜像时在启动 Docker 前拒绝执行，不引用开发镜像。手工栅格场景的 preflight 与业务执行总预算为 1740 秒；该场景预算由栅格入口设置，不改变其他场景或夜间调度预算。Business Fixture 管理两套无持久卷、凭据不同的 MinIO，生成含 EPSG:4326、确定性双波段和 NoData 的 TIFF；System-owned IAM helper 创建非默认 Tenant 与普通 User，独立 Provisioner 经正式 API 注册两个业务 Engine。User 经 Develop 提交 `raster_load → raster_band_math → raster_save(profile=cog)`，必须验证 create、重复 create 失败和 replace，并独立读取成果像元、CRS、transform、NoData 与完整 COG 布局。Meta 的有界 COG 布局提示与 GDAL 完整布局校验分别验证：本套件 Classic TIFF COG 成果严格核对 `profile=cog`、`is_cloud_optimized=true` 和 `cog_check_level=heuristic`，同时要求 `is_tiled=true`、`has_overviews` 与独立物理检查一致。overview 是独立结构事实，不能用于推出或否定 COG profile，也不能为了通过测试补造 overview；有界提示仍不替代完整布局及像元验证。场景还需重投影确定性源到 EPSG:3857 的 1 米网格，裁剪两个重叠区域，分别验证 first/last 镶嵌 COG 的全部像元、NoData、空间属性和原成果未改变；每个成果均验证自动扫描、派生血缘和同一普通 User 的浏览器展示。多波段组合验收需使用各数据波段缺值位置不同、含合法零值与部分 alpha 的确定性 TIFF，并分别覆盖 NaN 与有限 NoData；有限 NoData 的平均插值成果须逐波段保留有限声明与缺值，保存重读的波段计算成果须声明 NaN 并保留独立有效性，尺寸重采样后保存 COG，再经正式 ResourceLocator 重新读取并计算 `b1+b2`；独立物理夹具逐波段验证全部像元、NoData 声明、alpha 覆盖和重读后的联合有效性，同时核对先前全部成果及源对象哈希未改变。平均插值组合还需以非均匀源像元、波段独立缺值和透明干扰值验证有效贡献像元的面积均值，同时覆盖整倍数与非整数缩放比例；非整数网格须以源、目标像元矩形的面积交集独立验证边界贡献权重，不能使用等权均值；保存重读后的相加应复用各波段自己的平均结果，不能提前合并源有效性。双线性插值组合还需按各波段自己的有效中心与邻域权重验证，中心无效时不得用有效邻域填补；放大后 COG 的 overview 事实须与 Meta 轻量探测一致，保存重读后相加仍分别保留波段有效性。目标 DataItem 只来自 Develop 自动提交的 Meta scan，血缘只来自 owner 自动采集，禁止测试手工扫描目标或调用 collect 掩盖自动链路缺陷。Monitor API 与 Console 必须展示同一成功执行及源、目标血缘，浏览器登录身份与 API User 相同。凭据仅存 owner-only runner.temp，不进入业务进程环境或证据；全部退出路径销毁业务容器、临时 registry、平台容器和数据卷并检查零残留。首次真实通过前只登记手工 workflow_dispatch。 发布确认后清理故障复用该 suite：Business-owned 回环存储代理仅针对首片／末片两个明确对象，在真实 MinIO PUT 成功后、回复 Runtime 前，按上传长度与 SHA-256 唯一定位私有临时 COG，在 sidecar 路径创建目录触发真实 unlink 失败；原 COG 字节和大小保持不变。代理以 Runner 的 UID 和实际 Docker socket 所属 GID 运行，使 owner-only 故障事件的生产者与读取者身份一致；由已有 Hosted 生命周期独占创建和销毁，仅内部持有 Docker socket 与故障事件，不新增产品故障参数。部分确认时下一片为 not_attempted，全部确认时不返回 failed_tile/publication；两者父执行仍 failed，逐一核对确认产物、严格整数大小、新自动扫描、先前成果哈希和执行工作目录清理，未真实通过前不计为 T4。 min/max 聚合扩展复用已有选择第 2 数据波段、3×5 分组及 nearest 金字塔的单一 DAG，逐像元独立验证源 NoData 排除、内部和边缘不足整组的数值、CRS／完整仿射网格及金字塔；发布后的 artifact、物理对象、Meta DataItem 大小均为严格正整数且相等。新增两个成果及两个浏览器场景，原成功与失败场景完整保留，48 轮浏览器及业务总预算仍为 1740 秒；扩展真实通过前不计为 T4。
+阅读导航：[运行准入](#栅格主场景运行准入) · [计算矩阵](#栅格主场景计算矩阵) · [元数据授权](#栅格主场景元数据授权与事实取证) · [失败补偿](#栅格主场景失败补偿与退出) · [固定结果](#栅格主场景固定结果与验收边界)。本节定义 `raster-workflow` 主场景；独立分支与页面构图仍见[下节](#多来源计算与页面构图)。
 
-完整 `full` 场景沿现行元数据查看规则准备权限。三个源 Engine 扫描成功后，复用独立授权初始化员，为原执行 User 办理固定源对象及已确认成果的限时精确 `metadata_read`；实际单体布局取 System 已核事实，Grant 绑定同一 Tenant、User、Engine、完整路径、fingerprint 和 boundary hash。原执行 User 仍为十二项功能权限，办理员凭据只留在准备控制器中。每次普通枚举前核对当前可见性，未知授权写入结果也先登记并在退出时撤销；撤销后严格核重新不可见，业务错误和撤销错误分别保留。
+#### 栅格主场景运行准入
 
-普通 Meta 响应继续独立核验安全结构投影。原三方正整数大小、完整 TIFF 属性及普通图片源前后快照改由当轮 Hosted PostgreSQL 固定有界只读查询取证，绑定 `addp_online` 容器 ID／启动时刻、suite／Run ID、非默认 Tenant、真实 User、源扫描或当前 Develop 父执行及其精确自动扫描；容器变更、身份或目标不符即失败。对已确认发布但父执行失败的切片，只认原切片夹具白名单和实际返回的扫描绑定；失败前缀下的完整 Meta 对象集合另从相同受控快照核对，避免普通列表的权限过滤掩盖额外登记。保留公开身份与持久事实一致、完整像元／掩膜、COG、源与先前成果不变、当前血缘／浏览器及全部清理，原 1740 秒总预算保持。该调整的完整验收结论见下方固定源码记录。
+- **环境与产品身份**：仅 GitHub Hosted `ubuntu-24.04` x86_64 独占部署，复用 `scripts/utils/hosted-online.sh`。根 `make build-images` 构建 GeoPython 产品镜像，默认入口启动独立 `addp-raster-online-runtime`；核实际镜像 ID、默认 command／提交并留 Runtime 日志，不走开发启动。样例生成和物理校验通过 `ADDP_ONLINE_RASTER_RUNTIME_IMAGE` 使用同一已核产品镜像；缺参数须在 Docker 前拒绝，不回退开发镜像。
+- **夹具与身份**：Business 管理两套无持久卷、凭据不同的 MinIO，生成 EPSG:4326、确定性双波段／NoData TIFF；System-owned IAM helper 建非默认 Tenant／普通 User，独立 Provisioner 经正式 API 注册两个业务 Engine。浏览器与 API 必须是同一普通 User，凭据只在 owner-only runner.temp，不进业务进程环境或证据。
+- **唯一预算**：入口设置 preflight＋业务总计 **1740 秒**，涵盖下列矩阵、页面和原有业务收尾；不改变其他场景或夜间预算。首次真实通过前只登记手工 workflow_dispatch。当前完整 `full` 保留全部 **71 项**主场景浏览器观察、DEM、普通图片及分支阶段；min/max 扩展阶段的48轮记录不替代完整矩阵。
+- **登录等待**：依据精确目标 URL、实际租户选择或 MFA 状态，不以等待不存在选择框超时推进，不跳过当前身份／权限核验。
 
-Develop 公开执行投影不返回 `tenant_id`。成果候选登记前，父执行的 Tenant 和内部发起主体由同一受控只读快照核验；公开 UUID、模块、任务类型、状态和发起用户仍须匹配，不能要求接口恢复内部身份字段。
+#### 栅格主场景计算矩阵
 
-完整场景的登录等待以精确目标URL、实际租户选择或MFA状态为依据；不以等待不存在的选择框超时推进，也不跳过同一普通User身份及权限核验。全部71项原主场景浏览器观察、DEM及既有图片／分支阶段保持，1740秒总业务预算不变。
+| 路径 | 独有断言 |
+| --- | --- |
+| 基础保存 | 普通 User 经 Develop 提交 `raster_load → raster_band_math → raster_save(profile=cog)`，验证 create、重复create失败及replace；独立重读完整像元、CRS、transform、NoData与COG布局。 |
+| 重投影与镶嵌 | 确定性源重投影到EPSG:3857的1米网格，裁剪两个重叠区，分别验证first/last镶嵌的全部像元、NoData、空间属性及原成果不变。 |
+| 多波段／缺值 | 各波段缺值位置不同，含合法零及部分alpha，分别覆盖NaN／有限NoData。有限NoData的平均插值保留各波段原声明和缺值；波段计算保存重读声明NaN并保持独立有效性。尺寸重采样后存COG，经正式ResourceLocator重读计算 `b1+b2`，逐波段核全部像元、NoData、alpha及联合有效性。 |
+| 平均插值 | 非均匀源像元、波段独立缺值及透明干扰值，覆盖整倍数／非整数缩放；以源目标像元矩形面积交集独立核边界权重，不能用等权均值。保存重读相加使用各波段自己的均值，不提前合并源有效性。 |
+| 双线性插值 | 按各波段自己的有效中心／邻域权重核验，中心无效不能由邻域填补；放大COG的overview与Meta轻量探测一致，保存重读相加仍保持各波段有效性。 |
+| min/max聚合 | 复用第2数据波段、3×5分组及nearest金字塔的单一DAG，逐像元核NoData排除、内部／边缘不足整组的数值、CRS／完整仿射及金字塔；artifact＝物理对象＝Meta大小，均为严格正整数。两个新增成果／两个浏览器场景及原成功失败场景均保留；实际通过范围按固定版本认定。 |
 
-外层硬超时无法保证场景Python finally执行。Hosted在停止System及各Owner前复用既有生命周期钩子，从本轮元数据日志恢复精确撤销：严格绑定suite／Run、原隔离容器／启动时刻、普通User／Tenant、固定Engine及对象、请求UUID和已确认Grant回执；未知写入结果同样保留待撤销项。先归档原日志，再经正式System接口撤销并核普通User不可见，逐项回写剩余请求，另存退出补偿结果。失败／未知不得记作撤销通过；该补偿不改原Online失败报告，不把超时后的清理记作1740秒内业务通过，也不以最终Infra销毁替代许可证据。
+所有成果共同核验：
 
-物理 oracle 在同一校验进程内，以已有的独立单波段期望元组推导平均插值的覆盖 alpha 和保存重读后的联合结果、双线性插值的联合结果，避免重复计算相同权重与有效贡献。只复用确定性期望，不缓存实际对象、GDAL 读取、哈希或校验结论；每轮仍重读全部源、既有成果和当前成果，核对所有像元、掩膜、布局及大小。业务与页面矩阵、权限和 1740 秒预算保持。
+- Classic TIFF COG 的 `profile=cog`、`is_cloud_optimized=true`、`cog_check_level=heuristic`、`is_tiled=true`，`has_overviews`须与独立物理检查一致。overview是独立结构事实，不能推导或否定COG profile，更不能补造；Meta有界提示不替代GDAL完整布局／像元检查。
+- 目标 DataItem 仅由 Develop 自动提交 Meta scan，血缘仅由 owner 自动采集，不手扫目标或调用collect掩盖链路缺陷。逐成果核自动扫描／派生血缘，Monitor API与Console显示同一成功执行和源目标关系。
+- 每轮重读源及全部先前／当前成果，核像元、掩膜、布局、大小与源对象哈希不变。独立物理oracle只在同一进程复用已算单波段期望元组，推导平均插值覆盖alpha／联合结果及双线性联合结果；不缓存实际对象、GDAL读取、哈希或校验结论。
 
-固定源码 `0bee3c249cdc08424f6b97b9aab11d3a1e445655` 的 [完整 Hosted 42383359430](https://github.com/pampa0629/addp/actions/runs/42383359430/job/128435478324) 在 1740113 毫秒触发 `online_scenario_timeout`，不计 full 通过。七个服务同提交；归档含 67 份已通过的页面回执，最后元数据取证为 `dem-slope.cog.tif`，尚无普通图片和末尾分支撤权的完整结果。58 份元数据 Grant 的撤销回执仍为 pending，不能宣称撤权清理通过；隔离部署清理通过及 Infra 零残留单独成立。该轮 223 次血缘图 HTTP 请求合计 21.81 秒、最长 419 毫秒，不据总超时推断血缘接口变慢；该失败及清理缺口保留，不由后续通过覆盖。
+#### 栅格主场景元数据授权与事实取证
 
-固定源码 `a7895d467ca2d69cee45a578d2a4dcbf0c5c8d89` 的 [完整 Hosted 42390011971](https://github.com/pampa0629/addp/actions/runs/42390011971/job/128455431586) 已实际通过，业务及预检合计 1489195 毫秒，原 1740 秒预算保持。七服务同提交，执行 User 为非默认 Tenant 2／精确12权限，分支读者为独立普通 User／精确3权限。完整 create／冲突／replace、多来源与页面构图、DEM、PNG／JPEG 和分支撤权均完成；归档71份主场景页面回执，52组三方严格正整数大小一致。A撤权前四图各2节点1条当前执行直接边；撤权后A1／A2各1节点0边、permission_filtered=true，隐藏源名称／指纹和执行UUID未出现在图响应；B1／B2仍各2节点1边、无隐藏提示。C的下游图允许既有隐藏提示，但无本次执行关系，四张授权前产出图也均未包含C。64份主场景精确metadata Grant和7份分支Grant全部撤销并确认不可见，pending为空；154次有界只读取证、资源策略恢复、部署清理及Infra零残留均通过。独立核对八张原始图及三张前后对照截图；原专项通过不替代这次full结论。相同源码的 [GeoPython Linux CI](https://github.com/pampa0629/addp/actions/runs/42389976288/job/128455317630) 实际21113项通过／145条警告，登记与编排门禁也通过；不外推其他CI Job。
+完整 `full` 的三个源Engine扫描成功后，由独立授权初始化员为原执行User办理固定源和已确认成果的限时精确 `metadata_read`。单体布局取System已核事实，Grant绑定同一Tenant／User／Engine、完整路径、fingerprint和boundary hash；执行者仍精确十二项功能权限，办理凭据仅留准备控制器。每次普通枚举前核当前可见性；未知授权写入也先登记待撤销，退出后核重新不可见，业务与撤销错误分列。
+
+公开Meta继续核安全结构投影；三方正整数大小、完整TIFF属性和普通图片源前后快照由当轮Hosted PostgreSQL固定有界只读查询取证。绑定 `addp_online` 容器ID／启动时刻、suite／Run ID、非默认Tenant／真实User、源扫描或当前Develop父执行及精确自动扫描；容器、身份、目标错配即失败。已发布但父执行失败的切片只认原夹具白名单及实际返回扫描绑定，失败前缀完整Meta对象集合另从同一受控快照核对，不能让普通列表权限过滤掩盖额外登记。
+
+Develop公开投影不返回 `tenant_id`：成果候选登记前由同一快照核父Tenant／内部发起主体，公开UUID／模块／任务类型／状态／发起User仍匹配，不要求恢复内部字段。上述取证不扩大公开投影，也不减像元／COG、源及既有成果不变、当前血缘／页面或清理断言。
+
+#### 栅格主场景失败补偿与退出
+
+**发布已确认后的清理故障**复用同一suite：Business-owned回环代理仅针对首片／末片明确对象，在真实MinIO PUT成功、回复Runtime前按上传长度／SHA-256唯一定位私有临时COG，在sidecar路径建目录触发真实unlink失败；原COG字节／大小不变。代理以Runner UID及实际Docker socket GID运行，生产／读取owner-only故障事件的身份一致；仅内部持socket／事件，由现有Hosted生命周期独占创建／销毁，不新增产品故障参数。
+
+部分确认时下一片为 `not_attempted`；全部确认时不返回 `failed_tile/publication`，两者父执行仍failed。逐一核确认产物、严格整数大小、新自动扫描、先前成果哈希及执行工作目录清理；未真实运行不计该故障T4通过。
+
+**硬超时后的授权补偿**不能依赖Python finally。停止System／各Owner前，既有生命周期钩子从当轮元数据日志恢复精确撤销：绑定suite／Run、原容器／启动时刻、普通User／Tenant、固定Engine／对象、请求UUID及已确认Grant回执，未知写入同样留待办。先归档原日志，经正式System接口撤销并核普通User不可见，再逐项回写剩余请求、另存补偿结果；失败／未知不记撤销通过，不改原Online失败报告，不将超时后清理计入1740秒内业务通过。
+
+所有退出路径按归属销毁本轮业务容器、临时registry、平台容器／数据卷及产品Runtime容器／镜像，并核零残留。外层Infra销毁、业务产物核验、授权撤销分别认定，不能互相替代。
+
+#### 栅格主场景固定结果与验收边界
+
+| 固定版本／运行 | 结论与保留边界 |
+| --- | --- |
+| `0bee3c249cdc08424f6b97b9aab11d3a1e445655`，[Hosted42383359430／Job128435478324](https://github.com/pampa0629/addp/actions/runs/42383359430/job/128435478324) | 1740113毫秒触发 `online_scenario_timeout`，full失败。七服务同提交，67份页面通过回执、最后元数据为 `dem-slope.cog.tif`；普通图片及末尾分支撤权无完整结果。58份metadata Grant撤销仍pending，不能报收权完成；部署清理／Infra零残留单独成立。223次血缘HTTP合计21.81秒、最长419毫秒，不据总超时推断接口变慢。 |
+| `a7895d467ca2d69cee45a578d2a4dcbf0c5c8d89`，[Hosted42390011971／Job128455431586](https://github.com/pampa0629/addp/actions/runs/42390011971/job/128455431586) | full实际通过，预检＋业务1489195毫秒，未扩1740秒。七服务同提交；执行者Tenant2／精确12权限，分支读者独立普通User／精确3权限。create／冲突／replace、多来源／页面构图、DEM、PNG／JPEG及分支撤权完成；71份主场景页面回执、52组三方严格正整数大小相等。64份主场景＋7份分支Grant全撤且不可见，pending空；154次有界取证、资源策略恢复、部署／Infra清理通过。 |
+| 同源码[GeoPython Linux CI42389976288／Job128455317630](https://github.com/pampa0629/addp/actions/runs/42389976288/job/128455317630) | 实际21113项通过／145警告，登记及编排门禁通过；不外推其他CI Job。 |
+
+成功full的权限血缘证据独立保留：撤A前四图各2节点／1条当前执行直接边；撤后A1／A2各1节点／0边、`permission_filtered=true`，隐藏源名／指纹／execution UUID均不泄露；B1／B2仍各2节点／1边且无隐藏提示。C下游可有既有隐藏提示，但无本次执行关系，四张授权前产出图也不含C；已核八张原始图及三张前后对照截图。原专项通过不替代full，后续成功不覆盖首轮超时、收权缺口及其实际未验范围；以上固定结果不代表当前源码已重跑。
 
 ### 多来源计算与页面构图
 
