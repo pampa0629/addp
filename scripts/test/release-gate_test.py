@@ -110,6 +110,33 @@ exit 1
                 self.assertTrue((output / source).is_file(), source)
 
 
+            # Exercise the real images-mode exporter and generated loader too.
+            # The Docker stub only writes the archive, never reaches a daemon.
+            stub.write_text('''#!/bin/sh
+printf '%s\\n' "$*" >> "$PACKAGE_TEST_BOUNDARY"
+if [ "$1" = save ] && [ "$2" = -o ]; then
+    printf fixture > "$3"
+    exit 0
+fi
+if [ "$1" = load ]; then exit 0; fi
+exit 1
+''')
+            image_env = dict(env, PATH=f"{stub.parent}{os.pathsep}{env['PATH']}",
+                             PACKAGE_TEST_BOUNDARY=str(boundary))
+            packed = subprocess.run(['bash', 'scripts/build/package.sh', '--mode', 'images'],
+                                    cwd=root, env=image_env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(packed.returncode, 0, packed.stdout + packed.stderr)
+            images_output, = (root / 'dist').glob('package-images-*')
+            self.assertEqual((images_output / 'images/release.tar').read_text(), 'fixture')
+            self.assertIn('save -o', boundary.read_text())
+            self.assertIn('sha256:' + 'c' * 64, boundary.read_text())
+            self.assertIn('version: fixture', (images_output / 'DEPLOY_INFO.txt').read_text())
+            loaded = subprocess.run(['bash', 'load-images.sh'], cwd=images_output, env=image_env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(loaded.returncode, 0, loaded.stdout + loaded.stderr)
+            self.assertIn('load -i images/release.tar', boundary.read_text())
+
+
 class ReleaseGateTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="addp-release-gate-")

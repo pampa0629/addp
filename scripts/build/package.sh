@@ -6,7 +6,6 @@
 # Usage: ./package.sh [OPTIONS]
 # Options:
 #   --mode MODE               Deployment mode: images|registry (default: images)
-#   --registry REGISTRY_URL   Registry URL (default: localhost:5001)
 #   --server SERVER_USER@IP   Automatically transfer to server via rsync
 # =============================================================================
 
@@ -21,8 +20,6 @@ NC='\033[0m'
 
 # Default values
 MODE="images"
-REGISTRY="${REGISTRY:-localhost:5001}"
-IMAGE_TAG="${IMAGE_TAG:-latest}"
 SERVER=""
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -38,17 +35,13 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
-        --registry)
-            REGISTRY="$2"
-            shift 2
-            ;;
         --server)
             SERVER="$2"
             shift 2
             ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"
-            echo "Usage: $0 [--mode images|registry] [--registry URL] [--server user@host]"
+            echo "Usage: $0 [--mode images|registry] [--server user@host]"
             exit 1
             ;;
     esac
@@ -65,7 +58,7 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "Mode: ${GREEN}${MODE}${NC}"
 echo -e "Output: ${GREEN}${OUTPUT_DIR}${NC}"
-echo -e "Registry: ${GREEN}${REGISTRY}${NC}"
+echo "Release: dist/compose-release/manifest.json"
 if [ -n "$SERVER" ]; then
     echo -e "Target Server: ${GREEN}${SERVER}${NC}"
 fi
@@ -193,7 +186,7 @@ manifest = json.load(open(sys.argv[1]))
 assert manifest['schema'] == 'addp.compose-release/v1'
 references = set(manifest['image_ids'].values())
 assert references
-assert all(re.fullmatch(r'.+@sha256:[0-9a-f]{64}', ref) for ref in references)
+assert all(re.fullmatch(r'sha256:[0-9a-f]{64}', ref) for ref in references)
 print('\n'.join(sorted(references)))
 PYIMAGES
     local images=() reference
@@ -272,8 +265,7 @@ if [ "$FAILED" -eq 0 ]; then
     echo ""
     echo -e "${YELLOW}Next steps:${NC}"
     echo "1. Configure environment: bash scripts/prod/setup-env.sh && vim .env"
-    echo "2. Start infrastructure: bash scripts/infra/up.sh"
-    echo "3. Start services: bash scripts/prod/start.sh"
+    echo "2. Start the prepared release: bash scripts/prod/start.sh"
     exit 0
 else
     echo -e "${RED}✗ Some images failed to load${NC}"
@@ -313,7 +305,14 @@ ADDP Deployment Package
 
 Mode: ${MODE}
 Generated: $(date)
-Registry: ${REGISTRY}
+Release: dist/compose-release/manifest.json
+$(python3 - "$OUTPUT_DIR/dist/compose-release/manifest.json" <<'PYINFO'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+for key in ("version", "registry", "platform", "source_commit"):
+    print(key + ": " + manifest[key])
+PYINFO
+)
 Builder: $(whoami)
 Host: $(hostname)
 Git Branch: $(git branch --show-current 2>/dev/null || echo "unknown")
@@ -327,7 +326,7 @@ Package Contents:
 - scripts/infra/ (initialization scripts)
 - scripts/prod/ (production scripts)
 - business/ (business infrastructure)
-$(if [ "$MODE" = "images" ]; then echo "- images/ (pre-built Docker images, ~2-5GB)"; echo "- load-images.sh (image loader script)"; fi)
+$(if [ "$MODE" = "images" ]; then echo "- images/release.tar (all selected immutable image IDs)"; echo "- load-images.sh (image loader script)"; fi)
 
 Deployment Instructions:
 See README.md for detailed deployment steps.

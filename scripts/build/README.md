@@ -309,7 +309,6 @@ bash scripts/build/package.sh --mode registry
 | 参数 | 值 | 说明 |
 | --- | --- | --- |
 | `--mode` | `images` / `registry` | 默认 `images`；不接受 `offline` |
-| `--registry` | 地址 | 默认读取 `REGISTRY`，缺省为 `localhost:5001` |
 | `--server` | `user@host` | 生成后传输到远端 `~/addp-deploy/`，优先 rsync，缺少时使用 scp |
 
 版本、Registry 和镜像集合由已准备的 `dist/compose-release/manifest.json` 确定。两种模式都会复制 `.env.example`；根 `.env` 存在时也会复制，包及其传输目标按含凭据的部署制品管理。目标环境的配置和 Secret 须单独核对，不能仅靠包目录名判断。

@@ -423,10 +423,9 @@ else
         echo "   Visit: https://hub.docker.com/r/${TARGET_REGISTRY#docker.io/}/repositories"
     fi
     echo "2. Generate deployment package:"
-    echo "   ./scripts/build/package.sh --mode registry --registry $TARGET_REGISTRY"
+    echo "   bash scripts/prod/deploy.sh $IMAGE_TAG --registry $TARGET_REGISTRY --skip-deploy"
+    echo "   bash scripts/build/package.sh --mode registry"
     echo "3. Deploy on server:"
-    echo "   docker compose -f docker-compose.yml pull"
-    echo "   docker compose -f docker-compose.runtimes.yml pull"
     echo "   bash scripts/prod/start.sh"
     exit 0
 fi
