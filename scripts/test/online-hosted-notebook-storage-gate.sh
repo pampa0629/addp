@@ -20,6 +20,10 @@ export DEVELOP_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secret
 export MANAGER_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
+# The product creates only the deployment-bound bucket. The default bucket is
+# an independent private sentinel owned by this disposable acceptance fixture.
+run_logged docker exec addp-minio mc mb local/develop
+run_logged docker exec addp-minio mc anonymous set private local/develop
 application_owned=1
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
