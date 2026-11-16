@@ -114,6 +114,8 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 平台三员 Role 只允许 User Principal，必须互斥，不存在全权合并角色。Runtime Role 只允许 Service Principal，不得授予 User。具体 `allowed_principal_types`、`allowed_scope_types` 和 Permission 集合以 `system/authorization/builtin_roles.yaml` 为准。
 
+新增或调整内置 Role 的 `name_i18n_key`／`description_i18n_key` 时，须同步 System 后端语言包及 `common-frontend/basic/src/i18n/{zh-cn,en}.json` 中对应的名称和说明。前端展示沿[共享角色呈现契约](../../common-frontend/README.md#开发)，不得复制到 System 模块私有语言包，也不得增加平行角色清单或放宽从 Role Catalog 枚举消息键的完整性断言。发布验证使用 `make test-common-frontend` 与实际消费模块的标准前端门禁；System 的 `make test-system-frontend` 必须分别记录单测、完整浏览器和构建结果。
+
 三员特权治理以目标角色确定申请／复核资格，不把有限复核等同于普通账号或权限的直接管理权：
 
 | 目标角色 | 申请角色 | 复核角色 |

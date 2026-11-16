@@ -1592,6 +1592,10 @@
         "name": "Engine lifecycle operator",
         "description": "Create, read and delete tenant Engines and read Cleanup results; no default assignments or data access"
       },
+      "engine_management_reader": {
+        "name": "Engine management reader",
+        "description": "Read redacted engine management details in the current tenant; grants no business data access, engine writes or authorization management."
+      },
       "infrastructure_administrator": {
         "name": "Tenant Infrastructure Administrator",
         "description": "Manages engines, applications, API keys, and resource reclaim, and reads health status."

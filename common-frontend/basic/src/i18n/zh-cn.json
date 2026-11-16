@@ -1592,6 +1592,10 @@
         "name": "引擎生命周期操作员",
         "description": "仅办理当前租户的引擎创建、读取、删除及清理结果读取，不默认分配或授予数据访问"
       },
+      "engine_management_reader": {
+        "name": "引擎管理只读",
+        "description": "读取当前租户引擎管理的脱敏详情；不授予业务数据内容访问、引擎写入或授权管理。"
+      },
       "infrastructure_administrator": {
         "name": "租户基础设施管理员",
         "description": "管理引擎、应用、API Key 和资源回收，并查看健康状态。"
