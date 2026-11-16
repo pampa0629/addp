@@ -103,6 +103,8 @@ bash scripts/dev/start.sh -jupyter
 
 ## 依赖库
 
+Jupyter 的 PyArrow 范围为 `>=18.0.0,<26.0.0`，与当前 Matplotlib 3.8.2 所需的 NumPy `<2` 组合使用。原生启动和标准测试共同执行全量导入检查；依赖安装、`pip check` 和实际导入分别验证，导入失败保留 traceback。
+
 依赖见 [requirements.txt](requirements.txt)。
 
 ## 验证

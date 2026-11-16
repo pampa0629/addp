@@ -174,7 +174,7 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     # platform shell fixtures. Keep the existing module/CI selection shared.
     if any(path in {"scripts/dev/gdal-env.sh", "scripts/dev/gdal-arrow.py"} for path in files):
         affected.update({"engines", "manager"})
-    if "scripts/dev/geopython-workflow.sh" in files:
+    if any(path in {"scripts/dev/geopython-workflow.sh", "scripts/dev/jupyter-env.sh"} for path in files):
         affected.add("engines")
 
     # Agent loads platform Skill bodies, references, and runtime configuration from skills/.

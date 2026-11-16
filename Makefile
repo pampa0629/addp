@@ -168,6 +168,7 @@ test-document-native: ## 使用已准备的私有 LibreOffice 与中文字体验
 JUPYTER_PYTHON ?= engines/jupyter/venv/bin/python
 .PHONY: test-jupyter
 test-jupyter: ## 验证 Notebook Runtime 身份、内容摘要与隔离会话
+	@bash -c 'source scripts/dev/jupyter-env.sh; jupyter_runtime_imports_available "$$1"' _ "$(abspath $(JUPYTER_PYTHON))"
 	@cd engines/jupyter && $(abspath $(JUPYTER_PYTHON)) -m unittest discover -p 'test_*.py'
 
 MATH_WORKFLOW_PYTHON ?= engines/math-workflow/venv/bin/python

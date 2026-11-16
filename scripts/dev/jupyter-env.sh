@@ -61,7 +61,7 @@ install_jupyter_labextension() {
 jupyter_runtime_imports_available() {
   local python_bin="$1"
 
-  "$python_bin" - <<'PY' >/dev/null 2>&1
+  "$python_bin" - <<'PY'
 import sys
 
 if sys.version_info < (3, 11):
