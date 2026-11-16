@@ -875,12 +875,34 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 ## raster-zonal-statistics-persistence
 
-部署、身份、预算与清理遵循[公共前提](#独立持久化专项公共前提)。验证已登记且同 CRS／旋转网格的数值与分区 TIFF：显式多波段分类分区、重分类接统计、超过 50 类的完整 CSV 保存与有限预览、全无效分区空表四条 DAG；非法波段和不同网格两条失败不得发布目标或新增扫描。固定版本 `5e49199e8` 的[独立 Hosted 39217208101](https://github.com/pampa0629/addp/actions/runs/39217208101/job/117943758382) 已通过并经独立归档复核：四份 CSV 为 4／3／70／0 行，严格物理／Meta 大小为 253／206／1900／73 字节；预检与业务 210767 毫秒，清理与 Infra 零残留通过。Native 与真实跨模块结论分别记账。
+部署／身份／预算／清理沿[公共前提](#独立持久化专项公共前提)，Runner与Native分层沿[验证入口](#独立持久化专项验证入口)。标准业务入口为 `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence`。
 
-独立标量分组与标准库统计 oracle 逐行核对分类值、三项计数、五项统计、null、排序和固定 Schema，完整结果必须经既有 `save` 持久化；响应仅为有限表摘要，不新增 RasterArtifact。物理文件／Meta 大小严格为相等正整数；只手工扫描两份精确源，四份 CSV 各自自动扫描，核对同租户／同用户、Monitor 和当前执行所有输入的 active derive 血缘。每轮核对源物理字节／Meta 和先前成果不变。不计为 Manager 绘制、NFS 客户端写、HTTP Range、业务 DELETE、覆盖冲突或容量；原 Raster／Contour／Polygonize／Rasterize T4 保持。
+### 整数分区统计四条成功DAG
 
-标准入口 `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence`；专项 Runner 与 Native 分层见[验证入口](#独立持久化专项验证入口)。
+已登记且同CRS／旋转网格的数值TIFF＋分区TIFF，分别执行：
 
+- 显式多波段分类分区统计。
+- 重分类后接分区统计。
+- 超过50类的全量统计保存及有限预览。
+- 全无效分区保存空表，保留固定Schema。
+
+四份结果均经既有 `save` 持久化CSV；响应最多50行、仅作摘要，不新增RasterArtifact。物理文件＝Meta大小且为严格正整数；无数据行不等于无文件或执行失败。
+
+### 非法波段与不同网格失败
+
+两条失败分别验证非法波段、数值与分区网格不同；不得发布目标或新增扫描，不改变精确输出／扫描清单和既有成果。
+
+### 独立CSV核验与扫描血缘
+
+独立标量分组＋标准库统计oracle逐行核分类值、三项计数、五项统计、null、排序和固定Schema；完整CSV与有限预览分别验证，不以预览样本代替全表。
+
+仅手扫两份精确源，四份CSV各自自动扫描；逐项核同User／Tenant、Monitor及当前执行所有实际输入的active derive。每轮核源物理字节／Meta和先前成果不变。
+
+### 固定Hosted结果与范围
+
+`5e49199e8` 的[独立Hosted 39217208101／Job117943758382](https://github.com/pampa0629/addp/actions/runs/39217208101/job/117943758382)已通过并独立复核归档：四CSV为4／3／70／0行，严格物理／Meta大小253／206／1900／73字节，预检＋业务210767毫秒，清理及Infra零残留通过。
+
+Native与真实跨模块结果分别记账；不计Manager绘制、NFS客户端写、HTTP Range、业务DELETE、覆盖冲突或容量，原Raster／Contour／Polygonize／Rasterize T4不变，固定结果不表示当前源码已重跑。
 
 ## 邻域与 IDW 专项共同要求
 
