@@ -1439,7 +1439,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(proof['performance']['cleanup'],'passed')
         self.assertNotIn('source_fill_succeeded',proof['performance'])
 
-    def performance_orchestration(self, *, invalid=None):
+    def performance_orchestration(self, *, invalid=None, reset_during_trigger=False):
         import io
         state = {'phase':'', 'clock':0, 'trigger_reads':0, 'missing_reads':0,
                  'ack':False, 'deleted':False, 'lock_done':False, 'recovery_reads':0}
@@ -1469,7 +1469,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 window = {'state':'active','active':True,
                           'trigger_since':(now-timedelta(seconds=M.CDC_PERFORMANCE_SECONDS[code]+1)).isoformat()}
                 if phase in ('performance_pending','performance_trigger'):
-                    since = base if phase == 'performance_pending' or code == 'cdc_capture_delayed' else state['resumed_since']
+                    since = base if phase == 'performance_pending' or code == 'cdc_capture_delayed' else state.get('window_restarted_at',state['resumed_since'])
                     if invalid == 'resume_old_window' and code != 'cdc_capture_delayed':
                         since = base
                     active = (now-since).total_seconds() >= M.CDC_PERFORMANCE_SECONDS[code]
@@ -1565,6 +1565,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 fresh = {'sampled_at':now.isoformat(),'expires_at':(now+timedelta(seconds=30)).isoformat()}
                 buffer.update(fresh);delay.update(fresh)
                 state['trigger_reads'] += 1
+                if reset_during_trigger and state['trigger_reads']==11:
+                    state['window_restarted_at']=now
                 delay['event_count'] = str(state['trigger_reads'])
                 buffer['lag_offsets'] = '1000'
             if state['phase'] == 'performance_unknown':
@@ -1660,6 +1662,17 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(value['result'],'passed')
         self.assertEqual(value['backlog_threshold'],'256')
         self.assertGreaterEqual(len(value['backlog_recovery_samples']),5)
+
+    def test_rebuilt_evaluator_waits_for_a_complete_window_after_a_mid_trigger_reset(self):
+        value,state,delivered,_=self.performance_orchestration(reset_during_trigger=True)
+        pre=value['pretrigger_pause']
+        self.assertEqual(value['result'],'passed')
+        self.assertEqual(pre['result'],'passed')
+        for code in ('cdc_consumer_stalled','cdc_backlog_high'):
+            self.assertNotEqual(pre['resumed_pending'][code]['window']['trigger_since'],
+                                pre['insufficient_last'][code]['window']['trigger_since'])
+        self.assertIn('window_restarted_at',state)
+        self.assertEqual(delivered.call_count,2)
 
     def test_backlog_guards_refuse_short_window_wrong_threshold_changed_pause_and_half_boundary(self):
         for invalid in ('early','threshold','pause_changed','half','history_identity','history_pre_fault'):

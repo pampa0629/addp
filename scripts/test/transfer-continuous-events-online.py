@@ -810,7 +810,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             values = cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES)
             evidence['latest_incidents'] = values
             return values if set(values) == CDC_PERFORMANCE_CODES and all(v['status'] == 'open' for v in values.values()) else None
-        active = until(opened, timeout=450)
+        active = until(opened, timeout=600)
         require(set(pretrigger['insufficient_last']) == consumption_codes,
                 'resumed performance windows lacked actual insufficient samples')
         for code, row in pretrigger['insufficient_last'].items():
@@ -2581,7 +2581,7 @@ def main():
         require(len(set(identities)) == 5, 'fixture business Users must be distinct')
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
             signal.signal(signum, interrupted)
-        signal.alarm(1450)
+        signal.alarm(1650)
         faults.wait_protection_ready(tenant)
         report['protection_projection_ready'] = True
         run_suite(client, denied, foreign, peer, reader, admin, API.GatewayClient(gateway, '', timeout),

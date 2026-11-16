@@ -131,6 +131,16 @@ Artifact `14159537304` 的 SHA-256 `9c3e845cb0e64d5a2e839db0146cea655d624c0f9f42
 
 首轮工作区标准入口在既有 `test_additive_oracle_bounds_large_surplus_and_rejects_missing_duplicate_and_wrong_values` 的 `verify-cdc-altered` 子进程 45 秒超时，150 项中 1 项错误，未走到 Go，原件 `/tmp/addp-cdc-evaluator-runner-first.log` 保留；未修改该夹具及其超时，也不据主机负载推定唯一原因。冻结门禁验证最终增加“新进程实际暂停评估”断言后的源码，首轮失败不被改写。此阶段尚未完成新源码实际 Hosted，不追认前轮未重建 Monitor 的 T4。
 
+### 评估器重建首轮 Hosted 失败与等待边界修订（2026-11-16）
+
+固定 `913a14fad283fb8cc2ca8b6ce4f43b5507e780ce` 的 [Hosted 43843679319／Job 133218391405](https://github.com/pampa0629/addp/actions/runs/43843679319/job/133218391405)实际完成 Monitor 重建：PID 70403→114365，相同二进制 SHA-256 `8e9f3d90ed1111eee44cd8f83d69570a58de5dec83305954d9bc4e1c1ad23396`；重建完成 10:13:58.377878Z 后，新评估器在 10:14:12.560089Z 写入 paused／inactive，trigger_since／recovery_since 为空，两条消费规则的 incident／event／delivery 均为 0。随后正式 Resume 使用新 execution、generation 1 不变。整套仍失败在 performance_trigger 的 450 秒收敛等待，只有前 17 项检查完成，不认定本补充 T4 通过。
+
+首次恢复 pending 起点为 10:14:41.822106746Z，后来窗口重置并从 10:16:56.722067686Z 重新累计。最后的消费停滞不足窗口为 179.801 秒，计数均为 0，后在新窗口约 195.838 秒时打开；积压到等待结束只有 285.100 秒、仍 pending、计数均为 0，尚不足原 300 秒。Owner 回执中的 available 样本连续，不能写成 Owner 停采。机器读取日志分别在 10:16:42.572618Z、10:16:57.577028Z 返回 200；按当前最新快照读取及时间关系，评估器可能漏读中间的 10:16:43.280445Z 样本，使所读 10:16:26.327842Z→10:16:56.722068Z 间隔超过前份 30 秒有效期约 0.394 秒。该解释与现行缺样重置算法相符，但报告没有逐轮窗口历史，不能据此认定所有重置的唯一原因。已证实的失败边界是重新累计后的完整积压窗口尚未满足，旧墙钟等待已经耗尽。
+
+修订保留样本有效期、评估周期、阈值、缺样重置、临界前零生命周期和同一完整新窗口的全部断言，仅将本段收敛等待 450→600 秒，场景 1450→1650 秒、分发 1500→1700 秒；Hosted Job 仍为 60 分钟。新增确定性回归在尚未触发时中断并重新累计，旧 450 秒版本实际失败（`/tmp/addp-cdc-evaluator-window-reset-red-boundary.log`），600 秒版本通过（`/tmp/addp-cdc-evaluator-window-reset-green.log`）。首个较早重置替身未跨过旧截止线，原输出另保留，不冒充 red。最终七文件摘要与冻结检出逐一一致后，标准 `make test-transfer-continuous-online-runner` 通过 151 项 Python、原语法及 System 身份夹具 Go（`/tmp/addp-cdc-evaluator-runner-revised.log`）；一次复制源目录错误而运行旧 150 项的日志另存 `/tmp/addp-cdc-evaluator-runner-stale-input.log`，不计新源码验证。
+
+该轮性能与领域 cleanup=passed、cleanup_failures=[]、uncertain_mutation=false，任务 3／2 删除读回不存在，硬退出 Kafka 任务按原契约交部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。后继新窗口全套触发／恢复及签名投递、风险重建、scheduled、历史图表和最终原生 verify-clean 未完成，不计通过。Artifact `14216306323` 已核对 SHA-256 `be03a8880f3593b986d76aec601586b33370d012705b8dd147987f3e488300b1` 与 ZIP CRC，原件位于 `/tmp/addp-cdc-evaluator-hosted-43843679319/`。同源码的 [Platform consistency Job 133217624659](https://github.com/pampa0629/addp/actions/runs/43843456806/job/133217624659)成功，确定性／CI 不抵消实故障失败。修订源码需另跑同一 Hosted 并重新核对完整链路及清理。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办
