@@ -1018,24 +1018,46 @@ test('qualified operator grants and revokes an exact recipient', async ({ page }
   await expect(history).toContainText('已撤销')
   expect(writes).toHaveLength(2)
 })
-test('unchanged engine and authorization refresh preserve the draft; losing permission clears it', async ({ page }) => {
-  await page.clock.install()
-  const { writes } = await fixture(page, { allowed: grantPermissions })
-  await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
-  const response = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/engines'))
-  await page.clock.runFor(10000); await response
-  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
-  await refreshSameAuthorization(page)
-  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
-  await page.evaluate(async () => {
-    const store = (await import('/src/store/auth.js')).useAuthStore()
-    const context = JSON.parse(JSON.stringify(store.authContext))
-    context.authorization.role_assignments[0].permissions = context.authorization.role_assignments[0].permissions.filter(permission => permission !== 'system.engine_access_grant.create')
-    store.authContext = context
-  })
-  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
-  await expect(page.getByTestId('approval-targets')).toHaveCount(0)
-  expect(writes).toEqual([])
+test('unchanged engine and authorization refresh preserve the draft; losing permission clears it', async ({ page }, testInfo) => {
+  const navigation = []
+  let phase = 'initial-load'
+  const protocol = await page.context().newCDPSession(page)
+  await protocol.send('Page.enable')
+  for (const event of ['Page.frameRequestedNavigation', 'Page.frameNavigated', 'Page.navigatedWithinDocument']) {
+    protocol.on(event, detail => navigation.push({ phase, event, detail }))
+  }
+  try {
+    await page.clock.install()
+    const { writes } = await fixture(page, { allowed: grantPermissions })
+    await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
+    const document = await page.evaluateHandle(() => window.document)
+    const originalURL = page.url()
+    phase = 'engine-status-refresh'
+    const response = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/engines'))
+    await page.clock.runFor(10000); await response
+    await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+    phase = 'same-authorization-refresh'
+    await refreshSameAuthorization(page)
+    await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+    expect(await page.evaluate(original => window.document === original, document)).toBe(true)
+    phase = 'permission-loss'
+    await page.evaluate(async () => {
+      const store = (await import('/src/store/auth.js')).useAuthStore()
+      const context = JSON.parse(JSON.stringify(store.authContext))
+      context.authorization.role_assignments[0].permissions = context.authorization.role_assignments[0].permissions.filter(permission => permission !== 'system.engine_access_grant.create')
+      store.authContext = context
+    })
+    await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
+    await expect(page.getByTestId('approval-targets')).toHaveCount(0)
+    expect(writes).toEqual([])
+    expect(await page.evaluate(original => window.document === original, document)).toBe(true)
+    await expect(page).toHaveURL(originalURL)
+  } finally {
+    await testInfo.attach('authorization-draft-navigation', {
+      body: Buffer.from(JSON.stringify(navigation, null, 2)),
+      contentType: 'application/json'
+    })
+  }
 })
 for (const permit of ['deployment_default', 'allowed']) test(`opaque token rotation preserves the ${permit} grant draft`, async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, permit })
