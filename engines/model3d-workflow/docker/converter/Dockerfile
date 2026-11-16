@@ -35,6 +35,8 @@ RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg \
   && git checkout "${VCPKG_COMMIT}" \
   && ./bootstrap-vcpkg.sh
 
+RUN python3 -c 'from pathlib import Path; import os; p = Path(os.environ["VCPKG_ROOT"]) / "ports/libgta/portfile.cmake"; p.write_text(p.read_text().replace("http://download.savannah.nongnu.org/releases/gta/", "https://marlam.de/gta/releases/"))'
+
 # Product linking, compression smoke and packaging consume release libraries only.
 RUN set -eu; \
     for triplet_file in "$VCPKG_ROOT/triplets/x64-linux.cmake" "$VCPKG_ROOT/triplets/community/arm64-linux.cmake"; do \

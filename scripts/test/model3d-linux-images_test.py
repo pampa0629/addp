@@ -16,6 +16,27 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_libgta_uses_current_official_release_without_changing_pinned_source(self):
+        source = (ROOT / 'engines/model3d-workflow/docker/converter/Dockerfile').read_text()
+        commands = re.findall(r'^RUN (.*?(?:\\\n.*?)*)(?=\n(?:[^ \n]|\n)|\Z)', source, re.M)
+        repairs = [command for command in commands if 'https://marlam.de/gta/releases/' in command]
+        self.assertEqual(len(repairs), 1)
+        self.assertLess(source.index('https://marlam.de/gta/releases/'), source.index('cargo build --locked --release'))
+        sha512 = '99ec3d6317c9a12cf440a60bb989cc7a3fe35e0a1da3e65206e5cd52b69fb860850e61ea0f819511ef48ddc87c468c0ded710409990627096738886e1b358423'
+        original = ('set(LIBGTA_VERSION 1.0.8)\nset(LIBGTA_HASH ' + sha512 + ')\n'
+                    'vcpkg_download_distfile(ARCHIVE\n'
+                    ' URLS "http://download.savannah.nongnu.org/releases/gta/libgta-1.0.8.tar.xz"\n'
+                    ' FILENAME "libgta-${LIBGTA_VERSION}.tar.xz" SHA512 ${LIBGTA_HASH})\n')
+        with tempfile.TemporaryDirectory(prefix='addp-libgta-source-') as directory:
+            port = Path(directory) / 'ports/libgta/portfile.cmake'
+            port.parent.mkdir(parents=True)
+            port.write_text(original)
+            result = subprocess.run(['bash', '-c', repairs[0].replace('\\\n', '')],
+                                    env={**os.environ, 'VCPKG_ROOT': directory}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(port.read_text(), original.replace('http://download.savannah.nongnu.org/releases/gta/',
+                                                              'https://marlam.de/gta/releases/'))
+
     def test_product_triplets_build_only_release_and_preserve_target_linkage(self):
         source = (ROOT / 'engines/model3d-workflow/docker/converter/Dockerfile').read_text()
         commands = re.findall(r'^RUN (.*?(?:\\\n.*?)*)(?=\n(?:[^ \n]|\n)|\Z)', source, re.M)

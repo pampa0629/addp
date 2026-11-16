@@ -92,6 +92,8 @@ vcpkg baseline 保持上游固定版本。tinygltf `2.9.7` 通过唯一的 overl
 
 Linux 产品只链接和打包 Release 库。Converter 在固定 vcpkg 的 `x64-linux` 与 `arm64-linux` triplet 中显式设置 `VCPKG_BUILD_TYPE=release`，避免默认额外编译未使用的 Debug ports；保留原架构、静态链接、全部依赖版本和转换 smoke。此设置采用 [vcpkg 官方 triplet 契约](https://learn.microsoft.com/en-us/vcpkg/users/triplets#vcpkg_build_type)，不改变 macOS 原生工具包准备方式。`make test-dev-lifecycle` 执行实际 Dockerfile 配置片段并用 CMake 核对两种架构、链接策略和缺失 triplet 拒绝；完整新 Linux 镜像及 smoke 仍由已有 Product binary build 验证，不能以确定性测试代替，也不保证一次冷构建必然落在 Hosted 预算内。
 
+Linux Converter 的固定 vcpkg baseline 中，libgta 1.0.8 仍指向已在部署节点连续超时的 Savannah 下载地址。构建在依赖安装前将该 port 的下载源替换为[作者当前官方发布站点](https://marlam.de/gta/download/)的 `https://marlam.de/gta/releases/libgta-1.0.8.tar.xz`；保留版本、文件名、原 SHA-512 和构建选项，不增加备用下载分支。官方归档为 315332 字节，已核验与 baseline 原 SHA-512 一致。`make test-dev-lifecycle` 核对实际 Dockerfile 修正片段只改变下载地址；正式 Linux 镜像构建与 smoke 另行验证。
+
 标准构建入口按宿主机 CPU 选择 `linux/amd64` 或 `linux/arm64`，一次仅构建一个平台；内部构建脚本通过 `MODEL3D_DOCKER_PLATFORM` 接收选定目标，其他架构明确拒绝。GitHub Hosted Ubuntu x86_64 使用 amd64，不通过 QEMU 运行 arm64 转换器。IfcConvert 固定同一上游版本并按 Docker 目标架构下载官方二进制；两个架构共用一个 Dockerfile 和 Linux 构建 patch。
 
 从仓库根目录构建并验证产品镜像：
