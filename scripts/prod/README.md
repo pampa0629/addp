@@ -76,6 +76,8 @@ Runtime 选择与观测能力一并冻结到发布清单。所选服务的镜像
 
 该脚本没有 `--remove` 或 `--volumes` 参数。需要停止 Infra 时，单独使用 `scripts/infra/down.sh`，默认保留卷。需要销毁数据时，先核验可恢复备份及目标 Compose project，再走 Infra 专用交互确认流程。
 
+Runtime 停止命令显式覆盖全部 profiles，确保已运行的可选 Runtime 一并停止；不能依赖默认 `down` 清理未激活 profile 中的服务。
+
 ### 示例
 
 重启沿用上述停止范围，按停止、启动的顺序执行：
@@ -99,7 +101,7 @@ bash scripts/prod/health-check.sh
 
 | 检查层 | 实际范围与判定 |
 | --- | --- |
-| 服务枚举 | 分别读取 `docker-compose.infra.yml`、`docker-compose.yml`、`docker-compose.runtimes.yml` 的 `config --services` 输出；不叠加生产启动入口生成的观测等覆盖文件，不能据此认定本次部署全部可选组件已覆盖 |
+| 服务枚举 | Infra 与平台读取源 Compose 的 `config --services`；Runtime 叠加 `dist/compose-release/runtimes-images.yml`，按已冻结选择检查，包括已选 SuperMap、排除未选 SuperMap。缺少 Runtime 发布覆盖文件或配置解析失败即非零退出。平台与 Infra 不叠加生产启动入口生成的观测等覆盖文件，不能据此认定全部可选观测组件已覆盖 |
 | 容器状态 | 对枚举服务使用 `ps -a -q` 找容器，优先读取 `.State.Health.Status`，无健康探针时读取 `.State.Status`；healthy 或 running 通过，缺容器或其他状态记失败。running 不等于模块 Ready 或业务可用 |
 | 一次性初始化 | 仅 Infra 的 `redpanda-init` 允许 exited 且退出码 0，表示初始化完成；其他已退出容器不按此例外通过 |
 | Nginx 入口 | 从平台 Compose 查询 Nginx 的实际发布端口，再以 `curl -fsS` 请求 `http://127.0.0.1:<端口>/health`；无映射或请求失败记失败，不按模块宿主机固定端口探测 |
@@ -108,7 +110,7 @@ Nginx `/health` 由[根配置](../../nginx/nginx.conf)直接返回，脚本也�
 
 **失败与覆盖边界**：缺失容器、状态不通过或入口请求失败会累积非零结果；Docker 查询或 inspect 错误也可能提前中断。脚本不轮询等就绪，不自动修复；curl 未配置显式超时，不能套用 [wait-infra.sh](#wait-infrash) 的等待预算。
 
-服务枚举通过进程替换读取，脚本未单独检查 `config --services` 的退出结果；枚举失败时可能漏查服务。须结合原始报错、三份配置的预期服务及实际输出核对覆盖，不能只凭最终退出码推定完整检查。实际状态与失败排查分别见[查看状态](#查看状态)、[健康检查失败](#问题-3-健康检查失败)；可选观测状态还须按[Infra 故障排查](../infra/docs/故障排查.md)核对。
+服务枚举失败立即退出，不将空枚举计为健康。实际状态与失败排查分别见[查看状态](#查看状态)、[健康检查失败](#问题-3-健康检查失败)；可选观测状态还须按[Infra 故障排查](../infra/docs/故障排查.md)核对。
 
 容器检查、回环 HTTP 探测、公开入口和业务结果分别记录。标准门禁、隔离 T4 与 T5 认证遵循[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；未执行、失败或未覆盖项不能计为通过，健康检查成功不代表业务就绪、日志完整或升级/恢复验收通过。
 

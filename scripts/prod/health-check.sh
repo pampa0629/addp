@@ -6,9 +6,19 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root_dir"
 failed=0
 
+compose() {
+  local compose_file="$1"
+  shift
+  local args=(-f "$compose_file")
+  if [ "$compose_file" = docker-compose.runtimes.yml ]; then
+    args+=(-f dist/compose-release/runtimes-images.yml)
+  fi
+  docker compose "${args[@]}" "$@"
+}
+
 check_service() {
   local compose_file="$1" service="$2" container_id status exit_code
-  container_id="$(docker compose -f "$compose_file" ps -a -q "$service")"
+  container_id="$(compose "$compose_file" ps -a -q "$service")"
   if [ -z "$container_id" ]; then
     echo "✗ $service: 未启动"
     failed=1
@@ -32,9 +42,10 @@ check_service() {
 
 for compose_file in docker-compose.infra.yml docker-compose.yml docker-compose.runtimes.yml; do
   echo "=== $compose_file ==="
+  services="$(compose "$compose_file" config --services)"
   while IFS= read -r service; do
     check_service "$compose_file" "$service"
-  done < <(docker compose -f "$compose_file" config --services)
+  done <<< "$services"
 done
 
 published_port="$(docker compose -f docker-compose.yml port nginx 80 2>/dev/null | sed 's/.*://')"

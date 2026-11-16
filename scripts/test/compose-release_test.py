@@ -6,6 +6,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -210,6 +212,58 @@ class RuntimeSelectionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Selected service platform differs.*supermap-workflow-engine"):
                 release.prepare("fixture", "registry.invalid")
             execute.assert_not_called()
+
+
+class RuntimeHealthSelectionTest(unittest.TestCase):
+    def run_health(self, enabled, missing_override=False):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / "scripts/prod/health-check.sh"
+            script.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / "scripts/prod/health-check.sh", script)
+            for project, filename in release.COMPOSE_FILES.items():
+                services = "  fixture:\n    image: registry:2\n"
+                if project == "runtimes":
+                    services += "  supermap-workflow-engine:\n    image: registry:2\n    profiles: [supermap-workflow]\n"
+                (root / filename).write_text("services:\n" + services)
+            override = root / "dist/compose-release/runtimes-images.yml"
+            override.parent.mkdir(parents=True)
+            if not missing_override:
+                selected = {"fixture": IMAGE_ID}
+                if enabled:
+                    selected["supermap-workflow-engine"] = IMAGE_ID
+                release.write_override(override, selected)
+            tools = root / "tools"
+            tools.mkdir()
+            docker = tools / "docker"
+            docker.write_text("#!/bin/sh\n"
+                              "case \" $* \" in\n"
+                              "  *' config '*) exec " + shlex.quote(shutil.which("docker")) + " \"$@\" ;;\n"
+                              "  *' ps '*) echo fixture-container ;;\n"
+                              "  *' port '*) echo 127.0.0.1:28080 ;;\n"
+                              "  *' inspect '*) echo healthy ;;\n"
+                              "  *) exit 90 ;;\nesac\n")
+            docker.chmod(0o700)
+            curl = tools / "curl"
+            curl.write_text("#!/bin/sh\nexit 0\n")
+            curl.chmod(0o700)
+            env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"])
+            env.pop("COMPOSE_PROFILES", None)
+            return subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+
+    def test_selected_supermap_is_checked_without_startup_profile_environment(self):
+        result = self.run_health(True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("✓ supermap-workflow-engine: healthy", result.stdout)
+
+    def test_unselected_supermap_is_not_required_for_health(self):
+        result = self.run_health(False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("supermap-workflow-engine", result.stdout)
+
+    def test_missing_frozen_runtime_selection_fails_health(self):
+        result = self.run_health(False, missing_override=True)
+        self.assertNotEqual(result.returncode, 0)
 
 
 class OntologyPackageCoverageTest(unittest.TestCase):
