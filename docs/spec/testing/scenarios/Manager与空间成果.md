@@ -1050,11 +1050,25 @@ oracle 以像元平面几何运算、标量四邻接遍历与标准库统计核�
 
 ## raster-proximity-persistence
 
-部署、身份、预算与清理遵循[公共前提](#独立持久化专项公共前提)。已登记投影米制 Int32 多波段及美制测量英尺 UInt32 TIFF 分别执行 `raster_load → raster_proximity → raster_save`；显式波段、合法零／负分类／UInt32 最大分类值、跨块、无效目标、部分透明和无效区域可跨越由完整像元核验。源均为北向无旋转方形网格；输出保留源网格及 CRS，距离统一为米制 Float64／NaN，沿 COG 保存。
+部署、身份、预算及通用清理按[公共前提](#独立持久化专项公共前提)，Runner 与 Native 分层按[验证入口](#独立持久化专项验证入口)。标准入口为 `make test-online ONLINE_SUITE=raster-proximity-persistence`。
 
-独立 oracle 逐个有效目标中心穷举欧氏距离，不调用产品变换、下包络或 GDAL 距离算法。检查完整像元／mask、单位、网格／CRS、COG／金字塔与严格相等正整数的 artifact／物理／Meta 大小；精确两源手工扫描、两个当前执行自动扫描、同用户／租户、Monitor 以及各 DAG 仅自身实际源输入的 active derive 血缘。每次重核源物理／Meta 与先前成果不变；非法波段及无有效目标失败不得发布或新增扫描。清理还须核验产品 Runtime／registry／镜像。
+### 单位与网格
 
-标准入口 `make test-online ONLINE_SUITE=raster-proximity-persistence`；专项 Runner 与 Native 分层见[验证入口](#独立持久化专项验证入口)。仅手工触发，不改原套件、权限或跨模块产品逻辑；不认证测地距离、成本／路径、旋转／非方形网格、容量或 Manager 绘制。入口登记不代表 T4 通过；固定版本 Hosted 结果与未覆盖范围见[验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)，不外推为当前 HEAD 已重跑。
+已登记投影米制 Int32 多波段及美制测量英尺 UInt32 TIFF，分别执行 `raster_load → raster_proximity → raster_save`。两源均为北向无旋转方形网格；输出保留源网格及 CRS，距离统一为米制 Float64／NaN，沿 COG 保存。美制测量英尺按 `1200/3937` 换算为米。
+
+完整像元核验覆盖显式波段、合法零／负分类／UInt32 最大分类值、跨块、无效目标、部分透明和无效区域可跨越。
+
+### 独立距离核验与扫描血缘
+
+独立 oracle 对每个有效目标中心穷举欧氏距离，不调用产品变换、下包络或 GDAL 距离算法；核对完整像元／mask、单位、网格／CRS、COG／金字塔及 artifact／物理／Meta 严格相等的正整数大小。
+
+只手工扫描两份精确源，两个当前执行各自自动扫描成果；核对同用户／租户、Monitor 及各 DAG 仅自身实际源输入的 active derive 血缘。
+
+### 失败、清理与验收边界
+
+非法波段及无有效目标失败不得发布或新增扫描；每次源物理／Meta 与先前成果不变、退出清理沿公共前提，另须核验产品 Runtime／registry／镜像。
+
+本专项不认证测地距离、成本／路径、旋转／非方形网格、容量或 Manager 绘制。固定版本 Hosted 结果与未覆盖范围见[验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)；仅手工触发，入口登记不代表 T4 通过，不外推为当前 HEAD 已重跑。
 
 ## raster-thin-persistence
 
