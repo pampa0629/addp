@@ -1022,12 +1022,31 @@ Native与真实跨模块结果分别记账；不计Manager绘制、NFS客户端�
 
 ## vector-zonal-statistics-persistence
 
-部署、身份、预算与清理遵循[公共前提](#独立持久化专项公共前提)。三条通用 `save` GeoPackage DAG 分别验证已登记 GeoJSON 面与旋转多波段 TIFF 的中心覆盖、全部触及与自定义统计列前缀，以及 TIFF 重分类→分类转面→矢量分区统计；前两条记录两源，第三条仅记录实际 TIFF 输入。样本覆盖跨块、重叠、孔洞、多部件、合法零、负值、NoData／mask／透明／非有限值、部分透明、网格外、全无效数值及薄面。保留原始属性与行序，重叠面独立统计；空覆盖和无有效值保留行、统计为 null。
+部署、身份、预算及通用清理按[公共前提](#独立持久化专项公共前提)，Runner 与 Native 分层按[验证入口](#独立持久化专项验证入口)。标准入口为 `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence`。
 
-物理 oracle 独立以像元平面几何运算、标量四邻接遍历与标准库统计核对完整几何、属性、计数／五项统计／null、CRS 和字段类型，不调用产品统计／GDAL Rasterize／Polygonize。通用矢量保存不新增 RasterArtifact；物理／Meta 大小必须为相等正整数。只手工扫描两份精确源，三份成果各自精确自动扫描，核对同租户／同用户、Monitor 和当前执行全部输入的 active derive 血缘。非法波段／列名冲突不得发布文件或新增扫描；每轮检查源物理／Meta 与先前成果不变；清理还须核对 Runtime／镜像／registry。不认证 Manager 绘制、NFS 客户端写、业务 DELETE、覆盖冲突或容量，不改已有套件、权限或跨模块产品逻辑。
+### 三条 GeoPackage DAG
 
-标准入口 `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence`；专项 Runner 与 Native 分层见[验证入口](#独立持久化专项验证入口)。仅手工触发，入口登记不代表 T4 通过。固定版本 Hosted 结果与未覆盖范围见[验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)，不外推为当前 HEAD 已重跑。
+三条链均沿通用 `save` 保存 GeoPackage：
 
+1. 已登记 GeoJSON 面与旋转多波段 TIFF，按中心覆盖统计。
+2. 同两源按全部触及统计，使用自定义统计列前缀。
+3. TIFF 重分类→分类转面→矢量分区统计，仅记录实际 TIFF 输入；前两条均记录两源。
+
+样本覆盖跨块、重叠、孔洞、多部件、合法零、负值、NoData／mask／透明／非有限值、部分透明、网格外、全无效数值及薄面。保留原始属性与行序，重叠面独立统计；空覆盖和无有效值保留行、统计为 null。
+
+### 独立物理核验
+
+oracle 以像元平面几何运算、标量四邻接遍历与标准库统计核对完整几何、属性、计数／五项统计／null、CRS 和字段类型，不调用产品统计／GDAL Rasterize／Polygonize。通用矢量保存不新增 RasterArtifact；物理／Meta 大小必须为相等正整数。
+
+### 精确扫描与执行血缘
+
+只手工扫描两份精确源，三份成果各自精确自动扫描，核对同租户／同用户、Monitor 和当前执行全部输入的 active derive 血缘。
+
+### 失败、清理与验收边界
+
+非法波段／列名冲突不得发布文件或新增扫描；每轮源物理／Meta 与先前成果不变、退出清理沿公共前提，另须核对 Runtime／镜像／registry。
+
+不认证 Manager 绘制、NFS 客户端写、业务 DELETE、覆盖冲突或容量。固定版本 Hosted 结果与未覆盖范围见[验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)；仅手工触发，入口登记不代表 T4 通过，不外推为当前 HEAD 已重跑。
 
 ## raster-proximity-persistence
 
