@@ -496,7 +496,7 @@ MinIO沿同预览／409／刷新／分页／下载断言，只用既有Business�
 
 ### 拓扑持久化公共要求
 
-本节主场景及下述多距缓冲、重合规整、组合case使用独立手工Hosted Linux x86_64 T4，入口 `make test-online ONLINE_SUITE=vector-topology-persistence`。复用共享生命周期、NFS export所有权和正式GeoPython产品默认入口；当次disposable非默认Tenant、同一普通User、600秒预算及精确11权限不变：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。Engine登记身份独立，登记后撤基础设施Token，不复用个人会话。
+本节主场景及多距缓冲、面界提取／诊断、线端修剪、重合规整／组合业务case使用独立手工Hosted Linux x86_64 T4，入口 `make test-online ONLINE_SUITE=vector-topology-persistence`。复用共享生命周期、NFS export所有权和正式GeoPython产品默认入口；当次disposable非默认Tenant、同一普通User、600秒预算及精确11权限不变：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。Engine登记身份独立，登记后撤基础设施Token，不复用个人会话。
 
 算子准入及算法归[矢量算子契约](../../workflow/矢量算子契约.md)，本页只保留固定夹具与验收差异。以下要求按各case明确的源、端口和计数核验，不能把独立case通过当主场景重验：
 
@@ -616,6 +616,52 @@ OGR以原点手写六闭合菱形，核精确坐标／方向／序／包络／�
 **固定通过**：`afc6a18aa01338850f690083bc4ba8834ae0d1f6`，[2026-10-27 Hosted40501760127／Job122180927931](https://github.com/pampa0629/addp/actions/runs/40501760127/job/122180927931)，User33／Tenant2／11权限，11源要素→9／15／22、三成果各98304字节等于Meta，三扫描／derive及Monitor一致。独立OGR以原生坐标／类型／精确分数核来源／片段／四方向，EWKB／实际OL／三图像素＋五截图已验；缺列负例零发布／扫描／facts、源／成果保持，业务31562ms、全部退出清理零残留。原扫描库存／逐页身份有同轮断言但未单独归档原库存／AuthContext响应，不认证业务DELETE、亚像素肉眼可见或超JSON安全整数。
 
 同SHA [Console](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179912108)195单测／233浏览器／build、[GeoPython](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179912720)7622项／24警告通过；[Platform](https://github.com/pampa0629/addp/actions/runs/40501463449/job/122179911829)因Catalog登记在四合成仓库读缺失Makefile失败，原已交公共owner，不算整轮Platform通过。本轮未重验旧业务／容量，组合容量仍未验；本地／代码就绪不算新T4。
+
+### 面界提取独立普通用户场景
+
+`polygon-rings`仅一成功／两失败，沿[拓扑公共要求](#拓扑持久化公共要求)的Hosted／非默认Tenant／普通User11权限／600秒，不跑full／旧业务／容量。三份3857单层GPKG分别成功、ring_id冲突、自交无效面；成功`load→extract_polygon_rings(id_field=parcel_key)→save(mode=fail)`，四源面→八闭合LineString（多部件五环＋相邻／重复／精确微坐标面各一）。保环起点／方向／重复顶点／共有边每次记录、源序／部件／外后内；逐字段核source_id／part_no／ring_no／ring_id／is_hole及全部属性。
+
+parcel_shape活动几何与普通String geometry分开，来源是中文业务键非FID；nullable Int64／Boolean／String／Real及大整数核原生类型／值，不据JS Number猜类型。GPKG物理几何名按save事实，不要求等于内存名。rings.gpkg的stable_outputs／facts均create，一次同主体公开整数tenant_id／triggered_by扫描、严格正整数physical==Meta／单child八行／全字段、一条当前execution active derive及Monitor／原图一致，不给内存环建DataItem。
+
+两负例均带save而无文件／facts／scan／derive，同UUID隔离日志核准确原因，失败页／Monitor同User／failed；三源＋一成果共四扫描库存不变，失败／浏览器后源／成果SHA／大小／源Meta保持。每次导航browserAPIFromResponse核身份；原EWKB／八OL线完整来源编号坐标／真实像素，不能凭像素区分重线或微线。成功／线图／两失败页至少四截图，另核真实血缘tab原图／单边画布；浏览器只读，不补扫／重放／额外写入。
+
+Owner／browser／raw仅case/v1，incomplete不替最终。归档四原GPKG及API／Meta／血缘／Monitor／渲染，独立OGR复核完整坐标／类型／属性／序／3857／SHA与大小，期望不调产品／舍入／加容差。清理及runner／Native／Console／登记／mutation沿公共边界，不认证业务DELETE或新增suite／权限／永久入口。
+
+### 面界提取参数诊断独立实页
+
+`polygon-rings-input-diagnostics`仅ring_id冲突／真实无效面两失败，不跑旧成功／旧四参数场景／容量。沿拓扑11权限／600秒，只两源`rings-conflict.gpkg`／`rings-invalid.gpkg`，保parcel_shape及普通geometry。失败节点是冻结tasks数组首项、在load后调度，save不得执行。
+
+Develop／Monitor同UUID／User／冻结定义，准确v3／execution／INVALID_PARAMS对应`develop.workflow.invalid_params`；冲突仅field=ring_id，无效面仅operator_geometry_invalid且无field。两execution各在Develop／Monitor中英实页刷新同UUID，共八原始响应／截图／真实剪贴板核验；用唯一共享面板与当前请求身份，不跨导航持Token。核原因／人工重命名或先检查后显式修复建议、算子／节点／参数／固定字段／稳定码／UUID，不泄自定义节点名／业务ID值／坐标／路径／GEOS正文。
+
+两源字节／大小／SHA／Meta及两初扫库存保持，零新文件／成果扫描／facts／本次derive。存全原证据／源，最终不由incomplete替代，NFS／ownedroot／Runtime／registry／应用／Infra全清，不算业务DELETE；沿原runner／Native／浏览器／登记，无新suite／权限／API／容量入口。
+
+### 线端修剪独立普通User验收
+
+`line-trimming`仅一成功／八失败，沿拓扑Hosted／非默认Tenant／同User11权限／600秒，不跑full／旧业务／容量。成功双源3857、max_distance=4：15 MultiLineString／16部件＋14参考，手写15线结果／9目标Point。覆盖原两端冻结、累计路径非直距、上限等号／略超、首次交会／共线入口、同点全来源／单参考重复段去重、分支阻止／命中、重复内点／部件／方向、已接触／闭环／非悬端／无目标不动及2^-20微距。
+
+ID是JSON安全Int64而非FID，source_shape／reference_shape与普通geometry并存，nullable Int64／Boolean／String保持。活动几何名只属内存断言，物理／预览按save驱动实际名绑定，不承诺持久列名。Point是切点，原端存original_x/y；明细仅双ID、part_no/end、原端／切点XY／累计distance，不复制任意业务属性。
+
+八失败：非正上限、源ID／参考ID非法、CRS异、单部件自交、源正长重合、原两端计划相遇、首交点不可精确落线但后有可表示点。前七按v3核闭合原因／参数／冻结节点，无field或私值；第八保持EXECUTION_FAILED，同UUID隔离日志核首交点不可精确表示，不作参数错。每DAG含双save，冲突夹具先有可修剪要素仍整批零发布；逐次核Develop／Monitor同身份UUID、零目标／facts／新scan／derive、库存不增、全源／成功成果字节／Meta保持。
+
+双稳定输出／facts=create，两自动扫描公开严格整数tenant_id／triggered_by同主体；每成果双源当前derive，共四边，失败夹具不进成功图。独立OGR逐原坐标／全属性类型与null／序／方向／部件／3857核，不调产品造期望／epsilon／舍入。归档11源＋双成果，physical==Meta严格正整数；真实成功页、线／Point地图属性血缘及八次Develop／Monitor失败页，核EWKB／完整OL／明显切点见证与Point层像素／原图／截图，逐导航用当前请求身份。微距只核物理／API／OL，不证亚像素可目视。
+
+最终Owner／browser／raw同case／run／execution完整passed，incomplete仅阶段；末轮保持及NFS／ownedroot／Runtime／registry／部署／Infra清零。不认证内存索引／中间算子资源血缘／跨文件事务／业务DELETE／空批／英尺／容量。接线沿原runner／Native／Console／登记，最小门禁后才单次手工本case，不据脚本就绪填通过。
+
+## 端点吸附手工容量
+
+既有`make test-vector-topology-capacity`／`vector-topology-capacity.yml`的独立`profile=endpoint-snapping`，五类十五档、每档一次串行，不跑旧矩阵／受控对照／业务T4。3857／容差1／同源码产品镜像Runner，4 CPU／2 GiB／`memory.swap.max=0`、每档全流程180秒；Runtime准备／清理另记，不继承拓扑业务600秒。镜像构建前按根`.node-version`备Node，登记拒缺失／条件跳过／晚准备，不依赖默认版本。
+
+| 类型 | 三档与完整明细 |
+| --- | --- |
+| 稀疏 | 源／参考各1000／10000／100000；每四源一移动／严格边界／原位接触／无候选，N/4明细。 |
+| 密集 | 源／参考各128／512／2048，每待移端点K参考且唯一最近，K明细。 |
+| 同点 | 各128／512／2048，保全部S×R＝16384／262144／4194304明细。 |
+| 单参考重复部件 | 1000／10000／100000部件，源1条、仅1明细，不因参考重复扩增。 |
+| 单源原始部件 | 1000／10000／100000部件、参考1条，K明细，保编号／方向。 |
+
+精确二进制几何／唯一可落线目标，不改吸附。180秒含造双源／load／双源全检／生产snap_line_endpoints／线与Point双save／OGR完整重载／源文件Frame保持，不抽样／截明细／只比摘要，流式预期不调产品。核全坐标／来源／属性null／Int64／Boolean／Float64／序／部件／方向／CRS及原点／目标／距离，物理hash与全行摘要另存。
+
+observer=A不包产品，外部0.25秒采样及cgroup整体memory.peak／CPU／OOM／退出码；阶段缺采null，不把RSS高水位之和／采样峰值称精确阶段峰值。固定源码／实际加载函数／双Frame文件hash、阶段时长、整体资源、双成果数量大小摘要及档清理均绑case／measurement ID。成功／超时／cgroup证OOM／原生崩溃／其他失败分列，不扩预算／重试；只证本档实测。归属容器／镜像／registry／合成数据清零，不认证scan／血缘／页面／普通User授权／跨文件事务，旧endpoint-snapping T4范围不变。
 
 ## manager-hybrid-search
 
@@ -945,6 +991,26 @@ Native与真实跨模块结果分别记账；不计Manager绘制、NFS客户端�
 ### 三种邻域加权方法的共同复核
 
 仅下列明确引用的weighted_sum／weighted_stddev／weighted_mean套件共用本段。各为16条COG成功链、56次准确失败：成功累计136次、失败累计896次，合计1032次完整成果检查；加首次空基线共73次物理调用。逐次核完整像元／mask、缺定位和源编码清除、COG及实际概览，按上方要求核大小、扫描／内外血缘／Monitor、源旧Meta与全部清理。归档16份COG原字节、十份源原件、16份冻结独立预期及大小／SHA256清单，不覆盖／修补旧归档。三种方法各自的求和、均值或总体标准差oracle、全1解析见证与准确拒绝条件仍分别验证。
+
+#### 三种加权方法的矩阵与拒绝条件
+
+以下三suite各16成功COG（14加权＋2原方法对照）／28类各中英共56准确失败，沿[邻域共同要求](#邻域与-idw-专项共同要求)的12权限／各600秒及上方1032全检／73物理轮／十源与16成果16期望归档，不互借验收结果。
+
+成功共同覆盖非对称3／5跨块两链、全1权重3／5＋实际原方法3／5四链、非均匀同比例权重3／5两链、中心权重0／有效支持空、全无效、重分类、旋转、无定位单行、Int64／UInt64原生NoData邻值、第二波段raw scale-offset／mask／alpha；均值另保部分透明见证。非对称／同比例／重分类用519×515跨块，其余核实际概览；矩阵不翻转，中心无效不填洞，正权重有效支持空为NaN，先判原生NoData再按Float64边界，不宣称任意64位精确。方法独有见证如下。
+
+共同28类：18权重缺失／null／数值标量／布尔／字符串／对象／空列表／一维／行数错／列数错／不规则行／全零／负元素／布尔元素／字符串元素／null元素／对象元素／列表元素；原对应sum／stddev／mean带weights、variety带null weights、加权方法带percentiles三类；未知方法／非法窗口／布尔窗口／波段0／越界／选择alpha／复数数据七类。须同execution命中真实focal及准确原因，前置失败不充数，反向语言不改冻结错误；失败零发布／scan／derive，保持及清理沿共同要求。非标准JSON（含NaN／Infinity／超标准数值）、混合复数alpha与各法数值极限仅Native，登记／本地不代Hosted。
+
+### 邻域加权求和独立 Hosted 验收
+
+`raster-focal-weighted-sum-persistence`；`make test-raster-focal-weighted-sum-online-runner`，沿上述矩阵及[完整复核](#三种邻域加权方法的共同复核)。weighted_sum全1与原sum的实际全像元／mask及解析0／4、−4／4、2／2对照须得4／0／4；非均匀权重放大8倍的实际总量严格同比例。独立逐位置2000位Decimal乘积累计、最终Float64舍入，不用生产整数编码／归约，不除权重和／抽样／容差；常量按实际有效正权重质量，单样本保加权值，合法零／负结果保留。真正溢出像元转NaN只沿Native证据；旧加权均值Runner生命周期超时仍独立，不由本套覆盖。
+
+### 邻域加权总体标准差独立 Hosted 验收
+
+`raster-focal-weighted-stddev-persistence`；`make test-raster-focal-weighted-stddev-online-runner`，沿上述矩阵及[完整复核](#三种邻域加权方法的共同复核)。weighted_stddev全1与原stddev实际全像元／mask一致，解析0／4、−4／4、2／2分别2／4／0；非均匀权重用逐位置3000位Decimal偏差公式算总体方差再开方，不用生产一二阶矩／精确平方根，不放容差／抽样。核同比例权重不变、输出非负、常量／单样本0；不承诺任意64位整数差值。TRI仅保原有效证据，不纳本suite Hosted重跑。
+
+### 邻域加权均值独立 Hosted 验收
+
+`raster-focal-weighted-mean-persistence`；`make test-raster-focal-weighted-mean-online-runner`，沿上述矩阵及[完整复核](#三种邻域加权方法的共同复核)。weighted_mean全1与实际mean、同比例放大权重均核完整像元／mask相同，合法零／负值保持。独立逐位置2000位Decimal构造、最终Float64舍入并精确比，不调生产／容差／抽样。原九方法及数值极限另列Native，不以平台前置拒绝代目标诊断。
 
 ## raster-focal-statistics-persistence
 
@@ -1673,84 +1739,26 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 
 ## 矢量面分区百分位独立 Hosted 验收
 
-`vector-zonal-percentile-persistence`；`make test-vector-zonal-percentile-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。 当前仍显式传 `percentiles=[p]`，使用原前缀的 percentile_1／percentile_value_1，保持原矩阵及预算；64 条执行与查询计入预算，不将历史固定结果外推为后来多项套件通过。
+`vector-zonal-percentile-persistence`；`make test-vector-zonal-percentile-online-runner`。独立运行、600秒、身份／成果／清理沿[专项共同要求](#水文与分区统计专项共同要求)，算法归[栅格契约](../../workflow/栅格算子契约.md#栅格计算契约)。单项仍显式`percentiles=[p]`、原前缀`percentile_1/percentile_value_1`；64执行及查询纳预算，不以旧结果认证后来多项套件。
 
-固定16条成功GeoPackage保存链：不带百分位的原八列1条；0／100端点、奇偶总体50百分位4条；25／75插值、33.3跨块中心／全部触及4条；自定义／空前缀2条；栅格重分类→面化→90百分位1条；Int64／UInt64数值NoData邻接有效值2条；全无效数值保留面行与空矢量批次保留Schema／CRS2条。常规面共同覆盖孔洞、重叠、MultiPolygon、细面、部分／完全出界、单有效零和重复几何，以显式唯一`source_row`核行序；主栅格保留旋转网格、显式第二波段、独立mask／alpha和未应用的scale-offset。GeoPackage的FID不冒充用户索引；重复索引、活动几何列名冲突、混合类型复数alpha及数值极限继续单列Native。
+| 固定成功链 | 数量与独有断言 |
+| --- | --- |
+| 原八列／端点／中位 | 不带百分位1链；0／100、奇偶总体P50共4链。 |
+| 插值与覆盖 | 25／75、33.3跨块中心／全部触及共4链。 |
+| 字段与派生 | 自定义／空前缀2链；重分类→面化→P90共1链。 |
+| 原生有效性／空结果 | Int64／UInt64 NoData邻接合法值2链；全无效保面行、空矢量保Schema／CRS共2链。 |
 
-固定24类各按中英文提交，共48次准确失败：百分位列表null／布尔项／字符串项／嵌套数组项／对象项／低于0项／高于100项共7类；波段0／越界／布尔／字符串4类；所选复数数据与alpha2类；all_touched数值／null、前缀null／布尔4类；原统计列／percentile_1／percentile_value_1冲突3类；不同CRS、栅格缺CRS、缺仿射及奇异网格4类。必须到达当前执行的`analysis`统计任务并准确核原因，前置加载或扫描失败不能充数；新增百分位原因按中英核验，原有英文原因沿当前契约，不把两种语言提交称为全部诊断已翻译。反向查询不改写提交语言、原错误或执行快照。非法几何／无矢量CRS等文件准入边界、非有限JSON参数与IO／磁盘注入仍沿Native或既有专项记账。
+共16 GeoPackage。面含孔／重叠／MultiPolygon／细面／部分及全出界／单有效零／重复几何，以唯一source_row核原行序；栅格旋转、第二波段、独立mask／alpha、raw scale-offset。FID不代用户索引；重复索引／活动几何列冲突／混合复数alpha／数值极限另列Native。
 
-独立oracle用像元平面的Shapely中心包含或正面积相交计算覆盖，不调用产品函数、GDAL栅格化／面化或NumPy百分位；派生面由独立4邻接遍历与横向条带并集计算。Python标量排序、标准库统计及Fraction的确切二进制位置核完整逐面属性、几何／孔洞／多部件、Schema／CRS／顺序、原八列和新增两列、null与合法零。同源带／不带百分位的原八列逐值相同，端点／50百分位与min/max精确，其他百分位固定rtol=4e-15／atol=0，原统计其余值rtol=1e-12／atol=1e-12。GeoDataFrame公开FeatureCollection核完整属性和身份；所有完整拓扑几何及真实字段类型均在物理文件重读时核验，不新增宿主机几何依赖。
+24类各中英文共48准确失败：百分位列表null／布尔／字符串／嵌套数组／对象／＜0／＞100七类；波段0／越界／布尔／字符串四类；所选复数数据／alpha两类；all_touched数值／null、前缀null／布尔四类；原统计列／percentile_1／percentile_value_1冲突三类；异CRS／缺栅格CRS／缺仿射／奇异网格四类。必须到当前execution的analysis任务核准确原因，load／scan失败不充数；新增百分位原因中英核，原英文原因按现行契约，不称全部诊断已翻译。反向查询不改原语言／错误／快照；非法几何／无矢量CRS／非有限JSON／IO磁盘注入沿Native或原专项。
 
-每次成功后重读当前全部成果，每次失败后重读16份，固定904次完整GeoPackage检查；加首次源全检共65轮物理检查。仅缓存冻结的独立期望，实际成果和14份源的原件hash、完整栅格像元／mask／类型／原生NoData／仿射／CRS／scale-offset、矢量几何／属性／Schema每轮重读。归档14份源原字节、16份GeoPackage原字节及大小／SHA256清单、独立期望和16份当前执行血缘取证；原件／manifest／期望变化、缺失和额外文件均拒绝，不覆盖、重建或静默修复。
+oracle用像元平面Shapely中心包含／正面积交，派生面用独立4邻接＋横条并集，不调产品、GDAL栅格化／面化或NumPy百分位。标量排序／标准库统计／Fraction确切二进制位置核逐面全属性／几何孔洞多部件／Schema／CRS／序、原八列＋新增两列、null／零；带／不带百分位的八列逐值相同。端点／P50与min/max精确，其他百分位rtol=4e-15／atol=0，其余原统计rtol=1e-12／atol=1e-12。公开FeatureCollection核完整属性／身份，完整拓扑／真实字段类型由物理重读核，不增宿主几何依赖。
 
-GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或第三方大小：物理／Meta大小为相等正整数，唯一图层事实保留容器边界。精确自动扫描核父执行／普通User／租户／引擎；直接链核矢量面与数值栅格两源，面化派生链只核实际TIFF源，不虚构第二来源。现有受控只读observer仅登记本套件，完整核内部`save`／derive端口及公开`operations:null`安全投影，Meta关系和Monitor分别核验。失败零目标／新增扫描／派生血缘，源物理／Meta及先前成果不变；全部退出保持NFS／Runtime／registry／部署／Infra零残留。
+成功递增全检、每次失败全检16份，共904次GeoPackage检查＋首次源全检计65物理轮。只缓存冻结独立期望；每轮重读14源的原hash、全部像元／mask／类型／原生NoData／仿射／CRS／scale-offset及矢量几何／属性／Schema。归档14源／16成果原字节、大小／SHA256清单、独立期望及16当前执行血缘取证；缺失／变化／额外文件均拒，不覆盖／重建／修复。
 
-本地标准入口为`make test-vector-zonal-percentile-online-runner`及标准Native中的`test_online_vector_zonal_percentile_fixture.py`；Online／changed gate／独立workflow、observer和固定矩阵／删断言变异检查同步登记，实际Hosted由CI会话唯一协调运行。
+普通矢量容器只核物理＝Meta严格正整数大小／唯一子层，不虚构RasterArtifact／COG／第三方大小。扫描精确父执行／User／Tenant／Engine；直接链核面＋数值栅格双源，面化派生仅实际TIFF。observer限本套件，核内部save／derive端口及公开`operations:null`，Meta关系／Monitor另核。失败零目标／扫描／derive，源物理／Meta与旧成果保持，NFS／Runtime／registry／部署／Infra全清。
 
-**固定 Native 证据**：`c116e05fd9fb3eb4f2fd49bd1598879f64a14647` 的 [Linux Job124388227200](https://github.com/pampa0629/addp/actions/runs/41151306867/job/124388227200) 全量 10587 项通过，无失败／跳过／筛除。Schema 篡改须在无存活 Feature 时修改，关闭重开后核完整字段并由原 oracle 拒绝；九种物理污染和生命周期先红后绿回归保留。此前段错误仍为独立失败，其他原生故障不由新通过关闭；不计 Hosted、页面或容量。
-
-### 端点吸附手工容量
-
-用户确认在既有 `make test-vector-topology-capacity`／`vector-topology-capacity.yml` 增加独立 `profile=endpoint-snapping`，仅五类十五档、每档一次、串行，不运行旧矩阵／受控对照或业务T4。EPSG:3857、容差1、同源码／产品镜像／Runner，原4 CPU／2 GiB／memory.swap.max=0和每档全流程180秒不变，Runtime准备与清理另记。镜像构建前须按根`.node-version`准备Node，不依赖Runner默认版本；登记检查拒绝缺失、条件跳过或晚于门禁的准备步骤。observer=A不包装产品函数，外部0.25秒采样与cgroup整体memory.peak、CPU用量、OOM、退出码保留；分阶段采样缺失为null，不把RSS高水位之和或采样峰值说成精确分阶段峰值。
-
-五类为：稀疏源／参考各1000、10000、100000要素（每四源一移动、一严格边界、一原位接触、一无候选，明细N/4）；密集源／参考各128、512、2048（每个待移端点K个参考候选、唯一最近目标，明细K）；同点源／参考各128、512、2048（完整保留全部S×R明细16384／262144／4194304行）；单参考要素1000／10000／100000重复部件（源1条、仅1条明细，不因参考重复扩增）；单源要素1000／10000／100000原始部件（参考1条、明细K，保部件编号与方向）。几何全部采用精确二进制坐标及唯一可落线目标，不改产品吸附语义。
-
-180秒包含生成双源、load、双源全量核验、生产snap_line_endpoints计算、线与Point双save和独立OGR完整重载、源文件／Frame不变核验；不得抽样、截断明细或只比较摘要，流式独立预期不调用生产算法。核所有坐标、来源、属性／null／Int64／Boolean／Float64、原行序／部件／方向／CRS，明细保原点、目标及距离，物理哈希与完整行摘要另存。固定产品源码／实际加载函数、两源Frame与文件哈希、各阶段耗时、整体峰值内存／CPU、两成果数量／大小／摘要和当档清理均绑定case及measurement ID。成功、超时、cgroup证实OOM、原生崩溃／其他失败分别保留，不自动调预算或重试；超限仅说明该场景的实测边界，归属容器／镜像／registry／合成数据清0。该容量不认证扫描／血缘／页面／普通User授权或跨文件事务；已通过的endpoint-snapping T4保持原范围。
-
-
-### 面界提取独立普通用户场景
-
-用户确认新增 `polygon-rings` 独立case，复用 `vector-topology-persistence` 原入口、Hosted生命周期、非默认租户普通User精确11权限与600秒业务预算，只运行一成功和两失败，不运行full、旧业务T4或容量。三份独立3857单层GPKG分别为成功源、ring_id字段冲突源和自交无效面源。成功DAG为 `load → extract_polygon_rings(id_field=parcel_key) → save(mode=fail)`，四源要素输出八条闭合LineString：多部件面含五环、相邻面一环、重复面一环、含精确微坐标的面一环。保留原环起点／方向／重复顶点／共有边各次记录，原源顺序／部件／外环后内环；逐字段核source_id、part_no、ring_no、ring_id、is_hole及全部业务属性。源物理几何列parcel_shape与普通字符串geometry严格区分，来源用中文字符串业务主键而非FID；可空Int64／Boolean／String／Real及大整数按原生字段与原值核，不靠JS数值推断类型。文件写出的物理几何名遵循现有GPKG写出事实，不要求与内存角色名相同。
-
-唯一成功成果rings.gpkg的stable_outputs和facts均为create；一次成果自动扫描公开整数tenant_id／triggered_by与本普通User同主体，严格正整数physical==Meta大小、单子层行数8与完整字段数；一源到一成果恰好一条本execution active derive，Monitor与原图一致，不为内存环登记DataItem。两失败各携带下游save，但不得发布文件／输出事实／扫描／derive；同UUID原始运行日志核准确拒绝原因，失败页及Monitor核同User和failed。三源与成功成果SHA／大小／源Meta在失败和浏览器后均不变，扫描库存三源加一成果恰好四次。
-
-实际浏览器复用每次导航后的browserAPIFromResponse身份绑定；核原EWKB、8条OL线要素的来源／编号／完整坐标和真实线像素，不以像素区分重复线或证明微小线段独立可见。成功页、线地图和两失败页至少四截图，另核真实血缘tab原图及画布单边；浏览器只读，无补扫、重放执行或额外业务写入。Owner／browser／raw报告仅此case/v1，阶段检查点incomplete不得替代最终通过。归档四份合成原GPKG及原始API／Meta／血缘／Monitor／渲染证据，下载后独立OGR重核全部原坐标／类型／属性／行序／3857和SHA／大小，期望不调用生产算法生成、不舍入或增容差。最后核NFS/export/ownedroot、Runtime/registry/部署/Infra全清零；不认证业务DELETE。现有runner、Native与Console、Online CI登记及mutation检查同次覆盖独立case，无新suite、权限或永久入口。
-
-
-### 邻域加权求和独立 Hosted 验收
-
-独立手工 `raster-focal-weighted-sum-persistence`；`make test-raster-focal-weighted-sum-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。
-
-固定16条COG成功链（14条weighted_sum＋2条原sum对照）：非对称3／5跨块两条、全1权重3／5及实际sum3／5四条、非均匀权重整体放大8倍3／5两条、中心零权重兼常量／单有效支持／有效支持空、全无效、重分类接加权、旋转网格、缺定位单行、Int64／UInt64原生NoData邻接合法整数、显式第二波段原始scale-offset及mask／alpha。非对称、放大权重及重分类使用519×515跨块样本，其余保持实际概览。全1对照使用解析0／4、−4／4、2／2隔离像元对，求和分别为4／0／4；独立逐位置2000位Decimal乘积累计后最终Float64舍入，不调用生产整数编码或归约实现，不除以权重和，不抽样或放宽容差。全1与原sum实际成果完整像元／mask相等，放大8倍与原权重的实际成果总量严格成比例，常量按实际有效正权重质量计算、单样本保留其加权值；中心无效不填洞、支持空为NaN，合法零／负结果保留，矩阵不翻转。原生NoData先判定，再沿既有Float64数值边界，不宣称任意64位整数精确。
-
-固定28类各中英文一次共56准确失败：18类权重缺失／null／数值标量／布尔／字符串／对象／空列表／一维／行数错误／列数错误／不规则行／全零／负元素／布尔元素／字符串元素／null元素／对象元素／列表元素；原sum带权重、variety带null权重、weighted_sum带percentiles三类；未知方法／非法窗口／布尔窗口／波段0／越界波段／选择alpha／复数数据七类。须绑定同execution真实focal节点及准确原因，反向语言查询不改提交时错误；失败零发布／新增扫描／派生血缘。数值极限、真正溢出像元转NaN、非标准JSON数值及混合类型复数alpha单列Native，不以前置失败替代目标诊断；原加权均值Runner生命周期超时独立记账，不由本套结果覆盖。
-
-完整复核次数、十源／16成果／16预期归档、当前执行observer约束及清理统一见[三种加权方法共同复核](#三种邻域加权方法的共同复核)。
-
-### 邻域加权总体标准差独立 Hosted 验收
-
-独立手工 `raster-focal-weighted-stddev-persistence`；`make test-raster-focal-weighted-stddev-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。
-
-固定16条COG成功链（14条weighted_stddev＋2条原stddev对照）：非对称3／5跨块两条、全1权重3／5及实际stddev3／5四条、非均匀权重同比例放大3／5两条、中心零权重兼常量／单样本／有效支持空、全无效、重分类接加权、旋转网格、缺定位单行、Int64／UInt64原生NoData邻接合法整数、显式第二波段原始scale-offset及mask／alpha。非对称、同比例和重分类为519×515跨块样本，其余保持实际概览。全1对照源为解析0／4、−4／4、2／2隔离像元对，分别精确得到2／4／0，原stddev与加权结果逐像元／mask及独立解析值全部相等；非均匀权重用独立逐位置3000位Decimal偏差公式求总体方差再开方，不调用生产一阶／二阶矩或精确平方根实现，不放宽容差或抽样。完整输出严格非负，中心无效不填洞、支持空为NaN、常量／单样本为0，权重方向不翻转；原生NoData先判定，随后沿既有Float64边界，不宣称保留任意64位整数差值。
-
-固定28类各中英文一次共56准确失败：18类权重缺失／null／数值标量／布尔／字符串／对象／空列表／一维／行数错误／列数错误／不规则行／全零／负元素／布尔元素／字符串元素／null元素／对象元素／列表元素；原stddev带权重、variety显式带null权重、weighted_stddev带percentiles三类；未知方法／非法窗口／布尔窗口／波段0／越界波段／选择alpha／复数数据七类。必须绑定同execution真实focal阶段与准确原因，反向语言查询不改提交时错误；失败零发布／新增扫描／派生血缘。数值极限、非标准JSON数值和复数alpha混合类型单列Native；TRI只保留原有效证据，不纳入本套Hosted重跑。
-
-完整复核次数、十源／16成果／16预期归档、当前执行observer约束及清理统一见[三种加权方法共同复核](#三种邻域加权方法的共同复核)。
-
-### 邻域加权均值独立 Hosted 验收
-
-独立手工 `raster-focal-weighted-mean-persistence`；`make test-raster-focal-weighted-mean-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。
-
-固定16条COG成功链（14条weighted_mean＋2条mean对照）：非对称3／5各一、全1权重3／5与同源mean3／5共四、非均匀权重同比例放大3／5两条、中心权重零且局部有效支持空、全无效、重分类接加权、旋转网格、缺定位单行、Int64／UInt64原生NoData邻接合法整数、显式第二波段原始scale-offset与mask／部分透明alpha。非对称和同比例／重分类使用519×515跨块样本，其他用例保留实际概览。矩阵行列直接对应不翻转；中心无效不填洞，有效正权重为空输出NaN，合法零和负值保留。全1与mean、同比例权重均核实际成果完整像元／mask一致。预期只用独立逐位置Decimal（2000位）构建、最终Float64舍入，完整像元精确比较，不调用生产算法、不用容差或抽样；Native另覆盖原九方法及数值极限。
-
-固定28类各中英文提交共56次准确失败：权重缺失／null／数值标量／布尔／字符串／对象／空列表／一维列表／行列数错误／不规则行／全零／负元素／布尔元素／字符串元素／null元素／对象元素／列表元素共18类；mean带权重、variety带null权重、weighted_mean带percentiles三类；未知方法、非法窗口、布尔窗口、波段0、越界波段、选择alpha、复数数据七类。必须同execution精确命中focal阶段及真实原因；反向语言查询不改提交语言，失败零发布、零新增扫描／派生血缘。NaN／Infinity及超标准JSON数值、混合类型复数alpha和数值极限单列Native，不用平台前置拒绝充数。
-
-完整复核次数、十源／16成果／16预期归档、当前执行observer约束及清理统一见[三种加权方法共同复核](#三种邻域加权方法的共同复核)。
-
-### 面界提取参数诊断独立实页
-
-`vector-topology-persistence` 新增 `polygon-rings-input-diagnostics` case，仅执行ring_id固定字段重名与实际无效面的两次真实失败，不执行旧成功链、旧参数诊断四场景或容量。复用原Hosted生命周期、普通User精确11权限、非默认Tenant和600秒业务预算；只准备rings-conflict.gpkg与rings-invalid.gpkg两源，保留实际parcel_shape及普通geometry业务列。失败节点置于冻结tasks数组首位，在load之后调度，下游save必须未执行。两次Develop及Monitor响应均须绑定当前UUID/同一User/冻结定义，准确返回v3、execution、INVALID_PARAMS对应develop.workflow.invalid_params；重名仅field=ring_id，无效面仅operator_geometry_invalid且无field。
-
-两执行分别在Develop/Monitor中英文实页刷新同一UUID，共8份原始响应、截图及真实剪贴板核验；复用现有唯一共享面板和浏览器当前请求身份绑定，不持有跨导航旧Token。核准确原因、人工重命名或先几何检查后显式修复建议、算子/节点/参数/固定字段、稳定码和UUID；不得包含自定义节点名、业务ID/值、坐标、路径或GEOS正文。两源物理字节/大小/SHA及Meta始终不变；两初始扫描库存不变、无新增文件/成果扫描/输出facts/本次derive。保存全部原始证据和源文件，最终报告不能由incomplete checkpoint替代；退出NFS/export/ownedroot/Runtime/registry/应用/Infra全部清0，不把清理当业务DELETE验收。该case更新原runner/Native/浏览器和CI登记，不新增suite、权限、产品API或容量入口。
-
-
-### 线端修剪独立普通User验收
-
-`vector-topology-persistence` 新增显式 `line-trimming` case，仅一成功与八失败，不执行full、旧业务T4或容量。复用Hosted隔离生命周期、同一非默认Tenant普通User精确11权限和600秒总业务预算。成功双源EPSG:3857、max_distance=4，源15条MultiLineString/16部件及14条参考要素；手写15条线结果与9条目标Point明细，覆盖原始两端冻结、累计路径而非直线距离、上限等号/略超界、首次交会/共线入口、同点全部来源/单参考重复段去重、分支阻止/命中分支、重复内点/部件/方向、已接触/闭环/非悬端/无目标不动及2^-20精确微距。业务ID为JSON安全Int64且不同于FID，真实source_shape/reference_shape与普通geometry业务列共存；可空Int64/Boolean/String属性保持。活动几何列名保留属于算子内存结果断言；GPKG物理几何名沿既有save驱动声明，文件及预览按实际声明绑定，不新增持久列名承诺。Point位于切点，原端位置保存在original_x/y，明细仅保双方ID、part_no/end、原端/切点XY及累计distance，不复制任意业务属性。
-
-八次独立失败为非正上限、源ID非法、参考ID非法、CRS不一致、单部件自交、源正长度重合、原始两端计划相遇、首交点不可精确表示且更晚有可表示交点。前七次按既有v3闭合参数诊断核精确原因/参数/冻结节点，无field或私有值；第八次保持EXECUTION_FAILED，并以同UUID隔离owner日志核首交点不能精确落线，不冒充参数错误。每DAG均含两个下游save；冲突夹具先有可修剪要素，仍须整批无发布。每次核Develop/Monitor同User/UUID失败、失败目标/输出事实/自动扫描/本次derive不存在、扫描库存不增、全部源与成功成果原字节/Meta不变。
-
-成功两稳定输出及facts均create，恰两成果自动扫描公开严格整数tenant_id/triggered_by同主体；每成果两源本execution active derive，共四边，失败夹具不进入成功图。逐原坐标/全部属性类型与空值/行序/方向/部件/3857独立OGR重载，不调用生产算法生成期望、不epsilon或舍入。11源与双成果原文件保存供归档审计，物理与Meta大小严格为相等正整数。真实Console核成功执行、线与Point两地图/属性/血缘页及八次Develop/Monitor失败页；原EWKB、完整OL坐标/属性、明显切点见证像素/Point图层像素、原图和截图归档，每次导航绑定当前浏览器请求身份。微距仅核物理/API/OL，不宣称亚像素单独可见；不认证内存索引、中间算子资源血缘、跨文件事务、业务DELETE、空批/英尺或容量。最终Owner/browser/raw报告同case/run/execution完整passed，incomplete仅阶段意义；源及成果末轮不变、NFS/export/ownedroot/Runtime/registry/部署/Infra清零。现有runner/Native/Console/CI登记同次适配，通过最小标准门禁后单次手工派发此case。
+标准runner、Native的`test_online_vector_zonal_percentile_fixture.py`、Online／changed gate／workflow／observer及矩阵删断言mutation均登记，接线不计Hosted通过。固定`c116e05fd9fb3eb4f2fd49bd1598879f64a14647`的[Linux Job124388227200](https://github.com/pampa0629/addp/actions/runs/41151306867/job/124388227200)全量10587过，无失败／跳过／筛除；Schema污染须无存活Feature时修改、关重开后核字段并拒绝，九种污染及生命周期先红后绿保留。此前段错误仍独立失败，不由新通过关闭，未认证Hosted／页面／容量。
 
 ## 矢量面分区面积加权统计独立 Hosted 验收
 
