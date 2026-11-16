@@ -66,4 +66,8 @@ bounded 恢复时间由三组回归覆盖。[Common 租约回归](../../common/e
 
 ### CDC 任务性能规则
 
-现有 alert-rules 增加消费停滞、捕获持续延迟及可选积压偏高三种 CDC 任务规则，仅 warning。`monitor.alert_rules.backlog_threshold` 保存精确十进制 offset 距离，`cdc_window` JSONB 保存当前代次的有效样本、连续触发／恢复窗口和安全评估说明；由既有 Monitor store AutoMigrate 管理，不新增公共存储。评估写入不修改用户配置的 updated_at。配置与落事件分别按现有职责核对，通知沿原事务 outbox。阈值、暂停及缺样处理以[正式契约](../../docs/spec/tasks/Transfer同步执行.md#cdc-任务持续性能告警2026-11-14-已确认)为准，实际通过范围见 Monitor 告警历史证据。
+规则类型、阈值、暂停与缺样语义统一见[CDC 性能告警契约](../../docs/spec/tasks/Transfer同步执行.md#cdc-任务持续性能告警2026-11-14-已确认)。
+
+Monitor 在既有 `monitor.alert_rules` 持久化阈值和 CDC 评估窗口，由既有 store AutoMigrate 管理，不新增公共存储；评估写入不修改配置的 `updated_at`，落事件前复核规则及当前版本。通知复用既有事务 outbox。
+
+固定版本、实际故障、通知及清理范围见[CDC 告警证据](../../docs/spec/testing/evidence/Monitor告警与规则历史证据.md#alert-evidence-cdc)：触发前暂停／恢复窗口已有实故障 T4，评估器重建仍仅 T2；其他源类型／通知渠道、告警 UI 完整实操及生产 T5 不外推。
