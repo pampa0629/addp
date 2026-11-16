@@ -953,16 +953,40 @@ Native与真实跨模块结果分别记账；不计Manager绘制、NFS客户端�
 
 ## raster-focal-percentile-persistence
 
-独立手工 `raster-focal-percentile-persistence`；`make test-raster-focal-percentile-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。
+独立手工专项，准备／成果核验／清理按[邻域共同要求](#邻域与-idw-专项共同要求)。标准准备入口 `make test-raster-focal-percentile-online-runner`，真实GDAL及篡改拒绝沿 `make test-geopython-workflow`；suite、手工workflow、受控只读血缘suite及路径登记同批核验，不改原套件、安全投影或权限，不登记定时。
 
-16条COG成功链：3×3第0百分位及min、5×5第100百分位及max各两链；3／5窗口第50百分位及median各两链；第25／75／33.3百分位三链、重分类接第90百分位一链、Int64／UInt64邻接NoData两链、无定位及全无效两链。主源519×515，显式第二数据波段，覆盖双向跨块、小数／零／负值／重复值、奇偶及单有效邻居、NoData／mask／alpha／非有限数据、原始scale/offset和旋转网格；无定位源不补造CRS或仿射变换。
+### 百分位16条成功链
 
-18类非法输入各以中文／英文提交，共36次准确失败：percentiles缺失、单元素列表中的null／布尔／字符串／嵌套数组／下界越界／上界越界；其他方法携带百分位、未知方法；窗口值／布尔／字符串非法；波段越界／0／布尔／字符串／alpha；复数数据。用户确认将复数alpha单列Native混合类型GDAL数据集证据，不用全复数TIFF的数据波段前置失败冒充alpha校验，也不扩展产品格式。NaN／Infinity参数、极大／次正规及极小百分位权重等数值极限仍单列Native。
+- 端点对照：3×3第0百分位／min、5×5第100百分位／max，共4条。
+- 中位数对照：3／5窗口各执行第50百分位／median，共4条。
+- 第25／75／33.3百分位3条，重分类接第90百分位1条。
+- Int64／UInt64邻接NoData两条，无定位／全无效两条。
 
-独立标量邻居枚举与Fraction线性位置oracle逐像元核完整结果及mask，不调用产品排序／插值或NumPy quantile。已核输入／参数的只读期望可缓存，首次构建计入预算；不缓存实际成果验证。端点／50与各自控制链逐像元完全一致，其他插值按既有Native Float64精度rtol=4e-15、atol=0核验，mask与合法零严格比较。每次成功／失败后重读全部既有成果，16轮成功累计136次、36轮失败576次，共52次物理调用／712次全检；必须核完整COG与实际3层nearest概览；其余物理／身份、内部事实与公开投影、Monitor及源旧不变按共同要求。原16份COG字节与大小／SHA清单只追加核验，不重新编码或静默修复；全部退出保留首个业务失败及清理错误。
+主源519×515，显式第二数据波段；保留双向跨块、小数／零／负值／重复值、奇偶及单有效邻居、NoData／mask／alpha／非有限数据、原始scale/offset和旋转网格。无定位源不得补造CRS或仿射变换。
 
-标准准备入口为`make test-raster-focal-percentile-online-runner`，真实GDAL与篡改拒绝接既有`make test-geopython-workflow`；新增suite、手工workflow、受控只读血缘suite及路径登记同批验证，不改原套件、产品安全投影或权限，不登记定时。实际Hosted结果按固定版本另行认定。
+### 18类输入与36次准确失败
 
+每类均用中文／英文提交，共36次：
+
+- `percentiles`缺失；单元素列表含null、布尔、字符串、嵌套数组、下界越界或上界越界，合计7类。
+- 其他方法携带百分位、未知方法，共2类。
+- 窗口值、布尔、字符串非法，共3类。
+- 波段越界、0、布尔、字符串、alpha，共5类。
+- 复数数据1类。
+
+复数alpha单列Native混合类型GDAL数据集证据；不能用全复数TIFF的数据波段前置失败冒充alpha校验，不扩产品格式。NaN／Infinity参数、极大／次正规及极小百分位权重等数值极限仍单列Native。
+
+### Fraction独立期望与精度
+
+标量邻居枚举＋Fraction线性位置oracle逐像元核完整结果／mask，不调用产品排序／插值或NumPy quantile。端点／50与各自控制链逐像元完全一致；其他插值沿Native Float64精度 `rtol=4e-15`、`atol=0`，mask与合法零严格比较。
+
+只允许缓存已核输入／参数的只读期望，首次构建计入预算；实际成果验证不得缓存。其余物理／身份、内部事实与公开投影、Monitor及源旧不变沿共同要求。
+
+### 712次全检与原件保真
+
+每次成功／失败后重读全部既有成果：16轮成功累计136次，36轮失败为576次，合计52次物理调用／712次全检。完整COG及实际3层nearest概览每轮核验，不能用旧校验结论代替。
+
+原16份COG字节及大小／SHA清单只追加核验，不重新编码或静默修复；全部退出保留首个业务失败与清理错误。实际Hosted仅按固定版本及运行范围认定，登记和Native不替代真实验收。
 
 ## raster-focal-variety-persistence
 
