@@ -278,10 +278,10 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
         else
             echo -e "  ${YELLOW}pgvector 未安装，开始安装...${NC}"
 
-            # Check if pgvector packages are installed
-            PGVECTOR_PACKAGE_CHECK=$(docker exec "${CONTAINER_NAME}" sh -c 'dpkg -l | grep pgvector || echo "not-installed"')
-
-            if echo "${PGVECTOR_PACKAGE_CHECK}" | grep -q "not-installed"; then
+            # The release image installs pgvector from source, outside dpkg.
+            PGVECTOR_AVAILABLE=$(docker exec "${CONTAINER_NAME}" env PGPASSWORD="${DB_PASSWORD}" \
+                psql -U "${DB_USER}" -d "${DB_NAME}" -Atqc "SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector');")
+            if [ "${PGVECTOR_AVAILABLE}" = "f" ]; then
                 echo -e "  ${BLUE}编译安装 pgvector (v0.7.0)...${NC}"
                 docker exec "${CONTAINER_NAME}" sh -c '
                     set -e

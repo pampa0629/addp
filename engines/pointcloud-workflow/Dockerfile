@@ -43,6 +43,8 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 COPY common-python/README.md /common-python/README.md
 COPY common-python/addp_common/__init__.py /common-python/addp_common/__init__.py
 COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py
+COPY common-python/addp_common/http_observation.py /common-python/addp_common/http_observation.py
+COPY common-python/addp_common/httptrace /common-python/addp_common/httptrace
 COPY common-python/addp_common/client /common-python/addp_common/client
 COPY common-python/addp_common/workflow_access.py /common-python/addp_common/workflow_access.py
 COPY common-python/addp_common/workflow_runtime /common-python/addp_common/workflow_runtime
@@ -51,6 +53,7 @@ RUN python -m pip install --no-cache-dir --no-build-isolation --no-deps /common-
   && rm -rf /common-python
 
 COPY engines/pointcloud-workflow/api_server.py engines/pointcloud-workflow/operators.py /app/
+RUN python -c "import api_server"
 
 EXPOSE 8102
 CMD ["python", "api_server.py"]

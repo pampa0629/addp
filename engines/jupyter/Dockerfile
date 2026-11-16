@@ -59,10 +59,9 @@ COPY --from=labextension-builder /build/labextension/ \
     /usr/local/share/jupyter/labextensions/@addp/notebook-bridge/
 
 # 复制 API 服务器
-COPY engines/jupyter/api_server.py /app/
-COPY engines/jupyter/config.py /app/
+COPY engines/jupyter/api_server.py engines/jupyter/config.py engines/jupyter/interactive_sessions.py /app/
 COPY engines/jupyter/startup.sh /app/
-RUN chmod +x /app/startup.sh
+RUN cd /app && python -c "import interactive_sessions" && chmod +x startup.sh
 
 # 创建工作目录
 RUN mkdir -p /workspace/notebooks

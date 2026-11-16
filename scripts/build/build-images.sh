@@ -372,8 +372,10 @@ workflow_runtime_common_python_latest_time() {
             common-python/README.md \
             common-python/pyproject.toml \
             common-python/addp_common/__init__.py \
+            common-python/addp_common/module_lifecycle.py \
+            common-python/addp_common/http_observation.py \
             common-python/addp_common/workflow_access.py
-        find common-python/addp_common/client common-python/addp_common/workflow_runtime \
+        find common-python/addp_common/client common-python/addp_common/httptrace common-python/addp_common/workflow_runtime \
             -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
     } | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1
 }
