@@ -10,4 +10,4 @@
 
 ## 验证
 
-按 [Manager 开发与验证](../CLAUDE.md#开发与验证)选择标准门禁。需要验证真实资源树或预览链路时，按 [Manager Online 场景](../../docs/spec/testing/scenarios/Manager与空间成果.md)确认身份、权限、断言和清理范围。
+按 [Manager 开发与验证](../CLAUDE.md#开发与验证)选择标准门禁。需要验证真实资源树或预览链路时，按 [Manager Online 场景](../../docs/spec/testing/scenarios/Manager文件与预览.md)确认身份、权限、断言和清理范围。

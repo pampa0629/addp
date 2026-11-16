@@ -16,7 +16,7 @@
 
 ### 场景与入口
 
-当前 case 选择、部署和专用断言见[Manager 正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#manager-internal-artifact-lineage)；本节摘要与下列历史运行各按其实际范围记账。下列 COPC／PDF／GLB 与内容边界是选定子场景，不作为当前完整 suite 或所有 case 的覆盖清单。
+当前 case 选择、部署和专用断言见[Manager 正式场景](../../docs/spec/testing/scenarios/Manager文件与预览.md#manager-internal-artifact-lineage)；本节摘要与下列历史运行各按其实际范围记账。下列 COPC／PDF／GLB 与内容边界是选定子场景，不作为当前完整 suite 或所有 case 的覆盖清单。
 
 `manager-internal-artifact-lineage` 使用 `scripts/test/online-hosted-manager-gate.sh` 管理 GitHub Hosted Ubuntu x86_64 临时部署：从零建立 Infra、最小权限登录身份与 Business MinIO Engine Instance，启动 System、Gateway、Meta、Manager、Monitor、Console 和 PointCloud、Document、Model3D Runtime；无需永久账号或自备 Runner。Business owner 确定性生成 LAS、带 PNG 贴图的 DAE/3DS，并发布已跟踪的 3 页 PPTX；不依赖本机被忽略的数据目录。
 

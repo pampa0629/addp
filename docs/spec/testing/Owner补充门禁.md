@@ -124,7 +124,7 @@ T2 已沿根集成／Release 登记；T4 确定性编排由 `make test-online-ru
 
 `make test-model3d-workflow` 以受控 converter runner 验 DAE／3DS 源引用及动画边界、GLB 自包含、真实 PNG／JPEG 解码和失败不发布／替换；另覆盖下载完整性、私有资源隔离、损坏缓存拒绝。可用 `MODEL3D_WORKFLOW_PYTHON` 指向已准备解释器；生命周期沿 `make test-dev-lifecycle`，Linux／macOS 共用 IfcConvert 清单与 Cargo.lock。Python Runtime 的根聚合、依赖准备、共享输入及 CI 登记由现有检查核对，不将受控 runner 或原生预检计为真实转换链路。
 
-Manager 模型 T4 沿[既有场景](scenarios/Manager与空间成果.md#manager-internal-artifact-lineage)，必须验证正式镜像身份／默认入口并按当次标签清理，不调用开发 wrapper。DAE／3DS／IFC／单体 OSGB／SKP 分别认定；SKP 自有样例保留英寸三角形、两个实例及内嵌彩色 PNG，核米制尺寸／位移／贴图／缓存／血缘，Meta 仅登记格式。
+Manager 模型 T4 沿[既有场景](scenarios/Manager文件与预览.md#manager-internal-artifact-lineage)，必须验证正式镜像身份／默认入口并按当次标签清理，不调用开发 wrapper。DAE／3DS／IFC／单体 OSGB／SKP 分别认定；SKP 自有样例保留英寸三角形、两个实例及内嵌彩色 PNG，核米制尺寸／位移／贴图／缓存／血缘，Meta 仅登记格式。
 
 产品构建须在**最终 Runtime 镜像**经正式 operator 转换 Business 压缩 OSGB 并校验 GLB；builder 原生测试或最终镜像 `--help` 不能替代。
 
@@ -226,7 +226,7 @@ Graph Security T1 用正式Router／普通User核非默认Tenant、未同步／�
 
 静态轨迹须核三格式、乱序／时区、Unix秒精确毫秒与负数、无效时间／坐标、完整性、同设备同刻位置冲突、403／预算后清旧路线、迟到丢弃、范围回显及GeoJSON默认CRS提示。绘图用630px、1.6像素密度、南半球两路线核像素／全视野，不据此设产品最小视口。
 
-后端仍由Common唯一读取器核严格query／目标字段、混合设备ID／bigint文本、左闭右开、跨首段连续CSV／JSON／GeoJSON、预算／点数／保护失效／源增长／流失败／阻塞取消、JSON闭合与稳定EOF；真实下载／授权／来源见[轨迹Hosted场景](scenarios/Manager与空间成果.md#设备静态轨迹范围读取)。
+后端仍由Common唯一读取器核严格query／目标字段、混合设备ID／bigint文本、左闭右开、跨首段连续CSV／JSON／GeoJSON、预算／点数／保护失效／源增长／流失败／阻塞取消、JSON闭合与稳定EOF；真实下载／授权／来源见[轨迹Hosted场景](scenarios/Manager文件与预览.md#设备静态轨迹范围读取)。
 
 ## Manager 快显回归与基准验证
 

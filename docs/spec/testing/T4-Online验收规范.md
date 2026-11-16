@@ -28,7 +28,7 @@ T4只在隔离部署执行，profile由 `.github/workflows/online-t4-gates.yml`�
 | DM8试用 | 正式ARM64主机未就绪前，仅macOS ARM64 Docker Desktop技术T2/T4；数据库及所有加载官方Go驱动的进程在 `linux/arm64` 容器，System可原生只做登记。非认证ABI／非长期／不可调度；到期、架构／驱动摘要错误或介质缺失即失败，不Skip／换镜像驱动，不登Hosted／schedule。 |
 | `make test-manager-sgm-local` | macOS/Linux ARM64＋本地Linux ARM64 Docker；已提交源码的仓外副本，正式Compose／产品构建，独占平台、双Runtime、PG／Redis／双MinIO、普通User。Runtime／存储仅内部网，Nginx／System／Gateway／PG另接独立入口网，宿主只回环；构建前核真实端口映射／HTTP准入。SDK／许可／样例仅本机私有，报告只留哈希／断言，不留原日志／截图／样例。System本机标记仅既有Manager十权限，与Hosted／owner-managed互斥、不授个人生产权。核生成／GLB页面／缓存／源不变及领域物理清理；容器网卷／凭据／端口独占且逐项核清。runner沿 `make test-manager-online-runner`，公共workflow禁止真实入口，正式商业T4仍走上表。 |
 
-Hosted Manager经开发入口启动的PointCloud／Document为原生Python进程，按实际回环端口、PID／监听归属管理，访问宿主System／Infra／Business MinIO不改Docker host gateway。详见[显式Runtime](../../../scripts/docs/启动脚本使用指南.md#显式启动-runtime)、[端口／宿主发布绑定](../addp端口分配.md#system-addp-基础设施)及[点云与PPTX场景](scenarios/Manager与空间成果.md#点云与-pptx)。`make test-dev-lifecycle` 或依赖准备不代验真实对象／COPC／PDF／页面；产品容器仍按各profile，不据此统一host网络或用bridge host gateway替代回环实际可达路径。
+Hosted Manager经开发入口启动的PointCloud／Document为原生Python进程，按实际回环端口、PID／监听归属管理，访问宿主System／Infra／Business MinIO不改Docker host gateway。详见[显式Runtime](../../../scripts/docs/启动脚本使用指南.md#显式启动-runtime)、[端口／宿主发布绑定](../addp端口分配.md#system-addp-基础设施)及[点云与PPTX场景](scenarios/Manager文件与预览.md#点云与-pptx)。`make test-dev-lifecycle` 或依赖准备不代验真实对象／COPC／PDF／页面；产品容器仍按各profile，不据此统一host网络或用bridge host gateway替代回环实际可达路径。
 
 各suite夹具和断言见[场景索引](../addp测试与验收规范.md#online-场景索引)，条款只适用于声明范围。
 

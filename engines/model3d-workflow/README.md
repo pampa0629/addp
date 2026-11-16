@@ -168,7 +168,7 @@ FBX／OBJ 构建检查比较源角点坐标、三角面、UV 与实际贴图像�
 
 同一产品构建运行文件存在性回归，模拟 `stat()` 失败但输出结构残留普通文件标志，并核对真实文件、目录及缺失路径；最终 Runtime 使用真实 Assimp 反复转换带相对 PNG 引用的 3DS，核对几何、UV、内嵌像素、源文件不变和失败时旧产物保留。原有 FBX／OBJ／OSGB／SKP／MAX 检查继续执行。Linux amd64 的 Manager 页面与对象存储完整链路仍由原 Hosted suite 验收，构建检查不能替代 T4。
 
-MAX 的跨模块验收沿既有 `manager-internal-artifact-lineage`，核对源授权、单位与 bitmap 映射、转换结果、缓存、血缘和零残留清理。专用 Business MinIO 夹具、完整断言及标准入口统一见[Manager MAX Hosted 场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#max-模型-hosted-验收)，实际通过范围按固定版本证据认定。
+MAX 的跨模块验收沿既有 `manager-internal-artifact-lineage`，核对源授权、单位与 bitmap 映射、转换结果、缓存、血缘和零残留清理。专用 Business MinIO 夹具、完整断言及标准入口统一见[Manager MAX Hosted 场景](../../docs/spec/testing/scenarios/Manager文件与预览.md#max-模型-hosted-验收)，实际通过范围按固定版本证据认定。
 
 SKP 真实解析与转换回归自动进入同一 `make test-model3d-workflow`：自建 SKP 包含共享组件和内嵌贴图，验证米制尺寸、Y 上轴、实例共享、实际贴图像素、源文件不变，以及隐藏内容／损坏输入拒绝和旧产物保留。上面的标准产品构建入口还在生产 Runtime 镜像内生成并转换 SKP，检查 GLB 与米制尺寸。原生构建、NFS 本机页面与 S3／Hosted 的结果分别见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)，不以某一环境通过替代其他环境的验收。
 
