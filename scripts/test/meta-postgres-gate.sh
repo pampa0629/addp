@@ -104,7 +104,7 @@ if [ "$test_group" = file-composition ]; then
     done
 elif [ "$test_group" = native-object ]; then
     grep -q -- '--- PASS: TestSingleObjectAuthorizationFactsAgainstPostgres ' "$WORK_DIR/meta.log" || {
-        echo 'Meta PostgreSQL gate requires real single-object authorization facts' >&2; exit 1
+        echo 'Meta PostgreSQL gate requires the real TestSingleObjectAuthorizationFactsAgainstPostgres test' >&2; exit 1
     }
 elif [ "$test_group" = production ]; then
     for required_test in TestProductionBasicScanAgainstPostgres TestScanPlanFactsAgainstPostgres; do

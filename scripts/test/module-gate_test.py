@@ -508,7 +508,7 @@ package = args[1]
 pattern = args[args.index('-run')+1]
 catalog = {
     './internal/repository':['TestClaimedComponentsAgainstPostgres','TestAuthorizationBasisStartupMigrationAgainstPostgres'],
-    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres'],
+    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestSingleObjectAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres'],
     './internal/scanadapter':['TestPreciseCatalogScanAgainstPostgres'],
     './internal/scanprocessor':['TestDelimitedEncodingRefreshAgainstPostgres','TestTIFFContentVersionsRefreshAgainstPostgres'],
     './internal/scanruntime':['TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres'],
@@ -544,6 +544,7 @@ else:
         all_packages = ['repository','service','scanadapter','scanprocessor','scanruntime','api']
         for args, packages in (([],all_packages),(['--test','all'],all_packages),
                                (['--test','authorization-facts'],['service']),
+                               (['--test','native-object'],['service']),
                                (['--test','file-composition'],['scanruntime']),
                                (['--test','lineage-graph'],['service'])):
             with self.subTest(arguments=args):
@@ -560,10 +561,16 @@ else:
                 if args == ['--test','lineage-graph']:
                     self.assertIn('--- PASS: TestLineageGraphPerformanceAgainstPostgres ',result.stdout)
                     self.assertNotIn('TestDataItemAuthorizationFactsAgainstPostgres',result.stdout)
+                elif args == ['--test','native-object']:
+                    self.assertIn('--- PASS: TestSingleObjectAuthorizationFactsAgainstPostgres ',result.stdout)
+                    self.assertNotIn('TestDataItemAuthorizationFactsAgainstPostgres',result.stdout)
+                    self.assertNotIn('TestAuthorizationBasisRevisionAgainstPostgres',result.stdout)
+                    self.assertNotIn('TestScanPlanFactsAgainstPostgres',result.stdout)
                 elif packages == ['service']:
                     self.assertNotIn('TestProductionBasicScanAgainstPostgres',result.stdout)
                     self.assertNotIn('TestCleanupRuntimeAtomicityAgainstPostgres',result.stdout)
                     self.assertIn('--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ',result.stdout)
+                    self.assertIn('--- PASS: TestSingleObjectAuthorizationFactsAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestAuthorizationBasisRevisionAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestScanPlanFactsAgainstPostgres ',result.stdout)
                 if packages == ['scanruntime']:
@@ -572,8 +579,8 @@ else:
                     self.assertIn('--- PASS: TestFTPBasicCompositionAgainstPostgres ',result.stdout)
 
     def test_meta_postgres_each_group_rejects_missing_required_proofs_skips_zero_matches_and_go_failure(self) -> None:
-        for group in ('all','authorization-facts','file-composition','lineage-graph'):
-            required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestLineageGraphPerformanceAgainstPostgres',) if group == 'lineage-graph' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres')
+        for group in ('all','authorization-facts','native-object','file-composition','lineage-graph'):
+            required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestLineageGraphPerformanceAgainstPostgres',) if group == 'lineage-graph' else ('TestSingleObjectAuthorizationFactsAgainstPostgres',) if group == 'native-object' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestSingleObjectAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres')
             if group == 'all':
                 required += ('TestAuthorizationBasisStartupMigrationAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres','TestTIFFContentVersionsRefreshAgainstPostgres')
             for mode in ('skip','empty','failure',*('omit:'+name for name in required)):
@@ -629,6 +636,7 @@ with open({str(lock)!r}, "a") as held:
         sys.exit("gate failed to retain lock in test child")
 Path({str(marker)!r}).touch()
 print("--- PASS: TestDataItemAuthorizationFactsAgainstPostgres (0.01s)")
+print("--- PASS: TestSingleObjectAuthorizationFactsAgainstPostgres (0.01s)")
 print("--- PASS: TestAuthorizationBasisRevisionAgainstPostgres (0.01s)")
 print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
 ''')
