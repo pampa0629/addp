@@ -32,13 +32,17 @@ cd /path/to/addp
 3. 按固定镜像启动基础设施并等待就绪。
 4. 启动 System Backend，等待 Ready，再由部署入口使用模块专属发布身份发布声明。
 5. 启动 `addp-platform` 中全部平台服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
-6. 启动 `addp-runtimes` 中全部内置 Runtime，再列出平台与 Runtime 状态；本机入口探测另按[健康检查说明](#health-checksh)执行。
+6. 启动发布清单选中的 `addp-runtimes` 内置 Runtime，再列出平台与 Runtime 状态；本机入口探测另按[健康检查说明](#health-checksh)执行。
 
 ### 发布准备与镜像边界
 
 在固定源码检出中执行 `bash scripts/prod/deploy.sh <版本> --skip-deploy`，准备全部所选镜像及不可变发布目录；完整部署使用同一命令省略 `--skip-deploy`。准备阶段复用标准编译和镜像构建入口，将外部镜像与所选指标来源制品纳入清单，完成后原子切换 `dist/compose-release`。清单同时绑定 Registry digest 与镜像配置 ID；生产启动缺少本地镜像时只按 digest 拉取，核对配置 ID 后按该 ID 运行，缺少制品时失败；现场构建与自动识别 Kubernetes、Swarm 的旧发布路径删除。开发构建仍由开发入口和标准构建脚本管理。
 
-发布目录包含源提交、目标架构、所选观测能力、Compose 输入摘要及镜像覆盖文件，随部署文件一起交付。部署配置和 Secret 由目标环境准备，清单不保存密码或令牌。切换版本时显式准备并选择新发布，已有版本目录保留供核查；持久数据恢复仍遵循各 owner 的迁移与恢复规则。
+发布目录包含源提交、目标架构、所选 Runtime 与观测能力、Compose 输入摘要及镜像覆盖文件，随部署文件一起交付。部署配置和 Secret 由目标环境准备，清单不保存密码或令牌。切换版本时显式准备并选择新发布，已有版本目录保留供核查；持久数据恢复仍遵循各 owner 的迁移与恢复规则。
+
+`ADDP_SUPERMAP_WORKFLOW_ENABLED` 是生产发布的 Runtime 选择，默认 `true`，只接受 `true` / `false`。尚未准备原生 amd64 SuperMap SDK 与镜像的主机须显式设为 `false`；这会将 SuperMap 从本次镜像构建、发布清单、离线导出和启动范围中排除。其他平台模块与 Runtime 仍按原流程准备。设为 `true` 时，`SUPERMAP_WORKFLOW_PLATFORM` 和实际镜像必须符合目标 Linux 架构，不自动模拟、不静默跳过构建失败。
+
+Runtime 选择与观测能力一并冻结到发布清单。所选服务的镜像覆盖文件解除其源 Compose profile 条件，生产启动直接消费已经冻结的服务集合；未选 SuperMap 保留独立 profile，不随默认启动激活。改变选择须先在旧发布目录执行标准停止入口，再准备新发布并启动，保留原数据卷；仅编辑 `.env` 不能改变既有发布范围。本地开发 Runtime 的显式选择入口保持原约定。
 
 离线 `docker save/load` 不保留 Registry 的 RepoDigests，配置 ID 仍由镜像内容确定；在线与离线采用相同的配置 ID 运行路径。生产覆盖文件采用 Compose 规范的 `!reset null` 移除构建定义，预检通过真实 `docker compose config` 核对合并结果。指标采集来源镜像按清单 digest 和构建归属校验，实际部署容器、私有卷和账号继续使用目标工作区的归属证明。
 

@@ -209,6 +209,7 @@ services:
   # ==================== SuperMap Workflow Engine（超图工作流引擎） ====================
 
   supermap-workflow-engine:
+    profiles: [supermap-workflow]
     image: ${REGISTRY:-localhost:5001}/addp-supermap-workflow-engine:${IMAGE_TAG:-latest}
     container_name: supermap-workflow-engine
     platform: ${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}

@@ -21,6 +21,7 @@ COMPOSE_FILES = {
     "runtimes": "docker-compose.runtimes.yml",
 }
 CAPABILITIES = {
+    "ADDP_SUPERMAP_WORKFLOW_ENABLED": "true",
     "ADDP_OBSERVABILITY_LOGS_ENABLED": "true",
     "ADDP_OBSERVABILITY_TRACES_ENABLED": "false",
     "ADDP_OBSERVABILITY_METRICS_ENABLED": "false",
@@ -30,6 +31,7 @@ CAPABILITIES = {
     "ADDP_KAFKA_CONNECT_METRICS_ENABLED": "false",
 }
 PROFILES = {
+    "ADDP_SUPERMAP_WORKFLOW_ENABLED": "supermap-workflow",
     "ADDP_OBSERVABILITY_LOGS_ENABLED": "observability-logs",
     "ADDP_OBSERVABILITY_TRACES_ENABLED": "observability-traces",
     "ADDP_OBSERVABILITY_METRICS_ENABLED": "observability-metrics",
@@ -197,7 +199,7 @@ def write_override(path, services):
     lines = ["services:"]
     for name, reference in sorted(services.items()):
         lines += [f"  {json.dumps(name)}:", f"    image: {json.dumps(reference)}",
-                  "    build: !reset null", "    pull_policy: never"]
+                  "    build: !reset null", "    profiles: !reset []", "    pull_policy: never"]
     path.write_text("\n".join(lines) + "\n")
 
 

@@ -84,6 +84,10 @@ class ReleaseVerificationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Capability selection"):
             self.verify({"ADDP_OBSERVABILITY_LOGS_ENABLED": "false"})
 
+    def test_supermap_selection_change_requires_another_prepared_release(self):
+        with self.assertRaisesRegex(ValueError, "Capability selection"):
+            self.verify({"ADDP_SUPERMAP_WORKFLOW_ENABLED": "false"})
+
     def test_wrong_architecture_is_rejected(self):
         self.manifest["platform"] = "linux/amd64"
         self.save()
@@ -146,6 +150,7 @@ class ReleaseVerificationTest(unittest.TestCase):
         path = self.directory / "infra-images.yml"
         release.write_override(path, {"minio": REFERENCE})
         self.assertIn("build: !reset null", path.read_text())
+        self.assertIn("profiles: !reset []", path.read_text())
         self.assertIn("pull_policy: never", path.read_text())
         self.assertIn(REFERENCE, path.read_text())
 
@@ -162,6 +167,49 @@ class ReleaseVerificationTest(unittest.TestCase):
         release.activate(second)
         self.assertEqual((self.directory / "manifest.json").read_text(), "second")
         self.assertEqual((first / "manifest.json").read_text(), "first")
+
+
+class RuntimeSelectionTest(unittest.TestCase):
+    def runtime_model(self, enabled, platform="linux/amd64"):
+        env = release.release_environment(dict(os.environ, ADDP_SUPERMAP_WORKFLOW_ENABLED=enabled),
+                                          "fixture", "registry.invalid", platform)
+        return release.compose_model("runtimes", env), env
+
+    def test_amd64_release_explicitly_excludes_supermap(self):
+        model, _ = self.runtime_model("false")
+        self.assertNotIn("supermap-workflow-engine", model)
+        self.assertIn("geopython-workflow-engine", model)
+        self.assertTrue(all(service.get("platform", "linux/amd64") == "linux/amd64" for service in model.values()))
+
+    def test_supermap_selection_is_strict_boolean(self):
+        for value in ("auto", "TRUE", ""):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "true or false"):
+                release.selection({"ADDP_SUPERMAP_WORKFLOW_ENABLED": value})
+
+    def test_runtime_override_freezes_selected_profiles_for_standard_startup(self):
+        for enabled in ("true", "false"):
+            with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as temporary:
+                model, env = self.runtime_model(enabled, "linux/arm64")
+                override = Path(temporary) / "runtimes-images.yml"
+                release.write_override(override, {name: IMAGE_ID for name in model})
+                # Startup's shared environment selects observability profiles only.
+                env.pop("COMPOSE_PROFILES", None)
+                actual = release.compose_model("runtimes", env, override)
+                self.assertEqual(set(actual), set(model))
+                self.assertEqual("supermap-workflow-engine" in actual, enabled == "true")
+                self.assertTrue(all(service["image"] == IMAGE_ID for service in actual.values()))
+
+    def test_selected_arm64_supermap_is_rejected_before_amd64_build(self):
+        model, _ = self.runtime_model("true")
+        with patch.object(release, "native_platform", return_value="linux/amd64"), \
+             patch.object(release, "subprocess") as process, \
+             patch.object(release, "output", return_value="b" * 40), \
+             patch.object(release, "compose_model", side_effect=lambda project, *_: model if project == "runtimes" else {}), \
+             patch.object(release, "execute") as execute:
+            process.run.return_value.returncode = 0
+            with self.assertRaisesRegex(ValueError, "Selected service platform differs.*supermap-workflow-engine"):
+                release.prepare("fixture", "registry.invalid")
+            execute.assert_not_called()
 
 
 class OntologyPackageCoverageTest(unittest.TestCase):
