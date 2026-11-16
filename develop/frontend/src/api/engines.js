@@ -8,6 +8,8 @@ export const listEngines = () => {
   return client.get('/develop/engines')
 }
 
+export const listSourceEngines = () => client.get('/develop/source-engines')
+
 /**
  * 获取工作流引擎列表
  * @returns {Promise}

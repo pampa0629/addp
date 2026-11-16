@@ -1681,6 +1681,79 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engine-access/metadata-checks/develop-navigation": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 develop.task.read 和原普通 User 凭据，沿当前个人及组织 Grant 核验候选存储引擎根；Meta事实返回后重核。不授予连接、查询执行或内容读取权 | Checks candidate storage roots using fixed develop.task.read and the original ordinary User, current personal and organization Grants, and a final recheck after Meta facts. Grants no connection, query execution or content access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "检查查询工作台来源引擎可见性 | Check query workbench source engine visibility",
+                "parameters": [
+                    {
+                        "description": "1 至 200 个存储引擎根 | 1 to 200 storage engine roots",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceNavigationCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceMetadataCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
+            }
+        },
         "/engine-access/metadata-checks/manager-navigation": {
             "post": {
                 "security": [

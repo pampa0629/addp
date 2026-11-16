@@ -121,6 +121,11 @@ func (c *SystemServiceClient) CheckManagerObjectPreview(ctx context.Context, cre
 func (c *SystemServiceClient) CheckManagerNavigation(ctx context.Context, credential string, query authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
 	return c.checkNavigation(ctx, credential, query, "manager-navigation", false)
 }
+
+// CheckDevelopNavigation observes storage visibility as the original Develop User.
+func (c *SystemServiceClient) CheckDevelopNavigation(ctx context.Context, credential string, query authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+	return c.checkNavigation(ctx, credential, query, "develop-navigation", false)
+}
 func (c *SystemServiceClient) CheckMetaNavigation(ctx context.Context, credential string, query authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
 	return c.checkNavigation(ctx, credential, query, "meta-navigation", false)
 }

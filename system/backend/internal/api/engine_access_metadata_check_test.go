@@ -419,6 +419,84 @@ func (f *metadataCheckFixture) CheckManagerNavigation(_ context.Context, _ strin
 	}
 	return result, nil
 }
+func (f *metadataCheckFixture) CheckDevelopNavigation(ctx context.Context, token string, q authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+	f.calls++
+	result, err := f.CheckManagerNavigation(ctx, token, q)
+	if f.wrongTarget {
+		result.Targets[0].Target.EngineID++
+	}
+	return result, err
+}
 func (f *metadataCheckFixture) CheckMetaNavigation(ctx context.Context, token string, q authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
 	return f.CheckManagerNavigation(ctx, token, q)
+}
+
+func TestDevelopNavigationUsesOnlyItsExistingFunctionAndOrdinaryUser(t *testing.T) {
+	target := plugin.ObjectRootPath(12)
+	input, _ := json.Marshal(authorization.SourceNavigationCheckRequest{Targets: []plugin.EngineCatalogPath{target}})
+	for _, tc := range []struct {
+		name, permission, tokenType string
+		wrong                       bool
+		status                      int
+	}{
+		{"Develop User", engineaccess.DevelopNavigationReadPermission, middleware.IAMTokenTypeFirstPartyAccess, false, 200},
+		{"OAuth User", engineaccess.DevelopNavigationReadPermission, middleware.IAMTokenTypeOAuthAccess, false, 200},
+		{"Manager only", engineaccess.ManagerPreviewReadPermission, middleware.IAMTokenTypeFirstPartyAccess, false, 403},
+		{"no function", "", middleware.IAMTokenTypeFirstPartyAccess, false, 403},
+		{"Service", engineaccess.DevelopNavigationReadPermission, middleware.IAMTokenTypeServiceAccess, false, 403},
+		{"delegate", engineaccess.DevelopNavigationReadPermission, middleware.IAMTokenTypeDelegatedAccess, false, 403},
+		{"wrong target", engineaccess.DevelopNavigationReadPermission, middleware.IAMTokenTypeFirstPartyAccess, true, 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := sourceReadCheckAuth()
+			if tc.tokenType == middleware.IAMTokenTypeServiceAccess {
+				current = testIAMServiceActorContext("tenant", "addp-develop")
+				current.Authorization.RoleAssignments = sourceReadCheckAuth().Authorization.RoleAssignments
+			}
+			current.Token.Type = tc.tokenType
+			current.Authorization.RoleAssignments[0].Permissions = []string{tc.permission}
+			if tc.permission == "" {
+				current.Authorization.RoleAssignments = []authorization.RoleAssignment{}
+			}
+			if tc.tokenType == middleware.IAMTokenTypeOAuthAccess {
+				current.Client.ScopeMode = "restricted"
+				current.Client.Scopes = []string{"addp.api"}
+			}
+			if tc.tokenType == middleware.IAMTokenTypeDelegatedAccess {
+				current.Client.ScopeMode = "restricted"
+				current.Client.Audiences = []string{"meta"}
+				current.Client.Scopes = []string{"resource.children.list"}
+				current.Delegation = &authorization.DelegationFacts{DelegatedByClientID: *current.Client.ClientID, AgentRunID: "run", ToolCallID: "call"}
+			}
+			if err := authorization.ValidateAuthContext(current); err != nil {
+				t.Fatalf("invalid auth fixture: %v", err)
+			}
+			auth, err := middleware.NewIAMAuthenticationMiddleware(iamActorResolver{authContext: &current})
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeOAuthAccess)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := &metadataCheckFixture{wrongTarget: tc.wrong}
+			router := gin.New()
+			if err := RegisterEngineAccessMetadataCheckRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: auth, UserAccessCredential: credential}, &EngineAccessMetadataCheckHandler{service: fixture}); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest("POST", "/api/v1/system/engine-access/metadata-checks/develop-navigation", strings.NewReader(string(input)))
+			req.Header.Set("Authorization", "Bearer addp_at_test")
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, req)
+			if resp.Code != tc.status || (fixture.calls == 1) != (tc.status == 200 || tc.status == 500) {
+				t.Fatalf("status=%d calls=%d body=%s", resp.Code, fixture.calls, resp.Body.String())
+			}
+			if tc.status == 200 {
+				var result authorization.SourceMetadataCheck
+				if json.Unmarshal(resp.Body.Bytes(), &result) != nil || !result.MatchesNavigation(authorization.SourceNavigationCheckRequest{Targets: []plugin.EngineCatalogPath{target}}) || resp.Header().Get("Cache-Control") != "no-store" {
+					t.Fatal("incomplete or cacheable observation")
+				}
+			}
+		})
+	}
 }

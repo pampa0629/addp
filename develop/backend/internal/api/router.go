@@ -195,6 +195,8 @@ func SetupRouter(
 			engines.GET("", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListEngines)
 		}
 
+		api.GET("/source-engines", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListSourceEngines)
+
 		// ========== 工作流引擎管理 ==========
 		api.GET("/workflow-engines", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListWorkflowEngines)
 		api.GET("/workflow-engines/:id/operators", permission(developauthorization.PermissionDevelopTaskRead), operatorHandler.ListOperatorsByWorkflowEngine)

@@ -25,14 +25,22 @@ const navigationGrantsSQL = `WITH input AS MATERIALIZED (
  WHERE g.engine_id IN ? AND e.lifecycle_state='active' AND e.deleted_at IS NULL
  AND g.action IN ('metadata_read','read') AND ` + sourceGrantCurrentPredicate
 
+const DevelopNavigationReadPermission = "develop.task.read"
+
 func (s *Service) CheckManagerNavigation(ctx context.Context, credential string, q shared.SourceNavigationCheckRequest) (*shared.SourceMetadataCheck, error) {
+	return s.checkEngineNavigation(ctx, credential, q, ManagerPreviewReadPermission)
+}
+func (s *Service) CheckDevelopNavigation(ctx context.Context, credential string, q shared.SourceNavigationCheckRequest) (*shared.SourceMetadataCheck, error) {
+	return s.checkEngineNavigation(ctx, credential, q, DevelopNavigationReadPermission)
+}
+func (s *Service) checkEngineNavigation(ctx context.Context, credential string, q shared.SourceNavigationCheckRequest, permission string) (*shared.SourceMetadataCheck, error) {
 	for _, root := range q.Targets {
 		if len(root.Segments) != 1 {
 			return nil, commonapi.ErrBadRequest
 		}
 	}
 	return s.checkNavigation(ctx, credential, q, false, func(current shared.AuthContext) error {
-		return qualifyOrdinarySourceUser(current, ManagerPreviewReadPermission)
+		return qualifyOrdinarySourceUser(current, permission)
 	})
 }
 func (s *Service) CheckMetaNavigation(ctx context.Context, credential string, q shared.SourceNavigationCheckRequest) (*shared.SourceMetadataCheck, error) {

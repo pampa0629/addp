@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test'
 import { developAuthContext } from './developAuthContext.js'
 import { readFileSync } from 'node:fs'
 
+
+
 const ENGINE = {
   id: 11,
   name: 'PostgreSQL Demo',
@@ -940,7 +942,7 @@ async function installMockBackend(page, {
     if (path === '/api/v1/develop/engines') {
       return fulfillJSON(route, engines)
     }
-    if (path === '/api/v1/meta/engines') {
+    if (path === '/api/v1/meta/engines' || path === '/api/v1/develop/source-engines') {
       return fulfillJSON(route, metaEngines)
     }
     if (path === '/api/v1/manager/resource-facts') {
@@ -1780,3 +1782,27 @@ for (const locale of ['zh-cn', 'en']) for (const [boundary, leave] of [['create'
     }
   })
 }
+
+
+test('hidden query sources do not trigger an unauthorized resource tree',async({page})=>{
+ const reads=[];await installMockBackend(page,{resultKind:'table',engines:[],resourceTreeRequests:reads})
+ await page.goto('/sql?action=create')
+ await expect(page.locator('.monaco-editor-container .monaco-editor')).toBeVisible()
+ await expect(page.locator('.catalog-panel .el-tree')).toHaveCount(0)
+ await expect(page.locator('.engine-select')).not.toContainText(ENGINE.name)
+ expect(reads).toEqual([])
+})
+for (const reason of ['revoked','expired']) test(`query source ${reason} refresh removes old catalog and preserves draft`,async({page})=>{
+ const reads=[];await installMockBackend(page,{resultKind:'table',resourceTreeRequests:reads})
+ await page.goto('/sql?action=create')
+ const catalog=page.locator('.catalog-panel');await expect(catalog.getByRole('treeitem',{name:ENGINE.name,exact:true})).toBeVisible()
+ const editor=page.locator('.monaco-editor-container');await expect(editor.locator('.monaco-editor')).toBeVisible()
+ await editor.evaluate(el=>el.__vueParentComponent.setupState.editor.setValue('SELECT id FROM public.customers -- preserve draft'))
+ await page.route('**/api/v1/develop/engines',route=>fulfillJSON(route,[]))
+ const refreshed=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/develop/engines')
+ const before=reads.length;await page.locator('.engine-select').click();await refreshed
+ await expect(catalog.locator('.el-tree')).toHaveCount(0)
+ await expect(page.locator('.engine-select')).not.toContainText(ENGINE.name)
+ await expect.poll(()=>editor.evaluate(el=>el.__vueParentComponent.setupState.editor.getValue())).toBe('SELECT id FROM public.customers -- preserve draft')
+ expect(reads.length).toBe(before)
+})

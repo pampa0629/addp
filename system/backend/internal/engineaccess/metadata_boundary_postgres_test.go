@@ -29,7 +29,7 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 		if err != nil {
 			t.Fatal(err)
 		}
-		readerRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.generic_metadata_reader", Name: "Metadata viewer", PermissionKeys: []string{MetaCatalogReadPermission, MetaLineageReadPermission, ManagerPreviewReadPermission, ManagerSearchPermission}, ActorPrincipalID: adminID})
+		readerRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.generic_metadata_reader", Name: "Metadata viewer", PermissionKeys: []string{MetaCatalogReadPermission, MetaLineageReadPermission, ManagerPreviewReadPermission, ManagerSearchPermission, DevelopNavigationReadPermission}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,7 +167,11 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 					}
 					root := plugin.EngineCatalogPath{Version: target.Version, EngineID: target.EngineID, Segments: append([]plugin.EngineCatalogSegment(nil), target.Segments[:1]...)}
 					navigation := shared.SourceNavigationCheckRequest{Targets: []plugin.EngineCatalogPath{root}}
-					visible, err := service.CheckManagerNavigation(ctx, credential, navigation)
+					visible, err := service.CheckDevelopNavigation(ctx, credential, navigation)
+					if err != nil || !visible.MatchesNavigation(navigation) || visible.Targets[0].Visible != want {
+						t.Fatalf("Develop engine root visible=%v result=%+v err=%v", want, visible, err)
+					}
+					visible, err = service.CheckManagerNavigation(ctx, credential, navigation)
 					if err != nil || !visible.MatchesNavigation(navigation) || visible.Targets[0].Visible != want {
 						t.Fatalf("engine root visible=%v result=%+v err=%v", want, visible, err)
 					}

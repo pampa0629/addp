@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/addp/common/authorization"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
@@ -31,6 +33,19 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	capabilities := commonModels.JSONString(capabilitiesJSON)
 
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/system/engine-access/metadata-checks/develop-navigation" {
+			if r.Header.Get("Authorization") != "Bearer addp_at_user" {
+				t.Error("original user replaced")
+			}
+			var q authorization.SourceNavigationCheckRequest
+			json.NewDecoder(r.Body).Decode(&q)
+			result := authorization.SourceMetadataCheck{ObservedAt: time.Now()}
+			for _, target := range q.Targets {
+				result.Targets = append(result.Targets, authorization.SourceMetadataTargetCheck{Target: target, Visible: true})
+			}
+			json.NewEncoder(w).Encode(result)
+			return
+		}
 		if r.URL.Path != "/api/v1/system/runtime/engine-descriptors" {
 			t.Fatalf("unexpected system path: %s", r.URL.Path)
 		}
@@ -66,6 +81,7 @@ func TestListEnginesReturnsOnlySystemQueryEngines(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/engines", nil)
+	req.Header.Set("Authorization", "Bearer addp_at_user")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 

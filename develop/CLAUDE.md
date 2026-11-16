@@ -144,6 +144,8 @@ Develop 前端不提供模块级执行列表。任务行“最近执行”按批
 
 ### 查询工作台与预检
 
+查询引擎与联邦存储来源的消费列表必须按当前 User 的有效 metadata_read／read 来源过滤，不能将 Tenant Service 读取的 Runtime Descriptor 直接交付为全部可见来源。Develop 通过统一 System Client 调用固定 `develop-navigation`（既有 `develop.task.read`），复用当前个人／组织来源、Meta身份边界及事实返回后的最终规则重核。`GET /engines` 按查询能力返回有权存储引擎及原纯计算 Runtime；`GET /source-engines` 只返回当前可见存储来源。两者均不可缓存；依赖失败不回退全量。能力与数据可见性分开，DuckDB等纯计算Runtime不因此取得来源权限。撤权／到期在下一次列表读取和实际数据检查生效，不设置页面定时；刷新后无权绑定不可操作，资源树、补全与迟到响应失效，查询文本及原任务定义不被改写。
+
 查询工作台固定使用左侧 Meta 技术资源树、右侧编辑器与结果上下分栏。资源树直接消费 Meta resource-tree，不新增 Develop 私有 Engine Catalog API；native query engine 同时是 Runtime Engine 与 Source Engine，因此只展示当前 Engine 的原生路径；声明 `compute.query.federation.supported=true` 的共享 Runtime 不拥有可导航的 Engine Catalog，工作台必须按 `federation.source_engine_types` 过滤并展示当前 Tenant 的 Source Engine 资源树。查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
 
 查询编辑器的目录选择是来源上下文；声明联邦查询能力时，选中的 Source locator 只用于资源事实、模板和 Copilot，不得作为原生 `target_locator` 进入预检、即时执行或任务保存。`execution_config.engine_id` 仍绑定所选计算目标，Source 集合由后端解析并冻结；原生查询保留同引擎 `target_locator` 校验，关系参数查询也不携带该原生提示。前端统一使用同一能力驱动的投影，不能按 Spark 或 DuckDB 名称分支。

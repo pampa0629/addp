@@ -26,10 +26,11 @@ func NewEngineHandler(systemClient *commonClient.SystemServiceClient) *EngineHan
 
 // ListEngines 获取查询工作台相关引擎及其当前连接状态。
 // @Summary 获取查询工作台引擎选择项 | List engine options for the query workbench
-// @Description 返回 active 且声明 compute.query 能力的注册引擎；非 online 项由前端展示并禁选 | Return active registered engines declaring compute.query capability; clients must show but disable non-online options
+// @Description 返回 active 查询引擎；存储引擎须有当前用户有效元数据或读取来源，纯计算 Runtime 保持原能力规则；获权非 online 项禁选 | Return active query engines; storage engines require current User metadata or read sources, pure compute runtimes retain capability rules, and authorized non-online options are disabled
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.EngineRuntimeDescriptor "引擎运行时描述列表 | Engine runtime descriptor list"
+// @Failure 401,403,503 {object} map[string]string "核验失败 | Visibility check failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /engines [get]
@@ -46,7 +47,13 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, service.FilterQueryEngineDescriptors(engines))
+	visible, err := h.filterVisibleStorageEngines(c, service.FilterQueryEngineDescriptors(engines))
+	if err != nil {
+		writeEngineVisibilityError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, visible)
 }
 
 // ListWorkflowEngines 获取工作流引擎列表

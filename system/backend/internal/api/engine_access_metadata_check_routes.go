@@ -21,6 +21,7 @@ import (
 )
 
 type metaMetadataCheckService interface {
+	CheckDevelopNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckManagerNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckMetaNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckManagerObjectPreview(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceObjectPreviewCheck, error)
@@ -82,6 +83,11 @@ func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMR
 		return err
 	}
 	api.POST("/engine-access/metadata-checks/meta-lineage", runtime.Authentication, runtime.UserAccessCredential, tenant, lineagePermission, handler.CheckMetaLineage)
+	developPermission, err := middleware.NewIAMPermissionGuard(engineaccess.DevelopNavigationReadPermission)
+	if err != nil {
+		return err
+	}
+	api.POST("/engine-access/metadata-checks/develop-navigation", runtime.Authentication, runtime.UserAccessCredential, tenant, developPermission, handler.CheckDevelopNavigation)
 	previewPermission, err := middleware.NewIAMPermissionGuard(engineaccess.ManagerPreviewReadPermission)
 	if err != nil {
 		return err
@@ -261,6 +267,23 @@ func (h *EngineAccessMetadataCheckHandler) CheckManagerObjectPreview(c *gin.Cont
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// CheckDevelopNavigation godoc
+// @Summary 检查查询工作台来源引擎可见性 | Check query workbench source engine visibility
+// @Description 固定 develop.task.read 和原普通 User 凭据，沿当前个人及组织 Grant 核验候选存储引擎根；Meta事实返回后重核。不授予连接、查询执行或内容读取权 | Checks candidate storage roots using fixed develop.task.read and the original ordinary User, current personal and organization Grants, and a final recheck after Meta facts. Grants no connection, query execution or content access
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body authorization.SourceNavigationCheckRequest true "1 至 200 个存储引擎根 | 1 to 200 storage engine roots"
+// @Success 200 {object} authorization.SourceMetadataCheck
+// @Failure 400,401,403,500,503 {object} IAMErrorResponse "核验失败 | Check failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
+// @Router /engine-access/metadata-checks/develop-navigation [post]
+func (h *EngineAccessMetadataCheckHandler) CheckDevelopNavigation(c *gin.Context) {
+	h.navigation(c, h.service.CheckDevelopNavigation)
 }
 
 // CheckManagerNavigation godoc

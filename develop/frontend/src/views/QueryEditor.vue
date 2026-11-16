@@ -121,6 +121,7 @@
         </div>
         <el-empty v-if="catalogEnginesLoading" :description="t('develop.query.loadingFederatedCatalog')" :image-size="64" />
         <ResourceTreePicker
+        :key="catalogVersion"
           v-else-if="catalogTreeEngineIds.length"
           v-model="catalogSelection"
           class="catalog-tree"
@@ -435,6 +436,7 @@
       </div>
       <el-empty v-if="catalogEnginesLoading" :description="t('develop.query.loadingFederatedCatalog')" :image-size="64" />
       <ResourceTreePicker
+          :key="catalogVersion"
         v-else-if="catalogTreeEngineIds.length"
         v-model="catalogSelection"
         :engine-id="catalogTreeEngineValue"
@@ -463,7 +465,8 @@
 	  :close-on-click-modal="false"
 	>
 	  <ResourceTreePicker
-		v-if="activeRelationDefaultParameter && selectedEngineId"
+		:key="catalogVersion"
+		v-if="activeRelationDefaultParameter && selectedRegisteredTarget"
 		v-model="relationDefaultSelection"
 		:engine-id="selectedEngineId"
 		:initial-locator="activeRelationDefaultParameter.default?.locator || ''"
@@ -790,7 +793,6 @@ import {
   formatLocatorDisplayPath,
   engineSelectionState,
   isEngineSelectable,
-  listResourceTreeEngines,
   createLatestRequestScope,
   downloadAuthenticatedExport,
   parseLocator,
@@ -804,7 +806,7 @@ import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { getSampleQuery, getQueryProtectionOptions, getExportProtectionOptions, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
 import { createExecution, createQueryExport, getQueryResult, getQueryExport } from '../api/execution.js'
-import { listEngines } from '../api/engines.js'
+import { listEngines, listSourceEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
 import { generateQueryFromNL } from '../api/copilot.js'
 import {
@@ -865,6 +867,8 @@ useConsolePageDescriptor(router, 'develop', {
 const currentTask = ref(null)
 const selectedQueryTarget = ref('')
 const engines = ref([])
+const catalogVersion = ref(0)
+let engineListRequestSequence = 0
 const queryContent = ref('')
 const currentQueryLanguage = ref('')
 const executionResult = ref(null)
@@ -928,7 +932,7 @@ watch([catalogSelection, targetLocator, canRequestPlaintext],async ([selection, 
   const sequence=++plaintextTargetSequence
   plaintextTargetIdentity.value='';plaintextRequestVisible.value=false
   const locator=selection?.identity?.locator || savedLocator
-  if(!locator || !permitted)return
+  if(!locator || !permitted || !selectedRegisteredTarget.value)return
   let itemId
   try { itemId=selection?.identity?.item_id || parseLocator(locator).itemId } catch { return }
   if(!itemId)return
@@ -1084,12 +1088,12 @@ const selectedQueryContext = computed(() => {
 const selectedCapability = computed(() => queryCapabilityForEngine(selectedTarget.value?.engine))
 const federatedQuery = computed(() => Boolean(selectedCapability.value.federation?.supported))
 const queryFullExportSupported = computed(() => !federatedQuery.value && selectedCapability.value.readSession && selectedCapability.value.languages.includes(currentQueryLanguage.value))
-const catalogTreeEngineIds = computed(() => federatedQuery.value
+const catalogTreeEngineIds = computed(() => !selectedRegisteredTarget.value ? [] : federatedQuery.value
   ? catalogEngineIds.value
-  : (selectedEngineId.value ? [selectedEngineId.value] : []))
+  : [selectedEngineId.value])
 const catalogTreeEngineValue = computed(() => federatedQuery.value
   ? catalogTreeEngineIds.value
-  : (selectedEngineId.value || null))
+  : (selectedRegisteredTarget.value ? selectedEngineId.value : null))
 const catalogTreeEngineMultiple = computed(() => federatedQuery.value)
 const catalogEmptyDescription = computed(() => {
   if (!selectedEngineId.value) return t('develop.query.selectDataSourceFirst')
@@ -1219,14 +1223,49 @@ const markSaved = () => {
   savedSnapshot.value = currentSnapshot.value
 }
 
+const invalidateCatalogVisibility = () => {
+  catalogVersion.value++
+  catalogSelection.value = null
+  relationDefaultPickerVisible.value = false
+  activeRelationDefaultParameter.value = null
+  relationDefaultSelection.value = null
+  initialCatalogLocator.value = ''
+  fieldRequestSequence++
+  catalogFactsSequence++
+  catalogRequestSequence++
+  catalogEngineRequestSequence++
+  fieldCompletions.value = []
+  catalogCompletions.value = []
+  fieldCompletionCache.clear()
+  queryReferenceFacts.clear()
+  catalogSourceEngines.value = []
+  catalogEngineIds.value = []
+  catalogEnginesLoading.value = false
+  sampleRequests.invalidate()
+  loadingSampleQuery.value = false
+  maskingRequestSequence++
+  exportMaskingSequence++
+  maskingDrawerVisible.value = false
+  maskingFields.value = []
+  exportMaskingFields.value = []
+  plaintextTargetSequence++
+  plaintextTargetIdentity.value = ''
+  plaintextRequestVisible.value = false
+}
+
 const loadEngines = async () => {
+  const sequence = ++engineListRequestSequence
   try {
     const response = await listEngines()
+    if (sequence !== engineListRequestSequence) return
+    invalidateCatalogVisibility()
     engines.value = Array.isArray(response) ? response : []
     if (!selectedQueryTarget.value) {
       selectedQueryTarget.value = queryTargets.value.find(target => target.available)?.value || ''
     }
   } catch (error) {
+    if (sequence !== engineListRequestSequence) return
+    invalidateCatalogVisibility()
     engines.value = []
     ElMessage.error(t('develop.query.loadEnginesFailed') + (error.response?.data?.error || error.message))
   }
@@ -1239,7 +1278,7 @@ const handleQueryEngineDropdownVisible = visible => {
 const refreshCatalogEngines = async () => {
   const requestSequence = ++catalogEngineRequestSequence
   const engineID = selectedEngineId.value
-  if (!engineID) {
+  if (!selectedRegisteredTarget.value || !engineID) {
     catalogSourceEngines.value = []
     catalogEngineIds.value = []
     catalogEnginesLoading.value = false
@@ -1257,7 +1296,7 @@ const refreshCatalogEngines = async () => {
   try {
     const capability = selectedCapability.value.federation
     const supportedTypes = new Set(capability.sourceEngineTypes)
-    const sources = await listResourceTreeEngines('/api/v1/meta')
+    const sources = await listSourceEngines()
     if (requestSequence !== catalogEngineRequestSequence || engineID !== selectedEngineId.value) return
     catalogSourceEngines.value = sources
       .filter(source => Number(source.id) !== engineID && supportedTypes.has(String(source.engine_type || '').toLowerCase()))
@@ -1924,11 +1963,13 @@ const loadFieldCompletions = async selection => {
 }
 
 const loadQueryReferenceFacts = async selection => {
+  const sequence = catalogFactsSequence
   const locator = selection?.identity?.locator
   if (!locator) return
   const parsed = parseLocator(locator)
   if (!parsed.itemId) return
   const facts = await getResourceFacts('/api/v1/manager', locator)
+  if (sequence !== catalogFactsSequence) return
   if (Number(facts?.engine_id) !== Number(parsed.engineId) || Number(facts?.item_id) !== Number(parsed.itemId)) {
     throw new Error(t('develop.query.referenceUnavailable'))
   }
@@ -2522,7 +2563,7 @@ watch(currentQueryLanguage, () => {
   }))
 })
 
-watch([selectedEngineId, federatedQuery], () => {
+watch([selectedEngineId, federatedQuery, catalogVersion], () => {
   refreshCatalogEngines()
 })
 
@@ -2533,6 +2574,7 @@ watch(queryParameterPanelWidth, width => {
 })
 
 onBeforeUnmount(() => {
+  engineListRequestSequence += 1
   catalogFactsSequence += 1
   queryReferenceFacts.clear()
   fullExportRequests.dispose()

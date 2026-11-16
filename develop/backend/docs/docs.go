@@ -297,7 +297,7 @@ const docTemplate = `{
         },
         "/engines": {
             "get": {
-                "description": "返回 active 且声明 compute.query 能力的注册引擎；非 online 项由前端展示并禁选 | Return active registered engines declaring compute.query capability; clients must show but disable non-online options",
+                "description": "返回 active 查询引擎；存储引擎须有当前用户有效元数据或读取来源，纯计算 Runtime 保持原能力规则；获权非 online 项禁选 | Return active query engines; storage engines require current User metadata or read sources, pure compute runtimes retain capability rules, and authorized non-online options are disabled",
                 "produces": [
                     "application/json"
                 ],
@@ -312,6 +312,33 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/models.EngineRuntimeDescriptor"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "核验失败 | Visibility check failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "核验失败 | Visibility check failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "核验失败 | Visibility check failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
@@ -3095,6 +3122,65 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "develop.configuration.update"
+                ]
+            }
+        },
+        "/source-engines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前原用户的有效元数据或读取来源决定存储引擎可见性；仅返回无凭据运行描述，不授予连接或执行权 | Current original User metadata or read sources determine storage visibility. Returns credential-free runtime descriptors, not connection or execution authority",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Engines"
+                ],
+                "summary": "获取当前可见查询来源引擎 | List currently visible query source engines",
+                "responses": {
+                    "200": {
+                        "description": "当前可见来源 | Currently visible sources",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.EngineRuntimeDescriptor"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "核验失败 | Visibility check failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "核验失败 | Visibility check failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "核验失败 | Visibility check failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
                 ]
             }
         },

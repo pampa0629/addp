@@ -6,7 +6,7 @@
 
 ## 概述
 
-查询工作台按 Engine 的 `capabilities.compute.query` 提供查询语言和结果形态。即时查询与保存的 `query` 任务共享统一 execution；任务可手动执行或由 Orchestrator 显式调用，Develop 不提供自身定时调度。
+查询工作台按 Engine 的 `capabilities.compute.query` 提供查询语言和结果形态。存储引擎及联邦来源只展示当前账号有有效元数据查看或读取来源的选项；纯计算 Runtime 继续按其能力展示，不代替来源授权。打开引擎下拉时重新核对当前列表，失去授权的任务绑定保留为不可用，不自动切到其他引擎；资源树与补全清理，查询文本和原任务定义保留。即时查询与保存的 `query` 任务共享统一 execution；任务可手动执行或由 Orchestrator 显式调用，Develop 不提供自身定时调度。
 
 | 契约主题 | 权威正文 |
 | --- | --- |
