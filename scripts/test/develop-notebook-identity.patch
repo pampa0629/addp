@@ -1,0 +1,57 @@
+--- a/system/backend/cmd/online-test-fixture/main.go
++++ b/system/backend/cmd/online-test-fixture/main.go
+@@ -6,0 +7 @@
++	"encoding/json"
+@@ -18,0 +20 @@
++	"github.com/addp/common/engine/plugins/jupyter"
+@@ -22,0 +25,2 @@
++	enginerepository "github.com/addp/system/internal/repository"
++	engineservice "github.com/addp/system/internal/service"
+@@ -369,0 +374,2 @@
++	case "develop-notebook-storage":
++		return []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read", "system.engine.read"}, nil
+@@ -724,0 +731,39 @@
++
++	if *suite == "develop-notebook-storage" {
++		permissions, err := suitePermissions(*suite)
++		if err != nil {
++			return err
++		}
++		peer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
++			tenant.ID, administrator.PrincipalID, "external-online-notebook-peer", permissions)
++		if err != nil {
++			return err
++		}
++		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
++		if err != nil {
++			return err
++		}
++		foreign, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
++			foreignTenant.ID, reserve.PrincipalID, "external-online-notebook-foreign", permissions)
++		if err != nil {
++			return err
++		}
++		capabilities, err := json.Marshal((&jupyter.JupyterPlugin{}).Capabilities())
++		if err != nil {
++			return err
++		}
++		caps := models.JSONString(string(capabilities))
++		engine, _, err := engineservice.NewEngineService(enginerepository.NewEngineRepository(db), cfg.EncryptionKey, nil).CreateEngine(&models.Engine{
++			Name: "Notebook HTTP acceptance", EngineType: "jupyter", EngineOrigin: "extension", IsBuiltin: true,
++			ConnectionInfo: models.ConnectionInfo{"host": "127.0.0.1", "port": 8097}, Capabilities: &caps,
++			LifecycleState: models.EngineLifecycleActive, ConnectionStatus: models.EngineConnectionOnline,
++		})
++		if err != nil {
++			return err
++		}
++		values["ADDP_ONLINE_NOTEBOOK_PEER_TOKEN"] = peer.AccessToken
++		values["ADDP_ONLINE_NOTEBOOK_FOREIGN_TOKEN"] = foreign.AccessToken
++		values["ADDP_ONLINE_NOTEBOOK_FOREIGN_TENANT_ID"] = fmt.Sprint(foreignTenant.ID)
++		values["ADDP_ONLINE_NOTEBOOK_ENGINE_ID"] = fmt.Sprint(engine.ID)
++	}
++
+@@ -1765,0 +1811,4 @@
++		"ADDP_ONLINE_NOTEBOOK_PEER_TOKEN",
++		"ADDP_ONLINE_NOTEBOOK_FOREIGN_TOKEN",
++		"ADDP_ONLINE_NOTEBOOK_FOREIGN_TENANT_ID",
++		"ADDP_ONLINE_NOTEBOOK_ENGINE_ID",

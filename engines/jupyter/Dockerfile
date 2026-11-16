@@ -20,7 +20,7 @@ from pathlib import Path
 
 project = tomllib.loads(Path("/tmp/addp-common-pyproject.toml").read_text())
 Path("/tmp/addp-common-requirements.txt").write_text(
-    "\n".join(project["project"]["dependencies"]) + "\n"
+    "\n".join(project["project"]["dependencies"] + project["project"]["optional-dependencies"]["infra-minio"]) + "\n"
 )
 PY
 RUN pip install --no-cache-dir --upgrade pip \
@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir --upgrade setuptools
 COPY common-python/README.md /opt/addp-common/README.md
 COPY common-python/pyproject.toml /opt/addp-common/pyproject.toml
 COPY common-python/addp_common/ /opt/addp-common/addp_common/
-RUN pip install --no-cache-dir --no-build-isolation --no-deps /opt/addp-common \
+RUN pip install --no-cache-dir --no-build-isolation --no-deps "/opt/addp-common[infra-minio]" \
     && rm -rf /opt/addp-common
 
 FROM localhost:5001/node:20-alpine AS labextension-builder

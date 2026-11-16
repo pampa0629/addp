@@ -22,6 +22,7 @@ import (
 )
 
 var (
+	ErrNotebookFileIdentity      = errors.New("invalid Notebook file identity")
 	ErrNotebookNotFound          = errors.New("notebook task not found")
 	ErrTaskNotNotebook           = errors.New("task is not a notebook")
 	ErrDevTaskNotFound           = errors.New("development task not found")
@@ -52,6 +53,20 @@ func (s *DevTaskService) SetQueryProtection(service *SQLEngineService) { s.query
 
 // CreateDevTask 创建开发任务
 func (s *DevTaskService) CreateDevTask(ctx context.Context, bearer string, req *models.CreateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
+	if _, exists := req.Content["notebook_locator"]; req.DevType == "script" && exists {
+		return nil, ErrNotebookFileIdentity
+	}
+	return s.createDevTask(ctx, bearer, req, tenantID, userID)
+}
+func (s *DevTaskService) CreateNotebookTask(ctx context.Context, req *models.CreateDevTaskRequest, tenantID, userID uint) (*models.DevTask, error) {
+	locator, _ := req.Content["notebook_locator"].(string)
+	_, refErr := notebookRef(tenantID, locator)
+	if req.DevType != "script" || refErr != nil {
+		return nil, ErrNotebookFileIdentity
+	}
+	return s.createDevTask(ctx, "", req, tenantID, userID)
+}
+func (s *DevTaskService) createDevTask(ctx context.Context, bearer string, req *models.CreateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
 	// 业务验证：检查名称是否已存在
 	exists, err := s.devTaskRepo.ExistsByName(req.Name, tenantID, nil)
 	if err != nil {
@@ -139,6 +154,9 @@ func (s *DevTaskService) UpdateDevTask(ctx context.Context, bearer string, id ui
 	nextContent := map[string]interface{}(item.Content)
 	if req.Content != nil && len(req.Content) > 0 {
 		nextContent = req.Content
+	}
+	if nextContent["notebook_locator"] != item.Content["notebook_locator"] {
+		return nil, ErrNotebookFileIdentity
 	}
 	nextExecutionConfig := map[string]interface{}(item.ExecutionConfig)
 	if req.ExecutionConfig != nil {
@@ -558,6 +576,14 @@ func isDevelopDevType(devType string) bool {
 }
 
 func validateDevTaskContent(devType string, content map[string]interface{}) error {
+	if devType == "script" {
+		if _, exists := content["notebook_path"]; exists {
+			return ErrNotebookFileIdentity
+		}
+		if _, exists := content["minio_path"]; exists {
+			return ErrNotebookFileIdentity
+		}
+	}
 	if content == nil || len(content) == 0 {
 		return fmt.Errorf("content 不能为空")
 	}

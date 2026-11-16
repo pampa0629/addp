@@ -161,7 +161,7 @@ async function installMockBackend(page, { boundEngineID = NOTEBOOK_ENGINE.id, bi
     dev_type: 'script',
     updated_at: '2026-07-30T00:26:00+08:00',
     content: {
-      notebook_path: 'scripts2.ipynb',
+      notebook_locator: 'addp-infra://object/develop/tenant_1/notebooks/scripts2.ipynb?type=object',
       kernel: 'python3',
       parameters: {}
     },

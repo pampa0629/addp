@@ -7,7 +7,6 @@ import os
 import io
 import hashlib
 import re
-from pathlib import PurePosixPath
 import asyncio
 import logging
 import traceback
@@ -18,14 +17,16 @@ import httpx
 import papermill as pm
 import nbformat
 from datetime import datetime
-from minio import Minio
 
 # 加载配置
 from config import config
+from addp_common.infra.objectstore import Ref
+from addp_common.infra.objectstore.bootstrap import open_object_area
 from addp_common.auth import resolve_authorization_context
 from interactive_sessions import (
     InteractiveSessionManager,
     SessionConflictError,
+    SessionScopeError,
     SessionNotFoundError,
     SessionValidationError,
 )
@@ -40,31 +41,16 @@ logger = logging.getLogger(__name__)
 # 打印配置信息
 config.print_config()
 
-# 初始化 MinIO 客户端
-logger.info("初始化 MinIO 客户端...")
+# Select the deployment-bound provider once. Storage failure makes this Runtime unready.
 try:
-    minio_client = Minio(
-        config.MINIO_ENDPOINT,
-        access_key=config.MINIO_ACCESS_KEY,
-        secret_key=config.MINIO_SECRET_KEY,
-        secure=config.MINIO_USE_SSL
-    )
-    # 检查连接
-    if not minio_client.bucket_exists(config.MINIO_BUCKET):
-        logger.warning(f"MinIO bucket '{config.MINIO_BUCKET}' 不存在，将尝试创建")
-        minio_client.make_bucket(config.MINIO_BUCKET)
-        logger.info(f"已创建 MinIO bucket: {config.MINIO_BUCKET}")
-    else:
-        logger.info(f"MinIO 连接成功，bucket: {config.MINIO_BUCKET}")
-except Exception as e:
-    logger.error(f"MinIO 初始化失败: {e}")
-    logger.warning("Jupyter Engine 将以降级模式运行（无 MinIO 支持）")
-    minio_client = None
+    notebook_store = open_object_area("develop")
+except Exception:
+    logger.exception("Notebook object binding unavailable")
+    notebook_store = None
 
 app = Flask(__name__)
 interactive_session_manager = InteractiveSessionManager(
-    minio_client,
-    config.MINIO_BUCKET,
+    notebook_store,
     config.WORKSPACE_DIR,
     config.SESSION_TTL_SECONDS,
 )
@@ -101,12 +87,16 @@ def require_develop_service(handler):
 
 @app.route('/health', methods=['GET'])
 def health():
-    """健康检查"""
-    return jsonify({
-        'status': 'healthy',
-        'service': 'jupyter-engine',
-        'timestamp': datetime.now().isoformat()
-    })
+    """The dedicated Notebook Runtime requires its bound storage to be ready."""
+    ready = notebook_store is not None
+    if ready:
+        try:
+            notebook_store.check_ready()
+        except Exception as exc:
+            logger.warning("Notebook storage readiness failed: %s", type(exc).__name__)
+            ready = False
+    return jsonify({'status': 'healthy' if ready else 'unhealthy',
+                    'service': 'jupyter-engine', 'timestamp': datetime.now().isoformat()}), 200 if ready else 503
 
 @app.route('/api/execute', methods=['POST'])
 @require_develop_service
@@ -117,16 +107,16 @@ def execute_notebook():
     请求体:
     {
         "tenant_id": 1,                    # 租户 ID（由 Develop 模块传递）
-        "notebook_path": "test.ipynb",     # Notebook 相对路径
+        "notebook_locator": "addp-infra://object/develop/tenant_1/notebooks/test.ipynb?type=object",
         "parameters": {"user_param1": "value1"},
         "kernel": "python3"
     }
 
     说明：
     - tenant_id 由调用方（Develop 模块）提供
-    - notebook_path 是相对路径，完整路径为: tenant_{tenant_id}/notebooks/{notebook_path}
-    - 输入文件从 MinIO 读取
-    - 输出文件保存到 MinIO (executions/ 目录)
+    - notebook_locator 是 develop 区域内、当前租户 Notebook 的逻辑引用
+    - 输入文件从 object storage 读取
+    - 输出文件保存到 object storage (executions/ 目录)
     - 租户内的用户默认共享所有 Notebook
     """
     try:
@@ -134,17 +124,20 @@ def execute_notebook():
         if not isinstance(data, dict):
             return jsonify({'status': 'error', 'message': 'request body must be a JSON object'}), 400
 
+        if 'notebook_path' in data or 'minio_path' in data:
+            return jsonify({'status': 'error', 'message': 'legacy Notebook file field rejected'}), 400
+
         # 1. 获取租户信息（由 Develop 模块传递）
         tenant_id = data.get('tenant_id')
-        notebook_path = data.get('notebook_path')
+        notebook_locator = data.get('notebook_locator')
         parameters = data.get('parameters', {})
         kernel = data.get('kernel', 'python3')
 
         # 验证必需参数
-        if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0 or not isinstance(notebook_path, str) or not notebook_path:
+        if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0 or not isinstance(notebook_locator, str) or not notebook_locator:
             return jsonify({
                 'status': 'error',
-                'message': 'tenant_id and notebook_path are required'
+                'message': 'tenant_id and notebook_locator are required'
             }), 400
         if tenant_id != g.authorization_context.tenant_id:
             return jsonify({'status': 'error', 'message': 'tenant context mismatch'}), 403
@@ -153,31 +146,33 @@ def execute_notebook():
         content_digest = data.get('notebook_content_sha256')
         if not isinstance(content_digest, str) or re.fullmatch(r'[0-9a-f]{64}', content_digest) is None:
             return jsonify({'status': 'error', 'message': 'notebook_content_sha256 is required'}), 400
-        if (str(PurePosixPath(notebook_path)) != notebook_path or notebook_path in ('.', '..')
-                or notebook_path.startswith('/') or '..' in PurePosixPath(notebook_path).parts
-                or '\\' in notebook_path or '\x00' in notebook_path):
-            return jsonify({'status': 'error', 'message': 'invalid notebook_path'}), 400
+        try:
+            ref = Ref.parse(notebook_locator)
+        except ValueError:
+            return jsonify({'status': 'error', 'message': 'invalid notebook_locator'}), 400
+        if ref.area != 'develop' or ref.kind != 'object' or not ref.key.startswith(f'tenant_{tenant_id}/notebooks/') or not ref.key.endswith('.ipynb'):
+            return jsonify({'status': 'error', 'message': 'object scope forbidden'}), 403
         if kernel != 'python3':
             return jsonify({'status': 'error', 'message': 'unsupported kernel'}), 400
 
-        # 2. 构造 MinIO 路径（租户级别隔离）
-        input_minio_path = f"tenant_{tenant_id}/notebooks/{notebook_path}"
+        # 2. 构造 object storage 路径（租户级别隔离）
+        input_key = ref.key
 
         # 生成执行输出路径（使用时间戳避免冲突）
         from datetime import datetime
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        notebook_name = os.path.splitext(os.path.basename(notebook_path))[0]
+        notebook_name = os.path.splitext(os.path.basename(ref.key))[0]
         output_notebook_name = f"{notebook_name}_exec_{timestamp}.ipynb"
-        output_minio_path = f"tenant_{tenant_id}/executions/{output_notebook_name}"
+        output_key = f"tenant_{tenant_id}/executions/{output_notebook_name}"
 
-        logger.info(f"执行 Notebook: {input_minio_path} -> {output_minio_path}")
+        logger.info(f"执行 Notebook: {input_key} -> {output_key}")
         logger.info(f"租户 ID: {tenant_id}")
 
-        # 3. 从 MinIO 下载 Notebook 到临时文件
-        if not minio_client:
+        # 3. 从 object storage 下载 Notebook 到临时文件
+        if notebook_store is None:
             return jsonify({
                 'status': 'error',
-                'message': 'MinIO client is not initialized'
+                'message': 'Notebook storage unavailable'
             }), 500
 
         input_temp_fd, input_temp_path = tempfile.mkstemp(suffix='.ipynb')
@@ -187,18 +182,17 @@ def execute_notebook():
         try:
             # 下载输入文件
             with os.fdopen(input_temp_fd, 'wb') as f:
-                response = minio_client.get_object(config.MINIO_BUCKET, input_minio_path)
+                response = notebook_store.open(input_key)
                 try:
                     notebook_bytes = response.read()
                 finally:
                     response.close()
-                    response.release_conn()
                 if hashlib.sha256(notebook_bytes).hexdigest() != content_digest:
                     return jsonify({'status': 'error', 'error_code': 'notebook_content_changed',
                                     'message': 'Notebook content changed; submit a new execution'}), 409
                 f.write(notebook_bytes)
 
-            logger.info(f"已从 MinIO 下载: {input_minio_path}")
+            logger.info(f"已从对象存储下载: {input_key}")
 
             logger.info(f"开始执行 Notebook: {input_temp_path} -> {output_temp_path}")
             start_time = datetime.now()
@@ -222,15 +216,14 @@ def execute_notebook():
 
             with open(output_temp_path, 'rb') as f:
                 data = f.read()
-                minio_client.put_object(
-                    config.MINIO_BUCKET,
-                    output_minio_path,
+                notebook_store.put(
+                    output_key,
                     io.BytesIO(data),
-                    length=len(data),
-                    content_type='application/x-ipynb+json'
+                    size=len(data),
+                    media_type='application/x-ipynb+json'
                 )
 
-            logger.info(f"已上传输出到 MinIO: {output_minio_path}")
+            logger.info(f"已上传输出到对象存储: {output_key}")
 
             outputs = []
             output_count = 0
@@ -246,7 +239,7 @@ def execute_notebook():
                 'status': 'success',
                 'message': 'Notebook executed successfully',
                 'execution_time_seconds': execution_time,
-                'output_path': output_minio_path,
+                'output_locator': Ref('develop', output_key).uri(),
                 'cell_count': len(output_nb.cells),
                 'execution_count': sum(1 for c in output_nb.cells if c.cell_type == 'code'),
                 'output_count': output_count,
@@ -255,7 +248,7 @@ def execute_notebook():
             })
 
         except Exception as e:
-            logger.error(f"从 MinIO 下载或执行 Notebook 失败: {e}")
+            logger.error(f"从 object storage 下载或执行 Notebook 失败: {e}")
             raise
 
         finally:
@@ -308,11 +301,15 @@ def create_interactive_session():
         return jsonify({'status': 'error', 'message': 'request body must be a JSON object'}), 400
     if data.get('tenant_id') != g.authorization_context.tenant_id:
         return jsonify({'status': 'error', 'message': 'tenant context mismatch'}), 403
+    if notebook_store is None:
+        return jsonify({'status': 'error', 'message': 'Notebook storage unavailable'}), 503
     runtime_host = request.host.rsplit(':', 1)[0]
     try:
         session = interactive_session_manager.create(data, runtime_host)
     except SessionValidationError as exc:
         return jsonify({'status': 'error', 'message': str(exc)}), 400
+    except SessionScopeError:
+        return jsonify({'status': 'error', 'message': 'Notebook object scope forbidden'}), 403
     except SessionConflictError as exc:
         return jsonify({'status': 'error', 'message': str(exc)}), 409
     except Exception as exc:

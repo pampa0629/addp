@@ -13,7 +13,7 @@ import (
 
 func TestTaskLatestExecutionReadFailureIsNotTaskAbsence(t *testing.T) {
 	db := newNotebookHandlerTestDB(t)
-	if err := db.Exec(`INSERT INTO develop.dev_tasks (id, tenant_id, name, dev_type, content, execution_config, editor_layout, timeout, tags, created_by, status) VALUES (14, 7, 'latest', 'script', CAST('{"notebook_path":"latest.ipynb"}' AS BLOB), CAST('{}' AS BLOB), CAST('{}' AS BLOB), 600, '{}', 1, 'active')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO develop.dev_tasks (id, tenant_id, name, dev_type, content, execution_config, editor_layout, timeout, tags, created_by, status) VALUES (14, 7, 'latest', 'script', CAST('{"notebook_locator":"addp-infra://object/develop/tenant_7/notebooks/latest.ipynb?type=object"}' AS BLOB), CAST('{}' AS BLOB), CAST('{}' AS BLOB), 600, '{}', 1, 'active')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	taskService := service.NewDevTaskService(repository.NewDevTaskRepository(db), nil)

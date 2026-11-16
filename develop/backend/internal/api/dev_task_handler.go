@@ -56,6 +56,10 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 	bearer, _ := requestUserAccessToken(c)
 	item, err := h.devTaskService.CreateDevTask(c.Request.Context(), bearer, &req, tenantID, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrNotebookFileIdentity) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookFileIdentityInvalid), "error_code": "invalid_notebook_file_identity"})
+			return
+		}
 		if writeQueryProtectionError(c, err) {
 			return
 		}
@@ -105,6 +109,10 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 	bearer, _ := requestUserAccessToken(c)
 	item, err := h.devTaskService.UpdateDevTask(c.Request.Context(), bearer, uint(id), &req, tenantID, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrNotebookFileIdentity) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookFileIdentityInvalid), "error_code": "invalid_notebook_file_identity"})
+			return
+		}
 		if writeQueryProtectionError(c, err) {
 			return
 		}

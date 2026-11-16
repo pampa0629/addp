@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_OWNED_SERVICES=minio
+# ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.manager-postgres-t2.yml
+# ADDP_T2_LIFECYCLE_SCRIPT=scripts/test/manager-objectstore-gate.sh
+# ADDP_T2_INPUT_FILES=scripts/infra/init-minio.sh scripts/test/manager-objectstore-gate.sh scripts/test/docker-compose.manager-postgres-t2.yml scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ common/infra/objectstore/ common-python/ engines/jupyter/
 # ADDP_T2_REQUIRED_ENV=DEVELOP_POSTGRES_TEST_DSN
 # develop-postgres-gate.sh - Run Develop owner-local PostgreSQL schema and catalog tests.
 
@@ -41,7 +45,7 @@ addp_infra_verify_test_postgres_dsn "$DEVELOP_POSTGRES_TEST_DSN"
 
 cd "$SOURCE_ROOT/develop/backend"
 go test ./internal/repository \
-    -run '^(TestFileExecutionAgainstPostgres|TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres|TestQueryExecutionEventsAgainstPostgres|TestExecutionPolicyMigrationAgainstPostgres|TestQueryResultMigrationAgainstPostgres)$' \
+    -run '^(TestFileExecutionAgainstPostgres|TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres|TestQueryExecutionEventsAgainstPostgres|TestExecutionPolicyMigrationAgainstPostgres|TestQueryResultMigrationAgainstPostgres|TestNotebookStorageMigrationAgainstPostgres)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/develop.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/develop.log"; then
     echo "Develop PostgreSQL gate refuses skipped tests" >&2
@@ -55,3 +59,5 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/develop-table-result.log"; then
     echo "Develop table result PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
+
+bash "$ROOT_DIR/scripts/test/manager-objectstore-gate.sh" "$SOURCE_ROOT" --notebook

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 from urllib.parse import urlsplit
+from addp_common.infra.objectstore import Ref
 
 import httpx
 
@@ -24,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 class SessionValidationError(ValueError):
+    pass
+
+
+class SessionScopeError(PermissionError):
     pass
 
 
@@ -41,7 +46,7 @@ class InteractiveSession:
     tenant_id: int
     user_id: int
     task_id: int
-    notebook_path: str
+    notebook_locator: str
     notebook_name: str
     base_path: str
     endpoint: str
@@ -62,9 +67,8 @@ class InteractiveSession:
 
 
 class InteractiveSessionManager:
-    def __init__(self, minio_client, bucket, workspace_root, max_ttl_seconds=3600):
-        self._minio = minio_client
-        self._bucket = bucket
+    def __init__(self, store, workspace_root, max_ttl_seconds=3600):
+        self._store = store
         self._workspace_root = Path(workspace_root)
         self._workspace_root.mkdir(parents=True, exist_ok=True)
         self._max_ttl_seconds = max(60, int(max_ttl_seconds))
@@ -77,32 +81,31 @@ class InteractiveSessionManager:
 
     def create(self, data, runtime_host):
         values = self._validate_request(data)
-        if self._minio is None:
-            raise RuntimeError("MinIO client is not initialized")
+        if self._store is None:
+            raise RuntimeError("Notebook object store unavailable")
 
         with self._lock:
             if values["session_id"] in self._sessions:
                 raise SessionConflictError("session already exists")
             if any(
                 session.tenant_id == values["tenant_id"]
-                and session.notebook_path == values["notebook_path"]
+                and session.notebook_locator == values["notebook_locator"]
                 for session in self._sessions.values()
             ):
                 raise SessionConflictError("notebook already has an active interactive session")
 
         workspace = tempfile.mkdtemp(prefix=f"session-{values['session_id']}-", dir=self._workspace_root)
-        notebook_name = os.path.basename(values["notebook_path"])
+        object_name = values["notebook_ref"].key
+        notebook_name = os.path.basename(object_name)
         notebook_file = os.path.join(workspace, notebook_name)
         process = None
         try:
-            object_name = f"tenant_{values['tenant_id']}/notebooks/{values['notebook_path']}"
-            response = self._minio.get_object(self._bucket, object_name)
+            response = self._store.open(object_name)
             try:
                 with open(notebook_file, "wb") as destination:
                     shutil.copyfileobj(response, destination)
             finally:
                 response.close()
-                response.release_conn()
 
             port = self._available_port()
             runtime_token = secrets.token_urlsafe(32)
@@ -130,7 +133,7 @@ class InteractiveSessionManager:
                 tenant_id=values["tenant_id"],
                 user_id=values["user_id"],
                 task_id=values["task_id"],
-                notebook_path=values["notebook_path"],
+                notebook_locator=values["notebook_locator"],
                 notebook_name=notebook_name,
                 base_path=values["base_path"],
                 endpoint=endpoint,
@@ -185,13 +188,12 @@ class InteractiveSessionManager:
         try:
             with open(session.notebook_file, "rb") as source:
                 data = source.read()
-            object_name = f"tenant_{session.tenant_id}/notebooks/{session.notebook_path}"
-            self._minio.put_object(
-                self._bucket,
+            object_name = Ref.parse(session.notebook_locator).key
+            self._store.put(
                 object_name,
                 io.BytesIO(data),
-                length=len(data),
-                content_type="application/x-ipynb+json",
+                size=len(data),
+                media_type="application/x-ipynb+json",
             )
             logger.info(
                 "saved interactive notebook session id=%s tenant=%s task=%s",
@@ -227,6 +229,8 @@ class InteractiveSessionManager:
     def _validate_request(self, data):
         if not isinstance(data, dict):
             raise SessionValidationError("request body must be a JSON object")
+        if "notebook_path" in data or "minio_path" in data:
+            raise SessionValidationError("legacy Notebook file field rejected")
         session_id = data.get("session_id")
         if not isinstance(session_id, str) or not session_id or any(
             character not in "0123456789abcdef-" for character in session_id.lower()
@@ -238,14 +242,13 @@ class InteractiveSessionManager:
             if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
                 raise SessionValidationError(f"{field} must be a positive integer")
             positive_ids[field] = value
-        notebook_path = data.get("notebook_path")
-        if (
-            not isinstance(notebook_path, str)
-            or not notebook_path.endswith(".ipynb")
-            or notebook_path.startswith("/")
-            or ".." in Path(notebook_path).parts
-        ):
-            raise SessionValidationError("notebook_path is invalid")
+        notebook_locator = data.get("notebook_locator")
+        try:
+            ref = Ref.parse(notebook_locator)
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise SessionValidationError("invalid notebook_locator") from exc
+        if ref.area != "develop" or ref.kind != "object" or not ref.key.startswith(f"tenant_{positive_ids['tenant_id']}/notebooks/") or not ref.key.endswith(".ipynb"):
+            raise SessionScopeError("notebook_locator outside session scope")
         if data.get("kernel") != "python3":
             raise SessionValidationError("unsupported kernel")
         base_path = data.get("base_path")
@@ -307,7 +310,8 @@ class InteractiveSessionManager:
         return {
             "session_id": session_id,
             **positive_ids,
-            "notebook_path": notebook_path,
+            "notebook_locator": notebook_locator,
+            "notebook_ref": ref,
             "kernel": "python3",
             "base_path": base_path,
             "ttl_seconds": min(ttl_seconds, self._max_ttl_seconds),
@@ -359,7 +363,7 @@ class InteractiveSessionManager:
         environment = os.environ.copy()
         for key in tuple(environment):
             upper_key = key.upper()
-            if upper_key.startswith("MINIO_") or any(
+            if upper_key.startswith(("MINIO_", "ADDP_INFRA_OBJECTSTORE_")) or any(
                 marker in upper_key
                 for marker in ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API_KEY", "ACCESS_KEY", "PRIVATE_KEY")
             ):

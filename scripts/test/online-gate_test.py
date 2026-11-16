@@ -260,6 +260,7 @@ class OnlineGateTest(unittest.TestCase):
                 "platform-node-metrics",
                 "pg-source-authorization",
                 "standard-document-storage",
+                "develop-notebook-storage",
                 "infra-object-storage",
                 "meta-scan-claim",
                 "module-registry-recovery",

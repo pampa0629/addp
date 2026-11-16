@@ -228,8 +228,8 @@
               "content": {
                 "additionalProperties": true,
                 "properties": {
-                  "notebook_path": {
-                    "title": "Notebook 路径",
+                  "notebook_locator": {
+                    "title": "Notebook 逻辑对象引用",
                     "type": "string"
                   },
                   "parameters": {

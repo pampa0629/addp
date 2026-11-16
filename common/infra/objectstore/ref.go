@@ -7,6 +7,7 @@ import (
 )
 
 const Manager = "manager"
+const Develop = "develop"
 
 type Ref struct {
 	Area string
@@ -35,7 +36,7 @@ func Parse(value string) (Ref, error) {
 		}
 		decoded[i] = part
 	}
-	if len(decoded) < 2 || decoded[0] != Manager && decoded[0] != Standard {
+	if len(decoded) < 2 || decoded[0] != Manager && decoded[0] != Standard && decoded[0] != Develop {
 		return Ref{}, fmt.Errorf("invalid platform object area or key")
 	}
 	return Ref{Area: decoded[0], Key: strings.Join(decoded[1:], "/"), Type: q.Get("type")}, nil

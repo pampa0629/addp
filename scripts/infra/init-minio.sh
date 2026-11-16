@@ -48,17 +48,27 @@ MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-minioadmin}"
   exit 1
 }
 standard_bucket=standard
+develop_bucket=develop
 if [[ -n ${ADDP_INFRA_OBJECTSTORE_BINDINGS:-} ]]; then
-  if [[ $ADDP_INFRA_OBJECTSTORE_BINDINGS != standard=* ]]; then
-    echo "Unsupported object store binding: $ADDP_INFRA_OBJECTSTORE_BINDINGS (expected standard=bucket)" >&2
-    exit 1
-  fi
-  standard_bucket=${ADDP_INFRA_OBJECTSTORE_BINDINGS#standard=}
-  if [[ ! $standard_bucket =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ || $standard_bucket =~ ^([0-9]+\.){3}[0-9]+$ ||
-        $standard_bucket == *..* || $standard_bucket == *.-* || $standard_bucket == *-.* ]]; then
-    echo "Invalid MinIO bucket for standard: $standard_bucket" >&2
-    exit 1
-  fi
+  declare -a binding_entries
+  IFS=',' read -r -a binding_entries <<< "$ADDP_INFRA_OBJECTSTORE_BINDINGS"
+  [[ $ADDP_INFRA_OBJECTSTORE_BINDINGS != *, ]] || { echo 'Empty object binding' >&2; exit 1; }
+  seen_standard=0
+  seen_develop=0
+  for entry in "${binding_entries[@]}"; do
+    name=${entry%%=*}
+    target=${entry#*=}
+    case "$name" in
+      standard) [[ $seen_standard == 0 ]] || { echo "Duplicate object binding: $name" >&2; exit 1; }; seen_standard=1 ;;
+      develop) [[ $seen_develop == 0 ]] || { echo "Duplicate object binding: $name" >&2; exit 1; }; seen_develop=1 ;;
+      *) echo "Unsupported object area: $name" >&2; exit 1 ;;
+    esac
+    if [[ $entry != *=* || ! $target =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ || $target =~ ^([0-9]+\.){3}[0-9]+$ ||
+          $target == *..* || $target == *.-* || $target == *-.* ]]; then
+      echo "Invalid object store bucket: $target" >&2; exit 1
+    fi
+    case "$name" in standard) standard_bucket=$target ;; develop) develop_bucket=$target ;; esac
+  done
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -102,7 +112,7 @@ BUCKETS=(
   "meta:Meta 模块（元数据相关文件）"
   "transfer:Transfer 模块（传输临时文件）"
   "orchestrator:Orchestrator 模块（编排文件）"
-  "develop:Develop 模块（查询结果导出）"
+  "${develop_bucket}:Develop Notebook 文件"
   "service:Service 模块（服务注册文件）"
   "graph:Graph 模块（知识图谱构建材料）"
 )
@@ -126,6 +136,14 @@ done
 
 echo ""
 echo -e "${YELLOW}▶ 设置 Bucket 访问策略...${NC}"
+
+# Document and Notebook buckets remain private, including deployment exceptions.
+for private_bucket in "$standard_bucket" "$develop_bucket"; do
+  if ! compose_minio exec -T minio mc anonymous set private "local/$private_bucket" >/dev/null 2>&1; then
+    echo "Failed to set private object bucket: $private_bucket" >&2
+    exit 1
+  fi
+done
 
 # Manager 产物统一通过 Manager API 访问，bucket 保持私有。
 echo -e "  ${BLUE}▸ manager - 设置为私有（预览缓存、瓦片缓存对象通过 Manager API 访问）${NC}"
@@ -164,7 +182,7 @@ echo "  - manager       (私有)  : 预览缓存、瓦片缓存对象、导入�
 echo "  - meta          (私有)  : 元数据文件"
 echo "  - transfer      (私有)  : 传输临时文件"
 echo "  - orchestrator  (私有)  : 编排文件"
-echo "  - develop       (私有)  : 查询结果导出"
+echo "  - ${develop_bucket} (私有) : Notebook 文件"
 echo "  - service       (私有)  : 服务注册文件"
 echo "  - graph         (私有)  : 知识图谱构建材料"
 echo ""

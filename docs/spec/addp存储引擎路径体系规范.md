@@ -417,7 +417,7 @@ Kafka topic locator 的 path 必须且只能有一个业务 segment；topic 名�
 
 ### ADDP infra locator 与业务 ResourceLocator 的边界
 
-平台对象使用内部 `addp-infra://object/{area}/{key...}?type=object|prefix`。`area` 为逻辑区域，部署在进程启动时将其绑定到对象存储实现和物理桶。Manager 导入及 Manager／Develop 导出共用 `manager` 区域，默认映射同名桶。部署例外当前仅允许 `standard`，`manager` 暂按同名映射启动。
+平台对象使用内部 `addp-infra://object/{area}/{key...}?type=object|prefix`。`area` 为逻辑区域，部署在进程启动时将其绑定到对象存储实现和物理桶。Manager 导入及 Manager／Develop 导出共用 `manager` 区域，默认映射同名桶。部署例外允许 `standard`、`develop`，`manager` 暂按同名映射启动。Develop Notebook 使用 `develop` 区域，持久任务和内部 Runtime 请求统一使用 `notebook_locator`；引用只定位文件，不授予会话或业务数据读取权限。
 
 ```text
 addp-infra://object/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object

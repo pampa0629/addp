@@ -1,6 +1,6 @@
 # Jupyter Engine
 
-ADDP 的 Notebook 运行时，提供读取 MinIO、校验内容摘要、通过 Papermill 执行并写回结果的无头接口，以及由 Develop 创建和代理的短期隔离 JupyterLab 会话。
+ADDP 的 Notebook 运行时，提供读取启动绑定的 develop 对象区域、校验内容摘要、通过 Papermill 执行并写回结果的无头接口，以及由 Develop 创建和代理的短期隔离 JupyterLab 会话。
 
 当前一次性 Notebook（`script`）仍按[Develop 执行监督与授权规范](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)拒绝实际派发，已有 Runtime 接口不表示平台已开放该能力。交互 Session 不进入此队列；当前接线与未完成项见 [Develop Notebook 专题](../../develop/CLAUDE.md#notebook-会话与排队执行)。Runtime、Develop 代理、Python Facade 与编辑器的代码入口集中见[Notebook 实现导航](../../develop/CLAUDE.md#notebook-实现导航)。
 
@@ -16,7 +16,7 @@ flowchart TD
         Browser["浏览器"] --> Proxy["Develop 同源 HTTP / WebSocket 代理"]
         Proxy --> Control["Runtime 会话控制面"]
         Control --> Lab["隔离 JupyterLab process / 临时 workspace"]
-        Lab --> Save["关闭或到期：保存原 MinIO 对象并清理"]
+        Lab --> Save["关闭或到期：保存原逻辑对象并清理"]
     end
 ```
 
@@ -36,7 +36,7 @@ Content-Type: application/json
 
 {
   "tenant_id": 1,
-  "notebook_path": "analysis.ipynb",
+  "notebook_locator": "addp-infra://object/develop/tenant_1/notebooks/analysis.ipynb?type=object",
   "notebook_content_sha256": "<提交时源文件字节的 64 位小写 SHA-256>",
   "parameters": {
     "param1": "value1",
@@ -55,7 +55,7 @@ Content-Type: application/json
   "status": "success",
   "message": "Notebook executed successfully",
   "execution_time_seconds": 1.234,
-  "output_path": "tenant_1/executions/analysis_exec_20260729_120000.ipynb",
+  "output_locator": "addp-infra://object/develop/tenant_1/executions/analysis_exec_20260729_120000.ipynb?type=object",
   "cell_count": 1,
   "execution_count": 1,
   "output_count": 0,
@@ -77,7 +77,7 @@ GET http://jupyter-engine:8097/api/kernels
 
 Session 授权与每次只读数据访问的 Execution Authorization 分工统一见[会话授权规范](../../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。 Develop 的同源 Cookie／Kernel Capability 入口与凭据边界见[Owner 会话说明](../../develop/CLAUDE.md#会话入口与凭据)，数据代理及 Facade 所有权见[Owner 数据访问](../../develop/CLAUDE.md#数据访问与-native-facade)。
 
-每个会话使用独立临时目录和 JupyterLab process。Runtime 仅向该 process 注入 owner endpoint 和短期 Capability，供 `addp_common.notebook.engines.list()` 等受控调用使用；凭据的公开响应、存储与失效边界统一见[认证规范](../../docs/spec/addp登录认证的统一要求.md#七前端共享能力要求)，不提供共享 Lab、固定 8088 或 URL Token 入口。正常关闭与 TTL 清理先保存回原 MinIO 对象，再终止 process；Runtime 退出时统一清理全部会话。
+每个会话使用独立临时目录和 JupyterLab process。Runtime 仅向该 process 注入 owner endpoint 和短期 Capability，供 `addp_common.notebook.engines.list()` 等受控调用使用；凭据的公开响应、存储与失效边界统一见[认证规范](../../docs/spec/addp登录认证的统一要求.md#七前端共享能力要求)，不提供共享 Lab、固定 8088 或 URL Token 入口。正常关闭与 TTL 清理先保存回原逻辑对象，再终止 process；Runtime 退出时统一清理全部会话。
 
 镜像内预装 `@addp/notebook-bridge` JupyterLab 扩展。它只接受同源父页面、当前 Session ID 匹配的 `postMessage`，在当前 Notebook 中插入一个代码单元并保持未执行状态；不提供执行、文件覆盖或跨 Session 操作。
 
@@ -120,3 +120,7 @@ make test-jupyter
 ### Owner、SDK 与真实链路
 
 Develop Owner 使用 `make test-module MODULE=develop`，前后端、Common Python SDK 与 Runtime 的覆盖分工统一见[Notebook 验证分工](../../develop/CLAUDE.md#notebook-验证分工)；[历史证据](../../develop/CLAUDE.md#历史证据)保留原版本、失败及未覆盖范围。镜像检查、上述确定性门禁和交互成功均不能证明真实队列派发、撤权闭环或跨模块 Notebook T4 通过；未运行、失败与未覆盖项分别记录。
+
+## 平台对象存储绑定
+
+由 Common Python 在启动时按 `ADDP_INFRA_OBJECTSTORE_PROVIDER` 和 `ADDP_INFRA_OBJECTSTORE_BINDINGS` 装配 `develop` 区域，未填写例外时映射同名桶。部署负责建桶；Runtime 不创建桶、不回退其他桶。MinIO 凭据仅由适配读取，存储绑定失败使 `/health` 返回 503。Kernel 不接收 Infra 凭据或绑定配置。会话仅回存创建时的 `notebook_locator`，关闭／TTL 不删除持久对象；保存失败仍清理临时进程与目录，显式关闭报错，不承诺恢复未保存编辑。

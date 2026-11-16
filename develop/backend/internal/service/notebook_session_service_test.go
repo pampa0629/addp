@@ -487,7 +487,7 @@ func newNotebookEngineCatalogSessionTestService(
 			editor_layout, timeout, tags, created_by, status
 		) VALUES (
 			14, 7, 'analysis', 'Analysis', 'script',
-			CAST('{"notebook_path":"analysis.ipynb","kernel":"python3"}' AS BLOB),
+			CAST('{"notebook_locator":"addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object","kernel":"python3"}' AS BLOB),
 			CAST('{"engine_id":10}' AS BLOB), CAST('{}' AS BLOB), 600, '{}', 9, 'active'
 		)
 	`).Error; err != nil {

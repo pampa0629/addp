@@ -25,6 +25,7 @@ dependencies = [
 addp = "addp_common.cli:main"
 
 [project.optional-dependencies]
+infra-minio = ["minio==7.2.5"]
 inference-langchain = [
     "langchain-core==1.6.6",
 ]

@@ -50,7 +50,7 @@ type ListKernelsResponse struct {
 type JupyterRuntimeExecutionRequest struct {
 	TenantID              uint                   `json:"tenant_id"`
 	NotebookContentSHA256 string                 `json:"notebook_content_sha256"`
-	NotebookPath          string                 `json:"notebook_path"`
+	NotebookLocator       string                 `json:"notebook_locator"`
 	Parameters            map[string]interface{} `json:"parameters"`
 	Kernel                string                 `json:"kernel"`
 }
@@ -59,7 +59,7 @@ type JupyterRuntimeExecutionResponse struct {
 	Status               string                   `json:"status"`
 	Message              string                   `json:"message"`
 	ExecutionTimeSeconds float64                  `json:"execution_time_seconds"`
-	OutputPath           string                   `json:"output_path"`
+	OutputLocator        string                   `json:"output_locator"`
 	CellCount            int                      `json:"cell_count"`
 	ExecutionCount       int                      `json:"execution_count"`
 	OutputCount          int                      `json:"output_count"`

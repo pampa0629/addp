@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/infra/objectstore"
 	"io"
 	"net/http"
 	"strconv"
@@ -93,7 +94,7 @@ func (h *NotebookHandler) CreateNotebook(c *gin.Context) {
 	}
 
 	notebookPath := uuid.NewString() + ".ipynb"
-	minioPath := fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, notebookPath)
+	objectLocator := objectstore.ObjectURI(objectstore.Develop, fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, notebookPath))
 	cellID := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
 	blankNotebook, err := json.Marshal(map[string]interface{}{
 		"cells": []map[string]interface{}{{
@@ -110,24 +111,24 @@ func (h *NotebookHandler) CreateNotebook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookCreateFailed)})
 		return
 	}
-	if err := h.notebookExecutionService.SaveNotebookToMinIO(c.Request.Context(), minioPath, blankNotebook); err != nil {
+	if err := h.notebookExecutionService.SaveNotebook(c.Request.Context(), tenantID, objectLocator, blankNotebook); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookStoreFailed, err.Error())})
 		return
 	}
-	devTask, err := h.createNotebookTask(c.Request.Context(), req.Name, req.Description, notebookPath, minioPath, req.Kernel, map[string]interface{}{}, req.EngineID, tenantID, userIDValue(c))
+	devTask, err := h.createNotebookTask(c.Request.Context(), req.Name, req.Description, objectLocator, req.Kernel, map[string]interface{}{}, req.EngineID, tenantID, userIDValue(c))
 	if err != nil {
-		_ = h.notebookExecutionService.DeleteNotebookFromMinIO(c.Request.Context(), minioPath)
+		_ = h.notebookExecutionService.DeleteNotebook(c.Request.Context(), tenantID, objectLocator)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCreateFailed, err.Error())})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"message": "Notebook 创建成功", "dev_task": devTask})
 }
 
-func (h *NotebookHandler) createNotebookTask(ctx context.Context, name, description, notebookPath, minioPath, kernel string, parameters map[string]interface{}, engineID, tenantID, userID uint) (*models.DevTask, error) {
-	return h.devTaskService.CreateDevTask(ctx, "", &models.CreateDevTaskRequest{
+func (h *NotebookHandler) createNotebookTask(ctx context.Context, name, description, objectLocator, kernel string, parameters map[string]interface{}, engineID, tenantID, userID uint) (*models.DevTask, error) {
+	return h.devTaskService.CreateNotebookTask(ctx, &models.CreateDevTaskRequest{
 		Name: name, DisplayName: name, DevType: "script", Description: description, Timeout: 600,
 		Content: models.DevTaskContent{
-			"notebook_path": notebookPath, "minio_path": minioPath, "kernel": kernel,
+			"notebook_locator": objectLocator, "kernel": kernel,
 			"parameters": parameters, "description": description,
 		},
 		ExecutionConfig: models.DevTaskContent{"engine_id": engineID},
@@ -287,18 +288,18 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	// 对象路径使用服务端生成的不可冲突名称；用户文件名只作为导入来源信息。
 	notebookPath := uuid.NewString() + ".ipynb"
 
-	// 生成完整 MinIO 路径用于保存文件
-	minioPath := fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, notebookPath)
+	// 生成逻辑对象引用用于保存文件
+	objectLocator := objectstore.ObjectURI(objectstore.Develop, fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, notebookPath))
 
-	// 保存到 MinIO
-	if err := h.notebookExecutionService.SaveNotebookToMinIO(c.Request.Context(), minioPath, notebookContent); err != nil {
+	// 保存到对象区域
+	if err := h.notebookExecutionService.SaveNotebook(c.Request.Context(), tenantID, objectLocator, notebookContent); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookStoreFailed, err.Error())})
 		return
 	}
 
-	devTask, err := h.createNotebookTask(c.Request.Context(), name, description, notebookPath, minioPath, kernel, parameters, engineID, tenantID, userID)
+	devTask, err := h.createNotebookTask(c.Request.Context(), name, description, objectLocator, kernel, parameters, engineID, tenantID, userID)
 	if err != nil {
-		_ = h.notebookExecutionService.DeleteNotebookFromMinIO(c.Request.Context(), minioPath)
+		_ = h.notebookExecutionService.DeleteNotebook(c.Request.Context(), tenantID, objectLocator)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, developi18n.MsgNotebookCreateFailed, err.Error())})
 		return
 	}
@@ -342,15 +343,15 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 		return
 	}
 
-	// 获取 MinIO 路径
-	minioPath, ok := devTask.Content["minio_path"].(string)
-	if !ok || minioPath == "" {
+	// 获取逻辑对象引用
+	objectLocator, ok := devTask.Content["notebook_locator"].(string)
+	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Notebook 路径不存在"})
 		return
 	}
 
-	// 从 MinIO 读取文件
-	notebookContent, err := h.notebookExecutionService.ReadNotebookFromMinIO(c.Request.Context(), minioPath)
+	// 从绑定区域读取文件
+	notebookContent, err := h.notebookExecutionService.ReadNotebook(c.Request.Context(), tenantID, objectLocator)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取 Notebook 失败: %v", err)})
 		return
@@ -391,7 +392,7 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	// Notebook 是 script 类型开发任务的当前承载形态，通过 content.notebook_path 标识。
+	// Notebook 是 script 类型开发任务的当前承载形态，通过 content.notebook_locator 标识。
 	items, total, err := h.devTaskService.ListNotebookScripts(&req, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})

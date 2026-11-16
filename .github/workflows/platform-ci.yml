@@ -579,7 +579,7 @@ jobs:
             engines/jupyter/requirements.txt
             common-python/pyproject.toml
           requirements-file: engines/jupyter/requirements.txt
-          editable-install: ./common-python
+          editable-install: ./common-python[infra-minio]
       - name: Verify Notebook Runtime
         if: steps.selection.outputs.run == 'true'
         run: make test-jupyter

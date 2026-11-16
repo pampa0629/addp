@@ -35,7 +35,7 @@ func TestUpdateNotebookRuntimeBindingValidatesAndPersistsSelection(t *testing.T)
 	if updated.ID != 14 || updated.GetEngineID() == nil || *updated.GetEngineID() != 10 {
 		t.Fatalf("updated task = %#v", updated)
 	}
-	if updated.Content["kernel"] != "python3" || updated.Content["minio_path"] != "tenant_7/notebooks/analysis.ipynb" {
+	if updated.Content["kernel"] != "python3" || updated.Content["notebook_locator"] != "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object" {
 		t.Fatalf("updated content = %#v", updated.Content)
 	}
 
@@ -110,7 +110,7 @@ func newNotebookBindingHandlerForTest(t *testing.T) (*NotebookHandler, *service.
 			timeout, tags, created_by, status
 		) VALUES (
 			14, 7, 'analysis', 'script',
-			CAST('{"notebook_path":"analysis.ipynb","minio_path":"tenant_7/notebooks/analysis.ipynb","kernel":"old-kernel"}' AS BLOB),
+			CAST('{"notebook_locator":"addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object","kernel":"old-kernel"}' AS BLOB),
 			CAST('{"engine_id":8}' AS BLOB), CAST('{}' AS BLOB), 600, '{}', 1, 'active'
 		)
 	`).Error; err != nil {

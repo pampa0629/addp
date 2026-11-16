@@ -932,7 +932,7 @@ type InteractiveScriptSessionRequest struct {
 	TenantID                      uint   `json:"tenant_id"`
 	UserID                        uint   `json:"user_id"`
 	TaskID                        uint   `json:"task_id"`
-	NotebookPath                  string `json:"notebook_path"`
+	NotebookLocator               string `json:"notebook_locator"`
 	Kernel                        string `json:"kernel"`
 	BasePath                      string `json:"base_path"`
 	TTLSeconds                    int    `json:"ttl_seconds"`

@@ -213,7 +213,7 @@ func (d *DevTask) IsNotebookScript() bool {
 	if d == nil || d.DevType != "script" || d.Content == nil {
 		return false
 	}
-	notebookPath, ok := d.Content["notebook_path"].(string)
+	notebookPath, ok := d.Content["notebook_locator"].(string)
 	return ok && strings.TrimSpace(notebookPath) != ""
 }
 

@@ -20,6 +20,7 @@ common-python/
 │   ├── tools/              # Tool Manifest、校验与唯一执行映射
 │   ├── workflow_runtime/   # 通用工作流协议、执行与就绪核心
 │   ├── workflow_access.py  # 工作流源访问与目录暂存
+│   ├── infra/objectstore/   # 平台对象区域契约、启动绑定与可选 MinIO 实现
 │   ├── notebook/           # Notebook 原生目录与受控读取门面
 │   ├── module_lifecycle.py # Python Backend 健康、就绪与注册生命周期
 │   ├── runtime_logging.py  # 服务正文日志 JSON 出口
@@ -81,3 +82,7 @@ Notebook 的[资源选择](README.md#发现与资源选择)、[读取与空间�
 - [OAuth 授权规范](<../docs/spec/addp OAuth授权规范.md>)
 - [Agent 模块](../agent/CLAUDE.md)
 - [Copilot 模块](../copilot/CLAUDE.md)
+
+### 平台对象区域
+
+`addp_common.infra.objectstore` 的 Ref／Area 导入不加载 MinIO；启动处通过 bootstrap 一次绑定，SDK 实现及连接仅留在 minio 子模块。Jupyter 安装可选 `infra-minio`，业务 Notebook Facade 不获得 Infra 凭据。Go／Python 共享 `common/infra/objectstore/testdata/contract.json`，对应输入同时选择两种语言的门禁；真实跨语言验证由 `make test-develop-postgres` 的自有 MinIO 负责。

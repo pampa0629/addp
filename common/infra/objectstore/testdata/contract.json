@@ -1,0 +1,14 @@
+{
+ "valid_refs":["addp-infra://object/develop/tenant_7/notebooks/a%20b.ipynb?type=object","addp-infra://object/manager/tenant_7/export/a?type=prefix","addp-infra://object/standard/tenant_7/a?type=object"],
+ "invalid_refs":["addp-infra://minio/develop/a?type=object","addp-infra://object/develop/../a?type=object","addp-infra://object/develop/a%2Fb?type=object","addp-infra://object/develop/a?type=object&type=prefix","addp-infra://object/develop/a?type=object&bucket=x","addp-infra://object/develop/a%ZZ?type=object"],
+ "bindings":[
+  {"raw":"","area":"develop","bucket":"develop"},
+  {"raw":"standard=standard-exception,develop=notebook-exception","area":"develop","bucket":"notebook-exception"},
+  {"raw":"develop=notebook-exception,standard=standard-exception","area":"manager","bucket":"manager"},
+  {"raw":"develop=a,develop=another","area":"standard","error":true},
+  {"raw":"develop=notebook-exception,","area":"develop","error":true},
+  {"raw":"manager=manager-exception","area":"standard","error":true},
+  {"raw":"standard=BAD","area":"develop","error":true},
+  {"raw":"develop=127.0.0.1","area":"manager","error":true}
+ ]
+}

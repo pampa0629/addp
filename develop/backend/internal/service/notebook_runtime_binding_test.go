@@ -18,7 +18,7 @@ func TestRebindNotebookRuntimeUpdatesOnlyCurrentTaskBinding(t *testing.T) {
 			editor_layout, timeout, description, tags, created_by, status
 		) VALUES (
 			14, 7, 'analysis', 'Analysis', 'script',
-			CAST('{"notebook_path":"analysis.ipynb","minio_path":"tenant_7/notebooks/analysis.ipynb","kernel":"old-kernel","parameters":{"limit":10}}' AS BLOB),
+			CAST('{"notebook_locator":"addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object","kernel":"old-kernel","parameters":{"limit":10}}' AS BLOB),
 			CAST('{"engine_id":8,"retry":2}' AS BLOB), CAST('{}' AS BLOB), 600, 'kept', '{}', 1, 'active'
 		)
 	`).Error; err != nil {
@@ -39,8 +39,8 @@ func TestRebindNotebookRuntimeUpdatesOnlyCurrentTaskBinding(t *testing.T) {
 	if got := updated.Content["kernel"]; got != "python3" {
 		t.Fatalf("kernel = %#v, want python3", got)
 	}
-	if got := updated.Content["minio_path"]; got != "tenant_7/notebooks/analysis.ipynb" {
-		t.Fatalf("minio_path changed: %#v", got)
+	if got := updated.Content["notebook_locator"]; got != "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object" {
+		t.Fatalf("notebook_locator changed: %#v", got)
 	}
 	if got := updated.ExecutionConfig["retry"]; got != float64(2) {
 		t.Fatalf("execution_config.retry changed: %#v", got)

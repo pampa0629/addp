@@ -36,3 +36,18 @@ func TestContentWriterCloseReportsCommittedUploadFailure(t *testing.T) {
 		t.Fatalf("lost upload error: %v", err)
 	}
 }
+
+// Recognizing a new area URI must not grant existing Manager consumers access.
+func TestManagerContentAdapterRejectsNotebookAreaBeforeIO(t *testing.T) {
+	provider := &Provider{Name: objectstore.Manager}
+	path := p.ObjectItemPath(0, objectstore.Develop, "tenant_7/notebooks/a.ipynb")
+	if _, err := provider.OpenContent(t.Context(), nil, path, p.ReadOptions{}); err == nil {
+		t.Fatal("cross-area read accepted")
+	}
+	if _, err := provider.CreateContent(t.Context(), nil, path, p.WriteOptions{Overwrite: true}); err == nil {
+		t.Fatal("cross-area write accepted")
+	}
+	if err := provider.DeleteResource(t.Context(), nil, path); err == nil {
+		t.Fatal("cross-area delete accepted")
+	}
+}

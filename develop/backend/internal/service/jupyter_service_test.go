@@ -54,7 +54,7 @@ func TestJupyterServiceExecuteNotebookUsesBoundEngineAndTenantServiceToken(t *te
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if body["tenant_id"] != float64(7) || body["notebook_path"] != "analysis.ipynb" {
+		if body["tenant_id"] != float64(7) || body["notebook_locator"] != "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object" {
 			t.Fatalf("body = %#v", body)
 		}
 		parameters, ok := body["parameters"].(map[string]interface{})
@@ -65,7 +65,7 @@ func TestJupyterServiceExecuteNotebookUsesBoundEngineAndTenantServiceToken(t *te
 			t.Fatalf("legacy data_sources must not be sent: %#v", body)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "success", "output_path": "tenant_7/executions/result.ipynb",
+			"status": "success", "output_locator": "tenant_7/executions/result.ipynb",
 		})
 	}))
 	defer runtimeServer.Close()
@@ -74,7 +74,7 @@ func TestJupyterServiceExecuteNotebookUsesBoundEngineAndTenantServiceToken(t *te
 	result, err := service.ExecuteNotebook(
 		context.Background(), 7, 10,
 		JupyterRuntimeExecutionRequest{
-			TenantID: 7, NotebookPath: "analysis.ipynb",
+			TenantID: 7, NotebookLocator: "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object",
 			Parameters: map[string]interface{}{"limit": 10}, Kernel: "python3",
 		},
 		30*time.Second,
@@ -82,8 +82,8 @@ func TestJupyterServiceExecuteNotebookUsesBoundEngineAndTenantServiceToken(t *te
 	if err != nil {
 		t.Fatalf("ExecuteNotebook() error = %v", err)
 	}
-	if result.OutputPath != "tenant_7/executions/result.ipynb" {
-		t.Fatalf("OutputPath = %q", result.OutputPath)
+	if result.OutputLocator != "tenant_7/executions/result.ipynb" {
+		t.Fatalf("OutputLocator = %q", result.OutputLocator)
 	}
 }
 
@@ -120,7 +120,7 @@ func TestJupyterServiceOpenInteractiveSessionUsesStandardControlPlane(t *testing
 	service := newJupyterServiceForRuntimeTest(t, runtimeServer.URL)
 	session, controlURL, err := service.OpenInteractiveSession(context.Background(), 7, 10, plugin.InteractiveScriptSessionRequest{
 		SessionID: "abc-123", TenantID: 7, UserID: 9, TaskID: 11,
-		NotebookPath: "analysis.ipynb", Kernel: "python3",
+		NotebookLocator: "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object", Kernel: "python3",
 		BasePath: "/api/v1/develop/notebook-sessions/abc-123/", TTLSeconds: 3600,
 		OwnerAPIEndpoint:              "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
 		OwnerEngineCatalogAPIEndpoint: "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",

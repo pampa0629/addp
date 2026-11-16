@@ -56,6 +56,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := migrateCatalogDevTaskChanges(db); err != nil {
 		return nil, err
 	}
+	if err := migrateNotebookStorage(db); err != nil {
+		return nil, err
+	}
 	if err := migrateQueryResultStorage(db); err != nil {
 		return nil, err
 	}

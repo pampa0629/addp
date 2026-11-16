@@ -85,6 +85,12 @@ class ChangedGateTest(unittest.TestCase):
                      "business/scripts/online-netcdf-fixture.py", "business/testdata/netcdf4/nc4-int32.nc"):
             self.assertEqual(["engines"], MODULE.affected_modules(self.repository, [path]))
 
+    def test_object_contract_fixture_selects_both_languages(self):
+        modules = MODULE.affected_modules(self.repository, ["common/infra/objectstore/testdata/contract.json"])
+        self.assertIn("common", modules)
+        self.assertIn("common-python", modules)
+        self.assertIn("common-python", MODULE.affected_modules(self.repository, ["scripts/infra/init-minio.sh"]))
+
     def test_common_changes_expand_to_go_consumers(self) -> None:
         self.assertEqual(
             ["common", "sample"],

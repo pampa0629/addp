@@ -188,7 +188,7 @@ func TestValidateDevTaskExecutionConfigUsesEngineIDForDuckDBRuntime(t *testing.T
 func TestValidateDevTaskExecutionConfigRequiresScriptEngineID(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeScript,
-		map[string]interface{}{"notebook_path": "analysis.ipynb"},
+		map[string]interface{}{"notebook_locator":"addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object"},
 		map[string]interface{}{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "execution_config.engine_id") {
@@ -199,7 +199,7 @@ func TestValidateDevTaskExecutionConfigRequiresScriptEngineID(t *testing.T) {
 func TestValidateDevTaskExecutionConfigAcceptsScriptEngineID(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeScript,
-		map[string]interface{}{"notebook_path": "analysis.ipynb"},
+		map[string]interface{}{"notebook_locator":"addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object"},
 		map[string]interface{}{"engine_id": 10},
 	)
 	if err != nil {

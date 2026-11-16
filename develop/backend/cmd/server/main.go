@@ -116,7 +116,12 @@ func main() {
 	log.Printf("✅ JupyterService 初始化完成")
 
 	// 3.6 NotebookExecutionService（Notebook 完整执行服务）
-	notebookExecutionService, err := service.NewNotebookExecutionService(jupyterService)
+	areaCtx, cancelArea := context.WithTimeout(context.Background(), 30*time.Second)
+	notebookStore, err := objectbootstrap.OpenObjectArea(areaCtx, objectstore.Develop)
+	if err != nil {
+		log.Fatalf("Notebook object binding: %v", err)
+	}
+	notebookExecutionService, err := service.NewNotebookExecutionService(jupyterService, notebookStore)
 	if err != nil {
 		log.Fatalf("NotebookExecutionService 初始化失败: %v", err)
 	}
@@ -152,7 +157,6 @@ func main() {
 	}
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, serviceTokenSource)
-	areaCtx, cancelArea := context.WithTimeout(context.Background(), 30*time.Second)
 	area, err := objectbootstrap.OpenContentArea(areaCtx, objectstore.Manager)
 	cancelArea()
 	if err != nil {

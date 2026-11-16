@@ -75,6 +75,10 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, str(Path(__file__).with_name("standard-document-storage-online.py").resolve())),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("standard", "STANDARD_URL")),
     ),
+    "develop-notebook-storage": Suite(
+        command=("bash", "-c", 'exec "$NOTEBOOK_STORAGE_OBSERVER_PYTHON" scripts/test/develop-notebook-storage-online.py'),
+        services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("develop", "DEVELOP_URL")),
+    ),
     "meta-scan-claim": Suite(
         command=(sys.executable, str(Path(__file__).with_name("meta-scan-claim-online.py").resolve())),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("meta", "META_URL")),

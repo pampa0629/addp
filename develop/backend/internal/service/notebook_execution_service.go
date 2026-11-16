@@ -8,50 +8,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 	"time"
 
-	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/logger"
 	"github.com/addp/develop/backend/internal/models"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
-
-	_ "github.com/addp/common/engine/plugins/builtin/general"
 )
 
 // NotebookExecutionService Notebook 执行服务
 type NotebookExecutionService struct {
-	minioClient    *minio.Client
+	store          objectstore.Area
 	jupyterService *JupyterService
 }
 
 // NewNotebookExecutionService 创建 Notebook 执行服务
-func NewNotebookExecutionService(jupyterService *JupyterService) (*NotebookExecutionService, error) {
+func NewNotebookExecutionService(jupyterService *JupyterService, store objectstore.Area) (*NotebookExecutionService, error) {
 	if jupyterService == nil {
 		return nil, fmt.Errorf("Jupyter service is required")
 	}
-	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
-
-	// 初始化 MinIO 客户端
-	minioClient, err := minio.New(minioCfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(minioCfg.AccessKey, minioCfg.SecretKey, ""),
-		Secure: minioCfg.UseSSL,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize MinIO client: %w", err)
-	}
-
-	return &NotebookExecutionService{
-		minioClient: minioClient, jupyterService: jupyterService,
-	}, nil
+	return &NotebookExecutionService{store: store, jupyterService: jupyterService}, nil
 }
 
 // NotebookExecutionResult Notebook 执行结果
 type NotebookExecutionResult struct {
 	Status            string                   `json:"status"`             // 'success' | 'failed'
-	OutputPath        string                   `json:"output_path"`        // MinIO 路径
+	OutputLocator     string                   `json:"output_locator"`     // 平台对象引用
 	CellCount         int                      `json:"cell_count"`         // Cell 总数
 	ExecutionCount    int                      `json:"execution_count"`    // 执行的 Cell 数
 	OutputsPreview    []map[string]interface{} `json:"outputs_preview"`    // 前 5 个输出预览
@@ -68,10 +50,10 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 ) (*NotebookExecutionResult, string, error) {
 	startTime := time.Now()
 
-	// 1. 从 content 获取 notebook_path
-	notebookPath, ok := devTask.Content["notebook_path"].(string)
+	// 1. 从 content 获取 notebook_locator
+	notebookPath, ok := devTask.Content["notebook_locator"].(string)
 	if !ok || notebookPath == "" {
-		return nil, "", fmt.Errorf("notebook_path not found in dev_task content")
+		return nil, "", fmt.Errorf("notebook_locator not found in dev_task content")
 	}
 
 	// 获取参数（可选）
@@ -89,7 +71,7 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 	logger.L().Info("开始执行 Notebook",
 		"source_task_id", devTask.ID,
 		"execution_id", executionID,
-		"notebook_path", notebookPath)
+		"notebook_locator", notebookPath)
 
 	logger.L().Info("准备执行 Notebook",
 		"user_params_count", len(parameters))
@@ -109,7 +91,7 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 		devTask.TenantID,
 		*engineID,
 		JupyterRuntimeExecutionRequest{
-			TenantID: devTask.TenantID, NotebookPath: notebookPath,
+			TenantID: devTask.TenantID, NotebookLocator: notebookPath,
 			NotebookContentSHA256: notebookContentDigest(devTask),
 			Parameters:            parameters, Kernel: kernel,
 		},
@@ -128,7 +110,7 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 	executionTime := time.Since(startTime).Milliseconds()
 	result := &NotebookExecutionResult{
 		Status:            "success",
-		OutputPath:        execResp.OutputPath,
+		OutputLocator:     execResp.OutputLocator,
 		CellCount:         execResp.CellCount,
 		ExecutionCount:    execResp.ExecutionCount,
 		OutputsPreview:    execResp.Outputs,
@@ -138,66 +120,38 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 
 	logger.L().Info("Notebook 执行成功",
 		"execution_id", executionID,
-		"output_path", execResp.OutputPath,
+		"output_locator", execResp.OutputLocator,
 		"execution_time_ms", executionTime)
 
 	return result, "", nil
 }
 
-// ReadNotebookFromMinIO 从 MinIO 读取 Notebook 文件
-func (s *NotebookExecutionService) ReadNotebookFromMinIO(ctx context.Context, path string) ([]byte, error) {
-	bucketName := "develop"
-
-	logger.L().Info("从 MinIO 读取 Notebook",
-		"bucket", bucketName,
-		"path", path)
-
-	object, err := s.minioClient.GetObject(ctx, bucketName, path, minio.GetObjectOptions{})
+// ReadNotebook reads the exact deployment-bound object selected by the owner.
+func (s *NotebookExecutionService) ReadNotebook(ctx context.Context, tenantID uint, locator string) ([]byte, error) {
+	ref, err := notebookRef(tenantID, locator)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get object from MinIO: %w", err)
+		return nil, err
 	}
-	defer object.Close()
-
-	// 读取文件内容
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, object); err != nil {
-		return nil, fmt.Errorf("failed to read object content: %w", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-// SaveNotebookToMinIO 保存 Notebook 到 MinIO
-func (s *NotebookExecutionService) SaveNotebookToMinIO(ctx context.Context, path string, content []byte) error {
-	bucketName := "develop"
-
-	logger.L().Info("保存 Notebook 到 MinIO",
-		"bucket", bucketName,
-		"path", path,
-		"size_bytes", len(content))
-
-	_, err := s.minioClient.PutObject(
-		ctx,
-		bucketName,
-		path,
-		bytes.NewReader(content),
-		int64(len(content)),
-		minio.PutObjectOptions{
-			ContentType: "application/json",
-		},
-	)
+	stream, err := s.store.Open(ctx, ref.Key)
 	if err != nil {
-		return fmt.Errorf("failed to put object to MinIO: %w", err)
+		return nil, err
 	}
-
-	return nil
+	defer stream.Close()
+	return io.ReadAll(stream)
 }
-
-func (s *NotebookExecutionService) DeleteNotebookFromMinIO(ctx context.Context, path string) error {
-	if err := s.minioClient.RemoveObject(ctx, "develop", path, minio.RemoveObjectOptions{}); err != nil {
-		return fmt.Errorf("failed to remove object from MinIO: %w", err)
+func (s *NotebookExecutionService) SaveNotebook(ctx context.Context, tenantID uint, locator string, content []byte) error {
+	ref, err := notebookRef(tenantID, locator)
+	if err != nil {
+		return err
 	}
-	return nil
+	return s.store.Put(ctx, ref.Key, bytes.NewReader(content), int64(len(content)), "application/x-ipynb+json")
+}
+func (s *NotebookExecutionService) DeleteNotebook(ctx context.Context, tenantID uint, locator string) error {
+	ref, err := notebookRef(tenantID, locator)
+	if err != nil {
+		return err
+	}
+	return s.store.Delete(ctx, ref.Key)
 }
 
 // ToMap 将执行结果转换为 map（用于写入统一执行记录的结果摘要）
@@ -210,14 +164,11 @@ func (r *NotebookExecutionResult) ToMap() map[string]interface{} {
 
 // FreezeContent records the bytes selected at submission; the runtime rechecks its own download.
 func (s *NotebookExecutionService) FreezeContent(ctx context.Context, task *models.DevTask) error {
-	if task == nil || task.TenantID == 0 || s == nil || s.minioClient == nil {
+	if task == nil || task.TenantID == 0 || s == nil || s.store == nil {
 		return fmt.Errorf("Notebook content store is unavailable")
 	}
-	notebookPath, _ := task.Content["notebook_path"].(string)
-	if !validNotebookPath(notebookPath) {
-		return fmt.Errorf("invalid Notebook path")
-	}
-	content, err := s.ReadNotebookFromMinIO(ctx, fmt.Sprintf("tenant_%d/notebooks/%s", task.TenantID, notebookPath))
+	notebookPath, _ := task.Content["notebook_locator"].(string)
+	content, err := s.ReadNotebook(ctx, task.TenantID, notebookPath)
 	if err != nil {
 		return err
 	}
@@ -231,8 +182,13 @@ func (s *NotebookExecutionService) FreezeContent(ctx context.Context, task *mode
 	return nil
 }
 
-func validNotebookPath(value string) bool {
-	return value != "" && value != "." && !strings.Contains(value, "\\") && !strings.ContainsRune(value, 0) && !strings.HasPrefix(value, "/") && path.Clean(value) == value && value != ".." && !strings.HasPrefix(value, "../")
+func notebookRef(tenantID uint, locator string) (objectstore.Ref, error) {
+	ref, err := objectstore.Parse(locator)
+	if err != nil || ref.Area != objectstore.Develop || ref.Type != "object" ||
+		!strings.HasPrefix(ref.Key, fmt.Sprintf("tenant_%d/notebooks/", tenantID)) || !strings.HasSuffix(ref.Key, ".ipynb") {
+		return objectstore.Ref{}, ErrNotebookFileIdentity
+	}
+	return ref, nil
 }
 
 func notebookContentDigest(task *models.DevTask) string {

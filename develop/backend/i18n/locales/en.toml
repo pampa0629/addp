@@ -396,3 +396,6 @@ other = "The private file workflow execution failed."
 
 [develop.workflow.result_unavailable]
 other = "The current workflow result is unavailable or expired; execute again before reading"
+
+[develop.notebook.file_identity_invalid]
+other = "Invalid Notebook file identity. Create it through the Notebook file endpoint; an existing file cannot be rebound."

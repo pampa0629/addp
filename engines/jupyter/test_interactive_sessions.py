@@ -17,11 +17,11 @@ class _Minio:
         self.content = b'{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}'
         self.puts = []
 
-    def get_object(self, bucket, object_name):
+    def open(self, object_name):
         return _ObjectResponse(self.content)
 
-    def put_object(self, bucket, object_name, source, length, content_type):
-        self.puts.append((bucket, object_name, source.read(), length, content_type))
+    def put(self, object_name, source, size, media_type):
+        self.puts.append(("develop", object_name, source.read(), size, media_type))
 
 
 class _Process:
@@ -46,14 +46,14 @@ class InteractiveSessionManagerTests(unittest.TestCase):
     def test_create_and_close_saves_same_notebook_object(self):
         minio = _Minio()
         with tempfile.TemporaryDirectory() as workspace:
-            manager = InteractiveSessionManager(minio, "develop", workspace, 300)
+            manager = InteractiveSessionManager(minio, workspace, 300)
             process = _Process()
             request = {
                 "session_id": "abc-123",
                 "tenant_id": 7,
                 "user_id": 9,
                 "task_id": 11,
-                "notebook_path": "analysis.ipynb",
+                "notebook_locator": "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object",
                 "kernel": "python3",
                 "base_path": "/api/v1/develop/notebook-sessions/abc-123/",
                 "ttl_seconds": 120,
@@ -88,13 +88,13 @@ class InteractiveSessionManagerTests(unittest.TestCase):
     def test_rejects_second_writer_for_same_notebook(self):
         minio = _Minio()
         with tempfile.TemporaryDirectory() as workspace:
-            manager = InteractiveSessionManager(minio, "develop", workspace, 300)
+            manager = InteractiveSessionManager(minio, workspace, 300)
             base = {
                 "session_id": "abc-123",
                 "tenant_id": 7,
                 "user_id": 9,
                 "task_id": 11,
-                "notebook_path": "analysis.ipynb",
+                "notebook_locator": "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object",
                 "kernel": "python3",
                 "base_path": "/api/v1/develop/notebook-sessions/abc-123/",
                 "ttl_seconds": 120,
@@ -213,13 +213,13 @@ class InteractiveSessionManagerTests(unittest.TestCase):
 
     def test_validate_request_rejects_missing_or_invalid_owner_capability(self):
         with tempfile.TemporaryDirectory() as workspace:
-            manager = InteractiveSessionManager(_Minio(), "develop", workspace, 300)
+            manager = InteractiveSessionManager(_Minio(), workspace, 300)
             request = {
                 "session_id": "abc-123",
                 "tenant_id": 7,
                 "user_id": 9,
                 "task_id": 11,
-                "notebook_path": "analysis.ipynb",
+                "notebook_locator": "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object",
                 "kernel": "python3",
                 "base_path": "/api/v1/develop/notebook-sessions/abc-123/",
                 "ttl_seconds": 120,
@@ -242,13 +242,13 @@ class InteractiveSessionManagerTests(unittest.TestCase):
 
     def test_validate_request_rejects_cross_scheme_data_endpoint(self):
         with tempfile.TemporaryDirectory() as workspace:
-            manager = InteractiveSessionManager(_Minio(), "develop", workspace, 300)
+            manager = InteractiveSessionManager(_Minio(), workspace, 300)
             request = {
                 "session_id": "abc-123",
                 "tenant_id": 7,
                 "user_id": 9,
                 "task_id": 11,
-                "notebook_path": "analysis.ipynb",
+                "notebook_locator": "addp-infra://object/develop/tenant_7/notebooks/analysis.ipynb?type=object",
                 "kernel": "python3",
                 "base_path": "/api/v1/develop/notebook-sessions/abc-123/",
                 "ttl_seconds": 120,

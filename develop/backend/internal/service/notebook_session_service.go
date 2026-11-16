@@ -129,7 +129,10 @@ func (s *NotebookSessionService) Create(ctx context.Context, userAccessToken str
 	if engineID == nil {
 		return nil, "", fmt.Errorf("notebook task has no bound engine")
 	}
-	notebookPath, _ := task.Content["notebook_path"].(string)
+	notebookPath, _ := task.Content["notebook_locator"].(string)
+	if _, err := notebookRef(tenantID, notebookPath); err != nil {
+		return nil, "", fmt.Errorf("invalid Notebook file identity")
+	}
 	kernel, _ := task.Content["kernel"].(string)
 	if strings.TrimSpace(kernel) == "" {
 		kernel = "python3"
@@ -183,7 +186,7 @@ func (s *NotebookSessionService) Create(ctx context.Context, userAccessToken str
 		TenantID:                      tenantID,
 		UserID:                        userID,
 		TaskID:                        taskID,
-		NotebookPath:                  notebookPath,
+		NotebookLocator:               notebookPath,
 		Kernel:                        kernel,
 		BasePath:                      basePath,
 		TTLSeconds:                    int(s.ttl.Seconds()),

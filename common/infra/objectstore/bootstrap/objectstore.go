@@ -6,28 +6,24 @@ import (
 	"os"
 	"strings"
 
+	"github.com/minio/minio-go/v7/pkg/s3utils"
+
 	"github.com/addp/common/config"
 	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/infra/objectstore/minio"
 )
 
-// OpenObjectArea resolves the area once at startup. Manager remains mapped to its same-name bucket; only standard can be rebound.
+// OpenObjectArea resolves the area once at startup. Manager remains mapped to its same-name bucket; standard and develop can be rebound.
 func OpenObjectArea(ctx context.Context, area string) (objectstore.Area, error) {
-	if area != objectstore.Standard && area != objectstore.Manager {
+	if area != objectstore.Standard && area != objectstore.Manager && area != objectstore.Develop {
 		return nil, fmt.Errorf("unsupported platform object area %q", area)
 	}
 	if provider := config.GetEnv("ADDP_INFRA_OBJECTSTORE_PROVIDER", "minio"); provider != "minio" {
 		return nil, fmt.Errorf("unsupported platform object store provider %q", provider)
 	}
-	bucket := area
-	if mapping := os.Getenv("ADDP_INFRA_OBJECTSTORE_BINDINGS"); mapping != "" {
-		name, target, ok := strings.Cut(mapping, "=")
-		if !ok || name != objectstore.Standard {
-			return nil, fmt.Errorf("unsupported object store binding %q (expected standard=bucket)", mapping)
-		}
-		if area == objectstore.Standard {
-			bucket = target
-		}
+	bucket, err := resolveBucket(area, os.Getenv("ADDP_INFRA_OBJECTSTORE_BINDINGS"))
+	if err != nil {
+		return nil, err
 	}
 	return minio.Bind(ctx, area, bucket, config.LoadBuiltinMinIOConfig())
 }
@@ -43,4 +39,27 @@ func OpenContentArea(ctx context.Context, name string) (objectstore.ContentArea,
 		return nil, fmt.Errorf("object area %q lacks range or directory operations", name)
 	}
 	return content, nil
+}
+
+// resolveBucket validates the whole deployment mapping, including unused areas.
+func resolveBucket(area, raw string) (string, error) {
+	bucket := area
+	seen := map[string]bool{}
+	if raw == "" {
+		return bucket, nil
+	}
+	for _, entry := range strings.Split(raw, ",") {
+		name, target, ok := strings.Cut(entry, "=")
+		if !ok || (name != objectstore.Standard && name != objectstore.Develop) || seen[name] {
+			return "", fmt.Errorf("invalid object store binding %q", entry)
+		}
+		if err := s3utils.CheckValidBucketNameStrict(target); err != nil {
+			return "", fmt.Errorf("invalid object store bucket: %w", err)
+		}
+		seen[name] = true
+		if name == area {
+			bucket = target
+		}
+	}
+	return bucket, nil
 }

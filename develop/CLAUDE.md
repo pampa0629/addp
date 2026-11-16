@@ -276,7 +276,7 @@ Notebook 数据源注入在接入同一 Execution Authorization 消费路径前�
 
 #### 文件与运行时重绑
 
-新建空白 Notebook 与上传 Notebook 都创建同一种 `script` 任务和 MinIO 对象，进入同一交互 Session。Runtime 在会话创建时按任务绑定的 Notebook owner 路径装载文件；关闭／TTL 清理时原子保存回同一路径并终止 kernel/process，Runtime 顺序与隔离细节见[交互会话控制面](../engines/jupyter/README.md#4-交互会话控制面)。不恢复共享 Lab、直连 Runtime 或第二套 Notebook 实体。
+新建空白 Notebook 与上传 Notebook 都创建同一种 `script` 任务和 `develop` 逻辑区域对象，进入同一交互 Session。Runtime 在会话创建时按任务绑定的 Notebook owner 路径装载文件；关闭／TTL 清理时原子保存回同一路径并终止 kernel/process，Runtime 顺序与隔离细节见[交互会话控制面](../engines/jupyter/README.md#4-交互会话控制面)。不恢复共享 Lab、直连 Runtime 或第二套 Notebook 实体。
 
 Notebook 任务允许用户显式重绑定原任务的 Script Engine 和 Kernel。重绑定只更新任务定义并影响后续执行；历史执行保留创建时的 `execution_config` 快照，不复制任务或 Notebook 文件，也不自动选择替代引擎。
 
@@ -595,3 +595,7 @@ createQueryPlaintextRefresh原来复用一个计时器：5秒复核开始后等�
 沿现有页面归属契约，清空／替换结果、任务切换时关闭旧导出弹窗和加载状态，卸载时结束导出观测。复用共享 createLatestRequestScope，创建／轮询／下载传递同一轮 signal，成功、失败及 finally 写回前校验 ticket；旧创建回执不继续轮询，旧 finally 不清除新导出的加载状态。共享导出工具在轮询返回及 Blob 保存前复核取消信号，传输忽略取消也不能交付迟到成功。不取消或删除后台会话，不改服务端保护与授权。
 
 最终同一 16 项断言隔离回放旧代码 10 过 6 失败，修后 16 通过；中英文 8 项受控浏览器通过：三阶段任务切换、创建期间退出，以及新任务成功下载恢复。首次浏览器夹具未处理草稿离开确认、退出后仍查已卸载状态节点，原失败分别保留，均不计产品红例或通过。完整 make test-develop-frontend 实际退出 0：test:workflow 链、304 项浏览器及构建通过；共享 make test-common-frontend 378 项通过；Manager 消费方标准门禁 414 项单元、358 项浏览器及构建通过；前端 CI 登记 27 项／21 个前端通过。证据 /tmp/p145-export-observation-{red,green,browser-green-v3,common,develop,manager,registration}.log；隔离旧实现 /tmp/p145-export-observation-independent/。本轮是 T0／T1／受控 T3，没有真实身份 HTTP 或新增 Hosted T4。
+
+### Notebook 平台文件绑定
+
+文件的唯一定位事实是 `content.notebook_locator`，使用 `addp-infra://object/develop/tenant_<id>/notebooks/<UUID>.ipynb?type=object`。Develop 在启动时注入 Common Area；Jupyter 消费同一部署的 Common Python 绑定。数据库版本化迁移仅转换可变任务（含软删除定义），历史执行输入与摘要不改写。Generic Task 创建不能自行指定 Notebook 文件，更新不得重指向其他文件。远端对象存储失败保持 Go 告警与实际 I/O 报错，不影响查询工作台；Jupyter 的存储失败则使该 Runtime 未就绪。平台核心依赖为关系库和 Redis，后者用于 OAuth／MFA 等安全限流及协调，不是可随意跳过的缓存。

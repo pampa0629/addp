@@ -396,3 +396,6 @@ other = "精确文件工作流执行失败。"
 
 [develop.workflow.result_unavailable]
 other = "当次工作流结果不可用或已过期，请重新执行后读取"
+
+[develop.notebook.file_identity_invalid]
+other = "Notebook 文件身份无效。请通过 Notebook 文件入口创建，已有文件不可重绑定。"

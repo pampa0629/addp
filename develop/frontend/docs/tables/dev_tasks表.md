@@ -6,7 +6,7 @@
 
 ## 一、表结构概览
 
-`develop.dev_tasks` 表是 Develop 模块的开发任务定义表，统一存储 SQL 查询、工作流、脚本等开发任务。Notebook 是 `script` 任务的当前实现形态，通过 `content.notebook_path` 标识。
+`develop.dev_tasks` 表是 Develop 模块的开发任务定义表，统一存储 SQL 查询、工作流、脚本等开发任务。Notebook 是 `script` 任务的当前实现形态，通过 `content.notebook_locator` 标识。
 
 ---
 
@@ -166,7 +166,7 @@ DuckDB 是 System 中 `tenant_id=NULL`、`is_builtin=true` 的真实联邦查询
 | --- | --- |
 | `query` | `content.query_type`、`content.query`，见[Query 结构](#query-类型dev_typequery) |
 | `workflow` | `content.workflow_definition` 和可选 `content.inputs`，见[Workflow 结构](#workflow-类型dev_typeworkflow) |
-| `script` | 当前 Notebook 形态使用 `content.notebook_path`，运行时绑定见[文件与运行时重绑](../../../CLAUDE.md#文件与运行时重绑) |
+| `script` | 当前 Notebook 形态使用 `content.notebook_locator`，运行时绑定见[文件与运行时重绑](../../../CLAUDE.md#文件与运行时重绑) |
 
 类型声明不表示一次性 Notebook 已可派发；当前领取拒绝、内容摘要及交互／排队授权的区别见[排队执行与内容摘要](../../../CLAUDE.md#排队执行与内容摘要)，正式要求沿[执行监督契约](../../../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
 

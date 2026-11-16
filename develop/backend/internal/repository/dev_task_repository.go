@@ -146,7 +146,7 @@ func (r *DevTaskRepository) ListNotebookScripts(req *models.ListDevTasksRequest,
 	var total int64
 
 	query := r.db.Model(&models.DevTask{}).
-		Where("tenant_id = ? AND dev_type = ? AND content->>'notebook_path' IS NOT NULL", tenantID, "script")
+		Where("tenant_id = ? AND dev_type = ? AND content->>'notebook_locator' IS NOT NULL", tenantID, "script")
 
 	if req.Status != "" {
 		query = query.Where("status = ?", req.Status)

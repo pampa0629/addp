@@ -312,3 +312,11 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
 ### 可选同步 HTTP 追踪
 
 `addp_common.httptrace` 是 Agent/Copilot 同步 HTTP 的唯一 ASGI、HTTPX 和有界 OTLP 导出内核；由同一 ModuleRegistration 身份启动，复用显式 ADDP Trace 部署、mTLS 和既有尾采样。应用日志仍由 `runtime_logging` 唯一 JSON 出口附当前关联 ID。默认关闭，不自动采集第三方模型、异步 execution、SQL 或全量 HTTP 指标。边界、预算及验收见[平台运行观测规范 6.5](../docs/spec/addp平台运行观测规范.md#65-分布式追踪与日志关联二期第一批)。验证沿 `make test-common-python`，Agent/Copilot 的直接消费者沿 `make test-agent-eval`、`make test-copilot`；真实 Go → Python → Go 与日志关联沿原 `make test-monitor-traces`，容量专项仍保留原三 Go 进程模型，不在本批执行。
+
+## 平台对象存储区域
+
+服务端需要平台文件时，在启动处安装并使用 `infra-minio` 可选依赖（仓库根执行 `pip install -e './common-python[infra-minio]'`），通过 `addp_common.infra.objectstore.bootstrap.open_object_area("develop")` 获得部署绑定的区域。默认逻辑区域映射到同名桶，`ADDP_INFRA_OBJECTSTORE_BINDINGS` 只填写 `standard`、`develop` 的例外；只实现 MinIO Provider，桶由部署准备。
+
+轻量 `Area` 提供 put／stat／open／delete；绑定另外提供就绪探测。返回的流由调用者关闭，SDK 响应和连接释放留在适配器。`Ref.parse` 仅检查内部对象 URI 的语法；Tenant／Task／Session、允许区域和动作仍由 owner 校验，引用不授予访问权。服务端绑定不进入 Notebook Kernel；`addp_common.notebook` 的业务数据 Facade 继续通过 Develop 的会话授权与独立只读执行授权访问数据。
+
+使用 `make test-common-python` 检查跨语言样例与轻量依赖，使用 `make test-develop-postgres` 检查真实 PG 和自有 MinIO 的双桶隔离、Go／Python 字节往返及保存失败；这些结果不代替真实 JupyterLab 的 HTTP 验收。

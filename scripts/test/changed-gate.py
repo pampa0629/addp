@@ -276,6 +276,9 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
                 "common-frontend",
             )
         )
+    # Shared wire/configuration fixtures are consumed by both language gates.
+    if any(path == "scripts/infra/init-minio.sh" or path.startswith("common/infra/objectstore/testdata/") for path in files):
+        affected.add("common-python")
     if "common-python" in roots:
         affected.add("common-python")
         affected.update(

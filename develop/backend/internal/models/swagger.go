@@ -31,7 +31,7 @@ type DevTaskContentSwagger struct {
 	QueryParameters         []QueryParameterSwagger          `json:"query_parameters,omitempty"`
 	WorkflowDefinition      *WorkflowDefinitionSwagger       `json:"workflow_definition,omitempty"`
 	Inputs                  map[string]interface{}           `json:"inputs,omitempty" swaggertype:"object"`
-	NotebookPath            string                           `json:"notebook_path,omitempty" example:"demo.ipynb"`
+	NotebookLocator         string                           `json:"notebook_locator,omitempty" example:"addp-infra://object/develop/tenant_7/notebooks/demo.ipynb?type=object"`
 	Parameters              map[string]interface{}           `json:"parameters,omitempty" swaggertype:"object"`
 }
 

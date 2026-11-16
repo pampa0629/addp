@@ -53,7 +53,7 @@ func TestCatalogDevTaskChangeFeedAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	scriptTask := models.DevTask{TenantID: tenantID, Name: fmt.Sprintf("catalog_script_%d", tenantID), DevType: "script",
-		Content: models.DevTaskContent{"notebook_path": "notebooks/a.ipynb"}, EditorLayout: map[string]any{}, Status: "active"}
+		Content: models.DevTaskContent{"notebook_locator":"addp-infra://object/develop/tenant_7/notebooks/notebooks/a.ipynb?type=object"}, EditorLayout: map[string]any{}, Status: "active"}
 	if err := tx.Create(&scriptTask).Error; err != nil {
 		t.Fatal(err)
 	}

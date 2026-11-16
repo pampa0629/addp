@@ -5149,9 +5149,9 @@ const docTemplate = `{
                 "inputs": {
                     "type": "object"
                 },
-                "notebook_path": {
+                "notebook_locator": {
                     "type": "string",
-                    "example": "demo.ipynb"
+                    "example": "addp-infra://object/develop/tenant_7/notebooks/demo.ipynb?type=object"
                 },
                 "parameters": {
                     "type": "object"
