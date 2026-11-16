@@ -229,6 +229,7 @@ services:
       - MANAGER_URL=http://manager-backend:8081
       - SYSTEM_URL=http://system-backend:8180
       - DEVELOP_URL=http://develop-backend:8185
+      - TRANSFER_URL=http://transfer-backend:8083
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
     volumes:
@@ -278,6 +279,7 @@ services:
       - DEVELOP_URL=http://develop-backend:8185
       - META_URL=http://meta-backend:8082
       - MANAGER_URL=http://manager-backend:8081
+      - TRANSFER_URL=http://transfer-backend:8083
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - META_WORKER_CONCURRENCY=${META_WORKER_CONCURRENCY:-10}
       - META_BOUNDED_LEASE_DURATION=${META_BOUNDED_LEASE_DURATION:-2m}

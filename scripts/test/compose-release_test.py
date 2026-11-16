@@ -164,6 +164,19 @@ class ReleaseVerificationTest(unittest.TestCase):
         self.assertEqual((first / "manifest.json").read_text(), "first")
 
 
+class ProductionServiceAddressTest(unittest.TestCase):
+    def test_meta_processes_resolve_transfer_receipts_via_compose_service(self):
+        result = subprocess.run([
+            "docker", "compose", "--env-file", ".env.example", "-f", "docker-compose.yml",
+            "config", "--format", "json",
+        ], cwd=ROOT, capture_output=True, text=True, check=True)
+        services = json.loads(result.stdout)["services"]
+        for name in ("meta-backend", "meta-worker"):
+            with self.subTest(service=name):
+                self.assertEqual(services[name]["environment"].get("TRANSFER_URL"),
+                                 "http://transfer-backend:8083")
+
+
 class ProductionMetricImageTest(unittest.TestCase):
     def test_source_consumes_frozen_image_from_builder_and_never_builds(self):
         module = release.load_module("production_metric_image_test", "scripts/utils/metrics-source.py")
