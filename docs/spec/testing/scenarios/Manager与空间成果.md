@@ -210,7 +210,7 @@ EPSG:4326／3857源含七类二维非空几何、内洞／null几何和int32／b
 
 #### Avro 来源与权限
 
-`native-table-avro`沿[公共准备](#文件读取-case-的公共准备与收尾)，复用NFS／MinIO、Transfer及GeoPython物理回读。平面／嵌套／Enum／Map各六源（双存储×三codec），共二十四源／任务／精确Grant；只有六平面源可写Parquet，其余十八次须只读拒绝且无输出。Map扩展保留原十八源字节与全部断言。[Owner runner](../../../../scripts/test/manager-avro-online.py)及浏览器回执v6；v2日期小数／v3 UTC／v4嵌套只证当轮，不追认后续。
+`native-table-avro`沿[公共准备](#文件读取-case-的公共准备与收尾)，复用NFS／MinIO、Transfer及GeoPython物理回读。平面／嵌套／Enum／Map／普通fixed各六源（双存储×三codec），共三十源／任务／精确Grant；只有六平面源可写Parquet，其余二十四次须只读拒绝且无输出。普通fixed扩展保留原二十四源字节与全部断言。[Owner runner](../../../../scripts/test/manager-avro-online.py)及浏览器回执v7；v2日期小数／v3 UTC／v4嵌套只证当轮，不追认后续。
 
 #### Avro 三种 codec
 
@@ -221,18 +221,19 @@ EPSG:4326／3857源含七类二维非空几何、内洞／null几何和int32／b
 | 平面 | 每源2503行、多OCF块，标量／nullable、date、bytes／fixed decimal(38,6)：0001／9999、闰日／纪元前、正负大值／尾零／NULL／符号扩展。十三字段含ms/us/ns UTC：零／负计数、ms/us年界、超JS安全整数、ns int64两端及NULL；long独立编码不过浮点／时间对象。 |
 | 嵌套 | 每源2503行，根五字段id／detail／items／grid／fixed_values；可空record、record数组、多维数组及具名fixed decimal数组。核NULL对象／全NULL对象、NULL／空数组／NULL元素、大整数／Decimal／日期／三单位UTC／binary及OCF单／多／负块；原平面三文件哈希保持。 |
 | Enum | 顶层／嵌套／数组完整枚举名、有序候选、具名引用、null及精确值。 |
+| 普通fixed | 完整具名类型、精确1／4／16／32字节、此前声明引用、同宽异名、NULL／全零／首尾零／高位字节；record／array／map内逐值Base64还原，实际第二页和声明／结构详情。 |
 | Map | 动态键原文、完整`map_value`树、大整数／小数／UTC纳秒／枚举、NULL／空映射／缺键；真实第二页、结构详情／声明JSON。 |
 
 #### Avro 分页与批量传输
 
 - Meta核schema／date／decimal及UTC的unit=ms/us/ns、timezone=UTC、native_type=long；嵌套用户投影核完整树，不要求公开format_info，原schema保留由Meta原生及原件证明。
-- API首页／第二页／末页及真实下一页核总数／全值／缺失；页面UTC固定3／6／9位ISO小数＋Z。嵌套三页／四类结构单元格的只读JSON核完整值，Enum／Map各核声明。原件依公共MinIO允许／NFS拒绝规则；裁切不算全文展开／hover已验。
+- API首页／第二页／末页及真实下一页核总数／全值／缺失；页面UTC固定3／6／9位ISO小数＋Z。嵌套三页／四类结构单元格的只读JSON核完整值，Enum／Map／普通fixed各核声明。原件依公共MinIO允许／NFS拒绝规则；裁切不算全文展开／hover已验。
 - 六平面Avro→Parquet跨批核全字段、类型、nullable、精度／scale和值（含大整数／binary／NULL）。writer按字段名排序，不能按OCF列序；PyArrow逐列cast int64核UTC原计数／NULL、物理INT64／TIMESTAMP原单位及isAdjustedToUTC=true，不先转datetime或把最小ns当NaT。
-- 十八拒绝逐项绑定execution UUID／Tenant，公开读写0、`error_details.category=execution_failed`，不读取不存在的error_msg或公开原始错误。关联Worker既有Runtime日志单次已保存preview-only拒绝，仅存闭集原因／位置／行哈希；物理空间只含六Parquet＋marker，零计数或缺target_change_possible不证明无副作用。预期拒绝不算整场失败，原因／物理输出不符才失败。
+- 二十四拒绝逐项绑定execution UUID／Tenant，公开读写0、`error_details.category=execution_failed`，不读取不存在的error_msg或公开原始错误。关联Worker既有Runtime日志单次已保存preview-only拒绝，仅存闭集原因／位置／行哈希；物理空间只含六Parquet＋marker，零计数或缺target_change_possible不证明无副作用。预期拒绝不算整场失败，原因／物理输出不符才失败。
 
 #### Avro 清理与未覆盖项
 
-按[公共收尾](#文件读取-case-的公共准备与收尾)核二十四源／任务／Grant、六成果及marker删除，无十八类拒绝输出。嵌套／Enum／Map批量未开放，local-timestamp／time等未列逻辑类型、whole、写出、所有生产者／压缩变体与容量未验；NFS原件和SKP精确组成准入保持关闭。
+按[公共收尾](#文件读取-case-的公共准备与收尾)核三十源／任务／Grant、六成果及marker删除，无二十四次拒绝输出。嵌套／Enum／Map／普通fixed批量未开放，local-timestamp／time等未列逻辑类型、whole、写出、所有生产者／压缩变体与容量未验；NFS原件和SKP精确组成准入保持关闭。
 
 #### Avro 验证与历史证据
 

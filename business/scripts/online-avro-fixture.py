@@ -412,6 +412,67 @@ def map_sources():
              'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()} for c in CODECS for raw in [map_source_bytes(c)]]
 
 
+# Ordinary fixed has its own readonly sources; earlier fixture bytes remain unchanged.
+FIXED_SCHEMA = {'type':'record','name':'FixedRows','namespace':'demo','fields':[
+ {'name':'id','type':'long'},
+ {'name':'token','type':{'type':'fixed','name':'Token4','size':4}},
+ {'name':'optional','type':['null','Token4']},
+ {'name':'detail','type':{'type':'record','name':'FixedDetail','fields':[{'name':'token','type':{'type':'fixed','name':'Token16','size':16}}]}},
+ {'name':'items','type':{'type':'array','items':['Token4','null']}},
+ {'name':'lookup','type':{'type':'map','values':['null','Token4']}},
+ {'name':'other','type':{'type':'fixed','name':'other.Token4','size':4}},
+ {'name':'single','type':{'type':'fixed','name':'Single1','size':1}},
+ {'name':'wide','type':{'type':'fixed','name':'Wide32','size':32}},
+]}
+
+def fixed_row(i):
+    def raw(size):
+        return bytes(size) if i%17==0 else bytes([0]+[(i+j*127)%256 for j in range(1,size-1)]+[0]) if size>1 else bytes([i%256])
+    return {'id':row(i)['id'],'token':raw(4),'optional':None if i%7==0 else raw(4),
+            'detail':{'token':raw(16)},'items':[] if i%5==0 else [raw(4),None],
+            'lookup':{'中文 ':raw(4),'nil':None},'other':bytes(reversed(raw(4))),
+            'single':raw(1),'wide':raw(32)}
+
+def fixed_public_row(i):
+    value=fixed_row(i)
+    def public(v):
+        if isinstance(v,bytes):return base64.b64encode(v).decode()
+        if isinstance(v,dict):return {k:public(x) for k,x in v.items()}
+        if isinstance(v,list):return [public(x) for x in v]
+        return v
+    value=public(value);value['id']=str(value['id']);return value
+
+def fixed_source_bytes(codec):
+    if codec not in CODECS:raise ValueError('unsupported Avro fixture codec')
+    sync=hashlib.sha256(('addp-avro-fixed-'+codec).encode()).digest()[:16]
+    metadata={'avro.schema':json.dumps(FIXED_SCHEMA,separators=(',',':')).encode(),'avro.codec':codec.encode()}
+    result=b'Obj\x01'+number(2)+b''.join(blob(k.encode())+blob(v) for k,v in metadata.items())+number(0)+sync
+    for start in range(0,COUNT,257):
+        raw=bytearray()
+        for i in range(start,min(start+257,COUNT)):
+            v=fixed_row(i)
+            raw.extend(number(v['id'])+v['token']+number(0 if v['optional'] is None else 1))
+            if v['optional'] is not None:raw.extend(v['optional'])
+            raw.extend(v['detail']['token'])
+            if v['items']:raw.extend(number(2)+number(0)+v['items'][0]+number(1))
+            raw.extend(number(0)+number(2)+blob('中文 '.encode())+number(1)+v['lookup']['中文 ']+blob(b'nil')+number(0)+number(0))
+            raw.extend(v['other']+v['single']+v['wide'])
+        payload=bytes(raw)
+        if codec=='deflate':
+            compressor=zlib.compressobj(wbits=-15);payload=compressor.compress(payload)+compressor.flush()
+        elif codec=='snappy':
+            n=len(payload)-1;width=max(1,(n.bit_length()+7)//8)
+            tag=bytes([n<<2]) if n<60 else bytes([(59+width)<<2])+n.to_bytes(width,'little')
+            payload=unsigned(len(payload))+tag+payload+struct.pack('>I',zlib.crc32(payload))
+        result+=number(min(257,COUNT-start))+blob(payload)+sync
+    return result
+
+def fixed_sources():
+    return [{'codec':c,'name':'fixed-'+c+'.avro','count':COUNT,'schema':FIXED_SCHEMA,'fixed':True,
+             'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+            for c in CODECS for raw in [fixed_source_bytes(c)]]
+
+
 def worker(request):
     from minio import Minio
     access = request['storage']
@@ -437,28 +498,28 @@ def worker(request):
         assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'existing_outputs'
         directory.mkdir(exist_ok=False)
         with marker.open('x') as out:
-            out.write('addp.avro-fixture/v4')
-        for spec in sources()+nested_sources()+enum_sources()+map_sources():
-            raw = (map_source_bytes if spec.get('map') else enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec'])
+            out.write('addp.avro-fixture/v5')
+        for spec in sources()+nested_sources()+enum_sources()+map_sources()+fixed_sources():
+            raw = (fixed_source_bytes if spec.get('fixed') else map_source_bytes if spec.get('map') else enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec'])
             path = directory / spec['name']
             path.write_bytes(raw)
             path.chmod(0o644)
             client.put_object(bucket, 'avro/' + path.name, io.BytesIO(raw), len(raw), content_type='application/avro')
         client.put_object(bucket, 'avro-output/.keep', io.BytesIO(b''), 0)
-        return {'sources': sources(), 'nested_sources':nested_sources(), 'enum_sources':enum_sources(), 'map_sources':map_sources(), 'count': COUNT}
+        return {'sources': sources(), 'nested_sources':nested_sources(), 'enum_sources':enum_sources(), 'map_sources':map_sources(), 'fixed_sources':fixed_sources(), 'count': COUNT}
     if action not in {'verify', 'delete'}:
         raise ValueError('unknown Avro fixture action')
     if not directory.exists() and action == 'delete':
         assert not list(client.list_objects(bucket, prefix='avro/', recursive=True)), 'unowned_inputs'
         assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'unowned_outputs'
         return {'objects_removed': True, 'files_removed': True, 'outputs_removed': True}
-    assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v4', 'fixture_ownership'
-    assert all(not (directory / v['name']).is_symlink() for v in sources()+nested_sources()+enum_sources()+map_sources()), 'source_symlink'
+    assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v5', 'fixture_ownership'
+    assert all(not (directory / v['name']).is_symlink() for v in sources()+nested_sources()+enum_sources()+map_sources()+fixed_sources()), 'source_symlink'
     if action == 'verify':
         import pyarrow as pa
         import pyarrow.parquet as pq
-        for spec in sources()+nested_sources()+enum_sources()+map_sources():
-            assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == (map_source_bytes if spec.get('map') else enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec']), 'source_changed'
+        for spec in sources()+nested_sources()+enum_sources()+map_sources()+fixed_sources():
+            assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == (fixed_source_bytes if spec.get('fixed') else map_source_bytes if spec.get('map') else enum_source_bytes if spec.get('enum') else nested_source_bytes if spec.get('nested') else source_bytes)(spec['codec']), 'source_changed'
         assert {x.object_name for x in client.list_objects(bucket,prefix='avro-output/',recursive=True)}==set(outputs+['avro-output/.keep']), 'unexpected_nested_output'
         facts = []
         expected_rows = [row(i) for i in range(COUNT)]
@@ -486,11 +547,11 @@ def worker(request):
             facts.append({'object': name, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                           'all_values_and_nulls_verified': True, 'native_timestamp_ticks_verified': True,
                           'timestamp_units': {name:unit for name,(unit,_,_) in TIMESTAMPS.items()}, 'content_base64': base64.b64encode(raw).decode()})
-        return {'sources_unchanged': True, 'nested_outputs_absent':True, 'nested_sources_verified':6, 'enum_sources_verified':6, 'enum_outputs_absent':True, 'map_sources_verified':6, 'map_outputs_absent':True, 'outputs': facts}
+        return {'sources_unchanged': True, 'nested_outputs_absent':True, 'nested_sources_verified':6, 'enum_sources_verified':6, 'enum_outputs_absent':True, 'map_sources_verified':6, 'map_outputs_absent':True, 'fixed_sources_verified':6, 'fixed_outputs_absent':True, 'outputs': facts}
     if action == 'delete':
-        for name in outputs + ['avro-output/.keep'] + ['avro/' + v['name'] for v in sources()+nested_sources()+enum_sources()+map_sources()]:
+        for name in outputs + ['avro-output/.keep'] + ['avro/' + v['name'] for v in sources()+nested_sources()+enum_sources()+map_sources()+fixed_sources()]:
             client.remove_object(bucket, name)
-        for spec in sources()+nested_sources()+enum_sources()+map_sources():
+        for spec in sources()+nested_sources()+enum_sources()+map_sources()+fixed_sources():
             (directory / spec['name']).unlink(missing_ok=True)
         marker.unlink()
         if directory.exists():

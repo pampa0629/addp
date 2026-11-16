@@ -1870,6 +1870,7 @@
           "graphRelationshipShapes": "关系类型"
         },
         "tableColumns": {
+          "fixedBinary": "定长二进制声明",
           "enumeration": "枚举声明",
           "mapValue": "映射值类型",
           "name": "名称",

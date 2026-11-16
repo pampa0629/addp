@@ -1023,6 +1023,7 @@ const boxedNestedGroupKeys = new Set(['native', 'source'])
 
 const tableColumnLabelKeys = {
   enum: 'manager.explorer.attributes.tableColumns.enumeration',
+  fixed: 'manager.explorer.attributes.tableColumns.fixedBinary',
   map_value: 'manager.explorer.attributes.tableColumns.mapValue',
   name: 'manager.explorer.attributes.tableColumns.name',
   type: 'manager.explorer.attributes.tableColumns.type',
@@ -1378,7 +1379,7 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
 }
 
 const buildFieldTable = (pathParts, rows) => {
-  const preferredColumns = ['name', 'path', 'type', 'element_type', 'native_type', 'enum', 'map_value', 'nullable', 'primary_key', 'comment']
+  const preferredColumns = ['name', 'path', 'type', 'element_type', 'native_type', 'enum', 'fixed', 'map_value', 'nullable', 'primary_key', 'comment']
   const table = buildObjectArrayTable(pathParts, rows, preferredColumns, 'fields')
   return {
     ...table,
@@ -1513,7 +1514,7 @@ const tableColumnLabel = (profile, column) => {
 }
 
 const tableColumnMinWidth = (pathParts, column) => {
-  if (column === 'enum' || column === 'map_value') return 360
+  if (column === 'enum' || column === 'fixed' || column === 'map_value') return 360
   if (isGraphNodeShapesTable(pathParts)) {
     return ({
       name: 180,

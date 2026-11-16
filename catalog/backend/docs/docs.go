@@ -4511,6 +4511,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/datatype.FieldInfo"
                     }
                 },
+                "fixed": {
+                    "$ref": "#/definitions/datatype.FixedInfo"
+                },
                 "generated": {
                     "type": "boolean"
                 },
@@ -4598,6 +4601,17 @@ const docTemplate = `{
                 "FieldTypeUUID",
                 "FieldTypeGeometry"
             ]
+        },
+        "datatype.FixedInfo": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
         },
         "datatype.TemporalInfo": {
             "type": "object",

@@ -148,3 +148,34 @@ func TestAvroMapDeepScanPreservesValuesWithoutObservedKeys(t *testing.T) {
 		t.Fatal("map value metadata lost")
 	}
 }
+
+func TestAvroFixedMetadataRetainsExactDeclaration(t *testing.T) {
+	data, err := os.ReadFile("../../../../common/format/plugins/avro/testdata/synthetic-fixed.avro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := int64(len(data))
+	item := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{Layout: format.LayoutSingle, DataType: datatype.Table, Format: "avro", PrimaryContentPath: "fixed.avro", SizeBytes: &size}, PhysicalPath: "fixed.avro"}
+	enriched, ok, err := EnrichSingleTableFileItem(t.Context(), staticContentReader{content: string(data)}, nil, 1, item, "fixed.avro", size, false, "", nil, func(path string) plugin.EngineCatalogPath { return plugin.FileItemPath(1, path) })
+	if err != nil || !ok {
+		t.Fatalf("fixed metadata: %v", err)
+	}
+	info := datatype.TableInfoFromPayload(commonJSON.Section(enriched.Attributes, "type_info.table"), "")
+	if info == nil || *info.RowCount != 43 || len(info.Fields) != 9 {
+		t.Fatalf("fixed table: %#v", info)
+	}
+	for _, f := range []datatype.FieldInfo{info.Fields[1], info.Fields[2], *info.Fields[4].Element, *info.Fields[5].MapValue} {
+		if f.Type != datatype.FieldTypeBytes || f.Fixed == nil || f.Fixed.Name != "demo.Token4" || f.Fixed.Size != 4 || f.Size != 0 {
+			t.Fatalf("fixed declaration lost: %#v", f)
+		}
+	}
+	public := metaquery.MetadataOnlyItem(models.MetaItemLite{Attributes: enriched.Attributes})
+	projected := datatype.TableInfoFromPayload(commonJSON.Section(public.Attributes, "type_info.table"), "")
+	if projected == nil || !reflect.DeepEqual(projected.Fields, info.Fields) || projected.RowCount != nil || public.Attributes["format_info"] != nil {
+		t.Fatal("fixed metadata projection changed declarations or exposed content")
+	}
+	projected.Fields[1].Fixed.Name = "changed"
+	if info.Fields[1].Fixed.Name != "demo.Token4" {
+		t.Fatal("projection shares fixed declaration")
+	}
+}

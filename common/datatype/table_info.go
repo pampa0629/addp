@@ -23,6 +23,12 @@ type EnumInfo struct {
 	Symbols []string `json:"symbols"`
 }
 
+// FixedInfo preserves a named exact-width binary declaration, not a maximum length.
+type FixedInfo struct {
+	Name string `json:"name"`
+	Size int    `json:"size"`
+}
+
 // FieldInfo describes a common field or property semantic model.
 type FieldInfo struct {
 	Name                 string      `json:"name,omitempty"`
@@ -46,6 +52,7 @@ type FieldInfo struct {
 
 	Temporal *TemporalInfo `json:"temporal,omitempty"`
 	Enum     *EnumInfo     `json:"enum,omitempty"`
+	Fixed    *FixedInfo    `json:"fixed,omitempty"`
 }
 
 // Clone returns a deep copy of TableInfo.
@@ -89,6 +96,10 @@ func CloneFieldInfos(fields []FieldInfo) []FieldInfo {
 	for i := range result {
 		result[i].Path = append([]string(nil), fields[i].Path...)
 		result[i].Fields = CloneFieldInfos(fields[i].Fields)
+		if fields[i].Fixed != nil {
+			fixed := *fields[i].Fixed
+			result[i].Fixed = &fixed
+		}
 		if fields[i].Enum != nil {
 			enumeration := *fields[i].Enum
 			enumeration.Symbols = append([]string(nil), fields[i].Enum.Symbols...)

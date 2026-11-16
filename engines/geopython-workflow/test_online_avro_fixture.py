@@ -73,9 +73,10 @@ def avro_physical(tmp_path, monkeypatch):
 def test_hosted_avro_actual_parquet_oracle_and_cleanup(avro_physical):
     request, objects, write_outputs = avro_physical
     seeded = FIXTURE.worker(dict(request, action='seed'))
-    assert seeded == {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'enum_sources':FIXTURE.enum_sources(), 'map_sources':FIXTURE.map_sources(), 'count': 2503}
+    assert seeded == {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'enum_sources':FIXTURE.enum_sources(), 'map_sources':FIXTURE.map_sources(), 'fixed_sources':FIXTURE.fixed_sources(), 'count': 2503}
     write_outputs()
     proof = FIXTURE.worker(dict(request, action='verify'))
+    assert proof['fixed_sources_verified'] == 6 and proof['fixed_outputs_absent']
     assert proof['sources_unchanged'] and len(proof['outputs']) == 6
     expected = [f'avro-output/from-{storage}-{codec}.parquet' for storage in ('minio', 'nfs') for codec in FIXTURE.CODECS]
     assert [entry['object'] for entry in proof['outputs']] == expected
@@ -88,7 +89,7 @@ def test_hosted_avro_actual_parquet_oracle_and_cleanup(avro_physical):
     assert not objects and not (Path(request['nfs_root']) / 'avro').exists()
 
 
-@pytest.mark.parametrize('mutation', ['bigint', 'empty_bytes', 'date', 'decimal', 'fixed_decimal', 'timestamp', 'nanosecond', 'timestamp_unit', 'timestamp_timezone', 'source', 'field'])
+@pytest.mark.parametrize('mutation', ['bigint', 'empty_bytes', 'date', 'decimal', 'fixed_decimal', 'timestamp', 'nanosecond', 'timestamp_unit', 'timestamp_timezone', 'source', 'fixed-source', 'field'])
 def test_hosted_avro_oracle_rejects_real_parquet_or_source_corruption(avro_physical, mutation):
     request, objects, write_outputs = avro_physical
     FIXTURE.worker(dict(request, action='seed'))
@@ -117,6 +118,10 @@ def test_hosted_avro_oracle_rejects_real_parquet_or_source_corruption(avro_physi
         sink = io.BytesIO()
         pq.write_table(table,sink)
         objects[name] = sink.getvalue()
+    elif mutation == 'fixed-source':
+        write_outputs()
+        name = 'avro/fixed-null.avro'
+        objects[name] = objects[name][:-1] + bytes([objects[name][-1] ^ 1])
     elif mutation == 'source':
         write_outputs()
         objects['avro/null.avro'] += b'changed'
@@ -127,7 +132,7 @@ def test_hosted_avro_oracle_rejects_real_parquet_or_source_corruption(avro_physi
         sink = io.BytesIO()
         pq.write_table(broken, sink)
         objects[name] = sink.getvalue()
-    expected = ('source_changed' if mutation == 'source' else 'output_fields' if mutation == 'field'
+    expected = ('source_changed' if mutation in {'source','fixed-source'} else 'output_fields' if mutation == 'field'
                 else 'output_types' if mutation in {'timestamp_unit','timestamp_timezone'}
                 else 'output_ticks' if mutation in {'timestamp','nanosecond'} else 'output_values')
     with pytest.raises(AssertionError, match=expected):
@@ -162,3 +167,21 @@ def test_hosted_avro_nested_source_and_no_output_proof(avro_physical,mutation):
     objects.pop('avro-output/rejected-enum-from-minio-null.parquet',None)
     objects.pop('avro-output/rejected-map-from-minio-null.parquet',None)
     FIXTURE.worker(dict(request,action='delete'));assert not objects
+
+
+def test_fixed_fixture_declares_exact_widths_and_preserves_binary_cases():
+    fields=FIXTURE.FIXED_SCHEMA['fields']
+    assert fields[1]['type']=={'type':'fixed','name':'Token4','size':4}
+    assert fields[2]['type']==['null','Token4']
+    assert fields[6]['type']=={'type':'fixed','name':'other.Token4','size':4}
+    observed=set()
+    for i in range(FIXTURE.COUNT):
+        raw=FIXTURE.fixed_row(i);public=FIXTURE.fixed_public_row(i)
+        for name,size in [('token',4),('other',4),('single',1),('wide',32)]:
+            assert len(raw[name])==size
+            assert base64.b64decode(public[name],validate=True)==raw[name]
+            observed.update(raw[name])
+        assert (raw['optional'] is None)==(public['optional'] is None)
+    assert observed==set(range(256))
+    assert FIXTURE.fixed_public_row(0)['token']=='AAAAAA=='
+    assert FIXTURE.fixed_public_row(0)['optional'] is None

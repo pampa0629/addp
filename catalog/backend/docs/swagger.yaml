@@ -216,6 +216,8 @@ definitions:
         items:
           $ref: '#/definitions/datatype.FieldInfo'
         type: array
+      fixed:
+        $ref: '#/definitions/datatype.FixedInfo'
       generated:
         type: boolean
       generation_expression:
@@ -285,6 +287,13 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  datatype.FixedInfo:
+    properties:
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
   datatype.TemporalInfo:
     properties:
       timezone:

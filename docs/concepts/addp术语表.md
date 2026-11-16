@@ -923,6 +923,7 @@ TCP 当前连接数采用 [RFC 4022 的 tcpCurrEstab](https://www.rfc-editor.org
 | 英文 | 中文 | 定义 | 边界 |
 | --- | --- | --- | --- |
 | Elasticsearch index | Elasticsearch 索引 | Elasticsearch 中容纳文档的原生数据集，是 `service -> index` Engine Catalog 的叶子。 | `meta_item.item_type=index`；文档是索引内容，不逐条创建 Meta item；别名、data stream、分片不是首版叶子。 |
+| fixed binary declaration | 定长二进制声明 | 源Schema明确给出的完整类型名和精确字节长度，以`FieldInfo.fixed`表达，字段类型仍为`bytes`。 | 不同于最大长度或小数编码；原始字节在JSON中以Base64展示，不赋予批量转存能力。 |
 | Mapping | 字段映射 | 引擎声明的字段路径、原生类型及 object/nested、多字段关系。 | 映射字段事实不等于 `_source` 内容结构完整，不能据此断言未映射字段不存在。 |
 
 ## 结构化字段保护算法

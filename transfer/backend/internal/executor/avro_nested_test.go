@@ -12,7 +12,7 @@ import (
 )
 
 func TestReadOnlyAvroRejectsTransferBeforeOpeningOrReplacingTargets(t *testing.T) {
-	for _, name := range []string{"synthetic-nested.avro", "synthetic-enum.avro", "synthetic-map.avro"} {
+	for _, name := range []string{"synthetic-nested.avro", "synthetic-enum.avro", "synthetic-map.avro", "synthetic-fixed.avro"} {
 		t.Run(name, func(t *testing.T) {
 			data, err := os.ReadFile("../../../../common/format/plugins/avro/testdata/" + name)
 			if err != nil {

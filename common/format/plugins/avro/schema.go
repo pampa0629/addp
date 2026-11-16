@@ -255,7 +255,9 @@ func (p *schemaParser) parse(value interface{}, namespace string, depth int) (*v
 		return nil, err
 	}
 	node := &valueSchema{field: definition, nullBranch: -1}
-	if definition.Type == datatype.FieldTypeDecimal && primitiveName(value) == "" {
+	if definition.Fixed != nil {
+		node.fixedSize = definition.Fixed.Size
+	} else if definition.Type == datatype.FieldTypeDecimal && primitiveName(value) == "" {
 		if typ, _ := object["type"].(string); typ == "fixed" {
 			size, _ := object["size"].(json.Number)
 			n, _ := size.Int64()
@@ -263,11 +265,15 @@ func (p *schemaParser) parse(value interface{}, namespace string, depth int) (*v
 		}
 	}
 	if node.fixedSize > 0 {
-		if p.named[definition.NativeType] != nil || p.active[definition.NativeType] {
+		name := definition.NativeType
+		if definition.Fixed != nil {
+			name = definition.Fixed.Name
+		}
+		if p.named[name] != nil || p.active[name] {
 			return nil, fmt.Errorf("duplicate Avro named declaration")
 		}
 		node.codecName = fmt.Sprintf("addp.avro.Type%d", len(p.named))
-		p.named[definition.NativeType] = node
+		p.named[name] = node
 	}
 	return node, nil
 }

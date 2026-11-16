@@ -1870,6 +1870,7 @@
           "graphRelationshipShapes": "Relationship Types"
         },
         "tableColumns": {
+          "fixedBinary": "Fixed binary declaration",
           "enumeration": "Enumeration",
           "mapValue": "Map value type",
           "name": "Name",

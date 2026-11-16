@@ -2,6 +2,16 @@ import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
 
 for (const locale of ['zh-cn', 'en']) {
+  test(`shows named fixed byte declaration in ${locale}`, async ({ page }) => {
+    await openAttributes(page, locale, {
+      item: { data_type: 'table', format: 'avro', layout: 'single' },
+      type_info: { table: { fields: [{ name: 'token', type: 'bytes', native_type: 'fixed', nullable: true,
+        fixed: { name: 'example.Token4', size: 4 } }] } }
+    })
+    await expect(page.getByRole('columnheader', { name: locale === 'zh-cn' ? '定长二进制声明' : 'Fixed binary declaration', exact: true })).toBeVisible()
+    await expect(page.getByText(/example.Token4/).first()).toBeVisible()
+  })
+
   for (const status of ['parsed', 'absent', 'invalid', 'budget_exceeded']) {
     test(`shows JPEG EXIF fields and ${status} diagnostics in ${locale}`, async ({ page }) => {
       const jpeg = { exif_status: status }

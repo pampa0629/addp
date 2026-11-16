@@ -72,6 +72,10 @@ func metadataOnlyFields(fields []datatype.FieldInfo) []datatype.FieldInfo {
 		result[i] = datatype.FieldInfo{Name: f.Name, Path: append([]string(nil), f.Path...), Type: f.Type, ElementType: f.ElementType,
 			NativeType: f.NativeType, Nullable: f.Nullable, PrimaryKey: f.PrimaryKey, Size: f.Size, Precision: f.Precision, Scale: f.Scale,
 			OrdinalPosition: f.OrdinalPosition, Generated: f.Generated, Fields: metadataOnlyFields(f.Fields)}
+		if f.Fixed != nil {
+			fixed := *f.Fixed
+			result[i].Fixed = &fixed
+		}
 		if f.Enum != nil {
 			enumeration := *f.Enum
 			enumeration.Symbols = append([]string(nil), f.Enum.Symbols...)

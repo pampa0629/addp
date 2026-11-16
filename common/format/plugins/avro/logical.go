@@ -39,6 +39,14 @@ func fieldDefinition(value interface{}, namespace string) (datatype.FieldInfo, e
 	result.NativeType = native
 	logical, hasLogical := object["logicalType"]
 	if !hasLogical {
+		if native == "fixed" {
+			fixed, err := fixedDeclaration(object, namespace)
+			if err != nil {
+				return result, err
+			}
+			result.Type, result.Fixed = datatype.FieldTypeBytes, fixed
+			return result, nil
+		}
 		result.Type = map[string]datatype.FieldType{"boolean": datatype.FieldTypeBool, "int": datatype.FieldTypeInt, "long": datatype.FieldTypeBigInt, "float": datatype.FieldTypeFloat, "double": datatype.FieldTypeDouble, "bytes": datatype.FieldTypeBytes, "string": datatype.FieldTypeString}[native]
 		if result.Type != "" {
 			return result, nil
@@ -74,11 +82,12 @@ func fieldDefinition(value interface{}, namespace string) (datatype.FieldInfo, e
 	}
 	result.Type, result.Precision, result.Scale = datatype.FieldTypeDecimal, int(p), int(scale)
 	if native == "fixed" {
-		size, ok := object["size"].(json.Number)
-		n, err := size.Int64()
-		if !ok || err != nil || n < 1 || n > maxBlockBytes {
-			return result, fmt.Errorf("Avro decimal fixed size exceeds the supported block budget")
+		fixed, err := fixedDeclaration(object, namespace)
+		if err != nil {
+			return result, err
 		}
+		n := int64(fixed.Size)
+		result.NativeType = fixed.Name
 		// For larger fixed widths every supported precision already fits. Keep
 		// schema validation bounded rather than constructing a block-sized integer.
 		if n < maxDecimalPrecision {
@@ -88,23 +97,33 @@ func fieldDefinition(value interface{}, namespace string) (datatype.FieldInfo, e
 				return result, fmt.Errorf("Avro decimal precision exceeds fixed capacity")
 			}
 		}
-		name, _ := object["name"].(string)
-		if name == "" || primitiveTypeName(name[strings.LastIndexByte(name, '.')+1:]) {
-			return result, fmt.Errorf("invalid Avro fixed name")
-		}
-		if declared, present := object["namespace"]; present {
-			var ok bool
-			namespace, ok = declared.(string)
-			if !ok {
-				return result, fmt.Errorf("invalid Avro fixed namespace")
-			}
-		}
-		result.NativeType = qualifiedName(name, namespace)
-		if !avroFullName.MatchString(result.NativeType) {
-			return result, fmt.Errorf("invalid Avro fixed fullname")
-		}
 	}
 	return result, nil
+}
+
+// Both ordinary and decimal fixed share the same physical declaration boundary.
+func fixedDeclaration(object map[string]interface{}, namespace string) (*datatype.FixedInfo, error) {
+	size, ok := object["size"].(json.Number)
+	n, err := size.Int64()
+	if !ok || err != nil || n < 1 || n > maxBlockBytes {
+		return nil, fmt.Errorf("Avro fixed size must be a positive integer within the supported block budget")
+	}
+	name, _ := object["name"].(string)
+	if name == "" || primitiveTypeName(name[strings.LastIndexByte(name, '.')+1:]) {
+		return nil, fmt.Errorf("invalid Avro fixed name")
+	}
+	if declared, present := object["namespace"]; present {
+		var ok bool
+		namespace, ok = declared.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid Avro fixed namespace")
+		}
+	}
+	full := qualifiedName(name, namespace)
+	if !avroFullName.MatchString(full) {
+		return nil, fmt.Errorf("invalid Avro fixed fullname")
+	}
+	return &datatype.FixedInfo{Name: full, Size: int(n)}, nil
 }
 
 // Logical types have exactly the encoding of their underlying Avro type. Use
@@ -130,6 +149,9 @@ func physicalRecordSchema(schema map[string]interface{}, plan *valueSchema) (str
 	collect = func(node *valueSchema) {
 		if node.codecName != "" {
 			name := node.field.NativeType
+			if node.field.Fixed != nil {
+				name = node.field.Fixed.Name
+			}
 			if node.field.Enum != nil {
 				name = node.field.Enum.Name
 			}
