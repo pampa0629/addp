@@ -166,9 +166,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 		}
 	}
-	if len(roles) != 76 {
-		t.Fatalf("role count = %d, want 76", len(roles))
+	if len(roles) != 77 {
+		t.Fatalf("role count = %d, want 77", len(roles))
 	}
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.engine_management_reader", []string{"user"})
+	assertRepositoryRoleScopes(t, roles, "tenant.engine_management_reader", []string{"tenant"})
+	assertRepositoryRolePermissions(t, roles, "tenant.engine_management_reader", []string{"system.engine.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.engine_lifecycle_operator", []string{"user"})
 	assertRepositoryRoleScopes(t, roles, "tenant.engine_lifecycle_operator", []string{"tenant"})
 	assertRepositoryRolePermissions(t, roles, "tenant.engine_lifecycle_operator", []string{

@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 153
+manifest_version: 154
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -827,6 +827,14 @@ roles:
       - system.cleanup.read
       - system.engine.create
       - system.engine.delete
+      - system.engine.read
+  - key: tenant.engine_management_reader
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.engine_management_reader.name
+    description_i18n_key: roles.tenant.engine_management_reader.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [user]
+    permissions:
       - system.engine.read
   - key: tenant.geopython_runtime
     role_type: tenant_builtin

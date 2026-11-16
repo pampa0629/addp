@@ -9,8 +9,23 @@
 +	engineservice "github.com/addp/system/internal/service"
 @@ -369,0 +374,2 @@
 +	case "develop-notebook-storage":
-+		return []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read", "system.engine.read"}, nil
-@@ -724,0 +731,39 @@
++		return []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read"}, nil
+@@ -709,0 +716,14 @@
++	if *suite == "develop-notebook-storage" {
++		role, err := repository.GetActiveBuiltinRoleByKey(ctx, "tenant.engine_management_reader")
++		if err != nil {
++			return err
++		}
++		if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
++			TenantID: tenant.ID, MembershipID: membership.Membership.ID,
++			RoleIDs: []int64{role.ID}, Reason: "Notebook HTTP minimum engine management read",
++			ActorPrincipalID: administrator.PrincipalID, Audit: audit("external-online-notebook-reader"),
++		}); err != nil {
++			return err
++		}
++	}
++
+@@ -724,0 +745,39 @@
 +
 +	if *suite == "develop-notebook-storage" {
 +		permissions, err := suitePermissions(*suite)
@@ -18,7 +33,7 @@
 +			return err
 +		}
 +		peer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-+			tenant.ID, administrator.PrincipalID, "external-online-notebook-peer", permissions)
++			tenant.ID, administrator.PrincipalID, "external-online-notebook-peer", permissions, "tenant.engine_management_reader")
 +		if err != nil {
 +			return err
 +		}
@@ -27,7 +42,7 @@
 +			return err
 +		}
 +		foreign, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-+			foreignTenant.ID, reserve.PrincipalID, "external-online-notebook-foreign", permissions)
++			foreignTenant.ID, reserve.PrincipalID, "external-online-notebook-foreign", permissions, "tenant.engine_management_reader")
 +		if err != nil {
 +			return err
 +		}
@@ -50,7 +65,7 @@
 +		values["ADDP_ONLINE_NOTEBOOK_ENGINE_ID"] = fmt.Sprint(engine.ID)
 +	}
 +
-@@ -1765,0 +1811,4 @@
+@@ -1765,0 +1825,4 @@
 +		"ADDP_ONLINE_NOTEBOOK_PEER_TOKEN",
 +		"ADDP_ONLINE_NOTEBOOK_FOREIGN_TOKEN",
 +		"ADDP_ONLINE_NOTEBOOK_FOREIGN_TENANT_ID",

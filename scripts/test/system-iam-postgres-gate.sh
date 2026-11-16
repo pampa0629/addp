@@ -47,6 +47,7 @@ while [ "$#" -gt 0 ]; do
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
             echo "Execution subject roles: --package iam --test execution-subject-roles" >&2
+            echo "Minimum engine reader publication/assignment: --package migration|online-fixture --test engine-management-reader" >&2
             echo "Ontology rule delegation: --package iam --test ontology-rule-delegation" >&2
             echo "Cleanup execution authorization: --package iam --test cleanup-authorization" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test database-crash-recovery|oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|transfer-run|export-execution-provenance]" >&2
@@ -268,6 +269,13 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    engine-management-reader)
+        case "$PACKAGE_FILTER" in
+            migration) test_pattern='^TestEngineManagementReaderForwardMigrationAgainstPostgres$' ;;
+            online-fixture) test_pattern='^TestNotebookEngineReaderIdentityAgainstPostgres$' ;;
+            *) echo "engine-management-reader requires --package migration or online-fixture" >&2; exit 2 ;;
+        esac
+        ;;
     browser-login)
         case "$PACKAGE_FILTER" in
             iam) test_pattern='^Test(BrowserLoginAndContextOptions|ContextSelectionServices|MFAService|MFASessionClosure|ContextSwitchService)AgainstPostgres$' ;;

@@ -31,6 +31,23 @@ def require(value, message):
         raise api.SuiteError(message)
 
 
+class IdentityClient(api.GatewayClient):
+    def request(self, *args, **kwargs):
+        response = super().request(*args, **kwargs)
+        self.context = response.payload
+        return response
+
+
+def validate_notebook_identity(token, tenant):
+    client = IdentityClient(os.environ["GATEWAY_URL"], token, 30)
+    identity = api.validate_user_identity(client, tenant, PERMISSIONS)
+    actual = {permission for assignment in client.context["authorization"]["role_assignments"]
+              for permission in assignment["permissions"]}
+    require(actual == PERMISSIONS, "Notebook User actual permissions differ from approved six")
+    require("tenant.engine_management_reader" in identity["roles"], "Notebook User minimum builtin reader missing")
+    return identity
+
+
 class Client:
     def __init__(self, token):
         self.base = os.environ["GATEWAY_URL"].rstrip("/")
@@ -210,7 +227,7 @@ def main():
     tokens = [os.environ[name] for name in ("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN", "ADDP_ONLINE_NOTEBOOK_PEER_TOKEN", "ADDP_ONLINE_NOTEBOOK_FOREIGN_TOKEN")]
     clients = [Client(token) for token in tokens]
     owner, peer, foreign = clients
-    identities = [api.validate_user_identity(api.GatewayClient(os.environ["GATEWAY_URL"], token, 30), owner_tenant, PERMISSIONS)
+    identities = [validate_notebook_identity(token, owner_tenant)
                   for token, owner_tenant in zip(tokens, (tenant, tenant, foreign_tenant))]
     engines = owner.request("GET", ROOT + "/notebook-engines", (200,))
     require(any(engine["id"] == int(os.environ["ADDP_ONLINE_NOTEBOOK_ENGINE_ID"]) for engine in engines), "fixture Script Engine not visible")

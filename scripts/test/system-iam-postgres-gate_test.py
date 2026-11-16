@@ -187,6 +187,17 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=('--package', 'api', '--test', 'task-authorization'))
         self.assertEqual(result.returncode, 2)
 
+    def test_engine_reader_filter_selects_publication_and_formal_assignment(self):
+        for package, path, pattern in [
+            ('migration', './internal/migration', '^TestEngineManagementReaderForwardMigrationAgainstPostgres$'),
+            ('online-fixture', './cmd/online-test-fixture', '^TestNotebookEngineReaderIdentityAgainstPostgres$'),
+        ]:
+            result = self.run_gate(arguments=('--package', package, '--test', 'engine-management-reader'))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f'{path} -run {pattern}', (self.root / 'trace-1').read_text())
+        result = self.run_gate(arguments=('--package', 'api', '--test', 'engine-management-reader'))
+        self.assertEqual(result.returncode, 2)
+
     def test_browser_login_filter_selects_real_mfa_and_tenant_selection_tests(self):
         for package, pattern in [
             ('iam', '^Test(BrowserLoginAndContextOptions|ContextSelectionServices|MFAService|MFASessionClosure|ContextSwitchService)AgainstPostgres$'),

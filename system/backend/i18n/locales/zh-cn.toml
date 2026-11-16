@@ -511,6 +511,11 @@ other = "仅 Meta 服务核验集中 PG basic 计划、当前引擎与有效执�
 [system.cleanup.manager_scope_required]
 other = "执行 Meta 清理前，请显式选择 Meta 和 Manager 重新评估。"
 
+[roles.tenant.engine_management_reader.name]
+other = "引擎管理只读"
+[roles.tenant.engine_management_reader.description]
+other = "读取当前租户引擎管理的脱敏详情；不授予业务数据内容访问、引擎写入或授权管理。"
+
 [roles.tenant.engine_lifecycle_operator.name]
 other = "引擎生命周期操作员"
 [roles.tenant.engine_lifecycle_operator.description]

@@ -2,6 +2,8 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import import_module
 import os
+import json
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,6 +18,12 @@ class NotebookObserverTest(unittest.TestCase):
     def setUp(self):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
+                if self.path == "/api/v1/system/auth/context":
+                    self.server.identity_reads += 1
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(json.dumps(self.server.identity).encode())
+                    return
                 cookie = self.headers.get("Cookie", "")
                 if self.path == "/open":
                     self.send_response(200)
@@ -34,6 +42,15 @@ class NotebookObserverTest(unittest.TestCase):
                 pass
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.identity_reads = 0
+        self.server.identity = {
+            "principal": {"type": "user"}, "context": {"type": "tenant", "tenant_id": "7"},
+            "token": {"type": "first_party_access_token"},
+            "authorization": {"role_assignments": [
+                {"role_key": "tenant.engine_management_reader", "permissions": ["system.engine.read"]},
+                {"role_key": "online.notebook", "permissions": sorted(scenario.PERMISSIONS - {"system.engine.read"})},
+            ]},
+        }
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.environment = patch.dict(os.environ, {"GATEWAY_URL": "http://127.0.0.1:" + str(self.server.server_port)})
@@ -41,6 +58,21 @@ class NotebookObserverTest(unittest.TestCase):
         self.addCleanup(self.environment.stop)
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
+
+    def test_exact_permissions_are_checked_from_one_auth_context_request(self):
+        identity = scenario.validate_notebook_identity("ordinary-user", 7)
+        self.assertIn("tenant.engine_management_reader", identity["roles"])
+        self.assertEqual(self.server.identity_reads, 1)
+
+    def test_extra_permission_cannot_pass(self):
+        self.server.identity["authorization"]["role_assignments"][1]["permissions"].append("system.engine.create")
+        with self.assertRaises(scenario.api.SuiteError):
+            scenario.validate_notebook_identity("extra-permission", 7)
+
+    def test_unpublished_role_cannot_replace_builtin_reader(self):
+        self.server.identity["authorization"]["role_assignments"][0]["role_key"] = "online.unpublished_reader"
+        with self.assertRaises(scenario.api.SuiteError):
+            scenario.validate_notebook_identity("wrong-role", 7)
 
     def test_cookie_scope_and_binary_bytes_are_preserved(self):
         client = scenario.Client("ordinary-user")
@@ -86,13 +118,33 @@ class NotebookFixtureCompileTest(unittest.TestCase):
             subprocess.run(["git", "clone", "--shared", "--no-checkout", str(root), str(checkout)], check=True, capture_output=True)
             subprocess.run(["git", "checkout", "--detach", "HEAD"], cwd=checkout, check=True, capture_output=True)
             subprocess.run(["git", "apply", "--unidiff-zero", str(root / "scripts/test/develop-notebook-identity.patch")], cwd=checkout, check=True, capture_output=True)
+            # Check the current owned catalog before publication, too.
+            shutil.copyfile(root / "system/authorization/builtin_roles.yaml", checkout / "system/authorization/builtin_roles.yaml")
             test_file = checkout / "system/backend/cmd/online-test-fixture/notebook_storage_fixture_test.go"
             test_file.write_text('''package main
-import ("testing"; "reflect")
+import ("testing"; "reflect"; "path/filepath"; "slices"; "github.com/addp/common/authorization")
 func TestNotebookStoragePermissionBoundary(t *testing.T) {
     got, err := suitePermissions("develop-notebook-storage")
-    expected := []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read", "system.engine.read"}
+    expected := []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read"}
     if err != nil || !reflect.DeepEqual(got,expected) { t.Fatalf("unexpected ordinary-user permissions: %v %v",got,err) }
+    catalog, err := authorization.LoadRepositoryAuthorizationCatalog(filepath.Clean("../../../.."))
+    if err != nil { t.Fatal(err) }
+    for _, key := range got {
+        found := false
+        for _, permission := range catalog.Permissions {
+            if permission.Key == key { found = permission.Status == "active" && permission.TenantCustomizable && slices.Contains(permission.AllowedScopeTypes,"tenant") }
+        }
+        if !found { t.Fatalf("custom permission cannot be assigned: %s",key) }
+    }
+    found := false
+    for _, role := range catalog.Roles {
+        if role.Key != "tenant.engine_management_reader" { continue }
+        found = role.RoleType == "tenant_builtin" && slices.Equal(role.Permissions,[]string{"system.engine.read"}) && slices.Equal(role.AllowedScopeTypes,[]string{"tenant"}) && slices.Equal(role.AllowedPrincipalTypes,[]string{"user"})
+    }
+    if !found { t.Fatal("published minimum Tenant User reader missing") }
+    for _, permission := range catalog.Permissions {
+        if permission.Key == "system.engine.read" && permission.TenantCustomizable { t.Fatal("engine management read became customizable") }
+    }
     if len(suiteSourceInitializerPermissions("develop-notebook-storage")) != 0 { t.Fatal("Notebook fixture expanded source initializer permissions") }
 }
 ''')

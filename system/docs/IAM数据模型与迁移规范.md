@@ -486,3 +486,5 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 `000211` 专项验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test resource-alert-rules"`，覆盖新键作用域/绑定、其他目录与身份不变、授权版本、刷新撤销、重复执行及完整迁移 Runner。
 
 引擎生命周期操作员发布：`000255_engine_lifecycle_operator` 仅发布 Tenant Scope／User 的四权限内置角色 `tenant.engine_lifecycle_operator` 及产品权限绑定，不创建 Role Assignment，不改变 Permission 可自定义标记或既有主体授权。原生 Cleanup 临时 User 通过正式分配组合该模板和原有两项专业结果读取，保持精确六项。验证沿 `make test-authorization` 与 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package online-fixture"`，新 PostgreSQL 测试由既有 `AgainstPostgres` 自动发现承接。
+
+引擎管理只读发布：`000299_engine_management_reader` 仅追加 Tenant Scope／User 的单权限内置角色 `tenant.engine_management_reader`，唯一产品绑定为 `system.engine.read`。不创建 Assignment、Grant 或委托，不修改既有身份、会话、角色和 Permission 可定制性。`make test-authorization`、`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test engine-management-reader"` 与 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package online-fixture --test engine-management-reader"` 验证前向发布、零默认分配、精确组合及正式分配边界；新增 `AgainstPostgres` 测试由现有入口自动发现。

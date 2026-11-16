@@ -142,6 +142,8 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 引擎生命周期操作员（`tenant.engine_lifecycle_operator`）只允许 Tenant Scope 的 User，精确组合 `system.engine.create`、`system.engine.read`、`system.engine.delete` 和 `system.cleanup.read`。模板不默认分配账号，不新增 Permission 或资源实例 ACL，不改变上述 Permission 的不可租户自定义边界；通用 Cleanup execute、Engine update／execute、源数据访问及授权管理仍不在角色中。原生 Cleanup 验收的临时 Engine User 显式组合该模板与两项可自定义的专业结果读取权限，最终并集保持原批准六项；角色分配、会话及审计继续走 System 正式主路径。
 
+引擎管理只读（`tenant.engine_management_reader`）仅允许 Tenant Scope 的 User，精确包含 `system.engine.read`，可读取引擎管理脱敏详情。它不等同于业务目录读取 `system.engine_catalog.read`，不授予业务数据内容访问、引擎写入／执行或授权管理。模板不自动分配账号，不创建 Grant 或委托，保持该 Permission 不可租户自定义；需要时通过正式 Role Assignment 显式组合。Notebook 验收 User 将它与原五项可定制权限组合，实际 AuthContext 权限并集必须精确等于批准的六项，分配完成后才签发会话。
+
 Tenant 自定义 Role：
 
 角色标识 `role_key` 使用两段式 `<namespace>.<name>`，精确格式为 `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`；每段以小写英文字母开头，后续只允许小写英文字母、数字和下划线。创建时去除首尾空白，例如 `custom.ontology_manager`；`custom` 是示例命名空间，不是强制前缀。前端必须展示格式说明并在提交前校验；后端独立校验，不合规则返回 HTTP 400、稳定错误码 `role_key_invalid` 和对应语言的明确格式提示，不暴露内部错误详情。

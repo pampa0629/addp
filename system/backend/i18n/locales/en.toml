@@ -511,6 +511,11 @@ other = "Allow only the Meta runtime to verify a centralized PG basic plan, curr
 [system.cleanup.manager_scope_required]
 other = "Meta cleanup requires a new assessment explicitly including both Meta and Manager."
 
+[roles.tenant.engine_management_reader.name]
+other = "Engine management reader"
+[roles.tenant.engine_management_reader.description]
+other = "Read redacted engine management details in the current tenant; grants no business data access, engine writes or authorization management."
+
 [roles.tenant.engine_lifecycle_operator.name]
 other = "Engine lifecycle operator"
 [roles.tenant.engine_lifecycle_operator.description]
