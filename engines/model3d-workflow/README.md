@@ -92,6 +92,8 @@ vcpkg baseline 保持上游固定版本。tinygltf `2.9.7` 通过其 overlay por
 
 Linux 产品只链接和打包 Release 库。Converter 在固定 vcpkg 的 `x64-linux` 与 `arm64-linux` triplet 中显式设置 `VCPKG_BUILD_TYPE=release`，避免默认额外编译未使用的 Debug ports；保留原架构、静态链接、全部依赖版本和转换 smoke。此设置采用 [vcpkg 官方 triplet 契约](https://learn.microsoft.com/en-us/vcpkg/users/triplets#vcpkg_build_type)，不改变 macOS 原生工具包准备方式。`make test-dev-lifecycle` 执行实际 Dockerfile 配置片段并用 CMake 核对两种架构、链接策略和缺失 triplet 拒绝；完整新 Linux 镜像及 smoke 仍由已有 Product binary build 验证，不能以确定性测试代替，也不保证一次冷构建必然落在 Hosted 预算内。
 
+Linux vcpkg 资产下载与 macOS 原生准备共用 `native_setup.py fetch-asset`，通过 vcpkg 的 asset source script 接口调用并阻止 origin 回退。下载器校验原 SHA-512／SHA-256；TLS 断连、连接错误和超时最多尝试三次，间隔 1、2 秒并记录传输重试；证书校验错误、HTTP 错误及内容 hash 不符立即失败。Linux 构建缓存 vcpkg 下载目录，复用时仍按原内容 hash 校验；缓存不改变依赖版本、目标架构或 smoke 门禁。
+
 固定 vcpkg baseline 中，libgta 1.0.8 仍指向已在部署节点连续超时的 Savannah 下载地址。同一 overlay 目录中的 libgta port 将下载源固定为[作者当前官方发布站点](https://marlam.de/gta/download/)的 `https://marlam.de/gta/releases/libgta-1.0.8.tar.xz`；保留 baseline 的版本、port-version、依赖、文件名、原 SHA-512 和构建选项，不增加备用下载分支。不能原地改写 baseline 工作目录：manifest 版本解析会从 Git 版本库取得 port，忽略该改写。官方归档为 315332 字节，已核验与原 SHA-512 一致。该 overlay 由 Linux Converter 和 macOS 原生准备入口共用，并纳入原生工具包指纹；后续准备生成新的指纹目录，仍可复用已校验的二进制缓存，不修改活动工具包。`make test-dev-lifecycle` 执行实际 overlay port 并核对下载参数；正式 Linux 镜像构建与 smoke 另行验证。
 
 标准构建入口按宿主机 CPU 选择 `linux/amd64` 或 `linux/arm64`，一次仅构建一个平台；内部构建脚本通过 `MODEL3D_DOCKER_PLATFORM` 接收选定目标，其他架构明确拒绝。GitHub Hosted Ubuntu x86_64 使用 amd64，不通过 QEMU 运行 arm64 转换器。IfcConvert 固定同一上游版本并按 Docker 目标架构下载官方二进制；两个架构共用一个 Dockerfile 和 Linux 构建 patch。

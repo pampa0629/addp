@@ -1,21 +1,85 @@
 """Verify target selection and converter smoke checks without changing Docker state."""
 import os
 import hashlib
+import importlib.util
+import io
 import json
 import re
 import shlex
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
+class Model3DAssetDownloadTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location('model3d_asset_download_contract', ROOT / 'engines/model3d-workflow/native_setup.py')
+        cls.native = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.native)
+
+    def test_transport_errors_retry_then_reuse_verified_cache(self):
+        payload = b'checksum-pinned model3d asset'
+        asset = {'url': 'https://assets.invalid/pinned.tar.xz', 'sha512': hashlib.sha512(payload).hexdigest()}
+        reset = urllib.error.URLError(ssl.SSLEOFError(8, 'unexpected EOF'))
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.native.urllib.request, 'urlopen', side_effect=[reset, reset, io.BytesIO(payload)]) as opened, \
+             patch('time.sleep') as sleep, patch('sys.stderr', new_callable=io.StringIO):
+            downloaded = self.native.download(asset, Path(directory))
+            self.assertEqual(downloaded.read_bytes(), payload)
+            self.assertEqual(self.native.download(asset, Path(directory)), downloaded)
+            self.assertEqual(opened.call_count, 3)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
+
+    def test_integrity_http_and_certificate_failures_do_not_retry(self):
+        asset = {'url': 'https://assets.invalid/pinned.tar.xz', 'sha256': hashlib.sha256(b'expected').hexdigest()}
+        cases = [urllib.error.HTTPError(asset['url'], 404, 'missing', {}, None),
+                 urllib.error.URLError(FileNotFoundError('missing local asset')),
+                 urllib.error.URLError(ssl.SSLCertVerificationError(1, 'untrusted certificate')),
+                 ssl.SSLCertVerificationError(1, 'untrusted certificate'), io.BytesIO(b'wrong bytes')]
+        for response in cases:
+            if isinstance(response, urllib.error.HTTPError):
+                self.addCleanup(response.close)
+            with self.subTest(response=type(response).__name__), tempfile.TemporaryDirectory() as directory, \
+                 patch.object(self.native.urllib.request, 'urlopen', side_effect=[response]) as opened, \
+                 patch('time.sleep') as sleep:
+                with self.assertRaises((urllib.error.URLError, ssl.SSLCertVerificationError, RuntimeError)):
+                    self.native.download(asset, Path(directory))
+                self.assertEqual(opened.call_count, 1)
+                sleep.assert_not_called()
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_transport_retry_is_bounded_and_does_not_publish_partial_bytes(self):
+        asset = {'url': 'https://assets.invalid/pinned.tar.xz', 'sha256': '0' * 64}
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.native.urllib.request, 'urlopen', side_effect=urllib.error.URLError(ConnectionResetError())) as opened, \
+             patch('time.sleep') as sleep, patch('sys.stderr', new_callable=io.StringIO):
+            with self.assertRaises(urllib.error.URLError):
+                self.native.download(asset, Path(directory))
+            self.assertEqual(opened.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_linux_vcpkg_uses_shared_verified_downloader_and_cache(self):
+        source = (ROOT / 'engines/model3d-workflow/docker/converter/Dockerfile').read_text()
+        copy = 'COPY engines/model3d-workflow/native-assets.json engines/model3d-workflow/native_setup.py /tmp/addp-model3d/'
+        self.assertEqual(source.count(copy), 1)
+        self.assertLess(source.index(copy), source.index('cargo build --locked --release'))
+        self.assertIn('ENV X_VCPKG_ASSET_SOURCES=', source)
+        self.assertIn('fetch-asset "{url}" {sha512} "{dst}";x-block-origin', source)
+        self.assertIn('--mount=type=cache,target=/opt/vcpkg/downloads', source)
+
     def test_libgta_overlay_preserves_version_dependencies_and_verified_archive(self):
         converter = ROOT / 'engines/model3d-workflow/docker/converter'
         port = converter / 'vcpkg-overlays/libgta'

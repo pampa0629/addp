@@ -8,9 +8,12 @@ import json
 import os
 import platform
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -86,8 +89,21 @@ def download(asset, cache):
     pending = Path(filename)
     try:
         request = urllib.request.Request(asset["url"], headers={"User-Agent": "Mozilla/5.0 ADDP-Model3D"})
-        with urllib.request.urlopen(request, timeout=120) as response, pending.open("wb") as stream:
-            shutil.copyfileobj(response, stream)
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=120) as response, pending.open("wb") as stream:
+                    shutil.copyfileobj(response, stream)
+                break
+            except (urllib.error.URLError, ssl.SSLError, ConnectionError, TimeoutError) as error:
+                cause = error.reason if isinstance(error, urllib.error.URLError) else error
+                if (isinstance(error, urllib.error.HTTPError)
+                        or isinstance(cause, ssl.SSLCertVerificationError)
+                        or not isinstance(cause, (ssl.SSLError, ConnectionError, TimeoutError))):
+                    raise
+                if attempt == 2:
+                    raise
+                print(f"Model3D asset transport attempt {attempt + 1}/3 failed ({type(error).__name__}); retrying", file=sys.stderr)
+                time.sleep(attempt + 1)
         if digest(pending, algorithm) != expected:
             raise RuntimeError("download checksum mismatch: " + asset["url"])
         pending.replace(target)
