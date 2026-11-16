@@ -13,7 +13,7 @@
 
 ## Graph/Cleanup 执行管理最小验证矩阵
 
-状态：2026-10-29五项设计、正式契约／矩阵及父关闭／子领取与未领取拒绝细则均已获用户确认；安全展示及读取顺序／视图变化与Graph领域边界细则、C5j—C5m均已确认。牵头会话统一实施与相关门禁；当前矩阵已有实现与部分测试；新增定位列只认定源码和入口，不代表全部条件或当前HEAD的CI已通过，新Hosted单独确认。以下是最小必需断言及拟复用标准入口，不是既有通过清单，不替代实际验证结果。执行规则分别以[Graph构建任务](../tasks/模块任务契约.md#graph-构建任务)、[公共lease](../tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[Cleanup持久协议](../addp-cleanup体系规范.md#持久队列与完成回执)为唯一事实源，不在测试文档复制状态机。
+下表定义最小必需断言，定位列只说明已接线的实现、测试及缺口，不是当前 HEAD 或 Hosted 通过清单。执行规则分别以[Graph 构建任务](../tasks/模块任务契约.md#graph-构建任务)、[公共 lease](../tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[Cleanup 持久协议](../addp-cleanup体系规范.md#持久队列与完成回执)为准。
 
 | 编号 | 最小场景及判定 | 层级／主责 | 标准入口与边界 | 源码定位／待补项（2026-11-14复核，不等于当前HEAD全部通过） |
 | --- | --- | --- | --- | --- |
@@ -75,9 +75,9 @@ C5a—C5m的公共投影、读取和共享组件已接线；现有用例仅覆�
 | C5l | closed pending→Owner拒绝整体替换；撤去P读取权时原父详情404须清空且不自动补查C，独立合法C请求只给C说明；同C出现running／attempt>0等矛盾时移除旧标签、保留真实状态并记录完整性诊断；迟到旧请求不复活标签，父截止结论不变 | Common纯投影T1、System／Monitor授权T1与页面T3；并发事实用PG T2 | 页面有请求代际／清空逻辑，Monitor PG含父隐藏；System已有非法attempt清旧标签与迟到专业响应反例。合法closed pending→Owner拒绝、父404不自动补查C及独立子说明、running矛盾和两消费者迟到组合仍待专用T3，不能借通用execution拒绝测试关闭本项。 |
 | C5m | Graph未领取Cleanup拒绝不改G、构建／审核或操作证据；System／Monitor标签不推导远端停止、已核清、业务图为空或可重新开放，不产生写动作／额外权限或私表读取 | Graph Owner T1／PG T2，System／Monitor响应及共享前端T3 | Graph parent_closed四模式含PG，组件只解释不写；真实服务／页面组合T4未证。 |
 
-2026-11-14 对账：已完成项、固定源码Linux结果及逐项剩余清单以[专题第六节](../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)为当前索引；G2／G3／G8／G9、已列C2／C3／C4子场景不重复开发。新的最近执行／同次回跳真实验收补充仅为[待确认方案](../../next/ADDP任务执行管理统一收口专题.md#九最近执行与同次回跳的真实验收补充方案待确认未实施运行)，不改本表的Cleanup安全契约，也不计真实证据。
+已完成项、固定版本 Linux 结果及剩余工作见[专题第六节](../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)，不重复开发已列场景。[最近执行与同次回跳](../../next/ADDP任务执行管理统一收口专题.md#91-目标与既有覆盖)的实施与真实验收另行记录，不改变本表安全契约，也不能用 runner／Linux 通过代替实跑。
 
-职责以角色划分，不因本表派发或授予实现权：统一主责维护Common公共原语与整体迁移，Graph维护私有监督器／准入／操作证据，System维护闭合请求及父子创建／汇总，Ontology继续独占修订发布，Monitor只核安全读取，Make／CI／选择／登记由统一CI负责人单一整合。本文与正式契约已由Graph文档会话交接并经用户确认；统一主责接管契约及实施，未取得的新接口／权限决定仍须用户确认。
+职责归属：Common 维护公共原语，Graph 维护私有监督器、准入与操作证据，System 维护闭合请求及父子汇总，Ontology 独占修订发布，Monitor 负责安全读取，统一 CI 主责整合 Make／选择／登记。本文不授予实施或运行权限；新增接口、权限或验收范围仍须另行确认。
 
 入口现状：Common的Graph PG分组已运行repository的 `^TestIntegrationPostgresGraph` 及 service 的 `^TestIntegrationPostgresGraph(BuildInputRuntime|CleanupRuntime)$`，两个 service 主用例均须明确 PASS，所有分组拒绝 skip；后续新增函数或包仍须核对筛选与清理校验，不能仅凭文件位置推定覆盖。两个原生图引擎T2沿现有Common入口扩真实副作用／结果不确定断言；它们不证明Backend跨实例取消或Hosted故障恢复。System Cleanup现有入口以PG为必需依赖，不复制IAM的Redis连接探针，不为已经删除的协调路线保留第二套测试事实。
 
