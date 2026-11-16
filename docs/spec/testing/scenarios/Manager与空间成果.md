@@ -110,52 +110,49 @@ NC4外部/复杂组成拒绝由GeoPython原生T1及Linux产品构建验证分别
 
 ### 明确的验收 case
 
-2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；2026-10-26 按用户确认的读取范围扩展 Surfer 7 GRD；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
-
-栅格媒体子场景由独立夹具初始化用户向普通消费用户签发一次本轮 MinIO 的 `raster` 前缀非递归读取授权，只覆盖该前缀直接子项，场景结束即撤回；不修改角色或扩大到整个存储引擎。Meta 只核对目录身份、格式、内容布局和已声明 CRS；尺寸、波段、范围等内容事实由同一普通账号经 Manager 授权预览取回，并与物理夹具交叉核对。
-
-唯一选择参数为 `ADDP_ONLINE_MANAGER_CASE`，可选值见下表，与 Hosted gate、workflow 的 `manager_case` 及业务分发器登记对应。未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。
+本 suite 的唯一选择参数为 `ADDP_ONLINE_MANAGER_CASE`，未提供时选 `full`；空值或未知值在任何 Hosted 生命周期动作前拒绝。下表与 gate、workflow 的 `manager_case` 和业务分发器对应，各 case 的身份、权限及清理分别按所链正文，不套用 `full` 的十项权限。
 
 | case | 业务覆盖与正文入口 |
 | --- | --- |
-| `full` | 原完整模型、授权、点云、文档及其他既有断言；[部署、模型转换与通用清理](#部署模型转换与通用清理)。 |
-| `native-raster-media` | 本节下述 IMG／JPEG2000、[Surfer GRD](#surfer-grd-读取)及 [TIFF 无定位小图](#tiff-无定位小图的-cog-布局回归)；不执行模型、点云、文档或结构化数据业务。 |
-| `native-table-orc` | [ORC 单文件表格](#orc-单文件表格-hosted)：NFS／MinIO 预览、页面与原件、Transfer→Parquet；嵌套只读范围与批量传输范围分别判定。 |
-| `native-table-avro` | [Avro 单文件表格](#avro-单文件表格读取)：三种 codec、基础标量、日期／定点小数及UTC时间戳、嵌套与Enum只读／批量拒绝、分页／原件契约；平面单文件保留跨批 Transfer→Parquet，嵌套单独验证只读边界。 |
-| `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六份源的分页与 Transfer→Parquet，MinIO 原件下载与 NFS 下载拒绝分别核对；Grant、六任务及物理源／成果分别清理。 |
-| `delimited-read-settings` | [CSV／TSV GB18030 读取设置](#csvtsv-gb18030-独立读取设置-case)：NFS／MinIO 编码、表头切换、分页、重开及原件；撤销 Grant 并清理精确源，不创建派生产物，不替代 Transfer T4。 |
-| `native-netcdf` | [NetCDF 单文件只读](#netcdf-单文件只读)：变量／切片、页面与原件；无任务或业务产物，不伪造缓存及任务删除证明。 |
-| `native-grib` | [GRIB2 单文件只读](#grib2-单文件只读)：逐消息数值、切片、页面与原件；不生成地图、任务或缓存成果。 |
-| `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)：完整组成与节点授权、COG／原件、撤权恢复、页面及领域／物理清理。 |
-| `kml-export` | [KML 页面导出](#kml-实际页面导出)：隔离 PostGIS 源、真实按钮下载与独立 XML 核对；会话生命周期与部署清理分别判定。 |
-| `filegdb-export` | [PostGIS→FileGDB 页面导出](#filegdb-实际页面导出)：完整 ZIP 回读、跨账号拒绝及排队撤权；不代替 NFS FileGDB 读授权。 |
-| `filegdb-mysql-export` | [MySQL→FileGDB 页面导出](#mysql-filegdb-实际页面导出)：独占 MySQL 夹具、页面／回读与排队撤权，来源及清理独立于 PostGIS。 |
-| `filegdb-authorization` | [NFS FileGDB 整容器授权](授权与共享.md#nfs-filegdb-整容器授权2026-10-29-接入范围)：整项 Grant、子表与 ZIP、跨账号／撤权／到期及故障恢复，保留 NFS 挂载和临时包清理要求。 |
-| `nfs-upload-initial` | [NFS 上传新项初始授权](授权与共享.md#nfs-上传新项初始授权)：仅该 case 使用自有可写目录；验证新项授权、覆盖不增权、回执重放与部分失败，失败也收权并清理文件，不扩展追加能力。 |
+| `full` | 完整模型、授权、点云、文档等既有断言；[部署、模型转换与通用清理](#部署模型转换与通用清理)。 |
+| `native-raster-media` | [IMG／JPEG2000](#img-原生扫描与-cog-快显)、[Surfer GRD](#surfer-grd-读取)、[TIFF 无定位小图](#tiff-无定位小图的-cog-布局回归)；不执行模型、点云、文档、结构化数据业务。 |
+| `native-table-orc` | [ORC](#orc-单文件表格-hosted)：嵌套只读与平坦字段 Transfer→Parquet 分别判定。 |
+| `native-table-avro` | [Avro](#avro-单文件表格读取)：三 codec、标量／日期／小数／UTC、嵌套／Enum／Map；仅平面批量写 Parquet。 |
+| `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六源分页／Transfer→Parquet及各自原件准入。 |
+| `delimited-read-settings` | [CSV／TSV GB18030](#csvtsv-gb18030-独立读取设置-case)：编码、表头、分页、重开及原件，无派生产物，不替代 Transfer T4。 |
+| `native-netcdf` | [NetCDF](#netcdf-单文件只读)：变量／切片、页面及原件，无任务／持久缓存。 |
+| `native-grib` | [GRIB2](#grib2-单文件只读)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果。 |
+| `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)：精确组成、节点授权、原件／COG／缓存与撤权恢复。 |
+| `kml-export` | [KML 页面导出](#kml-实际页面导出)：PostGIS 源、真实按钮下载与独立 XML 核对。 |
+| `filegdb-export` | [PostGIS→FileGDB](#filegdb-实际页面导出)：ZIP 回读、跨账号拒绝与排队撤权，独立于 NFS FileGDB 读授权。 |
+| `filegdb-mysql-export` | [MySQL→FileGDB](#mysql-filegdb-实际页面导出)：独占 MySQL 源与独立清理，页面及撤权按专节。 |
+| `filegdb-authorization` | [NFS FileGDB 整容器授权](授权与共享.md#nfs-filegdb-整容器授权2026-10-29-接入范围)：整项 Grant、子表／ZIP、跨账号／撤权／到期、故障恢复及挂载／临时包清理。 |
+| `nfs-upload-initial` | [NFS 上传新项初始授权](授权与共享.md#nfs-上传新项初始授权)：仅此 case 使用自有可写目录；新项授权、覆盖不增权、重放／部分失败及失败收尾，不扩展追加。 |
 
-各 case 的精确身份、权限、源／成果、失败处理和清理证明以所链专题为准，不统一套用 `full` 的十项权限或模型清理条款。选择清单仅说明当前接线，不表示这些 case 已通过 Hosted；固定版本证据、首败、未覆盖项及业务与部署清理结果继续分别核对。
+标准入口示例：`ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。人工 Hosted 必须指定同名 `suite`、`manager_case` 和 `manager_source_commit`：后者为完整40位小写 SHA，检出前拒绝空值、短 SHA、分支名或非法格式；检出后核 HEAD 精确相等且为 dispatch 提交祖先（含自身），才准备工具／部署，不回退 main。日志分别记录源码与 dispatch SHA；应用、Runtime、夹具、断言均来自所选源码，其他 suite 不消费该参数。无此参数的历史 workflow 不替代固定源码入口。
 
-人工 Hosted 的 Manager Job 必须显式提供 `manager_source_commit`，使用完整40位小写 SHA；空值、分支名、短 SHA 和非法格式在检出前拒绝。该参数只控制 Manager Job 的源码检出，其他 suite 不消费它。检出后核对实际 HEAD 等于所选 SHA，且该提交必须为本次 workflow dispatch 提交的祖先（含自身），随后才准备工具和部署；不回退到当前 main。日志分别记录源码与 dispatch 的完整 SHA，应用、Runtime、夹具和业务断言均来自所选源码。沿既有手工 workflow 传入 `suite=manager-internal-artifact-lineage`、明确 `manager_case` 和 `manager_source_commit`；权限、服务、预算及清理契约不变。没有该参数的历史 workflow 版本不能替代固定源码入口。
+Job、Artifact、`manager-case.json` 均须含所选 case；独立通过不算 full。case 路由、默认值、拒绝、失败收尾及归档由 `make test-manager-online-runner`、既有 CI 登记检查覆盖，不新增入口、suite、服务、权限或定时。
 
-`native-raster-media` 执行既有 IMG/JPEG2000、Surfer GRD 只读及 TIFF 无定位小图 COG 布局子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。四个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
-
-case 路由、默认完整场景保留、未知值只读拒绝、子场景失败与清理、case 归档及 workflow 接线由现有 `make test-manager-online-runner` 及 CI 登记检查覆盖；不新增长期脚本或根 Makefile 入口。
+`native-raster-media` 根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，须含 case、`source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四子报告及真实失败状态；任一子场景失败即失败，`online-report.json` 由统一分发器生成。未执行业务不计通过；full 仍须独立验证，可能受新模型源授权正向断言阻断，不用旧源码或放宽授权绕过。
 
 ### 文件读取 case 的公共准备与收尾
 
-仅适用于下表文件读取 case；`full`、导出、上传及独立持久化 suite 仍按各自正文。部署引用[组件分工](#部署模型转换与通用清理)，身份／拓扑准入及外层清理引用[T4 规范](../T4-Online验收规范.md)；不重复维护启动步骤。
+本节文件读取 case 共用以下要求；`full`、导出／上传与独立持久化按各自正文。部署见[组件分工](#部署模型转换与通用清理)，身份／拓扑与外层清理见[T4 规范](../T4-Online验收规范.md)。
 
-- **授权与交付**：精确 metadata_read 只证明元数据可见，内容仍走各节既定许可；来源准备与消费身份分离，浏览器不携带办理凭据。结构、受控内容、API／按钮下载及物理 oracle 分别取证，以下来源和权限差异不得合并。
-- **失败与收尾**：只清本轮已知精确资源，按专节顺序核 Grant／任务／成果及物理源；源仍在时先验撤权／到期，再删源。外层部署零残留不代替业务清理或完整交付；无任务／成果者不造删除或缓存证明。首败与清理错误分列，清理失败不得通过。
-- **分层结果**：既有 `make test-manager-online-runner`、`make test-online-runner` 核接线，各节 Native／T1–T3／真实 Hosted 分别认定；独立 case 不算 full，修复／清理不改变旧失败。固定版本及缺口查[证据专题](../evidence/资源读取与预览历史证据.md)，不外推当前源码、全量 CI 或容量。
+- **来源与授权**：初始化和消费身份分离，浏览器不带办理凭据。精确 `metadata_read` 仅证明元数据可见；内容按各 case 的既定许可读取，不因受阻而扩权。公开 Meta 核身份、格式、布局、已声明 CRS；尺寸、波段、范围等内容事实由同一普通 User 经 Manager 授权预览取回，与物理夹具交叉核验并分开归档。
+- **交付**：API、真实页面按钮与独立物理 oracle 分别取证，完整字节／大小／SHA-256 不以截图或 API 成功代替。源字节及Meta保持／变更恢复按各节断言，不以显式刷新或源变化测试推定其他修改获准。无定位不推导 CRS，各格式页面行为按专节。
+- **收尾**：只清本轮已知精确资源；源尚在时先核撤权／到期，再删源。逐项核 Grant、任务、成果与物理删除，外层部署／Infra零残留不代替业务清理；无任务／成果者不造删除或缓存证明。执行未终结／归属未确认不报零残留，逻辑任务删除不证明历史执行已物理清除。首败与清理错误分列，清理失败不计通过。
+- **验证**：`make test-manager-online-runner`、`make test-online-runner` 核接线；原生媒体夹具经 `make test-geopython-workflow` 自动发现，其他 Native／T1–T3 按 owner 标准入口。固定结果见[资源读取证据](../evidence/资源读取与预览历史证据.md)。本地反例／修复、部署成功、部分 CI 或清理不替代真实 Hosted，不外推当前源码、容量或 full。报告／异常／下载证据不泄漏凭据。
 
-| case | 身份与独有收尾／交付边界 |
+| case | 身份、来源与独有交付／收尾 |
 | --- | --- |
-| `native-netcdf`／`native-grib` | 消费六项，列表见[NetCDF](#netcdf-来源与权限)；分别十四／四份精确 metadata Grant，未迁移内容源 Grant；无任务／持久缓存。 |
-| `native-table-orc`／`native-table-avro`／`native-table-feather` | 消费十一项，列表见[ORC](#orc-入口与权限)，Avro／Feather 来源准备十三项；各自保留真实 Transfer 与只读拒绝范围。Avro／Feather：NFS 原件403、无附件／按钮，MinIO 核 API／按钮完整字节；ORC 下载按自身正文。 |
-| `delimited-read-settings` | 消费十项／来源准备十三项；Common Go reader，初始化 basic 扫描及精确 Grant，无派生产物。 |
-| `native-raster-media` | 消费十项，GRD 无产物；[TIFF](#tiff-无定位小图的-cog-布局回归)另核初始化扫描权限、整项 read、到期和 sidecar，不套 IMG／JP2 无定位规则。 |
-| `native-envi` | 消费十项／来源准备十三项；NFS 扫描／变更重扫归初始化身份，MinIO 归消费者。节点与精确组成、ZIP／COG／缓存撤权恢复和残留各按专节。 |
+| `native-netcdf`／`native-grib` | 消费六项见[NetCDF](#netcdf-来源与权限)；十四／四份精确 metadata Grant，未迁移内容源 Grant；无任务／持久缓存。 |
+| `native-table-orc`／`native-table-avro`／`native-table-feather` | 消费十一项见[ORC](#orc-入口与权限)；Avro／Feather 准备十三项、源扫描归初始化用户。各保留 Transfer／只读拒绝；Avro／Feather NFS 原件403 JSON、无附件／按钮，MinIO核 API／按钮完整原件；ORC按自身正文。 |
+| `delimited-read-settings` | 消费十项／准备十三项；Common Go reader、初始化 basic 扫描与精确 Grant，无派生产物。 |
+| `native-raster-media` | 消费十项；初始化用户仅签本轮 MinIO `raster` 前缀非递归读取，限直属项、退出撤回，不改角色／引擎范围。GRD无产物；TIFF另按专节核初始化扫描权限、整项read、到期及sidecar。 |
+| `native-envi` | 消费十项／准备十三项；NFS扫描／变更重扫归初始化，MinIO归消费者，节点与精确组成阶段分离。 |
+
+导出 case 共用真实 Console 入口、独立回读、源前后内容／结构不变及独占源清理。会话按既有保留／生命周期管理，不新增删除 API，不把部署销毁算会话 DELETE／缓存验收；`result=failed / cleanup=passed`仍是业务失败，业务夹具 `cleanup=failed`不能由Infra清理替代。各自授权及回归范围保留如下。
 
 ### Surfer GRD 读取
 
@@ -163,59 +160,49 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 #### GRD 格式准入
 
-按内容认领 `DSRB` 的 Surfer 7 二进制 `.grd`（版本 1/2、单波段 Float64、零旋转、完整单 GRID/DATA）、`DSBB` 的 Surfer 6 Binary（单波段 Float32、完整头和全部节点）和 `DSAA` 的 Surfer 6 ASCII（五行头、完整 Float64 文本数值）。三种主体均不超过 64 MiB。拒绝其他同后缀格式、非有限值、断层／尾随结构及当前 GDAL 无法等价表达的版本 1 范围缺失值；不读取旁文件，不据 XY 数值推导 CRS，不新增 GRD 导出。完整产品契约见[媒体与地图数据集](../../builtin-formats/媒体与地图数据集.md)。
+完整准入见[媒体与地图数据集](../../builtin-formats/媒体与地图数据集.md)的[GRD契约](../../builtin-formats/媒体与地图数据集.md#grd--surfer-数值网格)：仅认内容 `DSRB`（Surfer7 v1/v2）、`DSBB`（6 Binary）和`DSAA`（6 ASCII），三者主体≤64 MiB；单波段、完整GRID/DATA／头及全部节点，Surfer7零旋转。拒绝同后缀其他格式、非有限值、断层／尾随及GDAL无法等价表达的v1范围缺失值；不读旁文件、推导CRS或新增导出。
 
-Surfer 6 Binary 的 Native 回归须拒绝 GDAL 掩膜与精确 NoData 判定不等价的输入，不修改值或绕过原生读取。ASCII 另验证 LF、全缺失、跨读取块 token、无末尾换行，以及畸形／多余／截断／下溢拒绝；像元或原生 mask 不等价即拒绝，保留源字节。这些拒绝的 Native 证据不冒充 Hosted 已注入对应负例。
+Native另核Binary掩膜与精确NoData等价，ASCII的LF／全缺失／跨块token／无末尾换行及畸形／多余／截断／下溢拒绝；数值／mask不等价即拒绝，源字节不变。此类原生反例不算Hosted故障注入。
 
 #### GRD 四份样例
 
-沿 `native-raster-media` 十项普通 User 权限及原预算，按[公共准备](#文件读取-case-的公共准备与收尾)执行；不生成 GRD 产物。四份自建样例均为 5×3 非方形单波段、14 个有效节点及一个 NoData，不据 XY 外观推定 CRS：
+沿公共十项权限，四份均5×3、14有效节点＋1 NoData，无CRS：
 
 | 样例 | 类型与独有断言 |
 | --- | --- |
-| Surfer 7 v1 | `DSRB`／`GS7BG`／Float64，保留版本 1、经纬度外观 XY，仍无 CRS。 |
-| Surfer 7 v2 | `DSRB`／`GS7BG`／Float64，保留版本 2、投影外观 XY；大于 BlankValue 的数值仍须按有效值核对。 |
-| `grd-surfer6.grd` | `DSBB`／`GSBG`／Float32，原件 116 字节，含小数和大整数、精确固定 NoData；`profile=surfer6_binary`，不得伪造不存在的版本字段。 |
-| `grd-surfer6-ascii.grd` | `DSAA`／`GSAG`／Float64，五行头、CRLF、tab／空格及跨网格行列表，含高精度小数和 `2^53−1`、精确 Float64 NoData；`profile=surfer6_ascii`，无版本字段。 |
+| Surfer7 v1 | `DSRB/GS7BG/Float64`，经纬度外观仍无CRS，核版本1。 |
+| Surfer7 v2 | `DSRB/GS7BG/Float64`，投影外观仍无CRS；大于BlankValue仍为有效值，核版本2。 |
+| `grd-surfer6.grd` | `DSBB/GSBG/Float32`、116字节，小数／大整数与固定精确NoData；`profile=surfer6_binary`，无版本字段。 |
+| `grd-surfer6-ascii.grd` | `DSAA/GSAG/Float64`，五行头、CRLF、tab／空格、跨行列表、高精度及`2^53−1`、精确NoData；`profile=surfer6_ascii`，无版本字段。 |
 
-独立物理 oracle 逐份核完整原字节与 SHA-256、全部 15 个原类型数值、精确 NoData 与 mask、上下行顺序、节点原点／间距／形状／范围及半像元网格。Meta 不发布推断的空间能力；Manager 授权预览核对应驱动、单波段、Surfer 7 版本或 Surfer 6 无版本，以及节点网格事实。Float32 与 Float64 的 NoData 不混用，原类型和精度不变。
+独立oracle核全部15个原类型数值、NoData／mask、上下行序、节点原点／间距／形状／范围／半像元网格和完整原字节。Float32／64不混用；Manager核驱动、波段、版本／无版本及网格事实，Meta不发布推断空间能力。
 
 #### GRD 页面与原件
 
-真实 Console iframe 的属性页、预览页和原件按钮逐份核对元数据、下载大小／哈希及截图，无地图、无破图、无 COG 生成入口。ASCII 的五行头与精确文本数值由原件及独立物理 oracle 核对，不由页面截图代替。截图按其实际可见内容使用，不据无定位 fallback／下载截图宣称 GRD 地图或属性表全量已取证。
+Console iframe逐源核属性／预览／原件按钮、截图与完整下载；无地图、破图或COG入口。ASCII头与精确文本靠原件／oracle，fallback／下载截图不证明地图或全量属性表。
 
-页面就绪统一观察当前 locator 的 `GET /api/v1/manager/preview`，沿该真实请求的 Bearer 核对同一普通身份；GRD 没有快显 target，不能等待页面本不请求的 COG capability。
-
-现行页面报告使用 `addp.manager-raster-media-browser/v4`，逐源要求 `source_preview_verified=true`，旧 v2 不替代该页面证明。报告归档为 `manager-grd.json`、`manager-grd-browser.json`、四份原文件、各自 Meta 快照及截图；历史轮次的实际报告版本与样例数量按其固定记录使用。
+等待当前locator实际`GET /api/v1/manager/preview`，沿该请求Bearer核同一普通User，不等不存在的COG capability。页面报告`addp.manager-raster-media-browser/v4`逐源须有`source_preview_verified=true`，旧v2不替代。归档`manager-grd.json`、`manager-grd-browser.json`、四原件及各Meta快照／截图。
 
 #### GRD 清理与能力边界
 
-源字节／Meta 不变，精确源和外层清理沿[公共收尾](#文件读取-case-的公共准备与收尾)。无 GRD 任务、产物、缓存或快显；未知 CRS 不定位、不读旁文件，不认证地图或导出。
-
-同一 case 原有 IMG／JPEG2000 的四份 COG 仍完整核像元、Range、缓存重开、任务／成果／物理删除及清理。这些 COG 属于原媒体栅格回归，不作为 GRD 生成或缓存证明；旧 IMG／JPEG2000 报告也不替代新增 GRD 验收。
+按[公共收尾](#文件读取-case-的公共准备与收尾)删精确源；GRD无任务、产物、缓存或快显。原IMG／JPEG2000四COG仍须完整核像元、Range、缓存及领域／物理删除，不能当GRD生成证明。未知CRS不定位；其他GRD变体、任意ASCII编码、写出、旁文件、NFS／FTP专项及容量未验。
 
 #### GRD 分版本证据
 
-固定源码、实际 Job、原始产物、失败／取消、清理结果和未覆盖项在以下证据正文维护；两份、三份、四份 GRD 的结论分别使用，旧样例通过不追认后续格式扩展：
-
-| 阶段 | 固定记录与边界 |
+| 固定来源／实际Job | 结论及缺口（完整记录见链接） |
 | --- | --- |
-| Surfer 7 首轮失败 | [失败留证](../evidence/资源读取与预览历史证据.md#surfer-7-grd-读取首轮--hosted-失败留证)：`69623c8847c97fae0bb92d6b42fef281702fbd46`、Job `121439055657`。数值／API原件已核，等待不存在的COG capability超时；属性页、按钮及浏览器后Meta未验，整case失败。 |
-| Surfer 7 两份复验 | [固定复验](../evidence/资源读取与预览历史证据.md#surfer-7-grd-读取复验--普通-user-hosted-t4)：`7d8d738c1839c267c4259e2bd713d083110266e1`、Job `121493786622`。仅两份Surfer7及原媒体回归，不含Surfer6／NFS／FTP。 |
-| Surfer 6 Binary 三份 | [Binary 扩展证据](../evidence/资源读取与预览历史证据.md#surfer-6-binary-扩展及三份-grd-读取--普通-user-hosted-t4)：`48aae0a4dbf79131edffd143bedb3407d20bfd18`、Job `121589927858`。首个Native Job下载后测试未完即取消；后续同SHA结果独立认定。 |
-| Surfer 6 ASCII 四份 | [ASCII 扩展证据](../evidence/资源读取与预览历史证据.md#surfer-6-ascii-扩展及四份-grd-读取--普通-user-hosted-t4)：`ff9e2fb512507d5e4ff1a4b1983be38c142dadfe`、Job `121910269484`。四份GRD及原媒体回归；PROJ失败、重复subset主动停止、父Platform取消均保留，不认证整轮CI。 |
-
-Hosted 限于受验的有界单文件读取与原件下载；近 NoData 误掩膜、畸形／截断／尾随／下溢等拒绝分别按 Native 记录使用，不认证任意 ASCII 编码、其他 GRD 变体、写出、旁文件定位、NFS／FTP 专项或容量。
+| `69623c8847c97fae0bb92d6b42fef281702fbd46`／`121439055657` | [首败](../evidence/资源读取与预览历史证据.md#surfer-7-grd-读取首轮--hosted-失败留证)：数值／API原件已核，等不存在的capability超时，属性／按钮／浏览器后Meta未验，整case失败。 |
+| `7d8d738c1839c267c4259e2bd713d083110266e1`／`121493786622` | [复验](../evidence/资源读取与预览历史证据.md#surfer-7-grd-读取复验--普通-user-hosted-t4)仅两份Surfer7及原媒体，不含6／NFS／FTP。 |
+| `48aae0a4dbf79131edffd143bedb3407d20bfd18`／`121589927858` | [Binary三份](../evidence/资源读取与预览历史证据.md#surfer-6-binary-扩展及三份-grd-读取--普通-user-hosted-t4)；首个Native Job测试未完取消，后续同SHA独立认定。 |
+| `ff9e2fb512507d5e4ff1a4b1983be38c142dadfe`／`121910269484` | [ASCII四份](../evidence/资源读取与预览历史证据.md#surfer-6-ascii-扩展及四份-grd-读取--普通-user-hosted-t4)及原媒体；PROJ失败、重复subset主动停止、父Platform取消不计整轮CI通过。 |
 
 ### KML 实际页面导出
 
-`kml-export` 是同一 `manager-internal-artifact-lineage` suite 内独立的 Manager 导出 case，仅使用本轮隔离 PostgreSQL/PostGIS 源、Manager→Transfer 标准导出会话和 Infra 暂存区；不运行或放宽原模型／媒体栅格断言。标准入口为 `ADDP_ONLINE_MANAGER_CASE=kml-export make test-online ONLINE_SUITE=manager-internal-artifact-lineage`，既有 Hosted workflow 使用同名 `manager_case`。选择、Job／Artifact 名称和根报告必须明确包含 case，不将本 case 的通过记为完整 Manager suite 通过。
+`kml-export`仅用隔离PostgreSQL/PostGIS、标准Manager→Transfer会话及Infra暂存；产品镜像／disposable源只读角色限合成样例，不连开发库。消费八项：`manager.data_item.read`、`manager.derived_artifact.create`、`manager.derived_artifact.read`、`meta.catalog.read`、`meta.scan_task.execute`、`meta.scan_task.read`、`monitor.execution.read`、`transfer.task.read`。末项是Monitor读取Transfer Owner的`sync`所必需，缺失在身份预检拒绝，不由Manager权限代替。初始化用户保留原四项权限，经System正式命令给已扫描精确表签Grant，无引擎级／管理员范围；本地调用链须经过精确Grant helper的拒绝→签发→允许，再进浏览器。回执读`request_id/item_fingerprint/boundary_hash`，不假设`id`；含Transfer在内的Build ID／ready先通过。
 
-复用仓库 PostgreSQL 产品镜像和既有 disposable 源生命周期，数据库只读角色仅访问合成样例；不连接开发数据库。普通 User 只具备八项既有权限：`manager.data_item.read`、`manager.derived_artifact.create`、`manager.derived_artifact.read`、`meta.catalog.read`、`meta.scan_task.execute`、`meta.scan_task.read`、`monitor.execution.read`、`transfer.task.read`。2026-10-25 用户确认仅为本隔离 case 补充最后一项：Monitor 按 Transfer Owner 裁决读取 `sync`，本人导出执行也须具备该权限，Manager 产物读取权限不能替代；缺少该项须在身份前置检查拒绝，不放宽 Monitor 归属断言。独立源初始化 User 沿既有四项初始化权限和 System 正式命令，为扫描后确认的精确表办理读取 Grant，不给消费者引擎级范围或管理员权限。报告沿正式回执记录 `request_id`、`item_fingerprint`、`boundary_hash`，不假设存在 `id`；本地调用链回归须实际经过精确 Grant 初始化 helper、拒绝→签发→允许检查，再进入浏览器阶段。其他 case 的十项普通权限和模型初始化身份保持原边界。全部参与服务（含 Transfer）的 Build ID 与 ready 前置检查须先通过。
+EPSG:4326／3857源含七类二维非空几何、内洞／null几何和int32／bool／double／中文XML特殊字符／空串／null。普通User在真实iframe查看表，经共享弹窗选KML、改名、按钮建会话、等待并接收下载。独立XML oracle核完整Placemark、几何／坐标、Folder、Schema／标量及空值，3857恢复已知WGS84；留文件名／哈希／截图、同用户且无任务定义的执行归属。LIBKML跨版本读取仍归GeoPython原生门禁，XML oracle不证明产品读侧增强。
 
-源表分别声明 EPSG:4326 与 EPSG:3857，覆盖七类二维非空几何、内洞和 null 几何，以及 int32、bool、double、中文／XML 特殊字符、空字符串和 null。同一普通用户在真实 Console iframe 查看表，打开共享导出弹窗，选择 KML 并修改文件名，经真实按钮建立导出会话、等待 Transfer 完成和接收浏览器下载；不以 API 下载替代按钮。独立 XML oracle 核对完整 Placemark、几何／坐标、Folder、Schema／标量、null／空字符串及数值布尔，保留文件名、文件哈希、截图和同一用户／无任务定义的执行归属。EPSG:3857 输出须恢复已知 WGS84 坐标，源数据、结构和行数前后不变。原生 LIBKML 跨版本读取仍沿已登记 GeoPython 门禁验证，XML oracle 不冒充产品 KML 读侧增强。
-
-新 case 的报告、异常和下载证据不得泄漏凭据。导出会话沿现有保留与生命周期规则，不新建业务删除 API；成功和失败均销毁本轮源容器／数据、应用、临时凭据及 Infra，并核零残留。业务结果和清理结果独立报告：业务失败且夹具清理成功时仍是 `result=failed / cleanup=passed`；夹具清理实际失败必须保留 `cleanup=failed`，不能由 Infra 零残留替代。部署清理不冒充会话业务 DELETE 或缓存验收。根 `make test-manager-online-runner`、`make test-online-runner`、System Go、共享前端及现有 Platform CI 覆盖新增路由、最小身份、页面脚本、物理 oracle 拒绝样例和失败清理；正式 Hosted 尚未通过前不得回填已验收。此 case 不扩展 bigint／decimal／时序／嵌套字段、Z/M、样式、KMZ 或其他目标格式。
+按公共导出收尾；既有runner、System Go、共享前端和Platform核路由／最小身份／页面／oracle拒绝／失败清理。未实际Hosted不回填通过；不扩展bigint／decimal／时序／嵌套、Z/M、样式、KMZ或其他目标。
 
 ### Avro 单文件表格读取
 
@@ -223,113 +210,105 @@ Hosted 限于受验的有界单文件读取与原件下载；近 NoData 误掩�
 
 #### Avro 来源与权限
 
-`native-table-avro` 复用 NFS／MinIO、Transfer 和 GeoPython 物理回读夹具；身份与部署沿[公共准备](#文件读取-case-的公共准备与收尾)，消费十一项、来源准备十三项，源扫描归初始化用户，Meta 沿精确 metadata_read；受阻即失败，不绕过或扩权。
-
-当前限定矩阵为平面、嵌套、Enum、Map各六份（NFS／MinIO×三种codec），共二十四来源／任务／Grant。原十八份源在Map扩展后逐字节保持；全部既有断言保留，只有原六份平面源可成功写Parquet，其余十八次执行须分别证明只读拒绝，不生成对应输出。当前[Owner runner](../../../../scripts/test/manager-avro-online.py)与浏览器回执为v6；v2日期／小数、v3 UTC、v4嵌套等历史回执只证明当轮范围，不追认后续扩展。
+`native-table-avro`沿[公共准备](#文件读取-case-的公共准备与收尾)，复用NFS／MinIO、Transfer及GeoPython物理回读。平面／嵌套／Enum／Map各六源（双存储×三codec），共二十四源／任务／精确Grant；只有六平面源可写Parquet，其余十八次须只读拒绝且无输出。Map扩展保留原十八源字节与全部断言。[Owner runner](../../../../scripts/test/manager-avro-online.py)及浏览器回执v6；v2日期小数／v3 UTC／v4嵌套只证当轮，不追认后续。
 
 #### Avro 三种 codec
 
-`null`、`deflate`、`snappy` 独立核验，不由一种结果推定其他通过；原件独立编码，不经产品读取器生成期望。
+`null/deflate/snappy`独立编码原件、独立核验，不用产品reader生成期望。
 
-| 来源类别 | 独有内容与断言 |
+| 来源 | 独有断言 |
 | --- | --- |
-| 平面 | 每源2503行、多OCF块，基础标量／可空字段及date、bytes decimal、fixed decimal（precision=38、scale=6）；日期0001／9999、闰日／纪元前，小数正负大值／尾零／NULL／合法符号扩展。十三字段含毫秒／微秒／纳秒UTC：零／负计数、毫秒微秒0001／9999、超JS安全整数、纳秒int64两端与NULL；Avro long独立编码，不过浮点或时间对象。 |
-| 嵌套 | 每源2503行；根五字段id、可空detail、可空record数组items、多维可空grid、具名fixed decimal数组fixed_values。NULL对象／全NULL对象、NULL／空数组／NULL元素、大整数、Decimal(38,6)、日期、三单位UTC及binary；OCF覆盖合法单／多／负块数组编码，原平面三文件哈希保持。 |
-| Enum | 顶层／嵌套／数组元素的完整枚举名、有序候选、具名引用与null，完整声明和精确值均核对。 |
-| Map | 动态键原文、完整 `map_value` 声明树、大整数／小数／UTC纳秒／枚举、NULL／空映射及缺键；真实页面第二页、结构详情及声明JSON分别验证。 |
+| 平面 | 每源2503行、多OCF块，标量／nullable、date、bytes／fixed decimal(38,6)：0001／9999、闰日／纪元前、正负大值／尾零／NULL／符号扩展。十三字段含ms/us/ns UTC：零／负计数、ms/us年界、超JS安全整数、ns int64两端及NULL；long独立编码不过浮点／时间对象。 |
+| 嵌套 | 每源2503行，根五字段id／detail／items／grid／fixed_values；可空record、record数组、多维数组及具名fixed decimal数组。核NULL对象／全NULL对象、NULL／空数组／NULL元素、大整数／Decimal／日期／三单位UTC／binary及OCF单／多／负块；原平面三文件哈希保持。 |
+| Enum | 顶层／嵌套／数组完整枚举名、有序候选、具名引用、null及精确值。 |
+| Map | 动态键原文、完整`map_value`树、大整数／小数／UTC纳秒／枚举、NULL／空映射／缺键；真实第二页、结构详情／声明JSON。 |
 
 #### Avro 分页与批量传输
 
-- Meta核结构schema及date／decimal，UTC字段另核unit=ms/us/ns、timezone=UTC、native_type=long。嵌套核用户投影完整字段树，不要求公开原始format_info；存储schema原样保留由Meta原生回归及物理原件证明。
-- API首页／第二页／末页与真实下一页核精确总数、全部值和缺失；日期／小数单元格、UTC固定3／6／9位ISO小数及Z实际核对。嵌套三页、四类结构单元格只读JSON对话框核完整值，Enum／Map扩展保留各自页面声明与值断言。
-- 原件沿现行准入：MinIO核API及真实按钮完整字节／SHA；NFS逐源HTTP403 JSON、无附件且无按钮，不增权或绕过。截图裁切不算全文展开／hover已验。
-- 六份平面Avro→Parquet跨批核全部字段、类型、nullable、精度／小数位及值，含大整数／binary／NULL。writer按字段名排序，不能把OCF声明顺序当物理列序。PyArrow逐列cast int64核原始UTC计数／NULL，物理INT64／TIMESTAMP原单位及isAdjustedToUTC=true；不先转datetime或把最小纳秒当NaT。
-- 嵌套／Enum／Map十八次Transfer逐项绑定execution UUID／Tenant，公开读写行数0、`error_details.category=execution_failed`；不读不存在的error_msg或要求公开原始错误。各执行还须关联Worker既有Runtime日志中单次已保存preview-only拒绝，仅留闭集原因／日志位置／行哈希。零计数或缺target_change_possible不足以证明无副作用；物理命名空间只含原六Parquet及marker。预期拒绝不是整场失败，原因或物理输出不符才失败。
+- Meta核schema／date／decimal及UTC的unit=ms/us/ns、timezone=UTC、native_type=long；嵌套用户投影核完整树，不要求公开format_info，原schema保留由Meta原生及原件证明。
+- API首页／第二页／末页及真实下一页核总数／全值／缺失；页面UTC固定3／6／9位ISO小数＋Z。嵌套三页／四类结构单元格的只读JSON核完整值，Enum／Map各核声明。原件依公共MinIO允许／NFS拒绝规则；裁切不算全文展开／hover已验。
+- 六平面Avro→Parquet跨批核全字段、类型、nullable、精度／scale和值（含大整数／binary／NULL）。writer按字段名排序，不能按OCF列序；PyArrow逐列cast int64核UTC原计数／NULL、物理INT64／TIMESTAMP原单位及isAdjustedToUTC=true，不先转datetime或把最小ns当NaT。
+- 十八拒绝逐项绑定execution UUID／Tenant，公开读写0、`error_details.category=execution_failed`，不读取不存在的error_msg或公开原始错误。关联Worker既有Runtime日志单次已保存preview-only拒绝，仅存闭集原因／位置／行哈希；物理空间只含六Parquet＋marker，零计数或缺target_change_possible不证明无副作用。预期拒绝不算整场失败，原因／物理输出不符才失败。
 
 #### Avro 清理与未覆盖项
 
-按[公共收尾](#文件读取-case-的公共准备与收尾)核全部二十四源／任务／精确Grant、六平面成果及目标标记删除，源前后哈希不变、无嵌套／Enum／Map输出，外层部署／Infra另核。逻辑任务删除或部署销毁不证明逐执行历史已物理清除。
-
-嵌套／Enum／Map批量未开放；已列date／decimal／UTC之外的逻辑类型（含local-timestamp／time）、whole及Avro写出未验，NFS原件仍未准入，SKP精确组成准入保持关闭。不外推所有生产者、压缩变体或容量。
+按[公共收尾](#文件读取-case-的公共准备与收尾)核二十四源／任务／Grant、六成果及marker删除，无十八类拒绝输出。嵌套／Enum／Map批量未开放，local-timestamp／time等未列逻辑类型、whole、写出、所有生产者／压缩变体与容量未验；NFS原件和SKP精确组成准入保持关闭。
 
 #### Avro 验证与历史证据
 
-复用既有Manager runner／Hosted／产品构建登记，无新增Runtime；T0–T3与真实Hosted分别认定。源变化／缺列等确定性反例不冒充Hosted故障注入，最小固定记录如下，产物和清理明细只在证据专题维护：
-
-| 范围 | 最小证据及限制 |
+| 固定源码／作业 | 结论与关键限制 |
 | --- | --- |
-| 首轮失败 | [列序oracle失败](../evidence/资源读取与预览历史证据.md#avro-单文件标量读取--hosted-验收)：`40b1468c5576c3660e1d49c8018f8356f5a959c3`、Job `128604699236`。API／原件／Transfer计数已执行，物理回读失败后未进页面、未归档原Parquet；本地复现不能补原件缺口。 |
-| 平面正式复验 | [六源三codec](../evidence/资源读取与预览历史证据.md#限定正式复验通过)：`e706899b69309fa9a7364e4c0f6118b9f5d153dd`、Job `128610273652`，六Parquet完整15018行；ID列截图裁切，完整整数由DOM／API／原件／物理回读证明，相关门禁失败不删。 |
-| UTC | [限定正式证据](../evidence/资源读取与预览历史证据.md#utc-时间戳限定正式-hosted-通过)：源码`7af201a28f237a0ef88aa27a8129e54042ff5d8f`，dispatch `1082c0ed0cd2359be69841085cf5dbf02a20467e`，Run43584189240／Job132415063748／attempt1。v3报告一致、六源十三字段及15018行原始ms/us/ns／NULL／UTC注解、清理通过；前两次失败保留，六截图长值裁切不算展开已验。 |
-| Enum | [正式范围](../evidence/资源读取与预览历史证据.md#avro-enum-正式-hosted-复验2026-11-15)：`c63888fba953df5545a06b11c7641284c2bbe792`，[Run43668574041／Job132673333161](https://github.com/pampa0629/addp/actions/runs/43668574041/job/132673333161)。十八源、原件、只读拒绝、原六Parquet及清理；首败保留，视口外声明或过渡帧不算完整视觉证明。 |
-| Map | [限定正式证据](../evidence/资源读取与预览历史证据.md#avro-map-限定正式-hosted2026-11-15)：`9cf429c4a9a0ffc84f06e5971bed254c7e935faa`，[Run43677124474／Job132699620936](https://github.com/pampa0629/addp/actions/runs/43677124474/job/132699620936)。二十四来源、动态键／完整值类型、分页／原件、十八拒绝、原六Parquet及清理；NFS403与截图视口边界不扩大。 |
+| `40b1468c5576c3660e1d49c8018f8356f5a959c3`／Job128604699236 | [首败](../evidence/资源读取与预览历史证据.md#avro-单文件标量读取--hosted-验收)：API／原件／Transfer计数后列序oracle失败，未进页面、未归档原Parquet，本地复现不补缺口。 |
+| `e706899b69309fa9a7364e4c0f6118b9f5d153dd`／Job128610273652 | [六源三codec](../evidence/资源读取与预览历史证据.md#限定正式复验通过)，六Parquet15018行；ID截图裁切，完整整数由DOM／API／原件／物理证明，相关门禁失败仍保留。 |
+| `7af201a28f237a0ef88aa27a8129e54042ff5d8f`，dispatch `1082c0ed0cd2359be69841085cf5dbf02a20467e`；43584189240／132415063748／attempt1 | [UTC v3](../evidence/资源读取与预览历史证据.md#utc-时间戳限定正式-hosted-通过)：六源十三字段／15018行原计数／NULL／UTC注解及清理；前两次失败、六截图长值裁切限制保留。 |
+| `c63888fba953df5545a06b11c7641284c2bbe792`；[43668574041／132673333161](https://github.com/pampa0629/addp/actions/runs/43668574041/job/132673333161) | [Enum](../evidence/资源读取与预览历史证据.md#avro-enum-正式-hosted-复验2026-11-15)：十八源、原件、拒绝、六Parquet／清理；首败及视口外声明／过渡帧不作完整视觉证明。 |
+| `9cf429c4a9a0ffc84f06e5971bed254c7e935faa`；[43677124474／132699620936](https://github.com/pampa0629/addp/actions/runs/43677124474/job/132699620936) | [Map](../evidence/资源读取与预览历史证据.md#avro-map-限定正式-hosted2026-11-15)：二十四源、键／类型、分页／原件、十八拒绝、六Parquet／清理；NFS403及截图边界不扩大。 |
 
 ### FileGDB 实际页面导出
 
-`filegdb-export` 的业务报告 v5 保留每个已扫描 PostGIS 源表的无源 Grant 断言。同一消费用户在授予源 Grant 前通过 Gateway 提交精确表路径，必须收到403，且响应中没有会话、执行UUID或下载入口。随后按原精确Grant、页面导出、回读与清理链路验证。此项不增加部署或用户权限；MySQL页面仍独立取证。
+`filegdb-export`用隔离PostGIS、GeoPython产品镜像。初始化用户扫描并签精确读Grant；同一消费用户授予前经Gateway提交每个精确表必须403，且无会话／execution UUID／下载入口。随后真实页面分别导出3857点、4326 MultiLineString／MultiPolygon，三份`.gdb.zip`各仅单图层；核Monitor执行归属／下载字节哈希／截图。同Tenant另一普通用户有导出读取权限仍须拒绝其会话及下载。独立GDAL解包核源CRS、XY、多部件边界、内环／标量／null：线顶点序不变，面允许环起点／方向变化。按公共导出收尾，与NFS FileGDB读授权分开报告。
 
-在原三份页面成功下载和独立回读后，复用同一消费用户、点表Grant及隔离部署的唯一Transfer bounded Worker，新增一次API导出执行的撤权验收。仅在已证明归属的Linux Hosted部署使用现有进程故障工具及pidfd暂停Worker；提交202后，由Monitor确认pending、attempt=0、未开始，再以原来源初始化用户撤销该精确Grant，复核仍未领取。恢复同一进程后，必须以attempt=1在来源授权preparation阶段失败，公开计数不得报告内容IO；Manager会话failed且无download_url，文件请求409，撤权后重新提交403，源表内容和结构不变。暂停、恢复及中途异常恢复均有确定性反例；不改产品配置、不新增权限或服务、不暂停个人开发服务，不以该API拒绝场景冒充浏览器失败页、物理零读或缓存验收。报告必须包含独立execution_revocation通过记录，保留原三份页面断言并绑定browser v3及全部清理，旧v3不能证明本项撤权。
+两种FileGDB case共用执行前撤权断言：仅归属已证的Linux Hosted，用现有进程工具／pidfd暂停唯一Transfer bounded Worker；提交202后Monitor须证pending、attempt=0、未开始。原初始化用户撤销精确Grant并复核未领取，恢复同一进程后须attempt=1在来源授权preparation失败，公开计数不报告内容IO；会话failed、无download_url，文件409、重提403、源不变。异常也恢复原进程，确定性核暂停／恢复／中途异常；不改配置、增权或操作开发进程。该API拒绝不证明浏览器失败页、物理零读或缓存。
 
-`filegdb-export` 复用既有 Manager Hosted suite、隔离 PostGIS 源和 GeoPython 产品镜像，使用 `ADDP_ONLINE_MANAGER_CASE=filegdb-export make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。来源初始化用户扫描测试表并授予精确读范围。消费用户在真实 Manager 页面分别导出 EPSG:3857 点、EPSG:4326 MultiLineString 和 EPSG:4326 MultiPolygon，每次取得仅含单个图层的 `.gdb.zip`，同时核对 Monitor 执行归属、下载字节哈希及截图。同租户的另一位普通用户持有导出读取权限，对每个会话及下载均须被拒。独立 GDAL 进程解包并核对源 CRS、XY 坐标、各多部件边界、面内环、标量和空值。线核对每个部件的顶点次序，面允许环的起点和方向改变。前后核对三个源表的内容与结构。归档随本轮隔离 Infra 清理；此 case 与 NFS FileGDB 读授权分开报告。
+Owner v5须含独立`execution_revocation`、每表无Grant拒绝、原三页面／清理及browser v3绑定；旧v3不证撤权。运行中途撤权／自然到期、其他引擎、ZM／多层／复杂字段／容量不因此扩展。
 
 ### MySQL FileGDB 实际页面导出
 
-独立选择`filegdb-mysql-export`，复用现有Manager Hosted suite、同一FileGDB owner/真实页面/独立OpenFileGDB回读/Transfer精确源授权及执行前撤权流程。只增加本轮独占的临时MySQL容器，使用既有T2登记的固定MySQL镜像、随机loopback端口、tmpfs数据卷和仅可读三个夹具表的来源账号；不连接个人Business MySQL。初始化用户仍13项、消费者仍6项、同租户旁观者仍1项权限，不修改角色模板、产品API或转换路线。
+`filegdb-mysql-export`沿上节页面／OpenFileGDB oracle／授权与撤权流程；唯一新增夹具为独占临时MySQL：既有T2固定镜像、随机loopback端口、tmpfs及仅可读三表账号，不连个人Business。初始化13项／消费6项／同Tenant旁观1项权限不变。
 
-三个InnoDB普通表为点3857、复线/含内环复面4326，各含三行及中文/空串/null、布尔/小数、空几何。源身份必须是server→database→table，按原数据库轴序规则保持经纬与源CRS；来源初始化、普通页面下载、内容/结构前后快照、跨账号拒绝与排队撤权分别取证，视图/自定义SQL仍由既有guarded reader拒绝。来源和PostGIS独立注册/运行/清理，不能借用PostGIS的schema路径或其旧正式通过。
+三InnoDB普通表分别点3857、复线／含内环复面4326，各三行含中文／空串／null、布尔／小数／空几何；身份为server→database→table，保留数据库轴序／CRS，视图／自定义SQL由guarded reader拒绝。独立注册／快照／运行／清理，不借PostGIS schema或历史通过。
 
-两种FileGDB case使用同一owner v5及browser v3，报告显式绑定case和source_engine_type；旧v4不表示MySQL通过。唯一新增业务夹具为`business/scripts/online-manager-mysql-fixture.sh`，start/精确快照/stop均校验独占case与容器归属，原Registry/GeoPython/部署及Infra清理保留。根`make test-manager-online-runner`、进程工具/身份夹具与既有Online登记和workflow同次覆盖；正式结果未核对前不得回填通过。运行中途撤权、自然到期、其他引擎/ZM/多图层/复杂字段及容量均不因此扩展；SKP精确组成授权关闭。
+同Owner v5／browser v3绑定case与source_engine_type，旧v4不证MySQL。`business/scripts/online-manager-mysql-fixture.sh`的start／精确快照／stop须核case及容器归属，原Registry／GeoPython及部署清理保留；runner、进程工具／身份夹具、既有登记／workflow核接线，未核正式结果不回填通过。SKP精确组成关闭。
 
 ### TIFF 无定位小图的 COG 布局回归
 
-阅读导航：[MinIO 小图](#tiff-minio-无定位小图) · [NFS 自然到期](#tiff-nfs-渲染与自然到期) · [MSK 组成扩展](#tiff-msk-组成扩展) · [清理与共同边界](#tiff-清理与共同边界) · [分版本证据](#tiff-分版本证据)。以下条款是当前断言；是否已验按固定版本证据分别判断，单文件历史通过不替代 MSK 扩展。
-
-当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`。
+阅读导航：[MinIO 小图](#tiff-minio-无定位小图) · [NFS 自然到期](#tiff-nfs-渲染与自然到期) · [MSK 组成扩展](#tiff-msk-组成扩展) · [清理与共同边界](#tiff-清理与共同边界) · [分版本证据](#tiff-分版本证据)。子报告`addp.manager-raster-media/v2`、页面`addp.manager-raster-media-browser/v4`。以下是验收要求，是否已验按固定记录，不以单文件通过追认MSK／四成员扩展。
 
 #### TIFF MinIO 无定位小图
 
-`native-raster-media` 保留原IMG/JPEG2000/四种GRD的全部断言，再添加一份自建240×120、Float64/NaN、512瓦片、DEFLATE、无CRS/网格定位及无overview的Classic TIFF COG。沿原十项普通User权限、原部署/预算/四份受管COG生成及缓存/删除/全部清理，不上传个人成果，不触发该小图的生成任务。隔离夹具的GDAL完整COG验证必须0错误/0警告，独立公式核全部28,800数值、35个NaN及完整有效掩膜、块尺寸/空CRS/空网格/零overview、原字节大小及SHA；源被修改后即使重写哈希收据也须拒绝。
+`native-raster-media`保留IMG／JPEG2000／四种GRD及四份受管COG回归，另加自建240×120 Classic TIFF COG：Float64/NaN、512瓦片、DEFLATE、无CRS／网格／overview。原十项权限及部署／预算不变；不上传个人成果或提交该小图生成，允许既有非定位可选转换按钮，不把无地图等同无按钮。
 
-同一普通身份通过 Gateway 发起 Manager 精确 item 刷新，再从 Meta 核对结构和扫描时间，从 Manager 授权预览核对`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后的 Meta 结构和 Manager 内容事实、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；单项刷新后，顶层 `full_name`、指纹和数据项 ID 必须保持一致。`storage.last_modified_at` 按带时区的时间戳比较同一时刻，其他 attributes 和源文件字节严格不变。真实Console的属性弹窗核同一元数据，预览核240×120单页、Range 206 和全部 Float64 灰阶像素及透明 NoData，页面无地图。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载以 single TIFF 原字节核对大小和 SHA-256，API 和真实按钮下载一致，分别归档。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
+- 夹具GDAL完整COG验证0错误／0警告；独立公式核28,800值、35 NaN／完整mask、块尺寸／空CRS／空网格／零overview、原大小／SHA。源改写即使重签哈希收据也拒绝。
+- 同User经Gateway精确item刷新，核单项同步请求／响应、前后Meta结构／扫描时间及独占源scan execution；`full_name`／指纹／item ID保持。`storage.last_modified_at`按带时区同一时刻比较，其他attributes及源字节不变。Manager受控事实须为`tiff/cog/true/heuristic`、240×120、tiled=true／overview=false且无spatial；与公开Meta分别归档。
+- 真实属性／预览核同一源、240×120单页、Range206、全部Float64灰阶／透明NoData、无地图；API及按钮下载同一single TIFF。重开、零生成／业务失败／警告及源／Meta保持分别核对，显式刷新除外。
 
 #### TIFF NFS 渲染与自然到期
 
-`native-raster-media` 还必须提交 `nfs_tiff_authorization` 证据。只把已核对 SHA-256 的同一 TIFF 复制到本轮只读 NFS 导出，由一次性源初始化用户用 `meta.scan_task.execute` 和 `meta.scan_task.read` 完成单目录深扫。仅该 case 为一次性初始化用户增加这两个扫描权限，普通消费用户仍是原十项。
+`nfs_tiff_authorization`只把同SHA小图复制至本轮只读NFS。仅初始化用户额外拥有`meta.scan_task.execute`、`meta.scan_task.read`完成单目录深扫，消费仍十项；短签／收回精确metadata授权以取得正式DataItem ID，再用同一普通API会话核Range 403→206→403，正向核Content-Range／实际字节。有效时真实Console核同账号、Range及完整灰阶／透明像元；原90秒read自然到期后Meta／preview404，正式历史须证未撤销而已到期。
 
-短暂签发并收回精确元数据授权以取得正式 DataItem ID，再以同一个普通 User API 会话验证 Range 依次返回 403、206、403。正向请求核对 Content-Range 和实际字节；授权有效时真实 Console 还须核对同一账号、Range 206 和完整灰阶／透明像元。到期后重新请求，核对元数据 404 和未撤销的已到期历史。失败时只清理本轮命令，源文件随既有 NFS 夹具清理。此用例覆盖该有界 NFS GeoTIFF／COG 的自然到期，BigTIFF、任意布局／容量和 Float64 地图渲染另行验收。
-
-三态授权沿同一普通用户、同一正式 DataItem 增加 API 断言：仅元数据授权时 Meta／Manager preview 均200，但预览只返回白名单结构、无内容地址／摘要／统计且 Range403；短暂增加精确read时完整预览和Range206；撤销read后仍保留元数据白名单；再撤销元数据后Meta／preview404、Range403。另行签发原90秒read，原Console完整像元及未撤销自然到期断言保留，到期后preview也须404。只增加本轮精确临时read命令，不扩大功能权限、目标、服务或预算；异常路径继续由现有授权owner清理，根报告须核对各状态完整证据。这是验收要求，新增断言的本地回归不代表已运行Hosted。
+三态另核：仅metadata时Meta／preview200且仅白名单结构、无内容地址／摘要／统计、Range403；加精确read后完整preview／Range206；撤read后保留metadata白名单，撤metadata后Meta／preview404、Range403。仅增加本轮精确read命令，不增功能权限、目标、服务或预算；根报告核完整状态，异常清理限本轮命令。该有界NFS单文件结果不证BigTIFF、任意布局／容量或Float64地图。
 
 #### TIFF MSK 组成扩展
 
-同一 TIFF 子报告增加 `nfs_tiff_msk`：在本轮 NFS 导出创建两份字节相同的有定位 TIFF，其中一份带真实外置 `.tif.msk`。固定公式独立核对全部 65,536 个 Int32 像元、NoData、CRS 和仿射网格；无 MSK 仅一个无效像元，有 MSK 共 257 个无效像元。Meta 必须分别登记 single 和 multi，multi 的主 TIFF 为 required=true、mask 为 required=false；授权命令只提交正式 Meta DataItem 指纹和 System 返回的完整边界 hash，不根据扩展名或文件数量自行组装授权边界。普通 User 在授权前读取均为 403，整项精确授权后每个已登记成员完整 Range 的大小、Content-Range 和 SHA-256 均匹配，跨 DataItem 借用 MSK 为 400。沿既有生成入口额外生成一份带掩膜 COG，完整数值、掩膜、空间事实及 COG 布局必须通过原生物理核验；删除成果后确认对象消失。撤销本轮两项 read 授权后，在源仍存在时重新读取各主文件及 MSK 必须为 403。归档正式组成、授权回执、执行和像元证明；本轮源、授权、成果与 Infra 全部按既有生命周期清理。保留原四份 COG、单文件浏览器和自然到期断言，不增加权限、服务或运行预算；新增 MSK 范围须由新版本 Hosted 运行另行证明，确定性测试不能计作 Hosted 通过。
+MSK和四成员复用组成验收实现，保留原格式／四COG／单文件浏览器／自然到期断言，不增权限／服务／预算，均须新增Hosted证明。共同准入为正式Meta DataItem指纹＋System完整boundary hash，不按扩展名／文件数拼授权边界；先验精确扫描身份和成功终态，再签整项read。每成员核授权前403、授权后完整Range206（大小／Content-Range／SHA）、源仍在时撤权后403，跨DataItem借sidecar400；计数相等不替代single／multi完整组成。
 
-MSK 扫描回执必须同时证明三个物理文件和两个成功完成的逻辑 DataItem：`scan_progress.files_discovered=3`、`directories_discovered=1`、两个 total_known 均为 true，`items_planned/items_completed/items_succeeded=2`、`items_failed=0`、`phase=finalizing`，以及 `metadata.items_scanned=2`。核对原初始化用户和成功终态，将回执计数写入 `nfs_tiff_msk.scan`。计数缺失、清单未完成、额外文件／目录／逻辑项或任何未完成／失败项均在签发授权前拒绝；后续仍须验证正式 Meta single／multi 身份和完整 MSK 组成，计数相等不能替代组成证明。
+| 专项 | 独有组成、扫描与物理断言 |
+| --- | --- |
+| `nfs_tiff_msk` | 两份字节相同的有定位TIFF，一份带真实`.tif.msk`。独立公式核全部65,536 Int32、NoData／CRS／仿射；无mask仅1无效，有mask257无效。single与multi分离，主image required=true、mask=false。`scan_progress.files_discovered=3`／`directories_discovered=1`，两个total_known=true，`items_planned/items_completed/items_succeeded=2`、`items_failed=0`、`phase=finalizing`，`metadata.items_scanned=2`；原初始化User／成功终态写入`nfs_tiff_msk.scan`，缺计数／额外项／未完成均签发前拒绝。生成额外一COG，核完整数值／mask／空间／布局及删除后对象缺失。 |
+| `nfs_tiff_sidecars` | 一TIFF＋同basename HDR／TFW＋完整主名追加PAM，另有相同主字节single对照，不用个人SRTM。主TIFF无定位，TFW给固定网格、PAM给EPSG:4326、HDR给完整可选成员；主image必需，header／world_file／auxiliary_metadata显式可选，single仍无定位。扫描恰5物理文件／1目录／2逻辑项全成功，System事实与Meta完整对应；五成员逐项Range。额外一COG核65,536 Int32、1 NoData、完整mask／TFW网格／PAM CRS／布局；TFW／PAM缺失或变化不能因主图可读而通过，HDR核组成／组件版本／原字节。 |
 
-四成员回归使用同一 TIFF 子报告的 `nfs_tiff_sidecars`，与MSK共享组成验收实现且保留原MSK断言。夹具为一份TIFF＋同basename HDR／TFW＋主文件完整名追加PAM，以及主文件字节相同的独立TIFF对照；不上传个人SRTM。主TIFF不内嵌定位，TFW提供固定仿射网格，PAM提供EPSG:4326，HDR作为完整可选成员参与授权、版本及读取。独立TIFF必须保持single且无定位，四成员multi的主image必需、header／world_file／auxiliary_metadata均显式可选。扫描必须恰好五物理文件／一目录／两逻辑项且全部成功；正式System事实必须完整对应Meta组成，五成员逐项核授权前403、完整Range206及撤权后403，single locator跨项借用辅助文件为400。额外一份COG核全部65,536个Int32像元、1个NoData无效像元、完整mask、TFW网格、PAM坐标系及COG布局；TFW／PAM缺失或变化的原生反例不得因主TIFF可读而通过；HDR完整性由正式组成、组件版本和原字节核对保证。原有四格式、单文件浏览器、自然到期和MSK证明保持不变，不增加权限／服务／预算。新增四成员Hosted须单独确认后执行；确定性测试或既有两成员MSK的成功不得替代。
+分别归档正式组成、授权回执、执行／像元及删除证明；四成员Hosted须单独确认，两成员MSK／确定性成功均不能替代。
 
 #### TIFF 组成的浏览器画布断言
 
-MSK 与四成员 COG 在授权有效、成果删除前分别打开真实 Console 快显。共用本地 Manager 浏览器断言：使用夹具独立公式计算 EPSG:4326 网格与 Web Mercator 像素位置，核对实际 OpenLayers 源投影／范围、画布有效像元及范围外透明像元；MSK 的 16×16 无效区中心必须透明、邻近有效区必须可见，四成员同位置必须可见。读取 WebGL 层 postrender 的真实 RGBA，不用元数据或原生掩膜结果代替显示证据。页面重开必须复用同一成果并再次核对，实际 COG Range 为 206，浏览器零生成／零业务失败／零警告。页面报告单独使用 `addp.manager-tiff-composition-browser/v1`，绑定 run、profile、普通身份、源 locator、item、成果 ID 和 URL；缺失或错误页面证明均使组成验收失败，随后仍执行原撤权与清理。掩膜区被强制画成不透明、地图移出预期位置的本地画布反例，以及错误网格／掩膜报告必须被拒绝。本地页面／runner 通过不表示 Hosted 已通过，新增 Hosted 仍须单独确认。
+MSK／四成员在授权有效且成果未删时各开真实Console快显。夹具独立公式将EPSG:4326网格换算Web Mercator像素，核真实OpenLayers源投影／范围及WebGL postrender RGBA：有效区可见、范围外透明，MSK 16×16无效区中心透明、邻近可见，四成员同位置可见。元数据／原生mask不替代显示；重开复用同成果并再核，实际COG Range206，零生成／业务失败／警告。
+
+`addp.manager-tiff-composition-browser/v1`绑定run／profile／普通身份／源locator／item／成果ID／URL；缺失／错误使组成验收失败，仍收权清理。强制不透明mask、移出预期地图及错误网格／mask报告的本地反例必须拒绝；本地页面／runner不算Hosted，新增运行仍需单独确认。
 
 #### TIFF 清理与共同边界
 
-MinIO 小图、NFS 单文件、MSK 及四成员结果分别判定；MSK和四成员扩展各生成一份额外COG，不改变小图“不得提交生成”的要求。保留 IMG／JPEG2000 原四份受管 COG 的缓存、任务／成果／物理删除和模式恢复；它们不替代 TIFF 自身断言。
-
-收尾沿[公共要求](#文件读取-case-的公共准备与收尾)，源仍在时先核撤权／到期拒绝，再删本轮 NFS 精确文件；各授权、Range、像元和生成阶段须有独立结果。
+按[公共收尾](#文件读取-case-的公共准备与收尾)，先核源存在时的撤权／到期再删精确文件，授权／Range／像元／生成阶段独立报告。MSK和四成员各一额外COG，不改变小图禁提交生成；IMG／JPEG2000原四COG仍核缓存、任务／成果／物理删除及模式恢复。
 
 #### TIFF 分版本证据
 
-固定源码、实际 Job、失败、原始产物和清理结果由所链证据正文维护：
-
-| 范围 | 结论与证据 |
+| 范围 | 最小证据与未覆盖项 |
 | --- | --- |
-| MinIO 无定位小图 | [布局修复与限定 Hosted](../evidence/资源读取与预览历史证据.md#tiff-cog-布局误判--有界格式与未知状态修复)；正向与 overview 负例分开认定。 |
-| MinIO 刷新／NFS 单文件 | [页面、Range 与自然到期](../evidence/资源读取与预览历史证据.md#nfs-tiff-渲染授权自然到期与清理--hosted-t4)；早期失败与最终范围以正文为准。 |
-| MSK 本地与准备 | [接入](../evidence/资源读取与预览历史证据.md#msk-纳入-tiff-完整组成2026-11-12) · [本机实操](../evidence/资源读取与预览历史证据.md#msk-singlemulti-本机普通用户实操与清理2026-11-12) · [自动化入口](../evidence/资源读取与预览历史证据.md#msk-自动化验收入口与本地门禁2026-11-12) · [迁移阻断](../evidence/资源读取与预览历史证据.md#tiff-285-已应用迁移被原位修改--system-启动阻断2026-11-12)。 |
-| MSK Hosted 缺口 | [首轮计数失败](../evidence/资源读取与预览历史证据.md#msk-hosted-计数失败与修复后待验2026-11-13) · [修复后待验](../evidence/资源读取与预览历史证据.md#计数修复的自然-ci-与未覆盖范围)；已识别 MSK 不等于后续组成、Range、COG／mask、撤权与删除已执行，清理不抵消失败。 |
+| MinIO小图 | [布局修复与限定Hosted](../evidence/资源读取与预览历史证据.md#tiff-cog-布局误判--有界格式与未知状态修复)，正向与overview反例分开认定。 |
+| 刷新／NFS单文件 | [页面、Range与自然到期](../evidence/资源读取与预览历史证据.md#nfs-tiff-渲染授权自然到期与清理--hosted-t4)，首败与最终范围按正文。 |
+| MSK本地／准备 | [接入](../evidence/资源读取与预览历史证据.md#msk-纳入-tiff-完整组成2026-11-12) · [本机实操](../evidence/资源读取与预览历史证据.md#msk-singlemulti-本机普通用户实操与清理2026-11-12) · [自动化入口](../evidence/资源读取与预览历史证据.md#msk-自动化验收入口与本地门禁2026-11-12) · [迁移阻断](../evidence/资源读取与预览历史证据.md#tiff-285-已应用迁移被原位修改--system-启动阻断2026-11-12)。 |
+| MSK Hosted | [首轮计数失败](../evidence/资源读取与预览历史证据.md#msk-hosted-计数失败与修复后待验2026-11-13) · [修复后待验](../evidence/资源读取与预览历史证据.md#计数修复的自然-ci-与未覆盖范围)：识别不证后续组成／Range／COG与mask／撤权／删除已执行，清理不抵消失败。 |
 
-BigTIFF、任意布局／容量、Float64 地图渲染和专业影像生产不在这些限定结论内；其他历史截图、原件、Native／T1／T2 与真实 Hosted 按各自实际范围使用，不把局部通过扩大为当前源码或整轮 CI 全部通过。
+BigTIFF、任意布局／容量、Float64地图及专业影像生产未覆盖，其他Native／T1／T2／历史截图不能补作Hosted。
 
 ### ENVI 双文件 COG（限定 Hosted 已验收）
 
@@ -337,62 +316,48 @@ BigTIFF、任意布局／容量、Float64 地图渲染和专业影像生产不�
 
 #### ENVI 身份与来源
 
-独立 `native-envi` 沿[公共部署与身份差异](#文件读取-case-的公共准备与收尾)，不启动 Model3D／文档／点云。仅此 case 的源初始化身份在原十一项增加 `meta.scan_task.execute`、`meta.scan_task.read`，合计十三项；普通消费仍十项，不扩大其他 case、真实账号、内置角色或源 Grant。
+`native-envi`沿[公共准备](#文件读取-case-的公共准备与收尾)，不启动模型／文档／点云。仅源初始化从十一项加`meta.scan_task.execute`、`meta.scan_task.read`为十三项，消费十项不变，不扩大其他case／真实账号／角色／Grant。NFS首次`envi`有界扫及组成／头版本变更重扫归初始化，MinIO归消费者；逐次留存储／范围／阶段／身份／execution，不用已禁Deny。
 
-NFS 首次 `envi` 有界扫描及组成／头文件版本变更重扫由初始化用户执行并读取状态；MinIO 同范围扫描仍由消费者执行。报告逐次记录存储、范围、阶段、实际调用身份及执行编号，浏览器不携带初始化／办理凭据，不要求已禁用的 Deny 权限。
-
-NFS 与 MinIO 各一套三份独立字节构造的 256×256 三波段 Byte ENVI：BSQ/WGS84、BIL/UTM50N、BIP/无定位。逐项核对 `media/envi/multi` 身份、唯一双 ref、完整扫描、原始尺寸和两个 SHA；公开 Meta 仅核结构与 CRS 声明，完整组成、尺寸、哈希和 extent 由同一普通用户经 Manager 受控内容入口核对，两份响应分别归档。完整格式约束见[ENVI 双文件只读规范](../../builtin-formats/媒体与地图数据集.md#envi-双文件只读)。
+NFS／MinIO各三份独立构造256×256三波段Byte：BSQ/WGS84、BIL/UTM50N、BIP无定位。核`media/envi/multi`、唯一双ref／完整扫描／原尺寸及两SHA；公开Meta仅结构／CRS，完整组成／尺寸／hash／extent经同User Manager受控入口并独立归档。准入归[ENVI正式规范](../../builtin-formats/媒体与地图数据集.md#envi-双文件只读)。
 
 #### ENVI 精确组成授权
 
-六项精确组成场景复用完整双文件 `read` 包含的必要元数据查看，不另用节点 Grant 混入其证明。分离办理用户先核 System 完整组成并批准，消费者再查目录并使用真实已扫描 `item_id` 的正式 locator；不得用缺 `item_id` 的无效 locator 充当拒绝证据。批准前及所有读取 Grant 撤销后主项不可见、详情 404；元数据事实不代替内容批准。
-
-未批准时原件下载拒绝，完整清单批准后核对 ZIP 两份原件的完整字节和哈希。公开 Meta 不读取 refs／尺寸／哈希／extent；浏览器单独核结构投影、受控内容参数和原件 ZIP。
+六项只用完整双文件read所含必要metadata，不混入节点Grant。分离办理用户先核System完整组成并批准，再用真实扫描`item_id`的正式locator消费；缺item_id的400不作授权拒绝。未批准／全撤后主项隐藏、详情404；下载未批准拒绝，批准后ZIP两原件逐字节／hash匹配。浏览器单核结构投影／受控内容／ZIP，不从公开Meta读取refs／尺寸／hash／extent。
 
 #### ENVI MinIO 持续节点授权
 
-持续节点阶段在六项精确组成场景之前独立执行，使用节点 `metadata_read`／`read`，复用同一隔离 Tenant、User、办理身份与 MinIO。先核该接收方当前有效来源为零，阶段结束再次归零，再进入精确组成场景。仅新增六个固定临时对象，不扩大格式、真实账号权限或基础设施。
+先独立验证节点metadata_read／read，再进六精确项；同隔离Tenant／用户／办理身份与MinIO，前后有效来源均归零。只加六临时对象：bucket metadata不含内容；prefix非递归覆盖直属及签发后新建首次识别直属，拒绝深层／相邻；递归仅扩后代；bucket两递归范围；撤read后独立metadata可见。拒绝均用真实item_id，允许ZIP核完整成员。
 
-分别核对 bucket 元数据 Grant 不允许内容、prefix 非递归覆盖当前直属项及签发后新建并首次识别的直属项、深层与相邻 prefix 拒绝、递归仅扩展后代、bucket 两种递归范围，以及撤销读取后独立元数据仍可见。所有拒绝使用真实已扫描 `item_id`，允许的 Manager ZIP 读取核成员大小和摘要。
-
-自然到期通过正式历史查询核对精确主体、节点、动作及到期时间；不重复撤销已到期命令，仍有效的命令继续显式撤销。`minio_node_scope` 保留原始命令、检查和清理；失败也沿本轮命令清单收尾，核当前关系归零、详情隐藏和六个源副本删除，原输入保持不变。
+自然到期由正式历史核主体／节点／动作／到期，不重复撤已到期命令；有效命令显式撤。`minio_node_scope`存命令／检查／清理，失败也照清单收尾，核当前关系零／详情隐藏／六副本删除，原输入不变。
 
 #### ENVI COG 与缓存
 
-四份定位 COG 通过正式 action、当前 User 来源和独立目的 EA 生成，逐份完整核对 196608 个值及掩膜、源 CRS、网格、COG 布局、HTTP／物理哈希和 Range。两个无定位 BIP 保留原件与内容核对，但无地图、无直接图片解码和 COG 生成动作。
+四定位源经正式action、当前User来源及独立目的EA生成COG，逐份核196608值／mask、CRS／网格／布局、HTTP／物理hash、Range。两无定位BIP只核原件／内容，无地图／直接图片解码／COG动作。真实Console核三色像元／属性／边界／ZIP／截图，重开同缓存、零额外生成。
 
-真实 Console 沿现有媒体栅格页面验证三色像元、属性、无定位边界、ZIP 按钮和截图；重开须复用同一缓存且零额外生成请求。
-
-ENVI 原件出口要求当前普通 User，资源动作声明与实际受控读取复用同一认证准入判断。真实页面按钮须走既有 authenticated-fetch／Blob 保存路径；核同一账号、无 Cookie、无 URL 凭据、精确 locator 请求及完整 ZIP 保存字节，不把 Blob URL 当作服务端下载入口，也不以 API 单独下载代替按钮验收。六份页面证据逐一记录 `current_user_download_verified=true`。
+原件动作与读取共用当前User认证准入；按钮须authenticated-fetch／Blob保存，核同账号、无Cookie／URL凭据、精确locator及完整ZIP，六份逐一`current_user_download_verified=true`。Blob URL不是服务端入口，API不替按钮。
 
 #### ENVI 撤权恢复与组成变化
 
-每份精确源先撤销当前 `read`，用真实 locator 验证原件 403 与 Meta 详情 404，再按同一完整清单重新批准后读取。派生 COG 同样受当前完整组成 Grant 约束：撤权后缓存读取拒绝，重批后恢复原成果同一 Range 字节，不生成新产物。不得用旧 Deny 报告替代当前 Grant 撤销与重新批准证明。
-
-两种存储各以 BSQ 样例变更头文件命名，重扫后旧清单不能读取；撤销旧 Grant，按新精确清单批准后方可下载，最后恢复原组成并重新批准。同名头文件内容变化还须拒绝已发布 COG 的缓存读取，恢复原字节并重扫后才恢复旧缓存。
+每源撤read后原件403／Meta404，按同完整清单重批后恢复；COG缓存也须拒绝，重批恢复原成果同Range字节、零新产物，不用旧Deny报告。双存储各BSQ改头命名并重扫，旧清单拒绝，撤旧Grant／批新后可读，最后恢复原组成并重批。同名头内容变化另须拒绝旧COG缓存，恢复原字节并重扫才恢复。
 
 #### ENVI 清理与失败
 
-按[公共收尾](#文件读取-case-的公共准备与收尾)执行 ENVI 固定顺序：正式 API 删成果／任务并核物理成果及精确暂存输入缺失→撤销完整 read 并核六项不可见／详情404→删 NFS／MinIO 精确源；部署／Infra另核。
+正式API删成果／任务并核物理对象／精确暂存输入缺失→撤完整read、核六项隐藏／404→删双存储精确源，外层另核。失败先观察终态实际结果，经API删并返回精确清单供物理核对；成果创建前失败记`results_observed=0`，部分成果逐项核删。全部任务后只读查本独占Tenant COG namespace／暂存零残留，记`artifact_residuals`；首错／清理错误分开，不以外层销毁替代。
 
-失败清理须先观察终态执行实际拥有的结果，再经正式 API 删除并返回该精确清单，供物理核对。生成在成果创建前失败时记录 `results_observed=0`，不得虚构对象已删除；部分失败成果仍逐项核物理删除。所有已知任务清理后，额外只读核验本次独占租户 COG namespace 及暂存输入均无残留，记录 `artifact_residuals`。业务首错与清理错误分别保存，不能用清理异常覆盖生成异常，也不能由外层 Infra 零残留替代内部成果核验。
-
-退出清理前保存本独占部署的 Redpanda 固定状态字段和末 80 行脱敏日志（至多 8 KiB），拒绝读取其他 Compose 归属；诊断失败记为 `unavailable`，不替代业务结果或清理证明。
+退出前仅保存本部署Redpanda固定状态及末80行脱敏日志（≤8 KiB），拒读其他Compose；诊断失败`unavailable`，不替业务／清理结论。
 
 #### ENVI 验证与历史证据
 
-Owner `addp.manager-envi/v4`、媒体页面 v4，报告为 `manager-envi.json`／`manager-envi-browser.json`，包含结构／内容分离与当前 User 下载；旧 v2／v3 不替代节点扩展。SKP 精确组成准入仍关闭。
+Owner `addp.manager-envi/v4`、媒体页面v4；`manager-envi.json`／`manager-envi-browser.json`含结构／内容分离与当前User下载，旧v2／v3不证节点扩展。三交错／双端序／七实数类型、NoData／NaN／mask、漂移／头变更／歧义／外部文件／非法字段／预算拒绝分别经GeoPython及Common／Meta／System／Manager T1/T2，两组runner／登记只核接线。
 
-三交错／双端序／七实数类型、NoData／NaN／完整掩膜、内容漂移、头文件改变／歧义／外部文件／非法字段及预算拒绝分别沿 `make test-geopython-workflow`、Common／Meta／System／Manager T1/T2；两组 runner 与 CI 登记核 case／物理／页面接线，分层不互代。
-
-| 范围 | 最小证据与限制 |
+| 固定来源／作业 | 最小证据与限制 |
 | --- | --- |
-| 早期与授权适配 | [原件／COG／页面](../evidence/资源读取与预览历史证据.md#envi-双文件读取与-cog-hosted-t4) · [授权首败](../evidence/资源读取与预览历史证据.md#envi-现行授权契约复验--待正式结果)；无效 locator 的400不是权限拒绝，旧通过不追认新契约。 |
-| NFS 初始化身份失败 | [原记录](../evidence/资源读取与预览历史证据.md#envi-现行-nfs-初始化扫描身份修正2026-11-04正式复验待运行)：`beb3925600d6480af5722abe1df58103a4328dcb`、Job `126236035325`，首次NFS扫描403；MinIO部分与清理不证明六项／页面通过。 |
-| v3 精确组成 | [固定证据](../evidence/资源读取与预览历史证据.md#envi-精确双文件现行权限正式复验通过2026-11-04)：`9e5a94b7e48d654cfcb844deec8d2ddb8d0f1557`、Job `126269226975`，六项、原件／四COG／缓存／页面及清理，不含节点扩展。 |
-| v4 节点及原六项 | `516822366b3d976a3cb7d59ba742be616fc158fa`，[Run41741133610／Job126282637030](https://github.com/pampa0629/addp/actions/runs/41741133610/job/126282637030) · [完整证据](../evidence/资源读取与预览历史证据.md#envi-minio-持续节点新建文件及到期独立-hosted-通过2026-11-04)。十二次内容判定、五次显式撤销、一次自然到期及历史查询；早期runner不冒充最后清理修正后全量重跑。 |
+| 早期／契约适配 | [原件／COG／页面](../evidence/资源读取与预览历史证据.md#envi-双文件读取与-cog-hosted-t4) · [授权首败](../evidence/资源读取与预览历史证据.md#envi-现行授权契约复验--待正式结果)，无效locator400不证拒权，旧通过不追认新契约。 |
+| `beb3925600d6480af5722abe1df58103a4328dcb`／126236035325 | [NFS初始化身份失败](../evidence/资源读取与预览历史证据.md#envi-现行-nfs-初始化扫描身份修正2026-11-04正式复验待运行)：首次scan403，MinIO部分／清理不证六项或页面。 |
+| `9e5a94b7e48d654cfcb844deec8d2ddb8d0f1557`／126269226975 | [v3精确组成](../evidence/资源读取与预览历史证据.md#envi-精确双文件现行权限正式复验通过2026-11-04)：六项／原件／四COG／缓存／页面／清理，不含节点。 |
+| `516822366b3d976a3cb7d59ba742be616fc158fa`；[41741133610／126282637030](https://github.com/pampa0629/addp/actions/runs/41741133610/job/126282637030) | [v4节点及原六项](../evidence/资源读取与预览历史证据.md#envi-minio-持续节点新建文件及到期独立-hosted-通过2026-11-04)：12次内容判定／5撤销／1到期及历史；早期runner不冒充最后清理修正后的全量重跑。 |
 
-仅认证受验Byte及MinIO节点范围；不外推任意光谱、64bit整数／复数、压缩／外部资源／导出、其他格式引擎、容量或授权表单全流程。固定版本、失败／产物／清理详见证据正文，部分成功不抵消失败。
+只认证所测Byte／MinIO节点；SKP精确组成仍关闭，任意光谱／64bit整数／复数／压缩／外部资源／导出／其他引擎格式／容量／授权表单全流程未验。
 
 ### IMG 原生扫描与 COG 快显
 
@@ -400,107 +365,95 @@ Owner `addp.manager-envi/v4`、媒体页面 v4，报告为 `manager-envi.json`�
 
 #### IMG／JPEG2000 正文分工与来源
 
-IMG 与 JPEG2000 复用同一 Manager Hosted suite、普通 User 十项权限、Business MinIO、GeoPython 产品 Runtime 和唯一媒体栅格 runner，不新增 suite、服务或权限。按 case 选择组件及原生进程／产品容器的分工统一见[部署、模型转换与通用清理](#部署模型转换与通用清理)，不在各格式重复维护启动步骤。
+同suite／十项消费权限、Business MinIO／GeoPython产品Runtime／唯一媒体runner，部署沿[组件分工](#部署模型转换与通用清理)。真实Meta深扫的结构与受控内容按公共规则分开核。
 
-| 来源／专题 | 本文职责与独有断言 |
+| 来源 | 固定夹具与独有断言 |
 | --- | --- |
-| IMG／HFA | 三份自有 256×256 三波段 Byte：WGS84、UTM50N、无定位影像，全部自包含、同类型、无 NoData。核 `img/media/single`、HFA 编码、尺寸／波段及已声明 CRS。格式准入见 [IMG 正式契约](../../builtin-formats/媒体与地图数据集.md#img--erdas-imagine)。 |
-| JPEG2000 | 四份同尺寸三波段 Byte 可逆无损源：GeoJP2 WGS84、GMLJP2 UTM50N、无定位 JP2、原始 J2K。核 `jpeg2000/media/single`、JP2OpenJPEG、profile、尺寸／波段及源大小／哈希。格式准入见 [JPEG2000 正式契约](../../builtin-formats/媒体与地图数据集.md#jpeg2000)。 |
-| TIFF 回归 | 布局判定、无定位小图像素、单项刷新、NFS 授权／自然到期和 MSK 扩展分别归[TIFF 专题](#tiff-无定位小图的-cog-布局回归)。复用 runner 不表示沿用 IMG／JP2 的无定位失败提示或生成按钮判定；本节不复制其业务断言。 |
-
-真实 Meta 深度扫描核结构身份与已声明 CRS；尺寸、波段、编码、完整格式参数及内容范围通过同一普通用户的 Manager 授权预览核对，并分别归档公开 Meta 与受控内容响应。无定位样例不得出现推断的空间能力，不据名称或坐标外观假定经纬度。
+| IMG／HFA | 三份256×256三波段Byte：WGS84／UTM50N／无定位；自包含、同类型、无NoData，核`img/media/single`及HFA。准入归[IMG契约](../../builtin-formats/媒体与地图数据集.md#img--erdas-imagine)。 |
+| JPEG2000 | 四份同尺寸三波段Byte可逆无损：GeoJP2 WGS84、GMLJP2 UTM50N、无定位JP2及原J2K；核`jpeg2000/media/single`、JP2OpenJPEG／profile／原大小及hash。准入归[JPEG2000契约](../../builtin-formats/媒体与地图数据集.md#jpeg2000)。 |
+| TIFF | 布局／小图／刷新／NFS／到期／MSK归[TIFF专题](#tiff-无定位小图的-cog-布局回归)，不沿用下述无定位提示／按钮规则。 |
 
 #### IMG／JPEG2000 COG 与缓存
 
-各格式的两份定位源沿正式 `generate_raster_cog` action 生成受管 TIFF／COG，共四份。逐任务核实际 `source_format=img` 或 `jpeg2000`、原生 Runtime 身份、完整像元／mask／CRS／仿射网格、完整 COG 布局、API／物理哈希与大小、Range 前后缀和越界 416 拒绝。
-
-同一普通 User 在真实 Console iframe 查看 WGS84／UTM COG，核 WebGL 图层品红／青／黄像素及截图；重开复用同一结果与执行，零额外生成请求。生成、页面、复用和退出均核源字节及 Meta 不变；原格式身份不因派生 COG 改写。
+各两定位源经`generate_raster_cog`共四受管TIFF／COG，逐任务核`source_format`为`img`或`jpeg2000`、原生Runtime身份、完整像元／mask／CRS／仿射、布局、API／物理hash及大小、Range前后缀／越界416。真实iframe核WGS84／UTM WebGL品红／青／黄及截图；重开同成果／execution、零额外生成，源字节／Meta与原格式身份保持。
 
 #### IMG／JPEG2000 页面与原件
 
-无定位 IMG、JP2、J2K 核元数据及可见的“不支持直接预览”提示，无地图、无 COG 生成动作；预览区域不得挂载普通图片组件或源 `<img>`，不得把源交给浏览器图片解码。页面报告必须包含 `source_image_absent=true` 与 `unsupported_message_visible=true`，缺失或为假均拒绝，不能仅凭无地图／无生成按钮判通过。
-
-每份原件经 API 和真实页面按钮分别核完整大小与哈希；API 下载不替代按钮。TIFF 的无定位渲染与可选转换动作按其专节判定，不从上述 IMG／JP2 规则推导。
+无定位IMG／JP2／J2K须显示“不支持直接预览”，无地图／COG动作、普通图片组件或源`<img>`，不交浏览器解码。页面必须`source_image_absent=true`、`unsupported_message_visible=true`，缺失／假即拒绝。原件逐份按公共API／按钮交付核验；TIFF独立判定。
 
 #### IMG／JPEG2000 清理与验证
 
-沿[公共收尾](#文件读取-case-的公共准备与收尾)，正式 Manager API 删四份受管结果／任务，核内容404、物理对象缺失、源预览模式恢复及业务零残留；部署／Infra另核。
-
-IMG／JPEG2000 分别归档 `manager-img*.json`、`manager-jpeg2000*.json`，现行报告为 `addp.manager-raster-media/v2` 与 `addp.manager-raster-media-browser/v4`。历史报告版本按固定记录使用，不追认新版覆盖；旧 Manager 场景断言保持。
-
-标准确定性入口为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现；CI 注册检查须确认子场景、浏览器和两组回归在既有入口实际接线。仅手工触发既有 Manager Hosted，不增加定时；未取得真实结果的新增范围不计通过。
+按[公共收尾](#文件读取-case-的公共准备与收尾)经Manager API删四成果／任务，核内容404／物理缺失／源预览模式恢复；`manager-img*.json`／`manager-jpeg2000*.json`分别归档。现行子报告`addp.manager-raster-media/v2`、页面`addp.manager-raster-media-browser/v4`，历史版本不追认新版；runner／原生门禁及既有登记核子场景／浏览器／回归接线，不增定时。
 
 #### IMG／JPEG2000 历史证据与未覆盖项
 
-固定源码、实际 Job、原始产物、失败／取消、清理及未覆盖项由以下专题维护，部署成功、CI 分项和页面独立复核分别判定：
-
-| 范围 | 结论与证据 |
+| 范围 | 最小证据与限制 |
 | --- | --- |
-| IMG 早期 HFA | [原生链路记录](../evidence/资源读取与预览历史证据.md#manager-内部产物与-minio-模型入口--hosted-t4)，不证明 JPEG2000。 |
-| JPEG2000 首轮 | [外层成功但页面复核未过](../evidence/资源读取与预览历史证据.md#jpeg2000-初轮--hosted-外层成功独立页面复核未通过)，保留破图及旧报告漏检结论。 |
-| IMG＋JPEG2000 独立 case | [正式收口](../evidence/资源读取与预览历史证据.md#imgjpeg2000-独立媒体栅格-case--hosted-t4)，按七源／四 COG、当轮页面与清理范围使用，不追认当前报告版本或完整模型场景。 |
-| TIFF | 统一查[TIFF 分版本证据](#tiff-分版本证据)，不由 IMG／JPEG2000 结果推断。 |
+| IMG早期HFA | [原生链路](../evidence/资源读取与预览历史证据.md#manager-内部产物与-minio-模型入口--hosted-t4)，不证明JPEG2000。 |
+| JPEG2000首轮 | [外层成功、独立页面未过](../evidence/资源读取与预览历史证据.md#jpeg2000-初轮--hosted-外层成功独立页面复核未通过)，保留破图／旧报告漏检。 |
+| 独立媒体case | [正式收口](../evidence/资源读取与预览历史证据.md#imgjpeg2000-独立媒体栅格-case--hosted-t4)仅当轮七源／四COG／页面／清理，不追认当前报告或full；TIFF见[分版本证据](#tiff-分版本证据)。 |
 
-IMG 不外推导出、外部 IGE／RRD／依赖文件、复数／异质波段、自定义 WKT、NFS Hosted 或任意影像容量；JPEG2000 不外推外部定位／PAM、JPX 组合、NFS／FTP、写出或任意厂商容量。旧 IMG 通过不代表 JPEG2000 通过，两者也不替代 TIFF 或 GRD 的独有断言；专项及清理通过不表示整轮 CI、完整 Manager 或专业影像生产全部通过。
+IMG导出／外部IGE或RRD／依赖／复数或异质波段／自定义WKT／NFS Hosted、JPEG2000外部定位或PAM／JPX组合／NFS或FTP／写出，以及任意厂商／容量未验。二者不替GRD／TIFF断言，亦不认证整轮CI／完整Manager或专业影像生产。
 
 ### 部署、模型转换与通用清理
 
-Manager 内部产物 T4 使用 `manager-internal-artifact-lineage` 单一 suite 和 GitHub Hosted Linux x86_64 disposable profile，不再由 macOS self-hosted 分发。`online-hosted-manager-gate.sh` 复用共享 Hosted 生命周期，从零建立 Infra、最小权限 User、Tenant 和 Business MinIO Engine；浏览器登录凭据只保存到当次仓库外 owner-only Secret 目录。
+`manager-internal-artifact-lineage`使用GitHub Hosted Linux x86_64 disposable，`online-hosted-manager-gate.sh`复用共享生命周期建Infra、最小User／Tenant／Business MinIO Engine；登录凭据限仓库外当次owner-only Secret目录，不由macOS self-hosted分发。身份／原生进程／产品容器归[T4专用环境](../T4-Online验收规范.md#专用环境)，按case选组件，启动不代表业务已验。
 
-部署组件由当前 `online-hosted-manager-gate.sh` 按 case 选择；启动了某个组件，不表示该 case 已执行其业务断言。组件分工如下：
-
-| 组件 | 启动方式与范围 |
+| 组件 | 部署及职责 |
 | --- | --- |
-| 应用模块及公共依赖 | 经标准开发生命周期选择 Security、Meta、Manager、Monitor；表格及部分导出 case 另选 Transfer。System、Gateway、Console 等公共依赖由该入口启动，不在 workflow 复制启动逻辑。 |
-| PointCloud、Document | 仅在对应部署分支中经开发入口启动原生 Python 进程，按 PID 与回环监听归属管理；部分独立 case 不启动二者。依赖准备与启动检查不代替下述 COPC／PDF 及页面断言。 |
-| Model3D | 对应分支通过正式构建入口构建 Linux amd64 转换器及 Runtime 产品镜像，以镜像默认入口启动；不使用模拟转换器。 |
-| GeoPython | 经共享 Hosted helper 构建并启动 Runtime 产品镜像；需要 NFS 的 case 显式只读挂载当次夹具目录。产品容器与上述原生进程分别遵循自己的启动和访问约束。 |
+| 应用 | 标准开发生命周期选择Security／Meta／Manager／Monitor，表格及部分导出另选Transfer；System／Gateway／Console等依赖由入口带起，不在workflow复制。 |
+| PointCloud／Document | 对应分支启动原生Python，按PID／回环监听归属管理；准备／版本检查不替COPC／PDF页面验收。 |
+| Model3D | 正式构建Linux amd64转换器及Runtime产品镜像，默认入口运行，不用模拟器。 |
+| GeoPython | 共享Hosted helper构建／启Runtime产品镜像，NFS case只读挂载当次夹具。 |
 
-身份、原生进程与产品容器的边界统一见 [T4 专用环境](../T4-Online验收规范.md#专用环境)。各 case 的数据源、业务覆盖和清理要求以本页对应条款为准；下述完整模型链路不扩展裁剪 case 的已验收范围。
+Runtime启动前设置`ADDP_ONLINE_TEST_RUN_ID=manager-<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`，运行标签／业务报告同ID；缺Run ID／attempt在变更服务前失败并清凭据。生命周期模拟保suite标签，其他标签不影响suite归属判断。
 
-Business MinIO 的确定性生成 LAS、仓库已跟踪的 3 页 PPTX、带 PNG 贴图的 DAE 与 3DS、仓库自有 IFC4 米制立方体及 zlib 压缩并内嵌 DXT5 红色贴图的单体 OSGB 必须经过同一次真实 Meta 深度扫描，再通过对应 Manager owner action/task 与真实 Runtime 生成 COPC、PDF、GLB。模型断言覆盖四种格式的 `model_3d + single` 分类；DAE/3DS 核对贴图资源引用及 GLB 内嵌 PNG，IFC 核对 STEP schema、实体摘要及米制立方体几何，OSGB 核对 GLB 内嵌 JPEG 与带 UV 的三角形。全部产物核对自包含 GLB 和非空网格、Manager/Monitor 血缘一致，以及 Console iframe 中 GLB 请求成功、模型加载完成和截图。
+full的确定性LAS、3页PPTX、PNG贴图DAE／3DS、IFC4米制立方体、内嵌DXT5红贴图的zlib单OSGB经同轮Meta深扫及正式owner action/task生成COPC／PDF／GLB；模型均核`model_3d/single`、自包含非空网格，格式断言见[八模型](#表格json-与八模型固定断言)。Manager／Monitor输入输出血缘一致，真实iframe须GLB请求成功、加载完成并截图；不扩裁剪case。
 
-Online Chromium 统一显式使用 SwiftShader 软件 WebGL，在无独立 GPU 的 Hosted Runner 上仍执行真实模型绘制；不屏蔽业务警告或用截图占位。浏览器报告 v5 仅将 Chromium WebGL Driver 的精确 `GPU stall due to ReadPixels` 性能诊断单列，记录来源、观测阶段及各阶段次数（包括栅格重投影/预览与截图），不将预览期间的诊断归因为截图。次数表示浏览器输出的诊断条数，浏览器可能限流，不能推断实际 GPU 读取次数或诊断未再次出现即无读取。共享前端测试工具独占精确消息分类；其余页面警告、错误及失败的业务请求仍使验收失败。重投影 T3 必须核对真实输出像元并断言无 Canvas getImageData 读取，不以诊断分类替代渲染验收。
+Chromium显式SwiftShader软件WebGL、真实绘制不占位。共享测试工具仅精确分类`GPU stall due to ReadPixels`，浏览器报告v5单列来源／阶段／次数（含重投影／预览／截图）；预览诊断不归因截图，限流条数不代表GPU调用次数／无读取。其他业务警告、错误、失败请求仍失败；重投影T3核真实像元及无Canvas getImageData，分类不替渲染验证。
 
-文件读取的公共收尾见[对应要求](#文件读取-case-的公共准备与收尾)。完整模型分支另按捕获 ID 删临时产物／任务，内容和任务分别404，模型源预览模式恢复；执行未终结或归属未确认不报告零残留。退出停应用、销毁本轮 Business MinIO 容器／网络／卷及 Infra。确定性沿 `make test-online-runner`，真实沿 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`，未实际 Hosted 不计T4，不增定时。
-
-Manager Hosted 在启动 Runtime 前明确设置 `ADDP_ONLINE_TEST_RUN_ID=manager-<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`，共享 Runtime 的运行标签和后续业务报告使用同一 ID。生命周期模拟须保留 suite 标签，并忽略其他标签对 suite 归属判断的影响；标准 `make test-manager-online-runner` 和 `make test-online-runner` 覆盖启动、失败退出与清理，不新增入口或 workflow。缺少 GitHub Run ID／attempt 时，生命周期必须在变更服务前明确失败并清理凭据。
+文件case沿[公共收尾](#文件读取-case-的公共准备与收尾)；full按捕获ID经正式API删产物／任务，内容／任务各404、源预览模式恢复，不直接改DB／Infra MinIO。十一类领域／物理清理、PDF／COG独立物理核验均保留，结束停应用／销毁本轮Business容器／网络／卷及Infra。确定性为`make test-online-runner`／`make test-manager-online-runner`，真实为`make test-online ONLINE_SUITE=manager-internal-artifact-lineage`，不增入口／workflow／定时。
 
 ### 点云与 PPTX
 
-Manager 点云与 PPTX 专用断言复用同一 Hosted 场景及当次 Business MinIO 与 Engine Instance。Fixture owner 幂等写入仓库内确定性小型 LAS 与多页 PPTX 样本；suite 经 Gateway 触发真实 Meta scan，并使用扫描所得的 ResourceLocator、item ID 和 fingerprint 验证两条正式链路：`point_cloud_copc_generation` 必须由 PointCloud Runtime 从业务对象存储读取源文件、向 Manager infra MinIO 发布 COPC，并由 Manager execution 写入 `addp.lineage-facts/v1`；PPTX 预览必须由 Quick View Capability 声明 `generate_pptx_pdf`，并通过统一 action 入口首次触发 `pptx_pdf_generation`，由 Document Workflow / LibreOffice 发布多页静态 PDF，同源再次读取 Capability 只复用同一任务与结果，不创建第二次 execution。Monitor API 与真实浏览器必须展示同一业务输入和 `addp-infra://` 输出；浏览器还必须在 Data Explorer 翻到后续 PDF 页，跨过 Engine 状态周期刷新后仍保持当前页。退出路径通过 Manager 正式 API 删除两类结果与任务、验证对象不可再读取及临时资源零残留；不得直接操作数据库或 infra MinIO 清理。
+Fixture owner幂等准备确定性LAS／多页PPTX，Gateway真实扫描得locator／item ID／fingerprint后核：
+
+- `point_cloud_copc_generation`由PointCloud从Business读源、发布COPC至Manager Infra MinIO，Manager execution写`addp.lineage-facts/v1`。
+- Quick View Capability声明`generate_pptx_pdf`，首次统一action触发`pptx_pdf_generation`，Document Workflow／LibreOffice发多页静态PDF；再读Capability复用同任务／结果、零第二execution。
+- Monitor API／真实浏览器须同业务输入与`addp-infra://`输出；Data Explorer翻后续PDF页，跨Engine状态刷新仍保持页。两类结果／任务按正式API和公共清理核不可读／零残留。
 
 ### 彩色 FBX 只读预览
 
-初始视角仍要求红、绿、蓝三种主色各有足够的真实像素。旋转、缓存恢复和重新打开后的视角可以显示源模型的黄色、品红、青色面，因此这些阶段按 RGB／CMY 六个明确色系核对至少两种着色，不能把“未同时看到两种 RGB 主色”误判为丢失顶点颜色；面积、像素阈值、旋转前后变化和源哈希断言保持不变。
+官方`vCube.fbx`原样复制至`model3d/fbx/vCube.fbx`，沿原扫描／十项权限，和缺颜色索引`model.fbx`的GLB几何转换并列，不替换。生成入口／缓存两阶段直接加载彩色源：初始红绿蓝均有足够真实像素，旋转／恢复／重开允许RGB／CMY六系中至少两色；原面积／像素阈值／旋转变化及下载SHA保持。
 
-同一 Manager Hosted suite 增加官方彩色 FBX `vCube.fbx` 的只读基础预览场景：Business 夹具原样复制仓库固定样例至 `model3d/fbx/vCube.fbx`，沿用既有扫描与十项普通 User Permission；与缺少颜色索引的 `model.fbx` 转 GLB 场景并列，不能替换原转换几何断言。在生成入口和缓存阶段分别直接加载彩色源，首轮确认真实截图的三种主色，两轮均核对旋转变化、重开后的着色及下载 SHA-256；不得为该源生成任务或产物。Owner 在扫描后和清理末尾再次核对原文件字节、空成果和空任务，失败也必须执行该检查；源由当次 Business MinIO 生命周期销毁，既有十一类领域／物理清理保持原断言。浏览器报告唯一版本升至 v12，Owner 报告升至 v10；旧版本拒绝。沿用 `make test-manager-online-runner`、`make test-online-runner`、Online CI 登记及既有 Hosted workflow，不增加服务、部署入口或权限；真实运行通过后方能认证新增 T4 范围。
+该源零任务／成果，扫描后及清理末尾即使失败也核源字节／空结果／空任务，再随Business生命周期销毁；原十一类清理不变。新增范围最低browser v12／Owner v10，旧版拒绝；完整报告遵循下文现行绑定，实际Hosted前不认证。
 
 <a id="max-模型-hosted-验收"></a>
 
 ### MAX 模型 Hosted 验收
 
-MAX 的 Manager Hosted T4 扩展复用 `manager-internal-artifact-lineage`，从专用 Business MinIO 读取未修改的 CC-BY-SA-3.0 马模型及 ADDP 自建 4 × 4 RGB `(220,30,60)` 贴图。页面验证默认米、手选毫米和显式 bitmap 映射；正式生成声明 `source_unit=mm`，核对转换审计、五个静态网格、十二个 primitive、444 个顶点、米制场景尺寸和实际内嵌贴图像素，不固定跨 Blender 版本的 PNG 编码哈希。Meta 仅识别 MAX 格式身份；六种模型与点云、PPTX、栅格共同核对九项输入／输出血缘、缓存加载和零残留清理。确定性入口仍为 `make test-manager-online-runner` 与 `make test-online-runner`；真实验收仍为现有 Hosted suite，实际运行通过前不计为 T4 通过。
+Business MinIO原样CC-BY-SA-3.0马模型＋自建4×4 RGB(220,30,60)贴图；页面核默认米／手选毫米／显式bitmap映射，正式生成`source_unit=mm`。核审计、5静态网格／12 primitive／444顶点、米制尺寸及真实内嵌像素，不固定跨Blender版本PNG编码hash。Meta仅格式身份；MAX阶段六模型＋点云／PPTX／栅格核九项输入输出血缘／缓存／清理，实际Hosted前不算T4。
 
 ### 表格、JSON 与八模型固定断言
 
-CSV／TSV 索引源版本复验复用同一 Hosted 独占 NFS 导出和原十项普通 User 权限。NFS 生命周期只在本轮私有根目录准备两个专用 ASCII 源；Owner 精确深扫并确认版本绑定的稀疏索引，验证两页内容后，在宿主夹具目录同大小改写字段与数据并显式推进修改时间。两页预览均须返回 `409/preview_source_refresh_required`，不得附带列、行或总数，不得自动改写 Meta 快照；同一用户仍可下载实际源字节。通过 Manager 原 item 刷新入口重建后，身份保持、绑定更新，两页必须显示新字段和新值。成功或失败均还原原字节、刷新并复核原分页与下载，再由既有 NFS 生命周期删除整个私有导出；写入前校验 Hosted Linux x86_64、私有根路径、Run owner 及无符号链接。原模型及领域／物理清理断言保持。本机标准入口 `make test-manager-online-runner` 仅证明夹具、拒绝边界及登记，真实存储及跨模块 T4 必须以对应版本完整 Hosted 通过证明。
+full沿原十项普通User，含`manager.content.read`下载及`manager.data_item.update`设置／刷新；Owner拒缺项／多项或管理员角色，不扩个人／生产身份。报告版本由当前Owner／浏览器及CI登记绑定，历史不替当前；下列固定夹具保留，格式产品规则归权威规范。
 
-MinIO 源变更复验继续使用该 suite 的现有隔离 Business MinIO 和固定 mc 镜像，不新增服务、用户权限或产品写接口。只允许生命周期在已有 Hosted Run 私有根与 owner 标记核验后改写两个精确 `index-source-versions/source.csv|tsv` 对象；命令动作固定为对应格式的 change／restore，拒绝原始字节或已知变更字节之外的对象，不接收任意路径或数据。NFS 与 MinIO 共用同一预览、409 拒绝、刷新、分页和下载验证逻辑；MinIO 还须核对源绑定中的 ETag 在同大小改写后改变，成功或失败均精确还原原字节、刷新并复核原页及下载，原业务容器销毁仍须零残留。四个 storage／format 案例在唯一 `index-source-versions.json` 中登记源绑定与字节哈希，证据版本升 v2，Owner 报告升 v13、浏览器仍 v13；历史 v1 报告不替代四案例的 v2 证据。未取得对应新版本完整 Hosted 通过前，MinIO 源变化仍属未验，不外推外部云 S3 或一致性快照。
+| 来源 | 固定断言 |
+| --- | --- |
+| CSV／TSV GBK | 两源各25行／784字节，真实设置／刷新核三列中文、20＋5／末页禁用、原大小／SHA及无覆盖再次刷新／重开。切“首行为数据”须`has_header=false`、Column1～Column3、26行（原头为首数据）／20＋6、普通刷新继承／重开，恢复头后25行。两阶段Meta实际模式／编码／指纹／内容hash一致，下载不变，GBK不发布字节索引；表头扩展最低suite／browser v14，旧v13不认证。 |
+| XLSX | 完整7087字节，Cities25行2列、Readings2行3列、Empty0行0列、HeaderOnly2列0数据。`format=excel`／`data_type=container`／`layout=single`，不同结构、未知总数20＋5／末页禁用、切表重置、刷新保当前页／空表、重开第一页及完整下载；dimension只是估算。 |
+| JSON／GeoJSON | 嵌套文档与25行records分别文档／20＋5表格；相同Point／LineString FeatureCollection的`.geojson/.json`均走唯一`preview_type=table`地图＋表格，核完整属性／几何、4326／未变换CRS、真canvas／点击、末页／下载／刷新／重开；普通文档不误入records／空间，不外推轨迹。 |
+| 八模型 | DAE／3DS核贴图引用／内嵌PNG；IFC核STEP schema／实体摘要／米制几何；OSGB核内嵌JPEG／UV三角形；SKP核英寸→米／共享双实例／彩色PNG、无虚构解析元数据；MAX按上节；FBX核角点／变换／颜色／12三角面；OBJ核尺寸／UV／PNG像素／不透明度，基础预览仅几何。均核`model_3d/single`／自包含GLB／真实网格；[固定FBX预览未认证边界](../../../../manager/docs/三维模型、点云与高斯泼溅预览说明.md#二数据类型与预览路线)保持，旧SKP套件不证明当前关闭的精确组成授权。 |
 
-同一轮复用既有十一份转换执行，核对 `model_3d_glb_generation`、`pptx_pdf_generation`、`raster_cog_generation` 和 `point_cloud_copc_generation` 四类成功任务的公共过程事件，不新增任务、权限或等待预算。通过 Monitor 原事件接口按 ID 游标分页到末页，严格核对闭合分页／事件字段、实际执行 UUID、首 claim 的 attempt=1、递增事件 ID、带时区的保留窗口内时间，以及唯一 started 在前、唯一 completed 在末；允许零至多条仅含整数百分比的 progress，不要求进度数量，拒绝截断或失败终态。生命周期首末事件不得含步骤或计数，过程事件不得出现参数、样本、Runtime 正文、lease 或授权信息。Owner 在 `manager-execution-events.json`（`addp.manager-execution-events/v1`）及完整报告中只归档执行 UUID、任务类型、attempt、事件／页数及安全检查结果，不保存完整事件响应；事件通过不替代专业结果、血缘或清理，也不外推其余八类任务和失败、过期、进度写入的 T4。
+**版本绑定索引**：同suite独占NFS私有根的两ASCII源精确深扫后，核版本绑定稀疏索引／两页；宿主同大小改字段与值、显式推进mtime，两页须`409/preview_source_refresh_required`、无列／行／总数、不自动改Meta，User仍可下载实际字节。原item刷新后身份保持／绑定更新／两页新值。成功／失败均先还原字节、刷新、复核原页／下载再删私有导出。写前核Hosted Linux x86_64／私有根／Run owner／无符号链接。
 
-同一 Manager Hosted suite 继续使用当次 Business MinIO、原十项普通 User 权限和生成入口／缓存两阶段浏览器，不新增服务或权限。身份只允许既有 `manager.content.read`（原文件下载）与 `manager.data_item.update`（应用编码和 item 刷新）等原十项权限，Owner 拒绝缺少／多出 Permission 或管理员角色；该限定不扩展个人或生产身份。完整报告版本以当前 Owner、浏览器实现和 Online CI 登记为准，历史版本不替代当前完整证据。
+MinIO沿同预览／409／刷新／分页／下载断言，只用既有Business与固定mc：在Run私有根／owner核验后，仅改`index-source-versions/source.csv|tsv`，动作限对应change／restore，拒绝已知原／变更字节之外对象及任意路径／数据。核同大小改写ETag改变，成功／失败均还原／回读，容器销毁零残留。四storage×format案例在`index-source-versions.json`证据v2，Owner v13／browser v13；旧v1不替四案例，未取得新版本完整Hosted前MinIO源变化仍未验，不认证外部S3／一致性快照。
 
-- CSV／TSV：两份固定 GBK 小表，各 25 行、784 字节。真实读取设置和 item 刷新先核对三列中文、20＋5 分页、末页禁用、源大小／SHA-256、无覆盖参数的再次刷新及整页重开。随后实际选择“首行为数据”，核对请求布尔 `has_header=false`、稳定 `Column1`～`Column3`、总数 26、原表头作为首条数据、20＋6 分页、普通刷新继承和重开；最后从同一设置组恢复表头模式并复核原 25 行。两阶段 Meta 的实际模式、编码、源指纹及内容哈希必须一致，下载原字节不变；GBK 不发布源字节索引。新增表头模式证据使用 suite／browser v14，旧 v13 不计该能力通过；该扩展复用原十项权限、业务存储和清理边界。
-- XLSX：固定完整工作簿 7087 字节，Cities 25 行两列、Readings 两行三列、Empty 零行零列、HeaderOnly 两列表头零数据。格式事实为 `format=excel`、`data_type=container`、`layout=single`；核对不同列结构、未知总数下 20＋5 分页和末页禁用、切表重置、刷新保留当前页／空表、重开回第一页及完整工作簿下载；worksheet dimension 仅为估算，不写成精确总数。
-- JSON：普通嵌套文档与 25 行 records array 分别证明文档展示和 20＋5 表格分页。相同 Point／LineString FeatureCollection 的 `.geojson`、`.json` 两后缀均按唯一 `preview_type=table` 主线验证地图＋属性表、完整属性／几何、EPSG:4326、未变换 CRS、真实 canvas／要素点击、末页、下载／刷新／重开；普通文档不误入 records 或空间分支，不推导设备轨迹规则。
-- 八模型：DAE／3DS／IFC／OSGB／SKP／MAX／FBX／OBJ 均核对 `model_3d/single`、自包含 GLB 和真实几何。原 DAE／3DS 贴图、IFC schema／实体、OSGB JPEG／UV 断言保持；SKP 核对英寸到米、共享双实例、内嵌彩色 PNG 且无虚构解析元数据；MAX 核对毫米审计、五网格及真实 RGB 贴图。FBX 核对源角点、变换、颜色与十二个三角面；OBJ 核对尺寸、UV、PNG 像素和不透明度，基础预览只验证几何。固定 FBX 的基础预览未认证边界见[三维预览说明](../../../../manager/docs/三维模型、点云与高斯泼溅预览说明.md#二数据类型与预览路线)。
-- 原文件与清理：FBX 在生成和缓存两阶段下载单主文件核对 SHA-256；OBJ 按既有逻辑对象下载契约接收 ZIP，严格核对且仅含 model.obj、model.mtl、texture.png，逐成员核大小、原始字节 SHA-256、重复／额外成员、加密及损坏拒绝。浏览器捕获原 ZIP 并记录包大小／SHA-256 和成员事实，Owner 用同一字节校验器复核；两阶段均须通过，清理后源成员不变。OBJ 主文件 97、MTL 45、PNG 76 字节合计 218 字节；DataItem 整体大小与主文件下载大小分别核对。十一类产物继续验证 Manager／Monitor 血缘、正式结果／任务删除和后续内容／任务 404，PDF／COG 独立物理核验不由 Infra 销毁代替；表格／JSON 源不创建派生产物。
+**原件与成果**：生成／缓存两阶段FBX单主文件核SHA；OBJ仅含model.obj(97字节)／model.mtl(45)／texture.png(76)的ZIP，共218字节。API、浏览器捕获、Owner／退出共用Python标准ZIP字节校验器，核包大小／SHA及每成员完整原字节／大小／SHA，拒重复／额外／加密／损坏；DataItem整体与主文件大小分开。两阶段通过且清理后源成员不变；表格／JSON不建派生产物。OBJ修正报告统一v15、拒v14，不新增包／产品接口。
 
-OBJ 逻辑下载修正将 Owner／浏览器报告统一升至 v15，拒绝 v14；使用 Python 标准 ZIP 读取器作为 API、浏览器捕获和退出核对的唯一字节校验器，不新增包或产品接口。
+**公共执行事件**：复用十一转换执行，按Monitor事件ID游标到末页核四成功任务`model_3d_glb_generation/pptx_pdf_generation/raster_cog_generation/point_cloud_copc_generation`，不增任务／权限／预算。分页闭合／字段／UUID、首claim attempt=1、ID递增、带时区保留窗口时间及唯一started首／completed末必须正确；progress零至多条、仅整数百分比，不固定数量，拒截断／失败终态。生命周期首末无步骤／计数，过程无参数／样本／Runtime正文／lease／授权。`manager-execution-events.json`（`addp.manager-execution-events/v1`）及完整报告仅存UUID／类型／attempt／事件页数／安全结果，不存完整响应。事件不替结果／血缘／清理，不外推其余八任务、失败／过期／进度写入T4。
 
-固定源、报告缺失／变更拒绝、场景与生命周期沿用 `make test-manager-online-runner`、`make test-online-runner` 和既有 Hosted Job。实际历史源码与通过边界见[证据索引](../验收证据索引.md#manager-预览与私有导入历史证据)。
+固定输入／报告缺失或变化拒绝／生命周期由原runner和Hosted登记核对；实际源码、失败、清理与覆盖范围统一查[证据索引](../验收证据索引.md#manager-预览与私有导入历史证据)。
 
 ## 拓扑构面、面叠面缝、悬点与线叠持久化（vector-topology-persistence）
 
