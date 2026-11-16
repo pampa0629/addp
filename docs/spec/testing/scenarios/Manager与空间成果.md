@@ -417,43 +417,45 @@ MSK／四成员均在授权有效、成果未删时开真实Console快显。独�
 
 ### ENVI 双文件 COG（限定 Hosted 已验收）
 
-阅读导航：[身份与来源](#envi-身份与来源) · [精确组成授权](#envi-精确组成授权) · [持续节点授权](#envi-minio-持续节点授权) · [COG 与缓存](#envi-cog-与缓存) · [撤权恢复与组成变化](#envi-撤权恢复与组成变化) · [清理与失败](#envi-清理与失败) · [验证与历史证据](#envi-验证与历史证据)。
+导航：[身份与来源](#envi-身份与来源) · [精确组成](#envi-精确组成授权) · [节点授权](#envi-minio-持续节点授权) · [COG／缓存](#envi-cog-与缓存) · [撤权／组成变化](#envi-撤权恢复与组成变化) · [清理](#envi-清理与失败) · [现行入口与历史证据](#envi-验证与历史证据)。
 
 #### ENVI 身份与来源
 
-`native-envi`沿[公共准备](#文件读取-case-的公共准备与收尾)，不启动模型／文档／点云。仅源初始化从十一项加`meta.scan_task.execute`、`meta.scan_task.read`为十三项，消费十项不变，不扩大其他case／真实账号／角色／Grant。NFS首次`envi`有界扫及组成／头版本变更重扫归初始化，MinIO归消费者；逐次留存储／范围／阶段／身份／execution，不用已禁Deny。
+`native-envi`沿[公共准备](#文件读取-case-的公共准备与收尾)，不启动模型／文档／点云。消费十权限，源初始化十一项加`meta.scan_task.execute`／`meta.scan_task.read`为十三项，不扩其他case／真实账号／角色／Grant。NFS首次`envi`有界扫及组成／头版本变更重扫归初始化，MinIO归消费者；逐次记存储／范围／阶段／身份／execution，不用已禁Deny。
 
-NFS／MinIO各三份独立构造256×256三波段Byte：BSQ/WGS84、BIL/UTM50N、BIP无定位。核`media/envi/multi`、唯一双ref／完整扫描／原尺寸及两SHA；公开Meta仅结构／CRS，完整组成／尺寸／hash／extent经同User Manager受控入口并独立归档。准入归[ENVI正式规范](../../builtin-formats/媒体与地图数据集.md#envi-双文件只读)。
+NFS／MinIO各三份独立256×256三波段Byte：BSQ/WGS84、BIL/UTM50N、BIP无定位。核`media/envi/multi`、唯一双ref／完整扫描／原尺寸／两SHA；Meta仅结构／CRS，refs／尺寸／hash／extent由同User经Manager受控取回并分存。准入见[ENVI正式规范](../../builtin-formats/媒体与地图数据集.md#envi-双文件只读)。
 
 #### ENVI 精确组成授权
 
-六项只用完整双文件read所含必要metadata，不混入节点Grant。分离办理用户先核System完整组成并批准，再用真实扫描`item_id`的正式locator消费；缺item_id的400不作授权拒绝。未批准／全撤后主项隐藏、详情404；下载未批准拒绝，批准后ZIP两原件逐字节／hash匹配。浏览器单核结构投影／受控内容／ZIP，不从公开Meta读取refs／尺寸／hash／extent。
+六精确项仅用完整双文件read及必要metadata、不混节点Grant。分离办理用户核System完整组成、批准后，以真实扫描`item_id`的正式locator消费；缺item_id的400不算拒权。未批／全撤后主项隐藏、详情404，原件下载拒绝；批准后ZIP两原件逐字节／hash匹配。浏览器分别核结构投影／受控内容／ZIP，不向公开Meta索取refs／尺寸／hash／extent。
 
 #### ENVI MinIO 持续节点授权
 
-先独立验证节点metadata_read／read，再进六精确项；同隔离Tenant／用户／办理身份与MinIO，前后有效来源均归零。只加六临时对象：bucket metadata不含内容；prefix非递归覆盖直属及签发后新建首次识别直属，拒绝深层／相邻；递归仅扩后代；bucket两递归范围；撤read后独立metadata可见。拒绝均用真实item_id，允许ZIP核完整成员。
+v4的bucket／prefix矩阵先节点metadata_read／read，清零后六精确项；同隔离Tenant／用户／办理身份与MinIO，`minio_node_scope`仅加六临时对象：bucket metadata无内容；prefix非递归覆盖直属及签发后新建首次识别直属、拒深层／相邻，递归仅扩后代；bucket核两递归范围。撤read仍有独立metadata可见，拒绝须真实item_id、允许ZIP核完整成员。
 
-自然到期由正式历史核主体／节点／动作／到期，不重复撤已到期命令；有效命令显式撤。`minio_node_scope`存命令／检查／清理，失败也照清单收尾，核当前关系零／详情隐藏／六副本删除，原输入不变。
+到期历史核主体／节点／动作／到期，不重复撤到期命令；有效命令显式撤。`minio_node_scope`存命令／检查／清理，失败仍核当前关系零／详情隐藏／六副本删除、原输入不变。
 
 #### ENVI COG 与缓存
 
-四定位源经正式action、当前User来源及独立目的EA生成COG，逐份核196608值／mask、CRS／网格／布局、HTTP／物理hash、Range。两无定位BIP只核原件／内容，无地图／直接图片解码／COG动作。真实Console核三色像元／属性／边界／ZIP／截图，重开同缓存、零额外生成。
+四定位源经正式action、当前User来源与独立目的EA生成COG，逐份核196608值／mask、CRS／网格／布局、HTTP／物理hash及Range。两无定位BIP仅原件／内容，无地图／直接图片解码／COG动作。真实Console核三色像元／属性／边界／ZIP／截图，重开同缓存、零额外生成。
 
-原件动作与读取共用当前User认证准入；按钮须authenticated-fetch／Blob保存，核同账号、无Cookie／URL凭据、精确locator及完整ZIP，六份逐一`current_user_download_verified=true`。Blob URL不是服务端入口，API不替按钮。
+原件按钮沿当前User认证读取，authenticated-fetch／Blob保存；逐项核同账号、无Cookie／URL凭据、精确locator／完整ZIP与`current_user_download_verified=true`。Blob URL不是服务端入口，API不代按钮。
 
 #### ENVI 撤权恢复与组成变化
 
-每源撤read后原件403／Meta404，按同完整清单重批后恢复；COG缓存也须拒绝，重批恢复原成果同Range字节、零新产物，不用旧Deny报告。双存储各BSQ改头命名并重扫，旧清单拒绝，撤旧Grant／批新后可读，最后恢复原组成并重批。同名头内容变化另须拒绝旧COG缓存，恢复原字节并重扫才恢复。
+每源撤read须原件403／Meta404／COG缓存拒绝；按同完整清单重批，恢复原成果同Range字节、零新产物，不用旧Deny报告。双存储各BSQ改头命名并重扫，旧清单拒绝，撤旧Grant／批新后可读，最后恢复原组成并重批。同名头内容变化另拒旧COG缓存，恢复原字节并重扫才恢复。
 
 #### ENVI 清理与失败
 
-正式API删成果／任务并核物理对象／精确暂存输入缺失→撤完整read、核六项隐藏／404→删双存储精确源，外层另核。失败先观察终态实际结果，经API删并返回精确清单供物理核对；成果创建前失败记`results_observed=0`，部分成果逐项核删。全部任务后只读查本独占Tenant COG namespace／暂存零残留，记`artifact_residuals`；首错／清理错误分开，不以外层销毁替代。
+沿[公共收尾](#文件读取-case-的公共准备与收尾)，ENVI按序：正式API删成果／任务并核物理对象／精确暂存输入缺失→撤完整read、核六项隐藏／404→删双存储精确源。失败先查终态实际结果，API删除后返回精确清单供物理核；创建成果前失败记`results_observed=0`，部分成果逐项核删。全部任务后只读核独占Tenant COG namespace／暂存零残留，记`artifact_residuals`。
 
-退出前仅保存本部署Redpanda固定状态及末80行脱敏日志（≤8 KiB），拒读其他Compose；诊断失败`unavailable`，不替业务／清理结论。
+退出诊断仅本部署Redpanda固定状态／末80行脱敏日志（≤8 KiB），拒其他Compose；失败记`unavailable`，不替业务／清理结论。
 
 #### ENVI 验证与历史证据
 
-Owner `addp.manager-envi/v4`、媒体页面v4；`manager-envi.json`／`manager-envi-browser.json`含结构／内容分离与当前User下载，旧v2／v3不证节点扩展。三交错／双端序／七实数类型、NoData／NaN／mask、漂移／头变更／歧义／外部文件／非法字段／预算拒绝分别经GeoPython及Common／Meta／System／Manager T1/T2，两组runner／登记只核接线。
+现行[Owner Runner](../../../../scripts/test/manager-envi-online.py)为`addp.manager-envi/v6`、媒体页面v4。v6新增MinIO根范围／授权工作区及NFS定向刷新，下表v3／v4不覆盖这些阶段。`manager-envi.json`／`manager-envi-browser.json`仍核结构／内容分离和当前User下载，v2／v3不证节点。
+
+三交错／双端序／七实数类型、NoData／NaN／mask及漂移／头变更／歧义／外部文件／非法字段／预算拒绝，由GeoPython和Common／Meta／System／Manager T1/T2分层认定；两组Runner／登记仅核接线，不补认新Hosted。
 
 | 固定来源／作业 | 最小证据与限制 |
 | --- | --- |
