@@ -1270,7 +1270,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M,'physical',side_effect=M.SuiteError('injected mutation failure')), \
              self.assertRaisesRegex(M.SuiteError,'injected mutation failure'):
             M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
-                lambda *args:{'id':1},lambda *args:None,lambda *args:None,report,lambda:None)
+                lambda *args:{'id':1},lambda *args:None,lambda *args:None,report,lambda:None,None)
         self.assertIsInstance(sample.call_args_list[1].kwargs['after'],M.datetime)
         self.assertEqual(report['cdc_risk_closure']['paused_buffer']['committed_offset'],'10')
         self.assertEqual(report['cdc_risk_closure']['stage'],'buffer_growth')
@@ -1300,7 +1300,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                      patch.object(M,'verify_capture_failure',side_effect=M.SuiteError('injected next phase')), \
                      self.assertRaisesRegex(M.SuiteError,'exact recovery origin' if wrong_origin else 'injected next phase'):
                     M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
-                        lambda *args:{'id':1},None,None,report,lambda:None)
+                        lambda *args:{'id':1},None,None,report,lambda:None,None)
                 wait.assert_called_once_with(client,recovered,'cancelled')
                 original.assert_called_once_with(client,manual)
                 self.assertEqual(report['cdc_risk_closure']['paused_execution_id'],recovered)
@@ -1375,7 +1375,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M.subprocess,'run',side_effect=command), \
              patch.object(M.subprocess,'Popen',side_effect=OSError('private process failure')), \
              self.assertRaises(OSError):
-            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,lambda _:None,None)
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,lambda _:None,None,None)
         self.assertEqual({v['rule_type'] for v in definitions}, M.CDC_PERFORMANCE_CODES)
         self.assertTrue(all(v['severity']=='warning' and v['enabled'] is True and
                             v['routes']==[{'channel':'webhook','destination_id':9}] for v in definitions))
@@ -1410,7 +1410,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M.time,'monotonic',side_effect=[0,100]), \
              patch.object(M,'physical',side_effect=lambda action:actions.append(action) or True), \
              self.assertRaisesRegex(M.SuiteError,'stop after native backpressure' if applied_cpu=='3000 100000' else 'CPU fault not applied'):
-            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage,None)
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage,None,None)
         self.assertFalse(any(args[1] == 'pause' or args[-1].endswith('/pause') for args in commands))
         self.assertIn(['docker','update','--cpu-quota','3000','owned-connect'],commands)
         self.assertIn(['docker','update','--cpu-quota','-1','owned-connect'],commands)
@@ -1478,9 +1478,9 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                               'expires_at':(now+timedelta(seconds=30)).isoformat()}
                 if invalid == 'early' and code == 'cdc_backlog_high' and phase == 'performance_trigger':
                     window.update(state='active',active=True)
-                if phase == 'performance_pretrigger_pause' and code != 'cdc_capture_delayed':
+                if phase in ('performance_pretrigger_pause','performance_evaluator_rebuild') and code != 'cdc_capture_delayed':
                     window = {'state':'paused','active':False,'generation':'1','reset_at':now.isoformat()}
-                    if invalid == 'pause_retains_pending':
+                    if invalid == 'pause_retains_pending' or invalid == 'rebuild_retains_pending' and phase == 'performance_evaluator_rebuild':
                         window['trigger_since'] = base.isoformat()
                 if phase == 'performance_task_pause' and code != 'cdc_capture_delayed':
                     window = {'state':'paused','active':True}
@@ -1505,7 +1505,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                            **({'backlog_threshold':'256','lag_offsets':'1000'} if r['rule_type']=='cdc_backlog_high' else {})}}
                 for r in rules() if state['phase'] != 'performance_trigger' or r['cdc_evaluation']['active']}
         def lifecycle(tenant, task_id, generation, selected, destination_id):
-            if state['phase'] == 'performance_pending':
+            if state['phase'] in ('performance_pending','performance_evaluator_rebuild'):
                 state['clock'] += 15
             result = {}
             for rule in rules():
@@ -1513,6 +1513,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 if code not in selected:
                     continue
                 window = rule['cdc_evaluation']
+                if invalid=='rebuild_no_evaluation' and state['phase']=='performance_evaluator_rebuild':
+                    window['reset_at']=base.isoformat()
                 if state['phase']=='performance_trigger' and state['trigger_reads']==1:
                     window={'state':'unknown','generation':'1','active':False,'reset_at':Clock.now().isoformat()}
                 if invalid == 'boundary_missing' and state['phase']=='performance_trigger' and code != 'cdc_capture_delayed' and not window['active']:
@@ -1523,7 +1525,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 count = int(window.get('active',False)) if state['phase']=='performance_trigger' else 0
                 if invalid == 'premature_lifecycle' and state['phase']=='performance_trigger':
                     count = 1
-                if invalid == 'preexisting_lifecycle' and state['phase']=='performance_pending':
+                if invalid == 'preexisting_lifecycle' and state['phase']=='performance_pending' or invalid == 'rebuild_emits_lifecycle' and state['phase']=='performance_evaluator_rebuild':
                     count = 1
                 result[code] = {'window':deepcopy(window),'incidents':count,'events':count,'deliveries':count}
             return result
@@ -1576,8 +1578,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             if state['phase'] == 'performance_recovery':
                 delay.update(delay_seconds=20,event_count=str(state['recovery_reads']))
                 buffer['lag_offsets'] = '128' if invalid=='half' else '127'
-            return SimpleNamespace(payload={'desired_state':'paused' if state['phase'] in ('performance_task_pause','performance_pretrigger_pause') else 'running',
-                'last_execution_id':state['running_execution'],'capture':{'generation':1,'buffer_observation':buffer,'delay_observation':delay}})
+            return SimpleNamespace(payload={'desired_state':'paused' if state['phase'] in ('performance_task_pause','performance_pretrigger_pause','performance_evaluator_rebuild') else 'running',
+                'last_execution_id':(pending_resumed if invalid=='rebuild_changes_execution' and state['phase']=='performance_evaluator_rebuild' else state['running_execution']),'capture':{'generation':1,'buffer_observation':buffer,'delay_observation':delay}})
         def mutate(actor, path, body=None, status=None):
             if path.endswith('/acknowledge'):
                 state['ack'] = True
@@ -1591,6 +1593,17 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             state['running_execution'] = pending_resumed if state['phase']=='performance_pretrigger_resume' else resumed
             return state['running_execution']
         launch = unittest.mock.Mock(side_effect=launch_execution)
+        def rebuild_evaluator():
+            self.assertEqual(state['phase'],'performance_evaluator_rebuild')
+            self.assertEqual(launch.call_count,0)
+            state['rebuilt'] = True
+            if invalid == 'rebuild_failed':
+                raise M.SuiteError('owned Monitor reconstruction failed')
+            return {'old_pid':42,'replacement_pid':42 if invalid=='rebuild_same_process' else 43,
+                    'executable_sha256':'a'*64,**({'secret':'private-performance-sentinel'} if invalid=='rebuild_private_proof' else {})}
+        rebuild = unittest.mock.Mock(side_effect=rebuild_evaluator)
+        def received():
+            return [{'signal_code':'cdc_consumer_stalled'}] if invalid=='rebuild_sends_notification' and state['phase']=='performance_evaluator_rebuild' else []
         error = {'early':'full resumed window','threshold':'optional threshold',
                  'pause_changed':'pause changed confirmed','half':'did not converge before the deadline',
                  'history_identity':'fault history task identity changed',
@@ -1598,7 +1611,11 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                  'preexisting_lifecycle':'lifecycle was not empty','premature_lifecycle':'lifecycle was not empty',
                  'pause_retains_pending':'did not converge before the deadline',
                  'resume_old_window':'reused its pre-pause window',
-                 'boundary_missing':'original threshold boundary'}.get(invalid)
+                 'boundary_missing':'original threshold boundary',
+                 'rebuild_same_process':'distinct owned Monitor process','rebuild_private_proof':'distinct owned Monitor process',
+                 'rebuild_retains_pending':'did not converge before the deadline','rebuild_emits_lifecycle':'lifecycle was not empty',
+                 'rebuild_changes_execution':'changed the paused task execution','rebuild_sends_notification':'emitted a performance notification',
+                 'rebuild_failed':'owned Monitor reconstruction failed','rebuild_no_evaluation':'did not converge before the deadline'}.get(invalid)
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
              patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
@@ -1611,10 +1628,10 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             if error:
                 with self.assertRaisesRegex(M.SuiteError,error):
                     M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
-                        mutate,delivered,SimpleNamespace(snapshot=lambda:[]),proof,stage,launch)
+                        mutate,delivered,SimpleNamespace(snapshot=received),proof,stage,launch,rebuild)
             else:
                 result = M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
-                    mutate,delivered,SimpleNamespace(snapshot=lambda:[]),proof,stage,launch)
+                    mutate,delivered,SimpleNamespace(snapshot=received),proof,stage,launch,rebuild)
                 self.assertEqual(result,resumed)
         self.assertEqual(proof['performance']['cleanup'],'passed')
         self.assertNotIn('private-performance-sentinel',json.dumps(proof))
@@ -1634,6 +1651,10 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(value['baseline']['committed_offset'],'0')
         self.assertEqual(value['pretrigger_pause']['buffer_before_pause']['committed_offset'],'1')
         self.assertEqual(value['pretrigger_pause']['pause_hold_checks'],8)
+        self.assertTrue(state['rebuilt'])
+        self.assertEqual(value['pretrigger_pause']['evaluator_rebuild'],
+                         {'old_pid':42,'replacement_pid':43,'executable_sha256':'a'*64})
+        self.assertTrue(all(v['window']['state']=='paused' for v in value['pretrigger_pause']['after_rebuild'].values()))
         self.assertEqual(set(value['pretrigger_pause']['insufficient_last']),M.CDC_PERFORMANCE_CODES-{'cdc_capture_delayed'})
         self.assertEqual(delivered.call_count,2)
         self.assertEqual(value['result'],'passed')
@@ -1652,10 +1673,20 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 value,*_ = self.performance_orchestration(invalid=invalid)
                 self.assertEqual(value['result'],'failed')
 
+    def test_evaluator_reconstruction_rejects_bad_identity_lifecycle_and_task_changes(self):
+        for invalid in ('rebuild_same_process','rebuild_private_proof','rebuild_retains_pending',
+                        'rebuild_emits_lifecycle','rebuild_changes_execution','rebuild_sends_notification','rebuild_failed','rebuild_no_evaluation'):
+            with self.subTest(invalid=invalid):
+                value,_,delivered,launch = self.performance_orchestration(invalid=invalid)
+                self.assertEqual(value['result'],'failed')
+                self.assertEqual(value['pretrigger_pause']['result'],'failed')
+                launch.assert_not_called()
+                delivered.assert_not_called()
+
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \
              self.assertRaises(Exception):
-            M.verify_cdc_performance(None,7,1,10,{},9,None,None,None,{},lambda _:None,None)
+            M.verify_cdc_performance(None,7,1,10,{},9,None,None,None,{},lambda _:None,None,None)
         run.assert_not_called()
 
     def test_real_signed_performance_open_and_close_are_warning_receipts(self):

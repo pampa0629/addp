@@ -575,7 +575,7 @@ COMMIT;
 
 
 def verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
-                           mutate, delivered, receiver, proof, stage, launch):
+                           mutate, delivered, receiver, proof, stage, launch, rebuild_evaluator):
     """Real bounded workload and native faults, exclusively on this Hosted deployment."""
     connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
     broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
@@ -752,6 +752,28 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             checks += 1
             time.sleep(2)
         pretrigger['pause_hold_checks'] = checks
+        stage('performance_evaluator_rebuild')
+        rebuilt = rebuild_evaluator()
+        require(type(rebuilt) is dict and set(rebuilt) == {'old_pid','replacement_pid','executable_sha256'}
+                and all(type(rebuilt[k]) is int and rebuilt[k] > 1 for k in ('old_pid','replacement_pid'))
+                and rebuilt['old_pid'] != rebuilt['replacement_pid']
+                and type(rebuilt['executable_sha256']) is str
+                and re.fullmatch(r'[0-9a-f]{64}', rebuilt['executable_sha256']),
+                'evaluator rebuild lacks a distinct owned Monitor process')
+        pretrigger['evaluator_rebuild'] = rebuilt
+        rebuilt_at = datetime.now(timezone.utc)
+        pretrigger['rebuilt_at'] = rebuilt_at.isoformat()
+        def rebuilt_evaluated_pause():
+            rows = pending_cleared()
+            return rows if rows and all(row['window'].get('reset_at')
+                and datetime.fromisoformat(row['window']['reset_at'].replace('Z', '+00:00')) > rebuilt_at
+                for row in rows.values()) else None
+        pretrigger['after_rebuild'] = until(rebuilt_evaluated_pause)
+        rebuilt_task = sample()['task_state']
+        require(rebuilt_task['desired_state'] == 'paused' and rebuilt_task['last_execution_id'] == pending_execution,
+                'evaluator rebuild changed the paused task execution')
+        require(not any(r['signal_code'] in consumption_codes for r in receiver.snapshot()),
+                'rebuilt paused evaluator emitted a performance notification')
         stage('performance_pretrigger_resume')
         pretrigger['resume_requested_at'] = datetime.now(timezone.utc).isoformat()
         pending_resumed = launch(task_id, 'resume')
@@ -1032,7 +1054,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
 
 
 def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, name, run_id,
-                            mutate, create, launch, report, checkpoint):
+                            mutate, create, launch, report, checkpoint, rebuild_evaluator):
     proof = report['cdc_risk_closure'] = {'task_id': task_id, 'cleanup': 'pending', 'stage': 'baseline'}
     healthy = until(lambda: cdc_task_sample(client, task_id, engine_id))
     generation = healthy['generation']
@@ -1078,7 +1100,7 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
         destination_id = API.require_positive_int(destination, 'id')
         proof['destination_id'] = destination_id
         execution_id = verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
-                                              mutate, delivered, receiver, proof, stage, launch)
+                                              mutate, delivered, receiver, proof, stage, launch, rebuild_evaluator)
         stage('buffer_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
         paused_task = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
@@ -2407,7 +2429,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         name = next(name for task, kind, name in tasks if task == cdc_task)
         phase('cdc_risk')
         cdc_paused = verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
-                                            mutate, create, launch, report, checkpoint)
+                                            mutate, create, launch, report, checkpoint, faults.rebuild_monitor)
         report['cdc_task_metric_history'] = verify_cdc_metric_history(client, cdc_task, report['cdc_risk_closure']['generation'])
         report['checks'].append('cdc_task_metric_history_safe_generation_backlog_growth_recovery_wal_delay')
         report['browser_cdc_history'] = run_browser('cdc_history', [cdc_paused], report['consumer_identity'], run_id, faults.secret,
@@ -2416,6 +2438,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('cdc_history_chart_real_growth_zero_and_fault_gap')
         report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
         report['checks'].append('cdc_pretrigger_pause_empty_lifecycle_and_complete_resumed_windows')
+        report['checks'].append('cdc_evaluator_rebuilt_while_paused_then_complete_new_windows_and_delivery')
         report['checks'].append('cdc_optional_backlog_300s_pause_missing_hold_60s_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')

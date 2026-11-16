@@ -18,11 +18,11 @@ def validate_process(process: Path, root: Path, secret: Path, module: str):
     executable = (process / 'exe').resolve(strict=True)
     environment = dict(x.split('=', 1) for x in (process / 'environ').read_bytes().decode().split('\0') if '=' in x)
     binary = module.removesuffix('-1') if module.endswith('-worker-1') else module
-    if (module not in {'transfer', 'transfer-continuous-worker-1', 'transfer-bounded-worker-1'} or
+    if (module not in {'transfer', 'transfer-continuous-worker-1', 'transfer-bounded-worker-1', 'monitor'} or
         executable != root / f'.dev-bins/addp-{binary}' or process.stat().st_uid != os.getuid() or
         environment.get('ADDP_ONLINE_SECRET_DIR') != str(secret) or
         environment.get('POSTGRES_DB') != 'addp_online' or environment.get('ADDP_ONLINE_HOSTED') != '1'):
-        raise ValueError('refusing to signal an unowned Transfer process')
+        raise ValueError('refusing to signal an unowned Hosted process')
 
 
 def runtime_environment(environment):
@@ -114,6 +114,30 @@ class HostedFaults:
         binary = self.root / '.dev-bins/addp-transfer-continuous-worker'
         return {'old_pid': pid, 'replacement_pid': replacement,
                 'executable_sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
+
+    def rebuild_monitor(self):
+        pid, descriptor = self.pin('monitor')
+        binary = self.root / '.dev-bins/addp-monitor'
+        try:
+            digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+            signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+            if not select.select([descriptor], [], [], 10)[0]:
+                raise ValueError('owned Monitor did not exit after SIGKILL')
+        finally:
+            os.close(descriptor)
+        # Recreate the evaluator through the product lifecycle, without human credentials.
+        env = {**runtime_environment(os.environ), 'SKIP_MODTIDY': '1'}
+        path = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'monitor-evaluator-replacement.log'
+        with path.open('a') as output:
+            subprocess.run(['bash', 'scripts/dev/start.sh', '-monitor'], cwd=self.root,
+                           env=env, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=180)
+        replacement, descriptor = self.pin('monitor')
+        try:
+            if replacement == pid or hashlib.sha256(binary.read_bytes()).hexdigest() != digest:
+                raise ValueError('Monitor replacement must be a distinct process of the same build')
+        finally:
+            os.close(descriptor)
+        return {'old_pid': pid, 'replacement_pid': replacement, 'executable_sha256': digest}
 
     def stop_owner_during(self, operation):
         return self._stop_during('transfer', operation, 'owner_pid')

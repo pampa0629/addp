@@ -112,6 +112,65 @@ class ContinuousFaultsTest(unittest.TestCase):
                 patch.object(M.time, 'monotonic', side_effect=[0, 91]), self.assertRaises(ValueError):
             faults.wait_protection_ready(2)
 
+    def test_monitor_identity_requires_the_exact_hosted_binary_and_private_environment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            binary = root / '.dev-bins/addp-monitor'; binary.parent.mkdir(); binary.write_bytes(b'monitor')
+            process = root / 'process'; process.mkdir(); (process / 'exe').symlink_to(binary)
+            good = {'ADDP_ONLINE_SECRET_DIR':'/private','POSTGRES_DB':'addp_online','ADDP_ONLINE_HOSTED':'1'}
+            (process / 'environ').write_bytes('\0'.join(f'{k}={v}' for k,v in good.items()).encode())
+            M.validate_process(process,root,Path('/private'),'monitor')
+            for key,value in [('ADDP_ONLINE_SECRET_DIR','/foreign'),('POSTGRES_DB','addp'),('ADDP_ONLINE_HOSTED','0')]:
+                (process / 'environ').write_bytes('\0'.join(f'{k}={v}' for k,v in {**good,key:value}.items()).encode())
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError,'unowned'):
+                    M.validate_process(process,root,Path('/private'),'monitor')
+            with self.assertRaisesRegex(ValueError,'unowned'):
+                M.validate_process(process,root,Path('/private'),'monitor-2')
+
+    def test_monitor_rebuild_confirms_exit_and_uses_the_same_build_via_standard_lifecycle(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); binary=root/'.dev-bins/addp-monitor'; binary.parent.mkdir(); binary.write_bytes(b'monitor')
+            faults=object.__new__(M.HostedFaults); faults.root=root
+            faults.pin=unittest.mock.Mock(side_effect=[(42,123),(43,124)])
+            with patch.dict(os.environ,ADDP_ONLINE_ARTIFACT_DIR=str(root),ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='private'), \
+                    patch.object(M.signal,'pidfd_send_signal',create=True) as send,patch.object(M.os,'close') as close, \
+                    patch.object(M.select,'select',return_value=([123],[],[])),patch.object(M.subprocess,'run') as run:
+                result=faults.rebuild_monitor()
+            self.assertEqual(result,{'old_pid':42,'replacement_pid':43,'executable_sha256':M.hashlib.sha256(b'monitor').hexdigest()})
+            self.assertEqual(faults.pin.call_args_list,[unittest.mock.call('monitor')]*2)
+            send.assert_called_once_with(123,signal.SIGKILL)
+            self.assertEqual(close.call_args_list,[unittest.mock.call(123),unittest.mock.call(124)])
+            self.assertEqual(run.call_args.args[0],['bash','scripts/dev/start.sh','-monitor'])
+            self.assertEqual(run.call_args.kwargs['env']['SKIP_MODTIDY'],'1')
+            self.assertNotIn('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',run.call_args.kwargs['env'])
+
+    def test_monitor_rebuild_never_starts_a_replacement_before_confirmed_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); binary=root/'.dev-bins/addp-monitor'; binary.parent.mkdir(); binary.write_bytes(b'monitor')
+            faults=object.__new__(M.HostedFaults); faults.root=root; faults.pin=unittest.mock.Mock(return_value=(42,123))
+            with patch.object(M.signal,'pidfd_send_signal',create=True),patch.object(M.os,'close') as close, \
+                    patch.object(M.select,'select',return_value=([],[],[])),patch.object(M.subprocess,'run') as run, \
+                    self.assertRaisesRegex(ValueError,'did not exit'):
+                faults.rebuild_monitor()
+            run.assert_not_called();close.assert_called_once_with(123);faults.pin.assert_called_once_with('monitor')
+
+    def test_monitor_rebuild_rejects_reused_pid_changed_binary_or_failed_start_without_retry(self):
+        for failure in ('same_pid','changed_binary','start_failed'):
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);binary=root/'.dev-bins/addp-monitor';binary.parent.mkdir();binary.write_bytes(b'monitor')
+                faults=object.__new__(M.HostedFaults);faults.root=root
+                faults.pin=unittest.mock.Mock(side_effect=[(42,123),(42 if failure=='same_pid' else 43,124)])
+                def start(*args,**kwargs):
+                    if failure=='start_failed':raise M.subprocess.CalledProcessError(1,args[0])
+                    if failure=='changed_binary':binary.write_bytes(b'foreign build')
+                with patch.dict(os.environ,ADDP_ONLINE_ARTIFACT_DIR=str(root)), \
+                        patch.object(M.signal,'pidfd_send_signal',create=True),patch.object(M.os,'close') as close, \
+                        patch.object(M.select,'select',return_value=([123],[],[])),patch.object(M.subprocess,'run',side_effect=start) as run, \
+                        self.assertRaises(M.subprocess.CalledProcessError if failure=='start_failed' else ValueError):
+                    faults.rebuild_monitor()
+                self.assertEqual(run.call_count,1)
+                self.assertEqual(close.call_count,1 if failure=='start_failed' else 2)
+
     def test_local_deployment_is_rejected_before_pid_or_network_access(self):
         with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}, clear=False), self.assertRaises(ValueError):
             M.HostedFaults()

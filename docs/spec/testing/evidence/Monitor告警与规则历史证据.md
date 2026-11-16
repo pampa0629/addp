@@ -123,6 +123,14 @@
 
 Artifact `14159537304` 的 SHA-256 `9c3e845cb0e64d5a2e839db0146cea655d624c0f9f42d81f41ca947b2e163691` 与 ZIP CRC 已核对；原件及独立汇总位于 `/tmp/addp-cdc-pretrigger-hosted-43705792261/`。修订源码 `make test-transfer-continuous-online-runner` 本地 145 项通过；[自然 Platform consistency Job 132786240249](https://github.com/pampa0629/addp/actions/runs/43705720875/job/132786240249)实际执行 145 项并通过整个所选门禁。额外登记入口的既有 Common 替身超时仍保留其失败边界，不由此抵消。本轮没有重启 Monitor，评估器重建仍缺独立实故障 T4。
 
+### 暂停清窗后评估器重建的实故障 T4 准备（2026-11-16）
+
+沿现有 T2 顺序，在真实性能故障的正式 Pause／清窗／16 秒保持后，仅终止本轮独占 Monitor，经 pidfd 确认退出，再用标准 `scripts/dev/start.sh -monitor` 重建；核对不同 PID 与相同二进制 SHA-256。新进程启动完成后必须取得更晚 reset_at 的暂停评估，确认两条消费规则仍 inactive、窗口／incident／event／delivery 为空，原暂停 execution／generation 未变，然后正式 Resume 并保留原 180／300 秒、临界前零事件／投递及最终签名送达断言。有效窗口本身按原契约持久化；本场景不将重建解释为无条件清空窗口，不把停机时间补作持续样本。
+
+只修改原 Runner、进程故障工具及各自回归和场景说明；沿既有标准入口及 Platform 自动发现，不新增产品 API、权限、入口或预算。冻结检出 `c34bc696c8f67fc2ea37e7445cf1e99d6a5f3956` 仅叠加本批五文件后，`make test-transfer-continuous-online-runner` 通过 150 项 Python、原语法及 System 身份夹具 Go 检查（`/tmp/addp-cdc-evaluator-runner-frozen.log`）。反例覆盖未证实退出不拉起替代、PID 复用／构建变化、启动失败不重试、私有回执字段、重建后保留窗口／提前生命周期或通知、任务身份改变及没有新后台评估；失败仍恢复既有原生故障、清理规则，不先 Resume。
+
+首轮工作区标准入口在既有 `test_additive_oracle_bounds_large_surplus_and_rejects_missing_duplicate_and_wrong_values` 的 `verify-cdc-altered` 子进程 45 秒超时，150 项中 1 项错误，未走到 Go，原件 `/tmp/addp-cdc-evaluator-runner-first.log` 保留；未修改该夹具及其超时，也不据主机负载推定唯一原因。冻结门禁验证最终增加“新进程实际暂停评估”断言后的源码，首轮失败不被改写。此阶段尚未完成新源码实际 Hosted，不追认前轮未重建 Monitor 的 T4。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办
