@@ -4,7 +4,7 @@
 
 共同前置条件见[T4 Online 验收规范](../T4-Online验收规范.md)。每项条款仅适用于其声明的 suite 与 profile；代码就绪不表示真实 T4 已通过。
 
-专项导读：[公共前提](#独立持久化专项公共前提) · [Runner／Native 验证入口](#独立持久化专项验证入口)
+专项导读：[公共前提](#独立持久化专项公共前提) · [Runner／Native 验证入口](#独立持久化专项验证入口) · [水文与分区统计共同要求](#水文与分区统计专项共同要求) · [水文固定结果与待验](#水文专项的固定结果与待验边界)
 
 本页场景导航仅用于定位，适用范围以各场景正文为准：
 
@@ -845,124 +845,147 @@ Develop 公开执行投影不返回 `tenant_id`。成果候选登记前，父执
 标准确定性入口为 `make test-raster-disk-pressure-online-runner`，由原 `make test-raster-online-runner` 聚合，覆盖隔离挂载归属、失败清理、8 条业务链和 CI 登记；GDAL 物理 oracle 与拒绝／恢复回归走 `make test-geopython-workflow`。本场景不新增并发抢盘或容量不可读取的 Hosted 故障注入，相关 Native 证据独立保留。独立入口与夹具已实现，本地 Native 全量、受影响场景复验及标准脚本聚合门禁通过；目前尚未执行真实 Hosted，仍需先补齐提交语言传递，不计 T4 通过。
 
 
+## 水文与分区统计专项共同要求
+
+本节只适用于明确引用它的水文与分区统计专项，不扩大[原五项公共前提](#独立持久化专项公共前提)或其他 suite 的适用范围。各节保留自己的输入、链数、错误节点、独立 oracle、字段和归档矩阵。
+
+- **准备与预算**：独立手工 Hosted Linux、既有隔离生命周期、NFS、同源默认入口产品 Runtime、普通 User 原 12 项权限及各自 600 秒业务预算。不接管个人部署，不改产品、权限、安全投影或原套件，不重试、扩预算或加入夜间调度。分区统计明确计入预算的初始化扫描、首次期望生成、全部执行／查询／物理复核、归档及业务工作区／期望缓存清理仍须全部计时；部署与外层退出按原生命周期另行核验。
+- **成果与身份**：逐项核完整物理成果、原网格／CRS、mask、类型和单位。COG 核完整布局及实际金字塔，artifact／物理／Meta 大小为相等正整数；普通 CSV／GeoPackage 核物理＝Meta 正整数大小，不虚构 RasterArtifact、COG 或第三方声明大小。自动扫描精确绑定父 execution／User／Tenant／Engine，血缘只认当前 execution 实际加载的注册输入，Monitor 单独核验；各节的源数、端口与受控内部 observer 范围不变，公开安全投影不因此扩大。
+- **独立复核**：按各节独立算法验证完整像元或表格／几何；每轮重新读取实际成果与源哈希，只允许复用绑定同轮输入的不可变数学期望。原始源、全部先前成果及各节要求的 Meta 快照不变。分区统计保留各自的全检次数、完整原件和清单，缺失、篡改、额外文件或符号链接均拒绝，不覆盖、重建或静默修复。
+- **失败与清理**：准确绑定当前执行、失败节点及各节要求的原因／语言；权限、保护投影、加载或其他节点失败不能冒充目标拒绝。反向语言查询不得改写原提交错误。失败零发布、零新增扫描与派生血缘；正常、失败及部分启动退出都核验本轮 Runtime 工作区、缓存、NFS、部署／Infra，以及各节声明的镜像／registry 等归属资源。保留首个业务失败和清理错误，清理失败整套失败。
+- **验证与证据**：各专项 Runner 沿既有 `make test-raster-online-runner` 聚合，真实 GDAL／污染反例沿 `make test-geopython-workflow`，登记沿 `make test-python-ci-registration`；新增输入须同次命中 Native、Online、影响选择与 CI。专项筛除、共享重复计数和隔离身份 Go T1 不算全量或完整 IAM／数据库集成。现场完整物理回执与归档后离线复算分开；无原 TIFF 的记录不能声称离线重读。已验与待验按固定源码分别认定，不外推 UI、容量、业务 DELETE、其他 Owner 或生产。 水文已有结果与缺口见[固定结果与待验边界](#水文专项的固定结果与待验边界)。
+
 ## raster-fill-depressions-persistence
 
-独立手工 Hosted Linux x86_64，标准业务入口 `make test-online ONLINE_SUITE=raster-fill-depressions-persistence`。复用现有 Hosted 生命周期、NFS、同源产品默认入口 Runtime 与普通 User 原十二权限，独立600秒业务预算，不改变原 Raster／分类整理套件、权限或跨模块产品逻辑。
+`make test-online ONLINE_SUITE=raster-fill-depressions-persistence`；脚本门禁 `make test-raster-fill-depressions-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-北向非方形网格的519×515多波段 DEM，显式选择第二波段；覆盖嵌套洼地、多／对角出口、图像与内部无效边界、合法零和负高程、跨512块、NoData／mask／alpha／非有限。三条保存链为米制填洼、英尺换算米制后填洼、全无效第三波段，独立逐水位连通oracle核全像元／mask；输出Float64米制NaN、原网格／CRS、COG／overview、无scale/offset泄漏。非法波段、旋转网格、单位冲突及未应用scale四类必须精确匹配当前父执行和fill任务的参数失败，不能用权限／保护投影／加载失败充数。每条只承认实际输入的当前执行血缘；核artifact／物理／Meta相等正整数大小、精确扫描的父执行／用户／租户／引擎与Monitor，失败无发布、无新增扫描或派生血缘，源及先前成果不变。
-
-成功与失败均沿现有隔离生命周期核工作目录、NFS、部署和Infra零残留。Native物理夹具与脚本门禁走标准入口，新增文件同次登记Native、Online、影响路由及CI一致性检查；入口、夹具及 CI 登记已实现并通过本地 Native 专项95项、脚本59项与完整登记检查；详细边界与日志指纹见[栅格专题](../../../next/栅格算子体系后续专题.md#二当前验收基线)。固定 `8599f94ed8aefffd98370ee1c4d19d8d81c158ce` 的 [Hosted 39727166222](https://github.com/pampa0629/addp/actions/runs/39727166222/job/119653632678) 已通过三条真实COG保存链、四类准确任务失败及领域归档复核。三方大小16173／16565／10849字节，有效像元267255／267255／0；米制及英尺链均抬升23815像元，最大29米／8.8392米。普通User33／Tenant2原12权限、七Backend和默认入口Runtime同源，预检与业务198588毫秒；精确扫描身份、当前执行实际输入血缘、Monitor、源及先前成果不变和全部清理通过。归档未保留TIFF，未离线重读成果像元，无页面截图；现场严格物理校验与报告指纹见专题。不认证UI、容量、平台中英文矩阵或完整水文分析，Linux全量继续等CI会话回传。
+北向非方形网格的519×515多波段 DEM，显式选择第二波段；覆盖嵌套洼地、多／对角出口、图像与内部无效边界、合法零和负高程、跨512块、NoData／mask／alpha／非有限。三条保存链为米制填洼、英尺换算米制后填洼、全无效第三波段，独立逐水位连通oracle核全像元／mask；输出Float64米制NaN、原网格／CRS、COG／overview、无scale/offset泄漏。非法波段、旋转网格、单位冲突及未应用scale四类必须精确匹配当前父执行和fill任务的参数失败，不能用权限／保护投影／加载失败充数。
 
 ### DEM D8 流向持久化
 
-独立手工 `raster-flow-direction-d8-persistence`／`make test-raster-flow-direction-d8-online-runner`，600秒业务预算，沿用既有Hosted生命周期、NFS、产品默认入口Runtime及普通User原12权限。三条COG保存链：直接流向、填洼接流向、全无效；四类错误（封闭洼地、非法波段、旋转网格、单位冲突）各按中英文提交，精确匹配当前执行的direction任务与语言原因，并核反向查询不会改写错误。严格核完整像元／mask、方向码、闭式最短平坦路径、无环与最终开放出口、源网格／CRS、COG、artifact／物理／Meta相等正整数大小、精确扫描身份、当前执行实际输入血缘及Monitor；失败无发布／新增扫描血缘，源及先前成果不变，Runtime工作区／NFS／部署／Infra全部清理。本地夹具专项33项、脚本门禁62项及Online登记通过。固定3944846c9的Hosted 39750207818／119728593684已通过且完成原始归档领域终审：225115毫秒，三保存链及八准确双语失败、三方大小、精确扫描／血缘／Monitor和全部清理通过。归档12414557855无TIFF，复核现场全像元worker及原始回执，未离线重算。仅API持久化，不计UI、容量或该394源码Linux全量；4fba的Linux另按精确版本记录，原套件及预算不变。
+`make test-online ONLINE_SUITE=raster-flow-direction-d8-persistence`；脚本门禁 `make test-raster-flow-direction-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
+
+三条COG保存链：直接流向、填洼接流向、全无效；四类错误（封闭洼地、非法波段、旋转网格、单位冲突）各按中英文提交，精确匹配当前执行的direction任务与语言原因，并核反向查询不会改写错误。严格核完整像元／mask、方向码、闭式最短平坦路径、无环与最终开放出口。
 
 ### D8 汇流累积持久化
 
-独立手工 `raster-flow-accumulation-d8-persistence`／`make test-raster-flow-accumulation-d8-online-runner`，600秒预算，沿用Hosted、NFS、同源默认入口Runtime和原普通User十二权限。四条完整COG链：已登记流向、DEM接流向接累积、填洼接流向接累积、全无效。七类错误（非法方向含UInt64 NoData相邻大整数、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格）各中英文提交，14条精确accumulation任务失败，反向查询不得改写旧错误。独立逐源路径核完整计数／mask、不计自身与终点总量守恒，严格核网格／CRS、COG及三方大小、精确自动扫描身份、当前执行实际输入血缘与Monitor、源和先前成果不变、失败零发布／零新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。原套件不变；本地真实GDAL夹具专项40项、脚本门禁62项及完整Online登记通过，原栅格脚本总门禁退出0；共享重复测试不累加，Go隔离身份T1不计全量IAM。固定4fba03313的Hosted 39761858875／119767722319已通过并完成领域终审：273053毫秒，四保存链／十四准确双语失败和全部严格断言及清理通过。前三成果各35819字节／264714有效像元／2终点，终点含自身总量264714；全无效成果10741字节／0有效。归档12420909006无TIFF，复核现场独立逐源路径全像元worker及原始回执，未离线重算。同精确源码Linux GeoPython 39761773681／119767424921全量2360 passed／21 warnings／1541.12秒，0失败／跳过／筛除；不覆盖后续流长／汇水分区，后续Linux仍等CI会话回传，不计UI、容量、整体Platform或完整水文体系。
+`make test-online ONLINE_SUITE=raster-flow-accumulation-d8-persistence`；脚本门禁 `make test-raster-flow-accumulation-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
+
+四条完整COG链：已登记流向、DEM接流向接累积、填洼接流向接累积、全无效。七类错误（非法方向含UInt64 NoData相邻大整数、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格）各中英文提交，14条精确accumulation任务失败，反向查询不得改写旧错误。独立逐源路径核完整计数／mask、不计自身与终点总量守恒。
 
 ### D8 下游流长持久化
 
-独立手工 `raster-flow-length-d8-persistence`／`make test-raster-flow-length-d8-online-runner`，600秒预算，复用Hosted、NFS、同源默认入口Runtime及普通User原12权限。六条COG链覆盖米制／国际英尺／美制测量英尺已登记方向、DEM→流向→流长、填洼→流向→流长及全无效；七类非法方向／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确length任务失败，查询语言不得改写旧错误。独立逐源路径按横纵对角步数核全像元／mask、米制中心距离和严格终点零，保留原网格／CRS，完整COG验证；严格三方相等正整数大小、精确自动扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘、Runtime工作区／NFS／部署／Infra全部清理。原套件不变；本地真实GDAL夹具专项45项、脚本门禁62项与完整Online登记通过。扩展原栅格脚本总门禁未通过：最后215项中的3个未修改原Raster模拟生命周期用例60秒超时，其他16组子门禁通过，不改原限制、不计整套通过；隔离身份Go T1不计全量IAM。固定 `dd04fb0637f381db9dfc3532c70d87135b34d21b` 的 [Hosted 39783255643／119839656541](https://github.com/pampa0629/addp/actions/runs/39783255643/job/119839656541) 已通过领域归档终审：507747毫秒，六条成果链和十四条中英文准确失败全部满足上述严格断言，普通User33／Tenant2原12权限、七Backend与默认入口Runtime同源码，全部清理通过。归档12437638231，原始online-report SHA-256 `c4273d4d51fb53173d63373554653cab8dd1566427213d765c007b3e922f0d18`；现场worker完整像元校验及原始回执已核，归档未保留TIFF，未离线重算。Linux全量等CI会话回传，不计UI或容量，不覆盖上游最长流长或汇水分区。
+`make test-online ONLINE_SUITE=raster-flow-length-d8-persistence`；脚本门禁 `make test-raster-flow-length-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。正式 DAG 必须按[统一流长入口](#d8流长统一入口的既有验收适配)显式指定 `method`；旧版本结果不代替该迁移验收。
 
+六条COG链覆盖米制／国际英尺／美制测量英尺已登记方向、DEM→流向→流长、填洼→流向→流长及全无效；七类非法方向／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确length任务失败，查询语言不得改写旧错误。独立逐源路径按横纵对角步数核全像元／mask、米制中心距离和严格终点零，保留原网格／CRS，完整COG验证。
 
 ### D8 汇水分区持久化
 
-独立手工 `raster-drainage-basins-d8-persistence`／`make test-raster-drainage-basins-d8-online-runner`，600秒预算，复用Hosted、NFS、同源默认入口Runtime及普通User原12权限。四条已登记多出口方向／DEM接流向／填洼接流向／全无效COG链，七类非法方向（含64位NoData相邻值）／内部伪终点／越界或无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确失败链。独立逐源路径核全像元／mask、出口行列编号、相邻出口不合并、唯一归属与总数守恒；严格三方大小、COG／网格／CRS、精确扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘与全部清理。入口、夹具及登记已实现；本地Native新增夹具专项42项（2676筛除，不是新全量）、脚本门禁62项及完整Online登记、Python CI标准登记通过，记录输入无漂移。固定 `6bf471fc2b6f8ee75fc01e2ce56e317e1375b5dc` 的 [Hosted 39797527146／119888617829](https://github.com/pampa0629/addp/actions/runs/39797527146/job/119888617829) 已通过并完成领域归档终审，297809毫秒，四保存链／十四准确双语失败、严格大小／扫描血缘及全部清理通过；原12权限、600秒和产品逻辑保持。官方归档12441159437，online-report SHA-256 `1589759d6af72b938fab53bf28d171e7fcc8d929be577403cf9368e53cad2c68`；现场全像元及原始回执／日志已核，TIFF未归档、未离线重算，不计UI或容量；Linux全量仍等CI会话回传。
+`make test-online ONLINE_SUITE=raster-drainage-basins-d8-persistence`；脚本门禁 `make test-raster-drainage-basins-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
+
+四条已登记多出口方向／DEM接流向／填洼接流向／全无效COG链，七类非法方向（含64位NoData相邻值）／内部伪终点／越界或无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确失败链。独立逐源路径核全像元／mask、出口行列编号、相邻出口不合并、唯一归属与总数守恒。
 
 ### D8 上游最长流长持久化
 
-独立手工 `raster-flow-length-upstream-d8-persistence`／`make test-raster-flow-length-upstream-d8-online-runner`，600秒预算；复用Hosted、NFS、同源默认入口Runtime、普通User原12权限。米制／国际英尺／美制测量英尺已登记方向、DEM接流向、填洼接流向及全无效六条COG链，七类非法方向码／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交共14条准确length任务失败。独立逐源路径全像元oracle核横纵对角米制中心距离、无入流零、汇合取最长以及开放终点保留上游长度；完整mask／原网格／CRS／Float64／NaN／COG及金字塔、严格artifact／物理／Meta相等正整数大小、精确扫描、当前执行实际输入血缘／Monitor、源及先前成果不变、失败零发布／新增扫描血缘与Runtime／NFS／部署／Infra清理均须满足。查询语言不改写旧失败；不修改产品算法、原套件、权限或跨模块产品逻辑。入口、夹具、Native recipe与手工Hosted登记已实现。本地标准Native新增夹具专项48项通过（2844项筛除不计通过），标准脚本门禁62项与完整Online登记通过，Python CI登记10项通过；记录输入无漂移。修后唯一固定 `ddd32f9536857cecc4dc40d63d356755c4ca297b`（含夹具修复 `2d6d92780`）的 [Hosted 39876682648／120163869951](https://github.com/pampa0629/addp/actions/runs/39876682648/job/120163869951) 已通过并完成领域归档终审，416469毫秒；六保存链／十四准确双语失败、上述完整像元／最长路径／米制单位／严格大小／精确扫描和当前执行血缘／Monitor／源及先前成果不变／全部清理通过。三方同源码，User33／Tenant2原12权限，600秒预算、样本及产品算法不变；夹具仅共享同几何不可变数学预期，物理成果每轮仍重读。修后标准Native专项51 passed／3032 deselected／36.86秒及脚本62项／23.525秒和登记通过，不冒充Linux全量。官方归档12472970205，online-report SHA-256 `c8c91de85e4ffae418f6dc46278ae91d13c8b4610239bc3ca3ed491114cb057c`；域报告与raw Job深等，固定源码及实际步骤／原始失败日志已核，未归档TIFF、未离线复算，不计UI、容量、加权汇流或业务DELETE。Linux全量仍等CI会话回传。
+`make test-online ONLINE_SUITE=raster-flow-length-upstream-d8-persistence`；脚本门禁 `make test-raster-flow-length-upstream-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。正式 DAG 必须按[统一流长入口](#d8流长统一入口的既有验收适配)显式指定 `method`；旧版本结果不代替该迁移验收。
 
+米制／国际英尺／美制测量英尺已登记方向、DEM接流向、填洼接流向及全无效六条COG链，七类非法方向码／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交共14条准确length任务失败。独立逐源路径全像元oracle核横纵对角米制中心距离、无入流零、汇合取最长以及开放终点保留上游长度；输出Float64／NaN；完整mask、原网格／CRS及COG核验沿共同要求。查询语言不改写旧失败。
 
 ### raster-stream-order-d8-persistence
 
-独立手工 `raster-stream-order-d8-persistence`／`make test-raster-stream-order-d8-online-runner`，600秒业务预算，复用现有Hosted／NFS、同源默认入口产品Runtime及普通User原12权限。六条COG链：已登记D8＋二值多级河网、汇流累积→重分类接分级、DEM→流向→累积→重分类→分级、填洼接同链、空河网、全无效。八类断流／非二值掩膜／有效覆盖不一致／完整网格不一致／非法D8方向（含UInt64 NoData相邻大整数）／循环／非法方向波段／非法掩膜波段各按中英文提交，共16条grade任务准确失败，反向查询不改写旧错误。
+`make test-online ONLINE_SUITE=raster-stream-order-d8-persistence`；脚本门禁 `make test-raster-stream-order-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-515×519完整网格中的确定性有效条带跨512块，含级别1／2／3、同最高级汇合、低级重复不升级、开放终点保留级别、合法零、原生NoData／mask／alpha／非有限覆盖。独立反向支流栈遍历与单独计数核全部像元与阈值掩膜，整幅逐像元／mask及完整COG／最近邻金字塔验证；严格保留原网格／CRS／Float64／NaN，级别不带距离单位。严格artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎与当前执行所有实际加载输入血缘／Monitor，源和旧成果不变，失败零发布／新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。入口／夹具／Native recipe／手工Hosted／输入影响与CI一致性登记已完成，本地Native专项48 passed／3083 deselected／5.33秒（0失败／跳过，不是新全量）、脚本门禁63项／23.076秒与完整登记、Python CI登记10项通过，记录输入无漂移；标准共享栅格脚本总入口完整退出0，20组子门禁（含原215项模拟生命周期）及隔离身份Go T1通过，输入无漂移；不累加共享重复用例、不计全量IAM／数据库集成，实际Hosted已在固定 `bde58e038751d932888bd7696046715e4ba21410` 通过并完成领域终审，Linux全量仍等专门CI会话回传；不改产品、权限或原套件，不计UI或容量。
+六条COG链：已登记D8＋二值多级河网、汇流累积→重分类接分级、DEM→流向→累积→重分类→分级、填洼接同链、空河网、全无效。八类断流／非二值掩膜／有效覆盖不一致／完整网格不一致／非法D8方向（含UInt64 NoData相邻大整数）／循环／非法方向波段／非法掩膜波段各按中英文提交，共16条grade任务准确失败，反向查询不改写旧错误。
 
-固定Hosted [39880792263／120177404317](https://github.com/pampa0629/addp/actions/runs/39880792263/job/120177404317) 的六条COG链及十六条中英文准确失败均通过，预检与业务436228毫秒，保持600秒预算。三方大小10788／10936／10860／10845／10715／10741字节；完整像元／mask、Strahler汇合／河网闭包／零背景、精确扫描与当前执行实际输入血缘／Monitor、源及先前成果不变、反向查询不改提交语言、失败零发布扫描血缘和Runtime／NFS／部署／Infra清理均通过。七Backend与默认入口产品Runtime同源码，普通User33／Tenant2原12权限；官方ZIP摘要、解包文件、域报告与原始Job JSON和逐条失败日志已独立核验。online-report SHA-256：`b2b5637e03923dd36238122e18a6ac8c804ff3ba2c6859ddf99163c4987ed1df`。归档无TIFF，未作离线像元复算；不计Linux全量、UI、容量、加权汇流或业务DELETE。
+515×519完整网格中的确定性有效条带跨512块，含级别1／2／3、同最高级汇合、低级重复不升级、开放终点保留级别、合法零、原生NoData／mask／alpha／非有限覆盖。独立反向支流栈遍历与单独计数核全部像元与阈值掩膜，整幅逐像元／mask及完整COG／最近邻金字塔验证；严格保留原网格／CRS／Float64／NaN，级别不带距离单位。严格artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎与当前执行所有实际加载输入血缘／Monitor，源和旧成果不变，失败零发布／新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。
 
 ## raster-flow-accumulation-weighted-d8-persistence
 
-独立 `raster-flow-accumulation-weighted-d8-persistence` 已获用户授权：复用Hosted隔离生命周期、NFS、同源默认入口产品Runtime和普通用户原12权限，独立600秒业务预算。六条COG保存链为直接非负权重、全1权重、权重重分类、DEM→D8流向→加权累积、填洼接上述链、全无效；每条都核当前执行两份实际注册输入的血缘。负权重、缺失／非有限权重、网格不一致、非法D8码（含原始UInt64 NoData邻接大整数）、循环、非法方向波段、非法权重波段、累计溢出八类各中英文提交，共16条准确失败。逐源路径oracle核完整权重和／mask、合法零、自身排除、全1等价、出口守恒、单位／网格／CRS、COG／金字塔、artifact／物理／Meta相等正整数大小、精确扫描与父执行／用户／租户／引擎、当前执行两源血缘／Monitor、源及先前成果不变和全部清理。失败不发布、不新增扫描或派生血缘，反向语言查询不改提交错误；不变更原套件／权限／跨模块产品逻辑，不计UI或容量。入口与夹具已实现、本地标准门禁通过，实际Hosted未运行；Linux全量和既有Hosted仍等专门CI会话回传。
+`make test-online ONLINE_SUITE=raster-flow-accumulation-weighted-d8-persistence`；脚本门禁 `make test-raster-flow-accumulation-weighted-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-标准入口：`make test-online ONLINE_SUITE=raster-flow-accumulation-weighted-d8-persistence`；脚本门禁：`make test-raster-flow-accumulation-weighted-d8-online-runner`。仅在独占Linux Runner经Hosted准入后运行，本地不接管个人部署。夹具仅拥有本轮NFS目录、容器、注册及部署；每次重读所有已发布物理成果和源哈希，退出严格核零残留。现场完整像元检查与归档回执审计分开记账，不将未归档的TIFF称为离线重读。
-
-独立夹具已实现并完成本地验证：标准 `make test-geopython-workflow` 过滤本夹具 **48 passed／3296 deselected／5.05秒**，真实GDAL六条COG保存链、16条中英文准确失败、完整像元／mask、单位／守恒／全1等价及成果篡改拒绝均通过，验证输入无漂移；专项日志SHA-256：`4b64f5e97eaa53a68c43c4ab39a9428faea155ec60285103bea7e2ec81909d37`。这是新增夹具专项，不将筛除计通过或冒充最终固定源码Linux全量。标准 `make test-raster-flow-accumulation-weighted-d8-online-runner` **63项／17.125秒**及完整Online登记通过，`make test-python-ci-registration` 的10项及11模块登记通过；前置34项重复覆盖不累加，组合日志SHA-256：`7150cdca0c3fd053df660539afd31af02d8be7066bdbd9c316d3f7a628510cac`。Node24.11.1下完整 `make test-raster-online-runner` 退出0，21个子门禁及末尾215项共享生命周期模拟／隔离身份Go T1通过，输入无漂移；聚合耗时574.87秒，日志SHA-256：`12705bbf3576b9b6f687dd7024a1bb64faad42d3a21abe995e55b1406bd0632d`。共享子门禁重复计数不累加为唯一测试数，不计全量IAM／数据库集成；产品代码仍复用a53690c9f的Native全量3296项固定证据。实际Hosted尚未运行，Linux全量和Hosted均沿专门CI会话回传后独立归档终审，不设定时或自行轮询。
+六条COG保存链为直接非负权重、全1权重、权重重分类、DEM→D8流向→加权累积、填洼接上述链、全无效；每条都核当前执行两份实际注册输入的血缘。负权重、缺失／非有限权重、网格不一致、非法D8码（含原始UInt64 NoData邻接大整数）、循环、非法方向波段、非法权重波段、累计溢出八类各中英文提交，共16条准确失败。逐源路径oracle核完整权重和／mask、合法零、自身排除、全1等价、出口守恒及单位；其余成果／身份核验沿共同要求。
 
 ## raster-watershed-d8-persistence
 
-独立 `raster-watershed-d8-persistence` 已获用户授权：复用Hosted、NFS、同源默认入口产品Runtime、普通用户原12权限，独立600秒业务预算。四条直接指定点／标记重分类／DEM→流向／填洼接流向COG保存链，每条核当前执行两份实际注册输入血缘；嵌套、重复编号、无点、全无效、非法编号（UInt64 NoData相邻大整数）、覆盖不一致、网格不一致、非法方向、循环及方向／标记两个角色非法波段十一类各中英文提交，共22条准确watershed任务失败。515×519完整网格中的有效条带跨512块，包含最大安全编号、中间点、两条支流共用最终开放出口、未选有效零及NoData／mask／alpha覆盖。独立逐源完整路径oracle核全部编号／mask、点自身、原网格／CRS、COG／金字塔及单位清除；严格artifact／物理／Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前执行两源血缘／Monitor、源及先前成果不变和全部清理；失败无发布／新增扫描血缘，反向查询不改提交错误。入口与长期夹具已实现，本地门禁通过、实际Hosted未运行；不修改原套件、权限或跨模块产品逻辑，不计UI或容量。Linux及其余Hosted继续等专门CI会话回传，不设定时、不自查或重复触发。
+`make test-online ONLINE_SUITE=raster-watershed-d8-persistence`；脚本门禁 `make test-raster-watershed-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-标准入口：`make test-online ONLINE_SUITE=raster-watershed-d8-persistence`；脚本门禁：`make test-raster-watershed-d8-online-runner`。仅经Hosted准入在独占Linux Runner运行，原普通用户权限与NFS归属边界不变；每轮重读全部源哈希与已发布物理成果，只有不可变数学预期可缓存，不缓存物理读取。现场完整像元校验与归档回执终审分开，不将未归档TIFF称为离线重读。
-
-独立夹具标准 `make test-geopython-workflow` 专项 **55 passed／3600 deselected／7.82秒**，0失败／跳过，输入无漂移；真实GDAL四保存链、22条中英准确失败、完整编号／mask与源及旧成果保护、19类物理篡改拒绝通过。专项不计新全量，不与产品原3553项相加。日志SHA-256：`b9969555eb2c6bea5c8c354a103275cbc416fce1ba2de109b431bce15fd8b2cc`。标准 `make test-raster-watershed-d8-online-runner` 的63项脚本回归（unittest报告28.890秒）及完整Online登记通过；`make test-python-ci-registration` 的10项／11模块与前置37项登记回归通过，共享计数不累加，组合日志SHA-256：`2c8f0d45e17a15852b95d5e1e9fa4c31d8b4cea7de75d6b15e123b9c9dbe6945`。实际Node24.11.1下完整 `make test-raster-online-runner` 退出0，22组子门禁及末尾215项共享生命周期模拟／隔离身份Go T1通过，壁钟2672.09秒，输入无漂移；日志SHA-256：`d28506697d40acf7d0c6a26698d1e0071e9711fe02b0c8eeba65f1f71c5fdd03`，不计完整IAM／数据库集成。最终专项与独立脚本绑定隔离候选 `19bb583a21b4ffd5d7ffe1d5099bb57d02d58ab7`，共享总入口绑定较早候选 `3a26d888637ef598e9d8361dbd668622ca710348`。两候选之间仅其他会话矢量拓扑测试／夹具／登记及场景文档发生变化，未修改产品代码或本轮算子／夹具；更新后的共享登记另由最终独立入口复核；Runtime产品代码保持91440f2e1，原Native全量固定证据保留。独立Hosted尚未运行，Linux及其余Hosted继续等专门CI会话回传与领域归档终审；不设定时、不自行轮询或重复触发。
+四条直接指定点／标记重分类／DEM→流向／填洼接流向COG保存链，每条核当前执行两份实际注册输入血缘；嵌套、重复编号、无点、全无效、非法编号（UInt64 NoData相邻大整数）、覆盖不一致、网格不一致、非法方向、循环及方向／标记两个角色非法波段十一类各中英文提交，共22条准确watershed任务失败。515×519完整网格中的有效条带跨512块，包含最大安全编号、中间点、两条支流共用最终开放出口、未选有效零及NoData／mask／alpha覆盖。独立逐源完整路径oracle核全部编号／mask、点自身、原网格／CRS、COG／金字塔及单位清除。
 
 ### D8 河段编号独立持久化
 
-手工 `raster-stream-link-d8-persistence` 复用隔离Hosted、NFS、同源默认入口Runtime和普通User原12权限，独立600秒预算。六条COG保存链覆盖已登记双输入、累积阈值重分类、DEM／填洼接流向、空河网及全无效；八类非法输入各中英文提交，共16条准确失败。独立上溯oracle核完整编号／mask、起点行列顺序、汇合点归下游、单像元汇合出口及交叉河流独立，严格COG／网格／CRS、artifact／物理／Meta相等正整数大小、精确扫描／全部实际输入当前血缘／Monitor、源和旧成果不变及零残留；失败零发布／新增扫描血缘、查询不改提交语言。夹具、标准入口与手工CI登记已实现；本地标准Native夹具专项50项／3852筛除、独立脚本63项、Python／Online登记与完整栅格总入口通过，输入无漂移（共享重复计数不累加，筛除不计通过）；实际Hosted尚未运行，Linux由专门CI会话协调回传，不计UI或容量；不改原套件与产品权限。
+`make test-online ONLINE_SUITE=raster-stream-link-d8-persistence`；脚本门禁 `make test-raster-stream-link-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
+
+六条COG保存链覆盖已登记双输入、累积阈值重分类、DEM／填洼接流向、空河网及全无效；八类非法输入各中英文提交，共16条准确失败。独立上溯oracle核完整编号／mask、起点行列顺序、汇合点归下游、单像元汇合出口及交叉河流独立。
 
 ### Shreve 独立持久化验收
 
-已批准手工 `raster-stream-shreve-d8-persistence`：沿用隔离Hosted／NFS、同源默认入口Runtime、普通User原12权限和600秒预算。六条Shreve保存链加同源默认／显式Strahler两条对照，共八条COG；断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环、双角色非法波段及非法method九类各中英文，共18条准确失败。独立逐源头前向路径oracle核完整量级／mask、出口源头数守恒、非河网供体排除和对角交叉独立，默认／显式Strahler完整物理成果相等且符合独立原规则；严格核COG／网格／CRS、三方相等正整数大小、精确扫描／全部实际输入当前血缘／Monitor、源与先前成果不变及零残留，失败零发布／新增扫描血缘、反向查询不改提交语言。整数越界继续单列Native证据，不模拟Hosted越界或降低产品上限；不改原套件、权限或跨模块产品逻辑，不计UI或容量。本地新夹具与脚本门禁通过，实际Hosted未运行；Linux全量及实际Hosted均等专门CI会话回传，本会话不触发、轮询或设置定时。
+`make test-online ONLINE_SUITE=raster-stream-shreve-d8-persistence`；脚本门禁 `make test-raster-stream-shreve-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-本独立夹具本地Native专项53项、标准独立runner65项、Online／Python CI登记及共享栅格总入口24组均通过；原产品Native全量4136项固定证据保留，固定883aed7b5正式Linux全量4189项已通过，实际Hosted仍待专门CI会话回传。整数累计越界仅列Native受控上界回归，Hosted精确64位非法方向码不等同量级累计越界；完整固定证据见[栅格专题](../../../next/栅格算子体系后续专题.md#三后续工作)。
+六条Shreve保存链加同源默认／显式Strahler两条对照，共八条COG；断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环、双角色非法波段及非法method九类各中英文，共18条准确失败。独立逐源头前向路径oracle核完整量级／mask、出口源头数守恒、非河网供体排除和对角交叉独立，默认／显式Strahler完整物理成果相等且符合独立原规则；整数越界继续单列Native证据，不模拟Hosted越界或降低产品上限。
 
 ### D8 河网转矢量线独立 Hosted 验收
 
-独立手工入口为 `make test-online ONLINE_SUITE=raster-stream-to-vector-d8-persistence`，复用隔离Hosted／NFS、同源默认入口Runtime、普通User原12权限及600秒预算。三种水平单位的直接双输入，加累积阈值、DEM／填洼完整链及空河网／全无效，共八条GeoPackage保存；孤立单像元（含非河网入流）、混合孤立点、断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环及两个角色非法波段十类各中英，共20条准确失败。独立逐边oracle核每条真实河网边恰好一次，完整中心坐标／方向／ID间隔／零基起止行列／米制长度、汇合端点、单像元终点、跨块及交叉独立。按通用矢量save契约核GeoPackage的完整几何／字段类型／CRS、物理与Meta相等正整数大小、精确扫描与当前执行所有实际输入血缘／Monitor、源与先前成果不变及全部清理；空成果核Schema与CRS。失败零发布／新增扫描血缘，反向查询不改提交语言，不新增RasterArtifact。编号／长度与坐标数值极限继续单列Native，不模拟Hosted越界；不改原套件、权限、算法或跨模块产品逻辑，不计UI或容量。夹具、标准入口和手工CI登记已实现并通过本地准备门禁；实际Hosted尚未运行，仍由专门CI会话协调，本会话不触发、轮询或设置定时。
+`make test-online ONLINE_SUITE=raster-stream-to-vector-d8-persistence`；脚本门禁 `make test-raster-stream-to-vector-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-验证入口：`make test-raster-stream-to-vector-d8-online-runner` 由 `make test-raster-online-runner` 聚合；真实 GDAL 夹具与篡改拒绝沿 `make test-geopython-workflow`。本地准备、Native 专项及后续固定版本 Linux 全量的命令、计数、日志摘要和适用范围统一见[D8 分版本证据](../../../next/栅格算子体系后续专题.md#三后续工作)。专项筛除不计通过，不与旧全量相加；Native 与真实 Hosted 结论分别记账。
+三种水平单位的直接双输入，加累积阈值、DEM／填洼完整链及空河网／全无效，共八条GeoPackage保存；孤立单像元（含非河网入流）、混合孤立点、断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环及两个角色非法波段十类各中英，共20条准确失败。独立逐边oracle核每条真实河网边恰好一次，完整中心坐标／方向／ID间隔／零基起止行列／米制长度、汇合端点、单像元终点、跨块及交叉独立。GeoPackage核完整几何／字段类型／CRS，空成果核Schema与CRS；其余成果／身份核验沿共同要求。编号／长度与坐标数值极限继续单列Native，不模拟Hosted越界；不改原套件、权限、算法或跨模块产品逻辑，不计UI或容量。
 
 ## raster-snap-pour-points-persistence
 
-已获用户授权新增独立手工Hosted：复用既有NFS、同源默认入口产品Runtime和普通用户原12权限，独立600秒业务预算。8条COG保存链包括米／国际英尺／美制测量英尺直接吸附、零半径、标记重分类、DEM接流向累积吸附、填洼接上述链，以及流向→累积→吸附→汇水区。13类各中英文提交，共26条失败链：碰撞、重复编号、全零无点、全无效、非法计数、非法编号、覆盖不一致、网格不一致、负半径、两个角色非法波段、旋转网格及吸附后嵌套；嵌套须由原汇水区节点失败，吸附节点先成功。整数非法样本包括原UInt64 NoData相邻大整数；非有限半径／单位溢出等极限保留Native证据。
+`make test-online ONLINE_SUITE=raster-snap-pour-points-persistence`；脚本门禁 `make test-raster-snap-pour-points-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-独立逐候选核完整编号／mask、真实CRS米制圆边界、距离／行列决胜、跨分水岭／无效区、零与编号保留；严格COG／原网格CRS／单位清除，artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎、当前执行全部实际输入血缘／Monitor，源与先前成果不变和全部清理。失败无发布／新增扫描／输出血缘，反向查询不改提交语言。入口与夹具已实现，本地最终标准Native专项312项（新增夹具53项，4538筛除）、独立脚本63项与完整Online登记通过；原栅格总入口固定准备候选实跑通过，最终Worker独立性另经Native／独立入口覆盖；实际Hosted未运行，不计UI或容量，不改产品逻辑／权限／原套件，Linux与其余Hosted等专门CI会话回传，不自行轮询或触发。
+8条COG保存链包括米／国际英尺／美制测量英尺直接吸附、零半径、标记重分类、DEM接流向累积吸附、填洼接上述链，以及流向→累积→吸附→汇水区。13类各中英文提交，共26条失败链：碰撞、重复编号、全零无点、全无效、非法计数、非法编号、覆盖不一致、网格不一致、负半径、两个角色非法波段、旋转网格及吸附后嵌套；嵌套须由原汇水区节点失败，吸附节点先成功。整数非法样本包括原UInt64 NoData相邻大整数；非有限半径／单位溢出等极限保留Native证据。
 
-标准入口：`make test-online ONLINE_SUITE=raster-snap-pour-points-persistence`；脚本门禁：`make test-raster-snap-pour-points-online-runner`。现场重新读取完整物理成果与源哈希，只有不可变数学预期可缓存；现场完整像元校验与原始归档终审分别记账，不把未归档TIFF称为离线重读。
-
+独立逐候选核完整编号／mask、真实CRS米制圆边界、距离／行列决胜、跨分水岭／无效区、零与编号保留；清除输出单位；COG及其余成果／身份核验沿共同要求。
 
 ## raster-subcatchments-d8-persistence
 
-已确认新增独立手工Hosted：复用Hosted／NFS／同源默认入口产品Runtime与普通用户原12权限，独立600秒预算。7条COG链：非嵌套增量分区、相同输入的原完整汇水区对照、多层嵌套与并列支流、标记重分类、DEM接流向、填洼接流向，以及流向→累积→真实移动点的吸附→增量分区。两条非嵌套成果须完整像元一致；嵌套按下游第一个指定点归属且点自身归本点，保留用户编号、未选有效零和原无效覆盖。
+`make test-online ONLINE_SUITE=raster-subcatchments-d8-persistence`；脚本门禁 `make test-raster-subcatchments-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-14类各中英文，共28条增量失败：重复编号、无点、全无效、非法编号、覆盖／网格不一致、非法方向码、内部伪终点、越界／无效下游、循环、两个角色非法波段及旋转网格；再加原完整汇水区对同一嵌套输入的两条中英文准确拒绝，共30条失败。包含原UInt64 NoData相邻非法大整数。独立逐源路径oracle核全部编号／mask、跨块、多波段、首点／自身、唯一归属和像元数守恒；不读取产品拓扑标签。完整COG、最近邻金字塔、原网格／CRS／单位清除、artifact／物理／Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前执行所有实际输入血缘／Monitor、源及先前成果不变及零残留均严格核对。失败须准确节点和提交语言、零发布／新增扫描或输出血缘，反向查询不改旧失败。
+7条COG链：非嵌套增量分区、相同输入的原完整汇水区对照、多层嵌套与并列支流、标记重分类、DEM接流向、填洼接流向，以及流向→累积→真实移动点的吸附→增量分区。两条非嵌套成果须完整像元一致；嵌套按下游第一个指定点归属且点自身归本点，保留用户编号、未选有效零和原无效覆盖。
 
-本地最终标准Native专项 `make test-geopython-workflow`（`-k subcatchments`）**247 passed／4912 deselected／17.46秒**，0失败／跳过，含新增夹具73项；输入无漂移且无新增Python原生崩溃报告。七份真实COG、30条双语准确失败、完整物理篡改拒绝和真实stdin Worker空目录独立运行均已验；专项筛除项未执行，不计新全量、不与原5073项全量累加。候选树 `adad1eebdd2a117ea800cc20bb5a1bb70d70154d`，日志SHA-256 `382fa9c8de7462820a457bb70c30a27f80960b45accf3e37ca46b4e17d092312`。最终 `make test-raster-subcatchments-d8-online-runner` **63项／38.524秒**及完整Online登记通过，同候选树且输入无漂移，日志SHA-256 `9918247fc8fd72fd185cf4b891226cbc96b8855d9297cfde4a52a9522a171089`。
-
-实际Node24.11.1下完整 `make test-raster-online-runner` 退出0，27组Python子门禁及隔离身份夹具Go T1通过，壁钟1058.90秒，输入无漂移；共享计数不累加为唯一测试数，不计全量IAM／数据库集成。固定准备候选 `a437da2bdfcb277c61ed6a1c5234b18c12e4f9a3`，日志SHA-256 `2b606775546f2a666114f2f7901de906c51fbde23d2d4bf4801772177be1f490`。其后仅本套件错误描述／测试命名及Worker独立性登记收紧，由上述最终Native／独立入口复核，原套件断言保持；PythonCI登记另通过42项与10项及11模块检查。新脚本的变更→engines选择、Native recipe、独立根入口和手工Hosted Job已同次登记。
-
-以上为本地准备及Native证据。实际Hosted尚未运行，仍由专门CI会话协调并回传原始归档终审；Linux全量及其余Hosted继续等待回传，不自行触发、轮询或定时。未计平台身份／扫描／血缘／Monitor与真实部署清理通过，也不计UI或容量；数值极限仍单列Native。
-
+14类各中英文，共28条增量失败：重复编号、无点、全无效、非法编号、覆盖／网格不一致、非法方向码、内部伪终点、越界／无效下游、循环、两个角色非法波段及旋转网格；再加原完整汇水区对同一嵌套输入的两条中英文准确拒绝，共30条失败。包含原UInt64 NoData相邻非法大整数。独立逐源路径oracle核全部编号／mask、跨块、多波段、首点／自身、唯一归属和像元数守恒；不读取产品拓扑标签。输出清除单位；其余成果、身份、失败及清理核验沿共同要求。
 
 ## raster-flow-accumulation-area-d8-persistence
 
-用户已批准独立手工D8汇流面积持久化验收：复用Hosted隔离生命周期、NFS、同源默认入口产品Runtime及普通用户原12权限，独立600秒业务预算。八条COG保存链为米制／国际英尺／美制测量英尺方向接area、同一米制方向的默认count／显式count对照、DEM→流向→area、填洼接上述链及全无效area。519×515矩形网格、显式第二数据波段，覆盖跨512块、多出口、孔洞、合法零、部分透明、孤立开放终点及边界非零方向。
+`make test-online ONLINE_SUITE=raster-flow-accumulation-area-d8-persistence`；脚本门禁 `make test-raster-flow-accumulation-area-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-非法方向码（含原始UInt64 NoData邻接大整数）、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格与非法measure八类各中英文提交，共16条准确失败；反向查询不改提交语言。独立逐源路径核完整像元／mask、area包含自身、平方米m2、count不计自身且清空单位、两count对照一致与出口面积守恒；严格核原网格／CRS、Float64／NaN、COG及最近邻金字塔、artifact／物理／Meta相等正整数大小、精确扫描的父执行／用户／租户／引擎、当前执行实际注册输入血缘／Monitor、源与先前成果不变。失败零发布／零新增扫描和派生血缘，全部退出清理和零残留为必需断言。面积溢出／下溢、累计溢出与精确计数上限继续单列Native数值极限证据，不记Hosted已验。
+八条COG保存链为米制／国际英尺／美制测量英尺方向接area、同一米制方向的默认count／显式count对照、DEM→流向→area、填洼接上述链及全无效area。519×515矩形网格、显式第二数据波段，覆盖跨512块、多出口、孔洞、合法零、部分透明、孤立开放终点及边界非零方向。
 
-标准业务入口`make test-online ONLINE_SUITE=raster-flow-accumulation-area-d8-persistence`；本地准备门禁`make test-raster-flow-accumulation-area-d8-online-runner`；仅手工Hosted，不参加夜间自动运行，不改原套件、产品逻辑、权限或跨模块实现，不计UI或容量。夹具、标准入口和独立手工CI登记已实现；最终本地Native专项184项（含新增夹具52项、5217项筛除）／18.65秒，独立脚本门禁63项／17.992秒与完整Online登记通过；Node24.11.1下共享栅格脚本总入口实跑通过，具体候选版本与证据见后续专题。实际Hosted未运行，由专门CI会话协调；Linux全量和其余Hosted继续等回传，不计平台扫描／血缘／Monitor、UI或容量通过。数值极限继续单列Native。
-
+非法方向码（含原始UInt64 NoData邻接大整数）、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格与非法measure八类各中英文提交，共16条准确失败；反向查询不改提交语言。独立逐源路径核完整像元／mask、area包含自身、平方米m2、count不计自身且清空单位、两count对照一致与出口面积守恒；输出Float64／NaN；其余成果、身份、失败及清理核验沿共同要求。面积溢出／下溢、累计溢出与精确计数上限继续单列Native数值极限证据，不记Hosted已验。
 
 ## raster-distance-to-stream-d8-persistence
 
-用户已批准独立手工D8到河网沿流距离持久化验收，复用Hosted／NFS、同源默认入口产品Runtime、普通User原12权限，独立600秒预算。米／国际英尺／美制测量英尺方向＋河网、累积阈值、DEM、填洼、空河网及全无效共8条COG保存链；519×515矩形网格与显式第二波段覆盖跨512块、多出口、对角交叉、孔洞及alpha／mask。独立逐源路径核首次命中、河网自身零、未到达NoData及输出有效覆盖，严格核米制单位、完整COG／最近邻金字塔、三方相等正整数大小、精确扫描、当前执行实际输入血缘／Monitor、源旧不变及全部清理。
+`make test-online ONLINE_SUITE=raster-distance-to-stream-d8-persistence`；脚本门禁 `make test-raster-distance-to-stream-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-非法码（含原始UInt64 NoData邻接非法整数）、内部伪终点、图外／无效下游、循环、断流、非二值掩膜、覆盖／网格不一致、旋转网格及两个角色非法波段共12类各中英文，合计24条准确失败；包含河网之外或命中之后的非法路线。失败零发布／新增扫描／派生血缘，反向查询不改提交语言。长路径稳定性、距离溢出及极小步长继续单列Native数值证据，不记Hosted已验。不改产品、权限、其他模块或原套件，不计UI／容量。
+米／国际英尺／美制测量英尺方向＋河网、累积阈值、DEM、填洼、空河网及全无效共8条COG保存链；519×515矩形网格与显式第二波段覆盖跨512块、多出口、对角交叉、孔洞及alpha／mask。独立逐源路径核首次命中、河网自身零、未到达NoData及输出有效覆盖，输出米制单位；其余成果／身份核验沿共同要求。
 
-夹具、脚本、标准入口及独立手工CI登记已实现；最终本地标准Native专项260项（含新增夹具57项、5434筛除）／10.55秒及独立脚本63项／23.327秒通过，完整Online登记通过；Node24.11.1下共享栅格脚本总入口实跑通过，具体候选与日志见后续专题。产品算子源码保持47a390210。本轮未运行实际Hosted，Linux全量和其他Hosted继续等专门CI会话回传，不计平台扫描／血缘／Monitor、UI或容量；数值极限仍单列Native，不触发、轮询或设置定时。
-
+非法码（含原始UInt64 NoData邻接非法整数）、内部伪终点、图外／无效下游、循环、断流、非二值掩膜、覆盖／网格不一致、旋转网格及两个角色非法波段共12类各中英文，合计24条准确失败；包含河网之外或命中之后的非法路线。长路径稳定性、距离溢出及极小步长继续单列Native数值证据，不记Hosted已验。
 
 ## raster-hand-d8-persistence
 
-已获用户批准：独立手工raster-hand-d8-persistence，复用Hosted／NFS、同源默认入口Runtime和普通用户原12权限，独立600秒预算。三种高程单位与水平CRS交叉的直接HAND、累积阈值、DEM、填洼、空河网及全无效共8条COG保存链，三输入显式数据波段、519×515矩形网格，覆盖跨512块、多出口、孔洞、平坦零、负高程与alpha／mask。独立逐源路径oracle核首次河网基准／完整高程差及mask、未到达NoData；严格核完整COG／最近邻金字塔、网格／CRS／米制、三方相等正整数大小、精确扫描和当前执行全部实际输入血缘／Monitor、源及先前成果不变与全部清理。
+`make test-online ONLINE_SUITE=raster-hand-d8-persistence`；脚本门禁 `make test-raster-hand-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
 
-命中前／命中后／空河网逆坡及填洼流向混用原DEM，非法码／内部伪终点／图外与无效指向／循环／断流，非二值河网、两角色覆盖与网格不一致、旋转网格，三个角色非法波段、非法高程单位及单位冲突共21类各按中英文提交，合计42条准确失败。失败零发布／新增扫描／派生血缘，反向查询不改提交语言。十万像元长路径、原始64位高程相邻差值及溢出／下溢继续单列Native，不计Hosted数值极限、UI或容量，不修改产品、原套件、权限或跨模块逻辑。
+三种高程单位与水平CRS交叉的直接HAND、累积阈值、DEM、填洼、空河网及全无效共8条COG保存链，三输入显式数据波段、519×515矩形网格，覆盖跨512块、多出口、孔洞、平坦零、负高程与alpha／mask。独立逐源路径oracle核首次河网基准／完整高程差及mask、未到达NoData；输出米制；其余成果／身份核验沿共同要求。
 
-夹具、标准入口与独立手工CI登记已实现，通过本地Native专项389项（含新夹具76项）、独立脚本63项及登记检查；实际Hosted尚未运行，Linux全量与其余Hosted继续等专门CI会话回传。本会话不手动触发、轮询或设置定时。专项不计新全量，不与原6007项全量或共享测试相加；不计真实普通用户、平台扫描／血缘／Monitor、UI或容量。
+命中前／命中后／空河网逆坡及填洼流向混用原DEM，非法码／内部伪终点／图外与无效指向／循环／断流，非二值河网、两角色覆盖与网格不一致、旋转网格，三个角色非法波段、非法高程单位及单位冲突共21类各按中英文提交，合计42条准确失败。十万像元长路径、原始64位高程相邻差值及溢出／下溢继续单列Native，不计Hosted数值极限。
 
+### 水文专项的固定结果与待验边界
+
+以下仅收敛已有归档结论，完整物理／扫描／当前执行血缘／Monitor、源旧不变和清理均按各轮实际报告认定；不代表当前 HEAD 已重跑。前七项 Hosted 归档均无原 TIFF，只有现场物理回执，不称为离线像元重算。
+
+| 专项 | 固定证据与长期结论 |
+| --- | --- |
+| 填洼 | `8599f94ed8aefffd98370ee1c4d19d8d81c158ce`，[Run39727166222／Job119653632678](https://github.com/pampa0629/addp/actions/runs/39727166222/job/119653632678)：3 链／4 类准确失败、三方大小、扫描／血缘／Monitor及清理通过；不证明平台完整双语矩阵或完整水文分析。 |
+| D8 流向 | `3944846c9`，Run39750207818／Job119728593684：3 链／8 次双语失败、平坦路径／开放出口／无环及清理通过。归档 `12414557855`，不计该源码 Linux 全量。 |
+| 计数累积 | `4fba03313`，Run39761858875／Job119767722319：4 链／14 次双语失败、排除自身与终点总量及清理通过；同源 Linux Run39761773681／Job119767424921 全量 2360 项通过，不证明后继面积或加权模式。 |
+| 旧下游流长 | `dd04fb0637f381db9dfc3532c70d87135b34d21b`，[Run39783255643／Job119839656541](https://github.com/pampa0629/addp/actions/runs/39783255643/job/119839656541)：6 链／14 次失败及清理通过。本地栅格聚合曾有 3 项原生命周期模拟超时，不能改计整套通过。 |
+| 开放终点分区 | `6bf471fc2b6f8ee75fc01e2ce56e317e1375b5dc`，[Run39797527146／Job119888617829](https://github.com/pampa0629/addp/actions/runs/39797527146/job/119888617829)：4 链／14 次失败、出口编号／归属守恒及清理通过。 |
+| 旧上游最长流长 | `ddd32f9536857cecc4dc40d63d356755c4ca297b`（含夹具修复 `2d6d92780`），[Run39876682648／Job120163869951](https://github.com/pampa0629/addp/actions/runs/39876682648/job/120163869951)：6 链／14 次失败及清理通过；仅共享不可变数学期望，物理成果仍逐轮重读，不冒充 Linux 全量。 |
+| Strahler | `bde58e038751d932888bd7696046715e4ba21410`，[Run39880792263／Job120177404317](https://github.com/pampa0629/addp/actions/runs/39880792263/job/120177404317)：6 链／16 次失败及清理通过，不证明 Shreve、加权累积或业务 DELETE。 |
+
+上述七项均保持原 600 秒预算、普通 User 原 12 权限和同源产品 Runtime。**后继统一流长**的两模式结果改查[既有验收适配](#d8流长统一入口的既有验收适配)，不把旧无 `method` 的结果当作当前接口验收。
+
+**尚无本文已核验 Hosted 通过结论**：加权累积、指定点汇水区、河段编号、Shreve、河网转线、点吸附、增量子汇水区、汇流面积、到河网距离及 HAND。已记录的本地 GDAL／脚本／登记通过只证明准备；其中指定点汇水区最终候选为 `19bb583a21b4ffd5d7ffe1d5099bb57d02d58ab7`，增量子汇水区最终候选为 `adad1eebdd2a117ea800cc20bb5a1bb70d70154d`，均不能用较早聚合候选外推整树通过。Shreve 的 `883aed7b5` Linux 全量 4189 项是独立 Native 证据。其余实际运行和完整固定版本边界统一见[栅格验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)与[后续工作](../../../next/栅格算子体系后续专题.md#三后续工作)；不因本次整理触发新运行。
 
 ### DEM 平均曲率独立 Hosted 验收
 
@@ -1320,7 +1343,7 @@ NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alph
 
 ## 栅格分区加权总体标准差独立 Hosted 验收
 
-`raster-zonal-weighted-stddev-persistence`独立手工套件，复用NFS、同源默认入口产品Runtime、非默认租户普通User原12权限及既有隔离生命周期。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核、原件归档及执行工作区／期望缓存清理；退出严格核NFS／Runtime／registry／Infra零残留，清理失败整套失败。不改原套件、权限、安全投影或产品逻辑，Linux全量及实际Hosted仍由CI会话协调，不自行触发、重试或扩预算。
+`raster-zonal-weighted-stddev-persistence`；`make test-raster-zonal-weighted-stddev-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。
 
 固定16条CSV成功链：非均匀权重、整体×8、全1三条；默认关闭／显式False的原加权对照及原未加权对照三条；权重／分区重分类两条；全零、混合特殊组、数值全无效、分区全无效四条；显式第二波段／raw scale-offset／mask／部分alpha及非必需域坏权重、同旋转网格、Int64／UInt64原生NoData邻接值四条。13份13列启用表、2份12列原加权表及1份9列原统计表。混合组覆盖单正权重、正权重对应常量、零权重高差值仍计入原统计但不计新标准差、无有效数值与全零权重；主场景79分区完整表，预览仍最多50行。
 
@@ -1330,11 +1353,11 @@ NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alph
 
 每次成功后重读当前1至16份成果，98次失败后各重读16份，共136＋98×16＝1704次CSV全表检查；加首次源全检共115轮物理检查。每轮真实重读所有源像元／原生NoData／mask／alpha／类型／网格／CRS／scale-offset和hash，不缓存实际成果，仅冻结独立期望。归档16份CSV及全部源原字节、大小／SHA256清单、当前执行血缘和原始证据；篡改、缺失、额外文件及符号链接均拒绝，不重建或静默修复。
 
-沿原普通表save，物理／Meta大小为相等正整数，不虚构RasterArtifact。扫描精确核父执行／用户／租户／引擎；启用及关闭开关的加权链核值／分区／权重三份实际源，原统计对照只核两份。受控只读observer核完整内部save derive，公开operations:null、Meta关系及Monitor分别校验；失败零发布／新增扫描或派生，源和所有旧成果不变，所有退出严格清理。标准入口`make test-raster-zonal-weighted-stddev-online-runner`与标准Native显式登记`test_online_zonal_weighted_stddev_fixture.py`，Online／changed gate／独立手工workflow／observer和固定矩阵删断言检查同次覆盖。本地标准Native受影响256 passed／12485 deselected／108.23秒，0失败／跳过／warnings；独立Runner99项／27.529秒及完整Online登记通过，输入无漂移。准备通过不计Linux全量或实际Hosted通过。
+启用及关闭开关的加权链核值／分区／权重三份实际源，原统计对照只核两份。受控只读observer核完整内部save derive，公开operations:null、Meta关系及Monitor分别校验。标准入口`make test-raster-zonal-weighted-stddev-online-runner`与标准Native显式登记`test_online_zonal_weighted_stddev_fixture.py`，Online／changed gate／独立手工workflow／observer和固定矩阵删断言检查同次覆盖。本节已有本地 Native 专项、独立 Runner 与登记通过记录，筛除不计全量，准备结果不证明 Linux 全量或真实 Hosted。
 
 ## 栅格分区加权统计独立 Hosted 验收
 
-`raster-zonal-weighted-persistence`为独立手工套件，复用NFS、同源默认入口Runtime和非默认租户普通User原12权限；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖初始化扫描、首次独立期望、执行／查询、全部物理复核、归档及执行工作区／期望缓存清理；部署／播种和NFS／Runtime／registry／Infra退出沿既有隔离生命周期严格清理。实际Linux全量与Hosted由CI会话协调，不自动触发、重试或扩预算，不计页面或容量。
+`raster-zonal-weighted-persistence`；`make test-raster-zonal-weighted-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。
 
 固定16条CSV成功链：非均匀跨二维读取块及权重×8两条；全1加权和两条原九列实际对照三条；权重／分区重分类两条；全零权重、混合空组、数值全无效、分区全无效四条；显式第二波段／raw scale-offset／mask／部分alpha与非必需域坏权重一条；三源同旋转网格一条；单有效值／合法零负值一条；Int64／UInt64原生NoData邻接数值与权重、精确大分区编号两条。14份12列加权表、2份9列对照；79分区完整CSV，公开预览最多50行。
 
@@ -1344,16 +1367,16 @@ NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alph
 
 成功后依次全读1至16份，80次失败后各全读16份，共1416次CSV全表检查；加首次源全检共97轮物理检查。每轮真实重读所有源像元／mask／类型／原生NoData／仿射／CRS／scale-offset及hash，不缓存实际成果。仅冻结独立期望；归档源原字节、16份CSV原字节及大小／SHA256清单和当前执行血缘。原件／manifest／期望变化、缺失、额外文件、符号链接一律失败，不重建或静默修复。
 
-沿普通表保存路径：物理／Meta大小须为相等正整数，不虚构RasterArtifact。自动扫描精确核父执行／用户／租户／引擎；加权链值／分区／权重三份实际输入，原统计对照仅两份。受控只读observer保留完整内部`save` derive与公开`operations:null`分别校验，Meta关系／Monitor独立核实；失败无发布／新增扫描或派生血缘，源及先前成果不变，清理失败整套失败。
+加权链值／分区／权重三份实际输入，原统计对照仅两份。受控只读observer保留完整内部`save` derive与公开`operations:null`分别校验，Meta关系／Monitor独立核实。
 
-标准入口`make test-raster-zonal-weighted-online-runner`与标准Native中的`test_online_zonal_weighted_fixture.py`，同次登记Online、changed gate、手工workflow、observer及固定矩阵／删断言拒绝测试；本地标准Native专项217 passed／11987 deselected／12.87秒、0失败／跳过／warnings；标准Runner96项／25.700秒及完整Online登记通过。准备通过不计实际Hosted通过。
+标准入口`make test-raster-zonal-weighted-online-runner`与标准Native中的`test_online_zonal_weighted_fixture.py`，同次登记Online、changed gate、手工workflow、observer及固定矩阵／删断言拒绝测试；本节已有本地 Native 专项、独立 Runner 与登记通过记录，筛除不计全量，准备结果不证明 Linux 全量或真实 Hosted。
 
 
 ## 栅格分区百分位独立 Hosted 验收
 
 栅格分区百分位参数已统一为非空严格递增`percentiles`列表，原单值参数及原两列删除，旧DAG显式修改；原九列保持、每区一行，按请求顺序从1追加percentile_i／percentile_value_i列对。原单项套件仅迁移单元素列表与列名、保持16成功／56双语失败／1032次全检和600秒预算，权重及分类频数互斥场景同步迁移，严格断言不减。历史固定版本证据保留；多项独立Hosted范围另议，实际Linux全量／Hosted仍由CI会话协调，不重试、不扩预算。
 
-`raster-zonal-percentile-persistence`为独立手工套件，复用NFS、同源产品默认入口Runtime与普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核及执行工作区／期望缓存清理。部署、静态夹具播种及NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原分区／整幅／邻域套件不改，实际Linux全量和Hosted仍由CI会话协调，不计UI或容量。
+`raster-zonal-percentile-persistence`；`make test-raster-zonal-percentile-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。
 
 固定16条成功CSV保存链：原九列统计1条；0／100端点、奇偶总体50百分位4条；25／75插值及33.3跨六块／逆序4条；分区重分类1条；79分区完整表／50行预览1条；精确Int64大分区号配Int64／UInt64数值NoData邻接有效值2条；显式第二波段独立mask／alpha及scale-offset1条；无有效数值保留分区、分区全无效空表2条。共同包含负分类、合法零、同分类非连通合组及单有效零值，主网格保留旋转。
 
@@ -1370,7 +1393,7 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 
 ## 矢量面分区加权总体标准差独立 Hosted 验收
 
-`vector-zonal-weighted-stddev-persistence`独立手工套件，复用NFS、同源默认入口产品Runtime、非默认租户普通User原12权限及既有隔离生命周期；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核、原件归档及执行工作区／期望缓存清理；NFS／Runtime／registry／Infra退出严格核零残留，清理失败整套失败。实际Linux全量与Hosted继续由CI会话协调，不触发、重试或扩预算，不计UI或容量。
+`vector-zonal-weighted-stddev-persistence`；`make test-vector-zonal-weighted-stddev-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。
 
 固定16条GeoPackage成功链：非均匀中心／全部触及、权重×8、全1四条；默认关闭／显式False的原加权对照及原未加权对照三条；权重重分类接自定义前缀、数值重分类、重分类→转面→统计三条；空前缀、全零、数值全无效、带声明字段空面批四条；Int64／UInt64原生NoData邻接值两条。13份追加新标准差、2份原加权字段、1份原八统计。显式False使用sd_前缀保留已有sd_weighted_stddev属性，不能误拒绝或覆盖。主夹具固定旋转网格并跨二维512块，覆盖第二波段／raw scale-offset／mask／alpha、孔洞、多部件、重叠、重复几何／属性、薄面、部分／完全出界；新增小面核单正权重、常量、零权重高差值仍参与原统计但不计新σ。
 
@@ -1380,11 +1403,11 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 
 每次成功重读当前1至16份成果，106次失败各重读16份，固定136＋106×16＝1832次GeoPackage全检；加首次源核共123轮物理检查。每轮真实核全部源像元／mask／原生NoData／类型／完整网格／CRS／scale-offset、矢量几何／属性及hash，核全部成果几何／属性／字段名序型／统计／null／行序／CRS，不缓存实际成果，仅冻结独立期望。归档16份GeoPackage及全部源原字节、大小／SHA256清单、原始执行和血缘；篡改、缺失、额外文件、符号链接不重建、不覆盖、不静默修复。
 
-沿普通矢量save，物理／Meta大小严格相等正整数，不虚构RasterArtifact；自动扫描精确核父执行／用户／租户／引擎。直接启用及关闭的加权链核三源，转面链核实际两源，原未加权对照核两源；完整内部save derive、公开operations:null、Meta关系和Monitor分别验证，失败零发布／新增扫描／派生，源旧不变及所有退出严格清理。根Makefile标准Native、独立Runner、Online／changed gate／独立手工workflow／受控observer／固定矩阵删断言检查同次登记。本地标准Native以`-k vector_zonal_weighted_stddev`通过333项（12741筛除、55.84秒，非全量），`make test-vector-zonal-weighted-stddev-online-runner`通过100项（38.378秒）及完整Online登记；两门禁输入无漂移。准备通过不计实际Hosted通过，Linux全量及真实Hosted仍待CI协调回传。
+直接启用及关闭的加权链核三源，转面链核实际两源，原未加权对照核两源；完整内部save derive、公开operations:null、Meta关系和Monitor分别验证。根Makefile标准Native、独立Runner、Online／changed gate／独立手工workflow／受控observer／固定矩阵删断言检查同次登记。本节已有本地 Native 专项、独立 Runner 与登记通过记录，筛除不计全量，准备结果不证明 Linux 全量或真实 Hosted。
 
 ## 矢量面分区加权统计独立 Hosted 验收
 
-`vector-zonal-weighted-persistence`为独立手工套件，复用NFS、同源默认入口Runtime、非默认租户普通User原12权限；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全量物理复核、原件归档及执行工作区／期望缓存清理；部署、静态播种和NFS／Runtime／registry／Infra退出沿既有隔离生命周期严格核验，清理失败整套失败。Linux全量与实际Hosted由CI会话协调，不自行触发、重试或扩预算，不计页面、容量或吞吐。
+`vector-zonal-weighted-persistence`；`make test-vector-zonal-weighted-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。
 
 固定16条成功GeoPackage保存链：非均匀权重中心覆盖／全部触及、权重×8、全1四条；对应中心／全部触及的原统计实际对照两条；权重重分类、数值重分类、重分类→转面→加权三条；自定义／空前缀两条；全零权重、数值全无效、带声明字段的空面批三条；Int64／UInt64原生NoData邻接数值及权重两条。14份加权成果追加原前缀三字段，2份原统计对照保持原八字段。共同覆盖完整旋转网格、跨二维读取块、显式第二波段、raw scale-offset、mask／部分alpha，以及孔洞、多部件、重叠、重复几何／属性、薄面、部分／完全出界、合法零和空组；重复内存索引单列Native，不冒充持久文件身份。
 
@@ -1394,14 +1417,14 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 
 每次成功后真实重读当前1至16份成果，每次失败后重读16份，固定136＋86×16＝1512次GeoPackage全检；加首次源检查共103轮物理检查。每轮核完整几何／属性／行序／字段类型、计数／统计／null，所有源原生像元／mask／NoData／仿射／CRS／scale-offset及矢量完整内容和hash；只冻结独立期望，不缓存实际成果。归档16份GeoPackage及全部源原字节、大小／SHA256清单、当前执行血缘和原始执行证据；篡改、缺失、额外文件或符号链接均拒绝，不覆盖、重建或静默修复。
 
-沿普通矢量保存路径，物理／Meta大小严格为相等正整数，不虚构RasterArtifact。自动扫描精确核父执行／用户／租户／引擎；直接加权三源，转面链仅数值和权重两份实际源，两个不加权对照仅面和数值。仅登记执行范围受控只读observer，完整内部save／derive和公开operations:null分别核验，Meta关系／Monitor另核；失败零发布／新增扫描／派生血缘，源及旧成果不变，所有退出零残留。
+直接加权三源，转面链仅数值和权重两份实际源，两个不加权对照仅面和数值。仅登记执行范围受控只读observer，完整内部save／derive和公开operations:null分别核验，Meta关系／Monitor另核。
 
-标准入口`make test-vector-zonal-weighted-online-runner`和标准Native中的`test_online_vector_zonal_weighted_fixture.py`，同步Online、changed gate、独立手工workflow、observer与固定矩阵／删断言拒绝检查。本地标准Native专项266 passed／12219 deselected／36.45秒，0失败／跳过／warnings；共享登记合并后的标准Runner97项／40.928秒及完整Online登记通过。准备通过不计实际Hosted通过。
+标准入口`make test-vector-zonal-weighted-online-runner`和标准Native中的`test_online_vector_zonal_weighted_fixture.py`，同步Online、changed gate、独立手工workflow、observer与固定矩阵／删断言拒绝检查。本节已有本地 Native 专项、独立 Runner 与登记通过记录，筛除不计全量，准备结果不证明 Linux 全量或真实 Hosted。
 
 
 ## 矢量面分区百分位独立 Hosted 验收
 
-`vector-zonal-percentile-persistence`为原单项独立手工套件，当前显式传`percentiles=[p]`，新增列使用带原前缀的percentile_1／percentile_value_1；原矩阵／预算与严格校验保持。多项独立Hosted尚未新增，历史固定版本证据不外推新源码。套件复用NFS、同源产品默认入口Runtime和普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、64条执行及查询、全部物理复核与执行工作区／期望缓存清理。部署、静态播种和NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原矢量分区／栅格百分位套件、产品逻辑、安全投影及权限不改；实际Hosted仍由CI会话协调，准备通过不计Hosted、UI或容量通过。
+`vector-zonal-percentile-persistence`；`make test-vector-zonal-percentile-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。 当前仍显式传 `percentiles=[p]`，使用原前缀的 percentile_1／percentile_value_1，保持原矩阵及预算；64 条执行与查询计入预算，不将历史固定结果外推为后来多项套件通过。
 
 固定16条成功GeoPackage保存链：不带百分位的原八列1条；0／100端点、奇偶总体50百分位4条；25／75插值、33.3跨块中心／全部触及4条；自定义／空前缀2条；栅格重分类→面化→90百分位1条；Int64／UInt64数值NoData邻接有效值2条；全无效数值保留面行与空矢量批次保留Schema／CRS2条。常规面共同覆盖孔洞、重叠、MultiPolygon、细面、部分／完全出界、单有效零和重复几何，以显式唯一`source_row`核行序；主栅格保留旋转网格、显式第二波段、独立mask／alpha和未应用的scale-offset。GeoPackage的FID不冒充用户索引；重复索引、活动几何列名冲突、混合类型复数alpha及数值极限继续单列Native。
 
@@ -1415,8 +1438,7 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 本地标准入口为`make test-vector-zonal-percentile-online-runner`及标准Native中的`test_online_vector_zonal_percentile_fixture.py`；Online／changed gate／独立workflow、observer和固定矩阵／删断言变异检查同步登记，实际Hosted由CI会话唯一协调运行。
 
-固定修复提交`c116e05fd9fb3eb4f2fd49bd1598879f64a14647`的[正式Linux Native Job](https://github.com/pampa0629/addp/actions/runs/41151306867/job/124388227200)已完整通过：Ubuntu24.04 x86_64／GDAL3.8.4，实际`make test-geopython-workflow`，10587 passed／104 warnings／1610.63秒，0失败／跳过／筛除，148行进度的10587个通过标记与最终汇总一致。九种真实物理篡改保留；Schema分支无存活Feature时变更字段定义，关闭重开后核完整字段名称／顺序／类型，再由原oracle准确拒绝，并有生命周期先红后绿回归。完整原始Job日志SHA256为`98e7f99734aea607c907d065f86f89dcf358434161ece47a1ce5124e822f83c6`；此前段错误失败保持独立历史，其他位置的原生故障不由本次通过关闭。该证据只认证固定源码Native，不计实际Hosted、页面或容量。
-
+**固定 Native 证据**：`c116e05fd9fb3eb4f2fd49bd1598879f64a14647` 的 [Linux Job124388227200](https://github.com/pampa0629/addp/actions/runs/41151306867/job/124388227200) 全量 10587 项通过，无失败／跳过／筛除。Schema 篡改须在无存活 Feature 时修改，关闭重开后核完整字段并由原 oracle 拒绝；九种物理污染和生命周期先红后绿回归保留。此前段错误仍为独立失败，其他原生故障不由新通过关闭；不计 Hosted、页面或容量。
 
 ### 端点吸附手工容量
 
@@ -1483,7 +1505,7 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 ## 矢量面分区面积加权统计独立 Hosted 验收
 
-`vector-zonal-area-weighted-persistence`为独立手工Linux Hosted套件，复用NFS、同源默认入口产品Runtime、非默认租户普通User原12权限及隔离生命周期。固定600秒业务预算覆盖源初始化扫描、首次独立预期、全部执行／查询／物理复核、原件归档及业务工作区／缓存清理；生命周期退出另核全部零残留，任一超时或清理失败整套失败。不改产品、原套件、权限或安全投影；实际运行由CI会话协调，不自行触发、重试、扩预算或加入nightly，不计UI或容量。
+`vector-zonal-area-weighted-persistence`；`make test-vector-zonal-area-weighted-online-runner`。独立运行、600 秒预算、成果／身份核验及退出清理统一按[专项共同要求](#水文与分区统计专项共同要求)执行。
 
 固定16条GeoPackage成功链：中心／全部触及面积统计、默认／False原八列对照、国际英尺／美制测量英尺、旋转非方形／反向轴、数值重分类接统计／重分类→转面→统计、空前缀／合法零负数值、全无效／声明字段空面批、Int64／UInt64原生NoData邻接值。14条启用后追加三列，2条原八列保持；False保留原前缀下已有三项同名业务属性。主519×515多波段跨二维512块，显式第二波段raw scale-offset、mask／alpha及合法零；面含孔洞、多部件、重叠／重复、部分／完全出界、边／点零面积接触、无中心覆盖的细小正面积及解析三角形。
 
@@ -1493,7 +1515,7 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 成功后依次重读已有1至16份成果136次，76次失败后各重读16份，合计1352次完整GeoPackage检查，加首次源基线共93轮物理核验。每轮核所有源全部像元／mask／原生类型／NoData／CRS／网格／scale-offset、面完整几何／属性及hash；成果核完整几何／属性／行序／字段名序型／统计／null／CRS。归档16份原GeoPackage与大小／SHA256清单、全部源原件和冻结独立预期；原件／清单篡改、缺失、额外文件与符号链接不覆盖、不重建、不静默修复。
 
-沿通用矢量save核物理／Meta相等正整数大小，不虚构RasterArtifact；精确自动扫描核父执行／用户／租户／引擎。直接统计／重分类链核两份原注册输入，转面链只核实际栅格源，共31条源到当前成果关系；受控有界内部血缘、公开operations:null投影及Monitor分别核验，不扩大普通User权限。源与先前成果原件／Meta不变，整套结束时源及全部16项成果Meta分别与初始化／首次扫描后完整快照相等，前后原始快照随报告归档；失败零发布／新增扫描／派生；工作区、oracle、NFS、Runtime、registry、部署与Infra退出全部严格清理，保留首个业务失败及清理错误。标准Native／独立Runner／Online及手工CI／observer与固定矩阵登记同次完成。本地标准Native以`-k "vector_zonal_area_weighted or vector_area_weighted"`通过211项／13100筛除／52.88秒，无失败／跳过／警告；独立`make test-vector-zonal-area-weighted-online-runner`通过103项／25.246秒及完整登记，两门禁输入无漂移。使用正式EPSG:2222／2277保留英尺单位和准确预览CRS，原有统计与产品保持；准备通过不计真实Hosted通过。
+直接统计／重分类链核两份原注册输入，转面链只核实际栅格源，共31条源到当前成果关系；受控有界内部血缘、公开operations:null投影及Monitor分别核验，不扩大普通User权限。源与先前成果原件／Meta不变，整套结束时源及全部16项成果Meta分别与初始化／首次扫描后完整快照相等，前后原始快照随报告归档；失败零发布／新增扫描／派生；工作区、oracle、NFS、Runtime、registry、部署与Infra退出全部严格清理，保留首个业务失败及清理错误。标准Native／独立Runner／Online及手工CI／observer与固定矩阵登记同次完成。本节已有本地 Native 专项、独立 Runner 与登记通过记录，筛除不计全量，准备结果不证明 Linux 全量或真实 Hosted。 夹具使用正式 EPSG:2222／2277 保留英尺单位及准确预览 CRS。
 
 ### 几何差集独立普通用户验收
 
