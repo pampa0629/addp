@@ -6,100 +6,82 @@
 
 ### 发布、路径选择与调度
 
-共享 `main` 的续办沿用 [统一发布入口](../../../AGENTS.md) 的单写入锁和快进规则。`make test-main-publication` 使用隔离 Git 仓库验证显式续办、基线变化、命令失败和锁竞争，并由 `make test-platform` 进入现有 Platform CI。测试使用本地临时远端。
+共享main续办遵循[统一发布入口](../../../AGENTS.md)的单写锁／快进规则；`make test-main-publication` 以隔离临时Git仓库／远端核显式续办、基线变化、命令失败及锁竞争，由 `make test-platform` 进入Platform CI。
 
-按路径选择门禁的托管工作流（Platform CI、Release/T2、Quality Smoke）使用独立 Runner 和 Job 独占的 disposable 资源，不设置 workflow 或 job 的 `concurrency` 分组。每次运行保留自己的提交范围与选择结果，由 GitHub Runner 配额排队；后续无关提交不能取消正在执行的门禁，也不能替换待执行门禁。仅将 `cancel-in-progress` 改为 `false` 不足以满足此要求：GitHub 默认仍以新运行替换同组已有的 pending 运行。专用 T4 主机的资源互斥遵循其既有 Job 锁，不套用托管门禁的调度规则。
+Platform、Release/T2及Quality Smoke路径门禁各自独占Runner资源，不设workflow／job `concurrency` 分组：保留每轮提交范围与选择，由Runner配额排队，无关后续提交不得取消运行或替换pending。仅 `cancel-in-progress: false` 仍会替换同组pending，不能采用；专用T4继续用原Job资源锁。
 
-Push 使用事件的 `before...sha`，PR 使用 base 与本次 SHA 的 merge-base 差异；共享依赖和 owner 声明的测试输入继续由 `changed-gate.py` 统一扩散。文档运行跳过测试只表示该提交未命中路径，不能替代前序代码提交的验收证据。`make test-platform` 的 CI 登记与选择回归约束上述调度，并验证连续相关提交后追加文档、共享依赖、取消/失败/意外跳过的判定；原有超时、owner 清理、零残留核验及 required check 汇总必须保留。
-
-调度回归须在相关门禁运行／排队时追加无关文档提交，证明前序继续、排队实际启动、文档只跳过自身未命中项。
+Push按 `before...sha`，PR按base与本次SHA的merge-base差异，`changed-gate.py` 扩散共享依赖／Owner输入。文档未命中只跳过该轮，不替前序代码验收。`make test-platform` 选择／登记回归须核连续相关提交再追加无关文档、共享依赖、取消／失败／意外跳过；证明前序继续、排队实启、文档只跳自身未命中项。超时、清理、零残留及required check汇总不变。
 
 ### 独立作业与构建登记
 
-System 与 Transfer 的 Go T1 分别使用 Platform CI 的独立 `System Go CI runner`、`Transfer Go CI runner` Job，按各自 owner／Common 及标准模块入口依赖路径选择，直接复用 `make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=transfer GO_ONLY=1`。两者沿用 Ubuntu 24.04 和 20 分钟预算，由各自 backend/go.mod 确定 Go 版本；因根 Make 入口仍校验 Node 版本，按 `.node-version` 准备固定版本并登记其输入，不绕过前提检查。独立 Job 不依赖 Go workspace 聚合 Job，不启用外部数据库、个人服务或 Hosted 验收；仅证明各自 Go T1，不计为完整模块门禁。聚合 workspace 继续承担全模块依赖及组合测试，其失败保持失败；不能把它在其它 owner 提前退出解释为 System 或 Transfer 已经执行或通过。独立 Job 须同时核对 selected、标准命令和实际终态。
+下列独立Job不依赖聚合Job；入口／环境／摘要须由登记检查证明实际调用。独立成功仅证明本项，聚合在其他Owner提前失败仍是失败，不能推定本项已执行。路径门禁分别核 `selected`、标准命令和真实终态；文档跳过不补前序证据。
 
-共享前端及前端 CI 登记分别由 Platform CI 的独立 `Common frontend contracts`、`Frontend CI registration` Job 执行，均使用既有 Ubuntu 24.04，每个 Job 预算 10 分钟，不依赖其他 Job。两项检查成本较低，所有 Platform CI 事件均直接执行，不设置路径跳过或矩阵条件：前者按根 `.node-version` 准备 Node，调用唯一 `make test-common-frontend`；后者使用 Runner 自带 Python 3，调用唯一 `make test-frontend-ci-registration`。两者沿用统一摘要，不安装共享库 `node_modules`，不启动浏览器、产品服务、数据库或 T4。`make test-platform` 保留对同一入口的聚合调用；独立 Job 成功只证明各自 T0/T1，不改变聚合 Job 的实际结果。前端登记检查同时约束这两个 Job 的独立性、无条件标准命令、运行环境和摘要，避免只登记但不执行。
+| Platform CI Job／入口 | 环境、预算与选择 |
+| --- | --- |
+| `System Go CI runner`／`make test-module MODULE=system GO_ONLY=1`；`Transfer Go CI runner`／`make test-module MODULE=transfer GO_ONLY=1` | 各Ubuntu24.04／20分钟，按Owner、Common及标准入口依赖选择；Go取各backend/go.mod，Node取根 `.node-version`（根Make仍须校验），输入登记不绕过。不启动DB／个人服务／T4，不算完整模块；Go workspace聚合仍验证组合依赖。 |
+| `Common frontend contracts`／`make test-common-frontend` | Ubuntu24.04／10分钟，根Node版本；所有Platform事件无条件执行。 |
+| `Frontend CI registration`／`make test-frontend-ci-registration` | Ubuntu24.04／10分钟，Runner Python3；所有Platform事件无路径或矩阵跳过。 |
+| `Execution online CI runner`／`make test-execution-online-ci-runner` | 独立确定性Graph/Cleanup编排、准入／报告／恢复／登记T0/T1，不启动产品／DB／T4；输入闭包、push/PR及schedule/manual选择沿统一检查，跳过须 `selected:false`。 |
 
-System Cleanup PostgreSQL 的公共DTO回归实际调用Hosted的唯一任务观察器。该T2入口通过 `ADDP_T2_INPUT_FILES` 显式登记观察器、共享支持和机器契约等运行时脚本依赖，使脚本变更也命中System门禁；函数改名同步全部真实消费者，不恢复旧别名。
+共享前端两Job复用统一摘要，不装共享库node_modules或启浏览器／产品／DB；`make test-platform` 继续聚合同入口，独立性及无条件调用由前端登记回归约束。System Cleanup PG实际消费Hosted唯一观察器，须经 `ADDP_T2_INPUT_FILES` 登记观察器／支持／机器契约；改名同步真消费者，无旧别名。
 
-产品镜像构建继续由 `make build-images` 唯一入口负责。构建调度最多同时执行两个任务，基础镜像预热先于任务启动；单路和两路使用同一实现。前端 Node 版本来自根 `.node-version`，仅使用锁文件安装依赖。`make test-platform` 校验这些契约，并验证并发上限、失败汇总、日志隔离及中断时的进程和临时目录清理。现有 Platform CI 产品构建 Job 复用该入口验证实际镜像；Node 版本变更必须通过影响选择命中全部前端镜像，不缩减受影响服务范围。
+构建／安全门禁：
 
-发布工作流安全审计统一由 `make test-workflow-security` 执行，并纳入本地 `test-platform` 与 CI 现有 System IAM required Job。唯一脚本固定 zizmor 1.28.0，只扫描 `.github/workflows/release-and-t2-gates.yml`，使用 auditor、medium 最低严重级别、关闭在线审计，不读取自定义配置或忽略标记；安装、扫描或输入收集失败必须阻断。首次运行需联网取得固定版本的二进制 wheel，使用临时虚拟环境且退出时清理；不依赖 ADDP 服务或数据库。
-
-Manager Hosted 的 Infra MinIO 构建准备复用固定输入缓存：继续使用原 Dockerfile 与 Infra Compose 构建最终镜像，缓存同时保存带 BuildKit inline 元数据的编译阶段和最终镜像，不改变 Server / mc 源码修订或验收断言。缓存键包含 Linux amd64、构建脚本及全部已跟踪 Infra 构建上下文；只恢复精确键，加载前核对归档摘要，加载后核对镜像身份和架构。热构建必须复用 Dockerfile RUN，并保持两个二进制摘要一致；缓存损坏、缺失的必需热验或构建失败均阻断。独立 Infra MinIO build cache 工作流在全新 Runner 核验复用，原样 Compose 构建仍实际执行。转移归档在产品部署前删除以释放磁盘，仅保存公开固定源码构建层，不保存身份、配置、业务数据或测试结果；构建缓存通过不代表业务 T4 通过。
+- `make build-images` 唯一调度，最多两任务、基础镜像预热先行，单／双路同实现；前端仅锁文件安装、Node取根版本，版本变化须选全部前端镜像。Platform核并发上限／失败汇总／日志隔离／中断进程与目录清理，既有产品Job实际构建。
+- `make test-workflow-security` 纳入本地test-platform及System IAM required Job：固定zizmor1.28.0，只扫 `.github/workflows/release-and-t2-gates.yml`，auditor／medium、禁在线审计／自定义配置／忽略。首次下载固定wheel，临时venv退出删除；安装／收集／扫描失败阻断，不依赖ADDP或DB。
+- Manager Hosted Infra MinIO缓存不替代构建：原Dockerfile／Infra Compose、Server/mc修订与断言不变，缓存含编译层inline及最终镜像。键绑定Linux amd64、脚本和全部已跟踪Infra上下文，仅精确命中；先核归档摘要，再核镜像身份架构，热构建复用RUN且双二进制摘要相同，损坏／缺必需热验／构建失败阻断。独立cache workflow在全新Runner实测，Compose仍实际构建；部署前删转移归档，只存公开固定源码构建层，不存身份／配置／数据／结果，不代业务T4。
 
 ### 作业预算与聚合复用
 
 <a id="frontend-deterministic-job-budget"></a>
 
-Platform CI 的 `frontend-deterministic` 默认预算为 20 分钟，例外以当前 workflow 矩阵登记为准：
+`frontend-deterministic` 默认20分钟，例外沿当前workflow矩阵：
 
-| 门禁 | 总预算与调度约束 |
+| 门禁 | 总预算／并行边界 |
 | --- | --- |
-| Monitor 前端 | 40 分钟；唯一 `make test-monitor-frontend`，单 Worker。 |
-| Console 前端 | 30 分钟；唯一 `make test-console-frontend`，两个 Worker 按文件并行，`fullyParallel: false` 保持同文件顺序。 |
-| GeoPython GDAL | 60 分钟；唯一 `make test-geopython-workflow`，四个隔离 Worker，详见下文。 |
+| Monitor `make test-monitor-frontend` | 40分钟，单Worker。 |
+| Console `make test-console-frontend` | 30分钟，两Worker按文件并行，`fullyParallel: false` 保文件内顺序。 |
+| GeoPython `make test-geopython-workflow` | 60分钟，四隔离pytest Worker／worksteal，见下述约束。 |
+| `Platform consistency`／`make test-platform` | 60分钟，含冷Swagger准备、完整门禁与退出清理。 |
 
-预算含准备、完整测试、构建及清理，登记检查约束矩阵预算；Context／HTTP夹具各自隔离，Vite仅服务源码，端口／缓存／证据归标准入口。不得删用例、放宽单例期限或增加重试。Monitor 20／30分钟取消及Console三次20分钟超时（`40254270886`、`40254922673`、`40255039253`）仍是历史失败，调整预算不能改记通过；Linux完整Job、局部分项和文档选择跳过分别认定。
+预算均含准备／全测试／构建／清理。Context／HTTP夹具隔离，Vite只服务源码，端口／缓存／证据由标准入口拥有；不得删例、放宽单例期限或增重试。Monitor20／30分钟取消、Console三次20分钟超时（`40254270886`、`40254922673`、`40255039253`）仍是历史失败，不因改预算改判；Linux完整Job、局部分项和文档跳过分别认定，独立专项成功也不代原聚合／review失败。
 
-执行管理确定性专项在 Platform CI 中使用独立的 `Execution online CI runner` Job，复用唯一 `make test-execution-online-ci-runner`，不依赖 Platform 聚合 Job 或复制语言测试列表。该 Job 只做现有 Graph／Cleanup 编排、准入、报告、恢复和登记的 T0/T1，不启动产品部署、数据库或 T4；输入闭包由登记检查约束，并复用标准路径选择的 push／PR 差异与 schedule／manual 语义。跳过必须明确 `selected:false`，不替代前序代码的实际执行证据；专项成功也不替代原聚合及 review 的失败结果。原聚合入口与全部断言保留；`Platform consistency` Job 的总预算固定为 60 分钟，包含冷 Swagger 准备、完整 `make test-platform` 和退出清理。除下述 GeoPython 测试进程调度外，各专项 Job、单项测试期限、串行执行与重试策略保持不变，未引入第二套实现或容错放行。
+Online聚合只沿Make依赖图串行复用分发／选择／栅格血缘观察／登记，同进程共享目标执行一次、独立Owner仍完整可达；禁跨运行结果缓存、环境分支跳过或重复实现。登记负例先验有效基线再移除普通依赖边，`.PHONY`／`.NOTPARALLEL` 不是执行依赖；原JavaScript语法预检仍为首个串行依赖，保持失败阶段。独立Job／聚合各按原期限与重试语义。
 
-Online 聚合通过 Make 依赖图串行复用公共分发、变更选择、栅格血缘观察和登记检查；同一进程内共享目标只执行一次，单独 owner 入口仍须完整可达。不得以跨运行结果缓存、环境分支跳过或重复实现换取通过。登记负例须先确认基线有效，再实际移除普通目标依赖边；`.PHONY`、`.NOTPARALLEL` 只声明属性，不算执行依赖。原先要求先检查 JavaScript 语法的 owner，仍须将语法预检作为首个串行依赖，保持失败阶段。聚合与独立 Job、各项期限及重试语义分别遵守原预算。
-
-GeoPython 沿唯一 `make test-geopython-workflow` 使用固定四个隔离 pytest Worker 和 worksteal 调度，利用现有公开仓库 `ubuntu-24.04` 标准 Runner 的四个 CPU（[GitHub Runner 规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)），不提高 Runner 规格或 Job 预算，完整 pytest 阶段保持完整收集集合，每个用例实际执行一次；既有 NetCDF 前置子集仍独立执行，pytest-xdist 仅作为测试依赖。Worker 使用各自临时目录，网络夹具须使用动态端口，不共享可变文件或产品服务；产品 Gunicorn 的单 Worker 约束不变。`--max-worker-restart=0` 禁止崩溃后自动重启，任何失败或不完整执行均阻断；不增加重试或放宽资源、像元、耗时及清理断言。序列收集与并发执行的用例集合必须一致，本地优化与 Linux 完整 Job 的通过证据分别记录。
+GeoPython使用现有公开 `ubuntu-24.04` 四CPU Runner（[规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)），不升规格或预算。完整pytest收集集合与串行相同、每例执行一次，NetCDF前置子集仍独立；pytest-xdist只为测试依赖，Worker独立临时目录／动态端口，无共享可变文件或产品服务。`--max-worker-restart=0` 禁崩溃重启，失败／不完整均阻断，不放宽资源／像元／耗时／清理；产品Gunicorn仍单Worker，本地优化与Linux完整Job证据分开。
 
 ### Workflow 的职责与变更闭包
 
-Workflow 只负责：
+Workflow仅管触发／Owner选择、Runner／工具链／disposable Service、唯一Make/script调用、超时并发／Artifact／摘要／required check。禁止复制SQL、业务夹具、测试选择表达式、模块启停或清理；可自动发现的Git／依赖事实不另维护手写清单，显式登记由 `make test-platform` 核完整性。
 
-- 触发条件与 owner 影响选择。
-- Runner、语言版本和 disposable Service 准备。
-- 调用唯一 Make / script 入口。
-- 超时、并发、Artifact、Step Summary 和 required check 名称。
+模块、门禁、依赖、构建或suite变化须同次闭合：**Owner断言与安全→根Make→发现／影响选择或suite登记→workflow／报告→规范／模块或运行文档**。永久排队、接开发环境或始终Skip的占位workflow不能交付。
 
-不得在 workflow 中复制 SQL、业务夹具、测试选择表达式、模块启动逻辑或清理逻辑。能通过 Git 和依赖声明自动发现的事实不维护手写清单；必须手工登记的门禁由 `make test-platform` 的一致性检查验证完整性。凡通过 `ADDP_T2_SERVICES` 声明 PostgreSQL、MongoDB、MySQL、OceanBase、TiDB 或后续数据库 Service 的 T2 门禁，都必须同时登记根 Make 入口、`test-integration` 串行聚合、共享模块变更选择和带摘要的 CI Job；每个声明的 Service 必须存在，并使用显式版本 tag 与镜像 sha256 digest。T5 suite 如声明 `workflow_job`，登记检查必须通用验证该 Job 只经 `test-release` 分发、配置仓库外证据目录并挂接统一摘要，不按产品或数据库类型增加检查分支。
-
-新增或修改模块、测试入口、基础设施依赖、构建方式或 suite 时，必须在同一次变更中同步：
-
-1. owner 测试与安全检查。
-2. 根 `Makefile` 标准入口。
-3. 自动发现、影响选择或显式 suite 登记。
-4. `.github/workflows/` 编排与报告。
-5. 对应规范、模块说明或运行指南。
-
-不得提交一个永久排队、连接开发环境或始终 Skip 的占位 workflow。
-
-NFS 完整单文件发布的确定性验证沿 `make test-common-nfs-unit`；真实协议沿 `make test-common-nfs-publication`，只在独占 Hosted Linux amd64 使用既有 NFS export 生命周期创建并销毁临时导出。该门禁声明 `ADDP_T2_HOSTED_ONLY` 和 `ADDP_T2_NATIVE_LIFECYCLE`，后者必须是 `ADDP_T2_INPUT_FILES` 中的真实生命周期源码；这是内核原生服务的受控测试准备，不伪装成 Docker 生命周期，也不进入本地 `test-integration`。Release/T2 的 Common 变更选择负责实际执行、摘要和原始证据归档，拒绝跳过集成用例。测试准备未知时保留业务残留报告，独占夹具最终销毁另外记录；不以此替代资源授权或业务 T4。
+- T2：凡 `ADDP_T2_SERVICES` 声明（包括后续新增数据库），须同时根Make、`test-integration` 串行聚合、共享影响选择与带摘要Job；实际Service存在、版本tag及sha256固定，不按数据库种类分支登记。
+- T5：声明 `workflow_job` 时，统一检查只经 `test-release` 分发、仓外证据及共享摘要，不按产品类型增加检查路线。
+- NFS：`make test-common-nfs-unit` 为确定性，`make test-common-nfs-publication` 为独占Hosted Linux amd64原生export协议T2。`ADDP_T2_HOSTED_ONLY`／`ADDP_T2_NATIVE_LIFECYCLE` 必须声明，后者是 `ADDP_T2_INPUT_FILES` 中真生命周期源码；不冒充Docker、不进本地集成。Release/T2按Common选择实跑／摘要／原证据且拒Skip；准备未知保留业务残留报告，夹具最终销毁另记，不代授权或T4。
 
 ### 辅助 macOS 定时巡检
 
-日常使用的 macOS 可以在独立 checkout 中定时运行 `make local-ci`，作为 GitHub Actions 之外的辅助反馈机制。该入口只复用已有 T0-T3 标准门禁，不产生第二套测试事实，也不替代 GitHub required checks。
+`make local-ci` 仅在日常macOS的独立巡检checkout复用已有T0–T3，辅助GitHub反馈，不替required checks、不跑T4/T5。依赖准备是编排，断言仍归根Make／Owner。
 
-- checkout 必须专用于自动巡检，处于 `main`，且不得包含已跟踪或未跟踪改动；脚本只使用 `git fetch` 与 fast-forward，不使用 reset 或 clean 覆盖现场。
-- 首次运行执行全部确定性门禁和已登记基础设施集成门禁；之后以上次成功 SHA 为 `BASE_REF` 运行 `make test-changed`。每个新 SHA 同时执行根 `make build BUILD_ARGS=--force`，复验全部 Linux 产品二进制。失败不推进成功基线，后续调度必须重试同一提交。
-- 测试范围与远端同步是两个正交选择：默认执行“同步 `origin/main` + 增量”，`--full` 强制全量，`--no-fetch` 跳过 `fetch` 与 fast-forward；专用机需要在当前干净 `main` 上执行不拉取的完整巡检时，统一使用 `make local-ci LOCAL_CI_ARGS="--no-fetch --full"`。`--check-only` 是独立的就绪检查，不与其他选项组合。运行日志和 `latest-summary.txt` 必须分别记录实际 `scope` 与 `remote_sync`，不能把“不拉取”误报成“增量”。
-- Python 与前端依赖准备只是环境编排；真实断言仍由根 `Makefile` 与 owner 门禁拥有。
-- 本地 PostgreSQL 继续只使用 `addp_test` 与 `addp_iam_test`，集成门禁严格串行。持久基础设施只启停 `addp-infra` Compose 项目；巡检专属 MySQL 和 OceanBase 由唯一的 `addp-local-macos-ci` Compose 项目管理，不操作其他 Compose 项目。脚本不执行 Docker 全局 prune，也不删除 `addp-infra` 数据卷。
-- MySQL owner 门禁使用本地巡检专属、固定版本且无数据卷的 MySQL 8 服务。该服务只绑定 `127.0.0.1:13306`，必须在确定性门禁和编译前通过健康检查；外层聚合门禁只携带本地作用域标记，真实连接参数只在 `test-common-mysql-data-protection` 进程内生成，不能写入仓库根 `.env`、传给其他 owner 门禁或连接 Business/生产 MySQL。
-- OceanBase owner 门禁使用本地巡检专属、固定 digest 且无数据卷的 OceanBase CE 4.4.2 LTS 服务。该服务只绑定 `127.0.0.1:12881`，并且必须在确定性门禁和编译前通过健康检查；外层聚合门禁只携带本地作用域标记，`common-oceanbase-gate.sh` 在该标记下固定生成 `addp_oceanbase_disposable` 连接参数。巡检启动前必须清除继承的 `ADDP_TEST_OCEANBASE_*`，不读取根 `.env`，不连接 Business/生产 OceanBase。
-- 两个巡检专属数据库服务都必须在巡检成功、失败和中断的统一退出清理中删除。
-- 辅助巡检不运行 T4 Online 或 T5 发布认证；两者继续遵循各自的专用环境、身份与报告协议。
-- 日志、上次成功 SHA 与运行锁位于 checkout 的 Git 内部状态目录，不进入工作树；日志不得包含 Token 或可复用凭据。
+| 边界 | 必需行为 |
+| --- | --- |
+| 源码／基线 | 干净main，无tracked／untracked改动；只fetch／fast-forward，不reset/clean。首轮完整确定性＋已登记集成，之后以上次成功SHA为 `BASE_REF` 跑 `make test-changed`；每新SHA另 `make build BUILD_ARGS=--force` 验全部Linux二进制。失败不推进基线，下轮重试同提交。 |
+| 范围／同步 | 默认同步origin/main＋增量；`--full` 全量、`--no-fetch` 不fetch/FF，可组合 `make local-ci LOCAL_CI_ARGS="--no-fetch --full"`；`--check-only` 独立且禁组合。日志与 `latest-summary.txt` 分列 `scope`／`remote_sync`，不将“不拉取”记作增量。 |
+| 项目／PG | 只启停持久 `addp-infra`，不删其卷／全局prune／操作他项目；PG仅 `addp_test`／`addp_iam_test`、集成串行。巡检MySQL／OceanBase唯一项目 `addp-local-macos-ci`，成败中断均删除两服务。 |
+| MySQL | 固定MySQL8、无卷、`127.0.0.1:13306`，确定性／编译前健康；外层只传本地作用域标记，连接只在 `test-common-mysql-data-protection` 内生成，不入根.env／传其他Owner或接Business／生产。 |
+| OceanBase | 固定digest的CE4.4.2 LTS、无卷、`127.0.0.1:12881`，同样预先健康；先清继承 `ADDP_TEST_OCEANBASE_*`，不读根.env。`common-oceanbase-gate.sh` 仅按本地标记生 `addp_oceanbase_disposable` 参数，不接Business／生产。 |
+
+日志／成功SHA／锁存Git内部状态目录，不入工作树或泄漏Token／可复用凭据。
 
 ## 交付与完成标准
 
-实施前识别受影响的 T0-T5 层级。交付前优先运行：
+实施前识别受影响T0–T5及入口／CI闭包。交付前运行最小充分标准门禁：
 
 ```bash
 make test-changed
 ```
 
-验证指定 owner 或已提交区间时分别使用 `make test-module MODULE=<module>`、`make test-changed BASE_REF=<ref>`。受环境限制无法运行时，必须列出未验证项、原因以及负责验证的现有 CI 门禁。
+指定Owner用 `make test-module MODULE=<module>`，已提交区间用 `make test-changed BASE_REF=<ref>`。环境受限必须列未验证项／原因／负责的已有CI，不能把未跑或Skip记通过。
 
-测试体系变更完成必须满足：
-
-1. 新逻辑只有一条标准入口，旧入口、变量和旁路已删除。
-2. owner、测试层级、数据与身份边界明确。
-3. 本地标准入口、CI 编排、登记检查和文档同步。
-4. 最小充分门禁真实执行，未以 Skip、旧进程或错误环境冒充通过。
-5. 运行产物位于操作系统临时目录或 CI artifact，仓库无残留。
+完成须同时满足：唯一标准入口且旧变量／旁路删除；Owner／层级／数据身份边界明确；本地／CI／登记／文档同步；真实执行、不借旧进程或错误环境；产物只在系统临时目录／CI Artifact，仓库无残留。
