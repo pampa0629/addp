@@ -19,7 +19,7 @@ SPEC.loader.exec_module(RELEASE_GATE)
 
 
 class DeploymentPackageTest(unittest.TestCase):
-    def test_clean_registry_package_reaches_infrastructure_startup(self) -> None:
+    def test_registry_package_preserves_release_and_rejects_missing_image_before_infra(self) -> None:
         repository = SCRIPT.parents[2]
         inputs = subprocess.check_output(
             ['git', 'ls-files', '-z', '--', '.env.example', 'docker-compose.yml',
@@ -27,12 +27,14 @@ class DeploymentPackageTest(unittest.TestCase):
              'scripts/infra', 'scripts/prod', 'scripts/dev', 'scripts/utils', 'common', 'nginx/nginx.conf',
              'business/.env.example', 'business/docker-compose.yml', 'gateway/go.mod',
              ':(glob)*/backend/go.mod', 'monitor/backend/go.sum', 'monitor/backend/cmd/minio-metrics-source',
-             'monitor/backend/cmd/redis-metrics-source', 'monitor/backend/internal/miniosource',
+             'monitor/backend/cmd/redis-metrics-source', 'monitor/backend/cmd/cdc-metrics-source',
+             'monitor/backend/internal/cdcsource', 'monitor/backend/internal/miniosource',
              'monitor/backend/internal/redissource', 'monitor/backend/internal/sourceserver'], cwd=repository,
         )
         with tempfile.TemporaryDirectory(prefix='addp-package-') as directory:
             root = Path(directory)
-            for name in os.fsdecode(inputs).split('\0'):
+            names = os.fsdecode(inputs).split('\0') + ['scripts/prod/release-images.py']
+            for name in names:
                 # The working tree may delete tracked sources before publication.
                 # Preserve dangling-link errors while excluding actual deletions.
                 if not name or not os.path.lexists(repository / name):
@@ -41,26 +43,41 @@ class DeploymentPackageTest(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(repository / name, target)
             env = {'PATH': os.environ['PATH']}
+            spec = importlib.util.spec_from_file_location('package_release_images', root / 'scripts/prod/release-images.py')
+            release = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(release)
+            prepared = root / 'dist/compose-release'
+            prepared.mkdir(parents=True)
+            reference = 'localhost:5001/addp-fixture@sha256:' + 'a' * 64
+            projects = {name: {name + '-service': reference} for name in release.COMPOSE_FILES}
+            manifest = {'schema': 'addp.compose-release/v1', 'source_commit': 'b' * 40,
+                        'build_root': str(root), 'platform': 'linux/arm64', 'version': 'fixture',
+                        'registry': 'localhost:5001', 'selection': release.selection({}),
+                        'inputs': release.compose_inputs(), 'projects': projects, 'sources': {}, 'image_ids': {reference: 'sha256:' + 'c' * 64}}
+            (prepared / 'manifest.json').write_text(json.dumps(manifest))
+            for project, services in projects.items():
+                release.write_override(prepared / (project + '-images.yml'), services)
             package = subprocess.run(['bash', 'scripts/build/package.sh', '--mode', 'registry'], cwd=root,
                                      env=env, capture_output=True, text=True, timeout=60)
             self.assertEqual(package.returncode, 0, package.stderr)
             output, = (root / 'dist').glob('package-registry-*')
             self.assertFalse((output / '.env').exists())
+            self.assertEqual(json.loads((output / 'dist/compose-release/manifest.json').read_text()), manifest)
             host_entry = output / 'scripts/infra/host-metrics.sh'
             result = subprocess.run([host_entry, 'check'], cwd=root, env=env,
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn('配置读取失败', result.stdout)
 
-            # Simulate a fresh Engine and stop at the Infra Docker boundary.
+            # Missing immutable images stop before the Infra startup boundary.
             # No command from this package can reach the host Docker daemon.
             stub = root / 'bin' / 'docker'
             stub.parent.mkdir()
             stub.write_text('''#!/bin/sh
-if [ "$1" = info ]; then exit 0; fi
-if [ "$1 $2" = 'compose version' ]; then
-    : > "$PACKAGE_TEST_BOUNDARY"
-    exit 78
+printf '%s\n' "$*" >> "$PACKAGE_TEST_BOUNDARY"
+if [ "$1" = info ]; then
+    printf '{"OSType":"linux","Architecture":"aarch64"}\n'
+    exit 0
 fi
 exit 1
 ''')
@@ -72,6 +89,9 @@ exit 1
                                     capture_output=True, text=True, timeout=30)
             self.assertTrue(boundary.is_file(), result.stdout + result.stderr)
             self.assertNotEqual(result.returncode, 0)
+            self.assertIn('pull ' + reference, boundary.read_text())
+            self.assertNotIn('compose up', boundary.read_text())
+            self.assertNotIn('build', boundary.read_text())
             self.assertEqual((output / '.env').stat().st_mode & 0o777, 0o600)
             self.assertFalse((output / '.dev-state/lifecycle.lock').exists())
             result = subprocess.run([host_entry, 'check'], cwd=root, env=env,

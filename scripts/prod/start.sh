@@ -17,6 +17,7 @@ echo ""
 
 PLATFORM_COMPOSE_FILES=(-f docker-compose.yml)
 platform_compose() { docker compose "${PLATFORM_COMPOSE_FILES[@]}" "$@"; }
+runtime_compose() { docker compose -f docker-compose.runtimes.yml -f "$ADDP_RELEASE_DIR/runtimes-images.yml" "$@"; }
 
 connect_business_network() {
   local network="${BUSINESS_DOCKER_NETWORK:-business_business-network}"
@@ -27,7 +28,7 @@ connect_business_network() {
   fi
 
   echo -e "${YELLOW}连接 ADDP 服务到 Business 网络 (${network})...${NC}"
-  for container in $(platform_compose ps -q 2>/dev/null) $(docker compose -f docker-compose.runtimes.yml ps -q 2>/dev/null); do
+  for container in $(platform_compose ps -q 2>/dev/null) $(runtime_compose ps -q 2>/dev/null); do
     if docker inspect "$container" --format '{{json .NetworkSettings.Networks}}' | grep -q "\"${network}\""; then
       continue
     fi
@@ -55,6 +56,10 @@ bash scripts/prod/setup-env.sh
 echo -e "${YELLOW}[1/4] 启动基础设施层...${NC}"
 source scripts/utils/observability-env.sh
 addp_prepare_observability_env "$PROJECT_ROOT/.env"
+export ADDP_RELEASE_MANIFEST
+ADDP_RELEASE_MANIFEST="$(python3 scripts/prod/release-images.py verify)"
+export ADDP_RELEASE_DIR="$(dirname "$ADDP_RELEASE_MANIFEST")"
+PLATFORM_COMPOSE_FILES+=(-f "$ADDP_RELEASE_DIR/platform-images.yml")
 infra_result=0
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-$PROJECT_ROOT/.dev-state/deployment-discovery}"
 if ! bash scripts/infra/up.sh; then
@@ -123,10 +128,10 @@ echo -e "${YELLOW}[2/4] 等待 System 就绪并发布模块声明...${NC}"
 python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${intent_compose_args[@]}"
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
-platform_compose up -d --wait --wait-timeout 180
+platform_compose up -d --no-build --pull never --wait --wait-timeout 180
 
 echo -e "${YELLOW}[4/4] 启动并等待内置 Runtime 就绪...${NC}"
-docker compose -f docker-compose.runtimes.yml up -d --wait --wait-timeout 180
+runtime_compose up -d --no-build --pull never --wait --wait-timeout 180
 
 connect_business_network
 
@@ -140,6 +145,6 @@ echo -e "${GREEN}✓ ADDP 容器部署已启动${NC}"
 echo -e "统一入口: ${public_origin}"
 echo ""
 platform_compose ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
-docker compose -f docker-compose.runtimes.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
+runtime_compose ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
 
 exit "$infra_result"

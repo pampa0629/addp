@@ -114,7 +114,7 @@ Platform CI 的产品构建 Job 在 GitHub 独占 Ubuntu runner 上先移除未�
 
 ### 构建的服务列表
 
-服务与构建上下文以 [build-images.sh](build-images.sh) 的 `main` 登记为准；`make select-image-services` 输出 CI 的构建选择，不代替正式服务登记。新增正式服务、Worker、前端或 Compose 镜像时，须同时补齐构建登记；检查入口为 `make test-build-registration`。
+服务与构建上下文以 [build-images.sh](build-images.sh) 的 `main` 登记为准；`make select-image-services` 输出 CI 的构建选择，不代替正式服务登记。Infra 自有镜像 `infra-minio`、`infra-postgres` 和 `runtime-log` 也由该入口登记构建；新增正式服务、Worker、前端或 Compose 镜像时，须同时补齐构建登记；检查入口为 `make test-build-registration`。
 
 ### 前置条件
 
@@ -296,11 +296,12 @@ bash scripts/build/push-images.sh --registry harbor.example.com:5001/addp --tag 
 ### 使用方法
 
 ```bash
-# 导出本机已有镜像，生成离线镜像包
-IMAGE_TAG=v1.0.0 bash scripts/build/package.sh --mode images
+# 先在固定源码中准备完整发布
+bash scripts/prod/deploy.sh v1.0.0 --registry harbor.example.com:5001/addp --skip-deploy
 
-# 生成目标 Registry 的配置目录
-IMAGE_TAG=v1.0.0 bash scripts/build/package.sh --mode registry --registry harbor.example.com:5001/addp
+# 从当前发布清单生成部署包
+bash scripts/build/package.sh --mode images
+bash scripts/build/package.sh --mode registry
 ```
 
 ### 参数说明
@@ -311,9 +312,9 @@ IMAGE_TAG=v1.0.0 bash scripts/build/package.sh --mode registry --registry harbor
 | `--registry` | 地址 | 默认读取 `REGISTRY`，缺省为 `localhost:5001` |
 | `--server` | `user@host` | 生成后传输到远端 `~/addp-deploy/`，优先 rsync，缺少时使用 scp |
 
-`IMAGE_TAG` 默认 `latest`，决定 images 模式导出的镜像版本。两种模式都会复制 `.env.example`；根 `.env` 存在时也会复制，包及其传输目标按含凭据的部署制品管理。部署时须核对实际 `.env` 的 Registry 和版本，不能仅靠包目录名判断。
+版本、Registry 和镜像集合由已准备的 `dist/compose-release/manifest.json` 确定。两种模式都会复制 `.env.example`；根 `.env` 存在时也会复制，包及其传输目标按含凭据的部署制品管理。目标环境的配置和 Secret 须单独核对，不能仅靠包目录名判断。
 
-两种模式均包含生产生命周期、部署发现及指标来源所需的脚本，以及目标机本地构建日志清理器和 Redis／MinIO 指标来源所需的源文件。使用 `make test-release-runner` 验证空目录生成的部署包可完成标准启动的配置准备；目标机的镜像可用性和完整运行仍需实测。
+两种模式均包含生产生命周期、部署发现及指标来源所需的脚本、发布清单和镜像覆盖文件。生产机不编译日志清理器或指标来源镜像；选中的制品均由准备阶段生成。`make test-release-runner` 覆盖部署包配置准备和缺少固定镜像时的拒绝行为；完整运行仍需隔离验收。
 
 ### 两种部署模式
 
@@ -322,13 +323,13 @@ IMAGE_TAG=v1.0.0 bash scripts/build/package.sh --mode registry --registry harbor
 | `images` | 本机已构建的 ADDP 镜像，通过 `docker save` 导出；附配置和加载脚本 | 使用 `load-images.sh` 加载，再按生产入口部署 | 目录及 tarball |
 | `registry` | 目标 Registry 已有所需版本镜像；只生成部署配置，不导出镜像 | 核对 Registry 访问与凭据，拉取所需镜像后部署 | 配置目录，不生成 tarball |
 
-images 模式的导出清单由 [package.sh](package.sh) 的 `export_images` 维护；缺失或导出失败的镜像会列入摘要，但不会阻止后续打包。包生成成功不证明镜像清单完整，也不证明所有 Infra、业务引擎与外部依赖已离线齐备。部署前须核对所需镜像、架构和版本，不保留固定包体积或导出数量承诺。
+images 模式按发布清单去重导出全部所选平台、Runtime、Infra 及指标来源镜像；缺失或导出失败即终止打包。未选能力、独立 Business 数据引擎及业务外部依赖不在该清单中，须按各自部署规则准备。生产启动重新核对清单、架构与实际镜像，包生成成功不代替完整部署验收。
 
 ### 生成的包结构
 
-两种模式均生成 `dist/package-{mode}-{timestamp}/`，包含三份根 Compose 定义、环境模板、Infra/Prod 脚本、Business 目录、Nginx 配置、`README.md` 和 `DEPLOY_INFO.txt`；已有根 `.env` 时同时携带该文件。两种模式都会更新平台与 Runtime Compose 中的 Registry 地址。
+两种模式均生成 `dist/package-{mode}-{timestamp}/`，包含三份根 Compose 定义、环境模板、Infra/Prod 脚本、Business 目录、Nginx 配置、`README.md` 和 `DEPLOY_INFO.txt`；已有根 `.env` 时同时携带该文件。两种模式保持 Compose 源文件不变，使用发布覆盖文件固定镜像 digest。
 
-images 模式额外包含 `images/*.tar` 与 `load-images.sh`，生成 `dist/addp-deploy-images-{timestamp}.tar.gz`；registry 模式保留配置目录，可用 `--server` 传输。实际复制范围和成功项以脚本及打包输出为准，不把清单存在当作完整部署验收。
+images 模式额外包含 `images/release.tar` 与 `load-images.sh`，生成 `dist/addp-deploy-images-{timestamp}.tar.gz`；registry 模式保留配置目录，可用 `--server` 传输。实际复制范围和成功项以脚本及打包输出为准，不把清单存在当作完整部署验收。
 
 ## 完整的构建流程
 

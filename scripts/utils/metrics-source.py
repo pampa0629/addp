@@ -169,7 +169,13 @@ class Source:
             error.source_recovery_reason = 'source-image-unavailable'
             raise error from None
         fact = decode(raw)[0]
-        if fact.get('Id') != image or (fact.get('Config',{}).get('Labels') or {}).get(self.owner) != str(self.root):
+        owner = str(self.root)
+        if os.environ.get('ADDP_RELEASE_MANIFEST'):
+            release = json.loads(Path(os.environ['ADDP_RELEASE_MANIFEST']).read_text())
+            if image not in {release['image_ids'][ref] for ref in release['sources'].values()}:
+                raise self.error('Metrics source image is outside the prepared release')
+            owner = release['build_root']
+        if fact.get('Id') != image or (fact.get('Config',{}).get('Labels') or {}).get(self.owner) != owner:
             raise self.error('Metrics recovery image ownership changed')
 
     def helper(self, image, command, *, input=None, mount=None, entrypoint=None):
@@ -339,6 +345,14 @@ class Source:
                 data = path.read_bytes(); digest.update(name.encode()+b'\0'+data)
                 target = context/name; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(data)
             tag = 'addp-'+self.kind+'-metrics:'+digest.hexdigest()
+            if os.environ.get('ADDP_RELEASE_MANIFEST'):
+                release = json.loads(Path(os.environ['ADDP_RELEASE_MANIFEST']).read_text())
+                reference = release['sources'].get(tag)
+                if not reference:
+                    raise Error('Metrics source is missing from the prepared production release')
+                fact = decode(self.docker.run(['image', 'inspect', release['image_ids'][reference]]))[0]
+                self.installed_image(fact['Id'])
+                return fact['Id']
             # Re-exporting the same inputs can replace the tag with a new
             # provenance index, orphaning an installed peer's exact image ID.
             images = self.docker.run(['image', 'ls', '--quiet', '--no-trunc', '--filter', 'reference='+tag]).split()

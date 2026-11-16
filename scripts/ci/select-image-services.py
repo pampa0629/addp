@@ -64,6 +64,7 @@ def select_services(
             name
             for name in hosted
             if name == "gateway"
+            or name == "runtime-log"
             or name == "duckdb-engine"
             or name.endswith("-backend")
             or name.endswith("-worker")

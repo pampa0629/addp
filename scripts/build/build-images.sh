@@ -761,6 +761,14 @@ build_service() {
             fi
             ;;
 
+        infra-minio|infra-postgres|runtime-log)
+            case "$service" in
+                infra-minio) dockerfile_path="scripts/infra/Dockerfile.minio"; build_context="scripts/infra" ;;
+                infra-postgres) dockerfile_path="scripts/infra/Dockerfile.postgres"; build_context="scripts/infra" ;;
+                runtime-log) dockerfile_path="scripts/infra/Dockerfile.runtime-log"; build_context="." ;;
+            esac
+            ;;
+
         *-backend|gateway)
             # Backends: use prebuilt binary Dockerfile (requires compile.sh first)
             dockerfile_path="${service_dir}/Dockerfile.prebuilt"
@@ -1133,6 +1141,9 @@ main() {
 
     # Define services to build
     local services=(
+        "infra-minio:scripts/infra"
+        "infra-postgres:scripts/infra"
+        "runtime-log:scripts/infra"
         "system-backend:system/backend"
         "manager-backend:manager/backend"
         "meta-backend:meta/backend"

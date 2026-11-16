@@ -28,10 +28,19 @@ cd /path/to/addp
 ### 启动流程
 
 1. 调用 `setup-env.sh` 初始化或校验根 `.env`；配置要求与已有凭据边界见[首次部署](#首次部署)。校验失败时停止启动。
-2. 启动基础设施并等待其就绪。
-3. 启动 System Backend，使用 Docker Compose 容器健康检查等待就绪。
-4. 启动 `addp-platform` 中全部平台服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
-5. 启动 `addp-runtimes` 中全部内置 Runtime，再列出平台与 Runtime 状态；本机入口探测另按[健康检查说明](#health-checksh)执行。
+2. 校验 `dist/compose-release` 中的发布清单、所选能力、Compose 输入及镜像架构，按清单 digest 取得镜像。该阶段失败时停止启动，尚未创建 Infra 容器。
+3. 按固定镜像启动基础设施并等待就绪。
+4. 启动 System Backend，等待 Ready，再由部署入口使用模块专属发布身份发布声明。
+5. 启动 `addp-platform` 中全部平台服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
+6. 启动 `addp-runtimes` 中全部内置 Runtime，再列出平台与 Runtime 状态；本机入口探测另按[健康检查说明](#health-checksh)执行。
+
+### 发布准备与镜像边界
+
+在固定源码检出中执行 `bash scripts/prod/deploy.sh <版本> --skip-deploy`，准备全部所选镜像及不可变发布目录；完整部署使用同一命令省略 `--skip-deploy`。准备阶段复用标准编译和镜像构建入口，将外部镜像与所选指标来源制品纳入清单，完成后原子切换 `dist/compose-release`。清单同时绑定 Registry digest 与镜像配置 ID；生产启动缺少本地镜像时只按 digest 拉取，核对配置 ID 后按该 ID 运行，缺少制品时失败；现场构建与自动识别 Kubernetes、Swarm 的旧发布路径删除。开发构建仍由开发入口和标准构建脚本管理。
+
+发布目录包含源提交、目标架构、所选观测能力、Compose 输入摘要及镜像覆盖文件，随部署文件一起交付。部署配置和 Secret 由目标环境准备，清单不保存密码或令牌。切换版本时显式准备并选择新发布，已有版本目录保留供核查；持久数据恢复仍遵循各 owner 的迁移与恢复规则。
+
+离线 `docker save/load` 不保留 Registry 的 RepoDigests，配置 ID 仍由镜像内容确定；在线与离线采用相同的配置 ID 运行路径。生产覆盖文件采用 Compose 规范的 `!reset null` 移除构建定义，预检通过真实 `docker compose config` 核对合并结果。指标采集来源镜像按清单 digest 和构建归属校验，实际部署容器、私有卷和账号继续使用目标工作区的归属证明。
 
 容器内部端口固定，平台 Compose 仅将 Nginx 的 `NGINX_PORT` 发布到宿主机。启动脚本报告统一访问地址；`ADDP_PUBLIC_ORIGIN` 留空时为 `http://localhost:<NGINX_PORT>`。域名、HTTPS 或上级反向代理部署须填写用户实际访问的 `ADDP_PUBLIC_ORIGIN`。
 

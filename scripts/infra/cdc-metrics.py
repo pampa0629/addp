@@ -27,6 +27,13 @@ Error = deployment.DeploymentError
 NETWORK = 'addp-network'
 PREFIXES = {'redpanda':'ADDP_REDPANDA_METRICS', 'kafka-connect':'ADDP_KAFKA_CONNECT_METRICS'}
 
+
+def source_inputs():
+    files = ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum', 'scripts/infra/Dockerfile.cdc-metrics']
+    for folder in ('monitor/backend/internal/cdcsource', 'monitor/backend/internal/sourceserver', 'monitor/backend/cmd/cdc-metrics-source'):
+        files.extend(str(path.relative_to(ROOT)) for path in sorted((ROOT/folder).glob('*.go')) if not path.name.endswith('_test.go'))
+    return files
+
 @sources.observed('private-state')
 def state_directory(env, scope, kind):
     if scope != 'infra' or kind not in PREFIXES: raise Error('Invalid CDC source selection')
@@ -96,10 +103,7 @@ def run(action, scope, kind, env):
         if action == 'recover':
             if not (state/'compose.json').exists(): return 'not installed; recovery skipped'
             return source.recover(component,config,ip,port,material,component.unchanged)
-        files = ['common/go.mod','common/go.sum','monitor/backend/go.mod','monitor/backend/go.sum','scripts/infra/Dockerfile.cdc-metrics']
-        for folder in ('monitor/backend/internal/cdcsource','monitor/backend/internal/sourceserver','monitor/backend/cmd/cdc-metrics-source'):
-            files.extend(str(p.relative_to(ROOT)) for p in sorted((ROOT/folder).glob('*.go')) if not p.name.endswith('_test.go'))
-        image = source.build(files)
+        image = source.build(source_inputs())
         component.unchanged()
         sources.write(owner,json.dumps(expected,sort_keys=True))
         source.stop()

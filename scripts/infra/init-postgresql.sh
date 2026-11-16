@@ -240,6 +240,10 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
         POSTGIS_PACKAGE_CHECK=$(docker exec "${CONTAINER_NAME}" sh -c 'dpkg -l | grep postgis || echo "not-installed"')
 
         if echo "${POSTGIS_PACKAGE_CHECK}" | grep -q "not-installed"; then
+            if [[ -n "${ADDP_RELEASE_MANIFEST:-}" ]]; then
+                echo 'PostGIS is missing from the prepared PostgreSQL image; prepare a complete release image before starting' >&2
+                exit 1
+            fi
             echo -e "  ${BLUE}安装 PostGIS 包...${NC}"
             docker exec "${CONTAINER_NAME}" sh -c '
                 apt-get update -qq && \
@@ -282,6 +286,10 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
             PGVECTOR_AVAILABLE=$(docker exec "${CONTAINER_NAME}" env PGPASSWORD="${DB_PASSWORD}" \
                 psql -U "${DB_USER}" -d "${DB_NAME}" -Atqc "SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector');")
             if [ "${PGVECTOR_AVAILABLE}" = "f" ]; then
+                if [[ -n "${ADDP_RELEASE_MANIFEST:-}" ]]; then
+                    echo 'pgvector is missing from the prepared PostgreSQL image; prepare a complete release image before starting' >&2
+                    exit 1
+                fi
                 echo -e "  ${BLUE}编译安装 pgvector (v0.7.0)...${NC}"
                 docker exec "${CONTAINER_NAME}" sh -c '
                     set -e

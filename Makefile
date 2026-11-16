@@ -1346,6 +1346,7 @@ test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致�
 	@$(MAKE) test-ontology-infra-config
 	@$(MAKE) test-go-dependency-policy
 	@$(MAKE) test-build-registration
+	@$(MAKE) test-compose-release
 	@$(MAKE) test-frontend-ci-registration
 	@$(MAKE) test-python-ci-registration
 	@$(MAKE) test-t2-ci-registration
@@ -1885,3 +1886,8 @@ test-raster-slope-orthogonal-scenario-unit:
 	@bash -n scripts/test/online-hosted-raster-slope-orthogonal-gate.sh
 	@python3 -m unittest scripts/test/raster-slope-orthogonal-persistence-online_test.py scripts/test/online-raster-slope-orthogonal-fixture_test.py scripts/test/online-hosted-raster-slope-orthogonal-gate_test.py scripts/test/raster-sight-orthogonal-persistence-online_test.py scripts/test/raster-viewshed-persistence-online_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
+.PHONY: test-compose-release
+test-compose-release: ## 验证 Compose 发布清单、固定镜像与生产无构建边界
+	@bash -n scripts/prod/deploy.sh scripts/prod/start.sh scripts/infra/up.sh scripts/build/package.sh
+	@python3 scripts/test/compose-release_test.py

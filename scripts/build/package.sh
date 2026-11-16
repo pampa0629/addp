@@ -5,7 +5,7 @@
 # Description: Package deployment files for offline or registry-based deployment
 # Usage: ./package.sh [OPTIONS]
 # Options:
-#   --mode MODE               Deployment mode: offline|registry (default: offline)
+#   --mode MODE               Deployment mode: images|registry (default: images)
 #   --registry REGISTRY_URL   Registry URL (default: localhost:5001)
 #   --server SERVER_USER@IP   Automatically transfer to server via rsync
 # =============================================================================
@@ -102,6 +102,15 @@ copy_common_files() {
         exit 1
     fi
 
+    # A deployment package carries the selected immutable release, independent of
+    # the build checkout's historical release directories and current symlink.
+    if [ ! -f dist/compose-release/manifest.json ]; then
+        echo "Prepare a Compose release with scripts/prod/deploy.sh --skip-deploy before packaging" >&2
+        exit 1
+    fi
+    mkdir -p "$OUTPUT_DIR/dist/compose-release"
+    cp -R dist/compose-release/. "$OUTPUT_DIR/dist/compose-release/"
+
     # 2. Copy environment template
     if [ -f ".env.example" ]; then
         cp .env.example "$OUTPUT_DIR/"
@@ -138,8 +147,8 @@ copy_common_files() {
         echo -e "${YELLOW}Warning: scripts/prod/ not found${NC}"
     fi
 
-    # Production and Infra entry points also run these helpers and build the
-    # node-local log and optional engine metric collectors from the package.
+    # Production helpers retain deployment proofs and source identity inputs.
+    # Runtime images are consumed from the fixed release manifest.
     local path parent
     for path in \
         scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py \
@@ -148,6 +157,7 @@ copy_common_files() {
         scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/utils/private-state.py \
         common gateway/go.mod */backend/go.mod monitor/backend/go.sum \
         monitor/backend/cmd/minio-metrics-source monitor/backend/cmd/redis-metrics-source \
+        monitor/backend/cmd/cdc-metrics-source monitor/backend/internal/cdcsource \
         monitor/backend/internal/miniosource monitor/backend/internal/redissource monitor/backend/internal/sourceserver; do
         parent="$OUTPUT_DIR/$(dirname "$path")"
         mkdir -p "$parent"
@@ -175,74 +185,22 @@ copy_common_files() {
 
 # Function: Export Docker images to tar files
 export_images() {
-    echo -e "${YELLOW}Exporting Docker images...${NC}"
-    echo ""
-
     local images_dir="$OUTPUT_DIR/images"
     mkdir -p "$images_dir"
-
-    # List of deployable images — keep in sync with build-images.sh and runtime sidecars.
-    local services=(
-        # Backend services
-        "system-backend" "manager-backend" "meta-backend"
-        "transfer-backend" "orchestrator-backend" "develop-backend"
-        "service-backend" "monitor-backend" "standard-backend" "copilot-backend"
-        "agent-backend" "model-backend" "quality-backend" "security-backend" "asset-backend" "catalog-backend" "workbench-backend" "portal-backend" "graph-backend" "inference-backend" "ontology-backend"
-        "gateway"
-        # Worker services
-        "meta-worker" "quality-worker" "security-worker" "transfer-bounded-worker" "transfer-continuous-worker"
-        # Engine/runtime services
-        "geopython-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine"
-        "pointcloud-workflow-engine" "spark-workflow-engine" "jupyter-engine" "duckdb-engine"
-        # Frontend services
-        "system-frontend" "manager-frontend" "meta-frontend"
-        "transfer-frontend" "orchestrator-frontend" "develop-frontend"
-        "service-frontend" "monitor-frontend" "standard-frontend"
-        "agent-frontend" "model-frontend" "quality-frontend" "security-frontend" "catalog-frontend" "workbench-frontend" "asset-frontend" "portal-frontend" "graph-frontend" "inference-frontend" "ontology-frontend"
-        # Infrastructure
-        "console" "nginx"
-    )
-
-    local exported_count=0
-    local failed_services=()
-
-    # Export each image
-    for service in "${services[@]}"; do
-        local image_name="${REGISTRY}/addp-${service}:${IMAGE_TAG}"
-        local tar_file="${images_dir}/${service}.tar"
-
-        echo -e "${YELLOW}Exporting ${service}...${NC}"
-
-        # Check if image exists
-        if ! docker image inspect "${image_name}" > /dev/null 2>&1; then
-            echo -e "${RED}⚠ Warning: Image ${image_name} not found, skipping${NC}"
-            failed_services+=("$service")
-            continue
-        fi
-
-        # Export image
-        if docker save "${image_name}" -o "${tar_file}"; then
-            local size=$(du -h "${tar_file}" | cut -f1)
-            echo -e "${GREEN}✓ Exported ${service} (${size})${NC}"
-            exported_count=$((exported_count + 1))
-        else
-            echo -e "${RED}✗ Failed to export ${service}${NC}"
-            failed_services+=("$service")
-        fi
-    done
-
-    echo ""
-    echo -e "${GREEN}✓ Exported ${exported_count}/${#services[@]} images${NC}"
-
-    if [ ${#failed_services[@]} -gt 0 ]; then
-        echo -e "${YELLOW}⚠ Failed/skipped services:${NC}"
-        for service in "${failed_services[@]}"; do
-            echo -e "  - ${service}"
-        done
-        echo ""
-        echo -e "${YELLOW}Hint: Run './scripts/build/build-images.sh' to build missing images${NC}"
-    fi
-    echo ""
+    python3 - "$OUTPUT_DIR/dist/compose-release/manifest.json" > "$images_dir/references.txt" <<'PYIMAGES'
+import json, re, sys
+manifest = json.load(open(sys.argv[1]))
+assert manifest['schema'] == 'addp.compose-release/v1'
+references = set(manifest['image_ids'].values())
+assert references
+assert all(re.fullmatch(r'.+@sha256:[0-9a-f]{64}', ref) for ref in references)
+print('\n'.join(sorted(references)))
+PYIMAGES
+    local images=() reference
+    while IFS= read -r reference; do images+=("$reference"); done < "$images_dir/references.txt"
+    docker save -o "$images_dir/release.tar.partial" "${images[@]}"
+    mv "$images_dir/release.tar.partial" "$images_dir/release.tar"
+    echo "Exported ${#images[@]} fixed release images"
 }
 
 # Function: Create load-images.sh script for server
@@ -328,356 +286,26 @@ EOF
     echo ""
 }
 
-# Function: Update registry URLs in docker-compose files
-update_registry_url() {
-    echo -e "${YELLOW}Updating registry URLs to ${REGISTRY}...${NC}"
-
-    # Replace localhost:5001 with actual registry URL
-    for compose_file in docker-compose.yml docker-compose.runtimes.yml; do
-        [ -f "$OUTPUT_DIR/$compose_file" ] || continue
-        # Use perl for cross-platform compatibility (macOS + Linux)
-        if command -v perl &> /dev/null; then
-            perl -pi -e "s|localhost:5001|${REGISTRY}|g" "$OUTPUT_DIR/$compose_file"
-        else
-            # Fallback to sed with backup
-            sed -i.bak "s|localhost:5001|${REGISTRY}|g" "$OUTPUT_DIR/$compose_file"
-            rm -f "$OUTPUT_DIR/$compose_file.bak"
-        fi
-        echo -e "${GREEN}✓ Registry URLs updated in $compose_file${NC}"
-    done
-}
-
-# Function: Generate mode-specific README
+# Function: Describe the prepared deployment package
 generate_readme() {
-    echo -e "${YELLOW}Generating README for ${MODE} mode...${NC}"
+    cat > "$OUTPUT_DIR/README.md" <<'EOF'
+# ADDP Compose 发布包
 
-    if [ "$MODE" = "images" ]; then
-        cat > "$OUTPUT_DIR/README.md" << 'EOF'
-# ADDP Images Deployment Package
+本包包含固定镜像清单和 Compose 覆盖文件。源提交、目标架构及镜像 digest 见 dist/compose-release/manifest.json。
 
-This package contains **pre-built Docker images** for offline deployment (no registry or compilation required).
+目标机器需要可用的 Docker Engine、Docker Compose 和 Python 3。已有部署沿用目标环境的 .env 和数据卷，首次部署由标准入口准备配置。
 
-## Package Contents
+镜像归档模式先在包目录执行 ./load-images.sh。仓库模式由生产预检按清单 digest 取得镜像，需要能够访问清单中的仓库。
 
-- `images/` - Pre-built Docker images (40 tar files, ~5-10GB total)
-- `load-images.sh` - Script to load all images into Docker
-- `docker-compose.infra.yml` - Infrastructure services configuration
-- `docker-compose.yml` - Platform services configuration
-- `docker-compose.runtimes.yml` - Built-in Runtime services configuration
-- `.env.example` - Environment variables template
-- `scripts/infra/` - Infrastructure initialization scripts
-- `scripts/prod/` - Production startup/stop scripts
-- `business/` - Business infrastructure (optional)
-- `nginx/` - Nginx configuration
+随后执行 bash scripts/prod/start.sh。入口核对所选能力和 Compose 输入，按固定镜像启动 Infra、System、发布模块声明，再启动平台与 Runtime。缺失制品时停止启动。
 
-## Server Requirements
+本包可能保留打包时已有的 .env，请按部署凭据管理。镜像清单不包含密码或令牌。
 
-- ✅ **Docker only** (no Go, Node.js, or build tools required)
-- ✅ ~10GB disk space for images and containers
-- ✅ No internet access required
-
-## Deployment Steps
-
-### 1. Transfer Package to Server
-
-```bash
-# Option A: Transfer tarball (recommended for large packages)
-scp addp-deploy-images-*.tar.gz user@server:~/
-ssh user@server
-cd ~
-tar -xzf addp-deploy-images-*.tar.gz
-cd package-images-*/
-
-# Option B: Transfer directory (faster if on same network)
-rsync -avz --progress package-images-*/ user@server:~/addp-deploy/
-```
-
-### 2. Load Docker Images
-
-```bash
-cd ~/addp-deploy
-
-# Load all images (takes 5-10 minutes depending on disk speed)
-./load-images.sh
-```
-
-**Expected output**:
-```
-========================================
-ADDP Image Loader
-========================================
-
-Found 40 image(s) to load
-
-Loading system-backend...
-✓ Loaded system-backend
-
-...
-
-========================================
-Summary
-========================================
-Total: 40
-Loaded: 40
-Failed: 0
-
-✓ All images loaded successfully!
-```
-
-### 3. Configure Environment
-
-```bash
-bash scripts/prod/setup-env.sh
-vim .env
-
-# Review public URLs, trusted proxies and Business Engine connection settings.
-```
-
-### 4. Start Infrastructure
-
-```bash
-# Start PostgreSQL, Redis, MinIO, Meilisearch
-bash scripts/infra/up.sh
-
-# Wait for infrastructure to be ready (30-60 seconds)
-```
-
-### 5. Start Application Services
-
-```bash
-# Start all ADDP services
-bash scripts/prod/start.sh
-```
-
-### 6. Verify Deployment
-
-```bash
-# Check service status
-docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.runtimes.yml ps
-
-# Check logs
-docker compose -f docker-compose.yml logs -f
-
-# Access application
-# Console: http://server-ip:80 (via Nginx, recommended)
-```
-
-## IAM Bootstrap
-
-ADDP does not ship default administrator credentials. Establish the initial system, security, and audit administrators through the one-time offline IAM bootstrap process before first login.
-
-## Advantages
-
-- ✅ **No compilation required** - pre-built images ready to use
-- ✅ **Fast deployment** - just load and start (~10 minutes total)
-- ✅ **Consistent environment** - images match development machine exactly
-- ✅ **Offline capable** - no internet access needed on server
-- ✅ **Simple requirements** - only Docker needed
-
-## Package Size
-
-- **Images**: ~5-10GB (40 Docker images)
-- **Total**: ~5-10GB compressed tarball
-
-## Troubleshooting
-
-### Load Images Fails
-
-```bash
-# Check Docker is running
-docker info
-
-# Check disk space
-df -h
-
-# Manually load a specific image
-docker load -i images/system-backend.tar
-```
-
-### Services Won't Start
-
-```bash
-# Check all images are loaded
-docker images | grep addp
-
-# Check infrastructure is running
-docker ps | grep -E "postgres|redis|minio"
-
-# Check logs
-docker compose -f docker-compose.yml logs SERVICE_NAME
-
-# Restart infrastructure
-bash scripts/infra/down.sh
-bash scripts/infra/up.sh
-```
-
-## Updating Deployment
-
-To update to a new version:
-
-```bash
-# 1. Stop services
-bash scripts/prod/stop.sh
-
-# 2. Transfer new package with updated images
-# 3. Load new images (will overwrite old versions)
-./load-images.sh
-
-# 4. Restart services
-bash scripts/prod/start.sh
-```
-
-## Architecture
-
-**Images deployment workflow**:
-1. Build on development machine
-2. Export all images using `docker save`
-3. Package images + configs
-4. Transfer to server
-5. Load images using `docker load`
-6. Start services
-
-**Why this approach**:
-- ✅ Server doesn't need build tools
-- ✅ Guarantees identical images
-- ✅ Works offline
-- ✅ Faster than compiling on server
+停止入口为 bash scripts/prod/stop.sh，保留持久数据卷。状态和业务验收按 scripts/prod/README.md 与平台测试规范执行。
 EOF
-    else
-        # Registry mode README
-        cat > "$OUTPUT_DIR/README.md" << EOF
-# ADDP Registry Deployment Package
-
-This package is for **registry-based deployment** (requires access to Docker registry).
-
-## Package Contents
-
-- \`docker-compose.infra.yml\` - Infrastructure services
-- \`docker-compose.yml\` - Platform services (configured for registry: **${REGISTRY}**)
-- \`docker-compose.runtimes.yml\` - Built-in Runtime services
-- \`.env.example\` - Environment variables template
-- \`scripts/infra/\` - Infrastructure initialization scripts
-- \`scripts/prod/\` - Production startup/stop scripts
-- \`business/\` - Business infrastructure (optional)
-- \`nginx/\` - Nginx configuration
-
-## Pre-requisites
-
-Images must be **pre-built and pushed** to registry: \`${REGISTRY}\`
-
-Required images:
-- \`${REGISTRY}/addp-system-backend:latest\`
-- \`${REGISTRY}/addp-manager-backend:latest\`
-- \`${REGISTRY}/addp-meta-backend:latest\`
-- \`${REGISTRY}/addp-transfer-backend:latest\`
-- \`${REGISTRY}/addp-orchestrator-backend:latest\`
-- \`${REGISTRY}/addp-develop-backend:latest\`
-- \`${REGISTRY}/addp-gateway:latest\`
-- \`${REGISTRY}/addp-*-worker:latest\` (workers)
-- \`${REGISTRY}/addp-*-frontend:latest\` (frontends)
-- \`${REGISTRY}/addp-console:latest\`
-- \`${REGISTRY}/addp-nginx:latest\`
-
-## Deployment Steps
-
-### 1. Transfer Package to Server
-
-\`\`\`bash
-# Transfer deployment package
-rsync -avz package-registry-*/ user@server:~/addp-deploy/
-
-# Or use tarball if generated
-scp addp-deploy-registry-*.tar.gz user@server:~/
-\`\`\`
-
-### 2. Configure Environment
-
-\`\`\`bash
-cd ~/addp-deploy
-bash scripts/prod/setup-env.sh
-vim .env
-
-# Review public URLs, trusted proxies and Business Engine connection settings.
-\`\`\`
-
-### 3. Configure Registry Access (If Private)
-
-\`\`\`bash
-# Login to private registry
-docker login ${REGISTRY}
-
-# Or configure insecure registry (if HTTP)
-sudo vim /etc/docker/daemon.json
-{
-  "insecure-registries": ["${REGISTRY}"]
-}
-sudo systemctl restart docker
-\`\`\`
-
-### 4. Pull Images
-
-\`\`\`bash
-# Pull all images from registry
-docker compose -f docker-compose.yml pull
-docker compose -f docker-compose.runtimes.yml pull
-\`\`\`
-
-### 5. Start Services
-
-\`\`\`bash
-# Start infrastructure
-bash scripts/infra/up.sh
-
-# Start application services
-bash scripts/prod/start.sh
-\`\`\`
-
-### 6. Verify Deployment
-
-\`\`\`bash
-# Check service status
-docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.runtimes.yml ps
-
-# Check logs
-docker compose -f docker-compose.yml logs -f
-\`\`\`
-
-## Updating Deployment
-
-\`\`\`bash
-# Pull new images
-docker compose -f docker-compose.yml pull
-docker compose -f docker-compose.runtimes.yml pull
-
-# Restart services (zero downtime)
-bash scripts/prod/start.sh
-\`\`\`
-
-## Architecture
-
-**Registry deployment workflow**:
-1. Images pre-built on build machine
-2. Images pushed to registry (${REGISTRY})
-3. Server pulls images from registry
-4. Deploy immediately
-
-**Advantages**:
-- Fast deployment (no compilation)
-- No build tools required on server
-- Consistent builds across environments
-
-**Disadvantages**:
-- Requires registry access
-- Registry must be maintained separately
-EOF
-    fi
-
-    echo -e "${GREEN}✓ README.md generated${NC}"
 }
 
-# Function: Create DEPLOY_INFO.txt
+# Function: Record package information
 create_deploy_info() {
     cat > "$OUTPUT_DIR/DEPLOY_INFO.txt" << EOF
 ADDP Deployment Package
@@ -809,8 +437,7 @@ main() {
         create_load_script
     fi
 
-    # Step 3: Update registry URLs (both modes)
-    update_registry_url
+    # Fixed registry references are supplied by the release manifest.
 
     # Step 4: Generate README
     generate_readme

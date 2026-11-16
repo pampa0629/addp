@@ -98,12 +98,9 @@ AUXILIARY_DOCKERFILES = {
     "engines/model3d-workflow/docker/converter/Dockerfile": "model3d converter build",
     "engines/model3d-workflow/docker/runtime/Dockerfile": "model3d runtime build",
     "engines/supermap-workflow/Dockerfile.base": "SuperMap SDK base image build",
-    "scripts/infra/Dockerfile.postgres": "infra PostgreSQL image build",
-    "scripts/infra/Dockerfile.minio": "infra MinIO image build",
     "scripts/infra/Dockerfile.redis-metrics": "deployment-owned fixed Redis INFO metrics source",
     "scripts/infra/Dockerfile.cdc-metrics": "deployment-owned fixed Redpanda and Kafka Connect metrics source",
     "scripts/infra/Dockerfile.minio-metrics": "deployment-owned fixed MinIO v3 metrics source",
-    "scripts/infra/Dockerfile.runtime-log": "shared runtime log capture and source housekeeping",
 }
 
 
@@ -115,6 +112,10 @@ def compiled_binary_name(service: str) -> str:
 
 def image_build_definition(service: str, directory: str) -> tuple[str, str | None, str | None]:
     """返回构建定义、预编译二进制名和 Docker build context。"""
+    if service in {"infra-minio", "infra-postgres", "runtime-log"}:
+        name = {"infra-minio": "minio", "infra-postgres": "postgres", "runtime-log": "runtime-log"}[service]
+        context = "." if service == "runtime-log" else "scripts/infra"
+        return f"scripts/infra/Dockerfile.{name}", None, context
     if service == "model3d-workflow-engine":
         return f"{directory}/scripts/build-linux-images.sh", None, None
     if service == "supermap-workflow-engine":

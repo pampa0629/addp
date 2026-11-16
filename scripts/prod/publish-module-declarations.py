@@ -71,7 +71,8 @@ def deploy_modules(args, compose, modules, provision):
         image = subprocess.check_output(["docker", "inspect", "-f", "{{.Image}}", system], text=True).strip()
         system_url = subprocess.check_output([*compose, "exec", "-T", "system-backend", "printenv", "SYSTEM_URL"], text=True).strip()
         publish_command = ["docker", "run", "--rm", "-i", "--network", "container:" + system,
-                           "-e", "SYSTEM_URL=" + system_url, "--entrypoint", "/app/server", image]
+                           "-e", "SYSTEM_URL=" + system_url, "-e", "NO_PROXY=*", "-e", "no_proxy=*",
+                           "--entrypoint", "/app/server", image]
     for module in modules:
         if args.compose_file:
             service = "gateway" if module == "gateway" else module + "-backend"

@@ -31,6 +31,13 @@ OWNER, SCOPE = 'io.addp.redis-metrics.owner', 'io.addp.redis-metrics.scope'
 RECORD = '/data/.addp-redis-observation/account.record'
 
 
+def source_inputs():
+    files = ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum', 'scripts/infra/Dockerfile.redis-metrics']
+    for folder in ('monitor/backend/internal/redissource', 'monitor/backend/internal/sourceserver', 'monitor/backend/cmd/redis-metrics-source'):
+        files.extend(str(path.relative_to(ROOT)) for path in sorted((ROOT/folder).glob('*.go')) if not path.name.endswith('_test.go'))
+    return files
+
+
 def unique(pairs):
     value = {}
     for key, item in pairs:
@@ -181,10 +188,7 @@ class Lifecycle:
         self.container_source().stop()
 
     def image(self):
-        files = ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum', 'scripts/infra/Dockerfile.redis-metrics']
-        for folder in ('monitor/backend/internal/redissource', 'monitor/backend/internal/sourceserver', 'monitor/backend/cmd/redis-metrics-source'):
-            files.extend(str(p.relative_to(ROOT)) for p in sorted((ROOT/folder).glob('*.go')) if not p.name.endswith('_test.go'))
-        return self.container_source().build(files)
+        return self.container_source().build(source_inputs())
 
     @sources.observed('account-plan')
     def plan(self, image, state):

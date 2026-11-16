@@ -19,7 +19,7 @@ PROVIDERS = {
     'kafka-connect': ('cdc-metrics.py', 'ADDP_KAFKA_CONNECT_METRICS', 'Kafka Connect'),
 }
 SCOPES = ('host', 'infra', 'business')
-OS_KEYS = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST')
+OS_KEYS = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'ADDP_RELEASE_MANIFEST')
 FAILURE_REASONS = {
     'source-layout-changed': '采集来源安装声明已变更；请显式执行 up 应用当前来源',
     'source-image-unavailable': '原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源',
@@ -93,7 +93,11 @@ def environment(scope, inherited, root=None):
                              'metrics-sources', str(config)], env=base, cwd=config.parent, capture_output=True, timeout=10)
     if result.returncode or max(len(result.stdout), len(result.stderr)) > 1024 * 1024:
         raise ValueError('Deployment configuration rejected')
-    return dict(value.decode().split('=', 1) for value in result.stdout.split(b'\0') if value)
+    values = dict(value.decode().split('=', 1) for value in result.stdout.split(b'\0') if value)
+    release = config.parent / 'dist/compose-release/manifest.json'
+    if scope == 'infra' and values.get('ENV') == 'production' and release.is_file():
+        values['ADDP_RELEASE_MANIFEST'] = str(release.resolve())
+    return values
 
 
 def selection(scopes, kinds):

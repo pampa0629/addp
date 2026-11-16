@@ -188,7 +188,10 @@ bash scripts/local/stop.sh
 **一键生产部署**:
 
 ```bash
-# 从项目根目录
+# 在固定源码中准备发布，并走生产启动入口
+bash scripts/prod/deploy.sh v1.0.0
+
+# 后续沿用同一发布启动（不编译或构建镜像）
 bash scripts/prod/start.sh
 ```
 

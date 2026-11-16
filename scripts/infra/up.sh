@@ -29,13 +29,21 @@ esac
 compose() {
   local trace_files=()
   if [[ "$TRACE_CONFIG_READY" == true ]]; then trace_files=(-f scripts/infra/traces-platform.yml); fi
+  local release_files=()
+  if [[ -n "${ADDP_RELEASE_MANIFEST:-}" ]]; then
+    release_files=(-f "$(dirname "$ADDP_RELEASE_MANIFEST")/infra-images.yml")
+  fi
   # Inactive optional profiles are still interpolated by Compose. Their unused
   # ports cannot prevent core or the other capability from starting.
   case "${ADDP_INFRA_PORT_SCOPE:-core}" in
-    logs|traces) PROMETHEUS_PORT=0 docker compose "${COMPOSE_FILES[@]}" ${trace_files[@]+"${trace_files[@]}"} "$@" ;;
-    metrics) TRACE_OTLP_PORT=0 TRACE_QUERY_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
-    *) TRACE_OTLP_PORT=0 TRACE_QUERY_PORT=0 PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
+    logs|traces) PROMETHEUS_PORT=0 docker compose "${COMPOSE_FILES[@]}" ${trace_files[@]+"${trace_files[@]}"} ${release_files[@]+"${release_files[@]}"} "$@" ;;
+    metrics) TRACE_OTLP_PORT=0 TRACE_QUERY_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" ${release_files[@]+"${release_files[@]}"} "$@" ;;
+    *) TRACE_OTLP_PORT=0 TRACE_QUERY_PORT=0 PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" ${release_files[@]+"${release_files[@]}"} "$@" ;;
   esac
+}
+
+build_development_images() {
+  if [[ -z "${ADDP_RELEASE_MANIFEST:-}" ]]; then compose build "$@"; fi
 }
 
 require_docker() {
@@ -231,7 +239,7 @@ if [ -n "$existing_meilisearch" ]; then
   fi
 fi
 
-if [ "$BUILD_REPOSITORY_POSTGRES_IMAGE" = "true" ] &&
+if [[ -z "${ADDP_RELEASE_MANIFEST:-}" ]] && [ "$BUILD_REPOSITORY_POSTGRES_IMAGE" = "true" ] &&
   ! docker image inspect "$POSTGRES_IMAGE" >/dev/null 2>&1; then
   echo -e "  ${BLUE}构建仓库 PostgreSQL 镜像: $POSTGRES_IMAGE${NC}"
   docker build --file scripts/infra/Dockerfile.postgres \
@@ -240,7 +248,7 @@ fi
 
 # Build every repository-owned service before checking remotely published images.
 # Compose-generated image names are local build artifacts, never registry pulls.
-compose build "${CORE_SERVICES[@]}"
+build_development_images "${CORE_SERVICES[@]}"
 # Images to check
 COMPOSE_IMAGES=$(compose config --images "${CORE_SERVICES[@]}")
 while IFS= read -r image; do
@@ -438,7 +446,7 @@ echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相�
 
 # Bounded local source retention is independent of central collection.
 optional_result=0
-if compose build runtime-log-pruner && compose up -d runtime-log-pruner; then
+if build_development_images runtime-log-pruner && compose up -d runtime-log-pruner; then
   echo 'Bounded local runtime output housekeeping started'
 else
   echo 'Runtime output housekeeping unavailable; core services remain running' >&2
@@ -479,7 +487,7 @@ start_central_logs() {
   local ADDP_INFRA_PORT_SCOPE=logs
   addp_runtime_log_preflight || return 1
   ADDP_INFRA_PORT_SCOPE=logs addp_infra_resolve_ports || return 1
-  compose build runtime-log-observer || return 1
+  build_development_images runtime-log-observer || return 1
   local image images
   images=$(compose config --images loki alloy runtime-log-api runtime-log-observer runtime-log-store-init) || return 1
   while IFS= read -r image; do
