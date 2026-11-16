@@ -2073,7 +2073,6 @@ if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
   # 设置环境变量
   export PORT=$COPILOT_BACKEND_PORT
   # SYSTEM_URL 已由 generate_service_urls() 自动生成
-  export DATABASE_URL=postgresql://addp:addp_password@localhost:${POSTGRES_PORT}/addp
 
   # 直接使用虚拟环境的 Python
   python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" copilot copilot backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" ./venv/bin/python main.py &

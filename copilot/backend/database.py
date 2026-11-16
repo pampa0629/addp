@@ -14,7 +14,8 @@ engine = create_engine(
     pool_size=5,
     max_overflow=10,
     pool_recycle=3600,
-    connect_args={"connect_timeout": 5}
+    # Platform PostgreSQL uses password authentication, not host Kerberos tickets.
+    connect_args={"connect_timeout": 5, "gssencmode": "disable"}
 )
 
 # 创建会话工厂
