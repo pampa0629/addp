@@ -1591,7 +1591,10 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             definitions.append(body)
             return {'id':len(definitions)}
         delivered = unittest.mock.Mock(return_value=[{'signed_receipt_verified':True}]*3)
-        def launch_execution(*args):
+        def launch_execution(*args,**kwargs):
+            self.assertEqual(kwargs,{'http_timeout':60})
+            if invalid=='resume_control_failure':
+                raise M.SuiteError('resume native control failed')
             state['running_execution'] = pending_resumed if state['phase']=='performance_pretrigger_resume' else resumed
             return state['running_execution']
         launch = unittest.mock.Mock(side_effect=launch_execution)
@@ -1617,7 +1620,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                  'rebuild_same_process':'distinct owned Monitor process','rebuild_private_proof':'distinct owned Monitor process',
                  'rebuild_retains_pending':'did not converge before the deadline','rebuild_emits_lifecycle':'lifecycle was not empty',
                  'rebuild_changes_execution':'changed the paused task execution','rebuild_sends_notification':'emitted a performance notification',
-                 'rebuild_failed':'owned Monitor reconstruction failed','rebuild_no_evaluation':'did not converge before the deadline'}.get(invalid)
+                 'rebuild_failed':'owned Monitor reconstruction failed','rebuild_no_evaluation':'did not converge before the deadline',
+                 'resume_control_failure':'resume native control failed'}.get(invalid)
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
              patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
@@ -1648,7 +1652,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertIn('recorded_at',value['history_gap'])
         self.assertEqual(value['trigger_seconds']['cdc_backlog_high'],300)
         self.assertEqual(value['resumed_execution_id'],'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb')
-        self.assertEqual(launch.call_args_list,[unittest.mock.call(7,'resume')]*2)
+        self.assertEqual(launch.call_args_list,[unittest.mock.call(7,'resume',http_timeout=60)]*2)
         self.assertEqual(value['pretrigger_pause']['result'],'passed')
         self.assertEqual(value['baseline']['committed_offset'],'0')
         self.assertEqual(value['pretrigger_pause']['buffer_before_pause']['committed_offset'],'1')
@@ -1695,6 +1699,13 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 self.assertEqual(value['pretrigger_pause']['result'],'failed')
                 launch.assert_not_called()
                 delivered.assert_not_called()
+
+    def test_resume_control_failure_is_not_retried_and_restores_the_faults(self):
+        value,_,delivered,launch=self.performance_orchestration(invalid='resume_control_failure')
+        self.assertEqual(value['result'],'failed')
+        self.assertEqual(value['cleanup'],'passed')
+        launch.assert_called_once_with(7,'resume',http_timeout=60)
+        delivered.assert_not_called()
 
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \

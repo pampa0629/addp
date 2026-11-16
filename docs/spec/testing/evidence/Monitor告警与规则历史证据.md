@@ -141,6 +141,16 @@ Artifact `14159537304` 的 SHA-256 `9c3e845cb0e64d5a2e839db0146cea655d624c0f9f42
 
 该轮性能与领域 cleanup=passed、cleanup_failures=[]、uncertain_mutation=false，任务 3／2 删除读回不存在，硬退出 Kafka 任务按原契约交部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。后继新窗口全套触发／恢复及签名投递、风险重建、scheduled、历史图表和最终原生 verify-clean 未完成，不计通过。Artifact `14216306323` 已核对 SHA-256 `be03a8880f3593b986d76aec601586b33370d012705b8dd147987f3e488300b1` 与 ZIP CRC，原件位于 `/tmp/addp-cdc-evaluator-hosted-43843679319/`。同源码的 [Platform consistency Job 133217624659](https://github.com/pampa0629/addp/actions/runs/43843456806/job/133217624659)成功，确定性／CI 不抵消实故障失败。修订源码需另跑同一 Hosted 并重新核对完整链路及清理。
 
+### 修订轮 Resume 提前撤销及单次等待修订（2026-11-16）
+
+固定 `1084e1562548f5e5aee6487d4e67783223b18dd2` 的 [Hosted 43881581512／Job 133348563840](https://github.com/pampa0629/addp/actions/runs/43881581512/job/133348563840)失败在 performance_pretrigger_resume，尚未进入新性能窗口，不能用于验证 600 秒收敛修订。Monitor PID 70514→114888，相同二进制 SHA-256 `2bd6a9cd7214a034f8ed0b96c7310124ce1adc3c5bcd1b233fcf4709a709b4af`；新进程完成于 14:24:04.181570Z，新评估器在 14:24:18.360694Z 写入两条 paused／inactive 空窗口，incident／event／delivery 为 0，原暂停 execution／generation 保持。
+
+正式 Resume 请求始于 14:24:18.896726Z；Gateway 在 14:24:28.909067Z 明确记录 `context canceled`，HTTP 日志耗时 10013 毫秒、状态 502；Transfer 同请求日志耗时 10012 毫秒、状态 500。验收 GatewayClient 默认 HTTP 等待为 10 秒，代理与追踪 Transport 不设置新的 10 秒截止；ConnectClient 单次默认已有 15 秒，Resume 沿既有多次状态读取及源端健康检查。因此这里不能把撤销后的 500／502 日志视为验收端已经取得服务端最终业务失败响应；回执正确保留 uncertain_mutation=true，没有重发 Resume，也没有凭随后清理成功清除此标记。
+
+本次修订仅为性能故障段两次正式 Resume 显式使用 60 秒 HTTP 等待，沿同一 User Token、Gateway、路径及原权限；每次只发一次，失败仍保留未知操作结果，其他 API 继续原等待。原生连接／探测超时、CPU 故障、目标锁、阈值、缺样规则和 1650／1700 秒总预算均未调整；现有日志足以定位提前撤销的等待边界，没有新增产品日志或修改 Transfer。新增回归核对两次 Resume 均显式传入 60 秒，失败只调用一次且既有故障清理仍通过。最终七文件与冻结检出摘要一致后，标准 `make test-transfer-continuous-online-runner` 通过 152 项 Python、原语法及 System 身份夹具 Go（`/tmp/addp-cdc-evaluator-runner-control-wait.log`）；真实结果仍需新源码另证。
+
+该轮性能／领域 cleanup=passed、cleanup_failures=[]，任务 3／2 删除读回不存在，硬退出 Kafka 任务按原拒删契约由部署销毁；summary 的 cleanup=passed、infra_cleanup=zero_residuals。未知操作结果仍单独保留，后续完整窗口、通知、风险重建、scheduled、历史图表及最终原生 verify-clean 均未走到，不计通过。Artifact `14234520613` 已核对 SHA-256 `e76095b8e7d0e8d38e5d7ea8c6a6c4d211b2a5888cd209573cd148c30f8aa0b9` 与 ZIP CRC，原件位于 `/tmp/addp-cdc-evaluator-hosted-43881581512/`。固定源码 preflight 六服务一致且工作区干净，[Platform consistency Job 133346940845](https://github.com/pampa0629/addp/actions/runs/43881111817/job/133346940845)成功；这些结果不抵消本轮真实失败。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办

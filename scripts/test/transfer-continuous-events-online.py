@@ -776,7 +776,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 'rebuilt paused evaluator emitted a performance notification')
         stage('performance_pretrigger_resume')
         pretrigger['resume_requested_at'] = datetime.now(timezone.utc).isoformat()
-        pending_resumed = launch(task_id, 'resume')
+        pending_resumed = launch(task_id, 'resume', http_timeout=60)
         require(pending_resumed != pending_execution, 'pretrigger resume reused an ended execution')
         pretrigger['resumed_execution_id'] = pending_resumed
         pretrigger['resumed_pending'] = {}
@@ -879,7 +879,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             time.sleep(2)
         evidence['pause_hold_checks'] = checks
         stage('performance_task_resume')
-        resumed_execution = launch(task_id, 'resume')
+        resumed_execution = launch(task_id, 'resume', http_timeout=60)
         require(resumed_execution != paused_execution, 'performance resume reused ended execution')
         evidence['resumed_execution_id'] = resumed_execution
 
@@ -2184,8 +2184,9 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         checkpoint()
         return task_id
 
-    def launch(task_id, action='start'):
-        result = mutate(client, f'{OWNER}/task-definitions/{task_id}/{action}')
+    def launch(task_id, action='start', *, http_timeout=None):
+        actor = client if http_timeout is None else API.GatewayClient(client.base_url, client.token, http_timeout)
+        result = mutate(actor, f'{OWNER}/task-definitions/{task_id}/{action}')
         if action == 'resume':
             result = result.get('execution', {})
         execution_id = canonical_uuid(result.get('execution_id'))
