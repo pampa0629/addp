@@ -16,26 +16,45 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
-    def test_libgta_uses_current_official_release_without_changing_pinned_source(self):
-        source = (ROOT / 'engines/model3d-workflow/docker/converter/Dockerfile').read_text()
-        commands = re.findall(r'^RUN (.*?(?:\\\n.*?)*)(?=\n(?:[^ \n]|\n)|\Z)', source, re.M)
-        repairs = [command for command in commands if 'https://marlam.de/gta/releases/' in command]
-        self.assertEqual(len(repairs), 1)
-        self.assertLess(source.index('https://marlam.de/gta/releases/'), source.index('cargo build --locked --release'))
+    def test_libgta_overlay_preserves_version_dependencies_and_verified_archive(self):
+        converter = ROOT / 'engines/model3d-workflow/docker/converter'
+        port = converter / 'vcpkg-overlays/libgta'
+        manifest = json.loads((port / 'vcpkg.json').read_text())
+        self.assertEqual((manifest['name'], manifest['version'], manifest['port-version']), ('libgta', '1.0.8', 5))
+        self.assertEqual(manifest['dependencies'], ['bzip2', 'liblzma', {'name': 'vcpkg-cmake', 'host': True}, 'zlib'])
+        dockerfile = (converter / 'Dockerfile').read_text()
+        self.assertIn('ENV VCPKG_OVERLAY_PORTS=/opt/addp/vcpkg-overlays', dockerfile)
+        self.assertNotIn('ports/libgta/portfile.cmake', dockerfile, 'working-tree edits do not override manifest version ports')
         sha512 = '99ec3d6317c9a12cf440a60bb989cc7a3fe35e0a1da3e65206e5cd52b69fb860850e61ea0f819511ef48ddc87c468c0ded710409990627096738886e1b358423'
-        original = ('set(LIBGTA_VERSION 1.0.8)\nset(LIBGTA_HASH ' + sha512 + ')\n'
-                    'vcpkg_download_distfile(ARCHIVE\n'
-                    ' URLS "http://download.savannah.nongnu.org/releases/gta/libgta-1.0.8.tar.xz"\n'
-                    ' FILENAME "libgta-${LIBGTA_VERSION}.tar.xz" SHA512 ${LIBGTA_HASH})\n')
-        with tempfile.TemporaryDirectory(prefix='addp-libgta-source-') as directory:
-            port = Path(directory) / 'ports/libgta/portfile.cmake'
-            port.parent.mkdir(parents=True)
-            port.write_text(original)
-            result = subprocess.run(['bash', '-c', repairs[0].replace('\\\n', '')],
-                                    env={**os.environ, 'VCPKG_ROOT': directory}, capture_output=True, text=True)
+        with tempfile.TemporaryDirectory(prefix='addp-libgta-overlay-') as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'source/COPYING').write_text('libgta license fixture')
+            harness = r'''
+set(FIXTURE_ROOT "${CMAKE_CURRENT_LIST_DIR}")
+set(PORT libgta)
+set(VCPKG_LIBRARY_LINKAGE static)
+set(CURRENT_PACKAGES_DIR "${CMAKE_CURRENT_LIST_DIR}/package")
+function(vcpkg_download_distfile output)
+  cmake_parse_arguments(P "" "FILENAME;SHA512" "URLS" ${ARGN})
+  file(WRITE "${FIXTURE_ROOT}/download.json" "${P_URLS}\n${P_FILENAME}\n${P_SHA512}")
+  set(${output} "unused-test-archive" PARENT_SCOPE)
+endfunction()
+function(vcpkg_extract_source_archive output)
+  set(${output} "${FIXTURE_ROOT}/source" PARENT_SCOPE)
+endfunction()
+foreach(stub vcpkg_cmake_configure vcpkg_cmake_install vcpkg_copy_pdbs vcpkg_fixup_pkgconfig)
+  function(${stub})
+  endfunction()
+endforeach()
+include("@PORT@")
+'''.replace('@PORT@', str(port / 'portfile.cmake'))
+            (root / 'check.cmake').write_text(harness)
+            result = subprocess.run(['cmake', '-P', str(root / 'check.cmake')], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(port.read_text(), original.replace('http://download.savannah.nongnu.org/releases/gta/',
-                                                              'https://marlam.de/gta/releases/'))
+            self.assertEqual((root / 'download.json').read_text().splitlines(), [
+                'https://marlam.de/gta/releases/libgta-1.0.8.tar.xz', 'libgta-1.0.8.tar.xz', sha512])
+            self.assertEqual((root / 'package/share/libgta/copyright').read_text(), 'libgta license fixture')
 
     def test_product_triplets_build_only_release_and_preserve_target_linkage(self):
         source = (ROOT / 'engines/model3d-workflow/docker/converter/Dockerfile').read_text()
