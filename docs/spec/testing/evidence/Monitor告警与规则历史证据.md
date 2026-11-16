@@ -84,7 +84,7 @@
 
 固定 `cfb49acf10fe80134b01f6d904765a8a5a53139e` 的 [Monitor PG15 Job 132657334331](https://github.com/pampa0629/addp/actions/runs/43662027612/job/132657334331)实际通过 `TestIntegrationPostgresCDCPerformanceRules`；[Go workspace Job 132653230261](https://github.com/pampa0629/addp/actions/runs/43662027629/job/132653230261)的 Monitor 包通过。真实 PG 中验证触发前暂停清空窗口、无事件／通知、重建评估器后重新累计完整窗口。专项入口为 `make test-monitor-postgres MONITOR_POSTGRES_TEST_ARGS=--case=cdc-performance`，默认完整 PG 范围未缩小；当批完整入口的 HTTP CAS 失败不由定向成功抵消。
 
-该固定源码的评估器重建仍只认受控 Owner 事实的 T2；触发前正式 Pause／Resume 由[本页后续新源码 Hosted](#cdc-pretrigger-pause-hosted-20261115)单独补证，不追认旧轮。后续[七天历史 Hosted](Monitor执行监控与留存历史证据.md#七天-cdc-任务历史的真实-hosted-断言通过2026-11-15)另认定，不代替此场景。
+该固定源码的评估器重建只认受控 Owner 事实的 T2；触发前正式 Pause／Resume 由[后续新源码 Hosted](#cdc-pretrigger-pause-hosted-20261115)单独补证，[暂停清窗后重建的完整 Hosted](#cdc-evaluator-rebuild-hosted-20261117)再按其固定源码另认定，不追认旧轮。后续[七天历史 Hosted](Monitor执行监控与留存历史证据.md#七天-cdc-任务历史的真实-hosted-断言通过2026-11-15)另认定，不代替此场景。
 
 ### 触发前暂停的实故障 T4 准备（2026-11-15）
 
@@ -151,10 +151,33 @@ Artifact `14159537304` 的 SHA-256 `9c3e845cb0e64d5a2e839db0146cea655d624c0f9f42
 
 该轮性能／领域 cleanup=passed、cleanup_failures=[]，任务 3／2 删除读回不存在，硬退出 Kafka 任务按原拒删契约由部署销毁；summary 的 cleanup=passed、infra_cleanup=zero_residuals。未知操作结果仍单独保留，后续完整窗口、通知、风险重建、scheduled、历史图表及最终原生 verify-clean 均未走到，不计通过。Artifact `14234520613` 已核对 SHA-256 `e76095b8e7d0e8d38e5d7ea8c6a6c4d211b2a5888cd209573cd148c30f8aa0b9` 与 ZIP CRC，原件位于 `/tmp/addp-cdc-evaluator-hosted-43881581512/`。固定源码 preflight 六服务一致且工作区干净，[Platform consistency Job 133346940845](https://github.com/pampa0629/addp/actions/runs/43881111817/job/133346940845)成功；这些结果不抵消本轮真实失败。
 
+<a id="cdc-evaluator-rebuild-hosted-20261117"></a>
+
+### 暂停清窗后评估器重建的完整实故障 T4 通过（2026-11-17 记录）
+
+固定 `7e583307e44e7451d388c3622f5edc3d4588ae56` 的 [Hosted 43895444567／Job 133397650216](https://github.com/pampa0629/addp/actions/runs/43895444567/job/133397650216)实际通过整套 27 项检查、8 份 Console 回执。preflight 工作区干净，System／Security／Meta／Transfer／Monitor／Gateway 六服务均为本源码；场景耗时 1329.967 秒，在当前 1650／1700 秒预算内。前两轮 `913a14fad`／`1084e1562` 的失败、未完成范围及未知操作结果标记保留在上方，不被此次通过改写。
+
+Monitor 经 pidfd 确认旧 PID 64169 退出后，由标准 `start.sh -monitor` 创建 PID 104969，同一二进制 SHA-256 `ef4145551718007850957fdfd5d250b397b3e1333f3a903f4704229e019f3c3a`。重建完成时刻为 15:38:44.258727Z，新的暂停评估 reset_at 为 15:38:58.316940Z；两条消费规则仍 paused／inactive，trigger_since／recovery_since 为空，incident／event／delivery 均为 0，原暂停 execution／generation 不变。正式 Resume 请求为 15:38:58.378648Z，返回新的 execution，generation 仍为 1；两条规则从 15:39:23.599458Z 的有效新窗口起累计。所有时间取本轮真实时钟，未写入替身事实或修改产品阈值。
+
+| 实际观测 | 消费停滞（180 秒） | 可选积压（300 秒，阈值 256） |
+| --- | --- | --- |
+| 正式 Pause 前 pending 已累计，尚无生命周期 | 43.899 秒 | 31.399 秒 |
+| 新评估器启动后的暂停评估 | 空窗口、inactive、计数为 0 | 空窗口、inactive、计数为 0 |
+| 恢复后临界前仍无 incident／event／投递 | 165.000 秒 | 285.698 秒 |
+| 首次打开距当前有效新窗口起点 | 184.717 秒 | 304.717 秒 |
+
+暂停保持的 16 秒／8 次零事件与零签名接收、重建后的新暂停评估、恢复后不足窗口及完整窗口触发均已实证；临界前及实际打开窗口有相同的新 trigger_since。本轮恢复新窗口未再次重置；允许中途缺样重置的等待边界由独立回归及首轮失败事实记录，不声称该重置在本轮又发生。捕获延迟仍独立评估，不因消费暂停清零。性能段两次 Resume 各沿原 User／Gateway 单次请求，使用已记录的独立 60 秒等待，没有失败后重发；不将本轮通过外推为所有原生慢探测或所有错误原因已覆盖。
+
+同轮原性能打开后暂停保持、缺样保持、恢复关闭、捕获持续失败、不可恢复风险、替代任务重建、scheduled basic→deep／原发起人及读取隔离、19 份分钟历史和真实历史图表均通过。性能 6 条、捕获失败 2 条、不可恢复风险 4 条，共 12 条唯一 HMAC 签名 opened／resolved 接收、202 回执与 delivered 审计逐一匹配。CPU／Connector 配置恢复、专用源行和规则清理、目标精确行集、Webhook 删除及接收端关闭均核对，cleanup_failures=[]、uncertain_mutation=false；原生槽／publication 的最终 verify-clean 已走到并通过。
+
+4 条正式任务删除读回不存在，1 条硬退出 Kafka 任务按原拒删契约交部署销毁，领域残留 1 不冒充 0；外层 summary 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals。个人环境在本轮前后只读对照一致：task61 仍 running／未删除，原有两个逻辑槽及当前任务槽的存在和活跃状态均保持；早先共享库恢复模式导致的读取不可用保留为当时事实，不推断为任务改变。未重启个人服务或操作个人任务、源表和槽。
+
+Artifact `14242081152` 的 SHA-256 `f60cd40eda38dcffd979f787ab4b2737a395bb0ee08c13f4d4e29df55408b611` 与 ZIP CRC 已核对；完整原件、独立汇总位于 `/tmp/addp-cdc-evaluator-hosted-43895444567/`，个人前后回执位于 `/tmp/addp-cdc-evaluator-final-preserved-before.json` 和 `/tmp/addp-cdc-evaluator-final-preserved-after.json`。标准 `make test-transfer-continuous-online-runner` 本地通过 152 项、原语法及 System 身份夹具 Go；[自然 Platform consistency Job 133396660611](https://github.com/pampa0629/addp/actions/runs/43895176021/job/133396660611)实际执行 152 项并成功。初始夹具超时、旧输入无效验证及两轮 Hosted 失败各守原边界，未被当前成功抵消。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办
 
 1. 补服务组失联的真实租约故障／恢复、正式页面、签名通知和清理；历史临时规则的后续处置无记录，不能假定已删除。
 2. 补真实主机容量源／挂载行的实际验收；现有受控容量 T2 和前端通过各守原范围。
-3. CDC 触发前暂停／恢复完整窗口已有上述实故障 T4；评估器重建仍仅 T2，其他源类型和告警 UI 完整正式覆盖须独立取证，不重复已完成的 PostgreSQL 闭环。
+3. CDC 触发前暂停／恢复完整窗口及暂停清窗后的评估器重建已有上述实故障 T4；其他源类型和租户告警 UI 完整正式覆盖仍须独立取证，不重复已完成的 PostgreSQL 闭环。
