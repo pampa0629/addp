@@ -113,16 +113,20 @@ class NotebookObserverTest(unittest.TestCase):
 class NotebookFixtureCompileTest(unittest.TestCase):
     def test_identity_patch_compiles_without_modifying_product_checkout(self):
         root = Path(__file__).resolve().parents[2]
+        source = Path(os.environ.get("ADDP_NOTEBOOK_IDENTITY_SOURCE_ROOT", root))
         with tempfile.TemporaryDirectory(prefix="addp-notebook-identity-check-") as directory:
             checkout = Path(directory) / "identity"
-            subprocess.run(["git", "clone", "--shared", "--no-checkout", str(root), str(checkout)], check=True, capture_output=True)
+            subprocess.run(["git", "clone", "--shared", "--no-checkout", str(source), str(checkout)], check=True, capture_output=True)
             subprocess.run(["git", "checkout", "--detach", "HEAD"], cwd=checkout, check=True, capture_output=True)
             subprocess.run(["git", "apply", "--unidiff-zero", str(root / "scripts/test/develop-notebook-identity.patch")], cwd=checkout, check=True, capture_output=True)
             # Check the current owned catalog before publication, too.
-            shutil.copyfile(root / "system/authorization/builtin_roles.yaml", checkout / "system/authorization/builtin_roles.yaml")
+            shutil.copyfile(source / "system/authorization/builtin_roles.yaml", checkout / "system/authorization/builtin_roles.yaml")
             test_file = checkout / "system/backend/cmd/online-test-fixture/notebook_storage_fixture_test.go"
             test_file.write_text('''package main
-import ("testing"; "reflect"; "path/filepath"; "slices"; "github.com/addp/common/authorization")
+import ("testing"; "reflect"; "path/filepath"; "slices"; "os"; "net/url"; "strings"; "time"; "context";
+ "github.com/addp/common/authorization"; "github.com/addp/system/internal/config";
+ "github.com/addp/system/internal/migration"; "github.com/addp/system/internal/testsupport";
+ "github.com/addp/system/internal/models"; "gorm.io/driver/postgres"; "gorm.io/gorm"; "gorm.io/gorm/logger")
 func TestNotebookStoragePermissionBoundary(t *testing.T) {
     got, err := suitePermissions("develop-notebook-storage")
     expected := []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read"}
@@ -147,10 +151,52 @@ func TestNotebookStoragePermissionBoundary(t *testing.T) {
     }
     if len(suiteSourceInitializerPermissions("develop-notebook-storage")) != 0 { t.Fatal("Notebook fixture expanded source initializer permissions") }
 }
+func TestNotebookStorageEngineFixtureAgainstPostgres(t *testing.T) {
+    dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+    if dsn == "" { t.Skip("requires standard System IAM PostgreSQL gate") }
+    testsupport.RequireDisposablePostgresDSN(t,dsn)
+    db,err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger:logger.Default.LogMode(logger.Silent)})
+    if err != nil { t.Fatal(err) }
+    connection,err := db.DB()
+    if err != nil { t.Fatal(err) }
+    reset := func() {
+        if err := db.Exec("DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE").Error; err != nil { t.Error(err) }
+    }
+    t.Cleanup(func(){ reset(); _ = connection.Close() })
+    reset()
+    ctx,cancel := context.WithTimeout(t.Context(),90*time.Second)
+    defer cancel()
+    if err := migration.NewRunner(dsn).Run(ctx); err != nil { t.Fatal(err) }
+    address,err := url.Parse(dsn)
+    if err != nil { t.Fatal(err) }
+    password,_ := address.User.Password()
+    cfg := &config.Config{PostgresHost:address.Hostname(),PostgresPort:address.Port(),PostgresUser:address.User.Username(),
+        PostgresPassword:password,PostgresDB:strings.TrimPrefix(address.Path,"/"),EncryptionKey:[]byte("0123456789abcdef0123456789abcdef")}
+    if cfg.PostgresPort == "" { cfg.PostgresPort = "5432" }
+    var engineID uint
+    for range 2 {
+        engine,err := createNotebookFixtureEngine(cfg)
+        if err != nil { t.Fatal(err) }
+        if engine.ID == 0 || (engineID != 0 && engine.ID != engineID) { t.Fatal("fixture lost stable real Engine identity") }
+        engineID = engine.ID
+        var stored models.Engine
+        if err := db.Table("system.engines").First(&stored,engine.ID).Error; err != nil { t.Fatal(err) }
+        if stored.EngineType != "jupyter" || !stored.IsBuiltin || stored.TenantID != nil { t.Fatal("fixture Engine declaration changed") }
+    }
+}
 ''')
-            result = subprocess.run(["go", "test", "./cmd/online-test-fixture", "-run", "^TestNotebookStoragePermissionBoundary$", "-count=1"],
+            pattern = "^TestNotebookStoragePermissionBoundary$"
+            postgres = os.environ.get("ADDP_NOTEBOOK_IDENTITY_POSTGRES") == "1"
+            if postgres:
+                pattern = "^TestNotebookStorage(PermissionBoundary|EngineFixtureAgainstPostgres)$"
+            result = subprocess.run(["go", "test", "./cmd/online-test-fixture", "-run", pattern, "-count=1", "-v"],
                                     cwd=checkout / "system/backend", env={**os.environ, "GOWORK": "off"}, capture_output=True, text=True, timeout=240)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            if postgres:
+                print("Notebook identity product base:", subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=checkout, text=True).strip())
+                self.assertIn("--- PASS: TestNotebookStorageEngineFixtureAgainstPostgres ", result.stdout)
+                self.assertNotIn("--- SKIP:", result.stdout)
+                print(result.stdout)
 
 
 if __name__ == "__main__":

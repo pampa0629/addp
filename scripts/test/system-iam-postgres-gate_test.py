@@ -41,6 +41,16 @@ class SystemIAMGateLockTest(unittest.TestCase):
             shutil.copyfile(Path(__file__).parents[1] / "utils/observability-env.sh", log_utility)
             (checkout / "scripts/utils/node-runtime.sh").write_text("exit 0\n")
             (checkout / "system/backend/go.mod").write_text("module github.com/addp/system\n")
+            (checkout / "scripts/test/develop-notebook-storage-online_test.py").write_text('''import os,unittest
+from pathlib import Path
+class NotebookFixtureCompileTest(unittest.TestCase):
+    def test_parent_owns_postgres_phase(self):
+        self.assertEqual(os.environ.get("ADDP_NOTEBOOK_IDENTITY_POSTGRES"), "1")
+        self.assertTrue(os.environ.get("ADDP_SYSTEM_POSTGRES_TEST_DSN"))
+        with Path(os.environ["TEST_GO_TRACE"]).open("a") as trace:
+            trace.write("notebook-identity-postgres-phase\\n")
+        self.assertNotEqual(os.environ.get("TEST_NOTEBOOK_FIXTURE_FAIL"), "1")
+''')
             subprocess.run(["git", "init", "-q"], cwd=checkout, check=True)
             subprocess.run(["git", "add", "."], cwd=checkout, check=True)
             subprocess.run(["git", "-c", "user.name=Gate Fixture", "-c", "user.email=gate@example.test", "commit", "-qm", "fixture"], cwd=checkout, check=True)
@@ -197,6 +207,14 @@ elif args[:2] != ["volume", "ls"]:
             self.assertIn(f'{path} -run {pattern}', (self.root / 'trace-1').read_text())
         result = self.run_gate(arguments=('--package', 'api', '--test', 'engine-management-reader'))
         self.assertEqual(result.returncode, 2)
+
+    def test_notebook_fixture_filter_runs_real_phase_and_propagates_failure(self):
+        result = self.run_gate(arguments=('--package', 'online-fixture', '--test', 'notebook-storage-fixture'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('notebook-identity-postgres-phase', (self.root / 'trace-1').read_text())
+        result = self.run_gate(arguments=('--package', 'online-fixture', '--test', 'notebook-storage-fixture'),
+                               TEST_NOTEBOOK_FIXTURE_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
 
     def test_browser_login_filter_selects_real_mfa_and_tenant_selection_tests(self):
         for package, pattern in [

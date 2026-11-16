@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=ADDP_SYSTEM_POSTGRES_TEST_DSN
-# ADDP_T2_INPUT_FILES=.github/actions/prepare-python-gate/ common-python/ engines/geopython-workflow/private_file_api.py engines/geopython-workflow/private_files.py engines/geopython-workflow/private_execution.py scripts/test/workflow-private-files-auth-probe.py scripts/test/workflow-private-files-auth-requirements.txt .node-version .github/actions/prepare-frontend-gate/ scripts/utils/node-runtime.sh scripts/test/system-iam-postgres-gate_test.py scripts/test/system-iam-browser-login.mjs console/frontend/e2e/online/local-identity-support.mjs workbench/frontend/src/ workbench/frontend/public/ workbench/frontend/index.html workbench/frontend/vite.config.js workbench/frontend/package.json workbench/frontend/package-lock.json workbench/frontend/e2e/fixtures/metricApplication.js portal/frontend/src/ portal/frontend/public/ portal/frontend/index.html portal/frontend/vite.config.js portal/frontend/package.json portal/frontend/package-lock.json common-frontend/basic/src/ common-frontend/chart/src/ common-frontend/map/src/ scripts/utils/deployment-inventory.py scripts/utils/metrics-project.py
+# ADDP_T2_INPUT_FILES=scripts/test/develop-notebook-identity.patch scripts/test/develop-notebook-storage-online_test.py scripts/test/develop-notebook-storage-online.py scripts/test/standard-document-storage-online.py scripts/utils/online-api.py .github/actions/prepare-python-gate/ common-python/ engines/geopython-workflow/private_file_api.py engines/geopython-workflow/private_files.py engines/geopython-workflow/private_execution.py scripts/test/workflow-private-files-auth-probe.py scripts/test/workflow-private-files-auth-requirements.txt .node-version .github/actions/prepare-frontend-gate/ scripts/utils/node-runtime.sh scripts/test/system-iam-postgres-gate_test.py scripts/test/system-iam-browser-login.mjs console/frontend/e2e/online/local-identity-support.mjs workbench/frontend/src/ workbench/frontend/public/ workbench/frontend/index.html workbench/frontend/vite.config.js workbench/frontend/package.json workbench/frontend/package-lock.json workbench/frontend/e2e/fixtures/metricApplication.js portal/frontend/src/ portal/frontend/public/ portal/frontend/index.html portal/frontend/vite.config.js portal/frontend/package.json portal/frontend/package-lock.json common-frontend/basic/src/ common-frontend/chart/src/ common-frontend/map/src/ scripts/utils/deployment-inventory.py scripts/utils/metrics-project.py
 # system-iam-postgres-gate.sh - Run destructive System IAM tests against a disposable PostgreSQL database.
 
 set -euo pipefail
@@ -47,6 +47,7 @@ while [ "$#" -gt 0 ]; do
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
             echo "Execution subject roles: --package iam --test execution-subject-roles" >&2
+            echo "Notebook engine fixture: --test notebook-storage-fixture" >&2
             echo "Minimum engine reader publication/assignment: --package migration|online-fixture --test engine-management-reader" >&2
             echo "Ontology rule delegation: --package iam --test ontology-rule-delegation" >&2
             echo "Cleanup execution authorization: --package iam --test cleanup-authorization" >&2
@@ -239,6 +240,16 @@ run_browser_login() {
     BROWSER_FIXTURE_ACTIVE=0
 }
 
+run_notebook_identity_fixture() {
+    # The parent gate owns the disposable IAM DB lock throughout the patched
+    # identity checkout. The unmodified product checkout is never patched.
+    (
+        cd "$ROOT_DIR"
+        ADDP_NOTEBOOK_IDENTITY_POSTGRES=1 ADDP_NOTEBOOK_IDENTITY_SOURCE_ROOT="$SOURCE_ROOT" python3 -m unittest \
+            scripts.test.develop-notebook-storage-online_test.NotebookFixtureCompileTest
+    )
+}
+
 if [ "$TEST_FILTER" = browser-login-e2e ]; then
     run_browser_login
     exit 0
@@ -253,6 +264,14 @@ if [ "$TEST_FILTER" = database-crash-recovery ] || { [ -z "$PACKAGE_FILTER" ] &&
 fi
 
 run_without_skips ./internal/testsupport '^TestResetDisposablePostgresForGate$'
+if [ "$TEST_FILTER" = notebook-storage-fixture ]; then
+    if [ -n "$PACKAGE_FILTER" ] && [ "$PACKAGE_FILTER" != online-fixture ]; then
+        echo "notebook-storage-fixture requires --package online-fixture or no package filter" >&2
+        exit 2
+    fi
+    run_notebook_identity_fixture
+    exit 0
+fi
 case "$PACKAGE_FILTER" in
     "") packages=(./internal/iam ./internal/iam/oauth ./internal/api ./internal/migration ./internal/engineaccess ./internal/repository ./cmd/online-test-fixture) ;;
     iam) packages=(./internal/iam) ;;
@@ -749,6 +768,10 @@ for package in "${packages[@]}"; do
         }
     fi
 done
+
+if [ -z "$TEST_FILTER" ] && { [ -z "$PACKAGE_FILTER" ] || [ "$PACKAGE_FILTER" = online-fixture ]; }; then
+    run_notebook_identity_fixture
+fi
 
 if [ -z "$PACKAGE_FILTER" ] && [ -z "$TEST_FILTER" ]; then
     run_browser_login
