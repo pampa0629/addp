@@ -101,6 +101,9 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if "scripts/test/frontend-browser-gate.mjs" in files:
         affected.update(file_consumers(repository, "*/frontend/package.json", "frontend-browser-gate.mjs"))
 
+    if any(path.startswith("scripts/build/") or path == "scripts/prod/release-images.py" for path in files):
+        affected.update(file_consumers(repository, "*/frontend/tests/*", "scripts/build/"))
+
     # GeoPython's Native tests import the same independent physical fixture and
     # scene definitions as Raster T4; changing only those must still run GDAL.
     if any(path in {

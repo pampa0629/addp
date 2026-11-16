@@ -129,7 +129,8 @@ test('translations have matching leaves and lifecycle/build/CI registration exis
     read(`${root}/scripts/dev/start.sh`),
     /FRONTEND_CONFIGS\+=\("ontology:\$\{ONTOLOGY_FE_PORT\}:ontology\/frontend"\)/
   )
-  for (const file of ['build-images.sh', 'push-images.sh', 'package.sh'])
+  // Manifest generation and offline export are exercised by test-compose-release.
+  for (const file of ['build-images.sh', 'push-images.sh'])
     assert.match(read(`${root}/scripts/build/${file}`), /ontology-frontend/)
   assert.match(
     read(`${root}/.github/workflows/platform-ci.yml`),

@@ -62,6 +62,17 @@ class ChangedGateTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_product_build_changes_select_frontend_registration_consumers(self):
+        path = self.repository / "sample/frontend/tests/registration.test.mjs"
+        path.parent.mkdir(parents=True)
+        path.write_text("read('scripts/build/build-images.sh')\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for changed in ("scripts/build/build-images.sh", "scripts/build/push-images.sh",
+                        "scripts/build/package.sh", "scripts/prod/release-images.py"):
+            with self.subTest(path=changed):
+                self.assertEqual(["sample"], MODULE.affected_modules(self.repository, [changed]))
+        self.assertEqual([], MODULE.affected_modules(self.repository, ["scripts/docs/构建打包与推送.md"]))
+
     def test_agent_model_definition_change_selects_producer_and_consumer(self) -> None:
         path = self.repository / "ontology/backend/go.mod"
         path.parent.mkdir(parents=True, exist_ok=True)

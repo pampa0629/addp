@@ -164,6 +164,73 @@ class ReleaseVerificationTest(unittest.TestCase):
         self.assertEqual((first / "manifest.json").read_text(), "first")
 
 
+class OntologyPackageCoverageTest(unittest.TestCase):
+    def setUp(self):
+        self.registration = release.load_module("ontology_release_registration", "scripts/ci/select-image-services.py")
+        self.registrations = self.registration.registered_services(ROOT)
+        env = release.release_environment(os.environ, "fixture", "registry.invalid", "linux/arm64")
+        # Resolve the real Compose definition, rather than inventing a service fixture.
+        self.frontend = release.compose_model("platform", env)["ontology-frontend"]
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def prepare(self, registrations):
+        models = {"infra": {}, "platform": {"ontology-frontend": self.frontend}, "runtimes": {}}
+        reference = "registry.invalid/addp-ontology-frontend@sha256:" + "a" * 64
+        with patch.object(release, "ROOT", self.root), \
+             patch.object(release, "native_platform", return_value="linux/arm64"), \
+             patch.object(release, "subprocess") as process, \
+             patch.object(release, "output", return_value="b" * 40), \
+             patch.object(release, "load_module", return_value=self.registration), \
+             patch.object(self.registration, "registered_services", return_value=registrations), \
+             patch.object(release, "compose_model", side_effect=lambda project, *_: models[project]), \
+             patch.object(release, "execute") as execute, \
+             patch.object(release, "publish_image", return_value=reference), \
+             patch.object(release, "inspect_image", return_value={"Id": IMAGE_ID}), \
+             patch.object(release, "prepare_metric_sources", return_value={}), \
+             patch.object(release, "input_fingerprints", return_value={}), \
+             patch.object(release, "verify"):
+            process.run.return_value.returncode = 0
+            release.prepare("fixture", "registry.invalid")
+            return json.loads((self.root / "dist/compose-release/manifest.json").read_text()), execute.call_args_list
+
+    def test_real_ontology_registration_reaches_manifest_and_offline_export(self):
+        manifest, commands = self.prepare(self.registrations)
+        reference = manifest["projects"]["platform"]["ontology-frontend"]
+        self.assertEqual(manifest["image_ids"][reference], IMAGE_ID)
+        self.assertIn("--services ontology-frontend", commands[1].args[0][-1])
+        self.assertIn(IMAGE_ID, (self.root / "dist/compose-release/platform-images.yml").read_text())
+
+        # Exercise the actual exporter without a Docker daemon or real image archives.
+        source = (ROOT / "scripts/build/package.sh").read_text()
+        exporter = source[source.index("export_images() {"):source.index("# Function: Create load-images.sh")]
+        executable = self.root / "bin/docker"
+        executable.parent.mkdir()
+        executable.write_text("#!/usr/bin/env python3\nimport json,os,sys\nfrom pathlib import Path\n"
+                              "Path(os.environ['EXPORT_TRACE']).write_text(json.dumps(sys.argv[1:]))\n"
+                              "Path(sys.argv[sys.argv.index('-o')+1]).write_bytes(b'image archive fixture')\n")
+        executable.chmod(0o755)
+        trace = self.root / "export.json"
+        subprocess.run(["bash", "-ec", exporter + "\nexport_images\n"],
+                       env=dict(os.environ, OUTPUT_DIR=str(self.root), EXPORT_TRACE=str(trace),
+                                PATH=str(executable.parent) + os.pathsep + os.environ["PATH"]),
+                       capture_output=True, text=True, check=True)
+        images = self.root / "images"
+        self.assertEqual(json.loads(trace.read_text()), ["save", "-o", str(images / "release.tar.partial"), IMAGE_ID])
+        self.assertEqual((images / "references.txt").read_text().splitlines(), [IMAGE_ID])
+        self.assertTrue((images / "release.tar").is_file())
+        self.assertFalse((images / "release.tar.partial").exists())
+
+    def test_missing_ontology_build_registration_rejects_release_preparation(self):
+        registrations = [(name, directory) for name, directory in self.registrations if name != "ontology-frontend"]
+        with self.assertRaisesRegex(ValueError, "Product image is not registered: ontology-frontend"):
+            self.prepare(registrations)
+        self.assertFalse((self.root / "dist/compose-release/manifest.json").exists())
+
+
 class ProductionServiceAddressTest(unittest.TestCase):
     def test_meta_processes_resolve_transfer_receipts_via_compose_service(self):
         result = subprocess.run([
