@@ -45,8 +45,7 @@ RUN set -eu; \
 COPY engines/model3d-workflow/docker/converter/vcpkg-overlays/ /opt/addp/vcpkg-overlays/
 ENV VCPKG_OVERLAY_PORTS=/opt/addp/vcpkg-overlays
 
-COPY engines/model3d-workflow/native-assets.json engines/model3d-workflow/native_setup.py /tmp/addp-model3d/
-ENV X_VCPKG_ASSET_SOURCES='clear;x-script,"/usr/bin/python3" "/tmp/addp-model3d/native_setup.py" fetch-asset "{url}" {sha512} "{dst}";x-block-origin'
+ENV X_VCPKG_ASSET_SOURCES=clear
 
 COPY engines/model3d-workflow/docker/converter/Cargo.lock /src/3dtiles/Cargo.lock
 WORKDIR /src/3dtiles
@@ -82,6 +81,7 @@ RUN mkdir -p /out \
   && cp -r target/release/gdal /out/gdal \
   && cp -r target/release/proj /out/proj \
   && cp -r target/release/osgPlugins-3.6.5 /out/osgPlugins-3.6.5
+COPY engines/model3d-workflow/native-assets.json engines/model3d-workflow/native_setup.py /tmp/addp-model3d/
 RUN case "$TARGETARCH" in \
       amd64) ifc_platform=linux64 ;; \
       arm64) ifc_platform=linuxarm64 ;; \

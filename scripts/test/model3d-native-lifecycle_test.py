@@ -1,3 +1,5 @@
+import importlib.util
+import io
 import json
 import os
 import socket
@@ -6,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -116,6 +119,50 @@ addp_launch_model3d_workflow
         self.assertFalse(pidfile.exists())
 
 
+class Model3DBuildToolIsolationTests(unittest.TestCase):
+    def test_user_site_launcher_resolves_native_cmake_before_isolated_version_check(self):
+        spec = importlib.util.spec_from_file_location('model3d_build_tools', ROOT / 'engines/model3d-workflow/native_setup.py')
+        native = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(native)
+        with tempfile.TemporaryDirectory(prefix='addp-model3d-cmake-') as directory:
+            root = Path(directory)
+            user_base = root / 'user-base'
+            environment = {**os.environ, 'PYTHONUSERBASE': str(user_base), 'PYTHONNOUSERSITE': '1'}
+            discovery = {key: value for key, value in environment.items() if key != 'PYTHONNOUSERSITE'}
+            user_site = Path(subprocess.check_output([sys.executable, '-c', 'import site; print(site.getusersitepackages())'],
+                                                    env=discovery, text=True).strip())
+            user_site.mkdir(parents=True)
+            program = root / 'native-cmake'
+            version_calls = root / 'versions'
+            program.write_text('#!/bin/sh\n[ "$1" = --version ] || exit 2\nprintf "%s" "$PYTHONNOUSERSITE" > "' + str(version_calls) + '"\necho "cmake version 4.4.0"\n')
+            program.chmod(0o755)
+            (user_site / 'addp_cmake_fixture.py').write_text('import sys\nprint(' + repr(str(program)) + ', file=sys.stderr)\n')
+            launcher = root / 'cmake'
+            launcher.write_text('#!' + sys.executable + '\nimport addp_cmake_fixture\n')
+            launcher.chmod(0o755)
+            failed = subprocess.run([str(launcher), '-P', 'probe'], env=environment, capture_output=True, text=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn('ModuleNotFoundError', failed.stderr)
+            tools = {}
+            for name in ('cargo', 'rustc', 'conda'):
+                tools[name] = root / name
+                tools[name].write_text('#!/bin/sh\necho "rustc 1.92.0"\n')
+                tools[name].chmod(0o755)
+            tools['cmake'] = launcher
+            actual_run = subprocess.run
+            def run(command, **kwargs):
+                if command[0] == 'xcode-select':
+                    raise RuntimeError('tool-resolution-complete')
+                return actual_run(command, **kwargs)
+            with patch.dict(os.environ, environment, clear=True), \
+                 patch.object(native.shutil, 'which', side_effect=lambda name: str(tools[name])), \
+                 patch.object(native.subprocess, 'run', side_effect=run):
+                with self.assertRaisesRegex(RuntimeError, 'tool-resolution-complete'):
+                    native.build(root, {'rust': '1.92.0', 'cmake': '4.4.0'}, root / 'private', io.BytesIO())
+                self.assertEqual(os.environ['PYTHONNOUSERSITE'], '1')
+            self.assertEqual(version_calls.read_text(), '1')
+
+
 class Model3DSKPRepairLifecycleTests(unittest.TestCase):
     shell = Model3DNativeLifecycleTests.shell
     def setUp(self):
@@ -125,6 +172,7 @@ class Model3DSKPRepairLifecycleTests(unittest.TestCase):
         (self.runtime / 'skp_dependency.py').write_text('''
 import os, sys
 from pathlib import Path
+from unittest.mock import patch
 operation = sys.argv[1]
 if operation == 'prepare' and os.environ.get('ADDP_TEST_LOCK') != '1':
     raise RuntimeError('repair preparation requires dependency lock')

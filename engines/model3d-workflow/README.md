@@ -80,6 +80,8 @@ DAE 的 XML 解析器直接拒绝 DTD 和实体声明，UTF-8 / UTF-16 下执行
 
 所有单体 GLB 快显发布前还校验场景与节点：默认场景（未声明时为第一个场景）必须能引用到网格；节点索引、父子层级及变换必须有效。循环、多父节点、空白场景、非有限变换和非法四元数不能发布为成功。合法单位缩放、上轴转换、平移及负缩放保持原样，沿用转换器与统一 GLB 发布路线。
 
+原生准备先从宿主 PATH 的 CMake 启动器解析 `CMAKE_COMMAND`，只在该解析子进程中移除继承的 `PYTHONNOUSERSITE`，以支持通过 pip 用户目录安装的启动器。随后只调用已绑定的原生 CMake 程序，在隔离环境中核对固定版本并构建；构建、Runtime 以及父进程继续禁用用户 site-packages。`make test-dev-lifecycle` 以真实 Python 用户包启动器覆盖此顺序，不修改活动环境或全局包。
+
 ## Linux amd64 / arm64 容器
 
 本节仅用于 Linux 产品镜像构建和 Hosted 产品验收；本机开发使用前述私有原生工具包。
@@ -92,7 +94,9 @@ vcpkg baseline 保持上游固定版本。tinygltf `2.9.7` 通过其 overlay por
 
 Linux 产品只链接和打包 Release 库。Converter 在固定 vcpkg 的 `x64-linux` 与 `arm64-linux` triplet 中显式设置 `VCPKG_BUILD_TYPE=release`，避免默认额外编译未使用的 Debug ports；保留原架构、静态链接、全部依赖版本和转换 smoke。此设置采用 [vcpkg 官方 triplet 契约](https://learn.microsoft.com/en-us/vcpkg/users/triplets#vcpkg_build_type)，不改变 macOS 原生工具包准备方式。`make test-dev-lifecycle` 执行实际 Dockerfile 配置片段并用 CMake 核对两种架构、链接策略和缺失 triplet 拒绝；完整新 Linux 镜像及 smoke 仍由已有 Product binary build 验证，不能以确定性测试代替，也不保证一次冷构建必然落在 Hosted 预算内。
 
-Linux vcpkg 资产下载与 macOS 原生准备共用 `native_setup.py fetch-asset`，通过 vcpkg 的 asset source script 接口调用并阻止 origin 回退。下载器校验原 SHA-512／SHA-256；TLS 断连、连接错误和超时最多尝试三次，间隔 1、2 秒并记录传输重试；证书校验错误、HTTP 错误及内容 hash 不符立即失败。Linux 构建缓存 vcpkg 下载目录，复用时仍按原内容 hash 校验；缓存不改变依赖版本、目标架构或 smoke 门禁。
+Linux 与 macOS 的 vcpkg 资产统一由固定版本 vcpkg 的原生下载器取得，`X_VCPKG_ASSET_SOURCES=clear` 排除外部资产缓存脚本，保留 port 声明的完整 URL／官方镜像列表及原 SHA-512 校验。不能用只接收首个 URL 的 `x-script` 下载器配合 `x-block-origin` 代替 origin 下载：SourceForge 首地址返回 403 时会截断原有镜像处理。其语义见 [vcpkg 官方资产缓存契约](https://learn.microsoft.com/en-us/vcpkg/users/assetcaching)。Linux 构建缓存 vcpkg 下载目录，复用仍由 vcpkg 校验内容；不改变依赖版本、目标架构或 smoke 门禁。
+
+`native_setup.py` 的清单下载器只负责清单内的 Conda、IfcConvert 等直接声明资产，校验原 SHA-512／SHA-256。TLS 断连、连接错误和超时最多尝试三次，间隔 1、2 秒并记录传输重试；证书校验错误、HTTP 错误及内容 hash 不符立即失败。vcpkg 不经过该下载器。
 
 固定 vcpkg baseline 中，libgta 1.0.8 仍指向已在部署节点连续超时的 Savannah 下载地址。同一 overlay 目录中的 libgta port 将下载源固定为[作者当前官方发布站点](https://marlam.de/gta/download/)的 `https://marlam.de/gta/releases/libgta-1.0.8.tar.xz`；保留 baseline 的版本、port-version、依赖、文件名、原 SHA-512 和构建选项，不增加备用下载分支。不能原地改写 baseline 工作目录：manifest 版本解析会从 Git 版本库取得 port，忽略该改写。官方归档为 315332 字节，已核验与原 SHA-512 一致。该 overlay 由 Linux Converter 和 macOS 原生准备入口共用，并纳入原生工具包指纹；后续准备生成新的指纹目录，仍可复用已校验的二进制缓存，不修改活动工具包。`make test-dev-lifecycle` 执行实际 overlay port 并核对下载参数；正式 Linux 镜像构建与 smoke 另行验证。
 

@@ -71,14 +71,22 @@ class Model3DAssetDownloadTests(unittest.TestCase):
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
-    def test_linux_vcpkg_uses_shared_verified_downloader_and_cache(self):
+    def test_vcpkg_preserves_its_port_url_list_and_verified_download_cache(self):
         source = (ROOT / 'engines/model3d-workflow/docker/converter/Dockerfile').read_text()
-        copy = 'COPY engines/model3d-workflow/native-assets.json engines/model3d-workflow/native_setup.py /tmp/addp-model3d/'
-        self.assertEqual(source.count(copy), 1)
-        self.assertLess(source.index(copy), source.index('cargo build --locked --release'))
-        self.assertIn('ENV X_VCPKG_ASSET_SOURCES=', source)
-        self.assertIn('fetch-asset "{url}" {sha512} "{dst}";x-block-origin', source)
+        self.assertIn('ENV X_VCPKG_ASSET_SOURCES=clear', source)
+        self.assertNotIn('x-script', source)
+        self.assertNotIn('x-block-origin', source)
         self.assertIn('--mount=type=cache,target=/opt/vcpkg/downloads', source)
+        # A script cache receives only the first URL, so it cannot replace the
+        # port's complete, hash-pinned SourceForge mirror list.
+        import ast
+        tree = ast.parse((ROOT / 'engines/model3d-workflow/native_setup.py').read_text())
+        build = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'build')
+        asset_sources = [keyword.value for node in ast.walk(build) if isinstance(node, ast.Call)
+                         for keyword in node.keywords if keyword.arg == 'X_VCPKG_ASSET_SOURCES']
+        self.assertEqual(len(asset_sources), 1)
+        self.assertEqual(ast.literal_eval(asset_sources[0]), 'clear')
+        self.assertNotIn('fetch-asset', (ROOT / 'engines/model3d-workflow/native_setup.py').read_text())
 
     def test_libgta_overlay_preserves_version_dependencies_and_verified_archive(self):
         converter = ROOT / 'engines/model3d-workflow/docker/converter'

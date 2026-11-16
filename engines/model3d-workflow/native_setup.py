@@ -160,19 +160,21 @@ def build(root, manifest, prefix, log):
     for name, path in commands.items():
         if not path:
             raise RuntimeError("Model3D native build requires " + name)
-    for name, expected in (("rustc", manifest["rust"]), ("cmake", manifest["cmake"])):
-        actual = subprocess.check_output([commands[name], "--version"], text=True).splitlines()[0].split()[1 if name == "rustc" else 2]
-        if actual != expected:
-            raise RuntimeError(f"Model3D native build requires {name} {expected}, found {actual}")
-    # A pip-installed launcher needs user site-packages; bind its native program
-    # before entering the isolated build environment instead of enabling them.
+    # Resolve the host launcher before isolating child build tools. The caller
+    # may already disable user packages for Runtime; only this probe needs them.
+    launcher_env = dict(os.environ)
+    launcher_env.pop("PYTHONNOUSERSITE", None)
     cmake_probe = build_dir / "cmake-program.cmake"
     cmake_probe.write_text('message("${CMAKE_COMMAND}")\n')
     cmake_program = subprocess.run([commands["cmake"], "-P", str(cmake_probe)], check=True,
-                                   capture_output=True, text=True).stderr.strip()
+                                   env=launcher_env, capture_output=True, text=True).stderr.strip()
     if not Path(cmake_program).is_absolute() or not os.access(cmake_program, os.X_OK):
         raise RuntimeError("CMake did not report an executable native program")
     commands["cmake"] = cmake_program
+    for name, expected in (("rustc", manifest["rust"]), ("cmake", manifest["cmake"])):
+        actual = subprocess.check_output([commands[name], "--version"], env=env, text=True).splitlines()[0].split()[1 if name == "rustc" else 2]
+        if actual != expected:
+            raise RuntimeError(f"Model3D native build requires {name} {expected}, found {actual}")
     env.update(CMAKE=cmake_program,
                PATH=str(Path(cmake_program).parent) + os.pathsep + env["PATH"])
     subprocess.run(["xcode-select", "-p"], check=True, stdout=log, stderr=log)
@@ -223,7 +225,7 @@ def build(root, manifest, prefix, log):
     env.update(VCPKG_ROOT=str(vcpkg), VCPKG_OVERLAY_PORTS=str(CONVERTER / "vcpkg-overlays"),
                VCPKG_DOWNLOADS=str(cache / "vcpkg-downloads"),
                VCPKG_BINARY_SOURCES="clear;files," + str(cache / "vcpkg-binary") + ",readwrite",
-               X_VCPKG_ASSET_SOURCES='clear;x-script,"' + sys.executable + '" "' + str(Path(__file__)) + '" fetch-asset "{url}" {sha512} "{dst}";x-block-origin',
+               X_VCPKG_ASSET_SOURCES="clear",
                VCPKG_MAX_CONCURRENCY="4", CARGO_BUILD_JOBS="4", CARGO_HOME=str(cache / "cargo"),
                CARGO_TARGET_DIR=str(build_dir / "target"), VCPKG_HAS_BEEN_INSTALLED="1", CMAKE_GENERATOR="Unix Makefiles")
     for name in ("vcpkg-downloads", "vcpkg-binary", "cargo"):
@@ -340,11 +342,6 @@ END-ISO-10303-21;
 
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] == "fetch-asset":
-        url, checksum, target = sys.argv[2:]
-        downloaded = download({"url": url, "sha512": checksum}, Path(target).parent)
-        shutil.copyfile(downloaded, target)
-        return
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("prepare", "current", "environment", "verify", "install-ifc"))
     parser.add_argument("root", type=Path)
