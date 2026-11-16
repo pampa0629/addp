@@ -25,6 +25,38 @@ SPEC.loader.exec_module(inventory)
 CID = 'a' * 64
 
 
+class BusinessPostgresReadinessTest(unittest.TestCase):
+    def test_initialization_socket_does_not_release_startup_barrier(self):
+        source = (ROOT / 'business/scripts/start.sh').read_text()
+        start = source.index('if [ "$ENABLE_PG" = true ]; then\n    PG_READY=false')
+        end = source.index('if [ "$ENABLE_ORACLE" = true ]; then\n    ORACLE_READY=false', start)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = r'''set -eu
+ENABLE_PG=true
+GREEN= RED= NC=
+sleep() { :; }
+docker() {
+  echo "$*" >> "$PROBES"
+  case "$*" in
+    *"-h 127.0.0.1"*) [ "$(wc -l < "$PROBES")" -ge 3 ] ;;
+    *) return 0 ;;
+  esac
+}
+''' + source[start:end]
+            result = subprocess.run(['bash', '-c', script], env=dict(os.environ, PROBES=str(root/'probes')), capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len((root/'probes').read_text().splitlines()), 3)
+
+    def test_healthcheck_rejects_socket_only_temporary_server(self):
+        model = json.loads(subprocess.check_output(['docker', 'compose', '--env-file', 'business/.env.example', '-f', 'business/docker-compose.yml', 'config', '--format', 'json'], cwd=ROOT))
+        command = model['services']['postgres']['healthcheck']['test']
+        self.assertEqual(command[0], 'CMD-SHELL')
+        script = 'pg_isready() { case "$*" in *"-h 127.0.0.1"*) return 1;; *) return 0;; esac; }; '+command[1]
+        result = subprocess.run(['bash', '-c', script], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+
+
 class StartupResultsTest(unittest.TestCase):
     def test_every_selected_backend_reaches_the_health_barrier(self):
         source = (ROOT / 'scripts/dev/start.sh').read_text()

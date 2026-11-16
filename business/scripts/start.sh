@@ -824,7 +824,7 @@ echo -e "${YELLOW}⏳ 等待服务就绪...${NC}"
 if [ "$ENABLE_PG" = true ]; then
     PG_READY=false
     for i in {1..30}; do
-        if docker exec business-postgres pg_isready -U business >/dev/null 2>&1; then
+        if docker exec business-postgres pg_isready -h 127.0.0.1 -U business >/dev/null 2>&1; then
             echo -e "${GREEN}✓ PostgreSQL 就绪${NC}"
             PG_READY=true
             break
