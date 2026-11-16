@@ -67,6 +67,30 @@ func TestListSessionEngineDescriptorsRejectsExpiredCapability(t *testing.T) {
 	}
 }
 
+func TestNotebookCatalogCapabilityProbeRequiresBoundedRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := &NotebookHandler{notebookSessionService: &service.NotebookSessionService{}}
+	router := gin.New()
+	router.POST("/notebook-kernel-sessions/:session_id/catalog/children", handler.ListSessionEngineCatalogChildren)
+	for _, test := range []struct {
+		body   string
+		status int
+		code   string
+	}{
+		{`{}`, http.StatusBadRequest, "engine_catalog_request_invalid"},
+		{`{"engine_id":1,"path":{"version":"catalog.path/v1","engine_id":1,"segments":[{"term":"root","kind":"root","name":""}]},"options":{"limit":1}}`, http.StatusUnauthorized, "notebook_session_unavailable"},
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/notebook-kernel-sessions/session-1/catalog/children", strings.NewReader(test.body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Authorization", "Bearer addp_nkc_"+strings.Repeat("A", 43))
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != test.status || !strings.Contains(response.Body.String(), test.code) {
+			t.Fatalf("body=%s status=%d response=%s", test.body, response.Code, response.Body.String())
+		}
+	}
+}
+
 func requestSessionEngineDescriptors(t *testing.T, handler *NotebookHandler, authorization string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

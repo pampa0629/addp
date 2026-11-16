@@ -267,7 +267,7 @@ def main():
             original = owner.request("GET", path + "/download", (200,), raw=True)
             if initial is not None:
                 check_bytes(original, initial, "uploaded HTTP")
-            check_bytes(objects.object_bytes(BUCKET, key), original, "initial physical")
+            initial_physical = check_bytes(objects.object_bytes(BUCKET, key), original, "initial physical")
             sentinel = b"default-bucket-sentinel:" + str(task_id).encode()
             physical_put("develop", key, sentinel)
             check_bytes(peer.request("GET", path + "/download", (200,), raw=True), original, "same tenant shared download")
@@ -285,9 +285,17 @@ def main():
             require(proof["pid"] in identity["processes"] and proof["cwd"] == identity["workspace"], "Kernel process not in owned workspace")
             saved = Path(identity["workspace"], Path(key).name).read_bytes()
             require(b"Notebook storage acceptance" in saved and saved != original, "HTTP edit was not saved")
+            observation = {"task_id": task_id, "session_id": session["id"], "locator": locator, "key": key,
+                           "initial_physical": initial_physical, "kernel": proof, "session_processes": identity}
+            report["observations"].append(observation)
             capability_path = ROOT + "/notebook-kernel-sessions/" + session["id"] + "/engine-descriptors"
             owner.request("GET", capability_path, (200,), headers={"Authorization": "Bearer " + capability})
-            owner.request("POST", capability_path.removesuffix("engine-descriptors") + "catalog/children", (401,), {}, headers={"Authorization": "Bearer addp_nkc_" + "A" * 43})
+            owner.request("POST", capability_path.removesuffix("engine-descriptors") + "catalog/children", (401,), {
+                "engine_id": engine_id,
+                "path": {"version": "catalog.path/v1", "engine_id": engine_id,
+                         "segments": [{"term": "root", "kind": "root", "name": ""}]},
+                "options": {"limit": 1},
+            }, headers={"Authorization": "Bearer addp_nkc_" + "A" * 43})
             old_cookie = owner.cookie_header(proxy)
             owner.request("DELETE", path + "/sessions/" + session["id"], (204,))
             sessions.remove((owner, task_id, session["id"]))
@@ -296,13 +304,11 @@ def main():
             closed_websocket(owner, session["id"], "closed-kernel", old_cookie)
             owner.request("GET", capability_path, (401,), headers={"Authorization": "Bearer " + capability})
             check_bytes(owner.request("GET", path + "/download", (200,), raw=True), saved, "closed HTTP")
-            observation = {"task_id": task_id, "session_id": session["id"], "locator": locator, "key": key,
-                           **check_bytes(objects.object_bytes(BUCKET, key), saved, "closed physical"),
-                           "kernel": proof, "session_processes": identity, "explicit_cleanup": "passed"}
+            observation.update({**check_bytes(objects.object_bytes(BUCKET, key), saved, "closed physical"),
+                                "explicit_cleanup": "passed"})
             check_bytes(objects.object_bytes("develop", key), sentinel, "default bucket sentinel")
             check_bytes(objects.object_bytes(BUCKET, foreign_key), foreign_bytes, "foreign retained object")
             retained[key] = saved
-            report["observations"].append(observation)
         # TTL is natural: no product clock, in-memory expiry, or PG timestamps are edited.
         task_id = uploaded["id"]
         path = ROOT + f"/notebooks/{task_id}"
