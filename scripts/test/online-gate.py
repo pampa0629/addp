@@ -76,7 +76,8 @@ SUITES: Mapping[str, Suite] = {
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("standard", "STANDARD_URL")),
     ),
     "develop-notebook-storage": Suite(
-        command=("bash", "-c", 'exec "$NOTEBOOK_STORAGE_OBSERVER_PYTHON" scripts/test/develop-notebook-storage-online.py'),
+        command=("bash", "-c", 'exec "$NOTEBOOK_STORAGE_OBSERVER_PYTHON" "$1"', "_",
+                 str(Path(__file__).with_name("develop-notebook-storage-online.py").resolve())),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("develop", "DEVELOP_URL")),
     ),
     "meta-scan-claim": Suite(
@@ -1392,10 +1393,16 @@ def run_online(
         available = ", ".join(sorted(suites)) or "none"
         raise OnlineGateError(f"unknown ONLINE_SUITE {suite_name!r}; registered suites: {available}")
 
-    if suite_name in {"meta-scan-claim", "standard-document-storage", "infra-object-storage"}:
+    pinned_products = {
+        "meta-scan-claim": "meta-scan-product",
+        "standard-document-storage": "standard-http-product",
+        "infra-object-storage": "infra-object-product",
+        "develop-notebook-storage": "notebook-http-product",
+    }
+    if suite_name in pinned_products:
         # The harness lives at the dispatch SHA. Preflight and all product
         # processes must instead identify the clean, pinned product checkout.
-        repository = Path(environment["RUNNER_TEMP"]) / {"meta-scan-claim": "meta-scan-product", "standard-document-storage": "standard-http-product", "infra-object-storage": "infra-object-product"}[suite_name]
+        repository = Path(environment["RUNNER_TEMP"]) / pinned_products[suite_name]
     profile = execution_profile(suite_name, environment)
     if suite_name == 'highgo-consumer-flow':
         highgo_case = environment.get('ADDP_ONLINE_HIGHGO_CASE', 'business')

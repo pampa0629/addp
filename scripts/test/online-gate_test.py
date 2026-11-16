@@ -229,6 +229,27 @@ class OnlineGateTest(unittest.TestCase):
         self.assertNotIn("addp_at_", persisted)
         self.assertNotIn("never-persist-this-secret", persisted)
 
+    def test_notebook_preflight_identifies_product_and_observer_identifies_harness(self):
+        product = self.root / "notebook-http-product"
+        product.mkdir()
+        self.environment["RUNNER_TEMP"] = str(self.root)
+        suite = ONLINE_GATE.SUITES["develop-notebook-storage"]
+        self.environment.update(GATEWAY_URL="http://127.0.0.1:8000", DEVELOP_URL="http://127.0.0.1:8085")
+        with patch.object(ONLINE_GATE, "run_stage", side_effect=(
+            ({"schema_version": "addp.online-preflight/v1", "git_commit": "product-sha"}, 1),
+            ({"schema_version": "addp.online-suite/v1", "result": "passed", "residual_resources": 0}, 1),
+        )) as stage:
+            report = ONLINE_GATE.run_online("develop-notebook-storage", self.repository, self.environment,
+                                            lock_root=self.root / "locks")
+        preflight, observer = stage.call_args_list
+        self.assertEqual(preflight.kwargs["repository"], product)
+        self.assertEqual(preflight.args[1][preflight.args[1].index("--repository") + 1], str(product))
+        self.assertEqual(observer.kwargs["repository"], product)
+        self.assertEqual(observer.args[1], suite.command)
+        self.assertEqual(Path(suite.command[-1]), SCRIPT.with_name("develop-notebook-storage-online.py").resolve())
+        self.assertIn('"$NOTEBOOK_STORAGE_OBSERVER_PYTHON"', suite.command[2])
+        self.assertEqual(report["preflight"]["git_commit"], "product-sha")
+
     def test_registers_only_executable_online_suites(self):
         self.assertEqual(
             set(ONLINE_GATE.SUITES),

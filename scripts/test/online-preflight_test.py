@@ -93,6 +93,21 @@ class OnlinePreflightTest(unittest.TestCase):
         self.assertEqual(report["network_boundary"], "loopback-only")
         self.assertEqual(report["services"]["system"]["git_commit"], HealthHandler.commit)
 
+    @patch.dict(os.environ, {
+        "ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42",
+        "ADDP_ONLINE_TEST_RUN_ID": "run-42", "POSTGRES_DB": "addp_online",
+    }, clear=True)
+    def test_product_health_rejects_harness_commit_and_accepts_product_commit(self):
+        # A distinct, clean harness commit cannot substitute for the product build.
+        (self.repository / "tracked").write_text("harness revision\n")
+        subprocess.run(["git", "-C", str(self.repository), "commit", "-qam", "harness"], check=True)
+        with self.assertRaisesRegex(ONLINE_PREFLIGHT.PreflightError, "git_commit"):
+            ONLINE_PREFLIGHT.run_preflight(self.args())
+        subprocess.run(["git", "-C", str(self.repository), "checkout", "--detach", HealthHandler.commit],
+                       check=True, capture_output=True)
+        report = ONLINE_PREFLIGHT.run_preflight(self.args())
+        self.assertEqual(report["services"]["system"]["git_commit"], HealthHandler.commit)
+
     def test_rejects_non_loopback_service(self):
         with self.assertRaisesRegex(ONLINE_PREFLIGHT.PreflightError, "loopback"):
             ONLINE_PREFLIGHT.parse_service("system=https://example.com")
