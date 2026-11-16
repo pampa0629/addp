@@ -719,9 +719,19 @@ Develop公开投影不返回 `tenant_id`：成果候选登记前由同一快照�
 
 ### 重分类与整数分组聚合
 
-重分类沿用原 suite，在多来源计算后追加 `reclassify-nodata` 和 `reclassify-keep`：经正式源 ResourceLocator 加载确定性双波段 TIFF，选择第二数据波段，分别验证省略 `unmatched` 时的默认 NoData 和显式保留原值。规则必须涵盖精确值、合法零类别、左闭右开区间、未命中间隙和无界端点。独立物理公式验证完整输出像元、NaN、mask 与 nearest overview，且源 NoData 不能因 `keep` 恢复有效；仍核对原全部成果的物理字节和对象集合。两个成果继续采用严格三方大小相等，自动 Meta scan、资源级 derive、Monitor 和同一普通 User 的 Console 全部验证。增加两份浏览器证据，总数为 31，最终保留 22 份 COG；不调整现有 1740 秒 suite 预算或单请求超时，不放宽原 29 份场景的断言。
+同一suite继多来源计算执行，复用[成果共同核验](#栅格主场景计算矩阵)：源字节／先前成果哈希及精确对象集合不变，三方严格正整数大小相等；逐项核自动Meta scan、资源级derive、Monitor和同一普通User的Console。1740秒总预算及各单项／单请求超时、先前场景断言均不变。
 
-整数分组聚合继续追加到原 suite 的重分类场景之后：`aggregate-mean` 和 `aggregate-sum` 选择源第二波段，以 `factors=[3,5]` 生成 86×52 单波段 COG，并显式构建 43×26 nearest 金字塔。独立公式验证全部像元、源 NoData 的有效计数，以及右侧、底侧和右下角不足整块的分组；均值仅允许 Float64 运算所需的局部容差，旧场景和求和仍保持原精确断言。继续逐次核对先前 22/23 份成果哈希、全部源字节、精确对象集合、自动 Meta scan、资源级 derive、Monitor 和同一普通 User 的 Console；严格保持三方正大小相等。浏览器总数增至 33，最终 24 份 COG，1740 秒总预算和各单项超时不变。
+#### 重分类规则与缺值
+
+正式源ResourceLocator加载确定性双波段TIFF，选择第二数据波段：`reclassify-nodata`省略 `unmatched`，核默认NoData；`reclassify-keep`显式保留未命中原值。规则覆盖精确值、合法零类别、左闭右开区间、未命中间隙及无界端点。独立公式核全部像元、NaN、mask和nearest overview；源NoData不能因 `keep` 恢复有效。
+
+#### 整数分组与精度
+
+`aggregate-mean`／`aggregate-sum`接在重分类之后，选源第二波段，`factors=[3,5]`生成86×52单波段COG，显式构建43×26 nearest金字塔。独立公式核所有像元、源NoData有效计数，以及右侧／底侧／右下角不足整块的分组；均值仅允许Float64运算所需局部容差，求和和旧场景仍精确比较。
+
+#### 扩展阶段计数与验收边界
+
+重分类早期在原29份浏览器证据上新增两份，累计31份、22份COG；mean／sum原轮逐次核先前22/23份成果，累计33份浏览器证据、24份COG。以上仅为阶段清单；当前full的71项观察及后续聚合范围查[主场景要求与固定结果](#部署与主场景)，不由旧计数推定全量通过。
 
 ### 外部裁剪、轮廓与局部更新
 
