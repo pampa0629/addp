@@ -10,7 +10,7 @@
 
 现行 suite／case、身份、断言与清理由[Manager 与空间成果正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md)和各 Host Gate 维护；本页保留选定子场景摘要、操作入口及历史证据。独立 case、领域报告、完整 suite 和容量专项分别认定，子场景通过不代表完整 suite 或其他 case 通过。
 
-专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow) · [邻域统计与 IDW](../../docs/spec/testing/scenarios/邻域统计与IDW.md) · [分区统计](../../docs/spec/testing/scenarios/分区统计.md) · [点线密度](../../docs/spec/testing/scenarios/点线密度.md)。
+专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow) · [邻域统计与 IDW](../../docs/spec/testing/scenarios/邻域统计与IDW.md) · [分区统计](../../docs/spec/testing/scenarios/分区统计.md) · [点线密度](../../docs/spec/testing/scenarios/点线密度.md) · [DEM 曲率与地形指标](../../docs/spec/testing/scenarios/DEM曲率与地形指标.md)。
 
 [Manager 固定版本](#manager-固定版本证据)与[栅格固定版本](#固定版本证据)只覆盖所列源码、运行尝试和当次清理；后续已审计结果见[栅格验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)。容量矩阵是通过条件，早期未注明源码的准备记录不能作为当前版本结果。Runner、Native、Linux、Hosted 和真实页面证据分别记账，未运行、失败、跳过或未覆盖项不计为通过；本次文档整理未运行或刷新任何验收。
 
