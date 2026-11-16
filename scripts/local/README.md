@@ -58,7 +58,7 @@ bash scripts/local/start.sh
 | Docker 与镜像预检 | `docker info` 不可用或[静态镜像清单](#2-构建镜像)缺项即退出，尚不启动 Infra |
 | Infra | 调用 `scripts/infra/up.sh`；返回非零即退出，不进入平台启动。准备范围与设施检查见[Infra 生命周期指南](../infra/docs/生命周期脚本.md#upsh) |
 | 平台 | 对 `docker-compose.yml` 执行 `up -d --wait --wait-timeout 180 --remove-orphans`；成功后才进入 Runtime 阶段 |
-| 内置 Runtime | 对 `docker-compose.runtimes.yml` 执行同样的 Compose 等待，每个项目各使用 180 秒等待预算；失败即退出 |
+| 内置 Runtime | 对 `docker-compose.runtimes.yml` 显式启用全部 profiles 后执行同样的 Compose 等待，保持包含 SuperMap 的完整本地容器范围；每个项目各使用 180 秒等待预算，失败即退出。生产发布的 `ADDP_SUPERMAP_WORKFLOW_ENABLED` 不裁剪此入口 |
 | 输出结果 | 从实际 Nginx 映射和公开 origin 配置生成地址，再列出平台与 Runtime 状态；不额外请求展示地址 |
 
 Compose 等待依据各服务的 `healthcheck`：配置了探针的服务等待 healthy，未配置探针的服务只等待 running。实际探针见[平台 Compose](../../docker-compose.yml)与[Runtime Compose](../../docker-compose.runtimes.yml)；该结果不证明浏览器入口、认证、业务查询或任务执行可用。
@@ -79,7 +79,7 @@ bash scripts/local/stop.sh --all
 
 `--all` 通过 `scripts/infra/down.sh` 停止基础设施；两种方式都保留数据卷，Business 由所属入口管理。卷与恢复边界统一见[数据持久化](#数据持久化)。
 
-Local 入口按两份 Compose 配置执行 `down`。操作前须核对 Compose project、service 和 `com.docker.compose.project.working_dir`，不能只凭容器名称或端口判断归属；规则与 Infra 停止入口的工作区核验范围见[项目隔离规范](../infra/docs/部署与项目隔离.md#执行顺序)及[容器归属](../infra/docs/部署与项目隔离.md#容器命名规范)。
+Local 入口按两份 Compose 配置执行 `down`，Runtime 显式覆盖全部 profiles，避免遗漏已经运行的可选 Runtime。操作前须核对 Compose project、service 和 `com.docker.compose.project.working_dir`，不能只凭容器名称或端口判断归属；规则与 Infra 停止入口的工作区核验范围见[项目隔离规范](../infra/docs/部署与项目隔离.md#执行顺序)及[容器归属](../infra/docs/部署与项目隔离.md#容器命名规范)。
 
 各阶段顺序执行，途中失败时前序服务可能已经停止；按 Runtime、平台及所选 Infra 的实际状态复核结果，未执行或失败的阶段不能计为停止完成。
 

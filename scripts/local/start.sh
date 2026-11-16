@@ -150,7 +150,7 @@ echo -e "${BLUE}🚀 Starting Application Layer${NC}"
 echo -e "${BLUE}========================================${NC}"
 python3 scripts/prod/publish-module-declarations.py --bootstrap-compose --compose-file docker-compose.yml
 docker compose -f docker-compose.yml up -d --wait --wait-timeout 180 --remove-orphans
-docker compose -f docker-compose.runtimes.yml up -d --wait --wait-timeout 180 --remove-orphans
+docker compose -f docker-compose.runtimes.yml --profile '*' up -d --wait --wait-timeout 180 --remove-orphans
 
 published_port="$(docker compose -f docker-compose.yml port nginx 80 | sed 's/.*://')"
 public_origin="${ADDP_PUBLIC_ORIGIN:-$(sed -n 's/^ADDP_PUBLIC_ORIGIN=//p' .env | tail -n 1)}"
@@ -162,7 +162,7 @@ echo -e "${GREEN}✓ ADDP 容器服务已就绪${NC}"
 echo -e "统一入口: ${public_origin}"
 echo ""
 docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.runtimes.yml ps
+docker compose -f docker-compose.runtimes.yml --profile '*' ps
 echo ""
 echo -e "${GREEN}Management Commands:${NC}"
 echo "  bash scripts/local/status.sh"

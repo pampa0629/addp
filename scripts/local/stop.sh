@@ -57,7 +57,7 @@ echo ""
 
 echo -e "${YELLOW}▶️  Stopping application layer...${NC}"
 
-docker compose -f docker-compose.runtimes.yml down
+docker compose -f docker-compose.runtimes.yml --profile '*' down
 docker compose -f docker-compose.yml down
 echo -e "${GREEN}✓ Application layer stopped (volumes preserved)${NC}"
 

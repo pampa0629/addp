@@ -1545,8 +1545,11 @@ for folder in ('local', 'prod'):
         assert 'runtime_compose up -d --no-build --pull never' in start
         assert start.index('release-images.py verify') < start.index('bash scripts/infra/up.sh')
     else:
-        assert 'docker compose -f docker-compose.runtimes.yml up' in start, folder
-    assert re.search(r'docker compose -f docker-compose\.runtimes\.yml(?: --env-file \.env)? down', stop), folder
+        assert "docker compose -f docker-compose.runtimes.yml --profile '*' up" in start, folder
+    command = 'docker compose -f docker-compose.runtimes.yml'
+    if folder == 'prod':
+        command += ' --env-file .env'
+    assert command + " --profile '*' down" in stop, folder
 print('PASS: platform and Runtime Compose projects preserve one public origin and lifecycle')
 PY
 }
@@ -1600,7 +1603,9 @@ import sys
 source = (Path(sys.argv[1]) / 'scripts/prod/health-check.sh').read_text()
 function = re.search(r'^check_service\(\) \{.*?^\}', source, re.M | re.S)
 assert function, 'production Compose health checker is missing'
-harness = function.group() + '''
+compose = re.search(r'^compose\(\) \{.*?^\}', source, re.M | re.S)
+assert compose, 'production Compose selection helper is missing'
+harness = compose.group() + '\n' + function.group() + '''
 docker() {
   if [ "$1" = compose ]; then printf '%s\\n' fixture-container; return; fi
   if [ "$3" = '{{.State.ExitCode}}' ]; then printf '%s\\n' "$fixture_exit_code"; return; fi
