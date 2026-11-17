@@ -2391,6 +2391,7 @@
       "detailAction": "详情",
       "refreshDiscovery": "重新读取来源",
       "service": "部署服务",
+      "selectScope": "选择当前标签内可接入的服务",
       "discoveryStatus": "接入状态",
       "noCandidates": "尚未发现可展示的服务",
       "discoveryHint": "选择服务并核对承载主机后确认接入。当前支持单容器 PostgreSQL、Redis 和 MinIO；接入不代表已开始专业指标采集。",

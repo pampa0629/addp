@@ -267,9 +267,10 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await system.getByTestId('deployment-create').click()
       expect((await discovered).status()).toBe(200)
       await expect(system.getByTestId('deployment-file')).toHaveCount(0)
-      for (const item of input.items) await system.getByRole('textbox', { name: `${item.scope} ${item.service}`, exact: true }).fill(item.display_name)
       for (const item of input.items) {
         const scope = item.scope === 'infra' ? 'Infra' : 'Business'
+        await system.getByTestId('deployment-discovery-scopes').getByRole('tab', { name: item.scope === 'infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
+        await system.getByRole('textbox', { name: `${item.scope} ${item.service}`, exact: true }).fill(item.display_name)
         const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / ${item.service}` })
         await expect(row).toHaveCount(1)
         await expect(row.locator('.el-checkbox')).toBeEnabled()
@@ -316,9 +317,11 @@ test('platform node resources through real Console password MFA and Monitor ifra
       }
       await system.getByTestId('deployment-create').click()
       for (const scope of ['Infra', 'Business']) {
+        await system.getByTestId('deployment-discovery-scopes').getByRole('tab', { name: scope === 'Infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
         const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / ${input.items[0].service}` })
         await expect(row).toContainText('已接入')
-        await expect(row.locator('.el-checkbox')).toBeDisabled()
+        await expect(row.getByTestId('candidate-connected')).toHaveAttribute('aria-label', '已接入')
+        await expect(row.locator('.el-checkbox')).toHaveCount(0)
       }
       expect(writes).toHaveLength(1)
       report.engine_admission = { writes, created: payload.data, reloaded: true, registered_disabled: true, current_sources: currentSources }

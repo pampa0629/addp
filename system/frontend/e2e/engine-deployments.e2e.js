@@ -6,9 +6,15 @@ async function selectHost(page){
  await page.getByRole('dialog').getByRole('combobox',{name:'承载主机',exact:true}).press('Enter')
  await page.getByRole('option',{name:'Node A',exact:true}).click()
 }
+async function discoveryTab(page,name){
+ await page.getByTestId('deployment-discovery-scopes').getByRole('tab',{name,exact:true}).click()
+}
 async function selectSources(page){
- await expect(page.getByTestId('deployment-candidates').locator('.el-table__body tr')).toHaveCount(4)
- await page.getByTestId('deployment-candidates').locator('.el-table__header .el-checkbox').click()
+ for(const scope of ['Infra 基础设施','Business 业务引擎']){
+  await discoveryTab(page,scope)
+  await expect(page.getByTestId('deployment-candidates').locator('.el-table__body tr')).toHaveCount(2)
+  await page.getByTestId('deployment-candidates').locator('.el-table__header .el-checkbox').click()
+ }
 }
 test('confirms both discovered PostgreSQL services in one explicit batch without a file',async({page})=>{
  const {writes}=await mockDeployments(page,{empty:true})
@@ -18,6 +24,7 @@ test('confirms both discovered PostgreSQL services in one explicit batch without
  await expect(page.getByTestId('deployment-save')).toBeDisabled()
  await selectSources(page)
  await expect(page.getByRole('dialog')).toContainText('此组件尚未适配')
+ await discoveryTab(page,'Infra 基础设施')
  await page.getByRole('textbox',{name:'infra postgres',exact:true}).fill('Infra database')
  await selectHost(page)
  await page.getByTestId('deployment-save').click()
@@ -29,14 +36,54 @@ test('confirms both discovered PostgreSQL services in one explicit batch without
  await expect(page.getByRole('dialog')).toHaveCount(0)
  await expect(page).toHaveURL(/\/engine-deployments\?search=Business&page_size=50$/)
 })
-test('already connected and unsupported components cannot be selected',async({page})=>{
+test('already connected shows a readonly check and unsupported components are grey with a cross',async({page})=>{
  const {writes}=await mockDeployments(page)
+ await page.addInitScript(()=>localStorage.setItem('theme-mode','dark'))
  await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
- await selectSources(page)
- const checks=page.getByTestId('deployment-candidates').locator('.el-table__body .el-checkbox')
- await expect(checks.nth(0)).toBeChecked()
- for(const index of [1,2,3])await expect(checks.nth(index)).toBeDisabled()
+ const table=page.getByTestId('deployment-candidates')
+ await table.getByRole('checkbox',{name:'选择当前标签内可接入的服务'}).locator('..').click()
+ await expect(table.getByRole('checkbox',{name:'infra postgres',exact:true})).toBeChecked()
+ await discoveryTab(page,'Business 业务引擎')
+ await expect(table.getByTestId('candidate-connected')).toHaveAttribute('aria-label','已接入')
+ await expect(table.getByTestId('candidate-unavailable')).toHaveAttribute('aria-label','此组件尚未适配')
+ await expect(table.locator('.el-table__body .el-checkbox')).toHaveCount(0)
+ await expect(table.getByRole('checkbox',{name:'选择当前标签内可接入的服务'})).toBeDisabled()
+ const unsupported=table.locator('.el-table__body tr').filter({hasText:'falkordb'})
+ await expect(unsupported).toHaveClass(/candidate-unavailable/)
+ const colours=await table.evaluate(element=>({
+   check:getComputedStyle(element.querySelector('.candidate-connected')).color,
+   cross:getComputedStyle(element.querySelector('.candidate-unavailable-icon')).color,
+   muted:getComputedStyle(element.querySelector('.candidate-unavailable td')).color,
+   normal:getComputedStyle(element.querySelector('tbody tr:not(.candidate-unavailable) td')).color
+ }))
+ expect(colours.check).not.toBe(colours.cross);expect(colours.muted).not.toBe(colours.normal)
+ await expect(page.locator('html')).toHaveClass(/dark/)
+ await page.screenshot({path:'/tmp/addp-engine-discovery-status.png',animations:'disabled'})
  expect(writes).toEqual([])
+})
+test('discovery tabs retain drafts and selections while select all affects only the active scope',async({page})=>{
+ const {writes}=await mockDeployments(page,{empty:true,redisSources:true})
+ await page.goto('/engine-deployments?scope=business');await page.getByTestId('deployment-create').click()
+ await expect(page.getByTestId('deployment-discovery-scopes').getByRole('tab',{name:'Business 业务引擎'})).toHaveAttribute('aria-selected','true')
+ const table=page.getByTestId('deployment-candidates'),all=table.getByRole('checkbox',{name:'选择当前标签内可接入的服务'})
+ await table.getByRole('checkbox',{name:'business postgres',exact:true}).locator('..').click()
+ await expect(table.locator('.el-table__header .is-indeterminate')).toHaveCount(1)
+ await all.locator('..').click()
+ await discoveryTab(page,'Infra 基础设施')
+ await expect(table.getByRole('checkbox',{name:'infra postgres',exact:true})).not.toBeChecked()
+ await all.locator('..').click()
+ await page.getByRole('textbox',{name:'infra redis',exact:true}).fill('My Infra Redis')
+ await discoveryTab(page,'Business 业务引擎')
+ await expect(table.getByRole('checkbox',{name:'business redis',exact:true})).toBeChecked()
+ await all.locator('..').click()
+ await discoveryTab(page,'Infra 基础设施')
+ await expect(table.getByRole('checkbox',{name:'infra redis',exact:true})).toBeChecked()
+ await expect(page.getByRole('textbox',{name:'infra redis',exact:true})).toHaveValue('My Infra Redis')
+ await selectHost(page);await page.getByTestId('deployment-save').click()
+ await expect.poll(()=>writes.length).toBe(1)
+ expect(writes[0].items.map(item=>[item.scope,item.service,item.display_name])).toEqual([
+  ['infra','postgres','Infra PostgreSQL'],['infra','redis','My Infra Redis']
+ ])
 })
 test('source changes preserve selection and require an explicit reload before another submission',async({page})=>{
  const {writes}=await mockDeployments(page,{empty:true,sourceChanged:true})
@@ -62,7 +109,7 @@ test('unknown creation results block repeated writes without inventing identitie
 test('unavailable sources remain distinct from an empty successful discovery',async({page})=>{
  const {writes}=await mockDeployments(page,{sourceUnavailable:true})
  await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
- await expect(page.getByRole('dialog')).toContainText('Infra · 来源不可用')
+ await expect(page.getByRole('dialog')).toContainText('来源不可用')
  await expect(page.getByTestId('deployment-save')).toBeDisabled();expect(writes).toEqual([])
 })
 test('a stale management update preserves draft and never resends inventory',async({page})=>{
@@ -107,10 +154,13 @@ test('English declaration details fit a narrow viewport',async({page})=>{
 test('English discovery selection is usable in a narrow viewport',async({page})=>{
  await mockDeployments(page,{language:'en',empty:true});await page.setViewportSize({width:390,height:844})
  await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
- const dialog=page.getByRole('dialog');await expect(page.getByTestId('deployment-candidates').locator('.el-table__body tr')).toHaveCount(4)
+ const dialog=page.getByRole('dialog');await expect(page.getByTestId('deployment-candidates').locator('.el-table__body tr')).toHaveCount(2)
  await expect(dialog).toBeVisible()
  await expect(dialog).not.toContainText('system.engineDeployments.')
  expect(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true)
+ const unavailable=page.getByTestId('deployment-candidates').locator('.candidate-unavailable .candidate-status')
+ await expect(unavailable).toHaveText('Component not supported yet')
+ expect(await unavailable.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true)
  await page.screenshot({path:'/tmp/addp-deployment-discovery-narrow-review.png',animations:'disabled'})
 })
 
@@ -162,7 +212,9 @@ test('confirms both Redis scopes and queries each tab separately',async({page})=
  const {calls,writes}=await mockDeployments(page,{empty:true,redisSources:true,permissions:[...deploymentPermissions,'monitor.resource_observation.read']})
  await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
  await selectSources(page)
+ await discoveryTab(page,'Infra 基础设施')
  await expect(page.getByRole('textbox',{name:'infra redis',exact:true})).toHaveValue('Infra Redis')
+ await discoveryTab(page,'Business 业务引擎')
  await expect(page.getByRole('textbox',{name:'business redis',exact:true})).toHaveValue('Business Redis')
  await selectHost(page);await page.getByTestId('deployment-save').click()
  await expect.poll(()=>writes.length).toBe(1)
@@ -192,7 +244,9 @@ test('confirms Infra and Business MinIO through the same explicit host admission
  const {writes}=await mockDeployments(page,{empty:true,minioSources:true,permissions:[...deploymentPermissions,'monitor.resource_observation.read']})
  await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
  await selectSources(page)
+ await discoveryTab(page,'Infra 基础设施')
  await expect(page.getByRole('textbox',{name:'infra minio',exact:true})).toHaveValue('Infra MinIO')
+ await discoveryTab(page,'Business 业务引擎')
  await expect(page.getByRole('textbox',{name:'business minio',exact:true})).toHaveValue('Business MinIO')
  await selectHost(page);await page.getByTestId('deployment-save').click()
  await expect.poll(()=>writes.length).toBe(1)

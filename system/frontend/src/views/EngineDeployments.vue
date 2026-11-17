@@ -51,14 +51,27 @@
         <el-form v-if="formReady" label-position="top" :disabled="saving || !canWrite" @submit.prevent>
           <template v-if="creating">
             <div class="toolbar"><el-button :loading="reading" :disabled="saving" @click="loadDiscovery">{{ t('system.engineDeployments.refreshDiscovery') }}</el-button></div>
-            <el-alert v-for="scope in discoveryScopes" :key="scope.scope" :title="`${scope.scope === 'infra' ? 'Infra' : 'Business'} · ${t(`system.engineDeployments.discoveryStates.${scope.state}`)}`" :type="scope.state === 'available' ? 'info' : 'warning'" :closable="false" />
-            <el-table :data="candidates" row-key="key" border max-height="320" data-testid="deployment-candidates" @selection-change="selectedCandidates = $event">
-              <el-table-column type="selection" width="45" :selectable="row => row.eligible && !row.deployment_id && !blocked && !reading" />
+            <el-tabs v-model="discoveryScope" data-testid="deployment-discovery-scopes">
+              <el-tab-pane name="infra" :label="t('system.engineDeployments.scopes.infra')" />
+              <el-tab-pane name="business" :label="t('system.engineDeployments.scopes.business')" />
+            </el-tabs>
+            <el-alert v-if="activeDiscoveryScope" :title="t(`system.engineDeployments.discoveryStates.${activeDiscoveryScope.state}`)" :type="activeDiscoveryScope.state === 'available' ? 'info' : 'warning'" :closable="false" />
+            <el-table :data="visibleCandidates" row-key="key" border max-height="320" data-testid="deployment-candidates" :row-class-name="({row}) => !row.eligible && !row.deployment_id ? 'candidate-unavailable' : ''">
+              <el-table-column width="52" align="center">
+                <template #header>
+                  <el-checkbox :model-value="allVisibleSelected" :indeterminate="someVisibleSelected && !allVisibleSelected" :disabled="!selectableCandidates.length || blocked || reading || saving" :aria-label="t('system.engineDeployments.selectScope')" @change="selectVisibleCandidates" />
+                </template>
+                <template #default="{row}">
+                  <el-icon v-if="row.deployment_id" class="candidate-connected" role="img" :aria-label="t('system.engineDeployments.candidateStates.registered')" data-testid="candidate-connected"><CircleCheckFilled /></el-icon>
+                  <el-icon v-else-if="!row.eligible" class="candidate-unavailable-icon" role="img" :aria-label="t(`system.engineDeployments.candidateStates.${row.reason}`)" data-testid="candidate-unavailable"><CircleCloseFilled /></el-icon>
+                  <el-checkbox v-else :model-value="selectedCandidateKeys.has(row.key)" :disabled="blocked || reading || saving" :aria-label="`${row.scope} ${row.service}`" @change="checked => selectCandidate(row,checked)" />
+                </template>
+              </el-table-column>
               <el-table-column :label="t('system.engineDeployments.service')" min-width="150"><template #default="{row}">
                 <div>{{ row.scope === 'infra' ? 'Infra' : 'Business' }} / {{ row.service }}</div>
                 <el-input v-if="row.eligible && !row.deployment_id" v-model="row.display_name" class="candidate-name" maxlength="255" :aria-label="`${row.scope} ${row.service}`" />
               </template></el-table-column>
-              <el-table-column :label="t('system.engineDeployments.discoveryStatus')" min-width="125"><template #default="{row}">{{ t(`system.engineDeployments.candidateStates.${row.deployment_id ? 'registered' : row.eligible ? 'ready' : row.reason}`) }}</template></el-table-column>
+              <el-table-column :label="t('system.engineDeployments.discoveryStatus')" min-width="125"><template #default="{row}"><el-tag class="candidate-status" :type="row.deployment_id ? 'success' : row.eligible ? 'primary' : 'info'">{{ t(`system.engineDeployments.candidateStates.${row.deployment_id ? 'registered' : row.eligible ? 'ready' : row.reason}`) }}</el-tag></template></el-table-column>
               <template #empty><el-empty :description="t('system.engineDeployments.noCandidates')" :image-size="56" /></template>
             </el-table>
             <p class="hint">{{ t('system.engineDeployments.discoveryHint') }}</p>
@@ -99,6 +112,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { HostNodeSelect, StatusAnnouncer, useConsolePageDescriptor, openConsoleRoute, buildMonitorEngineResourcesRoute } from '@common-ui'
 import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
@@ -128,6 +142,20 @@ const pickerAPI={nodes:hostNodesAPI.list,node:hostNodesAPI.get}
 const listRequests=createLatestRequestScope(),detailRequests=createLatestRequestScope(),discoveryRequests=createLatestRequestScope()
 const sourceRequests=createLatestRequestScope(),currentSource=ref(null),sourceLoading=ref(false),sourceError=ref(false)
 const candidates=ref([]),selectedCandidates=ref([]),discoveryScopes=ref([])
+const discoveryScope=ref('infra')
+const activeDiscoveryScope=computed(()=>discoveryScopes.value.find(item=>item.scope===discoveryScope.value))
+const visibleCandidates=computed(()=>candidates.value.filter(item=>item.scope===discoveryScope.value))
+const selectableCandidates=computed(()=>visibleCandidates.value.filter(item=>item.eligible && !item.deployment_id))
+const selectedCandidateKeys=computed(()=>new Set(selectedCandidates.value.map(item=>item.key)))
+const allVisibleSelected=computed(()=>selectableCandidates.value.length>0 && selectableCandidates.value.every(item=>selectedCandidateKeys.value.has(item.key)))
+const someVisibleSelected=computed(()=>selectableCandidates.value.some(item=>selectedCandidateKeys.value.has(item.key)))
+function selectCandidate(row,checked){selectedCandidates.value=checked?[...selectedCandidates.value,row]:selectedCandidates.value.filter(item=>item.key!==row.key)}
+function selectVisibleCandidates(checked){
+  const visibleKeys=new Set(selectableCandidates.value.map(item=>item.key))
+  selectedCandidates.value=selectedCandidates.value.filter(item=>!visibleKeys.has(item.key))
+  if(checked)selectedCandidates.value.push(...selectableCandidates.value)
+}
+
 let epoch=0,trigger=null,sourceExpiry=null
 const navigate=(path,query=state.value.query,history='push')=>navigateSystemRoute(router,{path,query},{history})
 const bindingState=row=>row.enabled?row.host_binding_state==='bound'?'bound':row.host_binding_reason==='node_kind_mismatch'?'node_kind_mismatch':'node_disabled':'deployment_disabled'
@@ -195,6 +223,7 @@ async function loadDiscovery() {
 }
 function openCreate(event){
   if(!canCreate.value)return
+  discoveryScope.value=state.value.scope
   trigger=event?.currentTarget;detailRequests.invalidate();clearCurrentSource();record.value=null;selectedHost.value=null;saveError.value='';detailError.value='';blocked.value=false;reading.value=false
   Object.assign(form,{display_name:'',enabled:true,inventory:null,declared_node_id:''});formReady.value=true;creating.value=true;loadDiscovery()
 }
@@ -241,4 +270,8 @@ onBeforeUnmount(()=>{clearCurrentSource();epoch++;listRequests.dispose();detailR
 <style scoped>
 .toolbar > h2 { color: var(--addp-text-primary); }
 .engine-deployments{padding:20px;min-width:0}.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}.toolbar h2{flex:1;margin:0}.toolbar .el-input{max-width:420px}.el-pagination{margin-top:16px;overflow-x:auto}.el-alert{margin-bottom:12px}.current-source{margin-bottom:20px}.current-source h3{flex:1;margin:0}.candidate-name{margin-top:6px}.hint{color:var(--addp-text-secondary);margin:8px 0;width:100%}dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px}dd{margin:0;overflow-wrap:anywhere}dt{color:var(--addp-text-secondary)}@media(max-width:600px){.engine-deployments{padding:12px}.toolbar .el-input{max-width:none;flex-basis:100%}dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:8px}}
+.candidate-connected{color:var(--el-color-success);font-size:20px}.candidate-unavailable-icon{color:var(--el-text-color-placeholder);font-size:20px}
+:deep(.candidate-unavailable td.el-table__cell){color:var(--el-text-color-placeholder);background-color:var(--el-fill-color-light)}
+.candidate-status{max-width:100%;height:auto;white-space:normal;line-height:1.5;padding:3px 8px}
+:deep(.candidate-status .el-tag__content){white-space:normal;overflow-wrap:anywhere}
 </style>
