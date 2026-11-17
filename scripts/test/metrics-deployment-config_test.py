@@ -307,6 +307,61 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 postgres_probe.directory_publication.directory_process_observations(value)
             self.assertNotIn('sentinel',str(caught.exception))
 
+    def test_directory_observer_closes_input_after_complete_protocol_and_requires_clean_exit(self):
+        probe = postgres_probe.directory_publication
+        child = r"""
+import sys
+print('baseline\t17\t0.00\tbefore\tbefore',flush=True)
+assert sys.stdin.buffer.readline()==b'published\n'
+for phase,at in [('published','0.01'),('control_before_enum','1.02'),('enumerate_first','1.03'),('control_before_second_enum','2.04'),('enumerate_second','2.05')]:
+ print(phase+'\t17\t'+at+'\tafter-version\tafter-version',flush=True)
+assert sys.stdin.buffer.read()==b''
+if sys.argv[1]=='extra':print('private-sentinel',flush=True)
+sys.exit(3 if sys.argv[1]=='nonzero' else 0)
+"""
+        for mode in ('success','extra','nonzero'):
+            with self.subTest(mode=mode):
+                published=mock.Mock()
+                if mode=='success':
+                    value=probe.observe([sys.executable,'-u','-c',child,mode],published)
+                    self.assertEqual([row['phase'] for row in value['samples']],list(probe.DIRECTORY_PROCESS_PHASES))
+                    self.assertTrue(value['single_process'])
+                else:
+                    with self.assertRaises(AssertionError) as caught:
+                        probe.observe([sys.executable,'-u','-c',child,mode],published)
+                    diagnostic=caught.exception.directory_observation
+                    self.assertTrue(diagnostic['protocol_complete'])
+                    self.assertEqual(diagnostic['observed_phases'],list(probe.DIRECTORY_PROCESS_PHASES))
+                    self.assertNotIn('private-sentinel',json.dumps(diagnostic))
+                published.assert_called_once_with()
+
+    def test_directory_observer_does_not_accept_incomplete_or_short_intervals(self):
+        probe = postgres_probe.directory_publication
+        child=r"""
+import sys
+print('baseline\t17\t0.00\tbefore\tbefore',flush=True)
+assert sys.stdin.buffer.readline()==b'published\n'
+for phase,at in [('published','0.01'),('control_before_enum','1.02'),('enumerate_first','1.03'),('control_before_second_enum','2.04'),('enumerate_second','2.05')][:int(sys.argv[1])]:
+ print(phase+'\t17\t'+('0.01' if sys.argv[2]=='short' else at)+'\tafter-version\tafter-version',flush=True)
+"""
+        for count,timing in [(4,'complete'),(5,'short')]:
+            with self.subTest(count=count,timing=timing),self.assertRaises(AssertionError) as caught:
+                probe.observe([sys.executable,'-u','-c',child,str(count),timing],lambda:None)
+            self.assertFalse(caught.exception.directory_observation['protocol_complete'])
+
+    def test_complete_directory_protocol_does_not_turn_unreadable_publication_into_success(self):
+        probe = postgres_probe.directory_publication
+        samples=[{'phase':phase,'a':'before' if i==0 else 'after-version','b':'before' if i==0 else 'after-version'}
+                 for i,phase in enumerate(probe.DIRECTORY_PROCESS_PHASES)]
+        for visible in (True,False):
+            rows=json.loads(json.dumps(samples))
+            if not visible:rows[1]['a']='unreadable'
+            result={'trials':[{'single_process':True,'samples':rows}]*2,
+                    'cleanup_verified':True,'temporary_removed':True}
+            with self.subTest(visible=visible),mock.patch.object(probe,'run',return_value=result), \
+                 mock.patch.object(sys,'argv',['directory-publication-probe.py']),redirect_stdout(io.StringIO()):
+                self.assertEqual(probe.main(),0 if visible else 1)
+
     def test_directory_probe_failure_keeps_phase_without_child_payload(self):
         probe = postgres_probe.directory_publication
         launch = subprocess.Popen

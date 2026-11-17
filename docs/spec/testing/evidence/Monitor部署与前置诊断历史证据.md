@@ -59,6 +59,18 @@
 - **后续复验分别认定**：稳定唤醒后固定 `39059d2ed2d711b992947c1debee6872a0d60578` 原三项 3／3 通过，收据 `/tmp/addp-monitor-stable-awake-20261102/receipt.json`；标准 runner 清理当次服务、缓存和端口租约，脱敏 trace 独立保留。固定 `3f281d49c7c3533a347db4a270d090cabfd63301` 的 [41391135443／Job125102562739](https://github.com/pampa0629/addp/actions/runs/41391135443/job/125102562739)另有完整 Linux 592 浏览器、构建和整 Job 通过。两者不覆盖原本机整套失败，也不证明真实来源或正式身份 T4；后续门禁结论见[综合验收专题](Monitor综合验收历史证据.md#前端门禁与超时结论)。
 - **MinIO 准备与实际采集分开**：11 月 2 日仅按授权准备 Infra 配置和叶证书、离线验证既有信任链，未安装账号或启停来源；不能以配置就绪当实时采集。用户应用后的 11 月 3 日才取得来源 mTLS 200／14 条样本、System 明确主机关联、HTTP SD 唯一目标 UP 及精确指标序列；收据 `/tmp/addp-minio-live-check-20261103.json`。当轮没有升级或启用 Business、重建原数据库，个人部署按授权保留，**不计零残留清理或 Hosted**。Safari 当时 hidden，未完成专业页面；后续真实页面、双域接入与恢复结果统一见[MinIO 来源专题](Monitor采集来源与引擎指标历史证据.md#minio-source-history)，不再保留“等待用户应用／页面复验”的旧待办。
 
+<a id="directory-observer-input-completion-20261117"></a>
+
+## 目录发布试验的观察与输入收尾（2026-11-17）
+
+固定 `5f6141faf8ae2d70ec09d5caff82253b75a1b367` 的 [Run 44050998180／Job 133935428531](https://github.com/pampa0629/addp/actions/runs/44050998180/job/133935428531)在 82 项前置测试通过后失败：database_started=false、trials=[]，observation 8001.3 ms、stdout_bytes=307、child_returncode=null。容器／网络／卷及临时目录清理不能替代原生试验通过；此前诊断和其他两轮通过不覆盖本轮，也不反推原 `1e8` 失败原因。日志未保留具体观察阶段，307 字节只能作为六条记录已可能完成的线索。
+
+已独立复现的观察器缺陷：它在保持 stdin 打开的同时，等 stdout EOF 才解析结果；交互传输若输出六条合法记录后等输入结束，父子双方相互等待。真实 Python 管道子进程的协议控制在原实现以 observation 8001.08 ms、301 字节、子进程未退出失败；修订为完整验证六阶段后关闭输入，再核对 stdout EOF 和零退出后，该控制在原8秒预算内通过。该 T1 使用受控记录，只证明协议收尾，不是目录或 Docker 业务试验。额外输出、非零退出、记录不全、短观察间隔和 published 不可读均仍拒绝；不新增重试、等待窗口、兼容分支或生产进程控制。
+
+本机原标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=directory-publication` 的 82 项前置通过，两个原生 trial 均在 published 读到 unreadable、其后恢复，按原判据退出失败；这与 Linux 观察阶段等满8秒分开认定。修订版同入口的84项前置通过后遇到 TimeoutExpired，cleanup_verified=false，未计通过、未重跑；之后只读未见带 directory-publication owner 标签的容器，也不能追改该轮清理结论。原日志与管道 red／green 证据保留在 `/tmp/addp-directory-publication-recur-original.log`、`/tmp/addp-directory-publication-recur-fixed.log`、`/tmp/addp-directory-observer-protocol-red.log` 和 `/tmp/addp-directory-observer-protocol-green.log`。
+
+现有 `test-monitor-metrics-config`、目录 case、默认 Metrics 门禁和 Release 的 directory-publication 矩阵已自动覆盖原观察器及配置测试类，不新增入口或 CI 路线；只修改试验观察器、回归和相关说明，不涉及生产共享进程管理或平台发布协议。冻结基线 `ba89eb67d716dfef6391ac875f3a496bf0adde84` 叠加最终两个试验输入后，`make test-monitor-metrics-config` 完整通过依赖门禁及145项配置测试（`/tmp/addp-directory-publication-recur-config-final.log`）；当前 Linux 原生结果待修订源码的自然 CI 独立核对，不能将本机 T1、CDC／Redis 通过或清理替代。
+
 ## 未解决事项与后续待办
 
 1. **历史超时根因**：四秒守卫尖峰和 Compose 15 秒失败仍缺原失败当轮的完整分层证据。后续成功、计时优化或进程回收回归不能反推根因已修复；再次出现时核对固定源码、首败阶段、实际预算及当次归属，不靠加时或重试制造通过。

@@ -17,6 +17,7 @@ import time
 import uuid
 
 IMAGE = 'postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c'
+DIRECTORY_PROCESS_PHASES = ('baseline','published','control_before_enum','enumerate_first','control_before_second_enum','enumerate_second')
 
 # No external commands, subshells or child processes: reads, timed waits and
 # filename expansion all execute in this one Bash process.
@@ -59,7 +60,7 @@ sample enumerate_second
 
 
 def directory_process_observations(data):
-    phases = ['baseline','published','control_before_enum','enumerate_first','control_before_second_enum','enumerate_second']
+    phases = DIRECTORY_PROCESS_PHASES
     lines = data.decode('ascii').splitlines()
     assert len(lines)==len(phases), 'Owned directory process output incomplete'
     rows, pids, times = [], set(), []
@@ -82,6 +83,7 @@ def observe(command, publish):
     process = subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
     data = bytearray()
     phase = 'baseline'
+    protocol_complete = False
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout,selectors.EVENT_READ)
@@ -102,16 +104,27 @@ def observe(command, publish):
             phase = 'handshake'
             process.stdin.write(b'published\n');process.stdin.flush()
             phase = 'observation'
+            while data.count(b'\n') < len(DIRECTORY_PROCESS_PHASES):
+                assert receive(), 'Owned directory process ended before final observation'
+            observations = directory_process_observations(bytes(data))
+            protocol_complete = True
+            # The interactive transport can wait for input EOF even after Bash's
+            # last record. End input only once both timed observations finished.
+            phase = 'input_completion'
+            process.stdin.close()
             while receive():
-                pass
+                raise AssertionError('Owned directory process output after final observation')
             phase = 'completion'
             remaining = deadline-time.monotonic()
             assert remaining>0 and process.wait(timeout=remaining)==0, 'Owned directory process failed'
-            return directory_process_observations(bytes(data))
+            return observations
     except (OSError,ValueError,AssertionError,subprocess.SubprocessError) as error:
         error.directory_observation = {
             'phase':phase, 'elapsed_ms':round((time.monotonic()-started)*1000,2),
             'stdout_bytes':len(data), 'child_returncode':process.poll(),
+            'observed_phases':[name for line in bytes(data).splitlines()
+                if (name := line.split(b'\t',1)[0].decode('ascii',errors='replace')) in DIRECTORY_PROCESS_PHASES],
+            'protocol_complete':protocol_complete,
         }
         raise
     finally:
