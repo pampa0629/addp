@@ -71,10 +71,12 @@
                 <div>{{ row.scope === 'infra' ? 'Infra' : 'Business' }} / {{ row.service }}</div>
                 <el-input v-if="row.eligible && !row.deployment_id" v-model="row.display_name" class="candidate-name" maxlength="255" :aria-label="`${row.scope} ${row.service}`" />
               </template></el-table-column>
-              <el-table-column :label="t('system.engineDeployments.discoveryStatus')" min-width="125"><template #default="{row}"><el-tag class="candidate-status" :type="row.deployment_id ? 'success' : row.eligible ? 'primary' : 'info'">{{ t(`system.engineDeployments.candidateStates.${row.deployment_id ? 'registered' : row.eligible ? 'ready' : row.reason}`) }}</el-tag></template></el-table-column>
+              <el-table-column :label="t('system.engineDeployments.discoveryStatus')" min-width="125"><template #default="{row}"><div class="candidate-status-cell"><el-tag class="candidate-status" :type="row.deployment_id ? 'success' : row.eligible ? 'primary' : 'info'">{{ t(`system.engineDeployments.candidateStates.${row.deployment_id ? 'registered' : row.eligible ? 'ready' : row.reason}`) }}</el-tag><el-button v-if="row.deployment_id" link type="primary" :data-testid="`candidate-detail-${row.deployment_id}`" @click="event => openDetail(row.deployment_id,event)">{{ t('system.engineDeployments.detailAction') }}</el-button></div></template></el-table-column>
               <template #empty><el-empty :description="t('system.engineDeployments.noCandidates')" :image-size="56" /></template>
             </el-table>
             <p class="hint">{{ t('system.engineDeployments.discoveryHint') }}</p>
+            <p v-if="selectedCandidates.length" class="hint" data-testid="admission-selection-count">{{ t('system.engineDeployments.selectedServices', {count:selectedCandidates.length}) }}</p>
+            <el-alert v-if="admissionNotice" :title="t(`system.engineDeployments.${admissionNotice}`)" type="info" :closable="false" role="status" data-testid="admission-save-guidance" />
           </template>
           <el-form-item v-else :label="t('system.engineDeployments.name')"><el-input ref="nameInput" v-model="form.display_name" maxlength="255" data-testid="deployment-name" /></el-form-item>
           <template v-if="form.inventory">
@@ -88,13 +90,17 @@
               <dt>{{ t('system.engineDeployments.ports') }}</dt><dd>{{ container.published_ports.map(port => `${port.address.includes(':') ? `[${port.address}]` : port.address}:${port.port} → ${port.container_port}/${port.protocol}`).join(', ') }}</dd>
             </dl>
           </template>
+          <template v-if="!creating || selectedCandidates.length">
           <el-form-item :label="t('system.engineDeployments.host')">
             <HostNodeSelect v-if="canReadHosts" v-model="form.declared_node_id" :selected="selectedHost" :allowed="canReadHosts" :identity="identity" :disabled="blocked || saving" :api="pickerAPI"
               :label="t('system.engineDeployments.host')" :placeholder="t('system.hostAdmission.search')" :more-label="t('system.hostAdmission.more')" :error-message="t('system.hostAdmission.readFailed')" @selected="selectedHost = $event" />
             <el-input v-else :model-value="form.declared_node_id" readonly />
             <p class="hint">{{ t('system.engineDeployments.hostHint') }}</p>
           </el-form-item>
-          <el-form-item :label="t('system.hostNodes.state')"><el-switch v-model="form.enabled" :aria-label="t('system.hostNodes.state')" :active-text="t('system.hostNodes.enabled')" :inactive-text="t('system.hostNodes.disabled')" data-testid="deployment-enabled" /></el-form-item>
+          <el-form-item :label="t(creating ? 'system.engineDeployments.newAdmissionState' : 'system.hostNodes.state')"><el-switch v-model="form.enabled" :aria-label="t(creating ? 'system.engineDeployments.newAdmissionState' : 'system.hostNodes.state')" :active-text="t('system.hostNodes.enabled')" :inactive-text="t('system.hostNodes.disabled')" data-testid="deployment-enabled" />
+            <p class="hint" data-testid="deployment-enabled-hint">{{ t(creating ? 'system.engineDeployments.newAdmissionStateHint' : 'system.engineDeployments.managementStateHint') }}</p>
+          </el-form-item>
+          </template>
           <p v-if="record" class="hint">{{ t('system.hostNodes.version', {version:record.version}) }} · {{ t(`system.engineDeployments.states.${bindingState(record)}`) }}</p>
         </el-form>
       </div>
@@ -149,6 +155,16 @@ const selectableCandidates=computed(()=>visibleCandidates.value.filter(item=>ite
 const selectedCandidateKeys=computed(()=>new Set(selectedCandidates.value.map(item=>item.key)))
 const allVisibleSelected=computed(()=>selectableCandidates.value.length>0 && selectableCandidates.value.every(item=>selectedCandidateKeys.value.has(item.key)))
 const someVisibleSelected=computed(()=>selectableCandidates.value.some(item=>selectedCandidateKeys.value.has(item.key)))
+const admissionNotice=computed(()=>{
+  if(!creating.value || reading.value || blocked.value || saveError.value)return ''
+  if(!selectedCandidates.value.length){
+    if(activeDiscoveryScope.value?.state!=='available')return ''
+    if(selectableCandidates.value.length)return 'selectServicesFirst'
+    const allKnown=discoveryScopes.value.every(scope=>scope.state==='available')
+    return allKnown && !candidates.value.some(item=>item.eligible && !item.deployment_id) ? 'noNewServices' : 'noNewServicesInScope'
+  }
+  return form.declared_node_id ? '' : 'selectAdmissionHost'
+})
 function selectCandidate(row,checked){selectedCandidates.value=checked?[...selectedCandidates.value,row]:selectedCandidates.value.filter(item=>item.key!==row.key)}
 function selectVisibleCandidates(checked){
   const visibleKeys=new Set(selectableCandidates.value.map(item=>item.key))
@@ -274,4 +290,5 @@ onBeforeUnmount(()=>{clearCurrentSource();epoch++;listRequests.dispose();detailR
 :deep(.candidate-unavailable td.el-table__cell){color:var(--el-text-color-placeholder);background-color:var(--el-fill-color-light)}
 .candidate-status{max-width:100%;height:auto;white-space:normal;line-height:1.5;padding:3px 8px}
 :deep(.candidate-status .el-tag__content){white-space:normal;overflow-wrap:anywhere}
+.candidate-status-cell{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 </style>

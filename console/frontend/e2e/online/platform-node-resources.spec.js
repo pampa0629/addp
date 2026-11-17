@@ -319,8 +319,8 @@ test('platform node resources through real Console password MFA and Monitor ifra
       for (const scope of ['Infra', 'Business']) {
         await system.getByTestId('deployment-discovery-scopes').getByRole('tab', { name: scope === 'Infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
         const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / ${input.items[0].service}` })
-        await expect(row).toContainText('已接入')
-        await expect(row.getByTestId('candidate-connected')).toHaveAttribute('aria-label', '已接入')
+        await expect(row).toContainText('已纳管')
+        await expect(row.getByTestId('candidate-connected')).toHaveAttribute('aria-label', '已纳管')
         await expect(row.locator('.el-checkbox')).toHaveCount(0)
       }
       expect(writes).toHaveLength(1)
