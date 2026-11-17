@@ -47,11 +47,29 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
 
 
+def validate_original_download(response,storage,spec):
+    if storage=='nfs':
+        headers={key.lower():value for key,value in response.headers.items()}
+        require(response.status==403 and headers.get('content-type','').startswith('application/json')
+            and 'content-disposition' not in headers and isinstance(response.payload,dict)
+            and set(response.payload)=={'error'} and isinstance(response.payload['error'],str) and response.payload['error'],
+            'GRIB NFS original must be a JSON denial without an attachment')
+        return dict(http_status=403,json_error=True,attachment=False)
+    require(response.status==200 and len(response.raw)==spec['size_bytes'] and hashlib.sha256(response.raw).hexdigest()==spec['sha256'],
+        'GRIB MinIO original differs from the complete source')
+    return dict(http_status=200,sha256=spec['sha256'],size_bytes=spec['size_bytes'])
+
+
 def validate_browser_case(case,observed):
     require(observed.get('locator')==case['locator'] and observed.get('values_verified') is True
-        and observed.get('viewport_grid_verified') is True and observed.get('visible_message_count')==len(case['spec']['fields'])
-        and observed.get('download_sha256')==case['spec']['sha256'] and observed.get('download_size')==case['spec']['size_bytes'],
-        'GRIB real visible grid or original button download incomplete')
+        and observed.get('viewport_grid_verified') is True and observed.get('visible_message_count')==len(case['spec']['fields']),
+        'GRIB real visible grid incomplete')
+    if case['source_case']=='nfs':
+        require(observed.get('original_download_disabled') is True and observed.get('original_download_denied_verified') is True
+            and 'download_sha256' not in observed and 'download_size' not in observed,'GRIB NFS download denial or disabled button incomplete')
+    else:
+        require(observed.get('download_sha256')==case['spec']['sha256'] and observed.get('download_size')==case['spec']['size_bytes'],
+            'GRIB MinIO original button download incomplete')
 
 
 def validate_structural_metadata(detail):
@@ -118,11 +136,13 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                     validate_slice(read(client,locator,window),spec,field,1,1,1,1)
                 for change in ({'indices':[0]},{'variable':'message-01'},{'width':129}):
                     invalid=dict(selection,**change);denied=read(client,locator,invalid,400);require(denied.get('error_code')=='grid_slice_selection_invalid','invalid window was not a controlled rejection')
-                stage='download';raw=client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(200,)).raw
-                require(len(raw)==spec['size_bytes'] and hashlib.sha256(raw).hexdigest()==spec['sha256'],'GRIB original download differs')
-                (artifact/f"grib-{storage}-{spec['case_id']}{Path(spec['name']).suffix}").write_bytes(raw)
+                stage='download'
+                original=client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(403 if storage=='nfs' else 200,))
+                original_proof=validate_original_download(original,storage,spec)
+                if storage=='minio':(artifact/f"grib-{storage}-{spec['case_id']}{Path(spec['name']).suffix}").write_bytes(original.raw)
+                else:(artifact/f"grib-{storage}-{spec['case_id']}-download-denied.json").write_text(json.dumps(original_proof,indent=2)+'\n')
                 require(client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload==detail,'GRIB preview changed metadata')
-                report['cases'].append(dict(source_case=storage,locator=locator,item_id=item['id'],spec=spec,metadata_verified=True,values_verified=True,mask_verified=True,repeat_stateless_verified=True,window_verified=True,invalid_selection_denied=True,original_download_verified=True))
+                report['cases'].append(dict(source_case=storage,locator=locator,item_id=item['id'],spec=spec,metadata_verified=True,values_verified=True,mask_verified=True,repeat_stateless_verified=True,window_verified=True,invalid_selection_denied=True,original_download_verified=storage=='minio',original_download=original_proof))
         stage='source_drift';physical('drift')
         for case in report['cases']:
             changed=read(client,case['locator'],dict(variable='message-1',indices=[],x=0,y=0,width=4,height=3),409)

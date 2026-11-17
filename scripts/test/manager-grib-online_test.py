@@ -65,7 +65,7 @@ class GRIBOracleTest(unittest.TestCase):
             with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
 
     def test_browser_dom_presence_cannot_replace_viewport_evidence(self):
-        spec=FIXTURE.sources()[0];case=dict(locator='exact-source',spec=spec)
+        spec=FIXTURE.sources()[0];case=dict(locator='exact-source',spec=spec,source_case='minio')
         observed=dict(locator='exact-source',values_verified=True,viewport_grid_verified=True,visible_message_count=3,download_sha256=spec['sha256'],download_size=spec['size_bytes'])
         SCENE.validate_browser_case(case,observed)
         for field,value in [('viewport_grid_verified',False),('visible_message_count',2),('download_sha256','wrong')]:
@@ -172,3 +172,21 @@ class GRIBOracleTest(unittest.TestCase):
             self.assertEqual(report['source_scans'],[dict(storage='minio',engine_id=12,catalog_paths=['bucket/grib'],principal_id='7',execution_id='minio-initialization')])
             self.assertEqual(len(report['metadata_authorization']['initializer_permissions_verified']),13)
         self.assertEqual([(engine,scope) for _,engine,scope in observed],[(12,{'catalog_paths':['bucket/grib']}),(14,{'catalog_paths':['grib']})])
+
+
+    def test_nfs_original_denial_cannot_masquerade_as_a_download(self):
+        spec=FIXTURE.sources()[2];raw=FIXTURE.source_bytes(spec)
+        good=types.SimpleNamespace(status=403,headers={'Content-Type':'application/json'},payload={'error':'access denied'},raw=b'{"error":"access denied"}')
+        self.assertEqual(SCENE.validate_original_download(good,'nfs',spec),dict(http_status=403,json_error=True,attachment=False))
+        for key,value in [('status',200),('headers',{'Content-Type':'application/octet-stream'}),('headers',{'Content-Type':'application/json','Content-Disposition':'attachment; filename=source.grib1'}),('payload',{'ok':True})]:
+            bad=copy.deepcopy(good);setattr(bad,key,value)
+            with self.assertRaises(ValueError):SCENE.validate_original_download(bad,'nfs',spec)
+        original=types.SimpleNamespace(status=200,raw=raw)
+        self.assertEqual(SCENE.validate_original_download(original,'minio',spec)['sha256'],spec['sha256'])
+        original.raw=raw[:-1]
+        with self.assertRaises(ValueError):SCENE.validate_original_download(original,'minio',spec)
+        case=dict(locator='nfs-source',source_case='nfs',spec=spec)
+        observed=dict(locator='nfs-source',values_verified=True,viewport_grid_verified=True,visible_message_count=3,original_download_disabled=True,original_download_denied_verified=True)
+        SCENE.validate_browser_case(case,observed)
+        for key,value in [('original_download_disabled',False),('original_download_denied_verified',False),('download_sha256',spec['sha256']),('download_size',spec['size_bytes'])]:
+            with self.assertRaises(ValueError):SCENE.validate_browser_case(case,dict(observed,**{key:value}))

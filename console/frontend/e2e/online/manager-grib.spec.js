@@ -71,6 +71,21 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           await expect(frame.locator('.geojson-preview')).toHaveCount(0)
           await expect(frame.getByTestId('grid-no-location')).toContainText(/暂不提供地图预览|map preview is not available/)
         }
+        if (source.source_case === 'nfs') {
+          const actions = await json(await api.get('/api/v1/manager/resource-actions', { params: { locator: source.locator } }), 'GRIB current download capability')
+          expect(actions.actions.download.supported).toBe(false)
+          await expect(frame.getByRole('button', { name: /^(下载|Download)$/ })).toHaveCount(0)
+          const denied = await api.get('/api/v1/manager/downloads/file?locator=' + encodeURIComponent(source.locator))
+          expect(denied.status()).toBe(403)
+          expect(denied.headers()['content-type']).toContain('application/json')
+          expect(denied.headers()['content-disposition']).toBeUndefined()
+          const error = await denied.json()
+          expect(Object.keys(error)).toEqual(['error'])
+          expect(typeof error.error).toBe('string'); expect(error.error.length).toBeGreaterThan(0)
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${source.source_case}-${source.spec.case_id}-page.png`) })
+          outcomes.push({ locator: source.locator, values_verified: true, mask_verified: true, message_switch_verified: true, grid_verified: true, native_units_verified: true, viewport_grid_verified: true, visible_message_count: source.spec.fields.length, original_download_disabled: true, original_download_denied_verified: true })
+          continue
+        }
         const ready = page.waitForEvent('download')
         await frame.getByRole('button', { name: /^(下载|Download)$/ }).click()
         const download = await ready
