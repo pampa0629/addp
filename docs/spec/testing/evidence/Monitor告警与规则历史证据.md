@@ -218,6 +218,12 @@ Artifact `14242081152` 的 SHA-256 `f60cd40eda38dcffd979f787ab4b2737a395bb0ee08c
 
 本地 `make test-transfer-continuous-online-runner` 的 156 项 Python、原 Node／Shell 语法和 System 身份夹具 Go 通过；[同源码自然 Platform consistency Job 133785625920](https://github.com/pampa0629/addp/actions/runs/44007302602/job/133785625920)成功，原始日志确认 156 项 Runner 实际运行。Artifact `14295904734` 已核对 SHA-256 `d32af8d96313a5d7e0429c9b8a363aae9f40713e0eed4695c066b770922d1e5f` 和 ZIP CRC；原件、逐项复核及个人前后对照保留在 `/tmp/addp-cdc-alert-ui-hosted-44007380675/`。前两轮失败源码、阶段、未知操作结果和清理记录继续保留，不追认为通过；本轮结果不外推其他 Provider、所有告警类型页面、七天自然留存或生产 T5。
 
+### 捕获失败与恢复能力丢失的租户页面验收准备（2026-11-17）
+
+沿原 `transfer-continuous-events` 扩展六个页面阶段：捕获失败的打开／页面确认、Connect 缺样保持、健康恢复关闭；源端及消息恢复能力丢失的打开／页面各确认、源库与本轮独占 Redpanda 同时缺样保持、正式确认 Stop 后旧事件关闭。复用上一轮唯一告警／通知页面断言，按真实任务、generation、incident 与签名 delivery UUID 对照正式 API；删除原捕获失败及源端风险的 Runner 确认 POST，补上消息风险的页面确认，所有确认仅发送一次。捕获与风险原契约没有性能规则的 evaluation_state，页面只核对真实已有状态、原因和最后有效观测时间；缺样由正式任务观测证明，不新增 unknown 字段或产品 UI。
+
+本批只改原 Runner／回归、Online spec 和现有场景／证据，不改产品服务、接口、权限、规则阈值或预算。现有 `make test-transfer-continuous-online-runner`／Platform 和手工 Hosted 自动覆盖；普通 Console T3 排除 Online spec，不能作为真实页面证据。冻结检出 `3ad3fead614e20627167428acb7a67a1840ac213` 叠加本批四个实际输入后，标准入口的 158 项 Python、原 Node／Shell 语法及 System 身份夹具 Go 完整通过（`/tmp/addp-cdc-risk-ui-runner-frozen.log`），覆盖六阶段浏览器失败与缺样时间漂移后恢复原生故障、不重复确认，以及九阶段绑定／回执拒绝。新整套预期 30 项检查、17 份浏览器回执及原六类 opened／resolved 共 12 条签名通知；此前三条性能告警页面成功不追认本补充。个人 task61 与三个现有槽已保存只读基线，故障动作仅限 GitHub Hosted 独占资源。
+
 ## 后续待办
 
 1. 补服务组失联的真实租约故障／恢复、正式页面、签名通知和清理；历史临时规则的后续处置无记录，不能假定已删除。

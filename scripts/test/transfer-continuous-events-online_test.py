@@ -766,10 +766,11 @@ class ContinuousRunnerTest(unittest.TestCase):
             binding={'task_id':7,'generation':1,'destination_id':9,
                 'incidents':{code:i for i,code in enumerate(sorted(M.CDC_PERFORMANCE_CODES),1)},
                 'delivery_ids':[f'aaaaaaaa-1111-4111-8111-{i:012d}' for i in range(1,4)],'last_observed_at':{}}
-            required={
-                'cdc_alert_open':['alert_task_generation','opened_rows_match_api','ui_acknowledge_confirmed','opened_delivery_rows_match_api','no_samples'],
-                'cdc_alert_unknown':['alert_task_generation','unknown_rows_match_api','last_observed_preserved','no_recovery_delivery','no_samples'],
-                'cdc_alert_resolved':['alert_task_generation','resolved_rows_match_api','original_incident_ids','resolved_delivery_rows_match_api','no_samples']}
+            required={phase: {
+                'open':['alert_task_generation','opened_rows_match_api','ui_acknowledge_confirmed','opened_delivery_rows_match_api','no_samples'],
+                'unknown':['alert_task_generation','unknown_rows_match_api','last_observed_preserved','no_recovery_delivery','no_samples'],
+                'resolved':['alert_task_generation','resolved_rows_match_api','original_incident_ids','resolved_delivery_rows_match_api','no_samples']
+            }[state] for phase,(_,state) in M.CDC_ALERT_BROWSER_PHASES.items()}
             change={}
             class Process:
                 def __init__(self,args,**kwargs):
@@ -786,8 +787,10 @@ class ContinuousRunnerTest(unittest.TestCase):
                 def wait(self,timeout):self.ended=True;return 0
             with patch.dict(os.environ,env),patch.object(M.subprocess,'Popen',Process):
                 for phase in required:
-                    binding['last_observed_at']={code:'2026-11-17T01:02:03Z' for code in M.CDC_PERFORMANCE_CODES} if phase=='cdc_alert_unknown' else {}
-                    binding['delivery_ids']=[f'aaaaaaaa-1111-4111-8111-{i:012d}' for i in range(1,7 if phase=='cdc_alert_resolved' else 4)]
+                    codes,state=M.CDC_ALERT_BROWSER_PHASES[phase]
+                    binding['incidents']={code:i for i,code in enumerate(sorted(codes),1)}
+                    binding['last_observed_at']={code:'2026-11-17T01:02:03Z' for code in codes} if state=='unknown' else {}
+                    binding['delivery_ids']=[f'aaaaaaaa-1111-4111-8111-{i:012d}' for i in range(1,len(codes)*(2 if state=='resolved' else 1)+1)]
                     result=M.run_browser(phase,[UUID],subject,'run-1',secret,alert_observation=binding)
                     self.assertEqual(result['alert_binding'],binding)
                     for alteration in [{'tenant_id':'3'},{'checks':required[phase][:-1]},
@@ -799,7 +802,7 @@ class ContinuousRunnerTest(unittest.TestCase):
             for changed in [{'task_id':0},{'generation':True},{'destination_id':'9'},{'incidents':{}},
                             {'delivery_ids':[UUID]*6},{'raw_response':{}},{'last_observed_at':{'foreign':'2026-11-17T00:00:00Z'}}]:
                 with self.subTest(changed=changed),patch.object(M.subprocess,'Popen') as launch,self.assertRaises(M.SuiteError):
-                    M.run_browser('cdc_alert_resolved',[UUID],subject,'run-1',secret,alert_observation={**binding,**changed})
+                    M.run_browser('cdc_alert_risk_resolved',[UUID],subject,'run-1',secret,alert_observation={**binding,**changed})
                 launch.assert_not_called()
             self.assertFalse(list(secret.iterdir()))
 
@@ -811,7 +814,7 @@ const source=readFileSync('console/frontend/e2e/online/continuous-execution-even
 const start=source.indexOf('  async function signedPage('),end=source.indexOf('  async function timeline(',start);
 assert(start>0 && end>start);
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
-for(const mode of ['cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved','live']) {
+for(const mode of ['cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved','cdc_alert_capture_open','cdc_alert_capture_unknown','cdc_alert_capture_resolved','cdc_alert_risk_open','cdc_alert_risk_unknown','cdc_alert_risk_resolved','live']) {
  let disposed=false,reads=0;
  const page={addInitScript:async()=>{},frameLocator:()=>({})};
  const api={get:async()=>{assert.equal(disposed,false);reads++;return{}},dispose:async()=>{disposed=true}};
@@ -837,7 +840,7 @@ for(const mode of ['cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved','li
         program = r"""
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 const source=readFileSync('console/frontend/e2e/online/continuous-execution-events.spec.js','utf8');
-const start=source.indexOf('      // This owned destination'),end=source.indexOf("      checks.push(phase==='cdc_alert_open'?",start);
+const start=source.indexOf('      // This owned destination'),end=source.indexOf("      checks.push(alertState==='open'?",start);
 assert(start>0 && end>start);
 const selected=[1,2,3].map(id=>({delivery_id:`signed-${id}`,status:'delivered',last_http_status:202,event_type:'opened'}));
 const rendered=[...selected,{delivery_id:'other-task',status:'pending',last_http_status:0,event_type:'opened'}];
@@ -1288,6 +1291,132 @@ class CDCTaskObservationTest(unittest.TestCase):
 
 
 class CDCRiskAcceptanceTest(unittest.TestCase):
+    def test_capture_failure_pages_own_confirmation_hold_missing_time_and_restore_on_page_failure(self):
+        for fail_phase in (None, 'cdc_alert_capture_open', 'cdc_alert_capture_unknown', 'cdc_alert_capture_resolved', 'unknown_drift'):
+            with self.subTest(fail_phase=fail_phase):
+                state={'connector':False,'component':False,'status':'open'}; pages=[]; commands=[]
+                proof={'destination_id':9,'paused_execution_id':UUID};frozen='2026-11-17T01:02:03Z'
+                def request(*args,**kwargs):
+                    now=M.datetime.now(M.timezone.utc)
+                    health='unknown' if state['component'] else 'failed' if state['connector'] else 'healthy'
+                    return SimpleNamespace(payload={'capture':{'generation':1,'health_observation':{
+                        'state':health,'sampled_at':now.isoformat(),'expires_at':(now+timedelta(seconds=30)).isoformat(),
+                        'failed_since':(now-timedelta(seconds=65)).isoformat()}}})
+                def alerts(*args,**kwargs):
+                    if not state['connector'] and not pages:return {}
+                    now=M.datetime.now(M.timezone.utc)
+                    return {'cdc_capture_failed':{'id':8,'status':state['status'],'severity':'warning',
+                        'last_observed_at':state.get('observed',frozen),'details':{'trigger_seconds':60,'sampled_at':now.isoformat()}}}
+                def command(args,**kwargs):
+                    commands.append(args)
+                    if args[:2]==['docker','pause']:state['component']=True
+                    elif args[:2]==['docker','unpause']:state['component']=False
+                    elif args[-1].endswith('/pause'):state['connector']=True
+                    elif args[-1].endswith('/resume'):state['connector']=False;state['status']='resolved'
+                    return SimpleNamespace()
+                def observe(phase,execution,binding):
+                    pages.append(phase);self.assertEqual(execution,UUID)
+                    self.assertEqual(binding['incidents'],{'cdc_capture_failed':8})
+                    self.assertEqual(len(binding['delivery_ids']),2 if phase.endswith('resolved') else 1)
+                    if phase.endswith('unknown'):
+                        self.assertTrue(state['component']);self.assertEqual(binding['last_observed_at'],{'cdc_capture_failed':frozen})
+                    if phase==fail_phase:raise M.SuiteError('actual page rejected')
+                    if phase.endswith('unknown') and fail_phase=='unknown_drift':state['observed']='2026-11-17T01:02:04Z'
+                    if phase.endswith('open'):state['status']='acknowledged'
+                    return {'result':'passed','phase':phase}
+                def immediate(fn,**kwargs):
+                    value=fn();self.assertTrue(value);return value
+                clock=iter(range(0,1000,20))
+                with patch.object(M,'cdc_risk_container',return_value='a'*64),patch.object(M,'cdc_risk_alerts',side_effect=alerts), \
+                     patch.object(M.subprocess,'run',side_effect=command),patch.object(M,'until',side_effect=immediate), \
+                     patch.object(M.time,'monotonic',side_effect=lambda:next(clock)),patch.object(M.time,'sleep'):
+                    args=(SimpleNamespace(request=request),7,1,{'connector':'owned'},
+                        lambda incidents,event:[{'delivery_id':event}],SimpleNamespace(snapshot=lambda:[]),proof,lambda _:None,observe)
+                    if fail_phase:
+                        with self.assertRaisesRegex(M.SuiteError,'capture unknown page changed warning' if fail_phase=='unknown_drift' else 'actual page rejected'):M.verify_capture_failure(*args)
+                    else:
+                        M.verify_capture_failure(*args)
+                        self.assertEqual(pages,['cdc_alert_capture_open','cdc_alert_capture_unknown','cdc_alert_capture_resolved'])
+                        self.assertEqual(proof['capture_failure']['result'],'passed')
+                self.assertFalse(state['component']);self.assertFalse(state['connector'])
+                self.assertEqual(proof['capture_failure']['fault_cleanup'],'passed')
+                self.assertEqual(len(pages),len(set(pages)))
+
+    def test_two_loss_pages_confirm_both_hold_source_and_broker_fault_and_cleanup_after_failure(self):
+        for fail_phase in (None,'cdc_alert_risk_open','cdc_alert_risk_unknown','cdc_alert_risk_resolved','unknown_drift'):
+            with self.subTest(fail_phase=fail_phase):
+                report={};state={'ack':False,'source_paused':False,'broker_paused':False};pages=[];receipts=[]
+                timestamp='2026-11-17T01:02:03Z';codes=sorted(M.CDC_RISK_CODES)
+                replacement='bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
+                def alerts(client,task,generation,**kwargs):
+                    if task!=7:return {}
+                    stage=report['cdc_risk_closure']['stage']
+                    if stage not in {'buffer_alert_and_delivery','source_fault','missing_sample','confirmed_close','replacement_task','completed'}:return {}
+                    wanted={'cdc_buffer_recovery_lost'} if stage=='buffer_alert_and_delivery' else set(codes)
+                    return {code:{'id':codes.index(code)+20,'status':'resolved' if stage in {'confirmed_close','replacement_task'} else 'acknowledged' if state['ack'] else 'open',
+                        'last_observed_at':state.get('observed',timestamp),'details':{'reason':'slot_missing' if 'source' in code else 'buffer_position_lost'}} for code in wanted}
+                def request(method,path,*args,**kwargs):
+                    if path.startswith(M.DELIVERIES):
+                        for code,row in alerts(None,7,1).items():
+                            event='resolved' if row['status']=='resolved' else 'opened'
+                            key=code+event
+                            if not any(v['delivery_id']==key for v in receipts):
+                                receipts.append({'delivery_id':key,'incident_id':row['id'],'event_type':event,'signal_code':code,'http_status':202})
+                        return SimpleNamespace(payload={'data':[{**v,'status':'delivered','last_http_status':202} for v in receipts],'total':len(receipts)})
+                    if method=='DELETE':return SimpleNamespace(payload={})
+                    if path==M.DESTINATIONS:return SimpleNamespace(payload=[])
+                    return SimpleNamespace(payload={'id':7,'desired_state':'paused','last_execution_id':UUID,'capture':{'generation':1},'name':'rebuilt'})
+                def physical(action):
+                    if action=='risk-pause-source':state['source_paused']=True
+                    if action=='risk-unpause-source':state['source_paused']=False
+                    return True
+                def command(args,**kwargs):
+                    if args[:2]==['docker','pause']:state['broker_paused']=True
+                    if args[:2]==['docker','unpause']:state['broker_paused']=False
+                    return SimpleNamespace(stdout=json.dumps({'identity_matches':True,'slot_active':False}))
+                def sample(client,task,engine,generation=None,**kwargs):
+                    return {'generation':2 if task!=7 else 1,'execution_id':replacement if task!=7 else UUID,
+                        'buffer':{'committed_offset':'9','latest_offset':'12','lag_offsets':'0' if task!=7 else '3'}}
+                def risk_sample(client,task,generation,field,status,**kwargs):
+                    if status=='unavailable':
+                        self.assertTrue(state['source_paused']);self.assertTrue(state['broker_paused'])
+                        self.assertIsInstance(kwargs['after'],M.datetime)
+                    return {'status':status,'recovery_state':'lost','earliest_offset':'10','committed_offset':'9'}
+                def observe(phase,execution,binding):
+                    pages.append(phase);self.assertEqual(execution,UUID)
+                    self.assertEqual(set(binding['incidents']),M.CDC_RISK_CODES)
+                    self.assertEqual(len(binding['delivery_ids']),4 if phase.endswith('resolved') else 2)
+                    if phase.endswith('unknown'):
+                        self.assertTrue(state['source_paused']);self.assertTrue(state['broker_paused'])
+                        self.assertEqual(binding['last_observed_at'],{code:timestamp for code in codes})
+                        self.assertFalse(any(v['event_type']=='resolved' for v in receipts))
+                    if phase==fail_phase:raise M.SuiteError('actual loss page rejected')
+                    if phase.endswith('unknown') and fail_phase=='unknown_drift':state['observed']='2026-11-17T01:02:04Z'
+                    if phase.endswith('open'):state['ack']=True
+                    return {'result':'passed','phase':phase}
+                def immediate(fn,**kwargs):
+                    value=fn();self.assertTrue(value);return value
+                clock=iter(range(0,1000,20));receiver=SimpleNamespace(url='private',secret='private',snapshot=lambda:receipts,close=lambda:None)
+                with patch.object(M,'cdc_task_sample',side_effect=sample),patch.object(M,'cdc_capture_binding',return_value={'connector':'owned','slot':'owned','publication':'owned'}), \
+                     patch.object(M,'CDCRiskReceiver',return_value=receiver),patch.object(M,'cdc_risk_alerts',side_effect=alerts), \
+                     patch.object(M,'verify_cdc_performance',return_value=UUID),patch.object(M,'verify_capture_failure'),patch.object(M,'cdc_risk_trim'), \
+                     patch.object(M,'cdc_risk_sample',side_effect=risk_sample),patch.object(M,'wait_status',return_value={}), \
+                     patch.object(M,'cdc_risk_container',return_value='b'*64),patch.object(M.subprocess,'run',side_effect=command), \
+                     patch.object(M,'physical',side_effect=physical),patch.object(M,'until',side_effect=immediate), \
+                     patch.object(M.time,'monotonic',side_effect=lambda:next(clock)),patch.object(M.time,'sleep'):
+                    args=(SimpleNamespace(request=request),2,7,10,UUID,'owned','run-1',lambda *a:{'id':9},lambda *a:99,
+                          lambda *a:replacement,report,lambda:None,None,observe)
+                    if fail_phase:
+                        with self.assertRaisesRegex(M.SuiteError,'unknown sample changed acknowledged risk' if fail_phase=='unknown_drift' else 'actual loss page rejected'):M.verify_cdc_risk_closure(*args)
+                    else:
+                        M.verify_cdc_risk_closure(*args)
+                        self.assertEqual(pages,['cdc_alert_risk_open','cdc_alert_risk_unknown','cdc_alert_risk_resolved'])
+                        self.assertEqual(report['cdc_risk_closure']['result'],'passed')
+                        self.assertEqual(set(report['cdc_risk_closure']['missing_samples']),{'postgresql_observation','buffer_observation'})
+                self.assertFalse(state['source_paused']);self.assertFalse(state['broker_paused'])
+                self.assertEqual(report['cdc_risk_closure']['cleanup'],'passed')
+                self.assertEqual(len(pages),len(set(pages)))
+
     def test_pretrigger_oracle_is_readonly_and_bound_to_owned_rules_and_destination(self):
         postgres=import_module('scripts.test.execution-retention-readonly-online')
         row={'window':{'generation':'1','state':'pending','active':False},'incidents':0,'events':0,'deliveries':0}
@@ -1343,7 +1472,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                  patch.object(M, 'until', side_effect=[{}, M.SuiteError('original observation failure')]), \
                  patch.object(M.subprocess, 'run', side_effect=[None, OSError('private') if cleanup_fails else None]) as run, \
                  self.assertRaisesRegex(M.SuiteError, 'original observation failure'):
-                M.verify_capture_failure(object(), 7, 1, {'connector': 'owned'}, None, None, None, proof, lambda _: None)
+                M.verify_capture_failure(object(), 7, 1, {'connector': 'owned'}, None, None, proof, lambda _: None, None)
             self.assertTrue(run.call_args_list[0].args[0][-1].endswith('/owned/pause'))
             self.assertTrue(run.call_args_list[1].args[0][-1].endswith('/owned/resume'))
             self.assertEqual(proof['capture_failure']['result'], 'failed')

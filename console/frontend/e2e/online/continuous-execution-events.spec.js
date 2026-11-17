@@ -18,7 +18,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   const control = process.env.ADDP_CONTINUOUS_BROWSER_CONTROL
   const artifacts = process.env.ADDP_ONLINE_ARTIFACT_DIR
   const credentials = [process.env.ADDP_CONTINUOUS_BROWSER_USERNAME, process.env.ADDP_CONTINUOUS_BROWSER_PASSWORD]
-  if (!['live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history','cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
+  if (!['live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history','cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved','cdc_alert_capture_open','cdc_alert_capture_unknown','cdc_alert_capture_resolved','cdc_alert_risk_open','cdc_alert_risk_unknown','cdc_alert_risk_resolved'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
   const marker = { run_id: runID, phase, execution_id: ids[0] }
   const checks = []
   const alertBinding = phase.startsWith('cdc_alert_') ? JSON.parse(process.env.ADDP_CONTINUOUS_BROWSER_ALERTS) : null
@@ -108,7 +108,9 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       ? `/monitor/cdc-resources?view=tasks&task_id=${history.task_id}&refresh=off` : alertBinding ? '/monitor/alerts' : route(ids[0]))
     if (alertBinding) {
       const binding = alertBinding
-      const names = { cdc_consumer_stalled:'CDC 目标消费停滞', cdc_capture_delayed:'CDC 捕获持续延迟', cdc_backlog_high:'CDC 积压持续偏高' }
+      const alertState = phase.split('_').at(-1)
+      const performanceAlert = ['cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'].includes(phase)
+      const names = { cdc_capture_failed:'CDC 捕获持续失败', cdc_source_recovery_lost:'CDC 源端恢复能力已丢失', cdc_buffer_recovery_lost:'CDC 消息恢复范围已丢失', cdc_consumer_stalled:'CDC 目标消费停滞', cdc_capture_delayed:'CDC 捕获持续延迟', cdc_backlog_high:'CDC 积压持续偏高' }
       const statusNames = { open:'待处理', acknowledged:'已确认', resolved:'已恢复' }
       const incidentIDs = Object.values(binding.incidents)
       const dateText = value => page.evaluate(value => new Date(value).toLocaleString(), value)
@@ -118,7 +120,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
         const payload = await json(await alertAPI.get('/api/v1/monitor/alerts?module=transfer&page_size=100'), 'CDC alert API')
         expect(payload.total).toBeLessThanOrEqual(100)
         const selected = payload.data.filter(row => incidentIDs.includes(row.id))
-        expect(selected).toHaveLength(3)
+        expect(selected).toHaveLength(incidentIDs.length)
         for (const row of selected) {
           expect(row.id).toBe(binding.incidents[row.signal_code])
           expect(row.tenant_id).toBe(Number(tenantID))
@@ -126,8 +128,8 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
           expect(row.source_task_id).toBe(String(binding.task_id))
           expect(row.details.generation).toBe(String(binding.generation))
           expect(row.status).toBe(status)
-          if (phase === 'cdc_alert_unknown') {
-            expect(row.details.evaluation_state).toBe('unknown')
+          if (alertState === 'unknown') {
+            if (performanceAlert) expect(row.details.evaluation_state).toBe('unknown')
             expect(row.last_observed_at).toBe(binding.last_observed_at[row.signal_code])
           }
         }
@@ -156,13 +158,19 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
           const visible=await findAlertRow(row.id)
           await expect(visible).toContainText(names[row.signal_code])
           await expect(visible.getByTestId('cdc-alert-reason')).toContainText(String(binding.generation))
+          if (row.signal_code==='cdc_capture_failed') {
+            expect(row.details.trigger_seconds).toBe(60)
+            await expect(visible.getByTestId('cdc-capture-failure-duration')).toContainText('60')
+          }
+          const reasons={slot_missing:'任务源端逻辑槽已不存在',buffer_position_lost:'任务消费位点已早于消息保留范围'}
+          if (reasons[row.details.reason]) await expect(visible.getByTestId('cdc-alert-reason')).toContainText(reasons[row.details.reason])
           const cells=visible.locator('td .cell')
           await expect(cells.nth(2)).toHaveText(statusNames[status])
           await expect(cells.nth(3)).toHaveText('transfer')
           await expect(cells.nth(4)).toHaveText(String(binding.task_id))
           await expect(cells.nth(5)).toHaveText(await dateText(row.opened_at))
-          if (phase!=='cdc_alert_open') await expect(cells.nth(6)).toHaveText(await dateText(row.last_observed_at))
-          if (phase==='cdc_alert_unknown') await expect(visible.getByTestId('cdc-performance-evaluation')).toContainText('观测未知')
+          if (alertState!=='open') await expect(cells.nth(6)).toHaveText(await dateText(row.last_observed_at))
+          if (alertState==='unknown' && performanceAlert) await expect(visible.getByTestId('cdc-performance-evaluation')).toContainText('观测未知')
           if (status!=='open') await expect(visible.getByRole('button',{name:'确认',exact:true})).toHaveCount(0)
         }
         return selected
@@ -170,7 +178,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       stage='cdc_alert_identity'
       await expect(alertPage).toBeVisible()
       checks.push('alert_task_generation')
-      if (phase==='cdc_alert_open') {
+      if (alertState==='open') {
         stage='cdc_alert_open_rows'
         const rows=await compareRows('open')
         checks.push('opened_rows_match_api')
@@ -191,9 +199,9 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
         checks.push('ui_acknowledge_confirmed')
       } else {
         stage='cdc_alert_retained_or_resolved'
-        await compareRows(phase==='cdc_alert_unknown'?'acknowledged':'resolved')
-        checks.push(phase==='cdc_alert_unknown'?'unknown_rows_match_api':'resolved_rows_match_api',
-                    phase==='cdc_alert_unknown'?'last_observed_preserved':'original_incident_ids')
+        await compareRows(alertState==='unknown'?'acknowledged':'resolved')
+        checks.push(alertState==='unknown'?'unknown_rows_match_api':'resolved_rows_match_api',
+                    alertState==='unknown'?'last_observed_preserved':'original_incident_ids')
       }
       stage='cdc_alert_notifications'
       const destinations=await json(await alertAPI.get('/api/v1/monitor/webhook-destinations'),'CDC destination API')
@@ -203,7 +211,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       expect(deliveries.total).toBeLessThanOrEqual(100)
       const selected=deliveries.data.filter(row=>incidentIDs.includes(row.incident_id))
       expect(selected.map(row=>row.delivery_id).sort()).toEqual([...binding.delivery_ids].sort())
-      expect(selected.filter(row=>row.event_type==='resolved')).toHaveLength(phase==='cdc_alert_resolved'?3:0)
+      expect(selected.filter(row=>row.event_type==='resolved')).toHaveLength(alertState==='resolved'?incidentIDs.length:0)
       stage='cdc_alert_notification_page'
       await page.goto('/monitor/notifications')
       const card=frame.locator('.webhook-list .delivery-card')
@@ -241,7 +249,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
         await expect(visible).toContainText('202')
         await expect(visible).toContainText(destination.name)
       }
-      checks.push(phase==='cdc_alert_open'?'opened_delivery_rows_match_api':phase==='cdc_alert_unknown'?'no_recovery_delivery':'resolved_delivery_rows_match_api')
+      checks.push(alertState==='open'?'opened_delivery_rows_match_api':alertState==='unknown'?'no_recovery_delivery':'resolved_delivery_rows_match_api')
       await expect(alertPage).toHaveCount(0)
       await expect(card).not.toContainText('business-value-sentinel')
       checks.push('no_samples')

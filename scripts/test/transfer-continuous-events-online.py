@@ -277,11 +277,26 @@ def until(operation, timeout=120):
 CDC_RISK_CODES = {'cdc_source_recovery_lost', 'cdc_buffer_recovery_lost'}
 CDC_PERFORMANCE_SECONDS = {'cdc_consumer_stalled': 180, 'cdc_capture_delayed': 180, 'cdc_backlog_high': 300}
 CDC_PERFORMANCE_CODES = set(CDC_PERFORMANCE_SECONDS)
+CDC_ALERT_BROWSER_PHASES = {
+    f'cdc_alert{group}_{state}': (codes, state)
+    for group, codes in [('', CDC_PERFORMANCE_CODES), ('_capture', {'cdc_capture_failed'}), ('_risk', CDC_RISK_CODES)]
+    for state in ('open', 'unknown', 'resolved')
+}
+
 CDC_BACKLOG_THRESHOLD = '256'
 RULES = '/api/v1/monitor/alert-rules'
 ALERTS = '/api/v1/monitor/alerts'
 DESTINATIONS = '/api/v1/monitor/webhook-destinations'
 DELIVERIES = '/api/v1/monitor/webhook-deliveries'
+
+
+def record_cdc_alert_browser(evidence, observe, phase, task_id, generation, destination_id, execution_id, incidents, deliveries):
+    binding = {'task_id': task_id, 'generation': generation, 'destination_id': destination_id,
+        'incidents': {code: row['id'] for code, row in incidents.items()},
+        'delivery_ids': [row['delivery_id'] for row in deliveries],
+        'last_observed_at': {code: row['last_observed_at'] for code, row in incidents.items()}
+            if CDC_ALERT_BROWSER_PHASES[phase][1] == 'unknown' else {}}
+    evidence.setdefault('browser', {})[phase] = observe(phase, execution_id, binding)
 
 
 class CDCRiskReceiver:
@@ -437,7 +452,7 @@ def cdc_risk_trim(binding, offset):
         check=True, capture_output=True, text=True, timeout=20)
 
 
-def verify_capture_failure(client, task_id, generation, binding, mutate, delivered, receiver, proof, stage):
+def verify_capture_failure(client, task_id, generation, binding, delivered, receiver, proof, stage, observe_alert_page):
     """Fault only this Hosted Connector; target consumption is already paused."""
     code = 'cdc_capture_failed'
     connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
@@ -481,7 +496,9 @@ def verify_capture_failure(client, task_id, generation, binding, mutate, deliver
         require((sampled - since).total_seconds() >= 60, 'capture warning opened before 60 seconds of evidence')
         evidence.update(incident_id=incident['id'], failed_since=first['failed_since'], opened_sampled_at=incident['details']['sampled_at'])
         evidence['opened_deliveries'] = until(lambda: delivered(opened, 'opened'))
-        mutate(client, f"{ALERTS}/{incident['id']}/acknowledge")
+        record_cdc_alert_browser(evidence, observe_alert_page, 'cdc_alert_capture_open', task_id, generation,
+            proof['destination_id'], proof['paused_execution_id'], opened, evidence['opened_deliveries'])
+        until(lambda: incidents('acknowledged'))
         stage('capture_failure_unknown')
         component_paused = True
         subprocess.run(['docker', 'pause', connect], check=True, capture_output=True, timeout=15)
@@ -499,6 +516,13 @@ def verify_capture_failure(client, task_id, generation, binding, mutate, deliver
             checks += 1
             time.sleep(2)
         evidence['missing_sample_checks'] = checks
+        record_cdc_alert_browser(evidence, observe_alert_page, 'cdc_alert_capture_unknown', task_id, generation,
+            proof['destination_id'], proof['paused_execution_id'], {code: frozen}, evidence['opened_deliveries'])
+        retained = incidents('acknowledged')
+        require(retained and retained[code]['id'] == incident['id']
+                and retained[code]['last_observed_at'] == frozen['last_observed_at'], 'capture unknown page changed warning')
+        require(not any(r['signal_code'] == code and r['event_type'] == 'resolved' for r in receiver.snapshot()),
+                'capture unknown page sent recovery')
         subprocess.run(['docker', 'unpause', connect], check=True, capture_output=True, timeout=15)
         component_paused = False
         refreshed = datetime.now(timezone.utc)
@@ -511,6 +535,9 @@ def verify_capture_failure(client, task_id, generation, binding, mutate, deliver
         resolved = until(lambda: incidents('resolved'))
         require(resolved[code]['id'] == incident['id'], 'capture recovery replaced warning')
         evidence['resolved_deliveries'] = until(lambda: delivered(resolved, 'resolved'))
+        record_cdc_alert_browser(evidence, observe_alert_page, 'cdc_alert_capture_resolved', task_id, generation,
+            proof['destination_id'], proof['paused_execution_id'], resolved,
+            evidence['opened_deliveries'] + evidence['resolved_deliveries'])
         evidence['result'] = 'passed'
     finally:
         original_failure = sys.exc_info()[0] is not None
@@ -846,11 +873,8 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         evidence['incident_ids'] = {k: v['id'] for k, v in active.items()}
         evidence['opened_deliveries'] = until(lambda: delivered(active, 'opened'))
         def observe_alerts(phase, values, deliveries, execution_id):
-            binding = {'task_id':task_id, 'generation':generation, 'destination_id':destination_id,
-                'incidents':evidence['incident_ids'],
-                'delivery_ids':[row['delivery_id'] for row in deliveries],
-                'last_observed_at':{code:row['last_observed_at'] for code,row in values.items()} if phase=='cdc_alert_unknown' else {}}
-            evidence.setdefault('browser', {})[phase] = observe_alert_page(phase, execution_id, binding)
+            record_cdc_alert_browser(evidence, observe_alert_page, phase, task_id, generation,
+                destination_id, execution_id, values, deliveries)
         stage('performance_alert_open_page')
         observe_alerts('cdc_alert_open', active, evidence['opened_deliveries'], pending_resumed)
         until(lambda: incidents('acknowledged'))
@@ -1077,7 +1101,7 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
     binding = cdc_capture_binding(tenant, task_id, engine_id, generation)
     receiver = CDCRiskReceiver(task_id)
     destination_id = None
-    paused = False
+    paused = broker_paused = False
 
     def stage(value):
         proof['stage'] = value
@@ -1135,7 +1159,7 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
                 'previous_status': previous['status'], 'reason': cancelled['metadata'].get('recovery_reason')}
             if paused_execution not in report['executions']:
                 report['executions'].append(paused_execution)
-        verify_capture_failure(client, task_id, generation, binding, mutate, delivered, receiver, proof, stage)
+        verify_capture_failure(client, task_id, generation, binding, delivered, receiver, proof, stage, observe_alert_page)
         stage('buffer_pause_settled')
         settled_after = datetime.now(timezone.utc)
         before = until(lambda: cdc_task_sample(client, task_id, engine_id, generation, after=settled_after))
@@ -1181,42 +1205,60 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
         opened = until(lambda: alerts_ready(CDC_RISK_CODES, 'open'))
         require(opened['cdc_source_recovery_lost']['details']['reason'] == 'slot_missing', 'wrong source loss reason')
         proof['opened_deliveries'] = until(lambda: delivered(opened, 'opened'))
-        source_id = opened['cdc_source_recovery_lost']['id']
-        mutate(client, f'{ALERTS}/{source_id}/acknowledge')
+        record_cdc_alert_browser(proof, observe_alert_page, 'cdc_alert_risk_open', task_id, generation,
+            destination_id, paused_execution, opened, proof['opened_deliveries'])
+        until(lambda: alerts_ready(CDC_RISK_CODES, 'acknowledged'))
         stage('missing_sample')
         paused = True  # Also unpause if the pause command outcome becomes uncertain.
         require(physical('risk-pause-source'), 'source pause failed')
+        broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
+        broker_paused = True
+        subprocess.run(['docker', 'pause', broker], check=True, capture_output=True, timeout=15)
         paused_at = datetime.now(timezone.utc)
-        until(lambda: cdc_risk_sample(client, task_id, generation, 'postgresql_observation', 'unavailable', after=paused_at))
-        frozen = cdc_risk_alerts(client, task_id, generation)['cdc_source_recovery_lost']
-        require(frozen['id'] == source_id and frozen['status'] == 'acknowledged', 'missing sample closed acknowledged risk')
+        missing = {}
+        for field in ('postgresql_observation', 'buffer_observation'):
+            missing[field] = until(lambda field=field: cdc_risk_sample(client, task_id, generation, field, 'unavailable', after=paused_at))
+        proof['missing_samples'] = missing
+        frozen = until(lambda: alerts_ready(CDC_RISK_CODES, 'acknowledged'))
         # Span two normal 15-second evaluations without changing product intervals.
         deadline = time.monotonic() + 32
         samples = 0
+        def retained_risks():
+            current = alerts_ready(CDC_RISK_CODES, 'acknowledged')
+            require(current and all(current[code]['id'] == frozen[code]['id']
+                    and current[code]['last_observed_at'] == frozen[code]['last_observed_at']
+                    and not current[code].get('resolved_at') for code in CDC_RISK_CODES),
+                    'unknown sample changed acknowledged risk')
+            require(not any(r['event_type'] == 'resolved' and r['signal_code'] in CDC_RISK_CODES for r in receiver.snapshot()),
+                    'unknown sample sent recovery')
         while time.monotonic() < deadline:
-            value = cdc_risk_alerts(client, task_id, generation)['cdc_source_recovery_lost']
-            require(value['id'] == source_id and value['status'] == 'acknowledged'
-                    and value['last_observed_at'] == frozen['last_observed_at'] and not value.get('resolved_at'),
-                    'unknown source sample changed acknowledged incident')
-            require(not any(r['event_type'] == 'resolved' and r['signal_code'] in CDC_RISK_CODES for r in receiver.snapshot()), 'unknown sample sent recovery')
+            retained_risks()
             samples += 1
             time.sleep(2)
         proof['missing_sample_checks'] = samples
+        record_cdc_alert_browser(proof, observe_alert_page, 'cdc_alert_risk_unknown', task_id, generation,
+            destination_id, paused_execution, frozen, proof['opened_deliveries'])
+        retained_risks()
         proof['acknowledged_incident_preserved'] = True
+        subprocess.run(['docker', 'unpause', broker], check=True, capture_output=True, timeout=15)
+        broker_paused = False
         require(physical('risk-unpause-source'), 'source unpause failed')
         paused = False
         restored_at = datetime.now(timezone.utc)
         until(lambda: cdc_risk_sample(client, task_id, generation, 'postgresql_observation', 'missing', after=restored_at))
-        still_active = cdc_risk_alerts(client, task_id, generation)
-        require(still_active['cdc_source_recovery_lost']['id'] == source_id
-                and still_active['cdc_source_recovery_lost']['status'] == 'acknowledged'
-                and still_active['cdc_buffer_recovery_lost']['status'] == 'open', 'fault disappeared without explicit close')
+        restored_buffer = until(lambda: cdc_risk_sample(client, task_id, generation, 'buffer_observation', 'available', after=restored_at))
+        require(restored_buffer['recovery_state'] == 'lost', 'sampling recovery concealed lost buffer range')
+        still_active = alerts_ready(CDC_RISK_CODES, 'acknowledged')
+        require(still_active and {k: v['id'] for k, v in still_active.items()} == {k: v['id'] for k, v in opened.items()},
+                'fault disappeared without explicit close')
         proof['confirmed_fault_after_sampling_resumed'] = True
         stage('confirmed_close')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/stop', {'confirmed': True, 'confirmation_text': name})
         closed = until(lambda: alerts_ready(CDC_RISK_CODES, 'resolved'))
         require({v['id'] for v in closed.values()} == {v['id'] for v in opened.values()}, 'close replaced risk incidents')
         proof['resolved_deliveries'] = until(lambda: delivered(closed, 'resolved'))
+        record_cdc_alert_browser(proof, observe_alert_page, 'cdc_alert_risk_resolved', task_id, generation,
+            destination_id, paused_execution, closed, proof['opened_deliveries'] + proof['resolved_deliveries'])
         require(physical('verify-clean'), 'fault generation capture resources remain')
         stage('replacement_task')
         # Stop is irreversible. Rebaseline through a new, independently owned definition.
@@ -1244,6 +1286,11 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
     finally:
         original_failure = sys.exc_info()[0] is not None
         cleanup_errors = []
+        if broker_paused:
+            try:
+                subprocess.run(['docker', 'unpause', broker], check=True, capture_output=True, timeout=15)
+            except Exception:
+                cleanup_errors.append('risk_broker_unpause_failed')
         if paused:
             try:
                 require(physical('risk-unpause-source'), 'fault source remained paused')
@@ -1965,19 +2012,20 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                 and all(isinstance(cdc[key], str) and re.fullmatch(r'0|[1-9][0-9]*', cdc[key]) for key in ('committed_offset', 'latest_offset', 'lag_offsets'))
                 and int(cdc['latest_offset']) - int(cdc['committed_offset']) == int(cdc['lag_offsets'])
                 and cdc['lag_offsets'] == ('3' if phase == 'cdc_growth' else '0'), 'CDC browser observation invalid')
-    alert_phase = phase in {'cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'}
+    alert_phase = phase in CDC_ALERT_BROWSER_PHASES
     require(alert_phase == (alert_observation is not None), 'alert browser binding changed')
     if alert_phase:
         a = alert_observation
+        codes, alert_state = CDC_ALERT_BROWSER_PHASES[phase]
         require(type(a) is dict and set(a)=={'task_id','generation','destination_id','incidents','delivery_ids','last_observed_at'}
                 and all(type(a[k]) is int and a[k]>0 for k in ('task_id','generation','destination_id'))
-                and type(a['incidents']) is dict and set(a['incidents'])==CDC_PERFORMANCE_CODES
-                and all(type(v) is int and v>0 for v in a['incidents'].values()) and len(set(a['incidents'].values()))==3
-                and type(a['delivery_ids']) is list and len(a['delivery_ids'])==(6 if phase=='cdc_alert_resolved' else 3)
+                and type(a['incidents']) is dict and set(a['incidents'])==codes
+                and all(type(v) is int and v>0 for v in a['incidents'].values()) and len(set(a['incidents'].values()))==len(codes)
+                and type(a['delivery_ids']) is list and len(a['delivery_ids'])==len(codes)*(2 if alert_state=='resolved' else 1)
                 and len(set(a['delivery_ids']))==len(a['delivery_ids'])
                 and all(isinstance(v,str) and canonical_uuid(v)==v for v in a['delivery_ids'])
                 and type(a['last_observed_at']) is dict
-                and set(a['last_observed_at'])==(CDC_PERFORMANCE_CODES if phase=='cdc_alert_unknown' else set()),
+                and set(a['last_observed_at'])==(codes if alert_state=='unknown' else set()),
                 'alert browser observation invalid')
         for value in a['last_observed_at'].values():
             require(isinstance(value,str) and datetime.fromisoformat(value.replace('Z','+00:00')).tzinfo is not None,
@@ -1990,7 +2038,7 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                 and isinstance(metric_history['gap_timestamp'], str)
                 and datetime.fromisoformat(metric_history['gap_timestamp'].replace('Z', '+00:00')).tzinfo is not None,
                 'history browser observation invalid')
-    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history','cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'}, 'unknown browser phase')
+    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history'} | set(CDC_ALERT_BROWSER_PHASES), 'unknown browser phase')
     require((action is not None) == (phase in {'live', 'revocation'}), 'browser action binding changed')
     require((faults is not None) == (phase == 'owner_unavailable'), 'browser Owner fault binding changed')
     require((finish is not None) == (phase == 'live'), 'browser terminal action binding changed')
@@ -2003,9 +2051,10 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
         'recovery': ['old_failure', 'recovery_source', 'record_failure_code', 'no_samples'],
         'revocation': ['previously_readable', 'old_content_cleared', 'fresh_monitor_only_denied', 'no_samples'],
         'owner_unavailable': OWNER_OUTAGE_CHECKS,
-        'cdc_alert_open': ['alert_task_generation','opened_rows_match_api','ui_acknowledge_confirmed','opened_delivery_rows_match_api','no_samples'],
-        'cdc_alert_unknown': ['alert_task_generation','unknown_rows_match_api','last_observed_preserved','no_recovery_delivery','no_samples'],
-        'cdc_alert_resolved': ['alert_task_generation','resolved_rows_match_api','original_incident_ids','resolved_delivery_rows_match_api','no_samples'],
+        **{key: {'open': ['alert_task_generation','opened_rows_match_api','ui_acknowledge_confirmed','opened_delivery_rows_match_api','no_samples'],
+                 'unknown': ['alert_task_generation','unknown_rows_match_api','last_observed_preserved','no_recovery_delivery','no_samples'],
+                 'resolved': ['alert_task_generation','resolved_rows_match_api','original_incident_ids','resolved_delivery_rows_match_api','no_samples']}[state]
+           for key, (_, state) in CDC_ALERT_BROWSER_PHASES.items()},
         'cdc_history': ['task_identity', 'history_api_matches_chart', 'history_backlog_growth_then_zero',
                         'history_fault_gap_not_connected', 'history_tooltips', 'no_samples'],
         **{name: ['task_identity', 'task_source_slot_wal', 'task_capture_delay', 'task_buffer_positions', 'execution_binding', 'no_samples'] for name in ('cdc_initial', 'cdc_growth', 'cdc_resumed')},
@@ -2469,12 +2518,12 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('initial_scans_preserve_sibling_and_ancestors')
         name = next(name for task, kind, name in tasks if task == cdc_task)
         def observe_alert_page(browser_phase, execution_id, binding):
-            if browser_phase == 'cdc_alert_open':
+            if CDC_ALERT_BROWSER_PHASES[browser_phase][1] == 'open':
                 report['uncertain_mutation'] = True
                 checkpoint()
             receipt = run_browser(browser_phase, [execution_id], report['consumer_identity'], run_id,
                                   faults.secret, alert_observation=binding)
-            if browser_phase == 'cdc_alert_open':
+            if CDC_ALERT_BROWSER_PHASES[browser_phase][1] == 'open':
                 report['uncertain_mutation'] = False
                 checkpoint()
             return receipt
@@ -2491,6 +2540,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('cdc_pretrigger_pause_empty_lifecycle_and_complete_resumed_windows')
         report['checks'].append('cdc_evaluator_rebuilt_while_paused_then_complete_new_windows_and_delivery')
         report['checks'].append('cdc_tenant_alert_pages_open_ack_unknown_resolve_and_delivery_match_api')
+        report['checks'].append('cdc_capture_failure_tenant_alert_pages_ack_unknown_recovery_and_delivery_match_api')
+        report['checks'].append('cdc_recovery_loss_tenant_alert_pages_ack_unknown_confirmed_close_and_delivery_match_api')
         report['checks'].append('cdc_optional_backlog_300s_pause_missing_hold_60s_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')
