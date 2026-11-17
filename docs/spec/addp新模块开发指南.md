@@ -338,7 +338,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 更新根目录 `CLAUDE.md` 的模块列表
 
 **测试验证**:
-- [ ] 实际持久写出业务 DataItem 时，按[统一产出办理规则](addp授权上下文规范.md#558-任务产出数据与初始使用权)登记生产 owner，接入成果回执、Meta 限定识别、System 唯一初始签发及后台续办；同 owner 新算子复用协议，不另建作者 ACL 或逐算子机器权限。实际来源 ReadSet 与同次读取 Engine 版本一并冻结，不从当前配置或血缘补造；后台复用统一核清与续办协议。覆盖部分成功、父任务失败后的已提交成果、来源／边界、幂等与撤权重放，并同步标准 Make／CI 门禁；尚未接通或验收必须明确记录。生产者只在 `common/client.NewProductionRegistry` 正式装配一次，System／Meta Backend／Worker 共用；运行 `make test-authorization` 核对目录、owner Manifest、既有最小机器角色和接线一致性，不在各消费者复制登记。
+- [ ] 实际持久写出业务 DataItem 时，按[统一产出办理规则](addp授权上下文规范.md#558-任务产出数据与初始使用权)登记生产 owner，接入成果回执、Meta 限定识别、System 唯一初始签发及后台续办；同 owner 新算子复用协议，不另建作者 ACL 或逐算子机器权限。实际来源 ReadSet 与同次读取 Engine 版本一并冻结，不从当前配置或血缘补造；后台复用统一核清与续办协议。覆盖部分成功、父任务失败后的已提交成果、来源／边界、幂等与撤权重放，并同步标准 Make／CI 门禁；尚未接通或验收必须明确记录。生产者只在 `common/client.NewProductionRegistry` 正式装配一次，System／Meta Backend／Worker 共用；运行 `make test-production-owner-registration`（亦被 `make test-authorization` 和独立 CI 复用）核对目录、owner Manifest、既有最小机器角色和接线一致性，不在各消费者复制登记。
 - [ ] System 不可达但业务 Backend 自身就绪时，`/health/live` 与 `/health/ready` 均返回 200，直连业务请求继续走原授权链
 - [ ] System 恢复后，同一 `instance_id` 自动完成登记，`registration_state` 恢复为 `registered`
 - [ ] 数据库表创建在正确的 schema

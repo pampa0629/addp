@@ -133,3 +133,54 @@ func TestProductionWiringRejectsConsumerCopiesAndMissingSharedFactory(t *testing
 		})
 	}
 }
+
+func TestProductionOwnerCIRejectsMissingOrBlockedRegistration(t *testing.T) {
+	root := testRepositoryRoot(t)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github/workflows/platform-ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	makefile, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct{ name, file, before, after string }{
+		{"missing job", "workflow", "  production-owner-registration:", "  removed-production-owner-registration:"},
+		{"upstream dependency", "workflow", "  production-owner-registration:", "  production-owner-registration:\n    needs: platform-tests"},
+		{"disabled job", "workflow", "  production-owner-registration:", "  production-owner-registration:\n    if: 'false'"},
+		{"removed execution", "workflow", "run: make test-production-owner-registration", "run: echo skipped"},
+		{"narrowed manifest selection", "workflow", "'*/authorization/*'", "'develop/authorization/*'"},
+		{"missing standard target", "make", "test-production-owner-registration: ##", "removed-production-owner-registration: ##"},
+		{"missing runtime test", "make", "@cd meta/backend && GOWORK=off go test ./cmd/server ./cmd/worker ./internal/service", "@echo skipped"},
+		{"missing aggregate reuse", "make", "@$(MAKE) test-production-owner-registration", "@echo skipped"},
+	}
+	if err := checkProductionOwnerCI(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			temp := t.TempDir()
+			w, m := string(workflow), string(makefile)
+			if tc.file == "workflow" {
+				w = strings.Replace(w, tc.before, tc.after, 1)
+			} else {
+				m = strings.Replace(m, tc.before, tc.after, 1)
+			}
+			if w == string(workflow) && m == string(makefile) {
+				t.Fatal("fixture mutation did not apply")
+			}
+			if err := os.MkdirAll(filepath.Join(temp, ".github/workflows"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(temp, ".github/workflows/platform-ci.yml"), []byte(w), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(temp, "Makefile"), []byte(m), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := checkProductionOwnerCI(temp); err == nil {
+				t.Fatal("invalid production owner CI registration passed")
+			}
+		})
+	}
+}

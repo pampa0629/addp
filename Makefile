@@ -1583,11 +1583,17 @@ authorization-generate: ## 从 Manifest 生成 owner-local 常量和 System Tool
 	@cd common && go run ./authorization/cmd/manifest --generate-owner-constants --repository-root ..
 	@cd common && go run ./authorization/cmd/manifest --generate-tool-catalog --repository-root ..
 
+.PHONY: test-production-owner-registration
+test-production-owner-registration: ## 校验生产者统一装配、最小机器权限与独立 CI 登记（不启动服务）
+	@cd common && GOWORK=off go test ./production ./client ./authorization/... -count=1
+	@cd common && GOWORK=off go run ./authorization/cmd/manifest --check-production-owners --repository-root .. > /tmp/addp-production-owners.json
+	@cd system/backend && GOWORK=off go test ./internal/api
+	@cd meta/backend && GOWORK=off go test ./cmd/server ./cmd/worker ./internal/service
+
 test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
-	@cd common && go test ./authorization/... -count=1
+	@$(MAKE) test-production-owner-registration
 	@cd common && go run ./authorization/cmd/manifest --check --repository-root .. > /tmp/addp-authorization-catalog.json
 	@cd common && go run ./authorization/cmd/manifest --check-owner-constants --repository-root .. > /tmp/addp-owner-constants.json
-	@cd common && go run ./authorization/cmd/manifest --check-production-owners --repository-root .. > /tmp/addp-production-owners.json
 	@cd common && go run ./authorization/cmd/manifest --check-tool-catalog --repository-root .. > /tmp/addp-system-tool-catalog.json
 	@cd common && go run ./authorization/cmd/manifest --check-sql-seed --repository-root .. > /tmp/addp-iam-catalog-seed.json
 	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json

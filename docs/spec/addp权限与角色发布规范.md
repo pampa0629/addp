@@ -270,7 +270,9 @@ Swagger/OpenAPI 的具体注解方式见 `docs/spec/addp-Swagger集成指南.md`
 
 持久业务 DataItem 的生产 owner 继续按统一产出办理规则接入。System、Meta Backend 与 Meta Worker 只从 `common/client.NewProductionRegistry` 装配同一生产者目录；该工厂绑定既有固定 Service Client、成果回执 reader、回执 Permission Key 和执行 Permission Key。禁止在消费者中复制 owner 清单或另行构造生产者目录。Common 只共享协议装配，不复制各模块 Permission 定义、System Role 模板或业务授权事实，不读取请求自报的 owner 资格、回调地址或用户 Token。
 
-`make test-authorization` 必须执行聚合器的 `--check-production-owners`：逐项核对实际生产者目录与 active `*.production_receipt.read` Manifest 双向一致，回执权限仅 Tenant Scope、不可委托、不可租户定制，且只由既有 `tenant.system_runtime` 和 `tenant.meta_runtime` 的租户内置服务角色持有；两者均不得漏配。生产者执行权限须属于原 owner 且在 Tenant Scope 有效。门禁同时核对 System／Meta 的共享工厂接线及唯一目录装配所有权，拒绝旁路目录。共享 client 的受控 HTTP 回归核验固定回执路由、同租户机器凭据和原 execution／result 绑定。
+`make test-production-owner-registration` 是生产者接入的唯一标准检测入口，覆盖 Common 生产协议／共享 client／授权聚合器、System 装配及 Meta Backend／Worker 相关 Go T1，并执行聚合器的 `--check-production-owners`；`make test-authorization` 复用这一入口。其检查包括：逐项核对实际生产者目录与 active `*.production_receipt.read` Manifest 双向一致，回执权限仅 Tenant Scope、不可委托、不可租户定制，且只由既有 `tenant.system_runtime` 和 `tenant.meta_runtime` 的租户内置服务角色持有；两者均不得漏配。生产者执行权限须属于原 owner 且在 Tenant Scope 有效。门禁同时核对 System／Meta 的共享工厂接线及唯一目录装配所有权，拒绝旁路目录。共享 client 的受控 HTTP 回归核验固定回执路由、同租户机器凭据和原 execution／result 绑定。
+
+独立的 `Production owner registration` CI Job 按生产协议、owner Manifest、Backend、Makefile 和 workflow 路径选择，直接调用同一标准入口，不依赖 Platform／Go workspace 聚合 Job 的结果。聚合器须验证此 Job 存在、无上游依赖且未被整 Job 关闭，实际 Run 步骤受原路径选择控制；不得只把接入检查放到其他领域检查之后。原聚合门禁仍保留，独立通过不把聚合失败或尚未运行项目改记为通过。
 
 新增生产 owner 在这一处完成正式装配，并同步其 owner Manifest、System 机器角色、回执服务和回归；同 owner 新增算子或任务不再次登记、不逐算子增加机器权限。门禁只检查已声明生产能力的接线完整性，不自动发现任意业务写入、不自动授予权限，也不代表该 owner 的所有写入入口或定时执行已经接通。初始 Grant、限定 basic 识别、实际来源／版本冻结及原成果后台续办仍消费同一协议；本登记不改变数据授权范围、任务主体、业务保存准入或真实验收边界。
 

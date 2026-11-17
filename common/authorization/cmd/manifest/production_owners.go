@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/client"
 	"github.com/addp/common/production"
@@ -30,6 +32,9 @@ func writeProductionOwnerReport(root string, catalog authorization.Authorization
 		return err
 	}
 	if err := checkProductionOwnerWiring(root, catalog.PermissionManifests); err != nil {
+		return err
+	}
+	if err := checkProductionOwnerCI(root); err != nil {
 		return err
 	}
 	return json.NewEncoder(output).Encode(struct {
@@ -158,6 +163,81 @@ func checkProductionOwnerWiring(root string, manifests []authorization.Permissio
 		if !found {
 			return fmt.Errorf("runtime is missing the shared production registry factory: %s", path)
 		}
+	}
+	return nil
+}
+
+// Check the independent gate as well as its reuse by the aggregate entry point.
+func checkProductionOwnerCI(root string) error {
+	source, err := os.ReadFile(filepath.Join(root, ".github/workflows/platform-ci.yml"))
+	if err != nil {
+		return err
+	}
+	var workflow struct {
+		Jobs map[string]struct {
+			Needs any    `yaml:"needs"`
+			If    string `yaml:"if"`
+			Steps []struct {
+				ID  string `yaml:"id"`
+				If  string `yaml:"if"`
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(source, &workflow); err != nil {
+		return err
+	}
+	job, found := workflow.Jobs["production-owner-registration"]
+	if !found || job.Needs != nil || job.If != "" {
+		return fmt.Errorf("production owner CI must be registered independently of aggregate jobs")
+	}
+	selected, executed := false, false
+	for _, step := range job.Steps {
+		if step.ID == "selection" && step.If == "" {
+			selected = strings.Contains(step.Run, "bash scripts/ci/select-gate-by-paths.sh")
+			for _, pattern := range []string{"Makefile", ".github/workflows/platform-ci.yml", "scripts/ci/*", "common/*", "*/authorization/*", "*/backend/*"} {
+				selected = selected && strings.Contains(step.Run, "'"+pattern+"'")
+			}
+		}
+		if strings.TrimSpace(step.Run) == "make test-production-owner-registration" && step.If == "steps.selection.outputs.run == 'true'" {
+			executed = true
+		}
+	}
+	if !selected || !executed {
+		return fmt.Errorf("production owner CI is missing its path coverage or standard gate execution")
+	}
+	source, err = os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		return err
+	}
+	recipes := map[string]string{}
+	current := ""
+	for _, line := range strings.Split(string(source), "\n") {
+		if strings.HasPrefix(line, "\t") {
+			recipes[current] += line + "\n"
+			continue
+		}
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		current = ""
+		if name, _, ok := strings.Cut(line, ":"); ok {
+			current = name
+		}
+	}
+	gate := recipes["test-production-owner-registration"]
+	for _, command := range []string{
+		"cd common && GOWORK=off go test ./production ./client ./authorization/... -count=1",
+		"go run ./authorization/cmd/manifest --check-production-owners --repository-root ..",
+		"cd system/backend && GOWORK=off go test ./internal/api",
+		"cd meta/backend && GOWORK=off go test ./cmd/server ./cmd/worker ./internal/service",
+	} {
+		if !strings.Contains(gate, command) {
+			return fmt.Errorf("production owner standard gate is missing %s", command)
+		}
+	}
+	if !strings.Contains(recipes["test-authorization"], "$(MAKE) test-production-owner-registration") {
+		return fmt.Errorf("authorization gate must reuse production owner standard gate")
 	}
 	return nil
 }

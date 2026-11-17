@@ -198,6 +198,53 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  production-owner-registration:
+    name: Production owner registration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select production owner registration gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Production owner registration" \
+            'Makefile' \
+            '.github/workflows/platform-ci.yml' \
+            'scripts/ci/*' \
+            'common/*' \
+            '*/authorization/*' \
+            '*/backend/*'
+
+      - name: Set up Go
+        if: steps.selection.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache-dependency-path: |
+            **/go.sum
+
+      - name: Run production owner registration gate
+        if: steps.selection.outputs.run == 'true'
+        run: make test-production-owner-registration
+
+      - name: Summarize production owner registration gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Production owner registration
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   common-frontend-tests:
     name: Common frontend contracts
     runs-on: ubuntu-24.04
