@@ -24,7 +24,7 @@
 | 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
 | DEM 通视与可视域 | [两点通视](DEM通视与可视域.md#dem-两点通视独立-hosted-验收) · [单观察点可视域](DEM通视与可视域.md#dem-单观察点可视域独立-hosted-验收) · [正交旋转](DEM通视与可视域.md#正交旋转网格通视与可视域独立-hosted-验收) |
-| DEM 地形与统计 | [填洼](D8水文分析.md#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) |
+| DEM 地形与统计 | [填洼](D8水文分析.md#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) · [TWI／SPI](#twispi-地形水文指数) |
 | D8 流向与累积 | [流向](D8水文分析.md#dem-d8-流向持久化) · [汇流累积](D8水文分析.md#d8-汇流累积持久化) · [加权累积](D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](D8水文分析.md#d8-下游流长持久化) · [上游最长流长](D8水文分析.md#d8-上游最长流长持久化) · [汇水分区](D8水文分析.md#d8-汇水分区持久化) |
 | D8 河网与汇水 | [Strahler](D8水文分析.md#raster-stream-order-d8-persistence) · [Shreve](D8水文分析.md#shreve-独立持久化验收) · [河段编号](D8水文分析.md#d8-河段编号独立持久化) · [河网转线](D8水文分析.md#d8-河网转矢量线独立-hosted-验收) · [指定汇水点](D8水文分析.md#raster-watershed-d8-persistence) · [汇水点吸附](D8水文分析.md#raster-snap-pour-points-persistence) · [增量子汇水区](D8水文分析.md#raster-subcatchments-d8-persistence) |
 | D8 面积、距离与高程 | [汇流面积](D8水文分析.md#raster-flow-accumulation-area-d8-persistence) · [到河网沿流距离](D8水文分析.md#raster-distance-to-stream-d8-persistence) · [HAND](D8水文分析.md#raster-hand-d8-persistence) |
@@ -516,21 +516,27 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 - <a id="dem-单观察点可视域独立-hosted-验收"></a>[单观察点可视域](DEM通视与可视域.md#dem-单观察点可视域独立-hosted-验收)
 - <a id="正交旋转网格通视与可视域独立-hosted-验收"></a>[正交旋转通视与可视域](DEM通视与可视域.md#正交旋转网格通视与可视域独立-hosted-验收)
 
-## 地形湿度指数 TWI 独立 Hosted 验收
+## TWI／SPI 地形水文指数
 
-`raster-twi-persistence`；`make test-raster-twi-online-runner`，沿[本组边界](#本组独立专项的核验与证据边界)。14链含degree/percent等价、两英尺、极小非零坡度／重分类／DEM两坡度单位／填洼后平地全NoData、Int64／UInt64面积、全无效／不交／零坡度。519×515方格第二波段跨512，双源独立mask/NoData/alpha；负指数／零／NaN分核。
+两套沿[本组边界](#本组独立专项的核验与证据边界)：519×515方格、第二波段跨512，双源独立mask/NoData/alpha；另一源无效不遮非法值，极限／异构复数alpha仅Native。
 
-26类中英共52准确TWI失败：双角色波段／面积单位／坡度冲突、零负面积／负坡度90度、九类网格、alpha／复数／scale/offset；另一源无效仍拒非法值。独立200位Decimal Lambert连分式＋ln、固定A/d／米制／单位1；极限／异构复数alpha仅Native。105＋52×14＝833全检／66调用，存14 COG，期望／准备／收尾纳600秒。
+每套14条COG链、26类中英52次准确拒绝，105＋52×14＝833全检／66调用，存14原COG。矩阵不代表已验，预算及证据按各节分别认定。
+
+### 地形湿度指数 TWI 独立 Hosted 验收
+
+`raster-twi-persistence`；`make test-raster-twi-online-runner`。链含degree/percent等价、两英尺、极小非零坡度／重分类／DEM两坡度单位／填洼后平地全NoData、Int64／UInt64面积、全无效／不交／零坡度NoData。负指数／零／NaN分核。
+
+TWI拒绝矩阵：双角色波段／面积单位／坡度冲突、零负面积／负坡度90度、九类网格、alpha／复数／scale/offset。独立200位Decimal Lambert连分式＋ln核ln((A/d)/tanβ)，d取米制边长、单位1。期望／准备／收尾纳600秒。
 
 `128a5330782ec1c0033be2ce14b076392e90f012`的[Hosted40818720334／123265876421](https://github.com/pampa0629/addp/actions/runs/40818720334/job/123265876421)完成14／52／833、三级nearest／大小／内外血缘／扫描／清零，421186ms；原件血缘清单与现场匹配。未列Linux全量证据，隔离身份Go T1不算完整IAM／DB，不认证HEAD或关闭通用GDAL中止缺陷。
 
-## 水流功率指数 SPI 独立 Hosted 验收
+### 水流功率指数 SPI 独立 Hosted 验收
 
-`raster-spi-persistence`；`make test-raster-spi-online-runner`，沿[本组边界](#本组独立专项的核验与证据边界)。14链保TWI单位／源组合，原始(A/d)×tanβ、单位metre、不取ln；零坡度／填平洼地有效内部0，原无效／坡度边缘NoData。519×515第二波段跨512，独立mask/NoData/alpha及部分透明，极限／异构复数仅Native。
+`raster-spi-persistence`；`make test-raster-spi-online-runner`。链保TWI单位／源组合，原始(A/d)×tanβ、单位metre、不取ln；零坡度／填平洼地有效内部0，原无效／坡度边缘NoData。部分透明覆盖仍核。
 
-26类中英52准确SPI失败：双角色波段／面积单位／坡度声明、零负面积／负坡度90度、尺寸原点CRS／非方形／旋转／南向／地理／无CRS网格、alpha／复数／scale/offset，另一源无效不遮非法值。独立200位Decimal Lambert连分式＋原乘积；误乘边长／面积计数／取ln／负值／零坡度作NoData／小坡度阈值／percent漏除100均须拒。
+SPI拒绝矩阵：双角色波段／面积单位／坡度声明、零负面积／负坡度90度、尺寸原点CRS／非方形／旋转／南向／地理／无CRS网格、alpha／复数／scale/offset。独立200位Decimal Lambert连分式＋原乘积；误乘边长／面积计数／取ln／负值／零坡度作NoData／小坡度阈值／percent漏除100均须拒。
 
-105＋728＝833全检／66调用，存14 COG，首次期望／业务清理纳600秒，构建／部署／源播种／拆除另记。本地专项／SPI-TWI runner／登记通过；旧聚合绑定旧快照主动中断不计全入口通过，最终排序修正仅按专项认。Linux全量／Hosted不能由本地推定。
+首次期望／业务清理纳600秒，构建／部署／源播种／拆除另记。本地专项／SPI-TWI runner／登记通过；旧聚合绑定旧快照主动中断不计全入口通过，最终排序修正仅按专项认。Linux全量／Hosted不能由本地推定。
 
 ## 正交旋转矩形DEM坡度独立 Hosted 验收
 
