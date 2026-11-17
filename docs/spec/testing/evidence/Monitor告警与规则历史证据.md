@@ -202,8 +202,24 @@ Artifact `14242081152` 的 SHA-256 `f60cd40eda38dcffd979f787ab4b2737a395bb0ee08c
 
 <a id="alert-evidence-todos"></a>
 
+<a id="cdc-tenant-alert-ui-hosted-20261117"></a>
+
+### 三条性能告警的租户页面实故障闭环通过（2026-11-17）
+
+固定源码 `b8593c1e706e78e23668649eb9595021d32a3e3a` 的 [Hosted 44007380675／Job 133785893483](https://github.com/pampa0629/addp/actions/runs/44007380675/job/133785893483)整套通过；System／Security／Meta／Transfer／Monitor／Gateway 六个服务均核对同一提交，仓库干净。28 项 suite 检查、11 份真实 Console 浏览器回执、12 条唯一 opened／resolved 签名实收及 delivered／HTTP 202 对照通过。沿原隔离 PostgreSQL、User 55／Tenant 2、任务 3／generation 1 和三条性能规则，没有扩权限、改变产品阈值或增加故障替身；预算维持场景 1650 秒／派发 1700 秒／Job 60 分钟。
+
+- `cdc_alert_open`：三条事件的任务、代次、ID、打开时间与 API 一致；页面各确认一次并读回同一事件 acknowledged。浏览器确认计数逐 incident 恰为一次，原生日志在 03:26:36 UTC 有三个实际 acknowledge HTTP POST，均 200；排除启动路由登记，整套另有原捕获失败与不可恢复风险两次 API 确认，不能把全套请求数写成三次。opened 通知页逐项核对绑定的三个投递 UUID、已送达及 HTTP 202。
+- `cdc_alert_unknown`：同一三个 incident 保持 acknowledged，评估为 unknown，LastObservedAt 与故障前安全观测逐项相同。正式 API 沿任务事件范围严格核对仅原 opened、零 resolved；页面在所选目标按签名实收的 UUID 分页定位，不把同目标其他执行的通知纳入本任务断言。
+- `cdc_alert_resolved`：原三个 incident 恢复为 resolved，关闭时间与 API 一致；通知页核对该任务六个 opened／resolved UUID、状态及 202，与签名接收及投递审计一致。三个阶段各五项检查均通过，回执绑定同一 User／Tenant／任务／代次／incident／投递；没有保存含目标地址的整页截图、登录输出或消息正文。
+
+原有触发前暂停清窗、暂停后的评估器重建和恢复完整窗口断言保留通过；不足持续时间没有事件或通知。性能缺样／暂停保持、捕获失败、源槽与消息恢复范围风险、后继任务重建、scheduled basic→deep／发起人／读取隔离、任务历史 API 和图表的积压增长／回零／故障断点同轮通过。这不把捕获失败和不可恢复风险的 API 闭环扩大为其告警页面全部交互已验。
+
+性能与风险 cleanup=passed、cleanup_failures=[]，CPU／Connector 配置恢复、规则和源行清理、目标行集核对、Webhook 删除及接收端关闭均通过。任务 5／4／3／2 删除后读回不存在；硬退出 Kafka 任务 1 按原约定保留至部署销毁，领域报告的 1 项预期部署残留不能写成领域零残留。原生 verify-clean 与停止后当前观测清空已执行；最终外层 summary 的 cleanup=passed、infra_cleanup=zero_residuals。个人环境仅只读核对：task61 仍 running，原两个槽 `addp_cdc_t1_task46_g1`／`addp_cdc_t1_task58_g1` 仍不活跃，当前任务槽 `addp_cdc_854107b8813848f8841f48460e8216d1_g1` 仍活跃，前后结果完全相同。
+
+本地 `make test-transfer-continuous-online-runner` 的 156 项 Python、原 Node／Shell 语法和 System 身份夹具 Go 通过；[同源码自然 Platform consistency Job 133785625920](https://github.com/pampa0629/addp/actions/runs/44007302602/job/133785625920)成功，原始日志确认 156 项 Runner 实际运行。Artifact `14295904734` 已核对 SHA-256 `d32af8d96313a5d7e0429c9b8a363aae9f40713e0eed4695c066b770922d1e5f` 和 ZIP CRC；原件、逐项复核及个人前后对照保留在 `/tmp/addp-cdc-alert-ui-hosted-44007380675/`。前两轮失败源码、阶段、未知操作结果和清理记录继续保留，不追认为通过；本轮结果不外推其他 Provider、所有告警类型页面、七天自然留存或生产 T5。
+
 ## 后续待办
 
 1. 补服务组失联的真实租约故障／恢复、正式页面、签名通知和清理；历史临时规则的后续处置无记录，不能假定已删除。
 2. 补真实主机容量源／挂载行的实际验收；现有受控容量 T2 和前端通过各守原范围。
-3. CDC 触发前暂停／恢复完整窗口及暂停清窗后的评估器重建已有上述实故障 T4；其他源类型和租户告警 UI 完整正式覆盖仍须独立取证，不重复已完成的 PostgreSQL 闭环。
+3. CDC 暂停／恢复完整窗口、评估器重建和三条性能告警的租户页面闭环已有上述实故障 T4；捕获失败／不可恢复风险的告警页面、其他源类型仍须独立取证，不重复已完成的 PostgreSQL 范围。
