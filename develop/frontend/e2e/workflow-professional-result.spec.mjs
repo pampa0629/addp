@@ -20,7 +20,7 @@ async function fixture(page, locale = 'zh-cn', resultHandler) {
     if (path === '/api/v1/system/auth/context') return json(route, developAuthContext)
     if (path === '/api/v1/meta/engines') return json(route, [])
     if (path.endsWith('/result')) return resultHandler(route)
-    if (path.endsWith('/logs')) return json(route, { logs: [] })
+    if (path.endsWith('/logs')) return json(route, { execution_id: path.split('/').at(-2), logs: [] })
     if (path.startsWith('/api/v1/develop/executions/')) return json(route, history(path.split('/').pop()))
     return json(route, {})
   })
@@ -207,4 +207,47 @@ test('leaving workflow results stops in-flight export observation and late downl
   release()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(statusReads).toBe(0); expect(downloads).toBe(0)
+})
+
+for (const locale of ['zh-cn', 'en']) test(`recorded workflow logs, empty and read failure are distinct in ${locale}`, async ({ page }) => {
+  const errors = []; page.on('pageerror', e => errors.push(e.message))
+  let mode = 'recorded', release
+  await fixture(page, locale, route => json(route, history(ID)))
+  await page.route('**/api/v1/develop/executions/*/logs', async route => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-2)
+    const responseMode = mode
+    if (responseMode === 'held') await new Promise(resolve => { release = resolve })
+    if (responseMode === 'failed') return json(route, { error_code: 'execution_logs_unavailable' }, 503)
+    if (responseMode === 'malformed') return json(route, { execution_id: id, logs: ['private-placeholder'] })
+    return json(route, { execution_id: id, logs: responseMode === 'empty' ? [] : [
+      { timestamp: '2026-11-17T08:00:00Z', level: 'INFO', event: 'workflow_started' },
+      { timestamp: '2026-11-17T08:00:01Z', level: 'INFO', event: 'task_progress', task_id: 'node-a', progress: 0 },
+      { timestamp: '2026-11-17T08:00:02Z', level: 'ERROR', event: 'workflow_failed' }
+    ] })
+  })
+  await page.goto(`/executions/${ID}?tab=logs`)
+  const panel = page.getByRole('tabpanel', { name: locale === 'en' ? 'Logs' : '执行日志', exact: true })
+  await expect(panel).toContainText(locale === 'en' ? 'Workflow started' : '工作流开始执行')
+  await expect(panel).toContainText(locale === 'en' ? 'Workflow failed' : '工作流执行失败')
+  await expect(panel).toContainText('node-a'); await expect(panel).toContainText('0%')
+  expect(await panel.locator('.el-timeline-item').count()).toBe(3)
+  const refresh = page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true })
+  for (const state of ['empty', 'failed', 'malformed']) {
+    mode = state; await refresh.click()
+    await expect(panel).toContainText(state === 'empty'
+      ? locale === 'en' ? 'No logs were recorded for this execution' : '本次执行未记录日志'
+      : locale === 'en' ? 'Could not read execution logs' : '执行日志读取失败')
+    await expect(panel.locator('.el-timeline-item')).toHaveCount(0)
+    await expect(panel).not.toContainText('private-placeholder')
+  }
+  mode = 'held'; await refresh.click()
+  await expect(panel).toContainText(locale === 'en' ? 'Loading execution logs' : '正在读取执行日志')
+  // Switch execution while the old read is in flight; only the new read may render.
+  mode = 'empty'
+  await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); await router.push('/executions/another?tab=logs') })
+  await expect(panel).toContainText(locale === 'en' ? 'No logs were recorded' : '本次执行未记录日志')
+  const late = page.waitForResponse(response => response.url().includes(`${ID}/logs`))
+  release(); await late
+  await expect(panel.locator('.el-timeline-item')).toHaveCount(0)
+  expect(errors).toEqual([])
 })

@@ -164,7 +164,9 @@
               <h4>{{ t('develop.executionDetail.stackTrace') }}</h4>
               <pre class="json-result">{{ executionResult.traceback }}</pre>
             </template>
-            <el-timeline v-if="logs.length > 0">
+            <el-alert v-if="logsStatus === 'failed'" :title="t('develop.executionDetail.logsLoadFailed')" type="error" :closable="false" />
+            <p v-else-if="logsStatus === 'loading'">{{ t('develop.executionDetail.logsLoading') }}</p>
+            <el-timeline v-else-if="logs.length > 0">
               <el-timeline-item
                 v-for="(log, index) in logs"
                 :key="index"
@@ -176,7 +178,8 @@
                   <el-tag :type="getLogType(log.level)" size="small">
                     {{ log.level }}
                   </el-tag>
-                  <span class="log-message">{{ log.message }}</span>
+                  <span class="log-message">{{ t('develop.executionDetail.logEvents.' + log.event) }}</span>
+                  <span v-if="log.event === 'task_progress'">{{ t('develop.executionDetail.logTaskProgress', { task: log.task_id, progress: log.progress }) }}</span>
                 </div>
               </el-timeline-item>
             </el-timeline>
@@ -236,6 +239,8 @@ useConsolePageDescriptor(router, 'develop', {
   ready: computed(() => Boolean(execution.value?.execution_id))
 })
 const logs = ref([])
+const logsStatus = ref('idle')
+let logsReadGeneration = 0
 const resourceEngines = ref([])
 const activeTab = ref(resolveExecutionDetailRouteState(route.query).tab)
 let routeDataReady = false
@@ -394,12 +399,6 @@ const loadExecution = async (silent = false) => {
     if (generation !== executionReadGeneration) return
     execution.value = data
 
-    const result = data.metadata?.result
-    if (result?.logs) {
-      logs.value = result.logs
-    } else {
-      logs.value = []
-    }
   } catch (error) {
     if (generation !== executionReadGeneration) return
     if ([403, 404].includes(error.response?.status)) {
@@ -418,18 +417,25 @@ const loadExecution = async (silent = false) => {
 
 // 加载执行日志
 const loadLogs = async () => {
-  const generation = executionReadGeneration
-  if (!execution.value) return
-  if (executionResult.value?.logs) {
-    logs.value = executionResult.value.logs
-    return
-  }
-
+  const generation = ++logsReadGeneration
+  const executionGeneration = executionReadGeneration
+  const id = executionId.value
+  logs.value = []
+  if (!execution.value) { logsStatus.value = 'idle'; return }
+  logsStatus.value = 'loading'
+  const current = () => generation === logsReadGeneration && executionGeneration === executionReadGeneration && Boolean(execution.value)
   try {
-    const data = await getExecutionLogs(executionId.value)
-    if (generation === executionReadGeneration && execution.value) logs.value = data.logs || []
-  } catch (error) {
-    console.error('加载日志失败:', error)
+    const data = await getExecutionLogs(id)
+    if (!current()) return
+    if (data.execution_id !== id || !Array.isArray(data.logs) || data.logs.some(log =>
+      !log || !Number.isFinite(Date.parse(log.timestamp)) || !['INFO', 'ERROR'].includes(log.level) ||
+      !['workflow_started', 'task_progress', 'workflow_succeeded', 'workflow_failed'].includes(log.event) ||
+      (log.event === 'task_progress' && (typeof log.task_id !== 'string' || !log.task_id || !Number.isInteger(log.progress) || log.progress < 0 || log.progress > 100))
+    )) throw Error('execution_logs_invalid')
+    logs.value = data.logs
+    logsStatus.value = 'ready'
+  } catch {
+    if (current()) { logs.value = []; logsStatus.value = 'failed' }
   }
 }
 
@@ -555,8 +561,7 @@ const startAutoRefresh = () => {
   if (execution.value?.status === 'running') {
     refreshTimer = setInterval(() => {
       if (execution.value?.status === 'running') {
-        loadExecution(true) // 静默刷新
-        loadLogs()
+        loadExecution(true).then(loadLogs)
       } else {
         stopAutoRefresh()
       }
@@ -586,7 +591,12 @@ watch(() => route.query, () => {
 })
 
 watch(activeTab, tab => { if (tab !== 'result') stopProfessionalResult() })
-watch(() => JSON.stringify(authStore.authContext), () => stopProfessionalResult())
+watch(() => JSON.stringify(authStore.authContext), () => {
+  stopProfessionalResult()
+  logsReadGeneration++
+  logs.value = []
+  logsStatus.value = 'idle'
+})
 
 watch(executionId, async () => {
   stopProfessionalResult()
@@ -611,6 +621,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  logsReadGeneration++
   professionalRefresh.dispose()
   professionalRequests.dispose()
   workflowExportRequests.dispose()

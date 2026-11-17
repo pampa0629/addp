@@ -897,6 +897,7 @@ type BinaryPayload struct {
 }
 
 type WorkflowExecutionStatus struct {
+	Logs            []WorkflowExecutionLog   `json:"logs,omitempty"`
 	Status          string                   `json:"status"`
 	ExecutionID     string                   `json:"execution_id,omitempty"`
 	Result          interface{}              `json:"result,omitempty"`

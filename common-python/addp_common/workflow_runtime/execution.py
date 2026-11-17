@@ -17,6 +17,7 @@ class ExecutionSnapshot:
     execution_id: str
     status: str
     progress: int = 0
+    logs: list[dict[str, Any]] = field(default_factory=list)
     result: Any = None
     all_results: dict[str, Any] | None = None
     task_order: list[str] = field(default_factory=list)
@@ -93,13 +94,14 @@ class ExecutionRegistry:
         input_data: dict[str, Any],
     ) -> None:
         started = time.monotonic()
-        self._update(execution_id, status="running", progress=0)
+        self._update(execution_id, log_event="workflow_started", status="running", progress=0)
         try:
             result = runner.execute(
                 workflow_def,
                 input_data,
                 progress=lambda status, progress, task: self._update(
                     execution_id,
+                    log_event="task_progress",
                     status=status,
                     progress=progress,
                     current_task=task,
@@ -107,6 +109,7 @@ class ExecutionRegistry:
             )
             self._update(
                 execution_id,
+                log_event="workflow_succeeded",
                 status="success",
                 progress=100,
                 current_task="",
@@ -127,6 +130,7 @@ class ExecutionRegistry:
               all_results=None, task_order=None, diagnostic=None) -> None:
         self._update(
             execution_id,
+            log_event="workflow_failed",
             status="failed",
             current_task="",
             error=error,
@@ -139,8 +143,14 @@ class ExecutionRegistry:
             execution_time_ms=(time.monotonic() - started) * 1000,
         )
 
-    def _update(self, execution_id: str, **changes: Any) -> None:
+    def _update(self, execution_id: str, *, log_event: str, **changes: Any) -> None:
         with self._lock:
             snapshot = self._executions[execution_id]
+            entry = {"timestamp": datetime.now(timezone.utc).isoformat(),
+                     "level": "ERROR" if log_event == "workflow_failed" else "INFO",
+                     "event": log_event}
+            if log_event == "task_progress":
+                entry.update(task_id=changes["current_task"], progress=changes["progress"])
+            snapshot.logs.append(entry)
             for key, value in changes.items():
                 setattr(snapshot, key, value)

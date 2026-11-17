@@ -1169,6 +1169,12 @@ def test_multi_distance_buffer_public_workflow_language_metadata_and_context(mon
             time.sleep(.01)
         assert state['status'] == 'failed' and state['error_code'] == 'INVALID_PARAMS'
         assert fragment in state['error']
+        logs = state['logs']
+        assert [entry['event'] for entry in logs] == ['workflow_started', 'task_progress', 'workflow_failed']
+        assert logs[1]['task_id'] == 'multi' and logs[1]['progress'] == 0
+        assert logs[-1]['level'] == 'ERROR'
+        assert all(set(entry) <= {'timestamp', 'level', 'event', 'task_id', 'progress'} for entry in logs)
+        assert fragment not in json.dumps(logs)
 
 
 @pytest.mark.parametrize('language', ['zh-cn', 'en'])

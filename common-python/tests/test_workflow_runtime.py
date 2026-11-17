@@ -726,3 +726,33 @@ def test_polygon_adjacency_rules_are_three_closed_combinations_without_private_c
         assert validated_operator_diagnostic(value)==value
         for extra in ({'field':'source_id_a'},{'source_id':'private'},{'parameter':'id_field'}):
             assert validated_operator_diagnostic({**value,'operator':{**value['operator'],**extra}}) is None
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_execution_logs_follow_real_callbacks_and_snapshot_isolation(fail):
+    class Deferred:
+        def __init__(self, target, args, daemon): self.target = target; self.args = args; jobs.append(self)
+        def start(self): pass
+    jobs = []
+    def execute(operator, params):
+        if fail: raise ValueError('secret-connection-and-parameter')
+        return 7
+    registry = ExecutionRegistry()
+    accepted = registry.submit(WorkflowRunner({'echo'}, execute), {'tasks': [
+        {'id': 'a', 'operator': 'echo', 'params': {}, 'depends_on': []}
+    ]}, thread_factory=Deferred)
+    assert accepted.to_dict()['logs'] == []
+    jobs[0].target(*jobs[0].args)
+    snapshot = registry.get(accepted.execution_id)
+    logs = snapshot.to_dict()['logs']
+    assert [log['event'] for log in logs] == (
+        ['workflow_started', 'task_progress', 'workflow_failed'] if fail else
+        ['workflow_started', 'task_progress', 'task_progress', 'workflow_succeeded'])
+    from datetime import datetime
+    assert all(datetime.fromisoformat(log['timestamp']).utcoffset().total_seconds() == 0 for log in logs)
+    assert logs[1]['task_id'] == 'a' and logs[1]['progress'] == 0
+    assert logs[-1]['level'] == ('ERROR' if fail else 'INFO')
+    assert 'secret-connection-and-parameter' not in json.dumps(logs)
+    snapshot.logs.clear()
+    logs[0]['event'] = 'changed'
+    assert registry.get(accepted.execution_id).logs[0]['event'] == 'workflow_started'
+    assert accepted.to_dict()['logs'] == []

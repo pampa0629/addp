@@ -1724,3 +1724,17 @@ func TestDirectResourceBindingRejectsAmbiguousSourceAndTarget(t *testing.T) {
 		t.Fatal("ambiguous bindings mutated runtime parameters")
 	}
 }
+
+func TestWorkflowTerminalReceiptCarriesRecordedLogs(t *testing.T) {
+	progress := 0
+	logs := []plugin.WorkflowExecutionLog{{Timestamp: "2026-11-17T08:00:00Z", Level: "INFO", Event: "task_progress", TaskID: "node", Progress: &progress}}
+	response := &WorkflowResponse{}
+	applyWorkflowRuntimeStatus(response, &plugin.WorkflowExecutionStatus{Status: "success", Logs: logs})
+	if len(response.Logs) != 1 || response.Logs[0].TaskID != "node" {
+		t.Fatal("terminal logs lost")
+	}
+	applyWorkflowRuntimeStatus(response, &plugin.WorkflowExecutionStatus{Status: "success"})
+	if len(response.Logs) != 0 {
+		t.Fatal("missing logs must not reuse previous receipt")
+	}
+}

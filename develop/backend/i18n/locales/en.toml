@@ -7,8 +7,8 @@ other = "Retry started"
 [develop.execution.param_exec_started]
 other = "Parameterized execution started"
 
-[develop.execution.logs_not_ready]
-other = "Log feature is under development..."
+[develop.execution.logs_unavailable]
+other = "Execution logs are unavailable"
 
 [develop.task.delete_success]
 other = "Deleted successfully"

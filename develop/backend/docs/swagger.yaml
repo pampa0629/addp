@@ -1717,6 +1717,15 @@ definitions:
       workflow_engine_id:
         type: integer
     type: object
+  internal_api.ExecutionLogsResponse:
+    properties:
+      execution_id:
+        type: string
+      logs:
+        items:
+          $ref: '#/definitions/plugin.WorkflowExecutionLog'
+        type: array
+    type: object
   internal_api.ListKernelsResponse:
     properties:
       kernels:
@@ -2126,6 +2135,32 @@ definitions:
         items:
           $ref: '#/definitions/plugin.EngineCatalogPath'
         type: array
+    type: object
+  plugin.WorkflowExecutionLog:
+    properties:
+      event:
+        enum:
+        - workflow_started
+        - task_progress
+        - workflow_succeeded
+        - workflow_failed
+        type: string
+      level:
+        enum:
+        - INFO
+        - ERROR
+        type: string
+      progress:
+        type: integer
+      task_id:
+        type: string
+      timestamp:
+        format: date-time
+        type: string
+    required:
+    - event
+    - level
+    - timestamp
     type: object
   production.CommittedObject:
     properties:
@@ -2928,10 +2963,9 @@ paths:
       - application/json
       responses:
         "200":
-          description: 执行日志 | Execution logs
+          description: 执行日志；无记录为空数组 | Recorded logs; empty array when none were recorded
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.ExecutionLogsResponse'
         "403":
           description: Forbidden
           schema:
@@ -2940,6 +2974,12 @@ paths:
             type: object
         "404":
           description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 日志不可用 | Logs unavailable
           schema:
             additionalProperties:
               type: string

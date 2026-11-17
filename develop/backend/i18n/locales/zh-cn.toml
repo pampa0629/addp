@@ -7,8 +7,8 @@ other = "重试已启动"
 [develop.execution.param_exec_started]
 other = "参数化执行已启动"
 
-[develop.execution.logs_not_ready]
-other = "日志功能开发中..."
+[develop.execution.logs_unavailable]
+other = "本次执行日志暂不可用"
 
 [develop.task.delete_success]
 other = "删除成功"

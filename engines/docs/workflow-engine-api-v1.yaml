@@ -804,6 +804,11 @@ components:
         - execution_id
         - progress
       properties:
+        logs:
+          type: array
+          description: 本次真实生成的结构化进度记录；缺失或空数组表示未记录。
+          items:
+            $ref: "#/components/schemas/WorkflowExecutionLog"
         status:
           type: string
           enum: [success, failed, running, pending, cancelled]
@@ -1108,3 +1113,27 @@ components:
         details:
           type: string
           description: 详细错误信息(可选)
+
+    WorkflowExecutionLog:
+      type: object
+      additionalProperties: false
+      required: [timestamp, level, event]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: UTC真实记录时间
+        level:
+          type: string
+          enum: [INFO, ERROR]
+        event:
+          type: string
+          enum: [workflow_started, task_progress, workflow_succeeded, workflow_failed]
+        task_id:
+          type: string
+          description: 仅task_progress携带原DAG节点身份
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 仅task_progress携带真实进度

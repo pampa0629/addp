@@ -128,6 +128,12 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 						code = "TARGET_ALREADY_EXISTS"
 					}
 					response := map[string]interface{}{"status": status, "execution_id": "remote-private-sentinel", "progress": 100, "error": "runtime-private-sentinel", "error_code": code}
+					event, level := "workflow_succeeded", "INFO"
+					if status == "failed" {
+						event, level = "workflow_failed", "ERROR"
+					}
+					response["logs"] = []interface{}{map[string]interface{}{"timestamp": "2026-11-17T08:00:00Z", "level": level, "event": event}}
+
 					if strings.HasPrefix(scenario, "invalid_params") {
 						response["error_code"] = "INVALID_PARAMS"
 						response["diagnostic"] = map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": "operator_field_conflict", "operator": map[string]interface{}{"node_index": 1, "operator_id": operatorID, "parameter": "input_gdf", "field": "distance"}}
@@ -225,6 +231,23 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 			if scenario == "success" || scenario == "runtime_failed" {
 				if stored.Metadata["runtime_execution_id"] != "remote-private-sentinel" {
 					t.Fatal("terminal result lost receipt")
+				}
+			}
+			if runtimeCalls > 0 && statusCalls > 0 {
+				result, ok := stored.Metadata["result"].(map[string]interface{})
+				if !ok {
+					t.Fatal("terminal result missing")
+				}
+				logs, err := plugin.DecodeWorkflowExecutionLogs(result["logs"])
+				if err != nil || len(logs) != 1 {
+					t.Fatalf("terminal logs not persisted: %v", err)
+				}
+				expected := "workflow_failed"
+				if want == "success" {
+					expected = "workflow_succeeded"
+				}
+				if logs[0].Event != expected {
+					t.Fatal("logs belong to another terminal")
 				}
 			}
 			if scenario == "target_exists" {
@@ -334,17 +357,22 @@ func testWorkflowCommittedEffects(t *testing.T, dsn string) {
 				db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", time.Now().Add(-time.Minute))
 			}
 			svc := &ExecutionService{queue: queue, executor: &DevExecutor{}}
-			err = svc.completeWorkflowExecution(t.Context(), claimed, *lease, task, commonModels.JSONMap{"status": "failed"}, outputs, "later node failed", false)
+			err = svc.completeWorkflowExecution(t.Context(), claimed, *lease, task, commonModels.JSONMap{"status": "failed", "logs": []plugin.WorkflowExecutionLog{{Timestamp: "2026-11-17T08:00:00Z", Level: "ERROR", Event: "workflow_failed"}}}, outputs, "later node failed", false)
 			var stored commonExecution.TaskExecution
 			db.Where("execution_id = ?", item.ExecutionID).First(&stored)
 			if scenario == "lease_lost" {
-				if err == nil || stored.Status != "running" || stored.Metadata["lineage_facts"] != nil {
+				if err == nil || stored.Status != "running" || stored.Metadata["lineage_facts"] != nil || stored.Metadata["result"] != nil {
 					t.Fatalf("lost lease published facts: status=%s metadata=%v err=%v", stored.Status, stored.Metadata, err)
 				}
 				return
 			}
 			if err != nil || stored.Status != "failed" {
 				t.Fatalf("terminal status=%s err=%v", stored.Status, err)
+			}
+			result := stored.Metadata["result"].(map[string]interface{})
+			logs, logErr := plugin.DecodeWorkflowExecutionLogs(result["logs"])
+			if logErr != nil || len(logs) != 1 || logs[0].Event != "workflow_failed" {
+				t.Fatal("failed terminal lost its recorded logs")
 			}
 			if scenario != "later_failure" {
 				if stored.Metadata["lineage_facts"] != nil {

@@ -806,3 +806,12 @@ Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的当前 Pr
 固定代码 `12d0302210fd77ae0e31e52bd81890ea8ecd9abb` 的 [Execution runner 44042355903／133899719655](https://github.com/pampa0629/addp/actions/runs/44042355903/job/133899719655) 和 [Platform Job 133899719601](https://github.com/pampa0629/addp/actions/runs/44042355903/job/133899719601) 均已成功终态。Execution原日志确认selected=true、新增四项清单组用例逐项ok、专项249项、导航16项及Go夹具；Platform仅引用其中HTTP生命周期：原日志54项Python整体OK、Node 7项及身份夹具通过，固定源码的54项测试枚举包含新增HTTP继承用例且未跳过（该入口默认非verbose，不伪称原日志逐名打印该项）。不外推其他检查或真实产品验收。
 
 发布源码与隔离验证的65项输入及HTTP测试文件逐项一致，摘要 `9f6a770fc0e3adf2c9bc45abd349caa64d12f75a3c5aea16f54aae60bea12241`；本机／Linux日志、测试选择及核验清单在 `/tmp/addp-list-overlap-validation-20261117-fq490tj_/`。原首失败及40个既有证据文件哈希保持，本轮未重启个人服务、触发Hosted或运行新真实窗口。下一步另行确认以此代码及输入进行一次隔离验收，先验证完整采样截止和取消清理，再按实际前置结果读取APT／HTTP 503诊断及causal-link、三状态导航和分层零残留；不把本批确定性并发验证当作历史物理根因已关闭。
+
+
+### 9.14 工作流结构化执行日志
+
+已确认沿既有 Runtime 状态回执、Develop 有效 lease 终态事务及本人专业读取接通日志，不新增权限、表、流式读取或业务执行。正式字段与安全边界见[Runtime 日志契约](../spec/workflow/HTTP协议.md#结构化执行日志)，Owner 无记录／读取失败及单一页面来源见[执行监控规范](../spec/tasks/执行监控.md#develop-执行日志读取)。Common Python 从实际状态更新及既有节点进度回调生成结构化记录；Develop 保存同次终态回执并返回数组，删除占位字符串；页面分别展示加载、无记录及失败，中英文固定事件文案，身份／执行切换拒绝迟到数据，保留独立 script traceback。
+
+本机验证：Common／隔离 Develop Go T1、Swagger 64 路由覆盖、Common Python完整入口一次641 passed／1原有 skipped／64 subtests（另轮三个既有MinIO初始化夹具10秒超时），本批workflow专项118 passed、Develop 前端327项浏览器与构建、GeoPython HTTP Handler与日志Schema定向3项通过。新增回归覆盖真实进度、成功／失败终态、快照复制、协议拒绝、终态保存、lease失效不保存、本人／撤权裁决、历史缺失不补造及页面无日志／读取失败／迟到响应。初轮红测试、夹具错误和共享工作区／初始化超时结果均保留，不以之后通过改写首轮。本机门禁仅证明受测实现，固定SHA的Linux实际执行待发布后核对。
+
+对已有执行 `14a6cf42-2ee6-4fbb-a592-4a92f18a1be0` 仅进行PostgreSQL只读核验：Develop workflow成功，`metadata.result.logs`缺失；metadata摘要 `f6ccf9d9001b5609eeff87de2796d6fda4b140176c54ed62c480a685c3c32912`。浏览器工具不可用，未宣称验证当前用户HTTP链路；不直接查询或拼接Runtime进程日志，不补造历史。本轮未重跑该任务、重启服务或触发Hosted。证据在 `/tmp/addp-execution-logs-20261117/`。已有执行部署新代码后仍应显示“本次执行未记录日志”；新的真实业务链路与其他未生成日志的Runtime覆盖仍需分别验收。

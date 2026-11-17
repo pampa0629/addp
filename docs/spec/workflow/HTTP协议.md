@@ -218,3 +218,11 @@ Manifest 固定 `schema_version=addp.workflow.private-files/v2`，包含十进�
 ---
 
 Feather V2内置direct读取算子`feather.inspect`／`feather.read_batch`使用`feather.table-batch/v1`，沿既有source-only access plan绑定；错误`FEATHER_SOURCE_CHANGED`为409、`FEATHER_READ_REJECTED`为400、`FEATHER_READ_FAILED`为500，返回当前请求语言的脱敏提示，不回显原生异常或资源路径。具体标量、预算及只读边界见[列式文件规范](../builtin-formats/列式文件与数据容器.md#feather-v2-单文件只读)。
+
+### 结构化执行日志
+
+执行日志是 Runtime 在本次实际运行中生成的领域进度记录，与 Monitor 通用过程事件、服务进程日志及原始 stdout/stderr 分开。沿既有 `GET /api/executions/{execution_id}` 的 `logs` 数组交付；未提供或空数组表示未记录日志，不依据 success、task_order、结果或当前定义补造历史。
+
+每条记录仅含 `timestamp`（UTC RFC3339，真实记录时间）、`level`（INFO 或 ERROR）、`event`（workflow_started、task_progress、workflow_succeeded、workflow_failed），以及可选 `task_id` 和 `progress`（0～100）。节点进度来自现有执行回调，不因相同百分比去重，不宣称其为未观察到的节点开始／完成；数组保留生成顺序。event 是稳定事实码，页面按查看语言翻译固定文案；task_id 为原 DAG 节点身份。不得包含参数、数据、连接、凭据、任意消息、异常正文或堆栈。日志不扩展业务效果和授权。
+
+Common Python ExecutionRegistry 在持锁更新实际运行状态时一并追加这些记录，快照复制隔离数组；pending 不补开始记录。Common Go Provider 在 HTTP 边界解析闭合字段，Develop 从同次 Runtime 终态回执取日志，在原有效 lease 的终态结果事务中保存 `metadata.result.logs`；不新增表、重试、流式接口或独立写入事务。其他未产生该记录的 Runtime 和旧执行保持无日志。

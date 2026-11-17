@@ -68,7 +68,7 @@ const (
 	MsgExecutionStartFailed                   = "develop.execution.start_failed"
 	MsgRetryStarted                           = "develop.execution.retry_started"
 	MsgParamExecStarted                       = "develop.execution.param_exec_started"
-	MsgLogsNotReady                           = "develop.execution.logs_not_ready"
+	MsgLogsUnavailable                           = "develop.execution.logs_unavailable"
 	MsgDeleteSuccess                          = "develop.task.delete_success"
 	MsgUseExecuteEndpoint                     = "develop.task.use_execute_endpoint"
 	MsgInvalidTaskID                          = "develop.task.invalid_id"

@@ -936,10 +936,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "执行日志 | Execution logs",
+                        "description": "执行日志；无记录为空数组 | Recorded logs; empty array when none were recorded",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.ExecutionLogsResponse"
                         }
                     },
                     "403": {
@@ -953,6 +952,15 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "日志不可用 | Logs unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -6684,6 +6692,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.ExecutionLogsResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.WorkflowExecutionLog"
+                    }
+                }
+            }
+        },
         "internal_api.ListKernelsResponse": {
             "type": "object",
             "properties": {
@@ -7293,6 +7315,42 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/plugin.EngineCatalogPath"
                     }
+                }
+            }
+        },
+        "plugin.WorkflowExecutionLog": {
+            "type": "object",
+            "required": [
+                "event",
+                "level",
+                "timestamp"
+            ],
+            "properties": {
+                "event": {
+                    "type": "string",
+                    "enum": [
+                        "workflow_started",
+                        "task_progress",
+                        "workflow_succeeded",
+                        "workflow_failed"
+                    ]
+                },
+                "level": {
+                    "type": "string",
+                    "enum": [
+                        "INFO",
+                        "ERROR"
+                    ]
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "format": "date-time"
                 }
             }
         },

@@ -117,16 +117,16 @@ func NewWorkflowEngineService(systemService *commonClient.SystemServiceClient) *
 
 // WorkflowResponse 工作流执行响应
 type WorkflowResponse struct {
-	Status          string                   `json:"status"`
-	ExecutionID     string                   `json:"execution_id"`
-	FinalResult     string                   `json:"final_result,omitempty"` // GeoJSON 字符串
-	AllResults      map[string]string        `json:"all_results,omitempty"`  // 所有中间结果
-	ProducedTargets []WorkflowProducedTarget `json:"produced_targets,omitempty"`
-	Error           string                   `json:"error,omitempty"`
-	Logs            []map[string]interface{} `json:"logs,omitempty"`      // 执行日志
-	Traceback       string                   `json:"traceback,omitempty"` // 详细堆栈信息
-	ExecutionTimeMs *float64                 `json:"execution_time_ms,omitempty"`
-	RuntimeStatus   map[string]interface{}   `json:"runtime_status,omitempty"`
+	Status          string                        `json:"status"`
+	ExecutionID     string                        `json:"execution_id"`
+	FinalResult     string                        `json:"final_result,omitempty"` // GeoJSON 字符串
+	AllResults      map[string]string             `json:"all_results,omitempty"`  // 所有中间结果
+	ProducedTargets []WorkflowProducedTarget      `json:"produced_targets,omitempty"`
+	Error           string                        `json:"error,omitempty"`
+	Logs            []plugin.WorkflowExecutionLog `json:"logs,omitempty"`      // 执行日志
+	Traceback       string                        `json:"traceback,omitempty"` // 详细堆栈信息
+	ExecutionTimeMs *float64                      `json:"execution_time_ms,omitempty"`
+	RuntimeStatus   map[string]interface{}        `json:"runtime_status,omitempty"`
 }
 
 type WorkflowProducedTarget struct {
@@ -415,9 +415,6 @@ func toWorkflowResponse(result *plugin.WorkflowExecuteResult) *WorkflowResponse 
 		}
 	}
 
-	if logs, ok := result.Result["logs"].([]map[string]interface{}); ok {
-		resp.Logs = logs
-	}
 	if traceback, ok := result.Result["traceback"].(string); ok {
 		resp.Traceback = traceback
 	}
@@ -440,6 +437,7 @@ func applyWorkflowRuntimeStatus(resp *WorkflowResponse, status *plugin.WorkflowE
 	if len(status.AllResults) > 0 {
 		resp.AllResults = workflowRuntimeResultMap(status.AllResults)
 	}
+	resp.Logs = status.Logs
 	resp.RuntimeStatus = workflowRuntimeStatusSummary(status)
 }
 

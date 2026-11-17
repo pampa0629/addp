@@ -312,6 +312,10 @@ func HTTPGetExecutionStatus(ctx context.Context, connInfo ConnectionInfo, execut
 		return nil, err
 	}
 	status := workflowExecutionStatusFromRaw(raw)
+	status.Logs, err = DecodeWorkflowExecutionLogs(raw["logs"])
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return status, fmt.Errorf("get workflow execution status failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
@@ -362,7 +366,7 @@ func workflowExecutionStatusFromRaw(raw map[string]interface{}) *WorkflowExecuti
 		status.ExecutionTimeMs = &value
 	}
 	for key, value := range raw {
-		if key != "status" && key != "execution_id" && key != "result" && key != "all_results" && key != "message" && key != "task_order" && key != "error" && key != "error_code" && key != "details" && key != "progress" && key != "started_at" && key != "execution_time_ms" {
+		if key != "logs" && key != "status" && key != "execution_id" && key != "result" && key != "all_results" && key != "message" && key != "task_order" && key != "error" && key != "error_code" && key != "details" && key != "progress" && key != "started_at" && key != "execution_time_ms" {
 			status.Raw[key] = value
 		}
 	}

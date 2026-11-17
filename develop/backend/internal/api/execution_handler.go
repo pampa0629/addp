@@ -11,6 +11,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -719,13 +720,19 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// GetExecutionLogs 获取执行日志（占位）
+type ExecutionLogsResponse struct {
+	ExecutionID string                        `json:"execution_id"`
+	Logs        []plugin.WorkflowExecutionLog `json:"logs"`
+}
+
+// GetExecutionLogs 读取本次执行已保存的结构化日志。
 // @Summary 获取执行日志 | Get execution logs
 // @Description 专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
-// @Success 200 {object} map[string]interface{} "执行日志 | Execution logs"
+// @Success 200 {object} ExecutionLogsResponse "执行日志；无记录为空数组 | Recorded logs; empty array when none were recorded"
+// @Failure 503 {object} map[string]string "日志不可用 | Logs unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions/{execution_id}/logs [get]
@@ -735,16 +742,23 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	executionID := c.Param("execution_id")
 
-	if _, err := h.devExecutor.GetExecution(c.Request.Context(), executionID, tenantIDValue(c)); err != nil {
+	execution, err := h.devExecutor.GetExecution(c.Request.Context(), executionID, tenantIDValue(c))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionNotFound), "error_code": "execution_not_found"})
 		return
 	}
 
-	// 暂时返回占位响应
-	c.JSON(http.StatusOK, gin.H{
-		"execution_id": executionID,
-		"logs":         []string{commoni18n.T(c, developi18n.MsgLogsNotReady)},
-	})
+	c.Header("Cache-Control", "no-store")
+	var raw interface{}
+	if result, ok := execution.Metadata["result"].(map[string]interface{}); ok {
+		raw = result["logs"]
+	}
+	logs, err := plugin.DecodeWorkflowExecutionLogs(raw)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, developi18n.MsgLogsUnavailable), "error_code": "execution_logs_unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, ExecutionLogsResponse{ExecutionID: executionID, Logs: logs})
 }
 
 type providerExecuteDevRequest struct {

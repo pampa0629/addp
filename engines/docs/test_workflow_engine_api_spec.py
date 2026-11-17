@@ -170,3 +170,13 @@ def test_typed_operator_diagnostic_spec_matches_the_single_runtime_contract():
     assert context['properties']['node_index']['maximum'] == 65535
     assert spec['ExecutionStatusResponse']['properties']['diagnostic'] == {'$ref':'#/components/schemas/WorkflowInputDiagnostic'}
     assert 'INVALID_PARAMS' in spec['ExecutionStatusResponse']['properties']['error_code']['enum']
+
+
+def test_workflow_execution_log_contract():
+    spec = load_spec()
+    schemas = spec['components']['schemas']
+    assert schemas['ExecutionStatusResponse']['properties']['logs']['items'] == {'$ref': '#/components/schemas/WorkflowExecutionLog'}
+    log = schemas['WorkflowExecutionLog']
+    assert log['additionalProperties'] is False
+    assert set(log['required']) == {'timestamp', 'level', 'event'}
+    assert log['properties']['event']['enum'] == ['workflow_started', 'task_progress', 'workflow_succeeded', 'workflow_failed']
