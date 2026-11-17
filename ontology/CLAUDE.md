@@ -312,6 +312,12 @@ Outdoor 合成示例用于测试夹具及用户显式创建的本地演示本体
 创建来源仅 `config` 文档变化；前向修订 74 只更新该已提交文件的来源身份、摘要和中英文用途，保持全部 59 项来源、72 项绑定、6 项覆盖以及定义中除 revision 外的字段。运行／执行读取切片不变。现有 `make test-platform-review`、Ontology Go T1 和自然 Go／Platform 门禁覆盖本次元数据修复；源码冻结不表示运行时已激活或真实 Hosted 通过。
 
 
+### Transfer 验收导航来源复核（2026-11-17）
+
+创建修订 77 补审 `5f6141faf8ae2d70ec09d5caff82253b75a1b367`：配置说明与任务语义文档各仅替换一处 Continuous 场景链接，统一指向[独立验收专题](../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events)。产品规则没有变化，创建仍为停止态 bounded/snapshot 原生表任务；不授予权限、不启动扫描或执行，不扩张 continuous 覆盖。
+
+仅更新 `config`、`policy_spec` 的真实来源提交、整文件摘要及双语用途，保留原锚点、另外 57 项来源、全部 72 项绑定和 6 项覆盖；定义除 revision 外保持，运行修订 13、执行读取修订 9 不变。整文件来源变化仍须经人工补审并前向修订，不能自动重生成或放宽漂移断言。标准验证沿 `make test-platform-review`、`make test-module MODULE=ontology GO_ONLY=1` 及自然 Go／Platform CI；本项不证明运行激活或真实 T4。
+
 ### 平台对象解耦来源复核（2026-11-14）
 
 Transfer 创建前向修订 76 复核已提交 `fe84ae5e0639da971a4e486b137ad07c82269bf0` 的 Planner 内容 Provider 注入。同文件只增加 `EngineBinding.BoundProvider`、统一 Provider 取得及能力查询转接；普通业务 Engine 未注入时仍使用相同的 `effectiveEngineType` 和插件注册表。`validateTableTransferSpec`、原生源／目标构建、查询与字段规则不变。仅更新 planner 一项真实提交、整文件 SHA-256 及双语用途，创建定义除 revision 外逐字段保持，59 项来源、72 项绑定、6 项覆盖不变；运行修订 13、执行读取修订 9 保持。对象暂存私有链路的改造不扩张该原生创建切片，不改 Schema、发布／投影内核或运行激活。沿现有 `make test-platform-review` 与 Ontology Go owner 验证，不以源码冻结代替 T4。

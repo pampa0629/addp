@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "d12e8279b3dacb87f9fc196aa3f2ddb79598e0dd",
-      "sha256": "9d8a18ea33c30eb2d065aa924f09950ebc6a009f37b73c887defb73addd990b2",
+      "commit": "5f6141faf8ae2d70ec09d5caff82253b75a1b367",
+      "sha256": "dc7726f7675fc409bed9b6f7bf68fdccc6e0877449647291c1b7a7aea69fc772",
       "use": {
-        "zh-cn": "复核写后 basic 确认 DataItem 身份与边界、System 独立办理初始授权、deep 补充增强事实的职责；授权不依赖 deep 成功。串接回执 metadata_scan.execution_id 指 deep，basic_execution_id 指基础识别，submitted 仅表示受理。当前创建仍限定 auto_scan_metadata=false 的停止态 bounded/snapshot 原生表任务，不启动扫描、执行或授权；创建能力、条件与效果保持。",
-        "en": "Reviewed post-write basic DataItem identification, independent System initial grants and deep enrichment; authorization does not depend on deep success. Chained metadata_scan.execution_id identifies deep, basic_execution_id identifies basic, and submitted means acceptance only. Creation remains a stopped bounded/snapshot native-table task with auto_scan_metadata=false, starting no scan, execution or grant and preserving its semantics, conditions and effects."
+        "zh-cn": "复核仅将 Continuous 验收导航迁入独立专题，产品规则不变。保留 basic 识别 DataItem、System 独立初始授权、deep 增强及授权不依赖 deep 成功；串接 metadata_scan.execution_id 指 deep、basic_execution_id 指基础识别，submitted 仅表受理。创建仍为 auto_scan_metadata=false 的停止态 bounded/snapshot 原生表任务，不启动扫描、执行或授权。",
+        "en": "Reviewed only the Continuous acceptance-link relocation; product rules are unchanged. Basic identifies the DataItem, System grants independently, and deep enriches; grants do not depend on deep success. Chained metadata_scan.execution_id denotes deep, basic_execution_id denotes basic, and submitted means acceptance. Creation remains a stopped bounded/snapshot native-table task with auto_scan_metadata=false, starting no scan, execution or grant."
       }
     },
     {
@@ -125,11 +125,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-任务语义与同步模式.md",
       "anchor": "## 三、当前支持矩阵",
-      "commit": "0af01095941be47c97d2d0383bcb69b23781fd68",
-      "sha256": "cac51ecae6f8b083e80ce385ed667263f47c617beefaa041b24b92f74ba71da2",
+      "commit": "5f6141faf8ae2d70ec09d5caff82253b75a1b367",
+      "sha256": "892622b0edabf47d345fd57076bde1b646c9ea28bbd6bd62c5d40327daa20ce1",
       "use": {
-        "zh-cn": "支持矩阵及快照replace/append保持；CDC加列审批后idle/paused，显式Resume才新建execution。不扩张本包continuous能力。",
-        "en": "Keep the matrix and snapshot replace/append. CDC approval leaves idle/paused; explicit Resume creates an execution. No continuous capability expansion."
+        "zh-cn": "复核仅将 Continuous 验收导航迁入独立专题，支持矩阵及 snapshot replace/append 不变；CDC 加列审批后仍 idle/paused，显式 Resume 才新建 execution。不扩张本包 continuous 能力。",
+        "en": "Reviewed only the Continuous acceptance-link relocation. The support matrix and snapshot replace/append are unchanged; CDC column approval leaves idle/paused and only explicit Resume creates an execution. This package gains no continuous capability."
       }
     },
     {
