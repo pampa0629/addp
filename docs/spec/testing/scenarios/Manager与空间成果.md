@@ -18,6 +18,7 @@
 | 矢量与地图 | [拓扑持久化](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](矢量拓扑持久化.md#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
 | 栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
 | 邻域与插值专项 | [三种加权方法共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核) · [7×7方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收) · [米制圆窗](邻域统计与IDW.md#米制圆形邻域统计独立验收) · [多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收) · [IDW基础](邻域统计与IDW.md#点数据idw插值独立-hosted-验收) · [最少支撑](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收) · [最近N点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收) · [距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收) |
+| 栅格采样 | [点位原值](栅格采样.md#点位栅格采样独立验收) · [双线性点位](栅格采样.md#双线性点位栅格采样独立验收) · [沿线采样](栅格采样.md#沿线栅格采样持久化) |
 | 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
 | DEM 地形与统计 | [填洼](D8水文分析.md#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) |
@@ -622,24 +623,14 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 
 正交旋转扩展不改16/52/968／600秒，仅同步实际双语准入：rotated_x/rotated_y是非正交剪切、orientation是单轴镜像，仍须当前节点准确拒绝；本suite只证北向矩形成果，不补认旋转Hosted。Linux／实际运行另行认定。
 
-## 点位栅格采样独立验收
+## 栅格采样
 
-`raster-sample-points-persistence`；沿[水文／分区共同要求](#水文与分区统计专项共同要求)。16GPKG涵cell原值三状态、边界邻接浮点、旋转剪切／地理／反向、raw第二波段／NoData/mask/alpha、Int64UInt64、重复点／nullable属性、519×515跨轴512、重分类／表达式接采样、全无效命中／全外／带类型空批；所有二维点几何属性顺序类型保留，FID／内存索引非业务ID。
+三项采样的独立核验、精度及验收边界见[栅格采样专题](栅格采样.md)。原定位保留如下。
 
-18类双语36准确sample失败：0负越界布尔串null列表对象波段、CRS异、MultiPoint/LineString/Polygon、新两列冲突、alpha、Int64UInt64命中不可精确值／缺网格；混合复数、非有限JSON坐标、重复索引／活动几何／极限／I/O仅Native。独立高精度半平面判界＋闭式原生值，不调产品逆变换分组块读；712全检／含预期53物理调用，16原GPKG／全部源／预期及hash归档，root/run／源字节／夹具绑定。普通矢量声明与物理Meta分核、两原始输入内外血缘，不虚构RasterArtifact，准备不计Hosted／UI容量。
-
-## 双线性点位栅格采样独立验收
-
-`raster-sample-points-bilinear-persistence`；沿[水文／分区共同要求](#水文与分区统计专项共同要求)。16GPKG含省略method／显式cell、bilinear四二一支持、中心邻接浮点／图外边缘不足、旋转剪切／地理反向、raw第二波段／NoData/mask/alpha／Int64UInt64、512跨轴重复点、重分类→表达式→采样、全无效／全外／类型空批。
-
-正权重全支持须有效，零权重无效邻居不参与、精确中心仅自身；无epsilon／补边外推／归一化，无效支持优先整数精度／结果范围问题，保全部点属性／序／CRS。原cell18类＋null/布尔/数/空串/未知/大小写/列表/对象8种method，共26类双语52准确sample失败；复数／非有限／极端仿射／索引几何／I/O仅Native。独立中心四边形高精度面积比＋精确权重原值，不调产品插值；136＋52×16＝968全检／含预期69物理调用，16原GPKG／源预期／清单归档，完整几何属性Schema状态null／CRS沿原容差，不借旧cell证据作Hosted。
-
-<a id="raster-sample-lines-persistence"></a>
-## 沿线栅格采样持久化
-
-`raster-sample-lines-persistence`；入口 `scripts/test/online-hosted-raster-sample-lines-gate.sh`，沿[水文／分区共同要求](#水文与分区统计专项共同要求)。16GPKG含cell/bilinear、米／正式国际及美制测量英尺、折线重复内顶点、短／闭合／准确终点、矩形旋转、outside/nodata/alpha、三种业务fid展开。28类双语56准确sample失败，独立Decimal段长＋逐点路径／精确支持权重核全里程坐标数值状态／原属性；单位取CRS事实，不拿独立浮点近似扩容差。
-
-1032全检／73物理调用不含收尾，16GPKG原件及hash归档；两源血缘／公开投影、Meta与旧成果不变沿共同要求。正权无效支持不补值／归一化，闭合起终点按不同里程保留。混合类型／数值极限／底层注入仅Native，不改原点位／算法／权限，未以本地准备记UI／容量或Hosted通过。
+- <a id="点位栅格采样独立验收"></a>[点位栅格采样独立验收](栅格采样.md#点位栅格采样独立验收)
+- <a id="双线性点位栅格采样独立验收"></a>[双线性点位栅格采样独立验收](栅格采样.md#双线性点位栅格采样独立验收)
+- <a id="沿线栅格采样持久化"></a>[沿线栅格采样持久化](栅格采样.md#沿线栅格采样持久化)
+- <a id="raster-sample-lines-persistence"></a>[沿线采样 suite 定位](栅格采样.md#raster-sample-lines-persistence)
 
 ## 点线密度
 
