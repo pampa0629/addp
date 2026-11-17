@@ -831,3 +831,31 @@ Develop普通与私有路径均保存同次有效终态日志，Owner接口读�
 证据 `/tmp/addp-execution-logs-20261117/` 保存36项本批相关文件的固定源码摘要、各轮红绿原始日志、只读回执和逐Job CI事实；Linux日志均按固定SHA核验。
 
 剩余边界：服务本轮未更新，尚无新版本普通用户的真实业务端到端证据；其他未产生日志的Runtime及Query／Notebook未新增日志生产。下一步先明确最小真实验收的身份、样本、断言及清理范围，再单独确认运行；不重跑旧任务、不补造日志。
+
+
+### 9.15 执行日志真实验收补充方案（待确认实施，不是运行授权）
+
+**推荐入口。** 复用既有 `vector-topology-persistence` 的单一 `geometry-difference` Hosted case，在原执行上补只读日志断言，不新增suite／本机profile或业务提交。该case已有文件来源初始化、精确保存批准及运行身份链；较早考虑的 `line-network-normalize` 尚未接入同一专用准备链路，不能擅自把其他case的准备资格推广给它。当前 `make test-monitor-traces-local` 只部署PostgreSQL query，加入GeoPython和文件来源会改变身份／部署／样本范围；原四身份、11项权限、causal-link首失败、三状态导航及65项输入证据继续独立保留。本节只整理方案，未修改runner／正式身份／workflow、未派发Hosted；现有case在最终源码是否实际可运行仍待准入和新证据。
+
+**身份与效果清单。** 沿几何差集case独占非默认Tenant的原普通User，真实登录／AuthContext核对准确11项：`develop.task.read/execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read/execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。独立来源初始化／保存批准准备身份沿现行该case的14项范围和原正式批准流程，业务User不获批准资格；服务身份与Manager只读事实观察沿原职责，不新增权限／角色／Grant用途或借用Trace平台诊断身份。该User无task.create/delete，通过原临时内容入口执行，不新增任务定义。
+
+完整保留原5份NFS合成源、一次成功的 `outputs/difference.gpkg`（9行混合几何）及四个只读负例：A缺标识列、A无效几何、B非面、CRS不同。每次实际只读取所需A／B两源，成功DAG含save，四负例DAG不含save；不得误称保存回滚。整例仍为原1成功＋4失败，共5次提交，无第6次或重跑。原手写几何、字段／NULL／CRS、源不变、物理清单、Meta扫描／血缘、正式Grant／批准、双语诊断及地图断言保持，不重跑Berkeley旧任务。复用的成本是完整保留这五次原执行，不能为缩成两次而删除原断言。
+
+**验收矩阵。** 终态日志沿§9.14正式契约，不读取Runtime私有接口或数据库来代替普通User授权。
+
+| 编号 | 断言 | 证据边界 |
+| --- | --- | --- |
+| L1 成功日志 | 原成功UUID终态后，经Gateway读取Develop logs接口：准确UUID、闭合字段、UTC时间、实际节点；四节点按当前串行Runner为开始＋8项进度＋唯一INFO成功终态共10条，节点为load_a、load_b、PRIVATE_DIFFERENCE_NODE、save_result，各两次；实施时先由固定源码回归锁定 | 验证实际私有子进程→既有最终回执→Develop终态保存→本人读取；与同UUID专业详情的已保存数组逐项相等，不从结果或task_order补造 |
+| L2 四失败日志 | 每个原失败UUID为开始＋load_a两项进度＋load_b两项进度＋差集节点一项进度＋唯一ERROR失败终态，共7条；无save／成功事件；五UUID不串用，原受控诊断及零发布断言保持 | 业务执行失败且日志可读，不等于日志读取失败 |
+| L3 页面与同次返回 | 同一普通User在Console从准确Monitor终态详情进入“查看执行结果”，切顶部日志标签，核固定文案／级别／节点／百分比；刷新保持同UUID、logs标签和return_to，返回恢复同次Monitor URL。成功及四失败各一次，页面只读取 | 本轮中文真实链路；其他语言、身份变化、迟到响应沿已有门禁，不追加未实跑结论；不证明最近执行三状态或causal-link |
+| L4 无日志 | 旧执行14a6cf42-2ee6-4fbb-a592-4a92f18a1be0沿§9.14只读事实：logs缺失、metadata摘要保持；空数组成功读取和页面“未记录日志”沿Owner／浏览器回归 | 不复制／补写个人历史到Hosted；没有个人当前User HTTP回执，不声称旧记录页面已实测 |
+| L5 读取失败 | 沿已有Owner格式错误503／execution_logs_unavailable及浏览器失败／清空／迟到拒绝回归，不降格为空日志 | 不篡改真实execution或代理响应制造503，不新增撤权身份或停止服务；本轮不声明真实503注入通过 |
+| L6 清理与保全 | 原源／成果页面前后不变，失败不新增物理文件／扫描／血缘；沿原case的Grant／批准清理、NFS／Runtime、凭据／会话及独占部署清理，失败分别报告，保留首因 | 外层销毁不计业务DELETE验收；个人数据、旧失败目录和历史执行保持 |
+
+**调用、时间与输出。** 宿主在五个原终态上各新增一次logs GET，共5次；浏览器每UUID进入与刷新各一次，共10次，新增日志读取总上限15次，不轮询／重试／补提交。结果页挂载自动读取日志应计入上述10次，同次返回停在Monitor。宿主日志核对共用25秒绝对截止；浏览器日志／导航组开始后共用60秒绝对截止，原地图步骤不消耗或重置该组截止。单次新增HTTP至多5秒，均服从原入口剩余时间；不足立即失败，不延长原180秒浏览器用例／240秒宿主浏览器命令、配置600秒的既有业务等待或180分钟Job。600秒是现有等待配置，不冒称整轮总截止。Hosted沿原资源契约，不移植本机Trace的8CPU／12GiB／4GiB停止线并声称已证明适配。
+
+新增报告仅含封闭断言、事件计数、请求数、耗时及安全摘要／错误类别；原首失败不被清理覆盖。不归档新增读取的原始响应、日志数组或认证材料；既有checkpoint／浏览器输入副本可能经execution.metadata／Monitor带入logs，实施时在该case归档边界仅剔除这些新增数组，保留私有内存核对及摘要，不改原几何／诊断／血缘证据。原上传与清理策略保持。
+
+**实施与CI闭包（待方案确认）。** 在原业务runner、同一case浏览器及归档边界接线，复用Client、Owner接口、Console导航／return_to和首失败设施，不新建通用抽象。补10／7条、四负例、UUID／字段错配、无日志、读取失败、截止／15次读取上限、原5提交不变和清理失败的确定性用例。标准入口 `make test-vector-topology-online-runner`、`make test-geopython-workflow` 及实际受影响Console／Develop前端门禁；核现有owner选择、前端依赖与Online登记，未命中才同批适配，Linux到终态后补证据。本文档本轮仅做差异审阅、路径／权限／源码顺序核验和 `git diff --check`，不将既有码通过计为未实施runner已通过。
+
+**确认顺序。** 先确认复用此case和新增只读断言，完成runner及确定性Linux门禁；再核最终完整SHA、实际输入、原11项业务身份及准备职责、5次提交／预算／清理清单，单独确认一次Hosted。任何真实前置拒绝保留首因，不扩大准备资格、不自动追加。原本机Trace、三状态导航和Graph高级恢复的状态及授权不变。
