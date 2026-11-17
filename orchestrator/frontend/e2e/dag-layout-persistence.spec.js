@@ -1616,6 +1616,62 @@ async function executionPulses(page) {
   ))
 }
 
+test('execution cards distinguish completed, running and waiting steps across themes and selection', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  fixture.steps[0].name = '已完成任务'
+  fixture.steps[1].name = '正在执行任务'
+  fixture.steps.push(createFixtureStep('waiting-step', '尚未执行任务', 9))
+  fixture.steps[1].depends_on = [SOURCE_NODE_ID]
+  fixture.steps[2].depends_on = [TARGET_NODE_ID]
+  fixture.editor_layout.nodes['waiting-step'] = { x: 780, y: 180 }
+  await installMockBackend(page, fixture)
+  let execution = {
+    id: EXECUTION_ID, execution_id: 'orchestration-execution-e2e', status: 'running',
+    current_step: TARGET_NODE_ID, metadata: { step_results: { [SOURCE_NODE_ID]: { status: 'success' } } }
+  }
+  await page.route('**/api/v1/orchestrator/orch-executions/' + EXECUTION_ID, route => fulfillJSON(route, execution))
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await startLiveExecution(page)
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '成功', [TARGET_NODE_ID]: '运行中', 'waiting-step': '等待执行' })
+  await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+  for (const theme of ['light', 'dark', 'blue', 'purple']) {
+    await page.evaluate(theme => { document.documentElement.className = theme === 'light' ? '' : `dark ${theme === 'dark' ? '' : theme}` }, theme)
+    for (const selectedID of [SOURCE_NODE_ID, TARGET_NODE_ID, 'waiting-step']) {
+      await page.locator('#dag-container').evaluate((el, id) => {
+        const state = el.__vueParentComponent.setupState
+        state.selectItem(state.graph.findById(id))
+      }, selectedID)
+      await expect.poll(() => page.locator('#dag-container').evaluate(element => {
+        const graph = element.__vueParentComponent.setupState.graph
+        const style = getComputedStyle(element), color = name => style.getPropertyValue(name).trim()
+        return [['source-step', 'success', '✓'], ['target-step', 'warning', '▶'], ['waiting-step', 'neutral', '…']].every(([id, tone, symbol]) => {
+          const node = graph.findById(id), group = node.getContainer()
+          const shape = name => group.find(shape => shape.get('name') === name)
+          const fill = color(tone === 'neutral' ? '--addp-bg-secondary' : `--el-color-${tone}-light-8`)
+          return group.attr('opacity') === 1 && shape('orchestration-node-card').attr('fill') === fill &&
+            shape('orchestration-node-card').attr('stroke') === color(node.hasState('selected') ? '--el-color-danger' : '--addp-border-color') &&
+            shape('execution-outline')?.attr('stroke') === color(tone === 'neutral' ? '--addp-text-secondary' : `--el-color-${tone}`) &&
+            (shape('execution-outline')?.attr('lineDash')?.length > 0) === (tone === 'neutral') &&
+            shape('execution-icon')?.attr('text') === symbol &&
+            shape('execution-badge').attr('fill') === fill && shape('execution-label').attr('fill') === color('--addp-text-primary')
+        })
+      })).toBe(true)
+    }
+    await page.locator('#dag-container').screenshot({ path: test.info().outputPath(`execution-card-contrast-${theme}.png`) })
+  }
+  await expect(page.locator('.unsaved-status')).toHaveCount(0)
+  execution = { ...execution, status: 'failed', current_step: null }
+  await page.getByRole('button', { name: '收起状态', exact: true }).click()
+  await expect.poll(() => page.locator('#dag-container').evaluate(el => {
+    const style = getComputedStyle(el)
+    return el.__vueParentComponent.setupState.graph.getNodes().every(node => {
+      const group = node.getContainer()
+      return group.find(shape => shape.get('name') === 'orchestration-node-card').attr('fill') === style.getPropertyValue('--addp-bg-primary').trim() &&
+        !group.find(shape => shape.get('name')?.startsWith('execution-'))
+    })
+  })).toBe(true)
+})
+
 test('live execution displays running and completed nodes, exposes failure, and stops polling at terminal state', async ({ page }) => {
   const fixture = createInteractionFixture()
   fixture.steps[1].depends_on = [SOURCE_NODE_ID]
@@ -1635,8 +1691,8 @@ test('live execution displays running and completed nodes, exposes failure, and 
       const graph = element.__vueParentComponent.setupState.graph, style = getComputedStyle(element)
       const shape = name => graph.findById(source).getContainer().find(shape => shape.get('name') === name)
       const warning = style.getPropertyValue('--el-color-warning').trim()
-      return shape('execution-badge').attr('fill') === style.getPropertyValue('--addp-bg-primary').trim() &&
-        shape('execution-label').attr('fill') === warning && shape('execution-pulse').attr('stroke') === warning &&
+      return shape('execution-badge').attr('fill') === style.getPropertyValue('--el-color-warning-light-8').trim() &&
+        shape('execution-label').attr('fill') === style.getPropertyValue('--addp-text-primary').trim() && shape('execution-pulse').attr('stroke') === warning &&
         shape('execution-pulse').get('animations').length > 0
     }, SOURCE_NODE_ID)).toBe(true)
     await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '运行中', [TARGET_NODE_ID]: '等待执行' })

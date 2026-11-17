@@ -369,7 +369,10 @@ function executionStateLabel(state) {
   const status = t(`orchestrator.liveExecution.status.${state.status}`)
   return state.observationStopped ? t('common.executionSteps.lastRecorded', { status }) : status
 }
-watch([() => props.executionStates, locale], renderExecutionStates)
+watch([() => props.executionStates, locale], () => {
+  refreshConnectionFocus()
+  renderExecutionStates()
+})
 const canCopyNode = computed(() => selectedItem.value?.getType?.() === 'node')
 const focusedConnections = ref([])
 const focusedName = ref('')
@@ -377,6 +380,11 @@ function refreshConnectionFocus() {
   const candidate = selectedItem.value
   const active = candidate && !candidate.destroyed ? candidate : null
   const edges = focusDAGConnections(graph.value, active)
+  // 执行状态需要全局可辨；连线仍聚焦，带状态的节点保持完整可见。
+  for (const node of graph.value?.getNodes?.() || []) {
+    if (props.executionStates[node.getID()]) node.getContainer().attr('opacity', 1)
+  }
+  graph.value?.paint?.()
   focusedName.value = active?.getType?.() === 'node' ? (active.getModel().name || active.getModel().label || active.getID()) : ''
   focusedConnections.value = edges.map(edge => {
     const model = edge.getModel()

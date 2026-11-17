@@ -264,6 +264,10 @@ function themeColors() {
   const color = name => style.getPropertyValue(name).trim()
   return {
     background: color('--addp-bg-primary'),
+    secondaryBackground: color('--addp-bg-secondary'),
+    successBackground: color('--el-color-success-light-8'),
+    warningBackground: color('--el-color-warning-light-8'),
+    dangerBackground: color('--el-color-danger-light-8'),
     border: color('--addp-border-color'),
     textPrimary: color('--addp-text-primary'),
     textSecondary: color('--addp-text-secondary'),
@@ -278,7 +282,7 @@ function themeColors() {
 export function renderOrchestrationNodeExecution(item, state, label) {
   const group = item?.getContainer?.()
   if (!group) return
-  for (const name of ['execution-badge', 'execution-label']) {
+  for (const name of ['execution-badge', 'execution-label', 'execution-outline', 'execution-icon']) {
     group.find(shape => shape.get('name') === name)?.remove()
   }
   const existingPulse = group.find(shape => shape.get('name') === 'execution-pulse')
@@ -287,11 +291,25 @@ export function renderOrchestrationNodeExecution(item, state, label) {
     existingPulse.stopAnimate()
     existingPulse.remove()
   }
-  if (!state) return
   const colors = themeColors()
-  const color = state.observationStopped ? colors.textSecondary : (({ running: colors.warning, success: colors.success, failed: colors.danger,
-    timeout: colors.danger })[state.status] || colors.textSecondary)
+  const card = group.find(shape => shape.get('name') === 'orchestration-node-card')
+  card?.attr({ fill: colors.background })
+  if (!state) return
+  const tone = state.observationStopped ? 'neutral' : ({ running: 'warning', success: 'success',
+    failed: 'danger', timeout: 'danger' })[state.status] || 'neutral'
+  const color = tone === 'neutral' ? colors.textSecondary : colors[tone]
+  const fill = tone === 'neutral' ? colors.secondaryBackground : colors[`${tone}Background`]
+  const symbol = state.observationStopped ? '■' : ({ success: '✓', running: '▶', pending: '…',
+    not_started: '–', failed: '×', timeout: '!', cancelled: '■' })[state.status]
   const height = orchestrationNodeSize(item.getModel())[1]
+  card?.attr({ fill })
+  group.addShape('rect', {
+    attrs: { x: -NODE_WIDTH / 2 - 3, y: -height / 2 - 3,
+      width: NODE_WIDTH + 6, height: height + 6, radius: 8,
+      fill: 'transparent', stroke: color, lineWidth: running ? 4 : 3,
+      lineDash: tone === 'neutral' ? [6, 4] : [] },
+    name: 'execution-outline', capture: false
+  })
   if (running) {
     const attrs = { x: -NODE_WIDTH / 2 - 5, y: -height / 2 - 5,
       width: NODE_WIDTH + 10, height: height + 10, radius: 10,
@@ -309,15 +327,20 @@ export function renderOrchestrationNodeExecution(item, state, label) {
       }
     }
   }
-  const width = Math.min(NODE_WIDTH, G6.Util.getTextSize(label, 12)[0] + 20)
+  const width = Math.min(NODE_WIDTH, G6.Util.getTextSize(label, 14)[0] + 44)
   group.addShape('rect', {
-    attrs: { x: NODE_WIDTH / 2 - width, y: -height / 2 - 20, width, height: 18,
-      fill: colors.background, stroke: color, radius: 4 },
+    attrs: { x: NODE_WIDTH / 2 - width, y: -height / 2 - 34, width, height: 26,
+      fill, stroke: color, lineWidth: 2, radius: 4 },
     name: 'execution-badge', capture: false
   })
   group.addShape('text', {
-    attrs: { text: label, x: NODE_WIDTH / 2 - width / 2, y: -height / 2 - 11,
-      fill: color, textAlign: 'center', textBaseline: 'middle', fontSize: 12, fontWeight: 600 },
+    attrs: { text: symbol, x: NODE_WIDTH / 2 - width + 14, y: -height / 2 - 21,
+      fill: color, textAlign: 'center', textBaseline: 'middle', fontSize: 16, fontWeight: 700 },
+    name: 'execution-icon', capture: false
+  })
+  group.addShape('text', {
+    attrs: { text: label, x: NODE_WIDTH / 2 - width / 2 + 10, y: -height / 2 - 21,
+      fill: colors.textPrimary, textAlign: 'center', textBaseline: 'middle', fontSize: 14, fontWeight: 600 },
     name: 'execution-label', capture: false
   })
 }
