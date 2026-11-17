@@ -262,11 +262,11 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 
 D8加权汇流累积首期已实现，显式双输入、不计自身、非负有限权重、覆盖完全一致及完整D8路线校验见[算子契约](workflow/栅格算子契约.md)。本地标准 `make test-geopython-workflow` 全量 **3296 passed／21 warnings／710.94秒**，0失败／跳过／筛除，进度计数一致且验证输入无漂移；独立逐源路径核完整像元／mask、全1权重与无权累积一致、出口总量守恒，以及真实COG、双语异步失败和清理。Linux全量继续等CI会话回传，独立Hosted入口及夹具已实现、本地通过，尚未实际运行，不计平台扫描血缘、UI或容量。
 
-独立验收入口、断言与固定版本记录见[D8 加权汇流累积持久化场景](testing/scenarios/Manager与空间成果.md#raster-flow-accumulation-weighted-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
+独立验收入口、断言与固定版本记录见[D8 加权汇流累积持久化场景](testing/scenarios/D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
 
 D8指定汇水点汇水区首期按已确认范围实施：保留用户唯一正编号，包含点自身的完整上游归属，嵌套点明确失败，未选有效范围零、原无效NaN；完整准入与失败规则见[算子契约](workflow/栅格算子契约.md)，实现及验证状态见[后续专题](../next/栅格算子体系后续专题.md#三后续工作)。本地标准 `make test-geopython-workflow` 隔离候选全量3553项／21 warnings／735.99秒通过，0失败／跳过／筛除且验证输入无漂移；完整像元／mask独立路径、严格编号／嵌套失败、中英诊断及真实异步COG保存清理已验。Linux与其余Hosted仍等CI会话回传，本算子独立Hosted入口及夹具已实现，实际运行待验，不计平台扫描／血缘、UI或容量。
 
-独立验收入口、断言与固定版本记录见[D8 指定汇水点汇水区持久化场景](testing/scenarios/Manager与空间成果.md#raster-watershed-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
+独立验收入口、断言与固定版本记录见[D8 指定汇水点汇水区持久化场景](testing/scenarios/D8水文分析.md#raster-watershed-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
 
 D8河段编号首期按已确认范围实施：显式流向与同网格／同覆盖0／1河网，河源与汇合点开启新段，汇合点归下游段；按起点行列顺序从1编号，完整非法路线或断流严格失败，不补线。输出同网格Float64分类编号，非河网有效零、原无效NaN；复用现有COG保存。完整契约见[算子契约](workflow/栅格算子契约.md)，实现与验证状态见[后续专题](../next/栅格算子体系后续专题.md#三后续工作)。首期已实现并通过本地标准Native全量（3852项／21 warnings／833.62秒，0失败／跳过／筛除且输入无漂移），完整编号／mask、双语失败、共享Strahler回归及真实异步COG保存清理已验；Linux／Hosted仍等CI会话回传，不计UI或容量。
 
@@ -310,7 +310,7 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 
 ### D8 汇流面积独立 Hosted 验收
 
-独立验收入口、断言与固定版本记录见[D8 汇流面积持久化场景](testing/scenarios/Manager与空间成果.md#raster-flow-accumulation-area-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
+独立验收入口、断言与固定版本记录见[D8 汇流面积持久化场景](testing/scenarios/D8水文分析.md#raster-flow-accumulation-area-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
 
 
 ### D8 到河网沿流距离首期
@@ -320,7 +320,7 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 
 ### D8 到河网沿流距离独立 Hosted 验收
 
-独立验收入口、断言与固定版本记录见[D8 到河网沿流距离持久化场景](testing/scenarios/Manager与空间成果.md#raster-distance-to-stream-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
+独立验收入口、断言与固定版本记录见[D8 到河网沿流距离持久化场景](testing/scenarios/D8水文分析.md#raster-distance-to-stream-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
 
 ### D8 到河网相对高程（HAND）首期
 
@@ -329,7 +329,7 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 
 ### D8 到河网相对高程（HAND）独立 Hosted 验收
 
-独立验收入口、断言与固定版本记录见[D8 到河网相对高程（HAND）持久化场景](testing/scenarios/Manager与空间成果.md#raster-hand-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
+独立验收入口、断言与固定版本记录见[D8 到河网相对高程（HAND）持久化场景](testing/scenarios/D8水文分析.md#raster-hand-d8-persistence)。该轮本地准备门禁通过，Hosted 未实际运行。
 
 ### DEM 平均曲率首期
 

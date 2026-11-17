@@ -10,7 +10,7 @@
 
 现行 suite／case、身份、断言与清理由[Manager 与空间成果正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md)和各 Host Gate 维护；本页保留选定子场景摘要、操作入口及历史证据。独立 case、领域报告、完整 suite 和容量专项分别认定，子场景通过不代表完整 suite 或其他 case 通过。
 
-专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow) · [邻域统计与 IDW](../../docs/spec/testing/scenarios/邻域统计与IDW.md) · [分区统计](../../docs/spec/testing/scenarios/分区统计.md) · [点线密度](../../docs/spec/testing/scenarios/点线密度.md) · [DEM 曲率与地形指标](../../docs/spec/testing/scenarios/DEM曲率与地形指标.md)。
+专题导航：[Manager 文件与预览](../../docs/spec/testing/scenarios/Manager文件与预览.md) · [矢量拓扑持久化](../../docs/spec/testing/scenarios/矢量拓扑持久化.md) · [栅格工作流](../../docs/spec/testing/scenarios/栅格工作流.md#raster-workflow) · [邻域统计与 IDW](../../docs/spec/testing/scenarios/邻域统计与IDW.md) · [分区统计](../../docs/spec/testing/scenarios/分区统计.md) · [点线密度](../../docs/spec/testing/scenarios/点线密度.md) · [DEM 曲率与地形指标](../../docs/spec/testing/scenarios/DEM曲率与地形指标.md) · [D8 水文分析](../../docs/spec/testing/scenarios/D8水文分析.md)。
 
 [Manager 固定版本](#manager-固定版本证据)与[栅格固定版本](#固定版本证据)只覆盖所列源码、运行尝试和当次清理；后续已审计结果见[栅格验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)。容量矩阵是通过条件，早期未注明源码的准备记录不能作为当前版本结果。Runner、Native、Linux、Hosted 和真实页面证据分别记账，未运行、失败、跳过或未覆盖项不计为通过；本次文档整理未运行或刷新任何验收。
 
@@ -135,4 +135,4 @@ Runner／Native 命令、聚合归属及隔离身份夹具 Go T1 见[容量验�
 
 独立手工入口为 `make test-online ONLINE_SUITE=raster-stream-to-vector-d8-persistence`，复用隔离 Hosted、NFS、同源默认入口产品 Runtime 和普通 User 原 12 项权限。Hosted 触发与证据核对由专门 CI 会话协调；入口登记与本地准备结果不等于 Hosted 已执行或通过。
 
-Runner／Native 入口与实际准备范围见[D8 正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#d8-河网转矢量线独立-hosted-验收)；尚待已审计 Hosted 结果的范围见[D8 后续事项](../../docs/next/栅格算子体系后续专题.md#三后续工作)。完整保存链、准确失败及工作目录／NFS／部署／Infra 清理按正式场景验收。失败须零发布、零新增扫描血缘，清理仍为验收前提；数值极限继续单列 Native，不计 UI 或容量，未执行、失败或未覆盖项不能计为通过。
+Runner／Native 入口与实际准备范围见[D8 正式场景](../../docs/spec/testing/scenarios/D8水文分析.md#d8-河网转矢量线独立-hosted-验收)；尚待已审计 Hosted 结果的范围见[D8 后续事项](../../docs/next/栅格算子体系后续专题.md#三后续工作)。完整保存链、准确失败及工作目录／NFS／部署／Infra 清理按正式场景验收。失败须零发布、零新增扫描血缘，清理仍为验收前提；数值极限继续单列 Native，不计 UI 或容量，未执行、失败或未覆盖项不能计为通过。

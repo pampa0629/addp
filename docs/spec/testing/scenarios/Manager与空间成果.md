@@ -4,7 +4,7 @@
 
 共同前置条件见[T4 Online 验收规范](../T4-Online验收规范.md)。每项条款仅适用于其声明的 suite 与 profile；代码就绪不表示真实 T4 已通过。
 
-专项导读：[文件读取公共准备与收尾](Manager文件与预览.md#文件读取-case-的公共准备与收尾) · [公共前提](#独立持久化专项公共前提) · [Runner／Native 验证入口](#独立持久化专项验证入口) · [水文与分区统计共同要求](#水文与分区统计专项共同要求) · [水文固定结果与待验](#水文专项的固定结果与待验边界) · [邻域与IDW共同要求](邻域统计与IDW.md#邻域与-idw-专项共同要求)
+专项导读：[文件读取公共准备与收尾](Manager文件与预览.md#文件读取-case-的公共准备与收尾) · [公共前提](#独立持久化专项公共前提) · [Runner／Native 验证入口](#独立持久化专项验证入口) · [水文与分区统计共同要求](#水文与分区统计专项共同要求) · [水文固定结果与待验](D8水文分析.md#水文专项的固定结果与待验边界) · [邻域与IDW共同要求](邻域统计与IDW.md#邻域与-idw-专项共同要求)
 
 本页场景导航仅用于定位，适用范围以各场景正文为准：
 
@@ -20,10 +20,10 @@
 | 邻域与插值专项 | [三种加权方法共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核) · [7×7方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收) · [米制圆窗](邻域统计与IDW.md#米制圆形邻域统计独立验收) · [多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收) · [IDW基础](邻域统计与IDW.md#点数据idw插值独立-hosted-验收) · [最少支撑](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收) · [最近N点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收) · [距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收) |
 | 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
-| DEM 地形与统计 | [填洼](#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) |
-| D8 流向与累积 | [流向](#dem-d8-流向持久化) · [汇流累积](#d8-汇流累积持久化) · [加权累积](#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](#d8-下游流长持久化) · [上游最长流长](#d8-上游最长流长持久化) · [汇水分区](#d8-汇水分区持久化) |
-| D8 河网与汇水 | [Strahler](#raster-stream-order-d8-persistence) · [Shreve](#shreve-独立持久化验收) · [河段编号](#d8-河段编号独立持久化) · [河网转线](#d8-河网转矢量线独立-hosted-验收) · [指定汇水点](#raster-watershed-d8-persistence) · [汇水点吸附](#raster-snap-pour-points-persistence) · [增量子汇水区](#raster-subcatchments-d8-persistence) |
-| D8 面积、距离与高程 | [汇流面积](#raster-flow-accumulation-area-d8-persistence) · [到河网沿流距离](#raster-distance-to-stream-d8-persistence) · [HAND](#raster-hand-d8-persistence) |
+| DEM 地形与统计 | [填洼](D8水文分析.md#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) |
+| D8 流向与累积 | [流向](D8水文分析.md#dem-d8-流向持久化) · [汇流累积](D8水文分析.md#d8-汇流累积持久化) · [加权累积](D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](D8水文分析.md#d8-下游流长持久化) · [上游最长流长](D8水文分析.md#d8-上游最长流长持久化) · [汇水分区](D8水文分析.md#d8-汇水分区持久化) |
+| D8 河网与汇水 | [Strahler](D8水文分析.md#raster-stream-order-d8-persistence) · [Shreve](D8水文分析.md#shreve-独立持久化验收) · [河段编号](D8水文分析.md#d8-河段编号独立持久化) · [河网转线](D8水文分析.md#d8-河网转矢量线独立-hosted-验收) · [指定汇水点](D8水文分析.md#raster-watershed-d8-persistence) · [汇水点吸附](D8水文分析.md#raster-snap-pour-points-persistence) · [增量子汇水区](D8水文分析.md#raster-subcatchments-d8-persistence) |
+| D8 面积、距离与高程 | [汇流面积](D8水文分析.md#raster-flow-accumulation-area-d8-persistence) · [到河网沿流距离](D8水文分析.md#raster-distance-to-stream-d8-persistence) · [HAND](D8水文分析.md#raster-hand-d8-persistence) |
 
 ## Manager 文件与预览
 
@@ -498,139 +498,31 @@ NaN/Infinity、保护[1.0]、混合复数alpha／退化／溢出下溢／I/O仅N
 - **成果与身份**：逐项核完整物理成果、原网格／CRS、mask、类型和单位。COG 核完整布局及实际金字塔，artifact／物理／Meta 大小为相等正整数；普通 CSV／GeoPackage 核物理＝Meta 正整数大小，不虚构 RasterArtifact、COG 或第三方声明大小。自动扫描精确绑定父 execution／User／Tenant／Engine，血缘只认当前 execution 实际加载的注册输入，Monitor 单独核验；各节的源数、端口与受控内部 observer 范围不变，公开安全投影不因此扩大。
 - **独立复核**：按各节独立算法验证完整像元或表格／几何；每轮重新读取实际成果与源哈希，只允许复用绑定同轮输入的不可变数学期望。原始源、全部先前成果及各节要求的 Meta 快照不变。分区统计保留各自的全检次数、完整原件和清单，缺失、篡改、额外文件或符号链接均拒绝，不覆盖、重建或静默修复。
 - **失败与清理**：准确绑定当前执行、失败节点及各节要求的原因／语言；权限、保护投影、加载或其他节点失败不能冒充目标拒绝。反向语言查询不得改写原提交错误。失败零发布、零新增扫描与派生血缘；正常、失败及部分启动退出都核验本轮 Runtime 工作区、缓存、NFS、部署／Infra，以及各节声明的镜像／registry 等归属资源。保留首个业务失败和清理错误，清理失败整套失败。
-- **验证与证据**：各专项 Runner 沿既有 `make test-raster-online-runner` 聚合，真实 GDAL／污染反例沿 `make test-geopython-workflow`，登记沿 `make test-python-ci-registration`；新增输入须同次命中 Native、Online、影响选择与 CI。专项筛除、共享重复计数和隔离身份 Go T1 不算全量或完整 IAM／数据库集成。现场完整物理回执与归档后离线复算分开；无原 TIFF 的记录不能声称离线重读。已验与待验按固定源码分别认定，不外推 UI、容量、业务 DELETE、其他 Owner 或生产。 水文已有结果与缺口见[固定结果与待验边界](#水文专项的固定结果与待验边界)。
+- **验证与证据**：各专项 Runner 沿既有 `make test-raster-online-runner` 聚合，真实 GDAL／污染反例沿 `make test-geopython-workflow`，登记沿 `make test-python-ci-registration`；新增输入须同次命中 Native、Online、影响选择与 CI。专项筛除、共享重复计数和隔离身份 Go T1 不算全量或完整 IAM／数据库集成。现场完整物理回执与归档后离线复算分开；无原 TIFF 的记录不能声称离线重读。已验与待验按固定源码分别认定，不外推 UI、容量、业务 DELETE、其他 Owner 或生产。 水文已有结果与缺口见[固定结果与待验边界](D8水文分析.md#水文专项的固定结果与待验边界)。
 
-## 水文专项的固定结果与待验边界
+## D8 水文分析
 
-以下仅收敛已有归档结论，完整物理／扫描／当前执行血缘／Monitor、源旧不变和清理均按各轮实际报告认定；不代表当前 HEAD 已重跑。前七项 Hosted 归档均无原 TIFF，只有现场物理回执，不称为离线像元重算。
+场景矩阵、独立核验、固定结果及未覆盖项见[D8 水文分析专题](D8水文分析.md)。公共要求继续由上节维护，以下保留原定位。
 
-| 专项 | 固定证据与长期结论 |
-| --- | --- |
-| 填洼 | `8599f94ed8aefffd98370ee1c4d19d8d81c158ce`，[Run39727166222／Job119653632678](https://github.com/pampa0629/addp/actions/runs/39727166222/job/119653632678)：3 链／4 类准确失败、三方大小、扫描／血缘／Monitor及清理通过；不证明平台完整双语矩阵或完整水文分析。 |
-| D8 流向 | `3944846c9`，Run39750207818／Job119728593684：3 链／8 次双语失败、平坦路径／开放出口／无环及清理通过。归档 `12414557855`，不计该源码 Linux 全量。 |
-| 计数累积 | `4fba03313`，Run39761858875／Job119767722319：4 链／14 次双语失败、排除自身与终点总量及清理通过；同源 Linux Run39761773681／Job119767424921 全量 2360 项通过，不证明后继面积或加权模式。 |
-| 旧下游流长 | `dd04fb0637f381db9dfc3532c70d87135b34d21b`，[Run39783255643／Job119839656541](https://github.com/pampa0629/addp/actions/runs/39783255643/job/119839656541)：6 链／14 次失败及清理通过。本地栅格聚合曾有 3 项原生命周期模拟超时，不能改计整套通过。 |
-| 开放终点分区 | `6bf471fc2b6f8ee75fc01e2ce56e317e1375b5dc`，[Run39797527146／Job119888617829](https://github.com/pampa0629/addp/actions/runs/39797527146/job/119888617829)：4 链／14 次失败、出口编号／归属守恒及清理通过。 |
-| 旧上游最长流长 | `ddd32f9536857cecc4dc40d63d356755c4ca297b`（含夹具修复 `2d6d92780`），[Run39876682648／Job120163869951](https://github.com/pampa0629/addp/actions/runs/39876682648/job/120163869951)：6 链／14 次失败及清理通过；仅共享不可变数学期望，物理成果仍逐轮重读，不冒充 Linux 全量。 |
-| Strahler | `bde58e038751d932888bd7696046715e4ba21410`，[Run39880792263／Job120177404317](https://github.com/pampa0629/addp/actions/runs/39880792263/job/120177404317)：6 链／16 次失败及清理通过，不证明 Shreve、加权累积或业务 DELETE。 |
-
-上述七项均保持原 600 秒预算、普通 User 原 12 权限和同源产品 Runtime。**后继统一流长**的两模式结果改查[既有验收适配](#d8流长统一入口的既有验收适配)，不把旧无 `method` 的结果当作当前接口验收。
-
-**尚无本文已核验 Hosted 通过结论**：加权累积、指定点汇水区、河段编号、Shreve、河网转线、点吸附、增量子汇水区、汇流面积、到河网距离及 HAND。已记录的本地 GDAL／脚本／登记通过只证明准备；其中指定点汇水区最终候选为 `19bb583a21b4ffd5d7ffe1d5099bb57d02d58ab7`，增量子汇水区最终候选为 `adad1eebdd2a117ea800cc20bb5a1bb70d70154d`，均不能用较早聚合候选外推整树通过。Shreve 的 `883aed7b5` Linux 全量 4189 项是独立 Native 证据。其余实际运行和完整固定版本边界统一见[栅格验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)与[后续工作](../../../next/栅格算子体系后续专题.md#三后续工作)；不因本次整理触发新运行。
-
-## raster-fill-depressions-persistence
-
-`make test-online ONLINE_SUITE=raster-fill-depressions-persistence`；脚本门禁 `make test-raster-fill-depressions-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-北向非方形网格的519×515多波段 DEM，显式选择第二波段；覆盖嵌套洼地、多／对角出口、图像与内部无效边界、合法零和负高程、跨512块、NoData／mask／alpha／非有限。三条保存链为米制填洼、英尺换算米制后填洼、全无效第三波段，独立逐水位连通oracle核全像元／mask；输出Float64米制NaN、原网格／CRS、COG／overview、无scale/offset泄漏。非法波段、旋转网格、单位冲突及未应用scale四类必须精确匹配当前父执行和fill任务的参数失败，不能用权限／保护投影／加载失败充数。
-
-### DEM D8 流向持久化
-
-`make test-online ONLINE_SUITE=raster-flow-direction-d8-persistence`；脚本门禁 `make test-raster-flow-direction-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-三条COG保存链：直接流向、填洼接流向、全无效；四类错误（封闭洼地、非法波段、旋转网格、单位冲突）各按中英文提交，精确匹配当前执行的direction任务与语言原因，并核反向查询不会改写错误。严格核完整像元／mask、方向码、闭式最短平坦路径、无环与最终开放出口。
-
-### D8 汇流累积持久化
-
-`make test-online ONLINE_SUITE=raster-flow-accumulation-d8-persistence`；脚本门禁 `make test-raster-flow-accumulation-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-四条完整COG链：已登记流向、DEM接流向接累积、填洼接流向接累积、全无效。七类错误（非法方向含UInt64 NoData相邻大整数、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格）各中英文提交，14条精确accumulation任务失败，反向查询不得改写旧错误。独立逐源路径核完整计数／mask、不计自身与终点总量守恒。
-
-### D8 下游流长持久化
-
-`make test-online ONLINE_SUITE=raster-flow-length-d8-persistence`；脚本门禁 `make test-raster-flow-length-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。正式 DAG 必须按[统一流长入口](#d8流长统一入口的既有验收适配)显式指定 `method`；旧版本结果不代替该迁移验收。
-
-六条COG链覆盖米制／国际英尺／美制测量英尺已登记方向、DEM→流向→流长、填洼→流向→流长及全无效；七类非法方向／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确length任务失败，查询语言不得改写旧错误。独立逐源路径按横纵对角步数核全像元／mask、米制中心距离和严格终点零，保留原网格／CRS，完整COG验证。
-
-### D8 汇水分区持久化
-
-`make test-online ONLINE_SUITE=raster-drainage-basins-d8-persistence`；脚本门禁 `make test-raster-drainage-basins-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-四条已登记多出口方向／DEM接流向／填洼接流向／全无效COG链，七类非法方向（含64位NoData相邻值）／内部伪终点／越界或无效下游／循环／非法波段／旋转网格各中英文提交，共14条准确失败链。独立逐源路径核全像元／mask、出口行列编号、相邻出口不合并、唯一归属与总数守恒。
-
-### D8 上游最长流长持久化
-
-`make test-online ONLINE_SUITE=raster-flow-length-upstream-d8-persistence`；脚本门禁 `make test-raster-flow-length-upstream-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。正式 DAG 必须按[统一流长入口](#d8流长统一入口的既有验收适配)显式指定 `method`；旧版本结果不代替该迁移验收。
-
-米制／国际英尺／美制测量英尺已登记方向、DEM接流向、填洼接流向及全无效六条COG链，七类非法方向码／内部伪终点／越界下游／无效下游／循环／非法波段／旋转网格各中英文提交共14条准确length任务失败。独立逐源路径全像元oracle核横纵对角米制中心距离、无入流零、汇合取最长以及开放终点保留上游长度；输出Float64／NaN；完整mask、原网格／CRS及COG核验沿共同要求。查询语言不改写旧失败。
-
-### raster-stream-order-d8-persistence
-
-`make test-online ONLINE_SUITE=raster-stream-order-d8-persistence`；脚本门禁 `make test-raster-stream-order-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-六条COG链：已登记D8＋二值多级河网、汇流累积→重分类接分级、DEM→流向→累积→重分类→分级、填洼接同链、空河网、全无效。八类断流／非二值掩膜／有效覆盖不一致／完整网格不一致／非法D8方向（含UInt64 NoData相邻大整数）／循环／非法方向波段／非法掩膜波段各按中英文提交，共16条grade任务准确失败，反向查询不改写旧错误。
-
-515×519完整网格中的确定性有效条带跨512块，含级别1／2／3、同最高级汇合、低级重复不升级、开放终点保留级别、合法零、原生NoData／mask／alpha／非有限覆盖。独立反向支流栈遍历与单独计数核全部像元与阈值掩膜，整幅逐像元／mask及完整COG／最近邻金字塔验证；严格保留原网格／CRS／Float64／NaN，级别不带距离单位。严格artifact／物理／Meta相等正整数大小，精确扫描父执行／用户／租户／引擎与当前执行所有实际加载输入血缘／Monitor，源和旧成果不变，失败零发布／新增扫描血缘及Runtime工作区／NFS／部署／Infra全部清理。
-
-## raster-flow-accumulation-weighted-d8-persistence
-
-`make test-online ONLINE_SUITE=raster-flow-accumulation-weighted-d8-persistence`；脚本门禁 `make test-raster-flow-accumulation-weighted-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-六条COG保存链为直接非负权重、全1权重、权重重分类、DEM→D8流向→加权累积、填洼接上述链、全无效；每条都核当前执行两份实际注册输入的血缘。负权重、缺失／非有限权重、网格不一致、非法D8码（含原始UInt64 NoData邻接大整数）、循环、非法方向波段、非法权重波段、累计溢出八类各中英文提交，共16条准确失败。逐源路径oracle核完整权重和／mask、合法零、自身排除、全1等价、出口守恒及单位；其余成果／身份核验沿共同要求。
-
-## raster-watershed-d8-persistence
-
-`make test-online ONLINE_SUITE=raster-watershed-d8-persistence`；脚本门禁 `make test-raster-watershed-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-四条直接指定点／标记重分类／DEM→流向／填洼接流向COG保存链，每条核当前执行两份实际注册输入血缘；嵌套、重复编号、无点、全无效、非法编号（UInt64 NoData相邻大整数）、覆盖不一致、网格不一致、非法方向、循环及方向／标记两个角色非法波段十一类各中英文提交，共22条准确watershed任务失败。515×519完整网格中的有效条带跨512块，包含最大安全编号、中间点、两条支流共用最终开放出口、未选有效零及NoData／mask／alpha覆盖。独立逐源完整路径oracle核全部编号／mask、点自身、原网格／CRS、COG／金字塔及单位清除。
-
-### D8 河段编号独立持久化
-
-`make test-online ONLINE_SUITE=raster-stream-link-d8-persistence`；脚本门禁 `make test-raster-stream-link-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-六条COG保存链覆盖已登记双输入、累积阈值重分类、DEM／填洼接流向、空河网及全无效；八类非法输入各中英文提交，共16条准确失败。独立上溯oracle核完整编号／mask、起点行列顺序、汇合点归下游、单像元汇合出口及交叉河流独立。
-
-### Shreve 独立持久化验收
-
-`make test-online ONLINE_SUITE=raster-stream-shreve-d8-persistence`；脚本门禁 `make test-raster-stream-shreve-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-六条Shreve保存链加同源默认／显式Strahler两条对照，共八条COG；断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环、双角色非法波段及非法method九类各中英文，共18条准确失败。独立逐源头前向路径oracle核完整量级／mask、出口源头数守恒、非河网供体排除和对角交叉独立，默认／显式Strahler完整物理成果相等且符合独立原规则；整数越界继续单列Native证据，不模拟Hosted越界或降低产品上限。
-
-### D8 河网转矢量线独立 Hosted 验收
-
-`make test-online ONLINE_SUITE=raster-stream-to-vector-d8-persistence`；脚本门禁 `make test-raster-stream-to-vector-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-三种水平单位的直接双输入，加累积阈值、DEM／填洼完整链及空河网／全无效，共八条GeoPackage保存；孤立单像元（含非河网入流）、混合孤立点、断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环及两个角色非法波段十类各中英，共20条准确失败。独立逐边oracle核每条真实河网边恰好一次，完整中心坐标／方向／ID间隔／零基起止行列／米制长度、汇合端点、单像元终点、跨块及交叉独立。GeoPackage核完整几何／字段类型／CRS，空成果核Schema与CRS；其余成果／身份核验沿共同要求。编号／长度与坐标数值极限继续单列Native，不模拟Hosted越界；不改原套件、权限、算法或跨模块产品逻辑，不计UI或容量。
-
-## raster-snap-pour-points-persistence
-
-`make test-online ONLINE_SUITE=raster-snap-pour-points-persistence`；脚本门禁 `make test-raster-snap-pour-points-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-8条COG保存链包括米／国际英尺／美制测量英尺直接吸附、零半径、标记重分类、DEM接流向累积吸附、填洼接上述链，以及流向→累积→吸附→汇水区。13类各中英文提交，共26条失败链：碰撞、重复编号、全零无点、全无效、非法计数、非法编号、覆盖不一致、网格不一致、负半径、两个角色非法波段、旋转网格及吸附后嵌套；嵌套须由原汇水区节点失败，吸附节点先成功。整数非法样本包括原UInt64 NoData相邻大整数；非有限半径／单位溢出等极限保留Native证据。
-
-独立逐候选核完整编号／mask、真实CRS米制圆边界、距离／行列决胜、跨分水岭／无效区、零与编号保留；清除输出单位；COG及其余成果／身份核验沿共同要求。
-
-## raster-subcatchments-d8-persistence
-
-`make test-online ONLINE_SUITE=raster-subcatchments-d8-persistence`；脚本门禁 `make test-raster-subcatchments-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-7条COG链：非嵌套增量分区、相同输入的原完整汇水区对照、多层嵌套与并列支流、标记重分类、DEM接流向、填洼接流向，以及流向→累积→真实移动点的吸附→增量分区。两条非嵌套成果须完整像元一致；嵌套按下游第一个指定点归属且点自身归本点，保留用户编号、未选有效零和原无效覆盖。
-
-14类各中英文，共28条增量失败：重复编号、无点、全无效、非法编号、覆盖／网格不一致、非法方向码、内部伪终点、越界／无效下游、循环、两个角色非法波段及旋转网格；再加原完整汇水区对同一嵌套输入的两条中英文准确拒绝，共30条失败。包含原UInt64 NoData相邻非法大整数。独立逐源路径oracle核全部编号／mask、跨块、多波段、首点／自身、唯一归属和像元数守恒；不读取产品拓扑标签。输出清除单位；其余成果、身份、失败及清理核验沿共同要求。
-
-## raster-flow-accumulation-area-d8-persistence
-
-`make test-online ONLINE_SUITE=raster-flow-accumulation-area-d8-persistence`；脚本门禁 `make test-raster-flow-accumulation-area-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-八条COG保存链为米制／国际英尺／美制测量英尺方向接area、同一米制方向的默认count／显式count对照、DEM→流向→area、填洼接上述链及全无效area。519×515矩形网格、显式第二数据波段，覆盖跨512块、多出口、孔洞、合法零、部分透明、孤立开放终点及边界非零方向。
-
-非法方向码（含原始UInt64 NoData邻接大整数）、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格与非法measure八类各中英文提交，共16条准确失败；反向查询不改提交语言。独立逐源路径核完整像元／mask、area包含自身、平方米m2、count不计自身且清空单位、两count对照一致与出口面积守恒；输出Float64／NaN；其余成果、身份、失败及清理核验沿共同要求。面积溢出／下溢、累计溢出与精确计数上限继续单列Native数值极限证据，不记Hosted已验。
-
-## raster-distance-to-stream-d8-persistence
-
-`make test-online ONLINE_SUITE=raster-distance-to-stream-d8-persistence`；脚本门禁 `make test-raster-distance-to-stream-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-米／国际英尺／美制测量英尺方向＋河网、累积阈值、DEM、填洼、空河网及全无效共8条COG保存链；519×515矩形网格与显式第二波段覆盖跨512块、多出口、对角交叉、孔洞及alpha／mask。独立逐源路径核首次命中、河网自身零、未到达NoData及输出有效覆盖，输出米制单位；其余成果／身份核验沿共同要求。
-
-非法码（含原始UInt64 NoData邻接非法整数）、内部伪终点、图外／无效下游、循环、断流、非二值掩膜、覆盖／网格不一致、旋转网格及两个角色非法波段共12类各中英文，合计24条准确失败；包含河网之外或命中之后的非法路线。长路径稳定性、距离溢出及极小步长继续单列Native数值证据，不记Hosted已验。
-
-## raster-hand-d8-persistence
-
-`make test-online ONLINE_SUITE=raster-hand-d8-persistence`；脚本门禁 `make test-raster-hand-d8-online-runner`。准备、成果核验和清理遵守[专项共同要求](#水文与分区统计专项共同要求)。
-
-三种高程单位与水平CRS交叉的直接HAND、累积阈值、DEM、填洼、空河网及全无效共8条COG保存链，三输入显式数据波段、519×515矩形网格，覆盖跨512块、多出口、孔洞、平坦零、负高程与alpha／mask。独立逐源路径oracle核首次河网基准／完整高程差及mask、未到达NoData；输出米制；其余成果／身份核验沿共同要求。
-
-命中前／命中后／空河网逆坡及填洼流向混用原DEM，非法码／内部伪终点／图外与无效指向／循环／断流，非二值河网、两角色覆盖与网格不一致、旋转网格，三个角色非法波段、非法高程单位及单位冲突共21类各按中英文提交，合计42条准确失败。十万像元长路径、原始64位高程相邻差值及溢出／下溢继续单列Native，不计Hosted数值极限。
+- <a id="水文专项的固定结果与待验边界"></a>[水文专项的固定结果与待验边界](D8水文分析.md#水文专项的固定结果与待验边界)
+- <a id="raster-fill-depressions-persistence"></a>[raster-fill-depressions-persistence](D8水文分析.md#raster-fill-depressions-persistence)
+- <a id="dem-d8-流向持久化"></a>[DEM D8 流向持久化](D8水文分析.md#dem-d8-流向持久化)
+- <a id="d8-汇流累积持久化"></a>[D8 汇流累积持久化](D8水文分析.md#d8-汇流累积持久化)
+- <a id="d8-下游流长持久化"></a>[D8 下游流长持久化](D8水文分析.md#d8-下游流长持久化)
+- <a id="d8-汇水分区持久化"></a>[D8 汇水分区持久化](D8水文分析.md#d8-汇水分区持久化)
+- <a id="d8-上游最长流长持久化"></a>[D8 上游最长流长持久化](D8水文分析.md#d8-上游最长流长持久化)
+- <a id="raster-stream-order-d8-persistence"></a>[raster-stream-order-d8-persistence](D8水文分析.md#raster-stream-order-d8-persistence)
+- <a id="raster-flow-accumulation-weighted-d8-persistence"></a>[raster-flow-accumulation-weighted-d8-persistence](D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence)
+- <a id="raster-watershed-d8-persistence"></a>[raster-watershed-d8-persistence](D8水文分析.md#raster-watershed-d8-persistence)
+- <a id="d8-河段编号独立持久化"></a>[D8 河段编号独立持久化](D8水文分析.md#d8-河段编号独立持久化)
+- <a id="shreve-独立持久化验收"></a>[Shreve 独立持久化验收](D8水文分析.md#shreve-独立持久化验收)
+- <a id="d8-河网转矢量线独立-hosted-验收"></a>[D8 河网转矢量线独立 Hosted 验收](D8水文分析.md#d8-河网转矢量线独立-hosted-验收)
+- <a id="raster-snap-pour-points-persistence"></a>[raster-snap-pour-points-persistence](D8水文分析.md#raster-snap-pour-points-persistence)
+- <a id="raster-subcatchments-d8-persistence"></a>[raster-subcatchments-d8-persistence](D8水文分析.md#raster-subcatchments-d8-persistence)
+- <a id="raster-flow-accumulation-area-d8-persistence"></a>[raster-flow-accumulation-area-d8-persistence](D8水文分析.md#raster-flow-accumulation-area-d8-persistence)
+- <a id="raster-distance-to-stream-d8-persistence"></a>[raster-distance-to-stream-d8-persistence](D8水文分析.md#raster-distance-to-stream-d8-persistence)
+- <a id="raster-hand-d8-persistence"></a>[raster-hand-d8-persistence](D8水文分析.md#raster-hand-d8-persistence)
+- <a id="d8流长统一入口的既有验收适配"></a>[D8流长统一入口的既有验收适配](D8水文分析.md#d8流长统一入口的既有验收适配)
 
 ## DEM 曲率与地形指标
 
@@ -736,14 +628,6 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 | `55fb679016e1397045735ff8f3f4078accc42cf4`／[Platform42924607122／130207746240](https://github.com/pampa0629/addp/actions/runs/42924607122/job/130207746240) | 原完整日志／Make依赖链核45坡度组合／6.236秒／OK、后续隔离身份Go T1过；父字段修复及两回归文件与`80637f0a9`逐字节一致，仅证该固定Linux范围。 |
 
 上述固定记录未有Hosted完整通过，修复／Platform不补认业务矩阵或原COG归档；本轮文档归整不运行新验收。
-
-## D8流长统一入口的既有验收适配
-
-仅保留 `raster_flow_length_d8`，必填method：原下游suite `raster-flow-length-d8-persistence` 提交downstream，原上游 `raster-flow-length-upstream-d8-persistence` 提交upstream_longest。不新增suite／脚本，不自动迁移旧DAG；两套各6成功COG／14准确双语失败及原米制步长、零值／最长汇合断言保持。
-
-固定 `fdbe2d58d55ab2b215a609bfbd58b5c34e7c27ed` 的[下游40657243422／122711172418](https://github.com/pampa0629/addp/actions/runs/40657243422/job/122711172418)、[上游40657252005／122711199682](https://github.com/pampa0629/addp/actions/runs/40657252005/job/122711199682)各完成6成功／14失败、6次扫描／血缘／Monitor与清零，业务543430／414932毫秒。原COG未归档，只认现场物理回执；旧独立ID证据不追认为统一入口，不认证UI／容量／业务DELETE／已有DAG迁移。
-
-[Linux40658271835／122714572426](https://github.com/pampa0629/addp/actions/runs/40658271835/job/122714572426)固定 `093a685b8558b74ecbdccb6b95b026d33af603e9` 的Native全量8413通过：D8另8个可执行输入相同，仅元数据测试矢量目录断言变化且D8 AST一致。fdbe条件跳过的Native不计通过，093也不证明粗糙度或当前HEAD全量。
 
 ## 本组独立专项的核验与证据边界
 
