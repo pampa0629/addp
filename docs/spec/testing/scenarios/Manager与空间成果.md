@@ -6,140 +6,29 @@
 
 专项导读：[文件读取公共准备与收尾](Manager文件与预览.md#文件读取-case-的公共准备与收尾) · [公共前提](#独立持久化专项公共前提) · [Runner／Native 验证入口](#独立持久化专项验证入口) · [水文与分区统计共同要求](#水文与分区统计专项共同要求) · [水文固定结果与待验](D8水文分析.md#水文专项的固定结果与待验边界) · [邻域与IDW共同要求](邻域统计与IDW.md#邻域与-idw-专项共同要求)
 
-本页导航与旧定位仅供跳转；已拆分专题的权限、规则、证据及未覆盖范围由对应正文维护。适用范围以各场景正文为准：
+旧章节锚点统一定位到下表对应主题；细项规则、权限、证据及未覆盖范围由专题正文维护。下表只提供导航，不扩大各场景的适用范围。
 
 | 内容 | 场景入口 |
 | --- | --- |
-| Manager 与文件 | [内部产物与 case](Manager文件与预览.md#manager-internal-artifact-lineage) · [混合检索](#manager-hybrid-search) · [KML／GML／TopoJSON S3](Manager文件与预览.md#kmlgmltopojson-的-s3-兼容消费) · [设备静态轨迹](Manager文件与预览.md#设备静态轨迹范围读取) |
+| <a id="manager-internal-artifact-lineage"></a><a id="明确的验收-case"></a><a id="文件读取-case-的公共准备与收尾"></a><a id="surfer-grd-读取"></a><a id="grd-格式准入"></a><a id="grd-四份样例"></a><a id="grd-页面与原件"></a><a id="grd-清理与能力边界"></a><a id="grd-分版本证据"></a><a id="kml-实际页面导出"></a><a id="avro-单文件表格读取"></a><a id="avro-来源与权限"></a><a id="avro-三种-codec"></a><a id="avro-分页与批量传输"></a><a id="avro-清理与未覆盖项"></a><a id="avro-验证与历史证据"></a><a id="orc-单文件表格-hosted"></a><a id="orc-入口与权限"></a><a id="orc-平坦字段与批量传输"></a><a id="orc-嵌套对象与数组只读"></a><a id="orc-源变化与读取限制"></a><a id="orc-清理与报告"></a><a id="orc-分层验证与历史证据"></a><a id="feather-v2-基础标量独立-hosted"></a><a id="feather-身份与基础标量"></a><a id="feather-时间字段"></a><a id="feather-日期与定点小数"></a><a id="feather-清理与未覆盖项"></a><a id="feather-分版本证据"></a><a id="csvtsv-gb18030-独立读取设置-case"></a><a id="gb18030-身份与来源准备"></a><a id="gb18030-结构与内容投影"></a><a id="gb18030-页面读取与原件"></a><a id="gb18030-清理与能力边界"></a><a id="gb18030-分层验证与历史证据"></a><a id="filegdb-实际页面导出"></a><a id="mysql-filegdb-实际页面导出"></a><a id="tiff-无定位小图的-cog-布局回归"></a><a id="tiff-minio-无定位小图"></a><a id="tiff-nfs-渲染与自然到期"></a><a id="tiff-msk-组成扩展"></a><a id="tiff-组成的浏览器画布断言"></a><a id="tiff-清理与共同边界"></a><a id="tiff-分版本证据"></a><a id="envi-双文件-cog限定-hosted-已验收"></a><a id="envi-身份与来源"></a><a id="envi-精确组成授权"></a><a id="envi-minio-持续节点授权"></a><a id="envi-cog-与缓存"></a><a id="envi-撤权恢复与组成变化"></a><a id="envi-清理与失败"></a><a id="envi-验证与历史证据"></a><a id="img-原生扫描与-cog-快显"></a><a id="imgjpeg2000-正文分工与来源"></a><a id="imgjpeg2000-cog-与缓存"></a><a id="imgjpeg2000-页面与原件"></a><a id="imgjpeg2000-清理与验证"></a><a id="imgjpeg2000-历史证据与未覆盖项"></a><a id="部署模型转换与通用清理"></a><a id="点云与-pptx"></a><a id="彩色-fbx-只读预览"></a><a id="max-模型-hosted-验收"></a><a id="kmlgmltopojson-的-s3-兼容消费"></a><a id="设备静态轨迹范围读取"></a><a id="表格json-与八模型固定断言"></a><a id="manager-文件与预览"></a>Manager 与文件 | [内部产物与 case](Manager文件与预览.md#manager-internal-artifact-lineage) · [混合检索](#manager-hybrid-search) · [KML／GML／TopoJSON S3](Manager文件与预览.md#kmlgmltopojson-的-s3-兼容消费) · [设备静态轨迹](Manager文件与预览.md#设备静态轨迹范围读取) |
 | 表格读取 | [ORC 单文件](Manager文件与预览.md#orc-单文件表格-hosted) · [Avro 单文件](Manager文件与预览.md#avro-单文件表格读取) · [Feather V2](Manager文件与预览.md#feather-v2-基础标量独立-hosted) · [CSV／TSV GB18030 读取设置](Manager文件与预览.md#csvtsv-gb18030-独立读取设置-case) |
 | 表格历史证据 | [ORC 平坦传输／嵌套只读](Manager文件与预览.md#orc-分层验证与历史证据) · [Avro 首轮／复验](Manager文件与预览.md#avro-验证与历史证据) · [Feather 分版本](Manager文件与预览.md#feather-分版本证据) · [GB18030 本地／Hosted](Manager文件与预览.md#gb18030-分层验证与历史证据) |
-| 媒体与容器读取 | [NetCDF](科学容器只读验收.md#netcdf-单文件只读) · [GRIB2](科学容器只读验收.md#grib2-单文件只读) · [ENVI 双文件 COG](Manager文件与预览.md#envi-双文件-cog限定-hosted-已验收) · [Surfer GRD](Manager文件与预览.md#surfer-grd-读取) |
+| <a id="grib2-单文件只读"></a><a id="grib2-授权与来源"></a><a id="grib2-逐消息数值"></a><a id="grib2-页面切片与原件"></a><a id="grib2-清理与未覆盖项"></a><a id="grib2-验证与历史证据"></a><a id="netcdf-单文件只读"></a><a id="netcdf-来源与权限"></a><a id="netcdf-变量与切片"></a><a id="netcdf-页面与原件"></a><a id="netcdf-清理与未覆盖项"></a><a id="netcdf-验证与历史证据"></a>媒体与容器读取 | [NetCDF](科学容器只读验收.md#netcdf-单文件只读) · [GRIB2](科学容器只读验收.md#grib2-单文件只读) · [ENVI 双文件 COG](Manager文件与预览.md#envi-双文件-cog限定-hosted-已验收) · [Surfer GRD](Manager文件与预览.md#surfer-grd-读取) |
 | 媒体读取历史证据 | [NetCDF 授权契约适配](../evidence/资源读取与预览历史证据.md#netcdf-当前元数据授权契约适配--限定正式-hosted-通过) · [GRIB2 数值与页面](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口) · [ENVI 精确组成](../evidence/资源读取与预览历史证据.md#envi-精确双文件现行权限正式复验通过2026-11-04) · [ENVI MinIO 节点](../evidence/资源读取与预览历史证据.md#envi-minio-持续节点新建文件及到期独立-hosted-通过2026-11-04) · [Surfer 四份 GRD](../evidence/资源读取与预览历史证据.md#surfer-6-ascii-扩展及四份-grd-读取--普通-user-hosted-t4) |
-| 矢量与地图 | [拓扑持久化](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](矢量拓扑持久化.md#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
-| 栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](邻近距离.md#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
-| 邻域与插值专项 | [三种加权方法共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核) · [7×7方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收) · [米制圆窗](邻域统计与IDW.md#米制圆形邻域统计独立验收) · [多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收) · [IDW基础](邻域统计与IDW.md#点数据idw插值独立-hosted-验收) · [最少支撑](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收) · [最近N点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收) · [距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收) |
-| 邻近距离专项 | [基础方形](邻近距离.md#raster-proximity-persistence) · [北向非方形](邻近距离.md#非方形像元邻近距离独立验收) · [正交旋转](邻近距离.md#正交旋转网格邻近距离独立保存) |
-| 整幅只读统计 | [单元素百分位](整幅栅格百分位统计.md#整幅栅格百分位统计独立-hosted-验收) · [多百分位](整幅栅格百分位统计.md#整幅栅格多百分位独立-hosted-验收) |
-| 栅格采样 | [点位原值](栅格采样.md#点位栅格采样独立验收) · [双线性点位](栅格采样.md#双线性点位栅格采样独立验收) · [沿线采样](栅格采样.md#沿线栅格采样持久化) |
-| 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
+| <a id="拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence"></a><a id="拓扑持久化公共要求"></a><a id="主场景的固定输入输出与扫描血缘"></a><a id="主场景的独有几何断言"></a><a id="主场景报告失败证据与历史范围"></a><a id="多距缓冲独立场景"></a><a id="重合规整独立场景"></a><a id="重合规整与链路合并独立组合"></a><a id="面界提取独立普通用户场景"></a><a id="面界提取参数诊断独立实页"></a><a id="线端修剪独立普通user验收"></a><a id="算子参数错误独立普通-user-实页"></a><a id="近接检查独立双源-point-成果"></a><a id="线端延伸独立双源双成果"></a><a id="端点吸附独立线与point双成果"></a><a id="差集融合叠加与节点提取的专项授权边界"></a><a id="几何差集独立普通用户验收"></a><a id="融合几何独立普通用户验收"></a><a id="相交叠加独立普通用户验收"></a><a id="节点提取独立普通用户验收"></a><a id="nfs-geopackage-血缘权限专项验收"></a><a id="顶点提取独立场景"></a><a id="面邻检查独立普通用户场景polygon-adjacency"></a><a id="面邻准备批准与持久事实"></a><a id="面邻只读负例与失败原件"></a><a id="矢量拓扑持久化"></a>矢量与地图 | [拓扑持久化](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](矢量拓扑持久化.md#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
+| <a id="raster-workflow"></a><a id="镶嵌-whole-的-basic-重扫收敛"></a><a id="whole-重扫身份与断言"></a><a id="whole-元数据授权与受限快照"></a><a id="whole-专业-dto-与血缘投影"></a><a id="部署与主场景"></a><a id="栅格主场景运行准入"></a><a id="栅格主场景计算矩阵"></a><a id="栅格主场景元数据授权与事实取证"></a><a id="栅格主场景失败补偿与退出"></a><a id="栅格主场景固定结果与验收边界"></a><a id="普通-pngjpeg-页面导出"></a><a id="多来源计算与页面构图"></a><a id="多源加权与rgb合成"></a><a id="普通用户页面多选构图"></a><a id="分支血缘与源撤权"></a><a id="重分类与整数分组聚合"></a><a id="重分类规则与缺值"></a><a id="整数分组与精度"></a><a id="扩展阶段计数与验收边界"></a><a id="外部裁剪轮廓与局部更新"></a><a id="区域外裁剪持久化cog"></a><a id="有效像元轮廓只读geojson"></a><a id="局部更新持久化cog"></a><a id="阶段清单与固定结果"></a><a id="栅格工作流"></a><a id="分类栅格小斑块筛除独立-hosted-验收"></a><a id="分类小斑块筛除平方米面积阈值独立-hosted-验收"></a><a id="分类小斑块筛除指定类别保护独立-hosted-验收"></a><a id="raster-thin-persistence"></a><a id="raster-boundary-clean-persistence"></a><a id="raster-boundary-clean-two-rounds-persistence"></a><a id="分类栅格连通斑块编号独立验收"></a><a id="分类栅格与形态处理"></a>栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](邻近距离.md#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
+| <a id="raster-zonal-statistics-persistence"></a><a id="整数分区统计四条成功dag"></a><a id="非法波段与不同网格失败"></a><a id="独立csv核验与扫描血缘"></a><a id="固定hosted结果与范围"></a><a id="栅格分区加权统计独立-hosted-验收"></a><a id="栅格分区加权总体标准差独立-hosted-验收"></a><a id="栅格分区百分位独立-hosted-验收"></a><a id="栅格分区多百分位独立保存验收"></a><a id="栅格分区分类频数独立保存验收"></a><a id="vector-zonal-statistics-persistence"></a><a id="三条-geopackage-dag"></a><a id="独立物理核验"></a><a id="精确扫描与执行血缘"></a><a id="矢量面分区加权统计独立-hosted-验收"></a><a id="矢量面分区加权总体标准差独立-hosted-验收"></a><a id="矢量面分区面积加权统计独立-hosted-验收"></a><a id="矢量面分区面积加权总体标准差独立验收"></a><a id="矢量面分区百分位独立-hosted-验收"></a><a id="矢量面分区多百分位独立保存验收"></a><a id="矢量面分区分类频数持久化"></a><a id="vector-zonal-class-frequency-persistence"></a><a id="分区统计"></a><a id="失败清理与验收边界"></a>分区统计 | [栅格／矢量面、加权、百分位与分类频数](分区统计.md) · [失败、清理与验收边界](分区统计.md#失败清理与验收边界) |
+| <a id="邻域与-idw-专项共同要求"></a><a id="邻域参数与专项范围"></a><a id="三种邻域加权方法的共同复核"></a><a id="三种加权方法的矩阵与拒绝条件"></a><a id="邻域加权求和独立-hosted-验收"></a><a id="邻域加权总体标准差独立-hosted-验收"></a><a id="邻域加权均值独立-hosted-验收"></a><a id="raster-focal-statistics-persistence"></a><a id="邻域输入与六条成功链"></a><a id="非法波段与窗口失败"></a><a id="独立numpy核验"></a><a id="邻域固定证据与未覆盖范围"></a><a id="raster-focal-percentile-persistence"></a><a id="百分位16条成功链"></a><a id="18类输入与36次准确失败"></a><a id="fraction独立期望与精度"></a><a id="712次全检与原件保真"></a><a id="raster-focal-variety-persistence"></a><a id="种类数成功矩阵与有效性"></a><a id="28次准确失败与诊断归属"></a><a id="独立预期与584次全检"></a><a id="冻结归档与验收边界"></a><a id="77-像元方窗独立-hosted-验收"></a><a id="米制圆形邻域统计独立验收"></a><a id="正交旋转网格米制圆形邻域统计独立验收"></a><a id="米制加权圆窗独立-hosted-验收"></a><a id="点数据idw插值独立-hosted-验收"></a><a id="idw最少支撑点数独立-hosted-验收"></a><a id="idw距离幂次独立-hosted-验收"></a><a id="idw最近n个支撑点独立-hosted-验收"></a><a id="邻域多百分位独立保存验收"></a><a id="邻域统计与-idw"></a>邻域与插值专项 | [三种加权方法共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核) · [7×7方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收) · [米制圆窗](邻域统计与IDW.md#米制圆形邻域统计独立验收) · [多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收) · [IDW基础](邻域统计与IDW.md#点数据idw插值独立-hosted-验收) · [最少支撑](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收) · [最近N点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收) · [距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收) |
+| <a id="raster-proximity-persistence"></a><a id="单位与网格"></a><a id="独立距离核验与扫描血缘"></a><a id="失败清理与验收边界-1"></a><a id="非方形像元邻近距离独立验收"></a><a id="正交旋转网格邻近距离独立保存"></a><a id="邻近距离"></a>邻近距离专项 | [基础方形](邻近距离.md#raster-proximity-persistence) · [北向非方形](邻近距离.md#非方形像元邻近距离独立验收) · [正交旋转](邻近距离.md#正交旋转网格邻近距离独立保存) |
+| <a id="整幅栅格百分位统计独立-hosted-验收"></a><a id="整幅栅格多百分位独立-hosted-验收"></a><a id="整幅栅格百分位统计"></a>整幅只读统计 | [单元素百分位](整幅栅格百分位统计.md#整幅栅格百分位统计独立-hosted-验收) · [多百分位](整幅栅格百分位统计.md#整幅栅格多百分位独立-hosted-验收) |
+| <a id="点位栅格采样独立验收"></a><a id="双线性点位栅格采样独立验收"></a><a id="沿线栅格采样持久化"></a><a id="raster-sample-lines-persistence"></a><a id="栅格采样"></a>栅格采样 | [点位原值](栅格采样.md#点位栅格采样独立验收) · [双线性点位](栅格采样.md#双线性点位栅格采样独立验收) · [沿线采样](栅格采样.md#沿线栅格采样持久化) |
+| <a id="点线密度专项共同要求"></a><a id="密度专项数量矩阵"></a><a id="点密度显式非负权重独立-hosted-验收"></a><a id="米制点核密度独立-hosted-验收"></a><a id="米制四次线核密度独立-hosted-验收"></a><a id="线密度显式非负权重独立-hosted-验收"></a><a id="米制圆形线密度栅格独立-hosted-验收"></a><a id="米制圆形点密度栅格独立-hosted-验收"></a><a id="点线密度"></a>点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
-| DEM 通视与可视域 | [两点通视](DEM通视与可视域.md#dem-两点通视独立-hosted-验收) · [单观察点可视域](DEM通视与可视域.md#dem-单观察点可视域独立-hosted-验收) · [正交旋转](DEM通视与可视域.md#正交旋转网格通视与可视域独立-hosted-验收) |
-| DEM 地形与统计 | [填洼](D8水文分析.md#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) · [TWI／SPI](#twispi-地形水文指数) |
-| D8 流向与累积 | [流向](D8水文分析.md#dem-d8-流向持久化) · [汇流累积](D8水文分析.md#d8-汇流累积持久化) · [加权累积](D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](D8水文分析.md#d8-下游流长持久化) · [上游最长流长](D8水文分析.md#d8-上游最长流长持久化) · [汇水分区](D8水文分析.md#d8-汇水分区持久化) |
+| <a id="dem-两点通视独立-hosted-验收"></a><a id="dem-单观察点可视域独立-hosted-验收"></a><a id="正交旋转网格通视与可视域独立-hosted-验收"></a><a id="dem-通视与可视域"></a>DEM 通视与可视域 | [两点通视](DEM通视与可视域.md#dem-两点通视独立-hosted-验收) · [单观察点可视域](DEM通视与可视域.md#dem-单观察点可视域独立-hosted-验收) · [正交旋转](DEM通视与可视域.md#正交旋转网格通视与可视域独立-hosted-验收) |
+| <a id="平均剖面与切向曲率共同验收边界"></a><a id="dem-平均曲率独立-hosted-验收"></a><a id="dem-剖面曲率独立-hosted-验收"></a><a id="dem-切向曲率独立-hosted-验收"></a><a id="dem-平面曲率独立-hosted-验收"></a><a id="dem-地形位置指数tpi独立-hosted-验收"></a><a id="填挖方与tpi受控血缘取证修复"></a><a id="tpi验收计时与本轮独立期望值缓存"></a><a id="dem-地形崎岖度tri独立-hosted-验收"></a><a id="dem-地形粗糙度独立-hosted-验收"></a><a id="dem-曲率与地形指标"></a>DEM 地形与统计 | [填洼](D8水文分析.md#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) · [TWI／SPI](#twispi-地形水文指数) |
+| <a id="水文专项的固定结果与待验边界"></a><a id="raster-fill-depressions-persistence"></a><a id="dem-d8-流向持久化"></a><a id="d8-汇流累积持久化"></a><a id="d8-下游流长持久化"></a><a id="d8-汇水分区持久化"></a><a id="d8-上游最长流长持久化"></a><a id="raster-stream-order-d8-persistence"></a><a id="raster-flow-accumulation-weighted-d8-persistence"></a><a id="raster-watershed-d8-persistence"></a><a id="d8-河段编号独立持久化"></a><a id="shreve-独立持久化验收"></a><a id="d8-河网转矢量线独立-hosted-验收"></a><a id="raster-snap-pour-points-persistence"></a><a id="raster-subcatchments-d8-persistence"></a><a id="raster-flow-accumulation-area-d8-persistence"></a><a id="raster-distance-to-stream-d8-persistence"></a><a id="raster-hand-d8-persistence"></a><a id="d8流长统一入口的既有验收适配"></a><a id="d8-水文分析"></a>D8 流向与累积 | [流向](D8水文分析.md#dem-d8-流向持久化) · [汇流累积](D8水文分析.md#d8-汇流累积持久化) · [加权累积](D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](D8水文分析.md#d8-下游流长持久化) · [上游最长流长](D8水文分析.md#d8-上游最长流长持久化) · [汇水分区](D8水文分析.md#d8-汇水分区持久化) |
 | D8 河网与汇水 | [Strahler](D8水文分析.md#raster-stream-order-d8-persistence) · [Shreve](D8水文分析.md#shreve-独立持久化验收) · [河段编号](D8水文分析.md#d8-河段编号独立持久化) · [河网转线](D8水文分析.md#d8-河网转矢量线独立-hosted-验收) · [指定汇水点](D8水文分析.md#raster-watershed-d8-persistence) · [汇水点吸附](D8水文分析.md#raster-snap-pour-points-persistence) · [增量子汇水区](D8水文分析.md#raster-subcatchments-d8-persistence) |
 | D8 面积、距离与高程 | [汇流面积](D8水文分析.md#raster-flow-accumulation-area-d8-persistence) · [到河网沿流距离](D8水文分析.md#raster-distance-to-stream-d8-persistence) · [HAND](D8水文分析.md#raster-hand-d8-persistence) |
-
-## Manager 文件与预览
-
-见[专题](Manager文件与预览.md)；以下为旧定位。
-
-- <a id="grib2-单文件只读"></a>[GRIB2 单文件只读](科学容器只读验收.md#grib2-单文件只读)
-- <a id="grib2-授权与来源"></a>[GRIB2 授权与来源](科学容器只读验收.md#grib2-授权与来源)
-- <a id="grib2-逐消息数值"></a>[GRIB2 逐消息数值](科学容器只读验收.md#grib2-逐消息数值)
-- <a id="grib2-页面切片与原件"></a>[GRIB2 页面切片与原件](科学容器只读验收.md#grib2-页面切片与原件)
-- <a id="grib2-清理与未覆盖项"></a>[GRIB2 清理与未覆盖](科学容器只读验收.md#grib2-清理与未覆盖项)
-- <a id="grib2-验证与历史证据"></a>[GRIB2 验证与证据](科学容器只读验收.md#grib2-验证与历史证据)
-- <a id="netcdf-单文件只读"></a>[NetCDF 单文件只读](科学容器只读验收.md#netcdf-单文件只读)
-- <a id="netcdf-来源与权限"></a>[NetCDF 来源与权限](科学容器只读验收.md#netcdf-来源与权限)
-- <a id="netcdf-变量与切片"></a>[NetCDF 变量与切片](科学容器只读验收.md#netcdf-变量与切片)
-- <a id="netcdf-页面与原件"></a>[NetCDF 页面与原件](科学容器只读验收.md#netcdf-页面与原件)
-- <a id="netcdf-清理与未覆盖项"></a>[NetCDF 清理与未覆盖](科学容器只读验收.md#netcdf-清理与未覆盖项)
-- <a id="netcdf-验证与历史证据"></a>[NetCDF 验证与证据](科学容器只读验收.md#netcdf-验证与历史证据)
-- <a id="manager-internal-artifact-lineage"></a>[内部产物与血缘](Manager文件与预览.md#manager-internal-artifact-lineage)
-- <a id="明确的验收-case"></a>[验收 case](Manager文件与预览.md#明确的验收-case)
-- <a id="文件读取-case-的公共准备与收尾"></a>[文件读取公共准备与收尾](Manager文件与预览.md#文件读取-case-的公共准备与收尾)
-- <a id="surfer-grd-读取"></a>[Surfer GRD 读取](Manager文件与预览.md#surfer-grd-读取)
-- <a id="grd-格式准入"></a>[GRD 格式准入](Manager文件与预览.md#grd-格式准入)
-- <a id="grd-四份样例"></a>[GRD 四份样例](Manager文件与预览.md#grd-四份样例)
-- <a id="grd-页面与原件"></a>[GRD 页面与原件](Manager文件与预览.md#grd-页面与原件)
-- <a id="grd-清理与能力边界"></a>[GRD 清理与能力边界](Manager文件与预览.md#grd-清理与能力边界)
-- <a id="grd-分版本证据"></a>[GRD 分版本证据](Manager文件与预览.md#grd-分版本证据)
-- <a id="kml-实际页面导出"></a>[KML 页面导出](Manager文件与预览.md#kml-实际页面导出)
-- <a id="avro-单文件表格读取"></a>[Avro 单文件表格读取](Manager文件与预览.md#avro-单文件表格读取)
-- <a id="avro-来源与权限"></a>[Avro 来源与权限](Manager文件与预览.md#avro-来源与权限)
-- <a id="avro-三种-codec"></a>[Avro 三种 codec](Manager文件与预览.md#avro-三种-codec)
-- <a id="avro-分页与批量传输"></a>[Avro 分页与批量传输](Manager文件与预览.md#avro-分页与批量传输)
-- <a id="avro-清理与未覆盖项"></a>[Avro 清理与未覆盖](Manager文件与预览.md#avro-清理与未覆盖项)
-- <a id="avro-验证与历史证据"></a>[Avro 验证与证据](Manager文件与预览.md#avro-验证与历史证据)
-- <a id="orc-单文件表格-hosted"></a>[ORC 单文件表格 Hosted](Manager文件与预览.md#orc-单文件表格-hosted)
-- <a id="orc-入口与权限"></a>[ORC 入口与权限](Manager文件与预览.md#orc-入口与权限)
-- <a id="orc-平坦字段与批量传输"></a>[ORC 平坦字段与批量传输](Manager文件与预览.md#orc-平坦字段与批量传输)
-- <a id="orc-嵌套对象与数组只读"></a>[ORC 嵌套对象与数组只读](Manager文件与预览.md#orc-嵌套对象与数组只读)
-- <a id="orc-源变化与读取限制"></a>[ORC 源变化与读取限制](Manager文件与预览.md#orc-源变化与读取限制)
-- <a id="orc-清理与报告"></a>[ORC 清理与报告](Manager文件与预览.md#orc-清理与报告)
-- <a id="orc-分层验证与历史证据"></a>[ORC 分层验证与证据](Manager文件与预览.md#orc-分层验证与历史证据)
-- <a id="feather-v2-基础标量独立-hosted"></a>[Feather V2 标量 Hosted](Manager文件与预览.md#feather-v2-基础标量独立-hosted)
-- <a id="feather-身份与基础标量"></a>[Feather 身份与基础标量](Manager文件与预览.md#feather-身份与基础标量)
-- <a id="feather-时间字段"></a>[Feather 时间字段](Manager文件与预览.md#feather-时间字段)
-- <a id="feather-日期与定点小数"></a>[Feather 日期与定点小数](Manager文件与预览.md#feather-日期与定点小数)
-- <a id="feather-清理与未覆盖项"></a>[Feather 清理与未覆盖](Manager文件与预览.md#feather-清理与未覆盖项)
-- <a id="feather-分版本证据"></a>[Feather 分版本证据](Manager文件与预览.md#feather-分版本证据)
-- <a id="csvtsv-gb18030-独立读取设置-case"></a>[CSV/TSV GB18030 设置](Manager文件与预览.md#csvtsv-gb18030-独立读取设置-case)
-- <a id="gb18030-身份与来源准备"></a>[GB18030 身份与来源准备](Manager文件与预览.md#gb18030-身份与来源准备)
-- <a id="gb18030-结构与内容投影"></a>[GB18030 结构与内容投影](Manager文件与预览.md#gb18030-结构与内容投影)
-- <a id="gb18030-页面读取与原件"></a>[GB18030 页面读取与原件](Manager文件与预览.md#gb18030-页面读取与原件)
-- <a id="gb18030-清理与能力边界"></a>[GB18030 清理与能力边界](Manager文件与预览.md#gb18030-清理与能力边界)
-- <a id="gb18030-分层验证与历史证据"></a>[GB18030 分层验证与证据](Manager文件与预览.md#gb18030-分层验证与历史证据)
-- <a id="filegdb-实际页面导出"></a>[FileGDB 页面导出](Manager文件与预览.md#filegdb-实际页面导出)
-- <a id="mysql-filegdb-实际页面导出"></a>[MySQL FileGDB 页面导出](Manager文件与预览.md#mysql-filegdb-实际页面导出)
-- <a id="tiff-无定位小图的-cog-布局回归"></a>[TIFF 无定位小图 COG 回归](Manager文件与预览.md#tiff-无定位小图的-cog-布局回归)
-- <a id="tiff-minio-无定位小图"></a>[TIFF MinIO 无定位小图](Manager文件与预览.md#tiff-minio-无定位小图)
-- <a id="tiff-nfs-渲染与自然到期"></a>[TIFF NFS 渲染与自然到期](Manager文件与预览.md#tiff-nfs-渲染与自然到期)
-- <a id="tiff-msk-组成扩展"></a>[TIFF MSK 组成扩展](Manager文件与预览.md#tiff-msk-组成扩展)
-- <a id="tiff-组成的浏览器画布断言"></a>[TIFF 组成与画布断言](Manager文件与预览.md#tiff-组成的浏览器画布断言)
-- <a id="tiff-清理与共同边界"></a>[TIFF 清理与共同边界](Manager文件与预览.md#tiff-清理与共同边界)
-- <a id="tiff-分版本证据"></a>[TIFF 分版本证据](Manager文件与预览.md#tiff-分版本证据)
-- <a id="envi-双文件-cog限定-hosted-已验收"></a>[ENVI 双文件 COG（限定 Hosted 已验）](Manager文件与预览.md#envi-双文件-cog限定-hosted-已验收)
-- <a id="envi-身份与来源"></a>[ENVI 身份与来源](Manager文件与预览.md#envi-身份与来源)
-- <a id="envi-精确组成授权"></a>[ENVI 精确组成授权](Manager文件与预览.md#envi-精确组成授权)
-- <a id="envi-minio-持续节点授权"></a>[ENVI MinIO 持续节点授权](Manager文件与预览.md#envi-minio-持续节点授权)
-- <a id="envi-cog-与缓存"></a>[ENVI COG 与缓存](Manager文件与预览.md#envi-cog-与缓存)
-- <a id="envi-撤权恢复与组成变化"></a>[ENVI 撤权恢复与组成变化](Manager文件与预览.md#envi-撤权恢复与组成变化)
-- <a id="envi-清理与失败"></a>[ENVI 清理与失败](Manager文件与预览.md#envi-清理与失败)
-- <a id="envi-验证与历史证据"></a>[ENVI 验证与证据](Manager文件与预览.md#envi-验证与历史证据)
-- <a id="img-原生扫描与-cog-快显"></a>[IMG 原生扫描与 COG 快显](Manager文件与预览.md#img-原生扫描与-cog-快显)
-- <a id="imgjpeg2000-正文分工与来源"></a>[IMG／JPEG2000 分工与来源](Manager文件与预览.md#imgjpeg2000-正文分工与来源)
-- <a id="imgjpeg2000-cog-与缓存"></a>[IMG／JPEG2000 COG 与缓存](Manager文件与预览.md#imgjpeg2000-cog-与缓存)
-- <a id="imgjpeg2000-页面与原件"></a>[IMG／JPEG2000 页面与原件](Manager文件与预览.md#imgjpeg2000-页面与原件)
-- <a id="imgjpeg2000-清理与验证"></a>[IMG／JPEG2000 清理与验证](Manager文件与预览.md#imgjpeg2000-清理与验证)
-- <a id="imgjpeg2000-历史证据与未覆盖项"></a>[IMG／JPEG2000 证据与未覆盖项](Manager文件与预览.md#imgjpeg2000-历史证据与未覆盖项)
-- <a id="部署模型转换与通用清理"></a>[部署、模型转换与通用清理](Manager文件与预览.md#部署模型转换与通用清理)
-- <a id="点云与-pptx"></a>[点云与 PPTX](Manager文件与预览.md#点云与-pptx)
-- <a id="彩色-fbx-只读预览"></a>[彩色 FBX 只读预览](Manager文件与预览.md#彩色-fbx-只读预览)
-- <a id="max-模型-hosted-验收"></a>[MAX 模型 Hosted 验收](Manager文件与预览.md#max-模型-hosted-验收)
-- <a id="kmlgmltopojson-的-s3-兼容消费"></a>[KML／GML／TopoJSON S3 消费](Manager文件与预览.md#kmlgmltopojson-的-s3-兼容消费)
-- <a id="设备静态轨迹范围读取"></a>[设备静态轨迹范围读取](Manager文件与预览.md#设备静态轨迹范围读取)
-- <a id="表格json-与八模型固定断言"></a>[表格／JSON／八模型断言](Manager文件与预览.md#表格json-与八模型固定断言)
-
-## 矢量拓扑持久化
-
-见[专题](矢量拓扑持久化.md)；以下为旧定位。
-
-- <a id="拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence"></a>[拓扑主场景](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence)
-- <a id="拓扑持久化公共要求"></a>[拓扑公共要求](矢量拓扑持久化.md#拓扑持久化公共要求)
-- <a id="主场景的固定输入输出与扫描血缘"></a>[主场景输入输出与扫描血缘](矢量拓扑持久化.md#主场景的固定输入输出与扫描血缘)
-- <a id="主场景的独有几何断言"></a>[主场景几何断言](矢量拓扑持久化.md#主场景的独有几何断言)
-- <a id="主场景报告失败证据与历史范围"></a>[主场景报告与历史边界](矢量拓扑持久化.md#主场景报告失败证据与历史范围)
-- <a id="多距缓冲独立场景"></a>[多距缓冲](矢量拓扑持久化.md#多距缓冲独立场景)
-- <a id="重合规整独立场景"></a>[重合规整](矢量拓扑持久化.md#重合规整独立场景)
-- <a id="重合规整与链路合并独立组合"></a>[重合规整与链路合并组合](矢量拓扑持久化.md#重合规整与链路合并独立组合)
-- <a id="面界提取独立普通用户场景"></a>[面界提取](矢量拓扑持久化.md#面界提取独立普通用户场景)
-- <a id="面界提取参数诊断独立实页"></a>[面界提取参数诊断实页](矢量拓扑持久化.md#面界提取参数诊断独立实页)
-- <a id="线端修剪独立普通user验收"></a>[线端修剪](矢量拓扑持久化.md#线端修剪独立普通user验收)
-- <a id="算子参数错误独立普通-user-实页"></a>[算子参数错误实页](矢量拓扑持久化.md#算子参数错误独立普通-user-实页)
-- <a id="近接检查独立双源-point-成果"></a>[近接检查双源 Point](矢量拓扑持久化.md#近接检查独立双源-point-成果)
-- <a id="线端延伸独立双源双成果"></a>[线端延伸双源双成果](矢量拓扑持久化.md#线端延伸独立双源双成果)
-- <a id="端点吸附独立线与point双成果"></a>[端点吸附线／Point 双成果](矢量拓扑持久化.md#端点吸附独立线与point双成果)
-- <a id="差集融合叠加与节点提取的专项授权边界"></a>[差集／融合／叠加／节点授权](矢量拓扑持久化.md#差集融合叠加与节点提取的专项授权边界)
-- <a id="几何差集独立普通用户验收"></a>[几何差集](矢量拓扑持久化.md#几何差集独立普通用户验收)
-- <a id="融合几何独立普通用户验收"></a>[融合几何](矢量拓扑持久化.md#融合几何独立普通用户验收)
-- <a id="相交叠加独立普通用户验收"></a>[相交叠加](矢量拓扑持久化.md#相交叠加独立普通用户验收)
-- <a id="节点提取独立普通用户验收"></a>[节点提取](矢量拓扑持久化.md#节点提取独立普通用户验收)
-- <a id="nfs-geopackage-血缘权限专项验收"></a>[NFS GeoPackage 血缘权限专项验收](矢量拓扑持久化.md#nfs-geopackage-血缘权限专项验收)
-- <a id="顶点提取独立场景"></a>[顶点提取](矢量拓扑持久化.md#顶点提取独立场景)
-- <a id="面邻检查独立普通用户场景polygon-adjacency"></a>[面邻检查](矢量拓扑持久化.md#面邻检查独立普通用户场景polygon-adjacency)
-- <a id="面邻准备批准与持久事实"></a>[面邻准备、批准与持久事实](矢量拓扑持久化.md#面邻准备批准与持久事实)
-- <a id="面邻只读负例与失败原件"></a>[面邻只读负例与失败原件](矢量拓扑持久化.md#面邻只读负例与失败原件)
 
 ## 端点吸附手工容量
 
@@ -164,36 +53,6 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 ## vector-pmtiles-workflow
 
 矢量 PMTiles T4 `vector-pmtiles-workflow` 仅手工在 GitHub Hosted `ubuntu-24.04` x86_64 独占部署运行，复用共享 Hosted 生命周期、标准 GeoPython 产品镜像和独立 source／target tmpfs MinIO。必须先启动 Security，preflight 同提交核验 Security、Develop、Meta、Manager 和 Monitor；身份夹具通过统一 `--wait-protection-owners develop,manager` 在导出凭据前只读观察该租户两个 Owner 的持久首次同步状态，最多等待 60 秒；读取错误或超时立即停止并清理，不写入 checkpoint，不绕过保护门禁或重试业务执行。非默认租户普通 User 经公开 Develop API 新建两点 GeoJSON 的纯几何 PMTiles，再用 50 面 Shapefile 和显式 name／rank 字段替换同一目标；独立 GDAL oracle 核对 PMTiles v3、gzip MVT、层名、业务字段、数量及按瓦片量化误差约束的坐标。重复 create 必须返回受控 target_exists，且文件哈希／大小／ETag／修改时间、源对象、扫描记录、DataItem 详情及当前血缘完全不变。replace 必须保留目标 ID／指纹并更新文件内容、自动扫描和唯一当前 derive 来源，不把当前图当作历史 observation 证明。每次成功均核对物理大小与 DataItem、原生 header_hash 与 Meta 格式事实，并由同一 User 真实登录 Console，检查 min_zoom=0／max_zoom=5、no-store 请求与响应、瓦片内容哈希、页面解码要素数及地图绘制。失败或成功退出均清理当次应用、业务容器、产品 Runtime／镜像、registry、Infra 数据卷和凭据；清理失败使门禁失败。标准离线入口为 `make test-vector-pmtiles-online-runner`，接入 `test-online-runner`；真实 GDAL oracle 用例接入既有 `make test-geopython-workflow`，由现有 Platform CI 调用，suite／CI／身份／清理登记由 Online 注册检查覆盖。提交 `3eed180b927916d76f1385e63cf8b213d32149a2` 的 [Hosted T4 39037436667](https://github.com/pampa0629/addp/actions/runs/39037436667/job/117410000383) 已通过上述完整 create／冲突保护／replace 场景：两轮地图分别显示 2 点与 50 面，目标身份稳定，自动扫描和当前血缘换源。7 个服务预检同提交，Runtime 留存同次源码构建、实际镜像 ID 与默认入口核验记录。清理证据仅覆盖当次隔离部署及 Infra 零残留，不代表 Manager 受管结果 DELETE API；T4 瓦片留痕为 HTTP 200／no-store／内容哈希，未单独采集 S3 HTTP Range 请求日志，Range 边界另有 Manager T1 回归。不登记 schedule，不覆盖新增 NFS／外部云 S3 认证、历史血缘、容量或十类全算子认证。
-
-## 栅格工作流
-
-见[专题](栅格工作流.md)；以下为旧定位。
-
-- <a id="raster-workflow"></a>[栅格主场景](栅格工作流.md#raster-workflow)
-- <a id="镶嵌-whole-的-basic-重扫收敛"></a>[镶嵌 whole 的 basic 重扫收敛](栅格工作流.md#镶嵌-whole-的-basic-重扫收敛)
-- <a id="whole-重扫身份与断言"></a>[whole 重扫身份与断言](栅格工作流.md#whole-重扫身份与断言)
-- <a id="whole-元数据授权与受限快照"></a>[whole 元数据授权与受限快照](栅格工作流.md#whole-元数据授权与受限快照)
-- <a id="whole-专业-dto-与血缘投影"></a>[whole 专业 DTO 与血缘投影](栅格工作流.md#whole-专业-dto-与血缘投影)
-- <a id="部署与主场景"></a>[部署与主场景](栅格工作流.md#部署与主场景)
-- <a id="栅格主场景运行准入"></a>[栅格主场景运行准入](栅格工作流.md#栅格主场景运行准入)
-- <a id="栅格主场景计算矩阵"></a>[栅格主场景计算矩阵](栅格工作流.md#栅格主场景计算矩阵)
-- <a id="栅格主场景元数据授权与事实取证"></a>[栅格主场景元数据授权与事实取证](栅格工作流.md#栅格主场景元数据授权与事实取证)
-- <a id="栅格主场景失败补偿与退出"></a>[栅格主场景失败补偿与退出](栅格工作流.md#栅格主场景失败补偿与退出)
-- <a id="栅格主场景固定结果与验收边界"></a>[栅格主场景固定结果与验收边界](栅格工作流.md#栅格主场景固定结果与验收边界)
-- <a id="普通-pngjpeg-页面导出"></a>[普通 PNG／JPEG 页面导出](栅格工作流.md#普通-pngjpeg-页面导出)
-- <a id="多来源计算与页面构图"></a>[多来源计算与页面构图](栅格工作流.md#多来源计算与页面构图)
-- <a id="多源加权与rgb合成"></a>[多源加权与RGB合成](栅格工作流.md#多源加权与rgb合成)
-- <a id="普通用户页面多选构图"></a>[普通用户页面多选构图](栅格工作流.md#普通用户页面多选构图)
-- <a id="分支血缘与源撤权"></a>[分支血缘与源撤权](栅格工作流.md#分支血缘与源撤权)
-- <a id="重分类与整数分组聚合"></a>[重分类与整数分组聚合](栅格工作流.md#重分类与整数分组聚合)
-- <a id="重分类规则与缺值"></a>[重分类规则与缺值](栅格工作流.md#重分类规则与缺值)
-- <a id="整数分组与精度"></a>[整数分组与精度](栅格工作流.md#整数分组与精度)
-- <a id="扩展阶段计数与验收边界"></a>[扩展阶段计数与验收边界](栅格工作流.md#扩展阶段计数与验收边界)
-- <a id="外部裁剪轮廓与局部更新"></a>[外部裁剪、轮廓与局部更新](栅格工作流.md#外部裁剪轮廓与局部更新)
-- <a id="区域外裁剪持久化cog"></a>[区域外裁剪：COG](栅格工作流.md#区域外裁剪持久化cog)
-- <a id="有效像元轮廓只读geojson"></a>[有效像元轮廓：只读GeoJSON](栅格工作流.md#有效像元轮廓只读geojson)
-- <a id="局部更新持久化cog"></a>[局部更新：COG](栅格工作流.md#局部更新持久化cog)
-- <a id="阶段清单与固定结果"></a>[阶段清单与固定结果](栅格工作流.md#阶段清单与固定结果)
 
 ## raster-contour-persistence
 
@@ -305,96 +164,6 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 该固定结果不计入Manager绘制、NFS客户端写、HTTP Range、业务DELETE、覆盖冲突或容量，不表示当前源码已重跑。
 
-## 分区统计
-
-见[专题](分区统计.md)；以下为旧定位。
-
-- <a id="raster-zonal-statistics-persistence"></a>[栅格分区基础统计](分区统计.md#raster-zonal-statistics-persistence)
-- <a id="整数分区统计四条成功dag"></a>[栅格分区四条成功 DAG](分区统计.md#整数分区统计四条成功dag)
-- <a id="非法波段与不同网格失败"></a>[非法波段与不同网格失败](分区统计.md#非法波段与不同网格失败)
-- <a id="独立csv核验与扫描血缘"></a>[独立CSV核验与扫描血缘](分区统计.md#独立csv核验与扫描血缘)
-- <a id="固定hosted结果与范围"></a>[固定Hosted结果与范围](分区统计.md#固定hosted结果与范围)
-- <a id="栅格分区加权统计独立-hosted-验收"></a>[栅格分区加权统计](分区统计.md#栅格分区加权统计独立-hosted-验收)
-- <a id="栅格分区加权总体标准差独立-hosted-验收"></a>[栅格分区加权总体标准差](分区统计.md#栅格分区加权总体标准差独立-hosted-验收)
-- <a id="栅格分区百分位独立-hosted-验收"></a>[栅格分区百分位](分区统计.md#栅格分区百分位独立-hosted-验收)
-- <a id="栅格分区多百分位独立保存验收"></a>[栅格分区多百分位](分区统计.md#栅格分区多百分位独立保存验收)
-- <a id="栅格分区分类频数独立保存验收"></a>[栅格分区分类频数](分区统计.md#栅格分区分类频数独立保存验收)
-- <a id="vector-zonal-statistics-persistence"></a>[矢量面分区基础统计](分区统计.md#vector-zonal-statistics-persistence)
-- <a id="三条-geopackage-dag"></a>[三条 GeoPackage DAG](分区统计.md#三条-geopackage-dag)
-- <a id="独立物理核验"></a>[独立物理核验](分区统计.md#独立物理核验)
-- <a id="精确扫描与执行血缘"></a>[精确扫描与执行血缘](分区统计.md#精确扫描与执行血缘)
-### 失败、清理与验收边界
-
-[矢量分区统计的对应正文](分区统计.md#失败清理与验收边界)
-
-- <a id="矢量面分区加权统计独立-hosted-验收"></a>[矢量面分区加权统计](分区统计.md#矢量面分区加权统计独立-hosted-验收)
-- <a id="矢量面分区加权总体标准差独立-hosted-验收"></a>[矢量面分区加权总体标准差](分区统计.md#矢量面分区加权总体标准差独立-hosted-验收)
-- <a id="矢量面分区面积加权统计独立-hosted-验收"></a>[矢量面分区面积加权统计](分区统计.md#矢量面分区面积加权统计独立-hosted-验收)
-- <a id="矢量面分区面积加权总体标准差独立验收"></a>[矢量面分区面积加权总体标准差](分区统计.md#矢量面分区面积加权总体标准差独立验收)
-- <a id="矢量面分区百分位独立-hosted-验收"></a>[矢量面分区百分位](分区统计.md#矢量面分区百分位独立-hosted-验收)
-- <a id="矢量面分区多百分位独立保存验收"></a>[矢量面分区多百分位](分区统计.md#矢量面分区多百分位独立保存验收)
-- <a id="矢量面分区分类频数持久化"></a>[矢量面分区分类频数](分区统计.md#矢量面分区分类频数持久化)
-- <a id="vector-zonal-class-frequency-persistence"></a>[矢量面分类频数 suite](分区统计.md#vector-zonal-class-frequency-persistence)
-
-## 邻域统计与 IDW
-
-见[专题](邻域统计与IDW.md)；以下为旧定位。
-
-- <a id="邻域与-idw-专项共同要求"></a>[邻域／IDW 共同要求](邻域统计与IDW.md#邻域与-idw-专项共同要求)
-- <a id="邻域参数与专项范围"></a>[邻域参数与专项范围](邻域统计与IDW.md#邻域参数与专项范围)
-- <a id="三种邻域加权方法的共同复核"></a>[邻域加权共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核)
-- <a id="三种加权方法的矩阵与拒绝条件"></a>[加权矩阵与拒绝条件](邻域统计与IDW.md#三种加权方法的矩阵与拒绝条件)
-- <a id="邻域加权求和独立-hosted-验收"></a>[邻域加权求和](邻域统计与IDW.md#邻域加权求和独立-hosted-验收)
-- <a id="邻域加权总体标准差独立-hosted-验收"></a>[邻域加权总体标准差](邻域统计与IDW.md#邻域加权总体标准差独立-hosted-验收)
-- <a id="邻域加权均值独立-hosted-验收"></a>[邻域加权均值](邻域统计与IDW.md#邻域加权均值独立-hosted-验收)
-- <a id="raster-focal-statistics-persistence"></a>[邻域基础统计](邻域统计与IDW.md#raster-focal-statistics-persistence)
-- <a id="邻域输入与六条成功链"></a>[邻域输入与六条成功链](邻域统计与IDW.md#邻域输入与六条成功链)
-- <a id="非法波段与窗口失败"></a>[非法波段与窗口失败](邻域统计与IDW.md#非法波段与窗口失败)
-- <a id="独立numpy核验"></a>[独立NumPy核验](邻域统计与IDW.md#独立numpy核验)
-- <a id="邻域固定证据与未覆盖范围"></a>[邻域固定证据与未覆盖范围](邻域统计与IDW.md#邻域固定证据与未覆盖范围)
-- <a id="raster-focal-percentile-persistence"></a>[邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence)
-- <a id="百分位16条成功链"></a>[百分位16条成功链](邻域统计与IDW.md#百分位16条成功链)
-- <a id="18类输入与36次准确失败"></a>[18类输入与36次准确失败](邻域统计与IDW.md#18类输入与36次准确失败)
-- <a id="fraction独立期望与精度"></a>[Fraction独立期望与精度](邻域统计与IDW.md#fraction独立期望与精度)
-- <a id="712次全检与原件保真"></a>[712次全检与原件保真](邻域统计与IDW.md#712次全检与原件保真)
-- <a id="raster-focal-variety-persistence"></a>[邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence)
-- <a id="种类数成功矩阵与有效性"></a>[种类数成功矩阵与有效性](邻域统计与IDW.md#种类数成功矩阵与有效性)
-- <a id="28次准确失败与诊断归属"></a>[28次准确失败与诊断归属](邻域统计与IDW.md#28次准确失败与诊断归属)
-- <a id="独立预期与584次全检"></a>[独立预期与584次全检](邻域统计与IDW.md#独立预期与584次全检)
-- <a id="冻结归档与验收边界"></a>[冻结归档与验收边界](邻域统计与IDW.md#冻结归档与验收边界)
-- <a id="77-像元方窗独立-hosted-验收"></a>[7×7 像元方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收)
-- <a id="米制圆形邻域统计独立验收"></a>[米制圆形邻域统计](邻域统计与IDW.md#米制圆形邻域统计独立验收)
-- <a id="正交旋转网格米制圆形邻域统计独立验收"></a>[正交旋转米制圆窗](邻域统计与IDW.md#正交旋转网格米制圆形邻域统计独立验收)
-- <a id="米制加权圆窗独立-hosted-验收"></a>[米制加权圆窗](邻域统计与IDW.md#米制加权圆窗独立-hosted-验收)
-- <a id="点数据idw插值独立-hosted-验收"></a>[点数据IDW插值](邻域统计与IDW.md#点数据idw插值独立-hosted-验收)
-- <a id="idw最少支撑点数独立-hosted-验收"></a>[IDW最少支撑点数](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收)
-- <a id="idw距离幂次独立-hosted-验收"></a>[IDW距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收)
-- <a id="idw最近n个支撑点独立-hosted-验收"></a>[IDW最近N个支撑点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收)
-- <a id="邻域多百分位独立保存验收"></a>[邻域多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收)
-
-## 邻近距离
-
-见[专题](邻近距离.md)；以下为旧定位。
-
-- <a id="raster-proximity-persistence"></a>[基础方形网格](邻近距离.md#raster-proximity-persistence)
-- <a id="单位与网格"></a>[单位与网格](邻近距离.md#单位与网格)
-- <a id="独立距离核验与扫描血缘"></a>[独立距离核验与扫描血缘](邻近距离.md#独立距离核验与扫描血缘)
-- <a id="失败清理与验收边界-1"></a>[失败、清理与验收边界](邻近距离.md#失败清理与验收边界)
-- <a id="非方形像元邻近距离独立验收"></a>[北向非方形像元](邻近距离.md#非方形像元邻近距离独立验收)
-- <a id="正交旋转网格邻近距离独立保存"></a>[正交旋转网格](邻近距离.md#正交旋转网格邻近距离独立保存)
-
-## 分类栅格与形态处理
-
-见[专题](分类栅格与形态处理.md)；以下为旧定位。
-
-- <a id="分类栅格小斑块筛除独立-hosted-验收"></a>[小斑块筛除：像元阈值](分类栅格与形态处理.md#分类栅格小斑块筛除独立-hosted-验收)
-- <a id="分类小斑块筛除平方米面积阈值独立-hosted-验收"></a>[小斑块筛除：平方米阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收)
-- <a id="分类小斑块筛除指定类别保护独立-hosted-验收"></a>[小斑块筛除：类别保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收)
-- <a id="raster-thin-persistence"></a>[Guo–Hall 细化](分类栅格与形态处理.md#raster-thin-persistence)
-- <a id="raster-boundary-clean-persistence"></a>[默认一轮边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence)
-- <a id="raster-boundary-clean-two-rounds-persistence"></a>[显式两轮边界清理](分类栅格与形态处理.md#raster-boundary-clean-two-rounds-persistence)
-- <a id="分类栅格连通斑块编号独立验收"></a>[连通斑块编号](分类栅格与形态处理.md#分类栅格连通斑块编号独立验收)
-
 ## 分类蚕食容量（raster-nibble-capacity）
 
 独立手工 Hosted Linux x86_64，入口 `make test-online ONLINE_SUITE=raster-nibble-capacity`，生命周期由 `scripts/test/online-hosted-raster-nibble-capacity-gate.sh` 统一管理。复用同源默认入口产品 Runtime、NFS 与普通 User 原 12 权限；管理员身份只配置本轮资源策略，计算、扫描和血缘均由普通 User 发起与读取。原 Raster T4、众数／蚕食持久化及旧完整场景容量套件保持原范围与预算。
@@ -439,45 +208,6 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 - **失败与清理**：准确绑定当前执行、失败节点及各节要求的原因／语言；权限、保护投影、加载或其他节点失败不能冒充目标拒绝。反向语言查询不得改写原提交错误。失败零发布、零新增扫描与派生血缘；正常、失败及部分启动退出都核验本轮 Runtime 工作区、缓存、NFS、部署／Infra，以及各节声明的镜像／registry 等归属资源。保留首个业务失败和清理错误，清理失败整套失败。
 - **验证与证据**：各专项 Runner 沿既有 `make test-raster-online-runner` 聚合，真实 GDAL／污染反例沿 `make test-geopython-workflow`，登记沿 `make test-python-ci-registration`；新增输入须同次命中 Native、Online、影响选择与 CI。专项筛除、共享重复计数和隔离身份 Go T1 不算全量或完整 IAM／数据库集成。现场完整物理回执与归档后离线复算分开；无原 TIFF 的记录不能声称离线重读。已验与待验按固定源码分别认定，不外推 UI、容量、业务 DELETE、其他 Owner 或生产。 水文已有结果与缺口见[固定结果与待验边界](D8水文分析.md#水文专项的固定结果与待验边界)。
 
-## D8 水文分析
-
-见[专题](D8水文分析.md)；以下为旧定位。
-
-- <a id="水文专项的固定结果与待验边界"></a>[水文固定结果与待验范围](D8水文分析.md#水文专项的固定结果与待验边界)
-- <a id="raster-fill-depressions-persistence"></a>[DEM 填洼](D8水文分析.md#raster-fill-depressions-persistence)
-- <a id="dem-d8-流向持久化"></a>[DEM D8 流向](D8水文分析.md#dem-d8-流向持久化)
-- <a id="d8-汇流累积持久化"></a>[D8 汇流累积](D8水文分析.md#d8-汇流累积持久化)
-- <a id="d8-下游流长持久化"></a>[D8 下游流长](D8水文分析.md#d8-下游流长持久化)
-- <a id="d8-汇水分区持久化"></a>[D8 汇水分区](D8水文分析.md#d8-汇水分区持久化)
-- <a id="d8-上游最长流长持久化"></a>[D8 上游最长流长](D8水文分析.md#d8-上游最长流长持久化)
-- <a id="raster-stream-order-d8-persistence"></a>[Strahler 分级](D8水文分析.md#raster-stream-order-d8-persistence)
-- <a id="raster-flow-accumulation-weighted-d8-persistence"></a>[加权汇流累积](D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence)
-- <a id="raster-watershed-d8-persistence"></a>[指定点完整汇水区](D8水文分析.md#raster-watershed-d8-persistence)
-- <a id="d8-河段编号独立持久化"></a>[D8 河段编号](D8水文分析.md#d8-河段编号独立持久化)
-- <a id="shreve-独立持久化验收"></a>[Shreve](D8水文分析.md#shreve-独立持久化验收)
-- <a id="d8-河网转矢量线独立-hosted-验收"></a>[D8 河网转矢量线](D8水文分析.md#d8-河网转矢量线独立-hosted-验收)
-- <a id="raster-snap-pour-points-persistence"></a>[汇水点吸附](D8水文分析.md#raster-snap-pour-points-persistence)
-- <a id="raster-subcatchments-d8-persistence"></a>[增量子汇水区](D8水文分析.md#raster-subcatchments-d8-persistence)
-- <a id="raster-flow-accumulation-area-d8-persistence"></a>[汇流面积](D8水文分析.md#raster-flow-accumulation-area-d8-persistence)
-- <a id="raster-distance-to-stream-d8-persistence"></a>[到河网距离](D8水文分析.md#raster-distance-to-stream-d8-persistence)
-- <a id="raster-hand-d8-persistence"></a>[HAND 高程差](D8水文分析.md#raster-hand-d8-persistence)
-- <a id="d8流长统一入口的既有验收适配"></a>[统一流长入口复验](D8水文分析.md#d8流长统一入口的既有验收适配)
-
-## DEM 曲率与地形指标
-
-见[专题](DEM曲率与地形指标.md)；以下为旧定位。
-
-- <a id="平均剖面与切向曲率共同验收边界"></a>[三种曲率共同边界](DEM曲率与地形指标.md#平均剖面与切向曲率共同验收边界)
-- <a id="dem-平均曲率独立-hosted-验收"></a>[DEM 平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收)
-- <a id="dem-剖面曲率独立-hosted-验收"></a>[DEM 剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收)
-- <a id="dem-切向曲率独立-hosted-验收"></a>[DEM 切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收)
-- <a id="dem-平面曲率独立-hosted-验收"></a>[DEM 平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收)
-- <a id="dem-地形位置指数tpi独立-hosted-验收"></a>[TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收)
-- <a id="填挖方与tpi受控血缘取证修复"></a>[填挖方／TPI 受控血缘取证](DEM曲率与地形指标.md#填挖方与tpi受控血缘取证修复)
-- <a id="tpi验收计时与本轮独立期望值缓存"></a>[TPI 计时与期望缓存](DEM曲率与地形指标.md#tpi验收计时与本轮独立期望值缓存)
-- <a id="dem-地形崎岖度tri独立-hosted-验收"></a>[TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收)
-- <a id="dem-地形粗糙度独立-hosted-验收"></a>[粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收)
-
 ## DEM 专项共同验收边界
 
 以下仅适用于平面曲率、填挖方、TPI、TRI四个独立手工suite：Hosted／独立NFS、同源产品默认入口Runtime、非默认Tenant普通User原12权限，各自600秒业务预算，不并入nightly或改变其他套件。算法准入归[栅格算子契约](../../workflow/栅格算子契约.md)，各专项保留固定矩阵、独立期望、证据与缺口；未执行范围不能由本地／部分CI补认。
@@ -507,14 +237,6 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 `raster-surface-area-persistence`；`make test-raster-surface-area-online-runner`，沿[本组边界](#本组独立专项的核验与证据边界)。12 CSV链：平地／斜面／非共面双对角／跨块、三水平垂直单位、填洼／重分类、Int64／UInt64微差／最小2×2；18类中英共36失败。完整8列Float64精确，预览按double_precision=15另核；独立高精度向量叉积双对角平均，不补外缘／跨孔洞，核计数／平方米／无量纲比，极限仅Native。
 
 成功78＋失败432＝510次CSV全检／48调用，存12原CSV；期望为标准库周期计数＋异常面片修正，保独立叉积，宿主不增NumPy／pandas／GDAL。物理＝Meta，不造第三方大小；准备／业务／收尾纳600秒。已有本地专项／Runner证据，未列已核Linux全量／Hosted结论。
-
-## DEM 通视与可视域
-
-见[专题](DEM通视与可视域.md)；以下为旧定位。
-
-- <a id="dem-两点通视独立-hosted-验收"></a>[两点通视](DEM通视与可视域.md#dem-两点通视独立-hosted-验收)
-- <a id="dem-单观察点可视域独立-hosted-验收"></a>[单观察点可视域](DEM通视与可视域.md#dem-单观察点可视域独立-hosted-验收)
-- <a id="正交旋转网格通视与可视域独立-hosted-验收"></a>[正交旋转通视与可视域](DEM通视与可视域.md#正交旋转网格通视与可视域独立-hosted-验收)
 
 ## TWI／SPI 地形水文指数
 
@@ -568,32 +290,3 @@ SPI拒绝矩阵：双角色波段／面积单位／坡度声明、零负面积�
 - 失败须命中指定业务节点／原因／冻结语言，前置失败不充数、反向查询不改错，零发布／新scan／derive。全部退出清归属缓存／工作区、NFS、Runtime／镜像／registry、部署／Infra及已声明Grant；首败与清理分列，清理失败整套失败，部署销毁不证业务DELETE。
 
 标准沿各Runner、`make test-raster-online-runner`／既有拓扑入口、`make test-geopython-workflow`及选择／登记，不能累加共享测试为唯一数量。本地／登记、Linux全量、Hosted API、真实页面只按固定源码认，不证当前HEAD／容量／任意影像或未列范围；后续事项见[栅格专题](../../../next/栅格算子体系后续专题.md#三后续工作)。
-
-## 整幅栅格百分位统计
-
-见[专题](整幅栅格百分位统计.md)；以下为旧定位。
-
-- <a id="整幅栅格百分位统计独立-hosted-验收"></a>[单元素百分位](整幅栅格百分位统计.md#整幅栅格百分位统计独立-hosted-验收)
-- <a id="整幅栅格多百分位独立-hosted-验收"></a>[多百分位](整幅栅格百分位统计.md#整幅栅格多百分位独立-hosted-验收)
-
-## 栅格采样
-
-见[专题](栅格采样.md)；以下为旧定位。
-
-- <a id="点位栅格采样独立验收"></a>[点位原值采样](栅格采样.md#点位栅格采样独立验收)
-- <a id="双线性点位栅格采样独立验收"></a>[双线性点位采样](栅格采样.md#双线性点位栅格采样独立验收)
-- <a id="沿线栅格采样持久化"></a>[沿线采样](栅格采样.md#沿线栅格采样持久化)
-- <a id="raster-sample-lines-persistence"></a>[沿线 suite 定位](栅格采样.md#raster-sample-lines-persistence)
-
-## 点线密度
-
-见[专题](点线密度.md)；以下为旧定位。
-
-- <a id="点线密度专项共同要求"></a>[点线密度共同要求](点线密度.md#点线密度专项共同要求)
-- <a id="密度专项数量矩阵"></a>[密度专项数量矩阵](点线密度.md#密度专项数量矩阵)
-- <a id="点密度显式非负权重独立-hosted-验收"></a>[点密度显式非负权重](点线密度.md#点密度显式非负权重独立-hosted-验收)
-- <a id="米制点核密度独立-hosted-验收"></a>[米制四次点核密度](点线密度.md#米制点核密度独立-hosted-验收)
-- <a id="米制四次线核密度独立-hosted-验收"></a>[米制四次线核密度](点线密度.md#米制四次线核密度独立-hosted-验收)
-- <a id="线密度显式非负权重独立-hosted-验收"></a>[线密度显式非负权重](点线密度.md#线密度显式非负权重独立-hosted-验收)
-- <a id="米制圆形线密度栅格独立-hosted-验收"></a>[米制圆形线密度](点线密度.md#米制圆形线密度栅格独立-hosted-验收)
-- <a id="米制圆形点密度栅格独立-hosted-验收"></a>[米制圆形点密度](点线密度.md#米制圆形点密度栅格独立-hosted-验收)
