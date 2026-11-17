@@ -69,7 +69,10 @@
 
 本机原标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=directory-publication` 的 82 项前置通过，两个原生 trial 均在 published 读到 unreadable、其后恢复，按原判据退出失败；这与 Linux 观察阶段等满8秒分开认定。修订版同入口的84项前置通过后遇到 TimeoutExpired，cleanup_verified=false，未计通过、未重跑；之后只读未见带 directory-publication owner 标签的容器，也不能追改该轮清理结论。原日志与管道 red／green 证据保留在 `/tmp/addp-directory-publication-recur-original.log`、`/tmp/addp-directory-publication-recur-fixed.log`、`/tmp/addp-directory-observer-protocol-red.log` 和 `/tmp/addp-directory-observer-protocol-green.log`。
 
-现有 `test-monitor-metrics-config`、目录 case、默认 Metrics 门禁和 Release 的 directory-publication 矩阵已自动覆盖原观察器及配置测试类，不新增入口或 CI 路线；只修改试验观察器、回归和相关说明，不涉及生产共享进程管理或平台发布协议。冻结基线 `ba89eb67d716dfef6391ac875f3a496bf0adde84` 叠加最终两个试验输入后，`make test-monitor-metrics-config` 完整通过依赖门禁及145项配置测试（`/tmp/addp-directory-publication-recur-config-final.log`）；当前 Linux 原生结果待修订源码的自然 CI 独立核对，不能将本机 T1、CDC／Redis 通过或清理替代。
+现有 `test-monitor-metrics-config`、目录 case、默认 Metrics 门禁和 Release 的 directory-publication 矩阵已自动覆盖原观察器及配置测试类，不新增入口或 CI 路线；只修改试验观察器、回归和相关说明，不涉及生产共享进程管理或平台发布协议。冻结基线 `ba89eb67d716dfef6391ac875f3a496bf0adde84` 叠加最终两个试验输入后，`make test-monitor-metrics-config` 完整通过依赖门禁及145项配置测试（`/tmp/addp-directory-publication-recur-config-final.log`）；Linux 原生结果由下面的修订源码自然 CI 独立核对，不能将本机 T1、CDC／Redis 通过或清理替代。
+
+
+固定修订 `aef9382030b61d5d8da30dadea58c672de9479aa` 的 [Run 44093656937／Job 134075535654](https://github.com/pampa0629/addp/actions/runs/44093656937/job/134075535654)目标 case 成功。原始日志确认 `make test-monitor-metrics` 按 `--case=directory-publication` 实际运行：85项前置测试通过，database_started=false，两个正反枚举 trial 的六阶段均完整、同一进程及单调顺序有效，published 及其后读取全部是 after-version；两个观察间隔约1秒，最后记录分别为2000／2010 ms，未放宽原8秒预算。cleanup_verified、zero_containers／zero_networks／zero_volumes、temporary_removed均为true，标准入口另输出自有资源和临时文件清零。原始日志 `/tmp/addp-directory-publication-recur-linux-job-134075535654.log` 与逐项复核 `/tmp/addp-directory-publication-recur-linux-verified.json` 保留。同源码[Platform consistency Job 134075034589](https://github.com/pampa0629/addp/actions/runs/44093656861/job/134075034589)成功；父Release workflow总状态为failure，本任务只认该目录case的实际通过，不调查或覆盖其他case。此结果证明观察器修订版本的Linux原生目录契约通过；原8秒首败未保存行内容，不能据此认定输入EOF等待是唯一原因，更不修复或追认本机VirtioFS失败、PG目录认证、采集来源、产品页面或生产T5。
 
 ## 未解决事项与后续待办
 
