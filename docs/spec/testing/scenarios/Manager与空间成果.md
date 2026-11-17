@@ -16,8 +16,9 @@
 | 媒体与容器读取 | [NetCDF](Manager文件与预览.md#netcdf-单文件只读) · [GRIB2](Manager文件与预览.md#grib2-单文件只读) · [ENVI 双文件 COG](Manager文件与预览.md#envi-双文件-cog限定-hosted-已验收) · [Surfer GRD](Manager文件与预览.md#surfer-grd-读取) |
 | 媒体读取历史证据 | [NetCDF 授权契约适配](../evidence/资源读取与预览历史证据.md#netcdf-当前元数据授权契约适配--限定正式-hosted-通过) · [GRIB2 数值与页面](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口) · [ENVI 精确组成](../evidence/资源读取与预览历史证据.md#envi-精确双文件现行权限正式复验通过2026-11-04) · [ENVI MinIO 节点](../evidence/资源读取与预览历史证据.md#envi-minio-持续节点新建文件及到期独立-hosted-通过2026-11-04) · [Surfer 四份 GRD](../evidence/资源读取与预览历史证据.md#surfer-6-ascii-扩展及四份-grd-读取--普通-user-hosted-t4) |
 | 矢量与地图 | [拓扑持久化](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](矢量拓扑持久化.md#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
-| 栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
+| 栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](邻近距离.md#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
 | 邻域与插值专项 | [三种加权方法共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核) · [7×7方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收) · [米制圆窗](邻域统计与IDW.md#米制圆形邻域统计独立验收) · [多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收) · [IDW基础](邻域统计与IDW.md#点数据idw插值独立-hosted-验收) · [最少支撑](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收) · [最近N点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收) · [距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收) |
+| 邻近距离专项 | [基础方形](邻近距离.md#raster-proximity-persistence) · [北向非方形](邻近距离.md#非方形像元邻近距离独立验收) · [正交旋转](邻近距离.md#正交旋转网格邻近距离独立保存) |
 | 整幅只读统计 | [单元素百分位](整幅栅格百分位统计.md#整幅栅格百分位统计独立-hosted-验收) · [多百分位](整幅栅格百分位统计.md#整幅栅格多百分位独立-hosted-验收) |
 | 栅格采样 | [点位原值](栅格采样.md#点位栅格采样独立验收) · [双线性点位](栅格采样.md#双线性点位栅格采样独立验收) · [沿线采样](栅格采样.md#沿线栅格采样持久化) |
 | 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
@@ -253,7 +254,7 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 ## 独立持久化专项公共前提
 
-本节仅适用于下列五项：[矢量栅格化](#vector-rasterize-persistence)、[整数栅格分区统计](分区统计.md#raster-zonal-statistics-persistence)、[邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence)、[矢量分区统计](分区统计.md#vector-zonal-statistics-persistence)、[邻近距离](#raster-proximity-persistence)。其他套件仍按各自场景声明执行。
+本节仅适用于下列五项：[矢量栅格化](#vector-rasterize-persistence)、[整数栅格分区统计](分区统计.md#raster-zonal-statistics-persistence)、[邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence)、[矢量分区统计](分区统计.md#vector-zonal-statistics-persistence)、[邻近距离](邻近距离.md#raster-proximity-persistence)。其他套件仍按各自场景声明执行。
 
 五项均使用独占 Hosted 生命周期、普通 User 原 12 项权限、同源七个 Backend 与默认入口 GeoPython 产品 Runtime，以及共享 NFS；不接管个人服务。Runtime 同路径 bind 写入与 Meta 真实 NFS 读取分别记录。各专项独立手工触发，预检与业务执行共用各自的 600 秒预算，不改变已有套件、产品权限或跨模块产品逻辑。
 
@@ -271,7 +272,7 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 | [整数栅格分区统计](分区统计.md#raster-zonal-statistics-persistence) | `make test-raster-zonal-statistics-online-runner` | 真实 GDAL／CSV 与篡改拒绝 |
 | [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) | `make test-raster-focal-statistics-online-runner` | 真实 GDAL／COG 与篡改拒绝 |
 | [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) | `make test-vector-zonal-statistics-online-runner` | 真实 GDAL／GeoPackage 与篡改拒绝 |
-| [邻近距离](#raster-proximity-persistence) | `make test-raster-proximity-online-runner` | 真实 GDAL／COG，以及错误像元／mask／单位／网格等篡改拒绝 |
+| [邻近距离](邻近距离.md#raster-proximity-persistence) | `make test-raster-proximity-online-runner` | 真实 GDAL／COG，以及错误像元／mask／单位／网格等篡改拒绝 |
 
 真实 Hosted 使用各场景列出的 `make test-online ONLINE_SUITE=...` 标准入口，workflow 仅编排同一入口。Runner、Native 与真实 Hosted 结果分别记账；前两者通过不代替 T4，实际结论仍绑定固定源码、运行与未覆盖范围。
 
@@ -370,33 +371,16 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 - <a id="idw最近n个支撑点独立-hosted-验收"></a>[IDW最近N个支撑点独立 Hosted 验收](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收)
 - <a id="邻域多百分位独立保存验收"></a>[邻域多百分位独立保存验收](邻域统计与IDW.md#邻域多百分位独立保存验收)
 
-## raster-proximity-persistence
+## 邻近距离
 
-部署、身份、预算及通用清理按[公共前提](#独立持久化专项公共前提)，Runner 与 Native 分层按[验证入口](#独立持久化专项验证入口)。标准入口为 `make test-online ONLINE_SUITE=raster-proximity-persistence`。
+三套网格场景、单位、独立核验与各自验收范围见[邻近距离专题](邻近距离.md)。原定位保留如下。
 
-### 单位与网格
-
-已登记投影米制 Int32 多波段及美制测量英尺 UInt32 TIFF，分别执行 `raster_load → raster_proximity → raster_save`。两源均为北向无旋转方形网格；输出保留源网格及 CRS，距离统一为米制 Float64／NaN，沿 COG 保存。美制测量英尺按 `1200/3937` 换算为米。
-
-完整像元核验覆盖显式波段、合法零／负分类／UInt32 最大分类值、跨块、无效目标、部分透明和无效区域可跨越。
-
-### 独立距离核验与扫描血缘
-
-独立 oracle 对每个有效目标中心穷举欧氏距离，不调用产品变换、下包络或 GDAL 距离算法；核对完整像元／mask、单位、网格／CRS、COG／金字塔及 artifact／物理／Meta 严格相等的正整数大小。
-
-只手工扫描两份精确源，两个当前执行各自自动扫描成果；核对同用户／租户、Monitor 及各 DAG 仅自身实际源输入的 active derive 血缘。
-
-### 失败、清理与验收边界
-
-非法波段及无有效目标失败不得发布或新增扫描；每次源物理／Meta 与先前成果不变、退出清理沿公共前提，另须核验产品 Runtime／registry／镜像。
-
-本专项不认证测地距离、成本／路径、旋转／非方形网格、容量或 Manager 绘制。固定版本 Hosted 结果与未覆盖范围见[验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)；仅手工触发，入口登记不代表 T4 通过，不外推为当前 HEAD 已重跑。
-
-## 正交旋转网格邻近距离独立保存
-
-`raster-proximity-orthogonal-persistence`：Hosted／NFS、同源默认产品Runtime、普通User原12权限、4CPU／2GiB／无额外swap、600秒，不重试／扩预算。18 COG链覆盖原北向三单位对照、90／180／270度及斜向正交方形／非方形、真实最近目标反转、第二波段／零负目标／NoData／mask／alpha／跨块及概览；30类中英共60准确拒绝，反向查询不改语言，失败零发布／新scan／血缘。
-
-成功递增全检、失败各重读18成果，共1251检查。独立世界向量枚举核完整仿射／CRS／米制距离／mask，逐份核COG／artifact＝物理＝Meta正整数、扫描父执行／User／Tenant／Engine、当前血缘／Monitor、源旧保持及全清理。归档18原COG／SHA256大小清单／冻结期望；数值极限、私有故障注入／等距目标身份只认Native，登记／本地不算Linux全量或真实Hosted。
+- <a id="raster-proximity-persistence"></a>[raster-proximity-persistence](邻近距离.md#raster-proximity-persistence)
+- <a id="单位与网格"></a>[单位与网格](邻近距离.md#单位与网格)
+- <a id="独立距离核验与扫描血缘"></a>[独立距离核验与扫描血缘](邻近距离.md#独立距离核验与扫描血缘)
+- <a id="失败清理与验收边界-1"></a>[失败、清理与验收边界](邻近距离.md#失败清理与验收边界)
+- <a id="非方形像元邻近距离独立验收"></a>[非方形像元邻近距离独立验收](邻近距离.md#非方形像元邻近距离独立验收)
+- <a id="正交旋转网格邻近距离独立保存"></a>[正交旋转网格邻近距离独立保存](邻近距离.md#正交旋转网格邻近距离独立保存)
 
 ## 分类栅格与形态处理
 
@@ -599,12 +583,6 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 
 - <a id="整幅栅格百分位统计独立-hosted-验收"></a>[整幅栅格百分位统计独立 Hosted 验收](整幅栅格百分位统计.md#整幅栅格百分位统计独立-hosted-验收)
 - <a id="整幅栅格多百分位独立-hosted-验收"></a>[整幅栅格多百分位独立 Hosted 验收](整幅栅格百分位统计.md#整幅栅格多百分位独立-hosted-验收)
-
-## 非方形像元邻近距离独立验收
-
-`raster-proximity-rectangular-persistence`；沿[水文／分区共同要求](#水文与分区统计专项共同要求)。16COG涵横纵比例使最近反转、小数步长、两英尺、raw第二波段、NoData/mask/alpha、零负／UInt32、跨块／单行列／原方形对照；26类双语52准确proximity失败。独立枚举目标预期，968全检，16COG／源／冻结数组及hash归档；米制、网格CRS／mask／完整COG和overview实核，数值极限／私文件破坏仅Native。
-
-正交旋转扩展不改16/52/968／600秒，仅同步实际双语准入：rotated_x/rotated_y是非正交剪切、orientation是单轴镜像，仍须当前节点准确拒绝；本suite只证北向矩形成果，不补认旋转Hosted。Linux／实际运行另行认定。
 
 ## 栅格采样
 
