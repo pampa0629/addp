@@ -1,6 +1,7 @@
-"""Self-contained GRIB2 fields: structural/bitmap proof, GDAL-only values."""
+"""Self-contained GRIB fields: edition-specific proof, GDAL-only values."""
 from __future__ import annotations
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -20,7 +21,7 @@ MAX_BYTES = 128 << 20
 MAX_MESSAGES = 128
 MAX_POINTS = 1 << 24
 MAX_TOTAL_POINTS = 1 << 26
-PROFILE = 'grib2_regular_fields/v1'
+PROFILES = {1: 'grib1_regular_fields/v1', 2: 'grib2_regular_fields/v1'}
 
 
 class SliceSelectionError(ValueError):
@@ -37,7 +38,7 @@ def _integer(value, low, high):
     return value
 
 
-def _fields(raw):
+def _grib2_fields(raw):
     """Require a complete closed single-field section sequence per message.
 
     Structural interpretation proves bounds and bitmap only. Packed numerical
@@ -115,12 +116,158 @@ def _fields(raw):
         if len(sections[7]) != 5 + data_bytes:
             raise ValueError('GRIB packed payload length mismatch')
         fields.append(dict(name=f'message-{len(fields)+1}', offset=offset, size=size, width=width, height=height,
-            scan=scan, bitmap=bitmap[6:].tobytes() if bitmap[5] == 0 else None,
+            edition=2, scan=scan, bitmap=bitmap[6:].tobytes() if bitmap[5] == 0 else None,
             product_template=pdt, data_template=drt, discipline=raw[offset+6]))
         offset = end
     if not fields:
         raise ValueError('empty GRIB2 file')
     return fields
+
+
+def _signed(raw):
+    """GRIB1 signed integers use a sign bit, not two's complement."""
+    value = int.from_bytes(raw, 'big')
+    sign = 1 << (8*len(raw)-1)
+    return -(value & (sign-1)) if value & sign else value
+
+
+# Standard table 2/3 identities verified against the native driver. Local
+# tables are deliberately not admitted by a fallback to these names/units.
+GRIB1_PARAMETERS = {
+    1: ('PRES', '[Pa]'), 2: ('PRMSL', '[Pa]'), 7: ('HGT', '[gpm]'),
+    11: ('TMP', '[K]'), 15: ('TMAX', '[K]'), 16: ('TMIN', '[K]'),
+    17: ('DPT', '[K]'), 32: ('WIND', '[m/s]'), 33: ('UGRD', '[m/s]'),
+    34: ('VGRD', '[m/s]'), 52: ('RH', '[%]'), 61: ('APCP', '[kg/m^2]'),
+}
+GRIB1_TIME_UNITS = {0: 60, 1: 3600, 2: 86400, 10: 10800, 11: 21600, 12: 43200, 254: 1}
+
+
+def _grib1_product(pds):
+    if len(pds) not in (28, 40) or any(pds[28:]) or pds[3] not in (2, 3) or pds[8] not in GRIB1_PARAMETERS or pds[7] & 63:
+        raise ValueError('unsupported GRIB1 product or parameter table')
+    year, century = pds[12], pds[24]
+    if not 1 <= year <= 100 or not 1 <= century <= 100:
+        raise ValueError('invalid GRIB1 year or century')
+    reference = datetime((century-1)*100+year, *pds[13:17], tzinfo=timezone.utc)
+    unit, p1, p2, indicator = pds[17:21]
+    included, missing = int.from_bytes(pds[21:23], 'big'), pds[23]
+    if unit not in GRIB1_TIME_UNITS or indicator not in (0, 1, 2, 3, 4, 5, 10):
+        raise ValueError('unsupported GRIB1 time semantics')
+    if indicator == 1 and (p1 or p2) or indicator == 0 and p2 or indicator in (2, 3, 4, 5) and p2 < p1:
+        raise ValueError('inconsistent GRIB1 time interval')
+    if indicator not in (3, 4, 5) and (included or missing):
+        raise ValueError('unexplained GRIB1 statistical counts')
+    step = GRIB1_TIME_UNITS[unit]
+    if indicator == 10:
+        start = end = (p1*256+p2)*step
+    else:
+        start = p1*step
+        end = p2*step if indicator in (2, 3, 4, 5) else start
+    start_time, end_time = reference+timedelta(seconds=start), reference+timedelta(seconds=end)
+    time = dict(reference_utc=reference.isoformat(), unit_code=unit, p1=p1, p2=p2,
+        range_indicator=indicator, operation={0: 'instant', 1: 'initialized_analysis', 2: 'interval', 3: 'average', 4: 'accumulation', 5: 'difference', 10: 'instant'}[indicator],
+        start_utc=start_time.isoformat(), end_utc=end_time.isoformat(), included_count=included, missing_count=missing)
+    kind = pds[9]
+    if kind not in (1, 100, 101, 102, 103, 105, 111, 112):
+        raise ValueError('unsupported GRIB1 level semantics')
+    raw = bytes(pds[10:12])
+    level = dict(type_code=kind, raw_octets=list(raw), unit={1: 'none', 100: 'hPa', 101: 'kPa', 102: 'none', 103: 'm', 105: 'm', 111: 'cm', 112: 'cm'}[kind],
+        reference={1: 'surface', 100: 'isobaric', 101: 'isobaric', 102: 'mean_sea_level', 103: 'mean_sea_level', 105: 'ground', 111: 'land_surface', 112: 'land_surface'}[kind])
+    if kind in (1, 102):
+        if any(raw):
+            raise ValueError('unexplained GRIB1 surface level value')
+    elif kind in (101, 112):
+        if raw[0] > raw[1]:
+            raise ValueError('inverted GRIB1 layer bounds')
+        level.update(upper=raw[0], lower=raw[1])
+    else:
+        level['value'] = int.from_bytes(raw, 'big')
+    return dict(parameter=dict(centre=pds[4], subcentre=pds[25], process=pds[5], table_version=pds[3], number=pds[8]),
+        time=time, level=level, decimal_scale=_signed(pds[26:28]),
+        reference_seconds=int(reference.timestamp()), valid_seconds=int(end_time.timestamp()), forecast_seconds=end)
+
+
+def _grib1_fields(raw):
+    fields, offset, total = [], 0, 0
+    while offset < len(raw):
+        if len(fields) >= MAX_MESSAGES or len(raw)-offset < 12 or raw[offset:offset+4] != b'GRIB' or raw[offset+7] != 1:
+            raise ValueError('unsupported GRIB1 message envelope or mixed edition')
+        size = int.from_bytes(raw[offset+4:offset+7], 'big')
+        end = offset+size
+        if size < 84 or size % 2 or end > len(raw) or raw[end-4:end] != b'7777':
+            raise ValueError('incomplete GRIB1 message')
+        position = offset+8
+        sections = []
+        # PDS flags determine whether BMS is present. GDS is mandatory here.
+        bitmap_present = False
+        for number in (1, 2, 3, 4):
+            if number == 3 and not bitmap_present:
+                continue
+            if end-4-position < 3:
+                raise ValueError('incomplete GRIB1 section')
+            length = int.from_bytes(raw[position:position+3], 'big')
+            if length < 4 or length % 2 or position+length > end-4:
+                raise ValueError('invalid GRIB1 section length')
+            section = memoryview(raw)[position:position+length]
+            sections.append(section)
+            position += length
+            if number == 1:
+                facts = _grib1_product(section)
+                if not section[7] & 128:
+                    raise ValueError('GRIB1 requires an explicit grid')
+                bitmap_present = bool(section[7] & 64)
+        if position != end-4:
+            raise ValueError('unexplained GRIB1 message bytes')
+        pds, grid, *rest = sections
+        if len(grid) != 32 or grid[3] != 0 or grid[4] != 255 or grid[5] != 0 or any(grid[28:]) or grid[16] != 128:
+            raise ValueError('unsupported GRIB1 regular grid')
+        width, height = int.from_bytes(grid[6:8], 'big'), int.from_bytes(grid[8:10], 'big')
+        count = width*height
+        scan = grid[27]
+        dx, dy = int.from_bytes(grid[23:25], 'big'), int.from_bytes(grid[25:27], 'big')
+        lat1, lon1, lat2, lon2 = (_signed(grid[a:a+3]) for a in (10, 13, 17, 20))
+        if not 2 <= width < 65535 or not 2 <= height < 65535 or count > MAX_POINTS or scan not in (0, 64) or not 0 < dx < 65535 or not 0 < dy < 65535:
+            raise ValueError('unsupported GRIB1 grid size or scan')
+        if max(abs(lat1), abs(lat2)) > 90000 or max(abs(lon1), abs(lon2)) > 360000 or lon2-lon1 != (width-1)*dx or lat2-lat1 != (height-1)*dy*(1 if scan == 64 else -1):
+            raise ValueError('inconsistent GRIB1 declared grid')
+        total += count
+        if total > MAX_TOTAL_POINTS:
+            raise ValueError('GRIB total grid budget exceeded')
+        bitmap = None
+        valid_count = count
+        if bitmap_present:
+            bms, data = rest
+            if len(bms) < 6 or int.from_bytes(bms[4:6], 'big') != 0 or not 0 <= bms[3] <= 15 or (len(bms)-6)*8-bms[3] != count:
+                raise ValueError('unsupported GRIB1 bitmap reference or length')
+            bitmap = bytes(bms[6:])
+            bits = np.unpackbits(np.frombuffer(bitmap, dtype='uint8'))
+            if np.any(bits[count:]):
+                raise ValueError('GRIB1 bitmap padding is nonzero')
+            valid_count = int(bits[:count].sum())
+        else:
+            data, = rest
+        if len(data) < 12 or data[3] & 0xf0 not in (0, 32) or data[10] > 32:
+            raise ValueError('unsupported GRIB1 value encoding')
+        unused, bits_per_value = data[3] & 15, data[10]
+        if (len(data)-11)*8-unused != valid_count*bits_per_value:
+            raise ValueError('GRIB1 packed data length differs from bitmap')
+        if unused and int.from_bytes(data[-2:], 'big') & ((1 << unused)-1):
+            raise ValueError('GRIB1 packed padding is nonzero')
+        facts['packing'] = dict(bits_per_value=bits_per_value, original_integer=bool(data[3] & 32),
+            binary_scale=_signed(data[4:6]), decimal_scale=facts.pop('decimal_scale'), reference_ibm_hex=bytes(data[6:10]).hex())
+        fields.append(dict(name=f'message-{len(fields)+1}', offset=offset, size=size, edition=1,
+            width=width, height=height, scan=scan, bitmap=bitmap, facts=facts,
+            transform=[(lon1-dx/2)/1000, dx/1000, 0., (max(lat1,lat2)+dy/2)/1000, 0., -dy/1000]))
+        offset = end
+    if not fields:
+        raise ValueError('empty GRIB1 file')
+    return fields
+
+
+def _fields(raw):
+    if len(raw) < 8 or raw[:4] != b'GRIB' or raw[7] not in PROFILES:
+        raise ValueError('unsupported GRIB edition')
+    return (_grib1_fields if raw[7] == 1 else _grib2_fields)(raw)
 
 
 @contextmanager
@@ -141,7 +288,7 @@ def _source(access_plan, source_version=None):
 
 @contextmanager
 def _dataset(raw, field):
-    name = '/vsimem/addp-grib-' + uuid.uuid4().hex + '.grb2'
+    name = '/vsimem/addp-grib-' + uuid.uuid4().hex + '.grb'
     dataset = None
     warnings = []
     try:
@@ -178,10 +325,24 @@ def _description(dataset, field):
     for key in ('GRIB_REF_TIME', 'GRIB_VALID_TIME', 'GRIB_FORECAST_SECONDS'):
         if key not in metadata or not metadata[key].lstrip('-').isdigit():
             raise ValueError('incomplete GRIB time facts')
+    message = dict(number=int(field['name'].split('-')[1]), edition=field['edition'])
+    if field['edition'] == 1:
+        facts = field['facts']
+        for key, fact in (('GRIB_REF_TIME', 'reference_seconds'), ('GRIB_VALID_TIME', 'valid_seconds'), ('GRIB_FORECAST_SECONDS', 'forecast_seconds')):
+            if int(metadata[key]) != facts[fact]:
+                raise ValueError('GRIB1 decoded time differs from source semantics')
+        element, unit = GRIB1_PARAMETERS[facts['parameter']['number']]
+        if metadata.get('GRIB_ELEMENT') != element or metadata.get('GRIB_UNIT') != unit or list(transform) != field['transform']:
+            raise ValueError('GRIB1 parameter or grid differs from source semantics')
+        message.update({key: facts[key] for key in ('parameter', 'time', 'level', 'packing')})
+        for key in ('parameter', 'time', 'level', 'packing'):
+            metadata['GRIB1_'+key.upper()] = json.dumps(facts[key], sort_keys=True, separators=(',', ':'))
+    else:
+        message.update(discipline=field['discipline'], product_template=field['product_template'], data_template=field['data_template'])
     return dict(name=field['name'], type='Float64', dimensions=[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],
         attributes={key:dict(type='String',values=[value]) for key,value in metadata.items()}, attributes_coverage='selected',slice_supported=True,
         value_mode='decoded_native_units',grid=dict(transform=list(transform),crs_wkt=dataset.GetProjectionRef(),longitude_policy='unchanged'),
-        message=dict(number=int(field['name'].split('-')[1]),discipline=field['discipline'],product_template=field['product_template'],data_template=field['data_template']))
+        message=message)
 
 
 def inspect(access_plan):
@@ -192,7 +353,7 @@ def inspect(access_plan):
                 description=_description(dataset,field)
             children.append(dict(name=field['name'],child_kind='array',data_type='media',format='grib',native=description))
         result=dict(schema_version='gdal.grib.inspect/v1',format='grib',container=dict(child_count=len(children),resource_count=1,children=children),
-            format_info=dict(driver='GRIB',encoding='GRIB2',profile=PROFILE,scan_complete=True,source_version=version,value_mode='decoded_native_units'))
+            format_info=dict(driver='GRIB',encoding='GRIB'+str(fields[0]['edition']),profile=PROFILES[fields[0]['edition']],scan_complete=True,source_version=version,value_mode='decoded_native_units'))
         if len(json.dumps(result).encode()) > 1 << 20:
             raise ValueError('GRIB catalog response budget exceeded')
         return result
@@ -248,9 +409,9 @@ def _native_main():
 
 def _register(name,function,params):
     metadata=OperatorMetadata(name=name,type=OperatorType.GENERAL,category=OperatorCategory.COMMON_IO,
-        description=name,brief_description='GRIB2 bounded self-contained fields',execution_modes=['direct'],effects=['read'],
+        description=name,brief_description='GRIB bounded self-contained fields',execution_modes=['direct'],effects=['read'],
         params=[OperatorParam(name='access_plan',type='param',data_type='object',description='Exact single-file source plan',required=True),*params],
-        overview='GRIB2单文件只读',use_cases=['气象场和元信息查看','有界数值切片'],notes=['Original units and longitude; no external idx','No map or export'],workflow_example={})
+        overview='GRIB单文件只读',use_cases=['气象场和元信息查看','有界数值切片'],notes=['Original units and longitude; no external idx','No map or export'],workflow_example={})
     def invoke(**kwargs):
         completed=_native_process.run([sys.executable,'-c','from operators.grib import _native_main; _native_main()'],input=json.dumps(dict(operation=function.__name__,params=kwargs),allow_nan=False),capture_output=True,text=True,timeout=60)
         if completed.returncode!=0:raise RuntimeError('GRIB native process failed')

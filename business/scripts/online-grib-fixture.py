@@ -10,7 +10,7 @@ import struct
 import subprocess
 import sys
 
-NAMES=('mixed-fields.grib2','south-to-north.grb2')
+NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1')
 
 
 def fields(reverse=False):
@@ -29,7 +29,7 @@ def expected(field,x=0,y=0,width=None,height=None):
         line=[];mask=[]
         for col in range(x,x+width):
             present=not(field['missing'] and row==1 and col==1)
-            value=9999. if field['missing'] and row==0 and col==0 else float(field['base']+row*field['width']+col)
+            value=9999. if field['missing'] and row==0 and col==0 else float(field['base']+(0 if field.get('constant') else row*field['width']+col)*field.get('step',1))
             line.append(repr(value) if present else 'NaN');mask.append(present)
         values.append(line);valid.append(mask)
     return values,valid
@@ -66,13 +66,68 @@ def message(field):
     return b'GRIB\0\0\0\x02'+struct.pack('>Q',16+len(body))+body
 
 
-def source_bytes(spec):return b''.join(message(field) for field in spec['fields'])
+def grib1_fields(reverse=False):
+    result=[]
+    for i,(base,step,constant,missing,level,level_raw,tri,p1,p2,reference,binary_scale) in enumerate([
+        (280.,1.,False,True,100,[1,244],0,3,0,0.,0),
+        (-1.25,.25,False,False,101,[50,100],4,3,6,-5.,-2),
+        (280.,1.,True,False,105,[0,2],10,1,44,280.,0)]):
+        result.append(dict(number=i+1,width=4-i,height=3 if i<2 else 4,packing='simple',scan=64 if reverse else 0,
+            west=250 if i==1 else 110,north=30,forecast=300 if tri==10 else p2 if tri==4 else p1,
+            base=base,step=step,constant=constant,missing=missing,level=level,level_raw=level_raw,
+            time_indicator=tri,p1=p1,p2=p2,reference=reference,binary_scale=binary_scale,decimal_scale=0,bits=0 if constant else 16))
+    return result
+
+
+def grib1_message(field):
+    # Independent GRIB1 encoding oracle, never used by the product reader.
+    def signed(value,width):return (abs(value)|(1<<(8*width-1) if value<0 else 0)).to_bytes(width,'big')
+    pds=bytearray(28);pds[:3]=(28).to_bytes(3,'big')
+    pds[3:12]=bytes([2,7,81,255,128+(64 if field['missing'] else 0),11,field['level'],*field['level_raw']])
+    pds[12:26]=bytes([26,1,2,3,0,1,field['p1'],field['p2'],field['time_indicator'],0,2 if field['time_indicator'] in (3,4,5) else 0,0,21,0])
+    pds[26:28]=signed(field['decimal_scale'],2)
+    width,height,scan=field['width'],field['height'],field['scan']
+    south=field['north']-height+1
+    grid=bytearray(32);grid[:3]=(32).to_bytes(3,'big');grid[4]=255;grid[6:8]=width.to_bytes(2,'big');grid[8:10]=height.to_bytes(2,'big')
+    grid[10:13]=signed((south if scan==64 else field['north'])*1000,3);grid[13:16]=signed(field['west']*1000,3);grid[16]=128
+    grid[17:20]=signed((field['north'] if scan==64 else south)*1000,3);grid[20:23]=signed((field['west']+width-1)*1000,3)
+    grid[23:27]=bytes.fromhex('03e803e8');grid[27]=scan
+    values,valid=expected(field);rows=range(height-1,-1,-1) if scan==64 else range(height)
+    points=[(values[y][x],valid[y][x]) for y in rows for x in range(width)]
+    bitmap=b''
+    if field['missing']:
+        length=6+((width*height+15)//16)*2;bitmap=bytearray(length);bitmap[:3]=length.to_bytes(3,'big');bitmap[3]=(length-6)*8-width*height
+        for i,(_,ok) in enumerate(points):
+            if ok:bitmap[6+i//8]|=1<<(7-i%8)
+    bitstring=''
+    if field['bits']:
+        for value,ok in points:
+            if ok:
+                integer=(float(value)*10**field['decimal_scale']-field['reference'])/2**field['binary_scale']
+                assert integer==int(integer) and 0<=integer<2**field['bits']
+                bitstring+=format(int(integer),'0'+str(field['bits'])+'b')
+    unused=(-len(bitstring)-88)%16;bitstring+='0'*unused
+    data=bytearray(11+len(bitstring)//8);data[:3]=len(data).to_bytes(3,'big');data[3]=unused;data[4:6]=signed(field['binary_scale'],2);data[10]=field['bits']
+    if field['reference']:
+        fraction=abs(field['reference']);exponent=0
+        while fraction>=1:fraction/=16;exponent+=1
+        while fraction<1/16:fraction*=16;exponent-=1
+        data[6:10]=((int(field['reference']<0)<<31)|((exponent+64)<<24)|int(fraction*2**24)).to_bytes(4,'big')
+    if bitstring:data[11:]=int(bitstring,2).to_bytes(len(bitstring)//8,'big')
+    body=pds+grid+bitmap+data+b'7777'
+    return b'GRIB'+(8+len(body)).to_bytes(3,'big')+b'\x01'+body
+
+
+def source_bytes(spec):return b''.join((grib1_message if spec.get('edition')==1 else message)(field) for field in spec['fields'])
 
 
 def sources():
     result=[]
-    for reverse,name in enumerate(NAMES):
+    for reverse,name in enumerate(NAMES[:2]):
         spec=dict(name=name,case_id='reverse' if reverse else 'forward',fields=fields(bool(reverse)))
+        raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
+    for reverse,name in enumerate(NAMES[2:]):
+        spec=dict(name=name,case_id='grib1-reverse' if reverse else 'grib1-forward',edition=1,fields=grib1_fields(bool(reverse)))
         raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
     return result
 

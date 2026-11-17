@@ -135,3 +135,31 @@ func TestGRIBDescriptorRecognizesContentAndOnlyDeclaresReaders(t *testing.T) {
 		t.Fatal(d)
 	}
 }
+
+func TestGRIBEditionProfilesAreBoundTogether(t *testing.T) {
+	r := &runtimeStub{}
+	b := bind(t, r)
+	for _, tc := range []struct {
+		encoding, profile string
+		valid             bool
+	}{
+		{"GRIB1", "grib1_regular_fields/v1", true},
+		{"GRIB2", "grib2_regular_fields/v1", true},
+		{"GRIB1", "grib2_regular_fields/v1", false},
+		{"GRIB2", "grib1_regular_fields/v1", false},
+		{"mixed", "grib1_regular_fields/v1", false},
+	} {
+		r.payload = description()
+		info := r.payload["format_info"].(map[string]interface{})
+		info["encoding"], info["profile"] = tc.encoding, tc.profile
+		_, err := b.DescribeContainer(context.Background(), nil)
+		if (err == nil) != tc.valid {
+			t.Fatal(tc, err)
+		}
+	}
+	for _, ext := range []string{".grib1", ".grb1"} {
+		if format.DetectFormat("weather"+ext, nil) != format.FormatGRIB {
+			t.Fatal(ext)
+		}
+	}
+}

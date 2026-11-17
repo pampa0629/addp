@@ -76,7 +76,7 @@
 | Personal Geodatabase | `single` | `container` | `pgeo` | `.mdb` 单文件容器，只允许作为只读 source |
 | KML / GML / TopoJSON | `single` | `container` | `kml` / `gml` / `topojson` | 通过 GDAL Runtime 枚举图层 children，选层后按 table 读取；GML / TopoJSON 只读，KML 另有二维简单要素 writer，父文件仍为 container |
 | NetCDF | `single` | `container` | `netcdf` | CDF-1/2/5 与受支持的自包含 NetCDF-4 根组数值网格；变量作为 array child，Runtime 提供有界切片，只读，不把父文件当单张影像 |
-| GRIB2 | `single` | `container` | `grib` | 当前只接入受支持的 GRIB2 规则网格消息，每条消息作为独立二维 array child；Runtime 提供有界切片，不支持 GRIB1、写出或 COG 快显 |
+| GRIB1／GRIB2 | `single` | `container` | `grib` | 受支持的规则经纬网消息各为独立二维 array child；GRIB1标准参数／简单打包子集与GRIB2分开准入及验收，复用Runtime有界切片；不支持写出或COG快显，具体实现及验收边界见媒体专题 |
 | ZIP | `single` | `container` | `zip` | 压缩包 entry 先写入 `type_info.container.children` |
 | 图片 | `single` | `media` | `jpeg` / `png` / `gif` / `webp` / `bmp` / `image` | 图片 GPS 空间语义进入 spatial |
 | TIFF / GeoTIFF | `single` / `multi` | `media` | `tiff` | 无旁文件时为 single；存在已确认的 TIFF sidecar 时按 multi 组织，空间语义进入 spatial |

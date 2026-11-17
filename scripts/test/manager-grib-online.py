@@ -1,6 +1,7 @@
 """GRIB ordinary-user metadata, raw grid, source version and UI acceptance."""
 from __future__ import annotations
 import hashlib
+from datetime import datetime, timezone
 import importlib
 import json
 from pathlib import Path
@@ -24,7 +25,23 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
     require(result['values']==values and result['valid']==valid,'GRIB numerical values or bitmap changed')
     variable=result['variable'];attributes=variable['attributes']
     require(attributes['GRIB_UNIT']['values']==['[K]'] and attributes['GRIB_ELEMENT']['values']==['TMP'],'GRIB units or element changed')
-    require(attributes['GRIB_FORECAST_SECONDS']['values']==[str(field['forecast']*3600)] and attributes['GRIB_REF_TIME']['values']==['1767322800'] and attributes['GRIB_VALID_TIME']['values']==[str(1767322800+field['forecast']*3600)] and attributes['GRIB_SHORT_NAME']['values']==['2-HTGL'],'GRIB reference/valid time or level changed')
+    require(attributes['GRIB_FORECAST_SECONDS']['values']==[str(field['forecast']*3600)] and attributes['GRIB_REF_TIME']['values']==['1767322800'] and attributes['GRIB_VALID_TIME']['values']==[str(1767322800+field['forecast']*3600)] and (spec.get('edition')==1 or attributes['GRIB_SHORT_NAME']['values']==['2-HTGL']),'GRIB reference/valid time or level changed')
+    if spec.get('edition')==1:
+        message=variable['message']
+        require(message['edition']==1 and message['parameter']==dict(centre=7,subcentre=0,process=81,table_version=2,number=11),'GRIB1 exact parameter identity changed')
+        level=message['level'];time_facts=message['time']
+        require(level['type_code']==field['level'] and level['raw_octets']==field['level_raw'],'GRIB1 level code or raw bounds changed')
+        require(time_facts['range_indicator']==field['time_indicator'] and time_facts['p1']==field['p1'] and time_facts['p2']==field['p2'] and time_facts['unit_code']==1,'GRIB1 time interval changed')
+        require(time_facts['operation']=={0:'instant',4:'accumulation',10:'instant'}[field['time_indicator']] and time_facts['reference_utc']=='2026-01-02T03:00:00+00:00','GRIB1 time statistic changed')
+        if field['level']==101:require(level['unit']=='kPa' and level['upper']==50 and level['lower']==100,'GRIB1 layer boundaries or units changed')
+        if field['level']==100:require(level['unit']=='hPa' and level['value']==500,'GRIB1 single pressure level changed')
+        if field['level']==105:require(level['unit']=='m' and level['value']==2,'GRIB1 height level changed')
+        start_hours=field['forecast'] if field['time_indicator']==10 else field['p1']
+        utc=lambda hours:datetime.fromtimestamp(1767322800+hours*3600,timezone.utc).isoformat()
+        require(time_facts['start_utc']==utc(start_hours) and time_facts['end_utc']==utc(field['forecast']) and time_facts['included_count']==(2 if field['time_indicator']==4 else 0) and time_facts['missing_count']==0,'GRIB1 interval endpoints or sample counts changed')
+        require(message['packing']==dict(bits_per_value=field['bits'],original_integer=False,binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale'],reference_ibm_hex={0.:'00000000',-5.:'c1500000',280.:'43118000'}[field['reference']]),'GRIB1 source packing declaration changed')
+        for key in ('parameter','time','level','packing'):
+            require(json.loads(attributes['GRIB1_'+key.upper()]['values'][0])==message[key],'GRIB1 displayed semantics differ from exact facts')
     require(variable['dimensions']==[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],'GRIB independent dimensions changed')
     require(variable['grid']['transform']==[field['west']-.5,1.,0.,field['north']+.5,0.,-1.] and variable['grid']['longitude_policy']=='unchanged' and bool(variable['grid']['crs_wkt']),'GRIB grid/longitude changed')
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
@@ -84,7 +101,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 (artifact/f"grib-{storage}-{spec['case_id']}-metadata.json").write_text(json.dumps({'meta':detail,'manager':native},ensure_ascii=False,indent=2)+'\n')
                 require({k:attrs.get('item',{}).get(k) for k in ('data_type','format','layout')}=={'data_type':'container','format':'grib','layout':'single'},'GRIB canonical identity changed')
                 info=attrs.get('format_info',{}).get('grib',{})
-                require(info.get('source_version')=='sha256:'+spec['sha256'] and info.get('scan_complete') is True and info.get('encoding')=='GRIB2' and info.get('profile')=='grib2_regular_fields/v1','GRIB content version missing')
+                require(info.get('source_version')=='sha256:'+spec['sha256'] and info.get('scan_complete') is True and info.get('encoding')=='GRIB'+str(spec.get('edition',2)) and info.get('profile')=='grib'+str(spec.get('edition',2))+'_regular_fields/v1','GRIB content version missing')
                 require(not attrs.get('capabilities',{}).get('spatial'),'GRIB parent gained unified spatial extent')
                 children=attrs.get('type_info',{}).get('container',{}).get('children',[])
                 require([v['name'] for v in children]==['message-1','message-2','message-3'],'GRIB message identity or enumeration changed')
@@ -100,7 +117,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                     invalid=dict(selection,**change);denied=read(client,locator,invalid,400);require(denied.get('error_code')=='grid_slice_selection_invalid','invalid window was not a controlled rejection')
                 stage='download';raw=client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(200,)).raw
                 require(len(raw)==spec['size_bytes'] and hashlib.sha256(raw).hexdigest()==spec['sha256'],'GRIB original download differs')
-                (artifact/f"grib-{storage}-{spec['case_id']}.grb2").write_bytes(raw)
+                (artifact/f"grib-{storage}-{spec['case_id']}{Path(spec['name']).suffix}").write_bytes(raw)
                 require(client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload==detail,'GRIB preview changed metadata')
                 report['cases'].append(dict(source_case=storage,locator=locator,item_id=item['id'],spec=spec,metadata_verified=True,values_verified=True,mask_verified=True,repeat_stateless_verified=True,window_verified=True,invalid_selection_denied=True,original_download_verified=True))
         stage='source_drift';physical('drift')

@@ -13,7 +13,7 @@ FIXTURE=SCENE.FIXTURE
 class GRIBOracleTest(unittest.TestCase):
     def test_closed_inventory_and_bytes_before_physical_mutation(self):
         request={'sources':FIXTURE.sources(),'source_bytes':{s['name']:FIXTURE.source_bytes(s).hex() for s in FIXTURE.sources()}}
-        self.assertEqual(len(FIXTURE._owned_sources(request)),2)
+        self.assertEqual(len(FIXTURE._owned_sources(request)),4)
         for change in ('missing','tampered'):
             bad=copy.deepcopy(request)
             if change=='missing':bad['sources'].pop()
@@ -22,17 +22,40 @@ class GRIBOracleTest(unittest.TestCase):
         for spec in FIXTURE.sources():
             raw=FIXTURE.source_bytes(spec);offset=0;count=0
             while offset<len(raw):
-                self.assertEqual(raw[offset:offset+8],b'GRIB\0\0\0\2')
-                length=int.from_bytes(raw[offset+8:offset+16],'big');self.assertEqual(raw[offset+length-4:offset+length],b'7777');offset+=length;count+=1
+                self.assertEqual(raw[offset:offset+4],b'GRIB');self.assertEqual(raw[offset+7],spec.get('edition',2))
+                length=int.from_bytes(raw[offset+4:offset+7] if spec.get('edition')==1 else raw[offset+8:offset+16],'big');self.assertEqual(raw[offset+length-4:offset+length],b'7777');offset+=length;count+=1
             self.assertEqual((offset,count),(len(raw),3))
+        self.assertEqual([s['sha256'] for s in FIXTURE.sources()[:2]],['98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110','addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6'])
 
     def response(self,spec,field):
         values,valid=FIXTURE.expected(field)
-        return dict(schema_version='gdal.grib.slice/v1',format='grib',source_version='sha256:'+spec['sha256'],value_mode='decoded_native_units',
+        result = dict(schema_version='gdal.grib.slice/v1',format='grib',source_version='sha256:'+spec['sha256'],value_mode='decoded_native_units',
             selection=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height']),values=values,valid=valid,spatial=None,
             variable=dict(attributes={'GRIB_UNIT':{'values':['[K]']},'GRIB_REF_TIME':{'values':['1767322800']},'GRIB_VALID_TIME':{'values':[str(1767322800+field['forecast']*3600)]},'GRIB_SHORT_NAME':{'values':['2-HTGL']},'GRIB_ELEMENT':{'values':['TMP']},'GRIB_FORECAST_SECONDS':{'values':[str(field['forecast']*3600)]}},
               dimensions=[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],
               grid=dict(transform=[field['west']-.5,1.,0.,field['north']+.5,0.,-1.],longitude_policy='unchanged',crs_wkt='source CRS')))
+
+        if spec.get('edition')==1:
+            from datetime import datetime, timezone
+            utc=lambda h:datetime.fromtimestamp(1767322800+h*3600,timezone.utc).isoformat()
+            level={'type_code':field['level'],'raw_octets':field['level_raw']}
+            level.update({100:dict(unit='hPa',value=500),101:dict(unit='kPa',upper=50,lower=100),105:dict(unit='m',value=2)}[field['level']])
+            facts=dict(edition=1,parameter=dict(centre=7,subcentre=0,process=81,table_version=2,number=11),level=level,
+                time=dict(unit_code=1,range_indicator=field['time_indicator'],p1=field['p1'],p2=field['p2'],operation='accumulation' if field['time_indicator']==4 else 'instant',reference_utc=utc(0),
+                    start_utc=utc(field['forecast'] if field['time_indicator']==10 else field['p1']),end_utc=utc(field['forecast']),included_count=2 if field['time_indicator']==4 else 0,missing_count=0),
+                packing=dict(bits_per_value=field['bits'],original_integer=False,binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale'],reference_ibm_hex={0.:'00000000',-5.:'c1500000',280.:'43118000'}[field['reference']]))
+            result['variable']['message']=facts
+            import json
+            for key in ('parameter','time','level','packing'):result['variable']['attributes']['GRIB1_'+key.upper()]={'values':[json.dumps(facts[key])]}
+        return result
+
+    def test_grib1_oracle_rejects_lost_time_layer_parameter_or_packing(self):
+        for spec in FIXTURE.sources()[2:]:
+            for field in spec['fields']:
+                result=self.response(spec,field);SCENE.validate_slice(result,spec,field)
+                for category,key,value in [('time','start_utc','wrong'),('time','range_indicator',99),('level','raw_octets',[0,0]),('parameter','table_version',128),('packing','binary_scale',1)]:
+                    bad=copy.deepcopy(result);bad['variable']['message'][category][key]=value
+                    with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
 
     def test_acceptance_rejects_unit_value_mask_longitude_and_message_drift(self):
         spec=FIXTURE.sources()[0];field=spec['fields'][1];result=self.response(spec,field);SCENE.validate_slice(result,spec,field)

@@ -5,10 +5,10 @@ import { resolve } from 'node:path'
 import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
 test('ordinary user reads independent GRIB messages with native units and downloads originals', async ({ page }) => {
-  test.setTimeout(240000)
+  test.setTimeout(480000)
   const env = process.env, context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(context.cases).toHaveLength(4)
+  expect(context.cases).toHaveLength(8)
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id, permissions: new Set(context.identity.permissions_verified) }
   expect([...identity.permissions].sort()).toEqual(['manager.content.read', 'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'])
   const outcomes = [], browserErrors = []
@@ -35,7 +35,11 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           const details = frame.getByTestId('grid-variable-details')
           await expect(details).toContainText('Float64')
           await expect(details).toContainText('[K]')
-          await expect(details).toContainText('2-HTGL')
+          if (source.spec.edition === 1) {
+            await expect(details).toContainText('GRIB1_TIME')
+            await expect(details).toContainText('GRIB1_LEVEL')
+            await expect(details).toContainText(field.level === 101 ? 'kPa' : field.level === 100 ? 'hPa' : 'ground')
+          } else await expect(details).toContainText('2-HTGL')
           await expect(details).toContainText(String(field.forecast * 3600))
           await expect(frame.getByTestId('grid-native-transform')).toContainText(String(field.west - 0.5))
           await expect(frame.locator('.grid-container-preview')).toContainText(/不自动转换单位|no automatic unit conversion/)
@@ -46,7 +50,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           await frame.getByTestId('read-grid-slice').click()
           const result = (await json(await observed, 'GRIB actual slice button')).data.object.content.json
           const valid = Array.from({ length: field.height }, (_, y) => Array.from({ length: field.width }, (_, x) => !(field.missing && y === 1 && x === 1)))
-          const values = valid.map((row, y) => row.map((ok, x) => !ok ? 'NaN' : field.missing && y === 0 && x === 0 ? '9999.0' : String(field.base + y * field.width + x) + (Number.isInteger(field.base) ? '.0' : '')))
+          const values = valid.map((row, y) => row.map((ok, x) => !ok ? 'NaN' : field.missing && y === 0 && x === 0 ? '9999.0' : (() => { const value = field.base + (field.constant ? 0 : y * field.width + x) * (field.step ?? 1); return String(value) + (Number.isInteger(value) ? '.0' : '') })()))
           expect(result.selection).toEqual({ variable: `message-${field.number}`, indices: [], x: 0, y: 0, width: field.width, height: field.height })
           expect(result.values).toEqual(values); expect(result.valid).toEqual(valid)
           expect(result.value_mode).toBe('decoded_native_units'); expect(result.spatial).toBeNull()

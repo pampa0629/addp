@@ -80,7 +80,7 @@ COPY engines/geopython-workflow/api_server.py .
 COPY engines/geopython-workflow/private_execution.py engines/geopython-workflow/private_files.py engines/geopython-workflow/private_file_api.py ./
 COPY engines/geopython-workflow/container_entrypoint.sh .
 
-RUN python -c "from osgeo import gdal; assert gdal.GetDriverByName('GRIB'), 'GRIB2 requires GRIB'; assert gdal.GetDriverByName('JP2OpenJPEG'), 'JPEG2000 requires JP2OpenJPEG'; assert gdal.GetDriverByName('GS7BG'), 'Surfer 7 requires GS7BG'; assert gdal.GetDriverByName('GSBG'), 'Surfer 6 Binary requires GSBG'; assert gdal.GetDriverByName('GSAG'), 'Surfer 6 ASCII requires GSAG'"
+RUN python -c "from osgeo import gdal; assert gdal.GetDriverByName('GRIB'), 'GRIB requires GRIB'; assert gdal.GetDriverByName('JP2OpenJPEG'), 'JPEG2000 requires JP2OpenJPEG'; assert gdal.GetDriverByName('GS7BG'), 'Surfer 7 requires GS7BG'; assert gdal.GetDriverByName('GSBG'), 'Surfer 6 Binary requires GSBG'; assert gdal.GetDriverByName('GSAG'), 'Surfer 6 ASCII requires GSAG'"
 
 # Read with the actual native ORC wheel before admitting the product image.
 RUN python - <<'PYORC'
@@ -139,6 +139,34 @@ with tempfile.TemporaryDirectory(prefix='addp-grib-build-') as work:
     assert result['variable']['attributes']['GRIB_UNIT']['values']==['[K]']
     assert result['variable']['grid']['transform']==[249.5,1.,0.,-9.5,0.,-1.]
 print('GRIB2 native units and bitmap image smoke passed')
+
+# Independent GRIB1 simple/bitmap, scaled interval/layer and constant bytes.
+raw=bytes.fromhex("""
+475249420000720100001c020751ffc00b6401f41a01020300010300000000001500000000002000ff000004
+000300753001adb080006d6001b96803e803e80000000000000008040000fbf0000022080000000000001027
+0f0119011a011b011c011e011f01200121012201230037373737475249420000660100001c020751ff800b65
+32641a01020300010306040002001500000000002000ff000003000300753003d09080006d6003d86003e803
+e8000000000000001e088002c150000010000f00100011001200130014001500160017003737373747524942
+0000540100001c020751ff800b6900021a0102030001012c0a0000001500000000002000ff00000200040075
+3001adb08000697801b19803e803e8000000000000000c08000043118000000037373737
+""")
+with tempfile.TemporaryDirectory(prefix='addp-grib1-build-') as work:
+    path=Path(work)/'input.grib1';path.write_bytes(raw)
+    plan={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'grib','access':{'method':'mounted_path','path':str(path)}}}
+    info=OPERATORS['grib.inspect']['function'](access_plan=plan)
+    assert info['format_info']['encoding']=='GRIB1' and info['format_info']['profile']=='grib1_regular_fields/v1'
+    assert info['format_info']['source_version']=='sha256:'+hashlib.sha256(raw).hexdigest()
+    expected=[([['9999.0','281.0','282.0','283.0'],['284.0','NaN','286.0','287.0'],['288.0','289.0','290.0','291.0']],[[True]*4,[True,False,True,True],[True]*4]),
+        ([['-1.25','-1.0','-0.75'],['-0.5','-0.25','0.0'],['0.25','0.5','0.75']],[[True]*3]*3),([['280.0']*2]*4,[[True]*2]*4)]
+    for number,(values,valid) in enumerate(expected,1):
+        result=OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=dict(variable=f'message-{number}',indices=[],x=0,y=0,width=len(values[0]),height=len(values)))
+        assert result['values']==values and result['valid']==valid
+        assert result['variable']['attributes']['GRIB_UNIT']['values']==['[K]']
+        if number==2:
+            facts=result['variable']['message']
+            assert facts['time']['operation']=='accumulation' and facts['time']['start_utc']=='2026-01-02T06:00:00+00:00' and facts['time']['end_utc']=='2026-01-02T09:00:00+00:00'
+            assert facts['level']['unit']=='kPa' and facts['level']['upper']==50 and facts['level']['lower']==100
+print('GRIB1 values bitmap time and layer image smoke passed')
 PYGRIB
 
 # Verify the packaged API and health route without starting a service or contacting System.

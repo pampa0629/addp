@@ -19,7 +19,7 @@ type Plugin struct{}
 
 func (*Plugin) Format() format.FormatType { return format.FormatGRIB }
 func (p *Plugin) Descriptor() format.FormatDescriptor {
-	return format.FormatDescriptor{ID: "builtin-grib", Format: p.Format(), I18nKey: "format.grib", DataType: datatype.Container, Layouts: []string{format.LayoutSingle}, Identification: format.FormatIdentification{Extensions: []string{".grib", ".grb", ".grib2", ".grb2"}, MimeTypes: []string{"application/x-grib"}, ContentSignatures: []string{"hex:47524942"}}}
+	return format.FormatDescriptor{ID: "builtin-grib", Format: p.Format(), I18nKey: "format.grib", DataType: datatype.Container, Layouts: []string{format.LayoutSingle}, Identification: format.FormatIdentification{Extensions: []string{".grib", ".grb", ".grib1", ".grb1", ".grib2", ".grb2"}, MimeTypes: []string{"application/x-grib"}, ContentSignatures: []string{"hex:47524942"}}}
 }
 func (*Plugin) RequiredContainerInfoOperators() []string  { return []string{"grib.inspect"} }
 func (*Plugin) RequiredContainerSliceOperators() []string { return []string{"grib.read_slice"} }
@@ -80,7 +80,7 @@ func (b *bound) DescribeContainer(ctx context.Context, _ *format.ParseOptions) (
 	}
 	info := description.FormatInfo
 	c := description.Container
-	if payload["schema_version"] != "gdal.grib.inspect/v1" || info["driver"] != "GRIB" || info["encoding"] != "GRIB2" || info["profile"] != "grib2_regular_fields/v1" || info["value_mode"] != "decoded_native_units" || info["scan_complete"] != true || !format.ValidContainerSourceVersion(info["source_version"]) || c == nil || c.ChildCount != len(c.Children) || c.ChildCount < 1 || c.ChildCount > 128 || c.ResourceCount != 1 {
+	if payload["schema_version"] != "gdal.grib.inspect/v1" || info["driver"] != "GRIB" || !((info["encoding"] == "GRIB2" && info["profile"] == "grib2_regular_fields/v1") || (info["encoding"] == "GRIB1" && info["profile"] == "grib1_regular_fields/v1")) || info["value_mode"] != "decoded_native_units" || info["scan_complete"] != true || !format.ValidContainerSourceVersion(info["source_version"]) || c == nil || c.ChildCount != len(c.Children) || c.ChildCount < 1 || c.ChildCount > 128 || c.ResourceCount != 1 {
 		return nil, fmt.Errorf("GRIB inspection proof incomplete")
 	}
 	for i, child := range c.Children {

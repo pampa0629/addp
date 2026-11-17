@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
 
-for (const lang of ['zh-cn', 'en']) test(`GRIB fields preserve decoded units and independent grids (${lang})`, async ({ page }) => {
+for (const edition of [2, 1]) for (const lang of ['zh-cn', 'en']) test(`GRIB${edition} fields preserve decoded units and independent grids (${lang})`, async ({ page }) => {
   const locator = 'addp://engine/14/path/weather.grb2?type=file&item_id=31'
   const rootLocator = 'addp://engine/14/path/?type=root&node_id=1'
   const item = { id: locator, locator, label: 'weather.grb2', type: 'file', hasChildren: false }
@@ -12,6 +12,13 @@ for (const lang of ['zh-cn', 'en']) test(`GRIB fields preserve decoded units and
     attributes: {"GRIB_COMMENT": {"type": "String", "values": ["Temperature [K]"]}, "GRIB_DISCIPLINE": {"type": "String", "values": ["0(Meteorological)"]}, "GRIB_ELEMENT": {"type": "String", "values": ["TMP"]}, "GRIB_FORECAST_SECONDS": {"type": "String", "values": ["21600"]}, "GRIB_IDS": {"type": "String", "values": ["CENTER=7(US-NCEP) SUBCENTER=0 MASTER_TABLE=2 LOCAL_TABLE=0 SIGNF_REF_TIME=1(Start_of_Forecast) REF_TIME=2026-01-02T03:00:00Z PROD_STATUS=0(Operational) TYPE=1(Forecast)"]}, "GRIB_PDS_PDTN": {"type": "String", "values": ["0"]}, "GRIB_PDS_TEMPLATE_ASSEMBLED_VALUES": {"type": "String", "values": ["0 0 2 0 0 0 0 1 6 103 0 2 255 -127 -2147483647"]}, "GRIB_PDS_TEMPLATE_NUMBERS": {"type": "String", "values": ["0 0 2 0 0 0 0 0 1 0 0 0 6 103 0 0 0 0 2 255 255 255 255 255 255"]}, "GRIB_REF_TIME": {"type": "String", "values": ["1767322800"]}, "GRIB_SHORT_NAME": {"type": "String", "values": ["2-HTGL"]}, "GRIB_UNIT": {"type": "String", "values": ["[K]"]}, "GRIB_VALID_TIME": {"type": "String", "values": ["1767344400"]}}
   } }))
   const slices = []
+  if (edition === 1) for (const field of variables) {
+    field.native.attributes = {
+      GRIB_UNIT: { type: 'String', values: ['[K]'] },
+      GRIB1_TIME: { type: 'String', values: [JSON.stringify({ reference_utc: '2026-01-02T03:00:00+00:00', range_indicator: 4, operation: 'accumulation', start_utc: '2026-01-02T06:00:00+00:00', end_utc: '2026-01-02T09:00:00+00:00', p1: 3, p2: 6, unit_code: 1 })] },
+      GRIB1_LEVEL: { type: 'String', values: [JSON.stringify({ type_code: 101, raw_octets: [50, 100], unit: 'kPa', upper: 50, lower: 100 })] },
+    }
+  }
   let changed = false
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), lang)
   await page.route('**/api/v1/**', route => {
@@ -40,6 +47,11 @@ for (const lang of ['zh-cn', 'en']) test(`GRIB fields preserve decoded units and
   })
   await page.goto('/data-explorer?locator=' + encodeURIComponent(locator))
   await expect(page.getByTestId('grid-variable-details')).toContainText('[K]')
+  if (edition === 1) {
+    await expect(page.getByTestId('grid-variable-details')).toContainText('accumulation')
+    await expect(page.getByTestId('grid-variable-details')).toContainText('kPa')
+    await expect(page.getByTestId('grid-variable-details')).toContainText('2026-01-02T09:00:00+00:00')
+  }
   await expect(page.locator('.grid-container-preview')).toContainText(lang === 'en' ? 'Decoded values in the file' : '按文件声明单位解码')
   await page.getByTestId('read-grid-slice').click()
   await expect(page.locator('td[data-raw="9999.0"]').first()).toHaveAttribute('data-valid', 'true')

@@ -22,5 +22,22 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
         native=result['variable'];assert native['attributes']['GRIB_UNIT']['values']==['[K]']
         assert native['grid']['transform']==[field['west']-.5,1.,0.,field['north']+.5,0.,-1.]
         assert native['attributes']['GRIB_FORECAST_SECONDS']['values']==[str(field['forecast']*3600)]
+        if spec.get('edition')==1:
+            assert native['message']['edition']==1
+            assert native['message']['level']['type_code']==field['level']
+            assert native['message']['level']['raw_octets']==field['level_raw']
+            assert native['message']['time']['range_indicator']==field['time_indicator']
+            assert native['message']['time']['p1']==field['p1'] and native['message']['time']['p2']==field['p2']
     path.write_bytes(raw[:-1]+bytes([raw[-1]^1]))
     assert grib.OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=select)['error_code']=='GRIB_SOURCE_CHANGED'
+
+
+def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
+    docker=(ROOT/'engines/geopython-workflow/Dockerfile').read_text()
+    smoke=docker.split("RUN python - <<'PYGRIB'\n",1)[1].split('\nPYGRIB',1)[0]
+    # Every OPERATORS call already launches the real isolated native worker.
+    # Execute the image's exact assertions without a redundant outer process.
+    exec(compile(smoke,'Dockerfile:PYGRIB','exec'),{})
+    captured=capsys.readouterr()
+    assert 'GRIB2 native units and bitmap image smoke passed' in captured.out
+    assert 'GRIB1 values bitmap time and layer image smoke passed' in captured.out
