@@ -13,7 +13,7 @@
 | Manager 与文件 | [内部产物与 case](Manager文件与预览.md#manager-internal-artifact-lineage) · [混合检索](#manager-hybrid-search) · [KML／GML／TopoJSON S3](Manager文件与预览.md#kmlgmltopojson-的-s3-兼容消费) · [设备静态轨迹](Manager文件与预览.md#设备静态轨迹范围读取) |
 | 表格读取 | [ORC 单文件](Manager文件与预览.md#orc-单文件表格-hosted) · [Avro 单文件](Manager文件与预览.md#avro-单文件表格读取) · [Feather V2](Manager文件与预览.md#feather-v2-基础标量独立-hosted) · [CSV／TSV GB18030 读取设置](Manager文件与预览.md#csvtsv-gb18030-独立读取设置-case) |
 | 表格历史证据 | [ORC 平坦传输／嵌套只读](Manager文件与预览.md#orc-分层验证与历史证据) · [Avro 首轮／复验](Manager文件与预览.md#avro-验证与历史证据) · [Feather 分版本](Manager文件与预览.md#feather-分版本证据) · [GB18030 本地／Hosted](Manager文件与预览.md#gb18030-分层验证与历史证据) |
-| 媒体与容器读取 | [NetCDF](Manager文件与预览.md#netcdf-单文件只读) · [GRIB2](Manager文件与预览.md#grib2-单文件只读) · [ENVI 双文件 COG](Manager文件与预览.md#envi-双文件-cog限定-hosted-已验收) · [Surfer GRD](Manager文件与预览.md#surfer-grd-读取) |
+| 媒体与容器读取 | [NetCDF](科学容器只读验收.md#netcdf-单文件只读) · [GRIB2](科学容器只读验收.md#grib2-单文件只读) · [ENVI 双文件 COG](Manager文件与预览.md#envi-双文件-cog限定-hosted-已验收) · [Surfer GRD](Manager文件与预览.md#surfer-grd-读取) |
 | 媒体读取历史证据 | [NetCDF 授权契约适配](../evidence/资源读取与预览历史证据.md#netcdf-当前元数据授权契约适配--限定正式-hosted-通过) · [GRIB2 数值与页面](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口) · [ENVI 精确组成](../evidence/资源读取与预览历史证据.md#envi-精确双文件现行权限正式复验通过2026-11-04) · [ENVI MinIO 节点](../evidence/资源读取与预览历史证据.md#envi-minio-持续节点新建文件及到期独立-hosted-通过2026-11-04) · [Surfer 四份 GRD](../evidence/资源读取与预览历史证据.md#surfer-6-ascii-扩展及四份-grd-读取--普通-user-hosted-t4) |
 | 矢量与地图 | [拓扑持久化](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](矢量拓扑持久化.md#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
 | 栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](邻近距离.md#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
@@ -33,18 +33,18 @@
 
 见[专题](Manager文件与预览.md)；以下为旧定位。
 
-- <a id="grib2-单文件只读"></a>[GRIB2 单文件只读](Manager文件与预览.md#grib2-单文件只读)
-- <a id="grib2-授权与来源"></a>[GRIB2 授权与来源](Manager文件与预览.md#grib2-授权与来源)
-- <a id="grib2-逐消息数值"></a>[GRIB2 逐消息数值](Manager文件与预览.md#grib2-逐消息数值)
-- <a id="grib2-页面切片与原件"></a>[GRIB2 页面切片与原件](Manager文件与预览.md#grib2-页面切片与原件)
-- <a id="grib2-清理与未覆盖项"></a>[GRIB2 清理与未覆盖](Manager文件与预览.md#grib2-清理与未覆盖项)
-- <a id="grib2-验证与历史证据"></a>[GRIB2 验证与证据](Manager文件与预览.md#grib2-验证与历史证据)
-- <a id="netcdf-单文件只读"></a>[NetCDF 单文件只读](Manager文件与预览.md#netcdf-单文件只读)
-- <a id="netcdf-来源与权限"></a>[NetCDF 来源与权限](Manager文件与预览.md#netcdf-来源与权限)
-- <a id="netcdf-变量与切片"></a>[NetCDF 变量与切片](Manager文件与预览.md#netcdf-变量与切片)
-- <a id="netcdf-页面与原件"></a>[NetCDF 页面与原件](Manager文件与预览.md#netcdf-页面与原件)
-- <a id="netcdf-清理与未覆盖项"></a>[NetCDF 清理与未覆盖](Manager文件与预览.md#netcdf-清理与未覆盖项)
-- <a id="netcdf-验证与历史证据"></a>[NetCDF 验证与证据](Manager文件与预览.md#netcdf-验证与历史证据)
+- <a id="grib2-单文件只读"></a>[GRIB2 单文件只读](科学容器只读验收.md#grib2-单文件只读)
+- <a id="grib2-授权与来源"></a>[GRIB2 授权与来源](科学容器只读验收.md#grib2-授权与来源)
+- <a id="grib2-逐消息数值"></a>[GRIB2 逐消息数值](科学容器只读验收.md#grib2-逐消息数值)
+- <a id="grib2-页面切片与原件"></a>[GRIB2 页面切片与原件](科学容器只读验收.md#grib2-页面切片与原件)
+- <a id="grib2-清理与未覆盖项"></a>[GRIB2 清理与未覆盖](科学容器只读验收.md#grib2-清理与未覆盖项)
+- <a id="grib2-验证与历史证据"></a>[GRIB2 验证与证据](科学容器只读验收.md#grib2-验证与历史证据)
+- <a id="netcdf-单文件只读"></a>[NetCDF 单文件只读](科学容器只读验收.md#netcdf-单文件只读)
+- <a id="netcdf-来源与权限"></a>[NetCDF 来源与权限](科学容器只读验收.md#netcdf-来源与权限)
+- <a id="netcdf-变量与切片"></a>[NetCDF 变量与切片](科学容器只读验收.md#netcdf-变量与切片)
+- <a id="netcdf-页面与原件"></a>[NetCDF 页面与原件](科学容器只读验收.md#netcdf-页面与原件)
+- <a id="netcdf-清理与未覆盖项"></a>[NetCDF 清理与未覆盖](科学容器只读验收.md#netcdf-清理与未覆盖项)
+- <a id="netcdf-验证与历史证据"></a>[NetCDF 验证与证据](科学容器只读验收.md#netcdf-验证与历史证据)
 - <a id="manager-internal-artifact-lineage"></a>[内部产物与血缘](Manager文件与预览.md#manager-internal-artifact-lineage)
 - <a id="明确的验收-case"></a>[验收 case](Manager文件与预览.md#明确的验收-case)
 - <a id="文件读取-case-的公共准备与收尾"></a>[文件读取公共准备与收尾](Manager文件与预览.md#文件读取-case-的公共准备与收尾)

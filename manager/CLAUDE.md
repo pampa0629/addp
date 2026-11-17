@@ -194,6 +194,7 @@ make test-manager-online-runner
 | 入口 | 正文归属 |
 | --- | --- |
 | [Manager Online 场景](../docs/spec/testing/scenarios/Manager文件与预览.md) | 现行 suite／case、身份、断言及清理要求；不表示已运行。 |
+| [科学容器只读验收](../docs/spec/testing/scenarios/科学容器只读验收.md) | GRIB1／2、NetCDF 的权限、数值、页面、下载与清理边界；结果按各固定版本认定。 |
 | [Transfer 私有导入场景](../docs/spec/testing/scenarios/同步与引擎消费.md#manager-私有导入) | 上传者私有来源与传输、扫描的专项验收要求。 |
 | [预览与私有导入历史证据](../docs/spec/testing/验收证据索引.md#manager-预览与私有导入历史证据) | 分版本结果、失败与修复、清理和未覆盖项。 |
 | [租户过程事件有限范围 T4](../docs/spec/testing/evidence/资源读取与预览历史证据.md#manager-租户过程事件有限范围-t42026-10-19) | 固定源码下四种成功任务类型的 11 个执行；与格式复验及事件留存维护分别认定。 |

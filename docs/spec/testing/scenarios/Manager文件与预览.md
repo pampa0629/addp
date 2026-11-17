@@ -4,7 +4,7 @@
 
 共同前置条件见[T4 Online 验收规范](../T4-Online验收规范.md)。各 case 的身份、权限、部署、清理及证据范围分别认定；代码就绪不表示真实 T4 已通过。
 
-导航：[case 选择](#明确的验收-case) · [公共准备与收尾](#文件读取-case-的公共准备与收尾) · [GRIB2](#grib2-单文件只读) · [NetCDF](#netcdf-单文件只读) · [其他格式读取](#surfer-grd-读取) · [模型与完整场景](#部署模型转换与通用清理)。
+导航：[case 选择](#明确的验收-case) · [公共准备与收尾](#文件读取-case-的公共准备与收尾) · [GRIB2](科学容器只读验收.md#grib2-单文件只读) · [NetCDF](科学容器只读验收.md#netcdf-单文件只读) · [其他格式读取](#surfer-grd-读取) · [模型与完整场景](#部署模型转换与通用清理)。
 
 ## manager-internal-artifact-lineage
 
@@ -20,8 +20,8 @@
 | `native-table-avro` | [Avro](#avro-单文件表格读取)：三 codec、标量／日期／小数／UTC、嵌套／Enum／Map；仅平面批量写 Parquet。 |
 | `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六源分页／Transfer→Parquet及各自原件准入。 |
 | `delimited-read-settings` | [CSV／TSV GB18030](#csvtsv-gb18030-独立读取设置-case)：编码、表头、分页、重开及原件，无派生产物，不替代 Transfer T4。 |
-| `native-netcdf` | [NetCDF](#netcdf-单文件只读)：变量／切片、页面及原件，无任务／持久缓存。 |
-| `native-grib` | [GRIB2](#grib2-单文件只读)与[GRIB1扩展](#grib1-扩展验收限定正式-hosted通过)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
+| `native-netcdf` | [NetCDF](科学容器只读验收.md#netcdf-单文件只读)：变量／切片、页面及原件，无任务／持久缓存。 |
+| `native-grib` | [GRIB2](科学容器只读验收.md#grib2-单文件只读)与[GRIB1扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
 | `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)：精确组成、节点授权、原件／COG／缓存与撤权恢复。 |
 | `kml-export` | [KML 页面导出](#kml-实际页面导出)：PostGIS 源、真实按钮下载与独立 XML 核对。 |
 | `filegdb-export` | [PostGIS→FileGDB](#filegdb-实际页面导出)：ZIP 回读、跨账号拒绝与排队撤权，独立于 NFS FileGDB 读授权。 |
@@ -48,7 +48,7 @@ Job、Artifact、`manager-case.json` 均须含所选 case；独立通过不算 f
 
 | case | 独有身份、来源与交付 |
 | --- | --- |
-| `native-netcdf`／`native-grib` | 六项消费权限见[NetCDF](#netcdf-来源与权限)，十四／八份精确 metadata Grant，未迁精确内容源授权；无任务／持久缓存。GRIB 初始化资格／NFS 原件拒绝按[GRIB1 现行扩展](#grib1-扩展验收限定正式-hosted通过)，不倒填旧 GRIB2 记录。 |
+| `native-netcdf`／`native-grib` | 六项消费权限见[NetCDF](科学容器只读验收.md#netcdf-来源与权限)，十四／八份精确 metadata Grant，未迁精确内容源授权；无任务／持久缓存。GRIB 初始化资格／NFS 原件拒绝按[GRIB1 现行扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)，不倒填旧 GRIB2 记录。 |
 | `native-table-orc`／`native-table-avro`／`native-table-feather` | 十一项消费见[ORC](#orc-入口与权限)；Avro／Feather 准备十三项、源扫描归初始化。保留各自 Transfer 及只读拒绝；Avro／Feather MinIO 核 API／按钮原件，NFS403 JSON、无附件／按钮，ORC 按自身版本。 |
 | `delimited-read-settings` | 消费十／准备十三项，Common Go reader、初始化 basic 及精确 Grant，无派生产物。 |
 | `native-raster-media` | 消费十项；初始化只签当轮 MinIO `raster`前缀非递归 read、直属范围、退出撤回，不改角色／管理范围。GRD 无产物；TIFF 扫描资格、整项 read、到期及 sidecar 另验。 |
@@ -60,90 +60,24 @@ Job、Artifact、`manager-case.json` 均须含所选 case；独立通过不算 f
 
 ### GRIB2 单文件只读
 
-阅读导航：[授权与来源](#grib2-授权与来源) · [逐消息数值](#grib2-逐消息数值) · [页面切片与原件](#grib2-页面切片与原件) · [清理与未覆盖项](#grib2-清理与未覆盖项) · [验证与历史证据](#grib2-验证与历史证据)。
+授权、数值、页面、原件、清理与固定版本证据见[科学容器专题](科学容器只读验收.md#grib2-单文件只读)。
 
-#### GRIB2 授权与来源
-
-独立 `native-grib`，正式准入归[GRIB2 契约](../../builtin-formats/媒体与地图数据集.md#grib2-单文件只读限定范围已验收)。沿公共六项权限、GeoPython／NFS／MinIO，不启动 Model3D／Transfer 或增加执行权限；精确内容源 Grant 迁移不在此批。
-
-原 GRIB2 双存储各两份独立字节编码原件、每份三条单场消息，含简单打包／IEEE32／64、异尺寸／同要素异时刻、两扫描方向、合法 9999／bitmap 缺失及>180°原生经度。分离初始化 User 为四精确源签 metadata_read，核前隐藏／后结构可见／退出撤回隐藏；不签目录或以元数据 Grant 证明内容授权／完整性。后继八源及初始化变化只按下节认定。
-
-#### GRIB2 逐消息数值
-
-普通 User 经 Manager 内容权限及 Security 核完整参数／版本／数值，不向 Meta 索取内容属性。逐消息独立对全部值／mask／单位／时间／网格、有界窗口、错误选择及源变化拒绝；不读外部 idx、不自动换单位／重排经度。
-
-#### GRIB2 页面切片与原件
-
-标准 1280px 及 Hosted 视口中用完整属性切消息、清旧结果，核按钮可点、切片 DOM 和滚动可见的首尾格；十二场各一数值表截图，四原件另核 API／真实按钮字节和页面截图。此为旧 GRIB2 固定轮，NFS 原件 200 不代表后继现行策略。
-
-#### GRIB2 清理与未覆盖项
-
-不写回 Meta、不生成地图／任务／缓存，Native 临时快照须清空，源／Grant 及部署按[公共收尾](#文件读取-case-的公共准备与收尾)。Hosted 模板 0 不证明仅 Native 覆盖的模板 8；GRIB1 另验，不外推单消息多场、其他网格／压缩／本地扩展、地图／COG、科学计算或导出。
-
-#### GRIB2 验证与历史证据
-
-门禁：`make test-geopython-workflow`（独立字节夹具、真实 Native Worker）、`make test-common-frontend`、`make test-module MODULE=common GO_ONLY=1`、受影响 Meta／Manager／Transfer Go、`make test-manager-frontend`，两 Runner 沿公共入口。Hosted 选 `suite=manager-internal-artifact-lineage`／`manager_case=native-grib`，业务命令 `ADDP_ONLINE_MANAGER_CASE=native-grib make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。
-
-`6e7ae87559552bd7d5bad122f4f0259f963d7b46`、Run `41572302717`／Job `125707787735`的 Owner／Browser v2 通过十二可见切片、四原件、撤权／清理，见[分层证据](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口)。v1 数值／DOM／原件有效但属性遮控件，不证切片可见；修后首验 `stage=scan / cases=[]`缺元数据授权，未进数值／页面。GeoPython CI 取消、本机 TLS 夹具错误仍按各层记录，不认整轮 CI 通过。
-
-<a id="grib1-扩展验收待正式执行"></a>
-
-#### GRIB1 扩展验收（限定正式 Hosted通过）
-
-2026-11-17 批准标准规则网格子集，规则与 Native 拒绝矩阵归[GRIB1 扩展](../../builtin-formats/媒体与地图数据集.md#grib1-扩展已批准验收分层记录)。仍原 case／部署／六项消费，仅来源初始化十一→十三项、加 `meta.scan_task.execute`／`meta.scan_task.read`：已有管理资格者对 NFS `grib`首次有界扫，MinIO 仍消费者，记录两存储扫描身份／范围／execution 并启 `scan_preparation=True`精确核验。不改其他 case／真实身份／服务权限／Grant，不迁内容源授权。
-
-| 核对面 | 扩展独有断言 |
-| --- | --- |
-| 八源二十四场 | 保原两 GRIB2 夹具完整字节／SHA／断言，加两 GRIB1、各三消息、双存储独立核验。GRIB1 全值／bitmap、合法 9999、常量、负参考／缩放、两扫描／异网格／重复要素、原表身份／单位、层次字节及 hPa／kPa／m、即时／累计／双字节预报时间，不能仅凭格式化显示名。目录／切片保 edition/profile。 |
-| 页面／原件 | API 与可见页面核消息切换／数值表、源变化拒绝／取消；四 MinIO 核 API／按钮完整字节／大小／SHA；四 NFS 须 403 JSON、无附件、download 关闭／无按钮，不把物理种子核对当下载通过。 |
-| Native／清理 | 未知／地方表、无 GDS、复杂打包／谱、外部 bitmap、坏长度／填充、混 edition、错时间／世纪／层次／边界及 GDAL 时间／单位不一致均拒绝。Native 临时快照、八源／Grant／部署／Infra 分别清，无地图／COG／Transfer 任务／持久缓存；重复切片一致不称缓存复用。 |
-
-沿既有 Native 测试／Online 自动枚举，Browser 明确八源，不另开入口。`e1a369f1296e030a739cd21e8c346f16e772562e`的[Run44013377421／Job133805423939](https://github.com/pampa0629/addp/actions/runs/44013377421/job/133805423939)正式通过上述数值／声明、八页面／二十四切片、四下载／四拒绝及清理，撤八 metadata Grant 后详情 404。首两轮失败、原件哈希及 Linux／本地层级见[证据记录](../evidence/资源读取与预览历史证据.md#grib1-标准子集与-grib2-回归正式-hosted2026-11-17)，不由旧 GRIB2 或无关 Platform 结果追认。
+- <a id="grib2-授权与来源"></a>[GRIB2 授权与来源](科学容器只读验收.md#grib2-授权与来源)
+- <a id="grib2-逐消息数值"></a>[GRIB2 逐消息数值](科学容器只读验收.md#grib2-逐消息数值)
+- <a id="grib2-页面切片与原件"></a>[GRIB2 页面切片与原件](科学容器只读验收.md#grib2-页面切片与原件)
+- <a id="grib2-清理与未覆盖项"></a>[GRIB2 清理与未覆盖项](科学容器只读验收.md#grib2-清理与未覆盖项)
+- <a id="grib2-验证与历史证据"></a>[GRIB2 验证与历史证据](科学容器只读验收.md#grib2-验证与历史证据)
+- <a id="grib1-扩展验收待正式执行"></a><a id="grib1-扩展验收限定正式-hosted通过"></a>[GRIB1 扩展验收（限定正式 Hosted通过）](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)
 
 ### NetCDF 单文件只读
 
-阅读导航：[来源与权限](#netcdf-来源与权限) · [变量与切片](#netcdf-变量与切片) · [页面与原件](#netcdf-页面与原件) · [清理与未覆盖项](#netcdf-清理与未覆盖项) · [验证与历史证据](#netcdf-验证与历史证据)。
+授权、数值、页面、原件、清理与固定版本证据见[科学容器专题](科学容器只读验收.md#netcdf-单文件只读)。
 
-#### NetCDF 来源与权限
-
-`native-netcdf`沿公共 GeoPython／NFS／MinIO 准备，格式准入归[NetCDF 契约](../../builtin-formats/媒体与地图数据集.md#netcdf-单文件只读)，不执行模型／点云／文档／Transfer 或生成任务。消费严格六项：manager.content.read、manager.data_item.read、meta.catalog.read、meta.scan_task.execute、meta.scan_task.read、monitor.execution.read；初始化沿原范围，浏览器不带其凭据。
-
-扫描后分离初始化 User 以既有 ExactFileMetadataGrants 签十四精确 metadata_read，核前隐藏／后结构可见／撤回隐藏及 404，不签目录／前缀或新内容源 Grant。完整内容仍沿 Manager 既有权限，不宣称精确组成内容授权已接入。
-
-| 七样例（两存储十四源） | 固定差异 |
-| --- | --- |
-| 三经典独立编码源 | CDF-1 未知坐标、CDF-2 显式 UTM50N 规则网格、CDF-5 超 2^53 Int64。 |
-| 四 NC4 固定原件 | 独立 netCDF-C/HDF5 生成 Int32 压缩、Int64、近上限 UInt64、UTM50N 规则网格，不用产品 reader 造期望；原件留存、独立 oracle 核值／mask／网格。 |
-
-全部含两时间层、缺失值、比例／偏移及 360_day 维。
-
-#### NetCDF 变量与切片
-
-Meta 只容器结构；消费者经 Manager 核原始类型／维度／日历／组成 profile／源版本并分存。十四源逐项核身份、维序、NC4 完整组成、大小／SHA、二维全值／mask、小窗口、重复只读切片、越界／伪子数据集拒绝、经典／NC4 源变化 409 及原件恢复；重复读取不是持久缓存。
-
-父容器无统一 extent，无 CRS 不定位；已证规则网格才显示范围，不据名称猜 4326。
-
-#### NetCDF 页面与原件
-
-实际页面逐格原值／valid 状态、切时间层清旧图；核表格可视高度和滚动可见末格，有定位样例分别留数值网格／地图图，不让地图压没表格。API／真实按钮下载按公共完整交付，留哈希／截图。
-
-`manager-netcdf.json`为 `addp.manager-netcdf/v2`，必须现行 metadata 授权证明、拒旧回执；`manager-netcdf-browser.json`为 `addp.manager-netcdf-browser/v1`，逐源核 schema、值／mask／时间切换、下载及截图。
-
-#### NetCDF 清理与未覆盖项
-
-公共收尾另核源未改写、十四 Grant／NFS 文件及对象删除、identity／engine／deployment／Infra 清理；无任务／业务成果／缓存。NC4 外部／复杂组成拒绝由原生 T1 和 Linux 产品构建另证，正常页面不代；嵌套组、复杂类型、跨文件、任意 CF、科学处理／输出未覆盖。
-
-#### NetCDF 验证与历史证据
-
-入口：`make test-geopython-workflow`、`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=manager GO_ONLY=1`、`make test-manager-frontend`、公共 Manager runner。业务 `ADDP_ONLINE_MANAGER_CASE=native-netcdf make test-online ONLINE_SUITE=manager-internal-artifact-lineage`，Hosted 选同名 case。
-
-| 证据 | 应保留的结论／缺口 |
-| --- | --- |
-| [经典 CDF](../evidence/资源读取与预览历史证据.md#netcdf-经典-cdf-单文件只读--限定-hosted-通过) | CDF-1／2／5；首轮页面失败，数值／清理不补按钮和浏览器后快照。 |
-| [NC4 根组](../evidence/资源读取与预览历史证据.md#netcdf-4-根组数值-profile--本地门禁与正式复验) | 组成拒绝假阳性、ARM64 下载、Linux 十项失败及维度引用符号修复分轮；修后 Hosted／Linux 命名回归不等完整 GeoPython 超时取消通过。 |
-| [元数据授权适配](../evidence/资源读取与预览历史证据.md#netcdf-当前元数据授权契约适配--限定正式-hosted-通过) | `5e5d436f8eb433890daa8b04d9c751fe5e7044bc`／Job `125763328404`：十四源、精确 Grant、结构／内容及清理。UInt64 截图裁切、首层缺失由 DOM／JSON 证，范围框不证外部底图／影像。 |
-
-旧回执不代现行授权，本地失败／CI 取消仍保留；固定版本不证明任意 NC4／CF 或当前全部环境。
+- <a id="netcdf-来源与权限"></a>[NetCDF 来源与权限](科学容器只读验收.md#netcdf-来源与权限)
+- <a id="netcdf-变量与切片"></a>[NetCDF 变量与切片](科学容器只读验收.md#netcdf-变量与切片)
+- <a id="netcdf-页面与原件"></a>[NetCDF 页面与原件](科学容器只读验收.md#netcdf-页面与原件)
+- <a id="netcdf-清理与未覆盖项"></a>[NetCDF 清理与未覆盖项](科学容器只读验收.md#netcdf-清理与未覆盖项)
+- <a id="netcdf-验证与历史证据"></a>[NetCDF 验证与历史证据](科学容器只读验收.md#netcdf-验证与历史证据)
 
 ### Surfer GRD 读取
 

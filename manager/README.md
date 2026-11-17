@@ -216,6 +216,7 @@ PMTiles 是矢量瓦片归档格式，MVT 是归档内瓦片类型，分别进�
 
 - [模块验证说明](./CLAUDE.md#开发与验证) — 标准门禁、运行环境与实际覆盖范围。
 - [Manager Online 场景](../docs/spec/testing/scenarios/Manager文件与预览.md) — 隔离链路的身份、固定断言及清理要求。
+- [科学容器只读验收](../docs/spec/testing/scenarios/科学容器只读验收.md) — GRIB1／2、NetCDF 的权限、数值、页面、下载与清理边界。
 - [Manager 私有导入场景](../docs/spec/testing/scenarios/同步与引擎消费.md#manager-私有导入) — 私有来源、传输、扫描与结果验证的专项范围。
 - [预览与私有导入历史证据](../docs/spec/testing/验收证据索引.md#manager-预览与私有导入历史证据) — 分版本结果与原始记录；其他专题的证据亦由该索引定位。
 - [租户过程事件有限范围 T4](../docs/spec/testing/evidence/资源读取与预览历史证据.md#manager-租户过程事件有限范围-t42026-10-19) — 固定源码下的实际事件读取、清理与未覆盖范围；不代替当前事件或留存契约。
