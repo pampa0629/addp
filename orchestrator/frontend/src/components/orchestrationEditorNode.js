@@ -311,9 +311,9 @@ export function renderOrchestrationNodeExecution(item, state, label) {
     name: 'execution-outline', capture: false
   })
   if (running) {
-    const attrs = { x: -NODE_WIDTH / 2 - 5, y: -height / 2 - 5,
-      width: NODE_WIDTH + 10, height: height + 10, radius: 10,
-      stroke: color, lineWidth: 4 }
+    const attrs = { x: -NODE_WIDTH / 2 - 10, y: -height / 2 - 10,
+      width: NODE_WIDTH + 20, height: height + 20, radius: 12,
+      fill: 'transparent', stroke: color, lineWidth: 4, shadowColor: color, shadowBlur: 12 }
     if (existingPulse) {
       // Keep the animation phase when polling updates the same running step.
       existingPulse.attr(attrs)
@@ -322,8 +322,11 @@ export function renderOrchestrationNodeExecution(item, state, label) {
         attrs: { ...attrs, opacity: 1 }, name: 'execution-pulse', capture: false
       })
       if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        pulse.animate(ratio => ({ opacity: 0.65 + 0.35 * Math.cos(ratio * Math.PI * 2) }),
-          { duration: 1600, repeat: true })
+        pulse.animate(ratio => {
+          const intensity = (1 + Math.cos(ratio * Math.PI * 2)) / 2
+          group.find(shape => shape.get('name') === 'execution-icon')?.attr({ opacity: 0.3 + 0.7 * intensity })
+          return { opacity: 0.15 + 0.85 * intensity, shadowBlur: 6 + 12 * intensity }
+        }, { duration: 1200, repeat: true })
       }
     }
   }
@@ -335,7 +338,7 @@ export function renderOrchestrationNodeExecution(item, state, label) {
   })
   group.addShape('text', {
     attrs: { text: symbol, x: NODE_WIDTH / 2 - width + 14, y: -height / 2 - 21,
-      fill: color, textAlign: 'center', textBaseline: 'middle', fontSize: 16, fontWeight: 700 },
+      fill: color, opacity: 1, textAlign: 'center', textBaseline: 'middle', fontSize: 16, fontWeight: 700 },
     name: 'execution-icon', capture: false
   })
   group.addShape('text', {

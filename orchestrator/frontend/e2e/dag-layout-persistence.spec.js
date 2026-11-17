@@ -1683,8 +1683,25 @@ test('live execution displays running and completed nodes, exposes failure, and 
   await startLiveExecution(page)
   await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '运行中', [TARGET_NODE_ID]: '等待执行' })
   await expect.poll(async () => Object.keys(await executionPulses(page))).toEqual([SOURCE_NODE_ID])
-  const initialOpacity = (await executionPulses(page))[SOURCE_NODE_ID].opacity
-  await expect.poll(async () => Math.abs((await executionPulses(page))[SOURCE_NODE_ID].opacity - initialOpacity)).toBeGreaterThan(0.1)
+  const flashSamples = []
+  await expect.poll(async () => {
+    flashSamples.push(await page.locator('#dag-container').evaluate((el, id) => {
+      const graph = el.__vueParentComponent.setupState.graph
+      const group = graph.findById(id).getContainer()
+      const shape = name => group.find(shape => shape.get('name') === name)
+      const pulse = shape('execution-pulse'), icon = shape('execution-icon')
+      return { outline: pulse.attr('opacity'), marker: icon.attr('opacity') ?? 1,
+        glow: pulse.attr('shadowBlur') || 0,
+        gap: shape('orchestration-node-card').attr('x') - pulse.attr('x'),
+        title: shape('orchestration-node-title').attr('opacity') ?? 1,
+        label: shape('execution-label').attr('opacity') ?? 1,
+        waitingAnimated: graph.findById('target-step').getContainer().get('children').some(shape => shape.get('animations')?.length > 0) }
+    }, SOURCE_NODE_ID))
+    const range = key => Math.max(...flashSamples.map(sample => sample[key])) - Math.min(...flashSamples.map(sample => sample[key]))
+    return { outlineFlashes: range('outline') > 0.6, markerFlashes: range('marker') > 0.5,
+      glowFlashes: range('glow') > 6,
+      contentStable: flashSamples.every(sample => sample.title === 1 && sample.label === 1 && !sample.waitingAnimated && sample.gap >= 8) }
+  }, { intervals: [100] }).toEqual({ outlineFlashes: true, markerFlashes: true, glowFlashes: true, contentStable: true })
   for (const theme of ['light', 'dark', 'blue', 'purple']) {
     await page.evaluate(theme => { document.documentElement.className = theme === 'light' ? '' : `dark ${theme === 'dark' ? '' : theme}` }, theme)
     await expect.poll(() => page.locator('#dag-container').evaluate((element, source) => {
@@ -1823,6 +1840,10 @@ test('live execution uses a static running outline for reduced motion', async ({
   await page.goto(`/orchestrations/${fixture.id}/edit`)
   await startLiveExecution(page)
   await expect.poll(() => executionPulses(page)).toEqual({ [SOURCE_NODE_ID]: { opacity: 1, animations: 0 } })
+  await expect.poll(() => page.locator('#dag-container').evaluate((el, id) => {
+    const icon = el.__vueParentComponent.setupState.graph.findById(id).getContainer().find(shape => shape.get('name') === 'execution-icon')
+    return { opacity: icon.attr('opacity'), animations: icon.get('animations')?.length || 0 }
+  }, SOURCE_NODE_ID)).toEqual({ opacity: 1, animations: 0 })
   await page.getByRole('button', { name: '调度', exact: true }).click()
   const schedule = page.getByRole('dialog', { name: '设置定时调度', exact: true })
   await schedule.getByRole('button', { name: '每小时', exact: true }).click()
