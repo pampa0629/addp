@@ -21,7 +21,7 @@
 | `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六源分页／Transfer→Parquet及各自原件准入。 |
 | `delimited-read-settings` | [CSV／TSV GB18030](#csvtsv-gb18030-独立读取设置-case)：编码、表头、分页、重开及原件，无派生产物，不替代 Transfer T4。 |
 | `native-netcdf` | [NetCDF](科学容器只读验收.md#netcdf-单文件只读)：变量／切片、页面及原件，无任务／持久缓存。 |
-| `native-grib` | [GRIB2](科学容器只读验收.md#grib2-单文件只读)与[GRIB1扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
+| `native-grib` | [GRIB2](科学容器只读验收.md#grib2-单文件只读)、[GRIB1扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)及[5.3扩展](科学容器只读验收.md#grib2-模板53二阶空间差分扩展已批准待正式验收)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
 | `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)：精确组成、节点授权、原件／COG／缓存与撤权恢复。 |
 | `kml-export` | [KML 页面导出](#kml-实际页面导出)：PostGIS 源、真实按钮下载与独立 XML 核对。 |
 | `filegdb-export` | [PostGIS→FileGDB](#filegdb-实际页面导出)：ZIP 回读、跨账号拒绝与排队撤权，独立于 NFS FileGDB 读授权。 |
@@ -50,7 +50,7 @@ Job、Artifact、`manager-case.json` 均须含所选 case；独立通过不算 f
 
 | case | 独有身份、来源与交付 |
 | --- | --- |
-| `native-netcdf`／`native-grib` | 六项消费权限见[NetCDF](科学容器只读验收.md#netcdf-来源与权限)，十四／八份精确 metadata Grant，未迁精确内容源授权；无任务／持久缓存。GRIB 初始化资格／NFS 原件拒绝按[GRIB1 现行扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)，不倒填旧 GRIB2 记录。 |
+| `native-netcdf`／`native-grib` | 六项消费权限见[NetCDF](科学容器只读验收.md#netcdf-来源与权限)，十四／十二份精确 metadata Grant，未迁精确内容源授权；无任务／持久缓存。GRIB1历史初始化资格／NFS原件拒绝按[GRIB1 现行扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)，不倒填旧 GRIB2 记录。 |
 | `native-table-orc`／`native-table-avro`／`native-table-feather` | 十一项消费见[ORC](#orc-入口与权限)；Avro／Feather 准备十三项、源扫描归初始化。保留各自 Transfer 及只读拒绝；Avro／Feather MinIO 核 API／按钮原件，NFS403 JSON、无附件／按钮，ORC 按自身版本。 |
 | `delimited-read-settings` | 消费十／准备十三项，Common Go reader、初始化 basic 及精确 Grant，无派生产物。 |
 | `native-raster-media` | 消费十项；初始化只签当轮 MinIO `raster`前缀非递归 read、直属范围、退出撤回，不改角色／管理范围。GRD 无产物；TIFF 扫描资格、整项 read、到期及 sidecar 另验。 |

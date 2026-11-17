@@ -6,6 +6,7 @@ import importlib
 import json
 from pathlib import Path
 import subprocess
+import struct
 import time
 from urllib.parse import urlencode
 
@@ -24,8 +25,8 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
     values,valid=FIXTURE.expected(field,x,y,width,height)
     require(result['values']==values and result['valid']==valid,'GRIB numerical values or bitmap changed')
     variable=result['variable'];attributes=variable['attributes']
-    require(attributes['GRIB_UNIT']['values']==['[K]'] and attributes['GRIB_ELEMENT']['values']==['TMP'],'GRIB units or element changed')
-    require(attributes['GRIB_FORECAST_SECONDS']['values']==[str(field['forecast']*3600)] and attributes['GRIB_REF_TIME']['values']==['1767322800'] and attributes['GRIB_VALID_TIME']['values']==[str(1767322800+field['forecast']*3600)] and (spec.get('edition')==1 or attributes['GRIB_SHORT_NAME']['values']==['2-HTGL']),'GRIB reference/valid time or level changed')
+    require(attributes['GRIB_UNIT']['values']==[field.get('unit','[K]')] and attributes['GRIB_ELEMENT']['values']==[field.get('element','TMP')],'GRIB units or element changed')
+    require(attributes['GRIB_FORECAST_SECONDS']['values']==[str(field.get('start_hour',field['forecast'])*3600)] and attributes['GRIB_REF_TIME']['values']==['1767322800'] and attributes['GRIB_VALID_TIME']['values']==[str(1767322800+field['forecast']*3600)] and (spec.get('edition')==1 or attributes['GRIB_SHORT_NAME']['values']==[field.get('short_name','2-HTGL')]),'GRIB reference/valid time or level changed')
     if spec.get('edition')==1:
         message=variable['message']
         require(message['edition']==1 and message['parameter']==dict(centre=7,subcentre=0,process=81,table_version=2,number=11),'GRIB1 exact parameter identity changed')
@@ -42,6 +43,21 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
         require(message['packing']==dict(bits_per_value=field['bits'],original_integer=False,binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale'],reference_ibm_hex={0.:'00000000',-5.:'c1500000',280.:'43118000'}[field['reference']]),'GRIB1 source packing declaration changed')
         for key in ('parameter','time','level','packing'):
             require(json.loads(attributes['GRIB1_'+key.upper()]['values'][0])==message[key],'GRIB1 displayed semantics differ from exact facts')
+    if spec.get('packing')=='complex-spatial':
+        require(attributes.get('GRIB2_DECODE_PRECISION',{}).get('values')==['float32_scaling_float64_output'],'complex GRIB precision disclosure missing')
+        FIXTURE.precision_bound(field,result['values'],result['valid'],x,y)
+        message=variable['message'];utc=lambda h:datetime.fromtimestamp(1767322800+h*3600,timezone.utc).isoformat()
+        require(message['edition']==2 and message['data_template']==3 and message['product_template']==field['product_template'],'complex GRIB template changed')
+        require(message['parameter']==dict(centre=7,subcentre=0,master_table=2,local_table=0,discipline=0,category=field['parameter'][0],number=field['parameter'][1]),'complex GRIB parameter identity changed')
+        expected_time=dict(reference_utc=utc(0),unit_code=1,forecast_value=field['start_hour'],start_utc=utc(field['start_hour']),end_utc=utc(field['forecast']),operation='instant')
+        if field['product_template']==8:expected_time.update(operation='accumulation',statistical_process=1,increment_type=2,interval_unit=1,interval_length=field['forecast']-field['start_hour'],missing_count=0)
+        require(message['time']==expected_time,'complex GRIB original interval changed')
+        expected_level=dict(type_code=103 if field['height_m'] else 1,raw_scale=0,raw_value=field['height_m'],reference='above_ground' if field['height_m'] else 'surface')
+        if field['height_m']:expected_level.update(value=field['height_m'],unit='m')
+        require(message['level']==expected_level,'complex GRIB surface changed')
+        points=field['width']*field['height']-int(field['missing'])
+        require(message['packing']==dict(data_template=3,order=2,extra_octets=2,groups=(points+3)//4,missing_value_management=0,reference_ieee_hex=struct.pack('>f',field['reference']).hex(),binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale']),'complex GRIB packing facts changed')
+        for key in ('parameter','time','level','packing'):require(json.loads(attributes['GRIB2_'+key.upper()]['values'][0])==message[key],'complex GRIB displayed facts differ')
     require(variable['dimensions']==[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],'GRIB independent dimensions changed')
     require(variable['grid']['transform']==[field['west']-.5,1.,0.,field['north']+.5,0.,-1.] and variable['grid']['longitude_policy']=='unchanged' and bool(variable['grid']['crs_wkt']),'GRIB grid/longitude changed')
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
@@ -126,10 +142,11 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 require(not attrs.get('capabilities',{}).get('spatial'),'GRIB parent gained unified spatial extent')
                 children=attrs.get('type_info',{}).get('container',{}).get('children',[])
                 require([v['name'] for v in children]==['message-1','message-2','message-3'],'GRIB message identity or enumeration changed')
-                stage='slice'
+                stage='slice';precision_audits=[]
                 for field in spec['fields']:
                     selection=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height'])
                     result=read(client,locator,selection);validate_slice(result,spec,field)
+                    if spec.get('packing')=='complex-spatial':precision_audits.append(dict(message=field['number'],**FIXTURE.precision_bound(field,result['values'],result['valid'])))
                     require(read(client,locator,selection)==result,'repeated GRIB slice changed')
                     (artifact/f"grib-{storage}-{spec['case_id']}-message{field['number']}.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
                     window=dict(selection,x=1,y=1,width=1,height=1)
@@ -142,7 +159,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 if storage=='minio':(artifact/f"grib-{storage}-{spec['case_id']}{Path(spec['name']).suffix}").write_bytes(original.raw)
                 else:(artifact/f"grib-{storage}-{spec['case_id']}-download-denied.json").write_text(json.dumps(original_proof,indent=2)+'\n')
                 require(client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload==detail,'GRIB preview changed metadata')
-                report['cases'].append(dict(source_case=storage,locator=locator,item_id=item['id'],spec=spec,metadata_verified=True,values_verified=True,mask_verified=True,repeat_stateless_verified=True,window_verified=True,invalid_selection_denied=True,original_download_verified=storage=='minio',original_download=original_proof))
+                report['cases'].append(dict(source_case=storage,locator=locator,item_id=item['id'],spec=spec,metadata_verified=True,values_verified=True,mask_verified=True,precision_audits=precision_audits,repeat_stateless_verified=True,window_verified=True,invalid_selection_denied=True,original_download_verified=storage=='minio',original_download=original_proof))
         stage='source_drift';physical('drift')
         for case in report['cases']:
             changed=read(client,case['locator'],dict(variable='message-1',indices=[],x=0,y=0,width=4,height=3),409)

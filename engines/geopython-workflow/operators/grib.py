@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import resource
+import struct
 import sys
 import tempfile
 import uuid
@@ -36,6 +37,70 @@ def _integer(value, low, high):
     if type(value) is not int or not low <= value <= high:
         raise SliceSelectionError('GRIB slice outside supported bounds')
     return value
+
+
+def _complex_spatial_structure(representation, data, valid_count):
+    """Prove 5.3 grouping and bit consumption, never reconstruct field values."""
+    if len(representation)!=49 or representation[20] not in (0,1) or representation[21]!=1 or representation[22]!=0 or representation[47]!=2 or not 1<=representation[48]<=4:
+        raise ValueError('unsupported GRIB complex spatial profile')
+    groups=int.from_bytes(representation[31:35],'big')
+    if valid_count<2 or not 1<=groups<=valid_count or any(representation[n]>32 for n in (19,35,36,46)):
+        raise ValueError('unsupported GRIB grouping dimensions')
+    if not math.isfinite(struct.unpack('>f',representation[11:15])[0]):
+        raise ValueError('nonfinite GRIB packing reference')
+    position=5+3*representation[48]
+    if position>len(data):raise ValueError('incomplete GRIB spatial descriptors')
+    def descriptors(bits, collect):
+        nonlocal position
+        byte_count=(groups*bits+7)//8
+        if position+byte_count>len(data):raise ValueError('incomplete GRIB group descriptors')
+        raw=data[position:position+byte_count];position+=byte_count
+        unused=(-groups*bits)%8
+        if unused and raw[-1]&((1<<unused)-1):raise ValueError('nonzero GRIB descriptor padding')
+        if not collect:return None
+        if bits==0:return [0]*groups
+        return [(int.from_bytes(raw[(i*bits)//8:(i*bits+bits+7)//8],'big') >> ((-(i*bits+bits))%8)) & ((1<<bits)-1) for i in range(groups)]
+    descriptors(representation[19],False)
+    widths=[representation[35]+v for v in descriptors(representation[36],True)]
+    if any(v>32 for v in widths):raise ValueError('unsupported GRIB group bit width')
+    length_reference=int.from_bytes(representation[37:41],'big')
+    lengths=[length_reference+v*representation[41] for v in descriptors(representation[46],True)]
+    lengths[-1]=int.from_bytes(representation[42:46],'big')
+    if any(v<1 for v in lengths) or sum(lengths)!=valid_count:
+        raise ValueError('GRIB group lengths differ from packed count')
+    value_bits=sum(w*n for w,n in zip(widths,lengths));byte_count=(value_bits+7)//8
+    if position+byte_count>len(data):raise ValueError('incomplete GRIB group payload')
+    unused=(-value_bits)%8
+    if unused and data[position+byte_count-1]&((1<<unused)-1):raise ValueError('nonzero GRIB value padding')
+    return position-5+byte_count
+
+
+def _grib2_complex_facts(identification, product, packing, discipline):
+    centre=int.from_bytes(identification[5:7],'big');master=identification[9]
+    parameter=(discipline,product[9],product[10])
+    parameters={(0,0,0):('TMP','[K]'),(0,2,2):('UGRD','[m/s]'),(0,2,3):('VGRD','[m/s]'),(0,1,8):('APCP','[kg/(m^2)]')}
+    if centre!=7 or master!=2 or parameter not in parameters or product[17]!=1:
+        raise ValueError('unsupported GRIB complex parameter or time unit')
+    reference=datetime(int.from_bytes(identification[12:14],'big'),*identification[14:19],tzinfo=timezone.utc)
+    forecast=_signed(product[18:22])
+    if forecast<0:raise ValueError('unsupported negative GRIB complex forecast')
+    start=reference+timedelta(hours=forecast);end=start;pdt=int.from_bytes(product[7:9],'big')
+    time_facts=dict(reference_utc=reference.isoformat(),unit_code=1,forecast_value=forecast,start_utc=start.isoformat(),end_utc=end.isoformat(),operation='instant')
+    if pdt==8:
+        if len(product)!=58 or product[41]!=1 or bytes(product[46:49])!=bytes([1,2,1]) or product[53]!=255 or any(product[54:58]):
+            raise ValueError('unsupported GRIB complex statistical interval')
+        hours=int.from_bytes(product[49:53],'big');end=datetime(int.from_bytes(product[34:36],'big'),*product[36:41],tzinfo=timezone.utc)
+        if hours<1 or end!=start+timedelta(hours=hours):raise ValueError('inconsistent GRIB cumulative interval')
+        time_facts.update(end_utc=end.isoformat(),operation='accumulation',statistical_process=1,increment_type=2,interval_unit=1,interval_length=hours,missing_count=int.from_bytes(product[42:46],'big'))
+    kind=product[22];scaled=int.from_bytes(product[24:28],'big')
+    if kind not in (1,103) or product[23]!=0 or (kind==1 and scaled!=0) or product[28]!=255:
+        raise ValueError('unsupported GRIB complex surface')
+    level=dict(type_code=kind,raw_scale=0,raw_value=scaled,reference='surface' if kind==1 else 'above_ground')
+    if kind==103:level.update(value=scaled,unit='m')
+    element,unit=parameters[parameter]
+    return dict(parameter=dict(centre=centre,subcentre=int.from_bytes(identification[7:9],'big'),master_table=master,local_table=identification[10],discipline=discipline,category=product[9],number=product[10]),
+        time=time_facts,level=level,packing=dict(data_template=3,order=2,extra_octets=packing[48],groups=int.from_bytes(packing[31:35],'big'),missing_value_management=0,reference_ieee_hex=bytes(packing[11:15]).hex(),binary_scale=_signed(packing[15:17]),decimal_scale=_signed(packing[17:19])),
+        reference_seconds=int(reference.timestamp()),forecast_seconds=forecast*3600,valid_seconds=int(end.timestamp()),element=element,unit=unit)
 
 
 def _grib2_fields(raw):
@@ -111,6 +176,8 @@ def _grib2_fields(raw):
             if len(representation) != 12 or representation[11] not in (1, 2):
                 raise ValueError('unsupported GRIB IEEE precision')
             data_bytes = valid_count * (4 if representation[11] == 1 else 8)
+        elif drt == 3:
+            data_bytes = _complex_spatial_structure(representation, sections[7], valid_count)
         else:
             raise ValueError('unsupported GRIB value encoding')
         if len(sections[7]) != 5 + data_bytes:
@@ -118,6 +185,8 @@ def _grib2_fields(raw):
         fields.append(dict(name=f'message-{len(fields)+1}', offset=offset, size=size, width=width, height=height,
             edition=2, scan=scan, bitmap=bitmap[6:].tobytes() if bitmap[5] == 0 else None,
             product_template=pdt, data_template=drt, discipline=raw[offset+6]))
+        if drt==3:
+            fields[-1]['facts']=_grib2_complex_facts(sections[1],product,representation,raw[offset+6])
         offset = end
     if not fields:
         raise ValueError('empty GRIB2 file')
@@ -339,6 +408,16 @@ def _description(dataset, field):
             metadata['GRIB1_'+key.upper()] = json.dumps(facts[key], sort_keys=True, separators=(',', ':'))
     else:
         message.update(discipline=field['discipline'], product_template=field['product_template'], data_template=field['data_template'])
+        if field['data_template']==3:
+            facts=field['facts']
+            metadata['GRIB2_DECODE_PRECISION']='float32_scaling_float64_output'
+            for key,fact in (('GRIB_REF_TIME','reference_seconds'),('GRIB_VALID_TIME','valid_seconds'),('GRIB_FORECAST_SECONDS','forecast_seconds')):
+                if int(metadata[key])!=facts[fact]:raise ValueError('GRIB2 decoded time differs from original interval')
+            if metadata.get('GRIB_UNIT')!=facts['unit'] or (facts['element']!='APCP' and metadata.get('GRIB_ELEMENT')!=facts['element']) or (facts['element']=='APCP' and not metadata.get('GRIB_ELEMENT','').startswith('APCP')):
+                raise ValueError('GRIB2 decoded parameter or unit differs from source')
+            for key in ('parameter','time','level','packing'):
+                message[key]=facts[key]
+                metadata['GRIB2_'+key.upper()]=json.dumps(facts[key],sort_keys=True,separators=(',',':'))
     return dict(name=field['name'], type='Float64', dimensions=[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],
         attributes={key:dict(type='String',values=[value]) for key,value in metadata.items()}, attributes_coverage='selected',slice_supported=True,
         value_mode='decoded_native_units',grid=dict(transform=list(transform),crs_wkt=dataset.GetProjectionRef(),longitude_policy='unchanged'),

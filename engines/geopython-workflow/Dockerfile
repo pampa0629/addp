@@ -167,6 +167,53 @@ with tempfile.TemporaryDirectory(prefix='addp-grib1-build-') as work:
             assert facts['time']['operation']=='accumulation' and facts['time']['start_utc']=='2026-01-02T06:00:00+00:00' and facts['time']['end_utc']=='2026-01-02T09:00:00+00:00'
             assert facts['level']['unit']=='kPa' and facts['level']['upper']==50 and facts['level']['lower']==100
 print('GRIB1 values bitmap time and layer image smoke passed')
+
+# Independent two-order grouping bytes: Kelvin, negative wind and0-6h rain.
+raw=bytes.fromhex("""
+475249420000000200000000000000e300000015010007000002000107ea010203000000010000004803000000
+000c00000000060000000000000000000000000000000000000400000003000000000000000001c9c380068e77
+803001ab3f0006bc3e40000f4240000f4240000000002204000000000000020000000000010000000367000000
+0002ffffffffffff00000031050000000b0003000000000000000001000100ffffffffffffffff000000030004
+000000010100000003020202000000080600fbf00000001707270f0119800120e200f8000000097e0001613737
+3737475249420000000200000000000000d600000015010007000002000107ea01020300000001000000480300
+0000000900000000060000000000000000000000000000000000000300000003000000000000000001c9c3800e
+e6b2803001ab3f000f053700000f4240000f424000000000220400000000020202000000000001000000066700
+0000000affffffffffff0000003105000000090003c0a000008002000000000100ffffffffffffffff00000003
+00000000000101000000010202020000000606ff0000000c07000f00100000f037373737475249420000000200
+000000000000ee00000015010007000002000107ea010203000000010000004803000000000900000000060000
+000000000000000000000000000000000300000003000000000000000001c9c380068e77803001ab3f0006acfc
+00000f4240000f4240000000003a040000000801080200000000000100000000010000000000ffffffffffff07
+ea0102090000010000000001020100000006ff0000000000000031050000000900030000000080020000000001
+00ffffffffffffffff0000000300000000000101000000010202020000000606ff0000000c07000000010000f0
+37373737
+""")
+with tempfile.TemporaryDirectory(prefix='addp-grib-complex-build-') as work:
+    path=Path(work)/'complex.grib2';path.write_bytes(raw)
+    plan={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'grib','access':{'method':'mounted_path','path':str(path)}}}
+    info=OPERATORS['grib.inspect']['function'](access_plan=plan)
+    expected=[([['9999.0','281.0','282.0','283.0'],['284.0','NaN','286.0','287.0'],['288.0','289.0','290.0','291.0']],'[K]'),
+        ([['-1.25','-1.0','-0.75'],['-0.5','-0.25','0.0'],['0.25','0.5','0.75']],'[m/s]'),([['0.0','0.25','0.5'],['0.75','1.0','1.25'],['1.5','1.75','2.0']],'[kg/(m^2)]')]
+    for number,(values,unit) in enumerate(expected,1):
+        result=OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=dict(variable=f'message-{number}',indices=[],x=0,y=0,width=len(values[0]),height=len(values)))
+        assert result['values']==values and result['valid']==[[v!='NaN' for v in row] for row in values]
+        assert result['variable']['attributes']['GRIB_UNIT']['values']==[unit]
+        facts=result['variable']['message'];assert facts['data_template']==3 and facts['packing']['order']==2
+        if number==3:
+            assert facts['time']['operation']=='accumulation' and facts['time']['start_utc']=='2026-01-02T03:00:00+00:00' and facts['time']['end_utc']=='2026-01-02T09:00:00+00:00'
+            assert result['variable']['attributes']['GRIB_FORECAST_SECONDS']['values']==['0']
+print('GRIB2 complex spatial interval smoke passed')
+
+with tempfile.TemporaryDirectory() as directory:
+    path=Path(directory)/'decimal.grib2'
+    path.write_bytes(bytes.fromhex('475249420000000200000000000000d600000015010007000002000107ea010203000000010000004803000000000900000000060000000000000000000000000000000000000300000003000000000000000001c9c3800ee6b2803001ab3f000f053700000f4240000f4240000000002204000000000202020000000000010000000667000000000affffffffffff0000003105000000090003c3fa00000000000200000100ffffffffffffffff0000000300000000000101000000010202020000000606ff0000000c070179017a0000f037373737'))
+    plan={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'grib','access':{'method':'mounted_path','path':str(path)}}}
+    info=OPERATORS['grib.inspect']['function'](access_plan=plan)
+    result=OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=dict(variable='message-1',indices=[],x=0,y=0,width=3,height=3))
+    assert result['values']==[['-1.2300000190734863', '-1.2200000286102295', '-1.209999918937683'], ['-1.1999999284744263', '-1.1899999380111694', '-1.1799999475479126'], ['-1.1699999570846558', '-1.159999966621399', '-1.149999976158142']] and result['valid']==[[True, True, True], [True, True, True], [True, True, True]]
+    assert result['variable']['attributes']['GRIB2_DECODE_PRECISION']['values']==['float32_scaling_float64_output']
+print('GRIB2 decimal Float32 precision smoke passed')
+
+
 PYGRIB
 
 # Verify the packaged API and health route without starting a service or contacting System.

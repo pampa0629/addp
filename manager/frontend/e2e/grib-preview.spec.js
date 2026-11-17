@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
 
-for (const edition of [2, 1]) for (const lang of ['zh-cn', 'en']) test(`GRIB${edition} fields preserve decoded units and independent grids (${lang})`, async ({ page }) => {
+for (const edition of [2, 1, 'complex']) for (const lang of ['zh-cn', 'en']) test(`GRIB${edition} fields preserve decoded units and independent grids (${lang})`, async ({ page }) => {
   const locator = 'addp://engine/14/path/weather.grb2?type=file&item_id=31'
   const rootLocator = 'addp://engine/14/path/?type=root&node_id=1'
   const item = { id: locator, locator, label: 'weather.grb2', type: 'file', hasChildren: false }
@@ -11,6 +11,14 @@ for (const edition of [2, 1]) for (const lang of ['zh-cn', 'en']) test(`GRIB${ed
     grid: {"crs_wkt": "GEOGCS[\"Coordinate System imported from GRIB file\",DATUM[\"unnamed\",SPHEROID[\"Sphere\",6371229,0]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AXIS[\"Latitude\",NORTH],AXIS[\"Longitude\",EAST]]", "longitude_policy": "unchanged", "transform": [249.5, 1, 0, -9.5, 0, -1]},
     attributes: {"GRIB_COMMENT": {"type": "String", "values": ["Temperature [K]"]}, "GRIB_DISCIPLINE": {"type": "String", "values": ["0(Meteorological)"]}, "GRIB_ELEMENT": {"type": "String", "values": ["TMP"]}, "GRIB_FORECAST_SECONDS": {"type": "String", "values": ["21600"]}, "GRIB_IDS": {"type": "String", "values": ["CENTER=7(US-NCEP) SUBCENTER=0 MASTER_TABLE=2 LOCAL_TABLE=0 SIGNF_REF_TIME=1(Start_of_Forecast) REF_TIME=2026-01-02T03:00:00Z PROD_STATUS=0(Operational) TYPE=1(Forecast)"]}, "GRIB_PDS_PDTN": {"type": "String", "values": ["0"]}, "GRIB_PDS_TEMPLATE_ASSEMBLED_VALUES": {"type": "String", "values": ["0 0 2 0 0 0 0 1 6 103 0 2 255 -127 -2147483647"]}, "GRIB_PDS_TEMPLATE_NUMBERS": {"type": "String", "values": ["0 0 2 0 0 0 0 0 1 0 0 0 6 103 0 0 0 0 2 255 255 255 255 255 255"]}, "GRIB_REF_TIME": {"type": "String", "values": ["1767322800"]}, "GRIB_SHORT_NAME": {"type": "String", "values": ["2-HTGL"]}, "GRIB_UNIT": {"type": "String", "values": ["[K]"]}, "GRIB_VALID_TIME": {"type": "String", "values": ["1767344400"]}}
   } }))
+  if (edition === 'complex') for (const [index, field] of variables.entries()) {
+    field.native.attributes = {
+      GRIB_UNIT: { type: 'String', values: [index === 0 ? '[K]' : '[kg/(m^2)]'] },
+      GRIB2_TIME: { type: 'String', values: [JSON.stringify({ operation: index === 0 ? 'instant' : 'accumulation', start_utc: index === 0 ? '2026-01-02T06:00:00+00:00' : '2026-01-02T03:00:00+00:00', end_utc: '2026-01-02T09:00:00+00:00', interval_length: 6 })] },
+      GRIB2_DECODE_PRECISION: { type: 'String', values: ['float32_scaling_float64_output'] },
+      GRIB2_PACKING: { type: 'String', values: [JSON.stringify({ data_template: 3, order: 2, missing_value_management: 0 })] },
+    }
+  }
   const slices = []
   if (edition === 1) for (const field of variables) {
     field.native.attributes = {
@@ -64,6 +72,13 @@ for (const edition of [2, 1]) for (const lang of ['zh-cn', 'en']) test(`GRIB${ed
   await page.locator('.grid-container-preview .el-select').click()
   await page.getByRole('option', { name: 'message-2', exact: true }).click()
   await expect(page.getByTestId('grid-slice-result')).toHaveCount(0)
+  if (edition === 'complex') {
+    await expect(page.getByTestId('grid-variable-details')).toContainText('float32_scaling_float64_output')
+    await expect(page.getByTestId('grid-variable-details')).toContainText('[kg/(m^2)]')
+    await expect(page.getByTestId('grid-variable-details')).toContainText('accumulation')
+    await expect(page.getByTestId('grid-variable-details')).toContainText('2026-01-02T03:00:00+00:00')
+    await expect(page.getByTestId('grid-variable-details')).toContainText('2026-01-02T09:00:00+00:00')
+  }
   await page.getByTestId('read-grid-slice').click()
   await expect(page.getByTestId('grid-slice-result').locator('tbody tr').first().locator('td')).toHaveCount(3)
   changed = true

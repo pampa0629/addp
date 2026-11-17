@@ -1,4 +1,5 @@
 import copy
+import struct
 import importlib
 from pathlib import Path
 import tempfile
@@ -13,7 +14,7 @@ FIXTURE=SCENE.FIXTURE
 class GRIBOracleTest(unittest.TestCase):
     def test_closed_inventory_and_bytes_before_physical_mutation(self):
         request={'sources':FIXTURE.sources(),'source_bytes':{s['name']:FIXTURE.source_bytes(s).hex() for s in FIXTURE.sources()}}
-        self.assertEqual(len(FIXTURE._owned_sources(request)),4)
+        self.assertEqual(len(FIXTURE._owned_sources(request)),6)
         for change in ('missing','tampered'):
             bad=copy.deepcopy(request)
             if change=='missing':bad['sources'].pop()
@@ -47,15 +48,45 @@ class GRIBOracleTest(unittest.TestCase):
             result['variable']['message']=facts
             import json
             for key in ('parameter','time','level','packing'):result['variable']['attributes']['GRIB1_'+key.upper()]={'values':[json.dumps(facts[key])]}
+        if spec.get('packing')=='complex-spatial':
+            import json
+            from datetime import datetime,timezone
+            utc=lambda h:datetime.fromtimestamp(1767322800+h*3600,timezone.utc).isoformat()
+            a=result['variable']['attributes'];a['GRIB2_DECODE_PRECISION']={'values':['float32_scaling_float64_output']};a['GRIB_UNIT']['values']=[field['unit']];a['GRIB_ELEMENT']['values']=[field['element']];a['GRIB_SHORT_NAME']['values']=[field['short_name']];a['GRIB_FORECAST_SECONDS']['values']=[str(field['start_hour']*3600)]
+            time=dict(reference_utc=utc(0),unit_code=1,forecast_value=field['start_hour'],start_utc=utc(field['start_hour']),end_utc=utc(field['forecast']),operation='instant')
+            if field['product_template']==8:time.update(operation='accumulation',statistical_process=1,increment_type=2,interval_unit=1,interval_length=6,missing_count=0)
+            level=dict(type_code=103 if field['height_m'] else 1,raw_scale=0,raw_value=field['height_m'],reference='above_ground' if field['height_m'] else 'surface')
+            if field['height_m']:level.update(value=field['height_m'],unit='m')
+            facts=dict(edition=2,data_template=3,product_template=field['product_template'],parameter=dict(centre=7,subcentre=0,master_table=2,local_table=0,discipline=0,category=field['parameter'][0],number=field['parameter'][1]),time=time,level=level,
+                packing=dict(data_template=3,order=2,extra_octets=2,groups=(field['width']*field['height']-int(field['missing'])+3)//4,missing_value_management=0,reference_ieee_hex=struct.pack('>f',field['reference']).hex(),binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale']))
+            result['variable']['message']=facts
+            for key in ('parameter','time','level','packing'):a['GRIB2_'+key.upper()]={'values':[json.dumps(facts[key])]}
         return result
 
     def test_grib1_oracle_rejects_lost_time_layer_parameter_or_packing(self):
-        for spec in FIXTURE.sources()[2:]:
+        for spec in FIXTURE.sources()[2:4]:
             for field in spec['fields']:
                 result=self.response(spec,field);SCENE.validate_slice(result,spec,field)
                 for category,key,value in [('time','start_utc','wrong'),('time','range_indicator',99),('level','raw_octets',[0,0]),('parameter','table_version',128),('packing','binary_scale',1)]:
                     bad=copy.deepcopy(result);bad['variable']['message'][category][key]=value
                     with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
+
+    def test_complex_oracle_preserves_unit_packing_and_cumulative_interval(self):
+        for spec in FIXTURE.sources()[4:]:
+            for field in spec['fields']:
+                result=self.response(spec,field);SCENE.validate_slice(result,spec,field)
+                for category,key,value in [('time','start_utc','wrong'),('time','forecast_value',99),('level','raw_value',99),('parameter','number',99),('packing','order',1),('packing','groups',99)]:
+                    bad=copy.deepcopy(result);bad['variable']['message'][category][key]=value
+                    with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
+
+    def test_complex_oracle_rejects_false_precision_or_one_float32_ulp(self):
+        spec=FIXTURE.sources()[4];field=spec['fields'][1]
+        result=self.response(spec,field);SCENE.validate_slice(result,spec,field)
+        bad=copy.deepcopy(result);bad['variable']['attributes']['GRIB2_DECODE_PRECISION']['values']=['Float64']
+        with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
+        bad=copy.deepcopy(result);v=float(bad['values'][0][0]);bits=int.from_bytes(struct.pack('>f',v),'big')
+        bad['values'][0][0]=repr(struct.unpack('>f',(bits+1).to_bytes(4,'big'))[0])
+        with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
 
     def test_acceptance_rejects_unit_value_mask_longitude_and_message_drift(self):
         spec=FIXTURE.sources()[0];field=spec['fields'][1];result=self.response(spec,field);SCENE.validate_slice(result,spec,field)

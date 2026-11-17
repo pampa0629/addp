@@ -282,3 +282,58 @@ def test_grib1_subdegree_grid_declared_increments(tmp_path,scan):
     raw[g+20:g+23]=(110375).to_bytes(3,'big');raw[g+23:g+25]=(125).to_bytes(2,'big');raw[g+25:g+27]=(250).to_bytes(2,'big')
     plan=source(tmp_path,raw);native=grib.inspect(plan)['container']['children'][0]['native']
     assert native['grid']['transform']==[109.9375,.125,0.,30.125,0.,-.25]
+
+
+@pytest.mark.parametrize('reverse',[False,True])
+@pytest.mark.parametrize('kind',[0,1,2])
+@pytest.mark.parametrize('extra',[1,2,3,4])
+def test_complex_spatial_values_constant_scale_mask_and_interval(tmp_path,reverse,kind,extra):
+    field=copy.deepcopy(ORACLE.complex_fields(reverse)[kind]);field['extra_octets']=extra
+    # Narrow extra descriptors use a small field without the deliberate9999.
+    if extra==1:field.update(base=1.,step=0.,reference=0.,binary_scale=0,decimal_scale=0,constant=True,missing=False)
+    raw=ORACLE.complex_message(field);plan=source(tmp_path,raw);info=grib.inspect(plan)
+    result=grib.read_slice(plan,info['format_info']['source_version'],window(width=field['width'],height=field['height']))
+    assert (result['values'],result['valid'])==ORACLE.expected(field)
+    m=result['variable']['message'];assert m['packing']['order']==2 and m['packing']['extra_octets']==extra
+    assert m['parameter']['category']==field['parameter'][0] and m['parameter']['number']==field['parameter'][1]
+    assert m['time']['forecast_value']==field['start_hour']
+    assert m['time']['operation']==('accumulation' if kind==2 else 'instant')
+    if kind==2:
+        assert m['time']['interval_length']==6 and m['time']['start_utc']=='2026-01-02T03:00:00+00:00' and m['time']['end_utc']=='2026-01-02T09:00:00+00:00'
+        assert result['variable']['attributes']['GRIB_FORECAST_SECONDS']['values']==['0']
+    assert result['variable']['attributes']['GRIB_UNIT']['values']==[field['unit']]
+    for key in ('parameter','time','level','packing'):
+        assert json.loads(result['variable']['attributes']['GRIB2_'+key.upper()]['values'][0])==m[key]
+
+
+@pytest.mark.parametrize('section,relative,replacement',[
+ (5,20,b'\x02'),(5,21,b'\x00'),(5,22,b'\x01'),(5,47,b'\x01'),(5,48,b'\x00'),(5,48,b'\x05'),
+ (5,19,b'\x21'),(5,35,b'\x21'),(5,36,b'\x21'),(5,46,b'\x21'),
+ (5,31,b'\x00\x00\x00\x00'),(5,31,b'\x00\x00\x01\x00'),(5,42,b'\x00\x00\x00\x00'),
+ (1,6,b'\x62'),(1,9,b'\x80'),(4,9,b'\xff'),(4,17,b'\x03'),(4,18,b'\x80'),(4,22,b'\x64'),(4,23,b'\x01'),
+])
+def test_complex_spatial_rejects_unproved_group_or_semantics_before_decoder(tmp_path,monkeypatch,section,relative,replacement):
+    raw=bytearray(ORACLE.complex_message(ORACLE.complex_fields()[0]));start,_=sections(raw)[section];raw[start+relative:start+relative+len(replacement)]=replacement
+    monkeypatch.setattr(grib.gdal,'OpenEx',lambda *a,**k:pytest.fail('unproved complex source reached decoder'))
+    with pytest.raises(ValueError):grib.inspect(source(tmp_path,raw))
+
+
+@pytest.mark.parametrize('position,value',[(41,2),(46,0),(47,1),(48,2),(52,5),(53,1),(57,1),(38,8)])
+def test_complex_cumulative_original_interval_must_be_proved(tmp_path,monkeypatch,position,value):
+    raw=bytearray(ORACLE.complex_message(ORACLE.complex_fields()[2]));start,_=sections(raw)[4];raw[start+position]=value
+    monkeypatch.setattr(grib.gdal,'OpenEx',lambda *a,**k:pytest.fail('bad interval reached decoder'))
+    with pytest.raises(ValueError):grib.inspect(source(tmp_path,raw))
+
+
+def test_complex_payload_full_length_and_padding(tmp_path,monkeypatch):
+    raw=bytearray(ORACLE.complex_message(ORACLE.complex_fields()[0]));start,length=sections(raw)[7]
+    variants=[]
+    for delta in (-1,1):
+        bad=bytearray(raw[:start+length-1]+(b'\x00\x00' if delta==1 else b'')+raw[start+length:]);bad[start:start+4]=(length+delta).to_bytes(4,'big');bad[8:16]=len(bad).to_bytes(8,'big');variants.append(bad)
+    # This fixture's value stream ends on an octet; its three descriptor
+    # streams each have real unused padding bits. Do not corrupt a valid value.
+    for relative in (11,13,14):
+        bad=bytearray(raw);bad[start+relative]|=1;variants.append(bad)
+    monkeypatch.setattr(grib.gdal,'OpenEx',lambda *a,**k:pytest.fail('incomplete complex payload reached decoder'))
+    for bad in variants:
+        with pytest.raises(ValueError):grib.inspect(source(tmp_path,bad))

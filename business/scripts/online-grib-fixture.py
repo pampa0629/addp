@@ -1,6 +1,7 @@
 """Independent WMO GRIB2 byte oracle and exclusive Hosted source lifecycle."""
 from __future__ import annotations
 import hashlib
+from fractions import Fraction
 import io
 import json
 import os
@@ -10,7 +11,7 @@ import struct
 import subprocess
 import sys
 
-NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1')
+NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2')
 
 
 def fields(reverse=False):
@@ -22,7 +23,7 @@ def fields(reverse=False):
             (2,4,'ieee32',170,50,300.5,False)])]
 
 
-def expected(field,x=0,y=0,width=None,height=None):
+def source_values(field,x=0,y=0,width=None,height=None):
     width=field['width'] if width is None else width;height=field['height'] if height is None else height
     values=[];valid=[]
     for row in range(y,y+height):
@@ -30,9 +31,43 @@ def expected(field,x=0,y=0,width=None,height=None):
         for col in range(x,x+width):
             present=not(field['missing'] and row==1 and col==1)
             value=9999. if field['missing'] and row==0 and col==0 else float(field['base']+(0 if field.get('constant') else row*field['width']+col)*field.get('step',1))
+            if field.get('packing')=='complex-spatial' and not(field['missing'] and row==0 and col==0):
+                value=float(Fraction(str(field['base']))+(0 if field.get('constant') else row*field['width']+col)*Fraction(str(field.get('step',1))))
             line.append(repr(value) if present else 'NaN');mask.append(present)
         values.append(line);valid.append(mask)
     return values,valid
+
+
+def expected(field,x=0,y=0,width=None,height=None):
+    values,valid=source_values(field,x,y,width,height)
+    if field.get('packing')=='complex-spatial':
+        # Independent scalar IEEE32 arithmetic oracle, not product decoding.
+        f32=lambda v:struct.unpack('>f',struct.pack('>f',v))[0]
+        r=f32(field['reference']);b=f32(2.**field['binary_scale']);d=f32(10.**(-field['decimal_scale']))
+        for row,line in enumerate(values):
+            for col,value in enumerate(line):
+                if valid[row][col]:
+                    integer=(Fraction(value)*10**field['decimal_scale']-Fraction(r))/Fraction(2)**field['binary_scale']
+                    assert integer==int(integer)
+                    line[col]=repr(f32(f32(f32(f32(integer)*b)+r)*d))
+    return values,valid
+
+
+def precision_bound(field,values,valid,x=0,y=0):
+    """Check normal-coefficient fixtures against the independent physical values."""
+    source,source_valid=source_values(field,x,y,len(values[0]),len(values))
+    assert source_valid==valid
+    u=2.**-24;gamma=5*u/(1-5*u);maximum=0.;bound=0.
+    for row,line in enumerate(values):
+        for col,value in enumerate(line):
+            if valid[row][col]:
+                original=float(source[row][col]);r=field['reference'];b=2.**field['binary_scale'];d=10.**(-field['decimal_scale'])
+                integer=(original/d-r)/b
+                absolute_bound=gamma*(abs(integer*b)+abs(r))*abs(d)
+                error=abs(float(value)-original)
+                assert error<=absolute_bound
+                maximum=max(maximum,error);bound=max(bound,absolute_bound)
+    return dict(max_absolute_error=maximum,max_derived_bound=bound,precision='float32_scaling_float64_output')
 
 
 def message(field):
@@ -42,7 +77,7 @@ def message(field):
     def u32(raw,p,value):raw[p:p+4]=struct.pack('>I',value)
     def angle(value):return int(abs(value)*1_000_000)|(0x80000000 if value<0 else 0)
     width,height=field['width'],field['height'];scan=field['scan']
-    values,valid=expected(field);rows=range(height-1,-1,-1) if scan==64 else range(height)
+    values,valid=source_values(field);rows=range(height-1,-1,-1) if scan==64 else range(height)
     points=[(values[y][x],valid[y][x]) for y in rows for x in range(width)]
     s1=section(1,21);s1[5:7]=struct.pack('>H',7);s1[9]=2;s1[11]=1;s1[12:14]=struct.pack('>H',2026);s1[14:19]=bytes([1,2,3,0,0]);s1[20]=1
     s3=section(3,72);u32(s3,6,width*height);s3[14]=6;u32(s3,30,width);u32(s3,34,height)
@@ -92,7 +127,7 @@ def grib1_message(field):
     grid[10:13]=signed((south if scan==64 else field['north'])*1000,3);grid[13:16]=signed(field['west']*1000,3);grid[16]=128
     grid[17:20]=signed((field['north'] if scan==64 else south)*1000,3);grid[20:23]=signed((field['west']+width-1)*1000,3)
     grid[23:27]=bytes.fromhex('03e803e8');grid[27]=scan
-    values,valid=expected(field);rows=range(height-1,-1,-1) if scan==64 else range(height)
+    values,valid=source_values(field);rows=range(height-1,-1,-1) if scan==64 else range(height)
     points=[(values[y][x],valid[y][x]) for y in rows for x in range(width)]
     bitmap=b''
     if field['missing']:
@@ -118,7 +153,56 @@ def grib1_message(field):
     return b'GRIB'+(8+len(body)).to_bytes(3,'big')+b'\x01'+body
 
 
-def source_bytes(spec):return b''.join((grib1_message if spec.get('edition')==1 else message)(field) for field in spec['fields'])
+def complex_fields(reverse=False):
+    return [dict(number=i+1,width=4 if i==0 else 3,height=3,packing='complex-spatial',scan=64 if reverse else 0,
+        west=110 if i!=1 else 250,north=30,forecast=3 if i==0 else 6,start_hour=0 if i==2 else 3 if i==0 else 6,
+        base=base,step=step,missing=i==0,reference=reference,binary_scale=scale,decimal_scale=2 if i==1 else 0,
+        parameter=parameter,unit=unit,element=element,short_name=short,product_template=8 if i==2 else 0,
+        height_m=2 if i==0 else 10 if i==1 else 0)
+        for i,(base,step,reference,scale,parameter,unit,element,short) in enumerate([
+            (280.,1.,0.,0,[0,0],'[K]','TMP','2-HTGL'),
+            (-1.23,.01,-500.,0,[2,2],'[m/s]','UGRD','10-HTGL'),
+            (0.,.25,0.,-2,[1,8],'[kg/(m^2)]','APCP06','0-SFC')])]
+
+
+def complex_message(field):
+    # Independent WMO5.3 encoder for the fixture; production never uses it.
+    base=dict(field,packing='ieee64');raw=message(base);sections={};pos=16
+    while pos<len(raw)-4:
+        size=int.from_bytes(raw[pos:pos+4],'big');sections[raw[pos+4]]=bytearray(raw[pos:pos+size]);pos+=size
+    values,valid=source_values(field);rows=range(field['height']-1,-1,-1) if field['scan']==64 else range(field['height'])
+    selected=[float(values[y][x]) for y in rows for x in range(field['width']) if valid[y][x]]
+    numbers=[int((Fraction(str(v))*10**field['decimal_scale']-Fraction(field['reference']))/Fraction(2)**field['binary_scale']) for v in selected]
+    assert all(float((Fraction(field['reference'])+n*Fraction(2)**field['binary_scale'])/10**field['decimal_scale'])==v for n,v in zip(numbers,selected))
+    differences=[numbers[i]-2*numbers[i-1]+numbers[i-2] for i in range(2,len(numbers))];minimum=min(differences)
+    residuals=[0,0]+[v-minimum for v in differences]
+    groups=[residuals[i:i+4] for i in range(0,len(residuals),4)]
+    references=[min(g) for g in groups];widths=[(max(g)-min(g)).bit_length() for g in groups];lengths=[len(g) for g in groups]
+    ref_bits=max(references).bit_length();width_bits=max(widths).bit_length();length_bits=(max(lengths)-1).bit_length()
+    def packed(values,bits):
+        text=''.join(format(v,'0'+str(bits)+'b') for v in values) if bits else ''
+        text+='0'*(-len(text)%8)
+        return int(text,2).to_bytes(len(text)//8,'big') if text else b''
+    def signed(value,width):return (abs(value)|(1<<(width*8-1) if value<0 else 0)).to_bytes(width,'big')
+    extra=field.get('extra_octets',2)
+    payload=b''.join(v.to_bytes(extra,'big') for v in numbers[:2])+signed(minimum,extra)
+    payload+=packed(references,ref_bits)+packed(widths,width_bits)+packed([v-1 for v in lengths],length_bits)
+    bits=''.join(format(v-r,'0'+str(w)+'b') for g,r,w in zip(groups,references,widths) if w for v in g)
+    bits+='0'*(-len(bits)%8)
+    if bits:payload+=int(bits,2).to_bytes(len(bits)//8,'big')
+    s5=bytearray(49);s5[:5]=(49).to_bytes(4,'big')+b'\x05';s5[5:9]=len(numbers).to_bytes(4,'big');s5[9:11]=(3).to_bytes(2,'big')
+    s5[11:15]=struct.pack('>f',field['reference']);s5[15:17]=signed(field['binary_scale'],2);s5[17:19]=signed(field['decimal_scale'],2);s5[19]=ref_bits
+    s5[21]=1;s5[23:31]=b'\xff'*8;s5[31:35]=len(groups).to_bytes(4,'big');s5[36]=width_bits;s5[37:41]=(1).to_bytes(4,'big');s5[41]=1;s5[42:46]=lengths[-1].to_bytes(4,'big');s5[46:49]=bytes([length_bits,2,extra])
+    s4=sections[4];s4[9:11]=bytes(field['parameter']);s4[22]=1 if field['height_m']==0 else 103;s4[24:28]=field['height_m'].to_bytes(4,'big');s4[18:22]=field['start_hour'].to_bytes(4,'big')
+    if field['product_template']==8:
+        s4+=bytearray(24);s4[:4]=(58).to_bytes(4,'big');s4[7:9]=(8).to_bytes(2,'big');s4[34:41]=bytes([7,234,1,2,3+field['forecast'],0,0]);s4[41]=1
+        s4[46:58]=bytes([1,2,1])+(field['forecast']-field['start_hour']).to_bytes(4,'big')+bytes([255])+bytes(4)
+    sections[4]=s4;sections[5]=s5;sections[7]=bytearray((5+len(payload)).to_bytes(4,'big')+b'\x07'+payload)
+    body=b''.join(sections[n] for n in (1,3,4,5,6,7))+b'7777'
+    return raw[:8]+(16+len(body)).to_bytes(8,'big')+body
+
+
+def source_bytes(spec):return b''.join((grib1_message if spec.get('edition')==1 else complex_message if spec.get('packing')=='complex-spatial' else message)(field) for field in spec['fields'])
 
 
 def sources():
@@ -126,8 +210,11 @@ def sources():
     for reverse,name in enumerate(NAMES[:2]):
         spec=dict(name=name,case_id='reverse' if reverse else 'forward',fields=fields(bool(reverse)))
         raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
-    for reverse,name in enumerate(NAMES[2:]):
+    for reverse,name in enumerate(NAMES[2:4]):
         spec=dict(name=name,case_id='grib1-reverse' if reverse else 'grib1-forward',edition=1,fields=grib1_fields(bool(reverse)))
+        raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
+    for reverse,name in enumerate(NAMES[4:]):
+        spec=dict(name=name,case_id='complex-reverse' if reverse else 'complex-forward',packing='complex-spatial',fields=complex_fields(bool(reverse)))
         raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
     return result
 
