@@ -12,7 +12,9 @@ case "$ADDP_ONLINE_MANAGER_CASE" in
   *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-table-avro, native-table-feather, delimited-read-settings, native-netcdf, native-grib, native-envi, kml-export, filegdb-export, filegdb-mysql-export or filegdb-authorization' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
-if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
+if [ "$ADDP_ONLINE_MANAGER_CASE" = native-raster-media ]; then
+  HOSTED_FIXTURE_CONTAINERS=(business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
+elif [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
   HOSTED_FIXTURE_CONTAINERS=(addp-metric-online-disposable)
 elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-mysql-export ]; then
   HOSTED_FIXTURE_CONTAINERS=(addp-manager-mysql-online-disposable addp-manager-online-registry addp-manager-raster-runtime)
@@ -30,6 +32,9 @@ RUNTIME_TAG=manager-raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
 export ADDP_ONLINE_RASTER_RUNTIME_IMAGE="$RUNTIME_IMAGE"
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim 127.0.0.1:5001/addp-model3d-converter:online 127.0.0.1:5001/addp-model3d-workflow-engine:online)
+if [ "$ADDP_ONLINE_MANAGER_CASE" = native-raster-media ]; then
+  HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim)
+fi
 if [[ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-* ]]; then
   HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE")
 fi
@@ -82,11 +87,13 @@ stop_online_fixture() {
       cleanup_status=1
     fi
   fi
-  if docker container inspect addp-manager-model3d-runtime >/dev/null 2>&1 &&
-    [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' addp-manager-model3d-runtime)" = "$ONLINE_SUITE" ]; then
-    run_logged docker logs addp-manager-model3d-runtime > "$ADDP_ONLINE_ARTIFACT_DIR/model3d-runtime.log" || cleanup_status=1
+  if [ "$ADDP_ONLINE_MANAGER_CASE" != native-raster-media ]; then
+    if docker container inspect addp-manager-model3d-runtime >/dev/null 2>&1 &&
+      [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' addp-manager-model3d-runtime)" = "$ONLINE_SUITE" ]; then
+      run_logged docker logs addp-manager-model3d-runtime > "$ADDP_ONLINE_ARTIFACT_DIR/model3d-runtime.log" || cleanup_status=1
+    fi
+    remove_online_product_container addp-manager-model3d-runtime || cleanup_status=1
   fi
-  remove_online_product_container addp-manager-model3d-runtime || cleanup_status=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh stop || cleanup_status=1
   run_logged docker rm -fv addp-manager-online-registry || cleanup_status=1
   if docker container inspect addp-manager-online-registry >/dev/null 2>&1; then
@@ -219,7 +226,7 @@ for attempt in $(seq 1 30); do
   [ "$attempt" -lt 30 ] || fail "temporary image registry did not become ready"
   sleep 1
 done
-if [ "$ADDP_ONLINE_MANAGER_CASE" != delimited-read-settings ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-orc ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-avro ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-feather ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-netcdf ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-grib ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-envi ]; then
+if [ "$ADDP_ONLINE_MANAGER_CASE" = full ]; then
 run_logged bash scripts/build/build-images.sh --verify --jobs 1 \
   --registry 127.0.0.1:5001 --tag online --services model3d-workflow-engine
 fi
@@ -247,6 +254,11 @@ elif [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ] || [ "$ADDP_ONLINE_MANAG
   done
   nfs_root=$(cat "$ADDP_ONLINE_SECRET_DIR/nfs-root")
   start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,src=$nfs_root,dst=$nfs_root,readonly"
+elif [ "$ADDP_ONLINE_MANAGER_CASE" = native-raster-media ]; then
+  for start_target in -security -meta -manager -monitor; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+  done
+  start_online_geopython_runtime "$RUNTIME_TAG"
 else
 for start_target in -security -meta -manager -monitor -pointcloud-workflow -document-workflow; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"

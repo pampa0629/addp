@@ -35,6 +35,8 @@ Job、Artifact、`manager-case.json` 均须含所选 case；独立通过不算 f
 
 `native-raster-media` 根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，须含 case、`source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四子报告及真实失败状态；任一子场景失败即失败，`online-report.json` 由统一分发器生成。未执行业务不计通过；full 仍须独立验证，可能受新模型源授权正向断言阻断，不用旧源码或放宽授权绕过。
 
+该 case 的 Hosted 准备只消费基础服务、GeoPython／GDAL、栅格物理校验器及 Console；不构建／启动 Model3D，不启动 PointCloud／Document。容器、镜像归属和退出清理按同一范围限定；保留 Infra、Business MinIO／NFS、临时 registry、原样本准备、NFS 读取方式及全部业务断言。`full` 继续构建／启动原有运行时。生命周期回归须分别证明该 case 不引入无关运行时、失败仍收尾，以及 `full` 路径保留；确定性回归不代替新的固定源码 Hosted。
+
 ### 文件读取 case 的公共准备与收尾
 
 以下只适用于文件读取 case；`full`、导出／上传及独立持久化按各自正文。组件归属见[部署](#部署模型转换与通用清理)，身份／拓扑／外层退出沿[T4 规范](../T4-Online验收规范.md)。各格式只补差异：
@@ -294,7 +296,7 @@ Owner v5须含独立`execution_revocation`、每表无Grant拒绝、原三页面
 
 导读：[MinIO 小图](#tiff-minio-无定位小图) · [NFS 自然到期](#tiff-nfs-渲染与自然到期) · [MSK 组成](#tiff-msk-组成扩展) · [清理与边界](#tiff-清理与共同边界) · [证据](#tiff-分版本证据)。
 
-`native-raster-media`保持原十项消费权限、部署／服务／预算及IMG／JPEG2000／四种GRD／原四COG。子报告`addp.manager-raster-media/v2`、页面`addp.manager-raster-media-browser/v4`；COG规则见[TIFF布局提示](../../builtin-formats/媒体与地图数据集.md#tiff-云优化布局提示)。
+`native-raster-media`保持原十项消费权限、预算及IMG／JPEG2000／四种GRD／原四COG；Hosted 服务范围按前述 case 准备要求限定。子报告`addp.manager-raster-media/v2`、页面`addp.manager-raster-media-browser/v4`；COG规则见[TIFF布局提示](../../builtin-formats/媒体与地图数据集.md#tiff-云优化布局提示)。
 
 #### TIFF MinIO 无定位小图
 

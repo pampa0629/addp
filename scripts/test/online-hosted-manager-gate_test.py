@@ -121,6 +121,11 @@ class HostedManagerGateTest(unittest.TestCase):
                           .replace('ADDP_TEST_PREEXIST_CONTAINER', 'ADDP_TEST_EXISTING_CONTAINER')
                           .replace("echo '[\"sh\",\"container_entrypoint.sh\"]'", "if [ \"$4\" = addp-manager-model3d-runtime ]; then echo '[\"python\",\"api_server.py\"]'; else echo '[\"sh\",\"container_entrypoint.sh\"]'; fi")
                           .replace('case "$1 $2" in', '''
+            if [ "${ADDP_TEST_FOREIGN_MODEL_IMAGE:-0}" = 1 ] && [[ "${@: -1}" = *model3d* ]]; then
+              echo "foreign-model-image:$*" >> "$ADDP_TEST_GATE_TRACE"
+              [ "$1 $2" = 'image inspect' ] && exit 0
+              exit 125
+            fi
             if [ "$1" = logs ]; then
               echo "runtime-logs:$2" >> "$ADDP_TEST_GATE_TRACE"
               echo "runtime diagnostic for $2"
@@ -152,6 +157,7 @@ class HostedManagerGateTest(unittest.TestCase):
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             echo "manager-case:$ADDP_ONLINE_MANAGER_CASE" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = build-images ]; then
+              [ "${ADDP_TEST_RASTER_BUILD_FAIL:-0}" != 1 ] || exit 1
               touch "${ADDP_TEST_GATE_TRACE}.image"
               exit 0
             fi
@@ -320,7 +326,7 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertNotIn('make:test-online',trace)
         self.assertFalse(self.host.secrets.exists())
 
-    def test_native_media_case_is_explicit_and_uses_same_cleanup(self):
+    def test_native_media_case_uses_only_raster_runtime_and_same_cleanup(self):
         result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         report = json.loads((self.host.artifacts / 'manager-case.json').read_text())
@@ -328,8 +334,62 @@ class HostedManagerGateTest(unittest.TestCase):
                                  'suite': 'manager-internal-artifact-lineage', 'case': 'native-raster-media'})
         trace = self.host.trace.read_text()
         for fragment in ('manager-case:native-raster-media', 'make:test-online ONLINE_SUITE=manager-internal-artifact-lineage',
+                         'start:-security', 'start:-meta', 'start:-manager', 'start:-monitor',
+                         'make:build-images IMAGE_BUILD_ARGS=--services geopython-workflow-engine',
+                         'docker-run:addp-manager-raster-runtime', 'raster-seed',
                          'application-stop', 'source-fixture:stop', 'nfs-fixture:stop', 'infra-down'):
             self.assertIn(fragment, trace)
+        for fragment in ('model3d', 'start:-pointcloud-workflow', 'start:-document-workflow', 'start:-transfer', '--mount'):
+            self.assertNotIn(fragment, trace)
+        self.assertIn('infra_cleanup=zero_residuals', (self.host.artifacts / 'summary.txt').read_text())
+        self.assertFalse(self.host.secrets.exists())
+        self.assertFalse((self.host.artifacts / 'model3d-runtime.log').exists())
+
+    def test_native_media_does_not_own_unrelated_model_container_or_images(self):
+        for overrides in ({'ADDP_TEST_EXISTING_CONTAINER': 'addp-manager-model3d-runtime'},
+                          {'ADDP_TEST_FOREIGN_MODEL_IMAGE': '1'}):
+            with self.subTest(overrides=overrides):
+                self.host.trace.write_text('')
+                result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media', **overrides)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn('model3d', self.host.trace.read_text())
+                self.assertNotIn('foreign-model-image', self.host.trace.read_text())
+
+    def test_native_media_seed_or_suite_failure_cleans_only_owned_resources(self):
+        for failure in ('ADDP_TEST_RASTER_SEED_FAIL', 'ADDP_TEST_SUITE_FAIL'):
+            with self.subTest(failure=failure):
+                self.host.trace.write_text('')
+                result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media', **{failure: '1'})
+                self.assertNotEqual(result.returncode, 0)
+                trace = self.host.trace.read_text()
+                for fragment in ('docker-rm:addp-manager-raster-runtime', 'source-fixture:stop',
+                                 'nfs-fixture:stop', 'application-stop', 'infra-down'):
+                    self.assertIn(fragment, trace)
+                self.assertNotIn('model3d', trace)
+                self.assertFalse(self.host.secrets.exists())
+                self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_native_media_raster_build_failure_cleans_owned_deployment(self):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media', ADDP_TEST_RASTER_BUILD_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        for fragment in ('source-fixture:stop', 'nfs-fixture:stop', 'docker-rm:addp-manager-online-registry',
+                         'application-stop', 'infra-down'):
+            self.assertIn(fragment, trace)
+        for fragment in ('model3d', 'docker-run:addp-manager-raster-runtime', 'make:test-online'):
+            self.assertNotIn(fragment, trace)
+        self.assertFalse(self.host.secrets.exists())
+        self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_native_media_runtime_cleanup_failure_is_not_reported_as_success(self):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media', ADDP_TEST_RUNTIME_CLEANUP_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        for fragment in ('docker-rm:addp-manager-raster-runtime', 'source-fixture:stop', 'nfs-fixture:stop', 'infra-down'):
+            self.assertIn(fragment, trace)
+        self.assertNotIn('model3d', trace)
+        self.assertFalse(self.host.secrets.exists())
+        self.assertIn('cleanup=failed', (self.host.artifacts / 'summary.txt').read_text())
 
     def test_kml_case_runs_transfer_without_model_services_and_cleans_after_failure(self):
         for failure in ('', 'ADDP_TEST_SUITE_FAIL', 'ADDP_TEST_KML_FIXTURE_FAIL', 'ADDP_TEST_KML_CLEANUP_FAIL'):
