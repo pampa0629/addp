@@ -119,7 +119,8 @@ def mc_env(info: dict, alias: str, host: str) -> dict[str, str]:
 def mc(args: list[str], *, env: dict[str, str], image: str, network: str,
        mounts: list[tuple[Path, str, bool]] | None = None, workdir: str | None = None,
        timeout: int = 300) -> subprocess.CompletedProcess:
-    command = ["docker", "run", "--rm", "--network", network]
+    command = ["docker", "run", "--rm", "--network", network,
+               "--user", f"{os.getuid()}:{os.getgid()}"]
     for key in env:
         if key.startswith("MC_HOST_"):
             command += ["-e", key]

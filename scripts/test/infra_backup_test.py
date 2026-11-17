@@ -73,6 +73,7 @@ class InfraBackupSafetyTest(unittest.TestCase):
         command = execute.call_args.args[0]
         self.assertEqual(command[-8:], ["--entrypoint", "mc", IMAGE, "admin", "cluster", "iam", "export", "src"])
         self.assertEqual(command[command.index("--entrypoint") + 1], "mc")
+        self.assertEqual(command[command.index("--user") + 1], f"{os.getuid()}:{os.getgid()}")
         self.assertNotIn(env["MC_HOST_src"], command)
         self.assertEqual(execute.call_args.kwargs["env"], env)
 
