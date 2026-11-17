@@ -26,6 +26,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	checkSQLSeed := flags.Bool("check-sql-seed", false, "verify the published first IAM catalog seed migration digest")
 	generateToolCatalog := flags.Bool("generate-tool-catalog", false, "generate the System Runtime Tool authorization catalog")
 	checkToolCatalog := flags.Bool("check-tool-catalog", false, "verify the System Runtime Tool authorization catalog is current")
+	checkProductionOwners := flags.Bool("check-production-owners", false, "verify production owner composition, machine roles and runtime wiring")
 	repositoryRoot := flags.String("repository-root", "", "explicit ADDP repository root")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -42,6 +43,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		*checkSQLSeed,
 		*generateToolCatalog,
 		*checkToolCatalog,
+		*checkProductionOwners,
 	} {
 		if enabled {
 			modeCount++
@@ -57,6 +59,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	report, err := authorization.LoadRepositoryAuthorizationCatalog(*repositoryRoot)
 	if err != nil {
 		return err
+	}
+	if *checkProductionOwners {
+		return writeProductionOwnerReport(*repositoryRoot, report, stdout)
 	}
 	if *check {
 		data, err := authorization.MarshalAuthorizationCatalogReport(report)

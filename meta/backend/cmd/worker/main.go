@@ -63,7 +63,7 @@ func main() {
 	}
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 	executionService.SetCollectionAuthorizationClient(systemClient)
-	producers, err := service.NewProductionRegistry(commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource), commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokenSource, nil))
+	producers, err := commonClient.NewProductionRegistry(commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource), commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokenSource, nil))
 	if err != nil {
 		panic(err)
 	}

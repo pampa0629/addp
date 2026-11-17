@@ -1587,6 +1587,7 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@cd common && go test ./authorization/... -count=1
 	@cd common && go run ./authorization/cmd/manifest --check --repository-root .. > /tmp/addp-authorization-catalog.json
 	@cd common && go run ./authorization/cmd/manifest --check-owner-constants --repository-root .. > /tmp/addp-owner-constants.json
+	@cd common && go run ./authorization/cmd/manifest --check-production-owners --repository-root .. > /tmp/addp-production-owners.json
 	@cd common && go run ./authorization/cmd/manifest --check-tool-catalog --repository-root .. > /tmp/addp-system-tool-catalog.json
 	@cd common && go run ./authorization/cmd/manifest --check-sql-seed --repository-root .. > /tmp/addp-iam-catalog-seed.json
 	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json

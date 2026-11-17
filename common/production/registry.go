@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -73,4 +74,15 @@ func (r *Registry) Read(ctx context.Context, tenant uint, ref Reference) (*Recei
 		return nil, err
 	}
 	return &copy, nil
+}
+
+// Owners returns the composed directory in stable order for publication checks.
+// Values are copied; callers cannot change the live registry.
+func (r *Registry) Owners() []Owner {
+	owners := make([]Owner, 0, len(r.owners))
+	for _, owner := range r.owners {
+		owners = append(owners, owner)
+	}
+	sort.Slice(owners, func(i, j int) bool { return owners[i].Module < owners[j].Module })
+	return owners
 }

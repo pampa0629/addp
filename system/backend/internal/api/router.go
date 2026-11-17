@@ -7,7 +7,6 @@ import (
 	"time"
 
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
-	"github.com/addp/common/production"
 
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/system/internal/config"
@@ -169,7 +168,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *gi
 		metaBasis = metaClient
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities).WithNodeIdentityPageReader(metaClient)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts).WithNodeIdentityReader(metaNodes)
-		producers, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: commonClient.NewTransferClient(cfg.TransferServiceURL, tokens).ReadCommittedProduction}, production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokens, nil).ReadCommittedProduction})
+		producers, err := commonClient.NewProductionRegistry(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens), commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokens, nil))
 		if err != nil {
 			panic(err)
 		}

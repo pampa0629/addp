@@ -266,6 +266,14 @@ Swagger/OpenAPI 的具体注解方式见 `docs/spec/addp-Swagger集成指南.md`
 - 确定性 Permission/Role Catalog 和 SQL seed 校验；
 - OpenAPI Operation 与 Tool 授权覆盖报告。
 
+### 生产 owner 登记与机器权限一致性
+
+持久业务 DataItem 的生产 owner 继续按统一产出办理规则接入。System、Meta Backend 与 Meta Worker 只从 `common/client.NewProductionRegistry` 装配同一生产者目录；该工厂绑定既有固定 Service Client、成果回执 reader、回执 Permission Key 和执行 Permission Key。禁止在消费者中复制 owner 清单或另行构造生产者目录。Common 只共享协议装配，不复制各模块 Permission 定义、System Role 模板或业务授权事实，不读取请求自报的 owner 资格、回调地址或用户 Token。
+
+`make test-authorization` 必须执行聚合器的 `--check-production-owners`：逐项核对实际生产者目录与 active `*.production_receipt.read` Manifest 双向一致，回执权限仅 Tenant Scope、不可委托、不可租户定制，且只由既有 `tenant.system_runtime` 和 `tenant.meta_runtime` 的租户内置服务角色持有；两者均不得漏配。生产者执行权限须属于原 owner 且在 Tenant Scope 有效。门禁同时核对 System／Meta 的共享工厂接线及唯一目录装配所有权，拒绝旁路目录。共享 client 的受控 HTTP 回归核验固定回执路由、同租户机器凭据和原 execution／result 绑定。
+
+新增生产 owner 在这一处完成正式装配，并同步其 owner Manifest、System 机器角色、回执服务和回归；同 owner 新增算子或任务不再次登记、不逐算子增加机器权限。门禁只检查已声明生产能力的接线完整性，不自动发现任意业务写入、不自动授予权限，也不代表该 owner 的所有写入入口或定时执行已经接通。初始 Grant、限定 basic 识别、实际来源／版本冻结及原成果后台续办仍消费同一协议；本登记不改变数据授权范围、任务主体、业务保存准入或真实验收边界。
+
 聚合器不在模块启动时写数据库。初始目录和后续变化都必须进入 System 向前 SQL migration；已发布 migration 不得重写。
 
 Permission 收缩、Role 权限移除或主体授权变化必须同步推进受影响 Principal 的授权版本，并按安全语义撤销 Token Family，不能等待 Access Token 自然过期。

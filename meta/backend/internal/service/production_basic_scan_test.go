@@ -52,7 +52,7 @@ func TestRuntimeProductionRegistryUsesAuthenticatedOwnerClients(t *testing.T) {
 		}
 		return "meta-test-token", nil
 	})
-	registry, err := NewProductionRegistry(client.NewTransferClient(server.URL, tokens), client.NewDevelopClient(server.URL, tokens, server.Client()))
+	registry, err := client.NewProductionRegistry(client.NewTransferClient(server.URL, tokens), client.NewDevelopClient(server.URL, tokens, server.Client()))
 	if err != nil {
 		t.Fatal(err)
 	}
