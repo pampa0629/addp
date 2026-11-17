@@ -76,6 +76,7 @@ class StartupResultsTest(unittest.TestCase):
                  ('none-selected', [], '', 'ready', False),
                  ('parallel-failure', ['monitor', 'standard'], 'standard', 'failed', False),
                  ('transient-standard', ['standard'], 'standard', 'transient', False),
+                 ('transient-standard-delayed', ['standard'], 'standard', 'transient', False),
                  ('manager-live-ready', ['manager'], '', 'ready', True),
                  ('manager-live-failed', ['manager'], 'manager', 'failed', True)]
         cases += [(module + '-failed', [module], module, 'failed', False) for module in ['system', *modules]]
@@ -91,6 +92,9 @@ class StartupResultsTest(unittest.TestCase):
 set -eu
 RED= GREEN= YELLOW= NC=
 MAX_WAIT=2
+# 模拟时钟只由探针和 sleep 推进，不叠加 Bash 的真实经过时间。
+unset SECONDS
+SECONDS=0
 HEALTH_CHECK_PIDS=()
 TRANSFER_WORKERS=()
 META_WORKER_UNITS=(meta-worker-1) QUALITY_WORKER_UNITS=(quality-worker-1)
@@ -109,6 +113,7 @@ curl() {
       if [ "$CURL_MODE" = transient ]; then
         [ ! -f "$CASE_ROOT/attempt" ] || return 0
         touch "$CASE_ROOT/attempt"
+        if [ "$DELAY_FIRST_PROBE" = true ]; then /bin/sleep 1.1; fi
       fi
       return 1 ;;
     *) return 0 ;;
@@ -120,7 +125,8 @@ report_backend_startup_failure() {
 }
 ''' + (system if selected == ['system'] else worker_jobs + phase) + '\ntouch "$CASE_ROOT/completed"\n'
                     environment = dict(os.environ, CASE_ROOT=str(case), FAIL_PORT=ports.get(failed, '0'),
-                                       CURL_MODE=mode, WAIT_LIVE=str(live).lower())
+                                       CURL_MODE=mode, WAIT_LIVE=str(live).lower(),
+                                       DELAY_FIRST_PROBE=str(name == 'transient-standard-delayed').lower())
                     for family in ['META', 'QUALITY', 'SECURITY', 'TRANSFER_BOUNDED', 'TRANSFER_CONTINUOUS']:
                         enabled = name in ('with-workers', 'failed-worker-owner') and family.split('_')[0].lower() in selected
                         environment['START_' + family + '_WORKER'] = str(enabled and family != 'TRANSFER_CONTINUOUS').lower()
@@ -140,7 +146,8 @@ report_backend_startup_failure() {
                                 for module in selected}
                     self.assertEqual(set(requests), expected)
                     for endpoint in expected:
-                        self.assertEqual(requests.count(endpoint), 2 if ':' + ports.get(failed, '0') + '/' in endpoint else 1)
+                        self.assertEqual(requests.count(endpoint), 2 if ':' + ports.get(failed, '0') + '/' in endpoint else 1,
+                                         result.stdout + result.stderr)
                     failures = (case / 'failures').read_text().splitlines() if (case / 'failures').exists() else []
                     self.assertEqual(failures, [failed + '|readiness_timeout'] if failed and mode == 'failed' and not live else [])
 
@@ -194,6 +201,7 @@ report_backend_startup_failure() {
                 script = r'''
 set -eu
 RED= NC= MAX_WAIT=5
+unset SECONDS
 SECONDS=0
 sleep() { SECONDS=$((SECONDS + 1)); }
 curl() {
@@ -212,7 +220,7 @@ curl() {
                 self.assertEqual(trace.read_text().splitlines(), expected)
 
     def test_response_after_deadline_is_not_counted_as_ready(self):
-        script = ('set -eu\nRED= NC= MAX_WAIT=2\nSECONDS=0\ncurl(){ SECONDS=$((SECONDS + 3)); return 0; }\n' +
+        script = ('set -eu\nRED= NC= MAX_WAIT=2\nunset SECONDS\nSECONDS=0\ncurl(){ SECONDS=$((SECONDS + 3)); return 0; }\n' +
                   self.readiness_helpers() + '\nreport_backend_startup_failure(){ printf "%s\\n" "$2"; }\n'
                   'wait_backend_ready standard "$$" 1 "Standard Backend"\n')
         result = subprocess.run(['bash', '-ec', script], capture_output=True, text=True, timeout=5)
@@ -1169,6 +1177,8 @@ set -eu
 ENABLE_SPARK=true
 SPARK_MASTER_UI=18088
 YELLOW= GREEN= RED= NC=
+unset SECONDS
+SECONDS=0
 curl() {
     [[ "$*" == *http://localhost:18088/json/* ]] || return 20
     printf '%s' "$PROBE_RESPONSE"
