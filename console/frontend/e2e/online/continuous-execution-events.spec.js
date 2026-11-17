@@ -54,7 +54,10 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       expect(current.permissions.has('monitor.execution.read')).toBe(true)
       stage = prefix + '_owner_permission'
       expect(current.permissions.has('transfer.task.read')).toBe(owner)
-    } finally { await api.dispose() }
+    } finally {
+      if (alertBinding) alertAPI = api
+      else await api.dispose()
+    }
     return { page, frame: page.frameLocator('iframe[data-testid="module-iframe"]') }
   }
   async function timeline(frame, terminal) {
@@ -105,13 +108,13 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       ? `/monitor/cdc-resources?view=tasks&task_id=${history.task_id}&refresh=off` : alertBinding ? '/monitor/alerts' : route(ids[0]))
     if (alertBinding) {
       const binding = alertBinding
-      const codes = ['cdc_consumer_stalled','cdc_capture_delayed','cdc_backlog_high']
       const names = { cdc_consumer_stalled:'CDC 目标消费停滞', cdc_capture_delayed:'CDC 捕获持续延迟', cdc_backlog_high:'CDC 积压持续偏高' }
       const statusNames = { open:'待处理', acknowledged:'已确认', resolved:'已恢复' }
       const incidentIDs = Object.values(binding.incidents)
       const dateText = value => page.evaluate(value => new Date(value).toLocaleString(), value)
       const alertPage = frame.locator('.alert-list')
       async function currentIncidents(status) {
+        stage='cdc_alert_api_'+status
         const payload = await json(await alertAPI.get('/api/v1/monitor/alerts?module=transfer&page_size=100'), 'CDC alert API')
         expect(payload.total).toBeLessThanOrEqual(100)
         const selected = payload.data.filter(row => incidentIDs.includes(row.id))
@@ -149,6 +152,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       async function compareRows(status) {
         const selected=await currentIncidents(status)
         for (const row of selected) {
+          stage='cdc_alert_row_'+row.signal_code
           const visible=await findAlertRow(row.id)
           await expect(visible).toContainText(names[row.signal_code])
           await expect(visible.getByTestId('cdc-alert-reason')).toContainText(String(binding.generation))
@@ -200,11 +204,13 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       const selected=deliveries.data.filter(row=>incidentIDs.includes(row.incident_id))
       expect(selected.map(row=>row.delivery_id).sort()).toEqual([...binding.delivery_ids].sort())
       expect(selected.filter(row=>row.event_type==='resolved')).toHaveLength(phase==='cdc_alert_resolved'?3:0)
+      stage='cdc_alert_notification_page'
       await page.goto('/monitor/notifications')
       const card=frame.locator('.webhook-list .delivery-card')
       await expect(card).toBeVisible()
       await card.locator('.el-select').first().click()
       await frame.getByRole('option',{name:destination.name,exact:true}).click()
+      stage='cdc_alert_notification_filter'
       const response=page.waitForResponse(response=>response.url().includes('/api/v1/monitor/webhook-deliveries?') && new URL(response.url()).searchParams.get('destination_id')===String(binding.destination_id))
       await card.getByRole('button',{name:'查询',exact:true}).click()
       expect((await response).ok()).toBe(true)

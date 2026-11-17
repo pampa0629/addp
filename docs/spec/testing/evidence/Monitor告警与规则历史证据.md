@@ -180,6 +180,16 @@ Artifact `14242081152` 的 SHA-256 `f60cd40eda38dcffd979f787ab4b2737a395bb0ee08c
 
 本批仅修改原 Hosted Runner／回归、原 Online 页面 spec 和现有场景／证据；没有产品 UI／接口／权限、入口或预算变化。标准 `make test-transfer-continuous-online-runner` 在冻结检出 `252942fc223e1fe865cdb3623fd7988d51c21fad` 叠加四个实际输入后，154 项 Python、原 Node／Shell 语法及 System 身份夹具 Go 完整通过（`/tmp/addp-cdc-alert-ui-runner-frozen.log`）。回归核对三阶段编排及页面唯一确认、错误任务／代次／投递或回执检查缺失的拒绝、浏览器失败后原生故障和规则清理；普通 Console T3 配置明确排除 `e2e/online`，这些实际页面断言必须由新源码 Hosted 证明。前轮 27 项／8 页回执未覆盖本补充，当前尚未运行实际新 T4，不追认通过。
 
+### 租户告警页面首轮 Hosted 失败与客户端生命周期修订（2026-11-17）
+
+固定 `0531f97a0ecfe95536274e5ffe8d919a7ab6b7e2` 的 [Hosted 43992449101／Job 133736209624](https://github.com/pampa0629/addp/actions/runs/43992449101/job/133736209624)失败在 performance_alert_open_page。已有前 17 项检查、暂停清窗／评估器重建／恢复完整窗口断言及三条性能告警真实打开和 3 条 opened 签名实收；浏览器只完成 alert_task_generation，失败阶段为 cdc_alert_open_rows，未进入确认／缺样／关闭页面。首次取 Artifact 时网络下载失败，仅重新读取同一原件，没有重新派发 Hosted。
+
+根因位于新增 Online spec：声明了 alertAPI，但原 signedPage 的 finally 仍即时 dispose，未将登录后通过身份核验的客户端赋给它；currentIncidents 首次读取直接调用未赋值的 alertAPI。浏览器失败回执的阶段与仅一条页面告警 GET 符合该路径，Monitor 日志没有确认 POST。本轮 uncertain_mutation=true 按预先设置保留，不借“实际尚未确认”或后续清理把标记清掉。修订仅让告警三阶段持有该客户端至外层 finally 释放，其余阶段仍即时释放；增加安全阶段标签，不新增产品接口／日志、权限或预算。
+
+新增回归执行实际 signedPage 闭包，只替换浏览器和网络边界：固定发布源码确实因告警客户端为 undefined 失败（`/tmp/addp-cdc-alert-ui-api-red-published.log`），修订后三个告警阶段均能继续读取并最终释放，普通阶段保持即时释放（`/tmp/addp-cdc-alert-ui-api-green-actual.log`）。早期回归名称、缺导入与夹具缺 route 的失败原件单独保留，不冒充有效 red。最终冻结输入一致后，`make test-transfer-continuous-online-runner` 完整通过 155 项、Node／Shell 语法和 System 身份夹具 Go（`/tmp/addp-cdc-alert-ui-runner-client-fix.log`）；[同源码自然 Platform consistency Job 133736064214](https://github.com/pampa0629/addp/actions/runs/43992409449/job/133736064214)成功仍不能抵消页面实故障失败。
+
+性能／领域 cleanup=passed、cleanup_failures=[]，CPU／Connector 配置恢复、临时源行和规则清理、Webhook 删除及接收端关闭均完成；任务 3／2 删除读回不存在，硬退出 Kafka 任务按原约定由部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。未知操作结果保留；后续页面、恢复通知、风险重建、scheduled、历史图表及最终原生 verify-clean 未走到，不计通过。Artifact `14289647480` 已核对 SHA-256 `033ea43b0a73e1ac4a5c9a510cb09f37bcb806d523835052ddd860acb4cd99f2` 与 ZIP CRC，原件 `/tmp/addp-cdc-alert-ui-hosted-43992449101/` 保留。修订后的真实页面闭环需另以新源码完整联验。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办

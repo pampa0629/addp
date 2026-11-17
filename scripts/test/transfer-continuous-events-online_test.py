@@ -803,6 +803,36 @@ class ContinuousRunnerTest(unittest.TestCase):
                 launch.assert_not_called()
             self.assertFalse(list(secret.iterdir()))
 
+    def test_actual_signed_page_retains_alert_api_until_outer_cleanup_and_disposes_other_phases(self):
+        # Execute the real closure with only browser/network edges replaced; no copied lifecycle implementation.
+        program = r"""
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const source=readFileSync('console/frontend/e2e/online/continuous-execution-events.spec.js','utf8');
+const start=source.indexOf('  async function signedPage('),end=source.indexOf('  async function timeline(',start);
+assert(start>0 && end>start);
+const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+for(const mode of ['cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved','live']) {
+ let disposed=false,reads=0;
+ const page={addInitScript:async()=>{},frameLocator:()=>({})};
+ const api={get:async()=>{assert.equal(disposed,false);reads++;return{}},dispose:async()=>{disposed=true}};
+ const run=new AsyncFunction('browser','request','login','identity','json','expect','phase',`
+  let stage;let alertAPI;const alertBinding=phase.startsWith('cdc_alert_')?{}:null;
+  const contexts=[],credentials=['ordinary','private'],principalID='33',tenantID='2';
+  ${source.slice(start,end)}
+  await signedPage('owned',true,'/monitor/alerts');return {alertAPI,contexts};`);
+ const result=await run({newContext:async()=>({newPage:async()=>page})},{newContext:async()=>api},async()=> 'opaque',
+  ()=>({principalType:'user',contextType:'tenant',principalID:'33',tenantID:'2',permissions:new Set(['monitor.execution.read','transfer.task.read'])}),
+  async value=>value,value=>({toBe:expected=>assert.equal(value,expected)}),mode);
+ assert.equal(reads,1);
+ if(mode.startsWith('cdc_alert_')) {
+  assert.equal(result.alertAPI,api);assert.equal(disposed,false);
+  await result.alertAPI.get('/alerts');assert.equal(reads,2);
+  await result.alertAPI.dispose();assert.equal(disposed,true);
+ } else {assert.equal(result.alertAPI,undefined);assert.equal(disposed,true)}
+}
+"""
+        M.subprocess.run(['node','--input-type=module','-e',program],cwd=M.ROOT,check=True,capture_output=True,text=True,timeout=15)
+
     def test_browser_rejects_invalid_phase_identity_and_action_before_launch(self):
         with patch.object(M.subprocess, 'Popen') as launch:
             for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None), ('live', [UUID], lambda: None),
