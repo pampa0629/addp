@@ -7,7 +7,7 @@ runs a capacity model. Product images and Compose contracts remain authoritative
 from __future__ import annotations
 
 import base64
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 import copy
 import hashlib
 import importlib
@@ -1584,33 +1584,81 @@ class Lifecycle:
                         else:
                             self.last_failure = command_failure
 
+    def sample_owned_lists(self, remaining):
+        requests = (
+            ('list_owned_containers', owned_container_list_args(self.run_id, self.label,
+                compile_details=self.strict_resources and self.sample_phase == 'product_compile')),
+            ('list_owned_volumes', ['volume','ls','-q','--filter',f'label={self.label}={self.run_id}']),
+        )
+        steps=[];reads=[];primary=None
+        self.owned_list_processes=[]
+        try:
+            with ExitStack() as stack:
+                try:
+                    for operation,args in requests:
+                        self.sample_operation=operation
+                        step={'operation':operation,'commands':[],'result':'failed'}
+                        steps.append(step);self.sample_steps.append(step)
+                        timeout=min(remaining(),self.started+self.work_seconds-time.monotonic())
+                        require(timeout>0,'total_deadline_exceeded')
+                        read=stack.enter_context(self.pending_command(['docker',*args],guarded=False,
+                            timeout=timeout,step=step,process_observer=self.owned_list_processes.append))
+                        reads.append(read)
+                    values=[]
+                    for (operation,args),step,read in zip(requests,steps,reads):
+                        self.sample_operation=operation
+                        values.append(read());remaining();step['result']='passed'
+                    return values[0],values[1].split()
+                except BaseException as error:
+                    primary=(error,self.sample_operation,getattr(self,'last_failure',None))
+                    raise
+        except BaseException:
+            if primary is not None:
+                error,operation,failure=primary
+                self.sample_operation=operation
+                if failure is None:self.__dict__.pop('last_failure',None)
+                else:self.last_failure=failure
+                raise error
+            raise
+        finally:
+            for step in steps:
+                commands=step['commands']
+                if commands:
+                    if any(command['result']=='failed' for command in commands):step['result']='failed'
+                    step['duration_seconds']=round((commands[-1]['finished_monotonic_ns']-
+                        commands[0]['entered_monotonic_ns'])/1e9,6)
+                    step['processing_seconds']=round(max(0,step['duration_seconds']-
+                        sum(command['duration_seconds'] for command in commands)),6)
+            self.owned_list_processes=[p for p in self.owned_list_processes if p.poll() is None]
+
     def _sample(self):
         def remaining():
             value=self.sample_deadline-time.monotonic()
             require(value>0, 'resource_sample_deadline_exceeded')
             return value
         if hasattr(self,'measurement_failure'):del self.measurement_failure
-        compile_target = None
-        with self.measure_step('list_owned_containers'):
-            if self.builder_created and not self.builder_ids:
+        if self.builder_created and not self.builder_ids:
+            with self.measure_step('list_owned_containers'):
                 self.builder_ids.update(self.docker('ps','-aq','--filter','name=^buildx_buildkit_'+self.builder+'0$',guarded=False,timeout=remaining()).split())
+        listing, volumes = self.sample_owned_lists(remaining)
+        with self.measure_step('bind_owned_containers'):
+            compile_target = None
             if self.strict_resources and self.sample_phase == 'product_compile':
-                args = owned_container_list_args(self.run_id, self.label, compile_details=True)
-                listing = self.docker(*args, guarded=False, timeout=remaining())
                 ids, compile_target = self.compile_container_targets(listing)
             else:
-                ids = set(self.owned('container', timeout=remaining()))
+                ids = set(listing.split())
             ids |= self.builder_ids
             self.sample_counts['container_count'] = len(ids)
+            remaining()
         pause_id = compile_target[0] if compile_target and compile_target[1] == 'running' else None
         with self.stable_compile_measurement(pause_id, remaining):
             with self.parallel_private_measurement(pause_id is not None,remaining) as private_read:
-                sample = self.measure_owned_resources(ids, compile_target, remaining, private_read)
+                sample = self.measure_owned_resources(ids, volumes, compile_target, remaining, private_read)
         sample.update(elapsed_seconds=round(time.monotonic()-self.started, 2), **self.sample_diagnostics())
         remaining()
         self.samples.append(sample)
 
-    def measure_owned_resources(self, ids, compile_target, remaining, private_read=None):
+    def measure_owned_resources(self, ids, volumes, compile_target, remaining, private_read=None):
         retries={'volume':0,'private':0}
         no_retry=getattr(self,'sample_no_retry',self.strict_resources)
         with self.measure_step('inspect_owned_containers'):
@@ -1641,8 +1689,7 @@ class Lifecycle:
                 raise
             remaining()
             self.sample_measured.update(cpu_hard_limit=cpu, memory_hard_limit_bytes=memory)
-        with self.measure_step('list_owned_volumes'):
-            volumes = self.owned('volume', timeout=remaining())
+        with self.measure_step('bind_owned_volumes'):
             if self.builder_ids:
                 for row in rows:
                     if row['Id'] in self.builder_ids:
@@ -1728,6 +1775,15 @@ class Lifecycle:
     def cleanup(self):
         self.stop.set()
         errors = []
+        for child in getattr(self,'owned_list_processes',[]):
+            try:
+                if child.poll() is None:
+                    os.killpg(child.pid,signal.SIGKILL)
+                    child.wait(timeout=1)
+                require(child.poll() is not None,'owned_list_child_not_stopped')
+            except (OSError,subprocess.SubprocessError,GateError):
+                return ['owned_list_child_not_stopped']
+        self.owned_list_processes=[]
         private_child = getattr(self,'private_measurement_process',None)
         if private_child is not None and private_child.poll() is None:
             try:
@@ -1760,7 +1816,7 @@ class Lifecycle:
             self.thread.join(timeout=10 if self.strict_resources else 6)
             if self.thread.is_alive():
                 errors.append('resource_guard_not_stopped')
-                if self.strict_resources:return errors
+                return errors
         self.phase = 'cleanup'
         # Release read-only mounts before Buildx removes its state volume,
         # including a helper created just before its client timed out.

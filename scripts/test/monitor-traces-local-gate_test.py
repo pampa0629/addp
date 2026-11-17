@@ -1540,6 +1540,123 @@ class LocalTraceIsolationTests(unittest.TestCase):
             self.assertNotIn('ports', service)
 
 
+class OwnedListOverlapTests(unittest.TestCase):
+    def exercise(self, fault=None, strict=False, lifecycle_class=None):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            if lifecycle_class is not None:
+                derived=lifecycle_class.__new__(lifecycle_class);derived.__dict__.update(life.__dict__);life=derived
+                life.command_evidence=m.CommandEvidence(label=life.label)
+            life.strict_resources=strict;life.phase='product_compile'
+            life.sample_thread_id=threading.get_ident();life.sample_phase=life.phase
+            life.sample_deadline=4;life.sample_began=0;life.sample_steps=[]
+            life.sample_counts={'container_count':None,'volume_count':None}
+            clock=[0.];events=[];processes=[]
+            def spawn(args,**kwargs):
+                kind=args[1]
+                self.assertEqual(args[0],'docker')
+                self.assertIn('label='+life.label+'='+life.run_id,args)
+                self.assertLess(clock[0],4)
+                if fault=='second_spawn' and kind=='volume':raise OSError('synthetic spawn failure')
+                process=mock.Mock(pid=610000+len(processes),returncode=None)
+                process.kind=kind
+                process.ready_at=(.1 if fault=='container_early' else .4) if kind=='container' else (9 if fault=='container_early' else .25)
+                def poll():
+                    if process.returncode is None and clock[0]>=process.ready_at and not (fault=='unreaped' and kind=='volume'):
+                        process.returncode=17 if fault==kind or fault=='container_early' and kind=='container' else 0
+                    return process.returncode
+                def wait(timeout):
+                    events.append(('wait',kind))
+                    if fault in ('timeout','unreaped'):
+                        if fault=='unreaped' and kind=='container':
+                            process.returncode=17;return 17
+                        clock[0]+=timeout
+                        raise m.subprocess.TimeoutExpired(args,timeout)
+                    clock[0]=max(clock[0],min(process.ready_at,clock[0]+timeout))
+                    if poll() is None:raise m.subprocess.TimeoutExpired(args,timeout)
+                    return process.returncode
+                process.poll.side_effect=poll;process.wait.side_effect=wait
+                if strict and kind=='container':
+                    kwargs['stdout'].write(('a'*64+'\t'+life.run_id+'-compile\trunning\toneshot\n').encode())
+                else:kwargs['stdout'].write((kind+'-owned\n').encode())
+                processes.append(process);events.append(('spawn',kind));return process
+            def kill(pid,sig):
+                process=next(p for p in processes if p.pid==pid)
+                events.append(('kill',process.kind))
+                if fault!='unreaped':process.returncode=-sig
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                 mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)), \
+                 mock.patch.object(m.subprocess,'Popen',side_effect=spawn) as spawned, \
+                 mock.patch.object(m.os,'killpg',side_effect=kill):
+                if fault:
+                    expected=OSError if fault=='second_spawn' else m.GateError
+                    with self.assertRaises(expected):life.sample_owned_lists(lambda:life.sample_deadline-clock[0])
+                else:
+                    listings=life.sample_owned_lists(lambda:life.sample_deadline-clock[0])
+                    self.assertEqual(listings[1],['volume-owned'])
+                    self.assertEqual(clock[0],.4)
+                self.assertEqual(events[:2],[('spawn','container'),('spawn','volume')] if fault!='second_spawn' else [('spawn','container'),('kill','container')])
+                self.assertEqual(spawned.call_count,2)
+                self.assertEqual(len(life.sample_steps),2)
+                records=life.command_evidence.snapshot()
+                self.assertEqual(len(records),2)
+                self.assertEqual([r['operation'] for r in records],['list_owned_containers','list_owned_volumes'])
+                self.assertEqual(len({r['command_id'] for r in records}),2)
+                self.assertTrue(all(r['record_complete'] for r in records))
+                if fault=='unreaped':
+                    self.assertEqual(life.last_failure['exit_code'],17)
+                    self.assertEqual(life.cleanup(),['owned_list_child_not_stopped'])
+                    self.assertTrue(Path(directory).exists())
+                else:self.assertFalse(any(p.poll() is None for p in processes))
+                self.assertFalse(life.command_evidence.active)
+                return fault,events,life.sample_steps
+
+    def test_two_existing_requests_overlap_in_both_profiles_with_independent_records(self):
+        for strict in (False,True):
+            with self.subTest(strict=strict):self.exercise(strict=strict)
+
+    def test_both_request_failures_second_spawn_and_deadline_reap_the_partner(self):
+        for fault in ('container','container_early','volume','second_spawn','timeout'):
+            with self.subTest(fault=fault):self.exercise(fault=fault)
+
+    def test_both_list_commands_share_the_existing_absolute_work_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.started=10;life.work_seconds=.2
+            life.sample_deadline=14;life.sample_phase='product_compile';life.sample_steps=[]
+            clock=[10.];deadlines=[]
+            @m.contextmanager
+            def pending(args,**kwargs):
+                deadlines.append(clock[0]+kwargs['timeout'])
+                clock[0]+=.05
+                yield lambda:''
+            life.pending_command=pending
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]):
+                self.assertEqual(life.sample_owned_lists(lambda:14-clock[0]),('',[]))
+            self.assertEqual(len(deadlines),2)
+            self.assertTrue(all(abs(d-10.2)<.000001 for d in deadlines))
+            life.sample_steps=[];clock[0]=10.2
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), self.assertRaisesRegex(m.GateError,'total_deadline_exceeded'):
+                life.sample_owned_lists(lambda:14-clock[0])
+            self.assertEqual(len(deadlines),2)
+
+    def test_unreaped_partner_preserves_first_failure_and_blocks_private_deletion(self):
+        self.exercise(fault='unreaped')
+
+
+def fake_pending_lists(life, other=None):
+    @m.contextmanager
+    def pending(args, **kwargs):
+        if args[:3] not in (['docker','container','ls'],['docker','volume','ls']):
+            with (other or m.Lifecycle.pending_command.__get__(life))(args,**kwargs) as finish:
+                yield finish
+            return
+        step=kwargs['step']
+        def finish():return life.docker(*args[1:],guarded=False,timeout=kwargs['timeout'])
+        yield finish
+        step.update(duration_seconds=0,processing_seconds=0)
+    return pending
+
+
 class LocalTraceResourceGuardTests(unittest.TestCase):
     def sample_lifecycle(self, directory, allocation):
         life = bare_lifecycle(directory)
@@ -1560,6 +1677,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 return ''
             raise AssertionError(args)
         life.docker = docker
+        life.pending_command = fake_pending_lists(life)
         return life, calls
 
     def compile_lifecycle(self, directory, *, state='running', role='oneshot'):
@@ -1595,7 +1713,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
         @m.contextmanager
         def pending_private(*args, **kwargs):
             yield lambda: str(life.owned_bind_bytes(timeout=kwargs['timeout'])//1024)+'\tprivate\n'
-        life.pending_command = pending_private
+        life.pending_command = fake_pending_lists(life,pending_private)
         return life, calls, compile_row
 
     def test_compile_pauses_owned_container_for_full_check_then_resumes_before_success(self):
@@ -1612,7 +1730,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
 
             def private_bytes(**kwargs):
                 self.assertTrue(compile_row['State']['Paused'])
-                self.assertEqual(kwargs['timeout'], 3)
+                self.assertEqual(kwargs['timeout'], 2.75)
                 clock[0] += .25
                 return 1024
 
@@ -1621,8 +1739,8 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
                 life.sample()
             self.assertEqual([args[0] for args, _ in calls],
-                ['container', 'pause', 'inspect', 'volume', 'exec', 'unpause'])
-            self.assertEqual([kw['timeout'] for _, kw in calls], [4, 3.25, 3, 2.75, 2.5, 2.5])
+                ['container', 'volume', 'pause', 'inspect', 'exec', 'unpause'])
+            self.assertEqual([kw['timeout'] for _, kw in calls], [4, 4, 3, 2.75, 2.5, 2.5])
             self.assertTrue(all(not kw['guarded'] for _, kw in calls))
             self.assertFalse(compile_row['State']['Paused'])
             sample = life.samples[0]
@@ -1643,7 +1761,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                      'private_timeout','docker_timeout','unreaped'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 life, _, compile_row = self.compile_lifecycle(directory)
-                del life.pending_command
+                life.pending_command = fake_pending_lists(life)
                 clock = [0.]
                 events = []
                 process = mock.Mock(pid=765432,returncode=None)
@@ -1721,7 +1839,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 docker = life.docker
 
                 def timed_docker(*args, **kwargs):
-                    self.assertEqual(args[:2], ('container', 'ls'))
+                    self.assertIn(args[:2], (('container', 'ls'),('volume', 'ls')))
                     clock[0] = listing_time
                     return docker(*args, **kwargs)
 
@@ -1729,7 +1847,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
                     with self.assertRaisesRegex(m.GateError, 'resource_sample_deadline_exceeded'):
                         life.sample(deadline=full_deadline)
-                self.assertEqual(len(calls), 1)
+                self.assertEqual(len(calls), 2)
                 self.assertEqual(life.resource_failure['operation'], 'pause_owned_compile_container')
                 self.assertEqual(life.samples, [])
 
@@ -1768,13 +1886,13 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                             life.sample(deadline=deadline)
                 if allowed:
                     self.assertEqual([args[0] for args, _ in calls],
-                        ['container', 'pause', 'inspect', 'volume', 'exec', 'unpause'])
-                    self.assertAlmostEqual(calls[1][1]['timeout'], deadline - .5 - lock_wait - list_time)
+                        ['container', 'volume', 'pause', 'inspect', 'exec', 'unpause'])
+                    self.assertAlmostEqual(calls[2][1]['timeout'], deadline - .5 - lock_wait - list_time)
                     self.assertAlmostEqual(calls[-1][1]['timeout'], deadline - lock_wait - list_time)
                     self.assertEqual(life.samples[0]['volume_allocated_bytes'], 1024+128+256+1024)
                     life.owned_bind_bytes.assert_called_once()
                 else:
-                    self.assertEqual([args[0] for args, _ in calls], ['container'])
+                    self.assertEqual([args[0] for args, _ in calls], ['container', 'volume'])
                     self.assertEqual(life.resource_failure['operation'], 'pause_owned_compile_container')
                     self.assertEqual(life.resource_failure['steps'][-1]['commands'], [])
                     self.assertEqual(life.samples, [])
@@ -1806,7 +1924,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                   mock.patch.object(life.stop, 'wait', side_effect=lambda _: life.stop.set())):
                 life.monitor()
                 self.assertEqual(life.failure, 'compile_pause_budget_insufficient')
-                self.assertEqual([args[0] for args, _ in calls], ['container'])
+                self.assertEqual([args[0] for args, _ in calls], ['container', 'volume'])
                 self.assertEqual(life.samples, [])
                 self.assertFalse(compile_row['State']['Paused'])
                 self.assertEqual(life.cleanup(), [])
@@ -1821,7 +1939,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
 
             def timed_docker(*args, **kwargs):
                 result = docker(*args, **kwargs)
-                if args[:2] == ('volume', 'ls'):
+                if args[0] == 'inspect':
                     self.assertAlmostEqual(clock[0] + kwargs['timeout'], 3.5)
                     clock[0] = 3.52  # Cancellation and reaping took another 20 ms.
                     raise m.GateError('command_deadline_exceeded')
@@ -1835,9 +1953,9 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             life.docker = timed_docker
             with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
                 life.monitor()
-            self.assertEqual([args[0] for args, _ in calls], ['container', 'pause', 'inspect', 'volume', 'unpause'])
+            self.assertEqual([args[0] for args, _ in calls], ['container', 'volume', 'pause', 'inspect', 'unpause'])
             self.assertFalse(compile_row['State']['Paused'])
-            self.assertEqual(life.resource_failure['operation'], 'list_owned_volumes')
+            self.assertEqual(life.resource_failure['operation'], 'inspect_owned_containers')
             self.assertEqual(life.failure, 'resource_sample_deadline_exceeded')
             self.assertEqual(life.resource_failure['steps'][-1]['result'], 'passed')
             self.assertEqual(life.samples, [])
@@ -1849,7 +1967,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 with mock.patch.object(m.time, 'monotonic', return_value=1):
                     with self.assertRaisesRegex(m.GateError, 'owned_compile_container_identity_invalid'):
                         life.sample()
-                self.assertEqual([args[0] for args, _ in calls], ['container'])
+                self.assertEqual([args[0] for args, _ in calls], ['container', 'volume'])
                 self.assertEqual(life.samples, [])
 
     def test_nonrunning_compile_remains_in_measurement_without_pause(self):
@@ -1867,7 +1985,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 life.docker = timed_docker
                 with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
                     life.sample()
-                self.assertEqual([args[0] for args, _ in calls], ['container', 'inspect', 'volume', 'exec'])
+                self.assertEqual([args[0] for args, _ in calls], ['container', 'volume', 'inspect', 'exec'])
                 self.assertEqual(life.samples[0]['container_writable_bytes'], 384)
 
     def test_compile_state_or_identity_must_match_the_size_inspection(self):
@@ -1891,7 +2009,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 with mock.patch.object(m.time, 'monotonic', return_value=1):
                     with self.assertRaisesRegex(m.GateError, 'owned_compile_container_'+error):
                         life.sample()
-                expected = ['container', 'inspect'] if mode == 'started' else ['container', 'pause', 'inspect', 'unpause']
+                expected = ['container', 'volume', 'inspect'] if mode == 'started' else ['container', 'volume', 'pause', 'inspect', 'unpause']
                 self.assertEqual([args[0] for args, _ in calls], expected)
                 self.assertEqual(life.samples, [])
 
@@ -1936,7 +2054,7 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]):
                 m.compile_product_binaries(life)
             self.assertEqual(commands,[('create',2200),('start',3),('wait',2187)])
-            self.assertEqual([args[0] for args, _ in sample_calls],['container','inspect','volume','exec'])
+            self.assertEqual([args[0] for args, _ in sample_calls],['container','volume','inspect','exec'])
             self.assertEqual(len(life.samples),1)
 
     def test_compile_start_failure_closes_sampling_and_preserves_first_cause(self):
@@ -2089,10 +2207,10 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             self.assertEqual(sample['volume_count'], 1)
             self.assertEqual(sample['sample_duration_seconds'], 2)
             self.assertEqual([step['operation'] for step in sample['steps']], [
-                'list_owned_containers', 'inspect_owned_containers', 'validate_container_states',
-                'list_owned_volumes', 'measure_owned_volumes', 'measure_private_bindings', 'final_validation'])
+                'list_owned_containers', 'list_owned_volumes', 'bind_owned_containers', 'inspect_owned_containers', 'validate_container_states',
+                'bind_owned_volumes', 'measure_owned_volumes', 'measure_private_bindings', 'final_validation'])
             self.assertTrue(all(step['result'] == 'passed' for step in sample['steps']))
-            self.assertEqual([kwargs['timeout'] for _, kwargs in calls], [4, 3.5, 3, 2.5])
+            self.assertEqual([kwargs['timeout'] for _, kwargs in calls], [4, 4, 3, 2.5])
 
     def test_failed_tick_keeps_completed_and_failed_steps_through_monitor(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2173,7 +2291,8 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             with mock.patch.object(m.time,'monotonic',return_value=1):
                 life.sample()
                 life.sample()
-                life.owned=lambda kind,**kw:['owned-id'] if kind=='container' else ['owned-volume','new-owned-volume']
+                previous=life.docker
+                life.docker=lambda *args,**kw:'owned-volume\nnew-owned-volume' if args[:2]==('volume','ls') else previous(*args,**kw)
                 life.sample()
             runs=[args for args,_ in calls if args[0]=='run']
             executions=[args for args,_ in calls if args[0]=='exec']
@@ -3381,6 +3500,10 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
     def test_timeout_keeps_spawn_wait_and_cleanup_costs_without_success_sample(self):
         with tempfile.TemporaryDirectory() as directory:
             life = bare_lifecycle(directory)
+            def sample_one_command():
+                with life.measure_step('list_owned_containers'):
+                    life.command(['docker',*m.owned_container_list_args(life.run_id,life.label)],guarded=False,timeout=4)
+            life._sample=sample_one_command
             clock = [0.0]
             process = mock.Mock(pid=654321, returncode=0)
             process.poll.return_value = None
@@ -3398,7 +3521,7 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
                 life.monitor()
             failure = life.resource_failure
             self.assertEqual(failure['error_code'], 'resource_sample_deadline_exceeded')
-            command = failure['steps'][-1]['commands'][-1]
+            command = failure['steps'][0]['commands'][-1]
             self.assertEqual(command['result'], 'failed')
             self.assertEqual(command['spawn_seconds'], .01)
             self.assertEqual(command['wait_seconds'], 3.99)
@@ -3412,7 +3535,7 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
             self.assertEqual(command['decision_monotonic_ns'],4_200_000_000)
             self.assertEqual(command['finished_monotonic_ns'],4_200_000_000)
             self.assertEqual(failure['sample_duration_seconds'], 4.2)
-            self.assertEqual(failure['steps'][-1]['processing_seconds'], 0)
+            self.assertEqual(failure['steps'][0]['processing_seconds'], 0)
             self.assertNotIn('PRIVATE', json.dumps(failure))
             self.assertEqual(life.samples, [])
             kill.assert_called_once_with(process.pid, signal.SIGTERM)
@@ -3593,6 +3716,8 @@ class LocalTraceCleanupTests(unittest.TestCase):
             life.docker = mock.Mock(return_value='')
             self.assertIn('resource_guard_not_stopped', life.cleanup())
             life.thread.join.assert_called_once()
+            life.docker.assert_not_called()
+            self.assertTrue(work.exists())
 
     def test_command_interruption_reaps_its_process_group(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -3805,7 +3930,9 @@ class LocalTraceStartupAndWritableBudgetTests(unittest.TestCase):
     def test_private_writable_directories_are_part_of_the_same_stop_line(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory)
-            life.owned=lambda kind,**kw: []
+            life.started=m.time.monotonic()
+            life.docker=mock.Mock(return_value='')
+            life.pending_command=fake_pending_lists(life)
             life.owned_bind_bytes=lambda **kw: m.VOLUME_STOP
             with self.assertRaisesRegex(m.GateError,'owned_volume_stop_line_reached'):life.sample()
             life.command=mock.Mock(return_value='2048 /private/work\n')

@@ -216,6 +216,11 @@ class HTTPProductLocalTests(unittest.TestCase):
         with mock.patch.object(m.core.time,'monotonic',return_value=11),self.assertRaisesRegex(m.core.GateError,'cleanup_deadline'):
             life.command(['must-never-spawn'])
 
+    def test_http_inherits_the_same_bounded_owned_list_overlap(self):
+        fixtures=m.core.module('monitor-traces-local-gate_test')
+        self.assertIs(m.Lifecycle.sample_owned_lists,m.core.Lifecycle.sample_owned_lists)
+        fixtures.OwnedListOverlapTests().exercise(strict=True,lifecycle_class=m.Lifecycle)
+
     def test_http_profile_uses_single_shared_lifecycle_and_retains_trace_contract(self):
         self.assertTrue(issubclass(m.Lifecycle,m.core.Lifecycle))
         self.assertTrue(m.Lifecycle.strict_resources);self.assertFalse(m.core.Lifecycle.strict_resources)
