@@ -524,7 +524,7 @@ continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自�
 
 ### Continuous 验收边界
 
-持续写入期间沿原游标续读、Console 刷新及 Worker 失联后的终态收敛，按现行场景的断言验收。[Transfer continuous Hosted 场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)
+持续写入期间沿原游标续读、Console 刷新及 Worker 失联后的终态收敛，按现行场景的断言验收。[Transfer continuous Hosted 场景](../../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events)
 
 实际通过范围以对应源码版本的运行回执为准。过程事件和精确扫描各有独立的分版本记录。[过程事件记录](../CLAUDE.md#continuous-过程事件与浏览器验收) · [精确扫描与审批记录](../CLAUDE.md#continuous-精确扫描与审批归属)
 

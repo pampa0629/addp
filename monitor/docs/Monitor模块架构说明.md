@@ -37,7 +37,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 
 事件读取的 Owner 授权、游标及 Owner 故障后的重新授权有独立的 PostgreSQL T2 验证。真实入口按各场景的实际回执认定。[模块 T2 范围](../CLAUDE.md#开发与验证)
 
-- **Transfer continuous 持续写入**。续页、Console 刷新及 Worker 失联后的唯一终态沿[正式验收说明](../../docs/spec/tasks/执行监控.md#大量事件分页与截断真实入口验收)和[场景要求](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)。[后续整套闭环](../../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环)与[早期分项通过、整套失败](../../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-10-固定源码复验)分别认定；业务清理、预期留待部署销毁项和未核清残留不混为领域零残留。
+- **Transfer continuous 持续写入**。续页、Console 刷新及 Worker 失联后的唯一终态沿[正式验收说明](../../docs/spec/tasks/执行监控.md#大量事件分页与截断真实入口验收)和[场景要求](../../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events)。[后续整套闭环](../../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环)与[早期分项通过、整套失败](../../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-10-固定源码复验)分别认定；业务清理、预期留待部署销毁项和未核清残留不混为领域零残留。
 - **合成 Meta 大量事件分页**。[限定范围证据](../../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#大量事件分页与截断真实入口验收通过限定范围2026-10-26)覆盖 1000／1201 条事件的 API 分页、采集截断及 Console 展示上限；不代表真实 Meta 扫描 Worker 或持续写入场景。
 
 存储维护按上表的 30 天事件物理清理、180 天概览只读评估和小时周期证据分别验收。固定源码、首次失败、修复、跳过与最终清理分别按原记录认定。

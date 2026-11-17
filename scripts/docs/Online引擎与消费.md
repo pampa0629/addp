@@ -30,7 +30,7 @@ Configuration、Manager Data Explorer、Service Query Services 在同一 Browser
 
 ### 关系型 SQL ETL
 
-`transfer-relational-sql-etl` 的唯一 Hosted 部署与完整覆盖范围见[正式场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-relational-sql-etl)，在 `Online T4 gates` 手工选择同名 suite。后续扩展分别见[Manager 私有导入与对象上传](../../docs/spec/testing/scenarios/同步与引擎消费.md#manager-私有导入)、[写入失败与证据边界](../../docs/spec/testing/scenarios/同步与引擎消费.md#写入失败与证据边界)、[字段级血缘](../../docs/spec/testing/scenarios/同步与引擎消费.md#字段级血缘验收)和[扫描读取隔离](../../docs/spec/testing/scenarios/同步与引擎消费.md#扫描调用链与读取隔离)；下列原生表和查询源子场景不作为完整 suite 的覆盖清单。
+`transfer-relational-sql-etl` 的唯一 Hosted 部署与完整覆盖范围见[正式场景](../../docs/spec/testing/scenarios/TransferSQL与血缘验收.md#transfer-relational-sql-etl)，在 `Online T4 gates` 手工选择同名 suite。后续扩展分别见[Manager 私有导入与对象上传](../../docs/spec/testing/scenarios/TransferSQL与血缘验收.md#manager-私有导入)、[写入失败与证据边界](../../docs/spec/testing/scenarios/TransferSQL与血缘验收.md#写入失败与证据边界)、[字段级血缘](../../docs/spec/testing/scenarios/TransferSQL与血缘验收.md#字段级血缘验收)和[扫描读取隔离](../../docs/spec/testing/scenarios/TransferSQL与血缘验收.md#扫描调用链与读取隔离)；下列原生表和查询源子场景不作为完整 suite 的覆盖清单。
 
 准备由[Transfer Host Gate](../test/online-hosted-transfer-gate.sh)复用 Hosted 生命周期，当前参与服务及物理夹具以该入口为准。真实测试 User 的权限集由[System 身份夹具](../../system/backend/cmd/online-test-fixture/main.go)维护，独立 Provisioner 通过 System API 注册当次 Engine Instance，注册后清除 Provisioner Token；不以固定权限数量描述后续扩展。Business Fixture 使用本轮独占的 tmpfs 容器，数据库用户只读取源表并在指定 schema 创建自己的目标表。业务断言仍只有 `make test-online ONLINE_SUITE=transfer-relational-sql-etl` 一条入口。
 
@@ -66,7 +66,7 @@ Host Gate 安装专用 Chromium；完整 API Key 不得进入报告或日志，A
 
 ### OceanBase 消费
 
-`oceanbase-consumer-flow` 的 macOS 环境字段沿[场景准备](Online编排与观测.md#按场景补充)，引擎模式、稳定键和消费断言沿[OceanBase 正式场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#oceanbase)。参与 System、Gateway、Meta、Manager、Transfer、Develop 和 Service；`business/scripts/online-oceanbase-consumer-fixture.sh` 管理独立 OceanBase CE。
+`oceanbase-consumer-flow` 的 macOS 环境字段沿[场景准备](Online编排与观测.md#按场景补充)，引擎模式、稳定键和消费断言沿[OceanBase 正式场景](../../docs/spec/testing/scenarios/关系型引擎消费验收.md#oceanbase)。参与 System、Gateway、Meta、Manager、Transfer、Develop 和 Service；`business/scripts/online-oceanbase-consumer-fixture.sh` 管理独立 OceanBase CE。
 
 专用环境预置永久 `engine_type=oceanbase` Engine Instance；Fixture 固定维护 5 行 InnoDB watermark 源表和同构空目标表。
 
@@ -78,7 +78,7 @@ suite 经 Gateway 和 Meta 获取正式 ResourceLocator，只创建一条 bounde
 
 `opengauss-consumer-flow` 使用同一个 `relational-consumer-flow-online.py` 断言 Manager、Transfer、Develop 和 Service，上层流程只通过通用 Engine Plugin/Provider 和 SQLDialect 工作。
 
-openGauss 6.0.6 官方容器的 NUMA 限制要求使用唯一 GitHub Hosted `ubuntu-24.04` x86_64 profile，见[openGauss 正式场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#opengauss)。[openGauss Host Gate](../test/online-hosted-opengauss-gate.sh)按正式 Infra 生命周期在镜像缺失时从 `scripts/infra/Dockerfile.postgres` 构建 x86_64 PostgreSQL 镜像，再从固定 SHA-256 官方介质创建独占 openGauss，准备当次 Infra 和 Manager/Transfer/Develop/Service 参与链路。
+openGauss 6.0.6 官方容器的 NUMA 限制要求使用唯一 GitHub Hosted `ubuntu-24.04` x86_64 profile，见[openGauss 正式场景](../../docs/spec/testing/scenarios/关系型引擎消费验收.md#opengauss)。[openGauss Host Gate](../test/online-hosted-opengauss-gate.sh)按正式 Infra 生命周期在镜像缺失时从 `scripts/infra/Dockerfile.postgres` 构建 x86_64 PostgreSQL 镜像，再从固定 SHA-256 官方介质创建独占 openGauss，准备当次 Infra 和 Manager/Transfer/Develop/Service 参与链路。
 
 Business Fixture 只输出 owner-only Engine 描述，System IAM owner helper 创建非默认 Tenant、仅含租户可定制业务 Permission 的最小消费 User，并把一次性 Engine Provisioner 绑定到正式内置 `tenant.infrastructure_administrator` Role。通用 `online-engine-registration.py` 使用 Provisioner Token 通过正式 System API 注册并验证当次 Engine Instance，随后立即从业务断言环境清除该 Token 与数据库凭据；consumer 不访问 System Engine 控制面，只验证 Manager、Transfer、Develop 和 Service 的消费路径，证据另写入 artifact 目录。
 
@@ -90,7 +90,7 @@ Business Fixture 只输出 owner-only Engine 描述，System IAM owner helper �
 
 `tidb-consumer-flow` 与 OceanBase/openGauss 复用同一个 `relational-consumer-flow-online.py`，使用 `engine_type=tidb` 的 database catalog profile，不在 Manager、Transfer、Develop 或 Service 增加数据库分支。
 
-macOS 专用 Runner 预置永久 TiDB Engine Instance；[TiDB 正式场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#tidb)维护部署与三组件清理边界。仓库外环境文件提供 `ADDP_ONLINE_TIDB_ENGINE_ID`、`ADDP_ONLINE_TIDB_PORT`、`ADDP_ONLINE_TIDB_DATABASE`、`ADDP_ONLINE_TIDB_USER` 和可为空的 `ADDP_ONLINE_TIDB_PASSWORD`，完整必需项沿[Host Gate](../test/online-host-gate.sh)。
+macOS 专用 Runner 预置永久 TiDB Engine Instance；[TiDB 正式场景](../../docs/spec/testing/scenarios/关系型引擎消费验收.md#tidb)维护部署与三组件清理边界。仓库外环境文件提供 `ADDP_ONLINE_TIDB_ENGINE_ID`、`ADDP_ONLINE_TIDB_PORT`、`ADDP_ONLINE_TIDB_DATABASE`、`ADDP_ONLINE_TIDB_USER` 和可为空的 `ADDP_ONLINE_TIDB_PASSWORD`，完整必需项沿[Host Gate](../test/online-host-gate.sh)。
 
 `online-tidb-consumer-fixture.sh` 复用 T2 的固定 digest、无卷 PD/TiKV/TiDB Compose，重建 5 行源和空目标，推进 2 行 watermark 后由同一 Transfer 任务得到 5/2/0 读取计数，并由 Manager、Develop、Service 比较 6 行同 checksum。
 
@@ -98,7 +98,7 @@ macOS 专用 Runner 预置永久 TiDB Engine Instance；[TiDB 正式场景](../.
 
 ### Transfer 仅新增写入
 
-`transfer-insert-only-mysql` 的 macOS 字段与两端身份沿[场景准备](Online编排与观测.md#按场景补充)，单字段水位边界沿[正式场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-仅新增-mysql-同步)。参与 System、Gateway、Meta、Transfer 和 Console；`business/scripts/online-transfer-insert-only-fixture.sh` 同时管理专用 PostgreSQL 源表和可写 MySQL 目标库。
+`transfer-insert-only-mysql` 的 macOS 字段与两端身份沿[场景准备](Online编排与观测.md#按场景补充)，单字段水位边界沿[正式场景](../../docs/spec/testing/scenarios/TransferSQL与血缘验收.md#transfer-仅新增-mysql-同步)。参与 System、Gateway、Meta、Transfer 和 Console；`business/scripts/online-transfer-insert-only-fixture.sh` 同时管理专用 PostgreSQL 源表和可写 MySQL 目标库。
 
 suite 以真实 User 登录 Console，经 Transfer 向导选择两端资源；字段映射阶段必须调用正式推荐接口，把无声明精度的 `numeric` 当前值分析为 `DECIMAL(6,2)`，配置阶段再选择仅新增并自动派生 `id` 水位和目标键。
 

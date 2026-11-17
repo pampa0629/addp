@@ -100,7 +100,7 @@ Neo4j 原生身份候选沿固定摘要 Community 5.26.24 独占 T2 验证，保
 | --- | --- |
 | `make test-common-ftp-unit` | 严格连接事实／账号根／规范路径／TLS／取消、种子／忽略目录／临时归属及T2登记。 |
 | `make test-common-ftp` | Business固定SFTPGo、独占容器卷／随机密码／私有CA／内外一致回环被动端口；FTP／显式FTPS、只读账号、NLST+MLST完整目录、中文／空格／百分号原名、REST Range、PASV约束及读取会话隔离，退出零残留。Linux ARM64／amd64同入口。 |
-| [普通User消费T4](scenarios/同步与引擎消费.md#ftp-普通-user-消费ftp-consumer-flow) | 平台身份及业务闭环另验；`make test-ftp-online-runner` 不代替真实Hosted。 |
+| [普通User消费T4](scenarios/文件来源与模型消费验收.md#ftp-普通-user-消费ftp-consumer-flow) | 平台身份及业务闭环另验；`make test-ftp-online-runner` 不代替真实Hosted。 |
 
 固定 `48a28fbd4` 的准入 `39373761312` 两架构通过；同卷重建欢迎响应EOF曾实际复现并修复，镜像manifest／协议准入不代验生产Provider或T4。连接失败只公开固定阶段／协议码／脱敏类别，欢迎EOF不能当正常内容EOF或借机重试；Parquet保留实际Range请求计数及完整行数断言。
 

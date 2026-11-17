@@ -322,13 +322,13 @@ CDC 捕获资源名沿全局 `apply_identity`／generation 生成，源端同名
 
 现行事件写入、Runtime lease／fencing 裁决、attempt、累计计数、预算、30 天清理与安全字段统一见[过程事件契约](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)，恢复与停止沿[continuous 生命周期](docs/transfer-任务语义与同步模式.md#64-生命周期)。Common 不读取 Transfer 私表，专业响应不暴露内部 `owner_instance_id`；事件与 System 平台日志、操作审计的生命周期分开，不由下列历史结果扩展契约。
 
-真实场景使用手工 Hosted suite [transfer-continuous-events](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)，沿独占生命周期、System IAM 测试身份和正式 Gateway／Owner／Worker；Business 物理夹具独立核对业务 Kafka 与 PostgreSQL CDC 目标事实。连续执行浏览器验收复用该 suite 与 Console canonical 路由，在事件已提交后核对时间线、自动刷新新增计数、恢复来源与失败原因；Python 夹具沿既有 IAM 入口撤权，浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档，只归档闭合报告和安全截图。
+真实场景使用手工 Hosted suite [transfer-continuous-events](../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events)，沿独占生命周期、System IAM 测试身份和正式 Gateway／Owner／Worker；Business 物理夹具独立核对业务 Kafka 与 PostgreSQL CDC 目标事实。连续执行浏览器验收复用该 suite 与 Console canonical 路由，在事件已提交后核对时间线、自动刷新新增计数、恢复来源与失败原因；Python 夹具沿既有 IAM 入口撤权，浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档，只归档闭合报告和安全截图。
 
-同一隔离场景的任务级槽／WAL／定向 Jolokia 与暂停恢复检查沿[场景定义](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)。新增源端与 Connect 原生读取只在既有 Hosted 边界内执行，公开回执不包含私有资源名；普通 runner 与新增断言的真实 T4 结果分别认定，不以个人环境任务 60 的联验替代新版 Hosted。 2026-11-12 [首轮 Hosted 回执](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-12-任务级-cdc-指标-hosted-首轮)停在 Kafka 强退拒删验证，新增 CDC 指标断言未执行；领域任务清理失败，外层部署销毁及 Infra 零残留通过，三者分别认定。 [第二轮固定版本复验](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-12-任务级-cdc-指标-hosted-复验)已通过任务级源端槽／WAL／定向延迟、暂停恢复及停止清空，领域清理与外层零残留通过；整套后续停在独立 bounded 定时任务的写后扫描反馈核对，不能记为整套 T4 通过。
+同一隔离场景的任务级槽／WAL／定向 Jolokia 与暂停恢复检查沿[场景定义](../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events)。新增源端与 Connect 原生读取只在既有 Hosted 边界内执行，公开回执不包含私有资源名；普通 runner 与新增断言的真实 T4 结果分别认定，不以个人环境任务 60 的联验替代新版 Hosted。 2026-11-12 [首轮 Hosted 回执](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-12-任务级-cdc-指标-hosted-首轮)停在 Kafka 强退拒删验证，新增 CDC 指标断言未执行；领域任务清理失败，外层部署销毁及 Infra 零残留通过，三者分别认定。 [第二轮固定版本复验](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-12-任务级-cdc-指标-hosted-复验)已通过任务级源端槽／WAL／定向延迟、暂停恢复及停止清空，领域清理与外层零残留通过；整套后续停在独立 bounded 定时任务的写后扫描反馈核对，不能记为整套 T4 通过。
 
 2026-11-13 [第三轮固定版本闭环](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环)在 `d12e8279b` 完成整套 19 项 Hosted 检查：basic 成功后领取独立 deep、原字段与精确扫描／读取隔离要求、任务级槽／WAL／定向延迟及暂停恢复、删除后授权历史和退出零残留均通过。该 suite 的指标证据来自任务 API 与原生对照，四份真实浏览器回执仍只覆盖既有执行页面；不外推初始 Grant 签发或新 CDC 卡片浏览器验收。
 
-持续写入验收在同一 Kafka 任务追加记录并确认目标提交后沿原游标续读，将拼接结果与 Monitor 和 Owner 从头读取的完整事件顺序对照。Console 核对自动续页和手动刷新后的顺序与行数，并在 Worker 失联后于同一页面核对原执行的失败诊断与唯一终态事件。已归档的两轮 Hosted 分别停在整引擎扫描和目录基线读取，均未创建 Kafka 任务，上述断言均未执行。旧版租户日志终审保留当次两页四条事件与撤权后旧游标拒绝的结果。[现行场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [持续写入两轮 Hosted 结果](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)
+持续写入验收在同一 Kafka 任务追加记录并确认目标提交后沿原游标续读，将拼接结果与 Monitor 和 Owner 从头读取的完整事件顺序对照。Console 核对自动续页和手动刷新后的顺序与行数，并在 Worker 失联后于同一页面核对原执行的失败诊断与唯一终态事件。已归档的两轮 Hosted 分别停在整引擎扫描和目录基线读取，均未创建 Kafka 任务，上述断言均未执行。旧版租户日志终审保留当次两页四条事件与撤权后旧游标拒绝的结果。[现行场景](../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events) · [持续写入两轮 Hosted 结果](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)
 
 确定性入口 `make test-transfer-continuous-online-runner` 与 `make test-online-runner`、ES module 语法校验和真实部署的 Chromium 准备均沿既有登记；Transfer T1／T2、前端及共享消费者扩散见[标准门禁](README.md#常规模块与专项门禁)与[测试规范](../docs/spec/addp测试与验收规范.md#三标准入口)。此处事件接入未新增 API、事件字段或基础设施；门禁与 API 通过不代替真实 Hosted 或浏览器验收，下列结果仅适用于各自固定版本。
 
@@ -350,7 +350,7 @@ T1 HTTP 隔离／投影、T2 PostgreSQL 与前端回归沿[标准门禁](README.
 
 #### SQL ETL 与 bounded 写后扫描
 
-现行场景见 [SQL ETL／字段血缘验收](../docs/spec/testing/scenarios/同步与引擎消费.md#字段级血缘验收)；父步骤的身份与子 execution UUID 沿[Orchestrator 专业响应](../docs/spec/tasks/执行监控.md#orchestrator-专业执行读取与响应)，不从父响应索取 `tenant_id`、配置或子任务 outputs。Transfer／Develop 子执行经各自 Owner 读取专业事实，Monitor 独立核对 Owner、任务和父子关联，不以父步骤复制结果证明三轮执行或结构演进。`make test-transfer-online-runner` 的[ETL 回归](../scripts/test/transfer-relational-sql-etl-online_test.py)沿既有 `make test-online-runner`、Platform T0／CI 聚合；确定性入口与真实 Hosted T4 分别认定。
+现行场景见 [SQL ETL／字段血缘验收](../docs/spec/testing/scenarios/TransferSQL与血缘验收.md#字段级血缘验收)；父步骤的身份与子 execution UUID 沿[Orchestrator 专业响应](../docs/spec/tasks/执行监控.md#orchestrator-专业执行读取与响应)，不从父响应索取 `tenant_id`、配置或子任务 outputs。Transfer／Develop 子执行经各自 Owner 读取专业事实，Monitor 独立核对 Owner、任务和父子关联，不以父步骤复制结果证明三轮执行或结构演进。`make test-transfer-online-runner` 的[ETL 回归](../scripts/test/transfer-relational-sql-etl-online_test.py)沿既有 `make test-online-runner`、Platform T0／CI 聚合；确定性入口与真实 Hosted T4 分别认定。
 
 精确扫描的来源与目标沿[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)和[写后扫描配置](docs/transfer-基本概念及配置说明.md#十一写后-meta-扫描)。两套 Transfer suite 均须经 Meta 正式只读接口核对兄弟项身份、扫描时间／深度和数据统计不变，schema 到 root 的扫描状态、时间和深度不变；父节点当前子树统计可随新目标创建变化。秒精度 DTO 的基线须跨过已观察时间刻度后再触发，不能让同秒截断掩盖扩大扫描；共享检查见[Online API 边界辅助](../scripts/utils/online-api.py)。bounded 场景核对三次原生表写入，结果为 `field_lineage.precise_scan_scope`；continuous 的阶段与独立证据见[首次扫描与审批归属](#continuous-精确扫描与审批归属)，不互相替代验收。
 
@@ -376,7 +376,7 @@ bounded 安全诊断链路已在 `c322167b8` 的 [Hosted T4 38219829612](https:/
 
 #### continuous 精确扫描与审批归属
 
-continuous 精确扫描沿现有 [transfer-continuous-events 场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)与[写后扫描触发规则](#写后扫描触发与范围)：启用 `auto_scan_metadata`，先正式扫描独立兄弟表、冻结 schema／root 基线，再分别观察 Kafka 建表和 CDC snapshot COMPLETED 后的首次扫描。目标须从基线不存在收敛到 deep 字段事实，恢复、普通事件及再次 resume 不重复首次扫描；各阶段的兄弟项、祖先与时间基线核对沿[精确扫描方法](#sql-etl-与-bounded-写后扫描)。结构审批补扫另核对真实变更、审批和恢复，不与首次扫描合并认定。标准回归为 `make test-transfer-continuous-online-runner`，共享检查同时由 `make test-transfer-online-runner` 覆盖；真实运行结果按下列固定版本收据分别认定，runner 通过不计为 T4。
+continuous 精确扫描沿现有 [transfer-continuous-events 场景](../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events)与[写后扫描触发规则](#写后扫描触发与范围)：启用 `auto_scan_metadata`，先正式扫描独立兄弟表、冻结 schema／root 基线，再分别观察 Kafka 建表和 CDC snapshot COMPLETED 后的首次扫描。目标须从基线不存在收敛到 deep 字段事实，恢复、普通事件及再次 resume 不重复首次扫描；各阶段的兄弟项、祖先与时间基线核对沿[精确扫描方法](#sql-etl-与-bounded-写后扫描)。结构审批补扫另核对真实变更、审批和恢复，不与首次扫描合并认定。标准回归为 `make test-transfer-continuous-online-runner`，共享检查同时由 `make test-transfer-online-runner` 覆盖；真实运行结果按下列固定版本收据分别认定，runner 通过不计为 T4。
 
 continuous Hosted 物理源准备以最终 TCP 服务成功查询 `continuous_fixture` 为就绪条件，不使用会命中 PostgreSQL 镜像临时初始化服务的 Unix socket `pg_isready`。有界等待耗尽必须在建源表及启动业务 Kafka 前失败，Hosted 退出路径继续清除当次资源。临时服务误判和耗尽拒绝由 `make test-transfer-continuous-online-runner` 中既有夹具回归覆盖，无新增入口或数据库。
 

@@ -74,7 +74,7 @@ continuous execution 表示一次长期运行的 runtime session，不是把 bou
 
 **交接位置。** 每个 task 同时仅有一个有效 runtime lease，绑定 execution、owner、截止时刻及 fencing token。接替者取得新 execution UUID 和递增的 token，沿用原任务的 `apply_identity`，从每分区 `transfer.sync_states` 已提交的 `next_offset` 继续。业务行与目标应用账本先在同一目标事务中提交，成功后才允许凭当前 token 和 state version 做 CAS 推进 checkpoint。两次提交之间中断时，接替者重读，目标账本吸收已应用记录并防止旧批次倒写。超出源端保留窗口须明确报错。完整规则见[恢复窗口](#显式起点与恢复窗口)和[目标提交与 Infra CAS](#共享目标提交与-infra-cas)。
 
-**恢复领取。** 创建 pending 与实际开跑分别取证。实际领取须同时满足当前进程资格有效、任务仍期望运行、旧租约已释放或过期、`recovery_not_before` 已到及既有任务准入条件。治理重连不能跳过退避或清除熔断。用户 Pause、Stop 和待处理的 schema 变更继续按原规则阻止自动恢复。PostgreSQL CDC 的进程换代沿用原 capture generation，遵循[捕获位点与消费位点](Transfer数据库CDC.md)及[不可逆停止规则](Transfer数据库CDC.md#恢复与不可逆停止)，不触发用户 Stop 的资源清理。正式验收见[continuous 治理与位点恢复试点](../testing/scenarios/同步与引擎消费.md#continuous-治理与位点恢复试点)。
+**恢复领取。** 创建 pending 与实际开跑分别取证。实际领取须同时满足当前进程资格有效、任务仍期望运行、旧租约已释放或过期、`recovery_not_before` 已到及既有任务准入条件。治理重连不能跳过退避或清除熔断。用户 Pause、Stop 和待处理的 schema 变更继续按原规则阻止自动恢复。PostgreSQL CDC 的进程换代沿用原 capture generation，遵循[捕获位点与消费位点](Transfer数据库CDC.md)及[不可逆停止规则](Transfer数据库CDC.md#恢复与不可逆停止)，不触发用户 Stop 的资源清理。正式验收见[continuous 治理与位点恢复试点](../testing/scenarios/Continuous与CDC验收.md#continuous-治理与位点恢复试点)。
 
 ### continuous 来源配置与目标提交
 

@@ -282,7 +282,7 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 
 #### 验收与证据
 
-字段级首期复用 `transfer-relational-sql-etl` Hosted T4。现行场景、身份与清理边界、性能采样口径及历史通过证据统一见[测试与验收规范](testing/scenarios/同步与引擎消费.md#字段级血缘验收)。确定性测试与本地只读复核不能替代真实 T4，历史验收不扩大本节已声明的 opaque / unresolved、continuous / CDC 等支持边界。
+字段级首期复用 `transfer-relational-sql-etl` Hosted T4。现行场景、身份与清理边界、性能采样口径及历史通过证据统一见[测试与验收规范](testing/scenarios/TransferSQL与血缘验收.md#字段级血缘验收)。确定性测试与本地只读复核不能替代真实 T4，历史验收不扩大本节已声明的 opaque / unresolved、continuous / CDC 等支持边界。
 
 ### 6.2 图数据库评估边界
 

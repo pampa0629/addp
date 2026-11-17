@@ -52,7 +52,7 @@
 
 **后续整套闭环**：11月12日旧轮分别在Kafka拒删、定时成果扫描阶段失败，首轮新增CDC未执行，复验的任务API指标通过不等于当轮新卡片页面通过。最终固定 `d12e8279b3dacb87f9fc196aa3f2ddb79598e0dd` 的 [43253234380／Job131304474365](https://github.com/pampa0629/addp/actions/runs/43253234380/job/131304474365)19项全过、四份原执行页面回执通过。唯一basic／deep串接、严格先后领取、当前人员及父执行归属／旁观404、精确目标和兄弟不变均核实；System仅消费basic，不从扫描成功推导初始Grant已签发。当前CDC观测及Pause／Resume、审批与显式恢复、定义删除后历史读取通过。
 
-强退Kafka未确认退出时正式拒删503，不派发外部删除；任务按场景留待部署销毁，**领域残留1＝预期残留1**，其他三任务删除404。领域与外层清理均通过、Infra零残留；这是有明确归属的设计保留，不能与前轮未核清业务残留混淆。现行步骤与身份统一见[Transfer continuous场景](../scenarios/同步与引擎消费.md#transfer-continuous-events)。
+强退Kafka未确认退出时正式拒删503，不派发外部删除；任务按场景留待部署销毁，**领域残留1＝预期残留1**，其他三任务删除404。领域与外层清理均通过、Infra零残留；这是有明确归属的设计保留，不能与前轮未核清业务残留混淆。现行步骤与身份统一见[Transfer continuous场景](../scenarios/Continuous与CDC验收.md#transfer-continuous-events)。
 
 ## 30 天过程事件清理
 

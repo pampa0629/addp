@@ -96,7 +96,7 @@ CDC 性能规则的持久化定向回归使用 `make test-monitor-postgres MONIT
 
 租户事件的 `TestIntegrationPostgresExecutionEventVisibility` 沿既有 PostgreSQL 服务测试自动发现，覆盖真实 SQL 上的 Owner 范围、历史／本人一次性执行、列表与统计总数、跨租户／类型／子执行隔离、三页事件游标、30 天读取窗口，以及翻页前撤权和 Owner 故障后重新授权。Owner HTTP 为受控协议夹具，仅计 T2，不代表真实 System／Gateway／Worker 的 T4，也不代表事件物理清理或 180 天概览删除已验收。
 
-真实事件读取与留存统一见[模块验收导航](docs/Monitor模块架构说明.md#执行留存与验收)，现行断言沿[执行监控规范](../docs/spec/tasks/执行监控.md#大量事件分页与截断真实入口验收)与[Transfer continuous 场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)。合成 Meta、持续写入 Hosted、30 天物理清理及 180 天只读评估分别认定；确定性 runner 不计真实链路通过。[固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)保留两页事件与撤权后旧游标拒绝的历史范围，不补证大量分页或留存删除。
+真实事件读取与留存统一见[模块验收导航](docs/Monitor模块架构说明.md#执行留存与验收)，现行断言沿[执行监控规范](../docs/spec/tasks/执行监控.md#大量事件分页与截断真实入口验收)与[Transfer continuous 场景](../docs/spec/testing/scenarios/Continuous与CDC验收.md#transfer-continuous-events)。合成 Meta、持续写入 Hosted、30 天物理清理及 180 天只读评估分别认定；确定性 runner 不计真实链路通过。[固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)保留两页事件与撤权后旧游标拒绝的历史范围，不补证大量分页或留存删除。
 
 正式身份的本机执行 Trace／日志闭环使用人工 `make test-monitor-traces-local`，准入、8 CPU／12 GiB、4 GiB 停止线、60 分钟及全部清理沿观测规范“正式身份的本机隔离闭环”。独立构建、独占身份和容器，不借个人服务或 Hosted；静态／守卫回归 `make test-monitor-traces-local-runner` 已聚合到既有 Infra 日志生命周期和 Platform，公共 workflow 禁止调用真实本地入口。
 
