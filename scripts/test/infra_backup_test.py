@@ -65,6 +65,48 @@ def dump_evidence(path):
 
 
 class InfraBackupSafetyTest(unittest.TestCase):
+    def test_mc_selects_the_client_entrypoint_without_exposing_credentials(self):
+        env = {"MC_HOST_src": "http://user:private-password@minio:9000"}
+        with patch.object(BACKUP, "run") as execute:
+            BACKUP.mc(["admin", "cluster", "iam", "export", "src"],
+                      env=env, image=IMAGE, network="addp-network")
+        command = execute.call_args.args[0]
+        self.assertEqual(command[-8:], ["--entrypoint", "mc", IMAGE, "admin", "cluster", "iam", "export", "src"])
+        self.assertEqual(command[command.index("--entrypoint") + 1], "mc")
+        self.assertNotIn(env["MC_HOST_src"], command)
+        self.assertEqual(execute.call_args.kwargs["env"], env)
+
+    def test_create_reuses_owned_minio_image_without_client_registry_dependency(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            root.mkdir()
+            (root / ".env").write_text("private backup fixture\n")
+            sources = [{"Image": "sha256:" + "b" * 64},
+                       {"Image": IMAGE, "Config": {"Env": ["MINIO_ROOT_USER=u", "MINIO_ROOT_PASSWORD=p"]}}]
+            def execute(command, **kwargs):
+                self.assertNotEqual(command[:3], ["docker", "image", "inspect"])
+                if command[:3] == ["docker", "exec", "addp-postgres"]:
+                    kwargs["stdout"].write(b"fixture dump")
+                return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
+            def client(command, **kwargs):
+                self.assertEqual(kwargs["image"], IMAGE)
+                if command[:3] == ["admin", "cluster", "bucket"]:
+                    (kwargs["mounts"][0][0] / "src-bucket-metadata.zip").write_bytes(b"bucket metadata")
+                if command[:3] == ["admin", "cluster", "iam"]:
+                    (kwargs["mounts"][0][0] / "src-iam-info.zip").write_bytes(b"iam metadata")
+                return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
+            with patch.object(BACKUP, "ROOT", root), \
+                 patch.object(BACKUP, "owned_source", side_effect=sources), \
+                 patch.object(BACKUP, "run", side_effect=execute), \
+                 patch.object(BACKUP, "mc", side_effect=client) as calls, \
+                 patch.object(BACKUP, "pg_counts", return_value={"engines": 1}):
+                result = BACKUP.create(Path(directory) / "backups")
+            manifest = BACKUP.validate(result)
+            self.assertEqual(manifest["source"]["mc_image"], IMAGE)
+            self.assertEqual(manifest["source"]["minio_image"], IMAGE)
+            self.assertEqual(calls.call_count, 3)
+
     def test_backup_root_rejects_repository_and_symlinks(self):
         with self.assertRaises(BACKUP.BackupError):
             BACKUP.private_directory(BACKUP.ROOT, create=False)

@@ -128,7 +128,7 @@ def mc(args: list[str], *, env: dict[str, str], image: str, network: str,
                     + (",readonly" if readonly else "")]
     if workdir:
         command += ["-w", workdir]
-    return run(command + [image, *args], env=env, timeout=timeout)
+    return run(command + ["--entrypoint", "mc", image, *args], env=env, timeout=timeout)
 
 
 def pg_counts(container: str, database: str) -> dict[str, int]:
@@ -357,7 +357,7 @@ def create(root: Path, *, meilisearch_dump: Path | None = None,
     env_file = ROOT / ".env"
     if not env_file.is_file() or env_file.is_symlink():
         raise BackupError("root .env is unavailable")
-    mc_image = json.loads(run(["docker", "image", "inspect", "minio/mc:latest"]).stdout)[0]["Id"]
+    mc_image = image_id(minio)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     target = root / f"addp-infra-{stamp}-{secrets.token_hex(3)}.incomplete"
     target.mkdir(mode=0o700)
