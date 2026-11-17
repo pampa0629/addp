@@ -12,6 +12,15 @@ from .runner import WorkflowRunner
 from .admission import ExecutionAdmission
 
 
+def append_execution_log(logs: list[dict[str, Any]], event: str, *, task_id: str = "", progress: int | None = None) -> None:
+    """Append an observed event; callers own the list's synchronization."""
+    entry = {"timestamp": datetime.now(timezone.utc).isoformat(),
+             "level": "ERROR" if event == "workflow_failed" else "INFO", "event": event}
+    if event == "task_progress":
+        entry.update(task_id=task_id, progress=progress)
+    logs.append(entry)
+
+
 @dataclass
 class ExecutionSnapshot:
     execution_id: str
@@ -146,11 +155,6 @@ class ExecutionRegistry:
     def _update(self, execution_id: str, *, log_event: str, **changes: Any) -> None:
         with self._lock:
             snapshot = self._executions[execution_id]
-            entry = {"timestamp": datetime.now(timezone.utc).isoformat(),
-                     "level": "ERROR" if log_event == "workflow_failed" else "INFO",
-                     "event": log_event}
-            if log_event == "task_progress":
-                entry.update(task_id=changes["current_task"], progress=changes["progress"])
-            snapshot.logs.append(entry)
+            append_execution_log(snapshot.logs, log_event, task_id=changes.get("current_task", ""), progress=changes.get("progress"))
             for key, value in changes.items():
                 setattr(snapshot, key, value)

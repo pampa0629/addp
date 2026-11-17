@@ -83,6 +83,10 @@ def test_private_files_api_real_bytes_canonical_execute_and_private_status(priva
     assert api.lookup(identifier, ("71", "2")).worker.wait(50)
     observed = client.get("/api/executions/" + identifier, headers=headers)
     assert observed.status_code == 200 and observed.get_json()["status"] == "success", observed.get_json()
+    logs = observed.get_json()["logs"]
+    assert logs[0]["event"] == "workflow_started" and logs[-1]["event"] == "workflow_succeeded"
+    assert any(entry["event"] == "task_progress" for entry in logs)
+    assert all(set(entry) <= {"timestamp", "level", "event", "task_id", "progress"} for entry in logs)
     encoded = json.dumps(observed.get_json())
     assert "sha256" not in encoded and str(tmp_path) not in encoded and "cleanup_pending" not in encoded
     receipt = client.get(path, headers=headers).get_json()["outputs"][0]

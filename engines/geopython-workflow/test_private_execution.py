@@ -79,6 +79,10 @@ def test_private_workflow_process_runs_original_dag_and_real_geopackage(tmp_path
     report = worker.snapshot()
     assert report["status"] == "success", report
     assert report["task_order"] == ["source", "mask", "difference", "save"]
+    assert [entry["event"] for entry in report["logs"]] == ["workflow_started"] + ["task_progress"] * 8 + ["workflow_succeeded"]
+    assert [entry["task_id"] for entry in report["logs"] if entry["event"] == "task_progress"] == [node for node in report["task_order"] for _ in range(2)]
+    assert all(set(entry) <= {"timestamp", "level", "event", "task_id", "progress"} for entry in report["logs"])
+    assert str(tmp_path) not in json.dumps(report["logs"])
     output = gpd.read_file(tmp_path / "output.gpkg")
     assert output["key"].tolist() == [11]
     assert output["label"].tolist() == ["kept"]
@@ -101,6 +105,9 @@ def test_private_workflow_process_keeps_controlled_diagnostic_and_blocks_save(tm
     report = worker.snapshot()
     assert report["status"] == "failed"
     assert report["error_code"] == "INVALID_PARAMS"
+    assert report["logs"][0]["event"] == "workflow_started"
+    assert report["logs"][-1]["event"] == "workflow_failed"
+    assert report["logs"][-1]["level"] == "ERROR"
     assert report["diagnostic"]["operator"] == {
         "operator_id": "difference", "node_index": 3, "parameter": "input_gdf"}
     assert report["diagnostic"]["reason"] == "operator_input_invalid"

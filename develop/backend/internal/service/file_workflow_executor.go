@@ -285,6 +285,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	result := commonModels.JSONMap{}
 	message := ""
 	if status != nil && err == nil {
+		result["logs"] = status.Logs
 		raw := map[string]interface{}{"status": status.Status, "error_code": status.ErrorCode}
 		if status.Diagnostic != nil {
 			data, _ := json.Marshal(status.Diagnostic)

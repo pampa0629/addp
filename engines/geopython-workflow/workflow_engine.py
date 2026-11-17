@@ -243,19 +243,25 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
 
 
 def execute_workflow(workflow_def, input_data=None):
+    from addp_common.workflow_runtime import append_execution_log
     logs = []
+    append_execution_log(logs, "workflow_started")
     try:
-        result = GeoPythonWorkflowRunner().execute(workflow_def, input_data, progress=lambda status, percent, task: logs.append({'level':'INFO','task_id':task,'message':status,'progress':percent}))
+        result = GeoPythonWorkflowRunner().execute(workflow_def, input_data, progress=lambda status, percent, task: append_execution_log(logs, "task_progress", task_id=task, progress=percent))
+        append_execution_log(logs, "workflow_succeeded")
         return {'status': 'success', 'final_result': result.final_result, 'all_results': result.all_results, 'logs': logs}
     except WorkflowValidationError as exc:
+        append_execution_log(logs, "workflow_failed")
         return {'status': 'failed', 'error_code': 'WORKFLOW_INVALID', 'error': str(exc), 'logs': logs}
     except WorkflowExecutionError as exc:
         logger.exception('Workflow execution failed')
+        append_execution_log(logs, "workflow_failed")
         return {'status': 'failed', 'error_code': exc.error_code, 'error': str(exc),
                 'all_results': exc.all_results or {}, 'logs': logs,
                 **({'diagnostic': exc.diagnostic} if exc.diagnostic is not None else {})}
     except Exception as exc:
         logger.exception('Workflow execution failed')
+        append_execution_log(logs, "workflow_failed")
         return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'error': str(exc), 'logs': logs}
 
 

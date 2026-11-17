@@ -139,6 +139,9 @@ def test_dag_sorting():
 
     assert result["status"] == "success", result.get("error")
     assert len(result["logs"]) >= 3
+    assert result["logs"][0]["event"] == "workflow_started"
+    assert result["logs"][-1]["event"] == "workflow_succeeded"
+    assert all("timestamp" in entry and "message" not in entry for entry in result["logs"])
     assert list(result["all_results"]) == ["project", "t1", "t2", "t3"]
     projected = json.loads(result["all_results"]["project"])
     assert CRS.from_user_input(projected["crs"]["properties"]["name"]).to_epsg() == 3857

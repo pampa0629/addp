@@ -47,10 +47,12 @@ def _run_private_dag(directory: str, workflow: dict, language: str, deadline: fl
         return
     signal.signal(signal.SIGALRM, signal.SIG_DFL)
     signal.setitimer(signal.ITIMER_REAL, remaining)
-    from addp_common.workflow_runtime import WorkflowExecutionError, WorkflowValidationError
+    from addp_common.workflow_runtime import WorkflowExecutionError, WorkflowValidationError, append_execution_log
     from workflow_engine import GeoPythonWorkflowRunner
 
     os.umask(0o077)
+    logs = []
+    append_execution_log(logs, "workflow_started")
     try:
         final_value = None
 
@@ -59,7 +61,9 @@ def _run_private_dag(directory: str, workflow: dict, language: str, deadline: fl
             final_value = value
             return _project_private_result(value)
 
-        result = GeoPythonWorkflowRunner(language=language, result_projector=project).execute(workflow)
+        result = GeoPythonWorkflowRunner(language=language, result_projector=project).execute(
+            workflow, progress=lambda status, percent, task: append_execution_log(
+                logs, "task_progress", task_id=task, progress=percent))
         report = {"status": "success", "result": result.final_result,
                   "all_results": result.all_results, "task_order": result.task_order}
         if not any(task["operator"] == "save" for task in workflow["tasks"]):
@@ -77,6 +81,8 @@ def _run_private_dag(directory: str, workflow: dict, language: str, deadline: fl
         report = {"status": "failed", "error_code": "WORKFLOW_INVALID"}
     except Exception:
         report = {"status": "failed", "error_code": "EXECUTION_FAILED"}
+    append_execution_log(logs, "workflow_succeeded" if report["status"] == "success" else "workflow_failed")
+    report["logs"] = logs
     root = Path(directory)
     # A result file avoids a pipe buffer making child exit depend on the parent
     # draining a potentially large result before join.

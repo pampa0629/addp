@@ -177,6 +177,7 @@ class PrivateFileAPI:
             raise PrivateFileError("PRIVATE_FILES_IO_FAILED", 500) from None
         return ExecutionSnapshot(
             execution_id=runtime_id, status=report["status"], progress=100 if report["status"] == "success" else 0,
+            logs=report.get("logs", []),
             result=report.get("result"), all_results=report.get("all_results"), task_order=report.get("task_order", []),
             error_code=report.get("error_code", ""), diagnostic=report.get("diagnostic"),
         ).to_dict()

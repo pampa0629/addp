@@ -810,10 +810,14 @@ Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的当前 Pr
 
 ### 9.14 工作流结构化执行日志
 
-已确认沿既有 Runtime 状态回执、Develop 有效 lease 终态事务及本人专业读取接通日志，不新增权限、表、流式读取或业务执行。正式字段与安全边界见[Runtime 日志契约](../spec/workflow/HTTP协议.md#结构化执行日志)，Owner 无记录／读取失败及单一页面来源见[执行监控规范](../spec/tasks/执行监控.md#develop-执行日志读取)。Common Python 从实际状态更新及既有节点进度回调生成结构化记录；Develop 保存同次终态回执并返回数组，删除占位字符串；页面分别展示加载、无记录及失败，中英文固定事件文案，身份／执行切换拒绝迟到数据，保留独立 script traceback。
+正式字段与安全边界见[Runtime 日志契约](../spec/workflow/HTTP协议.md#结构化执行日志)，本人读取、页面状态与迟到响应规则见[执行监控规范](../spec/tasks/执行监控.md#develop-执行日志读取)。复用既有状态回执和有效lease终态事务，不新增权限、表、流式接口或业务执行。通用ExecutionRegistry、GeoPython私有文件子进程及离线入口共用日志记录函数，记录实际开始、节点进度和终态；私有路径只在既有最终result.json增加安全日志数组，原进程、请求、截止、凭据与清理不变。硬终止／崩溃缺少最终回执时不补造。
 
-本机验证：Common／隔离 Develop Go T1、Swagger 64 路由覆盖、Common Python完整入口一次641 passed／1原有 skipped／64 subtests（另轮三个既有MinIO初始化夹具10秒超时），本批workflow专项118 passed、Develop 前端327项浏览器与构建、GeoPython HTTP Handler与日志Schema定向3项通过。新增回归覆盖真实进度、成功／失败终态、快照复制、协议拒绝、终态保存、lease失效不保存、本人／撤权裁决、历史缺失不补造及页面无日志／读取失败／迟到响应。初轮红测试、夹具错误和共享工作区／初始化超时结果均保留，不以之后通过改写首轮。本机门禁仅证明受测实现，固定SHA的Linux实际执行待发布后核对。
+Develop普通与私有路径均保存同次有效终态日志，Owner接口读取已保存数组，删除占位字符串；页面区分尚未读取、加载中、有记录、成功无记录和读取失败，身份变化后不将清空误报为无记录，不显示迟到旧响应；script traceback仍独立展示。普通与私有路径的接线均不代表实时日志流。
 
-对已有执行 `14a6cf42-2ee6-4fbb-a592-4a92f18a1be0` 仅进行PostgreSQL只读核验：Develop workflow成功，`metadata.result.logs`缺失；metadata摘要 `f6ccf9d9001b5609eeff87de2796d6fda4b140176c54ed62c480a685c3c32912`。浏览器工具不可用，未宣称验证当前用户HTTP链路；不直接查询或拼接Runtime进程日志，不补造历史。本轮未重跑该任务、重启服务或触发Hosted。证据在 `/tmp/addp-execution-logs-20261117/`。已有执行部署新代码后仍应显示“本次执行未记录日志”；新的真实业务链路与其他未生成日志的Runtime覆盖仍需分别验收。
+已有执行 `14a6cf42-2ee6-4fbb-a592-4a92f18a1be0` 仅经PostgreSQL只读核验：Develop workflow成功，绑定Engine 6（当前登记geopython_workflow），私有文件执行台账存在，`metadata.result.logs`缺失；metadata摘要始终为 `f6ccf9d9001b5609eeff87de2796d6fda4b140176c54ed62c480a685c3c32912`。首批仅核对到引擎类型，后续台账核验发现私有路径缺口并补齐。没有补写历史、重跑原任务、重启服务或触发Hosted；浏览器连接不可用，未声称验证当前用户HTTP／页面实测。本人读取授权有效且服务加载本批代码后，旧记录返回无日志，不能出现推造时间线。
 
-补充页面状态修正：身份／授权事实变化后清空旧日志时，必须显示“尚未读取”，而非将未读取误报为无记录。中英文浏览器用例先复现两项失败，再验证修正通过；现有前端单位门禁、两项定向浏览器及构建通过，无新增请求、权限或等待。原代码的Linux Go、Common Python及Develop PG已成功，前端原327项全部通过；补充修正发布后独立核对新SHA前端完整门禁。
+本机证据：Common Go与隔离Develop Go T1、Swagger64路由覆盖；Common Python641 passed／1既有skipped／64 subtests，workflow专项118通过；首批前端327项浏览器及构建通过，随后“尚未读取”修正的前端单元、两语种定向用例及构建通过；私有子进程／HTTP回执与统一离线日志定向29项通过。覆盖实际进度、成功／失败、安全字段、快照复制、协议拒绝、有效终态保存、lease／来源失效不保存、本人／撤权、历史缺失与页面失败／迟到响应。原始红测试、首轮夹具错误及三个MinIO初始化夹具10秒超时原日志均保留，完整Python入口亦有通过记录，不据后继通过改写前序。
+
+代码 `7a1432c5a` 首批Linux Go、Common Python641 passed／1 skipped、Develop PG及前端327项均成功终态；原始前端日志逐名确认两语种日志用例，真实PG确认扩展的终态持久化用例。`8ea0c05f8`页面状态补充及本批私有路径发布后的相关Linux实际结果继续按固定SHA核验。证据 `/tmp/addp-execution-logs-20261117/` 保存输入摘要、各轮原始日志、只读回执和CI事实。
+
+剩余边界：服务本轮未更新，尚无新版本普通用户的真实业务端到端证据；其他未产生日志的Runtime及Query／Notebook未新增日志生产。下一步先明确最小真实验收的身份、样本、断言及清理范围，再单独确认运行；不重跑旧任务、不补造日志。

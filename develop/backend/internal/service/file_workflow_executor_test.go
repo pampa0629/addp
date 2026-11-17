@@ -189,7 +189,7 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 						<-r.Context().Done()
 						// The client has lost its input observation. A late success
 						// attempt cannot become a business preview or another Runtime.
-						_ = json.NewEncoder(w).Encode(map[string]any{"execution_id": id, "status": "success", "result": map[string]any{"value": 7}})
+						_ = json.NewEncoder(w).Encode(map[string]any{"execution_id": id, "status": "success", "result": map[string]any{"value": 7}, "logs": []plugin.WorkflowExecutionLog{{Timestamp: "2026-11-17T08:00:00Z", Level: "INFO", Event: "workflow_succeeded"}}})
 						close(lateReplyDone)
 						return
 					}
@@ -204,6 +204,11 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 						out["error_code"] = "INVALID_PARAMS"
 						out["diagnostic"] = map[string]any{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": "operator_input_invalid", "operator": map[string]any{"node_index": 3, "operator_id": "buffer", "parameter": "input_gdf"}}
 					}
+					event, level := "workflow_succeeded", "INFO"
+					if out["status"] == "failed" {
+						event, level = "workflow_failed", "ERROR"
+					}
+					out["logs"] = []plugin.WorkflowExecutionLog{{Timestamp: "2026-11-17T08:00:00Z", Level: level, Event: event}}
 					_ = json.NewEncoder(w).Encode(out)
 				case r.Method == "GET" && r.URL.Path == "/api/private-files/"+id+"/result":
 					var table *plugin.WorkflowTableResult
@@ -268,7 +273,7 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			}
 			if scenario == "late-success" || scenario == "expired-source-window" {
 				payload, _ := json.Marshal(done.Metadata)
-				if strings.Contains(string(payload), "final_result") {
+				if strings.Contains(string(payload), "final_result") || strings.Contains(string(payload), `"logs"`) {
 					t.Fatal("expired input produced a business preview")
 				}
 			}
@@ -298,6 +303,23 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			private, _ := repo.ReadPrivateRuntime(t.Context(), 3, item.ExecutionID)
 			if private.RuntimeExecutionID != runtimeID.Load() {
 				t.Fatal("UUID replaced")
+			}
+			if scenario != "create-unknown" && scenario != "execute-unknown" && scenario != "late-success" {
+				result, ok := done.Metadata["result"].(map[string]interface{})
+				if !ok {
+					t.Fatal("private terminal result missing")
+				}
+				logs, err := plugin.DecodeWorkflowExecutionLogs(result["logs"])
+				if err != nil || len(logs) != 1 {
+					t.Fatalf("private terminal lost recorded logs: %v", err)
+				}
+				expected := "workflow_succeeded"
+				if strings.Contains(scenario, "failure") {
+					expected = "workflow_failed"
+				}
+				if logs[0].Event != expected {
+					t.Fatal("private logs belong to another terminal")
+				}
 			}
 			if scenario == "table-success" {
 				entry := executor.workflowResults.get(item.ExecutionID, lease.Attempt, 3, *item.ActorPrincipalID)
