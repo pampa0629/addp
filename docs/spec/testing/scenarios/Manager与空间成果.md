@@ -18,6 +18,7 @@
 | 矢量与地图 | [拓扑持久化](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](矢量拓扑持久化.md#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
 | 栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
 | 邻域与插值专项 | [三种加权方法共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核) · [7×7方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收) · [米制圆窗](邻域统计与IDW.md#米制圆形邻域统计独立验收) · [多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收) · [IDW基础](邻域统计与IDW.md#点数据idw插值独立-hosted-验收) · [最少支撑](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收) · [最近N点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收) · [距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收) |
+| 整幅只读统计 | [单元素百分位](整幅栅格百分位统计.md#整幅栅格百分位统计独立-hosted-验收) · [多百分位](整幅栅格百分位统计.md#整幅栅格多百分位独立-hosted-验收) |
 | 栅格采样 | [点位原值](栅格采样.md#点位栅格采样独立验收) · [双线性点位](栅格采样.md#双线性点位栅格采样独立验收) · [沿线采样](栅格采样.md#沿线栅格采样持久化) |
 | 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
@@ -592,30 +593,12 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 
 标准沿各Runner、`make test-raster-online-runner`／既有拓扑入口、`make test-geopython-workflow`及选择／登记，不能累加共享测试为唯一数量。本地／登记、Linux全量、Hosted API、真实页面只按固定源码认，不证当前HEAD／容量／任意影像或未列范围；后续事项见[栅格专题](../../../next/栅格算子体系后续专题.md#三后续工作)。
 
-## 整幅栅格百分位统计独立 Hosted 验收
+## 整幅栅格百分位统计
 
-`raster-statistics-percentile-workflow`为独立手工Hosted只读套件，复用NFS、同源产品默认入口Runtime及普通User原12权限，业务预算固定600秒；不改原Raster/OIF/邻域套件，不计UI、容量或任意影像认证。实现与本地夹具通过不计实际Hosted成功，实际Linux／Hosted仍由CI会话协调。
+单元素与多百分位的矩阵、精度和验收边界见[整幅栅格百分位统计专题](整幅栅格百分位统计.md)。原定位保留如下。
 
-该既有矩阵已随产品统一接口改为percentiles单元素列表及嵌套结果核验；不新增执行数或预算，不作为多项同次请求的Hosted证据。固定16条成功链：原统计不带百分位1条，0／100端点2条，奇偶总体50百分位2条，25／75插值2条，33.3跨六块及像元逆序2条，重分类接90百分位1条，Int64／UInt64 NoData邻接值2条，显式第二波段的mask／alpha／scale-offset覆盖1条，单有效／全无效2条，缺失定位1条；跨块源保留旋转网格。固定12类非法参数各按中英文提交，共24次准确失败：列表null／布尔项／字符串项／嵌套数组项／对象项／低于0项／高于100项，波段0／越界／布尔／字符串及所选复数数据。新增百分位原因按提交语言准确核验，既有波段／复数原因按当前英文契约核验，不将两种提交冒充全部诊断已翻译；反向查询不能改写冻结失败。NaN／Infinity、复数alpha混合类型、极端插值／原统计矩范围、IO注入及真实低盘边界分别沿Native或既有独立套件记账。
-
-独立oracle按源原生有效性取完整总体，使用Python标量排序与Fraction的确切二进制百分位位置；不调用产品函数或NumPy百分位。原统计全字段、计数／null／合法零、端点及中位数严格核对，其他插值固定rtol=4e-15／atol=0，原mean／stddev采用rtol=1e-10／atol=1e-12；同源带／不带百分位的原字段逐值相等。oracle首次计算计入预算，只缓存独立期望，实际源文件、像元与mask每次重新全读。
-
-源初始化扫描须核当前执行、无父执行、同租户／普通User／引擎；随后40条业务执行全部零资源发布、零新增扫描和零派生血缘，专业详情与Monitor核当前身份、状态和提交DAG／语言快照。共41次完整物理检查，每次覆盖11份源原件／全像元／mask／类型／NoData／网格／CRS／scale-offset及Runtime执行工作区零残留；每步重新读取此前成功结果，共504次先前结果检查。归档11份源原字节、独立期望、80份专业／Monitor终态原始响应及大小／hash清单（响应文件名相对于`statistics-responses/`目录），所有旧原件／响应／期望禁止覆盖、重建或静默修复。业务计时覆盖源初始化、oracle、40执行、查询、原件复核和执行工作区清理；Hosted部署／NFS／Infra退出清理由既有生命周期单独严格核验，清理失败不得通过。
-
-本地入口为`make test-raster-statistics-percentile-online-runner`及标准`make test-geopython-workflow`中的`test_online_statistics_percentile_fixture.py`；已同步Online registry、changed gate、独立workflow与固定矩阵／删除断言变异检查，仅登记不代表已运行Hosted。
-
-
-## 整幅栅格多百分位独立 Hosted 验收
-
-`raster-statistics-percentiles-workflow`是独立手工只读套件，复用NFS、同源产品默认入口Runtime及普通User原12权限，业务预算固定600秒；保留原单元素套件与产品算法、权限和原统计。实际Linux全量及Hosted由CI会话协调，不触发、重跑或扩预算，不计页面或容量。
-
-固定16成功：原统计不请求列表、同源单元素P50对照各1条；端点／常用分位／小数分位／源像元逆序4条；奇数／偶数总体、常量重分类／原两类重分类4条；原生Int64／UInt64 NoData邻接2条；显式第二波段覆盖、单有效、全无效及缺定位4条。共14条多项请求及2条原字段／单元素对照。完整结果逐项用独立标量排序及Fraction确切二进制位置核验，跨六块含旋转源；P50真实对照、像元逆序及不同百分位合法同值不得被合并。全面逐项与单元素计算的一致性仍由Native覆盖，不虚称Hosted逐项重跑。
-
-固定20类各中英文提交，共40准确失败：列表null／布尔／数值／字符串／对象／空6类，布尔项／字符串项／null项／嵌套列表项／对象项／越下界／越上界7类，重复／降序2类，波段0／越界／布尔／字符串及所选复数5类；须准确到analysis任务，前置失败不能充数。新增列表诊断核提交中英语言；既有波段／复数按原诊断契约精确核验，双语提交不等于全部诊断已翻译。反向查询不改旧失败。非有限JSON、旧单值参数、混合类型复数alpha、数值极限及IO／磁盘注入仍单列Native。
-
-56执行全部零发布、零新增扫描、零派生血缘；初始扫描精确核目标／无父执行／普通用户／租户／引擎，当前DAG／语言快照／Monitor严格核对。共57次完整物理复核、760次先前成功结果复核；每步核源及归档不变，最终核全部源Meta及血缘快照。归档11份源TIFF原字节、112份专业详情／Monitor原始终态响应、独立期望及大小／hash清单，不虚构成果声明大小。物理复核每次重读所有像元／mask／网格／CRS／类型／NoData／scale-offset，不缓存实际结果；只缓存独立期望且首次生成计入预算。源夹具与新矩阵打包为只读stdin Worker，依赖源码hash冻结，源码或原件漂移均失败。所有执行工作区及NFS／容器／镜像／部署／Infra退出清理不弱化；超时或清理失败整套失败。
-
-本地标准入口：`make test-raster-statistics-percentiles-online-runner`；Native夹具加入既有`make test-geopython-workflow`；Online、影响选择、手工workflow和严格矩阵登记同次接入。准备与本地通过不记实际Hosted通过。
+- <a id="整幅栅格百分位统计独立-hosted-验收"></a>[整幅栅格百分位统计独立 Hosted 验收](整幅栅格百分位统计.md#整幅栅格百分位统计独立-hosted-验收)
+- <a id="整幅栅格多百分位独立-hosted-验收"></a>[整幅栅格多百分位独立 Hosted 验收](整幅栅格百分位统计.md#整幅栅格多百分位独立-hosted-验收)
 
 ## 非方形像元邻近距离独立验收
 
