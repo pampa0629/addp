@@ -23,6 +23,7 @@
 | 栅格采样 | [点位原值](栅格采样.md#点位栅格采样独立验收) · [双线性点位](栅格采样.md#双线性点位栅格采样独立验收) · [沿线采样](栅格采样.md#沿线栅格采样持久化) |
 | 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
+| DEM 通视与可视域 | [两点通视](DEM通视与可视域.md#dem-两点通视独立-hosted-验收) · [单观察点可视域](DEM通视与可视域.md#dem-单观察点可视域独立-hosted-验收) · [正交旋转](DEM通视与可视域.md#正交旋转网格通视与可视域独立-hosted-验收) |
 | DEM 地形与统计 | [填洼](D8水文分析.md#raster-fill-depressions-persistence) · [平均曲率](DEM曲率与地形指标.md#dem-平均曲率独立-hosted-验收) · [剖面曲率](DEM曲率与地形指标.md#dem-剖面曲率独立-hosted-验收) · [切向曲率](DEM曲率与地形指标.md#dem-切向曲率独立-hosted-验收) · [平面曲率](DEM曲率与地形指标.md#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) · [TPI](DEM曲率与地形指标.md#dem-地形位置指数tpi独立-hosted-验收) · [TRI](DEM曲率与地形指标.md#dem-地形崎岖度tri独立-hosted-验收) · [粗糙度](DEM曲率与地形指标.md#dem-地形粗糙度独立-hosted-验收) |
 | D8 流向与累积 | [流向](D8水文分析.md#dem-d8-流向持久化) · [汇流累积](D8水文分析.md#d8-汇流累积持久化) · [加权累积](D8水文分析.md#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](D8水文分析.md#d8-下游流长持久化) · [上游最长流长](D8水文分析.md#d8-上游最长流长持久化) · [汇水分区](D8水文分析.md#d8-汇水分区持久化) |
 | D8 河网与汇水 | [Strahler](D8水文分析.md#raster-stream-order-d8-persistence) · [Shreve](D8水文分析.md#shreve-独立持久化验收) · [河段编号](D8水文分析.md#d8-河段编号独立持久化) · [河网转线](D8水文分析.md#d8-河网转矢量线独立-hosted-验收) · [指定汇水点](D8水文分析.md#raster-watershed-d8-persistence) · [汇水点吸附](D8水文分析.md#raster-snap-pour-points-persistence) · [增量子汇水区](D8水文分析.md#raster-subcatchments-d8-persistence) |
@@ -507,30 +508,13 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 
 成功78＋失败432＝510次CSV全检／48调用，存12原CSV；期望为标准库周期计数＋异常面片修正，保独立叉积，宿主不增NumPy／pandas／GDAL。物理＝Meta，不造第三方大小；准备／业务／收尾纳600秒。已有本地专项／Runner证据，未列已核Linux全量／Hosted结论。
 
-## DEM 单观察点可视域独立 Hosted 验收
+## DEM 通视与可视域
 
-`raster-viewshed-persistence`沿[本组边界](#本组独立专项的核验与证据边界)。16 COG链含平地／持续贴地、山脊／沿途NoData与遮挡优先、mask／透明及部分alpha、半径等号邻浮点、重合／子像元观察点／半径内无目标、两英尺、填洼及519×515矩形跨块；18类中英共36拒绝，数值极限／异构复数／注入仅Native。
+三套场景的矩阵、独立核验、双身份与未完成记录见[DEM 通视与可视域专题](DEM通视与可视域.md)。原定位保留如下。
 
-独立精确矩形裁剪，Byte三态0/1/2、NoData255／mask／六仿射／CRS／nearest／COG精核；136＋576＝712原件全检，预检＋52现场共53物理调用，存16 COG／大小SHA，期望／准备／收尾纳600秒。初始化仅本轮精确NFS文件限时metadata_read并全退出撤，填洼链保原DEM的raster_save输入；大小／内容仅隔离Hosted当轮User／scan／execution／target绑定的有界只读SQL，不改公开投影／权限。准备不计Linux全量／Hosted通过。
-
-## DEM 两点通视独立 Hosted 验收
-
-`raster-line-of-sight-persistence`沿[本组边界](#本组独立专项的核验与证据边界)。16 CSV链含平地／山脊、严格贴地与邻高程／端点触地／持续贴地、格角仅触及或真穿入／横纵边、NoData／mask／alpha与遮挡优先、两英尺／矩形第二波段跨块；18类中英共36通视失败，极限／注入仅Native。
-
-独立逐格相交冻结期望，136＋576＝712次原CSV全检，核唯一行／列序／精确Float64米制距离三态，预览按原序列化另核。存16 CSV／清单，核保存目标／类型／写方式与物理＝Meta；唯一真DEM→CSV内部save／公开投影／Meta／Monitor，observer仅本suite白名单。不以本地准备认证Linux全量／Hosted。
-
-## 正交旋转网格通视与可视域独立 Hosted 验收
-
-`raster-sight-orthogonal-persistence`沿[本组边界](#本组独立专项的核验与证据边界)，准备者复用办理角色13权限（原11＋扫描执行／读取），只扫固定源后给执行User精确限时metadata_read，不给执行者引擎管理。源扫／物理Meta快照绑准备者，16业务链／自动扫／血缘绑原12权限User，两清单分核，全部退出撤Grant。
-
-8组各CSV通视＋COG可视域：北向矩形／一般正交／90°／180°、子像元／格角格边、NoData/mask/alpha与遮挡优先、两英尺跨块；第二波段、半径等号邻浮点／重合中心，以完整六仿射＋独立逐格矩形相交核北向／旋转对照。两算子对剪切／近似正交／双单轴镜像／地理／无CRS／无定位／退化各中英共32拒绝，通视重合／半开界外及可视域零半径／越界另8，共40。16成功136＋40×16＝776全检，准备／56现场／清理纳600秒；存8 CSV／8 COG，分别核列序／唯一行／距离三态及声明、像元mask／网格／布局／nearest，极限／注入仅Native。
-
-派发必填`sight_orthogonal_source_commit`完整40位小写SHA；main仅编排，checkout等于所选业务源且为编排祖先，两SHA分记，不缺参回退main／影响其他suite。
-
-| 固定运行 | 首败与未完成范围 |
-| --- | --- |
-| 业务d240f16bc／编排f21728b33；[42448726028／128633145625](https://github.com/pampa0629/addp/actions/runs/42448726028/job/128633145625) | 检出／祖先／七服务预检过，真实main缺os导入NameError；无报告／8CSV8COG清单，16/40/776未验。wrapper／Infra清零不补Grant撤销报告。 |
-| aeabceb3d；[42469659281／128697238003](https://github.com/pampa0629/addp/actions/runs/42469659281/job/128697238003) | 原执行User集中扫源缺引擎管理范围403，矩阵／原件未执行。双身份修正及本地／隔离身份T1不算Hosted，新源须另确认；旧两失败不追改／扩600秒。 |
+- <a id="dem-两点通视独立-hosted-验收"></a>[DEM 两点通视独立 Hosted 验收](DEM通视与可视域.md#dem-两点通视独立-hosted-验收)
+- <a id="dem-单观察点可视域独立-hosted-验收"></a>[DEM 单观察点可视域独立 Hosted 验收](DEM通视与可视域.md#dem-单观察点可视域独立-hosted-验收)
+- <a id="正交旋转网格通视与可视域独立-hosted-验收"></a>[正交旋转网格通视与可视域独立 Hosted 验收](DEM通视与可视域.md#正交旋转网格通视与可视域独立-hosted-验收)
 
 ## 地形湿度指数 TWI 独立 Hosted 验收
 
