@@ -136,4 +136,5 @@ for phase in query guard fresh supervised driver; do
         /addp/contract.py "$phase"
 done
 compose exec -T driver python /addp/contract.py multicluster
+compose exec -T driver python /addp/contract.py query-cleanup
 echo 'SPARK_FEDERATION_ADMISSION_PASS native_query_and_fresh_driver_only'

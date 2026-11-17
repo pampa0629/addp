@@ -42,10 +42,12 @@ services:
   spark-worker:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     user: root
-    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "--host", "spark-worker", "--cores", "2", "--memory", "1g", "spark://spark-master:7077"]
+    entrypoint: ["bash", "-c", "python3 /addp/contract.py observe-worker & exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker --host spark-worker --cores 2 --memory 1g spark://spark-master:7077"]
     hostname: spark-worker
     environment: {SPARK_WORKER_DIR: /work}
-    volumes: [worker-a:/work]
+    volumes:
+      - worker-a:/work
+      - ./spark-federation-contract.py:/addp/contract.py:ro
     mem_limit: 2g
   spark-master-b:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c

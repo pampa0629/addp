@@ -11,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FederationAdmissionTest(unittest.TestCase):
+    def test_worker_observer_imports_without_runtime_dependencies(self):
+        # Worker /proc observation runs with the image's plain Python, outside
+        # spark-submit. It must not require importing PySpark or product deps.
+        contract = ROOT / 'scripts/test/spark-federation-contract.py'
+        subprocess.run([sys.executable, '-S', '-c',
+                        'import runpy,sys; sys.argv=[sys.argv[1],"observe-worker"]; '
+                        'scope=runpy.run_path(sys.argv[0]); '
+                        'assert callable(scope["observe_worker_processes"]); '
+                        'assert "pyspark" not in sys.modules', str(contract)],
+                       check=True, timeout=10)
+
     def test_cleanup_runs_after_success_startup_failure_and_driver_failure(self):
         fake = r'''
 import json, os, sys
@@ -35,7 +46,7 @@ if args[0] == 'compose':
             status = 19 if os.environ.get('FAIL_AT') == 'driver' else 0
         elif '/addp/contract.py' in args:
             state['phases'].append(args[-1])
-            status = 24 if os.environ.get('FAIL_AT') == 'multicluster' else 0
+            status = 24 if os.environ.get('FAIL_AT') == args[-1] else 0
         elif 'sys.prefix' in ' '.join(args):
             print('/tmp/owned-test-artifacts')
         elif 'uname' in args:
@@ -59,7 +70,7 @@ sys.exit(status)
 '''
         gate = ROOT / 'scripts/test/common-spark-federation-gate.sh'
         subprocess.run(['bash', '-n', str(gate)], check=True)
-        for failure in ('', 'up', 'compile', 'dialect-build', 'probe', 'driver', 'leak', 'seed', 'multicluster'):
+        for failure in ('', 'up', 'compile', 'dialect-build', 'probe', 'driver', 'leak', 'seed', 'multicluster', 'query-cleanup'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
                 docker = path / 'docker'
@@ -86,7 +97,7 @@ sys.exit(status)
                 self.assertFalse(state['active'])
                 self.assertEqual(result.returncode == 0, not failure, result.stderr)
                 if not failure:
-                    self.assertEqual(state['phases'], ['query', 'guard', 'fresh', 'supervised', 'driver', 'multicluster'])
+                    self.assertEqual(state['phases'], ['query', 'guard', 'fresh', 'supervised', 'driver', 'multicluster', 'query-cleanup'])
                     self.assertIn('zero_residuals', result.stdout)
 
 

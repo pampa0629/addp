@@ -5,9 +5,10 @@ from pathlib import Path
 import socket
 import sys
 
-from pyspark.sql import SparkSession
-from pyspark.sql.types import DecimalType, LongType
-from query_guard import QueryValidationError, validate_query
+if len(sys.argv) < 2 or sys.argv[1] != "observe-worker":
+    from pyspark.sql import SparkSession
+    from pyspark.sql.types import DecimalType, LongType
+    from query_guard import QueryValidationError, validate_query
 
 
 def verify_native_guard(spark):
@@ -307,7 +308,237 @@ def verify_multicluster():
     print('SPARK_MULTI_CLUSTER_EVIDENCE ' + json.dumps(observations, sort_keys=True), flush=True)
 
 
+def observe_worker_processes():
+    """Fixture-only /proc evidence, written outside application work folders."""
+    import os
+    import time
+    output = Path('/work/executor-processes.json')
+    while True:
+        processes = []
+        for folder in Path('/proc').iterdir():
+            if not folder.name.isdecimal():
+                continue
+            try:
+                args = (folder / 'cmdline').read_bytes().split(b'\0')
+                if b'org.apache.spark.executor.CoarseGrainedExecutorBackend' not in args:
+                    continue
+                app = args[args.index(b'--app-id') + 1].decode()
+                stat = (folder / 'stat').read_text().rsplit(')', 1)[1].split()
+                processes.append({'pid': int(folder.name), 'start_ticks': stat[19],
+                                  'state': stat[0], 'application_id': app})
+            except (OSError, ValueError, IndexError):
+                continue  # A process can exit during this /proc observation.
+        temporary = output.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'observed_at': time.time(), 'processes': processes}))
+        os.replace(temporary, output)
+        time.sleep(.1)
+
+
+def verify_query_cleanup():
+    """Real HTTP handlers and Driver/JVM/Worker; IAM transport remains a T2 fixture."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timedelta, timezone
+    import os
+    import tempfile
+    import time
+    from unittest.mock import AsyncMock, patch
+    from urllib.request import urlopen
+    from uuid import uuid4
+    from addp_common.auth import AuthorizationContext
+    import api_server
+    import query_http
+
+    context = AuthorizationContext(principal_id=19, principal_type='service_principal',
+        token_type='service_access_token', client_id='addp-develop', tenant_id=7)
+    headers = {'Authorization': 'Bearer owned-t2-fixture'}
+    clusters = {21: 'spark-master', 22: 'spark-master-b'}
+    engines = {key: {'id': key, 'tenant_id': 7, 'engine_type': 'spark', 'name': str(key),
+        'connection_info': {'host': host, 'port': 7077, 'web_ui_url': 'http://' + host + ':8080'}}
+        for key, host in clusters.items()}
+    engines[11] = {'id': 11, 'tenant_id': 7, 'engine_type': 'postgresql', 'name': 'Business PostgreSQL',
+        'connection_info': {'host': 'postgres', 'port': 5432, 'database': 'addp_test',
+                            'user': 'reader', 'password': 'admission-reader-only'}}
+
+    def grant(auth, execution, identifier, tenant, **kwargs):
+        assert auth == '8' and tenant == 7 and identifier in engines
+        return {'engine': engines[identifier], 'expires_at':
+            (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
+
+    def state(host, port=8080):
+        with urlopen('http://%s:%s/json/' % (host, port), timeout=3) as response:
+            return json.load(response)
+
+    def wait(check, description, seconds=30):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            value = check()
+            if value:
+                return value
+            time.sleep(.1)
+        raise AssertionError(description)
+
+    def active(key):
+        return {app['id'] for app in state(clusters[key]).get('activeapps', [])}
+
+    def worker():
+        s = state('spark-worker', 8081)
+        return {'cores': s['coresused'], 'memory_mb': s['memoryused'],
+                'applications': sorted({e['appid'] for e in s['executors']})}
+
+    def processes():
+        path = Path('/evidence/worker-a/executor-processes.json')
+        value = json.loads(path.read_text())
+        assert 0 <= time.time() - value['observed_at'] < 3, 'Worker /proc observer is stale'
+        return value
+
+    def request(method, path, **kwargs):
+        with api_server.app.test_client() as client:
+            response = client.open(path, method=method, headers=headers, **kwargs)
+            return response.status_code, response.get_json(silent=True)
+
+    def prepare(key, query, seconds=120):
+        code, result = request('POST', '/api/v1/queries', json={
+            'target_engine_id': key, 'source_engine_ids': [11], 'execution_id': str(uuid4()),
+            'execution_authorization_id': '8', 'query': query, 'language': 'sql',
+            'options': {'read_only': True, 'limit': 10, 'timeout': int(seconds * 10**9)}})
+        assert code == 201, (code, result)
+        identifier = result['query_id']
+        driver = query_http._queries[identifier]['driver']
+        before = active(key)
+        # Each phase starts with only its own application on this cluster.
+        assert len(before) == 1, before
+        return identifier, next(iter(before)), driver
+
+    def execute(identifier):
+        return request('POST', '/api/v1/queries/' + identifier + '/execute',
+                       data='{}', content_type='application/json')
+
+    def gone(pid):
+        try:
+            os.kill(pid, 0)
+            return False
+        except ProcessLookupError:
+            return True
+
+    def local_group(group):
+        members = []
+        for path in Path('/proc').iterdir():
+            if not path.name.isdecimal():
+                continue
+            try:
+                fields = (path / 'stat').read_text().rsplit(')', 1)[1].split()
+                if int(fields[2]) == group and fields[0] != 'Z':
+                    members.append({'pid': int(path.name), 'start_ticks': fields[19]})
+            except (OSError, ValueError, IndexError):
+                continue
+        return members
+
+    def busy(app):
+        folder = Path('/evidence/worker-a') / app
+        for stderr in folder.glob('*/stderr'):
+            data = stderr.read_text(errors='replace')
+            if data.rfind('Running task') > data.rfind('Finished task'):
+                pids = [p for p in processes()['processes'] if p['application_id'] == app and p['state'] != 'Z']
+                if pids:
+                    return pids
+        return False
+
+    normal = 'SELECT id FROM Business_PostgreSQL.public.orders ORDER BY id'
+    # 2^36 combinations, with an aggregate depending on every input. No test
+    # sleep/UDF, source-side wait, product guard bypass or writes are needed.
+    aliases = ['t%d' % i for i in range(36)]
+    sources = ' CROSS JOIN '.join('Business_PostgreSQL.public.orders ' + name for name in aliases)
+    expression = '+'.join('CAST(%s.customer_id AS BIGINT)*%d' % (name, 2**i)
+                          for i, name in enumerate(aliases))
+    slow = 'SELECT sum(sqrt(' + expression + ')) AS total FROM ' + sources
+    before_dirs = set(Path(tempfile.gettempdir()).glob('addp-spark-query-*'))
+    evidence = []
+    with patch.object(query_http, 'resolve_authorization_context', AsyncMock(return_value=context)), \
+         patch.object(query_http, 'get_execution_engine_access', side_effect=grant):
+        baseline = worker()
+        assert baseline == {'cores': 0, 'memory_mb': 0, 'applications': []}, baseline
+        try:
+            for phase in ('cancel', 'timeout', 'prepare-expiry'):
+                sibling, sibling_app, sibling_driver = prepare(22, normal)
+                identifier, app, driver = prepare(21, slow if phase != 'prepare-expiry' else normal,
+                                                   120 if phase == 'cancel' else 45)
+                pid, directory = driver.process.pid, driver.directory.name
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = None
+                    if phase != 'prepare-expiry':
+                        future = pool.submit(execute, identifier)
+                        pids = wait(lambda: busy(app), 'real Executor never started query tasks: ' + phase)
+                        assert not future.done(), 'long query completed before stop trigger'
+                    else:
+                        pids = wait(lambda: [p for p in processes()['processes'] if p['application_id'] == app],
+                                    'prepared Driver has no remote Executor')
+                    local_members = local_group(pid)
+                    assert len(local_members) >= 2, 'Python Driver and real JVM were not observed'
+                    allocated = worker()
+                    assert allocated['cores'] > 0 and allocated['memory_mb'] > 0
+                    assert allocated['applications'] == [app], allocated
+                    triggered_at = time.monotonic()
+                    if phase == 'cancel':
+                        assert request('DELETE', '/api/v1/queries/' + identifier)[0] == 204
+                    else:
+                        # Runtime owns the deadline set by the real request.
+                        wait(lambda: identifier not in query_http._queries,
+                             'Runtime deadline did not release query', seconds=50)
+                        assert time.monotonic() >= driver.deadline, 'query failed before its actual timeout'
+                        triggered_at = driver.deadline
+                    if future is not None:
+                        code, result = future.result(timeout=10)
+                        assert code != 200 and result['error_code'] in {
+                            'query_cancelled', 'query_timeout', 'query_driver_failed'}, (code, result)
+                    after = wait(lambda: worker() if worker() == baseline and app not in active(21)
+                        and not any(p['application_id'] == app for p in processes()['processes'])
+                        and gone(pid) and not local_group(pid) and not Path(directory).exists() else None,
+                        'local/remote cleanup did not finish within 30 seconds')
+                    elapsed = time.monotonic() - triggered_at
+                    assert elapsed <= 30, elapsed
+                    assert sibling_app in active(22) and not sibling_driver.closed, 'other cluster was stopped'
+                    evidence.append({'phase': phase, 'query_id': identifier, 'application_id': app,
+                        'driver_pid': pid, 'local_processes_before': local_members,
+                        'executor_processes_before': pids, 'worker_before': allocated,
+                        'worker_after': after, 'executor_processes_after': processes(),
+                        'local_processes_after': local_group(pid), 'driver_pid_gone': gone(pid),
+                        'private_directory_exists': Path(directory).exists(),
+                        'master_active_after': sorted(active(21)),
+                        'release_seconds': elapsed, 'other_application_active': sibling_app,
+                        'work_directory_retained': (Path('/evidence/worker-a') / app).exists()})
+                    print('SPARK_QUERY_REMOTE_STOP_CASE ' + json.dumps(evidence[-1], sort_keys=True), flush=True)
+                # A new production query must work after every stop, not only
+                # after the fixture cluster is torn down and recreated.
+                recovery, recovered_app, recovered_driver = prepare(21, normal)
+                recovery_code, recovery_result = execute(recovery)
+                assert recovery_code == 200 and recovery_result['columns'] == ['id'], recovery_result
+                assert [(f['name'], f['type']) for f in recovery_result['fields']] == [('id', 'bigint')]
+                assert recovery_result['rows'] == [{'id': '-9007199254740993'}, {'id': '9007199254740993'}]
+                wait(lambda: not active(21) and worker() == baseline, 'recovery resources not released')
+                sibling_code, sibling_result = execute(sibling)
+                assert sibling_code == 200 and sibling_result['rows'] == recovery_result['rows'], sibling_result
+                wait(lambda: not active(22), 'other cluster did not release its completed query')
+                evidence[-1]['recovery'] = {'query_id': recovery, 'application_id': recovered_app,
+                                            'rows': recovery_result['rows']}
+                evidence[-1]['other_query_completed'] = {'query_id': sibling, 'application_id': sibling_app,
+                                                        'rows': sibling_result['rows']}
+        finally:
+            for identifier in list(query_http._queries):
+                request('DELETE', '/api/v1/queries/' + identifier)
+        wait(lambda: not active(21) and not active(22) and worker() == baseline,
+             'final owned applications remain before fixture destruction')
+    assert set(Path(tempfile.gettempdir()).glob('addp-spark-query-*')) == before_dirs
+    print('SPARK_QUERY_REMOTE_CLEANUP_PASS ' + json.dumps({'cases': evidence,
+          'scope': 'native T2; fixture identity transport; no IAM/page acceptance'}), flush=True)
+
+
 def main(phase):
+    if phase == "observe-worker":
+        observe_worker_processes()
+        return
+    if phase == "query-cleanup":
+        verify_query_cleanup()
+        return
     if phase == 'multicluster':
         verify_multicluster()
         return
