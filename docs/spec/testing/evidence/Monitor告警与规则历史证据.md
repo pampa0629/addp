@@ -174,6 +174,12 @@ Monitor 经 pidfd 确认旧 PID 64169 退出后，由标准 `start.sh -monitor` 
 
 Artifact `14242081152` 的 SHA-256 `f60cd40eda38dcffd979f787ab4b2737a395bb0ee08c13f4d4e29df55408b611` 与 ZIP CRC 已核对；完整原件、独立汇总位于 `/tmp/addp-cdc-evaluator-hosted-43895444567/`，个人前后回执位于 `/tmp/addp-cdc-evaluator-final-preserved-before.json` 和 `/tmp/addp-cdc-evaluator-final-preserved-after.json`。标准 `make test-transfer-continuous-online-runner` 本地通过 152 项、原语法及 System 身份夹具 Go；[自然 Platform consistency Job 133396660611](https://github.com/pampa0629/addp/actions/runs/43895176021/job/133396660611)实际执行 152 项并成功。初始夹具超时、旧输入无效验证及两轮 Hosted 失败各守原边界，未被当前成功抵消。
 
+### 租户告警页面实故障闭环准备（2026-11-17）
+
+沿同一 `transfer-continuous-events` 性能故障新增 `cdc_alert_open`／`cdc_alert_unknown`／`cdc_alert_resolved` 三次真实 Console 页面回执，沿原 User、任务、generation、三条规则和签名通知。打开阶段逐项对照正式 API 的 incident ID、任务、代次、状态、打开时间；由页面各确认一次并核对已确认，Runner 删除原三次确认 POST。缺样阶段核对同一事件的 acknowledged／unknown、安全最后观测时间保持，通知页没有 resolved；恢复阶段核对原 incident resolved 及 opened／resolved 投递 UUID、已送达和 HTTP 202，与独立签名接收和审计关联。页面确认开始至完整浏览器回执前沿原机制标记未知操作结果，失败不重发。通知目标 URL、登录输出和完整响应不归档，不截图通知整页。
+
+本批仅修改原 Hosted Runner／回归、原 Online 页面 spec 和现有场景／证据；没有产品 UI／接口／权限、入口或预算变化。标准 `make test-transfer-continuous-online-runner` 在冻结检出 `252942fc223e1fe865cdb3623fd7988d51c21fad` 叠加四个实际输入后，154 项 Python、原 Node／Shell 语法及 System 身份夹具 Go 完整通过（`/tmp/addp-cdc-alert-ui-runner-frozen.log`）。回归核对三阶段编排及页面唯一确认、错误任务／代次／投递或回执检查缺失的拒绝、浏览器失败后原生故障和规则清理；普通 Console T3 配置明确排除 `e2e/online`，这些实际页面断言必须由新源码 Hosted 证明。前轮 27 项／8 页回执未覆盖本补充，当前尚未运行实际新 T4，不追认通过。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办

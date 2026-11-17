@@ -757,6 +757,52 @@ class ContinuousRunnerTest(unittest.TestCase):
                 launch.assert_not_called()
             self.assertFalse(list(secret.iterdir()))
 
+    def test_alert_browser_pins_task_incidents_deliveries_and_rejects_incomplete_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);artifacts=root/'artifacts';artifacts.mkdir();secret=root/'private';secret.mkdir()
+            subject={'tenant_id':'2','principal_id':'33'}
+            env={'ADDP_ONLINE_ARTIFACT_DIR':str(artifacts),'ADDP_ONLINE_TEST_USER_USERNAME':'consumer',
+                 'ADDP_ONLINE_TEST_USER_PASSWORD':'private-password'}
+            binding={'task_id':7,'generation':1,'destination_id':9,
+                'incidents':{code:i for i,code in enumerate(sorted(M.CDC_PERFORMANCE_CODES),1)},
+                'delivery_ids':[f'aaaaaaaa-1111-4111-8111-{i:012d}' for i in range(1,4)],'last_observed_at':{}}
+            required={
+                'cdc_alert_open':['alert_task_generation','opened_rows_match_api','ui_acknowledge_confirmed','opened_delivery_rows_match_api','no_samples'],
+                'cdc_alert_unknown':['alert_task_generation','unknown_rows_match_api','last_observed_preserved','no_recovery_delivery','no_samples'],
+                'cdc_alert_resolved':['alert_task_generation','resolved_rows_match_api','original_incident_ids','resolved_delivery_rows_match_api','no_samples']}
+            change={}
+            class Process:
+                def __init__(self,args,**kwargs):
+                    e=kwargs['env'];phase=e['ADDP_CONTINUOUS_BROWSER_PHASE']
+                    self.ended=False
+                    self_binding=json.loads(e['ADDP_CONTINUOUS_BROWSER_ALERTS'])
+                    assert self_binding==binding
+                    receipt={'schema_version':'addp.continuous-execution-browser/v1','phase':phase,'run_id':'run-1',
+                        'tenant_id':'2','principal_id':'33','execution_ids':[UUID],
+                        'checks':required[phase],'result':'passed','alert_binding':self_binding}
+                    receipt.update(change)
+                    (artifacts/f'continuous-browser-{phase}.json').write_text(json.dumps(receipt))
+                def poll(self):return 0 if self.ended else None
+                def wait(self,timeout):self.ended=True;return 0
+            with patch.dict(os.environ,env),patch.object(M.subprocess,'Popen',Process):
+                for phase in required:
+                    binding['last_observed_at']={code:'2026-11-17T01:02:03Z' for code in M.CDC_PERFORMANCE_CODES} if phase=='cdc_alert_unknown' else {}
+                    binding['delivery_ids']=[f'aaaaaaaa-1111-4111-8111-{i:012d}' for i in range(1,7 if phase=='cdc_alert_resolved' else 4)]
+                    result=M.run_browser(phase,[UUID],subject,'run-1',secret,alert_observation=binding)
+                    self.assertEqual(result['alert_binding'],binding)
+                    for alteration in [{'tenant_id':'3'},{'checks':required[phase][:-1]},
+                                       {'alert_binding':{**binding,'task_id':8}},{'result':'failed'}]:
+                        change.update(alteration)
+                        with self.subTest(phase=phase,change=alteration),self.assertRaises(M.SuiteError):
+                            M.run_browser(phase,[UUID],subject,'run-1',secret,alert_observation=binding)
+                        change.clear()
+            for changed in [{'task_id':0},{'generation':True},{'destination_id':'9'},{'incidents':{}},
+                            {'delivery_ids':[UUID]*6},{'raw_response':{}},{'last_observed_at':{'foreign':'2026-11-17T00:00:00Z'}}]:
+                with self.subTest(changed=changed),patch.object(M.subprocess,'Popen') as launch,self.assertRaises(M.SuiteError):
+                    M.run_browser('cdc_alert_resolved',[UUID],subject,'run-1',secret,alert_observation={**binding,**changed})
+                launch.assert_not_called()
+            self.assertFalse(list(secret.iterdir()))
+
     def test_browser_rejects_invalid_phase_identity_and_action_before_launch(self):
         with patch.object(M.subprocess, 'Popen') as launch:
             for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None), ('live', [UUID], lambda: None),
@@ -1270,7 +1316,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M,'physical',side_effect=M.SuiteError('injected mutation failure')), \
              self.assertRaisesRegex(M.SuiteError,'injected mutation failure'):
             M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
-                lambda *args:{'id':1},lambda *args:None,lambda *args:None,report,lambda:None,None)
+                lambda *args:{'id':1},lambda *args:None,lambda *args:None,report,lambda:None,None,None)
         self.assertIsInstance(sample.call_args_list[1].kwargs['after'],M.datetime)
         self.assertEqual(report['cdc_risk_closure']['paused_buffer']['committed_offset'],'10')
         self.assertEqual(report['cdc_risk_closure']['stage'],'buffer_growth')
@@ -1300,7 +1346,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                      patch.object(M,'verify_capture_failure',side_effect=M.SuiteError('injected next phase')), \
                      self.assertRaisesRegex(M.SuiteError,'exact recovery origin' if wrong_origin else 'injected next phase'):
                     M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
-                        lambda *args:{'id':1},None,None,report,lambda:None,None)
+                        lambda *args:{'id':1},None,None,report,lambda:None,None,None)
                 wait.assert_called_once_with(client,recovered,'cancelled')
                 original.assert_called_once_with(client,manual)
                 self.assertEqual(report['cdc_risk_closure']['paused_execution_id'],recovered)
@@ -1375,7 +1421,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M.subprocess,'run',side_effect=command), \
              patch.object(M.subprocess,'Popen',side_effect=OSError('private process failure')), \
              self.assertRaises(OSError):
-            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,lambda _:None,None,None)
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,lambda _:None,None,None,None)
         self.assertEqual({v['rule_type'] for v in definitions}, M.CDC_PERFORMANCE_CODES)
         self.assertTrue(all(v['severity']=='warning' and v['enabled'] is True and
                             v['routes']==[{'channel':'webhook','destination_id':9}] for v in definitions))
@@ -1410,7 +1456,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M.time,'monotonic',side_effect=[0,100]), \
              patch.object(M,'physical',side_effect=lambda action:actions.append(action) or True), \
              self.assertRaisesRegex(M.SuiteError,'stop after native backpressure' if applied_cpu=='3000 100000' else 'CPU fault not applied'):
-            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage,None,None)
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage,None,None,None)
         self.assertFalse(any(args[1] == 'pause' or args[-1].endswith('/pause') for args in commands))
         self.assertIn(['docker','update','--cpu-quota','3000','owned-connect'],commands)
         self.assertIn(['docker','update','--cpu-quota','-1','owned-connect'],commands)
@@ -1583,14 +1629,22 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             return SimpleNamespace(payload={'desired_state':'paused' if state['phase'] in ('performance_task_pause','performance_pretrigger_pause','performance_evaluator_rebuild') else 'running',
                 'last_execution_id':(pending_resumed if invalid=='rebuild_changes_execution' and state['phase']=='performance_evaluator_rebuild' else state['running_execution']),'capture':{'generation':1,'buffer_observation':buffer,'delay_observation':delay}})
         def mutate(actor, path, body=None, status=None):
-            if path.endswith('/acknowledge'):
-                state['ack'] = True
-                return {}
+            self.assertFalse(path.endswith('/acknowledge'),'performance confirmation belongs to the browser')
             if path.endswith('/pause'):
                 return {}
             definitions.append(body)
             return {'id':len(definitions)}
-        delivered = unittest.mock.Mock(return_value=[{'signed_receipt_verified':True}]*3)
+        delivered = unittest.mock.Mock(side_effect=lambda values,event:[{'delivery_id':f'aaaaaaaa-1111-4111-8111-{i+(10 if event=="resolved" else 0):012d}',
+                         'signed_receipt_verified':True} for i in range(1,4)])
+        def observe_page(phase,execution_id,binding):
+            state.setdefault('alert_pages',[]).append(phase)
+            self.assertEqual(binding['task_id'],7)
+            self.assertEqual(binding['generation'],1)
+            self.assertEqual(set(binding['incidents']),M.CDC_PERFORMANCE_CODES)
+            self.assertEqual(len(binding['delivery_ids']),6 if phase=='cdc_alert_resolved' else 3)
+            if invalid=='alert_page_failed':raise M.SuiteError('bound alert page failed')
+            if phase=='cdc_alert_open':state['ack']=True
+            return {'result':'passed','phase':phase,'alert_binding':binding}
         def launch_execution(*args,**kwargs):
             self.assertEqual(kwargs,{'http_timeout':60})
             if invalid=='resume_control_failure':
@@ -1621,7 +1675,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                  'rebuild_retains_pending':'did not converge before the deadline','rebuild_emits_lifecycle':'lifecycle was not empty',
                  'rebuild_changes_execution':'changed the paused task execution','rebuild_sends_notification':'emitted a performance notification',
                  'rebuild_failed':'owned Monitor reconstruction failed','rebuild_no_evaluation':'did not converge before the deadline',
-                 'resume_control_failure':'resume native control failed'}.get(invalid)
+                 'resume_control_failure':'resume native control failed','alert_page_failed':'bound alert page failed'}.get(invalid)
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
              patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
@@ -1634,10 +1688,10 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             if error:
                 with self.assertRaisesRegex(M.SuiteError,error):
                     M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
-                        mutate,delivered,SimpleNamespace(snapshot=received),proof,stage,launch,rebuild)
+                        mutate,delivered,SimpleNamespace(snapshot=received),proof,stage,launch,rebuild,observe_page)
             else:
                 result = M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
-                    mutate,delivered,SimpleNamespace(snapshot=received),proof,stage,launch,rebuild)
+                    mutate,delivered,SimpleNamespace(snapshot=received),proof,stage,launch,rebuild,observe_page)
                 self.assertEqual(result,resumed)
         self.assertEqual(proof['performance']['cleanup'],'passed')
         self.assertNotIn('private-performance-sentinel',json.dumps(proof))
@@ -1664,6 +1718,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(set(value['pretrigger_pause']['insufficient_last']),M.CDC_PERFORMANCE_CODES-{'cdc_capture_delayed'})
         self.assertEqual(delivered.call_count,2)
         self.assertEqual(value['result'],'passed')
+        self.assertEqual(state['alert_pages'],['cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'])
+        self.assertEqual(set(value['browser']),set(state['alert_pages']))
         self.assertEqual(value['backlog_threshold'],'256')
         self.assertGreaterEqual(len(value['backlog_recovery_samples']),5)
 
@@ -1707,10 +1763,18 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         launch.assert_called_once_with(7,'resume',http_timeout=60)
         delivered.assert_not_called()
 
+    def test_failed_alert_page_cleans_native_faults_without_repeating_confirmation(self):
+        value,state,delivered,launch=self.performance_orchestration(invalid='alert_page_failed')
+        self.assertEqual(value['result'],'failed')
+        self.assertEqual(value['cleanup'],'passed')
+        self.assertEqual(state['alert_pages'],['cdc_alert_open'])
+        self.assertEqual(delivered.call_count,1)
+        self.assertEqual(launch.call_count,1)
+
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \
              self.assertRaises(Exception):
-            M.verify_cdc_performance(None,7,1,10,{},9,None,None,None,{},lambda _:None,None,None)
+            M.verify_cdc_performance(None,7,1,10,{},9,None,None,None,{},lambda _:None,None,None,None)
         run.assert_not_called()
 
     def test_real_signed_performance_open_and_close_are_warning_receipts(self):

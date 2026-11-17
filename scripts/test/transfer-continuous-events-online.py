@@ -575,7 +575,7 @@ COMMIT;
 
 
 def verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
-                           mutate, delivered, receiver, proof, stage, launch, rebuild_evaluator):
+                           mutate, delivered, receiver, proof, stage, launch, rebuild_evaluator, observe_alert_page):
     """Real bounded workload and native faults, exclusively on this Hosted deployment."""
     connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
     broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
@@ -845,8 +845,15 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         evidence['opened_windows'] = {k: v['cdc_evaluation'] for k, v in windows.items()}
         evidence['incident_ids'] = {k: v['id'] for k, v in active.items()}
         evidence['opened_deliveries'] = until(lambda: delivered(active, 'opened'))
-        for incident in active.values():
-            mutate(client, f"{ALERTS}/{incident['id']}/acknowledge")
+        def observe_alerts(phase, values, deliveries, execution_id):
+            binding = {'task_id':task_id, 'generation':generation, 'destination_id':destination_id,
+                'incidents':evidence['incident_ids'],
+                'delivery_ids':[row['delivery_id'] for row in deliveries],
+                'last_observed_at':{code:row['last_observed_at'] for code,row in values.items()} if phase=='cdc_alert_unknown' else {}}
+            evidence.setdefault('browser', {})[phase] = observe_alert_page(phase, execution_id, binding)
+        stage('performance_alert_open_page')
+        observe_alerts('cdc_alert_open', active, evidence['opened_deliveries'], pending_resumed)
+        until(lambda: incidents('acknowledged'))
 
         stage('performance_task_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
@@ -917,6 +924,13 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             checks += 1
             time.sleep(2)
         evidence['unknown_hold_checks'] = checks
+        observe_alerts('cdc_alert_unknown', frozen, evidence['opened_deliveries'], resumed_execution)
+        current = incidents('acknowledged')
+        require(current and all(current[k]['id']==frozen[k]['id']
+                and current[k]['last_observed_at']==frozen[k]['last_observed_at'] for k in CDC_PERFORMANCE_CODES),
+                'unknown page changed confirmed performance incidents')
+        require(not any(r['signal_code'] in CDC_PERFORMANCE_CODES and r['event_type']=='resolved'
+                        for r in receiver.snapshot()), 'unknown page received a recovery notification')
 
         # Preserve a completed minute from this same real outage for the chart.
         # A task-created-before-window gap is not evidence of fault-time missing data.
@@ -991,6 +1005,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 'backlog closed without 60 seconds strictly below half its threshold')
         evidence['backlog_recovery_window'] = backlog_window
         evidence['resolved_deliveries'] = until(lambda: delivered(closed, 'resolved'))
+        observe_alerts('cdc_alert_resolved', closed, evidence['opened_deliveries']+evidence['resolved_deliveries'], resumed_execution)
         stage('performance_source_cleanup')
         require(physical('performance-clear'), 'performance source rows survived cleanup')
         source_dirty = False
@@ -1054,7 +1069,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
 
 
 def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, name, run_id,
-                            mutate, create, launch, report, checkpoint, rebuild_evaluator):
+                            mutate, create, launch, report, checkpoint, rebuild_evaluator, observe_alert_page):
     proof = report['cdc_risk_closure'] = {'task_id': task_id, 'cleanup': 'pending', 'stage': 'baseline'}
     healthy = until(lambda: cdc_task_sample(client, task_id, engine_id))
     generation = healthy['generation']
@@ -1100,7 +1115,7 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
         destination_id = API.require_positive_int(destination, 'id')
         proof['destination_id'] = destination_id
         execution_id = verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
-                                              mutate, delivered, receiver, proof, stage, launch, rebuild_evaluator)
+                                              mutate, delivered, receiver, proof, stage, launch, rebuild_evaluator, observe_alert_page)
         stage('buffer_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
         paused_task = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
@@ -1940,7 +1955,7 @@ def observe_browser_owner_outage(control, marker, process, faults):
     return proof
 
 
-def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None, finish=None, cdc=None, metric_history=None):
+def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None, finish=None, cdc=None, metric_history=None, alert_observation=None):
     cdc_phase = phase in {'cdc_initial', 'cdc_growth', 'cdc_resumed'}
     require(cdc_phase == (cdc is not None), 'CDC browser task binding changed')
     if cdc_phase:
@@ -1950,6 +1965,24 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                 and all(isinstance(cdc[key], str) and re.fullmatch(r'0|[1-9][0-9]*', cdc[key]) for key in ('committed_offset', 'latest_offset', 'lag_offsets'))
                 and int(cdc['latest_offset']) - int(cdc['committed_offset']) == int(cdc['lag_offsets'])
                 and cdc['lag_offsets'] == ('3' if phase == 'cdc_growth' else '0'), 'CDC browser observation invalid')
+    alert_phase = phase in {'cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'}
+    require(alert_phase == (alert_observation is not None), 'alert browser binding changed')
+    if alert_phase:
+        a = alert_observation
+        require(type(a) is dict and set(a)=={'task_id','generation','destination_id','incidents','delivery_ids','last_observed_at'}
+                and all(type(a[k]) is int and a[k]>0 for k in ('task_id','generation','destination_id'))
+                and type(a['incidents']) is dict and set(a['incidents'])==CDC_PERFORMANCE_CODES
+                and all(type(v) is int and v>0 for v in a['incidents'].values()) and len(set(a['incidents'].values()))==3
+                and type(a['delivery_ids']) is list and len(a['delivery_ids'])==(6 if phase=='cdc_alert_resolved' else 3)
+                and len(set(a['delivery_ids']))==len(a['delivery_ids'])
+                and all(isinstance(v,str) and canonical_uuid(v)==v for v in a['delivery_ids'])
+                and type(a['last_observed_at']) is dict
+                and set(a['last_observed_at'])==(CDC_PERFORMANCE_CODES if phase=='cdc_alert_unknown' else set()),
+                'alert browser observation invalid')
+        for value in a['last_observed_at'].values():
+            require(isinstance(value,str) and datetime.fromisoformat(value.replace('Z','+00:00')).tzinfo is not None,
+                    'alert browser observation time invalid')
+        assert_safe(a)
     require((phase == 'cdc_history') == (metric_history is not None), 'history browser binding changed')
     if metric_history is not None:
         require(type(metric_history) is dict and set(metric_history) == {'task_id', 'generation', 'gap_timestamp'}
@@ -1957,7 +1990,7 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                 and isinstance(metric_history['gap_timestamp'], str)
                 and datetime.fromisoformat(metric_history['gap_timestamp'].replace('Z', '+00:00')).tzinfo is not None,
                 'history browser observation invalid')
-    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history'}, 'unknown browser phase')
+    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history','cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'}, 'unknown browser phase')
     require((action is not None) == (phase in {'live', 'revocation'}), 'browser action binding changed')
     require((faults is not None) == (phase == 'owner_unavailable'), 'browser Owner fault binding changed')
     require((finish is not None) == (phase == 'live'), 'browser terminal action binding changed')
@@ -1970,6 +2003,9 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
         'recovery': ['old_failure', 'recovery_source', 'record_failure_code', 'no_samples'],
         'revocation': ['previously_readable', 'old_content_cleared', 'fresh_monitor_only_denied', 'no_samples'],
         'owner_unavailable': OWNER_OUTAGE_CHECKS,
+        'cdc_alert_open': ['alert_task_generation','opened_rows_match_api','ui_acknowledge_confirmed','opened_delivery_rows_match_api','no_samples'],
+        'cdc_alert_unknown': ['alert_task_generation','unknown_rows_match_api','last_observed_preserved','no_recovery_delivery','no_samples'],
+        'cdc_alert_resolved': ['alert_task_generation','resolved_rows_match_api','original_incident_ids','resolved_delivery_rows_match_api','no_samples'],
         'cdc_history': ['task_identity', 'history_api_matches_chart', 'history_backlog_growth_then_zero',
                         'history_fault_gap_not_connected', 'history_tooltips', 'no_samples'],
         **{name: ['task_identity', 'task_source_slot_wal', 'task_capture_delay', 'task_buffer_positions', 'execution_binding', 'no_samples'] for name in ('cdc_initial', 'cdc_growth', 'cdc_resumed')},
@@ -1989,6 +2025,8 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
             environment['ADDP_CONTINUOUS_BROWSER_CDC'] = json.dumps(cdc)
         if metric_history is not None:
             environment['ADDP_CONTINUOUS_BROWSER_HISTORY'] = json.dumps(metric_history)
+        if alert_phase:
+            environment['ADDP_CONTINUOUS_BROWSER_ALERTS'] = json.dumps(alert_observation)
         marker = {'run_id': run_id, 'phase': phase, 'execution_id': execution_ids[0]}
         # Raw Playwright output may contain login fill arguments; keep it private.
         with (control / 'output.log').open('w') as output:
@@ -2023,6 +2061,8 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                     'run_id': run_id, 'tenant_id': str(subject['tenant_id']),
                     'principal_id': str(subject['principal_id']), 'execution_ids': execution_ids,
                     'checks': required_checks, 'result': 'passed'}
+        if alert_phase:
+            expected['alert_binding'] = alert_observation
         require(result == expected, 'browser evidence contract changed')
         if faults is not None:
             result = {**result, 'owner_process': fault_proof}
@@ -2428,9 +2468,19 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['precise_scan_scope']['target_only_verified'] = True
         report['checks'].append('initial_scans_preserve_sibling_and_ancestors')
         name = next(name for task, kind, name in tasks if task == cdc_task)
+        def observe_alert_page(browser_phase, execution_id, binding):
+            if browser_phase == 'cdc_alert_open':
+                report['uncertain_mutation'] = True
+                checkpoint()
+            receipt = run_browser(browser_phase, [execution_id], report['consumer_identity'], run_id,
+                                  faults.secret, alert_observation=binding)
+            if browser_phase == 'cdc_alert_open':
+                report['uncertain_mutation'] = False
+                checkpoint()
+            return receipt
         phase('cdc_risk')
         cdc_paused = verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
-                                            mutate, create, launch, report, checkpoint, faults.rebuild_monitor)
+                                            mutate, create, launch, report, checkpoint, faults.rebuild_monitor, observe_alert_page)
         report['cdc_task_metric_history'] = verify_cdc_metric_history(client, cdc_task, report['cdc_risk_closure']['generation'])
         report['checks'].append('cdc_task_metric_history_safe_generation_backlog_growth_recovery_wal_delay')
         report['browser_cdc_history'] = run_browser('cdc_history', [cdc_paused], report['consumer_identity'], run_id, faults.secret,
@@ -2440,6 +2490,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
         report['checks'].append('cdc_pretrigger_pause_empty_lifecycle_and_complete_resumed_windows')
         report['checks'].append('cdc_evaluator_rebuilt_while_paused_then_complete_new_windows_and_delivery')
+        report['checks'].append('cdc_tenant_alert_pages_open_ack_unknown_resolve_and_delivery_match_api')
         report['checks'].append('cdc_optional_backlog_300s_pause_missing_hold_60s_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')

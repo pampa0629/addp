@@ -18,13 +18,15 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   const control = process.env.ADDP_CONTINUOUS_BROWSER_CONTROL
   const artifacts = process.env.ADDP_ONLINE_ARTIFACT_DIR
   const credentials = [process.env.ADDP_CONTINUOUS_BROWSER_USERNAME, process.env.ADDP_CONTINUOUS_BROWSER_PASSWORD]
-  if (!['live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
+  if (!['live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed', 'cdc_history','cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
   const marker = { run_id: runID, phase, execution_id: ids[0] }
   const checks = []
+  const alertBinding = phase.startsWith('cdc_alert_') ? JSON.parse(process.env.ADDP_CONTINUOUS_BROWSER_ALERTS) : null
+  let alertAPI
   let stage = 'login'
   const contexts = []
   const report = result => ({ schema_version: 'addp.continuous-execution-browser/v1', phase,
-    run_id: runID, tenant_id: tenantID, principal_id: principalID, execution_ids: ids, checks, result })
+    run_id: runID, tenant_id: tenantID, principal_id: principalID, execution_ids: ids, checks, result, ...(alertBinding ? { alert_binding: alertBinding } : {}) })
   const destination = resolve(artifacts, `continuous-browser-${phase}.json`)
   const route = id => id ? `/monitor/executions?execution_id=${encodeURIComponent(id)}` : '/monitor/executions'
   async function signedPage(id, owner = true, destination = route(id)) {
@@ -100,8 +102,128 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   try {
     const history = phase === 'cdc_history' ? JSON.parse(process.env.ADDP_CONTINUOUS_BROWSER_HISTORY) : null
     const { page, frame } = await signedPage(ids[0], true, history
-      ? `/monitor/cdc-resources?view=tasks&task_id=${history.task_id}&refresh=off` : route(ids[0]))
-    if (history) {
+      ? `/monitor/cdc-resources?view=tasks&task_id=${history.task_id}&refresh=off` : alertBinding ? '/monitor/alerts' : route(ids[0]))
+    if (alertBinding) {
+      const binding = alertBinding
+      const codes = ['cdc_consumer_stalled','cdc_capture_delayed','cdc_backlog_high']
+      const names = { cdc_consumer_stalled:'CDC 目标消费停滞', cdc_capture_delayed:'CDC 捕获持续延迟', cdc_backlog_high:'CDC 积压持续偏高' }
+      const statusNames = { open:'待处理', acknowledged:'已确认', resolved:'已恢复' }
+      const incidentIDs = Object.values(binding.incidents)
+      const dateText = value => page.evaluate(value => new Date(value).toLocaleString(), value)
+      const alertPage = frame.locator('.alert-list')
+      async function currentIncidents(status) {
+        const payload = await json(await alertAPI.get('/api/v1/monitor/alerts?module=transfer&page_size=100'), 'CDC alert API')
+        expect(payload.total).toBeLessThanOrEqual(100)
+        const selected = payload.data.filter(row => incidentIDs.includes(row.id))
+        expect(selected).toHaveLength(3)
+        for (const row of selected) {
+          expect(row.id).toBe(binding.incidents[row.signal_code])
+          expect(row.tenant_id).toBe(Number(tenantID))
+          expect(row.module).toBe('transfer')
+          expect(row.source_task_id).toBe(String(binding.task_id))
+          expect(row.details.generation).toBe(String(binding.generation))
+          expect(row.status).toBe(status)
+          if (phase === 'cdc_alert_unknown') {
+            expect(row.details.evaluation_state).toBe('unknown')
+            expect(row.last_observed_at).toBe(binding.last_observed_at[row.signal_code])
+          }
+        }
+        return selected
+      }
+      async function findAlertRow(id) {
+        const refreshed=page.waitForResponse(response => response.url().includes('/api/v1/monitor/alerts?') && response.request().method()==='GET')
+        await alertPage.getByRole('button',{name:'查询',exact:true}).click()
+        expect((await refreshed).ok()).toBe(true)
+        await expect(alertPage.locator('.el-loading-mask')).toHaveCount(0)
+        for (let index=0;index<5;index++) {
+          const row=alertPage.locator(`tbody tr:has(td:first-child .cell:text-is("${id}"))`)
+          if (await row.count()) return row
+          const next=alertPage.locator('.el-pagination .btn-next')
+          if (await next.isDisabled()) break
+          const response=page.waitForResponse(response => response.url().includes('/api/v1/monitor/alerts?') && response.request().method()==='GET')
+          await next.click();expect((await response).ok()).toBe(true)
+          await expect(alertPage.locator('.el-loading-mask')).toHaveCount(0)
+        }
+        throw new Error('bound CDC incident is absent from the visible pages')
+      }
+      async function compareRows(status) {
+        const selected=await currentIncidents(status)
+        for (const row of selected) {
+          const visible=await findAlertRow(row.id)
+          await expect(visible).toContainText(names[row.signal_code])
+          await expect(visible.getByTestId('cdc-alert-reason')).toContainText(String(binding.generation))
+          const cells=visible.locator('td .cell')
+          await expect(cells.nth(2)).toHaveText(statusNames[status])
+          await expect(cells.nth(3)).toHaveText('transfer')
+          await expect(cells.nth(4)).toHaveText(String(binding.task_id))
+          await expect(cells.nth(5)).toHaveText(await dateText(row.opened_at))
+          if (phase!=='cdc_alert_open') await expect(cells.nth(6)).toHaveText(await dateText(row.last_observed_at))
+          if (phase==='cdc_alert_unknown') await expect(visible.getByTestId('cdc-performance-evaluation')).toContainText('观测未知')
+          if (status!=='open') await expect(visible.getByRole('button',{name:'确认',exact:true})).toHaveCount(0)
+        }
+        return selected
+      }
+      stage='cdc_alert_identity'
+      await expect(alertPage).toBeVisible()
+      checks.push('alert_task_generation')
+      if (phase==='cdc_alert_open') {
+        stage='cdc_alert_open_rows'
+        const rows=await compareRows('open')
+        checks.push('opened_rows_match_api')
+        const posts=new Map()
+        page.on('request',req => {
+          const match=new URL(req.url()).pathname.match(/^\/api\/v1\/monitor\/alerts\/(\d+)\/acknowledge$/)
+          if (match && req.method()==='POST') posts.set(Number(match[1]),(posts.get(Number(match[1]))||0)+1)
+        })
+        stage='cdc_alert_acknowledge'
+        for (const row of rows) {
+          const visible=await findAlertRow(row.id)
+          const response=page.waitForResponse(response => new URL(response.url()).pathname===`/api/v1/monitor/alerts/${row.id}/acknowledge` && response.request().method()==='POST')
+          await visible.getByRole('button',{name:'确认',exact:true}).click()
+          expect((await response).ok()).toBe(true)
+        }
+        await compareRows('acknowledged')
+        expect([...posts.entries()].sort((a,b)=>a[0]-b[0])).toEqual(incidentIDs.map(id=>[id,1]).sort((a,b)=>a[0]-b[0]))
+        checks.push('ui_acknowledge_confirmed')
+      } else {
+        stage='cdc_alert_retained_or_resolved'
+        await compareRows(phase==='cdc_alert_unknown'?'acknowledged':'resolved')
+        checks.push(phase==='cdc_alert_unknown'?'unknown_rows_match_api':'resolved_rows_match_api',
+                    phase==='cdc_alert_unknown'?'last_observed_preserved':'original_incident_ids')
+      }
+      stage='cdc_alert_notifications'
+      const destinations=await json(await alertAPI.get('/api/v1/monitor/webhook-destinations'),'CDC destination API')
+      const destination=destinations.find(row=>row.id===binding.destination_id)
+      expect(destination).toBeTruthy()
+      const deliveries=await json(await alertAPI.get(`/api/v1/monitor/webhook-deliveries?destination_id=${binding.destination_id}&page_size=100`),'CDC delivery API')
+      expect(deliveries.total).toBeLessThanOrEqual(100)
+      const selected=deliveries.data.filter(row=>incidentIDs.includes(row.incident_id))
+      expect(selected.map(row=>row.delivery_id).sort()).toEqual([...binding.delivery_ids].sort())
+      expect(selected.filter(row=>row.event_type==='resolved')).toHaveLength(phase==='cdc_alert_resolved'?3:0)
+      await page.goto('/monitor/notifications')
+      const card=frame.locator('.webhook-list .delivery-card')
+      await expect(card).toBeVisible()
+      await card.locator('.el-select').first().click()
+      await frame.getByRole('option',{name:destination.name,exact:true}).click()
+      const response=page.waitForResponse(response=>response.url().includes('/api/v1/monitor/webhook-deliveries?') && new URL(response.url()).searchParams.get('destination_id')===String(binding.destination_id))
+      await card.getByRole('button',{name:'查询',exact:true}).click()
+      expect((await response).ok()).toBe(true)
+      // This owned destination has only three opened, then three resolved performance deliveries.
+      await expect(card.locator('tbody tr')).toHaveCount(selected.length)
+      for (const row of selected) {
+        expect(row.status).toBe('delivered');expect(row.last_http_status).toBe(202)
+        const visible=card.locator('tbody tr').filter({hasText:row.delivery_id})
+        await expect(visible).toHaveCount(1)
+        await expect(visible).toContainText(row.event_type==='opened'?'告警打开':'告警恢复')
+        await expect(visible).toContainText('已送达')
+        await expect(visible).toContainText('202')
+        await expect(visible).toContainText(destination.name)
+      }
+      checks.push(phase==='cdc_alert_open'?'opened_delivery_rows_match_api':phase==='cdc_alert_unknown'?'no_recovery_delivery':'resolved_delivery_rows_match_api')
+      await expect(alertPage).toHaveCount(0)
+      await expect(card).not.toContainText('business-value-sentinel')
+      checks.push('no_samples')
+    } else if (history) {
       stage = 'cdc_history_chart'
       await expect(frame.getByRole('tab', { name: '运行资源', exact: true })).toHaveCount(0)
       checks.push(...await assertCDCTaskHistory(page, frame, history))
@@ -314,6 +436,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
     writeFileSync(destination, JSON.stringify({ ...report('failed'), failed_stage: stage }))
     throw new Error(`continuous browser failed at ${stage}`)
   } finally {
+    if (alertAPI) await alertAPI.dispose()
     for (const context of contexts) await context.close()
   }
 })
