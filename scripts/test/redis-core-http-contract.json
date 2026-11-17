@@ -1,0 +1,9 @@
+{
+  "schema_version": "addp.redis-core-http/v1",
+  "product_sha": "690754af4890f493e5ec3fe560e7a5d12ba60c9d",
+  "suite": "infra-redis-core",
+  "window_deadline_seconds": 35,
+  "consumer_limit": 2,
+  "permissions": ["service.definition.create", "service.definition.read", "service.definition.update", "service.definition.delete", "service.data_read.execute", "meta.catalog.read", "security.enrollment.create", "security.enrollment.read"],
+  "checks": ["normal_query", "gateway_outage", "system_outage", "original_token", "same_window", "no_business_side_effect", "owner_cleanup"]
+}

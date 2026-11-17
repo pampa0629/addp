@@ -264,6 +264,15 @@ if [ "$TEST_FILTER" = database-crash-recovery ] || { [ -z "$PACKAGE_FILTER" ] &&
 fi
 
 run_without_skips ./internal/testsupport '^TestResetDisposablePostgresForGate$'
+if [ "$TEST_FILTER" = redis-core-wiring ]; then
+    : "${ADDP_REDIS_CORE_ENDPOINT:?owned Redis core endpoint required}"
+    : "${ADDP_REDIS_CORE_PASSWORD:?owned Redis core credential required}"
+    # The standard IAM gate owns its disposable PG lock until both protocol
+    # processes exit and the exact fixed-source identity has been discarded.
+    BROWSER_FIXTURE_ACTIVE=1
+    (cd "$ROOT_DIR" && python3 -m scripts.test.redis-core-http-online_test --real-wiring)
+    exit 0
+fi
 if [ "$TEST_FILTER" = notebook-storage-fixture ]; then
     if [ -n "$PACKAGE_FILTER" ] && [ "$PACKAGE_FILTER" != online-fixture ]; then
         echo "notebook-storage-fixture requires --package online-fixture or no package filter" >&2

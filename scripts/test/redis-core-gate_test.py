@@ -29,10 +29,15 @@ esac
 """)
             make=binary/"make"
             make.write_text("""#!/bin/sh
+case "$*" in
+ *redis-core-wiring*)
+ if [ "$PROBE_RESULT" != missing-wiring ]; then echo 'Redis pinned identity and cross-process System/Gateway wiring: passed; product=690754af4890f493e5ec3fe560e7a5d12ba60c9d'; fi
+ exit 0 ;;
+esac
 if [ "$PROBE_RESULT" = missing-pg ]; then echo PASS; else echo '    --- PASS: TestIAMOAuthClientCredentialsAuthContextAgainstPostgres/Redis_core_outage_preserves_Token_and_grant_facts (0.01s)'; fi
 """)
             go.chmod(0o755); make.chmod(0o755)
-            for result,code in (("pass",0),("skip",1),("missing",1),("missing-pg",1)):
+            for result,code in (("pass",0),("skip",1),("missing",1),("missing-pg",1),("missing-wiring",1)):
                 with self.subTest(result=result):
                     run=subprocess.run(["bash",str(contract)],env={**os.environ,"PATH":str(binary)+os.pathsep+os.environ["PATH"],"PROBE_RESULT":result,
                         "ADDP_REDIS_CORE_ENDPOINT":"127.0.0.1:6379","ADDP_REDIS_CORE_PASSWORD":"fixture-only"},capture_output=True,text=True)

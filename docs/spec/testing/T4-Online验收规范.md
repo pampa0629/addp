@@ -174,3 +174,11 @@ Cleanup浏览器 `browser_revocation_refresh_pagination_late_response` 须有独
 同次 `engine_task_observation` GET须准确请求／Engine／原User／scan／完整Owner，子项唯一UUID、精确父execution／cleanup_executor。Manager冻结计划拒未决产物时必须attempt1、已开始failed、唯一 `manager_cleanup_plan` 失败阶段且无伪造回执；父原30秒截止后timeout。他Owner失败、未开始／错attempt／阶段父子缺证或授权拒绝不可用均不替代；失败只用原GET assessment，不补隐藏Owner／私错。
 
 原11项目标、请求读次数／权限、120分钟部署／900秒业务、180秒barrier／90秒租约收敛及其他等待不变；barrier到期失败销毁，不续期重发。退出恢复当次暂停实例并释放barrier，控制状态／body／私有计划不归档。实际Hosted仍须单独确认。
+
+## Redis R1 固定产品隔离验收
+
+`infra-redis-core` 仅人工 Hosted Linux x86_64，固定产品 `690754af4890f493e5ec3fe560e7a5d12ba60c9d` 与验收检出分离；编排、Owner identity 补丁和观察器不得进入产品服务。详细阶段、35 秒原窗口截止、权限和拒绝谓词见[解耦设计第 4.6 节](../../next/平台数据库与对象存储解耦设计.md#r1-固定版本隔离-http-t4-编排已审核编排实施中未实跑)。
+
+System 专用准备夹具调用固定产品现有领域服务创建零 Role／Permission 的 Tenant Service Account 和精确 Query Consumer；不发行管理员 Token、不 SQL 写 IAM。Query 普通准备用户沿既有源 Grant、Meta 和 Security 链路；C 配额2、原固定60秒窗口、Gateway与System分别断Redis、原Token复用与窗口到期不变均须真实HTTP证明。HTTP透传只计实际request_id／方法／路径，不模拟Backend或放宽Ready；后台无ID请求与必需探针分开，重复相同响应ID只核成同一身份，不接受不同ID。
+
+`make test-redis-core-online-runner` 为确定性编排／固定身份编译门禁；`make test-redis-core-wiring` 为复用独占Redis和标准IAM PG锁的局部T2，完整门禁归 `make test-common-redis-core`。T2在独立子进程运行固定源码的System／Gateway生产Router，证明身份与代理接线，不代表产品main启动、真实Service Query或完整T4通过。新Hosted workflow仅手工派发，实际运行须另行批准，不登记夜间计划。业务清理、历史随自有Infra销毁及外层零残留分别报告；不得接管个人环境或执行keepalive。

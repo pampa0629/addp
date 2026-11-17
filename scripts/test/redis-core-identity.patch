@@ -1,0 +1,27 @@
+--- a/system/backend/cmd/online-test-fixture/main.go
++++ b/system/backend/cmd/online-test-fixture/main.go
+@@ -122,0 +123,2 @@
++	case redisCoreSuite:
++		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+@@ -369,0 +372,2 @@
++	case redisCoreSuite:
++		return redisCorePermissions, nil
+@@ -471,0 +476 @@
++	if suite == redisCoreSuite { return true }
+@@ -532,0 +538,2 @@
++	redisConsumer := flags.String("redis-consumer", "", "isolated Consumer prepare or cleanup")
++	redisQueryID := flags.Uint("redis-query-id", 0, "exact Query Service ID")
+@@ -566,0 +574 @@
++	if *suite == redisCoreSuite && os.Getenv("ADDP_ONLINE_HOSTED") != "1" { return errors.New("Redis HTTP fixture requires its own disposable Hosted profile") }
+@@ -597,0 +606,5 @@
++	}
++	if *redisConsumer != "" {
++		if *suite != redisCoreSuite { return errors.New("Redis fixture operation requires its own suite") }
++		ctx,cancel := context.WithTimeout(context.Background(), 30*time.Second); defer cancel()
++		return redisCoreConsumerCommand(ctx, db, *redisConsumer, *output, *redisQueryID)
+@@ -1253,0 +1267,5 @@
++	}
++	if *suite == redisCoreSuite {
++		values["ADDP_ONLINE_TEST_RUN_ID"] = os.Getenv("ADDP_ONLINE_TEST_RUN_ID")
++		if err := prepareRedisCoreIdentity(ctx,db,tenant.ID,administrator.PrincipalID,values); err != nil { return err }
++		return writeRedisPrivateJSON(*output,values)

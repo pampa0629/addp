@@ -65,6 +65,11 @@ SUITES: Mapping[str, Suite] = {
         command=("bash", "-c", 'exec "$ADDP_ONLINE_SECRET_DIR/observer/bin/python" scripts/test/workflow-runtime-health-recovery-online.py'),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL")),
     ),
+    "infra-redis-core": Suite(
+        command=(sys.executable, str(Path(__file__).with_name("redis-core-http-online.py").resolve())),
+        services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("meta", "META_URL"),
+                  ("security", "SECURITY_URL"), ("service", "SERVICE_URL")),
+    ),
     "infra-object-storage": Suite(
         command=(sys.executable, str(Path(__file__).with_name("infra-object-storage-online.py").resolve())),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("meta", "META_URL"),
@@ -1397,6 +1402,7 @@ def run_online(
         "meta-scan-claim": "meta-scan-product",
         "standard-document-storage": "standard-http-product",
         "infra-object-storage": "infra-object-product",
+        "infra-redis-core": "redis-http-product",
         "develop-notebook-storage": "notebook-http-product",
     }
     if suite_name in pinned_products:
@@ -1483,6 +1489,13 @@ def run_online(
                 timeout=remaining,
             )
             report["suite_report"] = suite_report
+            if suite_name == "infra-redis-core":
+                from importlib import import_module
+                redis_core = import_module("scripts.test.redis-core-http-online")
+                try:
+                    redis_core.validate_report(suite_report, run_id)
+                except (redis_core.EvidenceError, KeyError, ValueError, TypeError) as error:
+                    raise OnlineStageError("scenario", "redis_core_evidence_incomplete", "Redis core archive is incomplete") from error
             if suite_name == "ontology-agent-protection":
                 from importlib import import_module
                 protection = import_module("scripts.test.ontology-agent-protection-online")

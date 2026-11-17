@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""Disposable Hosted preparation and scoped physical observation for Redis R1.
+
+Only the explicit Hosted gate may start product processes. Normal unit/CI
+runner gates do not invoke start/accept and cannot dispatch Online acceptance.
+"""
+from __future__ import annotations
+
+import json
+import http.client
+import os
+from pathlib import Path
+import secrets
+import signal
+import socket
+import subprocess
+import sys
+import time
+from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from importlib import import_module
+s = import_module("scripts.test.redis-core-http-online")
+api = import_module("scripts.utils.online-api")
+registration = import_module("scripts.test.online-engine-registration")
+pg_auth = import_module("scripts.test.pg-source-authorization-online")
+
+SOURCE = "addp-redis-core-source"
+TABLE = "redis_core_probe"
+
+
+class IdentityClient(api.GatewayClient):
+    def request(self, *args, **kwargs):
+        response = super().request(*args, **kwargs)
+        if len(args)>1 and args[1] == s.CONTEXT_PATH: self.context = response.payload
+        return response
+
+
+def private():
+    path = Path(os.environ["ADDP_ONLINE_SECRET_DIR"])
+    s.require(path.is_absolute() and path.stat().st_mode & 0o077 == 0, "owner-only Hosted directory required")
+    return path
+
+
+def command(args, **kwargs):
+    result = subprocess.run(args, capture_output=True, **kwargs)
+    s.require(result.returncode == 0, "owned fixture command failed")
+    return result.stdout
+
+
+def database(statement, source=False):
+    # Caller only supplies fixed SQL and validated numeric fixture identities.
+    args = ["docker", "exec", "-i", "-e", "PGOPTIONS=-c default_transaction_read_only=on", SOURCE if source else "addp-postgres",
+            "psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres" if source else os.environ["POSTGRES_USER"],
+            "-d", "redis_core_fixture" if source else "addp_online"]
+    raw = command(args, input=statement.encode(), timeout=3)
+    return json.loads(raw) if raw.strip() else None
+
+
+def facts(identity):
+    tenant, account, consumer, query, engine = (int(identity[key]) for key in (
+        "ADDP_ONLINE_TEST_TENANT_ID", "ADDP_REDIS_HTTP_ACCOUNT_ID", "ADDP_REDIS_HTTP_CONSUMER_ID",
+        "ADDP_REDIS_HTTP_QUERY_ID", "ADDP_REDIS_HTTP_ENGINE_ID"))
+    s.require(tenant > 1 and min(account, consumer, query, engine) > 0, "scoped physical facts required")
+    reader, authorizer = (int(identity[key]) for key in ("ADDP_REDIS_HTTP_READER_ID", "ADDP_REDIS_HTTP_SOURCE_ID"))
+    s.require(min(reader,authorizer)>0, "scoped preparation identities missing")
+    # No token/credential hashes or values are selected. Runtime credential
+    # last_used_at is expected to change on valid requests and is not authority.
+    observation = database(f"""SELECT json_build_object(
+      'tokens',(SELECT coalesce(json_agg(json_build_object('id',t.id,'family',t.family_id,'expires',t.expires_at,'revoked',t.revoked_at) ORDER BY t.id),'[]')
+        FROM system.access_tokens t JOIN system.refresh_token_families f ON f.id=t.family_id WHERE f.principal_id={account}),
+      'families',(SELECT coalesce(json_agg(json_build_object('id',f.id,'version',f.issued_authorization_version,'expires',f.expires_at,'revoked',f.revoked_at) ORDER BY f.id),'[]')
+        FROM system.refresh_token_families f WHERE f.principal_id={account}),
+      'assignments',(SELECT coalesce(json_agg(to_jsonb(r) ORDER BY r.id),'[]') FROM system.role_assignments r WHERE r.principal_id IN ({account},{reader},{authorizer})),
+      'probe_roles',(SELECT count(*) FROM system.role_assignments r WHERE r.principal_id={account}),
+      'source_grants',(SELECT coalesce(json_agg(to_jsonb(g) ORDER BY g.request_id),'[]') FROM system.engine_access_grants g WHERE g.tenant_id={tenant} AND g.engine_id={engine}),
+      'consumer',(SELECT to_jsonb(c) FROM system.api_consumers c WHERE c.id={consumer} AND c.tenant_id={tenant}),
+      'consumer_grants',(SELECT coalesce(json_agg(to_jsonb(g) ORDER BY g.id),'[]') FROM system.api_consumer_service_grants g WHERE g.api_consumer_id={consumer}),
+      'credentials',(SELECT coalesce(json_agg(json_build_object('id',c.id,'status',c.status,'expires',c.expires_at,'revoked',c.revoked_at) ORDER BY c.id),'[]') FROM system.api_consumer_credentials c WHERE c.api_consumer_id={consumer}),
+      'query',(SELECT to_jsonb(q) FROM service.query_services q WHERE q.id={query} AND q.tenant_id={tenant}),
+      'issuance_audits',(SELECT coalesce(json_agg(a.id ORDER BY a.id),'[]') FROM system.audit_logs a WHERE a.principal_id={account} AND a.event_name='oauth.token.issued' AND a.result='succeeded')
+    )""")
+    observation["source"] = database(f"SELECT json_agg(t ORDER BY t.id) FROM public.{TABLE} t", True)
+    s.require(len(observation["tokens"]) == 1 and observation["probe_roles"] == 0 and observation["query"] is not None,
+              "dedicated Token/Query physical baseline missing")
+    return observation
+
+
+def fixture(mode, identity_path, query=0):
+    identity_root = Path(os.environ["RUNNER_TEMP"]) / "redis-http-identity"
+    args = ["go", "run", "./cmd/online-test-fixture", "--suite", s.CONTRACT["suite"], "--output", str(identity_path)]
+    if mode:
+        args += ["--redis-consumer", mode]
+        if query: args += ["--redis-query-id", str(query)]
+    command(args, cwd=identity_root / "system/backend", env=dict(os.environ, GOWORK="off"), timeout=180)
+
+
+def start():
+    root = Path.cwd()
+    s.pinned_product(root)
+    secret = private()
+    settings = {"redis_upstream": [os.environ.get("REDIS_HOST", "127.0.0.1"), int(os.environ["REDIS_PORT"])],
+                "system_upstream": os.environ["SYSTEM_URL"], "service_upstream": os.environ["SERVICE_URL"],
+                "system_paths": [["POST", s.TOKEN_PATH], ["GET", s.CONTEXT_PATH]],
+                "service_paths": [["POST", "/api/query/redis-core-" + os.environ["ADDP_ONLINE_TEST_RUN_ID"] + "/query"]],
+                "control": str(secret / "transport.sock"), "ready": str(secret / "transport.ready")}
+    # The Query endpoint reaches Service with its original data-plane path.
+    config = secret / "transport.json"; config.write_text(json.dumps(settings)); config.chmod(0o600)
+    processes = []
+
+    def spawn(args, name, environment):
+        log = open(secret / (name + ".log"), "ab", buffering=0)
+        try:
+            child = subprocess.Popen(args, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        finally: log.close()
+        processes.append({"pid": child.pid, "name": name, "started": Path(f"/proc/{child.pid}/stat").read_text().rsplit(") ",1)[1].split()[19]})
+        (secret / "processes.json").write_text(json.dumps(processes))
+        return child
+
+    harness = Path(__file__).resolve().parents[2]
+    proxy = spawn([sys.executable, "-m", "scripts.test.redis-core-transport", str(config)], "transport",
+                  dict(os.environ, PYTHONPATH=str(harness)))
+    deadline = time.monotonic() + 10
+    while not Path(settings["ready"]).exists():
+        s.require(proxy.poll() is None and time.monotonic() < deadline, "private transport did not start")
+        time.sleep(.05)
+    ports = json.loads(Path(settings["ready"]).read_text())
+    runtime = {"control": settings["control"], "redis_upstream": settings["redis_upstream"], "ports": ports,
+               "gateway_url": os.environ["GATEWAY_URL"], "system_url": os.environ["SYSTEM_URL"], "service_url": os.environ["SERVICE_URL"]}
+    (secret / "runtime.json").write_text(json.dumps(runtime))
+
+    # Use the platform compiler, receiver and deployment CLI. No go build/run
+    # temporary product server or altered product launcher is introduced.
+    command(["make", "build", "BUILD_ARGS=--local --services system-backend,meta-backend,meta-worker,security-backend,security-worker,service-backend,gateway,runtime-log"], timeout=1200)
+    outputs = list((root / "dist").glob("release-*"))
+    matching = [p for p in outputs if (p / "system").is_file()]
+    s.require(len(matching) == 1, "unique standard product artifact directory required")
+    binaries = root / ".dev-bins"; binaries.mkdir(exist_ok=True)
+    for name in ("system", "meta", "meta-worker", "security", "security-worker", "service", "gateway", "runtime-log"):
+        (binaries / ("addp-" + name)).symlink_to(matching[0] / name)
+    (root / ".dev-pids").mkdir(exist_ok=True)
+    modules = ["system", "meta", "security", "service", "gateway"]
+    publisher = [sys.executable, "scripts/prod/publish-module-declarations.py"]
+    command([*publisher, "--prepare", *modules], timeout=60)
+
+    def launch(name, extra=None):
+        owner = name.removesuffix("-worker")
+        role = "worker" if name.endswith("-worker") else ("ingress" if name == "gateway" else "backend")
+        child = spawn([sys.executable, "scripts/dev/process-metrics-launch.py", name, owner, role,
+                       str(binaries / "addp-runtime-log"), str(binaries / ("addp-" + name))], name,
+                      dict(os.environ, **(extra or {})))
+        (root / ".dev-pids" / (name + ".pid")).write_text(str(child.pid))
+        return child
+
+    def wait(origin, child):
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            s.require(child.poll() is None, "product process exited during preparation")
+            try:
+                response = s.request(origin, "GET", "/health/ready", timeout=2)
+                if response.status == 200:
+                    s.require(response.payload.get("git_commit") == s.PRODUCT_SHA, "product health SHA differs")
+                    return
+                s.require(response.status == 503, "unexpected preparation readiness")
+            except (OSError, http.client.HTTPException): pass
+            time.sleep(.2)
+        raise s.EvidenceError("product preparation readiness timed out")
+
+    system = launch("system", {"REDIS_HOST": "127.0.0.1", "REDIS_PORT": str(ports["system"])})
+    wait(os.environ["SYSTEM_URL"], system)
+    command([*publisher, "--provision", *modules], timeout=180)
+    command([*publisher, *modules], timeout=180)
+    for name, url in (("meta", os.environ["META_URL"]), ("security", os.environ["SECURITY_URL"]), ("service", os.environ["SERVICE_URL"])):
+        extra = {"SERVICE_HOST": "127.0.0.1:" + str(ports["service_http"])} if name == "service" else {}
+        child = launch(name, extra); wait(url, child)
+        if name in {"meta", "security"}: launch(name + "-worker")
+    gateway = launch("gateway", {"REDIS_HOST": "127.0.0.1", "REDIS_PORT": str(ports["gateway"]),
+                                  "SYSTEM_URL": "http://127.0.0.1:" + str(ports["system_http"])})
+    wait(os.environ["GATEWAY_URL"], gateway)
+    # Dedicated fixture database is created by this disposable container, never
+    # CREATE DATABASE on the local shared Infra.
+    descriptor_password = secrets.token_hex(24)
+    command(["docker", "run", "-d", "--name", SOURCE, "--label", "com.addp.online-fixture=infra-redis-core",
+             "--label", "com.addp.online-run-id="+os.environ["ADDP_ONLINE_TEST_RUN_ID"],
+             "--label", "com.docker.compose.project=addp-redis-core-fixture",
+             "--label", "com.docker.compose.service=source-postgres",
+             "-e", "POSTGRES_USER=postgres", "-e", "POSTGRES_DB=redis_core_fixture", "-e", "POSTGRES_PASSWORD",
+             "-p", "127.0.0.1::5432", "addp-postgres-pgvector:latest"],
+            env=dict(os.environ, POSTGRES_PASSWORD=descriptor_password), timeout=60)
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        probe = subprocess.run(["docker", "exec", SOURCE, "pg_isready", "-U", "postgres", "-d", "redis_core_fixture"], capture_output=True)
+        if probe.returncode == 0: break
+        time.sleep(.2)
+    else: raise s.EvidenceError("business source did not start")
+    command(["docker", "exec", "-i", SOURCE, "psql", "-Xq", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "redis_core_fixture"],
+            input=f"CREATE TABLE public.{TABLE}(id integer PRIMARY KEY,label text NOT NULL); INSERT INTO public.{TABLE} VALUES(1,'redis-r1-byte-baseline');".encode(), timeout=10)
+    mapping = command(["docker", "port", SOURCE, "5432/tcp"], timeout=5).decode().strip()
+    descriptor = {"name": "Redis R1 source", "engine_type": "postgresql", "connection_info": {
+        "host": "127.0.0.1", "port": int(mapping.rsplit(":", 1)[1]), "user": "postgres", "password": descriptor_password, "database": "redis_core_fixture", "sslmode": "disable"}}
+    (secret / "source.json").write_text(json.dumps(descriptor))
+    fixture("", secret / "identity.json")
+
+
+def accept():
+    secret = private(); identity_path = secret / "identity.json"
+    identity = json.loads(identity_path.read_text())
+    runtime = json.loads((secret / "runtime.json").read_text())
+    report = {"schema_version": "addp.online-suite/v1", "suite": s.CONTRACT["suite"], "result": "failed",
+              "product_sha": s.PRODUCT_SHA, "harness_sha": os.environ["GITHUB_SHA"], "run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"]}
+    owner = IdentityClient(os.environ["GATEWAY_URL"], identity["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], 10)
+    authorizer = IdentityClient(os.environ["GATEWAY_URL"], identity["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"], 10)
+    pending = []; query_id = None
+    cleanup_failed = False
+    try:
+        checker = owner
+        api.validate_user_identity(checker, int(identity["ADDP_ONLINE_TEST_TENANT_ID"]), set(s.CONTRACT["permissions"]))
+        permissions = {key for role in checker.context["authorization"]["role_assignments"] for key in role["permissions"]}
+        s.require(permissions == set(s.CONTRACT["permissions"]), "Query preparer permissions differ")
+        engine = registration.register_engine(os.environ["GATEWAY_URL"], identity["ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"], json.loads((secret / "source.json").read_text()))
+        identity["ADDP_REDIS_HTTP_ENGINE_ID"] = str(engine)
+        identity_path.write_text(json.dumps(identity))
+        pg_auth.basic_scan(authorizer, engine, [TABLE])
+        registration.initialize_exact_record_read_grants(authorizer, owner, int(identity["ADDP_ONLINE_TEST_TENANT_ID"]),
+            [(engine, "schema", "public", TABLE)], scan_preparation=True,
+            on_pending=lambda eid, rid, target: pending.append((eid, rid)))
+        # Establish explicit protection before freezing the published definition;
+        # only actual owner acknowledgement permits Query preparation.
+        locator = pg_auth.locator(engine, TABLE)
+        enrollment = owner.request("POST", "/api/v1/security/protection-enrollments", (201,), {"locator": locator}).payload
+        enrollment_id = enrollment["id"]
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            current = owner.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id, (200,)).payload
+            progresses = current.get("owner_progress", [])
+            if current.get("state") == "active" and any(x.get("consumer_owner") == "service" and x.get("acknowledged") is True for x in progresses): break
+            time.sleep(.2)
+        else: raise s.EvidenceError("Service protection did not converge")
+        sql = f"SELECT id,label FROM public.{TABLE}"
+        contract = owner.request("POST", "/api/v1/service/sql/output-contract", (200,), {"engine_id": engine, "sql": sql}).payload
+        service_name = "redis-core-" + os.environ["ADDP_ONLINE_TEST_RUN_ID"]
+        query = owner.request("POST", "/api/v1/service/query", (201,), {
+            "service_name": service_name, "title": "Redis R1 private probe", "config_type": "sql", "engine_id": engine,
+            "sql_query": sql, "data_config": {"stable_key": ["id"], "default_fields": ["id", "label"], "filterable_fields": []},
+            "output_contract": contract, "protocols": {"rest_api": {"enabled": True, "formats": ["json"]}}, "public_access": False, "max_features": 1}).payload
+        query_id = int(query["id"])
+        identity["ADDP_REDIS_HTTP_READER_ID"] = owner.context["principal"]["id"]
+        identity["ADDP_REDIS_HTTP_SOURCE_ID"] = authorizer.context["principal"]["id"]
+        identity_path.write_text(json.dumps(identity))
+        # Warm the complete real read path using its ordinary publisher User,
+        # before C exists. Runtime membership/authorization preparation cannot
+        # be mistaken for a fault-induced change or consume C's first window.
+        warmed=owner.request("POST", "/api/query/"+service_name+"/query", (200,),
+            {"select":["id","label"],"order_by":[{"field":"id","direction":"asc"}],"page":{"limit":1},"format":"json"}).payload
+        s.require(warmed.get("data")==[{"id":1,"label":"redis-r1-byte-baseline"}], "ordinary Query warmup differs")
+        fixture("prepare", identity_path, query_id)
+        identity = json.loads(identity_path.read_text())
+        report["identities"]={"tenant_id":int(identity["ADDP_ONLINE_TEST_TENANT_ID"]),
+            "oauth_principal_id":int(identity["ADDP_REDIS_HTTP_ACCOUNT_ID"]),"consumer_id":int(identity["ADDP_REDIS_HTTP_CONSUMER_ID"]),
+            "query_service_id":query_id,"engine_id":engine}
+        issued = s.oauth(runtime["gateway_url"], identity)
+        s.require(issued.status == 200, "normal OAuth baseline failed")
+        token = issued.payload["access_token"]
+        s.require(issued.payload.get("expires_in", 0) >= 120 and not issued.payload.get("refresh_token"), "normal service Token lifetime differs")
+        context = s.request(runtime["gateway_url"], "GET", s.CONTEXT_PATH, headers={"Authorization": "Bearer " + token})
+        s.require(context.status == 200, "normal OAuth AuthContext failed")
+        projection = s.token_projection(context.payload, identity)
+        runtime |= {"query_path": "/api/query/" + service_name + "/query",
+                    "query_body": {"select": ["id", "label"], "order_by": [{"field": "id", "direction": "asc"}], "page": {"limit": 1}, "format": "json"},
+                    "expected_rows": [{"id": 1, "label": "redis-r1-byte-baseline"}]}
+        redis = s.RedisObserver(runtime["redis_upstream"], os.environ["REDIS_PASSWORD"])
+        report.update(s.run_window(runtime, identity, token, projection, redis, lambda: facts(identity), report))
+    except Exception as error:
+        report["error_code"] = str(error) if isinstance(error, s.EvidenceError) else "redis_http_preparation_failed"
+        raise
+    finally:
+        try:
+            if identity.get("ADDP_REDIS_HTTP_CONSUMER_ID"):
+                fixture("cleanup", identity_path)
+            if query_id is not None: owner.request("DELETE", f"/api/v1/service/query/{query_id}", (200, 204))
+            for engine, request_id in reversed(pending):
+                authorizer.request("POST", f"/api/v1/system/engines/{engine}/access_grants/{request_id}/revoke", (200,), {"reason": "Redis R1 owned acceptance cleanup"})
+            if identity.get("ADDP_REDIS_HTTP_ACCOUNT_ID"): fixture("retire", identity_path)
+        except Exception:
+            cleanup_failed = True
+        report.setdefault("checks", {})["owner_cleanup"] = not cleanup_failed
+        if all(report["checks"].get(name) is True for name in s.CONTRACT["checks"]): report["result"] = "passed"
+        report["cleanup"] = "failed" if cleanup_failed else "passed"
+        # IAM/Meta/enrollment/Engine histories are deliberately retained until
+        # exact outer Infra destruction; do not claim logical engine deletion.
+        report["remaining_fixture_history"] = "destroy_with_owned_infra"
+        target = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "redis-core-http-evidence.json"
+        if report["result"] == "passed": s.validate_report(report, os.environ["ADDP_ONLINE_TEST_RUN_ID"])
+        target.write_text(json.dumps(report, sort_keys=True) + "\n")
+        print(json.dumps(report, sort_keys=True))
+        s.require(not cleanup_failed, "owner cleanup failed")
+
+
+def recover():
+    runtime=private()/"runtime.json"
+    if runtime.exists():
+        config=json.loads(runtime.read_text())
+        for owner in ("system","gateway"):
+            s.transport.control(config["control"], {"action":"fault","owner":owner,"available":True})
+
+
+def stop():
+    secret = private()
+    errors=[]
+    try: recover()
+    except Exception: errors.append("transport_recovery_failed")
+    processes=secret/"processes.json"
+    if processes.exists():
+        for row in reversed(json.loads(processes.read_text())):
+            if row["name"]!="transport": continue
+            pid=row["pid"]; stat=Path(f"/proc/{pid}/stat")
+            def owned_alive():
+                try: return stat.read_text().rsplit(") ",1)[1].split()[19] == row["started"]
+                except FileNotFoundError: return False
+            if stat.exists() and not owned_alive():
+                errors.append("transport_identity_changed"); continue
+            if owned_alive():
+                try: os.kill(pid,signal.SIGTERM)
+                except ProcessLookupError: pass
+            deadline=time.monotonic()+10
+            socket_path=secret/"transport.sock"
+            while socket_path.exists() and time.monotonic()<deadline:time.sleep(.05)
+            if socket_path.exists():
+                if owned_alive():
+                    os.kill(pid,signal.SIGKILL)
+                    errors.append("transport_forced_exit")
+                else: socket_path.unlink()
+    # Even a recovery failure must not bypass precise outer destruction.
+    existing=subprocess.run(["docker","container","inspect",SOURCE],capture_output=True)
+    if existing.returncode==0:
+        facts=json.loads(existing.stdout)[0]
+        labels=facts["Config"]["Labels"]
+        if labels.get("com.addp.online-fixture")!=s.CONTRACT["suite"] or labels.get("com.addp.online-run-id")!=os.environ["ADDP_ONLINE_TEST_RUN_ID"]:
+            errors.append("foreign_source_container")
+        else:
+            try:
+                volumes=[row["Name"] for row in facts.get("Mounts",[]) if row.get("Type")=="volume"]
+                command(["docker","rm","-fv",SOURCE],timeout=20)
+                for volume in volumes:
+                    s.require(subprocess.run(["docker","volume","inspect",volume],capture_output=True).returncode!=0,"source volume remains")
+                s.require(subprocess.run(["docker","container","inspect",SOURCE],capture_output=True).returncode!=0,"source container remains")
+            except Exception:errors.append("source_cleanup_failed")
+    s.require(not errors,"owned fixture cleanup failed: "+",".join(errors))
+
+
+if __name__ == "__main__":
+    import http.client
+    os.umask(0o077)
+    s.require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ADDP_ONLINE_HOSTED") == "1"
+              and os.environ.get("ONLINE_SUITE") == s.CONTRACT["suite"] and os.environ.get("POSTGRES_DB") == "addp_online",
+              "owned Hosted profile required")
+    {"start": start, "stop": stop, "recover": recover}[sys.argv[1]]()

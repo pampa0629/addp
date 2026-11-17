@@ -283,6 +283,7 @@ class OnlineGateTest(unittest.TestCase):
                 "standard-document-storage",
                 "develop-notebook-storage",
                 "infra-object-storage",
+                "infra-redis-core",
                 "meta-scan-claim",
                 "module-registry-recovery",
                 "workflow-runtime-health-recovery",

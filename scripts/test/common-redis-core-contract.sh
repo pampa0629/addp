@@ -27,3 +27,10 @@ make -C "$ROOT_DIR" test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--pa
 grep -q -- 'PASS: TestIAMOAuthClientCredentialsAuthContextAgainstPostgres/Redis_core_outage_preserves_Token_and_grant_facts ' "$work_dir/iam.log" || {
   echo 'Redis core gate did not observe actual System Token/Grant invariants' >&2; exit 1;
 }
+
+# New acceptance preparation must prove the pinned identity and actual
+# cross-process production Router wiring. This remains T2, never dispatches T4.
+make -C "$ROOT_DIR" test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--test redis-core-wiring" 2>&1 | tee "$work_dir/wiring.log"
+grep -q -- 'Redis pinned identity and cross-process System/Gateway wiring: passed; product=690754af4890f493e5ec3fe560e7a5d12ba60c9d' "$work_dir/wiring.log" || {
+  echo 'Redis core gate lacks pinned cross-process wiring evidence' >&2; exit 1;
+}

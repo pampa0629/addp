@@ -1206,6 +1206,12 @@ test-infra-object-online-runner: ## 验证固定版本对象存储 T4 编排与�
 	@bash -n scripts/test/online-hosted-infra-object-gate.sh scripts/test/infra-object-source-fixture.sh
 	@python3 -m unittest scripts/test/infra-object-storage-online_test.py
 
+.PHONY: test-redis-core-online-runner
+test-redis-core-online-runner: ## 验证固定 Redis R1 HTTP 编排、观察器与身份目录，不派发 T4
+	@python3 -m py_compile scripts/test/redis-core-http-online.py scripts/test/redis-core-http-preparation.py scripts/test/redis-core-transport.py scripts/test/redis-core-http-online_test.py
+	@bash -n scripts/test/online-hosted-redis-core-gate.sh
+	@python3 -m unittest scripts/test/redis-core-http-online_test.py
+
 .PHONY: test-notebook-storage-online-runner
 test-notebook-storage-online-runner: ## 验证 Notebook 存储 HTTP 编排与拒绝证据
 	@bash -n scripts/test/online-hosted-notebook-storage-gate.sh
@@ -1247,7 +1253,7 @@ test-online-registration-unit:
 
 .NOTPARALLEL: test-catalog-domain-online-runner test-execution-online-ci-runner test-graph-online-runner test-manager-online-runner test-online-runner test-raster-online-runner test-security-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-node-metrics-online-runner test-transfer-online-runner test-highgo-online-runner test-platform-administrator-online-runner
 
-test-online-runner: test-notebook-storage-online-runner test-meta-scan-claim-online-runner test-ontology-online-runner test-opengauss-online-runner test-execution-retention-online-runner test-execution-events-pagination-runner test-catalog-domain-online-runner test-workflow-runtime-health-online-runner test-sql-pool-online-runner test-starrocks-online-runner test-ftp-online-runner test-common-gaussdb-unit test-security-online-runner test-highgo-online-runner test-pg-authorization-online-runner test-transfer-continuous-online-runner test-transfer-online-runner test-node-metrics-online-runner test-platform-administrator-online-runner test-hdfs-online-runner test-raster-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-elasticsearch-online-runner test-orchestrator-online-runner test-manager-online-runner test-quality-online-runner test-online-dispatcher-unit test-online-registration-unit ## 运行 Online 分发器和预检器的确定性测试
+test-online-runner: test-redis-core-online-runner test-notebook-storage-online-runner test-meta-scan-claim-online-runner test-ontology-online-runner test-opengauss-online-runner test-execution-retention-online-runner test-execution-events-pagination-runner test-catalog-domain-online-runner test-workflow-runtime-health-online-runner test-sql-pool-online-runner test-starrocks-online-runner test-ftp-online-runner test-common-gaussdb-unit test-security-online-runner test-highgo-online-runner test-pg-authorization-online-runner test-transfer-continuous-online-runner test-transfer-online-runner test-node-metrics-online-runner test-platform-administrator-online-runner test-hdfs-online-runner test-raster-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-elasticsearch-online-runner test-orchestrator-online-runner test-manager-online-runner test-quality-online-runner test-online-dispatcher-unit test-online-registration-unit ## 运行 Online 分发器和预检器的确定性测试
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
@@ -1675,6 +1681,11 @@ test-redis-core-runner: ## 验证核心 Redis 门禁必须执行真实用例及�
 	@bash -n scripts/test/common-redis-core-gate.sh scripts/test/common-redis-core-contract.sh scripts/test/redis-owned-fixture.sh
 	@python3 scripts/test/redis-core-gate_test.py
 
+.PHONY: test-redis-core-wiring
+test-redis-core-wiring: ## 只预验固定产品身份与跨进程接线，完整门禁仍为 test-common-redis-core
+	@: "$${ADDP_SYSTEM_POSTGRES_TEST_DSN:?disposable System IAM PostgreSQL gate DSN required}"
+	@ADDP_REDIS_CORE_T2=1 bash scripts/test/redis-owned-fixture.sh $(MAKE) test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--test redis-core-wiring"
+
 .PHONY: test-common-redis-core
 test-common-redis-core: ## 独占 Infra Redis 验证核心装配、就绪、限流拒绝与原状态重连
 	@bash scripts/test/common-redis-core-gate.sh
@@ -1812,7 +1823,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-execution-online-ci-syntax test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
 
