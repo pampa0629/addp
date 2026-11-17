@@ -183,7 +183,8 @@
                 </div>
               </el-timeline-item>
             </el-timeline>
-            <el-empty v-else :description="t('develop.executionDetail.noLogs')" />
+            <el-empty v-else-if="logsStatus === 'ready'" :description="t('develop.executionDetail.noLogs')" />
+            <el-empty v-else :description="t('develop.executionDetail.logsNotRead')" />
           </div>
         </el-tab-pane>
 

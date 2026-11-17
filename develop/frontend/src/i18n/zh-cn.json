@@ -672,6 +672,7 @@
       "noResult": "暂无执行结果",
       "noLogs": "本次执行未记录日志",
       "logsLoadFailed": "执行日志读取失败，请刷新后重试",
+      "logsNotRead": "尚未读取执行日志，请刷新后查看",
       "logsLoading": "正在读取执行日志…",
       "logTaskProgress": "节点 {task} · {progress}%",
       "logEvents": {"workflow_started": "工作流开始执行", "task_progress": "节点进度更新", "workflow_succeeded": "工作流执行成功", "workflow_failed": "工作流执行失败"},

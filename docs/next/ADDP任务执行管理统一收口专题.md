@@ -815,3 +815,5 @@ Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的当前 Pr
 本机验证：Common／隔离 Develop Go T1、Swagger 64 路由覆盖、Common Python完整入口一次641 passed／1原有 skipped／64 subtests（另轮三个既有MinIO初始化夹具10秒超时），本批workflow专项118 passed、Develop 前端327项浏览器与构建、GeoPython HTTP Handler与日志Schema定向3项通过。新增回归覆盖真实进度、成功／失败终态、快照复制、协议拒绝、终态保存、lease失效不保存、本人／撤权裁决、历史缺失不补造及页面无日志／读取失败／迟到响应。初轮红测试、夹具错误和共享工作区／初始化超时结果均保留，不以之后通过改写首轮。本机门禁仅证明受测实现，固定SHA的Linux实际执行待发布后核对。
 
 对已有执行 `14a6cf42-2ee6-4fbb-a592-4a92f18a1be0` 仅进行PostgreSQL只读核验：Develop workflow成功，`metadata.result.logs`缺失；metadata摘要 `f6ccf9d9001b5609eeff87de2796d6fda4b140176c54ed62c480a685c3c32912`。浏览器工具不可用，未宣称验证当前用户HTTP链路；不直接查询或拼接Runtime进程日志，不补造历史。本轮未重跑该任务、重启服务或触发Hosted。证据在 `/tmp/addp-execution-logs-20261117/`。已有执行部署新代码后仍应显示“本次执行未记录日志”；新的真实业务链路与其他未生成日志的Runtime覆盖仍需分别验收。
+
+补充页面状态修正：身份／授权事实变化后清空旧日志时，必须显示“尚未读取”，而非将未读取误报为无记录。中英文浏览器用例先复现两项失败，再验证修正通过；现有前端单位门禁、两项定向浏览器及构建通过，无新增请求、权限或等待。原代码的Linux Go、Common Python及Develop PG已成功，前端原327项全部通过；补充修正发布后独立核对新SHA前端完整门禁。

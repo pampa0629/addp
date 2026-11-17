@@ -661,6 +661,7 @@
       "noResult": "No execution result",
       "noLogs": "No logs were recorded for this execution",
       "logsLoadFailed": "Could not read execution logs. Refresh to try again.",
+      "logsNotRead": "Execution logs have not been read. Refresh to view.",
       "logsLoading": "Loading execution logs…",
       "logTaskProgress": "Node {task} · {progress}%",
       "logEvents": {"workflow_started": "Workflow started", "task_progress": "Node progress updated", "workflow_succeeded": "Workflow succeeded", "workflow_failed": "Workflow failed"},

@@ -249,5 +249,19 @@ for (const locale of ['zh-cn', 'en']) test(`recorded workflow logs, empty and re
   const late = page.waitForResponse(response => response.url().includes(`${ID}/logs`))
   release(); await late
   await expect(panel.locator('.el-timeline-item')).toHaveCount(0)
+  mode = 'recorded'; await refresh.click()
+  await expect(panel.locator('.el-timeline-item')).toHaveCount(3)
+  await page.evaluate(async () => {
+    const { useAuthStore } = await import('/src/store/auth.js')
+    const auth = useAuthStore()
+    const context = JSON.parse(JSON.stringify(auth.authContext))
+    for (const role of context.authorization.role_assignments) {
+      role.permissions = role.permissions.filter(permission => permission !== 'develop.data_read.execute')
+    }
+    auth.authContext = context
+  })
+  await expect(panel.locator('.el-timeline-item')).toHaveCount(0)
+  await expect(panel).toContainText(locale === 'en' ? 'Execution logs have not been read' : '尚未读取执行日志')
+  await expect(panel).not.toContainText(locale === 'en' ? 'No logs were recorded' : '本次执行未记录日志')
   expect(errors).toEqual([])
 })
