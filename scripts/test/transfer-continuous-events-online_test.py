@@ -833,6 +833,28 @@ for(const mode of ['cdc_alert_open','cdc_alert_unknown','cdc_alert_resolved','li
 """
         M.subprocess.run(['node','--input-type=module','-e',program],cwd=M.ROOT,check=True,capture_output=True,text=True,timeout=15)
 
+    def test_actual_delivery_page_checks_signed_ids_with_unrelated_destination_rows(self):
+        program = r"""
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const source=readFileSync('console/frontend/e2e/online/continuous-execution-events.spec.js','utf8');
+const start=source.indexOf('      // This owned destination'),end=source.indexOf("      checks.push(phase==='cdc_alert_open'?",start);
+assert(start>0 && end>start);
+const selected=[1,2,3].map(id=>({delivery_id:`signed-${id}`,status:'delivered',last_http_status:202,event_type:'opened'}));
+const rendered=[...selected,{delivery_id:'other-task',status:'pending',last_http_status:0,event_type:'opened'}];
+const card={getByRole:()=>({click:async()=>{}}),locator:selector=>({
+ count:async()=>selector==='.el-loading-mask'?0:rendered.length,
+ filter:({hasText})=>({count:async()=>rendered.filter(r=>r.delivery_id===hasText).length,
+  text:()=>`${hasText} 告警打开 已送达 202 owned-target`})})};
+const page={waitForResponse:async()=>({ok:()=>true})};
+const expect=value=>({toBe:expected=>assert.equal(value,expected),
+ toHaveCount:async expected=>assert.equal(await value.count(),expected),
+ toContainText:async expected=>assert(value.text().includes(expected))});
+const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+const run=new AsyncFunction('selected','card','page','expect','destination','binding',`let stage;${source.slice(start,end)}`);
+await run(selected,card,page,expect,{name:'owned-target'},{destination_id:9});
+"""
+        M.subprocess.run(['node','--input-type=module','-e',program],cwd=M.ROOT,check=True,capture_output=True,text=True,timeout=15)
+
     def test_browser_rejects_invalid_phase_identity_and_action_before_launch(self):
         with patch.object(M.subprocess, 'Popen') as launch:
             for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None), ('live', [UUID], lambda: None),

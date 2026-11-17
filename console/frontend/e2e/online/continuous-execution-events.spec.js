@@ -214,11 +214,27 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       const response=page.waitForResponse(response=>response.url().includes('/api/v1/monitor/webhook-deliveries?') && new URL(response.url()).searchParams.get('destination_id')===String(binding.destination_id))
       await card.getByRole('button',{name:'查询',exact:true}).click()
       expect((await response).ok()).toBe(true)
-      // This owned destination has only three opened, then three resolved performance deliveries.
-      await expect(card.locator('tbody tr')).toHaveCount(selected.length)
+      // This owned destination may also receive other task signals; pin only these signed delivery IDs.
+      async function findDeliveryRow(deliveryID) {
+        const refreshed=page.waitForResponse(response=>response.url().includes('/api/v1/monitor/webhook-deliveries?') && new URL(response.url()).searchParams.get('destination_id')===String(binding.destination_id))
+        await card.getByRole('button',{name:'查询',exact:true}).click()
+        expect((await refreshed).ok()).toBe(true)
+        await expect(card.locator('.el-loading-mask')).toHaveCount(0)
+        for(let index=0;index<5;index++) {
+          const row=card.locator('tbody tr').filter({hasText:deliveryID})
+          if(await row.count()) return row
+          const next=card.locator('.el-pagination .btn-next')
+          if(await next.isDisabled()) break
+          const response=page.waitForResponse(response=>response.url().includes('/api/v1/monitor/webhook-deliveries?'))
+          await next.click();expect((await response).ok()).toBe(true)
+          await expect(card.locator('.el-loading-mask')).toHaveCount(0)
+        }
+        throw new Error('bound signed delivery is absent from visible pages')
+      }
       for (const row of selected) {
+        stage='cdc_alert_delivery_'+row.event_type
         expect(row.status).toBe('delivered');expect(row.last_http_status).toBe(202)
-        const visible=card.locator('tbody tr').filter({hasText:row.delivery_id})
+        const visible=await findDeliveryRow(row.delivery_id)
         await expect(visible).toHaveCount(1)
         await expect(visible).toContainText(row.event_type==='opened'?'告警打开':'告警恢复')
         await expect(visible).toContainText('已送达')

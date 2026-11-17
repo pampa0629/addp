@@ -190,6 +190,16 @@ Artifact `14242081152` 的 SHA-256 `f60cd40eda38dcffd979f787ab4b2737a395bb0ee08c
 
 性能／领域 cleanup=passed、cleanup_failures=[]，CPU／Connector 配置恢复、临时源行和规则清理、Webhook 删除及接收端关闭均完成；任务 3／2 删除读回不存在，硬退出 Kafka 任务按原约定由部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。未知操作结果保留；后续页面、恢复通知、风险重建、scheduled、历史图表及最终原生 verify-clean 未走到，不计通过。Artifact `14289647480` 已核对 SHA-256 `033ea43b0a73e1ac4a5c9a510cb09f37bcb806d523835052ddd860acb4cd99f2` 与 ZIP CRC，原件 `/tmp/addp-cdc-alert-ui-hosted-43992449101/` 保留。修订后的真实页面闭环需另以新源码完整联验。
 
+### 修订轮缺样通知列表范围失败及投递定位修订（2026-11-17）
+
+固定 `1a5d2e5696f05bb7e67b0f7338f7fe3c2d2a31bc` 的 [Hosted 44002520914／Job 133769826122](https://github.com/pampa0629/addp/actions/runs/44002520914/job/133769826122)通过 cdc_alert_open 的完整五项：任务／代次／incident 对照、页面确认及 opened 送达展示；Monitor 原生日志确认三个 acknowledge POST 均 200，浏览器各只发一次。缺样页面的 unknown_rows_match_api 和 last_observed_preserved 也已通过，失败阶段为 cdc_alert_notification_filter；整套仍失败，前 17 项完成，不外推恢复页面或整套通过。
+
+新增页面原来错误地要求所选 Webhook 目标的全部可见行数等于本任务三条性能告警的投递数。现有 CreateDeliveriesTx 对无规则的执行信号可向同租户启用目标投递，目标身份不等于仅该任务身份；正式 API 与原 HMAC 接收对照始终按 incident／event／delivery 精确筛选。本轮缺样前已出现真实执行故障，旧全表要求与通知契约不一致；报告未保存实际页面行数和失败子断言，不能认定它是本轮唯一失败原因。修订按已核验的投递 UUID 在所选目标中分页定位、逐项核对状态／事件／202；保留正式 API 中本任务恰有原 opened、没有 resolved 的严格判断，其他任务行不代替本任务证据。
+
+回归执行实际通知列表断言片段，使用三条绑定投递加一条其他任务投递：固定发布源码实际因 4≠3 失败（`/tmp/addp-cdc-alert-ui-row-scope-red.log`），修订后逐项定位通过（`/tmp/addp-cdc-alert-ui-row-scope-green.log`）。最终冻结输入摘要一致后，`make test-transfer-continuous-online-runner` 完整通过 156 项、原 Node／Shell 语法及 System 身份夹具 Go（`/tmp/addp-cdc-alert-ui-runner-row-scope.log`）。没有修改通知产品语义、权限、页面过滤参数或预算；新源码仍须重新完成同一 Hosted。[原源码 Platform consistency Job 133769550913](https://github.com/pampa0629/addp/actions/runs/44002439912/job/133769550913)成功，不能抵消本轮实故障失败。
+
+本轮 uncertain_mutation=false，性能／领域 cleanup=passed、cleanup_failures=[]；任务 3／2 删除读回不存在，硬退出 Kafka 任务由部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。恢复页面、剩余通知、后继风险重建、scheduled、历史图表及最终原生 verify-clean 未走到，不计通过。Artifact `14293873081` 已核对 SHA-256 `0d925cb934d74d79daeb8757c0b7e457c976e353e1728f7625f29a87a44ae70b` 与 ZIP CRC，原件 `/tmp/addp-cdc-alert-ui-hosted-44002520914/` 保留。新一轮须按修订源码核对完整页面、签名送达和清理，不追认本轮未完成部分。
+
 <a id="alert-evidence-todos"></a>
 
 ## 后续待办
