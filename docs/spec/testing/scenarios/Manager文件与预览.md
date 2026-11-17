@@ -315,6 +315,7 @@ Owner v5须含独立`execution_revocation`、每表无Grant拒绝、原三页面
 - **capability边界**：上述五阶段沿原普通User核capability状态及no-store；不可见404、metadata_only最小投影无内容／视图／产物事实，read核完整raster事实。无空间范围仍unavailable，不据此声称地图就绪。
 - **真实阶段页面**：仅元数据、撤read保元数据、全撤及自然到期分别在状态切换后打开真实Console，逐项核中／英文首次打开和重新加载。前两者明确metadata_only且属性single，无影像、下载、统计及快显；后两者须实际观察精确目标祖先链404，持久显示资源不可访问说明，无Axios英文弹窗、请选择数据空态或旧内容。页面重新打开证明不外推为原标签页无刷新自动收权。原read阶段继续独立核240×120完整像元。
 - **报告与预期拒绝**：阶段页面使用 `addp.manager-tiff-permission-browser/v1`，每阶段四次观察须有语言、打开方式、同普通User身份、精确请求／状态、DOM断言及PNG截图；缺任一阶段证据整套失败。只将该阶段精确祖先链GET404及由它产生的限定错误诊断计为预期，其余HTTP／页面异常仍失败，不全局忽略404或console.error。沿既有授权阶段取证，不新增Grant、权限、服务、suite或预算；新报告仅是验收要求，不表示已执行Hosted。
+- **隐藏引擎定位**：全撤／到期后目标引擎从可见列表消失，仍须通过正式 locator 的 Meta 祖先事实进入持久提示。Console 组件回归同时覆盖其他引擎可见和列表为空，保留目标引擎仍可见但祖先／预览404的原用例；Hosted observer 的精确响应匹配、状态码与报告要求不放宽。
 
 
 #### TIFF MSK 组成扩展

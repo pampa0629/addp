@@ -836,15 +836,17 @@ export const useExplorerStore = defineStore('explorer', {
         throw new Error('locator requires node_id or item_id')
       }
 
-      if (!this.engineTrees[loc.engineId]) {
-        await this.loadTree(loc.engineId, 1)
-      }
       if (!current() || revision !== this.treeRevision) return { chain: [], merged: null }
       const response = await dataExplorerAPI.getTreeAncestors(loc.engineId, locator)
       if (!current() || revision !== this.treeRevision) return { response, chain: [], merged: null }
       const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
       if (chain.length === 0) {
         throw new Error('ancestor chain is empty')
+      }
+
+      if (!this.engineTrees[loc.engineId]) {
+        await this.loadTree(loc.engineId, 1)
+        if (!current() || revision !== this.treeRevision) return { response, chain: [], merged: null }
       }
 
       const engine = this.engines.find(e => e.id === loc.engineId)

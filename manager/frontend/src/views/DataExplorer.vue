@@ -449,12 +449,6 @@ const locateRouteLocator = async (targetLocator, options = {}) => {
     ElMessage.warning(t('manager.explorer.locateFailed'))
     return
   }
-  const engine = store.engines.find(e => e.id === loc.engineId)
-  if (!engine) {
-    console.warn('[DataExplorer] 引擎未找到:', loc.engineId)
-    ElMessage.warning(t('manager.explorer.engineNotFound', { engineId: loc.engineId }))
-    return
-  }
   const revealed = await store.revealLocator(targetLocator)
   if (!revealed) return
   const revealedLocator = revealed.locator || targetLocator

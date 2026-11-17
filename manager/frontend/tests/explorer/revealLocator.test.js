@@ -113,6 +113,30 @@ describe('explorer revealLocator', () => {
     expect(store.selectedLocator).toBe('later-selection')
   })
 
+  it.each(['ancestors', 'tree'])('keeps a newer selection when cold %s preparation completes late', async stage => {
+    const store = useExplorerStore()
+    const rootLocator = 'addp://engine/9/path/?type=root&node_id=2'
+    const locator = 'addp://engine/9/path/images/private.tif?type=file&item_id=1'
+    const root = { id: rootLocator, locator: rootLocator, type: 'root', children: [] }
+    const target = { id: locator, locator, type: 'file', children: [] }
+    const facts = { ancestors: [root, target], target_locator: locator }
+    let release
+    const delayed = new Promise(resolve => { release = resolve })
+    mocks.getTreeAncestors.mockReturnValue(stage === 'ancestors' ? delayed : Promise.resolve(facts))
+    mocks.getTree.mockReturnValue(stage === 'tree' ? delayed : Promise.resolve(root))
+    const pending = store.revealLocator(locator)
+    await vi.waitFor(() => expect(stage === 'tree' ? mocks.getTree : mocks.getTreeAncestors).toHaveBeenCalledTimes(1))
+
+    store.selectNode('later-selection')
+    release(stage === 'ancestors' ? facts : root)
+
+    await expect(pending).resolves.toBeNull()
+    expect(store.selectedLocator).toBe('later-selection')
+    expect([...store.expandedLocators]).toEqual([])
+    expect(mocks.getNodeChildren).not.toHaveBeenCalled()
+    if (stage === 'ancestors') expect(mocks.getTree).not.toHaveBeenCalled()
+  })
+
   it('never lets an older deeper root response replace a newer root snapshot', async () => {
     const store = useExplorerStore()
     let resolveOld
@@ -182,7 +206,7 @@ describe('explorer revealLocator', () => {
     expect(store.nodeChildrenCache[doc].children[0].locator).toBe(file)
   })
 
-  it('loads sibling items for expanded ancestors when restoring a deep locator', async () => {
+  it.each([true, false])('loads authoritative ancestors before preparing the tree, with engine listed=%s', async listed => {
     const rootLocator = 'addp://engine/2/path/?type=server&node_id=10'
     const schemaLocator = 'addp://engine/2/path/outdoor?type=schema&node_id=11'
     const targetLocator = 'addp://engine/2/path/outdoor/ods_outdoor_persons?type=table&item_id=52899'
@@ -223,11 +247,12 @@ describe('explorer revealLocator', () => {
       : { parent_locator: schemaLocator, children: schemaChildren })
 
     const store = useExplorerStore()
-    store.engines = [{ id: 2, name: 'Business PostgreSQL', engine_type: 'postgresql', connection_status: 'online' }]
+    store.engines = listed ? [{ id: 2, name: 'Business PostgreSQL', engine_type: 'postgresql', connection_status: 'online' }] : []
 
     const revealed = await store.revealLocator(targetLocator)
 
     expect(mocks.getTree).toHaveBeenCalledWith(2, 1)
+    expect(mocks.getTreeAncestors.mock.invocationCallOrder[0]).toBeLessThan(mocks.getTree.mock.invocationCallOrder[0])
     expect(mocks.getNodeChildren).toHaveBeenCalledTimes(2)
     expect(mocks.getNodeChildren).toHaveBeenCalledWith(2, rootLocator)
     expect(mocks.getNodeChildren).toHaveBeenCalledWith(2, schemaLocator)
@@ -237,6 +262,23 @@ describe('explorer revealLocator', () => {
     ])
     expect(revealed.node.locator).toBe(targetLocator)
     expect(store.selectedLocator).toBe(targetLocator)
+  })
+
+  it.each([[], [{ id: 12, name: 'Other MinIO', engine_type: 'minio' }]])('preserves the target denial before tree preparation with engines=%j', async engines => {
+    const store = useExplorerStore()
+    store.engines = engines
+    const locator = 'addp://engine/9/path/images/private.tif?type=file&item_id=1'
+    const targetDenial = { response: { status: 404, data: { error: 'hidden target' } } }
+    mocks.getTreeAncestors.mockRejectedValue(targetDenial)
+    mocks.getTree.mockRejectedValue({ response: { status: 404, data: { error: 'hidden root' } } })
+
+    await expect(store.revealLocator(locator)).rejects.toBe(targetDenial)
+
+    expect(mocks.getTreeAncestors).toHaveBeenCalledWith(9, locator)
+    expect(mocks.getTree).not.toHaveBeenCalled()
+    expect(mocks.getNodeChildren).not.toHaveBeenCalled()
+    expect(store.selectedLocator).toBeNull()
+    expect(store.engineTrees[9]).toBeUndefined()
   })
 
   it('restores one Redis keyspace dataset without registering content keys', async () => {

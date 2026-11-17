@@ -21,7 +21,7 @@ function tinyTIFF() {
   bytes[200] = 32; bytes[201] = 224
   return bytes
 }
-async function install(page, locale, { delayedCapability, resolvedBeforeDenial = false } = {}) {
+async function install(page, locale, { delayedCapability, resolvedBeforeDenial = false, deniedEngineList = 'visible' } = {}) {
   const state = { access: 'metadata', requests: [], writes: [], released: false }
   const raw = tinyTIFF()
   const context = { type: 'tenant', tenant_id: '1' }
@@ -40,13 +40,21 @@ async function install(page, locale, { delayedCapability, resolvedBeforeDenial =
       authorization: { role_assignments: [{ scope: context, permissions: ['manager.data_item.read', 'meta.catalog.read',
         'manager.derived_artifact.read', 'manager.derived_artifact.create'] }] } })
     if (method !== 'GET') { state.writes.push({ method, path }); return json({ error: 'unexpected mutation' }, 403) }
-    if (path === '/api/v1/manager/engines') return json({ data: [{ id: 9, name: 'Metadata NFS', engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online' }] })
+    if (path === '/api/v1/manager/engines') {
+      const engines = state.access === 'none' && deniedEngineList !== 'visible'
+        ? deniedEngineList === 'other' ? [{ id: 12, name: 'Other MinIO', engine_type: 'minio', lifecycle_state: 'active', connection_status: 'online' }] : []
+        : [{ id: 9, name: 'Metadata NFS', engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online' }]
+      return json({ data: engines })
+    }
     if (path.endsWith('/ancestors')) {
       if (state.access === 'none' && !resolvedBeforeDenial) return json({ error: 'node not found' }, 404)
       return json({ target_locator: LOCATOR, ancestors: [root, node] })
     }
     if (path.endsWith('/node')) return json({ parent_locator: ROOT, children: state.access === 'none' && !resolvedBeforeDenial ? [] : [node] })
-    if (path === '/api/v1/meta/resource-tree/9') return json(state.access === 'none' && !resolvedBeforeDenial ? { ...root, hasChildren: false, children: [] } : root)
+    if (path === '/api/v1/meta/resource-tree/9') {
+      if (state.access === 'none' && deniedEngineList !== 'visible') return json({ error: 'hidden root' }, 404)
+      return json(state.access === 'none' && !resolvedBeforeDenial ? { ...root, hasChildren: false, children: [] } : root)
+    }
     if (path === '/api/v1/meta/items/1') return state.access === 'none' ? json({ error: 'hidden' }, 404) : json({ id: 1, ...itemMeta, attributes: attrs })
     if (path === '/api/v1/manager/resource-actions') {
       // A former read capability must not override the current metadata-only preview.
@@ -181,9 +189,32 @@ for (const locale of ['zh-cn', 'en']) for (const boundary of ['ancestors', 'prev
   })
 }
 
+for (const locale of ['zh-cn', 'en']) for (const deniedEngineList of ['other', 'empty']) {
+  test(`${locale}: hidden target engine with ${deniedEngineList} engines keeps the ancestor denial`, async ({ page }) => {
+    const state = await install(page, locale, { deniedEngineList })
+    state.access = 'none'
+    for (const opening of ['initial', 'reopened']) {
+      if (opening === 'initial') await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(LOCATOR)}`)
+      else await page.reload()
+      const manager = page.frameLocator('iframe[data-testid="module-iframe"]')
+      const failure = manager.getByTestId('preview-failure')
+      await expect(failure).toBeVisible()
+      await expect(failure).toContainText(locale === 'zh-cn' ? '无法访问该资源' : 'Resource unavailable')
+      await expect(failure).toContainText(locale === 'zh-cn' ? '资源可能已移除，或你暂无查看权限' : 'may have been removed, or you may not have permission')
+      await expect(manager.locator('.el-message--error, .preview-content, .panel-actions, .attributes-panel')).toHaveCount(0)
+      await expect(manager.getByText(locale === 'zh-cn' ? '请选择数据进行预览' : 'Select data to preview', { exact: true })).toHaveCount(0)
+      await expect(manager.getByText('Metadata NFS', { exact: true })).toHaveCount(0)
+    }
+    expect(state.requests.filter(r => r.path === '/api/v1/meta/resource-tree/9/ancestors')).toHaveLength(2)
+    expect(state.requests.filter(r => r.path === '/api/v1/meta/resource-tree/9' || r.path.endsWith('/manager/preview'))).toEqual([])
+    expect(contentRequests(state)).toEqual([])
+    expect(state.writes).toEqual([])
+  })
+}
+
 for (const phase of ['metadata_only', 'read_withdrawn', 'all_withdrawn', 'expired']) {
   test(`Hosted TIFF observer proves ${phase} against real Console components without grants`, async ({ page }, testInfo) => {
-    const state = await install(page, 'zh-cn')
+    const state = await install(page, 'zh-cn', { deniedEngineList: phase === 'expired' ? 'empty' : 'other' })
     state.access = ['all_withdrawn', 'expired'].includes(phase) ? 'none' : 'metadata'
     const evidence = { permission_phase: phase, run_id: 'local-observer-fixture',
       identity: { principal_id: '33', tenant_id: '1', permissions_verified: ['manager.data_item.read', 'meta.catalog.read',
