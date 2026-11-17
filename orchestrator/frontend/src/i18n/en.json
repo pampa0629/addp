@@ -135,6 +135,7 @@
       "statusOther": "{status}"
     },
     "dagEditor": {
+      "taskParameters": "Task parameters",
       "canvasAriaLabel": "Orchestration DAG canvas",
       "navigationStatusLabel": "Orchestration canvas selection status",
       "nodeSelected": "Selected node \"{name}\"",

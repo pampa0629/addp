@@ -74,7 +74,7 @@
     <div class="three-column-layout">
       <!-- 左侧任务库 -->
       <div id="task-library-panel" class="left-panel" :style="{ width: `${leftPanelWidth}px` }">
-        <TaskPanel @add-task="handleAddTask" />
+        <TaskPanel :selected-task="selectedTask" @add-task="handleAddTask" />
       </div>
 
       <div
@@ -103,6 +103,7 @@
           @update:steps="handleStepsUpdate"
           @update:layout="handleLayoutUpdate"
           @ready="handleEditorReady"
+          @select-task="selectedTask = $event"
         />
       </div>
     </div>
@@ -218,6 +219,7 @@ const editorReady = ref(false)
 const router = useRouter()
 const route = useRoute()
 const dagEditor = ref(null)
+const selectedTask = ref(null)
 const metadataNameInputRef = ref(null)
 const scheduleEnabledSwitchRef = ref(null)
 const jsonCloseButtonRef = ref(null)
@@ -319,6 +321,7 @@ watch(() => route.params.id, async id => {
   executing.value = false
   const generation = ++loadGeneration
   loaded.value = false
+  selectedTask.value = null
   editorReady.value = false
   layoutBaselinePending.value = true
   isEdit.value = Boolean(id && id !== 'new')

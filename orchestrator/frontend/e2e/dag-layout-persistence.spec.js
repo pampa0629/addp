@@ -700,6 +700,79 @@ test('persists a structured node parameter without a separate config save', asyn
   expect(persistedPayload.steps[0].parameters).toEqual({ limit: 25 })
 })
 
+test('canvas task selection reveals its exact library source and opens parameters from the toolbar', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  fixture.steps[0].task_id = 11
+  fixture.steps[1].task_id = 21
+  fixture.steps[1].task_type = 'notebook'
+  fixture.steps[1].depends_on = [SOURCE_NODE_ID]
+  const library = createTaskLibraryFixture()
+  library.deferTaskRequests = false
+  library.tasksByType.query.unshift(...Array.from({ length: 30 }, (_, i) => ({ id: 100 + i, task_type: 'query', display_name: `前置任务 ${i}` })))
+  // The same task ID and display name in another type must not capture selection.
+  library.tasksByType.notebook.push({ id: 11, task_type: 'notebook', display_name: '客户日报' })
+  const backend = await installMockBackend(page, fixture, library)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  const parameters = page.getByRole('button', { name: '任务参数', exact: true })
+  await expect(parameters).toBeDisabled()
+  const panel = page.locator('.task-panel')
+  const search = panel.getByPlaceholder('搜索任务')
+  await search.fill('月度预测')
+  await expect(panel.getByText('月度预测', { exact: true })).toBeVisible()
+  const canvas = page.locator('#dag-container canvas')
+  const box = await requiredBoundingBox(canvas)
+  const source = fixture.editor_layout.nodes[SOURCE_NODE_ID]
+  await page.mouse.click(box.x + source.x, box.y + source.y)
+  await expect(parameters).toBeEnabled()
+  await expect(search).toHaveValue('')
+  const selected = panel.locator('.el-tree-node.is-current > .el-tree-node__content')
+  await expect(selected.locator('.task-name')).toHaveText('客户日报')
+  await expect(selected).toBeInViewport()
+  expect(await selected.evaluate(el => el.parentElement.parentElement.closest('.el-tree-node').querySelector(':scope > .el-tree-node__content .task-type-name').textContent)).toBe('SQL 查询')
+  await expect(page.getByRole('dialog', { name: '配置步骤', exact: true })).toBeHidden()
+  await parameters.click()
+  const drawer = page.getByRole('dialog', { name: '配置步骤', exact: true })
+  await expect(drawer).toBeVisible()
+  await expect(drawer.getByRole('textbox').first()).toHaveValue('Source task')
+  await page.keyboard.press('Escape')
+  await expect(drawer).toBeHidden()
+  const target = fixture.editor_layout.nodes[TARGET_NODE_ID]
+  await page.mouse.click(box.x + target.x, box.y + target.y)
+  await expect(selected.locator('.task-name')).toHaveText('月度预测')
+  await parameters.click()
+  await expect(drawer.getByRole('textbox').first()).toHaveValue('Target task')
+  await page.keyboard.press('Escape')
+  await page.locator('#dag-container').evaluate(el => {
+    const state = el.__vueParentComponent.setupState
+    state.selectItem(state.graph.getEdges()[0])
+  })
+  await expect(parameters).toBeDisabled()
+  await expect(selected).toHaveCount(0)
+  await page.mouse.click(box.x + box.width - 20, box.y + 20)
+  await expect(parameters).toBeDisabled()
+  await expect(page.locator('.unsaved-status')).toHaveCount(0)
+  expect(backend.getPersistedPayload()).toBeNull()
+})
+
+test('selected task is located when the task library finishes loading', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  fixture.steps[0].task_id = 11
+  const backend = await installMockBackend(page, fixture, createTaskLibraryFixture())
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  const box = await requiredBoundingBox(page.locator('#dag-container canvas'))
+  const node = fixture.editor_layout.nodes[NODE_ID]
+  try {
+    await page.mouse.click(box.x + node.x, box.y + node.y)
+    await expect(page.getByRole('button', { name: '复制节点', exact: true })).toBeEnabled()
+  } finally {
+    backend.releaseTaskRequests()
+  }
+  const selected = page.locator('.task-panel .el-tree-node.is-current > .el-tree-node__content')
+  await expect(selected.locator('.task-name')).toHaveText('客户日报')
+  await expect(selected).toBeInViewport()
+})
+
 test('keeps task types collapsed and expands only matching search paths', async ({ page }) => {
   const orchestration = {
     ...createLayoutFixture(),
@@ -749,7 +822,8 @@ test('keeps task types collapsed and expands only matching search paths', async 
   await search.fill('')
   await expect(taskPanel.getByText('SQL 查询', { exact: true })).toBeVisible()
   await expect(taskPanel.getByText('Notebook', { exact: true })).toBeVisible()
-  await expect(taskPanel.getByText('客户日报', { exact: true })).not.toBeVisible()
+  // 添加节点会选中画布任务并展开来源，后续搜索恢复这一展开状态。
+  await expect(taskPanel.getByText('客户日报', { exact: true })).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')
   const canvasBox = await requiredBoundingBox(canvas)

@@ -1,6 +1,8 @@
 <template>
   <div class="task-panel">
     <ResourceTree
+      ref="resourceTree"
+      :current-node-key="currentNodeKey"
       :tree-data="treeData"
       :loading="initialLoading"
       :title="t('orchestrator.taskPanel.title')"
@@ -153,7 +155,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CirclePlus, Edit, FolderOpened, Loading, Plus, Rank, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import { buildTaskOwnerUrl, ResourceTree } from '@addp/common-frontend'
@@ -164,13 +166,33 @@ import { ElMessage } from 'element-plus'
 
 const TASK_REQUEST_CONCURRENCY = 4
 const { t } = useI18n()
+const props = defineProps({ selectedTask: { type: Object, default: null } })
 const emit = defineEmits(['add-task'])
+const resourceTree = ref(null)
+const currentNodeKey = ref(null)
 
 const loading = ref(false)
 const treeData = ref([])
 const filterText = ref('')
 const expandedKeys = ref([])
 const initialLoading = computed(() => loading.value && treeData.value.length === 0)
+const selectedTaskNode = computed(() => {
+  const task = props.selectedTask
+  if (!task) return null
+  const provider = treeData.value.find(node => node.id === task.provider)
+  const taskType = provider?.children.find(node => node.metadata.taskType === task.taskType)
+  return taskType?.children.find(node => String(node.metadata.taskId) === String(task.taskId)) || null
+})
+watch([() => props.selectedTask, selectedTaskNode], async ([task, node]) => {
+  currentNodeKey.value = node?.id || null
+  if (!node) return
+  filterText.value = ''
+  // 清除搜索会恢复搜索前的展开状态，随后再展开精确的来源路径。
+  await nextTick()
+  expandedKeys.value = [...new Set([...expandedKeys.value, task.provider, `${task.provider}-type-${task.taskType}`])]
+  await nextTick()
+  resourceTree.value?.scrollToNode(node.id, { block: 'nearest', behavior: 'instant' })
+})
 
 onMounted(async () => {
   await loadAllTasks()

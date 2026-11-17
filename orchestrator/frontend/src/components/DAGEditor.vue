@@ -43,9 +43,14 @@
         </el-tooltip>
         <el-button size="small" :aria-label="t('orchestrator.dagEditor.actualSize')" @click="handleActualSize">{{ Math.round(zoom * 100) }}%</el-button>
       </div>
-      <el-tooltip :content="t('orchestrator.dagEditor.clearBtn')">
-        <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.clearBtn')" @click="handleClear"><el-icon><DocumentDelete /></el-icon></el-button>
-      </el-tooltip>
+      <div class="toolbar-right">
+        <el-button size="small" :disabled="!canCopyNode" @click="openSelectedNodeParameters">
+          <el-icon><Setting /></el-icon>{{ t('orchestrator.dagEditor.taskParameters') }}
+        </el-button>
+        <el-tooltip :content="t('orchestrator.dagEditor.clearBtn')">
+          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.clearBtn')" @click="handleClear"><el-icon><DocumentDelete /></el-icon></el-button>
+        </el-tooltip>
+      </div>
     </div>
 
     <div class="connection-legend">
@@ -193,6 +198,7 @@ import {
   Rank,
   RefreshLeft,
   RefreshRight,
+  Setting,
   ZoomIn,
   ZoomOut
 } from '@element-plus/icons-vue'
@@ -252,7 +258,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:steps', 'update:layout', 'ready'])
+const emit = defineEmits(['update:steps', 'update:layout', 'ready', 'select-task'])
 
 const container = ref(null)
 const drawerVisible = ref(false)
@@ -386,7 +392,15 @@ function refreshConnectionFocus() {
     }
   })
 }
-watch(selectedItem, refreshConnectionFocus)
+watch(selectedItem, item => {
+  refreshConnectionFocus()
+  const model = item?.getType?.() === 'node' ? item.getModel() : null
+  emit('select-task', model ? {
+    provider: model.provider,
+    taskType: model.taskType,
+    taskId: model.taskId
+  } : null)
+})
 function focusConnection(id) {
   selectItem(graph.value.findById(id))
 }
@@ -1096,7 +1110,7 @@ function handleKeyboardNodeSelection(selectNode) {
   drawerVisible.value = false
 }
 
-function activateKeyboardSelection() {
+function openSelectedNodeParameters() {
   if (selectedItem.value?.getType?.() === 'node') handleNodeClick({ item: selectedItem.value })
 }
 
@@ -1110,7 +1124,7 @@ const handleKeydown = createDAGKeyboardHandler({
   cancelSelection: handleCancelSelection,
   selectPreviousNode: () => handleKeyboardNodeSelection(selectPreviousNode),
   selectNextNode: () => handleKeyboardNodeSelection(selectNextNode),
-  activateSelection: activateKeyboardSelection
+  activateSelection: openSelectedNodeParameters
 })
 
 function handleZoomIn() {
@@ -1361,11 +1375,16 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.toolbar-left {
+.toolbar-left,
+.toolbar-right {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.toolbar-right {
+  flex-shrink: 0;
 }
 
 .parameter-description {

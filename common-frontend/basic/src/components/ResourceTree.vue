@@ -657,6 +657,12 @@ const selectAndScrollToNode = async (key, options = {}) => {
   tree.setCurrentKey(key || null, false)
   if (!key) return false
   await nextTick()
+  // CollapseTransition 在下一帧设置 max-height；布局过渡结束后才有完整滚动范围。
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  await Promise.allSettled(tree.$el.getAnimations({ subtree: true })
+    .filter(animation => animation.transitionProperty === 'max-height')
+    .map(animation => animation.finished))
+  if (treeRef.value !== tree || tree.getCurrentKey() !== key) return false
   return scrollToCurrentNode(options.block || 'center', options.behavior || 'smooth')
 }
 
