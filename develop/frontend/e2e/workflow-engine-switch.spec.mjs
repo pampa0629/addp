@@ -1241,8 +1241,21 @@ function visibleDialogSurface(page) {
   return page.locator('.el-dialog.addp-dialog:visible')
 }
 
+test('restores a definition with unavailable contract and never submits execution', async ({ page }) => {
+  const backend = await installMockBackend(page, { contractUnavailable: true })
+  await openSavedWorkflow(page)
+  await expect(page.getByRole('heading', { name: 'Saved workflow', exact: true })).toBeVisible()
+  await expect(page.getByText('Review saved parameters', { exact: true })).toBeVisible()
+  await expect(primarySaveButton(page)).toBeEnabled()
+  await page.getByRole('button', { name: '执行', exact: true }).first().click()
+  await expect(page.getByText('执行失败: Review saved parameters', { exact: true })).toBeVisible()
+  await expect(page.locator('.el-dialog:visible')).toHaveCount(0)
+  expect(backend.executions).toEqual([])
+})
+
 async function installMockBackend(page, {
   language = 'zh-cn',
+  contractUnavailable = false,
   workflowEngines = [ENGINE_A, ENGINE_B],
   includeNestedCategories = false,
   includeMultiDistance = false,
@@ -1301,6 +1314,10 @@ async function installMockBackend(page, {
     includeCrossingEdges,
     includeCollectionInputs
   )
+  if (contractUnavailable) {
+    delete task.execution_contract
+    task.execution_contract_error = { error_code: 'execution_contract_unavailable', error: 'Review saved parameters' }
+  }
   if (includeExecutionDependency) {
     task.content.workflow_definition.tasks.push({
       id: 'operator_a_2', operator: 'operator_a', params: { source: 'independent-source' }, depends_on: ['operator_a_1']

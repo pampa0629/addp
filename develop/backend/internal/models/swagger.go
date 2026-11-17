@@ -184,7 +184,8 @@ type DevTaskSwagger struct {
 // DevTaskDetailSwagger 开发任务详情，包含本次执行可覆盖的任务级参数契约。
 type DevTaskDetailSwagger struct {
 	DevTaskSwagger
-	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
+	ExecutionContract      *taskprovider.ExecutionContract `json:"execution_contract,omitempty"`
+	ExecutionContractError *ExecutionContractReadError     `json:"execution_contract_error,omitempty"`
 }
 
 // ProviderDevTaskSwagger TaskProvider 标准开发任务 Swagger 响应摘要。

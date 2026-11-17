@@ -399,3 +399,12 @@ other = "当次工作流结果不可用或已过期，请重新执行后读取"
 
 [develop.notebook.file_identity_invalid]
 other = "Notebook 文件身份无效。请通过 Notebook 文件入口创建，已有文件不可重绑定。"
+
+[develop.execution.contract_edit_unavailable]
+other = "当前任务暂不可执行，请检查并纠正参数或工作流引擎配置后保存"
+
+[develop.workflow.parameters_invalid]
+other = "工作流参数无效，请检查节点参数"
+
+[develop.workflow.parameter_type_invalid]
+other = "参数类型与算子声明不符：{{.Path}}"

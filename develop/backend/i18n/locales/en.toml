@@ -399,3 +399,12 @@ other = "The current workflow result is unavailable or expired; execute again be
 
 [develop.notebook.file_identity_invalid]
 other = "Invalid Notebook file identity. Create it through the Notebook file endpoint; an existing file cannot be rebound."
+
+[develop.execution.contract_edit_unavailable]
+other = "This task cannot currently execute. Review and correct its parameters or workflow engine configuration, then save"
+
+[develop.workflow.parameters_invalid]
+other = "Invalid workflow parameters. Review the node parameters"
+
+[develop.workflow.parameter_type_invalid]
+other = "Parameter type differs from the operator declaration: {{.Path}}"

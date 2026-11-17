@@ -36,9 +36,10 @@ var (
 
 // DevTaskService 开发任务业务逻辑层
 type DevTaskService struct {
-	devTaskRepo     *repository.DevTaskRepository
-	systemClient    *commonClient.SystemServiceClient
-	queryProtection *SQLEngineService
+	devTaskRepo       *repository.DevTaskRepository
+	systemClient      *commonClient.SystemServiceClient
+	queryProtection   *SQLEngineService
+	operatorDiscovery *OperatorDiscoveryService
 }
 
 // NewDevTaskService 创建开发任务服务
@@ -47,6 +48,10 @@ func NewDevTaskService(devTaskRepo *repository.DevTaskRepository, systemClient *
 		devTaskRepo:  devTaskRepo,
 		systemClient: systemClient,
 	}
+}
+
+func (s *DevTaskService) SetOperatorDiscovery(discovery *OperatorDiscoveryService) {
+	s.operatorDiscovery = discovery
 }
 
 func (s *DevTaskService) SetQueryProtection(service *SQLEngineService) { s.queryProtection = service }
@@ -87,6 +92,9 @@ func (s *DevTaskService) createDevTask(ctx context.Context, bearer string, req *
 		return nil, err
 	}
 
+	if err := s.validateSavedWorkflow(ctx, req.DevType, req.Content, req.ExecutionConfig, tenantID); err != nil {
+		return nil, err
+	}
 	if err := s.validateSavedQueryChoices(ctx, bearer, tenantID, userID, &models.DevTask{DevType: req.DevType, Content: req.Content, ExecutionConfig: req.ExecutionConfig}); err != nil {
 		return nil, err
 	}
@@ -169,6 +177,9 @@ func (s *DevTaskService) UpdateDevTask(ctx context.Context, bearer string, id ui
 		}
 	}
 	if err := validateDevTaskExecutionConfig(item.DevType, nextContent, nextExecutionConfig); err != nil {
+		return nil, err
+	}
+	if err := s.validateSavedWorkflow(ctx, item.DevType, nextContent, nextExecutionConfig, tenantID); err != nil {
 		return nil, err
 	}
 	if err := s.validateSavedQueryChoices(ctx, bearer, tenantID, userID, &models.DevTask{DevType: item.DevType, Content: nextContent, ExecutionConfig: nextExecutionConfig}); err != nil {
@@ -1048,4 +1059,26 @@ func (s *DevTaskService) validateSavedQueryChoices(ctx context.Context, bearer s
 		return protection.ErrRequired
 	}
 	return s.queryProtection.ValidateQueryProtectionChoices(ctx, tenant, user, bearer, task)
+}
+
+// WorkflowParametersError rejects a definition before any task write.
+type WorkflowParametersError struct{ Issues []WorkflowValidationIssue }
+
+func (e *WorkflowParametersError) Error() string { return "workflow parameter types are invalid" }
+func (s *DevTaskService) validateSavedWorkflow(ctx context.Context, devType string, content, config map[string]interface{}, tenantID uint) error {
+	if devType != commonExecution.TaskTypeWorkflow {
+		return nil
+	}
+	if s.operatorDiscovery == nil {
+		return fmt.Errorf("operator discovery is unavailable")
+	}
+	workflow, _ := content["workflow_definition"].(map[string]interface{})
+	result, err := s.operatorDiscovery.ValidateWorkflowForTenant(ctx, workflowEngineIDFromExecutionConfig(config), workflow, tenantID)
+	if err != nil {
+		return err
+	}
+	if !result.Valid {
+		return &WorkflowParametersError{Issues: result.Errors}
+	}
+	return nil
 }

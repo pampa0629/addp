@@ -683,6 +683,7 @@ import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
 import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
 import {
   getDevTask,
+  requireDevTaskExecutionContract,
   getWorkflowStorageEngineBindings,
   rebindWorkflowStorageEngine
 } from '@/api/devTask'
@@ -1481,7 +1482,7 @@ async function openExecuteDialog() {
   executeDialogVisible.value = true
   try {
     const task = await getDevTask(currentTaskId.value)
-    executionContract.value = task.execution_contract
+    executionContract.value = requireDevTaskExecutionContract(task, t('develop.workflow.executionContractUnavailable'))
     await focusExecutionParameters()
   } catch (error) {
     executeDialogVisible.value = false
@@ -1492,7 +1493,7 @@ async function openExecuteDialog() {
 }
 
 async function confirmExecute() {
-  if (executing.value) return
+  if (executing.value || !executionContract.value) return
 
   executing.value = true
   try {
@@ -1839,6 +1840,7 @@ async function loadTask(taskId) {
     markSaved()
     resetValidationState()
     await loadStorageEngineBindings(task.id)
+    if (task.execution_contract_error) ElMessage.warning(task.execution_contract_error.error)
   } catch (error) {
     ElMessage.error(t('develop.workflow.loadTaskFailed') + (error.response?.data?.error || error.message))
   }

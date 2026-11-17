@@ -181,6 +181,21 @@ function isUncovered(locator) {
   })
 }
 
+test('refuses execution when a readable task has no execution contract', async ({ page }) => {
+  await installMockBackend(page)
+  let submissions = 0
+  await page.route('**/api/v1/develop/task-definitions/41', route => fulfillJSON(route, {
+    id: 41, name: 'farm_buffer', dev_type: 'workflow',
+    execution_contract_error: { error_code: 'execution_contract_unavailable', error: 'Review saved parameters' }
+  }))
+  await page.route('**/api/v1/develop/task-definitions/41/execute', route => { submissions++; return fulfillJSON(route, {}) })
+  await page.goto('/tasks')
+  await page.locator('.el-table__body-wrapper tbody tr').first().getByRole('button', { name: '执行', exact: true }).click()
+  await expect(page.getByText('加载执行参数失败: Review saved parameters')).toBeVisible()
+  await expect(page.locator('.el-dialog:visible')).toHaveCount(0)
+  expect(submissions).toBe(0)
+})
+
 async function installMockBackend(page, {
   locale = 'zh-cn', statuses, taskItems,
   userProfile = { id: '1', display_name: 'Develop E2E', local_account: { username: 'develop-e2e' } }

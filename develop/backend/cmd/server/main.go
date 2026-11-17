@@ -143,6 +143,7 @@ func main() {
 
 	// 7. 算子发现与工作流校验服务（动态发现工作流引擎）
 	operatorDiscovery := service.NewOperatorDiscoveryService(systemServiceClient)
+	devTaskService.SetOperatorDiscovery(operatorDiscovery)
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）

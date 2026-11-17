@@ -3313,9 +3313,9 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求或查询参数定义无效 | Invalid request or query parameter definitions",
+                        "description": "请求、工作流参数或查询参数定义无效 | Invalid request, workflow parameters or query parameter definitions",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.WorkflowParametersErrorResponse"
                         }
                     },
                     "403": {
@@ -3369,6 +3369,7 @@ const docTemplate = `{
         },
         "/task-definitions/{id}": {
             "get": {
+                "description": "人员编辑读取保留原定义；执行契约不可用时返回 execution_contract_error 并阻断执行。| Editable reads retain the original definition; unavailable execution contracts return execution_contract_error and cannot execute.",
                 "produces": [
                     "application/json"
                 ],
@@ -3447,9 +3448,9 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求或查询参数定义无效 | Invalid request or query parameter definitions",
+                        "description": "请求、工作流参数或查询参数定义无效 | Invalid request, workflow parameters or query parameter definitions",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                            "$ref": "#/definitions/internal_api.WorkflowParametersErrorResponse"
                         }
                     },
                     "403": {
@@ -5331,6 +5332,9 @@ const docTemplate = `{
                 "execution_contract": {
                     "$ref": "#/definitions/taskprovider.ExecutionContract"
                 },
+                "execution_contract_error": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionContractReadError"
+                },
                 "id": {
                     "type": "integer",
                     "example": 1
@@ -5506,6 +5510,17 @@ const docTemplate = `{
                 "error_code": {
                     "type": "string",
                     "example": "invalid_query_parameter_definitions"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ExecutionContractReadError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
                 }
             }
         },
@@ -6697,6 +6712,23 @@ const docTemplate = `{
                 },
                 "workflow_engine_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.WorkflowParametersErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.WorkflowValidationIssue"
+                    }
                 }
             }
         },

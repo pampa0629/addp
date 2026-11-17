@@ -36,7 +36,7 @@ func NewDevTaskHandler(devTaskService *service.DevTaskService, operatorDiscovery
 // @Produce json
 // @Param body body models.CreateDevTaskSwaggerRequest true "创建请求 | Create request"
 // @Success 200 {object} models.DevTaskSwagger "已创建的开发任务 | Created development task"
-// @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
+// @Failure 400 {object} WorkflowParametersErrorResponse "请求、工作流参数或查询参数定义无效 | Invalid request, workflow parameters or query parameter definitions"
 // @Failure 403 {object} models.ErrorResponse "缺少所选导出方式的执行权限 | Missing execution permissions for the selected export method"
 // @Failure 409 {object} models.ErrorResponse "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable"
 // @x-addp-auth-mode "permission"
@@ -58,6 +58,13 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, service.ErrNotebookFileIdentity) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookFileIdentityInvalid), "error_code": "invalid_notebook_file_identity"})
+			return
+		}
+		var workflowError *service.WorkflowParametersError
+		if errors.As(err, &workflowError) {
+			issues := workflowError.Issues
+			localizeWorkflowTypeIssues(c, issues)
+			c.JSON(http.StatusBadRequest, WorkflowParametersErrorResponse{Error: commoni18n.T(c, developi18n.MsgWorkflowParametersInvalid), ErrorCode: "invalid_workflow_parameters", Errors: issues})
 			return
 		}
 		if writeQueryProtectionError(c, err) {
@@ -83,7 +90,7 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 // @Param id path int true "开发任务 ID | Development task ID"
 // @Param body body models.UpdateDevTaskSwaggerRequest true "更新请求 | Update request"
 // @Success 200 {object} models.DevTaskSwagger "已更新的开发任务 | Updated development task"
-// @Failure 400 {object} models.ErrorResponse "请求或查询参数定义无效 | Invalid request or query parameter definitions"
+// @Failure 400 {object} WorkflowParametersErrorResponse "请求、工作流参数或查询参数定义无效 | Invalid request, workflow parameters or query parameter definitions"
 // @Failure 403 {object} models.ErrorResponse "缺少所选导出方式的执行权限 | Missing execution permissions for the selected export method"
 // @Failure 409 {object} models.ErrorResponse "脱敏方式或当前角色资格不可用 | Masking method or current role eligibility unavailable"
 // @x-addp-auth-mode "permission"
@@ -113,6 +120,13 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookFileIdentityInvalid), "error_code": "invalid_notebook_file_identity"})
 			return
 		}
+		var workflowError *service.WorkflowParametersError
+		if errors.As(err, &workflowError) {
+			issues := workflowError.Issues
+			localizeWorkflowTypeIssues(c, issues)
+			c.JSON(http.StatusBadRequest, WorkflowParametersErrorResponse{Error: commoni18n.T(c, developi18n.MsgWorkflowParametersInvalid), ErrorCode: "invalid_workflow_parameters", Errors: issues})
+			return
+		}
 		if writeQueryProtectionError(c, err) {
 			return
 		}
@@ -129,6 +143,7 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 }
 
 // GetDevTask 获取开发任务详情
+// @Description 人员编辑读取保留原定义；执行契约不可用时返回 execution_contract_error 并阻断执行。| Editable reads retain the original definition; unavailable execution contracts return execution_contract_error and cannot execute.
 // @Summary 获取开发任务详情 | Get development task details
 // @Tags DevTask
 // @Produce json
@@ -159,10 +174,12 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 	}
 	contract, err := h.executionContract(c, item, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionContractUnavailable), "error_code": "execution_contract_unavailable"})
-		return
+		item.ExecutionContract = nil
+		item.ExecutionContractError = &models.ExecutionContractReadError{ErrorCode: "execution_contract_unavailable", Error: commoni18n.T(c, developi18n.MsgExecutionContractEditUnavailable)}
+	} else {
+		item.ExecutionContract = contract
+		item.ExecutionContractError = nil
 	}
-	item.ExecutionContract = contract
 
 	c.JSON(http.StatusOK, item)
 }

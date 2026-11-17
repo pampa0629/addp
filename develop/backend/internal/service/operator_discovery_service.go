@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/engine/workflowaccess"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 )
 
 // OperatorDiscoveryService 工作流算子发现服务
@@ -170,6 +171,14 @@ func (s *OperatorDiscoveryService) validateWorkflow(
 					Message: fmt.Sprintf("算子 %s 未声明公开参数: %s", operatorName, name),
 				})
 				continue
+			}
+			if parameter.ParamType != "input" && parameter.ParamType != "resource" && !isWorkflowReference(params[name]) {
+				if schema := workflowProvidedParameterTypeSchema(parameter); schema != nil {
+					check := map[string]interface{}{"type": "object", "properties": map[string]interface{}{name: schema}, "additionalProperties": false}
+					if err := taskprovider.ValidateExecutionParameters(check, map[string]interface{}{name: params[name]}, taskprovider.ParameterValidationOptions{}); err != nil {
+						result.Errors = append(result.Errors, WorkflowValidationIssue{Code: "parameter_type_invalid", Path: fmt.Sprintf("workflow_definition.tasks[%d].params.%s", index, name), Message: fmt.Sprintf("parameter type differs from operator declaration: %s", name)})
+					}
+				}
 			}
 			validRasterReference := true
 			switch {
@@ -353,4 +362,29 @@ func workflowStorageAccess(engine *commonModels.Engine) *plugin.WorkflowStorageA
 		return nil
 	}
 	return caps.Compute.Workflow.StorageAccess
+}
+
+// Validate only declared JSON value types; Runtime retains domain validation.
+func workflowProvidedParameterTypeSchema(parameter commonModels.ParameterDescriptor) map[string]interface{} {
+	switch parameter.Type {
+	case "string", "integer", "int", "float", "double", "number", "boolean", "array", "object":
+		schema := map[string]interface{}{"type": normalizeWorkflowParameterType(parameter.Type)}
+		if parameter.Type == "array" && parameter.ItemType != "" {
+			if items := workflowProvidedParameterTypeSchema(commonModels.ParameterDescriptor{Type: parameter.ItemType}); items != nil {
+				schema["items"] = items
+			}
+		}
+		if parameter.Type == "object" && len(parameter.Properties) > 0 {
+			properties := map[string]interface{}{}
+			for name, property := range parameter.Properties {
+				if value := workflowProvidedParameterTypeSchema(property); value != nil {
+					properties[name] = value
+				}
+			}
+			schema["properties"] = properties
+		}
+		return schema
+	default:
+		return nil // runtime data handles are validated by their existing binding rules
+	}
 }

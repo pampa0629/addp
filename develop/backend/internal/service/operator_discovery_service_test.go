@@ -7,6 +7,8 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/repository"
 )
 
 func TestRasterMosaicCollectionRequiresReferences(t *testing.T) {
@@ -572,5 +574,105 @@ func TestResourcePickerUsesRuntimeInstanceAccessNotOperatorWhitelist(t *testing.
 	missing := parameterByName(t, publicOperatorParameters(&commonModels.Engine{EngineType: "spark_workflow"}, save), "target_resource")
 	if types := missing.UIConfig["engine_types"].([]string); types == nil || len(types) != 0 {
 		t.Fatalf("missing access must publish empty array: %#v", types)
+	}
+}
+
+func TestWorkflowPreflightRejectsProvidedParameterTypes(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind string
+		value      interface{}
+		valid      bool
+	}{
+		{"scalar-resolution", "array", float64(90), false},
+		{"paired-resolution", "array", []interface{}{float64(90), float64(90)}, true},
+		{"string-number", "float", "90", false},
+		{"fractional-integer", "integer", 1.5, false},
+		{"null-object", "object", nil, false},
+		{"object", "object", map[string]interface{}{"nested": "value"}, true},
+		{"string-boolean", "boolean", "false", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newWorkflowValidationTestService(t)
+			svc.listWorkflowOperators = func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
+				return []commonModels.OperatorDescriptor{{ID: "probe", Name: "probe", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{{Name: "value", Type: tc.kind}}}}, nil
+			}
+			workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "node", "operator": "probe", "params": map[string]interface{}{"value": tc.value}, "depends_on": []interface{}{}}}}
+			result, err := svc.ValidateWorkflowForTenant(context.Background(), 12, workflow, 7)
+			if err != nil || result.Valid != tc.valid {
+				t.Fatalf("valid=%v result=%#v err=%v", tc.valid, result, err)
+			}
+			if !tc.valid && (len(result.Errors) != 1 || result.Errors[0].Code != "parameter_type_invalid" || result.Errors[0].Path != "workflow_definition.tasks[0].params.value") {
+				t.Fatalf("issues=%#v", result.Errors)
+			}
+		})
+	}
+}
+
+func TestWorkflowSaveRejectsInvalidTypesWithoutWritingTask(t *testing.T) {
+	db := newNotebookBindingTestDB(t)
+	svc := NewDevTaskService(repository.NewDevTaskRepository(db), nil)
+	svc.SetOperatorDiscovery(newWorkflowValidationTestService(t))
+	workflow := func(value interface{}) map[string]interface{} {
+		return map[string]interface{}{"workflow_definition": map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "buffer", "operator": "buffer", "params": map[string]interface{}{"distance": value}, "depends_on": []interface{}{}}}}}
+	}
+	config := map[string]interface{}{"engine_id": float64(12)}
+	request := &models.CreateDevTaskRequest{Name: "typed", DevType: "workflow", Content: workflow("90"), ExecutionConfig: config}
+	if _, err := svc.CreateDevTask(context.Background(), "", request, 7, 3); err == nil {
+		t.Fatal("invalid create accepted")
+	}
+	var count int64
+	db.Table("develop.dev_tasks").Count(&count)
+	if count != 0 {
+		t.Fatalf("invalid create wrote %d rows", count)
+	}
+	request.Content = workflow(float64(90))
+	created, err := svc.CreateDevTask(context.Background(), "", request, 7, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.UpdateDevTask(context.Background(), "", created.ID, &models.UpdateDevTaskRequest{Content: workflow("90")}, 7, 3); err == nil {
+		t.Fatal("invalid update accepted")
+	}
+	stored, err := svc.GetDevTask(created.ID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := workflowTasksFromInterface(stored.Content["workflow_definition"].(map[string]interface{})["tasks"])
+	if value := tasks[0]["params"].(map[string]interface{})["distance"]; value != float64(90) {
+		t.Fatalf("stored value changed: %#v", value)
+	}
+}
+
+func TestWorkflowExecutionRejectsInvalidSavedParameterTypes(t *testing.T) {
+	svc := newWorkflowValidationTestService(t)
+	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "buffer", "operator": "buffer", "params": map[string]interface{}{"distance": "90"}, "depends_on": []interface{}{}}}}
+	if resolved, err := svc.resolveWorkflowExecutionParameters(context.Background(), 12, workflow, map[string]interface{}{}, 7); err == nil || resolved != nil {
+		t.Fatalf("invalid execution resolved=%#v err=%v", resolved, err)
+	}
+	tasks, _ := workflowTasksFromInterface(workflow["tasks"])
+	if tasks[0]["params"].(map[string]interface{})["distance"] != "90" {
+		t.Fatal("execution mutated persisted parameter")
+	}
+}
+
+func TestWorkflowDeclaredNestedTypesSharePreflightAndExecutionSchema(t *testing.T) {
+	parameter := commonModels.ParameterDescriptor{Name: "options", Type: "object", Properties: map[string]commonModels.ParameterDescriptor{"values": {Type: "array", ItemType: "float"}}}
+	svc := newWorkflowValidationTestService(t)
+	svc.listWorkflowOperators = func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
+		return []commonModels.OperatorDescriptor{{ID: "probe", Name: "probe", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{parameter}}}, nil
+	}
+	for _, tc := range []struct {
+		value interface{}
+		valid bool
+	}{{[]interface{}{float64(1), float64(2)}, true}, {[]interface{}{float64(1), "2"}, false}, {float64(90), false}} {
+		workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "node", "operator": "probe", "params": map[string]interface{}{"options": map[string]interface{}{"values": tc.value}}, "depends_on": []interface{}{}}}}
+		result, err := svc.ValidateWorkflowForTenant(context.Background(), 12, workflow, 7)
+		if err != nil || result.Valid != tc.valid {
+			t.Fatalf("preflight %#v = %#v %v", tc.value, result, err)
+		}
+		_, err = svc.resolveWorkflowExecutionParameters(context.Background(), 12, workflow, map[string]interface{}{}, 7)
+		if (err == nil) != tc.valid {
+			t.Fatalf("execution %#v = %v", tc.value, err)
+		}
 	}
 }

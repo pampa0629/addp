@@ -34,3 +34,11 @@ export const executeDevTask = (id, parameters = {}) => (
 
 // 获取可用资源列表
 export const listEngines = (params) => client.get('/develop/engines', { params })
+
+// A readable definition is not necessarily executable.
+export const requireDevTaskExecutionContract = (task, unavailableMessage) => {
+  if (!task?.execution_contract || task.execution_contract_error) {
+    throw new Error(task?.execution_contract_error?.error || unavailableMessage)
+  }
+  return task.execution_contract
+}

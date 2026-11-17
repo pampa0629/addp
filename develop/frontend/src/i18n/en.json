@@ -226,6 +226,7 @@
       "namePatternHint": "Only letters, numbers, underscores and Chinese characters allowed"
     },
     "workflow": {
+      "executionContractUnavailable": "The task execution contract is unavailable. Edit and correct the task before executing",
       "title": "Workflow Editor",
       "statusLabel": "Workflow status",
       "aiTitle": "AI Workflow Assistant",

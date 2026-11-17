@@ -229,6 +229,7 @@
       "namePatternHint": "只能包含字母、数字、下划线和中文"
     },
     "workflow": {
+      "executionContractUnavailable": "当前任务的执行参数契约不可用，请编辑并纠正后再执行",
       "title": "工作流编辑器",
       "statusLabel": "工作流状态",
       "aiTitle": "AI 工作流助手",

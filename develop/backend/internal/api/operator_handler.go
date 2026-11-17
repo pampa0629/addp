@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	commoni18n "github.com/addp/common/middleware/i18n"
+	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -12,6 +13,13 @@ import (
 // OperatorHandler 算子发现API处理器
 type OperatorHandler struct {
 	operatorDiscovery *service.OperatorDiscoveryService
+}
+
+// WorkflowParametersErrorResponse reports rejected workflow definition parameters.
+type WorkflowParametersErrorResponse struct {
+	Error     string                            `json:"error"`
+	ErrorCode string                            `json:"error_code"`
+	Errors    []service.WorkflowValidationIssue `json:"errors,omitempty"`
 }
 
 type OperatorListResponse struct {
@@ -107,5 +115,14 @@ func (h *OperatorHandler) ValidateWorkflow(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	localizeWorkflowTypeIssues(c, result.Errors)
 	c.JSON(http.StatusOK, result)
+}
+
+func localizeWorkflowTypeIssues(c *gin.Context, issues []service.WorkflowValidationIssue) {
+	for index := range issues {
+		if issues[index].Code == "parameter_type_invalid" {
+			issues[index].Message = commoni18n.TWithData(c, developi18n.MsgWorkflowParameterTypeInvalid, map[string]interface{}{"Path": issues[index].Path})
+		}
+	}
 }

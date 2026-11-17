@@ -46,10 +46,11 @@ type DevTask struct {
 	LastExecutionStatus string     `gorm:"size:50" json:"last_execution_status,omitempty"`
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"` // 最近执行创建时间 | Creation time of the latest admitted execution
 
-	ExecutionContract *taskprovider.ExecutionContract `gorm:"-" json:"execution_contract,omitempty"`
-	QueryResultLimit  int                             `gorm:"-" json:"-"`
-	RuntimeParameters map[string]interface{}          `gorm:"-" json:"-"`
-	FederatedBinding  *FederatedQueryBinding          `gorm:"-" json:"-"`
+	ExecutionContract      *taskprovider.ExecutionContract `gorm:"-" json:"execution_contract,omitempty"`
+	ExecutionContractError *ExecutionContractReadError     `gorm:"-" json:"execution_contract_error,omitempty"`
+	QueryResultLimit       int                             `gorm:"-" json:"-"`
+	RuntimeParameters      map[string]interface{}          `gorm:"-" json:"-"`
+	FederatedBinding       *FederatedQueryBinding          `gorm:"-" json:"-"`
 }
 
 // FederatedQueryBinding belongs to an execution snapshot, never a task definition.
@@ -327,4 +328,10 @@ type ListDevTasksResponse struct {
 	Total    int64     `json:"total"`
 	Page     int       `json:"page"`
 	PageSize int       `json:"page_size"`
+}
+
+// ExecutionContractReadError is transient edit-read diagnostics, never task state.
+type ExecutionContractReadError struct {
+	ErrorCode string `json:"error_code"`
+	Error     string `json:"error"`
 }

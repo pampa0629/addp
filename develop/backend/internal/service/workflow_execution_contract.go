@@ -341,11 +341,12 @@ func workflowResourceExecutionUI(parameter commonModels.ParameterDescriptor) map
 }
 
 func workflowParameterSchema(parameter commonModels.ParameterDescriptor) map[string]interface{} {
-	schema := map[string]interface{}{
-		"type":        normalizeWorkflowParameterType(parameter.Type),
-		"title":       firstNonEmpty(parameter.DisplayName, parameter.Name),
-		"description": parameter.Description,
+	schema := workflowProvidedParameterTypeSchema(parameter)
+	if schema == nil {
+		schema = map[string]interface{}{"type": normalizeWorkflowParameterType(parameter.Type)}
 	}
+	schema["title"] = firstNonEmpty(parameter.DisplayName, parameter.Name)
+	schema["description"] = parameter.Description
 	if len(parameter.Enum) > 0 {
 		values := make([]interface{}, len(parameter.Enum))
 		for index, value := range parameter.Enum {

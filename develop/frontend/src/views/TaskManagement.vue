@@ -214,6 +214,7 @@ import {
 import {
   listDevTasks,
   getDevTask,
+  requireDevTaskExecutionContract,
   deleteDevTask,
   executeDevTask,
   listEngines
@@ -349,7 +350,9 @@ const handleEdit = (row) => openTaskEditor(row.dev_type, row.id)
 
 const handleExecute = async (row) => {
   try {
-    currentTask.value = await getDevTask(row.id)
+    const task = await getDevTask(row.id)
+    requireDevTaskExecutionContract(task, t('develop.workflow.executionContractUnavailable'))
+    currentTask.value = task
     executeOverrides.value = {}
     executeDialogVisible.value = true
   } catch (error) {
@@ -358,7 +361,7 @@ const handleExecute = async (row) => {
 }
 
 const confirmExecute = async () => {
-  if (!currentTask.value) return
+  if (!currentTask.value?.execution_contract || currentTask.value.execution_contract_error) return
 
   try {
     executing.value = true
