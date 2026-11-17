@@ -72,3 +72,9 @@ curl -i \
 从仓库根目录使用 `make test-module MODULE=gateway`；当前工作区按范围使用 `make test-changed`。快速定位可用 `make test-module MODULE=gateway GO_ONLY=1`，只证明 Gateway Go T1，不替代完整模块门禁。
 
 认证或 owner 执行实现同时变更时，再按[测试与验收规范](../../docs/spec/addp测试与验收规范.md)扩散到 System / Service 门禁。真实启动、租约失效与恢复使用已登记的[模块注册恢复场景](../../docs/spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)，不能以单元测试或手工请求代替 T4 证据；本页样例不表示本次已执行。
+
+### Redis 核心依赖与隔离验证
+
+System／Gateway 启动前必须成功认证并 Ping 部署指定的 Redis；配置缺失或连接失败退出。运行中故障保留进程及 live，Ready 返回 503；Gateway 保留已应用路由快照，业务入口按既有就绪中间件暂时拒绝。恢复同一端点连接后恢复 Ready，实际限流仍核验 Redis 命令，禁止故障放行或本地计数回退。窗口仍是每 API Consumer 固定 60 秒，超限 429，依赖故障 503／`rate_limit_unavailable`。
+
+最小确定性门禁为 `make test-module MODULE=gateway GO_ONLY=1`，真实基础设施门禁为 `make test-common-redis-core`（先按标准 Infra status 解析实际 PG 端口，并提供仅指向 `addp_iam_test` 的 `ADDP_SYSTEM_POSTGRES_TEST_DSN`）。后者自动创建随机回环端口的独占 Infra Redis，测试后清理容器／网络／卷；网络故障通过测试 TCP 代理保留 Redis 状态验证，不停止共享 `addp-redis`，不清空生产数据。该 T2 不替代固定产品的独立进程 HTTP T4。

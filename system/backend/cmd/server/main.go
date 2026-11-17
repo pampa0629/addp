@@ -14,6 +14,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/httptrace"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/processmetrics"
 	"github.com/addp/system/internal/api"
@@ -24,7 +25,6 @@ import (
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
 // @title           ADDP System API
@@ -66,6 +66,15 @@ func main() {
 		"user", cfg.PostgresUser,
 		"db", cfg.PostgresDB)
 
+	redisClient, err := bootstrap.OpenRequiredRedis(context.Background(), commonConfig.RedisConfig{
+		Host: cfg.RedisHost, Port: cfg.RedisPort, Password: cfg.RedisPassword, DB: cfg.RedisDB,
+	})
+	if err != nil {
+		logger.L().Error("system_redis_unavailable")
+		os.Exit(1)
+	}
+	defer redisClient.Close()
+
 	// 初始化数据库
 	db, err := repository.InitDB(cfg)
 	if err != nil {
@@ -106,7 +115,7 @@ func main() {
 	}
 
 	// 创建路由
-	router := api.SetupRouter(db, cfg)
+	router := api.SetupRouter(db, cfg, redisClient)
 
 	// 创建 HTTP 服务器
 	srv := &http.Server{
@@ -146,12 +155,7 @@ func main() {
 	}()
 
 	cleanupCoordinator := service.NewCleanupOrchestratorService(db, moduleRegistryService)
-	var engineRedis *redis.Client
-	if cfg.RedisHost != "" {
-		engineRedis = redis.NewClient(&redis.Options{Addr: cfg.RedisHost + ":" + cfg.RedisPort, Password: cfg.RedisPassword, DB: cfg.RedisDB})
-		defer engineRedis.Close()
-	}
-	engineService := service.NewEngineService(repository.NewEngineRepository(db), cfg.EncryptionKey, engineRedis).WithCleanupOrchestrator(cleanupCoordinator)
+	engineService := service.NewEngineService(repository.NewEngineRepository(db), cfg.EncryptionKey, redisClient).WithCleanupOrchestrator(cleanupCoordinator)
 	cleanupCoordinatorDone := make(chan struct{})
 	go func() { defer close(cleanupCoordinatorDone); cleanupCoordinator.Run(runtimeContext) }()
 	deletionSupervisorDone := make(chan struct{})

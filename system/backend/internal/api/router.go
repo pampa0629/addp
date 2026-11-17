@@ -6,7 +6,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	"time"
 
-	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/production"
 
@@ -26,22 +25,13 @@ import (
 	_ "github.com/addp/system/docs"
 )
 
-func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
+func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 	router := modulelifecycle.NewRouter()
 	if err := cfg.ValidateTrustedProxies(); err != nil {
 		panic(err)
 	}
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		panic(fmt.Errorf("配置受信代理失败: %w", err))
-	}
-
-	var redisClient *redis.Client
-	if cfg.RedisHost != "" {
-		redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
-		redisClient = redis.NewClient(&redis.Options{Addr: redisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
-		logger.L().Info("Redis 客户端已初始化", "addr", redisAddr)
-	} else {
-		logger.L().Warn("Redis 未配置，资源变更事件通知功能将被禁用")
 	}
 
 	securityPolicyService := iam.NewSecurityPolicyService(iam.NewRepository(db))
@@ -103,6 +93,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		"system",
 		modulelifecycle.StaticCheck("local_dependencies", true, ""),
 		modulelifecycle.StaticCheck("iam_bootstrap", true, ""),
+		modulelifecycle.RedisCheck(redisClient),
 	)
 	lifecycle.RegisterHealthRoutes(router)
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

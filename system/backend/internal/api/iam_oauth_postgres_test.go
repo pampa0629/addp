@@ -151,7 +151,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	}
 
 	t.Run("publisher and runtime enforce module and operation ownership", func(t *testing.T) {
-		productRouter := SetupRouter(db, testIAMRuntimeConfig())
+		productRouter := SetupRouter(db, testIAMRuntimeConfig(), fixtureRouterRedis(t))
 		runtimeToken := decodeIAMAccessToken(t, performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-manager", secrets["addp-manager"]))
 		for _, c := range []struct{ token, method, path, body string }{
 			{publisherToken, "GET", "/deployment/module_declarations/meta", ""},
@@ -316,6 +316,12 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	tenantPrometheus := performIAMOAuthClientCredentialsFormRequest(t, router, "addp-prometheus", secrets["addp-prometheus"], url.Values{"tenant_id": {strconv.FormatInt(tenantID, 10)}})
 	if tenantPrometheus.Code == http.StatusOK {
 		t.Fatal("Prometheus obtained Tenant credential")
+	}
+
+	if os.Getenv("ADDP_REDIS_CORE_REQUIRED") == "1" {
+		t.Run("Redis core outage preserves Token and grant facts", func(t *testing.T) {
+			testSystemRedisBoundaryAgainstPostgres(t, db, runtime, secrets["addp-manager"], tenantID)
+		})
 	}
 
 	rotatedSecrets := testBuiltinServiceClientSecrets("rotated")

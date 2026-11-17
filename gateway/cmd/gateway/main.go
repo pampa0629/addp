@@ -12,6 +12,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/gateway/internal/config"
@@ -40,6 +41,15 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	redisClient, err := bootstrap.OpenRequiredRedis(context.Background(), commonConfig.RedisConfig{
+		Host: cfg.RedisHost, Port: cfg.RedisPort, Password: cfg.RedisPassword, DB: cfg.RedisDB,
+	})
+	if err != nil {
+		logger.L().Error("gateway_redis_unavailable")
+		os.Exit(1)
+	}
+	defer redisClient.Close()
+
 	runtimeContext, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	listener, err := net.Listen("tcp", cfg.Port)
@@ -47,7 +57,7 @@ func main() {
 		logger.L().Error("Gateway 监听失败", "error", err)
 		return
 	}
-	r, systemClient := router.SetupRouter(cfg)
+	r, systemClient := router.SetupRouter(cfg, redisClient)
 	server := &http.Server{Handler: r}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.Serve(listener) }()

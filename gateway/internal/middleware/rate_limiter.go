@@ -2,17 +2,19 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/gateway/pkg/client"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
 
-// RateLimiterMiddleware 限流中间件（基于 Redis 令牌桶算法）
+// RateLimiterMiddleware 限流中间件（基于 Redis 固定窗口算法）
 type RateLimiterMiddleware struct {
 	redisClient *redis.Client
 }
@@ -41,11 +43,12 @@ func (m *RateLimiterMiddleware) Handler() gin.HandlerFunc {
 		}
 
 		// 执行限流检查
-		allowed, err := m.checkRateLimit(info.APIConsumerID, info.RateLimitPerMinute)
+		allowed, err := m.checkRateLimit(c.Request.Context(), info.APIConsumerID, info.RateLimitPerMinute)
 		if err != nil {
-			log.Printf("Rate limit check failed: %v", err)
-			// 限流检查失败，为了安全起见，允许通过（避免误伤）
-			c.Next()
+			log.Print("rate_limit_unavailable")
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error": commoni18n.T(c, "rate_limit.unavailable"), "error_code": "rate_limit_unavailable",
+			})
 			return
 		}
 
@@ -62,16 +65,17 @@ func (m *RateLimiterMiddleware) Handler() gin.HandlerFunc {
 	}
 }
 
-// checkRateLimit 检查是否超过速率限制（Redis 令牌桶算法）
-// appID: 应用 ID
+// checkRateLimit 检查是否超过速率限制（Redis 固定窗口算法）
+// apiConsumerID: API 消费方 ID
 // limit: 每分钟请求数限制
 // 返回: true=允许通过, false=超过限制
-func (m *RateLimiterMiddleware) checkRateLimit(apiConsumerID uint, limit int) (bool, error) {
+func (m *RateLimiterMiddleware) checkRateLimit(ctx context.Context, apiConsumerID uint, limit int) (bool, error) {
 	if m.redisClient == nil {
-		return true, nil // Redis 不可用，允许通过
+		return false, errors.New("Redis client unavailable")
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 	key := fmt.Sprintf("ratelimit:api-consumer:%d", apiConsumerID)
 
 	// 使用 Lua 脚本实现原子操作

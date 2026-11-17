@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
 	redisv9 "github.com/redis/go-redis/v9"
 )
@@ -89,6 +90,6 @@ func handleRateLimitUnavailable(c *gin.Context, options RedisFixedWindowOptions,
 		options.OnUnavailable(c, err)
 		return
 	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "rate_limit_unavailable"})
+	c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, "rate_limit.unavailable"), "error_code": "rate_limit_unavailable"})
 	c.Abort()
 }

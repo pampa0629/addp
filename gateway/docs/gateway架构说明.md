@@ -47,13 +47,13 @@ Service 的二次验证和精确 Grant 检查是最终授权点，因此绕过 G
 - Service 当前逐请求向 System 验证，确保 owner 授权不依赖 Gateway 缓存。
 - 消费身份只记录 `api_consumer_id` 和不可用于认证的凭据短前缀；认证材料与请求体的日志边界见[认证规范](../../docs/spec/addp登录认证的统一要求.md#24-认证凭据日志边界)。
 
-当前 Query 限流实现按 Consumer ID 原子递增计数，首次请求设置 60 秒过期；它不是按 IP、Tenant、服务或图层划分的全局限流，也不是令牌桶。Redis 初始化不可用或计数失败时继续放行；超限返回 429 及 `error/limit/window`，未返回稳定限流错误码或 `X-RateLimit-*` 响应头。这些是现状与限制，不代表故障放行策略已经作为新的平台规范确认。
+当前 Query 限流实现按 Consumer ID 原子递增计数，首次请求设置 60 秒过期；它不是按 IP、Tenant、服务或图层划分的全局限流，也不是令牌桶。Redis 为核心必需依赖，初始化失败阻止启动；实际计数失败返回 503 和稳定 `rate_limit_unavailable`，不得转发下游或回退内存。超限保留 429 及 `error/limit/window`，不修改 Consumer 键、配额、60 秒窗口或增加重试；现有 `X-RateLimit-*` 响应头契约不变。
 
 ## 5. 模块发现
 
 System 是模块注册表权威。Gateway 使用自身 Platform Service Access Token 读取快照和 revision watch，只代理满足 `enabled + backend + up + lease valid` 的业务模块实例。同一业务模块的多个有效 Backend 参与请求级轮询，失败请求不做隐式重放。System 是引导控制面，其自注册实例供观测和配置入口声明；Gateway 在监听建立后通过部署提供的 `SYSTEM_URL` 直连 System，以不可路由的 `ingress` 角色注册自身并续租。容器部署用 `SERVICE_HOST=gateway` 提供可定位的实例地址，本地开发使用监听所在主机的地址。Gateway Ingress 不进入业务路由池、动态入口或可路由模块计数，System 与 Gateway 的 `enabled` 固定为 true。
 
-Gateway 使用公共 `/health/live` 与 `/health/ready`；就绪检查为 `system_registry_snapshot`，仅要求成功应用过完整快照。后续 watch 失败不清除已有快照，代理仍逐请求检查 Backend 租约；因此 Ready 不等于所有模块可路由或所有依赖健康。
+Gateway 使用公共 `/health/live` 与 `/health/ready`；就绪检查包含 `system_registry_snapshot` 与启动注入客户端的 `redis`，要求成功应用过完整快照且 Redis 有界 Ping 成功。后续 watch 失败不清除已有快照，代理仍逐请求检查 Backend 租约；Redis 运行中故障时 Ready 503、live 200，既有就绪中间件暂时拒绝全部业务，保留快照和进程；恢复同一端点连通后恢复 Ready，真实限流仍检查命令结果。因此 Ready 不等于所有模块可路由或所有依赖健康。
 
 [第三阶段 Catalog 服务发现契约](../../docs/spec/api/健康与平台控制面.md#第三阶段-catalog-服务发现契约)仅适用于待实施的 Kubernetes 试点。届时 Gateway 仍只读 System 快照，对 Catalog 逐请求检查其中的端点截止时间。已应用的摘除立即生效，链路中断则最迟在截止时刻停止选用。本地和 Compose 继续执行上述 System 实例租约规则。
 

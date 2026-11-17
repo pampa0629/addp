@@ -36,7 +36,7 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testIAMRuntimeConfig()
-	router := SetupRouter(db, cfg)
+	router := SetupRouter(db, cfg, fixtureRouterRedis(t))
 	routes := make(map[string]struct{})
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = struct{}{}

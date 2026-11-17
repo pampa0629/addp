@@ -63,3 +63,6 @@ other = "The query result field types or encoding are invalid."
 
 ["engine.spark.query_invalid"]
 other = "A Spark query requires a valid compute cluster and non-empty SQL."
+
+[rate_limit.unavailable]
+other = "Rate limit service is temporarily unavailable"

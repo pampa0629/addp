@@ -413,6 +413,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-agent-postgres
 	@$(MAKE) test-business-redis
 	@$(MAKE) test-common-redis
+	@$(MAKE) test-common-redis-core
 	@$(MAKE) test-monitor-redis-source
 	@$(MAKE) test-monitor-minio-observation
 	@$(MAKE) test-common-postgres
@@ -581,7 +582,7 @@ test-system-iam-runner: ## 验证 System IAM PostgreSQL 门禁跨进程互斥
 test-system-cleanup: ## 验证 System Cleanup 准入、父子协调与只读快照的 PostgreSQL 契约
 	@bash scripts/test/system-cleanup-gate.sh
 
-test-t2-ci-registration: ## 验证 T2 入口、选择、服务登记及 PostgreSQL runner 契约
+test-t2-ci-registration: test-redis-core-runner ## 验证 T2 入口、选择、服务登记及 PostgreSQL runner 契约
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/test/manager-postgres-gate_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
@@ -1668,6 +1669,15 @@ test-common-redis-unit: ## Redis 连接、键值数据集与内容读取预算�
 	@cd manager/backend && GOWORK=off go test ./internal/preview -count=1
 	@cd manager/backend && GOWORK=off go test ./internal/api -run '^TestPreview(Protection|Catalog)' -count=1
 	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1
+
+.PHONY: test-redis-core-runner
+test-redis-core-runner: ## 验证核心 Redis 门禁必须执行真实用例及拒绝跳过
+	@bash -n scripts/test/common-redis-core-gate.sh scripts/test/common-redis-core-contract.sh scripts/test/redis-owned-fixture.sh
+	@python3 scripts/test/redis-core-gate_test.py
+
+.PHONY: test-common-redis-core
+test-common-redis-core: ## 独占 Infra Redis 验证核心装配、就绪、限流拒绝与原状态重连
+	@bash scripts/test/common-redis-core-gate.sh
 
 test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 键值数据集消费链路
 	@bash scripts/test/common-redis-gate.sh

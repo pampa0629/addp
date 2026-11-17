@@ -1,11 +1,6 @@
 package config
 
-import (
-	"fmt"
-	"log"
-
-	"github.com/redis/go-redis/v9"
-)
+import "fmt"
 
 // RedisConfig holds Redis connection configuration
 type RedisConfig struct {
@@ -29,31 +24,6 @@ func LoadRedisConfig() RedisConfig {
 // Addr returns the Redis address in "host:port" format
 func (c RedisConfig) Addr() string {
 	return fmt.Sprintf("%s:%s", c.Host, c.Port)
-}
-
-// InitRedisClient initializes Redis client with the given configuration
-// Returns nil if Redis is not configured (host is empty)
-func InitRedisClient(cfg RedisConfig) *redis.Client {
-	if cfg.Host == "" {
-		log.Println("⚠️  Redis not configured, skipping initialization")
-		return nil
-	}
-
-	addr := cfg.Addr()
-	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: cfg.Password,
-		DB:       cfg.DB,
-	})
-
-	log.Printf("✅ Redis client initialized: %s (DB: %d)", addr, cfg.DB)
-	return client
-}
-
-// InitRedisClientFromEnv is a convenience function that loads config from env and initializes Redis
-func InitRedisClientFromEnv() *redis.Client {
-	cfg := LoadRedisConfig()
-	return InitRedisClient(cfg)
 }
 
 // Note: VectorDBConfig is defined in vector.go

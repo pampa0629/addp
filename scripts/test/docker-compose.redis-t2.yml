@@ -26,6 +26,8 @@ services:
     command: ["sh", "/addp/redis-authentication.sh", "infra"]
     environment:
       REDIS_PASSWORD: ${BUSINESS_REDIS_ADMIN_PASSWORD:?T2 deployment password required}
+    ports:
+      - "127.0.0.1::6379"
     volumes:
       - redis_infra_data:/data
       - ../infra/redis-authentication.sh:/addp/redis-authentication.sh:ro

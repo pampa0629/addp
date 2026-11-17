@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared lifecycle for the two Redis disposable consumer gates; never uses existing services.
+# Shared lifecycle for Redis Business, observation and core safety gates; never uses existing services.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 export ADDP_REDIS_T2_PROJECT="addp-redis-t2-${PPID}-$$"
@@ -19,13 +19,20 @@ cleanup() {
         echo "Redis T2 cleanup left owned resources" >&2
         status=1
     fi
+    if [ "$status" = 0 ]; then echo "Redis disposable containers, networks and volumes: zero residue"; fi
     exit "$status"
 }
 trap cleanup EXIT INT TERM
-services=(redis)
-if [[ "${ADDP_REDIS_OBSERVATION_T2:-0}" == 1 ]]; then services+=(redis-infra); fi
-compose up -d --wait --wait-timeout 120 "${services[@]}"
-compose exec -T redis sh /addp/redis/init.sh
-compose exec -T redis sh /addp/redis/init.sh
-export ADDP_REDIS_T2_ENDPOINT="$(compose port redis 6379)"
+if [[ "${ADDP_REDIS_CORE_T2:-0}" == 1 ]]; then
+  compose up -d --wait --wait-timeout 120 redis-infra
+  export ADDP_REDIS_CORE_ENDPOINT="$(compose port redis-infra 6379)"
+  export ADDP_REDIS_CORE_PASSWORD="$BUSINESS_REDIS_ADMIN_PASSWORD"
+else
+  services=(redis)
+  if [[ "${ADDP_REDIS_OBSERVATION_T2:-0}" == 1 ]]; then services+=(redis-infra); fi
+  compose up -d --wait --wait-timeout 120 "${services[@]}"
+  compose exec -T redis sh /addp/redis/init.sh
+  compose exec -T redis sh /addp/redis/init.sh
+  export ADDP_REDIS_T2_ENDPOINT="$(compose port redis 6379)"
+fi
 "$@"

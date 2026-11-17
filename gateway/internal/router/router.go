@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/httptrace"
 	"github.com/addp/common/middleware/cors"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/gateway/internal"
 	"github.com/addp/gateway/internal/cache"
@@ -23,18 +24,16 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config) (*gin.Engine, *commonClient.SystemServiceClient) {
+func SetupRouter(cfg *config.Config, redisClient *redis.Client) (*gin.Engine, *commonClient.SystemServiceClient) {
 	httptrace.MarkIngressBoundary()
 	router := modulelifecycle.NewRouter()
 
 	// CORS 中间件
 	router.Use(cors.CORS())
+	router.Use(i18nmiddleware.I18nMiddleware())
 
 	// 初始化数据库连接
 	db := initDatabase(cfg)
-
-	// 初始化 Redis 连接
-	redisClient := initRedis(cfg)
 
 	// 初始化 System 客户端
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-gateway", cfg.ServiceClientSecret, nil)
@@ -62,7 +61,7 @@ func SetupRouter(cfg *config.Config) (*gin.Engine, *commonClient.SystemServiceCl
 			return modulelifecycle.CheckResult{Name: "system_registry_snapshot", Status: modulelifecycle.CheckReady}
 		}
 		return modulelifecycle.CheckResult{Name: "system_registry_snapshot", Status: modulelifecycle.CheckNotReady, ErrorCode: "system_registry_snapshot_unavailable"}
-	})
+	}, modulelifecycle.RedisCheck(redisClient))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())
 
@@ -219,23 +218,4 @@ func initDatabase(cfg *config.Config) *gorm.DB {
 
 	log.Println("Database connected successfully")
 	return db
-}
-
-// initRedis 初始化 Redis 连接
-func initRedis(cfg *config.Config) *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
-
-	// 测试连接
-	ctx := context.Background()
-	if _, err := client.Ping(ctx).Result(); err != nil {
-		log.Printf("Failed to connect to Redis: %v (continuing without Redis)", err)
-		return nil
-	}
-
-	log.Println("Redis connected successfully")
-	return client
 }

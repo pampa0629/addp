@@ -63,3 +63,6 @@ other = "查询结果的字段类型或编码无效。"
 
 ["engine.spark.query_invalid"]
 other = "Spark 查询需要有效的计算集群和非空 SQL。"
+
+[rate_limit.unavailable]
+other = "限流服务暂时不可用"
