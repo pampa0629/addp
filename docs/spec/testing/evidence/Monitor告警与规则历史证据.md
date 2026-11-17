@@ -224,8 +224,22 @@ Artifact `14242081152` 的 SHA-256 `f60cd40eda38dcffd979f787ab4b2737a395bb0ee08c
 
 本批只改原 Runner／回归、Online spec 和现有场景／证据，不改产品服务、接口、权限、规则阈值或预算。现有 `make test-transfer-continuous-online-runner`／Platform 和手工 Hosted 自动覆盖；普通 Console T3 排除 Online spec，不能作为真实页面证据。冻结检出 `3ad3fead614e20627167428acb7a67a1840ac213` 叠加本批四个实际输入后，标准入口的 158 项 Python、原 Node／Shell 语法及 System 身份夹具 Go 完整通过（`/tmp/addp-cdc-risk-ui-runner-frozen.log`），覆盖六阶段浏览器失败与缺样时间漂移后恢复原生故障、不重复确认，以及九阶段绑定／回执拒绝。新整套预期 30 项检查、17 份浏览器回执及原六类 opened／resolved 共 12 条签名通知；此前三条性能告警页面成功不追认本补充。个人 task61 与三个现有槽已保存只读基线，故障动作仅限 GitHub Hosted 独占资源。
 
+<a id="cdc-risk-alert-ui-hosted-20261117"></a>
+
+### 捕获失败与两类恢复能力丢失的租户页面 Hosted 通过（2026-11-17）
+
+固定源码 `755d24f325355acd511be8ea88aa8cfa4cc9ab8b` 的 [Hosted 44033277901／Job 133870034806](https://github.com/pampa0629/addp/actions/runs/44033277901/job/133870034806)整套通过；六个服务构建身份一致，preflight 仓库干净。30 项 suite 检查、17 份真实 Console 回执及六类 opened／resolved 的 12 条唯一签名实收、delivered／HTTP 202 对照通过，原有性能告警、暂停清窗、评估器重建和完整持续窗口均保留。普通 User／Tenant、原独占任务／generation、规则权限和 1650／1700 秒预算不变，没有个人服务或资源写入。
+
+- 捕获持续失败沿原 Connector 暂停取得超过 60 秒的新鲜失败事实，warning incident `62` 由真实页面确认一次。Connect 缺样期间原 acknowledged、LastObservedAt 及零恢复通知保持；原 Connector 健康恢复后，同一 incident 关闭。`cdc_alert_capture_open`／`unknown`／`resolved` 各五项页面检查与 API 及两条签名投递一致。
+- 源端恢复能力丢失与消息恢复范围丢失沿原专用槽删除和主题 trim 故障产生两条 critical，原 incident 分别为 `65`／`64`。两条均由页面各确认一次；本轮独占源库与 Redpanda 同时暂停后，分别取得故障之后的新鲜 unavailable。原事件及最后有效观测时间保持且没有恢复通知；采样恢复后两个已知不可恢复风险仍存在，正式确认 Stop 后才关闭原 incident，新任务健康不替代旧位点恢复。`cdc_alert_risk_open`／`unknown`／`resolved` 各五项检查与 API 及四条签名投递一致。
+- 三组共九个告警页面阶段复用唯一实现，按同一租户、task／generation、incident ID 及签名 delivery UUID 定位。新增两组没有伪造性能规则的 evaluation_state／unknown 页面标签；缺样由任务 API 与 LastObservedAt 冻结共同证明。通知页逐项核对状态、事件类型及 202，排除同目标其他执行行；没有归档通知 URL、登录输出或消息正文。
+
+性能／风险及捕获故障清理通过，cleanup_failures=[]；临时 CPU／Connector 配置恢复、规则与源行清理、目标行集核对、Webhook 删除及接收端关闭分别核验。任务定义 5／4／3／2 删除后读回不存在；硬退出 Kafka 任务 1 按原约定保留到部署销毁，领域的预期残留 1 与外层最终零残留分别记录。原生 verify-clean、停止后的当前观测清空、后继重建、scheduled basic→deep／发起人／读取隔离及历史图表增长／回零／故障断点通过。外层 summary 的 cleanup=passed、infra_cleanup=zero_residuals；uncertain_mutation=false。个人 task61 和原两个槽及当前任务槽的前后只读结果完全一致。
+
+本地标准 `make test-transfer-continuous-online-runner` 的 158 项 Python、原 Node／Shell 语法和 System 身份夹具 Go 通过。[同源码自然 Platform consistency Job 133869832508](https://github.com/pampa0629/addp/actions/runs/44033218323/job/133869832508)成功，原始日志确认对应 158 项 Runner 实际执行。排除启动路由登记后，原生 Monitor 日志恰有六个实际 acknowledge POST 且均 200：三次原性能告警、一次捕获失败、两次恢复能力丢失，分别对应页面各一次；没有 Runner API 重复确认。Artifact `14308061493` 的 SHA-256 `8cd59d529561d0c7bcadc8b2d81cd1e5cbcf928b208eb7df54c0b19d9c441b2b` 与 ZIP CRC 已核对，原件和逐项复核位于 `/tmp/addp-cdc-risk-ui-hosted-44033277901/`。本轮没有修改产品 API／权限／告警阈值，既有失败记录保留，不外推其他 CDC Provider、七天自然留存、共享组件持续规则或生产 T5。
+
 ## 后续待办
 
 1. 补服务组失联的真实租约故障／恢复、正式页面、签名通知和清理；历史临时规则的后续处置无记录，不能假定已删除。
 2. 补真实主机容量源／挂载行的实际验收；现有受控容量 T2 和前端通过各守原范围。
-3. CDC 暂停／恢复完整窗口、评估器重建和三条性能告警的租户页面闭环已有上述实故障 T4；捕获失败／不可恢复风险的告警页面、其他源类型仍须独立取证，不重复已完成的 PostgreSQL 范围。
+3. CDC 暂停／恢复完整窗口、评估器重建及六类任务告警页面闭环已有上述 PostgreSQL 实故障 T4；其他源类型、共享组件持续规则、七天自然留存与容量仍须独立取证，不重复已完成范围。
