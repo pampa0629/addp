@@ -16,7 +16,7 @@
 | 媒体与容器读取 | [NetCDF](Manager文件与预览.md#netcdf-单文件只读) · [GRIB2](Manager文件与预览.md#grib2-单文件只读) · [ENVI 双文件 COG](Manager文件与预览.md#envi-双文件-cog限定-hosted-已验收) · [Surfer GRD](Manager文件与预览.md#surfer-grd-读取) |
 | 媒体读取历史证据 | [NetCDF 授权契约适配](../evidence/资源读取与预览历史证据.md#netcdf-当前元数据授权契约适配--限定正式-hosted-通过) · [GRIB2 数值与页面](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口) · [ENVI 精确组成](../evidence/资源读取与预览历史证据.md#envi-精确双文件现行权限正式复验通过2026-11-04) · [ENVI MinIO 节点](../evidence/资源读取与预览历史证据.md#envi-minio-持续节点新建文件及到期独立-hosted-通过2026-11-04) · [Surfer 四份 GRD](../evidence/资源读取与预览历史证据.md#surfer-6-ascii-扩展及四份-grd-读取--普通-user-hosted-t4) |
 | 矢量与地图 | [拓扑持久化](矢量拓扑持久化.md#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](矢量拓扑持久化.md#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
-| 栅格流程与持久化 | [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](#raster-thin-persistence) · [边界清理](#raster-boundary-clean-persistence) |
+| 栅格流程与持久化 | [分类栅格与形态处理](分类栅格与形态处理.md) · [Raster 工作流](栅格工作流.md#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](分区统计.md#raster-zonal-statistics-persistence) · [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) · [邻域百分位](邻域统计与IDW.md#raster-focal-percentile-persistence) · [邻域分类种类数](邻域统计与IDW.md#raster-focal-variety-persistence) · [筛除分类保护](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](分类栅格与形态处理.md#raster-thin-persistence) · [边界清理](分类栅格与形态处理.md#raster-boundary-clean-persistence) |
 | 邻域与插值专项 | [三种加权方法共同复核](邻域统计与IDW.md#三种邻域加权方法的共同复核) · [7×7方窗](邻域统计与IDW.md#77-像元方窗独立-hosted-验收) · [米制圆窗](邻域统计与IDW.md#米制圆形邻域统计独立验收) · [多百分位](邻域统计与IDW.md#邻域多百分位独立保存验收) · [IDW基础](邻域统计与IDW.md#点数据idw插值独立-hosted-验收) · [最少支撑](邻域统计与IDW.md#idw最少支撑点数独立-hosted-验收) · [最近N点](邻域统计与IDW.md#idw最近n个支撑点独立-hosted-验收) · [距离幂次](邻域统计与IDW.md#idw距离幂次独立-hosted-验收) |
 | 点／线密度专项 | [共同要求与数量矩阵](点线密度.md#点线密度专项共同要求) · [点权重](点线密度.md#点密度显式非负权重独立-hosted-验收) · [点核密度](点线密度.md#米制点核密度独立-hosted-验收) · [线核密度](点线密度.md#米制四次线核密度独立-hosted-验收) · [线权重](点线密度.md#线密度显式非负权重独立-hosted-验收) · [uniform线](点线密度.md#米制圆形线密度栅格独立-hosted-验收) · [uniform点](点线密度.md#米制圆形点密度栅格独立-hosted-验收) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
@@ -396,65 +396,17 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 成功递增全检、失败各重读18成果，共1251检查。独立世界向量枚举核完整仿射／CRS／米制距离／mask，逐份核COG／artifact＝物理＝Meta正整数、扫描父执行／User／Tenant／Engine、当前血缘／Monitor、源旧保持及全清理。归档18原COG／SHA256大小清单／冻结期望；数值极限、私有故障注入／等距目标身份只认Native，登记／本地不算Linux全量或真实Hosted。
 
-## 分类栅格小斑块筛除独立 Hosted 验收
+## 分类栅格与形态处理
 
-`raster-sieve-persistence`；`make test-raster-sieve-online-runner`，沿[本组边界](#本组独立专项的核验与证据边界)。6 COG：旋转多波段4／8邻接、重分类、min_pixels=1、无供体缺定位、全无效。519×515第二波段跨512，合法零／负／安全大整数、mask/NoData/alpha／非有限／部分透明；独立BFS＋原邻界核严格小于阈值替换、等值保留、原最大直接供体／并列、冻结单轮不传播迭代、无供体保持，不调产品游程／GDAL Sieve。
+七项场景的矩阵、独立核验、固定证据与未覆盖项见[分类栅格与形态处理专题](分类栅格与形态处理.md)。原有定位保留如下。
 
-14类中英28准确sieve失败：波段、零负小数布尔阈值、非法值／小数／布尔邻接、小数分类／正越界／Int64负及UInt64越界邻原生NoData、alpha／复数。异构复数alpha、不可观测同分类供体行列并列／资源极限仅Native；21＋28×6＝189全检／34调用，存6 COG，源／期望／业务清理纳600秒。
-
-无定位仅Meta cog/true/heuristic提示、无spatial，不造网格CRS；真实COG须全GDAL布局／三级nearest。血缘仅当前input.source；本节无已核Hosted证据，不以本地准备补Linux／Hosted。
-
-## 分类小斑块筛除平方米面积阈值独立 Hosted 验收
-
-`raster-sieve-area-persistence`；`make test-raster-sieve-area-online-runner`，沿[本组边界](#本组独立专项的核验与证据边界)。16 COG：米制4／8邻接＋重分类3、两英尺换算／提前舍入反例2、等号邻浮点3、等价像元数1、省略／空保护2、1000平方米下10米／30米分辨率2、Int64／UInt64原生NoData2、全无效1。519×515北向非方形、第二波段跨512，零负／mask/alpha、raw scale/offset。三基本链核保护小斑块不换、达标供体可给／未达标不供给桥接，原大小并列冻结不传播；临界斑块直邻达标供体、供体恰等阈值也核，防无供体保持掩错。
-
-32类中英64准确sieve失败：阈值缺／双传／像元null＋面积／反向4；面积null／布尔／零负／串／数组／对象7；地理／无CRS／定位／双旋转／未知单位／复合7；波段0／alpha／复数及非法小数布尔邻接6；小数／不安全Float64／原生Int64UInt64邻NoData越界4；保护null／[{}]／重复／越界4。独立2000位Decimal面积乘积＋BFS原边界，不调连通／供体／GDAL Sieve，单位重读文件而非写前系数，像元mask精确无容差。
-
-136＋64×16＝1160全检，源基线计81物理轮／80执行；600秒含身份源／首次期望／查询／归档／缓存清理，部署／外退另记。归档全源TIFF／16 COG／16冻结NPY／SHA，源全波段／原生NoData／类型／单位编码／Meta及旧成果保持；内部raster_save/derive与公开operations:null分核，observer只本suite。
-
-NaN/Infinity、保护[1.0]、混合复数alpha／退化／溢出下溢／I/O仅Native。GDAL矩阵／语义污染／归档拒绝及无仓库依赖stdin worker沿原Native，Online／changed／workflow／删断言mutation同登记；旧像元／保护suite不代面积，本地不证Hosted／UI／容量／全量IAM。
-
-## 分类小斑块筛除指定类别保护独立 Hosted 验收
-
-`raster-sieve-protected-persistence`；`make test-raster-sieve-protected-online-runner`，沿[本组边界](#本组独立专项的核验与证据边界)。JSON重编码规范[1.0]，严格拒绝仅Native，Hosted改[{}]；浮点邻接真非整数4.5，不改数字传输／产品准入。
-
-16 COG：4／8直接保护／重分类／零负保护与供体资格5，省略／空／未中／正逆序5，全保护／min_pixels=1／无定位无供体／全无效／Int64UInt64安全类6。519×515旋转多波段第二波段跨512，NoData/mask/alpha／部分透明，不用scale/offset。独立BFS＋原边界核保护小斑块不变、达标供体可给／未达标不传、原大小／并列／等阈／冻结单轮／无供体；省略空未中合原oracle、正逆序相等，全保护／阈值1保原有效像元。
-
-原14类波段／阈值／邻接／分类／alpha复数，加12保护null、列表外布尔／整数／串／对象、内布尔／对象／小数、正负越界／重复／嵌套，共26类双语52准确失败；不可序列化／极端／深嵌套／I/O资源仅Native。不调产品游程／并查集／供体／GDAL Sieve、不设容差；68执行、136＋52×16＝968全检，源基线计69物理轮，基线非成果数。
-
-600秒含身份源／期望／全查询全检归档／执行／缓存清理，部署／播种／退出另记。存全源TIFF／16 COG／16冻结NPY与大小SHA，源全波段／类型／原生NoData／编码／Meta及旧成果保持、实际nearest与缺定位分核；内部raster_save/derive与公开operations:null独立，不扩observer。原GDAL／52失败／语义污染／缓存归档破坏拒绝／stdin worker独立性及Online／changed／workflow／mutation接线不变；Sieve6/28/189不代16/52/968，准备不算Hosted。
-
-## raster-thin-persistence
-
-独立手工 Hosted Linux x86_64，入口 `make test-online ONLINE_SUITE=raster-thin-persistence`，生命周期由 `scripts/test/online-hosted-raster-thin-gate.sh` 管理。复用同源默认入口产品 Runtime、隔离 NFS 和普通 User 原12权限，独立预检与业务预算600秒；不改变产品策略、权限、原套件或算法，仅验 API 持久化。
-
-旋转519×515六波段 TIFF，显式选第二波段的零分类直接细化、第一波段重分类为安全整数上界后细化，以及第六波段全无效输入，三条 COG 保存链。样本覆盖跨510／512块的粗线、T／Y／交叉、对角线、环与孔洞、孤点、图边、合法零／负背景／精确大分类、NoData／mask／部分透明和非有限覆盖；源 scale/offset 不得隐式应用。独立全幅标量 Guo–Hall oracle 固定两阶段顺序直到收敛，不调用产品邻域、块遍历或细化实现。逐成果严格核完整0／1／NaN像元及mask、Float64／NaN、完整网格和CRS、无色表及scale/offset、COG完整布局和overviews、artifact／物理／Meta相等正整数大小；核对精确父执行／用户／租户／引擎扫描、Monitor和当前执行所有源血缘、源和先前成果不变。
-
-非法波段、有效小数分类、越界分类和非法前景参数四条失败链，必须匹配当前 execution 的 `thin` 任务与准确参数错误；失败不得发布文件、输出血缘或新增扫描／派生边。成功、失败、超时及部分启动均执行所属工作目录、NFS、Runtime、应用及Infra清理，清理失败即验收失败。仅认证合成样本API闭环，不含页面、容量、任意影像或完整拓扑数学证明。
-
-真实GDAL／COG及篡改拒绝沿 `make test-geopython-workflow`，编排、严格校验、生命周期和登记沿 `make test-raster-thin-online-runner`，并纳入原 `make test-raster-online-runner`。仅手工登记，不新增定时。隔离候选标准Native专项88 passed／1869 deselected／5.64秒，本套件脚本子门禁56项及完整Online登记通过；较大脚本聚合在范围外矢量分区统计模拟生命周期单测60秒超时停止，仍不计整套通过。
-
-固定 `7d376d998` 的 [Hosted 39698265976](https://github.com/pampa0629/addp/actions/runs/39698265976/job/119560904827) 已通过上述三条真实COG保存链、四条精确参数失败及全部隔离清理。七个Backend和默认入口Runtime同源，User33／Tenant2原12权限；原生GDAL3.10.3／Python3.11的现场全像元／mask与完整COG校验已执行，三方大小严格相等，分别9574／9574／10787字节，有效像元267227／267227／0、骨架像元1529／1529／0，预检与业务150285毫秒。源及先前成果不变、精确扫描父身份、当前执行血缘及Monitor、NFS／Runtime／部署与Infra零残留通过。固定源码、物理回执与原始日志已独立复核；归档未保留原TIFF，未作离线成果重读。不计UI、容量、业务DELETE、任意影像或全栅格认证，同版本Linux全量仍等CI会话回传。最终报告哈希及边界见[栅格专题验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)。
-
-## raster-boundary-clean-persistence
-
-该固定套件覆盖默认一轮。显式两轮单独登记为下述套件。
-
-独立手工 Hosted Linux x86_64，入口 `make test-online ONLINE_SUITE=raster-boundary-clean-persistence`，生命周期由 `scripts/test/online-hosted-raster-boundary-clean-gate.sh` 管理。复用同源默认入口产品 Runtime、隔离 NFS 和普通 User 原 12 权限，独立预检与业务预算 600 秒；原各套验收及权限保持。仅验 API 持久化，不计页面、容量或任意影像效果认证。
-
-同一 519×515、EPSG:4326 旋转六波段 TIFF 显式选择分类波段，执行直接清理、重分类接清理和全无效输入三条 COG 保存链。覆盖合法零、负分类、±(2^53−1) 及相邻大分类、全图类别计数并列、3×3 邻域跨块与边缘，以及 NoData／mask／透明和非有限值；全无效成果必须成功保存完整 NaN／无效 mask。独立全幅 Counter 与不可变两阶段逐像元 oracle 核对完整值及 mask，不调用产品排序、分块或中间文件实现，精确比较不采用近似容差。
-
-逐成果核对原尺寸、CRS 与完整仿射网格、Float64／NaN、完整 COG／金字塔、未继承源 scale／offset／色表，以及 artifact／物理／Meta 相等正整数大小。仅源由普通用户手工精确扫描一次，三个目标必须来自各自父执行的自动扫描；严格核扫描执行、父执行、用户、租户和引擎，Monitor 与当前执行源输入派生血缘一致。非法波段、小数类别和越界类别必须失败，输出、扫描及 active derive 图均不得增加；每步重核源物理／Meta 与先前成果不变。所有退出路径检查工作目录、NFS export／私有目录、Runtime／镜像／registry、部署及 Infra 清理，清理失败使门禁失败。
-
-真实 GDAL／COG 及篡改拒绝沿 `make test-geopython-workflow`；编排、严格校验、隔离生命周期与登记沿 `make test-raster-boundary-clean-online-runner`，并纳入原 `make test-raster-online-runner`。只登记手工 Hosted，不新增定时。固定 `1b5a26bc1` 的 [Hosted 39625363775](https://github.com/pampa0629/addp/actions/runs/39625363775/job/119309061524) 已通过上述 API 场景，预检与业务 194662 毫秒，三份大小 31270／13788／10787 字节，有效像元数 267227／267227／0；现场物理校验回执、失败 Runtime 诊断与完整日志已独立复核。归档未保留原 TIFF，未作离线重读；无页面截图，不计 UI／容量或同版本 Linux 全量通过。最终报告哈希与边界统一维护于[栅格专题验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)。
-
-## raster-boundary-clean-two-rounds-persistence
-
-独立手工 Hosted Linux x86_64，复用同源默认入口 Runtime、隔离 NFS、非默认租户普通 User 原 12 权限及既有退出清理。固定 600 秒业务预算覆盖身份与源初始化、冻结独立预期、全部执行和物理复核、归档与业务内清理。Linux 全量和实际 Hosted 由 CI 会话协调，不重试、不扩预算。
-
-12 条 COG 成功链。三组见证输入分别保存默认一轮、显式一轮和显式两轮，核真实第二轮变化、原始类别优先级冻结、旋转网格上跨双轴块的第二轮变化。三对默认／显式一轮实际成果必须像元及掩膜完全相等。另含重分类接两轮、全无效及无定位薄栅格。按原输入全图独立计数冻结类别优先级，逐像元独立生成每轮完整扩张和收缩，精确校验 NoData、mask、透明和部分透明 alpha、原始第二波段、合法零及负分类。16 类各中英文提交共 32 次准确失败，包括轮数 10、波段 4、分类 2，严格绑定真实清理节点与冻结提交语言。整数值浮点、宽整数 NoData 邻接、混合复数 alpha、数值极限及阶段故障注入单列 Native。
-
-成功后复查全部已有成果，失败后逐次复查全部 12 份，共 462 次成果全检、含首次基线 45 轮物理核验。核完整像元／实际掩膜、六项仿射及 CRS 或明确缺定位、Float64／NaN、COG 布局及全部实际最近邻概览、源编码清除。严格核声明／物理／Meta 正整数大小一致、精确父执行扫描、当前实际输入内外血缘及 Monitor、源和旧成果原字节／Meta 不变、失败零发布／新增扫描及派生血缘和全部退出清理。归档 12 份 COG 原字节、源文件、冻结预期及大小／SHA256 清单。
+- <a id="分类栅格小斑块筛除独立-hosted-验收"></a>[分类栅格小斑块筛除独立 Hosted 验收](分类栅格与形态处理.md#分类栅格小斑块筛除独立-hosted-验收)
+- <a id="分类小斑块筛除平方米面积阈值独立-hosted-验收"></a>[分类小斑块筛除平方米面积阈值独立 Hosted 验收](分类栅格与形态处理.md#分类小斑块筛除平方米面积阈值独立-hosted-验收)
+- <a id="分类小斑块筛除指定类别保护独立-hosted-验收"></a>[分类小斑块筛除指定类别保护独立 Hosted 验收](分类栅格与形态处理.md#分类小斑块筛除指定类别保护独立-hosted-验收)
+- <a id="raster-thin-persistence"></a>[raster-thin-persistence](分类栅格与形态处理.md#raster-thin-persistence)
+- <a id="raster-boundary-clean-persistence"></a>[raster-boundary-clean-persistence](分类栅格与形态处理.md#raster-boundary-clean-persistence)
+- <a id="raster-boundary-clean-two-rounds-persistence"></a>[raster-boundary-clean-two-rounds-persistence](分类栅格与形态处理.md#raster-boundary-clean-two-rounds-persistence)
+- <a id="分类栅格连通斑块编号独立验收"></a>[分类栅格连通斑块编号独立验收](分类栅格与形态处理.md#分类栅格连通斑块编号独立验收)
 
 ## 分类蚕食容量（raster-nibble-capacity）
 
@@ -669,12 +621,6 @@ artifact12794083457的12 CSV与清单／hash／Runtime物理base64一致，固�
 `raster-proximity-rectangular-persistence`；沿[水文／分区共同要求](#水文与分区统计专项共同要求)。16COG涵横纵比例使最近反转、小数步长、两英尺、raw第二波段、NoData/mask/alpha、零负／UInt32、跨块／单行列／原方形对照；26类双语52准确proximity失败。独立枚举目标预期，968全检，16COG／源／冻结数组及hash归档；米制、网格CRS／mask／完整COG和overview实核，数值极限／私文件破坏仅Native。
 
 正交旋转扩展不改16/52/968／600秒，仅同步实际双语准入：rotated_x/rotated_y是非正交剪切、orientation是单轴镜像，仍须当前节点准确拒绝；本suite只证北向矩形成果，不补认旋转Hosted。Linux／实际运行另行认定。
-
-## 分类栅格连通斑块编号独立验收
-
-`raster-region-group-persistence`；沿[水文／分区共同要求](#水文与分区统计专项共同要求)。16COG含4/8邻接、重分类、跨轴／重复编号一致／union根变、raw第二波段mask/alpha、旋转／地理／无定位、Int64/UInt64／全无效；另2CSV编号接分区统计，核每斑块分类、计数／总量守恒。
-
-18类双语36准确region失败：波段0/越界/布尔/串/null/列表，邻接0/3/布尔/串/null/列表，alpha／小数／正负越界／原生Int64UInt64不安全类；前置加载提交保存不充数，复数alpha／编号上限／I/O仅Native。独立BFS先冻，819全检／含源基线55物理轮；完整编号mask／锚点序／网格CRS、实际nearest及CSV九列，16COG＋2CSV／源／预期原件清单归档。COG三方大小、CSV物理Meta及预览分核，无RasterArtifact；准备不计Linux／Hosted／页面容量。
 
 ## 点位栅格采样独立验收
 
