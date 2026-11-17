@@ -818,6 +818,16 @@ Develop普通与私有路径均保存同次有效终态日志，Owner接口读�
 
 本机证据：Common Go与隔离Develop Go T1、Swagger64路由覆盖；Common Python641 passed／1既有skipped／64 subtests，workflow专项118通过；首批前端327项浏览器及构建通过，随后“尚未读取”修正的前端单元、两语种定向用例及构建通过；私有子进程／HTTP回执与统一离线日志定向29项通过。覆盖实际进度、成功／失败、安全字段、快照复制、协议拒绝、有效终态保存、lease／来源失效不保存、本人／撤权、历史缺失与页面失败／迟到响应。原始红测试、首轮夹具错误及三个MinIO初始化夹具10秒超时原日志均保留，完整Python入口亦有通过记录，不据后继通过改写前序。
 
-代码 `7a1432c5a` 首批Linux Go、Common Python641 passed／1 skipped、Develop PG及前端327项均成功终态；原始前端日志逐名确认两语种日志用例，真实PG确认扩展的终态持久化用例。`8ea0c05f8`页面状态补充及本批私有路径发布后的相关Linux实际结果继续按固定SHA核验。证据 `/tmp/addp-execution-logs-20261117/` 保存输入摘要、各轮原始日志、只读回执和CI事实。
+代码 `7a1432c5a` 首批Linux Go、Common Python、Develop PG／前端及受影响的七类Runtime门禁均成功终态；GeoPython完整21730项通过。页面状态修正 `8ea0c05f8` 的 [Develop前端](https://github.com/pampa0629/addp/actions/runs/44054624602/job/133940678777)亦已成功：327项浏览器与构建，原日志逐名打印两语种日志用例。
+
+私有路径最终代码 `39e4aecb490e62803e0287cf4266d01e770296ee` 的固定SHA Linux证据：
+
+- [Develop前端](https://github.com/pampa0629/addp/actions/runs/44057762922/job/133951402851)：327项浏览器及构建通过，两语种日志用例实际执行。
+- [Develop PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/44057762932/job/133952365019)：成功终态；原日志逐项确认扩展的 `TestWorkflowDisplayLanguageAgainstPostgres` 七场景、`TestWorkflowCommittedEffectsAgainstPostgres` 四场景，包括日志终态保存及lease失效排除。
+- [Common Python](https://github.com/pampa0629/addp/actions/runs/44057762922/job/133951402928)：641 passed、1既有skipped、64 subtests；Spark172、Math44、Document29及原生检查、PointCloud64＋21、Model3D527 passed／8既有skipped、SuperMap15 Python＋5 C++均成功终态。跳过项不计通过。
+- [GeoPython GDAL](https://github.com/pampa0629/addp/actions/runs/44057762922/job/133951402918)：成功终态；NetCDF109项、完整套件21730项通过，无测试跳过。该标准入口覆盖本批私有子进程／HTTP及离线用例；全量非verbose日志不逐名打印新增断言，本机定向29项证据另存。
+- [Go workspace](https://github.com/pampa0629/addp/actions/runs/44057762922/job/133951403056)及[Platform consistency](https://github.com/pampa0629/addp/actions/runs/44057762922/job/133951403072)两个汇总Job失败，均为Ontology校验两份Transfer文档的来源漂移，与本批未修改的审查来源有关；不盲目更新哈希、不接管修复。Go原日志确认本批Common协议及Develop API／仓储／服务包已通过；Platform在该校验处提前失败，其后检查不得计为本次通过。首批成功及本机Swagger64路由证据分别保留，不外推最终汇总Job全绿。
+
+证据 `/tmp/addp-execution-logs-20261117/` 保存36项本批相关文件的固定源码摘要、各轮红绿原始日志、只读回执和逐Job CI事实；Linux日志均按固定SHA核验。
 
 剩余边界：服务本轮未更新，尚无新版本普通用户的真实业务端到端证据；其他未产生日志的Runtime及Query／Notebook未新增日志生产。下一步先明确最小真实验收的身份、样本、断言及清理范围，再单独确认运行；不重跑旧任务、不补造日志。

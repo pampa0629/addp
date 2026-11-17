@@ -223,6 +223,8 @@ Feather V2内置direct读取算子`feather.inspect`／`feather.read_batch`使用
 
 执行日志是 Runtime 在本次实际运行中生成的领域进度记录，与 Monitor 通用过程事件、服务进程日志及原始 stdout/stderr 分开。沿既有 `GET /api/executions/{execution_id}` 的 `logs` 数组交付；未提供或空数组表示未记录日志，不依据 success、task_order、结果或当前定义补造历史。
 
-每条记录仅含 `timestamp`（UTC RFC3339，真实记录时间）、`level`（INFO 或 ERROR）、`event`（workflow_started、task_progress、workflow_succeeded、workflow_failed），以及可选 `task_id` 和 `progress`（0～100）。节点进度来自现有执行回调，不因相同百分比去重，不宣称其为未观察到的节点开始／完成；数组保留生成顺序。event 是稳定事实码，页面按查看语言翻译固定文案；task_id 为原 DAG 节点身份。不得包含参数、数据、连接、凭据、任意消息、异常正文或堆栈。日志不扩展业务效果和授权。
+每条记录仅含 `timestamp`（UTC RFC3339，真实记录时间）、`level`（INFO 或 ERROR）、`event`（workflow_started、task_progress、workflow_succeeded、workflow_failed）；仅 `task_progress` 同时携带必需的 `task_id` 和 `progress`（0～100），其他事件不得携带这两个字段。节点进度来自现有执行回调，不因相同百分比去重，不宣称其为未观察到的节点开始／完成；数组保留生成顺序。event 是稳定事实码，页面按查看语言翻译固定文案；task_id 为原 DAG 节点身份。不得包含参数、数据、连接、凭据、任意消息、异常正文或堆栈。日志不扩展业务效果和授权。
 
 Common Python ExecutionRegistry 在持锁更新实际运行状态时一并追加这些记录，快照复制隔离数组；pending 不补开始记录。Common Go Provider 在 HTTP 边界解析闭合字段，Develop 从同次 Runtime 终态回执取日志，在原有效 lease 的终态结果事务中保存 `metadata.result.logs`；不新增表、重试、流式接口或独立写入事务。其他未产生该记录的 Runtime 和旧执行保持无日志。
+
+GeoPython 私有文件子进程复用同一记录函数，从实际 Runner 回调生成日志，沿既有唯一最终 `result.json` 和私有状态投影返回；Develop 将同次有效回执的日志保存于原终态事务。不新增进程、请求、等待、文件写入步骤或凭据用途；硬终止／崩溃未留下最终回执时保持缺失，不在父进程补造开始或终态日志。
