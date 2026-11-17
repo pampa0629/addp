@@ -39,6 +39,12 @@ const descriptors = [
 
 async function fixture(page, language = 'zh-cn', typeDescriptors = descriptors, engineFacts = {}) {
   const writes = []
+  // List refreshes also update the open detail projection: both endpoints must
+  // describe the same immutable engine type and current instance facts.
+  const existingEngine = { id: '2', name: 'Existing PostgreSQL',
+    engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active',
+    connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} },
+    connection_info: { host: 'existing-host', port: 5432 }, ...engineFacts }
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/system/**', async route => {
@@ -61,10 +67,8 @@ async function fixture(page, language = 'zh-cn', typeDescriptors = descriptors, 
       return reply({ ...submitted, id: '3', engine_origin: 'general', lifecycle_state: 'active',
         capabilities: typeDescriptors.find(item => item.type === submitted.engine_type)?.capabilities })
     }
-    if (path.endsWith('/engines/2')) return reply({ id: '2', name: 'Existing HighGo', engine_type: 'highgo', engine_origin: 'general', lifecycle_state: 'active', connection_info: {}, ...engineFacts })
-    if (path.endsWith('/engines')) return reply([{ id: '2', name: 'Existing PostgreSQL',
-      engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active',
-      connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} }, connection_info: { host: 'existing-host', port: 5432 } }])
+    if (path.endsWith('/engines/2')) return reply(existingEngine)
+    if (path.endsWith('/engines')) return reply([existingEngine])
     throw new Error(`Unexpected engine types fixture request: ${request.method()} ${path}`)
   })
   await page.goto('/engines')
@@ -241,6 +245,7 @@ for (const [language, typeName, versionLabel, timeLabel] of [
   test(`native product version is a read-only instance fact in ${language}`, async ({ page }) => {
     const version = 'HighGo Database Management System 4.5 on aarch64,build on 20250227'
     const writes = await fixture(page, language, [descriptor('highgo', 'HighGo', 'tabular', 5866)], {
+      name: 'Existing HighGo', engine_type: 'highgo', connection_info: {},
       server_version: version, server_version_checked_at: '2026-10-16T08:00:00Z',
       last_check_at: '2026-10-16T09:00:00Z', connection_status: 'offline'
     })
@@ -259,7 +264,9 @@ for (const [language, typeName, versionLabel, timeLabel] of [
 }
 
 test('an engine without a successful version probe does not infer a version from its type', async ({ page }) => {
-  const writes = await fixture(page, 'zh-cn', [descriptor('highgo', 'HighGo', 'tabular', 5866)])
+  const writes = await fixture(page, 'zh-cn', [descriptor('highgo', 'HighGo', 'tabular', 5866)], {
+    name: 'Existing HighGo', engine_type: 'highgo', connection_info: {}
+  })
   await page.goto('/engines/2')
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('瀚高（HighGo）', { exact: true })).toBeVisible()
