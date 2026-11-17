@@ -2,6 +2,7 @@
   <div class="geojson-result-renderer">
     <MapContainer
       :features="features"
+      :data-projection="transform.sourceCode"
       :base-map-type="baseMapType"
       :height="height"
       :preserve-view="preserveView"
@@ -25,7 +26,7 @@ import { computed, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fieldPresentationFor, fieldPresentationLabel } from '../../../basic/src/utils/fieldPresentation.mjs'
 import MapContainer from './map/MapContainer.vue'
-import { crsSuppressionStatus, getPreviewCRSTransform, transformGeoJSONGeometryToWGS84 } from '../utils/crsRegistry'
+import { crsSuppressionStatus, getPreviewCRSTransform } from '../utils/crsRegistry'
 import { buildGeoJSONFeatures, resultSelectionFromFeature, spatialPreviewDescriptor, validateGeoJSONResult } from '../utils/geoJSONResult.mjs'
 import { buildThematicContext, thematicColorVariable } from '../utils/thematicMap.mjs'
 
@@ -47,7 +48,7 @@ const features = computed(() => {
   return buildGeoJSONFeatures(
     props.rows,
     props.config,
-    (geometry) => transformGeoJSONGeometryToWGS84(geometry, transform.value)
+    (geometry) => geometry
   )
 })
 const stylePresentation = computed(() => fieldPresentationFor(props.config.style?.field, props.config.field_presentations || []))

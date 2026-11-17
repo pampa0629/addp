@@ -3452,6 +3452,36 @@ class AdjacencyBrowserRawTest(unittest.TestCase):
             self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
         self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
     def test_adjacency_original_ewkb_native_geometry_one_edge_and_exact_bilingual_copies(self):m.validate_mixed_overlay_browser_raw(self.raw,self.evidence,m.fixture.ADJACENCY_CASE)
+    def test_real_browser_JSON_roundtrip_preserves_numbers_without_Python_float_identity(self):
+        import subprocess
+        result=subprocess.run(['node','--input-type=module','-e',"let s='';for await(const b of process.stdin)s+=b;process.stdout.write(JSON.stringify(JSON.parse(s)))"],
+            input=json.dumps(self.raw),text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        raw=json.loads(result.stdout)
+        self.assertIs(type(raw['observations'][0]['preview']['data']['rows'][0]['shared_length']),int)
+        self.assertIs(type(self.evidence['expected']['result'][0]['properties']['shared_length']),float)
+        m.validate_mixed_overlay_browser_raw(raw,self.evidence,m.fixture.ADJACENCY_CASE)
+        for key,value in [('shared_length',True),('shared_length','2'),('shared_length',None),('shared_length',float('nan')),
+                ('shared_length',float('inf')),('shared_length',2.+2**-40),('source_id_a',True),('source_id_a',90.),('source_id_a','90'),('source_id_a',2**53)]:
+            for location in ('preview','decoded'):
+                broken=copy.deepcopy(raw)
+                row=broken['observations'][0]['preview']['data']['rows'][0]if location=='preview'else broken['observations'][0]['decoded_rows'][0]['properties']
+                row[key]=value
+                with self.subTest(key=key,value=value,location=location),self.assertRaises(m.SuiteError):m.validate_mixed_overlay_browser_raw(broken,self.evidence,m.fixture.ADJACENCY_CASE)
+    def test_actual_unique_layer_identity_is_bound_instead_of_published_filename(self):
+        physical=copy.deepcopy(self.evidence['outputs'][0]);physical['layer_name']='output-0'
+        original=AdjacencyClient().outputs[0]
+        native_layer=original['attributes']['type_info']['container']['children'][0]
+        native_layer.update(name='output-0',native={'table':'output-0'})
+        self.assertNotEqual(physical['layer_name'],Path(physical['name']).stem)
+        self.assertEqual(m.validate_item(original,physical,physical['name'])['layer_name'],physical['layer_name'])
+        for mutation in ('name','native','extra','absent'):
+            item=copy.deepcopy(original);container=item['attributes']['type_info']['container'];child=container['children'][0]
+            if mutation=='name':child['name']='foreign-layer'
+            elif mutation=='native':child['native']['table']='foreign-table'
+            elif mutation=='extra':container['children'].append(copy.deepcopy(child))
+            else:container['children']=[]
+            with self.subTest(mutation=mutation),self.assertRaises(m.SuiteError):m.validate_item(item,physical,physical['name'])
     def test_adjacency_browser_entry_requires_bound_original_raw_and_selects_only_this_case(self):
         import subprocess
         raw=self.raw;evidence=self.evidence

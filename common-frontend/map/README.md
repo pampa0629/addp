@@ -33,7 +33,8 @@ GeometryCollection（含嵌套集合）保持一个原始要素、一份业务�
 - 内置少量稳定 CRS：`EPSG:4326`、`EPSG:3857`、`OGC:CRS84`。CRS84 直接读取经度、纬度坐标，保留身份，不推断数字 SRID。
 - 优先使用后端返回的 `source_crs_definition` 注册 CRS。
 - 第一阶段只接受 `source_crs_definition.definition_encoding` 为 `wkt`、`esri_wkt` 或 `proj4` 的定义文本。
-- 在可转换时把预览级小样本 geometry 转成 WGS84，再交给地图 renderer。
+- 注册并明确响应 geometry 的源 CRS，预览级小样本保留源坐标与业务属性，经 MapContainer 的 `dataProjection` 传到 renderer；默认 GeoJSON 输入为 EPSG:4326。OpenLayers 在读取要素时从源 CRS 直接转换到实际 view projection，相同 CRS 不进行坐标变换，禁止先转 WGS84 再转回视图而损失精度。
+- 高德在自身 renderer 边界把源坐标转为 WGS84，再沿既有 GCJ-02 展示适配；不改变源数据事实、事件坐标或其他 provider 的几何。
 - 在 CRS 未知或定义不可注册时压制地图，并由组件按 i18n 展示状态。
 
 前端 CRS registry 不做以下事情：
@@ -48,7 +49,7 @@ GeometryCollection（含嵌套集合）保持一个原始要素、一份业务�
 
 普通预览响应字段、`source_crs_definition` 编码及 `transform_status`／`preview_hint` 用法统一见 [Manager 空间预览 CRS 契约](../../manager/docs/数据预览语义协议.md#空间预览-crs-契约)。组件不消费后端 `transform_message`，不可渲染状态由前端按 i18n 展示；CRS 注册与小样本转换的实现边界见[CRS registry 边界](#crs-registry-边界)。
 
-普通预览不得仅凭 `target_srid=4326` 认为 geometry 已经可直接渲染。只有明确引擎转换路径返回 `transform_status=engine_transformed` 且目标 CRS 明确时，才能按目标 CRS 解释响应 geometry；如果目标 CRS 不是 WGS84，仍需由前端 CRS registry 转为 WGS84 后再交给地图 renderer。
+普通预览不得仅凭 `target_srid=4326` 认为 geometry 已经可直接渲染。只有明确引擎转换路径返回 `transform_status=engine_transformed` 且目标 CRS 明确时，才能按目标 CRS 解释响应 geometry；renderer 必须按该响应 CRS 直接转换到自身视图坐标。未知或无法注册的 CRS 仍压制地图，不能猜测 WGS84。
 
 ## 底图 profile
 

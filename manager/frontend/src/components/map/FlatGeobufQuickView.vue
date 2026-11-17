@@ -45,6 +45,7 @@
       <MapContainer
         v-else
         :features="geoFeatures"
+        :data-projection="crsTransform.sourceCode"
         :base-map-type="baseMapType"
         :preserve-view="hasSavedViewState"
         :view-state="viewState"
@@ -63,7 +64,6 @@ import {
   MapContainer,
   crsSuppressionStatus,
   getPreviewCRSTransform,
-  transformGeoJSONGeometryToWGS84,
   useMapConfig
 } from '@common-ui-map'
 import client from '@/api/client'
@@ -119,7 +119,7 @@ const geoFeatures = computed(() => {
     return (featureCollection.value.features || [])
       .map((feature) => ({
         ...feature,
-        geometry: transformGeoJSONGeometryToWGS84(feature?.geometry, crsTransform.value)
+        geometry: feature?.geometry
       }))
       .filter((feature) => feature.geometry)
   } catch (err) {

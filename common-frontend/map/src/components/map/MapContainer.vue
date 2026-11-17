@@ -4,6 +4,7 @@
       :is="mapRenderer"
       v-if="mapRenderer"
       :features="features"
+      :data-projection="dataProjection"
       :config="mapConfig"
       :base-type="baseMapType"
       :base-map-profile="baseMapProfile"
@@ -30,6 +31,10 @@ import GaodeMapRenderer from './GaodeMapRenderer.vue'
 import OpenLayersRenderer from './OpenLayersRenderer.vue'
 
 const props = defineProps({
+  dataProjection: {
+    type: String,
+    default: 'EPSG:4326'
+  },
   features: {
     type: Array,
     default: () => []

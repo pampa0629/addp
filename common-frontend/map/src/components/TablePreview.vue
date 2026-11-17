@@ -42,6 +42,7 @@
           v-if="geoFeatures.length > 0"
           ref="mapRef"
           :features="geoFeatures"
+          :data-projection="crsTransform.sourceCode"
           :base-map-type="baseMapType"
           :preserve-view="hasSavedViewState && !temporaryCrs"
           :view-state="viewState"
@@ -144,8 +145,7 @@ import {
   crsSuppressionStatus,
   canDeclarePreviewSourceCRS,
   getPreviewCRSTransform,
-  TEMPORARY_SOURCE_CRS_OPTIONS,
-  transformGeoJSONGeometryToWGS84
+  TEMPORARY_SOURCE_CRS_OPTIONS
 } from '../utils/crsRegistry'
 import TabularResultRenderer from '../../../basic/src/components/TabularResultRenderer.vue'
 import DataPagination from '../../../basic/src/components/DataPagination.vue'
@@ -564,7 +564,7 @@ const geometryPreviewState = computed(() => {
       const sourceGeometry = parseGeometry(rawGeometry)
       if (!sourceGeometry) return
       state.parsedCount += 1
-      const geometry = transformGeoJSONGeometryToWGS84(sourceGeometry, crsTransform.value)
+      const geometry = sourceGeometry
       if (!geometry) return
       state.features.push({
         type: 'Feature',

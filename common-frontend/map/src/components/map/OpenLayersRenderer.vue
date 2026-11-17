@@ -7,6 +7,10 @@ import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useOpenLayersMap } from '../../composables/useOpenLayersMap'
 
 const props = defineProps({
+  dataProjection: {
+    type: String,
+    default: 'EPSG:4326'
+  },
   features: {
     type: Array,
     default: () => []
@@ -68,6 +72,7 @@ const setupMap = async () => {
   }
 
   renderFeatures(props.features, {
+    dataProjection: props.dataProjection,
     preserveView: props.preserveView,
     popupOptions: props.popupOptions,
     featureStyle: props.featureStyle,
@@ -78,10 +83,11 @@ const setupMap = async () => {
 }
 
 watch(
-  () => props.features,
+  () => [props.features, props.dataProjection],
   () => {
     if (isInitialized) {
       renderFeatures(props.features, {
+    dataProjection: props.dataProjection,
         preserveView: props.preserveView,
         popupOptions: props.popupOptions,
         featureStyle: props.featureStyle,
@@ -111,6 +117,7 @@ watch(
   () => {
     if (isInitialized) {
       renderFeatures(props.features, {
+    dataProjection: props.dataProjection,
         preserveView: true,
         popupOptions: props.popupOptions,
         featureStyle: props.featureStyle,
@@ -128,6 +135,7 @@ watch(
   () => {
     if (isInitialized) {
       renderFeatures(props.features, {
+    dataProjection: props.dataProjection,
         preserveView: true,
         popupOptions: props.popupOptions,
         featureStyle: props.featureStyle,

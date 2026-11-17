@@ -3,10 +3,15 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { getPreviewCRSTransform, transformGeoJSONGeometryToWGS84 } from '../../utils/crsRegistry'
 import { useGaodeMap } from '../../composables/useGaodeMap'
 
 const props = defineProps({
+  dataProjection: {
+    type: String,
+    default: 'EPSG:4326'
+  },
   features: {
     type: Array,
     default: () => []
@@ -33,6 +38,13 @@ const props = defineProps({
   }
 })
 
+const displayFeatures = computed(() => {
+  const transform = getPreviewCRSTransform({ source_crs: props.dataProjection })
+  return props.features.map(feature => ({ ...feature,
+    geometry: transformGeoJSONGeometryToWGS84(feature.geometry, transform)
+  })).filter(feature => feature.geometry)
+})
+
 const emit = defineEmits(['feature-click', 'view-state-change'])
 
 const mapContainer = ref(null)
@@ -55,7 +67,7 @@ const setupMap = async () => {
     }
   }
 
-  renderFeatures(props.features, {
+  renderFeatures(displayFeatures.value, {
     preserveView: props.preserveView,
     popupOptions: props.popupOptions,
     onFeatureClick: (feature, coordinate, position) => {
@@ -65,10 +77,10 @@ const setupMap = async () => {
 }
 
 watch(
-  () => props.features,
+  () => displayFeatures.value,
   () => {
     if (isInitialized) {
-      renderFeatures(props.features, {
+      renderFeatures(displayFeatures.value, {
         preserveView: props.preserveView,
         popupOptions: props.popupOptions,
         onFeatureClick: (feature, coordinate, position) => {
@@ -84,7 +96,7 @@ watch(
   () => props.popupOptions,
   () => {
     if (isInitialized) {
-      renderFeatures(props.features, {
+      renderFeatures(displayFeatures.value, {
         preserveView: true,
         popupOptions: props.popupOptions,
         onFeatureClick: (feature, coordinate, position) => {

@@ -11,17 +11,12 @@ describe('scope-table geometry HTTP transport', () => {
     const bytes = Buffer.from('010200000002000000000000000000f03f000000000000004000000000000008400000000000001040', 'hex')
     expect(decodePreviewEWKB(bytes.toString('base64'))).toEqual({ type: 'LineString', coordinates: [[1, 2], [3, 4]] })
   })
-  it('predicts the display projection round trip exactly without rounding source coordinates', () => {
-    const source = [[.5, 0], [0, 10], [-.5, 20], [5, 30], [5, 35], [50, 40]]
+  it('preserves same-CRS display coordinates exactly without a geographic round trip', () => {
+    const source = [[.5, 0], [0, 10], [-.5, 20], [5, 30], [5, 35], [50, 40], [41, 0], [41, 2 ** -40]]
     const before = structuredClone(source)
-    // Actual doubles from the Hosted map; the EWKB source values remain exact.
-    expect(source.map(webMercatorPreviewCoordinate)).toEqual([
-      [.5, -7.081154551613622e-10], [0, 10.000000000746313],
-      [-.5, 20.000000000584794], [5.000000000000001, 29.999999999490864],
-      [5.000000000000001, 34.99999999823251], [50.00000000000001, 39.99999999885617]
-    ])
+    expect(source.map(webMercatorPreviewCoordinate)).toEqual(source)
     expect(source).toEqual(before)
-    expect(source.map(webMercatorPreviewCoordinate)).not.toEqual(source)
+    expect(source.map(webMercatorPreviewCoordinate).at(-1)[1]).toBe(2 ** -40)
   })
   it('keeps display axis, displacement and vertex order differences observable', () => {
     const expected = [[.5, 0], [10, 0]].map(webMercatorPreviewCoordinate)

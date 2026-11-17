@@ -15,8 +15,10 @@ const shapes = {
   ] },
 }
 
-for (const [type, shape] of Object.entries(shapes)) {
-  test(`shared map preserves business names through ${type} render, style, popup and highlight`, async ({ page }) => {
+const sourceCases = Object.entries(shapes).map(([type, shape]) => ({ type, shape, srid: 4326 }))
+sourceCases.push({ type: 'MultiLineString', shape: { type: 'MultiLineString', coordinates: [[[41, 0], [41, 2 ** -40]], [[0, 0], [2, 2]]] }, srid: 3857 })
+for (const { type, shape, srid } of sourceCases) {
+  test(`shared map preserves business names through ${type} EPSG:${srid} render, style, popup and highlight`, async ({ page }) => {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const locator = 'addp://engine/2/path/properties.gml?type=file&item_id=8'
@@ -36,7 +38,7 @@ for (const [type, shape] of Object.entries(shapes)) {
       if (path.endsWith('/meta/resource-tree/2') || path.endsWith('/meta/resource-tree/2/node')) return json(route, root)
       if (path.endsWith('/manager/preview')) return json(route, { preview_type: 'table', data: {
         mode: 'table', columns: [...Object.keys(business), 'source_shape'], geometry_columns: ['source_shape'], geometry_column: 'source_shape',
-        source_srid: 4326, source_crs: 'EPSG:4326', transform_status: 'not_transformed',
+        source_srid: srid, source_crs: `EPSG:${srid}`, transform_status: 'not_transformed',
         rows: [{ ...business, source_shape: shape }], page: 1, page_size: 20, total: 1,
       } })
       return json(route, {})
@@ -58,12 +60,13 @@ for (const [type, shape] of Object.entries(shapes)) {
       const coordinate = geometry.getClosestPoint(map.getView().getCenter())
       const pixel = map.getPixelFromCoordinate(coordinate)
       return { fields: Object.fromEntries(Object.keys(business).map(key => [key, feature.get(key)])), type: geometry.getType(), pixel,
-        extent: geometry.getExtent(), geometryName: feature.getGeometryName() }
+        extent: geometry.getExtent(), coordinates: geometry.getCoordinates?.(), geometryName: feature.getGeometryName() }
     }, { business })
     expect(observed.fields).toEqual(business)
     expect(observed.type).toBe(type)
     expect(observed.geometryName).not.toBe('geometry')
     expect(observed.extent.every(Number.isFinite)).toBe(true)
+    if (srid === 3857) expect(observed.coordinates).toEqual(shape.coordinates)
     if (type === 'GeometryCollection') {
       await expect.poll(() => collectionPointPixels(renderer)).toBeGreaterThan(10)
       // Also exercise the tile default factory on the real OpenLayers feature.
@@ -90,7 +93,7 @@ for (const [type, shape] of Object.entries(shapes)) {
       map.renderSync()
       return style.getImage?.()?.getRadius() || style.getStroke?.()?.getWidth()
     }, styleModuleURL)
-    expect(width).toBe(['Point', 'GeometryCollection'].includes(type) ? 6 : (type === 'LineString' ? 3 : 1.5))
+    expect(width).toBe(['Point', 'GeometryCollection'].includes(type) ? 6 : (['LineString','MultiLineString'].includes(type) ? 3 : 1.5))
     if (type === 'GeometryCollection') await expect.poll(() => collectionPointPixels(renderer)).toBeGreaterThan(10)
     // Real table selection highlights; a real pointer map click opens the popup.
     await page.getByRole('cell', { name: business.geometry, exact: true }).click()

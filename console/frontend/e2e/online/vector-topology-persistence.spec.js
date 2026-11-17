@@ -869,6 +869,13 @@ async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
   return expected
 }
 
+async function assertInputDiagnosticViewport(panel) {
+  await panel.scrollIntoViewIfNeeded()
+  await expect(panel).toBeInViewport({ratio:1})
+  await expect(panel.locator('h4')).toBeInViewport({ratio:1})
+  for(const field of await panel.locator('dd').all()) await expect(field).toBeInViewport({ratio:1})
+}
+
 async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
   expect(evidence.case).toBe(caseName)
@@ -922,6 +929,9 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
       await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
       await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(expected.clipboard)
       const clipboard=await page.evaluate(()=>navigator.clipboard.readText())
+      // Clicking Copy can scroll the modal to its bottom. A present DOM node
+      // does not prove that its reason is inside the archived viewport.
+      await assertInputDiagnosticViewport(panel)
       const screenshot=`operator-input-${run.key}-${owner}-${locale}.png`
       await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,screenshot)})
       observations.push({key:run.key,owner,locale,execution_id:run.execution_id,raw,clipboard,screenshot})

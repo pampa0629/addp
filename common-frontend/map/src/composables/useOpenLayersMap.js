@@ -263,8 +263,8 @@ export function useOpenLayersMap(config, options = {}) {
     let olFeatures = []
     try {
       olFeatures = readMapFeatures(features, {
-        dataProjection: 'EPSG:4326',
-        featureProjection: 'EPSG:3857'
+        dataProjection: options.dataProjection || 'EPSG:4326',
+        featureProjection: mapInstance.value.getView().getProjection()
       })
     } catch (error) {
       console.warn('OpenLayers 解析 GeoJSON 失败，已跳过本次渲染', error)

@@ -4,6 +4,26 @@ import test from 'node:test'
 
 const readSource = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
 
+test('ordinary preview retains source geometry and binds projection through the shared provider boundary', () => {
+  for (const name of ['TablePreview', 'GeoJsonPreview', 'GeoJSONResultRenderer']) {
+    const source = readSource(`../src/components/${name}.vue`)
+    assert.match(source, /:data-projection="(?:crsTransform|transform)\.sourceCode"/)
+    assert.doesNotMatch(source, /transformGeoJSONGeometryToWGS84/)
+  }
+  const flatgeobuf = readSource('../../../manager/frontend/src/components/map/FlatGeobufQuickView.vue')
+  assert.match(flatgeobuf, /:data-projection="crsTransform\.sourceCode"/)
+  assert.doesNotMatch(flatgeobuf, /transformGeoJSONGeometryToWGS84/)
+  assert.match(readSource('../src/components/map/MapContainer.vue'), /:data-projection="dataProjection"/)
+  const renderer = readSource('../src/components/map/OpenLayersRenderer.vue')
+  assert.match(renderer, /dataProjection: props\.dataProjection/)
+  const map = readSource('../src/composables/useOpenLayersMap.js')
+  assert.match(map, /dataProjection: options\.dataProjection \|\| 'EPSG:4326'/)
+  assert.match(map, /featureProjection: mapInstance\.value\.getView\(\)\.getProjection\(\)/)
+  const gaode = readSource('../src/components/map/GaodeMapRenderer.vue')
+  assert.match(gaode, /source_crs: props\.dataProjection/)
+  assert.match(gaode, /transformGeoJSONGeometryToWGS84\(feature.geometry, transform\)/)
+})
+
 test('OpenLayers popup pans fully into view with a controlled margin', () => {
   const source = readSource('../src/composables/useOpenLayersMap.js')
 

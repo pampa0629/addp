@@ -1935,7 +1935,15 @@ def validate_difference_browser_raw(raw,evidence):return validate_mixed_overlay_
 
 def validate_mixed_overlay_browser_raw(raw,evidence,case):
     profile=mixed_overlay_profile(case);input_count=len(profile.get('input_nodes',('load_a','load_b')));count=profile['result_count'];validate_failure=profile['failure_validator']
-    import base64,struct
+    import base64,struct,math
+    def property_matches(value, expected):
+        # The physical oracle owns column types; JSON has one Number domain.
+        # A Real such as 2.0 legitimately serializes as 2 in a browser archive.
+        if type(expected) is float:
+            return type(value) in (int,float) and math.isfinite(value) and value==expected
+        if type(expected) is int:
+            return type(value) is int and abs(value)<=2**53-1 and value==expected
+        return type(value) is type(expected) and value==expected
     if (raw.get('schema_version')!=profile['schema']+'-browser-raw/v1' or raw.get('result')!='passed' or raw.get('stage')!='complete'
         or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id')) or raw.get('publication_requests')!=[]):raise SuiteError('intersection browser raw incomplete or foreign')
     principal=positive(evidence['principal_id'],'intersection browser principal');execution=obj(raw.get('execution'),'intersection browser execution')
@@ -1949,7 +1957,7 @@ def validate_mixed_overlay_browser_raw(raw,evidence,case):
     fields=list(expected[0]['properties']);rows=array(data.get('rows'),'intersection preview rows')
     if len(rows)!=count or len(array(data.get('columns'),'intersection preview columns'))!=len(fields)+2 or set(data['columns'])!={output['fid_column'],output['geometry_column'],*fields} or [r.get(output['fid_column']) for r in rows]!=list(range(1,count+1)) or any(type(r.get(output['fid_column'])) is not int for r in rows):raise SuiteError('intersection preview FID/columns/rows differ')
     for row,wanted in zip(rows,expected):
-        if set(row)!=set(data['columns']) or {k:row.get(k) for k in fields}!=wanted['properties'] or any(type(row.get(k)) is not type(wanted['properties'][k]) for k in fields):raise SuiteError('intersection preview property types/null/values differ')
+        if set(row)!=set(data['columns']) or any(not property_matches(row.get(k),wanted['properties'][k]) for k in fields):raise SuiteError('intersection preview property types/null/values differ')
         encoded=row.get(output['geometry_column'])
         try:
             wire=base64.b64decode(encoded,validate=True);order='<' if wire[0]==1 else '>' if wire[0]==0 else None
@@ -1957,7 +1965,7 @@ def validate_mixed_overlay_browser_raw(raw,evidence,case):
             if srid!=3857 or code!=(0x20000000|{'Point':1,'LineString':2,'Polygon':3,'MultiPoint':4,'MultiLineString':5,'MultiPolygon':6,'GeometryCollection':7}[wanted['geometry']['type']]) or base64.b64encode(wire).decode()!=encoded:raise ValueError('invalid EWKB')
         except (ValueError,TypeError,IndexError,struct.error) as e:raise SuiteError('intersection canonical XY EPSG3857 EWKB missing') from e
     decoded=array(observation.get('decoded_rows'),'intersection decoded original geometry')
-    if decoded!=expected or any(type(a['properties'][k]) is not type(b['properties'][k]) for a,b in zip(decoded,expected) for k in fields):raise SuiteError('intersection decoded native coordinates/attributes differ')
+    if decoded!=expected or any(not property_matches(a['properties'][k],b['properties'][k]) for a,b in zip(decoded,expected) for k in fields):raise SuiteError('intersection decoded native coordinates/attributes differ')
     validate_proximity_graph(observation['graph'],evidence['sources'][:input_count],output['item_id'],evidence['execution_id'])
     validate_proximity_graph(observation['lineage_page'],evidence['sources'][:input_count],output['item_id'],evidence['execution_id'])
     validate_proximity_graph({**observation['lineage_page'],'edges':observation['lineage_rendered']['edges']},evidence['sources'][:input_count],output['item_id'],evidence['execution_id'])

@@ -25,6 +25,7 @@
     <MapContainer
       v-if="showMap && geoFeatures.length > 0"
       :features="geoFeatures"
+      :data-projection="crsTransform.sourceCode"
       :base-map-type="baseMapType"
       :preserve-view="hasSavedViewState"
       :view-state="viewState"
@@ -50,8 +51,7 @@ import MapContainer from './map/MapContainer.vue'
 import { safeStringify } from '../utils/formatters'
 import {
   crsSuppressionStatus,
-  getPreviewCRSTransform,
-  transformGeoJSONGeometryToWGS84
+  getPreviewCRSTransform
 } from '../utils/crsRegistry'
 
 const { t } = useI18n()
@@ -117,14 +117,14 @@ const geoFeatures = computed(() => {
       return (geojsonData.value.features || [])
         .map((feature) => ({
           ...feature,
-          geometry: transformGeoJSONGeometryToWGS84(feature?.geometry, crsTransform.value)
+          geometry: feature?.geometry
         }))
         .filter((feature) => feature.geometry)
     } else if (geojsonData.value.type === 'Feature') {
-      const geometry = transformGeoJSONGeometryToWGS84(geojsonData.value.geometry, crsTransform.value)
+      const geometry = geojsonData.value.geometry
       return geometry ? [{ ...geojsonData.value, geometry }] : []
     } else if (geojsonData.value.type && geojsonData.value.coordinates) {
-      const geometry = transformGeoJSONGeometryToWGS84(geojsonData.value, crsTransform.value)
+      const geometry = geojsonData.value
       if (!geometry) return []
       return [
         {
