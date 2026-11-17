@@ -21,7 +21,7 @@
 | `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六源分页／Transfer→Parquet及各自原件准入。 |
 | `delimited-read-settings` | [CSV／TSV GB18030](#csvtsv-gb18030-独立读取设置-case)：编码、表头、分页、重开及原件，无派生产物，不替代 Transfer T4。 |
 | `native-netcdf` | [NetCDF](科学容器只读验收.md#netcdf-单文件只读)：变量／切片、页面及原件，无任务／持久缓存。 |
-| `native-grib` | [GRIB2](科学容器只读验收.md#grib2-单文件只读)、[GRIB1扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)及[5.3扩展](科学容器只读验收.md#grib2-模板53二阶空间差分扩展已批准待正式验收)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
+| `native-grib` | [GRIB2](科学容器只读验收.md#grib2-单文件只读)、[GRIB1扩展](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)及[5.3扩展](科学容器只读验收.md#grib2-模板53二阶空间差分扩展限定正式-hosted通过)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
 | `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)：精确组成、节点授权、原件／COG／缓存与撤权恢复。 |
 | `kml-export` | [KML 页面导出](#kml-实际页面导出)：PostGIS 源、真实按钮下载与独立 XML 核对。 |
 | `filegdb-export` | [PostGIS→FileGDB](#filegdb-实际页面导出)：ZIP 回读、跨账号拒绝与排队撤权，独立于 NFS FileGDB 读授权。 |
