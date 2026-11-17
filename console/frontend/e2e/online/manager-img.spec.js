@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { observeTiffPermissionPage } from './manager-tiff-permission.js'
 import { modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -74,6 +75,12 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   expect(evidence.cases.map(source => source.case)).toEqual({ img: ['wgs84', 'utm50n', 'unlocated'], jpeg2000: ['wgs84', 'utm50n', 'unlocated', 'codestream'], grd: ['v1', 'v2', 'surfer6', 'surfer6-ascii'], tiff: ['unlocated-small-cog'], envi: ['minio-bsq','minio-bil','minio-bip','nfs-bsq','nfs-bil','nfs-bip'] }[evidence.source_format])
   const expectedIdentity = { principalID: evidence.identity.principal_id, tenantID: evidence.identity.tenant_id,
     permissions: new Set(evidence.identity.permissions_verified) }
+  if (evidence.permission_phase) {
+    await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
+    const proof = await observeTiffPermissionPage(page, evidence, env.ADDP_ONLINE_ARTIFACT_DIR)
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-tiff-permission-${evidence.permission_phase}-browser.json`), JSON.stringify(proof) + '\n')
+    return
+  }
   const diagnostics = createBrowserGpuDiagnostics('img-login')
   let businessStarted = false
   let generationRequests = 0

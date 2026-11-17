@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { observeTiffPermissionPage } from './online/manager-tiff-permission.js'
 
 const LOCATOR = 'addp://engine/9/path/images/private.tif?type=file&item_id=1'
 const ROOT = 'addp://engine/9/path/?type=root&node_id=2'
@@ -177,5 +178,22 @@ for (const locale of ['zh-cn', 'en']) for (const boundary of ['ancestors', 'prev
       await metadataOnly(manager, locale === 'zh-cn' ? '仅可查看元数据' : 'Metadata access only')
       await expect(failure).toHaveCount(0)
     }
+  })
+}
+
+for (const phase of ['metadata_only', 'read_withdrawn', 'all_withdrawn', 'expired']) {
+  test(`Hosted TIFF observer proves ${phase} against real Console components without grants`, async ({ page }, testInfo) => {
+    const state = await install(page, 'zh-cn')
+    state.access = ['all_withdrawn', 'expired'].includes(phase) ? 'none' : 'metadata'
+    const evidence = { permission_phase: phase, run_id: 'local-observer-fixture',
+      identity: { principal_id: '33', tenant_id: '1', permissions_verified: ['manager.data_item.read', 'meta.catalog.read',
+        'manager.derived_artifact.read', 'manager.derived_artifact.create'] },
+      nfs_tiff_authorization: { engine_id: 9, item_id: 1, locator: LOCATOR, storage_ref: 'images/private.tif', size_bytes: 202 } }
+    const report = await observeTiffPermissionPage(page, evidence, testInfo.outputDir)
+    expect(report.renders).toHaveLength(4)
+    expect(report.renders.map(row => [row.locale, row.opening])).toEqual([
+      ['zh-cn', 'initial'], ['zh-cn', 'reopened'], ['en', 'initial'], ['en', 'reopened']])
+    expect(report.content_requests).toBe(0)
+    expect(state.writes).toEqual([])
   })
 }

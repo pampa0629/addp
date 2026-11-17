@@ -86,6 +86,20 @@ def browser_report(evidence):
             'failed_business_responses': 0, 'warnings_errors': 0}
 
 
+def permission_browser_report(evidence):
+    phase, target = evidence['permission_phase'], evidence['nfs_tiff_authorization']
+    hidden = phase in ('all_withdrawn', 'expired')
+    return {'schema_version': 'addp.manager-tiff-permission-browser/v1', 'result': 'passed',
+        'run_id': evidence['run_id'], 'identity': evidence['identity'], 'phase': phase, 'target': copy.deepcopy(target),
+        'unexpected_business_responses': 0, 'warnings_errors': 0, 'content_requests': 0,
+        'renders': [{'locale': lang, 'opening': opening, 'screenshot': f'tiff-permission-{phase}-{lang}-{opening}.png',
+            'identity_verified': True, 'message': 'inaccessible' if hidden else 'metadata_only',
+            'content_absent': True, 'actions_absent': True, 'attributes_safe': True, 'raw_error_absent': True, 'empty_absent': True,
+            'response': {'method': 'GET', 'path': f"/api/v1/meta/resource-tree/{target['engine_id']}/ancestors" if hidden else '/api/v1/manager/preview',
+                'locator': target['locator'], 'status': 404 if hidden else 200}}
+            for lang in ('zh-cn', 'en') for opening in ('initial', 'reopened')]}
+
+
 class ManagerIMGTests(unittest.TestCase):
     def test_nfs_tiff_grants_require_the_exact_single_image_and_expiry(self):
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
@@ -150,7 +164,7 @@ class ManagerIMGTests(unittest.TestCase):
         receipt = {'request_id': 'read-command', 'item_fingerprint': fingerprint,
                    'boundary_hash': 'a' * 64, 'expires_at': expiry.isoformat()}
         for invalid in ('', 'browser', 'withdrawn', 'metadata_leak', 'read_missing_url',
-                        'hidden_leak', 'downgrade_leak', 'expired_visible', 'wrong_image_target', 'metadata_url'):
+                        'hidden_leak', 'downgrade_leak', 'capability_leak', 'page_missing', 'page_wrong_target', 'page_content_request', 'expired_visible', 'wrong_image_target', 'metadata_url'):
             with self.subTest(invalid=invalid):
                 client, issuer, auth = mock.Mock(), mock.Mock(), mock.Mock()
                 auth.operator, auth.recipient, auth.base = '11', '22', '/api/v1/system/engines/3'
@@ -180,7 +194,16 @@ class ManagerIMGTests(unittest.TestCase):
                 def request(method, path, statuses, **kwargs):
                     visible = state['metadata'] or state['read']
                     if invalid == 'expired_visible' and state['expired']: visible = True
-                    if 'storage-stream' in path:
+                    if '/quick-view/capability?' in path:
+                        payload = {'status': 'unavailable', 'raster': {'width': 240, 'height': 120}, 'available_actions': []} if state['read'] else {
+                            'status': 'metadata_only', 'can_use_quick_view': False, 'available_actions': [], 'quick_view': {}}
+                        payload.update(locator=OWNER.build_item_locator(3, item), item_fingerprint=fingerprint, tenant_id=4, source_engine_id=3)
+                        if state['read']: payload['raster']['size_bytes'] = len(raw)
+                        else: payload.update(source_kind='raster', can_generate_vector_tile_cache=False, preferred_mode='basic_preview',
+                            recommended_mode='basic_preview', active_mode='basic_preview', vector_tile_cache_generation={'available': False})
+                        if invalid == 'capability_leak' and not state['read']: payload['raster'] = {'width': 240}
+                        response = OWNER.Response(200 if visible else 404, payload if visible else {'error': 'hidden'}, {'Cache-Control': 'no-store'})
+                    elif 'storage-stream' in path:
                         status = 206 if state['read'] else 403
                         response = OWNER.Response(status, {} if status == 206 else {'error': 'denied'},
                             {'Content-Range': 'bytes 0-63/128'} if status == 206 else {}, raw[:64] if status == 206 else b'')
@@ -210,6 +233,12 @@ class ManagerIMGTests(unittest.TestCase):
                 evidence = {'source_format': 'tiff', 'identity': {'principal_id': '22'}, 'run_id': 'run', 'cases': []}
                 report = {}
                 def browser(data):
+                    if data.get('permission_phase'):
+                        page = permission_browser_report(data)
+                        if invalid in ('browser', 'page_missing'): page['renders'].pop()
+                        if invalid == 'page_wrong_target': page['renders'][0]['response']['locator'] = 'another-target'
+                        if invalid == 'page_content_request': page['content_requests'] = 1
+                        return page
                     outcome = browser_report(data)
                     nfs = data['nfs_tiff_authorization']
                     if invalid != 'browser':
@@ -235,13 +264,14 @@ class ManagerIMGTests(unittest.TestCase):
                     self.assertEqual([c.args[0] for c in auth.revoke.call_args_list], ['probe-command', 'metadata-command'])
                     self.assertEqual(report['range_statuses'], {'before_grant': 403, 'granted': 206, 'expired': 403})
                     self.assertEqual(report['permission_states'], {
-                        phase: {'meta': meta, 'preview': meta, 'range': stream, 'state': mode, 'projection_verified': True}
+                        phase: {'meta': meta, 'preview': meta, 'range': stream, 'state': mode, 'projection_verified': True, 'capability': meta, 'capability_verified': True}
                         for phase, meta, stream, mode in [('metadata_only', 200, 403, 'metadata'),
                             ('read_active', 200, 206, 'read'), ('read_withdrawn', 200, 403, 'metadata'),
                             ('all_withdrawn', 404, 403, 'none'), ('expired', 404, 403, 'none')]})
                     self.assertEqual(auth.grants, [])
                     self.assertTrue(report['natural_expiry_verified'])
                     self.assertTrue(report['zero_current_grants'])
+                    self.assertEqual(set(report['permission_pages']), set(IMG.PERMISSION_PAGE_PHASES))
 
     def test_four_member_grant_uses_complete_meta_boundary_and_rejects_missing_sidecars(self):
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
@@ -422,6 +452,49 @@ class ManagerIMGTests(unittest.TestCase):
                         self.assertTrue(report['source_unchanged'] and report['zero_current_grants'] and report['object_deleted'])
                         self.assertEqual([r['status'] for item in report['items'] for r in item['revoked']], [403] * len(raw))
                     if fault in ('cleanup', 'revoked', 'source_changed'): self.assertTrue(report['cleanup_errors'])
+
+    def test_permission_browser_requires_each_language_reopen_target_and_every_boundary(self):
+        for phase in IMG.PERMISSION_PAGE_PHASES:
+            evidence = {'permission_phase': phase, 'run_id': 'run', 'identity': {'principal_id': '22'},
+                'nfs_tiff_authorization': {'locator': 'exact', 'engine_id': 3, 'item_id': 5}}
+            good = permission_browser_report(evidence)
+            IMG.validate_permission_browser(OWNER, good, evidence)
+            mutations = [lambda r: r.update(phase='other'), lambda r: r.update(run_id='other'),
+                lambda r: r.update(identity={}), lambda r: r.update(schema_version='old'), lambda r: r['renders'].pop(),
+                lambda r: r.update(content_requests=1), lambda r: r.update(warnings_errors=1),
+                lambda r: r.update(unexpected_business_responses=1), lambda r: r['renders'][0].update(screenshot='../other.png'),
+                lambda r: r['renders'][0]['response'].update(path='/api/v1/other'),
+                lambda r: r['renders'][0]['response'].update(locator='other'),
+                lambda r: r['renders'][0]['response'].update(status=403),
+                lambda r: r['renders'][0].update(locale='other'), lambda r: r['renders'][1].update(opening='initial')]
+            for key in ('identity_verified', 'content_absent', 'actions_absent', 'attributes_safe', 'raw_error_absent', 'empty_absent'):
+                mutations.append(lambda r, k=key: r['renders'][0].pop(k))
+            for index, mutate in enumerate(mutations):
+                bad = copy.deepcopy(good); mutate(bad)
+                with self.subTest(phase=phase, mutation=index), self.assertRaises(OWNER.SuiteError):
+                    IMG.validate_permission_browser(OWNER, bad, evidence)
+
+    def test_permission_browser_requires_png_evidence_and_strips_initializer_tokens(self):
+        import subprocess
+        evidence = {'permission_phase': 'all_withdrawn', 'run_id': 'run', 'identity': {'principal_id': '22'},
+            'nfs_tiff_authorization': {'locator': 'exact', 'engine_id': 3, 'item_id': 5}}
+        for png in (None, b'not a png', b'\x89PNG\r\n\x1a\nfixture'):
+            with self.subTest(png=png), tempfile.TemporaryDirectory() as directory:
+                report = permission_browser_report(evidence)
+                def browser(command, **kwargs):
+                    self.assertEqual(command[5], 'e2e/online/manager-img.spec.js')
+                    self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
+                    Path(directory, 'manager-tiff-permission-all_withdrawn-browser.json').write_text(json.dumps(report))
+                    if png is not None:
+                        for row in report['renders']: Path(directory, row['screenshot']).write_bytes(png)
+                    return SimpleNamespace(returncode=0)
+                environment = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'never-pass',
+                    'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'never-pass-user'}
+                with mock.patch.object(IMG.subprocess, 'run', side_effect=browser):
+                    if png is None or not png.startswith(b'\x89PNG'):
+                        with self.assertRaises(OWNER.SuiteError): IMG.run_browser(Path('/repository'), environment, evidence, OWNER)
+                    else:
+                        self.assertEqual(IMG.run_browser(Path('/repository'), environment, evidence, OWNER), report)
 
     def test_composition_browser_rejects_wrong_identity_grid_alpha_and_cached_result(self):
         for profile in IMG.TIFF_COMPOSITIONS:

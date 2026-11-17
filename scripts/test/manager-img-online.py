@@ -124,7 +124,13 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
         locator = owner.build_item_locator(engine, item)
         item_path = f"/api/v1/meta/items/{item['id']}"
         range_path = '/api/v1/manager/storage-stream?' + urlencode({'locator': locator, 'storage_ref': NFS_TIFF_NAME})
-        report.update(item_id=item['id'], locator=locator, permission_states={})
+        target = {'locator': locator, 'storage_ref': NFS_TIFF_NAME, 'size_bytes': len(raw),
+                  'item_id': item['id'], 'engine_id': engine}
+        report.update(item_id=item['id'], locator=locator, size_bytes=len(raw), permission_states={}, permission_pages={})
+
+        def check_page(phase):
+            page_evidence = {**evidence, 'permission_phase': phase, 'nfs_tiff_authorization': target}
+            report['permission_pages'][phase] = validate_permission_browser(owner, browser(page_evidence), page_evidence)
 
         def check_range(phase, status, *, record=True):
             response = client.request('GET', range_path, (status,), headers={'Range': 'bytes=0-63'})
@@ -175,31 +181,38 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
                         or parse_qs(content_url.query) != {'locator': [locator], 'storage_ref': [NFS_TIFF_NAME]}
                         or image.get('metadata', {}).get('width') != 240 or image.get('metadata', {}).get('height') != 120):
                     raise owner.SuiteError('NFS TIFF read preview lost its controlled image contract')
+            capability = client.request('GET', '/api/v1/manager/quick-view/capability?' + urlencode({'locator': locator}),
+                                        (200 if visible else 404,))
+            validate_tiff_capability(owner, capability, state, target, fingerprint, tenant)
             # Reuse the byte/error oracle without changing the legacy expiry evidence.
             range_status = check_range(phase, 206 if readable else 403, record=False)
             report['permission_states'][phase] = {'meta': meta.status, 'preview': preview.status,
-                'range': range_status, 'state': state, 'projection_verified': True}
+                'range': range_status, 'state': state, 'projection_verified': True,
+                'capability': capability.status, 'capability_verified': True}
 
         check_preview('metadata_only', 'metadata')
+        check_page('metadata_only')
         probe = auth.grant(model)
         check_preview('read_active', 'read')
         auth.revoke(probe['request_id'])
         check_preview('read_withdrawn', 'metadata')
+        check_page('read_withdrawn')
         auth.revoke(metadata_grant['request_id'])
         report['metadata_grant_withdrawn'] = metadata_grant['request_id']
         check_preview('all_withdrawn', 'none')
+        check_page('all_withdrawn')
         check_range('before_grant', 403)
         expiry = datetime.now(timezone.utc) + timedelta(seconds=90)
         receipt = auth.grant(model, expires_at=expiry)
         report['grant'] = receipt
         check_range('granted', 206)
-        evidence['nfs_tiff_authorization'] = {'locator': locator, 'storage_ref': NFS_TIFF_NAME,
-                                              'size_bytes': len(raw), 'item_id': item['id']}
+        evidence['nfs_tiff_authorization'] = target
         observed = validate_browser(owner, browser(evidence), evidence)
         time.sleep(max(0, expiry.timestamp() - time.time()) + 0.1)
         check_range('expired', 403)
         report['expired_meta_status'] = client.request('GET', item_path, (404,)).status
         check_preview('expired', 'none')
+        check_page('expired')
     finally:
         try:
             if receipt is not None and datetime.now(timezone.utc) >= expiry:
@@ -502,6 +515,63 @@ def validate_meta(owner, detail, spec):
         raise owner.SuiteError('IMG source CRS or extent differs from its fixture')
 
 
+PERMISSION_PAGE_PHASES = ('metadata_only', 'read_withdrawn', 'all_withdrawn', 'expired')
+
+
+def validate_tiff_capability(owner, response, state, target, fingerprint, tenant):
+    body = response.payload
+    if (next((v for k, v in response.headers.items() if k.lower() == 'cache-control'), None) != 'no-store'
+            or not isinstance(body, dict)):
+        raise owner.SuiteError('NFS TIFF capability must be a noncacheable JSON object')
+    if state == 'none':
+        if set(body) != {'error'} or not body['error']:
+            raise owner.SuiteError('NFS TIFF hidden capability leaked target facts')
+        return
+    if (body.get('locator') != target['locator'] or body.get('item_fingerprint') != fingerprint
+            or body.get('source_engine_id') != target['engine_id'] or body.get('tenant_id') != tenant):
+        raise owner.SuiteError('NFS TIFF capability identity differs')
+    if state == 'read':
+        raster = body.get('raster', {})
+        if raster.get('width') != 240 or raster.get('height') != 120 or raster.get('size_bytes') != target['size_bytes']:
+            raise owner.SuiteError('NFS TIFF read capability lost its raster facts')
+        return
+    allowed = {'tenant_id', 'locator', 'item_fingerprint', 'source_kind', 'source_engine_id', 'can_use_quick_view',
+        'can_generate_vector_tile_cache', 'preferred_mode', 'recommended_mode', 'active_mode', 'available_actions',
+        'status', 'quick_view', 'vector_tile_cache_generation'}
+    if (set(body) != allowed or body['status'] != 'metadata_only' or body['source_kind'] != 'raster'
+            or body['can_use_quick_view'] is not False or body['can_generate_vector_tile_cache'] is not False
+            or body['available_actions'] != [] or body['quick_view'] != {}
+            or body['vector_tile_cache_generation'] != {'available': False}
+            or any(body[key] != 'basic_preview' for key in ('preferred_mode', 'recommended_mode', 'active_mode'))):
+        raise owner.SuiteError('NFS TIFF metadata-only capability exceeded the minimal projection')
+
+
+def validate_permission_browser(owner, report, evidence):
+    phase = evidence['permission_phase']
+    if phase not in PERMISSION_PAGE_PHASES:
+        raise owner.SuiteError('unknown NFS TIFF permission page phase')
+    target = evidence['nfs_tiff_authorization']
+    expected = {'schema_version': 'addp.manager-tiff-permission-browser/v1', 'result': 'passed',
+        'run_id': evidence['run_id'], 'identity': evidence['identity'], 'phase': phase, 'target': target,
+        'unexpected_business_responses': 0, 'warnings_errors': 0, 'content_requests': 0}
+    if any(report.get(k) != v for k, v in expected.items()):
+        raise owner.SuiteError('NFS TIFF permission page report identity or boundary differs')
+    hidden = phase in ('all_withdrawn', 'expired')
+    renders = report.get('renders', [])
+    if len(renders) != 4:
+        raise owner.SuiteError('NFS TIFF permission page must prove both languages and reopen')
+    for row, (locale, opening) in zip(renders, ((lang, opening) for lang in ('zh-cn', 'en') for opening in ('initial', 'reopened'))):
+        response = {'method': 'GET', 'path': f"/api/v1/meta/resource-tree/{target['engine_id']}/ancestors" if hidden else '/api/v1/manager/preview',
+                    'locator': target['locator'], 'status': 404 if hidden else 200}
+        if (row.get('locale') != locale or row.get('opening') != opening or row.get('response') != response
+                or row.get('message') != ('inaccessible' if hidden else 'metadata_only')
+                or row.get('screenshot') != f'tiff-permission-{phase}-{locale}-{opening}.png'
+                or any(row.get(k) is not True for k in ('identity_verified', 'content_absent', 'actions_absent',
+                    'attributes_safe', 'raw_error_absent', 'empty_absent'))):
+            raise owner.SuiteError('NFS TIFF permission page lacks exact request, DOM or screenshot proof')
+    return report
+
+
 def validate_browser(owner, report, evidence):
     for key, value in {'schema_version': 'addp.manager-raster-media-browser/v4', 'result': 'passed',
                        'run_id': evidence['run_id'], 'identity': evidence['identity'], 'source_format':evidence['source_format'],
@@ -576,7 +646,8 @@ def validate_composition_browser(owner, report, evidence):
 
 def run_browser(repository, environment, evidence, owner):
     composition = evidence.get('profile')
-    name = 'tiff-' + composition if composition else evidence['source_format']
+    phase = evidence.get('permission_phase')
+    name = 'tiff-permission-' + phase if phase else 'tiff-' + composition if composition else evidence['source_format']
     path = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / ('manager-' + name + '-browser.json')
     path.unlink(missing_ok=True)
     env = {key: value for key, value in environment.items() if not key.endswith('_ACCESS_TOKEN')}
@@ -586,8 +657,14 @@ def run_browser(repository, environment, evidence, owner):
                              '--config=playwright.online.config.js'], cwd=repository / 'console/frontend', env=env, check=False)
     if result.returncode or not path.is_file():
         raise owner.SuiteError('IMG Hosted browser acceptance did not succeed')
-    validate = validate_composition_browser if composition else validate_browser
-    return validate(owner, json.loads(path.read_text()), evidence)
+    validate = validate_permission_browser if phase else validate_composition_browser if composition else validate_browser
+    report = validate(owner, json.loads(path.read_text()), evidence)
+    if phase:
+        for render in report['renders']:
+            screenshot = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / render['screenshot']
+            if not screenshot.is_file() or not screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'):
+                raise owner.SuiteError('NFS TIFF permission screenshot is missing or invalid')
+    return report
 
 
 def run(repository, environment, owner, *, browser_runner=None, physical_runner=None, source_format="img"):

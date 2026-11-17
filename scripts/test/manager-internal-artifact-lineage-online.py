@@ -2484,12 +2484,22 @@ def run_native_raster_media_case(repository, environment, client, identity):
                 or any(nfs_tiff.get(key) is not True for key in ("natural_expiry_verified", "source_unchanged", "zero_current_grants"))):
             raise SuiteError("native raster media requires complete NFS TIFF authorization evidence")
         expected_states = {
-            phase: {'meta': status, 'preview': status, 'range': stream, 'state': state, 'projection_verified': True}
+            phase: {'meta': status, 'preview': status, 'range': stream, 'state': state, 'projection_verified': True,
+                    'capability': status, 'capability_verified': True}
             for phase, status, stream, state in (('metadata_only', 200, 403, 'metadata'),
                 ('read_active', 200, 206, 'read'), ('read_withdrawn', 200, 403, 'metadata'),
                 ('all_withdrawn', 404, 403, 'none'), ('expired', 404, 403, 'none'))}
         if nfs_tiff.get('permission_states') != expected_states:
             raise SuiteError('native raster media requires complete TIFF preview permission states')
+        from importlib import import_module
+        media = import_module('scripts.test.manager-img-online')
+        pages = nfs_tiff.get('permission_pages', {})
+        if set(pages) != set(media.PERMISSION_PAGE_PHASES):
+            raise SuiteError('native raster media requires every TIFF permission page')
+        for phase in media.PERMISSION_PAGE_PHASES:
+            media.validate_permission_browser(sys.modules[__name__], pages[phase], {
+                'permission_phase': phase, 'identity': report['tiff']['identity'], 'run_id': report['run_id'],
+                'nfs_tiff_authorization': {key: nfs_tiff[key] for key in ('locator', 'item_id', 'engine_id', 'size_bytes')} | {'storage_ref': media.NFS_TIFF_NAME}})
         for profile, member_count, invalid_pixels in (('msk', 2, 257), ('sidecars', 4, 1)):
             composition = report['tiff'].get('nfs_tiff_' + profile, {})
             items = composition.get('items', [])
