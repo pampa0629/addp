@@ -773,6 +773,32 @@ test('selected task is located when the task library finishes loading', async ({
   await expect(selected).toBeInViewport()
 })
 
+test('a newer library search survives the selected task arriving asynchronously', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  fixture.steps[0].task_id = 11
+  const backend = await installMockBackend(page, fixture, createTaskLibraryFixture())
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  const box = await requiredBoundingBox(page.locator('#dag-container canvas'))
+  const node = fixture.editor_layout.nodes[NODE_ID]
+  const panel = page.locator('.task-panel'), search = panel.getByPlaceholder('搜索任务')
+  try {
+    await page.mouse.click(box.x + node.x, box.y + node.y)
+    await expect(page.getByRole('button', { name: '复制节点', exact: true })).toBeEnabled()
+    await search.fill('不存在')
+    await expect(panel.getByText('未找到匹配任务', { exact: true })).toBeVisible()
+  } finally { backend.releaseTaskRequests() }
+  await expect(panel.getByRole('button', { name: '刷新任务库', exact: true })).toBeEnabled()
+  await expect(search).toHaveValue('不存在')
+  await expect(panel.getByText('未找到匹配任务', { exact: true })).toBeVisible()
+  await page.mouse.click(box.x + box.width - 20, box.y + 20)
+  await page.mouse.click(box.x + node.x, box.y + node.y)
+  await expect(search).toHaveValue('')
+  const selected = panel.locator('.el-tree-node.is-current > .el-tree-node__content')
+  await expect(selected.locator('.task-name')).toHaveText('客户日报')
+  await expect(selected).toBeInViewport()
+})
+
 test('keeps task types collapsed and expands only matching search paths', async ({ page }) => {
   const orchestration = {
     ...createLayoutFixture(),
@@ -783,8 +809,17 @@ test('keeps task types collapsed and expands only matching search paths', async 
       viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
     }
   }
-  const backend = await installMockBackend(page, orchestration, createTaskLibraryFixture())
+  const library = createTaskLibraryFixture()
+  const backend = await installMockBackend(page, orchestration, library)
 
+  let releaseDetail
+  let detailRequests = 0
+  const detailGate = new Promise(resolve => { releaseDetail = resolve })
+  await page.route('**/api/v1/orchestrator/task-providers/develop/tasks/query/11', async route => {
+    detailRequests += 1
+    await detailGate
+    await fulfillJSON(route, { execution_contract: createEmptyExecutionContract() })
+  })
   await page.goto(`/orchestrations/${TASK_LIBRARY_ORCHESTRATION_ID}/edit`)
   await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
@@ -816,13 +851,24 @@ test('keeps task types collapsed and expands only matching search paths', async 
   await expect(addTaskToCanvas).toHaveCount(1)
   await addTaskToCanvas.click()
 
+  await expect.poll(() => detailRequests).toBe(1)
   await search.fill('不存在')
+  try {
+    await expect(taskPanel.getByText('未找到匹配任务', { exact: true })).toBeVisible()
+  } finally { releaseDetail() }
+  await expect(page.getByRole('button', { name: '复制节点', exact: true })).toBeEnabled()
+  await expect(search).toHaveValue('不存在')
+  await expect(search).toBeFocused()
   await expect(taskPanel.getByText('未找到匹配任务', { exact: true })).toBeVisible()
 
   await search.fill('')
   await expect(taskPanel.getByText('SQL 查询', { exact: true })).toBeVisible()
   await expect(taskPanel.getByText('Notebook', { exact: true })).toBeVisible()
   // 添加节点会选中画布任务并展开来源，后续搜索恢复这一展开状态。
+  await expect(taskPanel.getByText('客户日报', { exact: true })).toBeVisible()
+  library.deferTaskRequests = false
+  await refreshTaskLibrary.click()
+  await expect(refreshTaskLibrary).toBeEnabled()
   await expect(taskPanel.getByText('客户日报', { exact: true })).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')

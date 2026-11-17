@@ -205,6 +205,7 @@ import {
 import { openMonitorExecution, buildTaskOwnerUrl, ExecutionParameterForm, StatusAnnouncer, focusElement } from '@addp/common-frontend'
 import {
   createDAGKeyboardHandler,
+  isDAGKeyboardEventFromEditableTarget,
   createDAGDirectEdgeBehavior,
   createDAGDragNodeBehavior,
   focusDAGConnections,
@@ -270,6 +271,7 @@ const executionContractIndex = ref(new Map())
 const lastStepsSignature = ref('')
 let nodeCopyCounter = 0
 let addedNodeCounter = 0
+let addedTaskSelectionId = null
 let syncingNodeDraft = false
 let syncingDependencies = false
 let stepsLoadGeneration = 0
@@ -403,10 +405,13 @@ function refreshConnectionFocus() {
 watch(selectedItem, item => {
   refreshConnectionFocus()
   const model = item?.getType?.() === 'node' ? item.getModel() : null
+  const revealSource = model?.id !== addedTaskSelectionId
+  addedTaskSelectionId = null
   emit('select-task', model ? {
     provider: model.provider,
     taskType: model.taskType,
-    taskId: model.taskId
+    taskId: model.taskId,
+    revealSource
   } : null)
 })
 function focusConnection(id) {
@@ -935,7 +940,11 @@ async function addTask(nodeData, point = null) {
     nodeModel.size = orchestrationNodeSize(nodeModel)
     const item = graph.value.addItem('node', nodeModel)
     graph.value.paint()
+    // 来源定位已在添加时发起；迟到的详情只更新选中，不覆盖后续输入。
+    const activeElement = document.activeElement
+    addedTaskSelectionId = id
     selectGraphItem(item)
+    if (isDAGKeyboardEventFromEditableTarget({ target: activeElement })) activeElement.focus({ preventScroll: true })
     recordHistory()
 
     ElMessage.success(t('orchestrator.dagEditor.taskAdded', { name: nodeData.name }))

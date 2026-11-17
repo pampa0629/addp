@@ -183,16 +183,26 @@ const selectedTaskNode = computed(() => {
   const taskType = provider?.children.find(node => node.metadata.taskType === task.taskType)
   return taskType?.children.find(node => String(node.metadata.taskId) === String(task.taskId)) || null
 })
-watch([() => props.selectedTask, selectedTaskNode], async ([task, node]) => {
+watch(() => props.selectedTask, task => {
+  // 只在显式选中时清除旧搜索，不能等到异步任务库加载完成后再清除。
+  if (task?.revealSource) filterText.value = ''
+})
+watch([() => props.selectedTask, selectedTaskNode], ([task, node]) => {
   currentNodeKey.value = node?.id || null
-  if (!node) return
-  filterText.value = ''
+  if (node && task.revealSource) revealTaskNode(node)
+})
+
+async function revealTaskNode(node) {
   // 清除搜索会恢复搜索前的展开状态，随后再展开精确的来源路径。
   await nextTick()
-  expandedKeys.value = [...new Set([...expandedKeys.value, task.provider, `${task.provider}-type-${task.taskType}`])]
+  if (filterText.value || currentNodeKey.value !== node.id) return
+  const { provider, taskType } = node.metadata
+  expandedKeys.value = [...new Set([...expandedKeys.value, provider, `${provider}-type-${taskType}`])]
   await nextTick()
-  resourceTree.value?.scrollToNode(node.id, { block: 'nearest', behavior: 'instant' })
-})
+  if (!filterText.value && currentNodeKey.value === node.id) {
+    resourceTree.value?.scrollToNode(node.id, { block: 'nearest', behavior: 'instant' })
+  }
+}
 
 onMounted(async () => {
   await loadAllTasks()
@@ -453,7 +463,11 @@ function buildTaskNodeData(data) {
 
 function addTaskToCanvas(data) {
   const nodeData = buildTaskNodeData(data)
-  if (nodeData) emit('add-task', nodeData)
+  if (!nodeData) return
+  filterText.value = ''
+  currentNodeKey.value = data.id
+  revealTaskNode(data)
+  emit('add-task', nodeData)
 }
 
 // 拖拽任务到画布
