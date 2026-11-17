@@ -90,7 +90,8 @@ class GRIBOracleTest(unittest.TestCase):
         events=[]
         class Grants:
             operator='8';recipient='7'
-            def __init__(self,*args):pass
+            def __init__(self,*args,**options):
+                if options!={'scan_preparation':True}:raise AssertionError('GRIB requires exact scan preparation')
             def grant(self,engine,name,storage,**identity):
                 events.append(('grant',engine,name,storage,identity));return {'action':'metadata_read'}
             def cleanup(self):events.append(('revoke',));return dict(grants_revoked=True,metadata_hidden=True)
@@ -103,7 +104,7 @@ class GRIBOracleTest(unittest.TestCase):
             self.assertEqual(action,'delete');return dict(objects_removed=True,files_removed=True)
         client=mock.Mock();client.request.return_value=types.SimpleNamespace(payload=[])
         owner=types.SimpleNamespace(GatewayClient=mock.Mock(return_value=client),positive_int=lambda value,label:int(value),
-            validate_user_identity=lambda *args:{'principal_id':'7'},wait_for_meta_scan=mock.Mock(),find_fixture_item=find)
+            validate_user_identity=lambda *args:{'principal_id':'7'},wait_for_meta_scan=mock.Mock(return_value='controlled-initialization'),find_fixture_item=find)
         with tempfile.TemporaryDirectory() as d:
             env=dict(ADDP_ONLINE_MANAGER_CASE='native-grib',ADDP_ONLINE_ARTIFACT_DIR=d,ADDP_ONLINE_TEST_RUN_ID='test',
                 GATEWAY_URL='http://local',ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',
@@ -135,3 +136,39 @@ class GRIBOracleTest(unittest.TestCase):
                 result=FIXTURE.worker({'storage':dict(endpoint='local',access_key='a',secret_key='b',bucket='test'),'nfs_root':str(root),'action':'delete'})
             self.assertEqual(result,dict(objects_removed=True,files_removed=True));self.assertEqual((root/'unrelated').read_text(),'keep')
             self.assertEqual(removed,[('test','grib/'+name) for name in FIXTURE.NAMES])
+
+
+    def test_nfs_initialization_uses_qualified_issuer_and_minio_keeps_consumer(self):
+        observed=[];consumer=mock.Mock();issuer=mock.Mock()
+        class Grants:
+            operator='8';recipient='7'
+            def __init__(self,authorizer,reader,tenant,**options):
+                assert authorizer is issuer and reader is consumer and tenant==2
+                assert options=={'scan_preparation':True}
+            def cleanup(self):return dict(grants_revoked=True,metadata_hidden=True)
+        def scan(client,engine,deadline,**options):
+            observed.append((client,engine,options['scope']))
+            if engine==14:
+                self.assertIs(client,issuer)
+                raise ValueError('verified NFS initialization identity')
+            self.assertIs(client,consumer)
+            return 'minio-initialization'
+        def physical(action):
+            if action=='seed':return {'sources':[]}
+            self.assertEqual(action,'delete');return dict(objects_removed=True,files_removed=True)
+        owner=types.SimpleNamespace(GatewayClient=lambda url,token,timeout:issuer if token=='issuer' else consumer,
+            positive_int=lambda value,label:int(value),validate_user_identity=lambda *args:{'principal_id':'7'},wait_for_meta_scan=scan)
+        with tempfile.TemporaryDirectory() as directory:
+            env=dict(ADDP_ONLINE_MANAGER_CASE='native-grib',ADDP_ONLINE_ARTIFACT_DIR=directory,ADDP_ONLINE_TEST_RUN_ID='identity-only',GATEWAY_URL='http://local',
+                ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='consumer',ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='issuer',ADDP_ONLINE_TEST_TENANT_ID='2',
+                ADDP_ONLINE_MANAGER_MINIO_BUCKET='bucket',ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID='12',ADDP_ONLINE_MANAGER_NFS_ENGINE_ID='14')
+            # No message assertions are mocked into a passing business report:
+            # stop immediately at the NFS scan after observing both callers.
+            with mock.patch.object(FIXTURE,'sources',return_value=[]),mock.patch.object(SCENE.REGISTRATION,'ExactFileMetadataGrants',Grants):
+                with self.assertRaisesRegex(ValueError,'verified NFS initialization identity'):SCENE.run(Path('/repo'),env,owner,physical_runner=physical)
+            import json
+            report=json.loads((Path(directory)/'manager-grib.json').read_text())
+            self.assertEqual(report['result'],'failed')
+            self.assertEqual(report['source_scans'],[dict(storage='minio',engine_id=12,catalog_paths=['bucket/grib'],principal_id='7',execution_id='minio-initialization')])
+            self.assertEqual(len(report['metadata_authorization']['initializer_permissions_verified']),13)
+        self.assertEqual([(engine,scope) for _,engine,scope in observed],[(12,{'catalog_paths':['bucket/grib']}),(14,{'catalog_paths':['grib']})])

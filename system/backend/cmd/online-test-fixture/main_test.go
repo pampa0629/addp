@@ -1895,8 +1895,12 @@ func TestGridFileCaseUsesExistingSixReadPermissions(t *testing.T) {
 			if err != nil || !slices.Equal(got, want) {
 				t.Fatalf("Grid file read-only identity: %v %v", got, err)
 			}
-			if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
-				t.Fatal("Grid file expanded source initializer permissions")
+			initializer := slices.Clone(sourceInitializerPermissions)
+			if name == "native-grib" {
+				initializer = append(initializer, "meta.scan_task.execute", "meta.scan_task.read")
+			}
+			if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), initializer) {
+				t.Fatal("Grid file source initializer differs from its approved scope")
 			}
 		})
 	}
@@ -1929,7 +1933,7 @@ func TestNativeMediaInitializersHaveOnlyThirteenPermissions(t *testing.T) {
 			t.Fatal("native media scan functions leaked to another suite")
 		}
 	}
-	for _, name := range []string{"full", "native-netcdf", "native-grib", ""} {
+	for _, name := range []string{"full", "native-netcdf", ""} {
 		t.Setenv("ADDP_ONLINE_MANAGER_CASE", name)
 		if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
 			t.Fatal("native media scan functions leaked to another Manager case")
@@ -2152,6 +2156,25 @@ func TestFileGDBRootAuthorizationUsesManagedScannerAndReadOnlyOutsider(t *testin
 	for _, key := range want {
 		if strings.Contains(key, "deny") {
 			t.Fatal("retired source prohibition permission", key)
+		}
+	}
+}
+
+func TestManagerGRIBScanPreparationKeepsConsumerReadOnly(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-grib")
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if len(want) != 13 || !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), want) {
+		t.Fatal("GRIB initialization must have exactly the approved scan qualifications")
+	}
+	actual, err := suitePermissions("manager-internal-artifact-lineage")
+	consumer := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
+	if err != nil || !slices.Equal(actual, consumer) {
+		t.Fatal(actual, err)
+	}
+	for _, name := range []string{"native-netcdf", "full", "kml-export"} {
+		t.Setenv("ADDP_ONLINE_MANAGER_CASE", name)
+		if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
+			t.Fatal("GRIB changed another case's initialization", name)
 		}
 	}
 }

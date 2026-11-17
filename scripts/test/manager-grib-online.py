@@ -78,14 +78,17 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     tenant=owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'],'GRIB tenant')
     report['identity']=owner.validate_user_identity(client,tenant,PERMISSIONS)
     issuer=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30)
-    grants=REGISTRATION.ExactFileMetadataGrants(issuer,client,tenant)
-    report['metadata_authorization']={'operator_principal_id':grants.operator,'recipient_principal_id':grants.recipient,'grants':[]}
+    grants=REGISTRATION.ExactFileMetadataGrants(issuer,client,tenant,scan_preparation=True)
+    report['metadata_authorization']={'operator_principal_id':grants.operator,'recipient_principal_id':grants.recipient,'initializer_permissions_verified':sorted(REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS|{'meta.scan_task.execute','meta.scan_task.read'}),'grants':[]}
     seeded=False;stage='seed'
     try:
         seeded=True;seed=physical('seed');require(seed=={'sources':FIXTURE.sources()},'GRIB source bytes differ from the independent oracle')
         bucket=environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']
         for storage,engine,scope,prefix in [('minio',owner.positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'],'MinIO'),'grib',bucket+'/'),('nfs',owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'],'NFS'),'grib','')]:
-            stage='scan';owner.wait_for_meta_scan(client,engine,time.monotonic()+180,scope={'catalog_paths':[prefix+scope]})
+            stage='scan'
+            scan_client=issuer if storage=='nfs' else client
+            scan_execution=owner.wait_for_meta_scan(scan_client,engine,time.monotonic()+180,scope={'catalog_paths':[prefix+scope]})
+            report.setdefault('source_scans',[]).append(dict(storage=storage,engine_id=engine,catalog_paths=[prefix+scope],principal_id=grants.operator if storage=='nfs' else grants.recipient,execution_id=scan_execution))
             for spec in seed['sources']:
                 stage='metadata_grant'
                 visible=client.request('GET',f'/api/v1/meta/engines/{engine}/items',(200,)).payload
