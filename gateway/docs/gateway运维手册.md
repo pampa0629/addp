@@ -11,7 +11,7 @@ curl -i "${GATEWAY_ORIGIN:?设置实际 Gateway origin}/health/live"
 curl -i "${GATEWAY_ORIGIN:?设置实际 Gateway origin}/health/ready"
 ```
 
-存活只证明进程可响应；Gateway 就绪只要求至少成功应用一次 System 完整模块路由快照，不证明所有模块、Redis、日志库或目标数据源可用。未就绪时 ready 为 503，业务入口由公共中间件拒绝；路由与实例租约需另查。统一响应见[健康端点规范](../../docs/spec/api/健康与平台控制面.md#进程存活与模块就绪端点)。
+存活只证明进程可响应；Gateway 就绪要求至少成功应用一次 System 完整模块路由快照，并且启动注入的 Redis 客户端有界 Ping 成功，不证明所有模块、日志库或目标数据源可用。Redis 检查失败时保留进程和快照，live 为 200、ready 为 503，业务入口由公共中间件拒绝；路由与实例租约需另查。统一响应见[健康端点规范](../../docs/spec/api/健康与平台控制面.md#进程存活与模块就绪端点)。
 
 注册与心跳失败的诊断、重试分类和敏感信息边界见[模块注册排查](../../docs/guide/troubleshooting/认证与引擎注册.md#模块注册与心跳失败)。
 
@@ -39,12 +39,12 @@ curl -i \
 | 401 | `api_consumer_credential_invalid`：凭据格式错误或当前无效；`api_consumer_control_plane_denied`：在 `/api/v1/*` 携带消费凭据。 |
 | 403 | 由 Service 最终授权裁决；核对 Consumer Tenant 与精确 Query Service ID Grant，以及源数据和保护要求。 |
 | 429 | 当前 Gateway 限流响应为 `error`、`limit`、`window`，没有 `rate_limit_exceeded` 错误码；下游也可能返回 429，需核对来源。 |
-| 503 | `api_consumer_auth_unavailable` 表示 Gateway 无法取得消费凭据验证结果；还需区分 `module_not_ready`、无有效 Backend 租约及下游错误。 |
+| 503 | `api_consumer_auth_unavailable` 表示 Gateway 无法取得消费凭据验证结果；`rate_limit_unavailable` 表示实际 Redis 限流命令失败；还需区分 `module_not_ready`（可由 Redis 就绪检查失败触发）、无有效 Backend 租约及下游错误。 |
 | 502 | 目标代理连接或传输失败，结合 Gateway 日志核对目标实例；不直接判为凭据无效。 |
 
 ## 限流与凭据缓存
 
-当前限流只覆盖已取得 API Consumer 上下文的 Query 请求；Redis 使用 `ratelimit:api-consumer:<consumer_id>`，首次计数后设 60 秒过期。Redis 初始化失败或请求期计数失败时当前实现继续放行，不能依赖它保证故障期间的请求上限。匿名、User Bearer 和其他协议不能据此视为已覆盖；完整边界见[架构说明](gateway架构说明.md#4-缓存与撤销)。
+当前限流只覆盖已取得 API Consumer 上下文的 Query 请求；Redis 使用 `ratelimit:api-consumer:<consumer_id>`，首次计数后设 60 秒过期。Redis 初始化失败阻止启动；请求期计数失败返回 503／`rate_limit_unavailable`，不转发下游或回退本地计数，达到配额仍为 429。匿名、User Bearer 和其他协议不能据此视为已覆盖；完整边界见[架构说明](gateway架构说明.md#4-缓存与撤销)。
 
 凭据验证仅有 30 秒进程内正缓存，无 Redis 凭据正缓存；Service 逐请求复核，因此最终授权不依赖 Gateway 缓存。不要通过删除限流键或扩大缓存时间处理凭据撤销。
 
@@ -62,7 +62,7 @@ curl -i \
 
 现有访问日志单元测试覆盖字段构建、Query 敏感参数名脱敏、请求体未被读取，以及无消费方上下文时不建记录；不证明真实数据库异步落库、Nginx 请求记录或集中运行日志送达。真实验收须分别核对请求响应和对应来源记录，不能用健康检查、单条日志或 HTTP 200 推导完整计量、审计或业务成功。
 
-1. 先区分存活、快照就绪与目标模块有效租约，再核对实际 origin 和请求路径。
+1. 先区分存活、路由快照与 Redis 两项就绪条件、目标模块有效租约，再核对实际 origin 和请求路径。
 2. Query 凭据使用 `addp_api_` 前缀，不同时携带 Authorization；在 System 的 API 消费方管理中核对 Consumer、Credential、Tenant 和精确服务 Grant。
 3. 依次定位 Gateway 前置认证/限流、Service 最终授权、源数据及执行错误；缺日志不表示请求未发生。
 4. 按[配置规范](../../docs/spec/addp配置介绍.md)核对依赖；不要直接改业务数据库、伪造 Tenant Header 或放宽中间件。需要重启时由用户按标准生命周期流程执行。
