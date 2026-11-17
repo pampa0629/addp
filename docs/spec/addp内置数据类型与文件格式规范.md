@@ -18,7 +18,7 @@
 | [点云](builtin-formats/点云.md) | LAS、LAZ、COPC、E57、PCD、XYZ、EPT |
 | [表格与矢量交换](builtin-formats/表格与矢量交换.md) | CSV / TSV、JSON、GeoJSON、Shapefile、KML / GML / TopoJSON |
 | [列式文件与数据容器](builtin-formats/列式文件与数据容器.md) | Excel、Parquet / ORC / Avro / Feather、SQLite / GeoPackage、FileGDB / PGeo、ZIP；Iceberg 为尚未内置注册的规范示例 |
-| [媒体与地图数据集](builtin-formats/媒体与地图数据集.md) | 图片、ENVI、Surfer GRD、NetCDF、GRIB2、JPEG EXIF / GPS、GIF / WebP 动画、TIFF 分页、PMTiles、Raster mosaic、视频、音频 |
+| [媒体与地图数据集](builtin-formats/媒体与地图数据集.md) | 图片、ENVI、Surfer GRD、NetCDF、GRIB1／GRIB2、JPEG EXIF / GPS、GIF / WebP 动画、TIFF 分页、PMTiles、Raster mosaic、视频、音频 |
 | [文档](builtin-formats/文档.md) | PDF、DOC / DOCX / RTF / PPTX / WPS |
 
 跨格式的预览材料与组件协议见[Manager 数据预览语义协议](../../manager/docs/数据预览语义协议.md)。

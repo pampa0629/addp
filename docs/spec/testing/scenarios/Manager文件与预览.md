@@ -21,7 +21,7 @@
 | `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六源分页／Transfer→Parquet及各自原件准入。 |
 | `delimited-read-settings` | [CSV／TSV GB18030](#csvtsv-gb18030-独立读取设置-case)：编码、表头、分页、重开及原件，无派生产物，不替代 Transfer T4。 |
 | `native-netcdf` | [NetCDF](#netcdf-单文件只读)：变量／切片、页面及原件，无任务／持久缓存。 |
-| `native-grib` | [GRIB2](#grib2-单文件只读)与[GRIB1扩展](#grib1-扩展验收待正式执行)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
+| `native-grib` | [GRIB2](#grib2-单文件只读)与[GRIB1扩展](#grib1-扩展验收限定正式-hosted通过)：逐消息数值、切片、页面及原件，无地图／任务／缓存成果；历史通过不外推新增profile。 |
 | `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)：精确组成、节点授权、原件／COG／缓存与撤权恢复。 |
 | `kml-export` | [KML 页面导出](#kml-实际页面导出)：PostGIS 源、真实按钮下载与独立 XML 核对。 |
 | `filegdb-export` | [PostGIS→FileGDB](#filegdb-实际页面导出)：ZIP 回读、跨账号拒绝与排队撤权，独立于 NFS FileGDB 读授权。 |
@@ -46,7 +46,7 @@ Job、Artifact、`manager-case.json` 均须含所选 case；独立通过不算 f
 
 | case | 身份、来源与独有交付／收尾 |
 | --- | --- |
-| `native-netcdf`／`native-grib` | 消费六项见[NetCDF](#netcdf-来源与权限)；十四／四份精确 metadata Grant，未迁移内容源 Grant；无任务／持久缓存。 |
+| `native-netcdf`／`native-grib` | 消费六项见[NetCDF](#netcdf-来源与权限)；十四／八份精确 metadata Grant，未迁移内容源 Grant；无任务／持久缓存。 |
 | `native-table-orc`／`native-table-avro`／`native-table-feather` | 消费十一项见[ORC](#orc-入口与权限)；Avro／Feather 准备十三项、源扫描归初始化用户。各保留 Transfer／只读拒绝；Avro／Feather NFS 原件403 JSON、无附件／按钮，MinIO核 API／按钮完整原件；ORC按自身正文。 |
 | `delimited-read-settings` | 消费十项／准备十三项；Common Go reader、初始化 basic 扫描与精确 Grant，无派生产物。 |
 | `native-raster-media` | 消费十项；初始化用户仅签本轮 MinIO `raster` 前缀非递归读取，限直属项、退出撤回，不改角色／引擎范围。GRD无产物；TIFF另按专节核初始化扫描权限、整项read、到期及sidecar。 |
@@ -89,15 +89,17 @@ NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，�
 固定源码 `6e7ae87559552bd7d5bad122f4f0259f963d7b46`、Run `41572302717`／Job `125707787735` 的 Owner／Browser v2 覆盖十二张可见切片、四原件、Grant 撤销及清理，详见[分层证据](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口)。首轮 v1 数值／DOM／原件有效但控件被长属性遮挡，元数据截图不证明切片可见；修后首验 `stage=scan / cases=[]` 因缺元数据授权失败，未进数值／页面。GeoPython CI 取消及本机 runner TLS 夹具错误独立保留，不由专项或清理通过推定全量 CI。
 
 
-#### GRIB1 扩展验收（待正式执行）
+<a id="grib1-扩展验收待正式执行"></a>
 
-2026-11-17 用户批准GRIB1标准规则网格子集，格式及语义边界见[GRIB1扩展](../../builtin-formats/媒体与地图数据集.md#grib1-扩展已批准验收分层记录)。继续使用既有`native-grib` case、部署和六项消费权限。2026-11-17用户另行批准仅本case来源初始化用户由十一项增至十三项，增加已有`meta.scan_task.execute`／`meta.scan_task.read`；NFS `grib`目录的有界首次扫描交给已有引擎管理资格的初始化用户，MinIO保持消费用户。记录两存储实际扫描身份／目录／execution，启用现成`scan_preparation=True`精确身份核验；不改其他case、个人／生产账号、服务权限或Grant范围，未迁移精确内容源授权。保留两份GRIB2夹具的完整字节／SHA和原断言，追加两份GRIB1，每份三条消息；两种存储合计八份文件、二十四场。GRIB2历史通过不代表GRIB1已验收。
+#### GRIB1 扩展验收（限定正式 Hosted通过）
+
+2026-11-17 用户批准GRIB1标准规则网格子集，格式及语义边界见[GRIB1扩展](../../builtin-formats/媒体与地图数据集.md#grib1-扩展已批准验收分层记录)。继续使用既有`native-grib` case、部署和六项消费权限。2026-11-17用户另行批准仅本case来源初始化用户由十一项增至十三项，增加已有`meta.scan_task.execute`／`meta.scan_task.read`；NFS `grib`目录的有界首次扫描交给已有引擎管理资格的初始化用户，MinIO保持消费用户。记录两存储实际扫描身份／目录／execution，启用现成`scan_preparation=True`精确身份核验；不改其他case、个人／生产账号、服务权限或Grant范围，未迁移精确内容源授权。保留两份GRIB2夹具的完整字节／SHA和原断言，追加两份GRIB1，每份三条消息；两种存储合计八份文件、二十四场。GRIB2历史通过不代表GRIB1已验收；本扩展以本节所列独立正式结果为准。
 
 GRIB1必须独立核对全部解码数值、bitmap、合法9999、常量场、负参考值与缩放、两种扫描、异质网格、重复要素、原参数表身份和单位、原层次字节及hPa／kPa／m边界、即时／累计区间／双字节预报时间声明。切片与目录中保留明确的GRIB1 edition/profile；统计时间和层次不能仅用格式化显示名证明。API／页面分别核对真实可见数值表、消息切换、源变化拒绝和取消，保留既有GRIB2数值断言。按现行原件策略：四份MinIO原件核API／页面按钮完整字节、大小与SHA；四份NFS原件必须403 JSON、无附件，资源动作download关闭、页面无下载按钮。GRIB尚未迁入NFS原件源授权，不扩大产品权限或Grant，不把物理夹具字节核对记作NFS原件下载通过。旧GRIB2历史NFS下载200不外推到现行策略。
 
 Native反例须覆盖未知／地方表、无GDS、复杂打包、谱数据、外部bitmap、坏长度／填充、混合edition、错误时间单位／统计／世纪、层次及边界；还需证明GDAL时间或单位与原声明不一致时拒绝。Native临时快照、八个源文件／对象、元数据Grant和隔离部署／Infra分别核清理。没有地图、COG、Transfer业务任务和持久缓存成果。
 
-标准入口与CI登记继续由本节既有入口覆盖；新增样例在现有Native fixture测试和Online runner中自动枚举，Browser明确核八源。对应Linux全量、产品构建及正式Hosted结果另行登记，未运行、失败和清理不能计作通过。首轮固定源码`f225538ac`、Run`44001056926`／Job`133764926142`中MinIO四源十二场的数值／掩膜／网格／时间层次和原件通过，随后NFS首次扫描403，未进入NFS、源变化及浏览器。四份精确元数据Grant撤销、物理源文件／对象及外层部署／Infra清理通过；保留原失败，不能以其清理或MinIO局部结果登记完整Hosted通过。第二轮固定源码`b871cd7ac`、Run`44007530923`／Job`133786377383`验证了十三项初始化资格及NFS扫描，两种存储共十五场数值（MinIO十二场、NFS首份GRIB2三场）通过，随后旧脚本要求NFS原件200而实际策略返回403；未进入浏览器及NFS GRIB1。五份Grant撤销和不可见观察、四项已完成详情隐藏、物理源及部署／Infra清理通过。该失败仅修正验收对现行原件策略的期望，不开放NFS原件。
+标准入口与CI登记继续由本节既有入口覆盖；新增样例在现有Native fixture测试和Online runner中自动枚举，Browser明确核八源。固定源码`e1a369f1296e030a739cd21e8c346f16e772562e`的[Run44013377421／Job133805423939](https://github.com/pampa0629/addp/actions/runs/44013377421/job/133805423939)正式通过：八源二十四场逐值／mask／网格与GRIB1原时间／层次／packing声明独立核验，四份MinIO下载及四份NFS拒绝、八个页面与二十四张切片截图已复核。八份元数据Grant撤销／详情404、物理八源删除、临时快照回收、部署及Infra零残留通过；无持久缓存或生成任务，不把重复切片一致性称为缓存成果复用。首两轮失败、Linux／本地分层及产物哈希保留在[证据记录](../evidence/资源读取与预览历史证据.md#grib1-标准子集与-grib2-回归正式-hosted2026-11-17)，不能把无关Platform失败计为通过。
 
 ### NetCDF 单文件只读
 
