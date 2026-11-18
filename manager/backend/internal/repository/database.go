@@ -444,6 +444,9 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 			return err
 		}
 	}
+	if err := MigratePreviewStateSchema(db); err != nil {
+		return err
+	}
 
 	var tileTaskLegacyColumns int64
 	if err := db.Raw(`
@@ -525,7 +528,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		}
 	}
 
-	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.PreviewState{}); err != nil {
+	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`

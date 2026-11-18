@@ -21,7 +21,7 @@ func TestTIFFCOGLayoutMultiGenerationUsesCommittedSpatialFacts(t *testing.T) {
 			locator := "addp://engine/6/path/images/scene.tif?type=file&item_id=62"
 			raster := RasterQuickViewSourceFromAttributes(attrs, locator, 6)
 			svc := NewQuickViewService(newTileCacheTaskServiceTestDB(t), nil)
-			cap, err := svc.BuildCapabilityFromSource(t.Context(), QuickViewSource{Identity: QuickViewIdentity{TenantID: 2, ItemFingerprint: commonModels.GenerateItemFingerprint(6, "images/scene.tif"), Locator: locator}, EngineID: 6, Raster: raster})
+			cap, err := svc.BuildCapabilityFromSource(t.Context(), QuickViewSource{Identity: QuickViewIdentity{TenantID: 2, ItemFingerprint: commonModels.GenerateItemFingerprint(6, "images/scene.tif"), Locator: locator}, EngineID: 6, Raster: raster}, 31)
 			if err != nil {
 				t.Fatal(err)
 			}

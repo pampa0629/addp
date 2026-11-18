@@ -60,12 +60,17 @@ func (s *CleanupService) freezeCleanupPlan(ctx context.Context, tenant uint, sco
 	observe := func(kind, identity string) (repository.CleanupTargetToken, error) {
 		return repository.ObserveCleanupTarget(ctx, s.db, repository.CleanupTargetKey{TenantID: tenant, Kind: kind, Identity: identity})
 	}
+	previewItems := make(map[string]struct{})
 	for _, v := range p.PreviewStates {
+		if _, seen := previewItems[v.ItemFingerprint]; seen {
+			continue
+		}
 		token, e := observe(repository.CleanupTargetPreviewState, v.ItemFingerprint)
 		if e != nil {
 			return nil, e
 		}
 		snap.PreviewTokens = append(snap.PreviewTokens, token)
+		previewItems[v.ItemFingerprint] = struct{}{}
 	}
 	for _, v := range p.Embeddings {
 		token, e := observe(repository.CleanupTargetEmbedding, v.ItemFingerprint)
@@ -242,9 +247,19 @@ func verifyCleanupRow(ctx context.Context, tx *gorm.DB, expected interface{}, cu
 	return nil
 }
 func (s *CleanupService) verifyCleanupPlain(ctx context.Context, tx *gorm.DB, snap *managerCleanupSnapshot) error {
-	for _, v := range snap.Plan.PreviewStates {
-		if err := verifyCleanupRow(ctx, tx, v, &models.PreviewState{}, v.ID, v.TenantID); err != nil {
+	if len(snap.PreviewTokens) != 0 {
+		fingerprints := make([]string, 0, len(snap.PreviewTokens))
+		for _, token := range snap.PreviewTokens {
+			fingerprints = append(fingerprints, token.Key.Identity)
+		}
+		var current []*models.PreviewState
+		if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND item_fingerprint IN ?", snap.PreviewTokens[0].Key.TenantID, fingerprints).
+			Order("id").Find(&current).Error; err != nil {
 			return err
+		}
+		if !reflect.DeepEqual(snap.Plan.PreviewStates, current) {
+			return errors.New("Manager cleanup preview states changed")
 		}
 	}
 	for _, v := range snap.Plan.Embeddings {

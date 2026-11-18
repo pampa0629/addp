@@ -69,12 +69,16 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 			if err := cleanup.MigrateResults(tx, "manager"); err != nil {
 				t.Fatal(err)
 			}
-			owned := models.PreviewState{TenantID: 7, ItemFingerprint: "owned", Locator: "addp://engine/9/path/owned?type=table", ViewState: commonmodels.JSONMap{}}
-			other := models.PreviewState{TenantID: 8, ItemFingerprint: "other", Locator: "addp://engine/9/path/other?type=table", ViewState: commonmodels.JSONMap{}}
+			owned := models.PreviewState{TenantID: 7, UserID: 31, ItemFingerprint: "owned", Locator: "addp://engine/9/path/owned?type=table", ViewState: commonmodels.JSONMap{}}
+			secondUser := models.PreviewState{TenantID: 7, UserID: 32, ItemFingerprint: owned.ItemFingerprint, Locator: owned.Locator, ViewState: commonmodels.JSONMap{}}
+			other := models.PreviewState{TenantID: 8, UserID: 31, ItemFingerprint: owned.ItemFingerprint, Locator: owned.Locator, ViewState: commonmodels.JSONMap{}}
 			if err := tx.Create(&owned).Error; err != nil {
 				t.Fatal(err)
 			}
 			if err := tx.Create(&other).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Create(&secondUser).Error; err != nil {
 				t.Fatal(err)
 			}
 			token, err := repository.ObserveCleanupTarget(t.Context(), tx, repository.CleanupTargetKey{TenantID: 7, Kind: repository.CleanupTargetPreviewState, Identity: "owned"})
@@ -252,7 +256,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 				}
 			}
 			var ownedCount, otherCount, results int64
-			if err := tx.Model(&models.PreviewState{}).Where("id=? AND tenant_id=7", owned.ID).Count(&ownedCount).Error; err != nil {
+			if err := tx.Model(&models.PreviewState{}).Where("tenant_id=7 AND item_fingerprint=?", owned.ItemFingerprint).Count(&ownedCount).Error; err != nil {
 				t.Fatal(err)
 			}
 			if err := tx.Model(&models.PreviewState{}).Where("id=? AND tenant_id=8", other.ID).Count(&otherCount).Error; err != nil {
@@ -273,7 +277,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 				if ownedCount != 0 || results != 2 || receipt == nil || child.Status != "success" || staleErr == nil {
 					t.Fatalf("non-atomic completion: owned=%d results=%d status=%s stale=%v", ownedCount, results, child.Status, staleErr)
 				}
-			} else if ownedCount != 1 || results != 1 || receipt != nil || child.Status != "failed" || staleErr != nil {
+			} else if ownedCount != 2 || results != 1 || receipt != nil || child.Status != "failed" || staleErr != nil {
 				t.Fatalf("effects escaped rejection: owned=%d results=%d status=%s stale=%v", ownedCount, results, child.Status, staleErr)
 			}
 			if indexScenario {

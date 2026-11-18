@@ -295,7 +295,7 @@ func TestVectorMaterializedViewDeleteResultsForSourceTableDeletesPreference(t *t
 	if err := repo.CreateResult(context.Background(), result); err != nil {
 		t.Fatalf("create vector materialized view result: %v", err)
 	}
-	if err := previewStateRepo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: result.TenantID, Kind: repository.CleanupTargetPreviewState, Identity: result.ItemFingerprint}}, result.TenantID, result.ItemFingerprint, result.Locator, models.PreviewModeMapQuickView); err != nil {
+	if err := previewStateRepo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: result.TenantID, Kind: repository.CleanupTargetPreviewState, Identity: result.ItemFingerprint}}, result.TenantID, 31, result.ItemFingerprint, result.Locator, models.PreviewModeMapQuickView); err != nil {
 		t.Fatalf("create preview state: %v", err)
 	}
 
@@ -303,7 +303,7 @@ func TestVectorMaterializedViewDeleteResultsForSourceTableDeletesPreference(t *t
 		t.Fatalf("delete results for source table: %v", err)
 	}
 
-	if _, err := previewStateRepo.GetByIdentity(result.TenantID, result.ItemFingerprint, result.Locator); !errors.Is(err, commonapi.ErrNotFound) {
+	if _, err := previewStateRepo.GetByIdentity(t.Context(), result.TenantID, 31, result.ItemFingerprint); !errors.Is(err, commonapi.ErrNotFound) {
 		t.Fatalf("preview state error = %v, want ErrNotFound", err)
 	}
 }

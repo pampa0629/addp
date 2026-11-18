@@ -554,27 +554,28 @@ type TileCacheGeneration struct {
 	CreateURL string `json:"create_url,omitempty"`
 }
 
-func (s *QuickViewService) GetPreference(ctx context.Context, identity QuickViewIdentity) (*models.PreviewState, error) {
-	if identity.TenantID == 0 {
-		identity.TenantID = 1
+func (s *QuickViewService) loadPreviewPreference(ctx context.Context, identity QuickViewIdentity, userID uint) (*models.PreviewState, error) {
+	state, err := s.repo.GetByIdentity(ctx, identity.TenantID, userID, identity.ItemFingerprint)
+	if errors.Is(err, commonapi.ErrNotFound) {
+		return nil, nil
 	}
-	identity.Locator = strings.TrimSpace(identity.Locator)
-	qv, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
-	if err == nil {
-		return qv, nil
-	}
-	if !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+	return state, err
+}
+
+func (s *QuickViewService) GetPreference(ctx context.Context, identity QuickViewIdentity, userID uint) (*models.PreviewState, error) {
+	state, err := s.loadPreviewPreference(ctx, identity, userID)
+	if err != nil || state != nil {
+		return state, err
 	}
 	return &models.PreviewState{
 		TenantID:        identity.TenantID,
 		ItemFingerprint: identity.ItemFingerprint,
-		Locator:         identity.Locator,
+		Locator:         strings.TrimSpace(identity.Locator),
 		PreferredMode:   models.PreviewModeBasicPreview,
 	}, nil
 }
 
-func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickViewIdentity, engineID uint, schema, table string) (*QuickViewCapability, error) {
+func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickViewIdentity, userID, engineID uint, schema, table string) (*QuickViewCapability, error) {
 	if identity.TenantID == 0 {
 		identity.TenantID = 1
 	}
@@ -587,8 +588,8 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 
 	now := time.Now()
 	preferredMode := models.PreviewModeBasicPreview
-	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
-	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
+	existing, err := s.loadPreviewPreference(ctx, identity, userID)
+	if err != nil {
 		return nil, err
 	}
 	if existing != nil && strings.TrimSpace(existing.PreferredMode) != "" {
@@ -692,7 +693,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	return capability, nil
 }
 
-func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source QuickViewSource) (*QuickViewCapability, error) {
+func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source QuickViewSource, userID uint) (*QuickViewCapability, error) {
 	identity := source.Identity
 	if identity.TenantID == 0 {
 		identity.TenantID = 1
@@ -711,8 +712,8 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	now := time.Now()
 	preferredMode := models.PreviewModeBasicPreview
 	hasExistingPreference := false
-	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
-	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
+	existing, err := s.loadPreviewPreference(ctx, identity, userID)
+	if err != nil {
 		return nil, err
 	}
 	if existing != nil && strings.TrimSpace(existing.PreferredMode) != "" {
@@ -1564,14 +1565,12 @@ func TileCacheZoomRange(tileCache *models.TileCache) (int, int, bool) {
 func (s *QuickViewService) UpdatePreferredModeByIdentity(
 	ctx context.Context,
 	identity QuickViewIdentity,
+	userID uint,
 	preferredMode string,
 	capabilityLoader func(context.Context) (*QuickViewCapability, error),
 ) error {
 	if preferredMode != models.PreviewModeBasicPreview && preferredMode != models.PreviewModeMapQuickView {
 		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, preferredMode)
-	}
-	if identity.TenantID == 0 {
-		identity.TenantID = 1
 	}
 	identity.Locator = strings.TrimSpace(identity.Locator)
 	if strings.TrimSpace(identity.ItemFingerprint) == "" {
@@ -1597,18 +1596,16 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 			return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, reason)
 		}
 	}
-	return s.repo.UpdatePreferredMode(ctx, token, identity.TenantID, identity.ItemFingerprint, identity.Locator, preferredMode)
+	return s.repo.UpdatePreferredMode(ctx, token, identity.TenantID, userID, identity.ItemFingerprint, identity.Locator, preferredMode)
 }
 
 func (s *QuickViewService) UpdateViewStateByIdentity(
 	ctx context.Context,
 	identity QuickViewIdentity,
+	userID uint,
 	viewState commonModels.JSONMap,
 	capabilityLoader func(context.Context) (*QuickViewCapability, error),
 ) error {
-	if identity.TenantID == 0 {
-		identity.TenantID = 1
-	}
 	identity.Locator = strings.TrimSpace(identity.Locator)
 	if strings.TrimSpace(identity.ItemFingerprint) == "" {
 		return fmt.Errorf("%w: item identity is missing", ErrQuickViewInvalidPreferredMode)
@@ -1621,10 +1618,13 @@ func (s *QuickViewService) UpdateViewStateByIdentity(
 		viewState = commonModels.JSONMap{}
 	}
 	initialMode := ""
-	stored, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
-	if err == nil {
+	stored, err := s.loadPreviewPreference(ctx, identity, userID)
+	if err != nil {
+		return err
+	}
+	if stored != nil {
 		initialMode = stored.PreferredMode
-	} else if errors.Is(err, commonapi.ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+	} else {
 		capability, loadErr := capabilityLoader(ctx)
 		if loadErr != nil {
 			return loadErr
@@ -1632,13 +1632,11 @@ func (s *QuickViewService) UpdateViewStateByIdentity(
 		if capability != nil {
 			initialMode = capability.PreferredMode
 		}
-	} else {
-		return err
 	}
 	if initialMode != models.PreviewModeBasicPreview && initialMode != models.PreviewModeMapQuickView {
 		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, initialMode)
 	}
-	return s.repo.UpdateViewState(ctx, token, identity.TenantID, identity.ItemFingerprint, identity.Locator, initialMode, normalizePreviewViewStatePayload(viewState))
+	return s.repo.UpdateViewState(ctx, token, identity.TenantID, userID, identity.ItemFingerprint, identity.Locator, initialMode, normalizePreviewViewStatePayload(viewState))
 }
 
 func normalizePreviewViewStatePayload(viewState commonModels.JSONMap) commonModels.JSONMap {

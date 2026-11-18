@@ -38,7 +38,8 @@ func (f *capabilityVisibilityFixture) CheckManagerObjectPreview(ctx context.Cont
 	return r, e
 }
 
-func TestNFSTIFFCapabilityCurrentVisibilityAndDelivery(t *testing.T) {
+func registerNFSQuickViewTestPlugin(t *testing.T) {
+	t.Helper()
 	previous, previousErr := plugin.Get("nfs")
 	plugin.Register(&nfs.NFSPlugin{})
 	t.Cleanup(func() {
@@ -48,6 +49,10 @@ func TestNFSTIFFCapabilityCurrentVisibilityAndDelivery(t *testing.T) {
 			plugin.Unregister("nfs")
 		}
 	})
+}
+
+func TestNFSTIFFCapabilityCurrentVisibilityAndDelivery(t *testing.T) {
+	registerNFSQuickViewTestPlugin(t)
 	for _, tc := range []struct {
 		name              string
 		visible, readable bool
@@ -70,7 +75,7 @@ func TestNFSTIFFCapabilityCurrentVisibilityAndDelivery(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newTaskProviderHandlerTestDB(t)
-			for _, sql := range []string{"CREATE TABLE manager.preview_state (id INTEGER PRIMARY KEY, tenant_id INTEGER, item_fingerprint TEXT, locator TEXT)", "ALTER TABLE manager.vector_tile_cache ADD COLUMN item_fingerprint TEXT", "ALTER TABLE manager.vector_materialized_view ADD COLUMN item_fingerprint TEXT", "ALTER TABLE manager.raster_cog ADD COLUMN item_fingerprint TEXT"} {
+			for _, sql := range []string{"CREATE TABLE manager.preview_state (id INTEGER PRIMARY KEY, tenant_id INTEGER, user_id INTEGER, item_fingerprint TEXT, locator TEXT)", "ALTER TABLE manager.vector_tile_cache ADD COLUMN item_fingerprint TEXT", "ALTER TABLE manager.vector_materialized_view ADD COLUMN item_fingerprint TEXT", "ALTER TABLE manager.raster_cog ADD COLUMN item_fingerprint TEXT"} {
 				if e := db.Exec(sql).Error; e != nil {
 					t.Fatal(e)
 				}
@@ -126,5 +131,104 @@ func TestNFSTIFFCapabilityCurrentVisibilityAndDelivery(t *testing.T) {
 				t.Fatal("metadata-only capability exposed content URL")
 			}
 		})
+	}
+}
+
+func TestPreviewStateUsesCurrentTenantUserForReadAndWrite(t *testing.T) {
+	registerNFSQuickViewTestPlugin(t)
+	db := newTaskProviderHandlerTestDB(t)
+	if err := db.Exec(`CREATE TABLE manager.preview_state (
+		id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, user_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
+		locator TEXT NOT NULL, preferred_mode TEXT DEFAULT 'basic_preview', view_state JSON DEFAULT '{}',
+		created_at DATETIME, updated_at DATETIME, UNIQUE(tenant_id, item_fingerprint, user_id))`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"vector_tile_cache", "vector_materialized_view", "raster_cog"} {
+		if err := db.Exec("ALTER TABLE manager." + table + " ADD COLUMN item_fingerprint TEXT").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	meta := apiDownloadTestMetaItemClient(t, `{"id":1,"tenant_id":1,"engine_id":9,"item_type":"file","full_name":"images/private.tif","name":"private.tif","attributes":{"schema_version":1,"item":{"data_type":"media","format":"tiff","layout":"single"},"storage":{"total_size":1844},"capabilities":{"spatial":{"srid":4326,"extent":[1,2,3,4]}},"type_info":{"media":{"width":240,"height":120}},"format_info":{"tiff":{"profile":"cog","is_cloud_optimized":true}}}}`)
+	resolver := preview.NewPreviewResolver(nil, apiDownloadTestSystemClient(t, 9, "nfs"), meta)
+	h := NewQuickViewHandler(service.NewQuickViewService(db, meta), resolver, nil, nil)
+	h.SetObjectPreviewChecker(&objectVisibilityFixture{visible: true, readable: true})
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		switch c.GetHeader("X-Test-Session") {
+		case "user-a-first-session", "user-a-new-session":
+			setTenantAuthContextForTest(c, 1, 31)
+		case "user-b-first-session", "user-b-new-session":
+			setTenantAuthContextForTest(c, 1, 32)
+		}
+	})
+	router.GET("/preview-state", h.GetPreviewStateByLocator)
+	router.GET("/quick-view/capability", h.GetQuickViewCapabilityByLocator)
+	router.PATCH("/preview-state/view-state", h.UpdateViewStateByLocator)
+	router.PATCH("/preview-state/preferred-mode", h.UpdatePreferredModeByLocator)
+
+	const locator = "addp://engine/9/path/images/private.tif?type=file&item_id=1"
+	call := func(session, method, path string, payload map[string]any, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		if method == "GET" {
+			path += "?locator=" + urlQueryEscape(locator)
+		} else {
+			payload["locator"] = locator
+		}
+		requestBody, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(method, path, strings.NewReader(string(requestBody)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer addp_at_original_user")
+		req.Header.Set("X-Test-Session", session)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		if res.Code != status {
+			t.Fatalf("%s %s status=%d want %d: %s", method, path, res.Code, status, res.Body.String())
+		}
+		return res
+	}
+	assertState := func(session, path, mode string, zoom int) {
+		t.Helper()
+		res := call(session, "GET", path, nil, 200)
+		var state struct {
+			PreferredMode string `json:"preferred_mode"`
+			ViewState     map[string]struct {
+				Map struct {
+					Zoom int `json:"zoom"`
+				} `json:"map"`
+			} `json:"view_state"`
+		}
+		if err := json.Unmarshal(res.Body.Bytes(), &state); err != nil {
+			t.Fatal(err)
+		}
+		if state.PreferredMode != mode || state.ViewState["basic_preview"].Map.Zoom != zoom ||
+			res.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("unexpected state from %s: %s", path, res.Body.String())
+		}
+	}
+	writeView := func(session string, zoom int, suppliedUser uint) {
+		t.Helper()
+		call(session, "PATCH", "/preview-state/view-state", map[string]any{
+			"user_id": suppliedUser,
+			"view_state": map[string]any{
+				"basic_preview": map[string]any{"map": map[string]any{"center": []int{2, 3}, "zoom": zoom}},
+			},
+		}, 200)
+	}
+	call("machine", "GET", "/preview-state", nil, 403)
+	call("machine", "PATCH", "/preview-state/view-state", map[string]any{}, 403)
+	call("machine", "PATCH", "/preview-state/preferred-mode", map[string]any{}, 403)
+	writeView("user-a-first-session", 8, 32)
+	call("user-a-first-session", "PATCH", "/preview-state/preferred-mode", map[string]any{"preferred_mode": "basic_preview", "user_id": 32}, 200)
+	assertState("user-b-first-session", "/preview-state", "basic_preview", 0)
+	assertState("user-b-first-session", "/quick-view/capability", "map_quick_view", 0)
+
+	writeView("user-b-first-session", 13, 31)
+	call("user-b-first-session", "PATCH", "/preview-state/preferred-mode", map[string]any{"preferred_mode": "map_quick_view", "user_id": 31}, 200)
+	for _, path := range []string{"/preview-state", "/quick-view/capability"} {
+		assertState("user-a-new-session", path, "basic_preview", 8)
+		assertState("user-b-new-session", path, "map_quick_view", 13)
 	}
 }

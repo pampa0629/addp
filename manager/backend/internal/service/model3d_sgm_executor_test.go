@@ -317,7 +317,7 @@ func TestSGMCapabilityRequiresBothDirectOperators(t *testing.T) {
 			capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 				Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: "sgm-fp", Locator: "addp://engine/26/path/models/compass.SGM?type=file&item_id=77"},
 				EngineID: 26, Model3D: &Model3DGLBSource{Format: "sgm", Layout: "single", SourceSizeBytes: 100},
-			})
+			}, 31)
 			if err != nil {
 				t.Fatal(err)
 			}

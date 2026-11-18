@@ -15,8 +15,9 @@ const (
 // 快显能力由查询时根据数据项元信息和快显结果动态合成。
 type PreviewState struct {
 	ID              uint   `gorm:"primaryKey" json:"id"`
-	TenantID        uint   `gorm:"not null;uniqueIndex:idx_preview_state_tenant_fingerprint,priority:1" json:"tenant_id"`
-	ItemFingerprint string `gorm:"size:64;not null;uniqueIndex:idx_preview_state_tenant_fingerprint,priority:2" json:"item_fingerprint"`
+	TenantID        uint   `gorm:"not null;uniqueIndex:idx_preview_state_tenant_item_user,priority:1" json:"tenant_id"`
+	ItemFingerprint string `gorm:"size:64;not null;uniqueIndex:idx_preview_state_tenant_item_user,priority:2" json:"item_fingerprint"`
+	UserID          uint   `gorm:"not null;check:chk_preview_state_user_id,user_id > 0;uniqueIndex:idx_preview_state_tenant_item_user,priority:3" json:"-"`
 	Locator         string `gorm:"type:text;not null" json:"locator"`
 
 	PreferredMode string               `gorm:"default:'basic_preview';size:32" json:"preferred_mode"`

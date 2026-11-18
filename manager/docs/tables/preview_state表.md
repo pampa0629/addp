@@ -8,7 +8,7 @@
 
 它回答：
 
-> 当前 item 的用户偏好预览模式是什么，以及基础预览 / 快显各自最近一次地图视口、三维相机或表格显示状态是什么。
+> 当前租户内，当前 User 对该数据项偏好的预览模式是什么，以及基础预览 / 快显各自最近一次地图视口、三维相机或表格显示状态是什么。
 
 它不回答：
 
@@ -37,7 +37,8 @@
 | --- | --- | --- |
 | `id` | bigint | 偏好记录 ID |
 | `tenant_id` | integer | 租户 ID |
-| `item_fingerprint` | varchar(64) | 标准 data item 指纹，和 `tenant_id` 组成唯一偏好身份 |
+| `user_id` | bigint | 当前 User 的稳定主体 ID，由已认证的 Tenant AuthContext 提供 |
+| `item_fingerprint` | varchar(64) | 标准数据项指纹，与租户、用户组成唯一偏好身份 |
 | `locator` | text | 资源树或数据项回跳定位，不作为去重主键 |
 | `preferred_mode` | varchar | `basic_preview` / `map_quick_view` |
 | `view_state` | jsonb | 快显 / 预览交互状态。顶层按 `basic_preview` / `quick_view` 区分显示模式，模式内按 `map` / `scene_3d` / `table` 区分渲染域 |
@@ -55,23 +56,25 @@
 
 | 索引名 | 字段顺序 | 模型声明 |
 | --- | --- | --- |
-| `idx_preview_state_tenant_fingerprint` | `tenant_id, item_fingerprint` | [PreviewState 模型](../../backend/internal/models/preview_state.go)声明的联合唯一索引，两列均声明 `NOT NULL`。 |
+| `idx_preview_state_tenant_item_user` | `tenant_id, item_fingerprint, user_id` | 三列均为必填，联合唯一。索引前两列支持按数据项清理各用户的偏好。 |
 
-[偏好写入](../../backend/internal/repository/preview_state_repository.go)以这两列作为 `ON CONFLICT` 目标。声明和写入依赖不等于实际运行库约束已核验；目标数据库仍须核对索引所属表、字段组合、唯一性和有效状态，不能仅凭同名索引认定符合要求。
+Manager 启动执行 [048 迁移](../../backend/migrations/048_scope_preview_state_to_user.sql)，原来无法归属到用户的共享偏好一次性重置。迁移在同一事务内设置用户字段及唯一索引。首次打开数据项由当前资源事实决定默认预览，随后按账号恢复偏好。
 
-当前启动经 [InitDatabase／ensureTileCacheStateSchema](../../backend/internal/repository/database.go) 的 Go 初始化链调用 `AutoMigrate`；旧结构检查包含删除并重建 `preview_state` 的分支。[历史 030 SQL](../../backend/migrations/030_rename_quick_view_to_preview_state.sql)也定义了该唯一索引并包含旧表删除，不能据文件存在认定目标库已执行，也不能以启动初始化或重放 SQL 代替只读索引核验。
+资源清理按租户与数据项处理该数据项的全部用户偏好，仍按数据项推进清理代际。清理使用评估时的偏好集合，确认后新增、修改或移除偏好会使计划失效。
 
-现有 [IndependentWrites PostgreSQL 用例](../../backend/internal/repository/preview_state_postgres_integration_test.go)由 `make test-manager-postgres` 的现有命名筛选命中；它在隔离 Schema 中自行创建联合唯一键后验证独立写入和并发保存，不验证当前运行库的索引名称或启动迁移是否生效。标准门禁与分版本证据见[Manager 开发与验证](../../CLAUDE.md#开发与验证)，源码和用例存在不计为数据库约束或运行验收通过。
+[PostgreSQL 门禁](../../backend/internal/repository/preview_state_postgres_integration_test.go)验证旧结构迁移、启动重入、同租户跨用户隔离及同一用户的独立并发写入。运行验收与标准入口见 [Manager 开发与验证](../../CLAUDE.md#开发与验证)。
 
 ## 五、UI 行为
 
 模式偏好与交互状态写入遵循以下规则：
 
-首次保存交互状态时，模式初值沿用 Quick View Capability 根据源事实计算的 `preferred_mode`，不得固定写成 `basic_preview`。已有记录的交互状态写入只更新 `view_state`，不覆盖模式偏好；模式偏好写入也不得清空交互状态。两类写入按 `tenant_id + item_fingerprint` 原子 upsert，首次并发保存也必须保留明确的模式选择。
+首次保存交互状态时，模式初值沿用 Quick View Capability 根据源事实计算的 `preferred_mode`，不得固定写成 `basic_preview`。已有记录的交互状态写入只更新 `view_state`，不覆盖模式偏好；模式偏好写入也不得清空交互状态。两类写入按 `tenant_id + user_id + item_fingerprint` 原子 upsert，首次并发保存也必须保留该用户明确选择的模式。
 
 预览页生成成果成功且当前数据项、用户模式选择均未变化时，自动进入快显必须同时通过既有模式偏好接口保存 `map_quick_view`，不能只修改页面局部模式。生成等待期间已切换数据项或明确选择其他模式时，不自动切换或覆盖该选择。同一数据项的模式保存按动作顺序串行发送，自动保存晚返回不得覆盖随后手动选择。任务页或后台生成不改变用户预览偏好。
 
 页面按钮、数据任务上下文与矢量物化视图诊断分别沿[页面动作](../quick-view/共用契约.md#矢量瓦片状态与页面动作)、[矢量任务与结果入口](../quick-view/矢量快显与物化视图.md#矢量物化视图任务和结果)及[目标与超时边界](../quick-view/矢量快显与物化视图.md#pg-表要求与矢量物化视图路线)维护；不由偏好记录推导生成能力。
+
+预览状态读取、两种写入和快显能力中附带的偏好均使用当前 User 的 Tenant AuthContext。请求只提交数据项和偏好值。个人状态读取须使用 `Cache-Control: no-store`。快显能力对无 User 身份的合法调用者只计算资源默认值。
 
 ## 六、与瓦片缓存结果的关系
 

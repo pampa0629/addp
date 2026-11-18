@@ -110,7 +110,7 @@ func TestQuickViewRasterMosaicUsesCanonicalSourceFacts(t *testing.T) {
 
 func testQuickViewModel3DActor(t *testing.T, modelFormat string) {
 	db := newTaskProviderHandlerTestDB(t)
-	if err := db.Exec("CREATE TABLE manager.preview_state (id INTEGER PRIMARY KEY, tenant_id INTEGER, item_fingerprint TEXT)").Error; err != nil {
+	if err := db.Exec("CREATE TABLE manager.preview_state (id INTEGER PRIMARY KEY, tenant_id INTEGER, user_id INTEGER, item_fingerprint TEXT)").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("ALTER TABLE manager.vector_tile_cache ADD COLUMN item_fingerprint TEXT").Error; err != nil {

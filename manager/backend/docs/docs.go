@@ -3116,7 +3116,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以 Resource Locator 为数据项身份返回用户预览模式与交互设置，包括地图视口、三维相机和表格可见字段。 | Return user preview mode and interaction settings by Resource Locator, including map viewport, 3D camera and visible table columns.",
+                "description": "按 Resource Locator 返回当前租户内当前用户的预览模式和交互设置，包括地图视口、三维相机和表格可见字段。 | Return the current tenant user’s preview mode and interaction settings by Resource Locator, including map viewport, 3D camera and visible table columns.",
                 "produces": [
                     "application/json"
                 ],
@@ -3147,6 +3147,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "当前身份不是租户用户 | Tenant user identity required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "资源不存在 | Resource not found",
                         "schema": {
@@ -3168,7 +3175,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以 Resource Locator 为数据项身份更新显示偏好：basic_preview 或 map_quick_view | Update preferred display mode by Resource Locator: basic_preview or map_quick_view",
+                "description": "按 Resource Locator 更新当前租户内当前用户的显示偏好：basic_preview 或 map_quick_view | Update the current tenant user’s preferred display mode by Resource Locator: basic_preview or map_quick_view",
                 "consumes": [
                     "application/json"
                 ],
@@ -3205,6 +3212,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "当前身份不是租户用户 | Tenant user identity required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
                         "description": "资源不存在 | Resource not found",
                         "schema": {
@@ -3223,7 +3237,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以 Resource Locator 为数据项身份更新预览交互状态。首次保存沿用快显能力计算的默认模式；已有模式偏好不被交互状态覆盖。view_state 顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d / table 区分渲染域。 | Update interaction state by Resource Locator. The initial mode follows Quick View Capability; existing mode preferences are preserved. view_state is grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d / table.",
+                "description": "按 Resource Locator 更新当前租户内当前用户的预览交互状态。首次保存沿用快显能力计算的默认模式；已有模式偏好不被交互状态覆盖。view_state 顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d / table 区分渲染域。 | Update the current tenant user’s interaction state by Resource Locator. The initial mode follows Quick View Capability; existing mode preferences are preserved. view_state is grouped by display mode basic_preview / quick_view, then by render domain map / scene_3d / table.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3255,6 +3269,13 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份不是租户用户 | Tenant user identity required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3373,7 +3394,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "NFS TIFF按原用户当前System裁决返回：不可见404，仅元数据为metadata_only最小能力且不返回内容事实；完整结果交付前重核 | NFS TIFF checks current original-user System visibility: hidden targets return 404, metadata_only contains no content facts, full results recheck current access\n以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.\n源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.\nFTP 的 GLB 生成动作适用于 IFC／3DS／DAE／OBJ；使用 System 实际引擎类型判断，不接受调用者自报类型，也不以 Grant 是否存在决定能力。 | FTP GLB generation actions apply to IFC/3DS/DAE/OBJ, using the actual System engine type rather than caller labels or Grant availability.",
+                "description": "NFS TIFF按原用户当前System裁决返回：不可见404，仅元数据为metadata_only最小能力且不返回内容事实；完整结果交付前重核 | NFS TIFF checks current original-user System visibility: hidden targets return 404, metadata_only contains no content facts, full results recheck current access\n以 Resource Locator 返回快显能力状态及当前租户内当前用户的预览偏好。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability and the current tenant user’s preview preferences by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.\n源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.\nFTP 的 GLB 生成动作适用于 IFC／3DS／DAE／OBJ；使用 System 实际引擎类型判断，不接受调用者自报类型，也不以 Grant 是否存在决定能力。 | FTP GLB generation actions apply to IFC/3DS/DAE/OBJ, using the actual System engine type rather than caller labels or Grant availability.",
                 "produces": [
                     "application/json"
                 ],

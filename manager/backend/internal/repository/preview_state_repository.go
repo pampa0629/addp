@@ -9,6 +9,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/migrations"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -22,53 +23,33 @@ func NewPreviewStateRepository(db *gorm.DB) *PreviewStateRepository {
 	return &PreviewStateRepository{db: db}
 }
 
+func MigratePreviewStateSchema(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('addp.manager.preview_state_schema', 0))").Error; err != nil {
+			return err
+		}
+		return tx.Exec(migrations.PreviewStateUserScopeSQL).Error
+	})
+}
+
 // GetDB 获取数据库连接（用于复杂查询）
 func (r *PreviewStateRepository) GetDB() *gorm.DB {
 	return r.db
 }
 
-func (r *PreviewStateRepository) GetByIdentity(tenantID uint, itemFingerprint string, locator string) (*models.PreviewState, error) {
+func (r *PreviewStateRepository) GetByIdentity(ctx context.Context, tenantID, userID uint, itemFingerprint string) (*models.PreviewState, error) {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
-	if itemFingerprint == "" {
+	if userID == 0 || itemFingerprint == "" {
 		return nil, commonapi.ErrNotFound
 	}
 	var state models.PreviewState
-	err := r.db.Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).First(&state).Error
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND item_fingerprint = ? AND user_id = ?", tenantID, itemFingerprint, userID).
+		First(&state).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
 	return &state, nil
-}
-
-func (r *PreviewStateRepository) GetByID(id uint) (*models.PreviewState, error) {
-	var state models.PreviewState
-	err := r.db.First(&state, id).Error
-	if err != nil {
-		return nil, commonrepo.WrapDBError(err)
-	}
-	return &state, nil
-}
-
-func (r *PreviewStateRepository) GetStatistics(tenantID uint) (*Statistics, error) {
-	var stats Statistics
-
-	r.db.Model(&models.PreviewState{}).
-		Where("tenant_id = ?", tenantID).
-		Count(&stats.Total)
-
-	return &stats, nil
-}
-
-// Statistics 统计信息
-type Statistics struct {
-	Total      int64 `json:"total"`
-	Generating int64 `json:"generating"`
-	Ready      int64 `json:"ready"`
-	Failed     int64 `json:"failed"`
-}
-
-func (r *PreviewStateRepository) Delete(id uint) error {
-	return r.db.Delete(&models.PreviewState{}, id).Error
 }
 
 func (r *PreviewStateRepository) ListPreviewStates(ctx context.Context, tenantID uint) ([]*models.PreviewState, error) {
@@ -89,7 +70,7 @@ func (r *PreviewStateRepository) DeleteByTenantAndFingerprint(ctx context.Contex
 // UpdatePreferredMode 更新用户偏好的显示模式
 func (r *PreviewStateRepository) UpdatePreferredMode(
 	ctx context.Context, token CleanupTargetToken,
-	tenantID uint,
+	tenantID, userID uint,
 	itemFingerprint string,
 	locator string,
 	mode string,
@@ -106,10 +87,11 @@ func (r *PreviewStateRepository) UpdatePreferredMode(
 			return err
 		}
 		return tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}, {Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"preferred_mode", "locator", "updated_at"}),
 		}).Create(&models.PreviewState{
 			TenantID:        tenantID,
+			UserID:          userID,
 			ItemFingerprint: itemFingerprint,
 			Locator:         strings.TrimSpace(locator),
 			PreferredMode:   mode,
@@ -119,7 +101,7 @@ func (r *PreviewStateRepository) UpdatePreferredMode(
 
 func (r *PreviewStateRepository) UpdateViewState(
 	ctx context.Context, token CleanupTargetToken,
-	tenantID uint,
+	tenantID, userID uint,
 	itemFingerprint string,
 	locator string,
 	initialPreferredMode string,
@@ -140,10 +122,11 @@ func (r *PreviewStateRepository) UpdateViewState(
 			return err
 		}
 		return tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}, {Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"view_state", "locator", "updated_at"}),
 		}).Create(&models.PreviewState{
 			TenantID:        tenantID,
+			UserID:          userID,
 			ItemFingerprint: itemFingerprint,
 			Locator:         strings.TrimSpace(locator),
 			PreferredMode:   initialPreferredMode,
