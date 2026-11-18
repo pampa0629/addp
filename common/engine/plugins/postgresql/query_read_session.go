@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -12,6 +13,22 @@ import (
 var _ plugin.QueryReadSessionProvider = (*PostgreSQLPlugin)(nil)
 
 func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery) (plugin.QueryReadSession, error) {
+	session, err := p.openQueryReadSession(ctx, prepared, nil)
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery, authorize plugin.QueryReadAuthorizer) (*postgresQueryReadSession, error) {
+	var expected *plugin.QueryReadSet
+	var err error
+	if authorize != nil {
+		expected, err = prepared.ReadSet(ctx)
+		if err != nil || expected == nil {
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
+	}
 	binding, err := plugin.ConsumeSQLPreparedReadSession(prepared, p)
 	if err != nil {
 		return nil, err
@@ -24,10 +41,37 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 	if err != nil {
 		return nil, fmt.Errorf("open PostgreSQL query read database: %w", err)
 	}
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	isolation := sql.LevelRepeatableRead
+	if authorize != nil {
+		isolation = sql.LevelReadCommitted
+	}
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: isolation})
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("begin PostgreSQL query read transaction: %w", err)
+	}
+	var readSet *plugin.QueryReadSet
+	if authorize != nil {
+		query, actual, err := prepareGuardedPostgresQuery(request)
+		if err != nil || actual == nil || !(len(expected.Paths) == 0 && len(actual.Paths) == 0 || reflect.DeepEqual(expected.Paths, actual.Paths)) {
+			_ = tx.Rollback()
+			_ = db.Close()
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
+		for _, path := range actual.Paths {
+			if _, err := p.checkOrdinaryTable(ctx, tx, path, false); err != nil {
+				_ = tx.Rollback()
+				_ = db.Close()
+				return nil, err
+			}
+		}
+		if err := authorize(ctx, actual.Clone()); err != nil {
+			_ = tx.Rollback()
+			_ = db.Close()
+			return nil, err
+		}
+		request.Query = query
+		readSet = actual
 	}
 	if err := binding.ValidateExecution(ctx, tx); err != nil {
 		_ = tx.Rollback()
@@ -41,7 +85,9 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 		_ = db.Close()
 		return nil, fmt.Errorf("declare PostgreSQL query read session: %w", err)
 	}
-	readSet := p.observeSessionReadSet(ctx, tx, request)
+	if authorize == nil {
+		readSet = p.observeSessionReadSet(ctx, tx, request)
+	}
 	rows, err := tx.QueryContext(ctx, "FETCH FORWARD 0 FROM "+cursor)
 	if err != nil {
 		_ = tx.Rollback()

@@ -346,6 +346,39 @@ func TestIntegrationGaussDBPreparedReadAndCancellation(t *testing.T) {
 	if set == nil || len(set.Paths) != 1 || !reflect.DeepEqual(set.Paths[0], want) {
 		t.Fatalf("read set identity: %+v", set)
 	}
+	t.Run("business source requires a fresh decision on each query", func(t *testing.T) {
+		denied := errors.New("source read permission revoked")
+		for _, decision := range []error{nil, denied} {
+			plan, err := p.PrepareQuery(ctx, info, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			session, err := p.OpenGuardedQueryReadSession(ctx, plan, func(_ context.Context, sources *plugin.QueryReadSet) error {
+				calls++
+				if sources == nil || len(sources.Paths) != 1 || !reflect.DeepEqual(sources.Paths[0], want) {
+					t.Fatalf("unexpected source set: %+v", sources)
+				}
+				return decision
+			})
+			if session != nil {
+				defer session.Close(context.Background())
+			}
+			if calls != 1 || !errors.Is(err, decision) || (session == nil) != (decision != nil) {
+				t.Fatalf("source check calls=%d, session=%v, error=%v", calls, session != nil, err)
+			}
+			if decision == nil {
+				batch, err := session.ReadBatch(ctx, 10)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertExactRows(t, batch)
+				if err := session.Close(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	})
 	if _, err := prepared.OutputLineage(ctx); err != nil {
 		t.Fatal(err)
 	}

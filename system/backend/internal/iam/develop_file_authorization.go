@@ -552,13 +552,13 @@ func (r *Repository) developFileUser(ctx context.Context, credential string, loc
 	if err != nil {
 		return nil, nil, err
 	}
-	if !developFileUserCredential(current, permissions...) || snapshot.TenantID == nil || snapshot.TenantMembershipID == nil {
+	if !developUserExecutionCredential(current, permissions...) || snapshot.TenantID == nil || snapshot.TenantMembershipID == nil {
 		return nil, nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	return &ExecutionAuthorization{ActorPrincipalID: snapshot.FamilyPrincipalID, TenantID: *snapshot.TenantID, TenantMembershipID: *snapshot.TenantMembershipID, IssuedAuthorizationVersion: snapshot.FamilyAuthorizationVersion, SourceType: "user", Audience: "develop"}, current, nil
 }
 
-func developFileUserCredential(auth *authorization.AuthContext, permissions ...string) bool {
+func developUserExecutionCredential(auth *authorization.AuthContext, permissions ...string) bool {
 	if auth == nil || auth.Principal.Type != "user" || auth.Context.Type != "tenant" || auth.Delegation != nil || len(auth.Client.Audiences) != 1 || auth.Client.Audiences[0] != "addp.api" || !authorization.HasContextPermissions(*auth, permissions...) {
 		return false
 	}

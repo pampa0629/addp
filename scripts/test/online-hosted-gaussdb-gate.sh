@@ -7,9 +7,14 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=gaussdb-consumer-flow
 # Randomly named resources are checked and removed by the labelled fixture owner.
 HOSTED_FIXTURE_CONTAINERS=()
+grant_cleanup_status=
 before_online_application_stop() {
-  [ ! -f "$ADDP_ONLINE_SECRET_DIR/readonly-sql-grants.json" ] ||
-    run_logged bash -c 'source "$1"; python3 -m scripts.test.readonly-sql-consumer-flow-online --engine-type "$2" cleanup' _ "$IDENTITY_ENV" gaussdb
+  if [ -n "$grant_cleanup_status" ]; then return "$grant_cleanup_status"; fi
+  grant_cleanup_status=0
+  if [ -f "$ADDP_ONLINE_SECRET_DIR/readonly-sql-grants.json" ]; then
+    run_logged bash -c 'source "$1"; python3 -m scripts.test.readonly-sql-consumer-flow-online --engine-type "$2" cleanup' _ "$IDENTITY_ENV" gaussdb || grant_cleanup_status=$?
+  fi
+  return "$grant_cleanup_status"
 }
 stop_online_fixture() {
   run_logged python3 business/scripts/online-gaussdb-consumer-fixture.py stop
@@ -36,3 +41,6 @@ export ADDP_ONLINE_CONSUMER_ENGINE_ID
 run_logged python3 -m scripts.test.readonly-sql-consumer-flow-online --engine-type gaussdb prepare
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
+# The same consumer submits its successful SQL again after the fixture owner revokes it.
+before_online_application_stop
+run_logged python3 -m scripts.test.readonly-sql-consumer-flow-online --engine-type gaussdb verify-revoked

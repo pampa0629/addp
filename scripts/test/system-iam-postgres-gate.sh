@@ -348,6 +348,14 @@ case "$TEST_FILTER" in
         [ "$PACKAGE_FILTER" = "online-fixture" ] || { echo "catalog-browser requires --package online-fixture" >&2; exit 2; }
         test_pattern='^TestCatalogBrowserIdentitiesAgainstPostgres$'
         ;;
+    develop-query-read)
+        case "$PACKAGE_FILTER" in
+            iam) test_pattern='^TestExecutionAuthorizationServiceAgainstPostgres$' ;;
+            engineaccess) test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^current_complete_source_read_rules$/^trusted_current_User_credential_and_precise_rules$/^Develop_query_current_Grants_and_final_Meta_recheck$' ;;
+            migration) test_pattern='^TestDevelopQueryReadCheckRuntimeForwardMigrationAgainstPostgres$' ;;
+            *) echo "develop-query-read requires --package iam|engineaccess|migration" >&2; exit 2 ;;
+        esac
+        ;;
     execution-subject-roles)
         if [ "$PACKAGE_FILTER" != "iam" ]; then
             echo "execution-subject-roles test requires --package iam" >&2

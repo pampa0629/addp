@@ -476,10 +476,15 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 		if !ok {
 			return nil, ErrControlledSQLExecutionUnsupported
 		}
+		guarded := engine.EngineType == "postgresql" || engine.EngineType == "gaussdb"
+		prepareLimit := limit
+		if guarded {
+			prepareLimit = 0 // The guarded cursor applies the limit when fetching the batch.
+		}
 		prepared, err := provider.PrepareQuery(execCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
 			EngineID: engine.ID, Language: "sql", Query: sqlContent,
 			Options: plugin.QueryOptions{
-				EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit,
+				EngineID: engine.ID, EngineType: engine.EngineType, Limit: prepareLimit,
 				Timeout: time.Duration(timeout) * time.Second, ReadOnly: true, Parameters: parameters,
 			},
 		})
@@ -491,11 +496,16 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 			return nil, err
 		}
 		defer endProtection()
-		queryResult, err := prepared.Execute(execCtx)
-		if err != nil {
-			return nil, err
+		var queryResult *plugin.QueryResult
+		if guarded {
+			queryResult, err = s.executeSourceAuthorizedSQL(execCtx, tenantID, executionID, engine, authorization, enginePlugin, prepared, limit, "", protectResult)
+		} else {
+			queryResult, err = prepared.Execute(execCtx)
+			if err == nil {
+				err = protectResult(queryResult)
+			}
 		}
-		if err := protectResult(queryResult); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		rows := queryResult.Rows
@@ -633,6 +643,9 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 	enginePlugin, err := plugin.Get(engine.EngineType)
 	if err != nil {
 		return "", "", err
+	}
+	if engine.EngineType == "postgresql" || engine.EngineType == "gaussdb" {
+		return s.generateGuardedExecutableSampleQuery(ctx, tenantID, userAccessToken, executionID, engine, enginePlugin, authorization, selectedPath)
 	}
 	if selectedPath != nil {
 		return s.generateProtectedExecutableSampleQuery(ctx, tenantID, engine, enginePlugin, selectedPath)

@@ -12,14 +12,14 @@ const guardedTableCatalogSQL = `SELECT c.relkind='r' AND c.relpersistence IN ('p
      THEN pg_catalog.split_part(option.value,'=',2)::boolean ELSE false END
     OR (pg_catalog.split_part(option.value,'=',1)='orientation' AND pg_catalog.split_part(option.value,'=',2)<>'row'))
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_inherits i WHERE i.inhrelid=c.oid OR i.inhparent=c.oid)
- AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_index i
+ AND (NOT $3::boolean OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_index i
    JOIN pg_catalog.pg_class idx ON idx.oid=i.indexrelid
    JOIN pg_catalog.pg_am am ON am.oid=idx.relam
    WHERE i.indrelid=c.oid AND (i.indexprs IS NOT NULL OR i.indpred IS NOT NULL
     OR am.amname NOT IN ('btree','ubtree')
     OR EXISTS (SELECT 1 FROM pg_catalog.unnest(i.indclass) op
       JOIN pg_catalog.pg_opclass oc ON oc.oid=op
-      JOIN pg_catalog.pg_namespace ns ON ns.oid=oc.opcnamespace WHERE ns.nspname<>'pg_catalog')))
+      JOIN pg_catalog.pg_namespace ns ON ns.oid=oc.opcnamespace WHERE ns.nspname<>'pg_catalog'))))
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a
    JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
    JOIN pg_catalog.pg_namespace tn ON tn.oid=t.typnamespace

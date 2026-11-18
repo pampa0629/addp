@@ -208,10 +208,56 @@ def run(client,tenant,engine,timeout,profile):
     return report
 
 
+def verify_gaussdb_revoked_execution(client, tenant, engine, directory):
+    report = json.loads((directory / 'gaussdb-consumer-flow.json').read_text())
+    browser = report['browser']
+    run_id = SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID')
+    API.validate_user_identity(client, tenant, PERMISSIONS)
+    identity = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    require(browser['principal_id'] == str(identity['principal']['id']) and
+            browser['tenant_id'] == tenant and browser['engine_id'] == engine and
+            browser['run_id'] == run_id, 'revocation check must use the original consumer and engine')
+    cleanup = json.loads((directory / 'gaussdb-grant-cleanup.json').read_text())
+    target = REGISTRATION.ExactRecordGrants.target(engine, 'addp_acceptance', 'source', 'table', 'schema')
+    grants = cleanup['grants']
+    require(cleanup['read_denied'] is True and not cleanup['failed_requests'] and len(grants) == 1 and
+            grants[0]['engine'] == engine and grants[0]['action'] == 'read' and grants[0]['target'] == target,
+            'confirmed revocation of the fixture source required')
+    first = browser['queries'][0]
+    require(first['status'] == 'success' and len(first['rows']) == 2 and
+            first['query'] == 'SELECT id,name,amount,optional_text FROM addp_acceptance.source ORDER BY id',
+            'successful reference query required before revocation')
+    submitted = client.request('POST', '/api/v1/develop/executions', (200,), {
+        'dev_type': 'query', 'trigger_type': 'manual', 'execution_config': {'engine_id': engine},
+        'content': {'query_type': 'sql', 'query': first['query'], 'target_locator': first['target_locator']},
+        'timeout': 120,
+    }).payload['execution_id']
+    require(submitted and submitted not in {q['execution_id'] for q in browser['queries']},
+            'revocation check requires a fresh execution')
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        result = client.request('GET', f'/api/v1/develop/executions/{submitted}/result', (200,)).payload
+        require(result.get('execution_id') == submitted, 'wrong execution result')
+        if result.get('status') not in ('pending', 'running'):
+            break
+        time.sleep(1)
+    details = result.get('error_details') or {}
+    diagnostic = details.get('diagnostic') or {}
+    require(result.get('status') == 'failed' and details.get('code') == 'develop.query.source_read_denied' and
+            diagnostic.get('stage') == 'authorization' and diagnostic.get('reason') == 'permission_denied',
+            'revoked execution did not fail during source authorization')
+    require((result.get('metadata') or {}).get('result') is None and not result.get('rows_affected'),
+            'revoked execution returned a result')
+    evidence = dict(run_id=run_id, tenant_id=tenant, engine_id=engine, principal_id=browser['principal_id'],
+                    allowed_execution=first['execution_id'], denied_execution=submitted, code=details['code'],
+                    stage=diagnostic['stage'], result_delivered=False)
+    (directory / 'gaussdb-revoked-execution.json').write_text(json.dumps(evidence))
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--engine-type',choices=PROFILES,required=True)
-    parser.add_argument('operation',nargs='?',choices=['prepare','cleanup'])
+    parser.add_argument('operation',nargs='?',choices=['prepare','cleanup','verify-revoked'])
     arguments=parser.parse_args()
     profile=PROFILES[arguments.engine_type]
     require(os.environ.get('ADDP_ONLINE_HOSTED')=='1' and os.environ.get('ADDP_ONLINE_TEST')=='1','Hosted Online entry required')
@@ -220,7 +266,12 @@ def main():
     if arguments.operation:
         require(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_OS')=='Linux' and os.environ.get('ADDP_ONLINE_HOST')=='1','disposable Hosted Linux required')
         if arguments.operation=='prepare': prepare(profile,tenant,engine)
-        else: cleanup(profile)
+        elif arguments.operation=='cleanup': cleanup(profile)
+        else:
+            require(profile.engine_type == 'gaussdb' and not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
+                    and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'isolated GaussDB consumer required')
+            client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
+            verify_gaussdb_revoked_execution(client, tenant, engine, Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')))
         return 0
     client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
     report=run(client,tenant,engine,float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','900')),profile)

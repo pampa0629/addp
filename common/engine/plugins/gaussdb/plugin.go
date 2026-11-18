@@ -41,6 +41,7 @@ var (
 	_ plugin.TableReadSessionProvider        = (*Plugin)(nil)
 	_ plugin.GuardedTableReadSessionProvider = (*Plugin)(nil)
 	_ plugin.QueryReadSessionProvider        = (*Plugin)(nil)
+	_ plugin.GuardedQueryReadSessionProvider = (*Plugin)(nil)
 	_ plugin.SQLQueryRuntimeProvider         = (*Plugin)(nil)
 )
 
@@ -143,6 +144,9 @@ func (p *Plugin) ExecuteSQL(ctx context.Context, info plugin.ConnectionInfo, sta
 		return nil, commonapi.ErrForbidden
 	}
 	return p.protocol().ExecuteSQL(ctx, info, statement, opts)
+}
+func (p *Plugin) OpenGuardedQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery, authorize plugin.QueryReadAuthorizer) (plugin.GuardedQueryReadSession, error) {
+	return p.protocol().OpenGuardedQueryReadSession(ctx, prepared, authorize)
 }
 func (p *Plugin) OpenQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery) (plugin.QueryReadSession, error) {
 	return p.protocol().OpenQueryReadSession(ctx, prepared)

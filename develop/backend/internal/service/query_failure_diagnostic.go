@@ -67,6 +67,8 @@ func queryFailureDiagnostic(code, message string, cause error) *commonExecution.
 		if errors.As(cause, &snapshot) {
 			reason = snapshot.reason
 		}
+	case "develop.query.source_read_denied":
+		stage, reason = "authorization", "permission_denied"
 	case "develop.query.authorization_failed":
 		stage, reason = "authorization", "authorization_invalid"
 	case "develop.query.engine_access_failed":

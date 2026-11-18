@@ -308,6 +308,10 @@ if [ "$test_group" = all ] || [ "$test_group" = shared-sql-pool ]; then
 fi
 
 if [ "$test_group" = all ] || [ "$test_group" = query-read-set ]; then
+    grep -q -- '--- PASS: TestIntegrationPostgresQueryReadSessionGuardedSources ' "$WORK_DIR/common-postgres.log" || {
+        echo "Common PostgreSQL gate requires the trusted-admin business-source contract" >&2
+        exit 1
+    }
     grep -q -- '--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite ' "$WORK_DIR/common-postgres.log" || {
         echo "Common PostgreSQL gate requires the real output rewrite equivalence test" >&2
         exit 1

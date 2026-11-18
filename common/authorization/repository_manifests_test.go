@@ -45,11 +45,11 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 551 {
-		t.Fatalf("descriptor count = %d, want 551", len(descriptors))
+	if len(descriptors) != 552 {
+		t.Fatalf("descriptor count = %d, want 552", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
-		if (descriptor.Key == "system.workflow_private_files.execute" || descriptor.Key == "system.manager_pg_read_check.execute") && (descriptor.OwnerModule != "system" || descriptor.Action != "execute" || descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
+		if (descriptor.Key == "system.workflow_private_files.execute" || descriptor.Key == "system.manager_pg_read_check.execute" || descriptor.Key == "system.develop_query_read_check.execute") && (descriptor.OwnerModule != "system" || descriptor.Action != "execute" || descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
 			t.Fatal("private Runtime transport permission escaped fixed Tenant machine qualification")
 		}
 		if descriptor.Key == "transfer.cdc_risk_observation.read" && (descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"platform"})) {
@@ -95,6 +95,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 			if key == "system.manager_pg_read_check.execute" && role.Key != "tenant.manager_runtime" {
 				t.Fatal("PG handoff permission escaped Manager runtime")
+			}
+			if key == "system.develop_query_read_check.execute" && role.Key != "tenant.develop_runtime" {
+				t.Fatal("query source observation escaped Develop runtime")
 			}
 			if key == "system.workflow_private_files.execute" && role.Key != "tenant.develop_runtime" {
 				t.Fatalf("unexpected private file Runtime caller %q", role.Key)
@@ -519,6 +522,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_projection.read",
 		"security.protection_projection.update",
 		"system.cleanup_authorization.execute",
+		"system.develop_query_read_check.execute",
 		"system.engine_access_initial_grant.execute",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",

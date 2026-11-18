@@ -152,7 +152,12 @@ test('Read-only SQL SELECT-only source retains precise values and field facts in
       }
       if (parameterized) await expect(table).toContainText(textValue)
       await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `${expected.engine_type}-query-${parameterized ? 'parameters' : 'source'}-console.png`) })
-      queries.push({ execution_id: started.execution_id, status: execution.status, effect: analysis.effect, rows, fields })
+      const evidence = { execution_id: started.execution_id, status: execution.status, effect: analysis.effect, rows, fields }
+      if (expected.engine_type === 'gaussdb' && !parameterized) {
+        evidence.query = body.content.query
+        evidence.target_locator = body.content.target_locator
+      }
+      queries.push(evidence)
     }
     await execute(`SELECT id,name,amount,optional_text FROM ${expected.namespace}.source ORDER BY id`, false)
     await execute(`SELECT id,name,amount,optional_text,CAST(:text AS ${expected.text_cast}) AS bound_text FROM ${expected.namespace}.source WHERE id >= :minimum ORDER BY id`, true)

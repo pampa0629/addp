@@ -42,7 +42,11 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
             from pathlib import Path
             operation=sys.argv[-1]
             with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace:trace.write('readonly:'+operation+'\\n')
-            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN']=='source-token'
+            if operation=='verify-revoked':
+                assert not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
+                assert not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN')
+            else:
+                assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN']=='source-token'
             if operation=='prepare': Path(os.environ['ADDP_ONLINE_SECRET_DIR'],'readonly-sql-grants.json').write_text('[]')
             if os.environ.get('ADDP_TEST_READONLY_FAIL')==operation:sys.exit(1)
         """)
@@ -69,10 +73,11 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
         order=['infra-up','gaussdb-fixture:start','start:-security','start:-manager','start:-develop','--suite gaussdb-consumer-flow',
             '--wait-protection-owners manager,develop',
             'register:gaussdb-engine.json','readonly:prepare','make:test-online ONLINE_SUITE=gaussdb-consumer-flow',
-            'readonly:cleanup','application-stop','gaussdb-fixture:stop','infra-down']
+            'readonly:cleanup','readonly:verify-revoked','application-stop','gaussdb-fixture:stop','infra-down']
         positions=[trace.index(step) for step in order]
         self.assertEqual(positions,sorted(positions))
         self.assertEqual(trace.count('register:'),1)
+        self.assertEqual(trace.count('readonly:cleanup'),1)
         self.assertNotIn('start:-transfer',trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
@@ -94,7 +99,7 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
                     self.assertNotIn('make:test-online',trace)
 
     def test_preparation_or_revocation_failure_still_cleans_owned_services(self):
-        for failure in ('prepare','cleanup'):
+        for failure in ('prepare','cleanup','verify-revoked'):
             self.host.trace.unlink(missing_ok=True)
             result=self.run_gate(ADDP_TEST_READONLY_FAIL=failure)
             self.assertNotEqual(result.returncode,0,result.stderr+result.stdout)

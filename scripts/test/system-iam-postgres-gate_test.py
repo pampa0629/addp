@@ -293,6 +293,21 @@ elif args[:2] != ["volume", "ls"]:
         self.assertEqual(result.returncode, 2)
         self.assertIn("requires --package migration", result.stderr)
 
+    def test_develop_query_read_selects_existing_owner_suites(self):
+        expected = {
+            "iam": "^TestExecutionAuthorizationServiceAgainstPostgres$",
+            "engineaccess": "^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^current_complete_source_read_rules$/^trusted_current_User_credential_and_precise_rules$/^Develop_query_current_Grants_and_final_Meta_recheck$",
+            "migration": "^TestDevelopQueryReadCheckRuntimeForwardMigrationAgainstPostgres$",
+        }
+        for owner, pattern in expected.items():
+            with self.subTest(owner=owner):
+                result = self.run_gate(arguments=("--package", owner, "--test", "develop-query-read"))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"./internal/{owner} -run {pattern}", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "api", "--test", "develop-query-read"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --package iam|engineaccess|migration", result.stderr)
+
     def test_execution_subject_roles_uses_existing_ea_postgres_suite(self):
         result = self.run_gate(arguments=("--package", "iam", "--test", "execution-subject-roles"))
         self.assertEqual(result.returncode, 0, result.stderr)

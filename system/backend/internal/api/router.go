@@ -220,6 +220,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *gi
 	}); err != nil {
 		panic(err)
 	}
+	if err := RegisterDevelopQueryReadRoutes(api, runtime, &DevelopQueryReadHandler{
+		service: engineaccess.NewService(engineaccess.NewRepository(db), nil).WithAuthorizationFactsReader(metaFacts),
+	}); err != nil {
+		panic(err)
+	}
 	if err := registerExecutionReadScopeRoute(api, runtime); err != nil {
 		panic(err)
 	}

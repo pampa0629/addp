@@ -50,7 +50,7 @@ type ProtocolIdentity struct {
 	TableResultGeneratedExpression        string
 	TableResultBuiltinNamespaceExpression string
 	// TableReadCatalogCheckSQL is a compiled, native ordinary-table predicate
-	// returning one boolean for schema/table parameters. The shared read path
+	// returning one boolean for schema, table and index-check parameters. The shared read path
 	// holds the relation lock before executing it; requests cannot supply SQL.
 	TableReadCatalogCheckSQL string
 }

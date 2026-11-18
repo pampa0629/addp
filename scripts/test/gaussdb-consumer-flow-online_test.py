@@ -258,3 +258,41 @@ class GaussDBConsumerTest(unittest.TestCase):
                 self.assertEqual(len(report['metadata_only']),len(profile.catalog_tables)-1)
                 self.assertEqual(sum(c.args[0]=='GET' and c.args[2]==(403,) for c in client.request.call_args_list),len(profile.catalog_tables)-1)
                 self.assertEqual(report['rows'],preview['data']['rows'])
+
+
+    def test_revoked_execution_requires_same_actor_new_id_and_pre_read_denial(self):
+        query = 'SELECT id,name,amount,optional_text FROM addp_acceptance.source ORDER BY id'
+        first = dict(query=query, target_locator='addp://engine/17/path/addp_acceptance/source?type=table',
+                     execution_id='allowed', status='success', rows=self.sample()['data']['rows'])
+        browser = dict(principal_id='33', engine_id=17, tenant_id=2, run_id='run',
+                       queries=[first, {'execution_id': 'parameterized'}])
+        details = dict(code='develop.query.source_read_denied', diagnostic=dict(stage='authorization', reason='permission_denied'))
+        for change in ('none', 'actor', 'no_revoke', 'reused', 'different_result', 'timeout', 'ordinary_failure', 'after_read', 'payload'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root/'gaussdb-consumer-flow.json').write_text(json.dumps(dict(browser=browser)))
+                target = FLOW.REGISTRATION.ExactRecordGrants.target(17, 'addp_acceptance', 'source', 'table', 'schema')
+                receipt = dict(read_denied=True, failed_requests=[], grants=[dict(engine=17, action='read', target=target)])
+                if change == 'no_revoke': receipt['grants'] = []
+                (root/'gaussdb-grant-cleanup.json').write_text(json.dumps(receipt))
+                result = dict(execution_id='denied', status='failed', error_details=copy.deepcopy(details))
+                if change == 'different_result': result['execution_id'] = 'foreign'
+                if change == 'timeout': result['status'] = 'timeout'
+                if change == 'ordinary_failure': result['error_details']['code'] = 'develop.query.execution_failed'
+                if change == 'after_read': result['error_details']['diagnostic']['stage'] = 'result'
+                if change == 'payload': result['metadata'] = dict(result=dict(rows=[{}]))
+                client = Mock()
+                client.request.side_effect = [SimpleNamespace(payload=dict(principal=dict(id=34 if change=='actor' else 33))),
+                                              SimpleNamespace(payload=dict(execution_id='allowed' if change=='reused' else 'denied')),
+                                              SimpleNamespace(payload=result)]
+                with patch.object(FLOW.SUPPORT, 'required_environment', return_value='run'), patch.object(FLOW.API, 'validate_user_identity'):
+                    if change == 'none':
+                        FLOW.verify_gaussdb_revoked_execution(client, 2, 17, root)
+                        self.assertEqual(client.request.call_args_list[1].args[3]['content']['query'], query)
+                        evidence = json.loads((root/'gaussdb-revoked-execution.json').read_text())
+                        self.assertEqual(evidence['denied_execution'], 'denied')
+                        self.assertFalse(evidence['result_delivered'])
+                    else:
+                        with self.assertRaises(FLOW.API.SuiteError):
+                            FLOW.verify_gaussdb_revoked_execution(client, 2, 17, root)
+                        self.assertFalse((root/'gaussdb-revoked-execution.json').exists())

@@ -2681,6 +2681,91 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engine-access/read-observations/develop-query": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-develop Tenant Service，首批限定 PostgreSQL/GaussDB。Provider 提供同次实际执行的完整来源，System 独立读取 Meta 正式身份后最终重核原用户、功能权限及全部当前 Grant。异步查询绑定原 EA 和当前执行租约；样例试读仅接收同次同步原用户凭据，不持久化或记录凭据。不签发 Grant、不返回连接、不授予可复用 Allow | Only addp-develop Tenant Service for PostgreSQL/GaussDB. Provider facts bind the actual execution. System resolves Meta facts before finally rechecking the original user, functions and all current Grants. Async queries require the original EA and current execution lease; sample reads use only the synchronous original user credential, never persisted or logged. No Grants, connections or reusable Allow are issued",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "核验 Develop 查询的当前来源读取授权 | Observe current Develop query source read authorization",
+                "parameters": [
+                    {
+                        "description": "完整来源和固定执行边界 | Complete sources and fixed execution boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopQueryReadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次观察和最晚边界，不得缓存为授权 | Point-in-time observation and upper deadline, not cacheable authority",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopQueryReadObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.develop_query_read_check.execute"
+                ]
+            }
+        },
         "/engine-catalog/engines": {
             "get": {
                 "security": [
@@ -19409,6 +19494,46 @@ const docTemplate = `{
                 },
                 "source": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "client.DevelopQueryReadObservation": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopQueryReadRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "string"
+                },
+                "engine_version": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "read_set": {
+                    "$ref": "#/definitions/plugin.QueryReadSet"
+                },
+                "sample_credential": {
+                    "type": "string"
                 }
             }
         },

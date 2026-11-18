@@ -156,6 +156,10 @@ ES DSL 查询沿用普通 query 执行及 TaskProvider 契约主路径；`POST /
 
 ### 查询保护与结果交付
 
+#### 原生查询来源授权
+
+2026-11-18 已确认可信源库管理员边界，PG／GaussDB 须分别完成原生验证。业务来源包括用户 SQL 的表、JOIN、子查询和 CTE；管理员配置的索引由源库处理。查询引擎可见与具备 EA `read` 效果均不替代 DataItem 读取 Grant；手写、保存后执行和样例真实试读须按实际完整来源判权。Provider 对同一实际执行证明 ReadSet 和来源绑定，System 复用当前精确／节点／根 Grant 及 Meta 后的最终规则重核，Develop 负责源读取前、下一批及交付前接线，Security 独立保护内容。未知来源或绑定不可得时拒绝，不回退普通 Execute；拒绝／取消／到期释放本轮会话和临时结果，不自动重跑。具体边界与后续未接入范围见[逻辑资源目标与执行约束](../docs/spec/addp授权上下文规范.md#554-逻辑资源目标与执行约束)，不得将本段方案状态记为已通过产品验收。
+
 #### 读取计划与保护范围
 
 需要读取／输出来源判断时，Develop 只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，使用独立 `query` 动作，在结果写 execution metadata 或返回 Workbench／Notebook Kernel 前完成保护。不自行解析查询或按同名结果列猜来源；纳管匹配、实时结构校验、direct／derived／opaque 边界及 Provider 支持范围统一见[Owner 本地执行契约](../docs/spec/addp数据安全与隐私保护实现规范.md#十owner-本地执行契约)。

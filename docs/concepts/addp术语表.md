@@ -127,7 +127,7 @@
 | query geometry value | 查询几何值 | 有界查询与连续查询读取统一使用带 SRID 的 EWKB 字节；面向 JSON 的结果统一投影为 `{wkt, srid}`。 | Provider 依据真实输出类型解码原生几何；共享展示只消费已授权投影，不猜字段名、原生字节格式或坐标系。SQL NULL、合法 EMPTY 与脱敏文本分别保留。 |
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
 | relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | 声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言引擎 SQL 直接使用未加引号、未限定 schema 的裸参数名引用；当前包括 PostgreSQL 与 openGauss。可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 PostgreSQL AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
-| PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。 |
+| PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、来源授权、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。同名 SQL 或同名路径不证明物理来源仍绑定。 |
 | analytical logical plan | 分析计算逻辑计划 | 以类型化关系节点、表达式和断言描述计算含义的数据库无关计划，契约为 `addp.query_plan/v1`。 | 使用计划内数据源／列身份，不包含原生 SQL、Model 身份或物理目录；指标只是该计划的一类 owner 来源。目标设计详见引擎插件接口规范。 |
 | analytical source binding | 分析计算来源绑定 | 将逻辑计划数据源和列映射到确定 Engine Instance、完整 EngineCatalogPath leaf 及物理列路径的编译输入。 | 与计划计算语义分离；不授予访问权限，不能替代执行期 QueryReadSet。 |
 | analytical compiler | 分析计算编译器 | 通过开放接口校验并将中立计划转换为特定引擎原生查询的无连接实现。 | 各引擎独立实现和认证，公共层可提供共享组件；不接收指标公式，编译器身份与实现版本必须参与发布依赖。 |
@@ -135,7 +135,7 @@
 | QueryAnalysis | 查询分析 | PreparedQuery 基于 Provider 原生语言规则产生的结构化诊断事实，包含稳定诊断码、阶段、严重级别、位置与 schema coverage。 | Develop 等 Owner 只展示和消费该事实，不在浏览器或业务服务中再次用正则、分词或样本字段推断 SQL、MQL、Cypher 语义。 |
 | schema coverage | 模式覆盖度 | 表达一次 QueryAnalysis 用于字段结论的 schema 事实完整度，固定为 `complete`、`sampled` 或 `unknown`。 | 只有 `complete` 才允许断言字段不存在；`sampled` 和 `unknown` 只能给出覆盖不足提示，不能把未观察到的字段报成错误。 |
 | QueryDefinitionChecker | 查询定义检查器 | Provider 对固定查询请求和服务端已保存结构快照进行连接无关分析的可选纯接口，返回部分输出字段、覆盖度及稳定诊断。 | 不接收连接或 Context，不准备或执行查询，不访问实时目录或采样；不提供实时血缘、读取集合或授权证明。sampled／unknown 不证明字段缺失，不能把未观察字段当作确定 NULL 或默认值。 |
-| QueryReadSet | 查询读取集合 | PreparedQuery 在执行前产生的、完整且去重的 Engine Catalog leaf 路径集合，回答“这次查询可能读取哪些资源”。 | 它不是查询语句或查询结果；不是调用方自报的授权范围，不包含数据行、Meta ID、DataItem 指纹、Security 策略或 Catalog 身份。 |
+| QueryReadSet | 查询读取集合 | PreparedQuery 在执行前产生的、完整且去重的 Engine Catalog leaf 路径集合，回答“这次查询可能读取哪些资源”。 | 它不是查询语句或查询结果；不是调用方自报的授权范围，不包含数据行、Meta ID、DataItem 指纹、Security 策略或 Catalog 身份。完整集合中的每个来源均须核验当前读取授权；未知／不完整集合不能当成已证明的空集合，路径集合本身也不证明实际执行绑定。 |
 | ReadSessionEvidence | 实际读取会话来源证据 | Provider 对同一实际读取会话绑定的完整来源集合提供的可选证明，值类型复用 QueryReadSet。 | 必须绑定真实读取事务与游标，不能用另一次预查、任务配置或血缘补造；不可用不等于空来源或许可。关闭后保留的证据只表示该次执行事实，不是当前访问授权。 |
 | query read session | 查询读取会话 | Engine Provider 为一次只读原生查询打开的连续批次读取会话。 | 与返回有界 `QueryResult` 的交互查询不同；生产搬运不得施加隐式行数上限。MongoDB MQL 可在源端用 `$project`、`$unwind`、`$group` 等把嵌套 BSON 整形为扁平行，但禁止 `$out`、`$merge`。 |
 | row grain | 行粒度 | 一行所代表的记录或对象范围，例如一文档一行或单个数组元素一行。 | 与字段保留范围分开确定。不展开数组不等于删除数组字段；按文档粒度保留顶层字段时，数组和对象仍是该行的字段值，目标表示及转换由 Provider 校验。字段删减不能由行粒度选择隐含授权。 |

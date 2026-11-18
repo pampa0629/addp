@@ -63,6 +63,11 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			return session, tokens
 		}
 
+		exerciseDevelopQueryReadGrants(t, db, path, tenantID, adminID, roles, newUser, grant, revoke, func(t *testing.T, user userProvenance) string {
+			session, _ := issue(t, user, time.Minute)
+			return session.AccessToken
+		})
+
 		t.Run("Develop workflow result current User grants and withdrawal", func(t *testing.T) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 			user, _ := newUser(t, time.Hour)

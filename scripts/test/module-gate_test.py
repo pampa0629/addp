@@ -37,6 +37,7 @@ COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n"
     f"{POSTGRES_SHARED_POOL_PASS}"
     f"{POSTGRES_OUTPUT_REWRITE_PASS}"
+    "--- PASS: TestIntegrationPostgresQueryReadSessionGuardedSources (0.01s)\n"
     "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
     "--- PASS: TestExecutionLifecycleAgainstPostgres (0.01s)\n"
     "--- PASS: TestBoundConnectionAgainstPostgres (0.01s)\n"

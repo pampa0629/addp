@@ -44,6 +44,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
  execution_authorization_id bigint,
 			tenant_id bigint NOT NULL,
 			module text NOT NULL,
+			task_type text NOT NULL DEFAULT 'query',
 			parent_execution_id uuid,
 			status text NOT NULL,
 			attempt integer NOT NULL DEFAULT 0,
@@ -167,6 +168,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	}
 
 	testExecutionSubjectRoles(t, ctx, db, issued, consumeAudit, selection.Session.AccessToken)
+	testDevelopQueryReadObservation(t, ctx, db, issued, tenantEngineID, selection.Session.AccessToken)
 
 	parentExecutionID := uuid.New()
 	childExecutionID := uuid.New()

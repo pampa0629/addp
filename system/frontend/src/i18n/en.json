@@ -794,6 +794,7 @@
           "develop_file_create_approval": "Workflow GeoPackage Creation Approval",
           "engine_access_initial_grant": "Initial New Data Access",
           "manager_pg_read_check": "Manager PG Read Check",
+          "develop_query_read_check": "Develop Query Source Read Check",
           "engine_access_deny": "Source Read Deny",
           "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
