@@ -45,10 +45,14 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 552 {
-		t.Fatalf("descriptor count = %d, want 552", len(descriptors))
+	if len(descriptors) != 554 {
+		t.Fatalf("descriptor count = %d, want 554", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
+		if strings.HasPrefix(descriptor.Key, "system.infra_configuration.") &&
+			(descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"platform"})) {
+			t.Fatalf("Infra configuration permission escaped its fixed Platform scope: %s", descriptor.Key)
+		}
 		if (descriptor.Key == "system.workflow_private_files.execute" || descriptor.Key == "system.manager_pg_read_check.execute" || descriptor.Key == "system.develop_query_read_check.execute") && (descriptor.OwnerModule != "system" || descriptor.Action != "execute" || descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
 			t.Fatal("private Runtime transport permission escaped fixed Tenant machine qualification")
 		}
@@ -84,6 +88,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.prometheus_runtime", []string{"monitor.metrics_discovery.read"})
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if strings.HasPrefix(key, "system.infra_configuration.") && role.Key != "platform.system_administrator" {
+				t.Fatalf("built-in role %q unexpectedly grants Infra configuration permission %q", role.Key, key)
+			}
 			if strings.HasPrefix(key, "system.meta_collection_qualification.") {
 				t.Fatalf("retired collection authority %s in %s", key, role.Key)
 			}
