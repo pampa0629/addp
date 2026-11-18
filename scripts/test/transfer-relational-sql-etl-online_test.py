@@ -94,6 +94,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
     def trace_case(self, parent_id, mutation=None):
         scan_id = str(uuid.uuid4())
+        basic_id = str(uuid.uuid4()) if parent_id else None
         identity = {"principal_type": "user", "principal_id": "33", "tenant_id": "2"}
         peer = {"principal_type": "user", "principal_id": "36", "tenant_id": "2", "permissions_verified": sorted(ONLINE.REQUIRED_PERMISSIONS)}
         detail = {"execution_id": scan_id, "module": "meta", "task_type": "scan", "status": "success",
@@ -102,25 +103,29 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "metadata": {"private": "test-only-must-not-persist"}}
         parent = {"execution_id": parent_id, "module": "transfer", "parent_execution_id": None, "status": "success"}
         node = lambda item, children=None: {"execution": copy.deepcopy(item), "children": children or [], "truncated": False}
-        root = node(parent, [node(detail)]) if parent_id else node(detail)
+        basic = dict(detail, execution_id=basic_id)
+        root = node(parent, [node(detail), node(basic)]) if parent_id else node(detail)
         peer_root = node(parent)
         if mutation == 'same-user': peer['principal_id'] = '33'
         elif mutation == 'cross-tenant': peer['tenant_id'] = '3'
         elif mutation == 'missing-permission': peer['permissions_verified'].remove('meta.scan_task.read')
         elif mutation == 'wrong-parent': root['children'][0]['execution']['parent_execution_id'] = str(uuid.uuid4())
         elif mutation == 'missing-child': root['children'] = []
+        elif mutation == 'missing-basic': root['children'].pop()
         elif mutation == 'duplicate-child': root['children'] *= 2
         elif mutation == 'wrong-actor': detail['triggered_by'] = 36
+        elif mutation == 'basic-wrong-actor': basic['triggered_by'] = 36
         elif mutation == 'task-bound-scan': detail['source_task_id'] = '1'
         elif mutation == 'wrong-source': detail['source'] = 'meta'
         elif mutation == 'truncated': root['truncated'] = True
-        elif mutation == 'peer-child-leak': peer_root['children'] = [node(detail)]
+        elif mutation == 'peer-child-leak': peer_root['children'] = [node(basic)]
         elif mutation == 'detail-drift': root['children'][0]['execution']['progress'] = 99
         def request(method, path, statuses):
             self.assertEqual(method, 'GET')
+            requested = basic if basic_id and basic_id in path else detail
             if path.endswith('/tree'):
-                value = root if path.endswith(str(parent_id) + '/tree') else node(detail)
-            else: value = detail
+                value = root if path.endswith(str(parent_id) + '/tree') else node(requested)
+            else: value = requested
             return SimpleNamespace(payload=value, status=200)
         def peer_request(method, path, statuses):
             self.assertEqual(method, 'GET')
@@ -135,23 +140,28 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 '/api/v1/monitor/executions/by-execution-id/' + parent_id,
                 '/api/v1/monitor/executions/by-execution-id/' + parent_id + '/tree') else 404
             if mutation == 'permission-denial' and status == 404: status = 403
+            if mutation == 'peer-basic-detail-leak' and path == '/api/v1/meta/executions/' + basic_id:
+                status, value = 200, basic
             return SimpleNamespace(payload=value, status=status)
-        return (SimpleNamespace(request=Mock(side_effect=request)), SimpleNamespace(request=Mock(side_effect=peer_request)), identity, peer, scan_id)
+        return (SimpleNamespace(request=Mock(side_effect=request)), SimpleNamespace(request=Mock(side_effect=peer_request)), identity, peer, scan_id, basic_id)
 
     def test_scan_trace_isolates_same_permission_peer_without_inventing_upload_parent(self):
         for parent_id in (None, str(uuid.uuid4())):
             with self.subTest(parent=parent_id):
-                client, peer, identity, peer_identity, scan_id = self.trace_case(parent_id)
-                proof = ONLINE.verify_scan_trace_visibility(client, peer, identity, peer_identity, scan_id, parent_id)
-                self.assertEqual(proof['owner_visible_execution_ids'], sorted([scan_id] + ([parent_id] if parent_id else [])))
+                client, peer, identity, peer_identity, scan_id, basic_id = self.trace_case(parent_id)
+                proof = ONLINE.verify_scan_trace_visibility(client, peer, identity, peer_identity, scan_id, parent_id, basic_scan_id=basic_id)
+                self.assertEqual(proof['owner_visible_execution_ids'], sorted([scan_id] + ([parent_id, basic_id] if parent_id else [])))
+                self.assertEqual(proof['basic_scan_execution_id'], basic_id)
                 self.assertEqual(proof['peer_visible_execution_ids'], [parent_id] if parent_id else [])
-                self.assertEqual(proof['peer_hidden_endpoints'], 4)
+                self.assertEqual(proof['peer_hidden_endpoints'], 8 if parent_id else 4)
                 observed = {row['execution_id']: row for row in proof['owner_visible_observations']}
                 self.assertEqual(observed[scan_id]['triggered_by'], 33)
                 self.assertEqual(observed[scan_id]['source'], 'transfer' if parent_id else 'manager')
                 self.assertEqual(observed[scan_id]['parent_execution_id'], parent_id)
                 self.assertEqual([row['execution_id'] for row in proof['peer_visible_observations']], [parent_id] if parent_id else [])
-                self.assertEqual(len(proof['peer_denials']), 4)
+                self.assertEqual(len(proof['peer_denials']), 8 if parent_id else 4)
+                for identifier in [scan_id] + ([basic_id] if parent_id else []):
+                    self.assertEqual(sum(identifier in row['path'].split('/') for row in proof['peer_denials']), 4)
                 self.assertEqual({row['status'] for row in proof['peer_denials']}, {404})
                 self.assertEqual({tuple(row['response_fields']) for row in proof['peer_denials']}, {('error',)})
                 for row in observed.values():
@@ -160,13 +170,14 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 self.assertTrue(any('/meta/executions/' in call.args[1] for call in peer.request.call_args_list))
 
     def test_scan_trace_rejects_wrong_identity_incomplete_tree_and_child_leaks(self):
-        for mutation in ('same-user','cross-tenant','missing-permission','wrong-parent','missing-child','duplicate-child',
-                         'wrong-actor','task-bound-scan','wrong-source','truncated','peer-child-leak','detail-drift','error-leak','permission-denial'):
+        for mutation in ('same-user','cross-tenant','missing-permission','wrong-parent','missing-child','missing-basic','duplicate-child',
+                         'wrong-actor','basic-wrong-actor','task-bound-scan','wrong-source','truncated','peer-child-leak',
+                         'peer-basic-detail-leak','detail-drift','error-leak','permission-denial'):
             with self.subTest(mutation=mutation):
                 parent_id = str(uuid.uuid4())
-                client, peer, identity, peer_identity, scan_id = self.trace_case(parent_id, mutation)
+                client, peer, identity, peer_identity, scan_id, basic_id = self.trace_case(parent_id, mutation)
                 with self.assertRaises(ONLINE.SuiteError):
-                    ONLINE.verify_scan_trace_visibility(client, peer, identity, peer_identity, scan_id, parent_id)
+                    ONLINE.verify_scan_trace_visibility(client, peer, identity, peer_identity, scan_id, parent_id, basic_scan_id=basic_id)
 
     def test_scan_trace_receipt_survives_later_failures_but_never_records_partial_proof(self):
         for failure in (False, True, 'stale-upload'):
@@ -179,7 +190,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 results = [{'scan_execution_id':'actual-object'}, ONLINE.SuiteError('hidden child leaked') if failure is True else {'scan_execution_id':'actual-import'}]
                 with patch.dict(ONLINE.os.environ, {'ADDP_ONLINE_ARTIFACT_DIR':directory,'ADDP_ONLINE_TEST_RUN_ID':'actual-run'}), patch.object(ONLINE,'verify_scan_trace_visibility',side_effect=results):
                     run = lambda: ONLINE.record_scan_trace_receipt(None,None,{'principal_id':'33'},{'principal_id':'36'},
-                        {'scan_execution_id':'actual-object'},{'meta_scan_execution_id':'actual-import','transfer_execution_id':'actual-parent'})
+                        {'scan_execution_id':'actual-object'},{'meta_scan_execution_id':'actual-import',
+                            'meta_basic_scan_execution_id':'actual-basic','transfer_execution_id':'actual-parent'})
                     if failure:
                         with self.assertRaises(ONLINE.SuiteError): run()
                         self.assertFalse(target.exists())
@@ -188,7 +200,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                         self.assertEqual(receipt['cases'],cases)
                         self.assertEqual(receipt['run_id'],'actual-run')
                         self.assertEqual(receipt['git_commit'],'a'*40)
-                        self.assertEqual(receipt['schema_version'],'addp.scan-trace-visibility/v1')
+                        self.assertEqual(receipt['schema_version'],'addp.scan-trace-visibility/v2')
 
     def object_facts_case(self):
         files = ONLINE.object_upload_files()
@@ -707,36 +719,49 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                              ["        1alpha   ", "        2beta    "])
 
     def test_import_requires_actual_parent_and_current_user_without_manual_rescan(self):
-        parent, child_id = str(uuid.uuid4()), str(uuid.uuid4())
+        parent, basic_id, child_id = (str(uuid.uuid4()) for _ in range(3))
         task = {"task_type": "sync", "auto_scan_metadata": True, "config": {
             "runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"}, "source": {"locator": "addp-infra://object/manager/private/points.shp?type=object"}, "target": {"policy": {"apply_mode": "replace"}}}}
         transfer = {"records_read": 2, "records_written": 2, "metadata": {
-            "metadata_scan": {"status": "submitted", "attempt": 0, "execution_id": child_id}}}
+            "metadata_scan": {"status": "submitted", "attempt": 0, "basic_execution_id": basic_id, "execution_id": child_id}}}
         child = {"module": "meta", "source": "transfer", "parent_execution_id": parent,
-                 "triggered_by": 31, "tenant_id": 7, "scan_context": {"engine_id": 8}}
+                 "triggered_by": 31, "tenant_id": 7, "scan_context": {"engine_id": 8, "scan_depth": "deep"}}
+        basic = dict(child, scan_context={"engine_id": 8, "scan_depth": "basic"})
+        browser = {"submission": {"transfer_task_id": 42, "transfer_execution_id": parent}, "meta_scan_execution_id": child_id}
         client = Mock()
         client.request.return_value.payload = task
-        with patch.object(ONLINE, "run_manager_import_browser", return_value={"submission": {"transfer_task_id": 42, "transfer_execution_id": parent}, "meta_scan_execution_id": child_id}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, child]) as wait, patch.object(ONLINE, "wait_transfer_target", return_value={"id": 9}), patch.object(ONLINE, "wait_for_scan") as manual, patch.object(ONLINE,"verify_import_private_access",return_value=str(uuid.uuid4())):
+        with patch.object(ONLINE, "run_manager_import_browser", return_value=browser), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, basic, child]) as wait, patch.object(ONLINE, "wait_transfer_target", return_value={"id": 9}), patch.object(ONLINE, "wait_for_scan") as manual, patch.object(ONLINE,"verify_import_private_access",return_value=str(uuid.uuid4())):
             owned = []
             report = ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned, Mock())
             self.assertEqual(owned, [42])
+            self.assertEqual(report["meta_basic_scan_execution_id"], basic_id)
             self.assertEqual(report["meta_scan_execution_id"], child_id)
-            self.assertEqual(wait.call_args_list[1].args, (client, "meta", child_id, 30))
+            self.assertEqual([call.args for call in wait.call_args_list], [
+                (client, "transfer", parent, 30), (client, "meta", basic_id, 30), (client, "meta", child_id, 30)])
             manual.assert_not_called()
         for change in ({"parent_execution_id": str(uuid.uuid4())}, {"source": "manager"},
-                       {"triggered_by": 32}, {"tenant_id": 8}, {"scan_context": {"engine_id": 9}}):
-            with self.subTest(change=change), patch.object(ONLINE, "run_manager_import_browser", return_value={"submission": {"transfer_task_id": 42, "transfer_execution_id": parent}, "meta_scan_execution_id": child_id}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, dict(child, **change)]):
+                       {"triggered_by": 32}, {"tenant_id": 8}, {"scan_context": {"engine_id": 9, "scan_depth": "basic"}},
+                       {"scan_context": {"engine_id": 8, "scan_depth": "deep"}}):
+            with self.subTest(change=change), patch.object(ONLINE, "run_manager_import_browser", return_value=browser), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, dict(basic, **change), child]):
                 owned = []
                 with self.assertRaisesRegex(ONLINE.SuiteError, "actual parent, current User or Tenant"):
                     ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned, Mock())
                 self.assertEqual(owned, [42], "failed verification must still leave the task available to cleanup")
+        for invalid in (None, "not-a-uuid", parent, child_id):
+            changed = copy.deepcopy(transfer)
+            changed["metadata"]["metadata_scan"]["basic_execution_id"] = invalid
+            with self.subTest(basic_id=invalid), patch.object(ONLINE, "run_manager_import_browser", return_value=browser), patch.object(ONLINE, "wait_owner_execution", return_value=changed) as wait:
+                with self.assertRaisesRegex(ONLINE.SuiteError, "distinct basic and deep scan UUIDs"):
+                    ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, [], Mock())
+                wait.assert_called_once_with(client, "transfer", parent, 30)
 
     def import_browser_proof(self):
-        parent, child, denied = (str(uuid.uuid4()) for _ in range(3))
+        parent, basic, child, denied = (str(uuid.uuid4()) for _ in range(4))
         identity = {"principal_id": "31", "tenant_id": "7"}
         common = {"schema_version": "addp.manager-private-import-browser/v1", "result": "passed",
                   "run_id": "run-fixture", **identity}
-        proof = {"transfer_task_id": 42, "transfer_execution_id": parent, "meta_scan_execution_id": child, "rejected_execution_id": denied}
+        proof = {"transfer_task_id": 42, "transfer_execution_id": parent, "meta_basic_scan_execution_id": basic,
+                 "meta_scan_execution_id": child, "rejected_execution_id": denied}
         proof["initial_grant"] = {"request_id": str(uuid.uuid4()), "uploader_preview_verified": True,
                                   "outsider_denied": True, "revocation_verified": True, "hidden_after_revoke": True}
         proof["browser"] = {
@@ -891,8 +916,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 ONLINE.record_manager_import_receipt(root, root, "run-fixture", identity, 8, proof)
             self.assertEqual(run.call_args_list[0].args[0], ["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "manager-import"])
             receipt = json.loads((root / "manager-private-import.json").read_text())
-            self.assertEqual(receipt["schema_version"], "addp.manager-private-import/v3")
+            self.assertEqual(receipt["schema_version"], "addp.manager-private-import/v4")
             self.assertEqual(receipt["git_commit"], "a" * 40)
+            self.assertEqual(receipt["manager_import"]["meta_basic_scan_execution_id"], proof["meta_basic_scan_execution_id"])
             self.assertTrue(receipt["manager_import"]["physical_geometry_verified"])
         for results in ([SimpleNamespace(returncode=1, stdout="SECRET_MARKER")],
                         [SimpleNamespace(returncode=0, stdout=""), SimpleNamespace(returncode=0, stdout="invalid")]):
@@ -912,7 +938,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 run.assert_not_called()
 
     def test_metadata_scan_allows_only_safe_public_feedback(self):
-        for scan in ({"status": "submitted", "attempt": 1, "execution_id": str(uuid.uuid4())},
+        for scan in ({"status": "submitted", "attempt": 1, "execution_id": str(uuid.uuid4()),
+                      "basic_execution_id": str(uuid.uuid4())},
                      {"status": "failed", "attempt": 1, "error_code": "metadata_scan_failed"}):
             execution = {"metadata": {"metadata_scan": scan}}
             ONLINE.assert_transfer_execution_projection(execution)
@@ -1550,7 +1577,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(binary.call_args.args[5:7], (3, pg_source))
         trace.assert_called_once()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v18")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v19")
         self.assertEqual(report["scan_trace_visibility"], {"object_upload": {}, "bounded_import": {}})
         self.assertEqual(report["created_resources"], 18)
         self.assertEqual(report["rustfs_orders"], {"rows": 20})

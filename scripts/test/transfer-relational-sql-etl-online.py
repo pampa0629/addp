@@ -576,7 +576,7 @@ def assert_transfer_execution_projection(execution):
         if authorization.get("status") not in ("pending", "issued", "denied"):
             raise SuiteError("Transfer initial authorization status is invalid")
     if "metadata_scan" in metadata:
-        fields(metadata["metadata_scan"], "status attempt execution_id error_code", "Transfer metadata scan")
+        fields(metadata["metadata_scan"], "status attempt execution_id basic_execution_id error_code", "Transfer metadata scan")
     if "lineage_facts" in metadata:
         facts = fields(metadata["lineage_facts"], "schema_version inputs outputs operations runtime_execution_id meta_scan_refs", "Transfer lineage")
         for direction in ("inputs", "outputs"):
@@ -878,15 +878,25 @@ def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider
     if execution.get("records_read") != 2 or execution.get("records_written") != 2:
         raise SuiteError("Manager import must transfer both uploaded points")
     scan = _object(_object(execution.get("metadata"), "import metadata").get("metadata_scan"), "automatic scan")
-    if scan.get("status") != "submitted" or not scan.get("execution_id"):
+    if scan.get("status") != "submitted":
         raise SuiteError("Manager import automatic scan was not submitted successfully")
-    child = wait_owner_execution(client, "meta", scan["execution_id"], timeout)
-    if (child.get("module") != "meta" or child.get("source") != "transfer"
-            or child.get("parent_execution_id") != identifier
-            or str(child.get("triggered_by")) != identity["principal_id"]
-            or str(child.get("tenant_id")) != identity["tenant_id"]
-            or child.get("scan_context", {}).get("engine_id") != engine_id):
-        raise SuiteError("automatic Meta scan lost its actual parent, current User or Tenant")
+    basic_id, deep_id = scan.get("basic_execution_id"), scan.get("execution_id")
+    try:
+        if (any(not isinstance(value, str) or str(uuid.UUID(value)) != value for value in (basic_id, deep_id))
+                or len({identifier, basic_id, deep_id}) != 3):
+            raise ValueError("scan UUIDs must be canonical and distinct from their parent")
+    except ValueError as error:
+        raise SuiteError("Manager import requires distinct basic and deep scan UUIDs") from error
+    if browser_upload["meta_scan_execution_id"] != deep_id:
+        raise SuiteError("Manager UI waited for a different Meta child")
+    for depth, scan_id in (("basic", basic_id), ("deep", deep_id)):
+        child = wait_owner_execution(client, "meta", scan_id, timeout)
+        if (child.get("module") != "meta" or child.get("source") != "transfer"
+                or child.get("parent_execution_id") != identifier
+                or str(child.get("triggered_by")) != identity["principal_id"]
+                or str(child.get("tenant_id")) != identity["tenant_id"]
+                or child.get("scan_context") != {"engine_id": engine_id, "scan_depth": depth}):
+            raise SuiteError("automatic Meta scan lost its actual parent, current User or Tenant, target or scan depth")
     item = wait_transfer_target(client, engine_id, "public." + IMPORT_TARGET, timeout)
     source = _object(config.get("source"), "import source").get("locator")
     if not isinstance(source, str) or not source:
@@ -896,11 +906,9 @@ def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider
     denied_execution = verify_import_private_access(outsider, task_id, identity, timeout)
 
     proof = {"transfer_task_id": task_id, "transfer_execution_id": identifier,
-            "meta_scan_execution_id": scan["execution_id"], "target_item_id": item["id"],
+            "meta_basic_scan_execution_id": basic_id, "meta_scan_execution_id": deep_id, "target_item_id": item["id"],
             "records_read": 2, "records_written": 2, "current_user_origin_verified": True,
             "automatic_scan_verified": True, "user_inspect_rejected": True, "non_uploader_rejected": True, "rejected_execution_id": denied_execution}
-    if browser_upload["meta_scan_execution_id"] != scan["execution_id"]:
-        raise SuiteError("Manager UI waited for a different Meta child")
     proof["browser"] = {"upload": browser_upload, "rejection": run_manager_import_browser(engine_id, identity, owned_ids, proof)}
     return proof
 
@@ -1243,7 +1251,7 @@ def run_manager_import_with_grant(client, engine_id, identity, timeout, owned_id
     return report
 
 
-def verify_scan_trace_visibility(client, outsider, identity, outsider_identity, scan_id, parent_id=None):
+def verify_scan_trace_visibility(client, outsider, identity, outsider_identity, scan_id, parent_id=None, *, basic_scan_id=None):
     """A readable task parent never grants access to another User's ad-hoc scan."""
     if (outsider_identity.get("tenant_id") != identity["tenant_id"]
             or outsider_identity.get("principal_id") == identity["principal_id"]
@@ -1252,13 +1260,17 @@ def verify_scan_trace_visibility(client, outsider, identity, outsider_identity, 
         raise SuiteError("trace peer must be a distinct same-Tenant User with the same existing permissions")
     monitor = "/api/v1/monitor/executions/by-execution-id/"
     source = "transfer" if parent_id else "manager"
-    detail = _object(client.request("GET", monitor + scan_id, (200,)).payload, "Monitor scan")
-    if (detail.get("execution_id") != scan_id or detail.get("module") != "meta"
-            or detail.get("task_type") != "scan" or detail.get("status") != "success"
-            or detail.get("source") != source or detail.get("source_task_id") is not None
-            or detail.get("parent_execution_id") != parent_id
-            or detail.get("triggered_by") != int(identity["principal_id"])):
-        raise SuiteError("Monitor scan lost its exact origin or direct parent")
+    scan_ids = (basic_scan_id, scan_id) if basic_scan_id else (scan_id,)
+    details = {}
+    for identifier in scan_ids:
+        detail = _object(client.request("GET", monitor + identifier, (200,)).payload, "Monitor scan")
+        if (detail.get("execution_id") != identifier or detail.get("module") != "meta"
+                or detail.get("task_type") != "scan" or detail.get("status") != "success"
+                or detail.get("source") != source or detail.get("source_task_id") is not None
+                or detail.get("parent_execution_id") != parent_id
+                or detail.get("triggered_by") != int(identity["principal_id"])):
+            raise SuiteError("Monitor scan lost its exact origin or direct parent")
+        details[identifier] = detail
 
     observation_fields = ("execution_id", "module", "task_type", "status", "source",
                           "source_task_id", "parent_execution_id", "triggered_by")
@@ -1279,39 +1291,40 @@ def verify_scan_trace_visibility(client, outsider, identity, outsider_identity, 
             nodes[identifier] = execution
             for child in _array(node["children"], "trace children"):
                 visit(child, identifier)
-        visit(value, parent_id if root_id == scan_id else None)
+        visit(value, parent_id if root_id in details else None)
         if set(nodes) != set(expected):
             raise SuiteError("trace tree lost an expected execution")
-        if scan_id in nodes and nodes[scan_id] != detail:
+        if any(nodes[identifier] != details[identifier] for identifier in nodes.keys() & details.keys()):
             raise SuiteError("Monitor scan detail differs from its tree projection")
         return [{key: nodes[identifier].get(key) for key in observation_fields} for identifier in sorted(nodes)]
 
     root_id = parent_id or scan_id
-    expected = {scan_id: "meta", **({parent_id: "transfer"} if parent_id else {})}
+    expected = {**dict.fromkeys(scan_ids, "meta"), **({parent_id: "transfer"} if parent_id else {})}
     visible = tree(client, root_id, expected)
-    # Verify the child's own tree as well; it must not invent or climb to a parent.
-    tree(client, scan_id, {scan_id: "meta"})
-    hidden_paths = [f"/api/v1/meta/executions/{scan_id}"] + [monitor + scan_id + suffix for suffix in ("", "/tree", "/events")]
     peer_denials = []
-    for path in hidden_paths:
-        response = outsider.request("GET", path, (404,))
-        denied = _object(response.payload, "hidden scan error")
-        if response.status != 404 or set(denied) - {"error", "error_code"} or not denied.get("error"):
-            raise SuiteError("hidden scan response leaked execution data")
-        peer_denials.append({"path": path, "status": response.status, "response_fields": sorted(denied)})
+    for identifier in scan_ids:
+        if parent_id:
+            tree(client, identifier, {identifier: "meta"})
+        hidden_paths = [f"/api/v1/meta/executions/{identifier}"] + [monitor + identifier + suffix for suffix in ("", "/tree", "/events")]
+        for path in hidden_paths:
+            response = outsider.request("GET", path, (404,))
+            denied = _object(response.payload, "hidden scan error")
+            if response.status != 404 or set(denied) - {"error", "error_code"} or not denied.get("error"):
+                raise SuiteError("hidden scan response leaked execution data")
+            peer_denials.append({"path": path, "status": response.status, "response_fields": sorted(denied)})
     peer_visible = []
     if parent_id:
         parent = _object(outsider.request("GET", monitor + parent_id, (200,)).payload, "peer task parent")
         if parent.get("execution_id") != parent_id or parent.get("module") != "transfer":
             raise SuiteError("peer cannot read the actual task parent")
         peer_visible = tree(outsider, parent_id, {parent_id: "transfer"})
-    return {"scan_execution_id": scan_id, "parent_execution_id": parent_id,
+    return {"scan_execution_id": scan_id, "basic_scan_execution_id": basic_scan_id, "parent_execution_id": parent_id,
             "owner_visible_execution_ids": [node["execution_id"] for node in visible],
             "peer_visible_execution_ids": [node["execution_id"] for node in peer_visible],
             "owner_visible_observations": visible, "peer_visible_observations": peer_visible,
             "peer_denials": peer_denials,
             "peer_principal_id": outsider_identity["principal_id"], "same_permissions_verified": True,
-            "owner_detail_tree_consistent": True, "peer_hidden_endpoints": 4,
+            "owner_detail_tree_consistent": True, "peer_hidden_endpoints": len(peer_denials),
             "parent_read_does_not_grant_scan_read": bool(parent_id)}
 
 
@@ -1319,7 +1332,8 @@ def record_scan_trace_receipt(client, outsider, identity, peer_identity, object_
     cases = {
         "object_upload": verify_scan_trace_visibility(client, outsider, identity, peer_identity, object_upload["scan_execution_id"]),
         "bounded_import": verify_scan_trace_visibility(client, outsider, identity, peer_identity,
-            manager_import["meta_scan_execution_id"], manager_import["transfer_execution_id"]),
+            manager_import["meta_scan_execution_id"], manager_import["transfer_execution_id"],
+            basic_scan_id=manager_import["meta_basic_scan_execution_id"]),
     }
     artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     upload = _object(json.loads((artifact / "manager-object-upload.json").read_text()), "object upload receipt")
@@ -1328,7 +1342,7 @@ def record_scan_trace_receipt(client, outsider, identity, peer_identity, object_
             or upload.get("run_id") != run_id or upload.get("identity") != identity
             or upload.get("scan_execution_id") != object_upload["scan_execution_id"]):
         raise SuiteError("scan trace receipt is not bound to the actual current upload")
-    receipt = {"schema_version": "addp.scan-trace-visibility/v1", "result": "passed",
+    receipt = {"schema_version": "addp.scan-trace-visibility/v2", "result": "passed",
         "run_id": run_id, "git_commit": upload["git_commit"],
         "identity": identity, "peer_identity": peer_identity, "cases": cases}
     (artifact / "scan-trace-visibility.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
@@ -1357,7 +1371,7 @@ def record_manager_import_receipt(repository, artifact_dir, run_id, identity, en
     if source.returncode != 0 or len(commit) != 40 or any(c not in "0123456789abcdef" for c in commit):
         raise SuiteError("Manager import receipt requires the actual source commit")
     proof["physical_geometry_verified"] = True
-    receipt = {"schema_version": "addp.manager-private-import/v3", "result": "passed", "run_id": run_id,
+    receipt = {"schema_version": "addp.manager-private-import/v4", "result": "passed", "run_id": run_id,
                "git_commit": commit, "identity": identity, "engine_id": engine_id, "manager_import": proof}
     path = Path(artifact_dir) / "manager-private-import.json"
     path.write_text(json.dumps(receipt, sort_keys=True) + "\n")
@@ -2496,7 +2510,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v18",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v19",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",

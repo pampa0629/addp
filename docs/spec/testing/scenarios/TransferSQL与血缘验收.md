@@ -26,13 +26,13 @@ Console 真实选源→固定 SQL（无 MQL／语言下拉／高级编辑）→�
 
 | 链路 | 关键断言与独立核验 |
 | --- | --- |
-| Shapefile 私有导入 | Console 弹窗上传固定两点 ZIP，核目标 namespace／CPG、当前 User 持久 sync 任务及 Transfer execution，等唯一 Meta 子扫和树刷新；Transfer 唯一读写／血缘 owner，不复制后台 HTTP 旁路。Business `manager-import`独立核完整 PostGIS 值／坐标／SRID，不从平台响应造期望。 |
+| Shapefile 私有导入 | Console 弹窗上传固定两点 ZIP，核目标 namespace／CPG、当前 User 持久 sync 任务及 Transfer execution，等自动 deep 扫描和树刷新。Transfer `metadata_scan` 同时提供 `basic_execution_id` 和 deep `execution_id`，分别向 Meta 核深度、终态及同一父执行／Tenant／User／目标引擎。Business `manager-import` 独立核完整 PostGIS 值／坐标／SRID。 |
 | 私有来源拒绝 | 绑定源码／Run／Tenant／User／真实父子 UUID；非上传者启动同任务零读写拒绝、普通 User 直接 Inspect 拒绝，专业详情仅安全诊断。接受上传即捕获任务／execution，后续失败也清；独立领域成功不代全 suite 成功。 |
 | 初始使用权 | 原同一 execution 授权终态后重开 namespace，上传者真实预览两点、旁观隐藏／拒读。准备者只查精确 `task_production`历史，唯一 until_revoked read 绑定接收方／边界；正式撤销后历史在、目录隐藏／预览拒绝。页面失败也沿原 execution 回收已签 Grant。 |
 | 对象上传 | 同 User 正式 `/uploads`传 CSV＋五成员 Shapefile 到自有 MinIO，真实 Meta UUID 须 source=manager、原 User／Tenant／Engine、deep 及直接上传来源；自动扫后目录仍空。准备者仅对 `transfer-upload/upload-check.csv`、`transfer-upload/points.shp`签 15 分钟 metadata_read，消费权限不变，结构两项同身份；撤两项后目录空／详情 404，部分失败也清。 |
 | 物理原件 | 独立读六对象全字节／SHA／大小／ETag／时间。CSV 大小是相等正整数、时间按同一时刻、ETag 原样；Shapefile 一个 multi，大小为五对象之和、ref 集合精确。源随 tmpfs 销毁，设施零残留另核。 |
 
-保留 `manager-private-import.json`（`addp.manager-private-import/v3`／`addp.manager-private-import-browser/v1`）、`manager-object-upload.json`（`addp.manager-object-upload/v2`）的身份、授权和物理绑定。导入后刷新／Monitor 导航竞态由独立嵌入式 T3 证明，Hosted 不补认；现有 Manager 前端门禁与[私有导入证据](../验收证据索引.md#manager-预览与私有导入历史证据)按各自范围认定。
+保留 `manager-private-import.json`（`addp.manager-private-import/v4`／`addp.manager-private-import-browser/v1`）、`manager-object-upload.json`（`addp.manager-object-upload/v2`）的身份、授权和物理绑定。导入后刷新／Monitor 导航竞态由独立嵌入式 T3 证明，Hosted 不补认；现有 Manager 前端门禁与[私有导入证据](../验收证据索引.md#manager-预览与私有导入历史证据)按各自范围认定。
 
 ### 写入失败与证据边界
 
@@ -71,9 +71,9 @@ Business 独立按 ID 核全行 hex／字节长／空值／文本，PG 为可空
 
 #### 扫描调用链与读取隔离
 
-原上传者与同 Tenant 同业务权限的另一 User，不额外赋权。对象上传后上传者读同一 Meta UUID，Monitor 树仅该根扫描；私有导入后读 Transfer 父及唯一 Meta 子扫。另一 User 可读持久任务父及过滤后的仅父树，但 Meta 专业详情、Monitor 详情／树／事件四入口对一次性扫描都 404、仅错误字段，不能以缺功能 403 代隔离。树不截断／重复／丢失／串 UUID，详情／树投影一致。
+原上传者与同 Tenant 同业务权限的另一 User，不额外赋权。对象上传后上传者读同一 Meta UUID，Monitor 树仅该根扫描；私有导入后读 Transfer 父及其直接 basic 和 deep 子执行。另一 User 可读持久任务父及过滤后的仅父树，对每个一次性扫描请求 Meta 详情及 Monitor 详情／树／事件都返回 404，仅错误字段。树不截断／重复／丢失／串 UUID，详情／树投影一致。
 
-`scan-trace-visibility.json`（`addp.scan-trace-visibility/v1`）绑定源码／Run／两 User／权限／父子／可见节点／拒绝状态和字段名，仅安全执行 DTO 最小投影。两链全过才留独立收据，后续失败不抹该分项；v14 纳隔离、v15 纳二进制，完整报告仍按当前登记，不由局部收据认整套通过。
+`scan-trace-visibility.json`（`addp.scan-trace-visibility/v2`）绑定源码／Run／两 User／权限／父子／可见节点／拒绝状态和字段名，仅安全执行 DTO 最小投影。上传与导入两条链都通过才写独立收据。整套结论仍以作业汇总为准。
 
 #### 性能采样口径
 
