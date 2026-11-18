@@ -121,8 +121,8 @@ manager/
 - 资源树行内只保留刷新快捷操作；向量化从当前选中资源的操作区或统一“数据任务”入口发起，不在每个树行展示向量化状态或快捷图标。
 - 资源树 node 行内刷新固定执行 Meta `basic + force`，用于发现当前范围的新 node / item；item 刷新固定执行 known-item `deep + force`，只重建该 item 自身的深层元数据。
 - node 详情右上角的“深度扫描”通过 Meta 手动扫描接口提交当前节点完整 ResourceLocator，使用 `deep + force` 覆盖该节点及全部下级资源；与行内基础刷新共用执行等待和资源树回读流程，不逐 item 派发刷新、不默认扩大为整个引擎。交互细则见 `docs/数据预览与资源树实现规范.md`，平台契约见 `docs/spec/addp元数据扫描机制规范.md`。
-- 前端剖析页签只按 `data_type=table` 和当前内容选择上下文展示；不得在前端按 `item_type`、engine type 或文件扩展名维护能力白名单。首期剖析是 `data_profiling` ad-hoc execution，结果写 Manager 私有表，不写 Meta attributes，不创建 `manager.data_profile_tasks`，也不声明 TaskProvider capability。
-- 后端在执行准备前识别非 PostgreSQL 来源和容器子内容，Provider 再证明普通单表；不支持的来源统一返回 HTTP 422 / `data_profile_source_unsupported`。该能力错误与源授权 403、保护校验 403 分开；前端显示中英文能力说明，不自动创建执行、不保留旧进度、不提供无效重试，也不增加独立 capability API。
+- 剖析页签按 `data_type=table` 和当前内容选择上下文显示，采样准入由后端及 Provider 判定。沿 `data_profiling` ad-hoc execution，结果仅写 Manager 私有表，禁止前端能力白名单、独立 capability API、持久任务定义或 TaskProvider。
+- 首版采样限已扫描 PostgreSQL 普通单表。HTTP 422／`data_profile_source_unsupported` 显示中英文能力提示，隐藏旧进度与无效重试，停止轮询和自动创建；源授权及保护拒绝分别走各自的 HTTP 403。明确拒绝创建后停止轮询及反复提交。详见[剖析准入与前端行为](docs/数据剖析规范.md#当前授权切换边界)。
 - 数据剖析不得使用当前预览页、分页记录或前端数组计算；采样和指标计算必须走统一 Provider 与服务端预算。刷新失败必须保留上一份成功结果。
 - 剖析入队及活跃／最近执行查询只从可信当前 User AuthContext 获取发起人、租户成员关系与授权版本；冻结共享 execution 来源字段，并按这三项隔离执行复用。不保存 User Token，不把来源事实当作源授权；独立 execution 源授权缺失或失效时拒绝采样；当前开放范围见[剖析规范](docs/数据剖析规范.md#当前授权切换边界)。
 - **剖析准备与绑定**。已扫描 PostgreSQL 单表入队时深拷贝条件和资源引用，冻结所有分页、完整 ReadSet、行数预算及超时（最多 10000 行、单页 2000 行），准备阶段禁止读取业务内容。v6 先保存计划，在当前 User 请求中签发独立源授权，再在行锁内绑定。未绑定不得领取，失败及中断按规范收敛。
