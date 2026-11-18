@@ -61,6 +61,7 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
     if spec.get('packing') == 'ccsds':
         message = variable['message']
         cumulative = field.get('product_template') == 8
+        initial_zero = cumulative and field['forecast'] == 0
         require(message['edition'] == 2 and message['data_template'] == 42
                 and message['product_template'] == field.get('product_template', 0),
                 'ECMWF CCSDS templates changed')
@@ -72,7 +73,8 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
             time=dict(reference_utc='2026-01-02T03:00:00+00:00', unit_code=1,
                       forecast_value=field.get('start_hour',field['forecast']), start_utc=start,
                       end_utc=end, operation='instant'),
-            packing=dict(data_template=42, bits_per_value=12 if cumulative else 8, flags=14, block_size=32,
+            packing=dict(data_template=42, bits_per_value=0 if initial_zero else 12 if cumulative else 8,
+                         flags=14, block_size=32,
                          reference_sample_interval=128, reference_ieee_hex=struct.pack('>f', field['base']).hex(),
                          binary_scale=field.get('binary_scale',-2), decimal_scale=0),
             local=dict(definition=1, section_bytes=17, mars_class='od', mars_type='fc',
@@ -90,7 +92,8 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
         for key, expected in expected_facts.items():
             require(message[key] == expected and json.loads(attributes['GRIB2_' + key.upper()]['values'][0]) == expected,
                     f'ECMWF CCSDS {key} differs from source')
-        require(attributes['GRIB2_DECODE_PRECISION']['values'] == ['float32_scaling_float64_output'],
+        precision = 'exact_zero_float64_output' if initial_zero else 'float32_scaling_float64_output'
+        require(attributes['GRIB2_DECODE_PRECISION']['values'] == [precision],
                 'ECMWF CCSDS precision disclosure missing')
     require(variable['dimensions']==[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],'GRIB independent dimensions changed')
     spacing = field.get('spacing', 1)
@@ -123,14 +126,14 @@ def validate_browser_case(case,observed):
             'GRIB MinIO original button download incomplete')
 
 
-def validate_structural_metadata(detail):
+def validate_structural_metadata(detail, expected_names):
     attrs=detail.get('attributes',{})
     require(set(attrs)=={'schema_version','item','type_info'} and attrs.get('schema_version')==1
         and attrs.get('item')=={'data_type':'container','format':'grib','layout':'single'},
         'GRIB Meta must expose only the canonical structural projection')
     container=attrs.get('type_info',{}).get('container',{})
     require(set(attrs['type_info'])=={'container'} and set(container)<= {'children','default_child'}
-        and container.get('children')==[dict(name='message-'+str(i),child_kind='array',data_type='media') for i in range(1,4)],
+        and container.get('children')==[dict(name=name,child_kind='array',data_type='media') for name in expected_names],
         'GRIB Meta container must not disclose native content or derived statistics')
 
 
@@ -166,7 +169,8 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 report['metadata_authorization']['grants'].append(receipt)
                 item=owner.find_fixture_item(client,engine,prefix+'grib/'+spec['name'],'GRIB '+storage)
                 detail=client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload
-                validate_structural_metadata(detail)
+                expected_names = [f"message-{field['number']}" for field in spec['fields']]
+                validate_structural_metadata(detail, expected_names)
                 locator=owner.build_item_locator(engine,item)
                 native=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':locator}),(200,)).payload
                 attrs=native.get('data',{}).get('object',{}).get('attributes',{})
@@ -176,7 +180,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 require(info.get('source_version')=='sha256:'+spec['sha256'] and info.get('scan_complete') is True and info.get('encoding')=='GRIB'+str(spec.get('edition',2)) and info.get('profile')=='grib'+str(spec.get('edition',2))+'_regular_fields/v1','GRIB content version missing')
                 require(not attrs.get('capabilities',{}).get('spatial'),'GRIB parent gained unified spatial extent')
                 children=attrs.get('type_info',{}).get('container',{}).get('children',[])
-                require([v['name'] for v in children]==['message-1','message-2','message-3'],'GRIB message identity or enumeration changed')
+                require([v['name'] for v in children]==expected_names,'GRIB message identity or enumeration changed')
                 stage='slice';precision_audits=[]
                 for field in spec['fields']:
                     selection=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height'])

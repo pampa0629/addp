@@ -14,7 +14,7 @@ FIXTURE=SCENE.FIXTURE
 class GRIBOracleTest(unittest.TestCase):
     def test_closed_inventory_and_bytes_before_physical_mutation(self):
         request={'sources':FIXTURE.sources(),'source_bytes':{s['name']:FIXTURE.source_bytes(s).hex() for s in FIXTURE.sources()}}
-        self.assertEqual(len(FIXTURE._owned_sources(request)),8)
+        self.assertEqual(len(FIXTURE._owned_sources(request)),9)
         for change in ('missing','tampered'):
             bad=copy.deepcopy(request)
             if change=='missing':bad['sources'].pop()
@@ -25,7 +25,7 @@ class GRIBOracleTest(unittest.TestCase):
             while offset<len(raw):
                 self.assertEqual(raw[offset:offset+4],b'GRIB');self.assertEqual(raw[offset+7],spec.get('edition',2))
                 length=int.from_bytes(raw[offset+4:offset+7] if spec.get('edition')==1 else raw[offset+8:offset+16],'big');self.assertEqual(raw[offset+length-4:offset+length],b'7777');offset+=length;count+=1
-            self.assertEqual((offset,count),(len(raw),3))
+            self.assertEqual((offset,count),(len(raw),len(spec['fields'])))
         self.assertEqual([s['sha256'] for s in FIXTURE.sources()[:2]],['98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110','addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6'])
 
     def response(self,spec,field):
@@ -108,14 +108,15 @@ class GRIBOracleTest(unittest.TestCase):
     def test_structural_meta_rejects_content_and_derived_statistics(self):
         detail=dict(attributes=dict(schema_version=1,item=dict(data_type='container',format='grib',layout='single'),
             type_info=dict(container=dict(children=[dict(name='message-'+str(i),child_kind='array',data_type='media') for i in range(1,4)]))))
-        SCENE.validate_structural_metadata(detail)
+        names = ['message-1', 'message-2', 'message-3']
+        SCENE.validate_structural_metadata(detail, names)
         for path,key,value in [(('attributes',),'format_info',{'grib':{'source_version':'hash'}}),
             (('attributes','type_info','container','children',0),'native',{'values':[9999]}),
             (('attributes','type_info','container'),'child_count',3)]:
             bad=copy.deepcopy(detail);obj=bad
             for step in path:obj=obj[step]
             obj[key]=value
-            with self.assertRaises(ValueError):SCENE.validate_structural_metadata(bad)
+            with self.assertRaises(ValueError):SCENE.validate_structural_metadata(bad, names)
 
     def test_grants_precede_consumer_catalog_and_cleanup_survives_business_failure(self):
         events=[]

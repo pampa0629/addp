@@ -12,7 +12,7 @@ import struct
 import subprocess
 import sys
 
-NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2','ecmwf-ccsds.grib2','ecmwf-precipitation.grib2')
+NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2','ecmwf-ccsds.grib2','ecmwf-precipitation.grib2','ecmwf-precipitation-0h.grib2')
 
 
 def fields(reverse=False):
@@ -230,7 +230,10 @@ def ccsds_message(field):
     # Frozen libaec encoding of unsigned integers 0..31, one block of 32.
     # Source declarations and expected physical values are independent of GDAL.
     cumulative = field.get('product_template') == 8
+    initial_zero = cumulative and field['forecast'] == 0
     payload = bytes.fromhex('1000492492492492492492492490' if cumulative else '20092492492492492492492492')
+    if initial_zero:
+        payload = b''
     raw = message(dict(field, packing='ieee64'))
     sections = {}
     offset = 16
@@ -255,8 +258,10 @@ def ccsds_message(field):
     else:
         sections[4][24:28] = field['height_m'].to_bytes(4, 'big')
     scale = field.get('binary_scale', -2)
+    encoded_scale = 0x8000 | -scale if scale < 0 else scale
+    bits = 0 if initial_zero else 12 if cumulative else 8
     sections[5] = (struct.pack('>IBIHf', 25, 5, 32, 42, field['base'])
-                   + struct.pack('>HHB', 0x8000 | -scale, 0, 12 if cumulative else 8)
+                   + struct.pack('>HHB', encoded_scale, 0, bits)
                    + bytes.fromhex('000e200080'))
     sections[7] = struct.pack('>IB', 5 + len(payload), 7) + payload
     body = b''.join(sections[n] for n in range(1, 8)) + b'7777'
@@ -286,6 +291,10 @@ def sources():
     raw = source_bytes(spec)
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     spec = dict(name=NAMES[7], case_id='ecmwf-precipitation', packing='ccsds', fields=ccsds_precipitation_fields())
+    raw = source_bytes(spec)
+    result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
+    zero = dict(ccsds_precipitation_fields()[0], forecast=0, constant=True, binary_scale=0, step=0.)
+    spec = dict(name=NAMES[8], case_id='ecmwf-precipitation-0h', packing='ccsds', fields=[zero])
     raw = source_bytes(spec)
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return result

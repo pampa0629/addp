@@ -15,7 +15,7 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
     plan={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'grib','access':{'method':'mounted_path','path':str(path)}}}
     info=grib.OPERATORS['grib.inspect']['function'](access_plan=plan)
     assert info['format_info']['source_version']=='sha256:'+spec['sha256']
-    assert [c['name'] for c in info['container']['children']]==['message-1','message-2','message-3']
+    assert [c['name'] for c in info['container']['children']]==[f"message-{field['number']}" for field in spec['fields']]
     for field in spec['fields']:
         select=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height'])
         result=grib.OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=select)
@@ -27,7 +27,9 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
         if spec.get('packing') == 'ccsds':
             assert native['message']['data_template'] == 42
             assert native['message']['local']['mars_stream'] == 'oper'
-            assert native['attributes']['GRIB2_DECODE_PRECISION']['values'] == ['float32_scaling_float64_output']
+            initial_zero = field.get('product_template') == 8 and field['forecast'] == 0
+            precision = 'exact_zero_float64_output' if initial_zero else 'float32_scaling_float64_output'
+            assert native['attributes']['GRIB2_DECODE_PRECISION']['values'] == [precision]
             if field.get('product_template') == 8:
                 facts = native['message']
                 start = datetime(2026, 1, 2, 3, tzinfo=timezone.utc)
@@ -63,6 +65,7 @@ def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
     assert 'GRIB2 decimal Float32 precision smoke passed' in captured.out
     assert 'GRIB2 ECMWF CCSDS complete stream and values smoke passed' in captured.out
     assert 'GRIB2 ECMWF CCSDS precipitation interval and source metres smoke passed' in captured.out
+    assert 'GRIB2 ECMWF CCSDS 0h exact zero smoke passed' in captured.out
 
 
 @pytest.mark.parametrize('reverse',[False,True])
@@ -100,6 +103,7 @@ def test_preexisting_grib1_grib2_hosted_bytes_are_unchanged():
         'complex-fields.grib2': '76e83b64e1ccbd32790e8825fd731fd5eb57b351289bd124f7617d1af811e9da',
         'complex-south-to-north.grb2': '9a624331a8980ee2fdd5d6a0eba7f14b69ccc1d28e720a4f0661aec8803b7b0b',
         'ecmwf-ccsds.grib2': '20604c89b64afc613a504d20da4085d89dd3e0ce4de4f0ce6808c3a982c17590',
+        'ecmwf-precipitation.grib2': '0c7f69c585c2d52bdc37f0db7894e753b5806f12416f750ed37cef28147cbaee',
     }
     assert {s['name']:s['sha256'] for s in FIXTURE.sources() if s['name'] in expected} == expected
 
@@ -133,6 +137,21 @@ def test_ecmwf_ccsds_invalid_stream_or_identity_rejected_before_gdal(monkeypatch
         grib._fields(source)
 
 
+def replace_precipitation_bytes(raw, section_id, start, stop, replacement):
+    sections = []
+    offset = 16
+    while offset < len(raw) - 4:
+        length = int.from_bytes(raw[offset:offset + 4], 'big')
+        section = bytearray(raw[offset:offset + length])
+        if section[4] == section_id:
+            section[start:stop] = replacement
+            section[:4] = len(section).to_bytes(4, 'big')
+        sections.append(section)
+        offset += length
+    body = b''.join(sections) + b'7777'
+    return raw[:8] + (len(body) + 16).to_bytes(8, 'big') + body
+
+
 @pytest.mark.parametrize('section_id, position, replacement, reason', [
     (1, 10, b'\x00', 'identification'),
     (3, 63, b'\x00\x0f\x42\x40', 'grid'),
@@ -140,7 +159,7 @@ def test_ecmwf_ccsds_invalid_stream_or_identity_rejected_before_gdal(monkeypatch
     (4, 22, b'\x67', 'parameter or level'),
     (4, 38, b'\x08', 'end time'),
     (4, 18, b'\x00\x00\x00\x01', 'interval'),
-    (4, 49, b'\x00\x00\x00\x00', 'interval'),
+    (4, 49, b'\x00\x00\x00\x00', 'end time'),
     (4, 53, b'\xff', 'interval'),
     (4, 57, b'\xc3', 'interval'),
     (5, 19, b'\x00', 'packing'),
@@ -148,21 +167,27 @@ def test_ecmwf_ccsds_invalid_stream_or_identity_rejected_before_gdal(monkeypatch
 ])
 def test_ecmwf_precipitation_rejects_conflicting_source_facts(monkeypatch, section_id, position, replacement, reason):
     raw = FIXTURE.ccsds_message(FIXTURE.ccsds_precipitation_fields()[0])
-    sections = []
-    offset = 16
-    while offset < len(raw) - 4:
-        length = int.from_bytes(raw[offset:offset + 4], 'big')
-        section = bytearray(raw[offset:offset + length])
-        if section[4] == section_id:
-            if position == -1:
-                section.pop()
-                section[:4] = len(section).to_bytes(4, 'big')
-            else:
-                section[position:position + len(replacement)] = replacement
-        sections.append(section)
-        offset += length
-    body = b''.join(sections) + b'7777'
-    source = raw[:8] + (len(body) + 16).to_bytes(8, 'big') + body
+    stop = None if position == -1 else position + len(replacement)
+    source = replace_precipitation_bytes(raw, section_id, position, stop, replacement)
+    monkeypatch.setattr(grib.gdal, 'OpenEx', lambda *a, **k: pytest.fail('invalid source reached GDAL'))
+    with pytest.raises(ValueError, match=reason):
+        grib._fields(source)
+
+
+@pytest.mark.parametrize('section_id, start, stop, replacement, reason', [
+    (4, 38, 39, b'\x04', 'end time'),
+    (5, 5, 9, b'\x00\x00\x00\x1f', 'packed value count'),
+    (5, 11, 15, b'\x3f\x80\x00\x00', '0h zero field'),
+    (5, 11, 15, b'\x80\x00\x00\x00', '0h zero field'),
+    (5, 16, 17, b'\x01', '0h zero field'),
+    (5, 18, 19, b'\x01', 'packing'),
+    (5, 19, 20, b'\x0c', '0h zero field'),
+    (6, 5, 6, b'\x00\xff\xff\xff\xff', 'packing'),
+    (7, 5, 5, b'\x00', '0h zero field'),
+])
+def test_ecmwf_initial_precipitation_requires_exact_constant_profile(monkeypatch, section_id, start, stop, replacement, reason):
+    spec = next(spec for spec in FIXTURE.sources() if spec['case_id'] == 'ecmwf-precipitation-0h')
+    source = replace_precipitation_bytes(FIXTURE.source_bytes(spec), section_id, start, stop, replacement)
     monkeypatch.setattr(grib.gdal, 'OpenEx', lambda *a, **k: pytest.fail('invalid source reached GDAL'))
     with pytest.raises(ValueError, match=reason):
         grib._fields(source)

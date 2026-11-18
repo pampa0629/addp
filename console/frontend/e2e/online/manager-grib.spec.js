@@ -8,7 +8,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
   test.setTimeout(480000)
   const env = process.env, context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(context.cases).toHaveLength(16)
+  expect(context.cases).toHaveLength(18)
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id, permissions: new Set(context.identity.permissions_verified) }
   expect([...identity.permissions].sort()).toEqual(['manager.content.read', 'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'])
   const outcomes = [], browserErrors = []
@@ -44,7 +44,8 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           if (source.spec.packing === 'ccsds') {
             await expect(details).toContainText('GRIB2_LOCAL')
             await expect(details).toContainText('mars_stream')
-            await expect(details).toContainText('float32_scaling_float64_output')
+            const initialZero = field.product_template === 8 && field.forecast === 0
+            await expect(details).toContainText(initialZero ? 'exact_zero_float64_output' : 'float32_scaling_float64_output')
             if (field.product_template === 8) {
               const end = new Date(Date.UTC(2026, 0, 2, 3 + field.forecast)).toISOString().replace('.000Z', '+00:00')
               await expect(details).toContainText('Total precipitation [m]')

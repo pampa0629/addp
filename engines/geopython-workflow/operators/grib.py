@@ -135,6 +135,7 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
                       forecast_value=forecast_hours, start_utc=valid.isoformat(),
                       end_utc=valid.isoformat(), operation='instant')
     identity = tuple(product[9:11])
+    initial_zero = False
     if cumulative:
         grid = sections[3]
         if (grid[38:42] != b'\x00' * 4 or grid[63:71] != struct.pack('>II', 250000, 250000)
@@ -143,7 +144,7 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
         if identity != (1, 193) or product[22:34] != b'\x01' + b'\xff' * 11:
             raise ValueError('unsupported ECMWF CCSDS precipitation parameter or level')
         duration = int.from_bytes(product[49:53], 'big')
-        if (len(product) != 58 or product[18:22] != b'\x00' * 4 or not 1 <= duration <= 360
+        if (len(product) != 58 or product[18:22] != b'\x00' * 4 or duration > 360
                 or product[41:49] != bytes.fromhex('0100000000010201')
                 or product[53:58] != bytes.fromhex('0d000001c2')):
             raise ValueError('unsupported ECMWF CCSDS precipitation interval')
@@ -155,6 +156,7 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
                           statistical_process=1, increment_type=2, interval_unit=1,
                           interval_length=duration, increment_unit=13, increment_value=450,
                           missing_count=0)
+        initial_zero = duration == 0
         element, unit = 'tp', '[m]'
         level = dict(type_code=1, raw_scale=None, raw_value=None, reference='surface')
     else:
@@ -170,23 +172,28 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
         level = dict(type_code=103, raw_scale=0, raw_value=height,
                      reference='above_ground', value=height, unit='m')
     if (len(packing) != 25 or packing[17:19] != b'\x00\x00'
-            or not 1 <= packing[19] <= 16 or packing[20:25] != b'\x00\x0e\x20\x00\x80'
-            or sections[6][5] != 255 or (cumulative and packing[19] != 12)):
+            or packing[20:25] != b'\x00\x0e\x20\x00\x80' or sections[6][5] != 255):
         raise ValueError('unsupported ECMWF CCSDS packing')
+    bits = packing[19]
     binary_scale = _signed(packing[15:17])
-    packing_reference = struct.unpack('>f', packing[11:15])[0]
-    if not math.isfinite(packing_reference) or not -126 <= binary_scale <= 127 - packing[19]:
-        raise ValueError('unsupported ECMWF CCSDS scaling')
-
-    payload = sections[7][5:].tobytes()
-    if not _ccsds_checker()(payload, len(payload), point_count, packing[19]):
-        raise ValueError('incomplete ECMWF CCSDS codestream')
+    if initial_zero:
+        if packing[11:20] != bytes(9) or len(sections[7]) != 5:
+            raise ValueError('invalid ECMWF CCSDS 0h zero field')
+    else:
+        if not 1 <= bits <= 16 or (cumulative and bits != 12):
+            raise ValueError('unsupported ECMWF CCSDS packing')
+        packing_reference = struct.unpack('>f', packing[11:15])[0]
+        if not math.isfinite(packing_reference) or not -126 <= binary_scale <= 127 - bits:
+            raise ValueError('unsupported ECMWF CCSDS scaling')
+        payload = sections[7][5:].tobytes()
+        if not _ccsds_checker()(payload, len(payload), point_count, bits):
+            raise ValueError('incomplete ECMWF CCSDS codestream')
 
     return dict(
         parameter=dict(centre=98, subcentre=0, master_table=32, local_table=local_table,
                        discipline=0, category=identity[0], number=identity[1]),
         time=time_facts, level=level,
-        packing=dict(data_template=42, bits_per_value=packing[19], flags=14,
+        packing=dict(data_template=42, bits_per_value=bits, flags=14,
                      block_size=32, reference_sample_interval=128,
                      reference_ieee_hex=bytes(packing[11:15]).hex(),
                      binary_scale=binary_scale, decimal_scale=0),
@@ -515,7 +522,9 @@ def _description(dataset, field):
         message.update(discipline=field['discipline'], product_template=field['product_template'], data_template=field['data_template'])
         if field['data_template'] in (3, 42):
             facts=field['facts']
-            metadata['GRIB2_DECODE_PRECISION']='float32_scaling_float64_output'
+            initial_zero = field['data_template'] == 42 and facts['packing']['bits_per_value'] == 0
+            metadata['GRIB2_DECODE_PRECISION'] = ('exact_zero_float64_output' if initial_zero
+                                                 else 'float32_scaling_float64_output')
             for key,fact in (('GRIB_REF_TIME','reference_seconds'),('GRIB_VALID_TIME','valid_seconds'),('GRIB_FORECAST_SECONDS','forecast_seconds')):
                 if int(metadata[key])!=facts[fact]:raise ValueError('GRIB2 decoded time differs from original interval')
             if field['data_template'] == 42 and facts['parameter']['local_table'] == 1:
@@ -573,6 +582,9 @@ def read_slice(access_plan, source_version, selection):
             values=dataset.GetRasterBand(1).ReadAsArray(x,y,width,height)
             if values is None or values.shape!=(height,width):
                 raise ValueError('GRIB slice incomplete')
+            if (field.get('data_template') == 42 and field['facts']['packing']['bits_per_value'] == 0
+                    and np.any(values != 0)):
+                raise ValueError('GDAL slice differs from declared ECMWF CCSDS 0h zero field')
         if field['bitmap'] is None:
             valid=np.ones((height,width),dtype=bool)
         else:
