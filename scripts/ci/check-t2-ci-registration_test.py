@@ -914,6 +914,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "pattern = args[args.index('-run') + 1]\n"
                 "names = [\n"
                 "    'TestIntegrationResolvePostgresQueryOutputRewrite',\n"
+                "    'TestIntegrationPostgresQueryReadSessionGuardedSources',\n"
                 "    'TestIntegrationPostgresSharedSQLPool',\n"
                 "    'TestIntegrationHighGoSharedSQLPoolTimeout',\n"
                 "    'TestIntegrationHighGoTableWrite', 'TestIntegrationPostgresKMLWriter',\n"
@@ -1155,6 +1156,13 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
         result, _ = self.run_gate_fixture("missing", "all")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires the real lifecycle matrix test", result.stderr)
+
+    def test_guarded_sources_must_run_in_full_and_query_read_set_groups(self) -> None:
+        for group in ("all", "query-read-set"):
+            with self.subTest(group=group):
+                result, _ = self.run_gate_fixture("missing", group, "TestIntegrationPostgresQueryReadSessionGuardedSources")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("requires the trusted-admin business-source contract", result.stderr)
 
     def test_event_group_executes_only_the_two_exact_pg_event_cases(self) -> None:
         result, calls = self.run_gate_fixture("pass", "execution-events")
