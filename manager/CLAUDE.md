@@ -127,7 +127,7 @@ manager/
 - 剖析入队及活跃／最近执行查询只从可信当前 User AuthContext 获取发起人、租户成员关系与授权版本；冻结共享 execution 来源字段，并按这三项隔离执行复用。不保存 User Token，不把来源事实当作源授权；独立 execution 源授权缺失或失效时拒绝采样；当前开放范围见[剖析规范](docs/数据剖析规范.md#当前授权切换边界)。
 - PostgreSQL 剖析准备通过同一表格查询生成器冻结预算内所有分页及完整源依赖；首版只允许已扫描单表，不调用预览或读取业务行；最多 10000 行、单页 2000 行。v6 入队先保存完整计划，当前 User 请求签发后在行锁事务内绑定；未绑定不得领取，失败或中断须收敛。Worker 核对精确租约、原始配置和重新准备的完整分页计划后，用当前 Tenant Service 消费 System 固定源授权入口；拒绝与不可用不进入采样，不缓存 Allow。每页读取和结果提交前都须重新核验现行源授权与本地保护，不以准备计划或首次 Allow 代替复核。完整配置摘要复用 `common/execution.NewManagerProfileReadScope`，只能输入持久执行的原始 JSON，不能经 `JSONMap` 浮点数往返。
 - 剖析入队与后台消费共享当前强类型配置契约；配置摘要覆盖超时。消费只使用入队时冻结的完整预算，并复核来源主体、复用键、引擎及稳定源身份；旧版本、缺失预算、未知字段或摘要不一致均在采样前拒绝，不补默认值。入队时深拷贝条件和资源引用，后续修改请求对象不得改变已有执行。
-- 已保存剖析结果必须带实际采样完整 `dependency_snapshot.read_set`；结果内容按当前普通 User Bearer 同步复核 System 固定 `manager-profile-result` 源规则及本地 Security。缺失或不规范的历史来源不从当前依赖补造、不回填、不删除，明确拒绝结果内容；不能用委托预览或机器身份读取。结果仍按资源／配置共享，不改为发起人私有。
+- 剖析结果按资源／配置共享。读取须使用实际采样冻结的 `dependency_snapshot.read_set`，历史集合缺失或不规范时保留记录并拒读，禁止按当前依赖补造或回填。`manager-pg-profile-result` 按原普通 User 复核完整来源，本地 Security 独立执行。身份交接与凭据约束见[剖析结果读取规范](docs/数据剖析规范.md#当前授权切换边界)；确定性检查与真实链路按[开发与验证](#开发与验证)分层认定。
 - 条件剖析只接受结构化 `data_scope`，条件必须由声明支持的 Provider 在采样前执行并安全绑定参数；全范围和条件范围按 `profile_config_hash` 分别保存。Manager 不接受任意 SQL，也不得退回到采样后过滤。已纳入 Security 保护的 DataItem 在条件值保护契约完成前只允许全范围剖析，条件剖析必须拒绝。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。
