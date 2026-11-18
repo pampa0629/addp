@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { verifyDifferenceLogPages } from './online/difference-execution-logs.mjs'
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
 
@@ -73,4 +75,45 @@ for (const state of ['pending', 'running', 'success']) test(`real navigation ora
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/v1/develop/') && request.method() !== 'GET') commands++ })
   await assertExecutionNavigationPage({ page, expect, task: 37, id, old, state, engine: 13, deadline: performance.now() + 15000 })
   expect(commands).toBe(0); expect(unexpected).toEqual([]); expect(errors).toEqual([])
+})
+
+
+test('geometry difference log oracle reads the five execution pages and refuses an unavailable response', async ({ page }) => {
+  const responses = {
+    '/api/v1/monitor/task-providers': [],
+    '/api/v1/monitor/executions': { executions: [], total: 0, page: 1, page_size: 20 }
+  }
+  const samples = []
+  for (let index = 0; index < 5; index++) {
+    const uuid = id.slice(0, -1) + (index + 1)
+    const status = index === 0 ? 'success' : 'failed'
+    const execution = { id: 1500 + index, execution_id: uuid, module: 'develop', task_type: 'workflow',
+      source: 'develop', status, attempt: 1, created_at: '2026-11-17T00:00:00Z', steps: [] }
+    const timestamp = '2026-11-17T00:00:00Z'
+    const logs = [{ event: 'workflow_started', level: 'INFO', timestamp },
+      { event: 'task_progress', level: 'INFO', progress: 0, task_id: 'load_a', timestamp },
+      { event: status === 'success' ? 'workflow_succeeded' : 'workflow_failed', level: status === 'success' ? 'INFO' : 'ERROR', timestamp }]
+    responses['/api/v1/monitor/executions/by-execution-id/' + uuid + '/tree'] = { execution, children: [], truncated: false }
+    responses['/api/v1/monitor/executions/by-execution-id/' + uuid + '/events'] = { items: [], has_more: false, next_cursor: 0 }
+    responses['/api/v1/develop/executions/' + uuid] = execution
+    responses['/api/v1/develop/executions/' + uuid + '/logs'] = { execution_id: uuid, logs }
+    samples.push({ execution_id: uuid, event_count: logs.length, sha256: createHash('sha256').update(JSON.stringify(logs)).digest('hex') })
+  }
+  await mockGraph(page, { permissions: ['develop.task.read', 'develop.data_read.execute', 'monitor.execution.read'], responses })
+  await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
+  await page.goto('/monitor/executions?execution_id=' + id)
+  const report = { reads: 0, samples: [] }
+  const stages = []
+  await verifyDifferenceLogPages(page, samples, report, stage => stages.push(stage))
+  expect(report.reads).toBe(10)
+  expect(report.samples.map(r => r.execution_id)).toEqual(samples.map(r => r.execution_id))
+  expect(stages.at(-1)).toBe('execution_logs_verified')
+  await page.route('**/api/v1/develop/executions/*/logs', route =>
+    route.fulfill({ status: 503, json: { error_code: 'execution_logs_unavailable', error: 'private synthetic detail' } }))
+  const failure = { reads: 0, samples: [] }
+  await expect(verifyDifferenceLogPages(page, samples, failure, stage => stages.push(stage))).rejects.toThrow('execution_logs_http_failed')
+  expect(failure).toMatchObject({ reads: 1, samples: [],
+    first_failure: { stage: 'enter', sample: 0, http_status: 503, code: 'execution_logs_http_failed' } })
+  expect(stages.at(-1)).toBe('execution_logs_failed')
+  expect(JSON.stringify(failure)).not.toContain('private synthetic detail')
 })

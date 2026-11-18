@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Ordinary User topology/repair/snap/overlap/gap/endpoints -> exact scans/lineage -> Console."""
+import hashlib
 import importlib
 import json
 import os
+import re
+from datetime import datetime
 from pathlib import Path
 import subprocess
 import sys
@@ -977,6 +980,102 @@ class _FilePublication:
 
 
 
+def difference_archive(evidence):
+    """Project execution payloads at the archive boundary without changing live evidence."""
+    if isinstance(evidence, list):
+        return [difference_archive(value) for value in evidence]
+    if not isinstance(evidence, dict):
+        return evidence
+    projected = {key: difference_archive(value) for key, value in evidence.items()}
+    metadata = projected.get('metadata')
+    if isinstance(metadata, dict) and isinstance(metadata.get('result'), dict):
+        metadata['result'].pop('logs', None)
+    return projected
+
+
+def difference_log_summary(response, execution, succeeded):
+    identifier = execution['execution_id']
+    nodes = ['load_a', 'load_b', 'PRIVATE_DIFFERENCE_NODE']
+    if succeeded:
+        nodes.append('save_result')
+    expected = [('workflow_started', 'INFO', None, None)]
+    for index, node in enumerate(nodes):
+        expected.append(('task_progress', 'INFO', node, index * 100 // len(nodes)))
+        if succeeded or index < len(nodes) - 1:
+            expected.append(('task_progress', 'INFO', node, (index + 1) * 100 // len(nodes)))
+    expected.append(('workflow_succeeded', 'INFO', None, None) if succeeded else
+                    ('workflow_failed', 'ERROR', None, None))
+    if not isinstance(response, dict) or set(response) != {'execution_id', 'logs'} or response['execution_id'] != identifier:
+        raise SuiteError('execution_logs_identity_mismatch')
+    logs = response['logs']
+    if not isinstance(logs, list) or len(logs) != len(expected):
+        raise SuiteError('execution_logs_count_mismatch')
+    for log, (event, level, node, progress) in zip(logs, expected):
+        fields = {'timestamp', 'level', 'event'} | ({'task_id', 'progress'} if node else set())
+        if not isinstance(log, dict) or set(log) != fields or (log['event'], log['level']) != (event, level):
+            raise SuiteError('execution_logs_event_mismatch')
+        timestamp = log['timestamp']
+        try:
+            if not isinstance(timestamp, str) or re.fullmatch(
+                    r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|\+00:00)', timestamp) is None:
+                raise ValueError
+            datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        except ValueError:
+            raise SuiteError('execution_logs_timestamp_invalid') from None
+        if node and (log['task_id'] != node or type(log['progress']) is not int or log['progress'] != progress):
+            raise SuiteError('execution_logs_progress_mismatch')
+    metadata = execution.get('metadata')
+    result = metadata.get('result') if isinstance(metadata, dict) else None
+    if not isinstance(result, dict) or result.get('logs') != logs:
+        raise SuiteError('execution_logs_persisted_mismatch')
+    # All validated values are ASCII. The browser uses the same key order and separators.
+    wire = json.dumps(logs, sort_keys=True, separators=(',', ':')).encode()
+    return {'execution_id': identifier, 'event_count': len(logs), 'sha256': hashlib.sha256(wire).hexdigest()}
+
+
+def verify_difference_logs(client, executions, deadline, checkpoint, persist):
+    identifiers = [value['execution_id'] for value in executions]
+    if len(identifiers) != 5 or len(set(identifiers)) != 5:
+        raise SuiteError('execution_logs_sample_mismatch')
+    started = time.monotonic()
+    deadline = min(deadline, started + 25)
+    evidence = {'reads': 0, 'samples': []}
+    checkpoint['execution_logs'] = evidence
+    for index, execution in enumerate(executions):
+        timeout = min(5, deadline - time.monotonic())
+        status = None
+        try:
+            if timeout <= 0:
+                raise SuiteError('execution_logs_deadline')
+            original_timeout = client.timeout
+            client.timeout = min(original_timeout, timeout)
+            evidence['reads'] += 1
+            try:
+                response = client.request('GET', f"/api/v1/develop/executions/{execution['execution_id']}/logs", range(100, 600))
+            except SuiteError:
+                raise SuiteError('execution_logs_request_failed') from None
+            finally:
+                client.timeout = original_timeout
+            status = response.status
+            if time.monotonic() >= deadline:
+                raise SuiteError('execution_logs_deadline')
+            if status != 200:
+                raise SuiteError('execution_logs_http_failed')
+            evidence['samples'].append(difference_log_summary(response.payload, execution, index == 0))
+        except SuiteError as error:
+            evidence['first_failure'] = {'sample': index, 'http_status': status, 'code': str(error)}
+            evidence['elapsed_ms'] = round((time.monotonic() - started) * 1000)
+            try:
+                persist('execution_logs_failed')
+            except OSError:
+                # Exit cleanup and its own evidence remain independent of the first failure.
+                pass
+            raise
+        evidence['elapsed_ms'] = round((time.monotonic() - started) * 1000)
+        persist('execution_logs_observed')
+    return evidence['samples']
+
+
 def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication=None):
     profile=mixed_overlay_profile(case);input_nodes=profile.get('input_nodes',('load_a','load_b'));schema=profile['schema'];names=profile['sources'];target_name=profile['target'];count=profile['result_count']
     definition=profile['definition'];validate_failure=profile['failure_validator'];diagnostic=profile['diagnostic'];features=profile['features']
@@ -1018,7 +1117,9 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         'identity':identity,'runtime_id':runtime,'execution_id':identifier,'definition':workflow,'sources':sources,
         'resource_preflight':preflight,'initial_scan_inventory':initial,'failures':[]}
     def persist(stage):
-        checkpoint['stage']=stage;path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+        checkpoint['stage'] = stage
+        archived = difference_archive(checkpoint) if case == fixture.DIFFERENCE_CASE else checkpoint
+        path.write_text(json.dumps(archived, ensure_ascii=False, indent=2) + '\n')
     persist('awaiting_execution')
     def observe_execution(response):
         checkpoint['execution']=response;persist('execution_observed')
@@ -1104,12 +1205,21 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     persist('before_browser')
     evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'sources':sources,'outputs':[output],
         'expected':{'result':physical['features']},'failures':[{'key':f['key'],'execution_id':f['execution_id'],'expected_diagnostic':f['expected_diagnostic'],'error_details':f['execution']['error_details']} for f in checkpoint['failures']]}
-    remaining();browser_report=browser_runner(repository,env,evidence);remaining()
+    if case == fixture.DIFFERENCE_CASE:
+        evidence['log_samples'] = verify_difference_logs(
+            client, [execution, *(f['execution'] for f in checkpoint['failures'])], deadline, checkpoint, persist)
+        persist('before_browser')
+    browser_env = env
+    if case == fixture.DIFFERENCE_CASE:
+        browser_env = dict(env, ADDP_TOPOLOGY_DIFFERENCE_BROWSER_SECONDS=str(min(240, remaining())))
+    remaining();browser_report=browser_runner(repository,browser_env,evidence);remaining()
     final=physical_runner(repository,env)
     if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay browser changed physical files or scans')
     if publication:publication.check_preparation_scans()
     meta_after=unchanged_meta()
     remaining()
+    if case == fixture.DIFFERENCE_CASE:
+        checkpoint = difference_archive(checkpoint)
     return {**checkpoint,'schema_version':schema+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,
         'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
 
@@ -1933,6 +2043,21 @@ def validate_overlay_browser_raw(raw,evidence):return validate_mixed_overlay_bro
 def validate_difference_browser_raw(raw,evidence):return validate_mixed_overlay_browser_raw(raw,evidence,fixture.DIFFERENCE_CASE)
 
 
+def validate_difference_log_browser(raw, samples):
+    expected = [dict(sample, timeline=True, reload=True, return_to_monitor=True) for sample in samples]
+    report = raw.get('execution_logs')
+    if (len(expected) != 5 or not isinstance(report, dict)
+            or set(report) != {'reads', 'samples', 'elapsed_ms'}
+            or type(report['reads']) is not int or report['reads'] != 10
+            or type(report['elapsed_ms']) is not int or not 0 <= report['elapsed_ms'] <= 60000
+            or report['samples'] != expected
+            or any(row.get(key) is not True for row in report['samples']
+                   for key in ('timeline', 'reload', 'return_to_monitor'))):
+        raise SuiteError('execution_logs_browser_evidence_invalid')
+    if difference_archive(raw) != raw:
+        raise SuiteError('execution_logs_archive_contains_logs')
+
+
 def validate_mixed_overlay_browser_raw(raw,evidence,case):
     profile=mixed_overlay_profile(case);input_count=len(profile.get('input_nodes',('load_a','load_b')));count=profile['result_count'];validate_failure=profile['failure_validator']
     import base64,struct,math
@@ -2008,9 +2133,14 @@ def browser(repository, env, evidence):
     case=fixture.topology_case(env)
     # Playwright prefixes file/project names in grep titles; match the exact test-name suffix.
     pattern=fixture.network_profile(case)['title']+'$' if case in fixture.INDEPENDENT_CASES else '同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败$'
+    timeout = 240
+    if case == fixture.DIFFERENCE_CASE:
+        timeout = float(env.get('ADDP_TOPOLOGY_DIFFERENCE_BROWSER_SECONDS', '0'))
+        if not 0 < timeout <= 240:
+            raise SuiteError('execution_logs_browser_budget_invalid')
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/vector-topology-persistence.spec.js',
         '--config=playwright.online.config.js','--grep',pattern], cwd=repository/'console/frontend',
-        env=dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(evidence)), stdout=sys.stderr, stderr=sys.stderr, timeout=240)
+        env=dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(evidence)), stdout=sys.stderr, stderr=sys.stderr, timeout=timeout)
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
@@ -2034,7 +2164,10 @@ def browser(repository, env, evidence):
     if case==fixture.ADJACENCY_CASE:
         raw=obj(json.loads((path.parent/'topology-adjacency-browser-raw.json').read_text()),'adjacency browser raw');validate_mixed_overlay_browser_raw(raw,evidence,case)
     if case==fixture.DIFFERENCE_CASE:
-        validate_difference_browser_raw(obj(json.loads((path.parent/'topology-difference-browser-raw.json').read_text()),'difference browser raw'),evidence)
+        raw = obj(json.loads((path.parent/'topology-difference-browser-raw.json').read_text()), 'difference browser raw')
+        validate_difference_browser_raw(raw, evidence)
+        validate_difference_log_browser(raw, evidence['log_samples'])
+        report['execution_logs'] = raw['execution_logs']
     if case==fixture.DISSOLVE_CASE:
         validate_dissolve_browser_raw(obj(json.loads((path.parent/'topology-dissolve-browser-raw.json').read_text()),'dissolve browser raw'),evidence)
     if case==fixture.OVERLAY_CASE:

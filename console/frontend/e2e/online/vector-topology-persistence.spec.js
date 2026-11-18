@@ -1,3 +1,4 @@
+import { differenceArchive, verifyDifferenceLogPages } from './difference-execution-logs.mjs'
 import { expect, request, test } from '@playwright/test'
 import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { writeFileSync } from 'node:fs'
@@ -1839,7 +1840,11 @@ async function verifyMixedOverlayCase(page,caseName) {
   expect(evidence.expected.result).toHaveLength(config.resultCount)
   const identity = { principalID: evidence.principal_id, tenantID: evidence.tenant_id, permissions: evidence.permissions_verified }
   const raw = { schema_version: config.schema+'-browser-raw/v1', case: evidence.case, run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
-  const persist = (stage, result = 'incomplete') => writeFileSync(resolve(directory, config.raw), JSON.stringify({ ...raw, stage, result }, null, 2) + '\n')
+  const difference = caseName === 'geometry-difference'
+  const persist = (stage, result = 'incomplete') => {
+    const snapshot = { ...raw, stage, result }
+    writeFileSync(resolve(directory, config.raw), JSON.stringify(difference ? differenceArchive(snapshot) : snapshot, null, 2) + '\n')
+  }
   const writes = []
   page.on('request', request => {
     const path = new URL(request.url()).pathname
@@ -1908,6 +1913,10 @@ async function verifyMixedOverlayCase(page,caseName) {
   await page.screenshot({ path: resolve(directory, config.prefix+'-lineage.png') }); persist('lineage_verified')
   const observations = await verifyInputDiagnosticCase(page, caseName, { ...evidence, executions: evidence.failures.map(f => ({ ...f, execution: { error_details: f.error_details } })) })
   raw.failures = evidence.failures.map(f => ({ key: f.key, execution_id: f.execution_id, observations: observations.filter(v => v.key === f.key) }))
+  if (difference) {
+    raw.execution_logs = { reads: 0, samples: [] }
+    await verifyDifferenceLogPages(page, evidence.log_samples, raw.execution_logs, persist)
+  }
   expect(writes).toEqual([]); raw.publication_requests = writes
   persist('complete', 'passed')
   writeFileSync(resolve(directory, 'topology-browser.json'), JSON.stringify({ ...evidence, schema_version: config.schema+'-browser/v1', result: 'passed' }, null, 2) + '\n')

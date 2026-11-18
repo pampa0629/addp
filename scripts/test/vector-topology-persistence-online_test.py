@@ -2755,6 +2755,21 @@ class FilePublicationFactReader:
         return SimpleNamespace(payload=value)
 
 
+def difference_logs(succeeded):
+    stamp = {'timestamp': '2026-11-17T00:00:00.123456+00:00'}
+    logs = [dict(stamp, level='INFO', event='workflow_started')]
+    progress = ([('load_a', 0), ('load_a', 25), ('load_b', 25), ('load_b', 50),
+                 ('PRIVATE_DIFFERENCE_NODE', 50), ('PRIVATE_DIFFERENCE_NODE', 75),
+                 ('save_result', 75), ('save_result', 100)] if succeeded else
+                [('load_a', 0), ('load_a', 33), ('load_b', 33), ('load_b', 66),
+                 ('PRIVATE_DIFFERENCE_NODE', 66)])
+    logs.extend(dict(stamp, level='INFO', event='task_progress', task_id=node, progress=value)
+                for node, value in progress)
+    logs.append(dict(stamp, level='INFO' if succeeded else 'ERROR',
+                     event='workflow_succeeded' if succeeded else 'workflow_failed'))
+    return logs
+
+
 class FormalFileClient(OverlayClient):
     def __init__(self,case):
         super().__init__(case);self.scans=[];self.grants={};self.issuer=FilePublicationInitializer(self)
@@ -2764,7 +2779,15 @@ class FormalFileClient(OverlayClient):
             item['attributes']['item'].update(file_count=1,refs=[dict(extension='.gpkg',path=item['full_name'],
                 primary=True,required=True,role='container')])
         self.observer=FilePublicationFactReader(self)
+        self.timeout = 30
+        if case == m.fixture.DIFFERENCE_CASE:
+            self.success['metadata']['result'] = {'logs': difference_logs(True)}
     def request(self,method,path,expected,body=None):
+        if self.case == m.fixture.DIFFERENCE_CASE and path.endswith('/logs'):
+            self.calls.append((method, path, body))
+            identifier = path.split('/')[-2]
+            logs = self.executions[identifier]['metadata']['result']['logs']
+            return SimpleNamespace(status=200, payload={'execution_id': identifier, 'logs': copy.deepcopy(logs)})
         if path.endswith('/auth/context'):
             response=super().request(method,path,expected,body);response.payload['principal']['id']='33';return response
         if path.endswith('/scan/run/manual'):
@@ -2778,6 +2801,10 @@ class FormalFileClient(OverlayClient):
             return SimpleNamespace(payload=dict(execution_id='overlay-output-scan',status='success',tenant_id=self.scan_tenant,triggered_by=self.scan_actor,source='develop',parent_execution_id=self.run_id,
                 scan_context=dict(scan_depth='basic',engine_id=3)))
         response=super().request(method,path,expected,body)
+        if self.case == m.fixture.DIFFERENCE_CASE and path == '/api/v1/develop/executions' and method == 'POST':
+            value = self.executions[response.payload['execution_id']]
+            if value is not self.success:
+                value['metadata'].setdefault('result', {})['logs'] = difference_logs(False)
         if path.startswith('/api/v1/meta/items/'):
             value=response.payload
             value.pop('size_bytes',None);value.pop('row_count',None)
@@ -2915,6 +2942,91 @@ class DifferenceOnlineTest(unittest.TestCase):
             self.assertEqual([task['operator'] for task in tasks], ['difference', 'load', 'load'])
             self.assertEqual(tasks[0]['depends_on'], ['load_a', 'load_b'])
             self.assertTrue(all('target_parent_locator' not in task['params'] and 'target_name' not in task['params'] for task in tasks))
+    def test_difference_logs_bind_five_receipts_and_redact_archive(self):
+        client = DifferenceClient()
+        def browser(_repository, env, evidence):
+            self.assertGreater(float(env['ADDP_TOPOLOGY_DIFFERENCE_BROWSER_SECONDS']), 0)
+            self.assertLessEqual(float(env['ADDP_TOPOLOGY_DIFFERENCE_BROWSER_SECONDS']), 240)
+            return evidence
+
+        report = self.run_case(client, browser=browser)
+        evidence = report['execution_logs']
+        self.assertEqual(evidence['reads'], 5)
+        self.assertEqual([sample['event_count'] for sample in evidence['samples']], [10, 7, 7, 7, 7])
+        self.assertEqual([sample['execution_id'] for sample in evidence['samples']], list(client.executions))
+        self.assertEqual(client.timeout, 30)
+        archived = (Path(self.directory.name) / 'topology-difference-checkpoint.json').read_text()
+        self.assertNotIn('"logs":', archived)
+        self.assertNotIn('"logs":', json.dumps(report))
+        self.assertEqual(len(client.success['metadata']['result']['logs']), 10)
+
+    def test_difference_logs_failure_retains_first_reason_and_cleans_without_retry(self):
+        for cause in ('unavailable', 'empty', 'foreign', 'extra_field', 'bad_progress', 'bad_time', 'mismatch'):
+            client = DifferenceClient()
+            request = client.request
+
+            def read(method, path, expected, body=None):
+                response = request(method, path, expected, body)
+                if not path.endswith('/logs'):
+                    return response
+                self.assertLessEqual(client.timeout, 5)
+                if cause == 'unavailable':
+                    response.status = 503
+                    response.payload = {'error': 'PRIVATE_SENTINEL'}
+                elif cause == 'empty':
+                    response.payload['logs'] = []
+                elif cause == 'foreign':
+                    response.payload['execution_id'] = 'PRIVATE_SENTINEL'
+                elif cause == 'extra_field':
+                    response.payload['logs'][0]['message'] = 'PRIVATE_SENTINEL'
+                elif cause == 'bad_progress':
+                    response.payload['logs'][1]['progress'] = False
+                else:
+                    response.payload['logs'][0]['timestamp'] = ('2026-11-17T00:00:00+10:00' if cause == 'bad_time'
+                                                                 else '2026-11-17T00:00:01Z')
+                return response
+
+            client.request = read
+            with self.subTest(cause=cause), self.assertRaisesRegex(m.SuiteError, 'execution_logs_'):
+                self.run_case(client, browser=lambda *_: self.fail('browser ran after log failure'))
+            checkpoint = (Path(self.directory.name) / 'topology-difference-checkpoint.json').read_text()
+            evidence = json.loads(checkpoint)['execution_logs']
+            self.assertEqual(evidence['reads'], 1)
+            self.assertEqual(evidence['first_failure']['http_status'], 503 if cause == 'unavailable' else 200)
+            self.assertEqual(sum(method == 'POST' and path.endswith('/develop/executions')
+                                 for method, path, _ in client.calls), 5)
+            self.assertNotIn('PRIVATE_SENTINEL', checkpoint)
+            self.assertNotIn('"logs":', checkpoint)
+            self.assertTrue(all(row['revocation'] is not None for row in client.grants.values()))
+
+    def test_difference_logs_expired_group_issues_no_request(self):
+        client = DifferenceClient()
+        executions = [{'execution_id': str(i)} for i in range(5)]
+        evidence = {}
+        with self.assertRaisesRegex(m.SuiteError, 'execution_logs_deadline'):
+            m.verify_difference_logs(client, executions, 0, evidence, lambda stage: None)
+        self.assertEqual(evidence['execution_logs']['reads'], 0)
+        self.assertEqual(client.calls, [])
+
+    def test_difference_browser_requires_safe_exact_evidence(self):
+        samples = [{'execution_id': str(i), 'event_count': 10 if i == 0 else 7, 'sha256': str(i) * 64}
+                   for i in range(5)]
+        exact = {'execution_logs': {'reads': 10, 'elapsed_ms': 10, 'samples': [
+            dict(sample, timeline=True, reload=True, return_to_monitor=True) for sample in samples]}}
+        m.validate_difference_log_browser(exact, samples)
+        for change in (
+            lambda report: report.pop('execution_logs'),
+            lambda report: report['execution_logs'].update(reads=11),
+            lambda report: report['execution_logs'].update(elapsed_ms=60001),
+            lambda report: report['execution_logs']['samples'][0].update(return_to_monitor=1),
+            lambda report: report['execution_logs']['samples'][1].update(execution_id='foreign'),
+            lambda report: report.update(metadata={'result': {'logs': ['must not archive']}}),
+        ):
+            malformed = copy.deepcopy(exact)
+            change(malformed)
+            with self.assertRaisesRegex(m.SuiteError, 'execution_logs_'):
+                m.validate_difference_log_browser(malformed, samples)
+
     def test_physical_wrapper_keeps_each_complete_failure_and_timeout_output(self):
         import subprocess
         stderr=b'original physical traceback\n'+b'x'*25000
@@ -2937,7 +3049,7 @@ class DifferenceOnlineTest(unittest.TestCase):
             calls.append('physical')
             checkpoint=json.loads((Path(self.directory.name)/'topology-difference-checkpoint.json').read_text())
             self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_physical'))
-            self.assertEqual(checkpoint['execution'],client.success)
+            self.assertEqual(checkpoint['execution'],m.difference_archive(client.success))
             self.assertEqual(checkpoint['monitor']['execution_id'],client.run_id)
             self.assertEqual(len(checkpoint['sources']),5)
             self.assertEqual(len(checkpoint['resource_preflight']),5)
