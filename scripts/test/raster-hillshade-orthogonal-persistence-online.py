@@ -2,6 +2,7 @@
 """16 hillshade COGs, 34 precise bilingual refusals and 680 complete rereads in 600s."""
 from __future__ import annotations
 import importlib,json,math,os,re,subprocess,sys,time,traceback
+from datetime import datetime
 from pathlib import Path
 view=importlib.import_module('scripts.test.raster-viewshed-persistence-online')
 orth=importlib.import_module('scripts.test.raster-sight-orthogonal-persistence-online')
@@ -10,6 +11,7 @@ PREFIX,SUITE=fixture.PREFIX,fixture.SUITE
 ARCHIVE_NAME='hillshade-orthogonal-cogs'
 MANIFEST_KEY='archived_cogs'
 COUNTS=(16,34,680,51)
+CLEANUP_RESERVE_SECONDS = 30
 SuiteError=view.SuiteError
 raster,lineage,base=view.raster,view.lineage,view.base
 encoded,obj=view.encoded,view.obj
@@ -43,6 +45,67 @@ class ViewshedMetadata(orth.ViewshedMetadata):
     prefix=PREFIX
     suite=SUITE
     fixture=fixture
+
+    def record_revocation(self, row, response, visibility):
+        identifier = row['request_id']
+        records = self.report.setdefault('revocations', {})
+        if visibility is None:
+            receipt = None
+            if response.status == 200:
+                receipt = obj(response.payload, 'hillshade Grant revocation receipt')
+                if (receipt.get('request_id') != identifier
+                    or receipt.get('revoked_request_ids') != [identifier]
+                    or receipt.get('revoked_by_principal_id') != self.grants.operator
+                    or receipt.get('reason') != 'Disposable Online metadata cleanup'
+                    or not isinstance(receipt.get('revoked_by_membership_id'), str)
+                    or not re.fullmatch('[1-9][0-9]*', receipt['revoked_by_membership_id'])):
+                    raise SuiteError('hillshade Grant revocation identity differs')
+                revoked_at = datetime.fromisoformat(receipt['revoked_at'])
+                if revoked_at.tzinfo is None or revoked_at >= datetime.fromisoformat(self.expires_at):
+                    raise SuiteError('hillshade Grant requires active revocation before expiry')
+                receipt = {key: receipt[key] for key in ('request_id', 'revoked_request_ids',
+                    'revoked_by_principal_id', 'revoked_by_membership_id', 'revoked_at', 'reason')}
+            elif response.status != 404 or row['confirmed']:
+                raise SuiteError('hillshade confirmed Grant must have a revocation receipt')
+            records[identifier] = {'engine': row['engine'], 'target': row['target'],
+                'http_status': response.status, 'receipt': receipt}
+        else:
+            receipt = records[identifier]['receipt']
+            observed_at = datetime.fromisoformat(visibility['observed_at'])
+            if (observed_at.tzinfo is None or observed_at >= datetime.fromisoformat(self.expires_at)
+                or (receipt is not None and observed_at < datetime.fromisoformat(receipt['revoked_at']))):
+                raise SuiteError('hillshade hidden visibility must follow withdrawal before expiry')
+            records[identifier]['visibility'] = visibility
+        self.save()
+
+    def cleanup(self):
+        try:
+            outcome = self.grants.cleanup(on_revocation=self.record_revocation)
+            if any(self.report.get('revocations', {}).get(row['request_id'], {}).get('http_status') != 200
+                   for row in self.report['issued']):
+                raise SuiteError('hillshade issued Grant receipts are incomplete')
+            self.report['cleanup'] = outcome
+        except BaseException:
+            self.report['cleanup'] = 'failed'
+            raise
+        finally:
+            self.save()
+
+
+def collect_public_lineage(client, relations, remaining):
+    pending = relations
+    while pending:
+        waiting = []
+        for relation in pending:
+            remaining()
+            edges = view.active_derivations(client, relation['target_item_id'], 'upstream')
+            if edges:
+                view.validate_public_derivation(edges, relation)
+            else:
+                waiting.append(relation)
+        pending = waiting
+        if pending:
+            time.sleep(min(1, remaining()))
 
 
 def success_language(index):return 'zh-cn'if index%2==0 else'en'
@@ -126,13 +189,19 @@ def check_and_archive(report,names,sources,frozen,archive,previous,scope_hash):
     return result
 
 
-def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage.read_current,metadata_factory=None):
-    return view.run_scenario(repository,env,client,physical_runner,diagnostic_runner,lineage_reader,metadata_factory,profile=sys.modules[__name__])
+def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage.read_current,metadata_factory=None,*,hard_deadline=None):
+    if hard_deadline is None:
+        hard_deadline = time.monotonic() + 600
+    return view.run_scenario(repository,env,client,physical_runner,diagnostic_runner,lineage_reader,metadata_factory,
+                             profile=sys.modules[__name__],hard_deadline=hard_deadline)
 
 
 def main():
     env=dict(os.environ);client=DiagnosticClient(env['GATEWAY_URL'],env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30,env['ADDP_ONLINE_ARTIFACT_DIR'])
-    report=run_scenario(Path(__file__).resolve().parents[2],env,client)
+    hard_deadline = float(env.get('ADDP_ONLINE_HILLSHADE_DEADLINE', 'nan'))
+    if not 0 < hard_deadline-time.monotonic() <= 600:
+        raise SuiteError('hillshade requires the current Online gate deadline')
+    report=run_scenario(Path(__file__).resolve().parents[2],env,client,hard_deadline=hard_deadline)
     view.immutable(Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/(PREFIX+'-persistence.json'),encoded(report));print(json.dumps(report,sort_keys=True))
 if __name__=='__main__':
     try:main()

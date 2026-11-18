@@ -179,6 +179,14 @@ def active_derivations(client, item, direction):
             if edge.get('status') == 'active' and edge.get('relation_kind') == 'derive']
 
 
+def validate_public_derivation(edges, relation):
+    if len(edges) != 1 or (edges[0].get('source', {}).get('item_id'),
+                           edges[0].get('target', {}).get('item_id'),
+                           edges[0].get('evidence', {}).get('execution_id')) != (
+                               relation['source_item_id'], relation['target_item_id'], relation['execution_id']):
+        raise SuiteError('Meta must expose exactly one current DEM-to-COG derivation')
+
+
 def source_edges(client, item):
     return sorted(json.dumps(edge, sort_keys=True) for edge in active_derivations(client, item, 'downstream'))
 
@@ -209,7 +217,7 @@ class ViewshedMetadata(raster.WorkflowMetadata):
     def file_contract(self,name):
         return 'media','tiff',('single','multi')
 
-    def __init__(self, env, client, engine, identity, source_scan, remaining):
+    def __init__(self, env, client, engine, identity, source_scan, remaining, *, grant_remaining=None):
         from datetime import datetime,timedelta,timezone
         self.env,self.client,self.engine,self.identity=env,client,engine,identity
         self.registration=importlib.import_module('scripts.test.online-engine-registration')
@@ -227,7 +235,7 @@ class ViewshedMetadata(raster.WorkflowMetadata):
         self.report={'schema_version':'addp.'+self.prefix+'-metadata/v1','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
             'identity':identity,'container_id':self.owner['Id'],'started_at':self.owner['State']['StartedAt'],
             'pending':[],'issued':[],'facts':[],'queries':[],'failures':[],'cleanup':'pending'}
-        self.expires_at=(datetime.now(timezone.utc)+timedelta(seconds=remaining())).isoformat();self.save()
+        self.expires_at=(datetime.now(timezone.utc)+timedelta(seconds=(grant_remaining or remaining)())).isoformat();self.save()
         issuer=BudgetClient(support.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30),remaining)
         self.grants=self.registration.ExactFileMetadataGrants(issuer,client,int(identity['tenant_id']),
             on_change=self.checkpoint,on_evidence=self.capture,scan_preparation=self.scan_preparation)
@@ -378,7 +386,7 @@ def check_scan_inventory(client, initializer, scan, scans):
 
 
 def run_scenario(repository, env, client, physical_runner=physical, diagnostic_runner=invalid_diagnostic,
-                 lineage_reader=lineage.read_current, metadata_factory=None, profile=None):
+                 lineage_reader=lineage.read_current, metadata_factory=None, profile=None, *, hard_deadline=None):
     profile = profile or sys.modules[__name__]
     fixture = profile.fixture
     prefix = profile.PREFIX
@@ -389,10 +397,15 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
     if budget != 600:
         raise SuiteError('viewshed business budget must be exactly 600 seconds')
 
+    cleanup_reserve = profile.CLEANUP_RESERVE_SECONDS if hard_deadline is not None else 0
+    deadline = started + budget if hard_deadline is None else hard_deadline
+    operation_deadline = deadline - cleanup_reserve
+    public_lineage_batch = getattr(profile, 'collect_public_lineage', None)
+
     def remaining():
-        left = budget-(time.monotonic()-started)
+        left = operation_deadline-time.monotonic()
         if left <= 0:
-            raise SuiteError('viewshed business budget exhausted')
+            raise SuiteError(f'{suite} phase budget exhausted')
         return left
 
     client = BudgetClient(client, remaining)
@@ -401,12 +414,16 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
     archive = directory/profile.ARCHIVE_NAME
     archive.mkdir(exist_ok=False)
     stages = []
+    phase_timings = {}
 
     def progress(status):
-        (directory/(prefix+'-progress.json')).write_bytes(encoded({
+        report = {
             'suite': suite, 'result': status, 'budget_ms': 600000,
             'elapsed_ms': round((time.monotonic()-started)*1000), 'stages': stages,
-        }))
+        }
+        if cleanup_reserve:
+            report.update(cleanup_reserve_ms=round(cleanup_reserve*1000), phase_timings_ms=phase_timings)
+        (directory/(prefix+'-progress.json')).write_bytes(encoded(report))
 
     def record_terminal(identifier, dag, language, status):
         execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected=status)
@@ -432,7 +449,8 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         scopes = {name: f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
         initializer, source_identity = profile.source_scan_client(env, client, identity, remaining)
         scan = support.wait_for_meta_scan(initializer, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
-        metadata = (metadata_factory or profile.ViewshedMetadata)(env,client,engine,identity,scan,remaining)
+        grant_deadline = {} if not cleanup_reserve else {'grant_remaining': lambda: deadline-time.monotonic()}
+        metadata = (metadata_factory or profile.ViewshedMetadata)(env,client,engine,identity,scan,remaining,**grant_deadline)
         producer_env={k:v for k,v in env.items()if k!='ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
         items = {name: metadata.find(name) for name in scopes}
         sources = {name: scopes[name]+f'&item_id={items[name]["id"]}' for name in scopes}
@@ -516,17 +534,28 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
             target_metadata[hit['id']] = item
             immutable(directory/f'target-{name}-meta-before.json', encoded(item))
             source_id = items[source_name]['id']
-            relation = raster.wait_lineage(client, source_id, hit['id'], identifier, remaining())
-            edges = active_derivations(client, hit['id'], 'upstream')
-            if len(edges) != 1 or (edges[0].get('source', {}).get('item_id'),
-                                   edges[0].get('target', {}).get('item_id'),
-                                   edges[0].get('evidence', {}).get('execution_id')) != (source_id, hit['id'], identifier):
-                raise SuiteError('Meta must expose exactly one current DEM-to-COG derivation')
-            cases.append({'name': name, 'execution_id': identifier, 'target_item_id': hit['id'],
+            case = {'name': name, 'execution_id': identifier, 'target_item_id': hit['id'],
                           'target_locator': target, 'automatic_scan_execution_id': automatic_scan,
-                          'scan_identity': scan_identity, 'lineage_evidence': proof, 'meta_relation': relation,
-                          'physical_size_bytes': previous[name]['size_bytes'], 'meta_size_bytes': item['size_bytes'],'size_evidence':sizes})
-            stages[-1]['status'] = 'passed'
+                          'scan_identity': scan_identity, 'lineage_evidence': proof,
+                          'physical_size_bytes': previous[name]['size_bytes'], 'meta_size_bytes': item['size_bytes'],'size_evidence':sizes}
+            if public_lineage_batch is None:
+                case['meta_relation'] = raster.wait_lineage(client, source_id, hit['id'], identifier, remaining())
+                validate_public_derivation(active_derivations(client, hit['id'], 'upstream'), case['meta_relation'])
+                stages[-1]['status'] = 'passed'
+            else:
+                case['meta_relation'] = {'source_item_id': source_id, 'target_item_id': hit['id'], 'execution_id': identifier}
+                stages[-1]['status'] = 'awaiting_public_lineage'
+            cases.append(case)
+            progress('running')
+
+        if public_lineage_batch is not None:
+            lineage_started = time.monotonic()
+            try:
+                public_lineage_batch(client, [case['meta_relation'] for case in cases], remaining)
+            finally:
+                phase_timings['public_lineage'] = round((time.monotonic()-lineage_started)*1000)
+            for stage in stages:
+                stage['status'] = 'passed'
             progress('running')
 
         profile.check_scan_inventory(client, initializer, scan, scans)
@@ -570,26 +599,37 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         lineage.verify_archive(env, suite, cases)
         cog_manifest = {name: {key: value for key, value in fact.items() if key != 'row'} for name, fact in previous.items()}
         manifest = immutable(directory/(profile.ARCHIVE_NAME+'-manifest.json'), encoded(cog_manifest))
-        progress('passed')
+        if not cleanup_reserve:
+            progress('passed')
         remaining()
     except BaseException:
         progress('failed')
         raise
     finally:
         pending_error=sys.exc_info()[1];cleanup_errors=[]
+        if cleanup_reserve:
+            operation_deadline = deadline - 1  # Leave time to write the terminal report.
+            cleanup_started = time.monotonic()
         if 'metadata'in locals():
             try:metadata.cleanup()
             except BaseException as failure:cleanup_errors.append(type(failure).__name__)
         if 'producer_env'in locals():
             try:
-                cleaned=physical_runner(repository,producer_env,'cleanup-oracle',[],max(.1,budget-(time.monotonic()-started)))
+                cleanup_timeout = remaining() if cleanup_reserve else max(.1,budget-(time.monotonic()-started))
+                cleaned=physical_runner(repository,producer_env,'cleanup-oracle',[],cleanup_timeout)
                 if cleaned.get('oracle_cache_removed')is not True:raise SuiteError('oracle cleanup proof missing')
             except BaseException as failure:cleanup_errors.append(type(failure).__name__)
-        if cleanup_errors:
+        if cleanup_reserve:
+            phase_timings['cleanup'] = round((time.monotonic()-cleanup_started)*1000)
+        if pending_error is not None or cleanup_errors:
             progress('failed')
+        if cleanup_errors:
             if pending_error is None:raise SuiteError('viewshed cleanup failed: '+','.join(cleanup_errors))
             immutable(directory/(prefix+'-cleanup-errors.json'),encoded({'business_error':type(pending_error).__name__,'cleanup_errors':cleanup_errors}))
-        if pending_error is None:remaining()
+        if pending_error is None:
+            remaining()
+            if cleanup_reserve:
+                progress('passed')
     return {'schema_version': 'addp.'+suite+'/v1', 'suite': suite, 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'runtime_engine_id': runtime,
             'sources': sources, 'physical_sources': source_bytes, 'source_scan_identity': source_scan,

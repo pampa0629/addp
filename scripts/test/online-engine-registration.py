@@ -177,15 +177,22 @@ class _ExactGrantLifecycle:
         if (not isinstance(result, dict) or not result.get('observed_at')
             or result.get('targets') != [dict(target=target, visible=visible)]):
             raise MetadataGrantError(phase,'visibility_mismatch')
+        return result
 
-    def cleanup(self, *, rows=None):
+    def cleanup(self, *, rows=None, on_revocation=None):
         errors = []
         for row in list(self.pending if rows is None else rows):
             try:
                 self.phase='grant_revoke'
-                self.authorizer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke",
+                response = self.authorizer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke",
                     (200,) if row['confirmed'] else (200,404), {'reason':'Disposable Online metadata cleanup'})
-                self.observe(row['target'],False,phase='visibility_after_revoke')
+                if on_revocation is not None:
+                    self.phase = 'revoke_receipt'
+                    on_revocation(row, response, None)
+                visibility = self.observe(row['target'],False,phase='visibility_after_revoke')
+                if on_revocation is not None:
+                    self.phase = 'revocation_evidence'
+                    on_revocation(row, response, visibility)
                 self.pending.remove(row)
                 self.checkpoint()
             except Exception as error:

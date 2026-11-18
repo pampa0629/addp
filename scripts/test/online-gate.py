@@ -1499,7 +1499,10 @@ def run_online(
                 "scenario",
                 suite.command,
                 repository=repository,
-                environment=environment,
+                environment=(
+                    dict(environment, ADDP_ONLINE_HILLSHADE_DEADLINE=str(started_at + timeout))
+                    if suite_name == "raster-hillshade-orthogonal-persistence" else environment
+                ),
                 timeout=remaining,
             )
             report["suite_report"] = suite_report

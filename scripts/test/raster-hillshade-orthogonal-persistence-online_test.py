@@ -3,6 +3,7 @@ import importlib
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 scene = importlib.import_module('scripts.test.raster-hillshade-orthogonal-persistence-online')
@@ -57,6 +58,84 @@ class HillshadeOrthogonalScenarioTest(unittest.TestCase):
         self.assertIs(profile.ViewshedMetadata.fixture, fixture)
         self.assertEqual(profile.fixture.ANCHOR, 'ADDP_ONLINE_HILLSHADE_ORTHOGONAL_ORACLE_ANCHOR_SHA256')
 
+    def test_batch_keeps_missing_evidence_pending_and_rejects_wrong_execution(self):
+        relations = [{'source_item_id': 10, 'target_item_id': target, 'execution_id': str(target)}
+                     for target in (21, 22)]
+        queries = []
+
+        def edges(client, target, direction):
+            self.assertEqual(direction, 'upstream')
+            queries.append(target)
+            if target == 21 and queries.count(target) == 1:
+                return []
+            return [{'source': {'item_id': 10}, 'target': {'item_id': target},
+                     'evidence': {'execution_id': str(target)}}]
+
+        with patch.object(scene.view, 'active_derivations', side_effect=edges), patch.object(scene.time, 'sleep') as sleep:
+            scene.collect_public_lineage(object(), relations, lambda: 2)
+            self.assertEqual(queries, [21, 22, 21])
+            sleep.assert_called_once_with(1)
+        with patch.object(scene.view, 'active_derivations', return_value=[
+            {'source': {'item_id': 10}, 'target': {'item_id': 21}, 'evidence': {'execution_id': 'old-run'}}
+        ]):
+            with self.assertRaisesRegex(scene.SuiteError, 'exactly one current'):
+                scene.collect_public_lineage(object(), relations, lambda: 2)
+
+    def test_revocation_archives_exact_receipts_and_observations_for_all_grants(self):
+        registration = importlib.import_module('scripts.test.online-engine-registration')
+        expiry = '2026-11-18T13:10:00Z'
+        revoked_at = '2026-11-18T13:09:40Z'
+        observed_at = '2026-11-18T13:09:41Z'
+        paths = (*fixture.SOURCES, *('outputs/'+name for name in fixture.TARGETS))
+        self.assertEqual(len(paths), 36)
+        for fault in (None, 'wrong-receipt', 'expired', 'still-visible'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                rows = [dict(request_id=str(index), engine=3, target={'name': name}, confirmed=True)
+                        for index, name in enumerate(paths, 1)]
+
+                class Issuer:
+                    def request(self, method, path, expected, body):
+                        identifier = path.split('/')[-2]
+                        return SimpleNamespace(status=200, payload={
+                            'request_id': 'stale' if identifier == '1' and fault == 'wrong-receipt' else identifier,
+                            'revoked_request_ids': [identifier], 'revoked_by_principal_id': '44',
+                            'revoked_by_membership_id': '55', 'reason': body['reason'],
+                            'revoked_at': expiry if identifier == '1' and fault == 'expired' else revoked_at})
+
+                class Consumer:
+                    def request(self, method, path, expected, body):
+                        target, = body['targets']
+                        return SimpleNamespace(payload={'observed_at': observed_at, 'targets': [
+                            dict(target=target, visible=fault == 'still-visible' and target == rows[0]['target'])
+                        ]})
+
+                owner = scene.ViewshedMetadata.__new__(scene.ViewshedMetadata)
+                owner.report = {'issued': [{'request_id': r['request_id']} for r in rows],
+                                'pending': rows[:], 'facts': [], 'cleanup': 'pending'}
+                owner.expires_at = expiry
+                owner.path = Path(directory)/'metadata.json'
+                with patch.object(registration, 'source_grant_participants', return_value=('44', '33')):
+                    owner.grants = registration.ExactFileMetadataGrants(
+                        Issuer(), Consumer(), 2, on_change=owner.checkpoint, on_evidence=owner.capture)
+                owner.grants.pending = rows[:]
+                if fault:
+                    with self.assertRaisesRegex(registration.MetadataGrantError, 'revoke_or_visibility_failed'):
+                        owner.cleanup()
+                    self.assertEqual(owner.report['pending'], rows[:1])
+                    self.assertEqual(owner.report['cleanup'], 'failed')
+                    if fault == 'still-visible':
+                        self.assertEqual(owner.report['revocations']['1']['receipt']['request_id'], '1')
+                        self.assertNotIn('visibility', owner.report['revocations']['1'])
+                else:
+                    owner.cleanup()
+                    self.assertEqual(owner.report['pending'], [])
+                    self.assertEqual(owner.report['cleanup'], {'grants_revoked': True, 'metadata_hidden': True})
+                    self.assertEqual(len(owner.report['revocations']), 36)
+                    for row in rows:
+                        fact = owner.report['revocations'][row['request_id']]
+                        self.assertEqual(fact['receipt']['request_id'], row['request_id'])
+                        self.assertEqual(fact['visibility']['targets'], [dict(target=row['target'], visible=False)])
+
     def test_complete_platform_matrix_and_failure_inventory(self):
         frozen = {
             name: {
@@ -68,7 +147,7 @@ class HillshadeOrthogonalScenarioTest(unittest.TestCase):
             for name in fixture.TARGETS
         }
         source_bytes = {name: {'size_bytes': 4096, 'sha256': 'a'*64} for name in fixture.SOURCES}
-        for fault in (None, 'negative-scan', 'extra-meta-relationship', 'language', 'size'):
+        for fault in (None, 'negative-scan', 'extra-meta-relationship', 'language', 'size', 'budget'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory, patch.multiple(
                 platform, scene=scene, fixture=fixture, FROZEN=frozen, SOURCES=source_bytes,
             ):
@@ -86,9 +165,26 @@ class HillshadeOrthogonalScenarioTest(unittest.TestCase):
                     'ADDP_ONLINE_ARTIFACT_DIR': directory,
                 }
                 reads = []
+                clock = [100.0]
+                cleanup_budget = []
+
+                class Metadata(platform.Metadata):
+                    def __init__(self, env, client, engine, identity, scan, remaining, *, grant_remaining):
+                        super().__init__(env, client)
+                        self.remaining = remaining
+                        self.expiry = grant_remaining()
+
+                    def cleanup(self):
+                        cleanup_budget.append(self.remaining())
+                        self_outer.assertGreater(self.expiry, 570)
+                        return super().cleanup()
+
+                self_outer = self
 
                 def physical(repository, env, action, names, timeout):
                     reads.append((action, len(names)))
+                    if fault == 'budget' and action == 'verify':
+                        clock[0] = 671.0
                     return platform.physical(repository, env, action, names, timeout)
 
                 def lineage(_env, identifier, tenant, principal, dag):
@@ -99,13 +195,28 @@ class HillshadeOrthogonalScenarioTest(unittest.TestCase):
                     return copy.deepcopy(scene.expected_lineage(dag['tasks'][0]['params']['locator'], target))
 
                 def run():
-                    with patch.object(scene.view.support, 'GatewayClient', return_value=initializer):
+                    original_graph = scene.view.active_derivations
+
+                    def assert_batch(client, item, direction):
+                        if direction == 'upstream':
+                            self.assertEqual(sum(status['status'] == 'success' for status in platform_client.executions.values()), 16)
+                            self.assertEqual(len(platform_client.executions), 16)
+                        return original_graph(client, item, direction)
+
+                    platform_client = client
+                    with patch.object(scene.view.support, 'GatewayClient', return_value=initializer), \
+                         patch.object(scene.time, 'monotonic', side_effect=lambda: clock[0]), \
+                         patch.object(scene.view, 'active_derivations', side_effect=assert_batch):
                         return scene.run_scenario(Path.cwd(), env, client, physical, platform.diagnostic,
-                                                  lineage, platform.Metadata)
+                                                  lineage, Metadata, hard_deadline=700.0)
 
                 if fault:
                     with self.assertRaises(scene.SuiteError):
                         run()
+                    if fault == 'budget':
+                        self.assertEqual(cleanup_budget, [28.0])
+                        self.assertEqual(reads[-1], ('cleanup-oracle', 0))
+                        self.assertNotIn('"result":"passed"', (Path(directory)/(scene.PREFIX+'-progress.json')).read_text())
                     continue
                 result = run()
                 self.assertEqual(result['result'], 'passed')

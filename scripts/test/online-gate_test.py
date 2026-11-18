@@ -229,6 +229,22 @@ class OnlineGateTest(unittest.TestCase):
         self.assertNotIn("addp_at_", persisted)
         self.assertNotIn("never-persist-this-secret", persisted)
 
+    @patch.object(ONLINE_GATE.time, "monotonic", side_effect=(10.0, 12.0, 14.0))
+    @patch.object(ONLINE_GATE, "run_stage", side_effect=(
+        ({"schema_version": "addp.online-preflight/v1", "git_commit": "abc"}, 2000),
+        ({"schema_version": "addp.online-suite/v1", "result": "passed"}, 20),
+    ))
+    def test_hillshade_receives_outer_deadline_including_preflight(self, run_stage, _monotonic):
+        name = "raster-hillshade-orthogonal-persistence"
+        self.environment["ADDP_ONLINE_TEST_TIMEOUT_SECONDS"] = "600"
+        self.environment["ADDP_ONLINE_TEST_RUN_ID"] = "hillshade-test"
+        ONLINE_GATE.run_online(name, self.repository, self.environment, {name: self.suites["owner-scenario"]})
+
+        preflight, scenario = run_stage.call_args_list
+        self.assertNotIn("ADDP_ONLINE_HILLSHADE_DEADLINE", preflight.kwargs["environment"])
+        self.assertEqual(scenario.kwargs["environment"]["ADDP_ONLINE_HILLSHADE_DEADLINE"], "610.0")
+        self.assertEqual(scenario.kwargs["timeout"], 598.0)
+
     def test_notebook_preflight_identifies_product_and_observer_identifies_harness(self):
         product = self.root / "notebook-http-product"
         product.mkdir()
