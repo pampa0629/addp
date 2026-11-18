@@ -1519,9 +1519,12 @@ test_compose_public_port_policy() {
     "$ROOT_DIR/scripts/prod/start.sh" "$ROOT_DIR/scripts/prod/health-check.sh" \
     "$ROOT_DIR/scripts/prod/deploy.sh" "$ROOT_DIR/scripts/prod/stop.sh" || fail "Compose lifecycle shell syntax is invalid"
   python3 - "$ROOT_DIR" <<'PY'
+import os
 from pathlib import Path
 import re
+import subprocess
 import sys
+import tempfile
 
 root = Path(sys.argv[1])
 compose = (root / 'docker-compose.yml').read_text()
@@ -1542,9 +1545,53 @@ for folder in ('local', 'prod'):
     start = (root / 'scripts' / folder / 'start.sh').read_text()
     stop = (root / 'scripts' / folder / 'stop.sh').read_text()
     if folder == 'prod':
-        assert 'runtime_compose() { docker compose -f docker-compose.runtimes.yml -f "$ADDP_RELEASE_DIR/runtimes-images.yml"' in start
-        assert 'runtime_compose up -d --no-build --pull never' in start
-        assert start.index('release-images.py verify') < start.index('bash scripts/infra/up.sh')
+        phases = (
+            'release-images.py verify',
+            'bash scripts/infra/up.sh',
+            'bash scripts/prod/wait-infra.sh',
+            'publish-module-declarations.py --bootstrap-compose',
+            'platform_compose up ',
+            'if [[ -n "${ADDP_GEOPYTHON_METRICS_ENDPOINT:-}" ]]; then',
+            'runtime_compose up ',
+            '\nconnect_business_network\n',
+        )
+        positions = [start.index(phase) for phase in phases]
+        assert positions == sorted(positions), 'production Compose startup order changed'
+        selection = re.search(r'^RUNTIME_COMPOSE_FILES=\(.*\)$', start, re.M).group()
+        runtime_compose = re.search(r'^runtime_compose\(\) \{.*\}$', start, re.M).group()
+        runtime_phase = start[positions[5]:positions[7]]
+        harness = '\n'.join((
+            'set -euo pipefail',
+            'infra_result=0',
+            'docker() { printf "%s\\0" "$@"; }',
+            selection,
+            runtime_compose,
+            runtime_phase,
+            'exit "$infra_result"',
+        ))
+        with tempfile.TemporaryDirectory(prefix='addp-prod-runtime-compose-') as temp:
+            release_dir = Path(temp).resolve() / 'release'
+            tls_dir = Path(temp).resolve() / 'tls'
+            tls_dir.mkdir()
+            base = ['compose', '-f', 'docker-compose.runtimes.yml']
+            overlay = ['-f', 'scripts/prod/geopython-metrics.yml']
+            invocation = ['-f', str(release_dir / 'runtimes-images.yml'), 'up', '-d',
+                          '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180']
+            for mode, endpoint, listen in (
+                ('disabled', '', ''),
+                ('enabled', 'https://127.0.0.1:19437/metrics', '127.0.0.1:19437'),
+                ('invalid', 'https://127.0.0.1:19437/metrics', '0.0.0.0:19437'),
+            ):
+                env = dict(
+                    PATH=os.environ['PATH'], ADDP_RELEASE_DIR=str(release_dir),
+                    ADDP_GEOPYTHON_METRICS_ENDPOINT=endpoint, ADDP_GEOPYTHON_METRICS_LISTEN=listen,
+                    ADDP_GEOPYTHON_METRICS_CONTAINER_PORT='9543', ADDP_GEOPYTHON_METRICS_TLS_DIR=str(tls_dir),
+                )
+                result = subprocess.run(['bash', '-c', harness], cwd=root, env=env,
+                                        capture_output=True, text=True, timeout=10)
+                assert result.returncode == (1 if mode == 'invalid' else 0), (mode, result.stderr)
+                args = result.stdout.removesuffix('\0').split('\0')
+                assert args == base + (overlay if mode == 'enabled' else []) + invocation, (mode, args)
     else:
         assert "docker compose -f docker-compose.runtimes.yml --profile '*' up" in start, folder
     command = 'docker compose -f docker-compose.runtimes.yml'
