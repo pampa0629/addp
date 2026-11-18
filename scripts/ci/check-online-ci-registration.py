@@ -3652,6 +3652,78 @@ def validate_raster_slope_orthogonal(repository: Path, registered: set[str]) -> 
     if "for g in GROUPS for u in('degree','percent')"not in fixture or "'expected_array_count':16"not in fixture:
         raise RegistrationError('orthogonal slope requires degree/percent and sixteen frozen complete arrays')
 
+def validate_raster_aspect_orthogonal(repository: Path, registered: set[str]) -> None:
+    import ast
+
+    suite = 'raster-aspect-orthogonal-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-aspect-orthogonal-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    source_input = re.search(r'(?ms)^      aspect_orthogonal_source_commit:\n(.*?)(?=^      [a-z][a-z0-9_]*:\n|^jobs:\n|\Z)', workflow)
+    fragments = (
+        f"if: github.event_name == 'workflow_dispatch' && inputs.suite == '{suite}'",
+        'runs-on: ubuntu-24.04', 'cancel-in-progress: false', 'nfs-kernel-server nfs-common',
+        '[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]',
+        'ref: ${{ inputs.aspect_orthogonal_source_commit }}',
+        '[ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]',
+        'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"',
+        'bash scripts/test/online-hosted-raster-aspect-orthogonal-gate.sh --check-only',
+        'run: bash scripts/test/online-hosted-raster-aspect-orthogonal-gate.sh',
+        'if: always()',
+    )
+    if (job is None or source_input is None or 'type: string' not in source_input[1]
+        or any(fragment not in job[1] for fragment in fragments)
+        or f"&& inputs.suite != '{suite}'" not in workflow
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('orthogonal aspect requires an isolated manual Hosted job and fixed ancestral SHA')
+
+    make = (repository / 'Makefile').read_text()
+    if ('test_online_aspect_orthogonal_fixture.py' not in make_target_commands(make, 'test-geopython-workflow')
+        or 'test-raster-aspect-orthogonal-online-runner:' not in make_target_commands(make, 'test-raster-online-runner')):
+        raise RegistrationError('orthogonal aspect must use the standard Native and Raster Runner aggregates')
+
+    required = {
+        'scripts/test/online-hosted-raster-aspect-orthogonal-gate.sh': (
+            'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', f'--suite {suite}',
+            '--wait-protection-owners develop,manager', 'start_online_geopython_runtime',
+            'online_raster_lineage.py prepare', 'online-raster-aspect-orthogonal-fixture.py stop'),
+        'business/scripts/online-raster-aspect-orthogonal-fixture.py': (
+            'ANGLE_LIMIT_DEGREES = 5e-5', 'full_check=True', 'def check_angles',
+            'def prepare_oracle', 'def cleanup_oracle', 'expected-manifest.json', 'def archive_files',
+            'complete nearest overview differs', 'source file changed'),
+        'scripts/test/raster-aspect-orthogonal-persistence-online.py': (
+            'COUNTS=(16,34,680,51)', 'view.run_scenario', 'raster.strict_sizes',
+            'source_scan_client=orth.source_scan_client', 'check_scan_inventory=orth.check_scan_inventory'),
+        'scripts/utils/online_raster_lineage.py': (f"'{suite}': 'aspect-orthogonal-lineage'",),
+        'system/backend/cmd/online-test-fixture/main_test.go': (
+            'TestAspectOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen',),
+        'engines/geopython-workflow/test_online_aspect_orthogonal_fixture.py': (
+            'test_aspect_orthogonal_sixteen_real_chains_and_680_complete_original_checks',
+            'checks==680', 'test_aspect_orthogonal_corrupt_actual_or_expected_never_passes'),
+    }
+    for name, fragments in required.items():
+        path = repository / name
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository)
+                                     for fragment in fragments):
+            raise RegistrationError('orthogonal aspect registration/evidence is incomplete: ' + name)
+
+    def literal(path, name):
+        tree = ast.parse((repository / path).read_text())
+        return next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == name for target in node.targets))
+
+    planes = literal('business/scripts/online-raster-aspect-orthogonal-fixture.py', 'PLANES')
+    failures = literal('scripts/test/raster-aspect-orthogonal-persistence-online.py', 'FAILURES')
+    if set(planes) != {'north-n', 'north-e', 'north-s', 'north-w', 'rotated-n', 'rotated-e', 'rotated-s',
+                       'rotated-w', 'quarter-turn', 'half-turn', 'wrap-west', 'wrap-east', 'feet', 'survey'}:
+        raise RegistrationError('orthogonal aspect requires the fourteen fixed directional planes')
+    if set(failures) != {'shear', 'near-orthogonal', 'reflect-column', 'reflect-row', 'geographic', 'no-crs',
+                         'no-grid', 'degenerate', 'band-zero', 'band-high', 'alpha', 'unit', 'unit-bool',
+                         'unit-conflict', 'unit-unknown', 'scale', 'offset'}:
+        raise RegistrationError('orthogonal aspect requires the seventeen fixed bilingual refusal categories')
+
+
 def validate_raster_sight_orthogonal(repository: Path, registered: set[str]) -> None:
     import ast
     suite='raster-sight-orthogonal-persistence'
@@ -7910,6 +7982,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_cut_fill(repository, registered)
     validate_raster_surface_area(repository, registered)
     validate_raster_slope_orthogonal(repository, registered)
+    validate_raster_aspect_orthogonal(repository, registered)
     validate_raster_sight_orthogonal(repository, registered)
     validate_raster_viewshed(repository, registered)
     validate_raster_line_of_sight(repository, registered)

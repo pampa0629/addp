@@ -2092,6 +2092,27 @@ func TestSlopeOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen(t *tes
 	}
 }
 
+func TestAspectOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen(t *testing.T) {
+	const suite = "raster-aspect-orthogonal-persistence"
+	got, err := suitePermissions(suite)
+	want, originalErr := suitePermissions("raster-workflow")
+	if err != nil || originalErr != nil || len(got) != 12 || !slices.Equal(got, want) {
+		t.Fatal("orthogonal aspect must retain the exact original twelve business permissions")
+	}
+	prep := suiteSourceInitializerPermissions(suite)
+	expected := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if len(prep) != 13 || !slices.Equal(prep, expected) || rasterBranchLineage(suite) || !needsEngineProvisioner(suite) {
+		t.Fatal("orthogonal aspect needs its explicit separate scan/issuance preparer, not ordinary-user escalation or a branch flag")
+	}
+	if len(suiteSourceInitializerPermissions("raster-workflow")) != 0 {
+		t.Fatal("the original Raster identity must not acquire preparation rights")
+	}
+	cfg := fixtureSessionConfig(suite)
+	if cfg.AccessTokenTTL != 30*time.Minute || cfg.RefreshTokenFamilyTTL != 45*time.Minute {
+		t.Fatal("the 600-second scene must retain the original short fixture session")
+	}
+}
+
 func TestFeatherCaseRetainsApprovedConsumerAndInitializerPermissions(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-table-feather")
 	got, err := suitePermissions("manager-internal-artifact-lineage")
