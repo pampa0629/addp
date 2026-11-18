@@ -122,7 +122,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
-	case "raster-aspect-orthogonal-persistence":
+	case "raster-aspect-orthogonal-persistence", "raster-hillshade-orthogonal-persistence":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "sql-pool-consumer-flow", "transfer-continuous-events", "metric-service-revision-lifecycle":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
@@ -389,7 +389,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return append(append([]string{}, rasterWorkflowPermissions...), "manager.data_item.read"), nil
 	case "vector-pmtiles-workflow":
 		return vectorPMTilesPermissions, nil
-	case "raster-aspect-orthogonal-persistence":
+	case "raster-aspect-orthogonal-persistence", "raster-hillshade-orthogonal-persistence":
 		return suitePermissions("raster-workflow")
 	case "raster-workflow", "raster-nibble-capacity", "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence":
 		return append(append([]string{}, rasterWorkflowPermissions...), "develop.task.create", "develop.task.delete"), nil
@@ -485,7 +485,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "quality-dynamic-binding" {
 		return true
 	}
-	return suite == "raster-aspect-orthogonal-persistence" || suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "raster-slope-orthogonal-persistence" || suite == "raster-sight-orthogonal-persistence") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "raster-hillshade-orthogonal-persistence" || suite == "raster-aspect-orthogonal-persistence" || suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "raster-slope-orthogonal-persistence" || suite == "raster-sight-orthogonal-persistence") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -494,7 +494,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "graph-protection", "execution-events-pagination", "sql-pool-consumer-flow", "raster-aspect-orthogonal-persistence":
+	case "graph-protection", "execution-events-pagination", "sql-pool-consumer-flow", "raster-aspect-orthogonal-persistence", "raster-hillshade-orthogonal-persistence":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "raster-nibble-capacity", "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "redis-consumer-flow", "ftp-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
@@ -835,7 +835,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME"] = username
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD"] = password
 	}
-	if *suite == "raster-workflow" || *suite == "raster-workflow-capacity" || *suite == "raster-nibble-capacity" || *suite == "raster-slope-orthogonal-persistence" || *suite == "raster-sight-orthogonal-persistence" || *suite == "raster-aspect-orthogonal-persistence" {
+	if *suite == "raster-workflow" || *suite == "raster-workflow-capacity" || *suite == "raster-nibble-capacity" || *suite == "raster-slope-orthogonal-persistence" || *suite == "raster-sight-orthogonal-persistence" || *suite == "raster-aspect-orthogonal-persistence" || *suite == "raster-hillshade-orthogonal-persistence" {
 		policyValues, err := rasterPolicyIdentities(ctx, repository, identity, selectionService, administrator.PrincipalID)
 		if err != nil {
 			return err
