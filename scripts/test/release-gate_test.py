@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,6 +30,7 @@ class DeploymentPackageTest(unittest.TestCase):
              'docs/guide/addp IAM三员初始化操作指南.md',
              ':(glob)*/backend/go.mod', 'monitor/backend/go.sum', 'monitor/backend/cmd/minio-metrics-source',
              'monitor/backend/cmd/redis-metrics-source', 'monitor/backend/cmd/cdc-metrics-source',
+             'monitor/backend/cmd/meilisearch-metrics-source',
              'monitor/backend/internal/cdcsource', 'monitor/backend/internal/miniosource',
              'monitor/backend/internal/redissource', 'monitor/backend/internal/sourceserver'], cwd=repository,
         )
@@ -68,8 +70,11 @@ class DeploymentPackageTest(unittest.TestCase):
             (prepared / 'manifest.json').write_text(json.dumps(manifest))
             for project, services in projects.items():
                 release.write_override(prepared / (project + '-images.yml'), {name: manifest['image_ids'][ref] for name, ref in services.items()})
-            compose = (root / 'docker-compose.yml').read_bytes()
-            (root / 'docker-compose.yml').write_bytes(compose + b'\n# uncommitted deployment drift\n')
+            frozen_configuration = {
+                name: (root / name).read_bytes() for name in ('docker-compose.yml', 'nginx/nginx.conf')
+            }
+            for name, content in frozen_configuration.items():
+                (root / name).write_bytes(content + b'\n# uncommitted deployment drift\n')
             private_paths = ('.env', 'business/.env', 'scripts/prod/local-secret.txt')
             for name in private_paths:
                 (root / name).write_text('must stay on the build host')
@@ -79,7 +84,8 @@ class DeploymentPackageTest(unittest.TestCase):
             output, = (root / 'dist').glob('package-registry-*')
             for name in private_paths:
                 self.assertFalse((output / name).exists(), name)
-            self.assertEqual((output / 'docker-compose.yml').read_bytes(), compose)
+            for name, content in frozen_configuration.items():
+                self.assertEqual((output / name).read_bytes(), content, name)
             self.assertEqual((output / 'tools/addp-iam-bootstrap').stat().st_mode & 0o777, 0o755)
             subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=output, env=env, check=True, stdout=subprocess.DEVNULL)
             self.assertEqual(json.loads((output / 'dist/compose-release/manifest.json').read_text()), manifest)
@@ -152,6 +158,9 @@ exit 1
             checksum, = (root / 'dist').glob('addp-deploy-images-*.tar.gz.sha256')
             subprocess.run(['sha256sum', '-c', checksum.name], cwd=checksum.parent, env=env,
                            check=True, stdout=subprocess.DEVNULL)
+            with tarfile.open(checksum.with_suffix('')) as archive:
+                with archive.extractfile(f'{images_output.name}/nginx/nginx.conf') as nginx_config:
+                    self.assertEqual(nginx_config.read(), frozen_configuration['nginx/nginx.conf'])
             self.assertEqual((images_output / 'images/release.tar').read_text(), 'fixture')
             self.assertIn('save -o', boundary.read_text())
             self.assertIn('sha256:' + 'c' * 64, boundary.read_text())
