@@ -18,15 +18,20 @@ def require(value,message):
     if not value:raise ValueError(message)
 
 
-def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
-    width=field['width'] if width is None else width;height=field['height'] if height is None else height
+def validate_slice(result,spec,field,x=None,y=None,width=None,height=None):
+    default = FIXTURE.selection(field)
+    x = default['x'] if x is None else x
+    y = default['y'] if y is None else y
+    width = default['width'] if width is None else width
+    height = default['height'] if height is None else height
+    reference_time = spec.get('reference_time', 1767322800)
     require(result.get('schema_version')=='gdal.grib.slice/v1' and result.get('source_version')=='sha256:'+spec['sha256'] and result.get('format')=='grib' and result.get('value_mode')=='decoded_native_units','GRIB slice identity mismatch')
     require(result['selection']==dict(variable='message-'+str(field['number']),indices=[],x=x,y=y,width=width,height=height),'GRIB exact message/window mismatch')
     values,valid=FIXTURE.expected(field,x,y,width,height)
     require(result['values']==values and result['valid']==valid,'GRIB numerical values or bitmap changed')
     variable=result['variable'];attributes=variable['attributes']
     require(attributes['GRIB_UNIT']['values']==[field.get('unit','[K]')] and attributes['GRIB_ELEMENT']['values']==[field.get('element','TMP')],'GRIB units or element changed')
-    require(attributes['GRIB_FORECAST_SECONDS']['values']==[str(field.get('start_hour',field['forecast'])*3600)] and attributes['GRIB_REF_TIME']['values']==['1767322800'] and attributes['GRIB_VALID_TIME']['values']==[str(1767322800+field['forecast']*3600)] and (spec.get('edition')==1 or attributes['GRIB_SHORT_NAME']['values']==[field.get('short_name','2-HTGL')]),'GRIB reference/valid time or level changed')
+    require(attributes['GRIB_FORECAST_SECONDS']['values']==[str(field.get('start_hour',field['forecast'])*3600)] and attributes['GRIB_REF_TIME']['values']==[str(reference_time)] and attributes['GRIB_VALID_TIME']['values']==[str(reference_time+field['forecast']*3600)] and (spec.get('edition')==1 or attributes['GRIB_SHORT_NAME']['values']==[field.get('short_name','2-HTGL')]),'GRIB reference/valid time or level changed')
     if spec.get('edition')==1:
         message=variable['message']
         require(message['edition']==1 and message['parameter']==dict(centre=7,subcentre=0,process=81,table_version=2,number=11),'GRIB1 exact parameter identity changed')
@@ -46,9 +51,9 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
     if spec.get('packing')=='complex-spatial':
         require(attributes.get('GRIB2_DECODE_PRECISION',{}).get('values')==['float32_scaling_float64_output'],'complex GRIB precision disclosure missing')
         FIXTURE.precision_bound(field,result['values'],result['valid'],x,y)
-        message=variable['message'];utc=lambda h:datetime.fromtimestamp(1767322800+h*3600,timezone.utc).isoformat()
+        message=variable['message'];utc=lambda h:datetime.fromtimestamp(reference_time+h*3600,timezone.utc).isoformat()
         require(message['edition']==2 and message['data_template']==3 and message['product_template']==field['product_template'],'complex GRIB template changed')
-        require(message['parameter']==dict(centre=7,subcentre=0,master_table=2,local_table=0,discipline=0,category=field['parameter'][0],number=field['parameter'][1]),'complex GRIB parameter identity changed')
+        require(message['parameter']==dict(centre=7,subcentre=0,master_table=2,local_table=field.get('local_table',0),discipline=0,category=field['parameter'][0],number=field['parameter'][1]),'complex GRIB parameter identity changed')
         expected_time=dict(reference_utc=utc(0),unit_code=1,forecast_value=field['start_hour'],start_utc=utc(field['start_hour']),end_utc=utc(field['forecast']),operation='instant')
         if field['product_template']==8:expected_time.update(operation='accumulation',statistical_process=1,increment_type=2,interval_unit=1,interval_length=field['forecast']-field['start_hour'],missing_count=0)
         require(message['time']==expected_time,'complex GRIB original interval changed')
@@ -56,7 +61,7 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
         if field['height_m']:expected_level.update(value=field['height_m'],unit='m')
         require(message['level']==expected_level,'complex GRIB surface changed')
         points=field['width']*field['height']-int(field['missing'])
-        require(message['packing']==dict(data_template=3,order=2,extra_octets=2,groups=(points+3)//4,missing_value_management=0,reference_ieee_hex=struct.pack('>f',field['reference']).hex(),binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale']),'complex GRIB packing facts changed')
+        require(message['packing']==dict(data_template=3,order=2,extra_octets=2,groups=field.get('groups',(points+3)//4),missing_value_management=0,reference_ieee_hex=struct.pack('>f',field['reference']).hex(),binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale']),'complex GRIB packing facts changed')
         for key in ('parameter','time','level','packing'):require(json.loads(attributes['GRIB2_'+key.upper()]['values'][0])==message[key],'complex GRIB displayed facts differ')
     if spec.get('packing') == 'ccsds':
         message = variable['message']
@@ -118,6 +123,9 @@ def validate_browser_case(case,observed):
     require(observed.get('locator')==case['locator'] and observed.get('values_verified') is True
         and observed.get('viewport_grid_verified') is True and observed.get('visible_message_count')==len(case['spec']['fields']),
         'GRIB real visible grid incomplete')
+    if case['spec']['case_id'] == 'noaa-gfs-intervals':
+        require(observed.get('distinct_accumulation_windows_verified') is True,
+                'GRIB page did not verify both original accumulation windows')
     if case['source_case']=='nfs':
         require(observed.get('original_download_disabled') is True and observed.get('original_download_denied_verified') is True
             and 'download_sha256' not in observed and 'download_size' not in observed,'GRIB NFS download denial or disabled button incomplete')
@@ -183,13 +191,13 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 require([v['name'] for v in children]==expected_names,'GRIB message identity or enumeration changed')
                 stage='slice';precision_audits=[]
                 for field in spec['fields']:
-                    selection=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height'])
+                    selection=FIXTURE.selection(field)
                     result=read(client,locator,selection);validate_slice(result,spec,field)
-                    if spec.get('packing')=='complex-spatial':precision_audits.append(dict(message=field['number'],**FIXTURE.precision_bound(field,result['values'],result['valid'])))
+                    if spec.get('packing')=='complex-spatial':precision_audits.append(dict(message=field['number'],**FIXTURE.precision_bound(field,result['values'],result['valid'],selection['x'],selection['y'])))
                     require(read(client,locator,selection)==result,'repeated GRIB slice changed')
                     (artifact/f"grib-{storage}-{spec['case_id']}-message{field['number']}.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
-                    window=dict(selection,x=1,y=1,width=1,height=1)
-                    validate_slice(read(client,locator,window),spec,field,1,1,1,1)
+                    window=dict(selection,x=selection['x']+1,y=selection['y']+1,width=1,height=1)
+                    validate_slice(read(client,locator,window),spec,field,window['x'],window['y'],1,1)
                 for change in ({'indices':[0]},{'variable':'message-01'},{'width':129}):
                     invalid=dict(selection,**change);denied=read(client,locator,invalid,400);require(denied.get('error_code')=='grid_slice_selection_invalid','invalid window was not a controlled rejection')
                 stage='download'
@@ -210,8 +218,9 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         for case in report['cases']:
             windows = []
             for field in case['spec']['fields']:
-                values, valid = FIXTURE.expected(field)
-                windows.append(dict(variable=f"message-{field['number']}", values=values, valid=valid))
+                selection = FIXTURE.selection(field)
+                values, valid = FIXTURE.expected(field, selection['x'], selection['y'], selection['width'], selection['height'])
+                windows.append(dict(selection=selection, values=values, valid=valid))
             browser_cases.append(dict(case, expected_windows=windows))
         context = dict(run_id=report['run_id'], identity=report['identity'], cases=browser_cases)
         if browser_runner:browser=browser_runner(context)
@@ -225,6 +234,8 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             for field in case['spec']['fields']:
                 prefix = f"grib-{case['source_case']}-{case['spec']['case_id']}-message{field['number']}-slice"
                 suffixes = ('.png', '-start.png') if field.get('product_template') == 8 and case['spec'].get('packing') == 'ccsds' else ('.png',)
+                if case['spec']['case_id'] == 'noaa-gfs-intervals':
+                    suffixes += ('-time.png',)
                 for suffix in suffixes:
                     screenshot = artifact / (prefix + suffix)
                     require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),

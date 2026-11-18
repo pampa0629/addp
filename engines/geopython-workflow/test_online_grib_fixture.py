@@ -17,13 +17,21 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
     assert info['format_info']['source_version']=='sha256:'+spec['sha256']
     assert [c['name'] for c in info['container']['children']]==[f"message-{field['number']}" for field in spec['fields']]
     for field in spec['fields']:
-        select=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height'])
+        select=FIXTURE.selection(field)
         result=grib.OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=select)
-        assert (result['values'],result['valid'])==FIXTURE.expected(field)
+        assert (result['values'],result['valid'])==FIXTURE.expected(field,select['x'],select['y'],select['width'],select['height'])
         native=result['variable'];assert native['attributes']['GRIB_UNIT']['values']==[field.get('unit','[K]')]
         spacing = field.get('spacing', 1)
         assert native['grid']['transform']==[field['west']-spacing/2,spacing,0.,field['north']+spacing/2,0.,-spacing]
         assert native['attributes']['GRIB_FORECAST_SECONDS']['values']==[str(field.get('start_hour',field['forecast'])*3600)]
+        if spec['case_id'] == 'noaa-gfs-intervals':
+            time = native['message']['time']
+            reference = datetime.fromtimestamp(spec['reference_time'],timezone.utc)
+            assert time['reference_utc'] == reference.isoformat()
+            assert time['start_utc'] == (reference+timedelta(hours=field['start_hour'])).isoformat()
+            assert time['end_utc'] == (reference+timedelta(hours=field['forecast'])).isoformat()
+            assert time['interval_length'] == field['forecast'] - field['start_hour']
+            assert time['operation'] == 'accumulation'
         if spec.get('packing') == 'ccsds':
             assert native['message']['data_template'] == 42
             assert native['message']['local']['mars_stream'] == 'oper'
@@ -104,6 +112,7 @@ def test_preexisting_grib1_grib2_hosted_bytes_are_unchanged():
         'complex-south-to-north.grb2': '9a624331a8980ee2fdd5d6a0eba7f14b69ccc1d28e720a4f0661aec8803b7b0b',
         'ecmwf-ccsds.grib2': '20604c89b64afc613a504d20da4085d89dd3e0ce4de4f0ce6808c3a982c17590',
         'ecmwf-precipitation.grib2': '0c7f69c585c2d52bdc37f0db7894e753b5806f12416f750ed37cef28147cbaee',
+        'ecmwf-precipitation-0h.grib2': 'be63fa46f1c52f8c37198e43ef56a12dce28fd23edee15bf759206c67dfc81a0',
     }
     assert {s['name']:s['sha256'] for s in FIXTURE.sources() if s['name'] in expected} == expected
 

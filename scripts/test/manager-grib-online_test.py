@@ -14,7 +14,7 @@ FIXTURE=SCENE.FIXTURE
 class GRIBOracleTest(unittest.TestCase):
     def test_closed_inventory_and_bytes_before_physical_mutation(self):
         request={'sources':FIXTURE.sources(),'source_bytes':{s['name']:FIXTURE.source_bytes(s).hex() for s in FIXTURE.sources()}}
-        self.assertEqual(len(FIXTURE._owned_sources(request)),9)
+        self.assertEqual(len(FIXTURE._owned_sources(request)),10)
         for change in ('missing','tampered'):
             bad=copy.deepcopy(request)
             if change=='missing':bad['sources'].pop()
@@ -29,16 +29,19 @@ class GRIBOracleTest(unittest.TestCase):
         self.assertEqual([s['sha256'] for s in FIXTURE.sources()[:2]],['98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110','addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6'])
 
     def response(self,spec,field):
-        values,valid=FIXTURE.expected(field)
+        selection=FIXTURE.selection(field)
+        values,valid=FIXTURE.expected(field,selection['x'],selection['y'],selection['width'],selection['height'])
+        reference_time=spec.get('reference_time',1767322800)
+        spacing=field.get('spacing',1)
         result = dict(schema_version='gdal.grib.slice/v1',format='grib',source_version='sha256:'+spec['sha256'],value_mode='decoded_native_units',
-            selection=dict(variable='message-'+str(field['number']),indices=[],x=0,y=0,width=field['width'],height=field['height']),values=values,valid=valid,spatial=None,
-            variable=dict(attributes={'GRIB_UNIT':{'values':['[K]']},'GRIB_REF_TIME':{'values':['1767322800']},'GRIB_VALID_TIME':{'values':[str(1767322800+field['forecast']*3600)]},'GRIB_SHORT_NAME':{'values':['2-HTGL']},'GRIB_ELEMENT':{'values':['TMP']},'GRIB_FORECAST_SECONDS':{'values':[str(field['forecast']*3600)]}},
+            selection=selection,values=values,valid=valid,spatial=None,
+            variable=dict(attributes={'GRIB_UNIT':{'values':['[K]']},'GRIB_REF_TIME':{'values':[str(reference_time)]},'GRIB_VALID_TIME':{'values':[str(reference_time+field['forecast']*3600)]},'GRIB_SHORT_NAME':{'values':['2-HTGL']},'GRIB_ELEMENT':{'values':['TMP']},'GRIB_FORECAST_SECONDS':{'values':[str(field['forecast']*3600)]}},
               dimensions=[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],
-              grid=dict(transform=[field['west']-.5,1.,0.,field['north']+.5,0.,-1.],longitude_policy='unchanged',crs_wkt='source CRS')))
+              grid=dict(transform=[field['west']-spacing/2,spacing,0.,field['north']+spacing/2,0.,-spacing],longitude_policy='unchanged',crs_wkt='source CRS')))
 
         if spec.get('edition')==1:
             from datetime import datetime, timezone
-            utc=lambda h:datetime.fromtimestamp(1767322800+h*3600,timezone.utc).isoformat()
+            utc=lambda h:datetime.fromtimestamp(reference_time+h*3600,timezone.utc).isoformat()
             level={'type_code':field['level'],'raw_octets':field['level_raw']}
             level.update({100:dict(unit='hPa',value=500),101:dict(unit='kPa',upper=50,lower=100),105:dict(unit='m',value=2)}[field['level']])
             facts=dict(edition=1,parameter=dict(centre=7,subcentre=0,process=81,table_version=2,number=11),level=level,
@@ -51,14 +54,14 @@ class GRIBOracleTest(unittest.TestCase):
         if spec.get('packing')=='complex-spatial':
             import json
             from datetime import datetime,timezone
-            utc=lambda h:datetime.fromtimestamp(1767322800+h*3600,timezone.utc).isoformat()
+            utc=lambda h:datetime.fromtimestamp(reference_time+h*3600,timezone.utc).isoformat()
             a=result['variable']['attributes'];a['GRIB2_DECODE_PRECISION']={'values':['float32_scaling_float64_output']};a['GRIB_UNIT']['values']=[field['unit']];a['GRIB_ELEMENT']['values']=[field['element']];a['GRIB_SHORT_NAME']['values']=[field['short_name']];a['GRIB_FORECAST_SECONDS']['values']=[str(field['start_hour']*3600)]
             time=dict(reference_utc=utc(0),unit_code=1,forecast_value=field['start_hour'],start_utc=utc(field['start_hour']),end_utc=utc(field['forecast']),operation='instant')
-            if field['product_template']==8:time.update(operation='accumulation',statistical_process=1,increment_type=2,interval_unit=1,interval_length=6,missing_count=0)
+            if field['product_template']==8:time.update(operation='accumulation',statistical_process=1,increment_type=2,interval_unit=1,interval_length=field['forecast']-field['start_hour'],missing_count=0)
             level=dict(type_code=103 if field['height_m'] else 1,raw_scale=0,raw_value=field['height_m'],reference='above_ground' if field['height_m'] else 'surface')
             if field['height_m']:level.update(value=field['height_m'],unit='m')
-            facts=dict(edition=2,data_template=3,product_template=field['product_template'],parameter=dict(centre=7,subcentre=0,master_table=2,local_table=0,discipline=0,category=field['parameter'][0],number=field['parameter'][1]),time=time,level=level,
-                packing=dict(data_template=3,order=2,extra_octets=2,groups=(field['width']*field['height']-int(field['missing'])+3)//4,missing_value_management=0,reference_ieee_hex=struct.pack('>f',field['reference']).hex(),binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale']))
+            facts=dict(edition=2,data_template=3,product_template=field['product_template'],parameter=dict(centre=7,subcentre=0,master_table=2,local_table=field.get('local_table',0),discipline=0,category=field['parameter'][0],number=field['parameter'][1]),time=time,level=level,
+                packing=dict(data_template=3,order=2,extra_octets=2,groups=field.get('groups',(field['width']*field['height']-int(field['missing'])+3)//4),missing_value_management=0,reference_ieee_hex=struct.pack('>f',field['reference']).hex(),binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale']))
             result['variable']['message']=facts
             for key in ('parameter','time','level','packing'):a['GRIB2_'+key.upper()]={'values':[json.dumps(facts[key])]}
         return result
@@ -87,6 +90,25 @@ class GRIBOracleTest(unittest.TestCase):
         bad=copy.deepcopy(result);v=float(bad['values'][0][0]);bits=int.from_bytes(struct.pack('>f',v),'big')
         bad['values'][0][0]=repr(struct.unpack('>f',(bits+1).to_bytes(4,'big'))[0])
         with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
+
+    def test_original_noaa_windows_reject_stale_values_and_time_on_switch(self):
+        spec = next(spec for spec in FIXTURE.sources() if spec['name']==FIXTURE.NOAA_INTERVALS)
+        first, second = spec['fields']
+        old, new = self.response(spec,first), self.response(spec,second)
+        SCENE.validate_slice(old,spec,first)
+        SCENE.validate_slice(new,spec,second)
+        self.assertEqual(old['variable']['message']['time']['end_utc'],new['variable']['message']['time']['end_utc'])
+        self.assertNotEqual(old['values'],new['values'])
+        with self.assertRaisesRegex(ValueError,'numerical values'):
+            SCENE.validate_slice(dict(new,values=old['values']),spec,second)
+        stale = copy.deepcopy(new)
+        stale['variable']['message']['time'] = old['variable']['message']['time']
+        with self.assertRaisesRegex(ValueError,'original interval'):
+            SCENE.validate_slice(stale,spec,second)
+        stale = copy.deepcopy(new)
+        stale['variable']['attributes']['GRIB2_TIME'] = old['variable']['attributes']['GRIB2_TIME']
+        with self.assertRaisesRegex(ValueError,'displayed facts'):
+            SCENE.validate_slice(stale,spec,second)
 
     def test_acceptance_rejects_unit_value_mask_longitude_and_message_drift(self):
         spec=FIXTURE.sources()[0];field=spec['fields'][1];result=self.response(spec,field);SCENE.validate_slice(result,spec,field)

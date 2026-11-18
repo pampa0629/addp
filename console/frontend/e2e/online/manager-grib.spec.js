@@ -8,7 +8,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
   test.setTimeout(480000)
   const env = process.env, context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(context.cases).toHaveLength(18)
+  expect(context.cases).toHaveLength(20)
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id, permissions: new Set(context.identity.permissions_verified) }
   expect([...identity.permissions].sort()).toEqual(['manager.content.read', 'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'])
   const outcomes = [], browserErrors = []
@@ -26,7 +26,10 @@ test('ordinary user reads independent GRIB messages with native units and downlo
       const api = await browserAPIFromResponse(response, env.GATEWAY_URL, identity)
       try {
         const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+        const sameEnd = source.spec.case_id === 'noaa-gfs-intervals'
         for (const field of source.spec.fields) {
+          const { selection, values, valid } = source.expected_windows[field.number - 1]
+          const screenshot = `grib-${source.source_case}-${source.spec.case_id}-message${field.number}-slice`
           if (field.number > 1) {
             await frame.locator('.child-select .el-select__wrapper').click()
             await frame.getByRole('option', { name: `message-${field.number}`, exact: true }).click()
@@ -62,28 +65,42 @@ test('ordinary user reads independent GRIB messages with native units and downlo
             await expect(details).toContainText('GRIB2_PACKING')
             await expect(details).toContainText('GRIB2_TIME')
             if (field.product_template === 8) {
-              await expect(details).toContainText('accumulation')
-              await expect(details).toContainText('2026-01-02T03:00:00+00:00')
-              await expect(details).toContainText('2026-01-02T09:00:00+00:00')
+              const utc = hour => new Date(((source.spec.reference_time ?? 1767322800) + hour * 3600) * 1000).toISOString().replace('.000Z', '+00:00')
+              const timeCell = details.getByText('GRIB2_TIME', { exact: true }).locator('xpath=following-sibling::td[1]')
+              await expect.poll(async () => JSON.parse(await timeCell.textContent())).toMatchObject({
+                operation: 'accumulation', reference_utc: utc(0), start_utc: utc(field.start_hour),
+                end_utc: utc(field.forecast), interval_length: field.forecast - field.start_hour
+              })
+              if (sameEnd) {
+                await timeCell.scrollIntoViewIfNeeded()
+                await expect(timeCell).toBeInViewport({ ratio: 1 })
+                await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${screenshot}-time.png`) })
+              }
             }
           }
           const spacing = field.spacing ?? 1
           await expect(frame.getByTestId('grid-native-transform')).toContainText(String(field.west - spacing / 2))
           await expect(frame.locator('.grid-container-preview')).toContainText(/不自动转换单位|no automatic unit conversion/)
+          if (sameEnd) {
+            for (const [key, name] of Object.entries({ x: /^(Start column|列起点)$/, y: /^(Start row|行起点)$/, width: /^(Columns|列数)$/, height: /^(Rows|行数)$/ })) {
+              const input = frame.getByRole('spinbutton', { name })
+              await input.fill(String(selection[key]))
+              await input.press('Tab')
+            }
+          }
           const observed = page.waitForResponse(reply => {
             const url = new URL(reply.url())
             return url.pathname === '/api/v1/manager/preview' && url.searchParams.get('locator') === source.locator && url.searchParams.has('grid_slice')
           }); observed.catch(() => {})
           await frame.getByTestId('read-grid-slice').click()
           const result = (await json(await observed, 'GRIB actual slice button')).data.object.content.json
-          const { variable, values, valid } = source.expected_windows[field.number - 1]
-          expect(variable).toBe(`message-${field.number}`)
-          expect(result.selection).toEqual({ variable: `message-${field.number}`, indices: [], x: 0, y: 0, width: field.width, height: field.height })
+          expect(selection.variable).toBe(`message-${field.number}`)
+          expect(result.selection).toEqual(selection)
           expect(result.values).toEqual(values); expect(result.valid).toEqual(valid)
           expect(result.value_mode).toBe('decoded_native_units'); expect(result.spatial).toBeNull()
           expect(result.variable.grid.transform).toEqual([field.west - spacing / 2, spacing, 0, field.north + spacing / 2, 0, -spacing])
-          await expect(frame.locator('.grid-window tbody tr')).toHaveCount(field.height)
-          for (let y = 0; y < field.height; y++) for (let x = 0; x < field.width; x++) {
+          await expect(frame.locator('.grid-window tbody tr')).toHaveCount(selection.height)
+          for (let y = 0; y < selection.height; y++) for (let x = 0; x < selection.width; x++) {
             const cell = frame.locator('.grid-window tbody tr').nth(y).locator('td').nth(x)
             await expect(cell).toHaveAttribute('data-raw', values[y][x])
             await expect(cell).toHaveAttribute('data-valid', String(valid[y][x]))
@@ -92,7 +109,6 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           const grid = frame.getByTestId('grid-slice-result')
           await grid.scrollIntoViewIfNeeded()
           const first = grid.locator('td').first(), last = grid.locator('td').last()
-          const screenshot = `grib-${source.source_case}-${source.spec.case_id}-message${field.number}-slice`
           const precipitation = source.spec.packing === 'ccsds' && field.product_template === 8
           if (precipitation) await first.scrollIntoViewIfNeeded()
           await expect(first).toBeInViewport({ ratio: 1 })
@@ -106,6 +122,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           await expect(frame.locator('.geojson-preview')).toHaveCount(0)
           await expect(frame.getByTestId('grid-no-location')).toContainText(/暂不提供地图预览|map preview is not available/)
         }
+        const intervalProof = sameEnd ? { distinct_accumulation_windows_verified: true } : {}
         if (source.source_case === 'nfs') {
           const actions = await json(await api.get('/api/v1/manager/resource-actions', { params: { locator: source.locator } }), 'GRIB current download capability')
           expect(actions.actions.download.supported).toBe(false)
@@ -118,7 +135,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           expect(Object.keys(error)).toEqual(['error'])
           expect(typeof error.error).toBe('string'); expect(error.error.length).toBeGreaterThan(0)
           await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${source.source_case}-${source.spec.case_id}-page.png`) })
-          outcomes.push({ locator: source.locator, values_verified: true, mask_verified: true, message_switch_verified: true, grid_verified: true, native_units_verified: true, viewport_grid_verified: true, visible_message_count: source.spec.fields.length, original_download_disabled: true, original_download_denied_verified: true })
+          outcomes.push({ ...intervalProof, locator: source.locator, values_verified: true, mask_verified: true, message_switch_verified: true, grid_verified: true, native_units_verified: true, viewport_grid_verified: true, visible_message_count: source.spec.fields.length, original_download_disabled: true, original_download_denied_verified: true })
           continue
         }
         const ready = page.waitForEvent('download')
@@ -133,7 +150,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           const original = await api.get('/api/v1/manager/downloads/file?locator=' + encodeURIComponent(source.locator))
           expect(original.status()).toBe(200); expect(await original.body()).toEqual(raw)
           await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${source.source_case}-${source.spec.case_id}-page.png`) })
-          outcomes.push({ locator: source.locator, values_verified: true, mask_verified: true, message_switch_verified: true, grid_verified: true, native_units_verified: true, viewport_grid_verified: true, visible_message_count: source.spec.fields.length, download_sha256: digest, download_size: raw.length })
+          outcomes.push({ ...intervalProof, locator: source.locator, values_verified: true, mask_verified: true, message_switch_verified: true, grid_verified: true, native_units_verified: true, viewport_grid_verified: true, visible_message_count: source.spec.fields.length, download_sha256: digest, download_size: raw.length })
         } finally { await download.delete() }
       } finally { await api.dispose() }
     }

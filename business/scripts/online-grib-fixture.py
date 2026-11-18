@@ -13,6 +13,12 @@ import subprocess
 import sys
 
 NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2','ecmwf-ccsds.grib2','ecmwf-precipitation.grib2','ecmwf-precipitation-0h.grib2')
+NOAA_INTERVALS = 'noaa-gfs-20261117-apcp-intervals.grib2'
+NAMES += (NOAA_INTERVALS,)
+NOAA_MESSAGE_HASHES = (
+    '3412648808a6e94f298ba5455c0f2366ff759e2a73a1ce1ba1cd9fbd04c4ffc8',
+    '54939cee1651562f5e99e781c6c48ed7d889b29f58ba04e1138aa3dd439db01c',
+)
 
 
 def fields(reverse=False):
@@ -24,8 +30,23 @@ def fields(reverse=False):
             (2,4,'ieee32',170,50,300.5,False)])]
 
 
+def selection(field):
+    window = dict(x=0, y=0, width=field['width'], height=field['height'])
+    if 'sample' in field:
+        sample = field['sample']
+        window = dict(x=sample['x'], y=sample['y'], width=len(sample['values'][0]), height=len(sample['values']))
+    return dict(variable=f"message-{field['number']}", indices=[], **window)
+
+
 def source_values(field,x=0,y=0,width=None,height=None):
     width=field['width'] if width is None else width;height=field['height'] if height is None else height
+    if 'sample' in field:
+        sample = field['sample']
+        left, top = x - sample['x'], y - sample['y']
+        grid = sample['values']
+        if not (0 <= left < left + width <= len(grid[0]) and 0 <= top < top + height <= len(grid)):
+            raise ValueError('requested GRIB oracle window exceeds the fixed independent sample')
+        return [[repr(value) for value in row[left:left+width]] for row in grid[top:top+height]], [[True]*width for _ in range(height)]
     values=[];valid=[]
     for row in range(y,y+height):
         line=[];mask=[]
@@ -269,6 +290,12 @@ def ccsds_message(field):
 
 
 def source_bytes(spec):
+    if spec['name'] == NOAA_INTERVALS:
+        raw = (Path(__file__).resolve().parents[1]/'fixtures'/'manager'/NOAA_INTERVALS).read_bytes()
+        if (len(raw) != 709765
+                or tuple(hashlib.sha256(part).hexdigest() for part in (raw[:400450], raw[400450:])) != NOAA_MESSAGE_HASHES):
+            raise ValueError('NOAA original messages differ from the frozen byte ranges')
+        return raw
     if spec.get('edition') == 1:
         encode = grib1_message
     else:
@@ -295,6 +322,24 @@ def sources():
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     zero = dict(ccsds_precipitation_fields()[0], forecast=0, constant=True, binary_scale=0, step=0.)
     spec = dict(name=NAMES[8], case_id='ecmwf-precipitation-0h', packing='ccsds', fields=[zero])
+    raw = source_bytes(spec)
+    result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
+    # Original messages 597 and 596 of the NOAA GFS f009 inventory.
+    # ecCodes 2.50.0 oracle at source row 308, column 343.
+    cumulative = (
+        (0, 24150, 'APCP09', [[292.0,92.3125,24.375,18.75], [235.125,67.25,26.625,17.8125], [145.375,44.625,21.375,13.375]]),
+        (6, 23510, 'APCP03', [[134.5,47.5,8.8125,7.375], [72.625,20.4375,7.25,5.0625], [2.875,1.625,0.9375,0.4375]]),
+    )
+    originals = [
+        dict(number=number, width=1440, height=721, spacing=0.25, west=0, north=90,
+             packing='complex-spatial', forecast=9, start_hour=start, groups=groups,
+             local_table=1, reference=0., binary_scale=-4, decimal_scale=0, missing=False,
+             product_template=8, parameter=[1,8], height_m=0, unit='[kg/(m^2)]',
+             element=element, short_name='0-SFC', sample=dict(x=343,y=308,values=values))
+        for number,(start,groups,element,values) in enumerate(cumulative,1)
+    ]
+    spec = dict(name=NOAA_INTERVALS, case_id='noaa-gfs-intervals', packing='complex-spatial',
+                reference_time=1794873600, fields=originals)
     raw = source_bytes(spec)
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return result
