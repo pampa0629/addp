@@ -4,38 +4,21 @@
 
 ## 一、当前实现与剩余工作
 
-| 能力 | 当前实现 | 验证边界或剩余工作 |
-| --- | --- | --- |
-| 可选观测基础设施 | 日志、指标按 Infra 生命周期组织，可分别关闭；故障与业务就绪隔离 | 已有标准生命周期及指标链路验证；生产安装、升级与容量 T5 未完成 |
-| 平台主机管理 | 主机登记、详情、编辑、纳管启停；名称/地址、类型、状态组合筛选及分页 | 组合筛选的本地门禁及个人复验见[组合筛选证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机监控类型纳管状态筛选与分页回跳修正2026-10-25)；未提供批量运维 |
-| 管理员确认接入 | System 确认主机与服务允许名单，生成新进程参数；Monitor 独立保存可选采集，见[清单契约][monitor-admission]。 | Linux VM 单新 Monitor 绑定与覆盖限制见[主机绑定证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#清单接入与实例绑定)；Infra／Business 两个单容器 PostgreSQL 的自动接入 T4 见[自动接入证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#infra与business-postgresql-自动接入)。原生 macOS 绑定与多进程仍不足，自动接入不等于专业采集已验 |
-| 采集配置 | 主机来源 CRUD、认证发现、独立采集启停、列表与详情采集结果 | 已接入；主机纳管状态、配置启停与实际采集结果分别表达 |
-| 主机资源与趋势 | 26 项固定主机指标（含 TCP）、设备／挂载明细及共享图表交互，同上下文刷新保留内容，CPU卡补同一分钟空闲率辅助展示；目录与缺值口径见[规范 6.1][monitor-catalog]，缩放、单位、图例及组合图见[规范 6.3][monitor-presentation]。 | 指标链路、交互和 TCP 分层结果见[节点证据][monitor-host]；原 Linux Hosted 不覆盖全部新增交互，新增真实页面 Hosted 待回传。真实 Linux 采集与挂载读数的[验收准备](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#真实-linux-采集与挂载页面验收准备2026-10-28)已补（含列表展开／手工刷新／收起），实际运行未验。空闲率的[本地展示证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机-cpu-空闲率辅助展示2026-10-28)不代替正式实源页面。文件系统视口按完整挂载身份隔离；同组切换缩放修复的固定`74edeb978` Linux产品门禁592项及构建通过，整Job后置缓存归档取消，见[缩放修复回传](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#缩放修复的固定-linux-产品门禁回传2026-11-02)；仅显示来源支持的指标，不据此诊断内存泄漏 |
-| 主机列表资源视图 | 核心资源／负载与连接两种列视图、[当前页摘要][monitor-core-summary]及按需[设备展开][monitor-device-expansion]／文件系统展开；手动刷新保留展开并重读明细；筛选恢复、唯一展示、分组读取和预算沿[规范 6.3][monitor-presentation]。 | 五项摘要见[固定 `9bf8dddcb` Linux 前端][monitor-fixed-frontend]；[文件系统展开][monitor-filesystem-expansion]含固定 `e5391ca36`、首轮失败与修复，父 workflow 取消不计整体通过。[负载／连接证据][monitor-load-view]保留实源摘要 T2 前置失败；个人仅验三档负载与导航、TCP 缺样，右侧截图／前台刷新未验。设备／文件系统实源、个人 Safari 与正式身份 Hosted 不由前端门禁代替；列表扩展不扩大 TOP5／采集配置的两项读取 |
-| 磁盘与卷容量 | 已接通默认关闭的受管采集、即时固定目录、主机列表与详情的唯一设备表；不汇总物理总量 | [首期范围](#磁盘与卷容量首期)已确认；Desktop VM 实源 T2、受控页面 T3 和构建通过；原生来源证明与 Console 收据准备已补，真实 Linux／Safari／Hosted仍有缺口；本地完整前端回归见[2026-10-29证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机与引擎自动筛选统一2026-10-29)，来源与页面分层见[本地证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#磁盘与卷容量首期实现与本地分层验证2026-10-28) |
-| 主机资源热力面板 | 复用当前 CPU、内存和各完整挂载使用率，提供主题热力与趋势入口，见[规范 6.3][monitor-presentation]。 | 本地交互见[热力面板证据][monitor-heatmap]，固定 Linux 前端见[`9bf8dddcb` 证据][monitor-fixed-frontend]；[实源页面验收准备](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#热力面板实源页面验收准备2026-10-28)已补，真实来源正式页面 Hosted 待回传。不新增接口或查询，不计算健康分或告警阈值 |
-| 服务状态、资源与趋势 | 实例筛选／重置、租约状态、Go 进程资源与趋势及当前主机导航；同上下文刷新保留列表、趋势和合法证明，沿[规范 6.3][monitor-presentation]；Meta、Quality 及 Transfer 两类 Worker 已支持默认单实例、可选双实例、独立 PID 与缺失补回，Transfer 持续同步双实例拒绝固定 Owner 身份。 | 绑定、双 Worker 实源隔离、趋势／环比见[实例证据][monitor-instance]，新增真实页面 Hosted 待回传。[Meta][monitor-meta-workers]／[Transfer][monitor-transfer-workers]／[Quality][monitor-quality-workers]专项的实例数量、登记／绑定、补回与页面断言由各专题维护；仅接通入口，真实 Hosted 未执行。原生 macOS 绑定、其他模块副本和全部语言覆盖仍不足，不开放退出实例历史 |
-| 资源总览与 TOP5 | 主机数量、纳管/采集状态、CPU 与内存 TOP5、覆盖率 | 单真实主机 Hosted 与受控多源 T2 见[跨主题证据](../spec/testing/evidence/Monitor综合验收历史证据.md#节点实例与资源告警)；不宣称多真实主机完整 T4，不提供全局物理容量合计 |
-| CPU/内存时段比较 | 主机与进程相邻等长时段的完整网格比较，单位和启动／预热保护沿[规范 6.3][monitor-presentation]。 | 主机完整样本／缺样见[主机比较证据](../spec/testing/evidence/Monitor综合验收历史证据.md#时段比较与资源告警)，进程本地结果见[进程比较证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#服务进程-cpurss-相邻时段比较本地)，测试失败与修复后的 Linux 前端见[固定 `9bf8dddcb` 证据][monitor-fixed-frontend]。进程正式身份真实运行待回传；1 小时／24 小时真实长窗与同比未覆盖 |
-| 平台统一告警 | Monitor 唯一管理入口，事件、确认、抑制、通知目标、投递与重试 | 入口及限定权限已发布；System 保留日志诊断和上下文跳转 |
-| 主机资源规则 | CPU/内存规则 CRUD、CAS、后台连续窗口评估、未知保护和恢复 | 本地、受控来源／签名通知 T2、个人操作及 CPU／内存实压 T4 的独立范围见[主机规则证据](../spec/testing/evidence/Monitor综合验收历史证据.md#节点实例与资源告警)；仅覆盖测试阈值与单台 VM，生产 T5 未覆盖 |
-| 服务实例资源规则 | 当前运行实例 CPU 核消耗／RSS 规则、持续窗口、未知保护及原事件恢复，复用统一事件和通知链路 | 固定 `dfa4ad161` 的原生 Linux 实源 T2 已回传并独立复核，覆盖真实触发／释放／恢复、签名重试、对等进程隔离及退出清零，见[专项证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#服务实例-cpurss-告警原生-linux-固定版本复核2026-10-23)；原失败保留，不外推当前 HEAD、正式身份页面 T4、长窗或生产 T5；不新增退出结束状态，不将 RSS 超限解释为泄漏诊断 |
-| 服务组失联规则 | 当前部署同模块／角色／用途全副本失联判定、当前运行确认持久化、规则四权限及默认停用CRUD，复用统一事件与显式通知订阅 | 规则与个人页面范围见[告警证据][monitor-alert]，真实租约故障、正式身份和 Hosted 未验。首次未确认保持等待，未知和计划停用不伪造恢复 |
-| 引擎与容器专业观测 | Infra／Business 只读发现、单容器 PostgreSQL 批量确认与显式主机关联；Redis 类型扩展、22项查询及分组页面已于`f404de89e`提交，前置259／260及本批261连续发布，见[规范 4.4](../spec/addp平台运行观测规范.md#44-平台引擎部署登记)及[4.5](../spec/addp平台运行观测规范.md#45-部署侧自动发现来源)；当前主机导航沿[6.3][monitor-presentation]，无需导出／导入文件。 | 自动接入、专业 T4 与来源 T2 按[引擎指标证据][monitor-engine]的各自固定版本认定，不外推当前 main。新增主机导航仅 T1/T3；个人 Infra／Business 来源与 Business 页面已分别复验，Business 改名及专业趋势缩放见[本轮证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#business-部署改名与专业趋势时间缩放2026-10-30)，已补个人 Safari 拖动、手动／自动刷新保持及指标切换重置；后续[原位刷新](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#引擎监控原位刷新2026-10-30)消除同上下文请求中的清空／整块遮罩，完整前端门禁通过，用户重启后已补个人 Safari 详情手动／自动刷新结果与缩放保持，在途画布保留由 T3 验证，仍不外推 Hosted；Redis分层状态及已确认、尚未运行的正式验收范围见下文，其余引擎／集群未开放。容器详情与证明的实现／未验范围见[实例证据][monitor-instance]，不由 PostgreSQL 专业验收代替 |
-| 平台 HTTP 接口质量与慢接口 | Common 统一全量采集，Monitor 固定窗口、实例/模板排行及趋势；HTTP 规则、持续慢接口标记、平台事件与 outbox | 公共 mTLS 前置失败、后续 Linux T2 及清理结果见[HTTP 证据][monitor-http]；旧失败不改判，也不代替个人本地实链、完整 Agent/Copilot 正式 backend 登录／页面、正式密码／MFA T4、Hosted、容量或长期保留。Tenant 发布服务质量仍归 Service 对象权限 |
-| Trace 与调用拓扑 | 可选 Go 平台 backend/ingress 与 Agent/Copilot Python backend 同步 HTTP Trace，经同一 Alloy 尾采样后进入 Tempo；Monitor 查询及实际 Client/Server 调用边，复用 System 精确日志关联 | 各批及正式身份本地第十窗口见[Trace 证据][monitor-trace]；本机隔离闭环已验，首次失败与 Link 目标未保留的 404 仍分别保留。`formal_runner_t4=false`，不代替 Hosted／专用 Runner T4 或 T5；真实 72 小时留存／删除、长期合并、其他 Runtime、continuous、Python 异步及 SQL Span 未覆盖，原 Go HTTP 容量外推不扩展至后续批次 |
-| 健康评分、功能热度、泄漏诊断 | 暂缓 | 先确定事实来源和可解释口径，不由资源阈值直接推导 |
-| SSH、环境初始化、防火墙、批量启停及扩容 | 不在首期 | 需要独立操作计划、权限、执行与审计契约 |
+| 能力 | 当前实现与验证边界 |
+| --- | --- |
+| 可选观测基础设施 | 日志、指标独立启停，故障与业务就绪分开。已有标准生命周期和指标链路验证，生产安装、升级和容量 T5 待验。[综合证据][monitor-summary] |
+| 主机与来源 | System 管主机、筛选和纳管，Monitor 管可选来源及采集结果。已有 Linux VM 单新 Monitor 绑定验证，原生 macOS 与多实例仍待补。批量运维未开放。[清单契约][monitor-admission] · [实例证据][monitor-instance] |
+| 主机列表、资源与趋势 | 26 项固定指标，支持核心资源／负载与连接、按需设备与挂载展开、热力面板和趋势。请求范围及图表交互归[指标目录][monitor-catalog]和[平台展示规范][monitor-presentation]。设备展开、固定 Linux 前端和 Safari 各自认定。父 Job 取消、实源摘要 T2 前置失败及真实挂载页面缺口见[节点证据][monitor-host]。 |
+| 磁盘与卷容量 | 默认关闭，提供即时设备表，无物理总量汇总。Desktop VM 来源 T2 和受控页面 T3 已验，Linux 原生来源及新增正式页面未覆盖。[首期范围](#磁盘与卷容量首期) · [节点证据][monitor-host] |
+| 服务状态与资源 | 当前租约、进程资源、趋势和有效主机导航已接入。Meta、Quality、Transfer 的双 Worker 入口按实际实例隔离，Transfer continuous 不共享固定 Owner 身份。多 Worker 本机实源、页面 T3 和待验的 Hosted 分开。[实例证据][monitor-instance] |
+| 资源总览与时段比较 | 主机 TOP5 和覆盖率有单真实主机 Hosted 与受控多源证据，多真实主机总览待验。主机及进程相邻时段比较已实现，进程正式身份链路、1 小时／24 小时真实长窗待验，同比未开放。[平台展示规范][monitor-presentation] · [综合证据][monitor-summary] · [进程比较](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#服务进程-cpurss-相邻时段比较本地) |
+| 平台告警 | Monitor 统一事件、规则、确认、抑制、目标和投递，System 保留日志诊断。检索与排序、CPU／内存、挂载容量、实例 CPU／RSS、服务组失联沿[正式规范](../spec/addp平台运行观测规范.md#七平台告警与通知)。主机实压限测试阈值与单台 VM，服务组真实租约失联 Hosted 仍缺通过证据。[告警证据][monitor-alert] · [主机规则证据][monitor-summary] |
+| 引擎及容器专业观测 | Platform 自管 PostgreSQL／Redis／MinIO 单容器部署可登记并关联主机，专业指标沿固定目录。正式 PostgreSQL T4、Linux 来源 T2、Redis Hosted 失败、MinIO 未验和个人 Safari 各自认定。容器配额须部署证明及完整限制层级。[引擎证据][monitor-engine] · [容器证据][monitor-instance] |
+| HTTP 接口质量 | 共用全量采集、固定窗口与排行、慢接口和告警。Go／Python 来源及前置失败按固定版本记录。正式 Agent／Copilot 登录页面、Hosted、容量、长期保留仍分别核验。Tenant 数据服务质量归 Service。[HTTP 证据][monitor-http] |
+| Trace 与日志 | Go 与 Agent／Copilot Python 同步 HTTP、指定执行短阶段及 Link 已接入。本机第十窗口闭环通过，Link 目标未保留的 404 仍守原范围。Hosted／专用 Runner T4、真实 72 小时留存、其他 Runtime、continuous、Python 异步和 SQL Span 未由此验收。[Trace 证据][monitor-trace] |
+| 暂缓能力 | 健康评分、功能热度及泄漏诊断先明确事实与口径。SSH、环境初始化、防火墙、批量启停及扩容还须独立权限、计划、执行与审计。 |
 
-平台事件已接入级别／首次发现时间筛选、首次触发名称检索、当前主机名称筛选及严重未恢复事件优先排序。筛选交集、计数与分页、URL 恢复、名称事实和排序规则统一见[正式规范 7.1](../spec/addp平台运行观测规范.md#71-领域入口与权限)；历史名称不回填，当前主机筛选不推断日志／实例／模块关联。事件列表已统一自动查询和字段旁提示；共享Enter处理及严格暂停时钟的证据更正见[本轮交互证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#平台告警自动筛选与字段提示2026-10-29)。各批固定版本、失败及个人复验范围见[告警与规则证据][monitor-alert]，不由接口或页面单项结果外推完整验收。
-
-主机监控列表的类型／纳管状态组合筛选沿 System 现有口径接入；共享控件、分页／详情／刷新恢复及仅查询当前页摘要的契约见[正式规范](../spec/addp平台运行观测规范.md)。本批验证及正式身份／Hosted 边界见[组合筛选证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机监控类型纳管状态筛选与分页回跳修正2026-10-25)，不由旧主机管理页验收代替。运行监控菜单已将主机移至服务之前；主机、服务和引擎列表统一为选择立即查询、文本300毫秒防抖，字段说明由共享问号提示就近展示。服务首批验证见[服务筛选交互证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#服务监控自动筛选与就近提示2026-10-29)，后续主机／引擎接入及共享调度见[自动筛选统一证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机与引擎自动筛选统一2026-10-29)。
-
-服务趋势弹窗的范围、CPU／RSS及资源组说明已收敛为对应指标旁的共享tip，当前异常与未接入状态仍直接显示；验证见[就近提示证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#服务趋势弹窗就近提示2026-10-31)。主机详情的统计、趋势双轴／缩放、设备／挂载范围说明也已移到对应标题或控件旁；磁盘列删除独立弹出层与重复短说明，列表展开沿同一组件，验证见[主机就近提示证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机详情就近提示2026-10-31)。引擎列表列名、十二项卡片和趋势／时间选择器的说明也已改为就近 tip，查询窗口、采集失败与缺样继续直接显示；分层验证及用户登录后的个人Safari中文键盘tip／缺样展示见[引擎就近提示证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#引擎监控就近提示2026-10-31)；两库前轮来源停止及启动声明过期见[来源诊断](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#个人两库来源不可用的只读诊断2026-10-31)；用户重新应用后，四来源运行及数据库启动身份、发现available、Prometheus两目标up、个人Safari两库即时值／提交趋势已复验，见[恢复证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#用户重新应用后的两库来源与-safari-恢复复验2026-11-01)。停采缺口不回填，不代表宿主无人值守恢复或新Hosted通过。
-
-主机详情与引擎页进一步补齐System对象重读后的版本／纳管状态等事实变化保护，先清旧值再等待本轮观测；[主机73项T3](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机详情当前对象变化的原位刷新保护2026-11-02)与[PG／Redis46项T3](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#引擎当前对象变化的原位刷新保护2026-11-02)分层记录，不替代Safari或Hosted。
-
-主机与服务页已补同上下文原位刷新，失败／撤权和对象变化仍清除失效内容；131项T1、534项T3及构建通过，个人Safari已核对主机与服务趋势刷新后的真实结果，原位画布保持由暂缓响应T3证明。分层结果与原失败修复见[原位刷新证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机与服务原位刷新2026-10-30)，不外推正式来源或Hosted。
+操作细节见[平台展示规范][monitor-presentation]和[告警入口与筛选](../spec/addp平台运行观测规范.md#71-领域入口与权限)。同上下文原位刷新、对象事实变化清值、就近提示和共享自动筛选的测试按[主机][monitor-host]、[实例][monitor-instance]、[引擎][monitor-engine]及[告警][monitor-alert]的证据认定。个人页面的读取结果与受控测试对请求在途状态的证明分别保留。
 
 ## 二、后续开发顺序
 
@@ -52,46 +35,25 @@ Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链
 
 ### CDC 任务与运行资源监控
 
-当前正式范围沿[平台运行观测规范](../spec/addp平台运行观测规范.md#cdc-基础设施组件的自动发现)：Tenant 按真实 Transfer 任务配置读取源／目标、当前 generation 的 PostgreSQL 槽与 WAL 风险、捕获延迟和当前消息缓冲；Platform 读取 Connect／Debezium 与 Redpanda 的共享组件指标及趋势。Infra PostgreSQL 不是默认 CDC 源端，其通用运行指标归引擎监控。菜单、入口及内容按 Context 和功能权限显示，Monitor 的中文模块名称统一为“统一监控”。
+Tenant 任务页读取 Transfer 当前任务、捕获代次和授权执行。Platform 页读取 Connect／Debezium 与 Redpanda 共享组件的当前运行段。Infra PostgreSQL 通用资源仍归引擎监控，任务源端由任务配置确定。身份、字段、查询与采集边界归[运行观测规范](../spec/addp平台运行观测规范.md#cdc-基础设施组件的自动发现)和[Transfer CDC 契约](../spec/tasks/Transfer数据库CDC.md)。
 
-已完成的任务级 API、原生对照及暂停恢复 Hosted 证据见[2026-11-13 闭环](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环)；本机 Chrome 任务卡片核对另见同专题后续记录，不能代替新增页面断言的 Hosted 运行。
+| 当前能力 | 固定验收与缺口 |
+| --- | --- |
+| 任务级观测及页面 | API、原生对照及暂停恢复已有 Hosted。固定 `88416bf8a` 的 [Hosted 43357940010](https://github.com/pampa0629/addp/actions/runs/43357940010)完成三阶段真实页面，积压 0→3→0。[原链路](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环) · [页面断言与清理](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-cdc-任务卡片的-hosted-三阶段断言) |
+| PostgreSQL 任务风险与持续告警 | 固定 `668187692` 的 [Hosted 43610830710](https://github.com/pampa0629/addp/actions/runs/43610830710)已验源槽／缓冲恢复范围丢失、捕获失败、消费停滞、活动延迟与可选积压的实际故障。控制与观测版本写入分工、阈值、签名通知、后继重建和清理见[分项证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#可选积压告警与后继-cdc-完整-hosted-通过2026-11-15)。 |
+| 任务历史趋势 | Transfer 按现行七天安全历史契约保存分钟观测，按 Tenant／任务身份／generation 授权，缺样为断点。schema 15 已启用，本机 task61 的六个分钟样本已只读核对。固定 `c63888fba` 的 [Hosted 43668756347](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#七天-cdc-任务历史的真实-hosted-断言通过2026-11-15)验证分钟记录。固定 `419548d39` 的 [Hosted 43675672486](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#cdc-历史图表同轮实故障-hosted-通过2026-11-15)验证真实图表与 API 一致、缺样及悬浮。个人 Chrome、七天自然留存和长期容量待验。[任务历史契约](../spec/tasks/Transfer数据库CDC.md#cdc-任务指标历史2026-11-15-已确认) |
+| 触发前暂停及评估器重建 | 固定 `7e583307e` 的 [Hosted 43895444567](../spec/testing/evidence/Monitor告警与规则历史证据.md#cdc-evaluator-rebuild-hosted-20261117)完成独占 Monitor 重建、当次暂停评估及 Resume 后完整新窗口。旧时限失败、提前撤销及未知操作结果在证据中保留。 |
+| 租户告警页面 | 固定 `b8593c1e7` 的 [Hosted 44007380675](../spec/testing/evidence/Monitor告警与规则历史证据.md#cdc-tenant-alert-ui-hosted-20261117)覆盖三条性能规则，固定 `755d24f32` 的 [Hosted 44033277901](../spec/testing/evidence/Monitor告警与规则历史证据.md#cdc-risk-alert-ui-hosted-20261117)另覆盖捕获持续失败、源槽与消息恢复范围丢失。保持、关闭、通知实收与清理分别沿各轮证据。 |
+| 其他 Provider 与组件规则 | MySQL 的 binlog／GTID、Oracle 的 SCN／日志保留与各自捕获延迟按实际任务需求再做。已有 CDC 能力与部分 Owner 原生观测不足以证明 Monitor 专业展示。Platform 共享组件持续告警、长期容量／保留和生产 T5 待验。 |
 
-| 优先级 | 未完成事项 | 价值与实施边界 | 当前推进状态 |
-| --- | --- | --- | --- |
-| P0（已完成） | CDC 任务页面的自动化真实链路验收 | 把源表／目标表、活跃槽、WAL 风险／字节距离、捕获延迟、暂停积压和恢复消退核对接入现有 `transfer-continuous-events`；沿原普通 User 和清理，不增加权限。 | 固定 `88416bf8a` 的 [Hosted 43357940010](https://github.com/pampa0629/addp/actions/runs/43357940010) 三阶段真实页面与暂停恢复通过，积压 0→3→0；[证据与清理边界](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-cdc-任务卡片的-hosted-三阶段断言)。 |
-| P1（当前 PostgreSQL 闭环已完成） | 任务风险与持续异常告警 | 源槽缺失与消息恢复范围丢失、捕获持续失败 60 秒、消费停滞 180 秒、活动事件延迟 >60 秒持续 180 秒，以及按任务可选积压阈值持续 300 秒均已实现并完成实故障闭环。 | 固定 `668187692` 的 [Hosted 43610830710](https://github.com/pampa0629/addp/actions/runs/43610830710) 整套 passed：23 项检查、7 份真实 Console 回执；可选积压触发约 314.197 秒，暂停／缺样各 16 次保持，低于半阈值约 74.98 秒关闭原事件，12 条签名通知实收逐条匹配 delivered。捕获失败、不可恢复风险、独立重建和 scheduled basic→deep／原发起人／读取隔离同轮通过；领域清理与部署最终零残留，个人任务和原槽保留。控制请求与后台观测共写版本的根因已按确认方案收敛，Go T1、race、标准 PG T2、139 项 Runner 与固定源码 Linux Go CI 通过。[完整证据及前轮失败边界](../spec/testing/evidence/Monitor告警与规则历史证据.md#可选积压告警与后继-cdc-完整-hosted-通过2026-11-15)保留，不外推其他 Provider 或生产 T5。 |
-| P2 | 任务级指标历史趋势 | 回答积压何时开始、延迟持续多久、WAL 保留是否持续增长；组件全局趋势不能代替任务趋势。 | 2026-11-15 已确认由 Transfer 每分钟保存安全任务观测、保留 7 天，沿 Tenant＋全局任务身份＋generation 隔离及原任务读取权限查询；优先实施持久化、过期清理、查询和共享图表，缺样保留断点。正式契约见[任务指标历史](../spec/tasks/Transfer数据库CDC.md#cdc-任务指标历史2026-11-15-已确认)。实现已接入 schema version 15、唯一历史 API 与 Monitor 任务图表；Transfer Go／标准 PG T2、141 项 Runner、Monitor 156 项 T1／29 项 CDC 浏览器及构建已验证。真实历史从新版 Transfer 启用后开始；固定 `aa483b1ec` 的 Linux Go、PG、Monitor 156 项 T1／865 项浏览器及构建、Platform 一致性均通过。用户重启后 schema 15 已启用，task61／generation 1 连续六个分钟持久样本已只读核对，原槽保留；新增历史断言已在固定 `c63888fba` 的 [Hosted 43668756347](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#七天-cdc-任务历史的真实-hosted-断言通过2026-11-15)实际通过：19 份分钟记录、积压峰值 41744 后回零、WAL 和延迟有效，24 项全套检查及资源清理通过。同轮真实历史图表已在固定 `419548d39` 的 [Hosted 43675672486](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#cdc-历史图表同轮实故障-hosted-通过2026-11-15)通过：25 项检查、8 份 Console 回执，实际 Canvas 数据与 API 逐点一致，积压 9537→故障断点→0、鼠标悬浮及清理均核对。个人 Chrome 实操、七天自然留存与长期容量仍未覆盖，不外推。 |
-| P2（已完成） | 告警触发前暂停与评估器重建验收 | 在原隔离 suite 中核对尚未打开事件时暂停清窗，评估器重建后恢复须重新积累完整持续时间。 | 真实 PG 定向 T2 与前轮暂停 T4 各守原范围。固定 `7e583307e` 的 [Hosted 43895444567](../spec/testing/evidence/Monitor告警与规则历史证据.md#cdc-evaluator-rebuild-hosted-20261117)另通过实际 Monitor 重建、启动后新暂停评估及正式 Resume：旧／新 PID 不同、同一构建，窗口为空且无事件／通知；恢复后 165.000／285.698 秒仍未触发，184.717／304.717 秒才打开。27 项全套、8 份 Console 回执、12 条签名通知及部署零残留通过，个人 task61 和原槽前后只读对照一致。前两轮等待边界失败及未知操作结果原件保留；当前窗口／等待预算见正式场景，不外推其他 Provider 或全部告警 UI。 |
-| P2（已完成） | 三条性能告警的租户页面闭环 | 在原实故障中核对事件打开、页面确认、缺样保持、恢复关闭及通知状态与 API 一致，沿任务与代次精确定位。 | 固定 `b8593c1e7` 的 [Hosted 44007380675](../spec/testing/evidence/Monitor告警与规则历史证据.md#cdc-tenant-alert-ui-hosted-20261117)整套通过：28 项检查、11 份浏览器回执、12 条签名通知；三次页面确认各只提交一次，缺样保持原 incident／LastObservedAt 且无恢复通知，恢复后原事件关闭并匹配送达。领域清理与部署最终零残留分别核对；个人 task61 及原槽前后只读结果一致。前两轮脚本失败保留；捕获失败／不可恢复风险的告警页面尚未纳入本项。 |
-| P2（已完成） | 捕获失败与恢复能力丢失的租户告警页面 | 补齐捕获持续失败、源槽恢复能力丢失及消息恢复范围丢失的页面确认、缺样保持、关闭和通知与 API 一致性。 | 固定 `755d24f32` 的 [Hosted 44033277901](../spec/testing/evidence/Monitor告警与规则历史证据.md#cdc-risk-alert-ui-hosted-20261117)整套通过：30 项检查、17 份 Console 回执及 12 条签名通知。捕获失败恢复健康后关闭原事件；两类不可恢复风险在源库／消息代理缺样时保持确认和时间，采样恢复仍保留风险，正式确认 Stop 后关闭原事件，再独立重建。领域清理与部署最终零残留分别核对，个人 task61 和现有槽前后只读一致。不外推七天自然留存或其他 Provider。 |
-| P3 | MySQL／Oracle 源端专业观测 | 在实际 CDC 任务需求出现后，按各引擎原生语义补 binlog／GTID、SCN／日志保留风险与本任务捕获延迟。 | 本轮 Monitor 的槽／WAL 与定向延迟闭环限 PostgreSQL；其他 Provider 已有 CDC 与部分 Owner 原生事实不等于 Monitor 专业展示／告警通过。不以无值或 PostgreSQL 指标表示其他源端健康，无实际需求时不扩大采集。 |
-| P3 | 共享组件持续异常告警及长期容量验证 | 平台用户关注失败 Connector／Task、不可用分区、磁盘容量；与租户任务告警分开。 | 共享组件即时值与当前运行段趋势已实现；持续规则、长时容量／保留与生产 T5 未完成。 |
+**共享组件来源的实测范围**
 
-以下保留来源接入各批的历史范围；其中早期部署级 PostgreSQL 选择已被任务关联视图替换，不再代表当前页面结构。
+- **实源 T2**。固定 `bbf3e453c` Linux Monitor Metrics T2 含 `cdc-native` 与 `target-budget`。独占 PostgreSQL 15、Redpanda 24.3.18、Debezium Connect 3.6.0.Final，验证真实 WAL 积压 0→1→0、Task 失败、mTLS 缺失或错误客户端身份拒绝、连接失败后的 503 与恢复、受控 HTTP SD 的 2→1→2 和零残留。真实 Prometheus 离线求值的 126 个场景覆盖有效零、缺字段、重复 up、过期、错次、重启及负延迟，初次临时目录不可写修复后才通过。各门禁归[Infra CDC 隔离验证](../../scripts/infra/docs/指标中心与来源.md#cdc-隔离验证)。
+- **容量与页面**。受控 34 个目标加入两真实来源至 36 个，Connect 停止时保留 35 个，恢复回 36 个，第 37 个被拒。每档约 80 秒的峰值为 146,350,080 字节，最大查询 0.0841 秒、抓取 0.0087 秒。真实组件与受控身份夹具范围分开，生产满载、七天留存及正式 Platform 页面 Hosted 待验。早期部署级 PG 下拉已由任务关联视图替换，早期受控页面不外推当前入口。
+- **个人来源**。2026-11-11 在用户应用配置后核对 System 容器身份、实际 mTLS 及两次间隔 20 秒的 36 个新鲜目标。Connector／Task 及消费组分区为零，无样本的积压、延迟留空。即时和趋势分别返回 200，回执 ID 为 `b318f164-593d-4292-ba5b-5b45cf71e97a`、`3bd3b31c-c67b-495e-909c-b04f9322db0d`。控制台连接超时，个人页面视觉实操未完成。
+- **门禁历史**。旧 Console 路由夹具、Infra 停服 provider 登记及 System 投影精确断言曾失败。Monitor 完整前端复验 145 项 T1、793 项浏览器及构建通过，固定 `5660f9df2` 自然前端 CI 通过。固定 `2e1d54946` 的 System Go 和 IAM PostgreSQL 已验 unavailable 空投影。CDC 辅助镜像补所有权后登记检查通过，原 Platform 失败与配置夹具 ps 超时仍各自认定。
 
-用户确认 Redpanda 与 Kafka Connect 按 Infra 部署事实自动纳入，复用现有 System 私有观测投影与 Monitor 统一发现。部署身份、来源就绪和平台读取权限分别核验，详见[CDC 基础设施组件的自动发现](../spec/addp平台运行观测规范.md#cdc-基础设施组件的自动发现)。
-
-前一批本机只读核对中，Redpanda 的私有 `/public_metrics` 单次返回 1,224 个样本，磁盘总量、空闲空间及不可用分区各有一条时序。该次没有观察到消费组 offset 或 lag 样本，Kafka Connect 的 Connector 清单为空。两个固定采集器已沿 `monitor/backend/internal/cdcsource` 实现，复用私有 mTLS 来源服务；部署侧发现、System 私有组件投影与 Monitor HTTP SD 准入代码已接入，组件与主机、进程、引擎共享端点去重和预算；正式来源安装／恢复已沿统一入口实现；隔离环境已验证在同一 Prometheus 中保留 34 个容量夹具目标、增加两个真实 CDC 来源到 36 个，并完成第 37 个拒绝、单来源故障隔离及恢复。源端出站路径固定，指标及标签有界，不采集 Connector 配置、连接串、事件正文或异常原文。保留现有 34 个来源，若各加一个目标则至少验证 36 个，覆盖成功、缺样、故障、超额与恢复后再应用。固定查询与统一 CDC 页面已进入下述分层验证，按持续时间评估的告警仍待后续实施。[Redpanda 24.3 指标](https://docs.redpanda.com/streaming/24.3/reference/public-metrics-reference/) · [Kafka Connect 指标](https://kafka.apache.org/38/operations/monitoring/#connect_monitoring)
-
-固定来源验证使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cdc-native`，独占 PostgreSQL 15 `addp_test`、Redpanda 24.3.18、Debezium Connect 3.6.0.Final、两个当前源码编译的采集器和 Compose 私网。采集器从固定 REST / JMX 路径读取数据，仅发布聚合指标；Jolokia 的属性级白名单拒绝其他属性及写入、执行、枚举操作，不发布宿主机 JMX 端口。用例核对空 Connector 与无延迟样本、mTLS 无身份及错误身份拒绝、两个真实 WAL 事件产生的消费积压 `0 → 1 → 0`、独立 Task 失败、上游停止后 503 和恢复，以及另一个来源继续响应。退出核验容器、网络、卷及私有材料清零。该 case 执行部署配置测试及 `make test-monitor-cdc-source-unit`；服务启停意图的完整配置回归继续由 `make test-monitor-metrics-config` 承担。自动发现已覆盖容器绑定、私网归属、重复端点、共享预算和发现故障的 T1；统一私有身份／准入的真实 System／Monitor 服务联验仍未完成；CDC 页面及固定查询已接入下述分层门禁，受控 HTTP SD 不能替代真实服务验收。[Debezium PostgreSQL 指标](https://debezium.io/documentation/reference/connectors/postgresql.html#postgresql-monitoring) · [Redpanda 消费积压口径](https://docs.redpanda.com/streaming/24.3/manage/monitoring/#consumer-group-lag)
-
-本批 36 目标隔离证据沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget`：36 个目标均有连续采样，两个 CDC 来源的受控身份标签保留，夹具伪造的组件标签被清理；Connect 来源停止时其余 35 个继续采集，正式恢复入口恢复后回到 36 个；37 个目标触发 Prometheus Job 限额，回退 36 个恢复；最终所有测试容器、网络、卷和私有材料清零。该次 Prometheus cgroup 内存峰值 146,350,080 字节，约 140 MiB；最大查询耗时 0.0841 秒、最大抓取耗时 0.0087 秒。测量为每档约 80 秒、额外预热约一分钟的受控负载，不证明生产满载或七天留存。个人来源和部署配置未在本批启用／替换。
-
-用户已确认并实施单来源失败隔离。统一发现先解析所有地址并完成声明／物理端点去重，再对固定 IP 做动态准入；单个来源解析、连接、防护或采集探测失败时，仅剔除自身，不复用旧地址、不释放预留名额。身份、重复端点、总预算和整批期限错误仍拒绝整批。混合主机／进程／引擎／CDC 的 T1 验证分别失败与恢复、失败来源仍参与去重／容量、DNS 只解析一次。`cdc-native` 同时运行 `make test-monitor-cdc-admission-t2`：身份读取为受控协议夹具，端点为正式生命周期创建的两个真实 CDC 来源；两项正常时发布两项，Connect 返回 503 时仅发布 Redpanda，恢复并推进运行身份后再次发布两项，最终资源清零。该证据不替代真实 System／Monitor 服务及页面联验。
-
-组件固定查询和统一 `/cdc-resources` 页面已接入：PostgreSQL 部署下拉选择复用原引擎授权及三项逻辑复制指标，Connect／Debezium 与 Redpanda 按当前部署事实独立展示卡片、展开指标及当前运行段趋势。组件目录为 12 项 Connect 与 6 项 Redpanda 指标，缺少 offset 或源端延迟样本不补零；负的原生延迟保留时钟偏差意义，不显示为端到端延迟。页面复用共享图表、刷新、请求隔离、格式化及 Console 单历史导航。仅有组件读取权限也能进入页面，PostgreSQL 源端独立授权。
-
-本批本地门禁：Monitor Go T1、共享前端 376 项、Monitor 前端 145 项 T1／787 项受控浏览器及构建、Console 258 项 T1／342 项浏览器及构建通过；随后对最终页面的六项 CDC 专项与一个真实 Console iframe 专项复验，覆盖中英文、390px 布局、空 Connector／缺少积压／来源故障／无有效组件快照、失败清值及恢复、隐藏暂停／撤权停止、下拉与直接地址恢复、页面内导航、返回及语言切换。浏览器 Back 按 Console 既有契约从公开 URL 加载目标 iframe，不据此承诺文档进程不变；页面内导航与语言切换保留当前 iframe 文档。初次翻译层级、夹具身份／语言初始化和过早读取图表宽度的问题均已保留失败日志并修正、复验。
-
-`cdc-native` 扩展既有 `test-monitor-cdc-admission-t2`：真实固定版本 Prometheus 的离线求值通过 126 个 CDC 固定表达式场景，覆盖正常／有效零值、缺字段、重复 up、停采、观测时刻过旧／错次与运行身份不匹配，包含最大 offset 比例到百分比的换算和负源端延迟。Promtool 复用相同 Prometheus 镜像，在专属 Compose 测试服务内使用有界临时存储；初次只读根文件系统缺少临时写入挂载的失败保留，增加私有 tmpfs 后通过。该批同时复验真实 WAL 积压 `0 → 1 → 0`、单 Task 失败、两来源准入 `2 → 1 → 2` 与零残留。固定样本求值、受控浏览器和真实来源证据各自认定，不能合并成个人正式链路通过。Swagger 生成与 98 个公开路由方法覆盖一致；测试仍由现有 Monitor／Console 前端与 Metrics CI 自动发现，无新增长期旁路。
-
-用户完成 Monitor 重启和 Infra 标准入口后，个人运行环境的 System／Monitor 均 Ready，两个 CDC 来源均启用、运行且镜像可用，Connect 已挂载只读 JMX 策略。真实 System 当前组件 ID／容器完整 ID／启动时刻与 Prometheus 保存的受控身份标签一致；与已保存基线按端点比对，原 34 个全部保留，只新增 `127.0.0.1:19134/19135`。两轮间隔 20 秒的实际采样中，36 个目标全部 UP、每一个抓取时间都向前推进；CDC 观测时间亦为新鲜样本。来源直接 mTLS 读取成功，匿名握手被拒绝。当前 Connect 的 Connector／Task 为零，Redpanda 消费组分区为零，未发布没有样本的源端延迟／消费积压，未补零。部署后 2026-11-11 18:36:28 +08:00 的真实 CDC 即时与趋势 API 请求均返回 200（请求 ID 分别为 `b318f164-593d-4292-ba5b-5b45cf71e97a`、`3bd3b31c-c67b-495e-909c-b04f9322db0d`）。这些证据证明本机来源、真实身份／发现和采样；控制台连接工具超时，尚未完成个人页面视觉实操，不外推正式身份 Hosted T4 或七天留存。
-
-`bbf3e453c` 的 Linux Monitor Metrics T2（含 `cdc-native`、`target-budget`）已通过。Platform CI 的两个本批相关失败已定位：新增 CDC 根入口使“仅资源读取权限”有了合法页面，旧入口测试仍期待 forbidden，且 Node 路由夹具尝试加载 Vue 懒组件；Infra 停服夹具则未复制 CDC provider，仍断言三项。补齐路由夹具的组件占位与合法 CDC 落点、两个 provider 的停服断言后，Monitor T1 与 Infra 端口／停服安全专项通过，完整前端复验继续沿原入口。本机较广配置回归另有一次临时 ps 夹具首次执行超时，未计为通过；实际进程表读取、两个来源的部署输入及拟应用中心配置检查独立通过，未修改主机安全设置。
-
-System 私有投影的 `TestObservabilityIdentityProjectionAgainstPostgres` 精确 JSON 预期已补齐 `infrastructure_components: {state: unavailable, items: []}`。无部署读取器时显式 unavailable 沿既有正式契约，不将未知改为空部署，不改变生产投影、浏览器字段、权限或兼容路径；完整嵌套字段集合比较继续保留。通过标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test observability-identity"` 在本地 `addp_iam_test` 先复现原差异，修正后同名用例及其子用例通过；System Go T1 通过。前述 Monitor 完整前端复验也已结束：当次共享工作区的 145 项 T1、793 项浏览器及构建通过。此回归修正仅修改测试预期，无需重启应用；唯一新提交的自然 CI 结果另行跟进。
-
-`2e1d54946` 的自然 CI 已通过 System Go 与 System IAM PostgreSQL，CI 原始日志确认同名 `TestObservabilityIdentityProjectionAgainstPostgres` 及两个子用例通过。`5660f9df2` 的自然 CI 已通过 Monitor 前端。Platform 后续暴露 CDC Dockerfile 未列入部署辅助镜像分类；现沿 Redis／MinIO 同一分类表补齐所有权，增加缺失 Dockerfile 拒绝回归，`make test-build-registration` 的 61 项／9 项回归及真实仓库 26 个 Go 单元、59 镜像登记检查通过。该修改只补构建登记，无生产容器或运行代码变化；新提交自然 Platform CI 结果另行核验，不把前序失败倒改为通过。
+固定采集字段参考[Redpanda 24.3 指标](https://docs.redpanda.com/streaming/24.3/reference/public-metrics-reference/) · [Kafka Connect 指标](https://kafka.apache.org/38/operations/monitoring/#connect_monitoring) · [Debezium PostgreSQL 指标](https://debezium.io/documentation/reference/connectors/postgresql.html#postgresql-monitoring) · [Redpanda 积压口径](https://docs.redpanda.com/streaming/24.3/manage/monitoring/#consumer-group-lag)。
 
 ## 三、验收状态与剩余缺口
 
@@ -142,50 +104,31 @@ Linux VM 单新 Monitor 绑定的固定版本、失败和覆盖限制见[清单�
 
 ### MinIO 专业监控首期（2026-11-02 已确认，分阶段实施）
 
-用户确认17项部署汇总及两个scope各自仅admin:Prometheus的独立采集身份。正式边界见[MinIO首期规范](../spec/addp平台运行观测规范.md#minio-专业观测首期边界2026-11-02-已确认)：只用固定版本v3，最近扫描统计与实时资源分别表达，容量不跨共享底层求和，原生指标权限宽于输出白名单。先实现部署账号生命周期与隔离权限测试，再接来源／发现／查询／页面；账号准备不等于指标接入，实际CI／Hosted仍由专门会话安排，个人部署不自动应用。
-
-账号与来源阶段已实现：私有状态、两scope独立身份、标准启停、保卷重建持久化、固定v3字段适配及独立mTLS来源；同一SDK更新保留状态与最小策略，失败移除来源并停用账号。21项账号／来源T1、Monitor Go T1及双MinIO真实mTLS／权限／恢复／计数代际T2通过，复用内核的Redis来源T2也通过，见[账号证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#minio-指标身份生命周期与隔离权限2026-11-02)和[来源证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#minio-固定-v3-指标与-mtls-来源2026-11-02)。固定上游省略零值系列，无扫描也不发布对象统计，保持缺样，不补造0；当前只输出原始数值，速率和占比留给唯一查询层。自动发现、System精确来源投影与HTTP SD已接通，管理员仍须确认服务及有效主机；固定查询和专业页面已接续实现；真实来源页面与正式身份全链路仍分别待验，不能以受控页面替代。
+固定版本 v3、两个独立 `admin:Prometheus` 账号及 17 项指标已接入发现、查询与页面。源端权限与产品输出各自受限，缺项不补零。真实来源 T2、受控页面及个人 Safari 已有分层证据。全指标、七天趋势与正式身份 Hosted 待验。[权限与指标契约](../spec/addp平台运行观测规范.md#minio-专业观测首期边界2026-11-02-已确认) · [历史证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#minio-source-history)
 
 ### Redis 专业指标实施状态
 
-Redis 后续范围已确认：首批 Infra／Business 单机 Redis 7，独立账号只授 HELLO／PING／INFO，无业务键和频道访问。已补固定采集内核、原生ACL持久化、独立mTLS来源与Infra／Business标准启停；正式契约见[Redis 首期边界](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。本批[账号与来源证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)与正式页面分层；工作区已补同一部署发现、System确认及私有来源精确投影和HTTP SD，见[本批证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-自动发现与-system-精确来源关联2026-11-01)；前置迁移259／260已由其他会话提交于`7da941ee6`，本批261按连续Catalog发布。工作区已补同一三项API的22项Redis目录、分组详情、四项列表摘要和趋势，复用现有授权重核、预算、提示、缩放及无闪烁刷新；见[查询与页面证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-专业指标查询与页面2026-11-01)。本地Go、原生PromQL边界、两作用域真实来源T2及受控页面T3通过，正式User／Prometheus／Console全链路与Hosted未运行；不将来源通过计为正式专业监控完成。
-
-Redis来源异常、停用／恢复及自动刷新暂停／撤权停止的中英文受控页面覆盖已补齐，见[状态验收证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-来源状态与恢复的受控页面验收2026-11-02)。当前值缺失与有效历史趋势分别判断；该T3不代替实际来源启停、个人Safari或正式T4。
+Infra／Business 单机 Redis 7 已接通独立最小 ACL、mTLS 来源、22 项固定查询及分组页面。发布迁移和来源／页面分层证据归历史专题。当前读取、合法缺项及历史趋势分开判断。[正式契约](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施) · [来源与页面证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-source-history)
 
 ### Redis 正式全链路验收（2026-11-01 已确认，本地验证）
 
-用户已确认在同一 suite 增加独立的 `redis-engine-admission` 人工 profile，复用正式三员 Bootstrap、真实密码／MFA、既有权限、独立 Prometheus 和共享生命周期；不改原 PG profile，也不把旧 PG 验收当作 Redis 通过。
-
-- **允许用途**：临时平台管理员只确认、读取、修改及停用当次 Infra／Business 两个单机 Redis 部署与当次主机关联；按原平台权限读取三项 `engine_resource_*` GET 及真实 Console 引擎页。已有账号保留既有角色，测试只行使这些限定用途；不新增 Permission、角色或生产授权，不接触 Tenant Engine／数据。
-- **真实链路**：标准 Redis 部署入口安装当次独立观察账号并启动本方 mTLS 来源，同一只读发现文件→System 明确确认与私有投影→Monitor HTTP SD→Prometheus→当前 User→Console。不得伪造发现／指标、注入 Token 或拦截业务 API。观察命令仍只有 HELLO／PING／INFO；不读取或写入业务键、频道、SQL，不加压。
-- **固定断言**：两部署身份、类型、主机和来源不可互换；22项按10／7／5组读取、四项摘要、当前容器趋势、单位／状态／tip及列表／详情返回正确。完整一分钟后验证速率；maxmemory为零、无键查找时分别验证比例缺失，不能把所有22项都强制为有效值，也不为制造比率执行业务命令。已有T1／T2的固定样本边界不冒充实源数据。
-- **变化及清理**：只对当次Business Redis纳管对象／观察来源做停用和恢复，验证旧值清空、Infra不受影响及新鲜数据重新出现；不停止个人或其他profile的数据库，不操纵指标／系统时钟或写IAM表。沿原System拒绝身份和查询结束前重核证明权限边界。所有退出销毁当次身份、容器、网络、卷及私有凭据，独立核验零残留，失败清理不能计通过。
-- **交付与执行**：保留1800秒场景预算、既有浏览器期限及60分钟Job上限；先修订现有场景规范，再复用runner／物理夹具／Console核对函数实现并做本地确定性验证，登记到现有唯一人工workflow。实际CI和Hosted仍由专门会话安排／回传，本会话不手工触发、不重跑、不设置定时任务。前置259／260已提交，本批261和查询／页面按本方路径精确发布。
-
-本批按上述限定用途实现，标准Online runner、共享清理及注册检查的本地证据见[Redis验收准备](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-正式全链路验收准备2026-11-01)。正式验收边界已同步至[Redis场景规范](../spec/testing/scenarios/平台观测与语义生命周期.md#redis-自管接入专业观测与页面)。实际Hosted尚未运行，身份总边界依据为[T4规范](../spec/testing/T4-Online验收规范.md#开关身份与拓扑预检)“平台管理员 Token 默认禁止”，以及[现有PG限定用途](../spec/testing/scenarios/平台观测与语义生命周期.md#自管引擎部署的自动接入)。
+`redis-engine-admission` 的授权范围与真实链路归正式场景，仍限两域当次纳管对象、真实密码／MFA、当前 User 查询和 Console 页面。首轮 Hosted 在采样等待阶段超时，未执行专业页面、Business 停采恢复及 Infra 持续采集。业务清理失败，基础设施零残留独立认定。验收器修复有本地回归，尚缺修复后的正式通过结果。[正式场景](../spec/testing/scenarios/平台观测与语义生命周期.md#redis-自管接入专业观测与页面) · [失败及修复](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-hosted-首轮失败与验收脚本修复2026-11-07) · [T4 身份边界](../spec/testing/T4-Online验收规范.md#开关身份与拓扑预检)
 
 ### PostgreSQL 专业指标实施状态
 
-2026-10-20 确认的两个作用域独立采集身份及固定汇总函数已接通，数据库侧最小读取边界归[正式规范 4.6](../spec/addp平台运行观测规范.md#46-postgresql-数据库侧汇总读取边界)。来源模板、mTLS、开关默认关闭与作用域隔离、账号启停／NOLOGIN、未知会话及凭据丢失拒绝、Business 仓库外认证目录归[4.7](../spec/addp平台运行观测规范.md#47-postgresql-受保护的固定指标来源)。来源生命周期已沿标准启停接入；标准脚本不签发证书或扩大 CA 信任，不由 Monitor／Web 请求重启数据库，停用保留函数、配置、历史和数据卷。
-
-Business 认证目录首次切换须由部署方沿标准生命周期重建容器并保留数据卷；文件准备不代表采集已生效，个人环境未切换／启用不计已接入。实库、回归、CI 与正式身份结果按[引擎指标证据][monitor-engine]分别认定：专业查询／页面 T4 为固定 `b08f2331d`，后续来源 Linux T2 为固定 `5d91fa31c`；两者不互相替代，不抹去先前失败，也不证明当前 HEAD、七天自然留存或生产 T5。专业 T4 不覆盖其后新增的主机导航，个人部署仍未据此自动启用。
+独立部署账号、固定函数与配对来源已接入。最小权限、标准启停与 Business 认证目录归[4.6](../spec/addp平台运行观测规范.md#46-postgresql-数据库侧汇总读取边界)和[4.7](../spec/addp平台运行观测规范.md#47-postgresql-受保护的固定指标来源)。个人实例须由部署方实际应用后核对采样。
 
 ### 后续自动接入的最小身份投影（已确认）
 
-2026-10-20 确认的引擎最小身份投影及 Common 完整性校验已实现。主体、字段、同快照裁决与整体预算见[正式规范第三章](../spec/addp平台运行观测规范.md#三对象与模块边界)；专业来源的端点／当前数据库运行身份扩展见[4.5](../spec/addp平台运行观测规范.md#45-部署侧自动发现来源)、[4.7](../spec/addp平台运行观测规范.md#47-postgresql-受保护的固定指标来源)。私有投影不进入普通浏览器 DTO，不授予后台部署写权或租户读取权，不读取 System 私表；用户专业查询仍逐请求接受 System 当前 User 裁决。投影 T1／仓储 T2／Swagger 不推导专业 T4，分层记录及断言修正见[引擎指标证据][monitor-engine]。
+System 私有身份投影及 Common 完整性校验已接通。后台来源读取、管理写权限和当前 User 读取分开，普通浏览器 DTO 不含私有端点。[身份与权限](../spec/addp平台运行观测规范.md#三对象与模块边界) · [部署侧发现](../spec/addp平台运行观测规范.md#45-部署侧自动发现来源)
 
 ### PostgreSQL 专业发现、查询与展示方案
 
-沿部署发现 → System 当前引擎身份 → Monitor 唯一 HTTP SD → Prometheus → Monitor 授权查询 → Console 页面这一条链，不另设手工采集目标、数据库凭据或租户 Engine 关联。专业来源的归属、当前数据库容器匹配及失效移除统一沿规范 4.5、4.7；专业来源失败不清空合法主机／进程身份，采集启停不改写确认摘要或管理历史。
-
-十二项专业查询目录及速率的启动／统计代际条件归[正式规范 6.1](../spec/addp平台运行观测规范.md#61-固定指标目录)，三个查询入口、当前 User 双侧权限与完成时重核归[6.2](../spec/addp平台运行观测规范.md#62-资源查询与预算)，当前数据库容器段、最多七天趋势及页面职责归[6.3](../spec/addp平台运行观测规范.md#63-趋势时段比较与总览)。退出容器历史及跨段拼接仍须另定保留／授权规则；HTTP 200 或 up=1 不证明 SQL 采集成功，不用旧样本或有效零值代替失败。
-
-验证沿 Common／System／Monitor T1、投影与持久化 T2、固定指标 mTLS T2、Monitor／Console 前端及 Swagger 既有门禁，部署发现协议／标签／Prometheus 输入同步现有 CI 登记。2026-10-21 确认的正式身份读取、真实页面及全退出清理范围统一见[PostgreSQL 专业观测测试场景](../spec/testing/scenarios/平台观测与语义生命周期.md#postgresql-专业观测与页面)；实际覆盖与未覆盖项见[固定专业 T4](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#postgresql-专业观测正式-hosted-验收)和[后续来源 T2](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#postgresql-专业来源固定版本-linux-t2-复核2026-10-24)。未执行、失败或清理不完整均不计通过。
-
+固定目录、当前 User 授权与当前数据库容器段趋势分别见[6.1][monitor-catalog]、[6.2](../spec/addp平台运行观测规范.md#62-资源查询与预算)及[6.3][monitor-presentation]。退出容器历史及跨段拼接仍须另定保留规则。固定 `b08f2331d` 专业 T4 与 `5d91fa31c` 来源 Linux T2 各自认定，后加主机导航、七天自然留存、生产 T5 未覆盖。[正式场景](../spec/testing/scenarios/平台观测与语义生命周期.md#postgresql-专业观测与页面) · [专业 T4](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#postgresql-专业观测正式-hosted-验收) · [来源 T2](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#postgresql-专业来源固定版本-linux-t2-复核2026-10-24)
 
 ### PostgreSQL 来源恢复首期范围（已确认）
 
-用户确认首期仅在完整启动 ADDP 时恢复已安装、同一数据库容器的来源，不增加 Docker 恢复后的常驻协调进程。实现与验收边界统一见[正式规范4.7](../spec/addp平台运行观测规范.md#47-postgresql-受保护的固定指标来源)：健康不动、单模块不处理、双作用域隔离、采集账号只读核验，不修改账号／HBA、不启动停用数据库或接管新容器。恢复代码已落地，本地两作用域的健康不动、停止恢复、同容器重启重绑定及账号／HBA不变已通过真实T2；目录认证分支仍因挂载读取失败未通过，完整启动的个人验收及新CI结果尚缺。具体通过、失败与清理边界见[来源恢复证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#完整开发启动的-postgresql-来源恢复2026-11-01)。
+完整启动只恢复安装证明匹配的同容器来源。健康来源保持，账号／权限／证书或容器身份变化由部署者核对后显式应用。[恢复契约](../spec/addp平台运行观测规范.md#47-postgresql-受保护的固定指标来源)。独占双域恢复已有实源证据，早期 Desktop 挂载读取失败和后续 Lima／本机复验各自保留，后者不关闭共享目录上游根因，也不证明无人值守恢复。[恢复历史](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#完整开发启动的-postgresql-来源恢复2026-11-01) · [目录取证](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#pg-directory-history)
 
 ## TCP 当前连接数
 
