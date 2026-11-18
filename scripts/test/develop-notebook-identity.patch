@@ -1,13 +1,33 @@
 --- a/system/backend/cmd/online-test-fixture/main.go
 +++ b/system/backend/cmd/online-test-fixture/main.go
-@@ -6,0 +7 @@
+@@ -4,6 +4,7 @@
+ 	"context"
+ 	"crypto/rand"
+ 	"encoding/base64"
 +	"encoding/json"
-@@ -18,0 +20 @@
+ 	"errors"
+ 	"flag"
+ 	"fmt"
+@@ -16,10 +17,13 @@
+ 	"time"
+ 
+ 	commonconfig "github.com/addp/common/config"
 +	"github.com/addp/common/engine/plugins/jupyter"
-@@ -22,0 +25,2 @@
+ 	"github.com/addp/system/internal/config"
+ 	"github.com/addp/system/internal/iam"
+ 	"github.com/addp/system/internal/iamcli"
+ 	"github.com/addp/system/internal/models"
 +	enginerepository "github.com/addp/system/internal/repository"
 +	engineservice "github.com/addp/system/internal/service"
-@@ -367,0 +372,23 @@
+ 	"github.com/addp/system/internal/testsupport"
+ 	"github.com/pquerna/otp/totp"
+ 	"gorm.io/driver/postgres"
+@@ -363,10 +367,35 @@
+ 	"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+ 	"manager.data_item.read", "manager.content.read", "develop.task.read", "develop.task.execute",
+ 	"develop.data_read.execute", "system.execution_authorization.create",
++}
++
 +func createNotebookFixtureEngine(cfg *config.Config) (*models.Engine, error) {
 +	db, err := enginerepository.InitDB(cfg)
 +	if err != nil {
@@ -29,12 +49,19 @@
 +		LifecycleState: models.EngineLifecycleActive, ConnectionStatus: models.EngineConnectionOnline,
 +	})
 +	return engine, err
-+}
-+
-@@ -369,0 +397,2 @@
+ }
+ 
+ func suitePermissions(suite string) ([]string, error) {
+ 	switch suite {
 +	case "develop-notebook-storage":
 +		return []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read"}, nil
-@@ -709,0 +739,14 @@
+ 	case executionTraceLocalSuite:
+ 		return append([]string(nil), executionTraceLocalPermissions...), nil
+ 	case "execution-events-pagination":
+@@ -707,6 +736,20 @@
+ 		}
+ 	}
+ 
 +	if *suite == "develop-notebook-storage" {
 +		role, err := repository.GetActiveBuiltinRoleByKey(ctx, "tenant.engine_management_reader")
 +		if err != nil {
@@ -49,7 +76,13 @@
 +		}
 +	}
 +
-@@ -724,0 +768,30 @@
+ 	var pgRecipients map[string]string
+ 	if *suite == "pg-source-authorization" {
+ 		pgRecipients, err = preparePGAuthorizationMemberships(ctx, iam.NewOrganizationService(repository, clock),
+@@ -722,6 +765,36 @@
+ 		return err
+ 	}
+ 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
 +
 +	if *suite == "develop-notebook-storage" {
 +		permissions, err := suitePermissions(*suite)
@@ -80,8 +113,17 @@
 +		values["ADDP_ONLINE_NOTEBOOK_ENGINE_ID"] = fmt.Sprint(engine.ID)
 +	}
 +
-@@ -1765,0 +1839,4 @@
+ 	if registryPlatformToken != "" {
+ 		values["ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN"] = registryPlatformToken
+ 	}
+@@ -1763,6 +1836,10 @@
+ 		"ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID",
+ 		"ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID",
+ 		"ADDP_ONLINE_TEST_TENANT_ID",
 +		"ADDP_ONLINE_NOTEBOOK_PEER_TOKEN",
 +		"ADDP_ONLINE_NOTEBOOK_FOREIGN_TOKEN",
 +		"ADDP_ONLINE_NOTEBOOK_FOREIGN_TENANT_ID",
 +		"ADDP_ONLINE_NOTEBOOK_ENGINE_ID",
+ 		"ADDP_ONLINE_RETENTION_FOREIGN_TENANT_ID",
+ 		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
+ 		"ADDP_ONLINE_TEST_APPROVER_USERNAME",

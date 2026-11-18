@@ -3,7 +3,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import import_module
 import os
 import json
-import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -113,17 +112,16 @@ class NotebookObserverTest(unittest.TestCase):
 class NotebookFixtureCompileTest(unittest.TestCase):
     def test_identity_patch_compiles_without_modifying_product_checkout(self):
         root = Path(__file__).resolve().parents[2]
-        source = Path(os.environ.get("ADDP_NOTEBOOK_IDENTITY_SOURCE_ROOT", root))
+        source = Path(os.environ.get("ADDP_NOTEBOOK_IDENTITY_SOURCE_ROOT", root)).resolve()
         with tempfile.TemporaryDirectory(prefix="addp-notebook-identity-check-") as directory:
             checkout = Path(directory) / "identity"
             subprocess.run(["git", "clone", "--shared", "--no-checkout", str(source), str(checkout)], check=True, capture_output=True)
             subprocess.run(["git", "checkout", "--detach", "HEAD"], cwd=checkout, check=True, capture_output=True)
-            subprocess.run(["git", "apply", "--unidiff-zero", str(root / "scripts/test/develop-notebook-identity.patch")], cwd=checkout, check=True, capture_output=True)
-            # Check the current owned catalog before publication, too.
-            shutil.copyfile(source / "system/authorization/builtin_roles.yaml", checkout / "system/authorization/builtin_roles.yaml")
+            subprocess.run(["git", "apply", str(root / "scripts/test/develop-notebook-identity.patch")], cwd=checkout, check=True, capture_output=True)
+            # Resolve the complete catalog from one source, including before publication.
             test_file = checkout / "system/backend/cmd/online-test-fixture/notebook_storage_fixture_test.go"
             test_file.write_text('''package main
-import ("testing"; "reflect"; "path/filepath"; "slices"; "os"; "net/url"; "strings"; "time"; "context";
+import ("testing"; "reflect"; "slices"; "os"; "net/url"; "strings"; "time"; "context";
  "github.com/addp/common/authorization"; "github.com/addp/system/internal/config";
  "github.com/addp/system/internal/migration"; "github.com/addp/system/internal/testsupport";
  "github.com/addp/system/internal/models"; "gorm.io/driver/postgres"; "gorm.io/gorm"; "gorm.io/gorm/logger")
@@ -131,7 +129,7 @@ func TestNotebookStoragePermissionBoundary(t *testing.T) {
     got, err := suitePermissions("develop-notebook-storage")
     expected := []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read"}
     if err != nil || !reflect.DeepEqual(got,expected) { t.Fatalf("unexpected ordinary-user permissions: %v %v",got,err) }
-    catalog, err := authorization.LoadRepositoryAuthorizationCatalog(filepath.Clean("../../../.."))
+    catalog, err := authorization.LoadRepositoryAuthorizationCatalog(os.Getenv("ADDP_NOTEBOOK_CATALOG_SOURCE_ROOT"))
     if err != nil { t.Fatal(err) }
     for _, key := range got {
         found := false
@@ -189,8 +187,9 @@ func TestNotebookStorageEngineFixtureAgainstPostgres(t *testing.T) {
             postgres = os.environ.get("ADDP_NOTEBOOK_IDENTITY_POSTGRES") == "1"
             if postgres:
                 pattern = "^TestNotebookStorage(PermissionBoundary|EngineFixtureAgainstPostgres)$"
+            env = {**os.environ, "GOWORK": "off", "ADDP_NOTEBOOK_CATALOG_SOURCE_ROOT": str(source)}
             result = subprocess.run(["go", "test", "./cmd/online-test-fixture", "-run", pattern, "-count=1", "-v"],
-                                    cwd=checkout / "system/backend", env={**os.environ, "GOWORK": "off"}, capture_output=True, text=True, timeout=240)
+                                    cwd=checkout / "system/backend", env=env, capture_output=True, text=True, timeout=240)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             if postgres:
                 print("Notebook identity product base:", subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=checkout, text=True).strip())
