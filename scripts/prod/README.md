@@ -194,12 +194,14 @@ Docker 的格式及部署前提见[官方 Stack 部署说明](https://docs.docke
 
 ### 首次部署
 
-先准备可用的 Docker、Docker Compose 和 OpenSSL，将目标版本的源码或部署包放入服务器部署目录，并按 [Build 指南](../build/README.md#build-imagessh)准备对应平台与版本的镜像。
+现场目标机准备 Docker、Docker Compose、Bash、Python 3、OpenSSL 和 curl。接收构建机制作的[固定版本发布包](../build/README.md#packagesh)及单独交付的站点配置，按包内 README 校验摘要。镜像归档模式先运行 `bash load-images.sh`。目标机无需克隆源码、编译服务或制作镜像。
 
 生产配置只使用根 `.env`，通过 [setup-env.sh](setup-env.sh) 从唯一模板 `.env.example` 初始化。文件缺失时生成 `ENV=production` 和独立随机 Secret；已有文件须通过生产配置校验，脚本仅收紧文件权限，不自动补齐、覆盖或轮换已有 Secret。配置规则见[环境变量参考](../../docs/spec/configuration/环境变量参考.md#根目录-env)。
 
+若发布选中集中日志，现场须显式填入 `ADDP_HOST_NODE_NAME` 并保证独立的 `LOG_OBSERVER_SERVICE_CLIENT_SECRET` 已配置。验收须核对 `runtime-log-observer` 实际运行状态。配置边界见[平台日志链路观测](../../docs/spec/configuration/Monitor与运行观测.md#平台日志链路观测与通知)。
+
 ```bash
-# 1. 进入服务器上的项目或部署包根目录
+# 1. 进入服务器上的部署包根目录
 cd /opt/addp
 
 # 2. 初始化或校验生产配置
@@ -217,7 +219,7 @@ vi .env  # 核对 Registry、镜像版本、公共 URL、反向代理及 Busines
 
 检测到已有 `addp-infra_postgres_data` 卷而根 `.env` 缺失时，初始化会拒绝重建，须从原部署恢复配置。配置校验失败时先修正对应问题；不要通过重新生成密码连接旧数据卷。
 
-通过启动输出中的 `ADDP_PUBLIC_ORIGIN` 访问 Console，再以合法身份验证所需业务功能；本机探测与公开入口的分工统一见[健康检查与验收范围](#health-checksh)。
+全新站点用包内 `tools/addp-iam-bootstrap` 按随附指南完成三员初始化，再从启动输出中的 `ADDP_PUBLIC_ORIGIN` 访问 Console 并验证业务。本机探测与公开入口的分工见[健康检查与验收范围](#health-checksh)。
 
 #### 主机采集
 

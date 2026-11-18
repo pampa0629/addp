@@ -291,7 +291,7 @@ bash scripts/build/push-images.sh --registry harbor.example.com:5001/addp --tag 
 
 ## package.sh
 
-生成包含现有镜像或 Registry 配置的部署包，不在目标服务器重新编译应用。
+生成包含现有镜像或 Registry 配置的部署包。打包时从清单对应的源码构建目标 Linux 平台的 IAM Bootstrap CLI，并随包交付。目标服务器无需源码或编译工具。
 
 ### 使用方法
 
@@ -311,7 +311,7 @@ bash scripts/build/package.sh --mode registry
 | `--mode` | `images` / `registry` | 默认 `images`；不接受 `offline` |
 | `--server` | `user@host` | 生成后传输到远端 `~/addp-deploy/`，优先 rsync，缺少时使用 scp |
 
-版本、Registry 和镜像集合由已准备的 `dist/compose-release/manifest.json` 确定。两种模式都会复制 `.env.example`；根 `.env` 存在时也会复制，包及其传输目标按含凭据的部署制品管理。目标环境的配置和 Secret 须单独核对，不能仅靠包目录名判断。
+版本、Registry 和镜像集合由已准备的 `dist/compose-release/manifest.json` 确定。部署文件从清单所指向的 Git 提交导出，并核对清单中的输入摘要。包只包含环境模板；目标站点配置、`.env`、发布身份凭据、TLS 私钥、备份和业务数据单独保管与交付。构建机工作区的未跟踪文件不参与打包。
 
 两种模式均包含生产生命周期、部署发现及指标来源所需的脚本、发布清单和镜像覆盖文件。生产机不编译日志清理器或指标来源镜像；选中的制品均由准备阶段生成。`make test-release-runner` 覆盖部署包配置准备和缺少固定镜像时的拒绝行为；完整运行仍需隔离验收。
 
@@ -326,7 +326,7 @@ images 模式按发布清单去重导出全部所选平台、Runtime、Infra 及
 
 ### 生成的包结构
 
-两种模式均生成 `dist/package-{mode}-{timestamp}/`，包含三份根 Compose 定义、环境模板、Infra/Prod 脚本、Business 目录、Nginx 配置、`README.md` 和 `DEPLOY_INFO.txt`；已有根 `.env` 时同时携带该文件。两种模式保持 Compose 源文件不变，使用发布覆盖文件固定镜像 digest。
+两种模式均生成 `dist/package-{mode}-{timestamp}/`，包含三份根 Compose 定义、环境模板、Infra/Prod 脚本、Business 目录、Nginx 配置、`README.md`、`DEPLOY_INFO.txt` 和文件校验清单 `SHA256SUMS`。现场解包后先执行 `sha256sum -c SHA256SUMS`，再按包内说明使用站点独立配置启动。两种模式保持 Compose 源文件不变，使用发布覆盖文件固定镜像 digest。
 
 images 模式额外包含 `images/release.tar` 与 `load-images.sh`，生成 `dist/addp-deploy-images-{timestamp}.tar.gz`；registry 模式保留配置目录，可用 `--server` 传输。实际复制范围和成功项以脚本及打包输出为准，不把清单存在当作完整部署验收。
 

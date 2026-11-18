@@ -9,7 +9,7 @@
 #   --server SERVER_USER@IP   Automatically transfer to server via rsync
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 # Color codes
 RED='\033[0;31m'
@@ -64,117 +64,79 @@ if [ -n "$SERVER" ]; then
 fi
 echo ""
 
-# Function: Copy common files (needed by both modes)
+# Export deployment files from the source of the prepared release, independently
+# of local configuration, ignored files and changes to the build workspace.
 copy_common_files() {
-    echo -e "${YELLOW}Copying common files...${NC}"
-
-    # Create base directory structure
-    mkdir -p "$OUTPUT_DIR/scripts"
-
-    # 1. Copy docker-compose files
-    if [ -f "docker-compose.infra.yml" ]; then
-        cp docker-compose.infra.yml "$OUTPUT_DIR/"
-        echo -e "${GREEN}✓ docker-compose.infra.yml copied${NC}"
-    else
-        echo -e "${RED}Error: docker-compose.infra.yml not found${NC}"
-        exit 1
-    fi
-
-    if [ -f "docker-compose.yml" ]; then
-        cp docker-compose.yml "$OUTPUT_DIR/"
-        echo -e "${GREEN}✓ docker-compose.yml copied${NC}"
-    else
-        echo -e "${RED}Error: docker-compose.yml not found${NC}"
-        exit 1
-    fi
-    if [ -f "docker-compose.runtimes.yml" ]; then
-        cp docker-compose.runtimes.yml "$OUTPUT_DIR/"
-        echo -e "${GREEN}✓ docker-compose.runtimes.yml copied${NC}"
-    else
-        echo -e "${RED}Error: docker-compose.runtimes.yml not found${NC}"
-        exit 1
-    fi
-
-    # A deployment package carries the selected immutable release, independent of
-    # the build checkout's historical release directories and current symlink.
-    if [ ! -f dist/compose-release/manifest.json ]; then
+    local release_dir="dist/compose-release" path
+    if [ ! -f "$release_dir/manifest.json" ]; then
         echo "Prepare a Compose release with scripts/prod/deploy.sh --skip-deploy before packaging" >&2
         exit 1
     fi
-    mkdir -p "$OUTPUT_DIR/dist/compose-release"
-    cp -R dist/compose-release/. "$OUTPUT_DIR/dist/compose-release/"
 
-    # 2. Copy environment template
-    if [ -f ".env.example" ]; then
-        cp .env.example "$OUTPUT_DIR/"
-        echo -e "${GREEN}✓ .env.example copied${NC}"
-    else
-        echo -e "${RED}Error: .env.example not found${NC}"
-        exit 1
-    fi
+    local identity
+    identity=$(python3 - "$release_dir/manifest.json" <<'PYCOMMIT'
+import json, re, sys
 
-    # For local packaging/deployment, preserve the active environment when present.
-    # This avoids generating a new database password against an existing Docker volume.
-    if [ -f ".env" ]; then
-        cp .env "$OUTPUT_DIR/"
-        echo -e "${GREEN}✓ .env copied (reuse current deployment secrets)${NC}"
-    else
-        echo -e "${YELLOW}ℹ .env not found; package will generate one on first start${NC}"
-    fi
+with open(sys.argv[1]) as stream:
+    manifest = json.load(stream)
+commit = manifest.get("source_commit", "")
+if manifest.get("schema") != "addp.compose-release/v1" or not re.fullmatch(r"[0-9a-f]{40}", commit):
+    sys.exit("Invalid Compose release manifest or source commit")
+platform = manifest.get("platform", "")
+if platform not in ("linux/amd64", "linux/arm64"):
+    sys.exit("Invalid Compose release platform")
+print(commit, platform.split("/")[1])
+PYCOMMIT
+)
+    read -r SOURCE_COMMIT TARGET_ARCH <<< "$identity"
+    git cat-file -e "$SOURCE_COMMIT^{commit}"
 
-    # 3. Copy scripts/infra/ (CORE: infrastructure initialization)
-    if [ -d "scripts/infra" ]; then
-        cp -r scripts/infra "$OUTPUT_DIR/scripts/"
-        echo -e "${GREEN}✓ scripts/infra/ copied${NC}"
-    else
-        echo -e "${RED}Error: scripts/infra/ directory not found${NC}"
-        exit 1
-    fi
+    # The collector image fingerprints include these build inputs even on
+    # installation hosts, where the release only consumes prebuilt images.
+    local paths=(
+        .env.example docker-compose.infra.yml docker-compose.yml docker-compose.runtimes.yml
+        scripts/infra scripts/prod scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py
+        scripts/utils/observability-env.sh scripts/utils/deployment-inventory.py
+        scripts/utils/container-proof.py scripts/utils/deployment-docker.py
+        scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/utils/private-state.py
+        common gateway/go.mod monitor/backend/go.sum
+        monitor/backend/cmd/minio-metrics-source monitor/backend/cmd/redis-metrics-source
+        monitor/backend/cmd/cdc-metrics-source monitor/backend/internal/cdcsource
+        monitor/backend/internal/miniosource monitor/backend/internal/redissource monitor/backend/internal/sourceserver
+        business nginx/nginx.conf "docs/guide/addp IAM三员初始化操作指南.md"
+    )
+    while IFS= read -r path; do paths+=("$path"); done < <(
+        git ls-tree -r --name-only "$SOURCE_COMMIT" | awk -F/ 'NF == 3 && $2 == "backend" && $3 == "go.mod"'
+    )
+    git archive --format=tar "$SOURCE_COMMIT" -- "${paths[@]}" | tar -xf - -C "$OUTPUT_DIR"
 
-    # 4. Copy scripts/prod/ (start/stop scripts)
-    if [ -d "scripts/prod" ]; then
-        cp -r scripts/prod "$OUTPUT_DIR/scripts/"
-        chmod +x "$OUTPUT_DIR/scripts/prod"/*.sh 2>/dev/null || true
-        echo -e "${GREEN}✓ scripts/prod/ copied${NC}"
-    else
-        echo -e "${YELLOW}Warning: scripts/prod/ not found${NC}"
-    fi
+    mkdir -p "$OUTPUT_DIR/$release_dir"
+    cp "$release_dir/"{manifest.json,infra-images.yml,platform-images.yml,runtimes-images.yml} "$OUTPUT_DIR/$release_dir/"
+    python3 - "$OUTPUT_DIR" <<'PYINPUTS'
+import hashlib, json, sys
+from pathlib import Path
 
-    # Production helpers retain deployment proofs and source identity inputs.
-    # Runtime images are consumed from the fixed release manifest.
-    local path parent
-    for path in \
-        scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py \
-        scripts/utils/observability-env.sh scripts/utils/deployment-inventory.py \
-        scripts/utils/container-proof.py scripts/utils/deployment-docker.py \
-        scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/utils/private-state.py \
-        common gateway/go.mod */backend/go.mod monitor/backend/go.sum \
-        monitor/backend/cmd/minio-metrics-source monitor/backend/cmd/redis-metrics-source \
-        monitor/backend/cmd/cdc-metrics-source monitor/backend/internal/cdcsource \
-        monitor/backend/internal/miniosource monitor/backend/internal/redissource monitor/backend/internal/sourceserver; do
-        parent="$OUTPUT_DIR/$(dirname "$path")"
-        mkdir -p "$parent"
-        cp -R "$path" "$parent/"
-    done
-    echo -e "${GREEN}✓ Production lifecycle and collector build inputs copied${NC}"
-
-    # 5. Copy business infrastructure (recommended)
-    if [ -d "business" ]; then
-        cp -r business "$OUTPUT_DIR/"
-        echo -e "${GREEN}✓ business/ copied (business infrastructure)${NC}"
-    else
-        echo -e "${YELLOW}Warning: business/ directory not found${NC}"
-    fi
-
-    # 6. Copy nginx configuration (if exists)
-    if [ -f "nginx/nginx.conf" ]; then
-        mkdir -p "$OUTPUT_DIR/nginx"
-        cp nginx/nginx.conf "$OUTPUT_DIR/nginx/"
-        echo -e "${GREEN}✓ nginx/nginx.conf copied${NC}"
-    else
-        echo -e "${YELLOW}Warning: nginx/nginx.conf not found${NC}"
-    fi
+root = Path(sys.argv[1])
+manifest = json.loads((root / "dist/compose-release/manifest.json").read_text())
+for name, digest in manifest["inputs"].items():
+    path = (root / name).resolve()
+    if root.resolve() not in path.parents or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+        sys.exit(f"Packaged input differs from the prepared release: {name}")
+PYINPUTS
+    echo "Exported deployment files from $SOURCE_COMMIT"
 }
+
+build_iam_bootstrap() (
+    local build_dir
+    build_dir=$(mktemp -d)
+    trap 'rm -rf -- "$build_dir"' EXIT
+    git archive --format=tar "$SOURCE_COMMIT" -- Makefile common system/backend | tar -xf - -C "$build_dir"
+    GOWORK=off make -C "$build_dir" build-iam-bootstrap GOOS=linux GOARCH="$TARGET_ARCH" \
+        LOCAL_GOMODCACHE="$PROJECT_ROOT/.gomodcache" LOCAL_GOPATH="$PROJECT_ROOT/.gopath" \
+        LOCAL_GOCACHE="$PROJECT_ROOT/.cache/go-build"
+    mkdir "$OUTPUT_DIR/tools"
+    install -m 0755 "$build_dir/dist/release-linux-$TARGET_ARCH/addp-iam-bootstrap" "$OUTPUT_DIR/tools/"
+)
 
 # Function: Export Docker images to tar files
 export_images() {
@@ -283,17 +245,28 @@ generate_readme() {
     cat > "$OUTPUT_DIR/README.md" <<'EOF'
 # ADDP Compose 发布包
 
-本包包含固定镜像清单和 Compose 覆盖文件。源提交、目标架构及镜像 digest 见 dist/compose-release/manifest.json。
+本包包含固定提交的部署文件、镜像清单和 Compose 覆盖文件。源提交、目标架构、能力选择及镜像 digest 见 `dist/compose-release/manifest.json`。站点配置、凭据和备份单独交付。
 
-目标机器需要可用的 Docker Engine、Docker Compose 和 Python 3。已有部署沿用目标环境的 .env 和数据卷，首次部署由标准入口准备配置。
+目标 Linux 主机准备 Docker Engine、Docker Compose、Bash、Python 3、OpenSSL、curl 和 sha256sum。现场无需源码检出或编译工具。
 
-镜像归档模式先在包目录执行 ./load-images.sh。仓库模式由生产预检按清单 digest 取得镜像，需要能够访问清单中的仓库。
+首次安装：
 
-随后执行 bash scripts/prod/start.sh。入口核对所选能力和 Compose 输入，按固定镜像启动 Infra、System、发布模块声明，再启动平台与 Runtime。缺失制品时停止启动。
+1. 有归档外的 `.sha256` 时先校验归档。解包后进入含本 README 的部署根目录，执行 `sha256sum -c SHA256SUMS`。
+2. 镜像归档模式执行 `bash load-images.sh`。仓库模式准备清单中仓库的访问权限和 CA，启动预检将按 digest 拉取。
+3. 安装站点独立提供的根 `.env`（权限 0600），或在空库首次安装时执行 `bash scripts/prod/setup-env.sh` 生成配置和随机密钥，再填写站点参数。核对 `ADDP_PUBLIC_ORIGIN`、监听地址及与发布清单一致的能力选择。启用集中日志时须显式设置本节点的 `ADDP_HOST_NODE_NAME`，并配置独立的 `LOG_OBSERVER_SERVICE_CLIENT_SECRET`；首次配置入口在模板启用日志时生成该凭据。保管此文件和启动后生成的模块声明发布凭据。
+4. 在部署根目录执行 `bash scripts/prod/start.sh` 和 `bash scripts/prod/health-check.sh`。选中集中日志时，另用 `docker inspect --format '{{.State.Status}}' addp-runtime-log-observer` 确认观测器为 `running`。重复启动仍使用同一入口和站点配置。
+5. 全新站点首次登录前，使用包内 `tools/addp-iam-bootstrap prepare` 和 `tools/addp-iam-bootstrap apply --manifest /站点私有目录/三员清单.json` 完成一次性三员初始化。从部署根目录在直接终端交互执行，凭据和验证码按 [IAM 指南](docs/guide/addp%20IAM三员初始化操作指南.md) 准备。包内已提供 CLI，跳过指南中的源码构建步骤。部署根 `.env` 中的 PostgreSQL 宿主机地址和端口须对应实际 Infra 映射。
+6. 从实际入口登录并核对项目业务。
 
-本包可能保留打包时已有的 .env，请按部署凭据管理。镜像清单不包含密码或令牌。
+带数据升级：
 
-停止入口为 bash scripts/prod/stop.sh，保留持久数据卷。状态和业务验收按 scripts/prod/README.md 与平台测试规范执行。
+1. 在独立暂存目录校验下一发布并导入新包镜像。核对目标版本的迁移说明，保存原发布包、站点配置与部署身份。
+2. 从原部署根目录执行 `bash scripts/prod/stop.sh`，保留 Infra 和数据卷。将已校验的新包文件解入**同一部署根目录**，保留 `.env`、`.dev-state` 和已有站点数据路径。按新版本要求核对配置，沿用原密钥。
+3. 在新版启动及任何新迁移之前，按下文完成备份和恢复演练。随后执行新包的生产启动、健康检查及业务验收。应用镜像切回旧版不能撤销数据库迁移；失败时按已验证的备份和恢复计划处理。
+
+备份与恢复演练：
+
+在部署根目录执行 `python3 scripts/infra/backup.py create --output-root /绝对路径/私有备份目录`，记录输出的备份路径。执行 `python3 scripts/infra/backup.py drill --backup-dir /绝对路径/本次备份` 验证 PostgreSQL 和 Infra MinIO 在独占临时容器中的真实恢复。该演练不回写现有服务或卷。实际灾备范围还包括单独保存的部署密钥、外接 Business 引擎和其他有状态依赖。
 EOF
 }
 
@@ -315,8 +288,6 @@ PYINFO
 )
 Builder: $(whoami)
 Host: $(hostname)
-Git Branch: $(git branch --show-current 2>/dev/null || echo "unknown")
-Git Commit: $(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 Package Contents:
 - docker-compose.infra.yml (infrastructure)
@@ -339,7 +310,9 @@ create_tarball() {
     if [ "$MODE" = "images" ]; then
         echo -e "${YELLOW}Creating tarball...${NC}"
         TARBALL="dist/addp-deploy-${MODE}-${TIMESTAMP}.tar.gz"
-        tar -czf "$TARBALL" -C "dist/" "$(basename $OUTPUT_DIR)"
+        tar -cf - -C dist "$(basename "$OUTPUT_DIR")" | gzip -1 > "$TARBALL.partial"
+        mv "$TARBALL.partial" "$TARBALL"
+        (cd dist && sha256sum "$(basename "$TARBALL")" > "$(basename "$TARBALL").sha256")
         echo -e "${GREEN}✓ Tarball created: ${TARBALL}${NC}"
         echo ""
         echo -e "Tarball location: ${GREEN}${TARBALL}${NC}"
@@ -407,9 +380,11 @@ transfer_to_server() {
 main() {
     # Clean and create dist directory
     mkdir -p dist
+    mkdir "$OUTPUT_DIR"
 
     # Step 1: Copy common files
     copy_common_files
+    build_iam_bootstrap
 
     # Step 2: Mode-specific operations
     if [ "$MODE" = "images" ]; then
@@ -425,6 +400,7 @@ main() {
 
     # Step 5: Create DEPLOY_INFO
     create_deploy_info
+    (cd "$OUTPUT_DIR" && find . -type f ! -path './SHA256SUMS' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS)
 
     # Step 6: Create tarball (images mode only)
     create_tarball

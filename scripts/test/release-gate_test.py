@@ -26,6 +26,7 @@ class DeploymentPackageTest(unittest.TestCase):
              'docker-compose.infra.yml', 'docker-compose.runtimes.yml', 'scripts/build/package.sh',
              'scripts/infra', 'scripts/prod', 'scripts/dev', 'scripts/utils', 'common', 'nginx/nginx.conf',
              'business/.env.example', 'business/docker-compose.yml', 'gateway/go.mod',
+             'docs/guide/addp IAM三员初始化操作指南.md',
              ':(glob)*/backend/go.mod', 'monitor/backend/go.sum', 'monitor/backend/cmd/minio-metrics-source',
              'monitor/backend/cmd/redis-metrics-source', 'monitor/backend/cmd/cdc-metrics-source',
              'monitor/backend/internal/cdcsource', 'monitor/backend/internal/miniosource',
@@ -43,6 +44,16 @@ class DeploymentPackageTest(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(repository / name, target)
             env = {'PATH': os.environ['PATH']}
+            (root / 'Makefile').write_text(
+                'build-iam-bootstrap:\n'
+                '\tmkdir -p dist/release-$(GOOS)-$(GOARCH)\n'
+                '\tprintf fixture > dist/release-$(GOOS)-$(GOARCH)/addp-iam-bootstrap\n')
+            subprocess.run(['git', 'init', '-q'], cwd=root, env=env, check=True)
+            subprocess.run(['git', 'add', '-f', '.'], cwd=root, env=env, check=True)
+            subprocess.run(['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                            '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Frozen deployment sources'],
+                           cwd=root, env=env, check=True)
+            commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, env=env, text=True).strip()
             spec = importlib.util.spec_from_file_location('package_release_images', root / 'scripts/prod/release-images.py')
             release = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(release)
@@ -50,18 +61,27 @@ class DeploymentPackageTest(unittest.TestCase):
             prepared.mkdir(parents=True)
             reference = 'localhost:5001/addp-fixture@sha256:' + 'a' * 64
             projects = {name: {name + '-service': reference} for name in release.COMPOSE_FILES}
-            manifest = {'schema': 'addp.compose-release/v1', 'source_commit': 'b' * 40,
+            manifest = {'schema': 'addp.compose-release/v1', 'source_commit': commit,
                         'build_root': str(root), 'platform': 'linux/arm64', 'version': 'fixture',
                         'registry': 'localhost:5001', 'selection': release.selection({}),
                         'inputs': release.compose_inputs(), 'projects': projects, 'sources': {}, 'image_ids': {reference: 'sha256:' + 'c' * 64}}
             (prepared / 'manifest.json').write_text(json.dumps(manifest))
             for project, services in projects.items():
                 release.write_override(prepared / (project + '-images.yml'), {name: manifest['image_ids'][ref] for name, ref in services.items()})
+            compose = (root / 'docker-compose.yml').read_bytes()
+            (root / 'docker-compose.yml').write_bytes(compose + b'\n# uncommitted deployment drift\n')
+            private_paths = ('.env', 'business/.env', 'scripts/prod/local-secret.txt')
+            for name in private_paths:
+                (root / name).write_text('must stay on the build host')
             package = subprocess.run(['bash', 'scripts/build/package.sh', '--mode', 'registry'], cwd=root,
                                      env=env, capture_output=True, text=True, timeout=60)
-            self.assertEqual(package.returncode, 0, package.stderr)
+            self.assertEqual(package.returncode, 0, package.stdout + package.stderr)
             output, = (root / 'dist').glob('package-registry-*')
-            self.assertFalse((output / '.env').exists())
+            for name in private_paths:
+                self.assertFalse((output / name).exists(), name)
+            self.assertEqual((output / 'docker-compose.yml').read_bytes(), compose)
+            self.assertEqual((output / 'tools/addp-iam-bootstrap').stat().st_mode & 0o777, 0o755)
+            subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=output, env=env, check=True, stdout=subprocess.DEVNULL)
             self.assertEqual(json.loads((output / 'dist/compose-release/manifest.json').read_text()), manifest)
             host_entry = output / 'scripts/infra/host-metrics.sh'
             result = subprocess.run([host_entry, 'check'], cwd=root, env=env,
@@ -127,6 +147,11 @@ exit 1
                                     cwd=root, env=image_env, capture_output=True, text=True, timeout=30)
             self.assertEqual(packed.returncode, 0, packed.stdout + packed.stderr)
             images_output, = (root / 'dist').glob('package-images-*')
+            for name in private_paths:
+                self.assertFalse((images_output / name).exists(), name)
+            checksum, = (root / 'dist').glob('addp-deploy-images-*.tar.gz.sha256')
+            subprocess.run(['sha256sum', '-c', checksum.name], cwd=checksum.parent, env=env,
+                           check=True, stdout=subprocess.DEVNULL)
             self.assertEqual((images_output / 'images/release.tar').read_text(), 'fixture')
             self.assertIn('save -o', boundary.read_text())
             self.assertIn('sha256:' + 'c' * 64, boundary.read_text())

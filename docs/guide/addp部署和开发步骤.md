@@ -185,17 +185,14 @@ bash scripts/local/stop.sh
 
 ### 第五步: 生产模式
 
-**一键生产部署**:
+在构建机从固定源码准备发布并打包。项目配置和密钥单独交付：
 
 ```bash
-# 在固定源码中准备发布，并走生产启动入口
-bash scripts/prod/deploy.sh v1.0.0
-
-# 后续沿用同一发布启动（不编译或构建镜像）
-bash scripts/prod/start.sh
+bash scripts/prod/deploy.sh v1.0.0 --skip-deploy
+bash scripts/build/package.sh --mode images
 ```
 
-首次部署的配置准备和服务启动顺序统一见 Prod README 的[首次部署](../../scripts/prod/README.md#首次部署)与[启动流程](../../scripts/prod/README.md#启动流程)。
+现场只需发布包、独立站点配置和所需运行环境。按包内 README 校验文件、导入镜像、配置站点，再执行 `bash scripts/prod/start.sh` 与 `bash scripts/prod/health-check.sh`。首次登录前用包内 IAM CLI 初始化三员。可访问内网 Registry 的部署也可使用 [Registry 模式](../../scripts/build/README.md#两种部署模式)。服务启动顺序见 Prod README 的[启动流程](../../scripts/prod/README.md#启动流程)。
 
 需要监控生产主机时，按[主机采集](../../scripts/prod/README.md#主机采集)在每台纳管主机独立安装、接入并核对实际样本。
 
