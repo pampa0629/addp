@@ -2128,7 +2128,7 @@ func TestFeatherCaseRetainsApprovedConsumerAndInitializerPermissions(t *testing.
 func TestFilePublicationSourceInitializerHasOnlyPreparationAndApprovalPermissions(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS", "0")
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
-	for _, caseName := range []string{"geometry-difference", "polygon-adjacency"} {
+	for _, caseName := range []string{"geometry-difference", "polygon-adjacency", "polygon-components"} {
 		t.Run(caseName, func(t *testing.T) {
 			t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", caseName)
 			got := suiteSourceInitializerPermissions("vector-topology-persistence")

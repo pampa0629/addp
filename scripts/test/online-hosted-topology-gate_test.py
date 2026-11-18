@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -118,6 +119,12 @@ class HostedTopologyGateTest(unittest.TestCase):
         self.assertEqual(json.loads((self.host.artifacts/'topology-case.json').read_text()),{'suite':'vector-topology-persistence','case':'geometry-difference'})
         self.assertNotIn('capacity',self.host.trace.read_text())
         self.assertFalse(self.host.secrets.exists())
+
+    def test_components_case_is_bound_without_old_business_or_capacity(self):
+        result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='polygon-components')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(json.loads((self.host.artifacts/'topology-case.json').read_text()),
+                         {'suite':'vector-topology-persistence','case':'polygon-components'})
 
     def test_adjacency_case_is_bound_without_old_business_or_capacity(self):
         result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='polygon-adjacency')
@@ -250,6 +257,14 @@ class TopologySourceCommitTest(unittest.TestCase):
         self.assertLess(self.job.index('Verify topology source ancestry'),self.job.index('Set up Go'))
         self.assertLess(self.job.index('Verify topology source ancestry'),self.job.index('Run Hosted Vector Topology Online gate'))
 
+    def test_components_requires_explicit_complete_lowercase_sha_before_checkout(self):
+        for value, accepted in [('',False),('main',False),('a'*39,False),('A'*40,False),('1'*40,True)]:
+            with self.subTest(value=value):
+                result=subprocess.run(['bash','-euo','pipefail','-c',self.validate],
+                    env={**os.environ,'SOURCE_COMMIT':value,'TOPOLOGY_CASE':'polygon-components'},
+                    capture_output=True,text=True,timeout=5)
+                self.assertEqual(result.returncode==0,accepted,result.stdout+result.stderr)
+
     def test_other_cases_choose_one_dispatch_snapshot_or_explicit_valid_sha(self):
         for value,accepted in [('',True),('b'*40,True),('branch-name',False)]:
             result=subprocess.run(['bash','-euo','pipefail','-c',self.validate],env={**os.environ,'SOURCE_COMMIT':value,'TOPOLOGY_CASE':'polygon-adjacency'},capture_output=True,text=True,timeout=5)
@@ -257,7 +272,7 @@ class TopologySourceCommitTest(unittest.TestCase):
         self.assertIn('ref: ${{ inputs.topology_source_commit || github.sha }}',self.job)
         self.assertIn('SOURCE_COMMIT: ${{ inputs.topology_source_commit || github.sha }}',self.job)
         self.assertIn('DISPATCH_COMMIT: ${{ github.sha }}',self.job)
-        self.assertIn("      topology_source_commit:\n        description: Full ancestor source SHA, required for geometry-difference\n        required: false\n        type: string\n        default: ''",self.workflow)
+        self.assertIn("      topology_source_commit:\n        description: Full ancestor source SHA, required for geometry-difference and polygon-components\n        required: false\n        type: string\n        default: ''",self.workflow)
         self.assertEqual(self.workflow.count('inputs.topology_source_commit'),3)
 
     def test_actual_git_ancestor_and_same_commit_pass_but_mismatch_or_unrelated_fail(self):

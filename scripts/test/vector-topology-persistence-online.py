@@ -650,8 +650,47 @@ def validate_adjacency_failure(execution,identifier,principal,spec):
     return details
 
 
+def components_definition(sources, parent, failure=None):
+    spec=next((s for s in fixture.COMPONENTS_FAILURES if s[0]==failure),None)
+    if failure is not None and spec is None:raise SuiteError('unknown polygon components failure')
+    node='PRIVATE_COMPONENTS_NODE'
+    tasks=[
+        {'id':node,'operator':'group_polygon_components','depends_on':['load_source'],
+         'params':{'input_gdf':{'$ref':'load_source'},'id_field':'parcel_key'}},
+        {'id':'load_source','operator':'load','depends_on':[],'params':{'locator':sources[spec[1] if spec else 0]}},
+    ]
+    if failure is None:
+        tasks.append({'id':'save_result','operator':'save','depends_on':[node],
+                      'params':{'input_df':{'$ref':node},'target_parent_locator':parent,
+                                'target_name':fixture.COMPONENTS_TARGET,'mode':'fail'}})
+    return {'tasks':tasks}
+
+
+def components_diagnostic(spec):
+    return expected_input_diagnostic((spec[0],'group_polygon_components',*spec[3:]))
+
+
+def validate_components_failure(execution, identifier, principal, spec):
+    if type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:
+        raise SuiteError('polygon components failure User differs')
+    metadata=obj(execution.get('metadata') or {},'polygon components failure metadata')
+    if (obj(metadata.get('lineage_facts') or {},'polygon components failure facts').get('outputs')
+        or obj(metadata.get('result') or {},'polygon components failure result').get('meta_scan_runs')):
+        raise SuiteError('polygon components failure published output facts')
+    details=validate_input_failure(execution,(spec[0],'group_polygon_components',*spec[3:]),identifier)
+    if any(token in json.dumps(details,ensure_ascii=False) for token in
+           ('PRIVATE_COMPONENTS','parcel_key','source_shape','business-',*fixture.COMPONENTS_SOURCES)):
+        raise SuiteError('polygon components public diagnostic leaked private input')
+    return details
+
+
 def mixed_overlay_profile(case):
     physical=fixture.mixed_fixture_profile(case)
+    if case==fixture.COMPONENTS_CASE:
+        return {**physical,'schema':fixture.COMPONENTS_SCHEMA,'definition':components_definition,
+                'diagnostic':components_diagnostic,'failure_validator':validate_components_failure,
+                'failures':fixture.COMPONENTS_FAILURES,'prefix':'components','checkpoint':'topology-components-checkpoint.json',
+                'input_nodes':('load_source',)}
     if case==fixture.ADJACENCY_CASE:return {**physical,'schema':fixture.ADJACENCY_SCHEMA,'definition':adjacency_definition,'diagnostic':adjacency_diagnostic,'failure_validator':validate_adjacency_failure,'failures':fixture.ADJACENCY_FAILURES,'prefix':'adjacency','checkpoint':'topology-adjacency-checkpoint.json','input_nodes':('load_source',)}
     if case==fixture.OVERLAY_CASE:return {**physical,'schema':fixture.OVERLAY_SCHEMA,'definition':overlay_definition,'diagnostic':overlay_diagnostic,'failure_validator':validate_overlay_failure,'failures':fixture.OVERLAY_FAILURES,'prefix':'overlay','checkpoint':'topology-overlay-checkpoint.json'}
     if case==fixture.DIFFERENCE_CASE:return {**physical,'schema':fixture.DIFFERENCE_SCHEMA,'definition':difference_definition,'diagnostic':difference_diagnostic,'failure_validator':validate_difference_failure,'failures':fixture.DIFFERENCE_FAILURES,'prefix':'difference','checkpoint':'topology-difference-checkpoint.json'}
@@ -1212,6 +1251,8 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     browser_env = env
     if case == fixture.DIFFERENCE_CASE:
         browser_env = dict(env, ADDP_TOPOLOGY_DIFFERENCE_BROWSER_SECONDS=str(min(240, remaining())))
+    elif case == fixture.COMPONENTS_CASE:
+        browser_env = dict(env, ADDP_TOPOLOGY_COMPONENTS_BROWSER_SECONDS=str(min(240, remaining())))
     remaining();browser_report=browser_runner(repository,browser_env,evidence);remaining()
     final=physical_runner(repository,env)
     if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay browser changed physical files or scans')
@@ -2099,6 +2140,13 @@ def validate_mixed_overlay_browser_raw(raw,evidence,case):
     rendered=obj(observation.get('rendered'),'intersection OL data');features=array(rendered.get('features'),'intersection OL features')
     if profile.get('line_only'):
         if rendered.get('projection')!='EPSG:3857' or len(features)!=count or any(v.get('geometry',{}).get('type')!='MultiLineString'for v in features) or type(rendered.get('painted_pixels'))is not int or rendered['painted_pixels']<=30 or type(rendered.get('shared_edge_pixels'))is not int or rendered['shared_edge_pixels']<=0:raise SuiteError('adjacency line rendering incomplete')
+    elif profile.get('polygon_parts'):
+        pixels=obj(rendered.get('polygon_pixels'),'polygon components pixel probes')
+        if (rendered.get('projection')!='EPSG:3857' or len(features)!=count
+            or any(v.get('geometry',{}).get('type')!='Polygon' for v in features)
+            or set(pixels)!={'filled','hole'} or type(pixels['filled']) is not int or pixels['filled']<=30
+            or type(pixels['hole']) is not int or pixels['hole']!=0):
+            raise SuiteError('polygon components fill or hole rendering differs')
     else:
         if rendered.get('projection')!='EPSG:3857' or len(features)!=count or sum(v.get('geometry',{}).get('type')=='GeometryCollection' for v in features)!=1 or any(type(rendered.get('collection_pixels',{}).get(k)) is not int or rendered['collection_pixels'][k]<=10 for k in ('point','line','polygon')):raise SuiteError('intersection mixed/collection rendering incomplete')
         collection=next(row['geometry']for row in expected if row['geometry']['type']=='GeometryCollection')
@@ -2113,7 +2161,7 @@ assert.deepEqual(keys(actual),keys(expected.map(row=>({properties:row.properties
     result=subprocess.run(['node','--input-type=module','-e',script,str(Path(__file__).resolve().parents[2]/'manager/frontend/e2e/geometry-preview-coordinate.js'),str(Path(__file__).resolve().parents[2]/'manager/frontend/e2e/geometry-preview-support.js')],input=json.dumps({'actual':features,'expected':expected,'preview':rows,'geometry_column':output['geometry_column']}),capture_output=True,text=True,timeout=30)
     if result.returncode:raise SuiteError('intersection raw OL coordinates/properties differ from exact independent projection')
     failures=array(raw.get('failures'),'intersection browser failures')
-    if [f.get('key') for f in failures]!=[s[0] for s in profile['failures']]:raise SuiteError('intersection browser needs four distinct failure causes')
+    if [f.get('key') for f in failures]!=[s[0] for s in profile['failures']]:raise SuiteError('mixed geometry browser failure causes differ')
     for record,failed,spec in zip(failures,evidence['failures'],profile['failures']):
         if record.get('execution_id')!=failed['execution_id']:raise SuiteError('intersection browser failure UUID differs')
         reads=array(record.get('observations'),'intersection owner/language pages')
@@ -2121,7 +2169,7 @@ assert.deepEqual(keys(actual),keys(expected.map(row=>({properties:row.properties
         for read in reads:
             value=obj(read.get('raw'),'intersection real failure response');execution=value if read['owner']=='develop' else obj(value.get('execution'),'intersection Monitor page')
             validate_failure(execution,failed['execution_id'],principal,spec)
-            if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'PRIVATE_OVERLAY','PRIVATE_DIFFERENCE','a_key','b_key','a_shape','b_shape','a_note',*profile['sources'])):raise SuiteError('intersection browser diagnostic/copy differs or leaks')
+            if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'PRIVATE_OVERLAY','PRIVATE_DIFFERENCE','PRIVATE_COMPONENTS','a_key','b_key','a_shape','b_shape','a_note',*profile['sources'])):raise SuiteError('intersection browser diagnostic/copy differs or leaks')
 
 
     validate_frozen_diagnostic_clipboards(failures)
@@ -2138,6 +2186,10 @@ def browser(repository, env, evidence):
         timeout = float(env.get('ADDP_TOPOLOGY_DIFFERENCE_BROWSER_SECONDS', '0'))
         if not 0 < timeout <= 240:
             raise SuiteError('execution_logs_browser_budget_invalid')
+    elif case == fixture.COMPONENTS_CASE:
+        timeout = float(env.get('ADDP_TOPOLOGY_COMPONENTS_BROWSER_SECONDS', '0'))
+        if not 0 < timeout <= 240:
+            raise SuiteError('polygon components browser budget invalid')
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/vector-topology-persistence.spec.js',
         '--config=playwright.online.config.js','--grep',pattern], cwd=repository/'console/frontend',
         env=dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(evidence)), stdout=sys.stderr, stderr=sys.stderr, timeout=timeout)
@@ -2161,6 +2213,9 @@ def browser(repository, env, evidence):
     else:binding=report
     if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
+    if case==fixture.COMPONENTS_CASE:
+        raw=obj(json.loads((path.parent/'topology-components-browser-raw.json').read_text()),'components browser raw')
+        validate_mixed_overlay_browser_raw(raw,evidence,case)
     if case==fixture.ADJACENCY_CASE:
         raw=obj(json.loads((path.parent/'topology-adjacency-browser-raw.json').read_text()),'adjacency browser raw');validate_mixed_overlay_browser_raw(raw,evidence,case)
     if case==fixture.DIFFERENCE_CASE:
@@ -2193,6 +2248,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         return run_nodes_lineage_permissions(repository, env, client, physical_runner)
     if fixture.topology_case(env)==fixture.VERTICES_CASE:
         return run_vertices_scenario(repository,env,client,physical_runner,browser_runner)
+    if fixture.topology_case(env)==fixture.COMPONENTS_CASE:
+        return run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,fixture.COMPONENTS_CASE)
     if fixture.topology_case(env)==fixture.ADJACENCY_CASE:return run_adjacency_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DIFFERENCE_CASE:
         return run_difference_scenario(repository,env,client,physical_runner,browser_runner)

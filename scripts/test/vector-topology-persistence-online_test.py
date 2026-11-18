@@ -2911,7 +2911,8 @@ class FilePublicationExitCaptureTest(unittest.TestCase):
                     client.issuer.request('POST','/test/develop-geopackage-create-approvals',(201,),{'expires_at':'2027-01-01T00:00:00Z'})
                     publication.grants.production_grant(3,'outputs/'+client.profile['target'],client.run_id)
                     publication.target=publication.grants.target(3,'outputs/'+client.profile['target'],'nfs')
-                    self.assertEqual(len(publication.grants.pending),6);write=publication.write;attempts=[]
+                    grant_count=len(client.profile['sources'])+1
+                    self.assertEqual(len(publication.grants.pending),grant_count);write=publication.write;attempts=[]
                     def journal():
                         attempts.append('write')
                         if mode=='every'or(mode=='first'and len(attempts)==1)or(mode=='final'and 'cleanup'in publication.evidence):
@@ -2921,7 +2922,7 @@ class FilePublicationExitCaptureTest(unittest.TestCase):
                         publication.cleanup()
                     self.assertEqual(publication.grants.pending,[])
                     self.assertTrue(all(row['revocation'] is not None for row in client.grants.values()))
-                    self.assertEqual(sum(path.endswith('/revoke')for _,path,_ in client.issuer.calls),6)
+                    self.assertEqual(sum(path.endswith('/revoke')for _,path,_ in client.issuer.calls),grant_count)
                     self.assertEqual(publication.evidence['cleanup']['result'],'failed')
 
 
@@ -3830,3 +3831,84 @@ class FilePublicationMachineFactsTest(unittest.TestCase):
         item=copy.deepcopy(client.sources[0]);item['full_name']='outside.gpkg'
         with self.assertRaises(m.SuiteError):publication.fact_snapshot(3,item,'outside.gpkg','source_prepared')
         self.assertFalse(client.observer.calls)
+
+
+class PolygonComponentsOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.case=m.fixture.COMPONENTS_CASE
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':self.case,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,
+                  'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
+        self.client=FormalFileClient(self.case)
+
+    def run_case(self):
+        client=self.client
+        with patch.object(m.fixture,'capture_publication',return_value={'state':'missing'}),patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer),patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
+            return m.run_scenario(Path('.'),self.env,client,lambda *a:mixed_physical(self.case),lambda *a:a[2])
+
+    def test_components_one_success_six_readonly_failures_one_scan_and_one_edge(self):
+        report=self.run_case()
+        self.assertEqual((report['result'],report['schema_version']),('passed','addp.polygon-components/v1'))
+        self.assertEqual([len(report[k]) for k in ('initial_scan_inventory','final_scan_inventory','meta_after')],[0,1,8])
+        self.assertEqual([(edge['source']['item_id'],edge['target']['item_id'])
+                          for edge in report['raw_lineage']['edges']],[(10,30)])
+        self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.COMPONENTS_FAILURES])
+        self.assertEqual(len(self.client.executions),7)
+        self.assertTrue(all([t['operator'] for t in f['definition']['tasks']]==['group_polygon_components','load']
+                            and len(f['source_lineage'])==1 for f in report['failures']))
+        self.assertEqual(report['publication']['cleanup']['result'],'passed')
+        self.assertEqual(len(self.client.grants),8)
+        self.assertTrue(all(g['revocation'] is not None for g in self.client.grants.values()))
+
+    def test_components_failure_publication_is_rejected(self):
+        self.client.mutate_failed=lambda result:result['metadata'].update(lineage_facts={'outputs':[{}]})
+        with self.assertRaisesRegex(m.SuiteError,'published output facts'):
+            self.run_case()
+
+    def test_components_browser_raw_requires_all_parts_fill_hole_sources_and_exact_copies(self):
+        report=self.run_case()
+        evidence=report['browser']
+        output=evidence['outputs'][0]
+        expected=evidence['expected']['result']
+        encoded=overlay_wire_and_projected(expected)
+        fields=list(expected[0]['properties'])
+        graph=report['raw_lineage']
+        observation={'port':'result','output_item_id':30,'sources':[{'item_id':v['id'],'item':v['before']} for v in evidence['sources']],
+             'output':output['before'],'graph':graph,'lineage_page':graph,'lineage_rendered':graph,
+             'lineage_canvas':{'rows':[{'text':n} for n in (evidence['sources'][0]['name'],output['name'])],'paths':[[[0,0],[1,1]]]},
+             'preview':{'preview_type':'table','data':{'page':1,'total':8,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed',
+                'preview_hint':'frontend_transform_required','geometry_columns':['geom'],'columns':['fid','geom',*fields],
+                'rows':[{**row['properties'],'fid':i+1,'geom':wire} for i,(row,wire) in enumerate(zip(expected,encoded['wire']))]}},
+             'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'polygon_pixels':{'filled':49,'hole':0}}}
+        failures=[{'key':f['key'],'execution_id':f['execution_id'],
+                   'observations':[{'owner':o,'locale':l,'raw':f['execution'] if o=='develop' else {'execution':f['monitor']}}
+                                   for o in ('develop','monitor') for l in ('zh-cn','en')]} for f in report['failures']]
+        raw={'schema_version':'addp.polygon-components-browser-raw/v1','case':self.case,'run_id':evidence['run_id'],
+             'execution_id':evidence['execution_id'],'result':'passed','stage':'complete','execution':self.client.success,
+             'observations':[observation],'publication_requests':[],'failures':frozen_literal_clipboards(failures)}
+        m.validate_mixed_overlay_browser_raw(raw,evidence,self.case)
+        changes=[
+            lambda r:r['observations'][0]['rendered']['polygon_pixels'].update(hole=1),
+            lambda r:r['observations'][0]['rendered']['features'].pop(),
+            lambda r:r['observations'][0]['preview']['data']['rows'][1].update(component_id=1),
+            lambda r:r['observations'][0]['preview']['data']['rows'][2].update(quantity=0),
+            lambda r:r['observations'][0]['graph']['edges'][0]['source'].update(item_id=11),
+            lambda r:r['failures'].pop(),
+            lambda r:r['failures'][-1]['observations'][0].update(clipboard='wrong'),
+        ]
+        for change in changes:
+            broken=copy.deepcopy(raw);change(broken)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):
+                m.validate_mixed_overlay_browser_raw(broken,evidence,self.case)
+
+    def test_components_playwright_discovery_selects_only_this_case(self):
+        import os, subprocess
+        repository=Path(__file__).resolve().parents[2]
+        result=subprocess.run(['npm','exec','--','playwright','test','e2e/online/vector-topology-persistence.spec.js',
+              '--config=playwright.online.config.js','--grep',m.fixture.COMPONENTS_TITLE+'$','--list','--reporter=json'],
+              cwd=repository/'console/frontend',env={**os.environ,**self.env},capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        def specs(suites):
+            return [v for suite in suites for v in [*suite.get('specs',[]),*specs(suite.get('suites',[]))]]
+        self.assertEqual([v['title'] for v in specs(json.loads(result.stdout)['suites'])],[m.fixture.COMPONENTS_TITLE])

@@ -496,6 +496,102 @@ test('多距缓冲独立普通User单成果与重名拒绝', async ({page}) => {
 // Literal acceptance expectations: do not derive these from the production formatter.
 const inputDiagnosticText = {
 
+  "components-id": {
+    "zh-cn": [
+      "待分组的面图层或来源标识配置不符合要求。",
+      "面连通分组",
+      "源图层（input_gdf）",
+      "",
+      "请提供唯一活动几何列、有效非空有限二维面，并将 id_field 指向非空唯一的非几何标量列；允许空表。"
+    ],
+    "en": [
+      "The polygon layer or source identifier configuration is invalid.",
+      "Group connected polygon parts",
+      "Source layer (input_gdf)",
+      "",
+      "Provide one active geometry column, valid non-empty finite XY polygons and unique non-null scalar id_field values; empty tables are allowed."
+    ]
+  },
+  "components-crs": {
+    "zh-cn": [
+      "面连通分组要求已知投影坐标系和匹配、有限且为正的水平单位。",
+      "面连通分组",
+      "",
+      "",
+      "请显式重投影到符合要求的投影坐标系。"
+    ],
+    "en": [
+      "Polygon component grouping requires a known projected CRS with matching finite positive horizontal units.",
+      "Group connected polygon parts",
+      "",
+      "",
+      "Reproject explicitly to a supported projected CRS."
+    ]
+  },
+  "components-overlap": {
+    "zh-cn": [
+      "源面存在正面积重叠、包含或重复，无法按共边分组。",
+      "面连通分组",
+      "源图层（input_gdf）",
+      "",
+      "请先执行面叠检查并显式处理重叠、包含或重复面，不自动融合或修复。"
+    ],
+    "en": [
+      "Areal overlaps, containment or duplicate polygons prevent shared-boundary grouping.",
+      "Group connected polygon parts",
+      "Source layer (input_gdf)",
+      "",
+      "Run polygon overlap checking and resolve overlaps, containment or duplicates explicitly; no automatic merge or repair."
+    ]
+  },
+  "components-source-id": {
+    "zh-cn": [
+      "固定输出字段 source_id 与源字段重名。",
+      "面连通分组",
+      "源图层（input_gdf）",
+      "source_id",
+      "请先显式重命名源字段 source_id，不会覆盖或自动改名。"
+    ],
+    "en": [
+      "The fixed output field source_id conflicts with a source column.",
+      "Group connected polygon parts",
+      "Source layer (input_gdf)",
+      "source_id",
+      "Rename the source field source_id explicitly; fields are never overwritten or renamed automatically."
+    ]
+  },
+  "components-part-no": {
+    "zh-cn": [
+      "固定输出字段 part_no 与源字段重名。",
+      "面连通分组",
+      "源图层（input_gdf）",
+      "part_no",
+      "请先显式重命名源字段 part_no，不会覆盖或自动改名。"
+    ],
+    "en": [
+      "The fixed output field part_no conflicts with a source column.",
+      "Group connected polygon parts",
+      "Source layer (input_gdf)",
+      "part_no",
+      "Rename the source field part_no explicitly; fields are never overwritten or renamed automatically."
+    ]
+  },
+  "components-component-id": {
+    "zh-cn": [
+      "固定输出字段 component_id 与源字段重名。",
+      "面连通分组",
+      "源图层（input_gdf）",
+      "component_id",
+      "请先显式重命名源字段 component_id，不会覆盖或自动改名。"
+    ],
+    "en": [
+      "The fixed output field component_id conflicts with a source column.",
+      "Group connected polygon parts",
+      "Source layer (input_gdf)",
+      "component_id",
+      "Rename the source field component_id explicitly; fields are never overwritten or renamed automatically."
+    ]
+  },
   "adjacency-id": {
     "zh-cn": [
       "待检查的面图层或来源标识配置不符合要求。",
@@ -866,6 +962,7 @@ async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
   await expect(panel).not.toContainText(/PRIVATE_DIAGNOSTIC|Traceback|site-packages|\/tmp\/|99\.0|parcel_shape|parcel_key|rings-(conflict|invalid)\.gpkg|相邻乙|重复丙|地块属性|普通业务几何/)
   if(['a-id','b-id','crs','fields'].includes(key))await expect(panel).not.toContainText(/PRIVATE_OVERLAY|a_key|b_key|a_shape|b_shape|a_note|overlay-(a|b|crs|fields)\.gpkg/)
   if(key.startsWith('dissolve-'))await expect(panel).not.toContainText(/PRIVATE_DISSOLVE|parcel_key|parcel_shape|dissolve-(source|duplicate-id|invalid|crs|fields)\.gpkg/)
+  if(key.startsWith('components-'))await expect(panel).not.toContainText(/PRIVATE_COMPONENTS|source_shape|business-|components-.*\.gpkg/)
   if(key.startsWith('difference-'))await expect(panel).not.toContainText(/PRIVATE_DIFFERENCE|a_key|a_shape|b_shape|difference-(a|b|invalid|mask|crs)\.gpkg/)
   return expected
 }
@@ -880,14 +977,14 @@ async function assertInputDiagnosticViewport(panel) {
 async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
   expect(evidence.case).toBe(caseName)
-  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve',difference=caseName==='geometry-difference',adjacency=caseName==='polygon-adjacency'
-  const keys=adjacency?['adjacency-id','adjacency-empty','adjacency-crs','adjacency-overlap']:difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
+  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve',difference=caseName==='geometry-difference',adjacency=caseName==='polygon-adjacency',components=caseName==='polygon-components'
+  const keys=components?["components-id", "components-crs", "components-overlap", "components-source-id", "components-part-no", "components-component-id"]:adjacency?['adjacency-id','adjacency-empty','adjacency-crs','adjacency-overlap']:difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
   expect(evidence.executions.map(run=>run.key)).toEqual(keys)
   expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(keys.length)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
   // The combined overlay scene is already logged in; standalone diagnostics still log in here.
-  let loggedIn=(overlay||dissolve||difference||adjacency)&&supplied!==null
+  let loggedIn=(overlay||dissolve||difference||adjacency||components)&&supplied!==null
   const observations=[],publicationRequests=[]
   page.on('request',request=>{
     const path=new URL(request.url()).pathname
@@ -938,11 +1035,12 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
       observations.push({key:run.key,owner,locale,execution_id:run.execution_id,raw,clipboard,screenshot})
     }
   }
-  if(dissolve) expect(observations).toHaveLength(32)
+  if(components) expect(observations).toHaveLength(24)
+  else if(dissolve) expect(observations).toHaveLength(32)
   else if(rings) expect(observations).toHaveLength(8)
   else expect(observations).toHaveLength(16)
   expect(publicationRequests).toEqual([])
-  if(adjacency)return observations
+  if(adjacency||components)return observations
   if(overlay||dissolve||difference)return observations
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
     ...evidence,schema_version:(rings?'addp.polygon-rings-input-diagnostics':'addp.operator-input-diagnostics')+'-browser/v1',result:'passed',observations},null,2)+'\n')
@@ -1824,6 +1922,7 @@ async function assertOverlayCollectionPixels(renderer) {
 }
 
 const mixedOverlayCases={
+  'polygon-components':{schema:'addp.polygon-components',sourceCount:7,resultCount:8,prefix:'components',raw:'topology-components-browser-raw.json',inputCount:1,polygonParts:true},
   'polygon-adjacency':{schema:'addp.polygon-adjacency',sourceCount:5,resultCount:5,prefix:'adjacency',raw:'topology-adjacency-browser-raw.json',inputCount:1,lineOnly:true},
   'intersection-overlay':{schema:'addp.intersection-overlay',sourceCount:4,resultCount:16,prefix:'intersection',raw:'topology-overlay-browser-raw.json'},
   'geometry-difference':{schema:'addp.geometry-difference',sourceCount:5,resultCount:9,prefix:'difference',raw:'topology-difference-browser-raw.json'},
@@ -1886,7 +1985,13 @@ async function verifyMixedOverlayCase(page,caseName) {
     observation.rendered={projection:rendered.projection,features:rendered.features.map(({properties,type,coordinates})=>({properties,geometry:{type,coordinates}})),painted_pixels:rendered.painted_pixels,shared_edge_pixels:rendered.new_segment_pixels}
   }else observation.rendered = await assertOverlayMap(renderer, expected)
   await page.screenshot({ path: resolve(directory, config.prefix+'-map.png') }); persist('map_verified')
-  if(!config.lineOnly){
+  if(config.polygonParts){
+    observation.rendered.polygon_pixels=await assertComponentsPolygonPixels(renderer)
+    await expect(table.locator('thead')).toContainText('geometry')
+    await page.screenshot({path:resolve(directory,'components-fill-map.png')})
+    persist('polygon_fill_verified')
+  }
+  if(!config.lineOnly&&!config.polygonParts){
     observation.rendered.collection_pixels = await assertOverlayCollectionPixels(renderer)
     await page.screenshot({ path: resolve(directory, config.prefix+'-collection-map.png') }); persist('collection_map_verified')
   }
@@ -2049,3 +2154,48 @@ test('顶点提取独立普通User三Point成果及七失败保护',async({page}
 })
 
 test('面邻检查独立普通User单源线成果及四失败保护',async({page})=>verifyMixedOverlayCase(page,'polygon-adjacency'))
+
+
+async function assertComponentsPolygonPixels(renderer) {
+  const probes=[['filled',24,0.5],['hole',23,3]].map(([key,x,y])=>[
+    key,webMercatorPreviewGeometry({type:'Point',coordinates:[x,y]}).coordinates
+  ])
+  await renderer.evaluate(element=>{
+    const value=element.__vueParentComponent.setupState.mapInstance, map=value?.value||value
+    const feature=map.getLayers().getArray().flatMap(layer=>layer.getSource?.()?.getFeatures?.()||[])
+      .find(candidate=>candidate.getGeometry().getType()==='Polygon'&&candidate.getGeometry().getCoordinates().length===2)
+    if(!feature)throw new Error('polygon components hole feature missing')
+    map.getView().fit(feature.getGeometry().getExtent(),{size:map.getSize(),padding:[32,32,32,32],duration:0})
+    map.renderSync()
+  })
+  let pixels
+  await expect.poll(async()=>{
+    pixels=await renderer.evaluate((element,probes)=>{
+      const value=element.__vueParentComponent?.setupState?.mapInstance, map=value?.value||value
+      if(!map||map.getView().getAnimating())return null
+      const layer=map.getLayers().getArray().find(candidate=>candidate.getSource?.()?.getFeatures?.().length===8)
+      const context=layer?.getRenderer()?.context
+      if(!context||!layer.getVisible()||layer.getOpacity()<=0)return null
+      const viewport=map.getViewport().getBoundingClientRect(),rectangle=context.canvas.getBoundingClientRect()
+      return Object.fromEntries(probes.map(([key,coordinate])=>{
+        const pixel=map.getPixelFromCoordinate(coordinate)
+        const x=Math.round((viewport.left+pixel[0]-rectangle.left)*context.canvas.width/rectangle.width)
+        const y=Math.round((viewport.top+pixel[1]-rectangle.top)*context.canvas.height/rectangle.height)
+        if(x<3||y<3||x+4>context.canvas.width||y+4>context.canvas.height)return [key,-1]
+        const data=context.getImageData(x-3,y-3,7,7).data
+        let count=0
+        for(let i=3;i<data.length;i+=4)if(data[i]>0)count++
+        return [key,count]
+      }))
+    },probes)
+    return Number.isInteger(pixels?.filled)&&pixels.filled>30&&pixels.hole===0
+  }).toBe(true)
+  return pixels
+}
+
+test('面连通分组独立普通User单源面成果及六失败保护',async({page})=>{
+  const seconds=Number(process.env.ADDP_TOPOLOGY_COMPONENTS_BROWSER_SECONDS)
+  if(!Number.isFinite(seconds)||seconds<=0||seconds>240)throw new Error('polygon components browser budget missing or invalid')
+  test.setTimeout(Math.floor(seconds*1000))
+  await verifyMixedOverlayCase(page,'polygon-components')
+})

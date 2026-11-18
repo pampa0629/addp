@@ -2537,13 +2537,27 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in nodes_required.items():
         if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology nodes case contract incomplete: '+relative)
-    adjacency_required = {'.github/workflows/online-t4-gates.yml': ('          - polygon-adjacency',), 'scripts/test/online-hosted-topology-gate.sh': ('|polygon-adjacency)',), 'business/scripts/online-vector-topology-fixture.py': ('ADJACENCY_FAILURES', 'def adjacency_features(', 'def adjacency_worker(', "'source_geometry_name':'source_shape'"), 'scripts/test/vector-topology-persistence-online.py': ('def adjacency_definition(', 'def validate_adjacency_failure(', "'input_nodes':('load_source',)", "profile.get('line_only')", 'for index in dict.fromkeys(spec[1:3]):'), 'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面邻检查独立普通User单源线成果及四失败保护', 'topology-adjacency-browser-raw.json', 'shared_edge_pixels', 'assertExtensionLineMap(renderer,expected,[2,1])'), 'engines/geopython-workflow/test_topology_operators.py': ('test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr',), 'scripts/test/vector-topology-persistence-online_test.py': ('class AdjacencyOnlineTest', 'class AdjacencyBrowserRawTest'), 'scripts/test/online-hosted-topology-gate_test.py': ('test_adjacency_case_is_bound_without_old_business_or_capacity',), 'scripts/test/online-vector-topology-fixture_test.py': ('class AdjacencyFixtureTest',)}
+    adjacency_required = {'.github/workflows/online-t4-gates.yml': ('          - polygon-adjacency',), 'scripts/test/online-hosted-topology-gate.sh': ('|polygon-adjacency|',), 'business/scripts/online-vector-topology-fixture.py': ('ADJACENCY_FAILURES', 'def adjacency_features(', 'def adjacency_worker(', "'source_geometry_name':'source_shape'"), 'scripts/test/vector-topology-persistence-online.py': ('def adjacency_definition(', 'def validate_adjacency_failure(', "'input_nodes':('load_source',)", "profile.get('line_only')", 'for index in dict.fromkeys(spec[1:3]):'), 'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面邻检查独立普通User单源线成果及四失败保护', 'topology-adjacency-browser-raw.json', 'shared_edge_pixels', 'assertExtensionLineMap(renderer,expected,[2,1])'), 'engines/geopython-workflow/test_topology_operators.py': ('test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr',), 'scripts/test/vector-topology-persistence-online_test.py': ('class AdjacencyOnlineTest', 'class AdjacencyBrowserRawTest'), 'scripts/test/online-hosted-topology-gate_test.py': ('test_adjacency_case_is_bound_without_old_business_or_capacity',), 'scripts/test/online-vector-topology-fixture_test.py': ('class AdjacencyFixtureTest',)}
     adjacency_required['scripts/test/vector-topology-persistence-online.py'] += ('def run_adjacency_scenario(', 'def run_prepared_file_scenario(', 'class _FilePublication:', 'publication=_FilePublication(env,client,case)')
-    adjacency_required['business/scripts/online-vector-topology-fixture.py'] += ('FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE)', 'publication_staging=case in FILE_PUBLICATION_CASES')
+    adjacency_required['business/scripts/online-vector-topology-fixture.py'] += ('FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE,COMPONENTS_CASE)', 'publication_staging=case in FILE_PUBLICATION_CASES')
     adjacency_required['scripts/test/vector-topology-persistence-online_test.py'] += ('test_adjacency_formal_stages_separate_initializer_and_business_identity_and_scans', 'test_adjacency_missing_initializer_or_wrong_case_never_uses_legacy_scan_route', 'test_adjacency_unknown_approval_is_once_with_retained_original_intent')
     for relative,fragments in adjacency_required.items():
         if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology adjacency independent case contract incomplete: '+relative)
+    components_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - polygon-components', '"$TOPOLOGY_CASE" == polygon-components'),
+        'scripts/test/online-hosted-topology-gate.sh': ('|polygon-components)',),
+        'business/scripts/online-vector-topology-fixture.py': ('COMPONENTS_FAILURES', 'def components_features(', 'def components_field_types('),
+        'scripts/test/vector-topology-persistence-online.py': ('def components_definition(', 'def validate_components_failure(', 'topology-components-browser-raw.json'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面连通分组独立普通User单源面成果及六失败保护', 'assertComponentsPolygonPixels('),
+        'system/backend/cmd/online-test-fixture/main.go': ('case "geometry-difference", "polygon-adjacency", "polygon-components":',),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_polygon_components_t4_one_save_six_readonly_refusals_independent_ogr',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class PolygonComponentsOnlineTest',),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_components_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative, fragments in components_required.items():
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
+            raise RegistrationError('topology polygon components independent case contract incomplete: '+relative)
     difference_required = {
         '.github/workflows/online-t4-gates.yml': ('          - geometry-difference',),
         'scripts/test/online-hosted-topology-gate.sh': ('geometry-difference|polygon-dissolve',),

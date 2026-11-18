@@ -11465,3 +11465,55 @@ def test_polygon_components_shared_edge_does_not_require_representable_float64_l
     # Existing adjacency measures length and must keep its original failure rule.
     with pytest.raises(RuntimeError,match='finite positive shared length'):
         adjacency(frame)
+
+
+def test_polygon_components_t4_one_save_six_readonly_refusals_independent_ogr(tmp_path):
+    import importlib
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    owner=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    case=fixture.COMPONENTS_CASE
+    root=tmp_path/'owned'
+    root.mkdir();(root/'outputs').mkdir();(root/'.addp-publication').mkdir(mode=0o700)
+    (root/'.addp-online-owner').touch()
+    seed=fixture.worker('seed',root,case)
+
+    def local_definition(failure=None):
+        workflow=owner.components_definition(fixture.COMPONENTS_SOURCES,'unused',failure)
+        connection={'engine_type':'nfs','mount_path':str(root)}
+        for task in workflow['tasks']:
+            params=task['params']
+            if task['operator']=='load':
+                params.update(connection_info=connection,path=params.pop('locator'))
+            elif task['operator']=='save':
+                params.pop('target_parent_locator')
+                params.update(connection_info=connection,path='outputs/'+params.pop('target_name'))
+        return workflow
+
+    result=execute_workflow(local_definition())
+    assert result['status']=='success',result
+    native=fixture.worker('verify',root,case)
+    assert native['sources']==seed['sources']
+    rows=native['targets'][fixture.COMPONENTS_TARGET]['features']
+    assert [row['properties']['component_id'] for row in rows]==[1,2,1,1,3,2,4,4]
+    assert rows[0]['properties']['source_id']==rows[1]['properties']['source_id']==2**40+9
+    assert rows[2]['properties']['note'] is None and rows[2]['properties']['quantity'] is None
+    for spec in fixture.COMPONENTS_FAILURES:
+        workflow=local_definition(spec[0])
+        assert [task['operator'] for task in workflow['tasks']]==['group_polygon_components','load']
+        failure=execute_workflow(workflow)
+        assert (failure['status'],failure['error_code'],failure['diagnostic'])==(
+            'failed','INVALID_PARAMS',owner.components_diagnostic(spec)),failure
+        assert fixture.worker('verify',root,case)==native
+    archive=tmp_path/'evidence'
+    archive.mkdir()
+    fixture.archive_physical_evidence(root,archive,native,case)
+    assert len(list((archive/'topology-physical').rglob('*.gpkg')))==8
+    from osgeo import ogr
+    ds=ogr.Open(str(root/'outputs'/fixture.COMPONENTS_TARGET),1)
+    layer=ds.GetLayer(0)
+    feature=layer.GetFeature(2)
+    feature.SetField('component_id',1)
+    assert layer.SetFeature(feature)==0
+    feature=layer=ds=None
+    with pytest.raises(fixture.FixtureError,match='attributes/identities'):
+        fixture.worker('verify',root,case)

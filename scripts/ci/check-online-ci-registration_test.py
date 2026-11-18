@@ -2341,8 +2341,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {'vector-topology-persistence'}
         CHECK.validate_vector_topology_profile(self.repository, registered)
         for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'vector-topology-persistence'"),
-            (paths[0], '          - polygon-adjacency'), (paths[3], '|polygon-adjacency)'),
-            (paths[4], 'def adjacency_definition('), (paths[4], 'class _FilePublication:'), (paths[4], 'def run_prepared_file_scenario('), (paths[5], 'FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE)'), (paths[13], 'test_adjacency_missing_initializer_or_wrong_case_never_uses_legacy_scan_route'), (paths[4], "'input_nodes':('load_source',)"),
+            (paths[0], '          - polygon-components'), (paths[3], '|polygon-components)'),
+            (paths[5], 'def components_features('), (paths[4], 'def components_definition('),
+            (paths[7], 'assertComponentsPolygonPixels('), (paths[8], 'case "geometry-difference", "polygon-adjacency", "polygon-components":'),
+            (paths[9], 'test_polygon_components_t4_one_save_six_readonly_refusals_independent_ogr'),
+            (paths[0], '          - polygon-adjacency'), (paths[3], '|polygon-adjacency|'),
+            (paths[4], 'def adjacency_definition('), (paths[4], 'class _FilePublication:'), (paths[4], 'def run_prepared_file_scenario('), (paths[5], 'FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE,COMPONENTS_CASE)'), (paths[13], 'test_adjacency_missing_initializer_or_wrong_case_never_uses_legacy_scan_route'), (paths[4], "'input_nodes':('load_source',)"),
             (paths[5], 'ADJACENCY_FAILURES'), (paths[5], 'def adjacency_features('),
             (paths[7], 'shared_edge_pixels'), (paths[9], 'test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr'),
             (paths[13], 'class AdjacencyBrowserRawTest'), (paths[15], 'test_adjacency_case_is_bound_without_old_business_or_capacity'), (paths[16], 'class AdjacencyFixtureTest'),

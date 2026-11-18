@@ -210,7 +210,7 @@ on:
           - full
           - bounded-recovery
       topology_source_commit:
-        description: Full ancestor source SHA, required for geometry-difference
+        description: Full ancestor source SHA, required for geometry-difference and polygon-components
         required: false
         type: string
         default: ''
@@ -230,6 +230,7 @@ on:
           - endpoint-snapping
           - vertex-extraction
           - polygon-adjacency
+          - polygon-components
           - polygon-rings
           - polygon-rings-input-diagnostics
           - line-trimming
@@ -2618,8 +2619,8 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.topology_source_commit }}
           TOPOLOGY_CASE: ${{ inputs.topology_case }}
         run: |
-          if [[ "$TOPOLOGY_CASE" == geometry-difference ]]; then
-            [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Geometry difference requires a full lowercase source SHA' >&2; exit 1; }
+          if [[ "$TOPOLOGY_CASE" == geometry-difference || "$TOPOLOGY_CASE" == polygon-components ]]; then
+            [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'This topology case requires a full lowercase source SHA' >&2; exit 1; }
           else
             [[ -z "$SOURCE_COMMIT" || "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Topology source must be a full lowercase SHA' >&2; exit 1; }
           fi
