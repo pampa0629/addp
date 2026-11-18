@@ -10,11 +10,17 @@ Transfer 仅新增 MySQL T4 使用永久 PostgreSQL 与 MySQL Engine Instance，
 
 ## transfer-relational-sql-etl
 
-仅手动 Hosted `ubuntu-24.04` x86_64、共享 `scripts/utils/hosted-online.sh`、独占 Infra／非默认 Tenant。System helper 建身份，独立 Provisioner 正式登记 PG／MongoDB／Doris／ClickHouse／MinIO，随后清 Token；消费 User 无 `system.engine.read/execute`，仅读同 Tenant Meta 投影。Business 仅管理自有容器／源／目标和 tmpfs MinIO，不调用 System；DB 账号只读源、只在指定 schema 创建／管理自有目标。
+仅手动 Hosted `ubuntu-24.04` x86_64、共享 `scripts/utils/hosted-online.sh`、独占 Infra／非默认 Tenant。System helper 建身份，独立 Provisioner 正式登记 PG／MongoDB／Doris／ClickHouse／MinIO／RustFS，随后清 Token；消费 User 无 `system.engine.read/execute`，仅读同 Tenant Meta 投影。Business 仅管理自有容器／源／目标和 tmpfs MinIO，不调用 System；DB 账号只读源、只在指定 schema 创建／管理自有目标。
 
 Console 真实选源→固定 SQL（无 MQL／语言下拉／高级编辑）→基础构造器投影与两参数过滤→PG snapshot。保存仅标准 `source.query` statement／类型化 parameters，decimal 为字符串；映射只有投影字段，Worker 准确读写 2 行，独立物理核行集合／金额／列序。任务正式删／404，自有业务容器／Infra／卷／凭据清理，身份／Engine 随平台库销毁。
 
 标准 `make test-transfer-online-runner`、`make test-online-runner`、`make test-platform`；T4 `make test-online ONLINE_SUITE=transfer-relational-sql-etl`。先等 Transfer Security 投影、Manager 就绪／Worker 注册和同提交 preflight，失败不建任务／改保护状态。ClickHouse 就绪使用原 240 秒共享预算，探针 NETWORK_ERROR(210)仅在预算内等待；各准备阶段有界、初始化不重试部分写入，诊断只私有保存并清理，不在本页重复命令时限表。具体阶段／报告 schema 以原 Runner 登记为准。
+
+### RustFS 单对象导入
+
+准备者深度扫描 `addp-demo/tables/订单.parquet` 并签发精确对象读取 Grant。独立检查者通过正式只读预检，消费 User 手动执行一次 bounded snapshot，核 PostgreSQL 新表与 Manager 预览 API 的 9 列、20 行及金额 33,880.00，PostgreSQL 日期列为 `DATE`。核同一 execution 的初始读取 Grant、旁观者预览拒绝，以及源和目标撤权后的拒绝。
+
+上述断言及撤权复核全部完成后立即写 `rustfs-orders.json`（`addp.transfer-rustfs-orders/v1`），记录提交、Run、身份、扫描／任务／执行／Grant 标识、数据摘要和断言结果。后续用例失败时仍随 Hosted 证据上传。整套 T4 结论及设施清理由作业汇总判定。
 
 ### Manager 私有导入
 

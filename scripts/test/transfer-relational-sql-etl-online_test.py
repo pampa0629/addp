@@ -1416,23 +1416,31 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                        "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only", "ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS": "30",
                        "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN": "fixture-initializer"}
         client = object()
+        rustfs_proof = {"source_item_id": 61, "source_scan_execution_id": str(uuid.uuid4()),
+                        "source_grant_id": str(uuid.uuid4()), "task_id": 42, "execution_id": str(uuid.uuid4()),
+                        "target_item_id": 62, "initial_grant_id": str(uuid.uuid4()),
+                        "fields": 9, "rows": 20, "amount": "33880.00"}
+        source_commit = "a" * 40
         def imported(*args):
             args[4].extend([42, 10])
             return {}
         def interrupt(*args):
             ONLINE.interrupt_online(ONLINE.signal.SIGTERM, None)
         with ExitStack() as stack:
+            directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+            environment["ADDP_ONLINE_ARTIFACT_DIR"] = str(directory)
             stack.enter_context(patch.dict(ONLINE.os.environ, environment))
             stack.enter_context(patch.object(ONLINE, "GatewayClient", return_value=client))
             stack.enter_context(patch.object(ONLINE, "wait_manager_read_boundary"))
             stack.enter_context(patch.object(ONLINE, "wait_transfer_read_boundary"))
             handlers = stack.enter_context(patch.object(ONLINE.signal, "signal"))
-            stack.enter_context(patch.object(ONLINE, "validate_user_identity"))
+            stack.enter_context(patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "33"}))
             stack.enter_context(patch.object(ONLINE, "validate_engine"))
             owned = stack.enter_context(patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]))
             stack.enter_context(patch.object(ONLINE, "wait_for_scan"))
             stack.enter_context(patch.object(ONLINE.REGISTRATION, "initialize_exact_record_read_grants"))
-            stack.enter_context(patch.object(ONLINE, "run_rustfs_orders"))
+            stack.enter_context(patch.object(ONLINE, "run_rustfs_orders", return_value=rustfs_proof))
+            stack.enter_context(patch.object(ONLINE.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=source_commit + "\n")))
             stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip"))
             stack.enter_context(patch.object(ONLINE, "find_item"))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
@@ -1443,6 +1451,17 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             cleanup = stack.enter_context(patch.object(ONLINE, "cleanup_tasks"))
             stack.enter_context(patch.object(ONLINE.sys, "stderr"))
             self.assertEqual(ONLINE.main(), 1)
+            self.assertEqual(json.loads((directory / "rustfs-orders.json").read_text()), {
+                "schema_version": "addp.transfer-rustfs-orders/v1", "result": "passed", "run_id": "run-123",
+                "git_commit": source_commit, "tenant_id": 42, "principal_id": "33",
+                "source_engine_id": 5, "source_object": "addp-demo/tables/订单.parquet",
+                "target_engine_id": 3, "target_table": "public.addp_online_rustfs_orders",
+                "checks": {"read_only_precheck": True, "postgresql_values_and_column_types": True,
+                           "manager_preview_values_and_columns": True, "source_read_denied_before_grant": True,
+                           "outsider_source_read_denied": True, "outsider_preview_denied": True,
+                           "source_read_denied_after_revoke": True, "target_preview_denied_after_revoke": True},
+                **rustfs_proof,
+            })
         self.assertEqual(handlers.call_args_list[0].args, (ONLINE.signal.SIGINT, ONLINE.interrupt_online))
         owned.assert_called_with(client, exact_name=ONLINE.task_name("run-123"))
         cleanup.assert_called_once_with(client, [42, 10, 11])
@@ -1492,12 +1511,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             return {"task_deleted_and_read_back_404": True}
         output = io.StringIO()
         with ExitStack() as stack:
+            environment["ADDP_ONLINE_ARTIFACT_DIR"] = stack.enter_context(tempfile.TemporaryDirectory())
             stack.enter_context(patch.dict(ONLINE.os.environ, environment))
             stack.enter_context(patch.object(ONLINE, "GatewayClient", return_value=client))
             stack.enter_context(patch.object(ONLINE, "wait_manager_read_boundary"))
             stack.enter_context(patch.object(ONLINE, "wait_transfer_read_boundary", side_effect=ready))
             stack.enter_context(patch.object(ONLINE.signal, "signal"))
-            stack.enter_context(patch.object(ONLINE, "validate_user_identity", return_value={}))
+            stack.enter_context(patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "33"}))
             stack.enter_context(patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]))
             stack.enter_context(patch.object(ONLINE, "suite_task_ids", return_value=[]))
             stack.enter_context(patch.object(ONLINE, "wait_for_scan", return_value="scan-id"))

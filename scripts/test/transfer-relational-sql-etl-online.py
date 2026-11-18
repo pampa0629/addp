@@ -1153,20 +1153,24 @@ def run_rustfs_orders(client, checker, initializer, outsider, identity, reposito
                     if execution_id is not None and observed_id != execution_id:
                         raise SuiteError("RustFS task execution history differs from the start response")
                     current, _ = import_grant_history(initializer, target_engine, identity, observed_id, target=RUSTFS_ORDERS_TARGET)
-                    if current is not None and not current.get("revocation"):
+                    if current is not None:
                         grant_id = str(uuid.UUID(current["request_id"]))
-                        initializer.request("POST", f"{output_grants}/{grant_id}/revoke", (200,),
-                                            {"reason": "Finish disposable RustFS orders result test"})
-                        withdrawn, _ = import_grant_history(initializer, target_engine, identity, observed_id, target=RUSTFS_ORDERS_TARGET)
-                        if not withdrawn or withdrawn["request_id"] != grant_id or not withdrawn.get("revocation"):
+                        if not current.get("revocation"):
+                            initializer.request("POST", f"{output_grants}/{grant_id}/revoke", (200,),
+                                                {"reason": "Finish disposable RustFS orders result test"})
+                            current, _ = import_grant_history(initializer, target_engine, identity, observed_id, target=RUSTFS_ORDERS_TARGET)
+                        if not current or current["request_id"] != grant_id or not current.get("revocation"):
                             raise SuiteError("RustFS initial Grant revocation was not recorded")
-                        if preview_route:
-                            client.request("GET", preview_route, (403,))
+                    if preview_route:
+                        if not current or current["request_id"] != grant["request_id"]:
+                            raise SuiteError("RustFS initial Grant revocation differs from the verified Grant")
+                        client.request("GET", preview_route, (403,))
                 elif execution_id is not None:
                     raise SuiteError("RustFS task history omitted the accepted execution")
     return {"source_item_id": item["id"], "source_scan_execution_id": scan, "source_grant_id": request_id,
             "task_id": task_id, "execution_id": execution_id, "target_item_id": target_item["id"],
-            "initial_grant_id": grant["request_id"], "fields": 9, "rows": 20, "amount": "33880.00"}
+            "initial_grant_id": grant["request_id"], "fields": len(physical["columns"]),
+            "rows": execution["records_written"], "amount": physical["amount_total"]}
 
 
 def verify_import_target_access(client, engine_id, visible):
@@ -2443,6 +2447,27 @@ def main() -> int:
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         rustfs_orders = run_rustfs_orders(client, checker, initializer, outsider, identity_report, repository,
                                          rustfs_engine_id, engine_id, owned_name, convergence_timeout, owned_ids)
+        try:
+            source_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository,
+                                           capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired as error:
+            raise SuiteError("RustFS order receipt could not read the source commit") from error
+        commit = source_commit.stdout.strip()
+        if source_commit.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise SuiteError("RustFS order receipt requires the actual source commit")
+        receipt = {
+            "schema_version": "addp.transfer-rustfs-orders/v1", "result": "passed", "run_id": run_id,
+            "git_commit": commit, "tenant_id": tenant_id, "principal_id": identity_report["principal_id"],
+            "source_engine_id": rustfs_engine_id, "source_object": RUSTFS_ORDERS_SOURCE,
+            "target_engine_id": engine_id, "target_table": f"public.{RUSTFS_ORDERS_TARGET}",
+            "checks": {"read_only_precheck": True, "postgresql_values_and_column_types": True,
+                       "manager_preview_values_and_columns": True, "source_read_denied_before_grant": True,
+                       "outsider_source_read_denied": True, "outsider_preview_denied": True,
+                       "source_read_denied_after_revoke": True, "target_preview_denied_after_revoke": True},
+            **rustfs_orders,
+        }
+        artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "rustfs-orders.json"
+        artifact.write_text(json.dumps(receipt, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
         binary = run_binary_roundtrip(client, initializer, repository, run_id, identity_report, engine_id, source, owned_name,
                                       convergence_timeout, owned_ids)
         wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
