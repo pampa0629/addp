@@ -114,27 +114,32 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 ## 独立持久化专项公共前提
 
-本节仅适用于下列五项：[矢量栅格化](#vector-rasterize-persistence)、[整数栅格分区统计](分区统计.md#raster-zonal-statistics-persistence)、[邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence)、[矢量分区统计](分区统计.md#vector-zonal-statistics-persistence)、[邻近距离](邻近距离.md#raster-proximity-persistence)。其他套件仍按各自场景声明执行。
+五项准入仅适用于[矢量栅格化](#vector-rasterize-persistence)、[整数栅格分区统计](分区统计.md#raster-zonal-statistics-persistence)、[邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence)、[矢量分区统计](分区统计.md#vector-zonal-statistics-persistence)和[邻近距离](邻近距离.md#raster-proximity-persistence)。
 
-五项均使用独占 Hosted 生命周期、普通 User 原 12 项权限、同源七个 Backend 与默认入口 GeoPython 产品 Runtime，以及共享 NFS；不接管个人服务。Runtime 同路径 bind 写入与 Meta 真实 NFS 读取分别记录。各专项独立手工触发，预检与业务执行共用各自的 600 秒预算，不改变已有套件、产品权限或跨模块产品逻辑。
+五项均独立手工 Hosted，使用独占生命周期、普通 User 原 12 项权限、同源七个 Backend、默认入口 GeoPython 产品 Runtime 和共享 NFS。分别记录 Runtime 同路径 bind 写入与 Meta 真实 NFS 读取。预检和业务共同计入各自 600 秒，不接管个人服务，不改既有套件、产品权限或跨模块逻辑。成果、失败与退出沿下列共用核验。
 
-每轮核对精确输出与扫描清单、源及先前成果不变和 Runtime 执行工作目录清理；失败不得发布目标或新增扫描。成功和失败退出均须核对归属 NFS export／目录、部署及 Infra 零残留。各专项另列的产品 Runtime／镜像／registry 清理项仍须逐项核对。
+### 成果与退出的共用核验
 
-入口登记、确定性门禁与真实 Hosted 分别记账。固定版本结果和未覆盖范围见[验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)，不外推为当前 HEAD 已重跑。
+仅供上述五项及明确链接本小节的专项复用。权限、预算、算法、归档和额外清理项目按各自正文。
+
+- **成果**。逐轮核精确输出与扫描清单、实际成果及源和先前成果不变。独立数学期望与成果回读分别取证，实际成果须重新读取。获准复用期望时限本轮且绑定输入与源 hash。
+- **失败**。失败须命中专项声明的业务节点、原因与提交语言。权限、加载、保护投影或其他前置失败不能充作目标拒绝，反向语言查询不改写既有错误。失败零发布、零新增扫描。水文／分区与本组十四项同时核零派生血缘。
+- **清理**。成功、失败和部分启动退出分别核本轮归属 Runtime 工作目录及适用缓存、NFS export／目录、部署与 Infra。Runtime、镜像、registry、Grant 等专项声明项须逐项核对。保留首个业务失败和清理错误，清理失败整套失败。设施零残留不证明业务 DELETE。
+- **证据**。脚本 Runner、Native、登记、Linux 全量、Hosted API 和真实页面按各自固定源码及实际执行范围认定。步骤通过、共享重复计数或跳过不能补作完整通过。原件或物理证据缺失时不补认离线回读，固定通过不外推当前 HEAD、UI、容量、任意影像或生产。
 
 ### 独立持久化专项验证入口
 
-以下分层仍仅适用于上述五项。脚本 Runner 验证夹具、场景断言、隔离生命周期与 CI 登记；五个专项 Runner 均由 `make test-raster-online-runner` 聚合。真实 GDAL 物理校验与篡改拒绝统一沿 `make test-geopython-workflow`，各项范围如下：
+仅列上述五项。Runner 核夹具、场景、生命周期与登记，聚合入口为 `make test-raster-online-runner`。Native 物理与篡改反例沿 `make test-geopython-workflow`。
 
 | 专项 | 脚本 Runner | Native 物理验证范围 |
 | --- | --- | --- |
-| [矢量栅格化](#vector-rasterize-persistence) | `make test-vector-rasterize-online-runner` | 几何覆盖、完整 COG 与篡改拒绝 |
-| [整数栅格分区统计](分区统计.md#raster-zonal-statistics-persistence) | `make test-raster-zonal-statistics-online-runner` | 真实 GDAL／CSV 与篡改拒绝 |
-| [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) | `make test-raster-focal-statistics-online-runner` | 真实 GDAL／COG 与篡改拒绝 |
-| [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) | `make test-vector-zonal-statistics-online-runner` | 真实 GDAL／GeoPackage 与篡改拒绝 |
-| [邻近距离](邻近距离.md#raster-proximity-persistence) | `make test-raster-proximity-online-runner` | 真实 GDAL／COG，以及错误像元／mask／单位／网格等篡改拒绝 |
+| [矢量栅格化](#vector-rasterize-persistence) | `make test-vector-rasterize-online-runner` | 几何覆盖、完整 COG、篡改拒绝 |
+| [整数栅格分区统计](分区统计.md#raster-zonal-statistics-persistence) | `make test-raster-zonal-statistics-online-runner` | 真实 GDAL／CSV、篡改拒绝 |
+| [邻域统计](邻域统计与IDW.md#raster-focal-statistics-persistence) | `make test-raster-focal-statistics-online-runner` | 真实 GDAL／COG、篡改拒绝 |
+| [矢量分区统计](分区统计.md#vector-zonal-statistics-persistence) | `make test-vector-zonal-statistics-online-runner` | 真实 GDAL／GeoPackage、篡改拒绝 |
+| [邻近距离](邻近距离.md#raster-proximity-persistence) | `make test-raster-proximity-online-runner` | 真实 GDAL／COG，像元／mask／单位／网格篡改拒绝 |
 
-真实 Hosted 使用各场景列出的 `make test-online ONLINE_SUITE=...` 标准入口，workflow 仅编排同一入口。Runner、Native 与真实 Hosted 结果分别记账；前两者通过不代替 T4，实际结论仍绑定固定源码、运行与未覆盖范围。
+真实 Hosted 由 workflow 调用各节的 `make test-online ONLINE_SUITE=...`。固定结果与缺口见[验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)。
 
 ## vector-rasterize-persistence
 
@@ -200,13 +205,19 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 ## 水文与分区统计专项共同要求
 
-本节只适用于明确引用它的水文与分区统计专项，不扩大[原五项公共前提](#独立持久化专项公共前提)或其他 suite 的适用范围。各节保留自己的输入、链数、错误节点、独立 oracle、字段和归档矩阵。
+仅明确引用本节的专项适用，保持[原五项准入](#独立持久化专项公共前提)的适用范围。独立手工 Hosted Linux，使用隔离生命周期、NFS、同源默认入口产品 Runtime 和普通 User 原 12 项权限，各自业务预算为 600 秒。禁止接管个人部署、改产品／权限／安全投影／原套件、重试、扩预算或增加夜间调度。
 
-- **准备与预算**：独立手工 Hosted Linux、既有隔离生命周期、NFS、同源默认入口产品 Runtime、普通 User 原 12 项权限及各自 600 秒业务预算。不接管个人部署，不改产品、权限、安全投影或原套件，不重试、扩预算或加入夜间调度。分区统计明确计入预算的初始化扫描、首次期望生成、全部执行／查询／物理复核、归档及业务工作区／期望缓存清理仍须全部计时；部署与外层退出按原生命周期另行核验。
-- **成果与身份**：逐项核完整物理成果、原网格／CRS、mask、类型和单位。COG 核完整布局及实际金字塔，artifact／物理／Meta 大小为相等正整数；普通 CSV／GeoPackage 核物理＝Meta 正整数大小，不虚构 RasterArtifact、COG 或第三方声明大小。自动扫描精确绑定父 execution／User／Tenant／Engine，血缘只认当前 execution 实际加载的注册输入，Monitor 单独核验；各节的源数、端口与受控内部 observer 范围不变，公开安全投影不因此扩大。
-- **独立复核**：按各节独立算法验证完整像元或表格／几何；每轮重新读取实际成果与源哈希，只允许复用绑定同轮输入的不可变数学期望。原始源、全部先前成果及各节要求的 Meta 快照不变。分区统计保留各自的全检次数、完整原件和清单，缺失、篡改、额外文件或符号链接均拒绝，不覆盖、重建或静默修复。
-- **失败与清理**：准确绑定当前执行、失败节点及各节要求的原因／语言；权限、保护投影、加载或其他节点失败不能冒充目标拒绝。反向语言查询不得改写原提交错误。失败零发布、零新增扫描与派生血缘；正常、失败及部分启动退出都核验本轮 Runtime 工作区、缓存、NFS、部署／Infra，以及各节声明的镜像／registry 等归属资源。保留首个业务失败和清理错误，清理失败整套失败。
-- **验证与证据**：各专项 Runner 沿既有 `make test-raster-online-runner` 聚合，真实 GDAL／污染反例沿 `make test-geopython-workflow`，登记沿 `make test-python-ci-registration`；新增输入须同次命中 Native、Online、影响选择与 CI。专项筛除、共享重复计数和隔离身份 Go T1 不算全量或完整 IAM／数据库集成。现场完整物理回执与归档后离线复算分开；无原 TIFF 的记录不能声称离线重读。已验与待验按固定源码分别认定，不外推 UI、容量、业务 DELETE、其他 Owner 或生产。 水文已有结果与缺口见[固定结果与待验边界](D8水文分析.md#水文专项的固定结果与待验边界)。
+分区统计按各节范围把初始化扫描、首次期望生成、执行、查询、物理复核、归档及业务工作区／期望缓存清理计入业务预算，部署和外层退出独立核验。各节保留输入、链数、错误节点、独立算法、字段、全检次数及归档矩阵，现场物理回执和归档离线复算分开，无原 TIFF 不能记离线重读。
+
+成果、失败与归属清理沿[共用核验](#成果与退出的共用核验)，格式及血缘另按下列要求。Runner 聚合 `make test-raster-online-runner`，Native／污染反例沿 `make test-geopython-workflow`，登记沿 `make test-python-ci-registration`。新增输入同次覆盖 Native、Online、影响选择与 CI。专项筛除、共享计数及隔离身份 Go T1 不作全量或完整 IAM／数据库集成。[水文固定结果与待验边界](D8水文分析.md#水文专项的固定结果与待验边界)
+
+### 实际成果与血缘核对
+
+本小节供本节与[十四项](#本组独立专项的核验与证据边界)复用，不共享身份、预算或矩阵。
+
+- **物理成果**。独立 oracle 不调用产品算法，完整核像元或表格／几何、原网格／CRS 或声明的缺定位、类型、mask 和单位。COG 核完整布局及实际概览，artifact＝物理＝Meta 正整数大小。CSV／GeoPackage 只核物理＝Meta 正整数大小，不补造 RasterArtifact、COG、第三方声明大小或叠加 child 大小。
+- **来源与血缘**。自动扫描精确绑定父 execution／User／Tenant／Engine，血缘仅取当前执行实际加载的注册输入。内部证据、公开投影、Meta 关系和 Monitor 分别核。源数、端口、Meta 快照与受控只读 observer／SQL 仅按各节声明，公开安全投影不扩大。
+- **归档**。完整原件、清单、数学期望按各节保存，缺失、篡改、额外文件或符号链接均拒绝，不覆盖、重建或静默修复。
 
 ## DEM 专项共同验收边界
 
@@ -293,10 +304,8 @@ SPI拒绝矩阵：双角色波段／面积单位／坡度声明、零负面积�
 
 ## 本组独立专项的核验与证据边界
 
-仅本组14个显式引用的专项适用，不扩其他套件。算法归[栅格算子契约](../../workflow/栅格算子契约.md#栅格计算契约)／[矢量算子契约](../../workflow/矢量算子契约.md)，本页保留固定矩阵／独立参考。各沿原手工Hosted／NFS、同源默认Runtime及600秒，栅格User12权限、拓扑User11权限不互换；准备者及metadata_read Grant按专节，不改产品／权限／公开投影／原套件，不重试／扩预算／增nightly。
+仅本组 14 个明确引用的专项适用。各沿原手工 Hosted、NFS、同源默认 Runtime 和 600 秒。栅格 User 12 权限、拓扑 User 11 权限分开，准备者及 metadata_read Grant 按专节。不改产品、权限、公开投影或原套件，不重试、扩预算或增加夜间调度。
 
-- 完整实际成果、源旧字节／Meta每次核；自动扫描精确父execution／User／Tenant／Engine，当前真实输入内部／公开安全血缘、Meta关系及Monitor分别核。COG核原网格／CRS或明确缺定位、类型／mask／全布局／实际概览、artifact＝物理＝Meta正整数；CSV／GPKG只物理＝Meta，不造RasterArtifact或重复计child大小。
-- oracle不调产品，真实成果逐次重读不缓存；获准不可变期望仅本轮／夹具／源hash绑定。各自原件／清单／期望缺失／篡改／额外文件／链接拒绝，不修复；有界只读observer／SQL仅原声明suite，公开投影不扩大。
-- 失败须命中指定业务节点／原因／冻结语言，前置失败不充数、反向查询不改错，零发布／新scan／derive。全部退出清归属缓存／工作区、NFS、Runtime／镜像／registry、部署／Infra及已声明Grant；首败与清理分列，清理失败整套失败，部署销毁不证业务DELETE。
+共用[成果与退出核验](#成果与退出的共用核验)和[实际成果与血缘核对](#实际成果与血缘核对)。各节保留固定矩阵、独立参考和归档范围。算法见[栅格算子契约](../../workflow/栅格算子契约.md#栅格计算契约)和[矢量算子契约](../../workflow/矢量算子契约.md)。
 
-标准沿各Runner、`make test-raster-online-runner`／既有拓扑入口、`make test-geopython-workflow`及选择／登记，不能累加共享测试为唯一数量。本地／登记、Linux全量、Hosted API、真实页面只按固定源码认，不证当前HEAD／容量／任意影像或未列范围；后续事项见[栅格专题](../../../next/栅格算子体系后续专题.md#三后续工作)。
+验证沿各 Runner、`make test-raster-online-runner` 或既有拓扑入口、`make test-geopython-workflow` 及选择／登记。按固定源码认定实际范围，未列用途另验。[后续事项](../../../next/栅格算子体系后续专题.md#三后续工作)
