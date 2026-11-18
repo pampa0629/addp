@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "5f6141faf8ae2d70ec09d5caff82253b75a1b367",
-      "sha256": "dc7726f7675fc409bed9b6f7bf68fdccc6e0877449647291c1b7a7aea69fc772",
+      "commit": "91d08ae6066d11f9bc837e2825cd0ee41883d259",
+      "sha256": "0de1b1a94732ade3aff8933c97f3fdf3396cf7d23204f4dbc0ce49c43a771c7b",
       "use": {
-        "zh-cn": "复核仅将 Continuous 验收导航迁入独立专题，产品规则不变。保留 basic 识别 DataItem、System 独立初始授权、deep 增强及授权不依赖 deep 成功；串接 metadata_scan.execution_id 指 deep、basic_execution_id 指基础识别，submitted 仅表受理。创建仍为 auto_scan_metadata=false 的停止态 bounded/snapshot 原生表任务，不启动扫描、执行或授权。",
-        "en": "Reviewed only the Continuous acceptance-link relocation; product rules are unchanged. Basic identifies the DataItem, System grants independently, and deep enriches; grants do not depend on deep success. Chained metadata_scan.execution_id denotes deep, basic_execution_id denotes basic, and submitted means acceptance. Creation remains a stopped bounded/snapshot native-table task with auto_scan_metadata=false, starting no scan, execution or grant."
+        "zh-cn": "正式只读预检纳入无调度的 RustFS 单 Parquet DataItem 到 PostgreSQL 表，核对精确对象身份和深扫结构。平台创建仍限定停止态原生表任务。",
+        "en": "Formal read-only preflight covers an unscheduled single RustFS Parquet DataItem to PostgreSQL using exact identity and a deep schema snapshot. Platform creation remains limited to stopped native table tasks."
       }
     },
     {
@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "879ba19cb545ec99c04fd51d7212815a2fdfe397",
-      "sha256": "5c5ce1f760df50ea2aaa968cfcce823299e4c663135134760b6de48c755c3fc5",
+      "commit": "91d08ae6066d11f9bc837e2825cd0ee41883d259",
+      "sha256": "5f609f17c9cddf074a5e0ccdff077d7545e9f8da0c6cd96a143d2ebb59224d03",
       "use": {
-        "zh-cn": "复核同文件的 CDC 列表参数和 TaskProvider 非法筛选拒绝；原委托创建及独立启动审批分支逐字不变，创建仍只保存停止态任务，不执行。",
-        "en": "Reviewed CDC list parameters and rejection of that filter for TaskProvider reads in the same file. Delegated creation and the separate start-approval branch are byte-identical; creation still persists a stopped task without execution."
+        "zh-cn": "预检 API 注解说明新增范围。委托创建、启动审批、三项预检权限和三态响应契约保持原定义。",
+        "en": "The preflight API annotation documents the new scope. Delegated creation, start approval, the three preflight permissions and the three-state response contract retain their definitions."
       }
     },
     {
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "9bf02dfabeef43e712e2eda21aa7f1b4c8a07d29",
-      "sha256": "220b8ee4fd58193c1cdc8018090e8a8a1f2c09e14eb33c44bb5dd5e73f8723a8",
+      "commit": "64117265b422b4aa255dbc5c5b9650b96eb5c6d0",
+      "sha256": "8ed96ec8fc6a068e534d0f468cf9a667581217cc9f2b4ce78c19a94107232c09",
       "use": {
-        "zh-cn": "复核 Develop 完整当次工作流表格仅经精确导出会话创建一次性 bounded sync；普通任务定义拒绝私有 workflow_result。原 idle/stopped 原生表创建、运行审批、权限、条件和效果保持，不扩大 Agent 创建范围。",
-        "en": "Reviewed complete current Develop workflow tables admitted only through exact one-off bounded export sessions; ordinary task definitions reject private workflow_result. Idle/stopped native-table creation, run approval, permissions, conditions and effects remain unchanged; Agent creation scope is not expanded."
+        "zh-cn": "普通任务定义拒绝提交服务端专用 object_source。手动执行阶段按精确 RustFS 对象办理授权；仍先保存 idle 原生表任务。",
+        "en": "Ordinary definitions reject submitted server-owned object_source. The manual start stage obtains exact RustFS object authorization; native task creation still persists idle definitions."
       }
     },
     {
@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "fe84ae5e0639da971a4e486b137ad07c82269bf0",
-      "sha256": "9aff531fa00d582ad07fc0624db2d4487e29f0ddb96bc704c443c00ff2548746",
+      "commit": "64117265b422b4aa255dbc5c5b9650b96eb5c6d0",
+      "sha256": "bd28c66c48eb67c3882d235787c37a7ddff75c4253d121dba48e031a6efe8531",
       "use": {
-        "zh-cn": "复核私有 workflow_result 的同一 Develop 导出前缀、摘要、原截止、完整列和全部来源及固定 CSV；普通任务拒绝该来源。Infra 内容改为注入启动绑定的区域 Provider，普通业务 Engine 保留原插件及能力解析。原 bounded/snapshot 原生创建、replace/append、查询／字段校验、权限及效果保持。",
-        "en": "Reviewed private workflow_result: exact Develop prefix, digest, original deadline, full columns/sources, CSV only; ordinary tasks reject it. Infra content uses an injected, startup-bound area Provider. Ordinary business engines retain existing plugin/capability lookup. Native bounded/snapshot creation, replace/append, query/field checks, permissions and effects are unchanged."
+        "zh-cn": "Planner 解析冻结的单对象范围。原生表 bounded/snapshot、replace/append、查询及字段校验沿原契约。",
+        "en": "The planner parses the frozen single-object scope. Native bounded snapshots, replace/append, query and field validation retain their contracts."
       }
     },
     {
@@ -424,11 +424,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_config_check.go",
       "anchor": "func (s *TaskConfigCheckService) Check(",
-      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
-      "sha256": "85d7ad96066628ac6ba1cd2654a974f6d3570ed4fcf9d7c7d702be7e28f66ba4",
+      "commit": "91d08ae6066d11f9bc837e2825cd0ee41883d259",
+      "sha256": "69c13703ab19c53afc821e66ddbd2c2292afd841a904864ee8b15580f1407788",
       "use": {
-        "zh-cn": "只用已保存完整／采样结构检查目标 Provider；保留确定反证，采样正向赋值降为 unknown，无有效快照不补造源类型；不读取业务行。",
-        "en": "Checks target Provider rules from persisted complete or sampled schemas, retaining contradictions but keeping sampled assignments unknown; no invented unobserved types or business-row reads."
+        "zh-cn": "只用 RustFS 精确对象的已保存深扫结构及已登记读取能力检查 PostgreSQL 定义。原生和采样结构检查保留三态；业务内容在运行时读取。",
+        "en": "Checks PostgreSQL definitions against exact RustFS object deep snapshots and registered read support. Native and sampled checks retain their three states; business content is read at execution."
       }
     },
     {
@@ -450,11 +450,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/service/task_config_check_test.go",
       "anchor": "func TestConfigCheckMongoObservedArrayMismatchIsNotHiddenBySampleCoverage(",
-      "commit": "6622b57e7bbc055bf6afb0e9a81e435ed089b076",
-      "sha256": "855a3da534f5ea3abcb76a59b1d07208562e20a251c3e267fad542515d48f5a6",
+      "commit": "91d08ae6066d11f9bc837e2825cd0ee41883d259",
+      "sha256": "5146c164640386bfb935068a9b378b8ab577e51cb964a3368d7ee38b0c3a3888",
       "use": {
-        "zh-cn": "纯 Mongo 投影别名到 PostgreSQL 定义检查：对象／数字数组拒绝；字符串、未知元素、JSON、复杂查询及未观察快照保留 unknown，诊断绑定映射位置且不改事实。",
-        "en": "Pure Mongo projection aliases reach PostgreSQL definition checking: object/numeric arrays reject; strings, unknown elements, JSON, complex queries and unobserved snapshots stay unknown; locations remain bound and facts unchanged."
+        "zh-cn": "回归覆盖 9 个 Parquet 字段以及快照缺失、身份不符、能力不足、转换待验证和范围外配置。原 Mongo 样例反例保留。",
+        "en": "Regressions cover nine Parquet fields, missing snapshots, identity mismatch, missing capabilities, unproven conversion and excluded scopes. Existing Mongo sampled-schema counterexamples remain."
       }
     },
     {

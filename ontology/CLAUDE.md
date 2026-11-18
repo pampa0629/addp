@@ -323,3 +323,9 @@ Outdoor 合成示例用于测试夹具及用户显式创建的本地演示本体
 Transfer 创建前向修订 76 复核已提交 `fe84ae5e0639da971a4e486b137ad07c82269bf0` 的 Planner 内容 Provider 注入。同文件只增加 `EngineBinding.BoundProvider`、统一 Provider 取得及能力查询转接；普通业务 Engine 未注入时仍使用相同的 `effectiveEngineType` 和插件注册表。`validateTableTransferSpec`、原生源／目标构建、查询与字段规则不变。仅更新 planner 一项真实提交、整文件 SHA-256 及双语用途，创建定义除 revision 外逐字段保持，59 项来源、72 项绑定、6 项覆盖不变；运行修订 13、执行读取修订 9 保持。对象暂存私有链路的改造不扩张该原生创建切片，不改 Schema、发布／投影内核或运行激活。沿现有 `make test-platform-review` 与 Ontology Go owner 验证，不以源码冻结代替 T4。
 
 本轮 `make test-platform-review` 和 `make test-module MODULE=ontology GO_ONLY=1` 通过。独立 JSON 核对确认创建定义仅 revision 改变，review 仅 planner 的提交、摘要和用途改变，全部其他来源／绑定／覆盖保持；原有 512 字节用途上限保留。未执行发布激活、服务重启或真实模型／T4 验收。
+
+### Transfer RustFS 预检来源复核（2026-11-18）
+
+创建修订 78 复核 RustFS 精确对象导入及正式预检的六项来源。Transfer 在手动执行阶段为单个 RustFS Parquet 对象绑定精确读取授权，Planner 解析服务端冻结范围。正式预检依据已登记的流式读取能力和深扫结构核对 PostgreSQL 字段定义与映射，权限交集、三态和运行时复核保留。平台创建能力仍限定停止态 bounded/snapshot 原生表任务，encoded 仍为未建模覆盖项。
+
+创建定义仅前向递增 revision，保留来源锚点、绑定与覆盖。验证使用 `make test-platform-review` 和 `make test-module MODULE=ontology GO_ONLY=1`。
