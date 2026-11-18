@@ -85,7 +85,8 @@ export function executionFailurePresentation(details, translate) {
   }
 }
 
-export const operatorInputRules = Object.freeze([
+// This initialization only freezes literal tuples. Consumers without execution diagnostics can omit it.
+export const operatorInputRules = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ [
   ["merge_line_chains", "operator_input_invalid", "input_gdf", ""],
   ["merge_line_chains", "operator_crs_invalid", "", ""],
   ["merge_line_chains", "operator_endpoint_network_invalid", "input_gdf", ""],
