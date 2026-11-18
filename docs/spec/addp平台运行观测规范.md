@@ -265,12 +265,12 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | 步长 | 至少 15 秒，随范围和预计序列规划；返回后再次核验，不静默截断 |
 | 查询超时与并发 | 总期限 5 秒；单主体 2、单 Monitor 进程上游 8；超限快速拒绝，无无界等待 |
 | TSDB 保留 | 7 天与 10 GiB 体积同时限制，可能提前淘汰；另预留 WAL/压缩空间 |
-| 来源序列预留 | 每端点和中心自身各 20,000。Monitor 和 Prometheus 使用同一部署变量 `ADDP_METRICS_TARGET_LIMIT`，接受 1 至 36 的整数，缺省 12。总预留为（外部来源上限 + 1）× 20,000。开发部署可选 36，对应 740,000。 |
+| 来源序列预留 | 每端点和中心自身各 20,000。Monitor 和 Prometheus 使用同一部署变量 `ADDP_METRICS_TARGET_LIMIT`，接受 1 至 38 的整数，缺省 12。总预留为（外部来源上限 + 1）× 20,000。选择 38 时对应 780,000。预算上限允许前向扩展，已配置的较小预算继续按其值执行。 |
 | 组件预算 | Prometheus 1 CPU/2 GiB，node_exporter 0.25 CPU/256 MiB；节点入口 0.25 CPU/128 MiB |
 
 来源准入按去重端点的预留配额原子校验，不能把当前少量序列或单端点 sample_limit 当作全局限额。查询预算可收紧并热生效，在途请求保持开始时版本；物理资源、卷与保留归 Infra。默认预算不是已证明的生产规模上限。
 
-开发部署扩至 36 个端点前，沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 在独立网络、卷及 mTLS 凭据内，从 24、34 个目标基线增加两个真实 CDC 来源到 36 个，再验证第 37 个拒绝及回到 36 个恢复。34 个受控容量目标保留一台主机、六个引擎、五个 Worker 和一个网关，其余为后端；新增 Redpanda 与 Connect 来源沿正式生命周期安装、恢复及停用。受控 HTTP SD 夹具验证 Prometheus 传输和容量，System 当前事实及 Monitor 准入另由身份投影门禁核对，不能将夹具算作正式页面验收。用代表性的 HTTP 路由直方图和失败计数运行即时与区间 PromQL，记录抓取成功与耗时、时序与写入量、查询延迟、容器内存及磁盘增长。短时估算不证明生产满载、正式页面或七天留存。
+预算容量沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 验证。独立 Prometheus、网络、卷及 mTLS 凭据中，34 个基线保留一台主机、六个引擎、五个 Worker、一个网关及其余后端；加入两个真实 CDC 来源形成 36 个，再加入两个有界 HTTP 指标夹具达到 38 个。验证 39 个的整批拒绝、移除超额后 38 个恢复，以及 38 个时真实 CDC 单源故障隔离。记录抓取、新鲜样本、时序与写入量、查询耗时、内存和磁盘增长。受控 HTTP SD 夹具验证 Prometheus 传输和容量，System 当前事实及 Monitor 准入由身份投影门禁核对。夹具不计 Meilisearch、GeoPython 正式发现或页面通过，短时估算不证明七天留存。
 
 开发部署有进程采集计划时，启动、重启和指标配置渲染均在应用前校验计划单元数、选中的本机主机来源以及 Infra 和 Business 引擎来源之和。即使来源暂未运行，也预留其名额。超额报告各类数量和上限，重启入口在停止进程前退出，指标配置渲染保留现有配置。手工添加的远程来源仍由 Monitor 在真实发现时纳入总预算。
 

@@ -837,7 +837,7 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
         pending.replace(sources / 'budget-http.prom')
 
     planned = []
-    for index in range(35):
+    for index in range(37):
         identity = f'11111111-1111-4111-8111-{index:012d}'
         if index == 0:
             labels = dict(addp_monitor_kind='host_resources', addp_source='node_exporter', addp_node_id=identity)
@@ -848,16 +848,16 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
                           addp_module_name=f'fixture-{index}', addp_runtime_role='worker' if index < 12 else 'ingress' if index == 12 else 'backend')
         planned.append({'targets': [f'{address}:{19500 + index}'], 'labels': labels})
 
-    overflow = planned.pop()
-    planned.extend(json.loads((WORK/'cdc-targets.json').read_text()))
-    planned.append(overflow)
+    cdc = json.loads((WORK / 'cdc-targets.json').read_text())
+    planned[34:34] = cdc
 
     def within_budget(count):
+        planned_instances = {item['targets'][0] for item in planned[:count]}
         samples = query('count_over_time({__name__=~"addp_fixture_resource_bytes|addp_cdc_(connect|redpanda)_observed_at_seconds",job="addp_nodes"}[45s])')
         assert all(not row['metric'].get('addp_component_id') for row in samples if row['metric'].get('addp_monitor_kind') != 'cdc_resources'), 'exporter forged CDC identity'
         return (len(samples) == count and all(int(row['value'][1]) >= 2 for row in samples)
-                and len({row['metric']['instance'] for row in samples}) == count
-                and len(query('up{job="addp_nodes"} == 1')) == count)
+                and {row['metric']['instance'] for row in samples} == planned_instances
+                and {row['metric']['instance'] for row in query('up{job="addp_nodes"} == 1')} == planned_instances)
 
     def scalar(expression):
         rows = query(expression)
@@ -889,7 +889,7 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
     failures = f'sum(rate(addp_http_server_failures_total{scope}[1m]))'
     pressure = 'max(addp_fixture_host_signal{job="addp_nodes"})'
     p95 = f'histogram_quantile(0.95, sum by(le)(rate(http_server_request_duration_seconds_bucket{scope}[1m])))'
-    for count in (24, 34, 36):
+    for count in (34, 36, 38):
         discovery_text(json.dumps(planned[:count]))
         eventually(lambda: within_budget(count), f'{count} distinct mTLS targets each have consecutive samples', seconds=90)
         if count == 36:
@@ -932,19 +932,21 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
     service = lifecycle.sources.group.service('kafka-connect','infra')
     source_id = docker.run(['ps','-aq',*lifecycle.sources.group.filters(PROJECT,{service})]).strip()
     docker.run(['stop','-t','5',source_id])
-    eventually(lambda: len(query('up{job="addp_nodes"} == 1')) == 35, 'one CDC source fails independently')
+    expected = {item['targets'][0] for item in planned[:38] if item['labels']['addp_source'] != 'kafka-connect'}
+    eventually(lambda: {row['metric']['instance'] for row in query('up{job="addp_nodes"} == 1')} == expected,
+               'one CDC source fails independently while the other 37 remain up')
     assert 'source recovered' in lifecycle.run('recover','infra','kafka-connect',cdc_environment(lifecycle,'kafka-connect'))
-    eventually(lambda: within_budget(36), 'CDC source recovers alongside unchanged 34 fixture targets', seconds=90)
+    eventually(lambda: within_budget(38), 'CDC source recovers alongside unchanged 36 fixture targets', seconds=90)
     discovery_text(json.dumps(planned))
 
     def over_budget():
         targets = [row for row in api('targets')['activeTargets'] if row['labels']['job'] == 'addp_nodes']
-        return (len(targets) == 37 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
+        return (len(targets) == 39 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
                                           for row in targets))
 
-    eventually(over_budget, '37 targets exceed the Prometheus job limit')
-    discovery_text(json.dumps(planned[:36]))
-    eventually(lambda: within_budget(36), '36 targets recover within the deployment budget', seconds=90)
+    eventually(over_budget, '39 targets exceed the Prometheus job limit')
+    discovery_text(json.dumps(planned[:38]))
+    eventually(lambda: within_budget(38), '38 targets recover within the deployment budget', seconds=90)
     raise SystemExit(0)
 initial_sample_time = query('addp_fixture_resource_bytes{job="addp_nodes"}')[0]['value'][0]
 # Write atomically without replacing the bind-mounted source directory.

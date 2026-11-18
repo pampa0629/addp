@@ -289,7 +289,7 @@ GATEWAY_COMPILE
 chmod 755 "$WORK_DIR/control.test"
 
 if [[ "$metrics_case" == target-budget ]]; then
-  export ADDP_METRICS_TARGET_LIMIT=36
+  export ADDP_METRICS_TARGET_LIMIT=38
 fi
 python3 "$ROOT_DIR/scripts/infra/generate-metrics-config.py"
 cat >"$WORK_DIR/nginx.conf" <<'CONFIG'
@@ -353,7 +353,7 @@ config=p.read_text().replace('@@BASIC@@','Basic '+basic)
 servers=[]
 sources = [(f'    listen {19450 + index} ssl;', f'overview-{index}') for index in range(6)]
 if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
-    for kind, start, end in [('host', 0, 1), ('engine', 1, 7), ('worker', 7, 12), ('http', 12, 35)]:
+    for kind, start, end in [('host', 0, 1), ('engine', 1, 7), ('worker', 7, 12), ('http', 12, 37)]:
         sources.append(('\n'.join(f'    listen {19500 + index} ssl;' for index in range(start, end)), f'budget-{kind}'))
 for listeners, fixture in sources:
     servers.append('''  server {

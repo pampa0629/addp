@@ -1714,12 +1714,23 @@ for phase,at in [('published','0.01'),('control_before_enum','1.02'),('enumerate
             with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 37 个.*上限 36'):
                 config.check_target_budget(env, root)
 
-        config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='34'))
+            for index in (28, 29):
+                plan[f'worker-{index}'] = dict(plan['worker-0'], listen=f'127.0.0.1:{19500 + index}',
+                                              endpoint=f'https://127.0.0.1:{19500 + index}/metrics',
+                                              tls_dir=f'/private/metrics/worker-{index}')
+            env['ADDP_METRICS_TARGET_LIMIT'] = '38'
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:29]))
+            self.assertEqual(config.check_target_budget(env, root), '38')
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(plan)
+            with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 39 个.*上限 38'):
+                config.render(env, root)
+
+        config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='38'))
         path = self.directory / 'prometheus.yml'
         content = path.read_bytes()
-        self.assertIn(b'target_limit: 34', content)
+        self.assertIn(b'target_limit: 38', content)
         with self.assertRaises(ValueError):
-            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='37'))
+            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='39'))
         self.assertEqual(path.read_bytes(), content)
 
     def test_desktop_loopback_rules_keep_the_original_identity_and_exact_ports(self):
