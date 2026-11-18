@@ -266,7 +266,7 @@ generate_readme() {
 
 备份与恢复演练：
 
-在部署根目录执行 `python3 scripts/infra/backup.py create --output-root /绝对路径/私有备份目录`，记录输出的备份路径。执行 `python3 scripts/infra/backup.py drill --backup-dir /绝对路径/本次备份` 验证 PostgreSQL 和 Infra MinIO 在独占临时容器中的真实恢复。该演练不回写现有服务或卷。实际灾备范围还包括单独保存的部署密钥、外接 Business 引擎和其他有状态依赖。
+备份前须在宿主机准备可读取来源 PostgreSQL dump 格式的客户端 `pg_restore`。在部署根目录执行 `python3 scripts/infra/backup.py create --output-root /绝对路径/私有备份目录`，记录输出的备份路径。执行 `python3 scripts/infra/backup.py drill --backup-dir /绝对路径/本次备份` 验证 PostgreSQL 和 Infra MinIO 在独占临时容器中的真实恢复。该演练不回写现有服务或卷。实际灾备范围还包括单独保存的部署密钥、外接 Business 引擎和其他有状态依赖。
 EOF
 }
 
