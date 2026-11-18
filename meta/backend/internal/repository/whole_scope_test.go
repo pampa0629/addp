@@ -60,10 +60,7 @@ func TestWholeScopeReconciliationUsesOwnedParentEdges(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("whole/sibling not preserved: %+v", items)
 	}
-	if err := repo.HardDeleteInvalidEngineGraph(7, 9); err != nil {
-		t.Fatal(err)
-	}
 	if err := db.First(&models.MetaItem{}, whole.ID).Error; err != nil {
-		t.Fatal("graph cleanup deleted legitimate whole", err)
+		t.Fatal("whole scope reconciliation deleted its owner", err)
 	}
 }

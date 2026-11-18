@@ -2,6 +2,7 @@ package scanruntime
 
 import (
 	"context"
+	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
@@ -63,6 +64,10 @@ func resolveObjectCatalogTarget(
 		return target, nil
 	}
 	if objectPath == "" {
+		return target, nil
+	}
+	if strings.HasSuffix(rawPath, "/") {
+		target.Prefix = objectPath
 		return target, nil
 	}
 	node, err := catalogProvider.ResolvePath(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectItemPath(resource.ID, bucketName, objectPath))

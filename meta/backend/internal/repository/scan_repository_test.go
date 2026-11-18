@@ -80,50 +80,6 @@ func TestEnsureCatalogRootNodeCanBeFinalized(t *testing.T) {
 	}
 }
 
-func TestHardDeleteInvalidEngineGraphRemovesNodeItemConflicts(t *testing.T) {
-	db := openScanRepositoryTestDB(t)
-	repo := NewScanRepository(db)
-
-	root, err := repo.UpsertNode(1, 26, nil, "root", "Business NFS", strPtr(""), models.JSONMap{})
-	if err != nil {
-		t.Fatalf("create root: %v", err)
-	}
-	staleNode, err := repo.UpsertNode(1, 26, root, "dir", "README.md", strPtr("README.md"), models.JSONMap{})
-	if err != nil {
-		t.Fatalf("create stale node: %v", err)
-	}
-	_, err = repo.UpsertNode(1, 26, staleNode, "dir", "child", strPtr("README.md/child"), models.JSONMap{})
-	if err != nil {
-		t.Fatalf("create stale child: %v", err)
-	}
-	_, err = repo.UpsertItemWithDepth(1, 26, root, "file", "README.md", "README.md", models.JSONMap{}, nil, nil, nil, models.ScannedDepthBasic)
-	if err != nil {
-		t.Fatalf("create file item: %v", err)
-	}
-
-	if err := repo.HardDeleteInvalidEngineGraph(1, 26); err != nil {
-		t.Fatalf("HardDeleteInvalidEngineGraph() error = %v", err)
-	}
-
-	var staleCount int64
-	if err := db.Model(&models.MetaNode{}).
-		Where("tenant_id = ? AND engine_id = ? AND full_name LIKE ?", 1, 26, "README.md%").
-		Count(&staleCount).Error; err != nil {
-		t.Fatalf("count stale nodes: %v", err)
-	}
-	if staleCount != 0 {
-		t.Fatalf("stale node count = %d, want 0", staleCount)
-	}
-
-	item, ok, err := repo.FindItemByFullName(1, 26, "README.md")
-	if err != nil {
-		t.Fatalf("FindItemByFullName() error = %v", err)
-	}
-	if !ok || item.NodeID != root.ID {
-		t.Fatalf("README item = %#v, found=%v, want item under root %d", item, ok, root.ID)
-	}
-}
-
 func openScanRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

@@ -874,9 +874,6 @@ func TestObjectCatalogPrefixScanKeepsWholeScopeAndDeletesInternalNodes(t *testin
 	if len(scanned) != 1 {
 		t.Fatalf("scanned fingerprints = %d, want one raster mosaic fingerprint", len(scanned))
 	}
-	if err := repo.HardDeleteInvalidEngineGraph(1, 9); err != nil {
-		t.Fatalf("delete stale whole item prefix: %v", err)
-	}
 
 	var stale models.MetaNode
 	if err := db.First(&stale, staleWholePathNode.ID).Error; err != nil {
@@ -960,9 +957,6 @@ func TestObjectCatalogPrefixScanKeepsWholeItemInOwnScope(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("persisted count = %d, want one raster mosaic item", count)
-	}
-	if err := repo.HardDeleteInvalidEngineGraph(1, 9); err != nil {
-		t.Fatalf("delete invalid graph: %v", err)
 	}
 
 	item, ok, err := repo.FindItemByFullName(1, 9, "addp/mosaics/srtm-e2e")

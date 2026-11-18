@@ -13,6 +13,9 @@ func TargetPathsFromNode(node models.MetaNode) []string {
 		return nil
 	}
 	if target := strings.Trim(node.FullName, "/"); target != "" {
+		if node.NodeType == "prefix" {
+			return []string{target + "/"}
+		}
 		return []string{target}
 	}
 	if target := strings.Trim(node.Name, "/"); target != "" {

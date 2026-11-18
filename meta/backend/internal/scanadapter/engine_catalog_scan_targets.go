@@ -110,6 +110,10 @@ func (d *EngineCatalogScanDispatcher) dispatchTargets(p plugin.EnginePlugin, pla
 			sub.Targets = nil
 			if t.entry != nil {
 				sub.CatalogPaths = []string{t.path.StringPath()}
+				if t.entry.Kind == plugin.EngineCatalogKindPrefix {
+					// Preserve the prefix selection when a same-name object exists.
+					sub.CatalogPaths[0] += "/"
+				}
 			}
 			part, err = d.Dispatch(sub)
 		}

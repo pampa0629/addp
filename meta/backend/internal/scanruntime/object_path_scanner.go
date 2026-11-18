@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"slices"
 
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -77,16 +78,13 @@ func scanObjectCatalogPaths(
 	itemTerm string,
 ) (result scanflow.DispatchResult, scanErr error) {
 	bucketNodes := make(map[string]*models.MetaNode)
-	processedBuckets := make(map[string]bool)
-	processedPrefixes := make(map[string]map[string]bool)
+	enumeratedScopes := make(map[uint]*models.MetaNode)
 	scanState := newObjectCatalogScanState()
 	scannedFingerprints := make(map[string]bool)
 
 	failures := &scanflow.FailedTargetCollector{}
 	total := len(paths)
 	completed := 0
-	isDeepScan := strings.EqualFold(scanDepth, "deep")
-
 	enginePlugin, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		return scanflow.DispatchResult{}, err
@@ -154,22 +152,15 @@ func scanObjectCatalogPaths(
 		}
 
 		fullBucket := prefix == "" && target.Object == ""
-		if fullBucket {
-			processedBuckets[bucketName] = true
-		} else if target.Object == "" {
-			if processedPrefixes[bucketName] == nil {
-				processedPrefixes[bucketName] = map[string]bool{}
-			}
-			processedPrefixes[bucketName][strings.Trim(prefix, "/")] = true
-		}
+		var scopeNode *models.MetaNode
 		if target.Object == "" {
 			chain, err := repo.EnsureObjectCatalogPrefixChain(tenantID, engineID, bucketNode, prefix)
 			if err != nil {
 				return result, err
 			}
-			node := chain[len(chain)-1]
+			scopeNode = chain[len(chain)-1]
 			scanState.record(chain, prefix, fullBucket)
-			if err := repo.ResetNodeState(node, "running"); err != nil {
+			if err := repo.ResetNodeState(scopeNode, "running"); err != nil {
 				return result, err
 			}
 		}
@@ -189,6 +180,9 @@ func scanObjectCatalogPaths(
 				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
 			}
 			continue
+		}
+		if scopeNode != nil {
+			enumeratedScopes[scopeNode.ID] = scopeNode
 		}
 		resources := objectCatalogEntriesToStorageResources(objects, bucketName)
 
@@ -230,39 +224,23 @@ func scanObjectCatalogPaths(
 		}
 	}
 
-	if isDeepScan && len(scannedFingerprints) > 0 {
-		for bucketName := range processedBuckets {
-			if bucketNodes[bucketName] == nil || scanState.errorFor(bucketName) != nil {
-				continue
-			}
-			if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints); err != nil {
-				failures.Add(bucketName, err)
-				scanState.fail(bucketName, err)
-				continue
-			}
+	for _, node := range enumeratedScopes {
+		activePath = node.FullName
+		if err := ctx.Err(); err != nil {
+			return result, err
 		}
-		for bucketName, prefixes := range processedPrefixes {
-			if processedBuckets[bucketName] || bucketNodes[bucketName] == nil {
-				continue
-			}
-			for prefix := range prefixes {
-				if prefix == "" || scanState.errorFor(bucketName+"/"+prefix) != nil {
-					continue
-				}
-				if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID, bucketName, prefix, scannedFingerprints); err != nil {
-					failures.Add(bucketName+"/"+prefix, err)
-					scanState.fail(bucketName+"/"+prefix, err)
-					continue
-				}
-			}
+		if scanState.errorFor(node.FullName) != nil {
+			continue
 		}
-		if err := repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil {
-			failures.Add(resource.Name, err)
-			for _, node := range scanState.nodes {
-				scanState.fail(node.FullName, err)
-			}
-			if reporter != nil {
-				reporter.Message(fmt.Sprintf("清理对象 catalog 陈旧节点失败: %v", err))
+		deleted, err := repo.SoftDeleteMissingObjectItems(ctx, node, scannedFingerprints)
+		if err != nil {
+			failures.Add(node.FullName, err)
+			scanState.fail(node.FullName, err)
+			continue
+		}
+		if runtime.indexer != nil {
+			for batch := range slices.Chunk(deleted, commonclient.ManagerContentBatchLimit) {
+				_ = runtime.indexer.DeleteItemsFromIndex(ctx, tenantID, engineID, batch)
 			}
 		}
 	}

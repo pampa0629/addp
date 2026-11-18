@@ -51,7 +51,12 @@ scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTA
 }
 
 func TestSingleObjectAuthorizationFactsAgainstPostgres(t *testing.T) {
-	exerciseSingleObjectAuthorizationFacts(t, authorizationFactsPostgresDB(t))
+	t.Run("authorization_facts", func(t *testing.T) {
+		exerciseSingleObjectAuthorizationFacts(t, authorizationFactsPostgresDB(t))
+	})
+	t.Run("node_rescan", func(t *testing.T) {
+		exerciseObjectNodeRescan(t, authorizationFactsPostgresDB)
+	})
 }
 
 func TestDataItemAuthorizationFactsAgainstPostgres(t *testing.T) {

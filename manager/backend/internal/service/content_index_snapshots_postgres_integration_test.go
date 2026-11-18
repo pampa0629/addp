@@ -14,8 +14,11 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/minio"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
@@ -164,16 +167,45 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	})
 
 	t.Run("exact_delete_batch_preserves_tenant_engine_and_sibling", func(t *testing.T) {
+		const tenantID, engineID uint = 7, 9
 		docs := []commonClient.ManagerContentDocument{}
 		ids := []string{}
 		for i := 0; i < 5; i++ {
-			id := fmt.Sprintf("delete-batch-%d", i)
+			name := fmt.Sprintf("rescancatalog-%d.txt", i)
+			target := plugin.ObjectItemPath(engineID, "catalog", name)
+			id, err := authorizationfacts.PrimaryCandidateFingerprint(target)
+			if err != nil {
+				t.Fatal(err)
+			}
 			ids = append(ids, id)
-			docs = append(docs, commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "file", Name: id})
+			itemID := uint(i + 1)
+			loc := resourcetree.LocatorFromFullName(engineID, "minio", "object", target.StringPath(), &itemID)
+			docs = append(docs, commonClient.ManagerContentDocument{
+				DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata,
+				EngineID: engineID, EngineType: "minio", DataItemType: "object", Name: name, FullName: target.StringPath(), Locator: loc.ToURI(),
+			})
 		}
-		if err := svc.UpsertContentDocuments(ctx, 7, docs); err != nil {
+		if err := svc.UpsertContentDocuments(ctx, tenantID, docs); err != nil {
 			t.Fatal(err)
 		}
+		assertSearchResults := func(wantIDs []string) {
+			t.Helper()
+			engine := engineID
+			result, err := testSearchDocuments(t, svc, ctx, tenantID, &engine, searchVisibilityFixture{}, "rescancatalog", 10, "")
+			if err != nil || len(result.Hits) != len(wantIDs) {
+				t.Fatalf("object search results = %+v, error = %v, want %d hits", result, err, len(wantIDs))
+			}
+			found := map[string]bool{}
+			for _, hit := range result.Hits {
+				found[hit.DocumentID] = true
+			}
+			for _, id := range wantIDs {
+				if !found[id] {
+					t.Errorf("object search is missing %s", id)
+				}
+			}
+		}
+		assertSearchResults(ids)
 		var before int64
 		db.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND kind = ?", index, repository.IndexDeliveryDelete).Count(&before)
 		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 10, DocumentIDs: ids[:3]}); err != nil {
@@ -200,6 +232,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		for _, id := range ids[3:] {
 			read(t, id)
 		}
+		assertSearchResults(ids[3:])
 		var after int64
 		db.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND kind = ?", index, repository.IndexDeliveryDelete).Count(&after)
 		if after-before != 3 {
@@ -208,6 +241,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentIDs: ids[3:]}); err != nil {
 			t.Fatal(err)
 		}
+		assertSearchResults(nil)
 	})
 	for _, first := range []bool{false, true} {
 		t.Run(fmt.Sprintf("content_first_%v", first), func(t *testing.T) {

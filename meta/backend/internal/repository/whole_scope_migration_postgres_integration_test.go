@@ -184,12 +184,6 @@ func TestWholeScopeMigrationAgainstPostgres(t *testing.T) {
 	if err := tx.Model(&models.MetaItem{}).Where("node_id=?", sibling.ID).Count(&count).Error; err != nil || count != 1 {
 		t.Fatal("sibling scope changed")
 	}
-	if err := repo.HardDeleteInvalidEngineGraph(7, 99); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.First(&models.MetaItem{}, missingScope.ID).Error; err != nil {
-		t.Fatal("normal cleanup deleted migrated whole", err)
-	}
 	if err := tx.Model(&models.MetaItem{}).Where("id=?", missingScope.ID).Update("row_count", 9).Error; err != nil {
 		t.Fatal(err)
 	}

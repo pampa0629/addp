@@ -109,7 +109,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			continue
 		}
 		needsUpdate := force || scanchange.ShouldUpdateStorageResource(existingItem, catalogResource) || !itemExists
-		if existingItem != nil && existingItem.NodeID != currentParent.ID {
+		if existingItem != nil && (existingItem.DeletedAt.Valid || existingItem.NodeID != currentParent.ID) {
 			needsUpdate = true
 		}
 		if strings.EqualFold(scanDepth, "deep") && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {

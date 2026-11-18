@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -51,38 +52,37 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixChain(
 	return chain, nil
 }
 
-func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
-	return r.SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID, bucketName, "", scannedFingerprints)
-}
-
-func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID uint, bucketName, objectPrefix string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
-	if len(scannedFingerprints) == 0 {
-		return nil, nil
-	}
-
-	var existingItems []models.MetaItem
-	query := r.db.Where("tenant_id = ? AND engine_id = ? AND item_type IN ?",
-		tenantID, engineID, []string{"object", "table"}).
-		Where("attributes->'storage'->>'bucket' = ?", bucketName).
-		Where("deleted_at IS NULL")
-	objectPrefix = strings.Trim(objectPrefix, "/")
-	if objectPrefix != "" {
-		fullPrefix := strings.Trim(bucketName, "/") + "/" + objectPrefix + "/"
-		query = query.Where("full_name = ? OR full_name LIKE ?", strings.TrimSuffix(fullPrefix, "/"), fullPrefix+"%")
-	}
-	if err := query.Find(&existingItems).Error; err != nil {
+// SoftDeleteMissingObjectItems reconciles the complete inventory of a bucket or prefix.
+func (r *ScanRepository) SoftDeleteMissingObjectItems(ctx context.Context, root *models.MetaNode, observed map[string]bool) ([]string, error) {
+	const scope = `WITH RECURSIVE scope(id) AS (
+		SELECT id FROM meta.meta_node WHERE id = ? AND tenant_id = ? AND engine_id = ? AND deleted_at IS NULL
+		UNION SELECT n.id FROM meta.meta_node n JOIN scope s ON n.parent_node_id = s.id
+		WHERE n.tenant_id = ? AND n.engine_id = ? AND n.deleted_at IS NULL
+	) SELECT id FROM scope`
+	var deleted []string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing []models.MetaItem
+		if err := tx.Select("id", "fingerprint").Where("tenant_id = ? AND engine_id = ?", root.TenantID, root.EngineID).
+			Where("node_id IN ("+scope+")", root.ID, root.TenantID, root.EngineID, root.TenantID, root.EngineID).
+			Find(&existing).Error; err != nil {
+			return err
+		}
+		for _, item := range existing {
+			if observed[item.Fingerprint] {
+				continue
+			}
+			result := tx.Delete(&item)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 0 {
+				deleted = append(deleted, item.Fingerprint)
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
-	}
-
-	deleted := make([]models.MetaItem, 0)
-	for _, item := range existingItems {
-		if scannedFingerprints[item.Fingerprint] {
-			continue
-		}
-		if err := r.db.Delete(&item).Error; err != nil {
-			return deleted, err
-		}
-		deleted = append(deleted, item)
 	}
 	return deleted, nil
 }
