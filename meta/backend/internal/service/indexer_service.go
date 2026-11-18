@@ -12,11 +12,13 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
+	"gorm.io/gorm"
 )
 
 // IndexerService 将扫描事实投影到 Manager owner 的内容索引。
 type IndexerService struct {
 	contentIndex *commonClient.ManagerContentClient
+	db           *gorm.DB
 	log          *slog.Logger
 }
 

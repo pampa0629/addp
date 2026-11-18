@@ -26,6 +26,9 @@ func ContentIndexSQLite(t *testing.T, db *gorm.DB) {
 		 endpoint_id TEXT NOT NULL, status TEXT NOT NULL, task_uid INTEGER,
 		 task_enqueued_at TEXT NOT NULL, task_correlation TEXT NOT NULL DEFAULT '', created_at DATETIME, updated_at DATETIME,
 		 UNIQUE (index_name, endpoint_id, task_uid))`,
+		`CREATE TABLE manager.content_index_deletion_fences (
+		 index_name TEXT NOT NULL, tenant_id INTEGER NOT NULL, document_id TEXT NOT NULL,
+		 engine_id INTEGER NOT NULL, operation_id TEXT NOT NULL, PRIMARY KEY(index_name,tenant_id,document_id))`,
 		`CREATE TABLE manager.cleanup_index_operations (id TEXT PRIMARY KEY,index_name TEXT NOT NULL,tenant_id INTEGER NOT NULL,execution_id TEXT NOT NULL UNIQUE,attempt INTEGER NOT NULL,request_digest TEXT NOT NULL,epoch TEXT NOT NULL,endpoint_id TEXT NOT NULL,inventory_digest TEXT NOT NULL,state TEXT NOT NULL,created_at DATETIME,settled_at DATETIME)`,
 		`CREATE TABLE manager.cleanup_index_assessments (domain_digest TEXT NOT NULL DEFAULT '', request_id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, requested_by INTEGER NOT NULL, scope_engine_id INTEGER NOT NULL, index_name TEXT NOT NULL, epoch TEXT NOT NULL, endpoint_id TEXT NOT NULL, inventory_digest TEXT NOT NULL, engine_ids TEXT NOT NULL, candidate_count INTEGER NOT NULL, created_at DATETIME)`,
 		`CREATE TABLE manager.cleanup_index_targets (index_name TEXT NOT NULL,tenant_id INTEGER NOT NULL,engine_id INTEGER NOT NULL,operation_id TEXT NOT NULL,PRIMARY KEY(index_name,tenant_id,engine_id))`,

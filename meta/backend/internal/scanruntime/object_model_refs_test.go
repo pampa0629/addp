@@ -54,7 +54,7 @@ func TestObjectModelRelatedRefsAgainstPostgres(t *testing.T) {
 	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+	if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ObjectIndexDeletion{}); err != nil {
 		t.Fatal(err)
 	}
 	testObjectModelRelatedRefsPersistSizeAndClaims(t, tx)

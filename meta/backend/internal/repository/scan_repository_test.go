@@ -128,10 +128,17 @@ func openScanRepositoryTestDB(t *testing.T) *gorm.DB {
 			scanned_depth TEXT,
 			attributes JSON,
 			created_at DATETIME,
-			deleted_at DATETIME
+			deleted_at DATETIME,
+			index_delete_operation_id TEXT NOT NULL DEFAULT ''
 		)
 	`).Error; err != nil {
 		t.Fatalf("create meta_item table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE meta.object_index_deletions (
+		fingerprint TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, engine_id INTEGER NOT NULL,
+		operation_id TEXT NOT NULL, confirmed BOOLEAN NOT NULL, restored BOOLEAN NOT NULL
+	)`).Error; err != nil {
+		t.Fatal(err)
 	}
 	return db
 }

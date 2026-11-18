@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/google/uuid"
 )
 
 type ManagerContentClient struct{ tenantHTTPClient }
@@ -79,9 +81,14 @@ type ManagerContentDocument struct {
 	ModifiedDate     *time.Time             `json:"modified_date,omitempty"`
 	Metadata         map[string]interface{} `json:"metadata,omitempty"`
 	ProjectionTime   time.Time              `json:"projection_time"`
+
+	AfterDeleteOperationID string `json:"after_delete_operation_id,omitempty" format:"uuid"`
 }
 
 func (d ManagerContentDocument) Validate() error {
+	if d.AfterDeleteOperationID != "" && !validContentOperationID(d.AfterDeleteOperationID) {
+		return errors.New("Manager content document has an invalid deletion operation ID")
+	}
 	if strings.TrimSpace(d.DocumentID) == "" || d.EngineID == 0 || strings.TrimSpace(d.DataItemType) == "" || strings.TrimSpace(d.Name) == "" {
 		return errors.New("Manager content document is incomplete")
 	}
@@ -130,13 +137,14 @@ func (c *ManagerContentClient) UpsertDocuments(ctx context.Context, documents []
 		return err
 	}
 	path := "/api/v1/manager/runtime/content-documents/batch_update"
-	if err := c.doJSON(ctx, http.MethodPost, path, batch, nil); err != nil {
+	if err := c.confirmContentDelivery(ctx, http.MethodPost, path, batch); err != nil {
 		return fmt.Errorf("Manager content document upsert: %w", err)
 	}
 	return nil
 }
 
 type ManagerContentDeleteScope struct {
+	OperationID  string
 	DocumentIDs  []string
 	EngineID     uint
 	DataItemType string
@@ -147,6 +155,9 @@ type ManagerContentDeleteScope struct {
 
 // Validate guards the one deletion contract before any transport or side effect.
 func (s ManagerContentDeleteScope) Validate() error {
+	if s.OperationID != "" && (len(s.DocumentIDs) == 0 || !validContentOperationID(s.OperationID)) {
+		return errors.New("Manager content operation ID requires an exact deletion")
+	}
 	if s.EngineID == 0 {
 		return errors.New("Manager content deletion requires an engine ID")
 	}
@@ -177,6 +188,9 @@ func (c *ManagerContentClient) DeleteDocuments(ctx context.Context, scope Manage
 	}
 	query := url.Values{}
 	query.Set("engine_id", strconv.FormatUint(uint64(scope.EngineID), 10))
+	if scope.OperationID != "" {
+		query.Set("operation_id", scope.OperationID)
+	}
 	for _, id := range scope.DocumentIDs {
 		query.Add("document_id", id)
 	}
@@ -193,8 +207,24 @@ func (c *ManagerContentClient) DeleteDocuments(ctx context.Context, scope Manage
 		query.Set("path_prefix", value)
 	}
 	path := "/api/v1/manager/runtime/content-documents?" + query.Encode()
-	if err := c.doJSON(ctx, http.MethodDelete, path, nil, nil); err != nil {
+	if err := c.confirmContentDelivery(ctx, http.MethodDelete, path, nil); err != nil {
 		return fmt.Errorf("Manager content document deletion: %w", err)
 	}
 	return nil
+}
+
+func (c *ManagerContentClient) confirmContentDelivery(ctx context.Context, method, path string, payload any) error {
+	status, err := c.doJSONStatus(ctx, method, path, payload, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusNoContent {
+		return fmt.Errorf("expected confirmed Manager delivery, got HTTP %d", status)
+	}
+	return nil
+}
+
+func validContentOperationID(value string) bool {
+	id, err := uuid.Parse(value)
+	return err == nil && id != uuid.Nil && id.String() == value
 }

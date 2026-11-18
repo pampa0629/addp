@@ -18,11 +18,12 @@ type SearchVisibilityChecker interface {
 }
 
 type indexedSearchIdentity struct {
-	ID         string `json:"document_id"`
-	Locator    string `json:"locator"`
-	EngineType string `json:"engine_type"`
-	TenantID   uint   `json:"tenant_id"`
-	EngineID   uint   `json:"engine_id"`
+	AfterDeleteOperationID string `json:"after_delete_operation_id"`
+	ID                     string `json:"document_id"`
+	Locator                string `json:"locator"`
+	EngineType             string `json:"engine_type"`
+	TenantID               uint   `json:"tenant_id"`
+	EngineID               uint   `json:"engine_id"`
 }
 
 func (doc indexedSearchIdentity) catalogPath() (plugin.EngineCatalogPath, bool) {

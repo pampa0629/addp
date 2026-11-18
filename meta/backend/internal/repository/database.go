@@ -43,7 +43,7 @@ func InitDatabase(cfg *config.Config, retireCollectionApproval func(*gorm.DB) er
 		return nil, err
 	}
 	if err := schema.Migrate(db, "meta", SchemaVersion, func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}); err != nil {
+		if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}, &models.ObjectIndexDeletion{}); err != nil {
 			return err
 		}
 		if err := applySQLMigrations(tx); err != nil {

@@ -87,11 +87,12 @@ func (h *ContentIndexHandler) UpsertDocuments(c *gin.Context) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.content_index.update"]
 // @Param document_id query []string false "1–100 个精确指纹，重复 query；不能混用范围选择器 | 1–100 exact fingerprints using repeated query parameters; mutually exclusive with range selectors" collectionFormat(multi)
+// @Param operation_id query string false "持久精确删除批次的操作 UUID，重试时原样提交 | Stable operation UUID for a durable exact deletion batch, reused on retry" format(uuid)
 // @Router /runtime/content-documents [delete]
 func (h *ContentIndexHandler) DeleteEngineDocuments(c *gin.Context) {
 	query, parseErr := url.ParseQuery(c.Request.URL.RawQuery)
 	invalid := parseErr != nil
-	allowed := map[string]bool{"engine_id": true, "document_id": true, "data_item_type": true, "schema": true, "bucket": true, "path_prefix": true}
+	allowed := map[string]bool{"engine_id": true, "document_id": true, "data_item_type": true, "schema": true, "bucket": true, "path_prefix": true, "operation_id": true}
 	for key, values := range query {
 		if !allowed[key] || (key != "document_id" && len(values) != 1) {
 			invalid = true
@@ -111,6 +112,7 @@ func (h *ContentIndexHandler) DeleteEngineDocuments(c *gin.Context) {
 		return
 	}
 	scope := service.ContentDocumentDeleteScope{
+		OperationID: c.Query("operation_id"),
 		DocumentIDs: c.QueryArray("document_id"), EngineID: uint(engineID), DataItemType: strings.TrimSpace(c.Query("data_item_type")),
 		Schema: strings.TrimSpace(c.Query("schema")), Bucket: strings.TrimSpace(c.Query("bucket")),
 		PathPrefix: strings.TrimSpace(c.Query("path_prefix")),

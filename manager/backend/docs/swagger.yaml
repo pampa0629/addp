@@ -57,6 +57,9 @@ definitions:
     type: object
   client.ManagerContentDocument:
     properties:
+      after_delete_operation_id:
+        format: uuid
+        type: string
       author:
         type: string
       bucket:
@@ -6446,6 +6449,12 @@ paths:
           type: string
         name: document_id
         type: array
+      - description: 持久精确删除批次的操作 UUID，重试时原样提交 | Stable operation UUID for a durable
+          exact deletion batch, reused on retry
+        format: uuid
+        in: query
+        name: operation_id
+        type: string
       responses:
         "204":
           description: No Content

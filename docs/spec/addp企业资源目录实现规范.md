@@ -918,6 +918,12 @@ Manager 是技术内容全文/向量检索投影的唯一 owner。Meta 在完成
 - Tenant 只来自 canonical AuthContext，请求正文不得携带或覆盖 `tenant_id`；
 - `document_id` 必须等于 DataItem fingerprint，删除和覆盖均不得跨 Tenant。
 
+对象存储节点缺失对账使用同一 DELETE 路由，固定 `engine_id`，以重复的 `document_id` 提交精确批次，并携带 `operation_id`（UUID）。Manager 在持久登记事务内按租户、引擎、精确指纹集合绑定操作 ID，并登记各指纹最近一次删除。相同请求复用原记录和 Meilisearch 回执，操作 ID 与范围不符时拒绝。仅当外部任务成功才返回 `204`；提交未决时保留原回执恢复机制。普通范围删除维持相应的范围清理契约。
+
+在该路径收到删除的指纹，技术和正文写入都须携带对应最近一次删除的 `after_delete_operation_id`；无删除记录的指纹用空值。Manager 在写入持久登记事务内验证绑定和删除终态，拒绝旧写入。恢复通过已有批量写入路由更新当前技术快照；既有正文保护和字段所有权规则继续适用。
+
+Manager 用户搜索沿既有 System 检索授权观察，从当前 Meta 事实取得该操作 ID，并与候选技术快照中的操作 ID 一致后才纳入结果。对象恢复、旧索引文档尚待删除时，目录可以先展示当前技术事实，用户搜索排除旧文档。
+
 Manager 内容索引固定使用独立配置 `MEILISEARCH_MANAGER_CONTENT_INDEX`，不得继续读取 `MEILISEARCH_ASSET_INDEX`。内容检索返回 `document_id`、`data_item_type` 和 Locator 等技术资源字段，不暴露 `asset_id` / `asset_type` 旧词族。
 
 ## 十、运行、配置与基础设施

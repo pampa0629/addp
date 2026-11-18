@@ -2,6 +2,7 @@ package service
 
 import (
 	"github.com/addp/common/execution"
+	"github.com/addp/meta/internal/models"
 	"os"
 	"testing"
 
@@ -44,7 +45,11 @@ CREATE TABLE meta.meta_item (
 id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, engine_id BIGINT NOT NULL, node_id BIGINT NOT NULL,
 item_type TEXT NOT NULL, name TEXT NOT NULL, full_name TEXT, fingerprint TEXT NOT NULL,
 row_count BIGINT, size_bytes BIGINT, data_updated_at TIMESTAMPTZ, scanned_at TIMESTAMPTZ,
-scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ);`).Error; err != nil {
+scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ,
+index_delete_operation_id TEXT NOT NULL DEFAULT '');`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&models.ObjectIndexDeletion{}); err != nil {
 		t.Fatal(err)
 	}
 	return tx

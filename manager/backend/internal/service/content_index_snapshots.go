@@ -16,6 +16,9 @@ import (
 func contentSnapshotPayload(tenantID uint, d commonClient.ManagerContentDocument) map[string]interface{} {
 	p := map[string]interface{}{"id": d.DocumentID, "document_id": d.DocumentID, "tenant_id": tenantID, "engine_id": d.EngineID}
 	if d.PayloadKind == commonClient.ManagerContentPayloadTechnicalMetadata {
+		if d.AfterDeleteOperationID != "" {
+			p["after_delete_operation_id"] = d.AfterDeleteOperationID
+		}
 		for k, v := range map[string]interface{}{
 			"name": d.Name, "full_name": d.FullName, "data_item_type": d.DataItemType,
 			"engine_name": d.EngineName, "engine_type": d.EngineType, "locator": d.Locator,
@@ -46,7 +49,7 @@ func (s *HybridSearchService) readContentTechnicalSnapshot(ctx context.Context, 
 	if op == nil || op.TenantID <= 0 || op.DocumentID == "" {
 		return nil, repository.ErrContentIndexIsolated
 	}
-	fields := []string{"search_ordinal"}
+	fields := []string{"search_ordinal", "after_delete_operation_id"}
 	for key := range contentSnapshotPayload(uint(op.TenantID), commonClient.ManagerContentDocument{PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata}) {
 		fields = append(fields, key)
 	}

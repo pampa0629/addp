@@ -14,6 +14,10 @@ import (
 // Same trusted Meta facts and current source rule store as content checks.
 // The metadata-only representation can never enter resolveReadBindings.
 func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, paths []plugin.EngineCatalogPath) ([]authorizationfacts.Binding, error) {
+	return s.resolveMetadataBindingsWithIndexVersion(ctx, tenant, paths, nil)
+}
+
+func (s *Service) resolveMetadataBindingsWithIndexVersion(ctx context.Context, tenant int64, paths []plugin.EngineCatalogPath, operationIDs []string) ([]authorizationfacts.Binding, error) {
 	if s == nil || s.authorizationFacts == nil || tenant <= 0 {
 		return nil, ErrAuthorizationFactsUnavailable
 	}
@@ -71,6 +75,9 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 		canonical, err := resourcetree.EngineCatalogPathFromLocator(model, &resourcetree.ResourceLocator{EngineID: target.EngineID, Type: resourcetree.ResourceType(target.Segments[len(target.Segments)-1].Kind), Path: names})
 		if err != nil || !reflect.DeepEqual(canonical, target) {
 			continue
+		}
+		if operationIDs != nil {
+			operationIDs[index] = facts.AfterDeleteOperationID
 		}
 		result[index] = binding
 	}

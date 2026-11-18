@@ -38,6 +38,10 @@ class HostedManagerGateTest(unittest.TestCase):
               [ "${ADDP_TEST_FIXTURE_FAIL:-0}" != 1 ] || exit 1
             fi
         ''')
+        self.host._write_repository_script("scripts/infra/ports.sh", '''
+            addp_infra_verify_container() { [ "$*" = "meilisearch addp-meilisearch" ]; }
+            addp_infra_mapped_port() { [ "$*" = "addp-meilisearch 7700" ] && printf '%s\n' 17700; }
+        ''')
         self.host._write_repository_script("business/scripts/online-manager-nfs-fixture.sh", """
             #!/usr/bin/env bash
             echo "nfs-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"

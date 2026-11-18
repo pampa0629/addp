@@ -92,13 +92,16 @@ func TestContentDeletionHandlerKeepsExactBatchAndRejectsInvalidScopes(t *testing
 			t.Fatalf("status=%d want=%d body=%s", w.Code, want, w.Body)
 		}
 	}
-	request("engine_id=14&document_id=one&document_id=two", 204)
-	if len(recorder.scope.DocumentIDs) != 2 || recorder.scope.DocumentIDs[0] != "one" || recorder.scope.EngineID != 14 {
+	const operation = "46b2e645-1af1-4d56-befd-e4d4e85c3faf"
+	request("engine_id=14&document_id=one&document_id=two&operation_id="+operation, 204)
+	if len(recorder.scope.DocumentIDs) != 2 || recorder.scope.DocumentIDs[0] != "one" || recorder.scope.EngineID != 14 || recorder.scope.OperationID != operation {
 		t.Fatalf("scope=%+v", recorder.scope)
 	}
 	for _, query := range []string{"engine_id=14&document_id=", "engine_id=14&document_id=one&document_id=one", "engine_id=14&document_id=one&schema=public", "engine_id=14&document_id=" + url.QueryEscape("x\ny")} {
 		request(query, 400)
 	}
+	request("engine_id=14&operation_id="+operation, 400)
+	request("engine_id=14&document_id=one&operation_id=invalid", 400)
 	query := "engine_id=14"
 	for i := 0; i < 101; i++ {
 		query += fmt.Sprintf("&document_id=id%d", i)

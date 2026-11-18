@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	commonClient "github.com/addp/common/client"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +87,7 @@ func TestCleanupIndexHoldAndLateRegistration(t *testing.T) {
 			if !errors.Is(repo.RequireNoCleanupHold(ctx, epoch), ErrContentIndexIsolated) {
 				t.Fatal("initialization ignored hold")
 			}
-			if _, err := repo.QueueDelete(ctx, epoch, 7, "tenant_id = 7"); !errors.Is(err, ErrContentIndexIsolated) {
+			if _, err := repo.QueueDelete(ctx, epoch, 7, "tenant_id = 7", commonClient.ManagerContentDeleteScope{}); !errors.Is(err, ErrContentIndexIsolated) {
 				t.Fatal("generic delete bypassed hold", err)
 			}
 			if scenario == "restart" {

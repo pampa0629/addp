@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	commonClient "github.com/addp/common/client"
 	"testing"
 	"time"
 
@@ -296,7 +297,7 @@ func TestContentMaintenanceSerializesPurgeAndResourceDeletion(t *testing.T) {
 	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, &purge); err != nil || !claimed {
 		t.Fatal(err)
 	}
-	deletion, err := repo.QueueDelete(t.Context(), epoch, 7, "tenant_id = 7 AND document_id = 'item'")
+	deletion, err := repo.QueueDelete(t.Context(), epoch, 7, "tenant_id = 7 AND document_id = 'item'", commonClient.ManagerContentDeleteScope{})
 	if err != nil {
 		t.Fatal(err)
 	}

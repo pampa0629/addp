@@ -28,7 +28,7 @@
 | `filegdb-mysql-export` | [MySQL→FileGDB](#mysql-filegdb-实际页面导出)的独占 MySQL 源、页面及撤权。 |
 | `filegdb-authorization` | [NFS FileGDB 整容器授权](授权与共享.md#nfs-filegdb-整容器授权2026-10-29-接入范围)的子表／ZIP 读取、到期和故障恢复。 |
 | `nfs-upload-initial` | [NFS 上传新项授权](授权与共享.md#nfs-上传新项初始授权)。独有可写目录，核新建、覆盖、重放和部分失败，无追加。 |
-| `minio-node-rescan` | 独占 Business MinIO 中登记两条目标 prefix 内的对象及一条同桶对照对象。真实删除第一条后 basic 重扫，再删除最后一条并 deep 重扫。每次核原生对象清单、Meta Worker 成功回执、普通 User 资源树及 Manager 搜索精确指纹集合。保留项 ID 与指纹保持一致，已删详情返回 404。退出核撤销当轮节点 Grant 和隔离资源清零。 |
+| `minio-node-rescan` | 独占 Business MinIO 中登记两条目标 prefix 内的对象及一条同桶对照对象。真实删除第一条后 basic 重扫，再删除最后一条并 deep 重扫，随后恢复第一条并 basic 重扫。各阶段核原生对象清单、Meta Worker 成功回执、普通 User 资源树、Manager 搜索和 Meilisearch 原始索引的精确指纹集合。保留项和恢复项使用原 ID 与指纹，已删详情返回 404。退出核撤销当轮节点 Grant 和隔离资源清零。 |
 
 入口示例：`ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。人工 Hosted 指定同名 `suite`、`manager_case`、`manager_source_commit`。源码参数须为完整 40 位小写 SHA，检出后 HEAD 必须精确相等且属于 dispatch 提交的祖先或自身，才准备工具和部署。日志分列源码及 dispatch SHA，应用、Runtime、夹具和断言取所选源码。其他 suite 不消费此参数，旧 workflow 不作固定源码入口。
 

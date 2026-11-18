@@ -11,7 +11,7 @@ import (
 )
 
 func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID uint, item *models.MetaItem, extractedText string, textTruncated bool) bool {
-	if s.contentIndex == nil || resource == nil || item == nil {
+	if s.contentIndex == nil || resource == nil || item == nil || !s.objectIndexWriteReady(ctx, item) {
 		return false
 	}
 
@@ -33,6 +33,7 @@ func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *comm
 	contentPreview := metatext.PreviewText(truncatedContent, metatext.DocumentPreviewRuneLimit)
 
 	document := commonClient.ManagerContentDocument{DocumentID: item.Fingerprint, EngineID: resource.ID, DataItemType: item.ItemType, Name: item.Name, ProjectionTime: time.Now().UTC()}
+	document.AfterDeleteOperationID = item.IndexDeleteOperationID
 	document.PayloadKind = commonClient.ManagerContentPayloadExtractedContent
 	document.ContentHash = stringFromStandardAttributes(metadata, "storage", "content_hash")
 	document.Content = truncatedContent

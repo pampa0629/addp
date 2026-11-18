@@ -94,7 +94,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 				t.Errorf("delete fixture index terminal: %+v %v", final, err)
 			}
 		}
-		for _, model := range []any{&models.SearchDocumentOrdinal{}, &models.ContentIndexDelivery{}, &models.ContentIndexOutlet{}} {
+		for _, model := range []any{&models.SearchDocumentOrdinal{}, &models.ContentIndexDeletionFence{}, &models.ContentIndexDelivery{}, &models.ContentIndexOutlet{}} {
 			if err := db.Where("index_name = ?", index).Delete(model).Error; err != nil {
 				t.Error(err)
 			}
@@ -166,6 +166,89 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		}
 	})
 
+	t.Run("exact_batch_has_replayable_receipt_and_fences_restoration", func(t *testing.T) {
+		tenantID, engineID := uint(7), uint(19)
+		identity := testSearchIdentity(t, tenantID, engineID, 81, "Restorable")
+		technical := commonClient.ManagerContentDocument{
+			DocumentID: identity.ID, EngineType: identity.EngineType, Locator: identity.Locator, EngineID: engineID,
+			PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, DataItemType: "collection", Name: "Restorable",
+		}
+		oldContent := commonClient.ManagerContentDocument{
+			DocumentID: identity.ID, EngineID: engineID, PayloadKind: commonClient.ManagerContentPayloadExtractedContent,
+			DataItemType: "collection", Name: "Restorable", Content: "legacybodyterm", ContentPreview: "legacybodyterm",
+		}
+		for _, doc := range []commonClient.ManagerContentDocument{technical, oldContent} {
+			if err := svc.UpsertContentDocuments(ctx, tenantID, []commonClient.ManagerContentDocument{doc}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if read(t, identity.ID)["content"] != oldContent.Content {
+			t.Fatal("fixture did not index the old body")
+		}
+		visibility := searchVisibilityFixture{}
+		assertSearch := func(query string, expected int) {
+			t.Helper()
+			result, err := testSearchDocuments(t, svc, ctx, tenantID, &engineID, visibility, query, 10, "")
+			if err != nil || len(result.Hits) != expected || (expected == 1 && result.Hits[0].DocumentID != identity.ID) {
+				t.Fatalf("search %q: %+v %v", query, result, err)
+			}
+		}
+		assertSearch("Restorable", 1)
+		scope := ContentDocumentDeleteScope{EngineID: engineID, DocumentIDs: []string{identity.ID}, OperationID: uuid.NewString()}
+		// Meta has restored the source before Manager has accepted the deletion.
+		// Its newer observation hides both the stale technical and text matches.
+		visibility.afterDelete = scope.OperationID
+		assertSearch("Restorable", 0)
+		assertSearch("legacybodyterm", 0)
+		// The original caller may lose the reply. Validate external absence before replay.
+		if err := svc.DeleteContentDocuments(ctx, tenantID, scope); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := svc.ReadContentIndexInventory(ctx, tenantID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, doc := range inventory.Documents {
+			if doc.DocumentID == identity.ID {
+				t.Fatal("document remained in the native index after the receipt")
+			}
+		}
+		assertSearch("Restorable", 0)
+		before, err := repo.Get(ctx, int64(tenantID), scope.OperationID)
+		if err != nil || before.TaskUID == nil || before.Status != repository.IndexDeliverySucceeded {
+			t.Fatalf("original receipt: %+v %v", before, err)
+		}
+		if err := svc.DeleteContentDocuments(ctx, tenantID, scope); err != nil {
+			t.Fatal(err)
+		}
+		staleScope := scope
+		staleScope.EngineID++
+		if err := svc.DeleteContentDocuments(ctx, tenantID, staleScope); !errors.Is(err, repository.ErrContentIndexDeliveryConflict) {
+			t.Fatalf("operation ID was reused across engines: %v", err)
+		}
+		technical.AfterDeleteOperationID = scope.OperationID
+		if err := svc.UpsertContentDocuments(ctx, tenantID, []commonClient.ManagerContentDocument{technical}); err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.UpsertContentDocuments(ctx, tenantID, []commonClient.ManagerContentDocument{oldContent}); !errors.Is(err, repository.ErrContentIndexDeliveryConflict) {
+			t.Fatalf("late pre-deletion body was accepted: %v", err)
+		}
+		if err := svc.DeleteContentDocuments(ctx, tenantID, scope); err != nil {
+			t.Fatal(err)
+		}
+		after, err := repo.Get(ctx, int64(tenantID), scope.OperationID)
+		if err != nil || after.TaskUID == nil || *after.TaskUID != *before.TaskUID {
+			t.Fatalf("replay replaced external receipt: %+v %v", after, err)
+		}
+		if raw := read(t, identity.ID); raw["name"] != technical.Name || raw["content"] == oldContent.Content {
+			t.Fatalf("restored raw document contains old content or wrong identity: %+v", raw)
+		}
+		assertSearch("Restorable", 1)
+		assertSearch("legacybodyterm", 0)
+		if err := svc.DeleteContentDocuments(ctx, tenantID, ContentDocumentDeleteScope{EngineID: engineID, DocumentIDs: []string{identity.ID}}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("exact_delete_batch_preserves_tenant_engine_and_sibling", func(t *testing.T) {
 		const tenantID, engineID uint = 7, 9
 		docs := []commonClient.ManagerContentDocument{}

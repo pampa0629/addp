@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	commonclient "github.com/addp/common/client"
 	"time"
 
 	"github.com/addp/manager/internal/models"
@@ -203,8 +205,11 @@ func (r *ContentIndexDeliveryRepository) QueueProtectionPurges(ctx context.Conte
 	return tx.Model(state).Update("isolated", true).Error
 }
 
-func (r *ContentIndexDeliveryRepository) QueueDelete(ctx context.Context, epoch string, tenantID int64, filter string) (*models.ContentIndexDelivery, error) {
+func (r *ContentIndexDeliveryRepository) QueueDelete(ctx context.Context, epoch string, tenantID int64, filter string, scope commonclient.ManagerContentDeleteScope) (*models.ContentIndexDelivery, error) {
 	op := &models.ContentIndexDelivery{ID: uuid.NewString(), IndexName: r.index, TenantID: tenantID, Kind: IndexDeliveryDelete, Filter: filter, Status: IndexDeliveryQueued}
+	if scope.OperationID != "" {
+		op.ID = scope.OperationID
+	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		state, err := r.lock(tx)
 		if err != nil {
@@ -213,12 +218,62 @@ func (r *ContentIndexDeliveryRepository) QueueDelete(ctx context.Context, epoch 
 		if state.Epoch != epoch || !state.Configured || state.CleanupHoldID != "" || tenantID <= 0 || filter == "" {
 			return ErrContentIndexIsolated
 		}
+		if scope.OperationID != "" {
+			var saved models.ContentIndexDelivery
+			err := tx.Where("id = ?", op.ID).Take(&saved).Error
+			switch {
+			case err == nil:
+				if saved.IndexName != r.index || saved.TenantID != tenantID || saved.Kind != IndexDeliveryDelete || saved.Filter != filter || saved.CleanupOperationID != "" {
+					return ErrContentIndexDeliveryConflict
+				}
+				op = &saved
+				return nil
+			case !errors.Is(err, gorm.ErrRecordNotFound):
+				return err
+			}
+			fences := make([]models.ContentIndexDeletionFence, 0, len(scope.DocumentIDs))
+			for _, id := range scope.DocumentIDs {
+				fences = append(fences, models.ContentIndexDeletionFence{IndexName: r.index, TenantID: tenantID, DocumentID: id, EngineID: scope.EngineID, OperationID: op.ID})
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "index_name"}, {Name: "tenant_id"}, {Name: "document_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"engine_id", "operation_id"}),
+			}).Create(&fences).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(op).Error; err != nil {
 			return err
 		}
 		return tx.Model(state).Update("isolated", true).Error
 	})
 	return op, err
+}
+
+// CheckWriteAfterDeletion uses the outlet lock already held by Register.
+func (r *ContentIndexDeliveryRepository) CheckWriteAfterDeletion(tx *gorm.DB, op *models.ContentIndexDelivery, documents []commonclient.ManagerContentDocument) error {
+	type deletion struct {
+		models.ContentIndexDeletionFence
+		Status string
+	}
+	var fences []deletion
+	if err := tx.Table("manager.content_index_deletion_fences AS f").
+		Select("f.*, COALESCE(d.status, '') AS status").Joins("LEFT JOIN manager.content_index_deliveries AS d ON d.id = f.operation_id").
+		Where("f.index_name = ? AND f.tenant_id = ? AND f.document_id IN ?", r.index, op.TenantID, op.DocumentIDs).
+		Scan(&fences).Error; err != nil {
+		return err
+	}
+	byID := make(map[string]deletion, len(fences))
+	for _, fence := range fences {
+		byID[fence.DocumentID] = fence
+	}
+	for _, doc := range documents {
+		fence, exists := byID[doc.DocumentID]
+		if doc.AfterDeleteOperationID != fence.OperationID || (exists && (fence.EngineID != doc.EngineID || fence.Status != IndexDeliverySucceeded)) {
+			return ErrContentIndexDeliveryConflict
+		}
+	}
+	return nil
 }
 
 // Unknown submissions are only discoverable with pre-submission correlation.

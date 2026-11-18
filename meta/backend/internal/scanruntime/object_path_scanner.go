@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
-
-	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -232,16 +229,9 @@ func scanObjectCatalogPaths(
 		if scanState.errorFor(node.FullName) != nil {
 			continue
 		}
-		deleted, err := repo.SoftDeleteMissingObjectItems(ctx, node, scannedFingerprints)
-		if err != nil {
+		if err := repo.SoftDeleteMissingObjectItems(ctx, node, scannedFingerprints); err != nil {
 			failures.Add(node.FullName, err)
 			scanState.fail(node.FullName, err)
-			continue
-		}
-		if runtime.indexer != nil {
-			for batch := range slices.Chunk(deleted, commonclient.ManagerContentBatchLimit) {
-				_ = runtime.indexer.DeleteItemsFromIndex(ctx, tenantID, engineID, batch)
-			}
 		}
 	}
 

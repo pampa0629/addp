@@ -79,28 +79,32 @@ func (c tenantHTTPClient) withTenantID(tenantID uint) tenantHTTPClient {
 }
 
 func (c tenantHTTPClient) doJSON(ctx context.Context, method, path string, payload, result any) error {
+	_, err := c.doJSONStatus(ctx, method, path, payload, result)
+	return err
+}
+
+func (c tenantHTTPClient) doJSONStatus(ctx context.Context, method, path string, payload, result any) (int, error) {
 	if c.httpClient == nil || c.tokenSource == nil || c.baseURL == "" || c.tenantID == nil || *c.tenantID == 0 {
-		return errors.New("tenant service request is not configured")
+		return 0, errors.New("tenant service request is not configured")
 	}
 	token, err := c.tokenSource.Token(ctx, *c.tenantID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	status, err := c.doJSONWithToken(ctx, method, path, token, payload, result)
 	if status != http.StatusUnauthorized {
-		return err
+		return status, err
 	}
 	invalidator, ok := c.tokenSource.(ServiceTokenInvalidator)
 	if !ok {
-		return err
+		return status, err
 	}
 	invalidator.InvalidateToken(*c.tenantID, token)
 	token, err = c.tokenSource.Token(ctx, *c.tenantID)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	_, err = c.doJSONWithToken(ctx, method, path, token, payload, result)
-	return err
+	return c.doJSONWithToken(ctx, method, path, token, payload, result)
 }
 
 func (c tenantHTTPClient) doJSONWithToken(ctx context.Context, method, path, token string, payload, result any) (int, error) {

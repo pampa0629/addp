@@ -38,3 +38,14 @@ type ContentIndexDelivery struct {
 }
 
 func (ContentIndexDelivery) TableName() string { return "manager.content_index_deliveries" }
+
+// ContentIndexDeletionFence binds a document's writes to its latest confirmed removal.
+type ContentIndexDeletionFence struct {
+	IndexName   string `gorm:"primaryKey;size:128"`
+	TenantID    int64  `gorm:"primaryKey;autoIncrement:false"`
+	DocumentID  string `gorm:"primaryKey;size:128"`
+	EngineID    uint   `gorm:"not null"`
+	OperationID string `gorm:"not null;size:36"`
+}
+
+func (ContentIndexDeletionFence) TableName() string { return "manager.content_index_deletion_fences" }

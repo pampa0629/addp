@@ -2445,6 +2445,9 @@ def run_minio_node_rescan(repository, environment):
         {'term': 'service', 'kind': 'service', 'name': ''}, {'term': 'bucket', 'kind': 'bucket', 'name': bucket}]}
     root = f'/api/v1/meta/resource-tree/{engine}'
     search = '/api/v1/manager/search?' + urllib.parse.urlencode({'q': 'rescan', 'engine_id': engine, 'page_size': 10})
+    index_port = positive_int(int(environment['ADDP_ONLINE_MANAGER_MEILI_PORT']), 'Meilisearch port')
+    index_name = urllib.parse.quote(environment['MEILISEARCH_MANAGER_CONTENT_INDEX'], safe='')
+    native_index = f'http://127.0.0.1:{index_port}/indexes/{index_name}/documents/fetch'
     first, last, outside = 'selected/rescanfirst.txt', 'selected/rescanlast.txt', 'sibling/rescanoutside.txt'
     deadline = time.monotonic() + 180
 
@@ -2474,7 +2477,11 @@ def run_minio_node_rescan(repository, environment):
 
     def verify_search(expected):
         while time.monotonic() < deadline:
-            payload = _object(client.request('GET', search, (200,)).payload, 'Manager search response')
+            response = client.request('GET', search, (200, 503))
+            payload = _object(response.payload, 'Manager search response')
+            if response.status == 503 and payload.get('error_code') == 'manager_search_isolated':
+                time.sleep(1)
+                continue
             data = _object(payload.get('data'), 'Manager search data')
             hits = [_object(row, 'Manager search result').get('document_id')
                     for row in _array(data.get('results') or [], 'Manager search results')]
@@ -2483,12 +2490,30 @@ def run_minio_node_rescan(repository, environment):
             time.sleep(1)
         raise SuiteError('Manager search results did not match the exact active object fingerprints')
 
-    def remove(action, expected):
+    def verify_native_index(expected):
+        request = urllib.request.Request(native_index, data=json.dumps({
+            'filter': f'tenant_id = {tenant} AND engine_id = {engine}',
+            'fields': ['id', 'document_id', 'tenant_id', 'engine_id'], 'limit': 10,
+        }).encode(), headers={'Authorization': 'Bearer ' + environment['MEILISEARCH_MASTER_KEY'],
+                              'Content-Type': 'application/json'})
+        while time.monotonic() < deadline:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                page = _object(json.load(response), 'native Meilisearch inventory')
+            rows = [_object(row, 'native Meilisearch document')
+                    for row in _array(page.get('results'), 'native Meilisearch documents')]
+            if any(row.get('id') != row.get('document_id') or row.get('tenant_id') != tenant or row.get('engine_id') != engine for row in rows):
+                raise SuiteError('native Meilisearch inventory crossed the expected identity scope')
+            if page.get('total') == len(rows) == len(expected) and {row['document_id'] for row in rows} == expected:
+                return sorted(expected)
+            time.sleep(1)
+        raise SuiteError('native Meilisearch documents did not match the exact active object fingerprints')
+
+    def mutate_source(action, expected):
         process = subprocess.run(['bash', 'business/scripts/online-manager-minio-fixture.sh', action],
             cwd=repository, env=environment, capture_output=True, text=True, timeout=45, check=True)
         rows = [json.loads(line) for line in process.stdout.splitlines()]
         if len(rows) != len(expected) or any(row.get('status') != 'success' for row in rows) or {row.get('key') for row in rows} != expected:
-            raise SuiteError('native MinIO listing did not match the expected post-delete inventory')
+            raise SuiteError('native MinIO listing did not match the expected object inventory')
 
     try:
         try:
@@ -2497,20 +2522,32 @@ def run_minio_node_rescan(repository, environment):
             initial, locator = read_tree()
             if set(initial) != {first, last, outside} or not isinstance(locator, str) or 'node_id=' not in locator:
                 raise SuiteError('initial directory did not expose all three objects and the exact prefix locator')
+            initial_ids = {item[1] for item in initial.values()}
             report['phases'].append({'phase': 'baseline', 'scan': initial_scan, 'tree': sorted(initial),
-                                     'search': verify_search({item[1] for item in initial.values()})})
+                                     'search': verify_search(initial_ids), 'native_index': verify_native_index(initial_ids)})
             for depth, removed, keep, action in (
                     ('basic', first, {last, outside}, 'rescan-remove-first'),
                     ('deep', last, {outside}, 'rescan-remove-last')):
-                remove(action, keep)
+                mutate_source(action, keep)
                 scan = wait_for_meta_scan(client, engine, deadline, depth=depth, scope={'targets': [locator]}, force=False)
                 actual, _ = read_tree()
                 if actual != {key: initial[key] for key in keep}:
                     raise SuiteError('resource tree did not reconcile to the exact retained object identities')
                 client.request('GET', f'/api/v1/meta/items/{initial[removed][0]}', (404,))
+                expected_ids = {item[1] for item in actual.values()}
                 report['phases'].append({'phase': 'partial' if depth == 'basic' else 'empty', 'depth': depth, 'scan': scan,
                                          'physical_inventory': sorted(keep), 'tree': sorted(actual),
-                                         'search': verify_search({item[1] for item in actual.values()})})
+                                         'search': verify_search(expected_ids), 'native_index': verify_native_index(expected_ids)})
+            keep = {first, outside}
+            mutate_source('rescan-restore-first', keep)
+            scan = wait_for_meta_scan(client, engine, deadline, depth='basic', scope={'targets': [locator]}, force=False)
+            restored, _ = read_tree()
+            if restored != {key: initial[key] for key in keep}:
+                raise SuiteError('the restored object lost its original Item ID or fingerprint')
+            expected_ids = {item[1] for item in restored.values()}
+            report['phases'].append({'phase': 'restored', 'depth': 'basic', 'scan': scan, 'physical_inventory': sorted(keep),
+                                     'tree': sorted(restored), 'search': verify_search(expected_ids),
+                                     'native_index': verify_native_index(expected_ids)})
         finally:
             authorization.cleanup()
             current = issuer.request('GET', authorization.base + '/access_grants?' + urllib.parse.urlencode({

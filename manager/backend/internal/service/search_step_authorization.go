@@ -70,7 +70,7 @@ func (s *searchSession) identities(ctx context.Context, ids []searchIdentity) ([
 	}
 	filter := buildSearchFilter(&s.tenant, s.engineFilter()) + " AND document_id IN [" + strings.Join(quoted, ",") + "]"
 	var page meilisearch.DocumentsResult
-	if err := s.service.client.Index(s.service.contentIndex).GetDocumentsWithContext(ctx, &meilisearch.DocumentsQuery{Filter: filter, Limit: int64(len(ids)), Fields: []string{"id", "document_id", "locator", "engine_type", "tenant_id", "engine_id"}}, &page); err != nil {
+	if err := s.service.client.Index(s.service.contentIndex).GetDocumentsWithContext(ctx, &meilisearch.DocumentsQuery{Filter: filter, Limit: int64(len(ids)), Fields: []string{"id", "document_id", "locator", "engine_type", "tenant_id", "engine_id", "after_delete_operation_id"}}, &page); err != nil {
 		return nil, err
 	}
 	var indexed []struct {
@@ -138,7 +138,7 @@ func (step *searchStep) authorize(ctx context.Context, hits []searchSourceHit) (
 			entry.Engine = valid[i].EngineID
 			entry.Locator = sha256.Sum256([]byte(valid[i].Locator))
 			if target.Visible {
-				if target.ItemFingerprint != valid[i].ID {
+				if target.ItemFingerprint != valid[i].ID || target.AfterDeleteOperationID != valid[i].AfterDeleteOperationID {
 					continue
 				}
 				entry.Flags |= 1

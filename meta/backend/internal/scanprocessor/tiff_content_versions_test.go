@@ -164,7 +164,7 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+	if err := db.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ObjectIndexDeletion{}); err != nil {
 		t.Fatal(err)
 	}
 	repo := metaRepo.NewScanRepository(db)

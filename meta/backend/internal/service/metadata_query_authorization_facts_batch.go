@@ -22,7 +22,7 @@ func (s *MetadataQueryService) QueryDataItemAuthorizationFacts(ctx context.Conte
 	result := &authorizationfacts.AuthorizationFactsBatch{Data: make([]authorizationfacts.AuthorizationFactsResult, 0, len(query.Fingerprints))}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var items []models.MetaItem
-		if err := tx.Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint", "attributes").Where("tenant_id=? AND fingerprint IN ? AND deleted_at IS NULL", tenant, query.Fingerprints).Find(&items).Error; err != nil {
+		if err := tx.Select("id", "tenant_id", "engine_id", "node_id", "item_type", "name", "full_name", "fingerprint", "attributes", "index_delete_operation_id").Where("tenant_id=? AND fingerprint IN ? AND deleted_at IS NULL", tenant, query.Fingerprints).Find(&items).Error; err != nil {
 			return err
 		}
 		lookup, err := loadMetadataIdentityNodes(tx, tenant, items)

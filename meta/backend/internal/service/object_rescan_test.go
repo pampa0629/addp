@@ -101,6 +101,8 @@ func exerciseObjectNodeRescan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 				tree := newResourceTreeTestServiceWithDB(t, db, tenantID, engineID)
 				fingerprint := func(key string) string { return commonmodels.GenerateItemFingerprint(engineID, "bucket/"+key) }
 				indexed := map[string]bool{}
+				deletionCalls := map[string]int{}
+				dropDeleteResponse := false
 				var indexLock sync.Mutex
 				manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					indexLock.Lock()
@@ -116,11 +118,25 @@ func exerciseObjectNodeRescan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 						}
 					case "DELETE /api/v1/manager/runtime/content-documents":
 						query := r.URL.Query()
-						if len(query) != 2 || query.Get("engine_id") != "90" || len(query["document_id"]) == 0 {
+						operation := query.Get("operation_id")
+						if len(query) != 3 || query.Get("engine_id") != "90" || len(query["document_id"]) == 0 || operation == "" {
 							t.Errorf("expected exact Manager deletion, got %v", query)
 						}
-						for _, id := range query["document_id"] {
-							delete(indexed, id)
+						deletionCalls[operation]++
+						if deletionCalls[operation] == 1 {
+							for _, id := range query["document_id"] {
+								delete(indexed, id)
+							}
+						}
+						if dropDeleteResponse {
+							dropDeleteResponse = false
+							conn, _, err := http.NewResponseController(w).Hijack()
+							if err != nil {
+								t.Error(err)
+							} else {
+								_ = conn.Close()
+							}
+							return
 						}
 					default:
 						t.Errorf("unexpected Manager request %s %s", r.Method, r.URL.Path)
@@ -187,6 +203,17 @@ func exerciseObjectNodeRescan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 				if err := scan(opts); (err != nil) != (mode == "failed_enumeration") {
 					t.Fatalf("rescan error = %v", err)
 				}
+				indexLock.Lock()
+				if len(deletionCalls) != 0 || !indexed[initial.Fingerprint] {
+					t.Error("scan must leave delivery to the independent worker")
+				}
+				indexLock.Unlock()
+				// Recreate the service after the Meta transaction, before any Manager call.
+				scanService = NewScanService(db, tree.engineService)
+				scanService.SetContentIndexClient(client)
+				if err := scanService.deliverObjectIndexChanges(t.Context()); err != nil {
+					t.Fatal(err)
+				}
 				root, err := tree.GetTree(t.Context(), tenantID, engineID, -1)
 				if err != nil {
 					t.Fatal(err)
@@ -234,6 +261,50 @@ func exerciseObjectNodeRescan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 					if err := db.First(&stored, initial.ID).Error; err != nil || stored.Fingerprint != initial.Fingerprint {
 						t.Fatalf("Item identity was not restored: %v, err = %v", stored, err)
 					}
+					if err := scanService.deliverObjectIndexChanges(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+					// Remove the same object again, lose the Manager reply, then
+					// restore it while the deletion is still unconfirmed in Meta.
+					provider.keys = []string{keptKey, outsideKey}
+					if err := scan(opts); err != nil {
+						t.Fatal(err)
+					}
+					indexLock.Lock()
+					dropDeleteResponse = true
+					indexLock.Unlock()
+					if err := scanService.deliverObjectIndexChanges(t.Context()); err == nil {
+						t.Fatal("expected lost Manager response")
+					}
+					var pending models.ObjectIndexDeletion
+					if err := db.Where("fingerprint = ?", initial.Fingerprint).Take(&pending).Error; err != nil || pending.Confirmed {
+						t.Fatalf("lost reply settled Meta deletion: %+v, %v", pending, err)
+					}
+					provider.keys = append(provider.keys, removedKey)
+					if err := scan(opts); err != nil {
+						t.Fatal(err)
+					}
+					root, err := tree.GetTree(t.Context(), tenantID, engineID, -1)
+					if err != nil || findResourceTreeNodeForTest(root, "bucket/"+removedKey) == nil {
+						t.Fatalf("restored object absent from tree: %v", err)
+					}
+					current, err := facts.GetDataItemAuthorizationFacts(t.Context(), tenantID, initial.Fingerprint)
+					if err != nil || current == nil || current.AfterDeleteOperationID != pending.OperationID {
+						t.Fatalf("current search observation lost the restoration identity: %+v, %v", current, err)
+					}
+					indexLock.Lock()
+					if indexed[initial.Fingerprint] {
+						t.Error("indexed restoration overtook the unconfirmed deletion")
+					}
+					indexLock.Unlock()
+					if err := scanService.deliverObjectIndexChanges(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+					indexLock.Lock()
+					if !indexed[initial.Fingerprint] || deletionCalls[pending.OperationID] != 2 {
+						t.Errorf("restoration did not follow the original deletion receipt: index=%v calls=%v", indexed, deletionCalls)
+					}
+					indexLock.Unlock()
 				}
 			})
 		}

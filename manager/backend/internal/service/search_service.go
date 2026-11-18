@@ -7,6 +7,7 @@ import (
 	"fmt"
 	commonClient "github.com/addp/common/client"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -347,14 +348,16 @@ func (s *HybridSearchService) DeleteContentDocuments(ctx context.Context, tenant
 		filters = append(filters, fmt.Sprintf("path ^= '%s'", strings.ReplaceAll(value, "'", "\\'")))
 	}
 	if len(scope.DocumentIDs) > 0 {
-		encoded, err := json.Marshal(scope.DocumentIDs)
+		ids := slices.Clone(scope.DocumentIDs)
+		slices.Sort(ids)
+		encoded, err := json.Marshal(ids)
 		if err != nil {
 			return err
 		}
 		filters = append(filters, "document_id IN "+string(encoded))
 	}
 	filter := strings.Join(filters, " AND ")
-	op, err := s.deliveries.QueueDelete(ctx, s.epoch, int64(tenantID), filter)
+	op, err := s.deliveries.QueueDelete(ctx, s.epoch, int64(tenantID), filter, scope)
 	if err != nil {
 		return err
 	}

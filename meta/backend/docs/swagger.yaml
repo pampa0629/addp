@@ -86,6 +86,9 @@ definitions:
     type: object
   authorizationfacts.AuthorizationFacts:
     properties:
+      after_delete_operation_id:
+        format: uuid
+        type: string
       basis_state:
         allOf:
         - $ref: '#/definitions/authorizationfacts.AuthorizationBasisState'

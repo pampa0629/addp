@@ -4268,6 +4268,13 @@ const docTemplate = `{
                         "description": "1–100 个精确指纹，重复 query；不能混用范围选择器 | 1–100 exact fingerprints using repeated query parameters; mutually exclusive with range selectors",
                         "name": "document_id",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "持久精确删除批次的操作 UUID，重试时原样提交 | Stable operation UUID for a durable exact deletion batch, reused on retry",
+                        "name": "operation_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -6620,6 +6627,10 @@ const docTemplate = `{
         "client.ManagerContentDocument": {
             "type": "object",
             "properties": {
+                "after_delete_operation_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
                 "author": {
                     "type": "string"
                 },

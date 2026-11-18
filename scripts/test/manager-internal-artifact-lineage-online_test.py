@@ -1,6 +1,7 @@
 import copy
 import importlib
 import importlib.util
+import io
 import json
 import math
 import struct
@@ -2132,6 +2133,7 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
         names = ('selected/rescanfirst.txt', 'selected/rescanlast.txt', 'sibling/rescanoutside.txt')
         locator = f'addp://engine/27/path/{bucket}/selected?type=prefix&node_id=51'
         fingerprints = [str(i) * 64 for i in (1, 2, 3)]
+        visible = ((0, 1, 2), (1, 2), (2,), (0, 2))
         phase = 0
         consumer, issuer = mock.Mock(), mock.Mock()
         issuer.request.return_value = response(200, {'total': 0, 'data': []})
@@ -2142,38 +2144,48 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                 return response(200, {'children': [
                     {'type': 'prefix', 'metadata': {'full_name': bucket + '/selected'}, 'locator': locator},
                     *[{'type': 'object', 'metadata': {'full_name': bucket + '/' + names[i], 'item_id': i + 1}}
-                      for i in range(phase, 3)]]})
+                      for i in visible[phase]]]})
             if path.startswith('/api/v1/meta/items/'):
                 index = int(path.rsplit('/', 1)[1]) - 1
-                self.assertEqual(expected, (404,) if index < phase else (200,))
+                self.assertEqual(expected, (200,) if index in visible[phase] else (404,))
                 return response(expected[0], {'fingerprint': fingerprints[index]})
             if path.startswith('/api/v1/manager/search?'):
                 return response(200, {'data': {'exhausted': True,
-                    'results': [{'document_id': fingerprint} for fingerprint in fingerprints[phase:]]}})
+                    'results': [{'document_id': fingerprints[i]} for i in visible[phase]]}})
             self.fail(f'unexpected request {path}')
 
         def remove(args, **kwargs):
             nonlocal phase
-            self.assertEqual(args[-1], ('rescan-remove-first', 'rescan-remove-last')[phase])
+            self.assertEqual(args[-1], ('rescan-remove-first', 'rescan-remove-last', 'rescan-restore-first')[phase])
             phase += 1
-            return mock.Mock(stdout='\n'.join(json.dumps({'status': 'success', 'key': key}) for key in names[phase:]))
+            return mock.Mock(stdout='\n'.join(json.dumps({'status': 'success', 'key': names[i]}) for i in visible[phase]))
+
+        def native_index(request, timeout):
+            self.assertTrue(request.full_url.endswith('/indexes/fixture-content/documents/fetch'))
+            self.assertEqual(json.loads(request.data)['filter'], f"tenant_id = {environment['ADDP_ONLINE_TEST_TENANT_ID']} AND engine_id = 27")
+            rows = [{'id': fingerprints[i], 'document_id': fingerprints[i],
+                     'tenant_id': int(environment['ADDP_ONLINE_TEST_TENANT_ID']), 'engine_id': 27} for i in visible[phase]]
+            return io.BytesIO(json.dumps({'total': len(rows), 'results': rows}).encode())
 
         consumer.request.side_effect = request
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(SUITE, 'GatewayClient', side_effect=(consumer, issuer)), \
                 mock.patch.object(grants, 'exact_user_principal', return_value='51'), \
                 mock.patch.object(grants, 'ModelSourceAuthorization') as grant, \
-                mock.patch.object(SUITE, 'wait_for_meta_scan', side_effect=('baseline', 'partial', 'empty')) as scan, \
+                mock.patch.object(SUITE, 'wait_for_meta_scan', side_effect=('baseline', 'partial', 'empty', 'restored')) as scan, \
+                mock.patch.object(SUITE.urllib.request, 'urlopen', side_effect=native_index), \
                 mock.patch.object(SUITE.subprocess, 'run', side_effect=remove):
             environment = scenario_environment(directory)
             environment.update(ADDP_ONLINE_TEST_RUN_ID='manager-42-1', ADDP_ONLINE_MANAGER_MINIO_BUCKET=bucket,
-                ADDP_ONLINE_HOSTED='1', POSTGRES_DB='addp_online', ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='fixture')
+                ADDP_ONLINE_HOSTED='1', POSTGRES_DB='addp_online', ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='fixture',
+                ADDP_ONLINE_MANAGER_MEILI_PORT='17700', MEILISEARCH_MANAGER_CONTENT_INDEX='fixture-content', MEILISEARCH_MASTER_KEY='fixture')
             report = SUITE.run_minio_node_rescan(Path('/repository'), environment)
             self.assertEqual(json.loads((Path(directory) / 'minio-node-rescan.json').read_text()), report)
             self.assertEqual(report['result'], 'passed')
-            self.assertEqual([row['search'] for row in report['phases']], [fingerprints, fingerprints[1:], fingerprints[2:]])
+            for key in ('search', 'native_index'):
+                self.assertEqual([row[key] for row in report['phases']], [[fingerprints[i] for i in phase_items] for phase_items in visible])
             self.assertEqual([call.kwargs['scope'] for call in scan.call_args_list],
-                             [{'catalog_paths': [bucket]}, {'targets': [locator]}, {'targets': [locator]}])
+                             [{'catalog_paths': [bucket]}, {'targets': [locator]}, {'targets': [locator]}, {'targets': [locator]}])
             grant.return_value.cleanup.assert_called_once()
 
     def test_default_full_and_invalid_values_fail_before_http(self):

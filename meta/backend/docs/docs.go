@@ -4702,6 +4702,10 @@ const docTemplate = `{
         "authorizationfacts.AuthorizationFacts": {
             "type": "object",
             "properties": {
+                "after_delete_operation_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
                 "basis_state": {
                     "enum": [
                         "complete",

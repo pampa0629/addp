@@ -28,7 +28,8 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 func projectDataItemAuthorizationFacts(item models.MetaItem, observedAt time.Time, lookup metadataNodeLookup) (*authorizationfacts.AuthorizationFacts, error) {
 	facts := &authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1,
 		ItemFingerprint: item.Fingerprint, EngineID: item.EngineID, ItemType: item.ItemType, FullName: item.FullName,
-		ObservedAt: observedAt, BasisState: authorizationfacts.AuthorizationBasisIncomplete}
+		AfterDeleteOperationID: item.IndexDeleteOperationID,
+		ObservedAt:             observedAt, BasisState: authorizationfacts.AuthorizationBasisIncomplete}
 	err := func() error {
 		layout := commonjson.String(item.Attributes, "item", "layout")
 		if item.ItemType == plugin.EngineCatalogTermFile || item.ItemType == plugin.EngineCatalogTermObject {

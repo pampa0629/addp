@@ -3,12 +3,17 @@ package repository
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanresource"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (r *ScanRepository) EnsureObjectCatalogPrefixPath(
@@ -53,38 +58,63 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixChain(
 }
 
 // SoftDeleteMissingObjectItems reconciles the complete inventory of a bucket or prefix.
-func (r *ScanRepository) SoftDeleteMissingObjectItems(ctx context.Context, root *models.MetaNode, observed map[string]bool) ([]string, error) {
+func (r *ScanRepository) SoftDeleteMissingObjectItems(ctx context.Context, root *models.MetaNode, observed map[string]bool) error {
 	const scope = `WITH RECURSIVE scope(id) AS (
 		SELECT id FROM meta.meta_node WHERE id = ? AND tenant_id = ? AND engine_id = ? AND deleted_at IS NULL
 		UNION SELECT n.id FROM meta.meta_node n JOIN scope s ON n.parent_node_id = s.id
 		WHERE n.tenant_id = ? AND n.engine_id = ? AND n.deleted_at IS NULL
 	) SELECT id FROM scope`
-	var deleted []string
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing []models.MetaItem
-		if err := tx.Select("id", "fingerprint").Where("tenant_id = ? AND engine_id = ?", root.TenantID, root.EngineID).
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "fingerprint").Where("tenant_id = ? AND engine_id = ?", root.TenantID, root.EngineID).
 			Where("node_id IN ("+scope+")", root.ID, root.TenantID, root.EngineID, root.TenantID, root.EngineID).
-			Find(&existing).Error; err != nil {
+			Order("id").Find(&existing).Error; err != nil {
 			return err
 		}
+		var missing []string
 		for _, item := range existing {
-			if observed[item.Fingerprint] {
-				continue
+			if !observed[item.Fingerprint] {
+				missing = append(missing, item.Fingerprint)
 			}
-			result := tx.Delete(&item)
-			if result.Error != nil {
-				return result.Error
+		}
+		now := time.Now()
+		for batch := range slices.Chunk(missing, commonclient.ManagerContentBatchLimit) {
+			var prior []models.ObjectIndexDeletion
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("fingerprint IN ?", batch).Order("fingerprint").Find(&prior).Error; err != nil {
+				return err
 			}
-			if result.RowsAffected != 0 {
-				deleted = append(deleted, item.Fingerprint)
+			pending := make(map[string]string, len(prior))
+			for _, deletion := range prior {
+				if !deletion.Confirmed {
+					pending[deletion.Fingerprint] = deletion.OperationID
+				}
+			}
+			operationID := uuid.NewString()
+			var deletions []models.ObjectIndexDeletion
+			for _, fingerprint := range batch {
+				id := pending[fingerprint]
+				if id == "" {
+					id = operationID
+					deletions = append(deletions, models.ObjectIndexDeletion{
+						Fingerprint: fingerprint, TenantID: root.TenantID, EngineID: root.EngineID, OperationID: id,
+					})
+				}
+				if err := tx.Model(&models.MetaItem{}).Where("fingerprint = ?", fingerprint).
+					Updates(map[string]any{"deleted_at": now, "index_delete_operation_id": id}).Error; err != nil {
+					return err
+				}
+			}
+			if len(deletions) > 0 {
+				if err := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "fingerprint"}},
+					DoUpdates: clause.AssignmentColumns([]string{"operation_id", "confirmed", "restored"}),
+				}).Create(&deletions).Error; err != nil {
+					return err
+				}
 			}
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return deleted, nil
 }
 
 func (r *ScanRepository) FindItemByFingerprintUnscoped(fingerprint string) (*models.MetaItem, bool, error) {

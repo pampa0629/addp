@@ -67,6 +67,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 
 	// 创建独立的服务（消除循环依赖）
 	indexerService := NewIndexerService(nil, log) // indexer 稍后通过 SetIndexer 注入
+	indexerService.db = db
 	runtimes := scanruntime.NewRuntimes(db, log, repo, indexerService)
 	runtimes.SetContainerInspector(NewWorkflowContainerInspector(engineService))
 

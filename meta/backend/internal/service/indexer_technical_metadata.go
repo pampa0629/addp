@@ -22,7 +22,12 @@ func (s *IndexerService) IndexTechnicalMetadata(ctx context.Context, resource *c
 		if item == nil {
 			return false
 		}
-		documents = append(documents, technicalMetadataDocument(resource, parent, item))
+		if s.objectIndexWriteReady(ctx, item) {
+			documents = append(documents, technicalMetadataDocument(resource, parent, item))
+		}
+	}
+	if len(documents) == 0 {
+		return false
 	}
 	if err := s.contentIndex.WithTenantID(tenantID).UpsertDocuments(ctx, documents); err != nil {
 		s.log.Warn("提交 DataItem 技术元数据批次失败", "items", len(documents), "error", err)
@@ -33,7 +38,8 @@ func (s *IndexerService) IndexTechnicalMetadata(ctx context.Context, resource *c
 
 func technicalMetadataDocument(resource *commonModels.Engine, parent *models.MetaNode, item *models.MetaItem) commonClient.ManagerContentDocument {
 	doc := commonClient.ManagerContentDocument{
-		DocumentID: item.Fingerprint, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata,
+		AfterDeleteOperationID: item.IndexDeleteOperationID,
+		DocumentID:             item.Fingerprint, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata,
 		EngineID: resource.ID, EngineName: resource.Name, EngineType: resource.EngineType,
 		DataItemType: item.ItemType, Name: item.Name, FullName: item.FullName,
 		RowCount: item.RowCount, SizeBytes: item.SizeBytes, DataUpdatedAt: item.DataUpdatedAt,

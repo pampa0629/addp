@@ -232,6 +232,10 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
   done
   infra_owned=1
   run_logged bash scripts/infra/up.sh
+  source "$ROOT_DIR/scripts/infra/ports.sh"
+  addp_infra_verify_container meilisearch addp-meilisearch
+  export ADDP_ONLINE_MANAGER_MEILI_PORT
+  ADDP_ONLINE_MANAGER_MEILI_PORT=$(addp_infra_mapped_port addp-meilisearch 7700)
   fixture_owned=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh start
   application_owned=1

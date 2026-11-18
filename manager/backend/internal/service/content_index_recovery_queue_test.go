@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	commonClient "github.com/addp/common/client"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,7 +46,7 @@ func TestContentRecoveryDrainsMaintenanceBehindFullQueue(t *testing.T) {
 	var last *models.ContentIndexDelivery
 	for i := 0; i < 101; i++ {
 		var err error
-		last, err = svc.deliveries.QueueDelete(t.Context(), svc.epoch, 7, fmt.Sprintf("tenant_id = 7 AND engine_id = %d", i+1))
+		last, err = svc.deliveries.QueueDelete(t.Context(), svc.epoch, 7, fmt.Sprintf("tenant_id = 7 AND engine_id = %d", i+1), commonClient.ManagerContentDeleteScope{})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -29,7 +29,7 @@ func qualifyManagerSearchRead(current shared.AuthContext) error {
 }
 
 func (s *Service) checkManagerSearchTargets(ctx context.Context, credential string, tenant int64, request shared.SourceMetadataCheckRequest) (*shared.SourceSearchCheck, error) {
-	result, err := s.checkSourceVisibilityTargets(ctx, credential, tenant, request, qualifyManagerSearchRead)
+	result, err := s.checkSourceVisibilityTargets(ctx, credential, tenant, request, qualifyManagerSearchRead, true)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (s *Service) checkManagerSearchTargets(ctx context.Context, credential stri
 
 // Both fixed operations observe metadata/content rules in the same final
 // snapshot. Only their required function and delegated scope differ.
-func (s *Service) checkSourceVisibilityTargets(ctx context.Context, credential string, tenant int64, request shared.SourceMetadataCheckRequest, qualify func(shared.AuthContext) error) (*shared.SourceObjectPreviewCheck, error) {
+func (s *Service) checkSourceVisibilityTargets(ctx context.Context, credential string, tenant int64, request shared.SourceMetadataCheckRequest, qualify func(shared.AuthContext) error, forSearch bool) (*shared.SourceObjectPreviewCheck, error) {
 	if s == nil || s.repository == nil || s.repository.db == nil {
 		return nil, errSourceReadRules
 	}
@@ -62,7 +62,11 @@ func (s *Service) checkSourceVisibilityTargets(ctx context.Context, credential s
 		return &shared.SourceObjectPreviewCheck{ObservedAt: now, Targets: []shared.SourceVisibilityTargetCheck{}}, err
 	}
 	started = time.Now()
-	bindings, err := s.resolveMetadataBindings(ctx, tenant, request.Targets)
+	var operationIDs []string
+	if forSearch {
+		operationIDs = make([]string, len(request.Targets))
+	}
+	bindings, err := s.resolveMetadataBindingsWithIndexVersion(ctx, tenant, request.Targets, operationIDs)
 	if timing != nil {
 		timing.metadataBinding = time.Since(started)
 	}
@@ -148,6 +152,9 @@ func (s *Service) checkSourceVisibilityTargets(ctx context.Context, credential s
 		result.Targets[i].ContentReadable = result.Targets[i].Visible && content >= 0 && observation.Targets[content].Covered
 		if result.Targets[i].Visible {
 			result.Targets[i].ItemFingerprint = bindings[i].ItemFingerprint
+			if forSearch {
+				result.Targets[i].AfterDeleteOperationID = operationIDs[i]
+			}
 		}
 	}
 	return result, nil
@@ -172,5 +179,5 @@ func (s *Service) CheckManagerObjectPreview(ctx context.Context, credential stri
 	if err := s.repository.checkSourceAccessAction(ctx, tenant, int64(request.Targets[0].EngineID), shared.SourceAccessMetadataRead); err != nil {
 		return nil, err
 	}
-	return s.checkSourceVisibilityTargets(ctx, credential, tenant, request, qualifyManagerPreviewRead)
+	return s.checkSourceVisibilityTargets(ctx, credential, tenant, request, qualifyManagerPreviewRead, false)
 }

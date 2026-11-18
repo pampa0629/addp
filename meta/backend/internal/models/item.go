@@ -24,7 +24,22 @@ type MetaItem struct {
 	Attributes    JSONMap        `gorm:"type:jsonb" json:"attributes,omitempty"`
 	CreatedAt     time.Time      `json:"created_at"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+	IndexDeleteOperationID string `gorm:"not null;default:'';size:36" json:"-"`
 }
+
+// ObjectIndexDeletion retains the latest exact deletion for an object fingerprint.
+// Unconfirmed members of an operation remain bound to the original batch.
+type ObjectIndexDeletion struct {
+	Fingerprint string `gorm:"primaryKey;size:64"`
+	TenantID    uint   `gorm:"not null"`
+	EngineID    uint   `gorm:"not null"`
+	OperationID string `gorm:"not null;size:36;index"`
+	Confirmed   bool   `gorm:"not null"`
+	Restored    bool   `gorm:"not null"`
+}
+
+func (ObjectIndexDeletion) TableName() string { return "meta.object_index_deletions" }
 
 func (MetaItem) TableName() string {
 	return "meta.meta_item"

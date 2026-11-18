@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -144,6 +145,14 @@ func (r *ScanRepository) UpsertItemSelective(
 		}
 		if attrs != nil {
 			item.Attributes = attrs
+		}
+		if commonJSON.String(attrs, "storage", "bucket") != "" {
+			var deletion models.ObjectIndexDeletion
+			err := r.db.Where("fingerprint = ? AND tenant_id = ? AND engine_id = ?", fingerprint, tenantID, engineID).Take(&deletion).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+			item.IndexDeleteOperationID = deletion.OperationID
 		}
 
 		if err := r.db.Create(&item).Error; err != nil {

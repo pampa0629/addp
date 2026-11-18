@@ -64,8 +64,9 @@ type SourceSearchCheck struct {
 
 type SourceVisibilityTargetCheck struct {
 	SourceMetadataTargetCheck
-	ContentReadable bool   `json:"content_readable"`
-	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	ContentReadable        bool   `json:"content_readable"`
+	ItemFingerprint        string `json:"item_fingerprint,omitempty"`
+	AfterDeleteOperationID string `json:"after_delete_operation_id,omitempty" format:"uuid"`
 }
 
 func (r *SourceSearchCheck) Matches(request SourceSearchCheckRequest) bool {
@@ -114,7 +115,7 @@ func visibilityTargetsMatch(targets []SourceVisibilityTargetCheck, expectedTarge
 			if err != nil || len(fp) != 32 || strings.ToLower(target.ItemFingerprint) != target.ItemFingerprint {
 				return false
 			}
-		} else if target.ItemFingerprint != "" {
+		} else if target.ItemFingerprint != "" || target.AfterDeleteOperationID != "" {
 			return false
 		}
 	}

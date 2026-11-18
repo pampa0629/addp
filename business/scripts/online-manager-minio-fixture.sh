@@ -29,7 +29,7 @@ fi
 
 action=${1:-}
 case "$action" in
-  start|start-obj|stop|status|index-csv-change|index-csv-restore|index-tsv-change|index-tsv-restore|rescan-remove-first|rescan-remove-last) ;;
+  start|start-obj|stop|status|index-csv-change|index-csv-restore|index-tsv-change|index-tsv-restore|rescan-remove-first|rescan-remove-last|rescan-restore-first) ;;
   *) fail "unknown Manager MinIO fixture action" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
@@ -434,6 +434,16 @@ case "$action" in
     key="selected/rescan${action#rescan-remove-}.txt"
     [ "$(mc cat "$bucket/$key")" = "$key" ] || fail "rescan mutation refused foreign source bytes"
     mc rm "$bucket/$key" >/dev/null
+    mc ls --recursive --json "$bucket"
+    ;;
+  rescan-restore-first)
+    container_running || fail "Business MinIO is not running"
+    bucket="fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET"
+    key="selected/rescanfirst.txt"
+    if mc stat "$bucket/$key" >/dev/null 2>&1; then
+      fail "rescan restoration requires an absent fixture key"
+    fi
+    printf '%s\n' "$key" | mc pipe "$bucket/$key" >/dev/null
     mc ls --recursive --json "$bucket"
     ;;
   index-*)

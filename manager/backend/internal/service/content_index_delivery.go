@@ -72,7 +72,10 @@ func (s *HybridSearchService) UpsertContentDocuments(ctx context.Context, tenant
 		for _, doc := range payload {
 			doc["search_ordinal"] = ordinals[doc["document_id"].(string)]
 		}
-		return s.deliveries.Register(ctx, tx, s.epoch, op)
+		if err := s.deliveries.Register(ctx, tx, s.epoch, op); err != nil {
+			return err
+		}
+		return s.deliveries.CheckWriteAfterDeletion(tx, op, documents)
 	})
 	if err != nil {
 		return err

@@ -110,20 +110,29 @@ func TestManagerContentBatchRejectsInvalidMembersBeforeSending(t *testing.T) {
 
 func TestExactContentDeletionValidatesAndSendsOneBoundedRequest(t *testing.T) {
 	calls := 0
+	const operation = "46b2e645-1af1-4d56-befd-e4d4e85c3faf"
 	ids := make([]string, ManagerContentBatchLimit)
 	for i := range ids {
 		ids[i] = fmt.Sprintf("fingerprint-%03d", i)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.Method != "DELETE" || r.URL.Path != "/api/v1/manager/runtime/content-documents" || !reflect.DeepEqual(r.URL.Query()["document_id"], ids) || r.URL.Query().Get("engine_id") != "14" {
+		if r.Method != "DELETE" || r.URL.Path != "/api/v1/manager/runtime/content-documents" || !reflect.DeepEqual(r.URL.Query()["document_id"], ids) || r.URL.Query().Get("engine_id") != "14" || r.URL.Query().Get("operation_id") != operation {
 			t.Errorf("exact scope changed: %s", r.URL)
 		}
-		w.WriteHeader(204)
+		if calls == 1 {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 	c := NewManagerContentClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "tenant", nil }), server.Client()).WithTenantID(7)
-	if err := c.DeleteDocuments(context.Background(), ManagerContentDeleteScope{EngineID: 14, DocumentIDs: ids}); err != nil {
+	scope := ManagerContentDeleteScope{EngineID: 14, DocumentIDs: ids, OperationID: operation}
+	if err := c.DeleteDocuments(context.Background(), scope); err == nil {
+		t.Fatal("unconfirmed acceptance settled the deletion")
+	}
+	if err := c.DeleteDocuments(context.Background(), scope); err != nil {
 		t.Fatal(err)
 	}
 	for _, bad := range []ManagerContentDeleteScope{
@@ -132,12 +141,13 @@ func TestExactContentDeletionValidatesAndSendsOneBoundedRequest(t *testing.T) {
 		{EngineID: 14, DocumentIDs: []string{"x"}, PathPrefix: "3d"},
 		{EngineID: 14, DocumentIDs: []string{" " + ids[0]}}, {EngineID: 14, DocumentIDs: []string{strings.Repeat("x", 129)}},
 		{EngineID: 14, DocumentIDs: []string{"bad\nname"}}, {DocumentIDs: []string{"x"}},
+		{EngineID: 14, OperationID: operation}, {EngineID: 14, DocumentIDs: []string{"x"}, OperationID: "invalid"},
 	} {
 		if err := c.DeleteDocuments(context.Background(), bad); err == nil {
 			t.Fatalf("invalid scope sent: %+v", bad)
 		}
 	}
-	if calls != 1 {
-		t.Fatalf("expected one bounded request, got %d", calls)
+	if calls != 2 {
+		t.Fatalf("expected the bounded submission and replay, got %d calls", calls)
 	}
 }

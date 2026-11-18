@@ -101,6 +101,7 @@ func main() {
 		log.Fatalf("Meta worker 心跳配置无效: %v", err)
 	}
 	go reporter.Run(ctx)
+	go scanService.RunObjectIndexDelivery(ctx)
 	logger.L().Info("meta bounded worker started", "concurrency", cfg.ConcurrentTasks, "lease", cfg.BoundedLeaseDuration)
 	runner.Run(ctx, registrationDone.IsRegistered)
 	<-registrationDone.Done()

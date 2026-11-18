@@ -53,6 +53,8 @@ type AuthorizationFacts struct {
 	BasisState      AuthorizationBasisState `json:"basis_state" enums:"complete,incomplete,needs_refresh,unsupported"`
 	BoundaryHash    *string                 `json:"boundary_hash"`
 	ObservedAt      time.Time               `json:"observed_at"`
+
+	AfterDeleteOperationID string `json:"after_delete_operation_id,omitempty" format:"uuid"`
 }
 
 func ValidItemFingerprint(value string) bool {

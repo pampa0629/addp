@@ -550,7 +550,7 @@ func TestContentDeliveryLostDeleteResponseRecoversWithoutResubmitting(t *testing
 			w.WriteHeader(500)
 		}
 	}))
-	op, err := svc.deliveries.QueueDelete(t.Context(), svc.epoch, 7, "tenant_id = 7")
+	op, err := svc.deliveries.QueueDelete(t.Context(), svc.epoch, 7, "tenant_id = 7", commonClient.ManagerContentDeleteScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
