@@ -72,7 +72,7 @@ scrape_configs:
         replacement: '$1'
         target_label: __tmp_addp_module_name
       - source_labels: [addp_monitor_kind, addp_instance_id]
-        regex: 'process_resources;(.+)'
+        regex: '(?:process_resources|compute_resources);(.+)'
         replacement: '$1'
         target_label: __tmp_addp_instance_id
       - source_labels: [addp_monitor_kind, addp_runtime_role]
@@ -103,6 +103,10 @@ scrape_configs:
         regex: '(?:cdc_resources|search_resources);(.+)'
         replacement: '$1'
         target_label: __tmp_addp_component_container_started_at
+      - source_labels: [addp_monitor_kind, addp_runtime_engine_id]
+        regex: 'compute_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_runtime_engine_id
       - action: labeldrop
         regex: '(exported_)*addp_.*'
       - source_labels: [__tmp_addp_node_id]
@@ -129,5 +133,7 @@ scrape_configs:
         target_label: addp_component_container_id
       - source_labels: [__tmp_addp_component_container_started_at]
         target_label: addp_component_container_started_at
+      - source_labels: [__tmp_addp_runtime_engine_id]
+        target_label: addp_runtime_engine_id
       - action: labeldrop
         regex: '__tmp_addp_.*'

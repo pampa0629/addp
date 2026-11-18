@@ -59,7 +59,7 @@ from flask_cors import CORS
 from operators.io_operators import STORAGE_ACCESS
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import time
 
@@ -94,6 +94,7 @@ CORS(app)  # 启用跨域
 
 # 启动时间（用于计算 uptime）
 start_time = datetime.now()
+metrics_started_at = datetime.now(timezone.utc).isoformat()
 
 # 内存存储（生产环境应使用数据库）
 executions = ExecutionRegistry()
@@ -549,6 +550,13 @@ def register_to_system():
         logger.info(f"📥 收到响应: status={status_code}, body={body[:500]}")
         if status_code == 202:
             logger.info("✅ Successfully registered to System Backend")
+            if os.getenv('ADDP_GEOPYTHON_METRICS_ENDPOINT'):
+                from json import loads
+                from runtime_metrics import start
+                try:
+                    start(system_url, client_secret, int(loads(body)['engine_id']), metrics_started_at, raster_resources.snapshot)
+                except Exception:
+                    logger.warning('geopython_metrics_registration_unavailable')
             return True
         else:
             logger.warning(f"⚠️  Failed to register: {status_code} - {body}")

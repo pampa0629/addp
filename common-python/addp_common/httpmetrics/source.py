@@ -228,8 +228,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(400);return
         try:
             began = time.monotonic()
-            payload = self.server.metrics.render()
-            if time.monotonic()-began >= 3:
+            payload = self.server.render()
+            if len(payload) > 4 << 20 or time.monotonic()-began >= 3:
                 raise MetricsUnavailable('http_metrics_render_timeout')
         except Exception:
             self.send_error(503);return
@@ -251,8 +251,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class Source:
-    def __init__(self, server, thread, declaration):
+    def __init__(self, server, thread, declaration, cleanup):
         self.server, self.thread, self.declaration = server, thread, declaration
+        self.cleanup = cleanup
         self.closed = False
 
     def close(self):
@@ -270,10 +271,26 @@ class Source:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=3)
-        self.server.metrics.registry.unregister(self.server.identity)
+        if self.cleanup is not None:
+            self.cleanup()
         if self.thread.is_alive():
             raise MetricsUnavailable('http_metrics_source_not_stopped')
         self.closed = True
+
+
+def start_private_source(listen, endpoint, tls_dir, render, *, declaration=None, cleanup=None):
+    context = source_tls(tls_dir, endpoint)
+    host, port = _address(listen)
+    server_type = type('IPv6Source',(_Server,),{'address_family':socket.AF_INET6}) if ':' in host else _Server
+    server = server_type((host,port), _Handler)
+    server.context, server.render = context, render
+    thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval':.05}, daemon=True, name='addp-http-metrics')
+    try:
+        thread.start()
+    except Exception:
+        server.server_close()
+        raise
+    return Source(server, thread, declaration, cleanup)
 
 
 def start_optional(registration):
@@ -284,17 +301,14 @@ def start_optional(registration):
             return None
         metrics = process()
         identity = Identity(registration)
-        context = source_tls(entry['tls_dir'], entry['endpoint'])
-        host, port = _address(entry['listen'])
-        server_type = type('IPv6Source',(_Server,),{'address_family':socket.AF_INET6}) if ':' in host else _Server
-        server = server_type((host,port), _Handler)
-        server.context, server.metrics, server.identity = context, metrics, identity
+        declaration = ProcessMetricsDeclaration(schema_version=SCHEMA, endpoint=entry['endpoint'])
         metrics.registry.register(identity)
-        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval':.05}, daemon=True, name='addp-http-metrics')
-        thread.start()
-        return Source(server, thread, ProcessMetricsDeclaration(schema_version=SCHEMA, endpoint=entry['endpoint']))
+        try:
+            return start_private_source(entry['listen'], entry['endpoint'], entry['tls_dir'], metrics.render,
+                                        declaration=declaration, cleanup=lambda: metrics.registry.unregister(identity))
+        except Exception:
+            metrics.registry.unregister(identity)
+            raise
     except Exception:
-        if 'server' in locals():
-            server.server_close()
         logger.warning('http_metrics_source_unavailable')
         return None

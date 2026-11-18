@@ -29,7 +29,7 @@ func TestObservabilityIdentityRouteRequiresOnlyMonitorPlatformService(t *testing
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { sqlDB.Close() })
-	if err := db.AutoMigrate(&models.HostNode{}, &models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.EngineDeployment{}); err != nil {
+	if err := db.AutoMigrate(&models.HostNode{}, &models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.EngineDeployment{}, &models.Engine{}, &models.GeoPythonMetricsLease{}); err != nil {
 		t.Fatal(err)
 	}
 	actor := testIAMServiceActorContext("platform", "addp-monitor")

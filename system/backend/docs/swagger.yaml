@@ -5959,6 +5959,28 @@ definitions:
       state:
         type: string
     type: object
+  models.GeoPythonMetricsDeclaration:
+    properties:
+      endpoint:
+        type: string
+      instance_id:
+        type: string
+      started_at:
+        type: string
+    type: object
+  models.GeoPythonMetricsIdentity:
+    properties:
+      endpoint:
+        type: string
+      engine_id:
+        type: integer
+      instance_id:
+        type: string
+      lease_expires_at:
+        type: string
+      started_at:
+        type: string
+    type: object
   models.JSONMap:
     additionalProperties: true
     type: object
@@ -6021,6 +6043,8 @@ definitions:
         items:
           $ref: '#/definitions/models.ObservabilityEngineIdentity'
         type: array
+      geopython_metrics:
+        $ref: '#/definitions/models.GeoPythonMetricsIdentity'
       infrastructure_components:
         $ref: '#/definitions/models.ObservabilityComponentSnapshot'
       module_instances:
@@ -15464,6 +15488,57 @@ paths:
       security:
       - BearerAuth: []
       summary: 注册内置 Engine Runtime | Register built-in engine runtime
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.runtime_registry.update
+  /runtime/engines/{id}/metrics:
+    put:
+      consumes:
+      - application/json
+      description: 限 GeoPython 的平台服务身份，当前内置引擎注册与进程代次须匹配 | The GeoPython platform service
+        renews a private source for its registered engine and current process
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 指标来源 | Metrics declaration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.GeoPythonMetricsDeclaration'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 续约 GeoPython 指标来源 | Renew the GeoPython metrics source
       tags:
       - 运行时注册 | Runtime Registry
       x-addp-auth-mode: permission

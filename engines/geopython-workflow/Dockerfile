@@ -81,7 +81,7 @@ RUN pip install --no-cache-dir --no-build-isolation --no-deps /tmp/common-python
 # Copy application code
 COPY engines/geopython-workflow/operators/ ./operators/
 COPY engines/geopython-workflow/geometry_batches.py .
-COPY engines/geopython-workflow/raster_resources.py .
+COPY engines/geopython-workflow/raster_resources.py engines/geopython-workflow/runtime_metrics.py ./
 COPY engines/geopython-workflow/workflow_engine.py .
 COPY engines/geopython-workflow/api_server.py .
 COPY engines/geopython-workflow/private_execution.py engines/geopython-workflow/private_files.py engines/geopython-workflow/private_file_api.py ./

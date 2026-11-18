@@ -105,6 +105,20 @@ func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context, 
 			}
 			result.EngineDeployments = append(result.EngineDeployments, engine)
 		}
+		var runtime commonmodels.GeoPythonMetricsIdentity
+		current := tx.Raw(`
+			SELECT lease.engine_id, lease.instance_id, lease.started_at, lease.endpoint, lease.lease_expires_at
+			FROM geopython_metrics_lease lease JOIN engines engine ON engine.id = lease.engine_id
+			WHERE lease.singleton AND lease.lease_expires_at > ?
+			  AND engine.engine_type = 'geopython_workflow' AND engine.engine_origin = 'extension'
+			  AND engine.is_builtin AND engine.tenant_id IS NULL AND engine.lifecycle_state = 'active'
+		`, result.ObservedAt).Scan(&runtime)
+		if current.Error != nil {
+			return current.Error
+		}
+		if current.RowsAffected == 1 {
+			result.GeoPythonMetrics = &runtime
+		}
 		encoded, err := json.Marshal(result)
 		if err != nil {
 			return err

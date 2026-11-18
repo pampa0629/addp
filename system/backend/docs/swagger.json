@@ -12539,6 +12539,83 @@
                 ]
             }
         },
+        "/runtime/engines/{id}/metrics": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "限 GeoPython 的平台服务身份，当前内置引擎注册与进程代次须匹配 | The GeoPython platform service renews a private source for its registered engine and current process",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "续约 GeoPython 指标来源 | Renew the GeoPython metrics source",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "指标来源 | Metrics declaration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.GeoPythonMetricsDeclaration"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.update"
+                ]
+            }
+        },
         "/runtime/execution-authorizations": {
             "post": {
                 "security": [
@@ -27257,6 +27334,40 @@
                 }
             }
         },
+        "models.GeoPythonMetricsDeclaration": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.GeoPythonMetricsIdentity": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                }
+            }
+        },
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
@@ -27351,6 +27462,9 @@
                     "items": {
                         "$ref": "#/definitions/models.ObservabilityEngineIdentity"
                     }
+                },
+                "geopython_metrics": {
+                    "$ref": "#/definitions/models.GeoPythonMetricsIdentity"
                 },
                 "infrastructure_components": {
                     "$ref": "#/definitions/models.ObservabilityComponentSnapshot"

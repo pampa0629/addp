@@ -16,8 +16,9 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 PLATFORM_COMPOSE_FILES=(-f docker-compose.yml)
+RUNTIME_COMPOSE_FILES=(-f docker-compose.runtimes.yml)
 platform_compose() { docker compose "${PLATFORM_COMPOSE_FILES[@]}" "$@"; }
-runtime_compose() { docker compose -f docker-compose.runtimes.yml -f "$ADDP_RELEASE_DIR/runtimes-images.yml" "$@"; }
+runtime_compose() { docker compose "${RUNTIME_COMPOSE_FILES[@]}" -f "$ADDP_RELEASE_DIR/runtimes-images.yml" "$@"; }
 
 connect_business_network() {
   local network="${BUSINESS_DOCKER_NETWORK:-business_business-network}"
@@ -131,6 +132,35 @@ echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
 platform_compose up -d --no-build --pull never --wait --wait-timeout 180
 
 echo -e "${YELLOW}[4/4] 启动并等待内置 Runtime 就绪...${NC}"
+if [[ -n "${ADDP_GEOPYTHON_METRICS_ENDPOINT:-}" ]]; then
+  if python3 - <<'PYGEO'
+import ipaddress
+import os
+import re
+from pathlib import Path
+
+try:
+    listener = re.fullmatch(r'(\[[0-9a-f:]+\]|[0-9.]+):([1-9][0-9]{0,4})', os.environ['ADDP_GEOPYTHON_METRICS_LISTEN'])
+    if not listener:
+        raise ValueError
+    address = ipaddress.ip_address(listener[1].strip('[]'))
+    port = int(os.environ['ADDP_GEOPYTHON_METRICS_CONTAINER_PORT'])
+    tls = Path(os.environ['ADDP_GEOPYTHON_METRICS_TLS_DIR'])
+    if (not (address.is_private or address.is_loopback) or address.is_unspecified or address.is_link_local
+        or address.is_multicast or not (1 <= port <= 65535 and int(listener[2]) <= 65535)
+        or not tls.is_absolute() or not tls.is_dir() or tls.is_symlink()
+        or tls.resolve().is_relative_to(Path.cwd())):
+        raise ValueError
+except (KeyError, ValueError, OSError):
+    raise SystemExit(1) from None
+PYGEO
+  then
+    RUNTIME_COMPOSE_FILES+=(-f scripts/prod/geopython-metrics.yml)
+  else
+    infra_result=1
+    echo 'GeoPython metrics deployment unconfigured; runtime startup remains independent' >&2
+  fi
+fi
 runtime_compose up -d --no-build --pull never --wait --wait-timeout 180
 
 connect_business_network

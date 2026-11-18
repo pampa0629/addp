@@ -20,6 +20,7 @@ const (
 // private projection for Monitor discovery. Process endpoints are deployment
 // declarations, never browser DTOs. Credentials are never included.
 type ObservabilityIdentitySnapshot struct {
+	GeoPythonMetrics         *GeoPythonMetricsIdentity       `json:"geopython_metrics,omitempty"`
 	InfrastructureComponents *ObservabilityComponentSnapshot `json:"infrastructure_components,omitempty"`
 	ServiceGroups            *ServiceGroupSnapshot           `json:"service_groups,omitempty"`
 	ObservedAt               time.Time                       `json:"observed_at"`

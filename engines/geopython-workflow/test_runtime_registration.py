@@ -334,3 +334,115 @@ def failed_stage():
     assert result.stdout.index('NATIVE_SENTINEL_FAILURE') < result.stdout.index('NATIVE_LATER_REPORT_RAN')
     expected = '1 failed, 1 passed' if stage == 'call' else '1 error'
     assert expected in result.stdout
+
+
+def test_real_metrics_listener_declares_runtime_and_stops_with_worker(tmp_path):
+    import os
+    from pathlib import Path
+    import queue
+    import runpy
+    import shutil
+    import socket
+    import ssl
+    import subprocess
+    import sys
+    import threading
+    from datetime import datetime
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.error import URLError
+    from urllib.request import HTTPSHandler, ProxyHandler, build_opener
+    from uuid import UUID
+
+    from operators import _native_process
+
+    claims = queue.Queue()
+    registered = threading.Event()
+
+    class SystemFixture(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def reply(self, status, value=None):
+            body = json.dumps(value).encode() if value is not None else b''
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def body(self):
+            return self.rfile.read(int(self.headers['Content-Length']))
+
+        def do_POST(self):
+            raw = self.body()
+            if self.path == '/api/v1/system/oauth/token' and b'context_type=platform' in raw:
+                self.reply(200, {'access_token':'addp_at_fixture_token','token_type':'Bearer','expires_in':180})
+            elif self.path == '/api/v1/system/runtime/engines' and self.headers.get('Authorization') == 'Bearer addp_at_fixture_token':
+                assert json.loads(raw)['engine_type'] == 'geopython_workflow'
+                registered.set()
+                self.reply(202, {'engine_id':36})
+            else:
+                self.reply(403)
+
+        def do_PUT(self):
+            value = json.loads(self.body())
+            if (registered.is_set() and self.path == '/api/v1/system/runtime/engines/36/metrics'
+                    and self.headers.get('Authorization') == 'Bearer addp_at_fixture_token'):
+                claims.put(value)
+                self.reply(204)
+            else:
+                self.reply(403)
+
+    repo = Path(__file__).resolve().parents[2]
+    runpy.run_path(str(repo/'common-python/tests/test_httpmetrics.py'))['pki'](tmp_path)
+    tls = tmp_path/'source-tls'
+    tls.mkdir(mode=0o700)
+    for name in ('ca.crt','server.crt','server.key'):
+        shutil.copy2(tmp_path/name, tls/name)
+    with socket.socket() as a, socket.socket() as b:
+        a.bind(('127.0.0.1',0))
+        b.bind(('127.0.0.1',0))
+        port, source_port = a.getsockname()[1], b.getsockname()[1]
+    endpoint = f'https://127.0.0.1:{source_port}/metrics'
+    fixture = ThreadingHTTPServer(('127.0.0.1',0), SystemFixture)
+    thread = threading.Thread(target=fixture.serve_forever, daemon=True)
+    thread.start()
+    env = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST='127.0.0.1',
+               SYSTEM_URL=f'http://127.0.0.1:{fixture.server_port}',
+               GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET='disposable-credential-for-metrics-fixture',
+               ADDP_GEOPYTHON_METRICS_ENDPOINT=endpoint, ADDP_GEOPYTHON_METRICS_LISTEN=f'127.0.0.1:{source_port}',
+               ADDP_GEOPYTHON_METRICS_TLS_DIR=str(tls), ADDP_GEOPYTHON_METRICS_CONTAINER_PORT='')
+    log = tmp_path/'geo-metrics-worker.log'
+    context = ssl.create_default_context(cafile=str(tls/'ca.crt'))
+    no_cert = build_opener(ProxyHandler({}), HTTPSHandler(context=context))
+    with log.open('w') as stream:
+        process = _native_process.start([sys.executable, 'api_server.py'], cwd=Path(__file__).parent,
+                                        env=env, stdout=stream, stderr=subprocess.STDOUT)
+        try:
+            claim = claims.get(timeout=45)
+            assert claim['endpoint'] == endpoint and str(UUID(claim['instance_id'])) == claim['instance_id']
+            assert datetime.fromisoformat(claim['started_at']).tzinfo is not None
+            with pytest.raises((OSError, URLError)):
+                no_cert.open(endpoint, timeout=4)
+            context.load_cert_chain(tmp_path/'client.crt', tmp_path/'client.key')
+            collector = build_opener(ProxyHandler({}), HTTPSHandler(context=context))
+            with collector.open(endpoint, timeout=4) as response:
+                metrics = dict(row.split() for row in response.read(8192).decode().splitlines())
+            assert float(metrics['addp_geopython_effective_cpu_cores']) > 0
+            assert int(metrics['addp_geopython_memory_limit_bytes']) > 0
+            assert metrics['addp_geopython_raster_running'] == metrics['addp_geopython_raster_waiting'] == '0'
+            assert metrics['addp_geopython_raster_admission_enabled'] == '0'
+            assert 'addp_geopython_raster_running_limit' not in metrics
+            assert 'addp_geopython_raster_waiting_limit' not in metrics
+            assert claims.get(timeout=38) == claim
+        except (AssertionError, queue.Empty) as exc:
+            raise AssertionError(log.read_text()) from exc
+        finally:
+            process.terminate()
+            process.wait(timeout=15)
+            fixture.shutdown()
+            fixture.server_close()
+            thread.join(timeout=3)
+    assert process.returncode == 0, log.read_text()
+    with pytest.raises(URLError):
+        collector.open(endpoint, timeout=4)

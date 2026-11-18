@@ -101,7 +101,7 @@ def compose_model(project, env, override=None):
 
 def compose_inputs():
     paths = set(COMPOSE_FILES.values())
-    paths.add("scripts/infra/traces-platform.yml")
+    paths.update(("scripts/infra/traces-platform.yml", "scripts/prod/geopython-metrics.yml"))
     pending = list(paths)
     while pending:
         name = pending.pop()

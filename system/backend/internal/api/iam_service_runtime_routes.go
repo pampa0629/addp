@@ -99,6 +99,7 @@ func RegisterIAMServiceRuntimeRoutes(
 		platformRoutes.POST("/modules/heartbeat", moduleHandler.HeartbeatService)
 		platformRoutes.DELETE("/modules/:module_name/instances/:instance_id", moduleHandler.DeregisterService)
 		platformRoutes.POST("/engines", engineHandler.RegisterRuntimeEngine)
+		platformRoutes.PUT("/engines/:id/metrics", sharedauth.MustNewServiceClientGuard("addp-geopython"), engineHandler.DeclareGeoPythonMetrics)
 	}
 	platformReadRoutes := runtimeRoutes.Group("")
 	platformReadRoutes.Use(platformContext, runtimeRegistryRead)

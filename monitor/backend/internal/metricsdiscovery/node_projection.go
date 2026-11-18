@@ -198,6 +198,19 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			return nil, ErrBudgetExceeded
 		}
 	}
+	geo := snapshot.GeoPythonMetrics
+	if geo != nil && geo.LeaseExpiresAt.After(p.now().UTC()) {
+		if geo.EngineID == 0 || geo.GeoPythonMetricsDeclaration.Validate(snapshot.ObservedAt) != nil ||
+			geo.LeaseExpiresAt.After(snapshot.ObservedAt.Add(models.GeoPythonMetricsLeaseDuration)) {
+			return nil, ErrIdentityUnavailable
+		}
+		reserved++
+		if reserved > p.policy.targetLimit {
+			return nil, ErrBudgetExceeded
+		}
+	} else {
+		geo = nil
+	}
 	physical := make(map[string]bool)
 	declared := make(map[string]bool)
 	dynamic := make(map[string]bool)
@@ -302,6 +315,19 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": monitorKind, "addp_source": component.Kind,
 				"addp_component_id": component.ID(), "addp_component_container_id": component.ContainerID,
 				"addp_component_container_started_at": component.StartedAt.UTC().Format(time.RFC3339Nano),
+			}})
+		}
+	}
+	if geo != nil {
+		resolved, accepted, err := resolve(geo.Endpoint)
+		if err != nil {
+			return nil, err
+		}
+		if accepted {
+			dynamic[resolved.Address] = true
+			groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
+				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": "compute_resources", "addp_source": "geopython",
+				"addp_runtime_engine_id": strconv.FormatUint(uint64(geo.EngineID), 10), "addp_instance_id": geo.InstanceID,
 			}})
 		}
 	}

@@ -410,6 +410,15 @@ other = "节点已被其他操作修改，请刷新后重试"
 [system.host_node.failed]
 other = "节点台账操作失败"
 
+["system.geopython_metrics.invalid"]
+other = "GeoPython 指标来源声明无效。"
+
+["system.geopython_metrics.conflict"]
+other = "GeoPython 指标来源声明与当前运行时不符。"
+
+["system.geopython_metrics.unavailable"]
+other = "GeoPython 指标来源声明暂不可用。"
+
 ["system.observability_identity.invalid"]
 other = "身份快照请求不接受参数或正文。"
 

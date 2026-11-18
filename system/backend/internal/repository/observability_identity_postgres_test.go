@@ -92,6 +92,74 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 			t.Fatalf("unexpected version or mixed commit: %+v %v", current, err)
 		}
 	})
+	t.Run("GeoPython runtime metrics lease", func(t *testing.T) {
+		var id uint
+		err := db.Raw(`INSERT INTO system.engines
+			(name, engine_type, engine_origin, connection_info, identity_key, is_builtin, lifecycle_state)
+			VALUES ('metrics runtime fixture', 'geopython_workflow', 'extension',
+			        '{"protocol":"http","host":"fixture-geo","port":8099}', '{"key":"geo-metrics-fixture"}', true, 'active')
+			RETURNING id`).Scan(&id).Error
+		if err != nil || id == 0 {
+			t.Fatalf("create GeoPython fixture: %v", err)
+		}
+		defer func() { _ = db.Exec("DELETE FROM system.engines WHERE id = ?", id).Error }()
+		engineService := service.NewEngineService(repository.NewEngineRepository(db), nil, nil)
+		registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+		first := commonmodels.GeoPythonMetricsDeclaration{
+			InstanceID: "54a30000-0000-4000-8000-000000000001",
+			StartedAt:  time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond),
+			Endpoint:   "https://127.0.0.1:19444/metrics",
+		}
+		project := func(engineID uint, instance string) {
+			t.Helper()
+			current, err := registry.ObservabilityIdentities(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			row := current.GeoPythonMetrics
+			if engineID == 0 {
+				if row != nil {
+					t.Fatal("expired or disabled source published")
+				}
+			} else if row == nil || row.EngineID != engineID || row.InstanceID != instance ||
+				!row.LeaseExpiresAt.After(current.ObservedAt) || row.Endpoint != first.Endpoint {
+				t.Fatalf("current runtime metrics generation mismatch: %+v", row)
+			}
+		}
+		if err := engineService.DeclareGeoPythonMetrics(ctx, id+1, first); !errors.Is(err, service.ErrGeoPythonMetricsConflict) {
+			t.Fatalf("unknown runtime accepted: %v", err)
+		}
+		for i := 0; i < 2; i++ {
+			if err := engineService.DeclareGeoPythonMetrics(ctx, id, first); err != nil {
+				t.Fatal("declare or renew current process", err)
+			}
+		}
+		project(id, first.InstanceID)
+		newer := first
+		newer.InstanceID = "54a30000-0000-4000-8000-000000000002"
+		newer.StartedAt = newer.StartedAt.Add(time.Second)
+		if err := engineService.DeclareGeoPythonMetrics(ctx, id, newer); err != nil {
+			t.Fatal(err)
+		}
+		if err := engineService.DeclareGeoPythonMetrics(ctx, id, first); !errors.Is(err, service.ErrGeoPythonMetricsConflict) {
+			t.Fatalf("past runtime displaced current generation: %v", err)
+		}
+		project(id, newer.InstanceID)
+		if err := db.Exec("UPDATE system.geopython_metrics_lease SET lease_expires_at = NOW()").Error; err != nil {
+			t.Fatal(err)
+		}
+		project(0, "")
+		if err := engineService.DeclareGeoPythonMetrics(ctx, id, newer); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec("UPDATE system.engines SET lifecycle_state = 'disabled' WHERE id = ?", id).Error; err != nil {
+			t.Fatal(err)
+		}
+		project(0, "")
+		if err := engineService.DeclareGeoPythonMetrics(ctx, id, newer); !errors.Is(err, service.ErrGeoPythonMetricsConflict) {
+			t.Fatalf("disabled runtime renewed: %v", err)
+		}
+	})
 	var count int64
 	if err := db.Raw(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id=rp.role_id JOIN permissions p ON p.id=rp.permission_id WHERE p.permission_key='system.observability_identity.read' AND r.role_key='platform.monitor_runtime' AND r.tenant_id IS NULL`).Scan(&count).Error; err != nil || count != 1 {
 		t.Fatalf("monitor grant=%d %v", count, err)

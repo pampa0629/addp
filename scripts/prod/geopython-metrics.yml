@@ -1,0 +1,16 @@
+# Optional source transport for the existing GeoPython container.
+services:
+  geopython-workflow-engine:
+    environment:
+      ADDP_GEOPYTHON_METRICS_CONTAINER_PORT: "${ADDP_GEOPYTHON_METRICS_CONTAINER_PORT:?}"
+      ADDP_GEOPYTHON_METRICS_ENDPOINT: "${ADDP_GEOPYTHON_METRICS_ENDPOINT:?}"
+      ADDP_GEOPYTHON_METRICS_TLS_DIR: /run/addp-geopython-metrics
+    ports:
+      - "${ADDP_GEOPYTHON_METRICS_LISTEN:?}:${ADDP_GEOPYTHON_METRICS_CONTAINER_PORT:?}"
+    volumes:
+      - type: bind
+        source: "${ADDP_GEOPYTHON_METRICS_TLS_DIR:?}"
+        target: /run/addp-geopython-metrics
+        read_only: true
+        bind:
+          create_host_path: false

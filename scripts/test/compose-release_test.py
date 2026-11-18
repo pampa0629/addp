@@ -30,7 +30,7 @@ class ReleaseVerificationTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.root_patch = patch.object(release, "ROOT", self.root)
         self.root_patch.start()
-        for name in (*release.COMPOSE_FILES.values(), "scripts/infra/traces-platform.yml"):
+        for name in (*release.COMPOSE_FILES.values(), "scripts/infra/traces-platform.yml", "scripts/prod/geopython-metrics.yml"):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("services: {}\n")
