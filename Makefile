@@ -1372,6 +1372,7 @@ test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致�
 	@$(MAKE) test-go-dependency-policy
 	@$(MAKE) test-build-registration
 	@$(MAKE) test-compose-release
+	@$(MAKE) test-k3s-pilot
 	@$(MAKE) test-frontend-ci-registration
 	@$(MAKE) test-python-ci-registration
 	@$(MAKE) test-t2-ci-registration
@@ -1937,3 +1938,8 @@ test-raster-slope-orthogonal-scenario-unit:
 test-compose-release: ## 验证 Compose 发布清单、固定镜像与生产无构建边界
 	@bash -n scripts/prod/deploy.sh scripts/prod/start.sh scripts/infra/up.sh scripts/build/package.sh
 	@python3 scripts/test/compose-release_test.py
+
+.PHONY: test-k3s-pilot
+test-k3s-pilot: ## 验证 K3s 试点制品、调度、凭据和空库检查
+	@python3 scripts/build/package-k3s-pilot.py --help >/dev/null
+	@python3 scripts/test/k3s-pilot_test.py

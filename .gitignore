@@ -10,6 +10,7 @@ engines/supermap-workflow/vendor/
 !scripts/build/
 scripts/build/*
 !scripts/build/*.sh
+!scripts/build/package-k3s-pilot.py
 !scripts/build/README.md
 **/bin/
 

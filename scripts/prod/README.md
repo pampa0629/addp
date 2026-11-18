@@ -192,6 +192,8 @@ Docker 的格式及部署前提见[官方 Stack 部署说明](https://docs.docke
 
 ## 完整的生产部署流程
 
+双架构 K3s 的 System、Gateway、Catalog 独占试点使用[单集群现场交接说明](k3s-pilot.md)。其制品、命名空间和验收入口独立于 Compose 发布。
+
 ### 首次部署
 
 现场目标机准备 Docker、Docker Compose、Bash、Python 3、OpenSSL 和 curl。接收构建机制作的[固定版本发布包](../build/README.md#packagesh)及单独交付的站点配置，按包内 README 校验摘要。镜像归档模式先运行 `bash load-images.sh`。目标机无需克隆源码、编译服务或制作镜像。
