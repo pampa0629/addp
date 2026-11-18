@@ -29,7 +29,7 @@ func NewFileExecutionRepository(db *gorm.DB) *FileExecutionRepository {
 // No System/Meta/network operation takes place while this transaction is open.
 func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commonexecution.TaskExecution, sources []commonexecution.DevelopFileSourceIntent, target *commonexecution.DevelopFileTargetIntent) (*commonclient.DevelopFileExecutionFacts, error) {
 	if item == nil || item.Module != commonexecution.ModuleDevelop || (item.Source != commonexecution.ModuleDevelop && item.Source != commonexecution.ModuleOrchestrator) ||
-		item.TaskType != commonexecution.TaskTypeWorkflow || item.TriggerType != commonexecution.TriggerTypeManual || item.MaxAttempts != 1 ||
+		item.TaskType != commonexecution.TaskTypeWorkflow || (item.TriggerType != commonexecution.TriggerTypeManual && (item.Source != commonexecution.ModuleOrchestrator || item.TriggerType != commonexecution.TriggerTypeScheduled)) || item.MaxAttempts != 1 ||
 		item.ExecutionBoundary != commonexecution.ExecutionBoundaryBounded || item.RetryOfExecutionID != nil ||
 		item.ExecutionAuthorizationID != nil || item.AuthorizationExpiresAt != nil || item.ActorPrincipalID == nil || item.ActorTenantMembershipID == nil || item.IssuedAuthorizationVersion == nil ||
 		item.TriggeredBy == nil || int64(*item.TriggeredBy) != *item.ActorPrincipalID {
@@ -55,7 +55,7 @@ func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commo
 				return errors.New("invalid private file parent")
 			}
 			var authoritative commonexecution.TaskExecution
-			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id=? AND tenant_id=? AND module='orchestrator' AND status='running' AND trigger_type='manual' AND lease_expires_at > clock_timestamp() AND actor_principal_id=? AND actor_tenant_membership_id=? AND issued_authorization_version=? AND triggered_by=actor_principal_id", *item.ParentExecutionID, item.TenantID, *item.ActorPrincipalID, *item.ActorTenantMembershipID, *item.IssuedAuthorizationVersion).Take(&authoritative).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id=? AND tenant_id=? AND module='orchestrator' AND task_type='orchestration' AND status='running' AND trigger_type=? AND lease_expires_at > clock_timestamp() AND actor_principal_id=? AND actor_tenant_membership_id=? AND issued_authorization_version=? AND triggered_by=actor_principal_id", *item.ParentExecutionID, item.TenantID, item.TriggerType, *item.ActorPrincipalID, *item.ActorTenantMembershipID, *item.IssuedAuthorizationVersion).Take(&authoritative).Error; err != nil {
 				return err
 			}
 			if authoritative.LeaseToken == nil {

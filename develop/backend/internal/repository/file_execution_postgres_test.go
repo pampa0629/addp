@@ -84,40 +84,50 @@ func TestFileExecutionAgainstPostgres(t *testing.T) {
 		t.Fatalf("PostgreSQL rejection fabricated issuance: %v", err)
 	}
 
-	t.Run("manual parent freezes claim and shares pending admission queue", func(t *testing.T) {
-		parent, _ := newFilePendingValues()
-		stamp := time.Now().UTC()
-		expiry := stamp.Add(time.Minute)
-		token, owner := uuid.NewString(), "parent-fixture"
-		parent.Module, parent.Source, parent.TaskType = "orchestrator", "orchestrator", "orchestration"
-		parent.Status, parent.Attempt, parent.StartedAt = "running", 1, &stamp
-		parent.LeaseOwner, parent.LeaseToken, parent.LeaseExpiresAt = &owner, &token, &expiry
-		if err := tx.Create(parent).Error; err != nil {
-			t.Fatal(err)
-		}
-		child, childSources := newFilePendingValues()
-		child.Source = "orchestrator"
-		child.ParentExecutionID = &parent.ExecutionID
-		runFileQueueCase(t, tx, repo, child, childSources, "104")
-		original, err := repo.Read(t.Context(), 7, child.ExecutionID)
-		expected, _ := commonexecution.NewDevelopFileParent(parent.ExecutionID, parent.Attempt, token)
-		if err != nil || !reflect.DeepEqual(original.Intent.Parent, expected) {
-			t.Fatal("parent claim not frozen", err)
-		}
-		denied, deniedSources := newFilePendingValues()
-		denied.Source = "orchestrator"
-		denied.ParentExecutionID = &parent.ExecutionID
-		if err := tx.Model(parent).UpdateColumn("trigger_type", "scheduled").Error; err != nil {
-			t.Fatal(err)
-		}
-		if _, err := repo.CreatePending(t.Context(), denied, deniedSources, nil); err == nil {
-			t.Fatal("scheduled parent entered file chain")
-		}
-		var count int64
-		if err := tx.Model(&commonexecution.TaskExecution{}).Where("execution_id=?", denied.ExecutionID).Count(&count).Error; err != nil || count != 0 {
-			t.Fatal("rejected child left claimable execution", err)
-		}
-	})
+	for _, trigger := range []string{"manual", "scheduled"} {
+		t.Run(trigger+" parent freezes claim and shares pending admission queue", func(t *testing.T) {
+			parent, _ := newFilePendingValues()
+			stamp := time.Now().UTC()
+			expiry := stamp.Add(time.Minute)
+			token, owner := uuid.NewString(), "parent-fixture"
+			parent.Module, parent.Source, parent.TaskType = "orchestrator", "orchestrator", "orchestration"
+			parent.TriggerType = trigger
+			parent.Status, parent.Attempt, parent.StartedAt = "running", 1, &stamp
+			parent.LeaseOwner, parent.LeaseToken, parent.LeaseExpiresAt = &owner, &token, &expiry
+			if err := tx.Create(parent).Error; err != nil {
+				t.Fatal(err)
+			}
+			child, childSources := newFilePendingValues()
+			child.Source = "orchestrator"
+			child.TriggerType = trigger
+			child.ParentExecutionID = &parent.ExecutionID
+			runFileQueueCase(t, tx, repo, child, childSources, map[string]string{"manual": "104", "scheduled": "105"}[trigger])
+			original, err := repo.Read(t.Context(), 7, child.ExecutionID)
+			expected, _ := commonexecution.NewDevelopFileParent(parent.ExecutionID, parent.Attempt, token)
+			if err != nil || !reflect.DeepEqual(original.Intent.Parent, expected) {
+				t.Fatal("parent claim not frozen", err)
+			}
+			denied, deniedSources := newFilePendingValues()
+			denied.Source = "orchestrator"
+			denied.TriggerType = trigger
+			denied.ParentExecutionID = &parent.ExecutionID
+			if err := tx.Model(parent).UpdateColumn("trigger_type", map[string]string{"manual": "scheduled", "scheduled": "manual"}[trigger]).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := repo.CreatePending(t.Context(), denied, deniedSources, nil); err == nil {
+				t.Fatal("mismatched parent trigger entered file chain")
+			}
+			var count int64
+			if err := tx.Model(&commonexecution.TaskExecution{}).Where("execution_id=?", denied.ExecutionID).Count(&count).Error; err != nil || count != 0 {
+				t.Fatal("rejected child left claimable execution", err)
+			}
+		})
+	}
+	root, rootSources := newFilePendingValues()
+	root.TriggerType = "scheduled"
+	if _, err := repo.CreatePending(t.Context(), root, rootSources, nil); err == nil {
+		t.Fatal("scheduled Develop root entered file chain")
+	}
 	runPrivatePublicationCase(t, tx, repo, 102, false)
 	runPrivatePublicationCase(t, tx, repo, 103, true)
 }

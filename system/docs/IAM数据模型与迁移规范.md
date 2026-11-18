@@ -6,6 +6,10 @@
 
 租户功能权限收敛：Role Assignment 只支持 Platform / Tenant，租户角色与分配请求不接收组织范围字段。旧部门／项目组分配先保留完整审计再退役，不升格为租户授权；范围目录、AuthContext 与数据库约束同步收敛。部门、项目组、部门层级、账号与全部组织成员关系保持原事实，源数据 Grant 与 Catalog 业务授权不在此次 IAM 收敛中改写。
 
+## Develop 定时受控文件子执行（2026-11-17）
+
+新增前向迁移 `000302_develop_scheduled_file_inputs.up.sql`，替换同一 `guard_develop_file_authorization`，允许已有 Orchestrator 定时父执行派生只读文件子执行；根 Develop 仍仅手动。父子触发方式必须一致，仍绑定同租户真实 User／Membership／授权版本、原 running orchestration 的有效租约及原 pending／running 子执行。原 Scope、完整来源、固定预算和无覆盖保存约束不变；不发布 Permission、不绑定角色、不改 Grant、不补造历史来源，也不修改已应用迁移。签发及实际读取继续由 System 复核当前权限、源规则与冻结版本。标准验证复用 `develop-file-inputs` 前向升级及 `develop-file-authorization` 的真实 PostgreSQL 分组；Develop 原 Owner PostgreSQL 门禁验证入队及原父 claim 冻结。
+
 ## 持续节点 Grant 与源 Deny 退役（2026-11-02）
 
 MinIO 扩展（2026-11-04）：000270 只扩展现有节点路径约束和引擎 profile guard，允许 bucket／普通 prefix 的 metadata_read、read 与显式递归；当时服务根只导航。000295 扩展同一约束和引擎 profile guard，允许签发递归服务根授权；不改写任何存量 Grant。既有 Grant、期限、撤销与审计不改写。Meta 使用已有最小身份机器权限核对；整体容器继续为精确 DataItem。节点范围不能把仅元数据边界升级为可读内容边界。

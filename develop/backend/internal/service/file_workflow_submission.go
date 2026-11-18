@@ -80,7 +80,7 @@ func (e *DevExecutor) submitPrivateFileWorkflow(ctx context.Context, item *execu
 		}
 		item.ActorPrincipalID, item.ActorTenantMembershipID, item.IssuedAuthorizationVersion = &principal, &membership, &version
 	} else {
-		if item.Source != execution.ModuleOrchestrator || item.TriggerType != execution.TriggerTypeManual || e.fileExecutions == nil || e.sqlEngine == nil || e.sqlEngine.systemService == nil {
+		if item.Source != execution.ModuleOrchestrator || (item.TriggerType != execution.TriggerTypeManual && item.TriggerType != execution.TriggerTypeScheduled) || e.fileExecutions == nil || e.sqlEngine == nil || e.sqlEngine.systemService == nil {
 			return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 		}
 		var err error

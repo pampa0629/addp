@@ -236,8 +236,8 @@ func (h *IAMDevelopFileAuthorizationHandler) ApproveCreate(c *gin.Context) {
 func (h *IAMDevelopFileAuthorizationHandler) Issue(c *gin.Context) { h.issue(c) }
 
 // IssueFromParent godoc
-// @Summary 从手动父执行签发 Develop 私有文件授权 | Issue Develop private file authorization from a manual parent
-// @Description 固定同租户 addp-develop Service；System 独立核 common 父子行、真实用户、当前权限、父租约与原冻结 Intent，仅允许只读。不以服务权限替代用户 read Grant。 | Fixed same-tenant addp-develop Service. System verifies authoritative parent-child executions, actual user, current permissions, parent lease and original frozen intent. Read only; service permission does not replace the user read Grant.
+// @Summary 从可信父执行签发 Develop 私有文件授权 | Issue Develop private file authorization from a trusted parent
+// @Description 固定同租户 addp-develop Service；System 独立核 common 父子行、相同手动或定时触发、真实用户、当前权限、父租约与原冻结 Intent，仅允许只读。不以服务权限替代用户 read Grant。 | Fixed same-tenant addp-develop Service. System verifies authoritative parent-child executions with matching manual or scheduled triggers, actual user, current permissions, parent lease and original frozen intent. Read only; service permission does not replace the user read Grant.
 // @Tags 执行授权 | Execution Authorization
 // @Accept json
 // @Produce json

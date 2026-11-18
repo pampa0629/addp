@@ -473,7 +473,7 @@ func (s *DevelopFileAuthorizationService) readOwner(ctx context.Context, auth *E
 }
 
 // One issuer resolves root User credentials or a fixed Develop Service deriving
-// a manual child. The actor always comes from authoritative execution rows.
+// a manual or scheduled child. The actor always comes from authoritative execution rows.
 func (r *Repository) developFileIssuer(ctx context.Context, input IssueDevelopFileAuthorizationInput, lock bool, permissions ...string) (*ExecutionAuthorization, *authorization.AuthContext, error) {
 	authService, err := NewAuthContextService(r)
 	if err != nil {
@@ -498,7 +498,7 @@ func (r *Repository) developFileIssuer(ctx context.Context, input IssueDevelopFi
 		return nil, nil, err
 	}
 	var child execution.TaskExecution
-	if err := r.db.WithContext(ctx).Where("execution_id=? AND tenant_id=? AND module='develop' AND source='orchestrator' AND parent_execution_id IS NOT NULL AND trigger_type='manual'", input.ExecutionID, tenant).Take(&child).Error; err != nil || child.ActorPrincipalID == nil || child.ActorTenantMembershipID == nil || child.IssuedAuthorizationVersion == nil {
+	if err := r.db.WithContext(ctx).Where("execution_id=? AND tenant_id=? AND module='develop' AND source='orchestrator' AND parent_execution_id IS NOT NULL AND trigger_type IN ('manual','scheduled')", input.ExecutionID, tenant).Take(&child).Error; err != nil || child.ActorPrincipalID == nil || child.ActorTenantMembershipID == nil || child.IssuedAuthorizationVersion == nil {
 		return nil, nil, ErrExecutionAuthorizationUnavailable
 	}
 	row := &ExecutionAuthorization{ActorPrincipalID: *child.ActorPrincipalID, TenantID: tenant, TenantMembershipID: *child.ActorTenantMembershipID, IssuedAuthorizationVersion: *child.IssuedAuthorizationVersion, SourceType: "user", Audience: "develop"}
@@ -612,14 +612,15 @@ func (r *Repository) developFileExecution(ctx context.Context, auth *ExecutionAu
 		ExecutionConfig          json.RawMessage
 		Source                   string
 		ParentExecutionID        *string
+		TriggerType              string
 	}
-	query := r.db.WithContext(ctx).Table("common.task_executions e").Select("e.status,e.attempt,e.started_at,e.lease_token,e.lease_owner,e.lease_expires_at,e.execution_authorization_id,e.authorization_expires_at,e.execution_config,e.source,e.parent_execution_id").Where("e.execution_id=? AND e.tenant_id=? AND e.module='develop' AND e.source IN ('develop','orchestrator') AND e.task_type='workflow' AND e.execution_boundary='bounded' AND e.trigger_type='manual' AND e.retry_of_execution_id IS NULL AND e.max_attempts=1 AND e.triggered_by=e.actor_principal_id AND e.actor_principal_id=? AND e.actor_tenant_membership_id=? AND e.issued_authorization_version=?", facts.ExecutionID, auth.TenantID, auth.ActorPrincipalID, auth.TenantMembershipID, auth.IssuedAuthorizationVersion)
+	query := r.db.WithContext(ctx).Table("common.task_executions e").Select("e.status,e.attempt,e.started_at,e.lease_token,e.lease_owner,e.lease_expires_at,e.execution_authorization_id,e.authorization_expires_at,e.execution_config,e.source,e.parent_execution_id,e.trigger_type").Where("e.execution_id=? AND e.tenant_id=? AND e.module='develop' AND e.source IN ('develop','orchestrator') AND e.task_type='workflow' AND e.execution_boundary='bounded' AND e.trigger_type IN ('manual','scheduled') AND e.retry_of_execution_id IS NULL AND e.max_attempts=1 AND e.triggered_by=e.actor_principal_id AND e.actor_principal_id=? AND e.actor_tenant_membership_id=? AND e.issued_authorization_version=?", facts.ExecutionID, auth.TenantID, auth.ActorPrincipalID, auth.TenantMembershipID, auth.IssuedAuthorizationVersion)
 	if err := query.Clauses(clause.Locking{Strength: "SHARE", Table: clause.Table{Name: "e"}}).Take(&row).Error; err != nil {
 		return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 	}
 	var parentLeaseExpiresAt *time.Time
 	if facts.Intent.Parent == nil {
-		if row.Source != "develop" || row.ParentExecutionID != nil {
+		if row.Source != "develop" || row.ParentExecutionID != nil || row.TriggerType != execution.TriggerTypeManual {
 			return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 		}
 	} else {
@@ -628,7 +629,7 @@ func (r *Repository) developFileExecution(ctx context.Context, auth *ExecutionAu
 			return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 		}
 		var parent execution.TaskExecution
-		err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id=? AND tenant_id=? AND module='orchestrator' AND status='running' AND trigger_type='manual' AND attempt=? AND lease_owner IS NOT NULL AND lease_owner<>'' AND lease_expires_at>clock_timestamp() AND triggered_by=actor_principal_id AND actor_principal_id=? AND actor_tenant_membership_id=? AND issued_authorization_version=?", frozen.ExecutionID, auth.TenantID, frozen.Attempt, auth.ActorPrincipalID, auth.TenantMembershipID, auth.IssuedAuthorizationVersion).Take(&parent).Error
+		err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id=? AND tenant_id=? AND module='orchestrator' AND task_type='orchestration' AND status='running' AND trigger_type=? AND attempt=? AND lease_owner IS NOT NULL AND lease_owner<>'' AND lease_expires_at>clock_timestamp() AND triggered_by=actor_principal_id AND actor_principal_id=? AND actor_tenant_membership_id=? AND issued_authorization_version=?", frozen.ExecutionID, auth.TenantID, row.TriggerType, frozen.Attempt, auth.ActorPrincipalID, auth.TenantMembershipID, auth.IssuedAuthorizationVersion).Take(&parent).Error
 		if err != nil || parent.LeaseToken == nil {
 			return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 		}

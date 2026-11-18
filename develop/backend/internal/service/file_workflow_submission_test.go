@@ -31,6 +31,12 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 		wantCalls int32
 	}{
 		{"temporary", false, false, 201, "pending", 1},
+		{"parent manual", true, false, 201, "pending", 1},
+		{"parent scheduled", true, false, 201, "pending", 1},
+		{"parent mismatch", true, false, 0, "", 0},
+		{"parent expired", true, false, 0, "", 0},
+		{"parent scheduled save", true, true, 0, "", 0},
+		{"scheduled root", false, false, 0, "", 0},
 		{"saved", true, false, 201, "pending", 1},
 		{"saved admission rejected", true, false, 201, "pending", 1},
 		{"denied", true, false, 403, "rejected", 1},
@@ -108,13 +114,20 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 					}
 					_ = json.NewEncoder(w).Encode(commonModels.MetaItem{ID: 19, TenantID: 3, EngineID: 11, FullName: name, ItemType: "file",
 						Attributes: attributes})
-				case "/api/v1/system/auth/execution-authorizations/develop-file-workflows":
+				case "/api/v1/system/auth/execution-authorizations/develop-file-workflows", "/api/v1/system/runtime/execution-authorizations/develop-file-workflows":
 					eaCalls.Add(1)
 					var request struct {
 						ExecutionID  string `json:"execution_id"`
 						IntentDigest string `json:"intent_digest"`
 					}
-					if err := json.NewDecoder(r.Body).Decode(&request); err != nil || r.Header.Get("Authorization") != "Bearer addp_at_user" {
+					credential := "addp_at_user"
+					if strings.HasPrefix(scenario.name, "parent ") {
+						credential = "addp_at_fixture_service"
+						if r.URL.Path != "/api/v1/system/runtime/execution-authorizations/develop-file-workflows" {
+							t.Error("child used root credential endpoint")
+						}
+					}
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil || r.Header.Get("Authorization") != "Bearer "+credential {
 						t.Error("bad precise issuance request", err)
 						w.WriteHeader(500)
 						return
@@ -190,7 +203,7 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 
 			e := NewDevExecutor(repository.NewDevTaskRepository(db), execution.NewTaskExecutionRepository(db), nil,
 				fileSubmissionDiscovery(t), client.NewMetaClient(server.URL, staticServiceTokenSource("meta-fixture")),
-				NewSQLEngineService(&config.Config{}, client.NewSystemServiceClient(server.URL, staticServiceTokenSource("fixture-service"), server.Client()),
+				NewSQLEngineService(&config.Config{}, client.NewSystemServiceClient(server.URL, staticServiceTokenSource("addp_at_fixture_service"), server.Client()),
 					client.NewSystemExecutionAuthorizationClient(server.URL, server.Client())), nil, nil)
 			e.fileExecutions = fileRepo
 			e.SetExecutionNotifier(func() { notifications.Add(1) })
@@ -245,13 +258,56 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 				if err := e.devTaskRepo.Create(task); err != nil {
 					t.Fatal(err)
 				}
-				id, err = e.ExecuteWithParams(ctx, task.ID, nil, 3, 31, "addp_at_user")
+				if strings.HasPrefix(scenario.name, "parent ") {
+					pool, _ := db.DB()
+					conn, connErr := pool.Conn(ctx)
+					if connErr != nil {
+						t.Fatal(connErr)
+					}
+					if regErr := conn.Raw(func(raw any) error {
+						return raw.(interface{ RegisterFunc(string, any, bool) error }).RegisterFunc("clock_timestamp", func() string { return time.Now().UTC().Format("2006-01-02 15:04:05") }, false)
+					}); regErr != nil {
+						t.Fatal(regErr)
+					}
+					if closeErr := conn.Close(); closeErr != nil {
+						t.Fatal(closeErr)
+					}
+					_, principal, member, version := executionActorIDs(auth)
+					by := int(principal)
+					stamp := time.Now().UTC()
+					expiry := stamp.Add(time.Minute)
+					owner, token := "parent-submission", uuid.NewString()
+					trigger := "scheduled"
+					if scenario.name == "parent manual" {
+						trigger = "manual"
+					}
+					if scenario.name == "parent expired" {
+						expiry = stamp.Add(-time.Minute)
+					}
+					parent := &execution.TaskExecution{TenantID: 3, ExecutionID: uuid.NewString(), Module: "orchestrator", TaskType: "orchestration", Source: "orchestrator", Status: "running", ExecutionBoundary: "bounded", TriggerType: trigger, TriggeredBy: &by, ActorPrincipalID: &principal, ActorTenantMembershipID: &member, IssuedAuthorizationVersion: &version, Attempt: 1, MaxAttempts: 1, StartedAt: &stamp, LeaseOwner: &owner, LeaseToken: &token, LeaseExpiresAt: &expiry, ExecutionConfig: commonModels.JSONMap{}}
+					if freezeErr := execution.FreezeDisplayLanguage(parent, "en"); freezeErr != nil {
+						t.Fatal(freezeErr)
+					}
+					if createErr := db.Create(parent).Error; createErr != nil {
+						t.Fatal(createErr)
+					}
+					if scenario.name == "parent mismatch" {
+						trigger = "manual"
+					}
+					id, err = e.ExecuteWithParamsFromParentExecution(t.Context(), task.ID, nil, 3, trigger, "orchestrator", parent.ExecutionID, "workflow")
+				} else {
+					id, err = e.ExecuteWithParams(ctx, task.ID, nil, 3, 31, "addp_at_user")
+				}
 				var persisted models.DevTask
 				if readErr := db.First(&persisted, task.ID).Error; readErr != nil || persisted.LastExecutionID != nil {
 					t.Fatal("an unstarted submission changed the last actual run", readErr)
 				}
 			} else {
-				id, err = e.ExecuteContent(ctx, "workflow", content, cfg, nil, 3, 31, "addp_at_user", "manual", 300, "")
+				trigger := "manual"
+				if scenario.name == "scheduled root" {
+					trigger = "scheduled"
+				}
+				id, err = e.ExecuteContent(ctx, "workflow", content, cfg, nil, 3, 31, "addp_at_user", trigger, 300, "")
 			}
 			success := scenario.status == 201
 			if success != (err == nil && id != "") {
@@ -277,7 +333,7 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 				}
 				if scenario.name != "other format" {
 					var count int64
-					if countErr := db.Model(&execution.TaskExecution{}).Count(&count).Error; countErr != nil || count != 0 {
+					if countErr := db.Model(&execution.TaskExecution{}).Where("module=?", "develop").Count(&count).Error; countErr != nil || count != 0 {
 						t.Fatal("rejected input left an execution behind", count, countErr)
 					}
 				}

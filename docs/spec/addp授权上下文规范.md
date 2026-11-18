@@ -148,7 +148,7 @@ GeoPackage 的内部结构、数据库完整性及深度摘要由 deep 扫描按
 
 NFS GeoPackage 与 MinIO GeoJSON 的受控读取采用同一 Intent、封存 Scope、准入和私有传输协议。GeoJSON 由 basic 身份和 `format=geojson/layout=single/data_type=table` 的唯一必需主 `data` ref 确定完整边界，目标必须与该 object DataItem 完全一致；System 封存可信格式与实际 Engine 版本，不从后缀或客户端字段授权。两类输入可以在同一纯读取 DAG 中组合；GeoJSON 来源及父子执行本阶段只读，保存仍仅限原 NFS GeoPackage 来源的精确新建链。
 
-手动 Orchestrator 子执行由固定同租户 `addp-develop` Service 从权威 common 父子执行派生，不能自报用户、租户或父执行替换用户授权。System 独立核验父执行为当前手动运行的 Orchestrator、父子 Actor／成员关系／授权版本一致、真实触发用户与当前权限，冻结父 UUID／attempt／lease 摘要，并在签发、准入和实际读取时复核同一父租约仍有效。父执行续租不延长子执行固定业务预算，父尝试或租约换代、取消、终止或撤权阻断后续读取；不开放定时任务或父子保存。删除旧 `develop-geojson/access` 和 `load.geojson` 内容注入路线。
+手动或定时 Orchestrator 子执行由固定同租户 `addp-develop` Service 从权威 common 父子执行派生，不能自报用户、租户或父执行替换用户授权。定时根执行由既有 Orchestrator Scheduler 在入队前经 System 解析 Task Authorization Subject，并在 due claim 事务核对原任务授权与定义摘要；子执行只继承该次父执行冻结的真实 User／Tenant Membership／授权版本，不从 `created_by`、当前任务定义或 Service 权限补造来源，不保存 User Token。System 独立核验父执行为当前运行的 Orchestrator orchestration，父子触发方式相同且仅为 manual／scheduled、Actor／成员关系／授权版本一致，并核验当前 User 功能权限与源 read Grant。冻结父 UUID／attempt／lease 摘要，在签发、准入和实际读取时复核同一父租约、当前身份授权、来源边界及冻结 Engine 版本。父执行续租不延长子执行固定业务预算；父尝试或租约换代、终止、租约失效或撤权阻断后续读取。根 Develop 文件执行仍只接受当前 User 手动发起；不新增 Develop owner scheduler，不开放父子保存。删除旧 `develop-geojson/access` 和 `load.geojson` 内容注入路线。
 
 共享协议分为同一阶段链上的声明与封存：Develop 保存 `DevelopFileIntent`，绑定完整持久配置摘要、DAG 读取节点与规范文件目标、预期 attempt、实际策略的 `timeout_seconds` 及可选保存目标；声明不包含由 Owner 推算的数据项指纹或边界摘要。System 用当前 User 请求或上述可信父执行请求反查 pending Intent，通过自己的 Meta 授权事实接口独立核验完整组成及当前源规则，再生成并持久封存 `DevelopBoundFileScope` 与唯一 EA。封存范围包含 Intent 摘要、实际源引用的指纹／边界摘要／Engine 版本和可选目标版本；Owner 保存原 EA 返回的范围引用，后续批准、资格观察、真实读取及发布均绑定同一 EA／Scope，不另算 Meta 投影，也不给 Develop 增加完整 Meta 授权事实读取权限。两个值类型分别表达声明和已核验范围，不是两条读取或授权路线；纯值工厂及摘要均不授予许可。
 
