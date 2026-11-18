@@ -307,9 +307,13 @@ env GITHUB_ACTIONS=true ADDP_ONLINE_HOST=1 ADDP_ONLINE_TEST=1 \
   MOCK_WORKING_DIR="$TEST_DIR/repo" \
   bash "$DOWN_SCRIPT" --volumes --force </dev/null >"$TEST_DIR/online.log" 2>&1
 [ "$(cat "$MOCK_MARKER")" = -v ]
-grep -Eq '^Infra Redis[[:space:]]+已停用$' "$TEST_DIR/online.log"
-grep -Eq '^Infra Redpanda[[:space:]]+已停用$' "$TEST_DIR/online.log"
-grep -Eq '^Infra Kafka Connect[[:space:]]+已停用$' "$TEST_DIR/online.log"
-grep -Fq '汇总：共 5 项，失败 0 项。' "$TEST_DIR/online.log"
+expected_stopped_sources=(
+  'Infra PostgreSQL' 'Infra Redis' 'Infra MinIO'
+  'Infra Redpanda' 'Infra Kafka Connect' 'Infra Meilisearch'
+)
+for source in "${expected_stopped_sources[@]}"; do
+  grep -Eq "^${source}[[:space:]]+已停用$" "$TEST_DIR/online.log"
+done
+grep -Fq "汇总：共 ${#expected_stopped_sources[@]} 项，失败 0 项。" "$TEST_DIR/online.log"
 
 echo 'ADDP Infra down safety OK'
