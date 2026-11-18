@@ -4,12 +4,13 @@ import importlib
 import json
 import io
 import os
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 CASE = importlib.import_module("scripts.test.orchestrator-scheduled-file-online")
 CHILD = "554dffd5-8d1b-4f74-9abe-6ca4f7cfc84d"
@@ -20,6 +21,100 @@ GRANT = {"item_fingerprint": "a" * 64, "boundary_hash": "b" * 64}
 
 
 class ScheduledControlTest(unittest.TestCase):
+    def test_source_seed_waits_after_connection_reset_before_writing(self):
+        with tempfile.TemporaryDirectory() as work:
+            directory = Path(work)
+            port = {"HostIp": "127.0.0.1", "HostPort": "49000"}
+            container = {"NetworkSettings": {"Ports": {"9000/tcp": [port]}}}
+            with (
+                patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=work),
+                patch.object(CASE, "owner", return_value=(directory, "orchestrator-1-1")),
+                patch.object(CASE, "source_container", side_effect=[None, container]),
+                patch.object(CASE, "docker"),
+                patch.object(CASE, "objectstore") as source,
+                patch.object(CASE.time, "sleep"),
+                patch("http.client.HTTPConnection.request") as request,
+                patch("http.client.HTTPConnection.getresponse", side_effect=[
+                    ConnectionResetError(104, "Connection reset by peer"), SimpleNamespace(status=200),
+                ]),
+            ):
+                CASE.seed()
+            self.assertEqual([request.args[:2] for request in request.call_args_list],
+                             [("GET", "/minio/health/ready")] * 2)
+            self.assertEqual(source.call_args_list, [call("mb"), call("pipe", key=CASE.KEY, data=CASE.SOURCE)])
+            evidence = json.loads((directory / CASE.SOURCE_STARTUP_REPORT).read_text())
+            self.assertEqual(evidence["readiness"], {
+                "attempts": 2, "result": "ready",
+                "first_not_ready": {"transport_error": "ConnectionResetError", "errno": 104},
+                "last_probe": {"http_status": 200},
+            })
+
+    def test_source_seed_exits_without_writing_when_readiness_budget_expires(self):
+        with tempfile.TemporaryDirectory() as work:
+            directory = Path(work)
+            port = {"HostIp": "127.0.0.1", "HostPort": "49000"}
+            container = {"NetworkSettings": {"Ports": {"9000/tcp": [port]}}}
+            with (
+                patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=work),
+                patch.object(CASE, "owner", return_value=(directory, "orchestrator-1-1")),
+                patch.object(CASE, "source_container", side_effect=[None, container]),
+                patch.object(CASE, "docker"),
+                patch.object(CASE, "objectstore") as source,
+                patch.object(CASE.time, "monotonic", side_effect=[100, 100, 160, 160]),
+                patch.object(CASE.time, "sleep"),
+                patch("http.client.HTTPConnection.request"),
+                patch("http.client.HTTPConnection.getresponse", return_value=SimpleNamespace(status=503)),
+                self.assertRaisesRegex(CASE.API.SuiteError, "source readiness timed out"),
+            ):
+                CASE.seed()
+            source.assert_not_called()
+            evidence = json.loads((directory / CASE.SOURCE_STARTUP_REPORT).read_text())
+            self.assertEqual(evidence["readiness"], {
+                "attempts": 1, "result": "timed_out",
+                "first_not_ready": {"http_status": 503}, "last_probe": {"http_status": 503},
+            })
+
+    def test_source_cleanup_archives_only_closed_startup_signals_before_removal(self):
+        dangerous = b"FATAL secret=never-archive"
+        container = {
+            "Id": "8" * 64, "Mounts": [{"Type": "tmpfs"}], "RestartCount": 1,
+            "State": {"Status": "exited", "ExitCode": 1, "OOMKilled": False, "Error": dangerous.decode()},
+            "Config": {"Env": ["MINIO_ROOT_PASSWORD=never-archive"]},
+        }
+        for available in (True, False):
+            with self.subTest(available=available), tempfile.TemporaryDirectory() as work:
+                path = Path(work) / CASE.SOURCE_STARTUP_REPORT
+                path.write_text('{"readiness":{"result":"timed_out"}}')
+                logged = SimpleNamespace(stdout=b"MinIO Object Storage Server\nAPI: private\n" + dangerous)
+                error = subprocess.TimeoutExpired("docker logs", 10)
+                def before_remove(*args):
+                    self.assertEqual(args, ("rm", "-fv", container["Id"]))
+                    evidence = json.loads(path.read_text())
+                    self.assertEqual(evidence["readiness"], {"result": "timed_out"})
+                    self.assertEqual(evidence["container_before_removal"], {
+                        "status": "exited", "oom_killed": False, "exit_code": 1,
+                        "restart_count": 1, "state_error_present": True,
+                    })
+                    self.assertEqual(evidence["startup_log"]["available"], available)
+                    if available:
+                        self.assertTrue(evidence["startup_log"]["banner_seen"])
+                        self.assertTrue(evidence["startup_log"]["api_announced"])
+                        self.assertTrue(evidence["startup_log"]["error_signal_seen"])
+                    self.assertNotIn("never-archive", path.read_text())
+                    self.assertNotIn("private", path.read_text())
+
+                with (
+                    patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=work),
+                    patch.object(CASE, "source_container", side_effect=[container, None]) as inspect,
+                    patch.object(CASE, "docker", side_effect=before_remove) as docker,
+                    patch.object(CASE.subprocess, "run", return_value=logged, side_effect=None if available else error) as logs,
+                ):
+                    CASE.stop()
+                docker.assert_called_once()
+                self.assertEqual(inspect.call_count, 2)
+                logs.assert_called_once_with(["docker", "logs", "--tail", "40", container["Id"]],
+                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True, timeout=10)
+
     def test_exact_source_and_two_slots_with_month_rollover(self):
         self.assertEqual(len(CASE.SOURCE), 165)
         self.assertEqual(hashlib.sha256(CASE.SOURCE).hexdigest(),

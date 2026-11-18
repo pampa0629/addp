@@ -1,5 +1,6 @@
 """One Hosted scheduled file authorization case, using the real owner APIs."""
 
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import hashlib
 from http.client import HTTPConnection, HTTPException
@@ -27,6 +28,7 @@ KEY = "source/one-point.geojson"
 SOURCE = b'{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"fixture_id":"scheduled-read-one"},"geometry":{"type":"Point","coordinates":[112.0,28.0]}}]}\n'
 IMAGE = "addp-minio:RELEASE.2025-10-15T17-29-55Z"
 CONTAINER = "addp-orchestrator-scheduled-source"
+SOURCE_STARTUP_REPORT = "scheduled-source-startup.json"
 CASE = "scheduled-controlled-file"
 ISSUE_PATH = "/api/v1/system/runtime/execution-authorizations/develop-file-workflows"
 TASKS = "/api/v1/develop/task-definitions"
@@ -80,6 +82,26 @@ def objectstore(*args, key=None, data=None):
                   data=data, env=dict(os.environ, MC_HOST_fixture=alias))
 
 
+def wait_source_ready(endpoint, readiness):
+    deadline = time.monotonic() + 60
+    while (remaining := deadline - time.monotonic()) > 0:
+        with closing(HTTPConnection(endpoint, timeout=min(2, remaining))) as connection:
+            try:
+                connection.request("GET", "/minio/health/ready")
+                observation = {"http_status": connection.getresponse().status}
+            except (ConnectionError, TimeoutError) as error:
+                observation = {"transport_error": type(error).__name__, "errno": error.errno}
+        readiness["attempts"] += 1
+        readiness["last_probe"] = observation
+        if observation.get("http_status") == 200 and time.monotonic() <= deadline:
+            readiness["result"] = "ready"
+            return
+        readiness.setdefault("first_not_ready", observation)
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
+    readiness["result"] = "timed_out"
+    raise API.SuiteError("scheduled MinIO source readiness timed out")
+
+
 def seed():
     directory, run_id = owner()
     require(source_container() is None, "refusing to reuse a fixture")
@@ -97,15 +119,12 @@ def seed():
                        connection_info=dict(endpoint="127.0.0.1:" + port["HostPort"],
                                             access_key="scheduled-source", secret_key=password, use_ssl=False),
                        description="Disposable scheduled read source"), out)
-    probe = API.GatewayClient("http://127.0.0.1:" + port["HostPort"], "", 2)
-    for attempt in range(60):
-        try:
-            probe.request("GET", "/minio/health/ready", (200,), raw_response=True)
-            break
-        except API.SuiteError:
-            if attempt == 59:
-                raise
-            time.sleep(1)
+    readiness = {"attempts": 0, "result": "failed"}
+    report = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / SOURCE_STARTUP_REPORT
+    try:
+        wait_source_ready("127.0.0.1:" + port["HostPort"], readiness)
+    finally:
+        report.write_text(json.dumps({"readiness": readiness}, sort_keys=True) + "\n")
     objectstore("mb")
     objectstore("pipe", key=KEY, data=SOURCE)
 
@@ -118,12 +137,44 @@ def issue_event(data, status, body):
     return {"execution_id": execution, "status": status, "error_code": error_code}
 
 
+def record_source_before_removal(container):
+    report = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / SOURCE_STARTUP_REPORT
+    evidence = json.loads(report.read_text()) if report.exists() else {"readiness": {"result": "not_probed"}}
+    state = container["State"]
+    status = state.get("Status")
+    evidence["container_before_removal"] = {
+        "status": status if status in {"created", "running", "paused", "restarting", "removing", "exited", "dead"} else "unknown",
+        "oom_killed": state.get("OOMKilled") is True,
+        "exit_code": state["ExitCode"],
+        "restart_count": container["RestartCount"],
+        "state_error_present": bool(state.get("Error")),
+    }
+    try:
+        logged = subprocess.run(["docker", "logs", "--tail", "40", container["Id"]],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        evidence["startup_log"] = {"available": False}
+    else:
+        lines = re.sub(rb"\x1b\[[0-9;]*m", b"", logged).splitlines()
+        evidence["startup_log"] = {
+            "available": True,
+            "lines": len(lines),
+            "banner_seen": any(b"MinIO Object Storage Server" in line for line in lines),
+            "api_announced": any(line.startswith(b"API:") for line in lines),
+            "error_signal_seen": any(line.startswith((b"ERROR", b"FATAL")) for line in lines),
+        }
+    report.write_text(json.dumps(evidence, sort_keys=True) + "\n")
+
+
 def stop():
     entry = source_container()
     if entry is not None:
         require(all(mount["Type"] == "tmpfs" for mount in entry["Mounts"]), "unexpected source mount")
-        docker("rm", "-fv", entry["Id"])
-    require(source_container() is None, "scheduled MinIO source left a container")
+        try:
+            record_source_before_removal(entry)
+        finally:
+            docker("rm", "-fv", entry["Id"])
+            require(source_container() is None, "scheduled MinIO source left a container")
 
 
 def observe_issuance():
