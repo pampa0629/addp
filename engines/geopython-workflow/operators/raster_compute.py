@@ -6258,26 +6258,37 @@ def _slope_error(code):
     return ValueError(_SLOPE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
+_ASPECT_MESSAGES = {
+    key: (zh.replace('DEM 坡度', 'DEM 坡向'), en.replace('DEM slope', 'DEM aspect'))
+    for key, (zh, en) in _SLOPE_MESSAGES.items() if key != 'slope-unit'
+}
+
+
+def _aspect_error(code):
+    return ValueError(_ASPECT_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
 def _terrain(input_raster, elevation_unit, band, processing, **options):
-    slope = processing == 'slope'
+    diagnostic = {'slope': _slope_error, 'aspect': _aspect_error}.get(processing)
+    orthogonal_grid = None
+    if diagnostic is not None:
+        orthogonal_grid = lambda dataset: _projected_orthogonal_grid_units(dataset, lambda: diagnostic('grid'))
     source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3,
-        diagnostic=_slope_error if slope else None,
-        grid_units=(lambda dataset: _projected_orthogonal_grid_units(dataset, lambda: _slope_error('grid'))) if slope else None)
+                                               diagnostic=diagnostic, grid_units=orthogonal_grid)
     transform = source.GetGeoTransform()
-    if slope:
-        # Horn operates on row/column differences. Orthogonal axis lengths give
-        # the same gradient magnitude without resampling or rotating elevations.
-        dx = _sqrt_fraction(Fraction(transform[1])**2 + Fraction(transform[4])**2, error=lambda: _slope_error('step'))
-        dy = _sqrt_fraction(Fraction(transform[2])**2 + Fraction(transform[5])**2, error=lambda: _slope_error('step'))
+    if diagnostic is not None:
+        dx = _sqrt_fraction(Fraction(transform[1])**2 + Fraction(transform[4])**2, error=lambda: diagnostic('step'))
+        dy = _sqrt_fraction(Fraction(transform[2])**2 + Fraction(transform[5])**2, error=lambda: diagnostic('step'))
         if any(not math.isfinite(step * horizontal_metres) or step * horizontal_metres <= 0 for step in (dx, dy)):
-            raise _slope_error('step')
+            raise diagnostic('step')
+        # Use the original pixel samples on an axis-aligned private calculation grid.
         source.SetGeoTransform((transform[0], dx, 0., transform[3], 0., -dy))
     try:
         raw = gdal.DEMProcessing(str(_path()), source, processing,
             format='GTiff', creationOptions=['TILED=YES', 'COMPRESS=DEFLATE'],
             alg='Horn', computeEdges=False, scale=horizontal_metres, **options)
     finally:
-        if slope:
+        if diagnostic is not None:
             source.SetGeoTransform(transform)
     if raw is None:
         raise ValueError('GDAL terrain analysis failed')
@@ -6286,17 +6297,25 @@ def _terrain(input_raster, elevation_unit, band, processing, **options):
     destination.SetUnitType('degree' if processing == 'aspect' else
                             'percent' if options.get('slopeFormat') == 'percent' else
                             'degree' if processing == 'slope' else '')
+    if processing == 'aspect':
+        # The negative row axis is local north. Its projected bearing offsets
+        # the aspect clockwise, since the accepted affine preserves handedness.
+        local_north = math.degrees(math.atan2(-transform[2], -transform[5]))
+        if local_north:
+            scale = min(dx, dy)
+            east_weight, north_weight = scale / dx, scale / dy
     for x, y, arrays, masks in _blocks(raw, [1]):
         values = arrays[0].copy()
         values[~masks[0]] = np.nan
         if processing == 'aspect':
-            # GDAL aspect uses pixel-axis gradients rather than map distances.
-            # Transform that direction into the projected grid so rectangular
-            # pixels have the same physical aspect as square pixels.
+            # GDAL's aspect uses unscaled pixel-axis Horn derivatives.
             angle = np.radians(values)
-            transform = source.GetGeoTransform()
-            values = np.degrees(np.arctan2(np.sin(angle) / transform[1],
-                                           np.cos(angle) / -transform[5])) % 360
+            if local_north:
+                bearing = np.degrees(np.arctan2(np.sin(angle) * east_weight, np.cos(angle) * north_weight))
+                values = (bearing + local_north) % 360.
+                values[values == 360.] = 0.
+            else:
+                values = np.degrees(np.arctan2(np.sin(angle) / dx, np.cos(angle) / dy)) % 360.
         height, width = values.shape
         destination.WriteRaster(x, y, width, height, values.tobytes(), buf_type=gdal.GDT_Float64)
     destination = raw = source = None
@@ -6977,7 +6996,7 @@ def _param(name, kind, description, default=None, required=True, role='param', e
 
 _INPUT = lambda: _param('input_raster', 'raster', '当前工作流的栅格输入端口', role='input')
 _ALGORITHM = lambda: _param('resampling', 'str', '重采样算法', 'nearest', False, enum=RESAMPLING)
-_DEM_PARAMS = lambda: [_INPUT(), _param('elevation_unit', 'str', '高程数值单位，必须明确声明', enum=list(_ELEVATION_METRES)),
+_DEM_PARAMS = lambda unit_description='高程数值单位，必须明确声明': [_INPUT(), _param('elevation_unit', 'str', unit_description, enum=list(_ELEVATION_METRES)),
                        _param('band', 'int', '从 1 开始的高程数据波段', 1, False)]
 _COG_OPTIONS = [
     _param('compression', 'str', '压缩算法', 'DEFLATE', False, enum=['DEFLATE', 'LZW', 'ZSTD', 'NONE']),
@@ -7049,7 +7068,7 @@ _SPECS = [
     (raster_roughness, OperatorCategory.RASTER_TERRAIN, 'DEM 地形粗糙度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3包含中心的九点最大高程减最小高程，不取半高差'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_curvature, OperatorCategory.RASTER_TERRAIN, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率；tangential：切向曲率；plan：平面曲率；方向方法九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile', 'tangential', 'plan'])], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_TERRAIN, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位；北向矩形／严格正交旋转网格按实际轴长计算Horn 3×3，保留完整原网格', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
-    (raster_aspect, OperatorCategory.RASTER_TERRAIN, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
+    (raster_aspect, OperatorCategory.RASTER_TERRAIN, 'DEM 坡向', _DEM_PARAMS('显式高程单位；北向矩形或严格正交旋转网格，Horn 3×3，输出投影网格北起顺时针下坡角度'), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_TERRAIN, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
     (raster_contour, OperatorCategory.RASTER_TERRAIN, 'DEM 等值线', [*_DEM_PARAMS(), _param('interval', 'float', '等高距（米），与指定高程二选一', None, False), _param('levels', 'list[float]', '严格递增的指定高程（米）', None, False)], 'GeoDataFrame', ['read']),
     (raster_line_of_sight, OperatorCategory.RASTER_TERRAIN, 'DEM 两点通视', [

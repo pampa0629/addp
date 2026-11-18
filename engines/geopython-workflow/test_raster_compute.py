@@ -437,9 +437,14 @@ def test_dem_terrain_units_are_explicit_and_horizontal_units_come_from_crs(tmp_p
         dataset = None
 
 
-@pytest.mark.parametrize('operation', [raster_slope, raster_aspect, raster_hillshade])
+@pytest.mark.parametrize('operation,grid', [
+    (raster_slope, (0,1,0,7,0,-1)),
+    (raster_aspect, (0,1,0,7,0,-1)),
+    (raster_aspect, (0,3,8,7,4,-6)),
+    (raster_hillshade, (0,1,0,7,0,-1)),
+])
 @pytest.mark.parametrize('fault', ['nodata', 'mask', 'alpha', 'nan', 'inf', 'all-invalid'])
-def test_dem_terrain_validity_requires_all_nine_samples_and_keeps_partial_alpha(tmp_path, operation, fault):
+def test_dem_terrain_validity_requires_all_nine_samples_and_keeps_partial_alpha(tmp_path, operation, grid, fault):
     rows, columns = np.indices((7,7)); values = columns.astype(float) + rows*2
     alpha = np.full((7,7),128.)
     if fault == 'nodata': values[3,3] = -9999
@@ -447,7 +452,7 @@ def test_dem_terrain_validity_requires_all_nine_samples_and_keeps_partial_alpha(
     if fault == 'inf': values[3,3] = math.inf
     if fault == 'alpha': alpha[3,3] = 0
     if fault == 'all-invalid': values[:] = -9999
-    path = create_raster(tmp_path/'holes.tif', np.stack([values,alpha]), (0,1,0,7,0,-1), 'EPSG:3857')
+    path = create_raster(tmp_path/'holes.tif', np.stack([values,alpha]), grid, 'EPSG:3857')
     ds = gdal.Open(str(path), gdal.GA_Update); ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
     if fault == 'mask':
         with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'): ds.CreateMaskBand(gdal.GMF_PER_DATASET)
@@ -464,7 +469,8 @@ def test_dem_terrain_validity_requires_all_nine_samples_and_keeps_partial_alpha(
 
 
 @pytest.mark.parametrize('fault', ['geographic','rotated','south-up','missing-crs','missing-grid','unit','unit-conflict','unit-unknown','scale','offset','alpha','band','small'])
-def test_dem_terrain_rejects_ambiguous_input_before_gdal_computation(tmp_path, fault, monkeypatch):
+@pytest.mark.parametrize('operation', [raster_slope, raster_aspect])
+def test_dem_terrain_rejects_ambiguous_input_before_gdal_computation(tmp_path, fault, operation, monkeypatch):
     transform = (0,1,0,5,0,-1)
     crs = 'EPSG:4326' if fault=='geographic' else '' if fault=='missing-crs' else 'EPSG:3857'
     if fault=='rotated': transform=(0,1,.2,5,0,-1)
@@ -480,7 +486,7 @@ def test_dem_terrain_rejects_ambiguous_input_before_gdal_computation(tmp_path, f
     b=ds=None
     monkeypatch.setattr(gdal,'DEMProcessing',lambda *a,**k:pytest.fail('invalid DEM reached GDAL terrain computation'))
     with raster_workspace(),pytest.raises(ValueError):
-        raster_slope(raster_load(source_plan(path)), 'unknown' if fault=='unit' else 'metre', band=True if fault=='band' else 1)
+        operation(raster_load(source_plan(path)), 'unknown' if fault=='unit' else 'metre', band=True if fault=='band' else 1)
 
 
 @pytest.mark.parametrize('kwargs', [{'azimuth':True},{'azimuth':360},{'azimuth':-1},{'altitude':0},{'altitude':91},{'altitude':math.nan}])
@@ -524,13 +530,19 @@ def test_dem_terrain_metadata_contract_is_discovered_without_private_paths():
         assert not {'path','access_plan','engine_id'} & params.keys()
 
 
-@pytest.mark.parametrize('operator', ['raster_slope','raster_aspect','raster_hillshade','raster_contour'])
+@pytest.mark.parametrize('operator,grid', [
+    ('raster_slope', (100,1,0,200,0,-1)),
+    ('raster_aspect', (100,1,0,200,0,-1)),
+    ('raster_aspect', (100,3,8,200,4,-6)),
+    ('raster_hillshade', (100,1,0,200,0,-1)),
+    ('raster_contour', (100,1,0,200,0,-1)),
+])
 @pytest.mark.parametrize('invalid', [False,True])
-def test_dem_terrain_async_dag_saves_via_existing_ports_and_cleans_workspace(tmp_path,monkeypatch,operator,invalid):
+def test_dem_terrain_async_dag_saves_via_existing_ports_and_cleans_workspace(tmp_path,monkeypatch,operator,grid,invalid):
     import api_server
     import workflow_engine
     source=create_raster(tmp_path/'dem.tif',np.tile(np.arange(9,dtype=float),(9,1)),
-                         transform=(100,1,0,200,0,-1),crs='EPSG:3857')
+                         transform=grid,crs='EPSG:3857')
     before=source.read_bytes()
     contour=operator=='raster_contour'
     target=tmp_path/('contours.geojson' if contour else 'terrain.cog.tif')
@@ -23076,7 +23088,7 @@ def test_dem_sight_orthogonal_does_not_relax_other_dem_grid_admission(tmp_path):
     path=create_raster(tmp_path/'other-dem.tif',np.zeros((3,3)),_SIGHT_ORTHOGONAL_GRIDS[1],'EPSG:3857')
     with raster_workspace():
         source=raster_load(source_plan(path))
-        with pytest.raises(ValueError,match='north-up grid'): c.raster_aspect(source,'metre',1)
+        with pytest.raises(ValueError,match='north-up grid'): c.raster_hillshade(source,'metre',1)
         with pytest.raises(ValueError,match='北向无旋转'): c.raster_fill_depressions(source,1,'metre')
 
 
@@ -23087,6 +23099,62 @@ _SLOPE_ORTHOGONAL_GRIDS = [
     (600000., -2., 0., 4000000., 0., 3.),
     (float(2**60), 3., -8., float(2**60), -4., -6.),
 ]
+
+
+@pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS)
+def test_dem_aspect_orthogonal_cross_block_horn_angles_and_cog(tmp_path, grid):
+    rows, cols = np.indices((519, 523))
+    values = (cols % 13 + .25 * (rows % 17)**2 + (cols * rows) % 7).astype(float)
+    values[127, 129] = values[511, 512] = np.nan
+    values[29:36, 41:51] = 100.
+    path = create_raster(tmp_path/'aspect.tif', np.stack([np.zeros_like(values), values]),
+                         grid, 'EPSG:2277', nodata=math.nan)
+    original = path.read_bytes()
+
+    # Evaluate the Horn stencil directly. Project the two directional
+    # derivatives as a vector, independently of the GDAL angle calculation.
+    block = np.lib.stride_tricks.sliding_window_view(values, (3, 3))
+    weights = np.array([1., 2., 1.])
+    column_delta = ((block[..., 2] - block[..., 0]) * weights).sum(axis=-1)
+    row_delta = ((block[..., 2, :] - block[..., 0, :]) * weights).sum(axis=-1)
+    column_axis = np.array([grid[1], grid[4]])
+    row_axis = np.array([grid[2], grid[5]])
+    east, north = -(column_delta[..., None] * column_axis / (column_axis @ column_axis)
+                    + row_delta[..., None] * row_axis / (row_axis @ row_axis)).transpose(2, 0, 1)
+    interior_valid = np.isfinite(block).all(axis=(-2, -1)) & ((east != 0.) | (north != 0.))
+    expected = np.degrees(np.arctan2(east, north))
+    valid = np.pad(interior_valid, 1)
+    target = tmp_path/'aspect.cog.tif'
+    with raster_workspace():
+        result = raster_aspect(raster_load(source_plan(path)), 'metre', band=2)
+        declared = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        assert type(declared['size_bytes']) is int and declared['size_bytes'] == target.stat().st_size > 0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds = gdal.Open(str(target)); band = ds.GetRasterBand(1)
+        result_values = read_band_values(band)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, valid)
+        assert np.isnan(result_values[~valid]).all()
+        assert np.all((result_values[valid] >= 0.) & (result_values[valid] < 360.))
+        error = (result_values[valid] - expected[interior_valid] + 180.) % 360. - 180.
+        np.testing.assert_allclose(error, 0., atol=5e-5, rtol=0.)
+        assert ds.GetGeoTransform() == grid and ds.GetSpatialRef().GetAuthorityCode(None) == '2277'
+        assert band.GetUnitType() == 'degree' and band.DataType == gdal.GDT_Float64
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT'] == 'COG'
+        band = ds = None
+
+    if grid == _SLOPE_ORTHOGONAL_GRIDS[0]:
+        reference = gdal.Open(str(path))
+        legacy = gdal.DEMProcessing('', reference, 'aspect', format='MEM', band=2, alg='Horn',
+                                    computeEdges=False, trigonometric=False, zeroForFlat=False)
+        legacy_band = legacy.GetRasterBand(1)
+        angles = read_band_values(legacy_band)
+        angles[legacy_band.GetMaskBand().ReadAsArray() == 0] = np.nan
+        radians = np.radians(angles)
+        legacy_result = np.degrees(np.arctan2(np.sin(radians) / grid[1], np.cos(radians) / -grid[5])) % 360.
+        np.testing.assert_array_equal(np.isfinite(legacy_result), valid)
+        np.testing.assert_array_equal(result_values[valid].view(np.uint64), legacy_result[valid].view(np.uint64))
+        legacy_band = legacy = reference = None
+    assert path.read_bytes() == original
 
 
 @pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS)
@@ -23184,19 +23252,21 @@ def test_dem_slope_orthogonal_validity_complete_nine_and_legal_zero(tmp_path, fa
 
 
 @pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('operation', [raster_slope, raster_aspect])
 @pytest.mark.parametrize('grid', [
     (0, 3, 8, 0, 4, math.nextafter(-6., 0.)),
     (0, 1, .125, 0, 0, -1), (0, 3, -8, 0, 4, 6),
     (0, 1, 0, 0, 0, 1), (0, 0, 0, 0, 0, 0),
 ])
-def test_dem_slope_orthogonal_exact_grid_refusal_before_normalizing(tmp_path, monkeypatch, language, grid):
+def test_dem_terrain_orthogonal_exact_grid_refusal_before_normalizing(tmp_path, monkeypatch, language, operation, grid):
     import operators.raster_compute as c
     path = create_raster(tmp_path/'slope-bad.tif', np.ones((5, 5)), grid, 'EPSG:3857')
     monkeypatch.setattr(gdal, 'DEMProcessing', lambda *a, **k: pytest.fail('invalid grid reached Horn'))
     with raster_workspace(), raster_error_language(language):
         source = raster_load(source_plan(path)); before = set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error: raster_slope(source, 'metre')
-        assert str(error.value) == c._SLOPE_MESSAGES['grid'][language == 'en']
+        with pytest.raises(ValueError) as error: operation(source, 'metre')
+        messages = c._SLOPE_MESSAGES if operation is raster_slope else c._ASPECT_MESSAGES
+        assert str(error.value) == messages['grid'][language == 'en']
         assert set(source.workspace.iterdir()) == before
 
 
@@ -23252,9 +23322,10 @@ def test_dem_slope_orthogonal_does_not_relax_other_terrain_or_d8(tmp_path, grid)
     path = create_raster(tmp_path/'other-terrain.tif', np.ones((5, 5)), grid, 'EPSG:3857')
     with raster_workspace():
         source = raster_load(source_plan(path))
-        for operation, args in [(c.raster_aspect, ('metre',)), (c.raster_hillshade, ('metre',)),
+        for operation, args in [(c.raster_hillshade, ('metre',)), (c.raster_contour, ('metre',)),
                                 (c.raster_flow_direction_d8, (1, 'metre')), (c.raster_fill_depressions, (1, 'metre'))]:
-            with pytest.raises(ValueError): operation(source, *args)
+            kwargs = {'interval': 1.} if operation is c.raster_contour else {}
+            with pytest.raises(ValueError): operation(source, *args, **kwargs)
 
 
 @pytest.mark.parametrize('pam', [None, '<PAMDataset/>',
