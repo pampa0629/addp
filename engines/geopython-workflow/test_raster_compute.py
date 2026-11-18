@@ -442,6 +442,7 @@ def test_dem_terrain_units_are_explicit_and_horizontal_units_come_from_crs(tmp_p
     (raster_aspect, (0,1,0,7,0,-1)),
     (raster_aspect, (0,3,8,7,4,-6)),
     (raster_hillshade, (0,1,0,7,0,-1)),
+    (raster_hillshade, (0,3,8,7,4,-6)),
 ])
 @pytest.mark.parametrize('fault', ['nodata', 'mask', 'alpha', 'nan', 'inf', 'all-invalid'])
 def test_dem_terrain_validity_requires_all_nine_samples_and_keeps_partial_alpha(tmp_path, operation, grid, fault):
@@ -469,7 +470,7 @@ def test_dem_terrain_validity_requires_all_nine_samples_and_keeps_partial_alpha(
 
 
 @pytest.mark.parametrize('fault', ['geographic','rotated','south-up','missing-crs','missing-grid','unit','unit-conflict','unit-unknown','scale','offset','alpha','band','small'])
-@pytest.mark.parametrize('operation', [raster_slope, raster_aspect])
+@pytest.mark.parametrize('operation', [raster_slope, raster_aspect, raster_hillshade])
 def test_dem_terrain_rejects_ambiguous_input_before_gdal_computation(tmp_path, fault, operation, monkeypatch):
     transform = (0,1,0,5,0,-1)
     crs = 'EPSG:4326' if fault=='geographic' else '' if fault=='missing-crs' else 'EPSG:3857'
@@ -535,6 +536,7 @@ def test_dem_terrain_metadata_contract_is_discovered_without_private_paths():
     ('raster_aspect', (100,1,0,200,0,-1)),
     ('raster_aspect', (100,3,8,200,4,-6)),
     ('raster_hillshade', (100,1,0,200,0,-1)),
+    ('raster_hillshade', (100,3,8,200,4,-6)),
     ('raster_contour', (100,1,0,200,0,-1)),
 ])
 @pytest.mark.parametrize('invalid', [False,True])
@@ -23088,7 +23090,7 @@ def test_dem_sight_orthogonal_does_not_relax_other_dem_grid_admission(tmp_path):
     path=create_raster(tmp_path/'other-dem.tif',np.zeros((3,3)),_SIGHT_ORTHOGONAL_GRIDS[1],'EPSG:3857')
     with raster_workspace():
         source=raster_load(source_plan(path))
-        with pytest.raises(ValueError,match='north-up grid'): c.raster_hillshade(source,'metre',1)
+        with pytest.raises(ValueError,match='north-up grid'): c.raster_contour(source,'metre',1,interval=1.)
         with pytest.raises(ValueError,match='北向无旋转'): c.raster_fill_depressions(source,1,'metre')
 
 
@@ -23099,6 +23101,99 @@ _SLOPE_ORTHOGONAL_GRIDS = [
     (600000., -2., 0., 4000000., 0., 3.),
     (float(2**60), 3., -8., float(2**60), -4., -6.),
 ]
+
+
+def hillshade_world_reference(east_gradient, north_gradient, azimuth, altitude):
+    """Illuminate a surface normal expressed along projected east, north and up."""
+    bearing, height = math.radians(azimuth), math.radians(altitude)
+    east_light = math.sin(bearing) * math.cos(height)
+    north_light = math.cos(bearing) * math.cos(height)
+    up_light = math.sin(height)
+    cosine = (up_light - east_gradient*east_light - north_gradient*north_light) / (
+        np.sqrt(1. + east_gradient**2 + north_gradient**2)
+    )
+    return np.floor(1.5 + 254. * np.maximum(0., cosine))
+
+
+@pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS)
+@pytest.mark.parametrize('azimuth,altitude,east,north,crs,unit,factor', [
+    (315., 45., .25, -.5, 'EPSG:32617', 'metre', 1.),
+    (90., 10., 1., 0., 'EPSG:32617', 'metre', 1.),
+    (270., 10., 1., 0., 'EPSG:2277', 'foot', .3048),
+    (0., 90., .25, -.5, 'EPSG:32617', 'metre', 1.),
+    (359.95, 35., 0., 0., 'EPSG:2277', 'us_survey_foot', 1200/3937),
+])
+def test_dem_hillshade_orthogonal_same_world_plane_and_light(tmp_path, grid, azimuth, altitude,
+                                                           east, north, crs, unit, factor):
+    reference = osr.SpatialReference()
+    assert reference.SetFromUserInput(crs) == 0
+    rows, cols = np.indices((9, 11))
+    horizontal_metres = reference.GetLinearUnits()
+    # Use relative coordinates so the test is independent of the affine origin.
+    heights = (east*(cols*grid[1] + rows*grid[2]) + north*(cols*grid[4] + rows*grid[5]))
+    heights *= horizontal_metres / factor
+    path = create_raster(tmp_path/'hillshade-plane.tif', np.stack([np.zeros_like(heights), heights]), grid, crs)
+    original = path.read_bytes()
+    expected = hillshade_world_reference(east, north, azimuth, altitude)
+    valid = np.zeros(heights.shape, bool)
+    valid[1:-1, 1:-1] = True
+    with raster_workspace():
+        result = raster_hillshade(raster_load(source_plan(path)), unit, band=2, azimuth=azimuth, altitude=altitude)
+        target = tmp_path/'hillshade.cog.tif'
+        saved = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        assert type(saved['size_bytes']) is int and saved['size_bytes'] == target.stat().st_size > 0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        dataset = gdal.Open(str(target))
+        band = dataset.GetRasterBand(1)
+        actual = read_band_values(band)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, valid)
+        np.testing.assert_array_equal(actual[valid], expected)
+        assert np.isnan(actual[~valid]).all()
+        assert dataset.GetGeoTransform() == grid and dataset.GetSpatialRef().IsSame(reference)
+        assert band.DataType == gdal.GDT_Float64 and band.GetUnitType() == ''
+        band = dataset = None
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS[:2])
+def test_dem_hillshade_orthogonal_cross_block_horn_and_legacy_north_up(tmp_path, grid):
+    rows, cols = np.indices((519, 523))
+    values = (cols % 13 + .25*(rows % 17)**2 + (cols*rows) % 7).astype(float)
+    values[127, 129] = values[511, 512] = np.nan
+    azimuth, altitude = 23., 41.
+    path = create_raster(tmp_path/'hillshade-blocks.tif', values, grid, 'EPSG:3857', nodata=math.nan)
+    original = path.read_bytes()
+    block = np.lib.stride_tricks.sliding_window_view(values, (3, 3))
+    weights = np.array([1., 2., 1.])
+    dc = ((block[..., 2] - block[..., 0]) * weights).sum(axis=-1) / 8.
+    dr = ((block[..., 2, :] - block[..., 0, :]) * weights).sum(axis=-1) / 8.
+    column_axis = np.array([grid[1], grid[4]])
+    row_axis = np.array([grid[2], grid[5]])
+    east, north = (dc[..., None]*column_axis/(column_axis @ column_axis)
+                   + dr[..., None]*row_axis/(row_axis @ row_axis)).transpose(2, 0, 1)
+    inner = hillshade_world_reference(east, north, azimuth, altitude)
+    inner[~np.isfinite(block).all(axis=(-2, -1))] = np.nan
+    expected = np.pad(inner, 1, constant_values=np.nan)
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        result = raster_hillshade(source, 'metre', azimuth=azimuth, altitude=altitude)
+        dataset = gdal.Open(str(result.path))
+        band = dataset.GetRasterBand(1)
+        actual = read_band_values(band)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, np.isfinite(expected))
+        np.testing.assert_array_equal(actual, expected)
+        assert dataset.GetGeoTransform() == grid
+        band = dataset = None
+    if grid == _SLOPE_ORTHOGONAL_GRIDS[0]:
+        raster = gdal.Open(str(path))
+        old = gdal.DEMProcessing('', raster, 'hillshade', format='MEM', alg='Horn', computeEdges=False,
+                                 scale=1., azimuth=azimuth, altitude=altitude)
+        old_band = old.GetRasterBand(1)
+        old_pixels = old_band.ReadAsArray().astype(float)
+        old_pixels[old_band.GetMaskBand().ReadAsArray() == 0] = np.nan
+        np.testing.assert_array_equal(actual.view(np.uint64), old_pixels.view(np.uint64))
+        old_band = old = raster = None
+    assert path.read_bytes() == original
 
 
 @pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS)
@@ -23252,20 +23347,24 @@ def test_dem_slope_orthogonal_validity_complete_nine_and_legal_zero(tmp_path, fa
 
 
 @pytest.mark.parametrize('language', ['zh-cn', 'en'])
-@pytest.mark.parametrize('operation', [raster_slope, raster_aspect])
+@pytest.mark.parametrize('operation,messages_name', [
+    (raster_slope, '_SLOPE_MESSAGES'),
+    (raster_aspect, '_ASPECT_MESSAGES'),
+    (raster_hillshade, '_HILLSHADE_MESSAGES'),
+])
 @pytest.mark.parametrize('grid', [
     (0, 3, 8, 0, 4, math.nextafter(-6., 0.)),
     (0, 1, .125, 0, 0, -1), (0, 3, -8, 0, 4, 6),
     (0, 1, 0, 0, 0, 1), (0, 0, 0, 0, 0, 0),
 ])
-def test_dem_terrain_orthogonal_exact_grid_refusal_before_normalizing(tmp_path, monkeypatch, language, operation, grid):
+def test_dem_terrain_orthogonal_exact_grid_refusal_before_normalizing(tmp_path, monkeypatch, language, operation, messages_name, grid):
     import operators.raster_compute as c
     path = create_raster(tmp_path/'slope-bad.tif', np.ones((5, 5)), grid, 'EPSG:3857')
     monkeypatch.setattr(gdal, 'DEMProcessing', lambda *a, **k: pytest.fail('invalid grid reached Horn'))
     with raster_workspace(), raster_error_language(language):
         source = raster_load(source_plan(path)); before = set(source.workspace.iterdir())
         with pytest.raises(ValueError) as error: operation(source, 'metre')
-        messages = c._SLOPE_MESSAGES if operation is raster_slope else c._ASPECT_MESSAGES
+        messages = getattr(c, messages_name)
         assert str(error.value) == messages['grid'][language == 'en']
         assert set(source.workspace.iterdir()) == before
 
@@ -23322,7 +23421,7 @@ def test_dem_slope_orthogonal_does_not_relax_other_terrain_or_d8(tmp_path, grid)
     path = create_raster(tmp_path/'other-terrain.tif', np.ones((5, 5)), grid, 'EPSG:3857')
     with raster_workspace():
         source = raster_load(source_plan(path))
-        for operation, args in [(c.raster_hillshade, ('metre',)), (c.raster_contour, ('metre',)),
+        for operation, args in [(c.raster_contour, ('metre',)),
                                 (c.raster_flow_direction_d8, (1, 'metre')), (c.raster_fill_depressions, (1, 'metre'))]:
             kwargs = {'interval': 1.} if operation is c.raster_contour else {}
             with pytest.raises(ValueError): operation(source, *args, **kwargs)

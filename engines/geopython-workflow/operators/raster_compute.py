@@ -6268,28 +6268,39 @@ def _aspect_error(code):
     return ValueError(_ASPECT_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
+_HILLSHADE_MESSAGES = {
+    key: (zh.replace('DEM 坡度', 'DEM 地形晕渲'), en.replace('DEM slope', 'DEM hillshade'))
+    for key, (zh, en) in _SLOPE_MESSAGES.items() if key != 'slope-unit'
+}
+
+
+def _hillshade_error(code):
+    return ValueError(_HILLSHADE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
 def _terrain(input_raster, elevation_unit, band, processing, **options):
-    diagnostic = {'slope': _slope_error, 'aspect': _aspect_error}.get(processing)
-    orthogonal_grid = None
-    if diagnostic is not None:
-        orthogonal_grid = lambda dataset: _projected_orthogonal_grid_units(dataset, lambda: diagnostic('grid'))
-    source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3,
-                                               diagnostic=diagnostic, grid_units=orthogonal_grid)
+    diagnostic = {'slope': _slope_error, 'aspect': _aspect_error, 'hillshade': _hillshade_error}[processing]
+    source, horizontal_metres, _ = _dem_source(
+        input_raster, elevation_unit, band, 3, diagnostic=diagnostic,
+        grid_units=lambda dataset: _projected_orthogonal_grid_units(dataset, lambda: diagnostic('grid')),
+    )
     transform = source.GetGeoTransform()
-    if diagnostic is not None:
-        dx = _sqrt_fraction(Fraction(transform[1])**2 + Fraction(transform[4])**2, error=lambda: diagnostic('step'))
-        dy = _sqrt_fraction(Fraction(transform[2])**2 + Fraction(transform[5])**2, error=lambda: diagnostic('step'))
-        if any(not math.isfinite(step * horizontal_metres) or step * horizontal_metres <= 0 for step in (dx, dy)):
-            raise diagnostic('step')
-        # Use the original pixel samples on an axis-aligned private calculation grid.
-        source.SetGeoTransform((transform[0], dx, 0., transform[3], 0., -dy))
+    dx = _sqrt_fraction(Fraction(transform[1])**2 + Fraction(transform[4])**2, error=lambda: diagnostic('step'))
+    dy = _sqrt_fraction(Fraction(transform[2])**2 + Fraction(transform[5])**2, error=lambda: diagnostic('step'))
+    if any(not math.isfinite(step * horizontal_metres) or step * horizontal_metres <= 0 for step in (dx, dy)):
+        raise diagnostic('step')
+    # The negative row axis is local north. GDAL sees the unrotated private grid.
+    local_north = math.degrees(math.atan2(-transform[2], -transform[5]))
+    if processing == 'hillshade' and local_north:
+        azimuth = (options['azimuth'] - local_north) % 360.
+        options['azimuth'] = 0. if azimuth == 360. else azimuth
+    source.SetGeoTransform((transform[0], dx, 0., transform[3], 0., -dy))
     try:
         raw = gdal.DEMProcessing(str(_path()), source, processing,
             format='GTiff', creationOptions=['TILED=YES', 'COMPRESS=DEFLATE'],
             alg='Horn', computeEdges=False, scale=horizontal_metres, **options)
     finally:
-        if diagnostic is not None:
-            source.SetGeoTransform(transform)
+        source.SetGeoTransform(transform)
     if raw is None:
         raise ValueError('GDAL terrain analysis failed')
     output = _numeric_output(source, 1)
@@ -6297,13 +6308,9 @@ def _terrain(input_raster, elevation_unit, band, processing, **options):
     destination.SetUnitType('degree' if processing == 'aspect' else
                             'percent' if options.get('slopeFormat') == 'percent' else
                             'degree' if processing == 'slope' else '')
-    if processing == 'aspect':
-        # The negative row axis is local north. Its projected bearing offsets
-        # the aspect clockwise, since the accepted affine preserves handedness.
-        local_north = math.degrees(math.atan2(-transform[2], -transform[5]))
-        if local_north:
-            scale = min(dx, dy)
-            east_weight, north_weight = scale / dx, scale / dy
+    if processing == 'aspect' and local_north:
+        scale = min(dx, dy)
+        east_weight, north_weight = scale / dx, scale / dy
     for x, y, arrays, masks in _blocks(raw, [1]):
         values = arrays[0].copy()
         values[~masks[0]] = np.nan
@@ -7069,7 +7076,7 @@ _SPECS = [
     (raster_curvature, OperatorCategory.RASTER_TERRAIN, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率；tangential：切向曲率；plan：平面曲率；方向方法九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile', 'tangential', 'plan'])], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_TERRAIN, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位；北向矩形／严格正交旋转网格按实际轴长计算Horn 3×3，保留完整原网格', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_TERRAIN, 'DEM 坡向', _DEM_PARAMS('显式高程单位；北向矩形或严格正交旋转网格，Horn 3×3，输出投影网格北起顺时针下坡角度'), 'raster', ['read']),
-    (raster_hillshade, OperatorCategory.RASTER_TERRAIN, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
+    (raster_hillshade, OperatorCategory.RASTER_TERRAIN, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '支持北向矩形或严格正交旋转网格，光源方位角从投影网格北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
     (raster_contour, OperatorCategory.RASTER_TERRAIN, 'DEM 等值线', [*_DEM_PARAMS(), _param('interval', 'float', '等高距（米），与指定高程二选一', None, False), _param('levels', 'list[float]', '严格递增的指定高程（米）', None, False)], 'GeoDataFrame', ['read']),
     (raster_line_of_sight, OperatorCategory.RASTER_TERRAIN, 'DEM 两点通视', [
         _INPUT(), _param('band', 'int', '显式一基高程数据波段'),
