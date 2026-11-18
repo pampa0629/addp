@@ -129,12 +129,18 @@ class RedisWindowTest(unittest.TestCase):
         result=self.exercise()
         result.update(schema_version="addp.online-suite/v1",suite="infra-redis-core",product_sha=scenario.PRODUCT_SHA,
                       run_id="one",result="passed",cleanup="passed",harness_sha="f"*40,
-                      identities={"tenant_id":2,"oauth_principal_id":8,"consumer_id":9,"query_service_id":10,"engine_id":11})
+                      identities={"tenant_id":2,"oauth_principal_id":8,"consumer_id":9,"query_service_id":10,"engine_id":11},
+                      source_preparation={"engine_id":11,"recipient_principal_id":"7","meta_item_id":19,
+                          "grant_request_id":"e1f68921-5773-4dcb-99b6-7e2d578ca531", "grant_receipt_verified":True,
+                          "recipient_metadata_verified":True,"service_query_verified":True})
         result["checks"]["owner_cleanup"]=True
         scenario.validate_report(result,"one")
         for mutate in (lambda x:x["checks"].pop("system_outage"),lambda x:x.update(elapsed_seconds=36),
                        lambda x:x["window"][3].update(expires_at_ms=200000),lambda x:x["requests"].pop(),
-                       lambda x:x.update(product_sha="other"),lambda x:x.update(cleanup="failed")):
+                       lambda x:x.update(product_sha="other"),lambda x:x.update(cleanup="failed"),
+                       lambda x:x.pop("source_preparation"),lambda x:x["source_preparation"].update(service_query_verified=False),
+                       lambda x:x["source_preparation"].update(recipient_metadata_verified="true"),
+                       lambda x:x["source_preparation"].update(engine_id=12)):
             import copy
             invalid=copy.deepcopy(result);mutate(invalid)
             with self.assertRaises(scenario.EvidenceError):scenario.validate_report(invalid,"one")
@@ -234,6 +240,146 @@ class RedisCleanupTest(unittest.TestCase):
 
     def test_foreign_run_is_never_destroyed(self):
         self.assertEqual(self.execute_cleanup(True),[])
+
+
+class RedisSourcePreparationTest(unittest.TestCase):
+    def prepare(self, fault=None):
+        """Exercise the real preparer up to Consumer creation, with owner APIs simulated."""
+        import copy
+        import hashlib
+        preparation = import_module("scripts.test.redis-core-http-preparation")
+        calls, commands = [], []
+        fingerprint = hashlib.sha256(f"3:public.{preparation.TABLE}".encode()).hexdigest()
+        boundary = "a" * 64
+        issued = None
+
+        def request(client, method, path, expected, body=None, **kwargs):
+            nonlocal issued
+            owner = client.token == "owner"
+            calls.append(("owner" if owner else "authorizer", method, path))
+            status, payload = 200, {}
+            if path == scenario.CONTEXT_PATH:
+                permissions = list(scenario.CONTRACT["permissions"]) if owner else sorted(
+                    preparation.registration.SOURCE_INITIALIZER_PERMISSIONS | {"meta.scan_task.execute", "meta.scan_task.read"})
+                if owner and fault == "extra_permission": permissions.append("manager.data_item.read")
+                payload = {"principal": {"type": "user", "id": "7" if owner else "8"},
+                    "context": {"type": "tenant", "tenant_id": "2"}, "token": {"type": "first_party_access_token"},
+                    "authorization": {"role_assignments": [{"role_key": "redis-query-preparer" if owner else
+                        preparation.registration.SOURCE_INITIALIZER_ROLE, "permissions": permissions}]}}
+            elif path.endswith("/authorization-facts"):
+                self.assertFalse(owner)
+                payload = {"schema_version": "meta.data_item_authorization_facts/v1", "engine_id": "3",
+                    "item_fingerprint": fingerprint, "item_type": "table", "full_name": "public." + preparation.TABLE,
+                    "basis_state": "complete", "boundary_hash": boundary, "observed_at": "now",
+                    "boundary": {"layout": "single", "native_target": preparation.pg_auth.table_path(3, preparation.TABLE)}}
+            elif path == "/api/v1/system/engine-access/read-observations/current-source":
+                # Reproduce the original product boundary: this User has no Manager Permission.
+                status, payload = 403, {"error_code": "permission_denied"}
+            elif path == "/api/v1/system/engines/3/access_grants":
+                self.assertFalse(owner)
+                self.assertEqual(body["catalog_path"], preparation.pg_auth.table_path(3, preparation.TABLE))
+                self.assertEqual((body["recipient_id"], body["action"], body["expiry_mode"]), ("7", "read", "until_revoked"))
+                issued = body["request_id"]
+                status, payload = 201, copy.deepcopy(body)
+                payload.update(engine_id="3", approval_mode="independent", revocation=None,
+                    item_fingerprint=fingerprint, boundary_hash=boundary)
+                if fault == "wrong_recipient": payload["recipient_id"] = "9"
+                if fault == "wider_grant": payload["node_recursive"] = True
+            elif "/access_grants/" in path and path.endswith("/revoke"):
+                self.assertFalse(owner)
+                self.assertEqual(path, f"/api/v1/system/engines/3/access_grants/{issued}/revoke")
+                if fault == "cleanup": status = 503
+            elif path == "/api/v1/meta/engines/3/items?branch=public":
+                self.assertTrue(owner)
+                self.assertIsNotNone(issued)
+                self.assertIs(kwargs.get("response_type"), list)
+                payload = [{"id": 19, "item_type": "table", "full_name": "public." + preparation.TABLE,
+                    "fingerprint": "wrong" if fault == "wrong_metadata" else fingerprint}]
+                if fault == "duplicate_metadata": payload += copy.deepcopy(payload)
+            elif path == "/api/v1/security/protection-enrollments": status, payload = 201, {"id": "protection"}
+            elif path.endswith("/protection-enrollments/protection"):
+                payload = {"state": "active", "owner_progress": [{"consumer_owner": "service", "acknowledged": True}]}
+            elif path == "/api/v1/service/sql/output-contract": payload = {"table": {"fields": []}}
+            elif path == "/api/v1/service/query": status, payload = 201, {"id": 11}
+            elif path == "/api/query/redis-core-source-preparation/query":
+                self.assertTrue(owner)
+                payload = {"data": [{"id": 1, "label": "wrong" if fault == "query_bytes" else "redis-r1-byte-baseline"}]}
+                if fault == "query_denied": status, payload = 403, {"error_code": "permission_denied"}
+            elif method == "DELETE" and path == "/api/v1/service/query/11": pass
+            else: self.fail("unexpected preparation API: " + path)
+            if status not in expected: raise preparation.api.SuiteError(f"{method} {path} returned HTTP {status} (permission_denied)")
+            return preparation.api.Response(status, payload)
+
+        class ConsumerBoundary(Exception): pass
+        def fixture(mode, *args):
+            commands.append(mode)
+            if mode == "prepare": raise ConsumerBoundary("stop before Consumer/OAuth/window")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "identity.json").write_text(json.dumps({"ADDP_ONLINE_TEST_TENANT_ID": "2",
+                "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "owner", "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN": "authorizer",
+                "ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN": "provisioner", "ADDP_REDIS_HTTP_ACCOUNT_ID": "9"}))
+            for name in ("runtime.json", "source.json"): (root / name).write_text("{}")
+            with patch.dict(os.environ, {"ADDP_ONLINE_SECRET_DIR": directory, "ADDP_ONLINE_ARTIFACT_DIR": directory,
+                "ADDP_ONLINE_TEST_RUN_ID": "source-preparation", "GITHUB_SHA": "f" * 40, "GATEWAY_URL": "http://127.0.0.1:1"}), \
+                patch.object(preparation.api.GatewayClient, "request", request), \
+                patch.object(preparation.registration, "register_engine", return_value=3), \
+                patch.object(preparation.pg_auth, "basic_scan"), patch.object(preparation, "fixture", fixture), \
+                patch("builtins.print"):
+                with self.assertRaises((ConsumerBoundary, scenario.EvidenceError, preparation.api.SuiteError,
+                    preparation.registration.RegistrationError)):
+                    preparation.accept()
+            report = json.loads((root / "redis-core-http-evidence.json").read_text())
+        return report, calls, commands
+
+    def test_service_preparer_reaches_consumer_without_manager_permission(self):
+        report, calls, commands = self.prepare()
+        self.assertEqual(commands, ["prepare", "retire"])
+        self.assertFalse(any("read-observations" in path for _, _, path in calls))
+        self.assertEqual({k: report["source_preparation"][k] for k in
+            ("grant_receipt_verified", "recipient_metadata_verified", "service_query_verified")},
+            dict(grant_receipt_verified=True, recipient_metadata_verified=True, service_query_verified=True))
+        self.assertEqual(report["source_preparation"]["meta_item_id"], 19)
+        self.assertEqual(report["result"], "failed")  # Stopping before A–E can never pass T4.
+        self.assertEqual(report["cleanup"], "passed")
+
+    def test_wrong_or_wider_grant_is_rejected_and_revoked(self):
+        for fault in ("wrong_recipient", "wider_grant"):
+            with self.subTest(fault=fault):
+                report, calls, commands = self.prepare(fault)
+                self.assertNotIn("prepare", commands)
+                self.assertFalse(any("/items?" in path for _, _, path in calls))
+                self.assertTrue(any(path.endswith("/revoke") for _, _, path in calls))
+                self.assertEqual(report["cleanup"], "passed")
+
+    def test_wrong_or_duplicate_recipient_metadata_prevents_service_creation(self):
+        for fault in ("wrong_metadata", "duplicate_metadata"):
+            with self.subTest(fault=fault):
+                report, calls, commands = self.prepare(fault)
+                self.assertNotIn("prepare", commands)
+                self.assertFalse(any(path == "/api/v1/service/query" for _, _, path in calls))
+                self.assertEqual(report["cleanup"], "passed")
+
+    def test_receipt_and_output_contract_cannot_hide_wrong_query_bytes(self):
+        for fault in ("query_bytes", "query_denied"):
+            with self.subTest(fault=fault):
+                report, _, commands = self.prepare(fault)
+                self.assertNotIn("prepare", commands)
+                self.assertTrue(report["source_preparation"]["grant_receipt_verified"])
+                self.assertTrue(report["source_preparation"]["recipient_metadata_verified"])
+                self.assertFalse(report["source_preparation"]["service_query_verified"])
+                self.assertEqual(report["result"], "failed")
+
+    def test_extra_manager_permission_fails_before_grant(self):
+        _, calls, commands = self.prepare("extra_permission")
+        self.assertFalse(any(path.endswith("/access_grants") for _, _, path in calls))
+        self.assertNotIn("prepare", commands)
+
+    def test_failed_grant_revocation_cannot_report_cleanup_success(self):
+        report, _, _ = self.prepare("cleanup")
+        self.assertEqual(report["cleanup"], "failed")
+        self.assertFalse(report["checks"]["owner_cleanup"])
 
 
 class RedisPinnedFixtureTest(unittest.TestCase):

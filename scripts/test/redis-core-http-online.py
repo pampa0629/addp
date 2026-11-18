@@ -289,6 +289,14 @@ def validate_report(report, run_id):
     identities=report.get("identities",{})
     require(set(identities)=={"tenant_id","oauth_principal_id","consumer_id","query_service_id","engine_id"}
             and all(type(value) is int and value>0 for value in identities.values()) and identities["tenant_id"]>1, "acceptance resource bindings missing")
+    preparation = report.get("source_preparation", {})
+    require(all(preparation.get(key) is True for key in
+        ("grant_receipt_verified", "recipient_metadata_verified", "service_query_verified"))
+        and preparation.get("engine_id") == identities["engine_id"]
+        and type(preparation.get("meta_item_id")) is int and preparation["meta_item_id"] > 0
+        and re.fullmatch("[1-9][0-9]*", str(preparation.get("recipient_principal_id", "")))
+        and str(UUID(preparation.get("grant_request_id", ""))) == preparation["grant_request_id"],
+        "Service source preparation evidence incomplete")
     checks = report.get("checks")
     require(isinstance(checks, dict) and set(checks) == set(CONTRACT["checks"]) and all(value is True for value in checks.values()), "Redis evidence stages incomplete")
     samples = report.get("window", [])

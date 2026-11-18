@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from importlib import import_module
@@ -221,9 +222,32 @@ def accept():
         identity["ADDP_REDIS_HTTP_ENGINE_ID"] = str(engine)
         identity_path.write_text(json.dumps(identity))
         pg_auth.basic_scan(authorizer, engine, [TABLE])
-        registration.initialize_exact_record_read_grants(authorizer, owner, int(identity["ADDP_ONLINE_TEST_TENANT_ID"]),
-            [(engine, "schema", "public", TABLE)], scan_preparation=True,
-            on_pending=lambda eid, rid, target: pending.append((eid, rid)))
+        # Grant preparation is shared; the consumption proof belongs to Service.
+        # Manager's current-source observation requires a different Permission.
+        _, recipient = registration.source_grant_participants(authorizer, owner,
+            int(identity["ADDP_ONLINE_TEST_TENANT_ID"]), scan_preparation=True)
+        path = pg_auth.table_path(engine, TABLE)
+        source = registration.read_exact_record_authorization_facts(authorizer, path)
+        body = {"request_id": str(uuid4()), "catalog_path": path, "recipient_type": "user", "recipient_id": recipient,
+            "action": "read", "expiry_mode": "until_revoked", "reason": "Redis R1 exact Service source preparation",
+            "item_fingerprint": source["item_fingerprint"], "expected_boundary_hash": source["boundary_hash"]}
+        pending.append((engine, body["request_id"]))
+        report["source_preparation"] = {"engine_id": engine, "recipient_principal_id": recipient,
+            "grant_request_id": body["request_id"], "grant_receipt_verified": False,
+            "recipient_metadata_verified": False, "service_query_verified": False}
+        receipt = authorizer.request("POST", f"/api/v1/system/engines/{engine}/access_grants", (201,), body).payload
+        expected = {key: body[key] for key in ("request_id", "catalog_path", "recipient_type", "recipient_id", "action", "expiry_mode")}
+        expected.update(engine_id=str(engine), approval_mode="independent", revocation=None, expires_at=None,
+            item_fingerprint=source["item_fingerprint"], boundary_hash=source["boundary_hash"])
+        s.require(isinstance(receipt, dict) and all(receipt.get(key) == value for key, value in expected.items())
+            and receipt.get("node_recursive") is None and not any(receipt.get(key) for key in
+                ("metadata_target", "file_composition", "scope")), "Service source Grant receipt differs")
+        report["source_preparation"]["grant_receipt_verified"] = True
+        items = owner.request("GET", f"/api/v1/meta/engines/{engine}/items?branch=public", (200,), response_type=list).payload
+        matches = [item for item in items if item.get("full_name") == "public." + TABLE and item.get("item_type") == "table"]
+        s.require(len(matches) == 1 and type(matches[0].get("id")) is int and matches[0]["id"] > 0
+            and matches[0].get("fingerprint") == source["item_fingerprint"], "Service recipient DataItem differs")
+        report["source_preparation"].update(recipient_metadata_verified=True, meta_item_id=matches[0]["id"])
         # Establish explicit protection before freezing the published definition;
         # only actual owner acknowledgement permits Query preparation.
         locator = pg_auth.locator(engine, TABLE)
@@ -253,6 +277,7 @@ def accept():
         warmed=owner.request("POST", "/api/query/"+service_name+"/query", (200,),
             {"select":["id","label"],"order_by":[{"field":"id","direction":"asc"}],"page":{"limit":1},"format":"json"}).payload
         s.require(warmed.get("data")==[{"id":1,"label":"redis-r1-byte-baseline"}], "ordinary Query warmup differs")
+        report["source_preparation"]["service_query_verified"] = True
         fixture("prepare", identity_path, query_id)
         identity = json.loads(identity_path.read_text())
         report["identities"]={"tenant_id":int(identity["ADDP_ONLINE_TEST_TENANT_ID"]),
