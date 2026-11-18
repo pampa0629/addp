@@ -19,6 +19,7 @@ import secrets
 
 ROOT = Path(__file__).resolve().parents[2]
 FILES = ('server.crt', 'server.key', 'source-ca.crt', 'query-ca.crt')
+DEVELOPMENT_PRODUCERS = ('manager:backend', 'develop:backend')
 
 
 def openssl(config, deadline, *args, capture=False):
@@ -103,11 +104,13 @@ def prepare_development(directory, producers, otlp_port, query_port):
 
 
 def prepare_development_producer(directory, producer):
-    """Append the approved Manager source to existing local preparation inputs."""
+    """Append one approved source to existing local preparation inputs."""
     p = Path(directory)
     deadline = time.monotonic()+60
-    if os.environ.get('ENV') == 'production' or producer != 'manager:backend':
-        raise ValueError('Only the approved development Manager source can be appended')
+    if os.environ.get('ENV') == 'production' or producer not in DEVELOPMENT_PRODUCERS:
+        raise ValueError('Only approved development sources can be appended')
+    source_module, source_role = producer.split(':')
+    source_name = f'{source_module}-{source_role}'
     for d in (p, p/'authorities', p/'center', p/'sources'):
         if not d.is_absolute() or d.is_symlink() or not d.is_dir() or d.resolve().is_relative_to(ROOT) or d.stat().st_mode & 0o077:
             raise ValueError('Private development preparation directories required')
@@ -166,9 +169,9 @@ def prepare_development_producer(directory, producer):
                 raise ValueError('Invalid existing source file')
         if (tls/'ca.crt').read_bytes() != (p/'authorities/server.crt').read_bytes():
             raise ValueError('Existing source server trust mismatch')
-    target = p/'sources/manager-backend'
-    if ('manager','backend') in seen or target.exists() or target.is_symlink():
-        raise ValueError('Manager source already exists')
+    target = p/'sources'/source_name
+    if (source_module, source_role) in seen or target.exists() or target.is_symlink():
+        raise ValueError('Development source already exists')
     if (p/'authorities/source.crt').read_bytes() != (p/'center/source-ca.crt').read_bytes():
         raise ValueError('Source CA does not match current center trust')
     with tempfile.TemporaryDirectory(prefix='.producer-', dir=p) as temporary:
@@ -187,7 +190,7 @@ def prepare_development_producer(directory, producer):
                                   'subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\nextendedKeyUsage=clientAuth\n')
             extensions.chmod(0o600)
             openssl(config, deadline, 'req', '-config', config, '-new', '-newkey', 'rsa:2048', '-nodes',
-                    '-subj', '/CN=addp-local-trace-manager-backend', '-keyout', target/'client.key', '-out', csr)
+                    '-subj', f'/CN=addp-local-trace-{source_name}', '-keyout', target/'client.key', '-out', csr)
             (target/'client.key').chmod(0o600); csr.chmod(0o600)
             openssl(config, deadline, 'x509', '-req', '-in', csr, '-CA', p/'authorities/source.crt',
                     '-CAkey', p/'authorities/source.key', '-set_serial', str(secrets.randbits(127)+1),
@@ -195,7 +198,7 @@ def prepare_development_producer(directory, producer):
             (target/'client.crt').chmod(0o600)
             (target/'ca.crt').write_bytes((p/'authorities/server.crt').read_bytes()); (target/'ca.crt').chmod(0o600)
             openssl(config, deadline, 'verify', '-CAfile', p/'center/source-ca.crt', '-purpose', 'sslclient', target/'client.crt')
-            deployments.append({'module_name':'manager','role':'backend','endpoint':endpoint,'tls_dir':str(target)})
+            deployments.append({'module_name':source_module,'role':source_role,'endpoint':endpoint,'tls_dir':str(target)})
             declaration = json.dumps(deployments, separators=(',',':'))
             if len(declaration.encode()) > 256*1024:
                 raise ValueError('Source declaration exceeds SDK input budget')
@@ -266,9 +269,9 @@ if __name__ == '__main__':
     development.add_argument('--producer',action='append',required=True)
     development.add_argument('--otlp-port',type=int,required=True)
     development.add_argument('--query-port',type=int,required=True)
-    source = commands.add_parser('prepare-development-producer', help='Append the approved Manager source; never activate')
+    source = commands.add_parser('prepare-development-producer', help='Append one approved local source; never activate')
     source.add_argument('--directory',required=True)
-    source.add_argument('--producer',required=True,choices=['manager:backend'])
+    source.add_argument('--producer',required=True,choices=DEVELOPMENT_PRODUCERS)
     args = parser.parse_args()
     try:
         if args.action == 'prepare-development':
@@ -276,7 +279,7 @@ if __name__ == '__main__':
             print('Development Trace deployment inputs prepared; no environment or service was activated')
         elif args.action == 'prepare-development-producer':
             prepare_development_producer(args.directory,args.producer)
-            print('Development Manager Trace inputs appended; no environment or service was activated')
+            print('Development Trace inputs appended; no environment or service was activated')
         else:
             flag = os.environ.get('ADDP_OBSERVABILITY_LOGS_ENABLED', 'true')
             if flag not in ('true', 'false'):

@@ -172,7 +172,7 @@ class TraceConfigTests(unittest.TestCase):
    rendered=p/'center/runtime.alloy';before=rendered.read_bytes()
    result=subprocess.run([os.sys.executable,script],env=env|{'ADDP_TRACE_DEPLOYMENT_DIR':str(p/'center')},capture_output=True,timeout=10)
    self.assertEqual(result.returncode,0,result.stderr.decode());self.assertEqual(rendered.read_bytes(),before)
-class ManagerTraceProducerTests(unittest.TestCase):
+class DevelopmentTraceProducerTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
   cls.renderer=module('scripts/infra/generate-trace-config.py')
@@ -225,7 +225,7 @@ class ManagerTraceProducerTests(unittest.TestCase):
   self.assertEqual(list(self.root.glob('.producer-*')),[])
   with self.assertRaises(ValueError):self.append()
  def test_rejects_unapproved_producer_and_production(self):
-  for env,producer in [('development','meta:backend'),('development','manager:worker'),('production','manager:backend')]:
+  for env,producer in [('development','meta:backend'),('development','develop:ingress'),('development','develop:worker'),('production','manager:backend'),('production','develop:backend')]:
    with patch.dict(os.environ,{'ENV':env}),patch.object(self.renderer.subprocess,'run') as run,self.assertRaises(ValueError):
     self.renderer.prepare_development_producer(self.root,producer)
    run.assert_not_called();self.unchanged()
@@ -287,5 +287,38 @@ class ManagerTraceProducerTests(unittest.TestCase):
   r=subprocess.run(args,env=env,capture_output=True,timeout=10)
   self.assertNotEqual(r.returncode,0);self.assertEqual(r.stderr.strip(),b'trace_deployment_invalid')
   self.assertEqual(r.stdout,b'')
+
+ def test_develop_cli_appends_independent_source_to_existing_manager_deployment(self):
+  self.append()
+  manifest=self.root/'deployment.env'
+  original_lines=manifest.read_text().splitlines()
+  original_files={p:p.read_bytes() for p in self.root.rglob('*') if p.is_file() and p != manifest}
+  args=[os.sys.executable,str(ROOT/'scripts/infra/generate-trace-config.py'),'prepare-development-producer',
+        '--directory',str(self.root),'--producer','develop:backend']
+  env=os.environ|{'ENV':'development','OPENSSL_CONF':'/nonexistent/global-config'}
+  result=subprocess.run(args,env=env,capture_output=True,timeout=60)
+  self.assertEqual(result.returncode,0,result.stderr.decode())
+  self.assertIn(b'no environment or service was activated',result.stdout)
+  new_lines=manifest.read_text().splitlines()
+  before=dict(shlex.split(line)[0].split('=',1) for line in original_lines)
+  after=dict(shlex.split(line)[0].split('=',1) for line in new_lines)
+  target=self.root/'sources/develop-backend'
+  self.assertEqual(json.loads(after.pop('ADDP_TRACE_DEPLOYMENTS')),json.loads(before.pop('ADDP_TRACE_DEPLOYMENTS'))+[
+   {'module_name':'develop','role':'backend','endpoint':'https://127.0.0.1:14318/v1/traces','tls_dir':str(target)}])
+  self.assertEqual(before,after)
+  for path, contents in original_files.items():self.assertEqual(path.read_bytes(),contents,path.name)
+  self.assertEqual(target.stat().st_mode&0o777,0o700)
+  self.assertEqual({p.name for p in target.iterdir()},{'ca.crt','client.crt','client.key'})
+  for path in target.iterdir():self.assertEqual(path.stat().st_mode&0o777,0o600)
+  env['OPENSSL_CONF']=str(self.root/'authorities/openssl.cnf')
+  subject=subprocess.run(['openssl','x509','-in',str(target/'client.crt'),'-noout','-subject'],
+                         env=env,capture_output=True,check=True,timeout=5)
+  self.assertIn(b'addp-local-trace-develop-backend',subject.stdout)
+  subprocess.run(['openssl','verify','-CAfile',str(self.root/'center/source-ca.crt'),'-purpose','sslclient',str(target/'client.crt')],
+                 env=env,capture_output=True,check=True,timeout=5)
+  result=subprocess.run(args,env=env,capture_output=True,timeout=10)
+  self.assertNotEqual(result.returncode,0)
+  self.assertEqual(result.stderr.strip(),b'trace_deployment_invalid')
+  self.assertEqual(manifest.read_text().splitlines(),new_lines)
 
 if __name__=='__main__':unittest.main()

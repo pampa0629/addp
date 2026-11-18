@@ -150,7 +150,7 @@ python3 scripts/infra/generate-trace-config.py prepare-development \
 
 最小确定性门禁沿原 `make test-infra-runtime-log-lifecycle` 自动发现，覆盖命令参数／目录边界、现有材料不覆盖、失败清理、私有 OpenSSL 配置、证书用途／有效期、来源与查询信任隔离、SDK 四字段接线及未修改个人环境；不新增 Make 或 workflow 入口。
 
-2026-11-12 确认首批为既有本机开发部署追加 `manager:backend`。同一生成器提供 `prepare-development-producer --directory <原准备根目录> --producer manager:backend`，只消费本工具已有的 `deployment.env` 和私有签发材料；当前追加范围仅为 Manager Backend，不推断个人 `.env`、运行实例或其他来源。先核验原七项部署变量、来源唯一性、中心与来源目录归属、source CA 与中心信任根一致及有效期；来源目录、声明已存在或材料不可核验时拒绝，不覆盖／轮换。复用原 source CA 签发独立 clientAuth 叶证书，有效期不超过30天且不超过原 CA 到期时间；不改 CA、既有来源和查询证书、端点、Alloy／Tempo 渲染结果或策略。
+既有本机开发部署可以分别追加已确认的 `manager:backend` 和 `develop:backend`。同一生成器提供 `prepare-development-producer --directory <原准备根目录> --producer <已确认来源>`，每次仅追加指定的一项。Develop Backend 使用该来源记录查询执行阶段并上报 Trace，查询与阶段读取继续使用现有授权。工具只消费自身准备的 `deployment.env` 和私有签发材料，先核验原七项部署变量、来源唯一性、中心与来源目录归属、source CA 与中心信任根一致及有效期；来源目录、声明已存在或材料不可核验时拒绝，不覆盖／轮换。复用原 source CA 签发独立 clientAuth 叶证书，有效期不超过30天且不超过原 CA 到期时间；不改 CA、既有来源和查询证书、端点、Alloy／Tempo 渲染结果或策略。
 
 新增来源仍只有 `ca.crt/client.crt/client.key`，目录0700、文件0600；签发用临时材料在当次私有目录，OpenSSL逐条执行、局部私有配置、单条最多十秒、整次六十秒。使用显式随机序列号，不修改原CA序列文件。新证书核验成功后仅原子更新 `deployment.env` 中的 `ADDP_TRACE_DEPLOYMENTS` 一项，其余行保持原样。失败删除本次新增来源和临时材料，原部署文件不变；不输出私钥或原始OpenSSL错误。准备不修改个人根 `.env`，不执行网络／Docker请求、不启停服务，真实材料生成、配置合并和启用另行确认。
 
