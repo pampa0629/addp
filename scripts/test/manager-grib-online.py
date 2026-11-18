@@ -201,7 +201,15 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             require(changed.get('error_code')=='preview_source_refresh_required','changed GRIB did not stop preview')
         physical('restore');report['source_drift_denied']=True
         require(physical('verify').get('sources_unchanged') is True,'sources not restored exactly')
-        stage='browser';context={'run_id':report['run_id'],'identity':report['identity'],'cases':report['cases']}
+        stage = 'browser'
+        browser_cases = []
+        for case in report['cases']:
+            windows = []
+            for field in case['spec']['fields']:
+                values, valid = FIXTURE.expected(field)
+                windows.append(dict(variable=f"message-{field['number']}", values=values, valid=valid))
+            browser_cases.append(dict(case, expected_windows=windows))
+        context = dict(run_id=report['run_id'], identity=report['identity'], cases=browser_cases)
         if browser_runner:browser=browser_runner(context)
         else:
             browser_environment={k:v for k,v in environment.items() if k not in {'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}}
@@ -211,8 +219,12 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
         for case,observed in zip(report['cases'],browser['cases']):
             validate_browser_case(case,observed)
             for field in case['spec']['fields']:
-                screenshot=artifact/f"grib-{case['source_case']}-{case['spec']['case_id']}-message{field['number']}-slice.png"
-                require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),'GRIB visible slice screenshot missing')
+                prefix = f"grib-{case['source_case']}-{case['spec']['case_id']}-message{field['number']}-slice"
+                suffixes = ('.png', '-start.png') if field.get('product_template') == 8 and case['spec'].get('packing') == 'ccsds' else ('.png',)
+                for suffix in suffixes:
+                    screenshot = artifact / (prefix + suffix)
+                    require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),
+                            'GRIB visible slice screenshot missing')
         if not physical_runner:
             inspected=subprocess.run(['docker','exec','addp-manager-raster-runtime','python','-c',
                 'import pathlib,json,tempfile; print(json.dumps([p.name for p in pathlib.Path(tempfile.gettempdir()).glob("addp-grib-*")]))'],

@@ -75,8 +75,8 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           }); observed.catch(() => {})
           await frame.getByTestId('read-grid-slice').click()
           const result = (await json(await observed, 'GRIB actual slice button')).data.object.content.json
-          const valid = Array.from({ length: field.height }, (_, y) => Array.from({ length: field.width }, (_, x) => !(field.missing && y === 1 && x === 1)))
-          const values = valid.map((row, y) => row.map((ok, x) => !ok ? 'NaN' : field.missing && y === 0 && x === 0 ? '9999.0' : (() => { let value = field.base + (field.constant ? 0 : y * field.width + x) * (field.step ?? 1); if (field.packing === 'complex-spatial') { const integer = (value * 10 ** field.decimal_scale - field.reference) / 2 ** field.binary_scale; value = Math.fround(Math.fround(Math.fround(Math.fround(integer) * Math.fround(2 ** field.binary_scale)) + Math.fround(field.reference)) * Math.fround(10 ** -field.decimal_scale)) } return String(value) + (Number.isInteger(value) ? '.0' : '') })()))
+          const { variable, values, valid } = source.expected_windows[field.number - 1]
+          expect(variable).toBe(`message-${field.number}`)
           expect(result.selection).toEqual({ variable: `message-${field.number}`, indices: [], x: 0, y: 0, width: field.width, height: field.height })
           expect(result.values).toEqual(values); expect(result.valid).toEqual(valid)
           expect(result.value_mode).toBe('decoded_native_units'); expect(result.spatial).toBeNull()
@@ -90,10 +90,18 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           }
           const grid = frame.getByTestId('grid-slice-result')
           await grid.scrollIntoViewIfNeeded()
-          await expect(grid.locator('td').first()).toBeInViewport({ ratio: 1 })
-          await expect(grid.locator('td').last()).toBeInViewport({ ratio: 1 })
-          await expect(grid.locator('td').last()).toHaveText(values.at(-1).at(-1))
-          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${source.source_case}-${source.spec.case_id}-message${field.number}-slice.png`) })
+          const first = grid.locator('td').first(), last = grid.locator('td').last()
+          const screenshot = `grib-${source.source_case}-${source.spec.case_id}-message${field.number}-slice`
+          const precipitation = source.spec.packing === 'ccsds' && field.product_template === 8
+          if (precipitation) await first.scrollIntoViewIfNeeded()
+          await expect(first).toBeInViewport({ ratio: 1 })
+          if (precipitation) {
+            await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${screenshot}-start.png`) })
+            await last.scrollIntoViewIfNeeded()
+          }
+          await expect(last).toBeInViewport({ ratio: 1 })
+          await expect(last).toHaveText(values.at(-1).at(-1))
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${screenshot}.png`) })
           await expect(frame.locator('.geojson-preview')).toHaveCount(0)
           await expect(frame.getByTestId('grid-no-location')).toContainText(/暂不提供地图预览|map preview is not available/)
         }
