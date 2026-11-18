@@ -2032,8 +2032,9 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         "transfer/backend/internal/planner/online_write_failure_contract_test.go": ("TestHostedWriteFailureTaskContract", "ParseTableExportTaskSpec", "module.write_failure_task"),
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v19",
-            "mongodb_source_access", "addp.mongodb-source-access/v1", "ExactRecordGrants", "rejected_before_read_write",
+            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v20",
+            "mongodb_source_access", "addp.mongodb-source-access/v2", "ExactRecordGrants", "rejected_before_read_write",
+            "grant_mongodb_ods_read", "read_mongodb_ods_scan_item", "ods_target_access", "preview_denied_after_revoke",
             "verify_scan_trace_visibility", "record_scan_trace_receipt", "scan-trace-visibility.json", "addp.scan-trace-visibility/v2", "meta_basic_scan_execution_id", "parent_read_does_not_grant_scan_read", "peer_hidden_endpoints", "owner_visible_observations", "peer_denials",
             "run_object_upload", "validate_object_upload_facts", "manager-object-upload.json", "addp.manager-object-upload/v2", "single_source_facts_verified", "multi_physical_size_verified", "ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID",
             "read_object_upload_meta", "verify_upload_visibility", "ExactFileMetadataGrants", "detail_404_after_revoke",

@@ -1693,8 +1693,8 @@ def validate_mongodb_execution(execution: dict[str, object], source_locator: str
     return hashes
 
 
-class MongoDBSourceReadGrants(REGISTRATION.ExactRecordGrants):
-    """Reuse exact Grant lifecycle with this consumer's preview permission."""
+class TransferScenarioReadGrants(REGISTRATION.ExactRecordGrants):
+    """Observe reads using the existing permissions of the Transfer consumer."""
 
     def observe(self, target, allowed, *, phase="visibility_check"):
         self.phase = phase
@@ -1709,14 +1709,14 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
     if os.environ.get("ONLINE_SUITE") != "transfer-relational-sql-etl":
         raise SuiteError("MongoDB source Grant requires its dedicated Hosted suite")
     import_module("scripts.test.orchestrator-execution-faults").deployment_secret()
-    grants = MongoDBSourceReadGrants(initializer, client, tenant_id, action="read", scan_preparation=True)
+    grants = TransferScenarioReadGrants(initializer, client, tenant_id, action="read", scan_preparation=True)
     namespace, collection = MONGODB_SOURCE.split(".")
     target = grants.target(engine_id, namespace, collection, "collection")
     route = "/api/v1/meta/items/by-catalog-path?" + urllib.parse.urlencode({
         "engine_id": engine_id, "catalog_path": MONGODB_SOURCE})
-    proof = {"schema_version": "addp.mongodb-source-access/v1", "run_id": required_environment("ADDP_ONLINE_TEST_RUN_ID"),
+    proof = {"schema_version": "addp.mongodb-source-access/v2", "run_id": required_environment("ADDP_ONLINE_TEST_RUN_ID"),
              "source_engine_id": engine_id, "result": "incomplete", "grant_request_ids": []}
-    state = {"proof": proof}
+    state = {"proof": proof, "grants": grants}
     scenario_failed = False
     artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "mongodb-source-access.json"
     try:
@@ -1746,7 +1746,17 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
         try:
             if not proof["grant_request_ids"]:
                 proof["grant_request_ids"] = [row["request_id"] for row in grants.pending]
+            ods = proof.get("ods_target_access")
+            ods_issuance_confirmed = bool(ods and ods.get("grant_request_id"))
+            if ods is not None and not ods_issuance_confirmed:
+                target_path = grants.target(ods["engine_id"], "public", MONGODB_TARGET, "table", "schema")
+                ods["grant_request_id"] = next((row["request_id"] for row in grants.pending if row["target"] == target_path), None)
             grants.cleanup()
+            if ods is not None and ods.get("grant_request_id"):
+                client.request("GET", mongodb_ods_catalog_route(ods["engine_id"]), (404,))
+                client.request("GET", mongodb_ods_preview_route(ods["locator"]), (403,))
+                ods.update(grant_cleanup_verified=True, grant_revoked=ods_issuance_confirmed, hidden_after_revoke=True,
+                           read_denied_after_revoke=True, preview_denied_after_revoke=True)
             if proof["grant_request_ids"]:
                 proof["grants_revoked"] = True
             client.request("GET", route, (404,))
@@ -1758,8 +1768,11 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
                 identifiers = transfer.get("execution_ids")
                 if (transfer.get("records_read") != 3 or transfer.get("records_written") != 3
                         or transfer.get("rerun_verified") is not True or not isinstance(identifiers, list)
-                        or len(identifiers) != 2 or len(set(identifiers)) != 2):
-                    raise SuiteError("MongoDB source proof requires two actual three-row transfers")
+                        or len(identifiers) != 2 or len(set(identifiers)) != 2
+                        or not ods or not ods.get("grant_revoked") or ods.get("visible_after_grant") is not True
+                        or ods.get("field_lineage_verified") is not True
+                        or ods.get("item_id") != transfer.get("target_item_id")):
+                    raise SuiteError("MongoDB proof requires two actual transfers and verified ODS access lifecycle")
                 proof["successful_execution_ids"] = [str(uuid.UUID(identifier)) for identifier in identifiers]
                 proof["rejected_execution_id"] = verify_unreadable_source_execution(client, transfer["task_id"], timeout)
                 proof.update(result="passed", records_per_execution=3, task_id=transfer["task_id"],
@@ -1776,7 +1789,70 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
             print("MongoDB source Grant cleanup also failed", file=sys.stderr)
 
 
-def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_engine_id: int, source: dict[str, object], pg_source: dict[str, object], name: str, timeout: float, owned_ids: list[int]) -> dict[str, object]:
+def mongodb_ods_catalog_route(engine_id):
+    query = urllib.parse.urlencode({"engine_id": engine_id, "catalog_path": f"public.{MONGODB_TARGET}"})
+    return f"/api/v1/meta/items/by-catalog-path?{query}"
+
+
+def mongodb_ods_preview_route(locator):
+    return "/api/v1/manager/preview?" + urllib.parse.urlencode({"locator": locator, "page": 1, "page_size": 20})
+
+
+def read_mongodb_ods_scan_item(tenant_id, engine_id, execution_id, scan_id):
+    hosted = import_module("scripts.test.execution-online-support")
+    try:
+        tenant, engine = hosted.positive(tenant_id), hosted.positive(engine_id)
+        parent, scan = hosted.identifier(execution_id), hosted.identifier(scan_id)
+        # The preparer establishes the Grant from System facts. This independent
+        # read pins the scanned item ID before the consumer can see it.
+        query = f"""SELECT COALESCE(json_agg(row_to_json(item)), '[]'::json) FROM (
+            SELECT i.id, i.engine_id, i.full_name, i.item_type, i.fingerprint
+            FROM meta.meta_item i JOIN common.task_executions e ON e.tenant_id=i.tenant_id
+            WHERE i.tenant_id={tenant} AND i.engine_id={engine} AND i.deleted_at IS NULL
+              AND i.full_name='public.{MONGODB_TARGET}' AND i.item_type='table' AND i.scanned_depth='deep'
+              AND e.execution_id='{scan}' AND e.parent_execution_id='{parent}'
+              AND e.module='meta' AND e.task_type='scan' AND e.source='transfer' AND e.status='success'
+              AND i.scanned_at BETWEEN e.started_at AND e.completed_at
+            ORDER BY i.id LIMIT 2) AS item"""
+        items = _array(hosted.OwnedDeployment().read(query), "persisted MongoDB ODS scan item")
+    except (hosted.SuiteError, subprocess.SubprocessError, ValueError) as error:
+        raise SuiteError("owned MongoDB ODS scan observation failed") from error
+    if len(items) != 1:
+        raise SuiteError("MongoDB ODS automatic scan did not persist one exact DataItem")
+    return _object(items[0], "persisted MongoDB ODS item")
+
+
+def grant_mongodb_ods_read(client, access, identity, engine_id, execution, timeout):
+    parent = execution["execution_id"]
+    scan = _object(_object(execution.get("metadata"), "MongoDB execution metadata").get("metadata_scan"), "MongoDB ODS scan")
+    scan_id = scan.get("execution_id")
+    if scan.get("status") != "submitted" or not isinstance(scan_id, str) or not scan_id:
+        raise SuiteError("MongoDB ODS automatic deep scan was not submitted")
+    child = wait_owner_execution(client, "meta", scan_id, timeout)
+    if (child.get("module") != "meta" or child.get("task_type") != "scan" or child.get("source") != "transfer"
+            or child.get("parent_execution_id") != parent or str(child.get("tenant_id")) != identity["tenant_id"]
+            or str(child.get("triggered_by")) != identity["principal_id"]
+            or child.get("scan_context") != {"engine_id": engine_id, "scan_depth": "deep"}):
+        raise SuiteError("MongoDB ODS automatic scan lost its execution, User, Tenant or target")
+    scanned = read_mongodb_ods_scan_item(int(identity["tenant_id"]), engine_id, parent, scan_id)
+    scanned_id = positive_int(scanned.get("id"), "MongoDB ODS scanned item id")
+    route = mongodb_ods_catalog_route(engine_id)
+    client.request("GET", route, (404,))
+    proof = {"engine_id": engine_id, "item_id": scanned_id, "fingerprint": scanned["fingerprint"],
+             "locator": SUPPORT.build_item_locator(engine_id, scanned), "scan_execution_id": scan_id,
+             "transfer_execution_id": parent, "hidden_before_grant": True}
+    access["proof"]["ods_target_access"] = proof
+    receipt = access["grants"].grant(engine_id, "public", MONGODB_TARGET, "table", namespace_term="schema")
+    proof.update(grant_request_id=str(uuid.UUID(receipt["request_id"])), boundary_hash=receipt["boundary_hash"])
+    visible = _object(client.request("GET", route, (200,)).payload, "authorized MongoDB ODS item")
+    if (any(visible.get(key) != scanned[key] for key in ("id", "engine_id", "full_name", "item_type", "fingerprint"))
+            or visible["fingerprint"] != receipt["item_fingerprint"]):
+        raise SuiteError("MongoDB ODS Grant did not expose the scanned DataItem")
+    proof["visible_after_grant"] = True
+    return visible
+
+
+def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_engine_id: int, source: dict[str, object], pg_source: dict[str, object], name: str, timeout: float, owned_ids: list[int], *, access, identity) -> dict[str, object]:
     if source_engine_id == target_engine_id:
         raise SuiteError("MongoDB source and PostgreSQL target must use distinct Engine Instances")
     source_id = positive_int(source.get("id"), "MongoDB source item id")
@@ -1806,10 +1882,12 @@ def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_eng
         if execution.get("execution_id") != identifier:
             raise SuiteError("MongoDB execution response identity mismatch")
         source_hash, target_hash = validate_mongodb_execution(execution, source_locator, target_engine_id)
-        # Observe owner-triggered metadata scanning. Never manually scan the target or collect lineage.
-        target = wait_transfer_target(client, target_engine_id, f"public.{MONGODB_TARGET}", timeout)
+        if target_id is None:
+            target = grant_mongodb_ods_read(client, access, identity, target_engine_id, execution, timeout)
+        else:
+            target = _object(client.request("GET", mongodb_ods_catalog_route(target_engine_id), (200,)).payload, "MongoDB ODS rerun item")
         current_id = positive_int(target.get("id"), "MongoDB ODS target id")
-        if target_id is not None and current_id != target_id:
+        if target_id is not None and (current_id != target_id or target.get("fingerprint") != access["proof"]["ods_target_access"]["fingerprint"]):
             raise SuiteError("MongoDB rerun must preserve the target DataItem identity")
         target_id = current_id
         expected_edges = set()
@@ -1822,6 +1900,7 @@ def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_eng
                     raise SuiteError("MongoDB field graph crosses the wrong Engine Instance")
             expected_edges.update(expected)
         execution_ids.append(identifier)
+    access["proof"]["ods_target_access"].update(field_lineage_verified=True, latest_lineage_execution_id=execution_ids[-1])
     return {"execution_ids": execution_ids, "task_id": task_id, "target_locator": SUPPORT.build_item_locator(target_engine_id, target),
             "source_locator": source_locator, "source_item_id": source_id, "target_item_id": target_id, "source_engine_id": source_engine_id, "target_engine_id": target_engine_id,
             "source_schema_snapshot_hash": source_hash, "schema_snapshot_hash": target_hash, "records_read": 3, "records_written": 3,
@@ -2495,7 +2574,8 @@ def main() -> int:
             del initializer
             mongodb_scan = mongodb_access["scan_execution_id"]
             mongodb_source = mongodb_access["source"]
-            mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids)
+            mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids,
+                                                  access=mongodb_access, identity=identity_report)
             mongodb_access["transfer"] = mongodb_lineage
             chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
             wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
@@ -2510,7 +2590,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v19",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v20",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",

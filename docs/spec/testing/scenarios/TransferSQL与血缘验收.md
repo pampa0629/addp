@@ -54,6 +54,8 @@ Business 独立按 ID 核全行 hex／字节长／空值／文本，PG 为可空
 
 **来源准入。** 准备者精确扫描 `transfer_fixture.activities`，System 事实核身份，`ExactRecordGrants`签 read 前 Meta 同路径 404／manager-preview403，签后 200 且指纹／Grant 一致并有观察时间。两次 Mongo→PG 各 3 行；退出撤权后 Meta404／内容 403，再启动原传输须零读写且不提交扫描。部分签发／后续失败同样清，`mongodb-source-access.json`单独记证（完整 suite v17 起）。SQL ETL／Continuous 的同级项、祖先、扫描时间／深度／状态／统计，只由当轮 addp_online 只读事务按正式身份核；原始值仅内存，拒绝由原普通 User API 取证。
 
+**ODS 目标读取。** 首轮 Mongo→PG 自动 deep 扫描完成后，按本轮父子执行、Tenant、目标引擎及时间窗只读核对 `public.addp_online_transfer_mongodb_ods` 的 DataItem。消费 User 读取精确目录项返回 404。已有独立准备者签发该表的精确 `read` Grant，消费 User 通过原目录接口读到同一 ID／指纹，再按两轮实际执行核对六条字段映射。Grant 保留至依赖该表的场景结束，随后正式撤销，核对精确目录项 404、当前读取许可 403、Manager 预览 403。`mongodb-source-access.json` v2 记录源和目标的各自授权证据。
+
 | 链路 | 必须独立核对的事实 |
 | --- | --- |
 | 原生表／SQL | 字段改名、decimal 精度转换、同目标 replace 映射更新、两跳搬运；真实成功 execution 自动采集、精确字段／结构、direct／derived、关闭旧入边、不串字段。可完整证明的单来源 SQL 记录映射，opaque／unresolved／不完整证据仍 unavailable，不伪造同名来源。 |
