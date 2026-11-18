@@ -8,8 +8,8 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
 export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
 case "$ADDP_ONLINE_MANAGER_CASE" in
-  full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial) ;;
-  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-table-avro, native-table-feather, delimited-read-settings, native-netcdf, native-grib, native-envi, kml-export, filegdb-export, filegdb-mysql-export or filegdb-authorization' >&2; exit 1 ;;
+  full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan) ;;
+  *) echo 'Unsupported ADDP_ONLINE_MANAGER_CASE' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
 if [ "$ADDP_ONLINE_MANAGER_CASE" = native-raster-media ]; then
@@ -25,6 +25,8 @@ elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
 fi
 if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
   HOSTED_FIXTURE_CONTAINERS=()
+elif [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
+  HOSTED_FIXTURE_CONTAINERS=(business-minio)
 fi
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(business)
 RUNTIME_CONTAINER=addp-manager-raster-runtime
@@ -38,11 +40,15 @@ fi
 if [[ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-* ]]; then
   HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE")
 fi
-if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
   HOSTED_FIXTURE_IMAGES=()
 fi
 stop_online_fixture() {
   local cleanup_status=0 image
+  if [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
+    run_logged bash business/scripts/online-manager-minio-fixture.sh stop
+    return
+  fi
   if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
     run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
     return "$cleanup_status"
@@ -219,6 +225,28 @@ export ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT=document/addp_online_preview_fixtur
 export ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY=online-manager
 ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 export ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY
+if [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
+  export ADDP_ONLINE_MANAGER_MINIO_BUCKET="addp-rescan-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+  for credential in MANAGER_SERVICE_CLIENT_SECRET META_SERVICE_CLIENT_SECRET; do
+    export "$credential=$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+  done
+  infra_owned=1
+  run_logged bash scripts/infra/up.sh
+  fixture_owned=1
+  run_logged bash business/scripts/online-manager-minio-fixture.sh start
+  application_owned=1
+  for start_target in -security -meta -manager -monitor; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+  done
+  run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners manager --output "$1"' _ "$IDENTITY_ENV"
+  source "$IDENTITY_ENV"
+  run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
+  source "$ENGINE_RESULT_ENV"
+  export ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+  unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
+  run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
+  exit 0
+fi
 fixture_owned=1
 run_logged docker run -d --name addp-manager-online-registry -p 127.0.0.1:5001:5000 registry:2
 for attempt in $(seq 1 30); do

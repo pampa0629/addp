@@ -596,14 +596,17 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or [body.index(step) for step in source_steps] != sorted(body.index(step) for step in source_steps)):
         raise RegistrationError('Manager fixed source requires mandatory exact SHA, checkout and dispatch ancestry before deployment')
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
+    hosted_case_selector = ('full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|'
+                            'delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|'
+                            'filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan)')
     if (not manager_input or any(not source_contract_contains(manager_input.group('body'), fragment, repository) for fragment in
-            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-table-avro', '- native-table-feather', '- delimited-read-settings', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-mysql-export', '- filegdb-authorization'))
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-table-avro', '- native-table-feather', '- delimited-read-settings', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-mysql-export', '- filegdb-authorization', '- minio-node-rescan'))
             or any(not source_contract_contains(job.group('body'), fragment, repository) for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(not source_contract_contains(hosted, fragment, repository) for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', hosted_case_selector,
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
     netcdf_paths = ('scripts/test/manager-netcdf-online.py', 'scripts/test/manager-netcdf-online_test.py',
@@ -651,7 +654,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     envi_browser=(repository/'console/frontend/e2e/online/manager-img.spec.js').read_text()
     if any(value not in envi_browser for value in ('enviContentMetadata','metadata_projection_verified','content_metadata_verified')):
         raise RegistrationError('ENVI requires separate public structure and protected browser content metadata')
-    if hosted.index('full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    if hosted.index(hosted_case_selector) > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
@@ -685,6 +688,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         if not source_contract_contains(manager_owner, fragment, repository):
             raise RegistrationError('Manager acceptance case owner must preserve full and separate media routing: ' + fragment)
     make = (repository / 'Makefile').read_text(encoding='utf-8')
+    if any(fragment not in manager_owner for fragment in ("if case == 'minio-node-rescan':", 'minio-node-rescan.json', 'verify_search')):
+        raise RegistrationError('Manager MinIO rescan requires explicit dispatch, search and case evidence')
     img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
     if ('nfs-upload-initial' not in manager_input.group('body')
             or "if case == 'nfs-upload-initial':" not in manager_owner

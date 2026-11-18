@@ -898,6 +898,16 @@ func TestManagerKMLExportFixtureReducesConsumerAndInitializerPermissions(t *test
 	}
 }
 
+func TestManagerMinIONodeRescanUsesOnlyScanCatalogAndSearchPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "minio-node-rescan")
+	const suite = "manager-internal-artifact-lineage"
+	want := []string{"manager.search.execute", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read"}
+	actual, err := suitePermissions(suite)
+	if err != nil || !slices.Equal(actual, want) || !slices.Equal(suiteSourceInitializerPermissions(suite), sourceInitializerPermissions) {
+		t.Fatalf("MinIO node rescan fixture permissions = %v, err = %v", actual, err)
+	}
+}
+
 func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
 	permissions, err := suitePermissions("transfer-relational-sql-etl")
 	if err != nil || len(permissions) != 23 || !needsEngineProvisioner("transfer-relational-sql-etl") {

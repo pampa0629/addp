@@ -470,6 +470,8 @@ func suitePermissions(suite string) ([]string, error) {
 		}
 	case "manager-internal-artifact-lineage":
 		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
+		case "minio-node-rescan":
+			return []string{"manager.search.execute", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read"}, nil
 		case "nfs-upload-initial":
 			return []string{"manager.data_item.create", "manager.data_item.read", "manager.content.read", "meta.catalog.read"}, nil
 		case "filegdb-authorization":

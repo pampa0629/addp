@@ -29,11 +29,21 @@ fi
 
 action=${1:-}
 case "$action" in
-  start|start-obj|stop|status|index-csv-change|index-csv-restore|index-tsv-change|index-tsv-restore) ;;
-  *) fail "unknown fixture action; use start|stop|status or a fixed Hosted index source change/restore action" ;;
+  start|start-obj|stop|status|index-csv-change|index-csv-restore|index-tsv-change|index-tsv-restore|rescan-remove-first|rescan-remove-last) ;;
+  *) fail "unknown Manager MinIO fixture action" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 native_obj=0
+rescan=0
+if [ "${ADDP_ONLINE_MANAGER_CASE:-}" = minio-node-rescan ]; then
+  [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ ]] && [[ "${GITHUB_RUN_ATTEMPT:-}" =~ ^[0-9]+$ ]] &&
+    [ "${ADDP_ONLINE_MANAGER_MINIO_BUCKET:-}" = "addp-rescan-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ] ||
+    fail "node rescan requires this Hosted run's disposable bucket"
+  rescan=1
+fi
+if [[ "$action" = rescan-* ]]; then
+  [ "$rescan" = 1 ] || fail "rescan mutation requires the exclusive Hosted Manager case"
+fi
 if [ "${ONLINE_SUITE:-}" = cleanup-native-effects ]; then
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] || fail "native OBJ requires its Hosted Manager case"
   case "${ADDP_ONLINE_NATIVE_CASE:-}" in manager-success|manager-object-unknown|manager-index-unknown|manager-late-writer) ;; *) fail "explicit native Manager case required" ;; esac
@@ -77,7 +87,7 @@ required=(
   ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY
   ADDP_ONLINE_MANAGER_MINIO_BUCKET
 )
-if [ "$native_obj" != 1 ]; then
+if [ "$native_obj" != 1 ] && [ "$rescan" != 1 ]; then
   required+=(ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT)
 fi
 if [ "${ADDP_ONLINE_HOSTED:-0}" != "1" ]; then
@@ -113,7 +123,7 @@ validate_object_key() {
   esac
 }
 
-if [ "$native_obj" != 1 ]; then
+if [ "$native_obj" != 1 ] && [ "$rescan" != 1 ]; then
 validate_object_key ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT las
 validate_object_key ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT pptx
 fixture_objects=("$ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT" "$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT")
@@ -178,7 +188,7 @@ mc() {
   local network
   network=$(minio_network)
   [ -n "$network" ] || fail "business-minio has no Docker network"
-  docker_fixture run --rm \
+  docker_fixture run --rm -i \
     --entrypoint mc \
     --network "$network" \
     -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
@@ -314,6 +324,14 @@ PY
 }
 
 seed_fixture() {
+  if [ "$rescan" = 1 ]; then
+    local bucket="fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET" key
+    mc mb "$bucket" >/dev/null
+    for key in selected/rescanfirst.txt selected/rescanlast.txt sibling/rescanoutside.txt; do
+      printf '%s\n' "$key" | mc pipe "$bucket/$key" >/dev/null
+    done
+    return
+  fi
   MODEL_FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-online-model3d.XXXXXX")
   trap 'rm -rf "$MODEL_FIXTURE_DIR"' EXIT
   generate_fixtures "$MODEL_FIXTURE_DIR"
@@ -410,6 +428,14 @@ seed_fixture() {
 validate_container_ownership
 
 case "$action" in
+  rescan-remove-first|rescan-remove-last)
+    container_running || fail "Business MinIO is not running"
+    bucket="fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET"
+    key="selected/rescan${action#rescan-remove-}.txt"
+    [ "$(mc cat "$bucket/$key")" = "$key" ] || fail "rescan mutation refused foreign source bytes"
+    mc rm "$bucket/$key" >/dev/null
+    mc ls --recursive --json "$bucket"
+    ;;
   index-*)
     container_running || fail "Business MinIO is not running"
     directory=$(mktemp -d "${TMPDIR:-/tmp}/addp-online-index-source.XXXXXX")
@@ -444,8 +470,8 @@ PYINDEX
     cmp -s "$directory/current" "$directory/$desired" || fail "index source write verification failed"
     ;;
   start|start-obj)
-    if [ "$native_obj" = 1 ]; then
-      ! docker_fixture container inspect business-minio >/dev/null 2>&1 || fail "native OBJ refuses an existing source container"
+    if [ "$native_obj" = 1 ] || [ "$rescan" = 1 ]; then
+      ! docker_fixture container inspect business-minio >/dev/null 2>&1 || fail "isolated source refuses an existing container"
     fi
     if ! docker_fixture image inspect "$MC_IMAGE" >/dev/null 2>&1; then
       compose build minio

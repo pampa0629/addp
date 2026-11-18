@@ -4085,6 +4085,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text((SCRIPT.parents[2] / relative).read_text())
         owner.write_text(owner.read_text() + "\nif case == 'nfs-upload-initial':\nmanager-upload-initial-online\n")
+        owner.write_text(owner.read_text() + "\nif case == 'minio-node-rescan':\nminio-node-rescan.json verify_search\n")
         make.write_text(make.read_text() + '\t@python3 -m unittest scripts/test/manager-upload-initial-online_test.py\n')
         for relative in ('scripts/test/manager-delimited-online.py', 'scripts/test/manager-delimited-online_test.py',
                          'business/scripts/online-delimited-fixture.py', 'console/frontend/e2e/online/manager-delimited.spec.js'):
@@ -4144,7 +4145,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (self.repository/'scripts/test/manager-envi-online.py','source_scans','ENVI'),
             (img_browser,'enviContentMetadata','ENVI'),
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan)', 'acceptance case'),
+            (owner, 'minio-node-rescan.json', 'MinIO rescan'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),

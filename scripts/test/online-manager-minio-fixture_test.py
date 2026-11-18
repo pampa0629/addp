@@ -576,6 +576,14 @@ esac
         self.assertIn("not owned", result.stderr)
         self.assertTrue(self.state.exists())
 
+    def test_rescan_deletion_rejects_a_foreign_bucket_before_docker(self):
+        result = self.run_fixture('rescan-remove-first', ADDP_ONLINE_HOSTED='1', ADDP_TEST_OS='Linux',
+            GITHUB_ACTIONS='true', RUNNER_OS='Linux', GITHUB_RUN_ID='41', GITHUB_RUN_ATTEMPT='1',
+            ADDP_ONLINE_MANAGER_CASE='minio-node-rescan', ADDP_ONLINE_MANAGER_MINIO_BUCKET='addp-rescan-42-1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('disposable bucket', result.stderr)
+        self.assertFalse(self.log.exists())
+
     def test_index_mutation_is_hosted_owned_exact_and_restorable(self):
         hosted = dict(ADDP_ONLINE_HOSTED='1', ADDP_TEST_OS='Linux', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
                       ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(self.root / 'descriptor.json'))

@@ -2415,9 +2415,113 @@ def required_environment() -> dict[str, str]:
 
 def manager_case(environment):
     case = environment.get("ADDP_ONLINE_MANAGER_CASE", "full")
-    if case not in ("full", "native-raster-media", "native-table-orc", "native-table-avro", "native-table-feather", "delimited-read-settings", "native-netcdf", "native-grib", "native-envi", "kml-export", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization", "nfs-upload-initial"):
-        raise SuiteError("ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-table-avro, native-table-feather, delimited-read-settings, native-netcdf, native-grib, native-envi, kml-export, filegdb-export, filegdb-mysql-export or filegdb-authorization")
+    if case not in ("full", "native-raster-media", "native-table-orc", "native-table-avro", "native-table-feather", "delimited-read-settings", "native-netcdf", "native-grib", "native-envi", "kml-export", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization", "nfs-upload-initial", "minio-node-rescan"):
+        raise SuiteError("Unsupported ADDP_ONLINE_MANAGER_CASE")
     return case
+
+
+def run_minio_node_rescan(repository, environment):
+    from importlib import import_module
+
+    run_id = environment['ADDP_ONLINE_TEST_RUN_ID']
+    bucket = environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']
+    if (environment.get('ADDP_ONLINE_HOSTED') != '1' or environment.get('POSTGRES_DB') != 'addp_online'
+            or not re.fullmatch(r'manager-[0-9]+-[0-9]+', run_id) or bucket != 'addp-rescan-' + run_id.removeprefix('manager-')):
+        raise SuiteError('MinIO rescan requires this Hosted run’s disposable bucket')
+    permissions = {'manager.search.execute', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
+    tenant = positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
+    engine = positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'], 'engine')
+    client = GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
+    issuer = GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+    grants = import_module('scripts.test.ftp-consumer-flow-online')
+    principal = grants.exact_user_principal(client, tenant, permissions)
+    report = {'schema_version': 'addp.manager-minio-node-rescan/v1', 'run_id': run_id, 'engine_id': engine,
+              'tenant_id': tenant, 'principal_id': principal, 'bucket': bucket, 'result': 'failed', 'phases': [],
+              'zero_current_grants': False}
+    artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / 'minio-node-rescan.json'
+    authorization = grants.ModelSourceAuthorization(issuer, client, report, source_type='minio',
+        consumer_permissions=permissions, issuer_permissions=grants.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+    target = {'version': 'catalog.path/v1', 'engine_id': engine, 'segments': [
+        {'term': 'service', 'kind': 'service', 'name': ''}, {'term': 'bucket', 'kind': 'bucket', 'name': bucket}]}
+    root = f'/api/v1/meta/resource-tree/{engine}'
+    search = '/api/v1/manager/search?' + urllib.parse.urlencode({'q': 'rescan', 'engine_id': engine, 'page_size': 10})
+    first, last, outside = 'selected/rescanfirst.txt', 'selected/rescanlast.txt', 'sibling/rescanoutside.txt'
+    deadline = time.monotonic() + 180
+
+    def read_tree():
+        nodes = [client.request('GET', root + '?expand_depth=4', (200,)).payload]
+        items, prefix_locator = {}, None
+        for node in nodes:
+            node = _object(node, 'Meta resource tree node')
+            nodes.extend(_array(node.get('children') or [], 'Meta resource tree children'))
+            metadata = _object(node.get('metadata') or {}, 'Meta resource tree metadata')
+            name = metadata.get('full_name')
+            if node.get('type') == 'prefix' and name == f'{bucket}/selected':
+                prefix_locator = node.get('locator')
+            if node.get('type') == 'object':
+                if not isinstance(name, str) or not name.startswith(bucket + '/'):
+                    raise SuiteError('resource tree returned a foreign object')
+                key = name.removeprefix(bucket + '/')
+                if key in items:
+                    raise SuiteError('resource tree returned a foreign or duplicate object')
+                item_id = positive_int(metadata.get('item_id'), 'resource tree item')
+                detail = _object(client.request('GET', f'/api/v1/meta/items/{item_id}', (200,)).payload, 'Meta item')
+                fingerprint = detail.get('fingerprint')
+                if not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+                    raise SuiteError('Meta Item has no canonical fingerprint')
+                items[key] = (item_id, fingerprint)
+        return items, prefix_locator
+
+    def verify_search(expected):
+        while time.monotonic() < deadline:
+            payload = _object(client.request('GET', search, (200,)).payload, 'Manager search response')
+            data = _object(payload.get('data'), 'Manager search data')
+            hits = [_object(row, 'Manager search result').get('document_id')
+                    for row in _array(data.get('results') or [], 'Manager search results')]
+            if len(hits) == len(expected) and set(hits) == expected and data.get('exhausted') is True and not data.get('next_cursor'):
+                return sorted(hits)
+            time.sleep(1)
+        raise SuiteError('Manager search results did not match the exact active object fingerprints')
+
+    def remove(action, expected):
+        process = subprocess.run(['bash', 'business/scripts/online-manager-minio-fixture.sh', action],
+            cwd=repository, env=environment, capture_output=True, text=True, timeout=45, check=True)
+        rows = [json.loads(line) for line in process.stdout.splitlines()]
+        if len(rows) != len(expected) or any(row.get('status') != 'success' for row in rows) or {row.get('key') for row in rows} != expected:
+            raise SuiteError('native MinIO listing did not match the expected post-delete inventory')
+
+    try:
+        try:
+            initial_scan = wait_for_meta_scan(client, engine, deadline, depth='basic', scope={'catalog_paths': [bucket]})
+            authorization.node_grant(target, action='metadata_read', recursive=True, seconds=None)
+            initial, locator = read_tree()
+            if set(initial) != {first, last, outside} or not isinstance(locator, str) or 'node_id=' not in locator:
+                raise SuiteError('initial directory did not expose all three objects and the exact prefix locator')
+            report['phases'].append({'phase': 'baseline', 'scan': initial_scan, 'tree': sorted(initial),
+                                     'search': verify_search({item[1] for item in initial.values()})})
+            for depth, removed, keep, action in (
+                    ('basic', first, {last, outside}, 'rescan-remove-first'),
+                    ('deep', last, {outside}, 'rescan-remove-last')):
+                remove(action, keep)
+                scan = wait_for_meta_scan(client, engine, deadline, depth=depth, scope={'targets': [locator]}, force=False)
+                actual, _ = read_tree()
+                if actual != {key: initial[key] for key in keep}:
+                    raise SuiteError('resource tree did not reconcile to the exact retained object identities')
+                client.request('GET', f'/api/v1/meta/items/{initial[removed][0]}', (404,))
+                report['phases'].append({'phase': 'partial' if depth == 'basic' else 'empty', 'depth': depth, 'scan': scan,
+                                         'physical_inventory': sorted(keep), 'tree': sorted(actual),
+                                         'search': verify_search({item[1] for item in actual.values()})})
+        finally:
+            authorization.cleanup()
+            current = issuer.request('GET', authorization.base + '/access_grants?' + urllib.parse.urlencode({
+                'recipient_type': 'user', 'recipient_id': principal, 'catalog_path': json.dumps(target)}), (200,)).payload
+            if current.get('total') != 0 or current.get('data') != []:
+                raise SuiteError('MinIO rescan left a current source Grant')
+            report['zero_current_grants'] = True
+        report['result'] = 'passed'
+        return report
+    finally:
+        artifact.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
 def run_raster_media_scenes(repository, environment, client, report):
@@ -2555,6 +2659,10 @@ def run_full_case(repository, environment, client):
 def main() -> int:
     try:
         case = manager_case(os.environ)
+        if case == 'minio-node-rescan':
+            report = run_minio_node_rescan(Path(__file__).resolve().parents[2], dict(os.environ))
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            return 0
         if case == 'nfs-upload-initial':
             import importlib
             report = importlib.import_module('scripts.test.manager-upload-initial-online').run(

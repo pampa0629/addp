@@ -1,4 +1,5 @@
 import copy
+import importlib
 import importlib.util
 import json
 import math
@@ -2118,6 +2119,63 @@ class MinIOExactModelGrantPreparationTest(unittest.TestCase):
 
 
 class ManagerAcceptanceCaseTest(unittest.TestCase):
+    def test_minio_rescan_dispatches_independently(self):
+        with mock.patch.dict(SUITE.os.environ, {'ADDP_ONLINE_MANAGER_CASE': 'minio-node-rescan'}, clear=True), \
+                mock.patch.object(SUITE, 'run_minio_node_rescan', return_value={'result': 'passed'}) as rescan, \
+                mock.patch.object(SUITE, 'required_environment') as full:
+            self.assertEqual(SUITE.main(), 0)
+            rescan.assert_called_once_with(mock.ANY, {'ADDP_ONLINE_MANAGER_CASE': 'minio-node-rescan'})
+            full.assert_not_called()
+
+    def test_minio_rescan_checks_both_deletions_with_the_sibling_control(self):
+        bucket = 'addp-rescan-42-1'
+        names = ('selected/rescanfirst.txt', 'selected/rescanlast.txt', 'sibling/rescanoutside.txt')
+        locator = f'addp://engine/27/path/{bucket}/selected?type=prefix&node_id=51'
+        fingerprints = [str(i) * 64 for i in (1, 2, 3)]
+        phase = 0
+        consumer, issuer = mock.Mock(), mock.Mock()
+        issuer.request.return_value = response(200, {'total': 0, 'data': []})
+
+        def request(method, path, expected):
+            self.assertEqual(method, 'GET')
+            if path.startswith('/api/v1/meta/resource-tree/'):
+                return response(200, {'children': [
+                    {'type': 'prefix', 'metadata': {'full_name': bucket + '/selected'}, 'locator': locator},
+                    *[{'type': 'object', 'metadata': {'full_name': bucket + '/' + names[i], 'item_id': i + 1}}
+                      for i in range(phase, 3)]]})
+            if path.startswith('/api/v1/meta/items/'):
+                index = int(path.rsplit('/', 1)[1]) - 1
+                self.assertEqual(expected, (404,) if index < phase else (200,))
+                return response(expected[0], {'fingerprint': fingerprints[index]})
+            if path.startswith('/api/v1/manager/search?'):
+                return response(200, {'data': {'exhausted': True,
+                    'results': [{'document_id': fingerprint} for fingerprint in fingerprints[phase:]]}})
+            self.fail(f'unexpected request {path}')
+
+        def remove(args, **kwargs):
+            nonlocal phase
+            self.assertEqual(args[-1], ('rescan-remove-first', 'rescan-remove-last')[phase])
+            phase += 1
+            return mock.Mock(stdout='\n'.join(json.dumps({'status': 'success', 'key': key}) for key in names[phase:]))
+
+        consumer.request.side_effect = request
+        grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(SUITE, 'GatewayClient', side_effect=(consumer, issuer)), \
+                mock.patch.object(grants, 'exact_user_principal', return_value='51'), \
+                mock.patch.object(grants, 'ModelSourceAuthorization') as grant, \
+                mock.patch.object(SUITE, 'wait_for_meta_scan', side_effect=('baseline', 'partial', 'empty')) as scan, \
+                mock.patch.object(SUITE.subprocess, 'run', side_effect=remove):
+            environment = scenario_environment(directory)
+            environment.update(ADDP_ONLINE_TEST_RUN_ID='manager-42-1', ADDP_ONLINE_MANAGER_MINIO_BUCKET=bucket,
+                ADDP_ONLINE_HOSTED='1', POSTGRES_DB='addp_online', ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='fixture')
+            report = SUITE.run_minio_node_rescan(Path('/repository'), environment)
+            self.assertEqual(json.loads((Path(directory) / 'minio-node-rescan.json').read_text()), report)
+            self.assertEqual(report['result'], 'passed')
+            self.assertEqual([row['search'] for row in report['phases']], [fingerprints, fingerprints[1:], fingerprints[2:]])
+            self.assertEqual([call.kwargs['scope'] for call in scan.call_args_list],
+                             [{'catalog_paths': [bucket]}, {'targets': [locator]}, {'targets': [locator]}])
+            grant.return_value.cleanup.assert_called_once()
+
     def test_default_full_and_invalid_values_fail_before_http(self):
         self.assertEqual(SUITE.manager_case({}), 'full')
         for case in ('full', 'native-raster-media', 'native-netcdf', 'native-grib', 'filegdb-mysql-export'):

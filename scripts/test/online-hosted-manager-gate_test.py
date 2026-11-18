@@ -168,6 +168,10 @@ class HostedManagerGateTest(unittest.TestCase):
             elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
               [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
               [ -z "${ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID:-}" ]
+            elif [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
+              [ "$ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID" = 17 ]
+              [ "$ADDP_ONLINE_MANAGER_MINIO_BUCKET" = addp-rescan-4242-1 ]
+              [ -z "${ADDP_ONLINE_MANAGER_NFS_ENGINE_ID:-}" ]
             else
               [ "$ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID" = 17 ]
               [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
@@ -225,6 +229,20 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertIn('nfs-fixture:stop', trace)
         self.assertIn('infra-down', trace)
         self.assertFalse(self.host.secrets.exists())
+
+    def test_rescan_case_owns_only_minio_and_cleans_after_success_or_failure(self):
+        for fail in ('0', '1'):
+            with self.subTest(fail=fail):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='minio-node-rescan', ADDP_TEST_SUITE_FAIL=fail)
+                self.assertEqual(result.returncode == 0, fail == '0', result.stderr)
+                trace = self.host.trace.read_text()
+                for step in ('source-fixture:start', 'make:test-online ONLINE_SUITE=manager-internal-artifact-lineage',
+                             'application-stop', 'source-fixture:stop', 'infra-down'):
+                    self.assertIn(step, trace)
+                for unrelated in ('nfs-fixture:', 'playwright install', 'build-images', 'online-registry'):
+                    self.assertNotIn(unrelated, trace)
+                self.assertFalse(self.host.secrets.exists())
 
     def test_unknown_or_empty_case_is_rejected_before_lifecycle(self):
         for case in ('', 'other'):
