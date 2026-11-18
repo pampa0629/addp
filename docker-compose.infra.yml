@@ -21,11 +21,7 @@ services:
     command:
       - postgres
       - -c
-      - shared_buffers=256MB
-      - -c
       - config_file=/addp/infra-postgresql.conf
-      - -c
-      - max_connections=200
       - -c
       - timezone=Asia/Shanghai
     environment:

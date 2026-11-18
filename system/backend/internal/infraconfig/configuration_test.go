@@ -72,10 +72,6 @@ func TestInfraConfigurationNative(t *testing.T) {
 		if work.Value != "32768" || !work.Editable || work.Source != "configuration file" {
 			t.Fatalf("deployment baseline: %+v", work)
 		}
-		readOnly := lookup(0, "shared_buffers")
-		if readOnly.Editable || readOnly.Source != "command line" || readOnly.Activation != "restart" {
-			t.Fatalf("command-line setting: %+v", readOnly)
-		}
 		auditFailure := errors.New("audit unavailable")
 		if _, err := s.Apply(ctx, "database", "work_mem", "40960", func(string, string) error { return auditFailure }); !errors.Is(err, auditFailure) {
 			t.Fatalf("write did not stop before audit failure: %v", err)
@@ -91,6 +87,17 @@ func TestInfraConfigurationNative(t *testing.T) {
 		} {
 			if result := apply(sample[0], sample[1], sample[2]); result.Persistence != "confirmed" {
 				t.Fatalf("%s not persisted: %+v", sample[1], result)
+			}
+		}
+		settings = s.Read(ctx)
+		for _, expected := range []struct{ name, value, unit string }{
+			{"max_connections", "200", ""},
+			{"shared_buffers", "32768", "8kB"},
+		} {
+			p := lookup(0, expected.name)
+			if p.Value != expected.value || p.Unit != expected.unit || p.Editable ||
+				p.Activation != "restart" || p.PendingRestart || p.Source != "configuration file" {
+				t.Errorf("read-only deployment setting after reload: %+v", p)
 			}
 		}
 		if _, err := s.Apply(ctx, "redis", "maxmemory-policy", "allkeys-lru", nil); !errors.Is(err, ErrReadOnly) {

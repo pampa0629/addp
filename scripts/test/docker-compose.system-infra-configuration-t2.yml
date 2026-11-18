@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
-    command: ["postgres", "-c", "config_file=/addp/infra-postgresql.conf", "-c", "shared_buffers=256MB", "-c", "max_connections=200", "-c", "timezone=Asia/Shanghai"]
+    command: ["postgres", "-c", "config_file=/addp/infra-postgresql.conf", "-c", "timezone=Asia/Shanghai"]
     environment:
       POSTGRES_USER: infra_test
       POSTGRES_PASSWORD: ${ADDP_INFRA_GATE_PASSWORD:?disposable gate password required}
