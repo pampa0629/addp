@@ -59,17 +59,30 @@ def test_hillshade_orthogonal_sixteen_real_chains_and_680_complete_original_chec
 
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('problem',scene.FAILURES)
+@pytest.mark.parametrize('problem', [*scene.FAILURES, 'unit-bool'])
 def test_hillshade_orthogonal_exact_failure_node_language_and_zero_private_output(export,language,problem,monkeypatch):
     import workflow_engine
     from addp_common.workflow_runtime import WorkflowExecutionError
     root,_,_=export;before={p.name:fixture.digest(p)for p in(root/'outputs').iterdir()};workspaces=[];original=workflow_engine._execute_operator
     def capture(name,params):
-        if name=='raster_hillshade':workspaces.append(params['input_raster'].workspace)
+        if name=='raster_hillshade':
+            workspaces.append(params['input_raster'].workspace)
+            if case == 'unit-empty':
+                if problem == 'unit-bool':
+                    assert params['elevation_unit'] is True
+                else:
+                    assert params['elevation_unit'] == ''
         return original(name,params)
     monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
-    with pytest.raises(WorkflowExecutionError)as caught:workflow_engine.GeoPythonWorkflowRunner(language=language).execute(localized(root,'north-lit.cog.tif',invalid=problem,language=language))
-    fact=scene.diagnostic_fact('native',problem,language)
+    # Develop rejects boolean values before creating an execution. Exercise
+    # the operator's own boolean rejection only through the Native runner.
+    case = 'unit-empty' if problem == 'unit-bool' else problem
+    dag = localized(root, 'north-lit.cog.tif', invalid=case, language=language)
+    if problem == 'unit-bool':
+        dag['tasks'][1]['params']['elevation_unit'] = True
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language=language).execute(dag)
+    fact=scene.diagnostic_fact('native',case,language)
     assert str(caught.value)=='任务 '+fact['task']+' 执行失败: '+fact['exact_cause']
     assert workspaces and all(not p.exists()for p in workspaces)
     assert before=={p.name:fixture.digest(p)for p in(root/'outputs').iterdir()}

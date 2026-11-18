@@ -19,6 +19,8 @@ class HillshadeOrthogonalScenarioTest(unittest.TestCase):
         self.assertEqual(scene.COUNTS, (16, 34, 680, 51))
         self.assertEqual(len(targets), 16)
         self.assertEqual(len(scene.FAILURES), 17)
+        self.assertEqual(scene.FAILURES['unit-empty'], ('unit', 'north.tif', {'elevation_unit': ''}))
+        self.assertNotIn('unit-bool', scene.FAILURES)
         self.assertEqual(len(set(sources.values())), len(sources))
 
         for name in targets:
@@ -40,6 +42,8 @@ class HillshadeOrthogonalScenarioTest(unittest.TestCase):
                 load, hillshade, save = dag['tasks']
                 self.assertEqual(load['params']['locator'], sources[source])
                 self.assertEqual(hillshade['operator'], 'raster_hillshade')
+                if problem == 'unit-empty':
+                    self.assertEqual(hillshade['params']['elevation_unit'], '')
                 name = save['params']['target_name']
                 self.assertNotIn(name, negative_targets)
                 self.assertNotIn(name, targets)

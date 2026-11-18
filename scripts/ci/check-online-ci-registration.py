@@ -3829,9 +3829,10 @@ def validate_raster_hillshade_orthogonal(repository: Path, registered: set[str])
     if (orientations != ('north', 'quarter-turn', 'half-turn', 'rotated', 'reverse')
         or lights != {'lit': (90., 10.), 'shadow': (270., 10.), 'vertical': (0., 90.)}):
         raise RegistrationError('orthogonal hillshade requires fixed projected light and five affine orientations')
-    if set(failures) != {'shear', 'near-orthogonal', 'reflect-column', 'reflect-row', 'geographic', 'no-crs',
-                         'no-grid', 'degenerate', 'band-zero', 'band-high', 'alpha', 'unit', 'unit-bool',
-                         'unit-conflict', 'unit-unknown', 'scale', 'offset'}:
+    if (set(failures) != {'shear', 'near-orthogonal', 'reflect-column', 'reflect-row', 'geographic', 'no-crs',
+                         'no-grid', 'degenerate', 'band-zero', 'band-high', 'alpha', 'unit', 'unit-empty',
+                         'unit-conflict', 'unit-unknown', 'scale', 'offset'}
+        or failures['unit-empty'] != ('unit', 'north.tif', {'elevation_unit': ''})):
         raise RegistrationError('orthogonal hillshade requires the seventeen fixed bilingual refusal categories')
 
 
