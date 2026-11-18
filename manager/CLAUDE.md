@@ -128,7 +128,7 @@ manager/
 - **剖析准备与绑定**。已扫描 PostgreSQL 单表入队时深拷贝条件和资源引用，冻结所有分页、完整 ReadSet、行数预算及超时（最多 10000 行、单页 2000 行），准备阶段禁止读取业务内容。v6 先保存计划，在当前 User 请求中签发独立源授权，再在行锁内绑定。未绑定不得领取，失败及中断按规范收敛。
 - **后台消费**。Worker 核精确租约、配置版本、配置摘要及重新准备的完整计划，经当前 Tenant Service 消费授权，按冻结预算采样。摘要仅用持久原始 JSON 经 `common/execution.NewManagerProfileReadScope` 计算，禁止 `JSONMap` 浮点往返或补默认预算。逐页读取和提交结果前重核现行源授权及本地保护，失败即停止，不缓存 Allow。详细流程、拒绝条件及源端并发 DDL 未覆盖范围见[剖析规范](docs/数据剖析规范.md#1-统一执行入口)，实际覆盖按[开发与验证](#开发与验证)分层认定。
 - 剖析结果按资源／配置共享。读取须使用实际采样冻结的 `dependency_snapshot.read_set`，历史集合缺失或不规范时保留记录并拒读，禁止按当前依赖补造或回填。`manager-pg-profile-result` 按原普通 User 复核完整来源，本地 Security 独立执行。身份交接与凭据约束见[剖析结果读取规范](docs/数据剖析规范.md#当前授权切换边界)；确定性检查与真实链路按[开发与验证](#开发与验证)分层认定。
-- 条件剖析只接受结构化 `data_scope`，条件必须由声明支持的 Provider 在采样前执行并安全绑定参数；全范围和条件范围按 `profile_config_hash` 分别保存。Manager 不接受任意 SQL，也不得退回到采样后过滤。已纳入 Security 保护的 DataItem 在条件值保护契约完成前只允许全范围剖析，条件剖析必须拒绝。
+- 条件剖析仅收结构化 `data_scope`，由支持的 Provider 在采样前绑定参数并过滤，禁止任意 SQL 或采样后过滤。全范围与各条件按 `profile_config_hash` 分存。条件值保护完成前，Security 纳管项仅允许 `kind=all`。详见[剖析数据范围](docs/数据剖析规范.md#4-剖析数据范围)。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。
 - “快显任务”“空间数据任务”和“向量化任务”是统一“数据任务”工作区中的产品分类，不是单一 `task_type`。三类任务在“数据任务”父菜单下使用独立 canonical path，但复用同一个工作区实现。全部 Manager 生成类任务定义统一写入 `manager.task_definitions`，由 `task_type` 选择强类型配置、执行器和结果策略；向量化任务继续使用 `manager.embedding_tasks` 及其独立调度和结果语义。不得恢复生成类型独立实现或向量化独立工作区。
