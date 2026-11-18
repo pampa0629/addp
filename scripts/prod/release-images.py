@@ -29,6 +29,7 @@ CAPABILITIES = {
     "ADDP_MINIO_METRICS_ENABLED": "false",
     "ADDP_REDPANDA_METRICS_ENABLED": "false",
     "ADDP_KAFKA_CONNECT_METRICS_ENABLED": "false",
+    "ADDP_MEILISEARCH_METRICS_ENABLED": "false",
 }
 PROFILES = {
     "ADDP_SUPERMAP_WORKFLOW_ENABLED": "supermap-workflow",
@@ -41,6 +42,7 @@ METRIC_IMAGES = (
     ("minio", "ADDP_MINIO_METRICS_ENABLED", "scripts/infra/minio-observation.py"),
     ("redpanda", "ADDP_REDPANDA_METRICS_ENABLED", "scripts/infra/cdc-metrics.py"),
     ("kafka-connect", "ADDP_KAFKA_CONNECT_METRICS_ENABLED", "scripts/infra/cdc-metrics.py"),
+    ("meilisearch", "ADDP_MEILISEARCH_METRICS_ENABLED", "scripts/infra/cdc-metrics.py"),
 )
 
 
@@ -130,7 +132,7 @@ def input_fingerprints(env):
     for kind, flag, path in METRIC_IMAGES:
         if capabilities[flag] == "true":
             owner = load_module("release_inputs_" + kind.replace("-", "_"), path)
-            for name in owner.source_inputs():
+            for name in owner.source_inputs(kind) if kind == "meilisearch" else owner.source_inputs():
                 fingerprints[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
     return fingerprints
 
@@ -187,7 +189,7 @@ def prepare_metric_sources(env, platform, registry, version):
         owner = load_module("release_metrics_" + kind.replace("-", "_"), path)
         with tempfile.TemporaryDirectory(prefix="addp-release-source-") as state:
             source = implementation.Source(docker, "infra", state, ROOT, kind, module.inventory.metrics_project.PROJECT)
-            image_id = source.build(owner.source_inputs())
+            image_id = source.build(owner.source_inputs(kind) if kind == "meilisearch" else owner.source_inputs())
         image = inspect_image(image_id, platform, env)
         original, = [ref for ref in image["RepoTags"] if re.fullmatch("addp-" + kind + r"-metrics:[0-9a-f]{64}", ref)]
         target = f"{registry}/addp-metrics-{kind}:{version}"

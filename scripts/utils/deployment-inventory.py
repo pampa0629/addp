@@ -358,7 +358,9 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
     redis = redis_metrics(docker, scope, first)
     minio = minio_metrics(docker, scope, first)
     cdc = cdc_metrics(docker, scope, first)
+    meili = single_deployment_metrics(docker, scope, first, 'meilisearch', metrics_project.PROJECT) if scope == 'infra' else None
     if (read() != first or postgres_metrics(docker, scope, first) != metrics or redis_metrics(docker, scope, first) != redis or minio_metrics(docker, scope, first) != minio or cdc_metrics(docker, scope, first) != cdc or ids() != container_ids
+            or (scope == 'infra' and single_deployment_metrics(docker, scope, first, 'meilisearch', metrics_project.PROJECT) != meili)
             or json.loads(docker('info', '--format', INFO)) != info):
         raise InventoryError('部署发现期间来源发生变化')
     services = {}
@@ -373,6 +375,8 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
               'source': {'type': 'docker_compose', 'runtime': kind, 'docker_engine_id': info['id'], 'project': project},
               'services': [{'service': service, 'engine_type': ENGINE_TYPES.get(service, 'unclassified'),
                             'containers': containers} for service, containers in sorted(services.items())]}
+    if meili is not None:
+        result['meilisearch_metrics'] = meili
     if len(json.dumps(result).encode('utf-8')) > DISCOVERY_LIMIT:
         raise InventoryError('部署发现快照超过预算')
     return result

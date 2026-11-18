@@ -133,7 +133,7 @@ def transport(env, root, prefix, error=ValueError):
 
 class Source:
     def __init__(self,docker,scope,state,root,kind,project,error=ValueError):
-        if kind not in {'redis','minio','redpanda','kafka-connect'} or scope not in {'infra','business'} or (kind in {'redpanda','kafka-connect'} and scope != 'infra'): raise error('Unknown metrics source owner')
+        if kind not in {'redis','minio','redpanda','kafka-connect','meilisearch'} or scope not in {'infra','business'} or (kind in {'redpanda','kafka-connect','meilisearch'} and scope != 'infra'): raise error('Unknown metrics source owner')
         self.docker,self.scope,self.state,self.root,self.kind,self.project,self.error=docker,scope,Path(state),Path(root),kind,project,error
         self.namespace='io.addp.'+kind+'-metrics'
         self.owner,self.scope_label=self.namespace+'.owner',self.namespace+'.scope'
@@ -280,7 +280,7 @@ class Source:
         files = self.installed_files(image)
         installed = json.loads(files.pop('config.json'), object_pairs_hook=unique)
         address = installed['address']
-        if self.kind in {'redpanda','kafka-connect'}:
+        if self.kind in {'redpanda','kafka-connect','meilisearch'}:
             host = ipaddress.ip_address(address)
             canonical = str(host)
         else:

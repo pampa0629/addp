@@ -99,6 +99,7 @@ AUXILIARY_DOCKERFILES = {
     "engines/model3d-workflow/docker/runtime/Dockerfile": "model3d runtime build",
     "engines/supermap-workflow/Dockerfile.base": "SuperMap SDK base image build",
     "scripts/infra/Dockerfile.redis-metrics": "deployment-owned fixed Redis INFO metrics source",
+    "scripts/infra/Dockerfile.meilisearch-metrics": "deployment-owned Infra Meilisearch task metrics source",
     "scripts/infra/Dockerfile.cdc-metrics": "deployment-owned fixed Redpanda and Kafka Connect metrics source",
     "scripts/infra/Dockerfile.minio-metrics": "deployment-owned fixed MinIO v3 metrics source",
 }

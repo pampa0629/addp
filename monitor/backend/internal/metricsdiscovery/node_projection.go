@@ -186,15 +186,10 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 	}
 	components := snapshot.InfrastructureComponents
 	if components != nil {
-		if components.Items == nil || len(components.Items) > 2 || (components.State != "available" && components.State != "unavailable") || (components.State == "unavailable" && len(components.Items) != 0) {
+		if components.Validate(snapshot.ObservedAt) != nil {
 			return nil, ErrIdentityUnavailable
 		}
-		seen := map[string]bool{}
 		for _, component := range components.Items {
-			if component.Validate() != nil || component.StartedAt.After(snapshot.ObservedAt) || seen[component.Kind] {
-				return nil, ErrIdentityUnavailable
-			}
-			seen[component.Kind] = true
 			if component.Metrics.State == "available" {
 				reserved++
 			}
@@ -298,9 +293,13 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			if !accepted {
 				continue
 			}
+			monitorKind := "search_resources"
+			if component.IsCDC() {
+				monitorKind = "cdc_resources"
+			}
 			dynamic[resolved.Address] = true
 			groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
-				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": "cdc_resources", "addp_source": component.Kind,
+				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": monitorKind, "addp_source": component.Kind,
 				"addp_component_id": component.ID(), "addp_component_container_id": component.ContainerID,
 				"addp_component_container_started_at": component.StartedAt.UTC().Format(time.RFC3339Nano),
 			}})

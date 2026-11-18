@@ -32,7 +32,7 @@ func TestIntegrationCDCDynamicAdmissionIsolation(t *testing.T) {
 		Certificate string                               `json:"certificate"`
 		Key         string                               `json:"key"`
 	}
-	if json.Unmarshal(raw, &cfg) != nil || cfg.Snapshot.InfrastructureComponents == nil || len(cfg.Snapshot.InfrastructureComponents.Items) != 2 {
+	if json.Unmarshal(raw, &cfg) != nil || cfg.Snapshot.InfrastructureComponents == nil || cfg.Snapshot.InfrastructureComponents.Items == nil {
 		t.Fatal("invalid CDC fixture")
 	}
 	ca, err := os.ReadFile(cfg.CA)
@@ -73,7 +73,15 @@ func TestIntegrationCDCDynamicAdmissionIsolation(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, group := range groups {
-		seen[group.Labels["addp_source"]] = true
+		kind := group.Labels["addp_source"]
+		monitorKind := "cdc_resources"
+		if kind == "meilisearch" {
+			monitorKind = "search_resources"
+		}
+		if group.Labels["addp_monitor_kind"] != monitorKind {
+			t.Fatalf("unexpected Monitor kind for %s", kind)
+		}
+		seen[kind] = true
 	}
 	for _, kind := range cfg.Expected {
 		if !seen[kind] {

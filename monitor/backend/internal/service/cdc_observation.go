@@ -53,17 +53,16 @@ func (s *ResourceObservationService) currentCDCIdentities(ctx context.Context) (
 		return nil, metricsdiscovery.ErrIdentityUnavailable
 	}
 	rows := snapshot.InfrastructureComponents
-	if rows == nil || rows.Items == nil || len(rows.Items) > 2 || (rows.State != "available" && rows.State != "unavailable") || (rows.State == "unavailable" && len(rows.Items) > 0) {
+	if rows.Validate(snapshot.ObservedAt) != nil {
 		return nil, metricsdiscovery.ErrIdentityUnavailable
 	}
-	seen := map[string]bool{}
+	result := &commonmodels.ObservabilityComponentSnapshot{State: rows.State, Items: []commonmodels.ObservabilityComponentIdentity{}}
 	for _, item := range rows.Items {
-		if item.Validate() != nil || item.StartedAt.After(snapshot.ObservedAt) || seen[item.Kind] {
-			return nil, metricsdiscovery.ErrIdentityUnavailable
+		if item.IsCDC() {
+			result.Items = append(result.Items, item)
 		}
-		seen[item.Kind] = true
 	}
-	return rows, nil
+	return result, nil
 }
 
 // CDCResources reads only current infrastructure facts. Platform permission is

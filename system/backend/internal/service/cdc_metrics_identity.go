@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
-	"time"
 )
 
 func parseCDCMetrics(raw json.RawMessage, services []models.DiscoveredDeploymentService, at time.Time) map[string]*commonmodels.EngineMetricsSource {
@@ -23,26 +24,38 @@ func parseCDCMetrics(raw json.RawMessage, services []models.DiscoveredDeployment
 		}
 	}
 	for kind, metrics := range declared {
-		result[kind] = &commonmodels.EngineMetricsSource{State: "unavailable"}
-		if metrics == nil || metrics.Validate() != nil || (metrics.StartedAt != nil && metrics.StartedAt.After(at)) {
-			continue
-		}
-		if metrics.State == "available" {
-			matched := false
-			for _, service := range services {
-				if service.Service == kind && len(service.Containers) == 1 {
-					c := service.Containers[0]
-					started, err := time.Parse(time.RFC3339Nano, c.StartedAt)
-					matched = err == nil && c.Status == "running" && c.ContainerID == metrics.ContainerID && started.Equal(*metrics.StartedAt)
-				}
-			}
-			if !matched {
-				continue
-			}
-		}
-		result[kind] = metrics
+		result[kind] = matchComponentMetrics(metrics, services, kind, at)
 	}
 	return result
+}
+
+func parseComponentMetrics(raw json.RawMessage, services []models.DiscoveredDeploymentService, kind string, at time.Time) *commonmodels.EngineMetricsSource {
+	if len(raw) == 0 {
+		return &commonmodels.EngineMetricsSource{State: "not_deployed"}
+	}
+	var claim commonmodels.EngineMetricsSource
+	if DecodeDeploymentJSON(raw, &claim) != nil {
+		return &commonmodels.EngineMetricsSource{State: "unavailable"}
+	}
+	return matchComponentMetrics(&claim, services, kind, at)
+}
+
+func matchComponentMetrics(metrics *commonmodels.EngineMetricsSource, services []models.DiscoveredDeploymentService, kind string, at time.Time) *commonmodels.EngineMetricsSource {
+	if metrics != nil && metrics.Validate() == nil && (metrics.StartedAt == nil || !metrics.StartedAt.After(at)) {
+		if metrics.State != "available" {
+			return metrics
+		}
+		for _, service := range services {
+			if service.Service == kind && len(service.Containers) == 1 {
+				c := service.Containers[0]
+				started, err := time.Parse(time.RFC3339Nano, c.StartedAt)
+				if err == nil && c.Status == "running" && c.ContainerID == metrics.ContainerID && started.Equal(*metrics.StartedAt) {
+					return metrics
+				}
+			}
+		}
+	}
+	return &commonmodels.EngineMetricsSource{State: "unavailable"}
 }
 
 func (s *ModuleRegistryService) enrichInfrastructureComponents(ctx context.Context, snapshot *commonmodels.ObservabilityIdentitySnapshot) {
@@ -54,7 +67,7 @@ func (s *ModuleRegistryService) enrichInfrastructureComponents(ctx context.Conte
 	}
 	projection.State = "available"
 	for _, service := range value.Services {
-		if service.Service != "redpanda" && service.Service != "kafka-connect" {
+		if service.Service != "redpanda" && service.Service != "kafka-connect" && service.Service != "meilisearch" {
 			continue
 		}
 		if len(service.Containers) != 1 || service.Containers[0].Status != "running" {
@@ -66,7 +79,9 @@ func (s *ModuleRegistryService) enrichInfrastructureComponents(ctx context.Conte
 			continue
 		}
 		metrics := &commonmodels.EngineMetricsSource{State: "not_deployed"}
-		if value.CDCMetrics != nil {
+		if service.Service == "meilisearch" {
+			metrics = value.MeilisearchMetrics
+		} else if value.CDCMetrics != nil {
 			metrics = value.CDCMetrics[service.Service]
 			if metrics == nil {
 				metrics = &commonmodels.EngineMetricsSource{State: "unavailable"}

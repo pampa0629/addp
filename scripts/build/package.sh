@@ -102,6 +102,7 @@ PYCOMMIT
         common gateway/go.mod monitor/backend/go.sum
         monitor/backend/cmd/minio-metrics-source monitor/backend/cmd/redis-metrics-source
         monitor/backend/cmd/cdc-metrics-source monitor/backend/internal/cdcsource
+        monitor/backend/cmd/meilisearch-metrics-source
         monitor/backend/internal/miniosource monitor/backend/internal/redissource monitor/backend/internal/sourceserver
         business nginx/nginx.conf "docs/guide/addp IAM三员初始化操作指南.md"
     )

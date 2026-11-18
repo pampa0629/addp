@@ -33,7 +33,7 @@ func (s *DeploymentDiscoveryService) Read(ctx context.Context) models.Deployment
 	result := models.DeploymentDiscovery{Scopes: make([]models.DeploymentDiscoveryScope, 0, 2), Candidates: []models.EngineDeploymentCandidate{}}
 	for _, scope := range []string{"infra", "business"} {
 		value := s.readScope(ctx, scope)
-		value.CDCMetrics = nil
+		value.CDCMetrics, value.MeilisearchMetrics = nil, nil
 		value.PostgreSQLMetrics, value.RedisMetrics, value.MinIOMetrics = nil, nil, nil // The browser projection has no professional source endpoint.
 		result.Scopes = append(result.Scopes, value)
 		if value.State == "available" {
@@ -177,6 +177,7 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	var document struct {
 		models.DeploymentDiscoveryScope
 		CDC     json.RawMessage `json:"cdc_metrics,omitempty"`
+		Meili   json.RawMessage `json:"meilisearch_metrics,omitempty"`
 		Metrics json.RawMessage `json:"postgresql_metrics,omitempty"`
 		Redis   json.RawMessage `json:"redis_metrics,omitempty"`
 		MinIO   json.RawMessage `json:"minio_metrics,omitempty"`
@@ -247,7 +248,10 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	if value.Services == nil {
 		value.Services = []models.DiscoveredDeploymentService{}
 	}
-	value.CDCMetrics = parseCDCMetrics(document.CDC, value.Services, at)
+	if scope == "infra" {
+		value.CDCMetrics = parseCDCMetrics(document.CDC, value.Services, at)
+		value.MeilisearchMetrics = parseComponentMetrics(document.Meili, value.Services, "meilisearch", at)
+	}
 	value.PostgreSQLMetrics = parseEngineMetrics(document.Metrics, value.Services, "postgresql", at)
 	value.RedisMetrics = parseEngineMetrics(document.Redis, value.Services, "redis", at)
 	value.MinIOMetrics = parseEngineMetrics(document.MinIO, value.Services, "minio", at)

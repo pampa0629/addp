@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Install/recover fixed Infra CDC sources; never mutate the components themselves.
+"""Install/recover fixed Infra component metrics sources; never mutate the components themselves.
 
-Usage: cdc-metrics.py up|down|recover --scope infra --kind redpanda|kafka-connect
+Usage: cdc-metrics.py up|down|recover --scope infra --kind redpanda|kafka-connect|meilisearch
 The public lifecycle entry is metrics-sources.py.
 """
 import argparse
@@ -11,7 +11,9 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import sys
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,10 +27,16 @@ sources = load('cdc_source', ROOT/'scripts/utils/metrics-source.py')
 private = sources.private
 Error = deployment.DeploymentError
 NETWORK = 'addp-network'
-PREFIXES = {'redpanda':'ADDP_REDPANDA_METRICS', 'kafka-connect':'ADDP_KAFKA_CONNECT_METRICS'}
+PREFIXES = {'redpanda':'ADDP_REDPANDA_METRICS', 'kafka-connect':'ADDP_KAFKA_CONNECT_METRICS',
+            'meilisearch':'ADDP_MEILISEARCH_METRICS'}
 
 
-def source_inputs():
+def source_inputs(kind=None):
+    if kind == 'meilisearch':
+        return ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum',
+                'scripts/infra/Dockerfile.meilisearch-metrics', 'monitor/backend/cmd/meilisearch-metrics-source/main.go',
+                *(str(p.relative_to(ROOT)) for p in sorted((ROOT/'monitor/backend/internal/sourceserver').glob('*.go'))
+                  if not p.name.endswith('_test.go'))]
     files = ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum', 'scripts/infra/Dockerfile.cdc-metrics']
     for folder in ('monitor/backend/internal/cdcsource', 'monitor/backend/internal/sourceserver', 'monitor/backend/cmd/cdc-metrics-source'):
         files.extend(str(path.relative_to(ROOT)) for path in sorted((ROOT/folder).glob('*.go')) if not path.name.endswith('_test.go'))
@@ -36,7 +44,7 @@ def source_inputs():
 
 @sources.observed('private-state')
 def state_directory(env, scope, kind):
-    if scope != 'infra' or kind not in PREFIXES: raise Error('Invalid CDC source selection')
+    if scope != 'infra' or kind not in PREFIXES: raise Error('Invalid Infra source selection')
     configured = env.get(PREFIXES[kind]+'_STATE_DIR')
     path = Path(configured) if configured else Path.home().resolve()/'.local/state/addp'/hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]/'cdc-metrics'/kind
     if not path.is_absolute() or '..' in path.parts or path.resolve().is_relative_to(ROOT): raise Error('Invalid CDC private state')
@@ -75,6 +83,27 @@ class Component:
     def unchanged(self):
         if self.docker.fact(self.identity) != self.facts: raise Error('CDC component changed during source operation')
 
+def meili_key_uid(env):
+    value = env.get('ADDP_MEILISEARCH_METRICS_KEY_UID', '')
+    if str(uuid.UUID(value)) != value or uuid.UUID(value).int == 0:
+        raise Error('Meilisearch task Key UID is invalid')
+    return value
+
+
+@sources.observed('deployment-check')
+def meili_config(component, env):
+    uid = meili_key_uid(env)
+    request = ("printf 'Authorization: Bearer %s\\n' \"$MEILI_MASTER_KEY\" | "
+               'curl -q -fsS --noproxy "*" --max-time 5 --max-filesize 16384 '
+               '--header @- "http://127.0.0.1:7700/keys/$1"')
+    raw = component.docker.run(['exec', component.identity, 'sh', '-ec', request, 'meilisearch-key', uid], timeout=8)
+    value = json.loads(raw)
+    if (value.get('uid') != uid or value.get('actions') != ['tasks.get'] or value.get('indexes') != ['*']
+            or not re.fullmatch('[a-f0-9]{64}', value.get('key', ''))):
+        raise Error('Meilisearch task Key permissions rejected')
+    return {'address':component.address, 'task_key':value['key']}
+
+
 def run(action, scope, kind, env):
     state = state_directory(env,scope,kind)
     prefix = PREFIXES[kind]
@@ -91,8 +120,8 @@ def run(action, scope, kind, env):
             source.stop(); return 'disabled; owned source removed'
         ip,port,material = sources.transport(env,ROOT,prefix,Error)
         component = Component(docker,kind)
-        config = {'kind':kind,'address':component.address}
-        expected = {'schema':'addp.cdc-metrics/v1','workspace':str(ROOT),'kind':kind,
+        config = meili_config(component,env) if kind == 'meilisearch' else {'kind':kind,'address':component.address}
+        expected = {'schema':'addp.meilisearch-metrics/v1' if kind == 'meilisearch' else 'addp.cdc-metrics/v1','workspace':str(ROOT),'kind':kind,
                     'docker_engine_id':docker.info['id'],'project':deployment.inventory.SCOPES['infra'][0]}
         owner = state/'owner.json'
         if os.path.lexists(owner):
@@ -103,7 +132,7 @@ def run(action, scope, kind, env):
         if action == 'recover':
             if not (state/'compose.json').exists(): return 'not installed; recovery skipped'
             return source.recover(component,config,ip,port,material,component.unchanged)
-        image = source.build(source_inputs())
+        image = source.build(source_inputs(kind))
         component.unchanged()
         sources.write(owner,json.dumps(expected,sort_keys=True))
         source.stop()
@@ -130,7 +159,7 @@ def main():
         if reason in sources.RECOVERY_REASONS: fields += '[reason='+reason+']'
         if getattr(error,'source_recovery_cleanup_failed',False): fields += '[cleanup=failed]'
         if getattr(error,'source_tls_reason',None) in sources.TLS_REASONS: fields += '[tls-reason='+error.source_tls_reason+']'
-        print('CDC source operation failed '+fields,file=sys.stderr)
+        print('Infra source operation failed '+fields,file=sys.stderr)
         return 1
     return 0
 

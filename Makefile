@@ -1712,7 +1712,7 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 
 .PHONY: test-monitor-cdc-source-unit
 test-monitor-cdc-source-unit: ## CDC 固定指标、缺样语义和有界读取 T1
-	@cd monitor/backend && GOWORK=off go test ./internal/cdcsource ./cmd/cdc-metrics-source ./internal/sourceserver -count=1
+	@cd monitor/backend && GOWORK=off go test ./internal/cdcsource ./cmd/cdc-metrics-source ./cmd/meilisearch-metrics-source ./internal/sourceserver -count=1
 
 .PHONY: test-monitor-cdc-admission-t2
 test-monitor-cdc-admission-t2: ## 在既有隔离 CDC 门禁中验证真实来源的统一准入与失败隔离
@@ -1723,7 +1723,7 @@ test-monitor-cdc-admission-t2: ## 在既有隔离 CDC 门禁中验证真实来�
 .PHONY: test-monitor-cdc-discovery-unit
 test-monitor-cdc-discovery-unit: ## CDC 部署事实、私有身份、统一发现与预算 T1
 	@cd common && GOWORK=off go test ./models -count=1
-	@cd system/backend && GOWORK=off go test ./internal/service -run 'Test(CDC|EngineMetrics|DeploymentDiscovery)' -count=1
+	@cd system/backend && GOWORK=off go test ./internal/service -run 'Test(CDC|InfrastructureComponent|EngineMetrics|DeploymentDiscovery)' -count=1
 	@cd monitor/backend && GOWORK=off go test ./internal/metricsdiscovery -count=1
 	@python3 -m unittest scripts/test/metrics-project_test.py scripts/test/business-deployments_test.py
 

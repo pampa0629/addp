@@ -21,6 +21,7 @@ TLS = Path(os.environ['ADDP_METRICS_TLS_DIR'])
 PROJECT = os.environ['METRICS_T2_PROJECT']
 FILE = os.environ['METRICS_T2_COMPOSE']
 FILES = [FILE]
+CDC_KINDS = ("redpanda", "kafka-connect")
 
 
 def compose(*args, timeout=None, stderr=None):
@@ -228,7 +229,7 @@ def check_native_cdc():
     assert isinstance(failed, dict) and failed['addp_cdc_connect_task_states{state="FAILED"}'] == '1'
     assert failed['addp_cdc_connect_task_states{state="RUNNING"}'] == '1'
     admission_items = []
-    for kind in module.PREFIXES:
+    for kind in CDC_KINDS:
         component = module.Component(docker,kind)
         admission_items.append({'docker_engine_id':docker.info['id'],'project':'addp-infra','kind':kind,
             'container_id':component.identity,'started_at':component.facts['started_at'],
@@ -240,15 +241,18 @@ def check_native_cdc():
             'expected':expected,'ca':str(WORK/'deployment/source-ca.crt'),'certificate':str(WORK/'collector.crt'),'key':str(WORK/'collector.key')}))
         subprocess.run(['make','test-monitor-cdc-admission-t2'],cwd=Path(__file__).resolve().parents[2],
                        env=dict(os.environ,ADDP_CDC_ADMISSION_FILE=str(receipt)),check=True,timeout=180)
-    verify_admission(['redpanda','kafka-connect'])
+    if os.environ.get('ADDP_METRICS_T2_CASE') == 'cdc-native':
+        check_native_meilisearch(module, docker, admission_items, verify_admission)
+    verify_admission(list(CDC_KINDS))
     compose('stop', 'cdc-connect')
     assert source('cdc-connect-source') == 503, 'upstream failure was masked by stale samples'
     assert isinstance(source('cdc-redpanda-source'), dict), 'Connect outage affected broker source'
     verify_admission(['redpanda'])
     compose('start', 'cdc-connect')
-    wait(lambda: isinstance(source('cdc-connect-source'), dict), 'Connect source recovers after upstream returns', seconds=90)
-    # Rebind the source to the component's new start time; preserve its peer.
+    wait(lambda: isinstance(connect('/connectors'), list), 'Connect API recovers after upstream returns', seconds=90)
+    # Docker can allocate a different IP after stop/start. Rebind before reading the protected source.
     assert 'source recovered' in module.run('recover','infra','kafka-connect',cdc_environment(module,'kafka-connect'))
+    wait(lambda: isinstance(source('cdc-connect-source'), dict), 'rebound Connect source serves new samples', seconds=25)
     # The identity fixture advances to the new runtime after source recovery.
     component = module.Component(docker,'kafka-connect')
     for item in admission_items:
@@ -258,7 +262,7 @@ def check_native_cdc():
     broker_service = module.sources.group.service('redpanda','infra')
     assert docker.run(['ps','-aq',*module.sources.group.filters(PROJECT,{broker_service})]).strip() == before['redpanda']
     targets = []
-    for kind in module.PREFIXES:
+    for kind in CDC_KINDS:
         component = module.Component(docker,kind)
         targets.append({'targets':['infra-'+kind+'-metrics:9443'],'labels':{
             'addp_monitor_kind':'cdc_resources','addp_source':kind,
@@ -278,7 +282,7 @@ def cdc_lifecycle():
     module.deployment.inventory.metrics_project.PROJECT = PROJECT
     module.NETWORK = 'default'
     component = module.Component
-    module.Component = lambda docker,kind: component(docker,kind,service={'redpanda':'cdc-broker','kafka-connect':'cdc-connect'}[kind])
+    module.Component = lambda docker,kind: component(docker,kind,service={'redpanda':'cdc-broker','kafka-connect':'cdc-connect','meilisearch':'search-meilisearch'}[kind])
     return module
 
 
@@ -298,6 +302,122 @@ def cdc_environment(module, kind):
         (tls/'port').write_text(str(port))
     return dict(os.environ, **{prefix+'_ENABLED':'true', prefix+'_LISTEN':'127.0.0.1:'+(tls/'port').read_text(),
                               prefix+'_STATE_DIR':str(state),prefix+'_TLS_DIR':str(tls)})
+
+
+def check_native_meilisearch(module, docker, admission_items, verify_admission):
+    service = 'search-meilisearch'
+    endpoint = 'http://'+compose('port', service, '7700', timeout=5)
+    key = os.environ['METRICS_T2_MEILI_KEY']
+
+    def request(path, body=None, *, auth=key):
+        req = urllib.request.Request(endpoint+path, data=body,
+                                     headers={'Authorization':'Bearer '+auth, 'Content-Type':'application/json'})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            raw = response.read(128*1024+1)
+            assert len(raw) <= 128*1024
+            return json.loads(raw)
+
+    def post(path, body):
+        return request(path, json.dumps(body, separators=(',', ':')).encode())
+
+    for actions in (['tasks.get','search'], ['tasks.get']):
+        credential = post('/keys', {'actions':actions, 'indexes':['*'], 'expiresAt':None})
+        env = cdc_environment(module, 'meilisearch')
+        env['ADDP_MEILISEARCH_METRICS_KEY_UID'] = credential['uid']
+        component = module.Component(docker, 'meilisearch')
+        if len(actions) == 1:
+            break
+        try:
+            module.meili_config(component, env)
+        except module.Error:
+            pass
+        else:
+            raise AssertionError('broader key passed the deployment boundary')
+    reader = credential['key']
+    try:
+        request('/keys', auth=reader)
+    except urllib.error.HTTPError as error:
+        assert error.code == 403
+    else:
+        raise AssertionError('task reader can list keys')
+
+    def eventually(sample, description, seconds=120):
+        end = time.monotonic()+seconds
+        while time.monotonic() < end:
+            value = sample()
+            if value:
+                return value
+            time.sleep(.05)
+        raise AssertionError(description)
+
+    module.run('up','infra','meilisearch',env)
+    assert 'source unchanged' in module.run('recover','infra','meilisearch',env)
+    context = ssl.create_default_context(cafile=str(WORK/'deployment/source-ca.crt'))
+    context.load_cert_chain(str(WORK/'collector.crt'), str(WORK/'collector.key'))
+    metrics = 'https://'+env['ADDP_MEILISEARCH_METRICS_LISTEN']+'/metrics'
+
+    def source():
+        with urllib.request.urlopen(metrics, context=context, timeout=6) as response:
+            raw = response.read(4097).decode()
+        values = {metric: float(value) for metric, value in (line.split() for line in raw.splitlines())}
+        assert set(values) == {'addp_meilisearch_tasks_pending','addp_meilisearch_tasks_oldest_wait_seconds',
+                               'addp_meilisearch_tasks_retained_failed','addp_meilisearch_observed_at_seconds'}
+        return tuple(values['addp_meilisearch_tasks_'+metric] for metric in ('pending','oldest_wait_seconds','retained_failed'))
+
+    assert source() == (0,0,0)
+    started = component.facts['started_at']
+    observed = module.deployment.inventory.single_deployment_metrics(
+        lambda *args: docker.run(list(args)).strip(), 'infra',
+        {component.identity:('meilisearch',{'status':'running','container_id':component.identity,'started_at':started})},
+        'meilisearch', PROJECT, network_key='default')
+    assert observed == {'state':'available','endpoint':metrics,'container_id':component.identity,'started_at':started}
+    claim = {'docker_engine_id':docker.info['id'], 'project':'addp-infra', 'kind':'meilisearch',
+             'container_id':component.identity, 'started_at':started, 'metrics':observed}
+    admission_items.append(claim)
+    verify_admission([*CDC_KINDS,'meilisearch'])
+
+    create = post('/indexes', {'uid':'metrics_fixture','primaryKey':'id'})['taskUid']
+    def status(uid):
+        return request(f'/tasks/{uid}', auth=reader)['status']
+    eventually(lambda: status(create) == 'succeeded', 'fixture index was not created')
+    documents = [{'id':i,'text':' '.join(f'term{i*7+j}word' for j in range(7))} for i in range(125000)]
+    path = '/indexes/metrics_fixture/documents'
+    bulk = post(path, documents)['taskUid']
+    small = [post(path,[{'id':125000+i,'text':'queued'}])['taskUid'] for i in range(2)]
+    bad = post(path,[{'id':'invalid id/space'}])['taskUid']
+    def pending():
+        return request('/tasks?statuses=enqueued&limit=1&reverse=true',auth=reader)
+
+    def stable_sample():
+        before = pending()
+        measured = source()
+        after = pending()
+        if before['results'] and len(before['results']) == len(after['results']) == 1:
+            oldest = before['results'][0]['uid']
+            if oldest in small and after['results'][0]['uid'] == oldest and before['total'] == after['total'] == measured[0]:
+                assert measured[1] > 0 and measured[2] == 0
+                return oldest, measured
+
+    first = eventually(stable_sample, 'no stable real Meilisearch pending task count', seconds=30)
+    def growing_wait():
+        value = stable_sample()
+        if value and value[0] == first[0] and value[1][1] >= first[1][1]+.2:
+            return value[1]
+    increased = eventually(growing_wait,'oldest task wait did not increase',seconds=20)
+    eventually(lambda: all(status(uid)=='succeeded' for uid in [bulk,*small]) and status(bad)=='failed',
+               'real indexing tasks did not reach their expected terminal states')
+    assert request(f'/tasks/{bad}',auth=reader)['error']['code'] == 'invalid_document_id'
+    assert source() == (0,0,1)
+    compose('stop',service,timeout=20)
+    try:
+        source()
+    except urllib.error.HTTPError as error:
+        assert error.code == 503
+    else:
+        raise AssertionError('stopped Meilisearch emitted stale metrics')
+    verify_admission(list(CDC_KINDS))
+    admission_items.pop()
+    print(f'Meilisearch T2: tasks.get only; pending={int(increased[0])}, oldest={first[1][1]:.3f}→{increased[1]:.3f}s; drained and failures=1; failed source omitted',flush=True)
 
 
 if __import__('sys').argv[1:] == ['--cleanup-cdc']:

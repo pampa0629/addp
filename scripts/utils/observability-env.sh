@@ -195,7 +195,7 @@ addp_recover_metrics_sources() {
   local result=0
   # Keep the closed per-source receipt in this startup only. FD 4 preserves
   # terminal stdout while FD 3 returns JSON through command substitution.
-  ADDP_STARTUP_METRICS_RECEIPT=$(python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope host --scope infra --scope business --kind node --kind postgresql --kind redis --kind minio --kind redpanda --kind kafka-connect --receipt-fd 3 3>&1 1>&4) || result=$?
+  ADDP_STARTUP_METRICS_RECEIPT=$(python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope host --scope infra --scope business --kind node --kind postgresql --kind redis --kind minio --kind redpanda --kind kafka-connect --kind meilisearch --receipt-fd 3 3>&1 1>&4) || result=$?
   return "$result"
 } 4>&1
 

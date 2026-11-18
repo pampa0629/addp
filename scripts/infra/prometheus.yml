@@ -92,15 +92,15 @@ scrape_configs:
         replacement: '$1'
         target_label: __tmp_addp_database_container_started_at
       - source_labels: [addp_monitor_kind, addp_component_id]
-        regex: 'cdc_resources;(.+)'
+        regex: '(?:cdc_resources|search_resources);(.+)'
         replacement: '$1'
         target_label: __tmp_addp_component_id
       - source_labels: [addp_monitor_kind, addp_component_container_id]
-        regex: 'cdc_resources;(.+)'
+        regex: '(?:cdc_resources|search_resources);(.+)'
         replacement: '$1'
         target_label: __tmp_addp_component_container_id
       - source_labels: [addp_monitor_kind, addp_component_container_started_at]
-        regex: 'cdc_resources;(.+)'
+        regex: '(?:cdc_resources|search_resources);(.+)'
         replacement: '$1'
         target_label: __tmp_addp_component_container_started_at
       - action: labeldrop

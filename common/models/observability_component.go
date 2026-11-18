@@ -2,8 +2,9 @@ package models
 
 import (
 	"errors"
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ObservabilityComponentSnapshot is a private current projection, not an inventory or an engine grant.
@@ -26,9 +27,28 @@ func (i ObservabilityComponentIdentity) ID() string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(i.DockerEngineID+"\x00"+i.Project+"\x00"+i.Kind)).String()
 }
 
+func (i ObservabilityComponentIdentity) IsCDC() bool {
+	return i.Kind == "redpanda" || i.Kind == "kafka-connect"
+}
+
+func (s *ObservabilityComponentSnapshot) Validate(at time.Time) error {
+	if s == nil || s.Items == nil || len(s.Items) > 3 ||
+		(s.State != "available" && s.State != "unavailable") || (s.State == "unavailable" && len(s.Items) != 0) {
+		return errors.New("invalid infrastructure component snapshot")
+	}
+	seen := map[string]bool{}
+	for _, item := range s.Items {
+		if item.Validate() != nil || item.StartedAt.After(at) || seen[item.Kind] {
+			return errors.New("invalid infrastructure component snapshot item")
+		}
+		seen[item.Kind] = true
+	}
+	return nil
+}
+
 func (i ObservabilityComponentIdentity) Validate() error {
 	if !observabilityDockerEngineID.MatchString(i.DockerEngineID) || i.Project != "addp-infra" ||
-		(i.Kind != "redpanda" && i.Kind != "kafka-connect") || !engineMetricsContainerID.MatchString(i.ContainerID) ||
+		(!i.IsCDC() && i.Kind != "meilisearch") || !engineMetricsContainerID.MatchString(i.ContainerID) ||
 		i.StartedAt.IsZero() || i.Metrics == nil || i.Metrics.Validate() != nil {
 		return errors.New("invalid infrastructure component identity")
 	}
