@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import urllib.parse
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -145,14 +146,20 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         return current, authorizer, consumer
 
     def metadata_clients(self, engine=14, full_name='grib/weather.grb2', storage='nfs',
-                         data_type='container', format_name='grib', layout='single'):
+                         data_type='container', format_name='grib', layout='single', boundary_kind='metadata_target'):
         current, issuer, consumer = self.grant_clients()
         target = REGISTRATION.ExactFileMetadataGrants.target(engine, full_name, storage, layout=layout)
         fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
         metadata = dict(target=target, layout=layout, data_type=data_type, format=format_name, composition_digest='b'*64)
+        if boundary_kind == 'file_composition':
+            boundary_value = dict(format=format_name, source_layout=layout,
+                                  refs=[dict(target=target, role='image', primary=True, required=True)])
+        else:
+            boundary_value = target if boundary_kind == 'native_target' else metadata
+        receipt_boundary = {} if boundary_kind == 'native_target' else {boundary_kind: boundary_value}
         facts = dict(schema_version='meta.data_item_authorization_facts/v1', engine_id=str(engine), item_fingerprint=fingerprint,
             item_type='object' if storage == 'minio' else 'file', full_name=full_name, basis_state='complete', boundary_hash='a'*64,
-            observed_at='2026-11-03T00:00:00Z', boundary=dict(layout=layout,metadata_target=metadata))
+            observed_at='2026-11-03T00:00:00Z', boundary=dict(layout=layout, **{boundary_kind: boundary_value}))
         issuer_identity, consumer_identity = issuer.request.side_effect, consumer.request.side_effect
         state = dict(visible=False, events=[])
         def authorize(method, path, expected, body=None):
@@ -165,10 +172,13 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
             self.assertEqual((method,expected),('POST',(201,)))
             self.assertEqual(body['action'],'metadata_read')
             self.assertEqual(body['catalog_path'],target)
+            self.assertEqual(body['expected_boundary_hash'], facts['boundary_hash'])
+            self.assertFalse({'metadata_target', 'file_composition', 'native_target', 'scope'} & body.keys())
             self.assertFalse(state['visible'])
             state['visible']=True
-            return SimpleNamespace(payload=dict(body,engine_id=str(engine),boundary_hash='a'*64,metadata_target=metadata,
-                approval_mode='independent',operator_principal_id='8',revocation=None,expires_at=body.get('expires_at')))
+            return SimpleNamespace(payload=dict(body,engine_id=str(engine),boundary_hash='a'*64,
+                approval_mode='independent',operator_principal_id='8',revocation=None,
+                expires_at=body.get('expires_at'), **receipt_boundary))
         def observe(method,path,expected,body=None):
             if path.endswith('/auth/context'):return consumer_identity(method,path,expected,body)
             self.assertEqual((method,path,expected),('POST','/api/v1/system/engine-access/metadata-checks/meta-query',(200,)))
@@ -191,6 +201,80 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
                     (datetime.now(timezone.utc)+timedelta(seconds=10801)).isoformat()):
             with self.subTest(bad=bad),self.assertRaises(REGISTRATION.RegistrationError):
                 grants.grant(14,'grib/weather.grb2','nfs',data_type='container',format_name='grib',layout='single',expires_at=bad)
+
+    def test_metadata_grant_reuses_canonical_tiff_and_csv_boundaries(self):
+        cases = (
+            (14, 'north.tif', 'nfs', 'media', 'tiff', 'file_composition'),
+            (12, 'transfer-upload/upload-check.csv', 'minio', 'table', 'csv', 'native_target'),
+        )
+        for engine, full_name, storage, data_type, format_name, kind in cases:
+            with self.subTest(kind=kind):
+                issuer, consumer, facts, state = self.metadata_clients(
+                    engine, full_name, storage, data_type, format_name, boundary_kind=kind)
+                events = []
+                grants = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2, on_evidence=events.append)
+                receipt = grants.grant(engine, full_name, storage, data_type=data_type,
+                                       format_name=format_name, layout='single')
+                self.assertEqual(receipt['action'], 'metadata_read')
+                self.assertEqual(receipt['boundary_hash'], facts['boundary_hash'])
+                self.assertNotIn('metadata_target', receipt)
+                self.assertNotIn('native_target', receipt)
+                if kind == 'file_composition':
+                    self.assertEqual(receipt[kind], facts['boundary'][kind])
+                self.assertEqual(grants.cleanup(), {'grants_revoked': True, 'metadata_hidden': True})
+                self.assertEqual([event[1] for event in state['events'] if event[0] == 'observe'], [False, True, False])
+                evidence = events[0]['facts']['boundary']
+                self.assertEqual(evidence['unrecognized_field_count'], 0)
+                self.assertIn(kind, evidence)
+
+    def test_content_boundary_must_bind_the_exact_file_or_object_before_metadata_grant(self):
+        for kind in ('file_composition', 'native_target'):
+            full_name, format_name, data_type = (
+                ('bucket/sample.tif', 'tiff', 'media') if kind == 'file_composition'
+                else ('bucket/sample.csv', 'csv', 'table')
+            )
+            for fault in ('foreign_target', 'extra_boundary', 'invalid_layout'):
+                with self.subTest(kind=kind, fault=fault):
+                    issuer, consumer, facts, state = self.metadata_clients(
+                        12, full_name, 'minio', data_type, format_name, boundary_kind=kind)
+                    boundary = facts['boundary']
+                    if fault == 'foreign_target':
+                        foreign = deepcopy(boundary[kind])
+                        target = foreign['refs'][0]['target'] if kind == 'file_composition' else foreign
+                        target['segments'][-1]['name'] = 'other.' + format_name
+                        boundary[kind] = foreign
+                    elif fault == 'extra_boundary':
+                        boundary['metadata_target'] = {}
+                    elif kind == 'file_composition':
+                        boundary[kind]['source_layout'] = 'multi'
+                    else:
+                        boundary['layout'] = 'multi'
+                    grants = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2)
+                    with self.assertRaises(REGISTRATION.MetadataGrantError) as raised:
+                        grants.grant(12, full_name, 'minio', data_type=data_type,
+                                     format_name=format_name, layout='single')
+                    self.assertEqual(raised.exception.stage, 'facts_validate')
+                    self.assertFalse(grants.pending)
+                    self.assertFalse(any(event[0] == 'POST' for event in state['events']))
+
+    def test_composition_metadata_grant_requires_matching_receipt_and_revokes_on_mismatch(self):
+        issuer, consumer, _, state = self.metadata_clients(
+            14, 'north.tif', 'nfs', 'media', 'tiff', boundary_kind='file_composition')
+        original = issuer.request.side_effect
+
+        def changed_receipt(method, path, expected, body=None):
+            result = original(method, path, expected, body)
+            if path.endswith('/access_grants'):
+                result.payload['file_composition'] = {'format': 'tiff', 'refs': []}
+            return result
+
+        issuer.request.side_effect = changed_receipt
+        grants = REGISTRATION.ExactFileMetadataGrants(issuer, consumer, 2)
+        with self.assertRaises(REGISTRATION.MetadataGrantError) as raised:
+            grants.grant(14, 'north.tif', 'nfs', data_type='media', format_name='tiff', layout='single')
+        self.assertEqual(raised.exception.stage, 'receipt_validate')
+        self.assertEqual(grants.cleanup(), {'grants_revoked': True, 'metadata_hidden': True})
+        self.assertFalse(state['visible'])
 
     def test_metadata_grant_exact_facts_hidden_visible_then_revoked(self):
         issuer,consumer,_,state=self.metadata_clients()

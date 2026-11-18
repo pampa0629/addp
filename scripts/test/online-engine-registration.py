@@ -72,7 +72,7 @@ def metadata_facts_evidence(facts, expected):
     boundary=facts.get('boundary')
     if not isinstance(boundary,dict):
         result['boundary']=digest(boundary);return result
-    clean={'unrecognized_field_count':len(set(boundary)-{'layout','metadata_target'})}
+    clean={'unrecognized_field_count':len(set(boundary)-{'layout','metadata_target','native_target','file_composition'})}
     if 'layout' in boundary:clean['layout']=known(boundary['layout'],{'single','multi','whole'})
     metadata=boundary.get('metadata_target')
     if isinstance(metadata,dict):
@@ -86,6 +86,9 @@ def metadata_facts_evidence(facts, expected):
         if 'composition_digest' in metadata:view['composition_digest']=hex_value(metadata['composition_digest'])
         clean['metadata_target']=view
     else:clean['metadata_target']=digest(metadata)
+    for field in ('native_target', 'file_composition'):
+        if field in boundary:
+            clean[field] = digest(boundary[field])
     result['boundary']=clean
     return result
 
@@ -198,7 +201,7 @@ class _ExactGrantLifecycle:
 
 
 class ExactFileMetadataGrants(_ExactGrantLifecycle):
-    """Existing metadata-only file contract; never a content completeness proof."""
+    """Issue metadata_read against the exact boundary projected by Meta."""
     @staticmethod
     def target(engine, full_name, storage, *, layout='single'):
         parts = full_name.split('/') if isinstance(full_name, str) else []
@@ -251,14 +254,51 @@ class ExactFileMetadataGrants(_ExactGrantLifecycle):
         if not isinstance(boundary,dict):fail('boundary_shape_invalid')
         layout=boundary.get('layout')
         if not isinstance(layout,str) or layout not in layouts:fail('layout_not_allowed')
-        metadata=boundary.get('metadata_target')
-        if not isinstance(metadata,dict):fail('metadata_target_missing')
-        if metadata.get('layout')!=layout:fail('boundary_layout_mismatch')
-        if metadata.get('target')!=self.target(engine,full_name,storage,layout=layout):fail('target_mismatch')
-        if metadata.get('data_type')!=data_type or metadata.get('format')!=format_name:fail('item_type_mismatch')
-        if not re.fullmatch('[0-9a-f]{64}',str(metadata.get('composition_digest',''))):fail('composition_digest_invalid')
-        if boundary!={'layout':layout,'metadata_target':dict(target=metadata['target'],layout=layout,
-            data_type=data_type,format=format_name,composition_digest=metadata['composition_digest'])}:fail('boundary_fields_mismatch')
+        fields = set(boundary) - {'layout'}
+        if len(fields) != 1 or not fields <= {'metadata_target', 'file_composition', 'native_target'}:
+            fail('boundary_fields_mismatch')
+        field, = fields
+        value = boundary[field]
+        if not isinstance(value, dict):
+            fail('boundary_value_invalid')
+        target = self.target(engine, full_name, storage, layout=layout)
+        if field == 'metadata_target':
+            if value.get('layout') != layout:
+                fail('boundary_layout_mismatch')
+            if value.get('target') != target:
+                fail('target_mismatch')
+            if value.get('data_type') != data_type or value.get('format') != format_name:
+                fail('item_type_mismatch')
+            if not re.fullmatch('[0-9a-f]{64}', str(value.get('composition_digest', ''))):
+                fail('composition_digest_invalid')
+            if set(value) != {'target', 'layout', 'data_type', 'format', 'composition_digest'}:
+                fail('boundary_fields_mismatch')
+        elif field == 'file_composition':
+            # Meta admits a composition only for the data type of its declared format.
+            if value.get('format') != format_name:
+                fail('item_type_mismatch')
+            if layout not in {'single', 'multi'}:
+                fail('boundary_layout_mismatch')
+            composition_fields = {'format', 'refs'}
+            if format_name == 'tiff':
+                composition_fields.add('source_layout')
+                if value.get('source_layout') != layout:
+                    fail('boundary_layout_mismatch')
+            if set(value) != composition_fields:
+                fail('boundary_fields_mismatch')
+            refs = value.get('refs')
+            if not isinstance(refs, list) or not all(isinstance(ref, dict) for ref in refs):
+                fail('composition_refs_invalid')
+            primary = [ref for ref in refs if ref.get('primary') is True]
+            if len(primary) != 1 or primary[0].get('required') is not True or primary[0].get('target') != target:
+                fail('target_mismatch')
+        else:
+            # The native object boundary binds the path; format and data type
+            # are checked on the scenario's Meta item projection.
+            if storage != 'minio' or layout != 'single':
+                fail('boundary_layout_mismatch')
+            if value != target:
+                fail('target_mismatch')
         if not re.fullmatch('[0-9a-f]{64}',str(facts.get('boundary_hash',''))):fail('boundary_hash_invalid')
         observed=facts.get('observed_at')
         try:
@@ -277,7 +317,7 @@ class ExactFileMetadataGrants(_ExactGrantLifecycle):
         target = self.target(engine, full_name, storage, layout=layout)
         fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
         facts=self.metadata_facts(engine,full_name,storage,data_type=data_type,format_name=format_name,layouts=(layout,))
-        metadata=facts['boundary']['metadata_target']
+        boundary = facts['boundary']
         self.observe(target,False,phase='visibility_before_grant')
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target, item_fingerprint=fingerprint,
@@ -292,7 +332,8 @@ class ExactFileMetadataGrants(_ExactGrantLifecycle):
         receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
         self.phase='receipt_validate'
         expected = {k:body[k] for k in ('request_id','catalog_path','item_fingerprint','recipient_type','recipient_id','action','expiry_mode')}
-        expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'], metadata_target=metadata,
+        expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'],
+                        metadata_target=boundary.get('metadata_target'), file_composition=boundary.get('file_composition'),
                         approval_mode='independent', operator_principal_id=self.operator, revocation=None)
         if expires_at is None:
             expected['expires_at'] = None
@@ -303,7 +344,7 @@ class ExactFileMetadataGrants(_ExactGrantLifecycle):
             except (KeyError, TypeError, ValueError):
                 raise MetadataGrantError('receipt_validate','expiry_mismatch') from None
         if (not isinstance(receipt, dict) or any(receipt.get(k) != v for k,v in expected.items())
-            or receipt.get('file_composition') or receipt.get('native_target') or receipt.get('scope')
+            or receipt.get('native_target') is not None or receipt.get('scope') is not None
             or receipt.get('node_recursive') is not None):
             raise MetadataGrantError('receipt_validate','boundary_mismatch')
         pending['confirmed'] = True
