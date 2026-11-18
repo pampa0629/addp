@@ -2990,6 +2990,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative in (
             "scripts/test/online-hosted-orchestrator-gate.sh",
             "scripts/test/orchestrator-execution-online.py",
+            "scripts/test/orchestrator-scheduled-file-online.py",
+            "scripts/test/orchestrator-scheduled-file-online_test.py",
             "scripts/test/orchestrator-execution-online_test.py",
             "scripts/test/orchestrator-execution-faults.py",
             "scripts/test/orchestrator-execution-faults_test.py",
@@ -3014,11 +3016,20 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         self.prepare_orchestrator_profile()
         makefile = self.repository / "Makefile"
         text = makefile.read_text()
-        for missing in ("test-orchestrator-online-runner", "scripts/test/orchestrator-execution-faults_test.py"):
+        for missing in ("test-orchestrator-online-runner", "scripts/test/orchestrator-execution-faults_test.py",
+                        "scripts/test/orchestrator-scheduled-file-online_test.py"):
             with self.subTest(missing=missing):
                 makefile.write_text(text.replace(missing, ""))
                 with self.assertRaises(CHECK.RegistrationError):
                     CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
+
+    def test_orchestrator_scheduled_source_requires_main_ancestry(self):
+        self.prepare_orchestrator_profile()
+        original = self.workflow.read_text()
+        self.workflow.write_text(original.replace(
+            'git merge-base --is-ancestor "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT" "$DISPATCH_SHA"', 'true'))
+        with self.assertRaisesRegex(CHECK.RegistrationError, "scheduled file Orchestrator source freeze"):
+            CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
 
     def test_orchestrator_cannot_start_nightly_or_also_target_personal_runner(self):
         self.prepare_orchestrator_profile()

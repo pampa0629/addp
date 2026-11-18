@@ -1395,7 +1395,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Develop Backend（带检查）
   if [ "$START_DEVELOP_BACKEND" = true ]; then
     if check_service_running "develop" "$DEVELOP_BACKEND_PORT"; then
-      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" develop develop backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-develop" &
+      develop_system_url="$SYSTEM_URL"
+      if [ -n "${ADDP_ONLINE_DEVELOP_SYSTEM_OBSERVER:-}" ]; then
+        if [ "${ADDP_ONLINE_HOSTED:-0}" != 1 ] || [ "${ADDP_ONLINE_ORCHESTRATOR_CASE:-}" != scheduled-controlled-file ] ||
+          [[ ! "$ADDP_ONLINE_DEVELOP_SYSTEM_OBSERVER" =~ ^http://127\.0\.0\.1:[1-9][0-9]{0,4}$ ]]; then
+          echo 'Invalid Hosted Develop System observer' >&2
+          exit 1
+        fi
+        develop_system_url="$ADDP_ONLINE_DEVELOP_SYSTEM_OBSERVER"
+      fi
+      SYSTEM_URL="$develop_system_url" python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" develop develop backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-develop" &
       DEVELOP_PID=$!
       echo $DEVELOP_PID > .dev-pids/develop.pid
       BACKEND_STARTS+=("develop:$DEVELOP_PID")

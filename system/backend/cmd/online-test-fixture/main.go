@@ -119,6 +119,9 @@ var sourceInitializerPermissions = []string{
 }
 
 func suiteSourceInitializerPermissions(suite string) []string {
+	if scheduledFileSelected(suite) {
+		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	}
 	switch suite {
 	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
@@ -276,6 +279,19 @@ var orchestratorPermissions = []string{
 	"orchestrator.workflow.read", "orchestrator.workflow.create", "orchestrator.workflow.delete", "orchestrator.workflow.execute",
 	"meta.scan_task.read", "meta.scan_task.create", "meta.scan_task.delete", "meta.scan_task.execute",
 	"monitor.execution.read", "system.execution_authorization.create",
+}
+
+var orchestratorScheduledFilePermissions = []string{
+	"orchestrator.workflow.create", "orchestrator.workflow.read", "orchestrator.workflow.update",
+	"orchestrator.workflow.delete", "orchestrator.workflow.execute", "system.execution_authorization.create",
+	"develop.task.create", "develop.task.read", "develop.task.delete", "develop.task.execute", "develop.data_read.execute",
+}
+
+const scheduledFileCase = "scheduled-controlled-file"
+const orchestratorCaseEnv = "ADDP_ONLINE_ORCHESTRATOR_CASE"
+
+func scheduledFileSelected(suite string) bool {
+	return suite == "orchestrator-execution" && os.Getenv(orchestratorCaseEnv) == scheduledFileCase
 }
 
 var orchestratorPeerPermissions = []string{"monitor.execution.read", "meta.scan_task.read"}
@@ -444,7 +460,14 @@ func suitePermissions(suite string) ([]string, error) {
 	case "ontology-agent-protection":
 		return ontologyAgentPreparationPermissions, nil
 	case "orchestrator-execution":
-		return orchestratorPermissions, nil
+		switch os.Getenv(orchestratorCaseEnv) {
+		case "", "execution":
+			return orchestratorPermissions, nil
+		case scheduledFileCase:
+			return orchestratorScheduledFilePermissions, nil
+		default:
+			return nil, errors.New("unknown Orchestrator Online case")
+		}
 	case "manager-internal-artifact-lineage":
 		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
 		case "nfs-upload-initial":
@@ -769,6 +792,10 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID"] = fmt.Sprint(eligibilityID)
 		values["ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"] = controller.AccessToken
 	}
+	if scheduledFileSelected(*suite) {
+		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
+		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
+	}
 	if *suite == "pg-source-authorization" {
 		for key, value := range pgRecipients {
 			values[key] = value
@@ -972,7 +999,7 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_RETENTION_FOREIGN_TENANT_ID"] = fmt.Sprintf("%d", foreignTenant.ID)
 	}
-	if *suite == "orchestrator-execution" || *suite == "transfer-continuous-events" {
+	if (*suite == "orchestrator-execution" && !scheduledFileSelected(*suite)) || *suite == "transfer-continuous-events" {
 		ownerPermission := "orchestrator.workflow.read"
 		readerName := "external-online-parent-reader"
 		peerName := "external-online-meta-peer"
@@ -1299,6 +1326,9 @@ func validateExternalEnvironment(environment []string, output, suite string) err
 		}
 	} else if values["GITHUB_ACTIONS"] != "true" || values["RUNNER_OS"] != "Linux" || profileCount != 1 {
 		return errors.New("fixture requires exactly one GitHub Hosted or owner-managed Linux Online profile")
+	}
+	if suite == "orchestrator-execution" && values[orchestratorCaseEnv] == scheduledFileCase && values["ADDP_ONLINE_HOSTED"] != "1" {
+		return errors.New("scheduled file fixture requires disposable GitHub Hosted Linux")
 	}
 	if suite == "compose-public-origin" && values["ADDP_ONLINE_HOSTED"] != "1" {
 		return errors.New("compose-public-origin fixture requires disposable GitHub Hosted Linux")

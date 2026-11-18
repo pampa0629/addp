@@ -154,6 +154,19 @@ on:
           - transfer-relational-sql-etl
           - transfer-continuous-events
           - workbench-service-consumption
+      orchestrator_case:
+        description: Orchestrator execution case (orchestrator-execution only)
+        required: false
+        type: choice
+        default: execution
+        options:
+          - execution
+          - scheduled-controlled-file
+      orchestrator_source_commit:
+        description: Full main-ancestor SHA, required for scheduled-controlled-file
+        required: false
+        type: string
+        default: ''
       public_origin_published_workbench:
         description: Verify a published Workbench application with real data (compose-public-origin only)
         required: false
@@ -2148,12 +2161,33 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: orchestrator-execution
+      ADDP_ONLINE_ORCHESTRATOR_CASE: ${{ inputs.orchestrator_case }}
+      ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT: ${{ inputs.orchestrator_source_commit }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Freeze Orchestrator source
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          case "${ADDP_ONLINE_ORCHESTRATOR_CASE:-execution}" in
+            execution)
+              [ -z "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT" ] || exit 1 ;;
+            scheduled-controlled-file)
+              [[ "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+              [ "$DISPATCH_REF" = refs/heads/main ]
+              git merge-base --is-ancestor "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT" "$DISPATCH_SHA"
+              git cat-file -e "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT:scripts/test/orchestrator-scheduled-file-online.py"
+              git checkout --detach "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT"
+              [ "$(git rev-parse HEAD)" = "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT" ] ;;
+            *) exit 1 ;;
+          esac
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7

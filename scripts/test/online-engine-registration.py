@@ -314,7 +314,7 @@ class ExactFileMetadataGrants(_ExactGrantLifecycle):
 
 
 class ExactFileReadGrants(_ExactGrantLifecycle):
-    """Complete single-file GPKG Grants, independent of deep inspection."""
+    """Complete single-file GeoPackage or GeoJSON Grants, independent of deep inspection."""
     target = staticmethod(ExactFileMetadataGrants.target)
 
     def observe(self, target, allowed, *, phase='read_check'):
@@ -324,14 +324,18 @@ class ExactFileReadGrants(_ExactGrantLifecycle):
         if allowed and (not isinstance(response.payload, dict) or not response.payload.get('observed_at')):
             raise MetadataGrantError(phase, 'read_observation_invalid')
 
-    def grant(self, engine, full_name):
-        target = self.target(engine, full_name, 'nfs')
+    def grant(self, engine, full_name, *, storage='nfs'):
+        formats = {'nfs': ('geopackage', 'file', 'container'), 'minio': ('geojson', 'object', 'data')}
+        if storage not in formats:
+            raise MetadataGrantError('file_facts', 'unsupported_storage')
+        format_name, item_type, role = formats[storage]
+        target = self.target(engine, full_name, storage)
         fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
         self.phase = 'file_facts'
         facts = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts', (200,)).payload
-        composition = dict(format='geopackage', refs=[dict(target=target, role='container', required=True, primary=True)])
+        composition = dict(format=format_name, refs=[dict(target=target, role=role, required=True, primary=True)])
         expected = dict(schema_version='meta.data_item_authorization_facts/v1', engine_id=str(engine),
-                        item_fingerprint=fingerprint, item_type='file', full_name=full_name, basis_state='complete',
+                        item_fingerprint=fingerprint, item_type=item_type, full_name=full_name, basis_state='complete',
                         boundary=dict(layout='single', file_composition=composition))
         if (not isinstance(facts, dict) or any(facts.get(k) != v for k, v in expected.items())
             or not re.fullmatch('[0-9a-f]{64}', str(facts.get('boundary_hash', ''))) or not facts.get('observed_at')):
@@ -340,7 +344,7 @@ class ExactFileReadGrants(_ExactGrantLifecycle):
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target, item_fingerprint=fingerprint,
                     expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
-                    action='read', expiry_mode='until_revoked', reason='Disposable Online exact GeoPackage source read')
+                    action='read', expiry_mode='until_revoked', reason='Disposable Online exact GeoPackage source read' if storage == 'nfs' else 'Disposable Online exact GeoJSON source read')
         pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
         self.pending.append(pending)
         self.checkpoint()

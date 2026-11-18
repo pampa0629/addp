@@ -675,7 +675,7 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 
 .PHONY: test-orchestrator-online-runner
 test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限和隔离生命周期
-	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
+	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py scripts/test/orchestrator-scheduled-file-online_test.py
 
 .PHONY: test-vector-pmtiles-online-runner
 .PHONY: test-vector-pmtiles-online-syntax

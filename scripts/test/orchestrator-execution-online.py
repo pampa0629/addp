@@ -750,6 +750,10 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
 
 
 def main():
+    case = os.environ.get("ADDP_ONLINE_ORCHESTRATOR_CASE", "")
+    if case == "scheduled-controlled-file":
+        return import_module("scripts.test.orchestrator-scheduled-file-online").run()
+    require(case in {"", "execution"}, "unknown Orchestrator Online case")
     report, evidence = {}, None
 
     def checkpoint():

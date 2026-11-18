@@ -2340,6 +2340,8 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
     gate = repository / "scripts/test/online-hosted-orchestrator-gate.sh"
     required_files = (
         "scripts/test/orchestrator-execution-online.py",
+        "scripts/test/orchestrator-scheduled-file-online.py",
+        "scripts/test/orchestrator-scheduled-file-online_test.py",
         "scripts/test/orchestrator-execution-online_test.py",
         "scripts/test/orchestrator-execution-faults.py",
         "scripts/test/orchestrator-execution-faults_test.py",
@@ -2354,7 +2356,8 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
     if owned is None or aggregate is None or not source_contract_contains(makefile, "$(MAKE) test-orchestrator-online-runner", repository):
         raise RegistrationError("orchestrator-execution requires its owner T1 entry in test-online-runner")
-    for test in ("orchestrator-execution-online_test.py", "orchestrator-execution-faults_test.py", "online-hosted-orchestrator-gate_test.py"):
+    for test in ("orchestrator-execution-online_test.py", "orchestrator-execution-faults_test.py",
+                 "online-hosted-orchestrator-gate_test.py", "orchestrator-scheduled-file-online_test.py"):
         if test not in make_target_commands(makefile, "test-orchestrator-online-runner"):
             raise RegistrationError(f"orchestrator-execution owner T1 entry is missing {test}")
     text = gate.read_text(encoding="utf-8")
@@ -2369,6 +2372,10 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
         'HTTP_PROXY="$ADDP_ONLINE_ORCHESTRATOR_PROXY_URL"',
         "SERVICE_HOST=addp-orchestrator-meta.test",
         "python3 scripts/test/online-engine-registration.py",
+        "scripts.test.orchestrator-scheduled-file-online observe-issuance",
+        "scripts.test.orchestrator-scheduled-file-online verify-build",
+        "scripts.test.orchestrator-scheduled-file-online stop",
+        "start_online_geopython_runtime",
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
         if not source_contract_contains(text, fragment, repository):
@@ -2379,6 +2386,15 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
         raise RegistrationError("orchestrator-execution must remain a manual Hosted T4 job before its first real pass")
     if "&& inputs.suite != 'orchestrator-execution'" not in workflow:
         raise RegistrationError("orchestrator-execution must not also dispatch on the self-hosted deployment")
+    for fragment in (
+        "ADDP_ONLINE_ORCHESTRATOR_CASE: ${{ inputs.orchestrator_case }}",
+        "ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT: ${{ inputs.orchestrator_source_commit }}",
+        '"$DISPATCH_REF" = refs/heads/main',
+        'git merge-base --is-ancestor "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT" "$DISPATCH_SHA"',
+        'git checkout --detach "$ADDP_ONLINE_ORCHESTRATOR_SOURCE_COMMIT"',
+    ):
+        if fragment not in job.group("body"):
+            raise RegistrationError(f"scheduled file Orchestrator source freeze is missing {fragment}")
 
 
 def validate_quality_dynamic_binding_profile(repository: Path, registered: set[str]) -> None:

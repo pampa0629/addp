@@ -795,6 +795,37 @@ func TestOrchestratorFixtureHasOnlyRequiredOwnerPermissions(t *testing.T) {
 	}
 }
 
+func TestOrchestratorScheduledFileFixtureSeparatesConsumerFromPreparation(t *testing.T) {
+	t.Setenv(orchestratorCaseEnv, scheduledFileCase)
+	suite := "orchestrator-execution"
+	wanted := []string{
+		"develop.data_read.execute", "develop.task.create", "develop.task.delete", "develop.task.execute", "develop.task.read",
+		"orchestrator.workflow.create", "orchestrator.workflow.delete", "orchestrator.workflow.execute",
+		"orchestrator.workflow.read", "orchestrator.workflow.update", "system.execution_authorization.create",
+	}
+	actual, err := suitePermissions(suite)
+	if err != nil || !slices.Equal(slices.Sorted(slices.Values(actual)), wanted) {
+		t.Fatalf("scheduled permissions = %v, %v", actual, err)
+	}
+	preparation := suiteSourceInitializerPermissions(suite)
+	if !slices.Equal(preparation, append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")) ||
+		!needsEngineProvisioner(suite) {
+		t.Fatalf("scheduled source and engine preparation = %v", preparation)
+	}
+	profile := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", orchestratorCaseEnv + "=" + scheduledFileCase}
+	output := filepath.Join(t.TempDir(), "fixture.env")
+	if err := validateExternalEnvironment(append(slices.Clone(profile), "ADDP_ONLINE_OWNER_MANAGED=1"), output, suite); err == nil {
+		t.Fatal("scheduled credential preparation accepted the owner-managed profile")
+	}
+	if err := validateExternalEnvironment(append(slices.Clone(profile), "ADDP_ONLINE_HOSTED=1"), output, suite); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(orchestratorCaseEnv, "undefined")
+	if _, err := suitePermissions(suite); err == nil {
+		t.Fatal("undefined Orchestrator case accepted")
+	}
+}
+
 func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *testing.T) {
 	permissions, err := suitePermissions("manager-internal-artifact-lineage")
 	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("manager-internal-artifact-lineage") {
