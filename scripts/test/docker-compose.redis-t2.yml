@@ -40,6 +40,20 @@ services:
       retries: 30
     mem_limit: 256m
     restart: "no"
+  redis-core-source:
+    profiles: [redis-core-source]
+    image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+    environment:
+      POSTGRES_DB: redis_core_fixture
+      POSTGRES_PASSWORD: ${BUSINESS_REDIS_ADMIN_PASSWORD:?T2 deployment password required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    configs:
+      - source: redis_core_init_barrier
+        target: /docker-entrypoint-initdb.d/99-cold-start.sh
+    volumes:
+      - redis_core_source_data:/var/lib/postgresql/data
+    network_mode: none
+    restart: "no"
   promtool:
     profiles: [redis-observation]
     image: quay.io/prometheus/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e
@@ -56,6 +70,13 @@ services:
     pids_limit: 64
     restart: "no"
 
+configs:
+  redis_core_init_barrier:
+    content: |
+      #!/bin/sh
+      timeout 90 sh -c 'until test -f /tmp/release-init; do sleep 0.1; done'
+
 volumes:
+  redis_core_source_data:
   redis_data:
   redis_infra_data:

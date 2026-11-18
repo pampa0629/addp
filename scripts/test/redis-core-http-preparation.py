@@ -27,6 +27,7 @@ registration = import_module("scripts.test.online-engine-registration")
 pg_auth = import_module("scripts.test.pg-source-authorization-online")
 
 SOURCE = "addp-redis-core-source"
+SOURCE_DB = "redis_core_fixture"
 TABLE = "redis_core_probe"
 
 
@@ -49,11 +50,51 @@ def command(args, **kwargs):
     return result.stdout
 
 
+def initialize_source(container, password, artifact_dir):
+    args = ["docker", "exec", "-i", "-e", "PGPASSWORD", container,
+            "psql", "-XqwAt", "-h", "127.0.0.1", "-U", "postgres", "-d", SOURCE_DB,
+            "-v", "ON_ERROR_STOP=1"]
+    environment = dict(os.environ, PGPASSWORD=password)
+
+    def fail(stage, exit_code, stderr, reason):
+        # The source has one generated credential. Never archive argv, env or SQL input.
+        detail = (stderr or b"").decode(errors="replace").replace(password, "[redacted]")
+        detail = " ".join(detail.split())[:512]
+        record = {"stage": stage, "reason": reason, "exit_code": exit_code, "stderr": detail}
+        (artifact_dir / "redis-core-source-error.json").write_text(json.dumps(record) + "\n")
+        raise s.EvidenceError(json.dumps(record)) from None
+
+    def execute(stage, options, timeout, sql=None):
+        try:
+            return subprocess.run([*args, *options], env=environment, input=sql,
+                                  capture_output=True, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            fail(stage, None, error.stderr, "command_timeout")
+
+    deadline = time.monotonic() + 60
+    while True:
+        probe = execute("source_readiness", ["-c", "SELECT current_database()"], 5)
+        if probe.returncode == 0:
+            if probe.stdout.strip() != SOURCE_DB.encode():
+                fail("source_readiness", 0, probe.stderr, "unexpected_database")
+            break
+        if time.monotonic() >= deadline:
+            fail("source_readiness", probe.returncode, probe.stderr, "readiness_timeout")
+        time.sleep(.2)
+
+    # The application-visible TCP server has opened the target DB. Seed it once atomically.
+    sql = (f"CREATE TABLE public.{TABLE}(id integer PRIMARY KEY,label text NOT NULL);\n"
+           f"INSERT INTO public.{TABLE} VALUES(1,'redis-r1-byte-baseline');\n")
+    seeded = execute("source_seed", ["--single-transaction", "-f", "-"], 10, sql.encode())
+    if seeded.returncode:
+        fail("source_seed", seeded.returncode, seeded.stderr, "command_failed")
+
+
 def database(statement, source=False):
     # Caller only supplies fixed SQL and validated numeric fixture identities.
     args = ["docker", "exec", "-i", "-e", "PGOPTIONS=-c default_transaction_read_only=on", SOURCE if source else "addp-postgres",
             "psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres" if source else os.environ["POSTGRES_USER"],
-            "-d", "redis_core_fixture" if source else "addp_online"]
+            "-d", SOURCE_DB if source else "addp_online"]
     raw = command(args, input=statement.encode(), timeout=3)
     return json.loads(raw) if raw.strip() else None
 
@@ -185,20 +226,14 @@ def start():
              "--label", "com.addp.online-run-id="+os.environ["ADDP_ONLINE_TEST_RUN_ID"],
              "--label", "com.docker.compose.project=addp-redis-core-fixture",
              "--label", "com.docker.compose.service=source-postgres",
-             "-e", "POSTGRES_USER=postgres", "-e", "POSTGRES_DB=redis_core_fixture", "-e", "POSTGRES_PASSWORD",
+             "-e", "POSTGRES_USER=postgres", "-e", f"POSTGRES_DB={SOURCE_DB}", "-e", "POSTGRES_PASSWORD",
+             "-e", "POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256",
              "-p", "127.0.0.1::5432", "addp-postgres-pgvector:latest"],
             env=dict(os.environ, POSTGRES_PASSWORD=descriptor_password), timeout=60)
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        probe = subprocess.run(["docker", "exec", SOURCE, "pg_isready", "-U", "postgres", "-d", "redis_core_fixture"], capture_output=True)
-        if probe.returncode == 0: break
-        time.sleep(.2)
-    else: raise s.EvidenceError("business source did not start")
-    command(["docker", "exec", "-i", SOURCE, "psql", "-Xq", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "redis_core_fixture"],
-            input=f"CREATE TABLE public.{TABLE}(id integer PRIMARY KEY,label text NOT NULL); INSERT INTO public.{TABLE} VALUES(1,'redis-r1-byte-baseline');".encode(), timeout=10)
+    initialize_source(SOURCE, descriptor_password, Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]))
     mapping = command(["docker", "port", SOURCE, "5432/tcp"], timeout=5).decode().strip()
     descriptor = {"name": "Redis R1 source", "engine_type": "postgresql", "connection_info": {
-        "host": "127.0.0.1", "port": int(mapping.rsplit(":", 1)[1]), "user": "postgres", "password": descriptor_password, "database": "redis_core_fixture", "sslmode": "disable"}}
+        "host": "127.0.0.1", "port": int(mapping.rsplit(":", 1)[1]), "user": "postgres", "password": descriptor_password, "database": SOURCE_DB, "sslmode": "disable"}}
     (secret / "source.json").write_text(json.dumps(descriptor))
     fixture("", secret / "identity.json")
 

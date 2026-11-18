@@ -242,6 +242,79 @@ class RedisCleanupTest(unittest.TestCase):
         self.assertEqual(self.execute_cleanup(True),[])
 
 
+class RedisSourceDatabaseTest(unittest.TestCase):
+    def test_probe_retries_only_reads_and_seed_failure_is_archived_once(self):
+        preparation = import_module("scripts.test.redis-core-http-preparation")
+        password = secrets.token_hex(24)
+        results = [subprocess.CompletedProcess([], 2, b"", b"connection refused"),
+                   subprocess.CompletedProcess([], 0, b"redis_core_fixture\n", b""),
+                   subprocess.CompletedProcess([], 3, b"", f"ERROR: duplicate relation {password}".encode())]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(preparation.subprocess, "run", side_effect=results) as run, \
+                patch.object(preparation.time, "sleep"):
+            with self.assertRaises(scenario.EvidenceError) as failure:
+                preparation.initialize_source("owned", password, Path(tmp))
+            record = json.loads((Path(tmp) / "redis-core-source-error.json").read_text())
+        self.assertEqual(json.loads(str(failure.exception)), record)
+        self.assertEqual(record, {"stage": "source_seed", "reason": "command_failed", "exit_code": 3,
+                                  "stderr": "ERROR: duplicate relation [redacted]"})
+        self.assertEqual(run.call_count, 3)
+        for call in run.call_args_list:
+            args = call.args[0]
+            self.assertNotIn(password, " ".join(args))
+            self.assertEqual(args[args.index("-h") + 1], "127.0.0.1")
+            self.assertEqual(call.kwargs["env"]["PGPASSWORD"], password)
+        self.assertEqual([c.kwargs["input"] is not None for c in run.call_args_list], [False, False, True])
+
+    def test_readiness_failures_cannot_seed(self):
+        preparation = import_module("scripts.test.redis-core-http-preparation")
+        for result, reason, code in (
+            (subprocess.CompletedProcess([], 0, b"postgres\n", b""), "unexpected_database", 0),
+            (subprocess.CompletedProcess([], 2, b"", b"refused"), "readiness_timeout", 2),
+            (subprocess.TimeoutExpired(["psql"], 5), "command_timeout", None),
+        ):
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as tmp, \
+                    patch.object(preparation.time, "monotonic", side_effect=(0, 61)), \
+                    patch.object(preparation.subprocess, "run", side_effect=[result]) as run:
+                with self.assertRaises(scenario.EvidenceError):
+                    preparation.initialize_source("owned", "fixture-secret", Path(tmp))
+                record = json.loads((Path(tmp) / "redis-core-source-error.json").read_text())
+                self.assertEqual((record["stage"], record["reason"], record["exit_code"]),
+                                 ("source_readiness", reason, code))
+                self.assertIsNone(run.call_args.kwargs["input"])
+                run.assert_called_once()
+
+
+def verify_source_cold_start():
+    """The Compose entrypoint barrier holds the temporary socket-only PG server."""
+    preparation = import_module("scripts.test.redis-core-http-preparation")
+    container = os.environ["ADDP_REDIS_CORE_SOURCE_ID"]
+    password = os.environ["BUSINESS_REDIS_ADMIN_PASSWORD"]
+    docker = ["docker", "exec", container]
+    tcp = ["docker", "exec", "-e", "PGPASSWORD", container, "psql", "-XqwAt", "-h", "127.0.0.1",
+           "-U", "postgres", "-d", preparation.SOURCE_DB, "-c"]
+    deadline = time.monotonic() + 60
+    while subprocess.run([*docker, "pg_isready", "-U", "postgres", "-d", preparation.SOURCE_DB],
+                         capture_output=True, timeout=5).returncode:
+        scenario.require(time.monotonic() < deadline, "temporary PG socket readiness timed out")
+        time.sleep(.2)
+    env = dict(os.environ, PGPASSWORD=password)
+    temporary = subprocess.run([*tcp, "SELECT current_database()"], env=env, capture_output=True, timeout=5)
+    scenario.require(temporary.returncode == 2 and b"Connection refused" in temporary.stderr,
+                     "temporary PG must accept the socket while refusing TCP")
+    subprocess.run([*docker, "touch", "/tmp/release-init"], check=True, timeout=5)
+    with tempfile.TemporaryDirectory() as tmp:
+        preparation.initialize_source(container, password, Path(tmp))
+    rejected = subprocess.run([*tcp, "SELECT current_database()"], env=dict(env, PGPASSWORD="incorrect"),
+                              capture_output=True, timeout=5)
+    scenario.require(rejected.returncode == 2 and b"password authentication failed" in rejected.stderr,
+                     "final source TCP connection must require the PG credential")
+    rows = subprocess.run([*tcp, f"SELECT id,label FROM public.{preparation.TABLE} ORDER BY id"], env=env,
+                          capture_output=True, check=True, timeout=5)
+    scenario.require(rows.stdout.splitlines() == [b"1|redis-r1-byte-baseline"], "source seed rows differ")
+    print("Redis R1 source PG cold start: socket=0, temporary TCP=2 (refused), "
+          "authenticated database=redis_core_fixture, wrong password=2, seed rows=1")
+
+
 class RedisSourcePreparationTest(unittest.TestCase):
     def prepare(self, fault=None):
         """Exercise the real preparer up to Consumer creation, with owner APIs simulated."""
@@ -489,7 +562,9 @@ class RedisPinnedFixtureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     import sys
-    if sys.argv[1:] == ["--real-wiring"]:
+    if sys.argv[1:] == ["--real-source-pg"]:
+        verify_source_cold_start()
+    elif sys.argv[1:] == ["--real-wiring"]:
         RedisPinnedFixtureTest().execute(True)
     else:
         unittest.main()
