@@ -29,6 +29,7 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
         self.host._executable('make','''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            printf '%s' "${ADDP_ONLINE_TEST_RUN_ID:-}" > "$ADDP_ONLINE_ARTIFACT_DIR/browser-run-id"
             [ "$ADDP_ONLINE_CONSUMER_ENGINE_ID" = 17 ] &&
               [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
               [ "$DEVELOP_URL" = http://127.0.0.1:8185 ] &&
@@ -45,6 +46,9 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
             if operation=='verify-revoked':
                 assert not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
                 assert not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN')
+                browser_run_id = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'], 'browser-run-id').read_text()
+                expected_run_id = f"gaussdb-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+                assert os.environ['ADDP_ONLINE_TEST_RUN_ID'] == browser_run_id == expected_run_id
             else:
                 assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN']=='source-token'
             if operation=='prepare': Path(os.environ['ADDP_ONLINE_SECRET_DIR'],'readonly-sql-grants.json').write_text('[]')
@@ -56,6 +60,7 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
     def run_gate(self,check=False,**overrides):
         environment={**os.environ,'PATH':f'{self.host.bin}:{os.environ["PATH"]}',
             'PYTHONDONTWRITEBYTECODE':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','RUNNER_TEMP':str(self.host.root),
+            'GITHUB_RUN_ID':'44260927767','GITHUB_RUN_ATTEMPT':'1',
             'ADDP_ONLINE_HOST':'1','ADDP_ONLINE_HOSTED':'1','ONLINE_SUITE_INPUT':'gaussdb-consumer-flow',
             'ADDP_ONLINE_ARTIFACT_DIR':str(self.host.artifacts),'ADDP_ONLINE_SECRET_DIR':str(self.host.secrets),
             'ADDP_TEST_GATE_TRACE':str(self.host.trace),'ADDP_TEST_BACKGROUND_PIDS':str(self.host.background_pids),**overrides}

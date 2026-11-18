@@ -20,6 +20,8 @@ stop_online_fixture() {
   run_logged python3 business/scripts/online-gaussdb-consumer-fixture.py stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+# Both the browser run and the post-revocation check inherit the same run ID.
+export ADDP_ONLINE_TEST_RUN_ID="gaussdb-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export ADDP_GAUSSDB_FIXTURE_DIR="$ADDP_ONLINE_SECRET_DIR"
 export CONSOLE_URL=http://127.0.0.1:5170
 export DEVELOP_URL=http://127.0.0.1:8185
