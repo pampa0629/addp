@@ -34,14 +34,16 @@ mongodb_container=addp-transfer-mongodb-online-disposable
 doris_container=addp-transfer-doris-online-disposable
 clickhouse_container=addp-transfer-clickhouse-online-disposable
 minio_container=addp-transfer-upload-online-disposable
+rustfs_container=addp-transfer-rustfs-online-disposable
 database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
-  start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|verify|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|verify|stop|status" ;;
+  start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|rustfs-orders|verify|stop|status) ;;
+  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|rustfs-orders|verify|stop|status" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
+containers=("$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container" "$rustfs_container")
 
 assert_owned() {
   local owned_container=${1:-$container}
@@ -457,10 +459,68 @@ else:
 PY_OBJECT
 }
 
+start_rustfs() {
+  python3 - "$rustfs_container" "$owner" <<'PY_ORDERS'
+import hashlib, importlib, json, os, secrets, subprocess, sys, time
+from pathlib import Path
+from urllib.request import urlopen
+
+shared = importlib.import_module('business.scripts.online-raster-minio-fixture')
+name, owner = sys.argv[1:]
+root = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+fixture = Path('transfer/backend/internal/planner/testdata/rustfs-orders/orders.parquet').read_bytes()
+if hashlib.sha256(fixture).hexdigest() != 'ec30c26bc503278a4d5bdaee3f59450b2b4ee66bb198c5113fbf1f1db3c99890':
+    raise shared.FixtureError('RustFS orders fixture digest changed')
+
+with (root / 'transfer-rustfs-fixture.log').open('ab') as log:
+    def command(args, *, data=None, env=None):
+        result = subprocess.run(args, input=data, stdout=subprocess.PIPE, stderr=log, env=env, timeout=180)
+        if result.returncode:
+            raise shared.FixtureError('RustFS fixture command failed')
+        return result.stdout
+
+    compose = ['docker', 'compose', '--env-file', '/dev/null', '-f', 'business/docker-compose.yml', '--profile', 'rustfs']
+    image = json.loads(command([*compose, 'config', '--format', 'json']))['services']['rustfs']['image']
+    access_key, secret_key = 'transfer-orders', secrets.token_hex(32)
+    env = dict(os.environ, RUSTFS_ACCESS_KEY=access_key, RUSTFS_SECRET_KEY=secret_key)
+    command(['docker', 'run', '-d', '--name', name, '--label', 'com.addp.online-fixture=' + owner,
+             '--tmpfs', '/data:mode=1777', '-p', '127.0.0.1::9000', '-e', 'RUSTFS_ACCESS_KEY',
+             '-e', 'RUSTFS_SECRET_KEY', '-e', 'RUSTFS_VOLUMES=/data', '-e', 'RUSTFS_CONSOLE_ENABLE=false', image], env=env)
+    endpoint = command(['docker', 'port', name, '9000/tcp']).decode().strip()
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        try:
+            with urlopen('http://' + endpoint + '/health', timeout=2) as response:
+                if response.status == 200:
+                    break
+        except OSError:
+            pass
+        time.sleep(1)
+    else:
+        raise shared.FixtureError('RustFS orders fixture did not become ready')
+
+    def mc(*args, data=None):
+        return command(['docker', 'run', '--rm', '-i', '--network', 'container:' + name,
+                        '-e', 'MC_HOST_fixture', '--entrypoint', 'mc', shared.MINIO_IMAGE, *args],
+                       data=data, env=dict(os.environ, MC_HOST_fixture=f'http://{access_key}:{secret_key}@127.0.0.1:9000'))
+
+    mc('mb', 'fixture/addp-demo')
+    mc('pipe', 'fixture/addp-demo/tables/订单.parquet', data=fixture)
+    if mc('cat', 'fixture/addp-demo/tables/订单.parquet') != fixture:
+        raise shared.FixtureError('RustFS orders object differs from the admitted fixture')
+
+shared.private_json(root / 'transfer-rustfs-engine.json', {
+    'name': 'Hosted Transfer RustFS', 'engine_type': 'rustfs', 'engine_origin': 'general',
+    'description': 'Disposable RustFS orders import source',
+    'connection_info': {'endpoint': endpoint, 'access_key': access_key, 'secret_key': secret_key, 'use_ssl': False},
+})
+PY_ORDERS
+}
+
 case "$action" in
   start)
     command -v timeout >/dev/null 2>&1 || fail "GNU timeout is required for ClickHouse fixture startup"
-    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container"; do
+    for candidate in "${containers[@]}"; do
       ! docker container inspect "$candidate" >/dev/null 2>&1 || fail "refusing an existing source container"
     done
     [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
@@ -507,11 +567,29 @@ PY_DESCRIPTOR
     start_mongodb
     start_write_failure_targets
     object_storage_fixture start
+    start_rustfs
     echo "Online Transfer relational SQL ETL fixture is ready"
     ;;
   object-facts)
     assert_owned "$minio_container"
     object_storage_fixture facts
+    ;;
+  rustfs-orders)
+    assert_owned
+    if [ "$(postgres_sql -Atc "SELECT to_regclass('public.addp_online_rustfs_orders') IS NULL")" = t ]; then
+      echo '{"exists":false}'
+    else
+      postgres_sql -At <<'SQL'
+SELECT json_build_object(
+  'exists', true,
+  'columns', (SELECT json_agg(json_build_array(column_name, data_type, numeric_precision, numeric_scale)
+                             ORDER BY ordinal_position)
+              FROM information_schema.columns WHERE table_schema='public' AND table_name='addp_online_rustfs_orders'),
+  'rows', (SELECT json_agg(to_jsonb(t) || jsonb_build_object('amount', amount::text) ORDER BY order_id)
+           FROM public.addp_online_rustfs_orders t),
+  'amount_total', (SELECT sum(amount)::text FROM public.addp_online_rustfs_orders));
+SQL
+    fi
     ;;
   write-failures)
     verify_write_failures
@@ -550,11 +628,11 @@ SQL_EVOLVE
     ;;
   stop)
     # Check ownership before deleting either container; cleanup also covers partial startup.
-    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container"; do
+    for candidate in "${containers[@]}"; do
       if docker container inspect "$candidate" >/dev/null 2>&1; then assert_owned "$candidate"; fi
     done
     cleanup_failed=0
-    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container"; do
+    for candidate in "${containers[@]}"; do
       if docker container inspect "$candidate" >/dev/null 2>&1; then
         if ! docker rm -fv "$candidate" >/dev/null; then cleanup_failed=1; fi
       fi

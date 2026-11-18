@@ -201,6 +201,7 @@ business/nfs/data/
 data/document-work/
 .push-cache
 *.parquet
+!transfer/backend/internal/planner/testdata/rustfs-orders/orders.parquet
 *.csv
 *.cpg
 *.dbf

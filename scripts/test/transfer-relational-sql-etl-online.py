@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 import io
 import struct
 import zipfile
@@ -55,6 +56,14 @@ cleanup_tasks = SUPPORT.cleanup_tasks
 SOURCE_TABLE = "addp_online_transfer_sql_etl_source"
 TARGET_TABLE = "addp_online_transfer_sql_etl_target"
 IMPORT_TARGET = "addp_online_manager_import_points"
+RUSTFS_ORDERS_SOURCE = "addp-demo/tables/订单.parquet"
+RUSTFS_ORDERS_TARGET = "addp_online_rustfs_orders"
+RUSTFS_ORDER_FIELDS = (
+    ("order_id", "string", "TEXT"), ("customer_id", "int", "INTEGER"),
+    ("product_id", "int", "INTEGER"), ("quantity", "int", "INTEGER"),
+    ("amount", "decimal", "NUMERIC(12,2)"), ("order_date", "date", "DATE"),
+    ("paid", "bool", "BOOLEAN"), ("status", "string", "TEXT"), ("note", "string", "TEXT"),
+)
 NATIVE_TARGET = "addp_online_transfer_field_lineage_target"
 MULTI_TARGET = "addp_online_transfer_multi_query_target"
 NATIVE_DOWNSTREAM = "addp_online_transfer_field_lineage_downstream"
@@ -95,7 +104,7 @@ def task_name(run_id: str) -> str:
 
 
 def owned_task_names(name: str) -> set[str]:
-    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_binary"} | {name + "_" + engine + "_" + scenario for engine in WRITE_FAILURE_ENGINES for scenario in WRITE_FAILURE_CASES}
+    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_binary", name + "_rustfs_orders"} | {name + "_" + engine + "_" + scenario for engine in WRITE_FAILURE_ENGINES for scenario in WRITE_FAILURE_CASES}
 
 
 WRITE_FAILURE_CASES = ("late_execute_failure", "invalid_json")
@@ -895,8 +904,8 @@ def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider
     return proof
 
 
-def import_grant_history(authorizer, engine_id, identity, execution_id):
-    query = urllib.parse.urlencode({"table_search": IMPORT_TARGET, "recipient_type": "user",
+def import_grant_history(authorizer, engine_id, identity, execution_id, *, target=IMPORT_TARGET):
+    query = urllib.parse.urlencode({"table_search": target, "recipient_type": "user",
                                     "recipient_id": identity["principal_id"], "page_size": 100})
     route = f"/api/v1/system/engines/{engine_id}/access_grants/history?{query}"
     listing = _object(authorizer.request("GET", route, (200,)).payload, "import Grant history")
@@ -904,7 +913,7 @@ def import_grant_history(authorizer, engine_id, identity, execution_id):
     path = {"version": "catalog.path/v1", "engine_id": engine_id, "segments": [
         {"term": "server", "kind": "server", "name": ""},
         {"term": "schema", "kind": "namespace", "name": "public"},
-        {"term": "table", "kind": "table", "name": IMPORT_TARGET},
+        {"term": "table", "kind": "table", "name": target},
     ]}
     if listing.get("total") != len(rows) or len(rows) > 1:
         raise SuiteError("import Grant history is incomplete or contains duplicates")
@@ -916,6 +925,229 @@ def import_grant_history(authorizer, engine_id, identity, execution_id):
             raise SuiteError("import Grant history is not owned by this execution")
         return row, path
     return None, path
+
+
+def rustfs_order_payload(name, engine_id, item_id, target_engine):
+    path = urllib.parse.quote(RUSTFS_ORDERS_SOURCE, safe="/")
+    fields = [{"source": column, "target": column, "target_type": kind, "nullable": True}
+              for column, kind, _ in RUSTFS_ORDER_FIELDS]
+    fields[4].update(precision=12, scale=2)
+    return {"name": name + "_rustfs_orders", "task_type": "sync", "batch_size": 7,
+            "enabled": False, "schedule": "", "auto_scan_metadata": False,
+            "config": {"runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"},
+                       "source": {"locator": f"addp://engine/{engine_id}/path/{path}?type=object&item_id={item_id}",
+                                  "data_type": "table", "representation": "encoded", "format": "parquet"},
+                       "target": {"parent_locator": f"addp://engine/{target_engine}/path/public?type=schema",
+                                  "name": RUSTFS_ORDERS_TARGET, "data_type": "table", "representation": "native",
+                                  "policy": {"apply_mode": "replace"}},
+                       "transforms": [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": fields}]}}
+
+
+def validate_rustfs_order_precheck(report, checker, source_engine, source_item, target_engine):
+    if (report.get("schema_version") != "addp.transfer_task_config_check/v1"
+            or report.get("status") != "supported" or report.get("principal_id") != checker["principal_id"]
+            or str(report.get("tenant_id")) != checker["tenant_id"]
+            or "provider_write_definition" not in report.get("checked", [])
+            or not {"business_rows", "source_data_authorization"} <= set(report.get("not_checked", []))):
+        raise SuiteError("RustFS source did not pass the formal read-only definition check")
+    facts = report.get("facts")
+    if not isinstance(facts, list) or len(facts) != 2:
+        raise SuiteError("RustFS precheck must contain exactly two endpoint facts")
+    for fact, expected in zip(facts, (
+            {"role": "source", "engine_id": source_engine, "engine_type": "rustfs", "meta_item_id": source_item,
+             "schema_coverage": "complete", "native_access": "supported"},
+            {"role": "target", "engine_id": target_engine, "engine_type": "postgresql", "native_access": "supported"})):
+        if any(fact.get(key) != value for key, value in expected.items()):
+            raise SuiteError("RustFS precheck endpoint evidence differs from the submitted configuration")
+    checks = report.get("diagnostics", [])
+    wanted = {(column, column, pg_type, f"/config/transforms/0/fields/{i}", kind)
+              for i, (column, _, pg_type) in enumerate(RUSTFS_ORDER_FIELDS)
+              for kind in ("field_definition_supported", "source_assignment_supported")}
+    actual = {(value.get("source_field"), value.get("target_field"), value.get("physical_type"),
+               value.get("config_path"), value.get("code"))
+              for value in checks if value.get("status") == "supported"}
+    if actual != wanted or len(checks) != len(wanted):
+        raise SuiteError("RustFS precheck did not prove the nine target fields and assignments")
+
+
+def validate_rustfs_order_data(rows, expected_rows):
+    fields = {name for name, _, _ in RUSTFS_ORDER_FIELDS}
+    normalized = []
+    for row in _array(rows, "RustFS order rows"):
+        if not isinstance(row, dict) or set(row) != fields or not isinstance(row["order_id"], str):
+            raise SuiteError("RustFS order contains unexpected fields")
+        row = dict(row)
+        try:
+            amount = Decimal(str(row["amount"]))
+            if not amount.is_finite() or amount != amount.quantize(Decimal("0.01")):
+                raise ValueError()
+            row["amount"] = f"{amount:.2f}"
+            if "T" in row["order_date"]:
+                instant = datetime.fromisoformat(row["order_date"].replace("Z", "+00:00"))
+                if instant != instant.replace(hour=0, minute=0, second=0, microsecond=0):
+                    raise ValueError()
+                row["order_date"] = instant.date().isoformat()
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise SuiteError("RustFS order has an invalid amount or date") from error
+        if (type(row["paid"]) is not bool
+                or any(type(row[key]) is not int for key in ("customer_id", "product_id", "quantity"))):
+            raise SuiteError("RustFS order scalar field types changed")
+        normalized.append(row)
+    if (len(normalized) != 20 or sorted(normalized, key=lambda row: row["order_id"]) != expected_rows
+            or sum(Decimal(row["amount"]) for row in normalized) != Decimal("33880.00")):
+        raise SuiteError("RustFS order rows or amount total differ from the admitted source")
+
+
+def rustfs_order_physical(repository):
+    result = subprocess.run(
+        ["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "rustfs-orders"],
+        cwd=repository, capture_output=True, text=True, timeout=20)
+    if result.returncode:
+        raise SuiteError("RustFS PostgreSQL physical observation failed")
+    return _object(json.loads(result.stdout), "RustFS PostgreSQL physical result")
+
+
+def run_rustfs_orders(client, checker, initializer, outsider, identity, repository, source_engine,
+                      target_engine, name, timeout, owned_ids):
+    tenant_id = int(identity["tenant_id"])
+    actor, recipient = REGISTRATION.source_grant_participants(initializer, client, tenant_id, scan_preparation=True)
+    context = checker.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    checker_id = context["principal"]["id"]
+    permissions = {permission for role in context["authorization"]["role_assignments"]
+                   for permission in role["permissions"]}
+    if (context["principal"]["type"] != "user" or checker_id == recipient
+            or context["context"]["type"] != "tenant" or context["context"]["tenant_id"] != str(tenant_id)
+            or not {"transfer.task.create", "meta.catalog.read", "system.engine.read"} <= permissions
+            or "transfer.task.execute" in permissions):
+        raise SuiteError("RustFS precheck requires the separate non-executing checker")
+    scan = wait_for_scan(initializer, source_engine, time.monotonic() + timeout)
+    target = {"version": "catalog.path/v1", "engine_id": source_engine, "segments": [
+        {"term": term, "kind": term, "name": value} for term, value in
+        (("service", ""), ("bucket", "addp-demo"), ("prefix", "tables"), ("object", "订单.parquet"))]}
+    fingerprint = hashlib.sha256(f"{source_engine}:{RUSTFS_ORDERS_SOURCE}".encode()).hexdigest()
+    source_grants = f"/api/v1/system/engines/{source_engine}/access_grants"
+    facts = initializer.request("GET", f"/api/v1/system/engines/{source_engine}/data-items/{fingerprint}/authorization-facts", (200,)).payload
+    expected = {"engine_id": str(source_engine), "item_fingerprint": fingerprint, "item_type": "object",
+                "full_name": RUSTFS_ORDERS_SOURCE, "basis_state": "complete", "data_type": "table", "format": "parquet",
+                "boundary": {"layout": "single", "native_target": target}}
+    if any(facts.get(key) != value for key, value in expected.items()) or not facts.get("boundary_hash"):
+        raise SuiteError("RustFS source does not have the exact single-object authorization facts")
+    observation = "/api/v1/system/engine-access/read-observations/current-source"
+    client.request("POST", observation, (403,), {"targets": [target]})
+    request_id = str(uuid.uuid4())
+    body = {"request_id": request_id, "catalog_path": target, "item_fingerprint": fingerprint,
+            "expected_boundary_hash": facts["boundary_hash"], "recipient_type": "user", "recipient_id": recipient,
+            "action": "read", "expiry_mode": "until_revoked", "reason": "Disposable RustFS orders exact read"}
+    output_grants = f"/api/v1/system/engines/{target_engine}/access_grants"
+    source_issued = False
+    task_id = None
+    execution_id = None
+    preview_route = None
+    try:
+        issued = initializer.request("POST", source_grants, (201,), body).payload
+        source_issued = True
+        if (any(issued.get(key) != body[key] for key in ("request_id", "catalog_path", "item_fingerprint",
+                                                       "recipient_type", "recipient_id", "action", "expiry_mode"))
+                or issued.get("approval_mode") != "independent" or issued.get("operator_principal_id") != actor
+                or issued.get("boundary_hash") != facts["boundary_hash"] or issued.get("revocation")):
+            raise SuiteError("RustFS source Grant did not bind the consumer and exact native boundary")
+        observed = client.request("POST", observation, (200,), {"targets": [target]}).payload
+        if not observed.get("observed_at"):
+            raise SuiteError("RustFS current-source read observation is missing")
+        outsider.request("POST", observation, (403,), {"targets": [target]})
+        item = find_item(client, source_engine, RUSTFS_ORDERS_SOURCE, "object")
+        if item["fingerprint"] != fingerprint:
+            raise SuiteError("RustFS scanned item differs from the source Grant")
+        config = rustfs_order_payload(name, source_engine, int(item["id"]), target_engine)
+        if rustfs_order_physical(repository) != {"exists": False}:
+            raise SuiteError("RustFS target table existed before the precheck")
+        before = suite_task_ids(client, exact_name=name)
+        response = checker.request("POST", "/api/v1/transfer/task-config-checks", (200,), config)
+        if response.cache_control != ("no-store",):
+            raise SuiteError("RustFS formal precheck is missing its no-store boundary")
+        validate_rustfs_order_precheck(response.payload, {"principal_id": checker_id, "tenant_id": str(tenant_id)},
+                                      source_engine, int(item["id"]), target_engine)
+        if rustfs_order_physical(repository) != {"exists": False} or suite_task_ids(client, exact_name=name) != before:
+            raise SuiteError("RustFS read-only precheck created a target or task")
+        task = client.request("POST", "/api/v1/transfer/task-definitions", (201,), config).payload
+        task_id = positive_int(task.get("id"), "RustFS order task ID")
+        owned_ids.append(task_id)
+        if task.get("config") != config["config"]:
+            raise SuiteError("RustFS persisted task differs from its checked configuration")
+        started = client.request("POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (200,)).payload
+        execution_id = str(uuid.UUID(started["execution_id"]))
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            execution = client.request("GET", f"/api/v1/transfer/executions/{execution_id}", (200,)).payload
+            assert_transfer_execution_projection(execution)
+            state = execution.get("metadata", {}).get("initial_authorization", {}).get("status")
+            if (execution.get("execution_id") != execution_id or execution.get("task_id") != task_id
+                    or execution.get("status") not in {"pending", "running", "success"} or state == "denied"):
+                raise SuiteError("RustFS execution failed or its automatic authorization was denied")
+            if execution["status"] == "success" and state == "issued":
+                break
+            time.sleep(1)
+        else:
+            raise SuiteError("RustFS import and initial Grant did not converge within the execution budget")
+        if (execution.get("records_read"), execution.get("records_written")) != (20, 20):
+            raise SuiteError("RustFS did not read and write exactly 20 records")
+
+        grant, target_path = import_grant_history(initializer, target_engine, identity, execution_id, target=RUSTFS_ORDERS_TARGET)
+        target_facts = REGISTRATION.read_exact_record_authorization_facts(initializer, target_path)
+        if (not grant or grant.get("revocation") or grant.get("action") != "read"
+                or grant.get("operator_principal_id") != recipient or grant.get("issuer_principal_id") in (None, recipient)
+                or grant.get("item_fingerprint") != target_facts["item_fingerprint"]
+                or grant.get("boundary_hash") != target_facts["boundary_hash"]
+                or grant.get("expiry_mode") != "until_revoked" or grant.get("expires_at") is not None):
+            raise SuiteError("RustFS target has no unique matching automatic Grant")
+
+        target_item = find_item(client, target_engine, f"public.{RUSTFS_ORDERS_TARGET}", "table")
+        query = urllib.parse.urlencode(dict(locator=SUPPORT.build_item_locator(target_engine, target_item), page=1, page_size=20))
+        preview_route = f"/api/v1/manager/preview?{query}"
+        preview = client.request("GET", preview_route, (200,)).payload
+        if preview.get("preview_type") != "table" or preview.get("data", {}).get("columns") != [field[0] for field in RUSTFS_ORDER_FIELDS]:
+            raise SuiteError("RustFS result preview does not expose nine ordered columns")
+        outsider.request("GET", preview_route, (403,))
+        expected_rows = json.loads((repository / "transfer/backend/internal/planner/testdata/rustfs-orders/expected.json").read_text())
+        validate_rustfs_order_data(preview["data"]["rows"], expected_rows)
+        physical = rustfs_order_physical(repository)
+        expected_types = {"TEXT": "text", "INTEGER": "integer", "NUMERIC(12,2)": "numeric", "DATE": "date", "BOOLEAN": "boolean"}
+        columns = [[column, expected_types[pg_type], *({"int": (32, 0), "decimal": (12, 2)}.get(kind, (None, None)))]
+                   for column, kind, pg_type in RUSTFS_ORDER_FIELDS]
+        if physical.get("exists") is not True or physical.get("columns") != columns or physical.get("amount_total") != "33880.00":
+            raise SuiteError("RustFS PostgreSQL physical definition or amount total differs")
+        validate_rustfs_order_data(physical.get("rows"), expected_rows)
+    finally:
+        try:
+            initializer.request("POST", f"{source_grants}/{request_id}/revoke", (200,) if source_issued else (200, 404),
+                                {"reason": "Finish disposable RustFS orders source test"})
+            if source_issued:
+                client.request("POST", observation, (403,), {"targets": [target]})
+        finally:
+            if task_id is not None:
+                listing = client.request("GET", f"/api/v1/transfer/task-definitions/{task_id}/executions?page_size=100", (200,)).payload
+                entries = _array(listing.get("data"), "RustFS task execution history")
+                if listing.get("total") != len(entries) or len(entries) > 1 or any(entry.get("task_id") != task_id for entry in entries):
+                    raise SuiteError("RustFS task must have at most one execution")
+                if entries:
+                    observed_id = str(uuid.UUID(entries[0]["execution_id"]))
+                    if execution_id is not None and observed_id != execution_id:
+                        raise SuiteError("RustFS task execution history differs from the start response")
+                    current, _ = import_grant_history(initializer, target_engine, identity, observed_id, target=RUSTFS_ORDERS_TARGET)
+                    if current is not None and not current.get("revocation"):
+                        grant_id = str(uuid.UUID(current["request_id"]))
+                        initializer.request("POST", f"{output_grants}/{grant_id}/revoke", (200,),
+                                            {"reason": "Finish disposable RustFS orders result test"})
+                        withdrawn, _ = import_grant_history(initializer, target_engine, identity, observed_id, target=RUSTFS_ORDERS_TARGET)
+                        if not withdrawn or withdrawn["request_id"] != grant_id or not withdrawn.get("revocation"):
+                            raise SuiteError("RustFS initial Grant revocation was not recorded")
+                        if preview_route:
+                            client.request("GET", preview_route, (403,))
+                elif execution_id is not None:
+                    raise SuiteError("RustFS task history omitted the accepted execution")
+    return {"source_item_id": item["id"], "source_scan_execution_id": scan, "source_grant_id": request_id,
+            "task_id": task_id, "execution_id": execution_id, "target_item_id": target_item["id"],
+            "initial_grant_id": grant["request_id"], "fields": 9, "rows": 20, "amount": "33880.00"}
 
 
 def verify_import_target_access(client, engine_id, visible):
@@ -2154,8 +2386,9 @@ def main() -> int:
         tenant_id = positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "ADDP_ONLINE_TEST_TENANT_ID")
         engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_ENGINE_ID"), "ADDP_ONLINE_TEST_ENGINE_ID")
         mongodb_engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_MONGODB_ENGINE_ID"), "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID")
-        if mongodb_engine_id == engine_id:
-            raise SuiteError("MongoDB source and PostgreSQL target must use distinct Engine Instances")
+        rustfs_engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_RUSTFS_ENGINE_ID"), "ADDP_ONLINE_TEST_RUSTFS_ENGINE_ID")
+        if len({engine_id, mongodb_engine_id, rustfs_engine_id}) != 3:
+            raise SuiteError("RustFS, MongoDB and PostgreSQL must use distinct Engine Instances")
         timeout = float(os.environ.get("ADDP_ONLINE_REQUEST_TIMEOUT_SECONDS", "30"))
         if timeout <= 0:
             raise SuiteError("ADDP_ONLINE_REQUEST_TIMEOUT_SECONDS must be greater than zero")
@@ -2167,6 +2400,8 @@ def main() -> int:
         run_id = required_environment("ADDP_ONLINE_TEST_RUN_ID")
         owned_name = task_name(run_id)
         client = GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), timeout)
+        checker = GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_TRANSFER_CHECK_USER_ACCESS_TOKEN"), timeout)
+        os.environ.pop("ADDP_ONLINE_TRANSFER_CHECK_USER_ACCESS_TOKEN")
 
         identity_report = validate_user_identity(client, tenant_id)
         outsider_identity = validate_user_identity(outsider, tenant_id)
@@ -2187,6 +2422,8 @@ def main() -> int:
         if convergence_timeout <= 0:
             raise SuiteError("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS must be greater than zero")
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
+        rustfs_orders = run_rustfs_orders(client, checker, initializer, outsider, identity_report, repository,
+                                         rustfs_engine_id, engine_id, owned_name, convergence_timeout, owned_ids)
         binary = run_binary_roundtrip(client, initializer, repository, run_id, identity_report, engine_id, source, owned_name,
                                       convergence_timeout, owned_ids)
         wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
@@ -2215,7 +2452,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v17",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v18",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -2236,8 +2473,9 @@ def main() -> int:
             "object_upload": object_upload,
             "write_failures": write_failures,
             "clickhouse_binary_roundtrip": binary,
-            "created_resources": 17,
-            "deleted_resources": 17,
+            "rustfs_orders": rustfs_orders,
+            "created_resources": 18,
+            "deleted_resources": 18,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))

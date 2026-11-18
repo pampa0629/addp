@@ -24,6 +24,51 @@ SPEC.loader.exec_module(ONLINE)
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
+    def test_rustfs_precheck_rejects_wrong_identity_type_or_missing_assignment(self):
+        checker = {"principal_id": "27", "tenant_id": "4"}
+        report = {
+            "schema_version": "addp.transfer_task_config_check/v1", "tenant_id": 4, "principal_id": "27",
+            "status": "supported", "checked": ["provider_write_definition"],
+            "not_checked": ["business_rows", "source_data_authorization"],
+            "facts": [
+                {"role": "source", "engine_id": 2, "engine_type": "rustfs", "meta_item_id": 36,
+                 "schema_coverage": "complete", "native_access": "supported"},
+                {"role": "target", "engine_id": 3, "engine_type": "postgresql", "native_access": "supported"},
+            ],
+            "diagnostics": [
+                {"status": "supported", "source_field": name, "target_field": name, "physical_type": pg_type,
+                 "config_path": f"/config/transforms/0/fields/{i}", "code": code}
+                for i, (name, _, pg_type) in enumerate(ONLINE.RUSTFS_ORDER_FIELDS)
+                for code in ("field_definition_supported", "source_assignment_supported")
+            ],
+        }
+        ONLINE.validate_rustfs_order_precheck(report, checker, 2, 36, 3)
+        for mutate in (lambda x: x["facts"][0].update(meta_item_id=37),
+                       lambda x: x["diagnostics"][8].update(physical_type="DOUBLE PRECISION"),
+                       lambda x: x["diagnostics"].pop(),
+                       lambda x: x.update(status="unknown")):
+            invalid = copy.deepcopy(report)
+            mutate(invalid)
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_rustfs_order_precheck(invalid, checker, 2, 36, 3)
+        source = ONLINE.rustfs_order_payload("orders", 2, 36, 3)["config"]["source"]
+        self.assertEqual(source["locator"], "addp://engine/2/path/addp-demo/tables/%E8%AE%A2%E5%8D%95.parquet?type=object&item_id=36")
+
+    def test_rustfs_orders_validate_all_values_even_with_unchanged_count_and_total(self):
+        file = Path(__file__).parents[2] / "transfer/backend/internal/planner/testdata/rustfs-orders/expected.json"
+        expected = json.loads(file.read_text())
+        rows = copy.deepcopy(expected)
+        rows[0]["order_date"] += "T00:00:00Z"
+        ONLINE.validate_rustfs_order_data(rows[::-1], expected)
+        for mutate in (lambda x: x[0].update(amount=x[1]["amount"]) or x[1].update(amount=expected[0]["amount"]),
+                       lambda x: x[0].update(order_date="2026-11-01T12:30:00Z"),
+                       lambda x: x[0].update(note=""),
+                       lambda x: x.pop()):
+            invalid = copy.deepcopy(rows)
+            mutate(invalid)
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_rustfs_order_data(invalid, expected)
+
     def trace_case(self, parent_id, mutation=None):
         scan_id = str(uuid.uuid4())
         identity = {"principal_type": "user", "principal_id": "33", "tenant_id": "2"}
@@ -1316,13 +1361,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual((fields[1]["source"], fields[1]["target"]), ("region", "region_name"))
         self.assertEqual((fields[2]["precision"], fields[2]["scale"]), (8, 2))
         self.assertEqual((fields[3]["source"], fields[3]["default"]), ("", "online"))
-        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_doris_late_execute_failure", name + "_doris_invalid_json", name + "_clickhouse_late_execute_failure", name + "_clickhouse_invalid_json", name + "_binary"})
+        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_rustfs_orders", name + "_doris_late_execute_failure", name + "_doris_invalid_json", name + "_clickhouse_late_execute_failure", name + "_clickhouse_invalid_json", name + "_binary"})
 
     def test_cleanup_selection_is_limited_to_the_exact_run_family(self):
         name = ONLINE.task_name("run-123")
         names = sorted(ONLINE.owned_task_names(name)) + [ONLINE.task_name("another-run"), name + "_unrelated"]
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload={"items": [{"id": index + 1, "name": value} for index, value in enumerate(names)], "total": len(names)}))
-        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), list(range(1, 14)))
+        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), list(range(1, 15)))
 
     def test_online_identity_requires_lineage_and_manager_permissions(self):
         self.assertFalse(any(key.startswith("system.engine.") for key in ONLINE.REQUIRED_PERMISSIONS))
@@ -1341,7 +1386,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
     def test_interruption_cleans_the_current_run_and_returns_failure(self):
         environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",
-                       "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture", "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170",
+                       "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_RUSTFS_ENGINE_ID": "5",
+                       "ADDP_ONLINE_TRANSFER_CHECK_USER_ACCESS_TOKEN": "fixture-checker", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture", "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170",
                        "GATEWAY_URL": "http://127.0.0.1:8000", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-token",
                        "ADDP_ONLINE_TEST_USER_USERNAME": "fixture", "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN": "fixture-outsider",
                        "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only", "ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS": "30",
@@ -1363,6 +1409,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             owned = stack.enter_context(patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]))
             stack.enter_context(patch.object(ONLINE, "wait_for_scan"))
             stack.enter_context(patch.object(ONLINE.REGISTRATION, "initialize_exact_record_read_grants"))
+            stack.enter_context(patch.object(ONLINE, "run_rustfs_orders"))
             stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip"))
             stack.enter_context(patch.object(ONLINE, "find_item"))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
@@ -1379,7 +1426,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
     def test_missing_private_import_token_fails_before_network_or_task_creation(self):
         environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",
-                       "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "CONSOLE_URL": "http://127.0.0.1:5170",
+                       "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_RUSTFS_ENGINE_ID": "5",
+                       "ADDP_ONLINE_TRANSFER_CHECK_USER_ACCESS_TOKEN": "fixture-checker", "CONSOLE_URL": "http://127.0.0.1:5170",
                        "GATEWAY_URL": "http://127.0.0.1:8000", "ADDP_ONLINE_TEST_USER_USERNAME": "fixture",
                        "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only"}
         error = io.StringIO()
@@ -1390,7 +1438,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
     def test_main_accepts_mongodb_collection_identity_and_reports_both_engines(self):
         environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",
-                       "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture",
+                       "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_RUSTFS_ENGINE_ID": "5",
+                       "ADDP_ONLINE_TRANSFER_CHECK_USER_ACCESS_TOKEN": "fixture-checker", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture",
                        "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170", "GATEWAY_URL": "http://127.0.0.1:8000",
                        "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-token", "ADDP_ONLINE_TEST_USER_USERNAME": "fixture",
                        "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN":"fixture-outsider", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only",
@@ -1441,6 +1490,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}))
             stack.enter_context(patch.object(ONLINE, "cleanup_definitions"))
             stack.enter_context(patch.object(ONLINE, "run_write_failures", return_value={"clickhouse": {"engine_id": 9}}))
+            stack.enter_context(patch.object(ONLINE, "run_rustfs_orders", return_value={"rows": 20}))
             binary = stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip", side_effect=binary_roundtrip))
             stack.enter_context(patch.object(ONLINE, "run_browser", return_value={}))
             stack.enter_context(patch.object(ONLINE, "verify_browser_query_transformations"))
@@ -1457,10 +1507,11 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(binary.call_args.args[5:7], (3, pg_source))
         trace.assert_called_once()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v17")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v18")
         self.assertEqual(report["scan_trace_visibility"], {"object_upload": {}, "bounded_import": {}})
-        self.assertEqual(report["created_resources"], 17)
-        self.assertEqual(report["deleted_resources"], 17)
+        self.assertEqual(report["created_resources"], 18)
+        self.assertEqual(report["rustfs_orders"], {"rows": 20})
+        self.assertEqual(report["deleted_resources"], 18)
         self.assertTrue(report["clickhouse_binary_roundtrip"]["task_deleted_and_read_back_404"])
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")

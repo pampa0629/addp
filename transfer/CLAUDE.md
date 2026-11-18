@@ -156,6 +156,8 @@ Develop 完整当次工作流表格也走同一导出会话和 bounded `sync`：
 
 #### 成果事实与初始授权
 
+- `transfer-relational-sql-etl` Hosted 套件的 RustFS 订单场景使用独占 RustFS 与 PostgreSQL 夹具。独立预检 User 和执行 User 使用同一配置，核对预检期间目标表缺席、精确对象读取 Grant、一次 bounded/snapshot 执行及该执行的唯一 `task_production` Grant。核对 Manager 实读和独立 PostgreSQL 物理结果的 9 列、20 行与 33,880.00 元，撤销测试 Grant 后复查拒绝。确定性入口为 `make test-transfer-online-runner`，真实跨模块证据来自现有 Hosted 套件。
+
 - PG bounded 在同 attempt／实际目标的成功提交中冻结同次读取会话的完整 ReadSet 与 Provider `created_and_committed`；来源未知为 null，新建未证明为 false，不从配置、行数或血缘补造。新建与提交证明、schema 运维前提及外部 DDL 原子性限制沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#storeprovider)。私有 `target_production` v3 使用封闭 JSON 字符串和唯一 owner codec，避免 JSONMap 浮点往返改变 Engine ID；不兼容或补填旧事实，不持久化原生 CreationWitness。
 - Manager 私有 Shapefile 导入在同次读取中核对上传组成的 SHA-256，随实际成功提交冻结私有来源证明，供 System 按同一初始授权入口裁决。源文件仍由 Manager 私有持有。
 - 成果资格、System／Meta 窄机器回执权限、签发事务与期限裁决、续办及限定 basic 补扫统一见[初始使用权契约](../docs/spec/addp授权上下文规范.md#558-任务产出数据与初始使用权)。Transfer 只在本次成功完成事务为具备 v3 首次新建提交证明及完整人类来源的首次 bounded 执行初始化 `initial_authorization`；不回填历史。Worker 注册有效时独立领取、锁外核清／续办，仅正式 pending 才补扫；有界退避、旧领取围栏和终态规则沿该契约，不重跑写入、不删除成果或延长 System 冻结期限。

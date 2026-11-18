@@ -821,11 +821,13 @@ func run(args []string, environment []string) error {
 		if err != nil {
 			return fmt.Errorf("resolve precheck infrastructure role: %w", err)
 		}
-		if _, err := grantTransferConfigCheckEngineReader(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
+		checker, err := grantTransferConfigCheckEngineReader(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
 			return issueSession(ctx, repository, selectionService, principalID, username+"-current-session")
-		}, original, tenant.ID, administrator.PrincipalID, assignmentID, builtin.ID); err != nil {
+		}, original, tenant.ID, administrator.PrincipalID, assignmentID, builtin.ID)
+		if err != nil {
 			return err
 		}
+		values["ADDP_ONLINE_TRANSFER_CHECK_USER_ACCESS_TOKEN"] = checker.AccessToken
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME"] = username
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD"] = password
 	}
@@ -1770,6 +1772,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_USER_USERNAME",
 		"ADDP_ONLINE_TEST_USER_PASSWORD",
+		"ADDP_ONLINE_TRANSFER_CHECK_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME",
 		"ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD",
 	} {

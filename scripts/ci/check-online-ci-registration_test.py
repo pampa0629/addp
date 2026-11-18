@@ -3735,7 +3735,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/transfer-relational-sql-etl-online.py", "run_write_failures"),
             ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "PARTITION BY RANGE(id)"),
             ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "write_failure_details_verified: writeFailureDetailsVerified"),
-            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-online/v17"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-online/v18"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "addp.mongodb-source-access/v1"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "ExactRecordGrants"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "hidden_after_revoke"),

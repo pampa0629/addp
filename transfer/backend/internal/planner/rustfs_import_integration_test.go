@@ -1,7 +1,6 @@
 package planner
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,12 +9,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/addp/common/datatype"
 	plugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/engine/plugins/rustfs"
 	"github.com/addp/common/format"
-	"github.com/addp/common/format/plugins/parquet"
 	"github.com/addp/common/production"
 	"github.com/addp/transfer/internal/executor"
 )
@@ -39,36 +36,16 @@ func TestIntegrationRustFSParquetImport(t *testing.T) {
 	ctx := t.Context()
 	p := &rustfs.RustFSPlugin{}
 	conn := plugin.ConnectionInfo{"endpoint": os.Getenv("ADDP_RUSTFS_TEST_ENDPOINT"), "access_key": os.Getenv("ADDP_RUSTFS_TEST_ACCESS_KEY"), "secret_key": os.Getenv("ADDP_RUSTFS_TEST_SECRET_KEY"), "use_ssl": false}
-	path := plugin.ObjectItemPath(91, os.Getenv("ADDP_RUSTFS_TEST_BUCKET"), "transfer/orders.parquet")
-	fields := []datatype.FieldInfo{{Name: "order_id", Type: datatype.FieldTypeString}, {Name: "customer_id", Type: datatype.FieldTypeString}, {Name: "product_id", Type: datatype.FieldTypeString},
-		{Name: "quantity", Type: datatype.FieldTypeInt}, {Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 12, Scale: 2}, {Name: "order_date", Type: datatype.FieldTypeDate},
-		{Name: "paid", Type: datatype.FieldTypeBool}, {Name: "status", Type: datatype.FieldTypeString}, {Name: "note", Type: datatype.FieldTypeString, Nullable: true}}
-	var buffer bytes.Buffer
-	writer, err := parquet.NewPlugin().OpenTableWriter(ctx, &buffer, &datatype.TableInfo{Fields: fields}, nil)
+	path := plugin.ObjectItemPath(91, os.Getenv("ADDP_RUSTFS_TEST_BUCKET"), "tables/订单.parquet")
+	fixture, err := os.ReadFile("testdata/rustfs-orders/orders.parquet")
 	if err != nil {
-		t.Fatal(err)
-	}
-	for i := 1; i <= 20; i++ {
-		amount := i * 1010
-		var note any
-		if i%3 != 0 {
-			note = "中文示范"
-		}
-		if i%5 == 0 {
-			note = ""
-		}
-		if err := writer.WriteRows(ctx, []map[string]interface{}{{"order_id": fmt.Sprintf("DEMO%04d", i), "customer_id": "C01", "product_id": "P01", "quantity": i%3 + 1, "amount": fmt.Sprintf("%d.%02d", amount/100, amount%100), "order_date": fmt.Sprintf("2026-11-%02d", i), "paid": i%2 == 0, "status": "completed", "note": note}}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := writer.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
 	out, err := p.CreateContent(ctx, conn, path, plugin.WriteOptions{ContentType: "application/vnd.apache.parquet"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := out.Write(buffer.Bytes()); err != nil {
+	if _, err := out.Write(fixture); err != nil {
 		t.Fatal(err)
 	}
 	if err := out.Close(); err != nil {
@@ -129,7 +106,7 @@ func TestIntegrationRustFSParquetImport(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema=$1 AND table_name='orders'`, schema).Scan(&columns); err != nil {
 		t.Fatal(err)
 	}
-	if count != 20 || columns != 9 || total != "2121.00" || minDate != "2026-11-01" || maxDate != "2026-11-20" {
+	if count != 20 || columns != 9 || total != "33880.00" || minDate != "2026-11-01" || maxDate != "2026-11-14" {
 		t.Fatalf("target facts rows=%d columns=%d total=%s dates=%s..%s", count, columns, total, minDate, maxDate)
 	}
 	var names, dateType string
@@ -156,5 +133,5 @@ func TestIntegrationRustFSParquetImport(t *testing.T) {
 		t.Fatal("withdrawal committed rows", remaining, err)
 	}
 
-	t.Log("RustFS Parquet -> PostgreSQL: 9 fields, 20 rows, DECIMAL 2121.00, DATE range; no-Grant opens=0; batch withdrawal rolled back rows and preserved target-change warning")
+	t.Log("RustFS Parquet -> PostgreSQL: 9 fields, 20 rows, DECIMAL 33880.00, DATE range; no-Grant opens=0; batch withdrawal rolled back rows and preserved target-change warning")
 }

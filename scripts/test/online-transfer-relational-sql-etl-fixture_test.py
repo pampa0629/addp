@@ -20,6 +20,7 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.doris_state = self.root / 'doris-running'
         self.clickhouse_state = self.root / 'clickhouse-running'
         self.minio_state = self.root / 'minio-running'
+        self.rustfs_state = self.root / 'rustfs-running'
         self.schema_state = self.root / 'evolved-schema'
         self.log = self.root / 'fixture.log'
         self.secrets = self.root / 'addp-online-secret-test'
@@ -28,6 +29,8 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.secrets.mkdir(mode=0o700)
         shutil.copy2(SCRIPT, self.root / 'business/scripts/online-transfer-relational-sql-etl-fixture.sh')
         shutil.copy2(SCRIPT.with_name('online-raster-minio-fixture.py'), self.root / 'business/scripts/online-raster-minio-fixture.py')
+        shutil.copytree(SCRIPT.parents[2] / 'transfer/backend/internal/planner/testdata/rustfs-orders',
+                        self.root / 'transfer/backend/internal/planner/testdata/rustfs-orders')
         (self.root / 'sitecustomize.py').write_text('''import urllib.request
 class Ready:
  status=200
@@ -74,8 +77,10 @@ case "$*" in
  *addp-transfer-doris-online-disposable*) state=$ADDP_TEST_DORIS_STATE ;;
  *addp-transfer-clickhouse-online-disposable*) state=$ADDP_TEST_CLICKHOUSE_STATE ;;
  *addp-transfer-upload-online-disposable*) state=$ADDP_TEST_MINIO_STATE ;;
+ *addp-transfer-rustfs-online-disposable*) state=$ADDP_TEST_RUSTFS_STATE ;;
 esac
 case "$1" in
+  compose) echo '{"services":{"rustfs":{"image":"test-rustfs:1.0.5"}}}' ;;
   container)
     [ -f "$state" ]
     ;;
@@ -88,6 +93,15 @@ case "$1" in
     esac
     ;;
   run)
+    if [[ "$*" == *'--entrypoint mc '* ]]; then
+      [ -f "$state" ] && [ -n "$MC_HOST_fixture" ] || exit 1
+      case "$*" in
+        *' pipe fixture/'*) cat > "$state.orders" ;;
+        *' cat fixture/'*) cat "$state.orders"
+          [ "${ADDP_TEST_RUSTFS_CONTENT_DRIFT:-0}" != 1 ] || printf 'unexpected-byte' ;;
+      esac
+      exit 0
+    fi
     if [ "$state" = "$ADDP_TEST_MINIO_STATE" ] && [ "${ADDP_TEST_MINIO_START_FAIL:-0}" = 1 ]; then exit 1; fi
     printf '%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG"
     echo transfer-relational-sql-etl > "$state"
@@ -250,6 +264,7 @@ esac
                                 ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-mongodb-engine.json'),
                                 ADDP_TEST_MONGODB_STATE=str(self.mongodb_state), ADDP_TEST_DORIS_STATE=str(self.doris_state), ADDP_TEST_CLICKHOUSE_STATE=str(self.clickhouse_state),
                                 ADDP_TEST_MINIO_STATE=str(self.minio_state),
+                                ADDP_TEST_RUSTFS_STATE=str(self.rustfs_state),
                                 ADDP_ONLINE_TEST_RUN_ID='transfer-fixture-run', PYTHONPATH=str(self.root), ADDP_TEST_SCHEMA_STATE=str(self.schema_state),
                                 ADDP_TEST_POSTGRES_STATE=str(self.postgres_state), ADDP_TEST_FIXTURE_LOG=str(self.log))
 
@@ -285,6 +300,27 @@ esac
         stopped = self.run_fixture('stop')
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         self.assertFalse(self.minio_state.exists())
+
+    def test_rustfs_orders_fixture_uploads_exact_bytes_and_checks_cleanup(self):
+        started = self.run_fixture('start')
+        self.assertEqual(started.returncode, 0, started.stderr)
+        descriptor = self.secrets / 'transfer-rustfs-engine.json'
+        self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
+        engine = json.loads(descriptor.read_text())
+        self.assertEqual(engine['engine_type'], 'rustfs')
+        self.assertNotIn(engine['connection_info']['secret_key'], self.log.read_text())
+        saved = Path(str(self.rustfs_state) + '.orders')
+        self.assertEqual(saved.read_bytes(), (self.root / 'transfer/backend/internal/planner/testdata/rustfs-orders/orders.parquet').read_bytes())
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+        self.assertFalse(self.rustfs_state.exists())
+
+    def test_rustfs_fixture_rejects_changed_object_and_cleans_partial_startup(self):
+        started = self.run_fixture('start', ADDP_TEST_RUSTFS_CONTENT_DRIFT='1')
+        self.assertNotEqual(started.returncode, 0)
+        self.assertIn('RustFS orders object differs', started.stderr)
+        self.assertFalse((self.secrets / 'transfer-rustfs-engine.json').exists())
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+        self.assertFalse(self.rustfs_state.exists())
 
 
     def test_object_fixture_failure_and_foreign_ownership_do_not_escape_cleanup(self):
