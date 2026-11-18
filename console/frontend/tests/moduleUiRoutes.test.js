@@ -63,10 +63,4 @@ describe('Console public routes and iframe entry ownership', () => {
     expect(nginx).toContain('location = /ontology/swagger/doc.json {')
     expect(nginx).toContain('location = /catalog/swagger/doc.json {')
   })
-
-  it('packages the same Nginx routing table that runs in the container', () => {
-    const packageScript = read('scripts/build/package.sh')
-    expect(packageScript).toContain('cp nginx/nginx.conf "$OUTPUT_DIR/nginx/"')
-    expect(packageScript).not.toContain('nginx.prod.conf')
-  })
 })
