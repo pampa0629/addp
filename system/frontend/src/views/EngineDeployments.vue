@@ -1,7 +1,7 @@
 <template>
   <section v-if="canRead" class="engine-deployments" data-testid="engine-deployments">
     <header class="toolbar"><h2>{{ t('system.engineDeployments.title') }}</h2>
-      <el-button v-if="canCreate" type="primary" data-testid="deployment-create" @click="openCreate">{{ t('system.engineDeployments.create') }}</el-button>
+      <el-button v-if="canConfigure" type="primary" data-testid="deployment-create" @click="openConfiguration">{{ t('system.engineDeployments.create') }}</el-button>
     </header>
     <p class="hint">{{ t('system.engineDeployments.purpose') }}</p>
     <el-tabs :model-value="state.scope" @update:model-value="changeScope">
@@ -28,11 +28,12 @@
       <template #empty><el-empty :description="t(listLoaded ? 'system.engineDeployments.empty' : 'system.hostNodes.notLoaded')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-if="listLoaded" :current-page="state.page" :page-size="state.pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="page => setQuery({page:String(page)})" @size-change="size => setQuery({page:'1',page_size:String(size)})" />
-    <el-dialog :model-value="dialogOpen" :title="t(creating ? 'system.engineDeployments.create' : 'system.engineDeployments.details')" class="addp-dialog" width="min(760px, calc(100vw - 24px))"
+    <el-dialog :model-value="dialogOpen" :title="t(configuring ? 'system.engineDeployments.create' : 'system.engineDeployments.details')" class="addp-dialog" width="min(760px, calc(100vw - 24px))"
       :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @update:model-value="value => !value && close()" @open-auto-focus="focusForm" @closed="restoreFocus">
       <div v-loading="detailLoading">
+        <el-alert v-if="savedChanges.length" :title="t('system.engineDeployments.appliedChanges', { names: savedChanges.join(', ') })" type="warning" :closable="false" data-testid="deployment-applied" />
         <el-alert v-if="detailError || saveError" :title="detailError || saveError" type="error" :closable="false" data-testid="deployment-error" />
-        <section v-if="record && !creating" class="current-source" data-testid="deployment-current-source" :aria-busy="sourceLoading">
+        <section v-if="record && !configuring" class="current-source" data-testid="deployment-current-source" :aria-busy="sourceLoading">
           <div class="toolbar"><h3>{{ t('system.engineDeployments.currentSource') }}</h3>
             <el-button :loading="sourceLoading" @click="loadCurrentSource">{{ t('system.engineDeployments.refreshDiscovery') }}</el-button>
           </div>
@@ -49,34 +50,50 @@
           <p class="hint">{{ t('system.engineDeployments.currentSourceHint') }}</p>
         </section>
         <el-form v-if="formReady" label-position="top" :disabled="saving || !canWrite" @submit.prevent>
-          <template v-if="creating">
-            <div class="toolbar"><el-button :loading="reading" :disabled="saving" @click="loadDiscovery">{{ t('system.engineDeployments.refreshDiscovery') }}</el-button></div>
+          <template v-if="configuring">
+            <div class="toolbar"><el-button :loading="reading" :disabled="saving" @click="loadDiscovery">{{ t('system.engineDeployments.reloadConfiguration') }}</el-button></div>
             <el-tabs v-model="discoveryScope" data-testid="deployment-discovery-scopes">
               <el-tab-pane name="infra" :label="t('system.engineDeployments.scopes.infra')" />
               <el-tab-pane name="business" :label="t('system.engineDeployments.scopes.business')" />
             </el-tabs>
-            <el-alert v-if="activeDiscoveryScope" :title="t(`system.engineDeployments.discoveryStates.${activeDiscoveryScope.state}`)" :type="activeDiscoveryScope.state === 'available' ? 'info' : 'warning'" :closable="false" />
-            <el-table :data="visibleCandidates" row-key="key" border max-height="320" data-testid="deployment-candidates" :row-class-name="({row}) => !row.eligible && !row.deployment_id ? 'candidate-unavailable' : ''">
+            <el-alert v-if="discoveryError || activeDiscoveryScope" :title="t(`system.engineDeployments.discoveryStates.${discoveryError ? 'unavailable' : activeDiscoveryScope.state}`)" :type="activeDiscoveryScope?.state === 'available' ? 'info' : 'warning'" :closable="false" />
+            <el-table :data="visibleCandidates" row-key="key" border max-height="320" data-testid="deployment-candidates" :row-class-name="({row}) => !row.deployment && !row.eligible ? 'candidate-unavailable' : ''">
               <el-table-column width="52" align="center">
-                <template #header>
-                  <el-checkbox :model-value="allVisibleSelected" :indeterminate="someVisibleSelected && !allVisibleSelected" :disabled="!selectableCandidates.length || blocked || reading || saving" :aria-label="t('system.engineDeployments.selectScope')" @change="selectVisibleCandidates" />
-                </template>
                 <template #default="{row}">
-                  <el-icon v-if="row.deployment_id" class="candidate-connected" role="img" :aria-label="t('system.engineDeployments.candidateStates.registered')" data-testid="candidate-connected"><CircleCheckFilled /></el-icon>
-                  <el-icon v-else-if="!row.eligible" class="candidate-unavailable-icon" role="img" :aria-label="t(`system.engineDeployments.candidateStates.${row.reason}`)" data-testid="candidate-unavailable"><CircleCloseFilled /></el-icon>
-                  <el-checkbox v-else :model-value="selectedCandidateKeys.has(row.key)" :disabled="blocked || reading || saving" :aria-label="`${row.scope} ${row.service}`" @change="checked => selectCandidate(row,checked)" />
+                  <el-icon v-if="!row.deployment && !row.eligible" class="candidate-unavailable-icon" role="img" :aria-label="t(`system.engineDeployments.candidateStates.${row.reason}`)" data-testid="candidate-unavailable"><CircleCloseFilled /></el-icon>
+                  <el-checkbox v-else :model-value="draftEnabled[row.key] ?? row.deployment?.enabled ?? false"
+                    :disabled="reading || blocked || (row.deployment ? !canUpdate : !canCreate)"
+                    :aria-label="row.deployment?.display_name ?? `${row.scope} ${row.service}`" @change="checked => setMonitoring(row, checked)" />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('system.engineDeployments.service')" min-width="150"><template #default="{row}">
-                <div>{{ row.scope === 'infra' ? 'Infra' : 'Business' }} / {{ row.service }}</div>
-                <el-input v-if="row.eligible && !row.deployment_id" v-model="row.display_name" class="candidate-name" maxlength="255" :aria-label="`${row.scope} ${row.service}`" />
-              </template></el-table-column>
-              <el-table-column :label="t('system.engineDeployments.discoveryStatus')" min-width="125"><template #default="{row}"><div class="candidate-status-cell"><el-tag class="candidate-status" :type="row.deployment_id ? 'success' : row.eligible ? 'primary' : 'info'">{{ t(`system.engineDeployments.candidateStates.${row.deployment_id ? 'registered' : row.eligible ? 'ready' : row.reason}`) }}</el-tag><el-button v-if="row.deployment_id" link type="primary" :data-testid="`candidate-detail-${row.deployment_id}`" @click="event => openDetail(row.deployment_id,event)">{{ t('system.engineDeployments.detailAction') }}</el-button></div></template></el-table-column>
-              <template #empty><el-empty :description="t('system.engineDeployments.noCandidates')" :image-size="56" /></template>
+              <el-table-column :label="t('system.engineDeployments.service')" min-width="106">
+                <template #default="{row}">
+                  <div>{{ row.deployment?.display_name ?? `${row.scope === 'infra' ? 'Infra' : 'Business'} / ${row.service}` }}</div>
+                  <el-input v-if="!row.deployment && row.eligible && draftEnabled[row.key]" v-model="row.display_name" :disabled="blocked" class="candidate-name" maxlength="255" :aria-label="`${row.scope} ${row.service}`" />
+                </template>
+              </el-table-column>
+              <el-table-column :label="t('system.engineDeployments.discoveryStatus')" min-width="84">
+                <template #default="{row}">
+                  <el-tag class="candidate-status" :type="row.deployment?.enabled ? 'success' : !row.deployment && row.eligible ? 'primary' : 'info'">{{ t(`system.engineDeployments.${row.deployment ? (row.deployment.enabled ? 'monitoringOn' : 'monitoringOff') : `candidateStates.${row.eligible ? 'ready' : row.reason}`}`) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="canObserve" :label="t('system.engineDeployments.collectionStatus')" min-width="93">
+                <template #default="{row}">
+                  <template v-if="row.deployment">
+                    <span :data-testid="`collection-${row.deployment.deployment_id}`">{{ t(`system.engineDeployments.collection.${collections[row.key]?.state ?? (row.deployment.enabled && row.deployment.host_binding_state === 'bound' ? 'unknown' : 'not_active')}`) }}</span>
+                    <div v-if="collections[row.key]?.sampled_at" class="collection-time">{{ formatDateTime(collections[row.key].sampled_at) }}</div>
+                  </template>
+                  <span v-else>—</span>
+                </template>
+              </el-table-column>
+              <template #empty><el-empty :description="t(reading ? 'system.hostNodes.notLoaded' : 'system.engineDeployments.noCandidates')" :image-size="56" /></template>
             </el-table>
             <p class="hint">{{ t('system.engineDeployments.discoveryHint') }}</p>
-            <p v-if="selectedCandidates.length" class="hint" data-testid="admission-selection-count">{{ t('system.engineDeployments.selectedServices', {count:selectedCandidates.length}) }}</p>
-            <el-alert v-if="admissionNotice" :title="t(`system.engineDeployments.${admissionNotice}`)" type="info" :closable="false" role="status" data-testid="admission-save-guidance" />
+            <div v-if="hasChanges" role="status" class="change-preview" data-testid="monitoring-changes">
+              <p v-if="enableNames.length">{{ t('system.engineDeployments.enableChanges', { names: enableNames.join(', ') }) }}</p>
+              <p v-if="disableNames.length">{{ t('system.engineDeployments.disableChanges', { names: disableNames.join(', ') }) }}</p>
+            </div>
+            <el-alert v-if="configurationNotice" :title="t(`system.engineDeployments.${configurationNotice}`)" type="info" :closable="false" role="status" data-testid="admission-save-guidance" />
           </template>
           <el-form-item v-else :label="t('system.engineDeployments.name')"><el-input ref="nameInput" v-model="form.display_name" maxlength="255" data-testid="deployment-name" /></el-form-item>
           <template v-if="form.inventory">
@@ -90,24 +107,22 @@
               <dt>{{ t('system.engineDeployments.ports') }}</dt><dd>{{ container.published_ports.map(port => `${port.address.includes(':') ? `[${port.address}]` : port.address}:${port.port} → ${port.container_port}/${port.protocol}`).join(', ') }}</dd>
             </dl>
           </template>
-          <template v-if="!creating || selectedCandidates.length">
+          <template v-if="!configuring || selectedCandidates.length">
           <el-form-item :label="t('system.engineDeployments.host')">
             <HostNodeSelect v-if="canReadHosts" v-model="form.declared_node_id" :selected="selectedHost" :allowed="canReadHosts" :identity="identity" :disabled="blocked || saving" :api="pickerAPI"
               :label="t('system.engineDeployments.host')" :placeholder="t('system.hostAdmission.search')" :more-label="t('system.hostAdmission.more')" :error-message="t('system.hostAdmission.readFailed')" @selected="selectedHost = $event" />
             <el-input v-else :model-value="form.declared_node_id" readonly />
             <p class="hint">{{ t('system.engineDeployments.hostHint') }}</p>
           </el-form-item>
-          <el-form-item :label="t(creating ? 'system.engineDeployments.newAdmissionState' : 'system.hostNodes.state')"><el-switch v-model="form.enabled" :aria-label="t(creating ? 'system.engineDeployments.newAdmissionState' : 'system.hostNodes.state')" :active-text="t('system.hostNodes.enabled')" :inactive-text="t('system.hostNodes.disabled')" data-testid="deployment-enabled" />
-            <p class="hint" data-testid="deployment-enabled-hint">{{ t(creating ? 'system.engineDeployments.newAdmissionStateHint' : 'system.engineDeployments.managementStateHint') }}</p>
-          </el-form-item>
           </template>
+          <p v-if="record" class="hint" data-testid="deployment-monitoring-state">{{ t(record.enabled ? 'system.engineDeployments.monitoringOn' : 'system.engineDeployments.monitoringOff') }}</p>
           <p v-if="record" class="hint">{{ t('system.hostNodes.version', {version:record.version}) }} · {{ t(`system.engineDeployments.states.${bindingState(record)}`) }}</p>
         </el-form>
       </div>
       <template #footer>
         <el-button ref="closeButton" :disabled="saving" @click="close">{{ t('common.close') }}</el-button>
         <el-button v-if="record || deploymentID" :disabled="saving || detailLoading" @click="loadDetail">{{ t('system.engineDeployments.reload') }}</el-button>
-        <el-button v-if="canWrite && formReady" type="primary" :disabled="reading || blocked || (creating ? !selectedCandidates.length : !form.inventory) || !form.declared_node_id" :loading="saving" data-testid="deployment-save" @click="save">{{ t('system.engineDeployments.confirm') }}</el-button>
+        <el-button v-if="canWrite && formReady" type="primary" :disabled="reading || blocked || (configuring ? !hasChanges || (selectedCandidates.length > 0 && !form.declared_node_id) : !form.inventory || !form.declared_node_id)" :loading="saving" data-testid="deployment-save" @click="save">{{ t('system.engineDeployments.confirm') }}</el-button>
       </template>
     </el-dialog>
     <StatusAnnouncer :message="saving ? t('system.hostNodes.saving') : ''" />
@@ -118,9 +133,10 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import { CircleCloseFilled } from '@element-plus/icons-vue'
 import { HostNodeSelect, StatusAnnouncer, useConsolePageDescriptor, openConsoleRoute, buildMonitorEngineResourcesRoute } from '@common-ui'
 import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters'
+import { validateEngineCollection } from '../../../../common-frontend/basic/src/utils/engineCollection.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { useAuthStore } from '../store/auth'
 import { hostNodesAPI } from '../api/hostNodes'
@@ -136,52 +152,60 @@ const canObserve=computed(()=>canRead.value && auth.hasPermission('monitor.resou
 const openMonitoring=id=>openConsoleRoute(buildMonitorEngineResourcesRoute({deployment_id:id}))
 const canCreate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.create'))
 const canUpdate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.update'))
+const canConfigure=computed(() => canCreate.value || canUpdate.value)
 const deploymentID=computed(()=>typeof route.params.deployment_id==='string'?route.params.deployment_id:'')
 const state=computed(()=>resolveEngineDeploymentsRouteState(route.query))
 const rows=ref([]),total=ref(0),listLoading=ref(false),listLoaded=ref(false),listError=ref(''),searchDraft=ref('')
-const record=ref(null),creating=ref(false),formReady=ref(false),detailLoading=ref(false),detailError=ref(''),saveError=ref(''),saving=ref(false),reading=ref(false),blocked=ref(false)
-const form=reactive({display_name:'',enabled:true,inventory:null,declared_node_id:''}),selectedHost=ref(null)
+const record=ref(null),configuring=ref(false),formReady=ref(false),detailLoading=ref(false),detailError=ref(''),saveError=ref(''),saving=ref(false),reading=ref(false),blocked=ref(false)
+const form=reactive({display_name:'',inventory:null,declared_node_id:''}),selectedHost=ref(null)
 const nameInput=ref(null),searchInput=ref(null),closeButton=ref(null)
-const dialogOpen=computed(()=>creating.value || Boolean(deploymentID.value)),canWrite=computed(()=>creating.value?canCreate.value:canUpdate.value)
+const dialogOpen=computed(()=>configuring.value || Boolean(deploymentID.value)),canWrite=computed(()=>configuring.value ? canConfigure.value : canUpdate.value)
 const container=computed(()=>form.inventory?.services[0].containers[0])
 const pickerAPI={nodes:hostNodesAPI.list,node:hostNodesAPI.get}
 const listRequests=createLatestRequestScope(),detailRequests=createLatestRequestScope(),discoveryRequests=createLatestRequestScope()
 const sourceRequests=createLatestRequestScope(),currentSource=ref(null),sourceLoading=ref(false),sourceError=ref(false)
-const candidates=ref([]),selectedCandidates=ref([]),discoveryScopes=ref([])
-const discoveryScope=ref('infra')
-const activeDiscoveryScope=computed(()=>discoveryScopes.value.find(item=>item.scope===discoveryScope.value))
-const visibleCandidates=computed(()=>candidates.value.filter(item=>item.scope===discoveryScope.value))
-const selectableCandidates=computed(()=>visibleCandidates.value.filter(item=>item.eligible && !item.deployment_id))
-const selectedCandidateKeys=computed(()=>new Set(selectedCandidates.value.map(item=>item.key)))
-const allVisibleSelected=computed(()=>selectableCandidates.value.length>0 && selectableCandidates.value.every(item=>selectedCandidateKeys.value.has(item.key)))
-const someVisibleSelected=computed(()=>selectableCandidates.value.some(item=>selectedCandidateKeys.value.has(item.key)))
-const admissionNotice=computed(()=>{
-  if(!creating.value || reading.value || blocked.value || saveError.value)return ''
-  if(!selectedCandidates.value.length){
-    if(activeDiscoveryScope.value?.state!=='available')return ''
-    if(selectableCandidates.value.length)return 'selectServicesFirst'
-    const allKnown=discoveryScopes.value.every(scope=>scope.state==='available')
-    return allKnown && !candidates.value.some(item=>item.eligible && !item.deployment_id) ? 'noNewServices' : 'noNewServicesInScope'
-  }
-  return form.declared_node_id ? '' : 'selectAdmissionHost'
+const candidates = ref([])
+const registered = ref([])
+const draftEnabled = ref({})
+const collections = ref({})
+const savedChanges = ref([])
+const discoveryError = ref(false)
+const discoveryScopes = ref([])
+const discoveryScope = ref('infra')
+const activeDiscoveryScope = computed(() => discoveryScopes.value.find(item => item.scope === discoveryScope.value))
+const configurationRows = computed(() => [
+  ...registered.value.map(deployment => ({ key: deployment.deployment_id, scope: deployment.scope, deployment })),
+  ...candidates.value.filter(item => !item.deployment_id)
+])
+const visibleCandidates = computed(() => configurationRows.value.filter(item => item.scope === discoveryScope.value))
+const selectedCandidates = computed(() => candidates.value.filter(item => !item.deployment_id && draftEnabled.value[item.key]))
+const changedDeployments = computed(() => registered.value.filter(row => draftEnabled.value[row.deployment_id] !== undefined))
+const hasChanges = computed(() => selectedCandidates.value.length > 0 || changedDeployments.value.length > 0)
+const enableNames = computed(() => [
+  ...selectedCandidates.value.map(row => row.display_name),
+  ...changedDeployments.value.filter(row => draftEnabled.value[row.deployment_id]).map(row => row.display_name)
+])
+const disableNames = computed(() => changedDeployments.value.filter(row => !draftEnabled.value[row.deployment_id]).map(row => row.display_name))
+const configurationNotice = computed(() => {
+  if (!configuring.value || reading.value || blocked.value || saveError.value) return ''
+  if (!hasChanges.value) return 'noChanges'
+  return selectedCandidates.value.length && !form.declared_node_id ? 'selectAdmissionHost' : ''
 })
-function selectCandidate(row,checked){selectedCandidates.value=checked?[...selectedCandidates.value,row]:selectedCandidates.value.filter(item=>item.key!==row.key)}
-function selectVisibleCandidates(checked){
-  const visibleKeys=new Set(selectableCandidates.value.map(item=>item.key))
-  selectedCandidates.value=selectedCandidates.value.filter(item=>!visibleKeys.has(item.key))
-  if(checked)selectedCandidates.value.push(...selectableCandidates.value)
+function setMonitoring(row, checked) {
+  if (checked === (row.deployment?.enabled ?? false)) delete draftEnabled.value[row.key]
+  else draftEnabled.value[row.key] = checked
 }
 
 let epoch=0,trigger=null,sourceExpiry=null
 const navigate=(path,query=state.value.query,history='push')=>navigateSystemRoute(router,{path,query},{history})
 const bindingState=row=>row.enabled?row.host_binding_state==='bound'?'bound':row.host_binding_reason==='node_kind_mismatch'?'node_kind_mismatch':'node_disabled':'deployment_disabled'
-useConsolePageDescriptor(router,'system',{title:computed(()=>t('system.engineDeployments.details')),subject:computed(()=>record.value?.display_name||''),ready:computed(()=>Boolean(record.value)&&!creating.value)})
+useConsolePageDescriptor(router,'system',{title:computed(()=>t('system.engineDeployments.details')),subject:computed(()=>record.value?.display_name||''),ready:computed(()=>Boolean(record.value)&&!configuring.value)})
 function validRecord(value,id='') {
   if (!isDeploymentUUID(value?.deployment_id) || (id && value.deployment_id!==id) || !Number.isSafeInteger(value.version) || value.version<1 || typeof value.display_name!=='string' || typeof value.enabled!=='boolean' || !isDeploymentUUID(value.declared_node_id) || !['bound','rejected'].includes(value.host_binding_state)) throw new Error('invalid_deployment')
   validateDeploymentInventory(value.inventory);return value
 }
 async function loadCurrentSource() {
-  if(!canRead.value || !record.value || creating.value)return
+  if(!canRead.value || !record.value || configuring.value)return
   clearTimeout(sourceExpiry)
   const id=record.value.deployment_id,inventory=record.value.inventory,ticket=sourceRequests.invalidate()
   currentSource.value=null;sourceError.value=false;sourceLoading.value=true
@@ -199,7 +223,7 @@ async function loadCurrentSource() {
 }
 function clearCurrentSource(){clearTimeout(sourceExpiry);sourceRequests.invalidate();currentSource.value=null;sourceLoading.value=false;sourceError.value=false}
 function populate(value) {
-  record.value=value;Object.assign(form,{display_name:value.display_name,enabled:value.enabled,inventory:value.inventory,declared_node_id:value.declared_node_id});selectedHost.value=null;formReady.value=true
+  record.value=value;Object.assign(form,{display_name:value.display_name,inventory:value.inventory,declared_node_id:value.declared_node_id});selectedHost.value=null;formReady.value=true
 }
 async function loadList() {
   if(!canRead.value)return
@@ -225,70 +249,182 @@ async function loadDetail() {
   }catch{if(detailRequests.current(ticket))detailError.value=t('system.engineDeployments.readFailed')}
   finally{if(detailRequests.current(ticket))detailLoading.value=false}
 }
-async function loadDiscovery() {
-  if(!canCreate.value || saving.value)return
-  const ticket=discoveryRequests.invalidate();reading.value=true;candidates.value=[];selectedCandidates.value=[];discoveryScopes.value=[];saveError.value='';blocked.value=true
-  try {
-    const value=validateDeploymentDiscovery(await discoveryRequests.request(config=>engineDeploymentsAPI.discover(config)))
-    if(!discoveryRequests.current(ticket))return
-    discoveryScopes.value=value.scopes
-    candidates.value=value.candidates.map(item=>({...item,key:item.scope+'/'+item.service,display_name:`${item.scope==='infra'?'Infra':'Business'} ${({postgres:'PostgreSQL',redis:'Redis',minio:'MinIO'})[item.service]||item.service}`}))
-    blocked.value=false
-  }catch{if(discoveryRequests.current(ticket))saveError.value=t('system.engineDeployments.readFailed')}
-  finally{if(discoveryRequests.current(ticket))reading.value=false}
+async function readRegistered(ticket) {
+  const size = 100
+  const records = new Map()
+  let total
+  for (let page = 1; discoveryRequests.current(ticket); page++) {
+    const result = await discoveryRequests.request(config => engineDeploymentsAPI.list({ page, page_size: size }, config))
+    total ??= result.total
+    if (!Number.isSafeInteger(total) || total < 0 || result.total !== total || result.page !== page ||
+        result.page_size !== size || !Array.isArray(result.data) || result.data.length !== Math.min(size, total - records.size)) {
+      throw new Error('invalid_deployment_page')
+    }
+    for (const row of result.data) {
+      validRecord(row)
+      if (!['infra', 'business'].includes(row.scope) || records.has(row.deployment_id)) throw new Error('invalid_deployment')
+      records.set(row.deployment_id, row)
+    }
+    if (records.size === total) return [...records.values()]
+  }
 }
-function openCreate(event){
-  if(!canCreate.value)return
-  discoveryScope.value=state.value.scope
-  trigger=event?.currentTarget;detailRequests.invalidate();clearCurrentSource();record.value=null;selectedHost.value=null;saveError.value='';detailError.value='';blocked.value=false;reading.value=false
-  Object.assign(form,{display_name:'',enabled:true,inventory:null,declared_node_id:''});formReady.value=true;creating.value=true;loadDiscovery()
+async function readCollections(ticket, records) {
+  const owners = records.filter(row => row.enabled && row.host_binding_state === 'bound')
+  if (!canObserve.value || !owners.length || owners.length > 100) return
+  try {
+    const result = await discoveryRequests.request(config => engineDeploymentsAPI.summaries(owners.map(row => row.deployment_id), config))
+    if (!discoveryRequests.current(ticket) || !canObserve.value) return
+    if (!Array.isArray(result?.data) || result.data.length !== owners.length) return
+    const byID = new Map(result.data.map(row => [row?.subject?.deployment_id, row]))
+    const queried = Date.parse(result.queried_at)
+    collections.value = Object.fromEntries(owners.map(owner => [owner.deployment_id, validateEngineCollection(byID.get(owner.deployment_id), owner, queried)]))
+  } catch {
+    // The monitoring read is independent of permissions and readiness for configuration writes.
+  }
+}
+function resetConfiguration() {
+  registered.value = []; candidates.value = []; draftEnabled.value = {}; collections.value = {}
+  discoveryScopes.value = []; discoveryError.value = false; savedChanges.value = []
+}
+async function loadDiscovery() {
+  if (!canConfigure.value || saving.value) return
+  const ticket = discoveryRequests.invalidate()
+  resetConfiguration()
+  form.declared_node_id = ''
+  selectedHost.value = null
+  reading.value = true; saveError.value = ''; blocked.value = true
+  const [owners, discovery] = await Promise.allSettled([
+    readRegistered(ticket),
+    discoveryRequests.request(config => engineDeploymentsAPI.discover(config)).then(validateDeploymentDiscovery)
+  ])
+  if (!discoveryRequests.current(ticket)) return
+  reading.value = false
+  discoveryError.value = discovery.status === 'rejected'
+  if (owners.status === 'rejected') {
+    saveError.value = t('system.engineDeployments.readFailed')
+    return
+  }
+  registered.value = owners.value
+  if (discovery.status === 'fulfilled') {
+    discoveryScopes.value = discovery.value.scopes
+    candidates.value = discovery.value.candidates.map(item => ({
+      ...item, key: `${item.scope}/${item.service}`,
+      display_name: `${item.scope === 'infra' ? 'Infra' : 'Business'} ${({ postgres: 'PostgreSQL', redis: 'Redis', minio: 'MinIO' })[item.service] || item.service}`
+    }))
+  }
+  blocked.value = false
+  void readCollections(ticket, owners.value)
+}
+function openConfiguration(event) {
+  if (!canConfigure.value) return
+  discoveryScope.value = state.value.scope
+  trigger = event?.currentTarget
+  detailRequests.invalidate(); clearCurrentSource(); record.value = null; selectedHost.value = null; detailError.value = ''
+  Object.assign(form, { display_name: '', inventory: null, declared_node_id: '' })
+  formReady.value = true; configuring.value = true
+  void loadDiscovery()
 }
 function openDetail(id,event){trigger=event?.currentTarget;return navigate(`/engine-deployments/${id}`)}
-function close(){if(saving.value)return;clearCurrentSource();epoch++;discoveryRequests.invalidate();creating.value=false;reading.value=false;if(deploymentID.value)return navigate('/engine-deployments',state.value.query,'replace')}
-async function focusForm(event){event?.preventDefault?.();await nextTick();if(canWrite.value && formReady.value && !creating.value)nameInput.value?.focus();else closeButton.value?.$el?.focus()}
+function closeConfiguration() {
+  discoveryRequests.invalidate(); resetConfiguration(); configuring.value = false; reading.value = false
+}
+function close(){if(saving.value)return;clearCurrentSource();epoch++;closeConfiguration();if(deploymentID.value)return navigate('/engine-deployments',state.value.query,'replace')}
+async function focusForm(event){event?.preventDefault?.();await nextTick();if(canWrite.value && formReady.value && !configuring.value)nameInput.value?.focus();else closeButton.value?.$el?.focus()}
 async function restoreFocus(){await nextTick();if(trigger?.isConnected)trigger.focus();else searchInput.value?.focus();trigger=null}
 function setQuery(patch){return navigate('/engine-deployments',{...state.value.query,...patch},'replace')}
 function changeScope(scope){return setQuery({scope:scope==='business'?'business':undefined,page:undefined})}
 function search(){return setQuery({search:searchDraft.value.trim()||undefined,page:undefined})}
-async function save(){
-  if(!canWrite.value||saving.value||blocked.value||reading.value)return
-  const name=form.display_name.trim(),isCreate=creating.value
-  const validName=value=>typeof value==='string' && value.trim() && [...value.trim()].length<=255 && !/\p{Cc}/u.test(value)
-  if(!isDeploymentUUID(form.declared_node_id) || (isCreate ? !selectedCandidates.value.length || selectedCandidates.value.length>16 || selectedCandidates.value.some(item=>!validName(item.display_name)) : !validName(name) || !form.inventory)){saveError.value=t('system.engineDeployments.invalidForm');return}
-  const desktop=isCreate ? selectedCandidates.value.some(item=>discoveryScopes.value.find(scope=>scope.scope===item.scope)?.source?.runtime==='desktop_linux_vm') : form.inventory.source.runtime==='desktop_linux_vm'
-  if(selectedHost.value && (selectedHost.value.node_id!==form.declared_node_id || ((isCreate || form.enabled) && !selectedHost.value.enabled) || (desktop && selectedHost.value.node_kind!=='virtual'))){saveError.value=t('system.engineDeployments.hostMismatch');return}
-  const own=epoch,id=deploymentID.value
-  const body=isCreate ? {items:selectedCandidates.value.map(item=>({scope:item.scope,service:item.service,fingerprint:item.fingerprint,display_name:item.display_name.trim(),enabled:form.enabled,declared_node_id:form.declared_node_id}))} : {display_name:name,enabled:form.enabled,declared_node_id:form.declared_node_id,version:record.value.version}
-  saving.value=true;saveError.value=''
-  try{
-    const result=await (isCreate?engineDeploymentsAPI.create(body):engineDeploymentsAPI.update(id,body))
-    const value=isCreate?null:validRecord(result,id)
-    if(isCreate){if(!Array.isArray(result.data) || result.data.length!==body.items.length)throw new Error('invalid_admission');result.data.forEach(value=>validRecord(value))}
-    if(own!==epoch)return
+async function save() {
+  if (!canWrite.value || saving.value || blocked.value || reading.value) return
+  const configuration = configuring.value
+  const additions = configuration && canCreate.value ? selectedCandidates.value : []
+  const updates = configuration && canUpdate.value ? changedDeployments.value.map(row => ({
+    row,
+    body: { display_name: row.display_name, enabled: draftEnabled.value[row.deployment_id], declared_node_id: row.declared_node_id, version: row.version }
+  })) : []
+  const name = form.display_name.trim()
+  const validName = value => typeof value === 'string' && value.trim() && [...value.trim()].length <= 255 && !/\p{Cc}/u.test(value)
+  if (configuration ? (!additions.length && !updates.length) || additions.length > 16 || additions.some(item => !validName(item.display_name))
+    : !validName(name) || !record.value) {
+    saveError.value = t('system.engineDeployments.invalidForm')
+    return
+  }
+  if (!configuration || additions.length) {
+    if (!isDeploymentUUID(form.declared_node_id)) {
+      saveError.value = t('system.engineDeployments.selectAdmissionHost')
+      return
+    }
+    const desktop = configuration
+      ? additions.some(item => discoveryScopes.value.find(scope => scope.scope === item.scope)?.source?.runtime === 'desktop_linux_vm')
+      : form.inventory.source.runtime === 'desktop_linux_vm'
+    if (selectedHost.value && (selectedHost.value.node_id !== form.declared_node_id ||
+        ((configuration || record.value.enabled) && !selectedHost.value.enabled) || (desktop && selectedHost.value.node_kind !== 'virtual'))) {
+      saveError.value = t('system.engineDeployments.hostMismatch')
+      return
+    }
+  }
+  const own = epoch
+  if (configuration) discoveryRequests.invalidate()
+  saving.value = true; saveError.value = ''; savedChanges.value = []
+  try {
+    if (configuration) {
+      if (additions.length) {
+        const items = additions.map(item => ({ scope: item.scope, service: item.service, fingerprint: item.fingerprint,
+          display_name: item.display_name.trim(), enabled: true, declared_node_id: form.declared_node_id }))
+        const result = await engineDeploymentsAPI.create({ items })
+        if (own !== epoch) return
+        if (!Array.isArray(result.data) || result.data.length !== items.length) throw new Error('invalid_admission')
+        const created = result.data.map(value => validRecord(value))
+        const keys = new Set(created.map(row => `${row.scope}/${row.inventory.services[0].service}`))
+        if (!items.every(item => keys.has(`${item.scope}/${item.service}`)) || created.some(row => !row.enabled)) throw new Error('invalid_admission')
+        savedChanges.value.push(...created.map(row => row.display_name))
+        registered.value.push(...created)
+        candidates.value = candidates.value.filter(item => !keys.has(item.key))
+        for (const key of keys) delete draftEnabled.value[key]
+      }
+      for (const { row, body } of updates) {
+        const value = validRecord(await engineDeploymentsAPI.update(row.deployment_id, body), row.deployment_id)
+        if (own !== epoch) return
+        if (value.enabled !== body.enabled || value.version !== body.version + 1) throw new Error('invalid_update')
+        savedChanges.value.push(value.display_name)
+        registered.value = registered.value.map(current => current.deployment_id === value.deployment_id ? value : current)
+        delete draftEnabled.value[row.deployment_id]
+        delete collections.value[row.deployment_id]
+      }
+      closeConfiguration()
+    } else {
+      const id = deploymentID.value
+      const body = { display_name: name, enabled: record.value.enabled, declared_node_id: form.declared_node_id, version: record.value.version }
+      const value = validRecord(await engineDeploymentsAPI.update(id, body), id)
+      if (own !== epoch) return
+      populate(value)
+    }
     ElMessage.success(t('system.engineDeployments.saved'))
-    if(isCreate){creating.value=false;if(deploymentID.value)await navigate('/engine-deployments',state.value.query,'replace');else await loadList()}
-    else{populate(value);await loadList()}
-  }catch(error){
-    if(own!==epoch)return
-    const status=error.response?.status,code=error.response?.data?.error_code
-    blocked.value=!status||status>=500||code==='resource_version_conflict'||code==='engine_deployment_source_changed'||code==='engine_deployment_source_occupied'
-    saveError.value=t(code==='engine_deployment_source_changed'?'system.engineDeployments.sourceChanged':code==='engine_deployment_source_occupied'?'system.engineDeployments.occupied':code==='engine_deployment_host_unavailable'?'system.engineDeployments.hostMismatch':blocked.value?'system.engineDeployments.unknownWrite':'system.engineDeployments.saveFailed')
-  }finally{if(own===epoch)saving.value=false}
+    await loadList()
+  } catch (error) {
+    if (own !== epoch) return
+    const status = error.response?.status, code = error.response?.data?.error_code
+    blocked.value = savedChanges.value.length > 0 || !status || status >= 500 || ['resource_version_conflict', 'engine_deployment_source_changed', 'engine_deployment_source_occupied'].includes(code)
+    saveError.value = t(`system.engineDeployments.${savedChanges.value.length ? 'partialSave' : code === 'engine_deployment_source_changed' ? 'sourceChanged' : code === 'engine_deployment_source_occupied' ? 'occupied' : code === 'engine_deployment_host_unavailable' ? 'hostMismatch' : blocked.value ? 'unknownWrite' : 'saveFailed'}`)
+    if (savedChanges.value.length) void loadList()
+  } finally {
+    if (own === epoch) saving.value = false
+  }
 }
 watch([()=>route.fullPath,identity],async()=>{
-  epoch++;clearCurrentSource();listRequests.invalidate();detailRequests.invalidate();discoveryRequests.invalidate();candidates.value=[];selectedCandidates.value=[];discoveryScopes.value=[];rows.value=[];record.value=null;selectedHost.value=null;creating.value=false;formReady.value=false;saving.value=false;reading.value=false;blocked.value=false;detailLoading.value=false;detailError.value='';saveError.value='';listError.value='';listLoading.value=false;listLoaded.value=false;Object.assign(form,{inventory:null,declared_node_id:'',display_name:'',enabled:true});searchDraft.value=state.value.search
+  epoch++;clearCurrentSource();listRequests.invalidate();detailRequests.invalidate();closeConfiguration();rows.value=[];record.value=null;selectedHost.value=null;formReady.value=false;saving.value=false;blocked.value=false;detailLoading.value=false;detailError.value='';saveError.value='';listError.value='';listLoading.value=false;listLoaded.value=false;Object.assign(form,{inventory:null,declared_node_id:'',display_name:''});searchDraft.value=state.value.search
   if(!canRead.value)return
   if(state.value.changed){await navigate(route.path,state.value.query,'replace');return}
   await Promise.all([loadList(),loadDetail()])
-},{immediate:true})
+},{immediate:true,flush:'sync'})
 onBeforeUnmount(()=>{clearCurrentSource();epoch++;listRequests.dispose();detailRequests.dispose();discoveryRequests.dispose();sourceRequests.dispose()})
 </script>
 <style scoped>
 .toolbar > h2 { color: var(--addp-text-primary); }
 .engine-deployments{padding:20px;min-width:0}.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}.toolbar h2{flex:1;margin:0}.toolbar .el-input{max-width:420px}.el-pagination{margin-top:16px;overflow-x:auto}.el-alert{margin-bottom:12px}.current-source{margin-bottom:20px}.current-source h3{flex:1;margin:0}.candidate-name{margin-top:6px}.hint{color:var(--addp-text-secondary);margin:8px 0;width:100%}dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px}dd{margin:0;overflow-wrap:anywhere}dt{color:var(--addp-text-secondary)}@media(max-width:600px){.engine-deployments{padding:12px}.toolbar .el-input{max-width:none;flex-basis:100%}dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:8px}}
-.candidate-connected{color:var(--el-color-success);font-size:20px}.candidate-unavailable-icon{color:var(--el-text-color-placeholder);font-size:20px}
+.candidate-unavailable-icon{color:var(--el-text-color-placeholder);font-size:20px}
 :deep(.candidate-unavailable td.el-table__cell){color:var(--el-text-color-placeholder);background-color:var(--el-fill-color-light)}
 .candidate-status{max-width:100%;height:auto;white-space:normal;line-height:1.5;padding:3px 8px}
 :deep(.candidate-status .el-tag__content){white-space:normal;overflow-wrap:anywhere}
-.candidate-status-cell{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.change-preview p{overflow-wrap:anywhere;margin:6px 0}.collection-time{font-size:12px;color:var(--addp-text-secondary);overflow-wrap:anywhere}
 </style>

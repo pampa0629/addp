@@ -676,10 +676,10 @@ export function createAPIClient(getAuthStore, options = {}) {
   client.interceptors.request.use((config) => {
     config.headers.set('Accept-Language', getCurrentLang())
     return authorize(config)
-  }, Promise.reject)
+  }, (error) => Promise.reject(error))
 
   if (!enableRefresh) {
-    if (extractData) client.interceptors.response.use((response) => response.data, Promise.reject)
+    if (extractData) client.interceptors.response.use((response) => response.data, (error) => Promise.reject(error))
     return client
   }
 

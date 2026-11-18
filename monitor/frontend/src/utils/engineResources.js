@@ -1,3 +1,4 @@
+import { validateEngineCollection } from '../../../../common-frontend/basic/src/utils/engineCollection.mjs'
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { isTargetUUID } from './monitoringTargets.js'
 import { currentResourceValue, resourceRanges } from './nodeResources.js'
@@ -111,13 +112,9 @@ export function validateEngineResources(value, owners, metricsForOwner, params =
   for (const row of value.data) {
     const owner = owners.find(item => item.deployment_id === row?.subject?.deployment_id)
     const metrics = owner ? metricsForOwner(owner) : []
-    if (!owner || seen.has(owner.deployment_id) || row.subject.kind !== 'engine_deployment' || row.subject.engine_type !== owner.engine_type || row.subject.display_name !== owner.display_name || row.node_id !== owner.node_id || !Array.isArray(row.series) || row.series.length !== metrics.length) invalid()
+    if (!owner || seen.has(owner.deployment_id) || !Array.isArray(row.series) || row.series.length !== metrics.length) invalid()
     seen.add(owner.deployment_id)
-    const state = row.collection?.state, stamp = Date.parse(row.collection?.sampled_at)
-    if (!['collecting', 'failed', 'stale', 'no_sample', 'snapshot_unavailable', 'not_active', 'not_connected', 'source_unavailable'].includes(state)) invalid()
-    if (['collecting', 'failed', 'stale', 'snapshot_unavailable'].includes(state)) {
-      if (!Number.isFinite(stamp) || stamp > queried || (state === 'stale' ? queried - stamp <= 60000 : queried - stamp > 60000)) invalid()
-    } else if (row.collection.sampled_at !== null) invalid()
+    const { state } = validateEngineCollection(row, owner, queried)
     const keys = new Set()
     for (const series of row.series) {
       const metric = metrics.find(item => item.key === series.metric_key)

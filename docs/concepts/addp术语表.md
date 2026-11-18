@@ -735,6 +735,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份及基础信息；用户入口称“平台主机管理”。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。平台节点 API 创建 UUID，enabled 表示纳管意图而非在线状态。 |
 | host admission manifest | 主机接入清单 | 部署入口导出、供平台管理员预览并确认主机及采集配置的有界声明文件。 | 不是主机身份库、签名或权限凭据；System 仍创建 node_id，Monitor 仍拥有采集配置，不按名称/IP自动合并或推断服务、引擎位置。 |
 | engine deployment | 引擎部署 | 运维方实际部署和维护的一套引擎服务，可承载多个租户的 Engine Instance 登记，也可跨多个主机。 | 部署运维归属与租户业务权限分别裁决；不把 engine_id、连接地址或容器运行 ID 当成部署永久身份，不重复累计共享资源。承载关联由 System 拥有；首批开放 Infra／Business PostgreSQL 单容器、单主机的管理员批量确认接入，专业观测与租户引擎关联尚未开放。 |
+| engine monitoring enabled | 引擎监控启用 | 平台管理员对已登记引擎的采集发现意图，对应部署的 `enabled`。 | 停用保存原部署和承载声明，退出平台采集发现。勾选表示配置意图，采集状态由 Monitor 按当前观测事实提供。 |
 | engine deployment inventory | 引擎部署来源清单 | 平台管理员确认接入时，由 Infra／Business 部署发现结果生成并保存的无凭据来源快照。 | 首期仅单容器 PostgreSQL；包含 Docker Engine、Compose 服务及确认时的容器证据，不含凭据或租户登记。持续发现的当前来源与确认快照分别展示；快照不是授权、稳定部署身份或已建立的主机关联。 |
 | deployment discovery snapshot | 部署发现快照 | 部署侧只读核验当前工作区 Infra 或 Business 实际 Compose 服务后自动发布的有界来源事实。 | 两个作用域独立原子替换；包含运行身份、状态与端口，不含凭据、租户、授权或自动建立的主机关联。失败与成功空列表分别表达；发现、管理员纳管声明、服务可用性与专业采集结果分别裁决。 |
 | CDC infrastructure component | CDC 基础设施组件 | Infra 为数据库变更捕获部署的消息代理 Redpanda 或捕获运行时 Kafka Connect。 | 按已核验的 Infra 部署事实自动纳入观测，组件运行身份、采集就绪和用户读取权限分别裁决。PostgreSQL 源端仍沿引擎部署身份观测。 |

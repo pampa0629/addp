@@ -2350,10 +2350,13 @@
     },
     "engineDeployments": {
       "title": "Engine administration",
-      "purpose": "Register deployed engines and manage their host associations and registration status.",
-      "scopes": { "infra": "Infra", "business": "Business" },
+      "purpose": "Manage engine monitoring, deployment names and hosting machines.",
+      "scopes": {
+        "infra": "Infra",
+        "business": "Business"
+      },
       "actions": "Actions",
-      "create": "Register discovered engines",
+      "create": "Configure engine monitoring",
       "details": "Engine deployment details",
       "name": "Deployment name",
       "search": "Search deployment names",
@@ -2372,10 +2375,10 @@
       "reload": "Reload and review",
       "empty": "No registered engine deployments",
       "readFailed": "Could not read deployments. Refresh to retry.",
-      "invalidForm": "Select services, enter deployment names and select their host.",
+      "invalidForm": "Review the selected services and deployment names.",
       "hostMismatch": "The host is missing, disabled or has an incompatible type. Review and select again.",
       "occupied": "This database service in the Docker engine is already registered. Find its existing deployment in the list.",
-      "unknownWrite": "The save result or version changed. Further submissions are blocked. Reload and review an existing record; for initial registration, close the dialog and refresh the list.",
+      "unknownWrite": "The save result is unknown or the version has changed. Reload and review before submitting again.",
       "saveFailed": "Could not save. Review the input and retry.",
       "saved": "Deployment declaration saved",
       "states": {
@@ -2391,18 +2394,10 @@
       "detailAction": "Details",
       "refreshDiscovery": "Reload sources",
       "service": "Deployed service",
-      "selectScope": "Select available services in this tab",
-      "newAdmissionState": "Management state for newly registered engines",
-      "newAdmissionStateHint": "Applies only to the new engines selected in this batch. Manage registered engines in their details.",
-      "managementStateHint": "Disabling removes this deployment from monitoring discovery; enabling includes it again. The engine keeps running and business data is retained.",
-      "selectedServices": "{count} services selected for registration, including selections in other tabs.",
-      "noNewServices": "No new engines are available for registration. Nothing needs saving. Open Details to change a registered engine’s management settings.",
-      "selectServicesFirst": "Select services to register, then configure their host and management state. A green check means already registered and cannot be selected again.",
-      "noNewServicesInScope": "No services are available for registration in this tab. Check another tab, or open Details to manage a registered engine.",
       "selectAdmissionHost": "Select the host that runs the selected services before saving.",
-      "discoveryStatus": "Registration status",
-      "noCandidates": "No discovered services",
-      "discoveryHint": "Select services and confirm their host to register deployments. Only single-container PostgreSQL, Redis and MinIO are supported. This does not create tenant business connections or install or start metrics collection.",
+      "discoveryStatus": "Current settings",
+      "noCandidates": "No deployments or discovery results in this tab",
+      "discoveryHint": "Select to enable monitoring or clear to disable it. Confirm the host when enabling monitoring for a new deployment.",
       "sourceChanged": "Sources changed or expired. Reload, check and select again.",
       "discoveryStates": {
         "available": "Source available",
@@ -2412,7 +2407,6 @@
         "stale": "Source expired"
       },
       "candidateStates": {
-        "registered": "Registered",
         "ready": "Ready to register",
         "unsupported_engine": "Component not supported yet",
         "unsupported_topology": "Multiple containers not supported",
@@ -2442,7 +2436,27 @@
         "dead": "Container in dead state",
         "removing": "Container being removed"
       },
-      "monitor": "View monitoring"
+      "monitor": "View monitoring",
+      "noChanges": "No monitoring changes to save.",
+      "monitoringOn": "Monitoring enabled",
+      "monitoringOff": "Monitoring disabled",
+      "collectionStatus": "Collection status",
+      "reloadConfiguration": "Reload configuration",
+      "enableChanges": "Enable monitoring for {names}",
+      "disableChanges": "Disable monitoring for {names}",
+      "appliedChanges": "Confirmed changes for {names}",
+      "partialSave": "Some changes were confirmed. Further submissions stopped. Reload the configuration and review its current state.",
+      "collection": {
+        "collecting": "Collecting",
+        "failed": "Collection failed",
+        "stale": "Sample expired",
+        "no_sample": "Waiting for samples",
+        "not_active": "Not collecting",
+        "not_connected": "Collection source not connected",
+        "source_unavailable": "Collection source unavailable",
+        "snapshot_unavailable": "Collection snapshot unavailable",
+        "unknown": "Collection status unknown"
+      }
     }
   }
 }

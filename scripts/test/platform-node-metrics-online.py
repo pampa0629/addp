@@ -1689,7 +1689,7 @@ def validate_engine_admission_browser(value,expected,artifacts):
     actor=value.get("identity",{}); platform_identity(actor,"platform.system_administrator")
     require(actor["principal"]["id"]==expected["admin_id"],"engine browser changed administrator")
     detail=value.get("engine_admission",{})
-    require(isinstance(detail,dict) and detail.get("reloaded") is True and detail.get("registered_disabled") is True,"engine browser reload or registered guard missing")
+    require(isinstance(detail,dict) and detail.get("reloaded") is True and detail.get("registered_checked") is True,"engine browser reload or registered monitoring state missing")
     writes=detail.get("writes",[])
     require(isinstance(writes,list) and len(writes)==1 and isinstance(writes[0],dict) and set(writes[0])=={"items"} and isinstance(writes[0]["items"],list) and len(writes[0]["items"])==2 and all(isinstance(row,dict) for row in writes[0]["items"]),"engine browser did not submit one bounded batch")
     items=sorted(writes[0]["items"],key=lambda row:row.get("scope",""))

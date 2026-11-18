@@ -8,8 +8,8 @@ export function discoveryFixture(registered=false,redis=false,minio=false) {
  const candidates=scopes.flatMap(scope=>scope.services.map(service=>({scope:scope.scope,service:service.service,fingerprint:(scope.scope==='infra'?'b':'a').repeat(64),eligible:service.service==='postgres'||((redis&&service.service==='redis')||(minio&&service.service==='minio')),reason:service.service==='postgres'||((redis&&service.service==='redis')||(minio&&service.service==='minio'))?'':'unsupported_engine',...(registered&&scope.scope==='business'&&service.service==='postgres'?{deployment_id:DEPLOYMENT_ID}:{})})))
  return {scopes,candidates}
 }
-export async function mockDeployments(page,{permissions=deploymentPermissions,scope='platform',conflict=false,unknown=false,language='zh-cn',empty=false,sourceChanged=false,sourceUnavailable=false,redisSources=false,minioSources=false}={}){
- const hosts=await mockHostNodesAPI(page,{permissions,scope,language}),calls=[],writes=[]
+export async function mockDeployments(page,{permissions=deploymentPermissions,scope='platform',conflict=false,unknown=false,language='zh-cn',empty=false,sourceChanged=false,sourceUnavailable=false,redisSources=false,minioSources=false,updateConflict=false,collectionState="collecting"}={}){
+ const hosts=await mockHostNodesAPI(page,{permissions,scope,language}),calls=[],writes=[],summaryReads=[]
  await page.route('**/api/v1/system/auth/context',route=>route.fulfill({json:{principal:{id:'1',type:'user'},context:{type:scope,...(scope==='tenant'?{tenant_id:'3',tenant_membership_id:'4'}:{})},authorization:{role_assignments:[{scope:{type:scope,...(scope==='tenant'?{tenant_id:'3'}:{})},permissions}]}}}))
  const record=(id=DEPLOYMENT_ID,source=inventory)=>({deployment_id:id,scope:source.source.project==='business'?'business':'infra',display_name:'Business PostgreSQL',engine_type:source.services[0].engine_type,enabled:true,inventory:source,declared_node_id:HOST_NODE_ID,node_id:HOST_NODE_ID,host_binding_state:'bound',host_binding_reason:'',version:7,created_at:'2026-10-19T00:00:00Z',updated_at:'2026-10-19T00:00:00Z'})
  let records=empty?[]:[record()]
@@ -18,7 +18,7 @@ export async function mockDeployments(page,{permissions=deploymentPermissions,sc
   if(request.method()==='POST'||request.method()==='PUT'){
    const body=request.postDataJSON();writes.push(body)
    if(unknown)return route.abort('failed')
-   if(conflict||sourceChanged)return route.fulfill({status:409,json:{error_code:sourceChanged?'engine_deployment_source_changed':'resource_version_conflict'}})
+   if(conflict||sourceChanged||(updateConflict&&request.method()==='PUT'))return route.fulfill({status:409,json:{error_code:sourceChanged?'engine_deployment_source_changed':'resource_version_conflict'}})
    if(request.method()==='POST'){
     const data=body.items.map(item=>{
       const scope=discoveryFixture(false,redisSources,minioSources).scopes.find(s=>s.scope===item.scope)
@@ -39,10 +39,21 @@ export async function mockDeployments(page,{permissions=deploymentPermissions,sc
   }
   if(url.pathname.endsWith('/engine_deployments')){
    const selectedScope=url.searchParams.get('scope')
-   const filtered=records.filter(row=>row.scope===selectedScope)
-   return route.fulfill({json:{data:filtered,total:filtered.length,page:Number(url.searchParams.get('page')),page_size:Number(url.searchParams.get('page_size')),total_pages:filtered.length?1:0}})
+   const filtered=records.filter(row=>!selectedScope||row.scope===selectedScope)
+   const page=Number(url.searchParams.get('page')),size=Number(url.searchParams.get('page_size'))
+   return route.fulfill({json:{data:filtered.slice((page-1)*size,page*size),total:filtered.length,page,page_size:size,total_pages:Math.ceil(filtered.length/size)}})
   }
   return route.fulfill({json:records.find(value=>url.pathname.endsWith('/'+value.deployment_id))})
  })
- return {calls,writes,hosts}
+ await page.route('**/api/v1/monitor/platform/engine_resource_summaries?*', route => {
+   const ids = new URL(route.request().url()).searchParams.get('deployment_ids').split(',')
+   summaryReads.push(ids)
+   const queried_at = new Date().toISOString()
+   return route.fulfill({json:{queried_at, data:records.filter(row => ids.includes(row.deployment_id)).map(row => ({
+     subject:{kind:'engine_deployment',deployment_id:row.deployment_id,display_name:row.display_name,engine_type:row.engine_type},
+     node_id:row.node_id,
+     collection:{state:collectionState,sampled_at:collectionState==='collecting'?queried_at:null}
+   }))}})
+ })
+ return {calls,writes,hosts,summaryReads}
 }

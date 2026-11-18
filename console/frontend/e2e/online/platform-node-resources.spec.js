@@ -270,11 +270,11 @@ test('platform node resources through real Console password MFA and Monitor ifra
       for (const item of input.items) {
         const scope = item.scope === 'infra' ? 'Infra' : 'Business'
         await system.getByTestId('deployment-discovery-scopes').getByRole('tab', { name: item.scope === 'infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
-        await system.getByRole('textbox', { name: `${item.scope} ${item.service}`, exact: true }).fill(item.display_name)
         const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / ${item.service}` })
         await expect(row).toHaveCount(1)
         await expect(row.locator('.el-checkbox')).toBeEnabled()
         await row.locator('.el-checkbox').click()
+        await system.getByRole('textbox', { name: `${item.scope} ${item.service}`, exact: true }).fill(item.display_name)
       }
       await system.getByRole('dialog').getByRole('combobox', { name: '承载主机', exact: true }).press('Enter')
       await system.getByRole('option', { name: input.host.display_name, exact: true }).click()
@@ -316,15 +316,15 @@ test('platform node resources through real Console password MFA and Monitor ifra
         await system.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
       }
       await system.getByTestId('deployment-create').click()
-      for (const scope of ['Infra', 'Business']) {
-        await system.getByTestId('deployment-discovery-scopes').getByRole('tab', { name: scope === 'Infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
-        const row = system.getByTestId('deployment-candidates').getByRole('row').filter({ hasText: `${scope} / ${input.items[0].service}` })
-        await expect(row).toContainText('已纳管')
-        await expect(row.getByTestId('candidate-connected')).toHaveAttribute('aria-label', '已纳管')
-        await expect(row.locator('.el-checkbox')).toHaveCount(0)
+      for (const owner of payload.data) {
+        await system.getByTestId('deployment-discovery-scopes').getByRole('tab', { name: owner.scope === 'infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
+        const checkbox = system.getByTestId('deployment-candidates').getByRole('checkbox', { name: owner.display_name, exact: true })
+        await expect(checkbox).toBeChecked()
+        await expect(checkbox.locator('..')).toBeEnabled()
+        await expect(system.getByTestId('deployment-save')).toBeDisabled()
       }
       expect(writes).toHaveLength(1)
-      report.engine_admission = { writes, created: payload.data, reloaded: true, registered_disabled: true, current_sources: currentSources }
+      report.engine_admission = { writes, created: payload.data, reloaded: true, registered_checked: true, current_sources: currentSources }
       report.result = 'passed'; save('complete'); return
     }
     if (expected.admission) {

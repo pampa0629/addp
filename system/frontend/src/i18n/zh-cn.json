@@ -2350,10 +2350,13 @@
     },
     "engineDeployments": {
       "title": "引擎纳管",
-      "purpose": "登记已部署的引擎，并维护承载主机与纳管状态。",
-      "scopes": { "infra": "Infra 基础设施", "business": "Business 业务引擎" },
+      "purpose": "管理引擎监控配置、部署名称和承载主机。",
+      "scopes": {
+        "infra": "Infra 基础设施",
+        "business": "Business 业务引擎"
+      },
       "actions": "操作",
-      "create": "登记发现的引擎",
+      "create": "配置引擎监控",
       "details": "引擎部署详情",
       "name": "部署名称",
       "search": "搜索部署名称",
@@ -2372,10 +2375,10 @@
       "reload": "重新读取并核对",
       "empty": "尚未登记引擎部署",
       "readFailed": "读取部署失败，请刷新重试",
-      "invalidForm": "请选择待登记服务、填写部署名称并选择承载主机",
+      "invalidForm": "请核对所选服务及部署名称。",
       "hostMismatch": "主机不存在、已停用或类型不匹配，请核对后重新选择",
       "occupied": "该 Docker 引擎中的数据库服务已登记，请在列表中查看已有部署",
-      "unknownWrite": "保存结果或版本已变化，已停止继续提交。请重新读取已有记录并核对；首次登记请关闭弹窗后刷新列表。",
+      "unknownWrite": "保存结果未知或版本已变化，已停止继续提交。请重新读取并核对。",
       "saveFailed": "保存失败，请核对输入后重试",
       "saved": "部署声明已保存",
       "states": {
@@ -2391,18 +2394,10 @@
       "detailAction": "详情",
       "refreshDiscovery": "重新读取来源",
       "service": "部署服务",
-      "selectScope": "选择当前标签内可登记的服务",
-      "newAdmissionState": "新登记引擎的纳管状态",
-      "newAdmissionStateHint": "仅作用于本次勾选的新引擎；已纳管引擎请在详情中修改。",
-      "managementStateHint": "停用后，该部署退出监控发现；重新启用后纳入发现。不会停止引擎或删除业务数据。",
-      "selectedServices": "已选择 {count} 个待登记服务（含其他标签中的选择）。",
-      "noNewServices": "当前没有待登记的新引擎，无需重复保存。修改已纳管引擎的纳管设置，请点击该项“详情”。",
-      "selectServicesFirst": "请先勾选待登记服务，再设置承载主机和纳管状态。绿色勾表示已纳管，不能再次勾选。",
-      "noNewServicesInScope": "当前标签没有待登记服务。可切换其他标签选择；修改已纳管引擎请点击“详情”。",
       "selectAdmissionHost": "请选择实际承载所选服务的主机后保存。",
-      "discoveryStatus": "纳管状态",
-      "noCandidates": "尚未发现可展示的服务",
-      "discoveryHint": "选择服务并核对承载主机后登记部署。当前支持单容器 PostgreSQL、Redis 和 MinIO；此处不创建租户业务连接，也不安装或启动指标采集。",
+      "discoveryStatus": "当前配置",
+      "noCandidates": "此范围暂无部署或发现结果",
+      "discoveryHint": "勾选以启用监控，取消勾选以停用。首次启用需要确认承载主机。",
       "sourceChanged": "来源已变化或过期，请重新读取后核对并选择。",
       "discoveryStates": {
         "available": "来源读取成功",
@@ -2412,7 +2407,6 @@
         "stale": "来源已过期"
       },
       "candidateStates": {
-        "registered": "已纳管",
         "ready": "待登记",
         "unsupported_engine": "此组件尚未适配",
         "unsupported_topology": "暂不支持多容器部署",
@@ -2442,7 +2436,27 @@
         "dead": "容器处于故障状态",
         "removing": "容器正在移除"
       },
-      "monitor": "查看监控"
+      "monitor": "查看监控",
+      "noChanges": "没有待保存的监控变更。",
+      "monitoringOn": "监控已启用",
+      "monitoringOff": "监控已停用",
+      "collectionStatus": "实际采集",
+      "reloadConfiguration": "重新读取配置",
+      "enableChanges": "将启用监控：{names}",
+      "disableChanges": "将停用监控：{names}",
+      "appliedChanges": "已确认保存：{names}",
+      "partialSave": "部分变更已确认保存。已停止后续提交，请重新读取配置并核对。",
+      "collection": {
+        "collecting": "正在采集",
+        "failed": "采集失败",
+        "stale": "样本过期",
+        "no_sample": "等待采样",
+        "not_active": "未在采集",
+        "not_connected": "未接入采集来源",
+        "source_unavailable": "采集来源不可用",
+        "snapshot_unavailable": "采集快照不可用",
+        "unknown": "采集状态未知"
+      }
     }
   }
 }
