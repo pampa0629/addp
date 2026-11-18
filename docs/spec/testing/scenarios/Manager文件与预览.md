@@ -21,7 +21,7 @@
 | `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)六源分页、Parquet 与原件。 |
 | `delimited-read-settings` | [CSV／TSV GB18030](#csvtsv-gb18030-独立读取设置-case)编码、表头和分页，无派生产物。 |
 | `native-netcdf` | [NetCDF](科学容器只读验收.md#netcdf-单文件只读)变量和切片。 |
-| `native-grib` | [GRIB2](科学容器只读验收.md#grib2-单文件只读)逐消息数值与切片，[GRIB1](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)、[5.3 二阶差分](科学容器只读验收.md#grib2-模板53二阶空间差分扩展限定正式-hosted通过)、[ECMWF CCSDS](科学容器只读验收.md#ecmwf-grib2-ccsds-扩展限定正式-hosted-已通过)、[IFS 累计降水](科学容器只读验收.md#ecmwf-ifs-累计降水扩展限定正式-hosted-已通过)按各自 profile 认定。 |
+| `native-grib` | [GRIB2](科学容器只读验收.md#grib2-单文件只读)逐消息数值与切片，[GRIB1](科学容器只读验收.md#grib1-扩展验收限定正式-hosted通过)、[5.3 二阶差分](科学容器只读验收.md#grib2-模板53二阶空间差分扩展限定正式-hosted通过)、[ECMWF CCSDS](科学容器只读验收.md#ecmwf-grib2-ccsds-扩展限定正式-hosted-已通过)、[IFS 累计降水](科学容器只读验收.md#ecmwf-ifs-累计降水扩展限定正式-hosted-已通过)、[IFS 0h 基线](科学容器只读验收.md#ecmwf-ifs-0h-累计降水基线限定正式-hosted-已通过)按各自 profile 认定。 |
 | `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)的精确组成、节点授权、COG／缓存及恢复。 |
 | `kml-export` | [KML 导出](#kml-实际页面导出)的 PostGIS 源、页面按钮及 XML 回读。 |
 | `filegdb-export` | [PostGIS→FileGDB](#filegdb-实际页面导出)的 ZIP 回读、跨账号与排队撤权。 |
