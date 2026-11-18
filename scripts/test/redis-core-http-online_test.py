@@ -7,11 +7,13 @@ from pathlib import Path
 import secrets
 import shutil
 import socket
+import sys
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from urllib.parse import unquote, urlsplit
 from unittest.mock import patch
 
 scenario = import_module("scripts.test.redis-core-http-online")
@@ -242,6 +244,74 @@ class RedisCleanupTest(unittest.TestCase):
         self.assertEqual(self.execute_cleanup(True),[])
 
 
+class RedisIdentityStageTest(unittest.TestCase):
+    def test_build_once_before_infra_and_reuse_for_all_operations(self):
+        preparation = import_module("scripts.test.redis-core-http-preparation")
+        entry = (ROOT / "scripts/test/online-hosted-redis-core-gate.sh").read_text()
+        self.assertEqual(entry.count(" build-identity\n"), 1)
+        self.assertLess(entry.index(" build-identity\n"), entry.index("infra_owned=1"))
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+                "RUNNER_TEMP": tmp, "ADDP_ONLINE_SECRET_DIR": tmp}), patch.object(preparation, "identity_stage") as stage:
+            identity = Path(tmp) / "identity.json"
+            preparation.build_identity()
+            for mode in ("", "prepare", "cleanup", "retire"):
+                preparation.fixture(mode, identity, 11 if mode == "prepare" else 0)
+        calls = [c.args for c in stage.call_args_list]
+        binary = str(Path(tmp) / "online-test-fixture")
+        self.assertEqual(calls[0][:2], ("build", ["go", "build", "-o", binary, "./cmd/online-test-fixture"]))
+        self.assertEqual([c[0] for c in calls], ["build","initial","prepare","cleanup","retire"])
+        self.assertEqual([c[3] for c in calls], [900, 180, 180, 180, 180])
+        for _, args, cwd, _, path in calls[1:]:
+            self.assertEqual(args[0], binary)
+            self.assertEqual(cwd, calls[0][2])
+            self.assertEqual(path, identity)
+        self.assertEqual(calls[2][1][-4:], ["--redis-consumer","prepare","--redis-query-id","11"])
+
+    def test_timeout_reaps_writer_before_observation_and_never_exports_raw_stderr(self):
+        preparation = import_module("scripts.test.redis-core-http-preparation")
+        secret = secrets.token_hex(12)
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+                "ADDP_ONLINE_ARTIFACT_DIR": tmp, "ADDP_ONLINE_TEST_RUN_ID": "test-timeout"}):
+            root = Path(tmp)
+            late = "import time;from pathlib import Path;time.sleep(2);Path('late').touch()"
+            code = ("import os,sys,time,subprocess; from pathlib import Path; "
+                    "Path('pid').write_text(str(os.getpid())); "
+                    f"subprocess.Popen([sys.executable,'-c',{late!r}]); "
+                    "print(sys.argv[1]+' permission denied',file=sys.stderr,flush=True);time.sleep(30)")
+            def observe():
+                if (root / "pid").exists():
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(int((root / "pid").read_text()), 0)
+                    return {"users":1}
+                return {"users":0}
+            with patch.object(preparation, "identity_counts", side_effect=observe):
+                with self.assertRaises(preparation.IdentityTimeout):
+                    preparation.identity_stage("initial", [sys.executable,"-c",code,secret], root, 1, root/"identity.json")
+            raw = (root/"redis-core-identity-initial.json").read_text()
+            record = json.loads(raw)
+            self.assertEqual((record["result"],record["exit_code"]), ("timeout",-9))
+            self.assertEqual((record["counts_before"],record["counts_after"]), ({"users":0},{"users":1}))
+            self.assertFalse(record["identity_file_present"])
+            self.assertNotIn(secret,raw)
+            self.assertEqual(record["stderr_categories"],["permission denied"])
+            time.sleep(1.2)
+            self.assertFalse((root/"late").exists())
+
+    def test_build_exit_and_failed_observation_keep_original_outcome(self):
+        preparation = import_module("scripts.test.redis-core-http-preparation")
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+                "ADDP_ONLINE_ARTIFACT_DIR": tmp, "ADDP_ONLINE_TEST_RUN_ID": "test-records"}):
+            root = Path(tmp)
+            preparation.identity_stage("build", [sys.executable,"-c","pass"],root,10)
+            built = json.loads((root/"redis-core-identity-build.json").read_text())
+            self.assertEqual((built["result"],built["exit_code"]),("passed",0))
+            with patch.object(preparation,"identity_counts",side_effect=[{"users":0},scenario.EvidenceError("db read failed")]):
+                with self.assertRaises(scenario.EvidenceError):
+                    preparation.identity_stage("initial",[sys.executable,"-c","import sys;sys.exit(7)"],root,10,root/"identity.json")
+            failed = json.loads((root/"redis-core-identity-initial.json").read_text())
+            self.assertEqual((failed["exit_code"],failed["observation_error"]),(7,"post_exit_counts_unavailable"))
+
+
 class RedisSourceDatabaseTest(unittest.TestCase):
     def test_probe_retries_only_reads_and_seed_failure_is_archived_once(self):
         preparation = import_module("scripts.test.redis-core-http-preparation")
@@ -386,6 +456,7 @@ class RedisSourcePreparationTest(unittest.TestCase):
         class ConsumerBoundary(Exception): pass
         def fixture(mode, *args):
             commands.append(mode)
+            if mode == "prepare" and fault == "identity_timeout": raise preparation.IdentityTimeout("identity prepare: timeout")
             if mode == "prepare": raise ConsumerBoundary("stop before Consumer/OAuth/window")
 
         with tempfile.TemporaryDirectory() as directory:
@@ -449,6 +520,13 @@ class RedisSourcePreparationTest(unittest.TestCase):
         self.assertFalse(any(path.endswith("/access_grants") for _, _, path in calls))
         self.assertNotIn("prepare", commands)
 
+    def test_consumer_timeout_goes_directly_to_outer_destruction(self):
+        report, calls, commands = self.prepare("identity_timeout")
+        self.assertEqual(commands, ["prepare"])
+        self.assertEqual(report["error_code"], "identity prepare: timeout")
+        self.assertEqual((report["result"], report["cleanup"]), ("failed","failed"))
+        self.assertFalse(any(method == "DELETE" or path.endswith("/revoke") for _, method, path in calls))
+
     def test_failed_grant_revocation_cannot_report_cleanup_success(self):
         report, _, _ = self.prepare("cleanup")
         self.assertEqual(report["cleanup"], "failed")
@@ -461,7 +539,7 @@ class RedisPinnedFixtureTest(unittest.TestCase):
 
     def execute(self, real):
         with tempfile.TemporaryDirectory(prefix="redis-r1-pinned-") as directory:
-            root = Path(directory); checkout = root / "identity"
+            root = Path(directory); checkout = root / "redis-http-identity"
             subprocess.run(["git", "clone", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True, capture_output=True)
             subprocess.run(["git", "checkout", "--detach", scenario.PRODUCT_SHA], cwd=checkout, check=True, capture_output=True)
             subprocess.run(["git", "apply", "--unidiff-zero", str(ROOT / "scripts/test/redis-core-identity.patch")], cwd=checkout, check=True, capture_output=True)
@@ -472,6 +550,14 @@ class RedisPinnedFixtureTest(unittest.TestCase):
             shutil.copyfile(ROOT / "scripts/test/redis-core-gateway-wiring.go", checkout / "gateway/internal/router/redis_core_wiring_test.go")
             identity = root / "identity.json"
             env = dict(os.environ, GOWORK="off", ADDP_REDIS_WIRING_IDENTITY=str(identity))
+            preparation = import_module("scripts.test.redis-core-http-preparation")
+            stage_env = {"RUNNER_TEMP": directory, "ADDP_ONLINE_SECRET_DIR": directory,
+                         "ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "identity-gate"}
+            with patch.dict(os.environ, stage_env):
+                preparation.build_identity()
+            build = json.loads((root/"redis-core-identity-build.json").read_text())
+            self.assertEqual((build["exit_code"],build["result"]),(0,"passed"))
+            self.assertTrue(os.access(root/"online-test-fixture",os.X_OK))
             pattern = "^TestRedisCorePermissionBoundary$" if not real else "^TestRedisCore(PermissionBoundary|IdentityAgainstPostgres)$"
             result = subprocess.run(["go", "test", "./cmd/online-test-fixture", "-run", pattern, "-count=1", "-v"],
                                     cwd=checkout / "system/backend", env=env, capture_output=True, text=True, timeout=240)
@@ -480,12 +566,75 @@ class RedisPinnedFixtureTest(unittest.TestCase):
             self.assertIn("--- PASS: TestRedisCorePermissionBoundary ", result.stdout)
             if real:
                 self.assertIn("--- PASS: TestRedisCoreIdentityAgainstPostgres ", result.stdout)
+                # Use the real domain writer on the already migrated, gate-locked IAM database.
+                # Only the DB transport changes here: Hosted reads through its own Docker container.
+                testbin = root/"identity-writer.test"
+                subprocess.run(["go","test","-c","-o",str(testbin),"./cmd/online-test-fixture"],
+                               cwd=checkout/"system/backend",env=env,check=True,timeout=240)
+                dsn = urlsplit(env["ADDP_SYSTEM_POSTGRES_TEST_DSN"])
+                pg_env = dict(env, PGHOST=dsn.hostname, PGPORT=str(dsn.port or 5432), PGDATABASE=dsn.path[1:],
+                              PGUSER=unquote(dsn.username), PGPASSWORD=unquote(dsn.password),
+                              PGOPTIONS="-c default_transaction_read_only=on")
+                def read_gate_db(statement):
+                    result = subprocess.run(["psql","-XwqAt","-v","ON_ERROR_STOP=1"],input=statement,text=True,
+                        env=pg_env,
+                        capture_output=True,check=True,timeout=5)
+                    return json.loads(result.stdout)
+                timeout_artifacts = root / "interrupted"
+                timeout_artifacts.mkdir()
+                with patch.dict(os.environ, stage_env | {"ADDP_ONLINE_ARTIFACT_DIR": str(timeout_artifacts)}), \
+                        patch.object(preparation, "database", read_gate_db):
+                    with self.assertRaises(preparation.IdentityTimeout):
+                        preparation.identity_stage("initial",[str(testbin),"-test.run=^TestRedisCoreInterruptedWriter$"],
+                            checkout/"system/backend",8,root/"incomplete.json")
+                interrupted = json.loads((timeout_artifacts/"redis-core-identity-initial.json").read_text())
+                before, after = interrupted["counts_before"], interrupted["counts_after"]
+                self.assertEqual(interrupted["exit_code"],-9)
+                self.assertFalse(interrupted["identity_file_present"])
+                self.assertEqual(after, before | {"users":before["users"]+1,"audits":before["audits"]+1})
+                print("Redis identity stage: fixed fixture built; interrupted domain writer reaped; PG partial users=1 audits=1 tenants=0")
+                if os.environ.get("GITHUB_JOB") == "common-redis-core":
+                    self.hosted_identity(root, checkout, testbin, stage_env)
                 self.wire(root, checkout, identity, env)
                 retired = subprocess.run(["go", "test", "./cmd/online-test-fixture", "-run", "^TestRedisCoreRetireAgainstPostgres$", "-count=1", "-v"],
                     cwd=checkout / "system/backend", env=env, capture_output=True, text=True, timeout=120)
                 self.assertEqual(retired.returncode,0,retired.stdout+retired.stderr)
                 self.assertIn("--- PASS: TestRedisCoreRetireAgainstPostgres ",retired.stdout)
                 print("Redis pinned identity and cross-process System/Gateway wiring: passed; product=" + scenario.PRODUCT_SHA)
+
+    def hosted_identity(self, root, checkout, testbin, stage_env):
+        preparation = import_module("scripts.test.redis-core-http-preparation")
+        container = os.environ["ADDP_REDIS_IDENTITY_PG_CONTAINER"]
+        env = dict(stage_env, POSTGRES_DB="addp_online", POSTGRES_HOST="127.0.0.1", POSTGRES_USER="postgres",
+                   POSTGRES_PORT=os.environ["ADDP_REDIS_IDENTITY_PG_PORT"],
+                   POSTGRES_PASSWORD=os.environ["ADDP_REDIS_IDENTITY_PG_PASSWORD"], ADDP_ONLINE_HOSTED="1")
+        self.assertEqual(os.environ["RUNNER_ENVIRONMENT"], "github-hosted")
+        identity = root / "hosted-identity.json"
+        def sql(statement):
+            result = subprocess.run(["docker", "exec", "-i", "-e", "PGOPTIONS=-c default_transaction_read_only=on",
+                container, "psql", "-XwqAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "addp_online"],
+                input=statement, text=True, capture_output=True, check=True, timeout=5)
+            return json.loads(result.stdout)
+        with patch.dict(os.environ, env), patch.object(preparation, "database", sql):
+            subprocess.run([str(testbin), "-test.run=^TestRedisCoreMigrateHostedIdentity$"],
+                           cwd=checkout/"system/backend", check=True, timeout=180)
+            preparation.fixture("", identity)
+            counts = preparation.identity_counts()
+            self.assertEqual((counts["users"], counts["tenants"], counts["user_tokens"], counts["oauth_clients"]),
+                             (5, 2, 3, 1))
+            preparation.fixture("prepare", identity, 731)
+            counts = preparation.identity_counts()
+            self.assertEqual((counts["consumers"],counts["grants"],counts["credentials"]), (1,1,1))
+            preparation.fixture("cleanup", identity)
+            preparation.fixture("retire", identity)
+            self.assertEqual(preparation.identity_counts()["consumers"], 0)
+            self.assertEqual(sql("select count(*) from system.service_principals s join system.principals p "
+                                 "on s.id=p.id where s.name='redis-core-oauth-probe' and p.status='suspended'"), 1)
+            for stage in ("build", "initial", "prepare", "cleanup", "retire"):
+                record = json.loads((root/f"redis-core-identity-{stage}.json").read_text())
+                self.assertEqual((record["result"],record["exit_code"]), ("passed",0))
+                print(f"Hosted identity {stage}: seconds={record['elapsed_seconds']} exit={record['exit_code']}")
+        print("Hosted first identity + Consumer prepare/cleanup + retire: one fixed binary, five successful stage records")
 
     def wire(self, root, checkout, identity_path, env):
         source_port = port()

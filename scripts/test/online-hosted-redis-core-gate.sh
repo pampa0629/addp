@@ -25,6 +25,7 @@ export ADDP_ONLINE_TEST_RUN_ID="redis-r1-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT
 export ONLINE_SUITE=infra-redis-core
 # Only this suite's private launcher varies the selected Redis endpoint and
 # published Service address. Platform compiler/receiver/deployment CLI unchanged.
+run_logged python3 "$HARNESS/scripts/test/redis-core-http-preparation.py" build-identity
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 fixture_owned=1

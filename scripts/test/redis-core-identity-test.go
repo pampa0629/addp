@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/addp/common/authorization"
+	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
@@ -162,5 +163,35 @@ func TestRedisCoreRetireAgainstPostgres(t *testing.T) {
 	var status string
 	if err := db.Raw("SELECT status FROM system.principals WHERE id=?", values["ADDP_REDIS_HTTP_ACCOUNT_ID"]).Scan(&status).Error; err != nil || status != "suspended" {
 		t.Fatal("OAuth account was not retired", err)
+	}
+}
+
+// Run only under the real gate's process supervisor, which terminates this writer
+// after the first committed action of the normal initial identity preparation.
+func TestRedisCoreInterruptedWriter(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = createUser(t.Context(), iam.NewIdentityService(iam.NewRepository(db), nil), "external-online-reserve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Minute)
+	t.Fatal("identity supervisor did not terminate writer")
+}
+
+// The CI job owns a separate, fresh PG service for the Hosted-only CLI.
+func TestRedisCoreMigrateHostedIdentity(t *testing.T) {
+	cfg := config.Load()
+	if os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" || os.Getenv("GITHUB_ACTIONS") != "true" ||
+		cfg.PostgresDB != "addp_online" || cfg.PostgresHost != "127.0.0.1" ||
+		cfg.PostgresPort != os.Getenv("ADDP_REDIS_IDENTITY_PG_PORT") {
+		t.Fatal("dedicated Hosted identity PG required")
+	}
+	if err := migration.NewRunner(cfg.PostgreSQLDSN()).Run(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 }

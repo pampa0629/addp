@@ -128,13 +128,108 @@ def facts(identity):
     return observation
 
 
+class IdentityTimeout(s.EvidenceError):
+    """Hand the disposable deployment to outer cleanup after observing the writer."""
+
+
+def identity_counts():
+    # All five usernames and both tenant codes belong to this fixture in its exclusive DB.
+    # Product traffic can issue unrelated service tokens and audits while we are observing.
+    return database("""WITH users AS (
+        SELECT user_id FROM system.local_accounts WHERE normalized_username IN
+        ('external-online-reserve','external-online-administrator','external-online-consumer',
+         'external-online-source-initializer','external-online-engine-provisioner')
+    ), tenants AS (
+        SELECT id FROM system.tenants WHERE code IN ('external-online-reserve','external-online')
+    ), oauth AS (
+        SELECT service_principal_id FROM system.oauth_clients WHERE owner_tenant_id IN (SELECT id FROM tenants)
+          AND display_name='redis-core-oauth-probe'
+    ), actors AS (
+        SELECT user_id FROM users UNION SELECT service_principal_id FROM oauth
+    ), consumers AS (
+        SELECT id FROM system.api_consumers WHERE tenant_id IN (SELECT id FROM tenants)
+    )
+    SELECT json_build_object(
+        'users',(SELECT count(*) FROM users), 'tenants',(SELECT count(*) FROM tenants),
+        'memberships',(SELECT count(*) FROM system.tenant_memberships WHERE tenant_id IN (SELECT id FROM tenants)),
+        'assignments',(SELECT count(*) FROM system.role_assignments WHERE tenant_id IN (SELECT id FROM tenants)),
+        'oauth_clients',(SELECT count(*) FROM oauth),
+        'user_tokens',(SELECT count(*) FROM system.access_tokens t JOIN system.refresh_token_families f
+                       ON t.family_id=f.id WHERE f.principal_id IN (SELECT user_id FROM users)),
+        'audits',(SELECT count(*) FROM system.audit_logs WHERE principal_id IN (SELECT * FROM actors)
+                  OR tenant_id IN (SELECT id FROM tenants) OR request_id LIKE 'external-online-%'),
+        'consumers',(SELECT count(*) FROM consumers),
+        'grants',(SELECT count(*) FROM system.api_consumer_service_grants WHERE api_consumer_id IN (SELECT id FROM consumers)),
+        'credentials',(SELECT count(*) FROM system.api_consumer_credentials WHERE api_consumer_id IN (SELECT id FROM consumers))
+    )""")
+
+
+def identity_stage(stage, args, cwd, timeout, identity_path=None):
+    artifact = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / f"redis-core-identity-{stage}.json"
+    record = {"stage": stage, "limit_seconds": timeout, "exit_code": None, "result": "not_started",
+              "run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "product_sha": s.PRODUCT_SHA}
+    started = time.monotonic()
+    try:
+        if identity_path is not None:
+            try:
+                record["counts_before"] = identity_counts()
+            except (OSError, ValueError, subprocess.SubprocessError, s.EvidenceError):
+                record["observation_error"] = "pre_execution_counts_unavailable"
+                raise s.EvidenceError(f"identity {stage}: baseline unavailable") from None
+        started = time.monotonic()
+        child = subprocess.Popen(args, cwd=cwd, env=dict(os.environ, GOWORK="off"),
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            _, stderr = child.communicate(timeout=timeout)
+            record["result"] = "passed" if child.returncode == 0 else "failed"
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass  # Exited between the deadline and the signal; still collect its status.
+            _, stderr = child.communicate()
+            record["result"] = "timeout"
+        record.update(exit_code=child.returncode, elapsed_seconds=round(time.monotonic()-started, 3))
+        if record["result"] != "passed":
+            # Only known categories leave the private runner, never raw Go/DB errors.
+            categories = ("context deadline exceeded", "connection refused", "permission denied",
+                          "no space left on device", "already contains user principals", "create consumer role",
+                          "create reserve tenant", "write identity", "no required module provides package")
+            record["stderr_categories"] = [tag for tag in categories if tag.encode() in stderr.lower()]
+            if stderr and not record["stderr_categories"]:
+                record["stderr_categories"] = ["unclassified"]
+            if identity_path is not None:
+                record["identity_file_present"] = identity_path.is_file()
+                try:
+                    record["counts_after"] = identity_counts()
+                except (OSError, ValueError, subprocess.SubprocessError, s.EvidenceError):
+                    record["observation_error"] = "post_exit_counts_unavailable"
+            failure = IdentityTimeout if record["result"] == "timeout" else s.EvidenceError
+            raise failure(f"identity {stage}: {record['result']}")
+    except OSError as error:
+        record["os_errno"] = error.errno
+        raise s.EvidenceError(f"identity {stage}: OS error") from None
+    finally:
+        record.setdefault("elapsed_seconds", round(time.monotonic()-started, 3))
+        artifact.write_text(json.dumps(record, sort_keys=True) + "\n")
+
+
+def build_identity():
+    directory = Path(os.environ["RUNNER_TEMP"]) / "redis-http-identity/system/backend"
+    identity_stage("build", ["go", "build", "-o", str(private() / "online-test-fixture"),
+                             "./cmd/online-test-fixture"], directory, 900)
+
+
 def fixture(mode, identity_path, query=0):
-    identity_root = Path(os.environ["RUNNER_TEMP"]) / "redis-http-identity"
-    args = ["go", "run", "./cmd/online-test-fixture", "--suite", s.CONTRACT["suite"], "--output", str(identity_path)]
+    directory = Path(os.environ["RUNNER_TEMP"]) / "redis-http-identity/system/backend"
+    args = [str(identity_path.parent / "online-test-fixture"), "--suite", s.CONTRACT["suite"],
+            "--output", str(identity_path)]
     if mode:
         args += ["--redis-consumer", mode]
-        if query: args += ["--redis-query-id", str(query)]
-    command(args, cwd=identity_root / "system/backend", env=dict(os.environ, GOWORK="off"), timeout=180)
+        if query:
+            args += ["--redis-query-id", str(query)]
+    identity_stage(mode or "initial", args, directory, 180, identity_path)
 
 
 def start():
@@ -331,18 +426,21 @@ def accept():
         redis = s.RedisObserver(runtime["redis_upstream"], os.environ["REDIS_PASSWORD"])
         report.update(s.run_window(runtime, identity, token, projection, redis, lambda: facts(identity), report))
     except Exception as error:
+        cleanup_failed = isinstance(error, IdentityTimeout)
         report["error_code"] = str(error) if isinstance(error, s.EvidenceError) else "redis_http_preparation_failed"
         raise
     finally:
-        try:
-            if identity.get("ADDP_REDIS_HTTP_CONSUMER_ID"):
-                fixture("cleanup", identity_path)
-            if query_id is not None: owner.request("DELETE", f"/api/v1/service/query/{query_id}", (200, 204))
-            for engine, request_id in reversed(pending):
-                authorizer.request("POST", f"/api/v1/system/engines/{engine}/access_grants/{request_id}/revoke", (200,), {"reason": "Redis R1 owned acceptance cleanup"})
-            if identity.get("ADDP_REDIS_HTTP_ACCOUNT_ID"): fixture("retire", identity_path)
-        except Exception:
-            cleanup_failed = True
+        if not cleanup_failed:
+            try:
+                if identity.get("ADDP_REDIS_HTTP_CONSUMER_ID"):
+                    fixture("cleanup", identity_path)
+                if query_id is not None: owner.request("DELETE", f"/api/v1/service/query/{query_id}", (200, 204))
+                for engine, request_id in reversed(pending):
+                    authorizer.request("POST", f"/api/v1/system/engines/{engine}/access_grants/{request_id}/revoke", (200,), {"reason": "Redis R1 owned acceptance cleanup"})
+                if identity.get("ADDP_REDIS_HTTP_ACCOUNT_ID"): fixture("retire", identity_path)
+            except Exception as error:
+                cleanup_failed = True
+                report["cleanup_error"] = str(error) if isinstance(error, IdentityTimeout) else "owner cleanup failed"
         report.setdefault("checks", {})["owner_cleanup"] = not cleanup_failed
         if all(report["checks"].get(name) is True for name in s.CONTRACT["checks"]): report["result"] = "passed"
         report["cleanup"] = "failed" if cleanup_failed else "passed"
@@ -353,7 +451,8 @@ def accept():
         if report["result"] == "passed": s.validate_report(report, os.environ["ADDP_ONLINE_TEST_RUN_ID"])
         target.write_text(json.dumps(report, sort_keys=True) + "\n")
         print(json.dumps(report, sort_keys=True))
-        s.require(not cleanup_failed, "owner cleanup failed")
+        if cleanup_failed and "error_code" not in report:
+            raise s.EvidenceError(report["cleanup_error"])
 
 
 def recover():
@@ -414,4 +513,4 @@ if __name__ == "__main__":
     s.require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ADDP_ONLINE_HOSTED") == "1"
               and os.environ.get("ONLINE_SUITE") == s.CONTRACT["suite"] and os.environ.get("POSTGRES_DB") == "addp_online",
               "owned Hosted profile required")
-    {"start": start, "stop": stop, "recover": recover}[sys.argv[1]]()
+    {"build-identity": build_identity, "start": start, "stop": stop, "recover": recover}[sys.argv[1]]()

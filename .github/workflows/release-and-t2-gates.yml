@@ -1417,6 +1417,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      identity-postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_DB: addp_online
+          POSTGRES_PASSWORD: r1_identity_ephemeral
+        ports:
+          - 5432/tcp
+        options: >-
+          --tmpfs /var/lib/postgresql/data
+          --health-cmd "pg_isready -U postgres -d addp_online"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       ADDP_SYSTEM_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@localhost:5432/addp_iam_test?sslmode=disable
     steps:
@@ -1431,6 +1442,10 @@ jobs:
           go-version-file: common/go.mod
           cache: false
       - name: Run Redis core lifecycle gate
+        env:
+          ADDP_REDIS_IDENTITY_PG_CONTAINER: ${{ job.services.identity-postgres.id }}
+          ADDP_REDIS_IDENTITY_PG_PORT: ${{ job.services.identity-postgres.ports[5432] }}
+          ADDP_REDIS_IDENTITY_PG_PASSWORD: r1_identity_ephemeral
         run: make test-common-redis-core
       - name: Summarize Redis core lifecycle gate
         if: always()
