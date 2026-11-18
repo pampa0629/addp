@@ -38,6 +38,7 @@ type preparedProduction struct {
 	receipt       production.Receipt
 	binding       authorizationfacts.Binding
 	engineVersion int64
+	engineType    string
 }
 
 // prepareProduction consumes an owner receipt and a complete Meta
@@ -67,6 +68,9 @@ func (s *Service) prepareProduction(ctx context.Context, tenantID int64, ref pro
 	if err != nil {
 		return nil, err
 	}
+	if engine.EngineType != "postgresql" && engine.EngineType != "nfs" {
+		return nil, errProductionTargetChanged
+	}
 	if engine.Version != copy.TargetEngineVersion {
 		return nil, errProductionTargetChanged
 	}
@@ -94,7 +98,7 @@ func (s *Service) prepareProduction(ctx context.Context, tenantID int64, ref pro
 	if len(bindings) != 1 || !reflect.DeepEqual(bindings[0], *identified.Binding) {
 		return nil, ErrAuthorizationBoundaryChanged
 	}
-	return &preparedProduction{receipt: copy, binding: bindings[0], engineVersion: engine.Version}, nil
+	return &preparedProduction{receipt: copy, binding: bindings[0], engineVersion: engine.Version, engineType: engine.EngineType}, nil
 }
 
 // Only select non-secret local Engine facts; no Provider connection or sample
@@ -105,7 +109,7 @@ func (r *Repository) productionEngine(ctx context.Context, tenantID, engineID in
 		Where("tenant_id = ? AND id = ?", tenantID, engineID).Take(&engine).Error; err != nil {
 		return nil, mapError(err)
 	}
-	if (engine.EngineType != "postgresql" && engine.EngineType != "nfs") || engine.LifecycleState != models.EngineLifecycleActive || engine.Version <= 0 {
+	if (engine.EngineType != "postgresql" && engine.EngineType != "nfs" && engine.EngineType != "rustfs") || engine.LifecycleState != models.EngineLifecycleActive || engine.Version <= 0 {
 		return nil, errProductionTargetChanged
 	}
 	return &engine, nil

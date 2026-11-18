@@ -174,3 +174,95 @@ func TestInitialProductionPreparesEveryPGSourceOutsideTransactions(t *testing.T)
 		})
 	}
 }
+
+func TestInitialProductionPreparesExactRustFSObjectSource(t *testing.T) {
+	for _, scenario := range []string{"complete", "unsupported_engine", "wrong_target_engine", "changed_source_version", "missing_source", "incomplete_source", "source_changes_during_meta"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := productionBindingDB(t)
+			if err := db.Exec("INSERT INTO system.engines VALUES (39,7,'rustfs',3,'active')").Error; err != nil {
+				t.Fatal(err)
+			}
+			path := plugin.ObjectItemPath(39, "addp-demo", "tables/订单.parquet")
+			r := productionBindingReceipt(7, 2)
+			r.SourceReadSet, _ = plugin.NewQueryReadSet(path)
+			r.SourceEngineVersions = []production.EngineVersion{{EngineID: 39, Version: 3}}
+			switch scenario {
+			case "unsupported_engine":
+				db.Exec("UPDATE system.engines SET engine_type='minio' WHERE id=39")
+			case "wrong_target_engine":
+				db.Exec("UPDATE system.engines SET engine_type='rustfs' WHERE id=2")
+			case "changed_source_version":
+				r.SourceEngineVersions[0].Version = 2
+			}
+			svc := NewService(NewRepository(db), nil).
+				withTestProductionReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) { return &r, nil })).
+				WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, _ uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
+					for _, p := range []plugin.EngineCatalogPath{r.Target, path} {
+						var f authorizationfacts.AuthorizationFacts
+						if p.EngineID == path.EngineID {
+							f = exactNativeObjectFacts(t, p)
+						} else {
+							f = factstest.Single(p)
+						}
+						if f.ItemFingerprint != fp {
+							continue
+						}
+						if p.EngineID == 39 {
+							switch scenario {
+							case "missing_source":
+								return nil, &client.TenantAPIError{StatusCode: 404}
+							case "incomplete_source":
+								f.BasisState, f.Boundary, f.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
+							case "source_changes_during_meta":
+								if err := db.Exec("UPDATE system.engines SET version=version+1 WHERE id=39").Error; err != nil {
+									t.Fatal(err)
+								}
+							}
+						}
+						return &f, nil
+					}
+					return nil, errors.New("unexpected source fingerprint")
+				}))
+			got, err := svc.prepareInitialProduction(t.Context(), 7, transferProductionRef(r.ExecutionID))
+			if scenario != "complete" {
+				if err == nil || got != nil {
+					t.Fatal("unproven object source prepared", got, err)
+				}
+				return
+			}
+			if err != nil || len(got.sources.Bindings) != 1 || got.engineVersions[39] != 3 || got.sources.Bindings[0].NativeTarget.StringPath() != path.StringPath() {
+				t.Fatal("actual RustFS source binding/version lost", got, err)
+			}
+		})
+	}
+}
+
+func TestInitialProductionObjectSourcesRequireSingleTransferResult(t *testing.T) {
+	object := plugin.ObjectItemPath(39, "addp-demo", "tables/订单.parquet")
+	for _, scenario := range []string{"single_transfer", "other_owner", "multiple_objects", "mixed_sources"} {
+		t.Run(scenario, func(t *testing.T) {
+			r := productionBindingReceipt(7, 2)
+			paths := []plugin.EngineCatalogPath{object}
+			switch scenario {
+			case "multiple_objects":
+				paths = append(paths, plugin.ObjectItemPath(39, "addp-demo", "tables/other.parquet"))
+			case "mixed_sources":
+				paths = append(paths, plugin.TabularItemPath(2, "schema", "public", "source"))
+			}
+			r.SourceReadSet, _ = plugin.NewQueryReadSet(paths...)
+			r.SourceEngineVersions = testReceiptVersions(r.SourceReadSet)
+			p := &preparedProduction{receipt: r.ProductionEvidence(), binding: factstest.Binding(r.Target), engineVersion: 1}
+			if scenario == "other_owner" {
+				p.receipt.Reference.Owner = "develop"
+			}
+			request, err := initialProductionSources(p)
+			if scenario == "single_transfer" {
+				if err != nil || len(request.Targets) != 1 || request.Targets[0].StringPath() != object.StringPath() {
+					t.Fatal("single Transfer object source lost", request, err)
+				}
+			} else if err == nil || len(request.Targets) != 0 {
+				t.Fatal("object production expanded its owner or read scope", request, err)
+			}
+		})
+	}
+}

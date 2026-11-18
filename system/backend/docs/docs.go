@@ -1042,6 +1042,87 @@ const docTemplate = `{
                 ]
             }
         },
+        "/auth/execution-authorizations/transfer-objects": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从当前用户的待执行 Transfer 单对象导入读取冻结配置，核对精确对象 Grant 与目标写入权限 | Read the current user frozen pending Transfer import and check exact object Grant and target write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "签发 Transfer 单对象导入执行授权 | Issue Transfer single-object import execution authorization",
+                "parameters": [
+                    {
+                        "description": "执行 UUID 和可选有效期秒数 | Execution UUID and optional lifetime in seconds",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.IssueManagerFileAuthorizationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "精确源对象执行授权 | Exact source object execution authorization",
+                        "schema": {
+                            "$ref": "#/definitions/client.IssuedTransferObjectAuthorization"
+                        }
+                    },
+                    "400": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.execute",
+                    "manager.data_item.read",
+                    "develop.data_write.execute"
+                ]
+            }
+        },
         "/auth/mfa": {
             "get": {
                 "security": [
@@ -6507,6 +6588,92 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/transfer-object-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 addp-transfer Tenant Service，核对实际运行租约、冻结配置、引擎版本和当前源 Grant。只返回当次受控读取所需连接 | Fixed addp-transfer Tenant Service only. Check the active lease, frozen configuration, engine version and current source Grant. Return the connection only for this guarded read",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "复核 Transfer 单对象导入当前源权限 | Recheck current Transfer single-object import source permission",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范正整数授权 ID | Canonical positive authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "真实执行租约及冻结源范围 | Actual execution lease and frozen source scope",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.TransferObjectAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可缓存的当前源引擎观察 | Non-cacheable current source engine observation",
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerFileAccessObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "复核失败 | Recheck failed",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
@@ -19422,6 +19589,29 @@ const docTemplate = `{
                 }
             }
         },
+        "client.IssuedTransferObjectAuthorization": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source_read_scope": {
+                    "$ref": "#/definitions/execution.TransferObjectReadScope"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.ManagerFileAccessObservation": {
             "type": "object",
             "properties": {
@@ -19472,6 +19662,23 @@ const docTemplate = `{
                 },
                 "user_credential": {
                     "type": "string"
+                }
+            }
+        },
+        "client.TransferObjectAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "source_read_scope": {
+                    "$ref": "#/definitions/execution.TransferObjectReadScope"
                 }
             }
         },
@@ -20292,6 +20499,31 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "execution.TransferObjectReadScope": {
+            "type": "object",
+            "properties": {
+                "config_digest": {
+                    "type": "string"
+                },
+                "object_source": {
+                    "$ref": "#/definitions/execution.TransferObjectSource"
+                },
+                "target_engine_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "execution.TransferObjectSource": {
+            "type": "object",
+            "properties": {
+                "binding": {
+                    "$ref": "#/definitions/authorizationfacts.Binding"
+                },
+                "engine_version": {
+                    "type": "string"
                 }
             }
         },

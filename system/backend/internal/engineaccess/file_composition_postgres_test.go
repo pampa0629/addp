@@ -179,6 +179,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if format == "geojson" {
 					readerPermissions = append(readerPermissions, "develop.task.execute", "develop.data_read.execute")
 				}
+				if kind == "rustfs" && format == "parquet" {
+					readerPermissions = append(readerPermissions, "transfer.task.execute", "develop.data_write.execute", "system.execution_authorization.create")
+				}
 				if kind == "minio" && format == "tiff" {
 					readerPermissions = append(readerPermissions, "manager.data_item.create")
 				}
@@ -215,6 +218,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal("real User session missing", err)
 				}
 				if kind == "rustfs" {
+					if format == "parquet" {
+						exerciseTransferObjectAuthorization(t, db, service, ctx, actor, reader, session.AccessToken, primary, current)
+					}
 					exerciseObjectPreviewVisibility(t, db, service, ctx, actor, reader, session.AccessToken, primary, current)
 					exerciseRustFSExactSourceRead(t, service, ctx, actor, reader, session.AccessToken, primary, &current)
 					return

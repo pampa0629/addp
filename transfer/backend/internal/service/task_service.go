@@ -61,24 +61,25 @@ type TaskExecutionEngine interface {
 
 // TaskService 任务服务
 type TaskService struct {
-	roleProtection   *RoleProtectionService
-	taskAuthorizer   TaskSubjectAuthorizer
-	configChecker    *TaskConfigCheckService
-	configDrafter    *TaskConfigDraftService
-	db               *gorm.DB
-	taskRepo         *repository.TaskRepository
-	deadLetterRepo   *repository.DeadLetterRepository
-	schemaChangeRepo *repository.SchemaChangeRequestRepository
-	executionService *ExecutionService // 使用统一执行服务
-	executionEngine  TaskExecutionEngine
-	cfg              *config.Config
-	captureControl   CaptureControl
-	taskCleanup      TaskOwnedResourceCleanup
-	engineResolver   planner.EngineResolver
-	schemaInspector  SchemaChangeInspector
-	metaClient       *commonClient.MetaClient
-	exportSource     ExportExecutionSourceResolver
-	logger           *slog.Logger
+	objectAuthorization transferObjectAuthorizationIssuer
+	roleProtection      *RoleProtectionService
+	taskAuthorizer      TaskSubjectAuthorizer
+	configChecker       *TaskConfigCheckService
+	configDrafter       *TaskConfigDraftService
+	db                  *gorm.DB
+	taskRepo            *repository.TaskRepository
+	deadLetterRepo      *repository.DeadLetterRepository
+	schemaChangeRepo    *repository.SchemaChangeRequestRepository
+	executionService    *ExecutionService // 使用统一执行服务
+	executionEngine     TaskExecutionEngine
+	cfg                 *config.Config
+	captureControl      CaptureControl
+	taskCleanup         TaskOwnedResourceCleanup
+	engineResolver      planner.EngineResolver
+	schemaInspector     SchemaChangeInspector
+	metaClient          *commonClient.MetaClient
+	exportSource        ExportExecutionSourceResolver
+	logger              *slog.Logger
 }
 
 func (s *TaskService) SetExportExecutionSourceResolver(resolver ExportExecutionSourceResolver) {
@@ -419,6 +420,9 @@ func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
 
 func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, config map[string]interface{}, batchSize int) error {
 	if _, present := config["workflow_result"]; present {
+		return ErrInvalidTaskConfig
+	}
+	if _, present := config["object_source"]; present {
 		return ErrInvalidTaskConfig
 	}
 	if _, present := config["filegdb_source"]; present {
@@ -817,6 +821,10 @@ func (s *TaskService) startTaskWithContext(
 			return nil, err
 		}
 	}
+	objectImport, err := s.prepareObjectExecution(ctx, task, executionRecord)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.authorizeRoleExecution(ctx, task, executionRecord); err != nil {
 		return nil, err
 	}
@@ -855,6 +863,11 @@ func (s *TaskService) startTaskWithContext(
 			return nil, fmt.Errorf("task is already running")
 		}
 		return nil, fmt.Errorf("claim task execution: %w", err)
+	}
+	if objectImport {
+		if err := s.issueObjectExecution(ctx, executionRecord); err != nil {
+			return nil, err
+		}
 	}
 	execution := s.executionService.convertToTransferExecution(executionRecord)
 

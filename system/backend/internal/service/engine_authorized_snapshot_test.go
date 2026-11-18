@@ -30,11 +30,22 @@ func TestAuthorizedExecutionSnapshotDoesNotRefetchOrMutate(t *testing.T) {
 	if decoded, err := svc.DecryptAuthorizedExecutionSnapshot(&nfs); err != nil || decoded == nil || decoded.EngineType != "nfs" {
 		t.Fatalf("NFS snapshot: %v", err)
 	}
-	minio := *engine
-	minio.EngineType = "minio"
-	minio.ConnectionInfo = models.ConnectionInfo{"endpoint": "127.0.0.1:9002", "access_key": secret, "secret_key": secret}
-	if got, err := svc.DecryptAuthorizedExecutionSnapshot(&minio); err != nil || got.ConnectionInfo["secret_key"] != "disposable-secret" {
-		t.Fatalf("MinIO snapshot: %v", err)
+	for _, kind := range []string{"minio", "rustfs"} {
+		t.Run(kind, func(t *testing.T) {
+			object := *engine
+			object.EngineType = kind
+			object.ConnectionInfo = models.ConnectionInfo{"endpoint": "127.0.0.1:9002", "access_key": secret, "secret_key": secret}
+			got, err := svc.DecryptAuthorizedExecutionSnapshot(&object)
+			if err != nil || got == nil || got == &object || got.EngineType != kind || got.Version != object.Version ||
+				got.ConnectionInfo["access_key"] != "disposable-secret" || got.ConnectionInfo["secret_key"] != "disposable-secret" ||
+				object.ConnectionInfo["access_key"] != secret || object.ConnectionInfo["secret_key"] != secret {
+				t.Fatalf("authorized object source snapshot: %v", err)
+			}
+			object.ConnectionInfo = models.ConnectionInfo{"secret_key": "plaintext"}
+			if got, err := svc.DecryptAuthorizedExecutionSnapshot(&object); err == nil || got != nil {
+				t.Fatal("invalid stored object secret returned")
+			}
+		})
 	}
 	for _, kind := range []string{"postgresql", "mysql"} {
 		t.Run(kind, func(t *testing.T) {

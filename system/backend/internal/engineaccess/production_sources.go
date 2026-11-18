@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/engine/plugin"
 	productionfacts "github.com/addp/common/production"
 	"github.com/addp/system/internal/iam"
 )
@@ -52,6 +53,9 @@ func initialProductionSources(prepared *preparedProduction) (sourceReadRequest, 
 		if reflect.DeepEqual(path, r.Primary) {
 			return sourceReadRequest{}, errInitialProductionEvidence
 		}
+		if _, err := plugin.RequireObjectLeafPath(path); err == nil && (r.Reference.Owner != "transfer" || len(paths) != 1) {
+			return sourceReadRequest{}, errInitialProductionEvidence
+		}
 	}
 	request.Targets = paths
 	return request, nil
@@ -81,6 +85,16 @@ func (s *Service) prepareInitialProduction(ctx context.Context, tenantID int64, 
 		}
 		if engine.Version != frozen.Version {
 			return nil, errProductionTargetChanged
+		}
+		for _, path := range sources.Targets {
+			if int64(path.EngineID) != id {
+				continue
+			}
+			_, objectErr := plugin.RequireObjectLeafPath(path)
+			if (engine.EngineType == "rustfs") != (objectErr == nil) ||
+				(engine.EngineType == "rustfs" && (production.receipt.Reference.Owner != "transfer" || len(sources.Targets) != 1 || production.engineType != "postgresql")) {
+				return nil, errInitialProductionEvidence
+			}
 		}
 		versions[id] = frozen.Version
 	}

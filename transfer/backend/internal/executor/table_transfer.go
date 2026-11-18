@@ -168,6 +168,7 @@ type TableTransferExecutor struct {
 	CRSDefinitionConverter     CRSDefinitionConverter
 	TargetCRSRequirements      format.CRSDefinitionWriteRequirementProvider
 	SourceProtector            TableSourceProtector
+	AuthorizeObjectSource      ObjectSourceAuthorizer
 	AuthorizeNativeSource      engineplugin.GuardedTableReadAuthorizer
 	PrivateImportSource        *client.ManagerImportSource
 }
@@ -243,6 +244,12 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 	source, err := e.openSource(plan.Source)
 	if err != nil {
 		return nil, err
+	}
+	if e.AuthorizeObjectSource != nil {
+		if plan.Source.Kind != TableEndpointEncoded || plan.Source.Layout != format.LayoutSingle || plan.Source.Format != format.FormatParquet || plan.Target.Kind != TableEndpointNative {
+			return nil, ErrProtectionPreparation
+		}
+		source = exactObjectBatchSource{source: source, path: plan.Source.Path, authorize: e.AuthorizeObjectSource}
 	}
 	target, err := e.openTarget(plan.Target)
 	if err != nil {
@@ -329,8 +336,12 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		if e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil {
 			return nil, fmt.Errorf("encoded table source requires table reader provider")
 		}
+		contentReader := e.SourceContentReader
+		if e.AuthorizeObjectSource != nil {
+			contentReader = exactObjectContentReader{ContentReadableProvider: contentReader, path: plan.Path, authorize: e.AuthorizeObjectSource}
+		}
 		return &encodedContentTableSource{
-			reader:              e.SourceContentReader,
+			reader:              contentReader,
 			tableProvider:       e.SourceTableReadProvider,
 			multiReaderProvider: e.SourceMultiReadProvider,
 			infoProvider:        e.SourceInfoProvider,

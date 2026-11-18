@@ -23,8 +23,9 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 	}
 	scope := auth.SourceReadScope.Clone()
 	fileGDBScope := scope.FileGDB()
+	objectScope := scope.Object()
 	expectedAudience := "manager"
-	if fileGDBScope != nil {
+	if fileGDBScope != nil || objectScope != nil {
 		expectedAudience = commonexecution.AudienceTransfer
 	}
 	if auth.Audience != expectedAudience {
@@ -50,6 +51,9 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 	}
 	if fileGDBScope != nil && (s.executionEngineSnapshot == nil || len(request.Bindings) != 1 ||
 		!reflect.DeepEqual(request.Bindings[0], fileGDBScope.FileGDBSource.Binding)) {
+		return nil, commonapi.ErrForbidden
+	}
+	if objectScope != nil && (s.executionEngineSnapshot == nil || len(request.Bindings) != 1 || !reflect.DeepEqual(request.Bindings[0], objectScope.ObjectSource.Binding)) {
 		return nil, commonapi.ErrForbidden
 	}
 	return func(ctx context.Context, db *gorm.DB, current *iam.ExecutionAuthorization) (*iam.ExecutionSourceReadObservation, error) {
@@ -79,6 +83,21 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).
 				Where("id=? AND tenant_id=? AND version=? AND engine_type=? AND lifecycle_state='active' AND deleted_at IS NULL",
 					source.Binding.NativeTarget.EngineID, request.TenantID, version, source.EngineType()).Take(&engine).Error; err != nil {
+				return nil, commonapi.ErrForbidden
+			}
+			stored = &engine
+		}
+		if objectScope != nil {
+			source := objectScope.ObjectSource
+			version, _ := strconv.ParseInt(source.EngineVersion, 10, 64)
+			var engine models.Engine
+			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("id=? AND tenant_id=? AND version=? AND engine_type='rustfs' AND lifecycle_state='active' AND deleted_at IS NULL", source.Binding.NativeTarget.EngineID, request.TenantID, version).Take(&engine).Error; err != nil {
+				return nil, commonapi.ErrForbidden
+			}
+			var target models.Engine
+			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("id=? AND tenant_id=? AND engine_type='postgresql' AND lifecycle_state='active' AND deleted_at IS NULL", objectScope.TargetEngineID, request.TenantID).Take(&target).Error; err != nil {
 				return nil, commonapi.ErrForbidden
 			}
 			stored = &engine

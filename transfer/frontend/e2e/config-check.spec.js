@@ -88,6 +88,61 @@ for (const engineCount of [2, 17]) {
   })
 }
 
+for (const engineType of ['rustfs', 'synthetic-object-provider']) {
+  test(`${engineType} Parquet source uses the declared object catalog and preserves the exact item`, async ({ page }) => {
+    const engineID = 9000001
+    const engine = {
+      id: engineID, name: 'Synthetic object source', engine_type: engineType,
+      lifecycle_state: 'active', connection_status: 'online',
+      capabilities: { engine_family: 'object', storage: {
+        catalog: { supported: true, real_time: true }, store: { stream_read: true, range_read: true },
+        catalog_model: { path_version: 'catalog.path/v1', root_term: 'service', levels: [
+          { term: 'bucket', role: 'branch' }, { term: 'prefix', role: 'branch', optional: true }, { term: 'object', role: 'leaf' }
+        ] }
+      } }
+    }
+    const locator = 'addp://engine/9000001/path/synthetic-bucket/tables/orders.parquet?type=object&item_id=90000199'
+    const attributes = { item: { layout: 'single', data_type: 'table', format: 'parquet' } }
+    const leaf = { id: locator, locator, label: 'orders.parquet', type: 'object', hasChildren: false,
+      metadata: { item_id: 90000199, full_name: 'synthetic-bucket/tables/orders.parquet', data_type: 'table', format: 'parquet', attributes } }
+    const bucketLocator = 'addp://engine/9000001/path/synthetic-bucket?type=bucket&node_id=90000198'
+    const bucket = { id: bucketLocator, locator: bucketLocator, label: 'synthetic-bucket', type: 'bucket', hasChildren: true }
+    const rootLocator = 'addp://engine/9000001/path/?type=service&node_id=90000197'
+    const root = { id: rootLocator, locator: rootLocator, label: engine.name, type: 'service', hasChildren: true, children: [bucket] }
+    const csv = { ...leaf, id: 'csv-item', label: 'orders.csv', locator: locator.replace('orders.parquet','orders.csv').replace('90000199','90000200'),
+      metadata: { ...leaf.metadata, item_id: 90000200, format: 'csv', full_name: 'synthetic-bucket/tables/orders.csv',
+        attributes: { item: { layout: 'single', data_type: 'table', format: 'csv' } } } }
+    const metadata = {
+      '/api/v1/meta/engines': [engine],
+      '/api/v1/transfer/capabilities': { table_formats: [{ value: 'parquet', read: true }, { value: 'csv', read: true }], raw_copy_formats: [] },
+      '/api/v1/meta/resource-tree/9000001': root,
+      '/api/v1/meta/resource-tree/9000001/node': { children: [leaf] },
+      '/api/v1/meta/resource-tree/9000001/ancestors': { ancestors: [root, bucket, leaf] },
+      '/api/v1/meta/resource-tree/9000001/search': { results: engineType === 'rustfs' ? [leaf, csv] : [leaf] },
+      '/api/v1/meta/items/90000199/fields': { data: [{ name: 'order_id', type: 'string' }, { name: 'amount', type: 'decimal', precision: 12, scale: 2 }] }
+    }
+    const writes = await setup(page, undefined, metadata)
+    await page.getByTestId('source-step').click()
+    const picker = page.getByTestId('task-source-picker')
+    await picker.locator('.picker-search input').fill('orders')
+    await expect(picker.locator('.search-result')).toHaveCount(1)
+    await picker.locator('.search-result').click()
+    await expect(page.getByText('已选数据项', { exact: true })).toBeVisible()
+    await expect.poll(async () => JSON.parse(await page.getByTestId('fixture-request').textContent()).config.source).toMatchObject({
+      locator, data_type: 'table', representation: 'encoded', format: 'parquet'
+    })
+    const selection = JSON.parse(await page.getByTestId('fixture-source-selection').textContent())
+    expect(selection.engineType).toBe(engineType)
+    expect(selection.source.sourceItem.item_id).toBe(90000199)
+    expect(selection.source.sourceItem.path.segments).toEqual([
+      { name: 'synthetic-bucket', kind: 'bucket', term: 'bucket' },
+      { name: 'tables', kind: 'directory', term: 'directory' },
+      { name: 'orders.parquet', kind: 'object', term: 'object' }
+    ])
+    expect(writes).toEqual([])
+  })
+}
+
 for (const [status, title] of [['supported', '已检查定义受支持'], ['unsupported', '发现不支持的定义'], ['unknown', '尚无法确定']]) {
   test(`${status} displays the scope, field location and keeps saving behavior`, async ({ page }) => {
     await setup(page, route => route.fulfill({ json: report(status) }))

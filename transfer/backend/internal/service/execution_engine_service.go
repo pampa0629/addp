@@ -294,6 +294,9 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
+	if build.SourceEngineType == "rustfs" {
+		return fmt.Errorf("%w: RustFS does not admit incremental reads", executor.ErrProtectionPreparation)
+	}
 	build.Plan.Start = start
 	expectedVersion := state.StateVersion
 	build.Plan.BeforeApply = func(ctx context.Context) error {
@@ -461,6 +464,13 @@ func (s *ExecutionEngineService) attachSourceMetaAttributes(ctx context.Context,
 			return fmt.Errorf("%w: FileGDB source metadata does not match the selected table", executor.ErrProtectionPreparation)
 		}
 	}
+	if spec.ObjectSource != nil {
+		p := spec.ObjectSource.Binding.NativeTarget
+		section, _ := item.Attributes["item"].(map[string]interface{})
+		if item.ID != spec.Source.LocatorItemID() || item.ItemType != "object" || item.FullName != p.StringPath() || item.Fingerprint != spec.ObjectSource.Binding.ItemFingerprint || section["layout"] != "single" || section["data_type"] != "table" || section["format"] != "parquet" {
+			return fmt.Errorf("%w: object metadata differs from frozen source", executor.ErrProtectionPreparation)
+		}
+	}
 	spec.Source.Attributes = item.Attributes
 	return nil
 }
@@ -520,6 +530,14 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	spec planner.TableExportTaskSpec,
 	resolver planner.EngineResolver,
 ) (*planner.TableTransferBuildResult, *executor.TablePipelineMetrics, error) {
+	var authorizeObject executor.ObjectSourceAuthorizer
+	if spec.ObjectSource != nil {
+		var err error
+		resolver, authorizeObject, err = s.objectImportSource(ctx, execution, resolver)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	var authorizeNative engineplugin.GuardedTableReadAuthorizer
 	if planner.IsFileGDBArchiveTarget(string(spec.Target.Format), spec.Target.Locator, spec.Target.ParentLocator) {
 		var err error
@@ -531,6 +549,9 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	buildResult, err := planner.BuildTableTransferPlan(spec, resolver)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build common table transfer plan: %w", err)
+	}
+	if buildResult.SourceEngine.Type == "rustfs" && authorizeObject == nil {
+		return nil, nil, fmt.Errorf("%w: RustFS requires exact object authorization", executor.ErrProtectionPreparation)
 	}
 	if buildResult.Plan.Target.IsFileGDBArchive() {
 		if authorizeNative == nil || buildResult.Plan.Source.Kind != executor.TableEndpointNative {
@@ -552,6 +573,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 		return nil, nil, fmt.Errorf("create common table transfer executor: %w", err)
 	}
 	tableExecutor.AuthorizeNativeSource = authorizeNative
+	tableExecutor.AuthorizeObjectSource = authorizeObject
 	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
 		return nil, nil, fmt.Errorf("configure instance table providers: %w", err)
 	}
@@ -1086,6 +1108,9 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
+	if buildResult.SourceEngine.Type == "rustfs" {
+		return fmt.Errorf("%w: RustFS requires a manual exact Parquet object import", executor.ErrProtectionPreparation)
+	}
 	buildResult.Plan.ProgressCallback = s.rawCopyProgressCallback(task, executionID)
 
 	sourceProvider, err := buildResult.SourceEngine.Provider()
@@ -1135,6 +1160,9 @@ func (s *ExecutionEngineService) executeCommonEncodedRecordExportTask(ctx contex
 		wrapped := fmt.Errorf("build encoded record export plan: %w", err)
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
+	}
+	if buildResult.SourceEngine.Type == "rustfs" {
+		return fmt.Errorf("%w: RustFS requires a manual exact Parquet object import", executor.ErrProtectionPreparation)
 	}
 	buildResult.Plan.ProgressCallback = s.encodedRecordExportProgressCallback(task, executionID)
 	if s.protectionGate == nil {

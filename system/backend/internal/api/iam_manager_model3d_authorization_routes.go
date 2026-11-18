@@ -56,7 +56,7 @@ func managerFileAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime,
 	return exactSourceAuthorizationHandlers(api, runtime, "addp-manager", handler.Issue, handler.Authorize)
 }
 
-func exactSourceAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime, clientID string, issueHandler, consumeHandler gin.HandlerFunc) ([]gin.HandlerFunc, []gin.HandlerFunc, error) {
+func exactSourceAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime, clientID string, issueHandler, consumeHandler gin.HandlerFunc, issuePermissions ...string) ([]gin.HandlerFunc, []gin.HandlerFunc, error) {
 	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil {
 		return nil, nil, errors.New("exact source execution authorization dependencies required")
 	}
@@ -72,7 +72,10 @@ func exactSourceAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime,
 	if err != nil {
 		return nil, nil, err
 	}
-	issue, err := middleware.NewIAMPermissionGuard("manager.derived_artifact.create", "manager.data_item.read")
+	if len(issuePermissions) == 0 {
+		issuePermissions = []string{"manager.derived_artifact.create", "manager.data_item.read"}
+	}
+	issue, err := middleware.NewIAMPermissionGuard(issuePermissions...)
 	if err != nil {
 		return nil, nil, err
 	}

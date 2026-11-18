@@ -248,6 +248,7 @@ import {
   hasNativeTableWriteCapability,
   hasStorageCapability,
   isContentEngine,
+  isObjectStorageEngine,
   isNativeTableEngine,
   representationLabel,
   writeModeDescription,
@@ -371,7 +372,7 @@ const targetOverrideEligible = computed(() => {
 })
 
 const targetStorageKind = computed(() => {
-  return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 's3' : selectedEngine.value?.engine_type || ''
+  return isObjectStorageEngine(selectedEngine.value) ? 's3' : selectedEngine.value?.engine_type || ''
 })
 
 const targetPickerInitialLocator = computed(() => restoredParentLocator.value || '')
@@ -536,11 +537,6 @@ watch(
   },
   { flush: 'post' }
 )
-
-function isObjectStorageEngine(engineType) {
-  const type = (engineType || '').toLowerCase()
-  return type.includes('s3') || type.includes('minio') || type.includes('oss') || type.includes('objectstore')
-}
 
 function syncTarget() {
   if (!selectedEngine.value || !canProceed.value) {
@@ -874,9 +870,9 @@ function buildParentNodeLocator(engineID, type, path, nodeID) {
 
 function parentLocatorTypeForPath(path) {
   if ((path || []).length <= 1) {
-    return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'bucket' : 'root'
+    return isObjectStorageEngine(selectedEngine.value) ? 'bucket' : 'root'
   }
-  return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'prefix' : 'directory'
+  return isObjectStorageEngine(selectedEngine.value) ? 'prefix' : 'directory'
 }
 
 function applyOutputFormatFromFileName(fileName) {
@@ -921,6 +917,7 @@ function targetEngineOptionLabel(engine) {
 
 function isAllowedTargetEngine(engine) {
   if (!sourceTransferSupported.value || !isEngineSelectable(engine)) return false
+  if (props.wizardState.sourceEngineType?.value === 'rustfs' && engine.engine_type !== 'postgresql') return false
   if (isContinuousSource.value) return isNativeTableEngine(engine) && hasAtomicPartitionedTableChangeApply(engine)
   if (props.wizardState.isWatermarkIncremental?.value) {
     return isNativeTableEngine(engine) && hasIdempotentTableUpsert(engine)

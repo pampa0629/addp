@@ -172,6 +172,7 @@ import {
   formatLabel,
   hasStorageCapability,
   isContentEngine,
+  isObjectStorageEngine,
   queryReadSessionCapability,
   representationLabel
 } from '@/utils/transferDisplay'
@@ -556,7 +557,7 @@ function pathSeparatorForNode(node, engine = selectedEngine.value) {
 }
 
 function containerKindForPath(index, engine = selectedEngine.value) {
-  if (isObjectStorageEngine(engine?.engine_type) && index === 0) return 'bucket'
+  if (isObjectStorageEngine(engine) && index === 0) return 'bucket'
   return isContentEngine(engine) ? 'directory' : 'schema'
 }
 
@@ -675,7 +676,7 @@ function sourceLocatorForNode(node) {
 function locatorTypeForNode(node) {
   if (treeNodeType(node) === 'topic') return 'topic'
   if (representationForSelection(node) === 'native') return 'table'
-  return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'object' : 'file'
+  return isObjectStorageEngine(selectedEngine.value) ? 'object' : 'file'
 }
 
 function ensureLocatorItemID(locator, itemID = 0) {
@@ -717,7 +718,7 @@ function nativeTableEndpointResourceFromNode(node) {
 
 function contentEndpointResourceFromNode(node) {
   const names = pathNames(node)
-  if (isObjectStorageEngine(selectedEngine.value?.engine_type)) {
+  if (isObjectStorageEngine(selectedEngine.value)) {
     return {
       kind: 'object',
       path: {
@@ -897,6 +898,9 @@ function catalogRoleFromTreeNode(node) {
 
 function isSelectableSourceItem(node, engine = selectedEngine.value) {
   if (node?.role !== 'leaf') return false
+  if (engine?.engine_type === 'rustfs' && (nodeDataType(node) !== 'table' ||
+    representationForSelection(node, engine) !== 'encoded' || nodeFormat(node) !== 'parquet' ||
+    (nodeAttribute(node, 'layout') || nodeItemAttribute(node, 'layout')) !== 'single')) return false
   if (isContainerSourceNode(node, engine)) return true
   if (treeNodeType(node) === 'topic') {
     return normalizeEngineType(engine?.engine_type) === 'kafka'
@@ -949,11 +953,6 @@ function buildPathOnlyEndpointResource(node) {
   return representationForSelection(node) === 'encoded'
     ? contentEndpointResourceFromNode(node)
     : nativeTableEndpointResourceFromNode(node)
-}
-
-function isObjectStorageEngine(engineType) {
-  const type = String(engineType || '').toLowerCase()
-  return type.includes('s3') || type.includes('minio') || type.includes('oss')
 }
 
 function normalizeEngineType(engineType) {

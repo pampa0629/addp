@@ -635,7 +635,7 @@ type ExecutionAuthorization struct {
 	DevelopFileBusinessDeadline          *time.Time                                 `gorm:"column:develop_file_business_deadline"`
 	DevelopFileScope                     *commonExecution.DevelopBoundFileScope     `gorm:"column:develop_file_scope;type:jsonb;serializer:json"`
 	CleanupScope                         *commonExecution.CleanupAuthorizationScope `gorm:"column:cleanup_scope;type:jsonb;serializer:json"`
-	SourceReadScope                      *ManagerSourceReadScope                    `gorm:"column:source_read_scope;type:jsonb;serializer:json"`
+	SourceReadScope                      *SourceReadScope                           `gorm:"column:source_read_scope;type:jsonb;serializer:json"`
 	InternalTask                         *commonExecution.InternalTaskScope         `gorm:"column:internal_task;type:jsonb;serializer:json"`
 	ID                                   int64                                      `gorm:"primaryKey;autoIncrement"`
 	ActorPrincipalID                     int64                                      `gorm:"column:actor_principal_id;not null"`

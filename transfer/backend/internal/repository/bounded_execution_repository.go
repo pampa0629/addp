@@ -64,11 +64,11 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 	var lease *commonExecution.Lease
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		// The Manager freezes a FileGDB execution before System can issue its
-		// source authorization. Leave it pending until the owner binds the reference.
+		// Exact-source executions are frozen before System issues authorization.
+		// Leave them pending until the owner binds that authorization.
 		eligible := tx.Where(`(
-			source <> ? OR source_task_id IS NOT NULL OR execution_config->'filegdb_source' IS NULL
-			OR (execution_authorization_id IS NOT NULL AND authorization_expires_at IS NOT NULL)
+			(execution_config->'object_source' IS NULL AND (source <> ? OR source_task_id IS NOT NULL OR execution_config->'filegdb_source' IS NULL))
+   OR (execution_authorization_id IS NOT NULL AND authorization_expires_at IS NOT NULL)
 		)`, commonExecution.ModuleManager)
 		execution, lease, err = commonExecution.ClaimNext(ctx, eligible, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleTransfer, TaskType: commonExecution.TaskTypeSync,
@@ -168,7 +168,7 @@ func (r *TaskRepository) FailExpiredBoundedExecutions(ctx context.Context, limit
 			count++
 		}
 		if count < limit {
-			abandoned, err := failAbandonedFileGDBExports(ctx, tx, limit-count)
+			abandoned, err := failAbandonedSourcePreparations(ctx, tx, limit-count)
 			if err != nil {
 				return err
 			}
@@ -179,15 +179,14 @@ func (r *TaskRepository) FailExpiredBoundedExecutions(ctx context.Context, limit
 	return count, err
 }
 
-func failAbandonedFileGDBExports(ctx context.Context, tx *gorm.DB, limit int) (int, error) {
+func failAbandonedSourcePreparations(ctx context.Context, tx *gorm.DB, limit int) (int, error) {
 	now, err := commonExecution.DatabaseNow(tx)
 	if err != nil {
 		return 0, err
 	}
 	query := tx.Where(`
-		module = ? AND source = ? AND task_type = ? AND execution_boundary = ? AND status = ?
-		AND source_task_id IS NULL AND parent_execution_id IS NULL AND attempt = 0
-		AND execution_config->'filegdb_source' IS NOT NULL AND execution_authorization_id IS NULL
+		module = ? AND ((source = ? AND source_task_id IS NULL AND execution_config->'filegdb_source' IS NOT NULL) OR (source='transfer' AND source_task_id IS NOT NULL AND execution_config->'object_source' IS NOT NULL)) AND task_type = ? AND execution_boundary = ? AND status = ?
+  AND parent_execution_id IS NULL AND attempt = 0 AND execution_authorization_id IS NULL
 		AND authorization_expires_at IS NULL AND created_at < ?
 	`, commonExecution.ModuleTransfer, commonExecution.ModuleManager, commonExecution.TaskTypeSync,
 		commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusPending, now.Add(-2*time.Minute)).
@@ -202,7 +201,7 @@ func failAbandonedFileGDBExports(ctx context.Context, tx *gorm.DB, limit int) (i
 	fields := map[string]interface{}{
 		"error_details": commonModels.JSONMap{
 			"code":    "transfer.execution.source_authorization_required",
-			"message": "FileGDB export source authorization preparation expired",
+			"message": "Transfer source authorization preparation expired",
 		},
 	}
 	for _, item := range items {
@@ -211,6 +210,11 @@ func failAbandonedFileGDBExports(ctx context.Context, tx *gorm.DB, limit int) (i
 		}
 		if err := commonExecution.RejectUnstarted(ctx, tx, identity, fields); err != nil {
 			return 0, err
+		}
+		if item.ExecutionConfig["object_source"] != nil {
+			if err := rejectObjectTaskSummary(ctx, tx, &item); err != nil {
+				return 0, err
+			}
 		}
 	}
 	return len(items), nil

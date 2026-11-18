@@ -1333,11 +1333,25 @@ jobs:
           status: ${{ job.status }}
 
   common-rustfs:
-    name: RustFS provider, persistence and consumers (1.0.5)
+    name: RustFS provider, persistence and PostgreSQL import (1.0.5)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.manager == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_rustfs_disposable
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_rustfs_disposable"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1349,12 +1363,18 @@ jobs:
           go-version-file: common/go.mod
           cache: false
       - name: Run RustFS gate
+        env:
+          ADDP_TEST_POSTGRES_HOST: 127.0.0.1
+          ADDP_TEST_POSTGRES_PORT: 5432
+          ADDP_TEST_POSTGRES_USER: addp_ci
+          ADDP_TEST_POSTGRES_PASSWORD: addp_ci_password
+          ADDP_TEST_POSTGRES_DATABASE: addp_rustfs_disposable
         run: make test-common-rustfs
       - name: Summarize RustFS gate
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: RustFS provider, persistence and consumers (1.0.5)
+          gate: RustFS provider, persistence and PostgreSQL import (1.0.5)
           status: ${{ job.status }}
 
   business-redis:

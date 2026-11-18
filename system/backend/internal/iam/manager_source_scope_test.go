@@ -23,12 +23,12 @@ func TestManagerSourceScopeClosedPurposes(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := &execution.ManagerFileReadScope{ConfigDigest: strings.Repeat("b", 64), OwnerTaskID: "1", OwnerTaskVersion: "2", EngineVersion: "3", FileComposition: *composition}
-	for _, candidate := range []*ManagerSourceReadScope{NewManagerProfileSourceScope(profile), NewManagerFileSourceScope(model)} {
+	for _, candidate := range []*SourceReadScope{NewManagerProfileSourceScope(profile), NewManagerFileSourceScope(model)} {
 		raw, err := json.Marshal(candidate)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var decoded ManagerSourceReadScope
+		var decoded SourceReadScope
 		if json.Unmarshal(raw, &decoded) != nil || !reflect.DeepEqual(candidate, &decoded) {
 			t.Fatal("strict scope roundtrip failed")
 		}
@@ -43,12 +43,12 @@ func TestManagerSourceScopeClosedPurposes(t *testing.T) {
 			t.Fatal("returned targets mutated stored scope")
 		}
 		for _, invalid := range []string{`null`, `{}`, strings.TrimSuffix(string(raw), "}") + `,"extra":true}`, strings.TrimSuffix(string(raw), "}") + `,"read_set":null}`, strings.TrimSuffix(string(raw), "}") + `,"config_digest":"` + strings.Repeat("f", 64) + `"}`} {
-			if json.Unmarshal([]byte(invalid), new(ManagerSourceReadScope)) == nil {
+			if json.Unmarshal([]byte(invalid), new(SourceReadScope)) == nil {
 				t.Fatalf("invalid scope accepted: %s", invalid)
 			}
 		}
 	}
-	if (&ManagerSourceReadScope{profile: profile, file: model}).Validate() == nil || NewManagerProfileSourceScope(profile).File() != nil || NewManagerFileSourceScope(model).Profile() != nil {
+	if (&SourceReadScope{profile: profile, file: model}).Validate() == nil || NewManagerProfileSourceScope(profile).File() != nil || NewManagerFileSourceScope(model).Profile() != nil {
 		t.Fatal("cross-purpose source scope accepted")
 	}
 	expected, _ := json.Marshal(profile)

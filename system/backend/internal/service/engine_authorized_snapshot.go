@@ -13,7 +13,7 @@ func (s *EngineService) DecryptAuthorizedExecutionSnapshot(engine *models.Engine
 	if s == nil || engine == nil || engine.ID == 0 || engine.TenantID == nil || *engine.TenantID == 0 || engine.Version <= 0 || engine.LifecycleState != models.EngineLifecycleActive || engine.DeletedAt != nil {
 		return nil, commonapi.ErrForbidden
 	}
-	if !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) && engine.EngineType != "postgresql" && engine.EngineType != "mysql" {
+	if !commonexecution.ManagerModel3DSourceEngineType(engine.EngineType) && engine.EngineType != "postgresql" && engine.EngineType != "mysql" && engine.EngineType != "rustfs" {
 		return nil, commonapi.ErrForbidden
 	}
 	connection, err := s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)

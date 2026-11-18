@@ -8,9 +8,9 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-// ValidateProductionReadSet is the bounded pure-value contract for the first
-// PG production slice. Nil means unavailable, never unbounded permission or a
-// proven source-free generation. The owner may not normalize or fill old proof.
+// ValidateProductionReadSet is the bounded pure-value contract for native-table
+// and single-object production sources. Nil means unavailable, never unbounded
+// permission or proven source-free generation. Owners may not fill old proof.
 func ValidateProductionReadSet(set *plugin.QueryReadSet) error {
 	if set == nil {
 		return nil
@@ -23,6 +23,9 @@ func ValidateProductionReadSet(set *plugin.QueryReadSet) error {
 		return errors.New("noncanonical production source read set")
 	}
 	for _, path := range set.Paths {
+		if _, err := plugin.RequireObjectLeafPath(path); err == nil && len(set.Paths) == 1 && int64(path.EngineID) > 0 {
+			continue
+		}
 		if len(path.Segments) != 3 || int64(path.EngineID) <= 0 || !reflect.DeepEqual(path, plugin.TabularItemPath(path.EngineID, plugin.EngineCatalogTermSchema, path.Segments[1].Name, path.Segments[2].Name)) {
 			return errors.New("unsupported production source read set")
 		}

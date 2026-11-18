@@ -1,10 +1,30 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # ADDP_T2_OWNED_SERVICES=rustfs
 # ADDP_T2_COMPOSE_FILE=business/docker-compose.yml
-# ADDP_T2_INPUT_FILES=business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
+# ADDP_T2_INPUT_FILES=business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/execution/ common/client/ transfer/backend/internal/planner/ transfer/backend/internal/executor/ transfer/backend/internal/service/ transfer/backend/internal/repository/ common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
 # disposable RustFS: reuse Business image/config, own every resource and remove it.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+SOURCE_ROOT=$ROOT_DIR
+if [ "$#" -ne 0 ]; then
+    if [ "$#" -ne 2 ] || [ "$1" != --source-root ]; then
+        echo "usage: $0 [--source-root checkout]" >&2
+        exit 2
+    fi
+    SOURCE_ROOT=$(cd "$2" && pwd -P)
+    if [ "$(git -C "$SOURCE_ROOT" rev-parse --show-toplevel)" != "$SOURCE_ROOT" ] ||
+       ! git -C "$ROOT_DIR" merge-base --is-ancestor "$(git -C "$SOURCE_ROOT" rev-parse HEAD)" HEAD ||
+       ! grep -qx 'module github.com/addp/transfer' "$SOURCE_ROOT/transfer/backend/go.mod"; then
+        echo "--source-root must be an ADDP checkout whose commit belongs to this repository" >&2
+        exit 2
+    fi
+fi
+: "${ADDP_TEST_POSTGRES_PORT:?verified PostgreSQL test mapping required}"
+: "${ADDP_TEST_POSTGRES_PASSWORD:?PostgreSQL test password required}"
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_target "${ADDP_TEST_POSTGRES_HOST:-localhost}" "$ADDP_TEST_POSTGRES_PORT" "${ADDP_TEST_POSTGRES_DATABASE:-addp_test}"
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-rustfs-t2.XXXXXX")
 chmod 700 "$WORK_DIR"
 export RUSTFS_T2_PROJECT="addp-rustfs-t2-${PPID}-$$"
@@ -29,7 +49,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-docker compose --env-file /dev/null --file "$ROOT_DIR/business/docker-compose.yml" --profile rustfs config --format json > "$WORK_DIR/business.json"
+docker compose --env-file /dev/null --file "$SOURCE_ROOT/business/docker-compose.yml" --profile rustfs config --format json > "$WORK_DIR/business.json"
 python3 - "$WORK_DIR" <<'PY'
 import json, sys
 from pathlib import Path
@@ -47,7 +67,7 @@ export ADDP_RUSTFS_INTEGRATION=1 ADDP_RUSTFS_TEST_BUCKET=addp-rustfs-contract
 export ADDP_RUSTFS_TEST_ACCESS_KEY="$RUSTFS_ACCESS_KEY" ADDP_RUSTFS_TEST_SECRET_KEY="$RUSTFS_SECRET_KEY"
 run_contract() {
     export ADDP_RUSTFS_TEST_ENDPOINT="$(compose port rustfs 9000)"
-    (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/rustfs -run '^TestIntegrationRustFS' -count=1 -timeout=90s -v) | tee "$WORK_DIR/provider.log"
+    (cd "$SOURCE_ROOT/common" && GOWORK=off go test ./engine/plugins/rustfs -run '^TestIntegrationRustFS' -count=1 -timeout=90s -v) | tee "$WORK_DIR/provider.log"
     ! grep -q -- '--- SKIP:' "$WORK_DIR/provider.log"
     grep -q -- '--- PASS: TestIntegrationRustFSProvider' "$WORK_DIR/provider.log"
 }
@@ -61,8 +81,11 @@ run_contract
 export ADDP_RUSTFS_TEST_META_ITEM="$WORK_DIR/meta-item.json"
 for specification in 'system service SystemConnection' 'meta service DeepScan' 'manager preview Preview' 'manager api AuthorizedPreview'; do
     read -r owner package contract <<< "$specification"
-    (cd "$ROOT_DIR/$owner/backend" && GOWORK=off go test "./internal/$package" -run '^TestIntegrationRustFS' -count=1 -timeout=90s -v) | tee "$WORK_DIR/$owner.log"
+    (cd "$SOURCE_ROOT/$owner/backend" && GOWORK=off go test "./internal/$package" -run '^TestIntegrationRustFS' -count=1 -timeout=90s -v) | tee "$WORK_DIR/$owner.log"
     ! grep -q -- '--- SKIP:' "$WORK_DIR/$owner.log"
     grep -q -- "--- PASS: TestIntegrationRustFS$contract " "$WORK_DIR/$owner.log"
 done
-echo 'RUSTFS_T2_PASS native provider, persistence and consumers'
+(cd "$SOURCE_ROOT/transfer/backend" && GOWORK=off go test ./internal/planner -run '^TestIntegrationRustFSParquetImport$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/transfer.log"
+! grep -q -- '--- SKIP:' "$WORK_DIR/transfer.log"
+grep -q -- '--- PASS: TestIntegrationRustFSParquetImport ' "$WORK_DIR/transfer.log"
+echo 'RUSTFS_T2_PASS native provider, persistence, consumers and PostgreSQL import'

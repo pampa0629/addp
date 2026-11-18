@@ -444,11 +444,18 @@ func (r *Repository) CreateExecutionAuthorization(
 	if authorization.Audience == "manager" || authorization.SourceReadScope != nil {
 		targets, scopeErr := authorization.SourceReadScope.Targets()
 		expectedAudience := "manager"
-		if authorization.SourceReadScope.FileGDB() != nil {
+		if authorization.SourceReadScope.FileGDB() != nil || authorization.SourceReadScope.Object() != nil {
 			expectedAudience = "transfer"
 		}
+		expectedCount := 1
+		if object := authorization.SourceReadScope.Object(); object != nil {
+			expectedCount = 2
+			if len(accesses) != 2 || accesses[1].EngineID != int64(object.TargetEngineID) || len(accesses[1].Effects) != 1 || accesses[1].Effects[0] != "write" {
+				return commonapi.ErrBadRequest
+			}
+		}
 		if authorization.Audience != expectedAudience || authorization.InternalTask != nil ||
-			scopeErr != nil || len(targets) == 0 || len(accesses) != 1 ||
+			scopeErr != nil || len(targets) == 0 || len(accesses) != expectedCount ||
 			accesses[0].EngineID != int64(targets[0].EngineID) ||
 			len(accesses[0].Effects) != 1 || accesses[0].Effects[0] != "read" {
 			return fmt.Errorf("%w: complete Manager source boundary is required", commonapi.ErrBadRequest)

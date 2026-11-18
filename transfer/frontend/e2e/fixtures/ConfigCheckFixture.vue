@@ -72,6 +72,7 @@ function queryDraft(language) {
     <button data-testid="review-step" @click="sourceVisible = false">Return to review</button>
     <output data-testid="fixture-submits">{{ submits }}</output>
     <pre data-testid="fixture-request" hidden>{{ JSON.stringify(wizard.taskConfig.value) }}</pre>
+    <pre data-testid="fixture-source-selection" hidden>{{ JSON.stringify({ engineType: wizard.sourceEngineType.value, source: wizard.sourceConfig.value }) }}</pre>
     <Step1SelectSource v-if="sourceVisible" :wizard-state="wizard" />
     <Step5Review v-else :wizard-state="wizard" @submit="submits++" />
   </div>

@@ -79,6 +79,7 @@ type QueryInputSpec struct {
 }
 
 type TableExportTaskSpec struct {
+	ObjectSource   *execution.TransferObjectSource    `json:"object_source,omitempty"`
 	WorkflowResult *client.WorkflowResultExportSource `json:"workflow_result,omitempty"`
 	FileGDBSource  *execution.FileGDBExportSource     `json:"filegdb_source,omitempty"`
 	Runtime        RuntimeSpec                        `json:"runtime"`
@@ -322,6 +323,11 @@ func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize i
 	}
 	if err := decodeStrictTaskConfig(configBytes, &spec, "transfer"); err != nil {
 		return TableExportTaskSpec{}, err
+	}
+	if spec.ObjectSource != nil {
+		if _, err := execution.NewTransferObjectReadScope(configBytes); err != nil {
+			return TableExportTaskSpec{}, err
+		}
 	}
 	if spec.FileGDBSource != nil {
 		if _, err := execution.NewFileGDBExportReadScope(configBytes); err != nil {

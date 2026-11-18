@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -114,39 +115,43 @@ func TestTargetProductionDurableLifecycle(t *testing.T) {
 }
 
 func TestTargetProductionFreezesActualReadSetWithCommit(t *testing.T) {
-	db := newTaskRepositoryTestDB(t)
-	item, lease := productionExecutionFixture(t, db)
-	repo := NewTaskRepository(db)
-	ctx := t.Context()
-	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator, 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
-		t.Fatal(err)
-	}
 	const largeEngine = uint(9007199254740993)
-	sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(largeEngine, "schema", "outdoor", "source"))
-	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources, true, nil, testCommitVersions(sources)); err != nil {
-		t.Fatal(err)
-	}
-	frozen := readProductionRecord(t, db, item.ID)
-	if !frozen.CreatedAndCommitted || frozen.SourceReadSet == nil || frozen.SourceReadSet.Paths[0].Segments[2].Name != "source" || frozen.SourceReadSet.Paths[0].EngineID != largeEngine {
-		t.Fatal("actual sources not persisted with commit")
-	}
-	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources, true, nil, testCommitVersions(sources)); err != nil {
-		t.Fatal("same source evidence retry failed", err)
-	}
-	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources, false, nil, testCommitVersions(sources)); err == nil {
-		t.Fatal("committed creation evidence cleared on replay")
-	}
-	sources.Paths[0].Segments[2].Name = "other"
-	for _, changed := range []*plugin.QueryReadSet{nil, sources, {Paths: []plugin.EngineCatalogPath{sources.Paths[0], sources.Paths[0]}}} {
-		if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, changed, true, nil, testCommitVersions(changed)); err == nil {
-			t.Fatal("committed sources changed, cleared or normalized on retry")
-		}
-	}
-	if again := readProductionRecord(t, db, item.ID); again.SourceReadSet.Paths[0].Segments[2].Name != "source" || !again.CommittedAt.Equal(*frozen.CommittedAt) {
-		t.Fatal("source proof or first commit time was rewritten")
+	for _, path := range []plugin.EngineCatalogPath{plugin.TabularItemPath(largeEngine, "schema", "outdoor", "source"), plugin.ObjectItemPath(largeEngine, "addp-demo", "source.parquet")} {
+		t.Run(path.Segments[len(path.Segments)-1].Term, func(t *testing.T) {
+			db := newTaskRepositoryTestDB(t)
+			item, lease := productionExecutionFixture(t, db)
+			repo := NewTaskRepository(db)
+			ctx := t.Context()
+			if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator, 1); err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
+				t.Fatal(err)
+			}
+			sources, _ := plugin.NewQueryReadSet(path)
+			if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources, true, nil, testCommitVersions(sources)); err != nil {
+				t.Fatal(err)
+			}
+			frozen := readProductionRecord(t, db, item.ID)
+			if !frozen.CreatedAndCommitted || frozen.SourceReadSet == nil || !reflect.DeepEqual(frozen.SourceReadSet.Paths[0], path) {
+				t.Fatal("actual sources not persisted with commit")
+			}
+			if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources, true, nil, testCommitVersions(sources)); err != nil {
+				t.Fatal("same source evidence retry failed", err)
+			}
+			if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources, false, nil, testCommitVersions(sources)); err == nil {
+				t.Fatal("committed creation evidence cleared on replay")
+			}
+			sources.Paths[0].Segments[2].Name = "other"
+			for _, changed := range []*plugin.QueryReadSet{nil, sources, {Paths: []plugin.EngineCatalogPath{sources.Paths[0], sources.Paths[0]}}} {
+				if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, changed, true, nil, testCommitVersions(changed)); err == nil {
+					t.Fatal("committed sources changed, cleared or normalized on retry")
+				}
+			}
+			if again := readProductionRecord(t, db, item.ID); !reflect.DeepEqual(again.SourceReadSet.Paths[0], path) || !again.CommittedAt.Equal(*frozen.CommittedAt) {
+				t.Fatal("source proof or first commit time was rewritten")
+			}
+		})
 	}
 }
 

@@ -56,7 +56,7 @@ type issuedManagerSourceAuthorization struct {
 	ID              int64
 	ExecutionID     uuid.UUID
 	TenantID        int64
-	SourceReadScope ManagerSourceReadScope
+	SourceReadScope SourceReadScope
 	ExpiresAt       time.Time
 }
 
@@ -65,7 +65,7 @@ type authorizeManagerSourceInput struct {
 	ExecutionID        uuid.UUID
 	Attempt            int
 	LeaseToken         uuid.UUID
-	SourceReadScope    ManagerSourceReadScope
+	SourceReadScope    SourceReadScope
 	ServicePrincipalID int64
 	ServiceClientID    string
 	TenantID           int64
@@ -165,7 +165,7 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 		if err != nil {
 			return err
 		}
-		if row.SourceReadScope.file != nil || row.SourceReadScope.fileGDB != nil {
+		if row.SourceReadScope.file != nil || row.SourceReadScope.fileGDB != nil || row.SourceReadScope.object != nil {
 			var prior ExecutionAuthorization
 			lookup := tx.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("audience=? AND execution_id=?", s.purpose.audience(), input.ExecutionID).Take(&prior)
 			if lookup.Error == nil {
@@ -202,6 +202,9 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 			return ErrExecutionAuthorizationUnavailable
 		}
 		accesses := []ExecutionAuthorizationEngineAccess{{EngineID: int64(targets[0].EngineID), Effects: []string{"read"}}}
+		if object := row.SourceReadScope.Object(); object != nil {
+			accesses = append(accesses, ExecutionAuthorizationEngineAccess{EngineID: int64(object.TargetEngineID), Effects: []string{"write"}})
+		}
 		if err := tx.CreateExecutionAuthorization(ctx, row, accesses); err != nil {
 			return err
 		}

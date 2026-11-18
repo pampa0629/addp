@@ -292,7 +292,7 @@ test-common-rustfs-unit: ## RustFS 连接、部署与独立插件契约
 	@cd common && GOWORK=off go test ./engine/plugins/objectstore ./engine/plugins/s3 ./engine/plugins/rustfs
 
 test-common-rustfs: ## 独占 RustFS 验证对象 Provider、持久化及 Meta/Manager 消费
-	@bash scripts/test/common-rustfs-gate.sh
+	@bash scripts/test/common-rustfs-gate.sh $(COMMON_RUSTFS_TEST_ARGS)
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
 	@$(MAKE) test-common-rustfs-unit

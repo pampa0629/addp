@@ -82,6 +82,12 @@ export function isContentEngine(engine) {
   return isContentStorageEngine(engine)
 }
 
+export function isObjectStorageEngine(engine) {
+  const storage = parseEngineCapabilities(engine)?.storage
+  return storage?.catalog?.supported === true && storage.catalog_model?.root_term === 'service' &&
+    storage.catalog_model.levels?.some(level => level.term === 'object' && level.role === 'leaf') === true
+}
+
 export function isDocumentEngine(engine) {
   return hasStorageCapability(engine) && engineCapabilityFamily(engine) === 'document'
 }

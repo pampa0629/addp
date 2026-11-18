@@ -240,7 +240,7 @@ func exerciseManagerFileAuthorization(t *testing.T, db *gorm.DB, source *Service
 			}
 		}
 		raw, _ := json.Marshal(issued.SourceReadScope)
-		var frozen iam.ManagerSourceReadScope
+		var frozen iam.SourceReadScope
 		if json.Unmarshal(raw, &frozen) != nil || frozen.File() == nil {
 			t.Fatal("persisted model scope unreadable")
 		}

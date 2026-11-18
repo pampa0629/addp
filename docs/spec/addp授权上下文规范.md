@@ -200,6 +200,16 @@ Runtime 成功后，Owner 只按原私有会话取得唯一输出回执，并将
 
 成功提交后，Develop 在有效 lease 下保存同一次实际读取和新建提交的私有回执，Meta 沿可信产出执行只识别该成果，System 按[任务产出数据与初始使用权](#558-任务产出数据与初始使用权)向原发起人签发唯一精确 `read` Grant 并核定期限。签发待处理、拒绝和产出成功分别表达。签发故障只核清或续办原命令，不能重发写入。现有其他算子、引擎、发布服务和目录持续写入不纳入此首期。以上为接入规范，实施及真实授权证据仍待补齐。
 
+### 5.2.5 Transfer 单对象导入执行授权
+
+2026-11-17 已确认，实施中：仅普通第一方／OAuth API User 手动执行、bounded／snapshot、RustFS 单个 Parquet DataItem → PostgreSQL 原生表。任务不得启用定时或自动执行；不开放桶／目录、其他文件格式、父执行派生及后台服务来源。保存任务定义不获得读取许可，每次人工启动独立核验。
+
+沿既有 EA 唯一 `source_read_scope` 保存 `config_digest`、`object_source={engine_version,binding}` 和 `target_engine_id`；binding 必须是 single 原生对象边界。源 locator 必须携带精确 item_id，Worker 在读取前匹配 Meta 的引擎、路径、指纹、single 与 Parquet 事实。System 从真实 pending Transfer execution 读取冻结配置，独立匹配当前 Meta 边界与源 Grant，保留源 read、目标 write 的逐引擎效果。所需当前功能权限为 `transfer.task.execute`、`manager.data_item.read` 及既有 PostgreSQL 写入效果权限 `develop.data_write.execute`；不新增角色、Permission 或数据 Grant。
+
+固定签发 `POST /auth/execution-authorizations/transfer-objects` 只接受 execution UUID／有效期；消费 `POST /execution-authorizations/{id}/transfer-object-accesses` 只接受固定 addp-transfer Tenant Service、真实 execution／attempt／lease 与冻结 scope。签发前 pending 行不可领取，绑定后仅一次 attempt。消费复核发起人、当前功能权限、源 Grant、源引擎版本、目标 PostgreSQL 状态及同一配置；仅返回当次精确源读取所需连接。通用 engine-accesses 不得消费这种 EA。Transfer 实际 Open／Describe 及每批读取前重核，收权后终止后续读取并沿既有目标事务退出；不承诺对象历史版本或跨对象一致性快照。前端测试、数据库授权反例与真实导入分别验收，不互相替代。
+
+2026-11-17 确认补齐成果初始读取授权：上述单对象读取在实际内容成功打开后，由受约束的读取会话提供该对象的完整 ReadSet；实际已授权连接响应中的源 Engine 版本与目标首次新建提交事实同次冻结。System 仅为 Transfer 的单个 RustFS 原生对象来源、PostgreSQL 新建表成果接入既有 5.5.8 初始签发，不放开其他对象引擎、桶／前缀、多对象或其他生产者。源 Grant、当前身份／功能权限、版本、Meta 边界和目标历史仍在正式签发时独立复核，期限沿原规则计算。旧执行缺失的来源证据不回填，原拒绝终态不重开；已生成但被拒绝的成果可另经正常显式精确授权办理，自动签发使用独立新建成果验收。
+
 ### 5.3 Notebook 会话授权
 
 Notebook Session Authorization 是独立的短期用户派生事实，不是 Delegated Token。Develop 在 Session 创建的同步栈用当前 User Bearer 请求签发，随后丢弃 Bearer；授权绑定 Session、Task、Tenant、Principal、Membership、Token Family、授权版本、固定 `develop` audience、操作和期限，不保存连接或 Engine 白名单。
@@ -526,7 +536,7 @@ PG 普通 Transfer 的持久化沿现有执行记录保存私有产出事实：�
 
 System 的内部产出边界准备只接受可信 Tenant 与精确执行 UUID，以共享 client 取得上述回执，再复用现有 Meta 边界解析器核验完整 `single` 目标。候选指纹不是归属证明，原生名称不得拆分或仅按 `full_name` 匹配；返回的类型化路径须与实际提交目标完全相同。跨 owner 调用不持有 System 数据库事务，前后核对本租户 PG 引擎的生命周期及聚合版本；不完整、待刷新或依赖不可用时拒绝准备，不在读取中补扫。准备结果仅为内部当次证据，不是 Runtime 凭证或 Grant，不缓存为许可，不冻结期限，不推导缺失的人类来源，也不因 `created` 或准备成功省略正式签发时的历史、身份、ReadSet 及边界复核。
 
-初始授权的内部来源准备进一步要求非重试的首次执行、实际 `created`、可信人类来源和非空完整 ReadSet；逐项核验来源的 PG 引擎版本及 Meta 边界。当前来源规则、执行所需 IAM 功能权限与目标既有批准／办理／Grant 历史在同一只读快照中观察，不因撤销、到期或更换边界而忽略目标历史；未知来源不进入规则查询。该观察不冻结期限、不签发 Grant，也不能替代正式写事务在统一锁顺序下的复核。首次执行与历史为空仍不能独立证明该执行真实新建并成功提交了成果。
+初始授权的内部来源准备进一步要求非重试的首次执行、实际 `created`、可信人类来源和非空完整 ReadSet；逐项核验已准入来源的引擎版本及 Meta 边界。Transfer 的 RustFS 来源仅限 5.2.5 的单对象 Parquet → PostgreSQL 范围。当前来源规则、执行所需 IAM 功能权限与目标既有批准／办理／Grant 历史在同一只读快照中观察，不因撤销、到期或更换边界而忽略目标历史；未知来源不进入规则查询。该观察不冻结期限、不签发 Grant，也不能替代正式写事务在统一锁顺序下的复核。首次执行与历史为空仍不能独立证明该执行真实新建并成功提交了成果。
 
 **资格基准与物理对象边界。** 初始授权以“任务真实新建并成功提交该逻辑成果”的不可变执行事实为资格依据，不以签发瞬间仍保留原物理表为条件。Provider 须证明从实际创建到本次写入提交的成果归属；准备与写入会话分离时，中间的替换窗口仍须校验，不能仅补执行后的目录查询。Transfer 沿原执行持久化同一事实，创建、写入或提交未知时不得补造成功证据。原生对象标识仅用于执行内部补证，不写入 Grant 成为物理 ACL，不增加业务列或改写业务注释。
 
@@ -538,7 +548,7 @@ PG Transfer 的私有 `transfer.target-production/v5` 与共享 `transfer.produc
 
 共享成果回执的 DataItem 来源同时冻结完整 ReadSet 与逐 Engine 的实际读取版本，按 Engine ID 严格升序唯一登记，覆盖集合必须恰好一致。同一 Engine 的多个必要读取必须版本一致。Transfer 从本次源连接解析响应向实际读取流水线传递版本，与同次提交事实一起冻结；Develop 从实际受限读取会话的已核对 Engine 响应取得版本，与原节点 ReadSet 和 Runtime manifest 同事务保存。不得从任务配置、当前 Engine、旧绑定范围或血缘反填历史读取版本。缺失版本的历史读取证明只表示证据不可用，不生成无来源资格。System 在边界准备、签发锁内和提交前逐项核验所有源与目标的冻结版本；引擎重绑或版本变化不转移原资格。
 
-文件成果以完整 FileComposition 绑定写入现有 `task_production` Grant，和普通文件 Grant 共用读取、历史与撤销规则；内部成员不产生独立 ACL。仅受支持的原生 PG 与 NFS 文件路径进入本期签发；whole 或 metadata-only 不能借该路径取得 read。Develop 的限定识别和初始授权由现有 Supervisor 恢复周期续办，同一原 operation 的明确发布结果与待办原子保存；未知依赖先核清原 System 终态，再续办原引用，不重新计算、发布或换号。后续核清得到的已提交结果也按同一规则办理，父任务终态不改写。
+文件成果以完整 FileComposition 绑定写入现有 `task_production` Grant，和普通文件 Grant 共用读取、历史与撤销规则；内部成员不产生独立 ACL。成果目标仅允许受支持的原生 PG 与 NFS 文件路径进入本期签发；whole 或 metadata-only 不能借该路径取得 read。Develop 的限定识别和初始授权由现有 Supervisor 恢复周期续办，同一原 operation 的明确发布结果与待办原子保存；未知依赖先核清原 System 终态，再续办原引用，不重新计算、发布或换号。后续核清得到的已提交结果也按同一规则办理，父任务终态不改写。
 
 物理产出、基础识别和授权签发不是跨模块原子事务。状态应分别反馈；产出或扫描成功不得显示成授权成功，授权失败不得自动重跑计算或删除已产出内容，结果未知先核清原办理，不换编号重复授予。只为授权确定边界时基础识别足够，不因本节给现有业务扫描增加 deep 前置要求。
 

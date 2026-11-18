@@ -22,10 +22,11 @@ const (
 	managerSourceModel3D   managerSourcePurpose = "model_3d_glb_generation"
 	managerSourceRasterCOG managerSourcePurpose = "raster_cog_generation"
 	managerSourceFileGDB   managerSourcePurpose = "filegdb_export"
+	managerSourceObject    managerSourcePurpose = "transfer_object"
 )
 
 func (p managerSourcePurpose) audience() string {
-	if p == managerSourceFileGDB {
+	if p == managerSourceFileGDB || p == managerSourceObject {
 		return execution.AudienceTransfer
 	}
 	return "manager"
@@ -35,6 +36,8 @@ func (p managerSourcePurpose) consumer() string { return "addp-" + p.audience() 
 
 func (p managerSourcePurpose) permission() string {
 	switch p {
+	case managerSourceObject:
+		return "transfer.task.execute"
 	case managerSourceProfile:
 		return "manager.data_profile.execute"
 	case managerSourceModel3D, managerSourceRasterCOG, managerSourceFileGDB:
@@ -42,7 +45,14 @@ func (p managerSourcePurpose) permission() string {
 	}
 	return ""
 }
-func (p managerSourcePurpose) scope(raw json.RawMessage) (*ManagerSourceReadScope, error) {
+func (p managerSourcePurpose) scope(raw json.RawMessage) (*SourceReadScope, error) {
+	if p == managerSourceObject {
+		scope, err := execution.NewTransferObjectReadScope(raw)
+		if err != nil {
+			return nil, ErrExecutionAuthorizationUnavailable
+		}
+		return NewTransferObjectSourceScope(scope), nil
+	}
 	if p == managerSourceFileGDB {
 		scope, err := execution.NewFileGDBExportReadScope(raw)
 		if err != nil {
@@ -80,11 +90,13 @@ func (p managerSourcePurpose) scope(raw json.RawMessage) (*ManagerSourceReadScop
 	}
 	return NewManagerFileSourceScope(scope), nil
 }
-func (p managerSourcePurpose) matches(scope *ManagerSourceReadScope) bool {
+func (p managerSourcePurpose) matches(scope *SourceReadScope) bool {
 	if scope == nil || scope.Validate() != nil {
 		return false
 	}
 	switch p {
+	case managerSourceObject:
+		return scope.object != nil
 	case managerSourceProfile:
 		return scope.profile != nil
 	case managerSourceModel3D, managerSourceRasterCOG:
@@ -104,13 +116,19 @@ func (r *Repository) managerSourceExecutionConfig(ctx context.Context, auth *Exe
 	}
 	var row struct{ ExecutionConfig json.RawMessage }
 	taskType := string(purpose)
-	if purpose == managerSourceFileGDB {
+	if purpose == managerSourceFileGDB || purpose == managerSourceObject {
 		taskType = execution.TaskTypeSync
 	}
+	sourceModule := "manager"
+	if purpose == managerSourceObject {
+		sourceModule = "transfer"
+	}
 	query := r.db.WithContext(ctx).Table("common.task_executions e").Select("e.execution_config").
-		Where("e.execution_id=? AND e.tenant_id=? AND e.module=? AND e.source='manager' AND e.task_type=? AND e.execution_boundary='bounded' AND e.trigger_type='manual' AND e.parent_execution_id IS NULL", auth.ExecutionID.String(), auth.TenantID, purpose.audience(), taskType).
+		Where("e.execution_id=? AND e.tenant_id=? AND e.module=? AND e.source=? AND e.task_type=? AND e.execution_boundary='bounded' AND e.trigger_type='manual' AND e.parent_execution_id IS NULL", auth.ExecutionID.String(), auth.TenantID, purpose.audience(), sourceModule, taskType).
 		Where("e.actor_principal_id=? AND e.actor_tenant_membership_id=? AND e.issued_authorization_version=?", auth.ActorPrincipalID, auth.TenantMembershipID, auth.IssuedAuthorizationVersion)
-	if purpose == managerSourceFileGDB {
+	if purpose == managerSourceObject {
+		query = query.Where("e.source_task_id IS NOT NULL AND e.triggered_by=e.actor_principal_id AND e.max_attempts=1")
+	} else if purpose == managerSourceFileGDB {
 		query = query.Where("e.source_task_id IS NULL AND e.triggered_by=e.actor_principal_id AND e.max_attempts=1 AND jsonb_typeof(e.metadata->'export_artifact_protection')='object'")
 	} else if purpose == managerSourceProfile {
 		query = query.Where("e.source_task_id IS NULL")
@@ -140,6 +158,9 @@ func managerSourceUserCredential(auth *authorization.AuthContext, purpose manage
 		!authorization.HasContextPermissions(*auth, purpose.permission(), "manager.data_item.read") {
 		return false
 	}
+	if purpose == managerSourceObject && !authorization.HasContextPermissions(*auth, "develop.data_write.execute") {
+		return false
+	}
 	if auth.Token.Type == "first_party_access_token" {
 		return auth.Client.ScopeMode == "unrestricted" && len(auth.Client.Scopes) == 0
 	}
@@ -160,7 +181,7 @@ func managerSourcePermissions(rows []RoleAssignmentPermissionProjection, purpose
 			permissions[row.PermissionKey] = true
 		}
 	}
-	return permissions[purpose.permission()] && permissions["manager.data_item.read"]
+	return permissions[purpose.permission()] && permissions["manager.data_item.read"] && (purpose != managerSourceObject || permissions["develop.data_write.execute"])
 }
 
 func (r *Repository) currentManagerSourceConsumer(ctx context.Context, input authorizeManagerSourceInput, purpose managerSourcePurpose) error {

@@ -12,6 +12,8 @@ RustFS 的正式用户预览沿 System 现行精确 DataItem Grant：CSV／JSON�
 
 S3 协议目录与内容实现归 `common/engine/plugins/objectstore`，Amazon S3 和 RustFS 仅持有各自类型、连接默认值与能力声明，不跨插件继承、不复制协议实现。真实存储及消费者测试统一由 `make test-common-rustfs` 拥有独占临时 RustFS；配置与启停契约进入 `make test-business-config`。T2 证明 Provider、持久化、System 真实签发对象核验适配器、真实扫描到授权事实投影及 Manager HTTP 内容交付前后的权限观察接线；其中 System 观察在 HTTP 测试中为夹具，真实 User／Grant 生命周期另由 System PostgreSQL 门禁验证。普通身份的真实服务页面 T4 需独立报告，不用协议通过替代。
 
+2026-11-17 Transfer 单对象导入实施范围：手动 bounded／snapshot 的 single Parquet → PostgreSQL，沿[精确对象执行授权](addp授权上下文规范.md#525-transfer-单对象导入执行授权)冻结 DataItem 边界和配置，实际 Open 及每批读取重核。`make test-common-rustfs` 同时依赖标准 PostgreSQL 测试服务，在独占 RustFS 与 disposable 测试 schema 验证 9 字段、20 行、日期、Decimal 金额、实际打开后的对象 ReadSet／连接版本、读取前拒绝、批间撤权行事务回滚及目标可能改变提示；System 的真实 Grant／EA／lease 及初始成果授权反例纳入既有 file-composition PostgreSQL 门禁。单个 RustFS 原生对象来源的 PostgreSQL 首次新建成果沿既有产出协议办理初始读取授权，保留精确来源、版本、期限及不可变终态检查；历史缺失证明不补造。该范围不含源对象历史版本、目录导入、多对象或其他生产者／对象引擎的自动初始授权。
+
 ---
 
 ## FTP／显式 FTPS 接入范围（2026-10-20 正式只读插件）
