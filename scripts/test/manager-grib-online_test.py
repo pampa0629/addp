@@ -14,7 +14,7 @@ FIXTURE=SCENE.FIXTURE
 class GRIBOracleTest(unittest.TestCase):
     def test_closed_inventory_and_bytes_before_physical_mutation(self):
         request={'sources':FIXTURE.sources(),'source_bytes':{s['name']:FIXTURE.source_bytes(s).hex() for s in FIXTURE.sources()}}
-        self.assertEqual(len(FIXTURE._owned_sources(request)),6)
+        self.assertEqual(len(FIXTURE._owned_sources(request)),7)
         for change in ('missing','tampered'):
             bad=copy.deepcopy(request)
             if change=='missing':bad['sources'].pop()
@@ -72,7 +72,7 @@ class GRIBOracleTest(unittest.TestCase):
                     with self.assertRaises(ValueError):SCENE.validate_slice(bad,spec,field)
 
     def test_complex_oracle_preserves_unit_packing_and_cumulative_interval(self):
-        for spec in FIXTURE.sources()[4:]:
+        for spec in FIXTURE.sources()[4:6]:
             for field in spec['fields']:
                 result=self.response(spec,field);SCENE.validate_slice(result,spec,field)
                 for category,key,value in [('time','start_utc','wrong'),('time','forecast_value',99),('level','raw_value',99),('parameter','number',99),('packing','order',1),('packing','groups',99)]:

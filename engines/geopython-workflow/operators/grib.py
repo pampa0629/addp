@@ -1,6 +1,8 @@
 """Self-contained GRIB fields: edition-specific proof, GDAL-only values."""
 from __future__ import annotations
 from contextlib import contextmanager
+import ctypes
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -103,6 +105,73 @@ def _grib2_complex_facts(identification, product, packing, discipline):
         reference_seconds=int(reference.timestamp()),forecast_seconds=forecast*3600,valid_seconds=int(end.timestamp()),element=element,unit=unit)
 
 
+@lru_cache(maxsize=1)
+def _ccsds_checker():
+    library = ctypes.CDLL(os.environ['GEOPYTHON_GRIB_CCSDS_PREFLIGHT_LIB'])
+    check = library.addp_grib_ccsds_complete
+    check.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint, ctypes.c_uint]
+    check.restype = ctypes.c_int
+    return check
+
+
+def _grib2_ecmwf_ccsds(sections, discipline, point_count):
+    identification, product, packing = (sections[n] for n in (1, 4, 5))
+    local = sections.get(2)
+    if (discipline != 0 or bytes(identification[5:12]) != bytes.fromhex('00620000200001')
+            or identification[19:21] != b'\x00\x01'
+            or local != bytes.fromhex('0000001102000100010009040130303031')):
+        raise ValueError('unsupported ECMWF CCSDS identification or local definition')
+
+    parameters = {(0, 0): ('TMP', '[K]', 2),
+                  (2, 2): ('UGRD', '[m/s]', 10),
+                  (2, 3): ('VGRD', '[m/s]', 10)}
+    identity = tuple(product[9:11])
+    if identity not in parameters:
+        raise ValueError('unsupported ECMWF CCSDS parameter')
+    element, unit, height = parameters[identity]
+    if (len(product) != 34 or product[17] != 1 or product[22:24] != b'\x67\x00'
+            or int.from_bytes(product[24:28], 'big') != height
+            or product[28:34] != b'\xff' * 6):
+        raise ValueError('unsupported ECMWF CCSDS product or level')
+
+    reference = datetime(int.from_bytes(identification[12:14], 'big'),
+                         *identification[14:19], tzinfo=timezone.utc)
+    forecast_hours = _signed(product[18:22])
+    if forecast_hours < 0:
+        raise ValueError('unsupported negative ECMWF forecast')
+    valid = reference + timedelta(hours=forecast_hours)
+    if (len(packing) != 25 or packing[17:19] != b'\x00\x00'
+            or not 1 <= packing[19] <= 16 or packing[20:25] != b'\x00\x0e\x20\x00\x80'
+            or sections[6][5] != 255):
+        raise ValueError('unsupported ECMWF CCSDS packing')
+    binary_scale = _signed(packing[15:17])
+    packing_reference = struct.unpack('>f', packing[11:15])[0]
+    if not math.isfinite(packing_reference) or not -126 <= binary_scale <= 127 - packing[19]:
+        raise ValueError('unsupported ECMWF CCSDS scaling')
+
+    payload = sections[7][5:].tobytes()
+    if not _ccsds_checker()(payload, len(payload), point_count, packing[19]):
+        raise ValueError('incomplete ECMWF CCSDS codestream')
+
+    return dict(
+        parameter=dict(centre=98, subcentre=0, master_table=32, local_table=0,
+                       discipline=0, category=identity[0], number=identity[1]),
+        time=dict(reference_utc=reference.isoformat(), unit_code=1,
+                  forecast_value=forecast_hours, start_utc=valid.isoformat(),
+                  end_utc=valid.isoformat(), operation='instant'),
+        level=dict(type_code=103, raw_scale=0, raw_value=height,
+                   reference='above_ground', value=height, unit='m'),
+        packing=dict(data_template=42, bits_per_value=packing[19], flags=14,
+                     block_size=32, reference_sample_interval=128,
+                     reference_ieee_hex=bytes(packing[11:15]).hex(),
+                     binary_scale=binary_scale, decimal_scale=0),
+        local=dict(definition=1, section_bytes=17, mars_class='od',
+                   mars_type='fc', mars_stream='oper', experiment_version='0001'),
+        reference_seconds=int(reference.timestamp()), forecast_seconds=forecast_hours * 3600,
+        valid_seconds=int(valid.timestamp()), element=element, unit=unit,
+    )
+
+
 def _grib2_fields(raw):
     """Require a complete closed single-field section sequence per message.
 
@@ -117,11 +186,13 @@ def _grib2_fields(raw):
             raise ValueError('unsupported GRIB2 message envelope')
         size = int.from_bytes(raw[offset+8:offset+16], 'big')
         end = offset + size
-        if size < 20 or end > len(raw) or raw[end-4:end] != b'7777' or raw[offset+4:offset+6] != b'\0\0':
+        if size < 20 or end > len(raw) or raw[end-4:end] != b'7777':
             raise ValueError('incomplete GRIB2 message')
         position = offset + 16
         sections = {}
-        for number in (1, 3, 4, 5, 6, 7):
+        for number in (1, 2, 3, 4, 5, 6, 7):
+            if number == 2 and (position + 5 > end - 4 or raw[position + 4] != 2):
+                continue
             if end-4-position < 5:
                 raise ValueError('incomplete GRIB2 sections')
             length = int.from_bytes(raw[position:position+4], 'big')
@@ -168,7 +239,14 @@ def _grib2_fields(raw):
         if len(representation) < 11 or int.from_bytes(representation[5:9], 'big') != valid_count:
             raise ValueError('GRIB packed value count differs from bitmap')
         drt = int.from_bytes(representation[9:11], 'big')
-        if drt == 0:
+        reserved = raw[offset+4:offset+6]
+        if drt != 42 and (2 in sections or reserved != b'\x00\x00'):
+            raise ValueError('unsupported GRIB2 reserved bytes or local section')
+        if drt == 42:
+            if pdt != 0 or reserved not in (b'\x00\x00', b'\xff\xff'):
+                raise ValueError('unsupported ECMWF CCSDS envelope')
+            facts = _grib2_ecmwf_ccsds(sections, raw[offset+6], count)
+        elif drt == 0:
             if len(representation) != 21 or representation[19] > 32 or representation[20] not in (0, 1):
                 raise ValueError('unsupported GRIB simple packing')
             data_bytes = (valid_count*representation[19]+7)//8
@@ -180,12 +258,14 @@ def _grib2_fields(raw):
             data_bytes = _complex_spatial_structure(representation, sections[7], valid_count)
         else:
             raise ValueError('unsupported GRIB value encoding')
-        if len(sections[7]) != 5 + data_bytes:
+        if drt != 42 and len(sections[7]) != 5 + data_bytes:
             raise ValueError('GRIB packed payload length mismatch')
         fields.append(dict(name=f'message-{len(fields)+1}', offset=offset, size=size, width=width, height=height,
             edition=2, scan=scan, bitmap=bitmap[6:].tobytes() if bitmap[5] == 0 else None,
             product_template=pdt, data_template=drt, discipline=raw[offset+6]))
-        if drt==3:
+        if drt == 42:
+            fields[-1]['facts'] = facts
+        elif drt == 3:
             fields[-1]['facts']=_grib2_complex_facts(sections[1],product,representation,raw[offset+6])
         offset = end
     if not fields:
@@ -408,7 +488,7 @@ def _description(dataset, field):
             metadata['GRIB1_'+key.upper()] = json.dumps(facts[key], sort_keys=True, separators=(',', ':'))
     else:
         message.update(discipline=field['discipline'], product_template=field['product_template'], data_template=field['data_template'])
-        if field['data_template']==3:
+        if field['data_template'] in (3, 42):
             facts=field['facts']
             metadata['GRIB2_DECODE_PRECISION']='float32_scaling_float64_output'
             for key,fact in (('GRIB_REF_TIME','reference_seconds'),('GRIB_VALID_TIME','valid_seconds'),('GRIB_FORECAST_SECONDS','forecast_seconds')):
@@ -418,6 +498,9 @@ def _description(dataset, field):
             for key in ('parameter','time','level','packing'):
                 message[key]=facts[key]
                 metadata['GRIB2_'+key.upper()]=json.dumps(facts[key],sort_keys=True,separators=(',',':'))
+            if field['data_template'] == 42:
+                message['local'] = facts['local']
+                metadata['GRIB2_LOCAL'] = json.dumps(facts['local'], sort_keys=True, separators=(',', ':'))
     return dict(name=field['name'], type='Float64', dimensions=[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],
         attributes={key:dict(type='String',values=[value]) for key,value in metadata.items()}, attributes_coverage='selected',slice_supported=True,
         value_mode='decoded_native_units',grid=dict(transform=list(transform),crs_wkt=dataset.GetProjectionRef(),longitude_policy='unchanged'),

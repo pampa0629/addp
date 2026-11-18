@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     libgdal-dev \
     libhdf5-dev \
     libnetcdf-dev \
+    libaec-dev \
     pkg-config \
     unixodbc \
     odbc-mdbtools \
@@ -24,6 +25,12 @@ RUN mkdir -p /usr/local/libexec \
         -o /usr/local/libexec/addp-netcdf-preflight $(pkg-config --cflags --libs hdf5 netcdf) \
     && rm /tmp/netcdf_preflight.c
 ENV GEOPYTHON_NETCDF_PREFLIGHT_BIN=/usr/local/libexec/addp-netcdf-preflight
+COPY engines/geopython-workflow/native/grib_ccsds_preflight.c /tmp/grib_ccsds_preflight.c
+RUN cc -std=c11 -Wall -Wextra -Werror -shared -fPIC /tmp/grib_ccsds_preflight.c \
+      -o /usr/local/libexec/addp-grib-ccsds-preflight.so -laec \
+    && rm /tmp/grib_ccsds_preflight.c
+ENV GEOPYTHON_GRIB_CCSDS_PREFLIGHT_LIB=/usr/local/libexec/addp-grib-ccsds-preflight.so
+
 
 # GDAL PGeo probes the standard Microsoft Access ODBC driver names. Debian's
 # MDB Tools package registers only MDBTools, so expose the same driver under
@@ -212,6 +219,28 @@ with tempfile.TemporaryDirectory() as directory:
     assert result['values']==[['-1.2300000190734863', '-1.2200000286102295', '-1.209999918937683'], ['-1.1999999284744263', '-1.1899999380111694', '-1.1799999475479126'], ['-1.1699999570846558', '-1.159999966621399', '-1.149999976158142']] and result['valid']==[[True, True, True], [True, True, True], [True, True, True]]
     assert result['variable']['attributes']['GRIB2_DECODE_PRECISION']['values']==['float32_scaling_float64_output']
 print('GRIB2 decimal Float32 precision smoke passed')
+
+
+with tempfile.TemporaryDirectory() as directory:
+    path = Path(directory) / 'ecmwf-ccsds.grib2'
+    path.write_bytes(bytes.fromhex('''
+47524942ffff000200000000000000d500000015010062000020000107ea010203000000010000001102000100
+010009040130303031000000480300000000200000000006000000000000000000000000000000000000080000
+0004000000000000000001c9c380068e778030019bfcc006f94740000f4240000f424000000000220400000000
+000002ffa10000000100000003670000000002ffffffffffff000000190500000020002a438700008002000008
+000e2000800000000606ff00000012072009249249249249249249249237373737
+'''))
+    plan = {'schema_version': 'addp.workflow.access-plan/v1',
+            'source': {'kind': 'file', 'format': 'grib', 'access': {'method': 'mounted_path', 'path': str(path)}}}
+    info = OPERATORS['grib.inspect']['function'](access_plan=plan)
+    result = OPERATORS['grib.read_slice']['function'](
+        access_plan=plan, source_version=info['format_info']['source_version'],
+        selection=dict(variable='message-1', indices=[], x=0, y=0, width=8, height=4))
+    assert result['values'] == [[repr(270. + (y * 8 + x) / 4) for x in range(8)] for y in range(4)]
+    assert result['valid'] == [[True] * 8 for _ in range(4)]
+    assert result['variable']['message']['data_template'] == 42
+    assert result['variable']['message']['local']['mars_stream'] == 'oper'
+print('GRIB2 ECMWF CCSDS complete stream and values smoke passed')
 
 
 PYGRIB

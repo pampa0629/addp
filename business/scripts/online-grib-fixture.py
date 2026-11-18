@@ -11,7 +11,7 @@ import struct
 import subprocess
 import sys
 
-NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2')
+NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2','ecmwf-ccsds.grib2')
 
 
 def fields(reverse=False):
@@ -202,7 +202,49 @@ def complex_message(field):
     return raw[:8]+(16+len(body)).to_bytes(8,'big')+body
 
 
-def source_bytes(spec):return b''.join((grib1_message if spec.get('edition')==1 else complex_message if spec.get('packing')=='complex-spatial' else message)(field) for field in spec['fields'])
+def ccsds_fields():
+    return [
+        dict(number=index, width=8, height=4, packing='ccsds', scan=0,
+             west=110, north=30, forecast=3 * index, base=base, step=0.25,
+             missing=False, parameter=parameter, unit=unit, element=element,
+             short_name=f'{height}-HTGL', height_m=height)
+        for index, (base, parameter, unit, element, height) in enumerate((
+            (270., [0, 0], '[K]', 'TMP', 2),
+            (-4., [2, 2], '[m/s]', 'UGRD', 10),
+            (-6., [2, 3], '[m/s]', 'VGRD', 10),
+        ), 1)
+    ]
+
+
+def ccsds_message(field):
+    # Frozen libaec encoding of unsigned integers 0..31, one block of 32.
+    # Source declarations and expected physical values are independent of GDAL.
+    payload = bytes.fromhex('20092492492492492492492492')
+    raw = message(dict(field, packing='ieee64'))
+    sections = {}
+    offset = 16
+    while offset < len(raw) - 4:
+        size = int.from_bytes(raw[offset:offset+4], 'big')
+        sections[raw[offset+4]] = bytearray(raw[offset:offset+size])
+        offset += size
+    sections[1][5:11] = bytes.fromhex('006200002000')
+    sections[2] = bytes.fromhex('0000001102000100010009040130303031')
+    sections[4][9:11] = bytes(field['parameter'])
+    sections[4][12:14] = bytes.fromhex('ffa1')
+    sections[4][24:28] = field['height_m'].to_bytes(4, 'big')
+    sections[5] = (struct.pack('>IBIHf', 25, 5, 32, 42, field['base'])
+                   + bytes.fromhex('8002000008000e200080'))
+    sections[7] = struct.pack('>IB', 5 + len(payload), 7) + payload
+    body = b''.join(sections[n] for n in range(1, 8)) + b'7777'
+    return b'GRIB\xff\xff\x00\x02' + struct.pack('>Q', 16 + len(body)) + body
+
+
+def source_bytes(spec):
+    if spec.get('edition') == 1:
+        encode = grib1_message
+    else:
+        encode = {'complex-spatial': complex_message, 'ccsds': ccsds_message}.get(spec.get('packing'), message)
+    return b''.join(encode(field) for field in spec['fields'])
 
 
 def sources():
@@ -213,9 +255,12 @@ def sources():
     for reverse,name in enumerate(NAMES[2:4]):
         spec=dict(name=name,case_id='grib1-reverse' if reverse else 'grib1-forward',edition=1,fields=grib1_fields(bool(reverse)))
         raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
-    for reverse,name in enumerate(NAMES[4:]):
+    for reverse,name in enumerate(NAMES[4:6]):
         spec=dict(name=name,case_id='complex-reverse' if reverse else 'complex-forward',packing='complex-spatial',fields=complex_fields(bool(reverse)))
         raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
+    spec = dict(name=NAMES[6], case_id='ecmwf-ccsds', packing='ccsds', fields=ccsds_fields())
+    raw = source_bytes(spec)
+    result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return result
 
 def _owned_sources(request):

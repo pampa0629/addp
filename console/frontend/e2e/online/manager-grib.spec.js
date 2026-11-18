@@ -8,7 +8,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
   test.setTimeout(480000)
   const env = process.env, context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(context.cases).toHaveLength(12)
+  expect(context.cases).toHaveLength(14)
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id, permissions: new Set(context.identity.permissions_verified) }
   expect([...identity.permissions].sort()).toEqual(['manager.content.read', 'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'])
   const outcomes = [], browserErrors = []
@@ -41,6 +41,11 @@ test('ordinary user reads independent GRIB messages with native units and downlo
             await expect(details).toContainText(field.level === 101 ? 'kPa' : field.level === 100 ? 'hPa' : 'ground')
           } else await expect(details).toContainText(field.short_name ?? '2-HTGL')
           await expect(details).toContainText(String((field.start_hour ?? field.forecast) * 3600))
+          if (source.spec.packing === 'ccsds') {
+            await expect(details).toContainText('GRIB2_LOCAL')
+            await expect(details).toContainText('mars_stream')
+            await expect(details).toContainText('float32_scaling_float64_output')
+          }
           if (source.spec.packing === 'complex-spatial') {
             await expect(details).toContainText('GRIB2_DECODE_PRECISION')
             await expect(details).toContainText('float32_scaling_float64_output')

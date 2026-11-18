@@ -22,6 +22,11 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
         native=result['variable'];assert native['attributes']['GRIB_UNIT']['values']==[field.get('unit','[K]')]
         assert native['grid']['transform']==[field['west']-.5,1.,0.,field['north']+.5,0.,-1.]
         assert native['attributes']['GRIB_FORECAST_SECONDS']['values']==[str(field.get('start_hour',field['forecast'])*3600)]
+        if spec.get('packing') == 'ccsds':
+            assert native['message']['data_template'] == 42
+            assert native['message']['local']['mars_stream'] == 'oper'
+            assert native['message']['level']['value'] == field['height_m']
+            assert native['attributes']['GRIB2_DECODE_PRECISION']['values'] == ['float32_scaling_float64_output']
         if spec.get('edition')==1:
             assert native['message']['edition']==1
             assert native['message']['level']['type_code']==field['level']
@@ -43,6 +48,7 @@ def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
     assert 'GRIB1 values bitmap time and layer image smoke passed' in captured.out
     assert 'GRIB2 complex spatial interval smoke passed' in captured.out
     assert 'GRIB2 decimal Float32 precision smoke passed' in captured.out
+    assert 'GRIB2 ECMWF CCSDS complete stream and values smoke passed' in captured.out
 
 
 @pytest.mark.parametrize('reverse',[False,True])
@@ -74,3 +80,32 @@ def test_complex_decimal_precision_is_explicit_and_independently_bounded(tmp_pat
 def test_preexisting_grib1_grib2_hosted_bytes_are_unchanged():
     expected={'mixed-fields.grib2': '98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110', 'south-to-north.grb2': 'addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6', 'regular-fields.grib1': 'fdb514b1f996bb192b2507613af42ece2d4d7e89fa2976f4627d9710e20a6232', 'south-to-north.grb1': '6e1f711d8624742c3cfb9cbae4c0641763f079b1fbf1b19b616d4a0ea3815116'}
     assert {s["name"]:s["sha256"] for s in FIXTURE.sources()[:4]}==expected
+
+@pytest.mark.parametrize('fault', ['empty', 'truncated', 'extra-zero', 'extra-ff',
+                                  'unknown-local', 'missing-local', 'local-parameter', 'bad-flags'])
+def test_ecmwf_ccsds_invalid_stream_or_identity_rejected_before_gdal(monkeypatch, fault):
+    raw = FIXTURE.ccsds_message(FIXTURE.ccsds_fields()[0])
+    sections = []
+    offset = 16
+    while offset < len(raw) - 4:
+        length = int.from_bytes(raw[offset:offset+4], 'big')
+        sections.append(bytearray(raw[offset:offset+length]))
+        offset += length
+    if fault in ('empty', 'truncated', 'extra-zero', 'extra-ff'):
+        payload = sections[-1][5:]
+        payload = {'empty': b'', 'truncated': payload[:-1], 'extra-zero': payload + b'\0',
+                   'extra-ff': payload + b'\xff'}[fault]
+        sections[-1] = (len(payload) + 5).to_bytes(4, 'big') + b'\x07' + payload
+    elif fault == 'unknown-local':
+        sections[1][-1] ^= 1
+    elif fault == 'missing-local':
+        del sections[1]
+    elif fault == 'local-parameter':
+        sections[3][9:11] = bytes([1, 193])
+    else:
+        sections[4][21] = 0
+    body = b''.join(sections) + b'7777'
+    source = raw[:8] + (len(body) + 16).to_bytes(8, 'big') + body
+    monkeypatch.setattr(grib.gdal, 'OpenEx', lambda *args, **kwargs: pytest.fail('invalid source reached GDAL'))
+    with pytest.raises(ValueError, match='ECMWF CCSDS'):
+        grib._fields(source)

@@ -2,25 +2,47 @@
 # Shared native development entry, sourced after actual ports are resolved.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gdal-env.sh"
 
-addp_geopython_netcdf_checker() {
-  local source="$ROOT_DIR/engines/geopython-workflow/native/netcdf_preflight.c" flags versions key directory temporary
-  local -a native_flags
-  flags=$(unset PKG_CONFIG_PATH PKG_CONFIG_LIBDIR; pkg-config --cflags --libs hdf5 netcdf) || return 1
-  versions=$(unset PKG_CONFIG_PATH PKG_CONFIG_LIBDIR; pkg-config --modversion hdf5 netcdf) || return 1
+addp_geopython_build_native() {
+  local source="$1" kind="$2" flags="$3" versions="$4" key directory temporary
+  local -a native_flags build_flags
   key=$({ cat "$source"; printf '%s\n' "$flags" "$versions"; } | shasum -a 256) || return 1
   key=${key%% *}
-  directory="$ROOT_DIR/.dev-state/geopython-netcdf/$key"
-  export GEOPYTHON_NETCDF_PREFLIGHT_BIN="$directory/netcdf-preflight"
-  if [ ! -x "$GEOPYTHON_NETCDF_PREFLIGHT_BIN" ]; then
+  directory="$ROOT_DIR/.dev-state/geopython-$kind/$key"
+  local target="$directory/$kind-preflight"
+  if [ ! -x "$target" ]; then
     mkdir -p "$directory" || return 1
     temporary=$(mktemp "$directory/.compile.XXXXXX") || return 1
     read -r -a native_flags <<< "$flags"
-    if ! cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror "$source" -o "$temporary" "${native_flags[@]}"; then
+    build_flags=(-std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror)
+    if [ "$kind" = grib-ccsds ]; then build_flags+=(-shared -fPIC); fi
+    if ! cc "${build_flags[@]}" "$source" -o "$temporary" "${native_flags[@]}"; then
       rm -f "$temporary"
       return 1
     fi
-    chmod 755 "$temporary" && mv "$temporary" "$GEOPYTHON_NETCDF_PREFLIGHT_BIN" || { rm -f "$temporary"; return 1; }
+    chmod 755 "$temporary" && mv "$temporary" "$target" || { rm -f "$temporary"; return 1; }
   fi
+  printf '%s\n' "$target"
+}
+
+addp_geopython_netcdf_checker() {
+  local flags versions
+  flags=$(unset PKG_CONFIG_PATH PKG_CONFIG_LIBDIR; pkg-config --cflags --libs hdf5 netcdf) || return 1
+  versions=$(unset PKG_CONFIG_PATH PKG_CONFIG_LIBDIR; pkg-config --modversion hdf5 netcdf) || return 1
+  GEOPYTHON_NETCDF_PREFLIGHT_BIN=$(addp_geopython_build_native "$ROOT_DIR/engines/geopython-workflow/native/netcdf_preflight.c" netcdf "$flags" "$versions") || return 1
+  export GEOPYTHON_NETCDF_PREFLIGHT_BIN
+}
+
+addp_geopython_grib_checker() {
+  local prefix flags=-laec version
+  if [ "$(uname -s)" = Darwin ]; then
+    prefix=$(brew --prefix libaec) || return 1
+    flags="-I$prefix/include -L$prefix/lib -laec"
+    version=$(brew list --versions libaec) || return 1
+  else
+    version=$(dpkg-query -W libaec-dev) || return 1
+  fi
+  GEOPYTHON_GRIB_CCSDS_PREFLIGHT_LIB=$(addp_geopython_build_native "$ROOT_DIR/engines/geopython-workflow/native/grib_ccsds_preflight.c" grib-ccsds "$flags" "$version") || return 1
+  export GEOPYTHON_GRIB_CCSDS_PREFLIGHT_LIB
 }
 
 addp_geopython_native_environment() {
@@ -44,7 +66,7 @@ addp_geopython_native_environment() {
   for candidate in 'Microsoft Access Driver (*.mdb, *.accdb)' 'Microsoft Access Driver (*.mdb)'; do
     printf '[%s]\nDescription=MDBTools for GeoPython PGeo\nDriver=%s\nFileUsage=1\n\n' "$candidate" "$driver"
   done > "$ODBCSYSINI/odbcinst.ini"
-  addp_geopython_netcdf_checker
+  addp_geopython_netcdf_checker && addp_geopython_grib_checker
 }
 
 addp_prepare_geopython_workflow() {

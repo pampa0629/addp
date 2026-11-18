@@ -122,7 +122,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 **命令与范围**：模块及 Runtime 的重启命令见[操作速查](../docs/启动脚本使用指南.md#选择操作)和[Runtime 启停](../docs/启动脚本使用指南.md#显式启动-runtime)；Gateway 选择器与停止范围的差异见[模块选择说明](../docs/模块选择启动指南.md#重启与停止的范围)。
 
-GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`。局部与全量重启均先通过 stop.sh 停止所选服务，再准备依赖并验证原生能力。开发入口不构建或启动 GeoPython 镜像；产品部署保留容器方式，产品栅格 Hosted 验收通过根构建入口独立完成。环境隔离与端口归属要求见[GeoPython 运行说明](../../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#本地开发)。
+GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config libaec`。局部与全量重启均先通过 stop.sh 停止所选服务，再准备依赖并验证原生能力。开发入口不构建或启动 GeoPython 镜像；产品部署保留容器方式，产品栅格 Hosted 验收通过根构建入口独立完成。环境隔离与端口归属要求见[GeoPython 运行说明](../../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#本地开发)。
 
 Model3D Workflow 的 macOS Apple Silicon 开发启动与重启共用 `model3d-workflow.sh`，绑定 `.dev-state/model3d-native` 的固定版本私有工具包，不使用开发 Docker 转换 wrapper。首次准备需要 Conda、Rust 1.92.0、CMake 4.4.0 和 Xcode Command Line Tools，后续复用已验证缓存。产品构建与 Hosted 验收保留正式 Linux Runtime 镜像。
 

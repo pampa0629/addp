@@ -58,6 +58,30 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
         points=field['width']*field['height']-int(field['missing'])
         require(message['packing']==dict(data_template=3,order=2,extra_octets=2,groups=(points+3)//4,missing_value_management=0,reference_ieee_hex=struct.pack('>f',field['reference']).hex(),binary_scale=field['binary_scale'],decimal_scale=field['decimal_scale']),'complex GRIB packing facts changed')
         for key in ('parameter','time','level','packing'):require(json.loads(attributes['GRIB2_'+key.upper()]['values'][0])==message[key],'complex GRIB displayed facts differ')
+    if spec.get('packing') == 'ccsds':
+        message = variable['message']
+        require(message['edition'] == 2 and message['data_template'] == 42 and message['product_template'] == 0,
+                'ECMWF CCSDS templates changed')
+        unit_height = field['height_m']
+        end = datetime.fromtimestamp(1767322800 + field['forecast'] * 3600, timezone.utc).isoformat()
+        expected_facts = dict(
+            parameter=dict(centre=98, subcentre=0, master_table=32, local_table=0,
+                           discipline=0, category=field['parameter'][0], number=field['parameter'][1]),
+            time=dict(reference_utc='2026-01-02T03:00:00+00:00', unit_code=1,
+                      forecast_value=field['forecast'], start_utc=end, end_utc=end, operation='instant'),
+            level=dict(type_code=103, raw_scale=0, raw_value=unit_height,
+                       reference='above_ground', value=unit_height, unit='m'),
+            packing=dict(data_template=42, bits_per_value=8, flags=14, block_size=32,
+                         reference_sample_interval=128, reference_ieee_hex=struct.pack('>f', field['base']).hex(),
+                         binary_scale=-2, decimal_scale=0),
+            local=dict(definition=1, section_bytes=17, mars_class='od', mars_type='fc',
+                       mars_stream='oper', experiment_version='0001'),
+        )
+        for key, expected in expected_facts.items():
+            require(message[key] == expected and json.loads(attributes['GRIB2_' + key.upper()]['values'][0]) == expected,
+                    f'ECMWF CCSDS {key} differs from source')
+        require(attributes['GRIB2_DECODE_PRECISION']['values'] == ['float32_scaling_float64_output'],
+                'ECMWF CCSDS precision disclosure missing')
     require(variable['dimensions']==[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],'GRIB independent dimensions changed')
     require(variable['grid']['transform']==[field['west']-.5,1.,0.,field['north']+.5,0.,-1.] and variable['grid']['longitude_policy']=='unchanged' and bool(variable['grid']['crs_wkt']),'GRIB grid/longitude changed')
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
