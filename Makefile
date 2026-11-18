@@ -433,6 +433,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-system-iam-postgres
 	@$(MAKE) test-system-cleanup
 	@$(MAKE) test-system-runtime-log
+	@$(MAKE) test-system-infra-configuration
 	@$(MAKE) test-monitor-metrics
 	@$(MAKE) test-monitor-traces
 	@$(MAKE) test-asset-postgres
@@ -1645,6 +1646,10 @@ prod-health: ## 检查生产环境服务健康状态
 .PHONY: test-system-runtime-log
 test-system-runtime-log: ## 隔离验证模块运行日志采集、授权、持久化和实例隔离
 	@bash scripts/test/system-runtime-log-gate.sh
+
+.PHONY: test-system-infra-configuration
+test-system-infra-configuration: ## 独占 PG 和 Redis 验证基础设施参数在线应用和持久化
+	@bash scripts/test/system-infra-configuration-gate.sh
 
 .PHONY: test-common-hdfs-unit test-common-hdfs
 .PHONY: test-common-parquet

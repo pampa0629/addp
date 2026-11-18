@@ -12,6 +12,7 @@ import (
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/infraconfig"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -103,6 +104,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *gi
 	})
 
 	api := router.Group("/api/v1/system")
+	if err := RegisterInfraConfigurationRoutes(api, runtime, &InfraConfigurationHandler{
+		service: infraconfig.New(cfg), audit: auditWriter,
+	}); err != nil {
+		panic(err)
+	}
 	if err := RegisterHostNodeRoutes(api, runtime, &HostNodeHandler{service: service.NewHostNodeService(repository.NewHostNodeRepository(db))}); err != nil {
 		panic(err)
 	}

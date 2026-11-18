@@ -23,9 +23,7 @@ services:
       - -c
       - shared_buffers=256MB
       - -c
-      - work_mem=32MB
-      - -c
-      - maintenance_work_mem=128MB
+      - config_file=/addp/infra-postgresql.conf
       - -c
       - max_connections=200
       - -c
@@ -38,6 +36,7 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/infra/infra-postgresql.conf:/addp/infra-postgresql.conf:ro
     ports:
       - "${INFRA_BIND_HOST:-0.0.0.0}:${POSTGRES_PORT:-15432}:5432"
     networks:
@@ -55,6 +54,7 @@ services:
     command: ["sh", "/addp/redis-authentication.sh", "infra"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Redis deployment password required}
+      ADDP_INFRA_REDIS_CONFIG_PASSWORD: ${ADDP_INFRA_REDIS_CONFIG_PASSWORD:-}
     volumes:
       - redis_data:/data
       - ./scripts/infra/redis-authentication.sh:/addp/redis-authentication.sh:ro

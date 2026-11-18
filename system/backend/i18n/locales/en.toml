@@ -533,3 +533,30 @@ other = "Search context changed. Start a new search."
 other = "Check Manager PostgreSQL read coverage"
 [permissions.system.manager_pg_read_check.execute.description]
 other = "Only the Manager runtime may submit same-request PostgreSQL resource facts for a final original-user read check; grants no source access or issuance authority."
+
+[permissions.system.infra_configuration.read.name]
+other = "Read infrastructure settings"
+
+[permissions.system.infra_configuration.read.description]
+other = "Read managed runtime settings of platform infrastructure."
+
+[permissions.system.infra_configuration.update.name]
+other = "Update infrastructure settings"
+
+[permissions.system.infra_configuration.update.description]
+other = "Apply approved runtime settings of platform infrastructure."
+
+[system.infra_configuration.invalid_value]
+other = "Invalid parameter value"
+
+[system.infra_configuration.unknown_parameter]
+other = "Configuration parameter not found"
+
+[system.infra_configuration.read_only]
+other = "This parameter is read-only for the current deployment"
+
+[system.infra_configuration.unavailable]
+other = "Infrastructure configuration is unavailable"
+
+[system.infra_configuration.audit_failed]
+other = "Could not record the configuration change audit"

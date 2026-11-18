@@ -2343,6 +2343,67 @@ definitions:
     - TenantStatusActive
     - TenantStatusSuspended
     - TenantStatusClosed
+  github_com_addp_system_internal_infraconfig.Component:
+    properties:
+      id:
+        type: string
+      observed_at:
+        type: string
+      parameters:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_infraconfig.Parameter'
+        type: array
+      provider:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_addp_system_internal_infraconfig.Outcome:
+    properties:
+      application:
+        enum:
+        - confirmed
+        - unconfirmed
+        type: string
+      audit_recorded:
+        type: boolean
+      current:
+        $ref: '#/definitions/github_com_addp_system_internal_infraconfig.Parameter'
+      failure_stage:
+        enum:
+        - write
+        - reload
+        - persist
+        - verify
+        type: string
+      persistence:
+        enum:
+        - confirmed
+        - unconfirmed
+        - not_attempted
+        type: string
+      previous_value:
+        type: string
+      requested_value:
+        type: string
+    type: object
+  github_com_addp_system_internal_infraconfig.Parameter:
+    properties:
+      activation:
+        type: string
+      editable:
+        type: boolean
+      name:
+        type: string
+      pending_restart:
+        type: boolean
+      source:
+        type: string
+      unit:
+        type: string
+      value:
+        type: string
+    type: object
   github_com_addp_system_internal_models.APIConsumer:
     properties:
       created_at:
@@ -5732,6 +5793,14 @@ definitions:
         type: string
       version:
         type: integer
+    type: object
+  internal_api.InfraParameterApplyRequest:
+    properties:
+      value:
+        maxLength: 32
+        type: string
+    required:
+    - value
     type: object
   internal_api.RasterPlatformUpdate:
     properties:
@@ -13446,6 +13515,100 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.host_node.update
+  /platform/infra_configuration:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 组件配置观测 | Component settings observations
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_system_internal_infraconfig.Component'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查看基础设施运行配置 | Read infrastructure runtime configuration
+      tags:
+      - 基础设施配置 | Infrastructure Configuration
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.infra_configuration.read
+  /platform/infra_configuration/{component}/parameters/{parameter}/apply:
+    post:
+      consumes:
+      - application/json
+      description: 返回应用、持久化与读回结果 | Return application, persistence, and verification
+        results
+      parameters:
+      - description: 部署角色 | Deployment role
+        in: path
+        name: component
+        required: true
+        type: string
+      - description: 参数名称 | Parameter name
+        in: path
+        name: parameter
+        required: true
+        type: string
+      - description: 原生单位中的值 | Value in the native unit
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.InfraParameterApplyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 操作结果 | Operation outcome
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_infraconfig.Outcome'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 应用一个基础设施参数 | Apply one infrastructure parameter
+      tags:
+      - 基础设施配置 | Infrastructure Configuration
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.infra_configuration.read
+      - system.infra_configuration.update
   /platform/module-instances:
     get:
       description: 按模块、节点、角色、当前有效状态及登记或离线判定时间组合查询实例；恢复后退出离线时间查询，不重建历史在线状态 | Search

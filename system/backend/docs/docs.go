@@ -9658,6 +9658,149 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/infra_configuration": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "基础设施配置 | Infrastructure Configuration"
+                ],
+                "summary": "查看基础设施运行配置 | Read infrastructure runtime configuration",
+                "responses": {
+                    "200": {
+                        "description": "组件配置观测 | Component settings observations",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_infraconfig.Component"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.infra_configuration.read"
+                ]
+            }
+        },
+        "/platform/infra_configuration/{component}/parameters/{parameter}/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回应用、持久化与读回结果 | Return application, persistence, and verification results",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "基础设施配置 | Infrastructure Configuration"
+                ],
+                "summary": "应用一个基础设施参数 | Apply one infrastructure parameter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "部署角色 | Deployment role",
+                        "name": "component",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "参数名称 | Parameter name",
+                        "name": "parameter",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原生单位中的值 | Value in the native unit",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.InfraParameterApplyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "操作结果 | Operation outcome",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_infraconfig.Outcome"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.infra_configuration.read",
+                    "system.infra_configuration.update"
+                ]
+            }
+        },
         "/platform/module-instances": {
             "get": {
                 "security": [
@@ -21662,6 +21805,96 @@ const docTemplate = `{
                 "TenantStatusClosed"
             ]
         },
+        "github_com_addp_system_internal_infraconfig.Component": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_infraconfig.Parameter"
+                    }
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_infraconfig.Outcome": {
+            "type": "object",
+            "properties": {
+                "application": {
+                    "type": "string",
+                    "enum": [
+                        "confirmed",
+                        "unconfirmed"
+                    ]
+                },
+                "audit_recorded": {
+                    "type": "boolean"
+                },
+                "current": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_infraconfig.Parameter"
+                },
+                "failure_stage": {
+                    "type": "string",
+                    "enum": [
+                        "write",
+                        "reload",
+                        "persist",
+                        "verify"
+                    ]
+                },
+                "persistence": {
+                    "type": "string",
+                    "enum": [
+                        "confirmed",
+                        "unconfirmed",
+                        "not_attempted"
+                    ]
+                },
+                "previous_value": {
+                    "type": "string"
+                },
+                "requested_value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_infraconfig.Parameter": {
+            "type": "object",
+            "properties": {
+                "activation": {
+                    "type": "string"
+                },
+                "editable": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pending_restart": {
+                    "type": "boolean"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.APIConsumer": {
             "type": "object",
             "properties": {
@@ -26784,6 +27017,18 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.InfraParameterApplyRequest": {
+            "type": "object",
+            "required": [
+                "value"
+            ],
+            "properties": {
+                "value": {
+                    "type": "string",
+                    "maxLength": 32
                 }
             }
         },

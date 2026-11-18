@@ -201,6 +201,9 @@ describe('System configuration access', () => {
       }
       expect(matchesNavigationAccess({ route }, 'platform', ['iam.security_policy.read'])).toBe(true)
       expect(matchesNavigationAccess({ route }, 'tenant', ['iam.security_policy.read'])).toBe(false)
+      expect(matchesNavigationAccess({ route }, 'platform', ['system.infra_configuration.read'])).toBe(true)
+      expect(matchesNavigationAccess({ route }, 'platform', ['system.infra_configuration.update'])).toBe(false)
+      expect(matchesNavigationAccess({ route }, 'tenant', ['system.infra_configuration.read'])).toBe(false)
     }
     expect(consoleRouteAccess('/system/engine-raster-policies')).toBeNull()
   })

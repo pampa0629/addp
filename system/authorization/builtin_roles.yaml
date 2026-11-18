@@ -362,6 +362,8 @@ roles:
       - standard.unit.update
       - system.engine_raster_policy.read
       - system.engine_raster_policy.update
+      - system.infra_configuration.read
+      - system.infra_configuration.update
       - transfer.configuration.read
       - transfer.configuration.update
   - key: platform.transfer_runtime

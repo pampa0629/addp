@@ -44,7 +44,7 @@ func TestSystemRegistrationDeclarationIsValid(t *testing.T) {
 		t.Fatalf("System node identity = %#v", request)
 	}
 	entries := systemDeclaration(t).ConfigurationManagement.Entries
-	if len(entries) != 2 {
+	if len(entries) != 3 {
 		t.Fatalf("unexpected System configuration management route: %+v", entries)
 	}
 	byID := make(map[string]commonconfiguration.ManagementEntry)
@@ -56,6 +56,10 @@ func TestSystemRegistrationDeclarationIsValid(t *testing.T) {
 	}
 	security := byID["system.iam_security_policy"]
 	raster := byID["system.engine_raster_policy"]
+	infra := byID["system.infra_configuration"]
+	if infra.ReadPermission != "system.infra_configuration.read" || infra.UpdatePermission != "system.infra_configuration.update" || len(infra.ScopeTypes) != 1 || infra.ScopeTypes[0] != commonconfiguration.ScopePlatformOnly {
+		t.Fatalf("infrastructure configuration scope/permissions changed: %+v", infra)
+	}
 	if security.ReadPermission != "iam.security_policy.read" || len(security.ScopeTypes) != 1 || security.ScopeTypes[0] != commonconfiguration.ScopePlatformOnly {
 		t.Fatalf("security policy declaration changed: %+v", security)
 	}

@@ -910,6 +910,7 @@
           "platform_alert": "Platform alerts",
           "platform_alert_notification": "Platform alert notifications",
           "module_log_source": "Log source",
+          "infra_configuration": "Infrastructure",
           "engine_raster_policy": "Raster Resource Policy",
           "engine_raster_policy_runtime": "Raster Runtime Policy Read",
           "host_node": "Platform node",
@@ -2318,6 +2319,97 @@
         "source_not_allowed": "This module identity is not allowed on the host"
       },
       "importDeployment": "Admit from deployment manifest"
+    },
+    "infraConfiguration": {
+      "tab": "Infrastructure",
+      "component": "Component",
+      "refresh": "Refresh",
+      "observedAt": "Observed at {time}",
+      "loadFailed": "Could not load infrastructure settings",
+      "parameter": "Parameter",
+      "value": "Current value",
+      "source": "Source",
+      "activation": "Activation",
+      "actions": "Actions",
+      "empty": "Empty",
+      "pendingRestart": "Restart pending",
+      "edit": "Edit",
+      "readOnly": "Read-only",
+      "editTitle": "Edit {name}",
+      "newValue": "New value",
+      "newValueWithUnit": "New value ({unit})",
+      "on": "On",
+      "off": "Off",
+      "cancel": "Cancel",
+      "apply": "Apply",
+      "result": "Application result for {name}",
+      "verifiedValue": "Value read back: {value} {unit}",
+      "saveFailed": "Could not confirm the operation. Refresh to check the current value.",
+      "completionAuditFailed": "The operation outcome could not be recorded in the audit log.",
+      "slowSQL": "Logs SQL text at or above the threshold. Enter -1 to disable or 0 to log all statements.",
+      "slowCommand": "Slow logs retain commands and arguments. Enter -1 to disable or 0 to log all commands.",
+      "slowLogLength": "Reducing the length discards older entries beyond the limit.",
+      "workMem": "Each sort or hash operation in a query can use this budget separately.",
+      "maintenanceMem": "This budget applies to maintenance operations. Autovacuum can use a separate budget.",
+      "status": {
+        "unbound": "Management credentials have not been configured for this component",
+        "unsupported": "Configuration management is unavailable for the selected provider",
+        "unavailable": "Component settings are currently unavailable"
+      },
+      "activationMode": {
+        "reload": "Reload",
+        "restart": "Component restart",
+        "new_connection": "New connections",
+        "online": "Online",
+        "native": "Deployment managed"
+      },
+      "sources": {
+        "command_line": "Startup arguments",
+        "configuration_file": "Configuration file",
+        "default": "Default",
+        "database": "Database default",
+        "user": "Role default",
+        "database_user": "Database and role default",
+        "session": "Current connection",
+        "client": "Client connection",
+        "environment_variable": "Environment variable",
+        "redis_runtime": "Component runtime",
+        "other": "Source not determined"
+      },
+      "application": {
+        "confirmed": "Application verified",
+        "unconfirmed": "Application unconfirmed"
+      },
+      "persistence": {
+        "confirmed": "Persisted",
+        "unconfirmed": "Persistence unconfirmed",
+        "not_attempted": "Persistence not attempted"
+      },
+      "stage": {
+        "write": "The component did not confirm the write.",
+        "reload": "The component did not confirm the reload.",
+        "persist": "The component did not confirm persistence.",
+        "verify": "Could not verify the requested value."
+      },
+      "description": {
+        "work_mem": "Base memory budget for a query operation",
+        "maintenance_work_mem": "Memory budget for maintenance operations",
+        "log_min_duration_statement": "Duration threshold for logging slow SQL",
+        "log_lock_waits": "Log lock waits exceeding the deadlock check threshold",
+        "shared_buffers": "Database shared buffers",
+        "max_connections": "Maximum concurrent database connections",
+        "TimeZone": "Default database session time zone",
+        "slowlog-log-slower-than": "Duration threshold for logging slow commands",
+        "slowlog-max-len": "Maximum retained slow log entries",
+        "latency-monitor-threshold": "Latency sampling threshold, with 0 disabling sampling",
+        "maxmemory": "Memory limit",
+        "maxmemory-policy": "Eviction policy at the memory limit",
+        "appendonly": "Whether AOF persistence is enabled",
+        "appendfsync": "AOF disk synchronization policy",
+        "save": "RDB snapshot triggers",
+        "maxclients": "Maximum client connections",
+        "timeout": "Idle connection timeout"
+      }
     },
     "configuration": {
       "title": "Configuration Management",

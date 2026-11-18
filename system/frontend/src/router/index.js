@@ -84,7 +84,7 @@ const routes = [
         path: 'configuration',
         name: 'Configuration',
         component: () => import('../views/Configuration.vue'),
-        meta: { requiresAuth: true, anyPermissions: ['iam.security_policy.read', 'system.engine_raster_policy.read'] }
+        meta: { requiresAuth: true }
       },
       {
         path: 'engines',

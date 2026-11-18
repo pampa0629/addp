@@ -533,3 +533,30 @@ other = "检索依据已变化，请重新检索"
 other = "核验 Manager PostgreSQL 读取范围"
 [permissions.system.manager_pg_read_check.execute.description]
 other = "仅 Manager 运行身份可提交同次请求的 PostgreSQL 资源事实并核验原用户的当前读取范围，不授予源读取或签发权限。"
+
+[permissions.system.infra_configuration.read.name]
+other = "查看基础设施配置"
+
+[permissions.system.infra_configuration.read.description]
+other = "读取平台基础设施实例的受控运行参数。"
+
+[permissions.system.infra_configuration.update.name]
+other = "修改基础设施配置"
+
+[permissions.system.infra_configuration.update.description]
+other = "应用平台基础设施实例允许修改的运行参数。"
+
+[system.infra_configuration.invalid_value]
+other = "参数值无效"
+
+[system.infra_configuration.unknown_parameter]
+other = "配置参数不存在"
+
+[system.infra_configuration.read_only]
+other = "当前部署中的此参数为只读"
+
+[system.infra_configuration.unavailable]
+other = "基础设施配置暂不可用"
+
+[system.infra_configuration.audit_failed]
+other = "无法记录配置变更审计"

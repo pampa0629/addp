@@ -16,6 +16,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import SecurityPolicy from './SecurityPolicy.vue'
 import EngineConfiguration from '../components/configuration/EngineConfiguration.vue'
+import InfraConfiguration from '../components/configuration/InfraConfiguration.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -23,7 +24,8 @@ const router = useRouter()
 const auth = useAuthStore()
 const domains = [
   { name: 'security-policy', label: 'system.iam.tabs.securityPolicy', permission: 'iam.security_policy.read', platformOnly: true, component: markRaw(SecurityPolicy) },
-  { name: 'engine-configuration', label: 'system.configuration.engines', permission: 'system.engine_raster_policy.read', component: markRaw(EngineConfiguration) }
+  { name: 'engine-configuration', label: 'system.configuration.engines', permission: 'system.engine_raster_policy.read', component: markRaw(EngineConfiguration) },
+  { name: 'infra-configuration', label: 'system.infraConfiguration.tab', permission: 'system.infra_configuration.read', platformOnly: true, component: markRaw(InfraConfiguration) }
 ]
 const tabs = computed(() => domains.filter(tab =>
   (!tab.platformOnly || auth.contextType === 'platform') && auth.hasPermission(tab.permission)))

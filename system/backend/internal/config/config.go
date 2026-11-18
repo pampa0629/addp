@@ -26,6 +26,9 @@ type Config struct {
 	ServiceClientSecrets        map[string]string
 
 	DeploymentDiscoveryDirectory string
+	InfraDatabaseProvider        string
+	InfraPGConfigPassword        string
+	InfraRedisConfigPassword     string
 
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
@@ -149,6 +152,9 @@ func Load() *Config {
 		},
 
 		DeploymentDiscoveryDirectory: getEnv("ADDP_DEPLOYMENT_DISCOVERY_DIR", ""),
+		InfraDatabaseProvider:        getEnv("ADDP_INFRA_DATABASE_PROVIDER", "postgres"),
+		InfraPGConfigPassword:        getEnv("ADDP_INFRA_PG_CONFIG_PASSWORD", ""),
+		InfraRedisConfigPassword:     getEnv("ADDP_INFRA_REDIS_CONFIG_PASSWORD", ""),
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),

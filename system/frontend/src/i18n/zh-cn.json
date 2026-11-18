@@ -910,6 +910,7 @@
           "platform_alert": "平台告警",
           "platform_alert_notification": "平台告警通知",
           "module_log_source": "日志来源",
+          "infra_configuration": "基础设施",
           "engine_raster_policy": "栅格资源配置",
           "engine_raster_policy_runtime": "栅格运行时策略读取",
           "host_node": "平台节点",
@@ -2318,6 +2319,97 @@
         "source_not_allowed": "主机不允许此模块身份关联"
       },
       "importDeployment": "从部署清单接入"
+    },
+    "infraConfiguration": {
+      "tab": "基础设施",
+      "component": "组件",
+      "refresh": "刷新",
+      "observedAt": "观测于 {time}",
+      "loadFailed": "无法读取基础设施配置",
+      "parameter": "参数",
+      "value": "当前值",
+      "source": "来源",
+      "activation": "生效方式",
+      "actions": "操作",
+      "empty": "空",
+      "pendingRestart": "待重启",
+      "edit": "编辑",
+      "readOnly": "只读",
+      "editTitle": "编辑 {name}",
+      "newValue": "新值",
+      "newValueWithUnit": "新值（{unit}）",
+      "on": "启用",
+      "off": "关闭",
+      "cancel": "取消",
+      "apply": "应用",
+      "result": "{name} 的应用结果",
+      "verifiedValue": "回读值 {value} {unit}",
+      "saveFailed": "无法确认操作结果，请刷新配置核对当前值。",
+      "completionAuditFailed": "变更结果审计未能写入。",
+      "slowSQL": "启用后记录符合阈值的 SQL 文本。输入 -1 关闭，输入 0 记录全部。",
+      "slowCommand": "慢日志会保留命令及参数。输入 -1 关闭，输入 0 记录全部。",
+      "slowLogLength": "缩短长度会移除超出限额的旧记录。",
+      "workMem": "单条查询的多个排序或哈希操作可分别使用此预算。",
+      "maintenanceMem": "此预算用于维护操作。自动清理进程可能使用单独的预算。",
+      "status": {
+        "unbound": "此组件尚未配置管理凭据",
+        "unsupported": "当前部署的实现尚未接入配置管理",
+        "unavailable": "组件配置暂不可用"
+      },
+      "activationMode": {
+        "reload": "重新加载",
+        "restart": "组件重启",
+        "new_connection": "新连接生效",
+        "online": "在线生效",
+        "native": "由部署管理"
+      },
+      "sources": {
+        "command_line": "启动参数",
+        "configuration_file": "配置文件",
+        "default": "默认值",
+        "database": "数据库默认值",
+        "user": "角色默认值",
+        "database_user": "数据库与角色默认值",
+        "session": "当前会话",
+        "client": "客户端连接",
+        "environment_variable": "环境变量",
+        "redis_runtime": "组件运行值",
+        "other": "来源未确定"
+      },
+      "application": {
+        "confirmed": "已核验生效",
+        "unconfirmed": "未确认生效"
+      },
+      "persistence": {
+        "confirmed": "已持久化",
+        "unconfirmed": "未确认持久化",
+        "not_attempted": "未执行持久化"
+      },
+      "stage": {
+        "write": "组件未确认写入。",
+        "reload": "组件未确认重新加载。",
+        "persist": "组件未确认写入持久配置。",
+        "verify": "未能回读到请求值。"
+      },
+      "description": {
+        "work_mem": "查询操作的基础内存预算",
+        "maintenance_work_mem": "维护操作的内存预算",
+        "log_min_duration_statement": "记录慢 SQL 的时间阈值",
+        "log_lock_waits": "记录超过死锁检查阈值的锁等待",
+        "shared_buffers": "数据库共享缓冲区",
+        "max_connections": "数据库最大并发连接数",
+        "TimeZone": "数据库会话的默认时区",
+        "slowlog-log-slower-than": "记录慢命令的时间阈值",
+        "slowlog-max-len": "慢命令日志保留条数",
+        "latency-monitor-threshold": "延迟采样阈值，0 表示关闭",
+        "maxmemory": "内存上限",
+        "maxmemory-policy": "达到内存上限时的淘汰策略",
+        "appendonly": "是否启用 AOF 持久化",
+        "appendfsync": "AOF 刷盘策略",
+        "save": "RDB 快照触发条件",
+        "maxclients": "最大客户端连接数",
+        "timeout": "空闲连接回收时间"
+      }
     },
     "configuration": {
       "title": "配置管理",

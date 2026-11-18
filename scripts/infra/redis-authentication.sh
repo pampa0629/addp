@@ -12,6 +12,17 @@ hash() { printf %s "$1" | sha256sum | cut -d ' ' -f 1; }
 if [ "$scope" = infra ]; then
   : "${REDIS_PASSWORD:?Redis deployment password required}"
   printf 'user default on #%s ~* &* +@all\n' "$(hash "$REDIS_PASSWORD")" > "$acl"
+  if [ -n "${ADDP_INFRA_REDIS_CONFIG_PASSWORD:-}" ]; then
+    printf 'user addp_infra_config reset on #%s +hello +ping +info +config|get +config|set +config|rewrite\n' \
+      "$(hash "$ADDP_INFRA_REDIS_CONFIG_PASSWORD")" >> "$acl"
+  fi
+  config_file=/data/infra-redis.conf
+  if [ ! -e "$config_file" ]; then
+    (set -C; : > "$config_file")
+  fi
+  [ ! -L "$config_file" ] && [ -f "$config_file" ]
+  chown redis:redis "$config_file"
+  chmod 600 "$config_file"
 else
   : "${BUSINESS_REDIS_ADMIN_PASSWORD:?Business Redis admin password required}"
   : "${BUSINESS_REDIS_READER_PASSWORD:?Business Redis reader password required}"
@@ -39,4 +50,8 @@ append_observer() {
 }
 append_observer || echo 'Redis observation record rejected; optional observer disabled, core authentication preserved' >&2
 chown -R redis:redis /run/addp-redis
-exec /usr/local/bin/docker-entrypoint.sh redis-server --bind 0.0.0.0 --protected-mode yes --aclfile "$acl" "$@"
+set -- --bind 0.0.0.0 --protected-mode yes --aclfile "$acl" "$@"
+if [ "$scope" = infra ]; then
+  set -- "$config_file" "$@"
+fi
+exec /usr/local/bin/docker-entrypoint.sh redis-server "$@"

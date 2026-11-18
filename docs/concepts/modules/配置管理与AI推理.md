@@ -50,6 +50,8 @@ flowchart LR
 
 Platform Realm 只展示平台配置入口，Tenant Context 只展示当前 Tenant 配置入口。owner API 必须执行最终上下文和 Permission 校验；System 的通用平台配置 Permission 不能绕过业务模块自己的配置 Permission。
 
+System 的基础设施配置域从部署选定的 Infra 连接读取原生运行参数，并通过同一实例的受限管理身份应用明确允许的参数。组件原生配置保留持久化事实，部署系统负责选型、实例地址、管理身份和启动输入。Monitor 继续提供运行指标。详见[基础设施运行配置](../../spec/configuration/配置归属与生效.md#基础设施运行配置)。
+
 部署配置、普通运行配置、Secret、资源实体和任务快照的详细边界见 [ADDP 配置规范](../../spec/addp配置介绍.md)。
 
 ### AI 推理职责

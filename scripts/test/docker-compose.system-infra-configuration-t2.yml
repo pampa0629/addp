@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+    command: ["postgres", "-c", "config_file=/addp/infra-postgresql.conf", "-c", "shared_buffers=256MB", "-c", "max_connections=200", "-c", "timezone=Asia/Shanghai"]
+    environment:
+      POSTGRES_USER: infra_test
+      POSTGRES_PASSWORD: ${ADDP_INFRA_GATE_PASSWORD:?disposable gate password required}
+      POSTGRES_DB: addp_test
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pg_config_data:/var/lib/postgresql/data
+      - ../infra/infra-postgresql.conf:/addp/infra-postgresql.conf:ro
+    ports: ["127.0.0.1::5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "infra_test", "-d", "addp_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 45
+  redis:
+    image: public.ecr.aws/docker/library/redis:7.2.13@sha256:37aa82f9fdff30517603b2e2c5376b34b106d353c2b508262260d3bb0d2c21ba
+    command: ["sh", "/addp/redis-authentication.sh", "infra"]
+    environment:
+      REDIS_PASSWORD: ${ADDP_INFRA_GATE_PASSWORD:?disposable gate password required}
+      ADDP_INFRA_REDIS_CONFIG_PASSWORD: ${ADDP_INFRA_GATE_MANAGER_PASSWORD:?disposable gate credential required}
+    volumes:
+      - redis_config_data:/data
+      - ../infra/redis-authentication.sh:/addp/redis-authentication.sh:ro
+    tmpfs:
+      - /run/addp-redis:mode=0700
+    ports: ["127.0.0.1::6379"]
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli -e ping | grep -qx PONG']
+      interval: 1s
+      timeout: 3s
+      retries: 45
+volumes:
+  pg_config_data:
+  redis_config_data:

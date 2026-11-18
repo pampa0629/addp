@@ -122,6 +122,8 @@ const (
 	PermissionSystemEngineRasterPolicyRuntimeRead       = "system.engine_raster_policy_runtime.read"
 	PermissionSystemExecutionAuthorizationCreate        = "system.execution_authorization.create"
 	PermissionSystemExecutionAuthorizationExecute       = "system.execution_authorization.execute"
+	PermissionSystemInfraConfigurationRead              = "system.infra_configuration.read"
+	PermissionSystemInfraConfigurationUpdate            = "system.infra_configuration.update"
 	PermissionSystemManagerPgReadCheckExecute           = "system.manager_pg_read_check.execute"
 	PermissionSystemMetaCollectionExecute               = "system.meta_collection.execute"
 	PermissionSystemModuleDeclarationPublish            = "system.module_declaration.publish"
@@ -254,6 +256,8 @@ var permissionKeys = [...]string{
 	"system.engine_raster_policy_runtime.read",
 	"system.execution_authorization.create",
 	"system.execution_authorization.execute",
+	"system.infra_configuration.read",
+	"system.infra_configuration.update",
 	"system.manager_pg_read_check.execute",
 	"system.meta_collection.execute",
 	"system.module_declaration.publish",

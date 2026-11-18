@@ -23,6 +23,16 @@
         "frontend_route": "/system/configuration",
         "read_permission": "system.engine_raster_policy.read",
         "update_permission": "system.engine_raster_policy.update"
+      },
+      {
+        "id": "system.infra_configuration",
+        "owner_module": "system",
+        "scope_types": [
+          "platform_only"
+        ],
+        "frontend_route": "/system/configuration",
+        "read_permission": "system.infra_configuration.read",
+        "update_permission": "system.infra_configuration.update"
       }
     ]
   }

@@ -696,6 +696,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | deployment configuration | 部署配置 | 模块连接自身持久化存储之前就必须可用的进程、网络和基础设施参数。 | 由根 `.env`、容器 environment 或部署系统注入；不是平台或 Tenant 普通运行配置。 |
+| infrastructure runtime configuration | 基础设施运行配置 | 平台所用 Infra 实例的原生运行参数。 | System 提供平台级参数查看、受控修改和审计。参数由组件原生机制持久化，实例与实现由部署选定。 |
 | secret | 密钥配置 | 密码、API Key、Token pepper、加密密钥等不得以明文进入普通配置存储、响应、日志或审计详情的敏感材料。 | 由 Secret Manager、受控环境注入或专用加密凭据实体管理；只可暴露是否设置、版本或引用。 |
 | platform configuration | 平台配置 | 在 Platform Realm 中管理、对整个 ADDP 部署或某个 owner 模块统一生效的普通运行配置。 | 平台级不等于 System-owned；配置语义、校验、存储和生效仍归 owner 模块。 |
 | tenant configuration | 租户配置 | 在单一 Tenant Context 中管理、只对当前 Tenant 生效的普通运行配置。 | 必须绑定 AuthContext 中的 `tenant_id`；平台管理员不能在 Platform Realm 中直接读取或修改。 |
