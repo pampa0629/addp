@@ -14,6 +14,7 @@ import importlib.util
 from importlib import import_module
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -943,6 +944,29 @@ def rustfs_order_payload(name, engine_id, item_id, target_engine):
                        "transforms": [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": fields}]}}
 
 
+def validate_rustfs_order_source_boundary(facts, source_engine, fingerprint, target):
+    expected = {"schema_version": "meta.data_item_authorization_facts/v1",
+                "engine_id": str(source_engine), "item_fingerprint": fingerprint, "item_type": "object",
+                "full_name": RUSTFS_ORDERS_SOURCE, "basis_state": "complete",
+                "boundary": {"layout": "single", "native_target": target}}
+    boundary_hash = facts.get("boundary_hash")
+    if (any(facts.get(key) != value for key, value in expected.items())
+            or not isinstance(boundary_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", boundary_hash)
+            or not facts.get("observed_at")):
+        raise SuiteError("RustFS source does not have the exact single-object authorization facts")
+    return boundary_hash
+
+
+def validate_rustfs_order_source_metadata(item, source_engine, fingerprint):
+    descriptor = _object(_object(item.get("attributes"), "RustFS source attributes").get("item"),
+                         "RustFS source item descriptor")
+    if (item.get("engine_id") != source_engine or item.get("fingerprint") != fingerprint
+            or item.get("scanned_depth") != "deep"
+            or any(descriptor.get(key) != value for key, value in
+                   {"data_type": "table", "format": "parquet", "layout": "single"}.items())):
+        raise SuiteError("RustFS scanned item differs from the exact Parquet source")
+
+
 def validate_rustfs_order_precheck(report, checker, source_engine, source_item, target_engine):
     if (report.get("schema_version") != "addp.transfer_task_config_check/v1"
             or report.get("status") != "supported" or report.get("principal_id") != checker["principal_id"]
@@ -1027,16 +1051,12 @@ def run_rustfs_orders(client, checker, initializer, outsider, identity, reposito
     fingerprint = hashlib.sha256(f"{source_engine}:{RUSTFS_ORDERS_SOURCE}".encode()).hexdigest()
     source_grants = f"/api/v1/system/engines/{source_engine}/access_grants"
     facts = initializer.request("GET", f"/api/v1/system/engines/{source_engine}/data-items/{fingerprint}/authorization-facts", (200,)).payload
-    expected = {"engine_id": str(source_engine), "item_fingerprint": fingerprint, "item_type": "object",
-                "full_name": RUSTFS_ORDERS_SOURCE, "basis_state": "complete", "data_type": "table", "format": "parquet",
-                "boundary": {"layout": "single", "native_target": target}}
-    if any(facts.get(key) != value for key, value in expected.items()) or not facts.get("boundary_hash"):
-        raise SuiteError("RustFS source does not have the exact single-object authorization facts")
+    boundary_hash = validate_rustfs_order_source_boundary(facts, source_engine, fingerprint, target)
     observation = "/api/v1/system/engine-access/read-observations/current-source"
     client.request("POST", observation, (403,), {"targets": [target]})
     request_id = str(uuid.uuid4())
     body = {"request_id": request_id, "catalog_path": target, "item_fingerprint": fingerprint,
-            "expected_boundary_hash": facts["boundary_hash"], "recipient_type": "user", "recipient_id": recipient,
+            "expected_boundary_hash": boundary_hash, "recipient_type": "user", "recipient_id": recipient,
             "action": "read", "expiry_mode": "until_revoked", "reason": "Disposable RustFS orders exact read"}
     output_grants = f"/api/v1/system/engines/{target_engine}/access_grants"
     source_issued = False
@@ -1049,15 +1069,14 @@ def run_rustfs_orders(client, checker, initializer, outsider, identity, reposito
         if (any(issued.get(key) != body[key] for key in ("request_id", "catalog_path", "item_fingerprint",
                                                        "recipient_type", "recipient_id", "action", "expiry_mode"))
                 or issued.get("approval_mode") != "independent" or issued.get("operator_principal_id") != actor
-                or issued.get("boundary_hash") != facts["boundary_hash"] or issued.get("revocation")):
+                or issued.get("boundary_hash") != boundary_hash or issued.get("revocation")):
             raise SuiteError("RustFS source Grant did not bind the consumer and exact native boundary")
         observed = client.request("POST", observation, (200,), {"targets": [target]}).payload
         if not observed.get("observed_at"):
             raise SuiteError("RustFS current-source read observation is missing")
         outsider.request("POST", observation, (403,), {"targets": [target]})
         item = find_item(client, source_engine, RUSTFS_ORDERS_SOURCE, "object")
-        if item["fingerprint"] != fingerprint:
-            raise SuiteError("RustFS scanned item differs from the source Grant")
+        validate_rustfs_order_source_metadata(item, source_engine, fingerprint)
         config = rustfs_order_payload(name, source_engine, int(item["id"]), target_engine)
         if rustfs_order_physical(repository) != {"exists": False}:
             raise SuiteError("RustFS target table existed before the precheck")

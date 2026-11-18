@@ -24,6 +24,29 @@ SPEC.loader.exec_module(ONLINE)
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
+    def test_rustfs_order_source_uses_system_boundary_and_meta_format_separately(self):
+        target = {"version": "catalog.path/v1", "engine_id": 3, "segments": [
+            {"term": term, "kind": term, "name": name} for term, name in (
+                ("service", ""), ("bucket", "addp-demo"), ("prefix", "tables"), ("object", "订单.parquet"))]}
+        fingerprint = "a" * 64
+        facts = {"schema_version": "meta.data_item_authorization_facts/v1", "engine_id": "3",
+                 "item_type": "object", "item_fingerprint": fingerprint, "full_name": ONLINE.RUSTFS_ORDERS_SOURCE,
+                 "basis_state": "complete", "boundary": {"layout": "single", "native_target": copy.deepcopy(target)},
+                 "observed_at": "2026-11-18T07:21:00Z", "boundary_hash": "b" * 64}
+        self.assertEqual(ONLINE.validate_rustfs_order_source_boundary(facts, 3, fingerprint, target), "b" * 64)
+        for invalid in (dict(facts, basis_state="incomplete"), dict(facts, boundary_hash="bad"),
+                        dict(facts, boundary={"layout": "single", "native_target": dict(target, engine_id=4)})):
+            with self.assertRaisesRegex(ONLINE.SuiteError, "exact single-object"):
+                ONLINE.validate_rustfs_order_source_boundary(invalid, 3, fingerprint, target)
+        item = {"engine_id": 3, "scanned_depth": "deep", "fingerprint": fingerprint,
+                "attributes": {"item": {"data_type": "table", "format": "parquet", "layout": "single"}}}
+        ONLINE.validate_rustfs_order_source_metadata(item, 3, fingerprint)
+        with self.assertRaisesRegex(ONLINE.SuiteError, "exact Parquet"):
+            ONLINE.validate_rustfs_order_source_metadata(dict(item, scanned_depth="basic"), 3, fingerprint)
+        item["attributes"]["item"]["format"] = "csv"
+        with self.assertRaisesRegex(ONLINE.SuiteError, "exact Parquet"):
+            ONLINE.validate_rustfs_order_source_metadata(item, 3, fingerprint)
+
     def test_rustfs_precheck_rejects_wrong_identity_type_or_missing_assignment(self):
         checker = {"principal_id": "27", "tenant_id": "4"}
         report = {
