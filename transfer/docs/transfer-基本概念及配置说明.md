@@ -288,7 +288,7 @@ Parquet writer 使用 `target.options.compression`；默认值、允许 codec、
 
 #### 预检请求、权限与读取范围
 
-`POST /api/v1/transfer/task-config-checks` 接收与创建任务相同的**完整请求**，供 Console 与 Agent 共用。首期支持 bounded + snapshot、native table、replace/append；不检查 upsert。当前租户用户必须同时具备 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`，委托还须使用精确 transfer audience 和唯一 `transfer.task.config.check` Scope。Service Principal 和 Resource Access Ticket 不能调用此用户入口。此接口不会保存任务、安装调度、扫描、执行查询、读取业务行、建表或删除目标；原创建／更新接口的权限和行为不因此改变。
+`POST /api/v1/transfer/task-config-checks` 接收与创建任务相同的**完整请求**，供 Console 与 Agent 共用。支持 bounded + snapshot 的原生表任务，以及无调度的 RustFS 单个 Parquet DataItem 导入 PostgreSQL 原生表。两类均检查 replace/append 定义，append 需要已有目标结构快照。不检查 upsert。当前租户用户必须同时具备 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`，委托还须使用精确 transfer audience 和唯一 `transfer.task.config.check` Scope。Service Principal 和 Resource Access Ticket 不能调用此用户入口。此接口不会保存任务、安装调度、扫描、执行查询、读取业务行、建表或删除目标；原创建／更新接口的权限和行为不因此改变。
 
 Agent Tool 与 SDK 只接入上述 HTTP 契约；`transfer.task.config.check` 的输入 Schema、SDK 映射与权限声明统一见 [Tool 契约](../../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)。System 签发与 Transfer 委托路由均按上述三项 Permission 执行 all-of 校验；完成当前主体校验后，由 Transfer 使用已有 Tenant Service 客户端读取租户绑定的控制面事实，不转发委托 token 给 Meta/System，不增加权限。
 
@@ -301,6 +301,8 @@ HTTP 200 只表示成功取得报告，不代表 `supported`；三态对创建�
 #### 快照覆盖与未检查项
 
 `facts[].schema_coverage` 是完整／采样／未知的**已落库快照**覆盖度，不是实时结构保证。
+
+RustFS 预检要求精确对象 locator 携带 item_id，且与同租户 Meta 快照的对象身份一致。源侧核对已登记的流式读取能力和当前 Provider，只有已落库的 single Parquet 表格深扫结构能作为完整字段证据。格式、布局或结构未获证明时保持 unknown。目标沿用 PostgreSQL 定义检查器验证字段映射与写入能力，源对象的读取 Grant 仍在运行时核验。
 
 查询不执行；可选 Common `QueryDefinitionChecker` 只用已保存快照分析部分输出。MongoDB 首期单集合、单个简单 `$project` 支持包含、排除和字段别名，覆盖度仍为 sampled／unknown；复杂查询、采样、缺失快照、无 Provider Checker 均保留 unknown。查询前原表结构不能充当输出结构，未观察字段不能证明缺失或确定 NULL／默认值。
 

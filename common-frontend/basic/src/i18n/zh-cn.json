@@ -66,6 +66,8 @@
       "query_output_schema_not_complete": "查询输出仅有部分结构事实，运行时仍需核验",
       "existing_column_type_not_proven": "目标字段类型尚未确定，无法证明与既有列兼容",
       "query_output_not_checked": "未执行源查询，无法确定输出结构",
+      "registered_object_read_not_supported": "已注册信息或当前 Provider 未证明支持 Parquet 对象读取",
+      "object_import_target_not_supported": "RustFS 单对象导入要求 PostgreSQL 目标",
       "registered_native_access_not_supported": "已注册信息未证明支持原生读写",
       "source_schema_not_complete": "源结构快照缺失或不完整",
       "target_schema_not_complete": "目标结构快照缺失或不完整",

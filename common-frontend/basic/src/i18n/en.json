@@ -66,6 +66,8 @@
       "query_output_schema_not_complete": "Only partial output schema facts are available; runtime verification is required",
       "existing_column_type_not_proven": "The target field type is unresolved; compatibility with the existing column is unproven",
       "query_output_not_checked": "The source query was not executed; its output schema is unknown",
+      "registered_object_read_not_supported": "Registered facts or the current provider do not establish Parquet object read support",
+      "object_import_target_not_supported": "RustFS single-object import requires a PostgreSQL target",
       "registered_native_access_not_supported": "Registered facts do not establish native access support",
       "source_schema_not_complete": "Source schema snapshot is missing or incomplete",
       "target_schema_not_complete": "Target schema snapshot is missing or incomplete",

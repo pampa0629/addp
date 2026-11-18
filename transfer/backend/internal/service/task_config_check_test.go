@@ -37,7 +37,7 @@ func (f *configFactsStub) GetEngineForTenant(_ context.Context, tenantID, engine
 }
 func (f *configFactsStub) GetItemSnapshot(_ context.Context, tenantID, engineID, itemID uint, path string) (*commonmodels.MetaItem, error) {
 	f.calls++
-	if tenantID != 7 || (engineID == 1 && path != "synthetic.source") || (engineID == 2 && path != "synthetic.target") {
+	if tenantID != 7 || (engineID == 1 && path != "synthetic.source" && (path != "addp-demo/tables/订单.parquet" || itemID != 11)) || (engineID == 2 && path != "synthetic.target") {
 		panic("wrong snapshot binding")
 	}
 	if f.metaErr != nil {
@@ -73,6 +73,169 @@ func checkFixtureReport(t *testing.T, svc *TaskConfigCheckService, subject autho
 		t.Fatal(err)
 	}
 	return result
+}
+
+func TestConfigCheckRustFSParquetImport(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want plugin.DefinitionCheckStatus
+		code string
+	}{
+		{"complete", plugin.DefinitionSupported, ""},
+		{"missing_snapshot", plugin.DefinitionUnknown, "source_schema_not_complete"},
+		{"basic_snapshot", plugin.DefinitionUnknown, "source_schema_not_complete"},
+		{"wrong_layout", plugin.DefinitionUnknown, "source_schema_not_complete"},
+		{"wrong_format", plugin.DefinitionUnknown, "source_schema_not_complete"},
+		{"wrong_fingerprint", plugin.DefinitionUnknown, "source_schema_not_complete"},
+		{"wrong_snapshot_identity", "", ""},
+		{"invalid_decimal", "", ""},
+		{"unproven_conversion", plugin.DefinitionUnknown, "value_conversion_not_checked"},
+		{"missing_stream_read", plugin.DefinitionUnsupported, "registered_object_read_not_supported"},
+		{"missing_target_delete", plugin.DefinitionUnsupported, "registered_native_access_not_supported"},
+		{"append_without_target_snapshot", plugin.DefinitionUnknown, "target_schema_not_complete"},
+		{"non_rustfs_source", plugin.DefinitionUnknown, "task_scope_not_checked"},
+		{"non_postgresql_target", plugin.DefinitionUnsupported, "object_import_target_not_supported"},
+		{"no_item_id", plugin.DefinitionUnknown, "task_scope_not_checked"},
+		{"file", plugin.DefinitionUnknown, "task_scope_not_checked"},
+		{"prefix", plugin.DefinitionUnknown, "task_scope_not_checked"},
+		{"scheduled", plugin.DefinitionUnknown, "task_scope_not_checked"},
+		{"caller_scope", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, facts, subject, body := configCheckFixture(t)
+			const path = "addp-demo/tables/订单.parquet"
+			item := facts.items[1]
+			item.ItemType, item.Name, item.FullName, item.ScannedDepth = "object", "订单.parquet", path, "deep"
+			item.Fingerprint = commonmodels.GenerateItemFingerprint(1, path)
+			section := map[string]interface{}{"data_type": "table", "format": "parquet", "layout": "single"}
+			item.Attributes["item"] = section
+			fields := []datatype.FieldInfo{
+				{Name: "order_id", Type: datatype.FieldTypeString},
+				{Name: "customer_id", Type: datatype.FieldTypeInt},
+				{Name: "product_id", Type: datatype.FieldTypeInt},
+				{Name: "quantity", Type: datatype.FieldTypeInt},
+				{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 12, Scale: 2},
+				{Name: "order_date", Type: datatype.FieldTypeDate},
+				{Name: "paid", Type: datatype.FieldTypeBool},
+				{Name: "status", Type: datatype.FieldTypeString},
+				{Name: "note", Type: datatype.FieldTypeString, Nullable: true},
+			}
+			item.Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
+			var request map[string]interface{}
+			if err := json.Unmarshal(body, &request); err != nil {
+				t.Fatal(err)
+			}
+			config := request["config"].(map[string]interface{})
+			source := config["source"].(map[string]interface{})
+			source["locator"] = "addp://engine/1/path/addp-demo/tables/%E8%AE%A2%E5%8D%95.parquet?type=object&item_id=11"
+			source["representation"], source["format"] = "encoded", "parquet"
+			columns := make([]map[string]interface{}, 0, len(fields))
+			for _, field := range fields {
+				binding := map[string]interface{}{"source": field.Name, "target": field.Name, "target_type": field.Type, "nullable": true}
+				if field.Type == datatype.FieldTypeDecimal {
+					binding["precision"], binding["scale"] = field.Precision, field.Scale
+				}
+				columns = append(columns, binding)
+			}
+			config["transforms"].([]interface{})[0].(map[string]interface{})["fields"] = columns
+			delete(facts.items, 2) // No persisted target snapshot is needed for replace.
+			sourceEngineType := "rustfs"
+			if tc.name == "non_rustfs_source" {
+				sourceEngineType = "minio"
+			}
+			sourceCaps := plugin.NewObjectCapabilities(sourceEngineType)
+			switch tc.name {
+			case "missing_snapshot":
+				delete(facts.items, 1)
+			case "basic_snapshot":
+				item.ScannedDepth = "basic"
+			case "wrong_layout":
+				section["layout"] = "whole"
+			case "wrong_format":
+				section["format"] = "csv"
+			case "wrong_fingerprint":
+				item.Fingerprint = strings.Repeat("a", 64)
+			case "wrong_snapshot_identity":
+				item.ID++
+			case "invalid_decimal":
+				columns[4]["scale"] = 13
+			case "unproven_conversion":
+				columns[4]["target_type"] = "date"
+				delete(columns[4], "precision")
+				delete(columns[4], "scale")
+			case "missing_stream_read":
+				sourceCaps.Storage.Store.StreamRead = false
+			case "append_without_target_snapshot":
+				config["target"].(map[string]interface{})["policy"].(map[string]interface{})["apply_mode"] = "append"
+			case "missing_target_delete", "non_postgresql_target":
+				engine := facts.engines[2]
+				if tc.name == "non_postgresql_target" {
+					engine.EngineType = "mysql"
+				}
+				registered, _ := plugin.Get(engine.EngineType)
+				caps := registered.Capabilities()
+				if tc.name == "missing_target_delete" {
+					caps.Storage.Store.Delete = false
+				}
+				encoded, _ := plugin.MarshalEngineCapabilities(caps)
+				declared := commonmodels.JSONString(encoded)
+				engine.Capabilities = &declared
+			case "no_item_id":
+				source["locator"] = strings.TrimSuffix(source["locator"].(string), "&item_id=11")
+			case "file":
+				source["locator"] = "addp://engine/1/path/tables/orders.parquet?type=file&item_id=11"
+			case "prefix":
+				source["locator"] = "addp://engine/1/path/addp-demo/tables?type=directory&item_id=11"
+			case "scheduled":
+				request["schedule"] = "0 * * * *"
+			case "caller_scope":
+				config["object_source"] = map[string]interface{}{}
+			}
+			encoded, _ := plugin.MarshalEngineCapabilities(sourceCaps)
+			declared := commonmodels.JSONString(encoded)
+			facts.engines[1].EngineType, facts.engines[1].Capabilities = sourceEngineType, &declared
+			body, _ = json.Marshal(request)
+			report, err := svc.Check(t.Context(), subject, body)
+			if tc.want == "" {
+				want := ErrInvalidTaskConfig
+				if tc.name == "wrong_snapshot_identity" {
+					want = ErrConfigCheckDependency
+				}
+				if !errors.Is(err, want) {
+					t.Fatalf("got report %v, error %v, want %v", report, err, want)
+				}
+				return
+			}
+			if err != nil || report.Status != tc.want {
+				t.Fatalf("report=%+v err=%v", report, err)
+			}
+			if tc.code != "" {
+				for _, diagnostic := range report.Diagnostics {
+					if diagnostic.Code == tc.code {
+						if tc.name == "unproven_conversion" && (diagnostic.SourceField != "amount" || diagnostic.TargetField != "amount" || diagnostic.ConfigPath != "/config/transforms/0/fields/4") {
+							t.Fatalf("conversion diagnostic lost field binding: %+v", diagnostic)
+						}
+						return
+					}
+				}
+				t.Fatalf("missing diagnostic %s: %+v", tc.code, report.Diagnostics)
+			}
+			if !slicesContains(report.Checked, "provider_write_definition") || !slicesContains(report.NotChecked, "source_data_authorization") || len(report.Facts) != 2 || report.Facts[0].Coverage != "complete" || report.Facts[0].MetaItemID != 11 {
+				t.Fatalf("incorrect preflight evidence: %+v", report)
+			}
+			checkedFields := make(map[string]string)
+			for _, diagnostic := range report.Diagnostics {
+				if diagnostic.Check == "source_assignment" && diagnostic.Status == plugin.DefinitionSupported {
+					checkedFields[diagnostic.SourceField] = diagnostic.TargetField
+				}
+			}
+			for _, field := range fields {
+				if checkedFields[field.Name] != field.Name {
+					t.Fatalf("field %q has no supported assignment: %+v", field.Name, checkedFields)
+				}
+			}
+		})
+	}
 }
 
 func TestConfigCheckUsesTargetProvider(t *testing.T) {

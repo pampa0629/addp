@@ -17,6 +17,8 @@ import (
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
+	"github.com/addp/common/format"
 	commonjson "github.com/addp/common/jsonmap"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -140,27 +142,45 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 	source, _ := request.Config["source"].(map[string]interface{})
 	target, _ := request.Config["target"].(map[string]interface{})
 	policy, _ := target["policy"].(map[string]interface{})
-	if runtime["boundary"] != "bounded" || load["mode"] != "snapshot" || source["data_type"] != "table" || target["data_type"] != "table" || source["representation"] != "native" || target["representation"] != "native" || (policy["apply_mode"] != "replace" && policy["apply_mode"] != "append") {
+	objectImport := source["representation"] == "encoded" && source["format"] == "parquet"
+	if runtime["boundary"] != "bounded" || load["mode"] != "snapshot" || source["data_type"] != "table" || target["data_type"] != "table" || (source["representation"] != "native" && !objectImport) || target["representation"] != "native" || (policy["apply_mode"] != "replace" && policy["apply_mode"] != "append") {
 		add(plugin.DefinitionUnknown, "task_scope_not_checked", "scope", "/config")
 		return finishConfigCheck(report), nil
+	}
+	var sourceLocator, parent *resourcetree.ResourceLocator
+	if objectImport {
+		if _, supplied := request.Config["object_source"]; supplied {
+			return nil, ErrInvalidTaskConfig
+		}
+		sourceLocator, parent, err = execution.TransferObjectImportLocators(request.Config)
+		if err != nil || strings.TrimSpace(request.Schedule) != "" {
+			add(plugin.DefinitionUnknown, "task_scope_not_checked", "scope", "/config")
+			return finishConfigCheck(report), nil
+		}
 	}
 	spec, err := planner.ParseTableExportTaskSpec(request.Config, request.BatchSize)
 	if err != nil {
 		return nil, ErrInvalidTaskConfig
 	}
 	report.Checked = append(report.Checked, "task_config_shape")
-	sourceLocator, err := spec.Source.ResourceLocator()
-	if err != nil {
-		return nil, ErrInvalidTaskConfig
-	}
-	parent, err := spec.Target.ParentResourceLocator()
-	if err != nil {
-		return nil, ErrInvalidTaskConfig
+	if !objectImport {
+		sourceLocator, err = spec.Source.ResourceLocator()
+		if err != nil {
+			return nil, ErrInvalidTaskConfig
+		}
+		parent, err = spec.Target.ParentResourceLocator()
+		if err != nil {
+			return nil, ErrInvalidTaskConfig
+		}
 	}
 	targetLocator := &resourcetree.ResourceLocator{EngineID: parent.EngineID, Type: resourcetree.TypeTable, Path: append(append([]string{}, parent.Path...), spec.Target.Name)}
 	sourceInfo, sourceSpatial, sourceFact, sourcePlugin, err := s.facts(ctx, uint(tenant), "source", sourceLocator, spec.Source.Query != nil, false)
 	if err != nil {
 		return nil, err
+	}
+	if objectImport && sourceFact.EngineType != "rustfs" {
+		add(plugin.DefinitionUnknown, "task_scope_not_checked", "scope", "/config/source")
+		return finishConfigCheck(report), nil
 	}
 	report.Facts = append(report.Facts, sourceFact)
 	targetInfo, _, targetFact, targetPlugin, err := s.facts(ctx, uint(tenant), "target", targetLocator, false, policy["apply_mode"] == "replace")
@@ -169,13 +189,21 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 	}
 	report.Facts = append(report.Facts, targetFact)
 	report.Checked = append(report.Checked, "registered_engine_facts", "persisted_meta_snapshots")
+	if objectImport && targetFact.EngineType != "postgresql" {
+		add(plugin.DefinitionUnsupported, "object_import_target_not_supported", "scope", "/config/target")
+		return finishConfigCheck(report), nil
+	}
 	for _, fact := range report.Facts {
 		if fact.NativeAccess != plugin.DefinitionSupported {
 			path := "/config/" + fact.Role
+			code := "registered_native_access_not_supported"
+			if objectImport && fact.Role == "source" {
+				code = "registered_object_read_not_supported"
+			}
 			if fact.Role == "target" && policy["apply_mode"] == "replace" {
 				path += "/policy/apply_mode"
 			}
-			add(fact.NativeAccess, "registered_native_access_not_supported", "engine_capability", path)
+			add(fact.NativeAccess, code, "engine_capability", path)
 		}
 	}
 	sourceComplete := sourceInfo != nil && sourceFact.Coverage == plugin.QuerySchemaCoverageComplete
@@ -326,6 +354,7 @@ func containsConfigNumber(value interface{}) bool {
 
 func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role string, locator *resourcetree.ResourceLocator, querySource, replaceTarget bool) (*datatype.TableInfo, *datatype.SpatialInfo, TaskConfigCheckFact, plugin.EnginePlugin, error) {
 	fact := TaskConfigCheckFact{Role: role, EngineID: locator.EngineID, Coverage: "unknown", NativeAccess: plugin.DefinitionUnknown}
+	objectSource := role == "source" && !querySource && locator.Type == resourcetree.TypeObject
 	if s == nil || s.engines == nil || s.metadata == nil {
 		return nil, nil, fact, nil, ErrConfigCheckDependency
 	}
@@ -334,6 +363,9 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 		return nil, nil, fact, nil, ErrConfigCheckDependency
 	}
 	fact.EngineType, fact.EngineVersion = engine.EngineType, engine.Version
+	if objectSource && fact.EngineType != "rustfs" {
+		return nil, nil, fact, nil, nil
+	}
 	var declared *plugin.EngineCapabilities
 	if engine.Capabilities != nil && string(*engine.Capabilities) != "" {
 		declared, err = plugin.ParseEngineCapabilities(string(*engine.Capabilities))
@@ -341,7 +373,14 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 			return nil, nil, fact, nil, ErrConfigCheckDependency
 		}
 	}
-	if role == "source" && querySource && declared != nil {
+	if objectSource {
+		if declared != nil {
+			fact.NativeAccess = plugin.DefinitionUnsupported
+			if declared.Storage != nil && declared.Storage.Store != nil && declared.Storage.Store.StreamRead {
+				fact.NativeAccess = plugin.DefinitionSupported
+			}
+		}
+	} else if role == "source" && querySource && declared != nil {
 		fact.NativeAccess = plugin.DefinitionUnsupported
 		if declared.Compute != nil && declared.Compute.Query != nil && declared.Compute.Query.Supported && declared.Compute.Query.ReadSession {
 			fact.NativeAccess = plugin.DefinitionSupported
@@ -358,6 +397,15 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 	if registered != nil {
 		observed := registered.Capabilities()
 		capabilities = &observed
+	}
+	if objectSource && fact.NativeAccess == plugin.DefinitionSupported {
+		if registered == nil {
+			fact.NativeAccess = plugin.DefinitionUnknown
+		} else if _, ok := registered.(plugin.ContentReadableProvider); !ok || capabilities.Storage == nil || capabilities.Storage.Store == nil || !capabilities.Storage.Store.StreamRead {
+			fact.NativeAccess = plugin.DefinitionUnsupported
+		} else if _, err := format.GetTableReaderProvider(format.FormatParquet); err != nil {
+			fact.NativeAccess = plugin.DefinitionUnknown
+		}
 	}
 	if replaceTarget {
 		// replace consumes ResourceDeleteProvider before preparing or writing the
@@ -399,8 +447,21 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 	tablePayload := commonjson.Section(item.Attributes, "type_info.table")
 	spatialPayload := commonjson.Section(item.Attributes, "capabilities.spatial")
 	info, spatial := datatype.TableInfoFromPayload(tablePayload, item.Name), datatype.SpatialInfoFromPayload(spatialPayload)
+	var objectKind map[string]string
+	if objectSource {
+		section := commonjson.Section(item.Attributes, "item")
+		objectKind = make(map[string]string, 3)
+		for _, key := range []string{"layout", "data_type", "format"} {
+			objectKind[key], _ = section[key].(string)
+		}
+	}
 	if info != nil && len(info.Fields) > 0 && item.ScannedAt != nil && item.ScannedDepth != "" && item.ScannedDepth != "none" && capabilities != nil {
-		if capabilities.EngineFamily == "dynamic_schema" {
+		if objectSource {
+			if item.ScannedDepth == "deep" && objectKind["layout"] == "single" && objectKind["data_type"] == "table" && objectKind["format"] == "parquet" &&
+				item.Fingerprint == commonmodels.GenerateItemFingerprint(locator.EngineID, locator.FullName()) {
+				fact.Coverage = "complete"
+			}
+		} else if capabilities.EngineFamily == "dynamic_schema" {
 			fact.Coverage = "sampled"
 		} else if capabilities.EngineFamily == "tabular" {
 			fact.Coverage = "complete"
@@ -413,7 +474,8 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 		Type, Name, FullName, Fingerprint, Depth, Coverage string
 		ScannedAt                                          *time.Time
 		Table, Spatial                                     map[string]interface{}
-	}{item.ID, item.TenantID, item.EngineID, item.NodeID, item.ItemType, item.Name, item.FullName, item.Fingerprint, item.ScannedDepth, fact.Coverage, item.ScannedAt, tablePayload, spatialPayload})
+		ObjectKind                                         map[string]string `json:",omitempty"`
+	}{item.ID, item.TenantID, item.EngineID, item.NodeID, item.ItemType, item.Name, item.FullName, item.Fingerprint, item.ScannedDepth, fact.Coverage, item.ScannedAt, tablePayload, spatialPayload, objectKind})
 	if fact.SnapshotHash == "" {
 		return nil, nil, fact, nil, ErrConfigCheckDependency
 	}
