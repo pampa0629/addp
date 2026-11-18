@@ -756,3 +756,16 @@ def test_execution_logs_follow_real_callbacks_and_snapshot_isolation(fail):
     logs[0]['event'] = 'changed'
     assert registry.get(accepted.execution_id).logs[0]['event'] == 'workflow_started'
     assert accepted.to_dict()['logs'] == []
+
+
+def test_polygon_components_diagnostic_rules_are_exact_and_private_values_omitted():
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES, OperatorInputError
+    expected={('operator_input_invalid',''):'input_gdf',('operator_crs_invalid',''):'',
+              ('operator_input_overlap',''):'input_gdf',
+              **{('operator_field_conflict',field):'input_gdf' for field in ('source_id','part_no','component_id')}}
+    assert {(reason,field):parameter for (op,reason,field),parameter in OPERATOR_INPUT_RULES.items() if op=='group_polygon_components'}==expected
+    for (reason,field),parameter in expected.items():
+        diagnostic=OperatorInputError(reason,'PRIVATE_VALUE',field=field).diagnostic('group_polygon_components',2)
+        assert diagnostic['operator']=={'node_index':2,'operator_id':'group_polygon_components',
+                                       **({'parameter':parameter} if parameter else {}),**({'field':field} if field else {})}
+        assert 'PRIVATE_VALUE' not in json.dumps(diagnostic)

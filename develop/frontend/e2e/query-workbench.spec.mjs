@@ -1806,3 +1806,28 @@ for (const reason of ['revoked','expired']) test(`query source ${reason} refresh
  await expect.poll(()=>editor.evaluate(el=>el.__vueParentComponent.setupState.editor.getValue())).toBe('SELECT id FROM public.customers -- preserve draft')
  expect(reads.length).toBe(before)
 })
+
+
+for (const locale of ['zh-cn','en']) for (const [reason,parameter,field] of [
+  ['operator_input_invalid','input_gdf',''],['operator_crs_invalid','',''],
+  ['operator_input_overlap','input_gdf',''],
+  ...['source_id','part_no','component_id'].map(field=>['operator_field_conflict','input_gdf',field])
+]) test(`polygon component grouping diagnostic (${reason}, ${field}, ${locale})`,async({page})=>{
+  await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
+  const errorDetails={category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE_VALUE /private/source.gpkg',
+    diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,
+      operator:{node_index:2,operator_id:'group_polygon_components',...(parameter?{parameter}:{}),...(field?{field}:{})}}}
+  await installMockBackend(page,{resultKind:'table',executionType:'workflow',locale,errorDetails})
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  const panel=page.locator('.execution-failure')
+  await expect(panel).toContainText(locale==='zh-cn'?'面连通分组':'Group connected polygon parts')
+  const marker=field|| (reason==='operator_input_overlap'?(locale==='zh-cn'?'面叠检查':'polygon overlap'):
+    reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):'id_field')
+  await expect(panel).toContainText(marker)
+  await expect(panel).not.toContainText('PRIVATE_VALUE')
+  await expect(panel).not.toContainText('/private/source.gpkg')
+  await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+  const copied=await page.evaluate(()=>window.copiedDiagnostic)
+  expect(copied).toContain(marker)
+  expect(copied).not.toMatch(/PRIVATE_VALUE|\/private\/source.gpkg/)
+})

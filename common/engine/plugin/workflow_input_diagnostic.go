@@ -42,8 +42,10 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 			}
 		}
 
-	case "group_line_components", "normalize_line_network":
+	case "group_polygon_components", "group_line_components", "normalize_line_network":
 		switch reason {
+		case "operator_input_overlap":
+			parameter, ok = "input_gdf", o.OperatorID == "group_polygon_components"
 		case "operator_input_invalid":
 			parameter, ok = "input_gdf", true
 		case "operator_crs_invalid":
@@ -53,7 +55,7 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 			case "source_id":
 				parameter, field, ok = "input_gdf", o.Field, true
 			case "part_no", "component_id":
-				parameter, field, ok = "input_gdf", o.Field, o.OperatorID == "group_line_components"
+				parameter, field, ok = "input_gdf", o.Field, (o.OperatorID == "group_line_components" || o.OperatorID == "group_polygon_components")
 			case "edge_id", "occurrence_count", "source_part_no", "source_segment_no", "piece_no", "is_reversed":
 				parameter, field, ok = "input_gdf", o.Field, o.OperatorID == "normalize_line_network"
 			}

@@ -479,6 +479,7 @@
         "check_dangling_points": "Check dangling points",
         "merge_line_chains": "Merge line chains",
         "normalize_line_network": "Normalize overlapping lines",
+        "group_polygon_components": "Group connected polygon parts",
         "group_line_components": "Group connected line parts",
         "split_line_intersections": "Split line intersections",
         "check_line_overlap": "Check line overlaps",
@@ -588,6 +589,20 @@
           "operator_endpoint_network_invalid": "Explicitly split intersections and resolve self-intersections or overlaps, then run the operator again.",
           "operator_input_invalid": "Provide valid non-empty finite XY lines in the active geometry column and set id_field to a non-geometry column with unique non-empty scalar values. A layer with no rows is allowed.",
           "operator_crs_invalid": "Check the source CRS and explicitly reproject to a suitable projected CRS."
+        }
+      },
+      "polygonComponents": {
+        "reasons": {
+          "operator_input_invalid": "The polygon layer or source identifier configuration is invalid.",
+          "operator_crs_invalid": "Polygon component grouping requires a known projected CRS with matching finite positive horizontal units.",
+          "operator_input_overlap": "Areal overlaps, containment or duplicate polygons prevent shared-boundary grouping.",
+          "operator_field_conflict": "The fixed output field {field} conflicts with a source column."
+        },
+        "actions": {
+          "operator_input_invalid": "Provide one active geometry column, valid non-empty finite XY polygons and unique non-null scalar id_field values; empty tables are allowed.",
+          "operator_crs_invalid": "Reproject explicitly to a supported projected CRS.",
+          "operator_input_overlap": "Run polygon overlap checking and resolve overlaps, containment or duplicates explicitly; no automatic merge or repair.",
+          "operator_field_conflict": "Rename the source field {field} explicitly; fields are never overwritten or renamed automatically."
         }
       },
       "polygonAdjacency": {

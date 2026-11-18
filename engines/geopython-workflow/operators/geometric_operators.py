@@ -1329,6 +1329,19 @@ def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
                 "operator_field_conflict", f"output column {field} must not overwrite a source field", field=field,
             )
 
+    return _group_original_parts(input_gdf, geometry, ids, _intersecting_part_pairs)
+
+
+def _intersecting_part_pairs(parts):
+    tree = shapely.STRtree(parts)
+    for a, part in enumerate(parts):
+        for b in tree.query(part, predicate="intersects"):
+            if b > a:
+                yield a, int(b)
+
+
+def _group_original_parts(input_gdf, geometry, ids, connected_pairs):
+    """Consume one edge at a time and number original parts by first appearance."""
     parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
     parents = list(range(len(parts)))
 
@@ -1338,15 +1351,10 @@ def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
             index = parents[index]
         return index
 
-    # Query one original part at a time; exact intersection includes contacts,
-    # crossings and overlaps without noding or changing any source coordinates.
-    tree = shapely.STRtree(parts)
-    for a, part in enumerate(parts):
-        for b in tree.query(part, predicate="intersects"):
-            if b > a:
-                left, right = root(a), root(int(b))
-                if left != right:
-                    parents[max(left, right)] = min(left, right)
+    for a, b in connected_pairs(parts):
+        left, right = root(a), root(b)
+        if left != right:
+            parents[max(left, right)] = min(left, right)
 
     components, part_numbers, component_numbers = {}, [], []
     source_part_counts = np.zeros(len(input_gdf), dtype=np.int64)
@@ -2433,6 +2441,29 @@ class PolygonAdjacencyInputError(ValueError):
         return self._messages[self.code][language == 'en']
 
 
+def _polygon_shared_lines(left, right, overlap_error):
+    """Classify exact intersection dimensions; never infer overlap from area."""
+    intersection = shapely.intersection(left, right)
+    if (not isinstance(intersection, shapely.Geometry) or not shapely.is_valid(intersection)
+            or shapely.has_z(intersection) or shapely.has_m(intersection)
+            or not np.isfinite(shapely.get_coordinates(intersection)).all()):
+        raise RuntimeError('polygon intersection produced an invalid result')
+    lines, pending = [], [intersection]
+    while pending:
+        part = pending.pop()
+        if part.is_empty:
+            continue
+        if part.geom_type == 'Polygon':
+            # A non-empty valid polygon proves areal overlap even if its
+            # Float64 area underflows. Never use a tolerance/area cutoff.
+            raise overlap_error()
+        if part.geom_type == 'LineString':
+            lines.append(part)
+        elif part.geom_type in ('MultiPolygon', 'MultiLineString', 'GeometryCollection', 'MultiPoint'):
+            pending.extend(reversed(part.geoms))
+    return lines
+
+
 def check_polygon_adjacency(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report each exact shared boundary once, rejecting any areal intersection."""
     source_error = partial(PolygonAdjacencyInputError, 'source')
@@ -2449,24 +2480,7 @@ def check_polygon_adjacency(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.G
     for a, shape in enumerate(geometry.array):
         candidates = tree.query(shape)
         for b in np.sort(candidates[candidates > a]):
-            intersection = shapely.intersection(shape, geometry.array[b])
-            if (not isinstance(intersection, shapely.Geometry) or not shapely.is_valid(intersection)
-                    or shapely.has_z(intersection) or shapely.has_m(intersection)
-                    or not np.isfinite(shapely.get_coordinates(intersection)).all()):
-                raise RuntimeError('polygon adjacency produced an invalid intersection')
-            lines, pending = [], [intersection]
-            while pending:
-                part = pending.pop()
-                if part.is_empty:
-                    continue
-                if part.geom_type == 'Polygon':
-                    # A non-empty valid polygon proves areal overlap even if its
-                    # Float64 area underflows. Never use a tolerance/area cutoff.
-                    raise PolygonAdjacencyInputError('overlap')
-                if part.geom_type == 'LineString':
-                    lines.append(part)
-                elif part.geom_type in ('MultiPolygon', 'MultiLineString', 'GeometryCollection', 'MultiPoint'):
-                    pending.extend(reversed(part.geoms))
+            lines = _polygon_shared_lines(shape, geometry.array[b], partial(PolygonAdjacencyInputError, 'overlap'))
             if not lines:
                 continue
             boundary = shapely.multilinestrings(lines)
@@ -2483,6 +2497,52 @@ def check_polygon_adjacency(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.G
          'shared_length': pd.Series(lengths, dtype='float64')},
         geometry=gpd.GeoSeries(boundaries, crs=geometry.crs),
     )
+
+
+class PolygonComponentInputError(ValueError):
+    """Only proven polygon-component admission facts become v3 input errors."""
+    _messages = {
+        'source': ('面连通分组需要唯一活动几何列、有效非空有限二维面和唯一非空标量来源 id_field。',
+                   'Polygon component grouping requires one active geometry column, valid non-empty finite XY polygons and unique non-null scalar id_field values.'),
+        'crs': ('面连通分组要求已知投影坐标系和匹配、有限且为正的水平单位换算因子。',
+                'Polygon component grouping requires a known projected CRS with matching finite positive horizontal unit factors.'),
+        'overlap': ('面连通分组拒绝正面积重叠、包含或重复面。请先执行面叠检查并显式处理。',
+                    'Polygon component grouping rejects areal overlaps, containment and duplicate polygons. Run polygon overlap checking and resolve them explicitly first.'),
+        'field': ('面连通分组的固定输出字段与源字段重名，请先显式重命名源字段。',
+                  'A fixed polygon component output field conflicts with a source column. Rename the source column explicitly first.'),
+    }
+
+    def __init__(self, code, detail='', *, field=''):
+        super().__init__(detail)
+        self.code, self.field = code, field
+
+    def message(self, language):
+        return self._messages[self.code][language == 'en']
+
+
+def group_polygon_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Group original polygon parts by exact shared boundaries, without merging."""
+    source_error = partial(PolygonComponentInputError, 'source')
+    _unary_frame_geometry(input_gdf, PolygonComponentInputError)
+    geometry = _finite_xy_geometry(input_gdf, input_error=source_error)
+    ids = _source_identifiers(input_gdf, id_field, input_error=source_error)
+    _check_polygon_input(geometry, 'input_gdf', source_error, 'component grouping')
+    if geometry.is_empty.any() or any(part.is_empty for shape in geometry.array for part in shapely.get_parts(shape)):
+        raise source_error('non-empty polygons and parts are required')
+    _require_projected_xy_crs(geometry.crs, input_error=partial(PolygonComponentInputError, 'crs'))
+    for field in ('source_id', 'part_no', 'component_id'):
+        if field in input_gdf.columns:
+            raise PolygonComponentInputError('field', field=field)
+
+    def shared_boundary_pairs(parts):
+        tree = shapely.STRtree(parts)
+        for a, part in enumerate(parts):
+            candidates = tree.query(part)
+            for b in candidates[candidates > a]:
+                if _polygon_shared_lines(part, parts[b], partial(PolygonComponentInputError, 'overlap')):
+                    yield a, int(b)
+
+    return _group_original_parts(input_gdf, geometry, ids, shared_boundary_pairs)
 
 
 def check_polygon_gap(input_gdf: gpd.GeoDataFrame, coverage_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -2752,6 +2812,21 @@ GROUP_LINE_COMPONENTS_METADATA = OperatorMetadata(
     use_cases=["识别线网的独立连通组和孤立闭环", "保留来源及业务属性，为后续分组加工提供标识"],
     notes=["同源多个部件可以分属不同组；保留源行和部件顺序、原方向、全部顶点和闭环接缝", "部件号在源内从1开始；组号按首次出现从1开始，仅是本次计算标识", "source_id/part_no/component_id冲突时失败，不覆盖或自动改名", "精确XY不判断桥隧或质量，不设容差，不吸附、打断、去重、删组或修复", "源不变，保存另接save；索引和成果驻内存，高密度候选可能平方增长，不承诺固定容量"],
     workflow_example={"id": "group_lines", "operator": "group_line_components", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
+
+GROUP_POLYGON_COMPONENTS_METADATA = OperatorMetadata(
+    name="group_polygon_components", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
+    description="面连通分组", brief_description="按精确共边传递归组，逐原始面部件保留来源和全部属性",
+    execution_modes=["workflow"], effects=["read"],
+    overview="仅精确共边连接原始面部件，点接触不连接；正面积重叠整批拒绝。只分组，不融合或修复。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待分组面图层", notes="有效非空有限二维Polygon/MultiPolygon，已知投影CRS；允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何唯一非空标量列，不推断主键"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="原始Polygon部件、全部属性及source_id/part_no/component_id", is_default=True)],
+    use_cases=["识别精确共边面群及孤立面", "保留每个原始部件和业务属性供后续分组加工"],
+    notes=["同一MultiPolygon的不同部件允许跨组；点接触不连通，孔洞边界参与共边", "源行和部件顺序不变，part_no及component_id从1开始，组号仅在本次成果内有效", "source_id/part_no/component_id按此顺序只报告首个重名，不覆盖或自动改名", "正面积重叠、包含和重复面须显式处理；不设容差，不吸附、补缝、融合或修复", "逐部件查询候选并立即归组；高密度候选可能平方增长，不承诺固定容量；保存另接save"],
+    workflow_example={"id":"group_polygons", "operator":"group_polygon_components", "params":{"input_gdf":{"$ref":"load"},"id_field":"parcel_id"}, "depends_on":["load"]},
 )
 
 SPLIT_LINE_INTERSECTIONS_METADATA = OperatorMetadata(
@@ -3382,6 +3457,7 @@ OPERATORS = dict([
     register_operator(SPLIT_LINE_INTERSECTIONS_METADATA, split_line_intersections),
     register_operator(EXTRACT_POLYGON_RINGS_METADATA, extract_polygon_rings),
     register_operator(GROUP_LINE_COMPONENTS_METADATA, group_line_components),
+    register_operator(GROUP_POLYGON_COMPONENTS_METADATA, group_polygon_components),
     register_operator(MERGE_LINE_CHAINS_METADATA, merge_line_chains),
     register_operator(EXTRACT_LINE_NODES_METADATA, extract_line_nodes),
     register_operator(NORMALIZE_LINE_NETWORK_METADATA, normalize_line_network),

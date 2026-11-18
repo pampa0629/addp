@@ -479,6 +479,7 @@
         "check_dangling_points": "悬点检查",
         "merge_line_chains": "链路合并",
         "normalize_line_network": "重合规整",
+        "group_polygon_components": "面连通分组",
         "group_line_components": "连通分组",
         "split_line_intersections": "交点打断",
         "check_line_overlap": "线叠检查",
@@ -588,6 +589,20 @@
           "operator_endpoint_network_invalid": "先显式打断交会并处理自交或重合，再重新运行。",
           "operator_input_invalid": "请提供具有活动几何列的有效非空有限二维线，并将 id_field 指向值非空、唯一的非几何标量列。允许空表。",
           "operator_crs_invalid": "请确认源坐标系，并显式重投影到符合要求的投影坐标系。"
+        }
+      },
+      "polygonComponents": {
+        "reasons": {
+          "operator_input_invalid": "待分组的面图层或来源标识配置不符合要求。",
+          "operator_crs_invalid": "面连通分组要求已知投影坐标系和匹配、有限且为正的水平单位。",
+          "operator_input_overlap": "源面存在正面积重叠、包含或重复，无法按共边分组。",
+          "operator_field_conflict": "固定输出字段 {field} 与源字段重名。"
+        },
+        "actions": {
+          "operator_input_invalid": "请提供唯一活动几何列、有效非空有限二维面，并将 id_field 指向非空唯一的非几何标量列；允许空表。",
+          "operator_crs_invalid": "请显式重投影到符合要求的投影坐标系。",
+          "operator_input_overlap": "请先执行面叠检查并显式处理重叠、包含或重复面，不自动融合或修复。",
+          "operator_field_conflict": "请先显式重命名源字段 {field}，不会覆盖或自动改名。"
         }
       },
       "polygonAdjacency": {

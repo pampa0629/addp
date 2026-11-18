@@ -1174,7 +1174,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("通用处理", "数据筛选"), "filter_by_attribute sort_by_field select_top_n sample random_split"),
         (("通用处理", "数值统计"), "normalize_field encode_categorical bin_field aggregate"),
         (("矢量处理", "几何构造"), "buffer centroid representative_point convex_hull envelope minimum_rotated_rectangle voronoi batch_buffer"),
-        (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry snap_line_endpoints extend_line_endpoints trim_line_endpoints split_multipart extract_vertices"),
+        (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry snap_line_endpoints extend_line_endpoints trim_line_endpoints group_polygon_components split_multipart extract_vertices"),
         (("矢量处理", "拓扑检查"), "check_polygon_overlap check_polygon_adjacency check_polygon_gap check_dangling_points check_line_proximity check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection"),
         (("矢量处理", "线网处理"), "polygonize extract_polygon_rings split_line_intersections group_line_components merge_line_chains normalize_line_network extract_line_nodes"),
         (("矢量处理", "叠加分析"), "intersection union difference clip"),
@@ -1344,10 +1344,10 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
 
 
 def test_vector_geometry_groups_have_expected_counts_and_clear_display_names():
-    expected = {'几何构造': 8, '几何整理': 10, '拓扑检查': 9, '线网处理': 7}
+    expected = {'几何构造': 8, '几何整理': 11, '拓扑检查': 9, '线网处理': 7}
     operators = list_operators()
     moved = [op for op in operators if op['category_path'][0] == '矢量处理' and op['category'] in expected]
-    assert len(moved) == len({op['id'] for op in moved}) == 34
+    assert len(moved) == len({op['id'] for op in moved}) == 35
     assert {group: sum(op['category'] == group for op in moved) for group in expected} == expected
     assert not any(op['category_path'] == ['矢量处理', '几何处理'] for op in operators)
     names = {op['id']: op['display_name'] for op in moved}
@@ -2151,3 +2151,13 @@ def test_polygon_adjacency_public_metadata_is_workflow_read_with_single_line_res
     assert spec['output_ports'][0]['is_default'] is True
     notes=' '.join(spec['detailed_description']['notes'])
     assert '英尺不换米' in notes and '正面积重叠' in notes
+
+
+def test_polygon_components_public_metadata_and_ownership():
+    spec=next(op for op in list_operators() if op['id']=='group_polygon_components')
+    assert spec['display_name']=='面连通分组' and spec['category_path']==['矢量处理','几何整理']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert {p['name'] for p in spec['parameters'] if p['required']}=={'input_gdf','id_field'}
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['name']=='result'
+    assert spec['output_ports'][0]['is_default'] is True
+    assert '正面积重叠' in ' '.join(spec['detailed_description']['notes'])

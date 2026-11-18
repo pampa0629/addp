@@ -67,7 +67,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
 | 矢量处理 | 几何构造 | 8 | `buffer`、`centroid`、`representative_point`、`convex_hull`、`minimum_rotated_rectangle`、`envelope`、`voronoi`、`batch_buffer` |
-| 矢量处理 | 几何整理 | 10 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints`、`split_multipart`、`extract_vertices` |
+| 矢量处理 | 几何整理 | 11 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints`、`group_polygon_components`、`split_multipart`、`extract_vertices` |
 | 矢量处理 | 拓扑检查 | 9 | `check_polygon_overlap`、`check_polygon_adjacency`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
 | 矢量处理 | 线网处理 | 7 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network`、`extract_line_nodes` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
@@ -340,3 +340,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `extract_vertices(input_gdf,id_field)`逐原始坐标位置输出Point，保闭环首尾、重复坐标/部件/孔洞及全部来源属性，追加source_id/part_no/ring_no/vertex_no/vertex_id；不去重、不补交点或计算网络度数。部件和源准入复用多部拆分，原XY/CRS不变；GeometryCollection/NULL/EMPTY及固定字段重名整批拒绝。完整规则见[顶点提取契约](../../../docs/spec/workflow/矢量算子契约.md#顶点提取契约)。
 
 `raster_line_of_sight`与`raster_viewshed`共用严格正交网格准入：已知线性单位二维投影，轴点积精确为0、行列式为负，支持北向矩形和正交旋转矩形；按完整六参数仿射定位与计算米制距离，不设epsilon，剪切和单轴镜像拒绝，不改变其他DEM准入。可视域采用显式米制半径和同网格Byte三态（遮挡0／可见1／路径未知2，半径外及无效目标NoData255），半径等号纳入、精确重合中心可见。原两点结果、逐格地表、贴地／格角／格边、NoData优先级、源瓦片缓存和块写保持，沿原COG保存及失败清理，不计容量认证。正交旋转扩展的Linux及独立Hosted分别验收，Hosted范围另议，不挪用既有固定版本证据。详见[通视契约](../../../docs/spec/workflow/栅格算子契约.md#dem-两点通视)与[可视域契约](../../../docs/spec/workflow/栅格算子契约.md#dem-单观察点可视域)。
+
+`group_polygon_components` 逐原始面部件按精确共边传递归组，点接触不连通，同源多部件可跨组。保留全部属性、原始几何及来源；正面积重叠明确拒绝，不融合或修复。见[面连通分组契约](../../../docs/spec/workflow/矢量算子契约.md#面连通分组契约)。

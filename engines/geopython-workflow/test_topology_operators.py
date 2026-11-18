@@ -11253,3 +11253,215 @@ def test_adjacency_empty_fixture_is_explicit_polygon_not_geojson_null(tmp_path,m
     geometry=row.GetGeometryRef();assert geometry is not None and geometry.IsEmpty()and geometry.GetGeometryName()=='POLYGON'
     geometry=None;row.SetGeometry(None);assert layer.SetFeature(row)==0;row=layer=ds=None
     with pytest.raises(f.FixtureError):f.verify_mixed_overlay(path,'empty',f.ADJACENCY_CASE)
+
+
+def polygon_components(frame, **kwargs):
+    return get_operator('group_polygon_components')(input_gdf=frame, id_field=kwargs.get('id_field', 'parcel_id'))
+
+
+def test_polygon_components_transitive_holes_multipart_and_attributes():
+    ring = Polygon(box(0,0,6,6).exterior.coords, [box(1,1,3,3).exterior.coords])
+    shapes = [shapely.MultiPolygon([ring, box(30,0,31,1)]), box(1,1,3,3), box(6,0,7,6), box(7,0,8,6), box(8,6,9,7)]
+    frame = overlap_frame(shapes)
+    frame['parcel_id'] = pd.Series([2**60+9,2**60+3,2**60+7,2**60+1,2**60+5],dtype='Int64')
+    frame['grade'] = pd.Series([None,2**60+1,3,4,5], dtype='Int64')
+    frame['geometry'] = pd.Series(['business',None,'c','d','e'], dtype='string')
+    frame.index=[7,7,1,9,3]
+    before=frame.copy(deep=True)
+    result=polygon_components(frame)
+    rows=[0,0,1,2,3,4]
+    assert result.columns.tolist()==[*frame.columns,'source_id','part_no','component_id']
+    assert result.component_id.tolist()==[1,2,1,1,1,3]
+    assert result.part_no.tolist()==[1,2,1,1,1,1]
+    assert result.source_id.tolist()==frame.parcel_id.iloc[rows].tolist()
+    assert result.source_id.dtype==frame.parcel_id.dtype
+    assert result.grade.dtype==frame.grade.dtype and result['geometry'].dtype==frame['geometry'].dtype
+    assert result.index.equals(pd.RangeIndex(6)) and result.crs==frame.crs
+    assert [shapely.to_wkb(x) for x in result.geometry.array]==[shapely.to_wkb(p) for shape in shapes for p in shapely.get_parts(shape)]
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('other,connected',[
+    (box(1,0,2,1),True),(box(1,1,2,2),False),(box(1+2**-40,0,2,1),False),
+    (box(1,0,2,2**-40),True),
+])
+def test_polygon_components_exact_boundary_without_metric_cutoff(other,connected):
+    result=polygon_components(overlap_frame([box(0,0,1,1),other],crs='EPSG:2263'))
+    assert result.component_id.tolist()==([1,1] if connected else [1,2])
+    assert result.crs.to_epsg()==2263
+
+
+def test_polygon_components_stable_under_reverse_candidates(monkeypatch):
+    frame=overlap_frame([box(2,0,3,1),box(0,0,1,1),box(1,0,2,1),box(10,0,11,1)],['z','b','a','q'])
+    original=shapely.STRtree.query
+    monkeypatch.setattr(shapely.STRtree,'query',lambda self,*a,**k: original(self,*a,**k)[::-1])
+    assert polygon_components(frame).component_id.tolist()==[1,1,1,2]
+
+
+@pytest.mark.parametrize('shapes',[[],[box(0,0,1,1)]])
+def test_polygon_components_empty_schema(shapes):
+    frame=overlap_frame(shapes)
+    frame['grade']=pd.Series([None]*len(frame),dtype='Int64')
+    result=polygon_components(frame)
+    assert result.crs==frame.crs and result.grade.dtype==frame.grade.dtype
+    assert result.source_id.dtype==frame.parcel_id.dtype
+    assert all(result[f].dtype==np.dtype('int64') for f in ('part_no','component_id'))
+    assert len(result)==len(shapes)
+
+
+@pytest.mark.parametrize('shape',[None,Polygon(),Point(0,0),LineString([(0,0),(1,0)]),
+    shapely.GeometryCollection([box(0,0,1,1)]),shapely.from_wkt('POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))'),
+    shapely.from_wkt('POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))'),
+    Polygon([(0,0),(1,1),(1,0),(0,1),(0,0)]),Polygon([(0,0),(float('inf'),0),(1,1),(0,0)])])
+def test_polygon_components_rejects_geometry(shape):
+    from operators.geometric_operators import PolygonComponentInputError
+    with pytest.raises(PolygonComponentInputError) as caught:
+        polygon_components(overlap_frame([shape]))
+    assert caught.value.code=='source'
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4326','EPSG:4978'])
+def test_polygon_components_rejects_crs(crs):
+    from operators.geometric_operators import PolygonComponentInputError
+    with pytest.raises(PolygonComponentInputError) as caught:
+        polygon_components(overlap_frame([box(0,0,1,1)],crs=crs))
+    assert caught.value.code=='crs'
+
+
+@pytest.mark.parametrize('ids',[[1,1],[1,None],['a',' '],[[1],[2]]])
+def test_polygon_components_requires_source_identity(ids):
+    from operators.geometric_operators import PolygonComponentInputError
+    with pytest.raises(PolygonComponentInputError) as caught:
+        polygon_components(overlap_frame([box(0,0,1,1),box(2,0,3,1)],ids))
+    assert caught.value.code=='source'
+
+
+@pytest.mark.parametrize('other',[box(.5,0,2,1),box(.1,.1,.2,.2),box(0,0,1,1),box(1-2**-40,0,2,1)])
+def test_polygon_components_rejects_overlap_even_after_group_already_connected(other):
+    from operators.geometric_operators import PolygonComponentInputError
+    with pytest.raises(PolygonComponentInputError) as caught:
+        polygon_components(overlap_frame([box(0,0,1,1),box(1,0,2,1),other]))
+    assert caught.value.code=='overlap'
+
+
+@pytest.mark.parametrize('case,reason,parameter,field',[
+    ('missing_layer','operator_input_invalid','input_gdf',''),('missing_id','operator_input_invalid','input_gdf',''),
+    ('source','operator_input_invalid','input_gdf',''),('id','operator_input_invalid','input_gdf',''),
+    ('crs','operator_crs_invalid','',''),('overlap','operator_input_overlap','input_gdf',''),
+    ('all_fields','operator_field_conflict','input_gdf','source_id'),('part_no','operator_field_conflict','input_gdf','part_no'),
+    ('component_id','operator_field_conflict','input_gdf','component_id'),
+    ('native_check',None,'',''),('native_query',None,'',''),('native_intersection',None,'',''),
+    ('bad_intersection',None,'',''),('result',None,'',''),
+])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_polygon_components_diagnostics_and_save_block(monkeypatch,case,reason,parameter,field,language):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    frame=overlap_frame([box(0,0,1,1),box(1,0,2,1)])
+    params={'input_gdf':frame,'id_field':'parcel_id'}
+    if case=='missing_layer': del params['input_gdf']
+    elif case=='missing_id': del params['id_field']
+    elif case=='source': params['input_gdf']=None
+    elif case=='id': params['id_field']='PRIVATE_ID'
+    elif case=='crs': params['input_gdf']=frame.to_crs(4326)
+    elif case=='overlap': params['input_gdf']=overlap_frame([box(0,0,1,1),box(.5,0,2,1)])
+    elif case=='all_fields': params['input_gdf']=frame.assign(component_id=1,part_no=1,source_id=1)
+    elif field: frame[field]=1
+    def fail(*a,**k): raise RuntimeError('native component failure')
+    if case=='native_check': monkeypatch.setattr(shapely,'is_valid',fail)
+    elif case=='native_query': monkeypatch.setattr(shapely.STRtree,'query',fail)
+    elif case=='native_intersection': monkeypatch.setattr(shapely,'intersection',fail)
+    elif case=='bad_intersection': monkeypatch.setattr(shapely,'intersection',lambda *a,**k: None)
+    elif case=='result': monkeypatch.setattr(gpd.GeoDataFrame,'reset_index',fail)
+    resolve=workflow_engine.get_operator;saves=[]
+    monkeypatch.setattr(workflow_engine,'get_operator',lambda name:(lambda **kw:saves.append(kw)) if name=='save' else resolve(name))
+    tasks=[{'id':'group','operator':'group_polygon_components','params':params,'depends_on':[]},
+           {'id':'save','operator':'save','params':{'input_df':{'$ref':'group','port':'result'}},'depends_on':['group']}]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language=language).execute({'tasks':tasks})
+    assert not saves
+    error=caught.value
+    if reason is None:
+        assert error.error_code=='EXECUTION_FAILED' and error.diagnostic is None
+    else:
+        context={'node_index':1,'operator_id':'group_polygon_components'}
+        if parameter: context['parameter']=parameter
+        if field: context['field']=field
+        assert error.error_code=='INVALID_PARAMS'
+        assert error.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':context}
+        assert 'PRIVATE_ID' not in str(error)
+
+
+@pytest.mark.parametrize('empty',[False,True])
+def test_polygon_components_real_save_reload_preserves_all_attributes(tmp_path,empty):
+    from osgeo import ogr
+    frame=overlap_frame([] if empty else [shapely.MultiPolygon([box(0,0,1,1),box(10,0,11,1)]),box(1,0,2,1)])
+    frame['grade']=pd.Series([] if empty else [2**60+1,None],dtype='Int64')
+    frame['geometry']=pd.Series([] if empty else ['business',None],dtype='string')
+    source=tmp_path/'source.gpkg';target=tmp_path/'grouped.gpkg'
+    frame.to_file(source,layer='parcels',driver='GPKG')
+    connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    before=source.read_bytes()
+    workflow={'tasks':[
+        {'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'group','operator':'group_polygon_components','params':{'input_gdf':{'$ref':'load'},'id_field':'parcel_id'},'depends_on':['load']},
+        {'id':'save','operator':'save','params':{'input_df':{'$ref':'group','port':'result'},'connection_info':connection,'path':'grouped.gpkg','mode':'fail'},'depends_on':['group']}]}
+    result=execute_workflow(workflow)
+    assert result['status']=='success',result
+    ds=ogr.Open(str(target));layer=ds.GetLayer(0)
+    assert layer.GetFeatureCount()==(0 if empty else 3) and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    for f in ('grade','part_no','component_id'):
+        assert layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex(f)).GetType()==ogr.OFTInteger64
+    for index,feature in enumerate(layer):
+        assert feature.GetGeometryRef().GetGeometryName()=='POLYGON'
+        assert feature.GetField('part_no')==[1,2,1][index] and feature.GetField('component_id')==[1,2,1][index]
+        assert feature.GetField('grade')==(2**60+1 if index<2 else None)
+        assert feature.GetField('geometry')==('business' if index<2 else None)
+        assert feature.GetField('parcel_id')==feature.GetField('source_id')
+    ds=None
+    assert source.read_bytes()==before
+
+
+def test_polygon_components_registration_workflow_only():
+    from operators import OPERATORS
+    meta=OPERATORS['group_polygon_components']
+    assert meta['execution_modes']==['workflow'] and meta['effects']==['read']
+    assert meta['category']=='几何整理' and meta['category_path']==['矢量处理','几何整理']
+    assert {p['name'] for p in meta['param_schema'] if p['required']}=={'input_gdf','id_field'}
+
+
+def test_polygon_components_http_async_discovery(tmp_path,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    frame=overlap_frame([box(0,0,1,1),box(1,0,2,1),box(2,1,3,2)])
+    frame.to_file(tmp_path/'source.gpkg',layer='parcels',driver='GPKG')
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':'source.gpkg'},'depends_on':[]},
+           {'id':'group','operator':'group_polygon_components','params':{'input_gdf':{'$ref':'load'},'id_field':'parcel_id'},'depends_on':['load']}]
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        metadata=next(op for op in client.get('/api/operators').get_json()['operators'] if op['id']=='group_polygon_components')
+        assert metadata['category_path']==['矢量处理','几何整理']
+        assert client.post('/api/operators/group_polygon_components/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in ('success','failed'): break
+            time.sleep(.01)
+        assert state['status']=='success',state
+        features=json.loads(state['result'])['features']
+        assert [f['properties']['component_id'] for f in features]==[1,1,2]
+
+
+def test_polygon_components_shared_edge_does_not_require_representable_float64_length():
+    # Native squared-distance length underflows, but the exact line is non-empty.
+    edge=2.**-600
+    frame=overlap_frame([box(0,0,1,edge),box(1,0,2,edge)])
+    shared=shapely.intersection(frame.geometry.iloc[0],frame.geometry.iloc[1])
+    assert not shared.is_empty and shared.geom_type=='LineString'
+    assert shapely.length(shared)==0.
+    assert polygon_components(frame).component_id.tolist()==[1,1]
+    # Existing adjacency measures length and must keep its original failure rule.
+    with pytest.raises(RuntimeError,match='finite positive shared length'):
+        adjacency(frame)
