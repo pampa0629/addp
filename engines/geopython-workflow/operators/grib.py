@@ -117,32 +117,61 @@ def _ccsds_checker():
 def _grib2_ecmwf_ccsds(sections, discipline, point_count):
     identification, product, packing = (sections[n] for n in (1, 4, 5))
     local = sections.get(2)
-    if (discipline != 0 or bytes(identification[5:12]) != bytes.fromhex('00620000200001')
+    cumulative = product[7:9] == b'\x00\x08'
+    local_table = int(cumulative)
+    if (discipline != 0 or identification[5:10] != bytes.fromhex('0062000020')
+            or identification[10:12] != bytes([local_table, 1])
             or identification[19:21] != b'\x00\x01'
             or local != bytes.fromhex('0000001102000100010009040130303031')):
         raise ValueError('unsupported ECMWF CCSDS identification or local definition')
 
-    parameters = {(0, 0): ('TMP', '[K]', 2),
-                  (2, 2): ('UGRD', '[m/s]', 10),
-                  (2, 3): ('VGRD', '[m/s]', 10)}
-    identity = tuple(product[9:11])
-    if identity not in parameters:
-        raise ValueError('unsupported ECMWF CCSDS parameter')
-    element, unit, height = parameters[identity]
-    if (len(product) != 34 or product[17] != 1 or product[22:24] != b'\x67\x00'
-            or int.from_bytes(product[24:28], 'big') != height
-            or product[28:34] != b'\xff' * 6):
-        raise ValueError('unsupported ECMWF CCSDS product or level')
-
     reference = datetime(int.from_bytes(identification[12:14], 'big'),
                          *identification[14:19], tzinfo=timezone.utc)
     forecast_hours = _signed(product[18:22])
-    if forecast_hours < 0:
-        raise ValueError('unsupported negative ECMWF forecast')
+    if product[17] != 1 or forecast_hours < 0:
+        raise ValueError('unsupported ECMWF CCSDS forecast time')
     valid = reference + timedelta(hours=forecast_hours)
+    time_facts = dict(reference_utc=reference.isoformat(), unit_code=1,
+                      forecast_value=forecast_hours, start_utc=valid.isoformat(),
+                      end_utc=valid.isoformat(), operation='instant')
+    identity = tuple(product[9:11])
+    if cumulative:
+        grid = sections[3]
+        if (grid[38:42] != b'\x00' * 4 or grid[63:71] != struct.pack('>II', 250000, 250000)
+                or grid[71] != 0):
+            raise ValueError('unsupported ECMWF CCSDS precipitation grid')
+        if identity != (1, 193) or product[22:34] != b'\x01' + b'\xff' * 11:
+            raise ValueError('unsupported ECMWF CCSDS precipitation parameter or level')
+        duration = int.from_bytes(product[49:53], 'big')
+        if (len(product) != 58 or product[18:22] != b'\x00' * 4 or not 1 <= duration <= 360
+                or product[41:49] != bytes.fromhex('0100000000010201')
+                or product[53:58] != bytes.fromhex('0d000001c2')):
+            raise ValueError('unsupported ECMWF CCSDS precipitation interval')
+        valid = datetime(int.from_bytes(product[34:36], 'big'), *product[36:41],
+                         tzinfo=timezone.utc)
+        if valid != reference + timedelta(hours=duration):
+            raise ValueError('inconsistent ECMWF CCSDS precipitation end time')
+        time_facts.update(end_utc=valid.isoformat(), operation='accumulation',
+                          statistical_process=1, increment_type=2, interval_unit=1,
+                          interval_length=duration, increment_unit=13, increment_value=450,
+                          missing_count=0)
+        element, unit = 'tp', '[m]'
+        level = dict(type_code=1, raw_scale=None, raw_value=None, reference='surface')
+    else:
+        parameters = {(0, 0): ('TMP', '[K]', 2),
+                      (2, 2): ('UGRD', '[m/s]', 10),
+                      (2, 3): ('VGRD', '[m/s]', 10)}
+        if identity not in parameters:
+            raise ValueError('unsupported ECMWF CCSDS parameter')
+        element, unit, height = parameters[identity]
+        if (product[22:24] != b'\x67\x00' or int.from_bytes(product[24:28], 'big') != height
+                or product[28:34] != b'\xff' * 6):
+            raise ValueError('unsupported ECMWF CCSDS product or level')
+        level = dict(type_code=103, raw_scale=0, raw_value=height,
+                     reference='above_ground', value=height, unit='m')
     if (len(packing) != 25 or packing[17:19] != b'\x00\x00'
             or not 1 <= packing[19] <= 16 or packing[20:25] != b'\x00\x0e\x20\x00\x80'
-            or sections[6][5] != 255):
+            or sections[6][5] != 255 or (cumulative and packing[19] != 12)):
         raise ValueError('unsupported ECMWF CCSDS packing')
     binary_scale = _signed(packing[15:17])
     packing_reference = struct.unpack('>f', packing[11:15])[0]
@@ -154,13 +183,9 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
         raise ValueError('incomplete ECMWF CCSDS codestream')
 
     return dict(
-        parameter=dict(centre=98, subcentre=0, master_table=32, local_table=0,
+        parameter=dict(centre=98, subcentre=0, master_table=32, local_table=local_table,
                        discipline=0, category=identity[0], number=identity[1]),
-        time=dict(reference_utc=reference.isoformat(), unit_code=1,
-                  forecast_value=forecast_hours, start_utc=valid.isoformat(),
-                  end_utc=valid.isoformat(), operation='instant'),
-        level=dict(type_code=103, raw_scale=0, raw_value=height,
-                   reference='above_ground', value=height, unit='m'),
+        time=time_facts, level=level,
         packing=dict(data_template=42, bits_per_value=packing[19], flags=14,
                      block_size=32, reference_sample_interval=128,
                      reference_ieee_hex=bytes(packing[11:15]).hex(),
@@ -243,7 +268,7 @@ def _grib2_fields(raw):
         if drt != 42 and (2 in sections or reserved != b'\x00\x00'):
             raise ValueError('unsupported GRIB2 reserved bytes or local section')
         if drt == 42:
-            if pdt != 0 or reserved not in (b'\x00\x00', b'\xff\xff'):
+            if reserved not in (b'\x00\x00', b'\xff\xff'):
                 raise ValueError('unsupported ECMWF CCSDS envelope')
             facts = _grib2_ecmwf_ccsds(sections, raw[offset+6], count)
         elif drt == 0:
@@ -493,7 +518,13 @@ def _description(dataset, field):
             metadata['GRIB2_DECODE_PRECISION']='float32_scaling_float64_output'
             for key,fact in (('GRIB_REF_TIME','reference_seconds'),('GRIB_VALID_TIME','valid_seconds'),('GRIB_FORECAST_SECONDS','forecast_seconds')):
                 if int(metadata[key])!=facts[fact]:raise ValueError('GRIB2 decoded time differs from original interval')
-            if metadata.get('GRIB_UNIT')!=facts['unit'] or (facts['element']!='APCP' and metadata.get('GRIB_ELEMENT')!=facts['element']) or (facts['element']=='APCP' and not metadata.get('GRIB_ELEMENT','').startswith('APCP')):
+            if field['data_template'] == 42 and facts['parameter']['local_table'] == 1:
+                native_parameter = (metadata.get('GRIB_ELEMENT'), metadata.get('GRIB_UNIT'))
+                if native_parameter not in {('unknown', '[-]'), (facts['element'], facts['unit'])}:
+                    raise ValueError('GDAL precipitation metadata conflicts with ECMWF local table')
+                metadata.update(GRIB_ELEMENT=facts['element'], GRIB_UNIT=facts['unit'],
+                                GRIB_COMMENT='Total precipitation [m]')
+            elif metadata.get('GRIB_UNIT')!=facts['unit'] or (facts['element']!='APCP' and metadata.get('GRIB_ELEMENT')!=facts['element']) or (facts['element']=='APCP' and not metadata.get('GRIB_ELEMENT','').startswith('APCP')):
                 raise ValueError('GRIB2 decoded parameter or unit differs from source')
             for key in ('parameter','time','level','packing'):
                 message[key]=facts[key]

@@ -14,7 +14,7 @@ FIXTURE=SCENE.FIXTURE
 class GRIBOracleTest(unittest.TestCase):
     def test_closed_inventory_and_bytes_before_physical_mutation(self):
         request={'sources':FIXTURE.sources(),'source_bytes':{s['name']:FIXTURE.source_bytes(s).hex() for s in FIXTURE.sources()}}
-        self.assertEqual(len(FIXTURE._owned_sources(request)),7)
+        self.assertEqual(len(FIXTURE._owned_sources(request)),8)
         for change in ('missing','tampered'):
             bad=copy.deepcopy(request)
             if change=='missing':bad['sources'].pop()

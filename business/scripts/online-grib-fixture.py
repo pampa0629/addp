@@ -1,5 +1,6 @@
 """Independent WMO GRIB2 byte oracle and exclusive Hosted source lifecycle."""
 from __future__ import annotations
+from datetime import datetime, timedelta
 import hashlib
 from fractions import Fraction
 import io
@@ -11,7 +12,7 @@ import struct
 import subprocess
 import sys
 
-NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2','ecmwf-ccsds.grib2')
+NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2','ecmwf-ccsds.grib2','ecmwf-precipitation.grib2')
 
 
 def fields(reverse=False):
@@ -81,9 +82,10 @@ def message(field):
     points=[(values[y][x],valid[y][x]) for y in rows for x in range(width)]
     s1=section(1,21);s1[5:7]=struct.pack('>H',7);s1[9]=2;s1[11]=1;s1[12:14]=struct.pack('>H',2026);s1[14:19]=bytes([1,2,3,0,0]);s1[20]=1
     s3=section(3,72);u32(s3,6,width*height);s3[14]=6;u32(s3,30,width);u32(s3,34,height)
-    south=field['north']-height+1
+    spacing=field.get('spacing',1)
+    south=field['north']-(height-1)*spacing
     u32(s3,46,angle(south if scan==64 else field['north']));u32(s3,50,angle(field['west']));s3[54]=48
-    u32(s3,55,angle(field['north'] if scan==64 else south));u32(s3,59,angle(field['west']+width-1));u32(s3,63,1_000_000);u32(s3,67,1_000_000);s3[71]=scan
+    u32(s3,55,angle(field['north'] if scan==64 else south));u32(s3,59,angle(field['west']+(width-1)*spacing));u32(s3,63,angle(spacing));u32(s3,67,angle(spacing));s3[71]=scan
     s4=section(4,34);s4[11]=2;s4[17]=1;u32(s4,18,field['forecast']);s4[22]=103;u32(s4,24,2);s4[28:34]=b'\xff'*6
     selected=[float(v) for v,ok in points if ok];simple=field['packing']=='simple'
     s5=section(5,21 if simple else 12);u32(s5,5,len(selected))
@@ -216,10 +218,19 @@ def ccsds_fields():
     ]
 
 
+def ccsds_precipitation_fields():
+    return [dict(number=index, width=8, height=4, packing='ccsds', scan=0,
+                 west=110, north=30, spacing=0.25, forecast=hours, start_hour=0,
+                 base=0., step=2.**scale, binary_scale=scale, missing=False,
+                 product_template=8, parameter=[1, 193], unit='[m]', element='tp', short_name='0-SFC')
+            for index, (hours, scale) in enumerate(((6, -14), (150, -12), (360, -11)), 1)]
+
+
 def ccsds_message(field):
     # Frozen libaec encoding of unsigned integers 0..31, one block of 32.
     # Source declarations and expected physical values are independent of GDAL.
-    payload = bytes.fromhex('20092492492492492492492492')
+    cumulative = field.get('product_template') == 8
+    payload = bytes.fromhex('1000492492492492492492492490' if cumulative else '20092492492492492492492492')
     raw = message(dict(field, packing='ieee64'))
     sections = {}
     offset = 16
@@ -231,9 +242,22 @@ def ccsds_message(field):
     sections[2] = bytes.fromhex('0000001102000100010009040130303031')
     sections[4][9:11] = bytes(field['parameter'])
     sections[4][12:14] = bytes.fromhex('ffa1')
-    sections[4][24:28] = field['height_m'].to_bytes(4, 'big')
+    if cumulative:
+        sections[1][10] = 1
+        product = sections[4]
+        product[7:9] = b'\x00\x08'
+        product[18:22] = b'\x00' * 4
+        product[22:34] = b'\x01' + b'\xff' * 11
+        end = datetime(2026, 1, 2, 3) + timedelta(hours=field['forecast'])
+        product.extend(struct.pack('>H5B', end.year, end.month, end.day, end.hour, end.minute, end.second))
+        product.extend(bytes.fromhex('0100000000010201') + struct.pack('>IBI', field['forecast'], 13, 450))
+        product[:4] = struct.pack('>I', len(product))
+    else:
+        sections[4][24:28] = field['height_m'].to_bytes(4, 'big')
+    scale = field.get('binary_scale', -2)
     sections[5] = (struct.pack('>IBIHf', 25, 5, 32, 42, field['base'])
-                   + bytes.fromhex('8002000008000e200080'))
+                   + struct.pack('>HHB', 0x8000 | -scale, 0, 12 if cumulative else 8)
+                   + bytes.fromhex('000e200080'))
     sections[7] = struct.pack('>IB', 5 + len(payload), 7) + payload
     body = b''.join(sections[n] for n in range(1, 8)) + b'7777'
     return b'GRIB\xff\xff\x00\x02' + struct.pack('>Q', 16 + len(body)) + body
@@ -259,6 +283,9 @@ def sources():
         spec=dict(name=name,case_id='complex-reverse' if reverse else 'complex-forward',packing='complex-spatial',fields=complex_fields(bool(reverse)))
         raw=source_bytes(spec);spec.update(size_bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest());result.append(spec)
     spec = dict(name=NAMES[6], case_id='ecmwf-ccsds', packing='ccsds', fields=ccsds_fields())
+    raw = source_bytes(spec)
+    result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
+    spec = dict(name=NAMES[7], case_id='ecmwf-precipitation', packing='ccsds', fields=ccsds_precipitation_fields())
     raw = source_bytes(spec)
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return result

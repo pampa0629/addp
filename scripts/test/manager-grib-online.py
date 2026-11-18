@@ -60,30 +60,41 @@ def validate_slice(result,spec,field,x=0,y=0,width=None,height=None):
         for key in ('parameter','time','level','packing'):require(json.loads(attributes['GRIB2_'+key.upper()]['values'][0])==message[key],'complex GRIB displayed facts differ')
     if spec.get('packing') == 'ccsds':
         message = variable['message']
-        require(message['edition'] == 2 and message['data_template'] == 42 and message['product_template'] == 0,
+        cumulative = field.get('product_template') == 8
+        require(message['edition'] == 2 and message['data_template'] == 42
+                and message['product_template'] == field.get('product_template', 0),
                 'ECMWF CCSDS templates changed')
-        unit_height = field['height_m']
         end = datetime.fromtimestamp(1767322800 + field['forecast'] * 3600, timezone.utc).isoformat()
+        start = '2026-01-02T03:00:00+00:00' if cumulative else end
         expected_facts = dict(
-            parameter=dict(centre=98, subcentre=0, master_table=32, local_table=0,
+            parameter=dict(centre=98, subcentre=0, master_table=32, local_table=int(cumulative),
                            discipline=0, category=field['parameter'][0], number=field['parameter'][1]),
             time=dict(reference_utc='2026-01-02T03:00:00+00:00', unit_code=1,
-                      forecast_value=field['forecast'], start_utc=end, end_utc=end, operation='instant'),
-            level=dict(type_code=103, raw_scale=0, raw_value=unit_height,
-                       reference='above_ground', value=unit_height, unit='m'),
-            packing=dict(data_template=42, bits_per_value=8, flags=14, block_size=32,
+                      forecast_value=field.get('start_hour',field['forecast']), start_utc=start,
+                      end_utc=end, operation='instant'),
+            packing=dict(data_template=42, bits_per_value=12 if cumulative else 8, flags=14, block_size=32,
                          reference_sample_interval=128, reference_ieee_hex=struct.pack('>f', field['base']).hex(),
-                         binary_scale=-2, decimal_scale=0),
+                         binary_scale=field.get('binary_scale',-2), decimal_scale=0),
             local=dict(definition=1, section_bytes=17, mars_class='od', mars_type='fc',
                        mars_stream='oper', experiment_version='0001'),
         )
+        if cumulative:
+            expected_facts['time'].update(operation='accumulation', statistical_process=1, increment_type=2,
+                                          interval_unit=1, interval_length=field['forecast'], increment_unit=13,
+                                          increment_value=450, missing_count=0)
+            expected_facts['level'] = dict(type_code=1, raw_scale=None, raw_value=None, reference='surface')
+        else:
+            height_m = field['height_m']
+            expected_facts['level'] = dict(type_code=103, raw_scale=0, raw_value=height_m,
+                                           reference='above_ground', value=height_m, unit='m')
         for key, expected in expected_facts.items():
             require(message[key] == expected and json.loads(attributes['GRIB2_' + key.upper()]['values'][0]) == expected,
                     f'ECMWF CCSDS {key} differs from source')
         require(attributes['GRIB2_DECODE_PRECISION']['values'] == ['float32_scaling_float64_output'],
                 'ECMWF CCSDS precision disclosure missing')
     require(variable['dimensions']==[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],'GRIB independent dimensions changed')
-    require(variable['grid']['transform']==[field['west']-.5,1.,0.,field['north']+.5,0.,-1.] and variable['grid']['longitude_policy']=='unchanged' and bool(variable['grid']['crs_wkt']),'GRIB grid/longitude changed')
+    spacing = field.get('spacing', 1)
+    require(variable['grid']['transform']==[field['west']-spacing/2,spacing,0.,field['north']+spacing/2,0.,-spacing] and variable['grid']['longitude_policy']=='unchanged' and bool(variable['grid']['crs_wkt']),'GRIB grid/longitude changed')
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
 
 

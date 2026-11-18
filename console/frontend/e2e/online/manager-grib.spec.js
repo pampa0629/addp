@@ -8,7 +8,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
   test.setTimeout(480000)
   const env = process.env, context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(context.cases).toHaveLength(14)
+  expect(context.cases).toHaveLength(16)
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id, permissions: new Set(context.identity.permissions_verified) }
   expect([...identity.permissions].sort()).toEqual(['manager.content.read', 'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'])
   const outcomes = [], browserErrors = []
@@ -45,6 +45,15 @@ test('ordinary user reads independent GRIB messages with native units and downlo
             await expect(details).toContainText('GRIB2_LOCAL')
             await expect(details).toContainText('mars_stream')
             await expect(details).toContainText('float32_scaling_float64_output')
+            if (field.product_template === 8) {
+              const end = new Date(Date.UTC(2026, 0, 2, 3 + field.forecast)).toISOString().replace('.000Z', '+00:00')
+              await expect(details).toContainText('Total precipitation [m]')
+              await expect(details).toContainText('GRIB2_TIME')
+              await expect(details).toContainText('accumulation')
+              await expect(details).toContainText('2026-01-02T03:00:00+00:00')
+              await expect(details).toContainText(end)
+              await expect(details).toContainText('"increment_value":450')
+            }
           }
           if (source.spec.packing === 'complex-spatial') {
             await expect(details).toContainText('GRIB2_DECODE_PRECISION')
@@ -57,7 +66,8 @@ test('ordinary user reads independent GRIB messages with native units and downlo
               await expect(details).toContainText('2026-01-02T09:00:00+00:00')
             }
           }
-          await expect(frame.getByTestId('grid-native-transform')).toContainText(String(field.west - 0.5))
+          const spacing = field.spacing ?? 1
+          await expect(frame.getByTestId('grid-native-transform')).toContainText(String(field.west - spacing / 2))
           await expect(frame.locator('.grid-container-preview')).toContainText(/不自动转换单位|no automatic unit conversion/)
           const observed = page.waitForResponse(reply => {
             const url = new URL(reply.url())
@@ -70,7 +80,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           expect(result.selection).toEqual({ variable: `message-${field.number}`, indices: [], x: 0, y: 0, width: field.width, height: field.height })
           expect(result.values).toEqual(values); expect(result.valid).toEqual(valid)
           expect(result.value_mode).toBe('decoded_native_units'); expect(result.spatial).toBeNull()
-          expect(result.variable.grid.transform).toEqual([field.west - 0.5, 1, 0, field.north + 0.5, 0, -1])
+          expect(result.variable.grid.transform).toEqual([field.west - spacing / 2, spacing, 0, field.north + spacing / 2, 0, -spacing])
           await expect(frame.locator('.grid-window tbody tr')).toHaveCount(field.height)
           for (let y = 0; y < field.height; y++) for (let x = 0; x < field.width; x++) {
             const cell = frame.locator('.grid-window tbody tr').nth(y).locator('td').nth(x)

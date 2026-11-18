@@ -242,6 +242,32 @@ with tempfile.TemporaryDirectory() as directory:
     assert result['variable']['message']['local']['mars_stream'] == 'oper'
 print('GRIB2 ECMWF CCSDS complete stream and values smoke passed')
 
+with tempfile.TemporaryDirectory() as directory:
+    path = Path(directory) / 'ecmwf-precipitation.grib2'
+    path.write_bytes(bytes.fromhex('''
+47524942ffff000200000000000000ee00000015010062000020010107ea010203000000010000001102000100
+010009040130303031000000480300000000200000000006000000000000000000000000000000000000080000
+0004000000000000000001c9c380068e77803001be51d006a92b700003d0900003d090000000003a0400000008
+01c102ffa1000000010000000001ffffffffffffffffffffff07ea0108090000010000000001020100000096
+0d000001c2000000190500000020002a00000000800c00000c000e2000800000000606ff0000001307100049
+249249249249249249249037373737
+'''))
+    plan = {'schema_version': 'addp.workflow.access-plan/v1',
+            'source': {'kind': 'file', 'format': 'grib', 'access': {'method': 'mounted_path', 'path': str(path)}}}
+    info = OPERATORS['grib.inspect']['function'](access_plan=plan)
+    result = OPERATORS['grib.read_slice']['function'](
+        access_plan=plan, source_version=info['format_info']['source_version'],
+        selection=dict(variable='message-1', indices=[], x=0, y=0, width=8, height=4))
+    assert result['values'] == [[repr((y * 8 + x) / 4096) for x in range(8)] for y in range(4)]
+    assert result['valid'] == [[True] * 8 for _ in range(4)]
+    assert result['variable']['attributes']['GRIB_UNIT']['values'] == ['[m]']
+    facts = result['variable']['message']
+    assert facts['parameter']['local_table'] == 1 and facts['product_template'] == 8
+    assert facts['time']['operation'] == 'accumulation' and facts['time']['increment_value'] == 450
+    assert facts['time']['start_utc'] == '2026-01-02T03:00:00+00:00'
+    assert facts['time']['end_utc'] == '2026-01-08T09:00:00+00:00'
+print('GRIB2 ECMWF CCSDS precipitation interval and source metres smoke passed')
+
 
 PYGRIB
 

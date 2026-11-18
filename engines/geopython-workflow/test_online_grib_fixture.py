@@ -1,4 +1,5 @@
 """Independent Hosted bytes traversing the real short-lived Native operators."""
+from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
 import pytest
@@ -20,13 +21,25 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
         result=grib.OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=select)
         assert (result['values'],result['valid'])==FIXTURE.expected(field)
         native=result['variable'];assert native['attributes']['GRIB_UNIT']['values']==[field.get('unit','[K]')]
-        assert native['grid']['transform']==[field['west']-.5,1.,0.,field['north']+.5,0.,-1.]
+        spacing = field.get('spacing', 1)
+        assert native['grid']['transform']==[field['west']-spacing/2,spacing,0.,field['north']+spacing/2,0.,-spacing]
         assert native['attributes']['GRIB_FORECAST_SECONDS']['values']==[str(field.get('start_hour',field['forecast'])*3600)]
         if spec.get('packing') == 'ccsds':
             assert native['message']['data_template'] == 42
             assert native['message']['local']['mars_stream'] == 'oper'
-            assert native['message']['level']['value'] == field['height_m']
             assert native['attributes']['GRIB2_DECODE_PRECISION']['values'] == ['float32_scaling_float64_output']
+            if field.get('product_template') == 8:
+                facts = native['message']
+                start = datetime(2026, 1, 2, 3, tzinfo=timezone.utc)
+                assert facts['product_template'] == 8 and facts['parameter']['local_table'] == 1
+                assert facts['level'] == dict(type_code=1, raw_scale=None, raw_value=None, reference='surface')
+                assert facts['time']['operation'] == 'accumulation'
+                assert facts['time']['start_utc'] == start.isoformat()
+                assert facts['time']['end_utc'] == (start + timedelta(hours=field['forecast'])).isoformat()
+                assert (facts['time']['increment_unit'], facts['time']['increment_value']) == (13, 450)
+                assert native['attributes']['GRIB_ELEMENT']['values'] == ['tp']
+            else:
+                assert native['message']['level']['value'] == field['height_m']
         if spec.get('edition')==1:
             assert native['message']['edition']==1
             assert native['message']['level']['type_code']==field['level']
@@ -49,6 +62,7 @@ def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
     assert 'GRIB2 complex spatial interval smoke passed' in captured.out
     assert 'GRIB2 decimal Float32 precision smoke passed' in captured.out
     assert 'GRIB2 ECMWF CCSDS complete stream and values smoke passed' in captured.out
+    assert 'GRIB2 ECMWF CCSDS precipitation interval and source metres smoke passed' in captured.out
 
 
 @pytest.mark.parametrize('reverse',[False,True])
@@ -78,8 +92,16 @@ def test_complex_decimal_precision_is_explicit_and_independently_bounded(tmp_pat
 
 
 def test_preexisting_grib1_grib2_hosted_bytes_are_unchanged():
-    expected={'mixed-fields.grib2': '98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110', 'south-to-north.grb2': 'addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6', 'regular-fields.grib1': 'fdb514b1f996bb192b2507613af42ece2d4d7e89fa2976f4627d9710e20a6232', 'south-to-north.grb1': '6e1f711d8624742c3cfb9cbae4c0641763f079b1fbf1b19b616d4a0ea3815116'}
-    assert {s["name"]:s["sha256"] for s in FIXTURE.sources()[:4]}==expected
+    expected = {
+        'mixed-fields.grib2': '98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110',
+        'south-to-north.grb2': 'addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6',
+        'regular-fields.grib1': 'fdb514b1f996bb192b2507613af42ece2d4d7e89fa2976f4627d9710e20a6232',
+        'south-to-north.grb1': '6e1f711d8624742c3cfb9cbae4c0641763f079b1fbf1b19b616d4a0ea3815116',
+        'complex-fields.grib2': '76e83b64e1ccbd32790e8825fd731fd5eb57b351289bd124f7617d1af811e9da',
+        'complex-south-to-north.grb2': '9a624331a8980ee2fdd5d6a0eba7f14b69ccc1d28e720a4f0661aec8803b7b0b',
+        'ecmwf-ccsds.grib2': '20604c89b64afc613a504d20da4085d89dd3e0ce4de4f0ce6808c3a982c17590',
+    }
+    assert {s['name']:s['sha256'] for s in FIXTURE.sources() if s['name'] in expected} == expected
 
 @pytest.mark.parametrize('fault', ['empty', 'truncated', 'extra-zero', 'extra-ff',
                                   'unknown-local', 'missing-local', 'local-parameter', 'bad-flags'])
@@ -108,4 +130,39 @@ def test_ecmwf_ccsds_invalid_stream_or_identity_rejected_before_gdal(monkeypatch
     source = raw[:8] + (len(body) + 16).to_bytes(8, 'big') + body
     monkeypatch.setattr(grib.gdal, 'OpenEx', lambda *args, **kwargs: pytest.fail('invalid source reached GDAL'))
     with pytest.raises(ValueError, match='ECMWF CCSDS'):
+        grib._fields(source)
+
+
+@pytest.mark.parametrize('section_id, position, replacement, reason', [
+    (1, 10, b'\x00', 'identification'),
+    (3, 63, b'\x00\x0f\x42\x40', 'grid'),
+    (4, 10, b'\x08', 'parameter or level'),
+    (4, 22, b'\x67', 'parameter or level'),
+    (4, 38, b'\x08', 'end time'),
+    (4, 18, b'\x00\x00\x00\x01', 'interval'),
+    (4, 49, b'\x00\x00\x00\x00', 'interval'),
+    (4, 53, b'\xff', 'interval'),
+    (4, 57, b'\xc3', 'interval'),
+    (5, 19, b'\x00', 'packing'),
+    (7, -1, b'', 'codestream'),
+])
+def test_ecmwf_precipitation_rejects_conflicting_source_facts(monkeypatch, section_id, position, replacement, reason):
+    raw = FIXTURE.ccsds_message(FIXTURE.ccsds_precipitation_fields()[0])
+    sections = []
+    offset = 16
+    while offset < len(raw) - 4:
+        length = int.from_bytes(raw[offset:offset + 4], 'big')
+        section = bytearray(raw[offset:offset + length])
+        if section[4] == section_id:
+            if position == -1:
+                section.pop()
+                section[:4] = len(section).to_bytes(4, 'big')
+            else:
+                section[position:position + len(replacement)] = replacement
+        sections.append(section)
+        offset += length
+    body = b''.join(sections) + b'7777'
+    source = raw[:8] + (len(body) + 16).to_bytes(8, 'big') + body
+    monkeypatch.setattr(grib.gdal, 'OpenEx', lambda *a, **k: pytest.fail('invalid source reached GDAL'))
+    with pytest.raises(ValueError, match=reason):
         grib._fields(source)
