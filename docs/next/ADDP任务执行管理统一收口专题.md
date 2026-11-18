@@ -858,4 +858,10 @@ Develop普通与私有路径均保存同次有效终态日志，Owner接口读�
 
 **实现与验证入口。** 宿主使用原业务客户端读取五个已终结的执行。浏览器通过产品路由核对五次进入、刷新与返回，用摘要与宿主同次日志对账。该case的宿主检查点、最终报告和浏览器原有诊断副本仅剔除 `metadata.result.logs`，原几何、血缘和安全诊断仍留存。原Platform consistency的 `make test-vector-topology-online-runner` 覆盖接线、错误、截止、归档和清理。Console门禁消费同一个页面验收函数，用受控响应执行五次导航并验证503停止。GeoPython私有回执定向测试沿原 `make test-geopython-workflow`。本次没有修改Develop或Runtime产品代码，相关历史门禁证据仍见§9.14。
 
+**固定源码验收证据。** 实现提交 `e36dfcd1eb6196baabb29dec1d07e7f2179d68f7`。本机拓扑标准入口通过分发、登记、280项回归及System夹具。最终Python改动复跑同一280项，新增宿主读取、截止、首失败保全和浏览器报告拒绝用例逐名通过。Console通过289项单元、7项定向浏览器及构建，最终页面日志用例单独复跑通过。GeoPython私有子进程／正式回执定向12项通过。
+
+- [Linux Platform consistency](https://github.com/pampa0629/addp/actions/runs/44227721682/job/134544899325) 成功终态。同SHA原日志确认拓扑标准入口280项通过，入口的非verbose输出按组汇总。
+- [Linux Console前端](https://github.com/pampa0629/addp/actions/runs/44227721682/job/134544899222) 成功终态。289项单元、382项浏览器及构建通过，原日志逐名确认新增五次导航和503用例。
+- 两个Job原件、执行时间、固定输入摘要和本机结果保存在 `/tmp/addp-difference-logs.cVdobD/`。真实普通用户、GeoPython日志端到端、部署预算与撤权清理尚待Hosted证据。
+
 **下一步。** 确定性和对应Linux门禁收口后，核对固定完整SHA、实际镜像／输入、原身份与准备职责、5次提交及清理清单，再单独确认一次Hosted。真实前置拒绝保留首因。原本机Trace、三状态导航和Graph高级恢复独立推进。
