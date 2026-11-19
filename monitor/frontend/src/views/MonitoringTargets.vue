@@ -2,44 +2,47 @@
   <section v-if="canRead || (canReadEngines && !dialogOpen)" class="monitoring-targets" data-testid="monitoring-targets">
     <header class="target-toolbar">
       <h2 ref="pageHeading" tabindex="-1">{{ t('monitor.targets.title') }}</h2>
-      <el-button v-if="manualTab" :loading="loading" @click="loadList">{{ t('monitor.targets.refresh') }}</el-button>
-      <el-button v-if="canCreate && manualTab" type="primary" @click="navigate('/monitoring-targets/new', frontendTab ? { tab: 'frontend' } : {})">{{ t('monitor.targets.create') }}</el-button>
     </header>
     <el-tabs v-if="!dialogOpen" :model-value="state.tab" @update:model-value="switchTab">
       <el-tab-pane v-if="canRead" :label="t('monitor.targets.automatic.hosts')" name="nodes" />
-      <el-tab-pane v-if="canRead" :label="t('monitor.frontend.title')" name="frontend" />
-      <el-tab-pane v-if="canRead" :label="t('monitor.targets.automatic.tab')" name="automatic" />
-      <el-tab-pane v-if="canReadEngines" :label="t('monitor.targets.engine.tab')" name="engines" />
+      <el-tab-pane v-if="canRead" :label="t('monitor.targets.core')" name="core" />
+      <el-tab-pane :label="t('monitor.engines.scopes.infra')" name="infra" />
+      <el-tab-pane v-if="canReadEngines" :label="t('monitor.engines.scopes.business')" name="business" />
+      <el-tab-pane v-if="canRead" :label="t('monitor.targets.runtime')" name="runtime" />
     </el-tabs>
-    <AutomaticCollectionScopes v-if="automaticTab && canRead" :key="identity" />
-    <EngineCollectionSettings v-else-if="engineTab && canReadEngines" :key="identity"
-      :scope="state.query.scope || 'infra'" :page="state.page" :page-size="state.pageSize"
-      @update:scope="scope => navigate('/monitoring-targets', { tab: 'engines', scope: scope === 'business' ? scope : undefined }, 'replace')"
-      @update:page="changePage" @update:page-size="changeSize" />
-    <template v-else-if="manualTab && canRead">
+    <div v-if="!dialogOpen" class="target-toolbar">
+      <el-button :loading="loading" @click="refreshTab">{{ t('monitor.targets.refresh') }}</el-button>
+      <el-button v-if="canCreate && manualTab" type="primary" @click="navigate('/monitoring-targets/new', frontendTab ? { tab: 'core' } : {})">{{ t('monitor.targets.create') }}</el-button>
+    </div>
+    <template v-if="manualTab && canRead">
+      <h3 v-if="frontendTab && !dialogOpen">{{ t('monitor.targets.sharedFrontend') }}</h3>
       <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
       <el-alert v-if="!dialogOpen && listCollectionError" :title="t(listCollectionError)" type="warning" :closable="false" show-icon data-testid="target-list-collection-error" />
-      <el-table v-loading="loading" :data="rows" border stripe>
-        <el-table-column :label="t('monitor.targets.node')" min-width="170" show-overflow-tooltip><template #default="{ row }">{{ nodeNames[row.subject.node_id] || t('monitor.targets.nodeMissing') }}</template></el-table-column>
-        <el-table-column :label="t('monitor.targets.configState')" width="100"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ t(row.enabled ? 'monitor.targets.enabled' : 'monitor.targets.disabled') }}</el-tag></template></el-table-column>
-        <el-table-column v-if="!dialogOpen" :label="t('monitor.targets.collection.title')" min-width="210">
-          <template #header><span>{{ t('monitor.targets.collection.title') }}</span><el-tooltip :content="t('monitor.targets.collection.metricHint')"><el-icon :aria-label="t('monitor.targets.collection.metricHint')" tabindex="0"><InfoFilled /></el-icon></el-tooltip></template>
-          <template #default="{ row }">
-            <div :data-testid="`target-list-collection-${row.id}`">
-              <el-tag class="target-collection-status" :type="listCollectionType(row)">{{ t(listCollectionKey(row)) }}</el-tag>
-              <p v-if="listCollections.get(row.id)?.collection?.sampled_at" class="target-sample-time" :title="t('monitor.targets.listCollection.queried', { time: listDate(listCollections.get(row.id).queried_at) })">{{ t('monitor.resources.sampledAt') }}: {{ listDate(listCollections.get(row.id).collection.sampled_at) }}</p>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('monitor.targets.kind')" min-width="160"><template #default="{ row }">{{ t(`monitor.targets.kinds.${row.monitor_kind}`) }}</template></el-table-column>
-        <el-table-column :label="t('monitor.targets.endpoint')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.source.endpoint }}</template></el-table-column>
-        <el-table-column prop="id" :label="t('monitor.targets.id')" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="version" :label="t('monitor.targets.version')" width="140" />
-        <el-table-column :label="t('monitor.targets.details')" fixed="right" width="100"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/monitoring-targets/${row.id}`)">{{ t('monitor.targets.details') }}</el-button></template></el-table-column>
-        <template #empty><el-empty :description="t(loaded ? 'monitor.targets.empty' : 'monitor.targets.notLoaded')" :image-size="64" /></template>
-      </el-table>
+      <CollectionSettingsTable v-loading="loading" :rows="rows" :can-toggle="canToggleTargets" :toggle-disabled="row => !hostReferences[row.subject.node_id]" :busy="saving || loading || Boolean(listError)" @toggle="toggleTarget" :empty="t(loaded ? 'monitor.targets.empty' : 'monitor.targets.notLoaded')">
+        <template #object="{ row }">{{ nodeNames[row.subject.node_id] || t('monitor.targets.nodeMissing') }}</template>
+        <template #kind="{ row }">{{ t(`monitor.targets.kinds.${row.monitor_kind}`) }}</template>
+        <template v-if="!dialogOpen" #observation="{ row }">
+          <div :data-testid="`target-list-collection-${row.id}`">
+            <el-button v-if="row.enabled && row.monitor_kind === 'frontend_resources' && canObserve && auth.hasPermission('platform.module.read')" text type="primary"
+              @click="navigate('/service-resources', { tab: 'frontend', node_id: row.subject.node_id })">{{ t('monitor.targets.collection.frontendLink') }}</el-button>
+            <el-tag v-else class="target-collection-status" :type="listCollectionType(row)">{{ t(listCollectionKey(row)) }}</el-tag>
+            <p v-if="listCollections.get(row.id)?.collection?.sampled_at" class="target-sample-time" :title="t('monitor.targets.listCollection.queried', { time: listDate(listCollections.get(row.id).queried_at) })">{{ t('monitor.resources.sampledAt') }}: {{ listDate(listCollections.get(row.id).collection.sampled_at) }}</p>
+          </div>
+        </template>
+        <template #actions="{ row }"><el-button text type="primary" @click="navigate(`/monitoring-targets/${row.id}`)">{{ t('monitor.targets.details') }}</el-button></template>
+      </CollectionSettingsTable>
       <div class="target-pagination"><el-pagination v-if="loaded" :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
     </template>
+    <section v-if="!dialogOpen && engineTab && canReadEngines">
+      <h3 v-if="state.tab === 'infra'">{{ t('monitor.targets.deployments') }}</h3>
+      <EngineCollectionSettings ref="engineSettings" :key="identity + state.tab" :scope="state.tab" :page="state.page" :page-size="state.pageSize"
+        @update:page="changePage" @update:page-size="changeSize" />
+    </section>
+    <section v-if="!dialogOpen && canRead && automaticKind">
+      <h3 v-if="frontendTab">{{ t('monitor.targets.backendProcesses') }}</h3>
+      <h3 v-else-if="state.tab === 'infra'">{{ t('monitor.targets.indexTasks') }}</h3>
+      <AutomaticCollectionScopes ref="automaticSettings" :key="identity + automaticKind" :kind="automaticKind" />
+    </section>
     <el-dialog :model-value="dialogOpen" :title="t(creating ? 'monitor.targets.create' : 'monitor.targets.details')" width="min(680px, calc(100vw - 24px))"
       :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @update:model-value="value => !value && closeDialog()" @opened="focusForm" @closed="restoreFocus">
       <div v-loading="detailLoading">
@@ -47,6 +50,7 @@
         <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon data-testid="target-save-error" />
         <el-alert v-if="creationBlocked" :title="t('monitor.targets.createUnknown')" type="warning" :closable="false" show-icon data-testid="target-create-unknown" />
         <el-form v-if="formReady" label-position="top" :disabled="!(creating ? canCreate : canRead && auth.hasPermission('monitor.monitoring_target.update')) || saving || conflicted" @submit.prevent>
+          <p v-if="target" class="target-hint">{{ t('monitor.targets.id') }} · {{ target.id }}　{{ t('monitor.targets.version') }} · {{ target.version }}</p>
           <el-form-item :label="t('monitor.targets.node')">
             <HostNodeSelect v-if="creating" :key="route.fullPath" ref="nodeInput" v-model="form.node_id" :selected="selectedNode" :allowed="canRead" :identity="identity" :disabled="Boolean(state.query.node_id)" :api="hostsAPI" :label="t('monitor.targets.node')" :placeholder="t('monitor.targets.nodeSearch')" :more-label="t('monitor.targets.moreNodes')" :error-message="t('monitor.targets.nodeLoadingFailed')" @selected="selectedNode = $event" />
             <el-input v-else :model-value="selectedNode?.display_name || t('monitor.targets.nodeMissing')" readonly data-testid="target-node" />
@@ -99,7 +103,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { InfoFilled } from '@element-plus/icons-vue'
+import CollectionSettingsTable from '../components/CollectionSettingsTable.vue'
 import { ElMessage } from 'element-plus'
 import { openConsoleRoute, StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
 import { useAuthStore } from '../store/auth'
@@ -130,10 +134,31 @@ const creationBlocked = ref(false)
 const canWrite = computed(() => !creationBlocked.value && Boolean(selectedNode.value) && (creating.value ? canCreate.value : canRead.value && auth.hasPermission('monitor.monitoring_target.update')))
 const canRemove = computed(() => !creating.value && canRead.value && auth.hasPermission('monitor.monitoring_target.delete'))
 const state = computed(() => resolveTargetRoute(route.query, creating.value, !dialogOpen.value))
-const automaticTab = computed(() => state.value.tab === 'automatic')
-const frontendTab = computed(() => state.value.tab === 'frontend')
-const engineTab = computed(() => state.value.tab === 'engines')
-const manualTab = computed(() => !automaticTab.value && !engineTab.value)
+const frontendTab = computed(() => state.value.tab === 'core')
+const engineTab = computed(() => ['infra', 'business'].includes(state.value.tab))
+const manualTab = computed(() => frontendTab.value || state.value.tab === 'nodes')
+const automaticKind = computed(() => ({ core: 'service', infra: 'meilisearch', runtime: 'geopython' })[state.value.tab])
+const engineSettings = ref(null), automaticSettings = ref(null)
+const canToggleTargets = computed(() => !dialogOpen.value && canRead.value && auth.hasPermission('monitor.monitoring_target.update'))
+async function toggleTarget(row) {
+  if (saving.value || listError.value || !canToggleTargets.value || !hostReferences.value[row.subject.node_id]) return
+  const generation = epoch
+  saving.value = true
+  try {
+    await request(config => api.update(row.id, { subject: row.subject, monitor_kind: row.monitor_kind, source: row.source, enabled: !row.enabled, version: row.version }, config))
+    if (generation === epoch) await loadList()
+  } catch (error) {
+    if (generation === epoch) listError.value = t(error.response?.status === 409 ? 'monitor.targets.conflict' : 'monitor.targets.saveFailed')
+  } finally {
+    if (generation === epoch) saving.value = false
+  }
+}
+function refreshTab() {
+  if (saving.value) return
+  if (manualTab.value) void loadList()
+  engineSettings.value?.refresh()
+  automaticSettings.value?.refresh()
+}
 const rows = ref([]), total = ref(0), loading = ref(false), loaded = ref(false), listError = ref('')
 const target = ref(null), formReady = ref(false), detailLoading = ref(false), detailError = ref(''), saveError = ref(''), saving = ref(false), conflicted = ref(false), statusMessage = ref('')
 const collection = ref(null), collectionLoading = ref(false), collectionError = ref('')
@@ -273,7 +298,7 @@ async function loadDetail() {
     const value = await request(config => api.get(id, config))
     if (generation !== epoch || ticket !== detailTicket) return
     if ((value.monitor_kind === 'frontend_resources') !== frontendTab.value) {
-      await navigate(route.path, { tab: value.monitor_kind === 'frontend_resources' ? 'frontend' : undefined }, 'replace')
+      await navigate(route.path, { tab: value.monitor_kind === 'frontend_resources' ? 'core' : undefined }, 'replace')
       return
     }
     populate(value); formReady.value = false
@@ -350,9 +375,9 @@ watch([() => route.fullPath, identity], async () => {
   listError.value = ''; detailError.value = ''; saveError.value = ''; statusMessage.value = ''; saving.value = false; conflicted.value = false
   if (!['MonitoringTargets', 'MonitoringTargetNew', 'MonitoringTargetDetail'].includes(route.name)) return
   if (route.name === 'MonitoringTargets' && !canRead.value && canReadEngines.value && !engineTab.value) {
-    await navigate(route.path, { tab: 'engines' }, 'replace'); return
+    await navigate(route.path, { tab: 'infra' }, 'replace'); return
   }
-  if (route.name === 'MonitoringTargets' && engineTab.value && !canReadEngines.value && canRead.value) {
+  if (route.name === 'MonitoringTargets' && state.value.tab === 'business' && !canReadEngines.value && canRead.value) {
     await navigate(route.path, {}, 'replace'); return
   }
   if (!canRead.value && !(engineTab.value && canReadEngines.value)) return

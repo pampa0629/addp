@@ -106,7 +106,7 @@ const showMeilisearch = computed(() => state.value.scope === 'infra' && state.va
 const canConfigure = computed(() => canReadHost.value && state.value.scope !== 'runtime' &&
   (auth.hasPermission('platform.engine_deployment.create') || auth.hasPermission('platform.engine_deployment.update')))
 function openConfiguration() {
-  return navigateMonitorRoute(router, { path: '/monitoring-targets', query: { tab: 'engines', ...(state.value.scope === 'business' ? { scope: 'business' } : {}) } }, { history: 'push' })
+  return navigateMonitorRoute(router, { path: '/monitoring-targets', query: { tab: state.value.scope } }, { history: 'push' })
 }
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
 const trendZoom = ref(null)

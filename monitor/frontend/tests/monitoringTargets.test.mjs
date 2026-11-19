@@ -10,9 +10,9 @@ test('only bounded canonical target pagination survives URL restoration', () => 
   }
 })
 test('collection tabs retain only their own public route state', () => {
-  assert.deepEqual(resolveTargetRoute({ tab: 'frontend', node_id: node }, true).query, { tab: 'frontend', node_id: node })
-  assert.deepEqual(resolveTargetRoute({ tab: 'engines', scope: 'business', page: '2', node_id: node }, false, true).query, { tab: 'engines', scope: 'business', page: '2' })
-  assert.deepEqual(resolveTargetRoute({ tab: 'automatic', scope: 'business', page: '2' }, false, true).query, { tab: 'automatic' })
+  assert.deepEqual(resolveTargetRoute({ tab: 'core', node_id: node }, true).query, { tab: 'core', node_id: node })
+  assert.deepEqual(resolveTargetRoute({ tab: 'business', page: '2', node_id: node }, false, true).query, { tab: 'business', page: '2' })
+  assert.deepEqual(resolveTargetRoute({ tab: 'runtime', scope: 'business', page: '2' }, false, true).query, { tab: 'runtime' })
 })
 test('edits preserve the saved subject, category and CAS version', () => {
   const form = { node_id: node, monitor_kind: 'container_resources', endpoint: ' https://example.test:9443/metrics ', enabled: false }

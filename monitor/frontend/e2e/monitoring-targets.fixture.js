@@ -24,6 +24,7 @@ export async function backend(page, options = {}) {
     const req = route.request(), url = new URL(req.url()), path = url.pathname
     let body, status = 200
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
+    else if (path === '/api/v1/monitor/platform/automatic_collection_scopes') body = { catalog_available: true, data: [] }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity()
     else if (path.startsWith('/api/v1/system/platform/host_nodes')) {

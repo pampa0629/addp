@@ -701,11 +701,21 @@
       }
     },
     "targets": {
+      "confirmResume": "恢复此对象的指标采集？",
+      "object": "采集对象",
+      "core": "ADDP 核心服务",
+      "runtime": "内置计算引擎",
+      "sharedFrontend": "前端 · Console 与 Monitor 按节点共享采集",
+      "backendProcesses": "后端服务与任务进程",
+      "deployments": "已登记引擎",
+      "indexTasks": "索引服务",
+      "categories": {
+        "meilisearch": "索引任务",
+        "geopython": "计算运行时"
+      },
       "engine": {
-        "tab": "引擎",
         "register": "登记引擎",
         "empty": "此范围暂无已登记引擎",
-        "confirmResume": "恢复此引擎的指标采集？",
         "saveFailed": "无法确认采集配置，请刷新后核对。",
         "states": {
           "unknown": "未知",
@@ -721,15 +731,12 @@
       },
       "automatic": {
         "hosts": "主机与容器",
-        "tab": "服务与专用来源",
-        "scope": "采集范围",
         "observation": "实际采集",
         "operation": "操作",
         "meilisearch": "Meilisearch",
         "geopython": "GeoPython",
         "pause": "暂停采集",
         "resume": "恢复采集",
-        "paused": "暂停配置已保存",
         "activeCount": "目标 {count} 个",
         "confirmPause": "暂停该范围的新指标采集？",
         "catalogUnavailable": "暂时无法读取新的采集范围，仍可管理已保存的配置。",

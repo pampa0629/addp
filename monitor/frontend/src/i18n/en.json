@@ -701,11 +701,21 @@
       }
     },
     "targets": {
+      "confirmResume": "Resume metrics collection for this object?",
+      "object": "Collection object",
+      "core": "ADDP core services",
+      "runtime": "Built-in compute engines",
+      "sharedFrontend": "Frontends · Console and Monitor share one target per node",
+      "backendProcesses": "Backend services and workers",
+      "deployments": "Registered engines",
+      "indexTasks": "Indexing services",
+      "categories": {
+        "meilisearch": "Indexing tasks",
+        "geopython": "Compute runtime"
+      },
       "engine": {
-        "tab": "Engines",
         "register": "Register engines",
         "empty": "No engines registered in this scope",
-        "confirmResume": "Resume metrics collection for this engine?",
         "saveFailed": "Collection settings could not be confirmed. Refresh to check.",
         "states": {
           "unknown": "Unknown",
@@ -721,15 +731,12 @@
       },
       "automatic": {
         "hosts": "Hosts and containers",
-        "tab": "Services and dedicated sources",
-        "scope": "Collection scope",
         "observation": "Observed collection",
         "operation": "Action",
         "meilisearch": "Meilisearch",
         "geopython": "GeoPython",
         "pause": "Pause collection",
         "resume": "Resume collection",
-        "paused": "Pause saved",
         "activeCount": "{count} targets",
         "confirmPause": "Pause new metric collection for this scope?",
         "catalogUnavailable": "New scopes are temporarily unavailable. Saved settings can still be managed.",

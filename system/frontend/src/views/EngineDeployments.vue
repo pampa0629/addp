@@ -191,7 +191,7 @@ function setMonitoring(row, checked) {
 
 let epoch=0,trigger=null,sourceExpiry=null
 const navigate=(path,query=state.value.query,history='push')=>navigateSystemRoute(router,{path,query},{history})
-const openCollection = () => openConsoleRoute(state.value.scope === 'business' ? '/monitor/monitoring-targets?tab=engines&scope=business' : '/monitor/monitoring-targets?tab=engines')
+const openCollection = () => openConsoleRoute(state.value.scope === 'business' ? '/monitor/monitoring-targets?tab=business' : '/monitor/monitoring-targets?tab=infra')
 const bindingState=row=>row.enabled?row.host_binding_state==='bound'?'bound':row.host_binding_reason==='node_kind_mismatch'?'node_kind_mismatch':'node_disabled':'deployment_disabled'
 useConsolePageDescriptor(router,'system',{title:computed(()=>t('system.engineDeployments.details')),subject:computed(()=>record.value?.display_name||''),ready:computed(()=>Boolean(record.value)&&!configuring.value)})
 function validRecord(value,id='') {

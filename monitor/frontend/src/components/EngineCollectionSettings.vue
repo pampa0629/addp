@@ -1,40 +1,18 @@
 <template>
   <section data-testid="engine-collection-settings">
-    <el-tabs :model-value="scope" @update:model-value="emit('update:scope', $event)">
-      <el-tab-pane name="infra" :label="t('monitor.engines.scopes.infra')" />
-      <el-tab-pane name="business" :label="t('monitor.engines.scopes.business')" />
-    </el-tabs>
-    <div class="engine-collection-toolbar">
-      <el-button :loading="loading" :disabled="saving" @click="load">{{ t('common.refresh') }}</el-button>
-      <el-button v-if="canRegister" @click="openConsoleRoute(registrationRoute)">{{ t('monitor.targets.engine.register') }}</el-button>
+    <div v-if="canRegister" class="engine-collection-toolbar">
+      <el-button @click="openConsoleRoute(registrationRoute)">{{ t('monitor.targets.engine.register') }}</el-button>
     </div>
     <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" />
-    <el-table :data="rows" v-loading="loading" border stripe>
-      <el-table-column prop="display_name" :label="t('monitor.targets.automatic.scope')" min-width="175" show-overflow-tooltip />
-      <el-table-column prop="engine_type" :label="t('monitor.targets.kind')" min-width="115" />
-      <el-table-column :label="t('monitor.targets.configState')" min-width="110">
-        <template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ t(row.enabled ? 'monitor.targets.enabled' : 'monitor.targets.disabled') }}</el-tag></template>
-      </el-table-column>
-      <el-table-column v-if="canObserve" :label="t('monitor.targets.automatic.observation')" min-width="150">
-        <template #default="{ row }">
-          {{ t(`monitor.targets.engine.states.${collections[row.deployment_id]?.state || 'unknown'}`) }}
-          <div v-if="collections[row.deployment_id]?.sampled_at" class="collection-time">{{ formatDateTime(collections[row.deployment_id].sampled_at) }}</div>
-        </template>
-      </el-table-column>
-      <el-table-column v-if="canWrite" :label="t('monitor.targets.automatic.operation')" min-width="115">
-        <template #default="{ row }">
-          <el-popconfirm :title="t(row.enabled ? 'monitor.targets.automatic.confirmPause' : 'monitor.targets.engine.confirmResume')"
-            :confirm-button-text="t('common.confirm')" :cancel-button-text="t('common.cancel')" @confirm="save(row)">
-            <template #reference>
-              <el-button text type="primary" :disabled="blocked || Boolean(saving) || loading">
-                {{ t(row.enabled ? 'monitor.targets.automatic.pause' : 'monitor.targets.automatic.resume') }}
-              </el-button>
-            </template>
-          </el-popconfirm>
-        </template>
-      </el-table-column>
-      <template #empty><el-empty :description="t('monitor.targets.engine.empty')" :image-size="64" /></template>
-    </el-table>
+    <CollectionSettingsTable :can-toggle="canWrite" :busy="blocked || Boolean(saving) || loading" @toggle="save"
+      :rows="rows" v-loading="loading" :empty="t('monitor.targets.engine.empty')">
+      <template #object="{ row }">{{ row.display_name }}</template>
+      <template #kind="{ row }">{{ row.engine_type }}</template>
+      <template v-if="canObserve" #observation="{ row }">
+        {{ t(`monitor.targets.engine.states.${collections[row.deployment_id]?.state || 'unknown'}`) }}
+        <div v-if="collections[row.deployment_id]?.sampled_at" class="collection-time">{{ formatDateTime(collections[row.deployment_id].sampled_at) }}</div>
+      </template>
+    </CollectionSettingsTable>
     <el-pagination v-if="total" :current-page="page" :page-size="pageSize" :page-sizes="[10,20,50]"
       :total="total" :disabled="Boolean(saving)" layout="total, sizes, prev, pager, next"
       @current-change="emit('update:page', $event)" @size-change="emit('update:pageSize', $event)" />
@@ -49,12 +27,13 @@ import { createLatestRequestScope } from '../../../../common-frontend/basic/src/
 import { validateEngineCollection } from '../../../../common-frontend/basic/src/utils/engineCollection.mjs'
 import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { engineResourcesAPI as api } from '../api/engineResources'
+import CollectionSettingsTable from './CollectionSettingsTable.vue'
 import { useAuthStore } from '../store/auth'
 import { validateEngineDeployment, validateEnginePage } from '../utils/engineResources'
 import { isTargetUUID } from '../utils/monitoringTargets.js'
 
 const props = defineProps({ scope: String, page: Number, pageSize: Number })
-const emit = defineEmits(['update:scope', 'update:page', 'update:pageSize'])
+const emit = defineEmits(['update:page', 'update:pageSize'])
 const auth = useAuthStore(), { t } = useI18n()
 const canWrite = computed(() => auth.hasPermission('platform.host_node.read') && auth.hasPermission('platform.engine_deployment.update'))
 const canRegister = computed(() => auth.hasPermission('platform.host_node.read') && auth.hasPermission('platform.engine_deployment.create'))
@@ -118,6 +97,7 @@ async function save(row) {
   }
 }
 
+defineExpose({ refresh: () => !saving.value && load() })
 watch(() => [props.scope, props.page, props.pageSize], load, { immediate: true })
 onBeforeUnmount(() => { requests.dispose(); writes.dispose() })
 </script>

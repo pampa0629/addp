@@ -193,7 +193,7 @@ const canRead = computed(() => auth.contextType === 'platform' && auth.authConte
 const canReadHost = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
 const canConfigureFrontend = computed(() => canReadHost.value && auth.hasPermission('monitor.monitoring_target.read'))
 function openFrontendConfiguration() {
-  return navigateMonitorRoute(router, { path: '/monitoring-targets', query: { tab: 'frontend' } }, { history: 'push' })
+  return navigateMonitorRoute(router, { path: '/monitoring-targets', query: { tab: 'core' } }, { history: 'push' })
 }
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))

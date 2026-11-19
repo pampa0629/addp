@@ -290,22 +290,23 @@ test('automatic collection separates intent from observed state and controls onl
     return route.fulfill({ json: { catalog_available: true, data: [{ ...bounded, observation }, cdc] } })
   })
   await page.goto('/monitoring-targets')
-  await page.getByRole('tab', { name: '服务与专用来源' }).click()
-  await expect(page).toHaveURL(/tab=automatic$/)
+  await page.getByRole('tab', { name: 'ADDP 核心服务' }).click()
+  await expect(page).toHaveURL(/tab=core$/)
   const list = page.getByTestId('automatic-collection-scopes')
   const boundedRow = list.getByRole('row').nth(1), cdcRow = list.getByRole('row').nth(2)
   await boundedRow.getByRole('button', { name: '暂停采集' }).click()
   await page.getByRole('button', { name: '确定', exact: true }).click()
-  await expect(boundedRow).toContainText('暂停配置已保存')
+  await expect(boundedRow).toContainText('已停用')
   await expect(boundedRow).toContainText('正等待停采')
   await expect(cdcRow).toContainText('正在采集')
   observation = 'stopped'
-  await list.getByRole('button', { name: '刷新', exact: true }).click()
+  await page.getByRole('button', { name: '刷新列表', exact: true }).click()
   await expect(boundedRow).toContainText('已停采')
   await boundedRow.getByRole('button', { name: '恢复采集' }).click()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
   await expect(boundedRow).toContainText('等待成功抓取')
   observation = 'collecting'
-  await list.getByRole('button', { name: '刷新', exact: true }).click()
+  await page.getByRole('button', { name: '刷新列表', exact: true }).click()
   await expect(boundedRow).toContainText('正在采集')
   expect(writes).toEqual([[bounded.id, { enabled: false, version: 1 }], [bounded.id, { enabled: true, version: 2 }]])
 })
@@ -315,7 +316,44 @@ test('automatic collection hides controls for read-only users', async ({ page })
   await page.route('**/api/v1/monitor/platform/automatic_collection_scopes', route => route.fulfill({
     json: { catalog_available: true, data: [{ id: 'geopython:1', kind: 'geopython', version: 2, enabled: false, observation: 'stopped', active_targets: 0 }] }
   }))
-  await page.goto('/monitoring-targets?tab=automatic')
+  await page.goto('/monitoring-targets?tab=runtime')
   await expect(page.getByTestId('automatic-collection-scopes')).toContainText('GeoPython')
   await expect(page.getByRole('button', { name: '恢复采集' })).toHaveCount(0)
+})
+
+test('flat collection tabs group frontend and backend with separate node and service controls', async ({ page }) => {
+  const state = await backend(page, { kind: 'frontend_resources', identity: identity([...permissions, 'platform.engine_deployment.read']) })
+  await page.route('**/api/v1/monitor/platform/automatic_collection_scopes', route => route.fulfill({ json: {
+    catalog_available: true,
+    data: [
+      { id: 'service:monitor:backend', kind: 'service', module_name: 'monitor', role: 'backend' },
+      { id: 'meilisearch:1', kind: 'meilisearch' },
+      { id: 'geopython:1', kind: 'geopython' }
+    ].map(row => ({ ...row, enabled: true, version: 1, observation: 'collecting', active_targets: 1 }))
+  } }))
+  await page.route('**/platform/engine_deployments?*', route => route.fulfill({ json: { data: [], total: 0, page: 1, page_size: 20 } }))
+  await page.goto('/monitoring-targets?tab=core')
+  const panel = page.getByTestId('monitoring-targets')
+  await expect(panel.getByRole('tablist')).toHaveCount(1)
+  await expect(panel.getByRole('tab')).toHaveCount(5)
+  await expect(panel.getByRole('heading', { name: /Console 与 Monitor/ })).toBeVisible()
+  const frontend = panel.getByRole('row', { name: /前端资源/ })
+  const automatic = panel.getByTestId('automatic-collection-scopes')
+  await expect(automatic.getByRole('row', { name: /monitor/ })).toContainText('正在采集')
+  await expect(automatic).not.toContainText('GeoPython')
+  for (const label of ['暂停采集', '恢复采集']) {
+    await frontend.getByRole('button', { name: label }).click()
+    await page.getByRole('button', { name: '确定', exact: true }).click()
+    await expect(frontend).toContainText(label === '暂停采集' ? '已停用' : '已启用')
+  }
+  expect(state.writes.map(({ input }) => [input.enabled, input.version, input.source.type, input.subject.node_id])).toEqual([
+    [false, 1, 'frontend_exporter', node], [true, 2, 'frontend_exporter', node]
+  ])
+  await panel.getByRole('tab', { name: 'Infra 基础设施' }).click()
+  await expect(automatic).toContainText('Meilisearch')
+  await expect(automatic).not.toContainText('GeoPython')
+  await expect(panel.getByRole('tablist')).toHaveCount(1)
+  await panel.getByRole('tab', { name: '内置计算引擎' }).click()
+  await expect(automatic).toContainText('GeoPython')
+  await expect(automatic).not.toContainText('Meilisearch')
 })

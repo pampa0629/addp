@@ -17,7 +17,7 @@ test('engine configuration is permission gated and keeps the selected deployment
   await expect(page.getByTestId('engine-configure')).toHaveCount(0)
   await page.getByRole('tab', { name: 'Business 业务引擎' }).click()
   await page.getByTestId('engine-configure').click()
-  await expect(page).toHaveURL(/\/monitoring-targets\?tab=engines&scope=business$/)
+  await expect(page).toHaveURL(/\/monitoring-targets\?tab=business$/)
 })
 
 for (const locale of ['zh-cn','en']) test(`provenance tabs show mixed engine cards with one summary request (${locale})`,async({page})=>{
@@ -114,7 +114,7 @@ test('central engine collection pauses and resumes the same deployment using cur
     Object.assign(owner, { enabled: body.enabled, version: body.version + 1, node_id: body.enabled ? owner.declared_node_id : '', host_binding_state: body.enabled ? 'bound' : 'rejected' })
     return route.fulfill({ json: owner })
   })
-  await page.goto('/monitoring-targets?tab=engines')
+  await page.goto('/monitoring-targets?tab=infra')
   const panel = page.getByTestId('engine-collection-settings')
   await panel.getByRole('button', { name: '暂停采集', exact: true }).click()
   await page.locator('.el-popconfirm__action .el-button--primary').click()
