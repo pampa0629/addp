@@ -155,11 +155,7 @@ const [engines, datasets, services, tasks] = await Promise.allSettled([
 
 ### 8.2 最近访问
 
-存 `localStorage`，记录最近 5 个访问记录，纯前端实现，零后端成本：
-
-```js
-{ module, page, label, timestamp }
-```
+Console 在当前浏览器保存最近访问，按当前 User 的租户或 Platform 上下文各保留五条。身份判定、路由去重和旧记录处理以[前端路由与可恢复状态规范](../docs/spec/addp前端路由与可恢复状态规范.md#七console-与模块同步)为准。
 
 ### 8.3 场景进度追踪
 

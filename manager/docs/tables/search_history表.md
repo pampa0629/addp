@@ -15,13 +15,13 @@
 | `query` | 必填，最长 512 字符，与租户和用户组成联合唯一键 |
 | `created_at`、`updated_at` | 原记录创建时间和最近记录时间 |
 
-一次性迁移保留拥有有效租户与用户 ID 的旧行，包括 ID、关键词和时间，按该行已有租户归属保留。旧唯一键按用户及关键词去重，因此同一词在其他租户被覆盖的历史无法恢复。迁移删除租户或用户 ID 缺失、非正数的行，替换旧唯一索引，启动重试不得再次改动已迁移数据。
+[049 迁移](../../backend/migrations/049_scope_search_history_to_tenant.sql)保留拥有有效租户与用户 ID 的旧行，包括 ID、关键词和时间，按该行已有租户归属保留。旧唯一键按用户及关键词去重，因此同一词在其他租户被覆盖的历史无法恢复。迁移删除租户或用户 ID 缺失、非正数的行，安装联合唯一索引 `idx_search_history_tenant_user_query`。迁移及其校验和同事务提交，后续启动不会重复改动已迁移数据。
 
 ## API
 
 | 入口 | 行为 |
 | --- | --- |
-| `GET /api/v1/manager/search/history` | 返回当前范围的 `data.items`，每项含 ID、搜索词及时间。默认 10 条，最多 50 条 |
+| `GET /api/v1/manager/search/history` | 返回当前范围的 `data.items`，每项含 ID、搜索词及时间。默认 10 条，最多 50 条，响应使用 `Cache-Control: no-store` |
 | `DELETE /api/v1/manager/search/history/:id` | 删除当前范围的一条记录并返回 204。记录不在当前范围时同样返回 204 |
 | `DELETE /api/v1/manager/search/history` | 只清空当前范围，返回 204 |
 

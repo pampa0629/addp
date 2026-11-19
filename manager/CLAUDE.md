@@ -22,7 +22,8 @@ Manager 导入使用持久 Transfer `sync` 任务并保持上传者私有来源�
 
 ## 领域事实与任务边界
 
-- `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
+- `manager.preview_state` 按当前租户、User 和 DataItem 保存预览模式及轻量交互设置，包括表格可见字段。Quick View Capability API 动态计算快显可用性、推荐渲染源和默认瓦片缓存结果。见[预览状态表](docs/tables/preview_state表.md)。
+- `manager.search_histories` 按当前租户和 User 保存个人搜索历史。见[归属、迁移和 API](docs/tables/search_history表.md)。
 - `manager.task_definitions`：Manager 生成类任务定义的唯一表；`task_type` 选择强类型配置、校验器和执行器，产品分类投影为“快显任务”与“空间数据任务”。向量化任务继续使用 `manager.embedding_tasks`，三类任务只在统一“数据任务”工作台合并呈现，不合并存储和结果生命周期。
 - `manager.task_resource_bindings`：任务定义对源/目标资源的规范化绑定，供引擎生命周期检查和资源回收使用；不得再从异构 `config` JSON 猜测资源归属。
 - `manager.vector_materialized_view`：矢量物化视图结果状态，只登记 Manager 创建并拥有生命周期的 3857 矢量物化视图目标；同源 schema 下自动识别的外部 3857 目标只读消费，不进入该表。
@@ -64,7 +65,7 @@ manager/
 │   ├── 存储流与原始下载语义.md
 │   ├── 向量化概念说明.md
 │   ├── 向量化能力说明.md
-│   └── tables/               # 表级说明：search_history、embeddings、preview_state、vector_tile_cache 等
+│   └── tables/               # 表级说明：search_histories、embeddings、preview_state、vector_tile_cache 等
 └── frontend/src/
     ├── views/                 # DataExplorer、DataRetrieval、Preview、SpatialPreview
     ├── components/explorer/
@@ -232,7 +233,7 @@ make test-manager-online-runner
 - [embeddings表](docs/tables/embeddings表.md)
 - [embedding_tasks表](docs/tables/embedding_tasks表.md)
 - [embedding_configuration表](docs/tables/embedding_configuration表.md)
-- [search_history表](docs/tables/search_history表.md)
+- [search_histories 表](docs/tables/search_history表.md)
 - [共享前端模块说明](../common-frontend/CLAUDE.md)
 - [Meta 模块说明](../meta/CLAUDE.md)
 - [平台任务与执行规范](../docs/spec/addp任务体系规范.md)
