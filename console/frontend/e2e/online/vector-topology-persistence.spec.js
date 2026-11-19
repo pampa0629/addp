@@ -1,4 +1,5 @@
 import { differenceArchive, verifyDifferenceLogPages } from './difference-execution-logs.mjs'
+import { sampleComponentsPolygonPixels } from './polygon-components-map.mjs'
 import { expect, request, test } from '@playwright/test'
 import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { writeFileSync } from 'node:fs'
@@ -1986,7 +1987,10 @@ async function verifyMixedOverlayCase(page,caseName) {
   }else observation.rendered = await assertOverlayMap(renderer, expected)
   await page.screenshot({ path: resolve(directory, config.prefix+'-map.png') }); persist('map_verified')
   if(config.polygonParts){
-    observation.rendered.polygon_pixels=await assertComponentsPolygonPixels(renderer)
+    await assertComponentsPolygonPixels(renderer, pixels => {
+      observation.rendered.polygon_pixels = pixels
+      persist('polygon_pixels_sampled')
+    })
     await expect(table.locator('thead')).toContainText('geometry')
     await page.screenshot({path:resolve(directory,'components-fill-map.png')})
     persist('polygon_fill_verified')
@@ -2156,41 +2160,17 @@ test('顶点提取独立普通User三Point成果及七失败保护',async({page}
 test('面邻检查独立普通User单源线成果及四失败保护',async({page})=>verifyMixedOverlayCase(page,'polygon-adjacency'))
 
 
-async function assertComponentsPolygonPixels(renderer) {
-  const probes=[['filled',24,0.5],['hole',23,3]].map(([key,x,y])=>[
-    key,webMercatorPreviewGeometry({type:'Point',coordinates:[x,y]}).coordinates
-  ])
-  await renderer.evaluate(element=>{
-    const value=element.__vueParentComponent.setupState.mapInstance, map=value?.value||value
-    const feature=map.getLayers().getArray().flatMap(layer=>layer.getSource?.()?.getFeatures?.()||[])
-      .find(candidate=>candidate.getGeometry().getType()==='Polygon'&&candidate.getGeometry().getCoordinates().length===2)
-    if(!feature)throw new Error('polygon components hole feature missing')
-    map.getView().fit(feature.getGeometry().getExtent(),{size:map.getSize(),padding:[32,32,32,32],duration:0})
-    map.renderSync()
-  })
-  let pixels
-  await expect.poll(async()=>{
-    pixels=await renderer.evaluate((element,probes)=>{
-      const value=element.__vueParentComponent?.setupState?.mapInstance, map=value?.value||value
-      if(!map||map.getView().getAnimating())return null
-      const layer=map.getLayers().getArray().find(candidate=>candidate.getSource?.()?.getFeatures?.().length===8)
-      const context=layer?.getRenderer()?.context
-      if(!context||!layer.getVisible()||layer.getOpacity()<=0)return null
-      const viewport=map.getViewport().getBoundingClientRect(),rectangle=context.canvas.getBoundingClientRect()
-      return Object.fromEntries(probes.map(([key,coordinate])=>{
-        const pixel=map.getPixelFromCoordinate(coordinate)
-        const x=Math.round((viewport.left+pixel[0]-rectangle.left)*context.canvas.width/rectangle.width)
-        const y=Math.round((viewport.top+pixel[1]-rectangle.top)*context.canvas.height/rectangle.height)
-        if(x<3||y<3||x+4>context.canvas.width||y+4>context.canvas.height)return [key,-1]
-        const data=context.getImageData(x-3,y-3,7,7).data
-        let count=0
-        for(let i=3;i<data.length;i+=4)if(data[i]>0)count++
-        return [key,count]
-      }))
-    },probes)
-    return Number.isInteger(pixels?.filled)&&pixels.filled>30&&pixels.hole===0
-  }).toBe(true)
-  return pixels
+async function assertComponentsPolygonPixels(renderer, archivePixels) {
+  let latest
+  try {
+    await expect.poll(async () => {
+      const pixels = await renderer.evaluate(sampleComponentsPolygonPixels)
+      if (pixels) latest = pixels
+      return Number.isInteger(pixels?.filled) && pixels.filled > 30 && pixels.hole === 0
+    }).toBe(true)
+  } finally {
+    if (latest) archivePixels(latest)
+  }
 }
 
 test('面连通分组独立普通User单源面成果及六失败保护',async({page})=>{
