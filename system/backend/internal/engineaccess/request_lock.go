@@ -19,8 +19,8 @@ func (r *Repository) lockAccessRequest(ctx context.Context, id uuid.UUID) error 
 			return fmt.Errorf("MySQL access request lock requires the outer transaction")
 		}
 		return r.db.WithContext(ctx).Exec(
-			"INSERT INTO `system`.`engine_access_request_locks` (request_id) VALUES (?) ON DUPLICATE KEY UPDATE request_id = request_id",
-			id[:],
+			"INSERT INTO `system`.`engine_access_request_locks` (request_id) VALUES (UUID_TO_BIN(?)) ON DUPLICATE KEY UPDATE request_id = request_id",
+			id.String(),
 		).Error
 	default:
 		return fmt.Errorf("unsupported access request lock database %q", r.db.Dialector.Name())

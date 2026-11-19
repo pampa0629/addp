@@ -95,7 +95,7 @@ func TestSystemAccessRequestLockAgainstMySQL(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	var count int64
-	err = db.Table("system.engine_access_request_locks").Where("request_id = ? OR request_id = ?", id[:], other[:]).Count(&count).Error
+	err = db.Table("system.engine_access_request_locks").Where("request_id IN (UUID_TO_BIN(?), UUID_TO_BIN(?))", id.String(), other.String()).Count(&count).Error
 	if err != nil || count != 2 {
 		t.Fatalf("request lock row count=%d: %v", count, err)
 	}
