@@ -291,35 +291,42 @@ MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + 
 
 ## 2026-10-22 角色可选方式控制面与 Projection v5
 
-按已确认的“默认自动保护、角色只增加选择资格、多角色取并集”原则，在原 ProtectionPolicy 不可变修订增加 `role_options`，不新增角色策略聚合或优先级。Security 为新选项生成 UUID，更新只接受当前修订已有身份；完整集合随默认效果同事务校验、保存、编译，撤销保留审计配置但不发布。每项仅可采用当前基线许可且类型匹配的内置 mask 决策，不能穿透字段默认 suppress/deny；基线撤回算法后移除不再许可的选项，普通默认保护继续有效。投影选项绑定 policy_id、policy_revision、assessment_revision；Common 显式解析器区分不可用/已变更与当前角色不具资格，角色取并集，不自动切换默认算法，也不把显式选择替换为原值豁免。调用者仍须先核验主体、Tenant、来源字段和当前角色事实；传入字符串集合本身不是认证证明。
+### 选项发布与当前资格
 
-唯一运行协议为 `addp.protection_projection/v5`，旧版本只用于一次性启动迁移，不保留运行兼容分支。Security 从可信 Enrollment 前像原位迁移中央记录和历史变化，保持序号；共享投影存储新增 `005_projection_role_options_v5`，清除旧缓存与所有 checkpoint 后完整重放。新增回归实际发现“只清 cursor 而保留 initialized=true”会提前认为就绪，已改为一并清除 checkpoint 并通过 SQLite/真实 PG 验证。Security 与 Transfer 外层启动 schema 均递增至 6，避免 Transfer 已应用旧 schema 时跳过共享迁移。其他 Owner/Provider 夹具只切换当前协议常量；运行时默认保护、原值授权、SQL 语义和源数据均未新增宽松路径。
+- **Security 控制面。** `role_options` 与默认效果同属一个 ProtectionPolicy 不可变修订。新选项由 Security 分配 UUID，更新只能复用当前修订的选项身份。撤销保留审计，发布侧移除失效选项。多个当前有效角色提供可用选项的并集。无显式选择时使用默认策略，选项限定为基线许可且类型匹配的内置掩码，不能绕过 `suppress`／`deny`。选项不授予原值访问。投影引用绑定策略、策略修订、评估修订和选项身份，失效时明确拒绝。[默认方式与角色可选方式](../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)
+- **资格来源。** 同步操作以当前第一方 Tenant User 自查获知完整有效 Role Key，包括无功能 Permission 的业务角色。后台执行由所属 Owner 按本次 EA、execution、attempt 和 lease 核验发起人；Worker、Runtime、创建人和发布人的角色均不可代替。角色事实只用于当前选择，不扩大源许可、原值授权或执行效果。[本人自查](../docs/spec/addp授权上下文规范.md#本人当前角色自查) · [执行发起人核验](../docs/spec/addp授权上下文规范.md#执行发起人的当前角色核验)
+- **控制面界面。** 角色候选来自现有租户角色目录，沿用 `iam.tenant_role.read`，只显示可分配给 User 的角色。缺权限或目录失败时可保留或显式移除既有选项，禁止新增或以空目录覆盖配置。修订历史保留选项身份和参数，版本冲突沿原显式重新加载。内置角色译名由共享前端维护，自定义名称保持输入。
 
-既有字段策略表单复用 ProtectionAlgorithmEditor 配置角色选项；角色候选只读取现有 System 租户角色目录，沿用 `iam.tenant_role.read`，只选择可分配给 User 的 Tenant 角色，不增加权限或自由输入角色键。目录无权读取或失败时已有选项保持只读、可保留或显式移除，不能因加载失败清空。修订历史显示选项身份对应的名称、角色键、算法参数；版本冲突仍由原显式重新加载流程处理。内置角色译名及名称/说明解析迁入 common-frontend 唯一维护，System 三个 IAM 组件直接复用，原重复函数和转发入口已删除；自定义名称保持原输入。Security 创建/更新/详情 Swagger 同步，上一轮执行主体角色接口的已生成 System Swagger 同次补入提交。
+### v5 迁移与就绪
 
-验证：Common Go T1 最终标准入口 `make test-module MODULE=common GO_ONLY=1` 通过；Security Go T1 标准入口已通过，新增 HTTP 及字段策略用例继续由共享 Go/既有 PG 入口发现。`make test-security-postgres` 在已核实 25432/addp_test 完整通过 8 个顶层用例，无失败或跳过，含四出口选项编译、默认不变、修订身份、基线收紧、撤销审计与 HTTP 未知选项身份拒绝、显式移除和跨租户隔离。`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test projection-store"` 真实通过 7 个顶层用例，无失败或跳过，覆盖多 Owner 同构、v4 缓存重放、初始化、并发版本以及既有 28 格逐原因协议；这是投影存储组，不计完整 Common PostgreSQL 门禁。该标准脚本只抽取原完整门禁中的同一函数，默认全门禁保持原组序；新过滤及拒绝跳过/零测试由 `scripts/test/module-gate_test.py` 34 项验证。最初全仓 Go 在新增初始化断言处红，修后 `GOMAXPROCS=2 GOFLAGS=-p=1 make test-go` 完整退出 0（依赖 tidy、全部已跟踪 Go 模块及 Common 无 CGO 过程指标）；补充的 Common 最终入口覆盖其后的评估修订断言。全仓日志 `/tmp/p145-options-go-final.log`；两次完整 Common PG 尝试因临时 guard 发现并发而终止，不计通过；后来精确投影组经过同一 guard 完成，不宣称共享主机独占。
+运行时只接受 `addp.protection_projection/v5`。Security 从可信 Enrollment 前像迁移中央投影与历史变化，保留发布序号。消费端由 `005_projection_role_options_v5` 清除旧缓存及完整 checkpoint，再完成重放。最初只清 cursor 会留下 `initialized=true` 并提前就绪，修复后通过 SQLite 与真实 PostgreSQL 回归。该次 Security 和 Transfer 启动 schema 均升至 6，确保已运行旧 schema 的 Transfer 也执行共享迁移；这是迁移发生时的版本。回放期间的拒绝及完整确认见[Projection v5](../docs/spec/addp数据安全与隐私保护实现规范.md#八protection-projection-v5)与[Owner 确认](../docs/spec/addp数据安全与隐私保护实现规范.md#九投影变化流与-owner-确认)。
 
-Security 237 个单元、原 33 个完整浏览器回归及构建通过；随后新增角色目录无权读取/失败保留场景，与多角色配置合计 3 个最终专项再次通过并构建（现有 35 个不同浏览器场景未合并伪称一次全跑）。System 155 单元、203 完整浏览器及构建通过；删除旧转发入口后，155 单元、8 个角色管理/角色分配/账号专项与构建再次通过。Common Frontend 257 项通过；投影存储所有权 9 项/4577 Go-SQL 文件、T2 登记检查以及 Security/System Swagger 63/241 路由覆盖通过。日志 `/tmp/p145-options-{common-t1-final,security-t1,security-postgres-final,projection-postgres-final,module-runner-final,store-ownership,t2-registration,security-frontend-final,security-role-browser-final,security-build-final,system-frontend-final,system-role-browser-final,system-build-direct,common-frontend-final,swagger-coverage-final}.log`。
+### Develop 保存、执行与历史
 
-边界：本轮完成控制面、v5 发布/重放和共享显式选项解析，不将 Develop/Service/Transfer 的业务保存选择、运行时选择与同次默认历史预览计为完成；Manager 普通预览继续默认方式。尚无本轮本地实际产品或 Hosted T4，不复用旧四出口 T4 为角色能力背书。后续保存及同步消费还需完整的当前登录用户角色事实：现有 AuthContext 是带 Permission 的角色投影，会漏掉零功能权限业务角色；不能据此暗中缩小已确认的角色并集。该窄接口的调用边界已向用户提出，未擅自扩大角色枚举或改变认证协议。未启停用户服务、不设置定时、不跟进其他 CI、不改变源授权、原值授权或栅格。清单大项仍部分实现，由 p0 维护表格。
+候选限当前用户显式选择的来源。查询保存精确字段和选项修订，保存（含仅改名称）、后台执行及当次交付均核验当前资格和已证明来源，过期、撤销、修订变化或选择未消费均明确拒绝。所选实时输出与默认历史由同一次 PreparedQuery 分别形成；有界暂存逐字段剥离失效原值，CAS 与分版计时防止旧观察恢复原值或延长留存。独立导出按自身选择和交付规则执行。各 Owner 的具体支持范围及限制见[正式角色方式契约](../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)与[Develop 角色选择及独立导出](../develop/CLAUDE.md#角色选择与独立导出)。
 
-2026-10-22 本人角色自查与 Develop 业务选择：补齐仅当前第一方 Tenant User 的 `GET /system/auth/subject-roles`，共享现行有效 Assignment 查询并包含没有功能权限的业务角色，不扩张 AuthContext v1、数据权限或原值授权。Develop 候选只读取显式数据项，选择以 `content.protection_choices` 保存精确字段与选项修订；保存／仅改名称更新、自身实时结果读取与绑定 EA／attempt／lease 的后台执行均复核当前资格。多个角色提供选项并集，不改默认方式；过期、撤销、修订变化、未消费来源与不支持的输出明确拒绝。角色结果与默认历史由同次 PreparedQuery 形成，SQL 原生变换只延后所选字段，其余沿共享 SQL／Go 路径；暂存严格有界、逐字段剥离到期原值，CAS 与独立计时修订防止旧观察恢复原值或延长保留。其他出口的默认保护不变，特殊方式尚未接入其他 Owner；全量导出暂拒绝特殊方式查询，不静默替换选择。
+### 实际验收与未覆盖项
 
-验证：`make test-go` 全 22 个 Go 模块及 go.mod/go.sum 通过；之后保护规划／暂存细化分别由最终 `make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=develop GO_ONLY=1` 补验通过，System Go T1 通过。真实数据库入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test execution-subject-roles"`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test query-read-set"`、`make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS=--local-disposable`、`make test-develop-postgres` 通过；PG／MySQL 分别 14／5 个新增原生角色方式用例，覆盖直接、别名、wildcard、混合、分页、选择优先于原值豁免、同次独立默认预览、当前角色／修订拒绝及输出元数据保真。IAM 覆盖纯业务角色、旧版本、自然到期及登出；Develop 真实 PG 覆盖默认历史无原值、最终复核后的快照和过期租约不进入交付缓存。PG 只用标准入口及 `addp_iam_test`／`addp_test`（实际端口 25432），无跳过；Common PG 仅 query-read-set 组，不计全门禁。一次前置 PG 验证因并发守卫主动终止，未计通过，随后独占复验通过。
+| 层级 | 实际覆盖 |
+| --- | --- |
+| 控制面和协议 | Common／Security Go T1 通过。Security PostgreSQL 8 个顶层用例通过，验证四出口编译、默认不变、修订身份、基线收紧及跨租户拒绝。Common PostgreSQL 的 `projection-store` 组 7 个顶层用例通过，覆盖旧缓存重放和首次初始化。两次完整 Common PostgreSQL 尝试遇并发守卫中止，仅记投影存储组通过。 |
+| 角色事实与原生查询 | 真实 IAM PostgreSQL 验证无功能 Permission 角色、旧版本、自然到期与登出。PG／MySQL 原生角色方式新增 14／5 例，覆盖字段投影、选择优先于原值豁免、同次默认历史及失效拒绝。Common PG 仅 `query-read-set` 组，Develop PostgreSQL 另核对快照与过期租约。 |
+| 受控界面 | Security／System 各自完整前端门禁通过。后续补充的目录失败、无权时保留配置等场景由定向回归覆盖。Develop 92 项、Monitor 289 项受控浏览器用例及构建通过，中英文诊断另有 2 项定向回归。 |
+| MySQL 本机真实账号 | 构建 `673cf8eef7cb776de26a0b04c8dbdc86384becbf` 包含 `50446c027`。现有普通多角色账号保存定义 #26，验证五行默认、保存并重载所选全遮盖、同一 UUID `7cc501ec-5d46-483a-8033-0e73d5579d87` 的默认历史。方式撤销并同步后，旧选择在准备阶段拒绝、同一历史无结果，Monitor 同 UUID 原因一致。显式移除选择后恢复五行默认。临时选项已撤销，无调度定义与不可变审计保留。 |
 
-前端：`make test-common-frontend` 259 项；`make test-develop-frontend` 确定性检查、92 项浏览器及构建；`make test-monitor-frontend` 确定性检查、289 项浏览器及构建；另按既有 `npm run test:e2e -- e2e/execution-diagnostics.spec.js --grep protection_role_choice_unavailable` 补验中英文 2 项新原因，均通过。Develop 新用例覆盖选择保存、重载执行不重复询问、修订变化不自动换方式、主动恢复默认与 390 px 窄屏；两张图目视核对中文，临时证据 `/tmp/p145-role-choice-visual-h4kqk_vt`。初轮发现的组件声明时序、夹具返回类型及浏览器亚像素／动画等待问题已修正并复验；MySQL 断言已按实际原生 VARCHAR→LONGTEXT 事实校正为保护值／列一致、语义类型与精度一致，并精确保留同次 Provider 返回元数据，未放宽保护断言。共享投影唯一所有权 9 项及 System／Develop Swagger 覆盖 247／60 路由通过，Swagger 检查单测 18 项通过。T1／T2／隔离浏览器 T3 不等于本地真实账号或 Hosted T4；本轮未重启用户服务、未手动派发／跟踪 CI、未创建定时，实际业务 T4 待加载新版后验收。记录与日志 `/tmp/p145-choices-*`。
+本机这次只验证一个现有账号、一个 MySQL 来源和一个方式的完整生命周期。零功能权限角色、多角色并集、成员资格撤销、原值豁免冲突按各自 T1／T2／T3 认定。该轮无 MQL、其他 Owner 或 Hosted 角色结论。后续真实 Hosted 的三出口分组与角色范围见 [v46／v10 证据](#v46v10-分组与角色保护-hosted-闭环2026-11-13)。本机材料见 `/tmp/p145-role-choice-local-20261022/`，门禁详情和逐轮证据可按[整理前固定提交](https://github.com/pampa0629/addp/blob/ba7bf3029bf0b3855cf45d2af4fdb9a8ff3d287c/security/CLAUDE.md#L292-L323)回查。
 
-2026-10-22 23:50，本人角色与 Develop 选择生命周期的本地 MySQL T4 通过。用户重启后，System／Develop／Security 均 ready，Develop／Security registered，三个构建提交均为 `673cf8eef7cb776de26a0b04c8dbdc86384becbf`，包含实现 `50446c027`；相关保护源码无变化，验收前后三个 build ID 未变。无痕 Chrome 的「outdoor开发者」在 `business.security_persons_acceptance_20261015` 执行五行直接字段查询：默认保护 UUID `b259fc2c-aaeb-40a1-a835-6914a4f95f2d`（46 ms）返回前 3 后 4 掩码及四个 NULL。只读核对该账号已有 10 个有效角色，包含数据工程师；未调整角色成员或数据授权。
+### 同期独立集成验收
 
-本轮临时增加仅数据工程师可显式选择的 `p145验收-全遮盖`（前后均保留 0 字符），字段默认算法、其他出口与原值许可均不变。保存查询定义 #26 `p145_role_choice_acceptance_20261022` 后，实时 UUID `7cc501ec-5d46-483a-8033-0e73d5579d87`（74 ms）返回全遮盖与四个 NULL；同一 UUID 的 Owner 历史显示默认掩码，未出现原值。新页面重新打开定义，SQL、来源与一项已保存选择均保留，直接执行再次返回全遮盖（Monitor #768，64 ms），无需再次选择。
+源码 `6ca313c0628ada381fb3e441c32e064a2cbd9900` 的 [Run 39872011655](https://github.com/pampa0629/addp/actions/runs/39872011655) attempt 1 记录四项实际 Hosted 成功，各自生命周期清理通过、Infra 零残留。
 
-撤销本次临时策略并同步后，旧选择执行 UUID `497c0e1e-515d-43dc-90fe-4854f860393e`（Monitor #769，46 ms）在准备阶段明确拒绝、零行；Owner 历史无结果，Monitor 同 UUID 原因及建议一致，明确提示并非数据读取权限不足。刷新方式后失效引用仍保留并要求主动移除，没有暗中改为默认。通过主动移除选择并更新定义后，五行默认保护再次成功（Monitor #770，86 ms）。临时角色选项已撤销，查询出口默认保护同步完成，其他出口不变；保留已恢复默认的无调度验收定义 #26 和不可变审计修订，没有写入业务源或调整源授权／原值授权。
+| 作业 | 实际覆盖 |
+| --- | --- |
+| [Compose 120148447106](https://github.com/pampa0629/addp/actions/runs/39872011655/job/120148447106) | Cookie 轮换、iframe 收敛和刷新保持、退出传播。JavaScript 不持久保存令牌。 |
+| [Metric TiDB 120148447390](https://github.com/pampa0629/addp/actions/runs/39872011655/job/120148447390) · [Metric PostgreSQL 120148447393](https://github.com/pampa0629/addp/actions/runs/39872011655/job/120148447393) | 两套均实际执行 `count_distinct` 与 `sum_decimal_by_group`，覆盖不自动重绑、撤回后拒绝及显式重绑恢复。 |
+| [openGauss 120148447472](https://github.com/pampa0629/addp/actions/runs/39872011655/job/120148447472) | Manager／Develop／Service 读回由 5 行变为 6 行，阶段内校验和一致；Transfer 初始 5、增量 2、空恢复 0，创建与删除各 2。 |
 
-临时证据 `/tmp/p145-role-choice-local-20261022/readiness.json` 与截图已校验完整性并目视核对关键实时／历史／拒绝图。本地 T4 仅证明第一方现有多角色账号的一项 MySQL 角色选项生命周期；纯业务角色、选项并集、成员角色撤销、原值豁免冲突仍沿用前述 T1／T2／T3 证据，不扩大为新增 T4。MQL、其他 Owner 的角色业务选择及 Hosted 角色 T4 本轮未验。部分旧标签页导航出现停滞，通过同一登录会话的新标签页继续，未修改产品绕过认证。此次仅补验收记录，未重复有效代码门禁、未重启服务、未跟进 CI 或设置定时，清单大项继续部分实现。
-
-2026-10-23 08:10，补核专门 CI 会话交付的四项固定范围归档，无新增派发、重试、取消、轮询或本地服务操作。Online [39872011655](https://github.com/pampa0629/addp/actions/runs/39872011655)，精确提交 `6ca313c0628ada381fb3e441c32e064a2cbd9900`、attempt 1：Compose Job `120148447106`、Metric TiDB `120148447390`、Metric PostgreSQL `120148447393`、openGauss `120148447472` 均 completed/success；各自 Run Hosted 门禁步骤实际执行并成功，非仅 readiness 或条件跳过。正式 artifacts `12467438628`／`12467681512`／`12466809401`／`12468255564` 的运行与 SHA 元数据、Job 上传记录、online-report 和 summary 逐项一致，四份 summary 均 cleanup passed、Infra zero_residuals。Compose 浏览器归档证明 Cookie 轮换、iframe 收敛／刷新保持和退出传播，未持久保存 JavaScript token；两种 Metric 的 count_distinct 与 sum_decimal_by_group 均实际完成初始查询、不自动重绑定、撤回拒绝和显式重绑恢复，临时资源残留 0。openGauss 正式报告与 online-gate.log 中实际报告一致：Manager／Develop／Service 初始 5 行、最终 6 行，阶段内 checksum 一致；Transfer 初始 5、增量 2、空恢复 0，创建 2、删除 2、残留 0。
-
-独立只读校验命令 `python3 /tmp/p145-fixed-scope-39872011655-audit.py` 通过，固定四项及 18 个证据文件散列见 `/tmp/p145-fixed-scope-39872011655-audit.json`；原始正式归档位于 `/tmp/addp-ci-20261023-000013/scheduled-{compose,metric-tidb,metric-pg,opengauss}`。另核实本会话文件尾空白修正 `d8ced917a0c8293548b94e4c944bfbae664ab86e` 的 Platform [39811301682 / Job 119937956271](https://github.com/pampa0629/addp/actions/runs/39811301682/job/119937956271)，consistency 与其 Check changed commits for whitespace errors 步骤均实际成功。本轮新增的是这些既定合成集成场景的通过证据，不单独解释旧 data_protection_required 的历史根因，不证明所有引擎／字段算法、角色消费、MQL 或静态加密，也不新增 openGauss 脱敏 SQL 下推覆盖。已只读核对清单实际行 155／156／158，现有摘要未保留这四项旧 CI 阻断；父项继续部分实现，不因集成通过提升功能程度或重复追加流水。当前开发中的过程事件等其他会话工作不纳入本轮提交。
+这些证据限各自合成场景，未覆盖角色选择、MQL、静态加密或 openGauss 脱敏 SQL 下推。独立审计索引为 `/tmp/p145-fixed-scope-39872011655-audit.json`。同期空白修正提交 `d8ced917a0c8293548b94e4c944bfbae664ab86e` 的 [Platform Job 119937956271](https://github.com/pampa0629/addp/actions/runs/39811301682/job/119937956271) 实际通过一致性和变更空白检查。
 
 ### Transfer 角色选择接入前的原生字段保护基础（2026-10-23）
 
