@@ -254,7 +254,7 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 - 生成与保存：配置确认后向同一 Copilot 接口提交资源上下文与完整草稿作受限生成；Copilot 不调用资源 Owner、不创建或启动任务，分工与生成约束统一见[Transfer 草稿契约](../docs/spec/addp智能体Tool开放规范.md#47-平台-transfer-语义与创建)。最终由 Transfer 按当前创建权限与唯一 `task-definitions` API 独立校验保存，不以生成成功证明资源、授权或执行成功。
 - 字段推荐：声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐，按目标 capability 校验并展示供确认，不按 `engine_type` 建立名单。字段与精度规则见[field_mapping 配置](docs/transfer-基本概念及配置说明.md#五field_mapping-transform)；真实源值读取与 `transfer.task.create` 权限边界见[核心 API](#核心-api)，能力展示不代替[实际验收](#开发与验证)。
 
-- 全局监控：模块全部执行列表、通用统计和通用详情统一归[Monitor 前端规范](../docs/spec/tasks/执行监控.md#执行监控前端所有权)；Transfer 不另建全局列表或面板。任务列表、任务详情及执行详情均复用 `MonitorExecutionsButton(module=transfer, task_type=sync)`，按实际任务身份附带筛选。`monitor.execution.read` 只是入口条件，仍须[逐 Owner 读取裁决](../docs/spec/tasks/执行监控.md#租户执行诊断)。
+- 全局监控：模块全部执行列表、通用统计和通用详情统一归[Monitor 前端规范](../docs/spec/tasks/执行监控.md#执行监控前端所有权)。任务列表与任务详情复用 `MonitorExecutionsButton` 按任务范围筛选；Transfer 执行详情使用同一按钮的 `execution` 范围，按 UUID 返回本次 Monitor 详情并恢复原筛选和分页。Monitor 的“查看执行结果”入口沿 `transfer.task.read`，返回入口沿 `monitor.execution.read`，实际读取由[各自的 Owner 裁决](../docs/spec/tasks/执行监控.md#租户执行诊断)。
 - Transfer 专业页：`TaskDetail` 保留单任务执行历史、领域诊断、结果及重试，`ExecutionDetail` 展示单次领域详情。读取与重试的独立权限、恢复条件见[执行记录 API](docs/tables/task_executions表.md#用户专业读取与重试)，安全 DTO 沿[专业响应契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)；页面可读或跳转成功不代替[真实链路验收](#开发与验证)。
 
 - 模块内公开导航统一通过 [moduleNavigation.js](frontend/src/utils/moduleNavigation.js) 复用共享能力；Console URL 与模块渲染的分工沿[公开路由事实源](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)，历史栈规则沿[浏览器历史语义](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义)，不在模块重复维护导航实现。

@@ -4,6 +4,42 @@ import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
 
 const id = '550e8400-e29b-41d4-a716-446655440001'
+
+for (const canReadTransfer of [true, false]) test(`Transfer result navigation uses the existing read permission (${canReadTransfer})`, async ({ page }) => {
+  const execution = {
+    id: 1256, execution_id: id, module: 'transfer', task_type: 'sync', source: 'transfer',
+    source_task_id: '63', source_task_name: '同步任务', status: 'success', progress: 100,
+    attempt: 1, created_at: '2026-11-18T02:32:48Z', metadata: {}, steps: []
+  }
+  const unexpected = await mockGraph(page, { permissions: ['monitor.execution.read', ...(canReadTransfer ? ['transfer.task.read'] : [])], responses: {
+    '/api/v1/monitor/task-providers': [],
+    '/api/v1/monitor/executions': { executions: [execution], total: 150, page: 3, page_size: 50 },
+    [`/api/v1/monitor/executions/by-execution-id/${id}/tree`]: { execution, children: [], truncated: false },
+    [`/api/v1/monitor/executions/by-execution-id/${id}/events`]: { items: [], has_more: false, next_cursor: 0 },
+    [`/api/v1/transfer/executions/${id}`]: { ...execution, task_id: 63, records_read: 20, records_written: 20 },
+    [`/api/v1/transfer/executions/${id}/events`]: { items: [], has_more: false, next_cursor: 0 }
+  } })
+  await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
+  const monitorURL = '/monitor/executions?module=transfer&task_type=sync&source_task_id=63&page=3&page_size=50&execution_id=' + id
+  await page.goto(monitorURL)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const dialog = frame.getByRole('dialog')
+  await expect(dialog.getByRole('button', { name: '打开任务定义', exact: true })).toBeVisible()
+  const result = dialog.getByRole('button', { name: '查看执行结果', exact: true })
+  if (canReadTransfer) {
+    await result.click({ timeout: 5000 })
+    await expect(page).toHaveURL(url => url.pathname === '/transfer/executions/' + id && url.searchParams.get('return_to') === monitorURL)
+    await expect(frame.getByText('执行详情 #' + id, { exact: true })).toBeVisible()
+    await page.reload()
+    await frame.getByRole('button', { name: '返回本次执行', exact: true }).click()
+    await expect(page).toHaveURL(monitorURL)
+    await expect(dialog.getByRole('heading', { name: '同步任务', exact: true })).toBeVisible()
+  } else {
+    await expect(result).toHaveCount(0)
+  }
+  expect(unexpected).toEqual([])
+})
+
 for (const status of ['pending', 'running', 'success']) test(`same ${status} execution survives task, Monitor, result, reload and return`, async ({ page }) => {
   const execution = { id: 1256, execution_id: id, module: 'develop', task_type: 'script', source: 'orchestrator', source_task_id: '37', source_task_name: '导航任务', status, progress: status === 'success' ? 100 : 0, attempt: 1, created_at: '2026-11-14T01:00:00Z', execution_config: { inputs: {} }, metadata: { result: { fixture_value: 42 } }, dev_task: { name: '导航任务' }, steps: [] }
   const errors = []

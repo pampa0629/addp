@@ -5,6 +5,19 @@ export function buildMonitorExecutionRoute(executionId) {
   return `/monitor/executions?execution_id=${encodeURIComponent(String(executionId))}`
 }
 
+export function buildExecutionResultRoute(execution, returnTo) {
+  if (!execution?.execution_id) return ''
+  const { module, task_type: taskType, execution_id: executionId } = execution
+  const supported = module === 'develop' && ['query', 'workflow', 'script'].includes(taskType)
+    || module === 'transfer' && taskType === 'sync'
+  if (!supported) return ''
+
+  const route = `/${module}/executions/${encodeURIComponent(executionId)}`
+  if (returnTo === undefined) return route
+  const back = resolveMonitorExecutionReturnRoute(executionId, returnTo)
+  return back ? route + '?' + new URLSearchParams({ return_to: back }) : ''
+}
+
 // A result page can return only to this execution's canonical Monitor context.
 export function resolveMonitorExecutionReturnRoute(executionId, returnTo) {
   if (!hasValue(executionId)) return ''

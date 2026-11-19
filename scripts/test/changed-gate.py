@@ -215,6 +215,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path.startswith("develop/frontend/") for path in files):
         affected.add("console")
 
+    # Console's execution result navigation mounts the real Transfer detail page.
+    if any(path.startswith("transfer/frontend/") for path in files):
+        affected.add("console")
+
     # Console's browser gate mounts Meta's production manual-scan dialog.
     if any(path.startswith("meta/frontend/") for path in files):
         affected.add("console")

@@ -1,11 +1,10 @@
 <template>
   <div class="execution-detail">
     <MonitorExecutionsButton
-      v-if="authStore.hasPermission('monitor.execution.read')"
       module="transfer"
-      task-type="sync"
-      :source-task-id="execution.task_id"
-      scope="task"
+      :execution-id="executionId"
+      :return-to="route.query.return_to"
+      scope="execution"
       style="margin-bottom: 20px;"
     />
     <el-card v-loading="loading">
@@ -26,7 +25,6 @@
         :status="execution.status"
         :error-details="execution.error_details || {}"
         :execution-id="execution.execution_id"
-        :show-monitor-link="authStore.hasPermission('monitor.execution.read')"
       />
 	  <el-alert
 	    v-if="initialAuthorizationStatus"
@@ -180,7 +178,6 @@
 </template>
 
 <script setup>
-import { useAuthStore } from '@/store/auth'
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MonitorExecutionsButton, ExecutionEvents, ExecutionFailure, useConsolePageDescriptor } from '@common-ui'
@@ -199,7 +196,6 @@ import {
 } from '@addp/common-frontend'
 
 const { t } = useI18n()
-const authStore = useAuthStore()
 
 const route = useRoute()
 const router = useRouter()

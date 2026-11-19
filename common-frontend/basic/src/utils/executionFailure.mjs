@@ -1,4 +1,3 @@
-import { resolveMonitorExecutionReturnRoute } from './executionNavigation.mjs'
 export const failureStages = Object.freeze(['validation', 'authorization', 'preparation', 'execution', 'result'])
 export const failureReasons = Object.freeze([
   'configuration_missing', 'configuration_invalid', 'timeout_invalid', 'result_limit_invalid',
@@ -325,12 +324,4 @@ function validSQLContext(sql, reason) {
     if (!position || Object.keys(position).length !== 2 || !['line', 'column'].every(key => Number.isInteger(position[key]) && position[key] >= 1 && position[key] <= 1000000)) return false
   }
   return true
-}
-
-export function buildDevelopExecutionRoute(execution, returnTo) {
-  if (execution?.module !== 'develop' || !['query', 'workflow', 'script'].includes(execution?.task_type) || !execution?.execution_id) return ''
-  const route = `/develop/executions/${encodeURIComponent(execution.execution_id)}`
-  if (returnTo === undefined) return route
-  const back = resolveMonitorExecutionReturnRoute(execution.execution_id, returnTo)
-  return back ? route + '?' + new URLSearchParams({ return_to: back }) : ''
 }

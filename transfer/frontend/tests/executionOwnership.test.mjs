@@ -23,7 +23,13 @@ test('Transfer task details retain domain history and link to the filtered Monit
   assert.match(taskDetailSource, /task-type="sync"/)
   assert.match(taskDetailSource, /:source-task-id="route\.params\.id"/)
   assert.match(taskDetailSource, /navigateTransferRoute\(router, `\/executions\/\$\{executionId\}`\)/)
-  assert.match(executionDetailSource, /MonitorExecutionsButton/)
-  assert.match(executionDetailSource, /:source-task-id="execution\.task_id"/)
-  assert.doesNotMatch(executionDetailSource, /execution\.source_task_id/)
+})
+
+test('Transfer execution detail has one return action scoped to the same execution', () => {
+  const buttons = executionDetailSource.match(/<MonitorExecutionsButton\b[^>]*>/g)
+  assert.equal(buttons?.length, 1)
+  assert.match(buttons[0], /scope="execution"/)
+  assert.match(buttons[0], /:execution-id="executionId"/)
+  assert.match(buttons[0], /:return-to="route\.query\.return_to"/)
+  assert.doesNotMatch(executionDetailSource, /:show-monitor-link|:source-task-id/)
 })

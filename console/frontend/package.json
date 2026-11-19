@@ -75,6 +75,10 @@
       {
         "module": "develop",
         "readyPath": "/module-ui/develop/login"
+      },
+      {
+        "module": "transfer",
+        "readyPath": "/module-ui/transfer/login"
       }
     ]
   }

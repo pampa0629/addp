@@ -277,6 +277,16 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["console", "monitor"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["monitor"], MODULE.affected_modules(self.repository, ["monitor/backend/internal/service/resource_observation.go"]))
 
+    def test_transfer_frontend_changes_include_console_execution_navigation_gate(self) -> None:
+        for name in ("transfer", "console"):
+            path = self.repository / name / "frontend/package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("transfer/frontend/src/views/ExecutionDetail.vue", "transfer/frontend/package-lock.json"):
+            self.assertEqual(["console", "transfer"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["transfer"], MODULE.affected_modules(self.repository, ["transfer/backend/internal/api/execution_handler.go"]))
+
     def test_graph_frontend_changes_include_console_ontology_navigation_gate(self) -> None:
         for name in ("graph", "console"):
             path = self.repository / name / "frontend/package.json"

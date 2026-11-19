@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
-import { buildDevelopExecutionRoute, executionFailurePresentation, failureStages, failureReasons, operatorInputRules } from '../src/utils/executionFailure.mjs'
+import { executionFailurePresentation, failureStages, failureReasons, operatorInputRules } from '../src/utils/executionFailure.mjs'
+import { buildExecutionResultRoute } from '../src/utils/executionNavigation.mjs'
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8')
 
@@ -62,10 +63,14 @@ test('SQL failure facts accept only bounded identifiers and coordinates under th
   assert.equal(executionFailurePresentation({ diagnostic: { ...base, schema_version: 'addp.execution-failure/v1' } }, translate).stage, '')
 })
 
-test('Develop professional execution navigation works without a task definition and does not guess other owners', () => {
-  for (const task_type of ['query', 'workflow', 'script']) for (const status of ['success', 'failed', 'running']) assert.equal(buildDevelopExecutionRoute({ module: 'develop', task_type, status, execution_id: 'execution/id' }), '/develop/executions/execution%2Fid')
-  for (const input of [{ module: 'develop', task_type: 'cleanup', execution_id: 'id' }, { module: 'meta', task_type: 'query', execution_id: 'id' }, {}]) {
-    assert.equal(buildDevelopExecutionRoute(input), '')
+test('execution result routes require a registered task type and an execution identity', () => {
+  for (const [module, taskTypes] of [['develop', ['query', 'workflow', 'script']], ['transfer', ['sync']]]) {
+    for (const task_type of taskTypes) for (const status of ['success', 'failed', 'running']) {
+      assert.equal(buildExecutionResultRoute({ module, task_type, status, execution_id: 'execution/id' }), `/${module}/executions/execution%2Fid`)
+    }
+  }
+  for (const input of [{ module: 'develop', task_type: 'cleanup', execution_id: 'id' }, { module: 'transfer', task_type: 'query', execution_id: 'id' }, { module: 'meta', task_type: 'query', execution_id: 'id' }, {}]) {
+    assert.equal(buildExecutionResultRoute(input), '')
   }
 })
 
@@ -885,10 +890,14 @@ test('endpoint diagnostics show the correct bilingual input and distance guidanc
 
 
 test('execution results retain only the exact Monitor execution context', () => {
-  const execution={module:'develop',task_type:'workflow',execution_id:'same-run'}
-  const back='/monitor/executions?module=develop&task_type=workflow&source_task_id=37&page=3&page_size=50&execution_id=same-run'
-  const target=new URL(buildDevelopExecutionRoute(execution,back),'http://console')
-  assert.equal(target.pathname,'/develop/executions/same-run')
-  assert.equal(target.searchParams.get('return_to'),back)
-  for (const bad of [null, '', ['same-run', 'same-run'], 'https://other.invalid/', '/develop/tasks?execution_id=same-run', '/monitor/executions?execution_id=other', '/monitor/executions?execution_id=same-run&execution_id=same-run', '/monitor/executions?execution_id=same-run&token=private']) assert.equal(buildDevelopExecutionRoute(execution,bad),'')
+  for (const [module, task_type] of [['develop', 'workflow'], ['transfer', 'sync']]) {
+    const execution = { module, task_type, execution_id: 'same-run' }
+    const back = `/monitor/executions?module=${module}&task_type=${task_type}&source_task_id=37&page=3&page_size=50&execution_id=same-run`
+    const target = new URL(buildExecutionResultRoute(execution, back), 'http://console')
+    assert.equal(target.pathname, `/${module}/executions/same-run`)
+    assert.equal(target.searchParams.get('return_to'), back)
+    for (const bad of [null, '', ['same-run', 'same-run'], 'https://other.invalid/', '/develop/tasks?execution_id=same-run', '/monitor/executions?execution_id=other', '/monitor/executions?execution_id=same-run&execution_id=same-run', '/monitor/executions?execution_id=same-run&token=private']) {
+      assert.equal(buildExecutionResultRoute(execution, bad), '')
+    }
+  }
 })

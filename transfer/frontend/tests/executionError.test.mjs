@@ -21,7 +21,7 @@ async function renderExecution(execution, language) {
     render,
     setup: () => ({
       execution, loading: false, isContinuousExecution: false,
-      authStore: { hasPermission: () => false },
+      executionId: execution.execution_id || 'fixture', route: { query: {} },
       executionAPI: { events: () => {} },
       getStatusType: () => 'danger',
       t: key => key.split('.').reduce((value, part) => value?.[part], key.startsWith('common.') ? commonMessages : messages)
@@ -30,7 +30,7 @@ async function renderExecution(execution, language) {
   const container = { setup: (_, { slots }) => () => Vue.h('div', slots.default?.()) }
   for (const name of ['ElCard', 'ElDescriptions', 'ElDescriptionsItem', 'ElTag']) app.component(name, container)
   app.component('ExecutionEvents', { render: () => null })
-  app.component('ExecutionFailure', { props: ['status', 'errorDetails', 'executionId', 'showMonitorLink'], setup(props) { failureProps.push({ ...props }); return () => null } })
+  app.component('ExecutionFailure', { props: { status: String, errorDetails: Object, executionId: String, showMonitorLink: Boolean }, setup(props) { failureProps.push({ ...props }); return () => null } })
   app.component('MonitorExecutionsButton', { render: () => null })
   app.directive('loading', {})
   return { html: await renderToString(app), failureProps }
