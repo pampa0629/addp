@@ -187,8 +187,14 @@ async def check_summary_concurrency(engine):
 
 async def check_idle_connection_recovery(url, admin):
     probe_name = f'agent_idle_probe_{uuid4().hex}'
+    server_default = await admin.scalar(text("SELECT current_setting('TimeZone')"))
+    await admin.rollback()
     target = DatabaseConfig(url.host, url.port, url.username, url.password, url.database)
-    probe = open_async_database(target, pool_pre_ping=True)
+    # Agent history orders existing naive timestamps against new inserts.
+    # Prove even an explicitly different platform TZ leaves the inherited zone intact.
+    other_zone = "Asia/Tokyo" if server_default != "Asia/Tokyo" else "UTC"
+    with patch.dict(os.environ, {"TZ": other_zone}):
+        probe = open_async_database(target, pool_pre_ping=True)
     try:
         async with probe.connect() as connection:
             await connection.execute(
@@ -198,7 +204,7 @@ async def check_idle_connection_recovery(url, admin):
                 text("SELECT current_database(), current_setting('TimeZone')")
             )).one()
             assert database == url.database
-            assert timezone == (os.environ.get("TZ") or "Asia/Shanghai")
+            assert timezone == server_default
             pid = await connection.scalar(text('SELECT pg_backend_pid()'))
             await connection.commit()
         terminated = await admin.scalar(text("""
@@ -213,6 +219,7 @@ async def check_idle_connection_recovery(url, admin):
             assert await connection.scalar(text('SELECT pg_backend_pid()')) != pid
     finally:
         await probe.dispose()
+    print('PASS platform binding preserves the PG session timezone for Agent history')
     print('PASS pool checkout replaces a terminated idle connection before the next transaction')
 
 

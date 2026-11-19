@@ -28,26 +28,27 @@ def _postgres_url(target: DatabaseConfig, driver: str) -> URL:
     )
 
 
-def _timezone() -> str:
+def _require_postgres() -> None:
     provider = os.environ.get("ADDP_INFRA_DATABASE_PROVIDER") or "postgres"
     if provider != "postgres":
         raise ValueError(f"unsupported platform database provider {provider!r}")
-    return ZoneInfo(os.environ.get("TZ") or "Asia/Shanghai").key
 
 
 def open_async_database(target: DatabaseConfig, **pool_options):
+    """Open an async pool using the database's session timezone default."""
+    _require_postgres()
     return create_async_engine(
-        _postgres_url(target, "postgresql+asyncpg"),
-        connect_args={"server_settings": {"timezone": _timezone()}},
-        **pool_options,
+        _postgres_url(target, "postgresql+asyncpg"), **pool_options
     )
 
 
 def open_sync_database(target: DatabaseConfig, **pool_options):
+    _require_postgres()
+    timezone = ZoneInfo(os.environ.get("TZ") or "Asia/Shanghai").key
     return create_engine(
         _postgres_url(target, "postgresql+psycopg2"),
         connect_args={
-            "options": f"-c timezone={_timezone()}",
+            "options": f"-c timezone={timezone}",
             # Use password authentication rather than host Kerberos tickets.
             "gssencmode": "disable",
             "connect_timeout": 5,
