@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	dbbootstrap "github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/common/schema"
 
 	commonClient "github.com/addp/common/client"
@@ -20,7 +22,6 @@ import (
 	"github.com/addp/standard/internal/config"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -40,7 +41,7 @@ func main() {
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
+	db, err := openDatabase(cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -166,4 +167,13 @@ func main() {
 
 	<-runtimeContext.Done()
 	<-registration.Done()
+}
+
+// openDatabase binds the deployment provider to Standard's platform schema at startup.
+func openDatabase(cfg *config.Config) (*gorm.DB, error) {
+	return dbbootstrap.OpenDatabase(database.Config{
+		Host: cfg.DBHost, Port: cfg.DBPort,
+		User: cfg.DBUser, Password: cfg.DBPassword,
+		DBName: cfg.DBName, Schema: cfg.DBSchema,
+	}, &gorm.Config{TranslateError: true})
 }

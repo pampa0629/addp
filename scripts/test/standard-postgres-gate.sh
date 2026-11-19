@@ -2,7 +2,7 @@
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_OWNED_SERVICES=minio
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.standard-minio-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ scripts/infra/init-minio.sh common/infra/bootstrap/ common/infra/objectstore/
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ scripts/infra/init-minio.sh common/infra/bootstrap/ common/infra/database/ common/config/timezone.go common/infra/objectstore/
 # ADDP_T2_REQUIRED_ENV=STANDARD_POSTGRES_TEST_DSN
 # standard-postgres-gate.sh - PostgreSQL and gate-owned disposable MinIO integration tests.
 
@@ -120,6 +120,7 @@ export ADDP_INFRA_OBJECTSTORE_BINDINGS=standard=project-a-standard-docs
 (cd "$ROOT_DIR/common" && run_without_skips ./infra/objectstore/bootstrap '^TestStandardAreaAgainstMinIO$')
 
 cd "$ROOT_DIR/standard/backend"
+run_without_skips ./cmd/server '^TestDatabaseStartup(AgainstPostgres|Failure)$'
 run_without_skips ./internal/repository '^(TestMigrateAgainstPostgres|TestMigrateConvertsLegacyDocumentToStableIdentityAndRevision|TestPostgresDeletePolicies|TestPostgresCodeSetScopeConstraint|TestPostgresElementScopeConstraint|TestPostgresExactElementRevisionResolutionKeepsPublishedHistory|TestPostgresGlossaryScopeConstraint|TestPostgresDocumentRevisionAndExtractionConstraints|TestPostgresMetricRevisionEffectiveIntervals|TestPostgresRemovesRetiredCollectionTables|TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle|TestPostgresCatalogFiveStandardTypesCaptureRevisionsAndRollback|TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts|TestPostgresDocumentCandidateComparisonTargets|TestPostgresDocumentCandidateFormalization|TestPostgresDocumentCandidateFamilyDecision)$'
 run_without_skips ./internal/repository '^TestPostgres(UnitCatalogMigrationKeepsReferences|UnitCatalogConcurrentStartup|RemovesElementExtraQualityRules|SimplifiesStandardDefinitions|GlossaryMappingsPreserveIdentityLifecycle)$'
 run_without_skips ./internal/service '^TestPostgres(UnitCatalog|StandardReferenceDeletion|MetricProfessionalRelations|DocumentCandidateGroups|StandardRevisionLifecycle)'

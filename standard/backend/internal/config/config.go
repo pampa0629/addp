@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"time"
 
@@ -61,17 +60,4 @@ func LoadConfig() (*Config, error) {
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
 
 	return cfg, nil
-}
-
-// GetDatabaseDSN 获取数据库连接字符串
-func (c *Config) GetDatabaseDSN() string {
-	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
-		c.DBHost,
-		c.DBPort,
-		c.DBUser,
-		c.DBPassword,
-		c.DBName,
-		c.DBSchema,
-	)
 }
