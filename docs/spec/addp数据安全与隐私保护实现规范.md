@@ -478,8 +478,7 @@ Owner 必须在单个本地数据库事务中：
 1. 校验整批变化和 Projection；
 2. 更新本地纳管索引及有效投影；
 3. 执行该 Owner 对变化目标声明的派生结果清理或重写屏障；
-4. 保存 `next_cursor`；
-5. 提交后向 Security 确认已同步 cursor。
+4. 保存 `next_cursor`。
 
 投影、数据库内派生结果处理和 cursor 必须共用同一事务。涉及外部系统的派生结果，事务内只持久登记待收敛操作，实际外部调用与核查归提交后的后置屏障，不得在数据库事务中等待外部任务。数据库内清理、重写或待收敛操作登记失败都必须整体回滚，Owner 不得保存 cursor 或向 Security 确认该批变化。Owner 重启时还必须在开放相关出口前，以已同步投影重放同一派生结果收敛逻辑，覆盖升级前已确认 cursor、但尚未具备新执行器的历史状态。
 
@@ -487,7 +486,13 @@ Owner 必须在单个本地数据库事务中：
 
 `protection_projection_entries`、`protection_projection_checkpoints` 及其存储迁移元数据是统一的 Owner 本地投影存储契约，必须由 `common/dataprotection/projectionstore` 唯一定义和迁移。各 Owner 只选择自身 schema、固定 `consumer_owner` 和可选的本地变化屏障，不得复制 DDL、增加 Owner 私有列或维护独立迁移路线。存储初始化必须在数据库事务和 schema 级迁移锁内顺序执行公共迁移，记录已应用版本，并在载入投影前校验真实 PostgreSQL 列、类型、可空性、默认值、主键和必要索引。首次 schema 存在性检查也必须在取得该锁后，以独立 SQL 语句读取 `pg_catalog.pg_namespace`，只在目录确认不存在时创建；等待锁前观察到的缺失状态或 `CREATE SCHEMA IF NOT EXISTS` 本身不能替代锁后的当前目录读取。并发初始化测试应先准备多个独立连接并观察 schema 缺失，再同时进入迁移，任何初始化失败均保留，不能通过自动重试或吞掉唯一约束错误放行。已存在表与当前契约不一致、迁移版本未知或迁移失败时，Owner 必须启动失败而不得进入 Ready。存量 payload 的单向收敛必须复用 `common/dataprotection` 唯一转换器，严格按“投影协议结构升级→投影内算法升级→当前契约校验与 checksum 重算”的顺序执行；Security 中央当前投影、历史变化载荷与 Owner 本地投影不得分别实现协议转换。一次性存储迁移不构成运行时兼容，数据面始终只接受当前协议。
 
-新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v5` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。Security 启动迁移必须从 Enrollment 的可信引擎归属前像，把存量 v1/v2/v3/v4 记录及历史变化原地单向改写为 v5 并重算 checksum；旧租户级 `allow` 只保留其保护性 fallback，sequence 与 cursor 不变，不保留运行时兼容解析或双协议变化流。
+新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v5` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。
+
+**中央转换。** Security 从 Enrollment 冻结的可信引擎归属前像，将 v1／v2／v3／v4 的中央当前记录与历史变化原位转为 v5。缺少前像或指纹不一致时迁移失败，禁止从指纹反推或以当前查询引擎补造归属。保留原日期、投影 ID、revision、sequence 和 cursor，重算 checksum；旧租户级 `allow` 只保留保护性 fallback。协议结构变化须通过版本升级交付。升级期间保持纳管、资源身份与既有权限，运行时统一校验 v5。
+
+**消费端迁移。** 共用 `projectionstore` 迁移。`004_projection_engine_scope_v4` 在事务内清除旧投影及 checkpoint，新增默认 `false` 的 `initialized` 列；`005_projection_role_options_v5` 清除旧投影及完整 checkpoint，使 cursor 和初始化事实一同重建。Transfer 的外层启动 schema 版本已随该迁移递增，防止跳过共享迁移。正常重启沿已持久的 checkpoint 继续同步。
+
+**首次同步与重放。** 按页持久推进本地 checkpoint，失败后从已提交位置继续。整轮完成前保持未初始化，也不逐页提交回执。收到 `has_more=false` 的最终批次时，初始化标记与投影和 cursor 同事务提交，内存索引从同一持久版本刷新；后置屏障通过后才确认非空 cursor。空变化流可完成初始化，无需凭空生成 cursor。Security 原有单调回执继续作为确认下界。
 
 Owner 的同步收敛明确分为两个不同屏障，不得混为一次“保存 cursor”操作：
 
@@ -602,11 +607,7 @@ Spark 联邦查询复用同一共享门禁，首期只准入未命中纳管 Data
 3. 范围相交、读取范围未知或存在无法归属的保护目标时，进入同一查询计划的 ReadSet 精确判断；未命中纳管 DataItem 即继续执行，命中后才取得 OutputLineage 并应用字段保护。无法证明完整 ReadSet 或受保护输出时拒绝本次查询。
 4. 范围判断与真实执行绑定同一个不可变计划及受控会话，不接受判断后替换查询、参数、连接、执行身份或运行时配置；图查询返回结构仍归独立 GraphQueryProvider，不能为复用判断把图伪装成表结果。
 
-`projectionstore` 从投影派生引擎索引，不增加第二份可编辑名单或独立变化流。enrolling、active、过期或校验失败但尚未明确 release 的纳管目标均保留在保护范围内；解除一个资源不能移除同一引擎其他资源的范围。投影、索引及 checkpoint 必须在同一版本下切换，并继续复用既有 acknowledgement / inflight 屏障，避免先放行再补装保护。首次同步或协议重放只有在完整消费至 `has_more=false` 后，才能在同一 checkpoint 事务中持久确认初始化完成；空表或空 cursor 本身不能证明保护范围为空。Security 离线时已完整同步的 Owner 继续按本地状态执行，不引入逐请求远程核对。
-
-本设计涉及投影协议升级，不能向已发布协议追加可被旧消费者忽略的字段。当前运行时只接受 v5 协议：Security 中央当前记录和历史变化载荷、Owner 持久投影与消费代码同次收敛。旧记录缺少可信归属时不得由指纹反解或按当前查询引擎补造；应从其 Enrollment 身份前像完成中央升级，前像缺失或指纹不一致时明确报错，不能把目标视为未纳管。Owner 在完成新协议校验及重放前保持不可放行。升级不解除纳管、不改数据项身份、不重新授予权限，不保留双协议运行分支。Owner 的 `004_projection_engine_scope_v4` 迁移在事务内清理旧投影并重置 cursor，新增 `initialized=false`；角色选项协议通过 `005_projection_role_options_v5` 继续清理旧缓存及全部 checkpoint，使初始化事实与 cursor 一起失效；Transfer 外层启动 schema 版本同步递增，不能因旧版本已就绪而跳过共享迁移。只有完整重放后的最终批次才将其改为 true。已安装当前协议的正常重启不会重复清空投影。
-
-Owner 若从初始 cursor 重放，首轮必须完整消费变化流后再提交 acknowledgement，不能在每个历史分页后回执较小 cursor。Security 当前拒绝 sequence 倒退；保留这一约束。初始化期间按页持久推进本地 checkpoint，失败后从本地进度继续，仍保持未初始化；到 `has_more=false` 后完成同一 checkpoint 的初始化确认、既有在途读取屏障及最终回执。不得通过清除 Security 回执、放宽单调性或提前宣称安装完成来绕过重放。
+`projectionstore` 从持久投影派生唯一引擎索引，投影、索引和 checkpoint 按同一版本切换。尚未明确 release 的纳管目标持续计入保护范围，包括 `enrolling`、`active`、过期或校验失败的目标；解除单个目标只移除该资源。首次同步或协议重放完成前，读取门禁仍拒绝，空表或空 cursor 无法证明保护范围为空。Security 离线时，已完整同步的 Owner 继续按本地状态和有效期执行。迁移、初始化和在途读取屏障依统一契约。[投影变化流与 Owner 确认](#九投影变化流与-owner-确认)
 
 **Neo4j 本地只读计划。** 普通查询与正式图查询分别使用 `PreparedQuery` 和 `PreparedGraphQuery`，共享 `QueryReadPlan`。模板和正式执行走相同范围证明，实际取数复用同一不可变计划、参数、连接和语句。Common 使用 `github.com/cloudprivacelabs/opencypher` v1.0.0 的 openCypher 9 ANTLR 语法树验证只读子集。Provider 在同一固定连接下用 `SHOW DATABASES` 确认物理 `standard` 数据库，并用 `SHOW FUNCTIONS` 的 `isBuiltIn` 校验语法树引用的函数。别名或复合数据库、过程、LOAD CSV、多语句、用户函数及未覆盖扩展均明确拒绝，保留 `local_read_unsupported` 与中英文说明。函数按标识匹配；参数避开语法保留字，可使用 `$row_limit`。当前 Neo4j 计划可证明实例内范围，图资源的精确 ReadSet 和字段级保护仍缺失。同引擎存在纳管目标且完整来源无法证明时拒绝。
 
@@ -928,7 +929,7 @@ ProtectionEnrollment 的 `protection_expires_at` 为可空绝对时间，null �
 Projection 唯一运行协议为 v5。`expires_at` 必须出现，可为 null（长期）或非零且晚于 `valid_from` 的时间。缺失期限字段、旧协议及非法日期均拒绝，checksum 包含 null。初始 `enrolling` 的拒绝门禁也受资源期限约束，到期继续保守拒绝。
 
 - **旧纳管期限回填。** 首次新增 `protection_expires_at` 时，读取该 Tenant 与 Enrollment 当时已有的全部当前投影，取最早截止时间。没有期限证据或任何存量投影缺少可核验的有限截止时间时，迁移失败。历史回填保留各投影原有日期，现行期限更新再从同一纳管期限发布新修订。
-- **中央转换与消费端重放。** Security 原位单向转换中央当前投影及历史变化，保持日期、投影 ID、revision、发布顺序和 cursor，并重算 checksum。所有必要 Owner 共用投影存储的 v5 迁移。存量消费端清除旧副本与完整 checkpoint 后重放，新消费端从初始 cursor 完整同步，按中央记录保留各历史修订的日期和身份。[统一投影存储与回执](#九投影变化流与-owner-确认)
+- **迁移后的期限。** 中央转换和消费端重放保留原修订上的期限，新的期限仍由纳管更新发布。[统一投影存储与回执](#九投影变化流与-owner-确认)
 
 临时原值授权仍为有截止时间、最长 30 天的独立事实。创建／批准不得超过资源指定截止时间；修改资源期限不会改写既有授权历史，投影中按资源期限截断授权有效区间；资源到期或缩短期限不会延长授权。过期资源的控制面事实可继续调整，但编译为 enrolling deny，直到显式更新有效期。前端默认长期，显式截止时提示到期将拒绝读取；列表和详情显示期限、服务端派生的 7 天内到期提示及所有必要 Owner 同步状态，冲突保留表单，不自动重试。
 
