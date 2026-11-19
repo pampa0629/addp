@@ -453,6 +453,14 @@ def validate_registration(repository: Path) -> list[str]:
             platform_workflow,
         )
         consistency_job = consistency_match.group("job") if consistency_match else ""
+        consistency_steps = re.split(r"(?m)^      - ", consistency_job)[1:]
+        if (
+            len(consistency_steps) < 2
+            or "uses: actions/checkout@" not in consistency_steps[0]
+            or "id: changed-whitespace" not in consistency_steps[1]
+            or re.search(r"(?m)^        if:", consistency_steps[1])
+        ):
+            errors.append("Platform CI must check whitespace immediately after checkout")
         install = re.search(r"(?m)^\s*sudo apt-get install[^\n]*\bripgrep\b[^\n]*$", consistency_job)
         check = re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform\s*$", consistency_job)
         if not install or not check or install.end() > check.start():

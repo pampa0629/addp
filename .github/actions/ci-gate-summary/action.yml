@@ -1,17 +1,25 @@
 name: CI gate summary
-description: Write one normalized ADDP gate result to the GitHub Actions step summary.
+description: Write a normalized ADDP gate result to the step summary and job log.
 
 inputs:
   gate:
     description: Human-readable gate name.
     required: true
   selected:
-    description: Whether path selection ran the gate.
+    description: Whether the workflow selected the gate for execution.
     required: false
     default: "true"
   status:
-    description: Final job status reported by the GitHub job context.
+    description: Job status observed at the summary step.
     required: true
+  gate-outcome:
+    description: Outcome of the actual gate step, when wired by the caller.
+    required: false
+    default: ""
+  failure-stage:
+    description: Known phase of the first failure.
+    required: false
+    default: ""
   details-file:
     description: Optional Markdown file containing gate-owned diagnostic facts.
     required: false
@@ -26,14 +34,42 @@ runs:
         ADDP_CI_GATE: ${{ inputs.gate }}
         ADDP_CI_SELECTED: ${{ inputs.selected }}
         ADDP_CI_STATUS: ${{ inputs.status }}
+        ADDP_CI_GATE_OUTCOME: ${{ inputs.gate-outcome }}
+        ADDP_CI_FAILURE_STAGE: ${{ inputs.failure-stage }}
         ADDP_CI_DETAILS_FILE: ${{ inputs.details-file }}
+        ADDP_CI_GATE_JSON: ${{ toJSON(inputs.gate) }}
+        ADDP_CI_STATUS_JSON: ${{ toJSON(inputs.status) }}
+        ADDP_CI_GATE_OUTCOME_JSON: ${{ inputs.gate-outcome != '' && toJSON(inputs.gate-outcome) || 'null' }}
+        ADDP_CI_FAILURE_STAGE_JSON: ${{ inputs.failure-stage != '' && toJSON(inputs.failure-stage) || 'null' }}
+        ADDP_CI_WORKFLOW_JSON: ${{ toJSON(github.workflow) }}
+        ADDP_CI_WORKFLOW_SHA_JSON: ${{ toJSON(github.sha) }}
+        ADDP_CI_EVENT_JSON: ${{ toJSON(github.event_name) }}
+        ADDP_CI_RUN_ID_JSON: ${{ toJSON(github.run_id) }}
+        ADDP_CI_RUN_ATTEMPT_JSON: ${{ toJSON(github.run_attempt) }}
+        ADDP_CI_JOB_JSON: ${{ toJSON(github.job) }}
       run: |
+        selected_json=null
+        case "$ADDP_CI_SELECTED" in
+          true|false) selected_json="$ADDP_CI_SELECTED" ;;
+        esac
+        printf 'ADDP_CI_GATE_RESULT {"schema_version":1,"workflow":%s,"workflow_sha":%s,"event":%s,"run_id":%s,"run_attempt":%s,"job":%s,"gate":%s,"selected":%s,"job_status":%s,"gate_outcome":%s,"failure_stage":%s}\n' \
+          "$ADDP_CI_WORKFLOW_JSON" "$ADDP_CI_WORKFLOW_SHA_JSON" "$ADDP_CI_EVENT_JSON" \
+          "$ADDP_CI_RUN_ID_JSON" "$ADDP_CI_RUN_ATTEMPT_JSON" "$ADDP_CI_JOB_JSON" \
+          "$ADDP_CI_GATE_JSON" "$selected_json" "$ADDP_CI_STATUS_JSON" \
+          "$ADDP_CI_GATE_OUTCOME_JSON" "$ADDP_CI_FAILURE_STAGE_JSON"
+
         {
           echo "## ADDP CI gate result"
           echo
           echo "| Gate | Selected | Result |"
           echo "| --- | --- | --- |"
           echo "| ${ADDP_CI_GATE} | ${ADDP_CI_SELECTED} | ${ADDP_CI_STATUS} |"
+          if [[ -n "$ADDP_CI_GATE_OUTCOME" ]]; then
+            printf '\nGate step outcome: `%s`\n' "$ADDP_CI_GATE_OUTCOME"
+          fi
+          if [[ -n "$ADDP_CI_FAILURE_STAGE" ]]; then
+            printf '\nFailure stage: `%s`\n' "$ADDP_CI_FAILURE_STAGE"
+          fi
           if [[ -n "$ADDP_CI_DETAILS_FILE" && -f "$ADDP_CI_DETAILS_FILE" ]]; then
             echo
             cat -- "$ADDP_CI_DETAILS_FILE"

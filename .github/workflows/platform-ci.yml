@@ -358,23 +358,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: common/go.mod
-          cache: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version-file: .node-version
-
-      - name: Validate Node runtime and rejection boundaries
-        run: |
-          make check-node-runtime test-node-runtime test-dev-environment
-          make dev-doctor
-
       - name: Check changed commits for whitespace errors
+        id: changed-whitespace
         env:
           ADDP_CI_BEFORE: ${{ github.event.before }}
           ADDP_CI_EVENT: ${{ github.event_name }}
@@ -391,6 +376,22 @@ jobs:
           else
             git show --check --format= "$ADDP_CI_HEAD"
           fi
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+
+      - name: Validate Node runtime and rejection boundaries
+        run: |
+          make check-node-runtime test-node-runtime test-dev-environment
+          make dev-doctor
 
       - name: Install platform check dependencies
         run: |
@@ -431,6 +432,7 @@ jobs:
           frontend-directory: manager/frontend
 
       - name: Run platform consistency gate
+        id: platform-gate
         # Includes Backend-owned schema startup, Worker ordering, Swagger cache invalidation and lifecycle concurrency tests.
         run: make test-platform
 
@@ -440,6 +442,12 @@ jobs:
         with:
           gate: Platform consistency
           status: ${{ job.status }}
+          gate-outcome: ${{ steps.platform-gate.outcome }}
+          failure-stage: >-
+            ${{ steps.changed-whitespace.outcome == 'failure' && 'whitespace'
+                || steps.platform-gate.outcome == 'failure' && 'gate'
+                || job.status == 'failure' && steps.platform-gate.outcome != 'success' && 'preparation'
+                || '' }}
 
   go-tests:
     name: Go workspace tests
@@ -1396,12 +1404,14 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run ${{ matrix.name }} frontend gate
+        id: frontend-gate
         if: steps.selection.outputs.run == 'true'
         env:
           TMPDIR: ${{ runner.temp }}
         run: make ${{ matrix.target }}
 
       - name: Upload browser failure evidence
+        id: browser-evidence
         if: failure() && matrix.playwright == true && steps.selection.outputs.run == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1421,3 +1431,10 @@ jobs:
           gate: ${{ matrix.name }} frontend
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
+          gate-outcome: ${{ steps.frontend-gate.outcome }}
+          failure-stage: >-
+            ${{ steps.selection.outcome == 'failure' && 'selection'
+                || steps.frontend-gate.outcome == 'failure' && 'gate'
+                || job.status == 'failure' && steps.selection.outputs.run == 'true' && steps.frontend-gate.outcome != 'success' && 'preparation'
+                || steps.browser-evidence.outcome == 'failure' && 'evidence-upload'
+                || '' }}

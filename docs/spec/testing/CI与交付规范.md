@@ -23,7 +23,11 @@ Push按 `before...sha`，PR按base与本次SHA的merge-base差异，`changed-gat
 | `Frontend CI registration`／`make test-frontend-ci-registration` | Ubuntu24.04／10分钟，Runner Python3；所有Platform事件无路径或矩阵跳过。 |
 | `Execution online CI runner`／`make test-execution-online-ci-runner` | 独立确定性Graph/Cleanup编排、准入／报告／恢复／登记T0/T1，不启动产品／DB／T4；输入闭包、push/PR及schedule/manual选择沿统一检查，跳过须 `selected:false`。 |
 
+Platform consistency 检出提交后先检查本轮改动的空白错误，再准备 Go、Node 与其他依赖。`make test-platform` 先检查 main 发布事务、构建登记及模块影响选择，再进入 Go 等其他平台门禁。
+
 共享前端两Job复用统一摘要，不装共享库node_modules或启浏览器／产品／DB；`make test-platform` 继续聚合同入口，独立性及无条件调用由前端登记回归约束。System Cleanup PG实际消费Hosted唯一观察器，须经 `ADDP_T2_INPUT_FILES` 登记观察器／支持／机器契约；改名同步真消费者，无旧别名。
+
+共享门禁摘要在 Job 日志写入一行以 `ADDP_CI_GATE_RESULT ` 开头的 JSON。记录 workflow、触发事件、workflow 提交 SHA、run、attempt、Job 与 gate 名称；`selected` 为选择结果，`job_status` 为摘要步骤观察到的 Job 状态，`gate_outcome` 为调用方接入的实际门禁步骤结果，`failure_stage` 为已识别的失败阶段。Platform consistency 和通用前端矩阵接入实际步骤和失败阶段。未知选择、未接入的步骤结果或未知失败阶段用 JSON `null`。最终 Job 状态、各步骤时间和摘要未执行的取消从 Actions API 读取。固定产品源码的 T4 继续以场景报告中的产品 SHA 为准。
 
 构建／安全门禁：
 

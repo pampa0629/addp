@@ -1355,8 +1355,11 @@ test-main-publication: ## 验证共享 main 续办、基线检查与发布锁
 	@python3 scripts/ci/publish-main_test.py
 
 test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致性门禁
-	@$(MAKE) test-format-documentation
 	@$(MAKE) test-main-publication
+	@$(MAKE) test-build-registration
+	@python3 scripts/ci/select-module-gate_test.py
+	@python3 scripts/test/changed-gate_test.py
+	@$(MAKE) test-format-documentation
 	@$(MAKE) test-infra-minio-cache
 	@$(MAKE) test-platform-review
 	@$(MAKE) test-dev-lifecycle
@@ -1373,7 +1376,6 @@ test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致�
 	@$(MAKE) test-ontology-postgres-policy
 	@$(MAKE) test-ontology-infra-config
 	@$(MAKE) test-go-dependency-policy
-	@$(MAKE) test-build-registration
 	@$(MAKE) test-compose-release
 	@$(MAKE) test-k3s-pilot
 	@$(MAKE) test-k3s-release
@@ -1383,10 +1385,8 @@ test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致�
 	@python3 scripts/ci/check-release-eligibility_test.py
 	@$(MAKE) test-release-runner
 	@$(MAKE) test-workflow-security
-	@python3 scripts/ci/select-module-gate_test.py
 	@python3 scripts/ci/update-cli-version_test.py
 	@python3 scripts/test/module-gate_test.py
-	@python3 scripts/test/changed-gate_test.py
 	@$(MAKE) test-engine-plugin-registration
 	@$(MAKE) test-engine-startup-isolation
 	@$(MAKE) test-execution-fixtures

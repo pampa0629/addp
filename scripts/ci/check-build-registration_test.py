@@ -14,6 +14,7 @@ import time
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -23,6 +24,53 @@ SPEC = importlib.util.spec_from_file_location("build_registration", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
+
+
+class GateSummaryTest(unittest.TestCase):
+    def test_log_keeps_job_status_and_gate_outcome_distinct(self):
+        action = SCRIPT.parents[2] / ".github/actions/ci-gate-summary/action.yml"
+        command = textwrap.dedent(action.read_text().split("      run: |\n", 1)[1])
+        gate = 'Example "gate" \\ check'
+        sha = "a" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary.md"
+            details = Path(directory) / "details.md"
+            details.write_text("Owned diagnostic\n")
+            for selected, status, outcome, phase in (
+                (True, "success", "success", None),
+                (False, "success", "skipped", None),
+                (True, "failure", "skipped", "preparation"),
+                (True, "failure", "failure", "gate"),
+                (None, "failure", "skipped", "selection"),
+                (True, "cancelled", "cancelled", None),
+                (True, "success", None, None),
+            ):
+                with self.subTest(selected=selected, status=status, outcome=outcome, phase=phase):
+                    fields = {
+                        "WORKFLOW": "Platform CI", "WORKFLOW_SHA": sha, "EVENT": "push",
+                        "RUN_ID": "12345678901", "RUN_ATTEMPT": "2", "JOB": "platform-consistency",
+                        "GATE": gate, "STATUS": status, "GATE_OUTCOME": outcome, "FAILURE_STAGE": phase,
+                    }
+                    env = dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), ADDP_CI_DETAILS_FILE=str(details))
+                    env.update({f"ADDP_CI_{name}_JSON": json.dumps(value) for name, value in fields.items()})
+                    env.update(ADDP_CI_GATE=gate, ADDP_CI_STATUS=status, ADDP_CI_GATE_OUTCOME=outcome or "",
+                               ADDP_CI_FAILURE_STAGE=phase or "",
+                               ADDP_CI_SELECTED="" if selected is None else json.dumps(selected))
+                    summary.write_text("")
+                    result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", command],
+                                            env=env, capture_output=True, text=True, check=True)
+                    line, = result.stdout.splitlines()
+                    self.assertTrue(line.startswith("ADDP_CI_GATE_RESULT "))
+                    self.assertEqual(json.loads(line.partition(" ")[2]), {
+                        "schema_version": 1, "workflow": "Platform CI", "workflow_sha": sha,
+                        "event": "push", "run_id": "12345678901", "run_attempt": "2",
+                        "job": "platform-consistency", "gate": gate, "selected": selected,
+                        "job_status": status, "gate_outcome": outcome, "failure_stage": phase,
+                    })
+                    markdown = summary.read_text()
+                    self.assertIn("Owned diagnostic", markdown)
+                    self.assertEqual("Gate step outcome:" in markdown, outcome is not None)
+                    self.assertEqual("Failure stage:" in markdown, phase is not None)
 
 
 class BuildRegistrationTest(unittest.TestCase):
@@ -163,6 +211,8 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write(
             ".github/workflows/platform-ci.yml",
             "jobs:\n  platform-consistency:\n    steps:\n"
+            "      - uses: actions/checkout@sha\n"
+            "      - id: changed-whitespace\n        run: git show --check\n"
             "      - run: |\n          sudo apt-get install -y --no-install-recommends ripgrep\n"
             "      - run: make test-platform\n"
             "  go-tests:\n    steps:\n"
@@ -379,6 +429,18 @@ class BuildRegistrationTest(unittest.TestCase):
             with self.subTest(workflow=changed):
                 workflow.write_text(changed)
                 self.assertIn("Platform CI must install ripgrep before make test-platform", MODULE.validate_registration(self.repository))
+
+    def test_platform_whitespace_step_runs_before_dependencies(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        original = workflow.read_text()
+        step = "      - id: changed-whitespace\n        run: git show --check\n"
+        for changed in (
+            original.replace(step, "").replace("      - run: make test-platform\n", step + "      - run: make test-platform\n"),
+            original.replace(step, step.replace("        run:", "        if: false\n        run:")),
+        ):
+            with self.subTest(workflow=changed):
+                workflow.write_text(changed)
+                self.assertIn("Platform CI must check whitespace immediately after checkout", MODULE.validate_registration(self.repository))
 
     def test_rejects_shallow_product_checkout(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
