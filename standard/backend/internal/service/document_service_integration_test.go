@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/addp/common/events"
-	"github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/infra/objectstore"
+	"github.com/addp/common/infra/objectstore/bootstrap"
+	"github.com/addp/common/infra/objectstore/s3"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/minio/minio-go/v7"
@@ -25,13 +26,14 @@ import (
 // Physical bucket selected by the gate's remapped deployment.
 const documentTestBucket = "project-a-standard-docs"
 
-func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
-	if os.Getenv("ADDP_STANDARD_MINIO_INTEGRATION") != "1" {
-		t.Skip("enable through make test-standard-postgres")
+func TestDocumentFileLifecycleAgainstPostgresAndS3(t *testing.T) {
+	provider := os.Getenv("ADDP_STANDARD_S3_TEST_PROVIDER")
+	if provider == "" {
+		t.Skip("run the Standard MinIO or RustFS gate")
 	}
-	for _, name := range []string{"STANDARD_POSTGRES_TEST_DSN", "STANDARD_MINIO_TEST_ENDPOINT", "STANDARD_MINIO_TEST_ACCESS_KEY", "STANDARD_MINIO_TEST_SECRET_KEY"} {
+	for _, name := range []string{"STANDARD_POSTGRES_TEST_DSN", "STANDARD_S3_TEST_ENDPOINT", "STANDARD_S3_TEST_ACCESS_KEY", "STANDARD_S3_TEST_SECRET_KEY"} {
 		if os.Getenv(name) == "" {
-			t.Fatalf("%s is required by the owned MinIO gate", name)
+			t.Fatalf("%s is required by the owned object-store gate", name)
 		}
 	}
 	db := openStandardReferenceDeletionPostgres(t)
@@ -44,16 +46,34 @@ func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
 			t.Errorf("close PostgreSQL: %v", err)
 		}
 	})
-	client, err := minio.New(os.Getenv("STANDARD_MINIO_TEST_ENDPOINT"), &minio.Options{
-		Creds: credentials.NewStaticV4(os.Getenv("STANDARD_MINIO_TEST_ACCESS_KEY"), os.Getenv("STANDARD_MINIO_TEST_SECRET_KEY"), ""),
+	config := s3.Config{
+		Endpoint:  os.Getenv("STANDARD_S3_TEST_ENDPOINT"),
+		AccessKey: os.Getenv("STANDARD_S3_TEST_ACCESS_KEY"),
+		SecretKey: os.Getenv("STANDARD_S3_TEST_SECRET_KEY"),
+	}
+	client, err := minio.New(config.Endpoint, &minio.Options{
+		Creds: credentials.NewStaticV4(config.AccessKey, config.SecretKey, ""),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	bindCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	area, err := bootstrap.OpenObjectArea(bindCtx, objectstore.Standard)
-	cancel()
+	defer cancel()
+	var area objectstore.Area
+	switch provider {
+	case "minio":
+		// The MinIO gate provisions the remapped bucket through the deployment initializer.
+		area, err = bootstrap.OpenObjectArea(bindCtx, objectstore.Standard)
+	case "rustfs":
+		// The RustFS gate owns the disposable endpoint and its volumes.
+		if err := client.MakeBucket(bindCtx, documentTestBucket, minio.MakeBucketOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		area, err = s3.Bind(bindCtx, objectstore.Standard, documentTestBucket, config)
+	default:
+		t.Fatalf("unsupported Standard object-store test provider %q", provider)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +115,7 @@ func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
 			svc := NewDocumentService(repository.NewDocumentRepository(f.tx), repository.NewTenantReferenceRepository(f.tx), area, DocumentStorageOptions{MaxFileSize: 1024, Timeout: 10 * time.Second})
 			t.Cleanup(svc.Stop)
 			from := time.Now().UTC().Add(-time.Hour)
-			created, err := svc.CreateDocument(&models.CreateDocumentRequest{ScopeType: models.StandardScopeTenantCommon, Code: "minio_lifecycle", DocType: "reference", Name: "MinIO 文件联测", Description: "替换、删除和撤回后保留文件", EffectiveFrom: &from}, f.tenantID, 1, "初始创建")
+			created, err := svc.CreateDocument(&models.CreateDocumentRequest{ScopeType: models.StandardScopeTenantCommon, Code: "object_lifecycle", DocType: "reference", Name: "文档文件联测", Description: "替换、删除和撤回后保留文件", EffectiveFrom: &from}, f.tenantID, 1, "初始创建")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +130,7 @@ func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertMissingMinioDocumentObject(t, client, first.LatestRevision.FileKey)
+			assertMissingDocumentObject(t, client, first.LatestRevision.FileKey)
 			digest := sha256.Sum256(content)
 			if second.LatestRevision.ContentSHA256 != hex.EncodeToString(digest[:]) || second.LatestRevision.MediaType != "text/markdown" {
 				t.Fatalf("uploaded file metadata mismatch: %#v", second.LatestRevision)
@@ -141,7 +161,7 @@ func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
 				if err := svc.DeleteDocument(id, f.tenantID); err != nil {
 					t.Fatal(err)
 				}
-				assertMissingMinioDocumentObject(t, client, second.LatestRevision.FileKey)
+				assertMissingDocumentObject(t, client, second.LatestRevision.FileKey)
 			}
 			var pending int64
 			if err := f.tx.Model(&models.DocumentFileCleanup{}).Where("starts_with(object_key, ?)", prefix).Count(&pending).Error; err != nil || pending != 0 {
@@ -151,7 +171,7 @@ func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
 	}
 }
 
-func assertMissingMinioDocumentObject(t *testing.T, client *minio.Client, key string) {
+func assertMissingDocumentObject(t *testing.T, client *minio.Client, key string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -263,7 +283,7 @@ func verifyCommittedDocumentFile(t *testing.T, db *gorm.DB, client *minio.Client
 	}
 	checkCommitted(firstKey, first, initial.Version)
 	download(first)
-	assertMissingMinioDocumentObject(t, client, rejectedKey)
+	assertMissingDocumentObject(t, client, rejectedKey)
 	assertNoCleanup := func() {
 		t.Helper()
 		var pending int64
@@ -285,7 +305,7 @@ func verifyCommittedDocumentFile(t *testing.T, db *gorm.DB, client *minio.Client
 	}
 	checkCommitted(secondKey, second, initial.Version+1)
 	download(second)
-	assertMissingMinioDocumentObject(t, client, firstKey)
+	assertMissingDocumentObject(t, client, firstKey)
 	assertNoCleanup()
 
 	cleanup := NewCleanupService(db, nil, area)
@@ -293,5 +313,5 @@ func verifyCommittedDocumentFile(t *testing.T, db *gorm.DB, client *minio.Client
 	if err != nil || stats == nil || len(stats.Errors) > 0 || stats.DeletedPhysicalArtifacts != 1 {
 		t.Fatalf("tenant cleanup=%+v err=%v", stats, err)
 	}
-	assertMissingMinioDocumentObject(t, client, secondKey)
+	assertMissingDocumentObject(t, client, secondKey)
 }

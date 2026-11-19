@@ -1335,7 +1335,7 @@ jobs:
   common-rustfs:
     name: RustFS provider, persistence and PostgreSQL import (1.0.5)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.standard == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:

@@ -3,19 +3,22 @@
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # ADDP_T2_OWNED_SERVICES=rustfs
 # ADDP_T2_COMPOSE_FILE=business/docker-compose.yml
-# ADDP_T2_INPUT_FILES=business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/execution/ common/client/ transfer/backend/internal/planner/ transfer/backend/internal/executor/ transfer/backend/internal/service/ transfer/backend/internal/repository/ common/infra/objectstore/ common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
+# ADDP_T2_INPUT_FILES=business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/execution/ common/client/ transfer/backend/internal/planner/ transfer/backend/internal/executor/ transfer/backend/internal/service/ transfer/backend/internal/repository/ common/infra/objectstore/ standard/backend/internal/service/document_service_integration_test.go common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
 # disposable RustFS: reuse Business image/config, own every resource and remove it.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 SOURCE_ROOT=$ROOT_DIR
-platform_only=false
-if [ "$#" -eq 2 ] && [ "$1" = --test ] && [ "$2" = platform-object-area ]; then
-    platform_only=true
+test_group=all
+if [ "$#" -eq 2 ] && [ "$1" = --test ]; then
+    case "$2" in
+        platform-object-area|platform-standard) test_group=$2 ;;
+        *) echo "unknown RustFS test group" >&2; exit 2 ;;
+    esac
     shift 2
 fi
 if [ "$#" -ne 0 ]; then
     if [ "$#" -ne 2 ] || [ "$1" != --source-root ]; then
-        echo "usage: $0 [--source-root checkout|--test platform-object-area]" >&2
+        echo "usage: $0 [--source-root checkout|--test platform-object-area|platform-standard]" >&2
         exit 2
     fi
     SOURCE_ROOT=$(cd "$2" && pwd -P)
@@ -26,7 +29,7 @@ if [ "$#" -ne 0 ]; then
         exit 2
     fi
 fi
-if [ "$platform_only" = false ]; then
+if [ "$test_group" != platform-object-area ]; then
     : "${ADDP_TEST_POSTGRES_PORT:?verified PostgreSQL test mapping required}"
     : "${ADDP_TEST_POSTGRES_PASSWORD:?PostgreSQL test password required}"
     source "$ROOT_DIR/scripts/infra/ports.sh"
@@ -75,9 +78,35 @@ export ADDP_RUSTFS_TEST_ACCESS_KEY="$RUSTFS_ACCESS_KEY" ADDP_RUSTFS_TEST_SECRET_
 export ADDP_RUSTFS_TEST_ENDPOINT="$(compose port rustfs 9000)"
 (cd "$SOURCE_ROOT/common" && GOWORK=off go test ./infra/objectstore/s3 -run '^TestPlatformAreaAgainstRustFS$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-s3.log"
 grep -q '^--- PASS: TestPlatformAreaAgainstRustFS ' "$WORK_DIR/platform-s3.log"
-if [ "$platform_only" = true ]; then
+if [ "$test_group" = platform-object-area ]; then
     exit 0
 fi
+
+export STANDARD_POSTGRES_TEST_DSN
+STANDARD_POSTGRES_TEST_DSN=$(python3 - <<'PYTHON'
+import os
+from urllib.parse import quote
+
+env = os.environ
+user = quote(env.get("ADDP_TEST_POSTGRES_USER", "addp"), safe="")
+password = quote(env["ADDP_TEST_POSTGRES_PASSWORD"], safe="")
+host = env.get("ADDP_TEST_POSTGRES_HOST", "localhost")
+port = env["ADDP_TEST_POSTGRES_PORT"]
+database = env.get("ADDP_TEST_POSTGRES_DATABASE", "addp_test")
+print(f"postgres://{user}:{password}@{host}:{port}/{database}?sslmode=disable")
+PYTHON
+)
+(cd "$SOURCE_ROOT/standard/backend" && ADDP_STANDARD_S3_TEST_PROVIDER=rustfs \
+    STANDARD_S3_TEST_ENDPOINT="$ADDP_RUSTFS_TEST_ENDPOINT" \
+    STANDARD_S3_TEST_ACCESS_KEY="$ADDP_RUSTFS_TEST_ACCESS_KEY" \
+    STANDARD_S3_TEST_SECRET_KEY="$ADDP_RUSTFS_TEST_SECRET_KEY" \
+    GOWORK=off go test ./internal/service -run '^TestDocumentFileLifecycleAgainstPostgresAndS3$' -count=1 -timeout=90s -v) \
+    | tee "$WORK_DIR/standard.log"
+grep -q '^--- PASS: TestDocumentFileLifecycleAgainstPostgresAndS3 ' "$WORK_DIR/standard.log"
+if [ "$test_group" = platform-standard ]; then
+    exit 0
+fi
+
 run_contract() {
     (cd "$SOURCE_ROOT/common" && GOWORK=off go test ./engine/plugins/rustfs -run '^TestIntegrationRustFS' -count=1 -timeout=90s -v) | tee "$WORK_DIR/provider.log"
     ! grep -q -- '--- SKIP:' "$WORK_DIR/provider.log"
