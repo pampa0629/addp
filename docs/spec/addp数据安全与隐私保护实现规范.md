@@ -121,15 +121,20 @@ activating -> enrolling -> active -> releasing -> released
 | --- | --- | --- |
 | `activating` | 产生面向必要 Owner 的最小 `enrolling` 门禁变化，等待 Owner 同步确认 | Owner 同步确认前仍是旧路径；Security UI/API 必须明确标记“保护未生效” |
 | `enrolling` | 必要 Owner 已确认门禁，可启动发现和策略编译 | 相关动作使用 `deny` 的第一阶段默认门禁，不返回明文 |
-| `active` | 有效 Policy 已编译，且当前投影被必要 Owner 持久安装并确认 | 具体请求使用本地有效投影执行；当前引擎或数据形态无法证明安全执行时保守拒绝 |
-| `releasing` | 发布明确 release 变化并等待确认 | 继续使用最后有效保护，不因找不到新策略自动解除 |
+| `active` | 当前保护投影已编译，且全部必要 Owner 已持久安装并确认各自修订 | 具体请求使用本地有效投影执行；当前引擎或数据形态无法证明安全执行时保守拒绝 |
+| `releasing` | 发布明确 release 变化，等待全部必要 Owner 确认 | 各 Owner 原子安装 release 前继续使用最后有效保护，不因找不到新策略自动解除 |
 | `released` | 保留历史和审计 | 只在已原子安装 release 后删除本地纳管索引 |
 
-创建 Enrollment 返回 HTTP `201` 和 `state=activating`，不得返回假的“已生效”。Security 必须在必要 Owner 对门禁版本完成确认后才进入 `enrolling`。第一阶段结构化 DataItem 必要 Owner 固定为 Manager、Transfer、Develop 和 Service；尚未能执行字段保护的 Owner 必须安装资源级 `deny` 门禁，不得被从激活屏障中忽略。
+创建 Enrollment 返回 HTTP `201` 和 `state=activating`。Security 等全部必要 Owner 确认初始门禁后进入 `enrolling`；全部必要 Owner 的当前投影为 `active` 且确认覆盖各自发布序号后进入 `active`；退出时全部必要 Owner 的确认覆盖各自 release 序号后进入 `released`。[变化流与回执规则](#九投影变化流与-owner-确认)
 
-Security 后端必须以一份固定 Owner 契约同时作为必要 Owner 集合和可豁免主动作绑定的唯一事实源。Enrollment 门禁创建、全量投影编译、定义影响传播、变化流读取与确认校验、历史投影升级均必须从该契约派生；不得在各服务中重复维护 Owner 切片或另建 action 分支。新增数据出口 Owner 时，必须在同一变更中补齐契约、编译器、Owner 执行器和一致性门禁。
+- **字段级策略出口。** 可编辑字段 Policy 适用 `manager/preview`、`develop/query`、`service/service_execute`、`transfer/export` 四个精确动作。原值申请范围仍仅为 `manager/preview` 和 `develop/query`，沿原审批契约授权。[字段策略](#71-protectionpolicy-首期语义) · [原值审批](#72-protectionaccessrequest-与-protectionexemption)
+- **激活与退出屏障。** 必要 Owner 为 Manager、Develop、Service、Transfer、Graph。Graph 通过独立 `graph_read` 投影执行资源级保护拒绝，参与安装与解除确认。Graph 的业务读取仍按 System 源权限和本地投影门禁裁决。[Graph 保护边界](#查询保护的引擎范围排除)
 
-已退出记录上的“重新纳入保护”只是创建新 ProtectionEnrollment 的便捷入口，不是状态回退。请求必须携带已退出 Enrollment 的正整数 `version`；Security 在同一事务锁定并验证来源记录仍为 `released`，使用其冻结的目标引用和最小目标快照创建新的 `activating` Enrollment 与四个 Owner 的初始门禁，并递增来源 Enrollment 的并发版本。旧 Enrollment 的状态、退出原因、退出依据和退出时间保持只读。成功响应固定返回 `source_enrollment_version` 和完整的新 `enrollment`；前端立即替换来源版本，并切换到新生命周期。若同一目标已有未退出 Enrollment，返回 `409 + protection_enrollment_already_active`，不得产生第二条活动生命周期。
+创建及重新纳管要求 Tenant Context 和 `security.enrollment.create`，退出要求 `security.enrollment.update`。运行时确认要求固定 Owner 的 Tenant Service Access Token 和 `security.protection_projection.update`，只推进本 Tenant、当前消费 Owner 的单调回执。[Permission 与认证](#十二permission认证与-swagger)
+
+Security 后端必须以一份固定 Owner 契约同时作为必要 Owner 集合和可编辑字段策略动作绑定的唯一事实源。Enrollment 门禁创建、全量投影编译、定义影响传播、变化流读取与确认校验、历史投影升级均必须从该契约派生；不得在各服务中重复维护 Owner 切片或另建 action 分支。新增数据出口 Owner 时，必须在同一变更中补齐契约、编译器、Owner 执行器和一致性门禁。
+
+已退出记录上的“重新纳入保护”只是创建新 ProtectionEnrollment 的便捷入口，不是状态回退。请求必须携带已退出 Enrollment 的正整数 `version`；Security 在同一事务锁定并验证来源记录仍为 `released`，使用其冻结的目标引用和最小目标快照创建新的 `activating` Enrollment 和全部必要 Owner 的初始门禁，并递增来源 Enrollment 的并发版本。旧 Enrollment 的状态、退出原因、退出依据和退出时间保持只读。成功响应固定返回 `source_enrollment_version` 和完整的新 `enrollment`；前端立即替换来源版本，并切换到新生命周期。若同一目标已有未退出 Enrollment，返回 `409 + protection_enrollment_already_active`，不得产生第二条活动生命周期。
 
 “受保护资源”的重新纳入必须使用正式确认对话框，完整展示冻结的资源和原退出记录。来源版本冲突时返回 `409 + resource_version_conflict`，前端保留重新纳入意图、禁用旧版本再次提交，并只提供“加载最新退出记录”的显式操作；用户主动加载后，只有来源状态仍为 `released` 才能再次确认，不得自动重试。收到 `protection_enrollment_already_active` 时，前端关闭确认对话框并切换到当前保护生命周期，不得复用来源记录再次创建。
 
@@ -138,6 +143,8 @@ Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projectio
 退出纳管只使用同一个 Release 子资源路径。Release 请求除 Enrollment `version` 和必填原因外，必须携带稳定依据 `basis=manual|no_supported_findings`；Enrollment 必须冻结 `release_basis`、`release_requested_by`、`release_requested_at` 和当次退出依据的 `release_source_snapshot_hash`。`no_supported_findings` 只允许在最近一次发现已成功、当前快照 Finding 数为 0，且同一 Enrollment 不存在 pending/running 发现 execution 时提交；服务端在同一退出事务内校验，不信任前端判断。
 
 退出纳管发生 Enrollment 版本冲突时必须返回 `409 + resource_version_conflict`。“受保护资源”的退出对话框必须保持打开并保留当次退出依据和原因，禁用旧版本再次提交；只有用户显式选择“放弃当前输入并加载最新受保护资源”后才调用 `GET /protection-enrollments/{id}` 建立最新基线。若最新状态已经是 `releasing|released`，则关闭对话框并告知无需重复退出；仍可退出时清空旧原因并要求重新确认，不得自动重试、自动合并或沿用旧原因提交。`no_supported_findings` 的事务内证据校验失败必须返回 `409 + no_supported_findings_release_unavailable`；前端关闭该零命中退出动作、刷新最新资源状态并明确提示重新核实，不得降级为 `manual`、复用旧原因或绕过服务端证据校验。
+
+回执验证覆盖缺少任一必要 Owner 时阻止推进、旧序号不得确认当前投影，以及解除须覆盖全部 release 序号。四个字段级出口的输出证据按各自运行范围认定。Graph 的真实读取、保护拒绝与退出确认按独立图引擎场景取证。[测试与验收](#十六测试与验收) · [Graph 保护场景](testing/scenarios/数据保护.md#graph-protection)
 
 ## 六、敏感发现执行
 

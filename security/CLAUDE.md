@@ -12,9 +12,9 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 - 不代理数据预览、查询、导出或服务流量；Owner 使用 `common/dataprotection` 在自身服务端执行保护投影。
 - `common/secretcipher` 只负责静态敏感配置值加解密，不是 Security 业务模块的一部分。
 - 未纳管资源不进入检测、投影或保护路径，不产生额外远程调用和安全审计负担。
-- Manager、Develop、Service、Transfer 的必要 Owner 集合及各自字段级主动作只能在 `internal/service` 的 Owner 契约中定义一次；Enrollment 创建、全量重编译、变化流校验和历史投影升级均从该契约派生，不得重复写 Owner 切片或 action 分支。当前可申请原值访问的出口另行严格限定为 `manager/preview`、`develop/query`，由申请显式选择，不能从 Owner 主动作集合自动扩张。
+- [Owner 契约](backend/internal/service/protection_owner_contract.go)统一定义四个字段级策略出口 `manager/preview`、`develop/query`、`service/service_execute`、`transfer/export`，以及包含 Graph 的五个必要 Owner。创建与重新纳管、全量重编译、变化流校验和历史投影升级均从该契约派生。Graph 消费 `graph_read` 保守拒绝投影，也须确认当前门禁和 release。运行时以固定 Tenant Service Access Token 绑定当前 Tenant 与 Owner。原值申请只可显式选择 `manager/preview`、`develop/query`。[纳管状态与回执边界](../docs/spec/addp数据安全与隐私保护实现规范.md#五纳管状态机与激活屏障)
 
-保护投影自身到期与用户临时原值授权到期分别验证：投影到期必须拒绝相关输出，授权到期仅回落默认保护。Common 查询／原生表的实际输出保护器及 Manager 普通预览响应必须重新校验本次读取绑定投影的有效期，空结果也不能输出过期字段结构。四个 Owner 的指定时点回归由 Go T1 和 `make test-common-postgres` 覆盖，Transfer 真实目标零新增写入由既有 `make test-transfer-postgres` 覆盖；历史协议夹具保留 365 天有效期，沿正式变化流安装，不改变产品有效期或本地系统时钟。同一回归还覆盖更高修订替换到期投影：旧读取继续拒绝，其他存储实例刷新持久 cursor 后的新读取执行新保护决策，重新打开存储后保持修订、纳管状态与保护输出；不增加自动续期路径。这些证据属于 T1/T2，不代替长周期到期 T4。
+保护投影自身到期与用户临时原值授权到期分别验证：投影到期必须拒绝相关输出，授权到期仅回落默认保护。Common 查询／原生表的实际输出保护器及 Manager 普通预览响应必须重新校验本次读取绑定投影的有效期，空结果也不能输出过期字段结构。四个字段级数据出口的指定时点回归由 Go T1 和 `make test-common-postgres` 覆盖，Transfer 真实目标零新增写入由既有 `make test-transfer-postgres` 覆盖；历史协议夹具保留 365 天有效期，沿正式变化流安装，不改变产品有效期或本地系统时钟。同一回归还覆盖更高修订替换到期投影：旧读取继续拒绝，其他存储实例刷新持久 cursor 后的新读取执行新保护决策，重新打开存储后保持修订、纳管状态与保护输出；不增加自动续期路径。这些证据属于 T1/T2，不代替长周期到期 T4。
 
 ## 运行角色
 
