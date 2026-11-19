@@ -261,9 +261,16 @@ test('confirms orchestration execution and locks duplicate submissions', async (
   await expect(executeButton).toBeEnabled()
 })
 
-test('persists node position and viewport across reload', async ({ page }) => {
+test('shares saved node positions and restores only the current account viewport', async ({ page }) => {
   const orchestration = createLayoutFixture()
   const backend = await installMockBackend(page, orchestration)
+  let userID = '31'
+  await page.route('**/api/v1/system/auth/context', route => fulfillJSON(route, {
+    principal: { type: 'user', id: userID },
+    context: { type: 'tenant', tenant_id: '1' },
+    authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' },
+      permissions: ['orchestrator.workflow.read', 'orchestrator.workflow.update'] }] }
+  }))
   const zoomWarnings = []
   page.on('console', message => {
     if (message.type() === 'warning' && message.text().includes('zoom failed')) {
@@ -297,11 +304,13 @@ test('persists node position and viewport across reload', async ({ page }) => {
 
   const persistedPayload = backend.getPersistedPayload()
   expect(persistedPayload).not.toBeNull()
-  expect(persistedPayload.editor_layout.viewport.zoom).toBeCloseTo(1.2, 8)
+  expect(persistedPayload.editor_layout).not.toHaveProperty('viewport')
   expect(persistedPayload.editor_layout.nodes[NODE_ID].x).not.toBe(220)
   expect(persistedPayload.editor_layout.nodes[NODE_ID].y).not.toBe(160)
-  expect(Math.abs(persistedPayload.editor_layout.viewport.translate_x)).toBeGreaterThan(0)
-  expect(Math.abs(persistedPayload.editor_layout.viewport.translate_y)).toBeGreaterThan(0)
+  const savedViewport = await page.evaluate(id => JSON.parse(localStorage.getItem(`addp:orchestrator:workflow-viewport:v1:1:31:${id}`)), ORCHESTRATION_ID)
+  expect(savedViewport.zoom).toBeCloseTo(1.2, 8)
+  expect(Math.abs(savedViewport.translate_x)).toBeGreaterThan(0)
+  expect(Math.abs(savedViewport.translate_y)).toBeGreaterThan(0)
 
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
   await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
@@ -313,13 +322,29 @@ test('persists node position and viewport across reload', async ({ page }) => {
   const restoredLayout = persistedPayload.editor_layout
   const restoredPosition = restoredLayout.nodes[NODE_ID]
   await page.mouse.click(
-    restoredBox.x + restoredPosition.x * restoredLayout.viewport.zoom + restoredLayout.viewport.translate_x,
-    restoredBox.y + restoredPosition.y * restoredLayout.viewport.zoom + restoredLayout.viewport.translate_y
+    restoredBox.x + restoredPosition.x * savedViewport.zoom + savedViewport.translate_x,
+    restoredBox.y + restoredPosition.y * savedViewport.zoom + savedViewport.translate_y
   )
   await expect(page.getByRole('button', { name: '复制节点', exact: true })).toBeEnabled()
 
   await page.getByRole('button', { name: '适应窗口', exact: true }).click()
   await expect(page.getByRole('button', { name: '放大', exact: true })).toBeDisabled()
+
+  userID = '33'
+  await page.reload()
+  await expect(page.getByText('100%', { exact: true })).toBeVisible()
+  const otherBox = await requiredBoundingBox(canvas)
+  await page.mouse.click(otherBox.x + restoredPosition.x, otherBox.y + restoredPosition.y)
+  await expect(page.getByRole('button', { name: '复制节点', exact: true })).toBeEnabled()
+  await zoomIn.click()
+  await expect(page.getByText('110%', { exact: true })).toBeVisible()
+
+  userID = '31'
+  await page.reload()
+  await expect(page.getByText('150%', { exact: true })).toBeVisible()
+  userID = '33'
+  await page.reload()
+  await expect(page.getByText('110%', { exact: true })).toBeVisible()
   expect(zoomWarnings).toEqual([])
 })
 

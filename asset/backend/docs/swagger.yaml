@@ -1274,6 +1274,8 @@ paths:
       - system.cleanup.read
   /consumer/applications:
     get:
+      description: 仅当前租户内的 User 可查询本人提交的申请 | Only a User in the current tenant can
+        list their own applications
       produces:
       - application/json
       responses:
@@ -1281,6 +1283,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            additionalProperties:
+              type: string
             type: object
       security:
       - BearerAuth: []

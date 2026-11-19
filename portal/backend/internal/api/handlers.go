@@ -268,9 +268,11 @@ func handleApply(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 }
 
 // @Summary 获取我的申请列表 | Get my applications
+// @Description 获取当前租户内当前 User 的申请 | List the current User's applications in the current tenant
 // @Tags Portal
 // @Produce json
 // @Success 200 {array} map[string]interface{}
+// @Failure 403 {object} map[string]string "禁止访问 | Forbidden"
 // @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
 // @Router /my/applications [get]
 // @Security BearerAuth

@@ -1089,7 +1089,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "editor_layout": {
-                    "$ref": "#/definitions/models.JSONMap"
+                    "description": "共享节点坐标 | Shared node positions",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
                 },
                 "enabled": {
                     "type": "boolean"

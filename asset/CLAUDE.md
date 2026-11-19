@@ -64,6 +64,8 @@ bash scripts/swagger/gen-swagger.sh asset
 bash scripts/swagger/check-route-coverage.sh asset
 ```
 
+Portal「我的申请」通过 Asset 消费入口读取当前租户内当前已认证 User 的申请。本人入口要求有效 User 身份并始终限定申请人。Asset 管理端按租户处理审批，可显式按申请人筛选。
+
 ## 相关文档
 
 - [企业资源目录实现规范](../docs/spec/addp企业资源目录实现规范.md)

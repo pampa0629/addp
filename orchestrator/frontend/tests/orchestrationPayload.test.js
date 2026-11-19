@@ -23,8 +23,7 @@ test('orchestration writes include only user-editable fields', () => {
     description: 'sync data',
     steps: [{ id: 'scan' }],
     editor_layout: {
-      nodes: { scan: { x: 10, y: 20 } },
-      viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
+      nodes: { scan: { x: 10, y: 20 } }
     },
     enabled: true,
     schedule: '0 2 * * *'

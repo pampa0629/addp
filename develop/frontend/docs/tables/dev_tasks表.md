@@ -25,7 +25,7 @@
 | `dev_type` | `string` | 长度 50，NOT NULL，联合索引 | Develop 内部类型，见[类型映射](#三devtype-与-taskprovider-task_type-边界) |
 | `content` | `DevTaskContent` | JSONB，NOT NULL | 各开发类型的定义，见 2.3 |
 | `execution_config` | `DevTaskContent` | JSONB | 运行 Engine 等配置，见 2.4 |
-| `editor_layout` | `JSONMap` | JSONB，NOT NULL，默认 `{}` | DAG 坐标和视口，不参与执行 |
+| `editor_layout` | `JSONMap` | JSONB，NOT NULL，默认 `{}` | DAG 共享节点坐标，不参与执行 |
 | `timeout` | `int` | 默认 300 | 定义中的秒数；查询有效预算以[执行策略快照](../../../../docs/spec/configuration/执行与模块策略.md#develop-执行快照与部署边界)为准 |
 | `description` | `string` | TEXT | 描述信息 |
 | `tags` | `pq.StringArray` | TEXT[] | 标签数组 |
@@ -105,16 +105,11 @@
 {
   "nodes": {
     "load_1": { "x": 120, "y": 240 }
-  },
-  "viewport": {
-    "zoom": 1,
-    "translate_x": 0,
-    "translate_y": 0
   }
 }
 ```
 
-`editor_layout` 是纯展示状态。TaskProvider 执行器只读取 `content.workflow_definition` 和 `execution_config`，不得读取 `editor_layout`。
+`editor_layout` 只保存共享节点坐标。个人视口由浏览器按租户、账号和任务保存。旧共享视口一次性移除，保留原节点坐标。TaskProvider 执行器只读取 `content.workflow_definition` 和 `execution_config`，不得读取 `editor_layout`。
 
 ### 2.4 推荐的 ExecutionConfig 结构
 

@@ -68,23 +68,15 @@ type WorkflowEngineSpecificConfigSwagger struct {
 	SparkClusterID uint `json:"spark_cluster_id,omitempty" example:"34"`
 }
 
-// DAGEditorLayoutSwagger DAG 编辑器展示状态，不参与运行时执行。
+// DAGEditorLayoutSwagger DAG 编辑器共享节点坐标，不参与运行时执行。
 type DAGEditorLayoutSwagger struct {
-	Nodes    map[string]DAGEditorNodePositionSwagger `json:"nodes"`
-	Viewport DAGEditorViewportSwagger                `json:"viewport"`
+	Nodes map[string]DAGEditorNodePositionSwagger `json:"nodes,omitempty"`
 }
 
 // DAGEditorNodePositionSwagger DAG 节点坐标。
 type DAGEditorNodePositionSwagger struct {
 	X float64 `json:"x" example:"120"`
 	Y float64 `json:"y" example:"240"`
-}
-
-// DAGEditorViewportSwagger DAG 画布视口。
-type DAGEditorViewportSwagger struct {
-	Zoom       float64 `json:"zoom" example:"1"`
-	TranslateX float64 `json:"translate_x" example:"0"`
-	TranslateY float64 `json:"translate_y" example:"0"`
 }
 
 // CreateDevTaskSwaggerRequest 创建开发任务 Swagger 请求体。

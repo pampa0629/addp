@@ -572,6 +572,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "获取当前租户内当前 User 的申请 | List the current User's applications in the current tenant",
                 "produces": [
                     "application/json"
                 ],
@@ -587,6 +588,15 @@ const docTemplate = `{
                             "items": {
                                 "type": "object",
                                 "additionalProperties": true
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     },

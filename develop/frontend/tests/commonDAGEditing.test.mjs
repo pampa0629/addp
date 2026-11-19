@@ -156,8 +156,7 @@ const layout = normalizeDAGEditorLayout({
   }
 })
 assert.deepEqual(layout, {
-  nodes: { valid: { x: 12, y: 24 } },
-  viewport: { zoom: 1.5, translate_x: -20, translate_y: 30 }
+  nodes: { valid: { x: 12, y: 24 } }
 })
 assert.deepEqual(
   applyDAGNodePositions([{ id: 'valid' }, { id: 'other', x: 1, y: 2 }], layout),
@@ -184,9 +183,11 @@ const viewportGraph = {
     viewportPaintCount += 1
   }
 }
-restoreDAGViewport(viewportGraph, layout)
+restoreDAGViewport(viewportGraph, { zoom: 2, translate_x: -20, translate_y: 30 })
 assert.deepEqual(viewportMatrix, [1.5, 0, 0, 0, 1.5, 0, -20, 30, 1])
 assert.notEqual(viewportMatrix, initialViewportMatrix)
 assert.equal(viewportPaintCount, 1)
+restoreDAGViewport(viewportGraph)
+assert.deepEqual(viewportMatrix, [1, 0, 0, 0, 1, 0, 0, 0, 1])
 
 console.log('common DAG editing tests passed')

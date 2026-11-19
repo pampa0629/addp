@@ -63,7 +63,7 @@ type OrchestrationDefinitionRequest struct {
 	Name         string               `json:"name"`
 	Description  string               `json:"description"`
 	Steps        Steps                `json:"steps"`
-	EditorLayout commonModels.JSONMap `json:"editor_layout"`
+	EditorLayout commonModels.JSONMap `json:"editor_layout"` // 共享节点坐标 | Shared node positions
 	Enabled      bool                 `json:"enabled"`
 	Schedule     string               `json:"schedule"`
 }
@@ -72,10 +72,9 @@ func (r OrchestrationDefinitionRequest) ApplyTo(orch *Orchestration) {
 	orch.Name = r.Name
 	orch.Description = r.Description
 	orch.Steps = r.Steps
-	if r.EditorLayout == nil {
-		orch.EditorLayout = commonModels.JSONMap{}
-	} else {
-		orch.EditorLayout = r.EditorLayout
+	orch.EditorLayout = commonModels.JSONMap{}
+	if nodes, ok := r.EditorLayout["nodes"]; ok {
+		orch.EditorLayout["nodes"] = nodes
 	}
 	orch.Enabled = r.Enabled
 	orch.Schedule = r.Schedule

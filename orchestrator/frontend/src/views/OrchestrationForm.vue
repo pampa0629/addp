@@ -99,6 +99,7 @@
           ref="dagEditor"
           :initial-steps="form.steps"
           :initial-layout="form.editor_layout"
+          :viewport-storage-key="viewportStorageKey"
           :execution-states="executionMatchesDefinition ? executionStates : {}"
           @update:steps="handleStepsUpdate"
           @update:layout="handleLayoutUpdate"
@@ -210,7 +211,7 @@ import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
 import { buildOrchestrationPayload } from '../utils/orchestrationPayload'
-import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, useResizable, useConsolePageDescriptor, OrchestrationExecuteButton } from '@common-ui'
+import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, tenantUserBrowserPreferenceKey, useResizable, useConsolePageDescriptor, OrchestrationExecuteButton } from '@common-ui'
 import { navigateOrchestratorRoute, orchestrationListLocation } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -225,6 +226,8 @@ const scheduleEnabledSwitchRef = ref(null)
 const jsonCloseButtonRef = ref(null)
 
 const isEdit = ref(false)
+const viewportStorageKey = computed(() => isEdit.value && route.params.id
+  ? tenantUserBrowserPreferenceKey(authStore.authContext, 'orchestrator:workflow-viewport', route.params.id) : '')
 const saving = ref(false)
 const executing = ref(false)
 const executionSteps = ref([])

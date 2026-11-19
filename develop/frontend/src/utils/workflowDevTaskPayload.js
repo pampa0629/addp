@@ -106,7 +106,7 @@ export const buildWorkflowDevTaskPayload = ({
     name,
     display_name: displayName,
     description,
-    editor_layout: editorLayout,
+    editor_layout: editorLayout?.nodes ? { nodes: editorLayout.nodes } : {},
     execution_config: buildWorkflowExecutionConfig({
       workflowEngineId,
       sparkRuntimeId,

@@ -1,15 +1,37 @@
+import { watch } from 'vue'
+import { readBrowserPreference, writeBrowserPreference } from '../../../basic/src/utils/tenantUserBrowserPreference.js'
 import {
   applyDAGNodePositions,
   captureDAGEditorLayout,
-  normalizeDAGEditorLayout,
+  captureDAGViewport,
   restoreDAGViewport
 } from '../utils/editing.js'
 
-export function useDAGLayout(graph) {
+export function useDAGLayout(graph, viewportKey, syncZoom) {
+  let draftViewport = null
+  function restoreViewport(fit) {
+    if (!graph.value) return
+    const key = viewportKey()
+    const viewport = key ? readBrowserPreference(key) : draftViewport
+    if (!viewport && fit) fit()
+    else restoreDAGViewport(graph.value, viewport)
+    syncZoom()
+  }
+  watch(viewportKey, () => {
+    draftViewport = null
+    restoreViewport()
+  })
+
   return {
     captureLayout: () => captureDAGEditorLayout(graph.value),
-    normalizeLayout: normalizeDAGEditorLayout,
     applyNodePositions: applyDAGNodePositions,
-    restoreViewport: layout => restoreDAGViewport(graph.value, layout)
+    restoreViewport,
+    saveViewport() {
+      if (!graph.value?.getNodes().length) return
+      const viewport = captureDAGViewport(graph.value)
+      const key = viewportKey()
+      if (key) writeBrowserPreference(key, viewport)
+      else draftViewport = viewport
+    }
   }
 }

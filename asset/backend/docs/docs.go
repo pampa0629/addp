@@ -1322,6 +1322,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅当前租户内的 User 可查询本人提交的申请 | Only a User in the current tenant can list their own applications",
                 "produces": [
                     "application/json"
                 ],
@@ -1335,6 +1336,15 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 },

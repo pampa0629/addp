@@ -870,6 +870,50 @@ test('defines a query parameter, inserts its reference, and submits an execution
   await expect(page.getByText('Ada', { exact: true })).toBeVisible()
 })
 
+test('query parameter panel width is restored for only the current tenant user', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table' })
+  let user = '31'
+  let tenant = '7'
+  await page.route('**/api/v1/system/auth/context', route => {
+    const auth = structuredClone(developAuthContext)
+    auth.principal = { type: 'user', id: user }
+    auth.context.tenant_id = tenant
+    auth.authorization.role_assignments[0].scope.tenant_id = tenant
+    return fulfillJSON(route, auth)
+  })
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('seed-width')) return
+    sessionStorage.setItem('seed-width', 'yes')
+    localStorage.setItem('develop.queryParameterPanelWidth', '599')
+  })
+
+  async function openPanel() {
+    await page.goto('/sql')
+    await page.locator('.editor-panel').getByRole('button', { name: /查询参数/ }).click()
+    return page.locator('.query-parameter-resize-handle')
+  }
+
+  let handle = await openPanel()
+  await expect(handle).toHaveAttribute('aria-valuenow', '440')
+  expect(await page.evaluate(() => localStorage.getItem('develop.queryParameterPanelWidth'))).toBeNull()
+  await handle.press('End')
+  await expect(handle).toHaveAttribute('aria-valuenow', '720')
+
+  user = '33'
+  handle = await openPanel()
+  await expect(handle).toHaveAttribute('aria-valuenow', '440')
+  await handle.press('Home')
+  await expect(handle).toHaveAttribute('aria-valuenow', '360')
+
+  user = '31'
+  tenant = '8'
+  await expect(await openPanel()).toHaveAttribute('aria-valuenow', '440')
+  tenant = '7'
+  await expect(await openPanel()).toHaveAttribute('aria-valuenow', '720')
+  user = '33'
+  await expect(await openPanel()).toHaveAttribute('aria-valuenow', '360')
+})
+
 test('extracted parameters immediately show and hide empty text and zero integer defaults', async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table' })
   await page.goto('/sql')

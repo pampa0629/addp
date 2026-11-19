@@ -79,6 +79,10 @@ func TestIntegrationApplySQLMigrationsDropsLegacyStepOrchestrations(t *testing.T
 			"timeout": 300
 		}
 	]`)
+	if err := tx.Exec(`UPDATE orchestrator.orchestrations SET editor_layout =
+		'{"nodes":{"meta-scan-1":{"x":120,"y":240}},"viewport":{"zoom":1.3}}'::jsonb WHERE name = ?`, currentName).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	if err := ApplySQLMigrations(tx); err != nil {
 		t.Fatalf("apply migrations: %v", err)
@@ -91,6 +95,12 @@ func TestIntegrationApplySQLMigrationsDropsLegacyStepOrchestrations(t *testing.T
 	}
 	assertOrchestratorMigrationRowCount(t, tx, currentName, 1)
 	assertOrchestratorMigrationRecorded(t, tx, "003_drop_legacy_step_orchestrations.sql")
+	assertOrchestratorMigrationRecorded(t, tx, "006_remove_shared_editor_viewport.sql")
+	var positionsPreserved bool
+	if err := tx.Raw(`SELECT editor_layout = '{"nodes":{"meta-scan-1":{"x":120,"y":240}}}'::jsonb
+		FROM orchestrator.orchestrations WHERE name = ?`, currentName).Scan(&positionsPreserved).Error; err != nil || !positionsPreserved {
+		t.Fatalf("viewport migration must preserve node coordinates: result=%t err=%v", positionsPreserved, err)
+	}
 }
 
 func openOrchestratorMigrationIntegrationDB(t *testing.T) *gorm.DB {

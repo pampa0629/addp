@@ -164,9 +164,31 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 		t.Fatalf("consumer ratings do not use the IAM display name: status=%d body=%s", ratings.Code, ratings.Body.String())
 	}
 
-	applications := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/applications?applicant_id=999", "")
-	if applications.Code != http.StatusOK || !strings.Contains(applications.Body.String(), `"applicant_id":9`) {
+	for _, other := range []models.Application{
+		{TenantID: 7, ApplicantID: 10, AssetID: published.ID, Status: "pending", Reason: "another-user"},
+		{TenantID: 8, ApplicantID: 9, AssetID: published.ID, Status: "pending", Reason: "another-tenant"},
+	} {
+		if err := db.Create(&other).Error; err != nil {
+			t.Fatalf("seed application boundary: %v", err)
+		}
+	}
+	applications := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/applications?applicant_id=10&tenant_id=8", "")
+	if applications.Code != http.StatusOK || !strings.Contains(applications.Body.String(), `"applicant_id":9`) ||
+		strings.Contains(applications.Body.String(), "another-user") || strings.Contains(applications.Body.String(), "another-tenant") {
 		t.Fatalf("my applications not scoped to current user: status=%d body=%s", applications.Code, applications.Body.String())
+	}
+}
+
+func TestConsumerApplicationsRequireUserPrincipal(t *testing.T) {
+	authServer := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{
+		"Bearer consumer": {ClientID: "addp-asset", Permissions: []string{"asset.application.read"}},
+	})
+	defer authServer.Close()
+	db := consumerTestDB(t)
+	router := SetupRouter(db, authServer.URL, nil, assetservice.NewAssetService(db, nil, nil), modulelifecycle.NewStandalone("asset"))
+	response := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/applications", "")
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("non-User application list must be denied: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

@@ -84,8 +84,7 @@ assert.deepEqual(
     display_name: 'City Buffer',
     description: 'demo',
     editor_layout: {
-      nodes: { read: { x: 10, y: 20 } },
-      viewport: { zoom: 1, translate_x: 0, translate_y: 0 }
+      nodes: { read: { x: 10, y: 20 } }
     },
     execution_config: {
       type: 'workflow',

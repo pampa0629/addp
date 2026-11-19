@@ -146,7 +146,7 @@ async function installBackend(page, { deferProviders = false, deferContract = fa
   const returningDefinition = {
     id: 'returning', name: 'Returning editor', enabled: false, schedule: '',
     steps: [{ id: 'returning-step', name: 'Returning step', provider: 'meta', task_type: 'scan', task_id: 2, parameters: { scope: 'new' }, depends_on: [], timeout: 300 }],
-    editor_layout: { nodes: { 'returning-step': { x: 240, y: 180 } }, viewport: { zoom: 1, translate_x: 0, translate_y: 0 } }
+    editor_layout: { nodes: { 'returning-step': { x: 240, y: 180 } } }
   }
   const pending = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))

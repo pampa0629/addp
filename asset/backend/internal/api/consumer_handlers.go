@@ -179,21 +179,28 @@ func (h *Handler) createConsumerApplication(c *gin.Context) {
 
 // listConsumerApplications godoc
 // @Summary 获取我的资产申请 | List my asset applications
+// @Description 仅当前租户内的 User 可查询本人提交的申请 | Only a User in the current tenant can list their own applications
 // @Tags Asset Consumer
 // @Produce json
 // @Success 200 {object} map[string]interface{}
+// @Failure 403 {object} map[string]string "禁止访问 | Forbidden"
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["asset.application.read"]
 // @Router /consumer/applications [get]
 func (h *Handler) listConsumerApplications(c *gin.Context) {
+	applicantID := int64(commonAuth.GetUserID(c))
+	if applicantID <= 0 {
+		commonAPI.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+		return
+	}
 	page, pageSize := commonAPI.GetPaginationParams(c)
 	assetID, _ := strconv.ParseInt(c.Query("asset_id"), 10, 64)
 	params := service.ApplicationListParams{
 		Page: page, PageSize: pageSize, Status: c.Query("status"), DisplayStatus: c.Query("display_status"),
-		AssetID: assetID, ApplicantID: int64(commonAuth.GetUserID(c)),
+		AssetID: assetID,
 	}
-	applications, total, err := h.applicationSvc.List(commonAuth.GetTenantID(c), params)
+	applications, total, err := h.applicationSvc.ListForApplicant(commonAuth.GetTenantID(c), applicantID, params)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return

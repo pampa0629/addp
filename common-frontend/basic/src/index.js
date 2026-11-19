@@ -137,6 +137,7 @@ export { useTreeCache, useTreeLoader } from './composables'
 // Composables - Resizable
 export { useElementFullscreen } from './composables/useElementFullscreen'
 export { useResizable } from './composables/useResizable'
+export { readBrowserPreference, tenantUserBrowserPreferenceKey, writeBrowserPreference } from './utils/tenantUserBrowserPreference'
 
 // Composables - Theme Management
 export { useTheme } from './composables/useTheme'

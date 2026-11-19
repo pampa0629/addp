@@ -171,6 +171,18 @@ func (s *ApplicationService) ConsumerStatus(tenantID uint, applicantID, assetID 
 
 // List 申请列表（管理员视角，支持多维度过滤，LEFT JOIN 授权信息）
 func (s *ApplicationService) List(tenantID uint, params ApplicationListParams) ([]ApplicationWithAuth, int64, error) {
+	var applicantID *int64
+	if params.ApplicantID > 0 {
+		applicantID = &params.ApplicantID
+	}
+	return s.list(tenantID, applicantID, params)
+}
+
+func (s *ApplicationService) ListForApplicant(tenantID uint, applicantID int64, params ApplicationListParams) ([]ApplicationWithAuth, int64, error) {
+	return s.list(tenantID, &applicantID, params)
+}
+
+func (s *ApplicationService) list(tenantID uint, applicantID *int64, params ApplicationListParams) ([]ApplicationWithAuth, int64, error) {
 	if params.Page <= 0 {
 		params.Page = 1
 	}
@@ -216,8 +228,8 @@ func (s *ApplicationService) List(tenantID uint, params ApplicationListParams) (
 	if params.AssetID > 0 {
 		query = query.Where("app.asset_id = ?", params.AssetID)
 	}
-	if params.ApplicantID > 0 {
-		query = query.Where("app.applicant_id = ?", params.ApplicantID)
+	if applicantID != nil {
+		query = query.Where("app.applicant_id = ?", *applicantID)
 	}
 
 	var total int64

@@ -55,7 +55,7 @@ const dagData = {
 - `useDAGViewport(graph, options)` - 缩放、适应窗口和自动布局
 - `useDAGHistory(options)` - 编辑历史入口；记录、合并与恢复职责见[撤销重做与历史恢复](#撤销重做与历史恢复)。
 - `useDAGClipboard(graph, options)` - 节点剪贴板入口；复制范围与宿主处理见[节点复制与粘贴](#节点复制与粘贴)。
-- `useDAGLayout(graph)` - 布局捕获、坐标应用与视口恢复入口，见[布局恢复与自动布局](#布局恢复与自动布局)。
+- `useDAGLayout(graph, viewportKey, syncZoom)` - 共享节点坐标与个人视口入口，见[布局恢复与自动布局](#布局恢复与自动布局)。
 - `useDAGTheme(refresh)` - 主题观察入口；宿主重绘、状态保持与卸载职责见[编辑器主题与状态保持](#编辑器主题与状态保持)。
 
 ### 组件
@@ -179,16 +179,11 @@ Develop 与 Orchestrator 的可编辑 DAG 通过 `useDAGTheme` 共用主题观�
 {
   "nodes": {
     "node_id": { "x": 120, "y": 240 }
-  },
-  "viewport": {
-    "zoom": 1,
-    "translate_x": 0,
-    "translate_y": 0
   }
 }
 ```
 
-`useDAGLayout(graph)` 的 `captureLayout()` 捕获节点坐标及视口，`normalizeLayout(layout)` 统一布局结构；`applyNodePositions(nodes, layout)` 返回应用已存坐标的节点列表，不直接修改图实例。宿主将这些节点载入画布后，再用 `restoreViewport(layout)` 恢复缩放和平移；该方法不恢复节点或重新排列。使用 `useDAGViewport` 的宿主随后调用 `syncZoom()` 同步缩放控件状态。方法实现统一见[布局 composable](src/composables/useDAGLayout.js)与[编辑工具](src/utils/editing.js)。
+`useDAGLayout` 的 `captureLayout()` 捕获共享节点坐标。`applyNodePositions(nodes, layout)` 返回应用已存坐标的节点列表。宿主载入节点后调用 `restoreViewport()` 恢复当前账号的缩放和平移，交互结束时调用 `saveViewport()`。已保存任务使用宿主提供的模块、租户、账号和任务键。视口单独保存在浏览器，草稿视口仅留在编辑器实例内。方法实现统一见[布局 composable](src/composables/useDAGLayout.js)与[编辑工具](src/utils/editing.js)。
 
 #### 等待自动布局完成
 

@@ -249,6 +249,7 @@ const { t, locale } = useI18n()
 
 const props = defineProps({
   executionStates: { type: Object, default: () => ({}) },
+  viewportStorageKey: { type: String, default: '' },
   initialSteps: {
     type: Array,
     default: () => []
@@ -343,7 +344,7 @@ const {
 const { zoom, syncZoom, canZoomIn, canZoomOut, zoomIn, zoomOut, fitView, autoLayout } = useDAGViewport(graph, {
   layout: { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep: 64 }
 })
-const { captureLayout, applyNodePositions, restoreViewport } = useDAGLayout(graph)
+const { captureLayout, applyNodePositions, restoreViewport, saveViewport } = useDAGLayout(graph, () => props.viewportStorageKey, syncZoom)
 const { copiedNode, copy, paste } = useDAGClipboard(graph, { createNodeId: createCopiedNodeId })
 const {
   canUndo,
@@ -424,7 +425,7 @@ function handleActualSize() {
   graph.value?.zoomTo(1)
   if (selectedItem.value) graph.value.focusItem(selectedItem.value)
   syncZoom()
-  emitLayout()
+  saveViewport()
 }
 const navigationAnnouncement = computed(() => {
   if (selectedItem.value?.getType?.() !== 'node') return ''
@@ -513,8 +514,8 @@ onMounted(async () => {
   graph.value.on('click', event => {
     if (!event.item) resetConnectionFocus()
   })
-  graph.value.on('canvas:dragend', emitLayout)
-  graph.value.on('wheelzoom', () => { syncZoom(); emitLayout() })
+  graph.value.on('canvas:dragend', saveViewport)
+  graph.value.on('wheelzoom', () => { syncZoom(); saveViewport() })
 
   graph.value.on('afterrender', renderExecutionStates)
   graph.value.on('afteradditem', renderExecutionStates)
@@ -1060,10 +1061,9 @@ async function loadSteps(steps) {
   loadData(applyNodePositions(nodes, props.initialLayout), edges)
   lastStepsSignature.value = stepsSignature(steps)
   if (hasStoredLayout(props.initialLayout)) {
-    restoreViewport(props.initialLayout)
-    syncZoom()
+    restoreViewport()
   } else if (nodes.length > 0) {
-    await autoLayout()
+    await autoLayout({ fit: () => restoreViewport(fitView) })
   }
   if (disposed) return
   resetHistory(graph.value.save())
@@ -1146,19 +1146,23 @@ const handleKeydown = createDAGKeyboardHandler({
 
 function handleZoomIn() {
   zoomIn()
+  saveViewport()
 }
 
 function handleZoomOut() {
   zoomOut()
+  saveViewport()
 }
 
 function handleFitView() {
   fitView()
+  saveViewport()
 }
 
 async function handleAutoLayout() {
   await autoLayout()
   if (disposed) return
+  saveViewport()
   recordHistory()
   emitLayout()
 }
@@ -1192,7 +1196,7 @@ function stepsSignature(steps) {
 }
 
 function hasStoredLayout(layout) {
-  return Boolean(Object.keys(layout?.nodes || {}).length || layout?.viewport)
+  return Object.keys(layout?.nodes || {}).length > 0
 }
 
 function hasValue(value) {

@@ -796,7 +796,10 @@ import {
   createLatestRequestScope,
   downloadAuthenticatedExport,
   parseLocator,
+  readBrowserPreference,
+  tenantUserBrowserPreferenceKey,
   useResizable,
+  writeBrowserPreference,
   waitForExportSession,
   useConsolePageDescriptor
 } from '@common-ui'
@@ -1000,18 +1003,31 @@ const {
   startResize: startEditorResize,
   handleResizeKeydown: handleEditorResizeKeydown
 } = useResizable(390, 220, 720, 'vertical')
-const storedQueryParameterPanelWidth = typeof window === 'undefined'
-  ? 440
-  : Number(window.localStorage.getItem('develop.queryParameterPanelWidth')) || 440
+const defaultQueryParameterPanelWidth = 440
+const queryParameterPanelKey = computed(() => tenantUserBrowserPreferenceKey(authStore.authContext, 'develop:query-parameter-panel-width'))
+try { globalThis.localStorage.removeItem('develop.queryParameterPanelWidth') }
+catch { /* Storage is optional. */ }
 const {
   size: queryParameterPanelWidth,
   minSize: queryParameterPanelMinWidth,
   maxSize: queryParameterPanelMaxWidth,
   startResize: startQueryParameterPanelResize,
   handleResizeKeydown: handleQueryParameterPanelResizeKeydown,
-  setSize: setQueryParameterPanelWidth
-} = useResizable(storedQueryParameterPanelWidth, 360, 720, 'horizontal', { reverse: true })
-const resetQueryParameterPanelWidth = () => setQueryParameterPanelWidth(440)
+  setSize: setQueryParameterPanelWidth,
+  stopResize: stopQueryParameterPanelResize
+} = useResizable(defaultQueryParameterPanelWidth, 360, 720, 'horizontal', { reverse: true })
+const resetQueryParameterPanelWidth = () => setQueryParameterPanelWidth(defaultQueryParameterPanelWidth)
+let restoringQueryParameterPanelWidth = false
+watch(queryParameterPanelKey, key => {
+  stopQueryParameterPanelResize()
+  const width = readBrowserPreference(key)
+  restoringQueryParameterPanelWidth = true
+  setQueryParameterPanelWidth(Number.isFinite(width) ? width : defaultQueryParameterPanelWidth)
+  restoringQueryParameterPanelWidth = false
+}, { immediate: true, flush: 'sync' })
+watch(queryParameterPanelWidth, width => {
+  if (!restoringQueryParameterPanelWidth) writeBrowserPreference(queryParameterPanelKey.value, width)
+}, { flush: 'sync' })
 
 const queryTargets = computed(() => engines.value.map(engine => {
   const available = isEngineSelectable(engine)
@@ -2565,12 +2581,6 @@ watch(currentQueryLanguage, () => {
 
 watch([selectedEngineId, federatedQuery, catalogVersion], () => {
   refreshCatalogEngines()
-})
-
-watch(queryParameterPanelWidth, width => {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem('develop.queryParameterPanelWidth', String(width))
-  }
 })
 
 onBeforeUnmount(() => {

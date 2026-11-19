@@ -109,14 +109,7 @@ export function cloneDAGNodeForPaste(nodeModel, {
 }
 
 export function normalizeDAGEditorLayout(layout) {
-  const normalized = {
-    nodes: {},
-    viewport: {
-      zoom: 1,
-      translate_x: 0,
-      translate_y: 0
-    }
-  }
+  const normalized = { nodes: {} }
 
   for (const [nodeId, position] of Object.entries(layout?.nodes || {})) {
     if (!nodeId || !Number.isFinite(Number(position?.x)) || !Number.isFinite(Number(position?.y))) continue
@@ -126,10 +119,6 @@ export function normalizeDAGEditorLayout(layout) {
     }
   }
 
-  const viewport = layout?.viewport || {}
-  normalized.viewport.zoom = clampDAGZoom(viewport.zoom)
-  normalized.viewport.translate_x = finiteNumber(viewport.translate_x, 0)
-  normalized.viewport.translate_y = finiteNumber(viewport.translate_y, 0)
   return normalized
 }
 
@@ -178,15 +167,16 @@ export function captureDAGEditorLayout(graph) {
     nodes[node.id] = { x: Number(node.x), y: Number(node.y) }
   }
 
+  return { nodes }
+}
+
+export function captureDAGViewport(graph) {
   const matrix = graph?.getGroup?.()?.getMatrix?.() || []
-  return normalizeDAGEditorLayout({
-    nodes,
-    viewport: {
-      zoom: graph?.getZoom?.() || 1,
-      translate_x: matrix[6] || 0,
-      translate_y: matrix[7] || 0
-    }
-  })
+  return {
+    zoom: clampDAGZoom(graph?.getZoom?.()),
+    translate_x: finiteNumber(matrix[6], 0),
+    translate_y: finiteNumber(matrix[7], 0)
+  }
 }
 
 export function applyDAGNodePositions(nodes, layout) {
@@ -197,18 +187,18 @@ export function applyDAGNodePositions(nodes, layout) {
   })
 }
 
-export function restoreDAGViewport(graph, layout) {
+export function restoreDAGViewport(graph, viewport) {
   if (!graph) return
-  const viewport = normalizeDAGEditorLayout(layout).viewport
-  graph.zoomTo?.(viewport.zoom)
+  const zoom = clampDAGZoom(viewport?.zoom)
+  graph.zoomTo?.(zoom)
 
   const group = graph.getGroup?.()
   const currentMatrix = group?.getMatrix?.()
   const matrix = currentMatrix
     ? [...currentMatrix]
-    : [viewport.zoom, 0, 0, 0, viewport.zoom, 0, 0, 0, 1]
-  matrix[6] = viewport.translate_x
-  matrix[7] = viewport.translate_y
+    : [zoom, 0, 0, 0, zoom, 0, 0, 0, 1]
+  matrix[6] = finiteNumber(viewport?.translate_x, 0)
+  matrix[7] = finiteNumber(viewport?.translate_y, 0)
   group?.setMatrix?.(matrix)
   graph.paint?.()
 }

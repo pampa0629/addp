@@ -125,7 +125,8 @@ func TestOrchestrationDefinitionRequestAppliesOnlyEditableFields(t *testing.T) {
 		Description: "description",
 		Steps:       Steps{{ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1}},
 		EditorLayout: commonModels.JSONMap{
-			"nodes": map[string]interface{}{"scan": map[string]interface{}{"x": 10, "y": 20}},
+			"nodes":    map[string]interface{}{"scan": map[string]interface{}{"x": 10, "y": 20}},
+			"viewport": map[string]interface{}{"zoom": 1.3},
 		},
 		Enabled:  true,
 		Schedule: "0 2 * * *",
@@ -138,7 +139,7 @@ func TestOrchestrationDefinitionRequestAppliesOnlyEditableFields(t *testing.T) {
 	if orch.Name != "new" || !orch.Enabled || orch.Schedule != "0 2 * * *" {
 		t.Fatalf("editable fields not applied: %#v", orch)
 	}
-	if orch.EditorLayout["nodes"] == nil {
+	if len(orch.EditorLayout) != 1 || orch.EditorLayout["nodes"] == nil {
 		t.Fatalf("editor layout not applied: %#v", orch.EditorLayout)
 	}
 }

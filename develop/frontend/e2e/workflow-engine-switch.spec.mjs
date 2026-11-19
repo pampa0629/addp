@@ -1850,10 +1850,22 @@ test('workflow editor uses shared protection and clears it after saving', async 
   await expect(dialog).toHaveCount(0)
 })
 
-test('workflow viewport navigation does not count as an unsaved edit', async ({ page }) => {
+test('workflow viewport belongs to the current tenant user and never dirties the shared layout', async ({ page }) => {
   await installMockBackend(page)
+  let userID = '31'
+  let tenantID = '1'
+  await page.route('**/api/v1/system/auth/context', route => {
+    const auth = structuredClone(developAuthContext)
+    auth.principal = { type: 'user', id: userID }
+    auth.context.tenant_id = tenantID
+    auth.authorization.role_assignments[0].scope.tenant_id = tenantID
+    return fulfillJSON(route, auth)
+  })
   await openSavedWorkflow(page)
-  await page.locator('#workflow-dag-container').evaluate(el => {
+  const canvas = page.locator('#workflow-dag-container')
+  const zoom = page.locator('.zoom-value')
+  await expect(zoom).toHaveText('100%')
+  await canvas.evaluate(el => {
     const graph = el.__vueParentComponent.setupState.graph
     graph.zoomTo(0.8)
     graph.translate(10, 20)
@@ -1862,6 +1874,30 @@ test('workflow viewport navigation does not count as an unsaved edit', async ({ 
   await page.locator('.workflow-editor-page').evaluate(el => { void el.__vueParentComponent.proxy.$router.push('/tasks') })
   await expect(page).toHaveURL(/\/tasks$/)
   await expect(page.getByRole('dialog', { name: '有未保存的修改', exact: true })).toHaveCount(0)
+
+  userID = '33'
+  await openSavedWorkflow(page)
+  await expect(zoom).toHaveText('100%')
+  await page.getByRole('button', { name: '放大', exact: true }).click()
+  await expect(zoom).toHaveText('110%')
+
+  userID = '31'
+  tenantID = '2'
+  await openSavedWorkflow(page)
+  await expect(zoom).toHaveText('100%')
+  tenantID = '1'
+  await openSavedWorkflow(page)
+  await expect(zoom).toHaveText('80%')
+  const offset = await canvas.evaluate(el => el.__vueParentComponent.setupState.graph.get('group').getMatrix().slice(6, 8))
+  expect(offset).toEqual([10, 20])
+  await page.locator('.workflow-editor-page').evaluate(el => {
+    void el.__vueParentComponent.proxy.$router.push('/workflow?action=create')
+  })
+  await expect(page).toHaveURL(/\/workflow\?action=create$/)
+  await expect(zoom).toHaveText('100%')
+  userID = '33'
+  await openSavedWorkflow(page)
+  await expect(zoom).toHaveText('110%')
 })
 
 test('workflow canvas themes refresh all shapes and cached interaction states without editing the workflow', async ({ page }) => {

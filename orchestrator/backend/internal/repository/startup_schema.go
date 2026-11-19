@@ -1,4 +1,4 @@
 package repository
 
-// StartupSchemaVersion fences the one-way execution supervision migration.
-const StartupSchemaVersion int64 = 1
+// StartupSchemaVersion fences execution supervision and shared editor layout migrations.
+const StartupSchemaVersion int64 = 2

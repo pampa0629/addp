@@ -154,6 +154,7 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  viewportStorageKey: { type: String, default: '' },
   resourceEnginesById: {
     type: Object,
     default: () => ({})
@@ -218,7 +219,7 @@ const {
   autoLayout,
   syncZoom
 } = useDAGViewport(graph)
-const { captureLayout, applyNodePositions, restoreViewport } = useDAGLayout(graph)
+const { captureLayout, applyNodePositions, restoreViewport, saveViewport } = useDAGLayout(graph, () => props.viewportStorageKey, syncZoom)
 const { copiedNode, copy, paste } = useDAGClipboard(graph, { createNodeId: createCopiedNodeId })
 const {
   canUndo,
@@ -294,10 +295,10 @@ onMounted(() => {
     recordHistory()
     emitLayout()
   })
-  graph.value.on('canvas:dragend', emitLayout)
+  graph.value.on('canvas:dragend', saveViewport)
   graph.value.on('wheelzoom', () => {
     syncZoom()
-    emitLayout()
+    saveViewport()
   })
 
   loadWorkflow(props.initialWorkflow)
@@ -532,10 +533,9 @@ function loadWorkflow(workflow) {
   lastEmittedSignature.value = workflowSignature(workflow)
   applyValidationStates()
   if (hasStoredLayout(props.initialLayout)) {
-    restoreViewport(props.initialLayout)
-    syncZoom()
+    restoreViewport()
   } else {
-    autoLayout()
+    autoLayout({ fit: () => restoreViewport(fitView) })
   }
   resetHistory(graph.value.save())
   emitLayout()
@@ -938,18 +938,22 @@ const handleKeydown = createDAGKeyboardHandler({
 
 function handleZoomIn() {
   zoomIn()
+  saveViewport()
 }
 
 function handleZoomOut() {
   zoomOut()
+  saveViewport()
 }
 
 function handleFitView() {
   fitView()
+  saveViewport()
 }
 
 async function handleAutoLayout() {
   await autoLayout()
+  saveViewport()
   recordHistory()
   emitLayout()
 }
@@ -1058,10 +1062,7 @@ function refreshInspectedNode(changedNodeId) {
 }
 
 function hasStoredLayout(layout) {
-  return Boolean(
-    Object.keys(layout?.nodes || {}).length ||
-    layout?.viewport
-  )
+  return Object.keys(layout?.nodes || {}).length > 0
 }
 
 function selectNode(nodeId) {

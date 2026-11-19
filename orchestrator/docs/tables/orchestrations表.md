@@ -17,7 +17,7 @@ Orchestrator 不直接调用计算引擎；工作流算子应先在 Develop 中�
 | `name` | VARCHAR(128) | 编排名称 |
 | `description` | VARCHAR(512) | 编排描述 |
 | `steps` | JSONB | DAG 步骤定义 |
-| `editor_layout` | JSONB | 编辑器节点坐标和视口，仅用于展示，不参与执行 |
+| `editor_layout` | JSONB | 编辑器共享节点坐标，不参与执行 |
 | `enabled` | BOOLEAN | 是否启用定时调度 |
 | `schedule` | VARCHAR(128) | Cron 表达式 |
 | `last_execution_id` | VARCHAR(36) | 最近一次父 execution UUID |
@@ -60,7 +60,7 @@ Step 的字段集合与绑定约束沿[编排定义规范](../../../docs/spec/ta
 }
 ```
 
-`editor_layout` 不属于 `steps[]`，Executor 不得读取它。
+`editor_layout` 不属于 `steps[]`，Executor 不得读取它。个人视口按租户、账号和任务保存在浏览器。迁移一次性移除旧共享视口并保留原节点坐标。
 
 执行身份和父子关联沿[编排规范](../../../docs/spec/tasks/编排与调度.md#orchestrator-规范)，监督器入队、租约与失败边界沿[执行可靠性](../../../docs/spec/tasks/编排与调度.md#orchestrator-执行可靠性)。入队时冻结 Steps，父执行的步骤阶段和子 execution 引用持久化位置见[数据库执行流程](../数据库架构.md#五执行流程)，不能由当前定义或编辑器布局补造历史。
 
@@ -103,8 +103,7 @@ curl -X POST "$ORCHESTRATOR_BASE_URL/api/v1/orchestrator/orchestrations" \
       "nodes": {
         "scan": { "x": 120, "y": 240 },
         "workflow": { "x": 360, "y": 240 }
-      },
-      "viewport": { "zoom": 1, "translate_x": 0, "translate_y": 0 }
+      }
     },
     "enabled": true,
     "schedule": "0 2 * * *"

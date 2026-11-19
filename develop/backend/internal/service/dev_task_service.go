@@ -56,6 +56,13 @@ func (s *DevTaskService) SetOperatorDiscovery(discovery *OperatorDiscoveryServic
 
 func (s *DevTaskService) SetQueryProtection(service *SQLEngineService) { s.queryProtection = service }
 
+func sharedEditorLayout(layout commonModels.JSONMap) commonModels.JSONMap {
+	if nodes, ok := layout["nodes"]; ok {
+		return commonModels.JSONMap{"nodes": nodes}
+	}
+	return commonModels.JSONMap{}
+}
+
 // CreateDevTask 创建开发任务
 func (s *DevTaskService) CreateDevTask(ctx context.Context, bearer string, req *models.CreateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
 	if _, exists := req.Content["notebook_locator"]; req.DevType == "script" && exists {
@@ -105,10 +112,6 @@ func (s *DevTaskService) createDevTask(ctx context.Context, bearer string, req *
 	}
 
 	// 创建开发任务
-	editorLayout := req.EditorLayout
-	if editorLayout == nil {
-		editorLayout = commonModels.JSONMap{}
-	}
 	item := &models.DevTask{
 		TenantID:        tenantID,
 		Name:            req.Name,
@@ -116,7 +119,7 @@ func (s *DevTaskService) createDevTask(ctx context.Context, bearer string, req *
 		DevType:         req.DevType,
 		Content:         req.Content,
 		ExecutionConfig: req.ExecutionConfig,
-		EditorLayout:    editorLayout,
+		EditorLayout:    sharedEditorLayout(req.EditorLayout),
 		Timeout:         req.Timeout,
 		Description:     req.Description,
 		Tags:            req.Tags,
@@ -192,7 +195,7 @@ func (s *DevTaskService) UpdateDevTask(ctx context.Context, bearer string, id ui
 		item.ExecutionConfig = req.ExecutionConfig
 	}
 	if req.EditorLayout != nil {
-		item.EditorLayout = req.EditorLayout
+		item.EditorLayout = sharedEditorLayout(req.EditorLayout)
 	}
 	if req.Timeout > 0 {
 		item.Timeout = req.Timeout

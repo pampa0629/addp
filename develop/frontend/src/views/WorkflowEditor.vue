@@ -265,6 +265,7 @@
           ref="canvasRef"
           :initial-workflow="workflowData"
           :initial-layout="editorLayout"
+          :viewport-storage-key="viewportStorageKey"
           :operators="operators"
           :resource-engines-by-id="resourceEnginesById"
           :validation-issues="validationIssues"
@@ -725,6 +726,7 @@ import {
   listResourceTreeEngines,
   openMonitorExecution,
   StatusAnnouncer,
+  tenantUserBrowserPreferenceKey,
   useConsolePageDescriptor
 } from '@addp/common-frontend'
 
@@ -764,6 +766,8 @@ const workflowData = ref({ tasks: [] })
 const editorLayout = ref({})
 const selectedNode = ref(null)
 const currentTaskId = ref(null)
+const viewportStorageKey = computed(() => currentTaskId.value
+  ? tenantUserBrowserPreferenceKey(authStore.authContext, 'develop:workflow-viewport', currentTaskId.value) : '')
 const currentTaskName = ref('')
 useConsolePageDescriptor(router, 'develop', {
   title: computed(() => t('develop.workflow.title')),
