@@ -18,7 +18,7 @@
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | [PostgreSQL](Monitor采集来源与引擎指标历史证据.md#pg-source-history)、[共享目录限制](Monitor采集来源与引擎指标历史证据.md#pg-directory-history)、[Redis](Monitor采集来源与引擎指标历史证据.md#redis-source-history)、[MinIO](Monitor采集来源与引擎指标历史证据.md#minio-source-history)、[引擎页面](Monitor采集来源与引擎指标历史证据.md#engine-ui-history) |
 | 来源恢复与联合核验 | [统一采集与主机恢复](Monitor采集来源与引擎指标历史证据.md#source-lifecycle-history)、[证书预检与实际载入](Monitor采集来源与引擎指标历史证据.md#source-tls-conclusions)、[七来源与 Safari](Monitor采集来源与引擎指标历史证据.md#seven-sources-live-conclusions)、[MinIO 辅助标签故障](Monitor采集来源与引擎指标历史证据.md#minio-helper-label-conclusions) |
 | [执行读取与事件](Monitor执行监控与留存历史证据.md) | [Owner 裁决与故障恢复](Monitor执行监控与留存历史证据.md#continuous-诊断与-owner-不可用)、[事件分页与持续写入](Monitor执行监控与留存历史证据.md#事件分页与持续写入)；分项通过、整套失败与后续闭环按各自证据认定。 |
-| 执行留存与统计 | [30 天事件物理清理](Monitor执行监控与留存历史证据.md#30-天过程事件清理)、[180 天概览只读评估](Monitor执行监控与留存历史证据.md#180-天概览只读评估)、[小时周期](Monitor执行监控与留存历史证据.md#小时周期与连续批次)、[统计与导航](Monitor执行监控与留存历史证据.md#统计与同次执行导航)、[CDC 指标与七天历史](Monitor执行监控与留存历史证据.md#cdc-任务指标与七天历史) |
+| 执行留存与统计 | [30 天事件物理清理](Monitor执行监控与留存历史证据.md#30-天过程事件清理)、[180 天概览只读评估](Monitor执行监控与留存历史证据.md#180-天概览只读评估)、[小时周期](Monitor执行监控与留存历史证据.md#小时周期与连续批次)、[统计与导航](Monitor执行监控与留存历史证据.md#统计与同次执行导航)、[Transfer 同次执行回跳](Monitor执行监控与留存历史证据.md#transfer-同次执行结果与回跳)、[CDC 指标与七天历史](Monitor执行监控与留存历史证据.md#cdc-任务指标与七天历史) |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | [资源守卫](Monitor部署与前置诊断历史证据.md#资源守卫诊断)、[Docker 等待归属](Monitor部署与前置诊断历史证据.md#docker-cli-与-daemon-取证)、[Compose 超时](Monitor部署与前置诊断历史证据.md#compose-配置超时)、[浏览器与 MinIO 前置](Monitor部署与前置诊断历史证据.md#浏览器与-minio-前置结论)、[未解决事项](Monitor部署与前置诊断历史证据.md#未解决事项与后续待办) |
 
 表中仅定位各主题的结论与实际边界，固定源码、关键证据及未覆盖项由对应专题维护。失败、取消、跳过、未运行与分项成功分别认定，不将本机、受控 T3、实源 T2 和 Hosted T4 合并为整套通过。

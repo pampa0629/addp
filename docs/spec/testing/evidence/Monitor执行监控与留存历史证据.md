@@ -93,6 +93,22 @@
 
 **导航的分层结论**：`9cb8b4e8c06313f5213930fd96476ebb07389e0f` 的 [Develop PG Job132407503241](https://github.com/pampa0629/addp/actions/runs/43579351144/job/132407503241)及Develop／Monitor／Console对应受控前端门禁通过。最近执行按受理顺序包含pending／running，同UUID进结果再回原筛选／分页；403／404／503不换成其他执行。结果标签顶部排列由 `307de5e6b77adc51435bd36f189003a55bb9f92a` 的 [Develop Job132433054640](https://github.com/pampa0629/addp/actions/runs/43590178112/job/132433054640)320浏览器及构建补证。共享前端／登记的Linux缺口后由 `2d5e63d43af0c87e19971c61481d84186fc7c884` 的 [Job132422749269](https://github.com/pampa0629/addp/actions/runs/43586730624/job/132422749269)／[Job132422749381](https://github.com/pampa0629/addp/actions/runs/43586730624/job/132422749381)补齐；不改判旧全仓Go／Platform失败，不把T1／T2／T3升级为正式身份导航。后续真实运行状态统一见[任务执行收口专题](../../../next/ADDP任务执行管理统一收口专题.md)，不保留第二份待确认／排队摘要。
 
+### Transfer 同次执行结果与回跳
+
+2026-11-19 使用本机 Console 的原账号「ADDP 开发管理员」核对任务 `63` 的既有成功执行 `d20408cd-69c0-481d-9503-c16c43162d0c`。Monitor 同时显示主要操作「查看执行结果」和次要操作「打开任务定义」。点击结果入口后，Transfer 详情展示同一 UUID、读取与写入各 20 条，以及「开始执行」、两条「进度汇总」和「执行完成」。点击「返回本次执行」恢复原 Monitor 详情与模块、类型和任务筛选。本机核对使用既有记录，只读操作。[打开本机 Monitor 详情](http://localhost:5170/monitor/executions?module=transfer&task_type=sync&source_task_id=63&execution_id=d20408cd-69c0-481d-9503-c16c43162d0c) · [查看导航契约](../../tasks/执行监控.md#develop-专业详情导航)
+
+固定源码 `f1ffafa2016930348286f65475f2d3c07ad16602` 的 Linux 结果如下。
+
+| 门禁 | 实际结果 |
+| --- | --- |
+| Transfer 前端 | 142 项单元、77 项浏览器及构建通过，包含执行详情的同次返回检查。[Job 135401048264](https://github.com/pampa0629/addp/actions/runs/44477364876/job/135401048264) |
+| Console 前端 | 289 项单元、386 项浏览器及构建通过。两条新增用例验证有权限时保留 UUID、任务筛选、分页及刷新后回跳，无 Transfer 读取权限时隐藏结果入口。[Job 135401048362](https://github.com/pampa0629/addp/actions/runs/44477364876/job/135401048362) |
+| Monitor 前端 | 156 项单元通过，浏览器 876 通过、8 失败。256 项执行诊断用例全部通过。8 项失败均出自 Redis／MinIO 资源页状态文案检查，Linux 构建未执行。[Job 135401048490](https://github.com/pampa0629/addp/actions/runs/44477364876/job/135401048490) |
+| 共享前端 | 381 通过、1 失败，两项执行路由契约均通过。唯一失败为节点选择器消费者清单，在改动前基线 `48aa650e6` 已复现。[Job 135401048224](https://github.com/pampa0629/addp/actions/runs/44477364876/job/135401048224) |
+| 前端 CI 登记 | 34 项测试及 21 个前端的登记检查通过。[Job 135401048066](https://github.com/pampa0629/addp/actions/runs/44477364876/job/135401048066) |
+
+本机证据覆盖一条成功历史记录的实际导航。分页恢复与无读取权限分支由受控 T3 覆盖。Hosted、其他任务类型的真实页面往返及 Develop 三状态导航沿各自证据认定。
+
 ## CDC 任务指标与七天历史
 
 <a id="2026-11-13-cdc-任务卡片的-hosted-三阶段断言"></a>
