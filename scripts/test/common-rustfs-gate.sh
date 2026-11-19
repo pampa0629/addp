@@ -72,10 +72,26 @@ for port in service['ports']:
     port['published'] = '0'
 (work/'compose.json').write_text(json.dumps({'services': {'rustfs': service}, 'volumes': {'rustfs_data': {}}}))
 PY
-compose up -d --wait --wait-timeout 150
+start_rustfs() {
+    local endpoint container volume
+    compose up -d --wait --wait-timeout 150 rustfs
+    endpoint=$(compose port rustfs 9000)
+    if [[ ! "$endpoint" =~ ^127\.0\.0\.1:[0-9]+$ ]]; then
+        echo "RustFS gate requires a published loopback endpoint" >&2
+        return 1
+    fi
+    container=$(compose ps -q rustfs)
+    volume=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' "$container")
+    if [ "$volume" != "${RUSTFS_T2_PROJECT}_rustfs_data" ]; then
+        echo "RustFS gate expected its named data volume, found $volume" >&2
+        return 1
+    fi
+    export ADDP_RUSTFS_TEST_ENDPOINT="$endpoint"
+    printf 'RustFS container=%s endpoint=%s data_volume=%s\n' "$container" "$endpoint" "$volume"
+}
+start_rustfs
 export ADDP_RUSTFS_INTEGRATION=1 ADDP_RUSTFS_TEST_BUCKET=addp-rustfs-contract
 export ADDP_RUSTFS_TEST_ACCESS_KEY="$RUSTFS_ACCESS_KEY" ADDP_RUSTFS_TEST_SECRET_KEY="$RUSTFS_SECRET_KEY"
-export ADDP_RUSTFS_TEST_ENDPOINT="$(compose port rustfs 9000)"
 (cd "$SOURCE_ROOT/common" && GOWORK=off go test ./infra/objectstore/s3 -run '^TestPlatformAreaAgainstRustFS$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-s3.log"
 grep -q '^--- PASS: TestPlatformAreaAgainstRustFS ' "$WORK_DIR/platform-s3.log"
 if [ "$test_group" = platform-object-area ]; then
@@ -131,7 +147,7 @@ export ADDP_RUSTFS_TEST_PHASE=initial
 run_contract
 # Recreate the server with the same named volume and independently assigned ports.
 compose rm -sf rustfs
-compose up -d --wait --wait-timeout 150
+start_rustfs
 export ADDP_RUSTFS_TEST_PHASE=persisted
 run_contract
 export ADDP_RUSTFS_TEST_META_ITEM="$WORK_DIR/meta-item.json"

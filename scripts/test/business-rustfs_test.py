@@ -39,6 +39,74 @@ class RustFSDeploymentTest(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn('-rustfs 必须独立使用', result.stdout+result.stderr)
 
+    def test_disposable_gate_refreshes_endpoint_and_retains_volume_after_recreation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docker = root/'docker'
+            docker.write_text(r'''#!/bin/bash
+set -eu
+case "$1 $2" in
+    'compose --env-file')
+        echo '{"services":{"rustfs":{"ports":[{"published":"9004","target":9000}]}}}'
+        ;;
+    'compose --project-name')
+        case "$6" in
+            up) echo "$(( $(cat "$STATE") + 1 ))" > "$STATE" ;;
+            port) echo "127.0.0.1:$((32767 + $(cat "$STATE")))" ;;
+            ps) echo "container-$(cat "$STATE")" ;;
+            rm|down) ;;
+            *) exit 2 ;;
+        esac
+        ;;
+    'inspect -f') echo "${RUSTFS_T2_PROJECT}_rustfs_data" ;;
+    'container ls'|'volume ls'|'network ls') ;;
+    *) exit 2 ;;
+esac
+''')
+            go = root/'go'
+            go.write_text(r'''#!/bin/bash
+set -eu
+case "$PWD/$2" in
+    */infra/objectstore/s3) contract=TestPlatformAreaAgainstRustFS ;;
+    */standard/backend/./internal/service) contract=TestDocumentFileLifecycleAgainstPostgresAndS3 ;;
+    */engine/plugins/rustfs)
+        case "$ADDP_RUSTFS_TEST_PHASE" in
+            initial) test "$ADDP_RUSTFS_TEST_ENDPOINT" = 127.0.0.1:32768 ;;
+            persisted) test "$ADDP_RUSTFS_TEST_ENDPOINT" = 127.0.0.1:32769 ;;
+            *) exit 2 ;;
+        esac
+        contract=TestIntegrationRustFSProvider ;;
+    *)
+        test "$ADDP_RUSTFS_TEST_ENDPOINT" = 127.0.0.1:32769
+        case "$PWD/$2" in
+            */system/backend/./internal/service) contract=TestIntegrationRustFSSystemConnection ;;
+            */meta/backend/./internal/service) contract=TestIntegrationRustFSDeepScan ;;
+            */manager/backend/./internal/preview) contract=TestIntegrationRustFSPreview ;;
+            */manager/backend/./internal/api) contract=TestIntegrationRustFSAuthorizedPreview ;;
+            */transfer/backend/./internal/planner) contract=TestIntegrationRustFSParquetImport ;;
+            *) exit 2 ;;
+        esac
+        ;;
+esac
+printf -- '--- PASS: %s (0.00s)\n' "$contract"
+''')
+            for executable in (docker, go):
+                executable.chmod(0o755)
+            state = root/'state'
+            state.write_text('0')
+            env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], STATE=str(state),
+                       GITHUB_ACTIONS='true', ADDP_TEST_POSTGRES_PORT='5432',
+                       ADDP_TEST_POSTGRES_PASSWORD='fixture')
+            run = subprocess.run(['bash', str(ROOT/'scripts/test/common-rustfs-gate.sh')],
+                                 env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(run.returncode, 0, run.stdout+run.stderr)
+            self.assertIn('container=container-1 endpoint=127.0.0.1:32768', run.stdout)
+            self.assertIn('container=container-2 endpoint=127.0.0.1:32769', run.stdout)
+            volumes = [line.split('data_volume=')[1] for line in run.stdout.splitlines() if 'data_volume=' in line]
+            self.assertEqual(len(volumes), 2)
+            self.assertEqual(volumes[0], volumes[1])
+            self.assertIn('RUSTFS_T2_PASS', run.stdout)
+
     def test_invalid_configuration_and_foreign_ownership_never_mutate_docker(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
