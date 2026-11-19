@@ -166,12 +166,9 @@ func AppendContinuousEvent(ctx context.Context, db *gorm.DB, executionID string,
 			item.Status != ExecutionStatusRunning || item.Attempt <= 0 {
 			return fmt.Errorf("continuous event requires an active execution identity")
 		}
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
-			now = now.UTC()
+		now, err := DatabaseNow(tx)
+		if err != nil {
+			return err
 		}
 		if err := authorize(cloneAdmissionExecution(item), now); err != nil {
 			return err
@@ -261,7 +258,7 @@ func PruneEvents(ctx context.Context, db *gorm.DB, now time.Time, limit int) (*E
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var ids []int64
 		query := tx.Model(&Event{}).Where("occurred_at < ?", result.ExpiredBefore).Order("occurred_at ASC, id ASC").Limit(limit)
-		if tx.Dialector.Name() == "postgres" {
+		if executionClockSQL(tx) != "" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		}
 		if err := query.Pluck("id", &ids).Error; err != nil {

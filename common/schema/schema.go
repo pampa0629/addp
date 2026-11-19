@@ -40,10 +40,21 @@ func Require(db *gorm.DB, name string, version int64) error {
 
 // InitializeCommon is called only by System Backend; domain implementations stay in common.
 func InitializeCommon(db *gorm.DB) error {
-	return Migrate(db, "common", CommonVersion, func(tx *gorm.DB) error {
-		if err := execution.EnsureStore(tx); err != nil {
+	apply := func(session *gorm.DB) error {
+		if err := execution.EnsureStore(session); err != nil {
 			return err
 		}
-		return runtimehealth.EnsureStore(tx)
-	})
+		return runtimehealth.EnsureStore(session)
+	}
+	if db != nil && db.Dialector.Name() == "mysql" {
+		var currentDatabase string
+		if err := db.Raw("SELECT DATABASE()").Scan(&currentDatabase).Error; err != nil {
+			return err
+		}
+		if currentDatabase != "common" {
+			return fmt.Errorf("Common MySQL migration requires the deployed common database")
+		}
+		return MigrateMySQL(db, "common", CommonVersion, apply)
+	}
+	return Migrate(db, "common", CommonVersion, apply)
 }

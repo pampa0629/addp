@@ -7,25 +7,37 @@ import (
 	"gorm.io/gorm"
 )
 
-// leaseClockValue is evaluated inside the conditional write on PostgreSQL.
-// SQLite unit fixtures use the time sampled by DatabaseNow.
+func executionClockSQL(db *gorm.DB) string {
+	switch db.Dialector.Name() {
+	case "postgres":
+		return "clock_timestamp()"
+	case "mysql":
+		return "CURRENT_TIMESTAMP(6)"
+	default:
+		// SQLite fixtures have no database clock with the required precision.
+		return ""
+	}
+}
+
+// leaseClockValue is evaluated in a statement issued after locking the row.
 func leaseClockValue(db *gorm.DB, sampled time.Time) any {
-	if db.Dialector.Name() == "postgres" {
-		return gorm.Expr("clock_timestamp()")
+	if clock := executionClockSQL(db); clock != "" {
+		return gorm.Expr(clock)
 	}
 	return sampled.UTC()
 }
 
-// DatabaseNow is the shared lifecycle clock. PostgreSQL never trusts worker time.
+// DatabaseNow samples the database clock after ownership locks are acquired.
 func DatabaseNow(db *gorm.DB) (time.Time, error) {
 	if db == nil {
 		return time.Time{}, fmt.Errorf("execution database is required")
 	}
-	if db.Dialector.Name() != "postgres" {
+	clock := executionClockSQL(db)
+	if clock == "" {
 		return time.Now().UTC(), nil
 	}
 	var now time.Time
-	err := db.Session(&gorm.Session{NewDB: true}).Raw("SELECT clock_timestamp()").Scan(&now).Error
+	err := db.Session(&gorm.Session{NewDB: true}).Raw("SELECT " + clock).Scan(&now).Error
 	return now.UTC(), err
 }
 

@@ -17,8 +17,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -41,6 +41,11 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
     echo 'fixture inspection or recovery requires an explicit test server' >&2
+    exit 2
+fi
+
+if [ "$test_group" = platform-execution ] && [ "$local_disposable" != true ]; then
+    echo 'platform-execution requires a gate-owned instance (--local-disposable)' >&2
     exit 2
 fi
 
@@ -96,15 +101,15 @@ if [ "$local_disposable" = true ]; then
     # Reuse the registered fixed MySQL fixture image and native healthcheck,
     # with a unique project/container and an OS-assigned loopback-only port.
     docker compose --env-file /dev/null -f "$ROOT_DIR/scripts/test/docker-compose.local-macos-ci.yml" config --format json > "$WORK_DIR/base.json"
-    python3 - "$WORK_DIR/base.json" "$WORK_DIR/mysql.json" "$MYSQL_PROJECT" <<'PY'
+    python3 - "$WORK_DIR/base.json" "$WORK_DIR/mysql.json" "$MYSQL_PROJECT" "$test_group" <<'PY'
 import json, sys
-source, destination, project = sys.argv[1:]
+source, destination, project, group = sys.argv[1:]
 with open(source) as handle:
     mysql = json.load(handle)['services']['mysql']
 mysql['container_name'] = project
 mysql['ports'] = [{'target': 3306, 'published': '0', 'host_ip': '127.0.0.1', 'protocol': 'tcp'}]
 mysql['networks'] = {'default': None}
-mysql['environment']['MYSQL_DATABASE'] = 'addp_platform_mysql_test'
+mysql['environment']['MYSQL_DATABASE'] = 'common' if group == 'platform-execution' else 'addp_platform_mysql_test'
 
 with open(destination, 'w') as handle:
     json.dump({'services': {'mysql': mysql}}, handle)
@@ -129,6 +134,13 @@ fi
 if [ -z "${ADDP_TEST_MYSQL_PASSWORD:-}" ]; then
     echo "ADDP_TEST_MYSQL_PASSWORD is required for the disposable MySQL protection gate" >&2
     exit 1
+fi
+
+if [ "$test_group" = platform-execution ]; then
+    (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_COMMON_EXECUTION=1 GOWORK=off go test ./schema \
+        -run '^TestPlatformMySQLExecutionLifecycle$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-execution.log"
+    grep -q '^--- PASS: TestPlatformMySQLExecutionLifecycle ' "$WORK_DIR/platform-execution.log"
+    exit 0
 fi
 
 if [ "$test_group" = platform-database ]; then

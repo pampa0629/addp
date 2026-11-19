@@ -59,8 +59,10 @@ func EnsureStore(db *gorm.DB) error {
 }
 
 func ensureStore(db *gorm.DB) error {
-	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS common").Error; err != nil {
-		return fmt.Errorf("ensure common schema for runtime health: %w", err)
+	if db.Dialector.Name() != "mysql" {
+		if err := db.Exec("CREATE SCHEMA IF NOT EXISTS common").Error; err != nil {
+			return fmt.Errorf("ensure common schema for runtime health: %w", err)
+		}
 	}
 	if err := db.AutoMigrate(&Heartbeat{}); err != nil {
 		return fmt.Errorf("migrate background runtime heartbeats: %w", err)

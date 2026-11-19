@@ -50,7 +50,7 @@ func mutateContinuous(ctx context.Context, db *gorm.DB, executionID, expectedSta
 	var item TaskExecution
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Session(&gorm.Session{}).Where("execution_id = ? AND execution_boundary = ? AND status = ?", executionID, ExecutionBoundaryContinuous, expectedStatus)
-		if tx.Dialector.Name() == "postgres" {
+		if executionClockSQL(tx) != "" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		if err := query.First(&item).Error; err != nil {

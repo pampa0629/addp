@@ -41,10 +41,12 @@ func Dialector(cfg database.Config) (gorm.Dialector, error) {
 	connection.TLSConfig = tlsMode
 	connection.Timeout = cfg.ConnectTimeout
 	connection.ParseTime = true
+	connection.ClientFoundRows = true
 	connection.Loc = location
 	connection.Params = map[string]string{
-		"charset":   "utf8mb4",
-		"time_zone": "'" + zone + "'",
+		"charset":               "utf8mb4",
+		"time_zone":             "'" + zone + "'",
+		"transaction_isolation": "'READ-COMMITTED'",
 	}
 	return dialect.New(dialect.Config{DSNConfig: connection}), nil
 }

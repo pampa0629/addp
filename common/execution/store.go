@@ -11,13 +11,25 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/*.sql mysql_schema/*.sql
 var migrationFiles embed.FS
 
 const executionStoreMigrationLockID int64 = 2026030501
 
 // EnsureStore ensures the common execution schema objects are present.
 func EnsureStore(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		for _, table := range []string{"task_executions", "execution_events"} {
+			ddl, err := migrationFiles.ReadFile("mysql_schema/" + table + ".sql")
+			if err != nil {
+				return err
+			}
+			if err := db.Exec(string(ddl)).Error; err != nil {
+				return fmt.Errorf("ensure MySQL execution table %s: %w", table, err)
+			}
+		}
+		return nil
+	}
 	return withExecutionStoreMigrationLock(db, ensureStore)
 }
 

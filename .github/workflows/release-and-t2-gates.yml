@@ -1696,6 +1696,9 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
+      - name: Run MySQL Common execution lifecycle gate
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-execution'
+
       - name: Run MySQL platform database session gate
         env:
           ADDP_TEST_MYSQL_HOST: 127.0.0.1

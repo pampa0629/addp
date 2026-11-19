@@ -120,7 +120,7 @@ func publishContinuousProjection(ctx context.Context, db *gorm.DB, executionID s
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var item TaskExecution
 		query := tx.Session(&gorm.Session{}).Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND execution_boundary = ?", executionID, tenantID, ModuleTransfer, TaskTypeSync, strconv.FormatUint(uint64(taskID), 10), ExecutionBoundaryContinuous)
-		if tx.Dialector.Name() == "postgres" {
+		if executionClockSQL(tx) != "" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		if err := query.First(&item).Error; err != nil {

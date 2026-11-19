@@ -69,7 +69,7 @@ func finishPending(ctx context.Context, db *gorm.DB, identity PendingIdentity, s
 		if neverStarted {
 			query = query.Where("attempt = 0 AND progress = 0")
 		}
-		if tx.Dialector.Name() == "postgres" {
+		if executionClockSQL(tx) != "" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		var item TaskExecution
@@ -106,8 +106,8 @@ func AttachAuthorizationWithLease(ctx context.Context, db *gorm.DB, lease Lease,
 			return fmt.Errorf("%w: execution authorization attachment is not admissible", commonapi.ErrConflict)
 		}
 		query := ownedActiveExecution(tx, lease, now).Where("execution_authorization_id IS NULL AND authorization_expires_at IS NULL")
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Where("clock_timestamp() < ?", expiresAt)
+		if executionClockSQL(tx) != "" {
+			query = query.Where("? < ?", leaseClockValue(tx, now), expiresAt)
 		}
 		return requireOwnedRow(query.Updates(map[string]interface{}{"execution_authorization_id": authorizationID, "authorization_expires_at": expiresAt.UTC(), "updated_at": now}), lease.ExecutionID, "attach authorization")
 	})
@@ -130,7 +130,7 @@ func AttachPendingAuthorization(ctx context.Context, db *gorm.DB, identity Pendi
 	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := exactPending(tx, identity).Where("attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL")
-		if tx.Dialector.Name() == "postgres" {
+		if executionClockSQL(tx) != "" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		var item TaskExecution
@@ -150,8 +150,8 @@ func AttachPendingAuthorization(ctx context.Context, db *gorm.DB, identity Pendi
 			return fmt.Errorf("%w: pending authorization lineage or expiry is invalid", commonapi.ErrConflict)
 		}
 		update := exactPending(tx, identity).Where("attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL")
-		if tx.Dialector.Name() == "postgres" {
-			update = update.Where("clock_timestamp() < ?", expiresAt)
+		if executionClockSQL(tx) != "" {
+			update = update.Where("? < ?", leaseClockValue(tx, now), expiresAt)
 		}
 		return requireOwnedRow(update.Updates(map[string]interface{}{"execution_authorization_id": authorizationID, "authorization_expires_at": expiresAt.UTC(), "updated_at": now, "actor_principal_id": authorization.ActorPrincipalID, "actor_tenant_membership_id": authorization.ActorTenantMembershipID, "issued_authorization_version": authorization.IssuedAuthorizationVersion, "triggered_by": authorization.ActorPrincipalID}), identity.ExecutionID, "attach pending authorization")
 	})
@@ -172,7 +172,7 @@ func FailUnleased(ctx context.Context, db *gorm.DB, executionID string, tenantID
 			return tx.Session(&gorm.Session{}).Model(&TaskExecution{}).Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_owner = '' OR lease_expires_at IS NULL)", executionID, tenantID, module, taskType, ExecutionBoundaryBounded, ExecutionStatusRunning)
 		}
 		query := exact()
-		if tx.Dialector.Name() == "postgres" {
+		if executionClockSQL(tx) != "" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		var item TaskExecution
