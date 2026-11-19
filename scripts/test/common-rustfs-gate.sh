@@ -3,14 +3,19 @@
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # ADDP_T2_OWNED_SERVICES=rustfs
 # ADDP_T2_COMPOSE_FILE=business/docker-compose.yml
-# ADDP_T2_INPUT_FILES=business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/execution/ common/client/ transfer/backend/internal/planner/ transfer/backend/internal/executor/ transfer/backend/internal/service/ transfer/backend/internal/repository/ common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
+# ADDP_T2_INPUT_FILES=business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/execution/ common/client/ transfer/backend/internal/planner/ transfer/backend/internal/executor/ transfer/backend/internal/service/ transfer/backend/internal/repository/ common/infra/objectstore/ common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
 # disposable RustFS: reuse Business image/config, own every resource and remove it.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 SOURCE_ROOT=$ROOT_DIR
+platform_only=false
+if [ "$#" -eq 2 ] && [ "$1" = --test ] && [ "$2" = platform-object-area ]; then
+    platform_only=true
+    shift 2
+fi
 if [ "$#" -ne 0 ]; then
     if [ "$#" -ne 2 ] || [ "$1" != --source-root ]; then
-        echo "usage: $0 [--source-root checkout]" >&2
+        echo "usage: $0 [--source-root checkout|--test platform-object-area]" >&2
         exit 2
     fi
     SOURCE_ROOT=$(cd "$2" && pwd -P)
@@ -21,10 +26,12 @@ if [ "$#" -ne 0 ]; then
         exit 2
     fi
 fi
-: "${ADDP_TEST_POSTGRES_PORT:?verified PostgreSQL test mapping required}"
-: "${ADDP_TEST_POSTGRES_PASSWORD:?PostgreSQL test password required}"
-source "$ROOT_DIR/scripts/infra/ports.sh"
-addp_infra_verify_test_postgres_target "${ADDP_TEST_POSTGRES_HOST:-localhost}" "$ADDP_TEST_POSTGRES_PORT" "${ADDP_TEST_POSTGRES_DATABASE:-addp_test}"
+if [ "$platform_only" = false ]; then
+    : "${ADDP_TEST_POSTGRES_PORT:?verified PostgreSQL test mapping required}"
+    : "${ADDP_TEST_POSTGRES_PASSWORD:?PostgreSQL test password required}"
+    source "$ROOT_DIR/scripts/infra/ports.sh"
+    addp_infra_verify_test_postgres_target "${ADDP_TEST_POSTGRES_HOST:-localhost}" "$ADDP_TEST_POSTGRES_PORT" "${ADDP_TEST_POSTGRES_DATABASE:-addp_test}"
+fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-rustfs-t2.XXXXXX")
 chmod 700 "$WORK_DIR"
 export RUSTFS_T2_PROJECT="addp-rustfs-t2-${PPID}-$$"
@@ -65,8 +72,13 @@ PY
 compose up -d --wait --wait-timeout 150
 export ADDP_RUSTFS_INTEGRATION=1 ADDP_RUSTFS_TEST_BUCKET=addp-rustfs-contract
 export ADDP_RUSTFS_TEST_ACCESS_KEY="$RUSTFS_ACCESS_KEY" ADDP_RUSTFS_TEST_SECRET_KEY="$RUSTFS_SECRET_KEY"
+export ADDP_RUSTFS_TEST_ENDPOINT="$(compose port rustfs 9000)"
+(cd "$SOURCE_ROOT/common" && GOWORK=off go test ./infra/objectstore/s3 -run '^TestPlatformAreaAgainstRustFS$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-s3.log"
+grep -q '^--- PASS: TestPlatformAreaAgainstRustFS ' "$WORK_DIR/platform-s3.log"
+if [ "$platform_only" = true ]; then
+    exit 0
+fi
 run_contract() {
-    export ADDP_RUSTFS_TEST_ENDPOINT="$(compose port rustfs 9000)"
     (cd "$SOURCE_ROOT/common" && GOWORK=off go test ./engine/plugins/rustfs -run '^TestIntegrationRustFS' -count=1 -timeout=90s -v) | tee "$WORK_DIR/provider.log"
     ! grep -q -- '--- SKIP:' "$WORK_DIR/provider.log"
     grep -q -- '--- PASS: TestIntegrationRustFSProvider' "$WORK_DIR/provider.log"

@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
-objectminio "github.com/addp/common/infra/objectstore/minio"
+objectminio "github.com/addp/common/infra/objectstore/s3"
 )
 
 type exportOwnerRegistry struct{ url string }

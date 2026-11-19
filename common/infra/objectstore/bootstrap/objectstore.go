@@ -10,7 +10,7 @@ import (
 
 	"github.com/addp/common/config"
 	"github.com/addp/common/infra/objectstore"
-	"github.com/addp/common/infra/objectstore/minio"
+	"github.com/addp/common/infra/objectstore/s3"
 )
 
 // OpenObjectArea resolves the area once at startup. Manager remains mapped to its same-name bucket; standard and develop can be rebound.
@@ -25,7 +25,11 @@ func OpenObjectArea(ctx context.Context, area string) (objectstore.Area, error) 
 	if err != nil {
 		return nil, err
 	}
-	return minio.Bind(ctx, area, bucket, config.LoadBuiltinMinIOConfig())
+	settings := config.LoadBuiltinMinIOConfig()
+	return s3.Bind(ctx, area, bucket, s3.Config{
+		Endpoint: settings.Endpoint, AccessKey: settings.AccessKey,
+		SecretKey: settings.SecretKey, UseSSL: settings.UseSSL,
+	})
 }
 
 // OpenContentArea requires the range and directory capabilities used by formats.

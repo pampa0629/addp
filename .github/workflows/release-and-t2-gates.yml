@@ -1696,6 +1696,15 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
+      - name: Run MySQL platform database session gate
+        env:
+          ADDP_TEST_MYSQL_HOST: 127.0.0.1
+          ADDP_TEST_MYSQL_PORT: 3306
+          ADDP_TEST_MYSQL_USER: root
+          ADDP_TEST_MYSQL_PASSWORD: addp_ci_password
+          ADDP_TEST_MYSQL_PLATFORM_DATABASE: addp_ci
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--test platform-database'
+
       - name: Run MySQL data protection gate
         env:
           ADDP_TEST_MYSQL_HOST: 127.0.0.1

@@ -18,7 +18,7 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/format"
-	objectminio "github.com/addp/common/infra/objectstore/minio"
+	objectminio "github.com/addp/common/infra/objectstore/s3"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

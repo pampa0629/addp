@@ -12,7 +12,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/exportartifact"
-	objectminio "github.com/addp/common/infra/objectstore/minio"
+	objectminio "github.com/addp/common/infra/objectstore/s3"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/minio/minio-go/v7"

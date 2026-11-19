@@ -10,7 +10,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/infra/objectstore"
 	objectcontent "github.com/addp/common/infra/objectstore/contentadapter"
-	objectminio "github.com/addp/common/infra/objectstore/minio"
+	objectminio "github.com/addp/common/infra/objectstore/s3"
 	sdk "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )

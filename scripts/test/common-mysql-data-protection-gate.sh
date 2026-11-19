@@ -17,8 +17,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -104,6 +104,8 @@ with open(source) as handle:
 mysql['container_name'] = project
 mysql['ports'] = [{'target': 3306, 'published': '0', 'host_ip': '127.0.0.1', 'protocol': 'tcp'}]
 mysql['networks'] = {'default': None}
+mysql['environment']['MYSQL_DATABASE'] = 'addp_platform_mysql_test'
+
 with open(destination, 'w') as handle:
     json.dump({'services': {'mysql': mysql}}, handle)
 PY
@@ -127,6 +129,21 @@ fi
 if [ -z "${ADDP_TEST_MYSQL_PASSWORD:-}" ]; then
     echo "ADDP_TEST_MYSQL_PASSWORD is required for the disposable MySQL protection gate" >&2
     exit 1
+fi
+
+if [ "$test_group" = platform-database ]; then
+    if [ "$local_disposable" = true ]; then
+        export ADDP_TEST_MYSQL_PLATFORM_DATABASE=addp_platform_mysql_test
+    fi
+    : "${ADDP_TEST_MYSQL_PLATFORM_DATABASE:?Use a pre-created disposable platform test database}"
+    case "$ADDP_TEST_MYSQL_PLATFORM_DATABASE" in
+        addp_ci|addp_platform_mysql_test) ;;
+        *) echo 'unsupported platform test database name' >&2; exit 2 ;;
+    esac
+    (cd "$ROOT_DIR/common" && GOWORK=off go test ./infra/database/mysql -run '^TestPlatformConnectionAgainstMySQL$' -count=1 -timeout=45s -v) \
+        | tee "$WORK_DIR/platform-mysql.log"
+    grep -q '^--- PASS: TestPlatformConnectionAgainstMySQL ' "$WORK_DIR/platform-mysql.log"
+    exit 0
 fi
 
 if [ "$recovery_mode" = inspect ]; then

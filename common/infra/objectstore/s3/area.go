@@ -1,4 +1,5 @@
-package minio
+// Package s3 adapts a deployment-owned S3 endpoint to a platform object area.
+package s3
 
 import (
 	"context"
@@ -6,7 +7,6 @@ import (
 	"io"
 	"log"
 
-	"github.com/addp/common/config"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/infra/objectstore"
 	sdk "github.com/minio/minio-go/v7"
@@ -14,14 +14,19 @@ import (
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
 
+type Config struct {
+	Endpoint, AccessKey, SecretKey string
+	UseSSL                         bool
+}
+
 type areaStore struct {
 	client *sdk.Client
 	bucket string
 }
 
-func Bind(ctx context.Context, area, bucket string, cfg config.BuiltinMinIOConfig) (objectstore.Area, error) {
+func Bind(ctx context.Context, area, bucket string, cfg Config) (objectstore.ContentArea, error) {
 	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
-		return nil, fmt.Errorf("object area %q: invalid MinIO bucket %q: %w", area, bucket, err)
+		return nil, fmt.Errorf("object area %q: invalid S3 bucket %q: %w", area, bucket, err)
 	}
 	client, err := sdk.New(cfg.Endpoint, &sdk.Options{
 		Creds: credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""), Secure: cfg.UseSSL,
@@ -32,9 +37,9 @@ func Bind(ctx context.Context, area, bucket string, cfg config.BuiltinMinIOConfi
 	// Preserve non-file functionality and the binding while storage recovers.
 	exists, err := client.BucketExists(ctx, bucket)
 	if err != nil {
-		log.Printf("object area %q, MinIO bucket %q: startup check failed: %v", area, bucket, err)
+		log.Printf("object area %q, S3 bucket %q: startup check failed: %v", area, bucket, err)
 	} else if !exists {
-		log.Printf("object area %q, MinIO bucket %q: bucket missing", area, bucket)
+		log.Printf("object area %q, S3 bucket %q: bucket missing", area, bucket)
 	}
 	return New(client, bucket), nil
 }

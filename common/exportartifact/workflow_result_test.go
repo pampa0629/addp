@@ -13,7 +13,7 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	objectminio "github.com/addp/common/infra/objectstore/minio"
+	objectminio "github.com/addp/common/infra/objectstore/s3"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

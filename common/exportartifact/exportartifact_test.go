@@ -12,7 +12,7 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/infra/objectstore"
-	objectminio "github.com/addp/common/infra/objectstore/minio"
+	objectminio "github.com/addp/common/infra/objectstore/s3"
 	commonModels "github.com/addp/common/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/exportartifact"
-	objectminio "github.com/addp/common/infra/objectstore/minio"
+	objectminio "github.com/addp/common/infra/objectstore/s3"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
