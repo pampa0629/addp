@@ -55,7 +55,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/monitor/traces': [platform('monitor.trace.read', 'platform.module.read')],
   '/monitor/http-quality': [platform('monitor.http_observation.read', 'platform.module.read')],
   '/monitor/node-resources': [platform('monitor.resource_observation.read', 'platform.host_node.read')],
-  '/monitor/monitoring-targets': [platform('monitor.monitoring_target.read', 'platform.host_node.read')],
+  '/monitor/monitoring-targets': [platform('monitor.monitoring_target.read', 'platform.host_node.read'), platform('platform.engine_deployment.read')],
   '/monitor/monitoring-targets/new': [platform('monitor.monitoring_target.read', 'platform.host_node.read', 'monitor.monitoring_target.create')],
   '/monitor/executions': [tenant('monitor.execution.read')],
   '/monitor/platform-alerts': [anyOf('platform', 'monitor.platform_alert.read', 'monitor.platform_alert_notification.read', 'monitor.platform_resource_rule.read', 'monitor.platform_http_rule.read', 'monitor.platform_service_availability_rule.read')],

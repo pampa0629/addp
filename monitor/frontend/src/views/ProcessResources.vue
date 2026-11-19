@@ -10,7 +10,7 @@
       <el-tab-pane :label="t('monitor.frontend.services')" name="services" />
       <el-tab-pane :label="t('monitor.frontend.title')" name="frontend" />
     </el-tabs>
-    <FrontendResources v-if="canReadHost && state.tab === 'frontend'" :key="identity" :node-id="state.nodeID" :identity="identity" @update:node-id="nodeID => navigate(resolveProcessRoute({ tab: 'frontend', node_id: nodeID }).query)" />
+    <FrontendResources v-if="canReadHost && state.tab === 'frontend'" :key="identity" :node-id="state.nodeID" :can-configure="canConfigureFrontend" @configure="openFrontendConfiguration" @update:node-id="nodeID => navigate(resolveProcessRoute({ tab: 'frontend', node_id: nodeID }).query)" />
     <template v-else-if="canRead">
       <section class="process-totals" data-testid="process-totals">
         <h3 class="process-total-title">{{ t('monitor.processTotals.title') }} <FieldHelp :content="t('monitor.processTotals.scope')" /></h3>
@@ -191,6 +191,10 @@ import { navigateMonitorRoute } from '../utils/moduleNavigation'
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.module.read'))
 const canReadHost = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
+const canConfigureFrontend = computed(() => canReadHost.value && auth.hasPermission('monitor.monitoring_target.read'))
+function openFrontendConfiguration() {
+  return navigateMonitorRoute(router, { path: '/monitoring-targets', query: { tab: 'frontend' } }, { history: 'push' })
+}
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')

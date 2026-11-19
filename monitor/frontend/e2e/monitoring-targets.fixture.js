@@ -70,12 +70,17 @@ export async function backend(page, options = {}) {
       if (mode === 'unavailable' || mode === 'denied') { status = mode === 'denied' ? 403 : 503; body = { error_code: mode === 'denied' ? 'permission_denied' : 'observability_backend_unavailable' } }
       if (collectionHeld) await collectionHeld
     }
+    else if (path === '/api/v1/monitor/platform/frontend_nodes') {
+      body = { data: target?.monitor_kind === 'frontend_resources' ? [{ node_id: node, display_name: '测试主机', enabled: target.enabled }] : [] }
+    }
     else if (path.startsWith('/api/v1/monitor/platform/monitoring_targets')) {
       if (req.method() === 'GET') {
         reads.push(path)
         if (path.endsWith('/monitoring_targets')) {
           if (held) await held
-          body = { data: target ? [target, ...(options.additionalTargets || [])] : [], total: target ? options.total || 1 : 0, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')), total_pages: 1 }
+          const scope = url.searchParams.get('scope')
+          const rows = target ? [target, ...(options.additionalTargets || [])].filter(row => !scope || (row.monitor_kind === 'frontend_resources') === (scope === 'frontend')) : []
+          body = { data: rows, total: rows.length ? options.total || rows.length : 0, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')), total_pages: 1 }
           if (options.unavailable) { status = 503; body = { error: 'unavailable' } }
         } else body = target
       } else {

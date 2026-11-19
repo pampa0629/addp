@@ -2443,13 +2443,14 @@
     },
     "engineDeployments": {
       "title": "引擎纳管",
-      "purpose": "管理引擎监控配置、部署名称和承载主机。",
+      "purpose": "登记已部署的引擎，维护部署名称和承载主机。",
       "scopes": {
         "infra": "Infra 基础设施",
         "business": "Business 业务引擎"
       },
       "actions": "操作",
-      "create": "配置引擎监控",
+      "create": "登记已发现的引擎",
+      "manageCollection": "配置采集",
       "details": "引擎部署详情",
       "name": "部署名称",
       "search": "搜索部署名称",
@@ -2490,7 +2491,7 @@
       "selectAdmissionHost": "请选择实际承载所选服务的主机后保存。",
       "discoveryStatus": "当前配置",
       "noCandidates": "此范围暂无部署或发现结果",
-      "discoveryHint": "勾选以启用监控，取消勾选以停用。首次启用需要确认承载主机。",
+      "discoveryHint": "勾选要登记的部署并核对承载主机。已登记引擎请在采集配置中启停。",
       "sourceChanged": "来源已变化或过期，请重新读取后核对并选择。",
       "discoveryStates": {
         "available": "来源读取成功",
@@ -2536,9 +2537,6 @@
       "collectionStatus": "实际采集",
       "reloadConfiguration": "重新读取配置",
       "enableChanges": "将启用监控：{names}",
-      "disableChanges": "将停用监控：{names}",
-      "appliedChanges": "已确认保存：{names}",
-      "partialSave": "部分变更已确认保存。已停止后续提交，请重新读取配置并核对。",
       "collection": {
         "collecting": "正在采集",
         "failed": "采集失败",

@@ -701,8 +701,26 @@
       }
     },
     "targets": {
+      "engine": {
+        "tab": "Engines",
+        "register": "Register engines",
+        "empty": "No engines registered in this scope",
+        "confirmResume": "Resume metrics collection for this engine?",
+        "saveFailed": "Collection settings could not be confirmed. Refresh to check.",
+        "states": {
+          "unknown": "Unknown",
+          "collecting": "Collecting",
+          "failed": "Latest scrape failed",
+          "stale": "Stale",
+          "snapshot_unavailable": "Snapshot unavailable",
+          "no_sample": "No sample",
+          "not_active": "Inactive",
+          "not_connected": "Not connected",
+          "source_unavailable": "Source unavailable"
+        }
+      },
       "automatic": {
-        "hosts": "Host collection",
+        "hosts": "Hosts and containers",
         "tab": "Services and dedicated sources",
         "scope": "Collection scope",
         "observation": "Observed collection",
@@ -1076,6 +1094,8 @@
       "cpu": "CPU usage",
       "memory": "Memory usage",
       "restarts": "Restarts",
+      "configure": "Configure frontend collection",
+      "noConfiguredNodes": "No frontend collection nodes are configured",
       "selectNode": "Select a frontend collection node",
       "modes": {
         "vite": "Development · Vite",

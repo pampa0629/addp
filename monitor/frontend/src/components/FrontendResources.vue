@@ -1,13 +1,17 @@
 <template>
   <section data-testid="frontend-resources">
     <div class="frontend-toolbar">
-      <HostNodeSelect :model-value="nodeId" :allowed="true" :identity="identity" :api="hosts"
-        :label="t('monitor.targets.node')" :placeholder="t('monitor.targets.nodeSearch')" :more-label="t('monitor.targets.moreNodes')"
-        :error-message="t('monitor.targets.nodeLoadingFailed')" @update:model-value="emit('update:nodeId', $event)" />
-      <el-button :disabled="!nodeId" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+      <el-select v-if="nodes.length || nodeId" :model-value="nodeId" filterable
+        :aria-label="t('monitor.frontend.selectNode')" :placeholder="t('monitor.frontend.selectNode')"
+        @update:model-value="emit('update:nodeId', $event)">
+        <el-option v-for="node in options" :key="node.node_id" :value="node.node_id" :label="node.display_name" />
+      </el-select>
+      <el-button :loading="loading || nodesLoading" @click="refreshView">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canConfigure" @click="emit('configure')">{{ t('monitor.frontend.configure') }}</el-button>
     </div>
     <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" />
-    <el-empty v-else-if="!observed && !loading" :description="t('monitor.frontend.selectNode')" :image-size="64" />
+    <el-alert v-else-if="!nodeId && nodesError" :title="t(nodesError)" type="warning" :closable="false" />
+    <el-empty v-else-if="!nodeId && !nodesLoading && !nodes.length" :description="t('monitor.frontend.noConfiguredNodes')" :image-size="64" />
     <template v-else-if="observed">
       <el-alert v-if="observed.source_state !== 'collecting'" :title="t(`monitor.frontend.states.${observed.source_state}`)" type="info" :closable="false" />
       <el-table v-else :data="observed.data" border>
@@ -36,21 +40,23 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import HostNodeSelect from '../../../../common-frontend/basic/src/components/HostNodeSelect.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue as formatNumber } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
-import { nodeResourcesAPI as hosts } from '../api/nodeResources'
 import { processResourcesAPI as api } from '../api/processResources'
 import { resourceErrorKey } from '../utils/nodeResources'
+import { isTargetUUID } from '../utils/monitoringTargets.js'
 
-const props = defineProps({ nodeId: { type: String, required: true }, identity: { type: String, required: true } })
-const emit = defineEmits(['update:nodeId'])
+const props = defineProps({ nodeId: { type: String, required: true }, canConfigure: { type: Boolean, default: false } })
+const emit = defineEmits(['update:nodeId', 'configure'])
 const { t, locale } = useI18n()
-const requests = createLatestRequestScope()
+const requests = createLatestRequestScope(), inventory = createLatestRequestScope()
+const nodes = ref([]), nodesLoading = ref(true), nodesError = ref('')
+const options = computed(() => !props.nodeId || nodes.value.some(node => node.node_id === props.nodeId)
+  ? nodes.value : [{ node_id: props.nodeId, display_name: observed.value?.node?.display_name || props.nodeId }, ...nodes.value])
 const observed = ref(null), loading = ref(false), blocked = ref(false), errorKey = ref('')
 const tagType = value => value === true ? 'success' : value === false ? 'danger' : 'info'
 const reachability = value => t(`monitor.frontend.states.${value === true ? 'up' : value === false ? 'down' : 'unknown'}`)
@@ -61,6 +67,31 @@ const refresh = createAutoRefresh({
   pause: () => { requests.invalidate(); loading.value = false; observed.value = null },
   visibilityChanged: () => {}
 })
+
+async function loadNodes() {
+  const ticket = inventory.invalidate()
+  nodesLoading.value = true
+  nodesError.value = ''
+  try {
+    const result = await inventory.request(api.frontendNodes)
+    if (!inventory.current(ticket)) return
+    const data = result.data
+    if (!Array.isArray(data) || data.length > 100 || data.some(node => !isTargetUUID(node?.node_id) || typeof node.display_name !== 'string' || !node.display_name.trim() || typeof node.enabled !== 'boolean') ||
+      new Set(data.map(node => node.node_id)).size !== data.length) throw new Error('invalid_resource_response')
+    nodes.value = data
+    if (!props.nodeId && data.length) emit('update:nodeId', data[0].node_id)
+  } catch (error) {
+    if (!inventory.current(ticket)) return
+    nodes.value = []
+    nodesError.value = resourceErrorKey(error)
+  } finally {
+    if (inventory.current(ticket)) nodesLoading.value = false
+  }
+}
+function refreshView() {
+  void loadNodes()
+  if (props.nodeId) void load()
+}
 
 async function load() {
   refresh.stop()
@@ -85,10 +116,11 @@ watch(() => props.nodeId, () => {
   observed.value = null; errorKey.value = ''; loading.value = false
   void load()
 }, { immediate: true })
-onBeforeUnmount(() => { refresh.dispose(); requests.dispose() })
+onMounted(loadNodes)
+onBeforeUnmount(() => { refresh.dispose(); requests.dispose(); inventory.dispose() })
 </script>
 
 <style scoped>
 .frontend-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-.frontend-toolbar :deep(.host-node-select) { width: min(360px, 100%); }
+.frontend-toolbar .el-select { width: min(360px, 100%); }
 </style>

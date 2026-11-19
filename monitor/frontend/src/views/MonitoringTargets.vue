@@ -1,16 +1,22 @@
 <template>
-  <section v-if="canRead" class="monitoring-targets" data-testid="monitoring-targets">
+  <section v-if="canRead || (canReadEngines && !dialogOpen)" class="monitoring-targets" data-testid="monitoring-targets">
     <header class="target-toolbar">
       <h2 ref="pageHeading" tabindex="-1">{{ t('monitor.targets.title') }}</h2>
-      <el-button v-if="!automaticTab" :loading="loading" @click="loadList">{{ t('monitor.targets.refresh') }}</el-button>
-      <el-button v-if="canCreate && !automaticTab" type="primary" @click="navigate('/monitoring-targets/new')">{{ t('monitor.targets.create') }}</el-button>
+      <el-button v-if="manualTab" :loading="loading" @click="loadList">{{ t('monitor.targets.refresh') }}</el-button>
+      <el-button v-if="canCreate && manualTab" type="primary" @click="navigate('/monitoring-targets/new', frontendTab ? { tab: 'frontend' } : {})">{{ t('monitor.targets.create') }}</el-button>
     </header>
-    <el-tabs v-if="!dialogOpen" :model-value="automaticTab ? 'automatic' : 'hosts'" @update:model-value="switchTab">
-      <el-tab-pane :label="t('monitor.targets.automatic.hosts')" name="hosts" />
-      <el-tab-pane :label="t('monitor.targets.automatic.tab')" name="automatic" />
+    <el-tabs v-if="!dialogOpen" :model-value="state.tab" @update:model-value="switchTab">
+      <el-tab-pane v-if="canRead" :label="t('monitor.targets.automatic.hosts')" name="nodes" />
+      <el-tab-pane v-if="canRead" :label="t('monitor.frontend.title')" name="frontend" />
+      <el-tab-pane v-if="canRead" :label="t('monitor.targets.automatic.tab')" name="automatic" />
+      <el-tab-pane v-if="canReadEngines" :label="t('monitor.targets.engine.tab')" name="engines" />
     </el-tabs>
-    <AutomaticCollectionScopes v-if="automaticTab" :key="identity" />
-    <template v-else>
+    <AutomaticCollectionScopes v-if="automaticTab && canRead" :key="identity" />
+    <EngineCollectionSettings v-else-if="engineTab && canReadEngines" :key="identity"
+      :scope="state.query.scope || 'infra'" :page="state.page" :page-size="state.pageSize"
+      @update:scope="scope => navigate('/monitoring-targets', { tab: 'engines', scope: scope === 'business' ? scope : undefined }, 'replace')"
+      @update:page="changePage" @update:page-size="changeSize" />
+    <template v-else-if="manualTab && canRead">
       <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
       <el-alert v-if="!dialogOpen && listCollectionError" :title="t(listCollectionError)" type="warning" :closable="false" show-icon data-testid="target-list-collection-error" />
       <el-table v-loading="loading" :data="rows" border stripe>
@@ -46,7 +52,7 @@
             <el-input v-else :model-value="selectedNode?.display_name || t('monitor.targets.nodeMissing')" readonly data-testid="target-node" />
             <p v-if="selectedNode" class="target-hint">{{ selectedNode.addresses.join(', ') }}</p>
           </el-form-item>
-          <el-form-item :label="t('monitor.targets.kind')"><el-select v-model="form.monitor_kind" :disabled="!creating" :aria-label="t('monitor.targets.kind')"><el-option v-for="kind in Object.keys(targetKinds)" :key="kind" :value="kind" :label="t(`monitor.targets.kinds.${kind}`)" /></el-select></el-form-item>
+          <el-form-item :label="t('monitor.targets.kind')"><el-select v-model="form.monitor_kind" :disabled="!creating" :aria-label="t('monitor.targets.kind')"><el-option v-for="kind in (creating && frontendTab ? ['frontend_resources'] : creating ? ['host_resources', 'container_resources'] : Object.keys(targetKinds))" :key="kind" :value="kind" :label="t(`monitor.targets.kinds.${kind}`)" /></el-select></el-form-item>
           <el-form-item :label="t('monitor.targets.endpoint')"><el-input ref="endpointInput" v-model="form.endpoint" maxlength="512" :placeholder="t('monitor.targets.endpointHint')" data-testid="target-endpoint" /></el-form-item>
           <el-form-item :label="t('monitor.targets.configState')"><el-switch v-model="form.enabled" :active-text="t('monitor.targets.enabled')" :inactive-text="t('monitor.targets.disabled')" :aria-label="t('monitor.targets.configState')" data-testid="target-enabled" /></el-form-item>
         </el-form>
@@ -98,6 +104,7 @@ import { ElMessage } from 'element-plus'
 import { openConsoleRoute, StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 import AutomaticCollectionScopes from '../components/AutomaticCollectionScopes.vue'
+import EngineCollectionSettings from '../components/EngineCollectionSettings.vue'
 import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import HostNodeSelect from '../../../../common-frontend/basic/src/components/HostNodeSelect.vue'
@@ -111,7 +118,9 @@ import { formatDateTime } from '../../../../common-frontend/basic/src/utils/form
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
-const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.monitoring_target.read') && auth.hasPermission('platform.host_node.read'))
+const platformUser = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation)
+const canRead = computed(() => platformUser.value && auth.hasPermission('monitor.monitoring_target.read') && auth.hasPermission('platform.host_node.read'))
+const canReadEngines = computed(() => platformUser.value && auth.hasPermission('platform.engine_deployment.read'))
 const canCreate = computed(() => canRead.value && auth.hasPermission('monitor.monitoring_target.create'))
 const canObserve = computed(() => canRead.value && auth.hasPermission('monitor.resource_observation.read'))
 const creating = computed(() => route.name === 'MonitoringTargetNew')
@@ -121,7 +130,10 @@ const creationBlocked = ref(false)
 const canWrite = computed(() => !creationBlocked.value && Boolean(selectedNode.value) && (creating.value ? canCreate.value : canRead.value && auth.hasPermission('monitor.monitoring_target.update')))
 const canRemove = computed(() => !creating.value && canRead.value && auth.hasPermission('monitor.monitoring_target.delete'))
 const state = computed(() => resolveTargetRoute(route.query, creating.value, !dialogOpen.value))
-const automaticTab = computed(() => state.value.query.tab === 'automatic')
+const automaticTab = computed(() => state.value.tab === 'automatic')
+const frontendTab = computed(() => state.value.tab === 'frontend')
+const engineTab = computed(() => state.value.tab === 'engines')
+const manualTab = computed(() => !automaticTab.value && !engineTab.value)
 const rows = ref([]), total = ref(0), loading = ref(false), loaded = ref(false), listError = ref('')
 const target = ref(null), formReady = ref(false), detailLoading = ref(false), detailError = ref(''), saveError = ref(''), saving = ref(false), conflicted = ref(false), statusMessage = ref('')
 const collection = ref(null), collectionLoading = ref(false), collectionError = ref('')
@@ -152,7 +164,7 @@ async function request(work) {
 }
 function navigate(path, query = state.value.query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
 function switchTab(tab) {
-  return navigate('/monitoring-targets', tab === 'automatic' ? { tab } : {}, 'replace')
+  return navigate('/monitoring-targets', tab === 'nodes' ? {} : { tab }, 'replace')
 }
 function changeSize(size) { return navigate('/monitoring-targets', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
@@ -183,7 +195,7 @@ function clearCollection() {
   collectionTicket++; collectionController?.abort(); collectionController = null
   collection.value = null; collectionError.value = ''; collectionLoading.value = false
 }
-function resetForm() { clearCollection(); creationBlocked.value = false; Object.assign(form, { node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null; selectedNode.value = null }
+function resetForm() { clearCollection(); creationBlocked.value = false; Object.assign(form, { node_id: '', monitor_kind: frontendTab.value ? 'frontend_resources' : 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null; selectedNode.value = null }
 
 function populate(value) {
   clearCollection()
@@ -208,7 +220,7 @@ async function loadList() {
   clearListCollections()
   loading.value = true; loaded.value = false; rows.value = []; hostReferences.value = {}; listError.value = ''
   try {
-    const value = await request(config => api.list({ page: state.value.page, page_size: state.value.pageSize }, config))
+    const value = await request(config => api.list({ page: state.value.page, page_size: state.value.pageSize, scope: frontendTab.value ? 'frontend' : 'nodes' }, config))
     if (generation !== epoch || ticket !== listTicket) return
     rows.value = value.data; total.value = value.total; loaded.value = true
     const hosts = await loadHostReferences(value.data.map(row => row.subject.node_id), readNode, () => generation === epoch && ticket === listTicket)
@@ -260,6 +272,10 @@ async function loadDetail() {
   try {
     const value = await request(config => api.get(id, config))
     if (generation !== epoch || ticket !== detailTicket) return
+    if ((value.monitor_kind === 'frontend_resources') !== frontendTab.value) {
+      await navigate(route.path, { tab: value.monitor_kind === 'frontend_resources' ? 'frontend' : undefined }, 'replace')
+      return
+    }
     populate(value); formReady.value = false
     const host = await readNode(value.subject.node_id)
     if (generation !== epoch || ticket !== detailTicket) return
@@ -333,9 +349,15 @@ watch([() => route.fullPath, identity], async () => {
   rows.value = []; total.value = 0; loaded.value = false; loading.value = false; detailLoading.value = false
   listError.value = ''; detailError.value = ''; saveError.value = ''; statusMessage.value = ''; saving.value = false; conflicted.value = false
   if (!['MonitoringTargets', 'MonitoringTargetNew', 'MonitoringTargetDetail'].includes(route.name)) return
-  if (!canRead.value) return
+  if (route.name === 'MonitoringTargets' && !canRead.value && canReadEngines.value && !engineTab.value) {
+    await navigate(route.path, { tab: 'engines' }, 'replace'); return
+  }
+  if (route.name === 'MonitoringTargets' && engineTab.value && !canReadEngines.value && canRead.value) {
+    await navigate(route.path, {}, 'replace'); return
+  }
+  if (!canRead.value && !(engineTab.value && canReadEngines.value)) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
-  if (automaticTab.value) return
+  if (!manualTab.value) return
   if (creating.value) {
     formReady.value = canCreate.value
     const generation = epoch

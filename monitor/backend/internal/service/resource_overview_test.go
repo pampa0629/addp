@@ -204,3 +204,20 @@ func TestResourceOverviewUsesOneBatchForCompleteAuthorizedConnectedScope(t *test
 		t.Fatal("backend failure became partial success", err)
 	}
 }
+
+func TestFrontendNodesReturnOnlyConfiguredUserVisibleHosts(t *testing.T) {
+	hosts, _, _ := overviewFixture(4)
+	hosts[0].Enabled = false
+	nodes := &overviewNodes{rows: hosts}
+	sources := &targetTestStore{}
+	for _, id := range []string{hosts[0].NodeID, hosts[1].NodeID, hosts[1].NodeID, uuid.NewString()} {
+		sources.rows = append(sources.rows, metricsdiscovery.NodeTarget{Subject: metricsdiscovery.NodeSubject{NodeID: id}, MonitorKind: "frontend_resources", Enabled: true})
+	}
+	sources.rows = append(sources.rows, metricsdiscovery.NodeTarget{Subject: metricsdiscovery.NodeSubject{NodeID: hosts[2].NodeID}, MonitorKind: "host_resources", Enabled: true})
+	s := &ResourceObservationService{nodes: nodes, targets: sources}
+	result, err := s.FrontendNodes(context.Background(), "addp_at_user")
+	if err != nil || len(result.Data) != 2 || result.Data[0].NodeID != hosts[1].NodeID || !result.Data[0].Enabled ||
+		result.Data[1].NodeID != hosts[0].NodeID || result.Data[1].Enabled || nodes.scopeCalls != 1 || nodes.tokens[0] != "addp_at_user" {
+		t.Fatalf("frontend node discovery: %#v %v", result, err)
+	}
+}

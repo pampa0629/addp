@@ -163,6 +163,7 @@ func SetupRouter(
 	platform.GET("/platform/http_interfaces", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorHttpObservationRead), platformObservationIdentity(false), httpHandler.Interfaces)
 	platform.GET("/platform/http_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorHttpObservationRead), platformObservationIdentity(false), httpHandler.Trend)
 	platform.GET("/platform/frontend_observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead, "platform.host_node.read"), platformObservationIdentity(false), resourceHandler.FrontendObservation)
+	platform.GET("/platform/frontend_nodes", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead, "platform.host_node.read"), platformObservationIdentity(false), resourceHandler.FrontendNodes)
 	platform.GET("/platform/resource_observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Instant)
 	platform.GET("/platform/metrics_collection_health", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.CollectionHealth)
 	platform.GET("/platform/resource_overview", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Overview)

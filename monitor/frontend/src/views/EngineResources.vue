@@ -76,7 +76,6 @@
 import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { openConsoleRoute } from '@common-ui'
 import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
@@ -107,7 +106,7 @@ const showMeilisearch = computed(() => state.value.scope === 'infra' && state.va
 const canConfigure = computed(() => canReadHost.value && state.value.scope !== 'runtime' &&
   (auth.hasPermission('platform.engine_deployment.create') || auth.hasPermission('platform.engine_deployment.update')))
 function openConfiguration() {
-  return openConsoleRoute(state.value.scope === 'business' ? '/system/engine-deployments?scope=business' : '/system/engine-deployments', { history: 'push' })
+  return navigateMonitorRoute(router, { path: '/monitoring-targets', query: { tab: 'engines', ...(state.value.scope === 'business' ? { scope: 'business' } : {}) } }, { history: 'push' })
 }
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
 const trendZoom = ref(null)

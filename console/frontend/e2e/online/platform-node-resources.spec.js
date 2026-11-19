@@ -320,7 +320,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
         await system.getByTestId('deployment-discovery-scopes').getByRole('tab', { name: owner.scope === 'infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
         const checkbox = system.getByTestId('deployment-candidates').getByRole('checkbox', { name: owner.display_name, exact: true })
         await expect(checkbox).toBeChecked()
-        await expect(checkbox.locator('..')).toBeEnabled()
+        await expect(checkbox).toBeDisabled()
         await expect(system.getByTestId('deployment-save')).toBeDisabled()
       }
       expect(writes).toHaveLength(1)

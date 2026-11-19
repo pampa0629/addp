@@ -701,8 +701,26 @@
       }
     },
     "targets": {
+      "engine": {
+        "tab": "引擎",
+        "register": "登记引擎",
+        "empty": "此范围暂无已登记引擎",
+        "confirmResume": "恢复此引擎的指标采集？",
+        "saveFailed": "无法确认采集配置，请刷新后核对。",
+        "states": {
+          "unknown": "未知",
+          "collecting": "正在采集",
+          "failed": "最近抓取失败",
+          "stale": "样本已过期",
+          "snapshot_unavailable": "最近快照不可用",
+          "no_sample": "暂无样本",
+          "not_active": "未采集",
+          "not_connected": "未接入",
+          "source_unavailable": "来源不可用"
+        }
+      },
       "automatic": {
-        "hosts": "主机采集",
+        "hosts": "主机与容器",
         "tab": "服务与专用来源",
         "scope": "采集范围",
         "observation": "实际采集",
@@ -1076,6 +1094,8 @@
       "cpu": "CPU 占用",
       "memory": "内存占用",
       "restarts": "重启次数",
+      "configure": "配置前端采集",
+      "noConfiguredNodes": "尚未配置前端采集节点",
       "selectNode": "选择前端采集节点",
       "modes": {
         "vite": "开发 · Vite",

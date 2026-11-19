@@ -124,6 +124,7 @@ func targetError(c *gin.Context, err error) {
 // @Security BearerAuth
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页条数 | Page size" default(20) maximum(100)
+// @Param scope query string false "来源范围 | Source scope" Enums(nodes,frontend)
 // @Success 200 {object} service.MonitoringTargetPage
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -143,13 +144,22 @@ func (h *MonitoringTargetHandler) List(c *gin.Context) {
 		return
 	}
 	page, size := 1, 20
+	scope := ""
 	query, err := url.ParseQuery(c.Request.URL.RawQuery)
 	if err != nil {
 		targetError(c, metricsdiscovery.ErrInvalidTarget)
 		return
 	}
 	for key, values := range query {
-		if len(values) != 1 || (key != "page" && key != "page_size") {
+		if len(values) != 1 {
+			targetError(c, metricsdiscovery.ErrInvalidTarget)
+			return
+		}
+		if key == "scope" && (values[0] == "nodes" || values[0] == "frontend") {
+			scope = values[0]
+			continue
+		}
+		if key != "page" && key != "page_size" {
 			targetError(c, metricsdiscovery.ErrInvalidTarget)
 			return
 		}
@@ -164,7 +174,7 @@ func (h *MonitoringTargetHandler) List(c *gin.Context) {
 			size = n
 		}
 	}
-	result, err := h.targets.List(c.Request.Context(), targetToken(c), page, size)
+	result, err := h.targets.List(c.Request.Context(), targetToken(c), page, size, scope)
 	if err != nil {
 		targetError(c, err)
 		return

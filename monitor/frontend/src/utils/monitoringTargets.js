@@ -6,8 +6,14 @@ export function resolveTargetRoute(query = {}, creating = false, allowAutomatic 
   const integer = (value, max, fallback) => typeof value === 'string' && /^[1-9][0-9]*$/u.test(value) && Number(value) <= max ? Number(value) : fallback
   const page = integer(query.page, 1000000, 1)
   const pageSize = integer(query.page_size, 100, 20)
-  const canonical = allowAutomatic && query.tab === 'automatic' ? { tab: 'automatic' } : { ...(creating && isTargetUUID(query.node_id) ? { node_id: query.node_id } : {}), ...(page === 1 ? {} : { page: String(page) }), ...(pageSize === 20 ? {} : { page_size: String(pageSize) }) }
-  return { page, pageSize, query: canonical, changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
+  const tab = query.tab === 'frontend' || (allowAutomatic && ['automatic','engines'].includes(query.tab)) ? query.tab : 'nodes'
+  const canonical = tab === 'automatic' ? { tab } : {
+    ...(tab !== 'nodes' ? { tab } : {}),
+    ...(tab === 'engines' && query.scope === 'business' ? { scope: 'business' } : {}),
+    ...(creating && isTargetUUID(query.node_id) ? { node_id: query.node_id } : {}),
+    ...(page === 1 ? {} : { page: String(page) }), ...(pageSize === 20 ? {} : { page_size: String(pageSize) })
+  }
+  return { tab, page, pageSize, query: canonical, changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
 }
 export function targetInput(form, target) {
   const kind = target ? target.monitor_kind : form.monitor_kind

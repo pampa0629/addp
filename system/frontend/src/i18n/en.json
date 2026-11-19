@@ -2443,13 +2443,14 @@
     },
     "engineDeployments": {
       "title": "Engine administration",
-      "purpose": "Manage engine monitoring, deployment names and hosting machines.",
+      "purpose": "Register deployed engines and manage their names and hosts.",
       "scopes": {
         "infra": "Infra",
         "business": "Business"
       },
       "actions": "Actions",
-      "create": "Configure engine monitoring",
+      "create": "Register discovered engines",
+      "manageCollection": "Collection settings",
       "details": "Engine deployment details",
       "name": "Deployment name",
       "search": "Search deployment names",
@@ -2490,7 +2491,7 @@
       "selectAdmissionHost": "Select the host that runs the selected services before saving.",
       "discoveryStatus": "Current settings",
       "noCandidates": "No deployments or discovery results in this tab",
-      "discoveryHint": "Select to enable monitoring or clear to disable it. Confirm the host when enabling monitoring for a new deployment.",
+      "discoveryHint": "Select deployments to register and confirm their host. Manage collection for registered engines in Collection settings.",
       "sourceChanged": "Sources changed or expired. Reload, check and select again.",
       "discoveryStates": {
         "available": "Source available",
@@ -2536,9 +2537,6 @@
       "collectionStatus": "Collection status",
       "reloadConfiguration": "Reload configuration",
       "enableChanges": "Enable monitoring for {names}",
-      "disableChanges": "Disable monitoring for {names}",
-      "appliedChanges": "Confirmed changes for {names}",
-      "partialSave": "Some changes were confirmed. Further submissions stopped. Reload the configuration and review its current state.",
       "collection": {
         "collecting": "Collecting",
         "failed": "Collection failed",

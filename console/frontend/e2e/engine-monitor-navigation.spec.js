@@ -36,3 +36,16 @@ test('engine deployment without observation permission has no monitoring entry',
   await expect(frame.getByRole('cell', { name: engineOwner.display_name, exact: true })).toBeVisible()
   await expect(frame.getByRole('button', { name: '查看监控', exact: true })).toHaveCount(0)
 })
+
+test('System links directly to the centralized engine collection tab without requiring target administration', async ({ page }) => {
+  const owner = { ...engineOwner, scope: 'business', declared_node_id: engineOwner.node_id, inventory: { ...inventory, source: { ...inventory.source, project: 'business' } } }
+  await engineBackend(page, { owner, auth: identity(['platform.engine_deployment.read']) })
+  await page.goto('/system/engine-deployments?scope=business')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await frame.getByRole('button', { name: '配置采集', exact: true }).click()
+  await expect(page).toHaveURL(/\/monitor\/monitoring-targets\?tab=engines&scope=business$/)
+  const settings = frame.getByTestId('engine-collection-settings')
+  await expect(settings.getByRole('tab', { name: 'Business 业务引擎' })).toHaveAttribute('aria-selected', 'true')
+  await expect(settings.getByRole('cell', { name: owner.display_name, exact: true })).toBeVisible()
+  await expect(settings.getByRole('button', { name: '暂停采集' })).toHaveCount(0)
+})

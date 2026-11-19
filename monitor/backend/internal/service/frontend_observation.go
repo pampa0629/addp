@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"sort"
 	"time"
 
 	"github.com/addp/common/client"
@@ -18,6 +20,63 @@ type FrontendObservation struct {
 	Data        []resourcequery.FrontendSample `json:"data"`
 	SourceState string                         `json:"source_state"`
 	QueriedAt   time.Time                      `json:"queried_at"`
+}
+
+type FrontendNode struct {
+	NodeID      string `json:"node_id"`
+	DisplayName string `json:"display_name"`
+	Enabled     bool   `json:"enabled"`
+}
+
+type FrontendNodes struct {
+	Data []FrontendNode `json:"data"`
+}
+
+func (s *ResourceObservationService) FrontendNodes(ctx context.Context, token string) (FrontendNodes, error) {
+	result := FrontendNodes{Data: []FrontendNode{}}
+	if s == nil || s.targets == nil {
+		return result, metricsdiscovery.ErrUnconfigured
+	}
+	ctx, cancel := context.WithTimeout(ctx, metricsdiscovery.Timeout)
+	defer cancel()
+	reader, ok := s.nodes.(UserHostNodeScopeReader)
+	if !ok {
+		return result, metricsdiscovery.ErrIdentityUnavailable
+	}
+	nodes, err := reader.HostNodesForUser(ctx, token)
+	if errors.Is(err, client.ErrHostNodeScopeBudget) {
+		return result, resourcequery.ErrBudget
+	}
+	if err != nil {
+		return result, err
+	}
+	targets, err := s.targets.Snapshot(ctx)
+	if err != nil {
+		return result, err
+	}
+	configured := make(map[string]bool)
+	for _, target := range targets {
+		if target.MonitorKind == "frontend_resources" {
+			id := target.Subject.NodeID
+			configured[id] = configured[id] || target.Enabled
+		}
+	}
+	for _, node := range nodes {
+		if enabled, exists := configured[node.NodeID]; exists {
+			result.Data = append(result.Data, FrontendNode{NodeID: node.NodeID, DisplayName: node.DisplayName, Enabled: node.Enabled && enabled})
+		}
+	}
+	sort.Slice(result.Data, func(i, j int) bool {
+		left, right := result.Data[i], result.Data[j]
+		if left.Enabled != right.Enabled {
+			return left.Enabled
+		}
+		if left.DisplayName != right.DisplayName {
+			return left.DisplayName < right.DisplayName
+		}
+		return left.NodeID < right.NodeID
+	})
+	return result, nil
 }
 
 func (s *ResourceObservationService) WithFrontend(backend FrontendObservationBackend) *ResourceObservationService {

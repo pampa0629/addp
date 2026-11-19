@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 
 	"github.com/addp/common/client"
 	"github.com/addp/monitor/internal/metricsdiscovery"
@@ -62,7 +63,7 @@ func (s *MonitoringTargetService) authorize(ctx context.Context, node, token str
 	}
 	return nil
 }
-func (s *MonitoringTargetService) List(ctx context.Context, token string, page, size int) (*MonitoringTargetPage, error) {
+func (s *MonitoringTargetService) List(ctx context.Context, token string, page, size int, scope string) (*MonitoringTargetPage, error) {
 	ctx, cancel := context.WithTimeout(ctx, metricsdiscovery.Timeout)
 	defer cancel()
 	if s == nil || s.store == nil {
@@ -80,6 +81,11 @@ func (s *MonitoringTargetService) List(ctx context.Context, token string, page, 
 	rows, err := s.store.Snapshot(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if scope != "" {
+		rows = slices.DeleteFunc(slices.Clone(rows), func(target metricsdiscovery.NodeTarget) bool {
+			return (target.MonitorKind == "frontend_resources") != (scope == "frontend")
+		})
 	}
 	start := (page - 1) * size
 	if start > len(rows) {

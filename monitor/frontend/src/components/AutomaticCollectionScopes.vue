@@ -2,7 +2,6 @@
   <section data-testid="automatic-collection-scopes">
     <div class="collection-toolbar">
       <el-button :loading="loading" :disabled="Boolean(saving)" @click="load()">{{ t('common.refresh') }}</el-button>
-      <el-button v-if="canConfigureEngines" @click="openConsoleRoute('/system/engine-deployments')">{{ t('monitor.engines.configure') }}</el-button>
     </div>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" show-icon />
     <el-alert v-else-if="catalogUnavailable" :title="t('monitor.targets.automatic.catalogUnavailable')" type="warning" :closable="false" show-icon />
@@ -44,7 +43,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { openConsoleRoute } from '@common-ui'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { automaticCollectionAPI as api } from '../api/monitoringTargets'
@@ -52,8 +50,6 @@ import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n(), auth = useAuthStore()
 const canWrite = computed(() => auth.hasPermission('monitor.monitoring_target.update'))
-const canConfigureEngines = computed(() => auth.hasPermission('platform.engine_deployment.read') &&
-  (auth.hasPermission('platform.engine_deployment.create') || auth.hasPermission('platform.engine_deployment.update')))
 const rows = ref([]), error = ref(''), loading = ref(false), saving = ref(''), blocked = ref(false), catalogUnavailable = ref(false)
 const requests = createLatestRequestScope(), writes = createLatestRequestScope()
 const refresh = createAutoRefresh({

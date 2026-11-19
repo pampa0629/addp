@@ -12,13 +12,12 @@ const mixed = [
 
 test('engine configuration is permission gated and keeps the selected deployment scope', async ({ page }) => {
   await engineBackend(page, { auth: identity([...enginePermissions, 'platform.host_node.read', 'platform.engine_deployment.update']) })
-  await page.route('**/system/engine-deployments?scope=business', route => route.fulfill({ body: 'Engine deployments' }))
   await page.goto('/engine-resources?scope=runtime&refresh=off')
   await expect(page.getByTestId('engine-runtime-geopython')).toBeVisible()
   await expect(page.getByTestId('engine-configure')).toHaveCount(0)
   await page.getByRole('tab', { name: 'Business 业务引擎' }).click()
   await page.getByTestId('engine-configure').click()
-  await expect(page).toHaveURL(/\/system\/engine-deployments\?scope=business$/)
+  await expect(page).toHaveURL(/\/monitoring-targets\?tab=engines&scope=business$/)
 })
 
 for (const locale of ['zh-cn','en']) test(`provenance tabs show mixed engine cards with one summary request (${locale})`,async({page})=>{
@@ -102,4 +101,28 @@ test('foreign-scope rows are rejected before reading summaries',async({page})=>{
  await expect(page.getByTestId('engine-error')).toBeVisible()
  await expect(page.getByTestId('engine-list').getByTestId(/^engine-card-/)).toHaveCount(0)
  expect(state.calls.filter(path=>path.endsWith('_summaries'))).toHaveLength(0)
+})
+
+test('central engine collection pauses and resumes the same deployment using current versions', async ({ page }) => {
+  const owner = { ...engineOwner, declared_node_id: engineOwner.node_id }
+  await engineBackend(page, { owner, auth: identity([...enginePermissions, 'platform.host_node.read', 'platform.engine_deployment.update']) })
+  const writes = []
+  await page.route(`**/api/v1/system/platform/engine_deployments/${owner.deployment_id}`, route => {
+    expect(route.request().method()).toBe('PUT')
+    const body = route.request().postDataJSON()
+    writes.push(body)
+    Object.assign(owner, { enabled: body.enabled, version: body.version + 1, node_id: body.enabled ? owner.declared_node_id : '', host_binding_state: body.enabled ? 'bound' : 'rejected' })
+    return route.fulfill({ json: owner })
+  })
+  await page.goto('/monitoring-targets?tab=engines')
+  const panel = page.getByTestId('engine-collection-settings')
+  await panel.getByRole('button', { name: '暂停采集', exact: true }).click()
+  await page.locator('.el-popconfirm__action .el-button--primary').click()
+  await expect(panel.getByRole('row', { name: /Infra PostgreSQL/ })).toContainText('已停用')
+  await panel.getByRole('button', { name: '恢复采集', exact: true }).click()
+  await page.locator('.el-popconfirm__action .el-button--primary').click()
+  await expect(panel.getByRole('row', { name: /Infra PostgreSQL/ })).toContainText('已启用')
+  expect(writes).toEqual([true, false].map((enabled, i) => ({
+    display_name: 'Infra PostgreSQL', enabled: !enabled, declared_node_id: owner.declared_node_id, version: i + 1
+  })))
 })

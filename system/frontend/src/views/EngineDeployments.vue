@@ -1,7 +1,8 @@
 <template>
   <section v-if="canRead" class="engine-deployments" data-testid="engine-deployments">
     <header class="toolbar"><h2>{{ t('system.engineDeployments.title') }}</h2>
-      <el-button v-if="canConfigure" type="primary" data-testid="deployment-create" @click="openConfiguration">{{ t('system.engineDeployments.create') }}</el-button>
+      <el-button link type="primary" @click="openCollection">{{ t('system.engineDeployments.manageCollection') }}</el-button>
+      <el-button v-if="canCreate" type="primary" data-testid="deployment-create" @click="openConfiguration">{{ t('system.engineDeployments.create') }}</el-button>
     </header>
     <p class="hint">{{ t('system.engineDeployments.purpose') }}</p>
     <el-tabs :model-value="state.scope" @update:model-value="changeScope">
@@ -31,7 +32,6 @@
     <el-dialog :model-value="dialogOpen" :title="t(configuring ? 'system.engineDeployments.create' : 'system.engineDeployments.details')" class="addp-dialog" width="min(760px, calc(100vw - 24px))"
       :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @update:model-value="value => !value && close()" @open-auto-focus="focusForm" @closed="restoreFocus">
       <div v-loading="detailLoading">
-        <el-alert v-if="savedChanges.length" :title="t('system.engineDeployments.appliedChanges', { names: savedChanges.join(', ') })" type="warning" :closable="false" data-testid="deployment-applied" />
         <el-alert v-if="detailError || saveError" :title="detailError || saveError" type="error" :closable="false" data-testid="deployment-error" />
         <section v-if="record && !configuring" class="current-source" data-testid="deployment-current-source" :aria-busy="sourceLoading">
           <div class="toolbar"><h3>{{ t('system.engineDeployments.currentSource') }}</h3>
@@ -62,7 +62,7 @@
                 <template #default="{row}">
                   <el-icon v-if="!row.deployment && !row.eligible" class="candidate-unavailable-icon" role="img" :aria-label="t(`system.engineDeployments.candidateStates.${row.reason}`)" data-testid="candidate-unavailable"><CircleCloseFilled /></el-icon>
                   <el-checkbox v-else :model-value="draftEnabled[row.key] ?? row.deployment?.enabled ?? false"
-                    :disabled="reading || blocked || (row.deployment ? !canUpdate : !canCreate)"
+                    :disabled="reading || blocked || Boolean(row.deployment) || !canCreate"
                     :aria-label="row.deployment?.display_name ?? `${row.scope} ${row.service}`" @change="checked => setMonitoring(row, checked)" />
                 </template>
               </el-table-column>
@@ -91,7 +91,6 @@
             <p class="hint">{{ t('system.engineDeployments.discoveryHint') }}</p>
             <div v-if="hasChanges" role="status" class="change-preview" data-testid="monitoring-changes">
               <p v-if="enableNames.length">{{ t('system.engineDeployments.enableChanges', { names: enableNames.join(', ') }) }}</p>
-              <p v-if="disableNames.length">{{ t('system.engineDeployments.disableChanges', { names: disableNames.join(', ') }) }}</p>
             </div>
             <el-alert v-if="configurationNotice" :title="t(`system.engineDeployments.${configurationNotice}`)" type="info" :closable="false" role="status" data-testid="admission-save-guidance" />
           </template>
@@ -152,14 +151,13 @@ const canObserve=computed(()=>canRead.value && auth.hasPermission('monitor.resou
 const openMonitoring=id=>openConsoleRoute(buildMonitorEngineResourcesRoute({deployment_id:id}))
 const canCreate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.create'))
 const canUpdate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.update'))
-const canConfigure=computed(() => canCreate.value || canUpdate.value)
 const deploymentID=computed(()=>typeof route.params.deployment_id==='string'?route.params.deployment_id:'')
 const state=computed(()=>resolveEngineDeploymentsRouteState(route.query))
 const rows=ref([]),total=ref(0),listLoading=ref(false),listLoaded=ref(false),listError=ref(''),searchDraft=ref('')
 const record=ref(null),configuring=ref(false),formReady=ref(false),detailLoading=ref(false),detailError=ref(''),saveError=ref(''),saving=ref(false),reading=ref(false),blocked=ref(false)
 const form=reactive({display_name:'',inventory:null,declared_node_id:''}),selectedHost=ref(null)
 const nameInput=ref(null),searchInput=ref(null),closeButton=ref(null)
-const dialogOpen=computed(()=>configuring.value || Boolean(deploymentID.value)),canWrite=computed(()=>configuring.value ? canConfigure.value : canUpdate.value)
+const dialogOpen=computed(()=>configuring.value || Boolean(deploymentID.value)),canWrite=computed(()=>configuring.value ? canCreate.value : canUpdate.value)
 const container=computed(()=>form.inventory?.services[0].containers[0])
 const pickerAPI={nodes:hostNodesAPI.list,node:hostNodesAPI.get}
 const listRequests=createLatestRequestScope(),detailRequests=createLatestRequestScope(),discoveryRequests=createLatestRequestScope()
@@ -168,7 +166,6 @@ const candidates = ref([])
 const registered = ref([])
 const draftEnabled = ref({})
 const collections = ref({})
-const savedChanges = ref([])
 const discoveryError = ref(false)
 const discoveryScopes = ref([])
 const discoveryScope = ref('infra')
@@ -179,25 +176,22 @@ const configurationRows = computed(() => [
 ])
 const visibleCandidates = computed(() => configurationRows.value.filter(item => item.scope === discoveryScope.value))
 const selectedCandidates = computed(() => candidates.value.filter(item => !item.deployment_id && draftEnabled.value[item.key]))
-const changedDeployments = computed(() => registered.value.filter(row => draftEnabled.value[row.deployment_id] !== undefined))
-const hasChanges = computed(() => selectedCandidates.value.length > 0 || changedDeployments.value.length > 0)
-const enableNames = computed(() => [
-  ...selectedCandidates.value.map(row => row.display_name),
-  ...changedDeployments.value.filter(row => draftEnabled.value[row.deployment_id]).map(row => row.display_name)
-])
-const disableNames = computed(() => changedDeployments.value.filter(row => !draftEnabled.value[row.deployment_id]).map(row => row.display_name))
+const hasChanges = computed(() => selectedCandidates.value.length > 0)
+const enableNames = computed(() => selectedCandidates.value.map(row => row.display_name))
 const configurationNotice = computed(() => {
   if (!configuring.value || reading.value || blocked.value || saveError.value) return ''
   if (!hasChanges.value) return 'noChanges'
   return selectedCandidates.value.length && !form.declared_node_id ? 'selectAdmissionHost' : ''
 })
 function setMonitoring(row, checked) {
-  if (checked === (row.deployment?.enabled ?? false)) delete draftEnabled.value[row.key]
-  else draftEnabled.value[row.key] = checked
+  if (row.deployment || !canCreate.value) return
+  if (checked) draftEnabled.value[row.key] = true
+  else delete draftEnabled.value[row.key]
 }
 
 let epoch=0,trigger=null,sourceExpiry=null
 const navigate=(path,query=state.value.query,history='push')=>navigateSystemRoute(router,{path,query},{history})
+const openCollection = () => openConsoleRoute(state.value.scope === 'business' ? '/monitor/monitoring-targets?tab=engines&scope=business' : '/monitor/monitoring-targets?tab=engines')
 const bindingState=row=>row.enabled?row.host_binding_state==='bound'?'bound':row.host_binding_reason==='node_kind_mismatch'?'node_kind_mismatch':'node_disabled':'deployment_disabled'
 useConsolePageDescriptor(router,'system',{title:computed(()=>t('system.engineDeployments.details')),subject:computed(()=>record.value?.display_name||''),ready:computed(()=>Boolean(record.value)&&!configuring.value)})
 function validRecord(value,id='') {
@@ -284,10 +278,10 @@ async function readCollections(ticket, records) {
 }
 function resetConfiguration() {
   registered.value = []; candidates.value = []; draftEnabled.value = {}; collections.value = {}
-  discoveryScopes.value = []; discoveryError.value = false; savedChanges.value = []
+  discoveryScopes.value = []; discoveryError.value = false
 }
 async function loadDiscovery() {
-  if (!canConfigure.value || saving.value) return
+  if (!canCreate.value || saving.value) return
   const ticket = discoveryRequests.invalidate()
   resetConfiguration()
   form.declared_node_id = ''
@@ -316,7 +310,7 @@ async function loadDiscovery() {
   void readCollections(ticket, owners.value)
 }
 function openConfiguration(event) {
-  if (!canConfigure.value) return
+  if (!canCreate.value) return
   discoveryScope.value = state.value.scope
   trigger = event?.currentTarget
   detailRequests.invalidate(); clearCurrentSource(); record.value = null; selectedHost.value = null; detailError.value = ''
@@ -338,13 +332,9 @@ async function save() {
   if (!canWrite.value || saving.value || blocked.value || reading.value) return
   const configuration = configuring.value
   const additions = configuration && canCreate.value ? selectedCandidates.value : []
-  const updates = configuration && canUpdate.value ? changedDeployments.value.map(row => ({
-    row,
-    body: { display_name: row.display_name, enabled: draftEnabled.value[row.deployment_id], declared_node_id: row.declared_node_id, version: row.version }
-  })) : []
   const name = form.display_name.trim()
   const validName = value => typeof value === 'string' && value.trim() && [...value.trim()].length <= 255 && !/\p{Cc}/u.test(value)
-  if (configuration ? (!additions.length && !updates.length) || additions.length > 16 || additions.some(item => !validName(item.display_name))
+  if (configuration ? !additions.length || additions.length > 16 || additions.some(item => !validName(item.display_name))
     : !validName(name) || !record.value) {
     saveError.value = t('system.engineDeployments.invalidForm')
     return
@@ -365,7 +355,7 @@ async function save() {
   }
   const own = epoch
   if (configuration) discoveryRequests.invalidate()
-  saving.value = true; saveError.value = ''; savedChanges.value = []
+  saving.value = true; saveError.value = ''
   try {
     if (configuration) {
       if (additions.length) {
@@ -377,19 +367,6 @@ async function save() {
         const created = result.data.map(value => validRecord(value))
         const keys = new Set(created.map(row => `${row.scope}/${row.inventory.services[0].service}`))
         if (!items.every(item => keys.has(`${item.scope}/${item.service}`)) || created.some(row => !row.enabled)) throw new Error('invalid_admission')
-        savedChanges.value.push(...created.map(row => row.display_name))
-        registered.value.push(...created)
-        candidates.value = candidates.value.filter(item => !keys.has(item.key))
-        for (const key of keys) delete draftEnabled.value[key]
-      }
-      for (const { row, body } of updates) {
-        const value = validRecord(await engineDeploymentsAPI.update(row.deployment_id, body), row.deployment_id)
-        if (own !== epoch) return
-        if (value.enabled !== body.enabled || value.version !== body.version + 1) throw new Error('invalid_update')
-        savedChanges.value.push(value.display_name)
-        registered.value = registered.value.map(current => current.deployment_id === value.deployment_id ? value : current)
-        delete draftEnabled.value[row.deployment_id]
-        delete collections.value[row.deployment_id]
       }
       closeConfiguration()
     } else {
@@ -404,9 +381,8 @@ async function save() {
   } catch (error) {
     if (own !== epoch) return
     const status = error.response?.status, code = error.response?.data?.error_code
-    blocked.value = savedChanges.value.length > 0 || !status || status >= 500 || ['resource_version_conflict', 'engine_deployment_source_changed', 'engine_deployment_source_occupied'].includes(code)
-    saveError.value = t(`system.engineDeployments.${savedChanges.value.length ? 'partialSave' : code === 'engine_deployment_source_changed' ? 'sourceChanged' : code === 'engine_deployment_source_occupied' ? 'occupied' : code === 'engine_deployment_host_unavailable' ? 'hostMismatch' : blocked.value ? 'unknownWrite' : 'saveFailed'}`)
-    if (savedChanges.value.length) void loadList()
+    blocked.value = !status || status >= 500 || ['resource_version_conflict', 'engine_deployment_source_changed', 'engine_deployment_source_occupied'].includes(code)
+    saveError.value = t(`system.engineDeployments.${code === 'engine_deployment_source_changed' ? 'sourceChanged' : code === 'engine_deployment_source_occupied' ? 'occupied' : code === 'engine_deployment_host_unavailable' ? 'hostMismatch' : blocked.value ? 'unknownWrite' : 'saveFailed'}`)
   } finally {
     if (own === epoch) saving.value = false
   }

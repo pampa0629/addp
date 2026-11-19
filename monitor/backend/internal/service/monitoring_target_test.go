@@ -77,12 +77,26 @@ func TestMonitoringTargetDisabledIntentAndOwnerAuthorization(t *testing.T) {
 func TestMonitoringTargetListEmptyAndPaginationDoNotBypassOwner(t *testing.T) {
 	store, nodes := &targetTestStore{}, &targetTestNodes{}
 	s := NewMonitoringTargetService(store, nodes, nil, false, nil)
-	page, err := s.List(context.Background(), "addp_at_user", 1, 20)
+	page, err := s.List(context.Background(), "addp_at_user", 1, 20, "")
 	if err != nil || len(page.Data) != 0 || page.Data == nil || nodes.listCalls != 1 {
 		t.Fatalf("empty list: %#v %v", page, err)
 	}
 	nodes.err = &client.SystemAPIError{StatusCode: 403}
-	if _, err := s.List(context.Background(), "addp_at_user", 1, 20); err == nil {
+	if _, err := s.List(context.Background(), "addp_at_user", 1, 20, ""); err == nil {
 		t.Fatal("empty inventory bypassed owner")
+	}
+}
+
+func TestMonitoringTargetScopeFiltersBeforePagination(t *testing.T) {
+	front := metricsdiscovery.NodeTarget{Subject: metricsdiscovery.NodeSubject{NodeID: uuid.NewString()}, MonitorKind: "frontend_resources"}
+	node := metricsdiscovery.NodeTarget{Subject: metricsdiscovery.NodeSubject{NodeID: uuid.NewString()}, MonitorKind: "host_resources"}
+	store, nodes := &targetTestStore{rows: []metricsdiscovery.NodeTarget{node, front}}, &targetTestNodes{}
+	s := NewMonitoringTargetService(store, nodes, nil, false, nil)
+	page, err := s.List(context.Background(), "addp_at_user", 1, 1, "frontend")
+	if err != nil || page.Total != 1 || len(page.Data) != 1 || page.Data[0] != front {
+		t.Fatalf("filtered frontend page: %#v %v", page, err)
+	}
+	if store.rows[0] != node || store.rows[1] != front {
+		t.Fatal("filter changed the snapshot")
 	}
 }

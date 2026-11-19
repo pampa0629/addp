@@ -1070,7 +1070,7 @@ test('IME composition waits for completion and a route change cancels pending te
   expect(state.listCalls.some(row => row.registered_host === 'obsolete')).toBe(false)
 })
 
-test('frontend tab shows pilot samples and distinguishes a failed script from missing data', async ({ page }) => {
+test('frontend tab opens the first configured node and shows pilot samples and distinguishes a failed script from missing data', async ({ page }) => {
   const nodeID = 'f83e9874-2164-4411-a5c0-650d143006cf'
   await page.route('**/api/v1/**', async route => {
     const { pathname, searchParams } = new URL(route.request().url())
@@ -1078,6 +1078,7 @@ test('frontend tab shows pilot samples and distinguishes a failed script from mi
     if (pathname.endsWith('/users/me')) return route.fulfill({ json: { id: 9, username: 'fixture-user' } })
     if (pathname.endsWith('/auth/context')) return route.fulfill({ json: identity(['monitor.resource_observation.read', 'platform.module.read', 'platform.host_node.read']) })
     const host = { node_id: nodeID, display_name: '前端节点', addresses: [], enabled: true, version: 1, node_kind: 'physical' }
+    if (pathname.endsWith('/frontend_nodes')) return route.fulfill({ json: { data: [{ node_id: nodeID, display_name: host.display_name, enabled: true }] } })
     if (pathname.endsWith('/host_nodes')) return route.fulfill({ json: { data: [host], total: 1, page: 1, page_size: 20 } })
     if (pathname.endsWith(`/host_nodes/${nodeID}`)) return route.fulfill({ json: host })
     if (!pathname.endsWith('/frontend_observations')) return route.fulfill({ status: 500, json: {} })
@@ -1088,11 +1089,31 @@ test('frontend tab shows pilot samples and distinguishes a failed script from mi
     ] } })
   })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
-  await page.goto(`/service-resources?tab=frontend&node_id=${nodeID}`)
+  await page.goto('/service-resources?tab=frontend')
+  await expect(page).toHaveURL(`/service-resources?tab=frontend&node_id=${nodeID}`)
   const panel = page.getByTestId('frontend-resources')
   await expect(page.getByRole('tab', { name: '前端', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(panel.getByRole('row', { name: /console/ })).toContainText('64.00 KiB')
   await expect(panel.getByRole('row', { name: /monitor/ })).toContainText('不可用')
   await expect(panel.getByRole('row', { name: /monitor/ })).toContainText('—')
   await expect(page.getByTestId('process-totals')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: '配置前端采集' })).toHaveCount(0)
+})
+
+test('frontend tab names the empty state and links authorized viewers to central settings', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/api/v1/**', route => {
+    const { pathname } = new URL(route.request().url())
+    if (pathname.endsWith('/refresh')) return route.fulfill({ json: { access_token: 'fixture-token', expires_in: 3600 } })
+    if (pathname.endsWith('/users/me')) return route.fulfill({ json: { id: 9, username: 'fixture-user' } })
+    if (pathname.endsWith('/auth/context')) return route.fulfill({ json: identity(['monitor.resource_observation.read', 'platform.module.read', 'platform.host_node.read', 'monitor.monitoring_target.read']) })
+    if (pathname.endsWith('/frontend_nodes')) return route.fulfill({ json: { data: [] } })
+    if (pathname.endsWith('/monitoring_targets')) return route.fulfill({ json: { data: [], total: 0, page: 1, page_size: 20, total_pages: 0 } })
+    throw new Error(`Unexpected request ${pathname}`)
+  })
+  await page.goto('/service-resources?tab=frontend')
+  await expect(page.getByTestId('frontend-resources')).toContainText('尚未配置前端采集节点')
+  await page.getByRole('button', { name: '配置前端采集', exact: true }).click()
+  await expect(page).toHaveURL('/monitoring-targets?tab=frontend')
+  await expect(page.getByRole('tab', { name: '前端', exact: true })).toHaveAttribute('aria-selected', 'true')
 })

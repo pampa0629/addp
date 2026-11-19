@@ -59,3 +59,31 @@ func (h *ResourceObservationHandler) FrontendObservation(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, result)
 }
+
+// FrontendNodes godoc
+// @Summary 查询已配置前端采集的节点 | List configured frontend collection nodes
+// @Tags 平台运行监控 | Platform Runtime Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} service.FrontendNodes
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Failure 504 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.resource_observation.read","platform.host_node.read"]
+// @Router /platform/frontend_nodes [get]
+func (h *ResourceObservationHandler) FrontendNodes(c *gin.Context) {
+	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
+		resourceError(c, resourcequery.ErrInvalid)
+		return
+	}
+	result, err := h.service.FrontendNodes(c.Request.Context(), targetToken(c))
+	if err != nil {
+		resourceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
