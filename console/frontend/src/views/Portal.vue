@@ -48,7 +48,7 @@
             :user="user"
             :permissions="navigationPermissions"
             :context-type="authStore.contextType"
-            :context-key="recentContextKey"
+            :recent-visits-key="recentVisitsKey"
             :portal-available="Boolean(portalLandingRoute)"
             @card-click="navigateToModule"
             @portal-click="openPortal"
@@ -184,7 +184,7 @@ import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
 import ConfigurationManagement from './ConfigurationManagement.vue'
 import { MANAGER_INFERENCE_CONFIGURATION_ROUTE, consoleRouteModule, isSynchronizedIframeRoute, splitConsoleRoute } from '../utils/consoleNavigation'
-import { buildRecentVisitEntry, prependRecentVisit } from '../utils/recentVisits'
+import { buildRecentVisitEntry, clearUnownedRecentVisits, loadRecentVisits, prependRecentVisit, recentVisitStorageKey } from '../utils/recentVisits'
 
 const router = useRouter()
 const route = useRoute()
@@ -255,9 +255,7 @@ async function retryAuthorization() {
     // Shared authentication owns failure classification; retain the hidden draft for retry.
   }
 }
-const recentContextKey = computed(() => authStore.contextType === 'tenant'
-  ? `tenant:${authStore.authContext?.context?.tenant_id || ''}`
-  : authStore.contextType === 'platform' ? 'platform' : '')
+const recentVisitsKey = computed(() => authorizationUnavailable.value ? '' : recentVisitStorageKey(authStore.authContext))
 
 const currentGroupConfig = computed(() =>
   MODULE_GROUPS.find(g => g.key === activeGroup.value) || null
@@ -298,6 +296,7 @@ function canOpenPage(path) {
 }
 
 onMounted(async () => {
+  clearUnownedRecentVisits()
   narrowViewportQuery = window.matchMedia('(max-width: 760px)')
   syncNarrowViewport = () => { isNarrowViewport.value = narrowViewportQuery.matches }
   syncNarrowViewport()
@@ -354,7 +353,8 @@ const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
     if (!synchronized || payload.draft || !targetModule || targetModule !== currentModule.value) {
       throw new Error('page descriptor must describe the active module iframe')
     }
-    if (resolvedRoute !== route.fullPath || !canOpenPage(splitConsoleRoute(resolvedRoute)[0])) {
+    if (!recentVisitsKey.value || iframeIdentity.value !== authorizationIdentity.value ||
+        resolvedRoute !== route.fullPath || !canOpenPage(splitConsoleRoute(resolvedRoute)[0])) {
       return { cancelled: true }
     }
     recordRecentVisit(targetModule, resolvedRoute, payload.pageDescriptor)
@@ -503,15 +503,15 @@ watch(
   { immediate: true }
 )
 
-const RECENT_KEY = 'addp_recent_visits_v2'
 function recordRecentVisit(module, fullPath, descriptor = null) {
+  const key = recentVisitsKey.value
+  if (!key) return
   const menuConfig = SIDEBAR_MENUS[module]
-  const entry = buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor, contextKey: recentContextKey.value })
+  const entry = buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor })
   if (!entry) return
   try {
-    const raw = localStorage.getItem(RECENT_KEY)
-    const list = prependRecentVisit(raw ? JSON.parse(raw) : [], entry)
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+    const list = prependRecentVisit(loadRecentVisits(key), entry)
+    localStorage.setItem(key, JSON.stringify(list))
   } catch { /* ignore */ }
 }
 

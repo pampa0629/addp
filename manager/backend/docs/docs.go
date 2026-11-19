@@ -4731,7 +4731,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前用户的搜索历史记录 | Get search history for the current user",
+                "description": "获取当前租户内当前用户的搜索历史记录 | Get search history for the current user in the current tenant",
                 "produces": [
                     "application/json"
                 ],
@@ -4742,7 +4742,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "返回数量限制，默认10 | Result limit, default 10",
+                        "description": "返回数量限制，默认10，最多50 | Result limit, default 10, maximum 50",
                         "name": "limit",
                         "in": "query"
                     }
@@ -4778,7 +4778,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "清空当前用户的所有搜索历史记录 | Clear all search history for the current user",
+                "description": "清空当前租户内当前用户的搜索历史 | Clear search history for the current user in the current tenant",
                 "produces": [
                     "application/json"
                 ],
@@ -4815,7 +4815,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "删除指定的搜索历史记录 | Delete a specific search history item",
+                "description": "只删除当前租户内当前用户的指定记录，记录不在该范围时也返回 204 | Delete the current tenant user’s item; return 204 even if the item is outside that scope",
                 "produces": [
                     "application/json"
                 ],

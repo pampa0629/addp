@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRecentVisitEntry, prependRecentVisit } from '../src/utils/recentVisits'
+import { buildRecentVisitEntry, prependRecentVisit, recentVisitStorageKey } from '../src/utils/recentVisits'
 
 const menuConfig = {
   label: 'console.menus.graph.label',
@@ -86,9 +86,22 @@ describe('Console recent visits', () => {
     expect(prependRecentVisit([oldEntry], nextEntry)).toEqual([nextEntry])
   })
 
-  it('keeps visits from different tenant contexts separate', () => {
-    const tenantA = { key: '/transfer/tasks', route: '/transfer/tasks', contextKey: 'tenant:3' }
-    const tenantB = { key: '/transfer/tasks', route: '/transfer/tasks', contextKey: 'tenant:4' }
-    expect(prependRecentVisit([tenantA], tenantB)).toEqual([tenantB, tenantA])
+  it('gives each user and tenant or platform context its own storage key', () => {
+    const tenant = (id, tenant_id) => ({
+      principal: { type: 'user', id }, context: { type: 'tenant', tenant_id }
+    })
+    const platform = id => ({ principal: { type: 'user', id }, context: { type: 'platform' } })
+    const keys = [tenant('42', '7'), tenant('43', '7'), tenant('42', '8'), platform('42'), platform('43')]
+      .map(recentVisitStorageKey)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(keys.every(Boolean)).toBe(true)
+    expect(recentVisitStorageKey(null)).toBe('')
+    expect(recentVisitStorageKey(tenant('42', undefined))).toBe('')
+    expect(recentVisitStorageKey({ ...platform('42'), principal: { type: 'service', id: '42' } })).toBe('')
+  })
+
+  it('retains only the most recent five entries in the supplied scope', () => {
+    const items = Array.from({ length: 6 }, (_, index) => ({ key: `/agent/sessions/${index}` }))
+    expect(items.reduce((entries, item) => prependRecentVisit(entries, item), [])).toEqual(items.slice(1).reverse())
   })
 })

@@ -30,7 +30,6 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Initialize database with auto-migration.
 	// Quick View / tile cache tables use an explicit clean-break schema guard below.
 	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.SearchHistory{},
 		&models.ImportSource{},
 		&models.EmbeddingTask{}, // 向量化任务定义表
 		&models.EmbeddingConfiguration{},
@@ -115,7 +114,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ensure content index delivery schema: %w", err)
 	}
 	if err := MigrateSearchSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to migrate search continuation schema: %w", err)
+		return nil, fmt.Errorf("failed to migrate Manager search schema: %w", err)
 	}
 	if err := normalizePreviewArtifactSchemaNames(db); err != nil {
 		return nil, fmt.Errorf("failed to normalize preview artifact schema names: %w", err)

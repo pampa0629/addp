@@ -108,8 +108,8 @@ func (h *SearchHandler) Search(c *gin.Context) {
 		return
 	}
 	if h.historyService != nil && c.Query("cursor") == "" {
-		if userID, ok := userIDFromContext(c); ok {
-			if err := h.historyService.Record(userID, tenantFilterIDFromContext(c), c.Query("q")); err != nil {
+		if tenantID, userID := searchHistoryIdentity(c); tenantID > 0 && userID > 0 {
+			if err := h.historyService.Record(c.Request.Context(), tenantID, userID, c.Query("q")); err != nil {
 				logger.L().Warn("记录搜索历史失败", "user_id", userID)
 			}
 		}
@@ -119,10 +119,10 @@ func (h *SearchHandler) Search(c *gin.Context) {
 }
 
 // @Summary 列出搜索历史 | List search history
-// @Description 获取当前用户的搜索历史记录 | Get search history for the current user
+// @Description 获取当前租户内当前用户的搜索历史记录 | Get search history for the current user in the current tenant
 // @Tags Manager
 // @Produce json
-// @Param limit query int false "返回数量限制，默认10 | Result limit, default 10"
+// @Param limit query int false "返回数量限制，默认10，最多50 | Result limit, default 10, maximum 50"
 // @Success 200 {object} map[string]interface{} "搜索历史列表 | Search history list"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "服务不可用 | Service unavailable"
@@ -130,13 +130,14 @@ func (h *SearchHandler) Search(c *gin.Context) {
 // @Router /search/history [get]
 // @Security BearerAuth
 func (h *SearchHandler) ListHistory(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	if h.historyService == nil {
 		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgSearchHistoryUnavailable)
 		return
 	}
 
-	userID, ok := userIDFromContext(c)
-	if !ok {
+	tenantID, userID := searchHistoryIdentity(c)
+	if tenantID == 0 || userID == 0 {
 		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
 		return
 	}
@@ -146,7 +147,7 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 		limit = 10
 	}
 
-	histories, err := h.historyService.List(userID, limit)
+	histories, err := h.historyService.List(c.Request.Context(), tenantID, userID, limit)
 	if err != nil {
 		logger.L().Error("查询搜索历史失败", "error", err, "user_id", userID)
 		managerError(c, http.StatusInternalServerError, manageri18n.MsgLoadHistoryFailed)
@@ -171,7 +172,7 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 }
 
 // @Summary 删除搜索历史记录 | Delete search history item
-// @Description 删除指定的搜索历史记录 | Delete a specific search history item
+// @Description 只删除当前租户内当前用户的指定记录，记录不在该范围时也返回 204 | Delete the current tenant user’s item; return 204 even if the item is outside that scope
 // @Tags Manager
 // @Produce json
 // @Param id path int true "历史记录ID | History item ID"
@@ -187,8 +188,8 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 		return
 	}
 
-	userID, ok := userIDFromContext(c)
-	if !ok {
+	tenantID, userID := searchHistoryIdentity(c)
+	if tenantID == 0 || userID == 0 {
 		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
 		return
 	}
@@ -200,7 +201,7 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 		return
 	}
 
-	if err := h.historyService.Delete(userID, uint(historyID64)); err != nil {
+	if err := h.historyService.Delete(c.Request.Context(), tenantID, userID, uint(historyID64)); err != nil {
 		logger.L().Error("删除搜索历史失败", "error", err, "user_id", userID, "history_id", historyID64)
 		managerError(c, http.StatusInternalServerError, manageri18n.MsgDeleteHistoryFailed)
 		return
@@ -210,7 +211,7 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 }
 
 // @Summary 清空搜索历史 | Clear search history
-// @Description 清空当前用户的所有搜索历史记录 | Clear all search history for the current user
+// @Description 清空当前租户内当前用户的搜索历史 | Clear search history for the current user in the current tenant
 // @Tags Manager
 // @Produce json
 // @Success 204 "清空成功 | Cleared successfully"
@@ -225,13 +226,13 @@ func (h *SearchHandler) ClearHistory(c *gin.Context) {
 		return
 	}
 
-	userID, ok := userIDFromContext(c)
-	if !ok {
+	tenantID, userID := searchHistoryIdentity(c)
+	if tenantID == 0 || userID == 0 {
 		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
 		return
 	}
 
-	if err := h.historyService.Clear(userID); err != nil {
+	if err := h.historyService.Clear(c.Request.Context(), tenantID, userID); err != nil {
 		logger.L().Error("清空搜索历史失败", "error", err, "user_id", userID)
 		managerError(c, http.StatusInternalServerError, manageri18n.MsgClearHistoryFailed)
 		return
@@ -240,7 +241,6 @@ func (h *SearchHandler) ClearHistory(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func userIDFromContext(c *gin.Context) (uint, bool) {
-	userID := userIDValue(c)
-	return userID, userID > 0
+func searchHistoryIdentity(c *gin.Context) (tenantID, userID uint) {
+	return tenantIDValue(c), userIDValue(c)
 }

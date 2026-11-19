@@ -14,15 +14,17 @@ import (
 type Engine = commonModels.Engine
 type ConnectionInfo = commonModels.ConnectionInfo
 
-// SearchHistory 记录用户的数据检索历史（全文检索 + 向量检索），按用户隔离
+// SearchHistory 记录当前租户内用户的个人数据检索历史。
 type SearchHistory struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
-	UserID    uint      `json:"user_id" gorm:"uniqueIndex:idx_search_history_user_query,priority:1;not null"`
-	TenantID  *uint     `json:"tenant_id" gorm:"index"`
-	Query     string    `json:"query" gorm:"size:512;not null;uniqueIndex:idx_search_history_user_query,priority:2"`
+	UserID    uint      `json:"user_id"`
+	TenantID  uint      `json:"tenant_id"`
+	Query     string    `json:"query"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+func (SearchHistory) TableName() string { return "manager.search_histories" }
 
 const (
 	ExportSessionStatusPending = exportartifact.StatusPending

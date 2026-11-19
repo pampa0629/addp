@@ -21,12 +21,3 @@ func tenantIDValue(c *gin.Context) uint {
 func userIDValue(c *gin.Context) uint {
 	return auth.GetUserID(c)
 }
-
-// tenantFilterIDFromContext 只使用认证租户，不接受 query 覆盖。
-func tenantFilterIDFromContext(c *gin.Context) *uint {
-	tenantID := auth.GetTenantID(c)
-	if tenantID == 0 {
-		return nil
-	}
-	return &tenantID
-}

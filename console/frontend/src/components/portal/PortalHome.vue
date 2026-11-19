@@ -127,6 +127,7 @@ import { fetchPortalStatus, STATUS_REQUESTS } from '../../utils/portalStatus'
 import { consoleRouteAccess } from '@common-ui'
 import { matchesNavigationAccess } from '../../utils/navigationAccess'
 import { splitConsoleRoute } from '../../utils/consoleNavigation'
+import { loadRecentVisits } from '../../utils/recentVisits'
 
 const { t } = useI18n()
 
@@ -136,7 +137,7 @@ const props = defineProps({
   user: { type: Object, default: null },
   permissions: { type: Array, default: () => [] },
   contextType: { type: String, default: null },
-  contextKey: { type: String, default: '' },
+  recentVisitsKey: { type: String, default: '' },
   portalAvailable: { type: Boolean, default: false },
 })
 
@@ -176,7 +177,7 @@ const statusPermissionKey = computed(() => STATUS_REQUESTS
   .map(request => request.permission)
   .join('|'))
 
-watch([() => props.contextKey, statusPermissionKey], () => fetchStatus())
+watch([() => props.recentVisitsKey, statusPermissionKey], () => fetchStatus())
 
 // ─── 状态推断 ────────────────────────────────────────────────────────────────
 
@@ -289,21 +290,11 @@ const recommendedScenarios = computed(() => {
 
 // ─── 最近访问 ────────────────────────────────────────────────────────────────
 
-const RECENT_KEY = 'addp_recent_visits_v2'
-const recentVisitsRaw = ref([])
-
-function loadRecentVisits() {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY)
-    recentVisitsRaw.value = raw ? JSON.parse(raw) : []
-  } catch {
-    recentVisitsRaw.value = []
-  }
-}
+const recentVisitsRaw = computed(() => loadRecentVisits(props.recentVisitsKey))
 
 const recentVisits = computed(() =>
   recentVisitsRaw.value.filter(item => {
-    if (!props.contextKey || item.contextKey !== props.contextKey) return false
+    if (!item) return false
     if (!props.homeCards.some(card => card.module === item.module)) return false
     const [path] = splitConsoleRoute(item.route)
     const access = consoleRouteAccess(path)
@@ -341,7 +332,6 @@ function navigateToModule(module) {
 
 onMounted(() => {
   fetchStatus()
-  loadRecentVisits()
 })
 </script>
 

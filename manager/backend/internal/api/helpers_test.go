@@ -8,30 +8,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestTenantFilterIDFromContextUsesAuthenticatedTenant(t *testing.T) {
+func TestSearchHistoryIdentityUsesAuthenticatedTenantAndUser(t *testing.T) {
 	t.Parallel()
 
-	c := newTenantFilterTestContext("/search?tenant_id=2")
+	c := newSearchHistoryTestContext("/search/history?tenant_id=2&user_id=42")
 	setTenantAuthContextForTest(c, 1, 8)
 
-	tenantID := tenantFilterIDFromContext(c)
-	if tenantID == nil || *tenantID != 1 {
-		t.Fatalf("tenantID = %v, want 1", tenantID)
+	tenantID, userID := searchHistoryIdentity(c)
+	if tenantID != 1 || userID != 8 {
+		t.Fatalf("tenant/user = %d/%d, want 1/8", tenantID, userID)
 	}
 }
 
-func TestTenantFilterIDFromContextDoesNotAcceptQueryTenantWithoutAuthContext(t *testing.T) {
+func TestSearchHistoryIdentityDoesNotAcceptQueryWithoutAuthContext(t *testing.T) {
 	t.Parallel()
 
-	c := newTenantFilterTestContext("/search?tenant_id=2")
+	c := newSearchHistoryTestContext("/search/history?tenant_id=2&user_id=42")
 
-	if tenantID := tenantFilterIDFromContext(c); tenantID != nil {
-		t.Fatalf("tenantID = %v, want nil", tenantID)
+	if tenantID, userID := searchHistoryIdentity(c); tenantID != 0 || userID != 0 {
+		t.Fatalf("tenant/user = %d/%d, want no identity", tenantID, userID)
 	}
 }
 
-func newTenantFilterTestContext(target string) *gin.Context {
-	gin.SetMode(gin.TestMode)
+func newSearchHistoryTestContext(target string) *gin.Context {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodGet, target, nil)
 	return c
