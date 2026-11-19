@@ -917,11 +917,14 @@ make test-changed
 
 ### 资源保护有效期
 
-ProtectionEnrollment 的 `protection_expires_at` 为可空绝对时间，null 明确表示长期有效。新纳管与重新纳入默认长期有效；创建可提交 `validity_mode=permanent|until` 和 `expires_at`，permanent 必须无截止时间，until 必须为未来时间。响应始终返回明确的 validity_mode 与可空 expires_at。完整表／集合内的四 Owner 使用同一截止时间，不按字段设置期限。
+ProtectionEnrollment 的 `protection_expires_at` 为可空绝对时间，null 明确表示长期有效。新纳管与重新纳入默认长期有效；创建可提交 `validity_mode=permanent|until` 和 `expires_at`，permanent 必须无截止时间，until 必须为未来时间。响应始终返回明确的 validity_mode 与可空 expires_at。同一纳管资源使用一份截止时间，所有必要 Owner 的当前投影均从该期限派生，粒度为完整资源。四个字段级策略出口与 Graph 的 `graph_read` 均在此范围内。[必要 Owner 与字段级策略出口](#五纳管状态机与激活屏障)
 
-`PUT /protection-enrollments/{id}/validity` 使用既有 security.enrollment.update，正文必填 version、validity_mode，until 必填 expires_at，permanent 的 expires_at 必须为 null 或省略。只允许未退出且未在退出中的资源；租户隔离、乐观版本、期限变更、所有必要 Owner 新投影和变更流必须同事务，失败整体回滚。每次显式修改保留新投影修订及操作者和时间；不增加自动续期、调度或权限。重新发现和策略调整保留资源期限，过期仍保持纳管并拒绝输出；显式改为长期或未来期限后经正式变化流恢复新请求。
+`PUT /protection-enrollments/{id}/validity` 使用既有 security.enrollment.update，正文必填 version、validity_mode，until 必填 expires_at，permanent 的 expires_at 必须为 null 或省略。只允许未退出且未在退出中的资源；租户隔离、乐观版本、期限变更、所有必要 Owner 新投影和变更流必须同事务，失败整体回滚。已有发现事实时复用唯一编译器，初始门禁阶段重发同一组保守门禁。各 Owner 持久安装后按自身 cursor 确认。每次显式修改保留新投影修订及操作者和时间；不增加自动续期、调度或权限。重新发现和策略调整保留资源期限，过期仍保持纳管并拒绝输出；显式改为长期或未来期限后经正式变化流恢复新请求。
 
-Projection 唯一运行协议为 v5，expires_at 必须出现，可为 null（长期）或非零且晚于 valid_from 的时间。缺失 expires_at、旧协议及非法日期均拒绝；checksum 包含 null。中央迁移单向转换当前投影和历史变化，保留原日期、ID、revision、cursor 和顺序，重新计算 checksum；四 Owner 清理旧协议副本并完整重放，恢复相同日期、身份及修订，不保留运行时兼容。旧 Enrollment 首次回填四 Owner 当前投影中最早截止时间，不能静默变为长期。初始 enrolling deny 也服从资源期限，到期不能解除门禁。
+Projection 唯一运行协议为 v5。`expires_at` 必须出现，可为 null（长期）或非零且晚于 `valid_from` 的时间。缺失期限字段、旧协议及非法日期均拒绝，checksum 包含 null。初始 `enrolling` 的拒绝门禁也受资源期限约束，到期继续保守拒绝。
+
+- **旧纳管期限回填。** 首次新增 `protection_expires_at` 时，读取该 Tenant 与 Enrollment 当时已有的全部当前投影，取最早截止时间。没有期限证据或任何存量投影缺少可核验的有限截止时间时，迁移失败。历史回填保留各投影原有日期，现行期限更新再从同一纳管期限发布新修订。
+- **中央转换与消费端重放。** Security 原位单向转换中央当前投影及历史变化，保持日期、投影 ID、revision、发布顺序和 cursor，并重算 checksum。所有必要 Owner 共用投影存储的 v5 迁移。存量消费端清除旧副本与完整 checkpoint 后重放，新消费端从初始 cursor 完整同步，按中央记录保留各历史修订的日期和身份。[统一投影存储与回执](#九投影变化流与-owner-确认)
 
 临时原值授权仍为有截止时间、最长 30 天的独立事实。创建／批准不得超过资源指定截止时间；修改资源期限不会改写既有授权历史，投影中按资源期限截断授权有效区间；资源到期或缩短期限不会延长授权。过期资源的控制面事实可继续调整，但编译为 enrolling deny，直到显式更新有效期。前端默认长期，显式截止时提示到期将拒绝读取；列表和详情显示期限、服务端派生的 7 天内到期提示及所有必要 Owner 同步状态，冲突保留表单，不自动重试。
 
@@ -930,6 +933,8 @@ Manager 原值申请目标可返回 protection_expires_at；长期有效时省�
 Owner 补拉历史变化时允许原子安装结构、checksum 和期限区间均合法但已过截止时间的 active 投影，并推进 cursor；读取和实际输出门禁仍按当前服务端时间拒绝。安装过期事实不是授权生效，不能沿用旧投影或解除纳管，也不能因旧批次过期而永久阻断后续较高修订的恢复。
 
 期限修改、原值申请／审批及所有投影重编译共享 Enrollment 行锁；编译器必须重新读取已提交的资源期限，不能使用调用方此前持有的旧期限覆盖新配置。
+
+**验收范围。** 存量期限回填的 SQLite／PostgreSQL 回归使用当时四个字段级 Owner 的投影，核对最早截止时间、各原期限、修订和位置。四个字段级出口的指定时点回归及 v13 Hosted 短窗口自然到期、拒绝和恢复分别按原证据认定，365 天区间是编译器验证。独立图引擎场景核对五方回执、Graph 读取与纳管拒绝。Graph 资源期限的自然到期仍需对应场景证据。[四出口有效期历史记录](../../security/CLAUDE.md#资源筛选银行卡识别与有效期) · [Graph 场景](testing/scenarios/数据保护.md#graph-protection)
 
 Neo4j 普通查询与正式图查询分别使用 `PreparedQuery` / `PreparedGraphQuery`，二者共享 `QueryReadPlan` 事实契约，执行参数、连接和解析语句片段均被冻结。Provider 使用 `github.com/cloudprivacylabs/opencypher/parser@v1.0.0` 的 openCypher 9 ANTLR 语法树证明只读语法，不按查询文本关键字判定。仅接受物理 standard database；通过原生 `SHOW DATABASES` 验证所连数据库，通过 `SHOW FUNCTIONS` 的 `isBuiltIn` 验证 AST 内函数。别名、复合数据库、过程、LOAD CSV、多语句、用户函数与未覆盖的 Neo4j 扩展明确拒绝，保留 `local_read_unsupported` 稳定诊断及中英文说明。函数名区分语法树标识，不通过名称前缀猜测内置资格。语法未覆盖的保留字参数名也应改用普通标识符，例如 `$row_limit`。当前 Neo4j 未提供图资源精确 ReadSet 和字段输出保护；本引擎存在纳管目标时仍拒绝未能精确证明的查询。
 
