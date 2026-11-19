@@ -46,9 +46,9 @@
       </el-table>
     </template>
 
-    <el-dialog v-model="editing" :title="label('editTitle', { name: draft?.name || '' })" width="min(480px, 90vw)"
-      :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
-      <el-form v-if="draft" label-position="top" @submit.prevent="apply">
+    <el-dialog v-if="draft" :model-value="true" :title="label('editTitle', { name: draft.name })" width="min(480px, 90vw)"
+      :before-close="closeEditor" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+      <el-form label-position="top" @submit.prevent="apply">
         <el-alert v-if="saveError" type="error" :title="saveError" :closable="false" />
         <el-form-item :label="draft.unit ? label('newValueWithUnit', { unit: draft.unit }) : label('newValue')">
           <el-select v-if="draft.name === 'log_lock_waits'" v-model="draft.value" :disabled="saving">
@@ -61,8 +61,8 @@
         <el-alert v-if="diagnosticHint" type="info" :title="diagnosticHint" :closable="false" />
       </el-form>
       <template #footer>
-        <el-button :disabled="saving" @click="editing = false">{{ label('cancel') }}</el-button>
-        <el-button type="primary" :disabled="!canUpdate || !draft?.value.trim()"
+        <el-button :disabled="saving" @click="closeEditor">{{ label('cancel') }}</el-button>
+        <el-button type="primary" :disabled="!canUpdate || !draft.value.trim()"
           :loading="saving" data-testid="infra-apply" @click="apply">{{ label('apply') }}</el-button>
       </template>
     </el-dialog>
@@ -83,7 +83,6 @@ const selectedID = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const loadFailed = ref(false)
-const editing = ref(false)
 const draft = ref(null)
 const saveError = ref('')
 const lastOutcome = ref(null)
@@ -137,7 +136,10 @@ async function reload() {
 function edit(row) {
   draft.value = { ...row }
   saveError.value = ''
-  editing.value = true
+}
+function closeEditor() {
+  draft.value = null
+  saveError.value = ''
 }
 async function apply() {
   if (saving.value || !canUpdate.value || !draft.value?.value.trim()) return
@@ -152,7 +154,7 @@ async function apply() {
     )
     if (context !== contextSequence) return
     lastOutcome.value = { ...result, name }
-    editing.value = false
+    closeEditor()
     await reload()
   } catch (error) {
     if (context === contextSequence) saveError.value = error.response?.data?.error || label('saveFailed')
@@ -160,13 +162,16 @@ async function apply() {
     if (context === contextSequence) saving.value = false
   }
 }
-watch(selectedID, () => { lastOutcome.value = null })
+watch(selectedID, () => {
+  closeEditor()
+  lastOutcome.value = null
+})
 watch(() => JSON.stringify([auth.authContext?.principal?.id, auth.authContext?.context]), () => {
   contextSequence++
   components.value = []
   selectedID.value = ''
   saving.value = false
-  editing.value = false
+  closeEditor()
   lastOutcome.value = null
   reload()
 })

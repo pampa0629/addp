@@ -7,6 +7,7 @@ test('platform Infra panel separates a Redis runtime update from persistence', a
   let value = '128'
   const reads = []
   const writes = []
+  let postgresBound = false
   const parameter = () => ({ name: 'slowlog-max-len', value, unit: 'entries', source: 'redis_runtime', activation: 'online', editable: true, pending_restart: false })
   await page.route(/\/api\/v1\/system\/platform\/infra_configuration(?:\/.*)?$/, async route => {
     const method = route.request().method()
@@ -20,7 +21,9 @@ test('platform Infra panel separates a Redis runtime update from persistence', a
     if (method === 'GET') {
       reads.push(value)
       return route.fulfill({ headers, json: [
-        { id: 'database', provider: 'postgres', status: 'unbound', parameters: [] },
+        { id: 'database', provider: 'postgres', status: postgresBound ? 'available' : 'unbound', parameters: postgresBound ? [
+          { name: 'maintenance_work_mem', value: '131072', unit: 'kB', source: 'configuration file', activation: 'reload', editable: true, pending_restart: false }
+        ] : [] },
         { id: 'redis', provider: 'redis', status: 'available', parameters: [
           parameter(),
           { name: 'maxmemory', value: '0', unit: 'bytes', source: 'redis_runtime', activation: 'native', editable: false, pending_restart: false }
@@ -29,6 +32,7 @@ test('platform Infra panel separates a Redis runtime update from persistence', a
     }
     writes.push(route.request().postDataJSON())
     value = writes.at(-1).value
+    postgresBound = true
     return route.fulfill({ headers, json: {
       application: 'confirmed', persistence: 'unconfirmed', failure_stage: 'persist', audit_recorded: true, current: parameter()
     } })
@@ -47,6 +51,16 @@ test('platform Infra panel separates a Redis runtime update from persistence', a
   await expect(page.getByRole('row').filter({ hasText: 'slowlog-max-len' })).toContainText('256')
   expect(writes).toEqual([{ value: '256' }])
   expect(reads).toEqual(['128', '256'])
+  // The completed draft and its overlay must be removed before editing another component.
+  await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0)
+  await page.getByTestId('infra-component').click()
+  await page.getByRole('option', { name: 'PostgreSQL', exact: true }).click()
+  await expect(result).toHaveCount(0)
+  await page.getByTestId('edit-maintenance_work_mem').click()
+  const postgresDialog = page.getByRole('dialog', { name: '编辑 maintenance_work_mem' })
+  await expect(postgresDialog.getByRole('textbox')).toHaveValue('131072')
+  await postgresDialog.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0)
 })
 
 test('Tenant configuration has no Infra tab', async ({ page }) => {
