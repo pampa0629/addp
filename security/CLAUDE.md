@@ -78,47 +78,27 @@ Standard 的旧分类分级 ID 和数据不迁移、不映射，也不提供兼�
 
 ## 前端验证与失败取证
 
-限时原值访问 `security-plaintext-access` 已在提交 `2e9d37e8b` 的 [2026-10-12 Hosted T4 38191967691](https://github.com/pampa0629/addp/actions/runs/38191967691) 首次通过完整 API 与真实 Console 双用户验收：同一 Tenant 的申请人与审批人使用隔离浏览器 Context，两次批准均在 Owner 同步确认后自动刷新原值预览；真实到期和提前撤销后恢复脱敏，另一主体始终脱敏，三行数据中的 null 保留，审批历史的当前授权状态正确。v3 总报告与 v1 页面报告一致，浏览器告警和业务请求错误为零，三张安全截图已目视核对，Hosted 应用、业务容器、Infra 及凭据清理零残留。同提交 Platform CI 完整通过；套件仍只手工调度，不将此结果扩大为 Security 实际停机故障验收。
+### 标准门禁与失败产物
 
-同一套件的 v4 扩展在完成原有 API 场景后，通过标准生命周期停止临时 Security、核对拒绝连接，验证未过期本地投影下有效原值授权与其他用户脱敏，以及真实授权到期后两人均回落脱敏。Manager 进程保持不变；所有停止尝试均恢复 Security 并核对构建身份、两用户和到期历史，再继续原有真实页面验收。凭据不传入恢复子进程；900 秒总预算、手工 Hosted 入口和零残留清理不变。提交 `96432fd38` 的 [2026-10-12 Hosted T4 38196037099](https://github.com/pampa0629/addp/actions/runs/38196037099) 已首次真实通过 v4：90 秒授权、八个拒绝连接时间点、两用户有效期内和到期后的输出、Manager 实例保持、Security 恢复身份及到期历史均核验通过。原有完整 API 和 v1 页面验收同时通过，三张安全截图已目视核对，浏览器零告警、零业务请求错误，清理零残留。该场景不扩张为长周期投影到期或高可用验收；Platform CI 结果另行记录。
+`make test-security-frontend` 依次运行确定性测试、Playwright 回归和构建。浏览器零重试，失败保留截图和 `trace.zip`。当轮结果独立保存到系统临时目录的 `addp-security-playwright-results-*`（CI 的 `TMPDIR=RUNNER_TEMP`），成功退出删除当轮目录，后续运行不覆盖此前失败产物。Platform CI 的 Security 前端失败产物为 `security-browser-failure-<run_id>-<run_attempt>`，保留 14 天。解压后在 `security/frontend` 运行 `npx playwright show-trace <trace.zip绝对路径>`，核对操作时序、DOM、网络和控制台。偶发故障的结论以首次失败取证和修复后的针对性回归为准。
 
-Transfer 派生查询拒绝验收核对 `query_output_lineage_unresolved`、failed 终态、本次执行身份及零写入。类型化错误、完成事务和专业响应的敏感信息保护统一见[Transfer bounded 失败诊断](../transfer/CLAUDE.md#bounded-失败诊断)。
+### 表单会话与保存
 
-四出口 v9 的停机与恢复步骤、拒绝连接探针、Backend 构建身份、Source Grant、原值授权边界和清理要求统一见[Security 控制面实际不可达场景](../docs/spec/testing/scenarios/数据保护.md#security-控制面实际不可达)。固定版本运行结果按以下记录分别认定。
+- 新会话打开或用户显式加载最新基线时清除旧校验。默认保护编辑取消、Esc 或遮罩退出时恢复原值、清除校验并保留父抽屉；Esc／遮罩关闭后在 `closed` 恢复触发按钮的焦点。打开动画结束时，`opened` 只负责聚焦，并保留动画期间产生的必填提示。定向回归在 `security/frontend` 使用 `npm run test:e2e -- --grep 'default protection editor'`，标准前端门禁也覆盖。
+- 候选复核由 `useProtectionFindingReview.prepare` 统一开启新会话，覆盖首次打开、重开和成功后复核下一项。关闭或销毁后忽略待执行的界面初始化。`FindingReviewForm` 的清校验与聚焦分开，挂载和 `opened` 只负责聚焦，测试实际覆盖动画前提交与动画后提示保留。
+- 从校验到写入和刷新结束使用同一 `saving` 状态，期间禁止重复提交、编辑及关闭弹窗。写入失败解除限制，保留草稿，等待用户重试。提示只展示标准错误体非空字符串 `error` 的普通文本；网络错误或无有效原因时使用 `security.common.failed`。诊断 `detail` 和 Axios 通用错误不向表单回显。
 
-本扩展已在提交 `c322167b8` 的 [2026-10-12 Hosted T4 38219829612](https://github.com/pampa0629/addp/actions/runs/38219829612) 首次真实通过 v9：两个 Security 停机窗口、14 个前后拒绝连接时间点、四 Owner Backend 实例和构建身份保持、Security 新实例恢复及普通 User/Tenant 核验均通过。MySQL 五行的 Develop 查询、Service REST Query 与从空表开始的 Transfer bounded snapshot 均移除邮箱，目标客户标识保持；MongoDB 七行在 SM3 下完成 Develop 嵌套字段、空值与相邻属性校验，计数仍为七、派生查询不返回结果，Transfer 可证明查询落表与不可证明查询零条／零字节写入均通过，拒绝使用安全诊断 code 而非原始错误文本。MongoDB 十个任务及执行逐一核对、全部删除，Baseline 恢复、临时 Policy 撤销；既有三算法、重启恢复与 Console 检索／定位／预览／CSV／Monitor 链路同时通过，浏览器零告警及零业务请求错误，四张截图已目视核对。独立 v9 报告核对与 Hosted 应用、业务容器、Infra、凭据清理均通过，零残留；[同提交 Platform CI 38219801688](https://github.com/pampa0629/addp/actions/runs/38219801688) 全部 33 项通过。此证据只覆盖上述有效投影下的实际出口，不扩张为其他出口原值授权、投影自身到期或全平台高可用验收。
+### 刷新、版本冲突与展示快照
 
-四出口 Hosted v10 进一步验证显式重新发现后的投影同步与实际输出：普通用户沿既有纳管 version 命令创建 discovery execution；四 Owner 的稳定投影 ID、递增 revision、新 published cursor 和本次发现完成事实须同时成立；时间按 API 规范接受带时区 ISO 8601 值，统一换算为 UTC 比较，拒绝无时区值及过旧回执。当前回执齐备后重新读取四个出口并核对 Transfer 新执行身份与实际目标。有效期延长及完整 365 天区间由 Security 编译器 T1 单独验证；不扩展治理响应、产品角色或自动续期，不将此证据表述为自然到期 T4；该 Hosted 套件的临时普通账号需具备既有 `security.enrollment.update` 命令资格，其他套件与源数据 Grant 不变。该扩展仍走现有 Hosted suite 和资源清理。
+- 创建或更新成功先采用完整写入响应与新 `version`，删除成功移除对应本地规则，刷新完成后再关闭弹窗。写入成功但读取刷新失败，应持久提示“变更已保存”并提供只读重试，刷新前禁止基于旧列表编辑。初次加载失败保留错误状态。
+- `resource_version_conflict` 保留草稿并阻止按旧版本重提，只有用户显式放弃输入并成功加载最新版才更新编辑基线。加载失败保留草稿，卸载后忽略迟到响应。
+- 默认保护工作区以敏感类型为范围发布最新展示快照，供父页面更新摘要。写入响应、显式冲突重载及列表读取成功均更新快照，父页面直接消费快照。
 
-提交 `fabac4bcb8` 的 [2026-10-13 Hosted T4 38335798164](https://github.com/pampa0629/addp/actions/runs/38335798164) 已真实通过 v10，并完成下载报告的独立核对：正式重新发现保持源结构和四个投影 ID 不变，四 Owner 均安装更高 revision 与新 cursor，当前回执覆盖本次发现完成时间；Manager、Develop、Service 及 Transfer 新执行均输出五行，邮箱字段移除、客户标识保持，Transfer 实际读写均为五行且目标预览一致。既有两个 Security 停机窗口、14 个拒绝连接时间点、MongoDB 三算法及十个任务清理同时通过；Console 检索、定位、预览、CSV 和 Monitor 页面报告通过，零浏览器告警、零业务请求错误，四张截图已目视核对。领域资源、Hosted 应用、业务容器、Infra 和凭据清理均通过，零残留。该结果不覆盖后续提交 `b8ce75038` 新增的治理有效期展示、资源筛选和银行卡号识别，也不计为自然到期或全平台高可用验收。
+### 验收入口
 
-Hosted T4 `security-mysql-owner-protection` 使用独立的准备身份，通过 System 正式 `access_grants` 命令原子初始化独立批准要求并给普通消费账号签发精确表的只读 Grant。范围仅包括 MySQL `customers`、`bank_card_accounts`、MongoDB `Outdoor.Persons` 集合，以及 PostgreSQL `spatial_algorithm_source`、`spatial_algorithm_transfer`、`mysql_email_transfer`、`mongodb_query_transfer`、`mongodb_query_control`、`mongodb_query_denied`、`bank_card_transfer` 七张表，共十个精确读取 Grant；不授予目录、未来表或消费者的授权管理权限。准备令牌在进入四 Owner 场景前移除，普通账号继续同时受功能权限、源数据授权和 Security 规则约束；整套夹具随 Hosted Job 清理。夹具身份、精确授权请求和准备令牌隔离回归由既有 `make test-online-runner` 自动发现，真实链路由 `online-t4-gates.yml` 的同名套件验证。
+`make test-security-postgres` 的默认保护 HTTP 回归使用真实 Handler、Service 与标准测试库事务，覆盖初始规则原子创建、非法规则无残留、完整写响应与版本递增、更新／删除冲突、显式重读后的再写、初始规则删除限制及租户隔离。回归结束回滚，身份是测试夹具。重新纳管审计按 PostgreSQL 实际落库的微秒精度，以操作前读回时间精确对照，防止放宽误差后漏检退出审计变更。现有 `security-postgres` CI Job 调用同一入口。
 
-MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + snapshot` 链路：未纳管时先验证派生查询能落表，纳管后三算法分别验证透明 aggregate 的嵌套字段别名、`$ifNull`、SQL NULL 和相邻字段；不可证明输出血缘的派生查询必须在保护准备阶段拒绝，写入条数、字节数为零且独立拒绝目标前后为空。Manager 独立预览 Policy 不改变 Transfer 默认 Baseline。提交 `41bd12252` 的 [Hosted T4 38133692022](https://github.com/pampa0629/addp/actions/runs/38133692022) 已真实通过 v8：8 个任务及执行逐一核对、任务全部删除并确认 404，Baseline／Policy 恢复及 Hosted 清理零残留；不把该 suite 结果扩大为全仓 CI 通过。
-
-空间标量算法验收按当前 Owner 输出协议解析 Manager 表格预览的 WKT，以及其他 Owner 查询输出的 GeoJSON 或原生十六进制 EWKB，并逐行比较二维 Point 坐标；非法类型、维度及改变后的坐标均失败。源表与结果表的 geometry 类型、主几何列及 SRID 4326 另由 Meta 空间事实核验；空间解析错误须标明 Owner 和行 ID，不能被算法校验或清理日志掩盖。
-
-重新纳入保护的 PostgreSQL 生命周期回归使用带纳秒尾数的固定时间夹具，先校验落库后的微秒精度，再以操作前读回的审计时间作为精确比较基线；不得把数据库读回值直接与 `time.Now()` 的纳秒输入比较，也不能通过放宽时间误差来掩盖退出审计被修改。该回归继续由 `make test-security-postgres` 和现有 `security-postgres` CI Job 执行。
-
-`make test-security-postgres` 除迁移与服务事务外，还运行默认保护 HTTP 契约集成回归：使用真实 Handler、Service 和 PostgreSQL，验证敏感定义与初始规则原子创建、非法规则无残留、完整写响应与递增版本、更新和删除冲突的稳定错误码、显式重读后再次写入、初始规则删除限制及租户隔离。测试仅在标准测试库事务中重建 `security` schema，结束回滚；身份上下文是可信测试夹具，不代表真实登录、权限中间件或 Gateway 已完成联调。CI 继续由 `release-and-t2-gates.yml` 的 `security-postgres` Job 调用同一入口；真实跨模块验收仍归独立的 Online T4。
-
-表单弹窗只在开始新会话（`open`）或用户显式加载最新基线后清除旧校验；`opened` 和焦点恢复只负责聚焦，不得清除动画期间已经产生的必填提示。浏览器回归通过延长打开动画、在动画结束前提交空表单来验证提示持续可见。
-
-候选复核的会话边界由 `useProtectionFindingReview.prepare` 统一拥有：首次打开、重新打开和成功后连续复核下一个候选都在准备新候选时清理旧校验；关闭或销毁后忽略待执行的界面初始化。`FindingReviewForm` 的 `clearValidate` 与 `focusRationale` 分离，挂载和弹窗 `opened` 只聚焦。不得让聚焦方法隐含表单重置，也不得通过延迟用户提交或增加测试重试规避动画竞态。现有 `make test-security-frontend` 与 Platform CI 同时覆盖动画前空提交、动画后提示保留、重开清理和连续复核会话，不新增测试入口或环境依赖。
-
-标准入口为 `make test-security-frontend`，依次运行确定性测试、Playwright 浏览器回归和构建。浏览器测试保持零重试，失败时保留截图与 `trace.zip`，成功时不保留轨迹。结果存放于系统临时目录（CI 设置 `TMPDIR=RUNNER_TEMP`）下当轮独立的 `addp-security-playwright-results-*`；成功退出时删除当轮目录，重跑不覆盖此前失败产物。
-
-默认保护编辑由独立浏览器用例覆盖识别方式到默认保护的抽屉切换、必填空值提交，以及取消按钮、Esc、遮罩点击三种退出路径。退出后必须恢复原值、清除旧校验并保留父抽屉；Esc 和遮罩关闭还验证焦点回到编辑按钮。鼠标遮罩关闭不能依赖 Element Plus 默认恢复焦点，默认保护弹窗在 `closed` 后显式聚焦本次触发按钮，不改写组件库的焦点陷阱。需要单独诊断时，在 `security/frontend` 运行 `npm run test:e2e -- --grep 'default protection editor'`；这些用例仍由标准前端门禁自动运行。
-
-`platform-ci.yml` 的 Security 前端门禁失败后上传 `security-browser-failure-<run_id>-<run_attempt>`，保留 14 天。下载并解压产物后，可在 `security/frontend` 运行 `npx playwright show-trace <trace.zip绝对路径>`，检查操作时序、DOM 快照、网络与浏览器控制台；一次重跑通过不能证明偶发问题已经修复。
-
-默认保护提交从校验开始到保存及列表刷新结束使用同一 `saving` 状态：禁止重复提交、修改表单，以及取消、关闭按钮、Esc 和遮罩退出，避免旧响应关闭新编辑会话。保存失败时解除限制并保留输入供重试；成功刷新后再关闭。延迟响应浏览器用例同时覆盖失败重试、保存成功和刷新尚未完成的阶段。
-
-默认保护保存失败提示只读取 API 标准错误体中的非空字符串 `error`，以普通文本展示；不展示诊断 `detail` 或 Axios 通用 HTTP 错误。断网、缺少原因、空白或非字符串原因使用现有 `security.common.failed` 本地化词条。浏览器回归同时验证服务端原因和这些异常响应，保持输入可编辑且不自动重试。
-
-默认保护写入结果与列表刷新结果分开处理：创建、更新成功后先采用响应中的完整规则和新 `version`；删除成功后移除对应本地规则。刷新失败显示持久的“变更已保存”提示并提供只读重试，不误报保存失败、不重复写入，也不允许基于未刷新列表继续编辑。初次加载失败不能显示成空列表。版本冲突按 `resource_version_conflict` 判断，保留草稿并阻止旧版本再次提交；只有用户显式选择放弃输入并加载最新规则后，才替换编辑基线和恢复提交。加载失败保留原草稿，组件卸载后忽略迟到响应。
-
-默认保护工作区向敏感类型父页面发布按类型限定的最新规则快照，用于更新默认保护摘要；父页面不得因此再次全量读取定义。写入响应、显式冲突重载和列表读取成功均更新这份展示快照，不另存业务保护事实。
+真实跨模块入口见[控制面不可达场景](../docs/spec/testing/scenarios/数据保护.md#security-控制面实际不可达)、[重新发现与安装回执](../docs/spec/testing/scenarios/数据保护.md#重新发现与安装回执)。固定结果分别见[四出口停机 v9](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)与[双用户限时原值](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#双用户限时原值与控制面不可达)。MongoDB 搬运沿[实际场景及早期证据](../docs/spec/testing/scenarios/数据保护.md#security-场景最小历史证据)，稳定错误、完成事务及安全 DTO 见[Transfer bounded 失败诊断](../transfer/CLAUDE.md#bounded-失败诊断)。
 
 ## 必读规范
 
