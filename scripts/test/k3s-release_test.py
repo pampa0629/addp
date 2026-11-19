@@ -1,7 +1,10 @@
 import copy
+import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
+import tarfile
 import tempfile
 import unittest
 
@@ -82,6 +85,28 @@ class K3sReleaseTest(unittest.TestCase):
             path.write_text(json.dumps(second))
             with self.assertRaisesRegex(ValueError, "identity"):
                 RELEASE.read_release(path)
+
+    def test_runtime_config_is_derived_from_archive_not_docker_index_id(self):
+        release = self.pair()
+        reference = RELEASE.image_ref(release, "platform/gateway")
+        expected = {reference: release["images"]["platform/gateway"]["arm64"]["docker_id"]}
+        config = b'{"architecture":"arm64","os":"linux"}'
+        digest = "sha256:" + hashlib.sha256(config).hexdigest()
+        self.assertNotEqual(expected[reference], digest)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "images.tar"
+            manifest = [{"Config": "blobs/sha256/" + digest[7:], "RepoTags": [reference]}]
+            with tarfile.open(path, "w") as archive:
+                for name, content in ((manifest[0]["Config"], config),
+                                      ("manifest.json", json.dumps(manifest).encode())):
+                    entry = tarfile.TarInfo(name)
+                    entry.size = len(content)
+                    archive.addfile(entry, io.BytesIO(content))
+            self.assertEqual(RELEASE.archive_config_digests(path, "arm64", expected), {reference: digest})
+            with self.assertRaisesRegex(ValueError, "non-native"):
+                RELEASE.archive_config_digests(path, "amd64", expected)
+            with self.assertRaisesRegex(ValueError, "exactly"):
+                RELEASE.archive_config_digests(path, "arm64", {"unexpected": digest})
 
     def test_pair_rejects_source_option_and_inventory_mismatch(self):
         amd = copy.deepcopy(self.amd)

@@ -11,7 +11,7 @@
    COMPOSE_ENV_FILES="$PWD/.env.example" python3 scripts/prod/release-images.py prepare \
      --tag "$(git rev-parse HEAD)" --registry localhost:5001
    ```
-2. 在操作端收齐两个 `dist/compose-release/manifest.json`，生成发布清单。将同一份 `release.json` 送回两端，在各自原生 Docker 环境生成离线包。输出目录必须尚未存在，且其父目录在可写的数据盘上。两个构建端的 Docker 中均须保留冻结清单记录的镜像。
+2. 在操作端收齐两个 `dist/compose-release/manifest.json`，生成发布清单。将同一份 `release.json` 送回两端，在各自原生 Docker 环境生成离线包。两个构建端的 Docker 中均须保留冻结清单记录的镜像，并支持 `docker save --platform`。输出目录必须尚未存在，且其父目录在可写的数据盘上。导出期间需为未压缩和压缩归档预留空间。
 
    ```bash
    python3 scripts/prod/k3s-release.py pair \
@@ -35,5 +35,5 @@
    python3 k3s-release.py render --release release.json --workloads site-workloads.json > workloads.json
    ```
 
-同一发布和服务在所有支持的架构使用同一个离线镜像引用。两份包各自记录原 Registry 摘要和镜像配置摘要。工作负载只调度到已导入该发布的节点，镜像从本机缓存获取。双架构镜像不添加架构或节点名选择器。单架构组件自动加架构约束。现有 PVC 及其存储拓扑继续决定有状态 Pod 的可用节点。跨节点扩副本前按组件确认并发执行语义。
+同一发布和服务在所有支持的架构使用同一个离线镜像引用。`release.json` 记录各架构的 Registry 摘要及 Docker 镜像 ID，`config-digests.json` 记录从对应 Docker 归档取得的原生镜像配置摘要，供 K3s 导入后核对。工作负载只调度到已导入该发布的节点，镜像从本机缓存获取。双架构镜像不添加架构或节点名选择器。单架构组件自动加架构约束。现有 PVC 及其存储拓扑继续决定有状态 Pod 的可用节点。跨节点扩副本前按组件确认并发执行语义。
 

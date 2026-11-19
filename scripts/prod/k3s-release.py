@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 
 
@@ -70,12 +71,12 @@ def frozen_images(release):
             raise ValueError(f"Frozen project has no images: {project}")
         for service, reference in services.items():
             repository, marker, digest = reference.rpartition("@")
-            config = release["image_ids"][reference]
+            docker_id = release["image_ids"][reference]
             if not SERVICE.fullmatch(service) or not repository or not marker or not DIGEST.fullmatch(digest):
                 raise ValueError(f"Invalid frozen image reference for {project}/{service}")
-            if not DIGEST.fullmatch(config):
-                raise ValueError(f"Invalid image configuration digest for {project}/{service}")
-            images[f"{project}/{service}"] = {"source": reference, "config": config}
+            if not DIGEST.fullmatch(docker_id):
+                raise ValueError(f"Invalid Docker image identity for {project}/{service}")
+            images[f"{project}/{service}"] = {"source": reference, "docker_id": docker_id}
     return images
 
 
@@ -137,7 +138,7 @@ def native_arch():
 
 
 def images_for_arch(release, arch):
-    return {image_ref(release, name): builds[arch]["config"]
+    return {image_ref(release, name): builds[arch]["docker_id"]
             for name, builds in release["images"].items() if arch in builds}
 
 
@@ -146,7 +147,26 @@ def inspect_docker_images(identities, arch):
         response = subprocess.check_output(["docker", "image", "inspect", reference])
         image, = json.loads(response)
         if image["Id"] != expected or image["Os"] != "linux" or image["Architecture"] != arch:
-            raise ValueError(f"Docker image configuration or architecture differs: {reference}")
+            raise ValueError(f"Docker image identity or architecture differs: {reference}")
+
+
+def archive_config_digests(path, arch, expected_images):
+    identities = {}
+    with tarfile.open(path, "r:") as archive:
+        manifest = json.load(archive.extractfile("manifest.json"))
+        for entry in manifest:
+            config = archive.extractfile(entry["Config"]).read()
+            platform = json.loads(config)
+            if platform["os"] != "linux" or platform["architecture"] != arch:
+                raise ValueError(f"Docker archive contains a non-native image: {entry['RepoTags']}")
+            digest = "sha256:" + hashlib.sha256(config).hexdigest()
+            for image in entry["RepoTags"]:
+                if image in identities:
+                    raise ValueError(f"Docker archive contains a duplicate image reference: {image}")
+                identities[image] = digest
+    if identities.keys() != expected_images.keys():
+        raise ValueError("Docker archive does not contain exactly the release image references")
+    return identities
 
 
 def export_bundle(release, output):
@@ -160,11 +180,12 @@ def export_bundle(release, output):
         bundle.mkdir(mode=0o700)
         for image, config in identities.items():
             subprocess.run(["docker", "tag", config, image], check=True)
-        with (bundle / IMAGE_ARCHIVE).open("wb") as archive:
-            with subprocess.Popen(["docker", "save", *sorted(identities)], stdout=subprocess.PIPE) as save:
-                subprocess.run(["gzip", "-1"], stdin=save.stdout, stdout=archive, check=True)
-                if save.wait() != 0:
-                    raise ValueError("docker save failed")
+        tar_path = bundle / "images.tar"
+        subprocess.run(["docker", "save", "--platform", f"linux/{arch}",
+                        "-o", str(tar_path), *sorted(identities)], check=True)
+        config_digests = archive_config_digests(tar_path, arch, identities)
+        (bundle / "config-digests.json").write_text(json_text(config_digests))
+        subprocess.run(["gzip", "-1", str(tar_path)], check=True)
         (bundle / "release.json").write_text(json_text(release))
         (bundle / "architecture").write_text(arch + "\n")
         script = Path(__file__).resolve()
@@ -183,7 +204,10 @@ def load_node(bundle):
         raise ValueError("Run load-node as root on the K3s Linux node matching the bundle")
     subprocess.run(["sha256sum", "--check", "--strict", "--quiet", "SHA256SUMS"], cwd=bundle, check=True)
     release = read_release(bundle / "release.json")
-    identities = images_for_arch(release, arch)
+    identities = read_json(bundle / "config-digests.json")
+    if (identities.keys() != images_for_arch(release, arch).keys()
+            or any(not DIGEST.fullmatch(digest) for digest in identities.values())):
+        raise ValueError("Image configuration digests do not cover the native release images")
     subprocess.run(["k3s", "ctr", "-n", "k8s.io", "images", "import",
                     "--platform", f"linux/{arch}", str((bundle / IMAGE_ARCHIVE).resolve())],
                    stdout=subprocess.DEVNULL, check=True)
@@ -251,7 +275,7 @@ def main():
             load_node(args.bundle)
         else:
             print(json_text(render(read_release(args.release), read_json(args.workloads))), end="")
-    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"K3s release {args.action} failed: {error}\n")
 
 
