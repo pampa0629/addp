@@ -169,7 +169,7 @@ class HostedManagerGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_MANAGER_PG_ENGINE_ID" = 17 ]
             elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-mysql-export ]; then
               [ "$ADDP_ONLINE_MANAGER_EXPORT_ENGINE_ID" = 17 ]
-            elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+            elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-tiff-metadata-grant ]; then
               [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
               [ -z "${ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID:-}" ]
             elif [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
@@ -193,6 +193,18 @@ class HostedManagerGateTest(unittest.TestCase):
         """)
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
         subprocess.run(["git", "commit", "-qm", "test fixture"], cwd=self.host.repository, check=True)
+
+    def test_tiff_metadata_case_uses_only_the_nfs_fixture_and_cleans_on_exit(self):
+        for fail in ('0', '1'):
+            with self.subTest(fail=fail):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='nfs-tiff-metadata-grant', ADDP_TEST_SUITE_FAIL=fail)
+                self.assertEqual(result.returncode == 0, fail == '0', result.stderr)
+                trace = self.host.trace.read_text()
+                for action in ('nfs-fixture:start', 'manager-case:nfs-tiff-metadata-grant', 'application-stop', 'nfs-fixture:stop', 'infra-down'):
+                    self.assertIn(action, trace)
+                for action in ('source-fixture:start', 'raster-seed', 'playwright install', 'build-images', 'start:-develop'):
+                    self.assertNotIn(action, trace)
 
     def check_filegdb_case(self, failure):
         result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='filegdb-authorization',

@@ -145,7 +145,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 		return nil
 	case "ontology-agent-protection", "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
-		if suite == "ontology-agent-protection" || suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "highgo-consumer-flow" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "native-grib", "native-raster-media", "native-table-avro", "native-table-feather", "delimited-read-settings", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
+		if suite == "ontology-agent-protection" || suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "highgo-consumer-flow" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "native-grib", "native-raster-media", "native-table-avro", "native-table-feather", "delimited-read-settings", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization", "nfs-tiff-metadata-grant"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
 			permissions = append(permissions, "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return permissions
@@ -470,6 +470,8 @@ func suitePermissions(suite string) ([]string, error) {
 		}
 	case "manager-internal-artifact-lineage":
 		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
+		case "nfs-tiff-metadata-grant":
+			return []string{"meta.catalog.read"}, nil
 		case "minio-node-rescan":
 			return []string{"manager.search.execute", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read"}, nil
 		case "nfs-upload-initial":

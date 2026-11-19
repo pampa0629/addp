@@ -16,6 +16,7 @@
 | --- | --- |
 | `full` | 模型、授权、点云、文档及[固定断言](#表格json-与八模型固定断言)。 |
 | `native-raster-media` | [IMG／JPEG2000](#img-原生扫描与-cog-快显)、[Surfer GRD](#surfer-grd-读取)、[TIFF 无定位小图](#tiff-无定位小图的-cog-布局回归)。 |
+| `nfs-tiff-metadata-grant` | [单份 TIFF 元数据签发和撤销](#nfs-tiff-元数据授权)。 |
 | `native-table-orc` | [ORC](#orc-单文件表格-hosted)的嵌套只读和平坦字段批量传输。 |
 | `native-table-avro` | [Avro](#avro-单文件表格读取)三种 codec、分页和仅平面批量写 Parquet。 |
 | `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)六源分页、Parquet 与原件。 |
@@ -33,6 +34,12 @@
 入口示例：`ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。人工 Hosted 指定同名 `suite`、`manager_case`、`manager_source_commit`。源码参数须为完整 40 位小写 SHA，检出后 HEAD 必须精确相等且属于 dispatch 提交的祖先或自身，才准备工具和部署。日志分列源码及 dispatch SHA，应用、Runtime、夹具和断言取所选源码。其他 suite 不消费此参数，旧 workflow 不作固定源码入口。
 
 Job、Artifact、`manager-case.json` 均记录所选 case。独立通过不计 full，full 的模型源授权正向断言受阻仍按失败认定。case 分发、版本拒绝、退出及归档沿 `make test-manager-online-runner` 与现有 CI 登记。
+
+### NFS TIFF 元数据授权
+
+独立 case 复用 Manager Hosted 的只读 NFS 导出，在隔离租户对单份 TIFF 执行精确深度扫描。办理账号沿源授权管理员及现有的两项扫描功能权限，普通账号只具备 `meta.catalog.read`。同一普通账号按精确 Catalog 路径观察签发前 404、签发 `metadata_read` 后 200、撤销后 404。核对 Meta 正式单文件 `file_composition`、Grant 指纹及边界摘要、公开元数据投影和同一请求的撤销回执。
+
+报告 `nfs-tiff-metadata-grant.json` 保存扫描执行、身份、签发与撤销事实和各阶段耗时。失败时按已登记的请求编号回收临时 Grant，保留失败阶段和待回收编号，外层继续核对当轮应用、NFS 导出及 Infra 清理。入口沿固定提交的 Manager 手工 Hosted 和 `make test-manager-online-runner`，晕渲数值、持久化及血缘沿原套件验收。
 
 `native-raster-media` 的 `manager-native-raster-media.json` 使用 `addp.manager-native-raster-media/v2`，须有普通身份、case、`source_formats=[img,jpeg2000,grd,tiff]`、四份子报告和实际失败状态，任一子场景失败即失败。`online-report.json` 归统一分发器。该 case 仅准备基础服务、GeoPython／GDAL、物理校验器及 Console，保留 Infra、Business MinIO／NFS、临时 registry、原样本和 NFS 读取方式。无 Model3D 构建／启动，无 PointCloud、Document 或结构化数据业务，按实际组件清理。生命周期门禁另核失败收尾及 full 保留的运行时。
 

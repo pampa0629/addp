@@ -1782,7 +1782,11 @@ test-manager-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/manager-netcdf.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-grib.spec.js
 
-test-manager-online-runner: test-manager-online-syntax test-online-registration-unit test-manager-sgm-local-runner ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
+.PHONY: test-manager-tiff-metadata-grant-runner
+test-manager-tiff-metadata-grant-runner:
+	@python3 -m unittest scripts/test/manager-tiff-metadata-grant-online_test.py
+
+test-manager-online-runner: test-manager-online-syntax test-online-registration-unit test-manager-sgm-local-runner test-manager-tiff-metadata-grant-runner ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
 	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py scripts/test/online-engine-registration_test.py scripts/test/metadata-refresh-scope-online_test.py
 	@python3 -m unittest scripts/test/manager-filegdb-online_test.py scripts/test/manager-filegdb-export-online_test.py scripts/test/manager-upload-initial-online_test.py
 	@python3 -m unittest scripts/test/manager-orc-online_test.py scripts/test/manager-avro-online_test.py scripts/test/manager-feather-online_test.py scripts/test/manager-delimited-online_test.py
@@ -1836,7 +1840,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
 

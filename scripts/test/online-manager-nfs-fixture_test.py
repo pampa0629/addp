@@ -102,6 +102,17 @@ if os.environ.get('TEST_DISCOVERY_FAIL') != '1': print(Path(os.environ['TEST_EXP
         self.assertIn('systemctl stop nfs-kernel-server.service rpcbind.service rpcbind.socket', self.trace.read_text())
         self.assertEqual(self.invoke("stop").returncode, 0)
 
+    def test_tiff_metadata_case_exports_exactly_one_read_only_source(self):
+        result = self.invoke("start", ADDP_ONLINE_MANAGER_CASE="nfs-tiff-metadata-grant")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = Path((self.secret / "nfs-root").read_text().strip())
+        self.assertEqual({path.name for path in root.iterdir()}, {".addp-online-owner", "source.tif"})
+        reference = SCRIPTS.parents[1] / "common/format/plugins/image/testdata/unlocated-cog.tif"
+        self.assertEqual((root / "source.tif").read_bytes(), reference.read_bytes())
+        self.assertIn("(ro,", self.exports.read_text())
+        self.assertEqual(self.invoke("stop").returncode, 0)
+        self.assertFalse(root.exists())
+
     def test_personal_host_rejected_before_any_privileged_action(self):
         for env in ({'GITHUB_ACTIONS': 'false'}, {'RUNNER_OS': 'macOS'}, {'ADDP_ONLINE_HOSTED': '0'}):
             with self.subTest(env=env):

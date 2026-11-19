@@ -2415,7 +2415,7 @@ def required_environment() -> dict[str, str]:
 
 def manager_case(environment):
     case = environment.get("ADDP_ONLINE_MANAGER_CASE", "full")
-    if case not in ("full", "native-raster-media", "native-table-orc", "native-table-avro", "native-table-feather", "delimited-read-settings", "native-netcdf", "native-grib", "native-envi", "kml-export", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization", "nfs-upload-initial", "minio-node-rescan"):
+    if case not in ("full", "native-raster-media", "native-table-orc", "native-table-avro", "native-table-feather", "delimited-read-settings", "native-netcdf", "native-grib", "native-envi", "kml-export", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization", "nfs-upload-initial", "minio-node-rescan", "nfs-tiff-metadata-grant"):
         raise SuiteError("Unsupported ADDP_ONLINE_MANAGER_CASE")
     return case
 
@@ -2696,6 +2696,12 @@ def run_full_case(repository, environment, client):
 def main() -> int:
     try:
         case = manager_case(os.environ)
+        if case == 'nfs-tiff-metadata-grant':
+            import importlib
+            report = importlib.import_module('scripts.test.manager-tiff-metadata-grant-online').run(
+                dict(os.environ), sys.modules[__name__])
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            return 0
         if case == 'minio-node-rescan':
             report = run_minio_node_rescan(Path(__file__).resolve().parents[2], dict(os.environ))
             print(json.dumps(report, ensure_ascii=False, sort_keys=True))

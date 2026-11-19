@@ -286,6 +286,7 @@ on:
           - filegdb-mysql-export
           - filegdb-authorization
           - nfs-upload-initial
+          - nfs-tiff-metadata-grant
           - minio-node-rescan
       manager_source_commit:
         description: Required full ancestor SHA when suite is manager-internal-artifact-lineage
@@ -2033,7 +2034,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install PointCloud native environment tool
-        if: inputs.manager_case != 'nfs-upload-initial' && inputs.manager_case != 'minio-node-rescan'
+        if: inputs.manager_case != 'nfs-upload-initial' && inputs.manager_case != 'minio-node-rescan' && inputs.manager_case != 'nfs-tiff-metadata-grant'
         uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167 # v3.3.0
         with:
           miniforge-version: "25.3.1-0"

@@ -1878,6 +1878,19 @@ func TestManagerORCFixtureUsesApprovedElevenPermissions(t *testing.T) {
 	}
 }
 
+func TestTIFFMetadataCaseUsesCatalogReaderAndExistingSourceInitializer(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "nfs-tiff-metadata-grant")
+	const suite = "manager-internal-artifact-lineage"
+	permissions, err := suitePermissions(suite)
+	if err != nil || !slices.Equal(permissions, []string{"meta.catalog.read"}) {
+		t.Fatalf("TIFF metadata consumer permissions = %v, %v", permissions, err)
+	}
+	wantIssuer := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions(suite), wantIssuer) {
+		t.Fatal("TIFF issuer must use the existing initializer and scan permissions")
+	}
+}
+
 func TestFileGDBCaseUsesReadOnlyConsumerAndExistingSourceInitializer(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "filegdb-authorization")
 	permissions, err := suitePermissions("manager-internal-artifact-lineage")

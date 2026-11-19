@@ -598,7 +598,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     hosted_case_selector = ('full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|'
                             'delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|'
-                            'filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan)')
+                            'filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan|nfs-tiff-metadata-grant)')
     if (not manager_input or any(not source_contract_contains(manager_input.group('body'), fragment, repository) for fragment in
             ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-table-avro', '- native-table-feather', '- delimited-read-settings', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-mysql-export', '- filegdb-authorization', '- minio-node-rescan'))
             or any(not source_contract_contains(job.group('body'), fragment, repository) for fragment in (
@@ -616,6 +616,14 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     netcdf_owner = (repository / netcdf_paths[0]).read_text(encoding='utf-8')
     netcdf_case_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
     netcdf_make = (repository / 'Makefile').read_text(encoding='utf-8')
+    if ('- nfs-tiff-metadata-grant' not in manager_input.group('body')
+            or "if case == 'nfs-tiff-metadata-grant':" not in netcdf_case_owner
+            or 'scripts.test.manager-tiff-metadata-grant-online' not in netcdf_case_owner
+            or not (repository / 'scripts/test/manager-tiff-metadata-grant-online.py').is_file()
+            or 'scripts/test/manager-tiff-metadata-grant-online_test.py' not in make_target_commands(netcdf_make, 'test-manager-tiff-metadata-grant-runner')
+            or any(not re.search(rf'(?m)^{target}:[^\n]*\btest-manager-tiff-metadata-grant-runner\b', netcdf_make)
+                   for target in ('test-manager-online-runner', 'test-execution-online-ci-runner'))):
+        raise RegistrationError('Manager NFS TIFF metadata Grant requires independent dispatch and a standard runner regression')
     if (any(not source_contract_contains(netcdf_owner, fragment, repository) for fragment in ('native-netcdf', 'addp.manager-netcdf/v2', 'manager-netcdf.json', 'source_drift_denied', 'original_download_verified', 'ExactFileMetadataGrants', 'metadata_authorization', 'validate_structural_metadata'))
             or "if case == 'native-netcdf':" not in netcdf_case_owner
             or any(not source_contract_contains(netcdf_make, fragment, repository) for fragment in (netcdf_paths[1], netcdf_paths[3]))):

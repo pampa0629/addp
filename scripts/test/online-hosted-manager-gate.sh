@@ -8,7 +8,7 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
 export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
 case "$ADDP_ONLINE_MANAGER_CASE" in
-  full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan) ;;
+  full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan|nfs-tiff-metadata-grant) ;;
   *) echo 'Unsupported ADDP_ONLINE_MANAGER_CASE' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
@@ -23,7 +23,7 @@ elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
 elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
   HOSTED_FIXTURE_CONTAINERS=(addp-manager-online-registry addp-manager-raster-runtime)
 fi
-if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-tiff-metadata-grant ]; then
   HOSTED_FIXTURE_CONTAINERS=()
 elif [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
   HOSTED_FIXTURE_CONTAINERS=(business-minio)
@@ -40,7 +40,7 @@ fi
 if [[ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-* ]]; then
   HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE")
 fi
-if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
+if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-tiff-metadata-grant ]; then
   HOSTED_FIXTURE_IMAGES=()
 fi
 stop_online_fixture() {
@@ -49,7 +49,7 @@ stop_online_fixture() {
     run_logged bash business/scripts/online-manager-minio-fixture.sh stop
     return
   fi
-  if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+  if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-tiff-metadata-grant ]; then
     run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
     return "$cleanup_status"
   fi
@@ -163,8 +163,8 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ] || [ "$ADDP_ONLINE_MANAGER_CASE"
   run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
   exit 0
 fi
-if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
-  # Only this upload case exposes an owned writable directory; old cases stay read-only.
+if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-tiff-metadata-grant ]; then
+  # Upload and TIFF metadata cases share the isolated NFS-only deployment.
   export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-nfs-engine.json"
   for credential in MANAGER_SERVICE_CLIENT_SECRET META_SERVICE_CLIENT_SECRET; do
     export "$credential=$(python3 -c 'import secrets; print(secrets.token_hex(32))')"

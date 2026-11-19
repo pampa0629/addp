@@ -4089,6 +4089,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text((SCRIPT.parents[2] / relative).read_text())
         owner.write_text(owner.read_text() + "\nif case == 'nfs-upload-initial':\nmanager-upload-initial-online\n")
         owner.write_text(owner.read_text() + "\nif case == 'minio-node-rescan':\nminio-node-rescan.json verify_search\n")
+        owner.write_text(owner.read_text() + "\nif case == 'nfs-tiff-metadata-grant':\nscripts.test.manager-tiff-metadata-grant-online\n")
+        owner.with_name('manager-tiff-metadata-grant-online.py').touch()
+        make.write_text(make.read_text().replace('test-manager-online-runner:\n', 'test-manager-online-runner: test-manager-tiff-metadata-grant-runner\n'))
         make.write_text(make.read_text() + '\t@python3 -m unittest scripts/test/manager-upload-initial-online_test.py\n')
         for relative in ('scripts/test/manager-delimited-online.py', 'scripts/test/manager-delimited-online_test.py',
                          'business/scripts/online-delimited-fixture.py', 'console/frontend/e2e/online/manager-delimited.spec.js'):
@@ -4106,6 +4109,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         owner.write_text(owner.read_text()+"\nif case == 'native-table-feather':\nmanager-feather-online\n")
         make.write_text(make.read_text().replace('\ntest-geopython-workflow:', '\n\t@python3 -m unittest scripts/test/manager-feather-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-feather.spec.js\n\ntest-geopython-workflow:'))
         make.write_text(make.read_text().replace('@echo test_online_avro_fixture.py', '@echo test_online_avro_fixture.py test_online_feather_fixture.py'))
+        make.write_text(make.read_text() + '\ntest-manager-tiff-metadata-grant-runner:\n\t@python3 -m unittest scripts/test/manager-tiff-metadata-grant-online_test.py\ntest-execution-online-ci-runner: test-manager-tiff-metadata-grant-runner\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
             (self.workflow, '      manager_source_commit:\n', 'Manager fixed source'),
@@ -4148,7 +4152,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (self.repository/'scripts/test/manager-envi-online.py','source_scans','ENVI'),
             (img_browser,'enviContentMetadata','ENVI'),
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial|minio-node-rescan|nfs-tiff-metadata-grant)', 'acceptance case'),
+            (owner, "if case == 'nfs-tiff-metadata-grant':", 'TIFF metadata Grant'),
             (owner, 'minio-node-rescan.json', 'MinIO rescan'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
