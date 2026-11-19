@@ -12,6 +12,32 @@
     <el-alert v-if="!canRead" :title="t('monitor.resources.denied')" type="warning" :closable="false" data-testid="overview-denied" />
     <template v-else>
       <p class="overview-hint">{{ t('monitor.overview.scope') }}</p>
+      <el-card class="overview-section" shadow="never" data-testid="metrics-collection-health">
+        <template #header><h3>{{ t('monitor.collectionHealth.title') }}</h3></template>
+        <el-alert v-if="coverageErrors.health" :title="t(coverageErrors.health)" type="warning" :closable="false" />
+        <dl v-else-if="coverage.health" class="collection-legend">
+          <div>
+            <dt>{{ t('monitor.collectionHealth.online') }}</dt>
+            <dd>{{ coverage.health.online ?? '—' }} / {{ coverage.health.discovered }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitor.collectionHealth.failed') }}</dt>
+            <dd>{{ coverage.health.failed ?? '—' }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitor.collectionHealth.budget') }}</dt>
+            <dd>{{ coverage.health.discovered }} / {{ coverage.health.target_limit }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitor.collectionHealth.discovery') }}</dt>
+            <dd>{{ coverage.health.discovery_error === null ? '—' : t(coverage.health.discovery_error ? 'monitor.collectionHealth.errorSeen' : 'monitor.collectionHealth.noError') }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('monitor.collectionHealth.storage') }}</dt>
+            <dd>{{ collectionBytes(coverage.health.tsdb_bytes) }} / {{ collectionBytes(coverage.health.retention_bytes) }}</dd>
+          </div>
+        </dl>
+      </el-card>
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="overview-error" />
       <div v-loading="loading && !overview && !errorKey" :aria-busy="loading">
         <template v-if="overview">
@@ -146,6 +172,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
+import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { allowsConsoleRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
@@ -200,6 +227,7 @@ const coverageBlocked = new Set()
 const inventoryPage = { page: 1, page_size: 100 }
 let disposed = false
 const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
+const collectionBytes = value => formatBytes(value, 2, locale.value)
 const percent = value => formatFieldPresentationValue(value, { unit: '%', precision: 2 }, locale.value)
 const navigate = (path, query) => navigateMonitorRoute(router, { path, query })
 function selectRefresh(refresh) { return navigateMonitorRoute(router, { path: '/resource-overview', query: resolveOverviewRoute({ refresh }).query }, { history: 'replace' }) }
@@ -292,6 +320,18 @@ async function loadCoverage(ticket, key, load) {
   }
 }
 
+async function collectionHealth(read) {
+  const value = await read(config => api.collectionHealth(config))
+  const amount = key => Number.isSafeInteger(value?.[key]) && value[key] >= 0
+  if (!['discovered', 'target_limit', 'tsdb_bytes', 'retention_bytes'].every(amount) ||
+      !['online', 'failed'].every(key => value[key] === null || amount(key)) ||
+      (value.online !== null && value.failed !== null && value.online + value.failed > value.discovered) ||
+      (value.discovery_error !== null && typeof value.discovery_error !== 'boolean')) {
+    throw new Error('invalid_resource_response')
+  }
+  return value
+}
+
 async function reload({ automatic = false } = {}) {
   if (disposed || route.name !== 'ResourceOverview') return
   if (automatic && (loading.value || !canRead.value || !visible.value || blocked.value)) return
@@ -321,6 +361,7 @@ async function reload({ automatic = false } = {}) {
   }
   try {
     if (blocked.value || !requests.current(ticket)) return
+    await loadCoverage(ticket, 'health', collectionHealth)
     if (canReadEngines.value) await loadCoverage(ticket, 'engines', engineCoverage)
     if (requests.current(ticket) && canReadServices.value) await loadCoverage(ticket, 'services', serviceCoverage)
   } finally {

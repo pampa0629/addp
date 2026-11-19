@@ -76,13 +76,17 @@ export function engineMetricMissingReason(row, key) {
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
 export function resolveEngineRoute(input = {}) {
+  const refresh = autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
+  if (input.scope === 'runtime') {
+    const query = { scope: 'runtime', ...(refresh !== '15' ? { refresh } : {}) }
+    return { scope: 'runtime', refresh, query, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => query[key] !== input[key]) }
+  }
   const page = typeof input.page === 'string' && /^[1-9]\d{0,5}$/.test(input.page) ? Number(input.page) : 1
   const deploymentID = isTargetUUID(input.deployment_id) ? input.deployment_id : ''
   const scope = input.scope === 'business' ? 'business' : 'infra'
   const engineType = ['redis','minio'].includes(input.engine_type) ? input.engine_type : 'postgresql'
   const metric = engineMetricsFor(engineType).some(item => item.key === input.metric) ? input.metric : defaultEngineMetric(engineType)
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
-  const refresh = autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
   const search = typeof input.search === 'string' && input.search.length <= 255 && !/[\u0000-\u001f]/u.test(input.search) ? input.search.trim() : ''
   const query = { ...(scope!=='infra'?{scope}:{}), ...(deploymentID && engineType!=='postgresql'?{engine_type:engineType}:{}), ...(page !== 1 ? { page: String(page) } : {}), ...(search ? { search } : {}), ...(refresh !== '15' ? { refresh } : {}), ...(deploymentID ? { deployment_id: deploymentID, ...(metric !== defaultEngineMetric(engineType) ? { metric } : {}), ...(range !== '5m' ? { range } : {}) } : {}) }
   return { scope, engineType, page, deploymentID, metric, range, refresh, search, query, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => query[key] !== input[key]) }

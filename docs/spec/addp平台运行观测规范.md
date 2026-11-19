@@ -247,12 +247,15 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | `/platform/resource_observations`、`/platform/resource_trends` | 显式 node_id、固定 metrics 白名单；趋势使用整秒 RFC3339 start/end，维度严格匹配 |
 | `/platform/resource_summaries` | 显式 `node_ids` 和 `metrics`，当前授权节点的批量摘要；指标仅允许 CPU 核数／一分钟忙碌率、内存总量／使用率、运行时长、三档系统平均负载和 TCP 当前连接数九项的非空无重复子集，同一评估锚点，不逐行查询 |
 | `/platform/process_resource_summaries` | 当前授权实例批量 CPU/RSS/时长，固定目录；普通实例 DTO 仅公开采集声明布尔值 |
+| `/platform/process_resource_totals` | 全平台当前授权服务的 CPU／RSS 合计，按模块及指标返回有效采样覆盖 |
 | `/platform/process_resource_trends` | 仅 instance_id/start/end，固定 CPU/RSS 两条序列；不读取已退出实例历史 |
 | `/platform/container_resource_observations` | `instance_ids` 恰好一个当前实例；固定资源组 CPU 核消耗、memory.current 及两项硬上界利用率，不改变批量摘要目录；无有效证明时只读当前声明内核边界的绝对用量 |
 | `/platform/engine_resource_observations` | 单部署即时观测，固定专业目录，每次最多十二指标 |
 | `/platform/engine_resource_summaries` | 当前授权页部署的四项摘要，沿同一查询预算 |
 | `/platform/engine_resource_trends` | 单部署固定专业目录，仅读当前数据库容器运行段 |
+| `/platform/engine_runtime_observations` | Meilisearch 与 GeoPython 当前实例固定指标，趋势须绑定当前来源 UUID |
 | `/platform/resource_overview` | 不接受 query/body，完整授权主机范围及 CPU/内存 TOP5 |
+| `/platform/metrics_collection_health` | 不接受 query/body，固定采集目标、发现健康及留存空间摘要 |
 | `/settings/resource-query-policy` | Monitor 普通平台配置，沿 `monitor.configuration.read/update`，版本 CAS 与审计 |
 
 传输采用固定 `MONITOR_PROMETHEUS_URL` 和独立 CA/client cert/key 部署输入；浏览器不读取私有地址或凭据。查询响应标明身份、单位、预算版本、评估/采样时间、窗口和步长，按每条序列判断有效性；null 与 0 区别明确，缺值形成断点。
@@ -265,12 +268,16 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | 步长 | 至少 15 秒，随范围和预计序列规划；返回后再次核验，不静默截断 |
 | 查询超时与并发 | 总期限 5 秒；单主体 2、单 Monitor 进程上游 8；超限快速拒绝，无无界等待 |
 | TSDB 保留 | 7 天与 10 GiB 体积同时限制，可能提前淘汰；另预留 WAL/压缩空间 |
-| 来源序列预留 | 每端点和中心自身各 20,000。Monitor 和 Prometheus 使用同一部署变量 `ADDP_METRICS_TARGET_LIMIT`，接受 1 至 38 的整数，缺省 12。总预留为（外部来源上限 + 1）× 20,000。选择 38 时对应 780,000。预算上限允许前向扩展，已配置的较小预算继续按其值执行。 |
+| 来源序列预留 | 每端点和中心自身各 20,000。Monitor 和 Prometheus 使用同一部署变量 `ADDP_METRICS_TARGET_LIMIT`，接受 1 至 96 的整数，缺省 12。总预留为（外部来源上限 + 1）× 20,000。选择 96 时对应 1,940,000。 |
 | 组件预算 | Prometheus 1 CPU/2 GiB，node_exporter 0.25 CPU/256 MiB；节点入口 0.25 CPU/128 MiB |
 
 来源准入按去重端点的预留配额原子校验，不能把当前少量序列或单端点 sample_limit 当作全局限额。查询预算可收紧并热生效，在途请求保持开始时版本；物理资源、卷与保留归 Infra。默认预算不是已证明的生产规模上限。
 
 预算容量沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 验证。独立 Prometheus、网络、卷及 mTLS 凭据中，34 个基线保留一台主机、六个引擎、五个 Worker、一个网关及其余后端；加入两个真实 CDC 来源形成 36 个，再加入两个有界 HTTP 指标夹具达到 38 个。验证 39 个的整批拒绝、移除超额后 38 个恢复，以及 38 个时真实 CDC 单源故障隔离。记录抓取、新鲜样本、时序与写入量、查询耗时、内存和磁盘增长。受控 HTTP SD 夹具验证 Prometheus 传输和容量，System 当前事实及 Monitor 准入由身份投影门禁核对。夹具不计 Meilisearch、GeoPython 正式发现或页面通过，短时估算不证明七天留存。
+
+扩容候选沿同一隔离入口运行 `ADDP_METRICS_T2_CAPACITY_SWEEP=1 make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget`。候选档位为 64、96、128。该参数仅改变当次隔离 Prometheus Job 和负载夹具，保留原 38 目标标准门禁。容量查询保留平台计数与按模块的 HTTP 分位趋势。全平台原始直方图范围查询单列 Prometheus 样本预算诊断。发布新上限前还须验证实际来源准入及发现期限，按测得的资源余量选择档位。
+
+本机隔离容量档测得 64／96／128 个目标分别约 3,769／6,107／8,446 样本每秒。按每样本两字节外推，七天样本块约 4.25／6.88／9.51 GiB。96 是本轮通过 8 GiB 样本块余量条件的最高档，128 超过该条件。此估算未包含其他长期占用，生产真实留存须按部署实测。
 
 开发部署有进程采集计划时，启动、重启和指标配置渲染均在应用前校验计划单元数、选中的本机主机来源以及 Infra 和 Business 引擎来源之和。即使来源暂未运行，也预留其名额。超额报告各类数量和上限，重启入口在停止进程前退出，指标配置渲染保留现有配置。手工添加的远程来源仍由 Monitor 在真实发现时纳入总预算。
 
@@ -281,6 +288,12 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 #### 页面导航、筛选与刷新
 
 运行监控依次提供资源总览、主机监控、引擎监控、服务监控、HTTP 监控、调用链，入口沿 Console 权限。引擎监控沿 System 现有引擎部署进入，使用已登记部署和来源。[引擎监控跳转](../../common-frontend/docs/components/页面状态与导航.md#引擎监控跳转与请求隔离)
+
+引擎监控的 Infra 页显示 Meilisearch 搜索任务，计算运行时页显示 GeoPython。固定查询 `/platform/engine_runtime_observations` 只允许持有 `monitor.resource_observation.read` 和 `platform.engine_deployment.read` 的非委托 Platform User。Monitor 沿 System 当前身份读取安全摘要，结束时重核部署或运行实例，GeoPython 续期允许同一实例的租约前进。Meilisearch 显示待处理、最老等待和当前保留失败任务数，GeoPython 显示有效 CPU 核数、内存上限、栅格任务运行数及等待数和准入状态。Meilisearch 时间范围限制在当前容器启动后，GeoPython 限制在当前运行实例启动后，趋势有缺样断点。空清单、发现不可用、来源不可用及有效零值分别表示。两项保持已有独立来源身份，结果不返回采集端点、容器 ID 或业务数据。
+
+服务监控顶部显示全平台 ADDP 服务资源总量。固定查询 `/platform/process_resource_totals` 由持有 `monitor.resource_observation.read` 和 `platform.module.read` 的非委托 Platform User 读取。以 System 当前用户可读模块在有效租约中的后端、Worker、调度和入口实例为分母，按实例启动身份去重，范围独立于页面筛选和分页。复用进程目录的一分钟 CPU 核占用与当前 RSS，Prometheus 在同一评估时刻按模块汇总有效样本。CPU、RSS 各自返回有效覆盖和合计，零覆盖值为空。RSS 可能包含多个进程共用的内存页。查询结束重核模块与当前实例集合，权限或实例变化使本轮无效。独立引擎与数据基础设施的资源仍沿引擎和主机页。
+
+资源总览的采集中心卡片经 `/platform/metrics_collection_health` 读取同一 Prometheus 自身采样。仅限有 `monitor.resource_observation.read` 的非委托 Platform User。使用固定 Job，展示已发现目标数、最近有效抓取在线及失败数、配置目标预算、最近五分钟是否发生发现失败、TSDB 块／Head chunks／WAL 体积及配置留存上限。目标变化造成发现与采样暂时错开时按缺样处理。体积口径为上述三项的合计，主机可用磁盘仍由主机监控提供。
 
 - **筛选提交**。主机、服务和引擎列表自动提交完整筛选，无独立搜索按钮。有限选项和完整时段即时提交，未完成的自定义时段就近提示。输入防抖、Enter、隐藏后的待提交状态及计时取消沿共享规则。提交回首页，用 `replace` 更新唯一 URL 并沿 Console 单历史恢复。服务关闭旧趋势，主机保留列视图和每页数量，引擎保留刷新选择。相同 URL 只恢复刷新调度，手动或自动刷新仅读取已提交范围。列表条件由 System 在计数和分页前处理，各列表保持自己的匹配口径，条件不传入即时或趋势接口。[自动筛选与已提交范围](../../common-frontend/docs/components/页面状态与导航.md#自动筛选与已提交范围)
 - **原位刷新**。默认 15 秒，最短 10 秒，刷新选择沿 URL 恢复。相同身份、对象与已提交范围下，列表、详情、合法的行内展开和趋势可在手动或自动刷新期间保留读数、分页、视口与比较，成功后原位更新。仅首次读取用整块加载反馈，刷新在途用控件状态和 `aria-busy`。刷新间隔变化不改变数据上下文。隐藏时暂停并取消在途读取，引擎页同时清除观测。[可见页面自动刷新](../../common-frontend/docs/components/页面状态与导航.md#可见页面自动刷新)

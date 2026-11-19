@@ -1017,6 +1017,26 @@
         "unsupported": "The device capacity view cannot be verified on this node"
       }
     },
+    "collectionHealth": {
+      "title": "Metrics collection",
+      "online": "Scraping / discovered",
+      "failed": "Recent scrape failures",
+      "budget": "Discovered / configured limit",
+      "discovery": "Discovery errors in 5 minutes",
+      "errorSeen": "Failures observed",
+      "noError": "No failures observed",
+      "storage": "TSDB footprint / retention limit"
+    },
+    "processTotals": {
+      "title": "ADDP service resource totals",
+      "scope": "Covers backends, workers, schedulers, and the gateway.",
+      "cpu": "CPU cores used over the last minute",
+      "rss": "Combined process RSS",
+      "rssHint": "Shared memory pages can be counted once per process that uses them.",
+      "coverage": "Valid samples {valid}/{expected}",
+      "cores": "cores",
+      "modules": "View by module"
+    },
     "process": {
       "coverage": {
         "action": "View collection coverage",
@@ -1702,6 +1722,41 @@
         "window": "{start} to {end}, display interval {step} seconds"
       }
     },
+    "engineRuntime": {
+      "meilisearch": "Meilisearch indexing tasks",
+      "geopython": "GeoPython",
+      "discoveryUnavailable": "Source discovery is unavailable",
+      "empty": "No active source",
+      "snapshotUnavailable": "No valid metrics snapshot",
+      "trendHint": "Trends cover the current instance. Gaps indicate missing samples.",
+      "hideTrend": "Hide trend",
+      "metrics": {
+        "tasks_pending": "Pending indexing tasks",
+        "tasks_oldest_wait_seconds": "Oldest task wait",
+        "tasks_retained_failed": "Retained failed tasks",
+        "effective_cpu_cores": "Effective CPU cores",
+        "memory_limit_bytes": "Memory limit",
+        "raster_running": "Running raster tasks",
+        "raster_waiting": "Waiting raster tasks",
+        "raster_admission_enabled": "Raster task admission"
+      },
+      "hints": {
+        "tasks_retained_failed": "Tracks retained task records and can decrease when older failed records are removed.",
+        "effective_cpu_cores": "CPU capacity available to the current runtime.",
+        "memory_limit_bytes": "Memory limit of the current runtime."
+      },
+      "admission": {
+        "0": "Disabled",
+        "1": "Enabled"
+      },
+      "units": {
+        "tasks": "",
+        "cores": "cores",
+        "seconds": "s",
+        "status": "",
+        "bytes": "B"
+      }
+    },
     "engines": {
       "noCurrentHost": "No current host association",
       "title": "Engine monitoring",
@@ -1893,6 +1948,7 @@
         }
       },
       "scopes": {
+        "runtime": "Compute runtimes",
         "infra": "Infra infrastructure",
         "business": "Business engines"
       },

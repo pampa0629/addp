@@ -67,6 +67,8 @@ export async function backend(page, options = {}) {
           ['container.cpu.core_equivalents', 'cores', 60, .25], ['container.memory.current_bytes', 'bytes', 0, 64 * 2 ** 20], ['container.cpu.limit_percent', 'percent', 60, verified ? 50 : null], ['container.memory.limit_percent', 'percent', 0, verified ? 50 : null]
         ].map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: [{ evaluated_at: stamp, sampled_at: value === null ? null : stamp, value, data_state: value === null ? 'no_data' : 'valid' }] })) } }
       options.containerResponse?.(body)
+    } else if (path === '/api/v1/monitor/platform/process_resource_totals') {
+      body = options.totals || { total: { expected: 0, cpu: { value: null, valid: 0 }, rss: { value: null, valid: 0 } }, modules: [], queried_at: stamp }
     } else if (path === '/api/v1/monitor/platform/process_resource_summaries') {
       calls.push(url.searchParams.get('instance_ids'))
       const requested = new Set(url.searchParams.get('instance_ids').split(',').map(Number))

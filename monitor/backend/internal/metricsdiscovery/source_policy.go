@@ -21,7 +21,7 @@ import (
 const (
 	Timeout                          = 5 * time.Second
 	DefaultExternalTargetLimit       = 12
-	MaxExternalTargetLimit           = 38
+	MaxExternalTargetLimit           = 96
 	EndpointBodyLimit          int64 = 10 << 20
 	TargetLimit                      = 1000
 )
@@ -54,7 +54,7 @@ type SourcePolicy struct {
 }
 
 func NewSourcePolicy(prefixes []netip.Prefix, ports []uint16, roots *x509.CertPool, certificate tls.Certificate, targetLimit int) (*SourcePolicy, error) {
-	if targetLimit < 1 || targetLimit > MaxExternalTargetLimit || len(prefixes) == 0 || len(prefixes) > 64 || len(ports) == 0 || len(ports) > 64 || roots == nil ||
+	if targetLimit < 1 || targetLimit > MaxExternalTargetLimit || len(prefixes) == 0 || len(prefixes) > 64 || len(ports) == 0 || len(ports) > MaxExternalTargetLimit || roots == nil ||
 		len(certificate.Certificate) == 0 || certificate.PrivateKey == nil {
 		return nil, ErrUnconfigured
 	}

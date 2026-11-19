@@ -226,6 +226,34 @@ func TestIntegrationMetricsProcessWindow(t *testing.T) {
 		}
 		tests = append(tests, map[string]any{"name": item.name, "interval": "15s", "input_series": inputs, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": item.at, "exp_samples": expected}}})
 	}
+	peer, stopped := scope, scope
+	peer.ID, peer.InstanceID, peer.Instance = 2, "peer-worker", "fixture:9446"
+	stopped.ID, stopped.InstanceID, stopped.Instance = 3, "stopped-worker", "fixture:9447"
+	totalInputs := []any{}
+	for _, current := range []ProcessScope{scope, peer, stopped} {
+		up, cpu, rss := "1x8", "0+15x8", "4096x8"
+		if current.ID == peer.ID {
+			// Peer has current RSS but has not finished the CPU window.
+			cpu, rss = "_ _ _ 15 30 45 60 75 90", "1024x8"
+		}
+		if current.ID == stopped.ID {
+			up = "0x8"
+		}
+		identity := strings.ReplaceAll(current.identitySelector(), `operating_system=~"darwin|linux"`, `operating_system="linux"`)
+		totalInputs = append(totalInputs, series(current.selector("process_cpu_seconds_total"), cpu), series(identity, "1x8"),
+			series(current.selector("process_start_time_seconds"), "1x8"), series(current.selector("process_resident_memory_bytes"), rss), series(current.selector("up"), up))
+	}
+	for _, metric := range []struct {
+		key          string
+		count, total int
+	}{{"process.cpu.core_equivalents", 1, 1}, {"process.memory.resident_bytes", 2, 5120}} {
+		expected := []any{
+			map[string]any{"labels": `{module="monitor",signal="sum"}`, "value": metric.total},
+			map[string]any{"labels": `{module="monitor",signal="count"}`, "value": metric.count},
+		}
+		spec := map[string]any{"expr": processTotalsExpression([]ProcessScope{scope, peer, stopped}, metric.key), "eval_time": "60s", "exp_samples": expected}
+		tests = append(tests, map[string]any{"name": "global-by-module/" + metric.key, "interval": "15s", "input_series": totalInputs, "promql_expr_test": []any{spec}})
+	}
 	runPromtoolCases(t, "process", tests, true)
-	t.Logf("pinned promtool passed %d process ownership/window scenarios", len(scenarios))
+	t.Logf("pinned promtool passed %d process ownership/window and two service-total scenarios", len(scenarios))
 }

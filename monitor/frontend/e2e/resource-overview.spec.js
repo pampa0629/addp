@@ -10,6 +10,10 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(page.getByTestId('overview-stat-connected').locator('.el-statistic__number')).toHaveText('40')
     await expect(page.getByTestId('overview-stat-collecting').locator('.el-statistic__number')).toHaveText('30')
     await expect(page.getByTestId('overview-stat-attention').locator('.el-statistic__number')).toHaveText('10')
+    const health = page.getByTestId('metrics-collection-health')
+    await expect(health).toContainText('35 / 38')
+    await expect(health).toContainText('38 / 96')
+    await expect(health).toContainText('3.00 GiB / 10.00 GiB')
     for (const [key, count] of Object.entries({ collecting: 30, failed: 2, stale: 3, no_sample: 5, unconfigured: 1, disabled: 2 })) {
       await expect(page.getByTestId(`overview-collection-${key}`).locator('dd')).toHaveText(String(count))
     }

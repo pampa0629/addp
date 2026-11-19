@@ -124,6 +124,45 @@ func TestIntegrationCDCMetricQueries(t *testing.T) {
 			}
 		}
 	}
+	runtimeCases := 0
+	for _, kind := range []string{"meilisearch", "geopython"} {
+		scope := RuntimeMetricSource{Kind: kind, ID: "10000000-0000-4000-8000-000000000003", Instance: "127.0.0.1:19451",
+			StartedAt: time.Unix(0, 0).UTC(), ContainerID: strings.Repeat("a", 64), EngineID: 1}
+		for _, metric := range runtimeMetrics[kind] {
+			for _, state := range []string{"current", "missing", "replaced"} {
+				at := time.Unix(120, 0).UTC()
+				plan, err := NewRuntimeMetricPlan(kind, metric.Key, at.Add(-time.Minute), at, at, DefaultBudget())
+				if err != nil {
+					t.Fatal(err)
+				}
+				rows := []input{{scope.selector("up"), "1x8"}, {scope.selector("observed_at_seconds"), "0+15x8"}}
+				value := 0
+				if metric.Unit == "bytes" || metric.Unit == "cores" {
+					value = 4
+				}
+				raw := scope.selector(metric.Key)
+				if state == "replaced" {
+					replacement := scope
+					replacement.ContainerID = strings.Repeat("b", 64)
+					replacement.ID = "20000000-0000-4000-8000-000000000003"
+					raw = replacement.selector(metric.Key)
+				}
+				if state != "missing" {
+					rows = append(rows, input{raw, strconv.Itoa(value) + "x8"})
+				}
+				expression, _ := scope.expressions(plan)
+				samples := []any{}
+				if state == "current" {
+					for key, v := range map[string]int{"value": value, "sampled_at": 120} {
+						samples = append(samples, map[string]any{"labels": `{addp_metric=` + strconv.Quote(metric.Key) + `,addp_component=` + strconv.Quote(key) + `}`, "value": v})
+					}
+				}
+				tests = append(tests, map[string]any{"name": kind + "/" + metric.Key + "/" + state, "interval": "15s",
+					"input_series": rows, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "2m", "exp_samples": samples}}})
+				runtimeCases++
+			}
+		}
+	}
 	document, err := json.Marshal(map[string]any{"evaluation_interval": "15s", "tests": tests})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +182,7 @@ func TestIntegrationCDCMetricQueries(t *testing.T) {
 		}
 		t.Fatalf("CDC PromQL proof: %v\n%s", err, out)
 	}
-	t.Logf("real Prometheus passed %d CDC query scenarios", len(tests))
+	t.Logf("real Prometheus passed %d CDC query scenarios and %d search/compute scenarios", len(tests)-runtimeCases, runtimeCases)
 }
 
 func TestCDCScalarNormalizerKeepsNegativeNativeDelayOnly(t *testing.T) {

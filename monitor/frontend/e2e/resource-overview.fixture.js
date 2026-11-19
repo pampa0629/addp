@@ -12,6 +12,18 @@ export async function overviewBackend(page, options = {}) {
   const calls = [], coverageCalls = []
   let coverageMode = 'valid'
   let mode = 'valid', stamp = '2026-10-13T00:00:00Z', held = null, resolve
+  await page.route('**/api/v1/monitor/platform/metrics_collection_health', route => route.fulfill({ json: {
+    discovered: 38, target_limit: 96, online: 35, failed: 2, discovery_error: true,
+    tsdb_bytes: 3 * 1024 ** 3, retention_bytes: 10 * 1024 ** 3, queried_at: stamp
+  } }))
+  await page.route('**/api/v1/monitor/platform/process_resource_totals', route => route.fulfill({ json: {
+    total: { expected: 0, cpu: { value: null, valid: 0 }, rss: { value: null, valid: 0 } },
+    modules: [], queried_at: stamp
+  } }))
+  await page.route('**/api/v1/monitor/platform/engine_runtime_observations?**', route => route.fulfill({ json: {
+    source: new URL(route.request().url()).searchParams.get('source'), queried_at: stamp,
+    discovery_state: 'available', collection: { state: 'not_connected' }, series: []
+  } }))
   await page.route('**/api/v1/system/platform/module_startup_failures', route => route.fulfill({ json: { data: [] } }))
   await page.route('**/api/v1/system/platform/modules', route => route.fulfill({ json: { modules: ['manager', 'meta', 'monitor'].map(module_name => ({ module_name })), count: 3 } }))
   const engineOwners = options.coverage ? [

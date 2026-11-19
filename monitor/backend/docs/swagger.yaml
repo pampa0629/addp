@@ -811,6 +811,13 @@ definitions:
       value:
         type: number
     type: object
+  github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal:
+    properties:
+      valid:
+        type: integer
+      value:
+        type: number
+    type: object
   github_com_addp_monitor_internal_resourcequery.Series:
     properties:
       dimensions:
@@ -894,6 +901,25 @@ definitions:
       started_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.CollectionHealthObservation:
+    properties:
+      discovered:
+        type: integer
+      discovery_error:
+        type: boolean
+      failed:
+        type: integer
+      online:
+        type: integer
+      queried_at:
+        type: string
+      retention_bytes:
+        type: integer
+      target_limit:
+        type: integer
+      tsdb_bytes:
+        type: integer
+    type: object
   github_com_addp_monitor_internal_service.ContainerResourceResponse:
     properties:
       cpu_upper_cores:
@@ -958,6 +984,31 @@ definitions:
         type: string
       kind:
         type: string
+    type: object
+  github_com_addp_monitor_internal_service.EngineRuntimeObservation:
+    properties:
+      collection:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.ProcessCollection'
+      discovery_state:
+        type: string
+      end:
+        type: string
+      id:
+        type: string
+      queried_at:
+        type: string
+      series:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Series'
+        type: array
+      source:
+        type: string
+      start:
+        type: string
+      started_at:
+        type: string
+      step_seconds:
+        type: integer
     type: object
   github_com_addp_monitor_internal_service.ExecutionObservation:
     properties:
@@ -1328,6 +1379,17 @@ definitions:
         $ref: '#/definitions/github_com_addp_monitor_internal_models.LogPipelineNode'
       notifications:
         type: string
+    type: object
+  github_com_addp_monitor_internal_service.ModuleResourceTotal:
+    properties:
+      cpu:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal'
+      expected:
+        type: integer
+      module_name:
+        type: string
+      rss:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal'
     type: object
   github_com_addp_monitor_internal_service.MonitoringTargetInput:
     properties:
@@ -2100,6 +2162,26 @@ definitions:
         type: integer
       total_pages:
         type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ServiceResourceTotal:
+    properties:
+      cpu:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal'
+      expected:
+        type: integer
+      rss:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal'
+    type: object
+  github_com_addp_monitor_internal_service.ServiceResourceTotals:
+    properties:
+      modules:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ModuleResourceTotal'
+        type: array
+      queried_at:
+        type: string
+      total:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal'
     type: object
   github_com_addp_monitor_internal_service.TraceResponse:
     properties:
@@ -4972,6 +5054,84 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.resource_observation.read
+  /platform/engine_runtime_observations:
+    get:
+      description: 读取当前 Meilisearch 或 GeoPython 的固定指标。趋势需要实例身份、指标和完整时段，最长七天 | Read
+        fixed metrics for current Meilisearch or GeoPython. Trends require the current
+        identity, one metric and a complete range up to seven days
+      parameters:
+      - description: 来源类型 | Source kind
+        enum:
+        - meilisearch
+        - geopython
+        in: query
+        name: source
+        required: true
+        type: string
+      - description: 当前来源 UUID，读取趋势时必填 | Current source UUID, required for trends
+        in: query
+        name: id
+        type: string
+      - description: 来源的固定指标键，读取趋势时必填 | Fixed source metric key, required for trends
+        in: query
+        name: metric
+        type: string
+      - description: RFC3339 趋势开始时间 | RFC3339 trend start
+        in: query
+        name: start
+        type: string
+      - description: RFC3339 趋势结束时间 | RFC3339 trend end
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.EngineRuntimeObservation'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取搜索与计算运行指标 | Read search and compute runtime metrics
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
+      - platform.engine_deployment.read
   /platform/http-alert-rules:
     get:
       parameters:
@@ -5564,6 +5724,53 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.log_pipeline.update
+  /platform/metrics_collection_health:
+    get:
+      description: 返回当前目标覆盖、发现异常与 TSDB 留存占用 | Return current target coverage, discovery
+        failures and TSDB retention footprint
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.CollectionHealthObservation'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取采集中心健康摘要 | Read metrics collection health
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
   /platform/metrics_discovery:
     get:
       description: 单个来源解析或动态准入失败时仅剔除该来源；身份、重复端点、总预算和整批期限错误拒绝整批，不返回旧地址。空数组表示本轮无已通过的目标，不表示来源健康。
@@ -6216,6 +6423,59 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.resource_observation.read
+  /platform/process_resource_totals:
+    get:
+      description: 以当前在线实例为分母，返回全平台与按模块的 CPU 核数、进程 RSS 合计以及分指标采样覆盖率 | Return platform
+        and module CPU cores, process RSS totals and per-metric coverage for current
+        online instances
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotals'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取 ADDP 服务资源总量 | Read total ADDP service resources
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
+      - platform.module.read
   /platform/process_resource_trends:
     get:
       description: 仅当前有效运行实例；当前用户经 System 授权后读取本次启动后的 CPU 核占用及 RSS。固定两条序列，完整一分钟 CPU

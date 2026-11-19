@@ -40,6 +40,9 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
     } else if (path.startsWith('/api/v1/monitor/platform/resource_')) {
       status = 503; body = { error_code: 'observability_backend_unavailable', error: 'fixture host metrics unavailable' }
     }
+    else if (path === '/api/v1/monitor/platform/engine_runtime_observations') {
+      body = { source: url.searchParams.get('source'), queried_at: stamp, discovery_state: 'available', collection: { state: 'not_connected' }, series: [] }
+    }
     else if (path.startsWith('/api/v1/monitor/platform/engine_resource_')) {
       calls.push(path)
       const trend = path.endsWith('_trends'), summary = path.endsWith('_summaries')

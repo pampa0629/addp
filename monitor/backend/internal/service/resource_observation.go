@@ -42,17 +42,20 @@ type ResourceObservationResponse struct {
 	Series             []resourcequery.Series       `json:"series"`
 }
 type ResourceObservationService struct {
-	cdc      CDCObservationDependencies
-	engines  EngineObservationDependencies
-	process  ProcessObservationDependencies
-	policies ResourceQueryPolicyStore
-	targets  TargetStore
-	nodes    UserNodeReader
-	backend  ResourceBackend
-	policy   *metricsdiscovery.SourcePolicy
-	enabled  bool
-	limiter  resourcequery.Limiter
-	now      func() time.Time
+	cdc              CDCObservationDependencies
+	engineRuntime    EngineRuntimeDependencies
+	processTotals    ProcessTotalDependencies
+	collectionHealth CollectionHealthBackend
+	engines          EngineObservationDependencies
+	process          ProcessObservationDependencies
+	policies         ResourceQueryPolicyStore
+	targets          TargetStore
+	nodes            UserNodeReader
+	backend          ResourceBackend
+	policy           *metricsdiscovery.SourcePolicy
+	enabled          bool
+	limiter          resourcequery.Limiter
+	now              func() time.Time
 }
 
 func NewResourceObservationService(policies ResourceQueryPolicyStore, targets TargetStore, nodes UserNodeReader, backend ResourceBackend, enabled bool, policy *metricsdiscovery.SourcePolicy, process ProcessObservationDependencies) *ResourceObservationService {

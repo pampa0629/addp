@@ -293,6 +293,17 @@ if [[ "$metrics_case" == target-budget ]]; then
   export ADDP_METRICS_TARGET_LIMIT=38
 fi
 python3 "$ROOT_DIR/scripts/infra/generate-metrics-config.py"
+if [[ "$metrics_case" == target-budget && "${ADDP_METRICS_T2_CAPACITY_SWEEP:-0}" == 1 ]]; then
+  python3 - "$ADDP_METRICS_DEPLOYMENT_DIR/prometheus.yml" <<'CAPACITY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+config = path.read_text()
+assert config.count('target_limit: 38') == 1
+path.write_text(config.replace('target_limit: 38', 'target_limit: 128'))
+CAPACITY
+fi
 cat >"$WORK_DIR/nginx.conf" <<'CONFIG'
 worker_processes 1;
 pid /tmp/nginx.pid;
@@ -354,7 +365,10 @@ config=p.read_text().replace('@@BASIC@@','Basic '+basic)
 servers=[]
 sources = [(f'    listen {19450 + index} ssl;', f'overview-{index}') for index in range(6)]
 if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
-    for kind, start, end in [('host', 0, 1), ('engine', 1, 7), ('worker', 7, 12), ('http', 12, 37)]:
+    fixture_count = 127 if os.environ.get('ADDP_METRICS_T2_CAPACITY_SWEEP') == '1' else 37
+    if fixture_count > 37:
+        config = config.replace('worker_connections 128;', 'worker_connections 512;')
+    for kind, start, end in [('host', 0, 1), ('engine', 1, 7), ('worker', 7, 12), ('http', 12, fixture_count)]:
         sources.append(('\n'.join(f'    listen {19500 + index} ssl;' for index in range(start, end)), f'budget-{kind}'))
 for listeners, fixture in sources:
     servers.append('''  server {

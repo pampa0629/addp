@@ -353,6 +353,9 @@ class Source:
                 fact = decode(self.docker.run(['image', 'inspect', release['image_ids'][reference]]))[0]
                 self.installed_image(fact['Id'])
                 return fact['Id']
+            # Local image ownership is checkout-specific. The cache key must
+            # distinguish simultaneous workspaces with identical build inputs.
+            tag += '-' + hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]
             # Re-exporting the same inputs can replace the tag with a new
             # provenance index, orphaning an installed peer's exact image ID.
             images = self.docker.run(['image', 'ls', '--quiet', '--no-trunc', '--filter', 'reference='+tag]).split()

@@ -9,29 +9,33 @@
     <template v-else>
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="engine-error" />
       <template v-if="!state.deploymentID">
-        <el-tabs :model-value="state.scope" @update:model-value="scope => navigate({...state.query,scope,page:'1'})" data-testid="engine-scopes">
-          <el-tab-pane v-for="scope in ['infra','business']" :key="scope" :name="scope" :label="t(`monitor.engines.scopes.${scope}`)" />
+        <el-tabs :model-value="state.scope" @update:model-value="scope => navigate({ ...state.query, scope, page: '1' })" data-testid="engine-scopes">
+          <el-tab-pane v-for="scope in ['infra','business','runtime']" :key="scope" :name="scope" :label="t(`monitor.engines.scopes.${scope}`)" />
         </el-tabs>
-        <form class="toolbar" @submit.prevent="filterInput.submit">
-          <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
-          <FieldHelp :content="t('monitor.engines.scopeHint')" />
-        </form>
-        <div class="engine-grid" v-loading="loading && !observed" data-testid="engine-list">
-          <article v-for="row in owners" :key="row.deployment_id" class="engine-card" :aria-label="row.display_name" :data-testid="`engine-card-${row.deployment_id}`">
-            <header class="engine-card-heading"><h3>{{ row.display_name }}</h3><el-tag effect="plain">{{ engineNames[row.engine_type] }}</el-tag></header>
-            <div class="engine-card-host"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
-            <p class="engine-card-state"><span>{{ t('monitor.engines.collection') }}:</span><span>{{ collection(row.deployment_id) }}</span></p>
-            <dl class="engine-summary">
-              <div v-for="metric in engineSummaryFor(row.engine_type)" :key="metric.key">
-                <dt class="metric-heading"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></dt>
-                <dd>{{ value(observation(row.deployment_id)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</dd>
-              </div>
-            </dl>
-            <el-button type="primary" plain :disabled="loading" @click="navigate({ ...state.query, engine_type: row.engine_type, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button>
-          </article>
-        </div>
-        <el-empty v-if="!loading && !errorKey && !owners.length" :description="t('monitor.engines.empty')" />
-        <el-pagination v-if="!errorKey && (observed || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
+        <EngineRuntimeCard v-if="state.scope === 'runtime' && visible" :key="identity" ref="runtimeCard" source="geopython" @access-lost="blocked = true" />
+        <template v-if="state.scope !== 'runtime'">
+          <EngineRuntimeCard v-if="state.scope === 'infra' && visible" :key="identity" ref="runtimeCard" class="infra-runtime" source="meilisearch" @access-lost="blocked = true" />
+          <form class="toolbar" @submit.prevent="filterInput.submit">
+            <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
+            <FieldHelp :content="t('monitor.engines.scopeHint')" />
+          </form>
+          <div class="engine-grid" v-loading="loading && !observed" data-testid="engine-list">
+            <article v-for="row in owners" :key="row.deployment_id" class="engine-card" :aria-label="row.display_name" :data-testid="`engine-card-${row.deployment_id}`">
+              <header class="engine-card-heading"><h3>{{ row.display_name }}</h3><el-tag effect="plain">{{ engineNames[row.engine_type] }}</el-tag></header>
+              <div class="engine-card-host"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
+              <p class="engine-card-state"><span>{{ t('monitor.engines.collection') }}:</span><span>{{ collection(row.deployment_id) }}</span></p>
+              <dl class="engine-summary">
+                <div v-for="metric in engineSummaryFor(row.engine_type)" :key="metric.key">
+                  <dt class="metric-heading"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></dt>
+                  <dd>{{ value(observation(row.deployment_id)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</dd>
+                </div>
+              </dl>
+              <el-button type="primary" plain :disabled="loading" @click="navigate({ ...state.query, engine_type: row.engine_type, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button>
+            </article>
+          </div>
+          <el-empty v-if="!loading && !errorKey && !owners.length" :description="t('monitor.engines.empty')" />
+          <el-pagination v-if="!errorKey && (observed || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
+        </template>
       </template>
       <template v-else>
         <div class="toolbar"><el-button @click="back">{{ t('monitor.engines.back') }}</el-button><h3>{{ owners[0]?.display_name }}</h3><el-tag effect="plain">{{ t(`monitor.engines.scopes.${state.scope}`) }}</el-tag><span>{{ collection(state.deploymentID) }}</span></div>
@@ -66,7 +70,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
@@ -83,6 +87,7 @@ import { engineResourcesAPI as api } from '../api/engineResources'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
 import MonitoredHostLink from '../components/MonitoredHostLink.vue'
+import EngineRuntimeCard from '../components/EngineRuntimeCard.vue'
 import { engineGroups, engineMetricsFor, engineSummaryFor, engineDetailMetrics, engineMetricMissingReason, defaultEngineMetric, resolveEngineRoute, validateEnginePage, validateEngineDeployment, validateEngineResources, engineTrendParameters } from '../utils/engineResources'
 import { currentResourceValue, resourceErrorKey, resourceChartRows, resourceRanges } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
@@ -95,6 +100,7 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const state = computed(() => resolveEngineRoute(route.query)), owners = ref([]), total = ref(0), observed = ref(null), history = ref(null)
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
 const trendZoom = ref(null)
+const runtimeCard = ref(null)
 const requests = createLatestRequestScope()
 let disposed = false, dataContext = ''
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
@@ -131,7 +137,7 @@ const navigate = (query, history = 'replace') => {
   if (router.resolve(target).fullPath === route.fullPath) { refreshCycle.schedule(); return }
   return navigateMonitorRoute(router, target, { history })
 }
-const filterInput = createAutoFilter({ apply: () => navigate({ scope:state.value.scope, search: search.value.trim(), refresh: state.value.refresh }), enabled: () => !disposed && route.name === 'EngineResources' && !state.value.deploymentID && canRead.value, visible: () => visible.value, pause: () => refreshCycle.stop() })
+const filterInput = createAutoFilter({ apply: () => navigate({ scope:state.value.scope, search: search.value.trim(), refresh: state.value.refresh }), enabled: () => !disposed && route.name === 'EngineResources' && state.value.scope !== 'runtime' && !state.value.deploymentID && canRead.value, visible: () => visible.value, pause: () => refreshCycle.stop() })
 function back() { const { deployment_id, engine_type, metric, range, ...query } = state.value.query; return navigate(query) }
 function invalidChart() { history.value = null; trendError.value = 'monitor.resources.errors.invalidResponse' }
 const refreshCycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && route.name === 'EngineResources' && !blocked.value && !loading.value && !state.value.changed && !filterInput.pending, refresh: () => reload({ automatic: true }), pause: () => { requests.invalidate(); loading.value = false; observed.value = null; history.value = null; hostReferences.value = {} }, visibilityChanged: value => { visible.value = value; filterInput.visibilityChanged(value) } })
@@ -151,7 +157,14 @@ async function reload({ automatic = false } = {}) {
   if (state.value.changed) { await navigate(state.value.query); return }
   if (!automatic) search.value = state.value.search
   loading.value = true
+  let runtimeLoad
   try {
+    if (!state.value.deploymentID && state.value.scope !== 'business') {
+      await nextTick()
+      if (!requests.current(ticket)) return
+      runtimeLoad = runtimeCard.value?.reload()
+    }
+    if (state.value.scope === 'runtime') return
     let rows, count
     if (state.value.deploymentID) {
       const owner = validateEngineDeployment(await requests.request(config => api.deployment(state.value.deploymentID, config)))
@@ -199,7 +212,10 @@ async function reload({ automatic = false } = {}) {
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) blocked.value = true
     observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0
-  } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
+  } finally {
+    await runtimeLoad
+    if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() }
+  }
 }
 async function loadHosts(rows, ticket) {
   if (!canReadHost.value) return
@@ -234,5 +250,6 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .metric-card strong { font-size: 24px; overflow-wrap: anywhere; }
 .hint { margin: 8px 0; color: var(--addp-text-secondary); line-height: 1.5; font-size: 13px; }
 .trend, .el-pagination { margin-top: 20px; }
+.infra-runtime { margin-bottom: 16px; }
 .chart { display: flex; min-width: 0; }
 </style>

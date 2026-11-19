@@ -7,6 +7,30 @@
     </div>
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
     <template v-else>
+      <section class="process-totals" data-testid="process-totals">
+        <h3 class="process-total-title">{{ t('monitor.processTotals.title') }} <FieldHelp :content="t('monitor.processTotals.scope')" /></h3>
+        <el-alert v-if="totalsError" :title="t(totalsError)" type="warning" :closable="false" />
+        <template v-else-if="totals">
+          <dl class="process-total-values">
+            <div v-for="metric in ['cpu', 'rss']" :key="metric">
+              <dt>{{ t(`monitor.processTotals.${metric}`) }} <FieldHelp v-if="metric === 'rss'" :content="t('monitor.processTotals.rssHint')" /></dt>
+              <dd :data-testid="`process-total-${metric}`">{{ totalValue(totals.total[metric], metric) }}</dd>
+              <p>{{ t('monitor.processTotals.coverage', { valid: totals.total[metric].valid, expected: totals.total.expected }) }}</p>
+            </div>
+          </dl>
+          <details v-if="totals.modules.length">
+            <summary>{{ t('monitor.processTotals.modules') }}</summary>
+            <el-table :data="totals.modules" size="small">
+              <el-table-column prop="module_name" :label="t('monitor.process.module')" />
+              <el-table-column v-for="metric in ['cpu', 'rss']" :key="metric" :label="t(`monitor.processTotals.${metric}`)">
+                <template #default="{ row }">
+                  {{ totalValue(row[metric], metric) }} · {{ t('monitor.processTotals.coverage', { valid: row[metric].valid, expected: row.expected }) }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </details>
+        </template>
+      </section>
       <el-alert v-if="startupFailures.length" :title="t('monitor.process.startupFailures.title')" type="warning" :closable="false" data-testid="process-startup-failures">
         <ul>
           <li v-for="failure in startupFailures" :key="failure.module_name">
@@ -164,6 +188,32 @@ const canReadHost = computed(() => canRead.value && auth.hasPermission('platform
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
+const totals = ref(null), totalsError = ref('')
+function totalValue(reading, metric) {
+  if (reading.value === null) return '—'
+  if (metric === 'rss') return formatBytes(reading.value, 2, locale.value)
+  return formatFieldPresentationValue(reading.value, { precision: 2, unit: t('monitor.processTotals.cores') }, locale.value)
+}
+async function loadTotals(ticket) {
+  try {
+    const value = await requests.request(config => api.totals(config))
+    if (!requests.current(ticket)) return
+    const valid = row => Number.isSafeInteger(row?.expected) && row.expected >= 0 && ['cpu', 'rss'].every(metric => {
+      const item = row[metric]
+      return Number.isSafeInteger(item?.valid) && item.valid >= 0 && item.valid <= row.expected &&
+        (item.valid ? typeof item.value === 'number' && Number.isFinite(item.value) && item.value >= 0 : item.value === null)
+    })
+    if (!valid(value?.total) || !Array.isArray(value?.modules) || value.modules.some(row => !valid(row) || typeof row.module_name !== 'string')) {
+      throw new Error('invalid_resource_response')
+    }
+    totals.value = value
+  } catch (error) {
+    if (!requests.current(ticket)) return
+    totals.value = null
+    totalsError.value = processErrorKey(error)
+    if ([401, 403].includes(error.response?.status)) refreshBlocked.value = true
+  }
+}
 const collectionFilter = ref('all')
 const showCoverage = computed(() => state.value.status === 'up' && state.value.declared === 'all')
 const visibleInstances = computed(() => showCoverage.value && collectionFilter.value !== 'all'
@@ -312,7 +362,7 @@ const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
   enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value && !filterInput.pending,
   refresh: () => reload({ automatic: true }),
-  pause: () => { requests.invalidate(); loading.value = false },
+  pause: () => { requests.invalidate(); loading.value = false; totals.value = null },
   visibilityChanged: visible => { pageVisible.value = visible; filterInput.visibilityChanged(visible) }
 })
 async function reload({ automatic = false, refreshModules = false } = {}) {
@@ -325,11 +375,13 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
   const context = JSON.stringify([{ ...state.value.query, refresh: undefined }, identity.value])
   if (context !== dataContext) {
     dataContext = context
+    totals.value = null
     startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; container.value = null
   }
   if (!automatic) refreshBlocked.value = false
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
+  totalsError.value = ''
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
   if (!automatic) { stopReason.value = state.value.stopReason; timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; nodeName.value = state.value.nodeName; nodeIP.value = state.value.nodeIP; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
@@ -395,7 +447,14 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
     trend.value = null; comparisons.value = null; trendErrorKey.value = errorKey.value
     startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
-  } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
+  } finally {
+    if (requests.current(ticket) && !refreshBlocked.value) await loadTotals(ticket)
+    if (requests.current(ticket)) {
+      if (refreshBlocked.value) totals.value = null
+      loading.value = false
+      refreshCycle.schedule()
+    }
+  }
 }
 async function loadStartupFailures(ticket) {
   const result = await requests.request(config => api.startupFailures(config)).catch(() => null)
@@ -411,6 +470,14 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 </script>
 
 <style scoped>
+.process-totals { padding: 16px 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); margin-bottom: 16px; }
+.process-totals h3 { margin: 0 0 12px; font-size: 16px; }
+.process-total-title { display: flex; align-items: center; gap: 4px; }
+.process-total-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; margin: 0; }
+.process-total-values dt { display: flex; align-items: center; gap: 4px; }
+.process-total-values dd { margin: 6px 0 0; font-size: 22px; }
+.process-total-values p { margin: 4px 0 12px; font-size: 13px; color: var(--addp-text-secondary); }
+.process-totals summary { cursor: pointer; }
 .process-resources { padding: 24px; color: var(--addp-text-primary); min-width: 0; }
 .process-toolbar, .process-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .process-toolbar .el-checkbox { height: auto; max-width: 100%; }

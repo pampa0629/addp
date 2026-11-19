@@ -51,12 +51,17 @@ func (s CDCScope) selector(field string) string {
 	return metric + `{job="addp_nodes",addp_monitor_kind="cdc_resources",addp_source=` + strconv.Quote(s.Component.Kind) + `,addp_component_id=` + strconv.Quote(s.Component.ID()) + `,addp_component_container_id=` + strconv.Quote(s.Component.ContainerID) + `,addp_component_container_started_at=` + strconv.Quote(s.Component.StartedAt.UTC().Format(time.RFC3339Nano)) + `,instance=` + strconv.Quote(s.Instance) + `}`
 }
 func (s CDCScope) fieldGuard(raw string) string {
-	return ` and (count(` + raw + `)==1) and (max(timestamp(` + raw + `))==max(timestamp(` + s.selector("up") + `)))`
+	return snapshotFieldGuard(raw, s.selector("up"))
 }
 func (s CDCScope) snapshotGuard() string {
-	up, observed := s.selector("up"), s.selector("observed_at_seconds")
+	return snapshotGuard(s.selector("up"), s.selector("observed_at_seconds"))
+}
+func snapshotFieldGuard(raw, up string) string {
+	return ` and (count(` + raw + `)==1) and (max(timestamp(` + raw + `))==max(timestamp(` + up + `)))`
+}
+func snapshotGuard(up, observed string) string {
 	stamp := `max(timestamp(` + up + `))`
-	return ` and (count(` + up + `)==1) and (max(` + up + `)==1) and (` + stamp + `>=time()-16)` + s.fieldGuard(observed) +
+	return ` and (count(` + up + `)==1) and (max(` + up + `)==1) and (` + stamp + `>=time()-16)` + snapshotFieldGuard(observed, up) +
 		` and (max(` + observed + `)>=` + stamp + `-5) and (max(` + observed + `)<=` + stamp + `+5)`
 }
 func (s CDCScope) expression(p Plan) (string, error) {
@@ -107,9 +112,11 @@ func (s CDCScope) expression(p Plan) (string, error) {
 	return strings.Join(parts, " or "), nil
 }
 func (s CDCScope) collectionExpression() string {
-	up := s.selector("up")
+	return snapshotCollectionExpression(s.selector("up"), s.snapshotGuard())
+}
+func snapshotCollectionExpression(up, guard string) string {
 	parts := []string{}
-	for _, item := range []struct{ k, v string }{{"up_count", `count(` + up + `) or vector(0)`}, {"up", `max(` + up + `)`}, {"sampled_at", `max(timestamp(` + up + `))`}, {"snapshot_valid", `(vector(1)` + s.snapshotGuard() + `) or vector(0)`}} {
+	for _, item := range []struct{ k, v string }{{"up_count", `count(` + up + `) or vector(0)`}, {"up", `max(` + up + `)`}, {"sampled_at", `max(timestamp(` + up + `))`}, {"snapshot_valid", `(vector(1)` + guard + `) or vector(0)`}} {
 		parts = append(parts, `label_replace((`+item.v+`),"signal",`+strconv.Quote(item.k)+`,"","")`)
 	}
 	return strings.Join(parts, " or ")
@@ -125,6 +132,9 @@ func (c *Client) CDCQuery(ctx context.Context, p Plan, s CDCScope, b Budget) (Su
 	if err != nil {
 		return Summary{}, err
 	}
+	return c.querySnapshot(ctx, p, b, expression, s.collectionExpression())
+}
+func (c *Client) querySnapshot(ctx context.Context, p Plan, b Budget, expression, collectionExpression string) (Summary, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(b.TimeoutSeconds)*time.Second)
 	defer cancel()
 	endpoint, q := planExpressionQuery(p, expression, b)
@@ -139,7 +149,7 @@ func (c *Client) CDCQuery(ctx context.Context, p Plan, s CDCScope, b Budget) (Su
 	if p.Trend {
 		return Summary{Series: series}, nil
 	}
-	_, q = planExpressionQuery(p, s.collectionExpression(), b)
+	_, q = planExpressionQuery(p, collectionExpression, b)
 	evidence, err := c.readForm(ctx, "/api/v1/query", q)
 	if err != nil {
 		return Summary{}, err

@@ -133,45 +133,56 @@ func (s ProcessScope) expression(p Plan) (string, error) {
 	if s.Validate() != nil || len(p.Metrics) < 1 || len(p.Metrics) > len(processDefinitions) || s.cgroupQuery && (s.Cgroup == nil || s.Cgroup.Validate() != nil) {
 		return "", ErrInvalid
 	}
-	info, start, up := s.identitySelector(), s.selector("process_start_time_seconds"), s.selector("up")
-	guard := s.identityGuard("") + ` and (count(` + up + `)==1) and (max(` + up + `)==1) and (max(timestamp(` + up + `))==max(timestamp(` + info + `)))`
 	parts := []string{}
 	for _, d := range p.Metrics {
-		var raw, value, stamp string
-		switch d.Key {
-		case "process.cpu.core_equivalents":
-			raw = s.selector("process_cpu_seconds_total")
-			if s.cgroupQuery {
-				raw = s.selector("addp_cgroup_cpu_usage_seconds_total")
-			}
-			previous := raw + ` offset 1m`
-			rate := `rate(` + raw + `[1m])`
-			eligible := `(` + rate + ` and (count_over_time(` + raw + `[1m])>=4) and (resets(` + raw + `[1m])==0)` +
-				` and (` + raw + `>=` + previous + `) and (timestamp(` + previous + `)>=time()-76) and (timestamp(` + raw + `)>=time()-16) and (` + rate + `>=0))`
-			guarded := guard + s.identityGuard(" offset 1m") + ` and (count(` + previous + `)==1) and (count(` + eligible + `)==1)` +
-				` and (max(timestamp(` + previous + `))==max(timestamp(` + start + ` offset 1m)))`
-			value = `(max(` + eligible + `)` + guarded + `)`
-			stamp = `(max(timestamp(` + raw + `))` + guarded + `)`
-		case "process.memory.resident_bytes":
-			raw = s.selector("process_resident_memory_bytes")
-			if s.cgroupQuery {
-				raw = s.selector("addp_cgroup_memory_current_bytes")
-			}
-			value = `(max(` + raw + `)` + guard + `)`
-			stamp = `(max(timestamp(` + raw + `))` + guard + `)`
-		case "process.uptime_seconds":
-			raw = start
-			value = `(time()-max(` + start + `)` + guard + `)`
-			stamp = `(max(timestamp(` + start + `))` + guard + `)`
-		default:
-			return "", ErrInvalid
+		value, stamp, err := s.metricValues(d.Key, false)
+		if err != nil {
+			return "", err
 		}
-		metricGuard := ` and (count(` + raw + `)==1) and (max(timestamp(` + raw + `))==max(timestamp(` + info + `)))`
 		for _, component := range []struct{ key, value string }{{"value", value}, {"sampled_at", stamp}} {
-			parts = append(parts, fmt.Sprintf(`label_replace(label_replace((%s%s),"addp_metric",%s,"",""),"addp_component",%s,"","")`, component.value, metricGuard, strconv.Quote(d.Key), strconv.Quote(component.key)))
+			parts = append(parts, fmt.Sprintf(`label_replace(label_replace((%s),"addp_metric",%s,"",""),"addp_component",%s,"","")`, component.value, strconv.Quote(d.Key), strconv.Quote(component.key)))
 		}
 	}
 	return strings.Join(parts, " or "), nil
+}
+
+func (s ProcessScope) metricValues(key string, fresh bool) (string, string, error) {
+	info, start, up := s.identitySelector(), s.selector("process_start_time_seconds"), s.selector("up")
+	guard := s.identityGuard("") + ` and (count(` + up + `)==1) and (max(` + up + `)==1) and (max(timestamp(` + up + `))==max(timestamp(` + info + `)))`
+	var raw, value, stamp string
+	switch key {
+	case "process.cpu.core_equivalents":
+		raw = s.selector("process_cpu_seconds_total")
+		if s.cgroupQuery {
+			raw = s.selector("addp_cgroup_cpu_usage_seconds_total")
+		}
+		previous := raw + ` offset 1m`
+		rate := `rate(` + raw + `[1m])`
+		eligible := `(` + rate + ` and (count_over_time(` + raw + `[1m])>=4) and (resets(` + raw + `[1m])==0)` +
+			` and (` + raw + `>=` + previous + `) and (timestamp(` + previous + `)>=time()-76) and (timestamp(` + raw + `)>=time()-16) and (` + rate + `>=0))`
+		guarded := guard + s.identityGuard(" offset 1m") + ` and (count(` + previous + `)==1) and (count(` + eligible + `)==1)` +
+			` and (max(timestamp(` + previous + `))==max(timestamp(` + start + ` offset 1m)))`
+		value = `(max(` + eligible + `)` + guarded + `)`
+		stamp = `(max(timestamp(` + raw + `))` + guarded + `)`
+	case "process.memory.resident_bytes":
+		raw = s.selector("process_resident_memory_bytes")
+		if s.cgroupQuery {
+			raw = s.selector("addp_cgroup_memory_current_bytes")
+		}
+		value = `(max(` + raw + `)` + guard + `)`
+		stamp = `(max(timestamp(` + raw + `))` + guard + `)`
+	case "process.uptime_seconds":
+		raw = start
+		value = `(time()-max(` + start + `)` + guard + `)`
+		stamp = `(max(timestamp(` + start + `))` + guard + `)`
+	default:
+		return "", "", ErrInvalid
+	}
+	metricGuard := ` and (count(` + raw + `)==1) and (max(timestamp(` + raw + `))==max(timestamp(` + info + `)))`
+	if fresh {
+		metricGuard += ` and (max(timestamp(` + raw + `))>=time()-16)`
+	}
+	return value + metricGuard, stamp + metricGuard, nil
 }
 
 func (c *Client) ProcessTrend(ctx context.Context, p Plan, scope ProcessScope, b Budget) ([]Series, error) {

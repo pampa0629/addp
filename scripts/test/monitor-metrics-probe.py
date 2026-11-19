@@ -747,6 +747,7 @@ def check_resource_windows():
                    cwd=backend / 'internal/resourcequery',
                    env=dict(environment, ADDP_METRICS_QUERY_INTEGRATION='1'),
                    check=True, timeout=60)
+    return binary
 
 def prepare_resource_pressure(work, backend, environment):
     binary = work / 'resource-pressure.test'
@@ -773,7 +774,7 @@ def discovery_text(text):
     pending.replace(WORK / 'source/discovery.json')
 
 
-check_resource_windows()
+resource_window_binary = check_resource_windows()
 
 if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'block-capacity'):
     sampler_id = compose('ps', '-q', 'block-capacity')
@@ -853,9 +854,11 @@ assert flags['web.enable-admin-api'] == 'false', flags
 assert flags['web.enable-lifecycle'] == 'false', flags
 assert flags['web.enable-remote-write-receiver'] == 'false', flags
 config = api('status/config')['yaml']
+sweep = os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget' and os.environ.get('ADDP_METRICS_T2_CAPACITY_SWEEP') == '1'
+target_limit = '128' if sweep else os.environ.get('ADDP_METRICS_TARGET_LIMIT', '12')
 for value in ('scrape_interval: 15s', 'scrape_timeout: 5s', 'sample_limit: 20000', 'body_size_limit: 10MiB',
               'label_limit: 20', 'label_name_length_limit: 128', 'label_value_length_limit: 512',
-              'refresh_interval: 30s', 'target_limit: ' + os.environ.get('ADDP_METRICS_TARGET_LIMIT', '12'), 'client_id: addp-prometheus',
+              'refresh_interval: 30s', 'target_limit: ' + target_limit, 'client_id: addp-prometheus',
               'context_type: platform', 'audience: addp.api', 'follow_redirects: false'):
     assert value in config, (value, config)
 
@@ -929,10 +932,18 @@ except AssertionError:
 # Scrape jobs have independent initial offsets; fixture readiness is not self readiness.
 eventually(self_sample_ready, 'center self scrape and resident memory')
 assert job_is_up('addp_nodes', '1')
+subprocess.run([str(resource_window_binary), '-test.run=^TestIntegrationMetricsCollectionHealthSource$', '-test.v', '-test.timeout=15s'],
+               check=True, timeout=20,
+               env=dict(os.environ, ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
+                        MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'),
+                        MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
+                        MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key')))
 finish_public_preflight()
 if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
     from concurrent.futures import ThreadPoolExecutor
 
+    tiers = (64, 96, 128) if sweep else (34, 36, 38)
+    limit = tiers[-1]
     address = json.loads(original_discovery)[0]['targets'][0].rsplit(':', 1)[0]
     sources = WORK / 'source'
     for kind, size in [('host', 640), ('engine', 24), ('worker', 4)]:
@@ -957,7 +968,7 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
         pending.replace(sources / 'budget-http.prom')
 
     planned = []
-    for index in range(37):
+    for index in range(limit - 1):
         identity = f'11111111-1111-4111-8111-{index:012d}'
         if index == 0:
             labels = dict(addp_monitor_kind='host_resources', addp_source='node_exporter', addp_node_id=identity)
@@ -1009,10 +1020,12 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
     failures = f'sum(rate(addp_http_server_failures_total{scope}[1m]))'
     pressure = 'max(addp_fixture_host_signal{job="addp_nodes"})'
     p95 = f'histogram_quantile(0.95, sum by(le)(rate(http_server_request_duration_seconds_bucket{scope}[1m])))'
-    for count in (34, 36, 38):
+    scoped_p95 = p95.replace('addp_runtime_role="backend"', 'addp_runtime_role="backend",addp_module_name="fixture-13"') if sweep else p95
+    qualified = []
+    for count in tiers:
         discovery_text(json.dumps(planned[:count]))
         eventually(lambda: within_budget(count), f'{count} distinct mTLS targets each have consecutive samples', seconds=90)
-        if count == 36:
+        if count == (64 if sweep else 36):
             for target in planned[34:36]:
                 identity = target['labels']
                 rows = query('addp_cdc_'+('redpanda' if identity['addp_source']=='redpanda' else 'connect')+'_observed_at_seconds{job="addp_nodes"}')
@@ -1031,7 +1044,7 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
             publish_http(tick)
             time.sleep(16)
             with ThreadPoolExecutor(max_workers=4) as executor:
-                latencies.extend(executor.map(query_latency, [(requests, False), (f'{failures}/{requests}', False), (p95, True), (pressure, True)]))
+                latencies.extend(executor.map(query_latency, [(requests, False), (f'{failures}/{requests}', False), (scoped_p95, True), (pressure, True)]))
             assert within_budget(count), 'target coverage changed during concurrent queries'
         elapsed = time.monotonic() - started
         ingest = scalar('sum(rate(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[1m]))')
@@ -1042,31 +1055,49 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
             cgroup_memory_peak_bytes=memory, volume_growth_bytes=max(0, volume_bytes()-before),
             projected_7d_samples_bytes=math.ceil(ingest * 7 * 86400 * 2),
             max_scrape_seconds=round(scalar('max(max_over_time(scrape_duration_seconds{job="addp_nodes"}[1m]))'), 4),
+            p95_query_seconds=round(sorted(latencies)[math.ceil(0.95 * len(latencies))-1], 4),
             max_query_seconds=round(max(latencies), 4))
+        evidence['within_disk_headroom'] = evidence['projected_7d_samples_bytes'] < 8 * 1024**3
+        if sweep:
+            # Product queries use an authorized module or instance scope. Keep
+            # the wider diagnostic as evidence of the separate raw query cap.
+            try:
+                query_latency((p95, True))
+                evidence['unscoped_histogram_query'] = 'accepted'
+            except urllib.error.HTTPError as failure:
+                response = json.loads(failure.read(4096))
+                if failure.code != 422 or 'too many samples' not in response.get('error', '').lower():
+                    raise
+                evidence['unscoped_histogram_query'] = 'sample_budget_exceeded'
         print('Metrics T2: target capacity ' + json.dumps(evidence, sort_keys=True), flush=True)
         assert evidence['cgroup_memory_peak_bytes'] < 1.5 * 1024**3
-        assert evidence['volume_growth_bytes'] < 256 * 1024**2 and evidence['projected_7d_samples_bytes'] < 8 * 1024**3
+        assert evidence['volume_growth_bytes'] < 256 * 1024**2
         assert evidence['max_scrape_seconds'] < 2 and evidence['max_query_seconds'] < 2
+        if evidence['within_disk_headroom']:
+            qualified.append(count)
+        elif not sweep:
+            raise AssertionError('configured tier exceeded the projected disk budget')
     lifecycle = cdc_lifecycle()
     docker = lifecycle.deployment.Docker(os.environ)
     service = lifecycle.sources.group.service('kafka-connect','infra')
     source_id = docker.run(['ps','-aq',*lifecycle.sources.group.filters(PROJECT,{service})]).strip()
     docker.run(['stop','-t','5',source_id])
-    expected = {item['targets'][0] for item in planned[:38] if item['labels']['addp_source'] != 'kafka-connect'}
+    expected = {item['targets'][0] for item in planned[:limit] if item['labels']['addp_source'] != 'kafka-connect'}
     eventually(lambda: {row['metric']['instance'] for row in query('up{job="addp_nodes"} == 1')} == expected,
-               'one CDC source fails independently while the other 37 remain up')
+               f'one CDC source fails independently while the other {limit-1} remain up')
     assert 'source recovered' in lifecycle.run('recover','infra','kafka-connect',cdc_environment(lifecycle,'kafka-connect'))
-    eventually(lambda: within_budget(38), 'CDC source recovers alongside unchanged 36 fixture targets', seconds=90)
+    eventually(lambda: within_budget(limit), 'CDC source recovers alongside unchanged fixture targets', seconds=90)
     discovery_text(json.dumps(planned))
 
     def over_budget():
         targets = [row for row in api('targets')['activeTargets'] if row['labels']['job'] == 'addp_nodes']
-        return (len(targets) == 39 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
+        return (len(targets) == limit + 1 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
                                           for row in targets))
 
-    eventually(over_budget, '39 targets exceed the Prometheus job limit')
-    discovery_text(json.dumps(planned[:38]))
-    eventually(lambda: within_budget(38), '38 targets recover within the deployment budget', seconds=90)
+    eventually(over_budget, f'{limit+1} targets exceed the Prometheus job limit')
+    discovery_text(json.dumps(planned[:limit]))
+    eventually(lambda: within_budget(limit), f'{limit} targets recover within the deployment budget', seconds=90)
+    print('Metrics T2: largest tier within sampled budget ' + str(max(qualified)), flush=True)
     raise SystemExit(0)
 initial_sample_time = query('addp_fixture_resource_bytes{job="addp_nodes"}')[0]['value'][0]
 # Write atomically without replacing the bind-mounted source directory.

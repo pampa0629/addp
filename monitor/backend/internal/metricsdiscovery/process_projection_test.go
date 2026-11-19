@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"testing"
@@ -103,5 +105,47 @@ func TestProcessAndHostShareWholeSnapshotReservations(t *testing.T) {
 	}
 	if strings.Contains(ErrBudgetExceeded.Error(), "18100") {
 		t.Fatal("budget diagnostics leak source")
+	}
+}
+
+func TestProcessProjectionAtConfiguredCeiling(t *testing.T) {
+	pki := testSourcePKI(t, true)
+	snapshot := testSnapshot()
+	servers := make([]*httptest.Server, 0, MaxExternalTargetLimit)
+	ports := make([]uint16, 0, MaxExternalTargetLimit)
+	for i := 0; i < MaxExternalTargetLimit; i++ {
+		server, port := testSourceServer(t, pki, tls.RequireAndVerifyClientCert, tls.VersionTLS13, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprintln(w, "process_resident_memory_bytes 4096")
+		}))
+		t.Cleanup(server.Close)
+		servers, ports = append(servers, server), append(ports, port)
+		instance := testProcessIdentity(server.URL + "/metrics")
+		instance.InstanceID = "capacity-worker-" + strconv.Itoa(i)
+		snapshot.ModuleInstances = append(snapshot.ModuleInstances, instance)
+	}
+	policy, err := NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, ports, pki.roots, pki.client, MaxExternalTargetLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := NewNodeProjector(true, policy, identityReaderFunc(func(context.Context) (*models.ObservabilityIdentitySnapshot, error) {
+		snapshot.ObservedAt = time.Now().UTC()
+		return snapshot, nil
+	}))
+	start := time.Now()
+	groups, err := projector.Project(context.Background(), nil)
+	if err != nil || len(groups) != MaxExternalTargetLimit {
+		t.Fatalf("admitted %d/%d targets: %v", len(groups), MaxExternalTargetLimit, err)
+	}
+	t.Logf("real loopback mTLS discovery admitted %d targets in %v", len(groups), time.Since(start))
+	servers[MaxExternalTargetLimit/2].Close()
+	groups, err = projector.Project(context.Background(), nil)
+	if err != nil || len(groups) != MaxExternalTargetLimit-1 {
+		t.Fatalf("one stopped source suppressed healthy peers: %d targets, %v", len(groups), err)
+	}
+	snapshot.ModuleInstances = append(snapshot.ModuleInstances, snapshot.ModuleInstances[0])
+	snapshot.ModuleInstances[len(snapshot.ModuleInstances)-1].InstanceID = "over-limit"
+	if _, err = projector.Project(context.Background(), nil); err != ErrBudgetExceeded {
+		t.Fatal("did not reject capacity beyond the configured limit", err)
 	}
 }

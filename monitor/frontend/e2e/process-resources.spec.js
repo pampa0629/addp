@@ -7,6 +7,31 @@ const boundHostID = '10000000-0000-4000-8000-000000000001'
 const boundInstances = () => [{ id: 1, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 2, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 3, node_id: '', host_node_name: 'Current managed host' }]
 const hostPermissions = [...processPermissions, 'platform.host_node.read']
 
+test('service resource totals are global and disclose per-metric sample coverage', async ({ page }) => {
+  const totals = {
+    total: { expected: 3, cpu: { value: 1.5, valid: 2 }, rss: { value: 1024 ** 3, valid: 1 } },
+    modules: [
+      { module_name: 'meta', expected: 2, cpu: { value: 1.5, valid: 2 }, rss: { value: 1024 ** 3, valid: 1 } },
+      { module_name: 'asset', expected: 1, cpu: { value: null, valid: 0 }, rss: { value: null, valid: 0 } }
+    ]
+  }
+  await backend(page, { totals, instances: [{ id: 1, module_name: 'meta', role: 'worker' }] })
+  const requests = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname.endsWith('/process_resource_totals')) requests.push(url.search)
+  })
+  await page.goto('/service-resources?module_name=meta&refresh=off')
+  const card = page.getByTestId('process-totals')
+  await expect(card.getByTestId('process-total-cpu')).toHaveText(/1\.50/)
+  await expect(card.getByTestId('process-total-rss')).toHaveText('1.00 GiB')
+  await expect(card).toContainText('有效采样 2/3')
+  await expect(card).toContainText('有效采样 1/3')
+  await card.getByText('按模块查看').click()
+  await expect(card.getByRole('row', { name: /asset/ })).toContainText('有效采样 0/1')
+  expect(requests).toEqual([''])
+})
+
 test('online coverage distinguishes configured, valid and missing collection on the current page', async ({ page }) => {
   const fixture = await backend(page, { instances: [
     { id: 1, module_name: 'meta', role: 'worker' },

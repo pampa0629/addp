@@ -156,7 +156,12 @@ func main() {
 		resourceBackend = cfg.MetricsQueryClient
 		defer cfg.MetricsQueryClient.Close()
 	}
-	resourceObservations := service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db, cfg.MetricsTargetLimit), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).WithEngines(service.EngineObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).WithCDC(service.CDCObservationDependencies{Identities: systemServiceClient, Backend: cfg.MetricsQueryClient})
+	resourceObservations := service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db, cfg.MetricsTargetLimit), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).
+		WithEngines(service.EngineObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).
+		WithCDC(service.CDCObservationDependencies{Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).
+		WithEngineRuntime(service.EngineRuntimeDependencies{Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).
+		WithProcessTotals(service.ProcessTotalDependencies{Users: systemServiceClient, Backend: cfg.MetricsQueryClient}).
+		WithCollectionHealth(cfg.MetricsQueryClient)
 	resourceRules := service.NewResourceAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
 	go resourceRules.Run(runtimeContext)
 	httpRules := service.NewHTTPAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)

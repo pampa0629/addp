@@ -21,10 +21,13 @@ class TargetBudgetExceeded(ValueError):
     pass
 
 
+MAX_EXTERNAL_TARGET_LIMIT = 96
+
+
 def check_target_budget(env, root=ROOT):
     value = env.get('ADDP_METRICS_TARGET_LIMIT', '12')
-    if not re.fullmatch(r'[1-9]|[1-9][0-9]', value) or int(value) > 38:
-        raise ValueError('ADDP_METRICS_TARGET_LIMIT must be an integer from 1 to 38')
+    if not re.fullmatch(r'[1-9]|[1-9][0-9]', value) or int(value) > MAX_EXTERNAL_TARGET_LIMIT:
+        raise ValueError(f'ADDP_METRICS_TARGET_LIMIT must be an integer from 1 to {MAX_EXTERNAL_TARGET_LIMIT}')
     raw_plan = env.get('ADDP_DEV_PROCESS_METRICS_PLAN', '')
     if not raw_plan:
         return value
@@ -84,7 +87,7 @@ def desktop_loopback_rules(env):
     if not value:
         return ''
     ports = value.split(',')
-    if (len(ports) > 64 or len(set(ports)) != len(ports)
+    if (len(ports) > MAX_EXTERNAL_TARGET_LIMIT or len(set(ports)) != len(ports)
             or any(not re.fullmatch(r'[1-9][0-9]{0,4}', port) or int(port) > 65535 for port in ports)):
         raise ValueError('Desktop loopback ports must be unique canonical ports')
     if platform.system() != 'Darwin':

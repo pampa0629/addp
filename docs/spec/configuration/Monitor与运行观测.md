@@ -20,7 +20,7 @@ Go 自身进程采集由唯一启动输入 `ADDP_PROCESS_METRICS_DEPLOYMENTS` �
 
 证书目录仅含部署提供的 `ca.crt/server.crt/server.key`，来源使用独立采集客户端 CA 做 mTLS；来源证书 SAN 必须覆盖声明地址及准入后固定的实际采集 IP，使用 DNS 声明时同时覆盖该 DNS 名称，不以 server_name 覆盖校验。SDK 启动校验声明地址，Monitor 与中心按唯一固定 IP 校验。平台不签发证书、不放宽 TLS、不复用中心健康身份。只有配置和端点实际启动成功才随当前进程登记发布私有采集声明；关闭、配置失败、证书错误或监听冲突只记录封闭诊断码，不阻塞业务登记或 Ready。此输入不是 System 普通配置或 Monitor 采集策略，改变它须重启对应进程生成新实例身份。System 普通实例 DTO 不公开端点或证书位置。
 
-macOS 本地 Docker Desktop 的唯一宿主通道输入为 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS`，空值关闭转换，非空为最多 64 个不重复的规范非零端口，以逗号分隔且不含空项或空格。该输入只改变同一 HTTP SD Job 中已发现来源的传输地址：先保留原 `instance`，将列表内 `127.0.0.1:端口` 精确转换为同端口 `host.docker.internal`；其他地址与端口不转换。它不授权来源、不部署来源、不扩大采集预算、不覆盖 Monitor 的 CIDR/端口准入策略。来源服务器证书同时覆盖回环 IP 与宿主通道 DNS；不覆盖 TLS server_name。配置变更须由标准指标入口重新应用中心。原单端口输入已删除，不保留兼容读取。
+macOS 本地 Docker Desktop 的唯一宿主通道输入为 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS`，空值关闭转换，非空为最多 96 个不重复的规范非零端口，以逗号分隔且不含空项或空格。该输入只改变同一 HTTP SD Job 中已发现来源的传输地址：先保留原 `instance`，将列表内 `127.0.0.1:端口` 精确转换为同端口 `host.docker.internal`；其他地址与端口不转换。它不授权来源、不部署来源、不扩大采集预算、不覆盖 Monitor 的 CIDR/端口准入策略。来源服务器证书同时覆盖回环 IP 与宿主通道 DNS；不覆盖 TLS server_name。配置变更须由标准指标入口重新应用中心。原单端口输入已删除，不保留兼容读取。
 
 Python Agent/Copilot 的单进程 backend 复用同一开发计划、SDK 五字段输入及产品只读证书投射；不新增 Python 专用端口表或第二个开关。仅发布 HTTP 指标和身份／启动时间，不启用 CPU、RSS 或 cgroup，选择 `cgroup_v2=true` 时拒绝当次可选来源。来源成功绑定后才随同一正式注册发布 `process_metrics`；当前实例声明不可变，未选择或源准备失败不发布，运行中源不可用沿 scrape 失败表达。指标与 Trace 开关独立，业务 Ready 不依赖来源；其资源及全量语义见运行观测规范 6.4。
 
@@ -100,7 +100,7 @@ Infra 根 `.env` 与 `business/.env` 各自的 `ADDP_POSTGRES_METRICS_ENABLED=fa
 
 `PROMETHEUS_PORT` 首选 `19090`，宿主固定回环发布，开发实际映射由标准入口解析；`ADDP_METRICS_TLS_DIR` 是外部部署证书目录，不是用户可修改的 Monitor 普通配置。启用需要独立 CA、服务器和健康客户端证书；未启用不校验这些专用输入、不创建证书目录。具体文件、用途与容器可读要求见 [Infra 指标中心](../../../scripts/infra/docs/指标中心与来源.md#可选指标中心)。运行状态分别报告 Disabled、Unconfigured、Not deployed、Unavailable 或中心 Ready；当前自身采集与业务资源覆盖分别解释。
 
-节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新及 15 秒采样由版本化模板维护。外部目标上限由 Monitor 和 Prometheus 共用的根环境变量 `ADDP_METRICS_TARGET_LIMIT` 指定，缺省 12，可设为 1 至 38。变更预算须重新应用指标中心并重启 Monitor。开发启动和重启在应用前核对本机采集计划。生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
+节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新及 15 秒采样由版本化模板维护。外部目标上限由 Monitor 和 Prometheus 共用的根环境变量 `ADDP_METRICS_TARGET_LIMIT` 指定，缺省 12，可设为 1 至 96。变更预算须重新应用指标中心并重启 Monitor。开发启动和重启在应用前核对本机采集计划。生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
 
 
 Infra CDC 来源分别由 `ADDP_REDPANDA_METRICS_*` 和 `ADDP_KAFKA_CONNECT_METRICS_*` 声明，`ENABLED` 缺省 false；选择后必须提供规范私有 `LISTEN` 和仓库外 `TLS_DIR`，可选 `STATE_DIR` 也须在仓库外。它们仅属于 Infra，使用统一采集管理入口，不创建数据引擎登记；恢复只复用既有安装，不根据组件已运行而自动安装。Connect 原生只读 JMX 由标准 Infra Compose 的策略挂载提供，来源入口不重启组件。详见 [CDC 来源操作与边界](../../../scripts/infra/docs/指标中心与来源.md#infra-cdc-来源)。

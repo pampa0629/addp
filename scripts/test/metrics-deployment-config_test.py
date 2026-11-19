@@ -1729,8 +1729,9 @@ for phase,at in [('published','0.01'),('control_before_enum','1.02'),('enumerate
         path = self.directory / 'prometheus.yml'
         content = path.read_bytes()
         self.assertIn(b'target_limit: 38', content)
+        self.assertEqual(config.check_target_budget({'ADDP_METRICS_TARGET_LIMIT': '96'}), '96')
         with self.assertRaises(ValueError):
-            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='39'))
+            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='97'))
         self.assertEqual(path.read_bytes(), content)
 
     def test_desktop_loopback_rules_keep_the_original_identity_and_exact_ports(self):
@@ -1761,7 +1762,7 @@ for phase,at in [('published','0.01'),('control_before_enum','1.02'),('enumerate
         self.assertEqual((self.directory / 'prometheus.yml').read_text(), before)
         for ports in ('019091', '0', '65536', '19091\n', '19091:123', '19091,19091',
                       ',19091', '19091,', '19091,,19101', '19091, 19101',
-                      ','.join(str(i) for i in range(1, 66))):
+                      ','.join(str(i) for i in range(1, 98))):
             with self.subTest(ports=ports), self.assertRaises(ValueError):
                 config.render(dict(env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS=ports))
             self.assertEqual((self.directory / 'prometheus.yml').read_text(), before)
@@ -1771,14 +1772,14 @@ for phase,at in [('published','0.01'),('control_before_enum','1.02'),('enumerate
         config.render(self.env)
         self.assertNotIn('relabel_configs:\n      - source_labels: [__address__]', (self.directory / 'prometheus.yml').read_text())
 
-    def test_desktop_transport_accepts_64_ports_and_rejects_non_desktop_engine(self):
-        env = dict(self.env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS=','.join(str(i) for i in range(1, 65)))
+    def test_desktop_transport_accepts_96_ports_and_rejects_non_desktop_engine(self):
+        env = dict(self.env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS=','.join(str(i) for i in range(1, 97)))
         replies = [json.dumps([{'Endpoints': {'docker': {'Host': 'unix:///local/docker.sock'}}}]),
                    json.dumps({'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'})]
         with mock.patch.object(config.platform, 'system', return_value='Darwin'), mock.patch.object(config.subprocess, 'check_output', side_effect=replies):
             config.render(env)
         before = (self.directory / 'prometheus.yml').read_text()
-        self.assertEqual(before.count('target_label: __address__'), 64)
+        self.assertEqual(before.count('target_label: __address__'), 96)
         for info in ({'OperatingSystem': 'Linux', 'OSType': 'linux'},
                      {'OperatingSystem': 'Docker Desktop', 'OSType': 'windows'}):
             with mock.patch.object(config.platform, 'system', return_value='Darwin'), mock.patch.object(config.subprocess, 'check_output', return_value=json.dumps(info)), self.assertRaises(ValueError):

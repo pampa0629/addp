@@ -5,5 +5,6 @@ export const processResourcesAPI = {
   instances: (params, config) => client.get('/system/platform/module-instances', { ...config, params }),
   startupFailures: config => client.get('/system/platform/module_startup_failures', config),
   summaries: (ids, config) => client.get('/monitor/platform/process_resource_summaries', { ...config, params: { instance_ids: ids.join(',') } }),
+  totals: config => client.get('/monitor/platform/process_resource_totals', config),
   trend: (params, config) => client.get('/monitor/platform/process_resource_trends', { ...config, params })
 }

@@ -1017,6 +1017,26 @@
         "unsupported": "当前节点的设备容量视图不可核验，不支持展示"
       }
     },
+    "collectionHealth": {
+      "title": "采集中心",
+      "online": "抓取在线 / 已发现",
+      "failed": "最近抓取失败目标",
+      "budget": "已发现 / 配置上限",
+      "discovery": "近 5 分钟发现异常",
+      "errorSeen": "有失败",
+      "noError": "未发现失败",
+      "storage": "TSDB 占用 / 留存上限"
+    },
+    "processTotals": {
+      "title": "ADDP 服务资源总量",
+      "scope": "当前统计后端、Worker、调度进程和网关。",
+      "cpu": "近一分钟 CPU 核占用",
+      "rss": "进程 RSS 合计",
+      "rssHint": "多个进程使用同一共享内存页时，该页可能被重复计入。",
+      "coverage": "有效采样 {valid}/{expected}",
+      "cores": "核",
+      "modules": "按模块查看"
+    },
     "process": {
       "coverage": {
         "action": "查看采集覆盖",
@@ -1702,6 +1722,41 @@
         "window": "{start} 至 {end}，显示间隔 {step} 秒"
       }
     },
+    "engineRuntime": {
+      "meilisearch": "Meilisearch 索引任务",
+      "geopython": "GeoPython",
+      "discoveryUnavailable": "来源发现暂不可用",
+      "empty": "当前暂无运行来源",
+      "snapshotUnavailable": "暂无有效指标快照",
+      "trendHint": "趋势仅涵盖当前运行实例，缺样处留空。",
+      "hideTrend": "收起趋势",
+      "metrics": {
+        "tasks_pending": "待处理索引任务",
+        "tasks_oldest_wait_seconds": "最老任务等待时间",
+        "tasks_retained_failed": "当前保留的失败任务",
+        "effective_cpu_cores": "有效 CPU 核数",
+        "memory_limit_bytes": "内存上限",
+        "raster_running": "运行中的栅格任务",
+        "raster_waiting": "等待中的栅格任务",
+        "raster_admission_enabled": "栅格任务准入"
+      },
+      "hints": {
+        "tasks_retained_failed": "随任务记录的保留范围变化。历史失败记录清理后此值会下降。",
+        "effective_cpu_cores": "当前运行实例可用的 CPU 容量。",
+        "memory_limit_bytes": "当前运行实例可用的内存上限。"
+      },
+      "admission": {
+        "0": "已关闭",
+        "1": "已开启"
+      },
+      "units": {
+        "tasks": "个",
+        "cores": "核",
+        "seconds": "秒",
+        "status": "",
+        "bytes": "B"
+      }
+    },
     "engines": {
       "noCurrentHost": "当前无有效主机关联",
       "title": "引擎监控",
@@ -1893,6 +1948,7 @@
         }
       },
       "scopes": {
+        "runtime": "计算运行时",
         "infra": "Infra 基础设施",
         "business": "Business 业务引擎"
       },
