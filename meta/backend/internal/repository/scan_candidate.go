@@ -12,11 +12,15 @@ import (
 // NextScanCandidate applies Meta's dependency rules in the caller's transaction.
 func NextScanCandidate(ctx context.Context, tx *gorm.DB) (*execution.PendingIdentity, error) {
 	var candidate execution.PendingIdentity
+	basicExecutionID := "task_executions.execution_config->>'production_basic_execution_id'"
+	if tx.Dialector.Name() == "mysql" {
+		basicExecutionID = "JSON_VALUE(task_executions.execution_config, '$.production_basic_execution_id') COLLATE utf8mb4_0900_bin"
+	}
 	query := tx.WithContext(ctx).Model(&execution.TaskExecution{}).
 		Select("execution_id", "tenant_id", "module", "task_type", "source").
 		Where("module=? AND task_type=? AND execution_boundary=? AND status=?", execution.ModuleMeta, execution.TaskTypeScan, execution.ExecutionBoundaryBounded, execution.ExecutionStatusPending).
 		Where(`NOT EXISTS (SELECT 1 FROM common.task_executions AS basic
- WHERE basic.execution_id = task_executions.execution_config->>'production_basic_execution_id'
+ WHERE basic.execution_id = ` + basicExecutionID + `
  AND basic.tenant_id = task_executions.tenant_id AND basic.module = 'meta' AND basic.task_type = 'scan'
  AND basic.status IN ('pending','running'))`).
 		Order("created_at ASC, id ASC").

@@ -17,8 +17,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-system-request|platform-meta-scan' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-system-request|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -44,10 +44,14 @@ if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
     exit 2
 fi
 
-if [ "$test_group" = platform-execution ] && [ "$local_disposable" != true ]; then
-    echo 'platform-execution requires a gate-owned instance (--local-disposable)' >&2
-    exit 2
-fi
+case "$test_group" in
+    platform-execution|platform-system-request|platform-meta-scan)
+        if [ "$local_disposable" != true ]; then
+            echo "$test_group requires a gate-owned instance (--local-disposable)" >&2
+            exit 2
+        fi
+        ;;
+esac
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-mysql-data-protection.XXXXXX")
@@ -109,7 +113,11 @@ with open(source) as handle:
 mysql['container_name'] = project
 mysql['ports'] = [{'target': 3306, 'published': '0', 'host_ip': '127.0.0.1', 'protocol': 'tcp'}]
 mysql['networks'] = {'default': None}
-mysql['environment']['MYSQL_DATABASE'] = 'common' if group == 'platform-execution' else 'addp_platform_mysql_test'
+mysql['environment']['MYSQL_DATABASE'] = {
+    'platform-execution': 'common',
+    'platform-system-request': 'system',
+    'platform-meta-scan': 'meta',
+}.get(group, 'addp_platform_mysql_test')
 
 with open(destination, 'w') as handle:
     json.dump({'services': {'mysql': mysql}}, handle)
@@ -140,6 +148,21 @@ if [ "$test_group" = platform-execution ]; then
     (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_COMMON_EXECUTION=1 GOWORK=off go test ./schema \
         -run '^TestPlatformMySQLExecutionLifecycle$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestPlatformMySQLExecutionLifecycle ' "$WORK_DIR/platform-execution.log"
+    exit 0
+fi
+
+if [ "$test_group" = platform-system-request ]; then
+    (cd "$ROOT_DIR/system/backend" && ADDP_TEST_MYSQL_SYSTEM_REQUEST_LOCK=1 GOWORK=off go test ./internal/engineaccess \
+        -run '^TestSystemAccessRequestLockAgainstMySQL$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-system-request.log"
+    grep -q '^--- PASS: TestSystemAccessRequestLockAgainstMySQL ' "$WORK_DIR/platform-system-request.log"
+    exit 0
+fi
+
+if [ "$test_group" = platform-meta-scan ]; then
+    mysql_compose exec -T mysql sh -ec 'exec mysql --user=root --password="$MYSQL_ROOT_PASSWORD" --execute="CREATE DATABASE common"'
+    (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_MYSQL_META_SCAN=1 GOWORK=off go test ./internal/service \
+        -run '^TestMetaClaimAndTaskSummaryAgainstMySQL$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-meta-scan.log"
+    grep -q '^--- PASS: TestMetaClaimAndTaskSummaryAgainstMySQL ' "$WORK_DIR/platform-meta-scan.log"
     exit 0
 fi
 
