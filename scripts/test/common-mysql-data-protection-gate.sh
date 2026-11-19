@@ -143,6 +143,9 @@ if [ "$test_group" = platform-database ]; then
     (cd "$ROOT_DIR/common" && GOWORK=off go test ./infra/database/mysql -run '^TestPlatformConnectionAgainstMySQL$' -count=1 -timeout=45s -v) \
         | tee "$WORK_DIR/platform-mysql.log"
     grep -q '^--- PASS: TestPlatformConnectionAgainstMySQL ' "$WORK_DIR/platform-mysql.log"
+    (cd "$ROOT_DIR/common" && GOWORK=off go test ./schema -run '^TestPlatformMySQLSchemaMigration$' -count=1 -timeout=60s -v) \
+        | tee "$WORK_DIR/platform-migration.log"
+    grep -q '^--- PASS: TestPlatformMySQLSchemaMigration ' "$WORK_DIR/platform-migration.log"
     exit 0
 fi
 
