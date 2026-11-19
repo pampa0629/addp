@@ -1,17 +1,15 @@
-from sqlalchemy import URL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from addp_common.infra.database import open_async_database
+from addp_common.infra.database import DatabaseConfig, open_async_database
 from config import settings
 
 engine = open_async_database(
-    URL.create(
-        "postgresql",
-        username=settings.POSTGRES_USER,
+    DatabaseConfig(
+        user=settings.POSTGRES_USER,
         password=settings.POSTGRES_PASSWORD,
         host=settings.POSTGRES_HOST,
         port=settings.POSTGRES_PORT,
-        database=settings.POSTGRES_DB,
+        name=settings.POSTGRES_DB,
     ),
     pool_pre_ping=True,
 )

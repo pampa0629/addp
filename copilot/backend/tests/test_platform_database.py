@@ -3,15 +3,15 @@ import subprocess
 import sys
 
 import pytest
-from sqlalchemy import URL, make_url
+from sqlalchemy import make_url
 
-from addp_common.infra.database import open_sync_database
+from addp_common.infra.database import DatabaseConfig, open_sync_database
 
 
 def test_unknown_platform_provider_rejected_before_engine_creation(monkeypatch):
     monkeypatch.setenv("ADDP_INFRA_DATABASE_PROVIDER", "mysql")
     with pytest.raises(ValueError, match="unsupported platform database provider 'mysql'"):
-        open_sync_database(URL.create("postgresql", host="invalid"))
+        open_sync_database(DatabaseConfig("invalid", 5432, "unused", None, "unused"))
 
 
 def test_platform_session_against_postgres():

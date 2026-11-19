@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from services.schema import migrate, MIGRATION_ROOT
-from addp_common.infra.database import open_async_database
+from addp_common.infra.database import DatabaseConfig, open_async_database
 from api.sessions import SessionUpdate, VersionInput, get_session, list_sessions, update_session, delete_session, list_session_runs
 from api.runs import get_agent_run
 from services.plans import read_run_plan
@@ -187,7 +187,8 @@ async def check_summary_concurrency(engine):
 
 async def check_idle_connection_recovery(url, admin):
     probe_name = f'agent_idle_probe_{uuid4().hex}'
-    probe = open_async_database(url, pool_pre_ping=True)
+    target = DatabaseConfig(url.host, url.port, url.username, url.password, url.database)
+    probe = open_async_database(target, pool_pre_ping=True)
     try:
         async with probe.connect() as connection:
             await connection.execute(

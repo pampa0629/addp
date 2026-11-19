@@ -3,20 +3,19 @@
 """
 from pathlib import Path
 
-from sqlalchemy import URL, text
-from addp_common.infra.database import open_sync_database
+from sqlalchemy import text
+from addp_common.infra.database import DatabaseConfig, open_sync_database
 from sqlalchemy.orm import declarative_base, sessionmaker
 from config import settings
 
 # 创建数据库引擎（优化配置避免延迟）
 engine = open_sync_database(
-    URL.create(
-        "postgresql",
-        username=settings.postgres_user,
+    DatabaseConfig(
+        user=settings.postgres_user,
         password=settings.postgres_password,
         host=settings.postgres_host,
         port=settings.postgres_port,
-        database=settings.postgres_db,
+        name=settings.postgres_db,
     ),
     pool_pre_ping=False,  # 禁用连接预检查
     pool_size=5,
