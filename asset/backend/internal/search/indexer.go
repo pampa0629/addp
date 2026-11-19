@@ -31,6 +31,7 @@ type AssetIndexDoc struct {
 // Indexer 封装 asset 模块的 Meilisearch 操作
 type Indexer struct {
 	client  meilisearch.ServiceManager
+	elastic *elasticsearchAssetIndex
 	index   string
 	enabled bool
 }
@@ -64,7 +65,7 @@ func NewIndexer(msURL, msAPIKey, indexName string) (*Indexer, error) {
 
 // Enabled 返回索引器是否启用
 func (i *Indexer) Enabled() bool {
-	return i != nil && i.enabled && i.client != nil
+	return i != nil && i.enabled && (i.client != nil || i.elastic != nil)
 }
 
 // ensureIndex 确保索引存在并配置正确
@@ -132,6 +133,10 @@ func (i *Indexer) UpsertAsset(doc *AssetIndexDoc) {
 	if doc.Tags == nil {
 		doc.Tags = []string{}
 	}
+	if i.elastic != nil {
+		i.UpsertAssets([]AssetIndexDoc{*doc})
+		return
+	}
 	idx := i.client.Index(i.index)
 	if _, err := idx.AddDocuments([]AssetIndexDoc{*doc}, nil); err != nil {
 		log.Printf("⚠️  写入资产索引失败 (id=%d): %v", doc.ID, err)
@@ -148,6 +153,14 @@ func (i *Indexer) UpsertAssets(docs []AssetIndexDoc) {
 			docs[idx].Tags = []string{}
 		}
 	}
+	if i.elastic != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := i.elastic.write(ctx, "index", docs, nil, ""); err != nil {
+			log.Printf("写入 Elasticsearch 资产索引失败 (count=%d): %v", len(docs), err)
+		}
+		return
+	}
 	index := i.client.Index(i.index)
 	if _, err := index.AddDocuments(docs, nil); err != nil {
 		log.Printf("⚠️  批量写入资产索引失败 (count=%d): %v", len(docs), err)
@@ -161,6 +174,9 @@ func (i *Indexer) ReplaceAssets(docs []AssetIndexDoc) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if i.elastic != nil {
+		return i.elastic.replace(ctx, docs)
+	}
 	index := i.client.Index(i.index)
 	task, err := index.DeleteAllDocumentsWithContext(ctx, nil)
 	if err != nil {
@@ -189,6 +205,10 @@ func (i *Indexer) UpdateStatus(id int64, status string) {
 	if !i.Enabled() {
 		return
 	}
+	if i.elastic != nil {
+		i.UpdateStatusBatch([]int64{id}, status)
+		return
+	}
 	// Meilisearch 的 AddDocuments 在主键匹配时执行 upsert（合并更新）
 	doc := map[string]interface{}{
 		"id":     id,
@@ -203,6 +223,14 @@ func (i *Indexer) UpdateStatus(id int64, status string) {
 // UpdateStatusBatch 批量更新资产 status（批量下架时调用）
 func (i *Indexer) UpdateStatusBatch(ids []int64, status string) {
 	if !i.Enabled() || len(ids) == 0 {
+		return
+	}
+	if i.elastic != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := i.elastic.write(ctx, "update", nil, ids, status); err != nil {
+			log.Printf("更新 Elasticsearch 资产状态失败 (count=%d): %v", len(ids), err)
+		}
 		return
 	}
 	docs := make([]map[string]interface{}, len(ids))
@@ -223,6 +251,14 @@ func (i *Indexer) DeleteAsset(id int64) {
 	if !i.Enabled() || id <= 0 {
 		return
 	}
+	if i.elastic != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := i.elastic.write(ctx, "delete", nil, []int64{id}, ""); err != nil {
+			log.Printf("删除 Elasticsearch 资产索引失败 (id=%d): %v", id, err)
+		}
+		return
+	}
 	if _, err := i.client.Index(i.index).DeleteDocument(strconv.FormatInt(id, 10), nil); err != nil {
 		log.Printf("⚠️  删除资产索引失败 (id=%d): %v", id, err)
 	}
@@ -240,6 +276,11 @@ func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, catego
 		return nil, nil
 	}
 
+	if i.elastic != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return i.elastic.search(ctx, tenantID, keyword, typeCode, categoryIDs, limit, offset)
+	}
 	// 固定过滤：仅返回 published 状态 + 当前租户
 	filters := buildAssetSearchFilters(tenantID, typeCode, categoryIDs)
 	filterStr := strings.Join(filters, " AND ")

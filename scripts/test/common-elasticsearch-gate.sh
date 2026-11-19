@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=elasticsearch,meilisearch,spark-master,spark-worker
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.elasticsearch-t2.yml
-# ADDP_T2_INPUT_FILES=business/elasticsearch/ business/docker-compose.yml engines/spark-workflow/ develop/backend/internal/service/workflow_engine_service.go develop/backend/internal/service/workflow_operator_adapter.go scripts/test/elasticsearch-spark-contract.py common/infra/search/ catalog/backend/internal/service/
+# ADDP_T2_INPUT_FILES=business/elasticsearch/ business/docker-compose.yml engines/spark-workflow/ develop/backend/internal/service/workflow_engine_service.go develop/backend/internal/service/workflow_operator_adapter.go scripts/test/elasticsearch-spark-contract.py common/infra/search/ catalog/backend/internal/service/ asset/backend/internal/search/
 # Run consumer contracts against an owned disposable Elasticsearch deployment.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-platform_only=false
+test_group=all
 if [ "$#" -ne 0 ]; then
-    if [ "$#" -ne 2 ] || [ "$1" != --test ] || [ "$2" != platform-catalog ]; then
-        echo "usage: $0 [--test platform-catalog]" >&2
+    if [ "$#" -ne 2 ] || [ "$1" != --test ]; then
+        echo "usage: $0 [--test platform-catalog|platform-asset]" >&2
         exit 2
     fi
-    platform_only=true
+    case "$2" in
+        platform-catalog|platform-asset) test_group=$2 ;;
+        *) echo "unknown Elasticsearch test group" >&2; exit 2 ;;
+    esac
 fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-elasticsearch.XXXXXX")
 export ELASTICSEARCH_T2_WORK_DIR="$WORK_DIR"
@@ -35,13 +38,24 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-compose up -d --wait --wait-timeout 120 elasticsearch meilisearch
+search_services=(elasticsearch)
+if [ "$test_group" != platform-asset ]; then
+    search_services+=(meilisearch)
+fi
+compose up -d --wait --wait-timeout 120 "${search_services[@]}"
 export ELASTICSEARCH_ENDPOINT="http://$(compose port elasticsearch 9200)"
-export MEILISEARCH_ENDPOINT="http://$(compose port meilisearch 7700)"
-(cd "$ROOT_DIR/catalog/backend" && ADDP_PLATFORM_SEARCH_TEST=1 GOWORK=off go test ./internal/service \
-    -run '^TestPlatformCatalogSearchProviders$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-catalog.log"
-grep -q '^--- PASS: TestPlatformCatalogSearchProviders ' "$WORK_DIR/platform-catalog.log"
-if [ "$platform_only" = true ]; then
+if [ "$test_group" != platform-asset ]; then
+    export MEILISEARCH_ENDPOINT="http://$(compose port meilisearch 7700)"
+    (cd "$ROOT_DIR/catalog/backend" && ADDP_PLATFORM_SEARCH_TEST=1 GOWORK=off go test ./internal/service \
+        -run '^TestPlatformCatalogSearchProviders$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-catalog.log"
+    grep -q '^--- PASS: TestPlatformCatalogSearchProviders ' "$WORK_DIR/platform-catalog.log"
+fi
+if [ "$test_group" != platform-catalog ]; then
+    (cd "$ROOT_DIR/asset/backend" && ADDP_PLATFORM_ASSET_SEARCH_TEST=1 GOWORK=off go test ./internal/search \
+        -run '^TestPlatformAssetSearchAgainstElasticsearch$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-asset.log"
+    grep -q '^--- PASS: TestPlatformAssetSearchAgainstElasticsearch ' "$WORK_DIR/platform-asset.log"
+fi
+if [ "$test_group" != all ]; then
     exit 0
 fi
 python3 - "$ROOT_DIR" "$WORK_DIR" <<'PY'

@@ -48,12 +48,21 @@ func (c *Client) Request(ctx context.Context, method, path string, input, output
 			return err
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, &body)
+	return c.request(ctx, method, path, "application/json", &body, output)
+}
+
+// RequestNDJSON sends a prepared bulk request without wrapping its lines in JSON.
+func (c *Client) RequestNDJSON(ctx context.Context, method, path string, body io.Reader, output any) error {
+	return c.request(ctx, method, path, "application/x-ndjson", body, output)
+}
+
+func (c *Client) request(ctx context.Context, method, path, contentType string, body io.Reader, output any) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, body)
 	if err != nil {
 		return err
 	}
-	if input != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if req.ContentLength != 0 {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if c.username != "" {
 		req.SetBasicAuth(c.username, c.password)
