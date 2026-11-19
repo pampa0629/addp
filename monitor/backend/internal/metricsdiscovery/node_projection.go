@@ -111,10 +111,15 @@ type NodeProjector struct {
 	policy     *SourcePolicy
 	identities IdentityReader
 	now        func() time.Time
+	paused     func(context.Context) (map[string]bool, error)
 }
 
 func NewNodeProjector(enabled bool, policy *SourcePolicy, identities IdentityReader) *NodeProjector {
 	return &NodeProjector{enabled: enabled, policy: policy, identities: identities, now: time.Now}
+}
+
+func (p *NodeProjector) WithCollectionPauses(read func(context.Context) (map[string]bool, error)) {
+	p.paused = read
 }
 
 // Project fails closed for unavailable control-plane facts. Only a successfully
@@ -139,6 +144,13 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 	if err != nil {
 		return nil, err
 	}
+	var paused map[string]bool
+	if p.paused != nil {
+		paused, err = p.paused(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	processes := map[struct{ module, instance string }]bool{}
 	validName := func(s string, max int) bool {
 		return s != "" && strings.TrimSpace(s) == s && utf8.ValidString(s) && utf8.RuneCountInString(s) <= max && strings.IndexFunc(s, unicode.IsControl) < 0
@@ -159,6 +171,9 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		}
 		if instance.ProcessMetrics.Validate() != nil || instance.ProcessStartedAt == nil || instance.ProcessStartedAt.IsZero() || instance.ProcessStartedAt.After(snapshot.ObservedAt) {
 			return nil, ErrIdentityUnavailable
+		}
+		if paused[ProcessCollectionScope(instance).ID] {
+			continue
 		}
 		reserved++
 		if reserved > p.policy.targetLimit {
@@ -190,7 +205,7 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			return nil, ErrIdentityUnavailable
 		}
 		for _, component := range components.Items {
-			if component.Metrics.State == "available" {
+			if component.Metrics.State == "available" && !paused[ComponentCollectionScope(component).ID] {
 				reserved++
 			}
 		}
@@ -204,9 +219,13 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			geo.LeaseExpiresAt.After(snapshot.ObservedAt.Add(models.GeoPythonMetricsLeaseDuration)) {
 			return nil, ErrIdentityUnavailable
 		}
-		reserved++
-		if reserved > p.policy.targetLimit {
-			return nil, ErrBudgetExceeded
+		if !paused[RuntimeCollectionScope(geo).ID] {
+			reserved++
+			if reserved > p.policy.targetLimit {
+				return nil, ErrBudgetExceeded
+			}
+		} else {
+			geo = nil
 		}
 	} else {
 		geo = nil
@@ -258,7 +277,8 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		})
 	}
 	for _, instance := range snapshot.ModuleInstances {
-		if instance.ProcessMetrics == nil {
+		scope := ProcessCollectionScope(instance)
+		if instance.ProcessMetrics == nil || paused[scope.ID] {
 			continue
 		}
 		resolved, accepted, err := resolve(instance.ProcessMetrics.Endpoint)
@@ -272,7 +292,7 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 			"__scheme__": "https", "__metrics_path__": "/metrics",
 			"addp_module_name": instance.ModuleName, "addp_instance_id": instance.InstanceID, "addp_runtime_role": instance.Role,
-			"addp_monitor_kind": "process_resources", "addp_source": "application",
+			"addp_monitor_kind": "process_resources", "addp_source": "application", CollectionScopeLabel: scope.DiscoveryLabel(),
 		}})
 	}
 	for _, engine := range snapshot.EngineDeployments {
@@ -296,7 +316,8 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 	}
 	if components != nil {
 		for _, component := range components.Items {
-			if component.Metrics.State != "available" {
+			scope := ComponentCollectionScope(component)
+			if component.Metrics.State != "available" || paused[scope.ID] {
 				continue
 			}
 			resolved, accepted, err := resolve(component.Metrics.Endpoint)
@@ -314,7 +335,7 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": monitorKind, "addp_source": component.Kind,
 				"addp_component_id": component.ID(), "addp_component_container_id": component.ContainerID,
-				"addp_component_container_started_at": component.StartedAt.UTC().Format(time.RFC3339Nano),
+				"addp_component_container_started_at": component.StartedAt.UTC().Format(time.RFC3339Nano), CollectionScopeLabel: scope.DiscoveryLabel(),
 			}})
 		}
 	}
@@ -327,7 +348,7 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			dynamic[resolved.Address] = true
 			groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": "compute_resources", "addp_source": "geopython",
-				"addp_runtime_engine_id": strconv.FormatUint(uint64(geo.EngineID), 10), "addp_instance_id": geo.InstanceID,
+				"addp_runtime_engine_id": strconv.FormatUint(uint64(geo.EngineID), 10), "addp_instance_id": geo.InstanceID, CollectionScopeLabel: RuntimeCollectionScope(geo).DiscoveryLabel(),
 			}})
 		}
 	}

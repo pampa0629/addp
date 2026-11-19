@@ -701,6 +701,33 @@
       }
     },
     "targets": {
+      "automatic": {
+        "hosts": "主机采集",
+        "tab": "服务与专用来源",
+        "scope": "采集范围",
+        "observation": "实际采集",
+        "operation": "操作",
+        "meilisearch": "Meilisearch",
+        "geopython": "GeoPython",
+        "pause": "暂停采集",
+        "resume": "恢复采集",
+        "paused": "暂停配置已保存",
+        "activeCount": "目标 {count} 个",
+        "confirmPause": "暂停该范围的新指标采集？",
+        "catalogUnavailable": "暂时无法读取新的采集范围，仍可管理已保存的配置。",
+        "conflict": "配置已被修改。请刷新后确认当前状态，再提交操作。",
+        "saveFailed": "无法确认保存结果。请刷新后查看当前配置。",
+        "loading": "正在读取采集范围",
+        "empty": "当前没有可配置的自动采集范围",
+        "states": {
+          "unknown": "状态未知",
+          "stopped": "已停采",
+          "stopping": "正等待停采",
+          "waiting": "等待成功抓取",
+          "collecting": "正在采集",
+          "partial": "部分目标正在采集"
+        }
+      },
       "moreNodes": "加载更多主机",
       "nodeLoadingFailed": "无法读取主机，请重试",
       "nodeMissing": "主机信息不可用，请重新选择或刷新",

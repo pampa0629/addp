@@ -4,12 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/addp/common/models"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/addp/common/models"
 )
 
 func TestCDCProjectionSharesBudgetAndEndpointUniqueness(t *testing.T) {
@@ -42,6 +43,18 @@ func TestCDCProjectionSharesBudgetAndEndpointUniqueness(t *testing.T) {
 	snapshot.InfrastructureComponents.Items = append(snapshot.InfrastructureComponents.Items, item)
 	if _, err := projector.Project(context.Background(), nil); !errors.Is(err, ErrIdentityUnavailable) {
 		t.Fatal("duplicate component admitted", err)
+	}
+	search := item
+	search.Kind = "meilisearch"
+	snapshot.InfrastructureComponents.Items = []models.ObservabilityComponentIdentity{search}
+	paused := map[string]bool{ComponentCollectionScope(search).ID: true}
+	projector.WithCollectionPauses(func(context.Context) (map[string]bool, error) { return paused, nil })
+	if groups, err := projector.Project(context.Background(), nil); err != nil || len(groups) != 0 {
+		t.Fatal("paused Meilisearch entered discovery", groups, err)
+	}
+	delete(paused, ComponentCollectionScope(search).ID)
+	if groups, err := projector.Project(context.Background(), nil); err != nil || len(groups) != 1 || groups[0].Labels[CollectionScopeLabel] != ComponentCollectionScope(search).ID {
+		t.Fatal("Meilisearch did not return after resume", groups, err)
 	}
 	snapshot.InfrastructureComponents = &models.ObservabilityComponentSnapshot{State: "unavailable", Items: []models.ObservabilityComponentIdentity{}}
 	if groups, err := projector.Project(context.Background(), []NodeTarget{target}); err != nil || len(groups) != 1 {

@@ -57,15 +57,8 @@ func observeServiceGroups(tx *gorm.DB, plan *commonmodels.ServiceExpectationDocu
 		active := member.Status == models.ModuleRuntimeStatusUp && member.LeaseExpiresAt.After(at)
 		key := commonmodels.ServiceGroupExpectation{ModuleName: member.ModuleName, Role: member.Role}
 		if member.Role == "worker" {
-			var metadata map[string]any
-			if json.Unmarshal(member.Metadata, &metadata) != nil {
-				unknownPurpose[member.ModuleName] = unknownPurpose[member.ModuleName] || active
-				continue
-			}
-			key.RuntimeName, _ = metadata["runtime_name"].(string)
-			check := key
-			check.ExpectedReplicas, check.DesiredState, check.ChangedAt = 1, "running", at
-			if !check.Valid(at) {
+			key.RuntimeName = registeredWorkerPurpose(member.Role, member.Metadata)
+			if key.RuntimeName == "" {
 				unknownPurpose[member.ModuleName] = unknownPurpose[member.ModuleName] || active
 				continue
 			}
@@ -91,4 +84,19 @@ func observeServiceGroups(tx *gorm.DB, plan *commonmodels.ServiceExpectationDocu
 		result.Groups = append(result.Groups, row)
 	}
 	return result, nil
+}
+
+func registeredWorkerPurpose(role string, value datatypes.JSON) string {
+	if role != "worker" {
+		return ""
+	}
+	var metadata map[string]any
+	if json.Unmarshal(value, &metadata) != nil {
+		return ""
+	}
+	name, _ := metadata["runtime_name"].(string)
+	if !commonmodels.ValidServiceGroupName(name) {
+		return ""
+	}
+	return name
 }

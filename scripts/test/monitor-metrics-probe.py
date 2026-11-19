@@ -1359,17 +1359,27 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
                 except Exception:
                     print('Metrics T2 CPU preparation diagnostics unavailable', flush=True)
                 raise
+            lifecycle_env = dict(env, ADDP_PROCESS_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
+                                 ADDP_TEST_POSTGRES_HOST='127.0.0.1', ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
+                                 ADDP_TEST_POSTGRES_DATABASE='addp_test', ADDP_TEST_POSTGRES_USER='addp',
+                                 ADDP_TEST_POSTGRES_PASSWORD=os.environ['METRICS_T2_POSTGRES_PASSWORD'],
+                                 ADDP_TEST_POSTGRES_SSLMODE='disable')
             completed = subprocess.run([str(alert_binary), '-test.run=^TestIntegrationMetricsProcessAlertLifecycle$', '-test.count=1', '-test.timeout=300s', '-test.v'],
                            cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
-                           env=dict(env, ADDP_PROCESS_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
-                                    ADDP_TEST_POSTGRES_HOST='127.0.0.1', ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
-                                    ADDP_TEST_POSTGRES_DATABASE='addp_test', ADDP_TEST_POSTGRES_USER='addp',
-                                    ADDP_TEST_POSTGRES_PASSWORD=os.environ['METRICS_T2_POSTGRES_PASSWORD'],
-                                    ADDP_TEST_POSTGRES_SSLMODE='disable'), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           env=lifecycle_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            text=True, timeout=320)
             print(completed.stdout, flush=True)
             completed.check_returncode()
             assert '--- PASS: TestIntegrationMetricsProcessAlertLifecycle' in completed.stdout
+            assert '--- SKIP:' not in completed.stdout and '[no tests to run]' not in completed.stdout
+            completed = subprocess.run([str(alert_binary), '-test.run=^TestIntegration(MetricsAutomaticCollection|PostgresAutomaticCollectionCASAndAlertBoundary)$', '-test.count=1', '-test.timeout=180s', '-test.v'],
+                           cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+                           env=lifecycle_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True, timeout=200)
+            print(completed.stdout, flush=True)
+            completed.check_returncode()
+            for name in ('TestIntegrationMetricsAutomaticCollection', 'TestIntegrationPostgresAutomaticCollectionCASAndAlertBoundary'):
+                assert f'--- PASS: {name}' in completed.stdout
             assert '--- SKIP:' not in completed.stdout and '[no tests to run]' not in completed.stdout
             return
         try:

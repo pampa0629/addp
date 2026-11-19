@@ -27530,6 +27530,9 @@ const docTemplate = `{
                 },
                 "role": {
                     "type": "string"
+                },
+                "runtime_name": {
+                    "type": "string"
                 }
             }
         },

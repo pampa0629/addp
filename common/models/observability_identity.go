@@ -77,6 +77,7 @@ type ObservabilityModuleIdentity struct {
 	ModuleName       string                     `json:"module_name"`
 	InstanceID       string                     `json:"instance_id"`
 	Role             string                     `json:"role"`
+	RuntimeName      string                     `json:"runtime_name,omitempty"`
 	NodeID           string                     `json:"node_id"`
 	LeaseExpiresAt   time.Time                  `json:"lease_expires_at"`
 }

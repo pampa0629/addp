@@ -42,25 +42,31 @@ type ResourceObservationResponse struct {
 	Series             []resourcequery.Series       `json:"series"`
 }
 type ResourceObservationService struct {
-	cdc              CDCObservationDependencies
-	engineRuntime    EngineRuntimeDependencies
-	processTotals    ProcessTotalDependencies
-	collectionHealth CollectionHealthBackend
-	engines          EngineObservationDependencies
-	process          ProcessObservationDependencies
-	policies         ResourceQueryPolicyStore
-	targets          TargetStore
-	nodes            UserNodeReader
-	backend          ResourceBackend
-	policy           *metricsdiscovery.SourcePolicy
-	enabled          bool
-	limiter          resourcequery.Limiter
-	now              func() time.Time
+	cdc                 CDCObservationDependencies
+	engineRuntime       EngineRuntimeDependencies
+	processTotals       ProcessTotalDependencies
+	collectionHealth    CollectionHealthBackend
+	automaticCollection AutomaticCollectionStore
+	engines             EngineObservationDependencies
+	process             ProcessObservationDependencies
+	policies            ResourceQueryPolicyStore
+	targets             TargetStore
+	nodes               UserNodeReader
+	backend             ResourceBackend
+	policy              *metricsdiscovery.SourcePolicy
+	enabled             bool
+	limiter             resourcequery.Limiter
+	now                 func() time.Time
 }
 
 func NewResourceObservationService(policies ResourceQueryPolicyStore, targets TargetStore, nodes UserNodeReader, backend ResourceBackend, enabled bool, policy *metricsdiscovery.SourcePolicy, process ProcessObservationDependencies) *ResourceObservationService {
 	return &ResourceObservationService{policies: policies, targets: targets, nodes: nodes, backend: backend, enabled: enabled, policy: policy, process: process, now: time.Now}
 }
+func (s *ResourceObservationService) WithAutomaticCollection(store AutomaticCollectionStore) *ResourceObservationService {
+	s.automaticCollection = store
+	return s
+}
+
 func (s *ResourceObservationService) Policy(ctx context.Context) (ResourceQueryPolicyResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

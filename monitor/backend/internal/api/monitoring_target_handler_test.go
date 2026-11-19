@@ -270,3 +270,50 @@ func TestMetricsDiscoveryProjectsCurrentNodesAndFailsWithoutCurrentFacts(t *test
 		t.Fatal("current node facts rewrote collection intent")
 	}
 }
+
+func TestAutomaticCollectionRequiresPlatformUserAndBothWritePermissions(t *testing.T) {
+	const read = "monitor.monitoring_target.read"
+	const update = "monitor.monitoring_target.update"
+	const hostRead = "platform.host_node.read"
+	for _, tc := range []struct {
+		name, method string
+		permissions  []string
+		collector    bool
+		want         int
+	}{
+		{"read-only can list", "GET", []string{read, hostRead}, false, 503},
+		{"read-only cannot update", "PUT", []string{read, hostRead}, false, 403},
+		{"write without collection read is denied", "PUT", []string{update, hostRead}, false, 403},
+		{"write without host read is denied", "PUT", []string{read, update}, false, 403},
+		{"write requires a platform user", "PUT", []string{read, update, hostRead}, true, 403},
+		{"valid write reaches service", "PUT", []string{read, update, hostRead}, false, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			identity := targetAPIIdentity("user", "addp-web", "first_party_access_token", read)
+			if tc.collector {
+				identity = targetAPIIdentity("service_principal", "addp-prometheus", "service_access_token", read)
+			}
+			identity.Authorization.RoleAssignments[0].Permissions = tc.permissions
+			system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(identity)
+			}))
+			defer system.Close()
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			path := "/api/v1/monitor/platform/automatic_collection_scopes"
+			var req *http.Request
+			if tc.method == "PUT" {
+				req = httptest.NewRequest(tc.method, path+"/service:transfer:worker:sync", strings.NewReader(`{"enabled":false,"version":1}`))
+				req.Header.Set("Content-Type", "application/json")
+			} else {
+				req = httptest.NewRequest(tc.method, path, nil)
+			}
+			req.Header.Set("Authorization", "Bearer addp_at_fixture")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			if w.Code != tc.want {
+				t.Fatalf("status=%d want=%d: %s", w.Code, tc.want, w.Body.String())
+			}
+		})
+	}
+}

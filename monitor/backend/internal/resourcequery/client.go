@@ -186,24 +186,9 @@ func (c *Client) read(ctx context.Context, endpoint string, q url.Values) (envel
 
 func (c *Client) readRequest(ctx context.Context, req *http.Request) (envelope, error) {
 	var data envelope
-	req.Header.Set("Accept", "application/json")
-	response, err := c.http.Do(req)
+	body, status, err := c.readJSONBody(ctx, req)
 	if err != nil {
-		if ctx.Err() != nil {
-			return data, ctx.Err()
-		}
-		return data, ErrUnavailable
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
-	if err != nil {
-		if ctx.Err() != nil {
-			return data, ctx.Err()
-		}
-		return data, ErrUnavailable
-	}
-	if len(body) > responseLimit {
-		return data, ErrBudget
+		return data, err
 	}
 	if json.Unmarshal(body, &data) != nil {
 		return data, ErrUnavailable
@@ -211,11 +196,34 @@ func (c *Client) readRequest(ctx context.Context, req *http.Request) (envelope, 
 	if data.Status == "error" && data.ErrorType == "timeout" {
 		return data, context.DeadlineExceeded
 	}
-	if response.StatusCode != 200 || data.Status != "success" || len(data.Warnings) > 0 || len(data.Infos) > 0 {
+	if status != 200 || data.Status != "success" || len(data.Warnings) > 0 || len(data.Infos) > 0 {
 		return data, ErrUnavailable
 	}
 	return data, nil
 }
+func (c *Client) readJSONBody(ctx context.Context, req *http.Request) ([]byte, int, error) {
+	req.Header.Set("Accept", "application/json")
+	response, err := c.http.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, 0, ctx.Err()
+		}
+		return nil, 0, ErrUnavailable
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, 0, ctx.Err()
+		}
+		return nil, 0, ErrUnavailable
+	}
+	if len(body) > responseLimit {
+		return nil, 0, ErrBudget
+	}
+	return body, response.StatusCode, nil
+}
+
 func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 	expected := "vector"
 	if p.Trend {

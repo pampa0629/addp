@@ -48,6 +48,16 @@ func TestGeoPythonProjectionRequiresLiveLeaseAndProtectedSource(t *testing.T) {
 		groups[0].Labels["addp_runtime_engine_id"] != "36" || groups[0].Labels["addp_instance_id"] != geo.InstanceID {
 		t.Fatal(groups, err)
 	}
+	paused := map[string]bool{RuntimeCollectionScope(geo).ID: true}
+	projector.WithCollectionPauses(func(context.Context) (map[string]bool, error) { return paused, nil })
+	geo.InstanceID = "54a30000-0000-4000-8000-000000000002"
+	if groups, err := projector.Project(ctx, nil); err != nil || len(groups) != 0 {
+		t.Fatal("replacement GeoPython instance ignored the engine pause", groups, err)
+	}
+	delete(paused, RuntimeCollectionScope(geo).ID)
+	if groups, err := projector.Project(ctx, nil); err != nil || len(groups) != 1 || groups[0].Labels[CollectionScopeLabel] != RuntimeCollectionScope(geo).ID {
+		t.Fatal("GeoPython did not return after resume", groups, err)
+	}
 	policy.targetLimit = 0
 	if _, err := projector.Project(ctx, nil); !errors.Is(err, ErrBudgetExceeded) {
 		t.Fatal("GeoPython escaped the shared target budget", err)

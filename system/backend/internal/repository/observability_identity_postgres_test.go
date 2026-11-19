@@ -324,6 +324,7 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	// A native process has no invented VM binding. Re-registration uses the
 	// same nanosecond start identity even though PostgreSQL stores microseconds.
 	process := &models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", ProcessStartedAt: time.Now().UTC(), RegistrationClientID: "addp-monitor",
+		Metadata:       map[string]any{"runtime_name": "continuous_sync"},
 		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics", Cgroup: &commonmodels.CgroupIdentity{BootID: "11111111-1111-4111-8111-111111111111", CgroupID: "100", PIDNamespaceID: "200"}}}
 	for i := 0; i < 2; i++ {
 		if err := registry.Register(process); err != nil {
@@ -342,6 +343,9 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	current, err = registry.ObservabilityIdentities(ctx)
 	if err != nil || len(current.ModuleInstances) != 1 || current.ModuleInstances[0].NodeID != "" || current.ModuleInstances[0].ProcessMetrics == nil || current.ModuleInstances[0].ProcessMetrics.Endpoint != process.ProcessMetrics.Endpoint {
 		t.Fatalf("private process projection: %+v %v", current, err)
+	}
+	if current.ModuleInstances[0].RuntimeName != "continuous_sync" {
+		t.Fatal("private process projection lost the registered purpose")
 	}
 	if !current.ModuleInstances[0].ProcessMetrics.Equal(process.ProcessMetrics) {
 		t.Fatal("private kernel identity lost in JSONB projection")

@@ -9,6 +9,9 @@ import (
 const ServiceExpectationLimit = 1000
 
 var serviceExpectationName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,49}$`)
+
+func ValidServiceGroupName(name string) bool { return serviceExpectationName.MatchString(name) }
+
 var serviceDeploymentID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // ServiceGroupExpectation is deployment intent, never inferred from registrations.
@@ -27,7 +30,7 @@ func (g ServiceGroupExpectation) Key() string {
 
 func (g ServiceGroupExpectation) Valid(at time.Time) bool {
 	return serviceExpectationName.MatchString(g.ModuleName) &&
-		((g.Role == "backend" && g.RuntimeName == "") || (g.Role == "worker" && serviceExpectationName.MatchString(g.RuntimeName))) &&
+		((g.Role == "backend" && g.RuntimeName == "") || (g.Role == "worker" && ValidServiceGroupName(g.RuntimeName))) &&
 		g.ExpectedReplicas >= 1 && g.ExpectedReplicas <= 1000 &&
 		(g.DesiredState == "running" || g.DesiredState == "planned_stopped") &&
 		!g.ChangedAt.IsZero() && !at.IsZero() && !g.ChangedAt.After(at)

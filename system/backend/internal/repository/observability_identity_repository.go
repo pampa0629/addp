@@ -41,7 +41,7 @@ func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context, 
 		var candidates []models.ModuleRuntimeInstanceRow
 		if err := tx.Table("module_runtime_instances").
 			Joins("JOIN module_definitions ON module_definitions.id = module_runtime_instances.module_definition_id").
-			Select("module_runtime_instances.module_definition_id, module_runtime_instances.instance_id, module_runtime_instances.role, module_runtime_instances.declared_node_id, module_runtime_instances.registration_client_id, module_runtime_instances.lease_expires_at, module_runtime_instances.process_metrics, module_runtime_instances.process_started_at, module_definitions.module_name").
+			Select("module_runtime_instances.module_definition_id, module_runtime_instances.instance_id, module_runtime_instances.role, module_runtime_instances.metadata, module_runtime_instances.declared_node_id, module_runtime_instances.registration_client_id, module_runtime_instances.lease_expires_at, module_runtime_instances.process_metrics, module_runtime_instances.process_started_at, module_definitions.module_name").
 			Where("module_definitions.enabled = ? AND module_runtime_instances.status = ? AND module_runtime_instances.lease_expires_at > ? AND (module_runtime_instances.declared_node_id <> '' OR module_runtime_instances.process_metrics IS NOT NULL)", true, models.ModuleRuntimeStatusUp, result.ObservedAt).
 			Order("module_definitions.module_name ASC, module_runtime_instances.instance_id ASC").
 			Limit(commonmodels.ObservabilityIdentityInstanceLimit + 1).Scan(&candidates).Error; err != nil {
@@ -69,6 +69,7 @@ func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context, 
 				ProcessMetrics: candidate.ProcessMetrics, ProcessStartedAt: candidate.ProcessStartedAt,
 				ModuleName: candidate.ModuleName, InstanceID: candidate.InstanceID, Role: candidate.Role,
 				NodeID: candidate.NodeID, LeaseExpiresAt: candidate.LeaseExpiresAt.UTC(),
+				RuntimeName: registeredWorkerPurpose(candidate.Role, candidate.Metadata),
 			})
 		}
 		var deployments []models.EngineDeployment

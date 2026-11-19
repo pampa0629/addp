@@ -6084,6 +6084,8 @@ definitions:
         type: string
       role:
         type: string
+      runtime_name:
+        type: string
     type: object
   models.ObservabilityNodeIdentity:
     properties:

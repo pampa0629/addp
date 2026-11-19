@@ -33,15 +33,18 @@ type MonitoringTargetPage struct {
 	TotalPages int                           `json:"total_pages"`
 }
 type MonitoringTargetService struct {
-	store     TargetStore
-	nodes     UserNodeReader
-	policy    *metricsdiscovery.SourcePolicy
-	projector *metricsdiscovery.NodeProjector
-	enabled   bool
+	store         TargetStore
+	nodes         UserNodeReader
+	policy        *metricsdiscovery.SourcePolicy
+	projector     *metricsdiscovery.NodeProjector
+	enabled       bool
+	identities    metricsdiscovery.IdentityReader
+	automatic     AutomaticCollectionStore
+	activeTargets CollectionTargetReader
 }
 
 func NewMonitoringTargetService(store TargetStore, nodes UserNodeReader, identities metricsdiscovery.IdentityReader, enabled bool, policy *metricsdiscovery.SourcePolicy) *MonitoringTargetService {
-	return &MonitoringTargetService{store: store, nodes: nodes, policy: policy, enabled: enabled, projector: metricsdiscovery.NewNodeProjector(enabled, policy, identities)}
+	return &MonitoringTargetService{store: store, nodes: nodes, policy: policy, enabled: enabled, identities: identities, projector: metricsdiscovery.NewNodeProjector(enabled, policy, identities)}
 }
 func (s *MonitoringTargetService) authorize(ctx context.Context, node, token string) error {
 	if s == nil || s.nodes == nil {

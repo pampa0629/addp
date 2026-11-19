@@ -701,6 +701,33 @@
       }
     },
     "targets": {
+      "automatic": {
+        "hosts": "Host collection",
+        "tab": "Services and dedicated sources",
+        "scope": "Collection scope",
+        "observation": "Observed collection",
+        "operation": "Action",
+        "meilisearch": "Meilisearch",
+        "geopython": "GeoPython",
+        "pause": "Pause collection",
+        "resume": "Resume collection",
+        "paused": "Pause saved",
+        "activeCount": "{count} targets",
+        "confirmPause": "Pause new metric collection for this scope?",
+        "catalogUnavailable": "New scopes are temporarily unavailable. Saved settings can still be managed.",
+        "conflict": "The setting changed. Refresh to review the current state before making a change.",
+        "saveFailed": "The save result could not be confirmed. Refresh to see the current setting.",
+        "loading": "Loading collection scopes",
+        "empty": "No automatic collection scopes are available",
+        "states": {
+          "unknown": "Unknown",
+          "stopped": "Collection stopped",
+          "stopping": "Waiting for collection to stop",
+          "waiting": "Waiting for a successful scrape",
+          "collecting": "Collecting",
+          "partial": "Collecting from some targets"
+        }
+      },
       "moreNodes": "Load more hosts",
       "nodeLoadingFailed": "Unable to read hosts. Retry.",
       "nodeMissing": "Host information is unavailable. Select again or refresh.",

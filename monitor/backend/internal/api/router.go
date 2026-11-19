@@ -144,6 +144,8 @@ func SetupRouter(
 	platform.DELETE("/platform/process-resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleDelete), platformObservationIdentity(false), processRuleHandler.Delete)
 
 	targetHandler := NewMonitoringTargetHandler(monitoringTargets)
+	platform.GET("/platform/automatic_collection_scopes", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead, "platform.host_node.read"), platformObservationIdentity(false), targetHandler.ListAutomaticScopes)
+	platform.PUT("/platform/automatic_collection_scopes/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead, monitorauthorization.PermissionMonitorMonitoringTargetUpdate, "platform.host_node.read"), platformObservationIdentity(false), targetHandler.SaveAutomaticScope)
 	platform.GET("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), platformObservationIdentity(false), targetHandler.List)
 	platform.GET("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), platformObservationIdentity(false), targetHandler.Get)
 	platform.POST("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetCreate), platformObservationIdentity(false), targetHandler.Create)

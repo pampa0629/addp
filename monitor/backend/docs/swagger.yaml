@@ -145,6 +145,25 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_models.AutomaticCollectionScope:
+    properties:
+      changed_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      kind:
+        type: string
+      module_name:
+        type: string
+      role:
+        type: string
+      runtime_name:
+        type: string
+      version:
+        type: integer
+    type: object
   github_com_addp_monitor_internal_models.CDCPerformanceWindow:
     properties:
       active:
@@ -857,6 +876,49 @@ definitions:
         type: string
       task_type:
         type: string
+    type: object
+  github_com_addp_monitor_internal_service.AutomaticCollectionInput:
+    properties:
+      enabled:
+        type: boolean
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - enabled
+    - version
+    type: object
+  github_com_addp_monitor_internal_service.AutomaticCollectionList:
+    properties:
+      catalog_available:
+        type: boolean
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.AutomaticCollectionRow'
+        type: array
+    type: object
+  github_com_addp_monitor_internal_service.AutomaticCollectionRow:
+    properties:
+      active_targets:
+        type: integer
+      changed_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      kind:
+        type: string
+      module_name:
+        type: string
+      observation:
+        type: string
+      role:
+        type: string
+      runtime_name:
+        type: string
+      version:
+        type: integer
     type: object
   github_com_addp_monitor_internal_service.CDCResourceObservation:
     properties:
@@ -4647,6 +4709,113 @@ paths:
       x-addp-required-permissions:
       - monitor.platform_alert.read
       - monitor.platform_alert.update
+  /platform/automatic_collection_scopes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.AutomaticCollectionList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询自动采集范围和实际采集状态 | List automatic collection scopes and observed state
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.monitoring_target.read
+      - platform.host_node.read
+  /platform/automatic_collection_scopes/{id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 自动采集范围 ID | Automatic collection scope ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 采集开关和版本 | Collection intent and version
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.AutomaticCollectionInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.AutomaticCollectionScope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新单个自动采集范围 | Update one automatic collection scope
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.monitoring_target.read
+      - monitor.monitoring_target.update
+      - platform.host_node.read
   /platform/cdc_resource_observations:
     get:
       description: 当前 Infra Redpanda 与 Kafka Connect 各至多一项，固定目录、共享预算及完成时身份重核；发现不可用与空清单分开，不读取

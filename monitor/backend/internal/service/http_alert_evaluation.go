@@ -85,7 +85,9 @@ func (s *HTTPAlertRuleService) Evaluate(parent context.Context, at time.Time) er
 		if reason == "" {
 			var err error
 			source, err = s.sources(ctx, rule, cfg.Version)
-			if err != nil {
+			if errors.Is(err, errCollectionPaused) {
+				reason = "collection_disabled"
+			} else if err != nil {
 				reason = "identity_unavailable"
 			}
 		}
@@ -118,7 +120,9 @@ func (s *HTTPAlertRuleService) Evaluate(parent context.Context, at time.Time) er
 		}
 		if reason == "" {
 			current, err := s.sources(ctx, rule, cfg.Version)
-			if err != nil || current.signature != source.signature || !source.lease.After(time.Now().UTC()) {
+			if errors.Is(err, errCollectionPaused) {
+				reason = "collection_disabled"
+			} else if err != nil || current.signature != source.signature || !source.lease.After(time.Now().UTC()) {
 				reason = "source_changed"
 			}
 		}
@@ -274,6 +278,14 @@ func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTT
 				updates["last_error"] = "source_changed"
 				return tx.Model(&rule).UpdateColumns(updates).Error
 			}
+			collectionCurrent, err := source.collectionCurrent(tx)
+			if err != nil {
+				return err
+			}
+			if !collectionCurrent {
+				updates["last_error"] = "source_changed"
+				return tx.Model(&rule).UpdateColumns(updates).Error
+			}
 			since := at
 			if rule.WindowSince != nil && rule.WindowSignature == source.signature && rule.LastEvaluatedAt != nil && at.Sub(*rule.LastEvaluatedAt) <= 16*time.Second {
 				since = *rule.WindowSince
@@ -284,8 +296,11 @@ func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTT
 			if rule.UpdatedAt.After(since) {
 				since = rule.UpdatedAt
 			}
+			if source.collectionChanged.After(since) {
+				since = source.collectionChanged
+			}
 			var active models.PlatformAlertIncident
-			err := tx.Where("category=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryHTTP, rule.ModuleName, rule.ID, []string{"open", "acknowledged"}).Take(&active).Error
+			err = tx.Where("category=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryHTTP, rule.ModuleName, rule.ID, []string{"open", "acknowledged"}).Take(&active).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}

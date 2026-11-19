@@ -27523,6 +27523,9 @@
                 },
                 "role": {
                     "type": "string"
+                },
+                "runtime_name": {
+                    "type": "string"
                 }
             }
         },

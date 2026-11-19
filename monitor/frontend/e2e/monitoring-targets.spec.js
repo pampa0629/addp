@@ -246,3 +246,51 @@ test('a settings reader with observation access can refresh evidence without wri
   await expect(page.getByTestId('target-delete')).toHaveCount(0)
   expect(state.writes).toHaveLength(0)
 })
+
+test('automatic collection separates intent from observed state and controls only the selected purpose', async ({ page }) => {
+  await backend(page)
+  const bounded = { id: 'service:transfer:worker:sync', kind: 'service', module_name: 'transfer', role: 'worker', runtime_name: 'sync', version: 1, enabled: true, observation: 'collecting', active_targets: 2 }
+  const cdc = { ...bounded, id: 'service:transfer:worker:continuous_sync', runtime_name: 'continuous_sync', active_targets: 1 }
+  const writes = []
+  let observation = 'collecting'
+  await page.route('**/api/v1/monitor/platform/automatic_collection_scopes**', async route => {
+    if (route.request().method() === 'PUT') {
+      const input = route.request().postDataJSON()
+      writes.push([decodeURIComponent(route.request().url().split('/').pop()), input])
+      bounded.enabled = input.enabled
+      bounded.version++
+      observation = input.enabled ? 'waiting' : 'stopping'
+      return route.fulfill({ json: bounded })
+    }
+    return route.fulfill({ json: { catalog_available: true, data: [{ ...bounded, observation }, cdc] } })
+  })
+  await page.goto('/monitoring-targets')
+  await page.getByRole('tab', { name: '服务与专用来源' }).click()
+  await expect(page).toHaveURL(/tab=automatic$/)
+  const list = page.getByTestId('automatic-collection-scopes')
+  const boundedRow = list.getByRole('row').nth(1), cdcRow = list.getByRole('row').nth(2)
+  await boundedRow.getByRole('button', { name: '暂停采集' }).click()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(boundedRow).toContainText('暂停配置已保存')
+  await expect(boundedRow).toContainText('正等待停采')
+  await expect(cdcRow).toContainText('正在采集')
+  observation = 'stopped'
+  await list.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(boundedRow).toContainText('已停采')
+  await boundedRow.getByRole('button', { name: '恢复采集' }).click()
+  await expect(boundedRow).toContainText('等待成功抓取')
+  observation = 'collecting'
+  await list.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(boundedRow).toContainText('正在采集')
+  expect(writes).toEqual([[bounded.id, { enabled: false, version: 1 }], [bounded.id, { enabled: true, version: 2 }]])
+})
+
+test('automatic collection hides controls for read-only users', async ({ page }) => {
+  await backend(page, { identity: identity(['platform.host_node.read', 'monitor.monitoring_target.read']) })
+  await page.route('**/api/v1/monitor/platform/automatic_collection_scopes', route => route.fulfill({
+    json: { catalog_available: true, data: [{ id: 'geopython:1', kind: 'geopython', version: 2, enabled: false, observation: 'stopped', active_targets: 0 }] }
+  }))
+  await page.goto('/monitoring-targets?tab=automatic')
+  await expect(page.getByTestId('automatic-collection-scopes')).toContainText('GeoPython')
+  await expect(page.getByRole('button', { name: '恢复采集' })).toHaveCount(0)
+})

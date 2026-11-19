@@ -2,31 +2,38 @@
   <section v-if="canRead" class="monitoring-targets" data-testid="monitoring-targets">
     <header class="target-toolbar">
       <h2 ref="pageHeading" tabindex="-1">{{ t('monitor.targets.title') }}</h2>
-      <el-button :loading="loading" @click="loadList">{{ t('monitor.targets.refresh') }}</el-button>
-      <el-button v-if="canCreate" type="primary" @click="navigate('/monitoring-targets/new')">{{ t('monitor.targets.create') }}</el-button>
+      <el-button v-if="!automaticTab" :loading="loading" @click="loadList">{{ t('monitor.targets.refresh') }}</el-button>
+      <el-button v-if="canCreate && !automaticTab" type="primary" @click="navigate('/monitoring-targets/new')">{{ t('monitor.targets.create') }}</el-button>
     </header>
-    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
-    <el-alert v-if="!dialogOpen && listCollectionError" :title="t(listCollectionError)" type="warning" :closable="false" show-icon data-testid="target-list-collection-error" />
-    <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column :label="t('monitor.targets.node')" min-width="170" show-overflow-tooltip><template #default="{ row }">{{ nodeNames[row.subject.node_id] || t('monitor.targets.nodeMissing') }}</template></el-table-column>
-      <el-table-column :label="t('monitor.targets.configState')" width="100"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ t(row.enabled ? 'monitor.targets.enabled' : 'monitor.targets.disabled') }}</el-tag></template></el-table-column>
-      <el-table-column v-if="!dialogOpen" :label="t('monitor.targets.collection.title')" min-width="210">
-        <template #header><span>{{ t('monitor.targets.collection.title') }}</span><el-tooltip :content="t('monitor.targets.collection.metricHint')"><el-icon :aria-label="t('monitor.targets.collection.metricHint')" tabindex="0"><InfoFilled /></el-icon></el-tooltip></template>
-        <template #default="{ row }">
-          <div :data-testid="`target-list-collection-${row.id}`">
-            <el-tag class="target-collection-status" :type="listCollectionType(row)">{{ t(listCollectionKey(row)) }}</el-tag>
-            <p v-if="listCollections.get(row.id)?.collection?.sampled_at" class="target-sample-time" :title="t('monitor.targets.listCollection.queried', { time: listDate(listCollections.get(row.id).queried_at) })">{{ t('monitor.resources.sampledAt') }}: {{ listDate(listCollections.get(row.id).collection.sampled_at) }}</p>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('monitor.targets.kind')" min-width="160"><template #default="{ row }">{{ t(`monitor.targets.kinds.${row.monitor_kind}`) }}</template></el-table-column>
-      <el-table-column :label="t('monitor.targets.endpoint')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.source.endpoint }}</template></el-table-column>
-      <el-table-column prop="id" :label="t('monitor.targets.id')" min-width="220" show-overflow-tooltip />
-      <el-table-column prop="version" :label="t('monitor.targets.version')" width="140" />
-      <el-table-column :label="t('monitor.targets.details')" fixed="right" width="100"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/monitoring-targets/${row.id}`)">{{ t('monitor.targets.details') }}</el-button></template></el-table-column>
-      <template #empty><el-empty :description="t(loaded ? 'monitor.targets.empty' : 'monitor.targets.notLoaded')" :image-size="64" /></template>
-    </el-table>
-    <div class="target-pagination"><el-pagination v-if="loaded" :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
+    <el-tabs v-if="!dialogOpen" :model-value="automaticTab ? 'automatic' : 'hosts'" @update:model-value="switchTab">
+      <el-tab-pane :label="t('monitor.targets.automatic.hosts')" name="hosts" />
+      <el-tab-pane :label="t('monitor.targets.automatic.tab')" name="automatic" />
+    </el-tabs>
+    <AutomaticCollectionScopes v-if="automaticTab" :key="identity" />
+    <template v-else>
+      <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
+      <el-alert v-if="!dialogOpen && listCollectionError" :title="t(listCollectionError)" type="warning" :closable="false" show-icon data-testid="target-list-collection-error" />
+      <el-table v-loading="loading" :data="rows" border stripe>
+        <el-table-column :label="t('monitor.targets.node')" min-width="170" show-overflow-tooltip><template #default="{ row }">{{ nodeNames[row.subject.node_id] || t('monitor.targets.nodeMissing') }}</template></el-table-column>
+        <el-table-column :label="t('monitor.targets.configState')" width="100"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ t(row.enabled ? 'monitor.targets.enabled' : 'monitor.targets.disabled') }}</el-tag></template></el-table-column>
+        <el-table-column v-if="!dialogOpen" :label="t('monitor.targets.collection.title')" min-width="210">
+          <template #header><span>{{ t('monitor.targets.collection.title') }}</span><el-tooltip :content="t('monitor.targets.collection.metricHint')"><el-icon :aria-label="t('monitor.targets.collection.metricHint')" tabindex="0"><InfoFilled /></el-icon></el-tooltip></template>
+          <template #default="{ row }">
+            <div :data-testid="`target-list-collection-${row.id}`">
+              <el-tag class="target-collection-status" :type="listCollectionType(row)">{{ t(listCollectionKey(row)) }}</el-tag>
+              <p v-if="listCollections.get(row.id)?.collection?.sampled_at" class="target-sample-time" :title="t('monitor.targets.listCollection.queried', { time: listDate(listCollections.get(row.id).queried_at) })">{{ t('monitor.resources.sampledAt') }}: {{ listDate(listCollections.get(row.id).collection.sampled_at) }}</p>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('monitor.targets.kind')" min-width="160"><template #default="{ row }">{{ t(`monitor.targets.kinds.${row.monitor_kind}`) }}</template></el-table-column>
+        <el-table-column :label="t('monitor.targets.endpoint')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.source.endpoint }}</template></el-table-column>
+        <el-table-column prop="id" :label="t('monitor.targets.id')" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="version" :label="t('monitor.targets.version')" width="140" />
+        <el-table-column :label="t('monitor.targets.details')" fixed="right" width="100"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/monitoring-targets/${row.id}`)">{{ t('monitor.targets.details') }}</el-button></template></el-table-column>
+        <template #empty><el-empty :description="t(loaded ? 'monitor.targets.empty' : 'monitor.targets.notLoaded')" :image-size="64" /></template>
+      </el-table>
+      <div class="target-pagination"><el-pagination v-if="loaded" :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
+    </template>
     <el-dialog :model-value="dialogOpen" :title="t(creating ? 'monitor.targets.create' : 'monitor.targets.details')" width="min(680px, calc(100vw - 24px))"
       :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @update:model-value="value => !value && closeDialog()" @opened="focusForm" @closed="restoreFocus">
       <div v-loading="detailLoading">
@@ -88,6 +95,7 @@ import { InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { openConsoleRoute, StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
 import { useAuthStore } from '../store/auth'
+import AutomaticCollectionScopes from '../components/AutomaticCollectionScopes.vue'
 import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import HostNodeSelect from '../../../../common-frontend/basic/src/components/HostNodeSelect.vue'
@@ -110,7 +118,8 @@ const dialogOpen = computed(() => creating.value || Boolean(targetID.value))
 const creationBlocked = ref(false)
 const canWrite = computed(() => !creationBlocked.value && Boolean(selectedNode.value) && (creating.value ? canCreate.value : canRead.value && auth.hasPermission('monitor.monitoring_target.update')))
 const canRemove = computed(() => !creating.value && canRead.value && auth.hasPermission('monitor.monitoring_target.delete'))
-const state = computed(() => resolveTargetRoute(route.query, creating.value))
+const state = computed(() => resolveTargetRoute(route.query, creating.value, !dialogOpen.value))
+const automaticTab = computed(() => state.value.query.tab === 'automatic')
 const rows = ref([]), total = ref(0), loading = ref(false), loaded = ref(false), listError = ref('')
 const target = ref(null), formReady = ref(false), detailLoading = ref(false), detailError = ref(''), saveError = ref(''), saving = ref(false), conflicted = ref(false), statusMessage = ref('')
 const collection = ref(null), collectionLoading = ref(false), collectionError = ref('')
@@ -140,6 +149,9 @@ async function request(work) {
   finally { pending.delete(controller) }
 }
 function navigate(path, query = state.value.query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
+function switchTab(tab) {
+  return navigate('/monitoring-targets', tab === 'automatic' ? { tab } : {}, 'replace')
+}
 function changeSize(size) { return navigate('/monitoring-targets', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function closeDialog() { if (!saving.value) return navigate('/monitoring-targets', state.value.query, 'replace') }
@@ -320,6 +332,7 @@ watch([() => route.fullPath, identity], async () => {
   if (!['MonitoringTargets', 'MonitoringTargetNew', 'MonitoringTargetDetail'].includes(route.name)) return
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
+  if (automaticTab.value) return
   if (creating.value) {
     formReady.value = canCreate.value
     const generation = epoch

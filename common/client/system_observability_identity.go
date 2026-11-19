@@ -75,6 +75,9 @@ func validateObservabilityIdentities(snapshot models.ObservabilityIdentitySnapsh
 			containers[key] = true
 			boundaries[p.Identity] = true
 		}
+		if instance.RuntimeName != "" && (instance.Role != "worker" || !models.ValidServiceGroupName(instance.RuntimeName)) {
+			return invalid()
+		}
 		switch instance.Role {
 		case "backend", "worker", "scheduler", "ingress":
 		default:
