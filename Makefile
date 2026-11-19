@@ -296,6 +296,8 @@ test-common-rustfs: ## 独占 RustFS 验证对象 Provider、持久化及 Meta/M
 	@bash scripts/test/common-rustfs-gate.sh $(COMMON_RUSTFS_TEST_ARGS)
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@bash -n business/scripts/k3s-kingbase-trial.sh
+	@python3 scripts/test/k3s-kingbase-trial_test.py
 	@$(MAKE) test-common-rustfs-unit
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["spark-master"]; assert {p["target"] for p in s["ports"]} == {7077,8080}; assert "start-master.sh" in str(s["command"]); assert "thrift" not in str(s["command"]).lower(); assert "init-test-data" not in str(s["command"])'
 	@test ! -e business/spark/init-test-data.sh
