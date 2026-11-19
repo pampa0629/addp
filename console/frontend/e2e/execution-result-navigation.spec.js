@@ -78,7 +78,7 @@ for (const state of ['pending', 'running', 'success']) test(`real navigation ora
 })
 
 
-test('geometry difference log oracle reads the five execution pages and refuses an unavailable response', async ({ page }) => {
+async function prepareDifferenceLogPages(page) {
   const responses = {
     '/api/v1/monitor/task-providers': [],
     '/api/v1/monitor/executions': { executions: [], total: 0, page: 1, page_size: 20 }
@@ -102,15 +102,25 @@ test('geometry difference log oracle reads the five execution pages and refuses 
   await mockGraph(page, { permissions: ['develop.task.read', 'develop.data_read.execute', 'monitor.execution.read'], responses })
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.goto('/monitor/executions?execution_id=' + id)
+  return samples
+}
+
+test('geometry difference log oracle reads the five execution pages', async ({ page }) => {
+  const samples = await prepareDifferenceLogPages(page)
   const report = { reads: 0, samples: [] }
   const stages = []
   await verifyDifferenceLogPages(page, samples, report, stage => stages.push(stage))
   expect(report.reads).toBe(10)
   expect(report.samples.map(r => r.execution_id)).toEqual(samples.map(r => r.execution_id))
   expect(stages.at(-1)).toBe('execution_logs_verified')
+})
+
+test('geometry difference log oracle refuses an unavailable response', async ({ page }) => {
+  const samples = await prepareDifferenceLogPages(page)
   await page.route('**/api/v1/develop/executions/*/logs', route =>
     route.fulfill({ status: 503, json: { error_code: 'execution_logs_unavailable', error: 'private synthetic detail' } }))
   const failure = { reads: 0, samples: [] }
+  const stages = []
   await expect(verifyDifferenceLogPages(page, samples, failure, stage => stages.push(stage))).rejects.toThrow('execution_logs_http_failed')
   expect(failure).toMatchObject({ reads: 1, samples: [],
     first_failure: { stage: 'enter', sample: 0, http_status: 503, code: 'execution_logs_http_failed' } })
