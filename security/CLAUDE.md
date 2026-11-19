@@ -167,43 +167,27 @@ v31 补查执行来源时，所属回归通过，完整 Runner 因既有栅格�
 
 ## Service SQL 补充记录与 Graph 消费者
 
-Service SQL 角色方式（2026-11-03）：已按[查询发布与执行规范](../service/docs/architecture/查询发布与执行.md)接入非联邦、Provider 可证明唯一普通表的直接字段及别名；候选统一为 POST，保存仅准备元数据并复用保护编译器，实际执行与交付核验当前本人角色。Common 保留资格失效与方式失效的具体原因，不改变授权规则。默认保护及已有原生表方式保持原契约。
+### Service SQL 角色方式与本机证据
 
-SQL资格生命周期Hosted（2026-11-04）：唯一Run41796322974／Job126461181063／attempt1、源码2b752ee0ed69c4fcfe3a5875735ad3385ac0947b已失败，官方原件及冻结源码已独立核验。失败在初始化consumer请求PG整引擎扫描，System管理范围核验403；领域／Online／浏览器报告未生成，SQL资格及其余业务未执行，不记断言通过或失败。生命周期清理与Infra零残留通过，业务域清理未进入。用户已确认，扫描夹具适配已按v42实现：独立准备User仅补两项扫描功能完成basic初识别，业务User只刷新原七表内的精确item_id，不增加消费权限或改产品规则。System Go、所属202项回归及登记CLI／针对性方法复验通过。完整入口的早期失败保留记录；随后以已提交main基线3ff120a0de3d40002b0a0ef7b9a6e4961ae37552加本轮精确差异的临时冻结副本执行make test-security-online-runner，41／201／18／142／34／80／242项及登记CLI全部通过，退出0，不覆盖其他会话WIP。未重派Hosted，不需本地重启。v42独立报告审计器8组离线测试不代替实际产物。事实与修复范围统一见[Service资格生命周期证据](../service/docs/testing/查询与要素协议.md#sql-角色资格生命周期隔离断言2026-11-04)。
+查询支持范围及当前角色核验以 [Service 查询发布与执行规范](../service/docs/architecture/查询发布与执行.md#登录用户的角色脱敏选择)为准。这里记录早期非联邦单表直接字段与别名的结果。候选用 POST，保存只准备元数据，实际执行和交付复核当前本人角色。已有 PostgreSQL 两表 JOIN 范围另见 [Service 协议测试](../service/docs/testing/查询与要素协议.md#postgresql-两表-join-角色方式2026-11-07)。
 
-字符串默认值修订已接入v41（2026-11-04），限定本地#33／MySQL真实HTTP及独立审计通过：10项／42条受控响应／11组JSON及CSV，int默认保持，string默认MM→GG后的脱敏输出、非法更新不变性、旧游标拒绝和两方向续页通过；临时#14带version2删除404，#7不变、已注销。Service Go、PostgreSQL11顶层、所属Runner180项、临时夹具5组及完整make test-security-online-runner（41／80／198／188／388项及登记CLI）验证仍有效。Hosted未运行，活动角色方式／资格生命周期及其他引擎不由本轮覆盖。事实统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#字符串默认值修订的验收接入v412026-11-04)，索引`/tmp/p145-string-default-20261104/verification.json`。
+| 主题 | 实际验收与收尾 |
+| --- | --- |
+| 单表双别名 | 普通用户 #33 的默认／全遮盖两页 JSON／CSV、方式撤销后新请求及旧游标 409、显式移除后默认恢复均通过。合并审计 12 项、6 份实际 CSV，恢复文件与初始默认文件逐字节一致。#7 最终私有、停用、空选择，临时策略撤销，会话注销。两次早期脚本失败由 Service 专题保留。v34 隔离 Runner 当时通过，精确 Hosted 未运行。[本机验收](../service/docs/testing/查询与要素协议.md#sql-单表角色方式本地验收2026-11-03) · [v34 隔离断言](../scripts/docs/Online数据保护.md#v34sql-双别名撤销与默认恢复) |
+| 命名参数 | 本机 #31／MySQL 使用必填 string 参数，独立审计 46 条实际响应及 9 份 CSV，覆盖实际过滤、旧游标绑定、24 次参数错误 400、4 次方式失效 409 及逐字节恢复；这 46 条均为 `no-store`。服务 #8 最终私有停用、空选择，临时策略撤销。较早被缓冲淘汰的事件保留取证缺口。v35 Runner 的普通用户必填 int 场景是另一证据范围。[本机证据](../service/docs/testing/查询与要素协议.md#sql-命名参数角色方式验收2026-11-04) · [v35 隔离断言](../scripts/docs/Online数据保护.md#v35sql-输入命名参数与游标绑定) |
+| 可选默认值与续页 | #33／MySQL 的默认保护 HTTP 验收依次覆盖 int 默认修订、两向省略／显式续页（36 条响应）、允许值列表 int 修订（43 条）及 string 默认修订（42 条）。保留旧游标拒绝、失败不改定义或版本、CSV 与 JSON 一致。临时服务 #11–#14 各按版本删除并核对 404，#7 保持，会话注销。活动角色、其他引擎与各版 Hosted 分别认定。[默认值修改与本机结果](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04) · [v39 Runner](../service/docs/testing/查询与要素协议.md#新默认续页的隔离runner接入v392026-11-04) · [v40 允许值列表](../service/docs/testing/查询与要素协议.md#允许值列表默认修订的验收接入v402026-11-04) · [v41 字符串修订](../service/docs/testing/查询与要素协议.md#字符串默认值修订的验收接入v412026-11-04) |
 
-允许值列表int默认修订的限定本地#33／MySQL真实HTTP及独立审计通过：10项／43条受控响应／11组JSON及CSV；临时#13带version2删除404、#7不变、已注销。该历史证据不代替string默认修订的真实HTTP，详细范围统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#允许值列表默认修订的验收接入v402026-11-04)。
+发布默认值的修改范围以[正式版本更新规则](../service/docs/architecture/查询发布与执行.md#已发布-sql-参数默认值修改)为准。v37 的确定性 Runner 核对省略与显式传入相同默认值可交叉续页，改值续读旧游标返回 400，方式撤销仍返回 409。v36 完整 Runner 曾在 Cleanup 日志标记断言处失败，Security 分组和登记 CLI 后续独立通过。v39 完整入口曾在 TiDB 部署夹具超时，Security 分组和登记 CLI 独立通过。v41 的完整 Runner 按固定输入实际通过，各轮原结果保留。[可选默认参数](../service/docs/testing/查询与要素协议.md#sql-可选默认参数隔离断言2026-11-04) · [历次门禁与固定输入](https://github.com/pampa0629/addp/blob/ec8ae1f9fd70dfecbabc4587b44534bfd1b63525/security/CLAUDE.md#L168-L207)
 
-新默认续页Runner v39已接入（2026-11-04）：同一五行合成来源以2＋2／4行参考，固定string默认仅用于普通谓词，int默认1→2；两方向参数省略／显式续页、CSV分页头、改int/string拒绝均沿单一服务／Policy及精确清理，领域v39／浏览器v9，资源数不变。所属174项通过；完整总入口在未修改TiDB部署夹具处20秒超时、退出2，未记通过；根Makefile原定Security组380项独立退出0，登记CLI退出0；不替代完整总入口通过，未执行的Graph/Cleanup等阶段不计通过。固定摘要及日志见`/tmp/p145-hosted-pagination-20261104/verification.json`。规范与证据统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#新默认续页的隔离runner接入v392026-11-04)；实际Hosted未运行，CI专门会话跟进，无需重启。
+### SQL 资格生命周期 Hosted 的首败
 
-新默认续页本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，9项检查／36条受控响应／9组JSON与CSV；两种省略／显式参数续页与更新前同参数第二页CSV一致，两页逐行等于10行参考、稳定排序不重叠，逐页版本／has-more头一致；旧游标4次、新游标改参数4次均400/no-store，脱敏和CSV空单元格保持。#12按version2删除404、#7不变、已注销。事实与边界统一见[Service测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)；索引verification.json的new_default_pagination_passed。仍是限定本地默认保护，不是活动角色方式或Hosted证据；已按上段v39接入既有隔离Runner，实际Hosted仍由专门会话跟进。
+固定源码 `2b752ee0ed69c4fcfe3a5875735ad3385ac0947b` 的 [Run 41796322974／Job 126461181063](https://github.com/pampa0629/addp/actions/runs/41796322974/job/126461181063) attempt 1 在消费用户请求 PostgreSQL 整引擎扫描时因 System 管理范围核验返回 403。资格撤销、自然到期和其余业务均未执行，缺领域、Online 和浏览器报告。生命周期清理通过、Infra 零残留，业务域清理未进入。
 
-SQL默认值本地HTTP独立审计通过（2026-11-04）：#33/addp-web/MySQL #3，正式可选int默认1→2更新，7项检查／24条受控响应／5组第一页JSON及CSV，旧游标两格式四次400、非法更新三次400、版本冲突409、双别名默认掩码及CSV空单元格均核对。#11按version=2删除404，#9/#10前后清理证据闭合，#7不变、已注销。前两轮临时夹具失败及修正保留在[唯一测试正文](../service/docs/testing/查询与要素协议.md#已发布sql默认值修改2026-11-04)，不再代表当前状态；索引`/tmp/p145-published-default-edit-20261104/verification.json`。该轮只验默认保护／第一页；上段已补续页结果，仍不扩展为角色选择、string默认修改或Hosted已验。
+v42 夹具将 basic 初识别交给独立准备用户，消费用户只刷新原七张表内的精确 `item_id`。修正后的冻结副本完整 Runner 和登记 CLI 通过，未在该轮重派 Hosted。资格撤销的旧会话 401／重登，与自然到期的同会话有效、仅资格消失，分别以 Service 专题的断言和后续实跑认定。[Service 首败和修正](../service/docs/testing/查询与要素协议.md#sql-角色资格生命周期隔离断言2026-11-04) · [v42 扫描准备](../scripts/docs/Online数据保护.md#v42扫描准备身份与业务精确刷新) · [后续 v46 实际范围](#v46v10-分组与角色保护-hosted-闭环2026-11-13) · [未覆盖项](../docs/sessions/数据脱敏与保护后续工作专题.md)
 
-Service SQL发布默认值修改（2026-11-04，v38）：用户已批准仅修改可选参数默认值。正式版本PUT及真实编辑页已接入，SQL和其他声明只读，拒绝／事务／保护边界沿[Service规范](../service/docs/architecture/查询发布与执行.md#已发布-sql-参数默认值修改)。真实PG存储与源读取门禁、Go T1、Service前端单元／构建及中英文受控浏览器已通过；隔离Runner新增默认1→2的旧游标拒绝／新默认输出，沿[v38合同](../scripts/docs/Online数据保护.md#v38发布默认值修订与旧游标拒绝)。完整`make test-security-online-runner`退出0（41／80／198／185／376项及登记CLI），所属171项通过；Service前端120单元／构建通过，12项受控浏览器通过（4项中英文角色／默认编辑、8项SQL创建／草稿回归）。固定文件摘要与验证日志见`/tmp/p145-published-default-edit-20261104/verification.json`；限定本地正式HTTP结果已在上段补录，新增Hosted仍未验，CI由专门会话跟进。
+### Graph 投影消费边界
 
-本轮 Go T1、Service PostgreSQL 11 项及 Common 投影存储 PostgreSQL 子门禁 8 项、Service 119 单元／构建和相关 10 项受控浏览器回归通过；不是 Common 全部 PostgreSQL 门禁或个人环境／Hosted T4。全 Console 门禁仍有非本功能导航失败，未计通过。证据 `/tmp/p145-service-sql-role-20261103/verification.json`；用户已全量重启；本地 #33 的默认／全遮盖两页 JSON／CSV、方式撤销拒绝及主动默认恢复合并独立审计通过，共十二项和六份实际 CSV；恢复文件与最初默认文件逐字节一致。#7 最终私有、停用、空选择，临时策略保持 revoked，会话注销，原失败报告保留；不外推新 SQL Hosted/T4。详见 [SQL 单表角色方式本地验收](../service/docs/testing/查询与要素协议.md#sql-单表角色方式本地验收2026-11-03)。CI 仍由专门会话跟进。当前状态与剩余边界统一维护于[后续工作专题](../docs/sessions/数据脱敏与保护后续工作专题.md)。
-
-Service SQL 隔离套件（2026-11-03，历史 v34）：原生表和新增 SQL 双别名复用同一角色方式生命周期；默认两页 JSON／CSV → 保存源字段选择 → 全遮盖 → 方式撤销后新请求／旧游标精确拒绝 → 保留选择保存／重新启用拒绝 → 显式移除后逐字节恢复初始 CSV。只使用既有隔离合成表、普通 User 与正式 Assessment，不新增权限或部署；本人 Membership／授权版本及 Baseline 不变，所有成功、失败和中断精确清理。CI 登记同时约束版本、SQL 派发、报告字段及新增 Service 的创建／删除计数；浏览器 v9 不扩展。
-
-v34 当时通过本地 `make test-security-online-runner`（41／80／197／180／347 项）、所属 Runner 147 项（末次报告字段去重后补跑）及登记校验，证据 `/tmp/p145-service-sql-hosted-runner-20261103/verification.json`；这只是确定性 Runner 门禁，新 v34 Hosted/T4 未运行，不自行派发、查询、重跑或定时。历史断言见 [SQL 双别名隔离断言](../scripts/docs/Online数据保护.md#v34sql-双别名撤销与默认恢复)。
-
-Service SQL 命名参数（2026-11-04，历史 v35）：该阶段领域报告为 v35，保留原生表和无参数 SQL 场景，新增一个必填、无默认值的整数参数 SQL 场景，共用既有生命周期和精确清理。三阶段都验证参数值改变后的真实过滤结果、JSON／CSV 两页、双别名、Unicode、NULL；旧游标改参数、缺参、多余参数、非法标量必须为 400/`invalid_structured_query`，合法参数下方式撤销仍为 409/`query_protection_choice_invalid`，不可混算。保存不持久化运行取值、不构造 Meta Source；登记约束派发、报告及新增服务计数，浏览器仍为 v9。标准 `make test-security-online-runner` 的 41／80／197／182／357 项及登记检查通过，所属 Runner 155 项通过；本轮仅脚本及文档，不需重启。证据 `/tmp/p145-service-sql-parameters-20261104/verification.json`，断言见 [命名参数隔离合同](../scripts/docs/Online数据保护.md#v35sql-输入命名参数与游标绑定)。这些确定性结果不能替代尚未运行的 v35 Hosted/T4。
-
-同轮复用当前浏览器本人 #31（管理员，Tenant1），在既有 MySQL Persons 上新建私有参数服务 #8，限定必填 string 参数 `minimum_id`：三阶段各两页及另一参数值的 JSON／CSV，独立审计 46 次实际查询响应、9 份五行 CSV、24 次参数错误 400、4 次方式撤销 409，全部 `no-store`；参数实际过滤、旧游标绑定和默认恢复逐字节相等均通过。#8 最终 inactive/version14、私有、空选择；临时策略 revoked/version10，原服务 #6/#7、角色及授权版本不变。两次临时审计失败均保留，分别修正抑制字段可省略／观测时间不能视作资格变更，以及 JSON 对象键序不能视作配置改变；不修改产品契约。最终响应头仅对两次角色观察间完整的46次请求认定，较早网络事件已被浏览器缓冲淘汰，不追认失败轮完整头证据。报告和已目视核对的停用页面位于 `/tmp/p145-service-sql-parameters-local-20261104/`，独立命令 `python3 /tmp/p145-service-sql-parameters-local-audit.py` 通过。不导出令牌，不将管理员 string 参数结果替代普通 User／整数参数的 Hosted，未变更本地用户角色、原值／源授权、源数据或本地进程。
-
-Service SQL 资格生命周期（2026-11-04，历史v36）：该阶段领域报告v36。在既有资格撤销、自然到期场景各新增一个私有必填int参数SQL双别名服务；保留原生表服务，共享同一次IAM变更／90秒真实等待、同一普通User及有效Policy，不新增角色、权限、凭据或第二次资格分配。失效前分别完成4/1两页JSON／CSV；失效后SQL候选中无可用角色方式，各自旧游标及无游标JSON／CSV必须精确403/`query_protection_roles_unavailable`、无结果且单个no-store。主动撤销继续单独证明旧令牌401及正式同用户重登；自然到期继续要求同一会话、授权版本及功能权限不变、Assignment仍active/expired，不重登／续期／撤销或改时钟。显式移除选择后分别恢复默认五行。
-
-SQL创建立即捕获ID，定义校验严格核对原SQL、参数声明和私有已选方式，不伪造Meta Source。报告仅存输出结构、CSV／游标摘要及拒绝事实，SQL独立结果嵌入两个既有资格报告，不保存凭据、源值或完整游标。失败、中断及SQL单独清理失败的反例证明仍继续清理原生表与Policy；根资源计数13+task_ids，浏览器v9保持原边界。现有 `make test-security-online-runner` 和CI登记自动覆盖，无新入口、工作流、产品API或后端变更，无需重启。本轮确定性证据见 `/tmp/p145-sql-eligibility-20261104/verification.json`；最终命令及数量以该记录为准。SQL新增403断言已先失败后修复，所属163项通过。完整 `make test-security-online-runner` 退出2：部署41项及Graph80项通过，后续Cleanup198项中 `test_delegated_image_log_visible_before_process_returns_and_next_phase_waits` 未观察到日志标记而失败，父门禁因此未继续执行Security组；这是本轮未修改的依赖测试，未调查、修复或重跑，不将完整入口记为通过。随后单独执行根Makefile中原定的Security测试组，366项退出0；登记CLI退出0。该组覆盖当前Runner和登记反例，未重跑失败的Cleanup依赖，不把分组通过改写成完整总入口通过。
-
-当前实际运行缺口仍为v36普通User／MySQL SQL资格撤销和自然到期的Hosted/T4；原#31/string参数或原生表资格证据不可替代。本轮未启动CI、操作个人浏览器／服务、修改个人角色／源或原值授权。可选默认参数的后续断言见下一段；Hosted仍由专门CI会话跟进。
-
-Service SQL 可选默认参数（2026-11-04，v37）：新增一个发布默认值为1的可选int参数私有SQL服务，保留必填及资格生命周期场景，复用同一角色方式选择／撤销／显式默认恢复和清理路径。默认保护、角色全遮盖、恢复默认三个阶段各核对空映射、省略parameters成员及显式默认值；两个方向交替省略／显式传值续读同一解析参数游标，行、列、CSV字节和服务版本一致。改值真实筛选，改值续读旧游标精确400；显式null、布尔、对象、空字符串、多余参数按参数错误拒绝，不套用默认值。方式撤销后，省略和显式默认值的新请求／旧游标JSON／CSV均精确409，显式移除选择才恢复初始CSV；运行值不覆盖发布默认值。
-
-候选接口没有服务声明，按已有API显式绑定发布默认值，再在正式执行请求验证省略；没有修改API或保护规则。当前领域报告唯一v37，浏览器v9不扩展；新增一个Service的计数，根资源14+task_ids，完整游标、凭据、运行输入和源值不归档。标准 `make test-security-online-runner` 退出0，41／80／198／184／375项及登记CLI通过；所属171项通过，固定输入摘要及结果见 `/tmp/p145-optional-default-20261104/verification.json`。原测试先RED，新反例覆盖忽略默认、CSV丢默认、按原始输入错误绑定游标、运行值覆盖默认、显式默认绕过撤销、错误拒绝及失败／中断清理。CI登记同时约束新派发、报告及等价事实，无新工作流或产品后端变更，无需重启。本轮没有个人账号、浏览器、角色、源／原值授权或本地服务操作；新增v37 Hosted/T4未运行，仍由专门会话跟进。下一步优先验证发布默认值修订后旧游标的明确拒绝及新查询按新默认脱敏，沿已有服务版本合同。
-
-Graph 保护消费者（2026-10-17）：固定 `addp-graph` 仅消费 `graph` 投影及确认 cursor，纳入安装／解除屏障；启动事务补齐存量未 released 资源及 releasing 的解除变化。Graph 领域读取复用 Common 显式 graph leaf 门禁，命中纳管拒绝，不提供属性脱敏、Policy 或原值豁免；System 源数据授权本轮不调整。当前消费者集合以 `protection_owner_contract.go` 为准，下文四 Owner 的历史验收不作为 Graph 已通过的证据。验证沿 Graph/Security/System Go、Security PostgreSQL、System migration 和 Common Neo4j/FalkorDB 标准门禁，既有 CI 自动发现。
+固定 `addp-graph` 只消费 `graph` 投影和确认 cursor，纳入安装及解除屏障。启动事务补齐未 released 资源和 releasing 的解除变化。Graph 领域读取复用 Common 对显式 graph leaf 的门禁，命中纳管则拒绝。Graph 不提供属性脱敏、Policy 或原值豁免，源数据授权归 System。消费者集合以 `protection_owner_contract.go` 为准。验证沿 Graph／Security／System Go、Security PostgreSQL、System migration 与 Common Neo4j／FalkorDB 门禁。Graph 的实际验收由独立场景认定。[Owner 确认规则](../docs/spec/addp数据安全与隐私保护实现规范.md#九投影变化流与-owner-确认) · [Graph 保护场景](../docs/spec/testing/scenarios/数据保护.md#graph-protection)
 
 ## 早期保护验收结论与缺口
 
