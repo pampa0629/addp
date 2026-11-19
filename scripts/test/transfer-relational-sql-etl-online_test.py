@@ -1555,8 +1555,10 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             access = stack.enter_context(patch.object(ONLINE, "mongodb_source_access", return_value=nullcontext({
                 "source": mongo_source, "scan_execution_id": "scan-id", "proof": {"result": "passed"}, "grants": object(),
             })))
-            stack.enter_context(patch.object(ONLINE, "dim_fixture_read_access", return_value=nullcontext()))
-            stack.enter_context(patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}))
+            dwd_receipt = {"result": "passed", "item_id": 24}
+            fixture_access = stack.enter_context(patch.object(ONLINE, "fixture_table_read_access", side_effect=[nullcontext({}), nullcontext(dwd_receipt)]))
+            stack.enter_context(patch.object(ONLINE, "verify_dim_read_orchestration", return_value={"row_count": 0}))
+            chain = stack.enter_context(patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}))
             stack.enter_context(patch.object(ONLINE, "cleanup_definitions"))
@@ -1578,7 +1580,10 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(binary.call_args.args[5:7], (3, pg_source))
         trace.assert_called_once()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v21")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v22")
+        self.assertEqual([request.args[-1] for request in fixture_access.call_args_list], [ONLINE.DIM_TARGET, ONLINE.DWD_TARGET])
+        self.assertIs(chain.call_args.kwargs["dwd_access"], dwd_receipt)
+        self.assertEqual(report["dwd_table_access"], dwd_receipt)
         self.assertEqual(report["scan_trace_visibility"], {"object_upload": {}, "bounded_import": {}})
         self.assertEqual(report["created_resources"], 20)
         self.assertEqual(report["rustfs_orders"], {"rows": 20})
@@ -2202,42 +2207,47 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertNotIn("target_locator", query)
         self.assertEqual(client.request.call_args.args, ("GET", f"/api/v1/develop/executions/{child}/result", (200,)))
 
-    def test_dim_exact_grant_is_revoked_and_receipt_survives_downstream_failure(self):
-        scanned = {"id": 23, "engine_id": 3, "full_name": f"public.{ONLINE.DIM_TARGET}", "item_type": "table", "fingerprint": "dim-fp"}
-        target = ONLINE.REGISTRATION.ExactRecordGrants.target(3, "public", ONLINE.DIM_TARGET, "table", "schema")
-        route = ONLINE.fixture_table_catalog_route(3, ONLINE.DIM_TARGET)
-        preview = ONLINE.fixture_table_preview_route(ONLINE.SUPPORT.build_item_locator(3, scanned))
-        for wrong_item in (False, True):
-            with self.subTest(wrong_item=wrong_item), tempfile.TemporaryDirectory() as directory:
+    def test_fixture_table_grant_is_revoked_and_receipt_survives_downstream_failure(self):
+        for table, filename, evidence_key, outcome in (
+            (ONLINE.DIM_TARGET, "dim-table-access.json", "orchestrated_read", "passed"),
+            (ONLINE.DWD_TARGET, "dwd-table-access.json", "orchestrated_chain", "passed"),
+            (ONLINE.DWD_TARGET, "dwd-table-access.json", "orchestrated_chain", "child_failed"),
+            (ONLINE.DWD_TARGET, "dwd-table-access.json", "orchestrated_chain", "wrong_item"),
+        ):
+            with self.subTest(table=table, outcome=outcome), tempfile.TemporaryDirectory() as directory:
+                scanned = {"id": 24, "engine_id": 3, "full_name": f"public.{table}", "item_type": "table", "fingerprint": "fixture-fp"}
+                target = ONLINE.REGISTRATION.ExactRecordGrants.target(3, "public", table, "table", "schema")
+                route = ONLINE.fixture_table_catalog_route(3, table)
+                preview = ONLINE.fixture_table_preview_route(ONLINE.SUPPORT.build_item_locator(3, scanned))
                 grant_id = str(uuid.uuid4())
-                other = {"target": "unrelated", "request_id": "other"}
-                dim = {"target": target, "request_id": grant_id}
-                client, grants = Mock(), Mock(pending=[other, dim])
+                other_target = ONLINE.DIM_TARGET if table == ONLINE.DWD_TARGET else ONLINE.DWD_TARGET
+                other = {"target": ONLINE.REGISTRATION.ExactRecordGrants.target(3, "public", other_target, "table", "schema"), "request_id": "other"}
+                exact = {"target": target, "request_id": grant_id}
+                client, grants = Mock(), Mock(pending=[other, exact])
                 grants.target.return_value = target
                 grants.grant.return_value = {"request_id": grant_id, "item_fingerprint": scanned["fingerprint"], "boundary_hash": "a" * 64}
-                client.request.side_effect = [SimpleNamespace(payload={}), SimpleNamespace(payload=dict(scanned, id=99 if wrong_item else 23)),
+                client.request.side_effect = [SimpleNamespace(payload={}), SimpleNamespace(payload=dict(scanned, id=99 if outcome == "wrong_item" else 24)),
                                               SimpleNamespace(payload={}), SimpleNamespace(payload={})]
                 with patch.dict(os.environ, {"ADDP_ONLINE_TEST_RUN_ID": "test-run", "ADDP_ONLINE_ARTIFACT_DIR": directory}), patch.object(
-                    ONLINE, "read_scanned_fixture_table", return_value=scanned) as read, patch.object(
-                    ONLINE, "verify_dim_read_orchestration", return_value={"row_count": 0}) as probe:
-                    with self.assertRaisesRegex(ONLINE.SuiteError, "scanned DataItem" if wrong_item else "downstream failure"):
-                        with ONLINE.dim_fixture_read_access(client, grants, 2, 3, "scan", "a" * 40, "run", 30, []):
+                    ONLINE, "read_scanned_fixture_table", return_value=scanned) as read:
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "scanned DataItem" if outcome == "wrong_item" else "downstream failure"):
+                        with ONLINE.fixture_table_read_access(client, grants, 2, 3, "scan", "a" * 40, table) as proof:
+                            if outcome == "passed":
+                                proof[evidence_key] = {"parent_execution_id": "verified-parent"}
                             raise ONLINE.SuiteError("downstream failure")
-                read.assert_called_once_with(2, 3, "scan", ONLINE.DIM_TARGET)
-                grants.grant.assert_called_once_with(3, "public", ONLINE.DIM_TARGET, "table", namespace_term="schema")
-                grants.cleanup.assert_called_once_with(rows=[dim])
+                read.assert_called_once_with(2, 3, "scan", table)
+                grants.grant.assert_called_once_with(3, "public", table, "table", namespace_term="schema")
+                grants.cleanup.assert_called_once_with(rows=[exact])
                 self.assertEqual(client.request.call_args_list, [call("GET", route, (404,)), call("GET", route, (200,)),
                                                                 call("GET", route, (404,)), call("GET", preview, (403,))])
-                receipt = json.loads((Path(directory) / "dim-table-access.json").read_text())
+                receipt = json.loads((Path(directory) / filename).read_text())
+                self.assertTrue(receipt["grant_revoked"])
                 self.assertTrue(receipt["read_denied_after_revoke"])
-                self.assertEqual(receipt["item_id"], 23)
-                if wrong_item:
-                    probe.assert_not_called()
-                    self.assertEqual(receipt["result"], "incomplete")
-                else:
-                    probe.assert_called_once()
-                    self.assertEqual(receipt["result"], "passed")
-                    self.assertTrue(receipt["grant_revoked"])
+                self.assertTrue(receipt["preview_denied_after_revoke"])
+                self.assertEqual(receipt["item_id"], 24)
+                self.assertEqual(receipt["result"], "passed" if outcome == "passed" else "incomplete")
+                self.assertEqual(evidence_key in receipt, outcome == "passed")
+                self.assertEqual("visible_after_grant" in receipt, outcome != "wrong_item")
 
     def test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs(self):
         items = {"public." + ONLINE.MONGODB_TARGET: {"id": 22, "full_name": "public." + ONLINE.MONGODB_TARGET, "item_type": "table"},
@@ -2296,7 +2306,11 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             identities = {(edge[0], edge[1]) for edge in expected} | {(edge[2], edge[3]) for edge in expected}
             return {"nodes": [{"item_id": item, "field_name": name, "schema_snapshot_hash": hashes[item], "engine_id": 4 if item == 20 else 3} for item, name in identities]}
         with patch.object(ONLINE, "find_item", side_effect=lambda client, engine, full_name, kind: items[full_name]), patch.object(ONLINE, "wait_owner_execution", side_effect=owner), patch.object(ONLINE, "wait_field_graph", side_effect=graph), patch.object(ONLINE, "wait_resource_chain") as resource, patch.object(ONLINE, "wait_for_scan", return_value="schema-scan") as scan, patch.object(ONLINE, "evolve_fixture") as evolve, patch.object(ONLINE, "verify_unproven_schema", return_value={"schema_snapshot_hash": "sha256:evolved", "field_graphs": {}}) as unproven, patch.object(ONLINE, "verify_historical_schema", return_value={}) as history:
-            report = ONLINE.run_orchestrated_lineage(SimpleNamespace(request=request), 3, 2, mongodb, "run-name", 30, paths)
+            dwd_access = {"item_id": 24}
+            with self.assertRaisesRegex(ONLINE.SuiteError, "authorized DWD DataItem"):
+                ONLINE.run_orchestrated_lineage(SimpleNamespace(request=request), 3, 2, mongodb, "run-name", 30, paths, dwd_access={"item_id": 99})
+            report = ONLINE.run_orchestrated_lineage(SimpleNamespace(request=request), 3, 2, mongodb, "run-name", 30, paths, dwd_access=dwd_access)
+        self.assertEqual(dwd_access["orchestrated_chain"], report["rounds"][0])
         self.assertEqual(len(created), 3)
         self.assertEqual(starts, ["/api/v1/orchestrator/orchestrations/10/execute"] * 3)
         self.assertEqual(len(paths), 3)

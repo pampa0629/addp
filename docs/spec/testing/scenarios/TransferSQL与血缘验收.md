@@ -58,6 +58,8 @@ Business 独立按 ID 核全行 hex／字节长／空值／文本，PG 为可空
 
 **预建 DIM 读取。** 以初始自动化准备扫描核对当轮 `public.addp_online_transfer_dim_activity` 的 DataItem。消费 User 授权前查询精确目录项返回 404。独立准备者仅签发该表的精确 `read` Grant，消费 User 核同一 ID／指纹，并使用单步编排执行 Develop 受控只读查询。核对父子执行及预建空表直接读取返回的 `activity_id` 列和零行结果。授权覆盖后续依赖 DIM 的场景，退出时撤销并核当前读取许可 403、精确目录项 404、Manager 预览 403。`dim-table-access.json` 单独记录授权、编排与撤权证据。
 
+**预建 DWD 读取。** 独立准备者根据同一次初始深扫为 `public.addp_online_transfer_dwd_activity` 签发精确 `read` Grant。消费 User 授权前精确目录查询返回 404，授权后核对同一 DataItem ID／指纹。编排使用该项作为 DWD 目标，核对实际 ODS、DIM、DWD 子执行、DIM 三行、DWD 两行及字段和资源血缘。Grant 覆盖后续使用 DWD 的场景，退出时撤销并验证当前读取许可 403、精确目录项 404、Manager 预览 403。`dwd-table-access.json` 保留单项证据，也记录执行或后续验收失败前已取得的事实。
+
 | 链路 | 必须独立核对的事实 |
 | --- | --- |
 | 原生表／SQL | 字段改名、decimal 精度转换、同目标 replace 映射更新、两跳搬运；真实成功 execution 自动采集、精确字段／结构、direct／derived、关闭旧入边、不串字段。可完整证明的单来源 SQL 记录映射，opaque／unresolved／不完整证据仍 unavailable，不伪造同名来源。 |

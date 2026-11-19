@@ -1799,7 +1799,7 @@ def fixture_table_preview_route(locator):
 
 
 def read_scanned_fixture_table(tenant_id, engine_id, scan_id, table, *, execution_id=None):
-    if table not in (MONGODB_TARGET, DIM_TARGET):
+    if table not in (MONGODB_TARGET, DIM_TARGET, DWD_TARGET):
         raise SuiteError("unexpected exact Hosted fixture table")
     hosted = import_module("scripts.test.execution-online-support")
     try:
@@ -2180,28 +2180,31 @@ def verify_dim_read_orchestration(client, engine_id, tenant_id, name, timeout, o
 
 
 @contextmanager
-def dim_fixture_read_access(client, grants, tenant_id, engine_id, scan_id, commit, name, timeout, owned_paths):
-    scanned = read_scanned_fixture_table(tenant_id, engine_id, scan_id, DIM_TARGET)
-    route = fixture_table_catalog_route(engine_id, DIM_TARGET)
+def fixture_table_read_access(client, grants, tenant_id, engine_id, scan_id, commit, table):
+    label, schema, filename, execution_key = {
+        DIM_TARGET: ("DIM", "addp.transfer-dim-table-access/v1", "dim-table-access.json", "orchestrated_read"),
+        DWD_TARGET: ("DWD", "addp.transfer-dwd-table-access/v1", "dwd-table-access.json", "orchestrated_chain"),
+    }[table]
+    scanned = read_scanned_fixture_table(tenant_id, engine_id, scan_id, table)
+    route = fixture_table_catalog_route(engine_id, table)
     client.request("GET", route, (404,))
-    proof = {"schema_version": "addp.transfer-dim-table-access/v1", "result": "incomplete", "git_commit": commit,
+    proof = {"schema_version": schema, "result": "incomplete", "git_commit": commit,
              "run_id": required_environment("ADDP_ONLINE_TEST_RUN_ID"), "scan_execution_id": scan_id,
-             "tenant_id": tenant_id, "engine_id": engine_id, "item_id": positive_int(scanned.get("id"), "DIM item"),
+             "tenant_id": tenant_id, "engine_id": engine_id, "item_id": positive_int(scanned.get("id"), f"{label} item"),
              "fingerprint": scanned["fingerprint"], "hidden_before_grant": True}
-    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "dim-table-access.json"
+    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / filename
     locator = SUPPORT.build_item_locator(engine_id, scanned)
-    target = grants.target(engine_id, "public", DIM_TARGET, "table", "schema")
+    target = grants.target(engine_id, "public", table, "table", "schema")
     scenario_failed = False
     try:
-        receipt = grants.grant(engine_id, "public", DIM_TARGET, "table", namespace_term="schema")
+        receipt = grants.grant(engine_id, "public", table, "table", namespace_term="schema")
         proof.update(grant_request_id=str(uuid.UUID(receipt["request_id"])), boundary_hash=receipt["boundary_hash"])
-        visible = _object(client.request("GET", route, (200,)).payload, "authorized DIM item")
+        visible = _object(client.request("GET", route, (200,)).payload, f"authorized {label} item")
         if (any(visible.get(key) != scanned[key] for key in ("id", "engine_id", "full_name", "item_type", "fingerprint"))
                 or visible["fingerprint"] != receipt["item_fingerprint"]):
-            raise SuiteError("DIM Grant did not expose the scanned DataItem")
+            raise SuiteError(f"{label} Grant did not expose the scanned DataItem")
         proof["visible_after_grant"] = True
-        proof["orchestrated_read"] = verify_dim_read_orchestration(client, engine_id, tenant_id, name, timeout, owned_paths)
-        yield
+        yield proof
     except BaseException:
         scenario_failed = True
         raise
@@ -2212,26 +2215,28 @@ def dim_fixture_read_access(client, grants, tenant_id, engine_id, scan_id, commi
                 grants.cleanup(rows=rows)
                 client.request("GET", route, (404,))
                 client.request("GET", fixture_table_preview_route(locator), (403,))
-                proof.update(hidden_after_revoke=True, read_denied_after_revoke=True, preview_denied_after_revoke=True)
-            if "orchestrated_read" in proof:
+                proof.update(grant_revoked=True, hidden_after_revoke=True, read_denied_after_revoke=True, preview_denied_after_revoke=True)
+            if execution_key in proof:
                 if not rows:
-                    raise SuiteError("DIM Grant is missing from the cleanup ledger")
-                proof.update(result="passed", grant_revoked=True)
+                    raise SuiteError(f"{label} Grant is missing from the cleanup ledger")
+                proof["result"] = "passed"
         except Exception:
             proof["result"] = "failed"
             if not scenario_failed:
                 raise
-            print("DIM Grant cleanup also failed", file=sys.stderr)
+            print(f"{label} Grant cleanup also failed", file=sys.stderr)
         finally:
             artifact.write_text(json.dumps(proof, sort_keys=True) + "\n")
 
 
-def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeout, owned_paths):
+def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeout, owned_paths, *, dwd_access):
     # Existing-table writes use the sole TableResultProvider route; no DDL or inferred DAG edges.
     ods_locator = mongodb["target_locator"]
     dim = find_item(client, engine_id, f"public.{DIM_TARGET}", "table")
     dwd = find_item(client, engine_id, f"public.{DWD_TARGET}", "table")
     dim_id, dwd_id = (positive_int(item.get("id"), "chain target id") for item in (dim, dwd))
+    if dwd_id != dwd_access["item_id"]:
+        raise SuiteError("chain target differs from the authorized DWD DataItem")
     dim_locator, dwd_locator = (SUPPORT.build_item_locator(engine_id, item) for item in (dim, dwd))
     dim_bindings, dwd_bindings = {"ods": ods_locator}, {"ods": ods_locator, "dim": dim_locator}
 
@@ -2343,6 +2348,8 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
         all_edges = ods_edges | {(ods_id, source, dim_id, target, transformation, ids["dim"]) for _, source, target, transformation in dim_mappings} | {(dim_id if port == "input.dim" else ods_id, source, dwd_id, target, transformation, ids["dwd"]) for port, source, target, transformation in dwd_mappings}
         wait_resource_chain(client, dwd_id, {(source_id, ods_id, ids["ods"]), (ods_id, dim_id, ids["dim"]), (ods_id, dwd_id, ids["dwd"]), (dim_id, dwd_id, ids["dwd"])}, timeout)
         rounds.append({"parent_execution_id": parent_id, "completed_at": parent.get("completed_at"), "child_execution_ids": ids, "dim_rows": 3, "dwd_rows": 2, "schema_snapshot_hash": hashes[dwd_id], "query_events_verified": 2})
+        if round_index == 0:
+            dwd_access["orchestrated_chain"] = rounds[0]
         # Manager verifies the latest active ODS edges after the enclosing DAG rerun as well.
         mongodb.update(expected_edges=sorted(ods_edges), latest_execution_id=ids["ods"], schema_snapshot_hash=ods_hash)
     after_write = verify_historical_schema(client, dwd_id, old_hashes, historical_as_of, old_fields, "closed")
@@ -2658,14 +2665,15 @@ def main() -> int:
             mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids,
                                                   access=mongodb_access, identity=identity_report)
             mongodb_access["transfer"] = mongodb_lineage
-            with dim_fixture_read_access(client, mongodb_access["grants"], tenant_id, engine_id, scan_execution_id, commit,
-                                         owned_name, convergence_timeout, owned_paths):
-                chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
-                wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
-                write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
-                browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
-                verify_browser_query_transformations(client, engine_id, source, convergence_timeout)
-                multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
+            with fixture_table_read_access(client, mongodb_access["grants"], tenant_id, engine_id, scan_execution_id, commit, DIM_TARGET) as dim_access:
+                dim_access["orchestrated_read"] = verify_dim_read_orchestration(client, engine_id, tenant_id, owned_name, convergence_timeout, owned_paths)
+                with fixture_table_read_access(client, mongodb_access["grants"], tenant_id, engine_id, scan_execution_id, commit, DWD_TARGET) as dwd_access:
+                    chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths, dwd_access=dwd_access)
+                    wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
+                    write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
+                    browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
+                    verify_browser_query_transformations(client, engine_id, source, convergence_timeout)
+                    multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
@@ -2673,7 +2681,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v21",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v22",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -2688,6 +2696,7 @@ def main() -> int:
             "mongodb_source_access": mongodb_access["proof"],
             "mongodb_field_lineage": mongodb_lineage,
             "orchestrated_field_lineage": chain,
+            "dwd_table_access": dwd_access,
             "multi_source_field_lineage": multi,
             "wide_field_lineage": wide,
             "manager_import": manager_import,
