@@ -1668,7 +1668,7 @@ jobs:
   common-mysql-data-protection:
     name: Common, Owner protection and Model metric contracts (MySQL 8)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.model == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.model == 'true' || needs.selection.outputs.gateway == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:

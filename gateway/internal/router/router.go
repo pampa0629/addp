@@ -206,14 +206,7 @@ func initDatabase(cfg *config.Config) *gorm.DB {
 		log.Printf("Failed to connect to database: %v (continuing without DB)", err)
 		return nil
 	}
-	if err := db.Exec(`
-		ALTER TABLE IF EXISTS gateway.api_access_logs DROP COLUMN IF EXISTS application_id;
-		ALTER TABLE IF EXISTS gateway.api_access_logs DROP COLUMN IF EXISTS api_key_prefix;
-	`).Error; err != nil {
-		log.Printf("Failed to remove obsolete Gateway access log columns: %v (continuing without access log DB)", err)
-		return nil
-	}
-	if err := db.AutoMigrate(&middleware.AccessLog{}); err != nil {
+	if err := middleware.MigrateAccessLog(db); err != nil {
 		log.Printf("Failed to migrate Gateway access log schema: %v (continuing without access log DB)", err)
 		return nil
 	}

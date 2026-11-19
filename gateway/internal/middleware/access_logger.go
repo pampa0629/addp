@@ -15,7 +15,8 @@ import (
 
 // AccessLoggerMiddleware 访问日志中间件
 type AccessLoggerMiddleware struct {
-	db *gorm.DB
+	db    *gorm.DB
+	table string
 }
 
 // AccessLog 访问日志模型
@@ -36,14 +37,16 @@ type AccessLog struct {
 
 // TableName 指定表名
 func (AccessLog) TableName() string {
-	return "gateway.api_access_logs"
+	return postgresAccessLogTable
 }
 
 // NewAccessLoggerMiddleware 创建访问日志中间件
 func NewAccessLoggerMiddleware(db *gorm.DB) *AccessLoggerMiddleware {
-	return &AccessLoggerMiddleware{
-		db: db,
+	table := postgresAccessLogTable
+	if db != nil && db.Dialector.Name() == "mysql" {
+		table = mysqlAccessLogTable
 	}
+	return &AccessLoggerMiddleware{db: db, table: table}
 }
 
 // Handler 中间件处理函数
@@ -164,7 +167,7 @@ func (m *AccessLoggerMiddleware) writeAccess(accessLog *AccessLog) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := m.db.WithContext(ctx).Create(accessLog).Error; err != nil {
+	if err := m.db.WithContext(ctx).Table(m.table).Create(accessLog).Error; err != nil {
 		log.Printf("Failed to write access log: %v", err)
 	}
 }
@@ -199,7 +202,7 @@ func (m *AccessLoggerMiddleware) CleanupOldLogs(days int) error {
 
 	cutoffTime := time.Now().AddDate(0, 0, -days)
 
-	result := m.db.Where("accessed_at < ?", cutoffTime).Delete(&AccessLog{})
+	result := m.db.Table(m.table).Where("accessed_at < ?", cutoffTime).Delete(&AccessLog{})
 	if result.Error != nil {
 		return result.Error
 	}
