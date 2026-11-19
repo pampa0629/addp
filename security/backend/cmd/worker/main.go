@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/buildinfo"
 	commonclient "github.com/addp/common/client"
 	commonexecution "github.com/addp/common/execution"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/common/schema"
 	"github.com/addp/security/internal/config"
@@ -19,7 +20,6 @@ import (
 	"github.com/addp/security/internal/service"
 	securityworker "github.com/addp/security/internal/worker"
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Security worker token source failed: %v", err)
 	}
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseDSN()), &gorm.Config{TranslateError: true})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Security worker database connection failed: %v", err)
 	}

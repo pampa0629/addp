@@ -2,9 +2,10 @@ FROM localhost:5001/python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     gcc \
     postgresql-client \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # 先安装第三方依赖；公共源码放到后续轻量层，避免源码变化使依赖层失效。

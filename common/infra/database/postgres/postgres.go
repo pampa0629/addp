@@ -15,9 +15,18 @@ import (
 // Dialector builds a pgx keyword DSN. GORM also reads the unquoted IANA
 // timezone to configure its timestamp codec on every connection in the pool.
 func Dialector(cfg database.Config) (gorm.Dialector, error) {
+	dsn, err := DSN(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return driver.Open(dsn), nil
+}
+
+// DSN builds connection settings for GORM and native PostgreSQL migration tools.
+func DSN(cfg database.Config) (string, error) {
 	zone := config.GetTimezone()
 	if _, err := time.LoadLocation(zone); err != nil {
-		return nil, fmt.Errorf("platform database timezone: %w", err)
+		return "", fmt.Errorf("platform database timezone: %w", err)
 	}
 	if cfg.SSLMode == "" {
 		cfg.SSLMode = "disable"
@@ -27,7 +36,10 @@ func Dialector(cfg database.Config) (gorm.Dialector, error) {
 	if cfg.Schema != "" {
 		dsn += " search_path=" + quote(cfg.Schema)
 	}
-	return driver.Open(dsn), nil
+	if cfg.ConnectTimeout > 0 {
+		dsn += fmt.Sprintf(" connect_timeout=%d", int64(cfg.ConnectTimeout/time.Second))
+	}
+	return dsn, nil
 }
 
 func quote(value string) string {

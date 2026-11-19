@@ -8,17 +8,16 @@ import (
 	"syscall"
 
 	"github.com/addp/common/buildinfo"
-	"github.com/addp/common/schema"
-	"github.com/addp/quality/internal/migration"
-
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
+	"github.com/addp/common/schema"
 	"github.com/addp/quality/internal/config"
+	"github.com/addp/quality/internal/migration"
 	"github.com/addp/quality/internal/repository"
 	"github.com/addp/quality/internal/service"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -27,7 +26,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}

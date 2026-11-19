@@ -83,6 +83,7 @@ services:
       - SPARK_WORKFLOW_SERVICE_CLIENT_SECRET=${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET}
       - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
       - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -148,6 +149,7 @@ services:
       - PORT=8081
       - DB_SCHEMA=manager
       - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -219,6 +221,7 @@ services:
       - PORT=8082
       - DB_SCHEMA=meta
       - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -269,6 +272,7 @@ services:
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - DB_SCHEMA=meta
       - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -342,6 +346,7 @@ services:
       - PORT=8083
       - DB_SCHEMA=transfer
       - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -434,6 +439,7 @@ services:
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - DB_SCHEMA=transfer
       - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -538,6 +544,8 @@ services:
       - SERVICE_HOST=orchestrator-backend
       - PORT=8084
       - DB_SCHEMA=orchestrator
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -601,6 +609,8 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - TRANSFER_URL=http://transfer-backend:8083
       - MANAGER_URL=http://manager-backend:8081
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -664,6 +674,8 @@ services:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -720,6 +732,8 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - GATEWAY_URL=http://gateway:8000
       - MONITOR_SERVICE_CLIENT_SECRET=${MONITOR_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -774,6 +788,8 @@ services:
       - ADDP_INFRA_OBJECTSTORE_BINDINGS=${ADDP_INFRA_OBJECTSTORE_BINDINGS:-}
       - STANDARD_DOCUMENT_MAX_FILE_SIZE=${STANDARD_DOCUMENT_MAX_FILE_SIZE:-104857600}
       - STANDARD_DOCUMENT_STORAGE_TIMEOUT=${STANDARD_DOCUMENT_STORAGE_TIMEOUT:-30s}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -839,6 +855,8 @@ services:
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - MEILISEARCH_CATALOG_INDEX=${MEILISEARCH_CATALOG_INDEX:-catalog_entries}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -885,6 +903,8 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - SERVICE_URL=http://service-backend:8086
       - WORKBENCH_SERVICE_CLIENT_SECRET=${WORKBENCH_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -937,6 +957,8 @@ services:
       - META_URL=http://meta-backend:8082
       - DEVELOP_URL=http://develop-backend:8185
       - COPILOT_SERVICE_CLIENT_SECRET=${COPILOT_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -974,6 +996,8 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - STANDARD_URL=http://standard-backend:8110
       - MODEL_SERVICE_CLIENT_SECRET=${MODEL_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1026,6 +1050,8 @@ services:
       - STANDARD_URL=http://standard-backend:8110
       - META_URL=http://meta-backend:8082
       - QUALITY_SERVICE_CLIENT_SECRET=${QUALITY_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1065,6 +1091,8 @@ services:
       - QUALITY_WORKER_POLL_INTERVAL=${QUALITY_WORKER_POLL_INTERVAL:-500ms}
       - SYSTEM_URL=http://system-backend:8180
       - QUALITY_SERVICE_CLIENT_SECRET=${QUALITY_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1115,6 +1143,8 @@ services:
       - ONTOLOGY_SERVICE_CLIENT_SECRET=${ONTOLOGY_SERVICE_CLIENT_SECRET}
       - INFRA_FALKORDB_ADDRESS=falkordb:6379
       - INFRA_FALKORDB_PASSWORD=${INFRA_FALKORDB_PASSWORD}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1148,6 +1178,8 @@ services:
       - SECURITY_BACKEND_PORT=8194
       - SYSTEM_URL=http://system-backend:8180
       - SECURITY_SERVICE_CLIENT_SECRET=${SECURITY_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1181,6 +1213,8 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
       - SECURITY_SERVICE_CLIENT_SECRET=${SECURITY_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1225,6 +1259,8 @@ services:
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - ASSET_SERVICE_CLIENT_SECRET=${ASSET_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1321,6 +1357,8 @@ services:
       - COPILOT_URL=http://copilot-backend:8087
       - SECURITY_URL=http://security-backend:8194
       - GRAPH_SERVICE_CLIENT_SECRET=${GRAPH_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1362,6 +1400,8 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - INFERENCE_SERVICE_CLIENT_SECRET=${INFERENCE_SERVICE_CLIENT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1424,6 +1464,8 @@ services:
       - COPILOT_URL=http://copilot-backend:8087
       - GRAPH_URL=http://graph-backend:8186
       - AGENT_SERVICE_CLIENT_SECRET=${AGENT_SERVICE_CLIENT_SECRET}
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -1467,6 +1509,8 @@ services:
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=gateway
       - PORT=8000
+      - ADDP_INFRA_DATABASE_PROVIDER=${ADDP_INFRA_DATABASE_PROVIDER:-postgres}
+      - TZ=${TZ:-Asia/Shanghai}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}

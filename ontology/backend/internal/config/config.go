@@ -2,11 +2,14 @@ package config
 
 import (
 	"errors"
-	commonconfig "github.com/addp/common/config"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
+	"time"
+
+	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
@@ -53,9 +56,10 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c *Config) DatabaseDSN() string {
-	u := &url.URL{Scheme: "postgres", Host: net.JoinHostPort(c.DBHost, c.DBPort), User: url.UserPassword(c.DBUser, c.DBPassword), Path: "/" + c.DBName}
-	q := url.Values{"sslmode": {"disable"}, "search_path": {"ontology"}, "connect_timeout": {"5"}}
-	u.RawQuery = q.Encode()
-	return u.String()
+func (c *Config) PlatformDatabase() database.Config {
+	return database.Config{
+		Host: c.DBHost, Port: c.DBPort,
+		User: c.DBUser, Password: c.DBPassword,
+		DBName: c.DBName, Schema: "ontology", ConnectTimeout: 5 * time.Second,
+	}
 }

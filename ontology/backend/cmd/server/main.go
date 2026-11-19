@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/client"
 	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/ontology/internal/api"
 	"github.com/addp/ontology/internal/config"
@@ -21,7 +22,6 @@ import (
 	"github.com/addp/ontology/internal/repository"
 	"github.com/addp/ontology/internal/service"
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -49,7 +49,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// Do not log DSNs, bound definitions or execution authorization facts.
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseDSN()), &gorm.Config{TranslateError: true, Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true, Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		return errors.New("ontology database connection failed")
 	}

@@ -49,7 +49,8 @@ class PilotTest(unittest.TestCase):
     def test_native_bindings_and_catalog_advertises_the_pod(self):
         for module, arch, node in (("system", "arm64", "arm"), ("gateway", "arm64", "arm"),
                                    ("catalog", "amd64", "intel")):
-            endpoint, deployment = pilot.product_objects(module, bundle(arch)["images"], node, arch)
+            with patch.dict("os.environ", {"ADDP_INFRA_DATABASE_PROVIDER": "postgres", "TZ": "Asia/Tokyo"}):
+                endpoint, deployment = pilot.product_objects(module, bundle(arch)["images"], node, arch)
             pod = deployment["spec"]["template"]["spec"]
             self.assertEqual(pod["nodeSelector"], {"kubernetes.io/arch": arch, "kubernetes.io/hostname": node})
             self.assertFalse(pod["automountServiceAccountToken"])
@@ -59,6 +60,8 @@ class PilotTest(unittest.TestCase):
             self.assertEqual(container["readinessProbe"]["httpGet"]["path"], "/health/ready")
             self.assertEqual(endpoint["spec"].get("type", "ClusterIP"), "ClusterIP")
             fields = {item["name"]: item for item in container["env"]}
+            self.assertEqual(fields["ADDP_INFRA_DATABASE_PROVIDER"]["value"], "postgres")
+            self.assertEqual(fields["TZ"]["value"], "Asia/Tokyo")
             self.assertEqual(fields["SERVICE_HOST"]["valueFrom"]["fieldRef"]["fieldPath"], "status.podIP")
             self.assertEqual(fields["ADDP_RUNTIME_LOG_ROOT"]["value"], container["volumeMounts"][0]["mountPath"])
 

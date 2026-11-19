@@ -132,9 +132,16 @@ def infra_objects(bundle, images, node, storage):
                        readiness=probe, volumes=volumes, **extra)
 
 
+def platform_database_options():
+    return {
+        "ADDP_INFRA_DATABASE_PROVIDER": os.environ.get("ADDP_INFRA_DATABASE_PROVIDER") or "postgres",
+        "TZ": os.environ.get("TZ") or "Asia/Shanghai",
+    }
+
+
 def product_objects(module, images, node, arch):
     name = NAMES[module]
-    env = {"ENV": "production", "GIN_MODE": "release", "SYSTEM_URL": "http://system-backend:8180",
+    env = {**platform_database_options(), "ENV": "production", "GIN_MODE": "release", "SYSTEM_URL": "http://system-backend:8180",
            "ADDP_RUNTIME_LOG_ROOT": "/var/log/addp",
            "POSTGRES_HOST": "postgres", "POSTGRES_PORT": 5432, "POSTGRES_USER": "addp", "POSTGRES_DB": "addp"}
     credentials = ["db"]
@@ -237,7 +244,7 @@ def install(args):
 def bootstrap(args):
     values = read_private(args.credentials)["runtime"]
     binary = args.bundle / "addp-iam-bootstrap"
-    env = {**os.environ, **{k: values[k] for k in (*KEYS, "POSTGRES_PASSWORD")},
+    env = {**os.environ, **platform_database_options(), **{k: values[k] for k in (*KEYS, "POSTGRES_PASSWORD")},
            "ENV": "production", "POSTGRES_HOST": "127.0.0.1", "POSTGRES_PORT": str(args.postgres_port),
            "POSTGRES_DB": "addp", "POSTGRES_USER": "addp"}
     command = [str(binary.resolve()), args.phase]

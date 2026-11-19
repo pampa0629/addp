@@ -15,10 +15,10 @@ import (
 	"time"
 
 	commonclient "github.com/addp/common/client"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -44,7 +44,7 @@ func runModuleDeployment(args []string, input io.Reader) error {
 	switch args[0] {
 	case "provision-module-publisher":
 		cfg := config.Load()
-		db, err := gorm.Open(postgres.Open(cfg.PostgreSQLDSN()), &gorm.Config{})
+		db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
 		if err != nil {
 			return err
 		}

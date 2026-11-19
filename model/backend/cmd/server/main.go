@@ -9,14 +9,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/addp/common/schema"
-
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	_ "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/api"
 	"github.com/addp/model/internal/config"
@@ -24,7 +24,6 @@ import (
 	"github.com/addp/model/internal/repository"
 	"github.com/addp/model/internal/service"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -46,7 +45,7 @@ func main() {
 	defer stopRuntime()
 
 	// 连接数据库
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
+	db, err := openDatabase(cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -180,4 +179,8 @@ func main() {
 	// 阻塞主 goroutine
 	<-runtimeContext.Done()
 	<-registration.Done()
+}
+
+func openDatabase(cfg *config.Config) (*gorm.DB, error) {
+	return bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
 }

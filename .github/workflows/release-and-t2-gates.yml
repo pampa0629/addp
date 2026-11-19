@@ -1941,6 +1941,7 @@ jobs:
       - name: Run Model PostgreSQL gate
         env:
           ADDP_TEST_MODEL_POSTGRES_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_model_disposable?sslmode=disable
+          ADDP_TEST_MODEL_STARTUP_COLD: "1"
         run: make test-model-postgres
 
       - name: Summarize Model PostgreSQL gate

@@ -9,17 +9,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/addp/common/schema"
-
 	commonclient "github.com/addp/common/client"
 	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	_ "github.com/addp/security/i18n"
 	"github.com/addp/security/internal/api"
 	"github.com/addp/security/internal/config"
 	"github.com/addp/security/internal/repository"
 	"github.com/addp/security/internal/service"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +33,7 @@ func main() {
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseDSN()), &gorm.Config{TranslateError: true})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Security database connection failed: %v", err)
 	}

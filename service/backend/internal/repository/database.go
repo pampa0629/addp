@@ -5,21 +5,21 @@ import (
 	"log"
 
 	"github.com/addp/common/cleanup"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/models"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 // InitDatabase 初始化数据库连接
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName,
-	)
-
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	db, err := bootstrap.OpenDatabase(database.Config{
+		Host: cfg.DBHost, Port: cfg.DBPort,
+		User: cfg.DBUser, Password: cfg.DBPassword,
+		DBName: cfg.DBName,
+	}, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {

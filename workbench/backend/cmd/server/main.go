@@ -10,12 +10,12 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/workbench/internal/api"
 	"github.com/addp/workbench/internal/config"
 	"github.com/addp/workbench/internal/repository"
 	"github.com/addp/workbench/internal/service"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +34,7 @@ func main() {
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect Workbench database: %v", err)
 	}

@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/addp/common/schema"
-
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	_ "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/api"
 	"github.com/addp/quality/internal/config"
@@ -23,7 +23,6 @@ import (
 	"github.com/addp/quality/internal/repository"
 	"github.com/addp/quality/internal/service"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -43,7 +42,7 @@ func main() {
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{TranslateError: true})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}

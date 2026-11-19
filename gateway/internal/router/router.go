@@ -9,6 +9,8 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/httptrace"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/common/middleware/cors"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/modulelifecycle"
@@ -20,7 +22,6 @@ import (
 	"github.com/addp/gateway/pkg/client"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -196,10 +197,11 @@ func proxyRegisteredModule(c *gin.Context, moduleName string, discovery modulePr
 
 // initDatabase 初始化数据库连接
 func initDatabase(cfg *config.Config) *gorm.DB {
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema)
-
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := bootstrap.OpenDatabase(database.Config{
+		Host: cfg.DBHost, Port: cfg.DBPort,
+		User: cfg.DBUser, Password: cfg.DBPassword,
+		DBName: cfg.DBName, Schema: cfg.DBSchema,
+	}, &gorm.Config{})
 	if err != nil {
 		log.Printf("Failed to connect to database: %v (continuing without DB)", err)
 		return nil

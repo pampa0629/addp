@@ -1,9 +1,12 @@
 package config
 
 import (
-	"github.com/jackc/pgx/v5"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/addp/common/infra/database/postgres"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestDeploymentConfiguration(t *testing.T) {
@@ -21,8 +24,12 @@ func TestDeploymentConfiguration(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := pgx.ParseConfig(c.DatabaseDSN())
-	if err != nil || parsed.Password != c.DBPassword || parsed.RuntimeParams["search_path"] != "ontology" {
+	dsn, err := postgres.DSN(c.PlatformDatabase())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := pgx.ParseConfig(dsn)
+	if err != nil || parsed.ConnectTimeout != 5*time.Second || parsed.Password != c.DBPassword || parsed.RuntimeParams["search_path"] != "ontology" {
 		t.Fatal("DSN encoding or schema mismatch")
 	}
 	for _, mutate := range []func(*Config){func(c *Config) { c.Port = "0" }, func(c *Config) { c.Port = "8195x" }, func(c *Config) { c.ServiceClientSecret = "" }, func(c *Config) { c.FalkorPassword = "" }, func(c *Config) { c.FalkorAddress = "localhost:0" }, func(c *Config) { c.SystemURL = "http://user:secret@localhost:8180" }} {

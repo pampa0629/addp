@@ -84,7 +84,13 @@ func main() {
 
 	// IAM 必须先执行显式版本化 migration；非 IAM 表随后暂由 GORM 管理。
 	migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
-	if err := migration.NewRunner(cfg.PostgreSQLDSN()).Run(migrationContext); err != nil {
+	migrationDSN, err := bootstrap.PostgreSQLDSN(cfg.PlatformDatabase())
+	if err != nil {
+		cancelMigration()
+		logger.L().Error("IAM 数据库迁移配置失败", "error", err)
+		os.Exit(1)
+	}
+	if err := migration.NewRunner(migrationDSN).Run(migrationContext); err != nil {
 		cancelMigration()
 		logger.L().Error("IAM 数据库迁移失败", "error", err)
 		os.Exit(1)

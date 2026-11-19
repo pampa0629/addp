@@ -12,11 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/addp/common/schema"
-
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
@@ -24,7 +25,6 @@ import (
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -51,10 +51,11 @@ func main() {
 	log.Printf("✅ 端口检查通过: %s", cfg.ServerPort)
 
 	// 连接数据库
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema)
-
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := bootstrap.OpenDatabase(database.Config{
+		Host: cfg.DBHost, Port: cfg.DBPort,
+		User: cfg.DBUser, Password: cfg.DBPassword,
+		DBName: cfg.DBName, Schema: cfg.DBSchema,
+	}, &gorm.Config{})
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}

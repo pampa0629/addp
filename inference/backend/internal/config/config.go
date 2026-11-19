@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
@@ -35,9 +36,10 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) DatabaseDSN() string {
-	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
-		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.DBSchema,
-	)
+func (c *Config) PlatformDatabase() database.Config {
+	return database.Config{
+		Host: c.DBHost, Port: c.DBPort,
+		User: c.DBUser, Password: c.DBPassword,
+		DBName: c.DBName, Schema: c.DBSchema,
+	}
 }

@@ -2,7 +2,6 @@ package repository
 
 import (
 	"github.com/addp/common/infra/bootstrap"
-	"github.com/addp/common/infra/database"
 	"github.com/addp/common/schema"
 	"github.com/addp/system/internal/config"
 	"gorm.io/gorm"
@@ -10,10 +9,8 @@ import (
 )
 
 func InitDB(cfg *config.Config) (*gorm.DB, error) {
-	connection := database.Config{
-		Host: cfg.PostgresHost, Port: cfg.PostgresPort, User: cfg.PostgresUser,
-		Password: cfg.PostgresPassword, DBName: cfg.PostgresDB, Schema: "system",
-	}
+	connection := cfg.PlatformDatabase()
+	connection.Schema = "system"
 	db, err := bootstrap.OpenDatabase(connection, &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
 	if err != nil {
 		return nil, err

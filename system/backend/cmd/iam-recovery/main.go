@@ -11,17 +11,16 @@ import (
 	"strings"
 	"time"
 
+	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/system/i18n"
-	"github.com/google/uuid"
-
-	commonconfig "github.com/addp/common/config"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/iamcli"
+	"github.com/google/uuid"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/term"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -43,7 +42,7 @@ func run(args []string, stdin *os.File, stdout *os.File) error {
 
 	commonconfig.LoadEnv()
 	cfg := config.Load()
-	db, err := gorm.Open(postgres.Open(cfg.PostgreSQLDSN()), &gorm.Config{})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
 	if err != nil {
 		return fmt.Errorf("连接 PostgreSQL: %w", err)
 	}

@@ -5,16 +5,15 @@ import (
 	"log"
 
 	"github.com/addp/common/cleanup"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/schema"
-
 	"github.com/addp/graph/internal/config"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {

@@ -240,6 +240,7 @@ test-vector-topology-capacity-runner: ## 验证容量矩阵、资源限制、镶
 
 COPILOT_PYTHON ?= copilot/backend/venv/bin/python
 test-copilot: ## 运行 Copilot 后端全量确定性测试
+	@if [ -n "$${COPILOT_POSTGRES_TEST_DSN:-}" ]; then bash -c 'source scripts/infra/ports.sh && addp_infra_verify_test_postgres_dsn "$$COPILOT_POSTGRES_TEST_DSN"'; fi
 	@cd copilot/backend && $(abspath $(COPILOT_PYTHON)) -m pytest -q tests
 
 test-common-python-cli-release:
@@ -584,6 +585,7 @@ test-system-cleanup: ## 验证 System Cleanup 准入、父子协调与只读快�
 	@bash scripts/test/system-cleanup-gate.sh
 
 test-t2-ci-registration: test-redis-core-runner ## 验证 T2 入口、选择、服务登记及 PostgreSQL runner 契约
+	@python3 scripts/ci/check-platform-database-startup.py
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/test/manager-postgres-gate_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"

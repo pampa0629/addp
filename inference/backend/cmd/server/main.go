@@ -12,6 +12,7 @@ import (
 
 	commonclient "github.com/addp/common/client"
 	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/inference/i18n"
@@ -20,7 +21,6 @@ import (
 	"github.com/addp/inference/internal/models"
 	"github.com/addp/inference/internal/repository"
 	"github.com/addp/inference/internal/service"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -39,7 +39,7 @@ func main() {
 	}
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseDSN()), &gorm.Config{})
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/resourcequery"
 )
@@ -161,17 +162,12 @@ func boolEnv(key string, defaultValue bool) (bool, error) {
 	return parsed, nil
 }
 
-// GetDatabaseDSN 获取数据库连接字符串
-func (c *Config) GetDatabaseDSN() string {
-	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		c.DatabaseHost,
-		c.DatabasePort,
-		c.DatabaseUser,
-		c.DatabasePassword,
-		c.DatabaseName,
-		c.DatabaseSSLMode,
-	)
+func (c *Config) PlatformDatabase() database.Config {
+	return database.Config{
+		Host: c.DatabaseHost, Port: c.DatabasePort,
+		User: c.DatabaseUser, Password: c.DatabasePassword,
+		DBName: c.DatabaseName, SSLMode: c.DatabaseSSLMode,
+	}
 }
 
 // getEnvOrDefault 获取环境变量或默认值

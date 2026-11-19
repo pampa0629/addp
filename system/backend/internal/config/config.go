@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
@@ -64,6 +65,15 @@ type Config struct {
 	TrustedProxies []string // 允许提供客户端 IP 转发头的反向代理 IP/CIDR
 }
 
+func (c *Config) PlatformDatabase() database.Config {
+	return database.Config{
+		Host: c.PostgresHost, Port: c.PostgresPort,
+		User: c.PostgresUser, Password: c.PostgresPassword,
+		DBName: c.PostgresDB,
+	}
+}
+
+// PostgreSQLDSN is for native infrastructure observation and test fixtures.
 func (c *Config) PostgreSQLDSN() string {
 	endpoint := &url.URL{
 		Scheme: "postgres",

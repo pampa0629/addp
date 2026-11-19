@@ -3,19 +3,25 @@
 """
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import URL, text
+from addp_common.infra.database import open_sync_database
 from sqlalchemy.orm import declarative_base, sessionmaker
 from config import settings
 
 # 创建数据库引擎（优化配置避免延迟）
-engine = create_engine(
-    settings.database_url,
+engine = open_sync_database(
+    URL.create(
+        "postgresql",
+        username=settings.postgres_user,
+        password=settings.postgres_password,
+        host=settings.postgres_host,
+        port=settings.postgres_port,
+        database=settings.postgres_db,
+    ),
     pool_pre_ping=False,  # 禁用连接预检查
     pool_size=5,
     max_overflow=10,
     pool_recycle=3600,
-    # Platform PostgreSQL uses password authentication, not host Kerberos tickets.
-    connect_args={"connect_timeout": 5, "gssencmode": "disable"}
 )
 
 # 创建会话工厂

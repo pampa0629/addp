@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"time"
 
+	commonconfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/system/internal/migration"
 	_ "github.com/lib/pq"
 )
@@ -25,7 +27,17 @@ func main() {
 		fmt.Fprintln(os.Stderr, "--migration must be exactly 75, 113, 130, or 240")
 		os.Exit(2)
 	}
-	dsn := postgresDSN()
+	dsn, err := bootstrap.PostgreSQLDSN(database.Config{
+		Host:     commonconfig.GetEnv("POSTGRES_HOST", "localhost"),
+		Port:     commonconfig.GetEnv("POSTGRES_PORT", "15432"),
+		User:     commonconfig.GetEnv("POSTGRES_USER", "addp"),
+		Password: commonconfig.GetEnv("POSTGRES_PASSWORD", "addp_password"),
+		DBName:   commonconfig.GetEnv("POSTGRES_DB", "addp"),
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "open migration repair database failed")
@@ -65,24 +77,4 @@ func main() {
 		}
 		fmt.Println("migration 130 repair completed; verified_target_facts=pre-migration; migration_state=129/clean")
 	}
-}
-
-func postgresDSN() string {
-	host := envOrDefault("POSTGRES_HOST", "localhost")
-	port := envOrDefault("POSTGRES_PORT", "15432")
-	user := envOrDefault("POSTGRES_USER", "addp")
-	password := envOrDefault("POSTGRES_PASSWORD", "addp_password")
-	database := envOrDefault("POSTGRES_DB", "addp")
-	value := &url.URL{Scheme: "postgres", User: url.UserPassword(user, password), Host: host + ":" + port, Path: database}
-	query := value.Query()
-	query.Set("sslmode", "disable")
-	value.RawQuery = query.Encode()
-	return value.String()
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }

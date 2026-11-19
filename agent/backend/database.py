@@ -1,16 +1,20 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import URL
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from addp_common.infra.database import open_async_database
 from config import settings
 
-DATABASE_URL = (
-    f"postgresql+asyncpg://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
-    f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+engine = open_async_database(
+    URL.create(
+        "postgresql",
+        username=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD,
+        host=settings.POSTGRES_HOST,
+        port=settings.POSTGRES_PORT,
+        database=settings.POSTGRES_DB,
+    ),
+    pool_pre_ping=True,
 )
-
-def create_agent_engine(url):
-    return create_async_engine(url, pool_pre_ping=True)
-
-
-engine = create_agent_engine(DATABASE_URL)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

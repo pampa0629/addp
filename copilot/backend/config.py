@@ -34,11 +34,6 @@ class Settings(BaseSettings):
     postgres_db: str = "addp"
     db_schema: str = "copilot"
 
-    @property
-    def database_url(self) -> str:
-        """动态构建数据库连接字符串"""
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-
     # 服务 host 和端口（从 .env 读取）
     service_host: str = "localhost"
     gateway_port: int = 8000
