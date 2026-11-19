@@ -371,6 +371,40 @@ func TestIntegrationMetricsCPUWindow(t *testing.T) {
 	t.Logf("pinned promtool passed %d CPU window/reset/topology scenarios", len(scenarios))
 }
 
+func TestIntegrationMetricsFrontendSamples(t *testing.T) {
+	if os.Getenv("ADDP_METRICS_QUERY_INTEGRATION") != "1" {
+		t.Skip("requires standard Monitor metrics T2 gate")
+	}
+	address := "fixture:9443"
+	revision := testNode + ":2:1"
+	labels := fmt.Sprintf(`job="addp_nodes",addp_monitor_kind="frontend_resources",addp_source="frontend_exporter",addp_node_id=%q,instance=%q,addp_frontend_revision=%q`, testNode, address, revision)
+	up := "up{" + labels + "}"
+	console := "{" + labels + `,frontend_module="console",frontend_mode="vite"}`
+	monitor := "{" + labels + `,frontend_module="monitor",frontend_mode="compose"}`
+	entry := "addp_frontend_entry_up" + console
+	memory := "addp_frontend_memory_bytes" + console
+	restarts := "addp_frontend_restart_count" + monitor
+	other := strings.Replace(entry, testNode, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", 1)
+	series := func(name, values string) map[string]any { return map[string]any{"series": name, "values": values} }
+	sample := func(name string, value float64) map[string]any { return map[string]any{"labels": name, "value": value} }
+	expression := frontendExpression(testNode, address, revision)
+	evaluate := func(at string, samples ...map[string]any) map[string]any {
+		return map[string]any{"expr": expression, "eval_time": at, "exp_samples": samples}
+	}
+	runPromtoolCases(t, "frontend", []any{map[string]any{
+		"name":     "both modules, same-scrape freshness, foreign node and scrape failure",
+		"interval": "15s",
+		"input_series": []any{series(up, "1 1 0"), series(entry, "1 0 _"), series(memory, "65536 _ _"),
+			series(restarts, "0 2 _"), series(other, "1 1 1"),
+			series(strings.Replace(memory, revision, testNode+":1:1", 1), "8192 8192 8192")},
+		"promql_expr_test": []any{
+			evaluate("0s", sample(entry, 1), sample(memory, 65536), sample(restarts, 0)),
+			evaluate("15s", sample(entry, 0), sample(restarts, 2)),
+			evaluate("30s"),
+		},
+	}}, false)
+}
+
 func runPromtoolCases(t *testing.T, name string, tests []any, fuzzy bool) {
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{"rule_files": []any{}, "evaluation_interval": "15s", "fuzzy_compare": fuzzy, "tests": tests})

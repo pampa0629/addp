@@ -762,10 +762,13 @@
       "saved": "Monitoring target saved",
       "deleted": "Monitoring target deleted",
       "kinds": {
+        "frontend_resources": "Frontend resources",
         "host_resources": "Host resources",
         "container_resources": "Container resources"
       },
       "collection": {
+        "frontend": "View frontend observations under Service Monitoring.",
+        "frontendLink": "View frontend metrics",
         "title": "Latest collection result",
         "refresh": "Refresh collection status",
         "savedConfig": "These results belong to the saved settings; the draft has not taken effect.",
@@ -1063,6 +1066,30 @@
       "coverage": "Valid samples {valid}/{expected}",
       "cores": "cores",
       "modules": "View by module"
+    },
+    "frontend": {
+      "title": "Frontends",
+      "services": "Service instances",
+      "runtime": "Runtime",
+      "entry": "Page entry",
+      "asset": "Application script",
+      "cpu": "CPU usage",
+      "memory": "Memory usage",
+      "restarts": "Restarts",
+      "selectNode": "Select a frontend collection node",
+      "modes": {
+        "vite": "Development · Vite",
+        "compose": "Compose · Nginx"
+      },
+      "states": {
+        "up": "Available",
+        "down": "Unavailable",
+        "unknown": "Unknown",
+        "collecting": "Collecting",
+        "not_connected": "Frontend collection is unconfigured for this node",
+        "disabled": "Frontend collection is disabled for this node",
+        "no_sample": "No valid frontend samples"
+      }
     },
     "process": {
       "coverage": {
@@ -1756,7 +1783,6 @@
       "empty": "No active source",
       "snapshotUnavailable": "No valid metrics snapshot",
       "trendHint": "Trends cover the current instance. Gaps indicate missing samples.",
-      "hideTrend": "Hide trend",
       "metrics": {
         "tasks_pending": "Pending indexing tasks",
         "tasks_oldest_wait_seconds": "Oldest task wait",

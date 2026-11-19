@@ -1,12 +1,12 @@
 <template>
-  <article class="runtime-card" :aria-busy="loading" :data-testid="`engine-runtime-${source}`">
-    <h3>{{ t(`monitor.engineRuntime.${source}`) }}</h3>
+  <article class="engine-card" :aria-busy="loading" :data-testid="`engine-runtime-${source}`">
+    <header class="engine-card-heading"><h3>{{ t(`monitor.engineRuntime.${source}`) }}</h3></header>
     <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" />
     <template v-else-if="current">
       <p class="runtime-state" data-testid="engine-runtime-state">
         {{ t(stateKey) }}<template v-if="current.collection.sampled_at"> · {{ date(current.collection.sampled_at) }}</template>
       </p>
-      <dl v-if="current.id" class="runtime-metrics">
+      <dl v-if="current.id" class="engine-summary">
         <div v-for="metric in metrics" :key="metric">
           <dt>
             {{ t(`monitor.engineRuntime.metrics.${metric}`) }}
@@ -15,25 +15,28 @@
           <dd :data-testid="`engine-runtime-value-${metric}`">{{ display(metric) }}</dd>
         </div>
       </dl>
-      <el-button v-if="current.id" text type="primary" @click="toggleTrend">
-        {{ t(showTrend ? 'monitor.engineRuntime.hideTrend' : 'monitor.engines.viewTrend') }}
+      <el-button v-if="current.id" class="engine-card-action" plain type="primary" @click="openTrend">
+        {{ t('monitor.engines.viewTrend') }}
       </el-button>
     </template>
-    <section v-if="showTrend && current?.id" class="runtime-trend" :aria-busy="trendLoading">
-      <div class="runtime-controls">
-        <el-select v-model="selectedMetric" :aria-label="t('monitor.engines.metric')">
-          <el-option v-for="metric in metrics" :key="metric" :value="metric" :label="t(`monitor.engineRuntime.metrics.${metric}`)" />
-        </el-select>
-        <el-select v-model="range" :aria-label="t('monitor.resources.range')">
-          <el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" />
-        </el-select>
-      </div>
-      <p class="runtime-state">{{ t('monitor.engineRuntime.trendHint') }}</p>
-      <el-alert v-if="trendError" :title="t(trendError)" type="warning" :closable="false" />
-      <div v-else-if="chart" data-testid="engine-runtime-chart">
-        <ChartRenderer :rows="chart.rows" :config="chart.config" @invalid="invalidTrend" />
-      </div>
-    </section>
+    <el-dialog v-if="current?.id" :model-value="showTrend" :title="t(`monitor.engineRuntime.${source}`)"
+      width="min(960px, calc(100vw - 32px))" @update:model-value="value => !value && closeTrend()">
+      <section :aria-busy="trendLoading">
+        <div class="runtime-controls">
+          <el-select v-model="selectedMetric" :aria-label="t('monitor.engines.metric')">
+            <el-option v-for="metric in metrics" :key="metric" :value="metric" :label="t(`monitor.engineRuntime.metrics.${metric}`)" />
+          </el-select>
+          <el-select v-model="range" :aria-label="t('monitor.resources.range')">
+            <el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" />
+          </el-select>
+        </div>
+        <p class="runtime-state">{{ t('monitor.engineRuntime.trendHint') }}</p>
+        <el-alert v-if="trendError" :title="t(trendError)" type="warning" :closable="false" />
+        <div v-else-if="chart" data-testid="engine-runtime-chart">
+          <ChartRenderer :rows="chart.rows" :config="chart.config" @invalid="invalidTrend" />
+        </div>
+      </section>
+    </el-dialog>
   </article>
 </template>
 
@@ -127,10 +130,7 @@ function closeTrend() {
   trendLoading.value = false
   trendError.value = ''
 }
-function toggleTrend() {
-  if (showTrend.value) closeTrend()
-  else showTrend.value = true
-}
+function openTrend() { showTrend.value = true }
 function invalidTrend() {
   history.value = null
   trendError.value = 'monitor.resources.errors.invalidResponse'
@@ -190,14 +190,10 @@ defineExpose({ reload })
 onBeforeUnmount(() => { requests.dispose(); trendRequests.dispose() })
 </script>
 
+<style scoped src="../styles/engineCards.css"></style>
+
 <style scoped>
-.runtime-card { padding: 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); min-width: 0; }
-.runtime-card h3 { margin: 0; font-size: 18px; }
-.runtime-state, .runtime-metrics dt { color: var(--addp-text-secondary); font-size: 13px; }
-.runtime-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; margin: 16px 0; }
-.runtime-metrics dt { display: flex; align-items: center; gap: 4px; }
-.runtime-metrics dd { margin: 6px 0 0; font-size: 20px; overflow-wrap: anywhere; }
+.runtime-state { color: var(--addp-text-secondary); font-size: 13px; }
 .runtime-controls { display: flex; gap: 12px; flex-wrap: wrap; }
 .runtime-controls .el-select { width: 220px; max-width: 100%; }
-.runtime-trend { margin-top: 12px; }
 </style>

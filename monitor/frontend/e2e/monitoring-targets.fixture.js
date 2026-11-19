@@ -1,4 +1,5 @@
 import { pressureMetrics } from '../src/utils/nodeResources'
+import { targetKinds } from '../src/utils/monitoringTargets'
 import { observations } from './resource-observations.fixture'
 
 export const id = '1621bb62-cb0e-40e1-b988-0d4d36683e51'
@@ -8,7 +9,7 @@ export function identity(keys = permissions, context = { type: 'platform' }, pri
   return { principal: { id: 'fixture-user', type: principal }, context, delegation, authorization: { role_assignments: [{ scope: context, permissions: keys }] } }
 }
 export async function backend(page, options = {}) {
-  let target = options.empty ? null : { id, version: 1, subject: { kind: 'node', node_id: node }, monitor_kind: options.kind || 'host_resources', source: { type: options.kind === 'container_resources' ? 'cadvisor' : 'node_exporter', endpoint: 'https://node.test:9443/metrics' }, enabled: options.enabled !== false }
+  let target = options.empty ? null : { id, version: 1, subject: { kind: 'node', node_id: node }, monitor_kind: options.kind || 'host_resources', source: { type: targetKinds[options.kind || 'host_resources'], endpoint: 'https://node.test:9443/metrics' }, enabled: options.enabled !== false }
   const writes = [], reads = []
   const collectionReads = [], summaryReads = []
   let summaryMode = options.summaryMode || 'collecting', summaryRelease

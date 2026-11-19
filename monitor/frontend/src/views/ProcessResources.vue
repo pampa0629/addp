@@ -2,11 +2,16 @@
   <section class="process-resources" :aria-busy="loading">
     <div class="process-toolbar">
       <h2>{{ t('monitor.process.title') }}</h2>
-      <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="process-refresh" @update:model-value="selectRefresh" />
-      <el-button :disabled="!canRead" :loading="loading" @click="reload({ refreshModules: true })">{{ t('common.refresh') }}</el-button>
+      <AutoRefreshControl v-if="canRead && state.tab !== 'frontend'" :model-value="state.refresh" :status="refreshStatus" test-id="process-refresh" @update:model-value="selectRefresh" />
+      <el-button v-if="state.tab !== 'frontend'" :disabled="!canRead" :loading="loading" @click="reload({ refreshModules: true })">{{ t('common.refresh') }}</el-button>
     </div>
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
-    <template v-else>
+    <el-tabs v-if="canReadHost" :model-value="state.tab || 'services'" @update:model-value="changeView">
+      <el-tab-pane :label="t('monitor.frontend.services')" name="services" />
+      <el-tab-pane :label="t('monitor.frontend.title')" name="frontend" />
+    </el-tabs>
+    <FrontendResources v-if="canReadHost && state.tab === 'frontend'" :key="identity" :node-id="state.nodeID" :identity="identity" @update:node-id="nodeID => navigate(resolveProcessRoute({ tab: 'frontend', node_id: nodeID }).query)" />
+    <template v-else-if="canRead">
       <section class="process-totals" data-testid="process-totals">
         <h3 class="process-total-title">{{ t('monitor.processTotals.title') }} <FieldHelp :content="t('monitor.processTotals.scope')" /></h3>
         <el-alert v-if="totalsError" :title="t(totalsError)" type="warning" :closable="false" />
@@ -152,6 +157,7 @@
 </template>
 
 <script setup>
+import FrontendResources from '../components/FrontendResources.vue'
 import ModuleInstanceCards from '../components/ModuleInstanceCards.vue'
 import ModuleNameSelect from '../components/ModuleNameSelect.vue'
 import ContainerResources from '../components/ContainerResources.vue'
@@ -311,6 +317,9 @@ async function loadHosts(rows, ticket) {
   const value = await loadHostReferences(rows.map(row => row.node_id), id => requests.request(config => hostsAPI.node(id, config)), current)
   if (current()) hostReferences.value = value
 }
+function changeView(tab) {
+  return navigate(tab === 'frontend' ? { tab } : {})
+}
 function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, compare: instanceID === state.value.instanceID ? state.value.query.compare : undefined, instance_id: String(instanceID), range }).query) }
 function selectComparison(enabled) { return navigate(resolveProcessRoute({ ...state.value.query, compare: enabled ? 'previous' : undefined }).query) }
@@ -360,13 +369,20 @@ function processErrorKey(error) {
 }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
-  enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value && !filterInput.pending,
+  enabled: () => canRead.value && route.name === 'ProcessResources' && state.value.tab !== 'frontend' && !state.value.changed && !refreshBlocked.value && !loading.value && !filterInput.pending,
   refresh: () => reload({ automatic: true }),
   pause: () => { requests.invalidate(); loading.value = false; totals.value = null },
   visibilityChanged: visible => { pageVisible.value = visible; filterInput.visibilityChanged(visible) }
 })
 async function reload({ automatic = false, refreshModules = false } = {}) {
   if (disposed || route.name !== 'ProcessResources') { refreshCycle.stop(); requests.invalidate(); return }
+  if (state.value.tab === 'frontend') {
+    refreshCycle.stop()
+    requests.invalidate()
+    loading.value = false
+    if (state.value.changed || !canReadHost.value) await navigate(canReadHost.value ? state.value.query : {})
+    return
+  }
   if (automatic && (loading.value || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   refreshCycle.stop()
   const ticket = requests.invalidate()

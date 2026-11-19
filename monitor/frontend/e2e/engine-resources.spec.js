@@ -190,7 +190,7 @@ for (const detail of [false, true]) for (const automatic of [false, true]) test(
   await expect(content).toContainText('1.00 GiB')
   const chart = detail ? await engineChart(page) : null
   const canvas = chart ? await chart.locator('canvas').elementHandle() : null
-  const row = !detail ? await content.locator('article.engine-card').elementHandle() : null
+  const row = !detail ? await content.getByTestId(`engine-card-${engineID}`).elementHandle() : null
   const reads = () => state.calls.filter(path => path.endsWith(detail ? '_observations' : '_summaries')).length
   const before = reads()
   state.hold()

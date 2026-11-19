@@ -762,10 +762,13 @@
       "saved": "监测目标已保存",
       "deleted": "监测目标已删除",
       "kinds": {
+        "frontend_resources": "前端资源",
         "host_resources": "主机资源",
         "container_resources": "容器资源"
       },
       "collection": {
+        "frontend": "前往服务监控查看前端采集结果。",
+        "frontendLink": "查看前端指标",
         "title": "最近采集结果",
         "refresh": "刷新采集状态",
         "savedConfig": "以下结果对应已保存的配置；草稿尚未生效。",
@@ -1063,6 +1066,30 @@
       "coverage": "有效采样 {valid}/{expected}",
       "cores": "核",
       "modules": "按模块查看"
+    },
+    "frontend": {
+      "title": "前端",
+      "services": "服务实例",
+      "runtime": "运行方式",
+      "entry": "页面入口",
+      "asset": "应用脚本",
+      "cpu": "CPU 占用",
+      "memory": "内存占用",
+      "restarts": "重启次数",
+      "selectNode": "选择前端采集节点",
+      "modes": {
+        "vite": "开发 · Vite",
+        "compose": "Compose · Nginx"
+      },
+      "states": {
+        "up": "可用",
+        "down": "不可用",
+        "unknown": "未知",
+        "collecting": "正在采集",
+        "not_connected": "当前节点尚未配置前端采集",
+        "disabled": "当前节点的前端采集已停用",
+        "no_sample": "暂无有效前端样本"
+      }
     },
     "process": {
       "coverage": {
@@ -1756,7 +1783,6 @@
       "empty": "当前暂无运行来源",
       "snapshotUnavailable": "暂无有效指标快照",
       "trendHint": "趋势仅涵盖当前运行实例，缺样处留空。",
-      "hideTrend": "收起趋势",
       "metrics": {
         "tasks_pending": "待处理索引任务",
         "tasks_oldest_wait_seconds": "最老任务等待时间",

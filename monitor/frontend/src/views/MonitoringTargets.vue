@@ -57,8 +57,9 @@
           </div>
           <p v-if="draftChanged" class="target-hint">{{ t('monitor.targets.collection.savedConfig') }}</p>
           <p v-if="!canObserve" role="status">{{ t('monitor.targets.collection.denied') }}</p>
-          <p v-else-if="target.monitor_kind !== 'host_resources'" role="status">{{ t('monitor.targets.collection.unsupported') }}</p>
           <p v-else-if="!target.enabled" role="status">{{ t('monitor.targets.collection.disabled') }}</p>
+          <p v-else-if="target.monitor_kind === 'frontend_resources'" role="status">{{ t('monitor.targets.collection.frontend') }}</p>
+          <p v-else-if="target.monitor_kind !== 'host_resources'" role="status">{{ t('monitor.targets.collection.unsupported') }}</p>
           <p v-else-if="collectionLoading" role="status">{{ t('monitor.targets.collection.loading') }}</p>
           <el-alert v-else-if="collectionError" :title="t(collectionError)" type="warning" :closable="false" show-icon />
           <template v-else-if="collection">
@@ -69,6 +70,7 @@
             <p>{{ t('monitor.resources.queriedAt') }}: {{ formatDateTime(collection.queried_at) }}</p>
           </template>
           <el-button v-if="canObserve && target.monitor_kind === 'host_resources'" text type="primary" @click="navigate(`/node-resources/${target.subject.node_id}`, {})">{{ t('monitor.targets.collection.resources') }}</el-button>
+          <el-button v-if="canObserve && auth.hasPermission('platform.module.read') && target.monitor_kind === 'frontend_resources'" text type="primary" @click="navigate('/service-resources', { tab: 'frontend', node_id: target.subject.node_id })">{{ t('monitor.targets.collection.frontendLink') }}</el-button>
         </section>
         <p v-if="creating" class="target-hint">{{ t('monitor.targets.configHint') }}</p>
         <el-button text type="primary" @click="openNodes">{{ t('monitor.targets.nodeInventory') }}</el-button>
@@ -163,8 +165,9 @@ function clearListCollections() {
 function collectionFailure(error) { return error.message === 'target_collection_changed' ? 'monitor.targets.collection.changed' : resourceErrorKey(error) }
 function listCollectionKey(row) {
   if (!canObserve.value) return 'monitor.targets.collection.denied'
-  if (row.monitor_kind !== 'host_resources') return 'monitor.targets.listCollection.unsupported'
   if (!row.enabled) return 'monitor.targets.listCollection.disabled'
+  if (row.monitor_kind === 'frontend_resources') return 'monitor.targets.collection.frontend'
+  if (row.monitor_kind !== 'host_resources') return 'monitor.targets.listCollection.unsupported'
   if (loading.value) return 'monitor.targets.collection.loading'
   if (!hostReferences.value[row.subject.node_id]) return 'monitor.targets.listCollection.hostUnavailable'
   if (listCollectionLoading.value) return 'monitor.targets.collection.loading'

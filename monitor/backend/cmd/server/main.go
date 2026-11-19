@@ -162,7 +162,7 @@ func main() {
 		WithCDC(service.CDCObservationDependencies{Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).
 		WithEngineRuntime(service.EngineRuntimeDependencies{Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).
 		WithProcessTotals(service.ProcessTotalDependencies{Users: systemServiceClient, Backend: cfg.MetricsQueryClient}).
-		WithCollectionHealth(cfg.MetricsQueryClient).WithAutomaticCollection(automaticCollection)
+		WithCollectionHealth(cfg.MetricsQueryClient).WithAutomaticCollection(automaticCollection).WithFrontend(cfg.MetricsQueryClient)
 	resourceRules := service.NewResourceAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
 	go resourceRules.Run(runtimeContext)
 	httpRules := service.NewHTTPAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)

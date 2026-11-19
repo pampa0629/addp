@@ -57,12 +57,16 @@ scrape_configs:
       # Remove exporter-owned temporary labels before saving controlled identities.
       - action: labeldrop
         regex: '__tmp_.*|__meta_.*'
-      # Node ownership belongs to host/container targets; process-host relations
+      # Node ownership belongs to host/container/frontend targets; process-host relations
       # are read from System, never inferred from exporter labels.
       - source_labels: [addp_monitor_kind, addp_node_id]
-        regex: '(host_resources|container_resources);(.+)'
+        regex: '(host_resources|container_resources|frontend_resources);(.+)'
         replacement: '$2'
         target_label: __tmp_addp_node_id
+      - source_labels: [addp_monitor_kind, addp_frontend_revision]
+        regex: 'frontend_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_frontend_revision
       - source_labels: [addp_monitor_kind]
         target_label: __tmp_addp_monitor_kind
       - source_labels: [addp_source]
@@ -111,6 +115,8 @@ scrape_configs:
         regex: '(exported_)*addp_.*'
       - source_labels: [__tmp_addp_node_id]
         target_label: addp_node_id
+      - source_labels: [__tmp_addp_frontend_revision]
+        target_label: addp_frontend_revision
       - source_labels: [__tmp_addp_monitor_kind]
         target_label: addp_monitor_kind
       - source_labels: [__tmp_addp_source]

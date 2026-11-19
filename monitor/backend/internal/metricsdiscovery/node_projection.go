@@ -50,12 +50,18 @@ func validUUID(value string) bool {
 	return err == nil && id != uuid.Nil && id.String() == value
 }
 
+// FrontendRevision binds samples to the exact enabled configuration.
+func (t NodeTarget) FrontendRevision(nodeVersion int64) string {
+	return t.ID + ":" + strconv.FormatInt(t.Version, 10) + ":" + strconv.FormatInt(nodeVersion, 10)
+}
+
 func (t NodeTarget) Validate() error {
 	if !validUUID(t.ID) || t.Version < 1 || t.Subject.Kind != "node" || !validUUID(t.Subject.NodeID) {
 		return ErrInvalidTarget
 	}
 	if (t.Source.Type != "node_exporter" || t.MonitorKind != "host_resources") &&
-		(t.Source.Type != "cadvisor" || t.MonitorKind != "container_resources") {
+		(t.Source.Type != "cadvisor" || t.MonitorKind != "container_resources") &&
+		(t.Source.Type != "frontend_exporter" || t.MonitorKind != "frontend_resources") {
 		return ErrInvalidTarget
 	}
 	if _, err := parseEndpoint(t.Source.Endpoint); err != nil {
@@ -267,14 +273,16 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		if !accepted {
 			continue
 		}
-		groups = append(groups, TargetGroup{
-			Targets: []string{resolved.Address}, Labels: map[string]string{
-				"__scheme__": "https", "__metrics_path__": "/metrics",
-				"addp_node_id": target.Subject.NodeID, "addp_monitor_kind": target.MonitorKind, "addp_source": target.Source.Type,
-				"__meta_addp_target_id": target.ID, "__meta_addp_target_version": strconv.FormatInt(target.Version, 10),
-				"__meta_addp_node_version": strconv.FormatInt(nodeVersion, 10),
-			},
-		})
+		labels := map[string]string{
+			"__scheme__": "https", "__metrics_path__": "/metrics",
+			"addp_node_id": target.Subject.NodeID, "addp_monitor_kind": target.MonitorKind, "addp_source": target.Source.Type,
+			"__meta_addp_target_id": target.ID, "__meta_addp_target_version": strconv.FormatInt(target.Version, 10),
+			"__meta_addp_node_version": strconv.FormatInt(nodeVersion, 10),
+		}
+		if target.MonitorKind == "frontend_resources" {
+			labels["addp_frontend_revision"] = target.FrontendRevision(nodeVersion)
+		}
+		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: labels})
 	}
 	for _, instance := range snapshot.ModuleInstances {
 		scope := ProcessCollectionScope(instance)

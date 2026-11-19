@@ -3075,6 +3075,92 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/frontend_observations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取前端采集摘要 | Read frontend observation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "采集节点 ID | Collection node ID",
+                        "name": "node_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.FrontendObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read",
+                    "platform.host_node.read"
+                ]
+            }
+        },
         "/platform/http-alert-rules": {
             "get": {
                 "security": [
@@ -7630,6 +7716,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "client.HostNodeReference": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "client.UserHostNode": {
             "type": "object",
             "properties": {
@@ -8853,6 +8953,32 @@ const docTemplate = `{
                 "type": "string"
             }
         },
+        "github_com_addp_monitor_internal_resourcequery.FrontendSample": {
+            "type": "object",
+            "properties": {
+                "asset_up": {
+                    "type": "boolean"
+                },
+                "cpu_cores": {
+                    "type": "number"
+                },
+                "entry_up": {
+                    "type": "boolean"
+                },
+                "memory_bytes": {
+                    "type": "number"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "restart_count": {
+                    "type": "number"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_resourcequery.HTTPObservation": {
             "type": "object",
             "properties": {
@@ -9540,6 +9666,26 @@ const docTemplate = `{
                 },
                 "truncated": {
                     "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.FrontendObservation": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.FrontendSample"
+                    }
+                },
+                "node": {
+                    "$ref": "#/definitions/client.HostNodeReference"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "source_state": {
+                    "type": "string"
                 }
             }
         },

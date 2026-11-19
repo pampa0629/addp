@@ -1,3 +1,4 @@
+import { isTargetUUID } from './monitoringTargets.js'
 import { compareEvaluationPeriods } from '../../../../common-frontend/basic/src/utils/evaluationPeriodComparison.mjs'
 import { normalizeRuntimeInstanceStopReason } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import { resolveRuntimeInstanceTime, runtimeInstanceTimeParams } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
@@ -17,6 +18,11 @@ export function processRoleLabelKey(instance) {
     : `monitor.process.roles.${instance.role}`
 }
 export function resolveProcessRoute(input = {}) {
+  if (input.tab === 'frontend') {
+    const nodeID = isTargetUUID(input.node_id) ? input.node_id : ''
+    const query = { tab: 'frontend', ...(nodeID ? { node_id: nodeID } : {}) }
+    return { ...resolveProcessRoute(), tab: 'frontend', nodeID, query, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+  }
   const time = resolveRuntimeInstanceTime(input)
   const page = typeof input.page === 'string' && /^[1-9]\d{0,6}$/.test(input.page) ? Number(input.page) : 1
   const module = typeof input.module_name === 'string' && /^[a-z][a-z0-9_-]{0,49}$/.test(input.module_name) ? input.module_name : ''

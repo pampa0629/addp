@@ -26,7 +26,7 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 		route := c.FullPath()
-		isResource := strings.HasPrefix(route, "/api/v1/monitor/platform/resource_") || strings.HasPrefix(route, "/api/v1/monitor/platform/process_resource_")
+		isResource := route == "/api/v1/monitor/platform/frontend_observations" || strings.HasPrefix(route, "/api/v1/monitor/platform/resource_") || strings.HasPrefix(route, "/api/v1/monitor/platform/process_resource_")
 		isQueryPolicy := route == "/api/v1/monitor/settings/resource-query-policy"
 		isRule := strings.HasPrefix(route, "/api/v1/monitor/platform/resource-alert-rules")
 		isAlert := strings.HasPrefix(route, "/api/v1/monitor/platform/alerts") || strings.HasPrefix(route, "/api/v1/monitor/platform/alert-notification-")

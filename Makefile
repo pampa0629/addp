@@ -1711,6 +1711,11 @@ test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 键�
 test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、故障恢复和持久化
 	@python3 scripts/test/metrics-http-budget.py bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)
 
+.PHONY: build-frontend-metrics-source
+build-frontend-metrics-source: ## 构建部署节点的前端采集程序，指定 FRONTEND_METRICS_BINARY 绝对路径
+	@test -n "$(FRONTEND_METRICS_BINARY)" && test "$(patsubst /%,/,$(FRONTEND_METRICS_BINARY))" = /
+	@cd monitor/backend && GOWORK=off go build -o "$(FRONTEND_METRICS_BINARY)" ./cmd/frontend-metrics-source
+
 .PHONY: test-monitor-cdc-source-unit
 test-monitor-cdc-source-unit: ## CDC 固定指标、缺样语义和有界读取 T1
 	@cd monitor/backend && GOWORK=off go test ./internal/cdcsource ./cmd/cdc-metrics-source ./cmd/meilisearch-metrics-source ./internal/sourceserver -count=1

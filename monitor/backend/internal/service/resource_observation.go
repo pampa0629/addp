@@ -46,6 +46,7 @@ type ResourceObservationService struct {
 	engineRuntime       EngineRuntimeDependencies
 	processTotals       ProcessTotalDependencies
 	collectionHealth    CollectionHealthBackend
+	frontend            FrontendObservationBackend
 	automaticCollection AutomaticCollectionStore
 	engines             EngineObservationDependencies
 	process             ProcessObservationDependencies

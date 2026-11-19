@@ -64,10 +64,15 @@ func New(handler http.Handler, directory string) (*http.Server, error) {
 }
 
 func Serve(handler http.Handler, directory string) error {
+	return ServeAt(handler, directory, ":9443")
+}
+
+func ServeAt(handler http.Handler, directory, address string) error {
 	server, err := New(handler, directory)
 	if err != nil {
 		return err
 	}
+	server.Addr = address
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	go func() {

@@ -1,4 +1,4 @@
-export const targetKinds = { host_resources: 'node_exporter', container_resources: 'cadvisor' }
+export const targetKinds = { host_resources: 'node_exporter', container_resources: 'cadvisor', frontend_resources: 'frontend_exporter' }
 export function isTargetUUID(value) {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value) && !/^0{8}-0{4}-0{4}-0{4}-0{12}$/u.test(value)
 }

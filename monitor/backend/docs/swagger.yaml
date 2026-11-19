@@ -1,5 +1,14 @@
 basePath: /api/v1/monitor
 definitions:
+  client.HostNodeReference:
+    properties:
+      enabled:
+        type: boolean
+      node_id:
+        type: string
+      version:
+        type: integer
+    type: object
   client.UserHostNode:
     properties:
       display_name:
@@ -808,6 +817,23 @@ definitions:
     additionalProperties:
       type: string
     type: object
+  github_com_addp_monitor_internal_resourcequery.FrontendSample:
+    properties:
+      asset_up:
+        type: boolean
+      cpu_cores:
+        type: number
+      entry_up:
+        type: boolean
+      memory_bytes:
+        type: number
+      mode:
+        type: string
+      module:
+        type: string
+      restart_count:
+        type: number
+    type: object
   github_com_addp_monitor_internal_resourcequery.HTTPObservation:
     properties:
       method:
@@ -1259,6 +1285,19 @@ definitions:
         $ref: '#/definitions/github_com_addp_monitor_internal_service.ExecutionObservation'
       truncated:
         type: boolean
+    type: object
+  github_com_addp_monitor_internal_service.FrontendObservation:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.FrontendSample'
+        type: array
+      node:
+        $ref: '#/definitions/client.HostNodeReference'
+      queried_at:
+        type: string
+      source_state:
+        type: string
     type: object
   github_com_addp_monitor_internal_service.HTTPAlertRuleInput:
     properties:
@@ -5301,6 +5340,62 @@ paths:
       x-addp-required-permissions:
       - monitor.resource_observation.read
       - platform.engine_deployment.read
+  /platform/frontend_observations:
+    get:
+      parameters:
+      - description: 采集节点 ID | Collection node ID
+        in: query
+        name: node_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.FrontendObservation'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取前端采集摘要 | Read frontend observation
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
+      - platform.host_node.read
   /platform/http-alert-rules:
     get:
       parameters:

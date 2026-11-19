@@ -13,14 +13,16 @@
         <el-tabs :model-value="state.scope" @update:model-value="scope => navigate({ ...state.query, scope, page: '1' })" data-testid="engine-scopes">
           <el-tab-pane v-for="scope in ['infra','business','runtime']" :key="scope" :name="scope" :label="t(`monitor.engines.scopes.${scope}`)" />
         </el-tabs>
-        <EngineRuntimeCard v-if="state.scope === 'runtime' && visible" :key="identity" ref="runtimeCard" source="geopython" @access-lost="blocked = true" />
+        <div v-if="state.scope === 'runtime' && visible" class="engine-grid">
+          <EngineRuntimeCard :key="identity" ref="runtimeCard" source="geopython" @access-lost="blocked = true" />
+        </div>
         <template v-if="state.scope !== 'runtime'">
-          <EngineRuntimeCard v-if="state.scope === 'infra' && visible" :key="identity" ref="runtimeCard" class="infra-runtime" source="meilisearch" @access-lost="blocked = true" />
           <form class="toolbar" @submit.prevent="filterInput.submit">
             <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
             <FieldHelp :content="t('monitor.engines.scopeHint')" />
           </form>
           <div class="engine-grid" v-loading="loading && !observed" data-testid="engine-list">
+            <EngineRuntimeCard v-if="showMeilisearch && visible" :key="identity" ref="runtimeCard" source="meilisearch" @access-lost="blocked = true" />
             <article v-for="row in owners" :key="row.deployment_id" class="engine-card" :aria-label="row.display_name" :data-testid="`engine-card-${row.deployment_id}`">
               <header class="engine-card-heading"><h3>{{ row.display_name }}</h3><el-tag effect="plain">{{ engineNames[row.engine_type] }}</el-tag></header>
               <div class="engine-card-host"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
@@ -31,10 +33,10 @@
                   <dd>{{ value(observation(row.deployment_id)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</dd>
                 </div>
               </dl>
-              <el-button type="primary" plain :disabled="loading" @click="navigate({ ...state.query, engine_type: row.engine_type, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button>
+              <el-button class="engine-card-action" type="primary" plain :disabled="loading" @click="navigate({ ...state.query, engine_type: row.engine_type, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button>
             </article>
           </div>
-          <el-empty v-if="!loading && !errorKey && !owners.length" :description="t('monitor.engines.empty')" />
+          <el-empty v-if="!loading && !errorKey && !owners.length && !showMeilisearch" :description="t('monitor.engines.empty')" />
           <el-pagination v-if="!errorKey && (observed || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
         </template>
       </template>
@@ -100,6 +102,8 @@ const canReadHost = computed(() => canRead.value && auth.hasPermission('platform
 const hostReferences = ref({})
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveEngineRoute(route.query)), owners = ref([]), total = ref(0), observed = ref(null), history = ref(null)
+const showMeilisearch = computed(() => state.value.scope === 'infra' && state.value.page === 1 &&
+  t('monitor.engineRuntime.meilisearch').toLocaleLowerCase(locale.value).includes(state.value.search.toLocaleLowerCase(locale.value)))
 const canConfigure = computed(() => canReadHost.value && state.value.scope !== 'runtime' &&
   (auth.hasPermission('platform.engine_deployment.create') || auth.hasPermission('platform.engine_deployment.update')))
 function openConfiguration() {
@@ -241,20 +245,14 @@ watch([() => route.fullPath, identity], () => reload(), { immediate: true, flush
 onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); requests.dispose() })
 </script>
 
+<style scoped src="../styles/engineCards.css"></style>
+
 <style scoped>
 .engine-resources { padding: 24px; min-width: 0; color: var(--addp-text-primary); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 .toolbar h2 { flex: 1; }
 .toolbar .el-input, .toolbar .el-select { width: 240px; max-width: 100%; }
 .engine-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 16px; }
-.engine-card { padding: 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); min-width: 0; }
-.engine-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.engine-card-heading h3 { margin: 0; overflow-wrap: anywhere; font-size: 18px; }
-.engine-card-host { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; overflow-wrap: anywhere; color: var(--addp-text-secondary); }
-.engine-card-state { display: flex; gap: 6px; flex-wrap: wrap; color: var(--addp-text-secondary); }
-.engine-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; margin: 20px 0; }
-.engine-summary dt { color: var(--addp-text-secondary); font-size: 13px; }
-.engine-summary dd { margin: 6px 0 0; font-size: 20px; overflow-wrap: anywhere; }
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; }
 .metric-card { padding: 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); min-width: 0; }
 .metric-card h3 { font-size: 16px; margin: 0 0 12px; }
@@ -262,6 +260,9 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .metric-card strong { font-size: 24px; overflow-wrap: anywhere; }
 .hint { margin: 8px 0; color: var(--addp-text-secondary); line-height: 1.5; font-size: 13px; }
 .trend, .el-pagination { margin-top: 20px; }
-.infra-runtime { margin-bottom: 16px; }
+/* Keep a long host name in the same row and let only the value wrap. */
+.engine-card-host { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 6px; margin-top: 12px; color: var(--addp-text-secondary); }
+.engine-card-host :deep(.el-button) { padding: 0; }
+.engine-card-state { display: flex; gap: 6px; flex-wrap: wrap; color: var(--addp-text-secondary); }
 .chart { display: flex; min-width: 0; }
 </style>

@@ -28,6 +28,31 @@ test('registers, updates, disables and deletes using authoritative saved version
   await expect(page).toHaveURL(/\/monitoring-targets$/)
   expect(state.writes[2]).toEqual({ method: 'DELETE', input: { version: 2 } })
 })
+test('frontend target pause and resume update the same saved configuration and link to its observations', async ({ page }) => {
+  const state = await backend(page, {
+    kind: 'frontend_resources',
+    identity: identity([...permissions, 'monitor.resource_observation.read', 'platform.module.read'])
+  })
+  await page.route('**/api/v1/monitor/platform/frontend_observations?*', route => route.fulfill({ json: { node: { node_id: node }, source_state: 'no_sample', data: [] } }))
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  await expect(panel).toContainText('前往服务监控查看前端采集结果')
+  await page.getByTestId('target-enabled').click()
+  await page.getByTestId('target-save').click()
+  await expect(panel).toContainText('已保存的采集配置已停用')
+  await page.getByTestId('target-enabled').click()
+  await page.getByTestId('target-save').click()
+  await expect(panel).toContainText('前往服务监控查看前端采集结果')
+  expect(state.writes.map(({ method, input }) => [method, input.version, input.enabled, input.source.type])).toEqual([
+    ['PUT', 1, false, 'frontend_exporter'],
+    ['PUT', 2, true, 'frontend_exporter']
+  ])
+  expect(state.collectionReads).toHaveLength(0)
+  await panel.getByRole('button', { name: '查看前端指标', exact: true }).click()
+  await expect(page).toHaveURL(`/service-resources?tab=frontend&node_id=${node}`)
+  await expect(page.getByTestId('frontend-resources')).toContainText('暂无有效前端样本')
+})
+
 test('retains a conflicting draft and requires explicit reload before another write', async ({ page }) => {
   const state = await backend(page, { conflict: true })
   await page.goto(`/monitoring-targets/${id}`)

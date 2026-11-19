@@ -1069,3 +1069,30 @@ test('IME composition waits for completion and a route change cancels pending te
   expect(state.listCalls.at(-1).registered_host).toBe('manager')
   expect(state.listCalls.some(row => row.registered_host === 'obsolete')).toBe(false)
 })
+
+test('frontend tab shows pilot samples and distinguishes a failed script from missing data', async ({ page }) => {
+  const nodeID = 'f83e9874-2164-4411-a5c0-650d143006cf'
+  await page.route('**/api/v1/**', async route => {
+    const { pathname, searchParams } = new URL(route.request().url())
+    if (pathname.endsWith('/refresh')) return route.fulfill({ json: { access_token: 'fixture-token', expires_in: 3600 } })
+    if (pathname.endsWith('/users/me')) return route.fulfill({ json: { id: 9, username: 'fixture-user' } })
+    if (pathname.endsWith('/auth/context')) return route.fulfill({ json: identity(['monitor.resource_observation.read', 'platform.module.read', 'platform.host_node.read']) })
+    const host = { node_id: nodeID, display_name: '前端节点', addresses: [], enabled: true, version: 1, node_kind: 'physical' }
+    if (pathname.endsWith('/host_nodes')) return route.fulfill({ json: { data: [host], total: 1, page: 1, page_size: 20 } })
+    if (pathname.endsWith(`/host_nodes/${nodeID}`)) return route.fulfill({ json: host })
+    if (!pathname.endsWith('/frontend_observations')) return route.fulfill({ status: 500, json: {} })
+    expect(searchParams.get('node_id')).toBe(nodeID)
+    return route.fulfill({ json: { node: { node_id: nodeID }, source_state: 'collecting', queried_at: '2026-11-19T06:00:00Z', data: [
+      { module: 'console', mode: 'vite', entry_up: true, asset_up: true, cpu_cores: 0, memory_bytes: 65536, restart_count: null },
+      { module: 'monitor', mode: 'compose', entry_up: true, asset_up: false, cpu_cores: null, memory_bytes: null, restart_count: 0 }
+    ] } })
+  })
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.goto(`/service-resources?tab=frontend&node_id=${nodeID}`)
+  const panel = page.getByTestId('frontend-resources')
+  await expect(page.getByRole('tab', { name: '前端', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(panel.getByRole('row', { name: /console/ })).toContainText('64.00 KiB')
+  await expect(panel.getByRole('row', { name: /monitor/ })).toContainText('不可用')
+  await expect(panel.getByRole('row', { name: /monitor/ })).toContainText('—')
+  await expect(page.getByTestId('process-totals')).toHaveCount(0)
+})

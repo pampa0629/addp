@@ -1030,7 +1030,7 @@ for phase,at in [('published','0.01'),('control_before_enum','1.02'),('enumerate
         self.assertEqual(Path(calls[1][0][0]).parent, work)
         self.assertIn('-test.timeout=60s', calls[1][0])
         self.assertIn('-test.count=1', calls[1][0])
-        self.assertIn('-test.run=^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes|BlockCapacity)$', calls[1][0])
+        self.assertIn('-test.run=^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes|BlockCapacity|FrontendSamples)$', calls[1][0])
         self.assertEqual(calls[1][1]['cwd'], ROOT / 'monitor/backend/internal/resourcequery')
         self.assertTrue(all(options['check'] for _, options in calls))
         self.assertEqual(calls[1][1]['env']['ADDP_METRICS_QUERY_INTEGRATION'], '1')

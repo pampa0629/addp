@@ -733,7 +733,7 @@ def check_resource_windows():
     backend = Path(__file__).resolve().parents[2] / 'monitor/backend'
     binary = WORK / 'resource-windows.test'
     environment = dict(os.environ, GOWORK='off')
-    selection = '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes|BlockCapacity)$'
+    selection = '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes|BlockCapacity|FrontendSamples)$'
     if os.environ.get('ADDP_METRICS_T2_CASE') == 'block-capacity': selection = '^TestIntegrationMetricsBlockCapacity$'
     print('Metrics window T2: build test binary (preparation limit 180s)', flush=True)
     receipt = os.environ.get('ADDP_HTTP_BUDGET_RECEIPT')

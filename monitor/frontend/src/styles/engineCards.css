@@ -1,0 +1,7 @@
+.engine-card { display: flex; flex-direction: column; padding: 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); min-width: 0; }
+.engine-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.engine-card-heading h3 { margin: 0; overflow-wrap: anywhere; font-size: 18px; }
+.engine-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; margin: 20px 0; }
+.engine-summary dt { color: var(--addp-text-secondary); font-size: 13px; overflow-wrap: anywhere; }
+.engine-summary dd { margin: 6px 0 0; font-size: 20px; overflow-wrap: anywhere; }
+.engine-card-action { align-self: flex-start; margin-top: auto; }
