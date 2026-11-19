@@ -906,6 +906,8 @@ PostgreSQL `catalog` Schema 是权威事实源。Meilisearch 索引固定使用 
 
 索引更新通过 Catalog 数据库内的投影任务异步完成。数据库事务成功而索引失败时 API 事实仍然有效，投影任务后台重试；管理员可以从 PostgreSQL 全量重建索引。不得把 Meilisearch 命中作为授权结论，返回前仍需应用 Catalog 可见性规则。
 
+Elasticsearch 接入复用同一文档投影、检索过滤和数据库授权复核。Catalog 定义索引映射，Common 提供 Elasticsearch 连接。使用 `make test-common-elasticsearch COMMON_ELASTICSEARCH_TEST_ARGS="--test platform-catalog"` 在两种真实引擎上验证租户及部门可见性、按状态过滤、修改、删除和分页。不同引擎的分词和相关性排序可能不同，搜索结果仍使用同一业务过滤规则。生产入口目前继续使用 Meilisearch。
+
 Meta 技术树索引、Manager 内容索引、Catalog 企业元数据索引和 Asset 已发布资产索引必须物理或逻辑隔离，不能继续复用 `asset` 文档模型。
 
 Manager 是技术内容全文/向量检索投影的唯一 owner。Meta 在完成 DataItem 扫描后，只通过 Manager 的 Tenant Runtime API 提交以 fingerprint 为 `document_id` 的内容文档；Manager 负责索引名称、字段映射、写入和删除。该调用是软依赖：Manager 不可达不得使 Meta 进程或扫描事实写入失败，但本次扫描必须记录 `index_failed`，后续重扫可按 DataItem 事实完整重建投影。Meta 不得持有 Meilisearch Client、索引名称或直接读写 Manager 索引。

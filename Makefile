@@ -1676,7 +1676,7 @@ test-common-elasticsearch-unit: ## ES 插件、通用文档预览和单层目录
 	@cd develop/backend && GOWORK=off go test ./internal/api ./internal/service -count=1
 
 test-common-elasticsearch: ## 独占 ES 与 Spark Worker 验证插件、预览、扫描和索引分布式读取
-	@bash scripts/test/common-elasticsearch-gate.sh
+	@bash scripts/test/common-elasticsearch-gate.sh $(COMMON_ELASTICSEARCH_TEST_ARGS)
 
 .PHONY: test-business-redis
 test-business-redis: ## 独占 Redis 验证 Business 认证、原生样例、幂等与重启持久化

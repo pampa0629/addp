@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ func (i *MeilisearchCatalogIndex) SearchCatalogEntries(ctx context.Context, tena
 	}
 	filters := []string{fmt.Sprintf("tenant_id = %d", tenantID), `entry_status = "active"`}
 	if filter.View == EntryViewGovernance {
-		filters = append(filters, `governance_status IN ["curated", "certified", "deprecated"]`)
+		filters = append(filters, `governance_status IN ["`+strings.Join(catalogGovernanceSearchStatuses, `", "`)+`"]`)
 	}
 	if !access.Inventory {
 		visibility := `visibility = "tenant"`
@@ -42,23 +43,12 @@ func (i *MeilisearchCatalogIndex) SearchCatalogEntries(ctx context.Context, tena
 		}
 		filters = append(filters, visibility)
 	}
-	appendStringFilter := func(field, value string) {
-		if value != "" {
-			filters = append(filters, fmt.Sprintf(`%s = "%s"`, field, value))
+	for _, facet := range catalogSearchFacets(filter) {
+		value := fmt.Sprint(facet.value)
+		if _, ok := facet.value.(string); ok {
+			value = strconv.Quote(value)
 		}
-	}
-	appendStringFilter("entry_type", filter.EntryType)
-	appendStringFilter("source_status", filter.SourceStatus)
-	appendStringFilter("governance_status", filter.GovernanceStatus)
-	appendStringFilter("visibility", filter.Visibility)
-	if filter.PrimaryDomainID > 0 {
-		appendStringFilter("primary_domain_id", fmt.Sprintf("%d", filter.PrimaryDomainID))
-	}
-	if filter.DepartmentID > 0 {
-		appendStringFilter("accountable_department_id", fmt.Sprintf("%d", filter.DepartmentID))
-	}
-	if filter.SourceEngineID > 0 {
-		filters = append(filters, fmt.Sprintf("source_engine_id = %d", filter.SourceEngineID))
+		filters = append(filters, facet.field+" = "+value)
 	}
 	response, err := i.client.Index(i.indexName).SearchWithContext(ctx, filter.Search, &meilisearch.SearchRequest{
 		Filter: strings.Join(filters, " AND "), Limit: int64(filter.PageSize), Offset: int64((filter.Page - 1) * filter.PageSize),
@@ -158,10 +148,7 @@ func (i *MeilisearchCatalogIndex) ensureIndex(ctx context.Context) error {
 	index := i.client.Index(i.indexName)
 	settings := []func() (*meilisearch.TaskInfo, error){
 		func() (*meilisearch.TaskInfo, error) {
-			return index.UpdateSearchableAttributesWithContext(ctx, &[]string{
-				"business_name", "business_description", "source_name", "source_identity", "domain_names",
-				"glossary_names", "responsibility_names", "component_names",
-			})
+			return index.UpdateSearchableAttributesWithContext(ctx, &catalogSearchTextFields)
 		},
 		func() (*meilisearch.TaskInfo, error) {
 			return index.UpdateFilterableAttributesWithContext(ctx, &[]interface{}{

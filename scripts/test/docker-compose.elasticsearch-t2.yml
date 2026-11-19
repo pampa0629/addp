@@ -11,8 +11,28 @@ services:
       - "127.0.0.1::9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --user \"elastic:$${ELASTIC_PASSWORD}\" http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 2s
+      timeout: 5s
+      retries: 50
     mem_limit: 2g
     restart: "no"
+  meilisearch:
+    image: getmeili/meilisearch:v1.54.3@sha256:e68913ab7d6f5b159529e472cfd362ce3c741fafd3c127961b2142abbe41b3c9
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILISEARCH_TEST_KEY:?T2 Meilisearch key required}
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "127.0.0.1::7700"
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
   spark-master:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     user: root
@@ -32,3 +52,4 @@ services:
     mem_limit: 2g
 volumes:
   elasticsearch_data:
+  meilisearch_data:

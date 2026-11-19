@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,40 @@ type CatalogSearchProjection interface {
 
 type CatalogSearchResolver interface {
 	SearchCatalogEntries(context.Context, int64, EntryAccess, EntryListFilter) ([]uuid.UUID, int64, error)
+}
+
+var catalogSearchTextFields = []string{
+	"business_name", "business_description", "source_name", "source_identity", "domain_names",
+	"glossary_names", "responsibility_names", "component_names",
+}
+
+var catalogGovernanceSearchStatuses = []string{"curated", "certified", "deprecated"}
+
+type catalogSearchFacet struct {
+	field string
+	value any
+}
+
+func catalogSearchFacets(filter EntryListFilter) []catalogSearchFacet {
+	facets := make([]catalogSearchFacet, 0, 7)
+	for _, facet := range []catalogSearchFacet{
+		{"entry_type", filter.EntryType}, {"source_status", filter.SourceStatus},
+		{"governance_status", filter.GovernanceStatus}, {"visibility", filter.Visibility},
+	} {
+		if facet.value != "" {
+			facets = append(facets, facet)
+		}
+	}
+	if filter.PrimaryDomainID > 0 {
+		facets = append(facets, catalogSearchFacet{"primary_domain_id", strconv.FormatInt(filter.PrimaryDomainID, 10)})
+	}
+	if filter.DepartmentID > 0 {
+		facets = append(facets, catalogSearchFacet{"accountable_department_id", strconv.FormatInt(filter.DepartmentID, 10)})
+	}
+	if filter.SourceEngineID > 0 {
+		facets = append(facets, catalogSearchFacet{"source_engine_id", filter.SourceEngineID})
+	}
+	return facets
 }
 
 type ProjectionWorker struct {
