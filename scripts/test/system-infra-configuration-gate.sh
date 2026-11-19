@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=postgres,redis
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.system-infra-configuration-t2.yml
-# ADDP_T2_INPUT_FILES=docker-compose.infra.yml docker-compose.yml scripts/infra/infra-postgresql.conf scripts/infra/redis-authentication.sh system/backend/internal/infraconfig/ system/backend/internal/api/infra_configuration.go system/backend/internal/api/infra_configuration_routes.go system/backend/internal/config/config.go
+# ADDP_T2_INPUT_FILES=docker-compose.infra.yml docker-compose.yml scripts/infra/infra-postgresql.conf scripts/infra/redis-authentication.sh system/backend/internal/infraconfig/ system/backend/internal/api/infra_configuration.go system/backend/internal/api/infra_configuration_routes.go system/backend/internal/api/infra_configuration_test.go system/backend/internal/iam/audit_writer.go system/backend/internal/config/config.go
 # Own a disposable Compose project for cluster-wide changes.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -39,16 +39,17 @@ GRANT ALTER SYSTEM ON PARAMETER work_mem, maintenance_work_mem, log_min_duration
 GRANT EXECUTE ON FUNCTION pg_catalog.pg_reload_conf() TO addp_infra_config;
 SQL
 run_case() {
-    local phase=$1 pg_endpoint redis_endpoint result
+    local phase=$1 package=${2:-./internal/infraconfig} test=${3:-TestInfraConfigurationNative}
+    local pg_endpoint redis_endpoint result
     pg_endpoint=$(compose port postgres 5432)
     redis_endpoint=$(compose port redis 6379)
     cd "$ROOT_DIR/system/backend"
     result=$(ADDP_INFRA_CONFIGURATION_INTEGRATION=1 ADDP_INFRA_GATE_PHASE="$phase" \
         ADDP_INFRA_GATE_PG_PORT="${pg_endpoint##*:}" ADDP_INFRA_GATE_REDIS_PORT="${redis_endpoint##*:}" \
-        GOWORK=off go test ./internal/infraconfig -run '^TestInfraConfigurationNative$' -count=1 -v 2>&1) \
+        GOWORK=off go test "$package" -run "^$test$" -count=1 -v 2>&1) \
         || { printf '%s\n' "$result" >&2; return 1; }
     printf '%s\n' "$result"
-    grep -q '^--- PASS: TestInfraConfigurationNative ' <<< "$result"
+    grep -Fq -- "--- PASS: $test " <<< "$result"
 }
 run_case apply
 compose exec -T --user root redis chmod 0555 /data
@@ -56,3 +57,4 @@ run_case persistence-failure
 compose exec -T --user root redis chmod 0755 /data
 compose up -d --wait --wait-timeout 100 --force-recreate
 run_case restart
+run_case audit ./internal/api TestInfraConfigurationAudit

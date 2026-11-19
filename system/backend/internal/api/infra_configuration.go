@@ -79,10 +79,10 @@ func (h *InfraConfigurationHandler) Apply(c *gin.Context) {
 
 	component, parameter := c.Param("component"), c.Param("parameter")
 	principalType, contextType := iam.PrincipalType("user"), iam.ContextType("platform")
-	requestID, path, method := c.GetString("request_id"), c.Request.URL.Path, c.Request.Method
+	requestID := c.GetString("request_id")
 	event := iam.AuditEvent{
 		Metadata: iam.AuditMetadata{PrincipalID: &actor, PrincipalType: &principalType, ContextType: &contextType,
-			RequestID: &requestID, ResourcePath: &path, HTTPMethod: &method},
+			RequestID: &requestID},
 		EventName: "system.infra_configuration.apply_requested", Result: iam.AuditResultSucceeded, RiskLevel: iam.AuditRiskMedium,
 		ModuleName: "system", EntityType: "infra_parameter", EntityID: component + "/" + parameter,
 	}
@@ -97,6 +97,10 @@ func (h *InfraConfigurationHandler) Apply(c *gin.Context) {
 		return
 	}
 
+	status, method, path := http.StatusOK, c.Request.Method, c.Request.URL.Path
+	event.Metadata.HTTPStatus = &status
+	event.Metadata.HTTPMethod = &method
+	event.Metadata.ResourcePath = &path
 	event.EventName = "system.infra_configuration.apply_completed"
 	if outcome.FailureStage != "" {
 		event.Result = iam.AuditResultFailed
@@ -113,7 +117,7 @@ func (h *InfraConfigurationHandler) Apply(c *gin.Context) {
 	if !outcome.AuditRecorded {
 		logger.L().Error("infra_configuration_completion_audit_failed", "request_id", requestID, "parameter", event.EntityID)
 	}
-	c.JSON(http.StatusOK, outcome)
+	c.JSON(status, outcome)
 }
 
 func infraConfigurationError(c *gin.Context, err error) {
