@@ -11,7 +11,7 @@ import uuid
 from contextlib import ExitStack, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 SCRIPT = Path(__file__).with_name("transfer-relational-sql-etl-online.py")
@@ -1553,8 +1553,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "run_native_lineage", side_effect=native))
             mongodb = stack.enter_context(patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}))
             access = stack.enter_context(patch.object(ONLINE, "mongodb_source_access", return_value=nullcontext({
-                "source": mongo_source, "scan_execution_id": "scan-id", "proof": {"result": "passed"},
+                "source": mongo_source, "scan_execution_id": "scan-id", "proof": {"result": "passed"}, "grants": object(),
             })))
+            stack.enter_context(patch.object(ONLINE, "dim_fixture_read_access", return_value=nullcontext()))
             stack.enter_context(patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}))
@@ -1577,11 +1578,11 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(binary.call_args.args[5:7], (3, pg_source))
         trace.assert_called_once()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v20")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v21")
         self.assertEqual(report["scan_trace_visibility"], {"object_upload": {}, "bounded_import": {}})
-        self.assertEqual(report["created_resources"], 18)
+        self.assertEqual(report["created_resources"], 20)
         self.assertEqual(report["rustfs_orders"], {"rows": 20})
-        self.assertEqual(report["deleted_resources"], 18)
+        self.assertEqual(report["deleted_resources"], 20)
         self.assertTrue(report["clickhouse_binary_roundtrip"]["task_deleted_and_read_back_404"])
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
@@ -1828,7 +1829,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 lifecycle.cleanup.side_effect = cleanup
                 route = "/api/v1/meta/items/by-catalog-path?engine_id=4&catalog_path=transfer_fixture.activities"
                 ods_locator = f"addp://engine/3/path/public/{ONLINE.MONGODB_TARGET}?type=table&item_id=22"
-                ods_paths = {ONLINE.mongodb_ods_catalog_route(3): (404,), ONLINE.mongodb_ods_preview_route(ods_locator): (403,)}
+                ods_paths = {ONLINE.fixture_table_catalog_route(3, ONLINE.MONGODB_TARGET): (404,), ONLINE.fixture_table_preview_route(ods_locator): (403,)}
                 ods_revocation_checks = []
                 metadata_statuses = []
                 def request(method, path, expected, body=None):
@@ -1965,7 +1966,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         scan = {"module": "meta", "task_type": "scan", "source": "transfer", "parent_execution_id": parent,
                 "tenant_id": 2, "triggered_by": 31, "scan_context": {"engine_id": 3, "scan_depth": "deep"}}
         item = {"id": 22, "engine_id": 3, "full_name": f"public.{ONLINE.MONGODB_TARGET}", "item_type": "table", "fingerprint": "ods-fingerprint"}
-        route = ONLINE.mongodb_ods_catalog_route(3)
+        route = ONLINE.fixture_table_catalog_route(3, ONLINE.MONGODB_TARGET)
         for failure in (None, "scan", "visible-before", "item-id", "fingerprint", "grant-fingerprint"):
             with self.subTest(failure=failure):
                 steps = []
@@ -1975,7 +1976,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     self.assertEqual((module, identifier, timeout), ("meta", scan_id, 30))
                     steps.append("scan")
                     return dict(scan, parent_execution_id="other") if failure == "scan" else scan
-                def read(tenant, engine, execution_id, identifier):
+                def read(tenant, engine, identifier, table, *, execution_id):
+                    self.assertEqual(table, ONLINE.MONGODB_TARGET)
                     self.assertEqual((tenant, engine, execution_id, identifier), (2, 3, parent, scan_id))
                     steps.append("scan-item")
                     return item
@@ -1998,7 +2000,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                             "item_fingerprint": "other" if failure == "grant-fingerprint" else item["fingerprint"]}
                 client.request.side_effect = request
                 grants.grant.side_effect = grant
-                with patch.object(ONLINE, "wait_owner_execution", side_effect=get_scan), patch.object(ONLINE, "read_mongodb_ods_scan_item", side_effect=read):
+                with patch.object(ONLINE, "wait_owner_execution", side_effect=get_scan), patch.object(ONLINE, "read_scanned_fixture_table", side_effect=read):
                     if failure is None:
                         self.assertEqual(ONLINE.grant_mongodb_ods_read(client, state, identity, 3, execution, 30), item)
                         self.assertTrue(state["proof"]["ods_target_access"]["visible_after_grant"])
@@ -2030,7 +2032,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 return SimpleNamespace(payload={"execution_id": next(executions)})
             if method == "GET" and path.startswith("/api/v1/transfer/executions/"):
                 return SimpleNamespace(payload=self.mongodb_execution(path.rsplit("/", 1)[1]))
-            if method == "GET" and path == ONLINE.mongodb_ods_catalog_route(3):
+            if method == "GET" and path == ONLINE.fixture_table_catalog_route(3, ONLINE.MONGODB_TARGET):
                 return SimpleNamespace(payload=target)
             raise AssertionError("unexpected call (manual scans/collects forbidden): " + method + " " + path)
         def proof(client, item_id, field, expected, timeout):
@@ -2173,6 +2175,68 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         for value in broken:
             with self.subTest(parent=value), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.validate_orchestrated_parent(value, parent["execution_id"], 10)
+
+    def test_dim_read_orchestration_verifies_real_query_and_parent(self):
+        parent, child = (str(uuid.uuid4()) for _ in range(2))
+        paths = []
+        client = Mock()
+        client.request.side_effect = [
+            SimpleNamespace(payload={"id": 40, "tenant_id": 2}),
+            SimpleNamespace(payload={"id": 41, "tenant_id": 2}),
+            SimpleNamespace(payload={"execution_id": parent, "status": "pending"}),
+            SimpleNamespace(payload={"execution_id": child, "parent_execution_id": parent, "module": "develop",
+                                     "source": "orchestrator", "source_task_id": "40", "task_type": "query", "status": "success"}),
+            SimpleNamespace(payload={"execution_id": child, "status": "success",
+                                     "metadata": {"result": {"summary": {"preview_rows": [{"dim_rows": "0"}]}}}}),
+        ]
+        observed = {"execution_id": parent, "module": "orchestrator", "task_type": "orchestration", "source_task_id": "41", "status": "success",
+                    "metadata": {"step_results": {"dim_read": {"status": "success", "result": {"execution_id": child}}}}}
+        with patch.object(ONLINE, "wait_owner_execution", return_value=observed) as wait:
+            proof = ONLINE.verify_dim_read_orchestration(client, 3, 2, "run", 30, paths)
+        wait.assert_called_once_with(client, "orchestrator", parent, 30)
+        self.assertEqual(proof, {"parent_execution_id": parent, "query_execution_id": child, "row_count": 0})
+        self.assertEqual(paths, ["/api/v1/develop/task-definitions/40", "/api/v1/orchestrator/orchestrations/41"])
+        query = client.request.call_args_list[0].args[3]["content"]
+        self.assertIn(f"FROM public.{ONLINE.DIM_TARGET}", query["query"])
+        self.assertNotIn("target_locator", query)
+        self.assertEqual(client.request.call_args.args, ("GET", f"/api/v1/develop/executions/{child}/result", (200,)))
+
+    def test_dim_exact_grant_is_revoked_and_receipt_survives_downstream_failure(self):
+        scanned = {"id": 23, "engine_id": 3, "full_name": f"public.{ONLINE.DIM_TARGET}", "item_type": "table", "fingerprint": "dim-fp"}
+        target = ONLINE.REGISTRATION.ExactRecordGrants.target(3, "public", ONLINE.DIM_TARGET, "table", "schema")
+        route = ONLINE.fixture_table_catalog_route(3, ONLINE.DIM_TARGET)
+        preview = ONLINE.fixture_table_preview_route(ONLINE.SUPPORT.build_item_locator(3, scanned))
+        for wrong_item in (False, True):
+            with self.subTest(wrong_item=wrong_item), tempfile.TemporaryDirectory() as directory:
+                grant_id = str(uuid.uuid4())
+                other = {"target": "unrelated", "request_id": "other"}
+                dim = {"target": target, "request_id": grant_id}
+                client, grants = Mock(), Mock(pending=[other, dim])
+                grants.target.return_value = target
+                grants.grant.return_value = {"request_id": grant_id, "item_fingerprint": scanned["fingerprint"], "boundary_hash": "a" * 64}
+                client.request.side_effect = [SimpleNamespace(payload={}), SimpleNamespace(payload=dict(scanned, id=99 if wrong_item else 23)),
+                                              SimpleNamespace(payload={}), SimpleNamespace(payload={})]
+                with patch.dict(os.environ, {"ADDP_ONLINE_TEST_RUN_ID": "test-run", "ADDP_ONLINE_ARTIFACT_DIR": directory}), patch.object(
+                    ONLINE, "read_scanned_fixture_table", return_value=scanned) as read, patch.object(
+                    ONLINE, "verify_dim_read_orchestration", return_value={"row_count": 0}) as probe:
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "scanned DataItem" if wrong_item else "downstream failure"):
+                        with ONLINE.dim_fixture_read_access(client, grants, 2, 3, "scan", "a" * 40, "run", 30, []):
+                            raise ONLINE.SuiteError("downstream failure")
+                read.assert_called_once_with(2, 3, "scan", ONLINE.DIM_TARGET)
+                grants.grant.assert_called_once_with(3, "public", ONLINE.DIM_TARGET, "table", namespace_term="schema")
+                grants.cleanup.assert_called_once_with(rows=[dim])
+                self.assertEqual(client.request.call_args_list, [call("GET", route, (404,)), call("GET", route, (200,)),
+                                                                call("GET", route, (404,)), call("GET", preview, (403,))])
+                receipt = json.loads((Path(directory) / "dim-table-access.json").read_text())
+                self.assertTrue(receipt["read_denied_after_revoke"])
+                self.assertEqual(receipt["item_id"], 23)
+                if wrong_item:
+                    probe.assert_not_called()
+                    self.assertEqual(receipt["result"], "incomplete")
+                else:
+                    probe.assert_called_once()
+                    self.assertEqual(receipt["result"], "passed")
+                    self.assertTrue(receipt["grant_revoked"])
 
     def test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs(self):
         items = {"public." + ONLINE.MONGODB_TARGET: {"id": 22, "full_name": "public." + ONLINE.MONGODB_TARGET, "item_type": "table"},

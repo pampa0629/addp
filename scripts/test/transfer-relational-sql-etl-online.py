@@ -1753,8 +1753,8 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
                 ods["grant_request_id"] = next((row["request_id"] for row in grants.pending if row["target"] == target_path), None)
             grants.cleanup()
             if ods is not None and ods.get("grant_request_id"):
-                client.request("GET", mongodb_ods_catalog_route(ods["engine_id"]), (404,))
-                client.request("GET", mongodb_ods_preview_route(ods["locator"]), (403,))
+                client.request("GET", fixture_table_catalog_route(ods["engine_id"], MONGODB_TARGET), (404,))
+                client.request("GET", fixture_table_preview_route(ods["locator"]), (403,))
                 ods.update(grant_cleanup_verified=True, grant_revoked=ods_issuance_confirmed, hidden_after_revoke=True,
                            read_denied_after_revoke=True, preview_denied_after_revoke=True)
             if proof["grant_request_ids"]:
@@ -1789,37 +1789,41 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
             print("MongoDB source Grant cleanup also failed", file=sys.stderr)
 
 
-def mongodb_ods_catalog_route(engine_id):
-    query = urllib.parse.urlencode({"engine_id": engine_id, "catalog_path": f"public.{MONGODB_TARGET}"})
+def fixture_table_catalog_route(engine_id, table):
+    query = urllib.parse.urlencode({"engine_id": engine_id, "catalog_path": f"public.{table}"})
     return f"/api/v1/meta/items/by-catalog-path?{query}"
 
 
-def mongodb_ods_preview_route(locator):
+def fixture_table_preview_route(locator):
     return "/api/v1/manager/preview?" + urllib.parse.urlencode({"locator": locator, "page": 1, "page_size": 20})
 
 
-def read_mongodb_ods_scan_item(tenant_id, engine_id, execution_id, scan_id):
+def read_scanned_fixture_table(tenant_id, engine_id, scan_id, table, *, execution_id=None):
+    if table not in (MONGODB_TARGET, DIM_TARGET):
+        raise SuiteError("unexpected exact Hosted fixture table")
     hosted = import_module("scripts.test.execution-online-support")
     try:
         tenant, engine = hosted.positive(tenant_id), hosted.positive(engine_id)
-        parent, scan = hosted.identifier(execution_id), hosted.identifier(scan_id)
+        scan = hosted.identifier(scan_id)
+        origin = (f"e.parent_execution_id='{hosted.identifier(execution_id)}' AND e.source='transfer'"
+                  if execution_id is not None else "e.parent_execution_id IS NULL")
         # The preparer establishes the Grant from System facts. This independent
         # read pins the scanned item ID before the consumer can see it.
         query = f"""SELECT COALESCE(json_agg(row_to_json(item)), '[]'::json) FROM (
             SELECT i.id, i.engine_id, i.full_name, i.item_type, i.fingerprint
             FROM meta.meta_item i JOIN common.task_executions e ON e.tenant_id=i.tenant_id
             WHERE i.tenant_id={tenant} AND i.engine_id={engine} AND i.deleted_at IS NULL
-              AND i.full_name='public.{MONGODB_TARGET}' AND i.item_type='table' AND i.scanned_depth='deep'
-              AND e.execution_id='{scan}' AND e.parent_execution_id='{parent}'
-              AND e.module='meta' AND e.task_type='scan' AND e.source='transfer' AND e.status='success'
+              AND i.full_name='public.{table}' AND i.item_type='table' AND i.scanned_depth='deep'
+              AND e.execution_id='{scan}' AND {origin}
+              AND e.module='meta' AND e.task_type='scan' AND e.status='success'
               AND i.scanned_at BETWEEN e.started_at AND e.completed_at
             ORDER BY i.id LIMIT 2) AS item"""
-        items = _array(hosted.OwnedDeployment().read(query), "persisted MongoDB ODS scan item")
+        items = _array(hosted.OwnedDeployment().read(query), "persisted fixture scan item")
     except (hosted.SuiteError, subprocess.SubprocessError, ValueError) as error:
-        raise SuiteError("owned MongoDB ODS scan observation failed") from error
+        raise SuiteError("owned fixture scan observation failed") from error
     if len(items) != 1:
-        raise SuiteError("MongoDB ODS automatic scan did not persist one exact DataItem")
-    return _object(items[0], "persisted MongoDB ODS item")
+        raise SuiteError("fixture scan did not persist one exact DataItem")
+    return _object(items[0], "persisted fixture table item")
 
 
 def grant_mongodb_ods_read(client, access, identity, engine_id, execution, timeout):
@@ -1834,9 +1838,9 @@ def grant_mongodb_ods_read(client, access, identity, engine_id, execution, timeo
             or str(child.get("triggered_by")) != identity["principal_id"]
             or child.get("scan_context") != {"engine_id": engine_id, "scan_depth": "deep"}):
         raise SuiteError("MongoDB ODS automatic scan lost its execution, User, Tenant or target")
-    scanned = read_mongodb_ods_scan_item(int(identity["tenant_id"]), engine_id, parent, scan_id)
+    scanned = read_scanned_fixture_table(int(identity["tenant_id"]), engine_id, scan_id, MONGODB_TARGET, execution_id=parent)
     scanned_id = positive_int(scanned.get("id"), "MongoDB ODS scanned item id")
-    route = mongodb_ods_catalog_route(engine_id)
+    route = fixture_table_catalog_route(engine_id, MONGODB_TARGET)
     client.request("GET", route, (404,))
     proof = {"engine_id": engine_id, "item_id": scanned_id, "fingerprint": scanned["fingerprint"],
              "locator": SUPPORT.build_item_locator(engine_id, scanned), "scan_execution_id": scan_id,
@@ -1885,7 +1889,7 @@ def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_eng
         if target_id is None:
             target = grant_mongodb_ods_read(client, access, identity, target_engine_id, execution, timeout)
         else:
-            target = _object(client.request("GET", mongodb_ods_catalog_route(target_engine_id), (200,)).payload, "MongoDB ODS rerun item")
+            target = _object(client.request("GET", fixture_table_catalog_route(target_engine_id, MONGODB_TARGET), (200,)).payload, "MongoDB ODS rerun item")
         current_id = positive_int(target.get("id"), "MongoDB ODS target id")
         if target_id is not None and (current_id != target_id or target.get("fingerprint") != access["proof"]["ods_target_access"]["fingerprint"]):
             raise SuiteError("MongoDB rerun must preserve the target DataItem identity")
@@ -1943,7 +1947,7 @@ def validate_orchestrated_child(execution, parent_id, module, task_id):
         raise SuiteError("orchestrated child owner, task or parent identity mismatch")
 
 
-def validate_orchestrated_parent(parent, execution_id, task_id):
+def validate_orchestrated_parent(parent, execution_id, task_id, *, expected_steps=("ods", "dim", "dwd")):
     expected = {"execution_id": execution_id, "module": "orchestrator", "task_type": "orchestration",
                 "source_task_id": str(task_id), "status": "success"}
     if any(parent.get(key) != value for key, value in expected.items()):
@@ -1955,8 +1959,8 @@ def validate_orchestrated_parent(parent, execution_id, task_id):
     if set(metadata) != {"step_results"}:
         raise SuiteError("Orchestrator must only own the parent context")
     steps = _object(metadata["step_results"], "parent steps")
-    if set(steps) != {"ods", "dim", "dwd"}:
-        raise SuiteError("chain must complete all three real steps")
+    if set(steps) != set(expected_steps):
+        raise SuiteError("orchestration did not complete its exact steps")
     for step in steps.values():
         step = _object(step, "parent step")
         if step.get("status") != "success" or set(step) - {"id", "status", "phase", "started_at", "ended_at", "duration", "error_code", "error", "result"}:
@@ -2139,6 +2143,87 @@ def validate_query_events(payload, identifier):
         raise SuiteError("Query event cursor must identify the last verified event")
 
 
+def create_chain_definition(client, tenant_id, owned_paths, module, collection, payload, status):
+    path = f"/api/v1/{module}/{collection}"
+    item = _object(client.request("POST", path, (status,), payload).payload, "chain definition")
+    identifier = positive_int(item.get("id"), "chain definition id")
+    owned_paths.append(f"{path}/{identifier}")
+    if item.get("tenant_id") != tenant_id:
+        raise SuiteError("chain definition tenant mismatch")
+    return identifier
+
+
+def verify_dim_read_orchestration(client, engine_id, tenant_id, name, timeout, owned_paths):
+    name += "_dim_read"
+    task_id = create_chain_definition(client, tenant_id, owned_paths, "develop", "task-definitions",
+        query_task(name, engine_id, f"SELECT CAST(COUNT(activity_id) AS text) AS dim_rows FROM public.{DIM_TARGET}", {}), 200)
+    parent_task = create_chain_definition(client, tenant_id, owned_paths, "orchestrator", "orchestrations", {
+        "name": name, "enabled": False, "steps": [{"id": "dim_read", "name": "DIM read", "provider": "develop",
+            "task_type": "query", "task_id": task_id, "parameters": {}, "depends_on": [], "timeout": 120}],
+    }, 201)
+    started = _object(client.request("POST", f"/api/v1/orchestrator/orchestrations/{parent_task}/execute", (202,)).payload, "DIM read admission")
+    parent_id = str(uuid.UUID(started["execution_id"]))
+    if started.get("status") != "pending":
+        raise SuiteError("DIM read orchestration was not admitted")
+    parent = wait_owner_execution(client, "orchestrator", parent_id, timeout)
+    steps = validate_orchestrated_parent(parent, parent_id, parent_task, expected_steps=("dim_read",))
+    child_id = steps["dim_read"]["result"]["execution_id"]
+    observed = _object(client.request("GET", f"/api/v1/monitor/executions/by-execution-id/{child_id}", (200,)).payload, "DIM read child")
+    validate_orchestrated_child(observed, parent_id, "develop", task_id)
+    result = _object(client.request("GET", f"/api/v1/develop/executions/{child_id}/result", (200,)).payload, "DIM read result")
+    rows = result.get("metadata", {}).get("result", {}).get("summary", {}).get("preview_rows")
+    if observed.get("execution_id") != child_id or result.get("execution_id") != child_id or result.get("status") != "success" or rows != [{"dim_rows": "0"}]:
+        raise SuiteError("DIM read did not return the prebuilt empty table count")
+    return {"parent_execution_id": parent_id, "query_execution_id": child_id, "row_count": 0}
+
+
+@contextmanager
+def dim_fixture_read_access(client, grants, tenant_id, engine_id, scan_id, commit, name, timeout, owned_paths):
+    scanned = read_scanned_fixture_table(tenant_id, engine_id, scan_id, DIM_TARGET)
+    route = fixture_table_catalog_route(engine_id, DIM_TARGET)
+    client.request("GET", route, (404,))
+    proof = {"schema_version": "addp.transfer-dim-table-access/v1", "result": "incomplete", "git_commit": commit,
+             "run_id": required_environment("ADDP_ONLINE_TEST_RUN_ID"), "scan_execution_id": scan_id,
+             "tenant_id": tenant_id, "engine_id": engine_id, "item_id": positive_int(scanned.get("id"), "DIM item"),
+             "fingerprint": scanned["fingerprint"], "hidden_before_grant": True}
+    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "dim-table-access.json"
+    locator = SUPPORT.build_item_locator(engine_id, scanned)
+    target = grants.target(engine_id, "public", DIM_TARGET, "table", "schema")
+    scenario_failed = False
+    try:
+        receipt = grants.grant(engine_id, "public", DIM_TARGET, "table", namespace_term="schema")
+        proof.update(grant_request_id=str(uuid.UUID(receipt["request_id"])), boundary_hash=receipt["boundary_hash"])
+        visible = _object(client.request("GET", route, (200,)).payload, "authorized DIM item")
+        if (any(visible.get(key) != scanned[key] for key in ("id", "engine_id", "full_name", "item_type", "fingerprint"))
+                or visible["fingerprint"] != receipt["item_fingerprint"]):
+            raise SuiteError("DIM Grant did not expose the scanned DataItem")
+        proof["visible_after_grant"] = True
+        proof["orchestrated_read"] = verify_dim_read_orchestration(client, engine_id, tenant_id, name, timeout, owned_paths)
+        yield
+    except BaseException:
+        scenario_failed = True
+        raise
+    finally:
+        try:
+            rows = [row for row in grants.pending if row["target"] == target]
+            if rows:
+                grants.cleanup(rows=rows)
+                client.request("GET", route, (404,))
+                client.request("GET", fixture_table_preview_route(locator), (403,))
+                proof.update(hidden_after_revoke=True, read_denied_after_revoke=True, preview_denied_after_revoke=True)
+            if "orchestrated_read" in proof:
+                if not rows:
+                    raise SuiteError("DIM Grant is missing from the cleanup ledger")
+                proof.update(result="passed", grant_revoked=True)
+        except Exception:
+            proof["result"] = "failed"
+            if not scenario_failed:
+                raise
+            print("DIM Grant cleanup also failed", file=sys.stderr)
+        finally:
+            artifact.write_text(json.dumps(proof, sort_keys=True) + "\n")
+
+
 def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeout, owned_paths):
     # Existing-table writes use the sole TableResultProvider route; no DDL or inferred DAG edges.
     ods_locator = mongodb["target_locator"]
@@ -2149,13 +2234,7 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
     dim_bindings, dwd_bindings = {"ods": ods_locator}, {"ods": ods_locator, "dim": dim_locator}
 
     def create(module, collection, payload, status):
-        path = f"/api/v1/{module}/{collection}"
-        item = _object(client.request("POST", path, (status,), payload).payload, "chain definition")
-        identifier = positive_int(item.get("id"), "chain definition id")
-        owned_paths.append(f"{path}/{identifier}")
-        if item.get("tenant_id") != tenant_id:
-            raise SuiteError("chain definition tenant mismatch")
-        return identifier
+        return create_chain_definition(client, tenant_id, owned_paths, module, collection, payload, status)
 
     dim_task = create("develop", "task-definitions", query_task(name + "_dim", engine_id,
                       "SELECT activity_id, activity_date_raw::date AS activity_date FROM ods", dim_bindings), 200)
@@ -2577,12 +2656,14 @@ def main() -> int:
             mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids,
                                                   access=mongodb_access, identity=identity_report)
             mongodb_access["transfer"] = mongodb_lineage
-            chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
-            wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
-            write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
-            browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
-            verify_browser_query_transformations(client, engine_id, source, convergence_timeout)
-            multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
+            with dim_fixture_read_access(client, mongodb_access["grants"], tenant_id, engine_id, scan_execution_id, commit,
+                                         owned_name, convergence_timeout, owned_paths):
+                chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
+                wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
+                write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
+                browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
+                verify_browser_query_transformations(client, engine_id, source, convergence_timeout)
+                multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
@@ -2590,7 +2671,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v20",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v21",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -2612,8 +2693,8 @@ def main() -> int:
             "write_failures": write_failures,
             "clickhouse_binary_roundtrip": binary,
             "rustfs_orders": rustfs_orders,
-            "created_resources": 18,
-            "deleted_resources": 18,
+            "created_resources": 20,
+            "deleted_resources": 20,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))

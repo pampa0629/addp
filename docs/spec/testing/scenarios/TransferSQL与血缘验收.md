@@ -56,6 +56,8 @@ Business 独立按 ID 核全行 hex／字节长／空值／文本，PG 为可空
 
 **ODS 目标读取。** 首轮 Mongo→PG 自动 deep 扫描完成后，按本轮父子执行、Tenant、目标引擎及时间窗只读核对 `public.addp_online_transfer_mongodb_ods` 的 DataItem。消费 User 读取精确目录项返回 404。已有独立准备者签发该表的精确 `read` Grant，消费 User 通过原目录接口读到同一 ID／指纹，再按两轮实际执行核对六条字段映射。Grant 保留至依赖该表的场景结束，随后正式撤销，核对精确目录项 404、当前读取许可 403、Manager 预览 403。`mongodb-source-access.json` v2 记录源和目标的各自授权证据。
 
+**预建 DIM 读取。** 以初始自动化准备扫描核对当轮 `public.addp_online_transfer_dim_activity` 的 DataItem。消费 User 授权前查询精确目录项返回 404。独立准备者仅签发该表的精确 `read` Grant，消费 User 核同一 ID／指纹，并使用单步编排执行 Develop 只读查询，核父子执行及预建空表的实际计数。授权覆盖后续依赖 DIM 的场景，退出时撤销并核当前读取许可 403、精确目录项 404、Manager 预览 403。`dim-table-access.json` 单独记录授权、编排与撤权证据。
+
 | 链路 | 必须独立核对的事实 |
 | --- | --- |
 | 原生表／SQL | 字段改名、decimal 精度转换、同目标 replace 映射更新、两跳搬运；真实成功 execution 自动采集、精确字段／结构、direct／derived、关闭旧入边、不串字段。可完整证明的单来源 SQL 记录映射，opaque／unresolved／不完整证据仍 unavailable，不伪造同名来源。 |
