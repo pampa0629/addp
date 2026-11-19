@@ -1,8 +1,10 @@
 """Independent Hosted bytes traversing the real short-lived Native operators."""
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 import importlib.util
 import math
 from pathlib import Path
+import numpy as np
 import pytest
 from operators import grib
 
@@ -63,6 +65,71 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
             assert native['message']['time']['p1']==field['p1'] and native['message']['time']['p2']==field['p2']
     path.write_bytes(raw[:-1]+bytes([raw[-1]^1]))
     assert grib.OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=select)['error_code']=='GRIB_SOURCE_CHANGED'
+
+
+def test_ecmwf_01_instant_original_messages_through_native_worker():
+    path = ROOT / 'business/fixtures/manager/ecmwf-ifs-20261117-instant-0p1.grib2'
+    digest = '6572e70940c633a342a1c154e1d4338f742abcb7e2608b8b9f6cf98c499a9b18'
+    assert sha256(path.read_bytes()).hexdigest() == digest
+    plan = {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+        'kind': 'file', 'format': 'grib', 'access': {'method': 'mounted_path', 'path': str(path)},
+    }}
+    info = grib.OPERATORS['grib.inspect']['function'](access_plan=plan)
+    version = info['format_info']['source_version']
+    assert version == 'sha256:' + digest
+    assert [child['name'] for child in info['container']['children']] == ['message-1', 'message-2', 'message-3']
+
+    # ecCodes 2.50.0 source values, rows 899–901 and columns 1798–1801.
+    # For these unscaled-decimal fields, GDAL rounds the decoded value to Float32.
+    source_windows = [
+        ('TMP', '[K]', 2, 9, (0, 0), [
+            [299.5925750732422, 299.8425750732422, 299.8425750732422, 299.8425750732422],
+            [299.8425750732422, 299.8425750732422, 299.8425750732422, 299.8425750732422],
+            [299.8425750732422, 299.8425750732422, 299.8425750732422, 299.5925750732422],
+        ]),
+        ('UGRD', '[m/s]', 10, 11, (2, 2), [
+            [-1.232879638671875, -0.982879638671875, -0.982879638671875, -1.357879638671875],
+            [-1.107879638671875, -0.982879638671875, -1.170379638671875, -1.545379638671875],
+            [-1.232879638671875, -1.170379638671875, -1.607879638671875, -1.795379638671875],
+        ]),
+        ('VGRD', '[m/s]', 10, 11, (2, 3), [
+            [4.6987152099609375, 5.1362152099609375, 5.3862152099609375, 4.8237152099609375],
+            [4.8862152099609375, 5.3862152099609375, 5.3862152099609375, 4.6987152099609375],
+            [5.0737152099609375, 5.4487152099609375, 5.2612152099609375, 4.8862152099609375],
+        ]),
+    ]
+    for number, (element, unit, height, bits, (category, parameter), source_values) in enumerate(source_windows, 1):
+        selection = dict(variable=f'message-{number}', indices=[], x=1798, y=899, width=4, height=3)
+        result = grib.OPERATORS['grib.read_slice']['function'](
+            access_plan=plan, source_version=version, selection=selection,
+        )
+        assert result['valid'] == [[True] * 4] * 3
+        rounded = np.asarray(source_values, dtype='float32')
+        actual = np.asarray(result['values'], dtype='float64')
+        np.testing.assert_array_equal(actual, rounded.astype('float64'))
+        if element == 'TMP':
+            errors = np.abs(actual - source_values)
+            assert 0 < errors.max() <= 2**-16
+        else:
+            np.testing.assert_array_equal(actual, source_values)
+
+        native = result['variable']
+        assert [dimension['size'] for dimension in native['dimensions']] == ['1801', '3600']
+        assert native['grid']['longitude_policy'] == 'unchanged'
+        np.testing.assert_allclose(native['grid']['transform'], [179.95, .1, 0., 90.05, 0., -.1], rtol=0, atol=1e-12)
+        attributes = native['attributes']
+        assert attributes['GRIB_ELEMENT']['values'] == [element]
+        assert attributes['GRIB_UNIT']['values'] == [unit]
+        assert attributes['GRIB2_DECODE_PRECISION']['values'] == ['float32_scaling_float64_output']
+        message = native['message']
+        assert (message['product_template'], message['data_template']) == (0, 42)
+        assert message['parameter'] == dict(centre=98, subcentre=0, master_table=32, local_table=0,
+                                            discipline=0, category=category, number=parameter)
+        assert message['time'] == dict(reference_utc='2026-11-17T00:00:00+00:00', unit_code=1,
+                                       forecast_value=6, start_utc='2026-11-17T06:00:00+00:00',
+                                       end_utc='2026-11-17T06:00:00+00:00', operation='instant')
+        assert message['level']['value'] == height and message['level']['unit'] == 'm'
+        assert message['packing']['bits_per_value'] == bits
 
 
 def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
