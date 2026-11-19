@@ -2187,7 +2187,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             SimpleNamespace(payload={"execution_id": child, "parent_execution_id": parent, "module": "develop",
                                      "source": "orchestrator", "source_task_id": "40", "task_type": "query", "status": "success"}),
             SimpleNamespace(payload={"execution_id": child, "status": "success",
-                                     "metadata": {"result": {"summary": {"preview_rows": [{"dim_rows": "0"}]}}}}),
+                                     "metadata": {"result": {"columns": ["activity_id"], "rows_count": 0,
+                                                             "summary": {"preview_rows": []}}}}),
         ]
         observed = {"execution_id": parent, "module": "orchestrator", "task_type": "orchestration", "source_task_id": "41", "status": "success",
                     "metadata": {"step_results": {"dim_read": {"status": "success", "result": {"execution_id": child}}}}}
@@ -2197,7 +2198,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(proof, {"parent_execution_id": parent, "query_execution_id": child, "row_count": 0})
         self.assertEqual(paths, ["/api/v1/develop/task-definitions/40", "/api/v1/orchestrator/orchestrations/41"])
         query = client.request.call_args_list[0].args[3]["content"]
-        self.assertIn(f"FROM public.{ONLINE.DIM_TARGET}", query["query"])
+        self.assertEqual(query["query"], f"SELECT activity_id FROM public.{ONLINE.DIM_TARGET}")
         self.assertNotIn("target_locator", query)
         self.assertEqual(client.request.call_args.args, ("GET", f"/api/v1/develop/executions/{child}/result", (200,)))
 

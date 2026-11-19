@@ -2156,7 +2156,7 @@ def create_chain_definition(client, tenant_id, owned_paths, module, collection, 
 def verify_dim_read_orchestration(client, engine_id, tenant_id, name, timeout, owned_paths):
     name += "_dim_read"
     task_id = create_chain_definition(client, tenant_id, owned_paths, "develop", "task-definitions",
-        query_task(name, engine_id, f"SELECT CAST(COUNT(activity_id) AS text) AS dim_rows FROM public.{DIM_TARGET}", {}), 200)
+        query_task(name, engine_id, f"SELECT activity_id FROM public.{DIM_TARGET}", {}), 200)
     parent_task = create_chain_definition(client, tenant_id, owned_paths, "orchestrator", "orchestrations", {
         "name": name, "enabled": False, "steps": [{"id": "dim_read", "name": "DIM read", "provider": "develop",
             "task_type": "query", "task_id": task_id, "parameters": {}, "depends_on": [], "timeout": 120}],
@@ -2171,9 +2171,11 @@ def verify_dim_read_orchestration(client, engine_id, tenant_id, name, timeout, o
     observed = _object(client.request("GET", f"/api/v1/monitor/executions/by-execution-id/{child_id}", (200,)).payload, "DIM read child")
     validate_orchestrated_child(observed, parent_id, "develop", task_id)
     result = _object(client.request("GET", f"/api/v1/develop/executions/{child_id}/result", (200,)).payload, "DIM read result")
-    rows = result.get("metadata", {}).get("result", {}).get("summary", {}).get("preview_rows")
-    if observed.get("execution_id") != child_id or result.get("execution_id") != child_id or result.get("status") != "success" or rows != [{"dim_rows": "0"}]:
-        raise SuiteError("DIM read did not return the prebuilt empty table count")
+    query_result = result.get("metadata", {}).get("result", {})
+    if (observed.get("execution_id") != child_id or result.get("execution_id") != child_id or result.get("status") != "success"
+            or query_result.get("columns") != ["activity_id"] or query_result.get("rows_count") != 0
+            or query_result.get("summary", {}).get("preview_rows") != []):
+        raise SuiteError("DIM read did not return the expected column and zero rows from the prebuilt table")
     return {"parent_execution_id": parent_id, "query_execution_id": child_id, "row_count": 0}
 
 
