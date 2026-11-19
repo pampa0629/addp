@@ -32,49 +32,32 @@ Manager 原值申请目标的 `projection_acknowledged` 复用现有 Owner 回�
 
 ## 数据库
 
-使用 PostgreSQL `security` schema。当前事实表为：
+Security 的领域事实存于 PostgreSQL `security` schema。下表名称均以 `security.` 为前缀，与 [领域模型](backend/internal/models/definitions.go)和 [Backend 迁移入口](backend/internal/repository/schema.go)对应。发现执行与过程事件使用共享执行表；Owner 本地投影和 cursor 由各自 schema 内的共享投影存储维护。启动职责见[数据库启动所有权](#数据库启动所有权)。
 
-- `security.security_classifications`
-- `security.security_grades`
-- `security.sensitive_data_types`
-- `security.protection_baselines`
-- `security.protection_enrollments`
-- `security.protection_projections`
-- `security.protection_projection_changes`
-- `security.protection_projection_acknowledgements`
-- `security.sensitive_findings`
-- `security.sensitive_finding_reviews`
-- `security.resource_security_assessments`
-- `security.resource_security_assessment_revisions`
-- `security.protection_policies`
-- `security.protection_policy_revisions`
-- `security.protection_access_requests`
-- `security.protection_exemptions`
-- `security.protection_exemption_revisions`
+| 持久事实 | 数据表 |
+| --- | --- |
+| 定义与默认保护 | `security_classifications`、`security_grades`、`sensitive_data_types`、`detectors`、`protection_baselines` |
+| 纳管与投影交付 | `protection_enrollments`、`protection_projections`、`protection_projection_changes`、`protection_projection_acknowledgements` |
+| 发现、复核与正式评估 | `sensitive_findings`、`sensitive_finding_reviews`、`resource_security_assessments`、`resource_security_assessment_revisions` |
+| 字段策略 | `protection_policies`、`protection_policy_revisions` |
+| 原值申请与授权 | `protection_access_requests`、`protection_exemptions`、`protection_exemption_revisions` |
 
-四个必要 Owner 确认 enrolling 门禁后，Security 在同一事务创建一次 discovery execution。治理人员也可携带 Enrollment `version` 显式创建重新发现执行；同一纳管同时至多一个 pending/running execution。完成后保存最新结构或文本快照并重新编译投影，保留资源指定截止时间，不自动延期。结构化 DataItem 目前使用 `addp.detector.phone_metadata/v2`、`addp.detector.email_metadata/v1`、`addp.detector.identity_document_number_metadata/v1` 和 `addp.detector.bank_card_number_metadata/v1` 按字段路径、确定性扁平路径语义和通用类型独立识别；文档使用 `addp.detector.phone_document/v1` 在当次内存样本中识别精确 11 位 ASCII 数字串。身份证件号码元数据能力只识别精确字段语义，不读取或校验业务值；结构化字段通过只读算法目录选择 Unicode 前后缀掩码、同类型固定值替换或普通 SM3 哈希；字段策略在基线显式 `allowed_algorithms` 内独立配置算法与 `parameters`，前后保留数不得超过基线上限。基线参数和许可收紧后，不再满足约束的字段策略回退到当前基线。图层沿用带空间字段的数据表语义，属性字段可脱敏，geometry 不执行标量算法。算法执行复用 `common/dataprotection`；文档正文仍只支持既有手机号片段保护。检测能力都不持久化原始业务值。Finding 必须通过当前 Tenant 的 Detector 绑定取得 SensitiveDataType 和自动采用置信度；达到绑定阈值且存在有效 ProtectionBaseline 后，唯一编译器对结构化组件为 Manager 生成 `preview` 和系统派生的 `profile` 规则，为 Develop 生成独立 `query` 规则，为 Service 生成独立 `service_execute` 规则，并为 Transfer bounded snapshot 生成独立 `export` 规则；对文档虚拟组件 `$document.text` 只生成 Manager `search_index` 规则。没有当前动作执行器的 Owner 出口继续保持资源级 deny。
+### 纳管、发现与复核
 
-`released` Enrollment 永久保存退出审计且不可恢复状态。再次保护只能通过旧记录上的重新纳入命令创建新的 `activating` Enrollment，并重新走所有必要 Owner 激活屏障；同一目标不允许同时存在两条未退出生命周期。
+- PostgreSQL 部分唯一索引限制同租户、同完整目标最多一条未 `released` 的纳管。重新纳入时锁定已退出来源并在同事务推进其版本、创建新的 `activating` 记录和初始门禁；旧退出状态与审计保留。带版本的零命中退出必须在同一事务复核最近发现成功、当前快照零 Finding 且没有在途执行。[纳管状态机与退出规则](../docs/spec/addp数据安全与隐私保护实现规范.md#五纳管状态机与激活屏障)
+- 初始门禁确认与首次发现入队同事务。同一纳管最多一个 `pending`／`running` 发现；成功提交当前来源快照、Finding 与重编译投影，保留资源截止时间。Finding 以实际发现执行、组件、检测器版本及来源快照区分观测，持久化证据不含业务原值。检测器绑定、适用类型、图层属性和文档正文的边界以正式规则为准。[敏感发现执行](../docs/spec/addp数据安全与隐私保护实现规范.md#六敏感发现执行)
+- 当前快照的 Finding 计数、待复核聚合、只读 `explanation` 与识别质量摘要由已有事实生成，复核队列、解释链和统计均无独立表。说明中的 Assessment 关联须匹配当前组件结构。误报保留不可变初审，正式结论调整在既有 Assessment 上追加修订；人工指定只取尚无正式 Assessment 的可信当前组件。[Finding、Assessment 与解释投影](../docs/spec/addp数据安全与隐私保护实现规范.md#七findingassessment-与唯一策略编译器)
 
-成功发现后 Enrollment 查询批量返回当前快照 Finding 总数、待复核数和已复核数；Finding 查询使用 `enrollment_id + source_snapshot_hash` 精确限定当前候选，并在分页响应中携带可选不可变初审记录，以及由当前 Detector、Assessment、ProtectionBaseline 和已发布 Projection 批量组装的只读 `explanation`。当前组件结构仍匹配正式 Assessment 时，`explanation.assessment_id` 在 `sensitive` 与 `not_sensitive` 结论下都指向同一精确聚合，供“受保护资源”继续追加修订；组件结构冲突时不返回该关联，前端不得按字段名猜测。集中“待复核候选”是 `/protection-enrollments?tab=review-queue` 的子视图，只通过 `GET /findings?snapshot_scope=current&review_state=pending` 聚合未退出 Enrollment 当前 Finding，不新增队列实体或第二套复核状态。前端不自行推导保护结论，解释链不持久化且不含原值。历史快照只用于审计。零命中只表示当前检测能力未发现候选，不编译 `allow` 且继续资源级 deny。治理人员确认当前无需保护时，必须使用唯一 Release 路径并提交 `basis=no_supported_findings`、Enrollment `version` 和原因；服务端校验最近发现已完成、Finding 数为 0 且无在途发现执行，然后冻结退出依据、发起人、时间和依据快照。
+### 定义、策略与授权事务
 
-识别质量摘要直接从 Finding、不可变 review 和 Assessment 当前修订即时聚合，不建立统计表或双写链。当前候选只取各未退出 Enrollment 最新成功发现；历史人工质量样本按 Enrollment、组件和检测能力版本折叠为最新 review。人工指定只作为可能漏检的线索，不归因于某个 Detector。
+- 新 SensitiveDataType 与其初始等级的有效 ProtectionBaseline 原子创建。定义变更用 Security 自有事实精确定位依赖，将受影响投影与定义写入同事务提交。Assessment 修订冻结当时的类型、分类和等级，展示变更不制造新投影。字段策略按 Assessment 和精确出口追加不可变修订，与对应 Owner 的新投影同事务；`manager/profile` 仍由编译器派生。[保护定义影响](../docs/spec/addp数据安全与隐私保护实现规范.md#73-保护定义变化的影响传播) · [字段策略](../docs/spec/addp数据安全与隐私保护实现规范.md#71-protectionpolicy-首期语义) · [剖析派生规则](../docs/spec/addp数据安全与隐私保护实现规范.md#101-manager-profile-动作)
+- 同租户、Assessment 与主体的持久 `pending` 申请受部分唯一索引约束。待审批和历史读取按服务端时间认定有效申请状态，再按当前各出口授权状态筛选和分页。本人不可自审。审批结论、所有所选出口的授权修订和 Projection v5 更新同事务，当前授权与原批准结论分别呈现。申请人及审批人的 Principal ID 是审计身份，显示名在动作发生时经 System 可信租户用户引用固化，Backend 启动补齐缺失快照；审批读取使用已存快照。[申请、审批与授权](../docs/spec/addp数据安全与隐私保护实现规范.md#72-protectionaccessrequest-与-protectionexemption)
 
-创建 Enrollment 的唯一用户输入是 Meta 资源树返回的 DataItem ResourceLocator；Security 自行计算 fingerprint，只纳管完整 DataItem。旧的 fingerprint 与字段路径自由输入路线不存在。字段组件通常由 Detector 发现；自动发现漏检时，治理人员只能从 Security Backend 实时读取并校验、且尚未形成任何正式 Assessment 的 Meta 当前字段清单中选择组件，直接形成来源为 `manual` 的正式 Assessment，不得自由填写字段路径。已存在 Assessment 的组件不再出现在人工指定候选中，其后续调整或撤销必须在既有聚合上追加修订。Finding 误报通过不可变 `reject` review 收口，既有正式 Assessment 错误则追加 `not_sensitive` 修订撤销，二者都由唯一投影编译器重新发布保护结果。
+### 投影与回执
 
-ProtectionPolicy 绑定正式 Assessment 和一个精确出口：`manager/preview`、`develop/query`、`service/service_execute` 或 `transfer/export`。字段算法及参数只能在当前 ProtectionBaseline 的算法许可、保留上限和异常值约束内独立收紧，效果为 `mask|suppress|deny`，不承载原值授权。创建、更新和撤销都追加不可变 revision，并在同一事务调用唯一投影编译器，只发布对应 Owner 的变化；撤销后回落到 Assessment + ProtectionBaseline，不解除纳管。
+Security 写入当前投影修订时，同事务追加该 Owner 的变化记录。消费只使用固定 Tenant Service Access Token，确认本地持久安装后的 cursor。激活及退出以 [Owner 契约](backend/internal/service/protection_owner_contract.go)中的全部必要 Owner 为准，含 Graph 的独立屏障。旧回执无法确认新修订，重复确认不推进 Enrollment 版本或重复入队。SQLite T1 和 `make test-security-postgres` 的生命周期回归验证该屏障，真实 Owner、Gateway 或浏览器链路按独立 Online 验收认定。[变化流及回执](../docs/spec/addp数据安全与隐私保护实现规范.md#九投影变化流与-owner-确认) · [Graph 引擎范围与保护](../docs/spec/addp数据安全与隐私保护实现规范.md#查询保护的引擎范围排除)
 
-ProtectionAccessRequest 是原值访问的唯一入口，只能由当前可信 User AuthContext 从 Manager 预览或 Develop 查询出口针对正式敏感 Assessment 发起，显式选择一个或两个使用范围，正文不得指定主体；申请本身不改变保护效果。申请状态固定为 `pending|approved|rejected|expired`，由 Security 按服务端时间返回有效状态；超过截止时间的未决策申请不再属于待审批，且不阻止申请人重新提交。唯一审批工作区使用 `scope=pending|history` 分别展示未过期待审批申请与已批准、已驳回、已过期历史，必须服务端分页，并可按申请人、资源或字段、申请时间筛选；历史记录还可按处理结果以及当前 `authorization_state=active|expired|revoked|superseded` 筛选，当前授权筛选必须在分页和总数统计前按当前 Exemption、Assessment revision 与服务端时间完成。批准历史必须另外返回当前授权状态与原授权截止时间，不能把“已批准”误作当前仍可访问原值。审批响应返回权威 `enrollment_id`，前端据此复用既有受保护资源详情和授权撤销路径，不按资源名称猜测、不复制第二套授权管理交互。本人待审申请可见但不可自审。申请人和审批人的 Principal ID 是权威审计身份；Security 只在申请或审批动作发生时通过 System 受信租户用户引用接口校验身份并固化显示名快照，审批读取不实时跨模块查询，服务启动会为旧记录补齐一次快照。另一名具有审批权限的用户在截止时间前批准后，Security 才创建或重新激活绑定 `{assessment, manager, preview, user}` 的 ProtectionExemption 并追加不可变 revision；拒绝不产生授权，申请人与审批人相同或申请已过期均冲突。Assessment 后续产生新修订时旧授权立即失效，不得静默恢复。授权效果固定为限时 `allow`，最长 30 天且不得超过申请期限，业务依据和审批理由必填。Projection v2 的规则始终保留 Policy/Baseline 默认 `decision`，主体授权放在 `authorizations`；Owner 必须从服务端可信 AuthContext 匹配 User，不能接受浏览器提交主体。临时授权只能提前撤销，不能直接创建、续期或重新启用；需要继续访问时必须重新申请和审批。
-
-`manager/profile` 不建立可编辑 Policy：唯一编译器把有效 `preview=mask|suppress` 派生为 `profile=suppress`，把 `preview=deny` 派生为 `profile=deny`。Manager 负责把 `profile=suppress` 执行为整个字段剖析对象的移除，Security 不复制 Manager 指标结构。
-
-创建 SensitiveDataType 必须同时提交其自动发现初始等级的完整默认保护，并在同一事务创建有效 ProtectionBaseline；不允许创建“已定义但无默认保护”的半成品。SensitiveDataType 更换自动发现初始等级前，新组合必须已存在有效 ProtectionBaseline；当前初始等级对应的 ProtectionBaseline 不得停用、改绑或单独删除。其他等级的 ProtectionBaseline 创建、更新、启停、改绑和带 `version` 删除必须根据 Security 自有 Finding/Assessment 依赖精准重编译受影响 Enrollment，并与定义写入保持同一事务；SensitiveDataType 自动发现初始等级变化只重算未复核候选 Finding；Detector 自动采用置信度变化走 Detector 配置变更的有界重新发现路径。正式 Assessment revision 冻结当时的类型、分类和等级，名称或排序等展示变化不制造投影版本。影响解析不得扫描全租户 Enrollment，也不得调用 Meta、Catalog 或 Engine。人工确认或调整 Assessment 时，目标 SensitiveDataType + SecurityGrade 也必须已有有效 ProtectionBaseline；`baseline_missing` 仅作为存量异常或一致性故障的失效关闭观测状态，不是正常配置流程。
-
-Owner 变化流是唯一投影交付路线。Manager、Transfer、Develop、Service、Graph 只能使用各自固定 Tenant Service Access Token 拉取自身变化并确认本地原子安装的 cursor；不能提交 consumer owner 或资源清单。
-
-Enrollment 从 `enrolling` 进入 `active` 必须同时满足四个必要 Owner 的当前投影均为 `active`，且各自 acknowledgement 已覆盖当前 `published_sequence`。旧修订的确认不能激活新修订；重复确认不递增 Enrollment 版本，也不重复创建发现执行。激活与退出都沿同一 acknowledgement 状态推进路径，SQLite T1 和 `make test-security-postgres` 的生命周期回归共同验证该屏障。
-
-Standard 的旧分类分级 ID 和数据不迁移、不映射，也不提供兼容 API。
+Standard 旧分类分级 ID 和数据不迁移、不映射，既有兼容入口已移除。[迁移与旧路径删除](../docs/spec/addp数据安全与隐私保护实现规范.md#十五迁移与旧路径删除)
 
 ## 前端验证与失败取证
 
