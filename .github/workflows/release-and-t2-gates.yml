@@ -1335,7 +1335,7 @@ jobs:
   common-rustfs:
     name: RustFS provider, persistence and PostgreSQL import (1.0.5)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.standard == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.standard == 'true' || needs.selection.outputs.develop == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -1370,6 +1370,8 @@ jobs:
           ADDP_TEST_POSTGRES_PASSWORD: addp_ci_password
           ADDP_TEST_POSTGRES_DATABASE: addp_rustfs_disposable
         run: make test-common-rustfs
+      - name: Verify Go and Python Notebook storage on RustFS
+        run: make test-common-rustfs COMMON_RUSTFS_TEST_ARGS='--test platform-notebook'
       - name: Summarize RustFS gate
         if: always()
         uses: ./.github/actions/ci-gate-summary

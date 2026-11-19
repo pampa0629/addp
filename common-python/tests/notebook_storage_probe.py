@@ -1,4 +1,4 @@
-"""Real-MinIO half of the Develop gate; never a unit-test storage substitute."""
+"""Real S3 half of the Develop gate; never a unit-test storage substitute."""
 import io
 import os
 import sys
@@ -31,11 +31,12 @@ elif phase == "exchange":
         assert stream.read() == '{"cells":[],"metadata":{"origin":"Go 中"},"nbformat":4,"nbformat_minor":5}\n'.encode()
     data = '{"cells":[], "metadata":{"origin":"Python 文"},"nbformat":4,"nbformat_minor":5}\n'.encode()
     area.put(key,io.BytesIO(data),len(data),"application/x-ipynb+json")
-elif phase == "save-failure":
+elif phase in {"save", "save-failure"}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engines/jupyter"))
     from interactive_sessions import InteractiveSessionManager
-    os.environ["MINIO_ROOT_USER"] = os.environ["NOTEBOOK_READONLY_USER"]
-    os.environ["MINIO_ROOT_PASSWORD"] = os.environ["NOTEBOOK_READONLY_PASSWORD"]
+    if phase == "save-failure":
+        os.environ["MINIO_ROOT_USER"] = os.environ["NOTEBOOK_READONLY_USER"]
+        os.environ["MINIO_ROOT_PASSWORD"] = os.environ["NOTEBOOK_READONLY_PASSWORD"]
     area = open_object_area("develop")
     with area.open(key) as stream:
         before = stream.read()
@@ -45,15 +46,22 @@ elif phase == "save-failure":
         workspace.mkdir()
         file = workspace / "edited.ipynb"
         file.write_bytes(b'{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}')
-        session = SimpleNamespace(notebook_file=str(file), notebook_locator="", process=SimpleNamespace(poll=lambda:0), workspace=str(workspace))
+        session = SimpleNamespace(
+            session_id="notebook-storage-fixture", tenant_id=7, task_id=1,
+            notebook_file=str(file), notebook_locator="",
+            process=SimpleNamespace(poll=lambda: 0), workspace=str(workspace),
+        )
         from addp_common.infra.objectstore import Ref
         session.notebook_locator = Ref("develop", key).uri()
         try:
             manager._save_and_cleanup(session)
         except PermissionError:
-            pass
+            if phase != "save-failure":
+                raise
         else:
-            raise AssertionError("read-only save unexpectedly succeeded")
+            if phase == "save-failure":
+                raise AssertionError("read-only save unexpectedly succeeded")
+            before = b'{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}'
         assert not workspace.exists()
         manager.shutdown()
     with area.open(key) as stream:

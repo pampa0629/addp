@@ -1,19 +1,19 @@
-package service
+package bootstrap
 
 import (
 	"bytes"
 	"context"
-	"github.com/addp/common/infra/objectstore"
-	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"io"
 	"os"
 	"os/exec"
 	"testing"
+
+	"github.com/addp/common/infra/objectstore"
 )
 
-func TestNotebookObjectsAcrossLanguagesAgainstMinIO(t *testing.T) {
+func TestNotebookObjectsAcrossLanguagesAgainstS3(t *testing.T) {
 	if os.Getenv("ADDP_NOTEBOOK_OBJECT_INTEGRATION") != "1" {
-		t.Skip("enable through make test-develop-postgres")
+		t.Skip("run the Develop MinIO or RustFS Notebook gate")
 	}
 	ctx := context.Background()
 	key := "tenant_7/notebooks/跨语言 % key.ipynb"
@@ -25,7 +25,7 @@ func TestNotebookObjectsAcrossLanguagesAgainstMinIO(t *testing.T) {
 	}
 	probe("prepare")
 	open := func() objectstore.Area {
-		area, err := objectbootstrap.OpenObjectArea(ctx, objectstore.Develop)
+		area, err := OpenObjectArea(ctx, objectstore.Develop)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,5 +55,11 @@ func TestNotebookObjectsAcrossLanguagesAgainstMinIO(t *testing.T) {
 	probe("exchange")
 	read(exception, append([]byte(`{"cells":[], "metadata":{"origin":"Python 文"},"nbformat":4,"nbformat_minor":5}`), '\n'))
 	read(normal, []byte(`{"cells":[],"metadata":{"origin":"default"},"nbformat":4,"nbformat_minor":5}`))
-	probe("save-failure")
+	if os.Getenv("NOTEBOOK_STORAGE_TEST_PROVIDER") == "rustfs" {
+		probe("save")
+		read(exception, []byte(`{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}`))
+		read(normal, []byte(`{"cells":[],"metadata":{"origin":"default"},"nbformat":4,"nbformat_minor":5}`))
+	} else {
+		probe("save-failure")
+	}
 }

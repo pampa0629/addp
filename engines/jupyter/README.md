@@ -126,3 +126,5 @@ Develop Owner 使用 `make test-module MODULE=develop`，前后端、Common Pyth
 ## 平台对象存储绑定
 
 由 Common Python 在启动时按 `ADDP_INFRA_OBJECTSTORE_PROVIDER` 和 `ADDP_INFRA_OBJECTSTORE_BINDINGS` 装配 `develop` 区域，未填写例外时映射同名桶。部署负责建桶；Runtime 不创建桶、不回退其他桶。MinIO 凭据仅由适配读取，存储绑定失败使 `/health` 返回 503。Kernel 不接收 Infra 凭据或绑定配置。会话仅回存创建时的 `notebook_locator`，关闭／TTL 不删除持久对象；保存失败仍清理临时进程与目录，显式关闭报错，不承诺恢复未保存编辑。
+
+跨语言 S3 验证可以使用 `make test-common-rustfs COMMON_RUSTFS_TEST_ARGS='--test platform-notebook'`。门禁独占 RustFS 实例，验证两个桶中的同键隔离、Go 与 Python 双向读写、匿名读取拒绝，以及会话回存后仍能从对应逻辑区域读出相同字节。运行时启动选型和 HTTP／Kernel 验收沿现有部署入口推进。
