@@ -293,6 +293,29 @@ with tempfile.TemporaryDirectory() as directory:
     assert attributes['GRIB2_DECODE_PRECISION']['values'] == ['exact_zero_float64_output']
 print('GRIB2 ECMWF CCSDS 0h exact zero smoke passed')
 
+with tempfile.TemporaryDirectory() as directory:
+    path = Path(directory) / 'ifs-0p1-0h.grib2'
+    # ECMWF IFS 2026-11-17 00 UTC, 0.1 degree surface total precipitation.
+    path.write_bytes(bytes.fromhex('''
+47524942ffff000200000000000000e000000015010062000020010107ea0b1100000000010000001102
+0001000100090401303030310000004803000062ee900000000006ffffffffffffffffffffffffffffff
+00000e100000070900000000ffffffff055d4a800aba950030855d4a800ab90e60000186a0000186a000
+0000003a040000000801c102ffa1000000010000000001ffffffffffffffffffffff07ea0b1100000001
+00000000010201000000000d000000e100000019050062ee90002a000000000000000000000e20008000
+00000606ff000000050737373737
+'''))
+    plan = {'schema_version': 'addp.workflow.access-plan/v1',
+            'source': {'kind': 'file', 'format': 'grib', 'access': {'method': 'mounted_path', 'path': str(path)}}}
+    info = OPERATORS['grib.inspect']['function'](access_plan=plan)
+    result = OPERATORS['grib.read_slice']['function'](
+        access_plan=plan, source_version=info['format_info']['source_version'],
+        selection=dict(variable='message-1', indices=[], x=3596, y=1798, width=4, height=3))
+    assert result['values'] == [['0.0'] * 4 for _ in range(3)]
+    assert result['valid'] == [[True] * 4 for _ in range(3)]
+    assert result['variable']['message']['time']['increment_value'] == 225
+    assert [v['size'] for v in result['variable']['dimensions']] == ['1801', '3600']
+print('GRIB2 ECMWF 0.1 degree precipitation smoke passed')
+
 PYGRIB
 
 # Verify the packaged API and health route without starting a service or contacting System.

@@ -8,7 +8,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
   test.setTimeout(480000)
   const env = process.env, context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
-  expect(context.cases).toHaveLength(20)
+  expect(context.cases).toHaveLength(22)
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id, permissions: new Set(context.identity.permissions_verified) }
   expect([...identity.permissions].sort()).toEqual(['manager.content.read', 'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'])
   const outcomes = [], browserErrors = []
@@ -27,6 +27,8 @@ test('ordinary user reads independent GRIB messages with native units and downlo
       try {
         const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
         const sameEnd = source.spec.case_id === 'noaa-gfs-intervals'
+        const highResolution = source.spec.case_id === 'ecmwf-precipitation-0p1'
+        const utc = hour => new Date(((source.spec.reference_time ?? 1767322800) + hour * 3600) * 1000).toISOString().replace('.000Z', '+00:00')
         for (const field of source.spec.fields) {
           const { selection, values, valid } = source.expected_windows[field.number - 1]
           const screenshot = `grib-${source.source_case}-${source.spec.case_id}-message${field.number}-slice`
@@ -50,13 +52,21 @@ test('ordinary user reads independent GRIB messages with native units and downlo
             const initialZero = field.product_template === 8 && field.forecast === 0
             await expect(details).toContainText(initialZero ? 'exact_zero_float64_output' : 'float32_scaling_float64_output')
             if (field.product_template === 8) {
-              const end = new Date(Date.UTC(2026, 0, 2, 3 + field.forecast)).toISOString().replace('.000Z', '+00:00')
               await expect(details).toContainText('Total precipitation [m]')
-              await expect(details).toContainText('GRIB2_TIME')
-              await expect(details).toContainText('accumulation')
-              await expect(details).toContainText('2026-01-02T03:00:00+00:00')
-              await expect(details).toContainText(end)
-              await expect(details).toContainText('"increment_value":450')
+              const timeCell = details.getByText('GRIB2_TIME', { exact: true }).locator('xpath=following-sibling::td[1]')
+              await expect.poll(async () => JSON.parse(await timeCell.textContent())).toMatchObject({
+                operation: 'accumulation', reference_utc: utc(0), start_utc: utc(0), end_utc: utc(field.forecast),
+                interval_length: field.forecast, increment_unit: 13, increment_value: field.increment_seconds ?? 450
+              })
+              if (highResolution) {
+                const packingCell = details.getByText('GRIB2_PACKING', { exact: true }).locator('xpath=following-sibling::td[1]')
+                await expect.poll(async () => JSON.parse(await packingCell.textContent())).toMatchObject({
+                  data_template: 42, bits_per_value: initialZero ? 0 : 12
+                })
+                await timeCell.scrollIntoViewIfNeeded()
+                await expect(timeCell).toBeInViewport({ ratio: 1 })
+                await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${screenshot}-time.png`) })
+              }
             }
           }
           if (source.spec.packing === 'complex-spatial') {
@@ -65,7 +75,6 @@ test('ordinary user reads independent GRIB messages with native units and downlo
             await expect(details).toContainText('GRIB2_PACKING')
             await expect(details).toContainText('GRIB2_TIME')
             if (field.product_template === 8) {
-              const utc = hour => new Date(((source.spec.reference_time ?? 1767322800) + hour * 3600) * 1000).toISOString().replace('.000Z', '+00:00')
               const timeCell = details.getByText('GRIB2_TIME', { exact: true }).locator('xpath=following-sibling::td[1]')
               await expect.poll(async () => JSON.parse(await timeCell.textContent())).toMatchObject({
                 operation: 'accumulation', reference_utc: utc(0), start_utc: utc(field.start_hour),
@@ -81,7 +90,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           const spacing = field.spacing ?? 1
           await expect(frame.getByTestId('grid-native-transform')).toContainText(String(field.west - spacing / 2))
           await expect(frame.locator('.grid-container-preview')).toContainText(/不自动转换单位|no automatic unit conversion/)
-          if (sameEnd) {
+          if (field.sample) {
             for (const [key, name] of Object.entries({ x: /^(Start column|列起点)$/, y: /^(Start row|行起点)$/, width: /^(Columns|列数)$/, height: /^(Rows|行数)$/ })) {
               const input = frame.getByRole('spinbutton', { name })
               await input.fill(String(selection[key]))
@@ -98,7 +107,12 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           expect(result.selection).toEqual(selection)
           expect(result.values).toEqual(values); expect(result.valid).toEqual(valid)
           expect(result.value_mode).toBe('decoded_native_units'); expect(result.spatial).toBeNull()
-          expect(result.variable.grid.transform).toEqual([field.west - spacing / 2, spacing, 0, field.north + spacing / 2, 0, -spacing])
+          const transform = [field.west - spacing / 2, spacing, 0, field.north + spacing / 2, 0, -spacing]
+          if (highResolution) {
+            expect(Math.abs(result.variable.grid.transform[1] - spacing)).toBeLessThanOrEqual(Number.EPSILON * spacing)
+            transform[1] = result.variable.grid.transform[1]
+          }
+          expect(result.variable.grid.transform).toEqual(transform)
           await expect(frame.locator('.grid-window tbody tr')).toHaveCount(selection.height)
           for (let y = 0; y < selection.height; y++) for (let x = 0; x < selection.width; x++) {
             const cell = frame.locator('.grid-window tbody tr').nth(y).locator('td').nth(x)
@@ -123,6 +137,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           await expect(frame.getByTestId('grid-no-location')).toContainText(/暂不提供地图预览|map preview is not available/)
         }
         const intervalProof = sameEnd ? { distinct_accumulation_windows_verified: true } : {}
+        if (highResolution) intervalProof.high_resolution_accumulation_verified = true
         if (source.source_case === 'nfs') {
           const actions = await json(await api.get('/api/v1/manager/resource-actions', { params: { locator: source.locator } }), 'GRIB current download capability')
           expect(actions.actions.download.supported).toBe(false)

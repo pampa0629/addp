@@ -1,6 +1,7 @@
 """Independent Hosted bytes traversing the real short-lived Native operators."""
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import math
 from pathlib import Path
 import pytest
 from operators import grib
@@ -22,7 +23,11 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
         assert (result['values'],result['valid'])==FIXTURE.expected(field,select['x'],select['y'],select['width'],select['height'])
         native=result['variable'];assert native['attributes']['GRIB_UNIT']['values']==[field.get('unit','[K]')]
         spacing = field.get('spacing', 1)
-        assert native['grid']['transform']==[field['west']-spacing/2,spacing,0.,field['north']+spacing/2,0.,-spacing]
+        x_spacing = spacing
+        if spacing == 0.1:
+            x_spacing = native['grid']['transform'][1]
+            assert abs(x_spacing-spacing) <= math.ulp(spacing)
+        assert native['grid']['transform']==[field['west']-spacing/2,x_spacing,0.,field['north']+spacing/2,0.,-spacing]
         assert native['attributes']['GRIB_FORECAST_SECONDS']['values']==[str(field.get('start_hour',field['forecast'])*3600)]
         if spec['case_id'] == 'noaa-gfs-intervals':
             time = native['message']['time']
@@ -40,13 +45,13 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
             assert native['attributes']['GRIB2_DECODE_PRECISION']['values'] == [precision]
             if field.get('product_template') == 8:
                 facts = native['message']
-                start = datetime(2026, 1, 2, 3, tzinfo=timezone.utc)
+                start = datetime.fromtimestamp(spec.get('reference_time',1767322800),timezone.utc)
                 assert facts['product_template'] == 8 and facts['parameter']['local_table'] == 1
                 assert facts['level'] == dict(type_code=1, raw_scale=None, raw_value=None, reference='surface')
                 assert facts['time']['operation'] == 'accumulation'
                 assert facts['time']['start_utc'] == start.isoformat()
                 assert facts['time']['end_utc'] == (start + timedelta(hours=field['forecast'])).isoformat()
-                assert (facts['time']['increment_unit'], facts['time']['increment_value']) == (13, 450)
+                assert (facts['time']['increment_unit'], facts['time']['increment_value']) == (13, field.get('increment_seconds',450))
                 assert native['attributes']['GRIB_ELEMENT']['values'] == ['tp']
             else:
                 assert native['message']['level']['value'] == field['height_m']
@@ -74,6 +79,7 @@ def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
     assert 'GRIB2 ECMWF CCSDS complete stream and values smoke passed' in captured.out
     assert 'GRIB2 ECMWF CCSDS precipitation interval and source metres smoke passed' in captured.out
     assert 'GRIB2 ECMWF CCSDS 0h exact zero smoke passed' in captured.out
+    assert 'GRIB2 ECMWF 0.1 degree precipitation smoke passed' in captured.out
 
 
 @pytest.mark.parametrize('reverse',[False,True])
@@ -113,6 +119,7 @@ def test_preexisting_grib1_grib2_hosted_bytes_are_unchanged():
         'ecmwf-ccsds.grib2': '20604c89b64afc613a504d20da4085d89dd3e0ce4de4f0ce6808c3a982c17590',
         'ecmwf-precipitation.grib2': '0c7f69c585c2d52bdc37f0db7894e753b5806f12416f750ed37cef28147cbaee',
         'ecmwf-precipitation-0h.grib2': 'be63fa46f1c52f8c37198e43ef56a12dce28fd23edee15bf759206c67dfc81a0',
+        FIXTURE.NOAA_INTERVALS: '3f6b645fe67ac2000a80a55b99b2c4ee59d86653a8e347bd5259bcafb95f7585',
     }
     assert {s['name']:s['sha256'] for s in FIXTURE.sources() if s['name'] in expected} == expected
 
@@ -200,3 +207,41 @@ def test_ecmwf_initial_precipitation_requires_exact_constant_profile(monkeypatch
     monkeypatch.setattr(grib.gdal, 'OpenEx', lambda *a, **k: pytest.fail('invalid source reached GDAL'))
     with pytest.raises(ValueError, match=reason):
         grib._fields(source)
+
+
+@pytest.mark.parametrize('high_resolution, section, start, stop, value, reason', [
+    (True, 4, 54, 58, 450, 'precipitation interval'),
+    (False, 4, 54, 58, 225, 'precipitation interval'),
+    (True, 3, 59, 63, 179800000, 'precipitation 0.1 grid'),
+    (True, 3, 63, 67, 250000, 'precipitation grid'),
+    (True, 3, 71, 72, 64, 'precipitation grid'),
+])
+def test_ecmwf_precipitation_binds_increment_to_grid(monkeypatch, high_resolution, section, start, stop, value, reason):
+    if high_resolution:
+        raw = FIXTURE.source_bytes({'name': FIXTURE.ECMWF_HIGH_RES_PRECIPITATION})[:224]
+    else:
+        raw = FIXTURE.ccsds_message(FIXTURE.ccsds_precipitation_fields()[0])
+    corrupted = replace_precipitation_bytes(raw, section, start, stop, value.to_bytes(stop-start, 'big'))
+    monkeypatch.setattr(grib.gdal, 'OpenEx', lambda *a, **k: pytest.fail('invalid source reached GDAL'))
+    with pytest.raises(ValueError, match=reason):
+        grib._fields(corrupted)
+
+
+def test_ecmwf_high_resolution_retains_field_and_slice_budgets(tmp_path):
+    raw = FIXTURE.source_bytes({'name': FIXTURE.ECMWF_HIGH_RES_PRECIPITATION})[:224]
+    assert len(grib._fields(raw * 10)) == 10
+    with pytest.raises(ValueError, match='total grid budget'):
+        grib._fields(raw * 11)
+    path = tmp_path/'global-zero.grib2'
+    path.write_bytes(raw)
+    plan = dict(schema_version='addp.workflow.access-plan/v1',
+                source=dict(kind='file', format='grib', access=dict(method='mounted_path', path=str(path))))
+    inspect = grib.OPERATORS['grib.inspect']['function'](access_plan=plan)
+    read = grib.OPERATORS['grib.read_slice']['function']
+    version = inspect['format_info']['source_version']
+    selection = dict(variable='message-1', indices=[], x=3472, y=1769, width=128, height=32)
+    result = read(access_plan=plan, source_version=version, selection=selection)
+    assert result['values'] == [['0.0'] * 128 for _ in range(32)]
+    assert result['valid'] == [[True] * 128 for _ in range(32)]
+    for invalid in (dict(selection, x=3473), dict(selection, y=1768, height=33)):
+        assert read(access_plan=plan, source_version=version, selection=invalid)['error_code'] == 'GRIB_SLICE_INVALID'

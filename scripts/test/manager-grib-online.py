@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime, timezone
 import importlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import struct
@@ -70,12 +71,13 @@ def validate_slice(result,spec,field,x=None,y=None,width=None,height=None):
         require(message['edition'] == 2 and message['data_template'] == 42
                 and message['product_template'] == field.get('product_template', 0),
                 'ECMWF CCSDS templates changed')
-        end = datetime.fromtimestamp(1767322800 + field['forecast'] * 3600, timezone.utc).isoformat()
-        start = '2026-01-02T03:00:00+00:00' if cumulative else end
+        reference = datetime.fromtimestamp(reference_time, timezone.utc).isoformat()
+        end = datetime.fromtimestamp(reference_time + field['forecast'] * 3600, timezone.utc).isoformat()
+        start = reference if cumulative else end
         expected_facts = dict(
             parameter=dict(centre=98, subcentre=0, master_table=32, local_table=int(cumulative),
                            discipline=0, category=field['parameter'][0], number=field['parameter'][1]),
-            time=dict(reference_utc='2026-01-02T03:00:00+00:00', unit_code=1,
+            time=dict(reference_utc=reference, unit_code=1,
                       forecast_value=field.get('start_hour',field['forecast']), start_utc=start,
                       end_utc=end, operation='instant'),
             packing=dict(data_template=42, bits_per_value=0 if initial_zero else 12 if cumulative else 8,
@@ -88,7 +90,7 @@ def validate_slice(result,spec,field,x=None,y=None,width=None,height=None):
         if cumulative:
             expected_facts['time'].update(operation='accumulation', statistical_process=1, increment_type=2,
                                           interval_unit=1, interval_length=field['forecast'], increment_unit=13,
-                                          increment_value=450, missing_count=0)
+                                          increment_value=field.get('increment_seconds',450), missing_count=0)
             expected_facts['level'] = dict(type_code=1, raw_scale=None, raw_value=None, reference='surface')
         else:
             height_m = field['height_m']
@@ -102,7 +104,13 @@ def validate_slice(result,spec,field,x=None,y=None,width=None,height=None):
                 'ECMWF CCSDS precision disclosure missing')
     require(variable['dimensions']==[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],'GRIB independent dimensions changed')
     spacing = field.get('spacing', 1)
-    require(variable['grid']['transform']==[field['west']-spacing/2,spacing,0.,field['north']+spacing/2,0.,-spacing] and variable['grid']['longitude_policy']=='unchanged' and bool(variable['grid']['crs_wkt']),'GRIB grid/longitude changed')
+    transform = [field['west']-spacing/2,spacing,0.,field['north']+spacing/2,0.,-spacing]
+    if spacing == 0.1:
+        # GDAL derives longitude spacing from the two bounding centers.
+        actual_spacing = variable['grid']['transform'][1]
+        require(abs(actual_spacing-spacing) <= math.ulp(spacing),'GRIB longitude spacing changed')
+        transform[1] = actual_spacing
+    require(variable['grid']['transform']==transform and variable['grid']['longitude_policy']=='unchanged' and bool(variable['grid']['crs_wkt']),'GRIB grid/longitude changed')
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
 
 
@@ -126,6 +134,9 @@ def validate_browser_case(case,observed):
     if case['spec']['case_id'] == 'noaa-gfs-intervals':
         require(observed.get('distinct_accumulation_windows_verified') is True,
                 'GRIB page did not verify both original accumulation windows')
+    if case['spec']['case_id']=='ecmwf-precipitation-0p1':
+        require(observed.get('high_resolution_accumulation_verified') is True,
+                'GRIB page did not verify both 0.1 degree accumulation fields')
     if case['source_case']=='nfs':
         require(observed.get('original_download_disabled') is True and observed.get('original_download_denied_verified') is True
             and 'download_sha256' not in observed and 'download_size' not in observed,'GRIB NFS download denial or disabled button incomplete')
@@ -234,7 +245,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             for field in case['spec']['fields']:
                 prefix = f"grib-{case['source_case']}-{case['spec']['case_id']}-message{field['number']}-slice"
                 suffixes = ('.png', '-start.png') if field.get('product_template') == 8 and case['spec'].get('packing') == 'ccsds' else ('.png',)
-                if case['spec']['case_id'] == 'noaa-gfs-intervals':
+                if case['spec']['case_id'] in ('noaa-gfs-intervals','ecmwf-precipitation-0p1'):
                     suffixes += ('-time.png',)
                 for suffix in suffixes:
                     screenshot = artifact / (prefix + suffix)

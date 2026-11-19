@@ -14,11 +14,18 @@ import sys
 
 NAMES=('mixed-fields.grib2','south-to-north.grb2','regular-fields.grib1','south-to-north.grb1','complex-fields.grib2','complex-south-to-north.grb2','ecmwf-ccsds.grib2','ecmwf-precipitation.grib2','ecmwf-precipitation-0h.grib2')
 NOAA_INTERVALS = 'noaa-gfs-20261117-apcp-intervals.grib2'
-NAMES += (NOAA_INTERVALS,)
-NOAA_MESSAGE_HASHES = (
-    '3412648808a6e94f298ba5455c0f2366ff759e2a73a1ce1ba1cd9fbd04c4ffc8',
-    '54939cee1651562f5e99e781c6c48ed7d889b29f58ba04e1138aa3dd439db01c',
-)
+ECMWF_HIGH_RES_PRECIPITATION = 'ecmwf-ifs-20261117-tp-0p1.grib2'
+ORIGINAL_MESSAGES = {
+    NOAA_INTERVALS: (
+        (400450, '3412648808a6e94f298ba5455c0f2366ff759e2a73a1ce1ba1cd9fbd04c4ffc8'),
+        (309315, '54939cee1651562f5e99e781c6c48ed7d889b29f58ba04e1138aa3dd439db01c'),
+    ),
+    ECMWF_HIGH_RES_PRECIPITATION: (
+        (224, 'f221c5c3bdf32e917f563b652497f68aaccd211779ad9b29c65d6bb5c95f50e0'),
+        (1067373, '4ae2645e087fa7a0f25ddefeccb915a956f178ba7eef923cfc12f26cb2d6ccdb'),
+    ),
+}
+NAMES += tuple(ORIGINAL_MESSAGES)
 
 
 def fields(reverse=False):
@@ -290,11 +297,17 @@ def ccsds_message(field):
 
 
 def source_bytes(spec):
-    if spec['name'] == NOAA_INTERVALS:
-        raw = (Path(__file__).resolve().parents[1]/'fixtures'/'manager'/NOAA_INTERVALS).read_bytes()
-        if (len(raw) != 709765
-                or tuple(hashlib.sha256(part).hexdigest() for part in (raw[:400450], raw[400450:])) != NOAA_MESSAGE_HASHES):
-            raise ValueError('NOAA original messages differ from the frozen byte ranges')
+    name = spec['name']
+    if name in ORIGINAL_MESSAGES:
+        raw = (Path(__file__).resolve().parents[1]/'fixtures'/'manager'/name).read_bytes()
+        start = 0
+        for length, digest in ORIGINAL_MESSAGES[name]:
+            end = start + length
+            if hashlib.sha256(raw[start:end]).hexdigest() != digest:
+                raise ValueError('GRIB original message differs from its frozen byte range')
+            start = end
+        if start != len(raw):
+            raise ValueError('unexpected bytes after the original GRIB messages')
         return raw
     if spec.get('edition') == 1:
         encode = grib1_message
@@ -340,6 +353,26 @@ def sources():
     ]
     spec = dict(name=NOAA_INTERVALS, case_id='noaa-gfs-intervals', packing='complex-spatial',
                 reference_time=1794873600, fields=originals)
+    raw = source_bytes(spec)
+    result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
+    # Original messages from the ECMWF 0.1° surface archives at 0h and 6h.
+    # ecCodes 2.50.0 values at the same source row 758, column 2661.
+    zero, accumulated = [
+        dict(number=number, width=3600, height=1801, spacing=0.1, west=180, north=90,
+             forecast=hour, start_hour=0, base=0., binary_scale=scale, missing=False,
+             increment_seconds=225, product_template=8, parameter=[1, 193], unit='[m]',
+             element='tp', short_name='0-SFC', sample=dict(x=2661, y=758, values=values))
+        for number, (hour, scale, values) in enumerate((
+            (0, 0, [[0.] * 4 for _ in range(3)]),
+            (6, -13, [
+                [0.28564453125, 0.2177734375, 0.0960693359375, 0.0738525390625],
+                [0.2471923828125, 0.1373291015625, 0.0621337890625, 0.055419921875],
+                [0.1832275390625, 0.0928955078125, 0.0650634765625, 0.0677490234375],
+            ]),
+        ), 1)
+    ]
+    spec = dict(name=ECMWF_HIGH_RES_PRECIPITATION, case_id='ecmwf-precipitation-0p1',
+                packing='ccsds', reference_time=1794873600, fields=[zero, accumulated])
     raw = source_bytes(spec)
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return result

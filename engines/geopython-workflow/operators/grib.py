@@ -138,15 +138,22 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
     initial_zero = False
     if cumulative:
         grid = sections[3]
-        if (grid[38:42] != b'\x00' * 4 or grid[63:71] != struct.pack('>II', 250000, 250000)
-                or grid[71] != 0):
+        spacing = struct.unpack('>II', grid[63:71])
+        increment_seconds = {(250000, 250000): 450, (100000, 100000): 225}.get(spacing)
+        if grid[38:42] != bytes(4) or increment_seconds is None or grid[71] != 0:
             raise ValueError('unsupported ECMWF CCSDS precipitation grid')
+        if increment_seconds == 225:
+            if (grid[14] != 6 or grid[42:46] != b'\xff' * 4 or grid[54] != 48
+                    or struct.unpack('>II', grid[30:38]) != (3600, 1801)
+                    or _signed(grid[46:50]) != 90000000 or _signed(grid[50:54]) != 180000000
+                    or _signed(grid[55:59]) != -90000000 or _signed(grid[59:63]) != 179900000):
+                raise ValueError('unsupported ECMWF CCSDS precipitation 0.1 grid')
         if identity != (1, 193) or product[22:34] != b'\x01' + b'\xff' * 11:
             raise ValueError('unsupported ECMWF CCSDS precipitation parameter or level')
         duration = int.from_bytes(product[49:53], 'big')
         if (len(product) != 58 or product[18:22] != b'\x00' * 4 or duration > 360
                 or product[41:49] != bytes.fromhex('0100000000010201')
-                or product[53:58] != bytes.fromhex('0d000001c2')):
+                or product[53:58] != b'\x0d' + increment_seconds.to_bytes(4,'big')):
             raise ValueError('unsupported ECMWF CCSDS precipitation interval')
         valid = datetime(int.from_bytes(product[34:36], 'big'), *product[36:41],
                          tzinfo=timezone.utc)
@@ -154,7 +161,7 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
             raise ValueError('inconsistent ECMWF CCSDS precipitation end time')
         time_facts.update(end_utc=valid.isoformat(), operation='accumulation',
                           statistical_process=1, increment_type=2, interval_unit=1,
-                          interval_length=duration, increment_unit=13, increment_value=450,
+                          interval_length=duration, increment_unit=13, increment_value=increment_seconds,
                           missing_count=0)
         initial_zero = duration == 0
         element, unit = 'tp', '[m]'
