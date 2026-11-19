@@ -698,146 +698,44 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 提交 `9c0d82b51448138578e7a1cdecb80580c1d45fcb` 将三种场景纳入既有 Security Hosted 领域报告 v43。最终领域 190 项、登记 149 项通过。聚合入口的指标夹具清理测试超过 20 秒，保留失败记录。真实 Hosted 待专门 CI 会话回传。独立审核脚本以一组模拟产物与八个反例检查 SHA、运行步骤、UUID、拒绝计数和清理，位于 `/tmp/p145-v43-transfer-join-audit.py`。[Hosted 验收约定](../scripts/docs/Online数据保护.md#transfer-postgresql-两表查询脱敏落盘)
 
 
-### v44 Hosted 前置元数据可见性阻塞（2026-11-07）
-
-[Run 42322135716 / Job 128248930706](https://github.com/pampa0629/addp/actions/runs/42322135716/job/128248930706) 在精确源码 `0af01095941be47c97d2d0383bcb69b23781fd68` 实际执行并失败，首错误为 `Meta must return exactly one Outdoor.Persons DataItem`。独立核对 Meta 日志，扫描执行 `4de30e87-8064-4140-9561-746222e8595f` 成功写入一条 MongoDB `Outdoor.Persons`，7 行、6 字段。随后普通 User 的数据项列表经过现有元数据可见性过滤，夹具仅准备了原七张 PostgreSQL 表的读取许可，没有 MongoDB 数据项的元数据查看许可，无法取得该项。
-
-该轮没有领域 suite_report，Service 两表角色场景和浏览器均未执行，不记为通过。标准生命周期 cleanup=passed、Infra=zero_residuals 仅证明隔离环境收尾。完整归档及独立失败核对在 `/tmp/p145-v44-42322135716/`。用户随后明确同意仅补三个数据项的 `metadata_read` 夹具许可：MongoDB `Outdoor.Persons`、MySQL `security_fixture.customers`、`security_fixture.bank_card_accounts`；原 MySQL／MongoDB 内容授权边界继续由对应会话负责。
-
-
-### v44 三项元数据查看许可夹具适配（2026-11-07）
-
-按用户确认范围，仅通过 System 现有正式 API，为原普通消费 User 准备上述三项 `metadata_read`。独立准备账号沿已有 exact 权限集合先 basic 扫描两个引擎，再读取可信指纹／完整 native_target 边界；逐项核对签发前不可见、签发回执、签发后可见及消费账号取得的同一 DataItem 指纹。不增加角色、功能权限、MySQL／MongoDB 内容 Grant 或原值授权，原七张 PostgreSQL `read` 准备保持。
-
-共享注册脚本抽取既有身份、可见性与逐条撤销生命周期，文件许可行为保持；新的普通表／集合 metadata helper 使用相同生命周期，正式 `action` 只允许 `metadata_read`。写入前原子记录 request_id／目标及执行身份到 0600 私有 checkpoint，包含未知写入结果，拒绝接管已有 checkpoint。Hosted 在初始化前固定本轮 Run ID，消费与浏览器不接收准备凭据；`before_online_application_stop` 独立子进程才重载私有身份文件，校验 Run／租户／主体、三项目标、UUID、重复项和待清理关系，逐条撤销并验证不可见。正常、失败和中断共用收尾，单条失败继续尝试剩余项，清理失败影响总结果。
-
-准备与清理产物分别为 `security-record-metadata-preparation.json`、`security-record-metadata-cleanup.json`，不含令牌；未知写入、错 action 回执、单项撤销失败、跨 Run／主体／目标、重复项、非法 UUID、checkpoint 权限及重复接管均有确定性反例。总入口仍为 `make test-security-online-runner`，已有 Platform CI／Online 聚合入口覆盖，无需新增 workflow 或本地重启。领域报告保留 v44、浏览器 v9；首次 Hosted 前置失败及本轮确定性结果分开保留，尚未以新夹具完成真实 T4。
-
-
-本轮最终 `make test-security-online-runner` 退出0：43／204／18／149／35／80／257 项、System Fixture Go 及登记 CLI 通过。单独领域200项、生命周期21项通过；独立元数据审计正常样本及8个反例通过。首次总门禁因共享 helper 类声明的静态登记未同步失败，已精确更新登记并完整重验，不改变文件许可语义或放宽断言。日志 `/tmp/p145-metadata-runner-gate.log`（首次失败）、`/tmp/p145-metadata-runner-final.log`（最终通过）、`/tmp/p145-metadata-domain-final.log`、`/tmp/p145-metadata-lifecycle-final.log`；文件摘要及证据边界见 `/tmp/p145-metadata-verification.json`。本轮仅确定性 T1，未新增真实数据库 T2、本地 HTTP 或 Hosted T4 通过记录。下一步交专门 CI 会话用本次精确提交运行 v44，回传 Run／Job 与准备／清理及完整领域／浏览器产物后独立核对。
-
-
-### v44 metadata-only 与字段检索断言冲突（2026-11-07）
-
-[Run 42367089598 / Job 128387317730](https://github.com/pampa0629/addp/actions/runs/42367089598/job/128387317730)，attempt1，精确 SHA `5bcac0793dd85d505c436f2d6e1aa4f95991da80`，实际 readiness 通过、Online gate 失败、原始产物上传成功。独立核对十个服务 preflight 均为此 SHA；三项 metadata_read 的准备／精确指纹、请求 UUID、两次准备扫描及三项撤销审计通过，pending 空、metadata_hidden=true、grants_revoked=true；总结果仍 failed，生命周期 cleanup=passed、Infra 零残留。无领域 suite_report，Service／Transfer 新场景与浏览器均未执行，不计通过，也不运行要求完整领域成功的总审计。
-
-新第一失败为 `protected technical field was not searchable before the deadline: Engine 3, Outdoor.Persons, userInfo.phone`。同轮日志证明该字段已作为 string、路径 `[userInfo,phone]` 写入 DataItem #12，Manager 在 11:56:22Z 接收索引批次并返回204，搜索持续200／total=0，System 的 Manager 搜索可见性检查取得1个候选。日志未归档搜索／裁决响应正文，不能只凭空结果猜测每项 visible/content_readable 值，也不把204扩大为字段搜索成功。
-
-固定源码和授权规范明确：仅 metadata_read 的 Manager 检索分支只搜索 name/full_name，只返回资源身份与定位；字段检索及字段高亮在当前 read 分支。旧 suite 却要求仅有元数据许可的 MongoDB userInfo.phone 和 MySQL email 字段搜索正例，包含 MongoDB 算法／重启检查和最终浏览器搜索到预览链路。这是验收前提与当前权限契约冲突，不能加等待或未经确认补 read Grant 解决，也不能静默删断言后记为原v44通过。
-
-待确认的具体适配方案：三项保持 metadata_read；正式核对 Manager 裁决 visible=true/content_readable=false，按名称／路径搜索同一 DataItem 并验证只返回安全身份；通过 Meta 当前用户字段结构核对精确组件路径、类型、指纹；字段检索与高亮的正例保留在现有已获 read 的 PostgreSQL 目标。MySQL／MongoDB 字段检索的原正例不再声明通过，报告与浏览器契约须同步新版本，原权限、数据脱敏输出、资格生命周期、失败原因、21图和清理仍严格保留。此方案改变原验收要求，当前仅记录方案，未实施／未重派；若要让 metadata_read 也搜索技术字段，则先讨论 Manager 检索产品规则，不能由本会话擅改。
-
-原始归档 `/tmp/addp-security-5bcac079/archive/_temp/addp-online-42367089598/`，独立失败核对 `/tmp/addp-security-5bcac079/p145-independent-failure-audit.json`，脚本 `/tmp/p145-5bc-failure-audit.py`；旧42322135716失败继续保留。已有5bc确定性门禁保持有效，本次仅归档核验和文档，未新增T1/T2/T4运行通过。
-
-
-### Hosted 三项精确读取权临时前提（2026-11-07）
-
-用户已明确选择：先给原验收账号增加数据读取权，继续脱敏验收；同时把“有元数据查看权就应能搜索字段名”的正式调整交给「数据权限-性能优化」会话。该会话为 `01a03925-3e49-7bd3-a80b-9dc8e71651e0 / local`，已收到用户原文、固定失败Run／SHA、字段事实和Manager当前分支的证据。p145仅改自己的Hosted夹具，不实施该会话的产品权限变更，也不采用此前拟议的名称检索替代方案。
-
-现有正式Grant签发可验证MySQL普通表和MongoDB集合的可信native边界及当前结构。夹具保留原三个metadata_read来源，再对同三个精确项分别签发read；依次核对普通用户固定Manager检索裁决content_readable=false→true、回执action／主体／指纹／边界，以及同一Meta项。只增加三个数据项的read，原七张PG、角色、功能Permission、原值授权、源数据和脱敏规则保持；read不等于获准查看敏感原值。原v44字段高亮、算法与重启检查、v9浏览器及21图全部保留。
-
-共享注册 helper 改为显式action的唯一 `ExactRecordGrants`，元数据与read使用同一登记／签发／回执和持久清理路径，移除仅元数据的旧helper名称与旧CLI／checkpoint路线。`security-record-grants.json`为0600原子checkpoint，绑定三目标×两动作、六个独立UUID；仅当前Run、同租户与同主体的唯一组合可清理。应用停止前先撤read及核对不可读，再撤metadata_read及核对不可见；单项失败仍尝试其余项及另一类动作，支持未知写入和中断后续办。成功回执使用 `addp.security-record-grant-fixture/v2` 和 `security-record-grant-{preparation,cleanup}.json`，不接受旧三项产物代替六项。
-
-正式权限规则仍由上述会话负责。持有临时read的字段检索成功只能证明本轮脱敏验收前提，不证明metadata-only字段检索已实现；后续须由其完成并提供独立验证。原42322135716及42367089598两次失败继续保留。本轮无本地账号写入、服务启停或新增workflow；实际6条许可签发、清理和领域T4须由专门CI会话运行后再认定。
-
-
-本轮必需门禁按输入范围完成：完整 `make test-security-online-runner` 的43／204／18／149／35／80组、System Fixture Go及登记CLI通过，最后258组因CLI清理flag更名后的两处旧属性引用报3项错误，首次失败保留。修正属性并新增真实CLI入口→六项精确清理回归后，复用输入未变的已通过依赖，沿原Make目标以 `-o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit` 重跑所属门禁，259项和System Fixture Go退出0；当前登记反例主测试及CLI再次通过。读取/元数据清理聚焦7项、原共享文件元数据27项通过；独立六项审计正常样本+10反例通过。固定摘要及完整命令见 `/tmp/p145-read-verification.json`；首次 `/tmp/p145-read-runner-gate.log`、最终 `/tmp/p145-read-owner-final.log`、`/tmp/p145-read-registration-final.log`。这是T1组合证据，未把复用项、失败项或待Hosted项写成实际重跑通过；本轮未新增真实T2／本地HTTP／T4通过。CI继续由专门会话用新精确提交单次安排，回传真实六项准备/清理及原领域/浏览器产物后再独立审计。
-
-### v44 六项许可实测与未就绪探针扫描前提（2026-11-07）
-
-历史 fb719 SHA 直接作为 workflow ref 派发返回 HTTP422，未产生 Run，不算产品失败。随后核对 main 的直接后继 `b4779ba443c42e423240132c332ccb08cbb8fd23`：仅其他套件测试／文档变化，本会话七个输入摘要一致，按真实后继 SHA 单次派发。证据 `/tmp/p145-read-dispatch-revision-review.json`。
-
-[Run 42378933245 / Job 128422248189](https://github.com/pampa0629/addp/actions/runs/42378933245/job/128422248189)，attempt1，实际 SHA b477：readiness 成功、gate 失败、Hosted 产物上传成功，执行产物条件未满足而跳过；十个服务 preflight 均为同一 SHA、干净检出、专用 addp_online 和 loopback 边界。独立审计确认六个唯一 UUID、三个精确目标×metadata_read/read 两动作、两次准备扫描、同项指纹及签发后的 content_readable=true；六项最终撤销，pending／errors 空，content_unreadable／metadata_hidden 均 true。总结果仍 failed，生命周期 cleanup=passed、Infra=zero_residuals；没有领域 suite_report 和浏览器 PNG，不认定 v44／v9／21图通过。
-
-本轮第一失败为 `unready source has no completed discovery identity`。Meta 原始落库行证明 PostgreSQL `addp_online_security.spatial_algorithm_source` 的准备扫描为 basic，attributes 无字段结构；固定源码中该表的 deep 刷新排在此探针之后。固定源码规定零字段事实可合法完成零命中发现、字段快照 Hash 为空；旧夹具却在该表首次 deep 刷新之前纳管并要求非空快照。该轮未归档 Enrollment 响应正文，不把具体缺失成员当作直接捕获的 HTTP 证据；根因判断来自落库事实与 Meta／Common／Security 发现契约的联合核对。
-
-修复仅在 `exercise_unready_source` 纳管之前调用已有 `wait_for_postgres_item_scan`，以普通消费账号刷新原七表之一的精确 DataItem，使用同一原 deadline，再读取新结构并创建全新 Enrollment。不改变空字段事实、发现状态、检测器、源／原值授权或扫描范围，不延长预算，不放宽 UUID、快照、零 Finding、四出口及前后修订不变断言。报告保留 v44、浏览器保留 v9；标准入口自动发现已覆盖，无需新增 workflow、Swagger 或本地服务重启。
-
-验证：`python3 scripts/test/security-mysql-owner-protection-online_test.py UnreadySourceFixtureTest -v` 四项通过，覆盖精确刷新先于读取／纳管、原 deadline、刷新失败后不纳管／不执行出口，以及缺失发现／快照仍拒绝。所属标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit test-security-online-runner` 261项和System Fixture Go通过；四个依赖目标未在本次重跑，前轮有效证据保留，本次不冒称完整聚合重跑。当前登记反例主测试及登记CLI通过，限定diff检查通过。日志 `/tmp/p145-unready-owner-gate.log`、`/tmp/p145-unready-registration.log`、`/tmp/p145-unready-registration-cli.log`；独立失败审计 `/tmp/addp-security-read-revised/p145-independent-failure-audit.json`。这是夹具T1修正；修正后的真实 deep 扫描、领域和浏览器T4仍须专门CI会话回传，旧失败保留。
-
-权限主责会话回报：`20d03f724` 已实现 metadata_read 搜索已登记字段名及高亮，Manager T1、PG＋Meilisearch T2与对应Linux CI通过，跨服务／真实浏览器仍待验；不能以本轮临时read证明该metadata-only产品规则已完成全链验收。
-
-2026-11-08，原共享main待发布提交阻塞已解除；本会话五路径摘要与前轮已验证输入一致。发布前再次沿上述根Make所属recipe验证，261项及System Fixture Go通过；登记反例主测试和登记CLI再次通过。四个依赖目标本次仍未重跑，未声称完整聚合门禁通过。新日志 `/tmp/p145-unready-owner-20261108.log`、`/tmp/p145-unready-registration-20261108.log`、`/tmp/p145-unready-registration-cli-20261108.log`。只发布本会话五路径，专门CI会话接收新完整SHA后单次安排v44/v9；运行与领域／浏览器结果须以实际回传独立核验，不将派发或排队算通过。
-
-### v44 Develop 查询几何契约夹具修正（2026-11-08）
-
-[Run 42389802508 / Job 128454804932](https://github.com/pampa0629/addp/actions/runs/42389802508/job/128454804932)，attempt1，实际提交 `82f9af3592bb994fc933810984fb736c3776a0c9`，不是006507精确运行。独立源码审阅确认五个修复路径及整个Security Job块与006507逐字相同；共享调度／初始化差异仅作用于Manager的FileGDB分支，未扩大Security权限或运行范围。十个服务preflight均为82f；readiness成功、gate失败、原始产物上传成功。首错误为 `develop spatial row 1: spatial output must contain a two-dimensional Point`，原日志5273行、scenario191763ms后退出1。旧未就绪首错误没有复现，但无最终suite_report和浏览器PNG，不能据此宣称该探针或完整v44/v9通过。三metadata＋三read的正式签发和六项精确撤销再次独立审计通过；pending／errors为空，撤销后不可读／不可见，生命周期cleanup=passed、Infra零残留。
-
-现行[查询几何值契约](../docs/spec/addp引擎插件接口规范.md)及术语表已统一：Provider按真实输出类型将PostGIS几何归一成EWKB，保护在原生值上执行，Develop持久预览及当前结果在最终JSON边界调用 `QueryRowsForJSON`，输出 `{wkt, srid}`。提交6f38108b78已有共享投影和Develop持久化回归。旧Hosted断言／合成Client仍只认识裸WKT、GeoJSON或hex EWKB，因此拒绝规范对象。原运行没有归档该结果响应正文，不声称直接捕获了失败行的几何对象；固定源码链路和两项确定性重现证明的是夹具与现行契约不一致，实际整链仍需新T4验证。
-
-仅修改本会话空间验收：Develop只接受恰含wkt／srid的对象，SRID必须为整数4326，WKT必须为有限二维Point且坐标逐行等于合成源；旧裸WKT／GeoJSON／hex不作为Develop兼容输入。其他三个出口保留各自现行表协议及原算法、NULL、坐标和清理断言，不改业务SQL、不用ST_AsGeoJSON绕过原生几何、不更改产品API／授权／算法。报告v44、浏览器v9及21图保持；既有Make与登记自动发现覆盖，无新增workflow或本地服务重启。
-
-验证：先把合成Develop响应改为规范对象，两项测试准确重现同一Point错误；首份新增测试的保护值预期曾与Client初始参数不一致，已先修正测试前提，再取得 `/tmp/p145-spatial-query-contract-red-final.log` 的两项Point失败。修正后所属空间／Owner组20项通过；当前根Make所属recipe262项及System Fixture Go通过，登记反例主测试和登记CLI通过。四个依赖目标未重跑，不把所属门禁当完整聚合；这是夹具T1，未新增真实数据库T2、本地HTTP或Hosted通过。错误／缺失／非整数SRID、旧形状、额外成员、NULL、空或三维Point、非有限值、其他几何及坐标改变均有拒绝反例。日志 `/tmp/p145-spatial-query-contract-{red,red-final,green}.log`、`/tmp/p145-spatial-query-owner-gate.log`、`/tmp/p145-spatial-query-registration{,-cli}.log`；原始归档 `/tmp/addp-security-unready-006507/archive/_temp/addp-online-42389802508/`，独立失败审计 `/tmp/addp-security-unready-006507/p145-independent-spatial-failure-audit.json`。后续仍交专门CI会话单次复验，原失败保留。
-
-### v44 SQL角色服务空参数数组修正（2026-11-08）
-
-[Run42413276305 / Job128525779027](https://github.com/pampa0629/addp/actions/runs/42413276305/job/128525779027)，attempt1，实际SHA `3f34efd2da97ef172a6ded15037bae246c83c1df`，不是754412精确运行；CI会话回报后继仅Agent／Console测试及文档变化，五个修复输入相同。独立审计十服务同SHA、readiness成功、gate失败、原产物上传成功；job.log5254行在scenario499325ms后报 `SQL role service invented a Meta source or changed the query`。未再次报旧Point错误，但无最终suite_report或浏览器PNG，不认定空间、SQL角色或完整v44/v9通过。六个精确metadata/read许可的真实签发／动作／UUID和完整撤销再次通过，pending／errors为空，撤销不可读／不可见，cleanup=passed、Infra零残留。
-
-原始Service日志7947行保存了该轮无参数SQL服务#9：SQL逐字等于夹具发布表达，`named_parameters`持久值为[]，source_snapshot有query_hash且没有source。旧错误由三项合并断言产生，不能据此指认伪造来源。固定源码的DTO从 `GetNamedParameters()`取得nil空切片，JSON序列化为null；新增仓储读取→正式GetService→JSON的确定性回归准确复现 `named_parameters = null, want array []`。原管理HTTP响应正文未归档，具体线上的null值是固定代码与重现支持的判断，不冒充原响应直接捕获。
-
-按已有Swagger数组契约，仅在Service唯一DTO转换边界用非nil空切片复制声明，无参数返回[]，非空声明保持；创建、更新、详情和列表共用。未改SQL、参数定义／默认值、快照、执行绑定、角色、授权或操作范围。正式文档先明确数组语义，Swagger结构／注解本来即array、不变，未生成无差异文件；无新路由／迁移／依赖，原Service T1及Security Runner自动发现覆盖，无新增CI编排。夹具严格拒绝null／遗漏参数成员，不作兼容兜底；错误拆成Meta Source、SQL改变、参数数组三类，各有缺失／null／修改的受控反例，失败前不写Policy并按原版本清理。
-
-验证：Go定向红／绿各一次；`make test-module MODULE=service GO_ONLY=1`实际通过，覆盖本轮Service Go T1。SQL角色无参数、必填和默认参数组32项通过；根Make所属recipe265项及System Fixture Go、登记反例和CLI通过，四个依赖目标未重跑，不声称完整聚合或真实数据库T2通过。没有新增本地HTTP／Hosted通过，不启停用户本地服务；新运行由专门CI会话继续。日志 `/tmp/p145-service-empty-parameters-{red,green,module}.log`、`/tmp/p145-service-definition-{diagnostic-red,diagnostic-green,owner-gate,registration,registration-cli}.log`；独立失败审计 `/tmp/addp-security-spatial-754412/p145-independent-service-definition-failure-audit.json`，原始归档 `/tmp/addp-security-spatial-754412/archive/_temp/addp-online-42413276305/`。
-
-### v44 精确3afbae复验总超时（2026-11-08，预算方案待确认）
-
-[Run42432701298 / Job128584861739](https://github.com/pampa0629/addp/actions/runs/42432701298/job/128584861739)，attempt1，精确提交 `3afbae0ec2921e237ee711b62d3d909a417504fc`，十服务preflight同SHA。readiness成功、gate失败、原始产物上传成功；原始job.log5252行 `scenario exceeded the Online total timeout`，online-report为 `failure_stage=scenario / error_code=online_scenario_timeout / duration_ms=1200105`。没有最终suite_report、浏览器PNG为0，不把未再次出现DTO／Point错误或部分文件解释为早期阶段完整通过。六精确Grant签发及最终撤销再次独立核对通过，pending／errors为空，撤销不可读／不可见，wrapper cleanup=passed、Infra零残留。
-
-只读耗时定位：四出口启动入口均给共享Projection Runner传固定30秒，保护变化不经同步请求直接读取Security。日志中多轮Policy变更与后续步骤相隔约30秒；三组角色资格自然到期按原代码分别等待90秒、串行执行。177次Service公开查询的服务端记录耗时合计4471ms，811次Enrollment详情读取合计3396ms；这些累计服务端耗时不等于完整墙钟时间，也不据此排除所有其他慢点。01:39:22.971Z最后一份Develop restored文件返回200，01:39:23.014Z原查询再次读取200，随后Meta数据项读取、新Enrollment创建201及Finding／Assessment循环200，距01:39:27Z总终止仅约4秒。按固定串行代码，已进入默认导出之后的邮箱发现准备；原响应正文未归档，不猜测该次Finding／Assessment具体状态，不计此阶段通过。当前证据支持主要预算消耗来自既有同步及自然到期等待，尚无完整阶段耗时报告，不能给出所有阶段的精确占比。
-
-独立核对归档六份CSV的内容：两个Owner各before／tightened／restored，均五行七字段，默认掩码、收紧全遮盖、空单元格及所有非敏感合成字段正确，恢复文件与原文件逐字节一致，Owner间三阶段文件相同。只认定这六份文件内容证据，不代替42次响应／会话归属／角色资格／浏览器全链验收。明细和限制在 `/tmp/addp-security-service-3afbae/p145-independent-timeout-audit.json`；时间线 `/tmp/addp-security-service-3afbae/p145-request-timeline.json`、`p145-security-mutation-timeline.json`；审计脚本 `/tmp/p145-3af-timeout-audit.py`。
-
-当前没有代码、超时、轮询、权限或运行环境变更，也未复派。待用户明确决定的方案：仅 `security-mysql-owner-protection` 的Hosted场景总预算1200→2400秒，增加安全的阶段计时／当前阶段记录；保留单请求30秒、产品Projection Runner30秒、三个90秒自然到期、全部场景／断言／21图及其他套件预算。2400秒是拟议上限，不是已测保证。现有Hosted Job上限120分钟无需修改。拟影响现有 `online-hosted-security-gate.sh`及其唯一分套件预算测试、领域Runner及测试的阶段计时、相关登记与文档；阶段记录只存固定阶段名／状态／耗时，不含SQL、结果、凭据或原值，不代替最终领域报告。确认后运行既有Security Runner／登记最小充分门禁，再交专门CI单次复验；确认前不实施预算变化，不为验收新增产品同步配置或修改各Owner轮询策略。
-
-### v44 预算与安全阶段诊断（2026-11-08）
-
-用户已确认上一节的限定方案。仅 `security-mysql-owner-protection` 的Hosted总场景预算由1200调整为2400秒；其他套件预算、单请求最多30秒、产品Projection Runner的30秒及三组资格自然到期各90秒不变。原业务调用、顺序、参数、断言和清理经独立AST去包装比较保持一致，v44／v9／21图和六项许可生命周期仍为通过条件。没有产品接口、身份、授权、同步配置或本地服务启停变更；2400秒只是批准的上限，尚不保证完整运行可以在此内完成。
-
-同一领域入口增加27个固定有序阶段，在开始及结束时将 `security-phase-timings.json` 原子保存到现有产物目录。文件仅含固定阶段名、状态、UTC起止及单调时钟耗时，权限0600；不记录SQL、结果、参数、凭据或异常正文。不覆盖已有journal；未知／重复／逆序／嵌套阶段拒绝。全部阶段实际结束才允许诊断result=passed；强制终止保留running，异常保留失败状态，诊断落盘故障不得取代原业务异常。该文件仅说明停止位置和耗时，不是领域或浏览器验收替代品。现有Make唯一测试入口及workflow的产物目录自动覆盖；Security Job既有120分钟上限足够，不新增workflow或登记分支。
-
-验证：阶段及主入口定向7项通过；独立审计正常全量／部分样本及12项拒绝样本通过，脚本 `/tmp/p145-v44-phase-audit.py` 继续组合原严格领域、六Grant及浏览器审计，实际图片仍须目视检查。根Make所属recipe的首次271项因旧main测试桩缺少产物目录而报1失败／1错误；补齐目录、mock计时并保持原断言后，新增上下文触及Python静态嵌套上限的首次语法失败也保留，测试改用标准ExitStack。最终所属271项及System Fixture Go、登记反例1项和CLI、语法与限定diff检查通过。四个依赖目标未在本轮重跑，不声称完整聚合运行。日志 `/tmp/p145-budget-phase-owner-gate{,-final}.log`、`/tmp/p145-phase-main-focused-green{,-final}.log`、`/tmp/p145-budget-phase-registration{,-cli}.log`、`/tmp/p145-phase-independent-audit.log`；业务流比较 `/tmp/p145-stage-flow-proof.json`；固定输入摘要及完整命令 `/tmp/p145-budget-phase-verification.json`。仅夹具T1及审计工具验证，无新增数据库T2、本地HTTP或Hosted通过。
-
-下一步由专门CI会话对新代码提交安排一次完整v44／v9，回传真实Run／Job／SHA、原始报告、CSV、27阶段诊断、21图及六Grant／领域／浏览器／Infra清理。原42432701298总超时和更早失败继续保留；不能以增加预算、诊断文件或此前局部CSV正确认定全套通过。
-
-### v44 业务报告与清理令牌到期（2026-11-08）
-
-[Run42438722028／Job128603163154](https://github.com/pampa0629/addp/actions/runs/42438722028/job/128603163154)，attempt1，精确提交 `8a7d36a28283401962f685da102e49734a04e2b4`。原始元信息核对completed／failure；readiness成功，gate实际执行失败，Hosted产物上传成功。十服务preflight同SHA且干净检出。业务online-report和v44领域报告标记passed，耗时1952614ms（约32.5分钟），27阶段均已结束；浏览器v9报告passed并有21张必需PNG。wrapper最终 `result=failed / cleanup=failed / infra_cleanup=zero_residuals`，因此不认定完整T4通过，也不把阶段passed当作清理证明。
-
-关键部分已独立审计：原六种计算的不同UUID及同历史无结果、三类新增准备拒绝的具体原因与五行恢复、20个runtime／8个protocol_only原因格、四出口邮箱移除、三算法及Mongo字段身份、Transfer JOIN三独立执行／拒绝零写入、Service方式撤销旧游标及SQL资格403、三组自然到期的数据库时间／身份不变、默认导出42条响应记录与六份CSV逐字节固定oracle及恢复一致。独立工具不导入生产校验器；其正常输入与20个拒绝反例通过。该重建工具明确是部分审计：多数子场景原始响应正文未归档，方法撤销的no-store也未保留在对应拒绝回执中，不能将报告断言升格为独立原始响应取证。`protection_not_yet_valid`及其余protocol_only格保持协议／T2范围，不冒称出口HTTP或浏览器T4。三组共六张新增Owner／Monitor截图已目视比对具体提示、建议、准备阶段与相同UUID；另看Manager预览／导出Monitor、Service拒绝／恢复、Transfer结果拒绝／Monitor，共12张关键图，其他9张仅检查完整集合及PNG头，不声称全部目视。
-
-六Grant准备回执包含三个精确目标×metadata_read／read、六个唯一签发UUID及可读裁决，但没有最终撤销回执。原job.log5280行的清理401，与System原始日志request_id `55520e69-9735-4ac3-ad1f-064c3b3d6385`一致：03:18:19.939Z `iam.auth_context.rejected / reason=token_expired / family_id=22`。固定源码清理先校验准备操作者，再校验消费用户；私有IDENTITY_ENV重载的是初始会话，不会续期。System隔离fixture原AccessTokenTTL为30分钟，短于本轮32.5分钟业务实际耗时。这里的30分钟不是产品默认；正式TokenFamilyService代码默认15分钟，本次均不改。Infra销毁不代替六项正式撤销成功，原失败及缺口保留。
-
-用户已确认仅该套件复用既有长场景会话：在唯一 `fixtureSessionConfig` 的长场景分支增加security-mysql-owner-protection，Access和RefreshFamily均4小时，随独占Job销毁；产品会话、其他套件、40分钟场景预算、功能权限／源授权／原值授权、角色资格90秒到期、业务断言及清理流程保持。不新增续期、重登、重试或绕过认证分支。新增Go回归覆盖本套件4小时及其余四套件原30／45分钟，原容量两套件回归亦通过；初始红色失败后修改，绿测试通过。沿根Make所属recipe验证System Fixture Go及271项通过；登记反例1项通过；全仓登记CLI本轮因未修改的raster-viewshed-persistence证据登记不完整失败，未处理或计通过。四依赖目标本轮未重跑，非完整聚合；无需新workflow、API、Swagger、迁移或用户本地重启，新Go测试被既有SecurityFixture选择模式命中。
-
-原始产物 `/tmp/addp-security-budget-8a7d36a2/archive/_temp/addp-online-42438722028/`；元信息及归档SHA核对、部分审计、12图目视记录、20反例及最初审计工具拼写／回执字段误读均保留在 `/tmp/p145-8a7d-audit/`，不将初始审计错误改记成功。归档ZIP SHA256 `6426d2080a2341018aa5a0abf371133de233346bcfbc7967042d0cb177fde38b`。修复门禁 `/tmp/p145-fixture-session-{red,green,owner-gate,registration,registration-cli}.log`；固定输入与发布证据 `/tmp/p145-fixture-session-verification.json`。下一步由专门CI会话对新提交单次完整复验，重点闭环六Grant正式撤销及清理报告；本会话不自行派发、定时或启停本地服务。新版会话期限尚无实际Hosted通过，旧run整体保持失败。
-
-### v44 重启构建身份与 Swagger 工具版本（2026-11-08）
-
-[Run42447289580／Job128628787628](https://github.com/pampa0629/addp/actions/runs/42447289580/job/128628787628)，attempt1，实际SHA为已审后继 `839a4d6c0178fbb02d7c2620ff06ec815b337a0c`。实际gate失败、Hosted产物上传成功；十服务preflight同SHA且干净检出。业务226946ms，阶段记录只有前四项passed、第五项spatial_algorithms失败；首错为 `manager changed build inputs during restart acceptance`。没有v44领域suite_report、v9浏览器报告或截图（PNG0），不能继承旧8a7d的业务报告。六Grant准备／撤销逐项UUID、目标、动作和主体相同，pending/errors空，grants_revoked／content_unreadable／metadata_hidden均true，wrapper cleanup=passed、Infra零残留。这仅补证本次早期退出的清理，不证明完整32.5分钟后的清理；原8a7d失败和缺失回执保留。
-
-固定日志显示：标准restart先安装 `github.com/swaggo/swag v1.16.4` 并重新生成Manager／Security文档，随后Manager因输入变化重编译、Security复用。技术栈规约与Manager依赖已规定v1.16.6，而生成脚本缺失工具时仍安装v1.16.4，已有工具也未核对版本。精确839a隔离重现：旧生成器使三文档仅 `cleanup.Result.statistics.additionalProperties.format=int64` 消失，参与编译的docs.go因此变动；规定版v1.16.6保持三文档不变。该新版的 `--version` 常量仍报v1.16.4，真实 `go version -m` 模块元信息为v1.16.6；不能据展示常量反复安装。失败轮未归档完整after Ready，因此不编造重启后build_id／fingerprint具体值；根因判断来自固定日志、源码和隔离重现，实际修复效果仍待新Hosted。
-
-仅修正唯一 `gen-swagger.sh`：按Go二进制模块元信息核对规定版，正确工具复用；缺失／旧版沿原安装入口安装v1.16.6，安装失败终止。未改业务模型、API、Swagger生成内容、重启/构建身份断言或源／原值授权，不新增跳过／兼容路径；当前共享在制Manager文档及start.sh属于其他会话，未动。四个受控工具场景覆盖缺失安装、旧PATH工具替换、正确模块版本复用（即使--version显示旧常量）、安装失败不执行旧生成器；已有增量生成夹具补准确工具元信息，缓存／失败／并发断言保留。标准Make Swagger与开发生命周期入口现有自动发现覆盖，无新CI入口或workflow。
-
-证据：原始 `/tmp/addp-security-session-d7635042/`，ZIP SHA256 `9f93f1c9e3b0ed13b1479b3e8d6a7de461bfd364f27ee3636d2c4468f2f11dc9`；独立失败审计 `p145-independent-failure-audit.json`；重现 `/tmp/p145-restart-{docs.go,swagger.json,swagger.yaml}.diff`。最终标准生成入口两次、三文档逐字节一致、构建指纹前后相同见 `/tmp/p145-swag-standard-repro.json`（完整Go workspace及已提交go.work.sum，真实macOS工具；无服务运行）。首次不完整workspace及遗漏sum造成的重现准备失败、旧版展示常量和测试桩占位符误替换导致的失败均保留，不计产品失败或通过；详见 `/tmp/p145-swag-version-red.log`、`/tmp/p145-swag-build-version-{red,green,green-final}.log`。本轮仅T1生成与身份输入验证，不算数据库T2、本地重启或Hosted通过。
-
-本轮最终门禁：`make test-swagger` 退出0，22项脚本测试、全部Go模块路由覆盖与两个FastAPI投影检查通过；`bash scripts/test/dev-lifecycle-and-build.sh` 标准脚本退出0，包含原Swagger缓存／内容／工具版本与并发、局部重启保留其他进程、构建指纹与原子替换断言。`bash -n` 和本会话限定diff检查通过。日志 `/tmp/p145-swag-standard-gate-verified.log`、`/tmp/p145-swag-dev-lifecycle-final.log`，输入摘要 `/tmp/p145-swag-version-verification.json`。未运行根 `make test-dev-lifecycle` 的其他依赖／Go聚合，不冒称完整平台聚合或新Hosted通过；既有Security Runner业务输入未改，前轮271项有效证据保留、不为仅工具修正重复执行。新运行仍由专门CI会话单次安排；必须核对重启前后真实构建三字段、领域／浏览器报告、六Grant正式撤销及完整清理。
-
-
 ### v44 完整 Hosted 验收与清理闭环（2026-11-08）
 
-[Run42454542147／Job128650659824](https://github.com/pampa0629/addp/actions/runs/42454542147/job/128650659824)，attempt1，实际完整 SHA `bd68a07014353d5c4a693fd863b3a3428bfdf460`。这是经审阅且本会话相关输入不变的2b42a752修复后继，不标作2b42精确运行。GitHub原始Run／Job均completed／success；readiness、Hosted Security gate及Hosted evidence上传实际成功，另一条件式execution evidence上传为skipped，不把它算通过。十服务preflight同SHA、干净检出、专用addp_online、loopback-only。领域v44及浏览器v9报告passed，业务1951989ms（约32.5分钟），27个固定阶段均完成。最终wrapper result=passed／cleanup=passed／infra_cleanup=zero_residuals；此前8a7d令牌到期与839a重启构建失败继续保留，本次不追改旧运行结论。
+**验收结果。** 固定源码 `bd68a07014353d5c4a693fd863b3a3428bfdf460` 的 [Run 42454542147／Job 128650659824](https://github.com/pampa0629/addp/actions/runs/42454542147/job/128650659824) 实际通过 v44／v9 的 27 阶段、21 张截图目视和完整清理。覆盖四出口保护拒绝与恢复、同构建重启、角色方式／资格撤销与资格自然到期、Service 参数修订与旧游标、Transfer 两表 JOIN 的成功落盘与拒绝零写入。默认导出核对 42 条响应及六份原始 CSV，规则变化后拒绝旧会话与文件，恢复后可新导出。六项临时许可均正式撤销，领域 23 建／23 删、两组浏览器各 2 建／2 删，Infra 零残留。[原始归档 13609052160](https://github.com/pampa0629/addp/actions/runs/42454542147/artifacts/13609052160)
 
-独立保留产物审计通过：31个必需领域段；六计算各独立UUID、准备阶段精确拒绝及同历史无结果；新增not_ready／operation_unsupported／schema_mismatch三条实际UUID分别为 `189376fd-7c1a-4318-941d-8acf5c9948b0`、`1d207fc0-9ec2-4ff8-aa00-963e3cfa86a5`、`c466820f-0a13-4c11-b28c-f4b1d3ec767c`，五行脱敏恢复且规则修订未变。七原因×四出口仍严格分为20个runtime、8个protocol_only格；`protection_not_yet_valid`仅有此前真实PostgreSQL T2，不新增开始时间配置、不改时钟，也不记HTTP／浏览器T4。四出口邮箱移除、三算法、Mongo嵌套字段身份与派生血缘拒绝、三组资格90秒自然到期、Service方式撤销及资格撤销／到期后的旧游标、Develop历史默认保护均按留存合同核对。Service参数SQL的int／string默认修订、显式与省略参数双向续页、非法默认更新和旧游标拒绝亦核对实际报告的行标识、版本、状态、缓存头及CSV摘要；不将这些摘要写成独立原始CSV正文。
+**覆盖边界。** 七原因四出口共 20 个 runtime 格、8 个 protocol_only 格。尚未生效仅有真实 PostgreSQL T2。多数子场景原始 HTTP 正文、部分方式撤销回执的缓存头未归档。当前字段检索的证据边界见下文，Service 到期页面的具体提示见本页[中英文复验](#v44v10-中英文保护到期和恢复-hosted-验收2026-11-10)。
 
-默认导出矩阵42条响应记录、六份实际CSV已逐字节核对固定合成oracle，包含Unicode、NULL／空单元格、非敏感字段、双Owner一致及恢复默认；规则变化后24次旧会话／文件拒绝，新导出恢复。Transfer两表JOIN三条执行UUID互异，成功读写2／2，两条敏感计算拒绝均0／0，精确目标和三任务清理无残留。空间及Mongo重启两处分别核对Manager／Security：build_id、git_commit、source_fingerprint保持，instance_id不同且started_at更晚；Security不可达场景另核对同构建重启及四Owner进程不变，没有用重新构建或重扫代替恢复。
+<a id="v44-hosted-前置元数据可见性阻塞2026-11-07"></a>
+<a id="v44-三项元数据查看许可夹具适配2026-11-07"></a>
+<a id="v44-metadata-only-与字段检索断言冲突2026-11-07"></a>
+<a id="hosted-三项精确读取权临时前提2026-11-07"></a>
+<a id="v44-六项许可实测与未就绪探针扫描前提2026-11-07"></a>
 
-21张原始1440×900 PNG全部逐一目视，含三组新增Develop历史／Monitor的六张图，具体提示、处理建议、准备阶段及同UUID一致；其余15图覆盖Manager检索／预览／导出及Monitor、资源交集与重置、计算拒绝、Service清空旧预览／恢复、Transfer准备／结果阶段拒绝及Monitor。Service当前截图仍使用保护类别总提示，不能宣称其已呈现每个子原因；列入后续提示一致性工作。临时三目标×metadata_read/read共六个唯一签发UUID在最终清理回执逐项身份／目标／动作一致，pending／errors空，grants_revoked／content_unreadable／metadata_hidden均true。领域23建／23删／0残留，浏览器两组各2建／2删／0残留；保留执行、导出审计及文件随独占Infra销毁，不能混为领域对象清理。
+**来源准备。** 三个精确目标为 MongoDB `Outdoor.Persons` 和 MySQL `security_fixture.customers`、`security_fixture.bank_card_accounts`，分别签发 `metadata_read` 和 `read`。准备者独立于消费账号，按当前 Run、租户、主体、目标及动作核对六个请求 UUID，先撤 read 验证不可读，再撤 metadata_read 验证不可见。该验收使用临时 read，字段名只靠 metadata_read 检索的能力由独立产品证据认定。修复 `20d03f724` 已有 Manager T1、PG＋Meilisearch T2 和 Linux CI 记录，真实跨服务／浏览器仍需独立证据。[精确许可准备与清理](../scripts/docs/Online数据保护.md#hosted-精确许可准备与清理)
 
-原始证据 `/tmp/addp-security-swag-2b42a752/archive/_temp/addp-online-42454542147/`；GitHub artifact ID13609052160，99成员ZIP CRC通过，SHA256 `552ec77a075975c55470e1a156a4eb649a254b28ddb0285e5de44b6a0addd56f`，解压文件逐字节等于归档。独立审计 `/tmp/p145-bd68-audit/independent-evidence-audit.json`，目视清单及逐图摘要 `visual-review.json`；命令 `python3 /tmp/p145-bd68-audit/audit.py` 与 `python3 /tmp/p145-bd68-audit/test_audit.py` 退出0，正常样本及43个受控拒绝反例通过。审计不导入生产校验器、不调用运行服务。多数子场景原始HTTP正文未归档，方式撤销拒绝回执也未单列cache_control，独立审计不补造这些证据；运行脚本的实时断言与保留报告、六份CSV原字节及浏览器目视证据分别陈述。
+| 固定源码及实际 Job | 首败与清理 |
+| --- | --- |
+| `0af01095941be47c97d2d0383bcb69b23781fd68` · [128248930706](https://github.com/pampa0629/addp/actions/runs/42322135716/job/128248930706) | MongoDB 已扫描入库，消费账号缺元数据许可，未取得唯一 `Outdoor.Persons`。领域与页面未执行，生命周期清理通过，Infra 零残留。 |
+| `5bcac0793dd85d505c436f2d6e1aa4f95991da80` · [128387317730](https://github.com/pampa0629/addp/actions/runs/42367089598/job/128387317730) | 当时仅 metadata_read 无法满足字段检索，领域与页面未执行。三项许可已撤销，Infra 零残留。 |
+| `b4779ba443c42e423240132c332ccb08cbb8fd23` · [128422248189](https://github.com/pampa0629/addp/actions/runs/42378933245/job/128422248189) | 未就绪探针在目标 deep 刷新前纳管，缺预期发现身份。领域与页面报告缺失，六项许可正式撤销，Infra 零残留。 |
 
-本次可认定上述v44/v9已覆盖范围的完整Hosted T4通过；不是全平台、全部SQL／引擎或静态加密完成，不证明metadata-only搜索，原临时read前提保留。无新产品实现或本地服务启停，本轮仅归档与文档校验；既有271项、System Fixture、Swagger／生命周期及后继Common插件隔离验证按输入复用，不声称重新运行。湖南实际行155／156大项仍为部分实现；默认导出与Transfer JOIN限定Hosted缺口已闭环，后续优先细化Service保护拒绝的具体原因及处理建议，再按已确认范围逐项扩大SQL保护能力。
+<a id="v44-develop-查询几何契约夹具修正2026-11-08"></a>
+<a id="v44-sql角色服务空参数数组修正2026-11-08"></a>
+<a id="v44-精确3afbae复验总超时2026-11-08预算方案待确认"></a>
+<a id="v44-预算与安全阶段诊断2026-11-08"></a>
+<a id="v44-业务报告与清理令牌到期2026-11-08"></a>
+<a id="v44-重启构建身份与-swagger-工具版本2026-11-08"></a>
 
+**业务与收尾。** 原 20 分钟总预算被实际触达，后续固定为 40 分钟。隔离套件复用 4 小时夹具会话，覆盖业务及正式撤销，产品会话和角色资格的 90 秒到期仍按各自规则核验。
+
+| 固定源码及实际 Job | 首败与清理 |
+| --- | --- |
+| `82f9af3592bb994fc933810984fb736c3776a0c9` · [128454804932](https://github.com/pampa0629/addp/actions/runs/42389802508/job/128454804932) | Develop 的二维 Point 夹具不识别现行 `{wkt, srid}`，对应原始响应未归档。无最终领域或页面报告，六项许可已撤销，Infra 零残留。 |
+| `3f34efd2da97ef172a6ded15037bae246c83c1df` · [128525779027](https://github.com/pampa0629/addp/actions/runs/42413276305/job/128525779027) | 无参 SQL 服务合并断言失败。固定代码和回归定位 DTO 空参数序列化为 `null`，原管理响应未归档。六项许可已撤销，Infra 零残留。 |
+| `3afbae0ec2921e237ee711b62d3d909a417504fc` · [128584861739](https://github.com/pampa0629/addp/actions/runs/42432701298/job/128584861739) | `online_scenario_timeout`，无领域报告及浏览器截图。六项许可已撤销，Infra 零残留。 |
+| `8a7d36a28283401962f685da102e49734a04e2b4` · [128603163154](https://github.com/pampa0629/addp/actions/runs/42438722028/job/128603163154) | 业务和页面报告通过，清理遇到会话到期 401。缺正式撤销回执，Infra 零残留，整体失败。 |
+| `839a4d6c0178fbb02d7c2620ff06ec815b337a0c` · [128628787628](https://github.com/pampa0629/addp/actions/runs/42447289580/job/128628787628) | 旧 Swagger 生成器改变 Manager 构建输入，重启身份断言失败。六项许可已撤销，Infra 零残留，领域和页面未完成。 |
+
+[整理前的完整记录](https://github.com/pampa0629/addp/blob/f99ee03a999e6818fd9378beb7f5a6fd867adbb9/security/CLAUDE.md#L701)。
 
 ### Service 具体保护原因的解释接入（2026-11-08）
 
@@ -845,15 +743,7 @@ DP-06已完成代码：Service复用Common类型分类，在原HTTP错误形状�
 
 ### Service 提示修复的 v44/v9 Hosted 闭环（2026-11-08）
 
-产品提交 `e32ac5db079f7b8bc5d8f4dc7f18993ba433af86` 的新增断言已在新运行中实际验证：[Run42472539366／Job128706485615](https://github.com/pampa0629/addp/actions/runs/42472539366/job/128706485615)，attempt 1，实际源码 `5a00785ae3640c7543b4822d97d4904c15e562a8`。已独立核对 checkout、十服务 preflight、实际 Hosted 步骤及证据上传成功；条件式执行证据上传 skipped 不计通过。本轮不是沿用旧 bd68 的 T4。
-
-v44领域、v9浏览器和27阶段实际完成，耗时1961940ms。21张原始1440×900截图全部逐张目视：Service英文页面持续错误区域明确显示保护规则已到期，并给出续期／设长期有效、同步后重查的建议；旧数据清空，恢复后提示消失并重新显示五行安全结果。其余截图覆盖三组真实原因的Develop历史／Monitor同UUID、计算拒绝、Transfer准备／结果阶段拒绝、Manager检索／预览／导出与过滤。七类文案的T1/T3仍有效，但这些真实截图只新增证明Service到期原因的英文页面，不代表其余六原因或中文页面逐项完成真实UI验收。
-
-独立审计通过六份默认导出CSV原字节与42条边界回执、五组同构建新实例／更晚启动、六个精确 `metadata_read/read` 许可的签发与正式撤销；pending／errors空。领域23建／23删／0残留，浏览器两组各2建／2删／0残留；wrapper result／cleanup通过，独占Infra零残留。20格runtime与8格protocol_only保持分开；future-start仅既有PostgreSQL T2，不算HTTP／浏览器T4。多数子场景未归档原始HTTP正文，部分方式撤销回执未单列cache_control；独立审计不补造这些证据。临时read许可前提保留，不证明metadata-only字段搜索。
-
-原始产物 `/tmp/addp-ci-20261108-200020/security-archive/_temp/addp-online-42472539366/`；artifact13615761493，99成员ZIP的SHA256为 `8f86150dab54143e163090d21f3c516a56ee370a25f3aaca04da26a88b8025a6`，CRC及解压原件逐字节核对通过。独立审计 `python3 /tmp/p145-e32-hosted-audit/audit.py` 和 `python3 /tmp/p145-e32-hosted-audit/test_audit.py` 退出0，正常全量样本及43个拒绝反例通过；21图哈希／目视记录 `visual-review.json`，限定结论 `acceptance-audit.json`。首次临时审计器漏替换旧运行身份而拒绝正常样本的日志保留，修正身份输入后通过，没有放宽业务断言或重跑产品门禁。
-
-本地用户重启后已确认新版Service、账号#33及服务#6/#7可读；两者停用，前轮仅只读未执行查询。临时脚本的代理、认证响应、注销状态码和目标前置核对失败保留，不能记为产品脱敏失败或本地通过。用户已另行批准仅私有#7临时启停，当前实际输出及恢复仍待本地报告；Hosted不替代该状态收尾。后续优先完成这个既定本地闭环，再按已确认契约选择一个具体SQL形态扩展；不扩大为全部引擎／出口或静态加密已完成。
+固定源码 `5a00785ae3640c7543b4822d97d4904c15e562a8` 的 [Run 42472539366／Job 128706485615](https://github.com/pampa0629/addp/actions/runs/42472539366/job/128706485615) 实际通过 v44／v9 的 27 阶段、21 图目视和完整清理。Service 英文到期页持续显示原因与处理建议，清空旧结果，恢复后显示五行安全结果。留存报告、六份 CSV 和六项精确撤销回执通过独立核对，Infra 零残留。其他原因页面仍按各自证据认定。后续[中英文到期和恢复](#v44v10-中英文保护到期和恢复-hosted-验收2026-11-10)已实际复验。
 
 ### Service #7 本地输出与停用收尾（2026-11-08）
 
@@ -871,59 +761,30 @@ v44领域、v9浏览器和27阶段实际完成，耗时1961940ms。21张原始14
 
 固定提交 `a06d7433e46bd1265134251ee2f3af9ce77c0ae8` 的 Job `128732582625` 覆盖五类默认中文 HTTP 拒绝文案、英文到期页面及零残留清理。中文真实页面在该轮未逐项验收，原始子场景 HTTP 正文未归档。完整记录见[Service 查询测试专题](../service/docs/testing/查询与要素协议.md#service-五类具体原因与建议的-hosted-闭环2026-11-08)。
 
-### Service 中文到期页面的隔离验收接入（2026-11-08，尚待 Hosted）
-
-此轮完成 v10 隔离用例接入和受控回归。当天未运行新版真实 Hosted，后续结果见本页的[中英文到期和恢复 Hosted 验收](#v44v10-中英文保护到期和恢复-hosted-验收2026-11-10)。完整记录见[Service 查询测试专题](../service/docs/testing/查询与要素协议.md#service-中文到期页面的隔离验收接入2026-11-08尚待-hosted)。
-
-### v10 首轮准备失败与检索续查消费者修正（2026-11-09）
-
-固定提交 `6efcd87d366b2e41b299ac4af14a94a84caae25d` 的 Job `128787376318` 在 Manager 搜索就绪探针因请求页大小为 100 返回 HTTP 400。领域与浏览器用例未执行，Infra 零残留。原失败、检索续查修正与受控回归分别记录。完整记录见[Service 查询测试专题](../service/docs/testing/查询与要素协议.md#v10-首轮准备失败与检索续查消费者修正2026-11-09)。
-
-### 检索续查修复的自然 CI 证据（2026-11-09）
-
-修复提交 `0792d77993dd8015f4a3611416955768fd69846b` 的自然 push CI，Run42502098196、attempt1，已独立核对两个所属Job的head SHA、成功执行步骤和原日志SHA256：[Platform consistency Job128796860668](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860668) 实际执行System Fixture Go及281项Python（13.318秒、OK）；[Console frontend Job128796860653](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860653) 实际执行257项单元、318项受控Playwright及生产构建。两个门禁均selected=true，目标执行步骤未跳过；Console条件依赖和失败证据上传的skipped不记通过。
-
-原日志 `/tmp/addp-ci-20261109-013023/security-{128796860668,128796860653}.log`，本会话严格独立核对脚本及报告 `/tmp/p145-security-search-continuation/{audit-natural-ci.py,natural-ci-independent-audit.json}`。这些是精确修复提交的CI／受控页面证据，不是v44/v10真实Hosted，不能把原6ef失败升级为通过，也不据此宣布全部矩阵闭环。本轮仅归档证据、未新增产品变更，复用有效测试；下一步仍是由专门CI会话在用户确认后单次同范围Hosted复验，保持23图、真实90秒到期和原清理标准，不自行调度或定时。
-
-### v10 第二轮准备失败与源许可观察消费者修正（2026-11-09）
-
-唯一一次 [Run42506020215／Job128808727268](https://github.com/pampa0629/addp/actions/runs/42506020215/job/128808727268)，workflow_dispatch、attempt1，实际提交 `f0792f6f1b8255b5b9457428495b9c7c525f970f`，准备阶段失败，未进入test-online、领域v44或浏览器v10，0/23图、无online-report。原日志5245行是 `POST /api/v1/system/engine-access/metadata-checks/manager-search returned HTTP 400 (unknown)`。固定源码的共享 `ExactRecordGrants.observe(read)` 仍只发targets，现行System绑定器要求targets/query_nonce/expected_observation_tag恰三键，后二者缺失；原HTTP正文未归档，不编造原错误体。
-
-artifact13628130958的44成员ZIP SHA256 `8d7aaed0fb5e60fa452d85b4b751b16fbdbbd8bbedf5264b3f505ba5bca7bb4b`，本会话独立核对Run/Job/SHA、实际失败步骤、CRC、安全路径及全部解压原件字节。三项metadata_read已签发且回执记录撤销，pending为空；三次最终read观察仍HTTP400，因此wrapper result=failed、cleanup=failed、Infra零残留。metadata_hidden/content_unreadable为false是未证明最终观察，不据此推断内容泄露，不称六Grant全部闭环。原6ef失败和本次失败均保留；原件 `/tmp/addp-security-hosted-f0792/`，独立审计 `/tmp/p145-record-observation-contract/failed-run-independent-audit.json`。
-
-修正沿现行System唯一协议和共享生命周期：每次独立read观察建立新nonce及显式null期望，校验当前精确目标、布尔可见／可读裁决、可见指纹、时间与合法不透明标记；同次再以相同nonce及原标记复核。签发／撤销后重新建立独立观察，不把变更前标记跨写入使用；409、协议错配或目标变化直接失败，不自动重开／重试。标记与nonce不持久化、不进入报告。metadata_read原观察、权限、产品API／Swagger、四出口保护、原值授权、v44/v10／90秒／23图／40分钟预算及清理范围不变。共享实现只改一个方法，无兼容路线或新依赖；现有Security确定性入口已覆盖实际消费者，Transfer沿原标准入口核对共享调用影响，不新增工作流。真实修后Hosted尚未执行。
-
-验证：先将Security现有模拟端收敛到System严格三键请求及观察标签语义，旧消费者实际因缺nonce/tag失败，保留red.log；修后11项精确许可生命周期定向检查通过，包含18种畸形回执、第二次标签／裁决错配、真实模拟依据变化409不重开、六许可签发／撤销及最终观察、24次read观察的12个独立nonce和不落盘检查。原metadata_read路线和不确定写入／清理失败回归保持。只有T0/T1，不计真实HTTP、PostgreSQL T2或Hosted。
-
-标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit test-security-online-runner test-transfer-online-runner` 退出0：登记156项及登记CLI一致、Security所属285项、Transfer118项、System Fixture Go和Transfer定向planner Go均实际通过；三个被省略的独立聚合依赖未运行，不称完整Security依赖聚合通过。JS／Shell语法检查由Transfer原入口执行，Python编译、限定diff与文档链接检查通过；共享脚本无新增依赖，仅标准库base64。现有Make／CI登记已覆盖，无需为同步改workflow。原日志和作用域证明位于 `/tmp/p145-record-observation-contract/{red.log,focused-final.log,owner-gates.log,scope-proof.json,failed-run-independent-audit.json}`。修复后的真实六Grant最终观察、领域及中文页面仍待新运行；不自动重派，不操作个人服务。
-
-2026-11-09自然CI补证：精确修复 `7c92e7c84b28c581edd5dea3230e2da20adf5ea9` 的push Run42508155900／attempt1，[Platform consistency Job128815197630](https://github.com/pampa0629/addp/actions/runs/42508155900/job/128815197630) 已独立核对head SHA、selected=true、实际执行步骤success和原日志SHA256。登记156项／CLI一致、Security285项、Transfer118项、System Fixture Go与Transfer planner Go均实际通过；不把其他独立GoRunner的test skip记为执行通过。本轮仅证据归档，复用有效门禁，没有新产品变更。原日志 `/tmp/addp-ci-20261109-030050/7c92-platform.log`，SHA256 `3a3fafeae0dc94fbeba55244b46a8ab2e6cdd15a94f24de85f611ef4ae731041`；本会话核对报告 `/tmp/p145-record-observation-contract/natural-ci-independent-audit.json`。两次Hosted原失败及0/23图缺口保持，修后Hosted尚未运行，等待新单次复验确认；自然CI不能替代真实六Grant最终观察与中文页面验收。
-
-### v10 第三轮浏览器语言头失败（2026-11-09）
-
-精确提交 `4e16bd556bc5c5b67076a56732d653cac013458b` 的单次 [Run42550010623／Job128943253399](https://github.com/pampa0629/addp/actions/runs/42550010623/job/128943253399) 实际失败。十个服务预检均匹配该提交。26个阶段记录通过，最后 `browser_acceptance` 失败。`online-report.json` 为失败报告且缺最终 `suite_report`，归档中保留12张正式阶段截图和1张Playwright失败图。英文Service预览返回HTTP 200，失败图可见五行。原日志5286至5300行记录请求头预期 `en`、实际 `en-US`。失败发生在90秒有效期设置前，两次Service到期403与中英文恢复均待实际验收。
-
-六项源许可的签发、撤销及最终不可见／不可读观察均通过，准备与清理记录的六项完全匹配，pending与errors均为空。wrapper清理通过，Infra零残留。artifact13646317569含90个ZIP成员，SHA256 `456f8929e64a0786dd7fa74b4f66cdd754530c342b8a499959d04aceab990f50`。本会话核验CRC、路径、全部解压字节、运行身份、阶段与清理记录，并目视检查失败图。原件 `/tmp/addp-approved-hosted-20261109/security/`，独立审计 `/tmp/p145-4e16-hosted-audit/independent-failure-audit.json`。前两次失败记录继续保留。
-
-Service预览经 `queryExecutionClient` 调用共享 `createAPIClient`，其请求拦截器装配Token，缺应用语言头。隔离Chromium以 `en-US` 启动，通过实际Axios和固定提交的两个函数发出三次请求，`addp-lang` 依次为 `en`、`zh-cn`、`en`，服务器三次均收到 `en-US`。此隔离复现使用合成令牌和端点，确认请求注入边界，Hosted原件证明实际失败。复现及捕获见 `/tmp/p145-4e16-hosted-audit/{probe-language.cjs,probe-language.json}`。按[现行国际化规范](../docs/spec/addp国际化开发规范.md#http-请求)，共享前端客户端应在请求时读取当前语言并发送 `zh-cn` 或 `en`。共享客户端归属及受影响消费者回归由项目协调，Security保留严格语言头、业务拒绝及恢复断言。后续Hosted完整复验以实际修复和相应门禁通过为前置。
-
-### v10 语言头修复后的 Hosted 构建中断（2026-11-10）
-
-共享 Axios 语言头修复已随 `438f093753f3941c58083e384e4b43bfe7a81567` 发布。Service 真实 iframe 受控回归验证中英文往返切换及请求头。按已授权范围发起的单次 [Run42767590544／Job129667620475](https://github.com/pampa0629/addp/actions/runs/42767590544/job/129667620475) 实际运行 `d02a26ef51138ce698617d1cd254b9b96aff2f2d`，attempt1。十服务预检均匹配该 SHA，前四阶段通过，第五阶段 `spatial_algorithms` 在第 5251 行报 `manager changed build inputs during restart acceptance`。未生成最终领域报告或浏览器报告，PNG 为 0/23。两次资格到期 403 与中文恢复均未执行。
-
-本次 Hosted 重启确认使用规定的 Swagger v1.16.6，Manager 生成文档后实际重编译。共享类型提交 `2199bb8ba953da8671969fe5f987f1a0bdf60c95` 给 `datatype.FieldInfo` 增加 `temporal`，但实际运行的提交未同步 Manager 等七模块的 Swagger 生成文件。候选审查遗漏了生成文件这一构建输入。隔离精确快照仅应用 Manager 三个文件的 `temporal` 定义，标准构建指纹由 `71433a1d0905…` 变为 `c6e02913418d…`，撤回后恢复。此前 Run42447289580 则由旧版生成器移除整数格式所致。两轮都在重启构建身份断言处失败，原因不同。失败轮未保留完整重启后 Ready 回执。本地独立全量生成未通过，Security 遇到类型解析错误，Manager 生成在完成上述隔离验证后终止。该结果不替代 Linux Hosted 复验。
-
-六项临时许可的签发、撤销、最终不可见和不可读均已独立核对，pending 与 errors 为空。wrapper 清理通过，Infra 零残留。artifact 13740964119 的 54 成员归档通过 CRC 及路径检查，SHA256 为 `409d15d58b39372729e556b246e752089e11acb67d8d2d7525fe3de94c298769`。独立审计和指纹记录在 `/tmp/p145-d02a-hosted-audit/`。下一步先由共享类型维护方同步受影响的生成文件并验证固定候选重新生成前后指纹一致，再由专门 CI 会话按授权安排同范围复验。此轮未修改构建断言或产品规则。
-
 ### v44/v10 中英文保护到期和恢复 Hosted 验收（2026-11-10）
 
-[Run42805905216／Job129794843854](https://github.com/pampa0629/addp/actions/runs/42805905216/job/129794843854)，workflow_dispatch、attempt 1，实际 SHA `421da33a7455f9b5a36df3e852cd37d5be4a2f8f`。就绪检查、正式 gate 和 Hosted 证据上传均实际成功，条件式执行证据上传跳过。十服务预检匹配 SHA，27 个阶段通过，业务耗时 1921391 ms。原日志 5269–5270 行确认 Playwright 实际执行 1 项并通过。Manager 与 Security 的空间和 MongoDB 重启回执保持原构建身份，进程实例已替换。上轮构建失败保留原结论。
+<a id="service-中文到期页面的隔离验收接入2026-11-08尚待-hosted"></a>
 
-同一私有 Service 预览先核对英文和中文正常响应。保护规则自然到期后，`Accept-Language` 分别为 `en` 和 `zh-cn` 的两次 POST 均返回 403。响应仅有 `error` 和 `error_code`，错误码为 `data_protection_required`。实际页面持续显示对应语言的到期原因和续期建议，移除旧结果和空结果提示。规则恢复长期有效后，中文请求返回 200 和五行，字段仅有 `id` 与 `customer_code`，敏感 `email` 被移除，持续错误消失。两次 403 对应保护规则到期。既有角色资格到期场景单列。
+**验收结果。** 固定源码 `421da33a7455f9b5a36df3e852cd37d5be4a2f8f` 的 [Run 42805905216／Job 129794843854](https://github.com/pampa0629/addp/actions/runs/42805905216/job/129794843854) 实际通过 27 阶段，23 张截图通过结构检查，四张 Service 拒绝和恢复图已目视。同一私有服务在规则自然到期后，`en` 与 `zh-cn` 两次均实际返回 HTTP 403／`data_protection_required`。页面持续显示对应语言的原因及续期建议并清空旧结果。恢复长期有效后返回五行，只含 `id`、`customer_code`。六项许可正式撤销，领域 23 建／23 删，两组浏览器各 2 建／2 删，Infra 零残留。[原始归档 13763838201](https://github.com/pampa0629/addp/actions/runs/42805905216/artifacts/13763838201)
 
-独立审计通过：核对 Run、Job、SHA、实际步骤、ZIP CRC、安全路径及解压原件逐字节一致。v44 的 31 个领域段与独立 v10 报告一致，23 张必需 PNG 通过结构检查，四张 Service 拒绝和恢复图已目视核对。英文恢复截图还留有前一步中文成功通知，与新英文通知短时同屏。验收覆盖了持续错误和恢复结果，未覆盖切换时清除既有短时通知。六份默认导出 CSV 按固定样本逐字节核验，42 条导出响应记录、五组重启回执、六项许可正式撤销及最终不可见和不可读均通过。领域 23 建／23 删，浏览器两组各 2 建／2 删，均零残留。wrapper 清理通过，Infra 零残留。
+**覆盖边界。** 真实浏览器断言核对了语言头、状态、响应形状与恢复数据，归档保留报告和截图，缺对应原始网络响应。真实页面只收口了保护规则到期与恢复，其他原因页面和切换语言时清除旧短时通知仍未验。角色资格自然到期由既有场景独立认定。[Service 查询测试专题](../service/docs/testing/查询与要素协议.md#service-中文到期页面的隔离验收接入2026-11-08尚待-hosted)
 
-[原始归档 13763838201](https://github.com/pampa0629/addp/actions/runs/42805905216/artifacts/13763838201) 含 101 个成员，SHA256 为 `b987f01f33a40cc71e9af242ab986fc7aa45e08894fc3f6cdc79fe919b619586`。独立脚本、报告和四图哈希见 `/tmp/p145-421da33-independent.WpSncZ/`。两次 403 和恢复的 HTTP 状态、请求头、响应形状及数据由实际运行的浏览器断言核对，归档保留报告和截图，未保留对应原始网络响应。覆盖仍限 20 个实际出口格及 8 个协议格，future-start 仍仅真实 PostgreSQL T2。其他保护原因的实际 Service 页面、全部 SQL 形态及静态加密仍在原边界内待补。
+<a id="v10-首轮准备失败与检索续查消费者修正2026-11-09"></a>
+<a id="检索续查修复的自然-ci-证据2026-11-09"></a>
+<a id="v10-第二轮准备失败与源许可观察消费者修正2026-11-09"></a>
+<a id="v10-第三轮浏览器语言头失败2026-11-09"></a>
+<a id="v10-语言头修复后的-hosted-构建中断2026-11-10"></a>
+
+| 固定源码及实际 Job | 首败与清理 |
+| --- | --- |
+| `6efcd87d366b2e41b299ac4af14a94a84caae25d` · Job 128787376318 | Manager 续查探针页大小为 100，准备时返回 400。领域和页面未执行，Infra 零残留。[检索续查修复](../service/docs/testing/查询与要素协议.md#v10-首轮准备失败与检索续查消费者修正2026-11-09) |
+| `f0792f6f1b8255b5b9457428495b9c7c525f970f` · [128808727268](https://github.com/pampa0629/addp/actions/runs/42506020215/job/128808727268) | 精确来源观察请求缺 nonce 和预期标记，返回 400，业务、页面均未执行。三项 metadata_read 已撤销，最终观察仍失败，六项闭环未证明，Infra 零残留。 |
+| `4e16bd556bc5c5b67076a56732d653cac013458b` · [128943253399](https://github.com/pampa0629/addp/actions/runs/42550010623/job/128943253399) | 页面预期 `en`，实际收到 `en-US`。到期拒绝与恢复未执行，六项许可已撤销，Infra 零残留。 |
+| `d02a26ef51138ce698617d1cd254b9b96aff2f2d` · [129667620475](https://github.com/pampa0629/addp/actions/runs/42767590544/job/129667620475) | 前四阶段通过，第五阶段重启触发 Manager 构建身份变化。共享字段 `temporal` 缺 Swagger 同步，属于另一轮生成输入问题。无最终报告、0/23 图，六项许可已撤销，Infra 零残留。 |
+
+续查修订 `0792d77993dd8015f4a3611416955768fd69846b` 的 [Platform 128796860668](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860668) 与 [Console 128796860653](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860653)，来源观察修订 `7c92e7c84b28c581edd5dea3230e2da20adf5ea9` 的 [Platform 128815197630](https://github.com/pampa0629/addp/actions/runs/42508155900/job/128815197630) 各自通过所列 CI，Console 页面使用受控环境。真实业务结论以该轮 Hosted 报告为准。
+
+[整理前的完整记录](https://github.com/pampa0629/addp/blob/f99ee03a999e6818fd9378beb7f5a6fd867adbb9/security/CLAUDE.md#L878)。
 
 ### PostgreSQL 单表分组输出重写（2026-11-11）
 
@@ -969,50 +830,34 @@ Develop 导出会话 #19 经独立 Transfer 执行 94347359-7a39-4359-9b66-cf26b
 
 本轮仅本地普通用户HTTP验收及文档补证，无新产品代码；重算此前T1／T2的三个Provider输入摘要仍一致，复用有效门禁，不重复全量执行。初次Meta404失败与其审计原件保留。源表仍为历史脱敏传输产物，本轮证明独立任务能够消费限定分组查询并保持目标结果一致；原值变换等价性另由真实PostgreSQL T2证明，角色方式失效、本地浏览器和新增分组Hosted均未验。下一步建议将Develop／Service／Transfer分组场景接入现有隔离套件，使用原值样本补实际默认保护和角色方式失效拒绝，再由专门CI会话安排运行。
 
-### v45 PostgreSQL 分组三出口隔离接入（2026-11-11，Hosted 未运行）
+### v46/v10 分组与角色保护 Hosted 闭环（2026-11-13）
 
-按用户同意的下一步，先在 Online 数据保护文档确定 v45 合同，再接入现有领域 Runner。复用原七表读取范围中的 spatial_algorithm_source、既有普通 User／本人角色和 value_a 正式 Assessment，不增加源、权限、身份或产品语法。固定查询只含直接列分组及 count(*)，输出 bucket／contact／n；Develop查询及重复历史、Service私有SQL两页JSON／CSV、Transfer独立任务及物理目标都与独立合成原值样本对照，覆盖默认、三个Owner各自保存的全遮盖选择、仅撤销方式后的拒绝、主动移除后的默认恢复。新场景验证方式撤销，既有资格撤销／自然到期不替代也不删除。
+**验收结果。** 固定业务源码 `45fe76a6f830d0968d73476e66812436659a4fd2`、控制面 `6d30e0f4fdc54a5035d7b3f88e397e6c3244eb68` 的 [Run 43217668163／Job 131180952821](https://github.com/pampa0629/addp/actions/runs/43217668163/job/131180952821) 实际通过 28 阶段和 23 图目视。PostgreSQL 单表直接字段分组与 `count(*)` 验证默认、角色选择、方式撤销拒绝及显式移除后恢复。Develop 分开验证同一 UUID 的当次结果与默认历史，Service 验证 JSON／CSV 两页及旧游标拒绝，Transfer 验证独立执行、物理回读和拒绝零写入。六项许可正式撤销，领域 26 建／26 删，两组浏览器各 2 建／2 删，Infra 零残留。[独立复核与留存证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#v46v10-分组角色脱敏-hosted-验收2026-11-13-独立复核)
 
-拒绝分别要求Develop准备阶段 protection_role_choice_unavailable、复读同一UUID无结果；Service新请求／旧游标两格式精确409/query_protection_choice_invalid及no-store；Transfer原任务精确409/transfer_protection_choice_invalid，执行列表和物理目标不变。正向Transfer三次执行核对本人、真实UUID、读写各五行及Worker同一首轮started/completed，源摘要不变。两个物理目标、两条任务和一个Service严格归本Run，任何失败／中断均继续尝试各项清理、撤销活动Policy并同步；清理失败使整体失败且保留原错误。根资源计数增加3，固定领域阶段28个，领域报告唯一v45；浏览器v10／23图、2400秒总预算、90秒资格到期及原六许可清理合同不变。JOIN与分组共用一个受控目标物理夹具，删除旧helper／环境字段，无兼容路线。
+**覆盖边界。** 方式撤销与角色资格撤销／自然到期分别核验。20 个 runtime 格、8 个 protocol_only 格的范围保持，尚未生效仅有真实 PostgreSQL T2。部分分组原始响应未归档。多表分组、复杂聚合、角色调度／编排身份、AK/SK、静态加密及后续前端竞态修复未由本轮覆盖。[三出口断言与清理合同](../scripts/docs/Online数据保护.md#v45postgresql-分组三出口与方式撤销) · [当次交付与默认历史](../scripts/docs/Online数据保护.md#v46分组当次结果与默认历史分开核对)
 
-新增回归先因缺实现报错，再实现；最终直接执行 python3 -m unittest scripts/test/security-mysql-owner-protection-online_test.py scripts/test/online-security-owner-fixture_test.py，241项退出0。六项新增Runner测试包含原值混入、Unicode长度、组计数／顺序／折叠、CSV缓存、错拒绝原因、旧选择放行、拒绝时写入、历史带结果、Worker换attempt、源变化和清理失败等反例；物理夹具另核对精确Run目标与动作隔离。登记反例 test_requires_mysql_four_owner_protection_fixtures_and_contract 与登记CLI均退出0，bash -n、py_compile和git diff --check通过。141个既有函数／类AST不变，原JOIN函数只变更共享物理helper名；已有Provider三个输入摘要仍与此前Go／真实PG T2一致，不重复运行。
+<a id="v45-postgresql-分组三出口隔离接入2026-11-11hosted-未运行"></a>
+<a id="v45-分组首失败与-v46-当次历史消费者修正2026-11-11"></a>
+<a id="v46-唯一复验的外部-dns-准备失败2026-11-12-审计"></a>
+<a id="v46-分组所选-transfer-的签发前提缺口2026-11-12hosted-首失败保留"></a>
+<a id="v46-分组-transfer-主动恢复的-put-前提缺口2026-11-12"></a>
 
-完整 make test-security-online-runner 在已提交基线加本轮差异的临时冻结副本执行，依赖部署组43项中三个未修改Metric包装测试20秒超时，退出2。随后仅执行原Make Security recipe（用-o标明四个依赖未重跑），Go Fixture通过；Python组291项中未修改的HostedSecurityGate执行图／恢复包装出现3个60秒超时错误和2个未到execution-resume的失败，亦退出2。不能把241项或Go子组通过称为完整入口通过，未继续重复运行／修复这些包装。冻结尝试早于最终历史UUID及创建计数细化，最终241项已在当前文件补跑；原失败包装输入未改。精确日志与范围见 /tmp/p145-grouped-runner-validation-root 指向目录内的 inputs.json、scope-audit.json、gate.log、owner-gate.log、verification.json，最终直接日志 /tmp/p145-grouped-final-owner.log、/tmp/p145-grouped-final-registration.log。本轮无新产品代码、服务启停、个人运行或新Hosted／浏览器结果。下一步交专门CI会话核对候选及上述门禁阻塞，再安排单次v45/v10隔离运行，回传精确Run／Job／SHA、领域报告、28阶段、23图及清理；实际产物回传前保持部分实现。
+| 固定业务源码及实际 Job | 首败与清理 |
+| --- | --- |
+| `7a91abaee4cfaefbf35b32776452240c7e3b47fe` · [130472411237](https://github.com/pampa0629/addp/actions/runs/43005665942/job/130472411237) | v45 在第七阶段失败，消费者将 Develop 的默认历史与角色当次输出比较。分组最终报告与页面缺失，六项许可已撤销，Infra 零残留。 |
+| `7faff9ab8b24e0678c465325491ca69b84c39f82` · [130619097907](https://github.com/pampa0629/addp/actions/runs/43048558678/job/130619097907) | Playwright 系统依赖下载遇 DNS 失败。业务和浏览器未进入，许可未签发，隔离环境清理通过。 |
+| `7faff9ab8b24e0678c465325491ca69b84c39f82` · [130924454141](https://github.com/pampa0629/addp/actions/runs/43140011471/job/130924454141) | Transfer 启动时执行授权签发 403，未创建 Worker 执行。夹具缺 `develop.data_write.execute`。无最终报告、0/23 图，六项许可已撤销，Infra 零残留。 |
+| `2664dd82881a553f6634afbbb4a2c3389803d9f0` · [131054875358](https://github.com/pampa0629/addp/actions/runs/43180455765/job/131054875358) | 显式移除旧选择时任务 PUT 返回 403／`permission_denied`。夹具缺 `transfer.task.update`。无最终报告、0/23 图，六项许可已撤销，Infra 零残留。 |
 
-### v45 完整标准门禁补证（2026-11-11，T4 待回传）
+两项既有 Permission 仅补给该套件的一次性消费账号。来源许可、原值授权和产品权限按各自契约判定。
 
-CI协调会话对精确候选7a91abaee4cfaefbf35b32776452240c7e3b47fe在隔离检出完整执行 make test-security-online-runner 并报告退出0。本会话只读核对 /tmp/addp-security-v45-validation.piGOfd 的HEAD为该SHA、git status为空，九份本轮文件及Makefile逐字节匹配候选。原日志 /tmp/addp-ci-1800.uLGG3R/security-v45-standard-gate.log，SHA256 4321f5856e4c6b1a175f67b76c217371de7360765f8a26e2e0e5655938cbdf07；七个Python组依次43／204／19／156／35／80／291项均为OK，两个System Fixture Go包结果为ok，未见失败或Python跳过摘要。Go非verbose包级结果不证明每个用例均未跳过；命令退出0由协调会话回报，原日志本身未嵌入退出码。本会话未重复运行该门禁。前述两轮本地失败及其冻结输入、最终专项通过均保留，不改写旧结果。
+<a id="v45-完整标准门禁补证2026-11-11t4-待回传"></a>
+<a id="v46-精确修复候选-linux-标准门禁2026-11-11非-hosted"></a>
+<a id="2664-精确候选的-linux-platform-自然门禁2026-11-12非-hosted"></a>
 
-独立输入和日志审计见 /tmp/p145-v45-standard-gate-independent/audit.json。本轮只补T0/T1门禁证据，不是新Hosted通过；专门CI会话已消耗唯一一次已授权运行，业务源码固定上述候选，控制面workflow源码c90015ac6a753938061383095bf8b598252b3268另行留证，两者不得混记。当前不重新派发、重试、定时或查看其他CI。下一步接收原始领域／28阶段／v10的23图及全部清理产物后独立审计；缺失或失败据实际记录，不以派发、正常运行或控制面门禁替代T4。
+**门禁边界。** v45 专项目标通过，早期本地聚合出现 Metric／Graph 包装失败，同候选后来有完整入口退出 0 的证据。v46 固定候选 `7faff9ab8b24e0678c465325491ca69b84c39f82` 的 [Platform 130516352816](https://github.com/pampa0629/addp/actions/runs/43018760077/job/130516352816) 和 `2664dd82881a553f6634afbbb4a2c3389803d9f0` 的 [Platform 130977934296](https://github.com/pampa0629/addp/actions/runs/43156617594/job/130977934296) 实际通过。补任务更新权限后，本地 Graph 包装仍有三个 60 秒子进程超时，完整入口失败。新版的真实 T4 只按上面的最终 Hosted 证据认定。
 
-### v45 分组首失败与 v46 当次／历史消费者修正（2026-11-11）
-
-唯一一次 [Run43005665942／Job130472411237](https://github.com/pampa0629/addp/actions/runs/43005665942/job/130472411237)，attempt1实际失败。控制面为c90015ac6a753938061383095bf8b598252b3268，业务源码7a91abaee4cfaefbf35b32776452240c7e3b47fe；候选校验、checkout、祖先校验和readiness实际通过，十服务preflight均为业务SHA，gate实际失败，Hosted证据上传成功，条件执行证据上传跳过。原始artifact13849786490的54成员ZIP通过API digest、SHA256、CRC、安全路径及全部解压原件逐字节核对，SHA256为423ff068cb30c318806f10bcc021a0383500a63e0d9db1dcb7c238810e7ab151。原件 /tmp/addp-ci-2000.h2K2Q3/security-artifact.zip，解压同名目录；独立原始元信息和脚本 /tmp/p145-430056-independent/{job.json,run.json,artifact.json,audit.py,failure-audit.json}。
-
-阶段前六项通过，第七postgres_grouped_outputs失败，60589ms包含业务与finally清理，不是请求超时。原scenario日志4741行报PostgreSQL grouped values, order, count or output fields differ from fixture。按候选控制流及Owner原日志的精确时间，分组默认Develop查询及重复历史、Service两页JSON／CSV和Transfer默认任务#8（五行）均已越过其检查；之后三个角色方式发布／候选读取、Develop无选择的Policy默认查询及重复历史继续执行，选择方式后的Develop详情GET之后即开始清理，没有所选Service更新或第二条Transfer任务。没有归档对应原始响应体或新分组领域报告，因此不编造每个实际单元格、完整结果／UUID证据，也不将这部分顺序观察记为完整三出口通过。最终online-report为failed/scenario，无领域suite_report、浏览器报告或PNG（0/23）。六Grant准备／撤销目标、action、请求UUID逐项匹配，最终pending/errors空、不可读及隐藏均true；wrapper cleanup=passed、Infra零残留单独成立，不能覆盖业务失败。
-
-已确认的消费者缺陷：新增postgres_grouped_develop调用GET执行详情取得默认历史，却在phase=selected时要求该历史等于角色全遮盖。实现规范10.2、Common TestRoleChoiceRequiresCurrentQualificationExactLineageAndSeparateHistory、Develop GetQueryResult注释与既有v44资格用例一致要求：GET详情保留默认保护，所选方式当次输出从GET /executions/{id}/result交付。新分组模拟原来错误地让详情直接返回全遮盖，掩盖了通道混淆。将模拟边界改成默认历史与所选当次结果分离后，旧Runner定向测试以同样错误报红；未修改产品或放宽任何值／字段／顺序／计数oracle。
-
-v46仅修正该消费者：先校验历史默认值，按同一UUID读取/result并严格校验所选值及单一no-store，再复读同一默认历史，确认未被当次读取改变。Policy有效时历史按前1／后1默认；恢复阶段历史和当次均为最初前3／后4默认。失败提示增加出口、阶段、通道及执行UUID，不输出字段值。报告新增当次／默认历史事实，唯一领域版本升v46、登记及删除事实反例同步；原SQL、身份、角色／权限、28阶段／23图、90秒／2400秒及清理不变。原v45首失败永久保留，本次唯一Hosted授权已消耗，不自动重派。
-
-最终直接Runner与物理Fixture242项、登记整组156项通过；最后补充两项报告事实登记约束后，所属登记反例方法再次通过，登记CLI通过。新增边界反例拒绝当次返回默认、混入原值、错UUID、缺no-store及历史错用所选值；重复历史／原计数排序和其余角色拒绝反例保持。py_compile、git diff --check通过。本轮未重跑完整make聚合；未变的包装、Go及其他依赖组按此前精确7a91abaee已独立核对的完整门禁复用，不称新命令已全量执行。修正AST仅postgres_grouped_develop及run_scenario（版本），独立固定样本oracle完全不变。证据 /tmp/p145-grouped-history-{red,green}.log、/tmp/p145-v46-{final-owner,registration-tests,final-registration-slice,registration-cli}.log及/tmp/p145-430056-independent/fix-verification.json。v46真实Hosted尚未运行，下一步提交精确修复候选并请用户确认一次同范围v46/v10复验，交专门CI会话执行；不启动个人服务或要求重启。
-
-### v46 精确修复候选 Linux 标准门禁（2026-11-11，非 Hosted）
-
-精确候选7faff9ab8b24e0678c465325491ca69b84c39f82的自然 [Run43018760077／Platform consistency Job130516352816](https://github.com/pampa0629/addp/actions/runs/43018760077/job/130516352816)，attempt1，该Job及实际Run platform consistency gate步骤均success。已独立读取原始Job元信息，核对head SHA和实际make test-platform，未把Reporter、跳过或整个Run状态替代所属门禁结果。原日志3530–3533行登记156项及CLI通过；4408／4418／4425／4431行分别部署43、Graph204、35和80项均OK，4455／4456行两个System online-test-fixture Go包实际ok，4459–4461行最终Security Runner292项OK。这是当前修复源码的Linux标准聚合实际执行证据，补齐前段仅复用旧候选未变依赖的限制；本会话未重复运行。非verbose Go包结果仍不证明逐例无跳过。
-
-原日志 /tmp/addp-ci-2200.i3zELb/logs/130516352816.log，SHA256 4e1de0a05233b0588396309b02bfe4f4c29af55df1429ceb86ae01e340c61d6e；独立元信息、脚本及结果 /tmp/p145-v46-linux-gate-independent/{job.json,audit.py,audit.json}。已先核对功能清单维护会话最新记录：M155／M156仍为部分实现，已保留v45第七阶段首失败、0/23图及v46专项修复；本次仅补Linux层级，不改写为Hosted通过。既有单次v46/v10确认请求仍待用户答复，未获得新授权、不派发、不重复确认、不定时，原v45失败和清理证据均保持。下一步仍按已有请求的答复决定是否交专门CI执行一次同范围真实复验。
-
-### v46 唯一复验的外部 DNS 准备失败（2026-11-12 审计）
-
-用户已明确同意的唯一一次 [Run43048558678／Job130619097907](https://github.com/pampa0629/addp/actions/runs/43048558678/job/130619097907)，attempt1实际failure。业务源码7faff9ab8b24e0678c465325491ca69b84c39f82，控制面940d31014ffc2dbf363ce229daf7bba9b8d09caf；源码输入、checkout、祖先和Hosted readiness实际通过。原Job日志226／229行证实实际HEAD，272行分别记录business／dispatch SHA。Hosted gate失败，证据上传成功，条件执行证据上传跳过，不把summary步骤成功算业务通过。
-
-原运行于2026-11-11 UTC 15:42后安装Playwright系统依赖，5186–5209行反复报Temporary failure resolving 'azure.archive.ubuntu.com'，apt退出100、Failed to install browsers。此时尚未调用业务preflight／scenario，没有online-report、phase-timings、领域或浏览器报告，PNG为0。六Grant清理原件恰为status=not_started／issued_count=0，不是已签发再撤销；wrapper summary为result=failed／cleanup=passed／infra_cleanup=zero_residuals，仅证明已启动的隔离环境收尾，不替代三出口输出／角色方式／页面验收，也不证明十服务业务preflight身份。
-
-独立审计原始Run／Job／artifact API身份、实际步骤、双SHA，artifact13870725957的ZIP SHA256为8f549c70f1d26070722bd4224d9d02ab0be09bd97b04f70116b84cb3787fe458，与API digest匹配；44成员CRC、安全路径及所有解压原件逐字节一致。原件 /tmp/addp-ci-0000-1112.9bGP9I/security-artifact.zip 和同名解压目录；raw Job日志SHA256 21213ba88159959ec1ee69570f8d506e2103d233004b71db849e0aa98a45d86c。独立元信息、脚本与结果 /tmp/p145-430485-independent/{job.json,run.json,artifact.json,audit.py,audit.json}，脚本实际退出0。当前精确7f候选的Linux292／登记156和既有T2／本地证据保持有效，本次不判产品回归或Hosted通过，旧v45业务首失败保持。
-
-已先核对清单维护会话最新M155／M156仍为部分实现、已记精确Linux层级但尚未记本次准备失败；本次仅补正确边界。外部CI问题由专门协调会话处理，本会话没有调查其他CI、修改镜像／软件源、启停本地服务或重复运行测试。此次单次授权已消耗，不重派、不重试、不定时、不重复请求已有授权；优先等待外部条件处理，未来确需真实复验时再提交具体候选与单次范围确认。本轮仅证据文档，验证为独立原件审计和所属git diff --check，无新产品实现或门禁输入变化。
-
+[整理前的完整记录](https://github.com/pampa0629/addp/blob/f99ee03a999e6818fd9378beb7f5a6fd867adbb9/security/CLAUDE.md#L972)。
 
 ### Owner 投影存储首次并发初始化的目录读取修正（2026-11-12，T2）
 
@@ -1023,17 +868,6 @@ v46仅修正该消费者：先校验历史默认值，按同一UUID读取/result
 最终同一测试输入的红绿校验走make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test projection-store'：用Go overlay仅还原5df原schema.go时退出2并重现23505；恢复修复源码退出0，投影存储完整子组无跳过，涵盖同构／历史／漂移、未来生效历史、四出口原因矩阵、首次并发初始化和版本提交锁竞争。不是完整Common PostgreSQL全门禁。make test-module MODULE=common GO_ONLY=1退出0；make test-projection-store-ownership退出0（9项／5504个Go或SQL文件），git diff --check通过。独立输入、红绿日志、原CI元信息和摘要/tmp/p145-projectionstore-fix-independent/{red-green.json,verification.json,red.log,green.log,first-ci-job.json}；Go及唯一归属日志/tmp/p145-projectionstore-{common-go,ownership}.log。既有自动发现和Common PostgreSQL CI已覆盖，无新增workflow。此修正尚无后继Linux自然CI或运行验收，不启动个人服务、不申请重启，也不消耗／重派Hosted授权。
 
 
-### v46 分组所选 Transfer 的签发前提缺口（2026-11-12，Hosted 首失败保留）
-
-DNS恢复后，用户另行确认的唯一[Run43140011471／Job130924454141](https://github.com/pampa0629/addp/actions/runs/43140011471/job/130924454141)，attempt1实际失败。控制面1ddd5fe55b48c3312df2424fb049240f0fab9501、业务7faff9ab8b24e0678c465325491ca69b84c39f82；源码输入／checkout／祖先／readiness实际成功，十服务preflight均为精确业务源码且repository_clean。与前一轮DNS准备失败不同，本次前六领域阶段通过，第七postgres_grouped_outputs在60106ms后失败（含finally），原错误为POST /api/v1/transfer/task-definitions/9/start returned HTTP 403 (unknown)。无最终领域／浏览器报告、0/23PNG，不记完整28阶段或T4通过；旧v45业务失败与v46准备失败分别保留。
-
-原件/tmp/addp-ci-1200-1112.J8xJkB/security-artifact.zip及同名解压目录，artifact13910247505，SHA256/API digest为df576d76c388b8fee49e4a20230640583fbaad6b2f35b9ebec554c015d80002d，54成员CRC／安全路径／解压字节逐项匹配。原Job日志SHA256为06ed0a1f79a49154fc8e6206ea618e9c88ab2dc8bfa784bd8eb50dc1a86f2cc3。六Grant逐项核对原三精确目标×metadata_read/read、六个真实请求UUID及前后issued一致，最终pending/errors空、grants_revoked/content_unreadable/metadata_hidden均true；wrapper cleanup=passed／Infra零残留单列成立，不替代业务。独立API元信息、脚本和结果/tmp/p145-431400-independent/{job.json,run.json,artifact.json,audit.py,failure-audit.json}。
-
-关联请求78ebe164-1ea5-4071-ac58-df13aaf01ef4：System本人角色读取200，随后POST auth/execution-authorizations为403；Transfer同一请求记录task9启动失败，无该任务Worker执行UUID。按候选控制流，此时已越过所选Develop当次／默认历史和所选Service两页检查，但没有归档原始响应体或分组最终报告，不能补造单元格、UUID或完整出口通过。正式签发契约对Transfer read/write要求transfer.task.execute、develop.data_read.execute及develop.data_write.execute；原套件普通消费User缺最后一项，专用Transfer资格User虽已有，但不能换身份冒充同一用户矩阵。
-
-用户已明确批准仅对security-mysql-owner-protection的disposable消费账号补该既有写入功能权限。规范方案先记录后实现：只追加到suitePermissions该case，global consumerPermissions、其他套件、Source Initializer、六Grant、原七PG表、原值授权及产品签发规则不变。新Go反例在旧夹具实际因missing develop.data_write.execute失败，修正后完整TestSecurity(Fixture|Masking)选择退出0；同例同时拒绝该功能泄漏到共享consumer及其他三个只读套件，拒绝DDL、external_effect和源授权管理功能。领域v46／浏览器v10、28阶段／23图、90秒资格／2400秒预算和严格业务oracle保持，不新增报告字段。完整make test-security-online-runner实际退出0，Python七组43／204／19／156／35／80／292项均OK、两个System Fixture Go选择实际ok，登记CLI通过。该次只执行确定性门禁，不是Hosted。原始日志/tmp/p145-grouped-write-standard-gate.log，反例及专项日志/tmp/p145-grouped-write-fixture-{red,green}.log，当前输入和日志摘要/tmp/p145-grouped-write-fixture-verification.json；git diff --check通过，现有入口及CI登记已覆盖，不增加workflow。本次授权只允许修正夹具，未重派Hosted，未来精确候选仍需新的单次运行确认，由专门CI会话统一协调。
-
-
 ### Owner 投影存储修正的 Linux 完整 PostgreSQL 自然门禁（2026-11-12）
 
 精确修复7d51762d5054ea14d774cc68040d71adacf8f947的push [Run43155459026／Common PostgreSQL Job130974521958](https://github.com/pampa0629/addp/actions/runs/43155459026/job/130974521958)，attempt1已实际success。独立读取原始Job API，确认head SHA、completed及Run Common PostgreSQL gate步骤success；原日志339行完整checkout SHA一致，491–492行实际执行make test-common-postgres，无子组选项，不以summary或容器清理替代。原并发初始化测试4988行实际PASS；投影存储八项顶层全部PASS，原始日志无SKIP及error annotation。这是修复后新的完整Common PostgreSQL T2门禁成功，原5df并发首失败及本地红绿证据保留。
@@ -1041,29 +875,6 @@ DNS恢复后，用户另行确认的唯一[Run43140011471／Job130924454141](htt
 原件/tmp/addp-ci-security-2664-l_naer3d/common-130974521958.log，SHA256为3fe428ef81b21dbf240ebe08b927f6d6bdaf5c3fa879fc1e433fd65b27bf55df。独立脚本、Job元信息和结果/tmp/p145-common-natural-independent/{audit.py,job.json,audit.json}，脚本实际退出0。已核7d为2664dd82881a553f6634afbbb4a2c3389803d9f0祖先，common全目录、根Makefile、release工作流、Common PG入口、其容量脚本、Graph backend、go.work/sum及Infra端口核验输入均无差异，故该T2结果可适用于2664候选；只比较既有入口依赖，不调查栅格或其他suite。
 
 本轮只补证据，未重复运行测试或Hosted、未启停个人服务。精确2664的Platform自然门禁仍由专门CI会话跟进，本轮未认定其通过；v46/v10新的完整T4尚未获单次授权或派发，原403与0/23图保持。下一步由专门CI会话核对该Platform结果后统一提出具体单次方案，不重复确认或自动重试。
-
-
-### 2664 精确候选的 Linux Platform 自然门禁（2026-11-12，非 Hosted）
-
-精确候选2664dd82881a553f6634afbbb4a2c3389803d9f0的push [Run43156617594／Platform Job130977934296](https://github.com/pampa0629/addp/actions/runs/43156617594/job/130977934296)，attempt1实际success。独立读取原始Job API，核对head SHA、completed/success及Run platform consistency gate实际步骤success；原始日志200行为完整checkout SHA，3529行登记156项并以OK结束，4458／4459行两组System Fixture Go选择实际ok，4462行Security292项以OK结束，无错误注解。非verbose Go包结果不证明逐例无跳过；本轮不推断整个Run其他Job结果。
-
-原件/tmp/addp-ci-1400-1112.ux0igerj/security-platform-h1.log，SHA256为879c3b545a14ae9afec4fd5c21724eee7145291df2c7f4f3b2eb4cce75a1015a；独立元信息、脚本和结果/tmp/p145-2664-platform-independent/{job.json,audit.py,audit.json}，脚本实际退出0。Common完整PG仍复用前节已核7d自然门禁的相同输入证据，不重复执行。此前三次Hosted首失败、已批准suite专属写入功能前提与严格oracle均保持；当前仅确定性自然门禁已补齐，新v46/v10真实Hosted尚待专门CI会话统一确认，未获新授权或派发。已核清单维护会话最近M155／M156均部分实现；本次只补精确候选Linux层级，不能把它记为新的T4通过。无产品或门禁输入变更，只更新证据文档并作所属diff检查。
-
-
-### v46 分组 Transfer 主动恢复的 PUT 前提缺口（2026-11-12）
-
-本次唯一[Run43180455765／Job131054875358](https://github.com/pampa0629/addp/actions/runs/43180455765/job/131054875358)，attempt1实际failure；控制面4b114983b335969f440b94c3182e8023a794cb8c、业务2664dd82881a553f6634afbbb4a2c3389803d9f0。独立读取Run／Job／Artifact API，核实际源码选择／checkout／祖先／readiness步骤success、业务步骤failure、证据上传success。Artifact13927312379原始ZIP的API摘要与本地SHA256均为f8b43dc5ebfe04e7c7fb4a4852a150f3dc91d974f06f0ca13964f034ace5d072，54个唯一安全路径成员、CRC与解包全部字节逐项一致。十服务preflight均精确业务源码且repository_clean。
-
-前六阶段passed，第七postgres_grouped_outputs在65000ms后failed（包含finally，不是单请求超时）。原online-gate.log第4721行与Job第5298行均为PUT /api/v1/transfer/task-definitions/9 returned HTTP 403 (permission_denied)。关联请求19d3a3e9-76f7-491a-acf0-bf1b1d7f8e55的System auth/context为200，Transfer任务PUT及Gateway为403，未进入该请求的执行授权签发。沿精确候选控制流，该PUT是撤销方式后主动清空旧选择、恢复默认的操作；此时已越过所选任务执行及撤销后的拒绝检查，但归档没有原始结果正文或最终分组报告，不能补造单元格／执行UUID或记完整三出口生命周期通过。无最终领域／浏览器报告、0/23PNG。六Grant的目标／action／请求UUID逐项对应，最终pending/errors空、撤销／不可读／隐藏均true；wrapper cleanup=passed、Infra零残留分别成立，不覆盖业务失败。独立审计脚本及原件元信息 /tmp/p145-431804-independent/{audit.py,job.json,run.json,artifact.json,failure-audit.json}，脚本实际退出0；原归档和日志 /tmp/addp-ci-1802-1112.4m3n2bzm/{security-artifact.zip,security-job.log}。
-
-UpdateTask正式接口要求transfer.task.update，而原套件消费User没有该功能。用户已明确批准只补该套件disposable消费账号，规范先记录后实现：只追加suitePermissions的security-mysql-owner-protection case，global consumerPermissions、两个准备账号、独立资格账号、其他套件、源Grant、原值授权和产品规则不变。回归扩展既有分组生命周期夹具检查，旧夹具实际因missing transfer.task.update报红；同时检查写入／更新功能不得扩散到共享consumer、准备账号和三个既有只读套件，原无DDL／external_effect／源Grant管理功能反例保持。领域v46／浏览器v10、28阶段／23图、90秒／2400秒和严格oracle保持。现有make test-security-online-runner与System夹具自动发现已覆盖，不新增workflow。本会话不启停个人服务、不派发Hosted；修后精确候选交专门CI会话安排本次用户同意的同范围复验，原三轮首失败分别保留。
-
-
-本轮回归实际结果：新增同一生命周期例在旧夹具报missing transfer.task.update（退出1），修后定向verbose例实际PASS（退出0）；完整System online-test-fixture Go包以GOWORK=off go test ./cmd/online-test-fixture -count=1退出0。所属未改领域组271项实际通过（不包含包装器组，不能冒充完整292）。完整make test-security-online-runner实际退出2：前置43／205／19／156项及登记CLI通过；随后35项execution包装组450.785秒、3个errors，均为HostedSecurityGateTest的test_graph_build_failure_never_starts_app_or_browser_and_still_cleans、test_graph_endpoint_case_reaches_only_the_existing_isolated_owner_dispatcher、test_graph_profile_uses_only_its_synthetic_fixture_and_always_cleans内部bash子进程60秒TimeoutExpired。不得把聚合入口记通过，后继Graph／Security recipe未执行；不改包装器、Graph、超时或断言，也不猜测这些超时根因。本次夹具变更沿已存在System Go及Platform登记覆盖，所属最小T1和领域检查已足够验证这一权限追加；完整聚合缺口须由专门CI会话先核精确候选相关自然门禁，再安排同范围Hosted，不能据专项通过直接放行。无新增T2、个人HTTP／浏览器或Hosted通过，不需个人服务重启。
-
-日志 /tmp/p145-grouped-task-update-{red,green,fixture-full,domain,standard-gate}.log，验证摘要及文件哈希 /tmp/p145-grouped-task-update-verification.json。功能清单已只读解密核对实际155行/B空为动态脱敏与静态加密执行总述，156行/B155为动态脱敏实时生效，两项M列仍部分实现；工作簿未写入，后续由维护会话更新。
-
-提交前发现System夹具同文件存在另一会话的topology工作区改动。已用HEAD加仅本次Security hunk构造临时Go overlay，排除该差异后完整online-test-fixture包再次通过；发布只暂存本次Security权限／测试hunk及三份所属文档，不包含topology改动。覆盖文件、补丁与输入摘要 /tmp/p145-grouped-task-update-candidate/，日志 /tmp/p145-grouped-task-update-pure-fixture.log。
 
 
 ### Service 保护拒绝后旧响应回流修正（2026-11-12，独立T1/T3）
@@ -1086,11 +897,6 @@ Develop现有原值复核在等待HTTP期间缺独立截止清空，且会展示
 ### Develop 导出切换与共享取消交付修正（2026-11-12）
 
 查询清空／替换、任务切换及退出结束旧导出的前端观测，复用既有请求作用域和单一共享导出工具。迟到创建／轮询／文件不继续交付，旧失败或 finally 不污染新任务；共享工具在状态返回与 Blob 保存前复核取消。后台导出会话、授权和保护规则保持。最终 16 项同断言旧代码 10 过 6 失败，修后全部通过；中英文 8 项受控浏览器及共享 378 项通过。完整 Develop 标准前端门禁的工作流链、304 项浏览器及构建通过；Manager 消费方 414 项单元、358 项浏览器及构建通过；前端登记 27 项通过。无新增 Hosted 或真实账户 HTTP 验收，不自行跟进 CI、不启停个人服务。细节见[Develop 记录](../develop/CLAUDE.md#全量导出在途观测失效2026-11-12)。
-
-
-### v46/v10 分组与角色保护 Hosted 闭环（2026-11-13）
-
-固定45fe76a6f830d0968d73476e66812436659a4fd2的唯一Run43217668163／Job131180952821已实际success，control6d30e0f4fdc54a5035d7b3f88e397e6c3244eb68。独立原件审计核十服务同源码、28阶段、23图逐张目视、默认／所选／拒绝／恢复的三出口分组、8个分组执行UUID、六Grant正式撤销和领域26/26/0、两组浏览器2/2/0及Infra零残留。限定T4通过，不再将该分组链路记作“Hosted待运行”；原各轮失败和本地Graph聚合超时保留。20个runtime／8个protocol_only及future-start仅T2边界保持，不覆盖后来前端竞态修复或静态加密。完整证据、原件摘要和实际审计命令见[本次独立复核](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#v46v10-分组角色脱敏-hosted-验收2026-11-13-独立复核)。本轮仅归档，不启停个人服务、不增加权限、不另派或重试CI。
 
 
 ### 8a068 自然前端门禁闭环（2026-11-13）
