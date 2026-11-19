@@ -608,13 +608,17 @@ Spark 联邦查询复用同一共享门禁，首期只准入未命中纳管 Data
 
 Owner 若从初始 cursor 重放，首轮必须完整消费变化流后再提交 acknowledgement，不能在每个历史分页后回执较小 cursor。Security 当前拒绝 sequence 倒退；保留这一约束。初始化期间按页持久推进本地 checkpoint，失败后从本地进度继续，仍保持未初始化；到 `has_more=false` 后完成同一 checkpoint 的初始化确认、既有在途读取屏障及最终回执。不得通过清除 Security 回执、放宽单调性或提前宣称安装完成来绕过重放。
 
-Neo4j 首个范围以普通本地图查询为候选，不因本租户当前没有 Neo4j 投影就直接声明实例内读取。当前参数校验与读路由不能建立该保证，必须先确定覆盖当前查询、参数、原生函数和数据库选择的可信执行约束。原生 EXPLAIN 可作为调查手段，但未证明计划覆盖全部隐式来源前，不能仅靠没有 LoadCSV / ProcedureCall 算子就宣布范围完整。模板验证与正式图查询必须消费相同的范围事实；只修模板而保留正式执行的租户级一刀切不算完成。
+**Neo4j 本地只读计划。** 普通查询与正式图查询分别使用 `PreparedQuery` 和 `PreparedGraphQuery`，共享 `QueryReadPlan`。模板和正式执行走相同范围证明，实际取数复用同一不可变计划、参数、连接和语句。Common 使用 `github.com/cloudprivacelabs/opencypher` v1.0.0 的 openCypher 9 ANTLR 语法树验证只读子集。Provider 在同一固定连接下用 `SHOW DATABASES` 确认物理 `standard` 数据库，并用 `SHOW FUNCTIONS` 的 `isBuiltIn` 校验语法树引用的函数。别名或复合数据库、过程、LOAD CSV、多语句、用户函数及未覆盖扩展均明确拒绝，保留 `local_read_unsupported` 与中英文说明。函数按标识匹配；参数避开语法保留字，可使用 `$row_limit`。当前 Neo4j 计划可证明实例内范围，图资源的精确 ReadSet 和字段级保护仍缺失。同引擎存在纳管目标且完整来源无法证明时拒绝。
 
-2026-10-17 只读调查：在当前 `neo4j:5-community` 上分别对 `MATCH (n) RETURN n LIMIT 10` 与带远程 URL 的 `LOAD CSV ... RETURN row LIMIT 10` 执行原生 EXPLAIN，两者的 Statement 分类均为 `READ_ONLY`。调查未实际执行数据查询或访问远程 URL。该结果仅证明原生只读分类不能区分实例内图读取与外部来源，不构成 EXPLAIN 计划范围解析已实现或 Neo4j 已通过保护验收的证据。Go Driver 的 AccessMode / readers routing 也只用于路由，不能作为访问控制或实例内来源保证，依据见 [Neo4j Go Driver 事务文档](https://neo4j.com/docs/go-manual/current/transactions/)。
+2026-10-17 的 `neo4j:5-community` 调查只执行 EXPLAIN：普通 MATCH 与带远程来源的 LOAD CSV 均被分类为 `READ_ONLY`，业务查询和远端读取均未执行。这一记录仅验证分类的局限。Go Driver 的 AccessMode 与 readers routing 只决定路由。[Neo4j Go Driver 事务文档](https://neo4j.com/docs/go-manual/current/transactions/)
 
 隔离 Hosted 部署必须实际启动 Security，并为参与保护的 Backend／Worker 配置其部署网络内的 Security 地址；不能在容器中沿用宿主机 `localhost`。全局 `/health/ready` 只证明服务实例就绪，不证明刚创建的租户已完成首轮投影同步。Hosted 身份夹具在导出消费身份之前，复用 System 的 `--wait-protection-owners` 只读观察各参与 Owner 的持久初始化 checkpoint；只有实际 Owner 从 Security 完整消费后才继续场景，不直接写入投影或 checkpoint、不扩权、不把业务拒绝重试为成功。此准备要求不改变已有投影下 Security 离线时的数据面规则，也不增加模块间全局启动等待。
 
-实施验收须覆盖：跨引擎无交集且不调用 ReadSet；同引擎未保护表仍精确放行；命中保护表仍正确脱敏或拒绝；未知 / 外部 / 联邦来源不得漏检；首次同步未完成拒绝；纳管中、过期、最后一个资源解除、同引擎多资源及跨租户隔离；范围计划被替换拒绝；在途读取期间新纳管的激活屏障；存量升级和 Owner 重启重放。沿既有 `make test-changed`、Common / Security / Develop 及实际改动消费者的标准模块与 PostgreSQL 门禁验证，首次真实 Neo4j 模板及图查询验收前不记为已修复；CI 自动发现和 Hosted 套件是否覆盖必须在实施前核对，缺口同次补齐。
+实施验收须覆盖：跨引擎无交集且不调用 ReadSet；同引擎未保护表仍精确放行；命中保护表仍正确脱敏或拒绝；未知 / 外部 / 联邦来源不得漏检；首次同步未完成拒绝；纳管中、过期、最后一个资源解除、同引擎多资源及跨租户隔离；范围计划被替换拒绝；在途读取期间新纳管的激活屏障；存量升级和 Owner 重启重放。
+
+- **标准回归。** 沿 `make test-changed`、Common／Security／Develop 与受影响消费模块的标准门禁，包含 `make test-module MODULE=common GO_ONLY=1`、`make test-common-postgres`、`make test-security-postgres` 和 `make test-develop-postgres`。实施前核对 CI 自动发现与 Hosted 套件覆盖，缺口同次补齐。
+- **Neo4j 原生 T2。** `make test-common-neo4j` 使用独占 Compose 项目、固定镜像摘要、随机凭据与回环端口，验证跨引擎排除、同引擎拒绝、图与表结果、有界执行、不可变计划和外部来源拒绝，退出核对容器、卷和网络零残留。该入口由标准模块门禁自动发现，纳入串行 `test-integration` 与 Release/T2 的 `common-neo4j` Job，登记检查同时覆盖。
+- **实际页面与运行验收。** Neo4j 模板和正式图查询需要分别保留实际运行证据，个人 Console 复验沿标准生命周期由用户重启全部 Common 消费模块后执行。Hosted 按独立图引擎场景认定：Neo4j 校验纳管目标拒绝和另一实例的未纳管对照可读，同引擎其他图放行和属性脱敏不在该验收范围。[Graph 保护场景](testing/scenarios/数据保护.md#graph-protection)
 
 ### 10.1 Manager `profile` 动作
 
@@ -935,7 +939,3 @@ Owner 补拉历史变化时允许原子安装结构、checksum 和期限区间�
 期限修改、原值申请／审批及所有投影重编译共享 Enrollment 行锁；编译器必须重新读取已提交的资源期限，不能使用调用方此前持有的旧期限覆盖新配置。
 
 **验收范围。** 存量期限回填的 SQLite／PostgreSQL 回归使用当时四个字段级 Owner 的投影，核对最早截止时间、各原期限、修订和位置。四个字段级出口的指定时点回归及 v13 Hosted 短窗口自然到期、拒绝和恢复分别按原证据认定，365 天区间是编译器验证。独立图引擎场景核对五方回执、Graph 读取与纳管拒绝。Graph 资源期限的自然到期仍需对应场景证据。[四出口有效期历史记录](../../security/CLAUDE.md#资源筛选银行卡识别与有效期) · [Graph 场景](testing/scenarios/数据保护.md#graph-protection)
-
-Neo4j 普通查询与正式图查询分别使用 `PreparedQuery` / `PreparedGraphQuery`，二者共享 `QueryReadPlan` 事实契约，执行参数、连接和解析语句片段均被冻结。Provider 使用 `github.com/cloudprivacylabs/opencypher/parser@v1.0.0` 的 openCypher 9 ANTLR 语法树证明只读语法，不按查询文本关键字判定。仅接受物理 standard database；通过原生 `SHOW DATABASES` 验证所连数据库，通过 `SHOW FUNCTIONS` 的 `isBuiltIn` 验证 AST 内函数。别名、复合数据库、过程、LOAD CSV、多语句、用户函数与未覆盖的 Neo4j 扩展明确拒绝，保留 `local_read_unsupported` 稳定诊断及中英文说明。函数名区分语法树标识，不通过名称前缀猜测内置资格。语法未覆盖的保留字参数名也应改用普通标识符，例如 `$row_limit`。当前 Neo4j 未提供图资源精确 ReadSet 和字段输出保护；本引擎存在纳管目标时仍拒绝未能精确证明的查询。
-
-最小验证入口：`make test-module MODULE=common GO_ONLY=1`、四个受影响出口及 Security 的对应 Go 模块门禁、`make test-common-postgres`、`make test-security-postgres` 和 `make test-develop-postgres`。新增 `make test-common-neo4j` 使用独占 Compose Project、固定镜像摘要、随机凭据与回环端口，验证跨引擎排除、同引擎拒绝、图与表结果、有界执行、不可变计划和外部来源拒绝，退出销毁并核对容器／卷／网络。它由标准模块门禁自动发现，纳入串行 `test-integration` 与现有 release-and-t2 workflow 的 `common-neo4j` Job；注册检查同时覆盖。真实个人 Console 页面验收需要用户按生命周期重启全部 Common 消费模块后另行执行，不能由上述测试替代。
