@@ -578,9 +578,14 @@ def job_is_up(job, expected):
 
 
 def self_sample_ready():
-    rows = query('process_resident_memory_bytes{job="prometheus"}')
-    return (job_is_up('prometheus', '1') and len(rows) == 1
-            and float(rows[0]['value'][1]) > 0)
+    # A fresh TSDB reports zero disk usage in its first self scrape. Observe the
+    # owned WAL after ingestion, at whole-second precision as in the Go query.
+    at = int(time.time())
+    for metric in ('process_resident_memory_bytes', 'prometheus_tsdb_wal_storage_size_bytes'):
+        rows = query(metric + '{job="prometheus"}', at=at)
+        if len(rows) != 1 or not float(rows[0]['value'][1]) > 0:
+            return False
+    return job_is_up('prometheus', '1')
 
 
 def eventually(check, label, seconds=65):
@@ -930,7 +935,7 @@ except AssertionError:
     fixture_scrape_diagnostic()
     raise
 # Scrape jobs have independent initial offsets; fixture readiness is not self readiness.
-eventually(self_sample_ready, 'center self scrape and resident memory')
+eventually(self_sample_ready, 'center self scrape with resident memory and persisted WAL bytes')
 assert job_is_up('addp_nodes', '1')
 subprocess.run([str(resource_window_binary), '-test.run=^TestIntegrationMetricsCollectionHealthSource$', '-test.v', '-test.timeout=15s'],
                check=True, timeout=20,

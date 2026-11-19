@@ -3,6 +3,7 @@ package resourcequery
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -27,8 +28,13 @@ func TestIntegrationMetricsCollectionHealthSource(t *testing.T) {
 	}
 	defer prometheus.Close()
 	health, err := prometheus.CollectionHealth(context.Background(), time.Now().UTC().Truncate(time.Second), DefaultBudget())
-	if err != nil || health.Discovered != 1 || health.Online == nil || *health.Online != 1 ||
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, _ := json.Marshal(health)
+	t.Logf("collection health: %s", observed)
+	if health.Discovered != 1 || health.Online == nil || *health.Online != 1 ||
 		health.Failed == nil || *health.Failed != 0 || health.RetentionBytes != 10*1024*1024*1024 || health.TSDBBytes <= 0 {
-		t.Fatalf("unexpected collection health: %+v, %v", health, err)
+		t.Fatal("unexpected collection health")
 	}
 }

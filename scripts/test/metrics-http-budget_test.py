@@ -476,15 +476,16 @@ while not (p/"sample_finished").exists():
         self.assertEqual(m.COMPILE_STAGES, ('gateway_control','process_source','resource_windows','http_query','http_alert'))
         path=Path(m.__file__).with_name('monitor-metrics-probe.py')
         nodes=ast.parse(path.read_text()).body
-        window=next(i for i,n in enumerate(nodes) if isinstance(n,ast.Expr) and
-                    isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='check_resource_windows')
+        windows=[i for i,n in enumerate(nodes) if isinstance(n,ast.Assign) and
+                 isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='check_resource_windows']
+        self.assertEqual(len(windows),1,'window preparation must run once, unconditionally at module scope')
         following=next(i for i,n in enumerate(nodes) if isinstance(n,ast.If) and
                        any(isinstance(c,ast.Call) and isinstance(c.func,ast.Name) and c.func.id=='prepare_http_test_binaries' for c in ast.walk(n)))
-        self.assertLess(window,following)
+        self.assertLess(windows[0],following)
         compile_go=Mock()
         with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'ADDP_HTTP_BUDGET_RECEIPT':directory+'/receipt.json'}),patch.object(runpy,'run_path',return_value={'run_owned_compile':compile_go}),patch.object(subprocess,'run') as execute:
             work=Path(directory)
-            prepare_function(work,'check_resource_windows')()
+            self.assertEqual(prepare_function(work,'check_resource_windows')(), work/'resource-windows.test')
             prepare_function(work)()
             self.assertEqual([c.args[1] for c in compile_go.call_args_list],['resource_windows','http_query','http_alert'])
             first=compile_go.call_args_list[0]

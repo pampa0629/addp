@@ -26,25 +26,30 @@ class MetricsProbeReadinessTest(unittest.TestCase):
                                      if isinstance(node, ast.FunctionDef)
                                      and node.name in ('job_is_up', 'self_sample_ready')],
                                type_ignores=[])
-        namespace = {'query': lambda expression: samples.get(expression, [])}
+        namespace = {'time': mock.Mock(time=lambda: 1.9),
+                     'query': lambda expression, *, at=None: samples.get((expression, at), [])}
         exec(compile(functions, 'monitor-metrics-probe.py', 'exec'), namespace)
         return namespace['self_sample_ready']
 
     def test_fixture_first_sample_does_not_prove_center_self_scrape(self):
-        check = self.readiness({'up{job="fixture"}': [{'value': [1, '1']}]})
+        check = self.readiness({('up{job="fixture"}', None): [{'value': [1, '1']}]})
         self.assertFalse(check())
 
-    def test_self_scrape_requires_up_and_positive_memory(self):
+    def test_self_scrape_requires_positive_memory_and_written_wal_at_whole_second(self):
         samples = {}
         check = self.readiness(samples)
         self.assertFalse(check())
-        samples['up{job="prometheus"}'] = [{'value': [1, '1']}]
+        samples['up{job="prometheus"}', None] = [{'value': [1, '1']}]
         self.assertFalse(check())
-        samples['process_resident_memory_bytes{job="prometheus"}'] = [{'value': [1, '0']}]
+        samples['process_resident_memory_bytes{job="prometheus"}', 1] = [{'value': [1, '0']}]
         self.assertFalse(check())
-        samples['process_resident_memory_bytes{job="prometheus"}'] = [{'value': [1, '4096']}]
+        samples['process_resident_memory_bytes{job="prometheus"}', 1] = [{'value': [1, '4096']}]
+        self.assertFalse(check())
+        samples['prometheus_tsdb_wal_storage_size_bytes{job="prometheus"}', 1] = [{'value': [1, '0']}]
+        self.assertFalse(check())
+        samples['prometheus_tsdb_wal_storage_size_bytes{job="prometheus"}', 1] = [{'value': [1, '128']}]
         self.assertTrue(check())
-        samples['up{job="prometheus"}'] = [{'value': [1, '0']}]
+        samples['up{job="prometheus"}', None] = [{'value': [1, '0']}]
         self.assertFalse(check())
 
 
