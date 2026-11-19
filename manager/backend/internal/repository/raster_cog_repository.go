@@ -37,14 +37,14 @@ func (r *RasterCOGRepository) GetTask(ctx context.Context, id uint, tenantID uin
 	return &task, err
 }
 
-func (r *RasterCOGRepository) GetTaskByItemFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) (*models.RasterCOGTask, error) {
+func (r *RasterCOGRepository) GetTaskByItemFingerprint(ctx context.Context, tenantID uint, itemFingerprint, message string) (*models.RasterCOGTask, error) {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
 	if itemFingerprint == "" {
 		return nil, nil
 	}
 	var task models.RasterCOGTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND task_type = ? AND config->'target'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypeRasterCOGGeneration, itemFingerprint).
+		Where("tenant_id = ? AND task_type = ? AND config->'target'->>'item_fingerprint' = ? AND COALESCE(config->'raster'->>'message', '') = ?", tenantID, commonExecution.TaskTypeRasterCOGGeneration, itemFingerprint, message).
 		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -203,10 +203,10 @@ func (r *RasterCOGRepository) List(ctx context.Context, filter RasterCOGFilter) 
 	return results, total, err
 }
 
-func (r *RasterCOGRepository) GetCurrentByFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) (*models.RasterCOG, error) {
+func (r *RasterCOGRepository) GetCurrentByFingerprint(ctx context.Context, tenantID uint, itemFingerprint, message string) (*models.RasterCOG, error) {
 	var result models.RasterCOG
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND item_fingerprint = ? AND status <> ?", tenantID, strings.TrimSpace(itemFingerprint), models.RasterCOGStatusDeleted).
+		Where("tenant_id = ? AND item_fingerprint = ? AND COALESCE(metadata->'grib_map'->>'message', '') = ? AND status <> ?", tenantID, strings.TrimSpace(itemFingerprint), message, models.RasterCOGStatusDeleted).
 		Order("updated_at DESC, id DESC").
 		First(&result).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -215,14 +215,14 @@ func (r *RasterCOGRepository) GetCurrentByFingerprint(ctx context.Context, tenan
 	return &result, err
 }
 
-func (r *RasterCOGRepository) GetLatestReadyByFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) (*models.RasterCOG, error) {
+func (r *RasterCOGRepository) GetLatestReadyByFingerprint(ctx context.Context, tenantID uint, itemFingerprint, message string) (*models.RasterCOG, error) {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
 	if itemFingerprint == "" {
 		return nil, nil
 	}
 	var result models.RasterCOG
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND item_fingerprint = ? AND status = ?", tenantID, itemFingerprint, models.RasterCOGStatusReady).
+		Where("tenant_id = ? AND item_fingerprint = ? AND COALESCE(metadata->'grib_map'->>'message', '') = ? AND status = ?", tenantID, itemFingerprint, message, models.RasterCOGStatusReady).
 		Order("updated_at DESC, id DESC").
 		First(&result).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

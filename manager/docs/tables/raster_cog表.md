@@ -39,7 +39,7 @@ raster COG 的生成任务定义写入 `manager.task_definitions`，TaskProvider
 | GORM 普通索引 | `idx_raster_cog_execution` | `last_execution_id`；回查最近一次生成执行 |
 | GORM 普通索引 | `idx_raster_cog_status` | `status`；结果状态过滤 |
 | GORM 普通索引 | `idx_raster_cog_deleted_at` | `deleted_at`；软删除字段索引 |
-| 初始化显式 SQL 部分唯一索引 | `idx_raster_cog_current_unique` | `(tenant_id, item_fingerprint)`，仅覆盖 `deleted_at IS NULL AND status <> 'deleted'` |
+| 初始化显式 SQL 部分唯一索引 | `idx_raster_cog_current_message_unique` | `(tenant_id, item_fingerprint, COALESCE(metadata.grib_map.message, ''))`，仅覆盖 `deleted_at IS NULL AND status <> 'deleted'` |
 
 模型未以 `uniqueIndex` 声明该部分唯一索引；初始化先执行模型 `AutoMigrate`，再运行显式 SQL。`building`、`ready`、`failed` 和 `stale` 均在占位范围内，不能将其理解为“仅 ready 结果唯一”。SQL 没有排除空指纹；字段 `NOT NULL` 也不等于非空业务身份校验。源引擎、任务、execution、内容版本及生成参数均不参与该结果唯一键。
 

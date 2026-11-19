@@ -758,12 +758,35 @@ def raster_to_cog(access_plan, options=None):
     if options is not None and not isinstance(options, dict):
         raise ValueError('options must be an object')
     options = dict(options or {})
-    allowed = {'source_crs', 'compression', 'blocksize', 'overview_resampling'}
+    allowed = {'source_crs', 'compression', 'blocksize', 'overview_resampling', 'grib_map_selection'}
     if set(options) - allowed:
         raise ValueError('Unknown COG options')
     with raster_workspace():
-        source = raster_load({'schema_version': plan['schema_version'], 'source': plan['source']}, options.pop('source_crs', ''))
-        return raster_save(source, {'schema_version': plan['schema_version'], 'target': plan['target']}, profile='cog', **options)
+        source_plan = {'schema_version': plan['schema_version'], 'source': plan['source']}
+        target_plan = {'schema_version': plan['schema_version'], 'target': plan['target']}
+        source_crs = options.pop('source_crs', '')
+        selection = options.pop('grib_map_selection', None)
+        if plan['source']['format'] == 'grib':
+            from . import grib
+            if (not isinstance(selection, dict) or set(selection) != {'source_version', 'message'}
+                    or not isinstance(selection['source_version'], str) or len(selection['source_version']) != 71
+                    or not isinstance(selection['message'], str) or len(selection['message']) > 32
+                    or source_crs or options.get('blocksize', 256) != 256
+                    or options.get('overview_resampling', 'nearest') != 'nearest'):
+                raise ValueError('GRIB COG requires a versioned message and the fixed map grid')
+            source_path = _path()
+            result = grib._invoke_native('_write_map_geotiff', dict(access_plan=source_plan, path=str(source_path), **selection))
+            if result.get('error_code') == 'GRIB_SOURCE_CHANGED':
+                raise ValueError('GRIB map source changed; refresh metadata')
+            if result.get('result', {}).get('map_profile') != grib.MAP_PROFILE:
+                raise ValueError('GRIB map message is outside the supported profile')
+            options['blocksize'] = 256
+            return {**raster_save(_raster(source_path), target_plan, profile='cog', **options),
+                    'map_profile': grib.MAP_PROFILE, 'grib_map_selection': selection}
+        if selection is not None:
+            raise ValueError('GRIB map selection requires a GRIB source')
+        source = raster_load(source_plan, source_crs)
+        return raster_save(source, target_plan, profile='cog', **options)
 
 
 def raster_build_overviews(input_raster, levels=None, resampling='nearest'):

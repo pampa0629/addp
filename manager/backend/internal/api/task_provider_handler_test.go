@@ -1254,6 +1254,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		tenant_id INTEGER NOT NULL,
 		task_id INTEGER,
 		status TEXT NOT NULL DEFAULT 'ready',
+		metadata JSON,
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {

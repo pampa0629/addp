@@ -118,6 +118,7 @@ func (r *PreviewResolver) runtimeDescriptorClientForTenant(tenantID *uint) insta
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
+	RasterMessage           string
 	MetaItem                *commonModels.MetaItem // Actual tenant-bound Meta record for this synchronous request only.
 	GridSlice               *format.GridSliceSelection
 	CheckContainerSliceRead func(context.Context, plugin.EngineCatalogPath) error

@@ -182,6 +182,7 @@ func (h *QuickViewHandler) GetPreviewStateByLocator(c *gin.Context) {
 }
 
 type ExecuteQuickViewActionRequest struct {
+	RasterMessage        string            `json:"raster_message,omitempty"` // GRIB 消息编号 | GRIB message name
 	Locator              string            `json:"locator" binding:"required"`
 	Action               string            `json:"action" binding:"required"`
 	ExistingResultAction string            `json:"existing_result_action,omitempty" enums:"overwrite"`
@@ -217,6 +218,7 @@ type RebindManagedQuickViewTaskResponse struct {
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Param raster_message query string false "GRIB 消息编号 | GRIB message name"
 // @Success 200 {object} service.QuickViewCapability "快显能力状态 | Quick view capability state"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "身份凭据无效 | Invalid credentials"
@@ -241,7 +243,12 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 		quickViewLocatorError(c, err)
 		return
 	}
-	restricted := req.RequiresObjectPreviewVisibility()
+	req.RasterMessage = c.Query("raster_message")
+	if req.RasterMessage != "" && quickViewSourceFromMeta(req).Raster == nil {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgGridSliceInvalid)
+		return
+	}
+	restricted := req.RequiresObjectPreviewVisibility() || req.RasterMessage != ""
 	if restricted {
 		readable, err := checkObjectPreviewVisibility(c, req, h.objectPreviewChecker)
 		if err != nil {
@@ -356,18 +363,39 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		}
 	}
 	tenantID := tenantIDFromContext(c)
-	capability, err := h.quickViewCapabilityForLocator(ctx, tenantID, locator)
+	lookup, err := h.quickViewRequestForLocator(ctx, tenantID, locator)
+	if err != nil {
+		quickViewActionLocatorError(c, err)
+		return
+	}
+	lookup.RasterMessage = req.RasterMessage
+	source := quickViewSourceFromMeta(lookup)
+	if req.RasterMessage != "" {
+		if action != service.QuickViewActionGenerateRasterCOG || source.Raster == nil {
+			managerError(c, http.StatusBadRequest, manageri18n.MsgGridSliceInvalid)
+			return
+		}
+		if !commonauth.HasAllRolePermissions(c, "manager.content.read") {
+			commonapi.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+			return
+		}
+		readable, err := checkObjectPreviewVisibility(c, lookup, h.objectPreviewChecker)
+		if err != nil {
+			writeObjectPreviewVisibilityError(c, err)
+			return
+		}
+		if !readable {
+			accessDeniedToEngine(c)
+			return
+		}
+	}
+	capability, err := h.quickViewCapabilityForRequest(ctx, tenantID, lookup, 0)
 	if err != nil {
 		quickViewActionLocatorError(c, err)
 		return
 	}
 	if !quickViewCapabilityHasAction(capability, action) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "quick view action is not available for this locator"})
-		return
-	}
-	source, err := h.quickViewSourceForLocator(c.Request.Context(), tenantID, locator)
-	if err != nil {
-		quickViewActionLocatorError(c, err)
 		return
 	}
 
@@ -386,7 +414,7 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 			managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
 			return
 		}
-		if quickViewSourceError(c, err) {
+		if writePreviewAuthorizationError(c, err) || quickViewSourceError(c, err) {
 			return
 		}
 		if errors.Is(err, commonapi.ErrForbidden) {
@@ -1376,6 +1404,12 @@ func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, s
 		"height":            raster.Height,
 		"band_count":        raster.BandCount,
 	}
+	blockSize := 512
+	if raster.Format == "grib" {
+		blockSize = 256
+		rasterMap["message"] = raster.Message
+		rasterMap["source_version"] = raster.SourceVersion
+	}
 	if raster.Format == "envi" {
 		rasterMap["header_sha256"] = raster.HeaderSHA256
 		rasterMap["raster_sha256"] = raster.RasterSHA256
@@ -1400,7 +1434,7 @@ func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, s
 		"raster": rasterMap,
 		"cog": commonModels.JSONMap{
 			"compression":         "DEFLATE",
-			"blocksize":           512,
+			"blocksize":           blockSize,
 			"overview_resampling": "NEAREST",
 		},
 	}, nil
@@ -1560,6 +1594,12 @@ func quickViewSourceFromMeta(req *preview.PreviewResolverRequest) service.QuickV
 		source.Identity.TenantID = *req.TenantID
 	}
 	attrs := req.MetadataAttributes()
+	if req.RasterMessage != "" {
+		if source.EngineType == "nfs" || source.EngineType == "minio" {
+			source.Raster = service.GRIBRasterQuickViewSource(attrs, req.RasterMessage)
+		}
+		return source
+	}
 	if source.RasterMosaic = service.RasterMosaicQuickViewSourceFromAttributes(attrs); source.RasterMosaic != nil {
 		return source
 	}

@@ -167,7 +167,8 @@ func taskSemanticKey(taskType string, config commonModels.JSONMap) string {
 		geometry, _ := jsonMap(config["geometry"])
 		return joinSemantic(firstString(target, "item_fingerprint"), firstString(geometry, "geometry_column"), fmt.Sprint(geometry["target_srid"]))
 	case commonExecution.TaskTypeRasterCOGGeneration:
-		return firstString(target, "item_fingerprint")
+		raster, _ := jsonMap(config["raster"])
+		return joinSemantic(firstString(target, "item_fingerprint"), firstString(raster, "message"))
 	case commonExecution.TaskTypePPTXPDFGeneration:
 		return joinSemantic(firstString(source, "item_fingerprint"), models.PPTXPDFArtifactVariant)
 	case commonExecution.TaskTypeModel3DGLBGeneration,

@@ -12,6 +12,11 @@ import (
 
 const ManagerRasterCOGConfigVersion = "raster-cog-file-config/v1"
 
+// ManagerRasterCOGSourceFormat selects formats using exact source execution authorization.
+func ManagerRasterCOGSourceFormat(format string) bool {
+	return format == "envi" || format == "tiff" || format == "grib"
+}
+
 // ManagerFileReadScope is a frozen boundary, not a credential or Allow.
 // System independently proves the pending config, engine and source rights.
 type ManagerFileReadScope struct {
@@ -34,7 +39,7 @@ func NewManagerFileReadScope(raw json.RawMessage, taskID, taskVersion, engineVer
 	config, digest, err := executionConfigObject(raw)
 	version := ManagerModel3DConfigVersion
 	objects := []string{"source", "result", "options"}
-	if composition.Format == "envi" || composition.Format == "tiff" {
+	if ManagerRasterCOGSourceFormat(composition.Format) {
 		version = ManagerRasterCOGConfigVersion
 		objects = []string{"target", "raster", "cog", "result"}
 	}
@@ -87,7 +92,7 @@ func (s *ManagerFileReadScope) Purpose() string {
 	if s == nil {
 		return ""
 	}
-	if s.FileComposition.Format == "envi" || s.FileComposition.Format == "tiff" {
+	if ManagerRasterCOGSourceFormat(s.FileComposition.Format) {
 		return TaskTypeRasterCOGGeneration
 	}
 	if ManagerModel3DConversionFormat(s.FileComposition.Format) {

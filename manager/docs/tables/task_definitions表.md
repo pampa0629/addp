@@ -58,7 +58,7 @@
 | --- | --- | --- |
 | `idx_vector_tile_set_tasks_semantic_unique` | `vector_tile_set_generation` | `config.semantic_hash`。 |
 | `idx_vector_tile_cache_tasks_source_profile_unique` | `vector_tile_cache_generation` | `config.target.item_fingerprint` 与 `config.profile_hash`。 |
-| `idx_raster_cog_tasks_source_unique` | `raster_cog_generation` | `config.target.item_fingerprint`。 |
+| `idx_raster_cog_tasks_source_message_unique` | `raster_cog_generation` | `config.target.item_fingerprint`，GRIB 另加 `config.raster.message`。 |
 | `idx_model3d_tiles_tasks_source_format_unique` | `model3d_tiles_generation` | `config.source.item_fingerprint` 与 `config.target_format`；两者各要求 `COALESCE(..., '') <> ''`。 |
 | `idx_model_3d_glb_tasks_source_unique` | `model_3d_glb_generation` | `config.source.item_fingerprint`，并要求 `COALESCE(..., '') <> ''`。 |
 | `idx_gaussian_splat_ksplat_tasks_source_unique` | `gaussian_splat_ksplat_generation` | `config.source.item_fingerprint`，并要求 `COALESCE(..., '') <> ''`。 |

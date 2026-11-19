@@ -1764,6 +1764,8 @@ definitions:
         type: string
       geometry_column:
         type: string
+      map_profile:
+        type: string
       max_zoom:
         type: integer
       min_zoom:
@@ -1771,6 +1773,10 @@ definitions:
       preview_hint:
         type: string
       preview_url:
+        type: string
+      raster_message:
+        type: string
+      raster_source_version:
         type: string
       record_count:
         type: integer
@@ -2185,6 +2191,9 @@ definitions:
         - overwrite
         type: string
       locator:
+        type: string
+      raster_message:
+        description: GRIB 消息编号 | GRIB message name
         type: string
       source_unit:
         description: MAX 原始单位，缺省米 | MAX source unit, defaults to metres
@@ -5840,6 +5849,10 @@ paths:
         name: locator
         required: true
         type: string
+      - description: GRIB 消息编号 | GRIB message name
+        in: query
+        name: raster_message
+        type: string
       produces:
       - application/json
       responses:
@@ -6208,6 +6221,10 @@ paths:
         name: id
         required: true
         type: integer
+      - description: GRIB 源版本 | GRIB source version
+        in: query
+        name: source_version
+        type: string
       produces:
       - application/octet-stream
       responses:

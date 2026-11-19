@@ -857,18 +857,18 @@ func ensureRasterCOGSchema(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_current_unique
-		ON manager.raster_cog (tenant_id, item_fingerprint)
-		WHERE deleted_at IS NULL AND status <> 'deleted'
-	`).Error; err != nil {
-		return err
-	}
-	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_tasks_source_unique
-		ON manager.task_definitions (tenant_id, task_type, (config->'target'->>'item_fingerprint'))
-		WHERE deleted_at IS NULL AND task_type = 'raster_cog_generation'
-	`).Error; err != nil {
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return tx.Exec(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_current_message_unique
+            ON manager.raster_cog (tenant_id, item_fingerprint, (coalesce(metadata->'grib_map'->>'message', '')))
+            WHERE deleted_at IS NULL AND status <> 'deleted';
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_tasks_source_message_unique
+            ON manager.task_definitions (tenant_id, task_type, (config->'target'->>'item_fingerprint'), (coalesce(config->'raster'->>'message', '')))
+            WHERE deleted_at IS NULL AND task_type = 'raster_cog_generation';
+            DROP INDEX IF EXISTS manager.idx_raster_cog_current_unique;
+            DROP INDEX IF EXISTS manager.idx_raster_cog_tasks_source_unique;
+        `).Error
+	}); err != nil {
 		return err
 	}
 	if err := db.Exec(`

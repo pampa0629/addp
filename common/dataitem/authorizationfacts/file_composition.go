@@ -56,7 +56,7 @@ func (b *FileCompositionBoundary) PrimaryRole() string {
 	if b != nil && b.Format == "geojson" {
 		return "data"
 	}
-	if b != nil && b.Format == "geopackage" {
+	if b != nil && (b.Format == "geopackage" || b.Format == "grib") {
 		return "container"
 	}
 	if b.ImageFormat() {
@@ -80,7 +80,7 @@ func (b *FileCompositionBoundary) DataType() string {
 	switch b.Format {
 	case "geojson":
 		return "table"
-	case "geopackage":
+	case "geopackage", "grib":
 		return "container"
 	case "envi", "jpeg", "tiff":
 		return "media"
@@ -144,7 +144,7 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	if (b.Format == "jpeg" || b.Format == "geojson") && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
 		return errFileComposition
 	}
-	if b.Format == "geopackage" && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != "container") {
+	if (b.Format == "geopackage" || b.Format == "grib") && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
 		return errFileComposition
 	}
 	primaryIndex := -1

@@ -271,6 +271,7 @@ func main() {
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
 	vectorMaterializedViewTaskSvc := service.NewVectorMaterializedViewTaskService(vectorMaterializedViewRepo, taskExecRepo)
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo)
+	rasterCOGTaskSvc.SetGRIBMapProtection(protectionStore)
 	rasterCOGTaskSvc.SetSourceAuthorizationClients(metaClient, systemClient, commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil), systemServiceClient)
 	rasterMosaicTaskSvc := service.NewRasterMosaicTaskService(rasterMosaicRepo, taskExecRepo)
 	vectorTileSetTaskSvc := service.NewVectorTileSetTaskService(vectorTileSetRepo, taskExecRepo)

@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugins/objectstore"
 	"github.com/addp/common/engine/workflowaccess"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
@@ -67,10 +68,12 @@ func NewManagerRasterCOGExecutor(
 }
 
 func (e *ManagerRasterCOGExecutor) BuildRasterCOG(ctx context.Context, req RasterCOGExecutionRequest) (*RasterCOGExecutionResult, error) {
-	if req.Config.Raster.SourceFormat == "envi" || req.Config.Raster.SourceFormat == "tiff" {
+	if commonExecution.ManagerRasterCOGSourceFormat(req.Config.Raster.SourceFormat) {
 		withSource := e.withENVISource
 		if req.Config.Raster.SourceFormat == "tiff" {
 			withSource = e.withTIFFSource
+		} else if req.Config.Raster.SourceFormat == "grib" {
+			withSource = e.withGRIBSource
 		}
 		var result *RasterCOGExecutionResult
 		err := withSource(ctx, req, func(ctx context.Context, source workflowaccess.Source) error {
@@ -102,15 +105,20 @@ func (e *ManagerRasterCOGExecutor) buildRasterCOG(ctx context.Context, req Raste
 	if err != nil {
 		return nil, err
 	}
+	options := commonModels.JSONMap{
+		"source_crs":  rasterCOGSourceCRS(req.Config.Raster),
+		"compression": req.Config.COG.Compression, "blocksize": req.Config.COG.BlockSize,
+		"overview_resampling": strings.ToLower(req.Config.COG.OverviewResampling),
+	}
+	if req.Config.Raster.SourceFormat == "grib" {
+		options["source_crs"] = ""
+		options["grib_map_selection"] = commonModels.JSONMap{"message": req.Config.Raster.Message, "source_version": req.Config.Raster.SourceVersion}
+	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		TenantID: req.Task.TenantID,
 		Params: map[string]interface{}{
 			"access_plan": plan.JSONMap(),
-			"options": commonModels.JSONMap{
-				"source_crs":  rasterCOGSourceCRS(req.Config.Raster),
-				"compression": req.Config.COG.Compression, "blocksize": req.Config.COG.BlockSize,
-				"overview_resampling": strings.ToLower(req.Config.COG.OverviewResampling),
-			},
+			"options":     options,
 		},
 	})
 	if err != nil {
@@ -125,6 +133,12 @@ func (e *ManagerRasterCOGExecutor) buildRasterCOG(ctx context.Context, req Raste
 	}
 
 	facts := operatorInvokeJSONFacts(invokeResult)
+	if req.Config.Raster.SourceFormat == "grib" {
+		selection, _ := asJSONMap(facts["grib_map_selection"])
+		if jsonString(facts["map_profile"]) != GRIBTemperatureMapProfile || jsonString(selection["message"]) != req.Config.Raster.Message || jsonString(selection["source_version"]) != req.Config.Raster.SourceVersion {
+			return nil, errors.New("GRIB map result differs from the selected source message")
+		}
+	}
 	sourceSRID := authoritativeRasterSRID(jsonInt(facts["source_srid"]), jsonInt(facts["extent_srid"]), req.Config.Raster.SourceSRID)
 	extentSRID := authoritativeExtentSRID(jsonInt(facts["extent_srid"]), req.Config.Raster.ExtentSRID, sourceSRID)
 	sourceCRS := authoritativeRasterCRS(jsonString(facts["source_crs"]), req.Config.Raster.SourceCRS, sourceSRID)
@@ -238,11 +252,11 @@ func (e *ManagerRasterCOGExecutor) prepareAccessPlanForSource(ctx context.Contex
 	if locator.EngineID != engine.ID || locator.FullName() != req.Config.Target.FullName {
 		return workflowaccess.Plan{}, nil, errors.New("source locator does not match COG source")
 	}
-	if req.Config.Raster.SourceFormat != "tiff" && req.Config.Raster.SourceFormat != "img" && req.Config.Raster.SourceFormat != "jpeg2000" && req.Config.Raster.SourceFormat != "envi" {
-		return workflowaccess.Plan{}, nil, errors.New("raster COG source_format must be tiff, img, jpeg2000 or envi")
+	if !commonExecution.ManagerRasterCOGSourceFormat(req.Config.Raster.SourceFormat) && req.Config.Raster.SourceFormat != "img" && req.Config.Raster.SourceFormat != "jpeg2000" {
+		return workflowaccess.Plan{}, nil, errors.New("raster COG source_format must be tiff, img, jpeg2000, envi or grib")
 	}
 	var source workflowaccess.Source
-	if req.Config.Raster.SourceFormat == "envi" || req.Config.Raster.SourceFormat == "tiff" {
+	if commonExecution.ManagerRasterCOGSourceFormat(req.Config.Raster.SourceFormat) {
 		if prepared == nil || req.SourceAuthorization == nil || req.SourceAuthorization.validateConfig(req.Config) != nil {
 			return workflowaccess.Plan{}, nil, ErrFileSourceAuthorizationRequired
 		}

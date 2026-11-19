@@ -35,7 +35,7 @@ func (s *RasterCOGTaskService) sourceSnapshot(ctx context.Context, tenant uint, 
 		return nil, engineaccess.ErrUnavailable
 	}
 	item, err := s.sourceMeta.GetItemSnapshot(ctx, tenant, config.Target.SourceEngineID, config.Target.ItemID, config.Target.FullName)
-	if errors.Is(err, commonAPI.ErrNotFound) && config.Raster.SourceFormat != "envi" && config.Raster.SourceFormat != "tiff" {
+	if errors.Is(err, commonAPI.ErrNotFound) && !commonExecution.ManagerRasterCOGSourceFormat(config.Raster.SourceFormat) {
 		return nil, nil
 	}
 	if err != nil {
@@ -68,6 +68,9 @@ func validateRasterSourceConfig(item *commonModels.MetaItem, actual RasterCOGRas
 		return ErrFileSourceAuthorizationRequired
 	}
 	facts := RasterQuickViewSourceFromAttributes(item.Attributes, "", item.EngineID)
+	if actual.SourceFormat == "grib" {
+		facts = GRIBRasterQuickViewSource(item.Attributes, actual.Message)
+	}
 	if facts == nil || facts.Format != actual.SourceFormat || len(facts.Extent) != 4 || (facts.SourceSRID <= 0 && facts.SourceCRS == "") {
 		return ErrFileSourceAuthorizationRequired
 	}
@@ -79,7 +82,7 @@ func validateRasterSourceConfig(item *commonModels.MetaItem, actual RasterCOGRas
 	if facts.Format == "tiff" && len(facts.ContentVersions) == 0 {
 		return ErrFileSourceAuthorizationRequired
 	}
-	expected := RasterCOGRasterConfig{SourceFormat: facts.Format, ContentVersions: facts.ContentVersions, SourceProfile: facts.Profile, SourceSizeBytes: facts.SizeBytes, HeaderSHA256: facts.HeaderSHA256, RasterSHA256: facts.RasterSHA256, Width: facts.Width, Height: facts.Height, BandCount: facts.BandCount, SourceSRID: facts.SourceSRID, SourceCRS: facts.SourceCRS, Extent: facts.Extent, ExtentSRID: facts.ExtentSRID}
+	expected := RasterCOGRasterConfig{SourceFormat: facts.Format, Message: facts.Message, SourceVersion: facts.SourceVersion, ContentVersions: facts.ContentVersions, SourceProfile: facts.Profile, SourceSizeBytes: facts.SizeBytes, HeaderSHA256: facts.HeaderSHA256, RasterSHA256: facts.RasterSHA256, Width: facts.Width, Height: facts.Height, BandCount: facts.BandCount, SourceSRID: facts.SourceSRID, SourceCRS: facts.SourceCRS, Extent: facts.Extent, ExtentSRID: facts.ExtentSRID}
 	if !reflect.DeepEqual(expected, actual) {
 		return ErrFileSourceAuthorizationRequired
 	}
@@ -105,8 +108,13 @@ func (s *RasterCOGTaskService) freezeRasterSourceExecution(ctx context.Context, 
 		return false, err
 	}
 	item, err := s.sourceSnapshot(ctx, snapshot.TenantID, cfg)
-	if err != nil || cfg.Raster.SourceFormat != "envi" && cfg.Raster.SourceFormat != "tiff" {
+	if err != nil || !commonExecution.ManagerRasterCOGSourceFormat(cfg.Raster.SourceFormat) {
 		return false, err
+	}
+	if cfg.Raster.SourceFormat == "grib" {
+		if err := s.checkGRIBMapProtection(ctx, snapshot.TenantID, cfg.Target.ItemFingerprint); err != nil {
+			return true, err
+		}
 	}
 	if execution.ParentExecutionID != nil || execution.Source != commonExecution.ModuleManager || execution.TriggerType != commonExecution.TriggerTypeManual || credential == "" {
 		return true, ErrFileSourceAuthorizationRequired
@@ -133,6 +141,9 @@ func (s *RasterCOGTaskService) freezeRasterSourceExecution(ctx context.Context, 
 	}
 
 	name := safeCOGFileName(defaultRasterCOGFileName(cfg.Target.FullName))
+	if cfg.Raster.Message != "" {
+		name = gribMapCOGFileName(cfg.Raster)
+	}
 	config["result"] = commonModels.JSONMap{"target_kind": models.RasterCOGTargetKindMinIO, "storage_ref": rastercogref.ObjectStorageRef(s.bucket, fmt.Sprintf("tenant_%d/cog/%s/%s", snapshot.TenantID, cfg.Target.ItemFingerprint, name)), "file_name": name}
 	config["config_version"] = commonExecution.ManagerRasterCOGConfigVersion
 	config["owner_task"] = map[string]string{"id": strconv.FormatUint(uint64(snapshot.TaskID), 10), "version": strconv.FormatUint(uint64(snapshot.Version), 10)}
@@ -164,11 +175,16 @@ func (s *RasterCOGTaskService) prepareRasterSourceClaim(ctx context.Context, exe
 	if err != nil {
 		return cfg, nil, err
 	}
-	if cfg.Raster.SourceFormat != "envi" && cfg.Raster.SourceFormat != "tiff" {
+	if !commonExecution.ManagerRasterCOGSourceFormat(cfg.Raster.SourceFormat) {
 		if object["config_version"] != nil || execution.ExecutionAuthorizationID != nil {
 			return cfg, nil, ErrFileSourceAuthorizationRequired
 		}
 		return cfg, nil, nil
+	}
+	if cfg.Raster.SourceFormat == "grib" {
+		if err := s.checkGRIBMapProtection(ctx, uint(execution.TenantID), cfg.Target.ItemFingerprint); err != nil {
+			return cfg, nil, err
+		}
 	}
 	composition, err := s.rasterCompositionFromMeta(ctx, uint(execution.TenantID), cfg, item)
 	if err != nil {
@@ -200,5 +216,5 @@ func (s *RasterCOGTaskService) rasterCompositionFromMeta(ctx context.Context, te
 	if !ok {
 		return nil, engineaccess.ErrUnavailable
 	}
-	return readTIFFCompositionFromMeta(ctx, reader, tenant, cfg.Target.ItemFingerprint, item)
+	return readFileCompositionFromMeta(ctx, reader, tenant, cfg.Target.ItemFingerprint, item, cfg.Raster.SourceFormat)
 }

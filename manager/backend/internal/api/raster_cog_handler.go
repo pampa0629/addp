@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	commonAPI "github.com/addp/common/api"
+	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/manager/internal/engineaccess"
@@ -39,6 +40,7 @@ func (h *RasterCOGHandler) SetSourceService(s *service.RasterCOGTaskService) { h
 // @Success 206 "部分 COG 内容流 | Partial COG content stream"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "COG 不存在或未就绪 | COG not found or not ready"
+// @Param source_version query string false "GRIB 源版本 | GRIB source version"
 // @Failure 416 {object} map[string]interface{} "Range 不可满足 | Range not satisfiable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "resource_ticket"
@@ -69,6 +71,13 @@ func (h *RasterCOGHandler) GetRasterCOGContent(c *gin.Context) {
 		return
 	}
 
+	if result.SourceProfile == service.GRIBTemperatureMapProfile {
+		commonAPI.NoStore(c)
+		if c.Query("source_version") == "" || c.Query("source_version") != commonjson.String(result.Metadata, "grib_map", "source_version") || !commonauth.HasAllRolePermissions(c, "manager.content.read") {
+			accessDeniedToEngine(c)
+			return
+		}
+	}
 	if h.sourceService == nil {
 		commonAPI.InternalServerError(c, "raster COG source authority unavailable")
 		return

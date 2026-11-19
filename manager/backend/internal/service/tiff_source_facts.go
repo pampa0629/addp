@@ -12,7 +12,7 @@ type fileCompositionFactsReader interface {
 }
 
 // TIFF stream reads and COG generation consume the same formal Meta boundary.
-func readTIFFCompositionFromMeta(ctx context.Context, reader fileCompositionFactsReader, tenant uint, fingerprint string, item *commonModels.MetaItem) (*authorizationfacts.FileCompositionBoundary, error) {
+func readFileCompositionFromMeta(ctx context.Context, reader fileCompositionFactsReader, tenant uint, fingerprint string, item *commonModels.MetaItem, format string) (*authorizationfacts.FileCompositionBoundary, error) {
 	batch, err := reader.ReadAuthorizationFacts(ctx, tenant, []string{fingerprint})
 	if err != nil {
 		return nil, engineaccess.ErrUnavailable
@@ -21,7 +21,7 @@ func readTIFFCompositionFromMeta(ctx context.Context, reader fileCompositionFact
 	facts := batch.Data[0].Facts
 	if facts == nil || item == nil || facts.EngineID != item.EngineID || facts.FullName != item.FullName ||
 		facts.ItemType != item.ItemType || facts.BasisState != authorizationfacts.AuthorizationBasisComplete ||
-		facts.Boundary == nil || facts.Boundary.FileComposition == nil || facts.Boundary.FileComposition.Format != "tiff" {
+		facts.Boundary == nil || facts.Boundary.FileComposition == nil || facts.Boundary.FileComposition.Format != format {
 		return nil, ErrFileSourceAuthorizationRequired
 	}
 	return facts.Boundary.FileComposition.Clone(), nil

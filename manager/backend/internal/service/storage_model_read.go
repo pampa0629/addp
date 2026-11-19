@@ -119,7 +119,7 @@ func (s *MetadataService) prepareStorageRead(ctx context.Context, target *Storag
 	var err error
 	switch {
 	case tiffPreview:
-		composition, err = readTIFFCompositionFromMeta(ctx, s.metaClient, *tenantID, target.ItemFingerprint, item)
+		composition, err = readFileCompositionFromMeta(ctx, s.metaClient, *tenantID, target.ItemFingerprint, item, "tiff")
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			return nil, commonClient.ErrManagerPreviewReadUnavailable
 		}

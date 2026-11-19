@@ -13,11 +13,13 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataitem"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
 )
@@ -68,6 +70,8 @@ type RasterCOGTargetConfig struct {
 }
 
 type RasterCOGRasterConfig struct {
+	Message         string
+	SourceVersion   string
 	ContentVersions []dataitem.ContentVersion
 	SourceFormat    string
 	SourceProfile   string
@@ -96,6 +100,7 @@ type RasterCOGTargetResultConfig struct {
 }
 
 type RasterCOGTaskService struct {
+	protection     managerprotection.UnmanagedDataItemGate
 	repo           *repository.RasterCOGRepository
 	executor       RasterCOGExecutor
 	cleaner        RasterCOGCleaner
@@ -135,7 +140,7 @@ func (s *RasterCOGTaskService) Create(ctx context.Context, task *models.RasterCO
 	if err != nil {
 		return err
 	}
-	existing, err := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Target.ItemFingerprint)
+	existing, err := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Target.ItemFingerprint, cfg.Raster.Message)
 	if err != nil {
 		return err
 	}
@@ -144,7 +149,7 @@ func (s *RasterCOGTaskService) Create(ctx context.Context, task *models.RasterCO
 	}
 	if err := s.repo.CreateTask(ctx, task); err != nil {
 		if repository.IsTaskSemanticConflict(err, commonExecution.TaskTypeRasterCOGGeneration) {
-			existing, lookupErr := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Target.ItemFingerprint)
+			existing, lookupErr := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Target.ItemFingerprint, cfg.Raster.Message)
 			if lookupErr != nil {
 				return lookupErr
 			}
@@ -314,7 +319,9 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 
 	if err == nil && sourceAuthorization != nil {
 		metadata["file_source_scope"] = sourceAuthorization.scope.Clone()
-		if execCfg.Raster.SourceFormat == "tiff" {
+		if execCfg.Raster.SourceFormat == "grib" {
+			metadata["grib_map"] = commonModels.JSONMap{"message": execCfg.Raster.Message, "source_version": execCfg.Raster.SourceVersion}
+		} else if execCfg.Raster.SourceFormat == "tiff" {
 			metadata["source_version"] = commonModels.JSONMap{"content_versions": execCfg.Raster.ContentVersions}
 		} else {
 			metadata["source_version"] = commonModels.JSONMap{"header_sha256": execCfg.Raster.HeaderSHA256, "raster_sha256": execCfg.Raster.RasterSHA256}
@@ -395,7 +402,10 @@ func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.R
 		},
 	}
 
-	existing, err := s.repo.GetCurrentByFingerprint(ctx, task.TenantID, execCfg.Target.ItemFingerprint)
+	if execCfg.Raster.SourceFormat == "grib" {
+		metadata["grib_map"] = commonModels.JSONMap{"message": execCfg.Raster.Message, "source_version": execCfg.Raster.SourceVersion}
+	}
+	existing, err := s.repo.GetCurrentByFingerprint(ctx, task.TenantID, execCfg.Target.ItemFingerprint, execCfg.Raster.Message)
 	if err != nil {
 		return nil, err
 	}
@@ -411,6 +421,14 @@ func (s *RasterCOGTaskService) prepareResult(ctx context.Context, task *models.R
 		for _, p := range preparations {
 			if !p.Cleaned {
 				return nil, commonAPI.ErrConflict
+			}
+		}
+		if execCfg.Raster.SourceFormat == "grib" && existing.StorageRef != execCfg.Result.StorageRef {
+			if s.cleaner == nil {
+				return nil, errors.New("GRIB map requires managed artifact cleanup")
+			}
+			if err := s.cleaner.DeleteByStorageRef(ctx, existing.StorageRef); err != nil {
+				return nil, err
 			}
 		}
 		fields := map[string]interface{}{
@@ -517,11 +535,14 @@ func normalizeRasterCOGTaskConfig(config commonModels.JSONMap, bucket string, te
 	if err != nil {
 		return RasterCOGExecutionConfig{}, err
 	}
-	if raster.SourceFormat != "tiff" && raster.SourceFormat != "img" && raster.SourceFormat != "jpeg2000" && raster.SourceFormat != "envi" {
-		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff, img, jpeg2000 or envi")
+	if !commonExecution.ManagerRasterCOGSourceFormat(raster.SourceFormat) && raster.SourceFormat != "img" && raster.SourceFormat != "jpeg2000" {
+		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff, img, jpeg2000, envi or grib")
 	}
 	cog := normalizeRasterCOGOptions(config)
-	result := normalizeRasterCOGTargetResult(config, target, bucket, tenantID)
+	if raster.SourceFormat == "grib" && (cog.BlockSize != 256 || !strings.EqualFold(cog.OverviewResampling, "nearest")) {
+		return RasterCOGExecutionConfig{}, errors.New("GRIB COG requires 256 pixel tiles and nearest overviews")
+	}
+	result := normalizeRasterCOGTargetResult(config, target, raster, bucket, tenantID)
 	return RasterCOGExecutionConfig{Target: target, Raster: raster, COG: cog, Result: result}, nil
 }
 
@@ -574,6 +595,8 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) (RasterCOGRasterConfi
 	rasterMap, _ := asJSONMap(config["raster"])
 	raster := RasterCOGRasterConfig{
 		SourceFormat:    stringFromConfig(rasterMap["source_format"]),
+		Message:         stringFromConfig(rasterMap["message"]),
+		SourceVersion:   stringFromConfig(rasterMap["source_version"]),
 		SourceProfile:   firstNonEmptyConfig(stringFromConfig(rasterMap["source_profile"]), "unknown"),
 		SourceSizeBytes: int64FromConfig(rasterMap["source_size_bytes"], 0),
 		HeaderSHA256:    stringFromConfig(rasterMap["header_sha256"]),
@@ -601,6 +624,15 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) (RasterCOGRasterConfi
 		"width":             raster.Width,
 		"height":            raster.Height,
 		"band_count":        raster.BandCount,
+	}
+	if raster.SourceFormat == "grib" {
+		if !validGRIBMapMessage(raster.Message) || !format.ValidContainerSourceVersion(raster.SourceVersion) {
+			return raster, ErrFileSourceAuthorizationRequired
+		}
+		normalized["message"] = raster.Message
+		normalized["source_version"] = raster.SourceVersion
+	} else if raster.Message != "" || raster.SourceVersion != "" {
+		return raster, ErrFileSourceAuthorizationRequired
 	}
 	if raster.SourceSRID > 0 {
 		normalized["source_srid"] = raster.SourceSRID
@@ -643,11 +675,14 @@ func normalizeRasterCOGOptions(config commonModels.JSONMap) RasterCOGOptionsConf
 	return opts
 }
 
-func normalizeRasterCOGTargetResult(config commonModels.JSONMap, target RasterCOGTargetConfig, bucket string, tenantID uint) RasterCOGTargetResultConfig {
+func normalizeRasterCOGTargetResult(config commonModels.JSONMap, target RasterCOGTargetConfig, raster RasterCOGRasterConfig, bucket string, tenantID uint) RasterCOGTargetResultConfig {
 	resultMap, _ := asJSONMap(config["result"])
 	fileName := stringFromConfig(resultMap["file_name"])
 	if fileName == "" {
 		fileName = defaultRasterCOGFileName(target.FullName)
+		if raster.SourceFormat == "grib" {
+			fileName = gribMapCOGFileName(raster)
+		}
 	}
 	storageRef := stringFromConfig(resultMap["storage_ref"])
 	if storageRef == "" {

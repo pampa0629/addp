@@ -132,6 +132,50 @@ def test_ecmwf_01_instant_original_messages_through_native_worker():
         assert message['packing']['bits_per_value'] == bits
 
 
+def test_grib_map_cog_keeps_message_identity_and_world_bounds(tmp_path):
+    from osgeo import gdal
+    from operators.raster_compute import raster_to_cog, validate_layout
+
+    fixtures = ROOT / 'business/fixtures/manager'
+    initial = (fixtures / 'ecmwf-ifs-20261117-2t-0p1-initial.grib2').read_bytes()
+    assert sha256(initial).hexdigest() == '7902e79e5ef98b1972298251db7ae327019b6b1e3d2f2617e12896c26b9f4071'
+    source = tmp_path / 'forecast.grib2'
+    raw = initial + (fixtures / 'ecmwf-ifs-20261117-instant-0p1.grib2').read_bytes()
+    source.write_bytes(raw)
+    version = 'sha256:' + sha256(raw).hexdigest()
+    plan = {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+        'kind': 'file', 'format': 'grib', 'access': {'method': 'mounted_path', 'path': str(source)},
+    }}
+    children = grib.OPERATORS['grib.inspect']['function'](access_plan=plan)['container']['children']
+    assert [child['native'].get('map_profile') for child in children] == [grib.MAP_PROFILE] * 2 + [None, None]
+    maps = []
+    for message in ('message-1', 'message-2'):
+        target = tmp_path / (message + '.tif')
+        access = {**plan, 'target': {'kind': 'file', 'format': 'tiff', 'name': target.name, 'write_mode': 'replace',
+                                    'access': {'method': 'mounted_path', 'path': str(target)}}}
+        selection = {'source_version': version, 'message': message}
+        result = raster_to_cog(access, {'grib_map_selection': selection})
+        assert result['grib_map_selection'] == selection and result['map_profile'] == grib.MAP_PROFILE
+        assert result['extent'] == [-180, -90, 180, 90]
+        ds = gdal.Open(str(target))
+        assert ds.GetSpatialRef().GetSemiMajor() == 6371229 and ds.GetSpatialRef().GetSemiMinor() == 6371229
+        assert (ds.RasterXSize, ds.RasterYSize) == (4096, 2048)
+        assert not validate_layout(ds, full_check=True)[1]
+        band = ds.GetRasterBand(1)
+        assert band.GetBlockSize() == [256, 256] and band.GetUnitType() == 'K'
+        values = band.ReadAsArray()
+        np.testing.assert_array_equal(values[:, 0], values[:, -1])
+        maps.append(values)
+        del band, ds
+    assert maps[0][1023, 0] != maps[1][1023, 0]
+    assert float(maps[1][0, 2275]) == 254.3425750732422
+    assert float(maps[1][-1, 2275]) == 240.8425750732422
+    for selection in ({'source_version': version, 'message': 'message-3'},
+                      {'source_version': 'sha256:' + '0' * 64, 'message': 'message-1'}):
+        with pytest.raises(ValueError, match='GRIB map'):
+            raster_to_cog(access, {'grib_map_selection': selection})
+
+
 def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
     docker=(ROOT/'engines/geopython-workflow/Dockerfile').read_text()
     smoke=docker.split("RUN python - <<'PYGRIB'\n",1)[1].split('\nPYGRIB',1)[0]

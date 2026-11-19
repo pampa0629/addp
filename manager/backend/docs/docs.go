@@ -3409,6 +3409,12 @@ const docTemplate = `{
                         "name": "locator",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "GRIB 消息编号 | GRIB message name",
+                        "name": "raster_message",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3930,6 +3936,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "GRIB 源版本 | GRIB source version",
+                        "name": "source_version",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -9187,6 +9199,9 @@ const docTemplate = `{
                 "geometry_column": {
                     "type": "string"
                 },
+                "map_profile": {
+                    "type": "string"
+                },
                 "max_zoom": {
                     "type": "integer"
                 },
@@ -9197,6 +9212,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "preview_url": {
+                    "type": "string"
+                },
+                "raster_message": {
+                    "type": "string"
+                },
+                "raster_source_version": {
                     "type": "string"
                 },
                 "record_count": {
@@ -9826,6 +9847,10 @@ const docTemplate = `{
                     ]
                 },
                 "locator": {
+                    "type": "string"
+                },
+                "raster_message": {
+                    "description": "GRIB 消息编号 | GRIB message name",
                     "type": "string"
                 },
                 "source_unit": {

@@ -26,6 +26,7 @@ export async function waitForRasterCOGExecution(executionID, fetchExecutionStatu
 
   let lastExecution = null
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (options.signal?.aborted) return { completed: false, success: false, status: '' }
     const execution = executionPayload(await fetchExecutionStatus(id))
     lastExecution = execution
     const status = cleanString(execution?.status).toLowerCase()

@@ -214,6 +214,8 @@ type QuickViewSource struct {
 }
 
 type RasterQuickViewSource struct {
+	Message             string
+	SourceVersion       string
 	ContentVersions     []dataitem.ContentVersion
 	Layout              string
 	HeaderSHA256        string
@@ -379,6 +381,9 @@ type QuickViewRealtimeTileInfo struct {
 }
 
 type QuickViewRenderInfo struct {
+	MapProfile          string                  `json:"map_profile,omitempty"`
+	RasterMessage       string                  `json:"raster_message,omitempty"`
+	RasterSourceVersion string                  `json:"raster_source_version,omitempty"`
 	RenderSource        string                  `json:"render_source,omitempty"`
 	TileFormat          string                  `json:"tile_format,omitempty"`
 	TileURLTemplate     string                  `json:"tile_url_template,omitempty"`
@@ -1786,7 +1791,7 @@ func (s *QuickViewService) readyRasterCOG(ctx context.Context, identity QuickVie
 	if s.rasterCOGRepo == nil || strings.TrimSpace(identity.ItemFingerprint) == "" {
 		return nil, nil
 	}
-	result, err := s.rasterCOGRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+	result, err := s.rasterCOGRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint, raster.Message)
 	if err != nil || result == nil {
 		return nil, err
 	}
@@ -1906,6 +1911,9 @@ func rasterCOGFactsMatch(result *models.RasterCOG, identity QuickViewIdentity, r
 	}
 	if raster == nil {
 		return true
+	}
+	if raster.Format == "grib" && !gribCOGVersionMatches(result, raster) {
+		return false
 	}
 	if raster.Format == "envi" {
 		if !enviRasterCOGVersionMatches(result, raster) {
@@ -2264,6 +2272,11 @@ func renderInfoFromRasterCOG(result *models.RasterCOG, raster *RasterQuickViewSo
 	}
 	if info.SourceSRID <= 0 && raster != nil {
 		info.SourceSRID = raster.SourceSRID
+	}
+	if raster != nil && raster.Format == "grib" {
+		info.MapProfile = GRIBTemperatureMapProfile
+		info.RasterMessage = raster.Message
+		info.RasterSourceVersion = raster.SourceVersion
 	}
 	extent, extentSRID := rasterCOGExtentForQuickView(result, raster)
 	if len(extent) == 4 {
@@ -2639,7 +2652,11 @@ func rasterCOGContentURL(result *models.RasterCOG) string {
 	if result == nil || result.ID == 0 {
 		return ""
 	}
-	return fmt.Sprintf("/api/v1/manager/raster_cog/%d/content", result.ID)
+	url := fmt.Sprintf("/api/v1/manager/raster_cog/%d/content", result.ID)
+	if result.SourceProfile == GRIBTemperatureMapProfile {
+		url += "?source_version=" + commonJSON.String(result.Metadata, "grib_map", "source_version")
+	}
+	return url
 }
 
 func applyRenderableWGS84Extent(info *QuickViewRenderInfo, meta *SpatialMetadataResult) {
@@ -2695,7 +2712,7 @@ func rasterUnavailableReason(raster *RasterQuickViewSource, maxBytes, maxPixels 
 	if raster.SourceSRID <= 0 && strings.TrimSpace(raster.SourceCRS) == "" {
 		return RasterUnavailableReasonMissingCRS
 	}
-	if raster.Format == "img" || raster.Format == "jpeg2000" || raster.Format == "envi" || (raster.Format == "tiff" && raster.Layout == "multi") {
+	if raster.Format == "grib" || raster.Format == "img" || raster.Format == "jpeg2000" || raster.Format == "envi" || (raster.Format == "tiff" && raster.Layout == "multi") {
 		return RasterUnavailableReasonRequiresCOGGeneration
 	}
 	if strings.TrimSpace(raster.PreviewURL) == "" {

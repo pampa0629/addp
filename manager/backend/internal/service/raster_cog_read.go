@@ -61,7 +61,7 @@ func (s *RasterCOGTaskService) CheckResultRead(ctx context.Context, result *mode
 	}
 	actual := commonjson.String(item.Attributes, "item", "format")
 	_, hasScope := result.Metadata["file_source_scope"]
-	if actual != "envi" && actual != "tiff" {
+	if !commonExecution.ManagerRasterCOGSourceFormat(actual) {
 		if hasScope {
 			return ErrFileSourceAuthorizationRequired
 		}
@@ -83,7 +83,15 @@ func (s *RasterCOGTaskService) CheckResultRead(ctx context.Context, result *mode
 	if !reflect.DeepEqual(composition, &scope.FileComposition) {
 		return ErrFileSourceAuthorizationRequired
 	}
-	if actual == "tiff" {
+	if actual == "grib" {
+		if err := s.checkGRIBMapProtection(ctx, result.TenantID, result.ItemFingerprint); err != nil {
+			return err
+		}
+		raster := GRIBRasterQuickViewSource(item.Attributes, commonjson.String(result.Metadata, "grib_map", "message"))
+		if !gribCOGVersionMatches(result, raster) {
+			return ErrFileSourceAuthorizationRequired
+		}
+	} else if actual == "tiff" {
 		versions, err := dataitem.TIFFContentVersionsFromAttributes(item.Attributes)
 		if err != nil || !tiffRasterCOGVersionMatches(result, versions) {
 			return ErrFileSourceAuthorizationRequired

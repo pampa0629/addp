@@ -5,9 +5,10 @@ export const quickViewAPI = {
     return request.get('/manager/preview-state', { params: { locator } })
   },
 
-  getQuickViewCapabilityByLocator(locator) {
+  getQuickViewCapabilityByLocator(locator, rasterMessage, signal) {
     return request.get('/manager/quick-view/capability', {
-      params: { locator }
+      params: rasterMessage ? { locator, raster_message: rasterMessage } : { locator },
+      signal
     })
   },
 

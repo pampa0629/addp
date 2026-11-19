@@ -6,7 +6,7 @@
         <span v-if="rasterSummary" class="raster-summary">{{ rasterSummary }}</span>
       </div>
       <div class="raster-controls">
-        <el-select v-model="baseMapType" size="small" class="base-map-select">
+        <el-select v-if="!isGRIBTemperatureMap" v-model="baseMapType" size="small" class="base-map-select">
           <el-option
             v-for="item in rasterBaseMapOptions"
             :key="item.value"
@@ -50,6 +50,10 @@
       </div>
     </div>
 
+    <div v-if="isGRIBTemperatureMap" class="grib-legend" aria-label="K">
+      <div class="grib-legend-ramp" />
+      <div class="grib-legend-labels"><span>≤ 225 K</span><span>255 K</span><span>285 K</span><span>≥ 315 K</span></div>
+    </div>
     <div class="raster-map-wrap">
       <div v-if="loading" class="loading-overlay">
         <div class="loading-content">
@@ -81,7 +85,8 @@ import { useI18n } from 'vue-i18n'
 import { fromUrl as tiffFromUrl } from 'geotiff'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
-import { toLonLat } from 'ol/proj.js'
+import { addProjection, get as getProjection, toLonLat } from 'ol/proj.js'
+import Projection from 'ol/proj/Projection.js'
 import GeoTIFFSource from 'ol/source/GeoTIFF'
 import XYZ from 'ol/source/XYZ.js'
 import TileLayer from 'ol/layer/Tile.js'
@@ -149,6 +154,7 @@ let mapMoveEndKey = null
 let viewInitialized = false
 
 const quickViewInfo = computed(() => props.status?.quick_view || {})
+const isGRIBTemperatureMap = computed(() => quickViewInfo.value.map_profile === 'ecmwf_ifs_01_temperature/v1')
 const rasterInfo = computed(() => props.status?.raster || {})
 const rasterMosaicInfo = computed(() => props.status?.raster_mosaic || {})
 
@@ -173,7 +179,9 @@ const rasterBaseMapOptions = computed(() => {
   return rasterQuickViewBaseMapOptions(baseMapOptions.value)
 })
 const rasterBandCount = computed(() => Number(rasterInfo.value.band_count || 0))
-const rasterTitle = computed(() => isMosaicQuickView.value
+const rasterTitle = computed(() => isGRIBTemperatureMap.value
+  ? t('manager.spatialPreview.gribTemperatureMap')
+  : isMosaicQuickView.value
   ? t('manager.spatialPreview.rasterMosaicQuickView')
   : t('manager.spatialPreview.rasterTIFFQuickView')
 )
@@ -213,12 +221,25 @@ function formatBytes(bytes) {
   return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`
 }
 
-function renderExtentInWebMercator() {
+function gribTemperatureProjection() {
+  const code = 'ADDP:ECMWF_SPHERE_6371229'
+  const existing = getProjection(code)
+  if (existing) return existing
+  const projection = new Projection({
+    code, units: 'degrees', extent: [-180, -90, 180, 90], worldExtent: [-180, -90, 180, 90],
+    global: true, metersPerUnit: 6371229 * Math.PI / 180
+  })
+  addProjection(projection)
+  return projection
+}
+
+function renderExtentForView() {
+  if (isGRIBTemperatureMap.value) return quickViewInfo.value.extent
   return rasterWebMercatorExtent(quickViewInfo.value)
 }
 
 function fitToExtent({ duration = 0 } = {}) {
-  const extent = renderExtentInWebMercator()
+  const extent = renderExtentForView()
   if (!map || !extent) return false
   viewInitialized = true
   map.getView().fit(extent, {
@@ -248,7 +269,7 @@ function applyMapViewState(state) {
   if (!map || !state) return false
   viewInitialized = true
   const view = map.getView()
-  view.setCenter(fromLonLat(state.center))
+  view.setCenter(isGRIBTemperatureMap.value ? state.center : fromLonLat(state.center))
   view.setZoom(state.zoom)
   view.setRotation(state.rotation || 0)
   return true
@@ -257,7 +278,8 @@ function applyMapViewState(state) {
 function emitMapViewState() {
   if (!map || !viewInitialized) return
   const view = map.getView()
-  const center = toLonLat(view.getCenter() || [0, 0])
+  const position = view.getCenter() || [0, 0]
+  const center = isGRIBTemperatureMap.value ? position : toLonLat(position)
   emit('view-state-change', {
     center,
     zoom: view.getZoom(),
@@ -303,6 +325,7 @@ function ensureBaseMapSelection() {
 }
 
 function createSelectedBaseLayers() {
+  if (isGRIBTemperatureMap.value) return []
   const selected = String(baseMapType.value || RASTER_QUICK_VIEW_GAODE_BASE_MAP)
   if (isTiandituRasterQuickViewBaseMap(selected)) {
     const layers = createTiandituBaseLayers({
@@ -391,8 +414,8 @@ async function createRasterLayer() {
   displayRangeSeq += 1
   const rangeSeq = displayRangeSeq
   const sourceOptions = createRasterSourceOptions()
-  const displayRange = rasterDisplayRangeFromMeta(rasterInfo.value) ||
-    await loadRasterDisplayRange(url, sourceOptions, rangeSeq)
+  const displayRange = isGRIBTemperatureMap.value ? null : (rasterDisplayRangeFromMeta(rasterInfo.value) ||
+    await loadRasterDisplayRange(url, sourceOptions, rangeSeq))
   if (seq !== sourceReadySeq) return null
   const sourceInfo = { url }
   if (displayRange) {
@@ -400,13 +423,14 @@ async function createRasterLayer() {
     sourceInfo.max = displayRange.max
     if (displayRange.nodata !== undefined) sourceInfo.nodata = displayRange.nodata
   }
-  const projection = rasterGeoTIFFProjectionFromQuickView(quickViewInfo.value)
+  const projection = isGRIBTemperatureMap.value ? gribTemperatureProjection() : rasterGeoTIFFProjectionFromQuickView(quickViewInfo.value)
   const sourceConfig = {
     sources: [sourceInfo],
     sourceOptions,
-    convertToRGB: 'auto',
-    normalize: true,
-    interpolate: true
+    convertToRGB: isGRIBTemperatureMap.value ? false : 'auto',
+    normalize: !isGRIBTemperatureMap.value,
+    interpolate: !isGRIBTemperatureMap.value,
+    wrapX: isGRIBTemperatureMap.value
   }
   if (projection) {
     sourceConfig.projection = projection
@@ -437,14 +461,24 @@ async function createRasterLayer() {
     error.value = t('manager.spatialPreview.loadRasterQuickViewFailed')
   })
   rasterSource = source
+  let style = { contrast: 0.18, exposure: 0.08, gamma: 0.9 }
+  if (isGRIBTemperatureMap.value) {
+    const ramp = getComputedStyle(mapEl.value)
+    const pixel = document.createElement('canvas').getContext('2d')
+    const stops = [[225, '--grib-cold'], [255, '--grib-cool'], [285, '--grib-warm'], [315, '--grib-hot']]
+      .flatMap(([value, token]) => {
+        pixel.clearRect(0, 0, 1, 1)
+        pixel.fillStyle = ramp.getPropertyValue(token).trim()
+        pixel.fillRect(0, 0, 1, 1)
+        const [r, g, b, alpha] = pixel.getImageData(0, 0, 1, 1).data
+        return [value, [r, g, b, alpha / 255]]
+      })
+    style = { color: ['interpolate', ['linear'], ['band', 1], ...stops] }
+  }
   return new WebGLTileLayer({
     source,
     opacity: rasterOpacity.value,
-    style: {
-      contrast: 0.18,
-      exposure: 0.08,
-      gamma: 0.9
-    },
+    style,
     zIndex: 10
   })
 }
@@ -533,7 +567,7 @@ async function initMap() {
   viewInitialized = false
   sourceReadySeq += 1
   const seq = sourceReadySeq
-  await loadMapConfig()
+  if (!isGRIBTemperatureMap.value) await loadMapConfig()
   if (sourceReadySeq !== seq) return
   ensureBaseMapSelection()
   if (!mapEl.value) return
@@ -548,7 +582,7 @@ async function initMap() {
   }
 
   const controls = defaultControls({ zoom: true })
-  const extentForControl = renderExtentInWebMercator()
+  const extentForControl = renderExtentForView()
   if (extentForControl) {
     controls.push(new ZoomToExtent({
       extent: extentForControl,
@@ -569,8 +603,11 @@ async function initMap() {
     ]),
     controls,
     view: new View({
-      center: fromLonLat(finiteMapViewState()?.center || centerFromExtent()),
-      zoom: finiteMapViewState()?.zoom || 8,
+      ...(isGRIBTemperatureMap.value ? {
+        center: [0, 0], projection: gribTemperatureProjection(), resolution: .72, multiWorld: true
+      } : {
+        center: fromLonLat(finiteMapViewState()?.center || centerFromExtent()), zoom: finiteMapViewState()?.zoom || 8
+      }),
       maxZoom: 19,
       minZoom: 1,
       enableRotation: false
@@ -650,11 +687,19 @@ watch(rasterOpacity, (opacity) => {
 
 <style scoped>
 .raster-tiff-quick-view {
+  --grib-cold: var(--el-color-primary-dark-2);
+  --grib-cool: var(--el-color-success);
+  --grib-warm: var(--el-color-warning);
+  --grib-hot: var(--el-color-danger);
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 320px;
 }
+
+.grib-legend { width: min(100%, 360px); padding: 0 12px 8px; }
+.grib-legend-ramp { height: 8px; background: linear-gradient(to right, var(--grib-cold), var(--grib-cool), var(--grib-warm), var(--grib-hot)); }
+.grib-legend-labels { display: flex; justify-content: space-between; font-size: 12px; }
 
 .raster-toolbar {
   flex: 0 0 auto;

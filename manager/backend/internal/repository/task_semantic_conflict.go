@@ -16,7 +16,7 @@ func IsTaskSemanticConflict(err error, taskType string) bool {
 	}
 	indexes := map[string]string{
 		commonExecution.TaskTypeVectorTileSetGeneration:       "idx_vector_tile_set_tasks_semantic_unique",
-		commonExecution.TaskTypeRasterCOGGeneration:           "idx_raster_cog_tasks_source_unique",
+		commonExecution.TaskTypeRasterCOGGeneration:           "idx_raster_cog_tasks_source_message_unique",
 		commonExecution.TaskTypeGaussianSplatKSplatGeneration: "idx_gaussian_splat_ksplat_tasks_source_unique",
 		commonExecution.TaskTypePointCloudCOPCGeneration:      "idx_point_cloud_copc_tasks_source_unique",
 		commonExecution.TaskTypeVectorTileCacheGeneration:     "idx_vector_tile_cache_tasks_source_profile_unique",

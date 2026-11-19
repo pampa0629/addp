@@ -1,6 +1,7 @@
 <template>
   <ContainerPreview class="grid-container-preview" :children="children" :selected-child-key="selectedName" :selector-label="t('gridPreview.variable')" @child-change="selectVariable">
     <template #child-details="{ child }">
+      <slot name="message-preview" :child="child" />
       <div class="grid-details" data-testid="grid-variable-details">
         <el-descriptions border size="small" :column="2">
           <el-descriptions-item :label="t('gridPreview.type')">{{ child.native?.type }}</el-descriptions-item>
@@ -33,7 +34,7 @@
             </table>
           </div>
           <slot v-if="slice.spatial" name="spatial" :spatial="slice.spatial" />
-          <el-text v-else type="info" data-testid="grid-no-location">{{ t(child.native?.grid ? 'gridPreview.noMapPreview' : 'gridPreview.noLocation') }}</el-text>
+          <el-text v-else-if="!child.native?.map_profile || !$slots['message-preview']" type="info" data-testid="grid-no-location">{{ t(child.native?.grid ? 'gridPreview.noMapPreview' : 'gridPreview.noLocation') }}</el-text>
         </template>
       </template>
       <el-empty v-else :description="t('gridPreview.unsupportedVariable')" />

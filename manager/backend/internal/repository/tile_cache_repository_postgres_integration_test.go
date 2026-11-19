@@ -800,7 +800,7 @@ func TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes(t *testing
 	}{
 		{commonExecution.TaskTypeVectorTileCacheGeneration, "idx_vector_tile_cache_tasks_source_profile_unique",
 			commonModels.JSONMap{"target": commonModels.JSONMap{"item_fingerprint": fingerprint}, "profile_hash": "profile-a"}},
-		{commonExecution.TaskTypeRasterCOGGeneration, "idx_raster_cog_tasks_source_unique",
+		{commonExecution.TaskTypeRasterCOGGeneration, "idx_raster_cog_tasks_source_message_unique",
 			commonModels.JSONMap{"target": commonModels.JSONMap{"item_fingerprint": fingerprint}}},
 	} {
 		t.Run(kind.taskType, func(t *testing.T) {
@@ -846,6 +846,43 @@ func TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes(t *testing
 			}
 		})
 	}
+	t.Run("GRIB messages are separate current results", func(t *testing.T) {
+		rollback := errors.New("rollback GRIB map identity probe")
+		err := db.Transaction(func(tx *gorm.DB) error {
+			repo := NewRasterCOGRepository(tx)
+			var results []uint
+			for _, message := range []string{"message-1", "message-2"} {
+				task := &models.RasterCOGTask{TenantID: tenantID, Name: message, Enabled: true, Config: commonModels.JSONMap{
+					"target": commonModels.JSONMap{"item_fingerprint": fingerprint},
+					"raster": commonModels.JSONMap{"source_format": "grib", "message": message},
+				}}
+				if err := repo.CreateTask(t.Context(), task); err != nil {
+					return err
+				}
+				loaded, err := repo.GetTaskByItemFingerprint(t.Context(), tenantID, fingerprint, message)
+				if err != nil || loaded == nil || loaded.ID != task.ID {
+					return fmt.Errorf("lookup GRIB task %s: %v", message, err)
+				}
+				result := &models.RasterCOG{TenantID: tenantID, ItemFingerprint: fingerprint, TaskID: &task.ID,
+					SourceEngineID: 14, TargetKind: models.RasterCOGTargetKindMinIO, StorageRef: "probe/" + message,
+					Status: models.RasterCOGStatusReady, Metadata: commonModels.JSONMap{"grib_map": commonModels.JSONMap{"message": message}}}
+				if err := repo.Create(t.Context(), result); err != nil {
+					return err
+				}
+				results = append(results, result.ID)
+			}
+			for i, message := range []string{"message-1", "message-2"} {
+				result, err := repo.GetLatestReadyByFingerprint(t.Context(), tenantID, fingerprint, message)
+				if err != nil || result == nil || result.ID != results[i] {
+					return fmt.Errorf("lookup GRIB current result %s: %v", message, err)
+				}
+			}
+			return rollback
+		})
+		if !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestIntegrationPostgresManagerDisablesTileCacheOwnerSchedule(t *testing.T) {

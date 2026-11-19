@@ -12,7 +12,7 @@ import (
 func TestTaskSemanticConflict(t *testing.T) {
 	for taskType, index := range map[string]string{
 		commonExecution.TaskTypeVectorTileCacheGeneration:     "idx_vector_tile_cache_tasks_source_profile_unique",
-		commonExecution.TaskTypeRasterCOGGeneration:           "idx_raster_cog_tasks_source_unique",
+		commonExecution.TaskTypeRasterCOGGeneration:           "idx_raster_cog_tasks_source_message_unique",
 		commonExecution.TaskTypeVectorTileSetGeneration:       "idx_vector_tile_set_tasks_semantic_unique",
 		commonExecution.TaskTypeModel3DGLBGeneration:          "idx_model_3d_glb_tasks_source_unique",
 		commonExecution.TaskTypeModel3DTilesGeneration:        "idx_model3d_tiles_tasks_source_format_unique",

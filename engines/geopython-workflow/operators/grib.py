@@ -15,7 +15,7 @@ import sys
 import tempfile
 import uuid
 import numpy as np
-from osgeo import gdal
+from osgeo import gdal, osr
 from addp_common.workflow_access import require_source_plan, stage_source_file
 from . import _native_process
 from .base import OperatorCategory, OperatorMetadata, OperatorParam, OperatorType, register_operator
@@ -25,6 +25,7 @@ MAX_MESSAGES = 128
 MAX_POINTS = 1 << 24
 MAX_TOTAL_POINTS = 1 << 26
 PROFILES = {1: 'grib1_regular_fields/v1', 2: 'grib2_regular_fields/v1'}
+MAP_PROFILE = 'ecmwf_ifs_01_temperature/v1'
 
 
 class SliceSelectionError(ValueError):
@@ -142,12 +143,8 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
         increment_seconds = {(250000, 250000): 450, (100000, 100000): 225}.get(spacing)
         if grid[38:42] != bytes(4) or increment_seconds is None or grid[71] != 0:
             raise ValueError('unsupported ECMWF CCSDS precipitation grid')
-        if increment_seconds == 225:
-            if (grid[14] != 6 or grid[42:46] != b'\xff' * 4 or grid[54] != 48
-                    or struct.unpack('>II', grid[30:38]) != (3600, 1801)
-                    or _signed(grid[46:50]) != 90000000 or _signed(grid[50:54]) != 180000000
-                    or _signed(grid[55:59]) != -90000000 or _signed(grid[59:63]) != 179900000):
-                raise ValueError('unsupported ECMWF CCSDS precipitation 0.1 grid')
+        if increment_seconds == 225 and not _ecmwf_global_01_grid(grid):
+            raise ValueError('unsupported ECMWF CCSDS precipitation 0.1 grid')
         if identity != (1, 193) or product[22:34] != b'\x01' + b'\xff' * 11:
             raise ValueError('unsupported ECMWF CCSDS precipitation parameter or level')
         duration = int.from_bytes(product[49:53], 'big')
@@ -196,7 +193,7 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
         if not _ccsds_checker()(payload, len(payload), point_count, bits):
             raise ValueError('incomplete ECMWF CCSDS codestream')
 
-    return dict(
+    facts = dict(
         parameter=dict(centre=98, subcentre=0, master_table=32, local_table=local_table,
                        discipline=0, category=identity[0], number=identity[1]),
         time=time_facts, level=level,
@@ -209,6 +206,18 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
         reference_seconds=int(reference.timestamp()), forecast_seconds=forecast_hours * 3600,
         valid_seconds=int(valid.timestamp()), element=element, unit=unit,
     )
+    if not cumulative and identity == (0, 0) and _ecmwf_global_01_grid(sections[3]):
+        facts['map_profile'] = MAP_PROFILE
+    return facts
+
+
+def _ecmwf_global_01_grid(grid):
+    return (grid[14] == 6 and grid[38:42] == bytes(4) and grid[42:46] == b'\xff' * 4
+            and grid[54] == 48 and grid[71] == 0
+            and struct.unpack('>II', grid[30:38]) == (3600, 1801)
+            and struct.unpack('>II', grid[63:71]) == (100000, 100000)
+            and _signed(grid[46:50]) == 90000000 and _signed(grid[50:54]) == 180000000
+            and _signed(grid[55:59]) == -90000000 and _signed(grid[59:63]) == 179900000)
 
 
 def _grib2_fields(raw):
@@ -548,10 +557,16 @@ def _description(dataset, field):
             if field['data_template'] == 42:
                 message['local'] = facts['local']
                 metadata['GRIB2_LOCAL'] = json.dumps(facts['local'], sort_keys=True, separators=(',', ':'))
-    return dict(name=field['name'], type='Float64', dimensions=[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],
+    description = dict(name=field['name'], type='Float64', dimensions=[dict(name='y',size=str(field['height']),axis_type='HORIZONTAL_Y',direction='NORTH_TO_SOUTH'),dict(name='x',size=str(field['width']),axis_type='HORIZONTAL_X',direction='WEST_TO_EAST')],
         attributes={key:dict(type='String',values=[value]) for key,value in metadata.items()}, attributes_coverage='selected',slice_supported=True,
         value_mode='decoded_native_units',grid=dict(transform=list(transform),crs_wkt=dataset.GetProjectionRef(),longitude_policy='unchanged'),
         message=message)
+    if field.get('facts', {}).get('map_profile') == MAP_PROFILE:
+        crs = osr.SpatialReference(wkt=dataset.GetProjectionRef())
+        if (crs.IsGeographic() and crs.GetSemiMajor() == crs.GetSemiMinor() == 6371229
+                and np.allclose(transform, (179.95, .1, 0, 90.05, 0, -.1), rtol=0, atol=1e-12)):
+            description['map_profile'] = MAP_PROFILE
+    return description
 
 
 def inspect(access_plan):
@@ -607,16 +622,54 @@ def read_slice(access_plan, source_version, selection):
             values=text,valid=valid.tolist(),value_mode='decoded_native_units',spatial=None)
 
 
+def _write_map_geotiff(access_plan, source_version, message, path):
+    with _source(access_plan, source_version) as (raw, fields, _):
+        field = next((candidate for candidate in fields if candidate['name'] == message), None)
+        if field is None or field.get('facts', {}).get('map_profile') != MAP_PROFILE:
+            raise ValueError('GRIB message is outside the map profile')
+        with _dataset(raw, field) as source:
+            if _description(source, field).get('map_profile') != MAP_PROFILE:
+                raise ValueError('GRIB decoded grid conflicts with the map profile')
+            values = source.GetRasterBand(1).ReadAsArray()
+            if values is None or values.shape != (1801, 3600) or not np.isfinite(values).all():
+                raise ValueError('GRIB temperature field is incomplete')
+            # A periodic longitude lookup and an unwrapped latitude lookup
+            # choose the source pixel nearest each display pixel center.
+            spacing = 360 / 4096
+            columns = np.floor((np.arange(4096) + .5) * spacing / .1 + .5).astype(int) % 3600
+            rows = np.floor((np.arange(2048) + .5) * spacing / .1 + .5).astype(int)
+            target = gdal.GetDriverByName('GTiff').Create(path, 4096, 2048, 1, gdal.GDT_Float32)
+            if target is None:
+                raise ValueError('GRIB display grid could not be created')
+            target.SetProjection(source.GetProjectionRef())
+            target.SetGeoTransform((-180, spacing, 0, 90, 0, -spacing))
+            band = target.GetRasterBand(1)
+            band.SetUnitType('K')
+            if band.WriteArray(values[np.ix_(rows, columns)].astype('float32')) != 0:
+                raise ValueError('GRIB display grid could not be written')
+            band = None
+            target.Close()
+    return {'map_profile': MAP_PROFILE}
+
+
 def _native_main():
     resource.setrlimit(resource.RLIMIT_CPU,(30,30))
     if sys.platform.startswith('linux'):resource.setrlimit(resource.RLIMIT_AS,(4*1024**3,4*1024**3))
     try:
         request=json.load(sys.stdin)
-        response={'result':{'inspect':inspect,'read_slice':read_slice}[request['operation']](**request['params'])}
+        response={'result':{'inspect':inspect,'read_slice':read_slice,'_write_map_geotiff':_write_map_geotiff}[request['operation']](**request['params'])}
     except SliceSelectionError:response={'error_code':'GRIB_SLICE_INVALID'}
     except SourceChanged:response={'error_code':'GRIB_SOURCE_CHANGED'}
     except Exception:response={'error':'GRIB input is outside the supported complete single-field profile'}
     print(json.dumps(response,allow_nan=False))
+
+
+def _invoke_native(operation, params):
+    completed = _native_process.run([sys.executable, '-c', 'from operators.grib import _native_main; _native_main()'],
+        input=json.dumps(dict(operation=operation, params=params), allow_nan=False), capture_output=True, text=True, timeout=60)
+    if completed.returncode != 0:
+        raise RuntimeError('GRIB native process failed')
+    return json.loads(completed.stdout)
 
 
 def _register(name,function,params):
@@ -625,9 +678,7 @@ def _register(name,function,params):
         params=[OperatorParam(name='access_plan',type='param',data_type='object',description='Exact single-file source plan',required=True),*params],
         overview='GRIB单文件只读',use_cases=['气象场和元信息查看','有界数值切片'],notes=['Original units and longitude; no external idx','No map or export'],workflow_example={})
     def invoke(**kwargs):
-        completed=_native_process.run([sys.executable,'-c','from operators.grib import _native_main; _native_main()'],input=json.dumps(dict(operation=function.__name__,params=kwargs),allow_nan=False),capture_output=True,text=True,timeout=60)
-        if completed.returncode!=0:raise RuntimeError('GRIB native process failed')
-        response=json.loads(completed.stdout)
+        response = _invoke_native(function.__name__, kwargs)
         if response.get('error_code') in ('GRIB_SLICE_INVALID','GRIB_SOURCE_CHANGED'):return dict(schema_version='gdal.grib.slice/v1',**response)
         if 'error' in response:raise ValueError(response['error'])
         return response['result']

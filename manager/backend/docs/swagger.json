@@ -3402,6 +3402,12 @@
                         "name": "locator",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "GRIB 消息编号 | GRIB message name",
+                        "name": "raster_message",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3923,6 +3929,12 @@
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "GRIB 源版本 | GRIB source version",
+                        "name": "source_version",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -9180,6 +9192,9 @@
                 "geometry_column": {
                     "type": "string"
                 },
+                "map_profile": {
+                    "type": "string"
+                },
                 "max_zoom": {
                     "type": "integer"
                 },
@@ -9190,6 +9205,12 @@
                     "type": "string"
                 },
                 "preview_url": {
+                    "type": "string"
+                },
+                "raster_message": {
+                    "type": "string"
+                },
+                "raster_source_version": {
                     "type": "string"
                 },
                 "record_count": {
@@ -9819,6 +9840,10 @@
                     ]
                 },
                 "locator": {
+                    "type": "string"
+                },
+                "raster_message": {
+                    "description": "GRIB 消息编号 | GRIB message name",
                     "type": "string"
                 },
                 "source_unit": {

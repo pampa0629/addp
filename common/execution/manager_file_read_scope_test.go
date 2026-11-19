@@ -75,3 +75,30 @@ func TestTIFFPAMScopeBindsCompleteMetaComposition(t *testing.T) {
 		t.Fatal("TIFF admitted as model conversion")
 	}
 }
+
+func TestGRIBMapScopeBindsExactFileAndMessage(t *testing.T) {
+	ref := authorizationfacts.FileCompositionRef{Target: plugin.FileItemPath(14, "weather/forecast.grib2"), Role: "container", Required: true, Primary: true}
+	composition, err := authorizationfacts.NewFileCompositionBoundary("grib", []authorizationfacts.FileCompositionRef{ref})
+	if err != nil || !ManagerFileSourceComposition("nfs", composition) || ManagerFileSourceComposition("ftp", composition) {
+		t.Fatalf("unexpected GRIB source admission: %+v, %v", composition, err)
+	}
+	aux := authorizationfacts.FileCompositionRef{Target: plugin.FileItemPath(14, "weather/forecast.grib2.idx"), Role: "index", Required: true}
+	if _, err := authorizationfacts.NewFileCompositionBoundary("grib", []authorizationfacts.FileCompositionRef{ref, aux}); err == nil {
+		t.Fatal("accepted an external GRIB index in the composition")
+	}
+	raster := map[string]any{"source_format": "grib", "message": "message-1", "source_version": "sha256:" + strings.Repeat("0", 64)}
+	config := map[string]any{"config_version": ManagerRasterCOGConfigVersion, "owner_task": map[string]string{"id": "10", "version": "7"},
+		"source_engine_version": "5", "source_composition": composition, "target": map[string]any{}, "raster": raster,
+		"cog": map[string]any{}, "result": map[string]any{}}
+	encoded, _ := json.Marshal(config)
+	first, err := NewManagerFileReadScope(encoded, "10", "7", "5", composition)
+	if err != nil || first.Purpose() != TaskTypeRasterCOGGeneration {
+		t.Fatalf("GRIB raster scope rejected: %v", err)
+	}
+	raster["message"] = "message-2"
+	encoded, _ = json.Marshal(config)
+	second, err := NewManagerFileReadScope(encoded, "10", "7", "5", composition)
+	if err != nil || first.ConfigDigest == second.ConfigDigest {
+		t.Fatalf("GRIB forecast selection escaped configuration binding: %v", err)
+	}
+}

@@ -72,6 +72,16 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 	if format == "geopackage" {
 		extensionMatches = ext == ".gpkg"
 	}
+	if format == "grib" {
+		switch ext {
+		case ".grib", ".grb", ".grib1", ".grb1", ".grib2", ".grb2":
+			extensionMatches = true
+		}
+		native := commonjson.Section(item.Attributes, "format_info.grib")
+		if native["scan_complete"] != true || !commonformat.ValidContainerSourceVersion(native["source_version"]) {
+			return finish(authorizationfacts.AuthorizationBasisIncomplete)
+		}
+	}
 	if identity.ImageFormat() {
 		if format == "jpeg" {
 			extensionMatches = ext == ".jpeg" || ext == ".jpg"
@@ -104,11 +114,11 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}
 	}
-	if !hasRefs && layout == "single" && (format == "ifc" || format == "geojson" || identity.ImageFormat()) {
+	if !hasRefs && layout == "single" && (format == "ifc" || format == "geojson" || format == "grib" || identity.ImageFormat()) {
 		required := true
 		refs = []fileAuthorizationRef{{Path: item.FullName, Role: identity.PrimaryRole(), Required: &required, Primary: true}}
 	}
-	if (identity.ImageFormat() || format == "geojson") && hasRefs {
+	if (identity.ImageFormat() || format == "geojson" || format == "grib") && hasRefs {
 		for i := range refs {
 			if refs[i].Primary && refs[i].Role == "main" {
 				refs[i].Role = identity.PrimaryRole()
