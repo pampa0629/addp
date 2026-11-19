@@ -37,7 +37,7 @@ for (const kind of ['redis','minio']) for (const locale of ['zh-cn', 'en']) for 
     await expect(page.getByText(en ? 'Collecting' : '正在采集', { exact: true })).toBeVisible()
   }
   state.owner.enabled = false; state.owner.version++; await refresh()
-  await expect(page.getByText(en ? 'Disabled or invalid host association' : '部署停用或主机关联无效', { exact: true })).toBeVisible()
+  await expect(page.getByText(en ? 'Collection disabled in configuration' : '采集配置已停用', { exact: true })).toBeVisible()
   await expect(content).not.toContainText('GiB')
   state.owner.enabled = true; state.owner.version++; state.setCapacity(8 * 1024 ** 3); await refresh()
   await expect(content).toContainText('8.00 GiB')
