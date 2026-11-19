@@ -540,14 +540,22 @@ class RedisPinnedFixtureTest(unittest.TestCase):
     def execute(self, real):
         with tempfile.TemporaryDirectory(prefix="redis-r1-pinned-") as directory:
             root = Path(directory); checkout = root / "redis-http-identity"
+            checkout_started = time.monotonic()
             subprocess.run(["git", "clone", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True, capture_output=True)
+            if not real:
+                # The pinned System fixture builds against Common. Keep every owner's
+                # authorization directory so the Go catalog still discovers the full set.
+                subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "/system/backend/",
+                                "/common/", "/*/authorization/"], cwd=checkout, check=True, capture_output=True)
             subprocess.run(["git", "checkout", "--detach", scenario.PRODUCT_SHA], cwd=checkout, check=True, capture_output=True)
+            checkout_seconds = time.monotonic() - checkout_started
             subprocess.run(["git", "apply", "--unidiff-zero", str(ROOT / "scripts/test/redis-core-identity.patch")], cwd=checkout, check=True, capture_output=True)
             for source, destination in (("redis-core-identity.go", "cmd/online-test-fixture/redis_core_fixture.go"),
-                                        ("redis-core-identity-test.go", "cmd/online-test-fixture/redis_core_fixture_test.go"),
-                                        ("redis-core-system-wiring.go", "internal/api/redis_core_wiring_test.go")):
+                                        ("redis-core-identity-test.go", "cmd/online-test-fixture/redis_core_fixture_test.go")):
                 shutil.copyfile(ROOT / "scripts/test" / source, checkout / "system/backend" / destination)
-            shutil.copyfile(ROOT / "scripts/test/redis-core-gateway-wiring.go", checkout / "gateway/internal/router/redis_core_wiring_test.go")
+            if real:
+                shutil.copyfile(ROOT / "scripts/test/redis-core-system-wiring.go", checkout / "system/backend/internal/api/redis_core_wiring_test.go")
+                shutil.copyfile(ROOT / "scripts/test/redis-core-gateway-wiring.go", checkout / "gateway/internal/router/redis_core_wiring_test.go")
             identity = root / "identity.json"
             env = dict(os.environ, GOWORK="off", ADDP_REDIS_WIRING_IDENTITY=str(identity))
             preparation = import_module("scripts.test.redis-core-http-preparation")
@@ -559,11 +567,17 @@ class RedisPinnedFixtureTest(unittest.TestCase):
             self.assertEqual((build["exit_code"],build["result"]),(0,"passed"))
             self.assertTrue(os.access(root/"online-test-fixture",os.X_OK))
             pattern = "^TestRedisCorePermissionBoundary$" if not real else "^TestRedisCore(PermissionBoundary|IdentityAgainstPostgres)$"
+            test_started = time.monotonic()
             result = subprocess.run(["go", "test", "./cmd/online-test-fixture", "-run", pattern, "-count=1", "-v"],
                                     cwd=checkout / "system/backend", env=env, capture_output=True, text=True, timeout=240)
+            test_seconds = time.monotonic() - test_started
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotIn("--- SKIP:", result.stdout)
             self.assertIn("--- PASS: TestRedisCorePermissionBoundary ", result.stdout)
+            permission_result = next(line for line in result.stdout.splitlines()
+                                     if "--- PASS: TestRedisCorePermissionBoundary " in line)
+            print(f"Redis pinned fixture: checkout={checkout_seconds:.3f}s "
+                  f"CLI build={build['elapsed_seconds']:.3f}s go test={test_seconds:.3f}s; {permission_result.strip()}", flush=True)
             if real:
                 self.assertIn("--- PASS: TestRedisCoreIdentityAgainstPostgres ", result.stdout)
                 # Use the real domain writer on the already migrated, gate-locked IAM database.
