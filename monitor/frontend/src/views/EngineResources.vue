@@ -4,6 +4,7 @@
       <h2>{{ t('monitor.engines.title') }}</h2>
       <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="engine-refresh" @update:model-value="refresh => navigate({ ...state.query, refresh })" />
       <el-button :disabled="!canRead" :loading="loading" @click="reload()">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canConfigure" data-testid="engine-configure" @click="openConfiguration">{{ t('monitor.engines.configure') }}</el-button>
     </header>
     <el-alert v-if="!canRead" :title="t('monitor.engines.denied')" type="warning" :closable="false" data-testid="engine-denied" />
     <template v-else>
@@ -73,6 +74,7 @@
 import { computed, nextTick, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { openConsoleRoute } from '@common-ui'
 import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
@@ -98,6 +100,11 @@ const canReadHost = computed(() => canRead.value && auth.hasPermission('platform
 const hostReferences = ref({})
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveEngineRoute(route.query)), owners = ref([]), total = ref(0), observed = ref(null), history = ref(null)
+const canConfigure = computed(() => canReadHost.value && state.value.scope !== 'runtime' &&
+  (auth.hasPermission('platform.engine_deployment.create') || auth.hasPermission('platform.engine_deployment.update')))
+function openConfiguration() {
+  return openConsoleRoute(state.value.scope === 'business' ? '/system/engine-deployments?scope=business' : '/system/engine-deployments', { history: 'push' })
+}
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
 const trendZoom = ref(null)
 const runtimeCard = ref(null)
@@ -109,7 +116,12 @@ const detailMetrics = computed(() => engineDetailMetrics(state.value.engineType,
 const engineNames = { postgresql: 'PostgreSQL', redis: 'Redis', minio: 'MinIO' }
 const selectedMetric = computed(() => engineMetricsFor(state.value.engineType).find(item => item.key === state.value.metric))
 const observation = id => observed.value?.data.find(row => row.subject.deployment_id === id)
-const collection = id => t(`monitor.engines.states.${observation(id)?.collection.state || 'no_sample'}`)
+function collection(id) {
+  if (owners.value.find(row => row.deployment_id === id)?.enabled === false) {
+    return t('monitor.engines.collectionDisabled')
+  }
+  return t(`monitor.engines.states.${observation(id)?.collection.state || 'no_sample'}`)
+}
 const currentMissingReason = computed(() => engineMetricMissingReason(observation(state.value.deploymentID), state.value.metric))
 function missingMessage(metric) {
   const reason = engineMetricMissingReason(observation(state.value.deploymentID), metric.key)

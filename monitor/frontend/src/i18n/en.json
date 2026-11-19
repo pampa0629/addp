@@ -1760,6 +1760,8 @@
     "engines": {
       "noCurrentHost": "No current host association",
       "title": "Engine monitoring",
+      "configure": "Configure engine monitoring",
+      "collectionDisabled": "Collection disabled in configuration",
       "denied": "This account cannot read platform engine monitoring",
       "search": "Search deployment name",
       "empty": "No managed engines in this scope",

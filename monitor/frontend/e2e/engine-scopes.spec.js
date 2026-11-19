@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { engineBackend, engineOwner } from './engine-resources.fixture'
+import { engineBackend, engineOwner, enginePermissions } from './engine-resources.fixture'
+import { identity } from './monitoring-targets.fixture'
 
 const id = n => `20000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const row = (n, scope, kind, name) => ({...engineOwner,deployment_id:id(n),scope,engine_type:kind,display_name:name})
@@ -9,11 +10,23 @@ const mixed = [
  row(4,'business','postgresql','Infra-looking PostgreSQL'), row(5,'business','redis','Business cache')
 ]
 
+test('engine configuration is permission gated and keeps the selected deployment scope', async ({ page }) => {
+  await engineBackend(page, { auth: identity([...enginePermissions, 'platform.host_node.read', 'platform.engine_deployment.update']) })
+  await page.route('**/system/engine-deployments?scope=business', route => route.fulfill({ body: 'Engine deployments' }))
+  await page.goto('/engine-resources?scope=runtime&refresh=off')
+  await expect(page.getByTestId('engine-runtime-geopython')).toBeVisible()
+  await expect(page.getByTestId('engine-configure')).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Business 业务引擎' }).click()
+  await page.getByTestId('engine-configure').click()
+  await expect(page).toHaveURL(/\/system\/engine-deployments\?scope=business$/)
+})
+
 for (const locale of ['zh-cn','en']) test(`provenance tabs show mixed engine cards with one summary request (${locale})`,async({page})=>{
  const state=await engineBackend(page,{locale,owners:structuredClone(mixed)})
  const requests=[];page.on('request',r=>{if(r.url().includes('engine_resource_summaries'))requests.push(new URL(r.url()).searchParams.get('deployment_ids').split(','))})
  await page.setViewportSize({width:620,height:900})
  await page.goto('/engine-resources?refresh=off')
+ await expect(page.getByTestId('engine-configure')).toHaveCount(0)
  const list=page.getByTestId('engine-list')
  await expect(list.locator('article')).toHaveCount(3)
  for (const kind of ['PostgreSQL','Redis','MinIO'])await expect(list.getByText(kind,{exact:true})).toBeVisible()

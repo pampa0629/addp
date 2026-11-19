@@ -1760,6 +1760,8 @@
     "engines": {
       "noCurrentHost": "当前无有效主机关联",
       "title": "引擎监控",
+      "configure": "配置引擎监控",
+      "collectionDisabled": "采集配置已停用",
       "denied": "当前账号无权查看平台引擎监控",
       "search": "搜索部署名称",
       "empty": "此范围内暂无已纳管引擎",

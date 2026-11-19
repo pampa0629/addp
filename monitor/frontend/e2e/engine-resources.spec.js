@@ -30,6 +30,7 @@ for (const kind of ['postgresql', 'redis']) for (const detail of [false, true]) 
     else {
       await expect(content).not.toContainText('1.00 GiB')
       if (detail) await expect(content).toHaveText('—')
+      if (change === 'disabled') await expect(page.getByText('采集配置已停用', { exact: true })).toBeVisible()
     }
   })
 }
