@@ -65,6 +65,16 @@ class PilotTest(unittest.TestCase):
             self.assertEqual(fields["SERVICE_HOST"]["valueFrom"]["fieldRef"]["fieldPath"], "status.podIP")
             self.assertEqual(fields["ADDP_RUNTIME_LOG_ROOT"]["value"], container["volumeMounts"][0]["mountPath"])
 
+    def test_catalog_discovery_port_and_process_recovery(self):
+        endpoint, deployment = pilot.product_objects("catalog", bundle("amd64")["images"], "intel", "amd64")
+        port, = endpoint["spec"]["ports"]
+        self.assertEqual(port, {"name": "http", "protocol": "TCP", "port": 8192, "targetPort": 8192})
+        self.assertFalse(endpoint["spec"].get("publishNotReadyAddresses", False))
+        container, = deployment["spec"]["template"]["spec"]["containers"]
+        for key in ("startupProbe", "livenessProbe"):
+            self.assertEqual(container[key]["httpGet"], {"port": 8192, "path": "/health/live"})
+        self.assertEqual(container["readinessProbe"]["httpGet"], {"port": 8192, "path": "/health/ready"})
+
     def test_credentials_are_private_and_publisher_secrets_stay_outside_the_cluster(self):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "site.json"

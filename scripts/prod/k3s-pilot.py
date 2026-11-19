@@ -162,9 +162,17 @@ def product_objects(module, images, node, arch):
     deploy = workload(name, images[module]["image"], node, arch, env, credentials=credentials,
                       readiness=http_probe(PORTS[module], "/health/ready"),
                       volumes=[("logs", "/var/log/addp", {"emptyDir": {}})])
-    deploy["spec"]["template"]["spec"]["containers"][0]["env"].append({
+    container = deploy["spec"]["template"]["spec"]["containers"][0]
+    container["env"].append({
         "name": "SERVICE_HOST", "valueFrom": {"fieldRef": {"fieldPath": "status.podIP"}}})
-    return service(name, PORTS[module]), deploy
+    endpoint = service(name, PORTS[module])
+    if module == "catalog":
+        endpoint["spec"]["ports"][0].update(name="http", protocol="TCP")
+        container["startupProbe"] = {**http_probe(PORTS[module], "/health/live"),
+                                     "periodSeconds": 5, "timeoutSeconds": 2, "failureThreshold": 48}
+        container["livenessProbe"] = {**http_probe(PORTS[module], "/health/live"),
+                                      "periodSeconds": 10, "timeoutSeconds": 2, "failureThreshold": 3}
+    return endpoint, deploy
 
 
 def secret_objects(manifest, data):

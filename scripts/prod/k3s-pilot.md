@@ -21,6 +21,8 @@ ARM64 节点的冻结 Compose 发布需包含四个所选 Infra 镜像，且本�
 
 ## 现场安装
 
+Catalog Service 将 8192/TCP 命名为 `http`，供发现方按端口名核对 EndpointSlice。kubelet 在启动阶段探测 `/health/live`，每 5 秒一次，允许连续 48 次失败；启动成功后每 10 秒检查存活，连续 3 次失败触发容器重启。Service 端点是否就绪由 `/health/ready` 单独判定。安装后应分别演练进程失去响应和业务依赖失联，记录容器重启次数、Pod UID 和 Ready 变化。Catalog 当前的 Gateway 路由仍取自 System 实例租约。
+
 目标集群需要一个 Ready ARM64 和一个 Ready AMD64 节点，集群 Pod 网络可跨节点互通，并提供能动态分配 RWO 卷的 StorageClass。两个节点上的同名 `kubernetes.io/hostname` 标签应与传给安装脚本的节点名一致。操作端需已有正确上下文的 `kubectl`、Python 3 和 `sha256sum`，并具备创建本试点资源、读取节点与存储类、向本试点 Pod 执行短时部署命令的权限。确认待使用的 namespace 是本次新建。
 
 部署沿用镜像自身用户及卷初始化流程。试点尚未适配强制所有容器以非 root 运行的 Restricted 策略；使用前按集群现行准入规则检查，不改变已有命名空间的安全策略。
