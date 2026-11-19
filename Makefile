@@ -1374,6 +1374,7 @@ test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致�
 	@$(MAKE) test-build-registration
 	@$(MAKE) test-compose-release
 	@$(MAKE) test-k3s-pilot
+	@$(MAKE) test-k3s-release
 	@$(MAKE) test-frontend-ci-registration
 	@$(MAKE) test-python-ci-registration
 	@$(MAKE) test-t2-ci-registration
@@ -1968,3 +1969,8 @@ test-compose-release: ## 验证 Compose 发布清单、固定镜像与生产无�
 test-k3s-pilot: ## 验证 K3s 试点制品、调度、凭据和空库检查
 	@python3 scripts/build/package-k3s-pilot.py --help >/dev/null
 	@python3 scripts/test/k3s-pilot_test.py
+
+.PHONY: test-k3s-release
+test-k3s-release: ## 验证 K3s 双架构发布、镜像身份和节点调度约束
+	@python3 scripts/prod/k3s-release.py --help >/dev/null
+	@python3 scripts/test/k3s-release_test.py
