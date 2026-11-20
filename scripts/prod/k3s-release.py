@@ -169,6 +169,37 @@ def archive_config_digests(path, arch, expected_images):
     return identities
 
 
+def write_worker_profiles(release, directory):
+    """Ship opt-in HPA, PDB and rollout settings only for delivered bounded Workers."""
+    for worker in ("meta-worker", "transfer-bounded-worker", "quality-worker", "security-worker"):
+        if "platform/" + worker not in release["images"]:
+            continue
+        labels = {"app.kubernetes.io/name": worker}
+        container = {"name": worker, "resources": {"requests": {"cpu": "250m", "memory": "256Mi"}}}
+        spread = {"topologyKey": "kubernetes.io/hostname", "maxSkew": 1, "minDomains": 2,
+                  "whenUnsatisfiable": "DoNotSchedule", "matchLabelKeys": ["pod-template-hash"],
+                  "labelSelector": {"matchLabels": labels}}
+        patch = {"spec": {
+            "strategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1}},
+            "template": {"spec": {"topologySpreadConstraints": [spread], "containers": [container]}},
+        }}
+        metrics = [{"type": "ContainerResource", "containerResource": {
+            "name": resource, "container": worker,
+            "target": {"type": "Utilization", "averageUtilization": utilization},
+        }} for resource, utilization in (("cpu", 70), ("memory", 80))]
+        hpa = {"apiVersion": "autoscaling/v2", "kind": "HorizontalPodAutoscaler",
+               "metadata": {"name": worker}, "spec": {
+                   "scaleTargetRef": {"apiVersion": "apps/v1", "kind": "Deployment", "name": worker},
+                   "minReplicas": 2, "maxReplicas": 6, "metrics": metrics,
+                   "behavior": {"scaleDown": {"stabilizationWindowSeconds": 300}},
+               }}
+        pdb = {"apiVersion": "policy/v1", "kind": "PodDisruptionBudget", "metadata": {"name": worker},
+               "spec": {"minAvailable": 1, "selector": {"matchLabels": labels}}}
+        (directory / f"k3s-{worker}-deployment-patch.json").write_text(json_text(patch))
+        (directory / f"k3s-{worker}-autoscaling.json").write_text(
+            json_text({"apiVersion": "v1", "kind": "List", "items": [hpa, pdb]}))
+
+
 def export_bundle(release, output):
     arch = native_arch()
     identities = images_for_arch(release, arch)
@@ -191,8 +222,7 @@ def export_bundle(release, output):
         script = Path(__file__).resolve()
         shutil.copy2(script, bundle / script.name)
         shutil.copy2(script.with_suffix(".md"), bundle / "README.md")
-        for name in ("k3s-meta-worker-autoscaling.json", "k3s-meta-worker-deployment-patch.json"):
-            shutil.copy2(script.with_name(name), bundle / name)
+        write_worker_profiles(release, bundle)
         with (bundle / "SHA256SUMS").open("x") as sums:
             for path in sorted(p for p in bundle.iterdir() if p.name != "SHA256SUMS"):
                 sums.write(f"{sha256_file(path)}  {path.name}\n")

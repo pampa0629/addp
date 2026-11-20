@@ -66,18 +66,21 @@ kubectl -n "$SITE_NAMESPACE" get endpointslices -l kubernetes.io/service-name=sy
 
 验收须在两个不同节点各看到一个 Ready System Pod，并确认 System Service 选中了这两个端点。使用已授权的业务账号通过 Gateway 访问 Catalog。先撤回一个 Catalog Pod，确认两个 System 返回相同的剩余端点，再退出当前的发现写入者。持续检查 Gateway 业务响应和存活副本的路由 revision、端点标识及截止时间，观测窗口应超过原端点截止时间。通过条件为业务请求持续成功、已撤回的端点未重新出现、存活副本重新核对后延长了剩余端点的截止时间。恢复两个副本后，可交换故障方向复验。这个演练覆盖 System 进程失效，数据库和 K3s 控制节点的容灾各自验收。可信 Service 绑定、Meta 后台资格及单模块查询权限见[健康与平台控制面规范](../../docs/spec/api/健康与平台控制面.md#第三阶段-catalog-服务发现契约)。
 
-## Meta Worker 资源伸缩
+## 有界 Worker 资源伸缩
 
-两台已加载相同发布镜像的可调度节点、可用的 Kubernetes 资源指标 API，以及名为 `meta-worker` 的 Deployment 和容器是这份配置的前提。Pod 模板使用标签 `app.kubernetes.io/name=meta-worker`；工作负载须能调度到两个不同主机。由现场工作负载清单解除单主机约束，保留发布版本和存储约束。先检查 `kubectl top nodes` 和两端容量。每个 Worker 使用独立进程身份，继续由 System 登记及数据库执行租约控制新任务领取。
+发布包根据冻结的 platform 镜像清单，为 `meta-worker`、`transfer-bounded-worker`、`quality-worker`、`security-worker` 中实际交付的服务生成各自的伸缩清单。每个服务分别选择启用。continuous Worker 的在途同步会话需要另行验证 checkpoint、退避和恢复；此有界任务配置只用于上述四种 Worker。
 
-在发布包所在目录执行：
+两台可调度节点须已加载本次发布的原生镜像，集群须提供资源指标 API。Deployment 名、容器名和 Pod 标签 `app.kubernetes.io/name` 均使用该 Worker 的服务名。先用 `kubectl top nodes` 和 `kubectl top pods` 核对指标与可调度容量。空库先完成 System 引导、模块声明发布和对应 Backend 初始化，再启动 Worker；Backend Ready 后确认 Worker 已登记并持续上报。各进程使用独立身份，按 System 登记资格和本模块执行租约领取任务。
+
+在发布包目录执行，以下示例为 Transfer 的有界 Worker：
 
 ```bash
-kubectl -n "$SITE_NAMESPACE" patch deployment meta-worker --type strategic --patch-file k3s-meta-worker-deployment-patch.json
-kubectl -n "$SITE_NAMESPACE" rollout status deployment/meta-worker
-kubectl -n "$SITE_NAMESPACE" apply -f k3s-meta-worker-autoscaling.json
-kubectl -n "$SITE_NAMESPACE" get hpa,pdb
-kubectl -n "$SITE_NAMESPACE" get pods -l app.kubernetes.io/name=meta-worker -o wide
+WORKER=transfer-bounded-worker
+kubectl -n "$SITE_NAMESPACE" patch deployment "$WORKER" --type strategic --patch-file "k3s-$WORKER-deployment-patch.json"
+kubectl -n "$SITE_NAMESPACE" rollout status "deployment/$WORKER"
+kubectl -n "$SITE_NAMESPACE" apply -f "k3s-$WORKER-autoscaling.json"
+kubectl -n "$SITE_NAMESPACE" get "hpa/$WORKER" "pdb/$WORKER"
+kubectl -n "$SITE_NAMESPACE" get pods -l "app.kubernetes.io/name=$WORKER" -o wide
 ```
 
 示例配置保留 2 至 6 个副本，按 Worker 容器 CPU、内存相对资源请求的利用率伸缩，初始目标分别为 70% 和 80%。每个副本请求 250m CPU、256Mi 内存。现场应按任务规模和容量调整。后续发布将相同资源请求、滚动升级与跨主机分布写入站点 Deployment 清单，并交由 HPA 管理副本数，避免重新应用固定 replicas。滚动升级按 Deployment 的 `pod-template-hash` 只统计同版本副本，防止旧副本退出后两个新 Worker 都留在同一主机。现场集群须支持拓扑分布的 `matchLabelKeys`。缩容后复查存活副本所在节点，调度器仅在放置新 Pod 时计算分布。PDB 要求自愿驱逐时至少一个 Pod 可用。业务验收还须确认两个进程均可领取任务、同一执行只有一个有效持有者，并验证单副本退出后的在途租约恢复。
