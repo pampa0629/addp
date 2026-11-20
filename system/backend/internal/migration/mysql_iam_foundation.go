@@ -10,12 +10,12 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 1
+const mysqlIAMFoundationVersion int64 = 2
 
 //go:embed mysql_iam/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
-// MigrateMySQLIAMFoundation installs the first System IAM schema revision.
+// MigrateMySQLIAMFoundation installs the staged System IAM schema.
 func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 	if db == nil || db.Dialector.Name() != "mysql" {
 		return fmt.Errorf("System IAM foundation requires a MySQL connection")
