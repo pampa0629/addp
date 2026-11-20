@@ -115,7 +115,8 @@ def package(commit: str, destination: Path, infra_release: Path | None, builder_
         manifest["infra_source"] = {"commit": infra["source_commit"], "manifest_sha256": digest(infra_release)}
         # The official System Compose service already specifies this complete key set.
         manifest["service_secret_keys"] = system_secret_keys(Path("docker-compose.yml").read_text())
-        shutil.copy2("scripts/infra/redis-authentication.sh", destination)
+        for filename in ("redis-authentication.sh", "infra-postgresql.conf"):
+            shutil.copy2(Path("scripts/infra") / filename, destination)
     (destination / "release.json").write_text(json.dumps(manifest, indent=2) + "\n")
     for name in ("k3s-pilot.py", "k3s-pilot.md"):
         shutil.copy2(TOOLS / "prod" / name, destination)

@@ -2,6 +2,13 @@
 
 范围为 System、Gateway、Catalog 和 PostgreSQL、Redis、MinIO、Meilisearch。安装在现有双架构 K3s 的新 namespace。System 和 Gateway 在 ARM64，Catalog 在 AMD64。默认由 Catalog 以 Pod IPv4 向 System 登记，Gateway 解析现有 System 实例租约。对外验证仅使用回环端口，不修改正式域名、现有 Compose 或集群入口。
 
+试点的 ARM64 基础设施包随附 Compose 共用的 PostgreSQL 配置。安装脚本通过 ConfigMap 挂载该文件，数据目录仍在 PostgreSQL 的 PVC 上。扩充模块或 Worker 并发数前，按现场峰值核对数据库连接预算。可用以下命令查看连接上限、当前连接数及配置来源。
+
+~~~bash
+kubectl -n "$SITE_NAMESPACE" exec deploy/postgres -- psql -U addp -d addp -c \
+  "SELECT setting, sourcefile, (SELECT count(*) FROM pg_stat_activity) AS current_connections FROM pg_settings WHERE name = 'max_connections';"
+~~~
+
 ## 构建与交付
 
 在两个原生 Linux Docker 构建节点上准备同一个干净 Git 提交，并从构建工具版本提供 `scripts/build/package-k3s-pilot.py` 及旁边的 `scripts/prod/k3s-pilot.{py,md}`。从目标提交的仓库根目录调用构建工具。Python 3.11+，依赖和标准 Makefile 入口与 Compose 构建一致。离线构建节点提前准备与源码匹配的 Go 工具链和模块缓存，覆盖三个服务及 IAM 初始化 CLI 的依赖。标准镜像脚本检查构建机 Registry，缺失时先用 `make registry-start` 准备默认的 `localhost:5001`。构建机使用其他 Registry 时，可用 `--builder-registry` 指定。镜像按 `--verify` 构建，现场从归档导入。

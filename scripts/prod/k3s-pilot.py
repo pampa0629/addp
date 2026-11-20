@@ -109,6 +109,8 @@ def infra_objects(bundle, images, node, storage):
         "minio": ("/data", "10Gi", {"MINIO_ROOT_USER": "minioadmin"}, "minio"),
         "meilisearch": ("/meili_data", "4Gi", {"MEILI_ENV": "production"}, "meili"),
     }
+    yield object_("v1", "ConfigMap", "postgres-config", immutable=True, data={
+        "infra-postgresql.conf": (bundle / "infra-postgresql.conf").read_text()})
     yield object_("v1", "ConfigMap", "redis-start", data={
         "redis-authentication.sh": (bundle / "redis-authentication.sh").read_text()})
     for name, (mount, size, env, secret) in specifications.items():
@@ -119,6 +121,8 @@ def infra_objects(bundle, images, node, storage):
         volumes = [("data", mount, {"persistentVolumeClaim": {"claimName": name}})]
         extra = {}
         if name == "postgres":
+            volumes.append(("config", "/addp", {"configMap": {"name": "postgres-config"}}))
+            extra = {"args": ["postgres", "-c", "config_file=/addp/infra-postgresql.conf"]}
             probe = {"exec": {"command": ["pg_isready", "-h", "127.0.0.1", "-U", "addp", "-d", "addp"]}}
         elif name == "redis":
             volumes.append(("start", "/addp", {"configMap": {"name": "redis-start"}}))

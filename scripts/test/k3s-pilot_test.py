@@ -133,6 +133,18 @@ class PilotTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "binding"):
             pilot.service_endpoints(namespace, "manager-backend", uid, "api", svc, [valid])
 
+    def test_postgres_uses_packaged_infra_configuration(self):
+        files = Path(__file__).resolve().parents[1] / "infra"
+        objects = list(pilot.infra_objects(files, bundle("arm64")["images"], "arm", "local-path"))
+        config, = [o for o in objects if o["metadata"]["name"] == "postgres-config"]
+        self.assertEqual(config["data"]["infra-postgresql.conf"], (files / "infra-postgresql.conf").read_text())
+        deployment, = [o for o in objects if o["kind"] == "Deployment" and o["metadata"]["name"] == "postgres"]
+        pod = deployment["spec"]["template"]["spec"]
+        volume, = [v for v in pod["volumes"] if v.get("configMap", {}).get("name") == "postgres-config"]
+        container, = pod["containers"]
+        self.assertIn({"name": volume["name"], "mountPath": "/addp"}, container["volumeMounts"])
+        self.assertEqual(container["args"], ["postgres", "-c", "config_file=/addp/infra-postgresql.conf"])
+
     def test_credentials_are_private_and_publisher_secrets_stay_outside_the_cluster(self):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "site.json"
@@ -164,6 +176,7 @@ class PilotTest(unittest.TestCase):
             args = argparse.Namespace(arm64=root, amd64=root, namespace="pilot", context="test", catalog_source="system",
                                       arm_node="arm", amd_node="intel", storage_class="local-path", credentials=root)
             (root / "redis-authentication.sh").write_text("# fixture")
+            (root / "infra-postgresql.conf").write_text("max_connections = 200")
             for module in pilot.MODULES:
                 (root / f"{module}.json").write_text(json.dumps({"module_name": module}))
             with patch.object(pilot, "read_bundle", side_effect=[bundle("arm64"), bundle("amd64")]):
