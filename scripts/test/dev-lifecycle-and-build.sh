@@ -2494,10 +2494,16 @@ for name in workers:
  content=(root/name).read_text()
  assert not re.search(r'\.(?:Migrate|AutoMigrate|EnsureStore|InitDatabase|PrepareSchema)\(',content),name
  assert 'schema.Require(' in content,name
+# Common has two installation entry points: PostgreSQL System startup and the
+# explicit MySQL deployment command. Runtime MySQL consumers only read revisions.
+common_installers = {
+ root/'system/backend/internal/repository/database.go',
+ root/'system/backend/cmd/server/mysql_install.go',
+}
 for path in root.glob('*/backend/**/*.go'):
- if path.name.endswith('_test.go') or path.parts[-4:]==('system','backend','internal','repository'):continue
+ if path.name.endswith('_test.go'):continue
  text=path.read_text()
- if 'schema.InitializeCommon(' in text: assert path==root/'system/backend/internal/repository/database.go',path
+ if 'schema.InitializeCommon(' in text: assert path in common_installers,path
  assert not re.search(r'(?i)(?:common)?(?:execution|runtimehealth)\.EnsureStore\(', text), path
 compose=(root/'docker-compose.yml').read_text()
 assert 'DB_SCHEMA=metadata' not in compose, 'retired Meta schema in deployment'
