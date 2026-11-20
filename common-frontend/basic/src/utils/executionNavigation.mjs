@@ -1,3 +1,5 @@
+import { cleanupOwners } from './cleanupObservation.mjs'
+
 const hasValue = value => value !== null && value !== undefined && String(value).trim() !== ''
 
 export function buildMonitorExecutionRoute(executionId) {
@@ -23,9 +25,15 @@ const resultTaskTypes = {
 export function buildExecutionResultRoute(execution, returnTo) {
   if (!execution?.execution_id) return ''
   const { module, task_type: taskType, execution_id: executionId } = execution
-  if (!Object.hasOwn(resultTaskTypes, module) || !resultTaskTypes[module].includes(taskType)) return ''
-
-  const route = `/${module}/executions/${encodeURIComponent(executionId)}`
+  let route
+  if (taskType === 'cleanup_executor' && execution.source === 'system' && cleanupOwners.includes(module) && hasValue(execution.parent_execution_id)) {
+    route = `/system/executions/${encodeURIComponent(execution.parent_execution_id)}/children/${encodeURIComponent(executionId)}`
+  } else if ((module === 'system' && taskType === 'cleanup' && execution.source === 'system') ||
+    (Object.hasOwn(resultTaskTypes, module) && resultTaskTypes[module].includes(taskType))) {
+    route = `/${module}/executions/${encodeURIComponent(executionId)}`
+  } else {
+    return ''
+  }
   if (returnTo === undefined) return route
   const back = resolveMonitorExecutionReturnRoute(executionId, returnTo)
   return back ? route + '?' + new URLSearchParams({ return_to: back }) : ''

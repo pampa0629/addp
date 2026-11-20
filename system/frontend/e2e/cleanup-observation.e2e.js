@@ -38,7 +38,7 @@ test('closed coordinator preserves pending, absent start and absent result; hist
   await page.goto('/cleanup')
   await expect(page.getByText('协调已关闭，模块未开始', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'graph · 待领取' })).toBeVisible()
-  await expect(page.locator('.cleanup-module-results dd').nth(1)).toHaveText('—')
+  await expect(page.locator('.cleanup-module-results dt').filter({ hasText: '开始时间' }).locator('+ dd')).toHaveText('—')
   await expect(page.getByText('原始 JSON', { exact: true })).toHaveCount(0)
   await expect(page.locator('.result-banner')).toContainText('超时')
   expect(state.professionalReads).toBe(0)

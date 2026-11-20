@@ -15,6 +15,7 @@ import (
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // CleanupHandler 资源回收任务处理器
@@ -251,6 +252,7 @@ type GetTaskHistoryResponse struct {
 // @Security BearerAuth
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页记录数 | Page size" default(20)
+// @Param parent_execution_id query string false "按父执行 UUID 精确筛选 | Exact parent execution UUID" format(uuid)
 // @Success 200 {object} GetTaskHistoryResponse
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
@@ -268,7 +270,16 @@ func (h *CleanupHandler) GetTaskHistory(c *gin.Context) {
 		return
 	}
 	page, size := commonapi.ParsePagination(c)
-	tasks, total, err := h.orchestrator.GetTaskHistory(c.Request.Context(), tenant, actor, page, size)
+	var parentID *uuid.UUID
+	if values, present := c.Request.URL.Query()["parent_execution_id"]; present {
+		id, parseErr := uuid.Parse(values[0])
+		if len(values) != 1 || parseErr != nil || id == uuid.Nil || id.String() != values[0] {
+			respondCleanupError(c, commonapi.ErrBadRequest)
+			return
+		}
+		parentID = &id
+	}
+	tasks, total, err := h.orchestrator.GetTaskHistory(c.Request.Context(), tenant, actor, page, size, parentID)
 	if err != nil {
 		respondCleanupError(c, err)
 		return

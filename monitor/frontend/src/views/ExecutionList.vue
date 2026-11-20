@@ -539,7 +539,7 @@ const professionalRoute = computed(() => {
   if (!destination) return ''
   const auth = useAuthStore()
   if (!allowsConsoleRoute(destination, auth.contextType, auth.permissions)) return ''
-  if (execution.module !== 'develop') return destination
+  if (execution.module !== 'develop' || execution.task_type === 'cleanup_executor') return destination
   const permission = execution.task_type === 'script' ? 'develop.notebook.read' : 'develop.data_read.execute'
   return auth.hasPermission(permission) ? destination : ''
 })

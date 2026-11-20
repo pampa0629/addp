@@ -594,7 +594,7 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 - `GET /api/v1/system/admin/cleanup/tasks/:task_id` 按原入口凭据、`system.cleanup.read` 与任务 Tenant 核验父读取权，不新增“仅请求创建者可读父”的限制。返回 `task_id`、`action`、真实 `status`、中性冻结 `task` 与 `observed_at`；父 `started_at`／`completed_at` 尚无事实时为 null。任务上下文只含闭合中性字段，不返回任意 context、原始 errors、SQL 或供应商正文。
 - 对 Owner 范围协议支持的当前 User，返回经过独立子授权的 `module_executions`。每项为安全 Observation、可选 `cleanup_admission` 与已验证标准 `receipt`；没有子读取权的项不生成占位节点。协议不适用时省略该字段；合法空范围返回空数组，两者不能表达“全部模块通过”。协议适用而任一必需 Owner 裁决失败时整次读取返回 `503 execution_owner_unavailable`，不回用旧结果。
 - `cutoff_at` 与可选 `summary` 仅来自父已冻结截止快照；summary 只汇总当前可读子在截止时已有的合法回执。没有可展示回执时省略摘要，页面显示未提供，不补零。当前子事实与父截止结论分开展示；GET 从不领取、拒绝、超时或恢复任务。
-- `GET /api/v1/system/admin/cleanup/history` 使用 `page`／`page_size`（默认 1／20，最大 100）返回本 Tenant 持久父请求的 `tasks`、真实 `total`、`page`、`page_size`。不使用 limit、Redis TTL 或最近 100 项索引；历史条目不包含子结果或专业统计。
+- `GET /api/v1/system/admin/cleanup/history` 支持可选的 `parent_execution_id` 精确筛选。该参数为单个规范 UUID，按当前 Tenant 与父执行唯一索引定位，跨租户或缺失返回空页。使用 `page`／`page_size`（默认 1／20，最大 100）返回本 Tenant 持久父请求的 `tasks`、真实 `total`、`page`、`page_size`。不使用 limit、Redis TTL 或最近 100 项索引；历史条目不包含子结果或专业统计。
 - 页面共用 Common 的准入说明和模块结果容器；专业结果按下节经当前用户向 Owner 按需读取。身份、Tenant、任务或请求代际变化立即清除旧结果，迟到响应不能恢复视图；读取失败清除相应详情。移除“原始 JSON”展示。跳转 Monitor 仍由 Monitor 独立核验父子读取范围。
 
 ### Owner 专业结果读取

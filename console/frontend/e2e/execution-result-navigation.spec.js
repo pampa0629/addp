@@ -193,3 +193,89 @@ test('geometry difference log oracle refuses an unavailable response', async ({ 
   expect(stages.at(-1)).toBe('execution_logs_failed')
   expect(JSON.stringify(failure)).not.toContain('private synthetic detail')
 })
+
+const cleanupRequest = '550e8400-e29b-41d4-a716-446655440002'
+const cleanupChild = '550e8400-e29b-41d4-a716-446655440003'
+const cleanupSibling = '550e8400-e29b-41d4-a716-446655440004'
+const cleanupHistoryPath = '/api/v1/system/admin/cleanup/history'
+const cleanupDetailPath = '/api/v1/system/admin/cleanup/tasks/' + cleanupRequest
+const professionalPath = '/api/v1/transfer/cleanup-executions/' + cleanupChild + '/result'
+
+async function cleanupFixture(page, { selected, professional = false, override = {} }) {
+  const task = { task_id: cleanupRequest, execution_id: id }
+  const child = { execution_id: cleanupChild, parent_execution_id: id, module: 'transfer', task_type: 'cleanup_executor',
+    source: 'system', attempt: 1, status: 'success', progress: 100 }
+  const receipt = { schema: 'addp.cleanup-receipt/v1', execution_id: cleanupChild, parent_execution_id: id,
+    request_id: cleanupRequest, module: 'transfer', attempt: 1, status: 'success', action: 'scan',
+    summary: { scanned_items: 17 }, impact: {}, request_digest: 'a'.repeat(64), impact_digest: 'b'.repeat(64) }
+  const sibling = { ...child, execution_id: cleanupSibling, module: 'meta', status: 'pending', progress: 0, attempt: 0 }
+  const parent = { execution_id: id, source: 'system', module: 'system', task_type: 'cleanup', status: 'running' }
+  const execution = selected === id ? parent : child
+  const historyQueries = [], professionalReads = []
+  page.on('request', req => {
+    const url = new URL(req.url())
+    if (url.pathname === cleanupHistoryPath) historyQueries.push(Object.fromEntries(url.searchParams))
+    if (url.pathname === professionalPath) professionalReads.push(req.method())
+  })
+  const unexpected = await mockGraph(page, {
+    permissions: ['monitor.execution.read', 'system.cleanup.read', ...(professional ? ['transfer.cleanup_result.read'] : [])],
+    responses: {
+      '/api/v1/monitor/task-providers': [], '/api/v1/monitor/executions': { executions: [execution], total: 1, page: 1, page_size: 20 },
+      [`/api/v1/monitor/executions/by-execution-id/${selected}/tree`]: { execution, children: [], truncated: false },
+      [`/api/v1/monitor/executions/by-execution-id/${selected}/events`]: { items: [], has_more: false, next_cursor: 0 },
+      [cleanupHistoryPath]: { total: 1, tasks: [task] },
+      [cleanupDetailPath]: { task_id: cleanupRequest, task, action: 'scan', status: 'running', module_executions: [{ ...child, receipt }, sibling] },
+      [professionalPath]: { schema: 'addp.cleanup-professional-result/v1', execution_id: cleanupChild, request_id: cleanupRequest,
+        module: 'transfer', attempt: 1, status: 'success', action: 'scan', summary: receipt.summary, statistics: { transferred_items: 321 } },
+      ...override
+    }
+  })
+  await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
+  return { unexpected, professionalReads, historyQueries }
+}
+
+for (const [selected, professional] of [[id, false], [cleanupChild, false], [cleanupChild, true]]) {
+  test(`cleanup result and exact return for ${selected === id ? 'parent' : 'child'}, professional read ${professional}`, async ({ page }) => {
+    const { unexpected, professionalReads, historyQueries } = await cleanupFixture(page, { selected, professional })
+    const monitorURL = '/monitor/executions?source=system&execution_id=' + selected
+    await page.goto(monitorURL)
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await frame.getByRole('dialog').getByRole('button', { name: '查看执行结果' }).click()
+    const target = '/system/executions/' + id + (selected === id ? '' : '/children/' + selected)
+    await expect(page).toHaveURL(url => url.pathname === target && url.searchParams.get('return_to') === monitorURL)
+    await expect(frame.getByText(cleanupRequest, { exact: true })).toBeVisible()
+    const row = frame.locator('.cleanup-module-results article').filter({ hasText: cleanupChild })
+    await expect(row.getByRole('heading', { name: 'transfer · 成功' })).toBeVisible()
+    await expect(row.getByText('标准回执', { exact: true }).locator('+ dd')).toHaveText('成功')
+    await expect(row.getByText('17', { exact: true })).toBeVisible()
+    await expect(frame.locator('.cleanup-module-results article').filter({ hasText: cleanupSibling })).toHaveCount(selected === id ? 1 : 0)
+    expect(professionalReads).toEqual([])
+    const button = row.getByRole('button', { name: '模块专业结果' })
+    if (professional) {
+      await button.click()
+      await expect(row.getByText('321', { exact: true })).toBeVisible()
+      expect(professionalReads).toEqual(['GET'])
+    } else {
+      await expect(button).toHaveCount(0)
+    }
+    expect(historyQueries).toEqual([{ parent_execution_id: id, page: '1', page_size: '1' }])
+    await frame.getByRole('button', { name: '返回本次执行' }).click()
+    await expect(page).toHaveURL(monitorURL)
+    await expect(frame.getByRole('dialog')).toContainText(selected)
+    expect(unexpected).toEqual([])
+  })
+}
+
+for (const [scenario, override] of [
+  ['non-unique history', { [cleanupHistoryPath]: { total: 2, tasks: [{ task_id: cleanupRequest, execution_id: id }] } }],
+  ['different parent', { [cleanupDetailPath]: { task_id: cleanupRequest, task: { execution_id: cleanupSibling } } }],
+  ['invisible child', { [cleanupDetailPath]: { task_id: cleanupRequest, task: { execution_id: id }, action: 'scan', status: 'success', module_executions: [] } }]
+]) test('cleanup rejects ' + scenario, async ({ page }) => {
+  const { professionalReads, unexpected } = await cleanupFixture(page, { selected: cleanupChild, professional: true, override })
+  await page.goto('/system/executions/' + id + '/children/' + cleanupChild)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('无法读取本次执行结果')).toBeVisible()
+  await expect(frame.locator('.cleanup-module-results')).toHaveCount(0)
+  expect(professionalReads).toEqual([])
+  expect(unexpected).toEqual([])
+})

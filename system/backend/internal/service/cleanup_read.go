@@ -119,7 +119,7 @@ func (s *CleanupOrchestratorService) GetTaskStatus(ctx context.Context, id strin
 	return result, nil
 }
 
-func (s *CleanupOrchestratorService) GetTaskHistory(ctx context.Context, tenant, user uint, page, pageSize int) ([]models.CleanupTask, int64, error) {
+func (s *CleanupOrchestratorService) GetTaskHistory(ctx context.Context, tenant, user uint, page, pageSize int, parentID *uuid.UUID) ([]models.CleanupTask, int64, error) {
 	if tenant == 0 || user == 0 {
 		return nil, 0, commonapi.ErrForbidden
 	}
@@ -130,6 +130,9 @@ func (s *CleanupOrchestratorService) GetTaskHistory(ctx context.Context, tenant,
 	var total int64
 	err := s.coordinator.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		q := tx.Model(&models.CleanupRequestRecord{}).Where("tenant_id = ?", tenant)
+		if parentID != nil {
+			q = q.Where("parent_execution_id = ?", *parentID)
+		}
 		if err := q.Count(&total).Error; err != nil {
 			return err
 		}

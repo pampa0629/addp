@@ -97,6 +97,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/system/host-nodes': [platform('platform.host_node.read')],
   '/system/engines': [tenant('system.engine.read')],
   '/system/configuration': [anyOf('platform', 'iam.security_policy.read', 'system.engine_raster_policy.read', 'system.infra_configuration.read'), tenant('system.engine_raster_policy.read')],
+  '/system/executions': [tenant('system.cleanup.read')],
   '/system/cleanup': [tenant('system.cleanup.read')],
   '/system/account': [{ context: 'any' }],
   '/configuration': [

@@ -966,6 +966,16 @@
       "leaseExpiredHint": "Lease expiration only indicates lost contact; it does not prove that the process exited."
     },
     "cleanupObservation": {
+      "attempt": "Attempt",
+      "receipt": "Standard receipt",
+      "noReceipt": "No receipt recorded",
+      "receipts": {
+        "success": "Success",
+        "failed": "Failed",
+        "partial_success": "Partially successful",
+        "timeout": "Timed out",
+        "skipped": "Skipped"
+      },
       "invalid": "The cleanup response is invalid. Reload to obtain current authorized facts.",
       "notApplicable": "Module observations are unavailable for this credential. Parent facts remain visible.",
       "noReadableChildren": "There are no readable module executions in this response.",

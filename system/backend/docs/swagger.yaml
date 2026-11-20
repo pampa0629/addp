@@ -7051,6 +7051,11 @@ paths:
         in: query
         name: page_size
         type: integer
+      - description: 按父执行 UUID 精确筛选 | Exact parent execution UUID
+        format: uuid
+        in: query
+        name: parent_execution_id
+        type: string
       produces:
       - application/json
       responses:

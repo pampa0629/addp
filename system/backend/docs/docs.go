@@ -123,6 +123,13 @@ const docTemplate = `{
                         "description": "每页记录数 | Page size",
                         "name": "page_size",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "按父执行 UUID 精确筛选 | Exact parent execution UUID",
+                        "name": "parent_execution_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {

@@ -99,6 +99,18 @@ const routes = [
         meta: { requiresAuth: true, title: '系统管理-addp', requiredPermissions: ['system.engine.read'] }
       },
       {
+        path: 'executions/:parentId',
+        name: 'CleanupParentResult',
+        component: () => import('../views/CleanupExecutionResult.vue'),
+        meta: { requiresAuth: true, requiredPermissions: ['system.cleanup.read'] }
+      },
+      {
+        path: 'executions/:parentId/children/:childId',
+        name: 'CleanupChildResult',
+        component: () => import('../views/CleanupExecutionResult.vue'),
+        meta: { requiresAuth: true, requiredPermissions: ['system.cleanup.read'] }
+      },
+      {
         path: 'cleanup',
         name: 'CleanupManager',
         component: () => import('../views/CleanupManager.vue'),

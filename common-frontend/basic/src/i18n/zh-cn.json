@@ -966,6 +966,16 @@
       "leaseExpiredHint": "租约超时仅表示实例失联，不能据此断定进程已经退出。"
     },
     "cleanupObservation": {
+      "attempt": "尝试次数",
+      "receipt": "标准回执",
+      "noReceipt": "尚未取得回执",
+      "receipts": {
+        "success": "成功",
+        "failed": "失败",
+        "partial_success": "部分成功",
+        "timeout": "超时",
+        "skipped": "已跳过"
+      },
       "invalid": "清理响应不符合契约，请刷新以获取当前已授权事实。",
       "notApplicable": "当前凭据不适用模块执行概览，父任务事实仍可查看。",
       "noReadableChildren": "本次响应中没有可读取的模块执行。",

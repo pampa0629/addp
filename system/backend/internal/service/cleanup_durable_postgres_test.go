@@ -658,7 +658,7 @@ func TestIntegrationPostgresCleanupReadOnlySnapshot(t *testing.T) {
 	if err != nil || otherView.ModuleExecutions == nil || len(*otherView.ModuleExecutions) != 0 || otherView.Summary != nil {
 		t.Fatalf("same-Tenant parent/foreign child scope: %+v %v", otherView, err)
 	}
-	otherHistory, _, err := api.GetTaskHistory(f.ctx, other.TenantID, other.UserID, 1, 20)
+	otherHistory, _, err := api.GetTaskHistory(f.ctx, other.TenantID, other.UserID, 1, 20, nil)
 	if err != nil || len(otherHistory) != 1 {
 		t.Fatalf("same-Tenant history was narrowed: %+v %v", otherHistory, err)
 	}
@@ -679,7 +679,23 @@ func TestIntegrationPostgresCleanupReadOnlySnapshot(t *testing.T) {
 	if !reflect.DeepEqual(before.Parent, readAgain.Parent) || !reflect.DeepEqual(before.Children, readAgain.Children) {
 		t.Fatal("public GET wrote execution facts")
 	}
-	tasks, total, err := api.GetTaskHistory(f.ctx, reader.TenantID, reader.UserID, 1, 1)
+	parentID := uuid.MustParse(f.input.ParentExecutionID)
+	tasks, total, err := api.GetTaskHistory(f.ctx, reader.TenantID, reader.UserID, 1, 1, &parentID)
+	if err != nil || len(tasks) != 1 || total != 1 || tasks[0].TaskID != f.input.RequestID || tasks[0].ExecutionID != f.input.ParentExecutionID {
+		t.Fatalf("parent identity lookup: %+v %d %v", tasks, total, err)
+	}
+	for _, lookup := range []struct {
+		tenant uint
+		id     uuid.UUID
+	}{
+		{reader.TenantID + 1, parentID}, {reader.TenantID, uuid.MustParse(f.input.RequestID)},
+	} {
+		hidden, n, err := api.GetTaskHistory(f.ctx, lookup.tenant, reader.UserID, 1, 1, &lookup.id)
+		if err != nil || n != 0 || len(hidden) != 0 {
+			t.Fatalf("unexpected exact history: %+v %d %v", hidden, n, err)
+		}
+	}
+	tasks, total, err = api.GetTaskHistory(f.ctx, reader.TenantID, reader.UserID, 1, 1, nil)
 	if err != nil || len(tasks) != 1 || total < 1 || tasks[0].StartedAt != nil {
 		t.Fatalf("history=%+v total=%d err=%v", tasks, total, err)
 	}

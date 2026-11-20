@@ -914,3 +914,20 @@ test('execution results retain only the exact Monitor execution context', () => 
     }
   }
 })
+
+test('cleanup uses the System parent for lookup and the selected execution for return', () => {
+  const parent = { module: 'system', task_type: 'cleanup', source: 'system', execution_id: 'parent' }
+  assert.equal(buildExecutionResultRoute(parent), '/system/executions/parent')
+  const child = { task_type: 'cleanup_executor', source: 'system', parent_execution_id: 'parent', execution_id: 'child' }
+  for (const module of ['asset', 'develop', 'graph', 'manager', 'meta', 'model', 'quality', 'service', 'standard', 'transfer']) {
+    const execution = { ...child, module }
+    const back = '/monitor/executions?execution_id=child'
+    const target = new URL(buildExecutionResultRoute(execution, back), 'http://console')
+    assert.equal(target.pathname, '/system/executions/parent/children/child')
+    assert.equal(target.searchParams.get('return_to'), back)
+    assert.equal(buildExecutionResultRoute(execution, '/monitor/executions?execution_id=parent'), '')
+    assert.equal(buildExecutionResultRoute({ ...execution, parent_execution_id: null }), '')
+    assert.equal(buildExecutionResultRoute({ ...execution, source: 'orchestrator' }), '')
+  }
+  assert.equal(buildExecutionResultRoute({ ...child, module: 'unknown' }), '')
+})

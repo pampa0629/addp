@@ -7,6 +7,9 @@
       <CleanupAdmission :execution="row" />
       <dl>
         <dt>{{ t('common.cleanupObservation.execution') }}</dt><dd>{{ row.execution_id }}</dd>
+        <dt>{{ t('common.cleanupObservation.attempt') }}</dt><dd>{{ row.attempt }}</dd>
+        <dt>{{ t('common.cleanupObservation.receipt') }}</dt>
+        <dd>{{ row.receipt ? t(`common.cleanupObservation.receipts.${row.receipt.status}`) : t('common.cleanupObservation.noReceipt') }}</dd>
         <dt>{{ t('common.cleanupObservation.startedAt') }}</dt><dd>{{ row.started_at ? new Date(row.started_at).toLocaleString() : '—' }}</dd>
         <template v-for="key in summaryFields" :key="key">
           <dt>{{ t(`common.cleanupObservation.summary.${key}`) }}</dt><dd>{{ row.receipt ? (row.receipt.summary[key] ?? 0) : '—' }}</dd>
