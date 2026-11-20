@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -21,7 +22,12 @@ func (s *Storage) ServiceCredentialResponseLifespan(ctx context.Context, request
 		return 0, fosite.ErrInvalidRequest
 	}
 	var now time.Time
-	if err := s.dbFromContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+	db := s.dbFromContext(ctx)
+	clock := "clock_timestamp()"
+	if db.Dialector.Name() == "mysql" {
+		clock = "CURRENT_TIMESTAMP(6)"
+	}
+	if err := db.Raw("SELECT " + clock).Scan(&now).Error; err != nil {
 		return 0, fosite.ErrTemporarilyUnavailable
 	}
 	remaining := requester.GetSession().GetExpiresAt(fosite.AccessToken).Sub(now)
@@ -56,18 +62,26 @@ func (s *Storage) PopulateServiceCredentialSession(
 	contextType := iam.ContextTypeTenant
 	var row serviceCredentialSessionRow
 	var result *gorm.DB
+	db := s.dbFromContext(ctx)
+	clock := issuanceTimeExpression(db)
+	serviceGrant := "oauth_client.grant_types = ARRAY['client_credentials']::text[]"
+	serviceRole := "'service_principal' = ANY(role.allowed_principal_types)"
+	if db.Dialector.Name() == "mysql" {
+		serviceGrant = "oauth_client.grant_types = JSON_ARRAY('client_credentials')"
+		serviceRole = `JSON_CONTAINS(role.allowed_principal_types, '"service_principal"')`
+	}
 	switch {
 	case contextTypeValue == "" && tenantIDValue != "":
 		tenantID, err := strconv.ParseInt(tenantIDValue, 10, 64)
 		if err != nil || tenantID <= 0 {
 			return fosite.ErrInvalidRequest
 		}
-		result = s.dbFromContext(ctx).Raw(`
+		result = db.Raw(fmt.Sprintf(`
 		SELECT principal.id AS principal_id,
 		       principal.authorization_version,
 		       membership.id AS tenant_membership_id,
 		       membership.tenant_id,
-		       transaction_timestamp() AS database_time
+		       %[1]s AS database_time
 		FROM system.oauth_clients oauth_client
 		JOIN system.principals principal
 		  ON principal.id = oauth_client.service_principal_id
@@ -78,22 +92,22 @@ func (s *Storage) PopulateServiceCredentialSession(
 		  ON membership.principal_id = principal.id
 		 AND membership.tenant_id = ?
 		 AND membership.status = 'active'
-		 AND (membership.expires_at IS NULL OR membership.expires_at > now())
+		 AND (membership.expires_at IS NULL OR membership.expires_at > %[1]s)
 		JOIN system.tenants tenant
 		  ON tenant.id = membership.tenant_id
 		 AND tenant.status = 'active'
 		WHERE oauth_client.client_id = ?
 		  AND oauth_client.status = 'active'
-		  AND oauth_client.grant_types = ARRAY['client_credentials']::text[]
-	`, tenantID, requester.GetClient().GetID()).Scan(&row)
+		  AND %[2]s
+	`, clock, serviceGrant), tenantID, requester.GetClient().GetID()).Scan(&row)
 	case contextTypeValue == string(iam.ContextTypePlatform) && tenantIDValue == "":
 		contextType = iam.ContextTypePlatform
-		result = s.dbFromContext(ctx).Raw(`
+		result = db.Raw(fmt.Sprintf(`
 		SELECT principal.id AS principal_id,
 		       principal.authorization_version,
-		       NULL::bigint AS tenant_membership_id,
-		       NULL::bigint AS tenant_id,
-		       transaction_timestamp() AS database_time
+		       NULL AS tenant_membership_id,
+		       NULL AS tenant_id,
+		       %[1]s AS database_time
 		FROM system.oauth_clients oauth_client
 		JOIN system.principals principal
 		  ON principal.id = oauth_client.service_principal_id
@@ -104,7 +118,7 @@ func (s *Storage) PopulateServiceCredentialSession(
 		 AND service_principal.owner_scope = 'platform'
 		WHERE oauth_client.client_id = ?
 		  AND oauth_client.status = 'active'
-		  AND oauth_client.grant_types = ARRAY['client_credentials']::text[]
+		  AND %[2]s
 		  AND EXISTS (
 		      SELECT 1
 		      FROM system.role_assignments assignment
@@ -112,13 +126,13 @@ func (s *Storage) PopulateServiceCredentialSession(
 		      WHERE assignment.principal_id = principal.id
 		        AND assignment.scope_type = 'platform'
 		        AND assignment.status = 'active'
-		        AND assignment.valid_from <= now()
-		        AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
+		        AND assignment.valid_from <= %[1]s
+		        AND (assignment.valid_until IS NULL OR assignment.valid_until > %[1]s)
 		        AND role.role_type = 'platform_builtin'
 		        AND role.status = 'active'
-		        AND 'service_principal' = ANY(role.allowed_principal_types)
+		        AND %[3]s
 		  )
-	`, requester.GetClient().GetID()).Scan(&row)
+	`, clock, serviceGrant, serviceRole), requester.GetClient().GetID()).Scan(&row)
 	default:
 		return fosite.ErrInvalidRequest
 	}

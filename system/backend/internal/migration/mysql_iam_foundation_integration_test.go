@@ -42,7 +42,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	}
 	t.Cleanup(func() { pool.Close() })
 
-	// Build revision 4 with its original DDL before testing an upgrade.
+	// Build revision 5 with its original DDL before testing an upgrade.
 	applyDDL := func(conn *gorm.DB, files ...string) error {
 		for _, file := range files {
 			ddl, err := mysqlIAMFoundationSQL.ReadFile("mysql_iam/" + file)
@@ -55,13 +55,13 @@ func TestMySQLIAMFoundation(t *testing.T) {
 		}
 		return nil
 	}
-	err = schema.MigrateMySQL(db, mysqlIAMFoundationOwner, 4, func(conn *gorm.DB) error {
+	err = schema.MigrateMySQL(db, mysqlIAMFoundationOwner, 5, func(conn *gorm.DB) error {
 		files, err := fs.ReadDir(mysqlIAMFoundationSQL, "mysql_iam")
 		if err != nil {
 			return err
 		}
 		for _, file := range files {
-			if file.Name() > "031_role_assignments_before_delete.sql" {
+			if file.Name() > "040_oauth_clients_before_delete.sql" {
 				break
 			}
 			if err := applyDDL(conn, file.Name()); err != nil {
@@ -84,9 +84,9 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	mustExec("INSERT INTO users (id, display_name) VALUES (100, ?), (103, 'Another user')", "验证用户 🧪")
 
 	mustExec("INSERT INTO tenants (id, code, name) VALUES (1, 'before-upgrade', 'Before upgrade')")
-	interrupted := errors.New("fixture interrupt after service principal DDL")
+	interrupted := errors.New("fixture interrupt after token family DDL")
 	err = schema.MigrateMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion, func(conn *gorm.DB) error {
-		if err := applyDDL(conn, "032_service_principals.sql"); err != nil {
+		if err := applyDDL(conn, "041_refresh_token_families.sql"); err != nil {
 			return err
 		}
 		return interrupted
@@ -94,7 +94,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	if !errors.Is(err, interrupted) {
 		t.Fatalf("upgrade did not reach the interruption: %v", err)
 	}
-	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, 4); err == nil {
+	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, 5); err == nil {
 		t.Fatal("pending upgrade passed the previous revision check")
 	}
 	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion); err == nil {
@@ -171,6 +171,12 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	})
 	t.Run("oauth service credential", func(t *testing.T) {
 		testMySQLOAuthServiceCredential(t, db)
+	})
+	t.Run("oauth service token session", func(t *testing.T) {
+		testMySQLTokenSession(t, db)
+	})
+	t.Run("refresh token linkage and rollback", func(t *testing.T) {
+		testMySQLRefreshTokenLinkage(t, db)
 	})
 }
 

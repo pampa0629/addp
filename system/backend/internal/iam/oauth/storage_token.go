@@ -11,7 +11,6 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/ory/fosite"
 	fositeoauth2 "github.com/ory/fosite/handler/oauth2"
 	"github.com/ory/fosite/handler/rfc8628"
@@ -126,8 +125,12 @@ func (s *Storage) GetAccessTokenSession(
 	if err != nil {
 		return nil, err
 	}
-	if token.RevokedAt != nil || family.RevokedAt != nil || !token.ExpiresAt.After(s.now()) ||
-		!family.ExpiresAt.After(s.now()) || !s.familyAuthorizationIsCurrent(ctx, family) {
+	now, err := s.tokenEvaluationTime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if token.RevokedAt != nil || family.RevokedAt != nil || !token.ExpiresAt.After(now) ||
+		!family.ExpiresAt.After(now) || !s.familyAuthorizationIsCurrent(ctx, family) {
 		return requester, fosite.ErrInactiveToken
 	}
 	return requester, nil
@@ -243,9 +246,13 @@ func (s *Storage) GetRefreshTokenSession(
 	if token.UsedAt != nil && token.ReplacedByTokenID != nil {
 		return requester, fosite.ErrInactiveToken
 	}
+	now, err := s.tokenEvaluationTime(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if token.RevokedAt != nil || token.ReuseDetectedAt != nil || family.RevokedAt != nil ||
-		!token.ExpiresAt.After(s.now()) || !family.ExpiresAt.After(s.now()) ||
-		!s.familyAuthorizationCanRotate(ctx, family) {
+		!token.ExpiresAt.After(now) || !family.ExpiresAt.After(now) ||
+		!s.familyAuthorizationCanRotate(ctx, family, now) {
 		return requester, fosite.ErrNotFound
 	}
 	return requester, nil
@@ -455,9 +462,9 @@ func (s *Storage) createOAuthFamily(
 		IssuedAuthorizationVersion: session.IssuedAuthorizationVersion,
 		ClientID:                   request.GetClient().GetID(),
 		AuthType:                   oauthFamilyAuthType,
-		Audiences:                  pq.StringArray(append([]string(nil), request.GetGrantedAudience()...)),
-		Scopes:                     pq.StringArray(append([]string(nil), request.GetGrantedScopes()...)),
-		AuthenticationMethods:      pq.StringArray(append([]string(nil), session.AuthenticationMethods...)),
+		Audiences:                  iam.DBStringList(append([]string(nil), request.GetGrantedAudience()...)),
+		Scopes:                     iam.DBStringList(append([]string(nil), request.GetGrantedScopes()...)),
+		AuthenticationMethods:      iam.DBStringList(append([]string(nil), session.AuthenticationMethods...)),
 		AssuranceLevel:             iam.AssuranceLevel(session.AssuranceLevel),
 		AuthenticatedAt:            session.AuthenticatedAt.UTC(),
 		ExpiresAt:                  expiresAt.UTC(),
@@ -529,7 +536,7 @@ func (s *Storage) familyAuthorizationIsCurrent(ctx context.Context, family *iam.
 		principal.AuthorizationVersion == family.IssuedAuthorizationVersion
 }
 
-func (s *Storage) familyAuthorizationCanRotate(ctx context.Context, family *iam.RefreshTokenFamily) bool {
+func (s *Storage) familyAuthorizationCanRotate(ctx context.Context, family *iam.RefreshTokenFamily, at time.Time) bool {
 	if family == nil {
 		return false
 	}
@@ -538,7 +545,7 @@ func (s *Storage) familyAuthorizationCanRotate(ctx context.Context, family *iam.
 	if err != nil || family.IssuedAuthorizationVersion > principal.AuthorizationVersion {
 		return false
 	}
-	active, err := repository.RefreshTokenFamilyContextIsActive(ctx, principal, family, s.now())
+	active, err := repository.RefreshTokenFamilyContextIsActive(ctx, principal, family, at)
 	return err == nil && active
 }
 

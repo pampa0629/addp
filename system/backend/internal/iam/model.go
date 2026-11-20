@@ -558,9 +558,9 @@ type RefreshTokenFamily struct {
 	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
 	ClientID                   string         `gorm:"column:client_id;not null"`
 	AuthType                   string         `gorm:"column:auth_type;not null"`
-	Audiences                  pq.StringArray `gorm:"column:audiences;type:text[];not null"`
-	Scopes                     pq.StringArray `gorm:"column:scopes;type:text[];not null"`
-	AuthenticationMethods      pq.StringArray `gorm:"column:authentication_methods;type:text[];not null"`
+	Audiences                  DBStringList   `gorm:"column:audiences;not null"`
+	Scopes                     DBStringList   `gorm:"column:scopes;not null"`
+	AuthenticationMethods      DBStringList   `gorm:"column:authentication_methods;not null"`
 	AssuranceLevel             AssuranceLevel `gorm:"column:assurance_level;not null"`
 	AuthenticatedAt            time.Time      `gorm:"column:authenticated_at;not null"`
 	StepUpExpiresAt            *time.Time     `gorm:"column:step_up_expires_at"`

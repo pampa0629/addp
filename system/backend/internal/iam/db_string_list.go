@@ -1,13 +1,16 @@
 package iam
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// DBStringList reads ordered IAM strings from PostgreSQL arrays or MySQL JSON arrays.
+// DBStringList maps ordered IAM strings to PostgreSQL arrays or MySQL JSON arrays.
 type DBStringList []string
 
 func (list *DBStringList) Scan(value any) error {
@@ -29,3 +32,11 @@ func (list DBStringList) Value() (driver.Value, error) {
 }
 
 func (DBStringList) GormDataType() string { return "json" }
+
+func (list DBStringList) GormValue(_ context.Context, db *gorm.DB) clause.Expr {
+	if db.Dialector.Name() == "mysql" && list != nil {
+		encoded, _ := json.Marshal(list)
+		return gorm.Expr("?", string(encoded))
+	}
+	return gorm.Expr("?", pq.StringArray(list))
+}

@@ -166,10 +166,25 @@ func (s *Storage) GetClient(ctx context.Context, id string) (fosite.Client, erro
 
 func (s *Storage) databaseNow(ctx context.Context) (time.Time, error) {
 	var now time.Time
-	if err := s.dbFromContext(ctx).Raw("SELECT transaction_timestamp()").Scan(&now).Error; err != nil {
+	db := s.dbFromContext(ctx)
+	if err := db.Raw("SELECT " + issuanceTimeExpression(db)).Scan(&now).Error; err != nil {
 		return time.Time{}, toFositeStorageError(err)
 	}
 	return now.UTC(), nil
+}
+
+func (s *Storage) tokenEvaluationTime(ctx context.Context) (time.Time, error) {
+	if s.dbFromContext(ctx).Dialector.Name() == "mysql" {
+		return s.databaseNow(ctx)
+	}
+	return s.now(), nil
+}
+
+func issuanceTimeExpression(db *gorm.DB) string {
+	if db.Dialector.Name() == "mysql" {
+		return "CURRENT_TIMESTAMP(6)"
+	}
+	return "transaction_timestamp()"
 }
 
 // Client assertion authentication is fail-closed until its replay table and key policy are enabled.

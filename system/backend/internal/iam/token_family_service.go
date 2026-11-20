@@ -15,7 +15,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/lib/pq"
 )
 
 const (
@@ -606,9 +605,9 @@ func (s *TokenFamilyService) createBrowserSessionTx(
 		IssuedAuthorizationVersion: input.Principal.AuthorizationVersion,
 		ClientID:                   "addp-web",
 		AuthType:                   "first_party",
-		Audiences:                  pq.StringArray{"addp.api"},
-		Scopes:                     pq.StringArray{},
-		AuthenticationMethods:      pq.StringArray(methods),
+		Audiences:                  DBStringList{"addp.api"},
+		Scopes:                     DBStringList{},
+		AuthenticationMethods:      DBStringList(methods),
 		AssuranceLevel:             input.Authentication.AssuranceLevel,
 		AuthenticatedAt:            input.Authentication.AuthenticatedAt.UTC(),
 		StepUpExpiresAt:            utcTimePointer(input.Authentication.StepUpExpiresAt),

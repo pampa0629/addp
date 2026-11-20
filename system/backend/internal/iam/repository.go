@@ -1286,6 +1286,21 @@ func (r *Repository) IncrementPrincipalAuthorizationVersion(
 	principalID int64,
 ) (int64, error) {
 	var authorizationVersion int64
+	if r.db.Dialector.Name() == "mysql" {
+		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			result := tx.Model(&Principal{}).Where("id = ?", principalID).
+				Update("authorization_version", gorm.Expr("authorization_version + 1"))
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return commonapi.ErrNotFound
+			}
+			return tx.Model(&Principal{}).Where("id = ?", principalID).
+				Select("authorization_version").Row().Scan(&authorizationVersion)
+		})
+		return authorizationVersion, wrapRepositoryError(err)
+	}
 	err := r.db.WithContext(ctx).Raw(`
 		UPDATE system.principals
 		SET authorization_version = authorization_version + 1,
@@ -1308,11 +1323,16 @@ func (r *Repository) RevokeActiveTokenFamilies(
 	if reason == "" {
 		return 0, fmt.Errorf("%w: token family revocation reason is required", commonapi.ErrBadRequest)
 	}
+	var revokedTime any = revokedAt
+	if r.db.Dialector.Name() == "mysql" {
+		// Token families are created using the MySQL session clock.
+		revokedTime = gorm.Expr("CURRENT_TIMESTAMP(6)")
+	}
 	result := r.db.WithContext(ctx).
 		Table("system.refresh_token_families").
 		Where("principal_id = ? AND revoked_at IS NULL", principalID).
 		Updates(map[string]any{
-			"revoked_at":     revokedAt,
+			"revoked_at":     revokedTime,
 			"revoked_reason": reason,
 		})
 	return result.RowsAffected, wrapRepositoryError(result.Error)

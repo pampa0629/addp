@@ -20,7 +20,6 @@ import (
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -119,7 +118,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	protocol := uuid.New()
-	family := &RefreshTokenFamily{ProtocolRequestID: &protocol, PrincipalID: runtimeID, ContextType: ContextTypeTenant, TenantMembershipID: &runtimeMember.Membership.ID, IssuedAuthorizationVersion: runtimePrincipal.AuthorizationVersion, ClientID: "addp-develop", AuthType: "oauth", Audiences: pq.StringArray{"addp.api"}, Scopes: pq.StringArray{"addp.api"}, AuthenticationMethods: pq.StringArray{"service_secret"}, AssuranceLevel: AssuranceLevelNotApplicable, AuthenticatedAt: now, ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now}
+	family := &RefreshTokenFamily{ProtocolRequestID: &protocol, PrincipalID: runtimeID, ContextType: ContextTypeTenant, TenantMembershipID: &runtimeMember.Membership.ID, IssuedAuthorizationVersion: runtimePrincipal.AuthorizationVersion, ClientID: "addp-develop", AuthType: "oauth", Audiences: DBStringList{"addp.api"}, Scopes: DBStringList{"addp.api"}, AuthenticationMethods: DBStringList{"service_secret"}, AssuranceLevel: AssuranceLevelNotApplicable, AuthenticatedAt: now, ExpiresAt: now.Add(time.Hour), CreatedAt: now, UpdatedAt: now}
 	if err := repo.CreateRefreshTokenFamily(ctx, family); err != nil {
 		t.Fatal(err)
 	}
