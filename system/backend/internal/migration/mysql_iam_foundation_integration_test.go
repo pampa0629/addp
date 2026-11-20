@@ -270,6 +270,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 		if admins != 1 || runtimes != 24 || members != 25 || audits != 1 {
 			t.Fatalf("administrators=%d runtimes=%d memberships=%d creation audits=%d", admins, runtimes, members, audits)
 		}
+		testMySQLScanIdentity(t, db, tenant.ID, 103)
 	})
 }
 

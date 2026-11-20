@@ -18,7 +18,7 @@ func assertInstalledMachineCatalog(t *testing.T, db *sql.DB) {
 	if err := json.Unmarshal(mysqlIAMMachineCatalogV14, &catalog); err != nil {
 		t.Fatal(err)
 	}
-	for _, data := range [][]byte{mysqlIAMTenantCatalogV15, mysqlIAMAdministratorCatalogV16} {
+	for _, data := range [][]byte{mysqlIAMTenantCatalogV15, mysqlIAMAdministratorCatalogV16, mysqlIAMFunctionalRolesV17} {
 		var tenantCatalog machineCatalog
 		if err := json.Unmarshal(data, &tenantCatalog); err != nil {
 			t.Fatal(err)

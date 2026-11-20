@@ -94,14 +94,15 @@ type RevokeTenantRoleAssignmentInput struct {
 
 type TenantRoleService struct {
 	repository *Repository
-	now        func() time.Time
+	now        DatabaseTimeReader
 }
 
 func NewTenantRoleService(repository *Repository, now func() time.Time) *TenantRoleService {
-	if now == nil {
-		now = time.Now
+	var clock DatabaseTimeReader = readDatabaseTime
+	if now != nil {
+		clock = func(context.Context, *Repository) (time.Time, error) { return now().UTC(), nil }
 	}
-	return &TenantRoleService{repository: repository, now: now}
+	return &TenantRoleService{repository: repository, now: clock}
 }
 
 func (s *TenantRoleService) ListRoles(ctx context.Context, tenantID int64) ([]TenantRole, error) {
@@ -206,7 +207,6 @@ func (s *TenantRoleService) DeleteRole(ctx context.Context, input DeleteTenantRo
 	if input.TenantID <= 0 || input.RoleID <= 0 || input.ActorPrincipalID <= 0 || strings.TrimSpace(input.Reason) == "" {
 		return fmt.Errorf("%w: tenant, role, actor and reason are required", commonapi.ErrBadRequest)
 	}
-	now := s.now().UTC()
 	return s.repository.Transaction(ctx, func(tx *Repository) error {
 		role, holders, err := tx.lockRoleMutationPrincipals(ctx, input.TenantID, input.RoleID, input.ActorPrincipalID)
 		if err != nil {
@@ -214,6 +214,10 @@ func (s *TenantRoleService) DeleteRole(ctx context.Context, input DeleteTenantRo
 		}
 		if role.Immutable || role.RoleType != "tenant_custom" || role.Status != "active" {
 			return commonapi.ErrForbidden
+		}
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
 		}
 		if err := tx.DisableTenantCustomRole(ctx, role.ID, input.ActorPrincipalID, strings.TrimSpace(input.Reason), now); err != nil {
 			return err
@@ -258,10 +262,6 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 	if input.TenantID <= 0 || input.MembershipID <= 0 || input.ActorPrincipalID <= 0 || grantReason == "" {
 		return nil, fmt.Errorf("%w: tenant, membership, roles, actor and reason are required", commonapi.ErrBadRequest)
 	}
-	now := s.now().UTC()
-	if input.ValidUntil != nil && !input.ValidUntil.After(now) {
-		return nil, fmt.Errorf("%w: assignment expiry must be in the future", commonapi.ErrBadRequest)
-	}
 	assignments := make([]*RoleAssignment, 0, len(roleIDs))
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		membership, err := tx.lockMembershipPrincipal(ctx, input.TenantID, input.MembershipID, input.ActorPrincipalID)
@@ -270,6 +270,13 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 		}
 		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
 			return err
+		}
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if input.ValidUntil != nil && !input.ValidUntil.After(now) {
+			return fmt.Errorf("%w: assignment expiry must be in the future", commonapi.ErrBadRequest)
 		}
 		if membership.TenantID != input.TenantID || membership.Status != TenantMembershipStatusActive || (membership.ExpiresAt != nil && !membership.ExpiresAt.After(now)) {
 			return commonapi.ErrForbidden
@@ -371,7 +378,6 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 	if input.TenantID <= 0 || input.AssignmentID <= 0 || input.ActorPrincipalID <= 0 || strings.TrimSpace(input.Reason) == "" {
 		return nil, fmt.Errorf("%w: tenant, assignment, actor and reason are required", commonapi.ErrBadRequest)
 	}
-	now := s.now().UTC()
 	var assignment *RoleAssignment
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
 		source, err := tx.GetTenantRoleAssignment(ctx, input.TenantID, input.AssignmentID)
@@ -390,6 +396,10 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 		}
 		if assignment.Status != "active" {
 			return commonapi.ErrConflict
+		}
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
 		}
 		if assignment.ValidUntil != nil && !assignment.ValidUntil.After(now) {
 			return ErrTenantRoleAssignmentExpired

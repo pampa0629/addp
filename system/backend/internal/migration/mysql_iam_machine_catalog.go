@@ -20,6 +20,9 @@ var mysqlIAMTenantCatalogV15 []byte
 //go:embed mysql_iam_v16.json
 var mysqlIAMAdministratorCatalogV16 []byte
 
+//go:embed mysql_iam_v17.json
+var mysqlIAMFunctionalRolesV17 []byte
+
 type platformMachine struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -58,7 +61,12 @@ func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
 		if err := installMySQLCatalogRevision(tx, mysqlIAMAdministratorCatalogV16); err != nil {
 			return err
 		}
-		return tx.Exec(`INSERT INTO role_conflicts (role_id_low,role_id_high,reason) SELECT a.id,b.id,'platform_three_administrators_separation_of_duties' FROM roles a JOIN roles b ON a.id<b.id WHERE a.role_key IN ? AND b.role_key IN ?`, platformAdministratorRoles, platformAdministratorRoles).Error
+		if err := tx.Exec(`INSERT INTO role_conflicts (role_id_low,role_id_high,reason) SELECT a.id,b.id,'platform_three_administrators_separation_of_duties' FROM roles a JOIN roles b ON a.id<b.id WHERE a.role_key IN ? AND b.role_key IN ?`, platformAdministratorRoles, platformAdministratorRoles).Error; err != nil {
+			return err
+		}
+	}
+	if from < 17 {
+		return installMySQLCatalogRevision(tx, mysqlIAMFunctionalRolesV17)
 	}
 	return nil
 }

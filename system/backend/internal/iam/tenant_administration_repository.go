@@ -268,20 +268,33 @@ func (r *Repository) CreateTenantRoleAssignment(ctx context.Context, assignment 
 }
 
 func (r *Repository) ListTenantRoles(ctx context.Context, tenantID int64) ([]TenantRole, error) {
-	var roles []TenantRole
+	// Read each role and its active permissions from a single snapshot. The left join
+	// also retains roles without an active permission binding.
+	var rows []struct {
+		Role
+		PermissionKey *string
+	}
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT role.*, COALESCE(array_agg(permission.permission_key ORDER BY permission.permission_key)
-		       FILTER (WHERE permission.id IS NOT NULL), ARRAY[]::text[]) AS permission_keys
-		FROM system.roles role
-		LEFT JOIN system.role_permissions role_permission ON role_permission.role_id = role.id
-		LEFT JOIN system.permissions permission ON permission.id = role_permission.permission_id AND permission.status = 'active'
-		WHERE role.status = 'active'
-		  AND ((role.role_type = 'tenant_builtin' AND role.tenant_id IS NULL) OR
-		       (role.role_type = 'tenant_custom' AND role.tenant_id = ?))
-		GROUP BY role.id
-		ORDER BY role.role_type, role.role_key
-	`, tenantID).Scan(&roles).Error
-	return roles, wrapRepositoryError(err)
+		SELECT role.*, permission.permission_key FROM system.roles role
+		LEFT JOIN system.role_permissions binding ON binding.role_id=role.id
+		LEFT JOIN system.permissions permission ON permission.id=binding.permission_id AND permission.status='active'
+		WHERE role.status='active' AND ((role.role_type='tenant_builtin' AND role.tenant_id IS NULL)
+			OR (role.role_type='tenant_custom' AND role.tenant_id=?))
+		ORDER BY role.role_type,role.role_key,role.id,permission.permission_key`, tenantID).Scan(&rows).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	var roles []TenantRole
+	for _, row := range rows {
+		if len(roles) == 0 || roles[len(roles)-1].ID != row.ID {
+			roles = append(roles, TenantRole{Role: row.Role, PermissionKeys: []string{}})
+		}
+		if row.PermissionKey != nil {
+			r := &roles[len(roles)-1]
+			r.PermissionKeys = append(r.PermissionKeys, *row.PermissionKey)
+		}
+	}
+	return roles, nil
 }
 
 func (r *Repository) ListTenantAssignablePermissions(ctx context.Context) ([]TenantAssignablePermission, error) {
@@ -466,7 +479,7 @@ func withManagedTenantRoleAssignmentProjection(query *gorm.DB) *gorm.DB {
 				WHERE active_assignment.principal_id = assignment.principal_id
 				  AND active_assignment.role_id = assignment.role_id
 				  AND active_assignment.scope_type = assignment.scope_type
-				  AND active_assignment.tenant_id IS NOT DISTINCT FROM assignment.tenant_id
+				  AND active_assignment.tenant_id = assignment.tenant_id
 				  AND active_assignment.status = 'active'
 				  AND active_assignment.valid_from <= CURRENT_TIMESTAMP(6)
 				  AND (active_assignment.valid_until IS NULL OR active_assignment.valid_until > CURRENT_TIMESTAMP(6))
