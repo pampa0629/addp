@@ -414,7 +414,7 @@ func postgresExtensionReadOperation(function postgresResolvedFunction) string {
 		switch function.Name {
 		case "st_transform":
 			return "dictionary"
-		case "st_intersects", "st_asgeojson", "st_makeenvelope", "st_srid":
+		case "st_intersects", "st_asgeojson", "st_astext", "st_makeenvelope", "st_srid":
 			return "value"
 		}
 	case "hstore":

@@ -150,6 +150,17 @@ func TestIntegrationPostgresQueryReadSessionFarmland(t *testing.T) {
 			}
 		})
 	}
+	t.Run("geometry_wkt", func(t *testing.T) {
+		session, err := open(t, "SELECT ST_AsText(geom) AS wkt FROM "+table+" LIMIT 1", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.Close(ctx)
+		batch, err := session.ReadBatch(ctx, 2)
+		if err != nil || batch == nil || len(batch.Rows) != 1 || batch.Rows[0]["wkt"] != "POINT(1 2)" {
+			t.Fatalf("geometry WKT projection: batch=%v err=%v", batch, err)
+		}
+	})
 	t.Run("transformed_srid", func(t *testing.T) {
 		session, err := open(t, "SELECT ST_SRID("+transform+") AS target_srid FROM "+table+" LIMIT 1", false)
 		if err != nil {
