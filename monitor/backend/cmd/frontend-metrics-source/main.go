@@ -266,7 +266,6 @@ func composeResource(ctx context.Context, run command, cfg configuration, f fron
 	}
 	defer resp.Body.Close()
 	var stats struct {
-		ID  string `json:"id"`
 		CPU struct {
 			Usage struct {
 				Total *uint64 `json:"total_usage"`
@@ -278,7 +277,7 @@ func composeResource(ctx context.Context, run command, cfg configuration, f fron
 		} `json:"memory_stats"`
 	}
 	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&stats) != nil ||
-		stats.ID != id || stats.CPU.Usage.Total == nil || stats.Memory.Usage == 0 {
+		stats.CPU.Usage.Total == nil || stats.Memory.Usage == 0 {
 		return nil
 	}
 	after, ok := inspect()

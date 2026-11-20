@@ -62,7 +62,7 @@ func TestComposeFrontendRejectsRecreatedOrForeignContainer(t *testing.T) {
 		if r.URL.Path != "/containers/"+cid+"/stats" || r.URL.Query().Get("one-shot") != "true" {
 			t.Errorf("unexpected stats URL %s", r.URL)
 		}
-		w.Write([]byte(`{"id":"` + cid + `","cpu_stats":{"cpu_usage":{"total_usage":3200000000}},"memory_stats":{"usage":46137344,"stats":{"inactive_file":4194304}}}`))
+		w.Write([]byte(`{"cpu_stats":{"cpu_usage":{"total_usage":3200000000}},"memory_stats":{"usage":46137344,"stats":{"inactive_file":4194304}}}`))
 	})}
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Close() })
