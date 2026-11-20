@@ -31,6 +31,7 @@ class SelectImageServicesTest(unittest.TestCase):
             ("geopython-workflow-engine", "engines/geopython-workflow"),
             ("spark-workflow-engine", "engines/spark-workflow"),
             ("model3d-workflow-engine", "engines/model3d-workflow"),
+            ("jupyter-engine", "engines/jupyter"),
             ("console", "console/frontend"),
             ("meta-frontend", "meta/frontend"),
             ("nginx", "nginx"),
@@ -98,6 +99,12 @@ class SelectImageServicesTest(unittest.TestCase):
         self.assertIn("geopython-workflow-engine", selected)
         self.assertIn("spark-workflow-engine", selected)
         self.assertIn("model3d-workflow-engine", selected)
+
+    def test_jupyter_container_gate_changes_select_its_image(self):
+        for path in ("scripts/test/jupyter-isolation.py", "scripts/test/docker-compose.jupyter-isolation.yml",
+                     "scripts/dev/docker-compose.jupyter.yml", "docker-compose.runtimes.yml"):
+            with self.subTest(path=path):
+                self.assertIn("jupyter-engine", self._select(path))
 
     def test_model3d_change_selects_hosted_native_image_build(self) -> None:
         self.assertIn("model3d-workflow-engine", self._select("engines/model3d-workflow/docker/converter/Dockerfile"))

@@ -1,8 +1,11 @@
 import io
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from execution_container import ExecutionContainer
 
 from interactive_sessions import InteractiveSessionManager, SessionConflictError, SessionValidationError
 
@@ -24,30 +27,11 @@ class _Minio:
         self.puts.append(("develop", object_name, source.read(), size, media_type))
 
 
-class _Process:
-    def __init__(self):
-        self.running = True
-
-    def poll(self):
-        return None if self.running else 0
-
-    def terminate(self):
-        self.running = False
-
-    def wait(self, timeout=None):
-        self.running = False
-        return 0
-
-    def kill(self):
-        self.running = False
-
-
 class InteractiveSessionManagerTests(unittest.TestCase):
     def test_create_and_close_saves_same_notebook_object(self):
         minio = _Minio()
         with tempfile.TemporaryDirectory() as workspace:
             manager = InteractiveSessionManager(minio, workspace, 300)
-            process = _Process()
             request = {
                 "session_id": "abc-123",
                 "tenant_id": 7,
@@ -68,20 +52,29 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                 "owner_change_stream_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/change-streams",
                 "owner_capability_token": "addp_nkc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             }
-            with patch.object(manager, "_available_port", return_value=31000), patch.object(
-                manager, "_start_jupyter", return_value=process
-            ), patch.object(manager, "_wait_until_ready"):
-                session = manager.create(request, "jupyter-engine")
-
-            self.assertEqual(session.endpoint, "http://jupyter-engine:31000")
+            with patch.dict(os.environ, {"ADDP_SYNTHETIC_MARKER": "api-only"}), patch.object(
+                ExecutionContainer, "start"
+            ) as start, patch.object(manager, "_wait_until_ready"):
+                session = manager.create(request, "jupyter-engine:8097")
+            start.assert_called_once_with("lab", 120)
+            self.assertEqual(session.endpoint, "http://jupyter-engine:8097")
+            job = json.loads((session.container.workspace / "job.json").read_text())
+            environment = job["session_environment"]
+            self.assertNotIn("ADDP_SYNTHETIC_MARKER", environment)
+            for key, value in request.items():
+                if key.startswith("owner_") and key.endswith("_endpoint"):
+                    variable = "ADDP_NOTEBOOK_" + key.removeprefix("owner_").upper()
+                    if key == "owner_api_endpoint":
+                        variable = "ADDP_NOTEBOOK_OWNER_API_ENDPOINT"
+                    self.assertEqual(environment[variable], value.replace("http://develop:8185", "http://nb-control:8097"))
+            self.assertEqual(environment["ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN"], request["owner_capability_token"])
             self.assertNotIn("owner_api_endpoint", session.response())
             self.assertNotIn("owner_catalog_api_endpoint", session.response())
             self.assertNotIn("owner_capability_token", session.response())
-            self.assertTrue(Path(session.notebook_file).exists())
-            manager.close("abc-123", tenant_id=7)
-
-            self.assertFalse(Path(session.workspace).exists())
-            self.assertFalse(process.running)
+            self.assertTrue((session.container.workspace / "files/analysis.ipynb").exists())
+            with patch.object(session.container.http, "delete"):
+                manager.close("abc-123", tenant_id=7)
+            self.assertFalse(session.container.workspace.exists())
             self.assertEqual(minio.puts[0][1], "tenant_7/notebooks/analysis.ipynb")
             manager.shutdown()
 
@@ -109,10 +102,8 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                 "owner_change_stream_api_endpoint": "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/change-streams",
                 "owner_capability_token": "addp_nkc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             }
-            with patch.object(manager, "_available_port", return_value=31000), patch.object(
-                manager, "_start_jupyter", return_value=_Process()
-            ), patch.object(manager, "_wait_until_ready"):
-                manager.create(base, "jupyter-engine")
+            with patch.object(ExecutionContainer, "start"), patch.object(manager, "_wait_until_ready"):
+                session = manager.create(base, "jupyter-engine:8097")
                 second = dict(base)
                 second["session_id"] = "def-456"
                 second["base_path"] = "/api/v1/develop/notebook-sessions/def-456/"
@@ -145,71 +136,8 @@ class InteractiveSessionManagerTests(unittest.TestCase):
                 )
                 with self.assertRaises(SessionConflictError):
                     manager.create(second, "jupyter-engine")
-            manager.shutdown()
-
-    def test_start_jupyter_injects_only_session_owner_capability(self):
-        with tempfile.TemporaryDirectory() as workspace:
-            Path(workspace, "analysis.ipynb").write_text("{}", encoding="utf-8")
-            with patch("interactive_sessions.subprocess.Popen") as popen:
-                InteractiveSessionManager._start_jupyter(
-                    workspace,
-                    "/api/v1/develop/notebook-sessions/abc-123/",
-                    31000,
-                    "runtime-secret",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/record-scans",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/graph-samples",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/graph-queries",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/content-reads",
-                    "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/change-streams",
-                    "addp_nkc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                )
-
-            environment = popen.call_args.kwargs["env"]
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_OWNER_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/engine-descriptors",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_CATALOG_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/catalog/children",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_TABLE_SCAN_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/table-scans",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_QUERY_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/queries",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_RECORD_SCAN_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/record-scans",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_GRAPH_SAMPLE_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/graph-samples",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_GRAPH_QUERY_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/graph-queries",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_CONTENT_READ_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/content-reads",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_CHANGE_STREAM_API_ENDPOINT"],
-                "http://develop:8185/api/v1/develop/notebook-kernel-sessions/abc-123/change-streams",
-            )
-            self.assertEqual(
-                environment["ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN"],
-                "addp_nkc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            )
-            self.assertNotIn("ADDP_TOKEN", environment)
+            with patch.object(session.container.http, "delete"):
+                manager.shutdown()
 
     def test_validate_request_rejects_missing_or_invalid_owner_capability(self):
         with tempfile.TemporaryDirectory() as workspace:

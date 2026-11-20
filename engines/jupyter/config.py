@@ -15,9 +15,6 @@ load_dotenv(dotenv_path=env_path)
 class Config:
     """Jupyter Engine 配置（从环境变量加载）"""
 
-    # API 配置
-    API_PORT = int(os.getenv('API_PORT', '8097'))
-
     # canonical AuthContext 解析服务
     SYSTEM_URL = os.getenv('SYSTEM_URL', 'http://localhost:8180')
 
@@ -26,6 +23,7 @@ class Config:
 
     # Workspace 配置
     WORKSPACE_DIR = os.getenv('WORKSPACE_DIR', os.path.join(tempfile.gettempdir(), 'addp-jupyter-notebooks'))
+    DEVELOP_LOOPBACK_HOST = os.getenv("JUPYTER_DEVELOP_LOOPBACK_HOST", "")
     SESSION_TTL_SECONDS = int(os.getenv('JUPYTER_SESSION_TTL_SECONDS', '3600'))
 
     @classmethod
@@ -33,7 +31,6 @@ class Config:
         """打印配置信息（用于启动时调试）"""
         print("=" * 60)
         print("Jupyter Engine 配置:")
-        print(f"  API_PORT: {cls.API_PORT}")
         print(f"  SYSTEM_URL: {cls.SYSTEM_URL}")
         print(f"  LOG_LEVEL: {cls.LOG_LEVEL}")
         print(f"  WORKSPACE_DIR: {cls.WORKSPACE_DIR}")

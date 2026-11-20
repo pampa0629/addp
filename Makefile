@@ -172,6 +172,10 @@ test-jupyter: ## 验证 Notebook Runtime 身份、内容摘要与隔离会话
 	@cd engines/jupyter && $(abspath $(JUPYTER_PYTHON)) -m unittest discover -p 'test_*.py'
 
 MATH_WORKFLOW_PYTHON ?= engines/math-workflow/venv/bin/python
+.PHONY: test-jupyter-container
+test-jupyter-container: ## 在本次构建的镜像中验证交互与批量 Kernel 的运行身份和隔离
+	@bash scripts/test/jupyter-isolation.sh
+
 .PHONY: test-math-workflow
 test-math-workflow: ## 运行 Math Workflow 算子、公共 DAG 执行与进程内 API 测试
 	@cd engines/math-workflow && $(abspath $(MATH_WORKFLOW_PYTHON)) -m pytest -q tests

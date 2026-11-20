@@ -265,13 +265,16 @@ stop_services_concurrent() {
   stop_workspace_launchd_jobs modules || cleanup_failed=true
   stop_pid_group "模块、Worker 和前端" "${all_pids[@]}"
 
-  local name container labels
-  for name in supermap-workflow; do
+  local name container labels timeout
+  for container in supermap-workflow-engine jupyter-engine jupyter-launcher; do
+    case "$container" in
+      supermap-workflow-engine) name=supermap-workflow; timeout=5 ;;
+      *) name=jupyter-api-server; timeout=30 ;;
+    esac
     stop_process_selected "$name" || continue
-    container="${name}-engine"
     labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || continue
     if [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ]; then
-      if ! docker stop -t 5 "$container" >/dev/null 2>&1 ||
+      if ! docker stop -t "$timeout" "$container" >/dev/null 2>&1 ||
          ! docker rm "$container" >/dev/null 2>&1; then
         echo -e "${RED}  ✗ Runtime 容器停止失败: $container${NC}"
         cleanup_failed=true

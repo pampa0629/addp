@@ -5,16 +5,18 @@ Jupyter Engine API Server
 
 import os
 import io
+from contextlib import closing
 import hashlib
 import re
 import asyncio
 import logging
 import traceback
-import tempfile
+import uuid
+from urllib.parse import urlsplit, urlunsplit
+from execution_container import ExecutionContainer, launcher_client, recover_previous_jobs
 from functools import wraps
-from flask import Flask, g, request, jsonify
+from flask import Flask, g, request, jsonify, Response
 import httpx
-import papermill as pm
 import nbformat
 from datetime import datetime
 
@@ -56,6 +58,11 @@ interactive_session_manager = InteractiveSessionManager(
 )
 
 
+def runtime_app():
+    recover_previous_jobs(config.WORKSPACE_DIR)
+    return app
+
+
 def require_develop_service(handler):
     @wraps(handler)
     def wrapped(*args, **kwargs):
@@ -92,8 +99,10 @@ def health():
     if ready:
         try:
             notebook_store.check_ready()
+            with launcher_client() as launcher:
+                launcher.get("/ready", timeout=2).raise_for_status()
         except Exception as exc:
-            logger.warning("Notebook storage readiness failed: %s", type(exc).__name__)
+            logger.warning("Notebook readiness failed: %s", type(exc).__name__)
             ready = False
     return jsonify({'status': 'healthy' if ready else 'unhealthy',
                     'service': 'jupyter-engine', 'timestamp': datetime.now().isoformat()}), 200 if ready else 503
@@ -159,10 +168,9 @@ def execute_notebook():
         input_key = ref.key
 
         # 生成执行输出路径（使用时间戳避免冲突）
-        from datetime import datetime
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         notebook_name = os.path.splitext(os.path.basename(ref.key))[0]
-        output_notebook_name = f"{notebook_name}_exec_{timestamp}.ipynb"
+        output_notebook_name = f"{notebook_name}_exec_{timestamp}_{uuid.uuid4().hex}.ipynb"
         output_key = f"tenant_{tenant_id}/executions/{output_notebook_name}"
 
         logger.info(f"执行 Notebook: {input_key} -> {output_key}")
@@ -175,55 +183,23 @@ def execute_notebook():
                 'message': 'Notebook storage unavailable'
             }), 500
 
-        input_temp_fd, input_temp_path = tempfile.mkstemp(suffix='.ipynb')
-        output_temp_fd, output_temp_path = tempfile.mkstemp(suffix='.ipynb')
-        os.close(output_temp_fd)
+        with closing(notebook_store.open(input_key)) as source:
+            contents = source.read()
+        if hashlib.sha256(contents).hexdigest() != content_digest:
+            return jsonify({'status': 'error', 'error_code': 'notebook_content_changed',
+                            'message': 'Notebook content changed; submit a new execution'}), 409
 
+        job = ExecutionContainer(config.WORKSPACE_DIR, uuid.uuid4().hex)
+        job.prepare("input.ipynb", contents, {"parameters": parameters})
         try:
-            # 下载输入文件
-            with os.fdopen(input_temp_fd, 'wb') as f:
-                response = notebook_store.open(input_key)
-                try:
-                    notebook_bytes = response.read()
-                finally:
-                    response.close()
-                if hashlib.sha256(notebook_bytes).hexdigest() != content_digest:
-                    return jsonify({'status': 'error', 'error_code': 'notebook_content_changed',
-                                    'message': 'Notebook content changed; submit a new execution'}), 409
-                f.write(notebook_bytes)
-
-            logger.info(f"已从对象存储下载: {input_key}")
-
-            logger.info(f"开始执行 Notebook: {input_temp_path} -> {output_temp_path}")
             start_time = datetime.now()
-
-            # 使用 papermill 执行 Notebook，只传递公开任务参数。
-            pm.execute_notebook(
-                input_temp_path,
-                output_temp_path,
-                parameters=parameters,
-                kernel_name=kernel,
-                progress_bar=False
-            )
-
-            end_time = datetime.now()
-            execution_time = (end_time - start_time).total_seconds()
-
-            logger.info(f"Notebook 执行完成，耗时 {execution_time:.2f} 秒")
-
-            with open(output_temp_path, 'r', encoding='utf-8') as f:
-                output_nb = nbformat.read(f, as_version=4)
-
-            with open(output_temp_path, 'rb') as f:
-                data = f.read()
-                notebook_store.put(
-                    output_key,
-                    io.BytesIO(data),
-                    size=len(data),
-                    media_type='application/x-ipynb+json'
-                )
-
-            logger.info(f"已上传输出到对象存储: {output_key}")
+            job.start("batch", 7200)
+            job.wait(7200)
+            execution_time = (datetime.now() - start_time).total_seconds()
+            result = job.read("output.ipynb")
+            output_nb = nbformat.reads(result.decode("utf-8"), as_version=4)
+            notebook_store.put(output_key, io.BytesIO(result), size=len(result),
+                               media_type="application/x-ipynb+json")
 
             outputs = []
             output_count = 0
@@ -247,18 +223,8 @@ def execute_notebook():
                 'variables_exported': {}
             })
 
-        except Exception as e:
-            logger.error(f"从 object storage 下载或执行 Notebook 失败: {e}")
-            raise
-
         finally:
-            # 清理输入/输出临时文件
-            if os.path.exists(input_temp_path):
-                os.remove(input_temp_path)
-                logger.debug(f"已删除临时文件: {input_temp_path}")
-            if os.path.exists(output_temp_path):
-                os.remove(output_temp_path)
-                logger.debug(f"已删除临时文件: {output_temp_path}")
+            job.close()
 
     except Exception as e:
         error_trace = traceback.format_exc()
@@ -303,7 +269,7 @@ def create_interactive_session():
         return jsonify({'status': 'error', 'message': 'tenant context mismatch'}), 403
     if notebook_store is None:
         return jsonify({'status': 'error', 'message': 'Notebook storage unavailable'}), 503
-    runtime_host = request.host.rsplit(':', 1)[0]
+    runtime_host = request.host
     try:
         session = interactive_session_manager.create(data, runtime_host)
     except SessionValidationError as exc:
@@ -330,6 +296,39 @@ def close_interactive_session(session_id):
         return jsonify({'status': 'error', 'message': str(exc)}), 500
     return '', 204
 
-if __name__ == '__main__':
-    logger.info(f"启动 Jupyter Engine API Server (端口: {config.API_PORT})...")
-    app.run(host='0.0.0.0', port=config.API_PORT, debug=False)
+
+@app.get("/_notebook_authorize")
+def authorize_lab_proxy():
+    token = interactive_session_manager.lab_authorization(request.headers.get("X-Notebook-Session", ""),
+                                                          request.headers.get("Authorization", ""))
+    if token is None:
+        return "", 403
+    return "", 204, {"X-Notebook-Lab-Authorization": token}
+
+
+@app.route('/api/v1/develop/notebook-kernel-sessions/<key>/<path:operation>', methods=['GET', 'POST'])
+def kernel_callback(key, operation):
+    authorization = request.headers.get("Authorization", "")
+    target = interactive_session_manager.owner_route(key, request.path, authorization)
+    if target is None:
+        return "", 403
+    url = urlsplit(target)
+    if url.hostname in {"localhost", "127.0.0.1", "::1"} and config.DEVELOP_LOOPBACK_HOST:
+        host = config.DEVELOP_LOOPBACK_HOST
+        target = urlunsplit((url.scheme, f"{host}:{url.port}" if url.port else host, url.path, "", ""))
+    headers = {"Authorization": authorization}
+    for name in ("Accept", "Content-Type"):
+        if name in request.headers:
+            headers[name] = request.headers[name]
+    client = httpx.Client(trust_env=False, timeout=120)
+    try:
+        upstream = client.send(client.build_request(request.method, target, headers=headers,
+                               params=list(request.args.items(multi=True)), content=request.get_data()), stream=True)
+    except httpx.HTTPError:
+        client.close()
+        return "", 502
+    response = Response(upstream.iter_bytes(), status=upstream.status_code,
+                        content_type=upstream.headers.get("content-type"))
+    response.call_on_close(upstream.close)
+    response.call_on_close(client.close)
+    return response

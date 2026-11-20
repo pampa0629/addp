@@ -46,6 +46,11 @@ def select_services(
     selected = BASELINE_SERVICES & available
     hosted = available - HOSTED_RUNNER_EXCLUSIONS
 
+    if changed_paths & {"docker-compose.runtimes.yml", "scripts/test/jupyter-isolation.py",
+                        "scripts/test/jupyter-isolation.sh", "scripts/test/docker-compose.jupyter-isolation.yml",
+                        "scripts/dev/docker-compose.jupyter.yml"}:
+        selected.add("jupyter-engine")
+
     for changed_path in changed_paths:
         if changed_path.endswith("/module-declaration.json"):
             module = changed_path.split("/")[0]

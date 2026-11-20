@@ -1160,6 +1160,17 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
     set -euo pipefail
     source "$PORT_SCRIPT"
     lsof() { printf "%s\n" "$$"; }
+    fixture_jupyter_port=8097
+    docker() {
+      case "$*" in
+        *com.docker.compose.project.working_dir*) echo "addp-runtimes|jupyter-engine|$ROOT_DIR" ;;
+        *State.Running*) echo true ;;
+        *HostConfig.NetworkMode*) echo addp-network ;;
+        "port jupyter-engine 8097/tcp") echo "127.0.0.1:$fixture_jupyter_port" ;;
+        *) return 1 ;;
+      esac
+    }
+    ! addp_dev_owned_listener jupyter-api-server 18097 || exit 1
     checked=0
     while read -r name variable preferred; do
       case "$variable" in
@@ -1176,11 +1187,12 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
       checked=$((checked + 1))
     done < <(addp_dev_port_specs)
     [ "$checked" -eq 5 ]
+    fixture_jupyter_port=18097
     addp_dev_load_saved_ports
     [ "$MATH_WORKFLOW_PORT" -eq 18089 ]
     [ "$JUPYTER_API_PORT" -eq 18097 ]
     [ "$MODEL3D_WORKFLOW_PORT" -eq 18101 ]
-  ' || fail "runtime port ownership did not match the startup PID files"
+  ' || fail "runtime port ownership did not match the recorded processes or Jupyter container"
 }
 
 test_geopython_native_lifecycle() {

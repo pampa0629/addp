@@ -92,10 +92,17 @@ class NotebookObserverTest(unittest.TestCase):
         self.assertEqual(scenario.check_bytes(b"abc", b"abc", "cross-language")["bytes"], 3)
 
     def test_reachable_workspace_never_counts_as_cleaned(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as directory:
-            self.assertFalse(scenario.process_gone({"workspace": directory, "processes": {}}))
-        self.assertTrue(scenario.process_gone({"workspace": directory, "processes": {}}))
+        with patch.object(scenario, "session_resources", return_value=[]), patch.object(scenario.subprocess, "run") as run:
+            identity = {"session_id": "fixture"}
+            run.return_value.stderr = b""
+            run.return_value.returncode = 1
+            self.assertFalse(scenario.process_gone(identity))
+            run.return_value.returncode = 0
+            self.assertTrue(scenario.process_gone(identity))
+            run.return_value.returncode = 125
+            with self.assertRaises(scenario.api.SuiteError):
+                scenario.process_gone(identity)
+
 
     def test_hosted_registration_pins_product_and_preserves_standard_lifecycle(self):
         root = Path(__file__).resolve().parents[2]

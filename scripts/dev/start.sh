@@ -156,7 +156,6 @@ export GOTOOLCHAIN="local"
 
 # 加载颜色定义（提前加载，供检查函数使用）
 source "${SCRIPT_DIR}/../utils/colors.sh"
-source "${SCRIPT_DIR}/jupyter-env.sh"
 source "${SCRIPT_DIR}/build-identity.sh"
 
 # ============================================================
@@ -2020,54 +2019,30 @@ start_runtime_spark() (
 )
 
 start_runtime_jupyter() (
-  echo -e "${YELLOW}Step 4.6/5: 启动 Jupyter Engine...${NC}"
-
-  ensure_jupyter_python_env "$ROOT_DIR"
-
-# 启动 Jupyter Engine
-if check_service_running "jupyter-api-server" "$JUPYTER_API_PORT"; then
-  echo "启动 Jupyter Notebook Runtime..."
-  cd engines/jupyter
-
-  # 设置环境变量
-  export API_PORT=$JUPYTER_API_PORT
-
-  # 启动 API Server（后台）
-  ./venv/bin/python api_server.py > ../../logs/jupyter-api-server.log 2> ../../logs/jupyter-api-server-stderr.log &
-  API_SERVER_PID=$!
-  echo $API_SERVER_PID > ../../.dev-pids/jupyter-api-server.pid
-
-  cd ../..
-
-  echo -e "${GREEN}✓ Jupyter Notebook Runtime 已启动:${NC}"
-  echo -e "  - API Server (PID: $API_SERVER_PID, Port: $JUPYTER_API_PORT)"
-
-  # 等待 API Server 健康检查通过
-  echo -n "等待 API Server 就绪..."
-  WAIT_COUNT=0
-  MAX_WAIT=60
-  until curl -f http://localhost:${JUPYTER_API_PORT}/health > /dev/null 2>&1; do
-    echo -n "."
-    sleep 1
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-      echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ API Server 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/jupyter-api-server.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/jupyter-api-server-stderr.log${NC}"
-      exit 1
+  set -e
+  local container current
+  if addp_dev_owned_listener jupyter-api-server "$JUPYTER_API_PORT"; then
+    curl --noproxy '*' -fsS --max-time 5 "http://127.0.0.1:$JUPYTER_API_PORT/health" >/dev/null
+    echo "✓ 复用当前工作区的 Jupyter 容器"
+    return
+  fi
+  for container in jupyter-engine jupyter-launcher; do
+    if docker container inspect "$container" >/dev/null 2>&1; then
+      echo "✗ 已有 $container，请核对工作区归属并通过标准生命周期停止原实例" >&2
+      return 1
     fi
   done
-  echo -e " ${GREEN}✓${NC}"
-
-  echo -e "${GREEN}✓ Jupyter Notebook Runtime 就绪:${NC}"
-  echo -e "  - API Server: http://localhost:${JUPYTER_API_PORT}"
-else
-  API_SERVER_PID=$(cat .dev-pids/jupyter-api-server.pid 2>/dev/null)
-  echo -e "${GREEN}✓ Jupyter Notebook Runtime 已在运行:${NC}"
-  echo -e "  - API Server (PID: $API_SERVER_PID)"
-fi
-  echo ""
+  if addp_dev_port_busy "$JUPYTER_API_PORT" || { [ -f .dev-pids/jupyter-api-server.pid ] && read -r current < .dev-pids/jupyter-api-server.pid &&
+       [[ "$current" =~ ^[0-9]+$ ]] && kill -0 "$current" 2>/dev/null; }; then
+    echo "✗ 发现已有 Jupyter 监听或原生进程，请先通过标准生命周期停止" >&2
+    return 1
+  fi
+  local tag="jupyter-dev"
+  make build-images IMAGE_BUILD_ARGS="--verify --services jupyter-engine --tag $tag"
+  IMAGE_TAG="$tag" docker compose -f docker-compose.runtimes.yml -f scripts/dev/docker-compose.jupyter.yml \
+      up -d --wait --wait-timeout 120 --no-build --pull never jupyter-engine
+  addp_dev_owned_listener jupyter-api-server "$JUPYTER_API_PORT"
+  echo jupyter-engine > .dev-pids/jupyter-api-server.pid
 )
 
 start_runtime_copilot() (

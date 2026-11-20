@@ -82,47 +82,54 @@ def check_bytes(actual, expected, label):
     return {"bytes": len(actual), "sha256": hashlib.sha256(actual).hexdigest()}
 
 
+def session_resources(kind, session_id):
+    command = ["docker", "ps", "-aq", "--no-trunc"] if kind == "container" else ["docker", "network", "ls", "-q", "--no-trunc"]
+    for label in ("addp.jupyter.launcher=addp-runtimes", "addp.jupyter.job=" + session_id):
+        command.extend(["--filter", "label=" + label])
+    return subprocess.check_output(command, text=True, timeout=10).splitlines()
+
+
 def process_identity(session_id):
-    workspace = Path(os.environ["WORKSPACE_DIR"])
-    matches = list(workspace.glob("session-" + session_id + "-*"))
-    require(len(matches) == 1, "unique owned session workspace missing")
-    directory = matches[0].resolve()
-    require(directory.is_relative_to(workspace.resolve()), "workspace escaped owned root")
-    pids = []
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
+    require(str(uuid.UUID(session_id)) == session_id, "invalid session identity")
+    containers = session_resources("container", session_id)
+    networks = session_resources("network", session_id)
+    require(len(containers) == len(networks) == 1, "unique owned session container/network missing")
+    # The disposable observer captures only the issued capability for the existing
+    # revocation oracle. It is never part of the archived process evidence.
+    inspect_job = r"""
+import json, os
+from pathlib import Path
+work = Path("/job/files")
+processes = {}
+for entry in Path("/proc").iterdir():
+    if not entry.name.isdigit() or entry.name == str(os.getpid()):
+        continue
+    try:
+        if (entry / "cwd").resolve() != work:
             continue
-        try:
-            if (entry / "cwd").resolve() == directory:
-                pids.append(int(entry.name))
-        except (OSError, RuntimeError):
-            continue
-    require(pids, "real session process missing")
-    identities = {pid: Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1].split()[19] for pid in pids}
-    capability = None
-    for pid in pids:
-        environment = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
-        for value in environment:
-            if value.startswith(b"ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN="):
-                capability = value.split(b"=", 1)[1].decode()
-        require(not any(value.startswith((b"MINIO_", b"ADDP_INFRA_OBJECTSTORE_")) for value in environment),
-                "Infra credential leaked into session process")
-    require(capability is not None, "session capability missing")
-    return {"workspace": str(directory), "processes": identities}, capability
+        env = (entry / "environ").read_bytes().split(b"\0")
+        assert not any(v.startswith((b"MINIO_", b"ADDP_INFRA_OBJECTSTORE_")) for v in env)
+        processes[entry.name] = (entry / "stat").read_text().split(") ", 1)[1].split()[19]
+    except FileNotFoundError:
+        continue
+assert processes and os.getuid() == 10001 and not Path("/var/run/docker.sock").exists()
+cap = json.loads(Path("/job/job.json").read_bytes())["session_environment"]["ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN"]
+print(json.dumps([processes, cap]))
+"""
+    processes, capability = json.loads(subprocess.check_output(
+        ["docker", "exec", containers[0], "python", "-I", "-c", inspect_job], timeout=15))
+    return {"workspace": "/job/files", "processes": {int(k): v for k, v in processes.items()},
+            "session_id": session_id, "container": containers[0], "network": networks[0]}, capability
 
 
 def process_gone(identity):
-    if Path(identity["workspace"]).exists():
+    key = identity["session_id"]
+    if session_resources("container", key) or session_resources("network", key):
         return False
-    for pid, started in identity["processes"].items():
-        stat = Path(f"/proc/{pid}/stat")
-        if stat.exists():
-            try:
-                if stat.read_text().split(") ", 1)[1].split()[19] == started:
-                    return False
-            except FileNotFoundError:
-                pass
-    return True
+    check = subprocess.run(["docker", "exec", "jupyter-engine", "test", "!", "-e",
+                            "/workspace/notebooks/" + key], capture_output=True, timeout=10)
+    require(check.returncode in (0, 1) and not check.stderr, "unable to verify API workspace cleanup")
+    return check.returncode == 0
 
 
 def wait_cleanup(identity, deadline):

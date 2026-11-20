@@ -15,8 +15,8 @@ flowchart TD
     subgraph interactive["Notebook 交互会话"]
         Browser["浏览器"] --> Proxy["Develop 同源 HTTP / WebSocket 代理"]
         Proxy --> Control["Runtime 会话控制面"]
-        Control --> Lab["隔离 JupyterLab process / 临时 workspace"]
-        Lab --> Save["关闭或到期：保存原逻辑对象并清理"]
+        Control --> Lab["每会话一个非 root JupyterLab 容器"]
+        Lab --> Save["关闭或到期时回存原对象并回收容器"]
     end
 ```
 
@@ -77,25 +77,25 @@ GET http://jupyter-engine:8097/api/kernels
 
 Session 授权与每次只读数据访问的 Execution Authorization 分工统一见[会话授权规范](../../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。 Develop 的同源 Cookie／Kernel Capability 入口与凭据边界见[Owner 会话说明](../../develop/CLAUDE.md#会话入口与凭据)，数据代理及 Facade 所有权见[Owner 数据访问](../../develop/CLAUDE.md#数据访问与-native-facade)。
 
-每个会话使用独立临时目录和 JupyterLab process。Runtime 仅向该 process 注入 owner endpoint 和短期 Capability，供 `addp_common.notebook.engines.list()` 等受控调用使用；凭据的公开响应、存储与失效边界统一见[认证规范](../../docs/spec/addp登录认证的统一要求.md#七前端共享能力要求)，不提供共享 Lab、固定 8088 或 URL Token 入口。正常关闭与 TTL 清理先保存回原逻辑对象，再终止 process；Runtime 退出时统一清理全部会话。
+每次交互或批量执行使用独立的非 root 容器。部署侧启动器只经私有 Unix 套接字接受固定的生命周期请求。API 在绑定的对象区域读写 Notebook。Kernel 的可写工作区仅覆盖本次任务，交互数据访问使用本会话的 Develop 短期能力。执行身份、网络和回收规则见[任务契约](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。
 
 镜像内预装 `@addp/notebook-bridge` JupyterLab 扩展。它只接受同源父页面、当前 Session ID 匹配的 `postMessage`，在当前 Notebook 中插入一个代码单元并保持未执行状态；不提供执行、文件覆盖或跨 Session 操作。
 
 ## 本地开发
 
 ```bash
-# 在仓库根目录使用标准原生开发生命周期
+# 在仓库根目录使用标准开发生命周期
 bash scripts/dev/start.sh -jupyter
 ./scripts/dev/restart.sh -jupyter
 ```
 
-镜像部署使用根 `docker-compose.runtimes.yml` 中的 `jupyter-engine`，不另用 `docker run` 建立开发实例。
+开发和镜像部署共用根 Compose 的 `jupyter-engine` 和 `jupyter-launcher`。开发覆盖只发布 API 的本机回环端口，并指定访问宿主 System 和 Develop 的地址。标准启动需要本地构建 Registry 和支持内部隔离网桥的 Docker Engine 28 或更高版本。[Docker Engine 28 网络变更](https://docs.docker.com/engine/release-notes/28/)。
 
 产品镜像准备统一使用[标准构建入口](../../scripts/build/README.md#build-imagessh)；冷构建日志、依赖层及指定镜像的扩展／Node 检查见[Python 镜像排查](../../docs/guide/troubleshooting/开发服务与构建.md#python-镜像首次构建耗时过长)，短期镜像检查不能替代真实 Notebook 验收。
 
 ## 环境变量
 
-- `API_PORT`: Notebook Runtime API 端口（默认 8097）
+- `JUPYTER_API_PORT` 指定开发宿主机回环端口，容器内 API 固定监听 8097。
 - `JUPYTER_GUNICORN_THREADS`: Runtime 控制面的线程数（默认 8；会话状态由单个 Gunicorn worker 持有）
 - `JUPYTER_GUNICORN_TIMEOUT`: 单次 Notebook 执行超时秒数（默认 7200）
 - `JUPYTER_SESSION_TTL_SECONDS`: 交互会话最大 TTL（默认 3600）
@@ -103,7 +103,7 @@ bash scripts/dev/start.sh -jupyter
 
 ## 依赖库
 
-Jupyter 的 PyArrow 范围为 `>=18.0.0,<26.0.0`，与当前 Matplotlib 3.8.2 所需的 NumPy `<2` 组合使用。原生启动和标准测试共同执行全量导入检查；依赖安装、`pip check` 和实际导入分别验证，导入失败保留 traceback。
+Jupyter 的 PyArrow 范围为 `>=18.0.0,<26.0.0`，与当前 Matplotlib 3.8.2 所需的 NumPy `<2` 组合使用。标准 Python 测试执行全量导入检查；依赖安装、`pip check` 和实际导入分别验证，导入失败保留 traceback。
 
 依赖见 [requirements.txt](requirements.txt)。
 
@@ -119,12 +119,14 @@ make test-jupyter
 
 根 `make test`、Engines 自动发现和 Platform CI 的 Jupyter Runtime job 均调用此入口，不接管开发服务。[接口用例](test_api_server.py)验证服务身份、租户、内容摘要和变更拒绝；[隔离会话用例](test_interactive_sessions.py)验证 owner 能力注入、同一文件保存、第二写入者拒绝和清理。用例使用受控认证、存储、执行器或进程替身，不能据此声称真实 JupyterLab、MinIO 或跨模块授权已经验收。
 
+构建验证镜像后运行 `make test-jupyter-container JUPYTER_TEST_IMAGE=<镜像>`。该门禁使用独占 Compose 项目和合成身份、对象存储夹具，验证两个真实 JupyterLab 会话、WebSocket 执行、Owner 回调、批量 Papermill 回存及清理。产品镜像 CI 在选中 Jupyter 时执行同一门禁。
+
 ### Owner、SDK 与真实链路
 
 Develop Owner 使用 `make test-module MODULE=develop`，前后端、Common Python SDK 与 Runtime 的覆盖分工统一见[Notebook 验证分工](../../develop/CLAUDE.md#notebook-验证分工)；[历史证据](../../develop/CLAUDE.md#历史证据)保留原版本、失败及未覆盖范围。镜像检查、上述确定性门禁和交互成功均不能证明真实队列派发、撤权闭环或跨模块 Notebook T4 通过；未运行、失败与未覆盖项分别记录。
 
 ## 平台对象存储绑定
 
-由 Common Python 在启动时按 `ADDP_INFRA_OBJECTSTORE_PROVIDER` 和 `ADDP_INFRA_OBJECTSTORE_BINDINGS` 装配 `develop` 区域，未填写例外时映射同名桶。部署负责建桶；Runtime 不创建桶、不回退其他桶。MinIO 凭据仅由适配读取，存储绑定失败使 `/health` 返回 503。Kernel 不接收 Infra 凭据或绑定配置。会话仅回存创建时的 `notebook_locator`，关闭／TTL 不删除持久对象；保存失败仍清理临时进程与目录，显式关闭报错，不承诺恢复未保存编辑。
+由 Common Python 在启动时按 `ADDP_INFRA_OBJECTSTORE_PROVIDER` 和 `ADDP_INFRA_OBJECTSTORE_BINDINGS` 装配 `develop` 区域，未填写例外时映射同名桶。部署负责建桶；Runtime 不创建桶、不回退其他桶。MinIO 凭据仅由适配读取，存储绑定失败使 `/health` 返回 503。API 就绪同时要求私有启动器在线且双方镜像 ID 一致。Kernel 不接收 Infra 凭据或绑定配置。会话仅回存创建时的 `notebook_locator`，关闭／TTL 不删除持久对象；保存失败仍清理临时进程与目录，显式关闭报错，不承诺恢复未保存编辑。
 
 跨语言 S3 验证可以使用 `make test-common-rustfs COMMON_RUSTFS_TEST_ARGS='--test platform-notebook'`。门禁独占 RustFS 实例，验证两个桶中的同键隔离、Go 与 Python 双向读写、匿名读取拒绝，以及会话回存后仍能从对应逻辑区域读出相同字节。运行时启动选型和 HTTP／Kernel 验收沿现有部署入口推进。

@@ -1,0 +1,19 @@
+services:
+  jupyter-launcher:
+    container_name: ${COMPOSE_PROJECT_NAME:?}-launcher
+    image: ${JUPYTER_TEST_IMAGE:?}
+  jupyter-engine:
+    container_name: ${COMPOSE_PROJECT_NAME:?}-api
+    image: ${JUPYTER_TEST_IMAGE:?}
+    environment:
+      MINIO_ROOT_USER: fixture
+      MINIO_ROOT_PASSWORD: fixture-synthetic-only
+      ADDP_SYNTHETIC_MARKER: fixture-control-only
+      GUNICORN_CMD_ARGS: --config /fixture/probe.py
+    volumes:
+      - ./scripts/test/jupyter-isolation.py:/fixture/probe.py:ro
+networks:
+  addp-network:
+    external: false
+    internal: true
+    name: ${COMPOSE_PROJECT_NAME:?}-fixture

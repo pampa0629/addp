@@ -36,7 +36,29 @@ services:
       retries: 12
       start_period: 30s
 
-  # ==================== Transfer 模块 ====================
+  # 专用启动器只通过私有 Unix 套接字接受固定的 Notebook 生命周期请求。
+  jupyter-launcher:
+    container_name: jupyter-launcher
+    image: ${REGISTRY:-localhost:5001}/addp-jupyter-engine:${IMAGE_TAG:-latest}
+    user: "0:0"
+    entrypoint: ["python", "-I", "/app/launcher.py"]
+    network_mode: none
+    environment:
+      - JUPYTER_SESSION_TTL_SECONDS=${JUPYTER_SESSION_TTL_SECONDS:-3600}
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - notebook-launcher:/run/notebook-launcher
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/notebook-launcher/control.sock"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
 
   jupyter-engine:
     build:
@@ -44,8 +66,12 @@ services:
       dockerfile: engines/jupyter/Dockerfile
     image: ${REGISTRY:-localhost:5001}/addp-jupyter-engine:${IMAGE_TAG:-latest}
     container_name: jupyter-engine
+    depends_on:
+      jupyter-launcher:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     environment:
-      - API_PORT=8097
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -57,7 +83,8 @@ services:
     expose:
       - "8097"
     volumes:
-      - ./logs:/app/logs
+      - notebook-launcher:/run/notebook-launcher:ro
+      - notebook-jobs:/workspace/notebooks
     networks:
       - addp-network
     restart: unless-stopped
@@ -271,3 +298,7 @@ networks:
   addp-network:
     external: true
     name: addp-network
+
+volumes:
+  notebook-launcher: {}
+  notebook-jobs: {}

@@ -39,6 +39,7 @@ EXPLICIT_RUNTIME_CASES = {
 RUNTIME_COMPOSE_SERVICES = {
     "duckdb-engine",
     "jupyter-engine",
+    "jupyter-launcher",
     "geopython-workflow-engine",
     "math-workflow-engine",
     "model3d-workflow-engine",

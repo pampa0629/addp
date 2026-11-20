@@ -43,6 +43,8 @@ document-workflow.sh
     image: duckdb
 {runtime_dep}  jupyter-engine:
     image: jupyter
+  jupyter-launcher:
+    image: jupyter
   geopython-workflow-engine:
     image: geopython
   model3d-workflow-engine:

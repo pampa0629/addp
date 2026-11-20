@@ -1,20 +1,17 @@
 import atexit
 import io
+from contextlib import closing
 import logging
 import os
 import re
 import secrets
-import shutil
-import socket
-import subprocess
-import sys
-import tempfile
+import hmac
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from execution_container import ExecutionContainer
 from urllib.parse import urlsplit
 from addp_common.infra.objectstore import Ref
 
@@ -52,9 +49,10 @@ class InteractiveSession:
     endpoint: str
     runtime_token: str
     expires_at: datetime
-    workspace: str
-    notebook_file: str
-    process: subprocess.Popen
+    container: ExecutionContainer
+    owner_routes: dict
+    capability: str
+    lab_token: str
 
     def response(self):
         return {
@@ -73,102 +71,96 @@ class InteractiveSessionManager:
         self._workspace_root.mkdir(parents=True, exist_ok=True)
         self._max_ttl_seconds = max(60, int(max_ttl_seconds))
         self._sessions = {}
+        self._opening = {}
+        self._closing = set()
         self._lock = threading.RLock()
         self._stopped = threading.Event()
         self._reaper = threading.Thread(target=self._reap_expired, name="jupyter-session-reaper", daemon=True)
         self._reaper.start()
         atexit.register(self.shutdown)
 
-    def create(self, data, runtime_host):
+    def create(self, data, runtime_authority):
         values = self._validate_request(data)
         if self._store is None:
             raise RuntimeError("Notebook object store unavailable")
 
+        key = values["session_id"]
+        container = ExecutionContainer(self._workspace_root, key)
+        object_name = values["notebook_ref"].key
+        name = os.path.basename(object_name)
+        token = secrets.token_urlsafe(32)
+        lab_token = secrets.token_urlsafe(32)
+        routes = {}
+        environment = {"ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN": values["owner_capability_token"]}
+        for field, url in values.items():
+            if field.startswith("owner_") and field.endswith("_endpoint"):
+                path = urlsplit(url).path
+                routes[path] = url
+                variable = "ADDP_NOTEBOOK_" + field.removeprefix("owner_").upper()
+                if field == "owner_api_endpoint":
+                    variable = "ADDP_NOTEBOOK_OWNER_API_ENDPOINT"
+                environment[variable] = "http://nb-control:8097" + path
+        # Reserve both identities before launch, including concurrently opening sessions.
         with self._lock:
-            if values["session_id"] in self._sessions:
-                raise SessionConflictError("session already exists")
-            if any(
-                session.tenant_id == values["tenant_id"]
-                and session.notebook_locator == values["notebook_locator"]
-                for session in self._sessions.values()
+            if key in self._opening or object_name in self._opening.values() or key in self._sessions or any(
+                session.notebook_locator == values["notebook_locator"] for session in self._sessions.values()
             ):
                 raise SessionConflictError("notebook already has an active interactive session")
-
-        workspace = tempfile.mkdtemp(prefix=f"session-{values['session_id']}-", dir=self._workspace_root)
-        object_name = values["notebook_ref"].key
-        notebook_name = os.path.basename(object_name)
-        notebook_file = os.path.join(workspace, notebook_name)
-        process = None
+            self._opening[key] = object_name
+        prepared = False
         try:
-            response = self._store.open(object_name)
-            try:
-                with open(notebook_file, "wb") as destination:
-                    shutil.copyfileobj(response, destination)
-            finally:
-                response.close()
-
-            port = self._available_port()
-            runtime_token = secrets.token_urlsafe(32)
-            endpoint = f"http://{runtime_host}:{port}"
-            process = self._start_jupyter(
-                workspace=workspace,
-                base_path=values["base_path"],
-                port=port,
-                runtime_token=runtime_token,
-                owner_api_endpoint=values["owner_api_endpoint"],
-                owner_catalog_api_endpoint=values["owner_catalog_api_endpoint"],
-                owner_table_scan_api_endpoint=values["owner_table_scan_api_endpoint"],
-                owner_record_scan_api_endpoint=values["owner_record_scan_api_endpoint"],
-                owner_query_api_endpoint=values["owner_query_api_endpoint"],
-                owner_graph_sample_api_endpoint=values["owner_graph_sample_api_endpoint"],
-                owner_graph_query_api_endpoint=values["owner_graph_query_api_endpoint"],
-                owner_content_read_api_endpoint=values["owner_content_read_api_endpoint"],
-                owner_change_stream_api_endpoint=values["owner_change_stream_api_endpoint"],
-                owner_capability_token=values["owner_capability_token"],
-            )
-            self._wait_until_ready(endpoint, values["base_path"], runtime_token, process)
-            expires_at = datetime.fromtimestamp(time.time() + values["ttl_seconds"], tz=timezone.utc)
-            session = InteractiveSession(
-                session_id=values["session_id"],
-                tenant_id=values["tenant_id"],
-                user_id=values["user_id"],
-                task_id=values["task_id"],
-                notebook_locator=values["notebook_locator"],
-                notebook_name=notebook_name,
-                base_path=values["base_path"],
-                endpoint=endpoint,
-                runtime_token=runtime_token,
-                expires_at=expires_at,
-                workspace=workspace,
-                notebook_file=notebook_file,
-                process=process,
-            )
+            with closing(self._store.open(object_name)) as stream:
+                contents = stream.read()
+            container.prepare(name, contents, {"name": name, "base_path": values["base_path"],
+                              "runtime_token": lab_token, "session_environment": environment})
+            prepared = True
+            container.start("lab", values["ttl_seconds"])
+            self._wait_until_ready(f"http://nb-{key}:8888", values["base_path"], lab_token, container)
+            session = InteractiveSession(key, values["tenant_id"], values["user_id"], values["task_id"],
+                values["notebook_locator"], name, values["base_path"], f"http://{runtime_authority}", token,
+                datetime.fromtimestamp(time.time() + values["ttl_seconds"], tz=timezone.utc),
+                container, routes, values["owner_capability_token"], lab_token)
             with self._lock:
-                self._sessions[session.session_id] = session
-            logger.info(
-                "created interactive notebook session id=%s tenant=%s task=%s expires_at=%s",
-                session.session_id,
-                session.tenant_id,
-                session.task_id,
-                session.expires_at.isoformat(),
-            )
+                self._sessions[key] = session
             return session
         except Exception:
-            if process is not None:
-                self._terminate(process)
-            shutil.rmtree(workspace, ignore_errors=True)
+            if prepared:
+                container.close()
             raise
+        finally:
+            with self._lock:
+                self._opening.pop(key, None)
+
+    def lab_authorization(self, key, authorization):
+        with self._lock:
+            session = self._sessions.get(key)
+            if (session and key not in self._closing and session.expires_at > datetime.now(tz=timezone.utc)
+                    and hmac.compare_digest(authorization.encode(), ("token " + session.runtime_token).encode())):
+                return "token " + session.lab_token
+        return None
+
+    def owner_route(self, key, path, authorization):
+        with self._lock:
+            session = self._sessions.get(key)
+            if (session and key not in self._closing and session.expires_at > datetime.now(tz=timezone.utc)
+                    and hmac.compare_digest(authorization.encode(), ("Bearer " + session.capability).encode())):
+                return session.owner_routes.get(path)
+        return None
 
     def close(self, session_id, tenant_id=None):
         with self._lock:
             session = self._sessions.get(session_id)
             if session is not None and tenant_id is not None and session.tenant_id != tenant_id:
                 session = None
-            if session is not None:
+            if session is None or session_id in self._closing:
+                raise SessionNotFoundError(session_id)
+            self._closing.add(session_id)
+        try:
+            self._save_and_cleanup(session)
+        finally:
+            with self._lock:
                 self._sessions.pop(session_id, None)
-        if session is None:
-            raise SessionNotFoundError(session_id)
-        self._save_and_cleanup(session)
+                self._closing.remove(session_id)
 
     def shutdown(self):
         if self._stopped.is_set():
@@ -176,18 +168,18 @@ class InteractiveSessionManager:
         self._stopped.set()
         with self._lock:
             sessions = list(self._sessions.values())
-            self._sessions.clear()
         for session in sessions:
             try:
-                self._save_and_cleanup(session)
+                self.close(session.session_id)
+            except SessionNotFoundError:
+                continue
             except Exception:
                 logger.exception("failed to close interactive notebook session id=%s", session.session_id)
 
     def _save_and_cleanup(self, session):
-        save_error = None
+        session.container.stop()
         try:
-            with open(session.notebook_file, "rb") as source:
-                data = source.read()
+            data = session.container.read(session.notebook_name)
             object_name = Ref.parse(session.notebook_locator).key
             self._store.put(
                 object_name,
@@ -201,26 +193,20 @@ class InteractiveSessionManager:
                 session.tenant_id,
                 session.task_id,
             )
-        except Exception as exc:
-            save_error = exc
         finally:
-            self._terminate(session.process)
-            shutil.rmtree(session.workspace, ignore_errors=True)
-        if save_error is not None:
-            raise save_error
+            session.container.discard_files()
+            session.container.http.close()
 
     def _reap_expired(self):
         while not self._stopped.wait(15):
             now = datetime.now(tz=timezone.utc)
             with self._lock:
-                expired_ids = [
-                    session_id
-                    for session_id, session in self._sessions.items()
-                    if session.expires_at <= now or session.process.poll() is not None
-                ]
-            for session_id in expired_ids:
+                sessions = list(self._sessions.values())
+            for session in sessions:
+                session_id = session.session_id
                 try:
-                    self.close(session_id)
+                    if session.expires_at <= now or session.container.poll() is not None:
+                        self.close(session_id)
                 except SessionNotFoundError:
                     continue
                 except Exception:
@@ -232,9 +218,7 @@ class InteractiveSessionManager:
         if "notebook_path" in data or "minio_path" in data:
             raise SessionValidationError("legacy Notebook file field rejected")
         session_id = data.get("session_id")
-        if not isinstance(session_id, str) or not session_id or any(
-            character not in "0123456789abcdef-" for character in session_id.lower()
-        ):
+        if not isinstance(session_id, str) or not re.fullmatch(r"[a-f0-9][a-f0-9-]{0,59}", session_id):
             raise SessionValidationError("session_id is invalid")
         positive_ids = {}
         for field in ("tenant_id", "user_id", "task_id"):
@@ -321,73 +305,6 @@ class InteractiveSessionManager:
         }
 
     @staticmethod
-    def _available_port():
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind(("", 0))
-            return sock.getsockname()[1]
-
-    @staticmethod
-    def _start_jupyter(
-        workspace,
-        base_path,
-        port,
-        runtime_token,
-        owner_api_endpoint,
-        owner_catalog_api_endpoint,
-        owner_table_scan_api_endpoint,
-        owner_record_scan_api_endpoint,
-        owner_query_api_endpoint,
-        owner_graph_sample_api_endpoint,
-        owner_graph_query_api_endpoint,
-        owner_content_read_api_endpoint,
-        owner_change_stream_api_endpoint,
-        owner_capability_token,
-    ):
-        command = [
-            sys.executable,
-            "-m",
-            "jupyterlab",
-            "--no-browser",
-            "--ServerApp.ip=0.0.0.0",
-            f"--ServerApp.port={port}",
-            "--ServerApp.port_retries=0",
-            f"--ServerApp.base_url={base_path}",
-            f"--ServerApp.root_dir={workspace}",
-            f"--ServerApp.token={runtime_token}",
-            "--ServerApp.password=",
-            "--ServerApp.allow_remote_access=True",
-            "--ServerApp.trust_xheaders=True",
-            "--ServerApp.quit_button=False",
-            f"--LabApp.default_url=/lab/tree/{quote(os.path.basename(next(Path(workspace).glob('*.ipynb'))))}",
-        ]
-        environment = os.environ.copy()
-        for key in tuple(environment):
-            upper_key = key.upper()
-            if upper_key.startswith(("MINIO_", "ADDP_INFRA_OBJECTSTORE_")) or any(
-                marker in upper_key
-                for marker in ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API_KEY", "ACCESS_KEY", "PRIVATE_KEY")
-            ):
-                environment.pop(key, None)
-        environment["ADDP_NOTEBOOK_OWNER_API_ENDPOINT"] = owner_api_endpoint
-        environment["ADDP_NOTEBOOK_CATALOG_API_ENDPOINT"] = owner_catalog_api_endpoint
-        environment["ADDP_NOTEBOOK_TABLE_SCAN_API_ENDPOINT"] = owner_table_scan_api_endpoint
-        environment["ADDP_NOTEBOOK_RECORD_SCAN_API_ENDPOINT"] = owner_record_scan_api_endpoint
-        environment["ADDP_NOTEBOOK_QUERY_API_ENDPOINT"] = owner_query_api_endpoint
-        environment["ADDP_NOTEBOOK_GRAPH_SAMPLE_API_ENDPOINT"] = owner_graph_sample_api_endpoint
-        environment["ADDP_NOTEBOOK_GRAPH_QUERY_API_ENDPOINT"] = owner_graph_query_api_endpoint
-        environment["ADDP_NOTEBOOK_CONTENT_READ_API_ENDPOINT"] = owner_content_read_api_endpoint
-        environment["ADDP_NOTEBOOK_CHANGE_STREAM_API_ENDPOINT"] = owner_change_stream_api_endpoint
-        environment["ADDP_NOTEBOOK_OWNER_CAPABILITY_TOKEN"] = owner_capability_token
-        return subprocess.Popen(
-            command,
-            cwd=workspace,
-            env=environment,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-
-    @staticmethod
     def _wait_until_ready(endpoint, base_path, runtime_token, process):
         status_url = endpoint + base_path + "api/status"
         deadline = time.monotonic() + 30
@@ -406,14 +323,3 @@ class InteractiveSessionManager:
                 pass
             time.sleep(0.2)
         raise RuntimeError("JupyterLab session startup timed out")
-
-    @staticmethod
-    def _terminate(process):
-        if process.poll() is not None:
-            return
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)

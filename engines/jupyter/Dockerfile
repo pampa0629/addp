@@ -58,13 +58,20 @@ FROM python-runtime
 COPY --from=labextension-builder /build/labextension/ \
     /usr/local/share/jupyter/labextensions/@addp/notebook-bridge/
 
-# 复制 API 服务器
-COPY engines/jupyter/api_server.py engines/jupyter/config.py engines/jupyter/interactive_sessions.py /app/
-COPY engines/jupyter/startup.sh /app/
-RUN cd /app && python -c "import interactive_sessions" && chmod +x startup.sh
+RUN apt-get -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends nginx-light \
+    && rm -rf /var/lib/apt/lists/*
 
-# 创建工作目录
-RUN mkdir -p /workspace/notebooks
+# 复制 API 服务器
+COPY --chmod=0644 engines/jupyter/api_server.py engines/jupyter/config.py engines/jupyter/interactive_sessions.py engines/jupyter/launcher.py engines/jupyter/execution_container.py engines/jupyter/worker.py engines/jupyter/nginx.conf /app/
+COPY --chmod=0755 engines/jupyter/startup.sh /app/
+RUN chmod 0755 /app && cd /app && python -c "import interactive_sessions"
+
+RUN groupadd --gid 10001 notebook \
+    && useradd --uid 10001 --gid notebook --create-home --shell /usr/sbin/nologin notebook \
+    && install -d -m 0700 -o notebook -g notebook /workspace/notebooks
+
+USER notebook:notebook
 
 EXPOSE 8097
 

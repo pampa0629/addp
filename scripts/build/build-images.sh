@@ -463,6 +463,12 @@ check_service_changed() {
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+            if [[ "$service" == jupyter-engine ]]; then
+                local entrypoint_time
+                entrypoint_time=$(python3 -c 'import os, sys; print(int(max(map(os.path.getmtime, sys.argv[1:]))))' \
+                    "$service_dir/startup.sh" "$service_dir/nginx.conf")
+                comparison_time=$(( comparison_time > entrypoint_time ? comparison_time : entrypoint_time ))
+            fi
             local common_time
             common_time=$(common_python_latest_time)
             comparison_time=$(( comparison_time > common_time ? comparison_time : common_time ))

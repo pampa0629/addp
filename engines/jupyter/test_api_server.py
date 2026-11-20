@@ -157,14 +157,14 @@ class NotebookContentIdentityTests(unittest.TestCase):
                        {"notebook_content_sha256": "a" * 63}, {"notebook_locator": "../other.ipynb"},
                        {"notebook_locator": "a/../other.ipynb"}, {"notebook_locator": "/other.ipynb"},
                        {"notebook_locator": "a\\other.ipynb"}]:
-            with self.subTest(values=values), patch.object(api_server, "notebook_store") as store, patch.object(api_server.pm, "execute_notebook") as execute:
+            with self.subTest(values=values), patch.object(api_server, "notebook_store") as store, patch.object(api_server, "ExecutionContainer") as execute:
                 self.assertEqual(self.request(**values).status_code, 400)
                 store.open.assert_not_called()
                 store.put.assert_not_called()
                 execute.assert_not_called()
 
     def test_changed_download_never_executes_or_publishes(self):
-        with patch.object(api_server, "notebook_store") as store, patch.object(api_server.pm, "execute_notebook") as execute:
+        with patch.object(api_server, "notebook_store") as store, patch.object(api_server, "ExecutionContainer") as execute:
             download = MagicMock()
             download.read.return_value = self.content + b"\n"
             store.open.return_value = download
@@ -176,15 +176,17 @@ class NotebookContentIdentityTests(unittest.TestCase):
             download.close.assert_called_once()
 
     def test_verified_bytes_are_the_bytes_executed(self):
-        def execute(input_path, output_path, **_kwargs):
-            self.assertEqual(Path(input_path).read_bytes(), self.content)
-            Path(output_path).write_bytes(b"{}")
-        with patch.object(api_server, "notebook_store") as store, patch.object(api_server.pm, "execute_notebook", execute), patch.object(api_server.nbformat, "read", return_value=SimpleNamespace(cells=[])):
+        with patch.object(api_server, "notebook_store") as store, patch.object(api_server, "ExecutionContainer") as create:
+            job = create.return_value
+            job.read.return_value = b'{"cells":[],"metadata":{},"nbformat":4,"nbformat_minor":5}'
             download = MagicMock()
             download.read.return_value = self.content
             store.open.return_value = download
             response = self.request()
             self.assertEqual(response.status_code, 200)
+            job.prepare.assert_called_once_with("input.ipynb", self.content, {"parameters": {}})
+            job.start.assert_called_once_with("batch", 7200)
+            job.close.assert_called_once_with()
             store.open.assert_called_once_with("tenant_7/notebooks/analysis.ipynb")
             store.put.assert_called_once()
             self.assertEqual(response.get_json()["cell_count"], 0)
@@ -196,8 +198,11 @@ class NotebookStorageReadinessTests(unittest.TestCase):
             response = client.get("/health")
             self.assertEqual(response.status_code, 503)
             self.assertEqual(response.get_json()["status"], "unhealthy")
-        with patch.object(api_server, "notebook_store", MagicMock()) as store:
+        with patch.object(api_server, "notebook_store", MagicMock()) as store, patch.object(api_server, "launcher_client") as launcher:
             self.assertEqual(client.get("/health").status_code, 200)
+            launcher.return_value.__enter__.return_value.get.side_effect = OSError("launcher unavailable")
+            self.assertEqual(client.get("/health").status_code, 503)
+            launcher.return_value.__enter__.return_value.get.side_effect = None
             store.check_ready.side_effect = OSError("storage disconnected")
             self.assertEqual(client.get("/health").status_code, 503)
             store.check_ready.side_effect = None

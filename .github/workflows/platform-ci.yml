@@ -540,6 +540,10 @@ jobs:
           ADDP_CI_SUMMARY_FILE: ${{ runner.temp }}/product-images-summary.md
         run: make build-images IMAGE_BUILD_ARGS="--verify --services $IMAGE_SERVICES"
 
+      - name: Verify Jupyter container isolation with real kernels
+        if: contains(format(',{0},', steps.image-selection.outputs.services), ',jupyter-engine,')
+        run: make test-jupyter-container
+
       - name: Report product build disk usage
         if: always()
         run: |

@@ -85,12 +85,17 @@ addp_dev_owned_listener() {
   local name="$1" port="$2" pidfile owner listener listeners
   pidfile="${ROOT_DIR}/.dev-pids/${name}.pid"
   case "$name" in
-    supermap-workflow)
+    supermap-workflow|jupyter-api-server)
       local container="${name}-engine" labels mapping mode
+      [ "$name" != jupyter-api-server ] || container=jupyter-engine
       labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1
       [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ] || return 1
       [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ] || return 1
       mode=$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$container") || return 1
+      if [ "$name" = jupyter-api-server ]; then
+        [ "$(docker port "$container" 8097/tcp)" = "127.0.0.1:$port" ] || return 1
+        return 0
+      fi
       if [ "$mode" = host ]; then
         [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "$(uname -s)" = Linux ] || return 1
         docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" |

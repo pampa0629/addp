@@ -1,0 +1,7 @@
+services:
+  jupyter-engine:
+    ports: ["127.0.0.1:${JUPYTER_API_PORT:?}:8097"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      SYSTEM_URL: http://host.docker.internal:${SYSTEM_BACKEND_PORT:?}
+      JUPYTER_DEVELOP_LOOPBACK_HOST: host.docker.internal

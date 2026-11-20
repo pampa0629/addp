@@ -34,6 +34,8 @@ elif phase == "exchange":
 elif phase in {"save", "save-failure"}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engines/jupyter"))
     from interactive_sessions import InteractiveSessionManager
+    from execution_container import ExecutionContainer
+    from unittest.mock import patch
     if phase == "save-failure":
         os.environ["MINIO_ROOT_USER"] = os.environ["NOTEBOOK_READONLY_USER"]
         os.environ["MINIO_ROOT_PASSWORD"] = os.environ["NOTEBOOK_READONLY_PASSWORD"]
@@ -42,19 +44,15 @@ elif phase in {"save", "save-failure"}:
         before = stream.read()
     with tempfile.TemporaryDirectory() as root:
         manager = InteractiveSessionManager(area, root)
-        workspace = Path(root) / "one-session"
-        workspace.mkdir()
-        file = workspace / "edited.ipynb"
-        file.write_bytes(b'{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}')
-        session = SimpleNamespace(
-            session_id="notebook-storage-fixture", tenant_id=7, task_id=1,
-            notebook_file=str(file), notebook_locator="",
-            process=SimpleNamespace(poll=lambda: 0), workspace=str(workspace),
-        )
+        container = ExecutionContainer(root, "one-session")
+        container.prepare("edited.ipynb", b'{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}', {})
+        session = SimpleNamespace(session_id="notebook-storage-fixture", tenant_id=7, task_id=1,
+                                  notebook_name="edited.ipynb", container=container)
         from addp_common.infra.objectstore import Ref
         session.notebook_locator = Ref("develop", key).uri()
         try:
-            manager._save_and_cleanup(session)
+            with patch.object(container.http, "delete"):
+                manager._save_and_cleanup(session)
         except PermissionError:
             if phase != "save-failure":
                 raise
@@ -62,7 +60,7 @@ elif phase in {"save", "save-failure"}:
             if phase == "save-failure":
                 raise AssertionError("read-only save unexpectedly succeeded")
             before = b'{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}'
-        assert not workspace.exists()
+        assert not container.workspace.exists()
         manager.shutdown()
     with area.open(key) as stream:
         assert stream.read() == before
