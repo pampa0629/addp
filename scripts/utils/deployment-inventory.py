@@ -63,6 +63,9 @@ ENGINE_TYPES = {
     'clickhouse': 'clickhouse', 'mongodb': 'mongodb', 'mysql': 'mysql', 'oceanbase': 'oceanbase',
     'tidb': 'tidb', 'opengauss': 'opengauss', 'gaussdb': 'gaussdb', 'highgo': 'highgo',
     'kingbase': 'kingbase', 'dameng': 'dameng', 'elasticsearch': 'elasticsearch', 'neo4j': 'neo4j',
+    'ftp': 'ftp', 'rustfs': 'rustfs', 'starrocks': 'starrocks',
+    'spark-master': 'spark', 'spark-worker-1': 'spark', 'spark-worker-2': 'spark',
+    'hdfs-namenode': 'hdfs', 'hdfs-datanode': 'hdfs', 'tidb-pd': 'tidb', 'tidb-tikv': 'tidb',
 }
 
 

@@ -601,6 +601,19 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(value['engine_type'], 'unclassified')
         self.assertEqual(value['service'], 'unadapted-component')
 
+    def test_business_engine_members_keep_their_compose_identity(self):
+        for service, engine in (
+            ('ftp', 'ftp'), ('rustfs', 'rustfs'), ('starrocks', 'starrocks'),
+            ('spark-master', 'spark'), ('spark-worker-1', 'spark'), ('spark-worker-2', 'spark'),
+            ('hdfs-namenode', 'hdfs'), ('hdfs-datanode', 'hdfs'), ('hdfs-samples', 'unclassified'),
+            ('tidb-pd', 'tidb'), ('tidb-tikv', 'tidb'),
+        ):
+            with self.subTest(service=service):
+                source = self.source()
+                source.container['service'] = service
+                value = self.discover(source)['services'][0]
+                self.assertEqual((value['service'], value['engine_type']), (service, engine))
+
     def test_wrong_scope_foreign_workdir_and_oneoff_reject_entire_snapshot(self):
         for key, value in (('project', 'addp-infra'), ('working_dir', '/different/workspace'), ('oneoff', 'True')):
             source = self.source()
