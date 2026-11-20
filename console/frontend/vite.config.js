@@ -61,7 +61,8 @@ export default defineConfig(withFrontendTestIsolation('console', {
       ...createModuleFrontendProxies(),
       '/api': {
         target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
-        changeOrigin: true
+        ws: true,
+        changeOrigin: false
       },
       // 模块健康检查代理（避免开发环境 CORS）
       '/module-health/system':      { target: `http://localhost:${process.env.SYSTEM_BACKEND_PORT || 8180}`, rewrite: () => '/health/ready', changeOrigin: true },
