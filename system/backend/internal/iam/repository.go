@@ -10,6 +10,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
@@ -1440,6 +1441,10 @@ func wrapRepositoryError(err error) error {
 	mapped := commonrepo.WrapDBError(err)
 	if errors.Is(mapped, commonapi.ErrNotFound) || errors.Is(mapped, commonapi.ErrConflict) {
 		return mapped
+	}
+	var mysqlError *mysqldriver.MySQLError
+	if errors.As(err, &mysqlError) && mysqlError.Number == 30001 {
+		return fmt.Errorf("%w: %s", commonapi.ErrBadRequest, mysqlError.Message)
 	}
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) {

@@ -42,7 +42,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	}
 	t.Cleanup(func() { pool.Close() })
 
-	// Build revision 2 with its original DDL before testing an upgrade.
+	// Build revision 3 with its original DDL before testing an upgrade.
 	applyDDL := func(conn *gorm.DB, files ...string) error {
 		for _, file := range files {
 			ddl, err := mysqlIAMFoundationSQL.ReadFile("mysql_iam/" + file)
@@ -55,13 +55,13 @@ func TestMySQLIAMFoundation(t *testing.T) {
 		}
 		return nil
 	}
-	err = schema.MigrateMySQL(db, mysqlIAMFoundationOwner, 2, func(conn *gorm.DB) error {
+	err = schema.MigrateMySQL(db, mysqlIAMFoundationOwner, 3, func(conn *gorm.DB) error {
 		files, err := fs.ReadDir(mysqlIAMFoundationSQL, "mysql_iam")
 		if err != nil {
 			return err
 		}
 		for _, file := range files {
-			if file.Name() > "011_tenant_memberships_after_delete.sql" {
+			if file.Name() > "016_mfa_credentials_before_delete.sql" {
 				break
 			}
 			if err := applyDDL(conn, file.Name()); err != nil {
@@ -84,9 +84,9 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	mustExec("INSERT INTO users (id, display_name) VALUES (100, ?), (103, 'Another user')", "验证用户 🧪")
 
 	mustExec("INSERT INTO tenants (id, code, name) VALUES (1, 'before-upgrade', 'Before upgrade')")
-	interrupted := errors.New("fixture interrupt after local account DDL")
+	interrupted := errors.New("fixture interrupt after role DDL")
 	err = schema.MigrateMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion, func(conn *gorm.DB) error {
-		if err := applyDDL(conn, "012_local_accounts.sql"); err != nil {
+		if err := applyDDL(conn, "017_roles.sql"); err != nil {
 			return err
 		}
 		return interrupted
@@ -94,7 +94,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	if !errors.Is(err, interrupted) {
 		t.Fatalf("upgrade did not reach the interruption: %v", err)
 	}
-	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, 2); err == nil {
+	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, 3); err == nil {
 		t.Fatal("pending upgrade passed the previous revision check")
 	}
 	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion); err == nil {
@@ -165,6 +165,9 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	})
 	t.Run("TOTP credential", func(t *testing.T) {
 		testMySQLIAMMFACredential(t, db)
+	})
+	t.Run("concurrent tenant administrator revocations", func(t *testing.T) {
+		testMySQLTenantAdministrator(t, db)
 	})
 }
 
