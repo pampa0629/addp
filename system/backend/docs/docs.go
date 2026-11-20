@@ -8984,7 +8984,12 @@ const docTemplate = `{
                         "enum": [
                             "postgresql",
                             "redis",
-                            "minio"
+                            "minio",
+                            "falkordb",
+                            "mysql",
+                            "neo4j",
+                            "ftp",
+                            "spark"
                         ],
                         "type": "string",
                         "description": "引擎类型 | Engine type",

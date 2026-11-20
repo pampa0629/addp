@@ -13106,6 +13106,11 @@ paths:
         - postgresql
         - redis
         - minio
+        - falkordb
+        - mysql
+        - neo4j
+        - ftp
+        - spark
         in: query
         name: engine_type
         type: string

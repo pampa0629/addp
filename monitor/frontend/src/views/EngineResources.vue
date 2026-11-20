@@ -116,7 +116,7 @@ let disposed = false, dataContext = ''
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
 const groups = computed(() => engineGroups(state.value.engineType))
 const detailMetrics = computed(() => engineDetailMetrics(state.value.engineType, state.value.metric))
-const engineNames = { postgresql: 'PostgreSQL', redis: 'Redis', minio: 'MinIO' }
+const engineNames = { postgresql: 'PostgreSQL', redis: 'Redis', minio: 'MinIO', falkordb: 'FalkorDB', mysql: 'MySQL', neo4j: 'Neo4j', ftp: 'FTP', spark: 'Spark' }
 const selectedMetric = computed(() => engineMetricsFor(state.value.engineType).find(item => item.key === state.value.metric))
 const observation = id => observed.value?.data.find(row => row.subject.deployment_id === id)
 function collection(id) {

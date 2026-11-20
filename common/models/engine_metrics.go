@@ -45,6 +45,16 @@ func PlatformEngineService(engineType string) (string, int) {
 		return "redis", 6379
 	case "minio":
 		return "minio", 9000
+	case "falkordb":
+		return "falkordb", 6379
+	case "mysql":
+		return "mysql", 3306
+	case "neo4j":
+		return "neo4j", 7687
+	case "ftp":
+		return "ftp", 2121
+	case "spark":
+		return "spark-master", 7077
 	default:
 		return "", 0
 	}

@@ -50,10 +50,20 @@ export const minioMetrics = [
   ['requests.errors_4xx_per_second','minio4xx','requests_per_second','minioTraffic',60], ['requests.errors_5xx_per_second','minio5xx','requests_per_second','minioTraffic',60], ['requests.error_5xx_percent','minioErrorPercent','percent','minioTraffic',60],
   ['traffic.sent_bytes_per_second','minioSent','bytes_per_second','minioTraffic',60], ['traffic.received_bytes_per_second','minioReceived','bytes_per_second','minioTraffic',60]
 ].map(([key,name,unit,group,windowSeconds=0])=>({key:`minio.${key}`,name,unit,group,windowSeconds}))
-export const engineMetricsFor = kind => kind === 'minio' ? minioMetrics : kind === 'redis' ? redisMetrics : kind === 'postgresql' ? engineMetrics : []
-export const engineSummaryFor = kind => kind === 'minio' ? minioMetrics.filter(metric=>['minioTotal','minioFree','minioPercent','minioRequests'].includes(metric.name)) : kind === 'redis' ? redisMetrics.filter(metric => ['redisAllocated', 'redisPercent', 'redisConnections', 'redisCommands'].includes(metric.name)) : kind === 'postgresql' ? engineSummaryMetrics : []
+const productMetrics = {
+  falkordb: [['connected_clients', 'connections'], ['used_memory', 'bytes']],
+  mysql: [['threads_connected', 'connections'], ['threads_running', 'threads'], ['uptime', 'seconds']],
+  neo4j: [['http_available', 'status']],
+  ftp: [['control_available', 'status']],
+  spark: [['workers_alive', 'workers'], ['cores_free', 'cores'], ['applications_running', 'applications']],
+}
+function productMetricsFor(kind) {
+  return (Object.hasOwn(productMetrics, kind) ? productMetrics[kind] : []).map(([name, unit]) => ({ key: kind+'.'+name, name, unit, windowSeconds: 0 }))
+}
+export const engineMetricsFor = kind => kind === 'minio' ? minioMetrics : kind === 'redis' ? redisMetrics : kind === 'postgresql' ? engineMetrics : productMetricsFor(kind)
+export const engineSummaryFor = kind => kind === 'minio' ? minioMetrics.filter(metric=>['minioTotal','minioFree','minioPercent','minioRequests'].includes(metric.name)) : kind === 'redis' ? redisMetrics.filter(metric => ['redisAllocated', 'redisPercent', 'redisConnections', 'redisCommands'].includes(metric.name)) : kind === 'postgresql' ? engineSummaryMetrics : productMetricsFor(kind)
 export const engineGroups = kind => [...new Set(engineMetricsFor(kind).map(metric=>metric.group).filter(Boolean))]
-export const defaultEngineMetric = kind => kind === 'minio' ? 'minio.capacity.used_percent' : kind === 'redis' ? 'redis.memory.used_percent' : 'postgresql.transactions.committed_per_second'
+export const defaultEngineMetric = kind => kind === 'minio' ? 'minio.capacity.used_percent' : kind === 'redis' ? 'redis.memory.used_percent' : productMetricsFor(kind)[0]?.key || 'postgresql.transactions.committed_per_second'
 export function engineDetailMetrics(kind, metric) {
   const catalog = engineMetricsFor(kind)
   const selected = catalog.find(item => item.key === metric)
@@ -84,7 +94,7 @@ export function resolveEngineRoute(input = {}) {
   const page = typeof input.page === 'string' && /^[1-9]\d{0,5}$/.test(input.page) ? Number(input.page) : 1
   const deploymentID = isTargetUUID(input.deployment_id) ? input.deployment_id : ''
   const scope = input.scope === 'business' ? 'business' : 'infra'
-  const engineType = ['redis','minio'].includes(input.engine_type) ? input.engine_type : 'postgresql'
+  const engineType = engineMetricsFor(input.engine_type).length ? input.engine_type : 'postgresql'
   const metric = engineMetricsFor(engineType).some(item => item.key === input.metric) ? input.metric : defaultEngineMetric(engineType)
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
   const search = typeof input.search === 'string' && input.search.length <= 255 && !/[\u0000-\u001f]/u.test(input.search) ? input.search.trim() : ''
@@ -92,7 +102,7 @@ export function resolveEngineRoute(input = {}) {
   return { scope, engineType, page, deploymentID, metric, range, refresh, search, query, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => query[key] !== input[key]) }
 }
 export function validateEngineDeployment(row) {
-  if (!['infra','business'].includes(row?.scope) || !isTargetUUID(row?.deployment_id) || typeof row.display_name !== 'string' || !row.display_name || row.display_name.length > 1024 || !['postgresql','redis','minio'].includes(row.engine_type) || typeof row.enabled !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1 || !['bound', 'rejected'].includes(row.host_binding_state) || (row.host_binding_state === 'bound' ? !isTargetUUID(row.node_id) : row.node_id !== '')) invalid()
+  if (!['infra','business'].includes(row?.scope) || !isTargetUUID(row?.deployment_id) || typeof row.display_name !== 'string' || !row.display_name || row.display_name.length > 1024 || !engineMetricsFor(row.engine_type).length || typeof row.enabled !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1 || !['bound', 'rejected'].includes(row.host_binding_state) || (row.host_binding_state === 'bound' ? !isTargetUUID(row.node_id) : row.node_id !== '')) invalid()
   return row
 }
 export function validateEnginePage(value, page, size = 20) {
@@ -103,7 +113,7 @@ export function validateEnginePage(value, page, size = 20) {
 }
 export function engineTrendParameters(id, metric, range, queriedAt) {
   const end = Math.floor(Date.parse(queriedAt) / 1000) * 1000
-  if (!isTargetUUID(id) || ![...engineMetrics,...redisMetrics,...minioMetrics].some(item => item.key === metric) || !Object.hasOwn(resourceRanges, range) || !Number.isFinite(end)) invalid()
+  if (!isTargetUUID(id) || ![...engineMetrics,...redisMetrics,...minioMetrics,...Object.keys(productMetrics).flatMap(productMetricsFor)].some(item => item.key === metric) || !Object.hasOwn(resourceRanges, range) || !Number.isFinite(end)) invalid()
   return { deployment_id: id, metrics: metric, start: new Date(end - resourceRanges[range] * 1000).toISOString().replace('.000Z', 'Z'), end: new Date(end).toISOString().replace('.000Z', 'Z') }
 }
 export function validateEngineResources(value, owners, metricsForOwner, params = null) {

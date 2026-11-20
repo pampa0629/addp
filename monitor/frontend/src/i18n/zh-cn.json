@@ -1872,7 +1872,11 @@
         "buckets": "个",
         "requests": "个",
         "requests_per_second": "次/秒",
-        "bytes_per_second": "B/s"
+        "bytes_per_second": "B/s",
+        "threads": "个线程",
+        "workers": "个",
+        "cores": "核",
+        "applications": "个"
       },
       "states": {
         "collecting": "正在采集",
@@ -1938,7 +1942,17 @@
         "minio5xx": "S3 5xx 错误速率",
         "minioErrorPercent": "S3 5xx 占比",
         "minioSent": "S3 发送速率",
-        "minioReceived": "S3 接收速率"
+        "minioReceived": "S3 接收速率",
+        "connected_clients": "已连接客户端",
+        "used_memory": "已分配内存",
+        "threads_connected": "连接数",
+        "threads_running": "运行线程",
+        "uptime": "运行时间",
+        "http_available": "HTTP 发现接口",
+        "control_available": "FTP 控制通道",
+        "workers_alive": "存活 Worker",
+        "cores_free": "空闲 CPU 核",
+        "applications_running": "运行中应用"
       },
       "hints": {
         "total": "客户端连接总数，不含本次采集连接。",
@@ -1994,7 +2008,17 @@
         "minio5xx": "完整一分钟的 5xx 计数速率；未发布、缺样或重置时留空。",
         "minioErrorPercent": "同一完整窗口、同代计数的 5xx 增量占请求增量的比例；请求增量为零或任一计数缺失时不计算。",
         "minioSent": "MinIO 向客户端发送的字节速率，使用完整一分钟；不是主机总网卡流量。",
-        "minioReceived": "MinIO 从客户端接收的字节速率，使用完整一分钟；不是主机总网卡流量。"
+        "minioReceived": "MinIO 从客户端接收的字节速率，使用完整一分钟；不是主机总网卡流量。",
+        "connected_clients": "FalkorDB INFO 返回的实例级读数。",
+        "used_memory": "FalkorDB INFO 返回的实例级读数。",
+        "threads_connected": "MySQL GLOBAL STATUS 返回的实例级读数。",
+        "threads_running": "MySQL GLOBAL STATUS 返回的实例级读数。",
+        "uptime": "MySQL GLOBAL STATUS 返回的实例级读数。",
+        "http_available": "HTTP 发现接口返回了 Neo4j 版本。",
+        "control_available": "控制端口返回 FTP 服务就绪应答。",
+        "workers_alive": "Spark Master 报告的集群当前值。",
+        "cores_free": "Spark Master 报告的集群当前值。",
+        "applications_running": "Spark Master 报告的集群当前值。"
       },
       "engineType": "引擎类型",
       "noLimit": "未设置内存上限",
@@ -2027,6 +2051,14 @@
         "redisAOFRewrite": {
           "0": "失败",
           "1": "成功"
+        },
+        "http_available": {
+          "0": "不可用",
+          "1": "可用"
+        },
+        "control_available": {
+          "0": "不可用",
+          "1": "可用"
         }
       },
       "scopes": {

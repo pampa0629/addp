@@ -33,7 +33,7 @@ func (s *DeploymentDiscoveryService) Read(ctx context.Context) models.Deployment
 	result := models.DeploymentDiscovery{Scopes: make([]models.DeploymentDiscoveryScope, 0, 2), Candidates: []models.EngineDeploymentCandidate{}}
 	for _, scope := range []string{"infra", "business"} {
 		value := s.readScope(ctx, scope)
-		value.CDCMetrics, value.MeilisearchMetrics = nil, nil
+		value.CDCMetrics, value.MeilisearchMetrics, value.ProductMetrics = nil, nil, nil
 		value.PostgreSQLMetrics, value.RedisMetrics, value.MinIOMetrics = nil, nil, nil // The browser projection has no professional source endpoint.
 		result.Scopes = append(result.Scopes, value)
 		if value.State == "available" {
@@ -176,11 +176,12 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	bad := discoveryState(scope, "unavailable", "source_invalid")
 	var document struct {
 		models.DeploymentDiscoveryScope
-		CDC     json.RawMessage `json:"cdc_metrics,omitempty"`
-		Meili   json.RawMessage `json:"meilisearch_metrics,omitempty"`
-		Metrics json.RawMessage `json:"postgresql_metrics,omitempty"`
-		Redis   json.RawMessage `json:"redis_metrics,omitempty"`
-		MinIO   json.RawMessage `json:"minio_metrics,omitempty"`
+		Products map[string]json.RawMessage `json:"product_metrics,omitempty"`
+		CDC      json.RawMessage            `json:"cdc_metrics,omitempty"`
+		Meili    json.RawMessage            `json:"meilisearch_metrics,omitempty"`
+		Metrics  json.RawMessage            `json:"postgresql_metrics,omitempty"`
+		Redis    json.RawMessage            `json:"redis_metrics,omitempty"`
+		MinIO    json.RawMessage            `json:"minio_metrics,omitempty"`
 	}
 	if len(raw) > deploymentDiscoveryLimit || DecodeDeploymentJSON(raw, &document) != nil {
 		return bad
@@ -251,6 +252,22 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 	if scope == "infra" {
 		value.CDCMetrics = parseCDCMetrics(document.CDC, value.Services, at)
 		value.MeilisearchMetrics = parseComponentMetrics(document.Meili, value.Services, "meilisearch", at)
+	}
+	value.ProductMetrics = make(map[string]*commonmodels.EngineMetricsSource, len(document.Products))
+	for kind, raw := range document.Products {
+		switch kind {
+		case "falkordb":
+			if scope != "infra" {
+				return bad
+			}
+		case "mysql", "neo4j", "spark", "ftp":
+			if scope != "business" {
+				return bad
+			}
+		default:
+			return bad
+		}
+		value.ProductMetrics[kind] = parseEngineMetrics(raw, value.Services, kind, at)
 	}
 	value.PostgreSQLMetrics = parseEngineMetrics(document.Metrics, value.Services, "postgresql", at)
 	value.RedisMetrics = parseEngineMetrics(document.Redis, value.Services, "redis", at)

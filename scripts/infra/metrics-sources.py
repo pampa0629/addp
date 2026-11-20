@@ -76,6 +76,13 @@ def load(path):
     return module
 
 
+PRODUCTS = load(ROOT/'scripts/utils/metrics-project.py').PRODUCTS
+PROVIDERS.update({kind: ('cdc-metrics.py', 'ADDP_'+kind.upper()+'_METRICS', title)
+                  for kind, title in [('falkordb','FalkorDB'), ('mysql','MySQL'), ('neo4j','Neo4j'),
+                                      ('ftp','FTP'), ('spark','Spark')]})
+COMPONENTS = {'redpanda','kafka-connect','meilisearch', *PRODUCTS}
+
+
 def environment(scope, inherited, root=None):
     """Load only the selected deployment's trusted shell configuration, privately."""
     base = {key: inherited[key] for key in OS_KEYS if key in inherited}
@@ -103,7 +110,7 @@ def environment(scope, inherited, root=None):
 
 def selection(scopes, kinds):
     return [(scope, kind) for scope in SCOPES if not scopes or scope in scopes
-            for kind in PROVIDERS if (scope == 'host') == (kind == 'node') and (not kinds or kind in kinds) and (kind not in ('redpanda','kafka-connect','meilisearch') or scope == 'infra')]
+            for kind in PROVIDERS if (scope == 'host') == (kind == 'node') and (not kinds or kind in kinds) and (kind not in COMPONENTS or scope == PRODUCTS.get(kind, ('infra', kind))[0])]
 
 
 def enabled(kind, env):
@@ -118,7 +125,7 @@ def check(kind, scope, env):
     if kind == 'node':
         provider.deployment(env)
         provider.capacity_enabled(env)
-    elif kind in ('redpanda','kafka-connect','meilisearch'):
+    elif kind in COMPONENTS:
         if kind == 'meilisearch':
             provider.meili_key_uid(env)
         provider.state_directory(env, scope, kind)
@@ -162,8 +169,8 @@ def status(kind, scope, env):
             if (not database['running'] or database['started_at'] != labels.get(namespace+'.database-started-at')
                     or db_labels.get('com.docker.compose.project') != source_project
                     or db_labels.get('com.docker.compose.project.working_dir') != str(working)
-                    or db_labels.get('com.docker.compose.service') != ('postgres' if kind == 'postgresql' else kind)):
-                return ('组件运行身份已变化' if kind in ('redpanda','kafka-connect','meilisearch') else '数据库运行身份已变化'), False
+                    or db_labels.get('com.docker.compose.service') != ('postgres' if kind == 'postgresql' else PRODUCTS.get(kind, (scope,kind))[1])):
+                return ('组件运行身份已变化' if kind in COMPONENTS else '数据库运行身份已变化'), False
     services = [fact['labels'].get('com.docker.compose.service') for fact in facts]
     if len(services) != len(expected) or set(services) != expected:
         return '组件不完整', False
@@ -184,7 +191,7 @@ def apply(action, kind, scope, env):
     args = [sys.executable, str(script), action]
     if kind != 'node':
         args += ['--scope', scope]
-    if kind in ('redpanda','kafka-connect','meilisearch'):
+    if kind in COMPONENTS:
         args += ['--kind', kind]
     result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=600)
     # Provider logs may contain deployment information. Publish closed stages only.
@@ -198,7 +205,7 @@ def apply(action, kind, scope, env):
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
         tls = tls_failure_detail(stage[1] if stage else None, re.findall(r'\[tls-reason=([a-z-]+)\]', result.stderr))
         detail = '：'+tls if tls else ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''
-        if kind in ('redpanda','kafka-connect','meilisearch'):
+        if kind in COMPONENTS:
             detail = detail.replace('引擎','组件').replace('数据库','组件').replace('账号、','')
         raise ValueError('操作失败'+detail+cleanup)
     if action == 'recover':

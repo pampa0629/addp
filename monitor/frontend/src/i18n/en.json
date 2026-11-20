@@ -1872,7 +1872,11 @@
         "buckets": "buckets",
         "requests": "requests",
         "requests_per_second": "requests/s",
-        "bytes_per_second": "B/s"
+        "bytes_per_second": "B/s",
+        "threads": "threads",
+        "workers": "workers",
+        "cores": "cores",
+        "applications": "applications"
       },
       "states": {
         "collecting": "Collecting",
@@ -1938,7 +1942,17 @@
         "minio5xx": "S3 5xx rate",
         "minioErrorPercent": "S3 5xx share",
         "minioSent": "S3 sent rate",
-        "minioReceived": "S3 received rate"
+        "minioReceived": "S3 received rate",
+        "connected_clients": "Connected clients",
+        "used_memory": "Allocated memory",
+        "threads_connected": "Open connections",
+        "threads_running": "Running threads",
+        "uptime": "Uptime",
+        "http_available": "HTTP discovery endpoint",
+        "control_available": "FTP control channel",
+        "workers_alive": "Live workers",
+        "cores_free": "Available CPU cores",
+        "applications_running": "Running applications"
       },
       "hints": {
         "total": "Client connections excluding this observation session.",
@@ -1994,7 +2008,17 @@
         "minio5xx": "5xx rate over a complete minute; blank when omitted, incomplete or reset.",
         "minioErrorPercent": "5xx/request increments in the same complete window and epoch. No percentage for zero request increments or missing counters.",
         "minioSent": "Bytes sent from MinIO to clients over a complete minute, not total host network traffic.",
-        "minioReceived": "Bytes received by MinIO from clients over a complete minute, not total host network traffic."
+        "minioReceived": "Bytes received by MinIO from clients over a complete minute, not total host network traffic.",
+        "connected_clients": "Instance value from FalkorDB INFO.",
+        "used_memory": "Instance value from FalkorDB INFO.",
+        "threads_connected": "Instance value from MySQL GLOBAL STATUS.",
+        "threads_running": "Instance value from MySQL GLOBAL STATUS.",
+        "uptime": "Instance value from MySQL GLOBAL STATUS.",
+        "http_available": "The HTTP discovery endpoint returned a Neo4j version.",
+        "control_available": "The control port returned an FTP service-ready greeting.",
+        "workers_alive": "Current cluster value reported by the Spark master.",
+        "cores_free": "Current cluster value reported by the Spark master.",
+        "applications_running": "Current cluster value reported by the Spark master."
       },
       "engineType": "Engine type",
       "noLimit": "No Redis memory limit",
@@ -2027,6 +2051,14 @@
         "redisAOFRewrite": {
           "0": "Failed",
           "1": "OK"
+        },
+        "http_available": {
+          "0": "Unavailable",
+          "1": "Available"
+        },
+        "control_available": {
+          "0": "Unavailable",
+          "1": "Available"
         }
       },
       "scopes": {

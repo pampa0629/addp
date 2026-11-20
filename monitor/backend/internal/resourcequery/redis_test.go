@@ -211,3 +211,28 @@ func TestEngineSummaryTransportSeparatesTypesAndRejectsForeignEvidence(t *testin
 		})
 	}
 }
+
+func TestProductDeploymentSummaryAndTrend(t *testing.T) {
+	at := time.Now().UTC().Truncate(time.Second)
+	for _, kind := range []string{"mysql", "falkordb", "neo4j", "ftp", "spark"} {
+		scope := queryEngineScope()
+		scope.EngineType = kind
+		plan, err := NewEngineSummaryPlan(kind, 1, at, DefaultBudget())
+		if err != nil {
+			t.Fatal(kind, err)
+		}
+		expression, err := scope.expression(plan)
+		if err != nil {
+			t.Fatal(kind, err)
+		}
+		for _, metric := range plan.Metrics {
+			if !strings.Contains(expression, scope.selector(strings.TrimPrefix(metric.Key, kind+"."))) ||
+				!strings.Contains(expression, scope.selector("observed_at_seconds")) {
+				t.Fatal(metric.Key)
+			}
+			if _, err = NewEnginePlan(kind, []string{metric.Key}, at.Add(-time.Minute), at, at, true, DefaultBudget()); err != nil {
+				t.Fatal(metric.Key, err)
+			}
+		}
+	}
+}

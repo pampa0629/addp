@@ -1,4 +1,10 @@
-const servicePorts = { postgres: { type: 'postgresql', port: 5432 }, redis: { type: 'redis', port: 6379 }, minio: { type: 'minio', port: 9000 } }
+const servicePorts = { postgres: { type: 'postgresql', port: 5432 }, redis: { type: 'redis', port: 6379 }, minio: { type: 'minio', port: 9000 },
+  'falkordb': { type: 'falkordb', port: 6379 },
+  'mysql': { type: 'mysql', port: 3306 },
+  'neo4j': { type: 'neo4j', port: 7687 },
+  'ftp': { type: 'ftp', port: 2121 },
+  'spark-master': { type: 'spark', port: 7077 }
+}
 const supported = service => Object.hasOwn(servicePorts, service?.service) && servicePorts[service.service].type === service.engine_type
 const fields = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))

@@ -48,7 +48,7 @@ class MetricsSourcesTest(unittest.TestCase):
         return code, output.getvalue(), mocks
 
     def test_exact_selection_deduplicates_and_never_expands_scope(self):
-        self.assertEqual(len(manager.selection((), ())), 10)
+        self.assertEqual(len(manager.selection((), ())), 15)
         self.assertEqual(manager.selection(['business', 'business'], ['postgresql', 'postgresql']), [('business', 'postgresql')])
         self.assertEqual(manager.selection(['business'], ['redpanda','kafka-connect','meilisearch']), [])
         self.assertEqual(manager.selection(['host'], ['postgresql']), [])
@@ -96,9 +96,9 @@ class MetricsSourcesTest(unittest.TestCase):
     def test_all_sources_are_attempted_after_failure_without_secret_logs(self):
         env = {value[1]+'_ENABLED':'true' for value in manager.PROVIDERS.values()}
         failure = subprocess.CalledProcessError(1, ['secret-command'], stderr='secret-password')
-        code, output, mocks = self.invoke('up', env=env, apply={'side_effect':[failure]+['已应用']*9})
+        code, output, mocks = self.invoke('up', env=env, apply={'side_effect':[failure]+['已应用']*14})
         self.assertEqual(code, 1)
-        self.assertEqual(mocks['apply'].call_count, 10)
+        self.assertEqual(mocks['apply'].call_count, 15)
         self.assertNotIn('secret-password', output)
         self.assertNotIn('secret-command', output)
 
@@ -118,13 +118,13 @@ class MetricsSourcesTest(unittest.TestCase):
         self.assertEqual([(call.args[0],call.args[1],call.args[2]) for call in mocks['apply'].call_args_list], [('recover',kind,scope) for scope,kind in manager.selection((),()) if scope!='host'])
         self.assertIn('主机须显式指定 --scope host',receipt['host/node']['detail'])
         self.assertEqual(len(output.splitlines()),1)
-        self.assertIn('9 项已恢复，1 项跳过，0 项失败',output)
+        self.assertIn('14 项已恢复，1 项跳过，0 项失败',output)
 
     def test_invalid_selection_never_blocks_shutdown_or_other_sources(self):
         env = {'ADDP_POSTGRES_METRICS_ENABLED':'invalid'}
         code, _, mocks = self.invoke('down', ['infra'], env=env, apply={'return_value':'已停用'})
         self.assertEqual(code, 0)
-        self.assertEqual(mocks['apply'].call_count, 6)
+        self.assertEqual(mocks['apply'].call_count, 7)
         code, output, mocks = self.invoke('check', ['infra'], env=env, check={})
         self.assertEqual(code, 1)
         self.assertIn('失败 1 项', output)
@@ -145,7 +145,7 @@ class MetricsSourcesTest(unittest.TestCase):
             provider = Mock()
             with patch.object(manager, 'load', return_value=provider): manager.check(kind, 'host' if kind=='node' else 'business', {})
             if kind=='node': provider.deployment.assert_called_once(); provider.capacity_enabled.assert_called_once()
-            elif kind in ('minio','redpanda','kafka-connect','meilisearch'): provider.sources.transport.assert_called_once()
+            elif kind == 'minio' or kind in manager.COMPONENTS: provider.sources.transport.assert_called_once()
             else: provider.transport.assert_called_once()
             provider.run.assert_not_called()
 
@@ -194,7 +194,7 @@ class MetricsSourcesTest(unittest.TestCase):
             for kind in manager.PROVIDERS:
                 failure=ValueError('private-password /private/server.crt')
                 failure.source_tls_reason=reason;failure.observation_stage='transport-check'
-                scope='host' if kind=='node' else 'infra'
+                scope='host' if kind=='node' else manager.PRODUCTS.get(kind, ('infra',kind))[0]
                 code,output,_=self.invoke('check',[scope],[kind],env={manager.PROVIDERS[kind][1]+'_ENABLED':'true'},check={'side_effect':failure})
                 self.assertEqual(code,1);self.assertIn(phrase,output);self.assertNotIn('private',output)
                 for action in ('up','recover'):
@@ -259,7 +259,7 @@ class MetricsSourcesTest(unittest.TestCase):
         self.assertIn('metrics-sources.py" up --resolved-env --scope business', business)
         self.assertNotIn('lifecycle.py" up --scope business', business)
         recovery = (ROOT/'scripts/utils/observability-env.sh').read_text().split('addp_recover_metrics_sources() {')[1]
-        self.assertIn('metrics-sources.py" recover --scope host --scope infra --scope business --kind node --kind postgresql --kind redis --kind minio', recovery)
+        self.assertIn('metrics-sources.py" recover --scope host --scope infra --scope business --receipt-fd', recovery)
         self.assertNotIn('source "$config"', recovery)
         for path in ('scripts/infra/up.sh','scripts/infra/down.sh','business/scripts/start.sh','business/scripts/stop.sh','scripts/utils/observability-env.sh'):
             subprocess.run(['bash','-n',str(ROOT/path)],check=True,capture_output=True)
@@ -299,7 +299,7 @@ exit "$result"
                     self.assertEqual(len(first.splitlines()),2 if mode=='failure' else 1)
                     self.assertNotIn('Business',first)
                     self.assertIn('本次恢复结果 | 当前运行／镜像状态',last)
-                    self.assertEqual(last.count('启用 / 运行中；镜像可用'),10)
+                    self.assertEqual(last.count('启用 / 运行中；镜像可用'),15)
                     self.assertNotIn('"outcome"',result.stdout+result.stderr)
                     self.assertFalse(result.stderr)
                     if mode=='failure':
@@ -308,12 +308,12 @@ exit "$result"
                         self.assertIn('失败：操作失败：原采集镜像不可用 | 启用 / 运行中；镜像可用',last)
                     elif mode=='invalid':
                         self.assertIn('本次恢复回执不可用',last)
-                        self.assertEqual(last.count('未记录 | '),10)
+                        self.assertEqual(last.count('未记录 | '),15)
                     elif mode=='restored':
-                        self.assertIn('9 项保持原状，1 项已恢复',first)
+                        self.assertIn('14 项保持原状，1 项已恢复',first)
                     else:
-                        self.assertIn('10 项保持原状',first)
-                        self.assertEqual(last.count('保持原状 | '),10)
+                        self.assertIn('15 项保持原状',first)
+                        self.assertEqual(last.count('保持原状 | '),15)
             result=subprocess.run([sys.executable,str(entry),'recover','--scope','host','--kind','node','--receipt-fd','3'],
                 env=dict(os.environ,MODE='normal'),capture_output=True,text=True,timeout=10)
             self.assertEqual(result.returncode,1)

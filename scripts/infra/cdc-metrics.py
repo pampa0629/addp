@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install/recover fixed Infra component metrics sources; never mutate the components themselves.
+"""Install/recover fixed deployment component metrics sources; manage only observation sources and their dedicated accounts.
 
 Usage: cdc-metrics.py up|down|recover --scope infra --kind redpanda|kafka-connect|meilisearch
 The public lifecycle entry is metrics-sources.py.
@@ -31,7 +31,16 @@ PREFIXES = {'redpanda':'ADDP_REDPANDA_METRICS', 'kafka-connect':'ADDP_KAFKA_CONN
             'meilisearch':'ADDP_MEILISEARCH_METRICS'}
 
 
+PRODUCTS = sources.group.PRODUCTS
+PREFIXES.update({kind: 'ADDP_'+kind.upper()+'_METRICS' for kind in PRODUCTS})
+
+
 def source_inputs(kind=None):
+    if kind in PRODUCTS:
+        return ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum',
+                'scripts/infra/Dockerfile.deployment-metrics', 'monitor/backend/cmd/deployment-metrics-source/main.go',
+                *(str(path.relative_to(ROOT)) for path in sorted((ROOT/'monitor/backend/internal/sourceserver').glob('*.go'))
+                  if not path.name.endswith('_test.go'))]
     if kind == 'meilisearch':
         return ['common/go.mod', 'common/go.sum', 'monitor/backend/go.mod', 'monitor/backend/go.sum',
                 'scripts/infra/Dockerfile.meilisearch-metrics', 'monitor/backend/cmd/meilisearch-metrics-source/main.go',
@@ -44,7 +53,7 @@ def source_inputs(kind=None):
 
 @sources.observed('private-state')
 def state_directory(env, scope, kind):
-    if scope != 'infra' or kind not in PREFIXES: raise Error('Invalid Infra source selection')
+    if kind not in PREFIXES or scope != PRODUCTS.get(kind, ('infra', kind))[0]: raise Error('Invalid Infra source selection')
     configured = env.get(PREFIXES[kind]+'_STATE_DIR')
     path = Path(configured) if configured else Path.home().resolve()/'.local/state/addp'/hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]/'cdc-metrics'/kind
     if not path.is_absolute() or '..' in path.parts or path.resolve().is_relative_to(ROOT): raise Error('Invalid CDC private state')
@@ -54,9 +63,10 @@ def state_directory(env, scope, kind):
 class Component:
     @sources.observed('deployment-check')
     def __init__(self, docker, kind, *, service=None):
-        service = service or kind
+        scope, owner_service = PRODUCTS.get(kind, ('infra', kind))
+        service = service or owner_service
         self.docker = docker
-        project, working = deployment.inventory.SCOPES['infra']
+        project, working = deployment.inventory.SCOPES[scope]
         ids = docker.run(['ps','-aq','--no-trunc','--filter','label=com.docker.compose.project='+project,
                           '--filter','label=com.docker.compose.service='+service]).split()
         if len(ids) != 1 or not deployment.inventory.identifier(ids[0]): raise Error('CDC component is not unique')
@@ -71,7 +81,7 @@ class Component:
             network = json.loads(docker.run(['network','inspect',attachment['NetworkID']]))[0]
             if (network.get('Id') == attachment['NetworkID'] and network.get('Name') == name and network.get('Driver') == 'bridge'
                 and (network.get('Labels') or {}).get('com.docker.compose.project') == project
-                and network['Labels'].get('com.docker.compose.network') == NETWORK):
+                and network['Labels'].get('com.docker.compose.network') == (NETWORK if scope == 'infra' else 'business-network')):
                 networks.append((name,attachment))
         if len(networks) != 1: raise Error('CDC private network rejected')
         self.network, attachment = networks[0]
@@ -104,6 +114,42 @@ def meili_config(component, env):
     return {'address':component.address, 'task_key':value['key']}
 
 
+@sources.observed('account-update')
+def product_password(component, kind, env):
+    path = Path(env.get(PREFIXES[kind]+'_PASSWORD_FILE', ''))
+    if not path.is_absolute():
+        raise Error('A deployment-owned observation password is required')
+    password = private.read(path, 0o600)[0].rstrip('\n')
+    if not re.fullmatch('[0-9a-f]{64}', password):
+        raise Error('Observation credential must be a generated 256-bit value')
+    # Inspect accounts using the product deployment owner. Only the dedicated
+    # observer credential enters the source volume. Never alter an existing grant.
+    if kind == 'mysql':
+        command = ['exec','-i',component.identity,'sh','-ec',
+                   'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --batch --skip-column-names']
+        existing = component.docker.run(command, input="SELECT Host FROM mysql.user WHERE User='addp_metrics_reader';").splitlines()
+        if not existing:
+            component.docker.run(command, input="CREATE USER 'addp_metrics_reader'@'%' IDENTIFIED BY '"+password+"';")
+        elif existing != ['%']:
+            raise Error('MySQL observation account is ambiguous')
+        grants = component.docker.run(command, input="SHOW GRANTS FOR 'addp_metrics_reader'@'%';").splitlines()
+        if grants != ['GRANT USAGE ON *.* TO `addp_metrics_reader`@`%`']:
+            raise Error('MySQL observation account has unexpected privileges')
+    else:
+        command = ['exec','-i',component.identity,'redis-cli','--json']
+        account = json.loads(component.docker.run(command+['ACL','GETUSER','addp_metrics_reader']))
+        digest = hashlib.sha256(password.encode()).hexdigest()
+        if account is None:
+            # The deployment does not persist ACLs. Re-establish only this named
+            # observer on recovery, with no key patterns or graph commands.
+            component.docker.run(command, input='ACL SETUSER addp_metrics_reader reset on #'+digest+' +info\n')
+            account = json.loads(component.docker.run(command+['ACL','GETUSER','addp_metrics_reader']))
+        if (not isinstance(account,dict) or 'on' not in account['flags'] or account['passwords'] != [digest]
+                or account['commands'] != '-@all +info' or account['keys'] or account['channels'] or account['selectors']):
+            raise Error('FalkorDB observation account has unexpected privileges')
+    return password
+
+
 def run(action, scope, kind, env):
     state = state_directory(env,scope,kind)
     prefix = PREFIXES[kind]
@@ -121,13 +167,16 @@ def run(action, scope, kind, env):
         ip,port,material = sources.transport(env,ROOT,prefix,Error)
         component = Component(docker,kind)
         config = meili_config(component,env) if kind == 'meilisearch' else {'kind':kind,'address':component.address}
-        expected = {'schema':'addp.meilisearch-metrics/v1' if kind == 'meilisearch' else 'addp.cdc-metrics/v1','workspace':str(ROOT),'kind':kind,
-                    'docker_engine_id':docker.info['id'],'project':deployment.inventory.SCOPES['infra'][0]}
+        expected = {'schema':'addp.meilisearch-metrics/v1' if kind == 'meilisearch' else 'addp.deployment-metrics/v1' if kind in PRODUCTS else 'addp.cdc-metrics/v1','workspace':str(ROOT),'kind':kind,
+                    'docker_engine_id':docker.info['id'],'project':deployment.inventory.SCOPES[scope][0]}
         owner = state/'owner.json'
         if os.path.lexists(owner):
             if json.loads(private.read(owner,0o600)[0]) != expected: raise Error('CDC source deployment owner changed')
         elif action == 'recover':
             raise Error('CDC source installation proof is missing')
+
+        if kind in ('mysql', 'falkordb'):
+            config['password'] = product_password(component, kind, env)
 
         if action == 'recover':
             if not (state/'compose.json').exists(): return 'not installed; recovery skipped'
@@ -147,7 +196,7 @@ def run(action, scope, kind, env):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=('up','down','recover'))
-    parser.add_argument('--scope',choices=('infra',),required=True)
+    parser.add_argument('--scope',choices=('infra','business'),required=True)
     parser.add_argument('--kind',choices=tuple(PREFIXES),required=True)
     args = parser.parse_args()
     try:

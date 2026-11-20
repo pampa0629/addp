@@ -7,7 +7,19 @@ from pathlib import Path
 PROJECT = 'addp-metrics-sources'
 
 
+# Engine deployment → (Compose scope, service whose lifetime owns the source).
+PRODUCTS = {
+    'falkordb': ('infra', 'falkordb'),
+    'mysql': ('business', 'mysql'),
+    'neo4j': ('business', 'neo4j'),
+    'ftp': ('business', 'ftp'),
+    'spark': ('business', 'spark-master'),
+}
+
+
 def service(kind, scope):
+    if kind in PRODUCTS and scope == PRODUCTS[kind][0]:
+        return scope+'-'+kind+'-metrics'
     if kind == 'node' and scope == 'host': return 'node-exporter'
     if kind in {'redpanda', 'kafka-connect', 'meilisearch'} and scope == 'infra': return scope+'-'+kind+'-metrics'
     if kind not in {'postgres', 'redis', 'minio'} or scope not in {'infra', 'business'}:

@@ -2,6 +2,7 @@ package resourcequery
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -110,10 +111,10 @@ func (c *Client) EngineSummaries(ctx context.Context, scopes []EngineScope, at t
 	if len(scopes) == 0 {
 		return nil, ErrInvalid
 	}
-	p, err := NewEngineSummaryPlan(scopes[0].EngineType, len(scopes), at, b)
-	if err != nil {
-		return nil, err
+	if len(scopes) > 100 {
+		return nil, ErrInvalid
 	}
+	var maxMetrics, totalMetrics int
 	if c == nil {
 		return nil, ErrUnavailable
 	}
@@ -130,6 +131,11 @@ func (c *Client) EngineSummaries(ctx context.Context, scopes []EngineScope, at t
 		if err != nil {
 			return nil, err
 		}
+		maxMetrics = max(maxMetrics, len(rowPlan.Metrics))
+		totalMetrics += len(rowPlan.Metrics)
+		if totalMetrics > b.MaxSeries || totalMetrics > b.MaxTotalPoints {
+			return nil, ErrBudget
+		}
 		expression, err := scope.expression(rowPlan)
 		if err != nil {
 			return nil, err
@@ -140,7 +146,7 @@ func (c *Client) EngineSummaries(ctx context.Context, scopes []EngineScope, at t
 		metrics = append(metrics, label(expression))
 		collections = append(collections, label(scope.collectionExpression()))
 	}
-	data, err := c.readSummaryGroups(ctx, metrics, at, b, ids, 2*len(p.Metrics), "addp_summary_engine")
+	data, err := c.readSummaryGroups(ctx, metrics, at, b, ids, 2*maxMetrics, "addp_summary_engine")
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +183,18 @@ func (s EngineScope) snapshotGuard(offset string) string {
 	if s.EngineType == "minio" {
 		return s.minioSnapshotGuard(offset)
 	}
+	if defs := productCatalog[s.EngineType]; len(defs) > 0 {
+		up := s.selector("up") + offset
+		guard := snapshotGuard(up, s.selector("observed_at_seconds")+offset)
+		for _, d := range defs {
+			raw := s.selector(strings.TrimPrefix(d.Key, s.EngineType+".")) + offset
+			guard += snapshotFieldGuard(raw, up) + " and (min(" + raw + ")>=0)"
+			if d.Unit == "status" {
+				guard += " and (max(" + raw + ")==1)"
+			}
+		}
+		return guard
+	}
 	return s.postgresqlSnapshotGuard(offset)
 }
 func (s EngineScope) expression(p Plan) (string, error) {
@@ -188,6 +206,20 @@ func (s EngineScope) expression(p Plan) (string, error) {
 	}
 	if s.EngineType == "minio" {
 		return s.minioExpression(p)
+	}
+	if defs := productCatalog[s.EngineType]; len(defs) > 0 {
+		guard := s.snapshotGuard("")
+		var parts []string
+		for _, d := range p.Metrics {
+			if !slices.Contains(defs, d) {
+				return "", ErrInvalid
+			}
+			raw := s.selector(strings.TrimPrefix(d.Key, s.EngineType+"."))
+			for _, field := range []struct{ name, expr string }{{"value", "max(" + raw + ")"}, {"sampled_at", "max(timestamp(" + raw + "))"}} {
+				parts = append(parts, `label_replace(label_replace((`+field.expr+guard+`),"addp_metric",`+strconv.Quote(d.Key)+`,"",""),"addp_component",`+strconv.Quote(field.name)+`,"","")`)
+			}
+		}
+		return strings.Join(parts, " or "), nil
 	}
 	return s.postgresqlExpression(p)
 }

@@ -303,7 +303,7 @@ async function loadDiscovery() {
     discoveryScopes.value = discovery.value.scopes
     candidates.value = discovery.value.candidates.map(item => ({
       ...item, key: `${item.scope}/${item.service}`,
-      display_name: `${item.scope === 'infra' ? 'Infra' : 'Business'} ${({ postgres: 'PostgreSQL', redis: 'Redis', minio: 'MinIO' })[item.service] || item.service}`
+      display_name: `${item.scope === 'infra' ? 'Infra' : 'Business'} ${({ postgres: 'PostgreSQL', redis: 'Redis', minio: 'MinIO', 'falkordb': 'FalkorDB', 'mysql': 'MySQL', 'neo4j': 'Neo4j', 'ftp': 'FTP', 'spark-master': 'Spark' })[item.service] || item.service}`
     }))
   }
   blocked.value = false

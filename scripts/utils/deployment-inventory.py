@@ -293,7 +293,7 @@ def single_deployment_metrics(docker, scope, containers, kind, project, *, netwo
         ids=docker('ps','--all','--no-trunc',*metrics_project.filters(project, {member}),'--format','{{.ID}}').splitlines()
         if not ids:return {'state':'not_deployed'}
         if len(ids)!=1 or not identifier(ids[0]):return unavailable
-        databases=[value for service,value in containers.values() if service==kind]
+        databases=[value for service,value in containers.values() if service==metrics_project.PRODUCTS.get(kind, (scope, kind))[1]]
         if len(databases)!=1 or databases[0]['status']!='running':return unavailable
         database=databases[0]
         inspection = REDIS_METRICS_CONTAINER.replace('io.addp.redis-metrics.', 'io.addp.'+kind+'-metrics.')
@@ -356,13 +356,19 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
             result[cid] = discovery_container(value, project, workspace)
         return result
 
+    def product_metrics(containers):
+        return {kind: single_deployment_metrics(docker, scope, containers, kind, metrics_project.PROJECT)
+                for kind, (owner_scope, service) in metrics_project.PRODUCTS.items()
+                if owner_scope == scope and any(name == service for name, _ in containers.values())}
+
     first = read()
+    products = product_metrics(first)
     metrics = postgres_metrics(docker, scope, first)
     redis = redis_metrics(docker, scope, first)
     minio = minio_metrics(docker, scope, first)
     cdc = cdc_metrics(docker, scope, first)
     meili = single_deployment_metrics(docker, scope, first, 'meilisearch', metrics_project.PROJECT) if scope == 'infra' else None
-    if (read() != first or postgres_metrics(docker, scope, first) != metrics or redis_metrics(docker, scope, first) != redis or minio_metrics(docker, scope, first) != minio or cdc_metrics(docker, scope, first) != cdc or ids() != container_ids
+    if (read() != first or postgres_metrics(docker, scope, first) != metrics or redis_metrics(docker, scope, first) != redis or minio_metrics(docker, scope, first) != minio or cdc_metrics(docker, scope, first) != cdc or product_metrics(first) != products or ids() != container_ids
             or (scope == 'infra' and single_deployment_metrics(docker, scope, first, 'meilisearch', metrics_project.PROJECT) != meili)
             or json.loads(docker('info', '--format', INFO)) != info):
         raise InventoryError('部署发现期间来源发生变化')
@@ -378,6 +384,8 @@ def discover(scope, *, env=None, reader=None, system=None, root=None):
               'source': {'type': 'docker_compose', 'runtime': kind, 'docker_engine_id': info['id'], 'project': project},
               'services': [{'service': service, 'engine_type': ENGINE_TYPES.get(service, 'unclassified'),
                             'containers': containers} for service, containers in sorted(services.items())]}
+    if products:
+        result['product_metrics'] = products
     if meili is not None:
         result['meilisearch_metrics'] = meili
     if len(json.dumps(result).encode('utf-8')) > DISCOVERY_LIMIT:

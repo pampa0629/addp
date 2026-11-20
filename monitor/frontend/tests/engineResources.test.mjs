@@ -89,7 +89,16 @@ test('engine URL retains exact deployment, metric, range and bounded refresh', (
 test('current page rejects duplicate, malformed and wrong-page owner references', () => {
   const page = { data: [owner], page: 1, page_size: 20, total: 1 }
   assert.equal(validateEnginePage(page, 1), page)
-  for (const value of [{ ...page, data: [owner, owner], total: 2 }, { ...page, page: 2 }, { ...page, data: [{ ...owner, node_id: '' }] }, { ...page, data: [{ ...owner, engine_type: 'mysql' }] }]) assert.throws(() => validateEnginePage(value, 1), /invalid_resource_response/)
+  for (const value of [{ ...page, data: [owner, owner], total: 2 }, { ...page, page: 2 }, { ...page, data: [{ ...owner, node_id: '' }] }, { ...page, data: [{ ...owner, engine_type: 'unknown' }] }]) assert.throws(() => validateEnginePage(value, 1), /invalid_resource_response/)
+})
+test('product deployment cards and details use the same metric catalog', () => {
+  for (const kind of ['falkordb','mysql','neo4j','ftp','spark']) {
+    const page = {data:[{...owner,engine_type:kind}],page:1,page_size:20,total:1}
+    assert.equal(validateEnginePage(page,1),page)
+    const route = resolveEngineRoute({deployment_id:owner.deployment_id,engine_type:kind})
+    assert.equal(route.engineType,kind)
+    assert.ok(route.metric.startsWith(kind+'.'))
+  }
 })
 test('valid zero is preserved; foreign, stale, fractional connection or incomplete evidence is rejected', () => {
   const good = response()

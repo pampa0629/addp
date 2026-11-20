@@ -133,7 +133,7 @@ def transport(env, root, prefix, error=ValueError):
 
 class Source:
     def __init__(self,docker,scope,state,root,kind,project,error=ValueError):
-        if kind not in {'redis','minio','redpanda','kafka-connect','meilisearch'} or scope not in {'infra','business'} or (kind in {'redpanda','kafka-connect','meilisearch'} and scope != 'infra'): raise error('Unknown metrics source owner')
+        if kind not in {'redis','minio','redpanda','kafka-connect','meilisearch', *group.PRODUCTS} or scope not in {'infra','business'} or (kind in {'redpanda','kafka-connect','meilisearch'} and scope != 'infra'): raise error('Unknown metrics source owner')
         self.docker,self.scope,self.state,self.root,self.kind,self.project,self.error=docker,scope,Path(state),Path(root),kind,project,error
         self.namespace='io.addp.'+kind+'-metrics'
         self.owner,self.scope_label=self.namespace+'.owner',self.namespace+'.scope'
@@ -280,7 +280,7 @@ class Source:
         files = self.installed_files(image)
         installed = json.loads(files.pop('config.json'), object_pairs_hook=unique)
         address = installed['address']
-        if self.kind in {'redpanda','kafka-connect','meilisearch'}:
+        if self.kind in {'redpanda','kafka-connect','meilisearch', *group.PRODUCTS}:
             host = ipaddress.ip_address(address)
             canonical = str(host)
         else:
@@ -364,7 +364,8 @@ class Source:
                     raise Error('Metrics source build identity is not unique')
                 self.installed_image(images[0])
                 return images[0]
-            self.docker.run(['build', '--label', OWNER+'='+str(ROOT), '-t', tag, '-f', str(context/('scripts/infra/Dockerfile.cdc-metrics' if self.kind in {'redpanda','kafka-connect'} else 'scripts/infra/Dockerfile.'+self.kind+'-metrics')), str(context)], timeout=240)
+            image_kind = 'deployment' if self.kind in group.PRODUCTS else 'cdc' if self.kind in {'redpanda','kafka-connect'} else self.kind
+            self.docker.run(['build', '--label', OWNER+'='+str(ROOT), '-t', tag, '-f', str(context/('scripts/infra/Dockerfile.'+image_kind+'-metrics')), str(context)], timeout=240)
         fact = decode(self.docker.run(['image', 'inspect', tag]))[0]
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', fact['Id']) or (fact.get('Config', {}).get('Labels') or {}).get(OWNER) != str(ROOT):
             raise Error('Metrics source build identity rejected')

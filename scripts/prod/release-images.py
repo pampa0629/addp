@@ -30,6 +30,7 @@ CAPABILITIES = {
     "ADDP_REDPANDA_METRICS_ENABLED": "false",
     "ADDP_KAFKA_CONNECT_METRICS_ENABLED": "false",
     "ADDP_MEILISEARCH_METRICS_ENABLED": "false",
+    **{"ADDP_"+kind+"_METRICS_ENABLED": "false" for kind in ("FALKORDB","MYSQL","NEO4J","FTP","SPARK")},
 }
 PROFILES = {
     "ADDP_SUPERMAP_WORKFLOW_ENABLED": "supermap-workflow",
@@ -42,6 +43,8 @@ METRIC_IMAGES = (
     ("minio", "ADDP_MINIO_METRICS_ENABLED", "scripts/infra/minio-observation.py"),
     ("redpanda", "ADDP_REDPANDA_METRICS_ENABLED", "scripts/infra/cdc-metrics.py"),
     ("kafka-connect", "ADDP_KAFKA_CONNECT_METRICS_ENABLED", "scripts/infra/cdc-metrics.py"),
+    *((kind, "ADDP_"+kind.upper()+"_METRICS_ENABLED", "scripts/infra/cdc-metrics.py")
+      for kind in ("falkordb","mysql","neo4j","ftp","spark")),
     ("meilisearch", "ADDP_MEILISEARCH_METRICS_ENABLED", "scripts/infra/cdc-metrics.py"),
 )
 
@@ -132,7 +135,7 @@ def input_fingerprints(env):
     for kind, flag, path in METRIC_IMAGES:
         if capabilities[flag] == "true":
             owner = load_module("release_inputs_" + kind.replace("-", "_"), path)
-            for name in owner.source_inputs(kind) if kind == "meilisearch" else owner.source_inputs():
+            for name in owner.source_inputs(kind) if path.endswith("cdc-metrics.py") else owner.source_inputs():
                 fingerprints[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
     return fingerprints
 
@@ -188,10 +191,13 @@ def prepare_metric_sources(env, platform, registry, version):
     for kind, flag, path in selected:
         owner = load_module("release_metrics_" + kind.replace("-", "_"), path)
         with tempfile.TemporaryDirectory(prefix="addp-release-source-") as state:
-            source = implementation.Source(docker, "infra", state, ROOT, kind, module.inventory.metrics_project.PROJECT)
-            image_id = source.build(owner.source_inputs(kind) if kind == "meilisearch" else owner.source_inputs())
+            scope = implementation.group.PRODUCTS.get(kind, ("infra", kind))[0]
+            source = implementation.Source(docker, scope, state, ROOT, kind, module.inventory.metrics_project.PROJECT)
+            image_id = source.build(owner.source_inputs(kind) if path.endswith("cdc-metrics.py") else owner.source_inputs())
         image = inspect_image(image_id, platform, env)
-        original, = [ref for ref in image["RepoTags"] if re.fullmatch("addp-" + kind + r"-metrics:[0-9a-f]{64}", ref)]
+        checkout_suffix = "-" + hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]
+        original, = [ref.removesuffix(checkout_suffix) for ref in image["RepoTags"]
+                     if re.fullmatch("addp-" + kind + r"-metrics:[0-9a-f]{64}" + checkout_suffix, ref)]
         target = f"{registry}/addp-metrics-{kind}:{version}"
         sources[original] = publish_image(image_id, target, platform, env)
     return sources

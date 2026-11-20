@@ -134,16 +134,17 @@ type DeploymentDiscoveryScope struct {
 	MeilisearchMetrics *commonmodels.EngineMetricsSource            `json:"-"`
 	// Only the private observation projection consumes this field. Neither the
 	// public discovery JSON nor an immutable deployment inventory contains it.
-	PostgreSQLMetrics *commonmodels.EngineMetricsSource `json:"-"`
-	RedisMetrics      *commonmodels.EngineMetricsSource `json:"-"`
-	MinIOMetrics      *commonmodels.EngineMetricsSource `json:"-"`
-	Schema            string                            `json:"schema"`
-	Scope             string                            `json:"scope"`
-	State             string                            `json:"state"`
-	ObservedAt        string                            `json:"observed_at,omitempty"`
-	Reason            string                            `json:"reason,omitempty"`
-	Source            *EngineDeploymentSource           `json:"source,omitempty"`
-	Services          []DiscoveredDeploymentService     `json:"services"`
+	ProductMetrics    map[string]*commonmodels.EngineMetricsSource `json:"-"`
+	PostgreSQLMetrics *commonmodels.EngineMetricsSource            `json:"-"`
+	RedisMetrics      *commonmodels.EngineMetricsSource            `json:"-"`
+	MinIOMetrics      *commonmodels.EngineMetricsSource            `json:"-"`
+	Schema            string                                       `json:"schema"`
+	Scope             string                                       `json:"scope"`
+	State             string                                       `json:"state"`
+	ObservedAt        string                                       `json:"observed_at,omitempty"`
+	Reason            string                                       `json:"reason,omitempty"`
+	Source            *EngineDeploymentSource                      `json:"source,omitempty"`
+	Services          []DiscoveredDeploymentService                `json:"services"`
 }
 type DiscoveredDeploymentService struct {
 	Service    string                          `json:"service"`

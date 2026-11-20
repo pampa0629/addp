@@ -94,7 +94,7 @@ func engineDeploymentError(c *gin.Context, err error) {
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Param search query string false "部署名称片段 | Deployment name fragment"
 // @Param scope query string false "部署来源范围 | Deployment provenance scope" Enums(infra,business)
-// @Param engine_type query string false "引擎类型 | Engine type" Enums(postgresql,redis,minio)
+// @Param engine_type query string false "引擎类型 | Engine type" Enums(postgresql,redis,minio,falkordb,mysql,neo4j,ftp,spark)
 // @Param node_id query string false "声明的主机 UUID | Declared host UUID"
 // @Success 200 {object} models.EngineDeploymentPage
 // @Failure 400 {object} models.ErrorResponse
