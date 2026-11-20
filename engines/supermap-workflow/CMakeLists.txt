@@ -20,7 +20,6 @@ target_compile_options(addp_workflow_core PRIVATE -Wall -Wextra -Wpedantic -Werr
 
 if(SUPERMAP_SDK_ROOT)
   find_package(CURL REQUIRED)
-  find_package(OpenSSL REQUIRED)
   find_path(CPP_HTTPLIB_INCLUDE_DIR httplib.h REQUIRED)
   find_library(CPP_HTTPLIB_LIBRARY cpp-httplib REQUIRED)
   if(NOT EXISTS "${SUPERMAP_SDK_ROOT}/include/Engine/UGDataSource.h")
@@ -110,7 +109,10 @@ if(SUPERMAP_SDK_ROOT)
   )
   target_link_libraries(
     supermap-workflow-server
-    PRIVATE addp_supermap_runtime_bridge OpenSSL::SSL "${CPP_HTTPLIB_LIBRARY}" nlohmann_json::nlohmann_json
+    PRIVATE addp_supermap_runtime_bridge "${CPP_HTTPLIB_LIBRARY}" nlohmann_json::nlohmann_json
+      # The SDK libcurl requires the OpenSSL ABI shipped with this SDK.
+      "${SUPERMAP_SDK_ROOT}/bin/bin/libssl.so.3"
+      "${SUPERMAP_SDK_ROOT}/bin/bin/libcrypto.so.3"
   )
   target_include_directories(
     supermap-workflow-server SYSTEM PRIVATE "${CPP_HTTPLIB_INCLUDE_DIR}"
