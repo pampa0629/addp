@@ -31,6 +31,7 @@ type postgresFunctionReference struct {
 	Name          string
 	ArgumentCount int
 	CountStar     bool
+	UnaryInput    *pgquery.FuncCall
 }
 
 type postgresResolvedFunction struct {
@@ -43,6 +44,8 @@ type postgresResolvedFunction struct {
 	Volatility      string
 	SecurityDefiner bool
 	Extension       string
+	resultType      int64
+	exactUnaryInput int64
 }
 
 type postgresQueryReadDependencies struct {
@@ -163,13 +166,24 @@ func (i *postgresSQLReadInspector) inspectFunction(function *pgquery.FuncCall, s
 			return postgresQueryReadSetError("named function arguments are not supported")
 		}
 	}
-	reference := postgresFunctionReference{Name: parts[len(parts)-1], ArgumentCount: len(function.GetArgs())}
-	reference.CountStar = reference.Name == "count" && function.GetAggStar() && reference.ArgumentCount == 0
-	if len(parts) == 2 {
-		reference.Schema = parts[0]
-	}
+	reference := postgresCallReference(function)
 	i.functions = append(i.functions, reference)
 	return i.inspectMessage(function.ProtoReflect(), scope, "funcname")
+}
+
+// The inspector validates names before catalog access. Both dependency resolution
+// and the guarded cursor use the same call identity when binding the AST.
+func postgresCallReference(call *pgquery.FuncCall) postgresFunctionReference {
+	names := call.GetFuncname()
+	ref := postgresFunctionReference{Name: names[len(names)-1].GetString_().GetSval(), ArgumentCount: len(call.Args)}
+	if len(names) == 2 {
+		ref.Schema = names[0].GetString_().GetSval()
+	}
+	ref.CountStar = ref.Name == "count" && call.GetAggStar() && ref.ArgumentCount == 0
+	if len(call.Args) == 1 && !call.FuncVariadic && !call.AggWithinGroup {
+		ref.UnaryInput = call.Args[0].GetFuncCall()
+	}
+	return ref
 }
 
 func (i *postgresSQLReadInspector) inspectSelect(stmt *pgquery.SelectStmt, inherited map[string]struct{}) error {
@@ -484,8 +498,12 @@ func (c *postgresDatabaseReadCatalog) FunctionCandidates(ctx context.Context, re
 		       CASE WHEN $4 AND COALESCE((pg_catalog.to_jsonb(proc)->>'proisagg')::boolean,false)
                     THEN 'a' ELSE proc.prokind::text END,
                proc.proretset, proc.provolatile::text, proc.prosecdef,
-		       extension.extname
+		       extension.extname,
+		       CASE WHEN result.typtype <> 'p' THEN proc.prorettype::bigint ELSE 0 END,
+		       CASE WHEN proc.pronargs = 1 AND proc.pronargdefaults = 0 AND proc.provariadic = 0
+		            THEN proc.proargtypes[0]::bigint ELSE 0 END
 		FROM pg_catalog.pg_proc proc
+		JOIN pg_catalog.pg_type result ON result.oid = proc.prorettype
 		JOIN pg_catalog.pg_namespace namespace ON namespace.oid = proc.pronamespace
 		JOIN pg_catalog.pg_language language ON language.oid = proc.prolang
 		LEFT JOIN pg_catalog.pg_depend extension_dependency
@@ -505,7 +523,38 @@ func (c *postgresDatabaseReadCatalog) FunctionCandidates(ctx context.Context, re
 	if err != nil {
 		return nil, err
 	}
-	return scanPostgresReadFunctions(rows)
+	candidates, err := scanPostgresReadFunctions(rows, true)
+	if err != nil || len(candidates) < 2 || reference.UnaryInput == nil {
+		return candidates, err
+	}
+	// PostgreSQL prefers an exact input type to an implicit cast. Only narrow a
+	// unary call when every inner overload has the same concrete return type
+	// and all outer candidates have ordinary, single-argument signatures.
+	inner, err := c.FunctionCandidates(ctx, postgresCallReference(reference.UnaryInput))
+	if err != nil {
+		return nil, err
+	}
+	if len(inner) == 0 || inner[0].resultType == 0 {
+		return candidates, nil
+	}
+	for _, fn := range inner[1:] {
+		if fn.resultType != inner[0].resultType {
+			return candidates, nil
+		}
+	}
+	var exact []postgresResolvedFunction
+	for _, fn := range candidates {
+		if fn.exactUnaryInput == 0 {
+			return candidates, nil
+		}
+		if fn.exactUnaryInput == inner[0].resultType {
+			exact = append(exact, fn)
+		}
+	}
+	if len(exact) == 1 {
+		return exact, nil
+	}
+	return candidates, nil
 }
 
 func (c *postgresDatabaseReadCatalog) ViewDependencies(ctx context.Context, oid int64) ([]postgresResolvedRelation, error) {
@@ -567,19 +616,23 @@ func (c *postgresDatabaseReadCatalog) ViewFunctionDependencies(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	return scanPostgresReadFunctions(rows)
+	return scanPostgresReadFunctions(rows, false)
 }
 
-func scanPostgresReadFunctions(rows *sql.Rows) ([]postgresResolvedFunction, error) {
+func scanPostgresReadFunctions(rows *sql.Rows, withSignature bool) ([]postgresResolvedFunction, error) {
 	defer rows.Close()
 	functions := make([]postgresResolvedFunction, 0)
 	for rows.Next() {
 		var function postgresResolvedFunction
 		var extension sql.NullString
-		if err := rows.Scan(
+		columns := []any{
 			&function.OID, &function.Schema, &function.Name, &function.Language,
 			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner, &extension,
-		); err != nil {
+		}
+		if withSignature {
+			columns = append(columns, &function.resultType, &function.exactUnaryInput)
+		}
+		if err := rows.Scan(columns...); err != nil {
 			return nil, err
 		}
 		function.Extension = extension.String

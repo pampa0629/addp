@@ -161,6 +161,33 @@ func TestIntegrationPostgresQueryReadSessionFarmland(t *testing.T) {
 			t.Fatalf("unexpected transformed SRID: batch=%v err=%v", batch, err)
 		}
 	})
+	t.Run("unrelated_overload_in_search_path", func(t *testing.T) {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, "CREATE FUNCTION "+schema+".st_srid(text) RETURNS integer LANGUAGE sql VOLATILE AS 'SELECT 1'"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, "SELECT pg_catalog.set_config('search_path', $1 || ',' || current_setting('search_path'), true)", schema); err != nil {
+			t.Fatal(err)
+		}
+		catalog := &postgresDatabaseReadCatalog{db: tx}
+		req := plugin.QueryRequest{EngineID: 91, Query: "SELECT ST_SRID(" + transform + ") FROM " + table, Options: plugin.QueryOptions{ReadOnly: true}}
+		plan, err := prepareGuardedPostgresQuery(ctx, req, catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var srid int
+		if err := tx.QueryRowContext(ctx, plan.sql).Scan(&srid); err != nil || srid != 3857 {
+			t.Fatalf("overloaded SRID = %d, err=%v", srid, err)
+		}
+		req.Query = "SELECT ST_SRID('text') FROM " + table
+		if _, err := prepareGuardedPostgresQuery(ctx, req, catalog); !errors.Is(err, plugin.ErrQueryReadSetUnresolved) {
+			t.Fatalf("unverified text overload: %v", err)
+		}
+	})
 	t.Run("masked_field_with_transform", func(t *testing.T) {
 		session, err := open(t, "SELECT owner_name, "+transform+" AS projected FROM "+table, true)
 		if err != nil {

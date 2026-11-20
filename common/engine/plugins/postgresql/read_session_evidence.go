@@ -129,11 +129,7 @@ func inspectSessionExpressions(message protoreflect.Message, operators map[strin
 			if len(name) < 1 || len(name) > 2 {
 				return false
 			}
-			ref := postgresFunctionReference{Name: name[len(name)-1].GetString_().GetSval(), ArgumentCount: len(function.Args)}
-			ref.CountStar = ref.Name == "count" && function.GetAggStar() && ref.ArgumentCount == 0
-			if len(name) == 2 {
-				ref.Schema = name[0].GetString_().GetSval()
-			}
+			ref := postgresCallReference(function)
 			if schema, ok := bound[ref]; ok {
 				function.Funcname = []*pgquery.Node{pgquery.MakeStrNode(schema), pgquery.MakeStrNode(ref.Name)}
 			} else if ref.Schema != "pg_catalog" || !sessionOutputFunction(ref.Name) {
