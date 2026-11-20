@@ -255,8 +255,14 @@ export async function assertExecutionNavigationPage({ page, expect, task, id, ol
     const content = await tabs.locator(':scope > .el-tabs__content').boundingBox()
     require(header && content && header.y + header.height <= content.y + 1, 'navigation_tabs_not_above_content')
   }
+  // The iframe updates its tab before Console records the route in browser history.
+  await page.waitForURL(url => url.pathname === '/develop/executions/' + id &&
+    url.searchParams.get('tab') === 'inputs' && url.searchParams.get('return_to') === monitorURL, options())
+    .catch(error => {
+      if (error.name === 'TimeoutError') throw new Error('navigation_input_tab_not_persisted')
+      throw error
+    })
   const resultURL = page.url()
-  require(new URL(resultURL).searchParams.get('tab') === 'inputs', 'navigation_input_tab_not_persisted')
   await page.reload(options())
   await expect(frame.getByRole('tab', { name: '输入参数', exact: true })).toHaveAttribute('aria-selected', 'true', options())
   await expect(page).toHaveURL(resultURL, options())
