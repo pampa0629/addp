@@ -144,6 +144,43 @@ func TestModuleDiscoveryRefreshesLeaseProjectionWithoutRevisionChange(t *testing
 	}
 }
 
+func TestCatalogWithdrawalSurvivesOlderSnapshot(t *testing.T) {
+	now := time.Now()
+	catalog := &client.ModuleInfo{ModuleName: "catalog", Enabled: true, Instances: []client.ModuleRuntimeInstanceInfo{
+		{InstanceID: "catalog-a", Role: "backend", Status: "up", ModuleURL: "http://catalog-a", LeaseExpiresAt: now.Add(30 * time.Second)},
+	}}
+	lister := &staticModuleLister{revision: 5, modules: []*client.ModuleInfo{catalog}}
+	discovery := NewModuleDiscovery(lister)
+	defer discovery.Stop()
+	discovery.now = func() time.Time { return now }
+	refresh := func() {
+		t.Helper()
+		if err := discovery.refreshModules(0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refresh()
+	lister.revision, lister.modules = 6, nil
+	refresh()
+	lister.revision, lister.modules = 5, []*client.ModuleInfo{catalog}
+	if err := discovery.refreshModules(0); err == nil {
+		t.Fatal("accepted a superseded routing revision")
+	}
+	if _, err := discovery.GetProxy("catalog"); err == nil {
+		t.Fatal("withdrawn endpoint became routable again")
+	}
+	lister.revision = 7
+	refresh()
+	if _, err := discovery.GetProxy("catalog"); err != nil {
+		t.Fatal(err)
+	}
+	now = catalog.Instances[0].LeaseExpiresAt
+	refresh()
+	if _, err := discovery.GetProxy("catalog"); err == nil {
+		t.Fatal("replayed snapshot extended the endpoint deadline")
+	}
+}
+
 type renewingModuleWatcher struct {
 	now func() time.Time
 }
@@ -159,7 +196,8 @@ func (w *renewingModuleWatcher) WatchModules(context.Context, int64, time.Durati
 }
 
 type staticModuleLister struct {
-	modules []*client.ModuleInfo
+	revision int64
+	modules  []*client.ModuleInfo
 }
 
 func (l *staticModuleLister) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*client.ModuleRoutingSnapshot, error) {
@@ -172,5 +210,5 @@ func (l *staticModuleLister) WatchModules(ctx context.Context, revision int64, w
 		case <-timer.C:
 		}
 	}
-	return &client.ModuleRoutingSnapshot{Revision: 1, Modules: l.modules}, nil
+	return &client.ModuleRoutingSnapshot{Revision: l.revision, Modules: l.modules}, nil
 }

@@ -105,6 +105,10 @@ func (md *ModuleDiscovery) refreshModules(wait time.Duration) error {
 	md.mu.Lock()
 	defer md.mu.Unlock()
 
+	if md.hasSnapshot && snapshot.Revision < md.revision {
+		return fmt.Errorf("路由快照 revision %d 早于已应用的 %d", snapshot.Revision, md.revision)
+	}
+
 	// 更新模块列表
 	newModules := make(map[string]*client.ModuleInfo)
 	newBackendPools := make(map[string][]moduleBackend)
