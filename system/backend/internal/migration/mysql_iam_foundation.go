@@ -11,10 +11,15 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 15
+const mysqlIAMFoundationVersion int64 = 16
 
 //go:embed mysql_iam/*.sql
 var mysqlIAMFoundationSQL embed.FS
+
+// RequireMySQLIAMFoundation checks the installed owner revision without DDL.
+func RequireMySQLIAMFoundation(db *gorm.DB) error {
+	return schema.RequireMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion)
+}
 
 // MigrateMySQLIAMFoundation installs the staged System IAM schema.
 func MigrateMySQLIAMFoundation(db *gorm.DB) error {

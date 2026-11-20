@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=scripts/test/mysql-system-install-contract.sh
+# ADDP_T2_INPUT_FILES=scripts/test/mysql-system-install-contract.sh system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -156,6 +156,7 @@ fi
 
 if [ "$test_group" = platform-system-install ]; then
     (cd "$ROOT_DIR/system/backend" && GOWORK=off go build -o "$WORK_DIR/system-server" ./cmd/server)
+    (cd "$ROOT_DIR/system/backend" && GOWORK=off go build -o "$WORK_DIR/iam-bootstrap" ./cmd/iam-bootstrap)
     bash "$ROOT_DIR/scripts/test/mysql-system-install-contract.sh" "$WORK_DIR" "$MYSQL_PROJECT" "$mysql_port"
     exit 0
 fi

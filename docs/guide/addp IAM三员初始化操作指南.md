@@ -97,6 +97,19 @@ cd /Users/pampa/code/addp
 make build-iam-bootstrap
 ```
 
+### MySQL 新装的临时 CLI 账号
+
+安装器和 DBA 已完成同版本 IAM 结构安装后，由 DBA 创建仅限初始化来源主机登录的临时数据库账号。离线终端配置 `ADDP_INFRA_DATABASE_PROVIDER=mysql`、`ADDP_MYSQL_HOST`、`ADDP_MYSQL_PORT`、`ADDP_MYSQL_SSLMODE`，从密钥管理注入 `ADDP_MYSQL_BOOTSTRAP_USER`、`ADDP_MYSQL_BOOTSTRAP_PASSWORD` 和本部署的 `IAM_MFA_ENCRYPTION_KEY`。远程连接使用 `verify-full`。临时账号的数据库权限范围如下。
+
+| `system` 数据表 | 临时权限 |
+| --- | --- |
+| `startup_schema_revision`、`roles` | SELECT |
+| `iam_bootstrap_state` | SELECT、INSERT、UPDATE |
+| `principals` | SELECT、INSERT |
+| `users`、`local_accounts`、`mfa_credentials`、`role_assignments`、`audit_logs` | INSERT |
+
+沿用下列 `prepare` 和 `apply` 步骤。CLI 退出后，由 DBA 核对第六节的完成事实，收回该账号，并确认新连接已被拒绝。数据库账号与三名管理员的平台登录身份分别管理。
+
 ### 5.2 生成一次性 Bootstrap Secret
 
 ```bash

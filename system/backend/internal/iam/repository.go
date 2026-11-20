@@ -228,12 +228,28 @@ func (r *Repository) ConsumeMFAEnrollment(ctx context.Context, enrollmentID int6
 	return nil
 }
 
+// Prepare uses the singleton primary key under read committed. Apply takes an
+// InnoDB next-key lock before checking that the first user can still be created.
+func (r *Repository) bootstrapTransaction(ctx context.Context, isolation sql.IsolationLevel, operation func(*Repository) error) error {
+	if r.db.Dialector.Name() != "mysql" {
+		return r.Transaction(ctx, operation)
+	}
+	return wrapRepositoryError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return operation(NewRepository(tx)) }, &sql.TxOptions{Isolation: isolation}))
+}
+
 func (r *Repository) LockIAMBootstrapTable(ctx context.Context) error {
+	if r.db.Dialector.Name() == "mysql" {
+		return nil
+	} // Concurrent prepares serialize on the singleton INSERT.
 	return wrapRepositoryError(r.db.WithContext(ctx).
 		Exec("LOCK TABLE system.iam_bootstrap_state IN EXCLUSIVE MODE").Error)
 }
 
 func (r *Repository) LockIAMBootstrapPrincipalWrites(ctx context.Context) error {
+	if r.db.Dialector.Name() == "mysql" {
+		var found []int64
+		return wrapRepositoryError(r.db.WithContext(ctx).Raw("SELECT id FROM system.principals WHERE principal_type='user' LIMIT 1 FOR SHARE").Scan(&found).Error)
+	}
 	return wrapRepositoryError(r.db.WithContext(ctx).
 		Exec("LOCK TABLE system.principals IN SHARE MODE").Error)
 }
@@ -293,6 +309,22 @@ func (r *Repository) CreateBootstrapRoleAssignment(
 	reason string,
 	validFrom time.Time,
 ) (int64, error) {
+	if r.db.Dialector.Name() == "mysql" {
+		var roleID int64
+		err := r.db.WithContext(ctx).Raw("SELECT id FROM system.roles WHERE role_key=? AND role_type='platform_builtin' AND status='active'", roleKey).Row().Scan(&roleID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("%w: bootstrap role does not exist", commonapi.ErrBadRequest)
+		}
+		if err != nil {
+			return 0, wrapRepositoryError(err)
+		}
+		result, err := r.db.Statement.ConnPool.ExecContext(ctx, `INSERT INTO system.role_assignments (principal_id,role_id,scope_type,status,valid_from,source_type,grant_reason)
+			VALUES (?,?,'platform','active',?,'bootstrap',?)`, principalID, roleID, validFrom, reason)
+		if err != nil {
+			return 0, wrapRepositoryError(err)
+		}
+		return result.LastInsertId()
+	}
 	var assignmentID int64
 	err := r.db.WithContext(ctx).Raw(`
 		INSERT INTO system.role_assignments

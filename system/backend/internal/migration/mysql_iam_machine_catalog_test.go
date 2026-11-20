@@ -18,12 +18,14 @@ func assertInstalledMachineCatalog(t *testing.T, db *sql.DB) {
 	if err := json.Unmarshal(mysqlIAMMachineCatalogV14, &catalog); err != nil {
 		t.Fatal(err)
 	}
-	var tenantCatalog machineCatalog
-	if err := json.Unmarshal(mysqlIAMTenantCatalogV15, &tenantCatalog); err != nil {
-		t.Fatal(err)
+	for _, data := range [][]byte{mysqlIAMTenantCatalogV15, mysqlIAMAdministratorCatalogV16} {
+		var tenantCatalog machineCatalog
+		if err := json.Unmarshal(data, &tenantCatalog); err != nil {
+			t.Fatal(err)
+		}
+		catalog.Roles = append(catalog.Roles, tenantCatalog.Roles...)
+		catalog.Permissions = append(catalog.Permissions, tenantCatalog.Permissions...)
 	}
-	catalog.Roles = append(catalog.Roles, tenantCatalog.Roles...)
-	catalog.Permissions = append(catalog.Permissions, tenantCatalog.Permissions...)
 	assertInstalledPermissionDescriptors(t, db, catalog.Permissions)
 	expected := make(map[string]platformMachine)
 	for _, s := range catalog.Services {

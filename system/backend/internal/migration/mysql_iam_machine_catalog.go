@@ -17,6 +17,9 @@ var mysqlIAMMachineCatalogV14 []byte
 //go:embed mysql_iam_v15.json
 var mysqlIAMTenantCatalogV15 []byte
 
+//go:embed mysql_iam_v16.json
+var mysqlIAMAdministratorCatalogV16 []byte
+
 type platformMachine struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -30,6 +33,8 @@ type machineCatalog struct {
 	Roles       []commonauth.BuiltinRoleDescriptor
 	Services    []platformMachine
 }
+
+var platformAdministratorRoles = []string{"platform.system_administrator", "platform.security_administrator", "platform.audit_administrator"}
 
 func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
 	if from < 14 {
@@ -45,7 +50,15 @@ func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
 		}
 	}
 	if from < 15 {
-		return installMySQLCatalogRevision(tx, mysqlIAMTenantCatalogV15)
+		if err := installMySQLCatalogRevision(tx, mysqlIAMTenantCatalogV15); err != nil {
+			return err
+		}
+	}
+	if from < 16 {
+		if err := installMySQLCatalogRevision(tx, mysqlIAMAdministratorCatalogV16); err != nil {
+			return err
+		}
+		return tx.Exec(`INSERT INTO role_conflicts (role_id_low,role_id_high,reason) SELECT a.id,b.id,'platform_three_administrators_separation_of_duties' FROM roles a JOIN roles b ON a.id<b.id WHERE a.role_key IN ? AND b.role_key IN ?`, platformAdministratorRoles, platformAdministratorRoles).Error
 	}
 	return nil
 }
@@ -62,19 +75,29 @@ func installMySQLCatalogRevision(tx *gorm.DB, release []byte) error {
 		}
 		return result.LastInsertId()
 	}
-	permissions := make(map[string]int64, len(catalog.Permissions))
+
 	for _, p := range catalog.Permissions {
 		scopes, err := json.Marshal(p.AllowedScopeTypes)
 		if err != nil {
 			return err
 		}
-		id, err := insertID(`INSERT INTO permissions (permission_key, owner_module, action, risk_level, allowed_scope_types,
+		err = tx.Exec(`INSERT INTO permissions (permission_key, owner_module, action, risk_level, allowed_scope_types,
 			tenant_customizable, delegable, status, name_i18n_key, description_i18n_key) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-			p.Key, p.OwnerModule, p.Action, p.RiskLevel, string(scopes), p.TenantCustomizable, p.Delegable, p.Status, p.NameI18nKey, p.DescriptionI18nKey)
+			p.Key, p.OwnerModule, p.Action, p.RiskLevel, string(scopes), p.TenantCustomizable, p.Delegable, p.Status, p.NameI18nKey, p.DescriptionI18nKey).Error
 		if err != nil {
 			return fmt.Errorf("install permission %s: %w", p.Key, err)
 		}
-		permissions[p.Key] = id
+	}
+	var installed []struct {
+		ID            int64
+		PermissionKey string
+	}
+	if err := tx.Raw("SELECT id,permission_key FROM permissions").Scan(&installed).Error; err != nil {
+		return err
+	}
+	permissions := make(map[string]int64, len(installed))
+	for _, p := range installed {
+		permissions[p.PermissionKey] = p.ID
 	}
 	roles := make(map[string]int64, len(catalog.Roles))
 	for _, r := range catalog.Roles {

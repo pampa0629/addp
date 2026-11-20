@@ -74,4 +74,38 @@ for denied in 'TRUNCATE TABLE audit_logs' 'ALTER TABLE audit_logs ADD COLUMN fix
     grep -q 'ERROR 1142' "$work/denied.err"
 done
 test "$(echo "SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.fixture.install' AND result='succeeded'" | runtime)" = 1
+export ADDP_MYSQL_BOOTSTRAP_USER=iam_bootstrap_gate
+export ADDP_MYSQL_BOOTSTRAP_PASSWORD=$(openssl rand -hex 24)
+export IAM_MFA_ENCRYPTION_KEY=$(openssl rand -base64 32)
+admin <<SQL
+CREATE USER 'iam_bootstrap_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_BOOTSTRAP_PASSWORD';
+GRANT SELECT ON system.startup_schema_revision TO 'iam_bootstrap_gate'@'%';
+GRANT SELECT,INSERT,UPDATE ON system.iam_bootstrap_state TO 'iam_bootstrap_gate'@'%';
+GRANT SELECT,INSERT ON system.principals TO 'iam_bootstrap_gate'@'%';
+GRANT SELECT ON system.roles TO 'iam_bootstrap_gate'@'%';
+GRANT INSERT ON system.role_assignments TO 'iam_bootstrap_gate'@'%';
+GRANT INSERT ON system.users TO 'iam_bootstrap_gate'@'%';
+GRANT INSERT ON system.local_accounts TO 'iam_bootstrap_gate'@'%';
+GRANT INSERT ON system.mfa_credentials TO 'iam_bootstrap_gate'@'%';
+GRANT INSERT ON system.audit_logs TO 'iam_bootstrap_gate'@'%';
+SQL
+# Run with the temporary credential alone. Keep the TTY and all secrets in memory.
+python3 "$(dirname "$0")/../../system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py" "$work"
+test "$(echo "SELECT COUNT(*) FROM iam_bootstrap_state WHERE status='completed' AND secret_hash IS NULL AND completed_at IS NOT NULL" | admin)" = 1
+test "$(echo "SELECT COUNT(DISTINCT u.id),COUNT(DISTINCT r.role_key) FROM users u JOIN mfa_credentials m ON m.user_id=u.id AND m.status='active' JOIN role_assignments a ON a.principal_id=u.id AND a.status='active' AND a.scope_type='platform' JOIN roles r ON r.id=a.role_id WHERE r.role_key IN ('platform.system_administrator','platform.security_administrator','platform.audit_administrator')" | admin)" = $'3\t3'
+test "$(echo "SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.bootstrap.administrator_created' AND result='succeeded'" | admin)" = 3
+test "$(echo "SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.bootstrap.completed' AND result='succeeded'" | admin)" = 1
+test "$(echo "SELECT COUNT(*) FROM role_conflicts WHERE reason='platform_three_administrators_separation_of_duties'" | admin)" = 3
+if echo 'SELECT secret_hash FROM iam_bootstrap_state' | runtime 2>"$work/state-denied.err"; then
+    echo 'runtime account can read the offline bootstrap state' >&2
+    exit 1
+fi
+grep -q 'ERROR 1142' "$work/state-denied.err"
+echo "DROP USER 'iam_bootstrap_gate'@'%'" | admin
+if MYSQL_PWD="$ADDP_MYSQL_BOOTSTRAP_PASSWORD" docker exec -e MYSQL_PWD "$container" mysql -h127.0.0.1 -uiam_bootstrap_gate -e 'SELECT 1' 2>"$work/closed.err"; then
+    echo 'temporary bootstrap account still authenticates' >&2
+    exit 1
+fi
+grep -q 'ERROR 1045' "$work/closed.err"
+echo 'MySQL offline CLI: three distinct administrators, MFA, audit and temporary account removal verified'
 echo "MySQL System IAM installation: DBA applied $expected scoped triggers; restricted runtime read version and appended audit"

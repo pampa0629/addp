@@ -124,7 +124,7 @@ func Load() *Config {
 		EncryptionKey:               encryptionKey,
 		OAuthUserCodePepper:         loadOAuthUserCodePepper(env, "OAUTH_USER_CODE_PEPPER", true),
 		OAuthPreviousUserCodePepper: loadOAuthUserCodePepper(env, "OAUTH_PREVIOUS_USER_CODE_PEPPER", false),
-		IAMMFAEncryptionKey:         loadIAMMFAEncryptionKey(env),
+		IAMMFAEncryptionKey:         LoadIAMMFAEncryptionKey(),
 		PublicAPIURL:                strings.TrimSuffix(getEnv("PUBLIC_API_URL", "http://localhost:8000"), "/"),
 		ConsoleURL:                  strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
 		ProjectName:                 getEnv("PROJECT_NAME", "全域数据平台"),
@@ -320,7 +320,8 @@ func loadOAuthUserCodePepper(env, name string, required bool) []byte {
 	return pepper
 }
 
-func loadIAMMFAEncryptionKey(env string) []byte {
+func LoadIAMMFAEncryptionKey() []byte {
+	env := getEnv("ENV", "development")
 	encoded := strings.TrimSpace(os.Getenv("IAM_MFA_ENCRYPTION_KEY"))
 	if encoded == "" {
 		if env == "production" {

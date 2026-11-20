@@ -3,6 +3,7 @@ package iam
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -105,7 +106,7 @@ func (s *BootstrapService) Prepare(ctx context.Context) (string, time.Time, erro
 	now := s.now().UTC()
 	expiresAt := now.Add(s.secretTTL)
 	secretHash := hashOpaqueToken(secret)
-	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+	err = s.repository.bootstrapTransaction(ctx, sql.LevelReadCommitted, func(tx *Repository) error {
 		if err := tx.LockIAMBootstrapTable(ctx); err != nil {
 			return err
 		}
@@ -151,7 +152,7 @@ func (s *BootstrapService) Apply(ctx context.Context, input BootstrapApplyInput)
 	providedHash := hashOpaqueToken(input.BootstrapSecret)
 	now := s.now().UTC()
 	result := &BootstrapResult{CompletedAt: now, PrincipalIDs: make(map[string]int64, len(prepared))}
-	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+	err = s.repository.bootstrapTransaction(ctx, sql.LevelRepeatableRead, func(tx *Repository) error {
 		state, err := tx.LockIAMBootstrapState(ctx)
 		if err != nil {
 			return hideBootstrapStateError(err)

@@ -200,6 +200,53 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	t.Run("service credential provisioning and audit rollback", func(t *testing.T) {
 		testMySQLServiceProvisioner(t, db)
 	})
+	t.Run("offline bootstrap state", func(t *testing.T) {
+		ctx := context.Background()
+		repo := iam.NewRepository(db)
+		now, err := repo.CurrentDatabaseTime(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hash := strings.Repeat("a", 64)
+		state := iam.IAMBootstrapState{Singleton: true, Status: iam.IAMBootstrapStatusPrepared, SecretHash: &hash, PreparedAt: now, ExpiresAt: now.Add(time.Hour)}
+		if err := repo.CreateIAMBootstrapState(ctx, &state); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CreateIAMBootstrapState(ctx, &state); err == nil {
+			t.Fatal("created a second bootstrap preparation")
+		}
+		if err := db.Exec("UPDATE iam_bootstrap_state SET expires_at=DATE_ADD(expires_at,INTERVAL 1 HOUR)").Error; err == nil {
+			t.Fatal("extended bootstrap preparation")
+		}
+		rollback := errors.New("roll back bootstrap completion")
+		if err := repo.Transaction(ctx, func(tx *iam.Repository) error {
+			if err := tx.CompleteIAMBootstrap(ctx, now); err != nil {
+				return err
+			}
+			return rollback
+		}); !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+		saved, err := repo.LockIAMBootstrapState(ctx)
+		if err != nil || saved.Status != iam.IAMBootstrapStatusPrepared || saved.SecretHash == nil || *saved.SecretHash != hash {
+			t.Fatalf("preparation was not restored after rollback: %v", err)
+		}
+		if err := repo.CompleteIAMBootstrap(ctx, now); err != nil {
+			t.Fatal(err)
+		}
+		saved, err = repo.LockIAMBootstrapState(ctx)
+		if err != nil || saved.Status != iam.IAMBootstrapStatusCompleted || saved.SecretHash != nil || saved.CompletedAt == nil {
+			t.Fatalf("unexpected completed state: %v", err)
+		}
+		if err := repo.CompleteIAMBootstrap(ctx, now); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatalf("second completion: %v", err)
+		}
+		for _, query := range []string{"UPDATE iam_bootstrap_state SET status='prepared',secret_hash=REPEAT('b',64),completed_at=NULL", "DELETE FROM iam_bootstrap_state"} {
+			if err := db.Exec(query).Error; err == nil {
+				t.Fatal("removed or reopened completed bootstrap")
+			}
+		}
+	})
 	t.Run("tenant initialization with installed roles", func(t *testing.T) {
 		service := iam.NewPlatformTenantService(iam.NewRepository(db), nil)
 		tenant, err := service.Create(context.Background(), iam.CreateTenantInput{

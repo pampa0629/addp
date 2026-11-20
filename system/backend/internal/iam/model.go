@@ -194,7 +194,7 @@ type Principal struct {
 	Status                PrincipalStatus `gorm:"column:status;not null;default:active"`
 	AuthorizationVersion  int64           `gorm:"column:authorization_version;not null;default:1"`
 	DeactivatedAt         *time.Time      `gorm:"column:deactivated_at"`
-	StatusChangeRequestID *int64          `gorm:"column:status_change_request_id"`
+	StatusChangeRequestID *int64          `gorm:"column:status_change_request_id;<-:update"`
 	CreatedAt             time.Time       `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt             time.Time       `gorm:"column:updated_at;autoUpdateTime"`
 }

@@ -15,12 +15,16 @@ import (
 
 	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/iamcli"
+	"github.com/addp/system/internal/migration"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/term"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var requiredRoles = []string{
@@ -53,17 +57,26 @@ func run(args []string, stdin *os.File, stdout *os.File) error {
 		return errors.New("用法: iam-bootstrap prepare | iam-bootstrap apply --manifest <path>")
 	}
 	commonconfig.LoadEnv()
-	cfg := config.Load()
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
+	db, err := openBootstrapDatabase()
 	if err != nil {
-		return fmt.Errorf("连接 PostgreSQL: %w", err)
+		return err
 	}
-	if err := iamcli.RequireCurrentMigration(db); err != nil {
+	pool, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if db.Dialector.Name() == "mysql" {
+		err = migration.RequireMySQLIAMFoundation(db)
+	} else {
+		err = iamcli.RequireCurrentMigration(db)
+	}
+	if err != nil {
 		return err
 	}
 	repository := iam.NewRepository(db)
 	identityService := iam.NewIdentityService(repository, nil)
-	cipher, err := iam.NewMFACredentialCipher(cfg.IAMMFAEncryptionKey)
+	cipher, err := iam.NewMFACredentialCipher(config.LoadIAMMFAEncryptionKey())
 	if err != nil {
 		return err
 	}
@@ -106,6 +119,33 @@ func run(args []string, stdin *os.File, stdout *os.File) error {
 	default:
 		return fmt.Errorf("未知子命令 %q", args[0])
 	}
+}
+
+// Only the offline command receives the temporary MySQL credentials.
+func openBootstrapDatabase() (*gorm.DB, error) {
+	if commonconfig.GetEnv("ADDP_INFRA_DATABASE_PROVIDER", "postgres") == "mysql" {
+		cfg := database.Config{Host: os.Getenv("ADDP_MYSQL_HOST"), Port: os.Getenv("ADDP_MYSQL_PORT"),
+			User: os.Getenv("ADDP_MYSQL_BOOTSTRAP_USER"), Password: os.Getenv("ADDP_MYSQL_BOOTSTRAP_PASSWORD"),
+			DBName: "system", SSLMode: os.Getenv("ADDP_MYSQL_SSLMODE"), ConnectTimeout: 5 * time.Second}
+		if cfg.Host == "" || cfg.Port == "" || cfg.User == "" || cfg.Password == "" {
+			return nil, errors.New("MySQL offline bootstrap requires explicit host, port and temporary bootstrap credentials")
+		}
+		dialect, err := platformmysql.Dialector(cfg)
+		if err != nil {
+			return nil, err
+		}
+		db, err := gorm.Open(dialect, &gorm.Config{TranslateError: true, Logger: logger.Default.LogMode(logger.Silent)})
+		if err != nil {
+			return nil, fmt.Errorf("open MySQL bootstrap connection: %w", err)
+		}
+		return db, nil
+	}
+	cfg := config.Load()
+	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("open bootstrap database: %w", err)
+	}
+	return db, nil
 }
 
 func readManifest(path string) (*bootstrapManifest, error) {
