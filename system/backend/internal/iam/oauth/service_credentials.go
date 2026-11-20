@@ -63,10 +63,13 @@ func (s *Storage) PopulateServiceCredentialSession(
 	var row serviceCredentialSessionRow
 	var result *gorm.DB
 	db := s.dbFromContext(ctx)
-	clock := issuanceTimeExpression(db)
+	issuedAt := issuanceTimeExpression(db)
+	// Grant validity uses the transaction clock independently of the issuance projection.
+	eligibilityTime := "now()"
 	serviceGrant := "oauth_client.grant_types = ARRAY['client_credentials']::text[]"
 	serviceRole := "'service_principal' = ANY(role.allowed_principal_types)"
 	if db.Dialector.Name() == "mysql" {
+		eligibilityTime = issuedAt
 		serviceGrant = "oauth_client.grant_types = JSON_ARRAY('client_credentials')"
 		serviceRole = `JSON_CONTAINS(role.allowed_principal_types, '"service_principal"')`
 	}
@@ -92,14 +95,14 @@ func (s *Storage) PopulateServiceCredentialSession(
 		  ON membership.principal_id = principal.id
 		 AND membership.tenant_id = ?
 		 AND membership.status = 'active'
-		 AND (membership.expires_at IS NULL OR membership.expires_at > %[1]s)
+		 AND (membership.expires_at IS NULL OR membership.expires_at > %[3]s)
 		JOIN system.tenants tenant
 		  ON tenant.id = membership.tenant_id
 		 AND tenant.status = 'active'
 		WHERE oauth_client.client_id = ?
 		  AND oauth_client.status = 'active'
 		  AND %[2]s
-	`, clock, serviceGrant), tenantID, requester.GetClient().GetID()).Scan(&row)
+	`, issuedAt, serviceGrant, eligibilityTime), tenantID, requester.GetClient().GetID()).Scan(&row)
 	case contextTypeValue == string(iam.ContextTypePlatform) && tenantIDValue == "":
 		contextType = iam.ContextTypePlatform
 		result = db.Raw(fmt.Sprintf(`
@@ -126,13 +129,13 @@ func (s *Storage) PopulateServiceCredentialSession(
 		      WHERE assignment.principal_id = principal.id
 		        AND assignment.scope_type = 'platform'
 		        AND assignment.status = 'active'
-		        AND assignment.valid_from <= %[1]s
-		        AND (assignment.valid_until IS NULL OR assignment.valid_until > %[1]s)
+		        AND assignment.valid_from <= %[3]s
+		        AND (assignment.valid_until IS NULL OR assignment.valid_until > %[3]s)
 		        AND role.role_type = 'platform_builtin'
 		        AND role.status = 'active'
-		        AND %[3]s
+		        AND %[4]s
 		  )
-	`, clock, serviceGrant, serviceRole), requester.GetClient().GetID()).Scan(&row)
+	`, issuedAt, serviceGrant, eligibilityTime, serviceRole), requester.GetClient().GetID()).Scan(&row)
 	default:
 		return fosite.ErrInvalidRequest
 	}
