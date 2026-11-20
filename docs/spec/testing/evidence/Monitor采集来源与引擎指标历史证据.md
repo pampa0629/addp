@@ -39,9 +39,9 @@ Business Compose 还提供可选部署。按实际启用对象安排后续适配
 
 | 对象 | 已取得的证据 | 现场待验 |
 | --- | --- | --- |
-| Infra FalkorDB，Business MySQL、Neo4j、FTP、Spark | 在开发节点以采集客户端证书分别读取五个端点，各取得 3 个时间戳递增的样本，首尾相隔 32 秒；五个端点均拒绝缺少客户端证书的连接。FalkorDB 返回内存与连接数，MySQL 返回线程数与运行时长，Neo4j HTTP 和 FTP 控制连接可用，Spark 返回 1 个存活 Worker、2 个空闲核 | System 应用 000307 后按实际部署登记，对照中心连续样本和页面 |
-| Business 原生 NFS | 节点采集器直接核对指定导出返回 1。Business 页的浏览器用例核对已导出、未导出和缺样三种结果 | 等节点作业载入配置后，核对中心样本及开发节点页面 |
-| 内置计算运行时 | 隔离 PostgreSQL 验证 000308、续租、代次替换、拒绝旧代次与过期移除；Jupyter、SuperMap 的指定引擎 ID 各有允许与拒绝用例。SuperMap 开发镜像使用厂商 SDK 完整构建，6 项 CTest 通过；断网容器中的 C++ 指标来源用测试签发端连续两次续租，验证双向 TLS 采样和无客户端证书时拒绝读取。GeoPython 原有采样有现场证据 | 其余运行时须以现场有效租约、连续样本和页面为准。SuperMap 现场发钥等待 Notebook 与宿主机 Docker 权限隔离。Jupyter 监控本轮暂缓，Math 按测试示例排除 |
+| Infra FalkorDB，Business MySQL、Neo4j、FTP、Spark | 在开发节点以采集客户端证书分别读取五个端点，各取得 3 个时间戳递增的样本，首尾相隔 32 秒；五个端点均拒绝缺少客户端证书的连接。FalkorDB 返回内存与连接数，MySQL 返回线程数与运行时长，Neo4j HTTP 和 FTP 控制连接可用，Spark 返回 1 个存活 Worker、2 个空闲核。已在 System 页面按实际部署登记 5 项，连同原有 6 项，共 11 项启用 | 5 个新增部署等待进程加载修正的服务端证书，再核对中心样本和页面 |
+| Business 原生 NFS | 开发节点的指定导出可用，中心最近 3 分钟有 12 个样本，原生 Safari 的 Business 页显示「已导出」。浏览器用例覆盖已导出、未导出和缺样 | 本次未中断现场导出 |
+| 内置计算运行时 | 隔离 PostgreSQL 验证 000308、续租、代次替换、拒绝旧代次与过期移除；Jupyter、SuperMap 的指定引擎 ID 各有允许与拒绝用例。SuperMap 开发镜像使用厂商 SDK 完整构建，6 项 CTest 通过；断网容器中的 C++ 指标来源用测试签发端连续两次续租，验证双向 TLS 采样和无客户端证书时拒绝读取。开发节点 System 已应用 000308。19:02 和 19:28 两次查询中，GeoPython、Spark Workflow、Model3D、PointCloud、DuckDB、Inference、Document 的实例标识一致，租约到期时间均向后推进。Safari 列出全部 7 项，GeoPython 最近 3 分钟有 12 个样本 | 新增的 6 项等待加载新证书后复核中心样本、页面指标及暂停和恢复。SuperMap 现场发钥等待 Notebook 与宿主机 Docker 权限隔离。Jupyter 监控本轮暂缓，Math 按测试示例排除 |
 
 <a id="pg-source-history"></a>
 
