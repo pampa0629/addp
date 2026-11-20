@@ -18,11 +18,20 @@ type ProcessTotals struct {
 	RSS ProcessMetricTotal `json:"rss"`
 }
 
-func (c *Client) ProcessResourceTotals(ctx context.Context, scopes []ProcessScope, modules int, at time.Time, b Budget) (map[string]ProcessTotals, error) {
+// ProcessTotalGroup maps gateway and scheduler instances to the backend row
+// used by module cards.
+func ProcessTotalGroup(module, role string) string {
+	if role == "worker" {
+		return module + "/worker"
+	}
+	return module + "/backend"
+}
+
+func (c *Client) ProcessResourceTotals(ctx context.Context, scopes []ProcessScope, groups int, at time.Time, b Budget) (map[string]ProcessTotals, error) {
 	if b.Validate() != nil {
 		return nil, ErrInvalid
 	}
-	if b.MaxMetrics < 2 || modules*2 > b.MaxSeries || modules*2 > b.MaxTotalPoints {
+	if b.MaxMetrics < 2 || groups*2 > b.MaxSeries || groups*2 > b.MaxTotalPoints {
 		return nil, ErrBudget
 	}
 	if c == nil {
@@ -39,7 +48,7 @@ func (c *Client) ProcessResourceTotals(ctx context.Context, scopes []ProcessScop
 			return nil, ErrInvalid
 		}
 		membership[scope.InstanceID] = true
-		expected[scope.ModuleName]++
+		expected[ProcessTotalGroup(scope.ModuleName, scope.Role)]++
 	}
 	for index, definition := range processDefinitions[:2] {
 		expression := processTotalsExpression(scopes, definition.Key)
@@ -52,7 +61,7 @@ func (c *Client) ProcessResourceTotals(ctx context.Context, scopes []ProcessScop
 		for module := range expected {
 			ids[module] = true
 		}
-		groups, err := splitSummaryEvidence(data, ids, 2, "module")
+		groups, err := splitSummaryEvidence(data, ids, 2, "group")
 		if err != nil {
 			return nil, err
 		}
@@ -85,11 +94,11 @@ func processTotalsExpression(scopes []ProcessScope, metric string) string {
 	for _, scope := range scopes {
 		// Caller uses the two fixed process definitions and verified identities.
 		value, _, _ := scope.metricValues(metric, true)
-		parts = append(parts, `label_replace(label_replace((`+value+`),"module",`+strconv.Quote(scope.ModuleName)+`,"",""),"runtime",`+strconv.Quote(scope.InstanceID)+`,"","")`)
+		parts = append(parts, `label_replace(label_replace((`+value+`),"group",`+strconv.Quote(ProcessTotalGroup(scope.ModuleName, scope.Role))+`,"",""),"runtime",`+strconv.Quote(scope.InstanceID)+`,"","")`)
 	}
 	// Union once per result signal, preserving the per-instance labels until
-	// the server has computed the per-module sum and coverage.
+	// the server has computed the per-role sum and coverage.
 	set := strings.Join(parts, " or ")
-	return `label_replace(sum by(module)(` + set + `),"signal","sum","","") or ` +
-		`label_replace(count by(module)(` + set + `),"signal","count","","")`
+	return `label_replace(sum by(group)(` + set + `),"signal","sum","","") or ` +
+		`label_replace(count by(group)(` + set + `),"signal","count","","")`
 }

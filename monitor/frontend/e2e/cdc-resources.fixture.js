@@ -1,4 +1,4 @@
-import { identity } from './monitoring-targets.fixture'
+import { identity, emptyServiceTotals } from './monitoring-targets.fixture'
 import { cdcMetrics } from '../src/utils/cdcResources'
 
 export const componentIDs = { redpanda: '10000000-0000-4000-8000-000000000011', 'kafka-connect': '10000000-0000-4000-8000-000000000012' }
@@ -44,7 +44,7 @@ export async function cdcBackend(page, { locale = 'zh-cn', permissions = ['monit
       else if (path.endsWith('/platform/module_startup_failures')) body = { data: [] }
       else if (path.endsWith('/platform/module-instances')) body = { data: [], total: 0, page: Number(url.searchParams.get('page')), page_size: 20 }
       else if (path.endsWith('/platform/process_resource_totals')) {
-        body = { total: { expected: 0, cpu: { value: null, valid: 0 }, rss: { value: null, valid: 0 } }, modules: [], queried_at: '2026-11-11T08:00:00Z' }
+        body = { ...emptyServiceTotals(), queried_at: '2026-11-11T08:00:00Z' }
       }
       else throw new Error(`Unexpected CDC fixture API: ${path}`)
       if (held) await held

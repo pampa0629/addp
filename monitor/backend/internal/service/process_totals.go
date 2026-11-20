@@ -27,18 +27,29 @@ func (s *ResourceObservationService) WithProcessTotals(deps ProcessTotalDependen
 
 type ServiceResourceTotal struct {
 	resourcequery.ProcessTotals
-	Expected int `json:"expected"`
+	Expected          int                              `json:"expected"`
+	ContainerExpected int                              `json:"container_expected"`
+	WorkingSet        resourcequery.ProcessMetricTotal `json:"working_set"`
 }
 
+type ResourceRoles struct {
+	Backend  ServiceResourceTotal `json:"backend"`
+	Frontend ServiceResourceTotal `json:"frontend"`
+	Worker   ServiceResourceTotal `json:"worker"`
+}
 type ModuleResourceTotal struct {
 	ServiceResourceTotal
+	ResourceRoles
 	ModuleName string `json:"module_name"`
 }
 
 type ServiceResourceTotals struct {
-	Total     ServiceResourceTotal  `json:"total"`
-	Modules   []ModuleResourceTotal `json:"modules"`
-	QueriedAt time.Time             `json:"queried_at"`
+	Total   ServiceResourceTotal  `json:"total"`
+	Roles   ResourceRoles         `json:"roles"`
+	Modules []ModuleResourceTotal `json:"modules"`
+	// Omitted from the observation scope when the caller lacks host read access.
+	UnknownFrontendNodes *int      `json:"unknown_frontend_nodes"`
+	QueriedAt            time.Time `json:"queried_at"`
 }
 
 type processTotalsMembership struct {
@@ -82,7 +93,7 @@ func (s *ResourceObservationService) currentProcessTotals(ctx context.Context, t
 	return versions, result, nil
 }
 
-func (s *ResourceObservationService) ProcessTotals(ctx context.Context, principal, token string) (ServiceResourceTotals, error) {
+func (s *ResourceObservationService) ProcessTotals(ctx context.Context, principal, token string, includeFrontend bool) (ServiceResourceTotals, error) {
 	var result ServiceResourceTotals
 	if s == nil || s.processTotals.Users == nil || s.processTotals.Backend == nil || s.process.Identities == nil || s.policy == nil {
 		return result, metricsdiscovery.ErrUnconfigured
@@ -111,11 +122,13 @@ func (s *ResourceObservationService) ProcessTotals(ctx context.Context, principa
 		return result, err
 	}
 	expected := map[string]int{}
+	moduleNames := map[string]bool{}
 	physical := map[string]bool{}
 	scopes := []resourcequery.ProcessScope{}
 	declared := 0
 	for _, instance := range members {
-		expected[instance.Module]++
+		moduleNames[instance.Module] = true
+		expected[resourcequery.ProcessTotalGroup(instance.Module, instance.Role)]++
 		if instance.Endpoint == "" {
 			continue
 		}
@@ -141,6 +154,59 @@ func (s *ResourceObservationService) ProcessTotals(ctx context.Context, principa
 	if err != nil {
 		return result, err
 	}
+	frontends := map[string]*ServiceResourceTotal{}
+	if includeFrontend {
+		if s.frontend == nil {
+			return result, metricsdiscovery.ErrUnconfigured
+		}
+		sources, err := s.frontendSources(ctx, token)
+		if err != nil {
+			return result, err
+		}
+		unknown := 0
+		for id, source := range sources {
+			if !source.Target.Enabled || !source.Node.Enabled {
+				unknown++
+				continue
+			}
+			resolved, err := s.policy.Resolve(ctx, source.Target.Source.Endpoint)
+			if err != nil {
+				return result, err
+			}
+			rows, err := s.frontend.FrontendSamples(ctx, id, resolved.Address, source.Target.FrontendRevision(source.Node.Version), at, cfg.Budget)
+			if err != nil {
+				return result, err
+			}
+			if len(rows) == 0 {
+				unknown++
+				continue
+			}
+			for _, sample := range rows {
+				moduleNames[sample.Module] = true
+				row := frontends[sample.Module]
+				if row == nil {
+					row = &ServiceResourceTotal{}
+					frontends[sample.Module] = row
+				}
+				row.Expected++
+				memory := &row.RSS
+				if sample.Mode == "compose" {
+					row.ContainerExpected++
+					memory = &row.WorkingSet
+				}
+				addProcessTotal(&row.CPU, resourcequery.ProcessMetricTotal{Value: sample.CPUCores, Valid: 1})
+				addProcessTotal(memory, resourcequery.ProcessMetricTotal{Value: sample.MemoryBytes, Valid: 1})
+			}
+		}
+		latest, err := s.frontendSources(ctx, token)
+		if err != nil {
+			return result, err
+		}
+		if !maps.Equal(sources, latest) {
+			return result, resourcequery.ErrConflict
+		}
+		result.UnknownFrontendNodes = &unknown
+	}
 	latestVersions, latestMembers, err := s.currentProcessTotals(ctx, token)
 	if err != nil {
 		return result, err
@@ -159,16 +225,34 @@ func (s *ResourceObservationService) ProcessTotals(ctx context.Context, principa
 		return result, ctx.Err()
 	}
 	result.QueriedAt = at
-	result.Modules = make([]ModuleResourceTotal, 0, len(expected))
-	for _, module := range slices.Sorted(maps.Keys(expected)) {
-		read := observed[module]
-		row := ServiceResourceTotal{ProcessTotals: read, Expected: expected[module]}
-		result.Modules = append(result.Modules, ModuleResourceTotal{ServiceResourceTotal: row, ModuleName: module})
-		result.Total.Expected += row.Expected
-		addProcessTotal(&result.Total.CPU, row.CPU)
-		addProcessTotal(&result.Total.RSS, row.RSS)
+	result.Modules = []ModuleResourceTotal{}
+	for _, module := range slices.Sorted(maps.Keys(moduleNames)) {
+		row := ModuleResourceTotal{ModuleName: module}
+		for role, part := range map[string]*ServiceResourceTotal{"backend": &row.Backend, "worker": &row.Worker} {
+			key := resourcequery.ProcessTotalGroup(module, role)
+			*part = ServiceResourceTotal{ProcessTotals: observed[key], Expected: expected[key]}
+		}
+		if frontend := frontends[module]; frontend != nil {
+			row.Frontend = *frontend
+		}
+		row.merge(row.Backend)
+		row.merge(row.Frontend)
+		row.merge(row.Worker)
+		result.Roles.Backend.merge(row.Backend)
+		result.Roles.Frontend.merge(row.Frontend)
+		result.Roles.Worker.merge(row.Worker)
+		result.Modules = append(result.Modules, row)
+		result.Total.merge(row.ServiceResourceTotal)
 	}
 	return result, nil
+}
+
+func (t *ServiceResourceTotal) merge(row ServiceResourceTotal) {
+	t.Expected += row.Expected
+	t.ContainerExpected += row.ContainerExpected
+	addProcessTotal(&t.CPU, row.CPU)
+	addProcessTotal(&t.RSS, row.RSS)
+	addProcessTotal(&t.WorkingSet, row.WorkingSet)
 }
 
 func addProcessTotal(total *resourcequery.ProcessMetricTotal, value resourcequery.ProcessMetricTotal) {

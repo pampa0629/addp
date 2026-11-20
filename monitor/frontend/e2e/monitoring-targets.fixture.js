@@ -5,6 +5,12 @@ import { observations } from './resource-observations.fixture'
 export const id = '1621bb62-cb0e-40e1-b988-0d4d36683e51'
 export const node = 'f83e9874-2164-4411-a5c0-650d143006cf'
 export const permissions = ['platform.host_node.read', ...['read', 'create', 'update', 'delete'].map(action => `monitor.monitoring_target.${action}`)]
+export function resourceTotal(values = {}) {
+  return { expected: 0, container_expected: 0, cpu: { valid: 0, value: null }, rss: { valid: 0, value: null }, working_set: { valid: 0, value: null }, ...values }
+}
+export function emptyServiceTotals() {
+  return { total: resourceTotal(), roles: { backend: resourceTotal(), frontend: resourceTotal(), worker: resourceTotal() }, modules: [], unknown_frontend_nodes: null }
+}
 export function identity(keys = permissions, context = { type: 'platform' }, principal = 'user', delegation = null) {
   return { principal: { id: 'fixture-user', type: principal }, context, delegation, authorization: { role_assignments: [{ scope: context, permissions: keys }] } }
 }
@@ -74,7 +80,7 @@ export async function backend(page, options = {}) {
     else if (path === '/api/v1/system/platform/module-instances') body = { page: 1, page_size: 20, total: 0, data: [] }
     else if (path === '/api/v1/system/platform/modules') body = { modules: [], count: 0 }
     else if (path === '/api/v1/system/platform/module_startup_failures') body = { data: [] }
-    else if (path === '/api/v1/monitor/platform/process_resource_totals') body = { total: { expected: 0, cpu: { valid: 0, value: null }, rss: { valid: 0, value: null } }, modules: [] }
+    else if (path === '/api/v1/monitor/platform/process_resource_totals') body = emptyServiceTotals()
     else if (path === '/api/v1/monitor/platform/frontend_nodes') {
       body = { data: target?.monitor_kind === 'frontend_resources' ? [{ node_id: node, display_name: '测试主机', enabled: target.enabled }] : [] }
     }

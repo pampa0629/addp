@@ -247,7 +247,7 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | `/platform/resource_observations`、`/platform/resource_trends` | 显式 node_id、固定 metrics 白名单；趋势使用整秒 RFC3339 start/end，维度严格匹配 |
 | `/platform/resource_summaries` | 显式 `node_ids` 和 `metrics`，当前授权节点的批量摘要；指标仅允许 CPU 核数／一分钟忙碌率、内存总量／使用率、运行时长、三档系统平均负载和 TCP 当前连接数九项的非空无重复子集，同一评估锚点，不逐行查询 |
 | `/platform/process_resource_summaries` | 当前授权实例批量 CPU/RSS/时长，固定目录；普通实例 DTO 仅公开采集声明布尔值 |
-| `/platform/process_resource_totals` | 全平台当前授权服务的 CPU／RSS 合计，按模块及指标返回有效采样覆盖 |
+| `/platform/process_resource_totals` | 当前授权服务的一分钟 CPU、进程 RSS 和容器工作集，按模块、角色及指标返回有效覆盖 |
 | `/platform/process_resource_trends` | 仅 instance_id/start/end，固定 CPU/RSS 两条序列；不读取已退出实例历史 |
 | `/platform/container_resource_observations` | `instance_ids` 恰好一个当前实例；固定资源组 CPU 核消耗、memory.current 及两项硬上界利用率，不改变批量摘要目录；无有效证明时只读当前声明内核边界的绝对用量 |
 | `/platform/engine_resource_observations` | 单部署即时观测，固定专业目录，每次最多十二指标 |
@@ -291,7 +291,7 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 
 引擎监控的 Infra 页显示 Meilisearch 搜索任务，计算运行时页显示 GeoPython。固定查询 `/platform/engine_runtime_observations` 只允许持有 `monitor.resource_observation.read` 和 `platform.engine_deployment.read` 的非委托 Platform User。Monitor 沿 System 当前身份读取安全摘要，结束时重核部署或运行实例，GeoPython 续期允许同一实例的租约前进。Meilisearch 显示待处理、最老等待和当前保留失败任务数，GeoPython 显示有效 CPU 核数、内存上限、栅格任务运行数及等待数和准入状态。Meilisearch 时间范围限制在当前容器启动后，GeoPython 限制在当前运行实例启动后，趋势有缺样断点。空清单、发现不可用、来源不可用及有效零值分别表示。两项保持已有独立来源身份，结果不返回采集端点、容器 ID 或业务数据。
 
-服务监控顶部显示全平台 ADDP 服务进程资源总量，前端节点采样在模块卡片内单列。固定查询 `/platform/process_resource_totals` 由持有 `monitor.resource_observation.read` 和 `platform.module.read` 的非委托 Platform User 读取。以 System 当前用户可读模块在有效租约中的后端、Worker、调度和入口实例为分母，按实例启动身份去重，范围独立于页面筛选和分页。复用进程目录的一分钟 CPU 核占用与当前 RSS，Prometheus 在同一评估时刻按模块汇总有效样本。CPU、RSS 各自返回有效覆盖和合计，零覆盖值为空。RSS 可能包含多个进程共用的内存页。查询结束重核模块与当前实例集合，权限或实例变化使本轮无效。独立引擎与数据基础设施的资源仍沿引擎和主机页。
+服务监控顶部按后端（含调度与入口）、前端和 Worker 汇总当前授权范围的资源。前端只计入具有主机读权的用户可见的已登记节点，查询结束重核节点、目标与版本。各角色 CPU 以同一实例一分钟内的累计 CPU 秒数计算平均核数；新实例与恢复后的新目标版本须先取得完整窗口。进程 RSS 包含 Vite，Compose 容器工作集另外汇总。各指标分别列出已知实例的有效采样数和应采数；已暂停或无当前部署观测的节点另列覆盖未知数。固定查询 `/platform/process_resource_totals` 由持有 `monitor.resource_observation.read` 和 `platform.module.read` 的非委托 Platform User 读取。服务进程分母取自 System 当前用户可读模块中租约有效的后端、Worker、调度和入口实例，按实例启动身份去重，范围独立于页面筛选和分页。复用进程目录的一分钟 CPU 核占用与当前 RSS，Prometheus 在同一评估时刻按模块汇总有效样本。CPU、RSS 各自返回有效覆盖和合计，零覆盖值为空。RSS 可能包含多个进程共用的内存页。查询结束重核模块与当前实例集合，权限或实例变化使本轮无效。独立引擎与数据基础设施的资源仍沿引擎和主机页。
 
 资源总览的采集中心卡片经 `/platform/metrics_collection_health` 读取同一 Prometheus 自身采样。仅限有 `monitor.resource_observation.read` 的非委托 Platform User。使用固定 Job，展示已发现目标数、最近有效抓取在线及失败数、配置目标预算、最近五分钟是否发生发现失败、TSDB 块／Head chunks／WAL 体积及配置留存上限。目标变化造成发现与采样暂时错开时按缺样处理。体积口径为上述三项的合计，主机可用磁盘仍由主机监控提供。
 

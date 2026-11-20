@@ -33,39 +33,63 @@ type FrontendNodes struct {
 	Data []FrontendNode `json:"data"`
 }
 
-func (s *ResourceObservationService) FrontendNodes(ctx context.Context, token string) (FrontendNodes, error) {
-	result := FrontendNodes{Data: []FrontendNode{}}
+type frontendSource struct {
+	Node   client.UserHostNode
+	Target metricsdiscovery.NodeTarget
+}
+
+// Select one current source per authorized node. Disabled configurations
+// still identify a node whose deployed frontend count is unknown.
+func (s *ResourceObservationService) frontendSources(ctx context.Context, token string) (map[string]frontendSource, error) {
 	if s == nil || s.targets == nil {
-		return result, metricsdiscovery.ErrUnconfigured
+		return nil, metricsdiscovery.ErrUnconfigured
 	}
-	ctx, cancel := context.WithTimeout(ctx, metricsdiscovery.Timeout)
-	defer cancel()
 	reader, ok := s.nodes.(UserHostNodeScopeReader)
 	if !ok {
-		return result, metricsdiscovery.ErrIdentityUnavailable
+		return nil, metricsdiscovery.ErrIdentityUnavailable
 	}
 	nodes, err := reader.HostNodesForUser(ctx, token)
 	if errors.Is(err, client.ErrHostNodeScopeBudget) {
-		return result, resourcequery.ErrBudget
+		return nil, resourcequery.ErrBudget
 	}
 	if err != nil {
-		return result, err
+		return nil, err
 	}
 	targets, err := s.targets.Snapshot(ctx)
 	if err != nil {
+		return nil, err
+	}
+	configured := make(map[string]metricsdiscovery.NodeTarget)
+	for _, t := range targets {
+		if t.MonitorKind != "frontend_resources" {
+			continue
+		}
+		id := t.Subject.NodeID
+		if t.Enabled {
+			configured[id] = t
+		} else if _, ok := configured[id]; !ok {
+			configured[id] = metricsdiscovery.NodeTarget{}
+		}
+	}
+	sources := make(map[string]frontendSource)
+	for _, node := range nodes {
+		if target, ok := configured[node.NodeID]; ok {
+			sources[node.NodeID] = frontendSource{node, target}
+		}
+	}
+	return sources, nil
+}
+
+func (s *ResourceObservationService) FrontendNodes(ctx context.Context, token string) (FrontendNodes, error) {
+	result := FrontendNodes{Data: []FrontendNode{}}
+	ctx, cancel := context.WithTimeout(ctx, metricsdiscovery.Timeout)
+	defer cancel()
+	sources, err := s.frontendSources(ctx, token)
+	if err != nil {
 		return result, err
 	}
-	configured := make(map[string]bool)
-	for _, target := range targets {
-		if target.MonitorKind == "frontend_resources" {
-			id := target.Subject.NodeID
-			configured[id] = configured[id] || target.Enabled
-		}
-	}
-	for _, node := range nodes {
-		if enabled, exists := configured[node.NodeID]; exists {
-			result.Data = append(result.Data, FrontendNode{NodeID: node.NodeID, DisplayName: node.DisplayName, Enabled: node.Enabled && enabled})
-		}
+	for id, source := range sources {
+		result.Data = append(result.Data, FrontendNode{NodeID: id, DisplayName: source.Node.DisplayName, Enabled: source.Target.Enabled && source.Node.Enabled})
 	}
 	sort.Slice(result.Data, func(i, j int) bool {
 		left, right := result.Data[i], result.Data[j]

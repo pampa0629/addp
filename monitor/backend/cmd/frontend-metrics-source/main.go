@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
@@ -44,8 +45,9 @@ type frontend struct {
 }
 
 type resource struct {
-	cores, memoryBytes float64
-	restarts           *uint64
+	cpuSeconds, memoryBytes float64
+	generation              string
+	restarts                *uint64
 }
 
 func (c configuration) validate() (*url.URL, error) {
@@ -162,20 +164,20 @@ func nativeResources(ctx context.Context, run command, workspace string, fronten
 			parents[fields[0]] = fields[1]
 		}
 	}
-	raw, err = run(ctx, "ps", "-p", idList, "-o", "pid=,ucomm=,pcpu=,rss=")
+	raw, err = run(ctx, "ps", "-p", idList, "-o", "pid=,ucomm=,time=,rss=,lstart=")
 	if err != nil {
 		return result
 	}
 	stats := map[string]*resource{}
 	for _, line := range strings.Split(raw, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 4 || fields[1] != "node" {
+		if len(fields) != 9 || fields[1] != "node" {
 			continue
 		}
-		cpu, cpuOK := number(fields[2])
+		cpu, cpuOK := processCPUSeconds(fields[2])
 		rss, rssOK := number(fields[3])
 		if cpuOK && rssOK && rss > 0 {
-			stats[fields[0]] = &resource{cores: cpu / 100, memoryBytes: rss * 1024}
+			stats[fields[0]] = &resource{cpuSeconds: cpu, memoryBytes: rss * 1024, generation: fields[0] + " " + strings.Join(fields[4:], " ")}
 		}
 	}
 	after := listeners()
@@ -202,7 +204,14 @@ func nativeResources(ctx context.Context, run command, workspace string, fronten
 }
 
 var containerID = regexp.MustCompile(`^[a-f0-9]{64}$`)
-var memoryUsage = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)\s*(B|KiB|MiB|GiB|TiB)$`)
+
+// Darwin ps reports accumulated user and system time as minutes:seconds.hundredths.
+func processCPUSeconds(raw string) (float64, bool) {
+	minutes, seconds, ok := strings.Cut(raw, ":")
+	m, err := strconv.ParseUint(minutes, 10, 64)
+	sec, valid := number(seconds)
+	return float64(m)*60 + sec, ok && err == nil && valid && sec < 60
+}
 
 func number(raw string) (float64, bool) {
 	value, err := strconv.ParseFloat(raw, 64)
@@ -241,27 +250,50 @@ func composeResource(ctx context.Context, run command, cfg configuration, f fron
 	if !ok {
 		return nil
 	}
-	raw, err := docker("stats", "--no-stream", "--no-trunc", "--format", "{{json .}}", id)
-	var stats struct{ CPUPerc, MemUsage string }
-	if err != nil || json.Unmarshal([]byte(raw), &stats) != nil || !strings.HasSuffix(stats.CPUPerc, "%") {
+	// The CLI percentage is a short-window rate. Read the cumulative counter from
+	// the same Docker socket and the same verified container as its memory stats.
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", cfg.DockerSocket)
+	}}
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/containers/"+id+"/stats?stream=false&one-shot=true", nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	var stats struct {
+		ID  string `json:"id"`
+		CPU struct {
+			Usage struct {
+				Total *uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+		} `json:"cpu_stats"`
+		Memory struct {
+			Usage uint64
+			Stats map[string]uint64
+		} `json:"memory_stats"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&stats) != nil ||
+		stats.ID != id || stats.CPU.Usage.Total == nil || stats.Memory.Usage == 0 {
 		return nil
 	}
 	after, ok := inspect()
 	if !ok || before.State.StartedAt != after.State.StartedAt || before.RestartCount != after.RestartCount {
 		return nil
 	}
-	cpu, valid := number(strings.TrimSuffix(stats.CPUPerc, "%"))
-	usage, _, _ := strings.Cut(stats.MemUsage, "/")
-	match := memoryUsage.FindStringSubmatch(strings.TrimSpace(usage))
-	if !valid || len(match) != 3 {
-		return nil
+	usage := stats.Memory.Usage
+	for _, key := range []string{"total_inactive_file", "inactive_file"} {
+		if inactive, exists := stats.Memory.Stats[key]; exists && inactive < usage {
+			usage -= inactive
+			break
+		}
 	}
-	memory, valid := number(match[1])
-	if !valid || memory <= 0 {
-		return nil
-	}
-	scales := map[string]float64{"B": 1, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
-	return &resource{cores: cpu / 100, memoryBytes: memory * scales[match[2]], restarts: &after.RestartCount}
+	return &resource{cpuSeconds: float64(*stats.CPU.Usage.Total) / 1e9, memoryBytes: float64(usage), restarts: &after.RestartCount,
+		generation: id + "/" + after.State.StartedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func deployedFrontends(cfg configuration) ([]frontend, error) {
@@ -365,7 +397,7 @@ func collect(ctx context.Context, cfg configuration, probe *frontendprobe.Prober
 				data = composeResource(ctx, run, cfg, f)
 			}
 			if data != nil {
-				metric("cpu_cores", data.cores)
+				metrics[i] = fmt.Appendf(metrics[i], "addp_frontend_cpu_seconds_total%s,frontend_generation=%q} %v\n", strings.TrimSuffix(label, "}"), data.generation, data.cpuSeconds)
 				metric("memory_bytes", data.memoryBytes)
 				if data.restarts != nil {
 					metric("restart_count", *data.restarts)

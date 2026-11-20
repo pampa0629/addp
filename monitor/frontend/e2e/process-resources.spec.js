@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { identity, setIdentity } from './monitoring-targets.fixture'
+import { identity, setIdentity, resourceTotal } from './monitoring-targets.fixture'
 
 import { backend, permissions as processPermissions } from './process-resources.fixture'
 
@@ -8,12 +8,13 @@ const boundInstances = () => [{ id: 1, node_id: boundHostID, host_node_name: 'ol
 const hostPermissions = [...processPermissions, 'platform.host_node.read']
 
 test('service resource totals are global and disclose per-metric sample coverage', async ({ page }) => {
+  const backendTotal = resourceTotal({ expected: 1, cpu: { value: 1, valid: 1 }, rss: { value: 1024 ** 3, valid: 1 } })
+  const frontend = resourceTotal({ expected: 1, container_expected: 1, cpu: { value: 0.5, valid: 1 }, working_set: { value: 512 * 2 ** 20, valid: 1 } })
+  const worker = resourceTotal({ expected: 1 })
+  const total = resourceTotal({ expected: 3, container_expected: 1, cpu: { value: 1.5, valid: 2 }, rss: backendTotal.rss, working_set: frontend.working_set })
   const totals = {
-    total: { expected: 3, cpu: { value: 1.5, valid: 2 }, rss: { value: 1024 ** 3, valid: 1 } },
-    modules: [
-      { module_name: 'meta', expected: 2, cpu: { value: 1.5, valid: 2 }, rss: { value: 1024 ** 3, valid: 1 } },
-      { module_name: 'asset', expected: 1, cpu: { value: null, valid: 0 }, rss: { value: null, valid: 0 } }
-    ]
+    total, roles: { backend: backendTotal, frontend, worker }, unknown_frontend_nodes: 1,
+    modules: [{ module_name: 'meta', ...resourceTotal({ ...total, expected: 2 }) }, { module_name: 'asset', ...worker }]
   }
   await backend(page, { totals, instances: [{ id: 1, module_name: 'meta', role: 'worker' }] })
   const requests = []
@@ -26,7 +27,10 @@ test('service resource totals are global and disclose per-metric sample coverage
   await expect(card.getByTestId('process-total-cpu')).toHaveText(/1\.50/)
   await expect(card.getByTestId('process-total-rss')).toHaveText('1.00 GiB')
   await expect(card).toContainText('有效采样 2/3')
-  await expect(card).toContainText('有效采样 1/3')
+  await expect(card).toContainText('有效采样 1/2')
+  await expect(card.getByTestId('process-total-working_set')).toHaveText('512.00 MiB')
+  await expect(card).toContainText('1 个前端节点覆盖未知')
+  await expect(card.getByRole('row', { name: /任务进程/ })).toContainText('缺样 1 个')
   await card.getByText('按模块查看').click()
   await expect(card.getByRole('row', { name: /asset/ })).toContainText('有效采样 0/1')
   expect(requests).toEqual([''])

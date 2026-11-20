@@ -1,5 +1,5 @@
 import { BlockList, isIP } from 'node:net'
-import { identity } from './monitoring-targets.fixture'
+import { identity, emptyServiceTotals } from './monitoring-targets.fixture'
 
 export const permissions = ['platform.module.read', 'monitor.resource_observation.read']
 export async function backend(page, options = {}) {
@@ -69,7 +69,7 @@ export async function backend(page, options = {}) {
         ].map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: [{ evaluated_at: stamp, sampled_at: value === null ? null : stamp, value, data_state: value === null ? 'no_data' : 'valid' }] })) } }
       options.containerResponse?.(body)
     } else if (path === '/api/v1/monitor/platform/process_resource_totals') {
-      body = options.totals || { total: { expected: 0, cpu: { value: null, valid: 0 }, rss: { value: null, valid: 0 } }, modules: [], queried_at: stamp }
+      body = options.totals || { ...emptyServiceTotals(), queried_at: stamp }
     } else if (path === '/api/v1/monitor/platform/process_resource_summaries') {
       calls.push(url.searchParams.get('instance_ids'))
       const requested = new Set(url.searchParams.get('instance_ids').split(',').map(Number))

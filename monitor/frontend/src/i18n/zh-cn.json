@@ -1091,16 +1091,23 @@
       "storage": "TSDB 占用 / 留存上限"
     },
     "processTotals": {
-      "title": "ADDP 服务进程资源总量",
-      "scope": "当前统计后端、Worker、调度进程和网关。",
+      "title": "ADDP 服务资源总量",
+      "scope": "按当前授权范围汇总有效样本。CPU 使用一分钟平均核数，Vite 使用进程 RSS，Nginx 使用容器工作集。",
       "cpu": "近一分钟 CPU 核占用",
       "rss": "进程 RSS 合计",
       "rssHint": "多个进程使用同一共享内存页时，该页可能被重复计入。",
       "coverage": "有效采样 {valid}/{expected}",
       "cores": "核",
-      "modules": "按模块查看"
+      "modules": "按模块查看",
+      "working_set": "容器工作集合计",
+      "missing": "缺样 {count} 个",
+      "unknown": "另有 {count} 个前端节点覆盖未知，当前实例数未知。",
+      "processOnly": "当前权限范围包括服务进程。前端统计需要主机读取权限。"
     },
     "frontend": {
+      "cpuPending": "等待完整 CPU 窗口",
+      "workingSet": "容器工作集",
+      "rss": "进程 RSS",
       "title": "前端",
       "services": "服务实例",
       "runtime": "运行方式",

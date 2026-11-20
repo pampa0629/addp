@@ -13,19 +13,31 @@
         <el-alert v-if="totalsError" :title="t(totalsError)" type="warning" :closable="false" />
         <template v-else-if="totals">
           <dl class="process-total-values">
-            <div v-for="metric in ['cpu', 'rss']" :key="metric">
+            <div v-for="metric in totalMetrics" :key="metric">
               <dt>{{ t(`monitor.processTotals.${metric}`) }} <FieldHelp v-if="metric === 'rss'" :content="t('monitor.processTotals.rssHint')" /></dt>
               <dd :data-testid="`process-total-${metric}`">{{ totalValue(totals.total[metric], metric) }}</dd>
-              <p>{{ t('monitor.processTotals.coverage', { valid: totals.total[metric].valid, expected: totals.total.expected }) }}</p>
+              <p>{{ t('monitor.processTotals.coverage', { valid: totals.total[metric].valid, expected: expectedFor(totals.total, metric) }) }}</p>
             </div>
           </dl>
+          <p v-if="totals.unknown_frontend_nodes > 0">{{ t('monitor.processTotals.unknown', { count: totals.unknown_frontend_nodes }) }}</p>
+          <p v-if="totals.unknown_frontend_nodes === null">{{ t('monitor.processTotals.processOnly') }}</p>
+          <table class="role-totals">
+            <thead><tr><th>{{ t('monitor.process.role') }}</th><th v-for="metric in totalMetrics" :key="metric">{{ t(`monitor.processTotals.${metric}`) }}</th></tr></thead>
+            <tbody><tr v-for="role in totalRoles" :key="role">
+              <th>{{ t(role === 'frontend' ? 'monitor.frontend.title' : `monitor.process.roles.${role}`) }}</th>
+              <td v-for="metric in totalMetrics" :key="metric">
+                {{ totalValue(totals.roles[role][metric], metric) }}
+                <small v-if="expectedFor(totals.roles[role], metric) > totals.roles[role][metric].valid">{{ t('monitor.processTotals.missing', { count: expectedFor(totals.roles[role], metric) - totals.roles[role][metric].valid }) }}</small>
+              </td>
+            </tr></tbody>
+          </table>
           <details v-if="totals.modules.length">
             <summary>{{ t('monitor.processTotals.modules') }}</summary>
             <el-table :data="totals.modules" size="small">
               <el-table-column prop="module_name" :label="t('monitor.process.module')" />
-              <el-table-column v-for="metric in ['cpu', 'rss']" :key="metric" :label="t(`monitor.processTotals.${metric}`)">
+              <el-table-column v-for="metric in totalMetrics" :key="metric" :label="t(`monitor.processTotals.${metric}`)">
                 <template #default="{ row }">
-                  {{ totalValue(row[metric], metric) }} · {{ t('monitor.processTotals.coverage', { valid: row[metric].valid, expected: row.expected }) }}
+                  {{ totalValue(row[metric], metric) }} · {{ t('monitor.processTotals.coverage', { valid: row[metric].valid, expected: expectedFor(row, metric) }) }}
                 </template>
               </el-table-column>
             </el-table>
@@ -102,7 +114,7 @@
               <span></span><span>{{ t('monitor.frontend.cpu') }}</span><span>{{ t('monitor.frontend.memory') }}</span>
               <template v-for="group in roleMetrics(rows, frontendRows.get(name))" :key="group.label">
                 <strong>{{ t(group.label) }}</strong>
-                <span>{{ comparisonValue(group.cpu, headlineMetrics[0]) }}</span>
+                <span>{{ group.waiting ? t('monitor.frontend.cpuPending') : comparisonValue(group.cpu, headlineMetrics[0]) }}</span>
                 <span>{{ comparisonValue(group.memory, headlineMetrics[1]) }}</span>
               </template>
             </div>
@@ -208,21 +220,28 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
 const totals = ref(null), totalsError = ref('')
+const totalMetrics = computed(() => totals.value?.total.container_expected ? ['cpu','rss','working_set'] : ['cpu','rss'])
+const totalRoles = computed(() => totals.value?.unknown_frontend_nodes === null ? ['backend', 'worker'] : ['backend','frontend','worker'])
+function expectedFor(row, metric) {
+  if (metric === 'working_set') return row.container_expected
+  return metric === 'rss' ? row.expected - row.container_expected : row.expected
+}
 function totalValue(reading, metric) {
   if (reading.value === null) return '—'
-  if (metric === 'rss') return formatBytes(reading.value, 2, locale.value)
+  if (metric !== 'cpu') return formatBytes(reading.value, 2, locale.value)
   return formatFieldPresentationValue(reading.value, { precision: 2, unit: t('monitor.processTotals.cores') }, locale.value)
 }
 async function loadTotals(ticket) {
   try {
     const value = await requests.request(config => api.totals(config))
     if (!requests.current(ticket)) return
-    const valid = row => Number.isSafeInteger(row?.expected) && row.expected >= 0 && ['cpu', 'rss'].every(metric => {
+    const valid = row => Number.isSafeInteger(row?.expected) && row.expected >= 0 && Number.isSafeInteger(row.container_expected) && row.container_expected >= 0 && row.container_expected <= row.expected && ['cpu', 'rss', 'working_set'].every(metric => {
       const item = row[metric]
-      return Number.isSafeInteger(item?.valid) && item.valid >= 0 && item.valid <= row.expected &&
+      return Number.isSafeInteger(item?.valid) && item.valid >= 0 && item.valid <= expectedFor(row, metric) &&
         (item.valid ? typeof item.value === 'number' && Number.isFinite(item.value) && item.value >= 0 : item.value === null)
     })
-    if (!valid(value?.total) || !Array.isArray(value?.modules) || value.modules.some(row => !valid(row) || typeof row.module_name !== 'string')) {
+    if (!valid(value?.total) || !['backend','frontend','worker'].every(role => valid(value.roles?.[role])) ||
+        !(value.unknown_frontend_nodes === null || (Number.isSafeInteger(value.unknown_frontend_nodes) && value.unknown_frontend_nodes >= 0)) || !Array.isArray(value?.modules) || value.modules.some(row => !valid(row) || typeof row.module_name !== 'string')) {
       throw new Error('invalid_resource_response')
     }
     totals.value = value
@@ -297,7 +316,7 @@ function roleMetrics(rows, frontend) {
   const processGroup = (label, instances) => ({ label, cpu: sum(instances, headlineMetrics[0]), memory: sum(instances, headlineMetrics[1]) })
   return [
     processGroup('monitor.process.roles.backend', rows.filter(row => row.role !== 'worker')),
-    { label: 'monitor.frontend.title', cpu: frontend?.cpu_cores ?? null, memory: frontend?.memory_bytes ?? null },
+    { label: 'monitor.frontend.title', cpu: frontend?.cpu_cores ?? null, waiting: frontend?.cpu_cores == null && frontend?.memory_bytes != null, memory: frontend?.memory_bytes ?? null },
     processGroup('monitor.process.roles.worker', rows.filter(row => row.role === 'worker'))
   ]
 }
@@ -624,4 +643,7 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .process-trend-range { flex: 1 1 200px; }
 .process-metric-heading { overflow-wrap: anywhere; }
 .process-trend-subject { overflow-wrap: anywhere; color: var(--addp-text-primary); }
+.role-totals { border-collapse: collapse; margin-block: 12px; }
+.role-totals td, .role-totals th { text-align: start; padding: 4px 20px 4px 0; }
+.role-totals small { color: var(--el-text-color-secondary); }
 </style>

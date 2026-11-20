@@ -12,7 +12,7 @@ import (
 
 // ProcessTotals godoc
 // @Summary 读取 ADDP 服务资源总量 | Read total ADDP service resources
-// @Description 以当前在线实例为分母，返回全平台与按模块的 CPU 核数、进程 RSS 合计以及分指标采样覆盖率 | Return platform and module CPU cores, process RSS totals and per-metric coverage for current online instances
+// @Description 按模块和角色返回一分钟 CPU、进程 RSS、容器工作集与覆盖数。持主机读权时包含可见节点的前端和覆盖未知节点数 | Return one-minute CPU, process RSS, container working set and coverage by module and role. Host readers also see frontends from authorized nodes and the number of nodes with unknown coverage
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
@@ -39,7 +39,7 @@ func (h *ResourceObservationHandler) ProcessTotals(c *gin.Context) {
 		return
 	}
 	var value service.ServiceResourceTotals
-	value, err := h.service.ProcessTotals(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c))
+	value, err := h.service.ProcessTotals(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), auth.HasRolePermission(c, "platform.host_node.read"))
 	if err != nil {
 		resourceError(c, err)
 		return

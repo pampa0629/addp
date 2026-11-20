@@ -103,7 +103,21 @@ func frontendExpression(nodeID, address, revision string) string {
 	// operand so freshness comparison cannot merge across the catalog.
 	parts := make([]string, 0, len(frontendMetrics))
 	for _, key := range frontendMetrics {
-		field := "addp_frontend_" + key + `{frontend_module=~` + strconv.Quote(strings.Join(frontendprobe.Modules[:], "|")) + `,frontend_mode=~"vite|compose",` + selector + "}"
+		labels := `{frontend_module=~` + strconv.Quote(strings.Join(frontendprobe.Modules[:], "|")) + `,frontend_mode=~"vite|compose",` + selector + "}"
+		field := "addp_frontend_" + key + labels
+		if key == "cpu_cores" {
+			counter := "addp_frontend_cpu_seconds_total" + strings.TrimSuffix(labels, "}") + `,frontend_generation!=""}`
+			prior := counter + " offset 1m"
+			rate := "rate(" + counter + "[1m])"
+			// Match the process CPU window. A sample from the same generation
+			// and revision must already exist at the beginning of the minute.
+			value := rate + " >= 0 and (count_over_time(" + counter + "[1m]) >= 4) and (resets(" + counter + "[1m]) == 0)" +
+				" and (" + counter + " >= " + prior + ") and (timestamp(" + prior + ") >= time()-76) and (timestamp(" + counter + ") >= time()-16)" +
+				" and " + join + "(min_over_time(" + up + "[1m]) == 1) and " + join + "(" + up + " == 1)" +
+				" and (timestamp(" + counter + ") == " + join + "group_left timestamp(" + up + "))"
+			parts = append(parts, `label_replace((`+value+`),"__name__","addp_frontend_cpu_cores","","")`)
+			continue
+		}
 		parts = append(parts, "("+field+" and "+join+"("+up+"==1) and "+join+"(timestamp("+up+")>=time()-30) and on(instance,addp_node_id,frontend_module,frontend_mode) "+
 			"(timestamp("+field+") == "+join+"group_left timestamp("+up+")))")
 	}

@@ -1091,16 +1091,23 @@
       "storage": "TSDB footprint / retention limit"
     },
     "processTotals": {
-      "title": "ADDP service process resource totals",
-      "scope": "Covers backends, workers, schedulers, and the gateway.",
+      "title": "ADDP service resource totals",
+      "scope": "Totals include valid samples in your authorized scope. CPU uses a one-minute average. Vite reports process RSS and Nginx reports container working set.",
       "cpu": "CPU cores used over the last minute",
       "rss": "Combined process RSS",
       "rssHint": "Shared memory pages can be counted once per process that uses them.",
       "coverage": "Valid samples {valid}/{expected}",
       "cores": "cores",
-      "modules": "View by module"
+      "modules": "View by module",
+      "working_set": "Container working set",
+      "missing": "{count} missing",
+      "unknown": "Frontend coverage and instance count are unknown for {count} additional nodes.",
+      "processOnly": "Your scope covers service processes. Frontend totals require host read access."
     },
     "frontend": {
+      "cpuPending": "Waiting for a full CPU window",
+      "workingSet": "Container working set",
+      "rss": "Process RSS",
       "title": "Frontends",
       "services": "Service instances",
       "runtime": "Runtime",

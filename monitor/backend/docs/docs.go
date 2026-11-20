@@ -5320,7 +5320,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "以当前在线实例为分母，返回全平台与按模块的 CPU 核数、进程 RSS 合计以及分指标采样覆盖率 | Return platform and module CPU cores, process RSS totals and per-metric coverage for current online instances",
+                "description": "按模块和角色返回一分钟 CPU、进程 RSS、容器工作集与覆盖数。持主机读权时包含可见节点的前端和覆盖未知节点数 | Return one-minute CPU, process RSS, container working set and coverage by module and role. Host readers also see frontends from authorized nodes and the number of nodes with unknown coverage",
                 "produces": [
                     "application/json"
                 ],
@@ -10225,16 +10225,31 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_service.ModuleResourceTotal": {
             "type": "object",
             "properties": {
+                "backend": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal"
+                },
+                "container_expected": {
+                    "type": "integer"
+                },
                 "cpu": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal"
                 },
                 "expected": {
                     "type": "integer"
                 },
+                "frontend": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal"
+                },
                 "module_name": {
                     "type": "string"
                 },
                 "rss": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal"
+                },
+                "worker": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal"
+                },
+                "working_set": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal"
                 }
             }
@@ -11108,6 +11123,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.ResourceRoles": {
+            "type": "object",
+            "properties": {
+                "backend": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal"
+                },
+                "frontend": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal"
+                },
+                "worker": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.ResourceRulePreset": {
             "type": "object",
             "properties": {
@@ -11415,6 +11444,9 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_service.ServiceResourceTotal": {
             "type": "object",
             "properties": {
+                "container_expected": {
+                    "type": "integer"
+                },
                 "cpu": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal"
                 },
@@ -11422,6 +11454,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "rss": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal"
+                },
+                "working_set": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.ProcessMetricTotal"
                 }
             }
@@ -11438,8 +11473,15 @@ const docTemplate = `{
                 "queried_at": {
                     "type": "string"
                 },
+                "roles": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceRoles"
+                },
                 "total": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_service.ServiceResourceTotal"
+                },
+                "unknown_frontend_nodes": {
+                    "description": "Omitted from the observation scope when the caller lacks host read access.",
+                    "type": "integer"
                 }
             }
         },

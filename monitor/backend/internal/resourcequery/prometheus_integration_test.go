@@ -396,14 +396,20 @@ func TestIntegrationMetricsFrontendSamples(t *testing.T) {
 		"name":     "deployed modules, same-scrape freshness, foreign node and scrape failure",
 		"interval": "15s",
 		"input_series": []any{series(up, "1 1 0"), series(entry, "1 0 _"), series(memory, "65536 _ _"),
-			series(restarts, "0 2 _"), series(portalCPU, "0.25 _ _"), series(other, "1 1 1"),
+			series(restarts, "0 2 _"), series(other, "1 1 1"),
 			series(strings.Replace(memory, revision, testNode+":1:1", 1), "8192 8192 8192")},
 		"promql_expr_test": []any{
-			evaluate("0s", sample(entry, 1), sample(memory, 65536), sample(restarts, 0), sample(portalCPU, 0.25)),
+			evaluate("0s", sample(entry, 1), sample(memory, 65536), sample(restarts, 0)),
 			evaluate("15s", sample(entry, 0), sample(restarts, 2)),
 			evaluate("30s"),
 		},
-	}}, false)
+	}, map[string]any{
+		"name":     "one minute CPU window requires the same process generation",
+		"interval": "15s",
+		"input_series": []any{series(up, "1x8"), series(strings.Replace(strings.TrimSuffix(portalCPU, "}")+`,frontend_generation="first"}`, "_cpu_cores", "_cpu_seconds_total", 1), "0+7.5x4 stale"),
+			series(strings.Replace(strings.TrimSuffix(portalCPU, "}")+`,frontend_generation="second"}`, "_cpu_cores", "_cpu_seconds_total", 1), "_ _ _ _ _ 0 1 2")},
+		"promql_expr_test": []any{evaluate("45s"), evaluate("60s", sample(strings.TrimSuffix(portalCPU, "}")+`,frontend_generation="first"}`, 0.5)), evaluate("75s")},
+	}}, true)
 }
 
 func runPromtoolCases(t *testing.T, name string, tests []any, fuzzy bool) {

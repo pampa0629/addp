@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,14 +29,14 @@ func TestNativeFrontendRequiresListenerOwnedByLauncher(t *testing.T) {
 		case name == "ps" && args[0] == "-A":
 			return "91 " + owner, nil
 		case name == "ps":
-			return "91 node 12.5 2048", nil
+			return "91 node 1:12.50 2048 Fri Nov 20 12:00:00 2026", nil
 		default:
 			t.Fatalf("unexpected %s %v", name, args)
 			return "", nil
 		}
 	}
 	got := nativeResources(context.Background(), run, root, []frontend{{module: "console", port: 5170}})["console"]
-	if got == nil || got.cores != .125 || got.memoryBytes != 2<<20 || got.restarts != nil {
+	if got == nil || got.cpuSeconds != 72.5 || got.memoryBytes != 2<<20 || got.restarts != nil {
 		t.Fatal(got)
 	}
 	owner = "1"
@@ -46,17 +48,33 @@ func TestNativeFrontendRequiresListenerOwnedByLauncher(t *testing.T) {
 func TestComposeFrontendRejectsRecreatedOrForeignContainer(t *testing.T) {
 	const root = "/owned/workspace"
 	cid := strings.Repeat("a", 64)
+	dir, err := os.MkdirTemp("/tmp", "fe-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "engine.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/containers/"+cid+"/stats" || r.URL.Query().Get("one-shot") != "true" {
+			t.Errorf("unexpected stats URL %s", r.URL)
+		}
+		w.Write([]byte(`{"id":"` + cid + `","cpu_stats":{"cpu_usage":{"total_usage":3200000000}},"memory_stats":{"usage":46137344,"stats":{"inactive_file":4194304}}}`))
+	})}
+	go server.Serve(listener)
+	t.Cleanup(func() { server.Close() })
 	workingDir, changed := root, false
 	count := 0
 	run := func(_ context.Context, name string, args ...string) (string, error) {
-		if name != "docker" || args[0] != "--host" || args[1] != "unix:///docker.sock" {
+		if name != "docker" || args[0] != "--host" || args[1] != "unix://"+socket {
 			t.Fatal(name, args)
 		}
 		switch args[2] {
 		case "ps":
 			return cid, nil
-		case "stats":
-			return `{"CPUPerc":"32.00%","MemUsage":"40MiB / 1GiB"}`, nil
 		case "inspect":
 			count++
 			restarts := 2
@@ -72,10 +90,10 @@ func TestComposeFrontendRejectsRecreatedOrForeignContainer(t *testing.T) {
 			return "", nil
 		}
 	}
-	cfg := configuration{Workspace: root, DockerSocket: "/docker.sock"}
+	cfg := configuration{Workspace: root, DockerSocket: socket}
 	f := frontend{service: "monitor-frontend"}
 	got := composeResource(context.Background(), run, cfg, f)
-	if got == nil || got.cores != .32 || got.memoryBytes != 40<<20 || *got.restarts != 2 {
+	if got == nil || got.cpuSeconds != 3.2 || got.memoryBytes != 40<<20 || *got.restarts != 2 {
 		t.Fatal(got)
 	}
 	changed = true

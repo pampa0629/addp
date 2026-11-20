@@ -248,8 +248,8 @@ func TestIntegrationMetricsProcessWindow(t *testing.T) {
 		count, total int
 	}{{"process.cpu.core_equivalents", 1, 1}, {"process.memory.resident_bytes", 2, 5120}} {
 		expected := []any{
-			map[string]any{"labels": `{module="monitor",signal="sum"}`, "value": metric.total},
-			map[string]any{"labels": `{module="monitor",signal="count"}`, "value": metric.count},
+			map[string]any{"labels": `{group="monitor/worker",signal="sum"}`, "value": metric.total},
+			map[string]any{"labels": `{group="monitor/worker",signal="count"}`, "value": metric.count},
 		}
 		spec := map[string]any{"expr": processTotalsExpression([]ProcessScope{scope, peer, stopped}, metric.key), "eval_time": "60s", "exp_samples": expected}
 		tests = append(tests, map[string]any{"name": "global-by-module/" + metric.key, "interval": "15s", "input_series": totalInputs, "promql_expr_test": []any{spec}})

@@ -1,4 +1,4 @@
-import { identity } from './monitoring-targets.fixture'
+import { identity, emptyServiceTotals } from './monitoring-targets.fixture'
 import { resourceBackend } from './node-resources.fixture'
 import { engineOwner } from './engine-resources.fixture'
 import { engineSummaryFor } from '../src/utils/engineResources'
@@ -17,10 +17,7 @@ export async function overviewBackend(page, options = {}) {
     discovered: 38, target_limit: 96, online: 35, failed: 2, discovery_error: true,
     tsdb_bytes: 3 * 1024 ** 3, retention_bytes: 10 * 1024 ** 3, queried_at: stamp
   } }))
-  await page.route('**/api/v1/monitor/platform/process_resource_totals', route => route.fulfill({ json: {
-    total: { expected: 0, cpu: { value: null, valid: 0 }, rss: { value: null, valid: 0 } },
-    modules: [], queried_at: stamp
-  } }))
+  await page.route('**/api/v1/monitor/platform/process_resource_totals', route => route.fulfill({ json: { ...emptyServiceTotals(), queried_at: stamp } }))
   await page.route('**/api/v1/monitor/platform/engine_runtime_observations?**', route => route.fulfill({ json: {
     source: new URL(route.request().url()).searchParams.get('source'), queried_at: stamp,
     discovery_state: 'available', collection: { state: 'not_connected' }, series: []
