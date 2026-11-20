@@ -11,7 +11,7 @@ const mixed = [
 ]
 
 test('engine configuration is permission gated and keeps the selected deployment scope', async ({ page }) => {
-  await engineBackend(page, { auth: identity([...enginePermissions, 'platform.host_node.read', 'platform.engine_deployment.update']) })
+  await engineBackend(page, { auth: identity([...enginePermissions, 'platform.host_node.read', 'platform.engine_deployment.update']), runtimeSources: [{ source: 'geopython', engine_id: 6 }] })
   await page.goto('/engine-resources?scope=runtime&refresh=off')
   await expect(page.getByTestId('engine-runtime-geopython')).toBeVisible()
   await expect(page.getByTestId('engine-configure')).toHaveCount(0)

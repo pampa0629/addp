@@ -4,7 +4,7 @@ import { engineMetricsFor, engineSummaryFor } from '../src/utils/engineResources
 export const engineID = '10000000-0000-4000-8000-000000000001'
 export const engineOwner = { scope: 'infra', deployment_id: engineID, display_name: 'Infra PostgreSQL', enabled: true, engine_type: 'postgresql', node_id: '10000000-0000-4000-8000-000000000002', version: 1, host_binding_state: 'bound' }
 export const enginePermissions = ['monitor.resource_observation.read', 'platform.engine_deployment.read']
-export async function engineBackend(page, { locale = 'zh-cn', auth = identity(enginePermissions), mode: initial = 'valid', owner = { ...engineOwner }, owners = null, hosts = [], holdHosts = false } = {}) {
+export async function engineBackend(page, { locale = 'zh-cn', auth = identity(enginePermissions), mode: initial = 'valid', owner = { ...engineOwner }, owners = null, hosts = [], runtimeSources = [], holdHosts = false } = {}) {
   const deploymentRows = owners || [owner]
   let mode = initial, capacity = 1024 ** 3
   const calls = [], queries=[], stamp = '2026-10-20T14:00:00Z'
@@ -18,6 +18,7 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
     let body, status = 200
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
     else if (path === '/api/v1/monitor/platform/automatic_collection_scopes') body = { catalog_available: true, data: [] }
+    else if (path === '/api/v1/monitor/platform/frontend_nodes') body = { data: [] }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = auth
     else if (path === '/api/v1/system/platform/engine_deployments') {
@@ -41,7 +42,7 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
     } else if (path.startsWith('/api/v1/monitor/platform/resource_')) {
       status = 503; body = { error_code: 'observability_backend_unavailable', error: 'fixture host metrics unavailable' }
     }
-    else if (path === '/api/v1/monitor/platform/engine_runtime_observations/sources') body = []
+    else if (path === '/api/v1/monitor/platform/engine_runtime_observations/sources') body = runtimeSources
     else if (path === '/api/v1/monitor/platform/engine_runtime_observations') {
       body = { source: url.searchParams.get('source'), queried_at: stamp, discovery_state: 'available', collection: { state: 'not_connected' }, series: [] }
     }

@@ -3,14 +3,13 @@ import { identity } from './monitoring-targets.fixture'
 import { engineBackend, enginePermissions } from './engine-resources.fixture'
 
 test('search and compute indicators follow the current source without converting missing samples to zero', async ({ page }) => {
-  const state = await engineBackend(page)
+  const state = await engineBackend(page, { runtimeSources: [{ source: 'geopython', engine_id: 6 }] })
   const stamp = '2026-10-20T14:00:00.000Z'
   const ids = { meilisearch: '10000000-0000-4000-8000-000000000003', geopython: '10000000-0000-4000-8000-000000000004' }
   const metrics = {
     meilisearch: { tasks_pending: ['tasks', 0], tasks_oldest_wait_seconds: ['seconds', 0], tasks_retained_failed: ['tasks', 76] },
     geopython: { effective_cpu_cores: ['cores', 4], memory_limit_bytes: ['bytes', null], raster_running: ['tasks', 2], raster_waiting: ['tasks', 0], raster_admission_enabled: ['status', 1] }
   }
-  await page.route('**/platform/engine_runtime_observations/sources', route => route.fulfill({ json: [{ source: 'geopython', engine_id: 6 }] }))
   const requests = []
   await page.route('**/api/v1/monitor/platform/engine_runtime_observations?**', route => {
     const query = Object.fromEntries(new URL(route.request().url()).searchParams)
@@ -73,4 +72,11 @@ test('Business NFS distinguishes an absent export from an absent sample', async 
   available = null
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(card).toContainText('暂无导出样本')
+})
+
+test('compute monitoring with no current leases has no runtime cards', async ({ page }) => {
+  await engineBackend(page)
+  await page.goto('/engine-resources?scope=runtime&refresh=off')
+  await expect(page.locator('.el-empty')).toBeVisible()
+  await expect(page.getByTestId('engine-runtime-geopython')).toHaveCount(0)
 })
