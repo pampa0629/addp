@@ -43,6 +43,20 @@ func testMySQLRolePermissionProjection(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	tenant, member := int64(500), int64(500)
+	var otherMembership int64
+	if err := db.Raw("SELECT id FROM tenant_memberships WHERE tenant_id=90 AND principal_id=100").Row().Scan(&otherMembership); err != nil {
+		t.Fatal(err)
+	}
+	otherTenant := int64(90)
+	other, err := repo.ListEffectiveRoleAssignmentPermissions(ctx, 100, iam.PrincipalTypeUser, iam.ContextTypeTenant, &otherTenant, &otherMembership, at)
+	if err != nil || len(other) == 0 {
+		t.Fatalf("other tenant administrator has no permissions: %v", err)
+	}
+	for _, r := range other {
+		if r.RoleKey != "tenant.administrator" || r.PermissionKey == "sample.projection.read" {
+			t.Fatalf("unexpected permission in other tenant: %+v", r)
+		}
+	}
 	for _, tc := range []struct {
 		name          string
 		principal     int64
@@ -53,7 +67,6 @@ func testMySQLRolePermissionProjection(t *testing.T, db *gorm.DB) {
 	}{
 		{"assigned user", 100, iam.PrincipalTypeUser, tenant, at, 1},
 		{"other user", 103, iam.PrincipalTypeUser, tenant, at, 0},
-		{"other tenant", 100, iam.PrincipalTypeUser, 90, at, 0},
 		{"ineligible principal type", 100, iam.PrincipalTypeServicePrincipal, tenant, at, 0},
 		{"before assignment", 100, iam.PrincipalTypeUser, tenant, at.Add(-time.Hour), 0},
 	} {

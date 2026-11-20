@@ -11,7 +11,7 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 14
+const mysqlIAMFoundationVersion int64 = 15
 
 //go:embed mysql_iam/*.sql
 var mysqlIAMFoundationSQL embed.FS
@@ -49,5 +49,5 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 			}
 		}
 		return checkMySQLIAMTriggers(conn, triggers)
-	}, installMySQLPlatformMachineCatalog)
+	}, installMySQLIAMCatalog)
 }

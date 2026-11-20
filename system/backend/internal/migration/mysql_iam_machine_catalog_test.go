@@ -3,6 +3,8 @@ package migration
 import (
 	"database/sql"
 	"encoding/json"
+	commonauth "github.com/addp/common/authorization"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -16,6 +18,13 @@ func assertInstalledMachineCatalog(t *testing.T, db *sql.DB) {
 	if err := json.Unmarshal(mysqlIAMMachineCatalogV14, &catalog); err != nil {
 		t.Fatal(err)
 	}
+	var tenantCatalog machineCatalog
+	if err := json.Unmarshal(mysqlIAMTenantCatalogV15, &tenantCatalog); err != nil {
+		t.Fatal(err)
+	}
+	catalog.Roles = append(catalog.Roles, tenantCatalog.Roles...)
+	catalog.Permissions = append(catalog.Permissions, tenantCatalog.Permissions...)
+	assertInstalledPermissionDescriptors(t, db, catalog.Permissions)
 	expected := make(map[string]platformMachine)
 	for _, s := range catalog.Services {
 		expected[s.ID] = s
@@ -88,8 +97,42 @@ func assertInstalledMachineCatalog(t *testing.T, db *sql.DB) {
 		t.Fatal(err)
 	}
 	for _, r := range catalog.Roles {
+		slices.Sort(actual[r.Key])
 		if !slices.Equal(actual[r.Key], r.Permissions) {
 			t.Errorf("%s permissions=%v, want %v", r.Key, actual[r.Key], r.Permissions)
 		}
+	}
+}
+
+func assertInstalledPermissionDescriptors(t *testing.T, db *sql.DB, descriptors []commonauth.PermissionDescriptor) {
+	t.Helper()
+	expected := make(map[string]commonauth.PermissionDescriptor, len(descriptors))
+	for _, p := range descriptors {
+		expected[p.Key] = p
+	}
+	rows, err := db.Query(`SELECT permission_key,owner_module,action,risk_level,delegable,allowed_scope_types,tenant_customizable,name_i18n_key,description_i18n_key,status FROM system.permissions`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p commonauth.PermissionDescriptor
+		var scopes iam.DBStringList
+		if err := rows.Scan(&p.Key, &p.OwnerModule, &p.Action, &p.RiskLevel, &p.Delegable, &scopes, &p.TenantCustomizable, &p.NameI18nKey, &p.DescriptionI18nKey, &p.Status); err != nil {
+			t.Fatal(err)
+		}
+		p.AllowedScopeTypes = []string(scopes)
+		if want, ok := expected[p.Key]; ok {
+			if !reflect.DeepEqual(p, want) {
+				t.Errorf("different permission %s: database=%+v release=%+v", p.Key, p, want)
+			}
+			delete(expected, p.Key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for key := range expected {
+		t.Errorf("missing permission %s", key)
 	}
 }

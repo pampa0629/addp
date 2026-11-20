@@ -316,21 +316,21 @@ type Tenant struct {
 func (Tenant) TableName() string { return "system.tenants" }
 
 type Role struct {
-	ID                    int64          `gorm:"primaryKey;autoIncrement"`
-	TenantID              *int64         `gorm:"column:tenant_id"`
-	RoleKey               string         `gorm:"column:role_key;not null"`
-	Name                  *string        `gorm:"column:name"`
-	Description           *string        `gorm:"column:description"`
-	NameI18nKey           *string        `gorm:"column:name_i18n_key"`
-	DescriptionI18nKey    *string        `gorm:"column:description_i18n_key"`
-	RoleType              string         `gorm:"column:role_type;not null"`
-	AllowedScopeTypes     pq.StringArray `gorm:"column:allowed_scope_types;type:text[];not null"`
-	AllowedPrincipalTypes pq.StringArray `gorm:"column:allowed_principal_types;type:text[];not null"`
-	Immutable             bool           `gorm:"column:immutable;not null"`
-	Status                string         `gorm:"column:status;not null"`
-	CreatedByPrincipalID  *int64         `gorm:"column:created_by_principal_id"`
-	CreatedAt             time.Time      `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt             time.Time      `gorm:"column:updated_at;autoUpdateTime"`
+	ID                    int64        `gorm:"primaryKey;autoIncrement"`
+	TenantID              *int64       `gorm:"column:tenant_id"`
+	RoleKey               string       `gorm:"column:role_key;not null"`
+	Name                  *string      `gorm:"column:name"`
+	Description           *string      `gorm:"column:description"`
+	NameI18nKey           *string      `gorm:"column:name_i18n_key"`
+	DescriptionI18nKey    *string      `gorm:"column:description_i18n_key"`
+	RoleType              string       `gorm:"column:role_type;not null"`
+	AllowedScopeTypes     DBStringList `gorm:"column:allowed_scope_types;type:json;not null"`
+	AllowedPrincipalTypes DBStringList `gorm:"column:allowed_principal_types;type:json;not null"`
+	Immutable             bool         `gorm:"column:immutable;not null"`
+	Status                string       `gorm:"column:status;not null"`
+	CreatedByPrincipalID  *int64       `gorm:"column:created_by_principal_id"`
+	CreatedAt             time.Time    `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt             time.Time    `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (Role) TableName() string { return "system.roles" }

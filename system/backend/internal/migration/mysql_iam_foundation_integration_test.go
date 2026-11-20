@@ -200,6 +200,30 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	t.Run("service credential provisioning and audit rollback", func(t *testing.T) {
 		testMySQLServiceProvisioner(t, db)
 	})
+	t.Run("tenant initialization with installed roles", func(t *testing.T) {
+		service := iam.NewPlatformTenantService(iam.NewRepository(db), nil)
+		tenant, err := service.Create(context.Background(), iam.CreateTenantInput{
+			Code: "runtime-install", Name: "Runtime install", ActorPrincipalID: 100, InitialAdministratorPrincipalID: 103,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !tenant.Initialized {
+			t.Fatal("new tenant is not initialized")
+		}
+		var admins, runtimes, members, audits int
+		if err := db.Raw(`SELECT COUNT(CASE WHEN r.role_key='tenant.administrator' AND a.principal_id=103 THEN 1 END),
+			COUNT(CASE WHEN a.source_type='bootstrap' AND s.id IS NOT NULL AND r.role_key=CONCAT('tenant.',SUBSTRING(s.name,6),'_runtime') THEN 1 END),
+			(SELECT COUNT(*) FROM tenant_memberships WHERE tenant_id=? AND status='active'),
+			(SELECT COUNT(*) FROM audit_logs WHERE entity_type='tenant' AND entity_id=CAST(? AS CHAR) AND event_name='iam.tenant.created')
+			FROM role_assignments a JOIN roles r ON r.id=a.role_id LEFT JOIN service_principals s ON s.id=a.principal_id
+			WHERE a.tenant_id=? AND a.scope_type='tenant' AND a.status='active'`, tenant.ID, tenant.ID, tenant.ID).Row().Scan(&admins, &runtimes, &members, &audits); err != nil {
+			t.Fatal(err)
+		}
+		if admins != 1 || runtimes != 24 || members != 25 || audits != 1 {
+			t.Fatalf("administrators=%d runtimes=%d memberships=%d creation audits=%d", admins, runtimes, members, audits)
+		}
+	})
 }
 
 func testMySQLIAMMembership(t *testing.T, db *gorm.DB) {

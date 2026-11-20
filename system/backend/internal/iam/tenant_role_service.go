@@ -10,7 +10,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/lib/pq"
 )
 
 const tenantAdministratorRoleKey = "tenant.administrator"
@@ -132,8 +131,8 @@ func (s *TenantRoleService) CreateRole(ctx context.Context, input CreateTenantRo
 	description := strings.TrimSpace(input.Description)
 	role := &Role{
 		TenantID: &input.TenantID, RoleKey: roleKey, Name: &name, Description: &description,
-		RoleType: "tenant_custom", AllowedScopeTypes: pq.StringArray{"tenant"},
-		AllowedPrincipalTypes: pq.StringArray{"user"}, Immutable: false, Status: "active",
+		RoleType: "tenant_custom", AllowedScopeTypes: DBStringList{"tenant"},
+		AllowedPrincipalTypes: DBStringList{"user"}, Immutable: false, Status: "active",
 		CreatedByPrincipalID: &input.ActorPrincipalID,
 	}
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {

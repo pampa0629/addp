@@ -24,13 +24,15 @@ func testMySQLTenantAdministrator(t *testing.T, db *gorm.DB) {
 	const initialize = "UPDATE tenants SET initialized_at = CURRENT_TIMESTAMP(6), initialized_by_principal_id = 100 WHERE id = 90"
 	assertLastAdminViolation(t, db.Exec(initialize).Error)
 	exec("INSERT INTO tenant_memberships (tenant_id, principal_id, source_type, joined_at) VALUES (90, 100, 'manual', NOW()), (90, 103, 'manual', NOW())")
-	exec(`INSERT INTO roles
-		(id, role_key, name_i18n_key, description_i18n_key, role_type, allowed_scope_types, allowed_principal_types, immutable)
-		VALUES (90, 'tenant.administrator', 'admin.name', 'admin.description', 'tenant_builtin',
-		        JSON_ARRAY('tenant'), JSON_ARRAY('user'), true)`)
-	exec(`INSERT INTO role_assignments (id, principal_id, role_id, scope_type, tenant_id, valid_from, source_type)
-		VALUES (91, 100, 90, 'tenant', 90, CURRENT_TIMESTAMP(6), 'bootstrap'),
-		       (92, 103, 90, 'tenant', 90, CURRENT_TIMESTAMP(6), 'bootstrap')`)
+	var adminRoleID int64
+	if err := db.Raw("SELECT id FROM roles WHERE role_key='tenant.administrator' AND tenant_id IS NULL").Row().Scan(&adminRoleID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO role_assignments (id, principal_id, role_id, scope_type, tenant_id, valid_from, source_type)
+		VALUES (91, 100, ?, 'tenant', 90, CURRENT_TIMESTAMP(6), 'bootstrap'),
+		       (92, 103, ?, 'tenant', 90, CURRENT_TIMESTAMP(6), 'bootstrap')`, adminRoleID, adminRoleID).Error; err != nil {
+		t.Fatal(err)
+	}
 	exec(initialize)
 
 	const revoke = `UPDATE role_assignments
@@ -43,7 +45,7 @@ func testMySQLTenantAdministrator(t *testing.T, db *gorm.DB) {
 		"UPDATE tenant_memberships SET expires_at = DATE_ADD(NOW(), INTERVAL 1 DAY) WHERE tenant_id = 90 AND principal_id = 103",
 		"DELETE FROM tenant_memberships WHERE tenant_id = 90 AND principal_id = 103",
 		"UPDATE principals SET status = 'suspended' WHERE id = 103",
-		"UPDATE roles SET status = 'disabled' WHERE id = 90",
+		"UPDATE roles SET status = 'disabled' WHERE role_key = 'tenant.administrator'",
 	} {
 		assertLastAdminViolation(t, db.Exec(invalid).Error)
 	}
@@ -64,7 +66,7 @@ func testMySQLTenantAdministrator(t *testing.T, db *gorm.DB) {
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`INSERT INTO role_assignments (principal_id, role_id, scope_type, tenant_id, source_type)
-			VALUES (100, 90, 'tenant', 90, 'bootstrap')`).Error; err != nil {
+			VALUES (100, ?, 'tenant', 90, 'bootstrap')`, adminRoleID).Error; err != nil {
 			return err
 		}
 		return tx.Exec(revoke, 92).Error

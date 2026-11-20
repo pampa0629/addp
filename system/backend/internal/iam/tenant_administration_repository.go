@@ -120,12 +120,12 @@ func (r *Repository) ListManagedTenantViews(
 			WHERE assignment.tenant_id = tenant.id
 			  AND assignment.scope_type = 'tenant'
 			  AND assignment.status = 'active'
-			  AND assignment.valid_from <= now()
+			  AND assignment.valid_from <= CURRENT_TIMESTAMP(6)
 			  AND assignment.valid_until IS NULL
 			  AND role.role_key = 'tenant.administrator'
 			  AND role.status = 'active'
 			  AND membership.status = 'active'
-			  AND (membership.expires_at IS NULL OR membership.expires_at > now())
+			  AND (membership.expires_at IS NULL OR membership.expires_at > CURRENT_TIMESTAMP(6))
 			  AND principal.status = 'active'
 		) AS initialized`).Order("tenant.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&tenants).Error
 	return tenants, total, wrapRepositoryError(err)
@@ -145,12 +145,12 @@ func (r *Repository) GetManagedTenantView(ctx context.Context, tenantID int64) (
 		           WHERE assignment.tenant_id = tenant.id
 		             AND assignment.scope_type = 'tenant'
 		             AND assignment.status = 'active'
-		             AND assignment.valid_from <= now()
+		             AND assignment.valid_from <= CURRENT_TIMESTAMP(6)
 		             AND assignment.valid_until IS NULL
 		             AND role.role_key = 'tenant.administrator'
 		             AND role.status = 'active'
 		             AND membership.status = 'active'
-		             AND (membership.expires_at IS NULL OR membership.expires_at > now())
+		             AND (membership.expires_at IS NULL OR membership.expires_at > CURRENT_TIMESTAMP(6))
 		             AND principal.status = 'active'
 		       ) AS initialized
 		FROM system.tenants tenant WHERE tenant.id = ?
@@ -174,8 +174,8 @@ func (r *Repository) ListTenantAdministratorCandidates(ctx context.Context, sear
 			WHERE assignment.principal_id = principal.id
 			  AND assignment.scope_type = 'platform'
 			  AND assignment.status = 'active'
-			  AND assignment.valid_from <= now()
-			  AND (assignment.valid_until IS NULL OR assignment.valid_until > now())
+			  AND assignment.valid_from <= CURRENT_TIMESTAMP(6)
+			  AND (assignment.valid_until IS NULL OR assignment.valid_until > CURRENT_TIMESTAMP(6))
 		)`)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
@@ -238,16 +238,13 @@ func (r *Repository) ListBuiltinServiceRuntimeBindings(ctx context.Context) ([]B
 		 AND principal.status = 'active'
 		JOIN system.roles role
 		  ON role.tenant_id IS NULL
-		 AND role.role_key = 'tenant.' || replace(service_principal.name, 'addp-', '') || '_runtime'
+		 AND role.role_key = CONCAT('tenant.', REPLACE(service_principal.name, 'addp-', ''), '_runtime')
 		 AND role.role_type = 'tenant_builtin'
 		 AND role.status = 'active'
 		WHERE service_principal.owner_scope = 'platform'
-		  AND service_principal.name IN (
-		      'addp-agent', 'addp-asset', 'addp-catalog', 'addp-copilot', 'addp-develop', 'addp-document', 'addp-duckdb', 'addp-geopython', 'addp-graph', 'addp-manager', 'addp-meta', 'addp-model', 'addp-model3d', 'addp-monitor',
-		      'addp-ontology', 'addp-orchestrator', 'addp-pointcloud', 'addp-quality', 'addp-security', 'addp-service', 'addp-spark', 'addp-standard', 'addp-system', 'addp-transfer'
-		  )
+		  AND service_principal.name IN ?
 		ORDER BY service_principal.name
-	`).Scan(&bindings).Error
+	`, builtinTenantRuntimeServiceClientIDs).Scan(&bindings).Error
 	if err != nil {
 		return nil, wrapRepositoryError(err)
 	}
@@ -413,11 +410,11 @@ func (r *Repository) ListTenantRoleAssignments(ctx context.Context, tenantID int
 	}
 	switch effectiveState {
 	case "scheduled":
-		base = base.Where("assignment.status = 'active' AND assignment.valid_from > now()")
+		base = base.Where("assignment.status = 'active' AND assignment.valid_from > CURRENT_TIMESTAMP(6)")
 	case "effective":
-		base = base.Where("assignment.status = 'active' AND assignment.valid_from <= now() AND (assignment.valid_until IS NULL OR assignment.valid_until > now())")
+		base = base.Where("assignment.status = 'active' AND assignment.valid_from <= CURRENT_TIMESTAMP(6) AND (assignment.valid_until IS NULL OR assignment.valid_until > CURRENT_TIMESTAMP(6))")
 	case "expired":
-		base = base.Where("assignment.status = 'active' AND assignment.valid_until IS NOT NULL AND assignment.valid_until <= now()")
+		base = base.Where("assignment.status = 'active' AND assignment.valid_until IS NOT NULL AND assignment.valid_until <= CURRENT_TIMESTAMP(6)")
 	case "revoked":
 		base = base.Where("assignment.status = 'revoked'")
 	}
@@ -459,8 +456,8 @@ func withManagedTenantRoleAssignmentProjection(query *gorm.DB) *gorm.DB {
 			role.role_key, role.name AS role_name, role.name_i18n_key AS role_name_i18n_key,
 			CASE
 				WHEN assignment.status = 'revoked' THEN 'revoked'
-				WHEN assignment.valid_from > now() THEN 'scheduled'
-				WHEN assignment.valid_until IS NOT NULL AND assignment.valid_until <= now() THEN 'expired'
+				WHEN assignment.valid_from > CURRENT_TIMESTAMP(6) THEN 'scheduled'
+				WHEN assignment.valid_until IS NOT NULL AND assignment.valid_until <= CURRENT_TIMESTAMP(6) THEN 'expired'
 				ELSE 'effective'
 			END AS effective_state,
 			CASE WHEN assignment.status = 'revoked' THEN (
@@ -471,8 +468,8 @@ func withManagedTenantRoleAssignmentProjection(query *gorm.DB) *gorm.DB {
 				  AND active_assignment.scope_type = assignment.scope_type
 				  AND active_assignment.tenant_id IS NOT DISTINCT FROM assignment.tenant_id
 				  AND active_assignment.status = 'active'
-				  AND active_assignment.valid_from <= now()
-				  AND (active_assignment.valid_until IS NULL OR active_assignment.valid_until > now())
+				  AND active_assignment.valid_from <= CURRENT_TIMESTAMP(6)
+				  AND (active_assignment.valid_until IS NULL OR active_assignment.valid_until > CURRENT_TIMESTAMP(6))
 				ORDER BY active_assignment.id DESC
 				LIMIT 1
 			) END AS same_scope_active_assignment_id,

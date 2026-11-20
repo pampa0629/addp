@@ -14,6 +14,9 @@ import (
 //go:embed mysql_iam_v14.json
 var mysqlIAMMachineCatalogV14 []byte
 
+//go:embed mysql_iam_v15.json
+var mysqlIAMTenantCatalogV15 []byte
+
 type platformMachine struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -28,12 +31,28 @@ type machineCatalog struct {
 	Services    []platformMachine
 }
 
-func installMySQLPlatformMachineCatalog(tx *gorm.DB, from int64) error {
-	if from >= 14 {
-		return nil
+func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
+	if from < 14 {
+		if err := installMySQLCatalogRevision(tx, mysqlIAMMachineCatalogV14); err != nil {
+			return err
+		}
+		if err := tx.Exec(`INSERT INTO oauth_clients (client_id,display_name,client_type,redirect_uris,grant_types,response_types,
+		allowed_scopes,allowed_audiences,token_endpoint_auth_method)
+		VALUES ('addp-cli','ADDP CLI','public',JSON_ARRAY('http://127.0.0.1/callback'),
+		JSON_ARRAY('authorization_code','refresh_token','urn:ietf:params:oauth:grant-type:device_code'),
+		JSON_ARRAY('code'),JSON_ARRAY('addp.api'),JSON_ARRAY('addp.api'),'none')`).Error; err != nil {
+			return err
+		}
 	}
+	if from < 15 {
+		return installMySQLCatalogRevision(tx, mysqlIAMTenantCatalogV15)
+	}
+	return nil
+}
+
+func installMySQLCatalogRevision(tx *gorm.DB, release []byte) error {
 	var catalog machineCatalog
-	if err := json.Unmarshal(mysqlIAMMachineCatalogV14, &catalog); err != nil {
+	if err := json.Unmarshal(release, &catalog); err != nil {
 		return err
 	}
 	insertID := func(query string, args ...any) (int64, error) {
@@ -59,9 +78,16 @@ func installMySQLPlatformMachineCatalog(tx *gorm.DB, from int64) error {
 	}
 	roles := make(map[string]int64, len(catalog.Roles))
 	for _, r := range catalog.Roles {
+		scopeTypes, err := json.Marshal(r.AllowedScopeTypes)
+		if err != nil {
+			return err
+		}
+		principalTypes, err := json.Marshal(r.AllowedPrincipalTypes)
+		if err != nil {
+			return err
+		}
 		id, err := insertID(`INSERT INTO roles (role_key, role_type, allowed_scope_types, allowed_principal_types,
-			immutable, name_i18n_key, description_i18n_key) VALUES (?, 'platform_builtin', JSON_ARRAY('platform'),
-			JSON_ARRAY('service_principal'), true, ?, ?)`, r.Key, r.NameI18nKey, r.DescriptionI18nKey)
+			immutable, name_i18n_key, description_i18n_key) VALUES (?, ?, ?, ?, true, ?, ?)`, r.Key, r.RoleType, string(scopeTypes), string(principalTypes), r.NameI18nKey, r.DescriptionI18nKey)
 		if err != nil {
 			return fmt.Errorf("install role %s: %w", r.Key, err)
 		}
@@ -94,9 +120,5 @@ func installMySQLPlatformMachineCatalog(tx *gorm.DB, from int64) error {
 			}
 		}
 	}
-	return tx.Exec(`INSERT INTO oauth_clients (client_id,display_name,client_type,redirect_uris,grant_types,response_types,
-		allowed_scopes,allowed_audiences,token_endpoint_auth_method)
-		VALUES ('addp-cli','ADDP CLI','public',JSON_ARRAY('http://127.0.0.1/callback'),
-		JSON_ARRAY('authorization_code','refresh_token','urn:ietf:params:oauth:grant-type:device_code'),
-		JSON_ARRAY('code'),JSON_ARRAY('addp.api'),JSON_ARRAY('addp.api'),'none')`).Error
+	return nil
 }
