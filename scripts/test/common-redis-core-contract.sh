@@ -22,6 +22,9 @@ for owner in common gateway system/backend; do
     grep -q -- "^--- PASS: $name " "$work_dir/tests.log" || { echo "Redis core gate did not execute $name" >&2; exit 1; }
   done
 done
+if [[ "${1:-}" == --client-only ]]; then
+  exit 0
+fi
 export ADDP_REDIS_CORE_REQUIRED=1
 make -C "$ROOT_DIR" test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package api --test oauth-client-credentials" 2>&1 | tee "$work_dir/iam.log"
 grep -q -- 'PASS: TestIAMOAuthClientCredentialsAuthContextAgainstPostgres/Redis_core_outage_preserves_Token_and_grant_facts ' "$work_dir/iam.log" || {

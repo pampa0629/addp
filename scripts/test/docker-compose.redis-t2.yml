@@ -40,6 +40,27 @@ services:
       retries: 30
     mem_limit: 256m
     restart: "no"
+  valkey:
+    profiles: [valkey-core]
+    image: ghcr.io/valkey-io/valkey:8.1.9-alpine@sha256:4934d214fd7e091d4ee77b398945b3fd62c6dd0ac71d8b79e2e3cbad8364f3b1
+    environment:
+      REDISCLI_AUTH: ${BUSINESS_REDIS_ADMIN_PASSWORD:?T2 deployment password required}
+    command:
+      - sh
+      - -ec
+      - |
+        printf 'requirepass %s\n' "$$REDISCLI_AUTH" | docker-entrypoint.sh valkey-server - --save "" --appendonly no
+    ports:
+      - "127.0.0.1::6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -e ping | grep -qx PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+    restart: "no"
   redis-core-source:
     profiles: [redis-core-source]
     image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c

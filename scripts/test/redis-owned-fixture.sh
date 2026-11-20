@@ -5,7 +5,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 export ADDP_REDIS_T2_PROJECT="addp-redis-t2-${PPID}-$$"
 export BUSINESS_REDIS_ADMIN_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
 export BUSINESS_REDIS_READER_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
-compose() { docker compose --profile redis-core-source --profile redis-observation -p "$ADDP_REDIS_T2_PROJECT" -f "$ROOT_DIR/scripts/test/docker-compose.redis-t2.yml" "$@"; }
+compose() { docker compose --profile redis-core-source --profile redis-observation --profile valkey-core -p "$ADDP_REDIS_T2_PROJECT" -f "$ROOT_DIR/scripts/test/docker-compose.redis-t2.yml" "$@"; }
 cleanup() {
     local status=$?
     trap - EXIT INT TERM
@@ -23,7 +23,13 @@ cleanup() {
     exit "$status"
 }
 trap cleanup EXIT INT TERM
-if [[ "${ADDP_REDIS_CORE_T2:-0}" == 1 ]]; then
+if [[ "${1:-}" == --valkey ]]; then
+  shift
+  compose up -d --wait --wait-timeout 120 valkey
+  compose exec -T valkey valkey-cli --raw info server | tr -d '\r' | grep -Fx 'valkey_version:8.1.9'
+  export ADDP_REDIS_CORE_ENDPOINT="$(compose port valkey 6379)"
+  export ADDP_REDIS_CORE_PASSWORD="$BUSINESS_REDIS_ADMIN_PASSWORD"
+elif [[ "${ADDP_REDIS_CORE_T2:-0}" == 1 ]]; then
   compose up -d --wait --wait-timeout 120 redis-infra
   export ADDP_REDIS_CORE_ENDPOINT="$(compose port redis-infra 6379)"
   export ADDP_REDIS_CORE_PASSWORD="$BUSINESS_REDIS_ADMIN_PASSWORD"

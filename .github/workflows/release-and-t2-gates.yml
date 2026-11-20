@@ -1400,7 +1400,7 @@ jobs:
           status: ${{ job.status }}
 
   common-redis-core:
-    name: System and Gateway Redis core lifecycle (Redis 7.2.13)
+    name: System and Gateway core cache (Redis 7.2.13, Valkey 8.1.9)
     needs: selection
     if: needs.selection.outputs.common == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.gateway == 'true'
     runs-on: ubuntu-24.04
@@ -1453,7 +1453,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: System and Gateway Redis core lifecycle (Redis 7.2.13)
+          gate: System and Gateway core cache (Redis 7.2.13, Valkey 8.1.9)
           status: ${{ job.status }}
 
   common-redis:
