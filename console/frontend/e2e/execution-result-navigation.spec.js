@@ -170,6 +170,8 @@ async function prepareDifferenceLogPages(page) {
 }
 
 test('geometry difference log oracle reads the five execution pages', async ({ page }) => {
+  // Fixture setup precedes the verifier's own 60-second deadline for all ten reads.
+  test.setTimeout(90_000)
   const samples = await prepareDifferenceLogPages(page)
   const report = { reads: 0, samples: [] }
   const stages = []
