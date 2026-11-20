@@ -12,7 +12,7 @@ class RedisCoreGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="redis-core-entry-") as directory:
             root=Path(directory)
             (root/"scripts/test").mkdir(parents=True)
-            for module in ("common", "gateway", "system/backend"):
+            for module in ("common", "gateway", "system/backend", "meta/backend"):
                 (root/module).mkdir(parents=True)
             contract=root/"scripts/test/common-redis-core-contract.sh"
             contract.write_text((ROOT/"scripts/test/common-redis-core-contract.sh").read_text())
@@ -23,6 +23,7 @@ if [ "$PROBE_RESULT" = skip ]; then echo '--- SKIP: TestRequiredRedisAgainstRedi
 if [ "$PROBE_RESULT" = missing ]; then echo 'PASS'; exit 0; fi
 case "$PWD" in
  */common) echo '--- PASS: TestRequiredRedisAgainstRedis (0.01s)'; echo '--- PASS: TestRedisReadinessAgainstRedis (0.01s)' ;;
+ */meta/backend) if [ "$PROBE_RESULT" != missing-meta ]; then echo '--- PASS: TestScanExecutionLockAgainstRedis (0.01s)'; fi ;;
  */gateway) echo '--- PASS: TestConsumerRateLimitAgainstRedis (0.01s)' ;;
  */system/backend) echo '--- PASS: TestOAuthRateLimitAgainstRedis (0.01s)' ;;
 esac
@@ -37,7 +38,7 @@ esac
 if [ "$PROBE_RESULT" = missing-pg ]; then echo PASS; else echo '    --- PASS: TestIAMOAuthClientCredentialsAuthContextAgainstPostgres/Redis_core_outage_preserves_Token_and_grant_facts (0.01s)'; fi
 """)
             go.chmod(0o755); make.chmod(0o755)
-            for result,code in (("pass",0),("skip",1),("missing",1),("missing-pg",1),("missing-wiring",1)):
+            for result,code in (("pass",0),("skip",1),("missing",1),("missing-meta",1),("missing-pg",1),("missing-wiring",1)):
                 with self.subTest(result=result):
                     run=subprocess.run(["bash",str(contract)],env={**os.environ,"PATH":str(binary)+os.pathsep+os.environ["PATH"],"PROBE_RESULT":result,
                         "ADDP_REDIS_CORE_ENDPOINT":"127.0.0.1:6379","ADDP_REDIS_CORE_PASSWORD":"fixture-only"},capture_output=True,text=True)

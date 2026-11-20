@@ -1,6 +1,10 @@
 package service
 
 import (
+	"context"
+	"time"
+
+	"github.com/addp/common/infra/redistest"
 	"strings"
 	"testing"
 
@@ -66,5 +70,41 @@ func TestGenerateExecutionLockKeyNormalizesCatalogPathsAndRefGroups(t *testing.T
 	}, nil)
 	if leftRefs != rightRefs {
 		t.Fatalf("ref group lock keys should normalize ordering: %q vs %q", leftRefs, rightRefs)
+	}
+}
+
+func TestScanExecutionLockAgainstRedis(t *testing.T) {
+	cfg := redistest.Config(t)
+	first := NewScanDedupService(redistest.Open(t, cfg))
+	second := NewScanDedupService(redistest.Open(t, cfg))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	key := first.GenerateExecutionLockKey(1, 9, 42, nil, nil, nil)
+	ttl := 500 * time.Millisecond
+	acquired, err := first.TryAcquireOwnedLock(ctx, key, "first", ttl)
+	if err != nil || !acquired {
+		t.Fatalf("first execution failed to acquire its range: %v", err)
+	}
+	if acquired, err := second.TryAcquireOwnedLock(ctx, key, "second", time.Minute); err != nil || acquired {
+		t.Fatalf("second execution did not observe the range in use: acquired=%v err=%v", acquired, err)
+	}
+	if released, err := second.ReleaseOwnedLock(ctx, key, "second"); err != nil || released {
+		t.Fatalf("wrong execution released the range: released=%v err=%v", released, err)
+	}
+	for {
+		acquired, err = second.TryAcquireOwnedLock(ctx, key, "second", time.Minute)
+		if err != nil {
+			t.Fatalf("waiting for range expiry: %v", err)
+		}
+		if acquired {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if released, err := first.ReleaseOwnedLock(ctx, key, "first"); err != nil || released {
+		t.Fatalf("expired execution released a reacquired range: released=%v err=%v", released, err)
+	}
+	if released, err := second.ReleaseOwnedLock(ctx, key, "second"); err != nil || !released {
+		t.Fatalf("current execution could not release its range: released=%v err=%v", released, err)
 	}
 }

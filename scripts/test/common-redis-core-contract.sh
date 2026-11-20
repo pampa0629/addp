@@ -5,11 +5,12 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 : "${ADDP_REDIS_CORE_PASSWORD:?owned Infra Redis credential required}"
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/redis-core-contract.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT
-for owner in common gateway system/backend; do
+for owner in common gateway system/backend meta/backend; do
   case "$owner" in
     common) packages=(./infra/bootstrap ./modulelifecycle); required=(TestRequiredRedisAgainstRedis TestRedisReadinessAgainstRedis) ;;
     gateway) packages=(./internal/middleware); required=(TestConsumerRateLimitAgainstRedis) ;;
     system/backend) packages=(./internal/middleware); required=(TestOAuthRateLimitAgainstRedis) ;;
+    meta/backend) packages=(./internal/service); required=(TestScanExecutionLockAgainstRedis) ;;
   esac
   (
     cd "$ROOT_DIR/$owner"
