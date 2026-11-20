@@ -24,7 +24,7 @@
         <template v-if="!dialogOpen" #observation="{ row }">
           <div :data-testid="`target-list-collection-${row.id}`">
             <el-button v-if="row.enabled && row.monitor_kind === 'frontend_resources' && canObserve && auth.hasPermission('platform.module.read')" text type="primary"
-              @click="navigate('/service-resources', { tab: 'frontend', node_id: row.subject.node_id })">{{ t('monitor.targets.collection.frontendLink') }}</el-button>
+              @click="navigate('/service-resources', { node_id: row.subject.node_id })">{{ t('monitor.targets.collection.frontendLink') }}</el-button>
             <el-tag v-else class="target-collection-status" :type="listCollectionType(row)">{{ t(listCollectionKey(row)) }}</el-tag>
             <p v-if="listCollections.get(row.id)?.collection?.sampled_at" class="target-sample-time" :title="t('monitor.targets.listCollection.queried', { time: listDate(listCollections.get(row.id).queried_at) })">{{ t('monitor.resources.sampledAt') }}: {{ listDate(listCollections.get(row.id).collection.sampled_at) }}</p>
           </div>
@@ -80,7 +80,7 @@
             <p>{{ t('monitor.resources.queriedAt') }}: {{ formatDateTime(collection.queried_at) }}</p>
           </template>
           <el-button v-if="canObserve && target.monitor_kind === 'host_resources'" text type="primary" @click="navigate(`/node-resources/${target.subject.node_id}`, {})">{{ t('monitor.targets.collection.resources') }}</el-button>
-          <el-button v-if="canObserve && auth.hasPermission('platform.module.read') && target.monitor_kind === 'frontend_resources'" text type="primary" @click="navigate('/service-resources', { tab: 'frontend', node_id: target.subject.node_id })">{{ t('monitor.targets.collection.frontendLink') }}</el-button>
+          <el-button v-if="canObserve && auth.hasPermission('platform.module.read') && target.monitor_kind === 'frontend_resources'" text type="primary" @click="navigate('/service-resources', { node_id: target.subject.node_id })">{{ t('monitor.targets.collection.frontendLink') }}</el-button>
         </section>
         <p v-if="creating" class="target-hint">{{ t('monitor.targets.configHint') }}</p>
         <el-button text type="primary" @click="openNodes">{{ t('monitor.targets.nodeInventory') }}</el-button>

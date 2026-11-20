@@ -291,7 +291,7 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 
 引擎监控的 Infra 页显示 Meilisearch 搜索任务，计算运行时页显示 GeoPython。固定查询 `/platform/engine_runtime_observations` 只允许持有 `monitor.resource_observation.read` 和 `platform.engine_deployment.read` 的非委托 Platform User。Monitor 沿 System 当前身份读取安全摘要，结束时重核部署或运行实例，GeoPython 续期允许同一实例的租约前进。Meilisearch 显示待处理、最老等待和当前保留失败任务数，GeoPython 显示有效 CPU 核数、内存上限、栅格任务运行数及等待数和准入状态。Meilisearch 时间范围限制在当前容器启动后，GeoPython 限制在当前运行实例启动后，趋势有缺样断点。空清单、发现不可用、来源不可用及有效零值分别表示。两项保持已有独立来源身份，结果不返回采集端点、容器 ID 或业务数据。
 
-服务监控顶部显示全平台 ADDP 服务资源总量。固定查询 `/platform/process_resource_totals` 由持有 `monitor.resource_observation.read` 和 `platform.module.read` 的非委托 Platform User 读取。以 System 当前用户可读模块在有效租约中的后端、Worker、调度和入口实例为分母，按实例启动身份去重，范围独立于页面筛选和分页。复用进程目录的一分钟 CPU 核占用与当前 RSS，Prometheus 在同一评估时刻按模块汇总有效样本。CPU、RSS 各自返回有效覆盖和合计，零覆盖值为空。RSS 可能包含多个进程共用的内存页。查询结束重核模块与当前实例集合，权限或实例变化使本轮无效。独立引擎与数据基础设施的资源仍沿引擎和主机页。
+服务监控顶部显示全平台 ADDP 服务进程资源总量，前端节点采样在模块卡片内单列。固定查询 `/platform/process_resource_totals` 由持有 `monitor.resource_observation.read` 和 `platform.module.read` 的非委托 Platform User 读取。以 System 当前用户可读模块在有效租约中的后端、Worker、调度和入口实例为分母，按实例启动身份去重，范围独立于页面筛选和分页。复用进程目录的一分钟 CPU 核占用与当前 RSS，Prometheus 在同一评估时刻按模块汇总有效样本。CPU、RSS 各自返回有效覆盖和合计，零覆盖值为空。RSS 可能包含多个进程共用的内存页。查询结束重核模块与当前实例集合，权限或实例变化使本轮无效。独立引擎与数据基础设施的资源仍沿引擎和主机页。
 
 资源总览的采集中心卡片经 `/platform/metrics_collection_health` 读取同一 Prometheus 自身采样。仅限有 `monitor.resource_observation.read` 的非委托 Platform User。使用固定 Job，展示已发现目标数、最近有效抓取在线及失败数、配置目标预算、最近五分钟是否发生发现失败、TSDB 块／Head chunks／WAL 体积及配置留存上限。目标变化造成发现与采样暂时错开时按缺样处理。体积口径为上述三项的合计，主机可用磁盘仍由主机监控提供。
 
@@ -309,7 +309,7 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 
 #### 服务列表与主机关联
 
-服务按 System 管理的实例筛选和分页。默认在线且已声明采集，仍显示采集失败和缺样的实例，可切换全部实例。当前页按模块归入卡片，每实例独立显示角色、租约、采集状态及 CPU／RSS，展开查看运行时长及时间信息，可进入该实例趋势。分组只作用于当前页，不汇总实例指标。在线状态按租约显示 `UP`／`DOWN` 和本地化文字，采集状态与在线独立。Worker 用途只读 `metadata.runtime_name`，未知时只显示正式角色。
+服务监控默认读取 System 在线且已声明采集的实例，合并各页登记；有主机读权时，一并展示所选节点的前端观测。每个模块一张等尺寸摘要卡，依次列出后端（含入口与调度）、前端和 Worker 的 CPU 与内存。同角色多个实例在该项都有有效样本时求和，缺少角色或样本显示「—」。展开后查看每个实例的角色、租约、采集状态和趋势，以及前端运行方式、页面入口、脚本和重启次数。使用实例条件、历史或采集覆盖筛选时，沿 System 实例分页，仅汇总当前页匹配的实例。在线状态按租约显示 `UP`／`DOWN` 和本地化文字，采集状态与在线独立。Worker 用途只读 `metadata.runtime_name`，未知时只显示正式角色。
 
 | 筛选 | Monitor 使用边界 |
 | --- | --- |

@@ -9,6 +9,7 @@ import { overviewResponse } from './resource-overview-response.js'
 export async function overviewBackend(page, options = {}) {
   const base = await resourceBackend(page, { ...options, identity: options.identity || identity(overviewPermissions) })
   await page.route(`**/api/v1/system/platform/host_nodes/${overviewNodeID}`, route => route.fulfill({ json: { node_id: overviewNodeID, display_name: '完整范围主机41', node_kind: 'virtual', version: 1, enabled: true, addresses: ['127.0.0.1'] } }))
+  await page.route('**/api/v1/monitor/platform/frontend_nodes', route => route.fulfill({ json: { data: [] } }))
   const calls = [], coverageCalls = []
   let coverageMode = 'valid'
   let mode = 'valid', stamp = '2026-10-13T00:00:00Z', held = null, resolve

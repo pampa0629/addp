@@ -2,16 +2,11 @@
   <section class="process-resources" :aria-busy="loading">
     <div class="process-toolbar">
       <h2>{{ t('monitor.process.title') }}</h2>
-      <AutoRefreshControl v-if="canRead && state.tab !== 'frontend'" :model-value="state.refresh" :status="refreshStatus" test-id="process-refresh" @update:model-value="selectRefresh" />
-      <el-button v-if="state.tab !== 'frontend'" :disabled="!canRead" :loading="loading" @click="reload({ refreshModules: true })">{{ t('common.refresh') }}</el-button>
+      <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="process-refresh" @update:model-value="selectRefresh" />
+      <el-button :disabled="!canRead" :loading="loading" @click="reload({ refreshModules: true })">{{ t('common.refresh') }}</el-button>
     </div>
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
-    <el-tabs v-if="canReadHost" :model-value="state.tab || 'services'" @update:model-value="changeView">
-      <el-tab-pane :label="t('monitor.frontend.services')" name="services" />
-      <el-tab-pane :label="t('monitor.frontend.title')" name="frontend" />
-    </el-tabs>
-    <FrontendResources v-if="canReadHost && state.tab === 'frontend'" :key="identity" :node-id="state.nodeID" :can-configure="canConfigureFrontend" @configure="openFrontendConfiguration" @update:node-id="nodeID => navigate(resolveProcessRoute({ tab: 'frontend', node_id: nodeID }).query)" />
-    <template v-else-if="canRead">
+    <template v-if="canRead">
       <section class="process-totals" data-testid="process-totals">
         <h3 class="process-total-title">{{ t('monitor.processTotals.title') }} <FieldHelp :content="t('monitor.processTotals.scope')" /></h3>
         <el-alert v-if="totalsError" :title="t(totalsError)" type="warning" :closable="false" />
@@ -77,6 +72,15 @@
         <el-button :disabled="!validTimeDraft" @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
         <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
+      <section v-if="canReadHost && moduleOverview" data-testid="frontend-resources" class="frontend-source">
+        <label v-if="frontendOptions.length">{{ t('monitor.frontend.selectNode') }}
+          <el-select :model-value="frontendNodeID" :aria-label="t('monitor.frontend.selectNode')" @update:model-value="node_id => navigate({ ...state.query, node_id })">
+            <el-option v-for="node in frontendOptions" :key="node.node_id" :label="node.display_name" :value="node.node_id" />
+          </el-select>
+        </label>
+        <span v-if="frontendError || frontendState">{{ t(frontendError || frontendState) }}</span>
+        <el-button v-if="canConfigureFrontend" text type="primary" @click="openFrontendConfiguration">{{ t('monitor.frontend.configure') }}</el-button>
+      </section>
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
       <section v-if="showCoverage && instances.length" class="process-coverage" :aria-label="t('monitor.process.coverage.title')">
         <div class="process-toolbar">
@@ -95,41 +99,56 @@
         </el-table>
       </section>
       <div v-loading="loading && !instances.length" data-testid="process-list">
-        <el-empty v-if="!loading && !visibleInstances.length" :description="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" />
-        <ModuleInstanceCards :instances="visibleInstances" test-prefix="process" v-slot="{ row }">
-          <p class="process-hint">
-            <span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span>
-            · <MonitoredHostLink data-testid="process-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" />
-          </p>
-          <p class="process-hint">
-            <strong>{{ collectionState(row) }}</strong>
-            <span v-if="sampledAt(row)"> · {{ sampledAt(row) }}</span>
-          </p>
-          <p v-if="row.status === 'down'" class="process-hint" data-testid="process-stop-reason">{{ stopReasonLabel(row) }}</p>
-          <p v-if="row.status === 'down' && row.stop_reason === 'lease_expired'" class="process-hint">{{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}</p>
-          <dl class="instance-metrics">
-            <div v-for="metric in headlineMetrics" :key="metric.key">
-              <dt>{{ t(`monitor.process.metrics.${metric.name}`) }} <FieldHelp :content="t(`monitor.process.hints.${metric.name}`)" /></dt>
-              <dd><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></dd>
+        <el-empty v-if="!loading && !visibleInstances.length && !frontendRows.size" :description="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" />
+        <ModuleInstanceCards :instances="visibleInstances" :frontend-modules="[...frontendRows.keys()]" test-prefix="process">
+          <template #overview="{ moduleName: name, rows }">
+            <div class="role-metrics">
+              <span></span><span>{{ t('monitor.frontend.cpu') }}</span><span>{{ t('monitor.frontend.memory') }}</span>
+              <template v-for="group in roleMetrics(rows, frontendRows.get(name))" :key="group.label">
+                <strong>{{ t(group.label) }}</strong>
+                <span>{{ comparisonValue(group.cpu, headlineMetrics[0]) }}</span>
+                <span>{{ comparisonValue(group.memory, headlineMetrics[1]) }}</span>
+              </template>
             </div>
-          </dl>
-          <details>
-            <summary>{{ t('monitor.process.moreMetrics') }}</summary>
+          </template>
+          <template #frontend="{ moduleName: name }">
+            <FrontendResources v-if="frontendRows.has(name)" :row="frontendRows.get(name)" :node-name="frontendNodeName" />
+          </template>
+          <template #default="{ row }">
+            <p class="process-hint">
+              <span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span>
+              · <MonitoredHostLink data-testid="process-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" />
+            </p>
+            <p class="process-hint">
+              <strong>{{ collectionState(row) }}</strong>
+              <span v-if="sampledAt(row)"> · {{ sampledAt(row) }}</span>
+            </p>
+            <p v-if="row.status === 'down'" class="process-hint" data-testid="process-stop-reason">{{ stopReasonLabel(row) }}</p>
+            <p v-if="row.status === 'down' && row.stop_reason === 'lease_expired'" class="process-hint">{{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}</p>
             <dl class="instance-metrics">
-              <div>
-                <dt>{{ t('monitor.process.metrics.uptime') }} <FieldHelp :content="t('monitor.process.hints.uptime')" /></dt>
-                <dd><strong>{{ value(row, uptimeMetric) }}</strong><p v-if="point(row, uptimeMetric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, uptimeMetric) }}</p></dd>
-              </div>
-              <div>
-                <dt>{{ t(`common.runtimeInstanceTime.${state.timeBasis}Time`) }}</dt>
-                <dd>{{ row[instanceTimeField] ? date(row[instanceTimeField]) : '—' }}</dd>
+              <div v-for="metric in headlineMetrics" :key="metric.key">
+                <dt>{{ t(`monitor.process.metrics.${metric.name}`) }} <FieldHelp :content="t(`monitor.process.hints.${metric.name}`)" /></dt>
+                <dd><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></dd>
               </div>
             </dl>
-          </details>
-          <el-button text type="primary" :disabled="row.status !== 'up' || !row.process_metrics_declared || loading" @click="selectTrend(row.id)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button>
+            <details>
+              <summary>{{ t('monitor.process.moreMetrics') }}</summary>
+              <dl class="instance-metrics">
+                <div>
+                  <dt>{{ t('monitor.process.metrics.uptime') }} <FieldHelp :content="t('monitor.process.hints.uptime')" /></dt>
+                  <dd><strong>{{ value(row, uptimeMetric) }}</strong><p v-if="point(row, uptimeMetric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, uptimeMetric) }}</p></dd>
+                </div>
+                <div>
+                  <dt>{{ t(`common.runtimeInstanceTime.${state.timeBasis}Time`) }}</dt>
+                  <dd>{{ row[instanceTimeField] ? date(row[instanceTimeField]) : '—' }}</dd>
+                </div>
+              </dl>
+            </details>
+            <el-button text type="primary" :disabled="row.status !== 'up' || !row.process_metrics_declared || loading" @click="selectTrend(row.id)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button>
+          </template>
         </ModuleInstanceCards>
       </div>
-      <el-pagination v-if="!errorKey && (instances.length || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
+      <el-pagination v-if="!moduleOverview && !errorKey && (instances.length || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
       <el-dialog :model-value="Boolean(state.instanceID)" :title="t('monitor.process.trend.title')" width="min(960px, calc(100vw - 32px))" destroy-on-close @close="closeTrend">
         <div v-loading="loading && !trend" :aria-busy="loading" data-testid="process-trend">
           <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
@@ -157,6 +176,7 @@
 </template>
 
 <script setup>
+import { isTargetUUID } from '../utils/monitoringTargets'
 import FrontendResources from '../components/FrontendResources.vue'
 import ModuleInstanceCards from '../components/ModuleInstanceCards.vue'
 import ModuleNameSelect from '../components/ModuleNameSelect.vue'
@@ -231,6 +251,67 @@ const visibleInstances = computed(() => showCoverage.value && collectionFilter.v
   : instances.value)
 const headlineMetrics = processMetrics.slice(0, 2)
 const uptimeMetric = processMetrics[2]
+// Registration history and endpoint filters apply to System instances only.
+const moduleOverview = computed(() => state.value.moduleOverview)
+const frontendNodes = ref([]), frontendObservation = ref(null), frontendError = ref(''), frontendBlocked = ref(false)
+const defaultFrontendNode = ref('')
+const frontendNodeID = computed(() => state.value.nodeID || (frontendNodes.value.length ? defaultFrontendNode.value : ''))
+const frontendOptions = computed(() => frontendNodeID.value && !frontendNodes.value.some(item => item.node_id === frontendNodeID.value)
+  ? [{ node_id: frontendNodeID.value, display_name: frontendObservation.value?.node?.display_name || frontendNodeID.value }, ...frontendNodes.value] : frontendNodes.value)
+const frontendNodeName = computed(() => frontendOptions.value.find(node => node.node_id === frontendNodeID.value)?.display_name)
+const frontendState = computed(() => {
+  if (frontendObservation.value && frontendObservation.value.source_state !== 'collecting') return `monitor.frontend.states.${frontendObservation.value.source_state}`
+  return !loading.value && !frontendNodeID.value ? 'monitor.frontend.noConfiguredNodes' : ''
+})
+const frontendRows = computed(() => new Map((canReadHost.value && moduleOverview.value && frontendObservation.value?.source_state === 'collecting'
+  ? frontendObservation.value.data : []).filter(row => !state.value.module || row.module === state.value.module).map(row => [row.module, row])))
+async function loadFrontend(ticket) {
+  try {
+    const { data } = await requests.request(api.frontendNodes)
+    if (!requests.current(ticket)) return
+    if (!Array.isArray(data) || data.length > 100 || data.some(node => !isTargetUUID(node?.node_id) || !node.display_name?.trim() || typeof node.enabled !== 'boolean') ||
+        new Set(data.map(node => node.node_id)).size !== data.length) throw new Error('invalid_resource_response')
+    frontendNodes.value = data
+    if (!data.some(node => node.node_id === defaultFrontendNode.value)) defaultFrontendNode.value = data[0]?.node_id || ''
+  } catch (error) {
+    if (!requests.current(ticket)) return
+    frontendNodes.value = []
+    defaultFrontendNode.value = ''
+    if (!state.value.nodeID) {
+      frontendObservation.value = null
+      frontendError.value = resourceErrorKey(error)
+      frontendBlocked.value = [401, 403, 404].includes(error.response?.status)
+      return
+    }
+  }
+  try {
+    const id = frontendNodeID.value
+    if (!id) { frontendObservation.value = null; frontendError.value = ''; return }
+    if (frontendObservation.value?.node.node_id !== id) frontendObservation.value = null
+    const result = await requests.request(config => api.frontend(id, config))
+    if (!requests.current(ticket)) return
+    if (result.node?.node_id !== id || !Array.isArray(result.data) || !['collecting', 'not_connected', 'disabled', 'no_sample'].includes(result.source_state)) throw new Error('invalid_resource_response')
+    frontendObservation.value = result
+    frontendError.value = ''
+  } catch (error) {
+    if (!requests.current(ticket)) return
+    frontendObservation.value = null
+    frontendError.value = resourceErrorKey(error)
+    frontendBlocked.value = [401, 403, 404].includes(error.response?.status)
+  }
+}
+function roleMetrics(rows, frontend) {
+  const sum = (instances, metric) => {
+    const values = instances.map(row => currentResourceValue(point(row, metric)))
+    return values.length && values.every(n => n !== null) ? values.reduce((total, n) => total + n, 0) : null
+  }
+  const processGroup = (label, instances) => ({ label, cpu: sum(instances, headlineMetrics[0]), memory: sum(instances, headlineMetrics[1]) })
+  return [
+    processGroup('monitor.process.roles.backend', rows.filter(row => row.role !== 'worker')),
+    { label: 'monitor.frontend.title', cpu: frontend?.cpu_cores ?? null, memory: frontend?.memory_bytes ?? null },
+    processGroup('monitor.process.roles.worker', rows.filter(row => row.role === 'worker'))
+  ]
+}
 const instanceTimeField = computed(() => state.value.timeBasis === 'offline' ? 'stopped_at' : 'registered_at')
 const coverage = computed(() => {
   const groups = new Map()
@@ -321,9 +402,6 @@ async function loadHosts(rows, ticket) {
   const value = await loadHostReferences(rows.map(row => row.node_id), id => requests.request(config => hostsAPI.node(id, config)), current)
   if (current()) hostReferences.value = value
 }
-function changeView(tab) {
-  return navigate(tab === 'frontend' ? { tab } : {})
-}
 function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, compare: instanceID === state.value.instanceID ? state.value.query.compare : undefined, instance_id: String(instanceID), range }).query) }
 function selectComparison(enabled) { return navigate(resolveProcessRoute({ ...state.value.query, compare: enabled ? 'previous' : undefined }).query) }
@@ -335,7 +413,7 @@ const filter = () => filterInput.submit()
 function selectModule(name) { moduleName.value = name; return filter() }
 function applyFilters() {
   if (!validTimeDraft.value) { refreshCycle.schedule(); return }
-  const query = resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value, registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query
+  const query = resolveProcessRoute({ ...timeDraft(), node_id: state.value.nodeID, refresh: state.value.refresh, module_name: moduleName.value, registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query
   return navigate(query)
 }
 function setScope(scope) {
@@ -344,7 +422,7 @@ function setScope(scope) {
   const coverageScope = scope === 'coverage'
   return navigate(resolveProcessRoute({
     ...(coverageScope && timeBasis.value === 'offline' ? {} : timeDraft()),
-    refresh: state.value.refresh, module_name: moduleName.value,
+    node_id: state.value.nodeID, refresh: state.value.refresh, module_name: moduleName.value,
     registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value,
     stop_reason: coverageScope ? undefined : stopReason.value,
     status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'current' ? 'true' : 'all'
@@ -373,20 +451,13 @@ function processErrorKey(error) {
 }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
-  enabled: () => canRead.value && route.name === 'ProcessResources' && state.value.tab !== 'frontend' && !state.value.changed && !refreshBlocked.value && !loading.value && !filterInput.pending,
+  enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value && !filterInput.pending,
   refresh: () => reload({ automatic: true }),
   pause: () => { requests.invalidate(); loading.value = false; totals.value = null },
   visibilityChanged: visible => { pageVisible.value = visible; filterInput.visibilityChanged(visible) }
 })
 async function reload({ automatic = false, refreshModules = false } = {}) {
   if (disposed || route.name !== 'ProcessResources') { refreshCycle.stop(); requests.invalidate(); return }
-  if (state.value.tab === 'frontend') {
-    refreshCycle.stop()
-    requests.invalidate()
-    loading.value = false
-    if (state.value.changed || !canReadHost.value) await navigate(canReadHost.value ? state.value.query : {})
-    return
-  }
   if (automatic && (loading.value || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   refreshCycle.stop()
   const ticket = requests.invalidate()
@@ -394,32 +465,47 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
   if (!automatic) cancelFilter()
   const context = JSON.stringify([{ ...state.value.query, refresh: undefined }, identity.value])
   if (context !== dataContext) {
+    frontendObservation.value = null; frontendNodes.value = []; frontendError.value = ''
     dataContext = context
     totals.value = null
     startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; container.value = null
   }
-  if (!automatic) refreshBlocked.value = false
+  if (!automatic) { refreshBlocked.value = false; frontendBlocked.value = false }
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   totalsError.value = ''
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
   if (!automatic) { stopReason.value = state.value.stopReason; timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; nodeName.value = state.value.nodeName; nodeIP.value = state.value.nodeIP; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
+  const frontendLoad = canReadHost.value && moduleOverview.value && !frontendBlocked.value ? loadFrontend(ticket) : null
   if (refreshModules) moduleRevision.value++
   try {
     const listParams = processInstanceParameters(state.value)
     const list = await requests.request(config => api.instances(listParams, config))
     if (!requests.current(ticket)) return
-    validateProcessInstances(list, state.value.page, listParams)
+    validateProcessInstances(list, listParams.page, listParams)
+    if (moduleOverview.value) {
+      const byID = new Map(list.data.map(row => [row.id, row]))
+      for (let page = 2; page <= Math.ceil(list.total / listParams.page_size); page++) {
+        const more = await requests.request(config => api.instances({ ...listParams, page }, config))
+        if (!requests.current(ticket)) return
+        validateProcessInstances(more, page, listParams)
+        for (const row of more.data) byID.set(row.id, row)
+      }
+      list.data = [...byID.values()]
+    }
     void loadStartupFailures(ticket)
     if (!instances.value.length) { instances.value = list.data; total.value = list.total }
     let currentSummaries = new Map(), currentTrend = null, currentComparisons = null
     if (list.data.length) {
       try {
-        const observed = await requests.request(config => api.summaries(list.data.map(row => row.id), config))
-        if (!requests.current(ticket)) return
-        currentSummaries = validateProcessSummaries(observed, list.data)
+        for (let offset = 0; offset < list.data.length; offset += 20) {
+          const batch = list.data.slice(offset, offset + 20)
+          const observed = await requests.request(config => api.summaries(batch.map(row => row.id), config))
+          if (!requests.current(ticket)) return
+          for (const [id, summary] of validateProcessSummaries(observed, batch)) currentSummaries.set(id, summary)
+        }
       } catch (error) {
         if (!requests.current(ticket)) return
         if ([401, 403, 404].includes(error.response?.status)) throw error
@@ -468,7 +554,7 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
     startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally {
-    if (requests.current(ticket) && !refreshBlocked.value) await loadTotals(ticket)
+    await Promise.all([frontendLoad, requests.current(ticket) && !refreshBlocked.value ? loadTotals(ticket) : null])
     if (requests.current(ticket)) {
       if (refreshBlocked.value) totals.value = null
       loading.value = false
@@ -490,6 +576,12 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 </script>
 
 <style scoped>
+.frontend-source, .frontend-source label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.frontend-source { margin-bottom: 16px; font-size: 13px; color: var(--addp-text-secondary); }
+.frontend-source .el-select { width: min(240px, 100%); }
+.role-metrics { display: grid; grid-template-columns: minmax(62px, 1fr) repeat(2, minmax(0, 1fr)); align-items: center; font-size: 13px; line-height: 26px; font-variant-numeric: tabular-nums; }
+.role-metrics > span { text-align: end; }
+.role-metrics > span:nth-child(-n+3) { color: var(--addp-text-secondary); font-size: 12px; }
 .process-totals { padding: 16px 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); margin-bottom: 16px; }
 .process-totals h3 { margin: 0 0 12px; font-size: 16px; }
 .process-total-title { display: flex; align-items: center; gap: 4px; }

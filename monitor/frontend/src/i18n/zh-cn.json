@@ -1083,7 +1083,7 @@
       "storage": "TSDB 占用 / 留存上限"
     },
     "processTotals": {
-      "title": "ADDP 服务资源总量",
+      "title": "ADDP 服务进程资源总量",
       "scope": "当前统计后端、Worker、调度进程和网关。",
       "cpu": "近一分钟 CPU 核占用",
       "rss": "进程 RSS 合计",

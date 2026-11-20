@@ -71,6 +71,10 @@ export async function backend(page, options = {}) {
       if (mode === 'unavailable' || mode === 'denied') { status = mode === 'denied' ? 403 : 503; body = { error_code: mode === 'denied' ? 'permission_denied' : 'observability_backend_unavailable' } }
       if (collectionHeld) await collectionHeld
     }
+    else if (path === '/api/v1/system/platform/module-instances') body = { page: 1, page_size: 20, total: 0, data: [] }
+    else if (path === '/api/v1/system/platform/modules') body = { modules: [], count: 0 }
+    else if (path === '/api/v1/system/platform/module_startup_failures') body = { data: [] }
+    else if (path === '/api/v1/monitor/platform/process_resource_totals') body = { total: { expected: 0, cpu: { valid: 0, value: null }, rss: { valid: 0, value: null } }, modules: [] }
     else if (path === '/api/v1/monitor/platform/frontend_nodes') {
       body = { data: target?.monitor_kind === 'frontend_resources' ? [{ node_id: node, display_name: '测试主机', enabled: target.enabled }] : [] }
     }

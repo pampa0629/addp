@@ -1083,7 +1083,7 @@
       "storage": "TSDB footprint / retention limit"
     },
     "processTotals": {
-      "title": "ADDP service resource totals",
+      "title": "ADDP service process resource totals",
       "scope": "Covers backends, workers, schedulers, and the gateway.",
       "cpu": "CPU cores used over the last minute",
       "rss": "Combined process RSS",

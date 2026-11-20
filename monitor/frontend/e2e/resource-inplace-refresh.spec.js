@@ -65,7 +65,7 @@ for (const automatic of [false, true]) test(`service ${automatic ? 'automatic' :
   else await page.getByRole('dialog').getByRole('button', { name: '刷新', exact: true }).click()
   await expect.poll(() => state.calls.length).toBe(before + 1)
   await expect(page.getByTestId('process-list')).toContainText('1.50 核')
-  await expect(page.locator('.el-pagination')).toBeVisible()
+  await expect(page.locator('.module-summary')).toBeVisible()
   await expect(page.getByTestId('container-proof-state')).toBeVisible()
   await expect(page.getByTestId('process-list').locator('.el-loading-mask')).toHaveCount(0)
   await expect(page.getByTestId('process-trend').locator('.el-loading-mask')).toHaveCount(0)

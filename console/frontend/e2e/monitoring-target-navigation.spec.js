@@ -87,10 +87,10 @@ test('Console opens configured frontend metrics and links directly to frontend c
       { module: 'console', mode: 'vite', entry_up: true, asset_up: true, cpu_cores: 0.23, memory_bytes: 128 * 1024 ** 2, restart_count: null }
     ] } })
   })
-  await page.goto('/monitor/service-resources?tab=frontend')
+  await page.goto(`/monitor/service-resources?node_id=${node}`)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-  await expect(page).toHaveURL(new RegExp(`/monitor/service-resources\\?tab=frontend&node_id=${node}$`))
-  await expect(frame.getByRole('row', { name: /console/ })).toContainText('128.00 MiB')
+  await expect(page).toHaveURL(new RegExp(`/monitor/service-resources\\?node_id=${node}$`))
+  await expect(frame.getByTestId('process-module-card').filter({ hasText: 'console' }).locator('.module-summary')).toContainText('128.00 MiB')
   await frame.getByRole('button', { name: '配置前端采集', exact: true }).click()
   await expect(page).toHaveURL(/\/monitor\/monitoring-targets\?tab=core$/)
   await expect(frame.getByRole('tab', { name: 'ADDP 核心服务', exact: true })).toHaveAttribute('aria-selected', 'true')

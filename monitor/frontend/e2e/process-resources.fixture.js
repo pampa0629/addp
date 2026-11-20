@@ -26,6 +26,7 @@ export async function backend(page, options = {}) {
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity(permissions)
+    else if (path === '/api/v1/monitor/platform/frontend_nodes') body = { data: [] }
     else if (path === '/api/v1/system/platform/modules') {
       const modules = (options.modules || [...new Set(rows.map(row => row.module_name))]).map(module_name => ({ module_name }))
       body = { modules, count: modules.length }
@@ -52,7 +53,7 @@ export async function backend(page, options = {}) {
           (!url.searchParams.has('time_from') || Date.parse(time) >= Date.parse(url.searchParams.get('time_from'))) &&
           (!url.searchParams.has('time_to') || Date.parse(time) < Date.parse(url.searchParams.get('time_to'))) && (!url.searchParams.has('registered_host') || (row.registered_host || '').toLowerCase() === url.searchParams.get('registered_host')) && (!url.searchParams.has('status') || row.status === url.searchParams.get('status')) && (!url.searchParams.has('process_metrics_declared') || String(row.process_metrics_declared) === url.searchParams.get('process_metrics_declared'))
       })
-      body = { data: filtered.slice((pageNumber - 1) * 20, pageNumber * 20), page: pageNumber, page_size: 20, total: options.scopes || options.workerTypes || options.instances ? filtered.length : 21 }
+      body = { data: filtered.slice((pageNumber - 1) * 20, pageNumber * 20), page: pageNumber, page_size: 20, total: options.scopes || options.workerTypes || options.instances || !url.searchParams.has('role') ? filtered.length : 21 }
     } else if (path.startsWith('/api/v1/system/platform/host_nodes/')) {
       const id = path.split('/').at(-1)
       hostReads.push(id)
