@@ -23,7 +23,7 @@ func testMySQLOAuthServiceCredential(t *testing.T, db *gorm.DB) {
 	}
 	exec("INSERT INTO principals (id, principal_type) VALUES (104, 'service_principal'), (105, 'service_principal')")
 	exec(`INSERT INTO service_principals (id, name, owner_scope, created_by_principal_id)
-		VALUES (104, 'addp-meta', 'platform', 100)`)
+		VALUES (104, 'fixture-platform-service', 'platform', 100)`)
 	for _, invalid := range []string{
 		`INSERT INTO service_principals (id, name, owner_scope, created_by_principal_id)
 		 VALUES (100, 'invalid-subtype', 'platform', 100)`,
@@ -55,13 +55,13 @@ func testMySQLOAuthServiceCredential(t *testing.T, db *gorm.DB) {
 	if err := db.Exec(insert, "addp_svc_wrongtenant00001", string(hash), 104, "tenant", 90).Error; err == nil {
 		t.Fatal("accepted a client owned by a different tenant than its principal")
 	}
-	exec(insert, "addp-meta", string(hash), 104, "platform", nil)
+	exec(insert, "fixture-platform-service", string(hash), 104, "platform", nil)
 	exec(insert, "addp_svc_correcttenant001", string(hash), 105, "tenant", 90)
 	for _, invalid := range []string{
-		"UPDATE oauth_clients SET allowed_scopes=JSON_ARRAY('addp.api', 'other') WHERE client_id='addp-meta'",
-		"UPDATE oauth_clients SET grant_types=JSON_ARRAY('authorization_code') WHERE client_id='addp-meta'",
-		"UPDATE oauth_clients SET service_principal_id=NULL WHERE client_id='addp-meta'",
-		"DELETE FROM oauth_clients WHERE client_id='addp-meta'",
+		"UPDATE oauth_clients SET allowed_scopes=JSON_ARRAY('addp.api', 'other') WHERE client_id='fixture-platform-service'",
+		"UPDATE oauth_clients SET grant_types=JSON_ARRAY('authorization_code') WHERE client_id='fixture-platform-service'",
+		"UPDATE oauth_clients SET service_principal_id=NULL WHERE client_id='fixture-platform-service'",
+		"DELETE FROM oauth_clients WHERE client_id='fixture-platform-service'",
 	} {
 		if err := db.Exec(invalid).Error; err == nil {
 			t.Fatalf("accepted invalid service client change: %s", invalid)
@@ -73,7 +73,7 @@ func testMySQLOAuthServiceCredential(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	client, err := storage.GetClient(ctx, "addp-meta")
+	client, err := storage.GetClient(ctx, "fixture-platform-service")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +84,8 @@ func testMySQLOAuthServiceCredential(t *testing.T, db *gorm.DB) {
 		bcrypt.CompareHashAndPassword(client.GetHashedSecret(), []byte(secret)) != nil {
 		t.Fatal("OAuth storage did not return the service client and its exact credential contract")
 	}
-	exec("UPDATE oauth_clients SET status='disabled' WHERE client_id='addp-meta'")
-	if _, err := storage.GetClient(ctx, "addp-meta"); !errors.Is(err, fosite.ErrNotFound) {
+	exec("UPDATE oauth_clients SET status='disabled' WHERE client_id='fixture-platform-service'")
+	if _, err := storage.GetClient(ctx, "fixture-platform-service"); !errors.Is(err, fosite.ErrNotFound) {
 		t.Fatalf("disabled client lookup returned %v", err)
 	}
 }

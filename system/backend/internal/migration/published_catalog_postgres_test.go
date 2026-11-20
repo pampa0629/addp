@@ -11,6 +11,7 @@ import (
 // Compare a freshly migrated database before any test identities are created.
 func assertPublishedRoleBindingsAndRisks(t *testing.T, db *sql.DB) {
 	t.Helper()
+	assertInstalledMachineCatalog(t, db)
 	catalog, err := commonauth.LoadRepositoryAuthorizationCatalog(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

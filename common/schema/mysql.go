@@ -16,6 +16,12 @@ const mysqlMigrationLock = "SHA2(CONCAT('addp.schema/', DATABASE(), '/', ?), 256
 // MigrateMySQL coordinates a retryable owner migration in the selected physical
 // database. Apply must be able to resume after any committed DDL statement.
 func MigrateMySQL(db *gorm.DB, owner string, version int64, apply func(*gorm.DB) error) error {
+	return MigrateMySQLWithData(db, owner, version, apply, nil)
+}
+
+// MigrateMySQLWithData commits the data migration and completion revision
+// together after retryable DDL. The callback receives the last completed version.
+func MigrateMySQLWithData(db *gorm.DB, owner string, version int64, apply func(*gorm.DB) error, data func(*gorm.DB, int64) error) error {
 	if db == nil || db.Dialector.Name() != "mysql" || !validMySQLSchemaOwner(owner) || version < 1 || apply == nil {
 		return fmt.Errorf("invalid MySQL schema migration contract: %q version %d", owner, version)
 	}
@@ -72,7 +78,14 @@ func MigrateMySQL(db *gorm.DB, owner string, version int64, apply func(*gorm.DB)
 		if err := apply(conn.Session(&gorm.Session{NewDB: true})); err != nil {
 			return fmt.Errorf("migrate MySQL schema %s to %d: %w", owner, version, err)
 		}
-		return conn.Exec("UPDATE startup_schema_revision SET version = ?, pending_version = 0 WHERE owner = ?", version, owner).Error
+		return conn.Transaction(func(tx *gorm.DB) error {
+			if data != nil {
+				if err := data(tx, current.Version); err != nil {
+					return fmt.Errorf("migrate MySQL data for %s to %d: %w", owner, version, err)
+				}
+			}
+			return tx.Exec("UPDATE startup_schema_revision SET version = ?, pending_version = 0 WHERE owner = ?", version, owner).Error
+		})
 	})
 }
 

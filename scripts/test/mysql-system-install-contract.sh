@@ -35,8 +35,30 @@ test "$result" = 1
 grep -q 'trg_principals_updated_at differs' "$work/refused.err"
 echo 'DROP TRIGGER trg_principals_updated_at' | admin
 admin < "$work/triggers.sql"
+# A failure recording completion must also roll back all bootstrap identities and grants.
+admin <<'SQL'
+DELIMITER $$
+CREATE TRIGGER fixture_refuse_completion BEFORE UPDATE ON startup_schema_revision FOR EACH ROW
+BEGIN
+    IF NEW.pending_version=0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rejected revision completion';
+    END IF;
+END$$
+DELIMITER ;
+SQL
+result=0
+"$work/system-server" install-mysql-iam > "$work/incomplete.out" 2>"$work/incomplete.err" || result=$?
+test "$result" = 1
+grep -q 'fixture rejected revision completion' "$work/incomplete.err"
+test "$(echo 'SELECT (SELECT COUNT(*) FROM principals)+(SELECT COUNT(*) FROM oauth_clients)+(SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM role_assignments)+(SELECT COUNT(*) FROM role_permissions)' | admin)" = 0
+test "$(echo "SELECT version=0 AND pending_version>0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | admin)" = 1
+echo 'DROP TRIGGER fixture_refuse_completion' | admin
 "$work/system-server" install-mysql-iam > "$work/remaining.sql"
 test ! -s "$work/remaining.sql"
+"$work/system-server" install-mysql-iam
+test "$(echo "SELECT COUNT(*) FROM oauth_clients WHERE client_type='confidential' AND status='disabled' AND client_secret_hash IS NULL" | admin)" = 54
+test "$(echo "SELECT COUNT(*) FROM oauth_clients WHERE client_id='addp-cli' AND status='active' AND client_type='public' AND service_principal_id IS NULL" | admin)" = 1
+test "$(echo "SELECT COUNT(*) FROM role_assignments WHERE scope_type='platform' AND source_type='bootstrap'" | admin)" = 53
 test "$(echo "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND definer='iam_installer@%'" | admin)" = "$expected"
 admin <<'SQL'
 GRANT SELECT ON `system`.startup_schema_revision TO 'iam_runtime'@'%';

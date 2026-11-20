@@ -84,6 +84,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	mustExec("ALTER TABLE principals AUTO_INCREMENT=1000")
 	mustExec("INSERT INTO principals (id, principal_type) VALUES (100, 'user'), (101, 'service_principal'), (103, 'user')")
 	mustExec("INSERT INTO users (id, display_name) VALUES (100, ?), (103, 'Another user')", "验证用户 🧪")
 
@@ -117,6 +118,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion); err != nil {
 		t.Fatal(err)
 	}
+	assertInstalledMachineCatalog(t, pool)
 	var existingCode string
 	if err := db.Raw("SELECT code FROM tenants WHERE id=1").Row().Scan(&existingCode); err != nil || existingCode != "before-upgrade" {
 		t.Fatalf("upgrade did not retain the existing tenant: %q, %v", existingCode, err)

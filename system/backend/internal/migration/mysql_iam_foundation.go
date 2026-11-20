@@ -11,7 +11,7 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 13
+const mysqlIAMFoundationVersion int64 = 14
 
 //go:embed mysql_iam/*.sql
 var mysqlIAMFoundationSQL embed.FS
@@ -29,7 +29,7 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 		return fmt.Errorf("System IAM foundation requires the deployed system database")
 	}
 
-	return schema.MigrateMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion, func(conn *gorm.DB) error {
+	return schema.MigrateMySQLWithData(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion, func(conn *gorm.DB) error {
 		migrations, err := fs.ReadDir(mysqlIAMFoundationSQL, "mysql_iam")
 		if err != nil {
 			return err
@@ -49,5 +49,5 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 			}
 		}
 		return checkMySQLIAMTriggers(conn, triggers)
-	})
+	}, installMySQLPlatformMachineCatalog)
 }

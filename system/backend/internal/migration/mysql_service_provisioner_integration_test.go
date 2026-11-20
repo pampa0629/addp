@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,20 +29,11 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 	const clientID = "addp-meta-publisher"
 	const originalSecret = "fixture-only-original-publisher-secret"
 	const rotatedSecret = "fixture-only-replacement-publisher-secret"
-	exec("INSERT INTO principals (id, principal_type) VALUES (106, 'service_principal')")
-	exec(`INSERT INTO service_principals (id, name, owner_scope, created_by_principal_id)
-	      VALUES (106, 'addp-meta-publisher', 'platform', 100)`)
-	exec(`INSERT INTO oauth_clients (
-	    client_id, display_name, client_type, redirect_uris, grant_types, response_types, allowed_scopes,
-	    allowed_audiences, token_endpoint_auth_method, service_principal_id, status
-	  ) VALUES ('addp-meta-publisher', 'Publisher', 'confidential', JSON_ARRAY(), JSON_ARRAY('client_credentials'),
-	    JSON_ARRAY(), JSON_ARRAY('addp.api'), JSON_ARRAY('addp.api'), 'client_secret_basic', 106, 'disabled')`)
-	exec(`INSERT INTO roles (
-	    id, role_key, name_i18n_key, description_i18n_key, role_type, allowed_scope_types, allowed_principal_types, immutable
-	  ) VALUES (91, 'platform.publisher', 'publisher.name', 'publisher.description', 'platform_builtin',
-	    JSON_ARRAY('platform'), JSON_ARRAY('service_principal'), true)`)
-	exec(`INSERT INTO role_assignments (principal_id, role_id, scope_type, source_type)
-	      VALUES (106, 91, 'platform', 'bootstrap')`)
+	var principalID int64
+	if err := db.Raw("SELECT service_principal_id FROM oauth_clients WHERE client_id=?", clientID).Row().Scan(&principalID); err != nil {
+		t.Fatal(err)
+	}
+	entityID := strconv.FormatInt(principalID, 10)
 
 	provisioner, err := iam.NewServiceCredentialProvisioner(repo, nil)
 	if err != nil {
@@ -52,7 +44,7 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 			t.Fatal(err)
 		}
 	}
-	assertServiceAuditCount(t, db, "iam.service_principal.credential.provisioned", 1)
+	assertServiceAuditCount(t, db, entityID, "iam.service_principal.credential.provisioned", 1)
 
 	storage, err := iamoauth.NewStorage(db, 5*time.Second)
 	if err != nil {
@@ -93,7 +85,7 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	principal, err := repo.GetPrincipal(ctx, 106)
+	principal, err := repo.GetPrincipal(ctx, principalID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,12 +97,12 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 		t.Fatal("credential rotation committed despite failed audit")
 	}
 	exec("DROP TRIGGER fixture_fail_rotation_audit")
-	assertServiceAuditCount(t, db, "iam.service_principal.credential.rotated", 0)
+	assertServiceAuditCount(t, db, entityID, "iam.service_principal.credential.rotated", 0)
 	client, err = storage.GetClient(ctx, clientID)
 	if err != nil || bcrypt.CompareHashAndPassword(client.GetHashedSecret(), []byte(originalSecret)) != nil {
 		t.Fatalf("audit failure replaced the original credential: %v", err)
 	}
-	unchanged, err := repo.GetPrincipal(ctx, 106)
+	unchanged, err := repo.GetPrincipal(ctx, principalID)
 	if err != nil || unchanged.AuthorizationVersion != principal.AuthorizationVersion {
 		t.Fatalf("audit failure advanced the authorization version: %v", err)
 	}
@@ -121,7 +113,7 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 	if err := provisioner.ProvisionPublisher(ctx, clientID, rotatedSecret); err != nil {
 		t.Fatal(err)
 	}
-	assertServiceAuditCount(t, db, "iam.service_principal.credential.rotated", 1)
+	assertServiceAuditCount(t, db, entityID, "iam.service_principal.credential.rotated", 1)
 	client, err = storage.GetClient(ctx, clientID)
 	if err != nil || bcrypt.CompareHashAndPassword(client.GetHashedSecret(), []byte(rotatedSecret)) != nil ||
 		bcrypt.CompareHashAndPassword(client.GetHashedSecret(), []byte(originalSecret)) == nil {
@@ -138,7 +130,7 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 	auditWriter := iam.NewAuditWriter(repo)
 	audit = iam.AuditEvent{
 		EventName: "iam.test.audit", Result: iam.AuditResultDenied, RiskLevel: iam.AuditRiskLow,
-		ModuleName: "system", EntityType: "service_principal", EntityID: "106",
+		ModuleName: "system", EntityType: "service_principal", EntityID: entityID,
 		Details: map[string]any{"nested": []any{map[string]string{"Client_Secret": "fixture-only"}}},
 	}
 	if err := auditWriter.Write(ctx, audit); err == nil {
@@ -154,10 +146,10 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func assertServiceAuditCount(t *testing.T, db *gorm.DB, event string, expected int) {
+func assertServiceAuditCount(t *testing.T, db *gorm.DB, entityID, event string, expected int) {
 	t.Helper()
 	var actual int
-	if err := db.Raw("SELECT COUNT(*) FROM audit_logs WHERE event_name = ? AND entity_id = '106'", event).Row().Scan(&actual); err != nil || actual != expected {
+	if err := db.Raw("SELECT COUNT(*) FROM audit_logs WHERE event_name = ? AND entity_id = ?", event, entityID).Row().Scan(&actual); err != nil || actual != expected {
 		t.Fatalf("audit event count for %q = %d, want %d: %v", event, actual, expected, err)
 	}
 }

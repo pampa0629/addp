@@ -1,0 +1,102 @@
+package migration
+
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+
+	commonauth "github.com/addp/common/authorization"
+	"gorm.io/gorm"
+)
+
+// Versioned installation data for the platform clients, independent of tenant setup.
+//
+//go:embed mysql_iam_v14.json
+var mysqlIAMMachineCatalogV14 []byte
+
+type platformMachine struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	Role        string `json:"role"`
+	Reason      string `json:"reason"`
+}
+
+type machineCatalog struct {
+	Permissions []commonauth.PermissionDescriptor
+	Roles       []commonauth.BuiltinRoleDescriptor
+	Services    []platformMachine
+}
+
+func installMySQLPlatformMachineCatalog(tx *gorm.DB, from int64) error {
+	if from >= 14 {
+		return nil
+	}
+	var catalog machineCatalog
+	if err := json.Unmarshal(mysqlIAMMachineCatalogV14, &catalog); err != nil {
+		return err
+	}
+	insertID := func(query string, args ...any) (int64, error) {
+		result, err := tx.Statement.ConnPool.ExecContext(tx.Statement.Context, query, args...)
+		if err != nil {
+			return 0, err
+		}
+		return result.LastInsertId()
+	}
+	permissions := make(map[string]int64, len(catalog.Permissions))
+	for _, p := range catalog.Permissions {
+		scopes, err := json.Marshal(p.AllowedScopeTypes)
+		if err != nil {
+			return err
+		}
+		id, err := insertID(`INSERT INTO permissions (permission_key, owner_module, action, risk_level, allowed_scope_types,
+			tenant_customizable, delegable, status, name_i18n_key, description_i18n_key) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			p.Key, p.OwnerModule, p.Action, p.RiskLevel, string(scopes), p.TenantCustomizable, p.Delegable, p.Status, p.NameI18nKey, p.DescriptionI18nKey)
+		if err != nil {
+			return fmt.Errorf("install permission %s: %w", p.Key, err)
+		}
+		permissions[p.Key] = id
+	}
+	roles := make(map[string]int64, len(catalog.Roles))
+	for _, r := range catalog.Roles {
+		id, err := insertID(`INSERT INTO roles (role_key, role_type, allowed_scope_types, allowed_principal_types,
+			immutable, name_i18n_key, description_i18n_key) VALUES (?, 'platform_builtin', JSON_ARRAY('platform'),
+			JSON_ARRAY('service_principal'), true, ?, ?)`, r.Key, r.NameI18nKey, r.DescriptionI18nKey)
+		if err != nil {
+			return fmt.Errorf("install role %s: %w", r.Key, err)
+		}
+		roles[r.Key] = id
+		for _, key := range r.Permissions {
+			if err := tx.Exec("INSERT INTO role_permissions (role_id,permission_id,source_type) VALUES (?,?,'product')", id, permissions[key]).Error; err != nil {
+				return fmt.Errorf("bind %s to %s: %w", r.Key, key, err)
+			}
+		}
+	}
+	for _, service := range catalog.Services {
+		id, err := insertID("INSERT INTO principals (principal_type) VALUES ('service_principal')")
+		if err != nil {
+			return err
+		}
+		if err := tx.Exec(`INSERT INTO service_principals (id,name,description,owner_scope,created_by_principal_id)
+			VALUES (?,?,?,'platform',?)`, id, service.ID, service.Description, id).Error; err != nil {
+			return fmt.Errorf("install service principal %s: %w", service.ID, err)
+		}
+		if err := tx.Exec(`INSERT INTO oauth_clients (client_id,display_name,client_type,redirect_uris,grant_types,response_types,
+			allowed_scopes,allowed_audiences,token_endpoint_auth_method,status,service_principal_id)
+			VALUES (?,?,'confidential',JSON_ARRAY(),JSON_ARRAY('client_credentials'),JSON_ARRAY(),JSON_ARRAY('addp.api'),
+			JSON_ARRAY('addp.api'),'client_secret_basic','disabled',?)`, service.ID, service.DisplayName, id).Error; err != nil {
+			return fmt.Errorf("install service client %s: %w", service.ID, err)
+		}
+		if service.Role != "" {
+			if err := tx.Exec(`INSERT INTO role_assignments (principal_id,role_id,scope_type,source_type,grant_reason)
+				VALUES (?,?,'platform','bootstrap',?)`, id, roles[service.Role], service.Reason).Error; err != nil {
+				return fmt.Errorf("assign %s to %s: %w", service.Role, service.ID, err)
+			}
+		}
+	}
+	return tx.Exec(`INSERT INTO oauth_clients (client_id,display_name,client_type,redirect_uris,grant_types,response_types,
+		allowed_scopes,allowed_audiences,token_endpoint_auth_method)
+		VALUES ('addp-cli','ADDP CLI','public',JSON_ARRAY('http://127.0.0.1/callback'),
+		JSON_ARRAY('authorization_code','refresh_token','urn:ietf:params:oauth:grant-type:device_code'),
+		JSON_ARRAY('code'),JSON_ARRAY('addp.api'),JSON_ARRAY('addp.api'),'none')`).Error
+}
