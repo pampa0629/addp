@@ -380,6 +380,10 @@ func (r *Repository) ListEffectiveRoleAssignmentPermissions(
 	at time.Time,
 ) ([]RoleAssignmentPermissionProjection, error) {
 	var rows []RoleAssignmentPermissionProjection
+	principalAllowed := "? = ANY(role.allowed_principal_types)"
+	if r.db.Dialector.Name() == "mysql" {
+		principalAllowed = "JSON_CONTAINS(role.allowed_principal_types, JSON_QUOTE(?))"
+	}
 	query := `
 		SELECT
 			assignment.id AS assignment_id,
@@ -399,7 +403,7 @@ func (r *Repository) ListEffectiveRoleAssignmentPermissions(
 		  AND assignment.valid_from <= ?
 		  AND (assignment.valid_until IS NULL OR assignment.valid_until > ?)
 		  AND role.status = 'active'
-		  AND ? = ANY(role.allowed_principal_types)
+		  AND ` + principalAllowed + `
 		  AND permission.status = 'active'
 	`
 	arguments := []any{principalID, at, at, principalType}

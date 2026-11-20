@@ -192,6 +192,9 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	t.Run("refresh token linkage and rollback", func(t *testing.T) {
 		testMySQLRefreshTokenLinkage(t, db)
 	})
+	t.Run("effective role permission projection", func(t *testing.T) {
+		testMySQLRolePermissionProjection(t, db)
+	})
 	t.Run("service credential provisioning and audit rollback", func(t *testing.T) {
 		testMySQLServiceProvisioner(t, db)
 	})
