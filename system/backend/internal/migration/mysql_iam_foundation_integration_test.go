@@ -177,7 +177,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	t.Run("TOTP credential", func(t *testing.T) {
 		testMySQLIAMMFACredential(t, db)
 	})
-	t.Run("single tenant browser session", func(t *testing.T) {
+	t.Run("browser session", func(t *testing.T) {
 		testMySQLBrowserSession(t, db)
 	})
 	t.Run("concurrent tenant administrator revocations", func(t *testing.T) {
@@ -512,4 +512,41 @@ func testMySQLBrowserSession(t *testing.T, db *gorm.DB) {
 			t.Fatalf("family revocation marked %d of %d %s: %v", count, want, table, err)
 		}
 	}
+	t.Run("multiple tenant choices", func(t *testing.T) {
+		second := iam.TenantMembership{PrincipalID: member.PrincipalID, TenantID: 11, SourceType: "invitation", JoinedAt: now}
+		if err := repo.CreateTenantMembership(ctx, &second); err != nil {
+			t.Fatal(err)
+		}
+		other := iam.TenantMembership{PrincipalID: 100, TenantID: second.TenantID, SourceType: "invitation", JoinedAt: now}
+		if err := repo.CreateTenantMembership(ctx, &other); err != nil {
+			t.Fatal(err)
+		}
+		result, err := service.BeginContextSelection(ctx, iam.BeginContextSelectionInput{
+			PrincipalID:    member.PrincipalID,
+			Authentication: iam.SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: now},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.NextAction != iam.ContextSelectionNextActionSelectContext || result.Session != nil || result.Challenge == nil || len(result.Challenge.Contexts) != 2 {
+			t.Fatal("expected the two available memberships and no session before selection")
+		}
+		choice := iam.ConsumeContextSelectionInput{SelectionTicket: result.Challenge.SelectionTicket,
+			Choice: iam.ContextSelectionChoice{Type: iam.ContextTypeTenant, TenantMembershipID: &other.ID}}
+		if _, err := service.ConsumeContextSelection(ctx, choice); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("unoffered membership returned %v", err)
+		}
+		choice.Choice.TenantMembershipID = &second.ID
+		session, err := service.ConsumeContextSelection(ctx, choice)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.Context.TenantID == nil || *session.Context.TenantID != second.TenantID || session.Context.TenantMembershipID == nil || *session.Context.TenantMembershipID != second.ID {
+			t.Fatal("session context differs from the chosen membership")
+		}
+		if _, err := service.ConsumeContextSelection(ctx, choice); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatalf("consumed ticket returned %v", err)
+		}
+	})
+
 }

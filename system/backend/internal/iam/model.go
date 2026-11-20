@@ -526,7 +526,7 @@ type ContextSelectionTicket struct {
 	PrincipalID                int64          `gorm:"column:principal_id;not null"`
 	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
 	ClientID                   string         `gorm:"column:client_id;not null"`
-	AuthenticationMethods      pq.StringArray `gorm:"column:authentication_methods;type:text[];not null"`
+	AuthenticationMethods      DBStringList   `gorm:"column:authentication_methods;not null"`
 	AssuranceLevel             AssuranceLevel `gorm:"column:assurance_level;not null"`
 	AuthenticatedAt            time.Time      `gorm:"column:authenticated_at;not null"`
 	StepUpExpiresAt            *time.Time     `gorm:"column:step_up_expires_at"`

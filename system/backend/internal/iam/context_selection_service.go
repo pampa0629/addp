@@ -9,7 +9,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/lib/pq"
 )
 
 var ErrStepUpRequired = errors.New("需要增强认证")
@@ -157,7 +156,7 @@ func (s *ContextSelectionService) BeginContextSelection(
 			PrincipalID:                principal.ID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			ClientID:                   "addp-web",
-			AuthenticationMethods:      pq.StringArray(methods),
+			AuthenticationMethods:      DBStringList(methods),
 			AssuranceLevel:             authentication.AssuranceLevel,
 			AuthenticatedAt:            authentication.AuthenticatedAt,
 			StepUpExpiresAt:            utcTimePointer(authentication.StepUpExpiresAt),
