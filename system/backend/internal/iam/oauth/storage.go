@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lib/pq"
@@ -36,20 +37,20 @@ func NewStorage(db *gorm.DB, devicePollingInterval time.Duration) (*Storage, err
 }
 
 type oauthClientRow struct {
-	ClientID           string         `gorm:"column:client_id"`
-	DisplayName        string         `gorm:"column:display_name"`
-	ClientType         string         `gorm:"column:client_type"`
-	ClientSecretHash   *string        `gorm:"column:client_secret_hash"`
-	RedirectURIs       pq.StringArray `gorm:"column:redirect_uris;type:text[]"`
-	GrantTypes         pq.StringArray `gorm:"column:grant_types;type:text[]"`
-	ResponseTypes      pq.StringArray `gorm:"column:response_types;type:text[]"`
-	AllowedScopes      pq.StringArray `gorm:"column:allowed_scopes;type:text[]"`
-	AllowedAudiences   pq.StringArray `gorm:"column:allowed_audiences;type:text[]"`
-	TokenAuthMethod    string         `gorm:"column:token_endpoint_auth_method"`
-	ServicePrincipalID *int64         `gorm:"column:service_principal_id"`
-	OwnerScope         string         `gorm:"column:owner_scope"`
-	OwnerTenantID      *int64         `gorm:"column:owner_tenant_id"`
-	Status             string         `gorm:"column:status"`
+	ClientID           string           `gorm:"column:client_id"`
+	DisplayName        string           `gorm:"column:display_name"`
+	ClientType         string           `gorm:"column:client_type"`
+	ClientSecretHash   *string          `gorm:"column:client_secret_hash"`
+	RedirectURIs       iam.DBStringList `gorm:"column:redirect_uris"`
+	GrantTypes         iam.DBStringList `gorm:"column:grant_types"`
+	ResponseTypes      iam.DBStringList `gorm:"column:response_types"`
+	AllowedScopes      iam.DBStringList `gorm:"column:allowed_scopes"`
+	AllowedAudiences   iam.DBStringList `gorm:"column:allowed_audiences"`
+	TokenAuthMethod    string           `gorm:"column:token_endpoint_auth_method"`
+	ServicePrincipalID *int64           `gorm:"column:service_principal_id"`
+	OwnerScope         string           `gorm:"column:owner_scope"`
+	OwnerTenantID      *int64           `gorm:"column:owner_tenant_id"`
+	Status             string           `gorm:"column:status"`
 }
 
 func (oauthClientRow) TableName() string { return "system.oauth_clients" }
