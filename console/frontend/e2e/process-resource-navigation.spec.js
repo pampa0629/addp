@@ -21,7 +21,9 @@ test('Console opens the exact managed host without reloading and one Back restor
   await page.goto('/monitor/service-resources?module_name=monitor&role=worker&node_ip=192.0.2.7&node_name=OLD-DEPLOYMENT-ALIAS&refresh=off')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const host = frame.getByTestId('process-host').getByRole('button', { name: 'Current managed host', exact: true })
+  const overviewURL = page.url()
   await frame.locator('.module-summary').click()
+  await expect(page).toHaveURL(/detail_module=monitor/)
   await expect(host).toBeVisible()
   await expect(frame.getByTestId('process-list')).not.toContainText('old-deployment-alias')
   const documentID = await frame.locator('body').evaluate(() => performance.timeOrigin), listURL = page.url()
@@ -32,14 +34,16 @@ test('Console opens the exact managed host without reloading and one Back restor
   expect(await frame.locator('body').evaluate(() => performance.timeOrigin)).toBe(documentID)
   await page.goBack()
   await expect(page).toHaveURL(listURL)
-  await frame.locator('.module-summary').click()
   await expect(host).toBeVisible()
   await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
   await page.screenshot({ path: testInfo.outputPath('service-managed-host.png'), fullPage: true })
   await page.reload()
-  await frame.locator('.module-summary').click()
   await expect(host).toBeVisible()
   await expect(page).toHaveURL(listURL)
+  await frame.getByTestId('back-to-modules').click()
+  await expect(page).toHaveURL(url => url.pathname === new URL(overviewURL).pathname &&
+    JSON.stringify([...url.searchParams].sort()) === JSON.stringify([...new URL(overviewURL).searchParams].sort()))
+  await expect(frame.locator('.module-summary')).toBeVisible()
 })
 
 test('Console service auto refresh preserves one iframe and restores the shared interval after reload', async ({ page }) => {

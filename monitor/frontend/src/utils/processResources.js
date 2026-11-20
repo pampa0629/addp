@@ -20,7 +20,8 @@ export function processRoleLabelKey(instance) {
 export function resolveProcessRoute(input = {}) {
   const nodeID = isTargetUUID(input.node_id) ? input.node_id : ''
   const time = resolveRuntimeInstanceTime(input)
-  const module = typeof input.module_name === 'string' && /^[a-z][a-z0-9_-]{0,49}$/.test(input.module_name) ? input.module_name : ''
+  const moduleName = value => typeof value === 'string' && /^[a-z][a-z0-9_-]{0,49}$/.test(value) ? value : ''
+  const module = moduleName(input.module_name), detailModule = moduleName(input.detail_module)
   const registeredHost = typeof input.registered_host === 'string' && input.registered_host.length <= 255 && !/[\x00-\x1f\x7f]/.test(input.registered_host) ? input.registered_host.trim().toLowerCase() : ''
   const nodeName = typeof input.node_name === 'string' ? input.node_name.trim() : ''
   const nodeIP = typeof input.node_ip === 'string' ? input.node_ip.trim() : ''
@@ -31,16 +32,22 @@ export function resolveProcessRoute(input = {}) {
   const moduleOverview = status === 'up' && declared === 'true' && !role && !registeredHost && !nodeName && !nodeIP &&
     !stopReason && time.period === 'all' && time.timeBasis === 'registered'
   const page = !moduleOverview && typeof input.page === 'string' && /^[1-9]\d{0,6}$/.test(input.page) ? Number(input.page) : 1
+  const historyDetail = Boolean(detailModule && status !== 'up')
+  const detailPage = historyDetail && typeof input.detail_page === 'string' && /^[1-9]\d{0,6}$/.test(input.detail_page) ? Number(input.detail_page) : 1
   const instanceID = typeof input.instance_id === 'string' && /^[1-9]\d{0,15}$/.test(input.instance_id) && Number.isSafeInteger(Number(input.instance_id)) ? Number(input.instance_id) : 0
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
   const compare = Boolean(instanceID && input.compare === 'previous' && supportsProcessComparison(range))
   const refresh = typeof input.refresh === 'string' && autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
-  const query = { ...(nodeID ? { node_id: nodeID } : {}), ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(compare ? { compare: 'previous' } : {}), ...(range !== '5m' ? { range } : {}) } : {}) }
+  const query = { ...(detailModule ? { detail_module: detailModule } : {}), ...(detailPage !== 1 ? { detail_page: String(detailPage) } : {}), ...(nodeID ? { node_id: nodeID } : {}), ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(compare ? { compare: 'previous' } : {}), ...(range !== '5m' ? { range } : {}) } : {}) }
   const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
-  return { nodeID, moduleOverview, timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, nodeName, nodeIP, role, stopReason, status, declared, instanceID, range, compare, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+  return { nodeID, detailModule, detailPage, historyDetail, moduleOverview, timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, nodeName, nodeIP, role, stopReason, status, declared, instanceID, range, compare, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
 }
 export function processInstanceParameters(state, now = Date.now()) {
-  return { ...state.params, ...runtimeInstanceTimeParams(state, now) }
+  const time = runtimeInstanceTimeParams(state, now)
+  if (!state.detailModule) return { ...state.params, ...time }
+  const { page_size, status, stop_reason } = state.params
+  return { page: state.detailPage, page_size, module_name: state.detailModule,
+    ...(status ? { status } : {}), ...(stop_reason ? { stop_reason } : {}), ...time }
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
 export function supportsProcessComparison(range) { return ['5m', '1h', '24h'].includes(range) }
@@ -93,6 +100,7 @@ export function validateProcessInstances(value, page, filters = {}, pageSize = 2
   for (const row of value.data) {
     const identity = JSON.stringify([row.module_name, row.instance_id])
     if (!Number.isSafeInteger(row.id) || row.id < 1 || ids.has(row.id) || names.has(identity) || typeof row.module_name !== 'string' || !row.module_name || typeof row.instance_id !== 'string' || !row.instance_id || !processRoles.includes(row.role) || !['up', 'down'].includes(row.status) || typeof row.node_id !== 'string' || typeof row.process_metrics_declared !== 'boolean') invalid()
+    if (filters.module_name && row.module_name !== filters.module_name) invalid()
     if ((filters.status && row.status !== filters.status) || (filters.process_metrics_declared !== undefined && String(row.process_metrics_declared) !== filters.process_metrics_declared)) invalid()
     if (filters.stop_reason && (row.status !== 'down' || row.stop_reason !== filters.stop_reason)) invalid()
     ids.add(row.id); names.add(identity)

@@ -391,18 +391,16 @@ test('platform node resources through real Console password MFA and Monitor ifra
       save('module-worker-resources-and-host')
       const { module, workers, host } = expected.module_workers
       const path = `/monitor/service-resources?module_name=${encodeURIComponent(module)}&role=worker&refresh=off`
-      const checkList = async (after) => {
-        await expect(monitor.getByTestId('process-list')).toBeVisible()
-        await expect(monitor.getByTestId('process-instance')).toHaveCount(workers.length)
-        await monitor.locator('.module-summary').click()
+      const checkWorkers = async (after) => {
+        await expect(monitor.getByRole('heading', { name: module + ' · 模块详情', exact: true })).toBeVisible()
         for (const owner of workers) await expect(monitor.locator(`article[data-instance-id="${owner.id}"] [data-testid="process-role"]`)).toHaveAttribute('title', owner.instance_id)
-        await expect.poll(async () => {
-          await Promise.all(pending)
-          return serviceBatches.slice(after).some(item => item.query.instance_ids?.split(',').sort().join(',') === workers.map(row => String(row.id)).sort().join(','))
-        }).toBe(true)
-        const batch = serviceBatches.slice(after).filter(item => item.query.instance_ids?.split(',').sort().join(',') === workers.map(row => String(row.id)).sort().join(',')).at(-1)
-        const values = validateProcessSummaries(batch.value, workers)
+        const currentPage = () => instancePages.filter(item => item.query.module_name === module && !item.query.role && item.query.status === 'up').at(-1)
+        const currentBatch = () => serviceBatches.slice(after).findLast(item => item.query.instance_ids === currentPage()?.value.data.map(row => row.id).join(','))
+        await expect.poll(async () => { await Promise.all(pending); return Boolean(currentBatch()) }).toBe(true)
+        const batch = currentBatch()
+        const values = validateProcessSummaries(batch.value, currentPage().value.data)
         for (const owner of workers) {
+          expect(values.get(owner.id).subject.instance_id).toBe(owner.instance_id)
           expect(values.get(owner.id).node_id).toBe(host.node_id)
           expect(values.get(owner.id).series.every(line => line.points[0].data_state === 'valid')).toBe(true)
         }
@@ -410,10 +408,17 @@ test('platform node resources through real Console password MFA and Monitor ifra
       }
       let batchStart = serviceBatches.length
       await page.goto(path)
-      await checkList(batchStart)
+      await expect(monitor.getByTestId('process-instance')).toHaveCount(workers.length)
+      const filteredBatch = () => serviceBatches.slice(batchStart).find(item =>
+        item.query.instance_ids?.split(',').sort().join(',') === workers.map(row => String(row.id)).sort().join(','))
+      await expect.poll(async () => { await Promise.all(pending); return Boolean(filteredBatch()) }).toBe(true)
+      const summary = filteredBatch()
+      validateProcessSummaries(summary.value, workers)
+      await monitor.locator('.module-summary').click()
+      await checkWorkers(batchStart)
       batchStart = serviceBatches.length
       await page.reload()
-      const summary = await checkList(batchStart)
+      await checkWorkers(batchStart)
       await page.screenshot({ path: resolve(artifact, 'module-workers-list.png'), animations: 'disabled' })
       const trends = []
       for (const owner of workers) {
@@ -432,14 +437,16 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await page.screenshot({ path: resolve(artifact, 'module-workers-trends.png'), animations: 'disabled' })
       batchStart = serviceBatches.length
       await page.goto(path)
-      await checkList(batchStart)
+      await expect(monitor.getByTestId('process-instance')).toHaveCount(workers.length)
+      await monitor.locator('.module-summary').click()
+      await checkWorkers(batchStart)
       await monitor.getByTestId('process-host').getByRole('button', { name: host.display_name, exact: true }).first().click()
       await expect(page).toHaveURL(new RegExp(`/monitor/node-resources/${host.node_id}$`))
       await expect(monitor.getByRole('heading', { name: host.display_name, exact: true })).toBeVisible()
       batchStart = serviceBatches.length
       await page.goBack()
-      await expect(page).toHaveURL(url => matchesRedirectURL(url, new URL(path, process.env.CONSOLE_URL)))
-      await checkList(batchStart)
+      await expect(page).toHaveURL(url => url.searchParams.get('detail_module') === module && url.searchParams.get('role') === 'worker')
+      await checkWorkers(batchStart)
       await Promise.all(pending)
       expect(businessErrors).toEqual([])
       report.module_workers = { summary, trends, reload_restored: true, host_navigation: true }
@@ -453,11 +460,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       const servicePath = '/monitor/service-resources?module_name=monitor&role=backend&refresh=off'
       await page.goto(servicePath)
       await expect(monitor.getByTestId('process-list')).toBeVisible()
-      const link = monitor.getByTestId('process-host').getByRole('button', { name: host.display_name, exact: true })
-      await monitor.locator('.module-summary').click()
-      await expect(link).toBeVisible()
-      await expect(monitor.getByTestId('process-instance')).toHaveCount(1)
-      await expect(monitor.getByTestId('process-list')).toContainText('正在采集')
+      const link = monitor.locator(`article[data-instance-id="${instance.id}"]`).getByTestId('process-host').getByRole('button', { name: host.display_name, exact: true })
       await expect.poll(async () => {
         await Promise.all(pending)
         return serviceBatches.some(row => row.query.instance_ids === String(instance.id))
@@ -466,10 +469,14 @@ test('platform node resources through real Console password MFA and Monitor ifra
       const observation = validateProcessSummaries(batch.value, [instance]).get(instance.id)
       expect(observation.node_id).toBe(host.node_id)
       expect(observation.series.every(series => series.points[0].data_state === 'valid')).toBe(true)
-      const list = instancePages.filter(row => row.query.module_name === 'monitor' && row.query.status === 'up').at(-1)
+      const list = instancePages.filter(row => row.query.module_name === 'monitor' && row.query.role === 'backend' && row.query.status === 'up').at(-1)
       expect(list.value.total).toBe(1)
       expect(list.value.data[0]).toMatchObject({ id: instance.id, instance_id: instance.instance_id, node_id: host.node_id,
         declared_node_id: host.node_id, node_binding_state: 'bound', node_binding_reason: '' })
+      await monitor.locator('.module-summary').click()
+      await expect(link).toBeVisible()
+      await expect(monitor.locator(`article[data-instance-id="${instance.id}"]`)).toContainText('正在采集')
+      await expect(page).toHaveURL(/detail_module=monitor/)
       const serviceURL = page.url()
       const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
       await page.screenshot({ path: resolve(artifact, 'node-binding-services.png'), animations: 'disabled' })
@@ -497,14 +504,12 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await page.screenshot({ path: resolve(artifact, 'node-binding-resources.png'), animations: 'disabled' })
       await page.goBack()
       await expect(page).toHaveURL(serviceURL)
-      await monitor.locator('.module-summary').click()
       await expect(link).toBeVisible()
       // History navigation is Console-owned; only the completed forward sync must keep its document.
       await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
-      await expect(monitor.getByTestId('process-instance')).toHaveCount(1)
+      await expect(monitor.locator(`article[data-instance-id="${instance.id}"]`)).toHaveCount(1)
       await page.reload()
       await expect(page).toHaveURL(serviceURL)
-      await monitor.locator('.module-summary').click()
       await expect(link).toBeVisible()
       await Promise.all(pending)
       expect(businessErrors).toEqual([])
@@ -821,18 +826,19 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await expect(monitor.getByTestId('process-list').locator('strong').filter({ hasText: /MiB|GiB/ })).toHaveCount(2)
     const checkServices = async (inspectDetails = false) => {
       await Promise.all(pending)
-      const list = instancePages.filter(item => item.query.role === 'backend' && item.query.status === 'up' && item.query.process_metrics_declared === 'true').at(-1)
+      const detailModule = new URL(page.url()).searchParams.get('detail_module')
+      const list = instancePages.filter(item => item.query.status === 'up' && (detailModule
+        ? item.query.module_name === detailModule && !item.query.role
+        : item.query.role === 'backend' && item.query.process_metrics_declared === 'true')).at(-1)
       validateProcessInstances(list.value, 1, list.query)
       const batch = serviceBatches.filter(item => item.query.instance_ids === list.value.data.map(row => row.id).join(',')).at(-1)
       const summaries = validateProcessSummaries(batch.value, list.value.data)
-      for (const owner of expected.processes) {
+      for (const owner of expected.processes.filter(item => !detailModule || item.module_name === detailModule)) {
         const index = list.value.data.findIndex(item => item.id === owner.id && item.instance_id === owner.instance_id)
         expect(index).toBeGreaterThanOrEqual(0)
         const row = monitor.locator(`article[data-instance-id="${owner.id}"]`)
         if (inspectDetails) {
-          const card = monitor.locator(`details.module-group:has(article[data-instance-id="${owner.id}"])`)
-          if (await card.getAttribute('open') === null) await card.locator('.module-summary').click()
-          await row.locator('details summary').click()
+          await monitor.locator(`.module-group[data-module="${list.value.data[index].module_name}"] .module-summary`).click()
           for (const hint of ['1 核 ≈ 占满一个逻辑核，可超过 1 核', '进程当前驻留内存（RSS）', '当前进程启动后经过的时间']) {
             await row.getByRole('button', { name: hint, exact: true }).hover()
             await expect(monitor.getByRole('tooltip', { name: hint, exact: true })).toBeVisible()
@@ -848,6 +854,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
         await expect(values.nth(2)).toHaveText(/\d+(?:天|小时|分钟|秒)/)
         expect(summaries.get(owner.id).series.map(s => s.metric_key).sort()).toEqual(processMetrics.map(m => m.key).sort())
         expect(summaries.get(owner.id).series.every(s => s.points[0].data_state === 'valid')).toBe(true)
+        if (inspectDetails) await monitor.getByTestId('back-to-modules').click()
       }
       return { ...batch, instances: list.value, instance_query: list.query }
     }
@@ -863,6 +870,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await page.screenshot({ path: resolve(artifact, 'node-resources-services.png'), animations: 'disabled' })
     save('current-process-trends-and-restore')
     const trendOwner = restoredServices.instances.data.find(row => row.id === expected.processes[0].id)
+    await monitor.locator(`.module-group[data-module="${trendOwner.module_name}"] .module-summary`).click()
     await monitor.locator(`article[data-instance-id="${trendOwner.id}"]`).getByRole('button', { name: '查看趋势', exact: true }).click()
     for (const metric of ['cpu', 'memory']) await expect(monitor.getByTestId(`process-trend-${metric}`).locator('canvas')).toBeVisible()
     await page.reload()

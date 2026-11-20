@@ -1168,16 +1168,24 @@ def validate_process_browser(value, expected, artifacts):
     auto_batches, auto_trends = automatic.get("batches"), automatic.get("trends")
     require(isinstance(auto_batches, list) and len(auto_batches) == 2 and isinstance(auto_trends, list) and len(auto_trends) == 2,
             "service auto refresh responses missing or unbounded")
-    batches = batches + auto_batches
     wanted = {r["id"]: r for r in expected["processes"]}
     observed = set()
-    for batch in batches:
+    for index, batch in enumerate(batches + auto_batches):
         require(batch.get("path") == PROCESS_SUMMARIES and set(batch.get("query", {})) == {"instance_ids"}, "service browser used unapproved resource input")
         instances = batch.get("instances", {})
         rows = instances.get("data")
         require(isinstance(rows, list) and 1 <= len(rows) <= 20 and instances.get("page") == 1 and instances.get("page_size") == 20
                 and type(instances.get("total")) is int and instances["total"] >= len(rows), "service browser list is not an authorized page")
-        require(batch.get("instance_query") == {"page": "1", "page_size": "20", "role": "backend", "status": "up", "process_metrics_declared": "true"}, "service browser list filters not restored")
+        scope = {"page": "1", "page_size": "20", "status": "up"}
+        if index < len(batches):
+            scope.update(role="backend", process_metrics_declared="true")
+        else:
+            subject_id = auto_trends[index-len(batches)].get("value", {}).get("subject", {}).get("id")
+            require(subject_id in wanted and any(row.get("id") == subject_id for row in rows), "detail page missed its selected instance")
+            scope["module_name"] = wanted[subject_id]["module_name"]
+            require(all(row.get("module_name") == scope["module_name"] and row.get("status") == "up" for row in rows),
+                    "module details included a foreign instance")
+        require(batch.get("instance_query") == scope, "service browser list or detail scope not restored")
         ids = [r.get("id") for r in rows]
         require(all(type(i) is int and i > 0 for i in ids) and len(set(ids)) == len(ids)
                 and batch["query"]["instance_ids"] == ",".join(map(str, ids)), "service browser summary expanded owner page")
@@ -1210,7 +1218,7 @@ def validate_process_browser(value, expected, artifacts):
         require(trend_screenshot.is_file() and trend_screenshot.stat().st_size > 1000 and trend_screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "process trend screenshot missing")
     screenshot = artifacts / "node-resources-services.png"
     require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "service browser screenshot missing or invalid")
-    return {"result": "passed", "real_instance_batch_reads": len(batches), "both_current_instances": True, "units_and_inline_hints": True, "auto_refresh": True,
+    return {"result": "passed", "real_instance_batch_reads": len(batches) + len(auto_batches), "both_current_instances": True, "units_and_inline_hints": True, "auto_refresh": True,
             "url_restore": True, "same_platform_identity": True, "security_administrator_denied": True}
 
 

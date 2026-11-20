@@ -112,7 +112,6 @@ test('automatic process refresh retains both viewports and closing or switching 
   expect((await chartState(page, cpu)).start).toBe(0)
   await dragResourceChartZoom(page, 0.6, cpu)
   await page.locator('.el-dialog__headerbtn').click()
-  await page.locator('.module-summary').click()
   await page.getByTestId('process-list').getByRole('button', { name: '查看趋势', exact: true }).nth(1).click()
   await readyChart(page, 'cpu'); await readyChart(page, 'memory')
   expect(state.trendCalls.at(-1).instance_id).toBe('2')

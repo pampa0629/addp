@@ -458,12 +458,17 @@ for(const failBody of [false,true]){
             if isinstance(value, str) and value.startswith("2026-") and value.endswith("Z"):
                 return (datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))+datetime.timedelta(seconds=15)).isoformat().replace("+00:00", "Z")
             return value
-        next_batch = copy.deepcopy(batch)
-        next_batch["value"] = advance(batch["value"])
+        detail_batch = copy.deepcopy(batch)
+        detail_batch.update(instance_query={"page": "1", "page_size": "20", "module_name": "system", "status": "up"},
+                            instances={"page": 1, "page_size": 20, "total": 1, "data": [owners[0]]},
+                            query={"instance_ids": "7"})
+        detail_batch["value"]["data"] = detail_batch["value"]["data"][:1]
+        next_batch = copy.deepcopy(detail_batch)
+        next_batch["value"] = advance(detail_batch["value"])
         for row in next_batch["value"]["data"]:
             next(line for line in row["series"] if line["metric_key"] == "process.uptime_seconds")["points"][0]["value"] += 15
         report["service_auto_refresh"] = {**dict.fromkeys(("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests"), True),
-            "batches": [copy.deepcopy(batch), next_batch], "trends": [copy.deepcopy(entry), advance(entry)]}
+            "batches": [detail_batch, next_batch], "trends": [copy.deepcopy(entry), advance(entry)]}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             screenshot = artifacts / "node-resources-services.png"
@@ -476,6 +481,7 @@ for(const failBody of [false,true]){
                          lambda v: v["service_auto_refresh"].update(trends=[]),
                          lambda v: v["service_auto_refresh"]["trends"][1].update(value=copy.deepcopy(v["service_auto_refresh"]["trends"][0]["value"]), query=copy.deepcopy(v["service_auto_refresh"]["trends"][0]["query"])),
                          lambda v: v["service_auto_refresh"]["batches"][1]["query"].update(instance_ids="7,9,12"),
+                         lambda v: v["service_auto_refresh"]["batches"][1]["instance_query"].update(module_name="monitor"),
                          lambda v: v["service_auto_refresh"]["trends"][1]["value"]["subject"].update(instance_id="new-runtime"),
                          lambda v: v["service_auto_refresh"]["batches"][1]["value"]["data"][0].update(policy_version=0),
                          lambda v: v["process_trend_presentation"].update(startup_bound=False),

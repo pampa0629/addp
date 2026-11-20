@@ -165,3 +165,14 @@ test('host or runtime name preserves System matching scope across list queries a
     assert.equal(resolved.query.node_name, undefined)
   }
 })
+
+test('module details read every role with their own history page and preserve list filters for return', () => {
+  const list = { role: 'worker', node_name: 'worker-host', module_name: 'meta', status: 'all', page: '3' }
+  const state = resolveProcessRoute({ ...list, detail_module: 'meta', detail_page: '2' })
+  assert.deepEqual(processInstanceParameters(state), { page: 2, page_size: 20, module_name: 'meta' })
+  assert.equal(state.query.page, '3')
+  assert.equal(state.query.node_name, 'worker-host')
+  assert.throws(() => validateProcessInstances({ data: [owner], page: 2, page_size: 20, total: 1 }, 2, processInstanceParameters(state)), /invalid_resource_response/)
+  assert.deepEqual(processInstanceParameters(resolveProcessRoute({ role: 'worker', detail_module: 'meta', detail_page: '2' })), { page: 1, page_size: 20, module_name: 'meta', status: 'up' })
+  assert.deepEqual(resolveProcessRoute({ detail_module: '../meta', detail_page: '2' }).query, {})
+})

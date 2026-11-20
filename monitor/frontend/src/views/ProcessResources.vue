@@ -1,13 +1,14 @@
 <template>
   <section class="process-resources" :aria-busy="loading">
     <div class="process-toolbar">
-      <h2>{{ t('monitor.process.title') }}</h2>
+      <el-button v-if="state.detailModule" data-testid="back-to-modules" @click="backToModules">{{ t('monitor.process.backToModules') }}</el-button>
+      <h2 ref="pageTitle" tabindex="-1">{{ state.detailModule ? t('monitor.process.moduleDetail', { module: state.detailModule }) : t('monitor.process.title') }}</h2>
       <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="process-refresh" @update:model-value="selectRefresh" />
       <el-button :disabled="!canRead" :loading="loading" @click="reload({ refreshModules: true })">{{ t('common.refresh') }}</el-button>
     </div>
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
     <template v-if="canRead">
-      <section class="process-totals" data-testid="process-totals">
+      <section v-if="!state.detailModule" class="process-totals" data-testid="process-totals">
         <h3 class="process-total-title">{{ t('monitor.processTotals.title') }} <FieldHelp :content="t('monitor.processTotals.scope')" /></h3>
         <el-alert v-if="totalsError" :title="t(totalsError)" type="warning" :closable="false" />
         <template v-else-if="totals">
@@ -31,14 +32,14 @@
           </details>
         </template>
       </section>
-      <el-alert v-if="startupFailures.length" :title="t('monitor.process.startupFailures.title')" type="warning" :closable="false" data-testid="process-startup-failures">
+      <el-alert v-if="displayedFailures.length" :title="t('monitor.process.startupFailures.title')" type="warning" :closable="false" data-testid="process-startup-failures">
         <ul>
-          <li v-for="failure in startupFailures" :key="failure.module_name">
+          <li v-for="failure in displayedFailures" :key="failure.module_name">
             {{ failure.module_name }} · {{ t(`monitor.process.startupFailures.${failure.reason}`) }} · {{ date(failure.failed_at) }}
           </li>
         </ul>
       </el-alert>
-      <form class="process-filters" @submit.prevent="filter">
+      <form v-if="!state.detailModule" class="process-filters" @submit.prevent="filter">
         <ModuleNameSelect :model-value="moduleName" :identity="identity" :suspended="refreshBlocked" :revision="moduleRevision" @update:model-value="selectModule" />
         <div class="endpoint-filter">
           <el-input v-model="registeredHost" :placeholder="t('monitor.process.addressFilter')" :aria-label="t('monitor.process.addressFilter')" maxlength="255" clearable @input="queueFilter" @keydown.enter="filterInput.enter" @clear="filter" />
@@ -72,7 +73,7 @@
         <el-button :disabled="!validTimeDraft" @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
         <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
-      <section v-if="canReadHost && moduleOverview" data-testid="frontend-resources" class="frontend-source">
+      <section v-if="canReadHost && moduleView" data-testid="frontend-resources" class="frontend-source">
         <label v-if="frontendOptions.length">{{ t('monitor.frontend.selectNode') }}
           <el-select :model-value="frontendNodeID" :aria-label="t('monitor.frontend.selectNode')" @update:model-value="node_id => navigate({ ...state.query, node_id })">
             <el-option v-for="node in frontendOptions" :key="node.node_id" :label="node.display_name" :value="node.node_id" />
@@ -82,7 +83,7 @@
         <el-button v-if="canConfigureFrontend" text type="primary" @click="openFrontendConfiguration">{{ t('monitor.frontend.configure') }}</el-button>
       </section>
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
-      <section v-if="showCoverage && instances.length" class="process-coverage" :aria-label="t('monitor.process.coverage.title')">
+      <section v-if="!state.detailModule && showCoverage && instances.length" class="process-coverage" :aria-label="t('monitor.process.coverage.title')">
         <div class="process-toolbar">
           <h3>{{ t('monitor.process.coverage.title') }}</h3>
           <el-select v-model="collectionFilter" :aria-label="t('monitor.process.coverage.filter')">
@@ -100,7 +101,7 @@
       </section>
       <div v-loading="loading && !instances.length" data-testid="process-list">
         <el-empty v-if="!loading && !visibleInstances.length && !frontendRows.size" :description="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" />
-        <ModuleInstanceCards :instances="visibleInstances" :frontend-modules="[...frontendRows.keys()]" test-prefix="process">
+        <ModuleInstanceCards :detail-module="state.detailModule" @select="openModule" :instances="visibleInstances" :frontend-modules="[...frontendRows.keys()]" test-prefix="process">
           <template #overview="{ moduleName: name, rows }">
             <div class="role-metrics">
               <span></span><span>{{ t('monitor.frontend.cpu') }}</span><span>{{ t('monitor.frontend.memory') }}</span>
@@ -131,24 +132,21 @@
                 <dd><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></dd>
               </div>
             </dl>
-            <details>
-              <summary>{{ t('monitor.process.moreMetrics') }}</summary>
-              <dl class="instance-metrics">
-                <div>
-                  <dt>{{ t('monitor.process.metrics.uptime') }} <FieldHelp :content="t('monitor.process.hints.uptime')" /></dt>
-                  <dd><strong>{{ value(row, uptimeMetric) }}</strong><p v-if="point(row, uptimeMetric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, uptimeMetric) }}</p></dd>
-                </div>
-                <div>
-                  <dt>{{ t(`common.runtimeInstanceTime.${state.timeBasis}Time`) }}</dt>
-                  <dd>{{ row[instanceTimeField] ? date(row[instanceTimeField]) : '—' }}</dd>
-                </div>
-              </dl>
-            </details>
+            <dl class="instance-metrics">
+              <div>
+                <dt>{{ t('monitor.process.metrics.uptime') }} <FieldHelp :content="t('monitor.process.hints.uptime')" /></dt>
+                <dd><strong>{{ value(row, uptimeMetric) }}</strong><p v-if="point(row, uptimeMetric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, uptimeMetric) }}</p></dd>
+              </div>
+              <div>
+                <dt>{{ t(`common.runtimeInstanceTime.${state.timeBasis}Time`) }}</dt>
+                <dd>{{ row[instanceTimeField] ? date(row[instanceTimeField]) : '—' }}</dd>
+              </div>
+            </dl>
             <el-button text type="primary" :disabled="row.status !== 'up' || !row.process_metrics_declared || loading" @click="selectTrend(row.id)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button>
           </template>
         </ModuleInstanceCards>
       </div>
-      <el-pagination v-if="!moduleOverview && !errorKey && (instances.length || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
+      <el-pagination v-if="(!moduleView || state.historyDetail) && !errorKey && (instances.length || !loading)" :current-page="state.detailModule ? state.detailPage : state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
       <el-dialog :model-value="Boolean(state.instanceID)" :title="t('monitor.process.trend.title')" width="min(960px, calc(100vw - 32px))" destroy-on-close @close="closeTrend">
         <div v-loading="loading && !trend" :aria-busy="loading" data-testid="process-trend">
           <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
@@ -183,7 +181,7 @@ import ModuleNameSelect from '../components/ModuleNameSelect.vue'
 import ContainerResources from '../components/ContainerResources.vue'
 import { validateContainerObservation } from '../utils/containerResources'
 import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import RuntimeInstanceStopReasonSelect from '../../../../common-frontend/basic/src/components/RuntimeInstanceStopReasonSelect.vue'
@@ -246,13 +244,13 @@ async function loadTotals(ticket) {
 }
 const collectionFilter = ref('all')
 const showCoverage = computed(() => state.value.status === 'up' && state.value.declared === 'all')
-const visibleInstances = computed(() => showCoverage.value && collectionFilter.value !== 'all'
+const visibleInstances = computed(() => !state.value.detailModule && showCoverage.value && collectionFilter.value !== 'all'
   ? instances.value.filter(row => collectionStatus(row) === collectionFilter.value)
   : instances.value)
 const headlineMetrics = processMetrics.slice(0, 2)
 const uptimeMetric = processMetrics[2]
 // Registration history and endpoint filters apply to System instances only.
-const moduleOverview = computed(() => state.value.moduleOverview)
+const moduleView = computed(() => state.value.moduleOverview || Boolean(state.value.detailModule))
 const frontendNodes = ref([]), frontendObservation = ref(null), frontendError = ref(''), frontendBlocked = ref(false)
 const defaultFrontendNode = ref('')
 const frontendNodeID = computed(() => state.value.nodeID || (frontendNodes.value.length ? defaultFrontendNode.value : ''))
@@ -263,8 +261,8 @@ const frontendState = computed(() => {
   if (frontendObservation.value && frontendObservation.value.source_state !== 'collecting') return `monitor.frontend.states.${frontendObservation.value.source_state}`
   return !loading.value && !frontendNodeID.value ? 'monitor.frontend.noConfiguredNodes' : ''
 })
-const frontendRows = computed(() => new Map((canReadHost.value && moduleOverview.value && frontendObservation.value?.source_state === 'collecting'
-  ? frontendObservation.value.data : []).filter(row => !state.value.module || row.module === state.value.module).map(row => [row.module, row])))
+const frontendRows = computed(() => new Map((canReadHost.value && moduleView.value && frontendObservation.value?.source_state === 'collecting'
+  ? frontendObservation.value.data : []).filter(row => !(state.value.detailModule || state.value.module) || row.module === (state.value.detailModule || state.value.module)).map(row => [row.module, row])))
 async function loadFrontend(ticket) {
   try {
     const { data } = await requests.request(api.frontendNodes)
@@ -330,6 +328,7 @@ const coverage = computed(() => {
   return [...groups.values()]
 })
 const hostReferences = ref({}), startupFailures = ref([])
+const displayedFailures = computed(() => startupFailures.value.filter(item => !state.value.detailModule || item.module_name === state.value.detailModule))
 const stopReason = ref('')
 const timeBasis = ref('registered'), period = ref('all'), customRange = ref(null)
 const validTimeDraft = computed(() => period.value !== 'custom' || validRuntimeInstanceRange(customRange.value))
@@ -391,10 +390,20 @@ function sampledAt(row) {
   const stamp = summaries.value.get(row.id)?.collection.sampled_at
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
 }
-const navigate = query => {
+const pageTitle = ref(null)
+let returnCard = null
+function openModule(name) {
+  returnCard = { name, scrollY: window.scrollY }
+  return navigate({ ...state.value.query, detail_module: name }, 'push')
+}
+function backToModules() {
+  const { detail_module, detail_page, instance_id, range, compare, ...query } = state.value.query
+  return navigate(query)
+}
+const navigate = (query, history = 'replace') => {
   const target = { path: '/service-resources', query }
   if (router.resolve(target).fullPath === route.fullPath) { refreshCycle.schedule(); return }
-  return navigateMonitorRoute(router, target, { history: 'replace' })
+  return navigateMonitorRoute(router, target, { history })
 }
 async function loadHosts(rows, ticket) {
   if (!canReadHost.value) return
@@ -443,7 +452,12 @@ function resetFilters() {
   moduleName.value = ''; registeredHost.value = ''; nodeName.value = ''; nodeIP.value = ''; role.value = ''; status.value = 'up'; declared.value = 'true'
   return navigate(resolveProcessRoute({ refresh: state.value.refresh }).query)
 }
-function changePage(page) { if (loading.value || page === state.value.page) return; const { instance_id, range, compare, ...query } = state.value.query; return navigate({ ...query, page: page === 1 ? undefined : String(page) }) }
+function changePage(page) {
+  const detail = Boolean(state.value.detailModule)
+  if (loading.value || page === (detail ? state.value.detailPage : state.value.page)) return
+  const { instance_id, range, compare, ...query } = state.value.query
+  return navigate({ ...query, [detail ? 'detail_page' : 'page']: page === 1 ? undefined : String(page) })
+}
 function processErrorKey(error) {
  if (error.response?.status === 400) return 'monitor.process.invalidQuery'
  const key = resourceErrorKey(error)
@@ -478,14 +492,14 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
   if (state.value.changed) { await navigate(state.value.query); return }
   if (!automatic) { stopReason.value = state.value.stopReason; timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; nodeName.value = state.value.nodeName; nodeIP.value = state.value.nodeIP; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
-  const frontendLoad = canReadHost.value && moduleOverview.value && !frontendBlocked.value ? loadFrontend(ticket) : null
+  const frontendLoad = canReadHost.value && moduleView.value && !frontendBlocked.value ? loadFrontend(ticket) : null
   if (refreshModules) moduleRevision.value++
   try {
     const listParams = processInstanceParameters(state.value)
     const list = await requests.request(config => api.instances(listParams, config))
     if (!requests.current(ticket)) return
     validateProcessInstances(list, listParams.page, listParams)
-    if (moduleOverview.value) {
+    if (moduleView.value && !state.value.historyDetail) {
       const byID = new Map(list.data.map(row => [row.id, row]))
       for (let page = 2; page <= Math.ceil(list.total / listParams.page_size); page++) {
         const more = await requests.request(config => api.instances({ ...listParams, page }, config))
@@ -554,7 +568,7 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
     startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally {
-    await Promise.all([frontendLoad, requests.current(ticket) && !refreshBlocked.value ? loadTotals(ticket) : null])
+    await Promise.all([frontendLoad, requests.current(ticket) && !refreshBlocked.value && !state.value.detailModule ? loadTotals(ticket) : null])
     if (requests.current(ticket)) {
       if (refreshBlocked.value) totals.value = null
       loading.value = false
@@ -571,6 +585,21 @@ async function loadStartupFailures(ticket) {
 }
 watch([() => JSON.stringify({ ...state.value.query, refresh: undefined }), identity], () => { trendZoom.value = {} }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = {} }, { flush: 'sync' })
+watch(() => state.value.detailModule, async name => {
+  if (name) {
+    await nextTick()
+    pageTitle.value?.focus({ preventScroll: true })
+    window.scrollTo(0, 0)
+  }
+})
+watch(loading, async busy => {
+  if (busy || state.value.detailModule || !returnCard) return
+  await nextTick()
+  const card = document.querySelector(`.module-group[data-module="${CSS.escape(returnCard.name)}"] .module-summary`)
+  card?.focus({ preventScroll: true })
+  window.scrollTo(0, returnCard.scrollY)
+  returnCard = null
+}, { flush: 'post' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); requests.dispose() })
 </script>
