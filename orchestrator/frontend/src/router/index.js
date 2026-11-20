@@ -26,6 +26,12 @@ const routes = [
     meta: { requiresAuth: true },
     children: [
       {
+        path: 'executions/:execution_id',
+        name: 'ExecutionResult',
+        component: () => import('../views/ExecutionResult.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
         path: 'orchestrations',
         name: 'OrchestrationList',
         component: () => import('../views/OrchestrationList.vue'),

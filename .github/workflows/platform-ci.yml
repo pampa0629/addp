@@ -1339,6 +1339,16 @@ jobs:
         working-directory: develop/frontend
         run: npm ci
 
+      - name: Install Quality dependencies for Console execution result navigation
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: quality/frontend
+        run: npm ci
+
+      - name: Install Orchestrator dependencies for Console execution result navigation
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: orchestrator/frontend
+        run: npm ci
+
       - name: Install Transfer dependencies for Console execution result navigation
         if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
         working-directory: transfer/frontend

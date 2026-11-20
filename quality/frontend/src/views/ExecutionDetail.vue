@@ -4,9 +4,9 @@
       <h2>{{ `${t('quality.execution.detailTitle')} - ${execution?.execution_id || ''}` }}</h2>
       <MonitorExecutionsButton
         module="quality"
-        :task-type="execution?.task_type"
-        :source-task-id="execution?.source_task_id"
-        scope="task"
+        :execution-id="route.params.execution_id"
+        :return-to="route.query.return_to"
+        scope="execution"
       />
     </div>
 
@@ -15,11 +15,7 @@
       icon="error"
       :title="t('quality.execution.detailLoadFailed')"
       :sub-title="loadError"
-    >
-      <template #extra>
-        <MonitorExecutionsButton module="quality" />
-      </template>
-    </el-result>
+    />
 
     <el-descriptions v-else-if="execution" :column="2" border style="margin-top:20px">
       <el-descriptions-item :label="t('quality.domain.snapshotOwner')" :span="2">{{ executionDomainLabel(execution.execution_config, t) }}</el-descriptions-item>

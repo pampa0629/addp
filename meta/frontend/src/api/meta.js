@@ -74,8 +74,8 @@ export default {
     })
   },
 
-  getScanRun(runId) {
-    return client.get(`/meta/executions/${runId}`)
+  getScanRun(runId, options = {}) {
+    return client.get(`/meta/executions/${runId}`, options)
   },
 
   getScanTasks(engineId) {

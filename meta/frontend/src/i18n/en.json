@@ -1,5 +1,13 @@
 {
   "meta": {
+    "executionResult": {
+      "title": "Scan result",
+      "engine": "Engine ID",
+      "completed": "Items completed",
+      "succeeded": "Items succeeded",
+      "failed": "Items failed",
+      "planned": "Items planned"
+    },
     "layout": {
       "title": "Metadata Management",
       "accountInfo": "Account Info",

@@ -5,12 +5,25 @@ export function buildMonitorExecutionRoute(executionId) {
   return `/monitor/executions?execution_id=${encodeURIComponent(String(executionId))}`
 }
 
+// Types served by each Owner's human execution detail endpoint.
+const resultTaskTypes = {
+  develop: ['query', 'workflow', 'script'],
+  transfer: ['sync'],
+  quality: ['quality_plan'],
+  meta: ['scan'],
+  orchestrator: ['orchestration'],
+  manager: [
+    'embedding', 'image_segmentation', 'vector_tile_cache_generation', 'vector_tile_set_generation',
+    'vector_materialized_view_generation', 'raster_cog_generation', 'raster_mosaic_generation',
+    'model_3d_glb_generation', 'model3d_tiles_generation', 'gaussian_splat_ksplat_generation',
+    'point_cloud_copc_generation', 'pptx_pdf_generation'
+  ]
+}
+
 export function buildExecutionResultRoute(execution, returnTo) {
   if (!execution?.execution_id) return ''
   const { module, task_type: taskType, execution_id: executionId } = execution
-  const supported = module === 'develop' && ['query', 'workflow', 'script'].includes(taskType)
-    || module === 'transfer' && taskType === 'sync'
-  if (!supported) return ''
+  if (!Object.hasOwn(resultTaskTypes, module) || !resultTaskTypes[module].includes(taskType)) return ''
 
   const route = `/${module}/executions/${encodeURIComponent(executionId)}`
   if (returnTo === undefined) return route

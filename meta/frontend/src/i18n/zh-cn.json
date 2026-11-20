@@ -1,5 +1,13 @@
 {
   "meta": {
+    "executionResult": {
+      "title": "扫描执行结果",
+      "engine": "引擎 ID",
+      "completed": "已完成项",
+      "succeeded": "成功项",
+      "failed": "失败项",
+      "planned": "计划项"
+    },
     "layout": {
       "title": "元数据管理模块",
       "accountInfo": "账号信息",

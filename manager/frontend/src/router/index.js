@@ -15,6 +15,12 @@ const routes = [
     meta: { requiresAuth: true, title: '数据管理-addp' },
     children: [
       {
+        path: 'executions/:execution_id',
+        name: 'ExecutionResult',
+        component: () => import('../views/ExecutionResult.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
         path: '',
         name: 'ManagerHome',
         beforeEnter: () => {

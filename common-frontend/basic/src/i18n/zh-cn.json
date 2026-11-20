@@ -800,6 +800,8 @@
       "removeItem": "删除此项"
     },
     "executionMonitor": {
+      "resultReadFailed": "无法读取本次执行结果",
+      "emptyResult": "本次执行暂无已记录的结果明细",
       "viewExecutions": "查看执行记录",
       "viewTaskExecutions": "在统一监控中查看",
       "returnToExecution": "返回本次执行"

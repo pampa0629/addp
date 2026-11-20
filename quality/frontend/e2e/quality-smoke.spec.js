@@ -93,7 +93,7 @@ test("single plan navigation and failed execution retain evidence", async ({
     page.getByText("至少一条 error 级质量规则未通过", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "在统一监控中查看" }),
+    page.getByRole("button", { name: "返回本次执行" }),
   ).toBeVisible();
 });
 test("edits versioned plan without Catalog or Model dependency", async ({

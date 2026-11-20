@@ -1,5 +1,33 @@
 {
   "manager": {
+    "executionResult": {
+      "title": "Derived task result",
+      "total": "Total",
+      "generated": "Generated",
+      "failed": "Failed",
+      "ready_skipped": "Already available",
+      "rebuilt": "Rebuilt",
+      "unsupported": "Unsupported",
+      "missing_source": "Missing source",
+      "tiles_processed": "Processed tiles",
+      "tiles_total_estimate": "Estimated tiles",
+      "total_tiles": "Total tiles",
+      "generated_tiles": "Generated tiles",
+      "cached_tiles": "Cached tiles",
+      "empty_tiles": "Empty tiles",
+      "skipped_tiles": "Skipped tiles",
+      "oversized_skipped_tiles": "Oversized tiles skipped",
+      "failed_tiles": "Failed tiles",
+      "total_size_bytes": "Total size (bytes)",
+      "max_tile_size_bytes": "Largest tile (bytes)",
+      "actual_max_zoom": "Actual maximum zoom",
+      "current_zoom": "Current zoom",
+      "min_zoom": "Minimum zoom",
+      "max_zoom": "Maximum zoom",
+      "workflow_runtime": "Workflow runtime",
+      "lineage_facts": "Input and output lineage",
+      "glb_facts": "GLB conversion details"
+    },
     "segment": {
       "title": "Image segmentation",
       "point": "Point",

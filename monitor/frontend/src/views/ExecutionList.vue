@@ -500,6 +500,7 @@
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { CleanupAdmission, parseCleanupAdmission, ExecutionSteps, ExecutionEvents, ExecutionFailure, buildExecutionResultRoute, openConsoleRoute } from '@common-ui'
+import { allowsConsoleRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { useAuthStore } from '@/store/auth'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -537,9 +538,10 @@ const professionalRoute = computed(() => {
   const destination = buildExecutionResultRoute(execution, '/monitor/executions?' + new URLSearchParams({ ...route.query, execution_id: execution.execution_id }))
   if (!destination) return ''
   const auth = useAuthStore()
-  if (execution.module === 'transfer') return auth.hasPermission('transfer.task.read') ? destination : ''
+  if (!allowsConsoleRoute(destination, auth.contextType, auth.permissions)) return ''
+  if (execution.module !== 'develop') return destination
   const permission = execution.task_type === 'script' ? 'develop.notebook.read' : 'develop.data_read.execute'
-  return auth.hasPermission('develop.task.read') && auth.hasPermission(permission) ? destination : ''
+  return auth.hasPermission(permission) ? destination : ''
 })
 
 // 过滤条件

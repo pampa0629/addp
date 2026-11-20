@@ -800,6 +800,8 @@
       "removeItem": "Remove item"
     },
     "executionMonitor": {
+      "resultReadFailed": "Could not read this execution result",
+      "emptyResult": "No result details recorded for this execution",
       "viewExecutions": "View executions",
       "viewTaskExecutions": "View in Monitor",
       "returnToExecution": "Back to this execution"

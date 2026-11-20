@@ -24,6 +24,10 @@ export default {
     return client.get(`/orchestrator/orchestrations/${id}/executions`, { params })
   },
 
+  getExecutionByUUID(executionID, options) {
+    return client.get(`/orchestrator/executions/${executionID}`, options)
+  },
+
   // 获取执行详情
   getExecution(id, options = {}) {
     return client.get(`/orchestrator/orch-executions/${id}`, options)

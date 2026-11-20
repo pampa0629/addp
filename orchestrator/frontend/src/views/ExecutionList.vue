@@ -19,8 +19,8 @@
       <el-table-column prop="execution_id" :label="t('orchestrator.executionList.colExecutionId')" width="260" show-overflow-tooltip></el-table-column>
       <el-table-column :label="t('orchestrator.executionList.colStatus')" width="120">
         <template #default="scope">
-          <el-tag :type="getStatusType(scope.row.status)">
-            {{ getStatusText(scope.row.status) }}
+          <el-tag :type="executionStatusType(scope.row.status)">
+            {{ getStatusText(scope.row.status, t) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -37,7 +37,7 @@
       </el-table-column>
       <el-table-column :label="t('orchestrator.executionList.colError')" show-overflow-tooltip>
         <template #default="scope">
-          {{ getErrorMessage(scope.row) }}
+          {{ executionFailureMessage(scope.row, t) || '-' }}
         </template>
       </el-table-column>
       <el-table-column :label="t('orchestrator.executionList.colActions')" width="120">
@@ -71,50 +71,7 @@
             {{ t('orchestrator.executionList.viewMonitorTreeBtn') }}
           </el-button>
         </div>
-        <el-descriptions :column="2" border>
-          <el-descriptions-item :label="t('orchestrator.executionList.descExecutionId')">{{ currentExecution.execution_id }}</el-descriptions-item>
-          <el-descriptions-item :label="t('orchestrator.executionList.descStatus')">
-            <el-tag :type="getStatusType(currentExecution.status)">
-              {{ getStatusText(currentExecution.status) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('orchestrator.executionList.descStartTime')">
-            {{ formatTime(currentExecution.started_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('orchestrator.executionList.descEndTime')">
-            {{ formatTime(currentExecution.completed_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('orchestrator.executionList.descCurrentStep')" :span="2">
-            {{ currentExecution.current_step || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('orchestrator.executionList.descError')" :span="2">
-            {{ getErrorMessage(currentExecution) }}
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <h4 style="margin-top: 20px">{{ t('orchestrator.executionList.stepResults') }}</h4>
-        <el-collapse v-if="getStepResults(currentExecution)">
-          <el-collapse-item
-            v-for="(result, stepId) in getStepResults(currentExecution)"
-            :key="stepId"
-          >
-            <template #title>
-              <span>{{ stepId }} - {{ result.status }}</span>
-              <el-button
-                v-if="getStepExecutionID(result)"
-                size="small"
-                text
-                type="primary"
-                class="step-monitor-link"
-                @click.stop="openExecutionInMonitor(getStepExecutionID(result))"
-              >
-                {{ t('orchestrator.executionList.viewChildExecutionBtn') }}
-              </el-button>
-            </template>
-            <pre>{{ JSON.stringify(result, null, 2) }}</pre>
-          </el-collapse-item>
-        </el-collapse>
-        <p v-else>{{ t('orchestrator.executionList.noStepResults') }}</p>
+        <OrchestrationExecutionResult :current-execution="currentExecution" />
       </div>
     </el-dialog>
   </div>
@@ -126,7 +83,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import orchestrationAPI from '../api/orchestration'
-import { executionFailureMessage } from '../utils/executionPresentation'
+import OrchestrationExecutionResult from '../components/OrchestrationExecutionResult.vue'
+import { executionFailureMessage, executionStatusType, formatTime, getStatusText } from '../utils/executionPresentation'
 import { navigateOrchestratorRoute, orchestrationListLocation } from '@/utils/moduleNavigation'
 import { MonitorExecutionsButton, openMonitorExecution, useConsolePageDescriptor, focusElement } from '@common-ui'
 
@@ -215,47 +173,6 @@ function handleBack() {
   navigateOrchestratorRoute(router, orchestrationListLocation(route.query), { history: 'replace' })
 }
 
-function getStatusType(status) {
-  const types = {
-    pending: 'info',
-    running: 'warning',
-    success: 'success',
-    failed: 'danger',
-    timeout: 'danger',
-    cancelled: 'info'
-  }
-  return types[status] || 'info'
-}
-
-function getStatusText(status) {
-  const texts = {
-    pending: t('orchestrator.executionList.statusPending'),
-    running: t('orchestrator.executionList.statusRunning'),
-    success: t('orchestrator.executionList.statusSuccess'),
-    failed: t('orchestrator.executionList.statusFailed'),
-    timeout: t('orchestrator.executionList.statusTimeout'),
-    cancelled: t('orchestrator.executionList.statusCancelled')
-  }
-  return texts[status] || status
-}
-
-function formatTime(time) {
-  if (!time) return '-'
-  return new Date(time).toLocaleString()
-}
-
-function getErrorMessage(execution) {
-  return executionFailureMessage(execution, t) || '-'
-}
-
-function getStepResults(execution) {
-  return execution?.metadata?.step_results || null
-}
-
-function getStepExecutionID(result) {
-  return result?.result?.execution_id || result?.execution_id || ''
-}
-
 async function openExecutionInMonitor(executionID) {
   if (!executionID) return
   await openMonitorExecution(executionID)
@@ -294,21 +211,10 @@ h2 {
   justify-content: center;
 }
 
-.execution-detail pre {
-  background: var(--addp-bg-secondary);
-  padding: 10px;
-  border-radius: 4px;
-  overflow-x: auto;
-  font-size: 12px;
-}
-
 .detail-actions {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 12px;
 }
 
-.step-monitor-link {
-  margin-left: 12px;
-}
 </style>

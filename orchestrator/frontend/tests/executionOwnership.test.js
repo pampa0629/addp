@@ -19,7 +19,8 @@ test('Monitor owns the Orchestrator-wide execution list', () => {
 test('the per-orchestration history retains domain details and links to filtered Monitor', () => {
   assert.match(routerSource, /path:\s*'orchestrations\/:id\/executions'/)
   assert.match(executionListSource, /orchestrationAPI\.listExecutions/)
-  assert.match(executionListSource, /getStepResults/)
+  const resultSource = readFileSync(resolve('src/views/ExecutionResult.vue'), 'utf8')
+  for (const source of [executionListSource, resultSource]) assert.match(source, /<OrchestrationExecutionResult /)
   assert.match(executionListSource, /openMonitorExecution/)
   assert.match(executionListSource, /MonitorExecutionsButton/)
   assert.match(executionListSource, /:source-task-id="route\.params\.id"/)

@@ -14,6 +14,12 @@ const routes = [
     meta: { requiresAuth: true, title: '元数据-addp' },
     children: [
       {
+        path: 'executions/:execution_id',
+        name: 'ExecutionResult',
+        component: () => import('../views/ExecutionResult.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
         path: '',
         redirect: { name: 'MetadataScan' },
         meta: { requiresAuth: true }

@@ -77,6 +77,14 @@
         "readyPath": "/module-ui/develop/login"
       },
       {
+        "module": "orchestrator",
+        "readyPath": "/module-ui/orchestrator/login"
+      },
+      {
+        "module": "quality",
+        "readyPath": "/module-ui/quality/login"
+      },
+      {
         "module": "transfer",
         "readyPath": "/module-ui/transfer/login"
       }

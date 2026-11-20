@@ -5,31 +5,40 @@ import { mockGraph } from './graph.fixture'
 
 const id = '550e8400-e29b-41d4-a716-446655440001'
 
-for (const canReadTransfer of [true, false]) test(`Transfer result navigation uses the existing read permission (${canReadTransfer})`, async ({ page }) => {
+const owners = [
+  { module: 'transfer', type: 'sync', permission: 'transfer.task.read', result: { task_id: 63, records_read: 20, records_written: 20 }, expected: '执行详情 #' + id },
+  { module: 'quality', type: 'quality_plan', permission: 'quality.plan.read', result: { execution_config: { target_key: 'quality-sample' } }, expected: 'quality-sample' },
+  { module: 'meta', type: 'scan', permission: 'meta.scan_task.read', result: { scan_context: { engine_id: 177, scan_depth: 'deep' } }, expected: '177' },
+  { module: 'manager', type: 'embedding', permission: 'manager.derived_artifact.read', result: { metadata: { generated: 11 } }, expected: '11' },
+  { module: 'orchestrator', type: 'orchestration', permission: 'orchestrator.workflow.read', result: { metadata: { step_results: { 'scan-orders': { status: 'success' } } } }, expected: 'scan-orders - success' }
+]
+
+for (const owner of owners) for (const canRead of [true, false]) test(`${owner.module} result navigation uses the existing read permission (${canRead})`, async ({ page }) => {
   const execution = {
-    id: 1256, execution_id: id, module: 'transfer', task_type: 'sync', source: 'transfer',
+    id: 1256, execution_id: id, module: owner.module, task_type: owner.type, source: 'orchestrator',
     source_task_id: '63', source_task_name: '同步任务', status: 'success', progress: 100,
     attempt: 1, created_at: '2026-11-18T02:32:48Z', metadata: {}, steps: []
   }
-  const unexpected = await mockGraph(page, { permissions: ['monitor.execution.read', ...(canReadTransfer ? ['transfer.task.read'] : [])], responses: {
+  const unexpected = await mockGraph(page, { permissions: ['monitor.execution.read', ...(canRead ? [owner.permission] : [])], responses: {
     '/api/v1/monitor/task-providers': [],
     '/api/v1/monitor/executions': { executions: [execution], total: 150, page: 3, page_size: 50 },
     [`/api/v1/monitor/executions/by-execution-id/${id}/tree`]: { execution, children: [], truncated: false },
     [`/api/v1/monitor/executions/by-execution-id/${id}/events`]: { items: [], has_more: false, next_cursor: 0 },
-    [`/api/v1/transfer/executions/${id}`]: { ...execution, task_id: 63, records_read: 20, records_written: 20 },
+    [`/api/v1/${owner.module}/executions/${id}`]: { ...execution, ...owner.result },
     [`/api/v1/transfer/executions/${id}/events`]: { items: [], has_more: false, next_cursor: 0 }
   } })
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
-  const monitorURL = '/monitor/executions?module=transfer&task_type=sync&source_task_id=63&page=3&page_size=50&execution_id=' + id
+  const monitorURL = `/monitor/executions?module=${owner.module}&task_type=${owner.type}&source_task_id=63&page=3&page_size=50&execution_id=${id}`
   await page.goto(monitorURL)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const dialog = frame.getByRole('dialog')
-  await expect(dialog.getByRole('button', { name: '打开任务定义', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: '同步任务', exact: true })).toBeVisible()
+  if (owner.module === 'transfer') await expect(dialog.getByRole('button', { name: '打开任务定义', exact: true })).toBeVisible()
   const result = dialog.getByRole('button', { name: '查看执行结果', exact: true })
-  if (canReadTransfer) {
+  if (canRead) {
     await result.click({ timeout: 5000 })
-    await expect(page).toHaveURL(url => url.pathname === '/transfer/executions/' + id && url.searchParams.get('return_to') === monitorURL)
-    await expect(frame.getByText('执行详情 #' + id, { exact: true })).toBeVisible()
+    await expect(page).toHaveURL(url => url.pathname === `/${owner.module}/executions/${id}` && url.searchParams.get('return_to') === monitorURL)
+    await expect(frame.getByText(owner.expected, { exact: true })).toBeVisible()
     await page.reload()
     await frame.getByRole('button', { name: '返回本次执行', exact: true }).click()
     await expect(page).toHaveURL(monitorURL)
@@ -37,6 +46,25 @@ for (const canReadTransfer of [true, false]) test(`Transfer result navigation us
   } else {
     await expect(result).toHaveCount(0)
   }
+  expect(unexpected).toEqual([])
+})
+
+test('an empty Owner result and a failed refresh keep distinct states and the same return target', async ({ page }) => {
+  const path = '/api/v1/manager/executions/' + id
+  const unexpected = await mockGraph(page, {
+    permissions: ['monitor.execution.read', 'manager.derived_artifact.read'],
+    responses: { [path]: { execution_id: id, status: 'success', metadata: {} } }
+  })
+  await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
+  const monitorURL = '/monitor/executions?module=manager&page=3&execution_id=' + id
+  await page.goto('/manager/executions/' + id + '?' + new URLSearchParams({ return_to: monitorURL }))
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('本次执行暂无已记录的结果明细')).toBeVisible()
+  await page.route('**' + path, route => route.fulfill({ status: 503, json: { error: 'unavailable' } }))
+  await frame.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(frame.getByText('无法读取本次执行结果')).toBeVisible()
+  await expect(frame.getByText('本次执行暂无已记录的结果明细')).toHaveCount(0)
+  await expect(frame.getByRole('button', { name: '返回本次执行' })).toBeEnabled()
   expect(unexpected).toEqual([])
 })
 

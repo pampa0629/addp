@@ -64,12 +64,25 @@ test('SQL failure facts accept only bounded identifiers and coordinates under th
 })
 
 test('execution result routes require a registered task type and an execution identity', () => {
-  for (const [module, taskTypes] of [['develop', ['query', 'workflow', 'script']], ['transfer', ['sync']]]) {
-    for (const task_type of taskTypes) for (const status of ['success', 'failed', 'running']) {
+  const expected = {
+    develop: ['query', 'workflow', 'script'],
+    transfer: ['sync'],
+    quality: ['quality_plan'],
+    orchestrator: ['orchestration'],
+    meta: ['scan'],
+    manager: [
+      'embedding', 'image_segmentation', 'vector_tile_cache_generation', 'vector_tile_set_generation',
+      'vector_materialized_view_generation', 'raster_cog_generation', 'raster_mosaic_generation',
+      'model_3d_glb_generation', 'model3d_tiles_generation', 'gaussian_splat_ksplat_generation',
+      'point_cloud_copc_generation', 'pptx_pdf_generation'
+    ]
+  }
+  for (const [module, taskTypes] of Object.entries(expected)) {
+    for (const task_type of taskTypes) for (const status of ['pending', 'running', 'success', 'failed']) {
       assert.equal(buildExecutionResultRoute({ module, task_type, status, execution_id: 'execution/id' }), `/${module}/executions/execution%2Fid`)
     }
   }
-  for (const input of [{ module: 'develop', task_type: 'cleanup', execution_id: 'id' }, { module: 'transfer', task_type: 'query', execution_id: 'id' }, { module: 'meta', task_type: 'query', execution_id: 'id' }, {}]) {
+  for (const input of [{ module: 'develop', task_type: 'cleanup', execution_id: 'id' }, { module: 'transfer', task_type: 'query', execution_id: 'id' }, { module: 'meta', task_type: 'query', execution_id: 'id' }, { module: 'manager', task_type: 'data_profiling', execution_id: 'id' }, { module: 'quality', task_type: 'cleanup_executor', execution_id: 'id' }, {}]) {
     assert.equal(buildExecutionResultRoute(input), '')
   }
 })
@@ -890,7 +903,7 @@ test('endpoint diagnostics show the correct bilingual input and distance guidanc
 
 
 test('execution results retain only the exact Monitor execution context', () => {
-  for (const [module, task_type] of [['develop', 'workflow'], ['transfer', 'sync']]) {
+  for (const [module, task_type] of [['develop', 'workflow'], ['transfer', 'sync'], ['quality', 'quality_plan'], ['manager', 'embedding'], ['meta', 'scan'], ['orchestrator', 'orchestration']]) {
     const execution = { module, task_type, execution_id: 'same-run' }
     const back = `/monitor/executions?module=${module}&task_type=${task_type}&source_task_id=37&page=3&page_size=50&execution_id=same-run`
     const target = new URL(buildExecutionResultRoute(execution, back), 'http://console')

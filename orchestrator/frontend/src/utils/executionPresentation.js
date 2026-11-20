@@ -29,3 +29,20 @@ export function executionFailureMessage(execution, t) {
   if (error?.message) return error.message
   return error?.category ? t(`common.executionFailure.${error.category}`) : ''
 }
+
+export function getStatusText(status, t) {
+  const texts = {
+    pending: t('orchestrator.executionList.statusPending'),
+    running: t('orchestrator.executionList.statusRunning'),
+    success: t('orchestrator.executionList.statusSuccess'),
+    failed: t('orchestrator.executionList.statusFailed'),
+    timeout: t('orchestrator.executionList.statusTimeout'),
+    cancelled: t('orchestrator.executionList.statusCancelled')
+  }
+  return texts[status] || status
+}
+
+export function formatTime(time) {
+  if (!time) return '-'
+  return new Date(time).toLocaleString()
+}

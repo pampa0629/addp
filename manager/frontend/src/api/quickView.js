@@ -282,8 +282,8 @@ export const quickViewAPI = {
     })
   },
 
-  getExecutionStatus(executionID) {
-    return request.get(`/manager/executions/${executionID}`)
+  getExecutionStatus(executionID, options = {}) {
+    return request.get(`/manager/executions/${executionID}`, options)
 	},
 
 	listVectorTileSetTasks(params = {}) { return request.get('/manager/tasks', { params: { ...params, task_type: 'vector_tile_set_generation' } }) },

@@ -1,5 +1,33 @@
 {
   "manager": {
+    "executionResult": {
+      "title": "派生任务执行结果",
+      "total": "总数",
+      "generated": "已生成",
+      "failed": "失败",
+      "ready_skipped": "已有结果跳过",
+      "rebuilt": "已重建",
+      "unsupported": "不支持",
+      "missing_source": "缺少来源",
+      "tiles_processed": "已处理瓦片",
+      "tiles_total_estimate": "预计瓦片数",
+      "total_tiles": "瓦片总数",
+      "generated_tiles": "已生成瓦片",
+      "cached_tiles": "缓存瓦片",
+      "empty_tiles": "空瓦片",
+      "skipped_tiles": "跳过瓦片",
+      "oversized_skipped_tiles": "超大跳过瓦片",
+      "failed_tiles": "失败瓦片",
+      "total_size_bytes": "总大小（字节）",
+      "max_tile_size_bytes": "最大瓦片（字节）",
+      "actual_max_zoom": "实际最大层级",
+      "current_zoom": "当前层级",
+      "min_zoom": "最小层级",
+      "max_zoom": "最大层级",
+      "workflow_runtime": "计算运行时",
+      "lineage_facts": "输入输出血缘",
+      "glb_facts": "GLB 转换结果"
+    },
     "segment": {
       "title": "影像分割",
       "point": "点选",
