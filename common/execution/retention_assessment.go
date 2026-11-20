@@ -80,21 +80,27 @@ type retentionRow struct {
 	LeaseExpiresAt     *time.Time
 }
 
-const retentionColumns = `id, tenant_id, execution_id, parent_execution_id,
- retry_of_execution_id, CASE
+const postgresRetentionRecovery = `CASE
  WHEN jsonb_typeof(metadata -> 'recovered_from_execution_id') = 'string'
  AND octet_length(metadata ->> 'recovered_from_execution_id') <= 255
  THEN metadata ->> 'recovered_from_execution_id'
- WHEN metadata ? 'recovered_from_execution_id' THEN '' END AS recovered_from,
- status, completed_at, lease_expires_at`
+ WHEN metadata ? 'recovered_from_execution_id' THEN '' END`
+
+const mysqlRetentionRecovery = `CASE
+ WHEN JSON_TYPE(metadata -> '$.recovered_from_execution_id') = 'STRING'
+ AND OCTET_LENGTH(metadata ->> '$.recovered_from_execution_id') <= 255
+ THEN metadata ->> '$.recovered_from_execution_id'
+ WHEN JSON_CONTAINS_PATH(metadata, 'one', '$.recovered_from_execution_id') THEN '' END`
 
 var errRetentionReadBudget = errors.New("execution retention assessment read budget exhausted")
 
 type retentionReader struct {
-	db      *gorm.DB
-	options RetentionAssessmentOptions
-	rows    int
-	queries int
+	recoveryProjection string
+	recoveryValue      string
+	db                 *gorm.DB
+	options            RetentionAssessmentOptions
+	rows               int
+	queries            int
 }
 
 func (r *retentionReader) read(query *gorm.DB, limit int) ([]retentionRow, error) {
@@ -106,7 +112,7 @@ func (r *retentionReader) read(query *gorm.DB, limit int) ([]retentionRow, error
 		limit = remaining
 	}
 	var rows []retentionRow
-	err := query.Select(retentionColumns).Order("id").Limit(limit).Scan(&rows).Error
+	err := query.Select("id, tenant_id, execution_id, parent_execution_id, retry_of_execution_id, " + r.recoveryProjection + " AS recovered_from, status, completed_at, lease_expires_at").Order("id").Limit(limit).Scan(&rows).Error
 	r.queries++
 	r.rows += len(rows)
 	return rows, err
@@ -133,15 +139,15 @@ func (o RetentionAssessmentOptions) normalized() (RetentionAssessmentOptions, er
 	return o, nil
 }
 
-// AssessRetention reads one bounded, consistent PostgreSQL snapshot. There is
+// AssessRetention reads one bounded, consistent database snapshot. There is
 // intentionally no Owner callback or deletion route in this first phase.
 func AssessRetention(ctx context.Context, db *gorm.DB, options RetentionAssessmentOptions) (*RetentionAssessment, error) {
 	options, err := options.normalized()
 	if err != nil {
 		return nil, err
 	}
-	if db == nil || db.Dialector.Name() != "postgres" {
-		return nil, fmt.Errorf("execution retention assessment requires PostgreSQL")
+	if db == nil || (db.Dialector.Name() != "postgres" && db.Dialector.Name() != "mysql") {
+		return nil, fmt.Errorf("execution retention assessment requires PostgreSQL or MySQL")
 	}
 	// GORM nested transactions ignore TxOptions. Never turn an inherited writable
 	// transaction into a report that falsely claims database-enforced read-only.
@@ -151,10 +157,19 @@ func AssessRetention(ctx context.Context, db *gorm.DB, options RetentionAssessme
 	var report *RetentionAssessment
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var now time.Time
-		if err := tx.Raw("SELECT transaction_timestamp()").Scan(&now).Error; err != nil {
+		r := &retentionReader{db: tx, options: options, recoveryProjection: postgresRetentionRecovery, recoveryValue: "metadata ->> 'recovered_from_execution_id'"}
+		if tx.Dialector.Name() == "mysql" {
+			r.recoveryProjection, r.recoveryValue = mysqlRetentionRecovery, "metadata ->> '$.recovered_from_execution_id'"
+			// InnoDB establishes its read view on the first table read. Sampling
+			// the clock alone would let a subsequent commit enter this report.
+			var firstID sql.NullInt64
+			err := tx.Raw("SELECT CURRENT_TIMESTAMP(6), (SELECT id FROM common.task_executions ORDER BY id LIMIT 1)").Row().Scan(&now, &firstID)
+			if err != nil {
+				return err
+			}
+		} else if err := tx.Raw("SELECT transaction_timestamp()").Scan(&now).Error; err != nil {
 			return err
 		}
-		r := &retentionReader{db: tx, options: options}
 		report = &RetentionAssessment{ReadOnly: true, AsOf: now.UTC(), ExpiredBefore: now.UTC().Add(-OverviewRetention),
 			NextAfterID: options.AfterID, ReasonCounts: map[RetentionReason]int{}, Trees: []RetentionTreeAssessment{}}
 		seeds, err := r.read(tx.Table("common.task_executions").Where("id > ?", options.AfterID), options.SeedLimit+1)
@@ -343,7 +358,7 @@ func (r *retentionReader) incomingReferences(report *RetentionAssessment, groups
 	}
 	sort.Strings(ids)
 	remaining := r.options.ReadLimit - r.rows
-	rows, err := r.read(r.db.Table("common.task_executions").Where("retry_of_execution_id IN ? OR metadata ->> 'recovered_from_execution_id' IN ?", ids, ids), remaining)
+	rows, err := r.read(r.db.Table("common.task_executions").Where("retry_of_execution_id IN ? OR "+r.recoveryValue+" IN ?", ids, ids), remaining)
 	if err != nil && !errors.Is(err, errRetentionReadBudget) {
 		return err
 	}

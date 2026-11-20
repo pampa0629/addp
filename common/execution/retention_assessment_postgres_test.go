@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/infra/database"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/common/models"
+	mysqlerr "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -21,7 +24,24 @@ func TestExecutionRetentionAssessmentAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("ADDP_TEST_EXECUTION_POSTGRES_DSN is not set")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	testExecutionRetentionAssessment(t, postgres.Open(dsn))
+}
+
+func TestExecutionRetentionAssessmentAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_COMMON_EXECUTION") != "1" {
+		t.Skip("run the disposable platform-execution MySQL gate")
+	}
+	driver, err := platformmysql.Dialector(database.Config{Host: "127.0.0.1", Port: os.Getenv("ADDP_TEST_MYSQL_PORT"),
+		DBName: "common", User: os.Getenv("ADDP_TEST_MYSQL_USER"), Password: os.Getenv("ADDP_TEST_MYSQL_PASSWORD")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testExecutionRetentionAssessment(t, driver)
+}
+
+func testExecutionRetentionAssessment(t *testing.T, driver gorm.Dialector) {
+	t.Helper()
+	db, err := gorm.Open(driver, &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,13 +259,23 @@ func TestExecutionRetentionAssessmentAgainstPostgres(t *testing.T) {
 		callback := "retention_readonly_" + uuid.NewString()
 		checked, injected := 0, false
 		if err := db.Callback().Row().Before("gorm:row").Register(callback, func(tx *gorm.DB) {
-			var mode, isolation string
-			if err := tx.Statement.ConnPool.QueryRowContext(t.Context(), "SELECT current_setting('transaction_read_only'), current_setting('transaction_isolation')").Scan(&mode, &isolation); err != nil {
-				tx.AddError(err)
-				return
-			}
-			if mode != "on" || isolation != "repeatable read" {
-				t.Errorf("assessment transaction is %s / %s", mode, isolation)
+			if driver.Name() == "mysql" {
+				// MySQL session defaults do not describe per-transaction overrides.
+				// Prove the actual restriction without changing any row.
+				_, err := tx.Statement.ConnPool.ExecContext(t.Context(), "UPDATE common.task_executions SET id=id WHERE FALSE")
+				var rejected *mysqlerr.MySQLError
+				if !errors.As(err, &rejected) || rejected.Number != 1792 {
+					t.Errorf("expected read-only transaction error 1792, got %v", err)
+				}
+			} else {
+				var mode, isolation string
+				if err := tx.Statement.ConnPool.QueryRowContext(t.Context(), "SELECT current_setting('transaction_read_only'), current_setting('transaction_isolation')").Scan(&mode, &isolation); err != nil {
+					tx.AddError(err)
+					return
+				}
+				if mode != "on" || isolation != "repeatable read" {
+					t.Errorf("assessment transaction is %s / %s", mode, isolation)
+				}
 			}
 			checked++
 			if !injected && strings.HasSuffix(tx.Statement.Table, "task_executions") {

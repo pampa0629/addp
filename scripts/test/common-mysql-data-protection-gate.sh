@@ -150,9 +150,10 @@ if [ -z "${ADDP_TEST_MYSQL_PASSWORD:-}" ]; then
 fi
 
 if [ "$test_group" = platform-execution ]; then
-    (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_COMMON_EXECUTION=1 GOWORK=off go test ./schema \
-        -run '^TestPlatformMySQLExecutionLifecycle$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-execution.log"
+    (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_COMMON_EXECUTION=1 GOWORK=off go test -p 1 ./schema ./execution \
+        -run '^(TestPlatformMySQLExecutionLifecycle|TestExecutionRetentionAssessmentAgainstMySQL)$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestPlatformMySQLExecutionLifecycle ' "$WORK_DIR/platform-execution.log"
+    grep -q '^--- PASS: TestExecutionRetentionAssessmentAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     exit 0
 fi
 
