@@ -1737,6 +1737,9 @@ jobs:
       - name: Run MySQL System authorization request lock gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-request'
 
+      - name: Verify restricted System source Grant routine permissions in MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-source-grant-boundary'
+
       - name: Run MySQL Meta claim and task summary gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-meta-scan'
 
