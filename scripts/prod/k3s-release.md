@@ -37,6 +37,33 @@
 
 同一发布和服务在所有支持的架构使用同一个离线镜像引用。`release.json` 记录各架构的 Registry 摘要及 Docker 镜像 ID，`config-digests.json` 记录从对应 Docker 归档取得的原生镜像配置摘要，供 K3s 导入后核对。工作负载只调度到已导入该发布的节点，镜像从本机缓存获取。双架构镜像不添加架构或节点名选择器。单架构组件自动加架构约束。现有 PVC 及其存储拓扑继续决定有状态 Pod 的可用节点。跨节点扩副本前按组件确认并发执行语义。
 
+## System 跨节点服务发现
+
+空库先启动一个 System 并完成引导和模块声明发布。两个可调度节点须已经导入并校验同一发布的各自原生镜像。System 使用共享 PostgreSQL、相同的服务身份密钥、发现绑定和集群内可达的 Service 地址。现场部署清单负责提供这些配置。Gateway 的 `SYSTEM_URL` 指向 System Service，以便切换副本后仍可重新连接。
+
+站点模板中为 System Pod 设置标签 `app.kubernetes.io/name=system-backend`。完成单副本引导后，在同一 Deployment 的 `spec` 中写入以下配置，保留发布节点标签、现场准入和资源约束，并确保两个节点都符合调度条件。用原有 `render` 入口生成清单后部署。
+
+```yaml
+replicas: 2
+template:
+  spec:
+    topologySpreadConstraints:
+      - topologyKey: kubernetes.io/hostname
+        maxSkew: 1
+        minDomains: 2
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: system-backend
+```
+
+```bash
+kubectl -n "$SITE_NAMESPACE" rollout status deployment/system-backend
+kubectl -n "$SITE_NAMESPACE" get pods -l app.kubernetes.io/name=system-backend -o wide
+kubectl -n "$SITE_NAMESPACE" get endpointslices -l kubernetes.io/service-name=system-backend
+```
+
+验收须在两个不同节点各看到一个 Ready System Pod，并确认 System Service 选中了这两个端点。使用已授权的业务账号通过 Gateway 访问 Catalog。先撤回一个 Catalog Pod，确认两个 System 返回相同的剩余端点，再退出当前的发现写入者。持续检查 Gateway 业务响应和存活副本的路由 revision、端点标识及截止时间，观测窗口应超过原端点截止时间。通过条件为业务请求持续成功、已撤回的端点未重新出现、存活副本重新核对后延长了剩余端点的截止时间。恢复两个副本后，可交换故障方向复验。这个演练覆盖 System 进程失效，数据库和 K3s 控制节点的容灾各自验收。可信 Service 绑定、Meta 后台资格及单模块查询权限见[健康与平台控制面规范](../../docs/spec/api/健康与平台控制面.md#第三阶段-catalog-服务发现契约)。
 
 ## Meta Worker 资源伸缩
 
