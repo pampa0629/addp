@@ -1701,6 +1701,9 @@ jobs:
       - name: Run MySQL Common execution lifecycle gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-execution'
 
+      - name: Run MySQL System IAM principal and user migration gate
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-iam-foundation'
+
       - name: Run MySQL System authorization request lock gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-request'
 

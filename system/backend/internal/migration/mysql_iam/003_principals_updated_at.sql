@@ -1,0 +1,3 @@
+CREATE TRIGGER IF NOT EXISTS trg_principals_updated_at
+BEFORE UPDATE ON principals FOR EACH ROW
+SET NEW.updated_at = CURRENT_TIMESTAMP(6)
