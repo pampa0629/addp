@@ -213,7 +213,7 @@ func (r *Repository) GetResourceAccessTicketAuthSnapshot(
 			membership.joined_at AS tenant_membership_joined_at,
 			membership.expires_at AS tenant_membership_expires_at,
 			tenant.status AS tenant_status,
-			statement_timestamp() AS database_time
+			` + r.statementTimeSQL() + ` AS database_time
 		FROM system.resource_access_tickets ticket
 		JOIN system.refresh_token_families family ON family.id = ticket.family_id
 		JOIN system.principals principal ON principal.id = family.principal_id

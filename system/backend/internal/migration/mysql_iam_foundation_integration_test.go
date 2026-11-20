@@ -3,7 +3,9 @@ package migration
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/common/schema"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	passwordutils "github.com/addp/system/pkg/utils"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
@@ -173,6 +176,9 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	})
 	t.Run("TOTP credential", func(t *testing.T) {
 		testMySQLIAMMFACredential(t, db)
+	})
+	t.Run("single tenant browser session", func(t *testing.T) {
+		testMySQLBrowserSession(t, db)
 	})
 	t.Run("concurrent tenant administrator revocations", func(t *testing.T) {
 		testMySQLTenantAdministrator(t, db)
@@ -444,4 +450,66 @@ func testMySQLIAMMFACredential(t *testing.T, db *gorm.DB) {
 		}
 	})
 
+}
+
+func testMySQLBrowserSession(t *testing.T, db *gorm.DB) {
+	ctx := context.Background()
+	repo := iam.NewRepository(db)
+	now, err := repo.CurrentDatabaseTime(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := iam.TenantMembership{PrincipalID: 103, TenantID: 1, SourceType: "invitation", JoinedAt: now}
+	if err := repo.CreateTenantMembership(ctx, &member); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := iam.NewTokenFamilyService(repo, iam.BrowserSessionConfig{
+		ResourceTicketOwners: models.BrowserResourceAccessOwners,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := iam.NewContextSelectionService(repo, tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.BeginContextSelection(ctx, iam.BeginContextSelectionInput{
+		PrincipalID:    member.PrincipalID,
+		Authentication: iam.SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: now},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.NextAction != iam.ContextSelectionNextActionSessionIssued || result.Session == nil {
+		t.Fatal("single tenant context did not issue a session")
+	}
+	session := result.Session
+	if len(session.ResourceAccessTickets) != len(models.BrowserResourceAccessOwners) || session.AccessToken == "" || session.RefreshToken == "" {
+		t.Fatal("incomplete first-party browser credentials")
+	}
+	for _, owner := range models.BrowserResourceAccessOwners {
+		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(session.ResourceAccessTickets[owner])))
+		snapshot, err := repo.GetResourceAccessTicketAuthSnapshot(ctx, hash)
+		if err != nil {
+			t.Fatalf("get %s credential snapshot: %v", owner, err)
+		}
+		if snapshot.CredentialOwner == nil || *snapshot.CredentialOwner != owner || snapshot.FamilyPrincipalID != member.PrincipalID ||
+			snapshot.TenantMembershipID == nil || *snapshot.TenantMembershipID != member.ID ||
+			snapshot.CredentialRevokedAt != nil || !snapshot.CredentialExpiresAt.After(snapshot.DatabaseTime) {
+			t.Fatalf("%s ticket has wrong owner, principal, membership, or validity", owner)
+		}
+	}
+	revoked, err := repo.CurrentDatabaseTime(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RevokeTokenFamily(ctx, session.FamilyID, revoked, "browser_logout"); err != nil {
+		t.Fatal(err)
+	}
+	for table, want := range map[string]int{"access_tokens": 1, "refresh_tokens": 1, "resource_access_tickets": len(models.BrowserResourceAccessOwners)} {
+		var count int
+		if err := db.Raw("SELECT COUNT(*) FROM "+table+" WHERE family_id=? AND revoked_at=?", session.FamilyID, revoked).Row().Scan(&count); err != nil || count != want {
+			t.Fatalf("family revocation marked %d of %d %s: %v", count, want, table, err)
+		}
+	}
 }
