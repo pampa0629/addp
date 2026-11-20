@@ -38,6 +38,24 @@
 同一发布和服务在所有支持的架构使用同一个离线镜像引用。`release.json` 记录各架构的 Registry 摘要及 Docker 镜像 ID，`config-digests.json` 记录从对应 Docker 归档取得的原生镜像配置摘要，供 K3s 导入后核对。工作负载只调度到已导入该发布的节点，镜像从本机缓存获取。双架构镜像不添加架构或节点名选择器。单架构组件自动加架构约束。现有 PVC 及其存储拓扑继续决定有状态 Pod 的可用节点。跨节点扩副本前按组件确认并发执行语义。
 
 
+## Meta Worker 资源伸缩
+
+两台已加载相同发布镜像的可调度节点、可用的 Kubernetes 资源指标 API，以及名为 `meta-worker` 的 Deployment 和容器是这份配置的前提。Pod 模板使用标签 `app.kubernetes.io/name=meta-worker`；工作负载须能调度到两个不同主机。由现场工作负载清单解除单主机约束，保留发布版本和存储约束。先检查 `kubectl top nodes` 和两端容量。每个 Worker 使用独立进程身份，继续由 System 登记及数据库执行租约控制新任务领取。
+
+在发布包所在目录执行：
+
+```bash
+kubectl -n "$SITE_NAMESPACE" patch deployment meta-worker --type strategic --patch-file k3s-meta-worker-deployment-patch.json
+kubectl -n "$SITE_NAMESPACE" rollout status deployment/meta-worker
+kubectl -n "$SITE_NAMESPACE" apply -f k3s-meta-worker-autoscaling.json
+kubectl -n "$SITE_NAMESPACE" get hpa,pdb
+kubectl -n "$SITE_NAMESPACE" get pods -l app.kubernetes.io/name=meta-worker -o wide
+```
+
+示例配置保留 2 至 6 个副本，按 Worker 容器 CPU、内存相对资源请求的利用率伸缩，初始目标分别为 70% 和 80%。每个副本请求 250m CPU、256Mi 内存。现场应按任务规模和容量调整。后续发布将相同资源请求、滚动升级与跨主机分布写入站点 Deployment 清单，并交由 HPA 管理副本数，避免重新应用固定 replicas。PDB 要求自愿驱逐时至少一个 Pod 可用。业务验收还须确认两个进程均可领取任务、同一执行只有一个有效持有者，并验证单副本退出后的在途租约恢复。
+
+Compose 可用 `docker compose up -d --scale meta-worker=2 meta-worker` 配置常驻副本；独立部署可由现场进程管理器运行多个 Worker 进程。两者的 CPU／内存自动伸缩需要现场编排器。单主机上的多个进程共享同一故障域。
+
 ## 可选的 KingbaseES 试用业务库
 
 内部验证站点可在原生 Linux AMD64 K3s 节点加载固定的 KingbaseES 官方 Docker 介质，并沿用镜像内置试用许可。站点自行保管下载介质，保留节点导入所需的原文件。既有 Compose 及正式许可验收入口见 [Business 部署配置](../../docs/spec/configuration/Business数据引擎部署.md)。

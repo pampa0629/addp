@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import json
 from pathlib import Path
 import tarfile
 import tempfile
@@ -151,6 +152,27 @@ class K3sReleaseTest(unittest.TestCase):
         data["items"] = [incompatible]
         with self.assertRaisesRegex(ValueError, "No compatible architecture"):
             RELEASE.render(release, data)
+
+    def test_meta_worker_profile_has_resource_requests_and_two_failure_domains(self):
+        directory = Path(RELEASE.__file__).parent
+        hpa, budget = json.loads((directory / "k3s-meta-worker-autoscaling.json").read_text())["items"]
+        patch = json.loads((directory / "k3s-meta-worker-deployment-patch.json").read_text())["spec"]
+        pod = patch["template"]["spec"]
+        container, = pod["containers"]
+        spread, = pod["topologySpreadConstraints"]
+        self.assertEqual(hpa["spec"]["scaleTargetRef"]["name"], container["name"])
+        self.assertEqual(hpa["spec"]["minReplicas"], 2)
+        self.assertGreater(hpa["spec"]["maxReplicas"], hpa["spec"]["minReplicas"])
+        metrics = [metric["containerResource"] for metric in hpa["spec"]["metrics"]]
+        self.assertEqual({metric["name"] for metric in metrics}, {"cpu", "memory"})
+        for metric in metrics:
+            self.assertEqual(metric["container"], container["name"])
+            self.assertIn(metric["name"], container["resources"]["requests"])
+        self.assertEqual(spread["topologyKey"], "kubernetes.io/hostname")
+        self.assertEqual(spread["minDomains"], 2)
+        self.assertEqual(spread["whenUnsatisfiable"], "DoNotSchedule")
+        self.assertEqual(spread["labelSelector"], budget["spec"]["selector"])
+        self.assertEqual(budget["spec"]["minAvailable"], 1)
 
     def test_render_rejects_unfrozen_image_and_scheduler_bypass(self):
         release = self.pair()

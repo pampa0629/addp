@@ -191,6 +191,8 @@ def export_bundle(release, output):
         script = Path(__file__).resolve()
         shutil.copy2(script, bundle / script.name)
         shutil.copy2(script.with_suffix(".md"), bundle / "README.md")
+        for name in ("k3s-meta-worker-autoscaling.json", "k3s-meta-worker-deployment-patch.json"):
+            shutil.copy2(script.with_name(name), bundle / name)
         with (bundle / "SHA256SUMS").open("x") as sums:
             for path in sorted(p for p in bundle.iterdir() if p.name != "SHA256SUMS"):
                 sums.write(f"{sha256_file(path)}  {path.name}\n")
