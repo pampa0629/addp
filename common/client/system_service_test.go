@@ -261,25 +261,22 @@ func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 	}
 }
 
-func TestListActiveModulesRequestsRoutableRegistryProjection(t *testing.T) {
+func TestListModuleEndpointsRequestsRoutableRegistryProjection(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/runtime/modules" || r.URL.Query().Get("status") != "up" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/runtime/modules/manager/endpoints" || r.URL.RawQuery != "" {
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"modules": []ModuleInfo{{ModuleName: "manager", Enabled: true}},
-			"count":   1,
-		})
+		_ = json.NewEncoder(w).Encode([]models.ModuleRoutingEndpoint{{ModuleName: "manager"}})
 	}))
 	defer server.Close()
 
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	modules, err := client.ListActiveModules(context.Background())
+	modules, err := client.ListModuleEndpoints(context.Background(), "manager")
 	if err != nil || len(modules) != 1 || modules[0].ModuleName != "manager" {
-		t.Fatalf("ListActiveModules() modules=%#v error=%v", modules, err)
+		t.Fatalf("ListModuleEndpoints() modules=%#v error=%v", modules, err)
 	}
 }
 

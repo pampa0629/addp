@@ -18,9 +18,9 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/processmetrics"
 	"github.com/addp/system/internal/api"
-	"github.com/addp/system/internal/catalogdiscovery"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/kubernetesdiscovery"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -141,13 +141,17 @@ func main() {
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopRuntime()
 	moduleRegistryService := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	if path := os.Getenv("ADDP_CATALOG_DISCOVERY_BINDING"); path != "" {
-		source, err := catalogdiscovery.Open(path)
+	if _, retired := os.LookupEnv("ADDP_CATALOG_DISCOVERY_BINDING"); retired {
+		logger.L().Error("Replace ADDP_CATALOG_DISCOVERY_BINDING with ADDP_KUBERNETES_DISCOVERY_BINDINGS before starting System")
+		os.Exit(1)
+	}
+	if path := os.Getenv("ADDP_KUBERNETES_DISCOVERY_BINDINGS"); path != "" {
+		sources, err := kubernetesdiscovery.Open(path)
 		if err != nil {
-			logger.L().Error("Catalog discovery binding failed", "error", err)
+			logger.L().Error("Kubernetes discovery bindings failed", "error", err)
 			os.Exit(1)
 		}
-		moduleRegistryService.StartCatalogDiscovery(runtimeContext, source)
+		moduleRegistryService.StartKubernetesDiscovery(runtimeContext, sources)
 	}
 	router := api.SetupRouter(db, cfg, redisClient, moduleRegistryService)
 

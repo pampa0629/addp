@@ -563,7 +563,7 @@ func (r *ModuleRegistryRepository) GetRegistryRevision() (int64, error) {
 }
 
 // RoutingSnapshot reads the cursor and eligible forwarding addresses from one database snapshot.
-func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, catalogBindingID string) (*commonmodels.ModuleRoutingSnapshot, error) {
+func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, bindings map[string]string, module string) (*commonmodels.ModuleRoutingSnapshot, error) {
 	snapshot := &commonmodels.ModuleRoutingSnapshot{ObservedAt: time.Now(), Endpoints: []commonmodels.ModuleRoutingEndpoint{}}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -577,30 +577,45 @@ func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, catalogB
 			Where("d.enabled = ? AND d.declaration_published_at IS NOT NULL", true).
 			Where("i.role = ? AND i.status = ? AND i.module_url <> '' AND i.lease_expires_at > ?", models.ModuleRuntimeRoleBackend, models.ModuleRuntimeStatusUp, snapshot.ObservedAt).
 			Order("d.module_name, i.instance_id")
-		if catalogBindingID != "" {
-			query = query.Where("d.module_name <> ?", "catalog")
+		if module != "" {
+			query = query.Where("d.module_name = ?", module)
+		}
+		external := make([]string, 0, len(bindings))
+		for name := range bindings {
+			external = append(external, name)
+		}
+		if len(external) > 0 {
+			query = query.Where("d.module_name NOT IN ?", external)
 		}
 		if err := query.Scan(&snapshot.Endpoints).Error; err != nil {
 			return err
 		}
-		if catalogBindingID == "" {
+		if len(external) == 0 || (module != "" && bindings[module] == "") {
 			return nil
 		}
-		var saved models.ModuleDiscoverySnapshot
-		result := tx.Table("module_discovery_snapshots AS s").Select("s.*").
+		var saved []models.ModuleDiscoverySnapshot
+		observations := tx.Table("module_discovery_snapshots AS s").Select("s.*").
 			Joins("JOIN module_definitions AS d ON d.module_name = s.module_name").
-			Where("s.module_name = ? AND s.binding_id = ? AND d.enabled = ? AND d.declaration_published_at IS NOT NULL", "catalog", catalogBindingID, true).
-			Scan(&saved)
-		if result.Error != nil || result.RowsAffected == 0 {
-			return result.Error
+			Where("s.module_name IN ? AND d.enabled = ? AND d.declaration_published_at IS NOT NULL", external, true).
+			Order("s.module_name")
+		if module != "" {
+			observations = observations.Where("s.module_name = ?", module)
 		}
-		var endpoints []commonmodels.ModuleRoutingEndpoint
-		if err := json.Unmarshal(saved.Endpoints, &endpoints); err != nil {
+		if err := observations.Scan(&saved).Error; err != nil {
 			return err
 		}
-		for _, endpoint := range endpoints {
-			if endpoint.ExpiresAt.After(snapshot.ObservedAt) {
-				snapshot.Endpoints = append(snapshot.Endpoints, endpoint)
+		for _, row := range saved {
+			if row.BindingID != bindings[row.ModuleName] {
+				continue
+			}
+			var endpoints []commonmodels.ModuleRoutingEndpoint
+			if err := json.Unmarshal(row.Endpoints, &endpoints); err != nil {
+				return err
+			}
+			for _, endpoint := range endpoints {
+				if endpoint.ModuleName == row.ModuleName && endpoint.ExpiresAt.After(snapshot.ObservedAt) {
+					snapshot.Endpoints = append(snapshot.Endpoints, endpoint)
+				}
 			}
 		}
 		return nil

@@ -8,7 +8,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/execution"
 	"github.com/addp/system/internal/models"
-	"github.com/addp/system/internal/repository"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -21,29 +21,6 @@ type CleanupReader struct {
 	Bearer           string
 }
 
-type cleanupRegistryReader struct{ db *gorm.DB }
-
-func (r cleanupRegistryReader) ListActiveModules(ctx context.Context) ([]*client.ModuleInfo, error) {
-	if r.db == nil {
-		return nil, client.ErrExecutionOwnerUnavailable
-	}
-	modules, err := NewModuleRegistryService(repository.NewModuleRegistryRepository(r.db.WithContext(ctx))).ListActiveModules()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*client.ModuleInfo, 0, len(modules))
-	for _, m := range modules {
-		if m == nil {
-			continue
-		}
-		target := &client.ModuleInfo{ModuleName: m.ModuleName, Enabled: m.Enabled}
-		for _, i := range m.Instances {
-			target.Instances = append(target.Instances, client.ModuleRuntimeInstanceInfo{Role: i.Role, Status: i.Status, LeaseExpiresAt: i.LeaseExpiresAt, ModuleURL: i.ModuleURL})
-		}
-		out = append(out, target)
-	}
-	return out, nil
-}
 func cleanupPublicTask(s *cleanupSnapshot) models.CleanupTask {
 	in, p := s.Input, s.Parent
 	return models.CleanupTask{TaskID: in.RequestID, Action: in.Action, TenantID: in.TenantID, CleanupMode: in.CleanupMode, TriggerType: in.TriggerType, CauseEvent: in.CauseEvent, Status: p.Status, ExpectedModules: in.ExpectedModules, Context: in.Context, ExecutionID: p.ExecutionID, RequestedBy: in.RequestedBy, CreatedAt: in.RequestedAt, StartedAt: p.StartedAt, CompletedAt: p.CompletedAt, TimeoutAt: in.Deadline, BasedOnScan: in.BasedOnScan}

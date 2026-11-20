@@ -84,7 +84,7 @@ class PilotTest(unittest.TestCase):
         self.assertEqual({(tuple(rule["resources"]), tuple(rule["verbs"])) for rule in role["rules"]},
                          {(("services",), ("list", "watch")), (("endpointslices",), ("list", "watch"))})
         self.assertEqual(binding["subjects"][0]["namespace"], "pilot")
-        self.assertEqual(json.loads(config["data"]["binding.json"])["service_uid"], "trusted-service")
+        self.assertEqual(json.loads(config["data"]["binding.json"])["catalog"]["service_uid"], "trusted-service")
         self.assertTrue(config["immutable"])
         self.assertEqual(system["spec"]["template"]["spec"]["serviceAccountName"], "catalog-discovery")
         self.assertEqual(catalog["spec"]["replicas"], 2)

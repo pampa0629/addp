@@ -695,7 +695,7 @@ func TestCatalogRoutingSourceKeepsProcessRegistrySeparate(t *testing.T) {
 		}
 	}
 	read("process")
-	registry.catalogBindingID = "binding-a"
+	registry.discoveryBindings = map[string]string{"catalog": "binding-a"}
 	read("")
 	endpoints := []commonmodels.ModuleRoutingEndpoint{{ModuleName: "catalog", EndpointID: "pod/http", URL: "http://10.42.1.7:8192", ExpiresAt: time.Now().Add(time.Minute)}}
 	save := func() {
@@ -711,9 +711,9 @@ func TestCatalogRoutingSourceKeepsProcessRegistrySeparate(t *testing.T) {
 	save()
 	// Another System process reads the same database snapshot from its first request.
 	registry = NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	registry.catalogBindingID = "other-binding"
+	registry.discoveryBindings = map[string]string{"catalog": "other-binding"}
 	read("")
-	registry.catalogBindingID = "binding-a"
+	registry.discoveryBindings = map[string]string{"catalog": "binding-a"}
 	read("pod/http")
 	if err := db.Model(&models.ModuleDefinition{}).Where("module_name = ?", "catalog").Update("enabled", false).Error; err != nil {
 		t.Fatal(err)
@@ -728,5 +728,47 @@ func TestCatalogRoutingSourceKeepsProcessRegistrySeparate(t *testing.T) {
 	var instances []models.ModuleRuntimeInstance
 	if err := db.Find(&instances).Error; err != nil || len(instances) != 1 || instances[0].InstanceID != "process" {
 		t.Fatalf("process registry: %+v, error %v", instances, err)
+	}
+}
+
+func TestMetaBackgroundRegistrationCannotEnterModuleHTTPRoute(t *testing.T) {
+	db := newServiceTestDB(t)
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}, &models.ModuleDiscoverySnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	registry.discoveryBindings = map[string]string{"meta": "meta-service-uid", "catalog": "catalog-service-uid"}
+	for _, module := range []string{"meta", "manager"} {
+		publishForTest(t, registry, module)
+		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: module, InstanceID: module + "-process", Role: models.ModuleRuntimeRoleBackend, ModuleURL: "http://" + module + ":8080", ProcessStartedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	verify := func(module, want string) {
+		t.Helper()
+		endpoints, err := registry.ListModuleEndpoints(context.Background(), module)
+		if err != nil || (want == "" && len(endpoints) != 0) || (want != "" && (len(endpoints) != 1 || endpoints[0].EndpointID != want || endpoints[0].ModuleName != module)) {
+			t.Fatalf("%s endpoints=%+v err=%v", module, endpoints, err)
+		}
+	}
+	verify("meta", "")
+	verify("manager", "manager-process")
+	eps := []commonmodels.ModuleRoutingEndpoint{{ModuleName: "meta", EndpointID: "meta-pod/http", URL: "http://pod:8080", ExpiresAt: time.Now().Add(time.Minute)}}
+	data, err := json.Marshal(eps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleDiscoverySnapshot{ModuleName: "meta", BindingID: registry.discoveryBindings["meta"], Endpoints: data}).Error; err != nil {
+		t.Fatal(err)
+	}
+	verify("meta", "meta-pod/http")
+	verify("manager", "manager-process")
+	verify("catalog", "")
+	var instance models.ModuleRuntimeInstance
+	if err := db.Where("instance_id = ? AND status = ?", "meta-process", "up").First(&instance).Error; err != nil {
+		t.Fatal(err)
 	}
 }

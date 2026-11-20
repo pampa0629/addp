@@ -40,9 +40,11 @@ func (r *requestScopeResolver) Resolve(_ context.Context, owners []string, tenan
 	return scopes, nil
 }
 
-type executionReadModuleRegistry struct{ modules []*commonclient.ModuleInfo }
+type executionReadModuleRegistry struct {
+	modules []models.ModuleRoutingEndpoint
+}
 
-func (r executionReadModuleRegistry) ListActiveModules(context.Context) ([]*commonclient.ModuleInfo, error) {
+func (r executionReadModuleRegistry) ListModuleEndpoints(context.Context, string) ([]models.ModuleRoutingEndpoint, error) {
 	return r.modules, nil
 }
 
@@ -81,8 +83,7 @@ func TestExecutionReadAPIReauthenticatesThroughOwnerForEveryRequest(t *testing.T
 	defer owner.Close()
 	registry := executionReadModuleRegistry{}
 	for _, module := range []string{"orchestrator", "transfer"} {
-		registry.modules = append(registry.modules, &commonclient.ModuleInfo{ModuleName: module, Enabled: true,
-			Instances: []commonclient.ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}})
+		registry.modules = append(registry.modules, models.ModuleRoutingEndpoint{ModuleName: module, URL: owner.URL, ExpiresAt: time.Now().Add(time.Hour)})
 	}
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

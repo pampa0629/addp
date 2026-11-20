@@ -43,12 +43,12 @@ func (s ManagerImportSource) Matches(tenantID uint, request ManagerImportSourceR
 }
 
 type ManagerImportSourceClient struct {
-	registry   ArtifactSourceRegistry
+	registry   ModuleEndpointResolver
 	tokens     ServiceTokenProvider
 	httpClient *http.Client
 }
 
-func NewManagerImportSourceClient(registry ArtifactSourceRegistry, tokens ServiceTokenProvider) *ManagerImportSourceClient {
+func NewManagerImportSourceClient(registry ModuleEndpointResolver, tokens ServiceTokenProvider) *ManagerImportSourceClient {
 	return &ManagerImportSourceClient{registry: registry, tokens: tokens, httpClient: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 func (c *ManagerImportSourceClient) VerifyImportSource(ctx context.Context, tenantID uint, request ManagerImportSourceRequest) (*ManagerImportSource, error) {

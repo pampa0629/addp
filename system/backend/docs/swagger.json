@@ -13566,6 +13566,65 @@
                 ]
             }
         },
+        "/runtime/modules/{module_name}/endpoints": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅供 Monitor 查询执行所属模块和 Transfer 查询 Manager、Develop | Monitor resolves execution owners and Transfer resolves Manager or Develop",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "查询指定模块的路由端点 | Get one module's routing endpoints",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名称 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.ModuleRoutingEndpoint"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.runtime_registry.read"
+                ]
+            }
+        },
         "/runtime/modules/{module_name}/instances/{instance_id}": {
             "delete": {
                 "security": [

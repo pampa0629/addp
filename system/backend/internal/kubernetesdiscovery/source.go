@@ -1,4 +1,4 @@
-package catalogdiscovery
+package kubernetesdiscovery
 
 import (
 	"context"
@@ -34,24 +34,43 @@ type Binding struct {
 }
 
 type Source struct {
+	Module      string
 	binding     Binding
 	client      *http.Client
 	trustDigest [sha256.Size]byte
 }
 
-func Open(path string) (*Source, error) {
+func Open(path string) (map[string]*Source, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var b Binding
-	if err = json.Unmarshal(data, &b); err != nil {
+	var bindings map[string]Binding
+	if err := json.Unmarshal(data, &bindings); err != nil {
 		return nil, err
 	}
+	if len(bindings) == 0 {
+		return nil, errors.New("empty Kubernetes discovery bindings")
+	}
+	sources := make(map[string]*Source, len(bindings))
+	for module, b := range bindings {
+		if !validSegment(module) {
+			return nil, errors.New("invalid discovery module")
+		}
+		source, err := newSource(module, b)
+		if err != nil {
+			return nil, fmt.Errorf("binding for %s: %w", module, err)
+		}
+		sources[module] = source
+	}
+	return sources, nil
+}
+
+func newSource(module string, b Binding) (*Source, error) {
 	server, err := url.Parse(b.APIServer)
 	if err != nil || server.Scheme != "https" || server.Hostname() == "" || server.User != nil || server.RawQuery != "" || server.Fragment != "" || strings.Trim(server.Path, "/") != "" ||
 		b.CAFile == "" || b.TokenFile == "" || b.ServiceUID == "" || b.PortName == "" || !validSegment(b.Namespace) || !validSegment(b.Service) {
-		return nil, errors.New("invalid Catalog Kubernetes binding")
+		return nil, errors.New("invalid module Kubernetes binding")
 	}
 	pem, err := os.ReadFile(b.CAFile)
 	if err != nil {
@@ -62,7 +81,7 @@ func Open(path string) (*Source, error) {
 		return nil, errors.New("invalid Kubernetes CA file")
 	}
 	b.APIServer = strings.TrimRight(b.APIServer, "/")
-	return &Source{binding: b, trustDigest: sha256.Sum256(pem), client: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &Source{Module: module, binding: b, trustDigest: sha256.Sum256(pem), client: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 // BindingID scopes a stored observation to the configured cluster trust, Service and port.
@@ -255,7 +274,7 @@ func (s *Source) endpoints(v *view, expires time.Time) []models.ModuleRoutingEnd
 	}
 	result := make([]models.ModuleRoutingEndpoint, 0, len(out))
 	for id, target := range out {
-		result = append(result, models.ModuleRoutingEndpoint{ModuleName: "catalog", EndpointID: id, URL: target, ExpiresAt: expires})
+		result = append(result, models.ModuleRoutingEndpoint{ModuleName: s.Module, EndpointID: id, URL: target, ExpiresAt: expires})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].EndpointID < result[j].EndpointID })
 	return result

@@ -10,15 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/models"
 	"github.com/google/uuid"
 )
 
 type exportRegistryStub struct {
-	modules []*ModuleInfo
+	modules []models.ModuleRoutingEndpoint
 	err     error
 }
 
-func (s exportRegistryStub) ListActiveModules(context.Context) ([]*ModuleInfo, error) {
+func (s exportRegistryStub) ListModuleEndpoints(context.Context, string) ([]models.ModuleRoutingEndpoint, error) {
 	return s.modules, s.err
 }
 
@@ -38,11 +39,12 @@ func TestExportSourceClientUsesOnlyLiveOwnerBackendAndTenantServiceToken(t *test
 		_ = json.NewEncoder(w).Encode(ExportExecutionSource{TenantID: 7, UserID: 9})
 	}))
 	defer server.Close()
-	registry := exportRegistryStub{modules: []*ModuleInfo{{ModuleName: "manager", Enabled: true, Instances: []ModuleRuntimeInstanceInfo{
-		{InstanceID: "0-worker", Role: "worker", Status: "up", ModuleURL: "http://127.0.0.1:1", LeaseExpiresAt: time.Now().Add(time.Minute)},
-		{InstanceID: "1-expired", Role: ModuleRuntimeRoleBackend, Status: "up", ModuleURL: "http://127.0.0.1:1", LeaseExpiresAt: time.Now().Add(-time.Minute)},
-		{InstanceID: "2-backend", Role: ModuleRuntimeRoleBackend, Status: "up", ModuleURL: server.URL, LeaseExpiresAt: time.Now().Add(time.Minute)},
-	}}}}
+	registry := exportRegistryStub{modules: []models.ModuleRoutingEndpoint{
+		{ModuleName: "meta", EndpointID: "other", URL: "http://127.0.0.1:1", ExpiresAt: time.Now().Add(time.Minute)},
+		{ModuleName: "manager", EndpointID: "expired", URL: "http://127.0.0.1:1", ExpiresAt: time.Now().Add(-time.Minute)},
+		{ModuleName: "manager", EndpointID: "live", URL: server.URL, ExpiresAt: time.Now().Add(time.Minute)},
+	}}
+
 	tokens := ServiceTokenProviderFunc(func(_ context.Context, tenant uint) (string, error) {
 		if tenant != 7 {
 			t.Error("wrong token tenant")
@@ -54,11 +56,11 @@ func TestExportSourceClientUsesOnlyLiveOwnerBackendAndTenantServiceToken(t *test
 	if err != nil || facts.UserID != 9 || called != 1 {
 		t.Fatalf("facts=%#v calls=%d err=%v", facts, called, err)
 	}
-	registry.modules[0].Enabled = false
+	client.registry = exportRegistryStub{}
 	if _, err := client.ResolveExportExecutionSource(t.Context(), "manager", 7, ref, digest); err == nil || called != 1 {
 		t.Fatal("disabled owner contacted")
 	}
-	registry.modules[0].Enabled = true
+
 	client.registry = exportRegistryStub{err: errors.New("registry unavailable")}
 	if _, err := client.ResolveExportExecutionSource(t.Context(), "manager", 7, ref, digest); err == nil || called != 1 {
 		t.Fatal("bypassed registry")
@@ -86,7 +88,7 @@ func TestExportSourceClientRejectsRedirectsAndWrongTenantOrEmptyActor(t *testing
 				_ = json.NewEncoder(w).Encode(facts)
 			}))
 			defer server.Close()
-			registry := exportRegistryStub{modules: []*ModuleInfo{{ModuleName: "develop", Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: ModuleRuntimeRoleBackend, Status: "up", ModuleURL: server.URL, LeaseExpiresAt: time.Now().Add(time.Minute)}}}}}
+			registry := exportRegistryStub{modules: []models.ModuleRoutingEndpoint{{ModuleName: "develop", URL: server.URL, ExpiresAt: time.Now().Add(time.Minute)}}}
 			client := NewExportExecutionSourceClient(registry, staticTenantToken("transfer-service"))
 			if _, err := client.ResolveExportExecutionSource(t.Context(), "develop", 7, TransferExportSessionReference{SessionID: 1, ExecutionID: uuid.NewString()}, strings.Repeat("a", 64)); err == nil {
 				t.Fatal("accepted untrusted source")

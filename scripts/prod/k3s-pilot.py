@@ -190,7 +190,7 @@ def discovery_resources(namespace, service_uid, system, catalog):
     config = {"api_server": "https://kubernetes.default.svc", "ca_file": directory + "/ca.crt",
               "token_file": directory + "/token", "namespace": namespace, "service": NAMES["catalog"],
               "service_uid": service_uid, "port_name": "http"}
-    config_map = object_("v1", "ConfigMap", reader, immutable=True, data={"binding.json": json.dumps(config)})
+    config_map = object_("v1", "ConfigMap", reader, immutable=True, data={"binding.json": json.dumps({"catalog": config})})
     pod = system["spec"]["template"]["spec"]
     pod["serviceAccountName"] = reader
     pod["volumes"].append({"name": reader, "projected": {"sources": [
@@ -198,7 +198,7 @@ def discovery_resources(namespace, service_uid, system, catalog):
         {"serviceAccountToken": {"path": "token", "expirationSeconds": 3600}}]}})
     process = pod["containers"][0]
     process["volumeMounts"].append({"name": reader, "mountPath": directory, "readOnly": True})
-    process["env"].append({"name": "ADDP_CATALOG_DISCOVERY_BINDING", "value": directory + "/binding.json"})
+    process["env"].append({"name": "ADDP_KUBERNETES_DISCOVERY_BINDINGS", "value": directory + "/binding.json"})
     catalog["spec"]["replicas"] = 2
     catalog["spec"]["template"]["spec"]["containers"][0]["env"].append({
         "name": "CATALOG_DISCOVERY_SOURCE", "value": "kubernetes"})

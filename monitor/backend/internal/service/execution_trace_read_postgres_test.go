@@ -105,13 +105,13 @@ func TestIntegrationPostgresExecutionTraceOwnerRead(t *testing.T) {
 	})
 	owner := httptest.NewServer(router)
 	defer owner.Close()
-	modules := []*commonclient.ModuleInfo{}
+	modules := []models.ModuleRoutingEndpoint{}
 	for _, module := range []string{"orchestrator", "develop", "transfer"} {
 		url := owner.URL
 		if module == "transfer" {
 			url = "http://127.0.0.1:1"
 		} // unrelated unavailable Owner must not be contacted
-		modules = append(modules, &commonclient.ModuleInfo{ModuleName: module, Enabled: true, Instances: []commonclient.ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: url, LeaseExpiresAt: time.Now().Add(time.Hour)}}})
+		modules = append(modules, models.ModuleRoutingEndpoint{ModuleName: module, URL: url, ExpiresAt: time.Now().Add(time.Hour)})
 	}
 	query := NewExecutionQueryService(execution.NewTaskExecutionRepository(db))
 	resolver := commonclient.NewExecutionReadAuthorizer(executionTestModuleLister{modules})

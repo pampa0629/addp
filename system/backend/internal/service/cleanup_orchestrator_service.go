@@ -35,7 +35,7 @@ type CleanupOrchestratorService struct {
 }
 
 func NewCleanupOrchestratorService(db *gorm.DB, registry *ModuleRegistryService) *CleanupOrchestratorService {
-	return &CleanupOrchestratorService{coordinator: newCleanupCoordinator(db), registry: registry, reads: client.NewExecutionReadAuthorizer(cleanupRegistryReader{db})}
+	return &CleanupOrchestratorService{coordinator: newCleanupCoordinator(db), registry: registry, reads: client.NewExecutionReadAuthorizer(registry)}
 }
 
 // Run is the only parent supervisor. Restart resumes aggregation from the

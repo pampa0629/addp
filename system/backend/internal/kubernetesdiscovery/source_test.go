@@ -1,4 +1,4 @@
-package catalogdiscovery
+package kubernetesdiscovery
 
 import (
 	"context"
@@ -19,7 +19,7 @@ const svcJSON = `{"metadata":{"name":"catalog","namespace":"pilot","uid":"bound"
 const sliceJSON = `{"metadata":{"namespace":"pilot","uid":"slice1","labels":{"kubernetes.io/service-name":"catalog","endpointslice.kubernetes.io/managed-by":"endpointslice-controller.k8s.io"},"ownerReferences":[{"apiVersion":"v1","kind":"Service","name":"catalog","uid":"bound","controller":true}]},"addressType":"IPv4","ports":[{"name":"http","protocol":"TCP","port":8192}],"endpoints":[{"addresses":["10.42.1.7"],"conditions":{"ready":true},"targetRef":{"kind":"Pod","namespace":"pilot","uid":"pod1"}}]}`
 
 func TestEndpointEligibility(t *testing.T) {
-	s := Source{binding: Binding{Namespace: "pilot", Service: "catalog", ServiceUID: "bound", PortName: "http"}}
+	s := Source{Module: "meta", binding: Binding{Namespace: "pilot", Service: "catalog", ServiceUID: "bound", PortName: "http"}}
 	for _, tc := range []struct{ from, to string }{
 		{"bound", "another"}, {"endpointslice-controller.k8s.io", "foreign"}, {"\"controller\":true", "\"controller\":false"}, {"\"ready\":true", "\"ready\":null"}, {"\"ready\":true", "\"ready\":true,\"terminating\":true"}, {"\"kind\":\"Pod\"", "\"kind\":\"Node\""}, {"TCP", "UDP"}, {"IPv4", "IPv6"},
 	} {
@@ -86,7 +86,7 @@ func TestReconcileRequiresCompleteListAndWatchOnlyRemoves(t *testing.T) {
 				fmt.Fprint(w, `{"metadata":{"resourceVersion":"8"},"items":[]}`)
 			}))
 			defer srv.Close()
-			s := Source{binding: Binding{APIServer: srv.URL, TokenFile: token, Namespace: "pilot", Service: "catalog", ServiceUID: "bound", PortName: "http"}, client: srv.Client()}
+			s := Source{Module: "meta", binding: Binding{APIServer: srv.URL, TokenFile: token, Namespace: "pilot", Service: "catalog", ServiceUID: "bound", PortName: "http"}, client: srv.Client()}
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			var published [][]models.ModuleRoutingEndpoint
@@ -113,7 +113,7 @@ func TestReconcileRequiresCompleteListAndWatchOnlyRemoves(t *testing.T) {
 					t.Fatalf("watch publications %+v", published)
 				}
 				first := published[0][0]
-				if first.EndpointID != "pod1/http" || first.URL != "http://10.42.1.7:8192" || first.ExpiresAt.Before(before.Add(30*time.Second)) || first.ExpiresAt.After(time.Now().Add(30*time.Second)) {
+				if first.ModuleName != "meta" || first.EndpointID != "pod1/http" || first.URL != "http://10.42.1.7:8192" || first.ExpiresAt.Before(before.Add(30*time.Second)) || first.ExpiresAt.After(time.Now().Add(30*time.Second)) {
 					t.Errorf("endpoint %+v", first)
 				}
 			}

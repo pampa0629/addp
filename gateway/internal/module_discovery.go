@@ -90,8 +90,20 @@ func (md *ModuleDiscovery) watchLoop(watchTimeout time.Duration) {
 func (md *ModuleDiscovery) refreshModules(wait time.Duration) error {
 	md.mu.RLock()
 	revision := md.revision
+	now := md.now()
+	for _, pool := range md.backendPools {
+		for _, ep := range pool {
+			if remaining := ep.expiresAt.Sub(now); remaining > 0 {
+				wait = min(wait, remaining/2)
+			}
+		}
+	}
 	md.mu.RUnlock()
-	snapshot, err := md.systemClient.WatchModules(md.ctx, revision, wait)
+	// Limit the entire exchange, including dial and token acquisition, so one
+	// stalled connection cannot block renewal through a surviving System replica.
+	ctx, cancel := context.WithTimeout(md.ctx, wait+2*time.Second)
+	defer cancel()
+	snapshot, err := md.systemClient.WatchModules(ctx, revision, wait)
 	if err != nil {
 		return err
 	}
@@ -109,7 +121,7 @@ func (md *ModuleDiscovery) refreshModules(wait time.Duration) error {
 
 	// 更新模块列表
 	newBackendPools := make(map[string][]moduleBackend)
-	now := md.now()
+	now = md.now()
 	existing := make(map[string]map[string]moduleBackend)
 	for _, e := range endpoints {
 		if !e.ExpiresAt.After(now) {

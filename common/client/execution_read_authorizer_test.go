@@ -17,12 +17,15 @@ import (
 
 	"github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/models"
 	"go.opentelemetry.io/otel/trace"
 )
 
-type executionTestModuleLister struct{ modules []*ModuleInfo }
+type executionTestModuleLister struct {
+	modules []models.ModuleRoutingEndpoint
+}
 
-func (l executionTestModuleLister) ListActiveModules(context.Context) ([]*ModuleInfo, error) {
+func (l executionTestModuleLister) ListModuleEndpoints(context.Context, string) ([]models.ModuleRoutingEndpoint, error) {
 	return l.modules, nil
 }
 
@@ -57,7 +60,7 @@ func TestExecutionReadAuthorizerBindsOwnerTenantSubjectAndNeverFollowsRedirect(t
 		_ = json.NewEncoder(w).Encode(scope)
 	}))
 	defer owner.Close()
-	registry := executionTestModuleLister{[]*ModuleInfo{{ModuleName: "transfer", Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}}}}
+	registry := executionTestModuleLister{[]models.ModuleRoutingEndpoint{{ModuleName: "transfer", URL: owner.URL, ExpiresAt: time.Now().Add(time.Hour)}}}
 	auth := NewExecutionReadAuthorizer(registry)
 	for _, value := range []string{"ok", "tenant", "subject", "owner", "redirect", "extra", "multiple"} {
 		mode = value
@@ -95,11 +98,11 @@ func TestExecutionReadAuthorizerBoundsConcurrencyAndKeepsEveryScope(t *testing.T
 		_ = json.NewEncoder(w).Encode(execution.ReadScope{Module: module, TenantID: 7, PrincipalID: 9})
 	}))
 	defer owner.Close()
-	modules := make([]*ModuleInfo, count)
+	modules := make([]models.ModuleRoutingEndpoint, count)
 	owners := make([]string, count)
 	for i := range owners {
 		owners[i] = fmt.Sprintf("owner_%d", i)
-		modules[i] = &ModuleInfo{ModuleName: owners[i], Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}}
+		modules[i] = models.ModuleRoutingEndpoint{ModuleName: owners[i], URL: owner.URL, ExpiresAt: time.Now().Add(time.Hour)}
 	}
 	auth := NewExecutionReadAuthorizer(executionTestModuleLister{modules})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -155,9 +158,9 @@ func TestExecutionReadAuthorizerFailureCancelsOtherOwnersAndReturnsNoPartialScop
 		http.Error(w, "private owner details", http.StatusServiceUnavailable)
 	}))
 	defer owner.Close()
-	modules := []*ModuleInfo{}
+	modules := []models.ModuleRoutingEndpoint{}
 	for _, name := range []string{"slow", "failed"} {
-		modules = append(modules, &ModuleInfo{ModuleName: name, Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}})
+		modules = append(modules, models.ModuleRoutingEndpoint{ModuleName: name, URL: owner.URL, ExpiresAt: time.Now().Add(time.Hour)})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -176,9 +179,9 @@ type executionReadTransport func(*http.Request) (*http.Response, error)
 
 func (f executionReadTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-type executionReadRegistry func(context.Context) ([]*ModuleInfo, error)
+type executionReadRegistry func(context.Context) ([]models.ModuleRoutingEndpoint, error)
 
-func (f executionReadRegistry) ListActiveModules(ctx context.Context) ([]*ModuleInfo, error) {
+func (f executionReadRegistry) ListModuleEndpoints(ctx context.Context, _ string) ([]models.ModuleRoutingEndpoint, error) {
 	return f(ctx)
 }
 
@@ -221,19 +224,18 @@ func TestExecutionReadFailureDiagnosticsAreBoundedAndCorrelated(t *testing.T) {
 			ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid}))
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			modules := []*ModuleInfo{{ModuleName: "transfer", Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: "http://private-host.example", LeaseExpiresAt: time.Now().Add(time.Hour)}}}}
-			auth := NewExecutionReadAuthorizer(executionReadRegistry(func(context.Context) ([]*ModuleInfo, error) {
+			modules := []models.ModuleRoutingEndpoint{{ModuleName: "transfer", URL: "http://private-host.example", ExpiresAt: time.Now().Add(time.Hour)}}
+			auth := NewExecutionReadAuthorizer(executionReadRegistry(func(context.Context) ([]models.ModuleRoutingEndpoint, error) {
 				if tc.name == "registry" {
 					return nil, errors.New("private registry error")
-				}
-				if tc.name == "dispatch" {
-					cancel()
 				}
 				return modules, nil
 			}))
 			owners := []string{"transfer"}
 			bearer := "Bearer private-token"
 			switch tc.name {
+			case "dispatch":
+				cancel()
 			case "empty":
 				owners = nil
 			case "input":
@@ -293,7 +295,7 @@ func TestExecutionReadFailureDiagnosticsAreBoundedAndCorrelated(t *testing.T) {
 				t.Fatalf("wrong HTTP status: %#v", record)
 			}
 			expectedOwner := "transfer"
-			if tc.stage == "input" || tc.stage == "registry" || tc.stage == "dispatch" || tc.name == "invalid_owner" {
+			if tc.stage == "input" || tc.stage == "dispatch" || tc.name == "invalid_owner" {
 				expectedOwner = ""
 			}
 			if record["owner_module"] != expectedOwner {
@@ -320,9 +322,9 @@ func TestExecutionReadFirstFailureSurvivesPeerCancellation(t *testing.T) {
 		http.Error(w, "private owner body", 503)
 	}))
 	defer owner.Close()
-	modules := []*ModuleInfo{}
+	modules := []models.ModuleRoutingEndpoint{}
 	for _, name := range []string{"slow", "failed"} {
-		modules = append(modules, &ModuleInfo{ModuleName: name, Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}})
+		modules = append(modules, models.ModuleRoutingEndpoint{ModuleName: name, URL: owner.URL, ExpiresAt: time.Now().Add(time.Hour)})
 	}
 	scopes, err := NewExecutionReadAuthorizer(executionTestModuleLister{modules}).Resolve(context.Background(), []string{"slow", "failed"}, 7, 9, "Bearer private-token")
 	if !errors.Is(err, ErrExecutionOwnerUnavailable) || scopes != nil {

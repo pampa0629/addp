@@ -176,3 +176,29 @@ func (l *staticModuleLister) WatchModules(ctx context.Context, revision int64, w
 	}
 	return &models.ModuleRoutingSnapshot{Revision: l.revision, Endpoints: l.endpoints}, nil
 }
+
+type deadlineWatcher struct{ wait, budget time.Duration }
+
+func (w *deadlineWatcher) WatchModules(ctx context.Context, _ int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return nil, errors.New("watch transport deadline is missing")
+	}
+	w.wait, w.budget = wait, time.Until(deadline)
+	return &models.ModuleRoutingSnapshot{}, nil
+}
+
+func TestStalledWatchLeavesTimeToReconnectBeforeEndpointExpiry(t *testing.T) {
+	watcher := new(deadlineWatcher)
+	md := NewModuleDiscovery(watcher)
+	defer md.Stop()
+	now := time.Now()
+	md.now = func() time.Time { return now }
+	md.backendPools["catalog"] = []moduleBackend{{expiresAt: now.Add(16 * time.Second)}}
+	if err := md.refreshModules(30 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if watcher.wait != 8*time.Second || watcher.budget > 10*time.Second || watcher.budget <= 8*time.Second {
+		t.Fatalf("wait=%s deadline budget=%s", watcher.wait, watcher.budget)
+	}
+}

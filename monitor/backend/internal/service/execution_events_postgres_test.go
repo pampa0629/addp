@@ -21,9 +21,11 @@ import (
 	"gorm.io/gorm"
 )
 
-type executionTestModuleLister struct{ modules []*commonclient.ModuleInfo }
+type executionTestModuleLister struct {
+	modules []models.ModuleRoutingEndpoint
+}
 
-func (l executionTestModuleLister) ListActiveModules(context.Context) ([]*commonclient.ModuleInfo, error) {
+func (l executionTestModuleLister) ListModuleEndpoints(context.Context, string) ([]models.ModuleRoutingEndpoint, error) {
 	return l.modules, nil
 }
 
@@ -141,8 +143,7 @@ func TestIntegrationPostgresExecutionEventVisibility(t *testing.T) {
 	t.Cleanup(owner.Close)
 	registry := executionTestModuleLister{}
 	for _, module := range []string{"orchestrator", "transfer"} {
-		registry.modules = append(registry.modules, &commonclient.ModuleInfo{ModuleName: module, Enabled: true,
-			Instances: []commonclient.ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: now.Add(time.Hour)}}})
+		registry.modules = append(registry.modules, models.ModuleRoutingEndpoint{ModuleName: module, URL: owner.URL, ExpiresAt: now.Add(time.Hour)})
 	}
 	repo := execution.NewTaskExecutionRepository(tx)
 	query := NewExecutionQueryService(repo)

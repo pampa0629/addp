@@ -151,11 +151,11 @@ func TestDiscoveryWriterFailoverAgainstPostgres(t *testing.T) {
 	var last int64
 	readBoth := func(count int) {
 		t.Helper()
-		a, err := first.RoutingSnapshot(ctx, "bound")
+		a, err := first.RoutingSnapshot(ctx, map[string]string{"catalog": "bound"}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, err := second.RoutingSnapshot(ctx, "bound")
+		b, err := second.RoutingSnapshot(ctx, map[string]string{"catalog": "bound"}, "")
 		if err != nil || b.Revision != a.Revision || a.Revision <= last || len(a.Endpoints) != count || len(b.Endpoints) != count {
 			t.Fatalf("readers %+v %+v, previous revision %d: %v", a, b, last, err)
 		}

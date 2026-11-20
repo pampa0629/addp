@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"time"
 
+	"github.com/addp/common/models"
 	"github.com/google/uuid"
 )
 
@@ -76,17 +76,17 @@ func ExportRequestDigest(request *CreateTransferExecutionRequest) (string, error
 	return hex.EncodeToString(digest[:]), nil
 }
 
-type ArtifactSourceRegistry interface {
-	ListActiveModules(context.Context) ([]*ModuleInfo, error)
+type ModuleEndpointResolver interface {
+	ListModuleEndpoints(context.Context, string) ([]models.ModuleRoutingEndpoint, error)
 }
 
 type ExportExecutionSourceClient struct {
-	registry   ArtifactSourceRegistry
+	registry   ModuleEndpointResolver
 	tokens     ServiceTokenProvider
 	httpClient *http.Client
 }
 
-func NewExportExecutionSourceClient(registry ArtifactSourceRegistry, tokens ServiceTokenProvider) *ExportExecutionSourceClient {
+func NewExportExecutionSourceClient(registry ModuleEndpointResolver, tokens ServiceTokenProvider) *ExportExecutionSourceClient {
 	return &ExportExecutionSourceClient{registry: registry, tokens: tokens, httpClient: &http.Client{
 		Timeout:       30 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -120,29 +120,27 @@ func (c *ExportExecutionSourceClient) ResolveExportExecutionSource(ctx context.C
 }
 
 // ownerArtifactTransport selects one live Owner backend for private artifact facts.
-func ownerArtifactTransport(ctx context.Context, registry ArtifactSourceRegistry, tokens ServiceTokenProvider, httpClient *http.Client, owner string, tenantID uint) (tenantHTTPClient, error) {
-	modules, err := registry.ListActiveModules(ctx)
+func ownerArtifactTransport(ctx context.Context, registry ModuleEndpointResolver, tokens ServiceTokenProvider, httpClient *http.Client, owner string, tenantID uint) (tenantHTTPClient, error) {
+	endpoints, err := registry.ListModuleEndpoints(ctx, owner)
 	if err != nil {
 		return tenantHTTPClient{}, err
 	}
-	var instances []ModuleRuntimeInstanceInfo
-	for _, module := range modules {
-		if module == nil || !module.Enabled || module.ModuleName != owner {
-			continue
-		}
-		for _, instance := range module.Instances {
-			if instance.Role == ModuleRuntimeRoleBackend && instance.Status == "up" && instance.LeaseExpiresAt.After(time.Now()) {
-				instances = append(instances, instance)
-			}
-		}
-	}
-	if len(instances) == 0 {
+	base := ownerEndpointURL(endpoints, owner, time.Now())
+	if base == "" {
 		return tenantHTTPClient{}, errors.New("artifact source backend is unavailable")
 	}
-	sort.Slice(instances, func(i, j int) bool { return instances[i].InstanceID < instances[j].InstanceID })
-	base, err := url.Parse(instances[0].ModuleURL)
-	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") {
-		return tenantHTTPClient{}, errors.New("artifact source backend URL is invalid")
+	return newTenantHTTPClient(base, tokens, httpClient).withTenantID(tenantID), nil
+}
+
+func ownerEndpointURL(endpoints []models.ModuleRoutingEndpoint, owner string, now time.Time) string {
+	for _, ep := range endpoints {
+		if ep.ModuleName != owner || !ep.ExpiresAt.After(now) {
+			continue
+		}
+		base, err := url.Parse(ep.URL)
+		if err == nil && (base.Scheme == "http" || base.Scheme == "https") && base.Hostname() != "" && base.User == nil && !base.ForceQuery && base.RawQuery == "" && base.Fragment == "" && (base.Path == "" || base.Path == "/") {
+			return base.Scheme + "://" + base.Host
+		}
 	}
-	return newTenantHTTPClient(base.Scheme+"://"+base.Host, tokens, httpClient).withTenantID(tenantID), nil
+	return ""
 }

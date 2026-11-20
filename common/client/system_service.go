@@ -346,8 +346,13 @@ func (c *SystemServiceClient) ListModules(ctx context.Context) ([]*ModuleInfo, e
 	return c.listModules(ctx, "/api/v1/system/runtime/modules")
 }
 
-func (c *SystemServiceClient) ListActiveModules(ctx context.Context) ([]*ModuleInfo, error) {
-	return c.listModules(ctx, "/api/v1/system/runtime/modules?status=up")
+func (c *SystemServiceClient) ListModuleEndpoints(ctx context.Context, module string) ([]models.ModuleRoutingEndpoint, error) {
+	if !ownerModulePattern.MatchString(module) {
+		return nil, errors.New("invalid endpoint owner")
+	}
+	var endpoints []models.ModuleRoutingEndpoint
+	err := c.doPlatformJSON(ctx, http.MethodGet, "/api/v1/system/runtime/modules/"+module+"/endpoints", nil, &endpoints)
+	return endpoints, err
 }
 
 func (c *SystemServiceClient) WatchActiveModules(ctx context.Context, revision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {

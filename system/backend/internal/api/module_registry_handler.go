@@ -318,6 +318,48 @@ func (h *ModuleRegistryHandler) ListModulesService(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"modules": modules, "count": len(modules)})
 }
 
+// ListModuleEndpoints godoc
+// @Summary 查询指定模块的路由端点 | Get one module's routing endpoints
+// @Description 仅供 Monitor 查询执行所属模块和 Transfer 查询 Manager、Develop | Monitor resolves execution owners and Transfer resolves Manager or Develop
+// @Tags 运行时注册 | Runtime Registry
+// @Produce json
+// @Security BearerAuth
+// @Param module_name path string true "模块名称 | Module name"
+// @Success 200 {array} commonmodels.ModuleRoutingEndpoint
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.runtime_registry.read"]
+// @Router /runtime/modules/{module_name}/endpoints [get]
+func (h *ModuleRegistryHandler) ListModuleEndpoints(c *gin.Context) {
+	auth, _ := middleware.IAMAuthContextFromGin(c)
+	module := c.Param("module_name")
+	if !moduleEndpointTargetAllowed(*auth.Client.ClientID, module) {
+		respondModuleRegistryError(c, http.StatusForbidden, commoni18n.T(c, commoni18n.MsgForbidden), moduleRegistryForbiddenErrorCode)
+		return
+	}
+	endpoints, err := h.service.ListModuleEndpoints(c.Request.Context(), module)
+	if err != nil {
+		respondModuleRegistryError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError), "module_endpoint_read_failed")
+		return
+	}
+	c.JSON(http.StatusOK, endpoints)
+}
+
+func moduleEndpointTargetAllowed(caller, module string) bool {
+	switch caller {
+	case "addp-transfer":
+		return module == "manager" || module == "develop"
+	case "addp-monitor":
+		switch module {
+		case "asset", "develop", "graph", "manager", "meta", "model", "ontology", "orchestrator", "quality", "security", "service", "standard", "system", "transfer":
+			return true
+		}
+	}
+	return false
+}
+
 // WatchModulesService godoc
 // @Summary      等待模块路由快照 | Watch module routing snapshot
 // @Description  仅供 Gateway 获取有效路由端点及绝对截止时间。修订变化或等待超时返回完整快照 | Returns forwarding endpoints and absolute expiry times to Gateway when the revision changes or the wait expires

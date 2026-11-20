@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/logger"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
-	"github.com/addp/system/internal/catalogdiscovery"
+	"github.com/addp/system/internal/kubernetesdiscovery"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
@@ -27,40 +27,55 @@ var ErrBootstrapModuleImmutable = errors.New("platform bootstrap module enabled 
 var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime instance query")
 
 type ModuleRegistryService struct {
-	catalogBindingID string
+	discoveryBindings map[string]string
 
 	repo                *repository.ModuleRegistryRepository
 	leaseDuration       time.Duration
 	deploymentDiscovery *DeploymentDiscoveryService
 }
 
-// StartCatalogDiscovery configures every reader before serving requests. Only the
+// StartKubernetesDiscovery configures every reader before serving requests. Only the
 // replica holding the database session lock reads Kubernetes and publishes changes.
-func (s *ModuleRegistryService) StartCatalogDiscovery(ctx context.Context, source *catalogdiscovery.Source) {
-	s.catalogBindingID = source.BindingID()
-	go func() {
-		for ctx.Err() == nil {
-			err := s.repo.WithDiscoveryWriter(ctx, "catalog", s.catalogBindingID, func(publish func([]commonmodels.ModuleRoutingEndpoint) error) error {
-				observed, cancel := context.WithCancel(ctx)
-				defer cancel()
-				var failure error
-				source.Run(observed, publish, func(err error) { failure = err; cancel() })
-				return failure
-			})
-			if err != nil && ctx.Err() == nil {
-				logger.L().Warn("Catalog Kubernetes discovery failed", "error", err)
+func (s *ModuleRegistryService) StartKubernetesDiscovery(ctx context.Context, sources map[string]*kubernetesdiscovery.Source) {
+	s.discoveryBindings = make(map[string]string, len(sources))
+	for module, source := range sources {
+		binding := source.BindingID()
+		s.discoveryBindings[module] = binding
+		go func() {
+			for ctx.Err() == nil {
+				err := s.repo.WithDiscoveryWriter(ctx, module, binding, func(publish func([]commonmodels.ModuleRoutingEndpoint) error) error {
+					observed, cancel := context.WithCancel(ctx)
+					defer cancel()
+					var failure error
+					source.Run(observed, publish, func(err error) { failure = err; cancel() })
+					return failure
+				})
+				if err != nil && ctx.Err() == nil {
+					logger.L().Warn("Kubernetes discovery failed", "module", module, "error", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Second):
+				}
 			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-		}
-	}()
+		}()
+	}
 }
 
 func (s *ModuleRegistryService) routingSnapshot(ctx context.Context) (*commonmodels.ModuleRoutingSnapshot, error) {
-	return s.repo.RoutingSnapshot(ctx, s.catalogBindingID)
+	return s.repo.RoutingSnapshot(ctx, s.discoveryBindings, "")
+}
+
+func (s *ModuleRegistryService) ListModuleEndpoints(ctx context.Context, module string) ([]commonmodels.ModuleRoutingEndpoint, error) {
+	if module == "" {
+		return nil, ErrInvalidModuleRuntimeInstanceQuery
+	}
+	snapshot, err := s.repo.RoutingSnapshot(ctx, s.discoveryBindings, module)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Endpoints, nil
 }
 
 const moduleRegistryWatchPollInterval = 250 * time.Millisecond

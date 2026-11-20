@@ -102,3 +102,5 @@ python3 arm64/k3s-pilot.py inspect-catalog \
 ```
 
 故障演练前、摘除后、恢复后分别保存输出。Kubernetes 端点状态和 Gateway 实际转发各自取证；Gateway 使用的发现来源见部署配置。
+
+使用多模块 Kubernetes 发现的 System 从 `ADDP_KUBERNETES_DISCOVERY_BINDINGS` 指定的文件读取绑定。文件以模块名为键，例如 `{"catalog": {...}, "meta": {...}}`。每个值都按该模块实际的 Service UID、端口和信任材料填写。升级已有 Catalog 试点时，应在同一次 System 工作负载变更中更新配置文件及环境变量，并使所有 System 副本采用同一份配置。Meta 的部署继续保留原 Backend 和 Worker 的 System 登记凭据，以支持内嵌 Scheduler 及 Worker 领取工作。端点查询验收应分别使用 Gateway、Monitor 和 Transfer 自身的服务身份。

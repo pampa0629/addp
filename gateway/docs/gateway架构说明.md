@@ -55,6 +55,8 @@ System 是模块注册表权威。Gateway 使用自身 Platform Service Access T
 
 Gateway 使用公共 `/health/live` 与 `/health/ready`；就绪检查包含 `system_registry_snapshot` 与启动注入客户端的 `redis`，要求成功应用过完整快照且 Redis 有界 Ping 成功。后续 watch 失败不清除已有快照，代理仍逐请求检查 Backend 租约；Redis 运行中故障时 Ready 503、live 200，既有就绪中间件暂时拒绝全部业务，保留快照和进程；恢复同一端点连通后恢复 Ready，真实限流仍检查命令结果。因此 Ready 不等于所有模块可路由或所有依赖健康。
 
+Gateway 为每次路由 watch 单独限定请求时间。已有端点时，服务端长轮询最多占用最近有效端点剩余租约的一半，另外预留 2 秒传输时间。失联后沿用原 watch 退避重新连接，使一个无响应的连接不会耗尽完整的 30 秒端点有效期。转发仍逐请求遵守原始绝对截止时间。
+
 Gateway 在替换路由池之前比较快照 revision。早于本进程已应用 revision 的响应会被拒绝，并进入既有 watch 错误退避。同一 revision 可携带新的租约截止时间，重放原响应仍按其中的绝对截止时间选路。数据库从较早备份恢复时，需要随恢复流程重新引导 Gateway，或等权威 revision 追平；普通 System 进程重启沿用数据库中的 revision。
 
 [第三阶段 Catalog 服务发现契约](../../docs/spec/api/健康与平台控制面.md#第三阶段-catalog-服务发现契约)适用于按部署配置启用的 Kubernetes 试点。Gateway 仍只读 System 快照，对 Catalog 逐请求检查其中的端点截止时间。已应用的摘除立即生效，链路中断则最迟在截止时刻停止选用。本地和 Compose 继续执行上述 System 实例租约规则。

@@ -3,11 +3,13 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/addp/common/models"
+	"github.com/google/uuid"
 )
 
 func TestManagerImportSourceClientBindsCurrentExecutionAndRejectsUntrustedResponses(t *testing.T) {
@@ -42,7 +44,7 @@ func TestManagerImportSourceClientBindsCurrentExecutionAndRejectsUntrustedRespon
 				_ = json.NewEncoder(w).Encode(result)
 			}))
 			defer server.Close()
-			registry := exportRegistryStub{modules: []*ModuleInfo{{ModuleName: "manager", Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: ModuleRuntimeRoleBackend, Status: "up", ModuleURL: server.URL, LeaseExpiresAt: time.Now().Add(time.Minute)}}}}}
+			registry := exportRegistryStub{modules: []models.ModuleRoutingEndpoint{{ModuleName: "manager", URL: server.URL, ExpiresAt: time.Now().Add(time.Minute)}}}
 			tokens := ServiceTokenProviderFunc(func(_ context.Context, tenant uint) (string, error) {
 				if tenant != 7 {
 					t.Error("wrong token tenant")

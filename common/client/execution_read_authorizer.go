@@ -8,7 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
+
 	"regexp"
 	"strings"
 	"sync"
@@ -26,17 +26,13 @@ type ExecutionReadResolver interface {
 	Resolve(context.Context, []string, int, int64, string) ([]execution.ReadScope, error)
 }
 
-type activeModuleLister interface {
-	ListActiveModules(context.Context) ([]*ModuleInfo, error)
-}
-
 type ExecutionReadAuthorizer struct {
-	registry   activeModuleLister
+	registry   ModuleEndpointResolver
 	httpClient *http.Client
 	now        func() time.Time
 }
 
-func NewExecutionReadAuthorizer(registry activeModuleLister) *ExecutionReadAuthorizer {
+func NewExecutionReadAuthorizer(registry ModuleEndpointResolver) *ExecutionReadAuthorizer {
 	return &ExecutionReadAuthorizer{registry: registry, now: time.Now, httpClient: &http.Client{
 		Timeout:       5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -84,11 +80,6 @@ func (a *ExecutionReadAuthorizer) Resolve(ctx context.Context, owners []string, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	modules, err := a.registry.ListActiveModules(ctx)
-	if err != nil {
-		executionReadFailure{stage: "registry", reason: executionReadErrorReason(err)}.log(ctx, "")
-		return nil, ErrExecutionOwnerUnavailable
-	}
 	// Owners are independent but share one deadline and one all-or-nothing result.
 	// A worker pool bounds upstream load without accumulating serial latency.
 	result := make([]execution.ReadScope, len(owners))
@@ -103,7 +94,7 @@ func (a *ExecutionReadAuthorizer) Resolve(ctx context.Context, owners []string, 
 				if ctx.Err() != nil {
 					return
 				}
-				scope, err := a.resolveOwner(ctx, modules, owners[index], tenantID, principalID, bearer)
+				scope, err := a.resolveOwner(ctx, owners[index], tenantID, principalID, bearer)
 				if err != nil {
 					if failed.CompareAndSwap(false, true) {
 						cancel()
@@ -134,29 +125,19 @@ dispatch:
 	return result, nil
 }
 
-func (a *ExecutionReadAuthorizer) resolveOwner(ctx context.Context, modules []*ModuleInfo, owner string, tenantID int, principalID int64, bearer string) (execution.ReadScope, *executionReadFailure) {
+func (a *ExecutionReadAuthorizer) resolveOwner(ctx context.Context, owner string, tenantID int, principalID int64, bearer string) (execution.ReadScope, *executionReadFailure) {
 	if !ownerModulePattern.MatchString(owner) {
 		return execution.ReadScope{}, &executionReadFailure{stage: "owner", reason: "invalid_owner"}
 	}
-	endpoint := ""
-	for _, module := range modules {
-		if module == nil || module.ModuleName != owner || !module.Enabled {
-			continue
-		}
-		for _, instance := range module.Instances {
-			if instance.Role != ModuleRuntimeRoleBackend || instance.Status != "up" || !instance.LeaseExpiresAt.After(a.now()) {
-				continue
-			}
-			base, parseErr := url.Parse(instance.ModuleURL)
-			if parseErr == nil && (base.Scheme == "http" || base.Scheme == "https") && base.Host != "" && base.User == nil && base.RawQuery == "" && base.Fragment == "" {
-				endpoint = strings.TrimRight(instance.ModuleURL, "/") + "/api/v1/" + owner + "/execution-read-scope"
-				break
-			}
-		}
+	endpoints, err := a.registry.ListModuleEndpoints(ctx, owner)
+	if err != nil {
+		return execution.ReadScope{}, &executionReadFailure{stage: "registry", reason: executionReadErrorReason(err)}
 	}
-	if endpoint == "" {
+	base := ownerEndpointURL(endpoints, owner, a.now())
+	if base == "" {
 		return execution.ReadScope{}, &executionReadFailure{stage: "owner", reason: "no_active_instance"}
 	}
+	endpoint := base + "/api/v1/" + owner + "/execution-read-scope"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return execution.ReadScope{}, &executionReadFailure{stage: "request", reason: "invalid_request"}

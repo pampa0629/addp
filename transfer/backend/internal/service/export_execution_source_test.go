@@ -12,16 +12,17 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/format"
+	objectminio "github.com/addp/common/infra/objectstore/s3"
 	"github.com/addp/common/middleware/auth"
+	"github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
-objectminio "github.com/addp/common/infra/objectstore/s3"
 )
 
 type exportOwnerRegistry struct{ url string }
 
-func (r exportOwnerRegistry) ListActiveModules(context.Context) ([]*commonClient.ModuleInfo, error) {
-	return []*commonClient.ModuleInfo{{ModuleName: "manager", Enabled: true, Instances: []commonClient.ModuleRuntimeInstanceInfo{{Role: commonClient.ModuleRuntimeRoleBackend, Status: "up", ModuleURL: r.url, LeaseExpiresAt: time.Now().Add(time.Minute)}}}}, nil
+func (r exportOwnerRegistry) ListModuleEndpoints(context.Context, string) ([]models.ModuleRoutingEndpoint, error) {
+	return []models.ModuleRoutingEndpoint{{ModuleName: "manager", URL: r.url, ExpiresAt: time.Now().Add(time.Minute)}}, nil
 }
 
 type exportDispatch struct {
@@ -60,7 +61,7 @@ func TestExportExecutionUsesOwnerVerifiedInitiatorAndOwnAdHocIsolation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner := exportartifact.NewService(dispatch, store, objectminio.New(minioClient,"manager"), "manager", "manager", "/exports")
+	owner := exportartifact.NewService(dispatch, store, objectminio.New(minioClient, "manager"), "manager", "manager", "/exports")
 	authServer := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{"Bearer transfer-service": {ClientID: "addp-transfer", Permissions: []string{"manager.export_provenance.read"}}})
 	defer authServer.Close()
 	router := gin.New()
