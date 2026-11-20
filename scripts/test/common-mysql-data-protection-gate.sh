@@ -154,8 +154,8 @@ fi
 
 if [ "$test_group" = platform-system-iam-foundation ]; then
     (cd "$ROOT_DIR/system/backend" && ADDP_TEST_MYSQL_SYSTEM_IAM_FOUNDATION=1 GOWORK=off go test ./internal/migration \
-        -run '^TestMySQLIAMPrincipalUserFoundation$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-system-iam-foundation.log"
-    grep -q '^--- PASS: TestMySQLIAMPrincipalUserFoundation ' "$WORK_DIR/platform-system-iam-foundation.log"
+        -run '^TestMySQLIAMFoundation$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-system-iam-foundation.log"
+    grep -q '^--- PASS: TestMySQLIAMFoundation ' "$WORK_DIR/platform-system-iam-foundation.log"
     exit 0
 fi
 

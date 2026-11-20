@@ -1213,9 +1213,7 @@ func (r *Repository) GetLocalAccountByNormalizedUsername(
 	normalizedUsername string,
 ) (*LocalAccount, error) {
 	var account LocalAccount
-	err := r.db.WithContext(ctx).
-		Where("normalized_username = ?", normalizedUsername).
-		Take(&account).Error
+	err := withLocalUsername(r.db.WithContext(ctx), normalizedUsername).Take(&account).Error
 	if err != nil {
 		return nil, wrapRepositoryError(err)
 	}
@@ -1366,7 +1364,7 @@ func (r *Repository) GetLocalUserIdentityByUsername(ctx context.Context, usernam
 	}
 
 	var identity LocalUserIdentity
-	err = r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Table("system.local_accounts AS account").
 		Select(`
 			principal.id AS principal_id,
@@ -1385,9 +1383,8 @@ func (r *Repository) GetLocalUserIdentityByUsername(ctx context.Context, usernam
 			account.last_authenticated_at
 		`).
 		Joins("JOIN system.users AS user_profile ON user_profile.id = account.user_id").
-		Joins("JOIN system.principals AS principal ON principal.id = user_profile.id AND principal.principal_type = ?", PrincipalTypeUser).
-		Where("account.normalized_username = ?", normalized).
-		Take(&identity).Error
+		Joins("JOIN system.principals AS principal ON principal.id = user_profile.id AND principal.principal_type = ?", PrincipalTypeUser)
+	err = withLocalUsername(query, normalized).Take(&identity).Error
 	if err != nil {
 		return nil, wrapRepositoryError(err)
 	}
@@ -1426,6 +1423,14 @@ func (r *Repository) ListEffectiveTenantMemberships(
 		return nil, wrapRepositoryError(err)
 	}
 	return memberships, nil
+}
+
+func withLocalUsername(query *gorm.DB, normalized string) *gorm.DB {
+	if query.Dialector.Name() == "mysql" {
+		// Match the full identity even when the digest selects an index entry.
+		query = query.Where("normalized_username_digest = UNHEX(SHA2(?, 256))", normalized)
+	}
+	return query.Where("normalized_username = ?", normalized)
 }
 
 func wrapRepositoryError(err error) error {

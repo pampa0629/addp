@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS mfa_credentials (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    method VARCHAR(16) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    secret_ciphertext LONGBLOB NOT NULL,
+    secret_nonce VARBINARY(12) NOT NULL,
+    key_version INT NOT NULL DEFAULT 1,
+    last_accepted_counter BIGINT,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    active_user_id BIGINT GENERATED ALWAYS AS (CASE WHEN status = 'active' THEN user_id END) STORED,
+    UNIQUE KEY uq_mfa_credentials_active_user_method (active_user_id, method),
+    KEY idx_mfa_credentials_user_status (user_id, status),
+    CONSTRAINT mfa_credentials_user_fk FOREIGN KEY (user_id) REFERENCES users (id),
+    CONSTRAINT mfa_credentials_method_check CHECK (method = 'totp'),
+    CONSTRAINT mfa_credentials_status_check CHECK (status IN ('active', 'disabled')),
+    CONSTRAINT mfa_credentials_ciphertext_check CHECK (OCTET_LENGTH(secret_ciphertext) >= 16),
+    CONSTRAINT mfa_credentials_nonce_check CHECK (OCTET_LENGTH(secret_nonce) = 12),
+    CONSTRAINT mfa_credentials_key_version_check CHECK (key_version > 0),
+    CONSTRAINT mfa_credentials_counter_check CHECK (last_accepted_counter >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin
