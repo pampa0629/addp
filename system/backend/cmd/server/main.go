@@ -39,12 +39,12 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and an ADDP opaque access token.
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "install-mysql-system" {
+	if len(os.Args) > 1 && (os.Args[1] == "install-mysql-system" || os.Args[1] == "install-mysql-common") {
 		if len(os.Args) != 2 {
-			fmt.Fprintln(os.Stderr, "install-mysql-system takes no arguments")
+			fmt.Fprintln(os.Stderr, os.Args[1], "takes no arguments")
 			os.Exit(2)
 		}
-		if err := installMySQLSystem(os.Stdout); err != nil {
+		if err := installMySQL(os.Args[1], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			var pending *migration.PendingMySQLSystemTriggers
 			if errors.As(err, &pending) {
@@ -118,7 +118,7 @@ func main() {
 	}
 	cancelMigration()
 	if err := repository.AutoMigrateNonIAM(db); err != nil {
-		logger.L().Error("非 IAM 数据库迁移失败", "error", err)
+		logger.L().Error("Common 存储准备失败", "error", err)
 		os.Exit(1)
 	}
 	serviceCredentialProvisioner, err := iam.NewServiceCredentialProvisioner(iam.NewRepository(db), nil)

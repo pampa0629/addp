@@ -1722,6 +1722,9 @@ jobs:
       - name: Run MySQL Common execution lifecycle gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-execution'
 
+      - name: Run MySQL Common installer and restricted cross-database readiness checks
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-common-install'
+
       - name: Run MySQL fresh System installation with separate database identities
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-install'
 

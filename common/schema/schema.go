@@ -28,6 +28,9 @@ func Require(db *gorm.DB, name string, version int64) error {
 	if db == nil || !namePattern.MatchString(name) || version < 1 {
 		return fmt.Errorf("invalid schema requirement: %q", name)
 	}
+	if db.Dialector.Name() == "mysql" {
+		return requireMySQLRevision(db, name+".startup_schema_revision", name, version)
+	}
 	var current int64
 	if err := db.Raw("SELECT version FROM " + name + ".startup_schema_revision WHERE singleton = TRUE").Scan(&current).Error; err != nil {
 		return fmt.Errorf("schema %s is not initialized; start its Backend first: %w", name, err)

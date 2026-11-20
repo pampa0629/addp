@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/infra/database"
 	platformmysql "github.com/addp/common/infra/database/mysql"
+	"github.com/addp/common/schema"
 	"github.com/addp/system/internal/migration"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -17,14 +18,18 @@ import (
 
 // Only this deployment subcommand reads the installation credentials.
 // Stdout is reserved for the SQL a DBA reviews and executes separately.
-func installMySQLSystem(output io.Writer) error {
+func installMySQL(command string, output io.Writer) error {
+	target := "system"
+	if command == "install-mysql-common" {
+		target = "common"
+	}
 	cfg := database.Config{
 		Host: os.Getenv("ADDP_MYSQL_HOST"), Port: os.Getenv("ADDP_MYSQL_PORT"),
 		User: os.Getenv("ADDP_MYSQL_INSTALL_USER"), Password: os.Getenv("ADDP_MYSQL_INSTALL_PASSWORD"),
-		DBName: "system", SSLMode: os.Getenv("ADDP_MYSQL_SSLMODE"), ConnectTimeout: 5 * time.Second,
+		DBName: target, SSLMode: os.Getenv("ADDP_MYSQL_SSLMODE"), ConnectTimeout: 5 * time.Second,
 	}
 	if os.Getenv("ADDP_INFRA_DATABASE_PROVIDER") != "mysql" || cfg.Host == "" || cfg.Port == "" || cfg.User == "" || cfg.Password == "" {
-		return errors.New("MySQL System installation requires the mysql provider, explicit host, port and installation credentials")
+		return errors.New("MySQL installation requires the mysql provider, explicit host, port and installation credentials")
 	}
 	dialect, err := platformmysql.Dialector(cfg)
 	if err != nil {
@@ -32,7 +37,7 @@ func installMySQLSystem(output io.Writer) error {
 	}
 	db, err := gorm.Open(dialect, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
-		return fmt.Errorf("open MySQL System installation connection: %w", err)
+		return fmt.Errorf("open MySQL %s installation connection: %w", target, err)
 	}
 	pool, err := db.DB()
 	if err != nil {
@@ -41,6 +46,9 @@ func installMySQLSystem(output io.Writer) error {
 	defer pool.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if target == "common" {
+		return schema.InitializeCommon(db.WithContext(ctx))
+	}
 	var statements []string
 	for _, install := range []func(*gorm.DB) error{
 		migration.MigrateMySQLIAMFoundation, migration.MigrateMySQLAccessRequestLocks, migration.MigrateMySQLModuleRegistry,

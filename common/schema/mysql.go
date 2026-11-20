@@ -58,7 +58,7 @@ func MigrateMySQLWithData(db *gorm.DB, owner string, version int64, apply func(*
 		) ENGINE=InnoDB`).Error; err != nil {
 			return err
 		}
-		current, err := readMySQLSchemaRevision(conn, owner)
+		current, err := readMySQLSchemaRevision(conn, "startup_schema_revision", owner)
 		if err != nil {
 			return err
 		}
@@ -94,15 +94,19 @@ func RequireMySQL(db *gorm.DB, owner string, version int64) error {
 	if db == nil || db.Dialector.Name() != "mysql" || !validMySQLSchemaOwner(owner) || version < 1 {
 		return fmt.Errorf("invalid MySQL schema requirement: %q", owner)
 	}
-	revision, err := readMySQLSchemaRevision(db, owner)
+	return requireMySQLRevision(db, "startup_schema_revision", owner, version)
+}
+
+func requireMySQLRevision(db *gorm.DB, table, owner string, version int64) error {
+	revision, err := readMySQLSchemaRevision(db, table, owner)
 	if err != nil {
-		return fmt.Errorf("schema %s is not initialized; start its Backend first: %w", owner, err)
+		return fmt.Errorf("cannot read installed MySQL schema revision for %s: %w", owner, err)
 	}
 	if revision.PendingVersion != 0 {
 		return fmt.Errorf("schema %s has unfinished MySQL migration to version %d", owner, revision.PendingVersion)
 	}
 	if revision.Version != version {
-		return fmt.Errorf("schema %s version mismatch: database=%d process=%d; complete Backend migration before starting Worker", owner, revision.Version, version)
+		return fmt.Errorf("schema %s version mismatch: database=%d process=%d; complete the deployment migration before startup", owner, revision.Version, version)
 	}
 	return nil
 }
@@ -112,9 +116,9 @@ type mysqlSchemaRevision struct {
 	PendingVersion int64
 }
 
-func readMySQLSchemaRevision(db *gorm.DB, owner string) (mysqlSchemaRevision, error) {
+func readMySQLSchemaRevision(db *gorm.DB, table, owner string) (mysqlSchemaRevision, error) {
 	var revision mysqlSchemaRevision
-	err := db.Raw("SELECT version, pending_version FROM startup_schema_revision WHERE owner = ?", owner).Scan(&revision).Error
+	err := db.Table(table).Select("version, pending_version").Where("owner = ?", owner).Scan(&revision).Error
 	return revision, err
 }
 

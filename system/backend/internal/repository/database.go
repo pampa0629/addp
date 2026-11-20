@@ -21,9 +21,10 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
+// AutoMigrateNonIAM is the System startup boundary for shared execution and health storage.
 func AutoMigrateNonIAM(db *gorm.DB) error {
-	if err := schema.InitializeCommon(db); err != nil {
-		return err
+	if db.Dialector.Name() == "mysql" {
+		return schema.Require(db, "common", schema.CommonVersion)
 	}
-	return nil
+	return schema.InitializeCommon(db)
 }
