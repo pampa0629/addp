@@ -101,7 +101,8 @@ class SelectImageServicesTest(unittest.TestCase):
         self.assertIn("model3d-workflow-engine", selected)
 
     def test_jupyter_container_gate_changes_select_its_image(self):
-        for path in ("scripts/test/jupyter-isolation.py", "scripts/test/docker-compose.jupyter-isolation.yml",
+        for path in (".github/workflows/platform-ci.yml", "scripts/test/jupyter-isolation.sh",
+                     "scripts/test/jupyter-isolation.py", "scripts/test/docker-compose.jupyter-isolation.yml",
                      "scripts/dev/docker-compose.jupyter.yml", "docker-compose.runtimes.yml"):
             with self.subTest(path=path):
                 self.assertIn("jupyter-engine", self._select(path))
