@@ -13455,7 +13455,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "revision 变化时立即返回完整可路由 Backend 快照；等待超时也返回同 revision 的新鲜快照以更新租约投影 | Returns the complete routable Backend snapshot immediately when the revision changes; a timeout also returns a fresh snapshot at the same revision to renew lease projections",
+                "description": "仅供 Gateway 获取有效路由端点及绝对截止时间。修订变化或等待超时返回完整快照 | Returns forwarding endpoints and absolute expiry times to Gateway when the revision changes or the wait expires",
                 "produces": [
                     "application/json"
                 ],
@@ -13483,7 +13483,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleRoutingSnapshot"
+                            "$ref": "#/definitions/models.ModuleRoutingSnapshot"
                         }
                     },
                     "400": {
@@ -23846,23 +23846,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_models.ModuleRoutingSnapshot": {
-            "type": "object",
-            "properties": {
-                "modules": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleInfo"
-                    }
-                },
-                "observed_at": {
-                    "type": "string"
-                },
-                "revision": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo": {
             "type": "object",
             "properties": {
@@ -27386,6 +27369,40 @@ const docTemplate = `{
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "models.ModuleRoutingEndpoint": {
+            "type": "object",
+            "properties": {
+                "endpoint_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ModuleRoutingSnapshot": {
+            "type": "object",
+            "properties": {
+                "endpoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ModuleRoutingEndpoint"
+                    }
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                }
+            }
         },
         "models.ObservabilityComponentIdentity": {
             "type": "object",

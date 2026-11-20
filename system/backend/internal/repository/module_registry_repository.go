@@ -2,6 +2,8 @@ package repository
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonmodels "github.com/addp/common/models"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/datatypes"
@@ -556,6 +559,50 @@ func (r *ModuleRegistryRepository) GetRegistryRevision() (int64, error) {
 		return 0, err
 	}
 	return state.Revision, nil
+}
+
+// RoutingSnapshot reads the cursor and eligible forwarding addresses from one database snapshot.
+func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, catalogEndpoints []commonmodels.ModuleRoutingEndpoint) (*commonmodels.ModuleRoutingSnapshot, error) {
+	snapshot := &commonmodels.ModuleRoutingSnapshot{ObservedAt: time.Now(), Endpoints: []commonmodels.ModuleRoutingEndpoint{}}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		snapshot.Revision, err = NewModuleRegistryRepository(tx).GetRegistryRevision()
+		if err != nil {
+			return err
+		}
+		query := tx.Table("module_runtime_instances AS i").
+			Joins("JOIN module_definitions AS d ON d.id = i.module_definition_id").
+			Select("d.module_name, i.instance_id AS endpoint_id, i.module_url AS url, i.lease_expires_at AS expires_at").
+			Where("d.enabled = ? AND d.declaration_published_at IS NOT NULL", true).
+			Where("i.role = ? AND i.status = ? AND i.module_url <> '' AND i.lease_expires_at > ?", models.ModuleRuntimeRoleBackend, models.ModuleRuntimeStatusUp, snapshot.ObservedAt).
+			Order("d.module_name, i.instance_id")
+		if catalogEndpoints != nil {
+			query = query.Where("d.module_name <> ?", "catalog")
+		}
+		if err := query.Scan(&snapshot.Endpoints).Error; err != nil {
+			return err
+		}
+		if len(catalogEndpoints) == 0 {
+			return nil
+		}
+		var enabled int64
+		if err := tx.Model(&models.ModuleDefinition{}).Where("module_name = ? AND enabled = ? AND declaration_published_at IS NOT NULL", "catalog", true).Count(&enabled).Error; err != nil {
+			return err
+		}
+		if enabled > 0 {
+			for _, endpoint := range catalogEndpoints {
+				if endpoint.ExpiresAt.After(snapshot.ObservedAt) {
+					snapshot.Endpoints = append(snapshot.Endpoints, endpoint)
+				}
+			}
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return snapshot, err
+}
+
+func (r *ModuleRegistryRepository) AdvanceRoutingRevision(ctx context.Context) error {
+	return bumpModuleRegistryRevision(r.db.WithContext(ctx), time.Now())
 }
 
 func bumpModuleRegistryRevision(tx *gorm.DB, now time.Time) error {

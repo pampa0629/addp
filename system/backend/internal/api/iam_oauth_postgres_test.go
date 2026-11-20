@@ -27,6 +27,8 @@ import (
 	"github.com/addp/system/internal/service"
 	"github.com/addp/system/internal/testsupport"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -39,7 +41,12 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
 	}
 	testsupport.RequireDisposablePostgresDSN(t, dsn)
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	conn, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.RuntimeParams["search_path"] = "system,public"
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: stdlib.OpenDB(*conn)}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,9 +158,10 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	}
 
 	t.Run("publisher and runtime enforce module and operation ownership", func(t *testing.T) {
-		productRouter := SetupRouter(db, testIAMRuntimeConfig(), fixtureRouterRedis(t))
+		productRouter := SetupRouter(db, testIAMRuntimeConfig(), fixtureRouterRedis(t), service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db)))
 		runtimeToken := decodeIAMAccessToken(t, performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-manager", secrets["addp-manager"]))
 		for _, c := range []struct{ token, method, path, body string }{
+			{runtimeToken, "GET", "/runtime/modules/watch?revision=0&wait_seconds=0", ""},
 			{publisherToken, "GET", "/deployment/module_declarations/meta", ""},
 			{publisherToken, "POST", "/deployment/module_declarations", `{"module_name":"meta","route_prefix":"/meta"}`},
 			{runtimeToken, "GET", "/deployment/module_declarations/manager", ""},
@@ -169,6 +177,15 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 			if response.Code != http.StatusForbidden {
 				t.Fatalf("%s %s: status %d body %s", c.method, c.path, response.Code, response.Body.String())
 			}
+		}
+		gatewayToken := decodeIAMAccessToken(t, performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-gateway", secrets["addp-gateway"]))
+		req := httptest.NewRequest("GET", "/api/v1/system/runtime/modules/watch?revision=0&wait_seconds=0", nil)
+		req.Header.Set("Authorization", "Bearer "+gatewayToken)
+		response := httptest.NewRecorder()
+		productRouter.ServeHTTP(response, req)
+		var snapshot struct{ Endpoints []json.RawMessage }
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &snapshot) != nil || snapshot.Endpoints == nil {
+			t.Fatalf("Gateway watch: status %d body %s", response.Code, response.Body.String())
 		}
 	})
 

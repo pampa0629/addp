@@ -144,3 +144,12 @@ func TestLiveDoesNotRunReadinessChecks(t *testing.T) {
 	case <-time.After(20 * time.Millisecond):
 	}
 }
+
+func TestExternalDiscoveryRetainsOnlyProcessIdentity(t *testing.T) {
+	controller := NewBusiness("catalog", "backend")
+	controller.UseExternalDiscovery()
+	response, ready := controller.Readiness(context.Background())
+	if !ready || response.InstanceID == "" || response.Role != "backend" || response.RegistrationState != "" {
+		t.Fatalf("external discovery readiness: %+v", response)
+	}
+}

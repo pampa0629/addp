@@ -1,6 +1,6 @@
 # ADDP 单集群 K3s 试点交接
 
-范围为 System、Gateway、Catalog 和 PostgreSQL、Redis、MinIO、Meilisearch。安装在现有双架构 K3s 的新 namespace。System 和 Gateway 在 ARM64，Catalog 在 AMD64。Catalog 以 Pod IPv4 向 System 登记，Gateway 解析现有 System 实例租约。对外验证仅使用回环端口，不修改正式域名、现有 Compose 或集群入口。
+范围为 System、Gateway、Catalog 和 PostgreSQL、Redis、MinIO、Meilisearch。安装在现有双架构 K3s 的新 namespace。System 和 Gateway 在 ARM64，Catalog 在 AMD64。默认由 Catalog 以 Pod IPv4 向 System 登记，Gateway 解析现有 System 实例租约。对外验证仅使用回环端口，不修改正式域名、现有 Compose 或集群入口。
 
 ## 构建与交付
 
@@ -21,7 +21,7 @@ ARM64 节点的冻结 Compose 发布需包含四个所选 Infra 镜像，且本�
 
 ## 现场安装
 
-Catalog Service 将 8192/TCP 命名为 `http`，供发现方按端口名核对 EndpointSlice。kubelet 在启动阶段探测 `/health/live`，每 5 秒一次，允许连续 48 次失败；启动成功后每 10 秒检查存活，连续 3 次失败触发容器重启。Service 端点是否就绪由 `/health/ready` 单独判定。安装后应分别演练进程失去响应和业务依赖失联，记录容器重启次数、Pod UID 和 Ready 变化。Catalog 当前的 Gateway 路由仍取自 System 实例租约。
+Catalog Service 将 8192/TCP 命名为 `http`，供发现方按端口名核对 EndpointSlice。kubelet 在启动阶段探测 `/health/live`，每 5 秒一次，允许连续 48 次失败；启动成功后每 10 秒检查存活，连续 3 次失败触发容器重启。Service 端点是否就绪由 `/health/ready` 单独判定。安装后应分别演练进程失去响应和业务依赖失联，记录容器重启次数、Pod UID 和 Ready 变化。Gateway 只消费 System 的路由端点快照。
 
 目标集群需要一个 Ready ARM64 和一个 Ready AMD64 节点，集群 Pod 网络可跨节点互通，并提供能动态分配 RWO 卷的 StorageClass。两个节点上的同名 `kubernetes.io/hostname` 标签应与传给安装脚本的节点名一致。操作端需已有正确上下文的 `kubectl`、Python 3 和 `sha256sum`，并具备创建本试点资源、读取节点与存储类、向本试点 Pod 执行短时部署命令的权限。确认待使用的 namespace 是本次新建。
 
@@ -47,6 +47,8 @@ python3 arm64/k3s-pilot.py install \
   --arm-node ARM_NODE --amd-node AMD_NODE --storage-class local-path \
   --credentials "$HOME/addp-pilot-site/credentials.json"
 ```
+
+验证 Kubernetes 发现时，在上面的 `install` 和下文的 `verify` 命令都追加 `--catalog-source kubernetes`。安装脚本先创建 Catalog Service，记录创建响应中的 UID，将绑定写入不可变 ConfigMap，并为 System 单独投射集群 CA 和轮换令牌。发现身份只能 list/watch 指定的 Service 和本 namespace 的 EndpointSlice。Catalog 启动两个副本，停止登记与心跳。现场核对双副本需有读取 Pod 日志的权限。默认 `--catalog-source system` 使用单个 Catalog 副本。
 
 初始化凭据命令拒绝覆盖已有文件。安装先校验两份包属于同一提交，再创建 namespace 及新卷。System Ready 后使用 System 镜像内已有发布命令部署三个声明，完成后才启动 Gateway 和 Catalog。发布密钥不进入 Kubernetes Secret 或长驻业务进程。安装失败应保留当前 namespace 和事件以便诊断。再次进行空库验收要先另选新的独占 namespace。
 
@@ -88,7 +90,7 @@ python3 arm64/k3s-pilot.py verify \
   --reader-token-file "$HOME/addp-pilot-site/reader.token"
 ```
 
-保存安装退出码、声明发布阶段、卷和 Pod 分布、验证输出。通过标准为实际节点架构正确，Gateway 的生效地址等于 AMD64 Catalog Pod IP，租户请求返回 200 和正确列表，空列表有效。
+保存安装退出码、声明发布阶段、卷和 Pod 分布、验证输出。通过标准为实际节点架构正确，Gateway 的生效地址等于 AMD64 Catalog Pod IP，租户请求返回 200 和正确列表，空列表有效。启用 Kubernetes 发现时，两次真实查询的请求 ID 应分别出现在两个 Catalog Pod 的日志，输出记录各自的 UID 和请求 ID。
 
 ## 现场核对 Catalog 端点
 

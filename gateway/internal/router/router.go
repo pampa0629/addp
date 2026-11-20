@@ -73,15 +73,8 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) (*gin.Engine, *c
 			"version": "1.0.0",
 		}
 
-		modules := moduleDiscovery.GetModules()
-		moduleMap := map[string]string{"system": cfg.SystemServiceURL}
-		for name, info := range modules {
-			if name != "system" {
-				if backend, ok := selectModuleBackend(info, time.Now()); ok {
-					moduleMap[name] = backend
-				}
-			}
-		}
+		moduleMap := moduleDiscovery.RouteAddresses()
+		moduleMap["system"] = cfg.SystemServiceURL
 		response["modules"] = moduleMap
 
 		c.JSON(200, response)
@@ -142,19 +135,6 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) (*gin.Engine, *c
 	}
 
 	return router, systemServiceClient
-}
-
-func selectModuleBackend(module *commonClient.ModuleInfo, now time.Time) (string, bool) {
-	if module == nil {
-		return "", false
-	}
-	for _, instance := range module.Instances {
-		if instance.Role == commonClient.ModuleRuntimeRoleBackend && instance.Status == "up" &&
-			instance.LeaseExpiresAt.After(now) && instance.ModuleURL != "" {
-			return instance.ModuleURL, true
-		}
-	}
-	return "", false
 }
 
 type moduleProxyLookup interface {

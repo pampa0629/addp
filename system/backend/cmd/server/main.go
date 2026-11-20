@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/processmetrics"
 	"github.com/addp/system/internal/api"
+	"github.com/addp/system/internal/catalogdiscovery"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
@@ -121,7 +122,18 @@ func main() {
 	}
 
 	// 创建路由
-	router := api.SetupRouter(db, cfg, redisClient)
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopRuntime()
+	moduleRegistryService := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	if path := os.Getenv("ADDP_CATALOG_DISCOVERY_BINDING"); path != "" {
+		source, err := catalogdiscovery.Open(path)
+		if err != nil {
+			logger.L().Error("Catalog discovery binding failed", "error", err)
+			os.Exit(1)
+		}
+		moduleRegistryService.StartCatalogDiscovery(runtimeContext, source)
+	}
+	router := api.SetupRouter(db, cfg, redisClient, moduleRegistryService)
 
 	// 创建 HTTP 服务器
 	srv := &http.Server{
@@ -129,8 +141,6 @@ func main() {
 		Handler: router,
 	}
 
-	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stopRuntime()
 	executionMaintenanceDone := make(chan struct{})
 	go func() {
 		defer close(executionMaintenanceDone)
@@ -147,7 +157,6 @@ func main() {
 	}()
 
 	// System 直接使用本地注册服务，退出前等待注销完成。
-	moduleRegistryService := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.ServerAddr)
 	registrationDone, registrationErr := startSystemRegistration(runtimeContext, moduleRegistryService,
 		newSystemRegistrationRequest(serviceURL, buildinfo.ProcessInstanceID()))

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -21,6 +22,7 @@ type Config struct {
 	DevelopURL                           string
 	WorkbenchURL                         string
 	QualityURL                           string
+	KubernetesDiscovery                  bool
 	ServiceClientSecret                  string
 	SourceSyncInterval                   time.Duration
 	ProjectionInterval                   time.Duration
@@ -49,6 +51,13 @@ func LoadConfig() (*Config, error) {
 		MeilisearchURL:                       commonConfig.GetEnv("MEILISEARCH_URL", "http://localhost:17700"),
 		MeilisearchAPIKey:                    os.Getenv("MEILISEARCH_MASTER_KEY"),
 		MeilisearchIndex:                     commonConfig.GetEnv("MEILISEARCH_CATALOG_INDEX", "catalog_entries"),
+	}
+	switch source := commonConfig.GetEnv("CATALOG_DISCOVERY_SOURCE", "system"); source {
+	case "system":
+	case "kubernetes":
+		cfg.KubernetesDiscovery = true
+	default:
+		return nil, fmt.Errorf("unknown Catalog discovery source %q", source)
 	}
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL

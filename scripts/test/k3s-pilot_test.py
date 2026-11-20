@@ -76,6 +76,23 @@ class PilotTest(unittest.TestCase):
             self.assertEqual(container[key]["httpGet"], {"port": 8192, "path": "/health/live"})
         self.assertEqual(container["readinessProbe"]["httpGet"], {"port": 8192, "path": "/health/ready"})
 
+    def test_discovery_credentials_belong_only_to_system(self):
+        _, system = pilot.product_objects("system", bundle("arm64")["images"], "arm", "arm64")
+        _, catalog = pilot.product_objects("catalog", bundle("amd64")["images"], "intel", "amd64")
+        _, role, binding, config = pilot.discovery_resources("pilot", "trusted-service", system, catalog)
+        self.assertEqual(role["rules"][0]["resourceNames"], ["catalog-backend"])
+        self.assertEqual({(tuple(rule["resources"]), tuple(rule["verbs"])) for rule in role["rules"]},
+                         {(("services",), ("list", "watch")), (("endpointslices",), ("list", "watch"))})
+        self.assertEqual(binding["subjects"][0]["namespace"], "pilot")
+        self.assertEqual(json.loads(config["data"]["binding.json"])["service_uid"], "trusted-service")
+        self.assertTrue(config["immutable"])
+        self.assertEqual(system["spec"]["template"]["spec"]["serviceAccountName"], "catalog-discovery")
+        self.assertEqual(catalog["spec"]["replicas"], 2)
+        catalog_pod = catalog["spec"]["template"]["spec"]
+        self.assertNotIn("serviceAccountName", catalog_pod)
+        self.assertFalse(catalog_pod["automountServiceAccountToken"])
+        self.assertIn({"name": "CATALOG_DISCOVERY_SOURCE", "value": "kubernetes"}, catalog_pod["containers"][0]["env"])
+
     def test_site_inspection_accepts_only_bound_ready_pod_addresses(self):
         namespace, uid = "pilot", "service-1"
         port = {"name": "http", "port": 8192, "protocol": "TCP"}
@@ -140,7 +157,7 @@ class PilotTest(unittest.TestCase):
     def test_dirty_database_never_starts_system(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            args = argparse.Namespace(arm64=root, amd64=root, namespace="pilot", context="test",
+            args = argparse.Namespace(arm64=root, amd64=root, namespace="pilot", context="test", catalog_source="system",
                                       arm_node="arm", amd_node="intel", storage_class="local-path", credentials=root)
             (root / "redis-authentication.sh").write_text("# fixture")
             for module in pilot.MODULES:

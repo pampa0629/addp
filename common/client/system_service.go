@@ -350,15 +350,18 @@ func (c *SystemServiceClient) ListActiveModules(ctx context.Context) ([]*ModuleI
 	return c.listModules(ctx, "/api/v1/system/runtime/modules?status=up")
 }
 
-func (c *SystemServiceClient) WatchActiveModules(ctx context.Context, revision int64, wait time.Duration) (*ModuleRoutingSnapshot, error) {
+func (c *SystemServiceClient) WatchActiveModules(ctx context.Context, revision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {
 	waitSeconds := int(wait / time.Second)
 	if wait > 0 && waitSeconds == 0 {
 		waitSeconds = 1
 	}
 	path := fmt.Sprintf("/api/v1/system/runtime/modules/watch?revision=%d&wait_seconds=%d", revision, waitSeconds)
-	var snapshot ModuleRoutingSnapshot
+	var snapshot models.ModuleRoutingSnapshot
 	if err := c.doPlatformJSON(ctx, http.MethodGet, path, nil, &snapshot); err != nil {
 		return nil, err
+	}
+	if snapshot.Endpoints == nil {
+		return nil, fmt.Errorf("System routing snapshot is missing endpoints")
 	}
 	return &snapshot, nil
 }

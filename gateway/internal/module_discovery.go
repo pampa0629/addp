@@ -7,14 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/addp/common/client"
+	"github.com/addp/common/models"
 	"github.com/addp/gateway/internal/proxy"
 )
 
 // ModuleDiscovery 模块发现管理器
 type ModuleDiscovery struct {
 	systemClient moduleWatcher
-	modules      map[string]*client.ModuleInfo // moduleName -> ModuleInfo
 	backendPools map[string][]moduleBackend
 	nextBackend  map[string]uint64
 	revision     int64
@@ -26,14 +25,14 @@ type ModuleDiscovery struct {
 }
 
 type moduleBackend struct {
-	instanceID     string
-	moduleURL      string
-	leaseExpiresAt time.Time
-	proxy          *proxy.ServiceProxy
+	endpointID string
+	moduleURL  string
+	expiresAt  time.Time
+	proxy      *proxy.ServiceProxy
 }
 
 type moduleWatcher interface {
-	WatchModules(ctx context.Context, revision int64, wait time.Duration) (*client.ModuleRoutingSnapshot, error)
+	WatchModules(ctx context.Context, revision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error)
 }
 
 // NewModuleDiscovery 创建模块发现管理器
@@ -42,7 +41,6 @@ func NewModuleDiscovery(systemClient moduleWatcher) *ModuleDiscovery {
 
 	return &ModuleDiscovery{
 		systemClient: systemClient,
-		modules:      make(map[string]*client.ModuleInfo),
 		backendPools: make(map[string][]moduleBackend),
 		nextBackend:  make(map[string]uint64),
 		ctx:          ctx,
@@ -100,7 +98,7 @@ func (md *ModuleDiscovery) refreshModules(wait time.Duration) error {
 	if snapshot == nil {
 		return fmt.Errorf("System 返回空模块路由快照")
 	}
-	modules := snapshot.Modules
+	endpoints := snapshot.Endpoints
 
 	md.mu.Lock()
 	defer md.mu.Unlock()
@@ -110,46 +108,38 @@ func (md *ModuleDiscovery) refreshModules(wait time.Duration) error {
 	}
 
 	// 更新模块列表
-	newModules := make(map[string]*client.ModuleInfo)
 	newBackendPools := make(map[string][]moduleBackend)
-	for _, mod := range modules {
-		instances := selectRoutableBackends(mod, md.now())
-		if len(instances) == 0 {
+	now := md.now()
+	existing := make(map[string]map[string]moduleBackend)
+	for _, e := range endpoints {
+		if !e.ExpiresAt.After(now) {
 			continue
 		}
-		newModules[mod.ModuleName] = mod
-		existing := indexModuleBackends(md.backendPools[mod.ModuleName])
-		pool := make([]moduleBackend, 0, len(instances))
-		for _, instance := range instances {
-			backend := moduleBackend{
-				instanceID: instance.InstanceID, moduleURL: instance.ModuleURL,
-				leaseExpiresAt: instance.LeaseExpiresAt,
-			}
-			if previous, ok := existing[instance.InstanceID]; ok && previous.moduleURL == instance.ModuleURL {
-				backend.proxy = previous.proxy
-			} else {
-				backend.proxy = proxy.NewServiceProxy(instance.ModuleURL)
-			}
-			pool = append(pool, backend)
+		if existing[e.ModuleName] == nil {
+			existing[e.ModuleName] = indexModuleBackends(md.backendPools[e.ModuleName])
 		}
-		newBackendPools[mod.ModuleName] = pool
-		if _, exists := md.nextBackend[mod.ModuleName]; !exists {
-			md.nextBackend[mod.ModuleName] = 0
+		backend := existing[e.ModuleName][e.EndpointID]
+		if backend.proxy == nil || backend.moduleURL != e.URL {
+			backend = moduleBackend{endpointID: e.EndpointID, moduleURL: e.URL, proxy: proxy.NewServiceProxy(e.URL)}
 		}
+		backend.expiresAt = e.ExpiresAt
+		newBackendPools[e.ModuleName] = append(newBackendPools[e.ModuleName], backend)
+	}
+	for _, pool := range newBackendPools {
+		sort.Slice(pool, func(i, j int) bool { return pool[i].endpointID < pool[j].endpointID })
 	}
 
 	for moduleName := range md.nextBackend {
-		if _, exists := newModules[moduleName]; !exists {
+		if _, exists := newBackendPools[moduleName]; !exists {
 			delete(md.nextBackend, moduleName)
 		}
 	}
 
-	md.modules = newModules
 	md.backendPools = newBackendPools
 	md.revision = snapshot.Revision
 	md.hasSnapshot = true
 
-	fmt.Printf("模块路由快照已应用: revision=%d, active_modules=%d\n", md.revision, len(md.modules))
+	fmt.Printf("模块路由快照已应用: revision=%d, active_modules=%d\n", md.revision, len(md.backendPools))
 	return nil
 }
 
@@ -159,27 +149,10 @@ func (md *ModuleDiscovery) HasSnapshot() bool {
 	return md.hasSnapshot
 }
 
-func selectRoutableBackends(module *client.ModuleInfo, now time.Time) []client.ModuleRuntimeInstanceInfo {
-	if module == nil || !module.Enabled {
-		return nil
-	}
-	candidates := make([]client.ModuleRuntimeInstanceInfo, 0)
-	for _, instance := range module.Instances {
-		if instance.Role == client.ModuleRuntimeRoleBackend && instance.Status == "up" && instance.LeaseExpiresAt.After(now) && instance.ModuleURL != "" {
-			candidates = append(candidates, instance)
-		}
-	}
-	if len(candidates) == 0 {
-		return nil
-	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].InstanceID < candidates[j].InstanceID })
-	return candidates
-}
-
 func indexModuleBackends(backends []moduleBackend) map[string]moduleBackend {
 	result := make(map[string]moduleBackend, len(backends))
 	for _, backend := range backends {
-		result[backend.instanceID] = backend
+		result[backend.endpointID] = backend
 	}
 	return result
 }
@@ -197,7 +170,7 @@ func (md *ModuleDiscovery) GetProxy(moduleName string) (*proxy.ServiceProxy, err
 	for offset := uint64(0); offset < uint64(len(pool)); offset++ {
 		index := (start + offset) % uint64(len(pool))
 		backend := pool[index]
-		if backend.proxy == nil || !backend.leaseExpiresAt.After(md.now()) {
+		if backend.proxy == nil || !backend.expiresAt.After(md.now()) {
 			continue
 		}
 		md.nextBackend[moduleName] = index + 1
@@ -206,21 +179,19 @@ func (md *ModuleDiscovery) GetProxy(moduleName string) (*proxy.ServiceProxy, err
 	return nil, fmt.Errorf("模块 %s 没有有效 Backend 租约", moduleName)
 }
 
-// GetModules 获取所有活跃模块信息（用于展示）
-func (md *ModuleDiscovery) GetModules() map[string]*client.ModuleInfo {
+// RouteAddresses reports one currently usable address per module for the Gateway landing page.
+func (md *ModuleDiscovery) RouteAddresses() map[string]string {
 	md.mu.RLock()
 	defer md.mu.RUnlock()
-
-	// 返回当前仍有有效 Backend 租约的模块列表副本。
-	result := make(map[string]*client.ModuleInfo, len(md.modules))
-	for k, v := range md.modules {
-		for _, backend := range md.backendPools[k] {
-			if backend.leaseExpiresAt.After(md.now()) {
-				result[k] = v
+	result := make(map[string]string, len(md.backendPools))
+	now := md.now()
+	for name, pool := range md.backendPools {
+		for _, backend := range pool {
+			if backend.expiresAt.After(now) {
+				result[name] = backend.moduleURL
 				break
 			}
 		}
 	}
-
 	return result
 }

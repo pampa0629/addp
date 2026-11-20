@@ -320,13 +320,13 @@ func (h *ModuleRegistryHandler) ListModulesService(c *gin.Context) {
 
 // WatchModulesService godoc
 // @Summary      等待模块路由快照 | Watch module routing snapshot
-// @Description  revision 变化时立即返回完整可路由 Backend 快照；等待超时也返回同 revision 的新鲜快照以更新租约投影 | Returns the complete routable Backend snapshot immediately when the revision changes; a timeout also returns a fresh snapshot at the same revision to renew lease projections
+// @Description  仅供 Gateway 获取有效路由端点及绝对截止时间。修订变化或等待超时返回完整快照 | Returns forwarding endpoints and absolute expiry times to Gateway when the revision changes or the wait expires
 // @Tags         运行时注册 | Runtime Registry
 // @Produce      json
 // @Security     BearerAuth
 // @Param        revision query int false "客户端当前修订号 | Client current revision" default(0)
 // @Param        wait_seconds query int false "最长等待秒数，范围 0-30 | Maximum wait in seconds, range 0-30" default(10)
-// @Success      200 {object} models.ModuleRoutingSnapshot
+// @Success      200 {object} commonmodels.ModuleRoutingSnapshot
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse

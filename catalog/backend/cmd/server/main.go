@@ -76,6 +76,9 @@ func main() {
 		"catalog", commonClient.ModuleRuntimeRoleBackend,
 		databaseReadyCheck(db), meilisearchReadyCheck(searchIndex),
 	)
+	if cfg.KubernetesDiscovery {
+		lifecycle.UseExternalDiscovery()
+	}
 	entryService := service.NewEntryService(
 		db,
 		service.NewStandardClientReferenceResolver(standardClient),
@@ -112,6 +115,10 @@ func main() {
 		}
 	}()
 
+	if cfg.KubernetesDiscovery {
+		<-runtimeContext.Done()
+		return
+	}
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.Port)
 	registration := systemClient.RegisterAndHeartbeatWithMetadata(runtimeContext, "catalog", serviceURL, map[string]interface{}{
 		"module": "catalog",

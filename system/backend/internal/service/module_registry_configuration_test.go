@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonconfiguration "github.com/addp/common/configuration"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -364,7 +365,7 @@ func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapsho
 	}
 
 	snapshot, err := registry.WatchRoutingSnapshot(context.Background(), revision, 20*time.Millisecond)
-	if err != nil || snapshot.Revision != revision || len(snapshot.Modules) != 1 {
+	if err != nil || snapshot.Revision != revision || len(snapshot.Endpoints) != 1 {
 		t.Fatalf("timeout snapshot = %#v, error=%v", snapshot, err)
 	}
 
@@ -409,7 +410,7 @@ func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapsho
 	if watchErr != nil {
 		t.Fatal(watchErr)
 	}
-	if snapshot.Revision != 3 || len(snapshot.Modules) != 1 || snapshot.Modules[0].Instances[0].ModuleURL != registration.ModuleURL {
+	if snapshot.Revision != 3 || len(snapshot.Endpoints) != 1 || snapshot.Endpoints[0].URL != registration.ModuleURL {
 		t.Fatalf("changed topology snapshot = %#v", snapshot)
 	}
 
@@ -659,5 +660,55 @@ func TestCatalogDeploymentDeclarationRequiresExplicitSupportedIntent(t *testing.
 		if _, err := s.CreateModuleDefinition(input); !errors.Is(err, ErrInvalidModuleRegistration) {
 			t.Fatalf("input %#v: %v", input, err)
 		}
+	}
+}
+
+func TestCatalogRoutingSourceKeepsProcessRegistrySeparate(t *testing.T) {
+	db := newServiceTestDB(t)
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewModuleRegistryRepository(db)
+	registry := NewModuleRegistryService(repo)
+	publishForTest(t, registry, "catalog")
+	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(), ModuleName: "catalog", Role: models.ModuleRuntimeRoleBackend, InstanceID: "process", ModuleURL: "http://legacy:8192"}); err != nil {
+		t.Fatal(err)
+	}
+	read := func(want string) {
+		t.Helper()
+		snap, err := registry.WatchRoutingSnapshot(context.Background(), 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want == "" {
+			if snap.Endpoints == nil || len(snap.Endpoints) != 0 {
+				t.Fatalf("want empty endpoints, got %#v", snap.Endpoints)
+			}
+			return
+		}
+		if len(snap.Endpoints) != 1 || snap.Endpoints[0].EndpointID != want {
+			t.Fatalf("want %s, got %+v", want, snap)
+		}
+	}
+	read("process")
+	registry.catalogRouting = &catalogRouting{}
+	read("")
+	registry.catalogRouting.endpoints = []commonmodels.ModuleRoutingEndpoint{{ModuleName: "catalog", EndpointID: "pod/http", URL: "http://10.42.1.7:8192", ExpiresAt: time.Now().Add(time.Minute)}}
+	read("pod/http")
+	if err := db.Model(&models.ModuleDefinition{}).Where("module_name = ?", "catalog").Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	read("")
+	if err := db.Model(&models.ModuleDefinition{}).Where("module_name = ?", "catalog").Update("enabled", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	registry.catalogRouting.endpoints[0].ExpiresAt = time.Now()
+	read("")
+	var instances []models.ModuleRuntimeInstance
+	if err := db.Find(&instances).Error; err != nil || len(instances) != 1 || instances[0].InstanceID != "process" {
+		t.Fatalf("process registry: %+v, error %v", instances, err)
 	}
 }

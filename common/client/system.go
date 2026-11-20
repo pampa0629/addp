@@ -265,12 +265,6 @@ type ModuleInfo struct {
 	UpdatedAt               time.Time                                  `json:"updated_at"`
 }
 
-type ModuleRoutingSnapshot struct {
-	Revision   int64         `json:"revision"`
-	Modules    []*ModuleInfo `json:"modules"`
-	ObservedAt time.Time     `json:"observed_at"`
-}
-
 type ModuleRuntimeInstanceInfo struct {
 	ProcessMetricsDeclared bool   `json:"process_metrics_declared"`
 	DeclaredNodeID         string `json:"declared_node_id"`

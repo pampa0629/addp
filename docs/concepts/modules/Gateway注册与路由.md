@@ -101,7 +101,7 @@ graph TB
 - `module_runtime_instances` 记录会被心跳、注销和租约收敛更新，是实例生命周期历史，不是追加式审计事件；管理员启停等操作审计仍以 `audit_logs` 为唯一事实源。
 
 **4. Gateway 动态发现**:
-- Gateway 使用自身 Platform Service Access Token，通过 `GET /api/v1/system/runtime/modules/watch` 获取路由快照；启动时以 `revision=0` 获取已启用模块及其 `up` 的 Backend 完整快照。`GET /api/v1/system/runtime/modules` 是注册表列表入口，不替代发现长轮询。
+- Gateway 使用自身 Platform Service Access Token，通过 `GET /api/v1/system/runtime/modules/watch` 获取路由快照；启动时以 `revision=0` 获取完整的路由端点快照。端点含模块名、端点 ID、URL 和绝对截止时间。`GET /api/v1/system/runtime/modules` 是注册表列表入口，不替代发现长轮询。
 - 后续只通过 revision 长轮询等待拓扑变化；新增、恢复、下线、端点变化和管理员启停会立即唤醒请求，无需重启 Gateway。
 - 长轮询达到 `MODULE_WATCH_TIMEOUT`（默认 **10 秒**）时，即使 revision 未变化也返回一份新鲜完整快照，使 Gateway 持有的租约截止时间持续更新，不会因缓存租约老化形成路由空窗。
 - Gateway 原子替换完整快照；watch 失败时保留最近一次已应用快照。当前实现不另设快照年龄失效窗口，实例是否仍可选由下述逐请求租约校验裁决。

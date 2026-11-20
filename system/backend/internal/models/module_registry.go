@@ -133,12 +133,6 @@ type HeartbeatRequest struct {
 	InstanceID string `json:"instance_id" binding:"required"`
 }
 
-type ModuleRoutingSnapshot struct {
-	Revision   int64         `json:"revision"`
-	Modules    []*ModuleInfo `json:"modules"`
-	ObservedAt time.Time     `json:"observed_at"`
-}
-
 // ModuleDefinitionCreateRequest explicitly declares Catalog deployment intent
 // before any Catalog process exists. It does not register a runtime instance.
 type ModuleDefinitionCreateRequest struct {

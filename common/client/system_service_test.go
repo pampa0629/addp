@@ -291,15 +291,15 @@ func TestWatchActiveModulesSendsRevisionAndWait(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(ModuleRoutingSnapshot{
-			Revision: 8, Modules: []*ModuleInfo{{ModuleName: "manager", Enabled: true}},
+		_ = json.NewEncoder(w).Encode(models.ModuleRoutingSnapshot{
+			Revision: 8, Endpoints: []models.ModuleRoutingEndpoint{{ModuleName: "manager", EndpointID: "manager-a", URL: "http://manager", ExpiresAt: time.Now().Add(time.Minute)}},
 		})
 	}))
 	defer server.Close()
 
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
 	snapshot, err := client.WatchActiveModules(context.Background(), 7, 3*time.Second)
-	if err != nil || snapshot.Revision != 8 || len(snapshot.Modules) != 1 {
+	if err != nil || snapshot.Revision != 8 || len(snapshot.Endpoints) != 1 {
 		t.Fatalf("WatchActiveModules() snapshot=%#v error=%v", snapshot, err)
 	}
 }

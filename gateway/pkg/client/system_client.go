@@ -5,6 +5,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/models"
 )
 
 // SystemClient 用于调用 System 模块的内部 API
@@ -31,6 +32,6 @@ func (c *SystemClient) BulkGetAPIConsumerCredentials() ([]APIConsumerCredentialV
 	return []APIConsumerCredentialValidationResponse{}, nil
 }
 
-func (c *SystemClient) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*commonClient.ModuleRoutingSnapshot, error) {
+func (c *SystemClient) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {
 	return c.serviceClient.WatchActiveModules(ctx, revision, wait)
 }

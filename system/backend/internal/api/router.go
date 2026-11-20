@@ -25,7 +25,7 @@ import (
 	_ "github.com/addp/system/docs"
 )
 
-func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *gin.Engine {
+func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client, moduleRegistryService *service.ModuleRegistryService) *gin.Engine {
 	router := modulelifecycle.NewRouter()
 	if err := cfg.ValidateTrustedProxies(); err != nil {
 		panic(err)
@@ -49,7 +49,6 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *gi
 
 	engineRepo := repository.NewEngineRepository(db)
 	apiConsumerRepo := repository.NewAPIConsumerRepository(db)
-	moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
 	engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, redisClient)
 	engineHandler := NewEngineHandler(engineService)
 	executionAuthorizationHandler, err := NewIAMExecutionAuthorizationHandler(
@@ -77,7 +76,6 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *gi
 	}
 	runtime.TaskAuthorizationSubjectHandler = taskAuthorizationSubjectHandler
 	apiConsumerService := service.NewAPIConsumerService(apiConsumerRepo)
-	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
 	moduleRegistryService.SetDeploymentDiscovery(&service.DeploymentDiscoveryService{Directory: cfg.DeploymentDiscoveryDirectory})
 	taskProviderService := service.NewTaskProviderService(moduleRegistryService)
 	moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService, cfg.EncryptionKey)

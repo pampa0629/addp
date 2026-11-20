@@ -176,6 +176,35 @@ def product_objects(module, images, node, arch):
     return endpoint, deploy
 
 
+def discovery_resources(namespace, service_uid, system, catalog):
+    reader = "catalog-discovery"
+    service_account = object_("v1", "ServiceAccount", reader, automountServiceAccountToken=False)
+    rules = [{"apiGroups": [""], "resources": ["services"], "resourceNames": [NAMES["catalog"]],
+              "verbs": ["list", "watch"]},
+             {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["list", "watch"]}]
+    role = object_("rbac.authorization.k8s.io/v1", "Role", reader, rules=rules)
+    binding = object_("rbac.authorization.k8s.io/v1", "RoleBinding", reader,
+                      roleRef={"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": reader},
+                      subjects=[{"kind": "ServiceAccount", "name": reader, "namespace": namespace}])
+    directory = "/var/run/addp/catalog-discovery"
+    config = {"api_server": "https://kubernetes.default.svc", "ca_file": directory + "/ca.crt",
+              "token_file": directory + "/token", "namespace": namespace, "service": NAMES["catalog"],
+              "service_uid": service_uid, "port_name": "http"}
+    config_map = object_("v1", "ConfigMap", reader, immutable=True, data={"binding.json": json.dumps(config)})
+    pod = system["spec"]["template"]["spec"]
+    pod["serviceAccountName"] = reader
+    pod["volumes"].append({"name": reader, "projected": {"sources": [
+        {"configMap": {"name": reader}}, {"configMap": {"name": "kube-root-ca.crt"}},
+        {"serviceAccountToken": {"path": "token", "expirationSeconds": 3600}}]}})
+    process = pod["containers"][0]
+    process["volumeMounts"].append({"name": reader, "mountPath": directory, "readOnly": True})
+    process["env"].append({"name": "ADDP_CATALOG_DISCOVERY_BINDING", "value": directory + "/binding.json"})
+    catalog["spec"]["replicas"] = 2
+    catalog["spec"]["template"]["spec"]["containers"][0]["env"].append({
+        "name": "CATALOG_DISCOVERY_SOURCE", "value": "kubernetes"})
+    return [service_account, role, binding, config_map]
+
+
 def secret_objects(manifest, data):
     env = data["runtime"]
     partitions = {"db": ["POSTGRES_PASSWORD"], "redis": ["REDIS_PASSWORD"], "minio": ["MINIO_ROOT_PASSWORD"],
@@ -234,7 +263,14 @@ def install(args):
     if empty.strip() != b"t":
         raise ValueError("Expected an empty application database before System starts")
     print("Empty application schemas verified", flush=True)
-    cluster.create(product_objects("system", arm["images"], args.arm_node, "arm64"))
+    system_service, system = product_objects("system", arm["images"], args.arm_node, "arm64")
+    catalog_service, catalog = product_objects("catalog", amd["images"], args.amd_node, "amd64")
+    if args.catalog_source == "kubernetes":
+        created = json.loads(cluster.run("create", "-f", "-", "-o", "json", data=catalog_service, capture=True))
+        uid = created["metadata"]["uid"]
+        print(f"Bound Catalog Service UID {uid}", flush=True)
+        cluster.create(discovery_resources(args.namespace, uid, system, catalog))
+    cluster.create([system_service, system])
     cluster.ready("system-backend")
     print("System is Ready before declaration publication", flush=True)
     for module in MODULES:
@@ -245,7 +281,7 @@ def install(args):
                     data={**credentials, "declaration": declarations[module]})
         print(f"Published {module} declaration", flush=True)
     cluster.create(product_objects("gateway", arm["images"], args.arm_node, "arm64"))
-    cluster.create(product_objects("catalog", amd["images"], args.amd_node, "amd64"))
+    cluster.create([catalog] if args.catalog_source == "kubernetes" else [catalog_service, catalog])
     cluster.ready("gateway", "catalog-backend")
     print(f"Installed pilot {arm['commit']} in {args.namespace}", flush=True)
 
@@ -325,29 +361,51 @@ def verify(args):
         name = NAMES[module]
         items = json.loads(cluster.run("get", "pods", "-l", f"app.kubernetes.io/name={name}", "-o", "json",
                                        capture=True))["items"]
-        pod, = [item for item in items if not item["metadata"].get("deletionTimestamp")]
-        phase = pod["status"]
-        node = pod["spec"]["nodeName"]
-        arch = cluster.node_arch(node)
+        active = [item for item in items if not item["metadata"].get("deletionTimestamp")]
+        expected = 2 if module == "catalog" and args.catalog_source == "kubernetes" else 1
+        if len(active) != expected:
+            raise ValueError(f"Expected {expected} active {module} Pods, found {len(active)}")
         selected = amd if module == "catalog" else arm
-        container = phase["containerStatuses"][0]
-        if arch != selected["arch"] or not container["ready"] or container["image"] != selected["images"][module]["image"]:
-            raise ValueError(f"Pod image, architecture or readiness mismatch: {module}")
-        pods[module] = {"node": node, "arch": arch, "pod_ip": phase["podIP"],
-                        "image": phase["containerStatuses"][0]["image"], "image_id": phase["containerStatuses"][0]["imageID"]}
+        pods[module] = []
+        for pod in active:
+            node = pod["spec"]["nodeName"]
+            arch = cluster.node_arch(node)
+            container = pod["status"]["containerStatuses"][0]
+            if arch != selected["arch"] or not container["ready"] or container["image"] != selected["images"][module]["image"]:
+                raise ValueError(f"Pod image, architecture or readiness mismatch: {module}")
+            pods[module].append({"name": pod["metadata"]["name"], "uid": pod["metadata"]["uid"], "node": node,
+                                 "arch": arch, "pod_ip": pod["status"]["podIP"], "image": container["image"],
+                                 "image_id": container["imageID"]})
     opener = request.build_opener(request.ProxyHandler({}))
     with opener.open(ORIGIN + "/", timeout=10) as response:
         route = json.load(response)["modules"]["catalog"]
-    if route != f"http://{pods['catalog']['pod_ip']}:8192":
-        raise ValueError("Gateway has not selected the actual Catalog Pod")
+    if route not in {f"http://{pod['pod_ip']}:8192" for pod in pods["catalog"]}:
+        raise ValueError("Gateway has not selected an actual Catalog Pod")
     token = private_text(args.reader_token_file).strip()
-    req = request.Request(ORIGIN + "/api/v1/catalog/entries?view=governance&page=1&page_size=1",
-                          headers={"Authorization": "Bearer " + token})
-    with opener.open(req, timeout=10) as response:
-        body = json.load(response)
-        status = response.status
-    if status != 200 or not isinstance(body["data"], list) or type(body["total"]) is not int:
-        raise ValueError("Catalog returned an invalid list response")
+    request_ids = []
+    for _ in pods["catalog"]:
+        req = request.Request(ORIGIN + "/api/v1/catalog/entries?view=governance&page=1&page_size=1",
+                              headers={"Authorization": "Bearer " + token})
+        with opener.open(req, timeout=10) as response:
+            body = json.load(response)
+            status = response.status
+            request_id = response.headers.get("X-Request-ID")
+        if status != 200 or not isinstance(body["data"], list) or type(body["total"]) is not int:
+            raise ValueError("Catalog returned an invalid list response")
+        if args.catalog_source == "kubernetes" and not request_id:
+            raise ValueError("Gateway response is missing its request ID")
+        request_ids.append(request_id)
+    if args.catalog_source == "kubernetes":
+        for pod in pods["catalog"]:
+            logs = cluster.run("logs", pod["name"], "--since=2m", capture=True).decode()
+            hits = [rid for rid in request_ids if rid in logs]
+            if len(hits) != 1:
+                raise ValueError(f"Expected one matching request in {pod['name']}, found {len(hits)}")
+            pod["request_id"] = hits[0]
+        if {pod["request_id"] for pod in pods["catalog"]} != set(request_ids):
+            raise ValueError("Catalog access records do not cover both requests")
+    if args.catalog_source == "system":
+        pods = {module: replicas[0] for module, replicas in pods.items()}
     print(json.dumps({"commit": arm["commit"], "pods": pods, "catalog_route": route,
                       "catalog_http": status, "total": body["total"]}, indent=2))
 
@@ -368,6 +426,7 @@ def main():
         action.add_argument("--namespace", required=True)
         action.add_argument("--arm64", type=Path, required=True)
         action.add_argument("--amd64", type=Path, required=True)
+        action.add_argument("--catalog-source", choices=("system", "kubernetes"), default="system")
         if command == "install":
             action.add_argument("--credentials", type=Path, required=True)
             action.add_argument("--arm-node", required=True)

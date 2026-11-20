@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/client"
+	"github.com/addp/common/models"
 )
 
 type recoveringModuleLister struct {
@@ -15,7 +15,7 @@ type recoveringModuleLister struct {
 	calls int
 }
 
-func (l *recoveringModuleLister) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*client.ModuleRoutingSnapshot, error) {
+func (l *recoveringModuleLister) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {
 	l.mu.Lock()
 	l.calls++
 	call := l.calls
@@ -32,14 +32,7 @@ func (l *recoveringModuleLister) WatchModules(ctx context.Context, revision int6
 		case <-timer.C:
 		}
 	}
-	return &client.ModuleRoutingSnapshot{Revision: 1, Modules: []*client.ModuleInfo{{
-		ModuleName: "manager",
-		Enabled:    true,
-		Instances: []client.ModuleRuntimeInstanceInfo{{
-			InstanceID: "manager-backend", Role: "backend", ModuleURL: "http://manager.test",
-			Status: "up", LeaseExpiresAt: time.Now().Add(time.Minute),
-		}},
-	}}}, nil
+	return &models.ModuleRoutingSnapshot{Revision: 1, Endpoints: []models.ModuleRoutingEndpoint{{ModuleName: "manager", EndpointID: "manager-backend", URL: "http://manager.test", ExpiresAt: time.Now().Add(time.Minute)}}}, nil
 }
 
 func TestModuleDiscoveryRetriesAfterInitialRefreshFailure(t *testing.T) {
@@ -61,33 +54,12 @@ func TestModuleDiscoveryRetriesAfterInitialRefreshFailure(t *testing.T) {
 	t.Fatal("module discovery did not recover after the initial refresh failure")
 }
 
-func TestSelectRoutableBackendsIgnoresNonBackendAndExpiredInstances(t *testing.T) {
-	now := time.Now()
-	module := &client.ModuleInfo{
-		ModuleName: "manager", Enabled: true,
-		Instances: []client.ModuleRuntimeInstanceInfo{
-			{InstanceID: "worker", Role: "worker", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
-			{InstanceID: "ingress", Role: client.ModuleRuntimeRoleIngress, ModuleURL: "http://gateway", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
-			{InstanceID: "expired", Role: "backend", ModuleURL: "http://expired", Status: "up", LeaseExpiresAt: now.Add(-time.Second)},
-			{InstanceID: "backend-b", Role: "backend", ModuleURL: "http://b", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
-			{InstanceID: "backend-a", Role: "backend", ModuleURL: "http://a", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
-		},
-	}
-	selected := selectRoutableBackends(module, now)
-	if len(selected) != 2 || selected[0].InstanceID != "backend-a" || selected[1].InstanceID != "backend-b" {
-		t.Fatalf("selected backends = %#v", selected)
-	}
-}
-
 func TestModuleDiscoveryRoundRobinsValidBackendsAndStopsAtLeaseExpiry(t *testing.T) {
 	now := time.Now()
-	lister := &staticModuleLister{modules: []*client.ModuleInfo{{
-		ModuleName: "manager", Enabled: true,
-		Instances: []client.ModuleRuntimeInstanceInfo{
-			{InstanceID: "backend-b", Role: "backend", ModuleURL: "http://b", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
-			{InstanceID: "backend-a", Role: "backend", ModuleURL: "http://a", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
-		},
-	}}}
+	lister := &staticModuleLister{endpoints: []models.ModuleRoutingEndpoint{
+		{ModuleName: "manager", EndpointID: "backend-b", URL: "http://b", ExpiresAt: now.Add(time.Minute)},
+		{ModuleName: "manager", EndpointID: "backend-a", URL: "http://a", ExpiresAt: now.Add(time.Minute)},
+	}}
 	discovery := NewModuleDiscovery(lister)
 	discovery.now = func() time.Time { return now }
 	defer discovery.Stop()
@@ -109,12 +81,12 @@ func TestModuleDiscoveryRoundRobinsValidBackendsAndStopsAtLeaseExpiry(t *testing
 	if _, err := discovery.GetProxy("manager"); err == nil {
 		t.Fatal("expected expired Backend pool to be unavailable")
 	}
-	if modules := discovery.GetModules(); len(modules) != 0 {
+	if modules := discovery.RouteAddresses(); len(modules) != 0 {
 		t.Fatalf("expired module snapshot = %#v, want empty", modules)
 	}
 
-	for index := range lister.modules[0].Instances {
-		lister.modules[0].Instances[index].LeaseExpiresAt = now.Add(time.Minute)
+	for index := range lister.endpoints {
+		lister.endpoints[index].ExpiresAt = now.Add(time.Minute)
 	}
 	if err := discovery.refreshModules(0); err != nil {
 		t.Fatal(err)
@@ -146,10 +118,8 @@ func TestModuleDiscoveryRefreshesLeaseProjectionWithoutRevisionChange(t *testing
 
 func TestCatalogWithdrawalSurvivesOlderSnapshot(t *testing.T) {
 	now := time.Now()
-	catalog := &client.ModuleInfo{ModuleName: "catalog", Enabled: true, Instances: []client.ModuleRuntimeInstanceInfo{
-		{InstanceID: "catalog-a", Role: "backend", Status: "up", ModuleURL: "http://catalog-a", LeaseExpiresAt: now.Add(30 * time.Second)},
-	}}
-	lister := &staticModuleLister{revision: 5, modules: []*client.ModuleInfo{catalog}}
+	catalog := models.ModuleRoutingEndpoint{ModuleName: "catalog", EndpointID: "catalog-a", URL: "http://catalog-a", ExpiresAt: now.Add(30 * time.Second)}
+	lister := &staticModuleLister{revision: 5, endpoints: []models.ModuleRoutingEndpoint{catalog}}
 	discovery := NewModuleDiscovery(lister)
 	defer discovery.Stop()
 	discovery.now = func() time.Time { return now }
@@ -160,9 +130,9 @@ func TestCatalogWithdrawalSurvivesOlderSnapshot(t *testing.T) {
 		}
 	}
 	refresh()
-	lister.revision, lister.modules = 6, nil
+	lister.revision, lister.endpoints = 6, nil
 	refresh()
-	lister.revision, lister.modules = 5, []*client.ModuleInfo{catalog}
+	lister.revision, lister.endpoints = 5, []models.ModuleRoutingEndpoint{catalog}
 	if err := discovery.refreshModules(0); err == nil {
 		t.Fatal("accepted a superseded routing revision")
 	}
@@ -174,7 +144,7 @@ func TestCatalogWithdrawalSurvivesOlderSnapshot(t *testing.T) {
 	if _, err := discovery.GetProxy("catalog"); err != nil {
 		t.Fatal(err)
 	}
-	now = catalog.Instances[0].LeaseExpiresAt
+	now = catalog.ExpiresAt
 	refresh()
 	if _, err := discovery.GetProxy("catalog"); err == nil {
 		t.Fatal("replayed snapshot extended the endpoint deadline")
@@ -185,22 +155,16 @@ type renewingModuleWatcher struct {
 	now func() time.Time
 }
 
-func (w *renewingModuleWatcher) WatchModules(context.Context, int64, time.Duration) (*client.ModuleRoutingSnapshot, error) {
-	return &client.ModuleRoutingSnapshot{Revision: 1, Modules: []*client.ModuleInfo{{
-		ModuleName: "manager", Enabled: true,
-		Instances: []client.ModuleRuntimeInstanceInfo{{
-			InstanceID: "manager-backend", Role: "backend", ModuleURL: "http://manager.test",
-			Status: "up", LeaseExpiresAt: w.now().Add(30 * time.Second),
-		}},
-	}}}, nil
+func (w *renewingModuleWatcher) WatchModules(context.Context, int64, time.Duration) (*models.ModuleRoutingSnapshot, error) {
+	return &models.ModuleRoutingSnapshot{Revision: 1, Endpoints: []models.ModuleRoutingEndpoint{{ModuleName: "manager", EndpointID: "manager-backend", URL: "http://manager.test", ExpiresAt: w.now().Add(30 * time.Second)}}}, nil
 }
 
 type staticModuleLister struct {
-	revision int64
-	modules  []*client.ModuleInfo
+	revision  int64
+	endpoints []models.ModuleRoutingEndpoint
 }
 
-func (l *staticModuleLister) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*client.ModuleRoutingSnapshot, error) {
+func (l *staticModuleLister) WatchModules(ctx context.Context, revision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {
 	if revision == 1 && wait > 0 {
 		timer := time.NewTimer(wait)
 		defer timer.Stop()
@@ -210,5 +174,5 @@ func (l *staticModuleLister) WatchModules(ctx context.Context, revision int64, w
 		case <-timer.C:
 		}
 	}
-	return &client.ModuleRoutingSnapshot{Revision: l.revision, Modules: l.modules}, nil
+	return &models.ModuleRoutingSnapshot{Revision: l.revision, Endpoints: l.endpoints}, nil
 }

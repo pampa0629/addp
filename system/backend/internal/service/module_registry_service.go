@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/addp/common/logger"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
+	"github.com/addp/system/internal/catalogdiscovery"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
@@ -26,9 +28,48 @@ var ErrBootstrapModuleImmutable = errors.New("platform bootstrap module enabled 
 var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime instance query")
 
 type ModuleRegistryService struct {
+	catalogRouting *catalogRouting
+
 	repo                *repository.ModuleRegistryRepository
 	leaseDuration       time.Duration
 	deploymentDiscovery *DeploymentDiscoveryService
+}
+
+type catalogRouting struct {
+	mu        sync.RWMutex
+	endpoints []commonmodels.ModuleRoutingEndpoint
+}
+
+// StartCatalogDiscovery selects the sole Catalog routing source before the HTTP server starts.
+func (s *ModuleRegistryService) StartCatalogDiscovery(ctx context.Context, source *catalogdiscovery.Source) {
+	state := &catalogRouting{}
+	s.catalogRouting = state
+	go source.Run(ctx, func(next []commonmodels.ModuleRoutingEndpoint) error {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		if len(state.endpoints) == 0 && len(next) == 0 {
+			return nil
+		}
+		if err := s.repo.AdvanceRoutingRevision(ctx); err != nil {
+			return err
+		}
+		state.endpoints = next
+		return nil
+	}, func(err error) { logger.L().Warn("Catalog Kubernetes discovery failed", "error", err) })
+}
+
+func (s *ModuleRegistryService) routingSnapshot(ctx context.Context) (*commonmodels.ModuleRoutingSnapshot, error) {
+	if s.catalogRouting == nil {
+		return s.repo.RoutingSnapshot(ctx, nil)
+	}
+	s.catalogRouting.mu.RLock()
+	defer s.catalogRouting.mu.RUnlock()
+	// A non-nil slice selects Kubernetes even before the first confirmation.
+	endpoints := s.catalogRouting.endpoints
+	if endpoints == nil {
+		endpoints = []commonmodels.ModuleRoutingEndpoint{}
+	}
+	return s.repo.RoutingSnapshot(ctx, endpoints)
 }
 
 const moduleRegistryWatchPollInterval = 250 * time.Millisecond
@@ -303,7 +344,7 @@ func (s *ModuleRegistryService) ListActiveModules() ([]*models.ModuleInfo, error
 
 // WatchRoutingSnapshot 在拓扑 revision 变化或等待超时后返回完整的新鲜路由快照。
 // 超时返回同一 revision 的快照是协议的一部分，用于续新 Gateway 持有的租约投影。
-func (s *ModuleRegistryService) WatchRoutingSnapshot(ctx context.Context, afterRevision int64, wait time.Duration) (*models.ModuleRoutingSnapshot, error) {
+func (s *ModuleRegistryService) WatchRoutingSnapshot(ctx context.Context, afterRevision int64, wait time.Duration) (*commonmodels.ModuleRoutingSnapshot, error) {
 	if afterRevision < 0 || wait < 0 {
 		return nil, fmt.Errorf("%w: revision and wait must not be negative", ErrInvalidModuleRegistration)
 	}
@@ -318,28 +359,16 @@ func (s *ModuleRegistryService) WatchRoutingSnapshot(ctx context.Context, afterR
 			return nil, err
 		}
 		if revision != afterRevision || wait == 0 {
-			return s.routingSnapshot(revision)
+			return s.routingSnapshot(ctx)
 		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-deadline.C:
-			revision, err = s.repo.GetRegistryRevision()
-			if err != nil {
-				return nil, err
-			}
-			return s.routingSnapshot(revision)
+			return s.routingSnapshot(ctx)
 		case <-ticker.C:
 		}
 	}
-}
-
-func (s *ModuleRegistryService) routingSnapshot(revision int64) (*models.ModuleRoutingSnapshot, error) {
-	modules, err := s.ListActiveModules()
-	if err != nil {
-		return nil, err
-	}
-	return &models.ModuleRoutingSnapshot{Revision: revision, Modules: modules, ObservedAt: time.Now()}, nil
 }
 
 func (s *ModuleRegistryService) Deregister(moduleName, instanceID string) error {

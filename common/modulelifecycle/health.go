@@ -54,8 +54,9 @@ type ReadyResponse struct {
 // Controller is the unique process-local readiness projection used by HTTP
 // backends. System remains the owner of the authoritative module lease.
 type Controller struct {
-	module string
-	role   string
+	externalDiscovery bool
+	module            string
+	role              string
 
 	mu           sync.RWMutex
 	registration *commonclient.ModuleRegistrationLifecycle
@@ -71,6 +72,9 @@ func NewBusiness(module, role string, checks ...CheckFunc) *Controller {
 	}
 	return &Controller{module: module, role: role, checks: checks}
 }
+
+// UseExternalDiscovery retains process identity without projecting a System registration state.
+func (c *Controller) UseExternalDiscovery() { c.externalDiscovery = true }
 
 func NewStandalone(module string, checks ...CheckFunc) *Controller {
 	return &Controller{module: module, checks: checks}
@@ -145,7 +149,9 @@ func (c *Controller) Readiness(ctx context.Context) (ReadyResponse, bool) {
 		}
 		response.Role = snapshot.Role
 		response.InstanceID = snapshot.InstanceID
-		response.RegistrationState = snapshot.State
+		if !c.externalDiscovery {
+			response.RegistrationState = snapshot.State
+		}
 	}
 	if !ready {
 		response.Status = "not_ready"

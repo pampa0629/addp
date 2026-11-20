@@ -107,7 +107,7 @@ func RegisterIAMServiceRuntimeRoutes(
 		platformReadRoutes.GET("/task-providers", taskProviderHandler.ListService)
 		platformReadRoutes.GET("/task-providers/:module_name", taskProviderHandler.GetService)
 		platformReadRoutes.GET("/modules", moduleHandler.ListModulesService)
-		platformReadRoutes.GET("/modules/watch", moduleHandler.WatchModulesService)
+		platformReadRoutes.GET("/modules/watch", sharedauth.MustNewServiceClientGuard("addp-gateway"), moduleHandler.WatchModulesService)
 		platformReadRoutes.GET("/modules/:module_name", moduleHandler.GetModuleService)
 	}
 	platformTenantRoutes := runtimeRoutes.Group("")

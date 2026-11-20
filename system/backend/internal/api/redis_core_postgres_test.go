@@ -2,6 +2,8 @@ package api
 
 import (
 	"github.com/addp/common/infra/redistest"
+	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"gorm.io/gorm"
 	"net"
 	"net/http/httptest"
@@ -13,7 +15,7 @@ func testSystemRedisBoundaryAgainstPostgres(t *testing.T, db *gorm.DB, runtime *
 	cfg := redistest.Config(t)
 	proxy := redistest.NewProxy(t, net.JoinHostPort(cfg.Host, cfg.Port))
 	client := redistest.Open(t, proxy.Config(cfg))
-	router := SetupRouter(db, testIAMRuntimeConfig(), client)
+	router := SetupRouter(db, testIAMRuntimeConfig(), client, service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db)))
 	token := decodeIAMAccessToken(t, performIAMOAuthClientCredentialsRequest(t, router, secret, tenantID))
 	count := func(table string) int64 {
 		t.Helper()

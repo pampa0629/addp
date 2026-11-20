@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -209,7 +211,7 @@ func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineacc
 		cfg := testIAMRuntimeConfig()
 		cfg.SystemServiceURL, cfg.MetaServiceURL = owner.URL, owner.URL
 		cfg.ServiceClientSecrets = map[string]string{"addp-system": machineSecret}
-		router := SetupRouter(db, cfg, fixtureRouterRedis(t))
+		router := SetupRouter(db, cfg, fixtureRouterRedis(t), service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db)))
 		runtime, err := NewIAMRuntime(db, cfg, testIAMSecurityPolicy())
 		if err != nil {
 			t.Fatal(err)

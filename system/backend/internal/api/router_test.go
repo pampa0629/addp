@@ -1,6 +1,8 @@
 package api
 
 import (
+	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"testing"
 
 	"github.com/addp/system/internal/iam"
@@ -36,7 +38,7 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testIAMRuntimeConfig()
-	router := SetupRouter(db, cfg, fixtureRouterRedis(t))
+	router := SetupRouter(db, cfg, fixtureRouterRedis(t), service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db)))
 	routes := make(map[string]struct{})
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = struct{}{}
