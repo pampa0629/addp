@@ -17,14 +17,14 @@ import (
 
 // Only this deployment subcommand reads the installation credentials.
 // Stdout is reserved for the SQL a DBA reviews and executes separately.
-func installMySQLIAM(output io.Writer) error {
+func installMySQLSystem(output io.Writer) error {
 	cfg := database.Config{
 		Host: os.Getenv("ADDP_MYSQL_HOST"), Port: os.Getenv("ADDP_MYSQL_PORT"),
 		User: os.Getenv("ADDP_MYSQL_INSTALL_USER"), Password: os.Getenv("ADDP_MYSQL_INSTALL_PASSWORD"),
 		DBName: "system", SSLMode: os.Getenv("ADDP_MYSQL_SSLMODE"), ConnectTimeout: 5 * time.Second,
 	}
 	if os.Getenv("ADDP_INFRA_DATABASE_PROVIDER") != "mysql" || cfg.Host == "" || cfg.Port == "" || cfg.User == "" || cfg.Password == "" {
-		return errors.New("MySQL IAM installation requires the mysql provider, explicit host, port and installation credentials")
+		return errors.New("MySQL System installation requires the mysql provider, explicit host, port and installation credentials")
 	}
 	dialect, err := platformmysql.Dialector(cfg)
 	if err != nil {
@@ -32,7 +32,7 @@ func installMySQLIAM(output io.Writer) error {
 	}
 	db, err := gorm.Open(dialect, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
-		return fmt.Errorf("open MySQL IAM installation connection: %w", err)
+		return fmt.Errorf("open MySQL System installation connection: %w", err)
 	}
 	pool, err := db.DB()
 	if err != nil {
@@ -41,15 +41,27 @@ func installMySQLIAM(output io.Writer) error {
 	defer pool.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	err = migration.MigrateMySQLIAMFoundation(db.WithContext(ctx))
-	var pending *migration.PendingMySQLIAMTriggers
-	if !errors.As(err, &pending) {
-		return err
+	var statements []string
+	for _, install := range []func(*gorm.DB) error{
+		migration.MigrateMySQLIAMFoundation, migration.MigrateMySQLAccessRequestLocks, migration.MigrateMySQLModuleRegistry,
+	} {
+		err := install(db.WithContext(ctx))
+		if err == nil {
+			continue
+		}
+		var pending *migration.PendingMySQLSystemTriggers
+		if !errors.As(err, &pending) {
+			return err
+		}
+		statements = append(statements, pending.Statements...)
+	}
+	if len(statements) == 0 {
+		return nil
 	}
 	if _, err := fmt.Fprintln(output, "USE `system`;\nDELIMITER $$"); err != nil {
 		return err
 	}
-	for _, statement := range pending.Statements {
+	for _, statement := range statements {
 		if _, err := fmt.Fprintln(output, statement+"$$"); err != nil {
 			return err
 		}
@@ -57,5 +69,5 @@ func installMySQLIAM(output io.Writer) error {
 	if _, err := fmt.Fprintln(output, "DELIMITER ;"); err != nil {
 		return err
 	}
-	return pending
+	return &migration.PendingMySQLSystemTriggers{Statements: statements}
 }

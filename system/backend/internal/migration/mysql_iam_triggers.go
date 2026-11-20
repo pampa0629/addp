@@ -11,12 +11,12 @@ import (
 // The embedded trigger files use one header format; the body is an opaque SQL statement.
 var mysqlTriggerHeader = regexp.MustCompile(`^CREATE TRIGGER IF NOT EXISTS ([a-z_]+)\n(BEFORE|AFTER) (INSERT|UPDATE|DELETE) ON ([a-z_]+) FOR EACH ROW\n`)
 
-type mysqlIAMTrigger struct {
+type mysqlSystemTrigger struct {
 	Name, Timing, Event, TableName, Body, Definer string
 	Position                                      int
 }
 
-func checkMySQLIAMTriggers(conn *gorm.DB, scripts []string) error {
+func checkMySQLSystemTriggers(conn *gorm.DB, scripts []string) error {
 	var account string
 	if err := conn.Raw("SELECT CURRENT_USER()").Row().Scan(&account); err != nil {
 		return err
@@ -33,9 +33,9 @@ func checkMySQLIAMTriggers(conn *gorm.DB, scripts []string) error {
 		return err
 	}
 	defer rows.Close()
-	byName := make(map[string]mysqlIAMTrigger)
+	byName := make(map[string]mysqlSystemTrigger)
 	for rows.Next() {
-		var trigger mysqlIAMTrigger
+		var trigger mysqlSystemTrigger
 		if err := rows.Scan(&trigger.Name, &trigger.Timing, &trigger.Event, &trigger.TableName, &trigger.Body, &trigger.Definer, &trigger.Position); err != nil {
 			return err
 		}
@@ -49,11 +49,11 @@ func checkMySQLIAMTriggers(conn *gorm.DB, scripts []string) error {
 	for _, script := range scripts {
 		header := mysqlTriggerHeader.FindStringSubmatch(script)
 		if header == nil {
-			return fmt.Errorf("invalid embedded System IAM trigger header")
+			return fmt.Errorf("invalid embedded System trigger header")
 		}
 		group := [3]string{header[2], header[3], header[4]}
 		positions[group]++
-		want := mysqlIAMTrigger{Name: header[1], Timing: header[2], Event: header[3],
+		want := mysqlSystemTrigger{Name: header[1], Timing: header[2], Event: header[3],
 			TableName: header[4], Body: strings.TrimSpace(script[len(header[0]):]), Definer: account, Position: positions[group]}
 		found, ok := byName[want.Name]
 		if !ok {
@@ -62,19 +62,19 @@ func checkMySQLIAMTriggers(conn *gorm.DB, scripts []string) error {
 			continue
 		}
 		if found != want {
-			return fmt.Errorf("installed System IAM trigger %s differs in definition, definer or order", want.Name)
+			return fmt.Errorf("installed System trigger %s differs in definition, definer or order", want.Name)
 		}
 	}
 	if len(missing) > 0 {
-		return &PendingMySQLIAMTriggers{Statements: missing}
+		return &PendingMySQLSystemTriggers{Statements: missing}
 	}
 	return nil
 }
 
-// PendingMySQLIAMTriggers contains the statements a deployment DBA must apply
+// PendingMySQLSystemTriggers contains the statements a deployment DBA must apply
 // to the same physical database before the installation can publish its revision.
-type PendingMySQLIAMTriggers struct{ Statements []string }
+type PendingMySQLSystemTriggers struct{ Statements []string }
 
-func (p *PendingMySQLIAMTriggers) Error() string {
-	return fmt.Sprintf("System IAM requires %d DBA-installed MySQL triggers", len(p.Statements))
+func (p *PendingMySQLSystemTriggers) Error() string {
+	return fmt.Sprintf("System requires %d DBA-installed MySQL triggers", len(p.Statements))
 }

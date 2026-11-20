@@ -67,6 +67,6 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 				return fmt.Errorf("apply System MySQL migration %s/%s: %w", directory, migration.Name(), err)
 			}
 		}
-		return checkMySQLIAMTriggers(conn, triggers)
+		return checkMySQLSystemTriggers(conn, triggers)
 	}, data)
 }

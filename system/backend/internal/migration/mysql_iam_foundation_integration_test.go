@@ -105,7 +105,7 @@ func TestMySQLIAMFoundation(t *testing.T) {
 	if err := schema.RequireMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion); err == nil {
 		t.Fatal("partial upgrade passed the new revision check")
 	}
-	var pending *PendingMySQLIAMTriggers
+	var pending *PendingMySQLSystemTriggers
 	if err := MigrateMySQLIAMFoundation(db); !errors.As(err, &pending) {
 		t.Fatalf("expected DBA statements for triggers missing after interrupted DDL: %v", err)
 	}

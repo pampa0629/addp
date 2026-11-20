@@ -39,14 +39,14 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and an ADDP opaque access token.
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "install-mysql-iam" {
+	if len(os.Args) > 1 && os.Args[1] == "install-mysql-system" {
 		if len(os.Args) != 2 {
-			fmt.Fprintln(os.Stderr, "install-mysql-iam takes no arguments")
+			fmt.Fprintln(os.Stderr, "install-mysql-system takes no arguments")
 			os.Exit(2)
 		}
-		if err := installMySQLIAM(os.Stdout); err != nil {
+		if err := installMySQLSystem(os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			var pending *migration.PendingMySQLIAMTriggers
+			var pending *migration.PendingMySQLSystemTriggers
 			if errors.As(err, &pending) {
 				os.Exit(3)
 			}
@@ -61,6 +61,10 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+	if len(os.Args) != 1 {
+		fmt.Fprintln(os.Stderr, "unknown System command")
+		os.Exit(2)
 	}
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()

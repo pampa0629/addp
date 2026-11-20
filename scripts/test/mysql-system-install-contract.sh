@@ -19,18 +19,28 @@ CREATE USER 'iam_runtime'@'%' IDENTIFIED BY '$runtime_password';
 GRANT SELECT, INSERT, UPDATE, CREATE, REFERENCES, INDEX, ALTER, TRIGGER, CREATE ROUTINE, EXECUTE ON \`system\`.* TO 'iam_installer'@'%';
 SQL
 test "$(echo 'SELECT @@log_bin, @@log_bin_trust_function_creators' | admin)" = $'1\t0'
+# An unknown argument must not launch the HTTP server or perform installation.
 result=0
-"$work/system-server" install-mysql-iam > "$work/triggers.sql" || result=$?
+"$work/system-server" install-mysql-iam > "$work/retired.out" 2> "$work/retired.err" || result=$?
+test "$result" = 2
+test ! -s "$work/retired.out"
+result=0
+"$work/system-server" install-mysql-system > "$work/triggers.sql" || result=$?
 test "$result" = 3
 test "$(echo "SELECT version=0 AND pending_version>0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | admin)" = 1
 expected=$(grep -c '^CREATE DEFINER=' "$work/triggers.sql")
 test "$expected" -gt 0
+for name in module_node_declaration_immutable process_metrics_declaration_immutable; do
+    grep -q "TRIGGER IF NOT EXISTS $name$" "$work/triggers.sql"
+done
+test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_module_registry') AND version=0 AND pending_version>0" | admin)" = 2
+test "$(echo "SELECT version=1 AND pending_version=0 FROM startup_schema_revision WHERE owner='system_access_request_locks'" | admin)" = 1
 # A same-name object with a different body must not authorize startup.
 admin <<'SQL'
 CREATE DEFINER='iam_installer'@'%' TRIGGER trg_principals_updated_at BEFORE UPDATE ON principals FOR EACH ROW SET NEW.updated_at = OLD.updated_at;
 SQL
 result=0
-"$work/system-server" install-mysql-iam > "$work/refused.sql" 2>"$work/refused.err" || result=$?
+"$work/system-server" install-mysql-system > "$work/refused.sql" 2>"$work/refused.err" || result=$?
 test "$result" = 1
 grep -q 'trg_principals_updated_at differs' "$work/refused.err"
 echo 'DROP TRIGGER trg_principals_updated_at' | admin
@@ -47,15 +57,25 @@ END$$
 DELIMITER ;
 SQL
 result=0
-"$work/system-server" install-mysql-iam > "$work/incomplete.out" 2>"$work/incomplete.err" || result=$?
+"$work/system-server" install-mysql-system > "$work/incomplete.out" 2>"$work/incomplete.err" || result=$?
 test "$result" = 1
 grep -q 'fixture rejected revision completion' "$work/incomplete.err"
 test "$(echo 'SELECT (SELECT COUNT(*) FROM principals)+(SELECT COUNT(*) FROM oauth_clients)+(SELECT COUNT(*) FROM roles)+(SELECT COUNT(*) FROM permissions)+(SELECT COUNT(*) FROM role_assignments)+(SELECT COUNT(*) FROM role_permissions)' | admin)" = 0
 test "$(echo "SELECT version=0 AND pending_version>0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | admin)" = 1
 echo 'DROP TRIGGER fixture_refuse_completion' | admin
-"$work/system-server" install-mysql-iam > "$work/remaining.sql"
+# The DBA may apply a partial list. Completed owners remain intact on replay.
+echo 'DROP TRIGGER process_metrics_declaration_immutable' | admin
+result=0
+"$work/system-server" install-mysql-system > "$work/last-trigger.sql" || result=$?
+test "$result" = 3
+test "$(grep -c '^CREATE DEFINER=' "$work/last-trigger.sql")" = 1
+grep -q 'TRIGGER IF NOT EXISTS process_metrics_declaration_immutable$' "$work/last-trigger.sql"
+test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_access_request_locks','system_iam_foundation') AND version>0 AND pending_version=0" | admin)" = 2
+test "$(echo 'SELECT COUNT(*) FROM module_registry_state' | admin)" = 0
+admin < "$work/last-trigger.sql"
+"$work/system-server" install-mysql-system > "$work/remaining.sql"
 test ! -s "$work/remaining.sql"
-"$work/system-server" install-mysql-iam
+"$work/system-server" install-mysql-system
 test "$(echo "SELECT COUNT(*) FROM oauth_clients WHERE client_type='confidential' AND status='disabled' AND client_secret_hash IS NULL" | admin)" = 54
 test "$(echo "SELECT COUNT(*) FROM oauth_clients WHERE client_id='addp-cli' AND status='active' AND client_type='public' AND service_principal_id IS NULL" | admin)" = 1
 test "$(echo "SELECT COUNT(*) FROM role_assignments WHERE scope_type='platform' AND source_type='bootstrap'" | admin)" = 53
@@ -65,6 +85,8 @@ GRANT SELECT ON `system`.startup_schema_revision TO 'iam_runtime'@'%';
 GRANT SELECT, INSERT ON `system`.audit_logs TO 'iam_runtime'@'%';
 SQL
 test "$(echo "SELECT version>0 AND pending_version=0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | runtime)" = 1
+test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry') AND version>0 AND pending_version=0" | runtime)" = 3
+test "$(echo "SELECT revision FROM module_registry_state WHERE id=1" | admin)" = 1
 echo "INSERT INTO audit_logs(event_name,result,risk_level,module_name) VALUES ('iam.fixture.install','succeeded','low','system')" | runtime
 for denied in 'TRUNCATE TABLE audit_logs' 'ALTER TABLE audit_logs ADD COLUMN fixture INT' "UPDATE audit_logs SET result='failed'" 'DELETE FROM audit_logs' 'UPDATE startup_schema_revision SET version=0'; do
     if echo "$denied" | runtime 2>"$work/denied.err"; then
@@ -108,4 +130,4 @@ if MYSQL_PWD="$ADDP_MYSQL_BOOTSTRAP_PASSWORD" docker exec -e MYSQL_PWD "$contain
 fi
 grep -q 'ERROR 1045' "$work/closed.err"
 echo 'MySQL offline CLI: three distinct administrators, MFA, audit and temporary account removal verified'
-echo "MySQL System IAM installation: DBA applied $expected scoped triggers; restricted runtime read version and appended audit"
+echo "MySQL System installation: DBA applied $expected scoped triggers; restricted runtime read version and appended audit"
