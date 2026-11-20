@@ -2380,6 +2380,93 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/business_nfs_observations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取指定节点的 Business NFS 导出状态 | Read the Business NFS export state for one node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "采集节点 ID | Collection node ID",
+                        "name": "node_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.BusinessNFSObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read",
+                    "platform.host_node.read",
+                    "platform.engine_deployment.read"
+                ]
+            }
+        },
         "/platform/cdc_resource_observations": {
             "get": {
                 "security": [
@@ -9282,6 +9369,23 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.BusinessNFSObservation": {
+            "type": "object",
+            "properties": {
+                "export_available": {
+                    "type": "boolean"
+                },
+                "node": {
+                    "$ref": "#/definitions/client.HostNodeReference"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "source_state": {
+                    "type": "string"
                 }
             }
         },

@@ -12,6 +12,7 @@ import (
 )
 
 type FrontendObservationBackend interface {
+	BusinessNFSExport(context.Context, string, string, string, time.Time, resourcequery.Budget) (*bool, error)
 	FrontendSamples(context.Context, string, string, string, time.Time, resourcequery.Budget) ([]resourcequery.FrontendSample, error)
 }
 
@@ -84,8 +85,55 @@ func (s *ResourceObservationService) WithFrontend(backend FrontendObservationBac
 	return s
 }
 
+type BusinessNFSObservation struct {
+	Node            *client.HostNodeReference `json:"node"`
+	ExportAvailable *bool                     `json:"export_available"`
+	SourceState     string                    `json:"source_state"`
+	QueriedAt       time.Time                 `json:"queried_at"`
+}
+
 func (s *ResourceObservationService) FrontendObservation(ctx context.Context, principal, token, nodeID string) (FrontendObservation, error) {
-	var result FrontendObservation
+	data := []resourcequery.FrontendSample{}
+	state, err := s.observeDeploymentNode(ctx, principal, token, nodeID, func(ctx context.Context, id, address, revision string, at time.Time, b resourcequery.Budget) (bool, error) {
+		rows, err := s.frontend.FrontendSamples(ctx, id, address, revision, at, b)
+		if err != nil {
+			return false, err
+		}
+		data = rows
+		for _, row := range rows {
+			if row.EntryUp != nil {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		return FrontendObservation{}, err
+	}
+	return FrontendObservation{Node: state.Node, SourceState: state.SourceState, QueriedAt: state.QueriedAt, Data: data}, nil
+}
+
+func (s *ResourceObservationService) BusinessNFSObservation(ctx context.Context, principal, token, nodeID string) (BusinessNFSObservation, error) {
+	var available *bool
+	state, err := s.observeDeploymentNode(ctx, principal, token, nodeID, func(ctx context.Context, id, address, revision string, at time.Time, b resourcequery.Budget) (bool, error) {
+		value, err := s.frontend.BusinessNFSExport(ctx, id, address, revision, at, b)
+		available = value
+		return value != nil, err
+	})
+	if err != nil {
+		return BusinessNFSObservation{}, err
+	}
+	return BusinessNFSObservation{Node: state.Node, SourceState: state.SourceState, QueriedAt: state.QueriedAt, ExportAvailable: available}, nil
+}
+
+type deploymentNodeState struct {
+	Node        *client.HostNodeReference
+	SourceState string
+	QueriedAt   time.Time
+}
+
+func (s *ResourceObservationService) observeDeploymentNode(ctx context.Context, principal, token, nodeID string, sample func(context.Context, string, string, string, time.Time, resourcequery.Budget) (bool, error)) (deploymentNodeState, error) {
+	var result deploymentNodeState
 	if s == nil || s.frontend == nil || s.policy == nil || s.nodes == nil || s.targets == nil {
 		return result, metricsdiscovery.ErrUnconfigured
 	}
@@ -115,7 +163,7 @@ func (s *ResourceObservationService) FrontendObservation(ctx context.Context, pr
 	}
 	at := s.now().UTC().Truncate(time.Second)
 	result.Node, result.QueriedAt, result.SourceState = node, at, "not_connected"
-	result.Data = []resourcequery.FrontendSample{}
+
 	targets, err := s.targets.Snapshot(ctx)
 	if err != nil {
 		return result, err
@@ -133,7 +181,7 @@ func (s *ResourceObservationService) FrontendObservation(ctx context.Context, pr
 			return result, err
 		}
 		queryCtx, done := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-		result.Data, err = s.frontend.FrontendSamples(queryCtx, nodeID, resolved.Address, target.FrontendRevision(node.Version), at, cfg.Budget)
+		collected, err := sample(queryCtx, nodeID, resolved.Address, target.FrontendRevision(node.Version), at, cfg.Budget)
 		done()
 		if err != nil {
 			return result, err
@@ -150,11 +198,8 @@ func (s *ResourceObservationService) FrontendObservation(ctx context.Context, pr
 			return result, resourcequery.ErrConflict
 		}
 		result.SourceState = "no_sample"
-		for _, row := range result.Data {
-			if row.EntryUp != nil {
-				result.SourceState = "collecting"
-				break
-			}
+		if collected {
+			result.SourceState = "collecting"
 		}
 		return result, nil
 	}

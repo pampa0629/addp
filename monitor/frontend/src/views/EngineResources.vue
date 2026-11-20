@@ -23,6 +23,14 @@
             <FieldHelp :content="t('monitor.engines.scopeHint')" />
           </form>
           <div class="engine-grid" v-loading="loading && !observed" data-testid="engine-list">
+            <article v-if="showNFS" class="engine-card" data-testid="business-nfs">
+              <header class="engine-card-heading"><h3>{{ t('monitor.engines.nfs.title') }}</h3></header>
+              <el-alert v-if="nfsError" :title="t(nfsError)" type="warning" :closable="false" />
+              <dl v-else-if="nfsExports.length" class="engine-summary">
+                <div v-for="row in nfsExports" :key="row.id"><dt>{{ row.name }}</dt><dd>{{ t(row.available ? 'monitor.engines.nfs.exported' : 'monitor.engines.nfs.absent') }}</dd></div>
+              </dl>
+              <span v-else-if="!loading">{{ t('monitor.engines.nfs.noSample') }}</span>
+            </article>
             <EngineRuntimeCard v-if="showMeilisearch && visible" :key="identity" ref="runtimeCard" source="meilisearch" @access-lost="blocked = true" />
             <article v-for="row in owners" :key="row.deployment_id" class="engine-card" :aria-label="row.display_name" :data-testid="`engine-card-${row.deployment_id}`">
               <header class="engine-card-heading"><h3>{{ row.display_name }}</h3><el-tag effect="plain">{{ engineNames[row.engine_type] }}</el-tag></header>
@@ -37,7 +45,7 @@
               <el-button class="engine-card-action" type="primary" plain :disabled="loading" @click="navigate({ ...state.query, engine_type: row.engine_type, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button>
             </article>
           </div>
-          <el-empty v-if="!loading && !errorKey && !owners.length && !showMeilisearch" :description="t('monitor.engines.empty')" />
+          <el-empty v-if="!loading && !errorKey && !owners.length && !showMeilisearch && !showNFS" :description="t('monitor.engines.empty')" />
           <el-pagination v-if="!errorKey && (observed || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
         </template>
       </template>
@@ -88,6 +96,8 @@ import { formatBytes, scaleByteValue, formatDurationSeconds } from '../../../../
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { engineResourcesAPI as api } from '../api/engineResources'
+import { processResourcesAPI } from '../api/processResources'
+import { isTargetUUID } from '../utils/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
 import MonitoredHostLink from '../components/MonitoredHostLink.vue'
@@ -104,6 +114,9 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const state = computed(() => resolveEngineRoute(route.query)), owners = ref([]), total = ref(0), observed = ref(null), history = ref(null)
 const showMeilisearch = computed(() => state.value.scope === 'infra' && state.value.page === 1 &&
   t('monitor.engineRuntime.meilisearch').toLocaleLowerCase(locale.value).includes(state.value.search.toLocaleLowerCase(locale.value)))
+const showNFS = computed(() => canReadHost.value && state.value.scope === 'business' && state.value.page === 1 &&
+  t('monitor.engines.nfs.title').toLocaleLowerCase(locale.value).includes(state.value.search.toLocaleLowerCase(locale.value)))
+const nfsExports = ref([]), nfsError = ref('')
 const canConfigure = computed(() => canReadHost.value && state.value.scope !== 'runtime' &&
   (auth.hasPermission('platform.engine_deployment.create') || auth.hasPermission('platform.engine_deployment.update')))
 function openConfiguration() {
@@ -166,7 +179,7 @@ async function reload({ automatic = false } = {}) {
   const context = JSON.stringify([identity.value, state.value.scope, state.value.engineType, state.value.deploymentID, state.value.metric, state.value.range, state.value.search, state.value.page])
   if (context !== dataContext) {
     observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0
-    runtimeSources.value = []
+    runtimeSources.value = []; nfsExports.value = []; nfsError.value = ''
     dataContext = context
   }
   errorKey.value = ''; trendError.value = ''
@@ -193,6 +206,7 @@ async function reload({ automatic = false } = {}) {
       if (!requests.current(ticket)) return
       runtimeLoad = runtimeCard.value?.reload()
     }
+    if (!state.value.deploymentID && showNFS.value) runtimeLoad = loadNFS(ticket)
     let rows, count
     if (state.value.deploymentID) {
       const owner = validateEngineDeployment(await requests.request(config => api.deployment(state.value.deploymentID, config)))
@@ -244,6 +258,23 @@ async function reload({ automatic = false } = {}) {
   } finally {
     await runtimeLoad
     if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() }
+  }
+}
+async function loadNFS(ticket) {
+  try {
+    const { data: nodes } = await requests.request(processResourcesAPI.frontendNodes)
+    const rows = []
+    for (const node of nodes) {
+      if (!requests.current(ticket) || !canReadHost.value) return
+      if (!node.enabled) continue
+      if (!isTargetUUID(node.node_id)) throw new Error('invalid_resource_response')
+      const result = await requests.request(config => api.nfs(node.node_id, config))
+      if (result.node?.node_id !== node.node_id || ![null, true, false].includes(result.export_available)) throw new Error('invalid_resource_response')
+      if (result.export_available !== null) rows.push({ id: node.node_id, name: result.node.display_name, available: result.export_available })
+    }
+    if (requests.current(ticket)) { nfsExports.value = rows; nfsError.value = '' }
+  } catch (error) {
+    if (requests.current(ticket)) { nfsExports.value = []; nfsError.value = resourceErrorKey(error) }
   }
 }
 async function loadHosts(rows, ticket) {

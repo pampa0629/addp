@@ -37,3 +37,33 @@ func TestFrontendSamplesChargesObservedModules(t *testing.T) {
 		t.Fatalf("over budget: %v", err)
 	}
 }
+
+func TestBusinessNFSExportBindsTheNodeAndPreservesMissingValues(t *testing.T) {
+	const address, revision = "node.test:9443", "3:1"
+	for _, tc := range []struct {
+		name, sample, node     string
+		want, present, invalid bool
+	}{
+		{"published", "1", testNode, true, true, false},
+		{"withdrawn", "0", testNode, false, true, false},
+		{"no sample", "", testNode, false, false, false},
+		{"invalid value", "2", testNode, false, false, true},
+		{"foreign node", "1", "other", false, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				rows := []map[string]any{}
+				if tc.sample != "" {
+					rows = append(rows, map[string]any{"metric": map[string]string{"__name__": "addp_business_nfs_export_available", "instance": address, "addp_node_id": tc.node, "addp_frontend_revision": revision}, "value": []any{testTime.Unix(), tc.sample}})
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": "vector", "result": rows}})
+			}))
+			defer server.Close()
+			c := Client{origin: server.URL, http: server.Client()}
+			value, err := c.BusinessNFSExport(context.Background(), testNode, address, revision, testTime, DefaultBudget())
+			if (err != nil) != tc.invalid || (value != nil) != tc.present || (value != nil && *value != tc.want) {
+				t.Fatalf("value=%v err=%v", value, err)
+			}
+		})
+	}
+}

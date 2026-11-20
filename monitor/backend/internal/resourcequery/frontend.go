@@ -96,8 +96,7 @@ func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision 
 }
 
 func frontendExpression(nodeID, address, revision string) string {
-	selector := `job="addp_nodes",addp_monitor_kind="frontend_resources",addp_source="frontend_exporter",addp_node_id=` +
-		strconv.Quote(nodeID) + ",instance=" + strconv.Quote(address) + ",addp_frontend_revision=" + strconv.Quote(revision)
+	selector := deploymentNodeSelector(nodeID, address, revision)
 	up := "up{" + selector + "}"
 	join := " on(instance,addp_node_id) "
 	// timestamp() removes the metric name. Keep each fixed metric in its own
@@ -109,4 +108,45 @@ func frontendExpression(nodeID, address, revision string) string {
 			"(timestamp("+field+") == "+join+"group_left timestamp("+up+")))")
 	}
 	return strings.Join(parts, " or on(__name__,instance,addp_node_id,frontend_module,frontend_mode) ")
+}
+
+func deploymentNodeSelector(nodeID, address, revision string) string {
+	return `job="addp_nodes",addp_monitor_kind="frontend_resources",addp_source="frontend_exporter",addp_node_id=` +
+		strconv.Quote(nodeID) + ",instance=" + strconv.Quote(address) + ",addp_frontend_revision=" + strconv.Quote(revision)
+}
+
+func (c *Client) BusinessNFSExport(ctx context.Context, nodeID, address, revision string, at time.Time, budget Budget) (*bool, error) {
+	if c == nil {
+		return nil, ErrUnavailable
+	}
+	selector := "{" + deploymentNodeSelector(nodeID, address, revision) + "}"
+	field, up := "addp_business_nfs_export_available"+selector, "up"+selector
+	guard := " and on(instance,addp_node_id) "
+	expr := field + guard + "(" + up + "==1)" + guard + "(timestamp(" + up + ")>=time()-30)" + guard + "(timestamp(" + field + ")==on(instance,addp_node_id) timestamp(" + up + "))"
+	endpoint, args := planExpressionQuery(Plan{End: at}, expr, budget)
+	args.Set("limit", "2")
+	wire, err := c.readForm(ctx, endpoint, args)
+	if err != nil {
+		return nil, err
+	}
+	for i, row := range wire.Data.Result {
+		m := row.Metric
+		if m["instance"] != address || m["addp_node_id"] != nodeID || m["addp_frontend_revision"] != revision || m["__name__"] != "addp_business_nfs_export_available" {
+			return nil, ErrUnavailable
+		}
+		wire.Data.Result[i].Metric = map[string]string{"signal": "export"}
+	}
+	values, err := normalizeSignals(wire, at, map[string]bool{"export": true})
+	if err != nil {
+		return nil, err
+	}
+	v, ok := values["export"]
+	if !ok {
+		return nil, nil
+	}
+	if v != 0 && v != 1 {
+		return nil, ErrUnavailable
+	}
+	available := v == 1
+	return &available, nil
 }

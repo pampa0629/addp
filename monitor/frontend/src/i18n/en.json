@@ -1858,6 +1858,12 @@
       }
     },
     "engines": {
+      "nfs": {
+        "title": "Business NFS export",
+        "exported": "Exported",
+        "absent": "Not exported",
+        "noSample": "No export samples from the visible nodes"
+      },
       "noCurrentHost": "No current host association",
       "title": "Engine monitoring",
       "configure": "Configure engine monitoring",

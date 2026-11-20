@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { engineBackend } from './engine-resources.fixture'
+import { identity } from './monitoring-targets.fixture'
+import { engineBackend, enginePermissions } from './engine-resources.fixture'
 
 test('search and compute indicators follow the current source without converting missing samples to zero', async ({ page }) => {
   const state = await engineBackend(page)
@@ -55,4 +56,21 @@ test('search and compute indicators follow the current source without converting
   expect(state.queries).toEqual([{ scope: 'infra', page: '1', page_size: '20' }])
   await page.getByRole('tab', { name: 'Business 业务引擎' }).click()
   await expect(page.getByTestId('engine-runtime-geopython')).toHaveCount(0)
+})
+
+test('Business NFS distinguishes an absent export from an absent sample', async ({ page }) => {
+  await engineBackend(page, { auth: identity([...enginePermissions, 'platform.host_node.read']) })
+  const node = { node_id: '10000000-0000-4000-8000-000000000002', display_name: '开发节点', enabled: true }
+  let available = true
+  await page.route('**/platform/frontend_nodes', route => route.fulfill({ json: { data: [node] } }))
+  await page.route('**/platform/business_nfs_observations?*', route => route.fulfill({ json: { node, export_available: available } }))
+  await page.goto('/engine-resources?scope=business&refresh=off')
+  const card = page.getByTestId('business-nfs')
+  await expect(card).toContainText('已导出')
+  available = false
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(card).toContainText('未导出')
+  available = null
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(card).toContainText('暂无导出样本')
 })

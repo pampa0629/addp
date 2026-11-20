@@ -1858,6 +1858,12 @@
       }
     },
     "engines": {
+      "nfs": {
+        "title": "Business NFS 导出",
+        "exported": "已导出",
+        "absent": "未导出",
+        "noSample": "当前可见节点暂无导出样本"
+      },
       "noCurrentHost": "当前无有效主机关联",
       "title": "引擎监控",
       "configure": "配置引擎监控",
