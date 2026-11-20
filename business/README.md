@@ -22,7 +22,7 @@ bash business/scripts/restart.sh -rustfs
 
 Infra 生命周期管理独立发现进程，Business 和开发启动幂等确保其存在；进程每轮完成后间隔 30 秒刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。
 
-管理员在 System“平台引擎部署”选择已发现的服务并确认承载主机，无需手工导出或导入文件。首批支持 Infra／Business 单容器 PostgreSQL；其他组件显示发现事实及未适配原因。发现、纳管和专业采集分别表达，平台运维关联不授予租户连接或业务数据权限。Docker Desktop 的来源属于 Linux VM，不属于原生 macOS 主机。
+管理员在 System 的引擎纳管页面选择已发现的服务并确认承载主机。Infra 和 Business 的单容器 PostgreSQL、Redis、MinIO 均支持登记和专业采集；未适配的组件显示发现事实和原因。Docker Desktop 的容器归属 Linux VM，macOS 原生 NFS 归属宿主机。登记与租户业务访问分别授权。各类引擎的页面入口、实际采样和候选项见[监控覆盖核对](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#engine-coverage-20261120)。
 
 发现只读当前工作区 Compose 的本地 Unix Socket Context，拒绝远程端点及环境覆盖，不读取容器环境、业务表或凭据，也不启动或重启服务。确定性校验使用 `make test-deployment-discovery`，完整 Business 校验使用 `make test-business-config`，均由现有 Platform CI 覆盖。
 

@@ -8,6 +8,33 @@
 
 现行契约由[运行观测规范](../../addp平台运行观测规范.md)维护，部署操作见[指标中心与来源](../../../../scripts/infra/docs/指标中心与来源.md)。本页不重复账号配方、固定查询、启动选择和私有卷规则；历史“尚未接入”“等待应用”等中间状态按后续实际结论归并。
 
+<a id="engine-coverage-20261120"></a>
+
+## Infra、Business 与内置引擎覆盖核对（2026-11-20）
+
+在个人开发节点核对 Compose 部署、主机 NFS 导出和内置引擎健康接口，再用 Monitor 的独立 mTLS 查询身份读取 Prometheus 最近三分钟的原始样本。10 个引擎及 CDC 来源各有 12 个样本，首尾相距 164～165 秒。中心另有自身抓取，`addp_nodes` 的 39 个目标还包括主机、服务和前端。
+
+| 已连续采样的部署 | 核对的序列 | 在统一监控中查看 |
+| --- | --- | --- |
+| Infra、Business 各一套 PostgreSQL、Redis、MinIO，共 6 个 | PostgreSQL 连接数，Redis 和 MinIO 的来源观测时间 | 引擎监控 → Infra 基础设施／Business 业务引擎 |
+| Infra Meilisearch | 索引任务来源观测时间，并核对待处理数序列存在 | 引擎监控 → Infra 基础设施 |
+| Infra Redpanda、Kafka Connect | 两个 CDC 来源各自的观测时间 | CDC 监控 → 运行资源 |
+| GeoPython Workflow | 运行时来源观测时间 | 引擎监控 → 计算运行时 |
+
+| 建议接入的对象 | 现场依据 | 首批值得观察的量 |
+| --- | --- | --- |
+| Infra FalkorDB、Business MySQL | 两套部署均在运行，缺少专用时序 | 连接数、内存，以及 MySQL 的运行线程数 |
+| Business Spark 集群 | Master 报告 ALIVE，已注册 1 个存活 Worker、共 2 核。Compose 另定义了第二个 Worker | 存活 Worker 数、可用核数、运行中应用数 |
+| Business Neo4j、FTP | Neo4j Community 和 FTP 服务容器在运行。FTP 部署关闭了 HTTP 管理入口 | 先看服务可用性。连接数或会话数须核对当前版本提供的只读汇总来源 |
+| Business 原生 NFS | macOS 的 nfsd 在运行，通过 `showmount` 精确匹配到本工作区的 Business 导出 | 服务可用性、指定导出是否已发布 |
+| Spark Workflow、DuckDB、Jupyter | 各自的 `/health` 返回 200。Spark Workflow 与 Business Spark 集群各有独立运行身份 | 运行时可用性，分别观察执行中任务、查询或会话的汇总数 |
+| Model3D、PointCloud、Document、SuperMap Workflow | 4 个运行时的 `/health` 均返回 200 | 运行时可用性、执行中任务数、失败次数 |
+| Math Workflow、Inference Runtime | Math 参考实现在运行，采用手动登记。Inference 模块 `/health/ready` 返回 200，其计算端点以独立引擎身份登记 | Math 先确认登记归属，Inference 先核对数据面实例。服务进程与计算任务分开计量 |
+
+Business Compose 还提供可选部署。按实际启用对象安排后续适配：HDFS 看存活 DataNode 与容量；Elasticsearch、ClickHouse、MongoDB、FalkorDB、TiDB、StarRocks、Doris、OceanBase、Oracle、openGauss、GaussDB、HighGo、Kingbase、Dameng、SuperMap PostgreSQL 按各引擎核对可用性及连接或节点汇总；RustFS 看对象存储容量；Business Redpanda 看业务集群自身的 broker 状态。一次性初始化和样例生成任务不占常驻采集目标。部署范围见 [Business 清单](../../../../business/docker-compose.yml) 和[内置运行时清单](../../../../engines/README.md)。
+
+本次为只读盘点。CDC 连接器及其任务状态均为 RUNNING，PostgreSQL 有 3 个逻辑槽，其中 1 个活动、2 个非活动。候选项的健康响应、容器状态和采样建议只作为接入依据，私有来源、准入、暂停／恢复以及页面验收仍需逐项完成。
+
 <a id="pg-source-history"></a>
 
 <!-- 保留对应主题旧链接。 -->
