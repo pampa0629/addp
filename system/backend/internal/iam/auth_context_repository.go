@@ -28,9 +28,9 @@ type SessionCredentialAuthSnapshot struct {
 	FamilyAuthorizationVersion    int64
 	FamilyClientID                string
 	FamilyAuthType                string
-	FamilyAudiences               pq.StringArray `gorm:"type:text[]"`
-	FamilyScopes                  pq.StringArray `gorm:"type:text[]"`
-	FamilyAuthenticationMethods   pq.StringArray `gorm:"type:text[]"`
+	FamilyAudiences               DBStringList
+	FamilyScopes                  DBStringList
+	FamilyAuthenticationMethods   DBStringList
 	FamilyAssuranceLevel          AssuranceLevel
 	FamilyAuthenticatedAt         time.Time
 	FamilyStepUpExpiresAt         *time.Time
@@ -104,8 +104,11 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 		SnapshotServerNS int64
 	}
 	var started time.Time
+	databaseTime := "statement_timestamp()"
 	timingColumn := ""
-	if ctx.Value(authContextTimingKey{}) != nil {
+	if r.db.Dialector.Name() == "mysql" {
+		databaseTime = "CURRENT_TIMESTAMP(6)"
+	} else if ctx.Value(authContextTimingKey{}) != nil {
 		// Only in the Hosted comparison. Keep the existing transaction and
 		// query; return the server clock at evaluation of this same result row.
 		timingColumn = ", (EXTRACT(EPOCH FROM (clock_timestamp() - statement_timestamp())) * 1000000000)::bigint AS snapshot_server_ns"
@@ -117,7 +120,7 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 			access_token.expires_at AS credential_expires_at,
 			access_token.revoked_at AS credential_revoked_at,
 			access_token.created_at AS credential_created_at,
-			NULL::text AS credential_owner,
+			NULL AS credential_owner,
 			family.principal_id AS family_principal_id,
 			family.context_type AS family_context_type,
 			family.tenant_membership_id AS family_tenant_membership_id,
@@ -141,7 +144,7 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 			membership.joined_at AS tenant_membership_joined_at,
 			membership.expires_at AS tenant_membership_expires_at,
 			tenant.status AS tenant_status,
-			statement_timestamp() AS database_time` + timingColumn + `
+			` + databaseTime + ` AS database_time` + timingColumn + `
 		FROM system.access_tokens access_token
 		JOIN system.refresh_token_families family ON family.id = access_token.family_id
 		JOIN system.principals principal ON principal.id = family.principal_id

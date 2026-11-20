@@ -67,6 +67,15 @@ func testMySQLTokenSession(t *testing.T, db *gorm.DB) {
 	}
 
 	repo := iam.NewRepository(db)
+	snapshot, err := repo.GetAccessTokenAuthSnapshot(ctx, signature)
+	if err != nil || snapshot.FamilyPrincipalID != 105 || snapshot.TenantID == nil || *snapshot.TenantID != 90 ||
+		snapshot.PrincipalType != iam.PrincipalTypeServicePrincipal ||
+		snapshot.FamilyAuthorizationVersion != snapshot.PrincipalAuthorizationVersion ||
+		len(snapshot.FamilyScopes) != 1 || snapshot.FamilyScopes[0] != "addp.api" ||
+		len(snapshot.FamilyAuthenticationMethods) != 1 || snapshot.FamilyAuthenticationMethods[0] != "service_secret" ||
+		snapshot.DatabaseTime.Before(snapshot.CredentialCreatedAt) || !snapshot.DatabaseTime.Before(snapshot.CredentialExpiresAt) {
+		t.Fatalf("service session returned invalid authentication facts: %v", err)
+	}
 	if _, err := repo.IncrementPrincipalAuthorizationVersion(ctx, 105); err != nil {
 		t.Fatal(err)
 	}
