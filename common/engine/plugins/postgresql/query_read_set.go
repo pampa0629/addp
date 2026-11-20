@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/logger"
+	commonquery "github.com/addp/common/query"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -28,6 +30,7 @@ type postgresFunctionReference struct {
 	Schema        string
 	Name          string
 	ArgumentCount int
+	CountStar     bool
 }
 
 type postgresResolvedFunction struct {
@@ -43,8 +46,9 @@ type postgresResolvedFunction struct {
 }
 
 type postgresQueryReadDependencies struct {
-	Relations []postgresRelationReference
-	Functions []postgresFunctionReference
+	Relations   []postgresRelationReference
+	Functions   []postgresFunctionReference
+	sourceNodes []*pgquery.RangeVar
 }
 
 type postgresReadCatalog interface {
@@ -55,8 +59,9 @@ type postgresReadCatalog interface {
 }
 
 type postgresSQLReadInspector struct {
-	references []postgresRelationReference
-	functions  []postgresFunctionReference
+	references  []postgresRelationReference
+	functions   []postgresFunctionReference
+	sourceNodes []*pgquery.RangeVar
 }
 
 func (p *PostgreSQLPlugin) resolvePreparedQueryReadSet(
@@ -69,6 +74,10 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryReadSet(
 	}
 	dependencies, err := inspectPostgresSQLReadDependencies(req.Query)
 	if err != nil {
+		if diagnostic := plugin.QueryErrorContextOf(err); diagnostic != nil && diagnostic.Object != nil && diagnostic.Object.Kind == "function" {
+			logger.L().WarnContext(ctx, "SQL function read dependencies unresolved", "engine_id", req.EngineID,
+				"function", diagnostic.Object.Name, "reason", "table_function_source")
+		}
 		return nil, err
 	}
 
@@ -82,19 +91,26 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryReadSet(
 	}
 	defer db.Close() //nolint:errcheck
 
-	return p.resolvePostgresQueryReadSet(ctx, req, dependencies, &postgresDatabaseReadCatalog{db: db})
+	return p.resolvePostgresQueryReadSet(ctx, req, dependencies, &postgresDatabaseReadCatalog{db: db, gaussDB: p.Type() == "gaussdb"})
 }
 
 func inspectPostgresSQLReadDependencies(query string) (postgresQueryReadDependencies, error) {
 	parsed, err := pgquery.Parse(query)
-	if err != nil || len(parsed.GetStmts()) != 1 || parsed.GetStmts()[0].GetStmt().GetSelectStmt() == nil {
+	if err != nil {
+		return postgresQueryReadDependencies{}, postgresQueryReadSetError("PostgreSQL query must contain exactly one SELECT")
+	}
+	return inspectParsedPostgresReadDependencies(parsed)
+}
+
+func inspectParsedPostgresReadDependencies(parsed *pgquery.ParseResult) (postgresQueryReadDependencies, error) {
+	if len(parsed.GetStmts()) != 1 || parsed.GetStmts()[0].GetStmt().GetSelectStmt() == nil {
 		return postgresQueryReadDependencies{}, fmt.Errorf("%w: PostgreSQL query must contain exactly one SELECT", plugin.ErrQueryReadSetUnresolved)
 	}
 	inspector := &postgresSQLReadInspector{}
 	if err := inspector.inspectNode(parsed.Stmts[0].Stmt, nil); err != nil {
 		return postgresQueryReadDependencies{}, err
 	}
-	return postgresQueryReadDependencies{Relations: inspector.references, Functions: inspector.functions}, nil
+	return postgresQueryReadDependencies{Relations: inspector.references, Functions: inspector.functions, sourceNodes: inspector.sourceNodes}, nil
 }
 
 func (i *postgresSQLReadInspector) inspectNode(node *pgquery.Node, scope map[string]struct{}) error {
@@ -111,7 +127,18 @@ func (i *postgresSQLReadInspector) inspectNode(node *pgquery.Node, scope map[str
 		return postgresQueryReadSetError("data modification substatement is not supported")
 	}
 	if node.GetRangeFunction() != nil || node.GetRangeTableFunc() != nil || node.GetJsonTable() != nil {
-		return postgresQueryReadSetError("table function source is not supported")
+		err := postgresQueryReadSetError("table function source is not supported")
+		if node.GetRangeFunction() == nil {
+			return err
+		}
+		walkPostgresFailureObjects(node.ProtoReflect(), func(object *commonquery.ErrorObject, _ int) bool {
+			if object.Kind != "function" {
+				return false
+			}
+			err = plugin.WithQueryErrorContext(err, &commonquery.ErrorContext{Object: object})
+			return true
+		})
+		return err
 	}
 	if function := node.GetFuncCall(); function != nil {
 		return i.inspectFunction(function, scope)
@@ -137,6 +164,7 @@ func (i *postgresSQLReadInspector) inspectFunction(function *pgquery.FuncCall, s
 		}
 	}
 	reference := postgresFunctionReference{Name: parts[len(parts)-1], ArgumentCount: len(function.GetArgs())}
+	reference.CountStar = reference.Name == "count" && function.GetAggStar() && reference.ArgumentCount == 0
 	if len(parts) == 2 {
 		reference.Schema = parts[0]
 	}
@@ -189,6 +217,7 @@ func (i *postgresSQLReadInspector) inspectRangeVar(relation *pgquery.RangeVar, s
 			return nil
 		}
 	}
+	i.sourceNodes = append(i.sourceNodes, relation)
 	i.references = append(i.references, postgresRelationReference{
 		Schema: strings.TrimSpace(relation.GetSchemaname()),
 		Name:   name,
@@ -240,7 +269,7 @@ func (p *PostgreSQLPlugin) resolvePostgresQueryReadSet(
 	dependencies postgresQueryReadDependencies,
 	catalog postgresReadCatalog,
 ) (*plugin.QueryReadSet, error) {
-	if err := validatePostgresFunctionReferences(ctx, req.Query, dependencies.Functions, catalog); err != nil {
+	if err := validatePostgresFunctionReferences(ctx, req, dependencies.Functions, catalog); err != nil {
 		return nil, err
 	}
 	paths := make([]plugin.EngineCatalogPath, 0, len(dependencies.Relations))
@@ -307,10 +336,7 @@ func (p *PostgreSQLPlugin) expandPostgresReadRelation(
 	}
 	for _, function := range functionDependencies {
 		if !isTransparentPostgresReadFunction(function) {
-			return nil, fmt.Errorf(
-				"%w: PostgreSQL view %s.%s depends on unresolved function %s.%s",
-				plugin.ErrQueryReadSetUnresolved, relation.Schema, relation.Name, function.Schema, function.Name,
-			)
+			return nil, unresolvedPostgresFunction(ctx, engineID, function, "unknown_view_function_dependencies")
 		}
 	}
 	dependencies, err := catalog.ViewDependencies(ctx, relation.OID)
@@ -329,7 +355,7 @@ func (p *PostgreSQLPlugin) expandPostgresReadRelation(
 
 func validatePostgresFunctionReferences(
 	ctx context.Context,
-	source string,
+	req plugin.QueryRequest,
 	references []postgresFunctionReference,
 	catalog postgresReadCatalog,
 ) error {
@@ -339,11 +365,11 @@ func validatePostgresFunctionReferences(
 			return postgresQueryReadSetCatalogError("resolve function", err)
 		}
 		if len(candidates) == 0 {
-			return plugin.WithQueryErrorContext(plugin.NewQueryError(plugin.QueryErrorCodeFunctionNotFound, postgresQueryReadSetError("function dependency cannot be resolved")), postgresNamedObjectContext(source, "function", reference.Schema, reference.Name))
+			return plugin.WithQueryErrorContext(plugin.NewQueryError(plugin.QueryErrorCodeFunctionNotFound, postgresQueryReadSetError("function dependency cannot be resolved")), postgresNamedObjectContext(req.Query, "function", reference.Schema, reference.Name))
 		}
 		for _, candidate := range candidates {
 			if !isTransparentPostgresReadFunction(candidate) {
-				return postgresQueryReadSetError("function dependency cannot be proven")
+				return unresolvedPostgresFunction(ctx, req.EngineID, candidate, "unknown_business_dependencies")
 			}
 		}
 	}
@@ -363,8 +389,33 @@ func isTransparentPostgresReadFunction(function postgresResolvedFunction) bool {
 		return false
 	}
 	trustedBuiltin := function.Schema == "pg_catalog" && function.Language == "internal"
-	trustedExtension := strings.EqualFold(strings.TrimSpace(function.Extension), "postgis")
-	return trustedBuiltin || trustedExtension
+	return trustedBuiltin || postgresExtensionReadOperation(function) != ""
+}
+
+// Verified value and dictionary operations. The extension name is obtained
+// from pg_depend; a matching function in an unrelated schema is insufficient.
+func postgresExtensionReadOperation(function postgresResolvedFunction) string {
+	switch function.Extension {
+	case "postgis":
+		switch function.Name {
+		case "st_transform":
+			return "dictionary"
+		case "st_intersects", "st_asgeojson", "st_makeenvelope", "st_srid":
+			return "value"
+		}
+	case "hstore":
+		if function.Name == "fetchval" {
+			return "value"
+		}
+	}
+	return ""
+}
+
+func unresolvedPostgresFunction(ctx context.Context, engineID uint, function postgresResolvedFunction, reason string) error {
+	logger.L().WarnContext(ctx, "SQL function read dependencies unresolved",
+		"engine_id", engineID, "schema", function.Schema, "function", function.Name, "oid", function.OID,
+		"extension", function.Extension, "reason", reason)
+	return postgresQueryReadSetError("function dependency cannot be proven")
 }
 
 func postgresReadRelationKind(relkind string) (string, error) {
@@ -388,7 +439,8 @@ type postgresCatalogQuerier interface {
 }
 
 type postgresDatabaseReadCatalog struct {
-	db postgresCatalogQuerier
+	db      postgresCatalogQuerier
+	gaussDB bool
 }
 
 const postgresQualifiedRelationQuery = `
@@ -423,44 +475,37 @@ func (c *postgresDatabaseReadCatalog) ResolveRelation(ctx context.Context, refer
 }
 
 func (c *postgresDatabaseReadCatalog) FunctionCandidates(ctx context.Context, reference postgresFunctionReference) ([]postgresResolvedFunction, error) {
+	// GaussDB's native count(*) has a zero-argument entry, marked by
+	// proisagg while prokind reports f. Read that identity without making
+	// PostgreSQL depend on a column absent from its catalog. An explicit
+	// qualification flag works with GaussDB sessions that treat empty text as NULL.
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT proc.oid::bigint, namespace.nspname, proc.proname, language.lanname,
-		       proc.prokind::text, proc.proretset, proc.provolatile::text, proc.prosecdef,
-		       COALESCE(extension.extname, '')
+		       CASE WHEN $4 AND COALESCE((pg_catalog.to_jsonb(proc)->>'proisagg')::boolean,false)
+                    THEN 'a' ELSE proc.prokind::text END,
+               proc.proretset, proc.provolatile::text, proc.prosecdef,
+		       extension.extname
 		FROM pg_catalog.pg_proc proc
 		JOIN pg_catalog.pg_namespace namespace ON namespace.oid = proc.pronamespace
 		JOIN pg_catalog.pg_language language ON language.oid = proc.prolang
 		LEFT JOIN pg_catalog.pg_depend extension_dependency
 		  ON extension_dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+		 AND extension_dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
 		 AND extension_dependency.objid = proc.oid
 		 AND extension_dependency.deptype = 'e'
 		LEFT JOIN pg_catalog.pg_extension extension ON extension.oid = extension_dependency.refobjid
 		WHERE proc.proname = $1
-		  AND (($2 <> '' AND namespace.nspname = $2) OR ($2 = '' AND pg_catalog.pg_function_is_visible(proc.oid)))
-		  AND $3::integer >= proc.pronargs::integer - proc.pronargdefaults::integer
-		      - CASE WHEN proc.provariadic <> 0 THEN 1 ELSE 0 END
-		  AND (proc.provariadic <> 0 OR $3::integer <= proc.pronargs::integer)
+		  AND (($5 AND namespace.nspname = $2) OR (NOT $5 AND pg_catalog.pg_function_is_visible(proc.oid)))
+		  AND (($4 AND proc.pronargs=0 AND COALESCE((pg_catalog.to_jsonb(proc)->>'proisagg')::boolean,false))
+            OR ($3::integer >= proc.pronargs::integer - proc.pronargdefaults::integer
+                - CASE WHEN proc.provariadic <> 0 THEN 1 ELSE 0 END
+                AND (proc.provariadic <> 0 OR $3::integer <= proc.pronargs::integer)))
 		ORDER BY namespace.nspname, proc.oid
-	`, reference.Name, reference.Schema, reference.ArgumentCount)
+	`, reference.Name, reference.Schema, reference.ArgumentCount, c.gaussDB && reference.CountStar, reference.Schema != "")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	functions := make([]postgresResolvedFunction, 0)
-	for rows.Next() {
-		var function postgresResolvedFunction
-		if err := rows.Scan(
-			&function.OID, &function.Schema, &function.Name, &function.Language,
-			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner, &function.Extension,
-		); err != nil {
-			return nil, err
-		}
-		functions = append(functions, function)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return functions, nil
+	return scanPostgresReadFunctions(rows)
 }
 
 func (c *postgresDatabaseReadCatalog) ViewDependencies(ctx context.Context, oid int64) ([]postgresResolvedRelation, error) {
@@ -500,7 +545,7 @@ func (c *postgresDatabaseReadCatalog) ViewFunctionDependencies(ctx context.Conte
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT DISTINCT function.oid::bigint, namespace.nspname, function.proname, language.lanname,
 		       function.prokind::text, function.proretset, function.provolatile::text, function.prosecdef,
-		       COALESCE(extension.extname, '')
+		       extension.extname
 		FROM pg_catalog.pg_rewrite rewrite
 		JOIN pg_catalog.pg_depend depend
 		  ON depend.classid = 'pg_catalog.pg_rewrite'::pg_catalog.regclass
@@ -511,6 +556,7 @@ func (c *postgresDatabaseReadCatalog) ViewFunctionDependencies(ctx context.Conte
 		JOIN pg_catalog.pg_language language ON language.oid = function.prolang
 		LEFT JOIN pg_catalog.pg_depend extension_dependency
 		  ON extension_dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+		 AND extension_dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
 		 AND extension_dependency.objid = function.oid
 		 AND extension_dependency.deptype = 'e'
 		LEFT JOIN pg_catalog.pg_extension extension ON extension.oid = extension_dependency.refobjid
@@ -521,16 +567,22 @@ func (c *postgresDatabaseReadCatalog) ViewFunctionDependencies(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
+	return scanPostgresReadFunctions(rows)
+}
+
+func scanPostgresReadFunctions(rows *sql.Rows) ([]postgresResolvedFunction, error) {
 	defer rows.Close()
 	functions := make([]postgresResolvedFunction, 0)
 	for rows.Next() {
 		var function postgresResolvedFunction
+		var extension sql.NullString
 		if err := rows.Scan(
 			&function.OID, &function.Schema, &function.Name, &function.Language,
-			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner, &function.Extension,
+			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner, &extension,
 		); err != nil {
 			return nil, err
 		}
+		function.Extension = extension.String
 		functions = append(functions, function)
 	}
 	if err := rows.Err(); err != nil {

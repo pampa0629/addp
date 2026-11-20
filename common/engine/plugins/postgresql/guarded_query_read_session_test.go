@@ -27,7 +27,8 @@ func TestGuardedPostgresQueryAdmission(t *testing.T) {
 		{"DELETE FROM public.persons RETURNING id", 0, false},
 	} {
 		t.Run(test.query, func(t *testing.T) {
-			query, set, err := prepareGuardedPostgresQuery(plugin.QueryRequest{EngineID: 9, Language: "sql", Query: test.query, Options: plugin.QueryOptions{ReadOnly: true}})
+			plan, err := prepareGuardedPostgresQuery(t.Context(), plugin.QueryRequest{EngineID: 9, Language: "sql", Query: test.query, Options: plugin.QueryOptions{ReadOnly: true}}, nil)
+			query, set := plan.sql, plan.readSet
 			if !test.accepted {
 				if !errors.Is(err, plugin.ErrQueryReadSetUnresolved) || set != nil {
 					t.Fatalf("unproven query admitted: %q %+v %v", query, set, err)

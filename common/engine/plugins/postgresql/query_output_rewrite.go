@@ -401,9 +401,26 @@ func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLinea
 		if !ordinary {
 			return plugin.ErrQueryOutputTransformUnsupported
 		}
+		// format_type includes the namespace of nonvisible extension types.
+		// Describe the locked columns under the same login settings as the
+		// prepared catalog snapshot, then restore the cursor's bound path.
+		var previousPath, loginPath string
+		if err := tx.QueryRowContext(ctx, `SELECT setting, reset_val FROM pg_catalog.pg_settings WHERE name='search_path'`).Scan(&previousPath, &loginPath); err != nil {
+			return err
+		}
+		if previousPath != loginPath {
+			if _, err := tx.ExecContext(ctx, "SELECT pg_catalog.set_config('search_path', $1, true)", loginPath); err != nil {
+				return err
+			}
+		}
 		current, err := postgresTableColumns(ctx, tx, parts[1].Name, parts[2].Name)
 		if err != nil {
 			return err
+		}
+		if previousPath != loginPath {
+			if _, err := tx.ExecContext(ctx, "SELECT pg_catalog.set_config('search_path', $1, true)", previousPath); err != nil {
+				return err
+			}
 		}
 		fields := make([]datatype.FieldInfo, len(current))
 		for i, field := range current {

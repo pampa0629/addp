@@ -16,9 +16,9 @@ func (p *PostgreSQLPlugin) proveGuardedNonSpatialTable(ctx context.Context, tx *
 	return p.checkOrdinaryTable(ctx, tx, path, true)
 }
 
-// Develop trusts administrator-managed indexes. Table-page evidence retains
-// its original index dependency check for other consumers.
-func (p *PostgreSQLPlugin) checkOrdinaryTable(ctx context.Context, tx *sql.Tx, path plugin.EngineCatalogPath, checkIndexDependencies bool) (*plugin.QueryReadSet, error) {
+// Both consumers bind the same locked business relation. The non-spatial page
+// reader also requires its certified column types and index access methods.
+func (p *PostgreSQLPlugin) checkOrdinaryTable(ctx context.Context, tx *sql.Tx, path plugin.EngineCatalogPath, requireNonSpatialPage bool) (*plugin.QueryReadSet, error) {
 	parts := path.Segments
 	if len(parts) != 3 || parts[0] != (plugin.EngineCatalogSegment{Kind: "server", Term: "server"}) ||
 		parts[1].Kind != plugin.EngineCatalogKindNamespace || parts[1].Term != plugin.EngineCatalogTermSchema ||
@@ -42,7 +42,7 @@ func (p *PostgreSQLPlugin) checkOrdinaryTable(ctx context.Context, tx *sql.Tx, p
 	if p.identity != nil && p.identity.TableReadCatalogCheckSQL != "" {
 		proof = p.identity.TableReadCatalogCheckSQL
 	}
-	err = tx.QueryRowContext(ctx, proof, parts[1].Name, parts[2].Name, checkIndexDependencies).Scan(&safe)
+	err = tx.QueryRowContext(ctx, proof, parts[1].Name, parts[2].Name, requireNonSpatialPage).Scan(&safe)
 	if err != nil {
 		return nil, fmt.Errorf("%w: prove locked native table: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}
@@ -72,9 +72,9 @@ const guardedNonSpatialTableSQL = `SELECT c.relkind='r' AND c.relpersistence IN 
    JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
    JOIN pg_catalog.pg_namespace tn ON tn.oid=t.typnamespace
    WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
-    AND (COALESCE(pg_catalog.to_jsonb(a)->>'attgenerated','')<>'' OR tn.nspname<>'pg_catalog'
+    AND (COALESCE(pg_catalog.to_jsonb(a)->>'attgenerated','')<>'' OR ($3::boolean AND (tn.nspname<>'pg_catalog'
      OR t.typtype<>'b' OR (t.typelem<>0 AND NOT EXISTS
        (SELECT 1 FROM pg_catalog.pg_type elem JOIN pg_catalog.pg_namespace en ON en.oid=elem.typnamespace
-        WHERE elem.oid=t.typelem AND en.nspname='pg_catalog' AND elem.typtype='b'))))
+        WHERE elem.oid=t.typelem AND en.nspname='pg_catalog' AND elem.typtype='b'))))))
  FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
  WHERE n.nspname=$1 AND c.relname=$2`

@@ -95,7 +95,7 @@ func TestInspectPostgresSQLReadDependenciesCollectsOrdinaryFunctions(t *testing.
 		t.Fatalf("inspectPostgresSQLReadDependencies failed: %v", err)
 	}
 	want := []postgresFunctionReference{
-		{Name: "count", ArgumentCount: 0},
+		{Name: "count", CountStar: true},
 		{Schema: "pg_catalog", Name: "to_date", ArgumentCount: 2},
 		{Name: "btrim", ArgumentCount: 1},
 	}

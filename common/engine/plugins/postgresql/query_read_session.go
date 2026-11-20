@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	commonquery "github.com/addp/common/query"
 )
 
 var _ plugin.QueryReadSessionProvider = (*PostgreSQLPlugin)(nil)
@@ -52,8 +53,15 @@ func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared pl
 	}
 	var readSet *plugin.QueryReadSet
 	if authorize != nil {
-		query, actual, err := prepareGuardedPostgresQuery(request)
-		if err != nil || actual == nil || !(len(expected.Paths) == 0 && len(actual.Paths) == 0 || reflect.DeepEqual(expected.Paths, actual.Paths)) {
+		catalog := &postgresDatabaseReadCatalog{db: tx, gaussDB: p.Type() == "gaussdb"}
+		plan, err := prepareGuardedPostgresQuery(ctx, request, catalog)
+		if err != nil {
+			_ = tx.Rollback()
+			_ = db.Close()
+			return nil, err
+		}
+		actual := plan.readSet
+		if actual == nil || !(len(expected.Paths) == 0 && len(actual.Paths) == 0 || reflect.DeepEqual(expected.Paths, actual.Paths)) {
 			_ = tx.Rollback()
 			_ = db.Close()
 			return nil, plugin.ErrQueryReadSetUnresolved
@@ -65,12 +73,29 @@ func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared pl
 				return nil, err
 			}
 		}
+		if len(plan.integerCastColumns) > 0 {
+			table := actual.Paths[0].Segments
+			if err := verifyGuardedIntegerCastColumns(ctx, tx, table[1].Name, table[2].Name, plan.integerCastColumns); err != nil {
+				_ = tx.Rollback()
+				_ = db.Close()
+				return nil, err
+			}
+		}
+		if plan.dictionarySchema != "" {
+			// SQL overloads resolve the extension's own dictionary in its installation schema.
+			path := "pg_catalog, " + commonquery.ForDialect("postgresql").QuoteIdentifier(plan.dictionarySchema) + ", pg_temp"
+			if _, err := tx.ExecContext(ctx, "SELECT pg_catalog.set_config('search_path', $1, true)", path); err != nil {
+				_ = tx.Rollback()
+				_ = db.Close()
+				return nil, err
+			}
+		}
 		if err := authorize(ctx, actual.Clone()); err != nil {
 			_ = tx.Rollback()
 			_ = db.Close()
 			return nil, err
 		}
-		request.Query = query
+		request.Query = plan.sql
 		readSet = actual
 	}
 	if err := binding.ValidateExecution(ctx, tx); err != nil {
@@ -113,6 +138,29 @@ func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared pl
 		return nil, err
 	}
 	return &postgresQueryReadSession{db: db, tx: tx, cursor: cursor, readSet: readSet, columns: columns, fields: fields, binding: binding, provider: p}, nil
+}
+
+// Called after the ordinary table proof locks the same relation used by the
+// cursor. Casts of extension columns cannot use this native integer path.
+func verifyGuardedIntegerCastColumns(ctx context.Context, tx *sql.Tx, schema, table string, columns []string) error {
+	for _, column := range columns {
+		var native bool
+		err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+         SELECT 1 FROM pg_catalog.pg_attribute a
+         JOIN pg_catalog.pg_class c ON c.oid=a.attrelid
+         JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+         JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
+         JOIN pg_catalog.pg_namespace tn ON tn.oid=t.typnamespace
+         WHERE n.nspname=$1 AND c.relname=$2 AND a.attname=$3 AND a.attnum>0 AND NOT a.attisdropped
+           AND tn.nspname='pg_catalog' AND t.typname IN ('int2','int4','int8'))`, schema, table, column).Scan(&native)
+		if err != nil {
+			return postgresQueryReadSetCatalogError("verify cursor cast source type", err)
+		}
+		if !native {
+			return postgresQueryReadSetError("integer cast source is not a native integer column")
+		}
+	}
+	return nil
 }
 
 func validatePostgresQueryReadSession(request plugin.QueryRequest) error {

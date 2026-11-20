@@ -41,7 +41,7 @@ func (p *PostgreSQLPlugin) proveSessionReadSet(ctx context.Context, tx *sql.Tx, 
 	}
 	parsed, err := pgquery.Parse(req.Query)
 	operators := make(map[string]struct{})
-	if err != nil || !inspectSessionExpressions(parsed.ProtoReflect(), operators) {
+	if err != nil || !inspectSessionExpressions(parsed.ProtoReflect(), operators, nil, nil) {
 		return nil, plugin.ErrQueryReadSetUnresolved
 	}
 	// Qualified relations and built-in operand types avoid a search-path name
@@ -106,15 +106,15 @@ func (p *PostgreSQLPlugin) proveSessionReadSet(ctx context.Context, tx *sql.Tx, 
 // Narrow proof grammar only; execution still consumes the original request.
 // The shared PG inspector above owns query dependency/CTE semantics.
 func sessionTransparentMessage(message protoreflect.Message) bool {
-	return inspectSessionExpressions(message, nil)
+	return inspectSessionExpressions(message, nil, nil, nil)
 }
 
-func inspectSessionExpressions(message protoreflect.Message, operators map[string]struct{}) bool {
+func inspectSessionExpressions(message protoreflect.Message, operators map[string]struct{}, bound map[postgresFunctionReference]string, allowedCasts map[*pgquery.TypeCast]bool) bool {
 	if node, ok := message.Interface().(*pgquery.Node); ok {
 		if node.GetCollateClause() != nil || node.GetRangeTableSample() != nil {
 			return false
 		}
-		if cast := node.GetTypeCast(); cast != nil {
+		if cast := node.GetTypeCast(); cast != nil && !allowedCasts[cast] {
 			name := cast.GetTypeName()
 			// Generated algorithm values are parameters explicitly typed as text;
 			// source casts and custom type I/O remain outside this proof slice.
@@ -126,7 +126,17 @@ func inspectSessionExpressions(message protoreflect.Message, operators map[strin
 		}
 		if function := node.GetFuncCall(); function != nil {
 			name := function.GetFuncname()
-			if len(name) != 2 || name[0].GetString_().GetSval() != "pg_catalog" || !sessionOutputFunction(name[1].GetString_().GetSval()) {
+			if len(name) < 1 || len(name) > 2 {
+				return false
+			}
+			ref := postgresFunctionReference{Name: name[len(name)-1].GetString_().GetSval(), ArgumentCount: len(function.Args)}
+			ref.CountStar = ref.Name == "count" && function.GetAggStar() && ref.ArgumentCount == 0
+			if len(name) == 2 {
+				ref.Schema = name[0].GetString_().GetSval()
+			}
+			if schema, ok := bound[ref]; ok {
+				function.Funcname = []*pgquery.Node{pgquery.MakeStrNode(schema), pgquery.MakeStrNode(ref.Name)}
+			} else if ref.Schema != "pg_catalog" || !sessionOutputFunction(ref.Name) {
 				return false
 			}
 		}
@@ -155,13 +165,13 @@ func inspectSessionExpressions(message protoreflect.Message, operators map[strin
 		if field.IsList() && field.Kind() == protoreflect.MessageKind {
 			list := value.List()
 			for i := 0; i < list.Len(); i++ {
-				if !inspectSessionExpressions(list.Get(i).Message(), operators) {
+				if !inspectSessionExpressions(list.Get(i).Message(), operators, bound, allowedCasts) {
 					ok = false
 					return false
 				}
 			}
 		} else if field.Kind() == protoreflect.MessageKind && !field.IsMap() {
-			ok = inspectSessionExpressions(value.Message(), operators)
+			ok = inspectSessionExpressions(value.Message(), operators, bound, allowedCasts)
 		}
 		return ok
 	})
