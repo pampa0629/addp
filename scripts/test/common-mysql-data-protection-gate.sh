@@ -203,6 +203,22 @@ if [ "$test_group" = platform-meta-scan ]; then
     (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_MYSQL_META_SCAN=1 GOWORK=off go test ./internal/service \
         -run '^TestMetaClaimAndTaskSummaryAgainstMySQL$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-meta-scan.log"
     grep -q '^--- PASS: TestMetaClaimAndTaskSummaryAgainstMySQL ' "$WORK_DIR/platform-meta-scan.log"
+    (cd "$ROOT_DIR/meta/backend" && GOWORK=off go build -o "$WORK_DIR/meta-worker" ./cmd/worker)
+    export ADDP_MYSQL_META_WORKER_USER=worker_gate
+    ADDP_MYSQL_META_WORKER_PASSWORD=$(openssl rand -hex 24)
+    export ADDP_MYSQL_META_WORKER_PASSWORD
+    mysql_admin() {
+        mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -h127.0.0.1 -uroot -NB meta'
+    }
+    mysql_admin <<SQL
+CREATE USER 'worker_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_META_WORKER_PASSWORD';
+GRANT SELECT ON meta.startup_schema_revision TO 'worker_gate'@'%';
+GRANT SELECT ON common.startup_schema_revision TO 'worker_gate'@'%';
+SQL
+    export ADDP_TEST_STARTUP_BINARY="$WORK_DIR/meta-worker"
+    (cd "$ROOT_DIR/common" && ADDP_TEST_STARTUP_REASON='schema meta version mismatch: database=0' GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
+    echo "UPDATE common.startup_schema_revision SET pending_version=version+1 WHERE owner='common'" | mysql_admin
+    (cd "$ROOT_DIR/common" && ADDP_TEST_STARTUP_REASON='schema common has unfinished MySQL migration' GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
     exit 0
 fi
 

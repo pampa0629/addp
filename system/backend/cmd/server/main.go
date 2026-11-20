@@ -80,13 +80,6 @@ func main() {
 	}
 	logger.L().Info("端口检查通过", "addr", cfg.ServerAddr)
 
-	// 临时调试：输出配置值
-	logger.L().Info("[DEBUG] PostgreSQL 配置",
-		"host", cfg.PostgresHost,
-		"port", cfg.PostgresPort,
-		"user", cfg.PostgresUser,
-		"db", cfg.PostgresDB)
-
 	redisClient, err := bootstrap.OpenRequiredRedis(context.Background(), commonConfig.RedisConfig{
 		Host: cfg.RedisHost, Port: cfg.RedisPort, Password: cfg.RedisPassword, DB: cfg.RedisDB,
 	})
@@ -98,6 +91,9 @@ func main() {
 
 	// 初始化数据库
 	db, err := repository.InitDB(cfg)
+	if err == nil && db.Dialector.Name() == "mysql" {
+		err = migration.CheckMySQLSystemStartup(db)
+	}
 	if err != nil {
 		logger.L().Error("数据库初始化失败", "error", err)
 		os.Exit(1)

@@ -11,9 +11,12 @@ import (
 func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	connection := cfg.PlatformDatabase()
 	connection.Schema = "system"
-	db, err := bootstrap.OpenDatabase(connection, &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
+	db, err := bootstrap.OpenRuntimeDatabase(connection, "system", "ADDP_MYSQL_SYSTEM", &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
 	if err != nil {
 		return nil, err
+	}
+	if db.Dialector.Name() == "mysql" {
+		return db, nil
 	}
 	if err := schema.EnsureNamespace(db, "system"); err != nil {
 		return nil, err

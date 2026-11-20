@@ -2,6 +2,7 @@ package migration
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -28,6 +29,24 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 
 const mysqlModuleRegistryOwner = "system_module_registry"
 const mysqlModuleRegistryVersion int64 = 1
+
+// CheckMySQLSystemStartup checks published System and Common revisions before
+// reporting the remaining storage prerequisite for a serving System process.
+func CheckMySQLSystemStartup(db *gorm.DB) error {
+	if err := RequireMySQLIAMFoundation(db); err != nil {
+		return err
+	}
+	if err := schema.RequireMySQL(db, mysqlRequestLocksOwner, mysqlRequestLocksVersion); err != nil {
+		return err
+	}
+	if err := schema.RequireMySQL(db, mysqlModuleRegistryOwner, mysqlModuleRegistryVersion); err != nil {
+		return err
+	}
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		return err
+	}
+	return errors.New("System MySQL installation does not yet include engine and source authorization storage")
+}
 
 // MigrateMySQLModuleRegistry installs the System registry and its first routing revision.
 func MigrateMySQLModuleRegistry(db *gorm.DB) error {

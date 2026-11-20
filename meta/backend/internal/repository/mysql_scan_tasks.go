@@ -5,9 +5,16 @@ import (
 	"gorm.io/gorm"
 )
 
+const mysqlScanTasksOwner = "meta_scan_tasks"
+const mysqlScanTasksVersion = 1
+
+func RequireMySQLScanTasks(db *gorm.DB) error {
+	return schema.RequireMySQL(db, mysqlScanTasksOwner, mysqlScanTasksVersion)
+}
+
 // MigrateMySQLScanTasks prepares the Meta-owned scan task definitions and summary.
 func MigrateMySQLScanTasks(db *gorm.DB) error {
-	return schema.MigrateMySQL(db, "meta_scan_tasks", 1, func(conn *gorm.DB) error {
+	return schema.MigrateMySQL(db, mysqlScanTasksOwner, mysqlScanTasksVersion, func(conn *gorm.DB) error {
 		return conn.Exec(`CREATE TABLE IF NOT EXISTS meta.scan_tasks (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
 			tenant_id BIGINT UNSIGNED NOT NULL,

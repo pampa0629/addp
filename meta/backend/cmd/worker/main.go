@@ -16,10 +16,10 @@ import (
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
-	commonRepo "github.com/addp/common/repository"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/meta/internal/config"
 	metaRepo "github.com/addp/meta/internal/repository"
@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -39,12 +40,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	if err := schema.Require(db, "meta", metaRepo.SchemaVersion); err != nil {
-		log.Fatalf("Worker schema is not ready: %v", err)
-	}
-	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
-		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
-	}
+
 	tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-meta", cfg.ServiceClientSecret, nil)
 	if err != nil {
 		log.Fatalf("初始化 addp-meta Service Principal 凭据失败: %v", err)
@@ -109,12 +105,32 @@ func main() {
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := commonRepo.OpenDatabase(database.Config{
+	db, err := bootstrap.OpenRuntimeDatabase(database.Config{
 		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
 		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
-	})
+	}, "meta", "ADDP_MYSQL_META_WORKER", &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Info)})
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
+	}
+	if db.Dialector.Name() == "mysql" {
+		err = metaRepo.RequireMySQLScanTasks(db)
+		if err == nil {
+			err = schema.Require(db, "common", schema.CommonVersion)
+		}
+		if err == nil {
+			err = schema.Require(db, "meta", metaRepo.SchemaVersion)
+		}
+	} else {
+		err = schema.Require(db, "meta", metaRepo.SchemaVersion)
+		if err == nil {
+			err = schema.Require(db, "common", schema.CommonVersion)
+		}
+	}
+	if err != nil {
+		if pool, e := db.DB(); e == nil {
+			_ = pool.Close()
+		}
+		return nil, fmt.Errorf("Worker schema: %w", err)
 	}
 	return db, nil
 }

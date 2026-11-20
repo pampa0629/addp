@@ -131,3 +131,22 @@ fi
 grep -q 'ERROR 1045' "$work/closed.err"
 echo 'MySQL offline CLI: three distinct administrators, MFA, audit and temporary account removal verified'
 echo "MySQL System installation: DBA applied $expected scoped triggers; restricted runtime read version and appended audit"
+
+# Supply only the runtime account to the normal System process. Install Common
+# with its separate owner so all published revisions are genuine.
+common_password=$(openssl rand -hex 24)
+admin <<SQL
+CREATE DATABASE common;
+CREATE USER 'common_setup'@'%' IDENTIFIED BY '$common_password';
+GRANT SELECT,INSERT,UPDATE,CREATE,INDEX,ALTER,REFERENCES ON common.* TO 'common_setup'@'%';
+SQL
+ADDP_MYSQL_INSTALL_USER=common_setup ADDP_MYSQL_INSTALL_PASSWORD="$common_password" "$work/system-server" install-mysql-common
+echo "GRANT SELECT ON common.startup_schema_revision TO 'iam_runtime'@'%'" | admin
+export ADDP_MYSQL_SYSTEM_USER=iam_runtime ADDP_MYSQL_SYSTEM_PASSWORD="$runtime_password"
+export ADDP_TEST_STARTUP_BINARY="$work/system-server"
+test_startup() {
+    (cd "$(dirname "$0")/../../common" && ADDP_TEST_STARTUP_REASON="$1" GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
+}
+test_startup 'System MySQL installation does not yet include engine and source authorization storage'
+echo "UPDATE startup_schema_revision SET pending_version=version+1 WHERE owner='system_module_registry'" | admin
+test_startup 'schema system_module_registry has unfinished MySQL migration'

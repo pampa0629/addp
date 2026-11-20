@@ -94,3 +94,20 @@ func TestBoundConnectionAgainstPostgres(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeDatabaseRequiresProcessCredentials(t *testing.T) {
+	t.Setenv("ADDP_INFRA_DATABASE_PROVIDER", "mysql")
+	t.Setenv("ADDP_MYSQL_HOST", "127.0.0.1")
+	t.Setenv("ADDP_MYSQL_PORT", "1")
+	t.Setenv("ADDP_MYSQL_INSTALL_USER", "installer")
+	t.Setenv("ADDP_MYSQL_INSTALL_PASSWORD", "fixture")
+	t.Setenv("ADDP_MYSQL_META_WORKER_USER", "worker")
+	t.Setenv("ADDP_MYSQL_META_WORKER_PASSWORD", "fixture")
+	t.Setenv("ADDP_MYSQL_SYSTEM_USER", "")
+	t.Setenv("ADDP_MYSQL_SYSTEM_PASSWORD", "")
+	pg := database.Config{Host: "localhost", Port: "5432", User: "pg", Password: "fixture"}
+	db, err := OpenRuntimeDatabase(pg, "system", "ADDP_MYSQL_SYSTEM", &gorm.Config{})
+	if db != nil || err == nil || err.Error() != "MySQL system startup requires explicit host, port and ADDP_MYSQL_SYSTEM credentials" {
+		t.Fatalf("missing System credentials: %v", err)
+	}
+}
