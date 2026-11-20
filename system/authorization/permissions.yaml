@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 49
+manifest_version: 50
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -412,7 +412,7 @@ permissions:
     description_i18n_key: permissions.iam.platform_administrator_change.approve.description
   - key: iam.platform_administrator_change.create
     allowed_scope_types: [platform]
-    risk_level: medium
+    risk_level: high
     tenant_customizable: false
     delegable: false
     status: active
@@ -428,7 +428,7 @@ permissions:
     description_i18n_key: permissions.iam.platform_administrator_change.read.description
   - key: iam.platform_administrator_change.reject
     allowed_scope_types: [platform]
-    risk_level: medium
+    risk_level: high
     tenant_customizable: false
     delegable: false
     status: active

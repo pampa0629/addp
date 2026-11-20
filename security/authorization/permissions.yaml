@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: security
-manifest_version: 9
+manifest_version: 10
 permissions:
   - key: security.assessment.create
     allowed_scope_types: [tenant]
@@ -100,7 +100,7 @@ permissions:
     description_i18n_key: permissions.security.enrollment.create.description
   - key: security.enrollment.read
     allowed_scope_types: [tenant]
-    risk_level: medium
+    risk_level: low
     tenant_customizable: true
     delegable: false
     status: active
@@ -276,7 +276,7 @@ permissions:
     description_i18n_key: permissions.security.protection_projection.read.description
   - key: security.protection_projection.update
     allowed_scope_types: [tenant]
-    risk_level: high
+    risk_level: medium
     tenant_customizable: false
     delegable: false
     status: active

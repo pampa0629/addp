@@ -3688,6 +3688,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 
 	assertIAMCatalogSeed(t, db)
+	assertPublishedRoleBindingsAndRisks(t, db)
 	assertEngineCatalogBusinessGrants(t, db)
 	assertWorkbenchRuntimeCatalog(t, db, 9, 6, 4, 0)
 	assertStandardDocumentCatalog(t, db)

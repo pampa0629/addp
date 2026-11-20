@@ -213,7 +213,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
-	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.authorization_facts.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.authorization_facts.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "system.engine_descriptor.read", "workbench.catalog.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "develop.file_execution.read", "develop.production_receipt.read", "manager.upload_receipt.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.node_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
@@ -367,7 +367,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.document_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.model3d_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.pointcloud_runtime", []string{"manager.derived_artifact.create"})
-	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine.read", "system.engine_catalog.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine.read", "system.engine_catalog.read", "system.execution_authorization.execute"})
 	assertRepositoryRolePermissions(t, roles, "tenant.monitor_runtime", []string{
 		"audit.tenant_event.create",
 		"meta.scan_task.read",
