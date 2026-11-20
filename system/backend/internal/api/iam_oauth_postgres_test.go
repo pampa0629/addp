@@ -624,6 +624,8 @@ func performIAMOAuthClientCredentialsFormRequest(t *testing.T, router http.Handl
 func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 	return map[string]string{
 		"addp-system":       "",
+		"addp-jupyter":      "",
+		"addp-supermap":     "",
 		"addp-agent":        prefix + "-agent-0123456789abcdef0123456789abcdef",
 		"addp-asset":        prefix + "-asset-0123456789abcdef0123456789abcdef",
 		"addp-catalog":      prefix + "-catalog-0123456789abcdef0123456789abcdef",
