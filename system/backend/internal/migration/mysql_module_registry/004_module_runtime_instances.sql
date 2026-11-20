@@ -1,0 +1,52 @@
+CREATE TABLE IF NOT EXISTS module_runtime_instances (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    module_definition_id BIGINT NOT NULL,
+    instance_id VARCHAR(100) NOT NULL,
+    role VARCHAR(30) NOT NULL CHECK (role IN ('backend','worker','scheduler','ingress')),
+    module_url VARCHAR(255),
+    health_check_url VARCHAR(255),
+    status VARCHAR(20) NOT NULL DEFAULT 'up' CHECK (status IN ('up','down')),
+    last_heartbeat DATETIME(6) NOT NULL,
+    lease_expires_at DATETIME(6) NOT NULL,
+    metadata JSON,
+    registered_at DATETIME(6) NOT NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    process_started_at DATETIME(6),
+    stopped_at DATETIME(6),
+    stop_reason VARCHAR(30) NOT NULL DEFAULT '' CHECK (stop_reason IN ('','graceful','lease_expired')),
+    registered_host VARCHAR(255) NOT NULL DEFAULT '',
+    host_node_name VARCHAR(255) NOT NULL DEFAULT '',
+    runtime_hostname VARCHAR(255) NOT NULL DEFAULT '',
+    host_node_ips JSON NOT NULL DEFAULT (JSON_ARRAY()) CHECK (JSON_TYPE(host_node_ips) = 'ARRAY'),
+    declared_node_id VARCHAR(36) NOT NULL DEFAULT '',
+    registration_client_id VARCHAR(100) NOT NULL DEFAULT '',
+    process_metrics JSON,
+    UNIQUE (module_definition_id,instance_id),
+    FOREIGN KEY (module_definition_id) REFERENCES module_definitions(id) ON DELETE RESTRICT,
+    CHECK (role <> 'backend' OR NULLIF(TRIM(module_url),'') IS NOT NULL),
+    CHECK (declared_node_id = '' OR (
+        REGEXP_LIKE(declared_node_id,'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$','c')
+        AND declared_node_id <> '00000000-0000-0000-0000-000000000000')),
+    CHECK (process_metrics IS NULL OR (process_started_at IS NOT NULL AND JSON_SCHEMA_VALID(
+        '{"type":"object","required":["schema_version","endpoint"],"additionalProperties":false,
+          "properties":{"schema_version":{"enum":["addp.process-metrics/v1"]},
+                        "endpoint":{"type":"string","minLength":1,"maxLength":512},
+                        "cgroup":{"type":"object","required":["kernel_boot_id","cgroup_id","pid_namespace_id"],
+                                  "additionalProperties":false,"properties":{
+                                    "kernel_boot_id":{"type":"string","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$","not":{"enum":["00000000-0000-0000-0000-000000000000"]}},
+                                    "cgroup_id":{"type":"string","pattern":"^[1-9][0-9]{0,19}$"},
+                                    "pid_namespace_id":{"type":"string","pattern":"^[1-9][0-9]{0,19}$"}}}}}',
+        process_metrics) AND (JSON_CONTAINS_PATH(process_metrics,'one','$.cgroup') = 0 OR
+            ((CHAR_LENGTH(process_metrics->>'$.cgroup.cgroup_id') < 20 OR process_metrics->>'$.cgroup.cgroup_id' <= '18446744073709551615')
+            AND (CHAR_LENGTH(process_metrics->>'$.cgroup.pid_namespace_id') < 20 OR process_metrics->>'$.cgroup.pid_namespace_id' <= '18446744073709551615'))))),
+    INDEX (module_definition_id,registered_at DESC,id DESC),
+    INDEX (module_definition_id,role,updated_at DESC,id DESC),
+    INDEX (lease_expires_at),
+    INDEX (registered_at DESC,id DESC),
+    INDEX (registered_host,registered_at DESC,id DESC),
+    INDEX (role),
+    INDEX (status,lease_expires_at),
+    INDEX ((LOWER(host_node_name))),
+    INDEX ((LOWER(runtime_hostname)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin

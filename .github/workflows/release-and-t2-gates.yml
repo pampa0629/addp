@@ -1707,6 +1707,9 @@ jobs:
       - name: Run MySQL System IAM foundation and concurrent tenant administrator gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-iam-foundation'
 
+      - name: Run MySQL System module registration and routing gate
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-registry'
+
       - name: Run MySQL System authorization request lock gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-request'
 

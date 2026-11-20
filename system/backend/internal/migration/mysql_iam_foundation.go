@@ -13,7 +13,7 @@ import (
 const mysqlIAMFoundationOwner = "system_iam_foundation"
 const mysqlIAMFoundationVersion int64 = 17
 
-//go:embed mysql_iam/*.sql
+//go:embed mysql_iam/*.sql mysql_module_registry/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
 // RequireMySQLIAMFoundation checks the installed owner revision without DDL.
@@ -23,25 +23,39 @@ func RequireMySQLIAMFoundation(db *gorm.DB) error {
 
 // MigrateMySQLIAMFoundation installs the staged System IAM schema.
 func MigrateMySQLIAMFoundation(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion, "mysql_iam", installMySQLIAMCatalog)
+}
+
+const mysqlModuleRegistryOwner = "system_module_registry"
+const mysqlModuleRegistryVersion int64 = 1
+
+// MigrateMySQLModuleRegistry installs the System registry and its first routing revision.
+func MigrateMySQLModuleRegistry(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlModuleRegistryOwner, mysqlModuleRegistryVersion, "mysql_module_registry", func(tx *gorm.DB, _ int64) error {
+		return tx.Exec("INSERT INTO module_registry_state (id, revision) VALUES (1,1)").Error
+	})
+}
+
+func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory string, data func(*gorm.DB, int64) error) error {
 	if db == nil || db.Dialector.Name() != "mysql" {
-		return fmt.Errorf("System IAM foundation requires a MySQL connection")
+		return fmt.Errorf("System migration requires a MySQL connection")
 	}
 	var name string
 	if err := db.Raw("SELECT DATABASE()").Scan(&name).Error; err != nil {
 		return err
 	}
 	if name != "system" {
-		return fmt.Errorf("System IAM foundation requires the deployed system database")
+		return fmt.Errorf("System migration requires the deployed system database")
 	}
 
-	return schema.MigrateMySQLWithData(db, mysqlIAMFoundationOwner, mysqlIAMFoundationVersion, func(conn *gorm.DB) error {
-		migrations, err := fs.ReadDir(mysqlIAMFoundationSQL, "mysql_iam")
+	return schema.MigrateMySQLWithData(db, owner, version, func(conn *gorm.DB) error {
+		migrations, err := fs.ReadDir(mysqlIAMFoundationSQL, directory)
 		if err != nil {
 			return err
 		}
 		var triggers []string
 		for _, migration := range migrations {
-			ddl, err := mysqlIAMFoundationSQL.ReadFile("mysql_iam/" + migration.Name())
+			ddl, err := mysqlIAMFoundationSQL.ReadFile(directory + "/" + migration.Name())
 			if err != nil {
 				return err
 			}
@@ -50,9 +64,9 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 				continue
 			}
 			if err := conn.Exec(string(ddl)).Error; err != nil {
-				return fmt.Errorf("apply System MySQL IAM migration %s: %w", migration.Name(), err)
+				return fmt.Errorf("apply System MySQL migration %s/%s: %w", directory, migration.Name(), err)
 			}
 		}
 		return checkMySQLIAMTriggers(conn, triggers)
-	}, installMySQLIAMCatalog)
+	}, data)
 }

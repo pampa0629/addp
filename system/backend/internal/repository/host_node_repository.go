@@ -32,7 +32,11 @@ func (r *HostNodeRepository) List(ctx context.Context, page, size int, filter mo
 		if filter.Search != "" {
 			// Escape SQL LIKE metacharacters; search is a literal fragment, not a pattern language.
 			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(filter.Search)) + "%"
-			query = query.Where("(LOWER(display_name) LIKE ? ESCAPE '!' OR LOWER(CAST(addresses AS TEXT)) LIKE ? ESCAPE '!')", pattern, pattern)
+			addresses := "CAST(addresses AS TEXT)"
+			if tx.Dialector.Name() == "mysql" {
+				addresses = "CAST(addresses AS CHAR)"
+			}
+			query = query.Where("(LOWER(display_name) LIKE ? ESCAPE '!' OR LOWER("+addresses+") LIKE ? ESCAPE '!')", pattern, pattern)
 		}
 		if filter.NodeKind != "" {
 			query = query.Where("node_kind = ?", filter.NodeKind)

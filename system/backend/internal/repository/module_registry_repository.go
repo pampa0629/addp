@@ -82,14 +82,7 @@ func (r *ModuleRegistryRepository) PublishDeclaration(name string, version int64
 		now := time.Now().UTC().Truncate(time.Microsecond)
 		if version == 0 {
 			definition = models.ModuleDefinition{ModuleName: name, Enabled: true, RoutePrefix: *fields.RoutePrefix, ConfigurationManagement: configuration, TaskProvider: provider, Version: 1, DeclarationPublishedAt: &now}
-			created := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "module_name"}}, DoNothing: true}).Create(&definition)
-			if created.Error != nil {
-				return created.Error
-			}
-			if created.RowsAffected == 0 {
-				return ErrModuleDefinitionVersionConflict
-			}
-			return nil
+			return createModuleDefinition(tx, &definition)
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("module_name = ?", name).First(&definition).Error; err != nil {
 			return commonrepo.WrapDBError(err)
@@ -229,23 +222,35 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 	return changed, err
 }
 
+// Only module_name is supplied as a unique key when creating a definition.
+func createModuleDefinition(tx *gorm.DB, value any) error {
+	result := tx.Model(&models.ModuleDefinition{}).Create(value)
+	if result.Error == nil {
+		return nil
+	}
+	// The normal connection and isolated callers can use different GORM
+	// translation settings. Translate at the repository boundary in either case.
+	err := result.Error
+	if translator, ok := tx.Dialector.(gorm.ErrorTranslator); ok {
+		err = translator.Translate(err)
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return ErrModuleDefinitionVersionConflict
+	}
+	return result.Error
+}
+
 // CreateCatalogDefinition records platform administrator intent without a
-// runtime lease. OnConflict never overwrites a concurrent service registration.
+// runtime lease. Concurrent creation is reported as a version conflict.
 func (r *ModuleRegistryRepository) CreateCatalogDefinition(enabled bool) (*models.ModuleDefinition, error) {
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 		// Use a map: GORM's model default:true must not replace explicit false.
-		result := tx.Model(&models.ModuleDefinition{}).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "module_name"}}, DoNothing: true,
-		}).Create(map[string]interface{}{
+		if err := createModuleDefinition(tx, map[string]any{
 			"module_name": "catalog", "route_prefix": "/catalog", "enabled": enabled,
 			"version": int64(1), "created_at": now, "updated_at": now,
-		})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrModuleDefinitionVersionConflict
+		}); err != nil {
+			return err
 		}
 		return bumpModuleRegistryRevision(tx, now)
 	})
@@ -430,9 +435,12 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 		query = query.Where("module_runtime_instances.registered_host = ?", filter.RegisteredHost)
 	}
 	if filter.NodeIP != "" {
-		if r.db.Dialector.Name() == "sqlite" {
+		switch r.db.Dialector.Name() {
+		case "mysql":
+			query = query.Where("JSON_CONTAINS(module_runtime_instances.host_node_ips, JSON_QUOTE(?))", filter.NodeIP)
+		case "sqlite":
 			query = query.Where("EXISTS (SELECT 1 FROM json_each(module_runtime_instances.host_node_ips) WHERE value = ?)", filter.NodeIP)
-		} else {
+		default:
 			addresses, _ := json.Marshal([]string{filter.NodeIP})
 			query = query.Where("module_runtime_instances.host_node_ips @> ?::jsonb", string(addresses))
 		}
@@ -624,7 +632,7 @@ func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, bindings
 }
 
 // WithDiscoveryWriter pins observation and every publication to the same physical
-// PostgreSQL session. A disconnected observer cannot use a replacement connection.
+// database session. A disconnected observer cannot use a replacement connection.
 func (r *ModuleRegistryRepository) WithDiscoveryWriter(ctx context.Context, module, binding string, observe func(func([]commonmodels.ModuleRoutingEndpoint) error) error) error {
 	pool, err := r.db.DB()
 	if err != nil {
@@ -636,8 +644,15 @@ func (r *ModuleRegistryRepository) WithDiscoveryWriter(ctx context.Context, modu
 	}
 	defer conn.Close()
 	key := "system.module_discovery/" + module
+	acquire, release := "SELECT pg_try_advisory_lock(hashtextextended($1, 0))", "SELECT pg_advisory_unlock(hashtextextended($1, 0))"
+	mysql := r.db.Dialector.Name() == "mysql"
+	if mysql {
+		// MySQL named locks are server-wide and names are limited to 64 bytes.
+		const lockName = "SHA2(CONCAT(DATABASE(), '/', ?), 256)"
+		acquire, release = "SELECT GET_LOCK("+lockName+", 0)", "SELECT RELEASE_LOCK("+lockName+")"
+	}
 	var locked bool
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtextextended($1, 0))", key).Scan(&locked); err != nil {
+	if err := conn.QueryRowContext(ctx, acquire, key).Scan(&locked); err != nil {
 		// The server may have acquired the lock before the reply was lost.
 		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		return err
@@ -646,19 +661,19 @@ func (r *ModuleRegistryRepository) WithDiscoveryWriter(ctx context.Context, modu
 		return nil
 	}
 	defer func() {
-		release, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		var released bool
-		if err := conn.QueryRowContext(release, "SELECT pg_advisory_unlock(hashtextextended($1, 0))", key).Scan(&released); err != nil || !released {
+		if err := conn.QueryRowContext(releaseCtx, release, key).Scan(&released); err != nil || !released {
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
 	}()
 	return observe(func(endpoints []commonmodels.ModuleRoutingEndpoint) error {
-		return publishDiscoverySnapshot(ctx, conn, module, binding, endpoints)
+		return publishDiscoverySnapshot(ctx, conn, mysql, module, binding, endpoints)
 	})
 }
 
-func publishDiscoverySnapshot(ctx context.Context, conn *sql.Conn, module, binding string, endpoints []commonmodels.ModuleRoutingEndpoint) error {
+func publishDiscoverySnapshot(ctx context.Context, conn *sql.Conn, mysql bool, module, binding string, endpoints []commonmodels.ModuleRoutingEndpoint) error {
 	payload, err := json.Marshal(endpoints)
 	if err != nil {
 		return err
@@ -668,21 +683,42 @@ func publishDiscoverySnapshot(ctx context.Context, conn *sql.Conn, module, bindi
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `INSERT INTO module_discovery_snapshots (module_name,binding_id,endpoints)
-        VALUES ($1,$2,$3) ON CONFLICT (module_name) DO UPDATE SET binding_id=excluded.binding_id,endpoints=excluded.endpoints
-        WHERE module_discovery_snapshots.binding_id IS DISTINCT FROM excluded.binding_id OR module_discovery_snapshots.endpoints IS DISTINCT FROM excluded.endpoints`, module, binding, string(payload))
+	// Only the pinned writer for this module can publish. Compare the stored
+	// snapshot explicitly so identical observations preserve the cursor on both
+	// providers, independent of the driver's affected-row mode.
+	read := "SELECT binding_id,endpoints FROM module_discovery_snapshots WHERE module_name=$1"
+	insert := "INSERT INTO module_discovery_snapshots (binding_id,endpoints,module_name) VALUES ($1,$2,$3)"
+	update := "UPDATE module_discovery_snapshots SET binding_id=$1,endpoints=$2 WHERE module_name=$3"
+	if mysql {
+		read = "SELECT binding_id,endpoints FROM module_discovery_snapshots WHERE module_name=?"
+		insert = "INSERT INTO module_discovery_snapshots (binding_id,endpoints,module_name) VALUES (?,?,?)"
+		update = "UPDATE module_discovery_snapshots SET binding_id=?,endpoints=? WHERE module_name=?"
+	}
+	var previousBinding string
+	var previous datatypes.JSON
+	err = tx.QueryRowContext(ctx, read, module).Scan(&previousBinding, &previous)
+	statement := update
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		statement = insert
+	case err != nil:
+		return err
+	case previousBinding == binding && equalDeclarationJSON(previous, datatypes.JSON(payload)):
+		return tx.Commit()
+	}
+	if _, err := tx.ExecContext(ctx, statement, binding, string(payload), module); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE module_registry_state SET revision=revision+1, updated_at=CURRENT_TIMESTAMP(6) WHERE id=1")
 	if err != nil {
 		return err
 	}
-	changed, err := result.RowsAffected()
+	count, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-	if changed != 0 {
-		var revision int64
-		if err := tx.QueryRowContext(ctx, "UPDATE module_registry_state SET revision=revision+1, updated_at=CURRENT_TIMESTAMP WHERE id=1 RETURNING revision").Scan(&revision); err != nil {
-			return err
-		}
+	if count != 1 {
+		return errors.New("module registry state is missing")
 	}
 	return tx.Commit()
 }
