@@ -15,6 +15,7 @@
             "maxSkew": 1,
             "minDomains": 2,
             "whenUnsatisfiable": "DoNotSchedule",
+            "matchLabelKeys": ["pod-template-hash"],
             "labelSelector": {
               "matchLabels": {
                 "app.kubernetes.io/name": "meta-worker"

@@ -52,6 +52,7 @@ template:
         maxSkew: 1
         minDomains: 2
         whenUnsatisfiable: DoNotSchedule
+        matchLabelKeys: [pod-template-hash]
         labelSelector:
           matchLabels:
             app.kubernetes.io/name: system-backend
@@ -79,7 +80,7 @@ kubectl -n "$SITE_NAMESPACE" get hpa,pdb
 kubectl -n "$SITE_NAMESPACE" get pods -l app.kubernetes.io/name=meta-worker -o wide
 ```
 
-示例配置保留 2 至 6 个副本，按 Worker 容器 CPU、内存相对资源请求的利用率伸缩，初始目标分别为 70% 和 80%。每个副本请求 250m CPU、256Mi 内存。现场应按任务规模和容量调整。后续发布将相同资源请求、滚动升级与跨主机分布写入站点 Deployment 清单，并交由 HPA 管理副本数，避免重新应用固定 replicas。PDB 要求自愿驱逐时至少一个 Pod 可用。业务验收还须确认两个进程均可领取任务、同一执行只有一个有效持有者，并验证单副本退出后的在途租约恢复。
+示例配置保留 2 至 6 个副本，按 Worker 容器 CPU、内存相对资源请求的利用率伸缩，初始目标分别为 70% 和 80%。每个副本请求 250m CPU、256Mi 内存。现场应按任务规模和容量调整。后续发布将相同资源请求、滚动升级与跨主机分布写入站点 Deployment 清单，并交由 HPA 管理副本数，避免重新应用固定 replicas。滚动升级按 Deployment 的 `pod-template-hash` 只统计同版本副本，防止旧副本退出后两个新 Worker 都留在同一主机。现场集群须支持拓扑分布的 `matchLabelKeys`。缩容后复查存活副本所在节点，调度器仅在放置新 Pod 时计算分布。PDB 要求自愿驱逐时至少一个 Pod 可用。业务验收还须确认两个进程均可领取任务、同一执行只有一个有效持有者，并验证单副本退出后的在途租约恢复。
 
 Compose 可用 `docker compose up -d --scale meta-worker=2 meta-worker` 配置常驻副本；独立部署可由现场进程管理器运行多个 Worker 进程。两者的 CPU／内存自动伸缩需要现场编排器。单主机上的多个进程共享同一故障域。
 

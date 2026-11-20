@@ -170,6 +170,7 @@ class K3sReleaseTest(unittest.TestCase):
             self.assertIn(metric["name"], container["resources"]["requests"])
         self.assertEqual(spread["topologyKey"], "kubernetes.io/hostname")
         self.assertEqual(spread["minDomains"], 2)
+        self.assertEqual(spread["matchLabelKeys"], ["pod-template-hash"])
         self.assertEqual(spread["whenUnsatisfiable"], "DoNotSchedule")
         self.assertEqual(spread["labelSelector"], budget["spec"]["selector"])
         self.assertEqual(budget["spec"]["minAvailable"], 1)
