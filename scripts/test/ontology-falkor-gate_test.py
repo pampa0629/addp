@@ -347,8 +347,13 @@ exit "$status"
             self.assertNotIn(secret, result.stdout + result.stderr)
             system_secret = values["SYSTEM_SERVICE_CLIENT_SECRET"]
             self.assertGreaterEqual(len(system_secret), 32)
-            service_secrets = [value for key, value in values.items() if key.endswith("_SERVICE_CLIENT_SECRET")]
-            self.assertEqual(len(service_secrets), len(set(service_secrets)))
+            service_secrets = {key: value for key, value in values.items() if key.endswith("_SERVICE_CLIENT_SECRET")}
+            self.assertEqual({key for key, value in service_secrets.items() if not value}, {
+                "PROMETHEUS_SERVICE_CLIENT_SECRET", "JUPYTER_METRICS_SERVICE_CLIENT_SECRET",
+                "SUPERMAP_METRICS_SERVICE_CLIENT_SECRET",
+            })
+            configured = [value for value in service_secrets.values() if value]
+            self.assertEqual(len(configured), len(set(configured)))
             self.assertNotIn(system_secret, result.stdout + result.stderr)
             # Existing deployments may omit this independent optional capability.
             # Validation must neither generate a secret nor borrow Catalog's one.
