@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	commonModels "github.com/addp/common/models"
@@ -81,14 +79,13 @@ func prepareFederatedSession(
 	}
 
 	// 3. 使用调用方提供的已冻结对象表映射改写 SQL。
-	rewriter := NewSQLRewriter(nil, 0)
-	rewrittenSQL, err := rewriter.RewriteWithEngines(ctx, sqlStr, engineObjectTables)
+	rewrittenSQL, paths, err := prepareObjectTables(ctx, conn, sqlStr, engineObjectTables)
 	if err != nil {
 		conn.Close()
 		db.Close()
 		return nil, fmt.Errorf("SQL 改写失败: %w", err)
 	}
-	if err := lockFederatedExternalAccess(ctx, conn, engineObjectTables); err != nil {
+	if err := lockExternalAccessWithAllowedPaths(ctx, conn, paths); err != nil {
 		conn.Close()
 		db.Close()
 		return nil, fmt.Errorf("限制 DuckDB 外部访问失败: %w", err)
@@ -120,25 +117,12 @@ func configureFederatedSession(ctx context.Context, conn *sql.Conn, options Fede
 	return nil
 }
 
-func lockFederatedExternalAccess(
+func lockExternalAccessWithAllowedPaths(
 	ctx context.Context,
 	conn *sql.Conn,
-	engineObjectTables map[string]map[string]string,
-) error {
-	allowedDirectories, allowedPaths := allowedObjectTableLocations(engineObjectTables)
-	return lockExternalAccessWithAllowedLocations(ctx, conn, allowedDirectories, allowedPaths)
-}
-
-func lockExternalAccessWithAllowedLocations(
-	ctx context.Context,
-	conn *sql.Conn,
-	allowedDirectories []string,
 	allowedPaths []string,
 ) error {
 	statements := make([]string, 0, 6)
-	if len(allowedDirectories) > 0 {
-		statements = append(statements, "SET allowed_directories = "+duckDBStringList(allowedDirectories))
-	}
 	if len(allowedPaths) > 0 {
 		statements = append(statements, "SET allowed_paths = "+duckDBStringList(allowedPaths))
 	}
@@ -154,43 +138,6 @@ func lockExternalAccessWithAllowedLocations(
 		}
 	}
 	return nil
-}
-
-func allowedObjectTableLocations(engineObjectTables map[string]map[string]string) ([]string, []string) {
-	directorySet := make(map[string]struct{})
-	pathSet := make(map[string]struct{})
-	seen := make(map[string]struct{})
-	for _, tables := range engineObjectTables {
-		for _, physicalPath := range tables {
-			path := strings.TrimSpace(physicalPath)
-			if path == "" {
-				continue
-			}
-			if !strings.HasPrefix(path, "s3://") && !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-				path = "s3://" + path
-			}
-			if _, exists := seen[path]; exists {
-				continue
-			}
-			seen[path] = struct{}{}
-			if strings.EqualFold(filepath.Ext(path), ".parquet") {
-				pathSet[path] = struct{}{}
-			} else {
-				directorySet[strings.TrimRight(path, "/")] = struct{}{}
-			}
-		}
-	}
-	directories := make([]string, 0, len(directorySet))
-	for directory := range directorySet {
-		directories = append(directories, directory)
-	}
-	paths := make([]string, 0, len(pathSet))
-	for path := range pathSet {
-		paths = append(paths, path)
-	}
-	sort.Strings(directories)
-	sort.Strings(paths)
-	return directories, paths
 }
 
 func duckDBStringList(values []string) string {

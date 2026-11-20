@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -171,7 +170,7 @@ func TestLockExternalAccessAllowsOnlyRegisteredPath(t *testing.T) {
 		t.Fatalf("db.Conn() error = %v", err)
 	}
 	defer conn.Close()
-	if err := lockExternalAccessWithAllowedLocations(context.Background(), conn, nil, []string{allowedPath}); err != nil {
+	if err := lockExternalAccessWithAllowedPaths(context.Background(), conn, []string{allowedPath}); err != nil {
 		t.Fatalf("lockExternalAccessWithAllowedLocations() error = %v", err)
 	}
 
@@ -183,25 +182,5 @@ func TestLockExternalAccessAllowsOnlyRegisteredPath(t *testing.T) {
 	blockedQuery := fmt.Sprintf("SELECT value FROM read_csv_auto('%s')", strings.ReplaceAll(blockedPath, "'", "''"))
 	if err := conn.QueryRowContext(context.Background(), blockedQuery).Scan(&value); err == nil {
 		t.Fatal("path absent from the execution whitelist must be rejected")
-	}
-}
-
-func TestAllowedObjectTableLocationsSeparatesDatasetsAndFiles(t *testing.T) {
-	t.Parallel()
-
-	directories, paths := allowedObjectTableLocations(map[string]map[string]string{
-		"lake": {
-			"partitioned": "bucket/lake/sales",
-			"single":      "s3://bucket/lake/snapshot.parquet",
-		},
-		"lake_alias": {
-			"partitioned": "bucket/lake/sales",
-		},
-	})
-	if want := []string{"s3://bucket/lake/sales"}; !reflect.DeepEqual(directories, want) {
-		t.Fatalf("directories = %#v, want %#v", directories, want)
-	}
-	if want := []string{"s3://bucket/lake/snapshot.parquet"}; !reflect.DeepEqual(paths, want) {
-		t.Fatalf("paths = %#v, want %#v", paths, want)
 	}
 }

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	commonClient "github.com/addp/common/client"
@@ -107,22 +110,62 @@ func TestBuildObjectTableMapUsesMetaItemList(t *testing.T) {
 }
 
 func TestRewriteTwoPartReferenceDoesNotMatchTableNamePrefix(t *testing.T) {
-	rewriter := NewSQLRewriter(nil, 0)
-	query, err := rewriter.RewriteWithEngines(
-		context.Background(),
-		"SELECT * FROM Business_MinIO.lake3_parquet",
-		map[string]map[string]string{
-			"Business_MinIO": {
-				"lake3":         "manager/lake3",
-				"lake3_parquet": "manager/lake3.parquet",
-			},
-		},
+	db, err := OpenDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	query, paths, err := prepareObjectTables(t.Context(), conn,
+		"SELECT 'Business_MinIO.lake3' AS ref FROM Business_MinIO.lake3_parquet",
+		map[string]map[string]string{"Business_MinIO": {"lake3": "manager/lake3", "lake3_parquet": "manager/lake3.parquet"}},
 	)
 	if err != nil {
-		t.Fatalf("RewriteWithEngines() error = %v", err)
+		t.Fatal(err)
 	}
-	want := "SELECT * FROM read_parquet('s3://manager/lake3.parquet')"
-	if query != want {
-		t.Fatalf("query = %q, want %q", query, want)
+	if !slices.Equal(paths, []string{"s3://manager/lake3.parquet"}) || !strings.Contains(query, "'Business_MinIO.lake3'") || !strings.Contains(query, "'s3://manager/lake3.parquet'") {
+		t.Fatalf("wrong object selection: %q, %v", query, paths)
+	}
+}
+
+func TestParquetMembersStayFixedWhenDirectoryGrows(t *testing.T) {
+	db, err := OpenDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	dir := t.TempDir()
+	write := func(name, value string) {
+		t.Helper()
+		_, err := conn.ExecContext(t.Context(), "COPY (SELECT "+value+" AS id) TO "+duckDBString(filepath.Join(dir, name))+" (FORMAT PARQUET)")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("one's.parquet", "1")
+	write("two.parquet", "2")
+	files, err := parquetMembers(t.Context(), conn, dir)
+	if err != nil || !slices.Equal(files, []string{filepath.Join(dir, "one's.parquet"), filepath.Join(dir, "two.parquet")}) {
+		t.Fatal(files, err)
+	}
+	write("three.parquet", "3")
+	if err := lockExternalAccessWithAllowedPaths(t.Context(), conn, files); err != nil {
+		t.Fatal(err)
+	}
+	var total int
+	if err := conn.QueryRowContext(t.Context(), "SELECT sum(id) FROM read_parquet("+duckDBStringList(files)+")").Scan(&total); err != nil || total != 3 {
+		t.Fatal(total, err)
+	}
+	if err := conn.QueryRowContext(t.Context(), "SELECT id FROM read_parquet("+duckDBString(filepath.Join(dir, "three.parquet"))+")").Scan(&total); err == nil {
+		t.Fatal("new member read outside the prepared list")
 	}
 }

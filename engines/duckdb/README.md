@@ -5,7 +5,7 @@
 
 Runtime 使用 `addp-duckdb` Service Principal 消费 Execution Authorization，并按授权中的
 Source Engine ID 从 System 获取短期连接信息。当前可挂载 PostgreSQL、MySQL、MinIO 和 S3；
-对象表读取格式只支持 Parquet。
+对象表读取格式只支持 Parquet。Runtime 解析查询实际引用的对象表，在准备阶段列出目录下本次匹配的 Parquet 文件。读取表达式和会话的允许路径均使用这份文件清单；准备后新增的文件由下次查询处理。
 
 ## 扩展生命周期
 
