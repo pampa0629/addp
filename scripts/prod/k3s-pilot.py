@@ -397,11 +397,20 @@ def verify(args):
         request_ids.append(request_id)
     if args.catalog_source == "kubernetes":
         for pod in pods["catalog"]:
-            logs = cluster.run("logs", pod["name"], "--since=2m", capture=True).decode()
-            hits = [rid for rid in request_ids if rid in logs]
+            patterns = [arg for rid in request_ids for arg in ("-e", rid)]
+            logs = cluster.run("exec", pod["name"], "--", "find", "/var/log/addp/catalog", "-name", "*.jsonl",
+                               "-exec", "grep", "-hF", *patterns, "{}", "+", capture=True)
+            hits = set()
+            for line in logs.splitlines():
+                record = json.loads(line)
+                if record.get("request_id") in request_ids:
+                    event = json.loads(record["message"])
+                    if (event.get("msg") == "http.request.completed" and event.get("route") == "/api/v1/catalog/entries"
+                            and event.get("method") == "GET" and event.get("status") == 200):
+                        hits.add(record["request_id"])
             if len(hits) != 1:
                 raise ValueError(f"Expected one matching request in {pod['name']}, found {len(hits)}")
-            pod["request_id"] = hits[0]
+            pod["request_id"] = hits.pop()
         if {pod["request_id"] for pod in pods["catalog"]} != set(request_ids):
             raise ValueError("Catalog access records do not cover both requests")
     if args.catalog_source == "system":

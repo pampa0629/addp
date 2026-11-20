@@ -2,6 +2,7 @@ package repository
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/addp/catalog/internal/models"
@@ -27,8 +28,28 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 	if err := tx.Exec("DROP SCHEMA IF EXISTS catalog CASCADE").Error; err != nil {
 		t.Fatalf("drop Catalog schema: %v", err)
 	}
+	// Even CREATE SCHEMA IF NOT EXISTS races on pg_namespace during concurrent first boots.
+	// Check the lock on this connection before PostgreSQL processes the schema DDL.
+	var checkedLock bool
+	if err := db.Callback().Raw().Before("gorm:raw").Register("test:catalog_schema_lock", func(stmt *gorm.DB) {
+		if !strings.HasPrefix(stmt.Statement.SQL.String(), "CREATE SCHEMA IF NOT EXISTS catalog") {
+			return
+		}
+		var held bool
+		err := stmt.Statement.ConnPool.QueryRowContext(stmt.Statement.Context,
+			"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'advisory' AND classid = 0 AND objid = $1 AND objsubid = 1 AND mode = 'ExclusiveLock' AND granted)", catalogSchemaLockID).Scan(&held)
+		if err != nil || !held {
+			t.Errorf("Catalog CREATE SCHEMA without migration lock: held=%v err=%v", held, err)
+		}
+		checkedLock = true
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := Migrate(tx); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
+	}
+	if !checkedLock {
+		t.Fatal("Catalog schema creation was not checked")
 	}
 	if err := Migrate(tx); err != nil {
 		t.Fatalf("second Migrate() must be idempotent: %v", err)

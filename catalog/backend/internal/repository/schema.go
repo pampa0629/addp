@@ -18,11 +18,11 @@ func Migrate(db *gorm.DB) error {
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS catalog").Error; err != nil {
-				return fmt.Errorf("create catalog schema: %w", err)
-			}
 			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", catalogSchemaLockID).Error; err != nil {
 				return fmt.Errorf("acquire catalog schema lock: %w", err)
+			}
+			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS catalog").Error; err != nil {
+				return fmt.Errorf("create catalog schema: %w", err)
 			}
 		}
 		if err := retireDevelopmentAuthorizationHistory(tx); err != nil {

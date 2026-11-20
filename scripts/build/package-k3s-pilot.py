@@ -90,7 +90,7 @@ def package(commit: str, destination: Path, infra_release: Path | None, builder_
     subprocess.run(["make", "build", f"BUILD_ARGS=--arch {arch} --services {services}"], check=True)
     image_args = f"--verify --jobs 1 --services {services} --tag {tag} --registry {builder_registry}"
     subprocess.run(["make", "build-images", f"IMAGE_BUILD_ARGS={image_args}"], check=True)
-    bootstrap_env = {**os.environ,
+    bootstrap_env = {**os.environ, "GOTOOLCHAIN": "local",
                      "GOMODCACHE": os.environ.get("ADDP_BUILD_GOMODCACHE", str(root / ".gomodcache")),
                      "GOCACHE": os.environ.get("ADDP_BUILD_GOCACHE", str(root / ".cache/go-build"))}
     subprocess.run(["make", "build-iam-bootstrap", "GOOS=linux", f"GOARCH={arch}"], env=bootstrap_env, check=True)

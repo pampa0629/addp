@@ -4,7 +4,7 @@
 
 ## 构建与交付
 
-在两个原生 Linux Docker 构建节点上准备同一个干净 Git 提交，并从构建工具版本提供 `scripts/build/package-k3s-pilot.py` 及旁边的 `scripts/prod/k3s-pilot.{py,md}`。从目标提交的仓库根目录调用构建工具。Python 3.11+，依赖和标准 Makefile 入口与 Compose 构建一致。标准镜像脚本检查构建机 Registry，缺失时先用 `make registry-start` 准备默认的 `localhost:5001`。构建机使用其他 Registry 时，可用 `--builder-registry` 指定。镜像按 `--verify` 构建，现场从归档导入。
+在两个原生 Linux Docker 构建节点上准备同一个干净 Git 提交，并从构建工具版本提供 `scripts/build/package-k3s-pilot.py` 及旁边的 `scripts/prod/k3s-pilot.{py,md}`。从目标提交的仓库根目录调用构建工具。Python 3.11+，依赖和标准 Makefile 入口与 Compose 构建一致。离线构建节点提前准备与源码匹配的 Go 工具链和模块缓存，覆盖三个服务及 IAM 初始化 CLI 的依赖。标准镜像脚本检查构建机 Registry，缺失时先用 `make registry-start` 准备默认的 `localhost:5001`。构建机使用其他 Registry 时，可用 `--builder-registry` 指定。镜像按 `--verify` 构建，现场从归档导入。
 
 ```bash
 # ARM64 构建节点
@@ -48,7 +48,7 @@ python3 arm64/k3s-pilot.py install \
   --credentials "$HOME/addp-pilot-site/credentials.json"
 ```
 
-验证 Kubernetes 发现时，在上面的 `install` 和下文的 `verify` 命令都追加 `--catalog-source kubernetes`。安装脚本先创建 Catalog Service，记录创建响应中的 UID，将绑定写入不可变 ConfigMap，并为 System 单独投射集群 CA 和轮换令牌。发现身份只能 list/watch 指定的 Service 和本 namespace 的 EndpointSlice。Catalog 启动两个副本，停止登记与心跳。现场核对双副本需有读取 Pod 日志的权限。默认 `--catalog-source system` 使用单个 Catalog 副本。
+验证 Kubernetes 发现时，在上面的 `install` 和下文的 `verify` 命令都追加 `--catalog-source kubernetes`。安装脚本先创建 Catalog Service，记录创建响应中的 UID，将绑定写入不可变 ConfigMap，并为 System 单独投射集群 CA 和轮换令牌。发现身份只能 list/watch 指定的 Service 和本 namespace 的 EndpointSlice。Catalog 启动两个副本，停止登记与心跳。验收身份需能在试点 Catalog Pod 中读取 `/var/log/addp/catalog` 下的请求完成记录（`pods/exec`）。发现身份仅持有上述读取集群资源的权限。默认 `--catalog-source system` 使用单个 Catalog 副本。
 
 初始化凭据命令拒绝覆盖已有文件。安装先校验两份包属于同一提交，再创建 namespace 及新卷。System Ready 后使用 System 镜像内已有发布命令部署三个声明，完成后才启动 Gateway 和 Catalog。发布密钥不进入 Kubernetes Secret 或长驻业务进程。安装失败应保留当前 namespace 和事件以便诊断。再次进行空库验收要先另选新的独占 namespace。
 
