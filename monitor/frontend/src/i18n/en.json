@@ -1101,7 +1101,6 @@
       "cpu": "CPU usage",
       "memory": "Memory usage",
       "restarts": "Restarts",
-      "configure": "Configure frontend collection",
       "noConfiguredNodes": "No frontend collection nodes are configured",
       "selectNode": "Select a frontend collection node",
       "modes": {

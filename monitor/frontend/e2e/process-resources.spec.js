@@ -1149,22 +1149,37 @@ test('module cards merge paged roles with frontend samples and expand to per-ins
   await expect(page.locator('.frontend-detail')).toContainText('64.00 KiB')
 })
 
-test('service monitoring names the empty state and links authorized viewers to central settings', async ({ page }) => {
+test('empty frontend discovery reports its status without a configuration shortcut', async ({ page }) => {
   await backend(page, { identity: identity([...hostPermissions, 'monitor.monitoring_target.read']) })
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
-  await page.route('**/api/v1/**', route => {
-    const { pathname } = new URL(route.request().url())
-    if (pathname.endsWith('/refresh')) return route.fulfill({ json: { access_token: 'fixture-token', expires_in: 3600 } })
-    if (pathname.endsWith('/users/me')) return route.fulfill({ json: { id: 9, username: 'fixture-user' } })
-    if (pathname.endsWith('/auth/context')) return route.fulfill({ json: identity(['monitor.resource_observation.read', 'platform.module.read', 'platform.host_node.read', 'monitor.monitoring_target.read']) })
-    if (pathname.endsWith('/automatic_collection_scopes')) return route.fulfill({ json: { catalog_available: true, data: [] } })
-    if (pathname.endsWith('/frontend_nodes')) return route.fulfill({ json: { data: [] } })
-    if (pathname.endsWith('/monitoring_targets')) return route.fulfill({ json: { data: [], total: 0, page: 1, page_size: 20, total_pages: 0 } })
-    return route.fallback()
-  })
   await page.goto('/service-resources')
-  await expect(page.getByTestId('frontend-resources')).toContainText('尚未配置前端采集节点')
-  await page.getByRole('button', { name: '配置前端采集', exact: true }).click()
-  await expect(page).toHaveURL('/monitoring-targets?tab=core')
-  await expect(page.getByRole('tab', { name: 'ADDP 核心服务', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('frontend-status')).toHaveText('尚未配置前端采集节点')
+  await expect(page.getByRole('combobox', { name: '选择前端采集节点' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '配置前端采集' })).toHaveCount(0)
+})
+
+test('multiple frontend nodes can be filtered in the module list and the detail keeps the selected node', async ({ page }) => {
+  await backend(page, { identity: identity(hostPermissions) })
+  const nodes = [
+    { node_id: '10000000-0000-4000-8000-000000000001', display_name: '开发节点 A', enabled: true },
+    { node_id: '10000000-0000-4000-8000-000000000002', display_name: '开发节点 B', enabled: true }
+  ]
+  await page.route('**/api/v1/monitor/platform/frontend_nodes', route => route.fulfill({ json: { data: nodes } }))
+  await page.route('**/api/v1/monitor/platform/frontend_observations?*', route => {
+    const id = new URL(route.request().url()).searchParams.get('node_id')
+    const index = nodes.findIndex(n => n.node_id === id)
+    expect(index).toBeGreaterThanOrEqual(0)
+    return route.fulfill({ json: { node: nodes[index], source_state: 'collecting', data: [
+      { module: 'console', mode: 'vite', cpu_cores: 0, memory_bytes: (index + 1) * 1024 ** 2 }
+    ] } })
+  })
+  await page.goto('/service-resources?refresh=off')
+  const card = page.getByRole('button', { name: 'console · 模块详情' })
+  await expect(card).toContainText('1.00 MiB')
+  await page.locator('.process-filters .el-select').filter({ has: page.getByRole('combobox', { name: '选择前端采集节点' }) }).click()
+  await page.getByRole('option', { name: '开发节点 B' }).click()
+  await expect(card).toContainText('2.00 MiB')
+  await card.click()
+  await expect(page.locator('.frontend-detail')).toContainText('开发节点 B')
+  await page.reload()
+  await expect(page.locator('.frontend-detail')).toContainText('2.00 MiB')
 })

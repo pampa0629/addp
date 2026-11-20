@@ -50,7 +50,7 @@ test('frontend target pause and resume update the same saved configuration and l
   expect(state.collectionReads).toHaveLength(0)
   await panel.getByRole('button', { name: '查看前端指标', exact: true }).click()
   await expect(page).toHaveURL(`/service-resources?node_id=${node}`)
-  await expect(page.getByTestId('frontend-resources')).toContainText('暂无有效前端样本')
+  await expect(page.getByTestId('frontend-status')).toContainText('暂无有效前端样本')
 })
 
 test('retains a conflicting draft and requires explicit reload before another write', async ({ page }) => {

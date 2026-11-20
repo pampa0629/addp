@@ -1101,7 +1101,6 @@
       "cpu": "CPU 占用",
       "memory": "内存占用",
       "restarts": "重启次数",
-      "configure": "配置前端采集",
       "noConfiguredNodes": "尚未配置前端采集节点",
       "selectNode": "选择前端采集节点",
       "modes": {

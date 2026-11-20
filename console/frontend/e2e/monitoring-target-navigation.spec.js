@@ -76,7 +76,7 @@ test('a tenant cannot load the monitoring iframe even with platform permission s
   expect(state.reads).toHaveLength(0)
 })
 
-test('Console opens configured frontend metrics and links directly to frontend collection settings', async ({ page }) => {
+test('Console opens node metrics from central collection settings without repeating single-node controls', async ({ page }) => {
   await backend(page, {
     kind: 'frontend_resources',
     identity: identity([...permissions, 'platform.module.read', 'monitor.resource_observation.read'])
@@ -87,12 +87,14 @@ test('Console opens configured frontend metrics and links directly to frontend c
       { module: 'console', mode: 'vite', entry_up: true, asset_up: true, cpu_cores: 0.23, memory_bytes: 128 * 1024 ** 2, restart_count: null }
     ] } })
   })
-  await page.goto(`/monitor/service-resources?node_id=${node}`)
+  await page.goto('/monitor/monitoring-targets?tab=core')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-  await expect(page).toHaveURL(new RegExp(`/monitor/service-resources\\?node_id=${node}$`))
-  await expect(frame.getByTestId('process-module-card').filter({ hasText: 'console' }).locator('.module-summary')).toContainText('128.00 MiB')
-  await frame.getByRole('button', { name: '配置前端采集', exact: true }).click()
-  await expect(page).toHaveURL(/\/monitor\/monitoring-targets\?tab=core$/)
   await expect(frame.getByRole('tab', { name: 'ADDP 核心服务', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(frame.getByRole('row', { name: /前端资源/ })).toContainText('测试主机')
+  const row = frame.getByRole('row', { name: /前端资源/ })
+  await expect(row).toContainText('测试主机')
+  await row.getByRole('button', { name: '查看前端指标' }).click()
+  await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('node_id') === node)
+  await expect(frame.getByTestId('process-module-card').filter({ hasText: 'console' }).locator('.module-summary')).toContainText('128.00 MiB')
+  await expect(frame.getByRole('combobox', { name: '选择前端采集节点' })).toHaveCount(0)
+  await expect(frame.getByRole('button', { name: '配置前端采集' })).toHaveCount(0)
 })

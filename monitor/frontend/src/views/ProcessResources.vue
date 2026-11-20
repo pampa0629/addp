@@ -68,20 +68,15 @@
           <FieldHelp :content="t('monitor.process.declarationHint')" />
         </div>
         <RuntimeInstanceTimeFilter v-model:time-basis="timeBasis" v-model:period="period" v-model:custom-range="customRange" @change="filter" />
+        <el-select v-if="canReadHost && moduleView && frontendOptions.length > 1" :model-value="frontendNodeID" :aria-label="t('monitor.frontend.selectNode')" @update:model-value="node_id => navigate({ ...state.query, node_id })">
+          <el-option v-for="node in frontendOptions" :key="node.node_id" :label="node.display_name" :value="node.node_id" />
+        </el-select>
         <el-button @click="resetFilters">{{ t('common.reset') }}</el-button>
         <el-button v-if="!showCoverage" :disabled="!validTimeDraft" @click="setScope('coverage')">{{ t('monitor.process.coverage.action') }}</el-button>
         <el-button :disabled="!validTimeDraft" @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
         <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
-      <section v-if="canReadHost && moduleView" data-testid="frontend-resources" class="frontend-source">
-        <label v-if="frontendOptions.length">{{ t('monitor.frontend.selectNode') }}
-          <el-select :model-value="frontendNodeID" :aria-label="t('monitor.frontend.selectNode')" @update:model-value="node_id => navigate({ ...state.query, node_id })">
-            <el-option v-for="node in frontendOptions" :key="node.node_id" :label="node.display_name" :value="node.node_id" />
-          </el-select>
-        </label>
-        <span v-if="frontendError || frontendState">{{ t(frontendError || frontendState) }}</span>
-        <el-button v-if="canConfigureFrontend" text type="primary" @click="openFrontendConfiguration">{{ t('monitor.frontend.configure') }}</el-button>
-      </section>
+      <p v-if="canReadHost && moduleView && (frontendError || frontendState)" class="process-hint" role="status" data-testid="frontend-status">{{ t(frontendError || frontendState) }}</p>
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
       <section v-if="!state.detailModule && showCoverage && instances.length" class="process-coverage" :aria-label="t('monitor.process.coverage.title')">
         <div class="process-toolbar">
@@ -209,10 +204,6 @@ import { navigateMonitorRoute } from '../utils/moduleNavigation'
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.module.read'))
 const canReadHost = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
-const canConfigureFrontend = computed(() => canReadHost.value && auth.hasPermission('monitor.monitoring_target.read'))
-function openFrontendConfiguration() {
-  return navigateMonitorRoute(router, { path: '/monitoring-targets', query: { tab: 'core' } }, { history: 'push' })
-}
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
@@ -605,9 +596,6 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 </script>
 
 <style scoped>
-.frontend-source, .frontend-source label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.frontend-source { margin-bottom: 16px; font-size: 13px; color: var(--addp-text-secondary); }
-.frontend-source .el-select { width: min(240px, 100%); }
 .role-metrics { display: grid; grid-template-columns: minmax(62px, 1fr) repeat(2, minmax(0, 1fr)); align-items: center; font-size: 13px; line-height: 26px; font-variant-numeric: tabular-nums; }
 .role-metrics > span { text-align: end; }
 .role-metrics > span:nth-child(-n+3) { color: var(--addp-text-secondary); font-size: 12px; }
