@@ -20,12 +20,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// Real PG controls and real MinIO bytes. Transfer scheduling stays stubbed here;
+// Real PG controls and S3 object bytes. Transfer scheduling stays stubbed here;
 // cross-process worker/Gateway evidence belongs to T4.
 func TestExportAreaAgainstMinIO(t *testing.T) {
 	if os.Getenv("ADDP_MANAGER_OBJECT_INTEGRATION") != "1" {
-		t.Skip("requires make test-manager-postgres")
+		t.Skip("run make test-manager-postgres")
 	}
+	testExportAreaAgainstS3(t)
+}
+
+func TestExportAreaAgainstRustFS(t *testing.T) {
+	if os.Getenv("ADDP_RUSTFS_INTEGRATION") != "1" {
+		t.Skip("run the platform-export group of make test-common-rustfs")
+	}
+	testExportAreaAgainstS3(t)
+}
+
+func testExportAreaAgainstS3(t *testing.T) {
+	t.Helper()
 	ctx := t.Context()
 	db, err := gorm.Open(postgres.Open(os.Getenv("MANAGER_POSTGRES_TEST_DSN")), &gorm.Config{})
 	if err != nil {
@@ -33,7 +45,7 @@ func TestExportAreaAgainstMinIO(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
-	table := "manager.objects_" + uuid.NewString()[:8]
+	table := "public.manager_objects_" + uuid.NewString()[:8]
 	if err := EnsureStore(db, table); err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +84,8 @@ func TestExportAreaAgainstMinIO(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, who := range [][2]uint{{8, 9}, {7, 10}} {
-				if _, err := svc.Open(ctx, row.ID, who[0], who[1], nil); err == nil {
-					t.Fatal("foreign identity opened export")
+				if _, err := svc.Open(ctx, row.ID, who[0], who[1], nil); !errors.Is(err, ErrSessionNotFound) {
+					t.Fatalf("foreign identity: got %v, want session not found", err)
 				}
 			}
 			file, err := svc.Open(ctx, row.ID, 7, 9, nil)

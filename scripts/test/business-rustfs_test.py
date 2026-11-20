@@ -68,6 +68,11 @@ esac
 set -eu
 case "$PWD/$2" in
     */infra/objectstore/s3) contract=TestPlatformAreaAgainstRustFS ;;
+    */common/-p)
+        for name in TestManagerObjectAreaAgainstRustFS TestExportAreaAgainstRustFS/manager TestExportAreaAgainstRustFS/develop TestExportAreaAgainstRustFS/shapefile_zip; do
+            printf -- '--- PASS: %s (0.00s)\n' "$name"
+        done
+        exit 0 ;;
     */standard/backend/./internal/service) contract=TestDocumentFileLifecycleAgainstPostgresAndS3 ;;
     */engine/plugins/rustfs)
         case "$ADDP_RUSTFS_TEST_PHASE" in

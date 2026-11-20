@@ -17,8 +17,20 @@ import (
 
 func TestManagerObjectAreaAgainstMinIO(t *testing.T) {
 	if os.Getenv("ADDP_MANAGER_OBJECT_INTEGRATION") != "1" {
-		t.Skip("requires make test-manager-postgres owned MinIO")
+		t.Skip("run make test-manager-postgres")
 	}
+	testManagerObjectAreaAgainstS3(t)
+}
+
+func TestManagerObjectAreaAgainstRustFS(t *testing.T) {
+	if os.Getenv("ADDP_RUSTFS_INTEGRATION") != "1" {
+		t.Skip("run the platform-export group of make test-common-rustfs")
+	}
+	testManagerObjectAreaAgainstS3(t)
+}
+
+func testManagerObjectAreaAgainstS3(t *testing.T) {
+	t.Helper()
 	ctx := t.Context()
 	client, err := sdk.New(os.Getenv("MANAGER_OBJECT_TEST_ENDPOINT"), &sdk.Options{Creds: credentials.NewStaticV4(os.Getenv("MANAGER_OBJECT_TEST_USER"), os.Getenv("MANAGER_OBJECT_TEST_PASSWORD"), "")})
 	if err != nil {
@@ -35,13 +47,16 @@ func TestManagerObjectAreaAgainstMinIO(t *testing.T) {
 	}
 	other := objectminio.New(client, "manager-contract-other")
 	key := "tenant_7/import/fixture/汉字 +%.bin"
-	for _, item := range []struct {
+	objects := []struct {
 		area objectstore.ContentArea
 		data string
-	}{{manager, "manager bytes"}, {other, "different bytes"}} {
+	}{{manager, "manager bytes"}, {other, "different bytes"}}
+	for _, item := range objects {
 		if err := item.area.Put(ctx, key, bytes.NewBufferString(item.data), int64(len(item.data)), "application/octet-stream"); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, item := range objects {
 		stream, err := item.area.Open(ctx, key)
 		if err != nil {
 			t.Fatal(err)
