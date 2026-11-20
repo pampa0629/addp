@@ -89,3 +89,14 @@ python3 arm64/k3s-pilot.py verify \
 ```
 
 保存安装退出码、声明发布阶段、卷和 Pod 分布、验证输出。通过标准为实际节点架构正确，Gateway 的生效地址等于 AMD64 Catalog Pod IP，租户请求返回 200 和正确列表，空列表有效。
+
+## 现场核对 Catalog 端点
+
+安装时在受信集群上下文中记录 Catalog Service UID。后续用原始记录核对同名 Service 和由原生控制器发布的 EndpointSlice。操作身份需能读取指定 Service 并列举试点 namespace 内的 EndpointSlice。检查只输出当次符合条件的 Pod UID、地址及具名 TCP 端口。Service 身份不符时命令失败；绑定有效且无可用端点时输出空数组。
+
+```bash
+python3 arm64/k3s-pilot.py inspect-catalog \
+  --context SITE_CONTEXT --namespace addp-registry-pilot --service-uid "$APPROVED_SERVICE_UID"
+```
+
+故障演练前、摘除后、恢复后分别保存输出。Kubernetes 端点状态和 Gateway 实际转发各自取证；Gateway 使用的发现来源见部署配置。
