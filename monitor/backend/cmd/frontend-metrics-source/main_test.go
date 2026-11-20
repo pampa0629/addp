@@ -121,3 +121,21 @@ func TestViteInventoryUsesOnlyLaunchedModulePorts(t *testing.T) {
 		t.Fatal("accepted missing launcher port")
 	}
 }
+
+func TestBusinessNFSChecksExactHostExport(t *testing.T) {
+	for _, tc := range []struct{ listing, expect string }{
+		{"Exports list on localhost:\n/work/business/nfs/data Everyone", "addp_business_nfs_export_available 1\n"},
+		{"Exports list on localhost:\n/work/business/nfs/data-old Everyone", "addp_business_nfs_export_available 0\n"},
+		{"unexpected response", ""},
+	} {
+		got := businessNFS(context.Background(), "/work", func(ctx context.Context, command string, args ...string) (string, error) {
+			if command != "/usr/bin/showmount" || strings.Join(args, " ") != "-e localhost" {
+				t.Fatal(command, args)
+			}
+			return tc.listing, nil
+		})
+		if string(got) != tc.expect {
+			t.Fatalf("export observation %q", got)
+		}
+	}
+}

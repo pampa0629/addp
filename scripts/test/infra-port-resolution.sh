@@ -309,7 +309,7 @@ env GITHUB_ACTIONS=true ADDP_ONLINE_HOST=1 ADDP_ONLINE_TEST=1 \
 [ "$(cat "$MOCK_MARKER")" = -v ]
 expected_stopped_sources=(
   'Infra PostgreSQL' 'Infra Redis' 'Infra MinIO'
-  'Infra Redpanda' 'Infra Kafka Connect' 'Infra Meilisearch'
+  'Infra Redpanda' 'Infra Kafka Connect' 'Infra Meilisearch' 'Infra FalkorDB'
 )
 for source in "${expected_stopped_sources[@]}"; do
   grep -Eq "^${source}[[:space:]]+已停用$" "$TEST_DIR/online.log"

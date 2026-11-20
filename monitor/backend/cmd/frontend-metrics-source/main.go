@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ import (
 var errConfiguration = errors.New("frontend source configuration is invalid")
 
 type configuration struct {
+	BusinessNFS  bool   `json:"business_nfs,omitempty"`
 	Mode         string `json:"mode"`
 	PublicOrigin string `json:"public_origin"`
 	Workspace    string `json:"workspace"`
@@ -59,6 +61,9 @@ func (c configuration) validate() (*url.URL, error) {
 			return nil, errConfiguration
 		}
 	case "compose":
+		if c.BusinessNFS {
+			return nil, errConfiguration
+		}
 		socket, err := os.Stat(c.DockerSocket)
 		if !filepath.IsAbs(c.DockerSocket) ||
 			err != nil || socket.Mode()&os.ModeSocket == 0 {
@@ -299,6 +304,30 @@ func deployedFrontends(cfg configuration) ([]frontend, error) {
 	return rows, nil
 }
 
+// Export visibility describes mountd's advertised directory, without opening any exported files.
+func businessNFS(ctx context.Context, workspace string, run command) []byte {
+	probeCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	listing, err := run(probeCtx, "/usr/bin/showmount", "-e", "localhost")
+	if err != nil {
+		return nil
+	}
+	export := filepath.Join(workspace, "business", "nfs", "data")
+	lines := strings.Split(listing, "\n")
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "Exports list on ") {
+		return nil
+	}
+	available := 0
+	for _, line := range lines[1:] {
+		line = strings.TrimSpace(line)
+		if line == export || strings.HasPrefix(line, export+" ") || strings.HasPrefix(line, export+"\t") {
+			available = 1
+			break
+		}
+	}
+	return fmt.Appendf(nil, "addp_business_nfs_export_available %d\n", available)
+}
+
 func collect(ctx context.Context, cfg configuration, probe *frontendprobe.Prober, run command) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
@@ -345,6 +374,9 @@ func collect(ctx context.Context, cfg configuration, probe *frontendprobe.Prober
 		}()
 	}
 	work.Wait()
+	if cfg.BusinessNFS && runtime.GOOS == "darwin" {
+		metrics = append(metrics, businessNFS(ctx, cfg.Workspace, run))
+	}
 	return bytes.Join(metrics, nil), nil
 }
 
