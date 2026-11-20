@@ -1479,6 +1479,14 @@
         "name": "DuckDB Federated Query Runtime",
         "description": "Lets DuckDB consume a single execution authorization and obtain exact engine access within a tenant."
       },
+      "jupyter_runtime": {
+        "name": "Jupyter metrics source",
+        "description": "Renews the metrics lease for its designated Jupyter runtime."
+      },
+      "supermap_runtime": {
+        "name": "SuperMap metrics source",
+        "description": "Renews the metrics lease for its designated SuperMap runtime."
+      },
       "geopython_runtime": {
         "name": "GeoPython Derivation Runtime",
         "description": "Lets GeoPython workloads create spatial-data-derived artifacts within a tenant."

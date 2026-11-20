@@ -410,14 +410,14 @@ other = "The host node changed; refresh and retry"
 [system.host_node.failed]
 other = "Host node inventory operation failed"
 
-["system.geopython_metrics.invalid"]
-other = "The GeoPython metrics declaration is invalid."
+["system.runtime_metrics.invalid"]
+other = "The runtime metrics declaration is invalid."
 
-["system.geopython_metrics.conflict"]
-other = "The GeoPython metrics declaration does not match the current runtime."
+["system.runtime_metrics.conflict"]
+other = "The runtime metrics declaration does not match the current runtime."
 
-["system.geopython_metrics.unavailable"]
-other = "The GeoPython metrics declaration is unavailable."
+["system.runtime_metrics.unavailable"]
+other = "The runtime metrics declaration is unavailable."
 
 ["system.observability_identity.invalid"]
 other = "The identity snapshot request accepts no parameters or body."

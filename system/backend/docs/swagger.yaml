@@ -5954,28 +5954,6 @@ definitions:
       state:
         type: string
     type: object
-  models.GeoPythonMetricsDeclaration:
-    properties:
-      endpoint:
-        type: string
-      instance_id:
-        type: string
-      started_at:
-        type: string
-    type: object
-  models.GeoPythonMetricsIdentity:
-    properties:
-      endpoint:
-        type: string
-      engine_id:
-        type: integer
-      instance_id:
-        type: string
-      lease_expires_at:
-        type: string
-      started_at:
-        type: string
-    type: object
   models.JSONMap:
     additionalProperties: true
     type: object
@@ -6060,8 +6038,6 @@ definitions:
         items:
           $ref: '#/definitions/models.ObservabilityEngineIdentity'
         type: array
-      geopython_metrics:
-        $ref: '#/definitions/models.GeoPythonMetricsIdentity'
       infrastructure_components:
         $ref: '#/definitions/models.ObservabilityComponentSnapshot'
       module_instances:
@@ -6074,6 +6050,10 @@ definitions:
         type: array
       observed_at:
         type: string
+      runtime_metrics:
+        items:
+          $ref: '#/definitions/models.RuntimeMetricsIdentity'
+        type: array
       service_groups:
         $ref: '#/definitions/models.ServiceGroupSnapshot'
     type: object
@@ -6112,6 +6092,30 @@ definitions:
       endpoint:
         type: string
       schema_version:
+        type: string
+    type: object
+  models.RuntimeMetricsDeclaration:
+    properties:
+      endpoint:
+        type: string
+      instance_id:
+        type: string
+      started_at:
+        type: string
+    type: object
+  models.RuntimeMetricsIdentity:
+    properties:
+      endpoint:
+        type: string
+      engine_id:
+        type: integer
+      instance_id:
+        type: string
+      kind:
+        type: string
+      lease_expires_at:
+        type: string
+      started_at:
         type: string
     type: object
   models.ServiceGroupObservation:
@@ -15521,8 +15525,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: 限 GeoPython 的平台服务身份，当前内置引擎注册与进程代次须匹配 | The GeoPython platform service
-        renews a private source for its registered engine and current process
+      description: 平台服务身份只能为自己的内置运行时和当前进程代次续租 | A platform runtime may renew only
+        its own registered engine and process generation
       parameters:
       - description: 引擎 ID | Engine ID
         in: path
@@ -15534,7 +15538,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/models.GeoPythonMetricsDeclaration'
+          $ref: '#/definitions/models.RuntimeMetricsDeclaration'
       produces:
       - application/json
       responses:
@@ -15562,12 +15566,12 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 续约 GeoPython 指标来源 | Renew the GeoPython metrics source
+      summary: 续约内置运行时指标来源 | Renew a built-in runtime metrics source
       tags:
       - 运行时注册 | Runtime Registry
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - system.runtime_registry.update
+      - system.runtime_metrics.update
   /runtime/execution-authorizations:
     post:
       consumes:

@@ -212,6 +212,8 @@ def register_to_system() -> bool:
             payload,
         )
         if status_code == 202:
+            from addp_common.httpmetrics.runtime import start_workflow_metrics
+            start_workflow_metrics("document", os.getenv("SYSTEM_URL", "http://localhost:8180"), os.getenv("DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET", ""), body, start_time, executions)
             logger.info("document_workflow registered to System")
             return True
         logger.warning("failed to register document_workflow: %s - %s", status_code, body)

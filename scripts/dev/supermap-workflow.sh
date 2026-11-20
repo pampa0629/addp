@@ -92,6 +92,12 @@ if [ -n "${data_dir}" ]; then
   mount_args+=(-v "${data_dir}:/mnt/supermap/data:ro")
 fi
 
+if [ -n "${ADDP_SUPERMAP_METRICS_ENDPOINT:-}" ]; then
+  mount_args+=(-p "${ADDP_SUPERMAP_METRICS_LISTEN:?}:9443" --mount "type=bind,source=${ADDP_SUPERMAP_METRICS_TLS_DIR:?},target=/run/addp-supermap-metrics,readonly"
+    -e ADDP_SUPERMAP_METRICS_ENDPOINT -e ADDP_SUPERMAP_METRICS_ENGINE_ID -e SUPERMAP_METRICS_SERVICE_CLIENT_SECRET
+    -e ADDP_SUPERMAP_METRICS_TLS_DIR=/run/addp-supermap-metrics -e ADDP_SUPERMAP_METRICS_CONTAINER_PORT=9443
+    -e "SYSTEM_URL=http://host.docker.internal:${SYSTEM_BACKEND_PORT:?}")
+fi
 echo "  启动 SuperMap Workflow Engine..."
 docker run -d \
   --name supermap-workflow-engine \

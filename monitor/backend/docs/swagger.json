@@ -2960,7 +2960,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "读取当前 Meilisearch 或 GeoPython 的固定指标。趋势需要实例身份、指标和完整时段，最长七天 | Read fixed metrics for current Meilisearch or GeoPython. Trends require the current identity, one metric and a complete range up to seven days",
+                "description": "读取当前搜索或计算运行时的固定指标。趋势需要实例身份、指标和完整时段，最长七天 | Read fixed metrics for the selected search or compute source. Trends require the current identity, one metric and a complete range up to seven days",
                 "produces": [
                     "application/json"
                 ],
@@ -2972,13 +2972,27 @@
                     {
                         "enum": [
                             "meilisearch",
-                            "geopython"
+                            "geopython",
+                            "spark",
+                            "document",
+                            "model3d",
+                            "pointcloud",
+                            "duckdb",
+                            "inference",
+                            "jupyter",
+                            "supermap"
                         ],
                         "type": "string",
                         "description": "来源类型 | Source kind",
                         "name": "source",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "计算运行时必须指定引擎 ID | Required for compute sources",
+                        "name": "engine_id",
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -3056,6 +3070,51 @@
                     },
                     "504": {
                         "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read",
+                    "platform.engine_deployment.read"
+                ]
+            }
+        },
+        "/platform/engine_runtime_observations/sources": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回有效租约的类型与引擎 ID | Return the kind and engine ID of current leases",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "列出当前计算运行时指标来源 | List current compute metric sources",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_monitor_internal_service.RuntimeObservationSubject"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
@@ -11029,6 +11088,17 @@
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.RuntimeObservationSubject": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "source": {
                     "type": "string"
                 }
             }

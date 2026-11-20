@@ -219,22 +219,26 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			return nil, ErrBudgetExceeded
 		}
 	}
-	geo := snapshot.GeoPythonMetrics
-	if geo != nil && geo.LeaseExpiresAt.After(p.now().UTC()) {
-		if geo.EngineID == 0 || geo.GeoPythonMetricsDeclaration.Validate(snapshot.ObservedAt) != nil ||
-			geo.LeaseExpiresAt.After(snapshot.ObservedAt.Add(models.GeoPythonMetricsLeaseDuration)) {
+	var runtimes []models.RuntimeMetricsIdentity
+	runtimeIDs := map[uint]bool{}
+	for _, runtime := range snapshot.RuntimeMetrics {
+		if !runtime.LeaseExpiresAt.After(p.now().UTC()) {
+			continue
+		}
+		if runtime.EngineID == 0 || runtimeIDs[runtime.EngineID] || models.RuntimeMetricsEngineType(runtime.Kind) == "" ||
+			runtime.RuntimeMetricsDeclaration.Validate(snapshot.ObservedAt) != nil ||
+			runtime.LeaseExpiresAt.After(snapshot.ObservedAt.Add(models.RuntimeMetricsLeaseDuration)) {
 			return nil, ErrIdentityUnavailable
 		}
-		if !paused[RuntimeCollectionScope(geo).ID] {
-			reserved++
-			if reserved > p.policy.targetLimit {
-				return nil, ErrBudgetExceeded
-			}
-		} else {
-			geo = nil
+		runtimeIDs[runtime.EngineID] = true
+		if paused[RuntimeCollectionScope(&runtime).ID] {
+			continue
 		}
-	} else {
-		geo = nil
+		reserved++
+		if reserved > p.policy.targetLimit {
+			return nil, ErrBudgetExceeded
+		}
+		runtimes = append(runtimes, runtime)
 	}
 	physical := make(map[string]bool)
 	declared := make(map[string]bool)
@@ -347,16 +351,16 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			}})
 		}
 	}
-	if geo != nil {
-		resolved, accepted, err := resolve(geo.Endpoint)
+	for _, runtime := range runtimes {
+		resolved, accepted, err := resolve(runtime.Endpoint)
 		if err != nil {
 			return nil, err
 		}
 		if accepted {
 			dynamic[resolved.Address] = true
 			groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
-				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": "compute_resources", "addp_source": "geopython",
-				"addp_runtime_engine_id": strconv.FormatUint(uint64(geo.EngineID), 10), "addp_instance_id": geo.InstanceID, CollectionScopeLabel: RuntimeCollectionScope(geo).DiscoveryLabel(),
+				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": "compute_resources", "addp_source": runtime.Kind,
+				"addp_runtime_engine_id": strconv.FormatUint(uint64(runtime.EngineID), 10), "addp_instance_id": runtime.InstanceID, CollectionScopeLabel: RuntimeCollectionScope(&runtime).DiscoveryLabel(),
 			}})
 		}
 	}

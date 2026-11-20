@@ -12558,7 +12558,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "限 GeoPython 的平台服务身份，当前内置引擎注册与进程代次须匹配 | The GeoPython platform service renews a private source for its registered engine and current process",
+                "description": "平台服务身份只能为自己的内置运行时和当前进程代次续租 | A platform runtime may renew only its own registered engine and process generation",
                 "consumes": [
                     "application/json"
                 ],
@@ -12568,7 +12568,7 @@ const docTemplate = `{
                 "tags": [
                     "运行时注册 | Runtime Registry"
                 ],
-                "summary": "续约 GeoPython 指标来源 | Renew the GeoPython metrics source",
+                "summary": "续约内置运行时指标来源 | Renew a built-in runtime metrics source",
                 "parameters": [
                     {
                         "type": "integer",
@@ -12583,7 +12583,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.GeoPythonMetricsDeclaration"
+                            "$ref": "#/definitions/models.RuntimeMetricsDeclaration"
                         }
                     }
                 ],
@@ -12624,7 +12624,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "system.runtime_registry.update"
+                    "system.runtime_metrics.update"
                 ]
             }
         },
@@ -27396,40 +27396,6 @@ const docTemplate = `{
                 }
             }
         },
-        "models.GeoPythonMetricsDeclaration": {
-            "type": "object",
-            "properties": {
-                "endpoint": {
-                    "type": "string"
-                },
-                "instance_id": {
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.GeoPythonMetricsIdentity": {
-            "type": "object",
-            "properties": {
-                "endpoint": {
-                    "type": "string"
-                },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "instance_id": {
-                    "type": "string"
-                },
-                "lease_expires_at": {
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                }
-            }
-        },
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
@@ -27559,9 +27525,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/models.ObservabilityEngineIdentity"
                     }
                 },
-                "geopython_metrics": {
-                    "$ref": "#/definitions/models.GeoPythonMetricsIdentity"
-                },
                 "infrastructure_components": {
                     "$ref": "#/definitions/models.ObservabilityComponentSnapshot"
                 },
@@ -27579,6 +27542,12 @@ const docTemplate = `{
                 },
                 "observed_at": {
                     "type": "string"
+                },
+                "runtime_metrics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.RuntimeMetricsIdentity"
+                    }
                 },
                 "service_groups": {
                     "$ref": "#/definitions/models.ServiceGroupSnapshot"
@@ -27638,6 +27607,43 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.RuntimeMetricsDeclaration": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.RuntimeMetricsIdentity": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "started_at": {
                     "type": "string"
                 }
             }

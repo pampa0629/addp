@@ -2149,6 +2149,13 @@ definitions:
       status:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.RuntimeObservationSubject:
+    properties:
+      engine_id:
+        type: integer
+      source:
+        type: string
+    type: object
   github_com_addp_monitor_internal_service.RuntimePolicyResponse:
     properties:
       alert_evaluation_interval_seconds:
@@ -5280,18 +5287,30 @@ paths:
       - monitor.resource_observation.read
   /platform/engine_runtime_observations:
     get:
-      description: 读取当前 Meilisearch 或 GeoPython 的固定指标。趋势需要实例身份、指标和完整时段，最长七天 | Read
-        fixed metrics for current Meilisearch or GeoPython. Trends require the current
-        identity, one metric and a complete range up to seven days
+      description: 读取当前搜索或计算运行时的固定指标。趋势需要实例身份、指标和完整时段，最长七天 | Read fixed metrics for
+        the selected search or compute source. Trends require the current identity,
+        one metric and a complete range up to seven days
       parameters:
       - description: 来源类型 | Source kind
         enum:
         - meilisearch
         - geopython
+        - spark
+        - document
+        - model3d
+        - pointcloud
+        - duckdb
+        - inference
+        - jupyter
+        - supermap
         in: query
         name: source
         required: true
         type: string
+      - description: 计算运行时必须指定引擎 ID | Required for compute sources
+        in: query
+        name: engine_id
+        type: integer
       - description: 当前来源 UUID，读取趋势时必填 | Current source UUID, required for trends
         in: query
         name: id
@@ -5350,6 +5369,35 @@ paths:
       security:
       - BearerAuth: []
       summary: 读取搜索与计算运行指标 | Read search and compute runtime metrics
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
+      - platform.engine_deployment.read
+  /platform/engine_runtime_observations/sources:
+    get:
+      description: 返回有效租约的类型与引擎 ID | Return the kind and engine ID of current leases
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_monitor_internal_service.RuntimeObservationSubject'
+            type: array
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 列出当前计算运行时指标来源 | List current compute metric sources
       tags:
       - 平台运行监控 | Platform Runtime Monitoring
       x-addp-auth-mode: permission

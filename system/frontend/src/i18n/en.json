@@ -868,6 +868,7 @@
           "run": "Run",
           "runtime": "Runtime",
           "module_declaration": "Module declaration",
+          "runtime_metrics": "Runtime metrics leases",
           "runtime_registry": "Runtime Registry",
           "scan_task": "Metadata Scan Task",
           "search": "Data Search",

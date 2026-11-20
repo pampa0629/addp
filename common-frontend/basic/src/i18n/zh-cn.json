@@ -1479,6 +1479,14 @@
         "name": "DuckDB 联邦查询运行时",
         "description": "供 DuckDB 在租户范围内消费单次执行授权并获取精确的引擎访问。"
       },
+      "jupyter_runtime": {
+        "name": "Jupyter 指标来源",
+        "description": "为部署指定的 Jupyter 实例续租指标来源。"
+      },
+      "supermap_runtime": {
+        "name": "SuperMap 指标来源",
+        "description": "为部署指定的 SuperMap 实例续租指标来源。"
+      },
       "geopython_runtime": {
         "name": "GeoPython 派生运行时",
         "description": "供 GeoPython 工作负载在租户范围内创建空间数据派生产物。"

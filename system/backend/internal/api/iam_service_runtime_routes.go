@@ -36,6 +36,10 @@ func RegisterIAMServiceRuntimeRoutes(
 	if err != nil {
 		return err
 	}
+	runtimeMetricsUpdate, err := middleware.NewIAMPermissionGuard("system.runtime_metrics.update")
+	if err != nil {
+		return err
+	}
 	runtimeRegistryRead, err := middleware.NewIAMPermissionGuard("system.runtime_registry.read")
 	if err != nil {
 		return err
@@ -99,8 +103,8 @@ func RegisterIAMServiceRuntimeRoutes(
 		platformRoutes.POST("/modules/heartbeat", moduleHandler.HeartbeatService)
 		platformRoutes.DELETE("/modules/:module_name/instances/:instance_id", moduleHandler.DeregisterService)
 		platformRoutes.POST("/engines", engineHandler.RegisterRuntimeEngine)
-		platformRoutes.PUT("/engines/:id/metrics", sharedauth.MustNewServiceClientGuard("addp-geopython"), engineHandler.DeclareGeoPythonMetrics)
 	}
+	runtimeRoutes.PUT("/engines/:id/metrics", platformContext, runtimeMetricsUpdate, sharedauth.MustNewServiceClientGuard("addp-geopython", "addp-spark", "addp-model3d", "addp-pointcloud", "addp-document", "addp-supermap", "addp-duckdb", "addp-jupyter", "addp-inference"), engineHandler.DeclareRuntimeMetrics)
 	platformReadRoutes := runtimeRoutes.Group("")
 	platformReadRoutes.Use(platformContext, runtimeRegistryRead)
 	{

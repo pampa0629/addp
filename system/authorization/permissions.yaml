@@ -1362,6 +1362,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.ontology_fact.execute.name
     description_i18n_key: permissions.system.ontology_fact.execute.description
+  - key: system.runtime_metrics.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.runtime_metrics.update.name
+    description_i18n_key: permissions.system.runtime_metrics.update.description
   - key: system.runtime_registry.read
     allowed_scope_types: [platform]
     risk_level: low

@@ -92,14 +92,15 @@ func TestRegisterRuntimeEngineUsesPlatformBearer(t *testing.T) {
 			t.Fatalf("runtime registration = %#v", request)
 		}
 		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"engine_id":12}`))
 	}))
 	defer server.Close()
 
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	if err := client.RegisterRuntimeEngine(context.Background(), &models.CapabilityRegistrationRequest{
+	if id, err := client.RegisterRuntimeEngine(context.Background(), &models.CapabilityRegistrationRequest{
 		Name: "DuckDB", EngineType: "duckdb", IsBuiltin: true,
 		ConnectionInfo: map[string]interface{}{"protocol": "http", "port": 8104},
-	}); err != nil {
+	}); err != nil || id != 12 {
 		t.Fatalf("RegisterRuntimeEngine() error = %v", err)
 	}
 }
@@ -115,6 +116,7 @@ func TestRegisterRuntimeEngineWithRetryDoesNotBlockAndRecovers(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"engine_id":12}`))
 		select {
 		case <-registered:
 		default:

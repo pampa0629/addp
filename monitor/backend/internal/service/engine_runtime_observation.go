@@ -43,7 +43,32 @@ type engineRuntimeIdentity struct {
 	State     string
 }
 
-func (s *ResourceObservationService) engineRuntimeIdentity(ctx context.Context, source string) (engineRuntimeIdentity, error) {
+type RuntimeObservationSubject struct {
+	Source   string `json:"source"`
+	EngineID uint   `json:"engine_id"`
+}
+
+func (s *ResourceObservationService) RuntimeObservationSubjects(ctx context.Context) ([]RuntimeObservationSubject, error) {
+	if s == nil || s.engineRuntime.Identities == nil {
+		return nil, metricsdiscovery.ErrUnconfigured
+	}
+	ctx, cancel := context.WithTimeout(ctx, metricsdiscovery.Timeout)
+	defer cancel()
+	snapshot, err := s.engineRuntime.Identities.GetObservabilityIdentities(ctx)
+	now := s.now().UTC()
+	if err != nil || snapshot == nil || snapshot.ObservedAt.Before(now.Add(-metricsdiscovery.Timeout)) || snapshot.ObservedAt.After(now.Add(metricsdiscovery.Timeout)) {
+		return nil, metricsdiscovery.ErrIdentityUnavailable
+	}
+	result := make([]RuntimeObservationSubject, 0, len(snapshot.RuntimeMetrics))
+	for _, runtime := range snapshot.RuntimeMetrics {
+		if runtime.LeaseExpiresAt.After(now) {
+			result = append(result, RuntimeObservationSubject{runtime.Kind, runtime.EngineID})
+		}
+	}
+	return result, nil
+}
+
+func (s *ResourceObservationService) engineRuntimeIdentity(ctx context.Context, source string, engineID uint) (engineRuntimeIdentity, error) {
 	snapshot, err := s.engineRuntime.Identities.GetObservabilityIdentities(ctx)
 	now := s.now().UTC()
 	if err != nil || snapshot == nil || snapshot.ObservedAt.Before(now.Add(-metricsdiscovery.Timeout)) || snapshot.ObservedAt.After(now.Add(metricsdiscovery.Timeout)) {
@@ -72,19 +97,27 @@ func (s *ResourceObservationService) engineRuntimeIdentity(ctx context.Context, 
 				}
 			}
 		}
-	} else if runtime := snapshot.GeoPythonMetrics; runtime != nil && runtime.LeaseExpiresAt.After(now) {
-		if runtime.EngineID == 0 || runtime.GeoPythonMetricsDeclaration.Validate(snapshot.ObservedAt) != nil ||
-			runtime.LeaseExpiresAt.After(snapshot.ObservedAt.Add(commonmodels.GeoPythonMetricsLeaseDuration)) {
-			return engineRuntimeIdentity{}, metricsdiscovery.ErrIdentityUnavailable
+	} else {
+		for _, runtime := range snapshot.RuntimeMetrics {
+			if runtime.Kind != source || runtime.EngineID != engineID || !runtime.LeaseExpiresAt.After(now) {
+				continue
+			}
+			if result.Source.EngineID != 0 {
+				return engineRuntimeIdentity{}, metricsdiscovery.ErrIdentityUnavailable
+			}
+			if runtime.EngineID == 0 || runtime.RuntimeMetricsDeclaration.Validate(snapshot.ObservedAt) != nil ||
+				runtime.LeaseExpiresAt.After(snapshot.ObservedAt.Add(commonmodels.RuntimeMetricsLeaseDuration)) {
+				return engineRuntimeIdentity{}, metricsdiscovery.ErrIdentityUnavailable
+			}
+			result.Source.ID, result.Source.EngineID, result.Source.StartedAt = runtime.InstanceID, runtime.EngineID, runtime.StartedAt.UTC()
+			result.Endpoint = runtime.Endpoint
+			result.State = "no_sample"
 		}
-		result.Source.ID, result.Source.EngineID, result.Source.StartedAt = runtime.InstanceID, runtime.EngineID, runtime.StartedAt.UTC()
-		result.Endpoint = runtime.Endpoint
-		result.State = "no_sample"
 	}
 	return result, nil
 }
 
-func (s *ResourceObservationService) EngineRuntime(ctx context.Context, principal, source, id, metric string, start, end time.Time) (EngineRuntimeObservation, error) {
+func (s *ResourceObservationService) EngineRuntime(ctx context.Context, principal, source, id, metric string, engineID uint, start, end time.Time) (EngineRuntimeObservation, error) {
 	var result EngineRuntimeObservation
 	if s == nil || s.engineRuntime.Identities == nil || s.engineRuntime.Backend == nil || s.policy == nil {
 		return result, metricsdiscovery.ErrUnconfigured
@@ -113,7 +146,7 @@ func (s *ResourceObservationService) EngineRuntime(ctx context.Context, principa
 	if !s.enabled {
 		return result, metricsdiscovery.ErrDisabled
 	}
-	current, err := s.engineRuntimeIdentity(ctx, source)
+	current, err := s.engineRuntimeIdentity(ctx, source, engineID)
 	if err != nil {
 		return result, err
 	}
@@ -153,7 +186,7 @@ func (s *ResourceObservationService) EngineRuntime(ctx context.Context, principa
 			}
 		}
 	}
-	latest, err := s.engineRuntimeIdentity(ctx, source)
+	latest, err := s.engineRuntimeIdentity(ctx, source, engineID)
 	if err != nil {
 		return EngineRuntimeObservation{}, err
 	}

@@ -8,7 +8,7 @@
         {{ row.kind === 'service' ? row.module_name : t(`monitor.targets.automatic.${row.kind}`) }}
       </template>
       <template #kind="{ row }">
-        {{ row.kind === 'service' ? t(`monitor.process.roles.${row.role}`, row.role) : t(`monitor.targets.categories.${row.kind}`) }}
+        {{ row.kind === 'service' ? t(`monitor.process.roles.${row.role}`, row.role) : t(`monitor.targets.categories.${props.kind === 'runtime' ? 'geopython' : row.kind}`) }}
         <template v-if="row.runtime_name"> · {{ t(`monitor.availability.purposes.${row.runtime_name}`, row.runtime_name) }}</template>
       </template>
       <template #observation="{ row }">
@@ -54,7 +54,7 @@ async function load() {
   try {
     const data = await requests.request(api.list)
     if (!requests.current(ticket)) return
-    rows.value = data.data.filter(row => row.kind === props.kind)
+    rows.value = data.data.filter(row => props.kind === 'runtime' ? !['service', 'meilisearch'].includes(row.kind) : row.kind === props.kind)
     catalogUnavailable.value = !data.catalog_available
     error.value = ''
     blocked.value = false

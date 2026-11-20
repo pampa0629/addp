@@ -8,6 +8,11 @@ import (
 )
 
 var runtimeMetrics = map[string][]Definition{
+	"document": workflowMetrics, "spark": workflowMetrics, "model3d": workflowMetrics, "pointcloud": workflowMetrics,
+	"duckdb":    {{"uptime_seconds", "seconds", 0}, {"resident_memory_bytes", "bytes", 0}},
+	"inference": {{"uptime_seconds", "seconds", 0}, {"resident_memory_bytes", "bytes", 0}},
+	"supermap":  {{"uptime_seconds", "seconds", 0}},
+	"jupyter":   {{"uptime_seconds", "seconds", 0}},
 	"meilisearch": {
 		{"tasks_pending", "tasks", 0},
 		{"tasks_oldest_wait_seconds", "seconds", 0},
@@ -21,6 +26,8 @@ var runtimeMetrics = map[string][]Definition{
 		{"raster_admission_enabled", "status", 0},
 	},
 }
+
+var workflowMetrics = []Definition{{"uptime_seconds", "seconds", 0}, {"executions_running", "tasks", 0}, {"executions_pending", "tasks", 0}}
 
 // RuntimeMetricSource contains only server-resolved identity labels.
 type RuntimeMetricSource struct {

@@ -219,6 +219,8 @@ def register_to_system() -> bool:
             system_url, "addp-model3d", client_secret, payload
         )
         if status_code == 202:
+            from addp_common.httpmetrics.runtime import start_workflow_metrics
+            start_workflow_metrics("model3d", system_url, client_secret, body, start_time, executions)
             logger.info("model3d_workflow registered to System")
             return True
         logger.warning("failed to register model3d_workflow: %s - %s", status_code, body)

@@ -95,14 +95,16 @@ Develop 执行工作流时必须把工作流运行时的本地状态收敛为 AD
 
 以 Manager COG 生成结果为例，Manager 通过 `InvokeOperator("raster_to_cog")` 调用实际提供该 direct 算子的工作流运行时，但 COG 是否可用以 `manager.raster_cog.status` 为准；`raster_cog` 记录中应保留源 item fingerprint、源 locator、目标 `storage_ref`、`workflow_runtime.engine_id/name/engine_type/execution_id/operator/mode`、栅格 facts 与失败原因。工作流运行时只负责执行 GDAL 转换，不负责登记 Manager 的 COG 结果生命周期。
 
-### GeoPython 运行指标来源
+### 内置运行时指标来源
 
-GeoPython 完成已有的内置 Runtime 自注册并启动独立的私有 mTLS 监听后，用本方平台 Service Principal 向 System 更新一次指标来源声明。声明携带该引擎 ID、本次进程 UUID、进程启动时刻和固定 HTTPS `/metrics` 地址。System 以服务端时间签发 90 秒有效期，进程每 30 秒续约。同一个部署仅发布最新进程的声明，旧进程不能覆盖更新的启动代次。正式发现继续沿 Monitor 的地址和端口策略、mTLS 与全局目标预算。进程退出时监听停止，下一轮来源验证移除目标。停止续约后，System 到期即停止发布声明。
+内置运行时使用已登记的 System 引擎 ID。平台服务凭据经 system.runtime_metrics.update 权限校验后，只能续租与自身类型匹配的内置、活动、平台级引擎。Math 是测试示例。运行时启动独立的私有 mTLS 监听后，用本方平台 Service Principal 向 System 更新指标来源声明。声明携带该引擎 ID、本次进程 UUID、进程启动时刻和固定 HTTPS `/metrics` 地址。System 以服务端时间签发 90 秒有效期，进程每 30 秒续约。同一个部署仅发布最新进程的声明，旧进程不能覆盖更新的启动代次。正式发现继续沿 Monitor 的地址和端口策略、mTLS 与全局目标预算。进程退出时监听停止，下一轮来源验证移除目标。停止续约后，System 到期即停止发布声明。
 
-采集首期读取本进程的 CPU、内存约束，以及栅格准入状态、运行数、等待数和已应用的额度。当前无有效额度时对应序列缺样。来源状态不影响工作流 Readiness 和业务请求。声明不进入引擎业务连接描述、能力声明或租户接口。
+GeoPython 读取本进程的 CPU、内存约束，以及栅格准入状态、运行数、等待数和已应用的额度。当前无有效额度时对应序列缺样。来源状态不影响工作流 Readiness 和业务请求。声明不进入引擎业务连接描述、能力声明或租户接口。
 
 部署需显式配置 `ADDP_GEOPYTHON_METRICS_ENDPOINT`、`ADDP_GEOPYTHON_METRICS_LISTEN` 和仓库外的 `ADDP_GEOPYTHON_METRICS_TLS_DIR`。容器部署同时配置 `ADDP_GEOPYTHON_METRICS_CONTAINER_PORT`，生产启动将监听映射到指定宿主机私有地址，并把 TLS 目录只读挂载给 Runtime。TLS 目录和其中的材料须归 Runtime 进程用户。证书须覆盖由 Monitor 准入后实际拨号的 IP。有效声明预留一个目标配额，实际采集还须通过来源准入。
 
+
+Document、PointCloud、Model3D 和 Spark Workflow 发布进程运行时长及当前运行、等待任务数。DuckDB 与 Inference 发布进程运行时长和常驻内存。SuperMap 在其 C++ 进程内发布运行时长，租约绑定部署指定的 `ADDP_SUPERMAP_METRICS_ENGINE_ID`。每个来源使用独立证书和端口，配置键为 `ADDP_<名称>_METRICS_ENDPOINT`、`_LISTEN`、`_TLS_DIR`，Spark 计算运行时使用 `SPARK_WORKFLOW`，Business Spark 集群使用 `SPARK`。Monitor 按生效租约列出当前的内置计算引擎，从服务端解析私有地址和进程代次。Business NFS 的宿主导出状态由开发节点采集器读取。
 
 ## 扩展新引擎指南
 

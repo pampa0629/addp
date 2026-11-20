@@ -9,6 +9,7 @@ test('search and compute indicators follow the current source without converting
     meilisearch: { tasks_pending: ['tasks', 0], tasks_oldest_wait_seconds: ['seconds', 0], tasks_retained_failed: ['tasks', 76] },
     geopython: { effective_cpu_cores: ['cores', 4], memory_limit_bytes: ['bytes', null], raster_running: ['tasks', 2], raster_waiting: ['tasks', 0], raster_admission_enabled: ['status', 1] }
   }
+  await page.route('**/platform/engine_runtime_observations/sources', route => route.fulfill({ json: [{ source: 'geopython', engine_id: 6 }] }))
   const requests = []
   await page.route('**/api/v1/monitor/platform/engine_runtime_observations?**', route => {
     const query = Object.fromEntries(new URL(route.request().url()).searchParams)

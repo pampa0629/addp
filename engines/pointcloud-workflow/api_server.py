@@ -231,6 +231,8 @@ def register_to_system() -> bool:
             system_url, "addp-pointcloud", client_secret, payload
         )
         if status_code == 202:
+            from addp_common.httpmetrics.runtime import start_workflow_metrics
+            start_workflow_metrics("pointcloud", system_url, client_secret, body, start_time, executions)
             logger.info("pointcloud_workflow registered to System")
             return True
         logger.warning("failed to register pointcloud_workflow: %s - %s", status_code, body)

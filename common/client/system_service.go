@@ -22,6 +22,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	"github.com/addp/common/processmetrics"
+	"github.com/google/uuid"
 )
 
 // SystemServiceClient is the Bearer-only client used by ADDP service
@@ -259,11 +260,20 @@ func (c *SystemServiceClient) DeregisterModule(ctx context.Context, moduleName, 
 
 // RegisterRuntimeEngine registers or updates one platform runtime Engine Instance.
 // Runtime processes call this only after their own HTTP server is ready to accept probes.
-func (c *SystemServiceClient) RegisterRuntimeEngine(ctx context.Context, request *models.CapabilityRegistrationRequest) error {
+func (c *SystemServiceClient) RegisterRuntimeEngine(ctx context.Context, request *models.CapabilityRegistrationRequest) (uint, error) {
 	if request == nil {
-		return errors.New("runtime engine registration request is required")
+		return 0, errors.New("runtime engine registration request is required")
 	}
-	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/engines", request, nil)
+	var result struct {
+		EngineID uint `json:"engine_id"`
+	}
+	if err := c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/runtime/engines", request, &result); err != nil {
+		return 0, err
+	}
+	if result.EngineID == 0 {
+		return 0, errors.New("missing registered engine ID")
+	}
+	return result.EngineID, nil
 }
 
 // RegisterRuntimeEngineWithRetry starts a non-blocking registration loop and stops after
@@ -274,6 +284,7 @@ func (c *SystemServiceClient) RegisterRuntimeEngineWithRetry(
 	initialRetryInterval time.Duration,
 	maxRetryInterval time.Duration,
 ) {
+	started := time.Now().UTC()
 	go func() {
 		if request == nil {
 			return
@@ -286,8 +297,12 @@ func (c *SystemServiceClient) RegisterRuntimeEngineWithRetry(
 		}
 		retryInterval := initialRetryInterval
 		for {
-			if err := c.RegisterRuntimeEngine(ctx, request); err == nil {
+			if engineID, err := c.RegisterRuntimeEngine(ctx, request); err == nil {
 				log.Printf("%s runtime engine registration succeeded", request.EngineType)
+				kind := strings.TrimSuffix(request.EngineType, "_runtime")
+				if kind == "inference" || kind == "duckdb" {
+					c.renewComputeMetrics(ctx, engineID, kind, started)
+				}
 				return
 			} else {
 				log.Printf("%s runtime engine registration failed: %v", request.EngineType, err)
@@ -313,6 +328,37 @@ func (c *SystemServiceClient) RegisterRuntimeEngineWithRetry(
 			}
 		}
 	}()
+}
+
+func (c *SystemServiceClient) renewComputeMetrics(ctx context.Context, engineID uint, kind string, started time.Time) {
+	source, err := processmetrics.StartCompute(kind, started)
+	if err != nil {
+		log.Printf("%s metrics source unavailable", kind)
+		return
+	}
+	if source == nil {
+		return
+	}
+	defer source.Close()
+	claim := models.RuntimeMetricsDeclaration{InstanceID: uuid.NewString(), StartedAt: started, Endpoint: source.Declaration().Endpoint}
+	path := fmt.Sprintf("/api/v1/system/runtime/engines/%d/metrics", engineID)
+	ticker := time.NewTicker(models.RuntimeMetricsLeaseDuration / 3)
+	defer ticker.Stop()
+	for {
+		renew, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err := c.doPlatformJSON(renew, http.MethodPut, path, claim, nil)
+		cancel()
+		if err != nil {
+			log.Printf("%s metrics lease unavailable", kind)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-source.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (c *SystemServiceClient) SendModuleHeartbeat(ctx context.Context, moduleName, instanceID string) error {

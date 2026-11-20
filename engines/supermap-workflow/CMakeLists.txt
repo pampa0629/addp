@@ -20,6 +20,7 @@ target_compile_options(addp_workflow_core PRIVATE -Wall -Wextra -Wpedantic -Werr
 
 if(SUPERMAP_SDK_ROOT)
   find_package(CURL REQUIRED)
+  find_package(OpenSSL REQUIRED)
   find_path(CPP_HTTPLIB_INCLUDE_DIR httplib.h REQUIRED)
   find_library(CPP_HTTPLIB_LIBRARY cpp-httplib REQUIRED)
   if(NOT EXISTS "${SUPERMAP_SDK_ROOT}/include/Engine/UGDataSource.h")
@@ -103,12 +104,13 @@ if(SUPERMAP_SDK_ROOT)
   set_property(TARGET addp_supermap_runtime_bridge PROPERTY CXX_STANDARD 17)
 
   add_executable(supermap-workflow-server
+    src/main/cpp/runtime_metrics.cpp
     src/main/cpp/http_server.cpp
     src/main/cpp/main.cpp
   )
   target_link_libraries(
     supermap-workflow-server
-    PRIVATE addp_supermap_runtime_bridge "${CPP_HTTPLIB_LIBRARY}" nlohmann_json::nlohmann_json
+    PRIVATE addp_supermap_runtime_bridge OpenSSL::SSL "${CPP_HTTPLIB_LIBRARY}" nlohmann_json::nlohmann_json
   )
   target_include_directories(
     supermap-workflow-server SYSTEM PRIVATE "${CPP_HTTPLIB_INCLUDE_DIR}"
@@ -116,7 +118,7 @@ if(SUPERMAP_SDK_ROOT)
   target_compile_options(
     supermap-workflow-server PRIVATE -Wall -Wextra -Wpedantic -Werror
   )
-  target_compile_definitions(supermap-workflow-server PRIVATE _GLIBCXX_USE_CXX11_ABI=1)
+  target_compile_definitions(supermap-workflow-server PRIVATE _GLIBCXX_USE_CXX11_ABI=1 CPPHTTPLIB_OPENSSL_SUPPORT CPPHTTPLIB_ZLIB_SUPPORT CPPHTTPLIB_BROTLI_SUPPORT)
   set_property(TARGET supermap-workflow-server PROPERTY CXX_STANDARD 20)
 endif()
 

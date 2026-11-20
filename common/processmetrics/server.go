@@ -184,10 +184,6 @@ func start(d config.ProcessMetricsDeployment, identity Identity, sample Sampler)
 		identity.StartedAt.IsZero() || identity.StartedAt.After(time.Now()) || sample == nil {
 		return nil, ErrSourceUnavailable
 	}
-	tlsConfig, err := sourceTLS(d)
-	if err != nil {
-		return nil, err
-	}
 	registry := prometheus.NewRegistry()
 	if registry.Register(newCollector(identity.ModuleName, identity.Role, identity.InstanceID, identity.StartedAt, sample)) != nil {
 		return nil, ErrSourceUnavailable
@@ -201,6 +197,23 @@ func start(d config.ProcessMetricsDeployment, identity Identity, sample Sampler)
 	if _, err := registry.Gather(); err != nil {
 		return nil, ErrSourceUnavailable
 	}
+	s, err := serveRegistry(d, registry)
+	if err != nil {
+		return nil, err
+	}
+	if d.CgroupV2 {
+		if initial, err := sample(); err == nil && initial.Cgroup.valid() {
+			s.declaration.Cgroup = &models.CgroupIdentity{BootID: initial.Cgroup.BootID, CgroupID: initial.Cgroup.CgroupID, PIDNamespaceID: initial.Cgroup.PIDNamespaceID}
+		}
+	}
+	return s, nil
+}
+
+func serveRegistry(d config.ProcessMetricsDeployment, registry *prometheus.Registry) (*Server, error) {
+	tlsConfig, err := sourceTLS(d)
+	if err != nil {
+		return nil, err
+	}
 	listener, err := net.Listen("tcp", d.Listen)
 	if err != nil {
 		return nil, ErrSourceUnavailable
@@ -208,11 +221,6 @@ func start(d config.ProcessMetricsDeployment, identity Identity, sample Sampler)
 	server := &http.Server{Handler: handler(registry), ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 8192,
 		ErrorLog: log.New(io.Discard, "", 0)}
 	s := &Server{http: server, done: make(chan struct{}), declaration: models.ProcessMetricsDeclaration{SchemaVersion: models.ProcessMetricsSchema, Endpoint: d.Endpoint}}
-	if d.CgroupV2 {
-		if initial, err := sample(); err == nil && initial.Cgroup.valid() {
-			s.declaration.Cgroup = &models.CgroupIdentity{BootID: initial.Cgroup.BootID, CgroupID: initial.Cgroup.CgroupID, PIDNamespaceID: initial.Cgroup.PIDNamespaceID}
-		}
-	}
 	go func() { defer close(s.done); _ = server.Serve(tls.NewListener(listener, tlsConfig)) }()
 	return s, nil
 }

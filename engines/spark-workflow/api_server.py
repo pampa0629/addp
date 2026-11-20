@@ -485,6 +485,8 @@ def register_to_system():
             system_url, "addp-spark", client_secret, payload
         )
         if status_code == 202:
+            from addp_common.httpmetrics.runtime import start_workflow_metrics
+            start_workflow_metrics("spark", system_url, client_secret, body, start_time, executions)
             logger.info("✅ Successfully registered to System Backend")
             return True
         else:

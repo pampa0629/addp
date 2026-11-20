@@ -22,6 +22,8 @@ var builtinServiceClientIDs = []string{
 	"addp-workbench",
 	"addp-copilot",
 	"addp-develop",
+	"addp-jupyter",
+	"addp-supermap",
 	"addp-document",
 	"addp-duckdb",
 	"addp-gateway",
@@ -69,6 +71,14 @@ var builtinTenantRuntimeServiceClientIDs = []string{
 	"addp-spark",
 	"addp-standard",
 	"addp-transfer",
+}
+
+func optionalServiceCredential(clientID string) bool {
+	switch clientID {
+	case "addp-system", "addp-log-observer", "addp-prometheus", "addp-supermap", "addp-jupyter":
+		return true
+	}
+	return false
 }
 
 type serviceOAuthClientCredentialRow struct {
@@ -127,7 +137,7 @@ func (s *ServiceCredentialProvisioner) applyClient(ctx context.Context, reposito
 		return fmt.Errorf("%w: OAuth client %s is not bound to a service principal", commonapi.ErrConflict, clientID)
 	}
 	// Removing an optional capability credential disables its client and tokens.
-	if (clientID == "addp-system" || clientID == "addp-log-observer" || clientID == "addp-prometheus") && secret == "" {
+	if optionalServiceCredential(clientID) && secret == "" {
 		if client.Status == "disabled" {
 			return nil
 		}
@@ -192,7 +202,7 @@ func validateBuiltinServiceSecrets(secrets map[string]string) error {
 	seen := make(map[string]string, len(secrets))
 	for _, clientID := range builtinServiceClientIDs {
 		secret := secrets[clientID]
-		if (clientID == "addp-system" || clientID == "addp-log-observer" || clientID == "addp-prometheus") && secret == "" {
+		if optionalServiceCredential(clientID) && secret == "" {
 			continue
 		}
 		if secret != strings.TrimSpace(secret) || len(secret) < 32 || len(secret) > 72 {

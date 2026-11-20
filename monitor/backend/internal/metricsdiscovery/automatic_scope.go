@@ -47,11 +47,11 @@ func ComponentCollectionScope(component models.ObservabilityComponentIdentity) A
 	return AutomaticScope{}
 }
 
-func RuntimeCollectionScope(runtime *models.GeoPythonMetricsIdentity) AutomaticScope {
+func RuntimeCollectionScope(runtime *models.RuntimeMetricsIdentity) AutomaticScope {
 	if runtime == nil || runtime.EngineID == 0 {
 		return AutomaticScope{}
 	}
-	return AutomaticScope{ID: "geopython:" + strconv.FormatUint(uint64(runtime.EngineID), 10), Kind: "geopython"}
+	return AutomaticScope{ID: runtime.Kind + ":" + strconv.FormatUint(uint64(runtime.EngineID), 10), Kind: runtime.Kind}
 }
 
 func (s AutomaticScope) DiscoveryLabel() string {

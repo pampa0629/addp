@@ -52,12 +52,16 @@ import { engineResourcesAPI as api } from '../api/engineResources'
 import { currentResourceValue, resourceChartRows, resourceErrorKey, resourceRanges } from '../utils/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
 
-const props = defineProps({ source: { type: String, required: true } })
+const props = defineProps({ source: { type: String, required: true }, engineId: Number })
 const emit = defineEmits(['access-lost'])
 const { t, locale } = useI18n()
+const subject = props.engineId ? { source: props.source, engine_id: props.engineId } : { source: props.source }
 const units = props.source === 'meilisearch'
   ? { tasks_pending: 'tasks', tasks_oldest_wait_seconds: 'seconds', tasks_retained_failed: 'tasks' }
-  : { effective_cpu_cores: 'cores', memory_limit_bytes: 'bytes', raster_running: 'tasks', raster_waiting: 'tasks', raster_admission_enabled: 'status' }
+  : props.source === 'geopython' ? { effective_cpu_cores: 'cores', memory_limit_bytes: 'bytes', raster_running: 'tasks', raster_waiting: 'tasks', raster_admission_enabled: 'status' }
+  : ['spark', 'document', 'model3d', 'pointcloud'].includes(props.source) ? { uptime_seconds: 'seconds', executions_running: 'tasks', executions_pending: 'tasks' }
+  : ['inference', 'duckdb'].includes(props.source) ? { uptime_seconds: 'seconds', resident_memory_bytes: 'bytes' }
+  : { uptime_seconds: 'seconds' }
 const metrics = Object.keys(units)
 const current = ref(null), history = ref(null), loading = ref(false), trendLoading = ref(false)
 const errorKey = ref(''), trendError = ref(''), showTrend = ref(false), selectedMetric = ref(metrics[0]), range = ref('5m')
@@ -146,7 +150,7 @@ async function loadTrend() {
   trendLoading.value = true
   try {
     const result = await trendRequests.request(config => api.runtime({
-      source: props.source, id: row.id, metric: selectedMetric.value,
+      ...subject, id: row.id, metric: selectedMetric.value,
       start: new Date(start).toISOString(), end: new Date(end).toISOString()
     }, config))
     if (trendRequests.current(ticket)) history.value = checkResponse(result, true)
@@ -165,7 +169,7 @@ async function reload() {
   errorKey.value = ''
   loading.value = true
   try {
-    const result = await requests.request(config => api.runtime({ source: props.source }, config))
+    const result = await requests.request(config => api.runtime(subject, config))
     if (!requests.current(ticket)) return
     const value = checkResponse(result, false)
     if (current.value?.id !== value.id || current.value?.started_at !== value.started_at) closeTrend()

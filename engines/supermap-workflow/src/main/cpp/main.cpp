@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <string>
 
+void start_supermap_metrics();
+
 namespace {
 
 std::string environment(const char* name, const std::string& fallback) {
@@ -38,6 +40,7 @@ int main() {
     const int threads = positive_integer("SUPERMAP_HTTP_THREADS", 4, 256);
     addp::supermap::HttpServer server(operators, sdk_root, threads);
     std::cout << "supermap-workflow-engine listening on http://0.0.0.0:" << port << '\n';
+    start_supermap_metrics();
     server.listen(port);
     return 0;
   } catch (const std::exception& error) {

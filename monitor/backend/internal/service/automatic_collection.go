@@ -64,8 +64,11 @@ func (s *MonitoringTargetService) automaticCatalog(ctx context.Context) (map[str
 			}
 		}
 	}
-	if geo := current.GeoPythonMetrics; geo != nil && geo.LeaseExpiresAt.After(now) {
-		if scope := metricsdiscovery.RuntimeCollectionScope(geo); scope.ID != "" {
+	for _, runtime := range current.RuntimeMetrics {
+		if !runtime.LeaseExpiresAt.After(now) {
+			continue
+		}
+		if scope := metricsdiscovery.RuntimeCollectionScope(&runtime); scope.ID != "" {
 			result[scope.ID] = scope
 		}
 	}

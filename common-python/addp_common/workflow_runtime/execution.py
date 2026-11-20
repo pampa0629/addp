@@ -49,6 +49,12 @@ class ExecutionRegistry:
         self._lock = threading.RLock()
         self._executions: dict[str, ExecutionSnapshot] = {}
 
+    def active_counts(self) -> tuple[int, int]:
+        with self._lock:
+            running = sum(job.status == "running" for job in self._executions.values())
+            pending = sum(job.status == "pending" for job in self._executions.values())
+            return running, pending
+
     def clear(self) -> None:
         with self._lock:
             self._executions.clear()

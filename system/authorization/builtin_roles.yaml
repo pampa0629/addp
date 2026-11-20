@@ -63,6 +63,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - system.runtime_metrics.update
       - system.runtime_registry.update
   - key: platform.duckdb_runtime
     role_type: platform_builtin
@@ -71,6 +72,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - system.runtime_metrics.update
       - system.runtime_registry.update
   - key: platform.gateway_runtime
     role_type: platform_builtin
@@ -90,6 +92,7 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - system.engine_raster_policy_runtime.read
+      - system.runtime_metrics.update
       - system.runtime_registry.update
   - key: platform.graph_runtime
     role_type: platform_builtin
@@ -107,7 +110,16 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - system.runtime_metrics.update
       - system.runtime_registry.update
+  - key: platform.jupyter_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.jupyter_runtime.name
+    description_i18n_key: roles.platform.jupyter_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_metrics.update
   - key: platform.log_observer_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.log_observer_runtime.name
@@ -141,6 +153,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - system.runtime_metrics.update
       - system.runtime_registry.update
   - key: platform.model_runtime
     role_type: platform_builtin
@@ -195,6 +208,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - system.runtime_metrics.update
       - system.runtime_registry.update
   - key: platform.portal_runtime
     role_type: platform_builtin
@@ -267,6 +281,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - system.runtime_metrics.update
       - system.runtime_registry.update
   - key: platform.standard_runtime
     role_type: platform_builtin
@@ -276,6 +291,14 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - system.runtime_registry.update
+  - key: platform.supermap_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.supermap_runtime.name
+    description_i18n_key: roles.platform.supermap_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_metrics.update
   - key: platform.system_administrator
     role_type: platform_builtin
     name_i18n_key: roles.platform.system_administrator.name

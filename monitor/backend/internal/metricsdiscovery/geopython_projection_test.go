@@ -28,15 +28,17 @@ func TestGeoPythonProjectionRequiresLiveLeaseAndProtectedSource(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := testSnapshot()
 	snapshot.ObservedAt = now
-	geo := &models.GeoPythonMetricsIdentity{
-		GeoPythonMetricsDeclaration: models.GeoPythonMetricsDeclaration{
+	geo := &models.RuntimeMetricsIdentity{
+		RuntimeMetricsDeclaration: models.RuntimeMetricsDeclaration{
 			InstanceID: "54a30000-0000-4000-8000-000000000001",
 			StartedAt:  now.Add(-time.Minute),
 			Endpoint:   server.URL + "/metrics",
 		},
 		EngineID: 36, LeaseExpiresAt: now.Add(time.Minute),
 	}
-	snapshot.GeoPythonMetrics = geo
+	geo.Kind = "geopython"
+	snapshot.RuntimeMetrics = []models.RuntimeMetricsIdentity{*geo}
+	geo = &snapshot.RuntimeMetrics[0]
 	policy := testPolicy(t, pki, port)
 	projector := NewNodeProjector(true, policy, identityReaderFunc(func(context.Context) (*models.ObservabilityIdentitySnapshot, error) {
 		return snapshot, nil

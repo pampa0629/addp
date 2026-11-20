@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	commonmodels "github.com/addp/common/models"
@@ -106,19 +107,29 @@ func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context, 
 			}
 			result.EngineDeployments = append(result.EngineDeployments, engine)
 		}
-		var runtime commonmodels.GeoPythonMetricsIdentity
+		var runtimeRows []struct {
+			commonmodels.RuntimeMetricsIdentity
+			EngineType string
+		}
 		current := tx.Raw(`
-			SELECT lease.engine_id, lease.instance_id, lease.started_at, lease.endpoint, lease.lease_expires_at
-			FROM geopython_metrics_lease lease JOIN engines engine ON engine.id = lease.engine_id
-			WHERE lease.singleton AND lease.lease_expires_at > ?
-			  AND engine.engine_type = 'geopython_workflow' AND engine.engine_origin = 'extension'
+			SELECT lease.engine_id, lease.instance_id, lease.started_at, lease.endpoint, lease.lease_expires_at, engine.engine_type
+			FROM runtime_metrics_leases lease JOIN engines engine ON engine.id = lease.engine_id
+			WHERE lease.lease_expires_at > ? AND engine.engine_origin = 'extension'
 			  AND engine.is_builtin AND engine.tenant_id IS NULL AND engine.lifecycle_state = 'active'
-		`, result.ObservedAt).Scan(&runtime)
+			ORDER BY engine.id LIMIT ?
+		`, result.ObservedAt, commonmodels.ObservabilityIdentityEngineLimit+1).Scan(&runtimeRows)
 		if current.Error != nil {
 			return current.Error
 		}
-		if current.RowsAffected == 1 {
-			result.GeoPythonMetrics = &runtime
+		if len(runtimeRows) > commonmodels.ObservabilityIdentityEngineLimit {
+			return ErrObservabilityIdentityBudget
+		}
+		for _, row := range runtimeRows {
+			kind := strings.TrimSuffix(strings.TrimSuffix(row.EngineType, "_workflow"), "_runtime")
+			if commonmodels.RuntimeMetricsEngineType(kind) == row.EngineType {
+				row.Kind = kind
+				result.RuntimeMetrics = append(result.RuntimeMetrics, row.RuntimeMetricsIdentity)
+			}
 		}
 		encoded, err := json.Marshal(result)
 		if err != nil {

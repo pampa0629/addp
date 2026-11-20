@@ -131,6 +131,7 @@ const (
 	PermissionSystemNotebookSessionAuthorizationExecute = "system.notebook_session_authorization.execute"
 	PermissionSystemObservabilityIdentityRead           = "system.observability_identity.read"
 	PermissionSystemOntologyFactExecute                 = "system.ontology_fact.execute"
+	PermissionSystemRuntimeMetricsUpdate                = "system.runtime_metrics.update"
 	PermissionSystemRuntimeRegistryRead                 = "system.runtime_registry.read"
 	PermissionSystemRuntimeRegistryUpdate               = "system.runtime_registry.update"
 	PermissionSystemTaskAuthorizationExecute            = "system.task_authorization.execute"
@@ -265,6 +266,7 @@ var permissionKeys = [...]string{
 	"system.notebook_session_authorization.execute",
 	"system.observability_identity.read",
 	"system.ontology_fact.execute",
+	"system.runtime_metrics.update",
 	"system.runtime_registry.read",
 	"system.runtime_registry.update",
 	"system.task_authorization.execute",

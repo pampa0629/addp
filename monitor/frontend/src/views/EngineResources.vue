@@ -14,8 +14,9 @@
           <el-tab-pane v-for="scope in ['infra','business','runtime']" :key="scope" :name="scope" :label="t(`monitor.engines.scopes.${scope}`)" />
         </el-tabs>
         <div v-if="state.scope === 'runtime' && visible" class="engine-grid">
-          <EngineRuntimeCard :key="identity" ref="runtimeCard" source="geopython" @access-lost="blocked = true" />
+          <EngineRuntimeCard v-for="row in runtimeSources" :key="identity + row.engine_id" ref="computeCards" :engine-id="row.engine_id" :source="row.source" @access-lost="blocked = true" />
         </div>
+        <el-empty v-if="state.scope === 'runtime' && !loading && !errorKey && !runtimeSources.length" :description="t('monitor.engineRuntime.empty')" />
         <template v-if="state.scope !== 'runtime'">
           <form class="toolbar" @submit.prevent="filterInput.submit">
             <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
@@ -111,6 +112,7 @@ function openConfiguration() {
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
 const trendZoom = ref(null)
 const runtimeCard = ref(null)
+const runtimeSources = ref([]), computeCards = ref([])
 const requests = createLatestRequestScope()
 let disposed = false, dataContext = ''
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
@@ -164,6 +166,7 @@ async function reload({ automatic = false } = {}) {
   const context = JSON.stringify([identity.value, state.value.scope, state.value.engineType, state.value.deploymentID, state.value.metric, state.value.range, state.value.search, state.value.page])
   if (context !== dataContext) {
     observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0
+    runtimeSources.value = []
     dataContext = context
   }
   errorKey.value = ''; trendError.value = ''
@@ -174,12 +177,22 @@ async function reload({ automatic = false } = {}) {
   loading.value = true
   let runtimeLoad
   try {
-    if (!state.value.deploymentID && state.value.scope !== 'business') {
+    if (state.value.scope === 'runtime') {
+      const sources = await requests.request(config => api.runtimeSources(config))
+      if (!requests.current(ticket)) return
+      runtimeSources.value = sources
+      await nextTick()
+      for (const card of computeCards.value) {
+        if (!requests.current(ticket) || blocked.value) break
+        await card.reload()
+      }
+      return
+    }
+    if (!state.value.deploymentID && state.value.scope === 'infra') {
       await nextTick()
       if (!requests.current(ticket)) return
       runtimeLoad = runtimeCard.value?.reload()
     }
-    if (state.value.scope === 'runtime') return
     let rows, count
     if (state.value.deploymentID) {
       const owner = validateEngineDeployment(await requests.request(config => api.deployment(state.value.deploymentID, config)))
@@ -224,6 +237,7 @@ async function reload({ automatic = false } = {}) {
     }
   } catch (error) {
     if (!requests.current(ticket)) return
+    runtimeSources.value = []
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) blocked.value = true
     observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0

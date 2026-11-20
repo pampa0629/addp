@@ -137,7 +137,7 @@ const state = computed(() => resolveTargetRoute(route.query, creating.value, !di
 const frontendTab = computed(() => state.value.tab === 'core')
 const engineTab = computed(() => ['infra', 'business'].includes(state.value.tab))
 const manualTab = computed(() => frontendTab.value || state.value.tab === 'nodes')
-const automaticKind = computed(() => ({ core: 'service', infra: 'meilisearch', runtime: 'geopython' })[state.value.tab])
+const automaticKind = computed(() => ({ core: 'service', infra: 'meilisearch', runtime: 'runtime' })[state.value.tab])
 const engineSettings = ref(null), automaticSettings = ref(null)
 const canToggleTargets = computed(() => !dialogOpen.value && canRead.value && auth.hasPermission('monitor.monitoring_target.update'))
 async function toggleTarget(row) {
