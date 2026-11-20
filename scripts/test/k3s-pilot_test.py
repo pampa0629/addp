@@ -95,18 +95,18 @@ class PilotTest(unittest.TestCase):
 
     def test_site_inspection_accepts_only_bound_ready_pod_addresses(self):
         namespace, uid = "pilot", "service-1"
-        port = {"name": "http", "port": 8192, "protocol": "TCP"}
-        svc = {"metadata": {"name": "catalog-backend", "namespace": namespace, "uid": uid},
-               "spec": {"selector": {"app": "catalog"}, "ports": [port]}}
-        owner = {"apiVersion": "v1", "kind": "Service", "name": "catalog-backend", "uid": uid, "controller": True}
+        port = {"name": "api", "port": 8081, "protocol": "TCP"}
+        svc = {"metadata": {"name": "manager-backend", "namespace": namespace, "uid": uid},
+               "spec": {"selector": {"app": "manager"}, "ports": [port]}}
+        owner = {"apiVersion": "v1", "kind": "Service", "name": "manager-backend", "uid": uid, "controller": True}
         endpoint = {"targetRef": {"kind": "Pod", "namespace": namespace, "uid": "pod-1"},
                     "addresses": ["10.42.1.7"], "conditions": {"ready": True, "terminating": False}}
-        labels = {"kubernetes.io/service-name": "catalog-backend",
+        labels = {"kubernetes.io/service-name": "manager-backend",
                   "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io"}
         valid = {"metadata": {"namespace": namespace, "ownerReferences": [owner], "labels": labels},
                  "addressType": "IPv4", "endpoints": [endpoint], "ports": [port]}
-        self.assertEqual(pilot.catalog_endpoints(namespace, uid, svc, [valid, valid]),
-                         [{"pod_uid": "pod-1", "address": "10.42.1.7", "port": 8192}])
+        self.assertEqual(pilot.service_endpoints(namespace, "manager-backend", uid, "api", svc, [valid, valid]),
+                         [{"pod_uid": "pod-1", "address": "10.42.1.7", "port": 8081}])
         for path, value in [
                 (("metadata", "namespace"), "other"),
                 (("metadata", "ownerReferences", 0, "uid"), "replaced"),
@@ -122,12 +122,16 @@ class PilotTest(unittest.TestCase):
                 for key in path[:-1]:
                     parent = parent[key]
                 parent[path[-1]] = value
-                self.assertEqual(pilot.catalog_endpoints(namespace, uid, svc, [candidate]), [])
+                self.assertEqual(pilot.service_endpoints(namespace, "manager-backend", uid, "api", svc, [candidate]), [])
         with self.assertRaisesRegex(ValueError, "binding"):
-            pilot.catalog_endpoints(namespace, "retired-service", svc, [valid])
+            pilot.service_endpoints(namespace, "manager-backend", "retired-service", "api", svc, [valid])
+        with self.assertRaisesRegex(ValueError, "binding"):
+            pilot.service_endpoints(namespace, "other", uid, "api", svc, [valid])
+        with self.assertRaisesRegex(ValueError, "port"):
+            pilot.service_endpoints(namespace, "manager-backend", uid, "other", svc, [valid])
         svc["spec"]["publishNotReadyAddresses"] = True
         with self.assertRaisesRegex(ValueError, "binding"):
-            pilot.catalog_endpoints(namespace, uid, svc, [valid])
+            pilot.service_endpoints(namespace, "manager-backend", uid, "api", svc, [valid])
 
     def test_credentials_are_private_and_publisher_secrets_stay_outside_the_cluster(self):
         with TemporaryDirectory() as directory:

@@ -303,14 +303,13 @@ def bootstrap(args):
     subprocess.run(command, env=env, check=True)
 
 
-def catalog_endpoints(namespace, uid, service, slices):
-    name = NAMES["catalog"]
+def service_endpoints(namespace, name, uid, port_name, service, slices):
     meta, spec = service["metadata"], service["spec"]
     if (not uid or meta["uid"] != uid or meta["namespace"] != namespace or meta["name"] != name
             or meta.get("deletionTimestamp") or not spec.get("selector") or spec.get("publishNotReadyAddresses")):
-        raise ValueError("Catalog Service binding mismatch")
-    if not any(port.get("name") == "http" and port.get("protocol") == "TCP" for port in spec["ports"]):
-        raise ValueError("Catalog Service has no named HTTP port")
+        raise ValueError("Service binding mismatch")
+    if not any(port.get("name") == port_name and port.get("protocol") == "TCP" for port in spec["ports"]):
+        raise ValueError(f"Service has no matching named TCP port: {port_name}")
     endpoints = set()
     for item in slices:
         meta = item["metadata"]
@@ -323,7 +322,7 @@ def catalog_endpoints(namespace, uid, service, slices):
                            and o.get("name") == name and o.get("uid") == uid and o.get("controller") is True
                            for o in owners)):
             continue
-        ports = [p["port"] for p in item.get("ports", []) if p.get("name") == "http"
+        ports = [p["port"] for p in item.get("ports", []) if p.get("name") == port_name
                  and p.get("protocol") == "TCP" and isinstance(p.get("port"), int) and 1 <= p["port"] <= 65535]
         if len(ports) != 1 or item["addressType"] not in ("IPv4", "IPv6"):
             continue
@@ -340,17 +339,18 @@ def catalog_endpoints(namespace, uid, service, slices):
     return [{"pod_uid": uid, "address": addr, "port": port} for uid, addr, port in sorted(endpoints)]
 
 
-def inspect_catalog(args):
+def inspect_service(args):
     cluster = Cluster(args.context, args.namespace)
-    svc_args = ("get", "service", NAMES["catalog"], "-o", "json")
+    svc_args = ("get", f"service/{args.service}", "-o", "json")
     service = json.loads(cluster.run(*svc_args, capture=True))
     slices = json.loads(cluster.run("get", "endpointslices.discovery.k8s.io", "-l",
-                                    "kubernetes.io/service-name=catalog-backend", "-o", "json", capture=True))
+                                    f"kubernetes.io/service-name={args.service}", "-o", "json", capture=True))
     confirmed = json.loads(cluster.run(*svc_args, capture=True))
     if confirmed["metadata"]["resourceVersion"] != service["metadata"]["resourceVersion"]:
-        raise ValueError("Catalog Service changed during inspection")
-    endpoints = catalog_endpoints(args.namespace, args.service_uid, confirmed, slices["items"])
-    print(json.dumps({"namespace": args.namespace, "service_uid": args.service_uid, "endpoints": endpoints}))
+        raise ValueError("Service changed during inspection")
+    endpoints = service_endpoints(args.namespace, args.service, args.service_uid, args.port_name, confirmed, slices["items"])
+    print(json.dumps({"namespace": args.namespace, "service": args.service, "service_uid": args.service_uid,
+                      "port_name": args.port_name, "endpoints": endpoints}))
 
 
 def verify(args):
@@ -446,9 +446,11 @@ def main():
             action.add_argument("--storage-class", required=True)
         else:
             action.add_argument("--reader-token-file", type=Path, required=True)
-    check = actions.add_parser("inspect-catalog")
+    check = actions.add_parser("inspect-service")
     check.add_argument("--context", required=True)
     check.add_argument("--namespace", required=True)
+    check.add_argument("--service", required=True)
+    check.add_argument("--port-name", required=True)
     check.add_argument("--service-uid", required=True)
     action = actions.add_parser("bootstrap")
     action.add_argument("phase", choices=("prepare", "apply"))
@@ -464,8 +466,8 @@ def main():
             create_credentials(read_bundle(args.bundle, "arm64"), args.credentials)
         elif args.action == "install":
             install(args)
-        elif args.action == "inspect-catalog":
-            inspect_catalog(args)
+        elif args.action == "inspect-service":
+            inspect_service(args)
         elif args.action == "bootstrap":
             bootstrap(args)
         else:

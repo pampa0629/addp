@@ -97,10 +97,15 @@ python3 arm64/k3s-pilot.py verify \
 安装时在受信集群上下文中记录 Catalog Service UID。后续用原始记录核对同名 Service 和由原生控制器发布的 EndpointSlice。操作身份需能读取指定 Service 并列举试点 namespace 内的 EndpointSlice。检查只输出当次符合条件的 Pod UID、地址及具名 TCP 端口。Service 身份不符时命令失败；绑定有效且无可用端点时输出空数组。
 
 ```bash
-python3 arm64/k3s-pilot.py inspect-catalog \
-  --context SITE_CONTEXT --namespace addp-registry-pilot --service-uid "$APPROVED_SERVICE_UID"
+python3 arm64/k3s-pilot.py inspect-service \
+  --context SITE_CONTEXT --namespace addp-registry-pilot --service catalog-backend \
+  --service-uid "$APPROVED_SERVICE_UID" --port-name http
 ```
 
 故障演练前、摘除后、恢复后分别保存输出。Kubernetes 端点状态和 Gateway 实际转发各自取证；Gateway 使用的发现来源见部署配置。
 
 使用多模块 Kubernetes 发现的 System 从 `ADDP_KUBERNETES_DISCOVERY_BINDINGS` 指定的文件读取绑定。文件以模块名为键，例如 `{"catalog": {...}, "meta": {...}}`。每个值都按该模块实际的 Service UID、端口和信任材料填写。升级已有 Catalog 试点时，应在同一次 System 工作负载变更中更新配置文件及环境变量，并使所有 System 副本采用同一份配置。Meta 的部署继续保留原 Backend 和 Worker 的 System 登记凭据，以支持内嵌 Scheduler 及 Worker 领取工作。端点查询验收应分别使用 Gateway、Monitor 和 Transfer 自身的服务身份。
+
+扩展到 Manager 等已部署模块时，先从站点交付记录取得获准的 Service 名、UID 和端口名，用同一条 `inspect-service` 命令核对。部署管理员将该 Service 名加入本 namespace 发现 Role 的 services 规则 resourceNames，保留 list、watch；EndpointSlice 规则和 RoleBinding 沿用原配置。将新增模块的绑定与现有绑定合并到新建的不可变 ConfigMap，更新 System Deployment 的投射卷引用，等所有 System 副本采用新配置并 Ready 后验收。Service 被同名重建时需重新确认新 UID。
+
+Manager 验收先保留切换前的导出和 CSV 摘要。切换后用 Transfer 自身的平台服务身份查询 Manager 端点，核对 Pod UID、具名端口和地址，再通过 Gateway 完成同一测试表的导出并比较 CSV。临时撤回隔离试点的 Manager 端点时，Transfer 查询应返回空数组，Gateway 的 Manager 业务请求应返回 503。同期真实 Manager 进程继续向 System 续租。恢复原 Service 选择器后，应再次观察到可用端点和成功的业务请求。
