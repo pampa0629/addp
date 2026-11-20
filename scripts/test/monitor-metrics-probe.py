@@ -423,7 +423,7 @@ def check_native_meilisearch(module, docker, admission_items, verify_admission):
 if __import__('sys').argv[1:] == ['--cleanup-cdc']:
     module = cdc_lifecycle()
     docker = module.deployment.Docker(os.environ)
-    for kind in module.PREFIXES:
+    for kind in (*CDC_KINDS, 'meilisearch'):
         state = WORK.resolve()/'cdc-state'/kind
         if state.exists():
             module.run('down','infra',kind,cdc_environment(module,kind))
