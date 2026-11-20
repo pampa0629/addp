@@ -4,13 +4,14 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"strings"
 
 	"github.com/addp/common/schema"
 	"gorm.io/gorm"
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 7
+const mysqlIAMFoundationVersion int64 = 8
 
 //go:embed mysql_iam/*.sql
 var mysqlIAMFoundationSQL embed.FS
@@ -33,15 +34,20 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 		if err != nil {
 			return err
 		}
+		var triggers []string
 		for _, migration := range migrations {
 			ddl, err := mysqlIAMFoundationSQL.ReadFile("mysql_iam/" + migration.Name())
 			if err != nil {
 				return err
 			}
+			if strings.HasPrefix(string(ddl), "CREATE TRIGGER ") {
+				triggers = append(triggers, string(ddl))
+				continue
+			}
 			if err := conn.Exec(string(ddl)).Error; err != nil {
 				return fmt.Errorf("apply System MySQL IAM migration %s: %w", migration.Name(), err)
 			}
 		}
-		return nil
+		return checkMySQLIAMTriggers(conn, triggers)
 	})
 }
