@@ -466,6 +466,7 @@ func testMySQLBrowserSession(t *testing.T, db *gorm.DB) {
 	if err := repo.CreateTenantMembership(ctx, &member); err != nil {
 		t.Fatal(err)
 	}
+	prepareMySQLBrowserOrganization(t, db, member)
 	tokens, err := iam.NewTokenFamilyService(repo, iam.BrowserSessionConfig{
 		ResourceTicketOwners: models.BrowserResourceAccessOwners,
 	}, nil, nil)
@@ -487,6 +488,7 @@ func testMySQLBrowserSession(t *testing.T, db *gorm.DB) {
 		t.Fatal("single tenant context did not issue a session")
 	}
 	session := result.Session
+	verifyMySQLBrowserOrganization(t, db, member, session.AccessToken)
 	if len(session.ResourceAccessTickets) != len(models.BrowserResourceAccessOwners) || session.AccessToken == "" || session.RefreshToken == "" {
 		t.Fatal("incomplete first-party browser credentials")
 	}

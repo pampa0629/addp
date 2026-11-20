@@ -1,0 +1,3 @@
+CREATE TRIGGER IF NOT EXISTS trg_project_group_memberships_before_insert
+BEFORE INSERT ON project_group_memberships FOR EACH ROW
+CALL validate_project_group_membership(NEW.tenant_id,NEW.project_group_id,NEW.tenant_membership_id,NEW.status)

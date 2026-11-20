@@ -1,0 +1,3 @@
+CREATE TRIGGER IF NOT EXISTS trg_project_group_memberships_after_insert
+AFTER INSERT ON project_group_memberships FOR EACH ROW
+CALL bump_organization_member(NEW.tenant_membership_id)

@@ -2,6 +2,7 @@ package iam
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -54,7 +55,7 @@ type DepartmentMembershipProjection struct {
 	DepartmentID   int64
 	MembershipType string
 	RelationRole   string
-	AncestorIDs    pq.Int64Array `gorm:"type:bigint[]"`
+	AncestorIDs    []int64
 }
 
 type ProjectGroupMembershipProjection struct {
@@ -213,7 +214,7 @@ func (r *Repository) GetResourceAccessTicketAuthSnapshot(
 			membership.joined_at AS tenant_membership_joined_at,
 			membership.expires_at AS tenant_membership_expires_at,
 			tenant.status AS tenant_status,
-			` + r.statementTimeSQL() + ` AS database_time
+			`+r.statementTimeSQL()+` AS database_time
 		FROM system.resource_access_tickets ticket
 		JOIN system.refresh_token_families family ON family.id = ticket.family_id
 		JOIN system.principals principal ON principal.id = family.principal_id
@@ -296,8 +297,7 @@ func (r *Repository) ListEffectiveDepartmentMemberships(
 	tenantMembershipID int64,
 	tenantID int64,
 ) ([]DepartmentMembershipProjection, error) {
-	var memberships []DepartmentMembershipProjection
-	err := r.db.WithContext(ctx).Raw(`
+	rows, err := r.db.WithContext(ctx).Raw(`
 		WITH RECURSIVE direct_memberships AS (
 			SELECT
 				membership.id AS membership_id,
@@ -327,17 +327,32 @@ func (r *Repository) ListEffectiveDepartmentMemberships(
 			direct.department_id,
 			direct.membership_type,
 			direct.relation_role,
-			COALESCE(
-				array_agg(ancestor.ancestor_id ORDER BY ancestor.depth DESC)
-					FILTER (WHERE ancestor.ancestor_id IS NOT NULL),
-				ARRAY[]::bigint[]
-			) AS ancestor_ids
+			ancestor.ancestor_id
 		FROM direct_memberships direct
 		LEFT JOIN ancestors ancestor ON ancestor.origin_id = direct.department_id
-		GROUP BY direct.membership_id, direct.department_id, direct.membership_type, direct.relation_role
-		ORDER BY direct.department_id ASC
-	`, tenantMembershipID, tenantID, tenantID, tenantID).Scan(&memberships).Error
+		ORDER BY direct.department_id, direct.membership_id, ancestor.depth DESC
+	`, tenantMembershipID, tenantID, tenantID, tenantID).Rows()
 	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	defer rows.Close()
+	var memberships []DepartmentMembershipProjection
+	for rows.Next() {
+		var member DepartmentMembershipProjection
+		var ancestor sql.NullInt64
+		if err := rows.Scan(&member.MembershipID, &member.DepartmentID, &member.MembershipType, &member.RelationRole, &ancestor); err != nil {
+			return nil, wrapRepositoryError(err)
+		}
+		if len(memberships) == 0 || memberships[len(memberships)-1].MembershipID != member.MembershipID {
+			member.AncestorIDs = []int64{}
+			memberships = append(memberships, member)
+		}
+		if ancestor.Valid {
+			current := &memberships[len(memberships)-1]
+			current.AncestorIDs = append(current.AncestorIDs, ancestor.Int64)
+		}
+	}
+	if err := rows.Err(); err != nil {
 		return nil, wrapRepositoryError(err)
 	}
 	return memberships, nil
