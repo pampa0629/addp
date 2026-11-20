@@ -458,6 +458,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-workbench-postgres
 
 test-integration-hosted: test-integration ## 严格串行追加 hosted-only disposable 基础设施门禁
+	@$(MAKE) test-common-apache-kafka
 	@$(MAKE) test-common-spark-table
 	@$(MAKE) test-common-opengauss
 	@$(MAKE) test-common-oracle-decimal
@@ -510,6 +511,10 @@ test-common-nfs-unit: ## NFS 普通文件、软链接拒绝与句柄绑定读取
 .PHONY: test-common-nfs-publication
 test-common-nfs-publication: ## Hosted 独占原生 NFSv3：完整暂存、无覆盖发布及未知结果核清
 	@bash scripts/test/common-nfs-publication-gate.sh
+
+.PHONY: test-common-apache-kafka
+test-common-apache-kafka: ## 独占 Apache Kafka 验证 CDC 消费位置、身份边界及 Transfer 死信
+	@bash scripts/test/common-apache-kafka-gate.sh
 
 .PHONY: test-common-ftp test-common-ftp-unit
 test-common-ftp-unit: ## FTP 配置、路径、取消和生命周期静态验证

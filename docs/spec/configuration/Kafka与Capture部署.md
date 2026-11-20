@@ -20,6 +20,9 @@
 
 Infra Kafka 是 ADDP 部署资源，不进入 System Engine。正式实现固定为 Redpanda v24.3.18 + Debezium Connect 3.6.0.Final；开发环境为 1 broker/1 Connect，生产参考为 3 broker/至少 2 Connect worker。消费者通过 Kafka API 访问部署选定的消息流。Apache Kafka 是新装候选，待验证 Connect、主题和 ACL 初始化、持续消费断点恢复及死信重放后开放。本次选型仅涉及已有消息流，模块运行日志沿用 Alloy 和 Loki。
 
+Apache Kafka 4.4.0 的协议验收入口为 `make test-common-apache-kafka`。门禁使用经 SHA-512 核对的 Apache 发行包，在独占环境的回环地址启动单个 KRaft broker，以独立的 Connect 和 Transfer 身份核对 CDC 写入、消费组断点续读、受限主题拒绝，以及 Transfer 死信写入、按偏移读回和删除后状态。隔离机须设置 `ADDP_KAFKA_T2_DISPOSABLE=1`，可用 `ADDP_KAFKA_T2_ARCHIVE` 指向已下载的同版本压缩包。部署选型开放前还需验收真实 Debezium Connect、源端变更以及端到端重放。
+
+
 ### 环境变量示例
 
 ```bash
