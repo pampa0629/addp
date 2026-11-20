@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import ipaddress
 import json
+import mmap
 import os
 from pathlib import Path
 import ssl
@@ -168,6 +169,17 @@ class SourceTLSRejection(unittest.TestCase):
 
 
 class SourceContract(unittest.TestCase):
+    def test_rss_tracks_resident_pages_after_unmapping(self):
+        read_rss = source._resident_bytes_reader()
+        baseline = read_rss()
+        length = 16 << 20
+        with mmap.mmap(-1, length) as region:
+            for offset in range(0, length, mmap.PAGESIZE):
+                region[offset] = 1
+            resident = read_rss()
+        self.assertGreater(resident - baseline, length // 2)
+        self.assertGreater(resident - read_rss(), length // 2)
+
     def test_real_mtls_fixed_endpoint_identity_and_graceful_close(self):
         import shutil
         import socket
@@ -184,9 +196,19 @@ class SourceContract(unittest.TestCase):
             self.assertIsNotNone(running)
             try:
                 ctx=ssl.create_default_context(cafile=str(root/'ca.crt'));ctx.load_cert_chain(root/'client.crt',root/'client.key')
+                cpu_before = time.process_time()
                 with urllib.request.urlopen(entry['endpoint'],context=ctx,timeout=4) as response:
                     body=response.read().decode()
-                self.assertIn('addp_process_identity_info',body);self.assertNotIn('process_cpu',body)
+                cpu_after = time.process_time()
+                self.assertIn('addp_process_identity_info',body)
+                samples = {sample.name: sample for family in text_string_to_metric_families(body) for sample in family.samples}
+                cpu = samples['process_cpu_seconds_total']
+                rss = samples['process_resident_memory_bytes']
+                self.assertEqual(cpu.labels, {})
+                self.assertEqual(rss.labels, {})
+                self.assertLessEqual(cpu_before, cpu.value)
+                self.assertLessEqual(cpu.value, cpu_after)
+                self.assertGreater(rss.value, 0)
                 self.assertEqual(running.declaration.schema_version,'addp.process-metrics/v1')
                 from urllib.error import HTTPError
                 for path,status in (('/metrics?x=1',404),('/other',404)):

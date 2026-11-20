@@ -137,11 +137,13 @@ def run(scope):
         record_path=source/'process-records.json';record_path.write_text(json.dumps(records))
         selector='{job="addp_nodes",addp_monitor_kind="process_resources",addp_module_name=~"agent|copilot"}'
         eventually(lambda: len(query('addp_http_server_requests_total'+selector))==2,'two Python HTTP identities in the sole SD job')
-        assert not query('process_cpu_seconds_total'+selector) and not query('process_resident_memory_bytes'+selector)
         def complete_window():
-            samples=query('addp_http_server_requests_total'+selector+' offset 1m')
-            return len(samples)==2
-        eventually(complete_window,'two Python SDK minute windows',seconds=100)
+            cpu = 'process_cpu_seconds_total' + selector
+            samples = query('rate(' + cpu + '[1m]) >= 0 and (' + cpu + ' offset 1m) and '
+                            '(process_resident_memory_bytes' + selector + ' > 0) and '
+                            '(addp_http_server_requests_total' + selector + ' offset 1m)')
+            return {sample['metric']['addp_module_name'] for sample in samples} == {'agent', 'copilot'}
+        eventually(complete_window,'two Python SDK CPU, RSS and HTTP minute windows',seconds=100)
         env=dict(os.environ,GOWORK='off',ADDP_METRICS_QUERY_INTEGRATION='1',MONITOR_PROMETHEUS_URL=scope['base'],MONITOR_PROMETHEUS_CA_FILE=str(scope['TLS']/'ca.crt'),MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(work/'query-tls/client.crt'),MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(work/'query-tls/client.key'),ADDP_PROCESS_T2_RECORDS=str(record_path))
         phase='query'
         subprocess.run([str(work/'http-query.test'),'-test.run=^TestIntegrationMetricsHTTPRealSource$','-test.count=1','-test.v'],cwd=root/'monitor/backend',env=env,check=True,timeout=120)

@@ -6,7 +6,7 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 
 ## 服务端 HTTP 观测
 
-Agent/Copilot 的单进程 Backend 共用 `addp_common.httpmetrics.server.HTTPObservationMiddleware`，统一记录完整 HTTP 请求并结束可选 Trace；流式响应、认证／Ready 拒绝与异常均沿同一次生命周期处理。全量指标与 Trace 采样独立，原仅 Trace 的服务端入口已删除。指标使用私有 Registry，身份与启动时间沿正式 ModuleRegistration，不默认导出 Python CPU、RSS 或 GC。
+Agent/Copilot 的单进程 Backend 共用 `addp_common.httpmetrics.server.HTTPObservationMiddleware`，统一记录完整 HTTP 请求并结束可选 Trace；流式响应、认证／Ready 拒绝与异常均沿同一次生命周期处理。全量指标与 Trace 采样独立，原仅 Trace 的服务端入口已删除。启用私有指标端点后，Registry 发布正式 ModuleRegistration 的身份、启动时间，以及本进程累计 CPU 秒数与当前 RSS 字节数。
 
 受保护来源由 `addp_common.httpmetrics.start_optional(registration)` 在服务生命周期内启用，仅成功监听后发布私有 `process_metrics` 声明；退出关闭来源。开发使用现有逐启动单元计划，产品部署使用同一 SDK 输入与仓库外只读证书。权限、512 组合／4 MiB 边界及本地验证标准见[平台运行观测规范 6.4](../docs/spec/addp平台运行观测规范.md#64-http-接口质量分阶段接入)，不能将本批记作其他 Runtime 或正式身份已验收。
 

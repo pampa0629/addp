@@ -10,13 +10,14 @@ import re
 import socket
 import ssl
 import stat
+import sys
 import threading
 import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlsplit
 
-from prometheus_client.core import GaugeMetricFamily
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from . import MetricsUnavailable, process
 
 logger = logging.getLogger('addp.httpmetrics')
@@ -147,11 +148,44 @@ def source_tls(directory, endpoint):
     return context
 
 
-class Identity:
+def _resident_bytes_reader():
+    if sys.platform == 'linux':
+        page_size = os.sysconf('SC_PAGE_SIZE')
+
+        def linux_rss():
+            resident_pages = Path('/proc/self/statm').read_text().split()[1]
+            return int(resident_pages) * page_size
+
+        return linux_rss
+
+    if sys.platform != 'darwin':
+        raise ValueError('source_platform_unsupported')
+
+    import ctypes
+
+    # Darwin's PROC_PIDTASKINFO returns six uint64s followed by twelve int32s.
+    class TaskInfo(ctypes.Structure):
+        _fields_ = [('virtual_size', ctypes.c_uint64), ('resident_size', ctypes.c_uint64),
+                    ('cpu_times', ctypes.c_uint64 * 4), ('counts', ctypes.c_int32 * 12)]
+
+    proc_pidinfo = ctypes.CDLL('/usr/lib/libproc.dylib').proc_pidinfo
+    proc_pidinfo.argtypes = (ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
+                             ctypes.POINTER(TaskInfo), ctypes.c_int)
+    proc_pidinfo.restype = ctypes.c_int
+
+    def darwin_rss():
+        info = TaskInfo()
+        size = ctypes.sizeof(info)
+        if proc_pidinfo(os.getpid(), 4, 0, ctypes.byref(info), size) != size:
+            raise MetricsUnavailable('process_resident_memory_unavailable')
+        return info.resident_size
+
+    return darwin_rss
+
+
+class RegisteredProcessCollector:
     def __init__(self, registration):
-        import sys
-        if sys.platform not in {'darwin','linux'}:
-            raise ValueError('source_platform_unsupported')
+        self.resident_bytes = _resident_bytes_reader()
         self.labels = [registration.module_name, registration.role, registration.instance_id, sys.platform, SCHEMA]
         started = datetime.fromisoformat(registration.process_started_at.replace('Z','+00:00'))
         if started.tzinfo is None or not registration.instance_id.strip() or registration.instance_id != registration.instance_id.strip() or any(ord(c)<32 for c in registration.instance_id):
@@ -166,6 +200,10 @@ class Identity:
         info.add_metric(self.labels, 1)
         yield info
         yield GaugeMetricFamily('process_start_time_seconds','Registered process start time.',value=self.started)
+        yield CounterMetricFamily('process_cpu_seconds_total', 'Current process user and system CPU time in seconds.',
+                                  value=time.process_time())
+        yield GaugeMetricFamily('process_resident_memory_bytes', 'Current process resident memory in bytes.',
+                                value=self.resident_bytes())
 
 
 class _Server(HTTPServer):
@@ -300,14 +338,14 @@ def start_optional(registration):
         if entry is None:
             return None
         metrics = process()
-        identity = Identity(registration)
+        collector = RegisteredProcessCollector(registration)
         declaration = ProcessMetricsDeclaration(schema_version=SCHEMA, endpoint=entry['endpoint'])
-        metrics.registry.register(identity)
+        metrics.registry.register(collector)
         try:
             return start_private_source(entry['listen'], entry['endpoint'], entry['tls_dir'], metrics.render,
-                                        declaration=declaration, cleanup=lambda: metrics.registry.unregister(identity))
+                                        declaration=declaration, cleanup=lambda: metrics.registry.unregister(collector))
         except Exception:
-            metrics.registry.unregister(identity)
+            metrics.registry.unregister(collector)
             raise
     except Exception:
         logger.warning('http_metrics_source_unavailable')

@@ -22,7 +22,7 @@ Go 自身进程采集由唯一启动输入 `ADDP_PROCESS_METRICS_DEPLOYMENTS` �
 
 macOS 本地 Docker Desktop 的唯一宿主通道输入为 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS`，空值关闭转换，非空为最多 96 个不重复的规范非零端口，以逗号分隔且不含空项或空格。该输入只改变同一 HTTP SD Job 中已发现来源的传输地址：先保留原 `instance`，将列表内 `127.0.0.1:端口` 精确转换为同端口 `host.docker.internal`；其他地址与端口不转换。它不授权来源、不部署来源、不扩大采集预算、不覆盖 Monitor 的 CIDR/端口准入策略。来源服务器证书同时覆盖回环 IP 与宿主通道 DNS；不覆盖 TLS server_name。配置变更须由标准指标入口重新应用中心。原单端口输入已删除，不保留兼容读取。
 
-Python Agent/Copilot 的单进程 backend 复用同一开发计划、SDK 五字段输入及产品只读证书投射；不新增 Python 专用端口表或第二个开关。仅发布 HTTP 指标和身份／启动时间，不启用 CPU、RSS 或 cgroup，选择 `cgroup_v2=true` 时拒绝当次可选来源。来源成功绑定后才随同一正式注册发布 `process_metrics`；当前实例声明不可变，未选择或源准备失败不发布，运行中源不可用沿 scrape 失败表达。指标与 Trace 开关独立，业务 Ready 不依赖来源；其资源及全量语义见运行观测规范 6.4。
+Python Agent/Copilot 的单进程 backend 复用同一开发计划、SDK 五字段输入及产品只读证书投射；不新增 Python 专用端口表或第二个开关。发布 HTTP 指标、身份、启动时间，以及本进程的累计 CPU 秒数与当前 RSS 字节数。选择 `cgroup_v2=true` 时拒绝当次可选来源。来源成功绑定后才随同一正式注册发布 `process_metrics`；当前实例声明不可变，未选择或源准备失败不发布，运行中源不可用沿 scrape 失败表达。指标与 Trace 开关独立，业务 Ready 不依赖来源；其资源及全量语义见运行观测规范 6.4。
 
 ## 告警评估与通知策略
 

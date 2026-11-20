@@ -46,7 +46,7 @@ HTTP 监控默认在线，显式切换已停源实例后用原 System 分页条�
 
 Common Python 唯一 ASGI 观测入口向全量 HTTP 指标和可选 Trace 提供生命周期事实，替换仅 Trace 中间件，不叠加计量路径。指标不依赖 Trace 开关／采样；正常响应在最后 body 成功发送时结束，取消、超时、写失败或异常只结束一次。Ready、认证拒绝、404、健康请求均计量，正文／流式消息原样透传，响应完成后的后台异常不改 HTTP 结果。当前接入 Agent／Copilot 单进程 backend，不接 WebSocket／其他 Runtime。
 
-复用 `addp.process-metrics/v1`、进程实例／启动时间、`ADDP_PROCESS_METRICS_DEPLOYMENTS` 和开发启动单元计划；来源只发布身份、启动时间及与 Go 同名／同桶／同维度的 HTTP 指标，Python CPU／RSS／cgroup 不在此范围、不补零。服务器启动成功后才交正式 ModuleRegistration，来源故障／配置失败／关闭不改变业务 Ready 或同实例不可变声明；每副本独立地址、证书、实例及 Registry，不多进程共享。
+复用 `addp.process-metrics/v1`、进程实例／启动时间、`ADDP_PROCESS_METRICS_DEPLOYMENTS` 和开发启动单元计划；来源发布身份、启动时间及与 Go 同名／同桶／同维度的 HTTP 指标。每次抓取同时读取本进程的累计 CPU 时间（用户态与内核态之和，秒）及当前 RSS（字节），由 Monitor 按既有一分钟窗口计算 CPU 平均核数。进程资源读取失败时该次抓取失败。Python 来源仅支持进程级观测。服务器启动成功后才交正式 ModuleRegistration，来源故障／配置失败／关闭不改变业务 Ready 或同实例不可变声明；每副本独立地址、证书、实例及 Registry，不多进程共享。
 
 私有 Registry 经独立 mTLS HTTPS `/metrics` 暴露，仅 GET、无 query／正文，不挂业务端口；证书、显式地址、固定 IP 准入、采集身份及唯一 HTTP SD 沿既有链路，新增来源占原预算。开发／产品部署同批支持 Agent／Copilot，不新增配置路线、用户权限／角色或 Monitor 公开 API。统计／规则沿 Platform 权限和当前 User 实例裁决，Tenant 发布服务质量仍归 Service。
 
