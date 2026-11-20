@@ -2,6 +2,7 @@ package catalogdiscovery
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -33,8 +34,9 @@ type Binding struct {
 }
 
 type Source struct {
-	binding Binding
-	client  *http.Client
+	binding     Binding
+	client      *http.Client
+	trustDigest [sha256.Size]byte
 }
 
 func Open(path string) (*Source, error) {
@@ -60,8 +62,16 @@ func Open(path string) (*Source, error) {
 		return nil, errors.New("invalid Kubernetes CA file")
 	}
 	b.APIServer = strings.TrimRight(b.APIServer, "/")
-	return &Source{b, &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &Source{binding: b, trustDigest: sha256.Sum256(pem), client: &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
+
+// BindingID scopes a stored observation to the configured cluster trust, Service and port.
+func (s *Source) BindingID() string {
+	b := s.binding
+	key, _ := json.Marshal([]string{fmt.Sprintf("%x", s.trustDigest), b.APIServer, b.Namespace, b.Service, b.ServiceUID, b.PortName})
+	return fmt.Sprintf("%x", sha256.Sum256(key))
+}
+
 func validSegment(s string) bool {
 	return s != "" && s != "." && s != ".." && url.PathEscape(s) == s && !strings.Contains(s, "/")
 }

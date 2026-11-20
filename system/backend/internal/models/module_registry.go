@@ -81,6 +81,13 @@ type ModuleRegistryState struct {
 
 func (ModuleRegistryState) TableName() string { return "module_registry_state" }
 
+// ModuleDiscoverySnapshot holds the confirmed route endpoints for one external binding.
+type ModuleDiscoverySnapshot struct {
+	ModuleName string         `gorm:"primaryKey"`
+	BindingID  string         `gorm:"not null"`
+	Endpoints  datatypes.JSON `gorm:"type:jsonb;not null"`
+}
+
 // ModuleDeclarationFields is the complete set of fields owned by the module publisher.
 // A pointer distinguishes the Gateway's explicit empty prefix from an omitted field.
 type ModuleDeclarationFields struct {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -562,7 +563,7 @@ func (r *ModuleRegistryRepository) GetRegistryRevision() (int64, error) {
 }
 
 // RoutingSnapshot reads the cursor and eligible forwarding addresses from one database snapshot.
-func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, catalogEndpoints []commonmodels.ModuleRoutingEndpoint) (*commonmodels.ModuleRoutingSnapshot, error) {
+func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, catalogBindingID string) (*commonmodels.ModuleRoutingSnapshot, error) {
 	snapshot := &commonmodels.ModuleRoutingSnapshot{ObservedAt: time.Now(), Endpoints: []commonmodels.ModuleRoutingEndpoint{}}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -576,24 +577,30 @@ func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, catalogE
 			Where("d.enabled = ? AND d.declaration_published_at IS NOT NULL", true).
 			Where("i.role = ? AND i.status = ? AND i.module_url <> '' AND i.lease_expires_at > ?", models.ModuleRuntimeRoleBackend, models.ModuleRuntimeStatusUp, snapshot.ObservedAt).
 			Order("d.module_name, i.instance_id")
-		if catalogEndpoints != nil {
+		if catalogBindingID != "" {
 			query = query.Where("d.module_name <> ?", "catalog")
 		}
 		if err := query.Scan(&snapshot.Endpoints).Error; err != nil {
 			return err
 		}
-		if len(catalogEndpoints) == 0 {
+		if catalogBindingID == "" {
 			return nil
 		}
-		var enabled int64
-		if err := tx.Model(&models.ModuleDefinition{}).Where("module_name = ? AND enabled = ? AND declaration_published_at IS NOT NULL", "catalog", true).Count(&enabled).Error; err != nil {
+		var saved models.ModuleDiscoverySnapshot
+		result := tx.Table("module_discovery_snapshots AS s").Select("s.*").
+			Joins("JOIN module_definitions AS d ON d.module_name = s.module_name").
+			Where("s.module_name = ? AND s.binding_id = ? AND d.enabled = ? AND d.declaration_published_at IS NOT NULL", "catalog", catalogBindingID, true).
+			Scan(&saved)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		var endpoints []commonmodels.ModuleRoutingEndpoint
+		if err := json.Unmarshal(saved.Endpoints, &endpoints); err != nil {
 			return err
 		}
-		if enabled > 0 {
-			for _, endpoint := range catalogEndpoints {
-				if endpoint.ExpiresAt.After(snapshot.ObservedAt) {
-					snapshot.Endpoints = append(snapshot.Endpoints, endpoint)
-				}
+		for _, endpoint := range endpoints {
+			if endpoint.ExpiresAt.After(snapshot.ObservedAt) {
+				snapshot.Endpoints = append(snapshot.Endpoints, endpoint)
 			}
 		}
 		return nil
@@ -601,8 +608,68 @@ func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, catalogE
 	return snapshot, err
 }
 
-func (r *ModuleRegistryRepository) AdvanceRoutingRevision(ctx context.Context) error {
-	return bumpModuleRegistryRevision(r.db.WithContext(ctx), time.Now())
+// WithDiscoveryWriter pins observation and every publication to the same physical
+// PostgreSQL session. A disconnected observer cannot use a replacement connection.
+func (r *ModuleRegistryRepository) WithDiscoveryWriter(ctx context.Context, module, binding string, observe func(func([]commonmodels.ModuleRoutingEndpoint) error) error) error {
+	pool, err := r.db.DB()
+	if err != nil {
+		return err
+	}
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	key := "system.module_discovery/" + module
+	var locked bool
+	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtextextended($1, 0))", key).Scan(&locked); err != nil {
+		// The server may have acquired the lock before the reply was lost.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		return err
+	}
+	if !locked {
+		return nil
+	}
+	defer func() {
+		release, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var released bool
+		if err := conn.QueryRowContext(release, "SELECT pg_advisory_unlock(hashtextextended($1, 0))", key).Scan(&released); err != nil || !released {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+	}()
+	return observe(func(endpoints []commonmodels.ModuleRoutingEndpoint) error {
+		return publishDiscoverySnapshot(ctx, conn, module, binding, endpoints)
+	})
+}
+
+func publishDiscoverySnapshot(ctx context.Context, conn *sql.Conn, module, binding string, endpoints []commonmodels.ModuleRoutingEndpoint) error {
+	payload, err := json.Marshal(endpoints)
+	if err != nil {
+		return err
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `INSERT INTO module_discovery_snapshots (module_name,binding_id,endpoints)
+        VALUES ($1,$2,$3) ON CONFLICT (module_name) DO UPDATE SET binding_id=excluded.binding_id,endpoints=excluded.endpoints
+        WHERE module_discovery_snapshots.binding_id IS DISTINCT FROM excluded.binding_id OR module_discovery_snapshots.endpoints IS DISTINCT FROM excluded.endpoints`, module, binding, string(payload))
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 0 {
+		var revision int64
+		if err := tx.QueryRowContext(ctx, "UPDATE module_registry_state SET revision=revision+1, updated_at=CURRENT_TIMESTAMP WHERE id=1 RETURNING revision").Scan(&revision); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func bumpModuleRegistryRevision(tx *gorm.DB, now time.Time) error {

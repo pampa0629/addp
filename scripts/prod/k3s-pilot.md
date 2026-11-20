@@ -48,7 +48,7 @@ python3 arm64/k3s-pilot.py install \
   --credentials "$HOME/addp-pilot-site/credentials.json"
 ```
 
-验证 Kubernetes 发现时，在上面的 `install` 和下文的 `verify` 命令都追加 `--catalog-source kubernetes`。安装脚本先创建 Catalog Service，记录创建响应中的 UID，将绑定写入不可变 ConfigMap，并为 System 单独投射集群 CA 和轮换令牌。发现身份只能 list/watch 指定的 Service 和本 namespace 的 EndpointSlice。Catalog 启动两个副本，停止登记与心跳。验收身份需能在试点 Catalog Pod 中读取 `/var/log/addp/catalog` 下的请求完成记录（`pods/exec`）。发现身份仅持有上述读取集群资源的权限。默认 `--catalog-source system` 使用单个 Catalog 副本。
+验证 Kubernetes 发现时，在上面的 `install` 和下文的 `verify` 命令都追加 `--catalog-source kubernetes`。安装脚本先创建 Catalog Service，记录创建响应中的 UID，将绑定写入不可变 ConfigMap，并为 System 单独投射集群 CA 和轮换令牌。发现身份只能 list/watch 指定的 Service 和本 namespace 的 EndpointSlice。System 首次就绪并完成声明发布后扩为两个副本，从共享数据库读取路由。Catalog 启动两个副本，停止登记与心跳。验收身份需能在试点 Catalog Pod 中读取 `/var/log/addp/catalog` 下的请求完成记录（`pods/exec`）。发现身份仅持有上述读取集群资源的权限。默认 `--catalog-source system` 使用单个 Catalog 副本。
 
 初始化凭据命令拒绝覆盖已有文件。安装先校验两份包属于同一提交，再创建 namespace 及新卷。System Ready 后使用 System 镜像内已有发布命令部署三个声明，完成后才启动 Gateway 和 Catalog。发布密钥不进入 Kubernetes Secret 或长驻业务进程。安装失败应保留当前 namespace 和事件以便诊断。再次进行空库验收要先另选新的独占 namespace。
 

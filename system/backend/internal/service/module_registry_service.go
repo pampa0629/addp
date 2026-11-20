@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -28,48 +27,40 @@ var ErrBootstrapModuleImmutable = errors.New("platform bootstrap module enabled 
 var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime instance query")
 
 type ModuleRegistryService struct {
-	catalogRouting *catalogRouting
+	catalogBindingID string
 
 	repo                *repository.ModuleRegistryRepository
 	leaseDuration       time.Duration
 	deploymentDiscovery *DeploymentDiscoveryService
 }
 
-type catalogRouting struct {
-	mu        sync.RWMutex
-	endpoints []commonmodels.ModuleRoutingEndpoint
-}
-
-// StartCatalogDiscovery selects the sole Catalog routing source before the HTTP server starts.
+// StartCatalogDiscovery configures every reader before serving requests. Only the
+// replica holding the database session lock reads Kubernetes and publishes changes.
 func (s *ModuleRegistryService) StartCatalogDiscovery(ctx context.Context, source *catalogdiscovery.Source) {
-	state := &catalogRouting{}
-	s.catalogRouting = state
-	go source.Run(ctx, func(next []commonmodels.ModuleRoutingEndpoint) error {
-		state.mu.Lock()
-		defer state.mu.Unlock()
-		if len(state.endpoints) == 0 && len(next) == 0 {
-			return nil
+	s.catalogBindingID = source.BindingID()
+	go func() {
+		for ctx.Err() == nil {
+			err := s.repo.WithDiscoveryWriter(ctx, "catalog", s.catalogBindingID, func(publish func([]commonmodels.ModuleRoutingEndpoint) error) error {
+				observed, cancel := context.WithCancel(ctx)
+				defer cancel()
+				var failure error
+				source.Run(observed, publish, func(err error) { failure = err; cancel() })
+				return failure
+			})
+			if err != nil && ctx.Err() == nil {
+				logger.L().Warn("Catalog Kubernetes discovery failed", "error", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
 		}
-		if err := s.repo.AdvanceRoutingRevision(ctx); err != nil {
-			return err
-		}
-		state.endpoints = next
-		return nil
-	}, func(err error) { logger.L().Warn("Catalog Kubernetes discovery failed", "error", err) })
+	}()
 }
 
 func (s *ModuleRegistryService) routingSnapshot(ctx context.Context) (*commonmodels.ModuleRoutingSnapshot, error) {
-	if s.catalogRouting == nil {
-		return s.repo.RoutingSnapshot(ctx, nil)
-	}
-	s.catalogRouting.mu.RLock()
-	defer s.catalogRouting.mu.RUnlock()
-	// A non-nil slice selects Kubernetes even before the first confirmation.
-	endpoints := s.catalogRouting.endpoints
-	if endpoints == nil {
-		endpoints = []commonmodels.ModuleRoutingEndpoint{}
-	}
-	return s.repo.RoutingSnapshot(ctx, endpoints)
+	return s.repo.RoutingSnapshot(ctx, s.catalogBindingID)
 }
 
 const moduleRegistryWatchPollInterval = 250 * time.Millisecond

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -665,7 +666,7 @@ func TestCatalogDeploymentDeclarationRequiresExplicitSupportedIntent(t *testing.
 
 func TestCatalogRoutingSourceKeepsProcessRegistrySeparate(t *testing.T) {
 	db := newServiceTestDB(t)
-	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}, &models.ModuleDiscoverySnapshot{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
@@ -694,9 +695,25 @@ func TestCatalogRoutingSourceKeepsProcessRegistrySeparate(t *testing.T) {
 		}
 	}
 	read("process")
-	registry.catalogRouting = &catalogRouting{}
+	registry.catalogBindingID = "binding-a"
 	read("")
-	registry.catalogRouting.endpoints = []commonmodels.ModuleRoutingEndpoint{{ModuleName: "catalog", EndpointID: "pod/http", URL: "http://10.42.1.7:8192", ExpiresAt: time.Now().Add(time.Minute)}}
+	endpoints := []commonmodels.ModuleRoutingEndpoint{{ModuleName: "catalog", EndpointID: "pod/http", URL: "http://10.42.1.7:8192", ExpiresAt: time.Now().Add(time.Minute)}}
+	save := func() {
+		t.Helper()
+		payload, err := json.Marshal(endpoints)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Save(&models.ModuleDiscoverySnapshot{ModuleName: "catalog", BindingID: "binding-a", Endpoints: payload}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	// Another System process reads the same database snapshot from its first request.
+	registry = NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	registry.catalogBindingID = "other-binding"
+	read("")
+	registry.catalogBindingID = "binding-a"
 	read("pod/http")
 	if err := db.Model(&models.ModuleDefinition{}).Where("module_name = ?", "catalog").Update("enabled", false).Error; err != nil {
 		t.Fatal(err)
@@ -705,7 +722,8 @@ func TestCatalogRoutingSourceKeepsProcessRegistrySeparate(t *testing.T) {
 	if err := db.Model(&models.ModuleDefinition{}).Where("module_name = ?", "catalog").Update("enabled", true).Error; err != nil {
 		t.Fatal(err)
 	}
-	registry.catalogRouting.endpoints[0].ExpiresAt = time.Now()
+	endpoints[0].ExpiresAt = time.Now()
+	save()
 	read("")
 	var instances []models.ModuleRuntimeInstance
 	if err := db.Find(&instances).Error; err != nil || len(instances) != 1 || instances[0].InstanceID != "process" {

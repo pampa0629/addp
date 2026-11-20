@@ -280,6 +280,9 @@ def install(args):
         cluster.run(*command, "publish-module-declaration", module,
                     data={**credentials, "declaration": declarations[module]})
         print(f"Published {module} declaration", flush=True)
+    if args.catalog_source == "kubernetes":
+        cluster.run("scale", "deployment/system-backend", "--replicas=2")
+        cluster.ready("system-backend")
     cluster.create(product_objects("gateway", arm["images"], args.arm_node, "arm64"))
     cluster.create([catalog] if args.catalog_source == "kubernetes" else [catalog_service, catalog])
     cluster.ready("gateway", "catalog-backend")
@@ -362,7 +365,7 @@ def verify(args):
         items = json.loads(cluster.run("get", "pods", "-l", f"app.kubernetes.io/name={name}", "-o", "json",
                                        capture=True))["items"]
         active = [item for item in items if not item["metadata"].get("deletionTimestamp")]
-        expected = 2 if module == "catalog" and args.catalog_source == "kubernetes" else 1
+        expected = 2 if module in ("catalog", "system") and args.catalog_source == "kubernetes" else 1
         if len(active) != expected:
             raise ValueError(f"Expected {expected} active {module} Pods, found {len(active)}")
         selected = amd if module == "catalog" else arm

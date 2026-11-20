@@ -428,6 +428,10 @@ case "$TEST_FILTER" in
             *) echo "engine-deployments requires --package repository, api or migration" >&2; exit 2 ;;
         esac
         ;;
+    discovery-routing)
+        [ "$PACKAGE_FILTER" = repository ] || { echo "discovery-routing requires --package repository" >&2; exit 2; }
+        test_pattern='^TestDiscoveryWriterFailoverAgainstPostgres$'
+        ;;
     host-nodes)
         [ "$PACKAGE_FILTER" = repository ] || { echo "host-nodes requires --package repository" >&2; exit 2; }
         test_pattern='^TestHostNodeIdentityVersionAndBindingAgainstPostgres$'
