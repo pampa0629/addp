@@ -178,7 +178,11 @@ test('platform node resources through real Console password MFA and Monitor ifra
         await page.goto('/monitor/engine-resources?refresh=off&scope=' + scope)
         await expect(monitor.getByRole('tab', { name: scope === 'infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true })).toHaveAttribute('aria-selected', 'true')
         await expect(monitor.getByTestId('engine-list').getByRole('button', { name: '查看监控', exact: true })).toHaveCount(scopedOwners.length)
-        for (const owner of scopedOwners) await expect(monitor.getByTestId('engine-list')).toContainText(owner.display_name)
+        for (const owner of scopedOwners) {
+          const card = monitor.getByTestId('engine-card-' + owner.deployment_id)
+          await expect(card).toContainText(owner.display_name)
+          await expect(card.getByText('正在采集', { exact: true })).toBeVisible()
+        }
         for (const owner of owners.filter(owner => !scopedOwners.includes(owner))) await expect(monitor.getByTestId('engine-list')).not.toContainText(owner.display_name)
       }
       await page.screenshot({ path: resolve(artifact, 'engine-resources-list.png'), fullPage: true, animations: 'disabled' })
