@@ -568,6 +568,16 @@ class EngineSourceFixtureTest(unittest.TestCase):
 
 
 class RedisEngineSourceFixtureTest(unittest.TestCase):
+    def test_compose_error_reports_only_fixed_diagnostics(self):
+        failure = subprocess.CalledProcessError(1, ["docker"], stderr="pull access denied: private-sentinel")
+        with patch.object(FIXTURE.subprocess, "run", side_effect=failure), patch("builtins.print") as log:
+            with self.assertRaises(subprocess.CalledProcessError):
+                FIXTURE.engine_compose(Path("/fixture"), "up", "-d", "redis")
+        message = log.call_args.args[0]
+        self.assertIn("pull access denied", message)
+        self.assertIn('"exit_code": 1', message)
+        self.assertNotIn("private-sentinel", message)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="addp-redis-hosted-test-")
         self.addCleanup(self.temp.cleanup)

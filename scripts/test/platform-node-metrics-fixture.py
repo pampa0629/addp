@@ -561,10 +561,24 @@ def assert_process_listeners_closed():
 
 
 def engine_compose(directory, *args):
-    return subprocess.run(["docker", "compose", "--project-directory", str(ROOT/"business"), "-p", "business",
-                           "--env-file", str(ROOT/"business/.env.example"), "--env-file", str(directory/"engine-source.env"),
-                           "-f", str(ROOT/"business/docker-compose.yml"), *args],
-                          env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=150).stdout
+    try:
+        return subprocess.run(["docker", "compose", "--project-directory", str(ROOT/"business"), "-p", "business",
+                               "--env-file", str(ROOT/"business/.env.example"), "--env-file", str(directory/"engine-source.env"),
+                               "-f", str(ROOT/"business/docker-compose.yml"), *args],
+                              env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=150).stdout
+    except subprocess.CalledProcessError as error:
+        # Compose may interpolate private values in errors. Report fixed Docker
+        # error signatures and phase names without exposing its raw output.
+        stderr = (error.stderr or "").lower()
+        signatures = ("toomanyrequests", "unauthorized", "denied", "manifest unknown", "no matching manifest",
+                      "pull access denied", "failed to resolve reference", "no space left on device",
+                      "port is already allocated", "address already in use", "is already in use",
+                      "unhealthy", "no such file or directory", "invalid mount", "not a directory",
+                      "required variable", "address pool", "overlap", "tls handshake timeout", "connection refused")
+        diagnostic = {"exit_code": error.returncode, "matched_errors": [key for key in signatures if key in stderr],
+                      "progress": [step for step in ("pulling", "creating", "starting", "waiting") if step in stderr]}
+        print("Hosted engine Compose " + args[0] + ": " + json.dumps(diagnostic), flush=True)
+        raise
 
 
 def engine_metrics_action(directory, action):

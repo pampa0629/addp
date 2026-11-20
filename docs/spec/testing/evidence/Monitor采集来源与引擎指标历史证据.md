@@ -113,6 +113,8 @@ Safari 管理员在采集配置逐项暂停并恢复 11 个来源，以每项观
 
 验收器随后修正合法 `no_data` 拒绝与清理凭据丢失，仍要求 Business 两项有值及完整窗口；标准 runner 本地回归通过，**原记录没有修复后的真实 Hosted 通过证据**。
 
+2026-11-20 的 [Redis Hosted 复验 44748335286](https://github.com/pampa0629/addp/actions/runs/44748335286/job/136329387009) 使用提交 `1e4c44d2e`。就绪校验通过，Prometheus 中心已就绪。验收器在启动隔离的 Business Redis 时退出，未进入部署登记、指标查询和浏览器步骤。原始日志只给出启动阶段，无法确定 Docker 错误原因。归档的 `summary.txt` 记录了 `cleanup=passed` 和 `infra_cleanup=zero_residuals`。
+
 <a id="minio-source-history"></a>
 
 <!-- 保留对应主题旧链接。 -->
