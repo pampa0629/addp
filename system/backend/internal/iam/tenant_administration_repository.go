@@ -78,9 +78,16 @@ func readDatabaseTime(ctx context.Context, repository *Repository) (time.Time, e
 	return repository.CurrentDatabaseTime(ctx)
 }
 
+func (r *Repository) statementTimeSQL() string {
+	if r.db.Dialector.Name() == "mysql" {
+		return "CURRENT_TIMESTAMP(6)"
+	}
+	return "statement_timestamp()"
+}
+
 func (r *Repository) CurrentDatabaseTime(ctx context.Context) (time.Time, error) {
 	var current time.Time
-	if err := r.db.WithContext(ctx).Raw("SELECT statement_timestamp()").Scan(&current).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw("SELECT " + r.statementTimeSQL()).Scan(&current).Error; err != nil {
 		return time.Time{}, wrapRepositoryError(err)
 	}
 	return current.UTC(), nil

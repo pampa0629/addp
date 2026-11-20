@@ -244,18 +244,18 @@ type MFACredential struct {
 func (MFACredential) TableName() string { return "system.mfa_credentials" }
 
 type MFAChallenge struct {
-	ID                         int64          `gorm:"primaryKey;autoIncrement"`
-	TokenHash                  string         `gorm:"column:token_hash;not null;unique"`
-	PrincipalID                int64          `gorm:"column:principal_id;not null"`
-	Purpose                    string         `gorm:"column:purpose;not null"`
-	SourceFamilyID             *int64         `gorm:"column:source_family_id"`
-	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
-	AuthenticationMethods      pq.StringArray `gorm:"column:authentication_methods;type:text[];not null"`
-	AuthenticatedAt            time.Time      `gorm:"column:authenticated_at;not null"`
-	ExpiresAt                  time.Time      `gorm:"column:expires_at;not null"`
-	FailedAttempts             int            `gorm:"column:failed_attempts;not null"`
-	ConsumedAt                 *time.Time     `gorm:"column:consumed_at"`
-	CreatedAt                  time.Time      `gorm:"column:created_at;autoCreateTime"`
+	ID                         int64        `gorm:"primaryKey;autoIncrement"`
+	TokenHash                  string       `gorm:"column:token_hash;not null;unique"`
+	PrincipalID                int64        `gorm:"column:principal_id;not null"`
+	Purpose                    string       `gorm:"column:purpose;not null"`
+	SourceFamilyID             *int64       `gorm:"column:source_family_id"`
+	IssuedAuthorizationVersion int64        `gorm:"column:issued_authorization_version;not null"`
+	AuthenticationMethods      DBStringList `gorm:"column:authentication_methods;not null"`
+	AuthenticatedAt            time.Time    `gorm:"column:authenticated_at;not null"`
+	ExpiresAt                  time.Time    `gorm:"column:expires_at;not null"`
+	FailedAttempts             int          `gorm:"column:failed_attempts;not null"`
+	ConsumedAt                 *time.Time   `gorm:"column:consumed_at"`
+	CreatedAt                  time.Time    `gorm:"column:created_at;autoCreateTime"`
 }
 
 func (MFAChallenge) TableName() string { return "system.mfa_challenges" }

@@ -11,7 +11,6 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	passwordutils "github.com/addp/system/pkg/utils"
-	"github.com/lib/pq"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -318,7 +317,7 @@ func (s *MFASessionService) BeginStepUp(ctx context.Context, input BeginMFAStepU
 		challenge := &MFAChallenge{
 			TokenHash: hashOpaqueToken(plainToken), PrincipalID: principal.ID, Purpose: "step_up",
 			SourceFamilyID: &familyID, IssuedAuthorizationVersion: principal.AuthorizationVersion,
-			AuthenticationMethods: pq.StringArray{"password"}, AuthenticatedAt: family.AuthenticatedAt,
+			AuthenticationMethods: DBStringList{"password"}, AuthenticatedAt: family.AuthenticatedAt,
 			ExpiresAt: expiresAt, CreatedAt: now,
 		}
 		if err := tx.CreateMFAChallenge(ctx, challenge); err != nil {

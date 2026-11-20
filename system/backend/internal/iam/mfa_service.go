@@ -10,7 +10,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/lib/pq"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
@@ -118,7 +117,7 @@ func (s *MFAService) BeginChallenge(
 			PrincipalID:                principal.ID,
 			Purpose:                    "login",
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
-			AuthenticationMethods:      pq.StringArray{"password"},
+			AuthenticationMethods:      DBStringList{"password"},
 			AuthenticatedAt:            authenticated.AuthenticatedAt.UTC(),
 			ExpiresAt:                  expiresAt,
 			FailedAttempts:             0,

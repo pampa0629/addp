@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/schema"
 	"github.com/addp/system/internal/iam"
 	passwordutils "github.com/addp/system/pkg/utils"
+	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -406,4 +407,41 @@ func testMySQLIAMMFACredential(t *testing.T, db *gorm.DB) {
 	if err != nil || active.ID != replacement.ID || active.LastAcceptedCounter != nil {
 		t.Fatalf("replacement MFA credential could not be read: %v", err)
 	}
+	t.Run("login challenge and one-time verification", func(t *testing.T) {
+		service, err := iam.NewMFAService(repo, cipher, iam.MFAServiceConfig{}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		user, err := repo.GetPrincipal(ctx, credential.UserID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now, err := repo.CurrentDatabaseTime(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		challenge, err := service.BeginChallenge(ctx, &iam.AuthenticatedLocalUser{
+			PrincipalID: user.ID, AuthorizationVersion: user.AuthorizationVersion, AuthenticatedAt: now,
+		}, iam.AuditMetadata{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		code, err := totp.GenerateCode(secret, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input := iam.VerifyMFAChallengeInput{ChallengeToken: challenge.ChallengeToken, Code: code}
+		verified, err := service.VerifyChallenge(ctx, input)
+		if err != nil || verified.PrincipalID != user.ID || verified.Authentication.AssuranceLevel != iam.AssuranceLevelAAL2 {
+			t.Fatalf("login challenge was not verified at AAL2: %v", err)
+		}
+		if _, err := service.VerifyChallenge(ctx, input); !errors.Is(err, commonapi.ErrUnauthorized) {
+			t.Fatalf("consumed challenge returned %v", err)
+		}
+		var consumed int
+		if err := db.Raw("SELECT COUNT(*) FROM mfa_challenges WHERE principal_id=? AND consumed_at IS NOT NULL AND authentication_methods=JSON_ARRAY('password')", user.ID).Row().Scan(&consumed); err != nil || consumed != 1 {
+			t.Fatalf("expected one consumed password challenge: %d, %v", consumed, err)
+		}
+	})
+
 }

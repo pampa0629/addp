@@ -104,11 +104,9 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 		SnapshotServerNS int64
 	}
 	var started time.Time
-	databaseTime := "statement_timestamp()"
+	databaseTime := r.statementTimeSQL()
 	timingColumn := ""
-	if r.db.Dialector.Name() == "mysql" {
-		databaseTime = "CURRENT_TIMESTAMP(6)"
-	} else if ctx.Value(authContextTimingKey{}) != nil {
+	if r.db.Dialector.Name() != "mysql" && ctx.Value(authContextTimingKey{}) != nil {
 		// Only in the Hosted comparison. Keep the existing transaction and
 		// query; return the server clock at evaluation of this same result row.
 		timingColumn = ", (EXTRACT(EPOCH FROM (clock_timestamp() - statement_timestamp())) * 1000000000)::bigint AS snapshot_server_ns"
