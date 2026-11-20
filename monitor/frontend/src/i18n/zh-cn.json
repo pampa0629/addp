@@ -705,7 +705,7 @@
       "object": "采集对象",
       "core": "ADDP 核心服务",
       "runtime": "内置计算引擎",
-      "sharedFrontend": "前端 · Console 与 Monitor 按节点共享采集",
+      "sharedFrontend": "模块前端 · 按节点共享采集",
       "backendProcesses": "后端服务与任务进程",
       "deployments": "已登记引擎",
       "indexTasks": "索引服务",

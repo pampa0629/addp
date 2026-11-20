@@ -336,7 +336,7 @@ test('flat collection tabs group frontend and backend with separate node and ser
   const panel = page.getByTestId('monitoring-targets')
   await expect(panel.getByRole('tablist')).toHaveCount(1)
   await expect(panel.getByRole('tab')).toHaveCount(5)
-  await expect(panel.getByRole('heading', { name: /Console 与 Monitor/ })).toBeVisible()
+  await expect(panel.getByRole('heading', { name: /模块前端 · 按节点共享采集/ })).toBeVisible()
   const frontend = panel.getByRole('row', { name: /前端资源/ })
   const automatic = panel.getByTestId('automatic-collection-scopes')
   await expect(automatic.getByRole('row', { name: /monitor/ })).toContainText('正在采集')

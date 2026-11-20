@@ -705,7 +705,7 @@
       "object": "Collection object",
       "core": "ADDP core services",
       "runtime": "Built-in compute engines",
-      "sharedFrontend": "Frontends · Console and Monitor share one target per node",
+      "sharedFrontend": "Module frontends · One collection target per node",
       "backendProcesses": "Backend services and workers",
       "deployments": "Registered engines",
       "indexTasks": "Indexing services",

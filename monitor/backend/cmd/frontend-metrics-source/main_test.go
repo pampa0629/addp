@@ -20,25 +20,25 @@ func TestNativeFrontendRequiresListenerOwnedByLauncher(t *testing.T) {
 	owner := "90"
 	run := func(_ context.Context, name string, args ...string) (string, error) {
 		switch {
-		case name == "lsof" && args[0] == "-t":
-			return "91", nil
+		case name == "lsof" && args[0] == "-nP":
+			return "p91\nf5\nn[::1]:5170", nil
 		case name == "lsof" && args[0] == "-a":
 			return "p91\nfcwd\nn" + filepath.Join(root, "console", "frontend"), nil
-		case name == "ps" && args[3] == "ppid=":
-			return owner, nil
+		case name == "ps" && args[0] == "-A":
+			return "91 " + owner, nil
 		case name == "ps":
-			return "node 12.5 2048", nil
+			return "91 node 12.5 2048", nil
 		default:
 			t.Fatalf("unexpected %s %v", name, args)
 			return "", nil
 		}
 	}
-	got := nativeResource(context.Background(), run, root, frontend{module: "console", port: 5170})
+	got := nativeResources(context.Background(), run, root, []frontend{{module: "console", port: 5170}})["console"]
 	if got == nil || got.cores != .125 || got.memoryBytes != 2<<20 || got.restarts != nil {
 		t.Fatal(got)
 	}
 	owner = "1"
-	if got := nativeResource(context.Background(), run, root, frontend{module: "console", port: 5170}); got != nil {
+	if got := nativeResources(context.Background(), run, root, []frontend{{module: "console", port: 5170}})["console"]; got != nil {
 		t.Fatal("foreign listener admitted", got)
 	}
 }
@@ -85,5 +85,39 @@ func TestComposeFrontendRejectsRecreatedOrForeignContainer(t *testing.T) {
 	workingDir = "/another/deployment"
 	if got := composeResource(context.Background(), run, cfg, f); got != nil {
 		t.Fatal("foreign identity was accepted", got)
+	}
+}
+
+func TestViteInventoryUsesOnlyLaunchedModulePorts(t *testing.T) {
+	workspace := t.TempDir()
+	for _, dir := range []string{".dev-pids", ".dev-state"} {
+		if err := os.Mkdir(filepath.Join(workspace, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(rel, data string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(workspace, rel), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".dev-state/ports.env", "CONSOLE_FE_PORT=6000\nPORTAL_FE_PORT=6001\nMANAGER_FE_PORT=6002\nMETA_FE_PORT=6003\n")
+	for _, module := range []string{"console", "manager", "portal", "unknown"} {
+		write(".dev-pids/"+module+"-frontend.pid", "99")
+	}
+	cfg := configuration{Workspace: workspace, Mode: "vite"}
+	got, err := deployedFrontends(cfg)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("inventory %v: %v", got, err)
+	}
+	want := []frontend{{module: "console", entry: "/", port: 6000}, {module: "manager", entry: "/module-ui/manager/", port: 6002}, {module: "portal", entry: "/portal/", port: 6001}}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got %+v, want %+v", got[i], want[i])
+		}
+	}
+	write(".dev-state/ports.env", "PORTAL_FE_PORT=6001\n")
+	if _, err := deployedFrontends(cfg); err == nil {
+		t.Fatal("accepted missing launcher port")
 	}
 }

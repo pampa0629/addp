@@ -1,5 +1,5 @@
 // Package frontendprobe checks the public entry and application script of the
-// pilot frontends, using a deployment-owned origin and a closed path set.
+// module frontends, using a deployment-owned origin and a closed path set.
 package frontendprobe
 
 import (
@@ -15,6 +15,11 @@ import (
 
 	"golang.org/x/net/html"
 )
+
+// Modules is the closed set of public ADDP frontend identities.
+var Modules = [...]string{"console", "agent", "asset", "catalog", "develop", "graph", "inference",
+	"manager", "meta", "model", "monitor", "ontology", "orchestrator", "portal", "quality",
+	"security", "service", "standard", "system", "transfer", "workbench"}
 
 type Result struct {
 	Entry bool

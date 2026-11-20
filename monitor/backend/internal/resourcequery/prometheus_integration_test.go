@@ -384,6 +384,7 @@ func TestIntegrationMetricsFrontendSamples(t *testing.T) {
 	entry := "addp_frontend_entry_up" + console
 	memory := "addp_frontend_memory_bytes" + console
 	restarts := "addp_frontend_restart_count" + monitor
+	portalCPU := strings.Replace("addp_frontend_cpu_cores"+console, `frontend_module="console"`, `frontend_module="portal"`, 1)
 	other := strings.Replace(entry, testNode, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", 1)
 	series := func(name, values string) map[string]any { return map[string]any{"series": name, "values": values} }
 	sample := func(name string, value float64) map[string]any { return map[string]any{"labels": name, "value": value} }
@@ -392,13 +393,13 @@ func TestIntegrationMetricsFrontendSamples(t *testing.T) {
 		return map[string]any{"expr": expression, "eval_time": at, "exp_samples": samples}
 	}
 	runPromtoolCases(t, "frontend", []any{map[string]any{
-		"name":     "both modules, same-scrape freshness, foreign node and scrape failure",
+		"name":     "deployed modules, same-scrape freshness, foreign node and scrape failure",
 		"interval": "15s",
 		"input_series": []any{series(up, "1 1 0"), series(entry, "1 0 _"), series(memory, "65536 _ _"),
-			series(restarts, "0 2 _"), series(other, "1 1 1"),
+			series(restarts, "0 2 _"), series(portalCPU, "0.25 _ _"), series(other, "1 1 1"),
 			series(strings.Replace(memory, revision, testNode+":1:1", 1), "8192 8192 8192")},
 		"promql_expr_test": []any{
-			evaluate("0s", sample(entry, 1), sample(memory, 65536), sample(restarts, 0)),
+			evaluate("0s", sample(entry, 1), sample(memory, 65536), sample(restarts, 0), sample(portalCPU, 0.25)),
 			evaluate("15s", sample(entry, 0), sample(restarts, 2)),
 			evaluate("30s"),
 		},

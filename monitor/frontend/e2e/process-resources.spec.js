@@ -1070,7 +1070,7 @@ test('IME composition waits for completion and a route change cancels pending te
   expect(state.listCalls.some(row => row.registered_host === 'obsolete')).toBe(false)
 })
 
-test('frontend tab opens the first configured node and shows pilot samples and distinguishes a failed script from missing data', async ({ page }) => {
+test('frontend tab opens the first configured node and shows module samples and distinguishes a failed script from missing data', async ({ page }) => {
   const nodeID = 'f83e9874-2164-4411-a5c0-650d143006cf'
   await page.route('**/api/v1/**', async route => {
     const { pathname, searchParams } = new URL(route.request().url())
@@ -1085,7 +1085,8 @@ test('frontend tab opens the first configured node and shows pilot samples and d
     expect(searchParams.get('node_id')).toBe(nodeID)
     return route.fulfill({ json: { node: { node_id: nodeID }, source_state: 'collecting', queried_at: '2026-11-19T06:00:00Z', data: [
       { module: 'console', mode: 'vite', entry_up: true, asset_up: true, cpu_cores: 0, memory_bytes: 65536, restart_count: null },
-      { module: 'monitor', mode: 'compose', entry_up: true, asset_up: false, cpu_cores: null, memory_bytes: null, restart_count: 0 }
+      { module: 'monitor', mode: 'compose', entry_up: true, asset_up: false, cpu_cores: null, memory_bytes: null, restart_count: 0 },
+      { module: 'portal', mode: 'vite', entry_up: true, asset_up: true, cpu_cores: 0.25, memory_bytes: 16777216, restart_count: null }
     ] } })
   })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
@@ -1094,6 +1095,8 @@ test('frontend tab opens the first configured node and shows pilot samples and d
   const panel = page.getByTestId('frontend-resources')
   await expect(page.getByRole('tab', { name: '前端', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(panel.getByRole('row', { name: /console/ })).toContainText('64.00 KiB')
+  await expect(panel.getByRole('row', { name: /portal/ })).toContainText('0.25')
+  await expect(panel.getByRole('row', { name: /portal/ })).toContainText('16.00 MiB')
   await expect(panel.getByRole('row', { name: /monitor/ })).toContainText('不可用')
   await expect(panel.getByRole('row', { name: /monitor/ })).toContainText('—')
   await expect(page.getByTestId('process-totals')).toHaveCount(0)

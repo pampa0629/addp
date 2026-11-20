@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/addp/monitor/internal/frontendprobe"
 )
 
 type FrontendSample struct {
@@ -21,29 +23,30 @@ type FrontendSample struct {
 var frontendMetrics = []string{"entry_up", "asset_up", "cpu_cores", "memory_bytes", "restart_count"}
 
 func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision string, at time.Time, budget Budget) ([]FrontendSample, error) {
-	const maximumSeries = 2 * 5
 	if c == nil {
 		return nil, ErrUnavailable
 	}
-	if budget.MaxMetrics < len(frontendMetrics) || budget.MaxSeries < maximumSeries || budget.MaxTotalPoints < maximumSeries {
+	if budget.MaxMetrics < len(frontendMetrics) || budget.MaxSeries < 1 || budget.MaxTotalPoints < 1 {
 		return nil, ErrBudget
 	}
 	expression := frontendExpression(nodeID, address, revision)
 	endpoint, args := planExpressionQuery(Plan{End: at}, expression, budget)
+	limit := min(budget.MaxSeries, budget.MaxTotalPoints)
+	args.Set("limit", strconv.Itoa(limit+1))
 	wire, err := c.readForm(ctx, endpoint, args)
+	if len(wire.Data.Result) > limit {
+		return nil, ErrBudget
+	}
 	if err != nil {
 		return nil, err
 	}
 	allowed := make(map[string]bool)
-	for _, module := range []string{"console", "monitor"} {
+	for _, module := range frontendprobe.Modules {
 		for _, mode := range []string{"vite", "compose"} {
 			for _, metric := range frontendMetrics {
 				allowed[module+":"+mode+":"+metric] = true
 			}
 		}
-	}
-	if len(wire.Data.Result) > maximumSeries {
-		return nil, ErrUnavailable
 	}
 	for i := range wire.Data.Result {
 		m := wire.Data.Result[i].Metric
@@ -56,8 +59,8 @@ func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision 
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]FrontendSample, 0, 2)
-	for _, module := range []string{"console", "monitor"} {
+	rows := make([]FrontendSample, 0, len(frontendprobe.Modules))
+	for _, module := range frontendprobe.Modules {
 		row := FrontendSample{Module: module}
 		for _, mode := range []string{"vite", "compose"} {
 			lookup := func(key string) *float64 {
@@ -85,7 +88,9 @@ func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision 
 			}
 			row.CPUCores, row.MemoryBytes, row.RestartCount = cpu, memory, restarts
 		}
-		rows = append(rows, row)
+		if row.Mode != "" {
+			rows = append(rows, row)
+		}
 	}
 	return rows, nil
 }
@@ -99,7 +104,7 @@ func frontendExpression(nodeID, address, revision string) string {
 	// operand so freshness comparison cannot merge across the catalog.
 	parts := make([]string, 0, len(frontendMetrics))
 	for _, key := range frontendMetrics {
-		field := "addp_frontend_" + key + `{frontend_module=~"console|monitor",frontend_mode=~"vite|compose",` + selector + "}"
+		field := "addp_frontend_" + key + `{frontend_module=~` + strconv.Quote(strings.Join(frontendprobe.Modules[:], "|")) + `,frontend_mode=~"vite|compose",` + selector + "}"
 		parts = append(parts, "("+field+" and "+join+"("+up+"==1) and "+join+"(timestamp("+up+")>=time()-30) and on(instance,addp_node_id,frontend_module,frontend_mode) "+
 			"(timestamp("+field+") == "+join+"group_left timestamp("+up+")))")
 	}

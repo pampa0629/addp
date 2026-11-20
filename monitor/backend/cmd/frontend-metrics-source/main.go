@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/netip"
 	"net/url"
 	"os"
@@ -29,8 +31,6 @@ type configuration struct {
 	Mode         string `json:"mode"`
 	PublicOrigin string `json:"public_origin"`
 	Workspace    string `json:"workspace"`
-	ConsolePort  int    `json:"console_port"`
-	MonitorPort  int    `json:"monitor_port"`
 	DockerSocket string `json:"docker_socket"`
 }
 
@@ -55,13 +55,12 @@ func (c configuration) validate() (*url.URL, error) {
 	}
 	switch c.Mode {
 	case "vite":
-		if c.DockerSocket != "" || c.ConsolePort < 1 || c.ConsolePort > 65535 ||
-			c.MonitorPort < 1 || c.MonitorPort > 65535 || c.ConsolePort == c.MonitorPort {
+		if c.DockerSocket != "" {
 			return nil, errConfiguration
 		}
 	case "compose":
 		socket, err := os.Stat(c.DockerSocket)
-		if !filepath.IsAbs(c.DockerSocket) || c.ConsolePort != 0 || c.MonitorPort != 0 ||
+		if !filepath.IsAbs(c.DockerSocket) ||
 			err != nil || socket.Mode()&os.ModeSocket == 0 {
 			return nil, errConfiguration
 		}
@@ -87,42 +86,114 @@ func positivePID(raw string) (int, bool) {
 	return pid, err == nil && pid > 1 && strconv.Itoa(pid) == raw
 }
 
-func nativeResource(ctx context.Context, run command, workspace string, f frontend) *resource {
-	raw, err := os.ReadFile(filepath.Join(workspace, ".dev-pids", f.module+"-frontend.pid"))
-	parent, valid := positivePID(strings.TrimSpace(string(raw)))
-	if err != nil || !valid {
-		return nil
+// Take node-wide snapshots so adding a module does not add another set of lsof/ps processes.
+func nativeResources(ctx context.Context, run command, workspace string, frontends []frontend) map[string]*resource {
+	result := make(map[string]*resource)
+	if len(frontends) == 0 {
+		return result
 	}
-	listener, err := run(ctx, "lsof", "-t", "-iTCP:"+strconv.Itoa(f.port), "-sTCP:LISTEN")
-	pid, valid := positivePID(listener)
-	if err != nil || !valid {
-		return nil
+	ports := make([]string, 0, len(frontends))
+	for _, f := range frontends {
+		ports = append(ports, strconv.Itoa(f.port))
 	}
-	cwd, err := run(ctx, "lsof", "-a", "-p", listener, "-d", "cwd", "-Fn")
-	if err != nil || cwd != "p"+listener+"\nfcwd\nn"+filepath.Join(workspace, f.module, "frontend") {
-		return nil
+	listeners := func() map[string]string {
+		raw, err := run(ctx, "lsof", "-nP", "-iTCP:"+strings.Join(ports, ","), "-sTCP:LISTEN", "-Fpn")
+		byPort := make(map[string]string)
+		if err != nil {
+			return byPort
+		}
+		var pid string
+		for _, line := range strings.Split(raw, "\n") {
+			if strings.HasPrefix(line, "p") {
+				pid = line[1:]
+			}
+			if !strings.HasPrefix(line, "n") {
+				continue
+			}
+			_, port, err := net.SplitHostPort(line[1:])
+			if err != nil {
+				continue
+			}
+			if old, ok := byPort[port]; ok && old != pid {
+				byPort[port] = ""
+			} else {
+				byPort[port] = pid
+			}
+		}
+		return byPort
 	}
-	fields, err := run(ctx, "ps", "-p", listener, "-o", "ucomm=,pcpu=,rss=")
-	data := strings.Fields(fields)
-	if err != nil || len(data) != 3 || data[0] != "node" {
-		return nil
-	}
-	// The standard launcher records the wrapper PID. A listener owned by a
-	// different workspace or a different launcher does not count.
-	for depth := 0; pid != parent && depth < 8; depth++ {
-		next, err := run(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "ppid=")
-		pid, valid = positivePID(next)
-		if err != nil || !valid {
-			return nil
+	before := listeners()
+	var ids []string
+	for _, pid := range before {
+		if _, ok := positivePID(pid); ok {
+			ids = append(ids, pid)
 		}
 	}
-	stillListening, err := run(ctx, "lsof", "-t", "-iTCP:"+strconv.Itoa(f.port), "-sTCP:LISTEN")
-	cpu, cpuOK := number(data[1])
-	rss, rssOK := number(data[2])
-	if pid != parent || err != nil || stillListening != listener || !cpuOK || !rssOK || rss <= 0 {
-		return nil
+	if len(ids) == 0 {
+		return result
 	}
-	return &resource{cores: cpu / 100, memoryBytes: rss * 1024}
+	idList := strings.Join(ids, ",")
+	raw, err := run(ctx, "lsof", "-a", "-p", idList, "-d", "cwd", "-Fn")
+	if err != nil {
+		return result
+	}
+	cwd := map[string]string{}
+	var pid string
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.HasPrefix(line, "p") {
+			pid = line[1:]
+		}
+		if strings.HasPrefix(line, "n") {
+			cwd[pid] = line[1:]
+		}
+	}
+	raw, err = run(ctx, "ps", "-A", "-o", "pid=,ppid=")
+	if err != nil {
+		return result
+	}
+	parents := map[string]string{}
+	for _, line := range strings.Split(raw, "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 {
+			parents[fields[0]] = fields[1]
+		}
+	}
+	raw, err = run(ctx, "ps", "-p", idList, "-o", "pid=,ucomm=,pcpu=,rss=")
+	if err != nil {
+		return result
+	}
+	stats := map[string]*resource{}
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 4 || fields[1] != "node" {
+			continue
+		}
+		cpu, cpuOK := number(fields[2])
+		rss, rssOK := number(fields[3])
+		if cpuOK && rssOK && rss > 0 {
+			stats[fields[0]] = &resource{cores: cpu / 100, memoryBytes: rss * 1024}
+		}
+	}
+	after := listeners()
+	for _, f := range frontends {
+		port := strconv.Itoa(f.port)
+		pid := before[port]
+		if stats[pid] == nil || after[port] != pid || cwd[pid] != filepath.Join(workspace, f.module, "frontend") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(workspace, ".dev-pids", f.module+"-frontend.pid"))
+		owner := strings.TrimSpace(string(raw))
+		if _, ok := positivePID(owner); err != nil || !ok {
+			continue
+		}
+		ancestor := pid
+		for depth := 0; ancestor != "" && ancestor != owner && depth < 8; depth++ {
+			ancestor = parents[ancestor]
+		}
+		if ancestor == owner {
+			result[f.module] = stats[pid]
+		}
+	}
+	return result
 }
 
 var containerID = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -188,12 +259,56 @@ func composeResource(ctx context.Context, run command, cfg configuration, f fron
 	return &resource{cores: cpu / 100, memoryBytes: memory * scales[match[2]], restarts: &after.RestartCount}
 }
 
+func deployedFrontends(cfg configuration) ([]frontend, error) {
+	if cfg.Mode == "compose" {
+		return []frontend{{module: "console", entry: "/", service: "console"}, {module: "monitor", entry: "/module-ui/monitor/", service: "monitor-frontend"}}, nil
+	}
+	raw, err := os.ReadFile(filepath.Join(cfg.Workspace, ".dev-state", "ports.env"))
+	if err != nil {
+		return nil, err
+	}
+	ports := make(map[string]string)
+	for _, line := range strings.Split(string(raw), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			ports[key] = value
+		}
+	}
+	var rows []frontend
+	for _, module := range frontendprobe.Modules {
+		_, err := os.Stat(filepath.Join(cfg.Workspace, ".dev-pids", module+"-frontend.pid"))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		port, err := strconv.Atoi(ports[strings.ToUpper(module)+"_FE_PORT"])
+		if err != nil || port < 1 || port > 65535 {
+			return nil, errConfiguration
+		}
+		entry := "/module-ui/" + module + "/"
+		switch module {
+		case "console":
+			entry = "/"
+		case "portal":
+			entry = "/portal/"
+		}
+		rows = append(rows, frontend{module: module, entry: entry, port: port})
+	}
+	return rows, nil
+}
+
 func collect(ctx context.Context, cfg configuration, probe *frontendprobe.Prober, run command) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	frontends := []frontend{
-		{module: "console", entry: "/", service: "console", port: cfg.ConsolePort},
-		{module: "monitor", entry: "/module-ui/monitor/", service: "monitor-frontend", port: cfg.MonitorPort},
+	frontends, err := deployedFrontends(cfg)
+	if err != nil {
+		return nil, err
+	}
+	var native map[string]*resource
+	if cfg.Mode == "vite" {
+		native = nativeResources(ctx, run, cfg.Workspace, frontends)
 	}
 	metrics := make([][]byte, len(frontends))
 	var work sync.WaitGroup
@@ -216,10 +331,8 @@ func collect(ctx context.Context, cfg configuration, probe *frontendprobe.Prober
 			if health.Asset != nil {
 				metric("asset_up", binary(*health.Asset))
 			}
-			var data *resource
-			if cfg.Mode == "vite" {
-				data = nativeResource(ctx, run, cfg.Workspace, f)
-			} else {
+			data := native[f.module]
+			if cfg.Mode == "compose" {
 				data = composeResource(ctx, run, cfg, f)
 			}
 			if data != nil {
@@ -232,7 +345,7 @@ func collect(ctx context.Context, cfg configuration, probe *frontendprobe.Prober
 		}()
 	}
 	work.Wait()
-	return append(metrics[0], metrics[1]...), nil
+	return bytes.Join(metrics, nil), nil
 }
 
 func run() error {
