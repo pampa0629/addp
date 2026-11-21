@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -221,13 +222,49 @@ func (p *SourcePolicy) Admit(ctx context.Context, endpoint string) (ResolvedEndp
 	if err != nil {
 		return ResolvedEndpoint{}, err
 	}
-	return p.admitResolved(ctx, resolved)
+	if rejection := p.admitResolved(ctx, resolved); rejection != nil {
+		return ResolvedEndpoint{}, rejection.decision
+	}
+	return resolved, nil
+}
+
+// Only bounded diagnostics leave the probe. Transport errors can contain private URLs.
+type probeRejection struct {
+	decision error
+	reason   string
+	status   int
+}
+
+func probeFailureReason(err error) string {
+	var netErr net.Error
+	var certErr *tls.CertificateVerificationError
+	var opErr *net.OpError
+	switch {
+	case errors.As(err, &certErr):
+		return "certificate_verification"
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return "timeout"
+	case errors.As(err, &opErr) && opErr.Op == "remote error":
+		return "remote_tls_alert"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection_refused"
+	case errors.Is(err, syscall.ECONNRESET):
+		return "connection_reset"
+	case errors.Is(err, syscall.EPIPE):
+		return "broken_pipe"
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return "stream_closed"
+	case errors.Is(err, ErrAdmissionFailed):
+		return "invalid_metrics_response"
+	default:
+		return "transport_error"
+	}
 }
 
 // admitResolved uses the already policy-checked, pinned address. It never resolves again.
-func (p *SourcePolicy) admitResolved(ctx context.Context, resolved ResolvedEndpoint) (ResolvedEndpoint, error) {
-	if _, err := p.fetch(ctx, resolved, true); err != nil {
-		return ResolvedEndpoint{}, ErrAdmissionFailed
+func (p *SourcePolicy) admitResolved(ctx context.Context, resolved ResolvedEndpoint) *probeRejection {
+	if status, err := p.fetch(ctx, resolved, true); err != nil {
+		return &probeRejection{ErrAdmissionFailed, probeFailureReason(err), status}
 	}
 	status, err := p.fetch(ctx, resolved, false)
 	if err != nil {
@@ -236,12 +273,12 @@ func (p *SourcePolicy) admitResolved(ctx context.Context, resolved ResolvedEndpo
 		var remote *net.OpError
 		if ctx.Err() != nil || !errors.As(err, &remote) || remote.Op != "remote error" || remote.Err == nil ||
 			(remote.Err.Error() != tls.AlertError(42).Error() && remote.Err.Error() != tls.AlertError(116).Error()) {
-			return ResolvedEndpoint{}, ErrUnprotected
+			return &probeRejection{ErrUnprotected, probeFailureReason(err), status}
 		}
 	} else if status != http.StatusUnauthorized && status != http.StatusForbidden {
-		return ResolvedEndpoint{}, ErrUnprotected
+		return &probeRejection{ErrUnprotected, "unexpected_http_status", status}
 	}
-	return resolved, nil
+	return nil
 }
 
 func (p *SourcePolicy) fetch(ctx context.Context, resolved ResolvedEndpoint, authenticated bool) (int, error) {
@@ -272,11 +309,14 @@ func (p *SourcePolicy) fetch(ctx context.Context, resolved ResolvedEndpoint, aut
 	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || (contentType != "text/plain" && contentType != "application/openmetrics-text") ||
 		response.StatusCode != http.StatusOK || response.Header.Get("Content-Encoding") != "" || response.ContentLength > EndpointBodyLimit {
-		return 0, ErrAdmissionFailed
+		return response.StatusCode, ErrAdmissionFailed
 	}
 	n, err := io.Copy(io.Discard, io.LimitReader(response.Body, EndpointBodyLimit+1))
-	if err != nil || n > EndpointBodyLimit {
-		return 0, ErrAdmissionFailed
+	if err != nil {
+		return response.StatusCode, err
+	}
+	if n > EndpointBodyLimit {
+		return response.StatusCode, ErrAdmissionFailed
 	}
 	return response.StatusCode, nil
 }

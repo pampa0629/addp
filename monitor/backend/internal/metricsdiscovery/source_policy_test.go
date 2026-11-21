@@ -286,6 +286,34 @@ func TestSourceAdmissionRejectsAnonymousAccessAndInconclusiveNegativeProbe(t *te
 	}
 }
 
+func TestSourceProbeRejectionIdentifiesFailedCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name                                 string
+		authenticatedStatus, anonymousStatus int
+		want                                 probeRejection
+	}{
+		{"authenticated metrics unavailable", 503, 403, probeRejection{ErrAdmissionFailed, "invalid_metrics_response", 503}},
+		{"anonymous denial inconclusive", 200, 503, probeRejection{ErrUnprotected, "unexpected_http_status", 503}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pki := testSourcePKI(t, true)
+			server, port := testSourceServer(t, pki, tls.RequestClientCert, tls.VersionTLS13, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				if len(r.TLS.PeerCertificates) == 0 {
+					w.WriteHeader(tc.anonymousStatus)
+					return
+				}
+				w.WriteHeader(tc.authenticatedStatus)
+			}))
+			policy := testPolicy(t, pki, port)
+			rejection := policy.admitResolved(context.Background(), ResolvedEndpoint{Address: server.Listener.Addr().String()})
+			if rejection == nil || *rejection != tc.want {
+				t.Fatalf("got %+v, want %+v", rejection, tc.want)
+			}
+		})
+	}
+}
+
 func TestSourceAdmissionRejectsWrongTrustAndDNSOnlyServerCertificate(t *testing.T) {
 	for _, ipSAN := range []bool{true, false} {
 		pki := testSourcePKI(t, ipSAN)

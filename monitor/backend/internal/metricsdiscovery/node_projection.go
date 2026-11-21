@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/addp/common/logger"
 	"github.com/addp/common/models"
 	"github.com/google/uuid"
 )
@@ -367,15 +368,21 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 	admitted := make([]TargetGroup, 0, len(groups))
 	for _, group := range groups {
 		if dynamic[group.Targets[0]] {
-			_, err := p.policy.admitResolved(ctx, ResolvedEndpoint{Address: group.Targets[0]})
+			rejection := p.policy.admitResolved(ctx, ResolvedEndpoint{Address: group.Targets[0]})
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if err != nil {
-				if sourceAdmissionFailure(err) {
-					continue
+			if rejection != nil {
+				if group.Labels["addp_monitor_kind"] == "process_resources" {
+					probe := "authenticated_metrics"
+					if rejection.decision == ErrUnprotected {
+						probe = "anonymous_denial"
+					}
+					logger.L().WarnContext(ctx, "metrics_discovery.process_source_excluded",
+						"source_module", group.Labels["addp_module_name"], "source_instance", group.Labels["addp_instance_id"],
+						"probe", probe, "reason", rejection.reason, "http_status", rejection.status)
 				}
-				return nil, err
+				continue
 			}
 		}
 		admitted = append(admitted, group)
