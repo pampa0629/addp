@@ -123,7 +123,7 @@ func (r *ScanRepository) UpsertItemSelective(
 
 	var item models.MetaItem
 	// 使用 fingerprint 查找记录（唯一索引），包括软删除的记录
-	err = r.db.Unscoped().Where("fingerprint = ?", fingerprint).First(&item).Error
+	err = r.db.Unscoped().Where("tenant_id = ? AND engine_id = ? AND fingerprint = ?", tenantID, engineID, fingerprint).First(&item).Error
 
 	if err == gorm.ErrRecordNotFound {
 		// 创建新记录

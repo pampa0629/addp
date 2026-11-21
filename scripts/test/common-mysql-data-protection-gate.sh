@@ -215,6 +215,23 @@ CREATE USER 'worker_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_META_WORKER_PASSWORD';
 GRANT SELECT ON meta.startup_schema_revision TO 'worker_gate'@'%';
 GRANT SELECT ON common.startup_schema_revision TO 'worker_gate'@'%';
 SQL
+    # Only the composite System parent key is a fixture. For the source scan use
+    # a real table, its own read-only account and the production MySQL plugin.
+    export ADDP_TEST_META_SOURCE_PASSWORD
+    ADDP_TEST_META_SOURCE_PASSWORD=$(openssl rand -hex 24)
+    mysql_admin <<SQL
+CREATE DATABASE \`system\`;
+CREATE TABLE \`system\`.engines (id BIGINT PRIMARY KEY, tenant_id BIGINT, UNIQUE KEY (tenant_id,id)) ENGINE=InnoDB;
+INSERT INTO \`system\`.engines VALUES (99,7),(100,8);
+CREATE DATABASE scan_source;
+CREATE TABLE scan_source.orders (id BIGINT PRIMARY KEY, label VARCHAR(30));
+INSERT INTO scan_source.orders VALUES (1,'sample');
+CREATE USER 'scan_reader'@'%' IDENTIFIED BY '$ADDP_TEST_META_SOURCE_PASSWORD';
+GRANT SELECT ON scan_source.* TO 'scan_reader'@'%';
+SQL
+    (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_META_MYSQL_CATALOG=1 GOWORK=off go test ./internal/scanruntime \
+        -run '^TestMySQLScanCatalog$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/meta-catalog.log"
+    grep -q '^--- PASS: TestMySQLScanCatalog ' "$WORK_DIR/meta-catalog.log"
     export ADDP_TEST_STARTUP_BINARY="$WORK_DIR/meta-worker"
     (cd "$ROOT_DIR/common" && ADDP_TEST_STARTUP_REASON='schema meta version mismatch: database=0' GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
     echo "UPDATE common.startup_schema_revision SET pending_version=version+1 WHERE owner='common'" | mysql_admin
