@@ -14,7 +14,7 @@ import (
 const mysqlIAMFoundationOwner = "system_iam_foundation"
 const mysqlIAMFoundationVersion int64 = 17
 
-//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql
+//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
 // RequireMySQLIAMFoundation checks the installed owner revision without DDL.
@@ -51,10 +51,20 @@ func CheckMySQLSystemStartup(db *gorm.DB) error {
 	if err := schema.RequireMySQL(db, mysqlSourceGrantCatalogOwner, mysqlSourceGrantCatalogVersion); err != nil {
 		return err
 	}
+	if err := schema.RequireMySQL(db, mysqlEngineDelegationsOwner, mysqlEngineDelegationsVersion); err != nil {
+		return err
+	}
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return err
 	}
 	return errors.New("System MySQL installation does not yet include complete source authorization guards")
+}
+
+const mysqlEngineDelegationsOwner = "system_engine_delegations"
+const mysqlEngineDelegationsVersion = 1
+
+func MigrateMySQLEngineDelegations(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlEngineDelegationsOwner, mysqlEngineDelegationsVersion, "mysql_engine_delegations", nil)
 }
 
 const mysqlSourceGrantCatalogOwner = "system_source_grant_catalog"

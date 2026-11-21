@@ -212,3 +212,44 @@ test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE event_name='system.engin
 expect_error system_gate 1644 "START TRANSACTION; $(call catalog "'$closed_id'" 0 NULL); ROLLBACK;"
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id='$closed_id'")" = 0
 echo 'System receipt: accepted authorizes the matching Catalog Grant; closed is immutable, audited once and cannot issue a Grant'
+
+# Existing IAM and engine rights for the System service fixture. Only the
+# delegation table receives the new write privileges in this installation.
+admin <<'SQL'
+INSERT INTO principals(id,principal_type) VALUES(40002,'user');
+INSERT INTO users(id,display_name) VALUES(40002,'Delegated engine manager');
+INSERT INTO tenant_memberships(id,tenant_id,principal_id,source_type,joined_at)
+VALUES(50002,7,40002,'manual',NOW(6));
+INSERT INTO refresh_token_families(principal_id,context_type,tenant_membership_id,issued_authorization_version,client_id,
+    auth_type,audiences,scopes,authentication_methods,assurance_level,authenticated_at,expires_at)
+SELECT id,'tenant',50002,authorization_version,'addp-web','first_party',JSON_ARRAY('addp.api'),JSON_ARRAY(),JSON_ARRAY('pwd'),'aal1',
+    NOW(6),NOW(6)+INTERVAL 1 HOUR FROM principals WHERE id=40002;
+INSERT INTO role_assignments(principal_id,role_id,scope_type,tenant_id,source_type,created_by_principal_id,grant_reason)
+SELECT 40001,id,'tenant',7,'manual',40001,'isolated management fixture' FROM roles
+WHERE role_key='tenant.engine_access_delegation_administrator';
+GRANT SELECT, INSERT, UPDATE (status,version,revoked_by_principal_id,revoked_at,revoked_reason) ON system.engine_access_delegations TO 'system_gate'@'%';
+GRANT SELECT, UPDATE (authorization_version,updated_at) ON system.principals TO 'system_gate'@'%';
+GRANT SELECT ON system.users TO 'system_gate'@'%';
+GRANT SELECT ON system.tenants TO 'system_gate'@'%';
+GRANT SELECT, UPDATE (status) ON system.tenant_memberships TO 'system_gate'@'%';
+GRANT SELECT, UPDATE (lifecycle_state) ON system.engines TO 'system_gate'@'%';
+GRANT SELECT ON system.roles TO 'system_gate'@'%';
+GRANT SELECT ON system.role_assignments TO 'system_gate'@'%';
+GRANT SELECT ON system.permissions TO 'system_gate'@'%';
+GRANT SELECT ON system.role_permissions TO 'system_gate'@'%';
+GRANT SELECT, UPDATE (revoked_at,revoked_reason) ON system.refresh_token_families TO 'system_gate'@'%';
+SQL
+(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
+    go test ./internal/engineaccess -run '^TestEngineDelegationAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/delegation.log"
+grep -q '^--- PASS: TestEngineDelegationAgainstMySQL ' "$work/delegation.log"
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE entity_type='engine_access_delegation' AND tenant_id=7 AND principal_id=40001 AND event_name IN ('system.engine_access_delegation.created','system.engine_access_delegation.revoked')")" = 2
+test "$(admin <<<"SELECT COUNT(*) FROM refresh_token_families f JOIN principals p ON p.id=f.principal_id WHERE f.principal_id=40002 AND f.revoked_at IS NOT NULL AND f.revoked_reason='engine_access_delegation_changed' AND p.authorization_version=f.issued_authorization_version+2")" = 1
+delegations=system.engine_access_delegations
+expect_error system_gate 1143 "UPDATE $delegations SET grant_reason='changed' WHERE id=1;"
+expect_error system_gate 1142 "DELETE FROM $delegations WHERE id=1;"
+expect_error system_gate 1142 "TRUNCATE TABLE $delegations;"
+for user in worker_gate bootstrap_gate; do
+    expect_error "$user" 1142 "SELECT status FROM $delegations;"
+done
+test "$(admin <<<"SELECT COUNT(*) FROM information_schema.column_privileges WHERE grantee=CONCAT(QUOTE('system_gate'),'@',QUOTE('%')) AND table_schema='system' AND table_name='engine_access_delegations' AND privilege_type='UPDATE' AND column_name IN ('status','version','revoked_by_principal_id','revoked_at','revoked_reason')")" = 5
+echo 'System delegation: restricted create, read and versioned revocation passed; overlap serialized and history preserved'

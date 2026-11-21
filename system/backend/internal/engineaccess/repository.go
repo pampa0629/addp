@@ -9,6 +9,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
+	drivermysql "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -56,12 +57,19 @@ func (r *Repository) readCommitted(ctx context.Context, read func(*Repository) e
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 }
 
+func (r *Repository) wallClockSQL() string {
+	if r.db.Dialector.Name() == "mysql" {
+		return "SYSDATE(6)"
+	}
+	return "clock_timestamp()"
+}
+
 func (r *Repository) wallClock(ctx context.Context) (time.Time, error) {
 	if r.db.Dialector.Name() == "mysql" {
 		return r.identity().CurrentDatabaseTime(ctx)
 	}
 	var now time.Time
-	err := r.db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error
+	err := r.db.WithContext(ctx).Raw("SELECT " + r.wallClockSQL()).Scan(&now).Error
 	return now.UTC(), err
 }
 
@@ -95,14 +103,15 @@ func (r *Repository) get(ctx context.Context, tenantID, engineID, id int64, lock
 
 const viewSelect = `d.*, e.name AS engine_name, m.principal_id, u.display_name,
 CASE WHEN d.status = 'revoked' THEN 'revoked'
-     WHEN d.expires_at <= clock_timestamp() THEN 'expired'
+     WHEN d.expires_at <= ? THEN 'expired'
      WHEN t.status <> 'active' OR p.status <> 'active' OR p.principal_type <> 'user'
-          OR m.status <> 'active' OR (m.expires_at IS NOT NULL AND m.expires_at <= clock_timestamp())
+          OR m.status <> 'active' OR (m.expires_at IS NOT NULL AND m.expires_at <= ?)
           OR e.lifecycle_state <> 'active' THEN 'unavailable'
      ELSE 'effective' END AS effective_state`
 
 func (r *Repository) views(ctx context.Context, tenantID, engineID int64) *gorm.DB {
-	return r.db.WithContext(ctx).Table("system.engine_access_delegations d").Select(viewSelect).
+	clock := gorm.Expr(r.wallClockSQL())
+	return r.db.WithContext(ctx).Table("system.engine_access_delegations d").Select(viewSelect, clock, clock).
 		Joins("JOIN system.engines e ON e.tenant_id = d.tenant_id AND e.id = d.engine_id").
 		Joins("JOIN system.tenant_memberships m ON m.tenant_id = d.tenant_id AND m.id = d.tenant_membership_id").
 		Joins("JOIN system.principals p ON p.id = m.principal_id").
@@ -137,7 +146,7 @@ func (r *Repository) insert(ctx context.Context, d *Delegation) error {
 }
 func (r *Repository) revoke(ctx context.Context, d *Delegation, version, actorID int64, reason string, now time.Time) error {
 	result := r.db.WithContext(ctx).Model(&Delegation{}).
-		Where("tenant_id = ? AND engine_id = ? AND id = ? AND version = ? AND status = 'active' AND expires_at > clock_timestamp()", d.TenantID, d.EngineID, d.ID, version).
+		Where("tenant_id = ? AND engine_id = ? AND id = ? AND version = ? AND status = 'active' AND expires_at > ?", d.TenantID, d.EngineID, d.ID, version, gorm.Expr(r.wallClockSQL())).
 		Updates(map[string]any{"status": "revoked", "version": gorm.Expr("version + 1"), "revoked_by_principal_id": actorID, "revoked_at": now, "revoked_reason": reason})
 	if result.Error != nil {
 		return mapError(result.Error)
@@ -150,6 +159,17 @@ func (r *Repository) revoke(ctx context.Context, d *Delegation, version, actorID
 func mapError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return commonapi.ErrNotFound
+	}
+	var mysqlErr *drivermysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1644 {
+		switch mysqlErr.Message {
+		case "engine_access_delegations_overlap":
+			return ErrOverlap
+		case "engine_access_delegations_expiry":
+			return ErrExpiry
+		case "engine_access_delegations_expired_history":
+			return ErrExpired
+		}
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {

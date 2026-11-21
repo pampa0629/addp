@@ -111,8 +111,8 @@ func (r *Repository) lockManagementScope(ctx context.Context, tenantID, engineID
 		Clauses(clause.Locking{Strength: "SHARE"}).Take(scope.engine).Error
 	if err == nil && !scope.isAdministrator(now) {
 		err = r.db.WithContext(ctx).
-			Where("tenant_id = ? AND engine_id = ? AND tenant_membership_id = ? AND status = 'active' AND expires_at > clock_timestamp()",
-				tenantID, engineID, membershipID).
+			Where("tenant_id = ? AND engine_id = ? AND tenant_membership_id = ? AND status = 'active' AND expires_at > ?",
+				tenantID, engineID, membershipID, gorm.Expr(r.wallClockSQL())).
 			Clauses(clause.Locking{Strength: "SHARE"}).Take(scope.delegation).Error
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
