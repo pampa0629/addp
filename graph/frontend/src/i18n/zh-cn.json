@@ -216,6 +216,7 @@
       "graphPrefix": "图谱 #"
     },
     "build": {
+      "resultTitle": "图谱构建结果",
       "taskRecentVisitTitle": "图谱构建任务",
       "title": "图谱构建",
       "createTask": "+ 新建任务",

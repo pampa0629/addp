@@ -57,6 +57,8 @@ flowchart LR
 
 `processed` 表示本轮已处理过的材料数，可能包含失败材料；`auto_written`、`pending_review` 和 execution 的 `records_written` 保留实际成功操作的计数，包括失败材料中已经成功的操作。具体失败从逐份材料的错误和 execution 的 `error_details` 读取，不能用零计数或 `success` 隐藏失败。
 
+用户接口 `GET /api/v1/graph/executions/{execution_id}` 沿用 `graph.build_task.read`、当前租户和原有临时执行归属校验。在通用概览上增加可选的 `build_result`，只投影该 UUID 完成汇总时记录的 `total_materials`（本次材料总数）、`auto_written`（成功自动写入数）和 `pending_review`（本次送审数）。明确记录的零保留为 0。排队、构建进度快照以及没有完整完成汇总的历史记录均省略该对象。汇总完成的失败执行也可有结果。结果页按同一 UUID 返回 Monitor，后续审核或重跑不覆盖历史计数。
+
 ### 取消与重跑
 
 取消要求当前 Graph Backend 持有运行句柄；没有句柄返回冲突，不伪造取消终态。取消等待 Worker 停止并提交 `cancelled`，中断的材料恢复为可重跑的 `pending`，清除其分块进度。取消语义与材料失败汇总分开。

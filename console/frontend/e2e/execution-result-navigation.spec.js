@@ -7,6 +7,7 @@ const id = '550e8400-e29b-41d4-a716-446655440001'
 
 const owners = [
   { module: 'transfer', type: 'sync', permission: 'transfer.task.read', result: { task_id: 63, records_read: 20, records_written: 20 }, expected: '执行详情 #' + id },
+  { module: 'graph', type: 'kg_build', permission: 'graph.build_task.read', result: { build_result: { total_materials: 3, auto_written: 13, pending_review: 2 } }, expected: '13' },
   { module: 'quality', type: 'quality_plan', permission: 'quality.plan.read', result: { execution_config: { target_key: 'quality-sample' } }, expected: 'quality-sample' },
   { module: 'meta', type: 'scan', permission: 'meta.scan_task.read', result: { scan_context: { engine_id: 177, scan_depth: 'deep' } }, expected: '177' },
   { module: 'manager', type: 'embedding', permission: 'manager.derived_artifact.read', result: { metadata: { generated: 11 } }, expected: '11' },
@@ -362,4 +363,40 @@ test('security discovery keeps the execution filter on page two and clears rows 
   await frame.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(frame.getByText('无法读取本次执行结果')).toBeVisible()
   await expect(frame.getByText('page-2-column-0')).toHaveCount(0)
+})
+
+test('graph preserves both build results and their Monitor return targets after a rerun', async ({ page }) => {
+  const runs = [
+    { uuid: id, counts: [3, 2, 5] },
+    { uuid: '550e8400-e29b-41d4-a716-446655440002', counts: [1, 0, 0] }
+  ]
+  const executions = runs.map(({ uuid }) => ({
+    execution_id: uuid, module: 'graph', task_type: 'kg_build', source: 'graph', source_task_id: '17',
+    source_task_name: '图谱构建任务 A', status: 'success', attempt: 1
+  }))
+  const responses = {
+    '/api/v1/monitor/task-providers': [],
+    '/api/v1/monitor/executions': { executions: [...executions].reverse(), total: 2, page: 1, page_size: 20 }
+  }
+  for (const [index, { uuid, counts: [total_materials, auto_written, pending_review] }] of runs.entries()) {
+    const execution = executions[index]
+    const observation = '/api/v1/monitor/executions/by-execution-id/' + uuid
+    responses[observation + '/tree'] = { execution, children: [], truncated: false }
+    responses[observation + '/events'] = { items: [], has_more: false, next_cursor: 0 }
+    responses['/api/v1/graph/executions/' + uuid] = { ...execution, build_result: { total_materials, auto_written, pending_review } }
+  }
+  const unexpected = await mockGraph(page, { permissions: ['monitor.execution.read', 'graph.build_task.read'], responses })
+  await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  for (const { uuid, counts } of runs) {
+    const monitor = '/monitor/executions?module=graph&source_task_id=17&execution_id=' + uuid
+    await page.goto(monitor)
+    await frame.getByRole('dialog').getByRole('button', { name: '查看执行结果' }).click()
+    await expect(page).toHaveURL(url => url.pathname === '/graph/executions/' + uuid && url.searchParams.get('return_to') === monitor)
+    await expect(frame.locator('.el-descriptions__content')).toHaveText(counts.map(String))
+    await frame.getByRole('button', { name: '返回本次执行' }).click()
+    await expect(page).toHaveURL(monitor)
+    await expect(frame.getByRole('dialog')).toContainText(uuid)
+  }
+  expect(unexpected).toEqual([])
 })

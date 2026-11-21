@@ -50,6 +50,12 @@ const routes = [
         meta: { requiresAuth: true, title: '本体详情' }
       },
       {
+        path: 'executions/:execution_id',
+        name: 'BuildExecutionResult',
+        component: () => import('../views/BuildExecutionResult.vue'),
+        meta: { requiresAuth: true, title: '图谱构建结果' }
+      },
+      {
         path: 'graphs',
         name: 'GraphList',
         component: () => import('../views/KnowledgeGraphList.vue'),

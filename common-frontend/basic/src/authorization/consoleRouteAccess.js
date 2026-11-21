@@ -31,6 +31,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/quality/overview': [tenant('quality.plan.read', 'quality.issue.read', 'monitor.execution.read')],
   '/quality/rules': [tenant('quality.rule.read')],
   '/quality/plans': [tenant('quality.plan.read')],
+  '/graph/executions': [tenant('graph.build_task.read')],
   '/meta/executions': [tenant('meta.scan_task.read')],
   '/manager/executions': [tenant('manager.derived_artifact.read')],
   '/orchestrator/executions': [tenant('orchestrator.workflow.read')],

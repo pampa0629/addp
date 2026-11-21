@@ -227,12 +227,24 @@ func (h *TaskProviderHandler) GetProviderExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(execution))
 }
 
+type graphBuildResult struct {
+	TotalMaterials int `json:"total_materials"`
+	AutoWritten    int `json:"auto_written"`
+	PendingReview  int `json:"pending_review"`
+}
+
+type graphBuildExecutionResponse struct {
+	*commonExecution.Observation
+	BuildResult *graphBuildResult `json:"build_result,omitempty"`
+}
+
 // GetExecution 获取用户侧 Graph 构建执行详情。
 // @Summary 获取 Graph 构建执行详情 | Get graph build execution detail
 // @Tags 图谱构建 | Graph Build
 // @Produce json
 // @Param execution_id path string true "执行UUID | Execution UUID"
-// @Success 200 {object} execution.Observation "安全执行概览 | Safe execution observation"
+// @Description 同次执行完成汇总后返回材料总数、自动写入数和送审数，缺少汇总时省略 build_result。| Returns material, automatic write and review submission counts when this execution recorded a final summary.
+// @Success 200 {object} graphBuildExecutionResponse "构建执行与本次结果 | Build execution and its result"
 // @Failure 404 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.read"]
@@ -249,7 +261,18 @@ func (h *TaskProviderHandler) GetExecution(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
 		return
 	}
-	c.JSON(http.StatusOK, commonExecution.Observe(execution))
+	response := graphBuildExecutionResponse{Observation: commonExecution.Observe(execution)}
+	// Graph commits records_written together with its final summary, including zero.
+	// Progress updates also carry counters but do not set records_written.
+	if execution.RecordsWritten != nil {
+		total, hasTotal := execution.Metadata.GetInt("total_materials")
+		written, hasWritten := execution.Metadata.GetInt("auto_written")
+		queued, hasQueued := execution.Metadata.GetInt("pending_review")
+		if hasTotal && hasWritten && hasQueued {
+			response.BuildResult = &graphBuildResult{TotalMaterials: total, AutoWritten: written, PendingReview: queued}
+		}
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *TaskProviderHandler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution, bool) {

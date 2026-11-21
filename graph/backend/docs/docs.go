@@ -150,6 +150,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "同次执行完成汇总后返回材料总数、自动写入数和送审数，缺少汇总时省略 build_result。| Returns material, automatic write and review submission counts when this execution recorded a final summary.",
                 "produces": [
                     "application/json"
                 ],
@@ -168,9 +169,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "安全执行概览 | Safe execution observation",
+                        "description": "构建执行与本次结果 | Build execution and its result",
                         "schema": {
-                            "$ref": "#/definitions/execution.Observation"
+                            "$ref": "#/definitions/internal_api.graphBuildExecutionResponse"
                         }
                     },
                     "404": {
@@ -4189,113 +4190,6 @@ const docTemplate = `{
                 }
             }
         },
-        "execution.Observation": {
-            "type": "object",
-            "properties": {
-                "attempt": {
-                    "type": "integer"
-                },
-                "bytes_read": {
-                    "type": "integer"
-                },
-                "bytes_written": {
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "current_step": {
-                    "type": "string"
-                },
-                "diagnostics_truncated": {
-                    "type": "boolean"
-                },
-                "error_details": {
-                    "$ref": "#/definitions/models.JSONMap"
-                },
-                "execution_boundary": {
-                    "type": "string"
-                },
-                "execution_id": {
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "max_attempts": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/models.JSONMap"
-                },
-                "module": {
-                    "type": "string"
-                },
-                "parent_execution_id": {
-                    "type": "string"
-                },
-                "progress": {
-                    "type": "integer"
-                },
-                "records_read": {
-                    "type": "integer"
-                },
-                "records_written": {
-                    "type": "integer"
-                },
-                "retry_of_execution_id": {
-                    "type": "string"
-                },
-                "rows_affected": {
-                    "type": "integer"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "source_task_id": {
-                    "type": "string"
-                },
-                "source_task_name": {
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "steps": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/execution.DiagnosticStep"
-                    }
-                },
-                "steps_attempt_unverified": {
-                    "type": "boolean"
-                },
-                "steps_truncated": {
-                    "type": "boolean"
-                },
-                "task_type": {
-                    "type": "string"
-                },
-                "trigger_type": {
-                    "type": "string"
-                },
-                "triggered_by": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "execution.ReadGrant": {
             "type": "object",
             "properties": {
@@ -5894,6 +5788,130 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "internal_api.graphBuildExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "build_result": {
+                    "$ref": "#/definitions/internal_api.graphBuildResult"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.graphBuildResult": {
+            "type": "object",
+            "properties": {
+                "auto_written": {
+                    "type": "integer"
+                },
+                "pending_review": {
+                    "type": "integer"
+                },
+                "total_materials": {
+                    "type": "integer"
                 }
             }
         },

@@ -2,6 +2,9 @@ import client from './client'
 
 export const buildAPI = {
   // ——— 构建任务 ———
+  getExecution(executionId, options) {
+    return client.get(`/graph/executions/${encodeURIComponent(executionId)}`, options)
+  },
   listTasks(graphId) {
     return client.get(`/graph/graphs/${graphId}/build/tasks`)
   },

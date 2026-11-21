@@ -67,6 +67,7 @@ test('execution result routes require a registered task type and an execution id
   const expected = {
     develop: ['query', 'workflow', 'script'],
     transfer: ['sync'],
+    graph: ['kg_build'],
     quality: ['quality_plan'],
     orchestrator: ['orchestration'],
     meta: ['scan'],
@@ -903,7 +904,7 @@ test('endpoint diagnostics show the correct bilingual input and distance guidanc
 
 
 test('execution results retain only the exact Monitor execution context', () => {
-  for (const [module, task_type] of [['develop', 'workflow'], ['transfer', 'sync'], ['quality', 'quality_plan'], ['manager', 'embedding'], ['meta', 'scan'], ['orchestrator', 'orchestration']]) {
+  for (const [module, task_type] of [['develop', 'workflow'], ['graph', 'kg_build'], ['transfer', 'sync'], ['quality', 'quality_plan'], ['manager', 'embedding'], ['meta', 'scan'], ['orchestrator', 'orchestration']]) {
     const execution = { module, task_type, execution_id: 'same-run' }
     const back = `/monitor/executions?module=${module}&task_type=${task_type}&source_task_id=37&page=3&page_size=50&execution_id=same-run`
     const target = new URL(buildExecutionResultRoute(execution, back), 'http://console')

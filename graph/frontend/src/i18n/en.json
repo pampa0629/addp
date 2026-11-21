@@ -216,6 +216,7 @@
       "graphPrefix": "Graph #"
     },
     "build": {
+      "resultTitle": "Graph build result",
       "taskRecentVisitTitle": "Graph Build Task",
       "title": "Graph Build",
       "createTask": "+ New Task",

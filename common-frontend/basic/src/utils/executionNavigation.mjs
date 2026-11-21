@@ -12,6 +12,7 @@ const resultTaskTypes = {
   develop: ['query', 'workflow', 'script'],
   transfer: ['sync'],
   security: ['sensitive_data_discovery'],
+  graph: ['kg_build'],
   quality: ['quality_plan'],
   meta: ['scan'],
   orchestrator: ['orchestration'],
