@@ -169,3 +169,29 @@ func TestParquetMembersStayFixedWhenDirectoryGrows(t *testing.T) {
 		t.Fatal("new member read outside the prepared list")
 	}
 }
+
+func TestObjectQueryKeepsQualifiedDataItemIdentity(t *testing.T) {
+	db, err := OpenDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	tables := map[string]map[string]string{"lake": {
+		"sales": "bucket/retail.parquet", "archive.sales": "bucket/archive.parquet",
+	}}
+	_, paths, err := prepareObjectTables(t.Context(), conn,
+		"SELECT * FROM lake.sales a JOIN lake.archive.sales b USING (id)", tables)
+	if err != nil || len(paths) != 2 || !slices.Contains(paths, "s3://bucket/retail.parquet") || !slices.Contains(paths, "s3://bucket/archive.parquet") {
+		t.Fatalf("JOIN did not bind both declared tables: paths=%v err=%v", paths, err)
+	}
+	_, _, err = prepareObjectTables(t.Context(), conn,
+		"SELECT * FROM lake.sales a JOIN lake.absent.sales b USING (id)", tables)
+	if err == nil {
+		t.Fatal("unknown qualified object table was accepted during preparation")
+	}
+}

@@ -106,13 +106,17 @@ func prepareObjectTables(ctx context.Context, conn *sql.Conn, query string, tabl
 		if engine == "" {
 			engine, schema = schema, ""
 		}
-		byName := tables[engine]
-		location := byName[table]
-		if schema != "" && byName[schema+"."+table] != "" {
-			location = byName[schema+"."+table]
-		}
-		if location == "" {
+		byName, objectEngine := tables[engine]
+		if !objectEngine || engine == "" {
 			return nil
+		}
+		name := table
+		if schema != "" {
+			name = schema + "." + table
+		}
+		location := byName[name]
+		if location == "" {
+			return fmt.Errorf("object table not present in the query source mapping")
 		}
 		if !strings.HasPrefix(location, "s3://") && !strings.HasPrefix(location, "https://") && !strings.HasPrefix(location, "http://") {
 			if strings.Contains(location, "://") {
