@@ -2,7 +2,6 @@ CREATE TRIGGER IF NOT EXISTS engine_delegation_insert
 BEFORE INSERT ON engine_access_delegations FOR EACH ROW
 BEGIN
     DECLARE eligible_member BIGINT;
-    -- Serialize checks on an existing membership even when its first delegation has no row.
     SELECT m.id INTO eligible_member FROM tenant_memberships m
         JOIN principals p ON p.id=m.principal_id JOIN tenants t ON t.id=m.tenant_id
         WHERE m.id=NEW.tenant_membership_id AND m.tenant_id=NEW.tenant_id
