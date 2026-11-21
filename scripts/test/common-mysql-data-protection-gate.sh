@@ -193,8 +193,9 @@ fi
 
 if [ "$test_group" = platform-system-request ]; then
     (cd "$ROOT_DIR/system/backend" && ADDP_TEST_MYSQL_SYSTEM_REQUEST_LOCK=1 GOWORK=off go test ./internal/engineaccess \
-        -run '^TestSystemAccessRequestLockAgainstMySQL$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-system-request.log"
+        -run '^TestSystemAccess(Request|Target)LockAgainstMySQL$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-system-request.log"
     grep -q '^--- PASS: TestSystemAccessRequestLockAgainstMySQL ' "$WORK_DIR/platform-system-request.log"
+    grep -q '^--- PASS: TestSystemAccessTargetLockAgainstMySQL ' "$WORK_DIR/platform-system-request.log"
     exit 0
 fi
 

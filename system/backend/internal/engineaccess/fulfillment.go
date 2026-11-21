@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,20 +110,33 @@ func (r *Repository) lockFulfillmentTarget(ctx context.Context, tenantID int64, 
 	if err := json.Unmarshal(path, &target); err != nil {
 		return errFulfillmentBinding
 	}
+	var key string
 	if (authorizationfacts.NodeIdentityQuery{Target: target}).Validate() == nil {
 		encoded, err := json.Marshal(target)
 		if err != nil {
 			return err
 		}
-		key := fmt.Sprintf("engine_access_node|%d|%s", tenantID, encoded)
+		key = fmt.Sprintf("engine_access_node|%d|%s", tenantID, encoded)
+	} else {
+		fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(target)
+		if err != nil {
+			return err
+		}
+		key = fmt.Sprintf("engine_access_target|%d|%d|%s", tenantID, target.EngineID, fingerprint)
+	}
+	switch r.db.Dialector.Name() {
+	case "postgres":
 		return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error
+	case "mysql":
+		if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); !ok {
+			return errors.New("MySQL access target lock requires the outer transaction")
+		}
+		digest := sha256.Sum256([]byte(key))
+		return r.db.WithContext(ctx).Exec(`INSERT INTO system.engine_access_target_locks (target_key)
+			VALUES (?) ON DUPLICATE KEY UPDATE lock_marker = 0`, digest[:]).Error
+	default:
+		return fmt.Errorf("unsupported access target lock database %q", r.db.Dialector.Name())
 	}
-	fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(target)
-	if err != nil {
-		return err
-	}
-	key := fmt.Sprintf("engine_access_target|%d|%d|%s", tenantID, target.EngineID, fingerprint)
-	return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error
 }
 
 // readFulfillment only observes a committed immutable outcome. A missing row

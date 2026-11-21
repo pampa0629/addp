@@ -38,6 +38,7 @@ func installMySQL(command string, output io.Writer) error {
 	for _, install := range []func(*gorm.DB) error{
 		migration.MigrateMySQLIAMFoundation,
 		migration.MigrateMySQLAccessRequestLocks,
+		migration.MigrateMySQLAccessTargetLocks,
 		migration.MigrateMySQLModuleRegistry,
 		migration.MigrateMySQLEngineCatalog,
 	} {

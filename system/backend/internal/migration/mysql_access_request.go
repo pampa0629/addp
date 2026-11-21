@@ -15,3 +15,10 @@ func MigrateMySQLAccessRequestLocks(db *gorm.DB) error {
 			"(request_id BINARY(16) NOT NULL PRIMARY KEY) ENGINE=InnoDB").Error
 	})
 }
+
+const mysqlTargetLocksOwner = "system_access_target_locks"
+const mysqlTargetLocksVersion = 1
+
+func MigrateMySQLAccessTargetLocks(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlTargetLocksOwner, mysqlTargetLocksVersion, "mysql_target_locks", nil)
+}
