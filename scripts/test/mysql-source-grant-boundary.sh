@@ -16,7 +16,9 @@ ADDP_MYSQL_INSTALL_PASSWORD=$(openssl rand -hex 24)
 export ADDP_MYSQL_INSTALL_PASSWORD
 admin <<SQL
 CREATE USER 'source_installer'@'%' IDENTIFIED BY '$ADDP_MYSQL_INSTALL_PASSWORD';
-GRANT SELECT, INSERT, UPDATE, CREATE, REFERENCES, INDEX, ALTER, TRIGGER, CREATE ROUTINE, EXECUTE ON system.* TO 'source_installer'@'%';
+SQL
+admin <<'SQL'
+GRANT SELECT, INSERT, UPDATE, CREATE, REFERENCES, INDEX, ALTER, TRIGGER, CREATE ROUTINE, EXECUTE ON `system`.* TO 'source_installer'@'%';
 SQL
 result=0
 "$work/system-server" install-mysql-system > "$work/source-triggers.sql" || result=$?
@@ -152,8 +154,11 @@ $(call independent "$(uuid 14)" 0 NULL);
 INSERT INTO system.sample_audit VALUES(1),(2),(3),(4),(5),(6);
 COMMIT;
 SQL
+# Result 3 was denied and has no parent Grant. This hits the outcome key
+# after the new parent insert, so a following COMMIT exercises the savepoint.
 expect_error system_gate 1062 "START TRANSACTION; INSERT INTO system.sample_audit VALUES(7);
- $(call task_production "$(uuid 15)" 1 NULL); COMMIT;"
+ $(call task_production "$(uuid 15)" 3 NULL); COMMIT;"
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 15)")" = 0
 expect_error system_gate 1062 "START TRANSACTION; $(call upload_creation "$(uuid 16)" 6 NULL);
  INSERT INTO system.sample_audit VALUES(1); ROLLBACK;"
 expect_error system_gate 1644 "START TRANSACTION; $(call independent "$(uuid 17)" 0 "'not_new'"); COMMIT;"
