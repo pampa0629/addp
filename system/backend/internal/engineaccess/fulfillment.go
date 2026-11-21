@@ -132,8 +132,10 @@ func (r *Repository) lockFulfillmentTarget(ctx context.Context, tenantID int64, 
 			return errors.New("MySQL access target lock requires the outer transaction")
 		}
 		digest := sha256.Sum256([]byte(key))
-		return r.db.WithContext(ctx).Exec(`INSERT INTO system.engine_access_target_locks (target_key)
-			VALUES (?) ON DUPLICATE KEY UPDATE lock_marker = 0`, digest[:]).Error
+		// Bind the digest on the transaction directly: GORM expands a slice in VALUES (?).
+		_, err := r.db.Statement.ConnPool.ExecContext(ctx, `INSERT INTO system.engine_access_target_locks (target_key)
+			VALUES (?) ON DUPLICATE KEY UPDATE lock_marker = 0`, digest[:])
+		return err
 	default:
 		return fmt.Errorf("unsupported access target lock database %q", r.db.Dialector.Name())
 	}
