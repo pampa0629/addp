@@ -254,3 +254,35 @@ for user in worker_gate bootstrap_gate; do
 done
 test "$(admin <<<"SELECT COUNT(*) FROM information_schema.column_privileges WHERE grantee=CONCAT(QUOTE('system_gate'),'@',QUOTE('%')) AND table_schema='system' AND table_name='engine_access_delegations' AND privilege_type='UPDATE' AND column_name IN ('status','version','revoked_by_principal_id','revoked_at','revoked_reason')")" = 5
 echo 'System delegation: restricted create, read and versioned revocation passed; overlap serialized and history preserved'
+
+# An ordinary delegated operator, a separate business confirmer and the
+# registered Catalog runtime exercise System's normal application service.
+admin <<'SQL'
+INSERT INTO principals(id,principal_type) VALUES(40003,'user');
+INSERT INTO users(id,display_name) VALUES(40003,'Catalog fulfillment operator');
+INSERT INTO tenant_memberships(id,tenant_id,principal_id,source_type,joined_at)
+VALUES(50003,7,40003,'manual',NOW(6));
+UPDATE oauth_clients SET status='active',client_secret_hash='isolated-unusable-test-hash' WHERE client_id='addp-catalog';
+SET @catalog=(SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-catalog');
+INSERT INTO tenant_memberships(id,tenant_id,principal_id,source_type,joined_at)
+VALUES(50004,7,@catalog,'manual',NOW(6));
+INSERT INTO roles(tenant_id,role_key,name,role_type,allowed_scope_types,allowed_principal_types,immutable,created_by_principal_id)
+VALUES(7,'custom.catalog_confirmer','Catalog business confirmer','tenant_custom',JSON_ARRAY('tenant'),JSON_ARRAY('user'),0,40001);
+SET @confirmer=LAST_INSERT_ID();
+SET @entry=(SELECT id FROM permissions WHERE permission_key='catalog.entry.read');
+SET @decision=(SELECT id FROM permissions WHERE permission_key='catalog.sharing_decision.create');
+INSERT INTO role_permissions(role_id,permission_id,source_type,created_by_principal_id)
+VALUES(@confirmer,@entry,'tenant',40001),(@confirmer,@decision,'tenant',40001);
+SET @authority=(SELECT id FROM roles WHERE role_key='tenant.source_data_authorizer');
+SET @runtime=(SELECT id FROM roles WHERE role_key='tenant.catalog_runtime');
+INSERT INTO role_assignments(principal_id,role_id,scope_type,tenant_id,source_type,created_by_principal_id,grant_reason)
+VALUES(40002,@confirmer,'tenant',7,'manual',40001,'Catalog business confirmation'),
+      (40003,@authority,'tenant',7,'manual',40001,'Catalog handling'),
+      (@catalog,@runtime,'tenant',7,'manual',40001,'Catalog runtime');
+GRANT SELECT ON system.oauth_clients TO 'system_gate'@'%';
+GRANT SELECT ON system.service_principals TO 'system_gate'@'%';
+SQL
+(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
+    go test ./internal/engineaccess -run '^TestCatalogFulfillmentServiceAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/catalog-fulfillment.log"
+grep -q '^--- PASS: TestCatalogFulfillmentServiceAgainstMySQL ' "$work/catalog-fulfillment.log"
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs a JOIN engine_access_fulfillment_outcomes o ON o.request_id=a.entity_id WHERE a.event_name='system.engine_access_fulfillment.accepted' AND a.principal_id=$catalog_id AND o.outcome='accepted' AND o.binding->>'$.operator.principal_id'='40003'")" = 1
