@@ -41,6 +41,7 @@ func installMySQL(command string, output io.Writer) error {
 		migration.MigrateMySQLAccessTargetLocks,
 		migration.MigrateMySQLModuleRegistry,
 		migration.MigrateMySQLEngineCatalog,
+		migration.MigrateMySQLSourceGrantCatalog,
 	} {
 		err := install(db.WithContext(ctx))
 		if err == nil {

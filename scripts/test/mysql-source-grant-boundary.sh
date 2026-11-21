@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exercise the shipped procedure/result DDL with fixture Grant and IAM parents.
+# Exercise the shipped procedure against tables and provenance guards from the System installer.
 set -euo pipefail
 container=$1
 work=$2
@@ -10,6 +10,20 @@ admin() {
     docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --protocol=TCP -h127.0.0.1 -uroot -NB system'
 }
 sql_dir="$(cd "$(dirname "$0")/../../system/backend/internal/migration/mysql_source_grant" && pwd)"
+export ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$ADDP_TEST_MYSQL_PORT"
+export ADDP_MYSQL_INSTALL_USER=source_installer
+ADDP_MYSQL_INSTALL_PASSWORD=$(openssl rand -hex 24)
+export ADDP_MYSQL_INSTALL_PASSWORD
+admin <<SQL
+CREATE USER 'source_installer'@'%' IDENTIFIED BY '$ADDP_MYSQL_INSTALL_PASSWORD';
+GRANT SELECT, INSERT, UPDATE, CREATE, REFERENCES, INDEX, ALTER, TRIGGER, CREATE ROUTINE, EXECUTE ON system.* TO 'source_installer'@'%';
+SQL
+result=0
+"$work/system-server" install-mysql-system > "$work/source-triggers.sql" || result=$?
+test "$result" = 3
+admin < "$work/source-triggers.sql"
+"$work/system-server" install-mysql-system > "$work/source-replay.sql"
+test ! -s "$work/source-replay.sql"
 admin < "$sql_dir/create_definer.sql"
 admin <<SQL
 CREATE USER 'system_gate'@'%' IDENTIFIED BY '$runtime_password';
@@ -17,29 +31,24 @@ CREATE USER 'worker_gate'@'127.0.0.1' IDENTIFIED BY '$worker_password';
 CREATE USER 'bootstrap_gate'@'127.0.0.1' IDENTIFIED BY '$bootstrap_password';
 SQL
 admin <<'SQL'
-CREATE TABLE tenants (id BIGINT PRIMARY KEY);
-CREATE TABLE principals (id BIGINT PRIMARY KEY);
-CREATE TABLE tenant_memberships (id BIGINT PRIMARY KEY);
-INSERT INTO tenants VALUES(7);
-INSERT INTO principals VALUES(21);
-INSERT INTO tenant_memberships VALUES(31);
-CREATE TABLE engine_access_grants (
-    request_id CHAR(36) PRIMARY KEY, approval_mode VARCHAR(32) NOT NULL,
-    tenant_id BIGINT NOT NULL, engine_id BIGINT NOT NULL, catalog_path JSON NOT NULL,
-    catalog_request_id CHAR(36), node_recursive BOOLEAN, item_fingerprint CHAR(64), boundary_hash CHAR(64),
-    file_composition JSON, scope_boundary JSON, metadata_target JSON,
-    recipient_type VARCHAR(32), recipient_id BIGINT, action VARCHAR(32), expiry_mode VARCHAR(32),
-    expires_at DATETIME(6), operator_principal_id BIGINT, operator_membership_id BIGINT,
-    operator_authorization_version BIGINT, reason LONGTEXT, producer_owner VARCHAR(255),
-    production_execution_id CHAR(36), production_result_id CHAR(36), upload_id CHAR(36),
-    issuer_principal_id BIGINT, issuer_membership_id BIGINT,
-    granted_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    UNIQUE (tenant_id,producer_owner,production_execution_id,production_result_id,request_id,issuer_principal_id,issuer_membership_id),
-    UNIQUE (tenant_id,upload_id,item_fingerprint,request_id,issuer_principal_id,issuer_membership_id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET ascii COLLATE ascii_bin;
+INSERT INTO tenants(id,code,name) VALUES(7,'grant-source','Grant source');
+INSERT INTO principals(id,principal_type) VALUES(40001,'user');
+INSERT INTO users(id,display_name) VALUES(40001,'Source writer fixture');
+INSERT INTO tenant_memberships(id,tenant_id,principal_id,source_type,joined_at)
+VALUES(50001,7,40001,'manual',NOW(6));
+UPDATE oauth_clients SET status='active',client_secret_hash='isolated-unusable-test-hash'
+WHERE client_id IN ('addp-transfer','addp-manager');
+INSERT INTO tenant_memberships(id,tenant_id,principal_id,source_type,joined_at)
+SELECT IF(client_id='addp-transfer',31001,31002),7,service_principal_id,'manual',NOW(6) FROM oauth_clients
+WHERE client_id IN ('addp-transfer','addp-manager');
+INSERT INTO engines(id,tenant_id,name,engine_type,connection_info,identity_key)
+VALUES (12,7,'Grant records','postgresql',JSON_OBJECT(),JSON_OBJECT('id',12)),
+       (99,7,'Grant files','nfs',JSON_OBJECT(),JSON_OBJECT('id',99));
 CREATE TABLE sample_audit (id INT PRIMARY KEY);
 SQL
-admin < "$sql_dir/initial_results.sql"
+transfer_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-transfer'")
+manager_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-manager'")
+human_version=$(admin <<<"SELECT authorization_version FROM principals WHERE id=40001")
 { echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
 admin < "$sql_dir/authorize_definer.sql"
 admin <<'SQL'
@@ -94,23 +103,37 @@ uuid() { printf "'00000000-0000-4000-8000-%012d'" "$1"; }
 call() {
     local mode=$1 request=$2 result=$3 denial=$4
     local owner=NULL execution=NULL result_id=NULL upload=NULL issuer=NULL membership=NULL recorded=NULL catalog_request=NULL
-    local fingerprint="SHA2('item',256)"
+    local engine=12 path="$table_path" fingerprint="SHA2('12:public.orders',256)" reason=NULL composition=NULL
     case "$mode" in
-        task_production) owner="'transfer'"; execution=$(uuid 100); result_id=$(uuid "$result") ;;
-        upload_creation) upload=$(uuid "$result") ;;
+        task_production) owner="'transfer'"; execution=$(uuid 100); result_id=$(uuid "$result"); issuer=$transfer_id; membership=31001 ;;
+        upload_creation)
+            engine=99; path="$file_path"; fingerprint="SHA2('99:upload.geojson',256)"; upload=$(uuid "$result")
+            issuer=$manager_id; membership=31002
+            composition="JSON_OBJECT('format','geojson','refs',JSON_ARRAY(JSON_OBJECT('target',$path,'role','data','primary',true,'required',true)))" ;;
         catalog) catalog_request=$request ;;
-        independent) ;;
+        independent) reason="'fixture approval'" ;;
         *) return 2 ;;
     esac
     case "$mode" in task_production|upload_creation)
-        issuer=21; membership=31; recorded="'2026-01-02 03:04:05.123456'" ;;
+        recorded="'2026-01-02 03:04:05.123456'" ;;
     esac
     cat <<SQL
-CALL system.persist_source_grant('$mode',$request,7,99,JSON_OBJECT('engine_id',99),$catalog_request,NULL,
-    $fingerprint,SHA2('boundary',256),NULL,NULL,NULL,'user',41,'read','until_revoked',NULL,41,51,1,NULL,
+CALL system.persist_source_grant('$mode',$request,7,$engine,$path,$catalog_request,NULL,
+    $fingerprint,SHA2('boundary',256),$composition,NULL,NULL,'user',40001,'read','until_revoked',NULL,40001,50001,$human_version,$reason,
     $owner,$execution,$result_id,$upload,$issuer,$membership,$recorded,$denial)
 SQL
 }
+table_path="JSON_OBJECT('version','catalog.path/v1','engine_id',12,'segments',JSON_ARRAY(JSON_OBJECT('term','server','kind','server','name',''),JSON_OBJECT('term','schema','kind','namespace','name','public'),JSON_OBJECT('term','table','kind','table','name','orders')))"
+file_path="JSON_OBJECT('version','catalog.path/v1','engine_id',99,'segments',JSON_ARRAY(JSON_OBJECT('term','root','kind','root','name',''),JSON_OBJECT('term','file','kind','file','name','upload.geojson')))"
+admin <<SQL
+SET @recorded=NOW(6);
+INSERT INTO engine_access_fulfillment_outcomes (request_id,tenant_id,engine_id,caller_principal_id,catalog_path,binding,expiry_mode,outcome,recorded_at,deadline)
+VALUES ($(uuid 13),7,12,(SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-catalog'),$table_path,
+  JSON_OBJECT('expiry_mode','until_revoked','expires_at',NULL,'item_fingerprint',SHA2('12:public.orders',256),'boundary_hash',SHA2('receipt',256),
+    'recipient_type','user','recipient_id',40001,'action','read',
+    'operator',JSON_OBJECT('principal_id','40001','tenant_membership_id','50001','authorization_version','$human_version')),
+  'until_revoked','accepted',@recorded,@recorded+INTERVAL 5 MINUTE);
+SQL
 pair=$(call task_production "$(uuid 11)" 1 NULL)
 expect_error worker_gate 1370 "START TRANSACTION; $pair; ROLLBACK;"
 expect_error bootstrap_gate 1370 "START TRANSACTION; $pair; ROLLBACK;"
@@ -135,13 +158,22 @@ expect_error system_gate 1062 "START TRANSACTION; $(call upload_creation "$(uuid
  INSERT INTO system.sample_audit VALUES(1); ROLLBACK;"
 expect_error system_gate 1644 "START TRANSACTION; $(call independent "$(uuid 17)" 0 "'not_new'"); COMMIT;"
 expect_error system_gate 3819 "START TRANSACTION; $(call task_production NULL 7 "'not_new'"); ROLLBACK;"
+# Repeat with a missing Catalog receipt, stale human, wrong service identity,
+# and a non-NFS upload. All attempts use the same restricted procedure.
+expect_error system_gate 1644 "START TRANSACTION; $(call catalog "$(uuid 81)" 0 NULL); ROLLBACK;"
+expect_error system_gate 1644 "START TRANSACTION; $(human_version=0 call independent "$(uuid 82)" 0 NULL); ROLLBACK;"
+expect_error system_gate 1644 "START TRANSACTION; $(transfer_id=$manager_id call task_production "$(uuid 83)" 83 NULL); ROLLBACK;"
+admin <<<"UPDATE engines SET lifecycle_state='disabled' WHERE id=99"
+expect_error system_gate 1644 "START TRANSACTION; $(call upload_creation "$(uuid 84)" 84 NULL); ROLLBACK;"
+admin <<<"UPDATE engines SET lifecycle_state='active' WHERE id=99"
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 13) AND boundary_hash=SHA2('receipt',256)")" = 1
 for table in engine_access_initial_grant_outcomes engine_access_upload_grant_outcomes; do
     test "$(admin <<<"SELECT COUNT(*), SUM(outcome='issued'), SUM(outcome='denied') FROM $table")" = $'2\t1\t1'
 done
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants")" = 4
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE approval_mode IN ('catalog','independent') AND request_id IN ($(uuid 13),$(uuid 14))")" = 2
-test "$(admin <<<"SELECT COUNT(*) FROM engine_access_initial_grant_outcomes WHERE grant_request_id=$(uuid 11) AND result_id=$(uuid 1) AND issuer_principal_id=21 AND issuer_membership_id=31 AND recorded_at='2026-01-02 03:04:05.123456'")" = 1
-test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE grant_request_id=$(uuid 12) AND upload_id=$(uuid 2) AND item_fingerprint=SHA2('item',256)")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_initial_grant_outcomes WHERE grant_request_id=$(uuid 11) AND result_id=$(uuid 1) AND issuer_principal_id=$transfer_id AND issuer_membership_id=31001 AND recorded_at='2026-01-02 03:04:05.123456'")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE grant_request_id=$(uuid 12) AND upload_id=$(uuid 2) AND item_fingerprint=SHA2('99:upload.geojson',256)")" = 1
 test "$(admin <<<"SELECT COUNT(*) FROM sample_audit")" = 7
 echo 'MySQL System source procedure: 4 Grants, 2 issued and 2 denied across both result tables; privileges and rollback verified'
 (cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \

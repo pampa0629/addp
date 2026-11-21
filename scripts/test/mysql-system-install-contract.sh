@@ -85,7 +85,7 @@ GRANT SELECT ON `system`.startup_schema_revision TO 'iam_runtime'@'%';
 GRANT SELECT, INSERT ON `system`.audit_logs TO 'iam_runtime'@'%';
 SQL
 test "$(echo "SELECT version>0 AND pending_version=0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | runtime)" = 1
-test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry','system_engine_catalog','system_access_target_locks') AND version>0 AND pending_version=0" | runtime)" = 5
+test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry','system_engine_catalog','system_access_target_locks','system_source_grant_catalog') AND version>0 AND pending_version=0" | runtime)" = 6
 test "$(echo "SELECT revision FROM module_registry_state WHERE id=1" | admin)" = 1
 echo "INSERT INTO audit_logs(event_name,result,risk_level,module_name) VALUES ('iam.fixture.install','succeeded','low','system')" | runtime
 for denied in 'TRUNCATE TABLE audit_logs' 'ALTER TABLE audit_logs ADD COLUMN fixture INT' "UPDATE audit_logs SET result='failed'" 'DELETE FROM audit_logs' 'UPDATE startup_schema_revision SET version=0'; do
@@ -147,6 +147,6 @@ export ADDP_TEST_STARTUP_BINARY="$work/system-server"
 test_startup() {
     (cd "$(dirname "$0")/../../common" && ADDP_TEST_STARTUP_REASON="$1" GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
 }
-test_startup 'System MySQL installation does not yet include source authorization storage'
+test_startup 'System MySQL installation does not yet include complete source authorization guards'
 echo "UPDATE startup_schema_revision SET pending_version=version+1 WHERE owner='system_module_registry'" | admin
 test_startup 'schema system_module_registry has unfinished MySQL migration'

@@ -14,7 +14,7 @@ import (
 const mysqlIAMFoundationOwner = "system_iam_foundation"
 const mysqlIAMFoundationVersion int64 = 17
 
-//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql
+//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
 // RequireMySQLIAMFoundation checks the installed owner revision without DDL.
@@ -48,10 +48,20 @@ func CheckMySQLSystemStartup(db *gorm.DB) error {
 	if err := schema.RequireMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion); err != nil {
 		return err
 	}
+	if err := schema.RequireMySQL(db, mysqlSourceGrantCatalogOwner, mysqlSourceGrantCatalogVersion); err != nil {
+		return err
+	}
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return err
 	}
-	return errors.New("System MySQL installation does not yet include source authorization storage")
+	return errors.New("System MySQL installation does not yet include complete source authorization guards")
+}
+
+const mysqlSourceGrantCatalogOwner = "system_source_grant_catalog"
+const mysqlSourceGrantCatalogVersion = 1
+
+func MigrateMySQLSourceGrantCatalog(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlSourceGrantCatalogOwner, mysqlSourceGrantCatalogVersion, "mysql_source_grant_catalog", nil)
 }
 
 const mysqlEngineCatalogOwner = "system_engine_catalog"

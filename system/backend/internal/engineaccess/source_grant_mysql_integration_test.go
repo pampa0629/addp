@@ -43,15 +43,19 @@ func TestSourceGrantWriterAgainstMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actor := Actor{TenantID: 7, PrincipalID: 21, MembershipID: 31}
+	prior, err := repo.findSourceGrant(ctx, uuid.MustParse("00000000-0000-4000-8000-000000000011"))
+	if err != nil || prior.IssuerPrincipalID == nil || prior.IssuerMembershipID == nil {
+		t.Fatalf("production source fixture: %v", err)
+	}
+	actor := Actor{TenantID: prior.TenantID, PrincipalID: *prior.IssuerPrincipalID, MembershipID: *prior.IssuerMembershipID}
 	executionID, resultID := uuid.New(), uuid.New()
 	ref := production.Reference{Owner: "transfer", ExecutionID: executionID.String(), ResultID: resultID.String()}
 	id := productionGrantCommand(actor.TenantID, ref)
 	grant := &sourceGrant{
 		RequestID: id, ApprovalMode: productionApprovalMode, TenantID: actor.TenantID, EngineID: int64(request.Path.EngineID),
 		CatalogPath: catalogPath, ItemFingerprint: request.ItemFingerprint, BoundaryHash: request.BoundaryHash,
-		RecipientID: 41, RecipientType: "user", Action: "read", ExpiryMode: "until_revoked",
-		OperatorPrincipalID: 41, OperatorMembershipID: 51, OperatorAuthorizationVersion: 1,
+		RecipientID: prior.OperatorPrincipalID, RecipientType: "user", Action: "read", ExpiryMode: "until_revoked",
+		OperatorPrincipalID: prior.OperatorPrincipalID, OperatorMembershipID: prior.OperatorMembershipID, OperatorAuthorizationVersion: prior.OperatorAuthorizationVersion,
 		ProducerOwner: &ref.Owner, ProductionExecutionID: &executionID, ProductionResultID: &resultID,
 		IssuerPrincipalID: &actor.PrincipalID, IssuerMembershipID: &actor.MembershipID,
 	}
@@ -68,11 +72,15 @@ func TestSourceGrantWriterAgainstMySQL(t *testing.T) {
 	if grant.GrantedAt.IsZero() || !json.Valid(grant.CatalogPath) || !strings.Contains(string(grant.CatalogPath), "业务.域") {
 		t.Fatalf("Grant readback lost database time or target: %+v", grant)
 	}
+	managerGrant, err := repo.findSourceGrant(ctx, uuid.MustParse("00000000-0000-4000-8000-000000000012"))
+	if err != nil || managerGrant.IssuerPrincipalID == nil || managerGrant.IssuerMembershipID == nil {
+		t.Fatalf("upload source fixture: %v", err)
+	}
 	uploadID := uuid.New()
 	denial := "not_new"
 	upload := &uploadGrantOutcome{
 		TenantID: actor.TenantID, UploadID: uploadID, ItemFingerprint: request.ItemFingerprint,
-		IssuerPrincipalID: actor.PrincipalID, IssuerMembershipID: actor.MembershipID,
+		IssuerPrincipalID: *managerGrant.IssuerPrincipalID, IssuerMembershipID: *managerGrant.IssuerMembershipID,
 		Outcome: "denied", RecordedAt: outcome.RecordedAt, DenialCode: &denial,
 	}
 	if err := repo.transaction(ctx, func(tx *Repository) error {
