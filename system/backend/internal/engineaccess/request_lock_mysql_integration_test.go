@@ -185,6 +185,9 @@ func TestSystemAccessTargetLockAgainstMySQL(t *testing.T) {
 			if err := second.Raw("SELECT CONNECTION_ID()").Scan(&waiterID).Error; err != nil {
 				t.Fatal(err)
 			}
+			if waiterID == holderID {
+				t.Fatalf("expected separate application connections, got %d", holderID)
+			}
 			done := make(chan error, 1)
 			go func() { done <- contender.lockFulfillmentTarget(ctx, 7, path) }()
 			// The observer is a separate administrative connection. The two
@@ -198,17 +201,18 @@ func TestSystemAccessTargetLockAgainstMySQL(t *testing.T) {
 				case <-ctx.Done():
 					t.Fatal(ctx.Err())
 				case <-tick.C:
-					err := admin.WithContext(ctx).Raw(`SELECT EXISTS (
-						SELECT 1 FROM performance_schema.data_lock_waits w
-						JOIN performance_schema.threads a ON a.THREAD_ID=w.REQUESTING_THREAD_ID
-						JOIN performance_schema.threads b ON b.THREAD_ID=w.BLOCKING_THREAD_ID
+					// Only these two transactions touch the target table in this
+					// disposable database. Observe the storage-engine wait directly.
+					var waits int
+					err := admin.WithContext(ctx).Raw(`SELECT COUNT(*)
+						FROM performance_schema.data_lock_waits w
 						JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID
-						WHERE a.PROCESSLIST_ID=? AND b.PROCESSLIST_ID=?
-						AND l.OBJECT_SCHEMA='system' AND l.OBJECT_NAME='engine_access_target_locks'
-					)`, waiterID, holderID).Scan(&waiting).Error
+						WHERE l.OBJECT_SCHEMA='system' AND l.OBJECT_NAME='engine_access_target_locks'
+						  AND w.REQUESTING_ENGINE_TRANSACTION_ID <> w.BLOCKING_ENGINE_TRANSACTION_ID`).Scan(&waits).Error
 					if err != nil {
 						t.Fatal(err)
 					}
+					waiting = waits > 0
 				}
 			}
 			var err error
