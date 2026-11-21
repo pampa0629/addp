@@ -20,7 +20,9 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -281,6 +283,39 @@ func TestSourceAdmissionRejectsAnonymousAccessAndInconclusiveNegativeProbe(t *te
 			}
 			if err != ErrUnprotected {
 				t.Fatalf("insecure/inconclusive source admitted: %v", err)
+			}
+		})
+	}
+}
+
+type brokenProbeWriter struct{}
+
+func (brokenProbeWriter) Write([]byte) (int, error) { return 0, syscall.EPIPE }
+
+func TestAnonymousProbeReadsCertificateAlertAfterBrokenPipe(t *testing.T) {
+	request, err := http.NewRequest(http.MethodGet, "https://127.0.0.1/metrics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		reply     io.Reader
+		wantAlert bool
+	}{
+		{"peer certificate required", iotest.ErrReader(&net.OpError{Op: "remote error", Err: tls.AlertError(116)}), true},
+		{"peer bad certificate", iotest.ErrReader(&net.OpError{Op: "remote error", Err: tls.AlertError(42)}), true},
+		{"other peer alert", iotest.ErrReader(&net.OpError{Op: "remote error", Err: tls.AlertError(40)}), false},
+		{"closed without reply", strings.NewReader(""), false},
+		{"http denial after failed write", strings.NewReader("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := struct {
+				io.Reader
+				io.Writer
+			}{tc.reply, brokenProbeWriter{}}
+			status, err := anonymousProbeResponse(conn, request)
+			if status != 0 || certificateRejection(err) != tc.wantAlert || (!tc.wantAlert && !errors.Is(err, syscall.EPIPE)) {
+				t.Fatalf("status=%d err=%v", status, err)
 			}
 		})
 	}

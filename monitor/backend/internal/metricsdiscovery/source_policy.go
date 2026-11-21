@@ -3,6 +3,7 @@
 package metricsdiscovery
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -268,11 +269,7 @@ func (p *SourcePolicy) admitResolved(ctx context.Context, resolved ResolvedEndpo
 	}
 	status, err := p.fetch(ctx, resolved, false)
 	if err != nil {
-		// TCP crypto/tls wraps peer alerts in net.OpError. Match only the two
-		// certificate rejection alerts, never a network error or a timeout.
-		var remote *net.OpError
-		if ctx.Err() != nil || !errors.As(err, &remote) || remote.Op != "remote error" || remote.Err == nil ||
-			(remote.Err.Error() != tls.AlertError(42).Error() && remote.Err.Error() != tls.AlertError(116).Error()) {
+		if ctx.Err() != nil || !certificateRejection(err) {
 			return &probeRejection{ErrUnprotected, probeFailureReason(err), status}
 		}
 	} else if status != http.StatusUnauthorized && status != http.StatusForbidden {
@@ -281,10 +278,57 @@ func (p *SourcePolicy) admitResolved(ctx context.Context, resolved ResolvedEndpo
 	return nil
 }
 
+func certificateRejection(err error) bool {
+	var remote *net.OpError
+	return errors.As(err, &remote) && remote.Op == "remote error" && remote.Err != nil &&
+		(remote.Err.Error() == tls.AlertError(42).Error() || remote.Err.Error() == tls.AlertError(116).Error())
+}
+
+// A TLS 1.3 server can send its certificate rejection just as the client
+// writes the HTTP request. Read the peer's reply even after a write error.
+// A failed write alone is never evidence of certificate rejection.
+func anonymousProbeResponse(conn io.ReadWriter, request *http.Request) (int, error) {
+	writeErr := request.Write(conn)
+	reader := bufio.NewReader(io.LimitReader(conn, 32<<10))
+	for {
+		response, err := http.ReadResponse(reader, request)
+		if writeErr != nil && !certificateRejection(err) {
+			return 0, writeErr
+		}
+		if err != nil {
+			return 0, err
+		}
+		if response.StatusCode < 100 || response.StatusCode >= 200 || response.StatusCode == http.StatusSwitchingProtocols {
+			// The caller closes this one-shot connection; no response body is consumed.
+			return response.StatusCode, nil
+		}
+	}
+}
+
 func (p *SourcePolicy) fetch(ctx context.Context, resolved ResolvedEndpoint, authenticated bool) (int, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+resolved.Address+"/metrics", nil)
+	if err != nil {
+		return 0, ErrAdmissionFailed
+	}
+	request.Header.Set("Accept", "text/plain; version=0.0.4, application/openmetrics-text")
 	tlsConfig := p.tlsConfig.Clone()
 	if !authenticated {
 		tlsConfig.Certificates = nil
+		ctx, cancel := context.WithTimeout(ctx, Timeout)
+		defer cancel()
+		conn, err := (&tls.Dialer{Config: tlsConfig}).DialContext(ctx, "tcp", resolved.Address)
+		if err != nil {
+			return 0, err
+		}
+		defer conn.Close()
+		deadline, _ := ctx.Deadline()
+		if err := conn.SetDeadline(deadline); err != nil {
+			return 0, err
+		}
+		stop := context.AfterFunc(ctx, func() { conn.Close() })
+		defer stop()
+		request.Close = true
+		return anonymousProbeResponse(conn, request)
 	}
 	transport := &http.Transport{
 		Proxy: nil, TLSClientConfig: tlsConfig, DisableKeepAlives: true, DisableCompression: true,
@@ -293,19 +337,11 @@ func (p *SourcePolicy) fetch(ctx context.Context, resolved ResolvedEndpoint, aut
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: Timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrEndpointForbidden }}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+resolved.Address+"/metrics", nil)
-	if err != nil {
-		return 0, ErrAdmissionFailed
-	}
-	request.Header.Set("Accept", "text/plain; version=0.0.4, application/openmetrics-text")
 	response, err := client.Do(request)
 	if err != nil {
 		return 0, err
 	}
 	defer response.Body.Close()
-	if !authenticated {
-		return response.StatusCode, nil
-	}
 	contentType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || (contentType != "text/plain" && contentType != "application/openmetrics-text") ||
 		response.StatusCode != http.StatusOK || response.Header.Get("Content-Encoding") != "" || response.ContentLength > EndpointBodyLimit {
