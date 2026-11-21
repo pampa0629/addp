@@ -3,7 +3,9 @@ package engineaccess
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSourceGrantWriterAgainstMySQL(t *testing.T) {
+func mysqlSourceGrantRepository(t *testing.T) *Repository {
+	t.Helper()
 	if os.Getenv("ADDP_TEST_MYSQL_SOURCE_GRANT") != "1" {
 		t.Skip("run the disposable platform-source-grant-boundary gate")
 	}
@@ -34,8 +37,12 @@ func TestSourceGrantWriterAgainstMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	repo := NewRepository(db)
+	t.Cleanup(func() { pool.Close() })
+	return NewRepository(db)
+}
+
+func TestSourceGrantWriterAgainstMySQL(t *testing.T) {
+	repo := mysqlSourceGrantRepository(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	request := testFulfillmentRequest()
@@ -91,5 +98,51 @@ func TestSourceGrantWriterAgainstMySQL(t *testing.T) {
 	stored, err := repo.uploadOutcome(ctx, actor.TenantID, uploadID, request.ItemFingerprint)
 	if err != nil || stored.GrantRequestID != nil || stored.DenialCode == nil || *stored.DenialCode != denial {
 		t.Fatalf("committed upload denial: %+v, %v", stored, err)
+	}
+}
+
+func TestFulfillmentReceiptAgainstMySQL(t *testing.T) {
+	repo := mysqlSourceGrantRepository(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	request := testFulfillmentRequest()
+	callerID, err := strconv.ParseInt(os.Getenv("ADDP_TEST_CATALOG_PRINCIPAL_ID"), 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.CallerPrincipalID = callerID
+	closeRequest := func(tx *Repository) error {
+		_, err := tx.settleFulfillment(ctx, request, false, userProvenance{}, nil)
+		return err
+	}
+	rollback := errors.New("roll back the caller transaction")
+	err = repo.transaction(ctx, func(tx *Repository) error {
+		if err := closeRequest(tx); err != nil {
+			return err
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatalf("close before outer rollback: %v", err)
+	}
+	if _, err := repo.readFulfillment(ctx, request); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("observed rolled-back receipt: %v", err)
+	}
+	if err := repo.transaction(ctx, closeRequest); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.readFulfillment(ctx, request)
+	if err != nil || stored.Outcome != "closed" || stored.Deadline != nil || stored.RecordedAt.IsZero() {
+		t.Fatalf("committed receipt: %+v, %v", stored, err)
+	}
+	if err := repo.transaction(ctx, closeRequest); err != nil {
+		t.Fatalf("repeat close: %v", err)
+	}
+	if _, err := repo.readFulfillmentGrant(ctx, request); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("closed receipt Grant lookup: %v", err)
+	}
+	request.DecisionID = uuid.New()
+	if _, err := repo.readFulfillment(ctx, request); !errors.Is(err, errFulfillmentBinding) {
+		t.Fatalf("same request with changed decision: %v", err)
 	}
 }

@@ -50,11 +50,16 @@ CREATE TABLE sample_audit (id INT PRIMARY KEY);
 SQL
 transfer_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-transfer'")
 manager_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-manager'")
+catalog_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-catalog'")
 human_version=$(admin <<<"SELECT authorization_version FROM principals WHERE id=40001")
 { echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
 admin < "$sql_dir/authorize_definer.sql"
 admin <<'SQL'
 GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'system_gate'@'%';
+GRANT SELECT, INSERT ON system.engine_access_fulfillment_outcomes TO 'system_gate'@'%';
+GRANT SELECT, INSERT, UPDATE ON system.engine_access_request_locks TO 'system_gate'@'%';
+GRANT INSERT (target_key), UPDATE (lock_marker) ON system.engine_access_target_locks TO 'system_gate'@'%';
+GRANT INSERT ON system.audit_logs TO 'system_gate'@'%';
 GRANT SELECT ON system.engine_access_grants TO 'system_gate'@'%';
 GRANT SELECT ON system.engine_access_initial_grant_outcomes TO 'system_gate'@'%';
 GRANT SELECT ON system.engine_access_upload_grant_outcomes TO 'system_gate'@'%';
@@ -96,6 +101,8 @@ check_grants() {
 check_grants addp_system_source_grant@localhost 'EXECUTE ON PROCEDURE system.persist_source_grant' \
     'INSERT ON system.engine_access_grants' 'INSERT ON system.engine_access_initial_grant_outcomes' 'INSERT ON system.engine_access_upload_grant_outcomes'
 check_grants 'system_gate@%' 'EXECUTE ON PROCEDURE system.persist_source_grant' 'SELECT ON system.engine_access_grants' \
+    'SELECT, INSERT ON system.engine_access_fulfillment_outcomes' 'SELECT, INSERT, UPDATE ON system.engine_access_request_locks' \
+    'INSERT (target_key), UPDATE (lock_marker) ON system.engine_access_target_locks' 'INSERT ON system.audit_logs' \
     'SELECT ON system.engine_access_initial_grant_outcomes' 'SELECT ON system.engine_access_upload_grant_outcomes' 'INSERT ON system.sample_audit'
 check_grants worker_gate@127.0.0.1
 check_grants bootstrap_gate@127.0.0.1 'INSERT ON system.sample_audit'
@@ -127,15 +134,28 @@ SQL
 }
 table_path="JSON_OBJECT('version','catalog.path/v1','engine_id',12,'segments',JSON_ARRAY(JSON_OBJECT('term','server','kind','server','name',''),JSON_OBJECT('term','schema','kind','namespace','name','public'),JSON_OBJECT('term','table','kind','table','name','orders')))"
 file_path="JSON_OBJECT('version','catalog.path/v1','engine_id',99,'segments',JSON_ARRAY(JSON_OBJECT('term','root','kind','root','name',''),JSON_OBJECT('term','file','kind','file','name','upload.geojson')))"
-admin <<SQL
+caller system_gate system <<SQL
 SET @recorded=NOW(6);
 INSERT INTO engine_access_fulfillment_outcomes (request_id,tenant_id,engine_id,caller_principal_id,catalog_path,binding,expiry_mode,outcome,recorded_at,deadline)
-VALUES ($(uuid 13),7,12,(SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-catalog'),$table_path,
-  JSON_OBJECT('expiry_mode','until_revoked','expires_at',NULL,'item_fingerprint',SHA2('12:public.orders',256),'boundary_hash',SHA2('receipt',256),
+VALUES ($(uuid 13),7,12,$catalog_id,$table_path,
+  JSON_OBJECT('decision_id',$(uuid 113),'expiry_mode','until_revoked','expires_at',NULL,'item_fingerprint',SHA2('12:public.orders',256),'boundary_hash',SHA2('receipt',256),
     'recipient_type','user','recipient_id',40001,'action','read',
     'operator',JSON_OBJECT('principal_id','40001','tenant_membership_id','50001','authorization_version','$human_version')),
   'until_revoked','accepted',@recorded,@recorded+INTERVAL 5 MINUTE);
 SQL
+receipt=system.engine_access_fulfillment_outcomes
+test "$(caller system_gate <<<"SELECT outcome FROM $receipt WHERE request_id=$(uuid 13)")" = accepted
+for user in worker_gate bootstrap_gate; do
+    expect_error "$user" 1142 "SELECT outcome FROM $receipt;"
+    expect_error "$user" 1142 "INSERT INTO $receipt () VALUES ();"
+done
+for statement in "UPDATE $receipt SET outcome='closed' WHERE request_id=$(uuid 13)" "DELETE FROM $receipt WHERE request_id=$(uuid 13)"; do
+    expect_error system_gate 1142 "$statement"
+    # The table's immutable triggers must reject even an account with DML privileges.
+    if admin <<<"$statement" >"$work/immutable.out" 2>"$work/immutable.err"; then exit 1; fi
+    grep -q '^ERROR 1644 ' "$work/immutable.err"
+done
+expect_error system_gate 1142 "TRUNCATE TABLE $receipt;"
 pair=$(call task_production "$(uuid 11)" 1 NULL)
 expect_error worker_gate 1370 "START TRANSACTION; $pair; ROLLBACK;"
 expect_error bootstrap_gate 1370 "START TRANSACTION; $pair; ROLLBACK;"
@@ -181,6 +201,14 @@ test "$(admin <<<"SELECT COUNT(*) FROM engine_access_initial_grant_outcomes WHER
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE grant_request_id=$(uuid 12) AND upload_id=$(uuid 2) AND item_fingerprint=SHA2('99:upload.geojson',256)")" = 1
 test "$(admin <<<"SELECT COUNT(*) FROM sample_audit")" = 7
 echo 'MySQL System source procedure: 4 Grants, 2 issued and 2 denied across both result tables; privileges and rollback verified'
-(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
-    go test ./internal/engineaccess -run '^TestSourceGrantWriterAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/source-writer.log"
+(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_CATALOG_PRINCIPAL_ID="$catalog_id" ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
+    go test ./internal/engineaccess -run '^Test(SourceGrantWriter|FulfillmentReceipt)AgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/source-writer.log"
 grep -q '^--- PASS: TestSourceGrantWriterAgainstMySQL ' "$work/source-writer.log"
+grep -q '^--- PASS: TestFulfillmentReceiptAgainstMySQL ' "$work/source-writer.log"
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE event_name='system.engine_access_fulfillment.closed'")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_fulfillment_outcomes WHERE outcome='closed'")" = 1
+closed_id=$(admin <<<"SELECT request_id FROM engine_access_fulfillment_outcomes WHERE outcome='closed'")
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE event_name='system.engine_access_fulfillment.closed' AND entity_id='$closed_id' AND tenant_id=7 AND principal_id=$catalog_id")" = 1
+expect_error system_gate 1644 "START TRANSACTION; $(call catalog "'$closed_id'" 0 NULL); ROLLBACK;"
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id='$closed_id'")" = 0
+echo 'System receipt: accepted authorizes the matching Catalog Grant; closed is immutable, audited once and cannot issue a Grant'
