@@ -12,7 +12,7 @@ admin() {
 sql_dir="$(cd "$(dirname "$0")/../../system/backend/internal/migration/mysql_source_grant" && pwd)"
 admin < "$sql_dir/create_definer.sql"
 admin <<SQL
-CREATE USER 'system_gate'@'127.0.0.1' IDENTIFIED BY '$runtime_password';
+CREATE USER 'system_gate'@'%' IDENTIFIED BY '$runtime_password';
 CREATE USER 'worker_gate'@'127.0.0.1' IDENTIFIED BY '$worker_password';
 CREATE USER 'bootstrap_gate'@'127.0.0.1' IDENTIFIED BY '$bootstrap_password';
 SQL
@@ -41,15 +41,13 @@ CREATE TABLE sample_audit (id INT PRIMARY KEY);
 SQL
 admin < "$sql_dir/initial_results.sql"
 { echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
+admin < "$sql_dir/authorize_definer.sql"
 admin <<'SQL'
-GRANT INSERT ON system.engine_access_grants TO 'addp_system_source_grant'@'localhost';
-GRANT INSERT ON system.engine_access_initial_grant_outcomes TO 'addp_system_source_grant'@'localhost';
-GRANT INSERT ON system.engine_access_upload_grant_outcomes TO 'addp_system_source_grant'@'localhost';
-GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'addp_system_source_grant'@'localhost','system_gate'@'127.0.0.1';
-GRANT SELECT ON system.engine_access_grants TO 'system_gate'@'127.0.0.1';
-GRANT SELECT ON system.engine_access_initial_grant_outcomes TO 'system_gate'@'127.0.0.1';
-GRANT SELECT ON system.engine_access_upload_grant_outcomes TO 'system_gate'@'127.0.0.1';
-GRANT INSERT ON system.sample_audit TO 'system_gate'@'127.0.0.1','bootstrap_gate'@'127.0.0.1';
+GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'system_gate'@'%';
+GRANT SELECT ON system.engine_access_grants TO 'system_gate'@'%';
+GRANT SELECT ON system.engine_access_initial_grant_outcomes TO 'system_gate'@'%';
+GRANT SELECT ON system.engine_access_upload_grant_outcomes TO 'system_gate'@'%';
+GRANT INSERT ON system.sample_audit TO 'system_gate'@'%','bootstrap_gate'@'127.0.0.1';
 SQL
 caller() {
     local user=$1
@@ -86,7 +84,7 @@ check_grants() {
 }
 check_grants addp_system_source_grant@localhost 'EXECUTE ON PROCEDURE system.persist_source_grant' \
     'INSERT ON system.engine_access_grants' 'INSERT ON system.engine_access_initial_grant_outcomes' 'INSERT ON system.engine_access_upload_grant_outcomes'
-check_grants system_gate@127.0.0.1 'EXECUTE ON PROCEDURE system.persist_source_grant' 'SELECT ON system.engine_access_grants' \
+check_grants 'system_gate@%' 'EXECUTE ON PROCEDURE system.persist_source_grant' 'SELECT ON system.engine_access_grants' \
     'SELECT ON system.engine_access_initial_grant_outcomes' 'SELECT ON system.engine_access_upload_grant_outcomes' 'INSERT ON system.sample_audit'
 check_grants worker_gate@127.0.0.1
 check_grants bootstrap_gate@127.0.0.1 'INSERT ON system.sample_audit'
@@ -146,3 +144,6 @@ test "$(admin <<<"SELECT COUNT(*) FROM engine_access_initial_grant_outcomes WHER
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE grant_request_id=$(uuid 12) AND upload_id=$(uuid 2) AND item_fingerprint=SHA2('item',256)")" = 1
 test "$(admin <<<"SELECT COUNT(*) FROM sample_audit")" = 7
 echo 'MySQL System source procedure: 4 Grants, 2 issued and 2 denied across both result tables; privileges and rollback verified'
+(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
+    go test ./internal/engineaccess -run '^TestSourceGrantWriterAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/source-writer.log"
+grep -q '^--- PASS: TestSourceGrantWriterAgainstMySQL ' "$work/source-writer.log"

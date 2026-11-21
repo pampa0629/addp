@@ -190,11 +190,8 @@ func (s *Service) IssueInitialProductionGrant(ctx context.Context, actor Product
 				return err
 			}
 		}
-		outcome, err := tx.insertInitialProductionOutcome(ctx, actor.Actor, ref, &requestID, "")
+		outcome, err := tx.insertInitialProductionOutcome(ctx, actor.Actor, ref, grant, "")
 		if err != nil {
-			return err
-		}
-		if err := tx.insertSourceGrant(ctx, grant); err != nil {
 			return err
 		}
 		if err := tx.auditInitialProduction(ctx, actor, ref, "issued", ""); err != nil {
@@ -225,6 +222,9 @@ func (s *Service) IssueInitialProductionGrant(ctx context.Context, actor Product
 }
 
 func (r *Repository) lockInitialProduction(ctx context.Context, tenantID int64, ref production.Reference) error {
+	if r.db.Dialector.Name() == "mysql" {
+		return r.lockAccessRequest(ctx, productionGrantCommand(tenantID, ref))
+	}
 	return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", fmt.Sprintf("initial_production|%d|%s|%s|%s", tenantID, ref.Owner, ref.ExecutionID, ref.ResultID)).Error
 }
 

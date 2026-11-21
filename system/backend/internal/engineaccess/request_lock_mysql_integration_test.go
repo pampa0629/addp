@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/infra/database"
 	platformmysql "github.com/addp/common/infra/database/mysql"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/migration"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -41,12 +42,14 @@ func TestSystemAccessRequestLockAgainstMySQL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	repo := NewRepository(db)
-	id, other := uuid.New(), uuid.New()
+	ref := production.Reference{Owner: "transfer", ExecutionID: uuid.NewString(), ResultID: uuid.NewString()}
+	uploadID, fingerprint := uuid.NewString(), testFulfillmentRequest().ItemFingerprint
+	id, other := productionGrantCommand(7, ref), uploadGrantCommand(7, uploadID, fingerprint)
 	rollback := errors.New("roll back access request")
 	waiting := make(chan error, 1)
 	contended := false
 	err = repo.transaction(ctx, func(first *Repository) error {
-		if err := first.lockAccessRequest(ctx, id); err != nil {
+		if err := first.lockInitialProduction(ctx, 7, ref); err != nil {
 			return err
 		}
 		go func() {
@@ -77,7 +80,7 @@ func TestSystemAccessRequestLockAgainstMySQL(t *testing.T) {
 			}
 		}
 		if err := repo.transaction(ctx, func(otherTx *Repository) error {
-			return otherTx.lockAccessRequest(ctx, other)
+			return otherTx.lockInitialUpload(ctx, 7, uploadID, fingerprint)
 		}); err != nil {
 			return err
 		}

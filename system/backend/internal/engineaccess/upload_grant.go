@@ -77,6 +77,18 @@ func (r *Repository) uploadResult(ctx context.Context, row *uploadGrantOutcome) 
 	}
 	return result, result.Validate()
 }
+func uploadGrantCommand(tenantID int64, id, fingerprint string) uuid.UUID {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("addp.initial-upload|%d|%s|%s", tenantID, id, fingerprint)))
+}
+
+func (r *Repository) lockInitialUpload(ctx context.Context, tenantID int64, id, fingerprint string) error {
+	if r.db.Dialector.Name() == "mysql" {
+		return r.lockAccessRequest(ctx, uploadGrantCommand(tenantID, id, fingerprint))
+	}
+	return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",
+		fmt.Sprintf("initial_upload|%d|%s|%s", tenantID, id, fingerprint)).Error
+}
+
 func (s *Service) withUploadRuntime(ctx context.Context, actor UploadRuntimeActor, op func(*Repository, func() error) error, humans ...int64) error {
 	if actor.ClientID != "addp-manager" {
 		return commonapi.ErrForbidden
@@ -88,7 +100,7 @@ func (s *Service) withUploadRuntime(ctx context.Context, actor UploadRuntimeActo
 // first logical boundary can seed the canonical Grant. No caller supplies ACLs.
 func (s *Service) IssueInitialUploadGrant(ctx context.Context, actor UploadRuntimeActor, id, fp string) (*shared.UploadInitialResult, error) {
 	uploadID, err := uuid.Parse(id)
-	if err != nil || uploadID==uuid.Nil || uploadID.String()!=id || !authorizationfacts.ValidItemFingerprint(fp) {
+	if err != nil || uploadID == uuid.Nil || uploadID.String() != id || !authorizationfacts.ValidItemFingerprint(fp) {
 		return nil, commonapi.ErrBadRequest
 	}
 	var result *shared.UploadInitialResult
@@ -203,7 +215,7 @@ func (s *Service) IssueInitialUploadGrant(ctx context.Context, actor UploadRunti
 		if e := tx.db.WithContext(ctx).Table("system.engines").Select("id,version,engine_type,lifecycle_state").Where("tenant_id=? AND id=?", actor.TenantID, receipt.EngineID).Clauses(clause.Locking{Strength: "SHARE"}).Take(&engine).Error; e != nil {
 			return e
 		}
-		if e := tx.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", fmt.Sprintf("initial_upload|%d|%s|%s", actor.TenantID, id, fp)).Error; e != nil {
+		if e := tx.lockInitialUpload(ctx, actor.TenantID, id, fp); e != nil {
 			return e
 		}
 		if row, e := tx.uploadOutcome(ctx, actor.TenantID, uploadID, fp); e == nil {
@@ -250,7 +262,7 @@ func (s *Service) IssueInitialUploadGrant(ctx context.Context, actor UploadRunti
 			if history {
 				code = "target_history_exists"
 			} else {
-				requestID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("addp.initial-upload|%d|%s|%s", actor.TenantID, id, fp)))
+				requestID := uploadGrantCommand(actor.TenantID, id, fp)
 				grant = &sourceGrant{RequestID: requestID, ApprovalMode: shared.UploadInitialSource, TenantID: actor.TenantID, EngineID: int64(receipt.EngineID), CatalogPath: path, ItemFingerprint: fp, BoundaryHash: binding.BoundaryHash, RecipientType: "user", RecipientID: source.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, OperatorPrincipalID: source.PrincipalID, OperatorMembershipID: source.MembershipID, OperatorAuthorizationVersion: source.AuthorizationVersion, UploadID: &uploadID, IssuerPrincipalID: &actor.PrincipalID, IssuerMembershipID: &actor.MembershipID}
 				if binding.MetadataTarget != nil {
 					grant.Action = "metadata_read"
@@ -271,13 +283,8 @@ func (s *Service) IssueInitialUploadGrant(ctx context.Context, actor UploadRunti
 			row.GrantRequestID = &grant.RequestID
 			row.DenialCode = nil
 		}
-		if e := tx.db.WithContext(ctx).Create(row).Error; e != nil {
+		if e := tx.persistSourceGrant(ctx, grant, row); e != nil {
 			return e
-		}
-		if grant != nil {
-			if e := tx.insertSourceGrant(ctx, grant); e != nil {
-				return e
-			}
 		}
 		p, c := iam.PrincipalTypeServicePrincipal, iam.ContextTypeTenant
 		if e := iam.NewAuditWriter(tx.identity()).Write(ctx, iam.AuditEvent{Metadata: iam.AuditMetadata{PrincipalID: &actor.PrincipalID, PrincipalType: &p, TenantID: &actor.TenantID, ContextType: &c}, EventName: "system.engine_access_initial_grant." + row.Outcome, Result: iam.AuditResultSucceeded, RiskLevel: iam.AuditRiskHigh, ModuleName: "system", EntityType: "engine_access_initial_grant", EntityID: id, Details: map[string]any{"source": shared.UploadInitialSource, "upload_id": id, "item_fingerprint": fp, "outcome": row.Outcome, "denial_code": code}}); e != nil {

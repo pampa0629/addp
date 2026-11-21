@@ -63,9 +63,46 @@ func (sourceGrant) TableName() string { return "system.engine_access_grants" }
 // exact target boundary before calling the one persistence path. The database
 // supplies issuance time and enforces immutable provenance/rule constraints.
 func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) error {
-	if grant == nil {
+	return r.persistSourceGrant(ctx, grant, nil)
+}
+
+// Ordinary grants have no initial outcome. A production or upload outcome and
+// its optional Grant belong to one repository operation in the caller's transaction.
+func (r *Repository) persistSourceGrant(ctx context.Context, grant *sourceGrant, outcome initialSourceOutcome) error {
+	if grant == nil && outcome == nil {
 		return commonapi.ErrBadRequest
 	}
+	mysql := r.db.Dialector.Name() == "mysql"
+	if !mysql && outcome != nil {
+		if err := r.db.WithContext(ctx).Create(outcome).Error; err != nil {
+			return err
+		}
+	}
+	if grant != nil {
+		if err := validateSourceGrantTarget(grant); err != nil {
+			return err
+		}
+	}
+	if mysql {
+		return r.persistMySQLSourceGrant(ctx, grant, outcome)
+	}
+	if grant == nil {
+		return nil
+	}
+	err := r.db.WithContext(ctx).Clauses(clause.Returning{}).Create(grant).Error
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.ConstraintName {
+		case "engine_access_grant_relation_exists":
+			return ErrGrantRelationExists
+		case "source_grant_geopackage_nfs":
+			return commonapi.ErrBadRequest
+		}
+	}
+	return err
+}
+
+func validateSourceGrantTarget(grant *sourceGrant) error {
 	var primary plugin.EngineCatalogPath
 	if json.Unmarshal(grant.CatalogPath, &primary) != nil {
 		return commonapi.ErrBadRequest
@@ -112,15 +149,5 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 			return commonapi.ErrBadRequest
 		}
 	}
-	err := r.db.WithContext(ctx).Clauses(clause.Returning{}).Create(grant).Error
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.ConstraintName {
-		case "engine_access_grant_relation_exists":
-			return ErrGrantRelationExists
-		case "source_grant_geopackage_nfs":
-			return commonapi.ErrBadRequest
-		}
-	}
-	return err
+	return nil
 }

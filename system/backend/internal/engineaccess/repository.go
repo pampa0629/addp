@@ -57,6 +57,9 @@ func (r *Repository) readCommitted(ctx context.Context, read func(*Repository) e
 }
 
 func (r *Repository) wallClock(ctx context.Context) (time.Time, error) {
+	if r.db.Dialector.Name() == "mysql" {
+		return r.identity().CurrentDatabaseTime(ctx)
+	}
 	var now time.Time
 	err := r.db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error
 	return now.UTC(), err

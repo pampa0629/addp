@@ -44,7 +44,7 @@ func productionGrantCommand(tenantID int64, ref production.Reference) uuid.UUID 
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("addp.initial-production|"+strconv.FormatInt(tenantID, 10)+"|"+ref.Owner+"|"+ref.ExecutionID+"|"+ref.ResultID))
 }
 
-func (r *Repository) insertInitialProductionOutcome(ctx context.Context, actor Actor, ref production.Reference, grantID *uuid.UUID, denial string) (*initialProductionOutcome, error) {
+func (r *Repository) insertInitialProductionOutcome(ctx context.Context, actor Actor, ref production.Reference, grant *sourceGrant, denial string) (*initialProductionOutcome, error) {
 	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); !ok || actor.TenantID <= 0 || ref.Validate() != nil {
 		return nil, errInitialProductionEvidence
 	}
@@ -53,14 +53,16 @@ func (r *Repository) insertInitialProductionOutcome(ctx context.Context, actor A
 		return nil, err
 	}
 	row := &initialProductionOutcome{TenantID: actor.TenantID, ProducerOwner: ref.Owner, ExecutionID: uuid.MustParse(ref.ExecutionID), ResultID: uuid.MustParse(ref.ResultID),
-		Outcome: "issued", RecordedAt: now, GrantRequestID: grantID, IssuerPrincipalID: actor.PrincipalID, IssuerMembershipID: actor.MembershipID}
-	if grantID == nil {
+		Outcome: "issued", RecordedAt: now, IssuerPrincipalID: actor.PrincipalID, IssuerMembershipID: actor.MembershipID}
+	if grant == nil {
 		row.Outcome = "denied"
 		row.DenialCode = &denial
 	} else if denial != "" {
 		return nil, commonapi.ErrBadRequest
+	} else {
+		row.GrantRequestID = &grant.RequestID
 	}
-	if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
+	if err := r.persistSourceGrant(ctx, grant, row); err != nil {
 		return nil, err
 	}
 	return row, nil
