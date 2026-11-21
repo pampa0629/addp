@@ -38,7 +38,7 @@ export const protectionEnrollmentAPI = {
 }
 
 export const findingAPI = {
-  list: params => client.get('/security/findings', { params }),
+  list: (params, options) => client.get('/security/findings', { ...options, params }),
   get: id => client.get(`/security/findings/${id}`),
   review: (id, data) => client.post(`/security/findings/${id}/reviews`, data)
 }

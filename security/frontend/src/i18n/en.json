@@ -495,6 +495,11 @@
       "loadFailed": "Failed to load pending candidates"
     },
     "finding": {
+      "executionTitle": "Sensitive data discovery results",
+      "observedComponent": "Observed component",
+      "detectorVersion": "Detector version",
+      "zeroHits": "Discovery succeeded with zero findings",
+      "noRecordedFindings": "No findings recorded for this execution",
       "governanceTitle": "Sensitive field decisions",
       "governanceHint": "Manage automatic findings, complete match evidence, and formal human decisions in one place.",
       "noGovernanceConclusions": "No automatic candidates or manual formal decisions are available. Designate a field manually when recognition misses it.",

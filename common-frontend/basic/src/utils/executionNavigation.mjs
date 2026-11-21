@@ -11,6 +11,7 @@ export function buildMonitorExecutionRoute(executionId) {
 const resultTaskTypes = {
   develop: ['query', 'workflow', 'script'],
   transfer: ['sync'],
+  security: ['sensitive_data_discovery'],
   quality: ['quality_plan'],
   meta: ['scan'],
   orchestrator: ['orchestration'],

@@ -495,6 +495,11 @@
       "loadFailed": "读取待复核候选失败"
     },
     "finding": {
+      "executionTitle": "敏感数据发现结果",
+      "observedComponent": "发现组件",
+      "detectorVersion": "检测器版本",
+      "zeroHits": "本次发现成功，命中 0 项",
+      "noRecordedFindings": "本次执行暂无已记录的发现",
       "governanceTitle": "敏感字段判定",
       "governanceHint": "自动识别结果、完整命中依据和人工正式结论都在这里管理。",
       "noGovernanceConclusions": "当前没有自动候选或人工正式结论；如识别能力漏报，可人工指定字段。",

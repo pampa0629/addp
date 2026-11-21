@@ -279,3 +279,87 @@ for (const [scenario, override] of [
   expect(professionalReads).toEqual([])
   expect(unexpected).toEqual([])
 })
+
+const discoveryObservation = {
+  execution_id: id, module: 'security', task_type: 'sensitive_data_discovery', source: 'security', status: 'success'
+}
+const observationPath = '/api/v1/monitor/executions/by-execution-id/' + id
+const findingsPath = '/api/v1/security/findings'
+const discoveryMonitor = '/monitor/executions?module=security&execution_id=' + id
+const finding = { id: 'older-finding', discovery_execution_id: id, component_key: 'column:order_code',
+  detector_code: 'pattern', detector_version: 'v2', confidence: 0.91, observed_at: '2026-11-17T00:00:00Z',
+  explanation: { governance_source: 'later-review' } }
+
+async function discoveryFixture(page, { permissions = ['security.finding.read'], execution = discoveryObservation, data = [finding] } = {}) {
+  const queries = []
+  page.on('request', req => {
+    const url = new URL(req.url())
+    if (url.pathname === findingsPath) queries.push(Object.fromEntries(url.searchParams))
+  })
+  const unexpected = await mockGraph(page, { permissions: ['monitor.execution.read', 'security.enrollment.read', ...permissions], responses: {
+    '/api/v1/monitor/task-providers': [],
+    '/api/v1/monitor/executions': { executions: [discoveryObservation], page: 1, page_size: 20, total: 1 },
+    [observationPath + '/tree']: { execution: discoveryObservation, children: [], truncated: false },
+    [observationPath + '/events']: { items: [], has_more: false, next_cursor: 0 },
+    [observationPath]: execution,
+    [findingsPath]: { data, total: data.length, page: 1, page_size: 20, total_pages: data.length ? 1 : 0 }
+  } })
+  await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
+  return { frame: page.frameLocator('iframe[data-testid="module-iframe"]'), queries, unexpected }
+}
+
+test('security discovery reads historical observations by execution and returns to the same dialog', async ({ page }) => {
+  const { frame, queries, unexpected } = await discoveryFixture(page)
+  await page.goto(discoveryMonitor)
+  await frame.getByRole('dialog').getByRole('button', { name: '查看执行结果' }).click()
+  await expect(page).toHaveURL(url => url.pathname === '/security/executions/' + id && url.searchParams.get('return_to') === discoveryMonitor)
+  await expect(frame.getByRole('cell', { name: 'column:order_code' })).toBeVisible()
+  await expect(frame.getByText('later-review')).toHaveCount(0)
+  expect(queries).toEqual([{ discovery_execution_id: id, page: '1', page_size: '20' }])
+  await frame.getByRole('button', { name: '返回本次执行' }).click()
+  await expect(page).toHaveURL(discoveryMonitor)
+  await expect(frame.getByRole('dialog')).toContainText(id)
+  expect(unexpected).toEqual([])
+})
+
+test('security discovery hides the result without finding read', async ({ page }) => {
+  const { frame, queries } = await discoveryFixture(page, { permissions: [] })
+  await page.goto(discoveryMonitor)
+  await expect(frame.getByRole('dialog')).toContainText(id)
+  await expect(frame.getByRole('button', { name: '查看执行结果' })).toHaveCount(0)
+  expect(queries).toEqual([])
+})
+
+for (const [scenario, execution, data, expected] of [
+  ['zero hits', { ...discoveryObservation, metadata: { finding_count: 0 } }, [], '本次发现成功，命中 0 项'],
+  ['missing historical details', { ...discoveryObservation, metadata: { finding_count: 2 } }, [], '本次执行暂无已记录的发现'],
+  ['unfinished', { ...discoveryObservation, status: 'running' }, [], '本次执行暂无已记录的发现'],
+  ['wrong execution type', { ...discoveryObservation, task_type: 'cleanup_executor' }, [], '无法读取本次执行结果'],
+  ['foreign finding', discoveryObservation, [{ ...finding, discovery_execution_id: cleanupSibling }], '无法读取本次执行结果']
+]) test('security discovery distinguishes ' + scenario, async ({ page }) => {
+  const { frame, queries, unexpected } = await discoveryFixture(page, { execution, data })
+  await page.goto('/security/executions/' + id)
+  await expect(frame.getByText(expected, { exact: true })).toBeVisible()
+  if (scenario === 'wrong execution type') expect(queries).toEqual([])
+  if (scenario === 'foreign finding') await expect(frame.getByText('column:order_code')).toHaveCount(0)
+  expect(unexpected).toEqual([])
+})
+
+test('security discovery keeps the execution filter on page two and clears rows on a failed refresh', async ({ page }) => {
+  const { frame, queries } = await discoveryFixture(page)
+  await page.route('**' + findingsPath + '?**', route => {
+    const n = Number(new URL(route.request().url()).searchParams.get('page'))
+    const data = Array.from({ length: n === 1 ? 20 : 1 }, (_, i) => ({
+      ...finding, id: `finding-${n}-${i}`, component_key: `page-${n}-column-${i}`
+    }))
+    return route.fulfill({ json: { data, page: n, page_size: 20, total: 21, total_pages: 2 } })
+  })
+  await page.goto('/security/executions/' + id)
+  await frame.locator('.el-pagination .btn-next').click()
+  await expect(frame.getByRole('cell', { name: 'page-2-column-0', exact: true })).toBeVisible()
+  expect(queries.map(q => [q.discovery_execution_id, q.page])).toEqual([[id, '1'], [id, '2']])
+  await page.route('**' + findingsPath + '?**', route => route.fulfill({ status: 503, json: { error: 'unavailable' } }))
+  await frame.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(frame.getByText('无法读取本次执行结果')).toBeVisible()
+  await expect(frame.getByText('page-2-column-0')).toHaveCount(0)
+})

@@ -14,6 +14,7 @@ const children = [
     },
     meta: { requiresAuth: true, handlesForbidden: true }
   },
+  { path: 'executions/:id', component: () => import('../views/DiscoveryExecutionResult.vue'), meta: { requiresAuth: true, requiredPermissions: ['monitor.execution.read', 'security.enrollment.read', 'security.finding.read'] } },
   { path: 'classification-grading', component: () => import('../views/ClassificationGrading.vue'), meta: { requiresAuth: true } },
   { path: 'sensitive-data-definitions', component: () => import('../views/SensitiveDataDefinitions.vue'), meta: { requiresAuth: true } },
   { path: 'protection-enrollments', component: () => import('../views/ProtectionEnrollmentList.vue'), meta: { requiresAuth: true } }

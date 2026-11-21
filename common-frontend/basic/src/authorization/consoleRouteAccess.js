@@ -36,6 +36,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/orchestrator/executions': [tenant('orchestrator.workflow.read')],
   '/quality/executions': [tenant('monitor.execution.read', 'quality.plan.read')],
   '/quality/issues': [tenant('quality.issue.read')],
+  '/security/executions': [tenant('monitor.execution.read', 'security.enrollment.read', 'security.finding.read')],
   '/security/classification-grading': [tenant('security.classification.read', 'security.grade.read')],
   '/security/sensitive-data-definitions': [tenant('security.sensitive_data_type.read', 'security.detector.read', 'security.protection_baseline.read', 'security.classification.read', 'security.grade.read')],
   '/security/protection-enrollments': [tenant('security.enrollment.read', 'meta.catalog.read')],
