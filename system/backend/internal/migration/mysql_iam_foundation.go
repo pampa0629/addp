@@ -14,7 +14,7 @@ import (
 const mysqlIAMFoundationOwner = "system_iam_foundation"
 const mysqlIAMFoundationVersion int64 = 17
 
-//go:embed mysql_iam/*.sql mysql_module_registry/*.sql
+//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
 // RequireMySQLIAMFoundation checks the installed owner revision without DDL.
@@ -42,10 +42,20 @@ func CheckMySQLSystemStartup(db *gorm.DB) error {
 	if err := schema.RequireMySQL(db, mysqlModuleRegistryOwner, mysqlModuleRegistryVersion); err != nil {
 		return err
 	}
+	if err := schema.RequireMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion); err != nil {
+		return err
+	}
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return err
 	}
-	return errors.New("System MySQL installation does not yet include engine and source authorization storage")
+	return errors.New("System MySQL installation does not yet include source authorization storage")
+}
+
+const mysqlEngineCatalogOwner = "system_engine_catalog"
+const mysqlEngineCatalogVersion int64 = 1
+
+func MigrateMySQLEngineCatalog(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion, "mysql_engine_catalog", nil)
 }
 
 // MigrateMySQLModuleRegistry installs the System registry and its first routing revision.

@@ -45,22 +45,10 @@ func TestMySQLScanCatalog(t *testing.T) {
 		t.Cleanup(func() { pool.Close() })
 		return db
 	}
-	admin := open(os.Getenv("ADDP_TEST_MYSQL_USER"), os.Getenv("ADDP_TEST_MYSQL_PASSWORD"))
-	if err := repository.MigrateMySQLScanCatalog(admin); err != nil {
-		t.Fatal(err)
-	}
-	if err := repository.MigrateMySQLScanCatalog(admin); err != nil {
-		t.Fatal("replay installation:", err)
-	}
-	if err := schema.RequireMySQL(admin, "meta_scan_catalog", 1); err != nil {
-		t.Fatal(err)
-	}
-	for _, table := range []string{"meta_node", "meta_item", "object_index_deletions"} {
-		if err := admin.Exec("GRANT SELECT, INSERT, UPDATE ON meta." + table + " TO 'worker_gate'@'%'").Error; err != nil {
-			t.Fatal(err)
-		}
-	}
 	db := open(os.Getenv("ADDP_MYSQL_META_WORKER_USER"), os.Getenv("ADDP_MYSQL_META_WORKER_PASSWORD"))
+	if err := schema.RequireMySQL(db, "meta_scan_catalog", 1); err != nil {
+		t.Fatal(err)
+	}
 	repo := repository.NewScanRepository(db)
 	portNumber, err := strconv.Atoi(port)
 	if err != nil {

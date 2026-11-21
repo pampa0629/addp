@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=scripts/test/mysql-source-grant-boundary.sh scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
+# ADDP_T2_INPUT_FILES=scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -200,6 +200,11 @@ fi
 
 if [ "$test_group" = platform-meta-scan ]; then
     mysql_compose exec -T mysql sh -ec 'exec mysql --user=root --password="$MYSQL_ROOT_PASSWORD" --execute="CREATE DATABASE common"'
+    (cd "$ROOT_DIR/system/backend" && GOWORK=off go build -o "$WORK_DIR/system-server" ./cmd/server)
+    (cd "$ROOT_DIR/meta/backend" && GOWORK=off go build -o "$WORK_DIR/meta-server" ./cmd/server)
+    export ADDP_TEST_META_SOURCE_PASSWORD
+    ADDP_TEST_META_SOURCE_PASSWORD=$(openssl rand -hex 24)
+    bash "$ROOT_DIR/scripts/test/mysql-meta-install-contract.sh" "$WORK_DIR" "$MYSQL_PROJECT" "$mysql_port"
     (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_MYSQL_META_SCAN=1 GOWORK=off go test ./internal/service \
         -run '^TestMetaClaimAndTaskSummaryAgainstMySQL$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-meta-scan.log"
     grep -q '^--- PASS: TestMetaClaimAndTaskSummaryAgainstMySQL ' "$WORK_DIR/platform-meta-scan.log"
@@ -214,20 +219,9 @@ if [ "$test_group" = platform-meta-scan ]; then
 CREATE USER 'worker_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_META_WORKER_PASSWORD';
 GRANT SELECT ON meta.startup_schema_revision TO 'worker_gate'@'%';
 GRANT SELECT ON common.startup_schema_revision TO 'worker_gate'@'%';
-SQL
-    # Only the composite System parent key is a fixture. For the source scan use
-    # a real table, its own read-only account and the production MySQL plugin.
-    export ADDP_TEST_META_SOURCE_PASSWORD
-    ADDP_TEST_META_SOURCE_PASSWORD=$(openssl rand -hex 24)
-    mysql_admin <<SQL
-CREATE DATABASE \`system\`;
-CREATE TABLE \`system\`.engines (id BIGINT PRIMARY KEY, tenant_id BIGINT, UNIQUE KEY (tenant_id,id)) ENGINE=InnoDB;
-INSERT INTO \`system\`.engines VALUES (99,7),(100,8);
-CREATE DATABASE scan_source;
-CREATE TABLE scan_source.orders (id BIGINT PRIMARY KEY, label VARCHAR(30));
-INSERT INTO scan_source.orders VALUES (1,'sample');
-CREATE USER 'scan_reader'@'%' IDENTIFIED BY '$ADDP_TEST_META_SOURCE_PASSWORD';
-GRANT SELECT ON scan_source.* TO 'scan_reader'@'%';
+GRANT SELECT, INSERT, UPDATE ON meta.meta_node TO 'worker_gate'@'%';
+GRANT SELECT, INSERT, UPDATE ON meta.meta_item TO 'worker_gate'@'%';
+GRANT SELECT, INSERT, UPDATE ON meta.object_index_deletions TO 'worker_gate'@'%';
 SQL
     (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_META_MYSQL_CATALOG=1 GOWORK=off go test ./internal/scanruntime \
         -run '^TestMySQLScanCatalog$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/meta-catalog.log"

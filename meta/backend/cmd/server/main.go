@@ -12,6 +12,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/common/infra/objectstore"
 	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/logger"
@@ -40,6 +41,17 @@ import (
 // @name Authorization
 
 func main() {
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "install-mysql-scan" {
+			fmt.Fprintln(os.Stderr, "expected install-mysql-scan with no arguments")
+			os.Exit(2)
+		}
+		if err := installMySQLScan(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
 
@@ -206,4 +218,23 @@ func main() {
 	}()
 	<-runtimeContext.Done()
 	<-registration.Done()
+}
+
+func installMySQLScan() error {
+	db, err := platformmysql.OpenInstallation("meta")
+	if err != nil {
+		return err
+	}
+	pool, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	db = db.WithContext(ctx)
+	if err := repository.MigrateMySQLScanTasks(db); err != nil {
+		return err
+	}
+	return repository.MigrateMySQLScanCatalog(db)
 }
