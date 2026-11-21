@@ -220,13 +220,14 @@ INSERT INTO principals(id,principal_type) VALUES(40002,'user');
 INSERT INTO users(id,display_name) VALUES(40002,'Delegated engine manager');
 INSERT INTO tenant_memberships(id,tenant_id,principal_id,source_type,joined_at)
 VALUES(50002,7,40002,'manual',NOW(6));
+SET @member_version=(SELECT authorization_version FROM principals WHERE id=40002);
 INSERT INTO refresh_token_families(principal_id,context_type,tenant_membership_id,issued_authorization_version,client_id,
     auth_type,audiences,scopes,authentication_methods,assurance_level,authenticated_at,expires_at)
-SELECT id,'tenant',50002,authorization_version,'addp-web','first_party',JSON_ARRAY('addp.api'),JSON_ARRAY(),JSON_ARRAY('pwd'),'aal1',
-    NOW(6),NOW(6)+INTERVAL 1 HOUR FROM principals WHERE id=40002;
+VALUES(40002,'tenant',50002,@member_version,'addp-web','first_party',JSON_ARRAY('addp.api'),JSON_ARRAY(),JSON_ARRAY('pwd'),'aal1',
+    NOW(6),NOW(6)+INTERVAL 1 HOUR);
+SET @role_id=(SELECT id FROM roles WHERE role_key='tenant.engine_access_delegation_administrator');
 INSERT INTO role_assignments(principal_id,role_id,scope_type,tenant_id,source_type,created_by_principal_id,grant_reason)
-SELECT 40001,id,'tenant',7,'manual',40001,'isolated management fixture' FROM roles
-WHERE role_key='tenant.engine_access_delegation_administrator';
+VALUES(40001,@role_id,'tenant',7,'manual',40001,'isolated management fixture');
 GRANT SELECT, INSERT, UPDATE (status,version,revoked_by_principal_id,revoked_at,revoked_reason) ON system.engine_access_delegations TO 'system_gate'@'%';
 GRANT SELECT, UPDATE (authorization_version,updated_at) ON system.principals TO 'system_gate'@'%';
 GRANT SELECT ON system.users TO 'system_gate'@'%';
