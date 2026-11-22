@@ -2,7 +2,6 @@ package migration
 
 import (
 	"embed"
-	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -13,7 +12,7 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 17
+const mysqlIAMFoundationVersion int64 = 18
 
 //go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql
 var mysqlIAMFoundationSQL embed.FS
@@ -31,8 +30,7 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 const mysqlModuleRegistryOwner = "system_module_registry"
 const mysqlModuleRegistryVersion int64 = 1
 
-// CheckMySQLSystemStartup checks published System and Common revisions before
-// reporting the remaining storage prerequisite for a serving System process.
+// CheckMySQLSystemStartup verifies the installed owners using the runtime connection.
 func CheckMySQLSystemStartup(db *gorm.DB) error {
 	if err := RequireMySQLIAMFoundation(db); err != nil {
 		return err
@@ -61,10 +59,7 @@ func CheckMySQLSystemStartup(db *gorm.DB) error {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return err
 	}
-	if err := schema.RequireMySQL(db, mysqlGrantProcedureOwner, mysqlGrantProcedureVersion); err != nil {
-		return err
-	}
-	return errors.New("System MySQL installation does not yet include complete source authorization guards")
+	return schema.RequireMySQL(db, mysqlGrantProcedureOwner, mysqlGrantProcedureVersion)
 }
 
 const mysqlCleanupOwner = "system_cleanup_requests"

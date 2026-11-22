@@ -66,7 +66,16 @@ func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
 		}
 	}
 	if from < 17 {
-		return installMySQLCatalogRevision(tx, mysqlIAMFunctionalRolesV17)
+		if err := installMySQLCatalogRevision(tx, mysqlIAMFunctionalRolesV17); err != nil {
+			return err
+		}
+	}
+	if from < 18 {
+		return tx.Exec(`INSERT INTO iam_security_policy (
+			id,version,applied_version,access_token_ttl_minutes,delegated_access_token_ttl_minutes,resource_access_ticket_ttl_minutes,
+			refresh_token_ttl_days,oauth_authorization_code_ttl_minutes,oauth_device_code_ttl_minutes,oauth_device_poll_interval_seconds,
+			tenant_invitation_ttl_hours,oauth_public_rate_limit_per_minute,oauth_user_rate_limit_per_minute)
+			VALUES (1,1,0,15,2,15,30,5,10,5,168,60,30)`).Error
 	}
 	return nil
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/create_definer.sql system/backend/internal/migration/mysql_source_grant/authorize_definer.sql system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
+# ADDP_T2_INPUT_FILES=scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/create_definer.sql system/backend/internal/migration/mysql_source_grant/authorize_definer.sql system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -128,6 +128,22 @@ mysql['environment']['MYSQL_DATABASE'] = {
 with open(destination, 'w') as handle:
     json.dump({'services': {'mysql': mysql}}, handle)
 PY
+    if [ "$test_group" = platform-system-install ]; then
+        export REDIS_PASSWORD=$(openssl rand -hex 24)
+        ADDP_INFRA_GATE_PASSWORD="$REDIS_PASSWORD" ADDP_INFRA_GATE_MANAGER_PASSWORD="$(openssl rand -hex 24)" \
+            docker compose --env-file /dev/null -f "$ROOT_DIR/scripts/test/docker-compose.system-infra-configuration-t2.yml" \
+            config --format json > "$WORK_DIR/redis-base.json"
+        python3 - "$WORK_DIR/mysql.json" "$WORK_DIR/redis-base.json" <<'PYTHON'
+import json, sys
+from pathlib import Path
+config = Path(sys.argv[1])
+spec = json.loads(config.read_text())
+redis = json.loads(Path(sys.argv[2]).read_text())["services"]["redis"]
+spec["services"]["redis"] = redis
+spec["volumes"] = {"redis_config_data": {}}
+config.write_text(json.dumps(spec))
+PYTHON
+    fi
     existing=$(docker ps -aq --filter "label=com.docker.compose.project=$MYSQL_PROJECT")
     if [ -n "$existing" ]; then
         echo "MySQL gate refuses to reuse an existing project: $MYSQL_PROJECT" >&2
@@ -135,6 +151,12 @@ PY
     fi
     mysql_owned=true
     mysql_compose up -d --wait --wait-timeout 120 mysql
+    if [ "$test_group" = platform-system-install ]; then
+        mysql_compose up -d --wait --wait-timeout 90 redis
+        redis_binding=$(mysql_compose port redis 6379)
+        [[ "$redis_binding" =~ ^127\.0\.0\.1:[0-9]+$ ]]
+        export REDIS_PORT=${redis_binding##*:}
+    fi
     mysql_binding=$(docker inspect --format '{{with index (index .NetworkSettings.Ports "3306/tcp") 0}}{{.HostIp}}:{{.HostPort}}{{end}}' "$MYSQL_PROJECT")
     [[ "$mysql_binding" =~ ^127\.0\.0\.1:[0-9]+$ ]] || { echo 'MySQL gate requires a mapped loopback port' >&2; exit 1; }
     mysql_port=${mysql_binding##*:}

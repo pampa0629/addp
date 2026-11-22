@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS iam_security_policy (
+    id SMALLINT PRIMARY KEY CHECK (id=1),
+    version BIGINT NOT NULL CHECK (version>0),
+    applied_version BIGINT NOT NULL,
+    access_token_ttl_minutes INT NOT NULL CHECK (access_token_ttl_minutes BETWEEN 1 AND 60),
+    delegated_access_token_ttl_minutes INT NOT NULL CHECK (delegated_access_token_ttl_minutes BETWEEN 1 AND 2),
+    resource_access_ticket_ttl_minutes INT NOT NULL,
+    refresh_token_ttl_days INT NOT NULL CHECK (refresh_token_ttl_days BETWEEN 1 AND 365),
+    oauth_authorization_code_ttl_minutes INT NOT NULL CHECK (oauth_authorization_code_ttl_minutes BETWEEN 1 AND 5),
+    oauth_device_code_ttl_minutes INT NOT NULL CHECK (oauth_device_code_ttl_minutes BETWEEN 5 AND 30),
+    oauth_device_poll_interval_seconds INT NOT NULL CHECK (oauth_device_poll_interval_seconds BETWEEN 5 AND 60),
+    tenant_invitation_ttl_hours INT NOT NULL CHECK (tenant_invitation_ttl_hours BETWEEN 1 AND 720),
+    oauth_public_rate_limit_per_minute INT NOT NULL CHECK (oauth_public_rate_limit_per_minute BETWEEN 1 AND 10000),
+    oauth_user_rate_limit_per_minute INT NOT NULL CHECK (oauth_user_rate_limit_per_minute BETWEEN 1 AND 10000),
+    updated_by_principal_id BIGINT,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    FOREIGN KEY (updated_by_principal_id) REFERENCES principals(id),
+    CHECK (applied_version BETWEEN 0 AND version),
+    CHECK (resource_access_ticket_ttl_minutes BETWEEN 1 AND 60 AND resource_access_ticket_ttl_minutes<=access_token_ttl_minutes)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin

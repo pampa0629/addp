@@ -157,11 +157,56 @@ GRANT SELECT,INSERT,UPDATE,CREATE,INDEX,ALTER,REFERENCES ON common.* TO 'common_
 SQL
 ADDP_MYSQL_INSTALL_USER=common_setup ADDP_MYSQL_INSTALL_PASSWORD="$common_password" "$work/system-server" install-mysql-common
 echo "GRANT SELECT ON common.startup_schema_revision TO 'iam_runtime'@'%'" | admin
+sql_dir="$(cd "$(dirname "$0")/../../system/backend/internal/migration/mysql_source_grant" && pwd)"
 export ADDP_MYSQL_SYSTEM_USER=iam_runtime ADDP_MYSQL_SYSTEM_PASSWORD="$runtime_password"
 export ADDP_TEST_STARTUP_BINARY="$work/system-server"
 test_startup() {
     (cd "$(dirname "$0")/../../common" && ADDP_TEST_STARTUP_REASON="$1" GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
 }
 test_startup 'schema system_source_grant_procedure version mismatch'
+
+# Install and attest the real signing routine with a deployment-only connection.
+admin < "$sql_dir/create_definer.sql"
+{ echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
+admin < "$sql_dir/authorize_definer.sql"
+ADDP_MYSQL_INSTALL_USER=root ADDP_MYSQL_INSTALL_PASSWORD="$ADDP_TEST_MYSQL_PASSWORD" "$work/system-server" verify-mysql-source-grant
+admin <<'SQL'
+INSERT INTO module_definitions(module_name,route_prefix,enabled,declaration_published_at)
+VALUES('system','/system',TRUE,NOW(6));
+GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'iam_runtime'@'%';
+GRANT SELECT, UPDATE (client_secret_hash,status,updated_at) ON system.oauth_clients TO 'iam_runtime'@'%';
+GRANT SELECT ON system.engines TO 'iam_runtime'@'%';
+GRANT SELECT, UPDATE (updated_at) ON system.module_definitions TO 'iam_runtime'@'%';
+GRANT SELECT, INSERT, UPDATE ON system.module_runtime_instances TO 'iam_runtime'@'%';
+GRANT SELECT, UPDATE (revision,updated_at) ON system.module_registry_state TO 'iam_runtime'@'%';
+GRANT SELECT, DELETE ON common.execution_events TO 'iam_runtime'@'%';
+GRANT SELECT ON common.task_executions TO 'iam_runtime'@'%';
+GRANT SELECT, UPDATE (applied_version,updated_at) ON system.iam_security_policy TO 'iam_runtime'@'%';
+INSERT INTO common.task_executions (tenant_id,execution_id,module,task_type,status,trigger_type,created_at,updated_at,completed_at)
+VALUES (1,'00000000-0000-4000-8000-000000000031','meta','scan','success','manual',NOW(6)-INTERVAL 35 DAY,NOW(6)-INTERVAL 29 DAY,NOW(6)-INTERVAL 29 DAY);
+INSERT INTO common.execution_events(execution_id,tenant_id,module,task_type,attempt,occurred_at,kind)
+VALUES ('00000000-0000-4000-8000-000000000031',1,'meta','scan',1,NOW(6)-INTERVAL 31 DAY,'started'),
+       ('00000000-0000-4000-8000-000000000031',1,'meta','scan',1,NOW(6)-INTERVAL 29 DAY,'completed');
+SQL
+
+for forbidden in "UPDATE module_definitions SET enabled=0 WHERE 1=0" \
+    "DELETE FROM common.task_executions WHERE 1=0" \
+    "UPDATE common.execution_events SET step_id='denied' WHERE 1=0" \
+    "UPDATE iam_security_policy SET access_token_ttl_minutes=30 WHERE 1=0"; do
+    if runtime <<<"$forbidden" 2>"$work/denied.err"; then
+        echo "unexpected write permission: $forbidden" >&2
+        exit 1
+    fi
+    grep -Eq '^ERROR (1142|1143)' "$work/denied.err"
+done
+test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/0'
+python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
+test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
+test "$(runtime <<<"SELECT COUNT(*),MIN(kind) FROM common.execution_events WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = $'1\tcompleted'
+test "$(runtime <<<"SELECT status FROM common.task_executions WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = success
+test "$(admin <<<"SELECT COUNT(*) FROM module_runtime_instances i JOIN module_definitions d ON d.id=i.module_definition_id WHERE d.module_name='system' AND i.role='backend' AND i.status='down' AND i.stop_reason='graceful'")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.service_principal.credential.provisioned'")" -gt 0
+echo 'System startup facts: applied IAM policy, pruned 31-day event, retained 29-day event and execution, audited credentials and closed backend lease'
+
 echo "UPDATE startup_schema_revision SET pending_version=version+1 WHERE owner='system_module_registry'" | admin
 test_startup 'schema system_module_registry has unfinished MySQL migration'
