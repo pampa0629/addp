@@ -215,17 +215,52 @@ provision_publisher
 provision_publisher
 publisher_secret=$(openssl rand -hex 24)
 provision_publisher
+# Reuse this publisher through the production declaration protocol during the login test.
+export ADDP_TEST_GATEWAY_PUBLISHER_SECRET="$publisher_secret"
 unset publisher_secret
 test "$(admin <<<"SELECT authorization_version FROM principals WHERE id=$publisher_id")" = "$((initial_version + 1))"
 test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE entity_id='$publisher_id' AND event_name='iam.service_principal.credential.provisioned'")" = 1
 test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE entity_id='$publisher_id' AND event_name='iam.service_principal.credential.rotated'")" = 1
 echo 'System publisher CLI: initial credential, idempotent provision and audited rotation verified'
+admin <<'SQL'
+CREATE DATABASE gateway;
+GRANT SELECT ON system.principals TO 'iam_runtime'@'%';
+GRANT SELECT ON system.service_principals TO 'iam_runtime'@'%';
+GRANT SELECT ON system.users TO 'iam_runtime'@'%';
+GRANT SELECT, UPDATE(last_authenticated_at,updated_at) ON system.local_accounts TO 'iam_runtime'@'%';
+GRANT SELECT (user_id,method,status) ON system.mfa_credentials TO 'iam_runtime'@'%';
+GRANT SELECT, UPDATE(updated_at) ON system.tenant_memberships TO 'iam_runtime'@'%';
+GRANT SELECT, UPDATE(updated_at) ON system.tenants TO 'iam_runtime'@'%';
+GRANT SELECT ON system.role_assignments TO 'iam_runtime'@'%';
+GRANT SELECT ON system.roles TO 'iam_runtime'@'%';
+GRANT SELECT ON system.permissions TO 'iam_runtime'@'%';
+GRANT SELECT ON system.role_permissions TO 'iam_runtime'@'%';
+GRANT SELECT, INSERT ON system.refresh_token_families TO 'iam_runtime'@'%';
+GRANT SELECT, INSERT ON system.access_tokens TO 'iam_runtime'@'%';
+GRANT INSERT ON system.refresh_tokens TO 'iam_runtime'@'%';
+GRANT INSERT ON system.resource_access_tickets TO 'iam_runtime'@'%';
+GRANT SELECT ON system.departments TO 'iam_runtime'@'%';
+GRANT SELECT ON system.department_memberships TO 'iam_runtime'@'%';
+GRANT SELECT ON system.project_groups TO 'iam_runtime'@'%';
+GRANT SELECT ON system.project_group_memberships TO 'iam_runtime'@'%';
+GRANT INSERT ON system.module_definitions TO 'iam_runtime'@'%';
+SQL
+if runtime <<<"SELECT secret_ciphertext FROM mfa_credentials LIMIT 0" 2>"$work/mfa-denied.err"; then
+    echo 'ordinary login gate can read the TOTP secret' >&2
+    exit 1
+fi
+grep -q '^ERROR 1143' "$work/mfa-denied.err"
+export ADDP_TEST_GATEWAY_RUNTIME_PASSWORD=$(openssl rand -hex 24)
+export ADDP_TEST_MYSQL_MEMBER_PASSWORD=$(openssl rand -hex 24)
+bash "$(dirname "$0")/mysql-gateway-install-contract.sh" "$work" "$container" "$3"
+(cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_TENANT_FACTS="$work/tenant.json" GOWORK=off go test ./internal/migration -run '^TestPrepareMySQLGatewayTenant$' -count=1 -v)
 python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
 test "$(runtime <<<"SELECT COUNT(*),MIN(kind) FROM common.execution_events WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = $'1\tcompleted'
 test "$(runtime <<<"SELECT status FROM common.task_executions WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = success
 test "$(admin <<<"SELECT COUNT(*) FROM module_runtime_instances i JOIN module_definitions d ON d.id=i.module_definition_id WHERE d.module_name='system' AND i.role='backend' AND i.status='down' AND i.stop_reason='graceful'")" = 1
 test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.service_principal.credential.provisioned'")" -gt 0
+test "$(admin <<<"SELECT COUNT(*) FROM module_runtime_instances i JOIN module_definitions d ON d.id=i.module_definition_id WHERE d.module_name='gateway' AND i.role='ingress' AND i.status='down' AND i.stop_reason='graceful'")" = 1
 echo 'System startup facts: applied IAM policy, pruned 31-day event, retained 29-day event and execution, audited credentials and closed backend lease'
 
 echo "UPDATE startup_schema_revision SET pending_version=version+1 WHERE owner='system_module_registry'" | admin

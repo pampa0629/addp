@@ -6,7 +6,7 @@ container=$2
 export ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$3"
 export ADDP_MYSQL_INSTALL_USER=gateway_setup ADDP_MYSQL_GATEWAY_USER=gateway_runtime
 ADDP_MYSQL_INSTALL_PASSWORD=$(openssl rand -hex 24)
-ADDP_MYSQL_GATEWAY_PASSWORD=$(openssl rand -hex 24)
+ADDP_MYSQL_GATEWAY_PASSWORD=${ADDP_TEST_GATEWAY_RUNTIME_PASSWORD:-$(openssl rand -hex 24)}
 export ADDP_MYSQL_INSTALL_PASSWORD ADDP_MYSQL_GATEWAY_PASSWORD
 admin() {
     docker exec -i "$container" sh -c 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --protocol=TCP -h127.0.0.1 -uroot -NB gateway'

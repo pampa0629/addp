@@ -3,14 +3,20 @@ package migration
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	commonauth "github.com/addp/common/authorization"
+	"github.com/addp/common/infra/database"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func testMySQLScanIdentity(t *testing.T, db *gorm.DB, tenantID, adminID int64) {
@@ -23,29 +29,7 @@ func testMySQLScanIdentity(t *testing.T, db *gorm.DB, tenantID, adminID int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	member, err := iam.NewTenantMembershipService(repo, nil).EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
-		TenantID: tenantID, PrincipalID: newUser.PrincipalID, SourceType: iam.TenantMembershipSourceManual, CreatedByPrincipalID: &adminID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	role, err := repo.GetActiveBuiltinRoleByKey(ctx, "tenant.data_steward")
-	if err != nil {
-		t.Fatal(err)
-	}
-	assignments, err := iam.NewTenantRoleService(repo, nil).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenantID, MembershipID: member.Membership.ID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "metadata scan",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(assignments) != 1 {
-		t.Fatalf("expected one assignment, got %d", len(assignments))
-	}
-	if got := assignments[0]; got.RoleKey != role.RoleKey || got.EffectiveState != "effective" {
-		dbNow, err := repo.CurrentDatabaseTime(ctx)
-		t.Fatalf("created role=%q state=%q valid_from=%s db_now=%s: %v", got.RoleKey, got.EffectiveState, got.ValidFrom, dbNow, err)
-	}
+	assignScanMember(t, repo, tenantID, adminID, newUser.PrincipalID)
 	tokens, err := iam.NewTokenFamilyService(repo, iam.BrowserSessionConfig{ResourceTicketOwners: models.BrowserResourceAccessOwners}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -89,5 +73,86 @@ func testMySQLScanIdentity(t *testing.T, db *gorm.DB, tenantID, adminID int64) {
 		len(auth.Authorization.RoleAssignments) != 1 || !commonauth.HasContextPermissions(*auth, "meta.scan_task.execute", "meta.scan_task.read") ||
 		commonauth.HasContextPermissions(*auth, "iam.tenant_role_assignment.create") {
 		t.Fatal("scan member has unexpected identity or permissions")
+	}
+}
+
+func assignScanMember(t *testing.T, repo *iam.Repository, tenantID, adminID, principalID int64) {
+	t.Helper()
+	ctx := t.Context()
+	member, err := iam.NewTenantMembershipService(repo, nil).EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
+		TenantID: tenantID, PrincipalID: principalID, SourceType: iam.TenantMembershipSourceManual, CreatedByPrincipalID: &adminID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := repo.GetActiveBuiltinRoleByKey(ctx, "tenant.data_steward")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignments, err := iam.NewTenantRoleService(repo, nil).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+		TenantID: tenantID, MembershipID: member.Membership.ID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "metadata scan",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assignments) != 1 {
+		t.Fatalf("expected one assignment, got %d", len(assignments))
+	}
+	if got := assignments[0]; got.RoleKey != role.RoleKey || got.EffectiveState != "effective" {
+		dbNow, err := repo.CurrentDatabaseTime(ctx)
+		t.Fatalf("created role=%q state=%q valid_from=%s db_now=%s: %v", got.RoleKey, got.EffectiveState, got.ValidFrom, dbNow, err)
+	}
+}
+
+// The disposable gate creates tenant identities through the same IAM services as tenant management.
+// The observer receives only public IDs. Passwords and deployment credentials never reach Gateway.
+func TestPrepareMySQLGatewayTenant(t *testing.T) {
+	path := os.Getenv("ADDP_TEST_MYSQL_TENANT_FACTS")
+	if path == "" {
+		t.Skip("requires the disposable System installation gate")
+	}
+	driver, err := platformmysql.Dialector(database.Config{
+		Host: "127.0.0.1", Port: os.Getenv("ADDP_TEST_MYSQL_PORT"), DBName: "system",
+		User: os.Getenv("ADDP_TEST_MYSQL_USER"), Password: os.Getenv("ADDP_TEST_MYSQL_PASSWORD"), ConnectTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(driver, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	ctx := t.Context()
+	repo := iam.NewRepository(db)
+	identities := iam.NewIdentityService(repo, nil)
+	admin, err := identities.CreateLocalUser(ctx, iam.CreateLocalUserInput{Username: "scan-tenant-admin", DisplayName: "Scan tenant administrator", Password: rand.Text()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var creator int64
+	if err := db.Raw(`SELECT a.principal_id FROM role_assignments a JOIN roles r ON r.id=a.role_id
+		WHERE a.scope_type='platform' AND a.status='active' AND r.role_key='platform.system_administrator'`).Row().Scan(&creator); err != nil {
+		t.Fatal(err)
+	}
+	tenant, err := iam.NewPlatformTenantService(repo, nil).Create(ctx, iam.CreateTenantInput{Code: "mysql-scan", Name: "MySQL scan", ActorPrincipalID: creator, InitialAdministratorPrincipalID: admin.PrincipalID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := identities.CreateLocalUser(ctx, iam.CreateLocalUserInput{Username: "scan-member", DisplayName: "Scan member", Password: os.Getenv("ADDP_TEST_MYSQL_MEMBER_PASSWORD")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignScanMember(t, repo, tenant.ID, admin.PrincipalID, member.PrincipalID)
+	facts, err := json.Marshal(map[string]int64{"tenant_id": tenant.ID, "principal_id": member.PrincipalID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, facts, 0600); err != nil {
+		t.Fatal(err)
 	}
 }

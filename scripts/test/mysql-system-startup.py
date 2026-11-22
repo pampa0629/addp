@@ -1,5 +1,6 @@
 """Observe the installed System process using only its own runtime environment."""
 import base64
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -67,6 +68,12 @@ with log_path.open("w") as log:
         else:
             raise RuntimeError(f"System failed to become ready, exit={process.poll()}")
         assert fetch("/api/v1/system/engines", "unauthenticated")[0] == 401, "unauthenticated engine request was not rejected"
+        login_env = {key: os.environ[key] for key in (
+            "ADDP_TEST_GATEWAY_PUBLISHER_SECRET", "ADDP_TEST_GATEWAY_RUNTIME_PASSWORD", "ADDP_TEST_MYSQL_MEMBER_PASSWORD")}
+        for key in ("ADDP_INFRA_DATABASE_PROVIDER","ADDP_MYSQL_HOST","ADDP_MYSQL_PORT","GATEWAY_SERVICE_CLIENT_SECRET","REDIS_PORT","REDIS_PASSWORD"):
+            login_env[key] = env[key]
+        subprocess.run([sys.executable, str(root/"scripts/test/mysql-gateway-login.py"), str(work), f"http://127.0.0.1:{port}"],
+                       env=login_env, check=True, timeout=100)
         # Wait through the registration cleanup tick, then confirm the same live process.
         try:
             process.wait(timeout=11)
@@ -85,6 +92,21 @@ with log_path.open("w") as log:
         output = log_path.read_text(errors="replace")
         bad = [line for line in output.splitlines()
                if re.search(r'panic:|Error [0-9]{4} |"level":"ERROR"|level=ERROR|\[error\]|FATAL', line, re.I)]
+        # The System watch handler ends without writing if Gateway disconnects.
+        # HTTP metrics classify that canceled long poll as an error with status 200.
+        stopped_at = work / "gateway-stop-time"
+        if stopped_at.exists():
+            shutdown = float(stopped_at.read_text())
+            unexpected = []
+            for line in bad:
+                record = json.loads(line) if line.startswith("{") else {}
+                if (record.get("msg") == "http.request.completed" and record.get("method") == "GET"
+                        and record.get("route") == "/api/v1/system/runtime/modules/watch"
+                        and record.get("status") == 200 and datetime.fromisoformat(record["time"]).timestamp() >= shutdown):
+                    print("Gateway disconnected its registry watch on shutdown, request_id=" + record["request_id"])
+                else:
+                    unexpected.append(line)
+            bad = unexpected
         if bad or process.returncode:
             diagnostic = "\n".join(bad or output.splitlines()[-6:])
             for key, value in env.items():
