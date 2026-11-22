@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"time"
 
@@ -52,7 +51,7 @@ func installMySQL(command string, output io.Writer) error {
 		if err == nil {
 			continue
 		}
-		var pending *migration.PendingMySQLSystemTriggers
+		var pending *schema.PendingMySQLTriggers
 		if !errors.As(err, &pending) {
 			return err
 		}
@@ -61,16 +60,9 @@ func installMySQL(command string, output io.Writer) error {
 	if len(statements) == 0 {
 		return nil
 	}
-	if _, err := fmt.Fprintln(output, "USE `system`;\nDELIMITER $$"); err != nil {
+	pending := &schema.PendingMySQLTriggers{Statements: statements}
+	if err := pending.WriteSQL(output, target); err != nil {
 		return err
 	}
-	for _, statement := range statements {
-		if _, err := fmt.Fprintln(output, statement+"$$"); err != nil {
-			return err
-		}
-	}
-	if _, err := fmt.Fprintln(output, "DELIMITER ;"); err != nil {
-		return err
-	}
-	return &migration.PendingMySQLSystemTriggers{Statements: statements}
+	return pending
 }

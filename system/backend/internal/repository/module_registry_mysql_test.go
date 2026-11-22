@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/addp/common/schema"
 	"os"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestModuleRegistryAgainstMySQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close() })
-	var pending *migration.PendingMySQLSystemTriggers
+	var pending *schema.PendingMySQLTriggers
 	if err := migration.MigrateMySQLModuleRegistry(db); !errors.As(err, &pending) || len(pending.Statements) != 2 {
 		t.Fatalf("expected two pending registry triggers, got %v", err)
 	}

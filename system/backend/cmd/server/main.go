@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/addp/common/schema"
 	"net/http"
 	"os"
 	"os/signal"
@@ -46,7 +47,7 @@ func main() {
 		}
 		if err := installMySQL(os.Args[1], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			var pending *migration.PendingMySQLSystemTriggers
+			var pending *schema.PendingMySQLTriggers
 			if errors.As(err, &pending) {
 				os.Exit(3)
 			}

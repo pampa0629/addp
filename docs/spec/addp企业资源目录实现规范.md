@@ -447,7 +447,7 @@ GET /api/v1/meta/data-items/changes?after_cursor={opaque}&limit=200
 
 变化日志第一阶段不设置时间保留窗口。首次迁移必须为已有 DataItem 原子补齐 `upsert` 记录，从而允许新的 Catalog 从空库只通过该变化源重建。
 
-Meta 使用 `meta_item` 表上的 PostgreSQL trigger 作为唯一变化捕获边界：任何 Repository、批量 SQL、软删除、恢复或硬删除只要修改权威表，就必须在同一数据库事务内自动追加变化记录。应用代码不得再增加第二套手工 append、回调或双写逻辑；禁用或绕过该 trigger 写入 `meta_item` 视为缺陷。trigger 只读取 `meta_item` 当前行构造最小快照，不查询 System 或其他模块。
+Meta 使用所选平台数据库（PostgreSQL 或 MySQL）的 `meta_item` 行级 trigger 作为唯一变化捕获边界：任何 Repository、批量 SQL、软删除、恢复或硬删除只要修改权威表，就必须在同一数据库事务内自动追加变化记录。应用代码不得再增加第二套手工 append、回调或双写逻辑；禁用或绕过该 trigger 写入 `meta_item` 视为缺陷。trigger 只读取 `meta_item` 当前行构造最小快照，不查询 System 或其他模块。
 
 ### 5.2 幂等消费与检查点
 

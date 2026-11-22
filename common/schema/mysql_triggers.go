@@ -1,7 +1,8 @@
-package migration
+package schema
 
 import (
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -11,12 +12,12 @@ import (
 // The embedded trigger files use one header format; the body is an opaque SQL statement.
 var mysqlTriggerHeader = regexp.MustCompile(`^CREATE TRIGGER IF NOT EXISTS ([a-z_]+)\n(BEFORE|AFTER) (INSERT|UPDATE|DELETE) ON ([a-z_]+) FOR EACH ROW\n`)
 
-type mysqlSystemTrigger struct {
+type mysqlTrigger struct {
 	Name, Timing, Event, TableName, Body, Definer string
 	Position                                      int
 }
 
-func checkMySQLSystemTriggers(conn *gorm.DB, scripts []string) error {
+func CheckMySQLTriggers(conn *gorm.DB, scripts []string) error {
 	var account string
 	if err := conn.Raw("SELECT CURRENT_USER()").Row().Scan(&account); err != nil {
 		return err
@@ -33,9 +34,9 @@ func checkMySQLSystemTriggers(conn *gorm.DB, scripts []string) error {
 		return err
 	}
 	defer rows.Close()
-	byName := make(map[string]mysqlSystemTrigger)
+	byName := make(map[string]mysqlTrigger)
 	for rows.Next() {
-		var trigger mysqlSystemTrigger
+		var trigger mysqlTrigger
 		if err := rows.Scan(&trigger.Name, &trigger.Timing, &trigger.Event, &trigger.TableName, &trigger.Body, &trigger.Definer, &trigger.Position); err != nil {
 			return err
 		}
@@ -49,11 +50,11 @@ func checkMySQLSystemTriggers(conn *gorm.DB, scripts []string) error {
 	for _, script := range scripts {
 		header := mysqlTriggerHeader.FindStringSubmatch(script)
 		if header == nil {
-			return fmt.Errorf("invalid embedded System trigger header")
+			return fmt.Errorf("invalid embedded MySQL trigger header")
 		}
 		group := [3]string{header[2], header[3], header[4]}
 		positions[group]++
-		want := mysqlSystemTrigger{Name: header[1], Timing: header[2], Event: header[3],
+		want := mysqlTrigger{Name: header[1], Timing: header[2], Event: header[3],
 			TableName: header[4], Body: strings.TrimSpace(script[len(header[0]):]), Definer: account, Position: positions[group]}
 		found, ok := byName[want.Name]
 		if !ok {
@@ -62,19 +63,33 @@ func checkMySQLSystemTriggers(conn *gorm.DB, scripts []string) error {
 			continue
 		}
 		if found != want {
-			return fmt.Errorf("installed System trigger %s differs in definition, definer or order", want.Name)
+			return fmt.Errorf("installed MySQL trigger %s differs in definition, definer or order", want.Name)
 		}
 	}
 	if len(missing) > 0 {
-		return &PendingMySQLSystemTriggers{Statements: missing}
+		return &PendingMySQLTriggers{Statements: missing}
 	}
 	return nil
 }
 
-// PendingMySQLSystemTriggers contains the statements a deployment DBA must apply
+// PendingMySQLTriggers contains the statements a deployment DBA must apply
 // to the same physical database before the installation can publish its revision.
-type PendingMySQLSystemTriggers struct{ Statements []string }
+type PendingMySQLTriggers struct{ Statements []string }
 
-func (p *PendingMySQLSystemTriggers) Error() string {
-	return fmt.Sprintf("System requires %d DBA-installed MySQL triggers", len(p.Statements))
+func (p *PendingMySQLTriggers) Error() string {
+	return fmt.Sprintf("installation requires %d DBA-installed MySQL triggers", len(p.Statements))
+}
+
+// WriteSQL emits the pending statements for the deployment DBA.
+func (p *PendingMySQLTriggers) WriteSQL(out io.Writer, database string) error {
+	if _, err := fmt.Fprintf(out, "USE `%s`;\nDELIMITER $$\n", strings.ReplaceAll(database, "`", "``")); err != nil {
+		return err
+	}
+	for _, stmt := range p.Statements {
+		if _, err := fmt.Fprintln(out, stmt+"$$"); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(out, "DELIMITER ;")
+	return err
 }

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/addp/common/schema"
 	"net"
 	"os"
 	"os/signal"
@@ -47,6 +49,15 @@ func main() {
 			os.Exit(2)
 		}
 		if err := installMySQLScan(); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				fmt.Fprintln(os.Stderr, err)
+				if err := pending.WriteSQL(os.Stdout, "meta"); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				os.Exit(3)
+			}
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -236,5 +247,8 @@ func installMySQLScan() error {
 	if err := repository.MigrateMySQLScanTasks(db); err != nil {
 		return err
 	}
-	return repository.MigrateMySQLScanCatalog(db)
+	if err := repository.MigrateMySQLScanCatalog(db); err != nil {
+		return err
+	}
+	return repository.MigrateMySQLScanChanges(db)
 }

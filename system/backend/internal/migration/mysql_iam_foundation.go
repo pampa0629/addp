@@ -144,6 +144,6 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 				triggers = append(triggers, trigger.String())
 			}
 		}
-		return checkMySQLSystemTriggers(conn, triggers)
+		return schema.CheckMySQLTriggers(conn, triggers)
 	}, data)
 }
