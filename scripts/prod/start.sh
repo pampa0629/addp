@@ -4,11 +4,11 @@
 
 set -euo pipefail
 
-prepare_meta=false
+prepare_databases=false
 case "$#:${1:-}" in
   0:) ;;
-  1:--prepare-meta) prepare_meta=true ;;
-  *) echo 'Usage: scripts/prod/start.sh [--prepare-meta]' >&2; exit 2 ;;
+  1:--prepare-databases) prepare_databases=true ;;
+  *) echo 'Usage: scripts/prod/start.sh [--prepare-databases]' >&2; exit 2 ;;
 esac
 
 # 颜色定义
@@ -67,68 +67,89 @@ addp_prepare_observability_env "$PROJECT_ROOT/.env"
 export ADDP_RELEASE_MANIFEST
 ADDP_RELEASE_MANIFEST="$(python3 scripts/prod/release-images.py verify)"
 export ADDP_RELEASE_DIR="$(dirname "$ADDP_RELEASE_MANIFEST")"
+if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == system-meta ]]; then
+  PLATFORM_COMPOSE_FILES=(-f scripts/prod/system-meta.yml)
+fi
 PLATFORM_COMPOSE_FILES+=(-f "$ADDP_RELEASE_DIR/platform-images.yml")
 infra_result=0
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-$PROJECT_ROOT/.dev-state/deployment-discovery}"
-if ! bash scripts/infra/up.sh; then
-  source scripts/infra/ports.sh
-  addp_infra_ready core || exit 1
-  infra_result=1
-  echo 'Optional observability startup failed; core services are ready' >&2
-fi
-bash scripts/prod/wait-infra.sh
-if addp_metrics_enabled; then
-  if addp_metrics_platform_preflight; then
-    PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-platform.yml)
-    if python3 scripts/prod/generate-process-metrics-platform.py; then
-      PLATFORM_COMPOSE_FILES+=(-f "$ADDP_METRICS_DEPLOYMENT_DIR/platform-process-metrics.json")
+if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
+  if ! bash scripts/infra/up.sh; then
+    source scripts/infra/ports.sh
+    addp_infra_ready core || exit 1
+    infra_result=1
+    echo 'Optional observability startup failed; core services are ready' >&2
+  fi
+  bash scripts/prod/wait-infra.sh
+  if addp_metrics_enabled; then
+    if addp_metrics_platform_preflight; then
+      PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-platform.yml)
+      if python3 scripts/prod/generate-process-metrics-platform.py; then
+        PLATFORM_COMPOSE_FILES+=(-f "$ADDP_METRICS_DEPLOYMENT_DIR/platform-process-metrics.json")
+      else
+        infra_result=1
+        echo 'Process metrics/evidence deployment unconfigured; business startup remains independent' >&2
+      fi
     else
       infra_result=1
-      echo 'Process metrics/evidence deployment unconfigured; business startup remains independent' >&2
+      echo 'Monitor metrics admission unconfigured; business startup remains independent' >&2
     fi
-  else
-    infra_result=1
-    echo 'Monitor metrics admission unconfigured; business startup remains independent' >&2
   fi
-fi
-if addp_metrics_enabled && [[ -n "${MONITOR_PROMETHEUS_URL:-}" ]]; then
-  if addp_metrics_query_preflight; then
-    PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-query.yml)
-  else
-    infra_result=1
-    echo 'Monitor metrics query unconfigured; business startup remains independent' >&2
+  if addp_metrics_enabled && [[ -n "${MONITOR_PROMETHEUS_URL:-}" ]]; then
+    if addp_metrics_query_preflight; then
+      PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-query.yml)
+    else
+      infra_result=1
+      echo 'Monitor metrics query unconfigured; business startup remains independent' >&2
+    fi
   fi
-fi
-if [[ -n "${GATEWAY_METRICS_CONTROL_LISTEN:-}" ]]; then
-  if [[ -n "${GATEWAY_METRICS_CONTROL_SERVER_NAME:-}" && "${GATEWAY_METRICS_CONTROL_TLS_DIR:-}" == /* && -d "$GATEWAY_METRICS_CONTROL_TLS_DIR" ]]; then
-    PLATFORM_COMPOSE_FILES+=(-f scripts/prod/gateway-metrics-control.yml)
-  else
-    infra_result=1
-    echo 'Gateway metrics control deployment unconfigured; business startup remains independent' >&2
+  if [[ -n "${GATEWAY_METRICS_CONTROL_LISTEN:-}" ]]; then
+    if [[ -n "${GATEWAY_METRICS_CONTROL_SERVER_NAME:-}" && "${GATEWAY_METRICS_CONTROL_TLS_DIR:-}" == /* && -d "$GATEWAY_METRICS_CONTROL_TLS_DIR" ]]; then
+      PLATFORM_COMPOSE_FILES+=(-f scripts/prod/gateway-metrics-control.yml)
+    else
+      infra_result=1
+      echo 'Gateway metrics control deployment unconfigured; business startup remains independent' >&2
+    fi
   fi
-fi
-if addp_traces_enabled; then
-  if python3 scripts/prod/generate-trace-platform.py; then
-    PLATFORM_COMPOSE_FILES+=(-f "$ADDP_TRACE_DEPLOYMENT_DIR/platform-traces.json")
-  else
-    infra_result=1
-    echo 'Trace producer/query deployment unconfigured; business startup remains independent' >&2
+  if addp_traces_enabled; then
+    if python3 scripts/prod/generate-trace-platform.py; then
+      PLATFORM_COMPOSE_FILES+=(-f "$ADDP_TRACE_DEPLOYMENT_DIR/platform-traces.json")
+    else
+      infra_result=1
+      echo 'Trace producer/query deployment unconfigured; business startup remains independent' >&2
+    fi
   fi
+  # Containers use the fixed internal query endpoint; native development uses the resolved host mapping.
+  export LOKI_URL=''
+  if addp_runtime_logs_enabled; then export LOKI_URL=http://runtime-log-api:3100; fi
+else
+  docker network inspect "${ADDP_DEPLOYMENT_NETWORK:?}" > /dev/null
 fi
-# Containers use the fixed internal query endpoint; native development uses the resolved host mapping.
-export LOKI_URL=''
-if addp_runtime_logs_enabled; then export LOKI_URL=http://runtime-log-api:3100; fi
 
 # Publish desired services from the same Compose files, independently of metrics.
 intent_compose_args=()
 for ((intent_index=1; intent_index<${#PLATFORM_COMPOSE_FILES[@]}; intent_index+=2)); do
   intent_compose_args+=(--compose-file "${PLATFORM_COMPOSE_FILES[$intent_index]}")
 done
-if python3 scripts/utils/deployment-inventory.py service-expectations --state running "${intent_compose_args[@]}"; then
-  PLATFORM_COMPOSE_FILES+=(-f "$ADDP_DEPLOYMENT_DISCOVERY_DIR/platform-service-expectations.json")
-else
-  infra_result=1
-  echo 'Service expectations unavailable; business startup continues' >&2
+if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
+  if python3 scripts/utils/deployment-inventory.py service-expectations --state running "${intent_compose_args[@]}"; then
+    PLATFORM_COMPOSE_FILES+=(-f "$ADDP_DEPLOYMENT_DISCOVERY_DIR/platform-service-expectations.json")
+  else
+    infra_result=1
+    echo 'Service expectations unavailable; business startup continues' >&2
+  fi
+fi
+
+# The same deployment identity prepares every module in the selected instance.
+prepare_database() {
+  local service=$1
+  shift
+  platform_compose run --rm -T --no-deps --entrypoint /app/server \
+    -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service" prepare-database "$@"
+}
+if [[ "$prepare_databases" == true ]]; then
+  prepare_database system-backend system
+  prepare_database system-backend common
 fi
 
 # 第二步：System 就绪后由部署入口发布声明
@@ -136,14 +157,17 @@ echo -e "${YELLOW}[2/4] 等待 System 就绪并发布模块声明...${NC}"
 python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${intent_compose_args[@]}"
 
 # Only a new deployment or upgrade prepares Meta. A normal start uses runtime roles.
-if [[ "$prepare_meta" == true ]]; then
-  platform_compose run --rm -T --no-deps --entrypoint /app/server \
-    -e ADDP_PG_META_INSTALL_USER -e ADDP_PG_META_INSTALL_PASSWORD -e ADDP_PG_META_TRIGGER_OWNER \
-    -e ADDP_MYSQL_INSTALL_USER -e ADDP_MYSQL_INSTALL_PASSWORD meta-backend prepare-database
+if [[ "$prepare_databases" == true ]]; then
+  prepare_database meta-backend
 fi
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
 platform_compose up -d --no-build --pull never --wait --wait-timeout 180
+
+if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == system-meta ]]; then
+  platform_compose ps
+  exit 0
+fi
 
 echo -e "${YELLOW}[4/4] 启动并等待内置 Runtime 就绪...${NC}"
 if [[ -n "${ADDP_GEOPYTHON_METRICS_ENDPOINT:-}" ]]; then

@@ -8,7 +8,7 @@ import (
 	"github.com/addp/common/infra/database"
 	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/common/schema"
-	"github.com/addp/system/internal/repository"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -21,7 +21,7 @@ func TestRestrictedCommonStartupAgainstMySQL(t *testing.T) {
 	for _, owner := range []string{"system", "meta"} {
 		t.Run(owner, func(t *testing.T) {
 			driver, err := platformmysql.Dialector(database.Config{Host: "127.0.0.1", Port: os.Getenv("ADDP_TEST_MYSQL_PORT"), DBName: owner,
-				User: owner + "_runtime_gate", Password: os.Getenv("ADDP_TEST_" + strings.ToUpper(owner) + "_RUNTIME_PASSWORD")})
+				User: os.Getenv("ADDP_DATABASE_RUNTIME_USER"), Password: os.Getenv("ADDP_DATABASE_RUNTIME_PASSWORD")})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -34,12 +34,7 @@ func TestRestrictedCommonStartupAgainstMySQL(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer pool.Close()
-			if owner == "system" {
-				err = repository.AutoMigrateNonIAM(db)
-			} else {
-				// Meta Worker calls the same check using its own module connection.
-				err = schema.Require(db, "common", schema.CommonVersion)
-			}
+			err = schema.Require(db, "common", schema.CommonVersion)
 			switch state {
 			case "ready":
 				if err != nil {

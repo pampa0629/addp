@@ -65,6 +65,11 @@ type Config struct {
 	TrustedProxies []string // 允许提供客户端 IP 转发头的反向代理 IP/CIDR
 }
 
+// LoadPlatformDatabase reads only the PG endpoint needed by offline commands.
+func LoadPlatformDatabase() database.Config {
+	return database.Config{Host: getEnv("POSTGRES_HOST", "localhost"), Port: getEnv("POSTGRES_PORT", "5432"), DBName: getEnv("POSTGRES_DB", "addp"), User: getEnv("POSTGRES_USER", "addp"), Password: getEnv("POSTGRES_PASSWORD", "addp_password")}
+}
+
 func (c *Config) PlatformDatabase() database.Config {
 	return database.Config{
 		Host: c.PostgresHost, Port: c.PostgresPort,
@@ -118,6 +123,7 @@ func Load() *Config {
 	port := getEnv("SYSTEM_BACKEND_PORT", "8180")
 	serverAddr := ":" + port
 
+	postgres := LoadPlatformDatabase()
 	cfg := &Config{
 		Env:                         env,
 		ServerAddr:                  serverAddr,
@@ -169,11 +175,11 @@ func Load() *Config {
 		InfraRedisConfigPassword:     getEnv("ADDP_INFRA_REDIS_CONFIG_PASSWORD", ""),
 
 		// PostgreSQL 配置
-		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
-		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
-		PostgresUser:     getEnv("POSTGRES_USER", "addp"),
-		PostgresPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
-		PostgresDB:       getEnv("POSTGRES_DB", "addp"),
+		PostgresHost:     postgres.Host,
+		PostgresPort:     postgres.Port,
+		PostgresUser:     postgres.User,
+		PostgresPassword: postgres.Password,
+		PostgresDB:       postgres.DBName,
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),

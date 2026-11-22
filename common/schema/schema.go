@@ -41,7 +41,7 @@ func Require(db *gorm.DB, name string, version int64) error {
 	return nil
 }
 
-// InitializeCommon is called only by System Backend; domain implementations stay in common.
+// InitializeCommon prepares the Common-owned schema on the deployment connection.
 func InitializeCommon(db *gorm.DB) error {
 	apply := func(session *gorm.DB) error {
 		if err := execution.EnsureStore(session); err != nil {

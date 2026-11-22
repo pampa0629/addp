@@ -1,0 +1,22 @@
+# Scoped release for an existing project network and its database and cache.
+name: ${ADDP_DEPLOYMENT_PROJECT:?set the deployment project}
+services:
+  system-backend:
+    extends: {file: ../../docker-compose.yml, service: system-backend}
+    container_name: !reset null
+    environment: &endpoints
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+  meta-backend:
+    extends: {file: ../../docker-compose.yml, service: meta-backend}
+    container_name: !reset null
+    environment: *endpoints
+  meta-worker:
+    extends: {file: ../../docker-compose.yml, service: meta-worker}
+    environment: *endpoints
+networks:
+  addp-network:
+    external: true
+    name: ${ADDP_DEPLOYMENT_NETWORK:?set the project network}

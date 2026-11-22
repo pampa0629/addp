@@ -26,6 +26,15 @@ func OpenDatabase(cfg database.Config, options *gorm.Config) (*gorm.DB, error) {
 	}
 }
 
+// OpenPlatformRuntime uses one runtime identity for the dedicated platform instance.
+func OpenPlatformRuntime(pg database.Config, owner string, options *gorm.Config) (*gorm.DB, error) {
+	pg.User, pg.Password = os.Getenv("ADDP_DATABASE_RUNTIME_USER"), os.Getenv("ADDP_DATABASE_RUNTIME_PASSWORD")
+	if pg.User == "" || pg.Password == "" {
+		return nil, fmt.Errorf("platform database runtime credentials are required")
+	}
+	return OpenRuntimeDatabase(pg, owner, "ADDP_DATABASE_RUNTIME", options)
+}
+
 // OpenRuntimeDatabase is for consumers with a MySQL startup contract. The
 // physical database and credential prefix belong to the calling process.
 func OpenRuntimeDatabase(pg database.Config, mysqlDatabase, credentialPrefix string, options *gorm.Config) (*gorm.DB, error) {

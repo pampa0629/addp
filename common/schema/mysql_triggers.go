@@ -1,7 +1,9 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"io"
 	"regexp"
 	"strings"
@@ -66,8 +68,14 @@ func CheckMySQLTriggers(conn *gorm.DB, scripts []string) error {
 			return fmt.Errorf("installed MySQL trigger %s differs in definition, definer or order", want.Name)
 		}
 	}
-	if len(missing) > 0 {
-		return &PendingMySQLTriggers{Statements: missing}
+	for i, statement := range missing {
+		if err := conn.Exec(statement).Error; err != nil {
+			var denied *mysqlDriver.MySQLError
+			if errors.As(err, &denied) && denied.Number == 1419 {
+				return &PendingMySQLTriggers{Statements: missing[i:]}
+			}
+			return err
+		}
 	}
 	return nil
 }

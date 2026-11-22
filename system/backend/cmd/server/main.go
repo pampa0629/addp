@@ -40,12 +40,13 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and an ADDP opaque access token.
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "install-mysql-system" || os.Args[1] == "install-mysql-common" || os.Args[1] == "verify-mysql-source-grant") {
-		if len(os.Args) != 2 {
-			fmt.Fprintln(os.Stderr, os.Args[1], "takes no arguments")
+	if len(os.Args) > 1 && os.Args[1] == "prepare-database" {
+		if len(os.Args) != 3 {
+			fmt.Fprintln(os.Stderr, "expected prepare-database <common|system>")
 			os.Exit(2)
 		}
-		if err := installMySQL(os.Args[1], os.Stdout); err != nil {
+		err := prepareDatabase(os.Args[2], os.Stdout)
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			var pending *schema.PendingMySQLTriggers
 			if errors.As(err, &pending) {
@@ -102,22 +103,17 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		// IAM 必须先执行显式版本化 migration；非 IAM 表随后暂由 GORM 管理。
-		migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
-		migrationDSN, err := bootstrap.PostgreSQLDSN(cfg.PlatformDatabase())
+		pool, err := db.DB()
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			err = migration.CheckPostgresSystemStartup(ctx, pool)
+			cancel()
+		}
+		if err == nil {
+			err = schema.Require(db, "common", schema.CommonVersion)
+		}
 		if err != nil {
-			cancelMigration()
-			logger.L().Error("IAM 数据库迁移配置失败", "error", err)
-			os.Exit(1)
-		}
-		if err := migration.NewRunner(migrationDSN).Run(migrationContext); err != nil {
-			cancelMigration()
-			logger.L().Error("IAM 数据库迁移失败", "error", err)
-			os.Exit(1)
-		}
-		cancelMigration()
-		if err := repository.AutoMigrateNonIAM(db); err != nil {
-			logger.L().Error("Common 存储准备失败", "error", err)
+			logger.L().Error("数据库初始化失败", "error", err)
 			os.Exit(1)
 		}
 	}

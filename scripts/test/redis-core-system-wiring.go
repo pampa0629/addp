@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/schema"
 	"github.com/addp/system/internal/iam"
-	"github.com/addp/system/internal/repository"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -36,7 +37,7 @@ func TestRedisCoreSystemWire(t *testing.T) {
 	}
 	connection, _ := db.DB()
 	defer connection.Close()
-	if err := repository.AutoMigrateNonIAM(db); err != nil {
+	if err := schema.InitializeCommon(db); err != nil {
 		t.Fatal("production non-IAM bootstrap:", err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)

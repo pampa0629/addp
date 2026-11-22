@@ -32,6 +32,15 @@ CAPABILITIES = {
     "ADDP_MEILISEARCH_METRICS_ENABLED": "false",
     **{"ADDP_"+kind+"_METRICS_ENABLED": "false" for kind in ("FALKORDB","MYSQL","NEO4J","FTP","SPARK")},
 }
+# The release owns these choices. New providers enter the production selection
+# after the selected consumers and the deployment lifecycle have been verified.
+INFRA_PROVIDERS = {
+    "ADDP_INFRA_DATABASE_PROVIDER": "postgres",
+    "ADDP_INFRA_OBJECTSTORE_PROVIDER": "minio",
+    "ADDP_INFRA_SEARCH_PROVIDER": "meilisearch",
+    "ADDP_INFRA_MESSAGE_PROVIDER": "redpanda",
+    "ADDP_INFRA_CACHE_PROVIDER": "redis",
+}
 PROFILES = {
     "ADDP_SUPERMAP_WORKFLOW_ENABLED": "supermap-workflow",
     "ADDP_OBSERVABILITY_LOGS_ENABLED": "observability-logs",
@@ -70,6 +79,16 @@ def selection(env):
     values = {name: env.get(name, default) for name, default in CAPABILITIES.items()}
     if any(value not in ("true", "false") for value in values.values()):
         raise ValueError("Release capability selections must be true or false")
+    scope = env.get("ADDP_DEPLOYMENT_SCOPE", "full")
+    if scope not in ("full", "system-meta"):
+        raise ValueError(f"unsupported deployment scope {scope!r}")
+    values["ADDP_DEPLOYMENT_SCOPE"] = scope
+    for key, supported in INFRA_PROVIDERS.items():
+        configured = env.get(key, supported)
+        supported_mysql = key == "ADDP_INFRA_DATABASE_PROVIDER" and scope == "system-meta" and configured == "mysql"
+        if configured != supported and not supported_mysql:
+            raise ValueError(f"{key}={configured!r} is not supported by the {scope} Compose release")
+        values[key] = configured
     return values
 
 
@@ -92,7 +111,12 @@ def release_environment(env, version, registry, platform):
 
 
 def compose_model(project, env, override=None):
-    command = ["docker", "compose", "-f", COMPOSE_FILES[project]]
+    source = COMPOSE_FILES[project]
+    if selection(env)["ADDP_DEPLOYMENT_SCOPE"] == "system-meta":
+        if project != "platform":
+            return {}
+        source = "scripts/prod/system-meta.yml"
+    command = ["docker", "compose", "-f", source]
     if project == "infra" and selection(env)["ADDP_OBSERVABILITY_TRACES_ENABLED"] == "true":
         command += ["-f", "scripts/infra/traces-platform.yml"]
     if override is not None:
@@ -132,6 +156,9 @@ def native_platform(env):
 def input_fingerprints(env):
     fingerprints = compose_inputs()
     capabilities = selection(env)
+    if capabilities["ADDP_DEPLOYMENT_SCOPE"] == "system-meta":
+        name = "scripts/prod/system-meta.yml"
+        fingerprints[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
     for kind, flag, path in METRIC_IMAGES:
         if capabilities[flag] == "true":
             owner = load_module("release_inputs_" + kind.replace("-", "_"), path)
@@ -246,7 +273,10 @@ def prepare(version, registry):
                 raise ValueError(f"Selected service platform differs from the release: {service}")
             owners[project, service] = owned_image(project, service, definition, env, registered)
     build_names = sorted({name for name in owners.values() if name})
-    execute(["make", "build"], env)
+    compile_args = ["make", "build"]
+    if selection(env)["ADDP_DEPLOYMENT_SCOPE"] == "system-meta":
+        compile_args.append("BUILD_ARGS=--services " + ",".join(build_names))
+    execute(compile_args, env)
     execute(["make", "build-images", "IMAGE_BUILD_ARGS=" + shlex.join([
         "--force", "--services", ",".join(build_names), "--tag", version, "--registry", registry])], env)
     projects = {}
@@ -297,8 +327,9 @@ def verify(filename, inherited):
     if manifest["inputs"] != input_fingerprints(env):
         raise ValueError("Compose source inputs differ from the prepared release")
     references = set(manifest.get("sources", {}).values())
-    for services in manifest["projects"].values():
-        if not isinstance(services, dict) or not services:
+    for project, services in manifest["projects"].items():
+        external_only = manifest["selection"]["ADDP_DEPLOYMENT_SCOPE"] == "system-meta" and project in ("infra", "runtimes")
+        if not isinstance(services, dict) or (not services and not external_only):
             raise ValueError("Release services must be nonempty")
         references.update(services.values())
     for reference in sorted(references):

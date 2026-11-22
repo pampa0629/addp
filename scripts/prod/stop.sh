@@ -36,6 +36,14 @@ fi
 ROOT_DIR="$PROJECT_ROOT"
 source scripts/dev/lifecycle-lock.sh
 addp_acquire_lifecycle_lock prod-stop "$@"
+# Scoped installations own just these three application containers.
+if (set -a; source .env; [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == system-meta ]]); then
+    set -a
+    source .env
+    set +a
+    docker compose -f scripts/prod/system-meta.yml stop
+    exit
+fi
 (
     set -a
     source .env || exit 1

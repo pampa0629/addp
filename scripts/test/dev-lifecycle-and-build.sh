@@ -2494,7 +2494,7 @@ for name in workers:
  content=(root/name).read_text()
  assert not re.search(r'\.(?:Migrate|AutoMigrate|EnsureStore|InitDatabase|PrepareSchema)\(',content),name
  if name == 'meta/backend/cmd/worker/main.go':
-  assert 'metaRepo.OpenRuntimeDatabase(cfg, "META_WORKER")' in content,name
+  assert 'metaRepo.OpenRuntimeDatabase(cfg)' in content,name
   database=(root/'meta/backend/internal/repository/database.go').read_text()
   runtime=database.split('func OpenRuntimeDatabase(',1)[1].split('\n}',1)[0]
   assert 'RequireRuntime(db)' in runtime and not re.search(r'(?:Migrate|PreparePostgres|PrepareMySQL)\(',runtime),name

@@ -18,7 +18,7 @@ func TestMetaCleanupChangesAgainstMySQL(t *testing.T) {
 	if password == "" {
 		t.Skip("requires the disposable platform-meta-scan gate")
 	}
-	dial, err := platformmysql.Dialector(database.Config{DBName: "meta", Host: "127.0.0.1", Port: os.Getenv("ADDP_MYSQL_PORT"), User: "meta_cleanup", Password: password, ConnectTimeout: 5 * time.Second})
+	dial, err := platformmysql.Dialector(database.Config{DBName: "meta", Host: "127.0.0.1", Port: os.Getenv("ADDP_MYSQL_PORT"), User: os.Getenv("ADDP_DATABASE_RUNTIME_USER"), Password: password, ConnectTimeout: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}

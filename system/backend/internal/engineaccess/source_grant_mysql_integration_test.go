@@ -66,9 +66,32 @@ func TestSourceGrantWriterAgainstMySQL(t *testing.T) {
 		ProducerOwner: &ref.Owner, ProductionExecutionID: &executionID, ProductionResultID: &resultID,
 		IssuerPrincipalID: &actor.PrincipalID, IssuerMembershipID: &actor.MembershipID,
 	}
+	// Exercise the production audit writer after both rows were written in the outer transaction.
+	failedRef := ref
+	failedRef.ResultID = "00000000-0000-4000-8000-000000000501"
+	failedID := uuid.MustParse(failedRef.ResultID)
+	failedGrant := *grant
+	failedGrant.ProductionResultID = &failedID
+	failedGrant.RequestID = productionGrantCommand(actor.TenantID, failedRef)
+	err = repo.transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.insertInitialProductionOutcome(ctx, actor, failedRef, &failedGrant, ""); err != nil {
+			return err
+		}
+		return tx.auditInitialProduction(ctx, ProductionRuntimeActor{Actor: actor, ClientID: "addp-transfer"}, failedRef, "issued", "")
+	})
+	if err == nil || !strings.Contains(err.Error(), "gate rejected initial grant audit") {
+		t.Fatalf("expected audit rejection after issuance: %v", err)
+	}
+	var remaining int
+	if err := repo.db.Raw("SELECT (SELECT COUNT(*) FROM engine_access_grants WHERE request_id=?) + (SELECT COUNT(*) FROM engine_access_initial_grant_outcomes WHERE result_id=?) + (SELECT COUNT(*) FROM audit_logs WHERE entity_id=?)", failedGrant.RequestID, failedID, failedRef.ResultID).Row().Scan(&remaining); err != nil || remaining != 0 {
+		t.Fatalf("failed audit left %d rows: %v", remaining, err)
+	}
+	t.Log("audit rejected after both writes; persisted Grant, initial outcome and audit counts are zero")
 	if err := repo.transaction(ctx, func(tx *Repository) error {
-		_, err := tx.insertInitialProductionOutcome(ctx, actor, ref, grant, "")
-		return err
+		if _, err := tx.insertInitialProductionOutcome(ctx, actor, ref, grant, ""); err != nil {
+			return err
+		}
+		return tx.auditInitialProduction(ctx, ProductionRuntimeActor{Actor: actor, ClientID: "addp-transfer"}, ref, "issued", "")
 	}); err != nil {
 		t.Fatal(err)
 	}

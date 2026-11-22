@@ -15,7 +15,7 @@ import (
 func OpenInstallation(target string) (*gorm.DB, error) {
 	cfg := database.Config{
 		Host: os.Getenv("ADDP_MYSQL_HOST"), Port: os.Getenv("ADDP_MYSQL_PORT"),
-		User: os.Getenv("ADDP_MYSQL_INSTALL_USER"), Password: os.Getenv("ADDP_MYSQL_INSTALL_PASSWORD"),
+		User: os.Getenv("ADDP_DATABASE_DEPLOY_USER"), Password: os.Getenv("ADDP_DATABASE_DEPLOY_PASSWORD"),
 		DBName: target, SSLMode: os.Getenv("ADDP_MYSQL_SSLMODE"), ConnectTimeout: 5 * time.Second,
 	}
 	if os.Getenv("ADDP_INFRA_DATABASE_PROVIDER") != "mysql" || cfg.Host == "" || cfg.Port == "" || cfg.User == "" || cfg.Password == "" {

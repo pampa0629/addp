@@ -9,21 +9,22 @@ admin() {
     docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --protocol=TCP -h127.0.0.1 -uroot -NB meta'
 }
 system_password=$(openssl rand -hex 24)
-meta_password=$(openssl rand -hex 24)
 admin <<SQL
 CREATE DATABASE \`system\`;
 CREATE USER 'system_setup'@'%' IDENTIFIED BY '$system_password';
-GRANT SELECT, INSERT, UPDATE, CREATE, REFERENCES, INDEX, ALTER, TRIGGER, CREATE ROUTINE, EXECUTE ON \`system\`.* TO 'system_setup'@'%';
-CREATE USER 'meta_setup'@'%' IDENTIFIED BY '$meta_password';
-GRANT SELECT, INSERT, UPDATE, CREATE, REFERENCES, INDEX, ALTER, TRIGGER ON meta.* TO 'meta_setup'@'%';
+GRANT ALL ON \`system\`.* TO 'system_setup'@'%' WITH GRANT OPTION;
+CREATE USER 'worker_gate'@'%' IDENTIFIED BY '$ADDP_DATABASE_RUNTIME_PASSWORD';
+GRANT SELECT,INSERT,UPDATE,DELETE ON meta.* TO 'worker_gate'@'%';
+GRANT ALL ON meta.* TO 'system_setup'@'%' WITH GRANT OPTION;
+
 SQL
 
-export ADDP_MYSQL_INSTALL_USER=system_setup ADDP_MYSQL_INSTALL_PASSWORD="$system_password"
+export ADDP_DATABASE_DEPLOY_USER=system_setup ADDP_DATABASE_DEPLOY_PASSWORD="$system_password"
 result=0
-"$work/system-server" install-mysql-system >"$work/system-triggers.sql" || result=$?
+"$work/system-server" prepare-database system >"$work/system-triggers.sql" || result=$?
 test "$result" = 3
 admin <"$work/system-triggers.sql"
-"$work/system-server" install-mysql-system
+"$work/system-server" prepare-database system
 
 # Exercise the real address key including platform scope, JSON object equality,
 # case-insensitive engine type and release of an address by a permanent tombstone.
@@ -49,18 +50,6 @@ admin <<SQL
 CREATE USER 'scan_reader'@'%' IDENTIFIED BY '$ADDP_TEST_META_SOURCE_PASSWORD';
 GRANT SELECT ON scan_source.* TO 'scan_reader'@'%';
 SQL
-export ADDP_MYSQL_INSTALL_USER=meta_setup ADDP_MYSQL_INSTALL_PASSWORD="$meta_password"
-if "$work/meta-server" prepare-database 2>"$work/meta-denied.err"; then exit 1; fi
-grep -Eiq '1142.*REFERENCES|REFERENCES.*denied' "$work/meta-denied.err"
-test "$(echo "SELECT version=0 AND pending_version=2 FROM startup_schema_revision WHERE owner='meta_scan_catalog'" | admin)" = 1
-admin <<'SQL'
-GRANT REFERENCES ON `system`.engines TO 'meta_setup'@'%';
-SQL
-# The DBA connection owns the grant, including revocation on installation failure.
-revoke_parent() {
-    echo "REVOKE REFERENCES ON \`system\`.engines FROM 'meta_setup'@'%'" | admin
-}
-trap revoke_parent EXIT
 result=0
 "$work/meta-server" prepare-database >"$work/meta-triggers.sql" || result=$?
 test "$result" = 3
@@ -97,16 +86,7 @@ for entry in '201 meta_node' '202 meta_item'; do
     grep -q "ERROR 1451.*fk_${table}_engine_restrict" "$work/meta-delete.err"
 done
 echo 'Both populated engine references rejected physical deletion (1451)'
-meta_cleanup_password=$(openssl rand -hex 24)
-admin <<SQL
-CREATE USER 'meta_cleanup'@'%' IDENTIFIED BY '$meta_cleanup_password';
-GRANT SELECT, DELETE ON meta.meta_item TO 'meta_cleanup'@'%';
-GRANT SELECT, DELETE ON meta.meta_node TO 'meta_cleanup'@'%';
-GRANT SELECT ON meta.data_item_changes TO 'meta_cleanup'@'%';
-GRANT SELECT ON meta.authorization_basis_generation TO 'meta_cleanup'@'%';
-GRANT SELECT ON meta.authorization_basis_revisions TO 'meta_cleanup'@'%';
-SQL
-ADDP_TEST_META_CLEANUP_PASSWORD="$meta_cleanup_password" GOWORK=off go -C "$root/meta/backend" test ./internal/service \
+ADDP_TEST_META_CLEANUP_PASSWORD="$ADDP_DATABASE_RUNTIME_PASSWORD" GOWORK=off go -C "$root/meta/backend" test ./internal/service \
     -run '^TestMetaCleanupChangesAgainstMySQL$' -count=1 -v | tee "$work/meta-cleanup.log"
 grep -q '^--- PASS: TestMetaCleanupChangesAgainstMySQL ' "$work/meta-cleanup.log"
 test "$(echo 'DELETE FROM `system`.engines WHERE id IN (201,202); SELECT ROW_COUNT()' | admin)" = 2
@@ -117,16 +97,9 @@ ALTER TABLE meta_item DROP FOREIGN KEY fk_meta_item_engine_restrict;
 SQL
 if "$work/meta-server" prepare-database 2>"$work/meta-key.err"; then exit 1; fi
 grep -q 'requires both tenant/engine foreign keys' "$work/meta-key.err"
-MYSQL_PWD="$meta_password" docker exec -i -e MYSQL_PWD "$container" mysql --protocol=TCP -h127.0.0.1 -umeta_setup meta <<'SQL'
+MYSQL_PWD="$system_password" docker exec -i -e MYSQL_PWD "$container" mysql --protocol=TCP -h127.0.0.1 -usystem_setup meta <<'SQL'
 ALTER TABLE meta_item ADD CONSTRAINT fk_meta_item_engine_restrict FOREIGN KEY (tenant_id, engine_id)
     REFERENCES `system`.engines(tenant_id, id) ON DELETE RESTRICT;
 SQL
 "$work/meta-server" prepare-database
-revoke_parent
-trap - EXIT
-
-# Prove the same installation identity can no longer create a parent reference.
-if MYSQL_PWD="$meta_password" docker exec -i -e MYSQL_PWD "$container" mysql --protocol=TCP -h127.0.0.1 -umeta_setup meta \
-    -e 'CREATE TABLE ref_probe (tenant_id BIGINT, engine_id BIGINT, FOREIGN KEY (tenant_id,engine_id) REFERENCES `system`.engines(tenant_id,id))' 2>"$work/revoked.err"; then exit 1; fi
-grep -Eiq '1142.*REFERENCES|REFERENCES.*denied' "$work/revoked.err"
-echo 'Verified System engine installation and address uniqueness; Meta REFERENCES denied, granted for installation, both keys verified, then revoked'
+echo 'Installed both Meta foreign keys; populated parent rejected and cleaned parent deletable.'

@@ -325,10 +325,13 @@ EOF
 }
 
 # Function to check if registry is accessible
+registry_api="http://${REGISTRY%%/*}/v2"
+repository_prefix=""
+if [[ "$REGISTRY" == */* ]]; then repository_prefix="${REGISTRY#*/}/"; fi
 check_registry() {
     echo -e "${YELLOW}Checking registry accessibility...${NC}"
 
-    if ! curl -sf --max-time 5 "http://${REGISTRY}/v2/" > /dev/null 2>&1; then
+    if ! curl -sf --max-time 5 "${registry_api}/" > /dev/null 2>&1; then
         echo -e "${RED}Error: Registry ${REGISTRY} is not accessible${NC}"
         echo ""
         echo -e "${YELLOW}Troubleshooting steps:${NC}"
@@ -389,7 +392,7 @@ check_service_changed() {
     local cache_file="${cache_dir}/${service}-${IMAGE_TAG}.timestamp"
 
     # Check if image exists in registry using tags API
-    local tags_response=$(curl -s "http://${REGISTRY}/v2/addp-${service}/tags/list")
+    local tags_response=$(curl -s "${registry_api}/${repository_prefix}addp-${service}/tags/list")
 
     if ! echo "$tags_response" | grep -q "\"${IMAGE_TAG}\""; then
         echo -e "${YELLOW}Image doesn't exist in registry, building...${NC}"
@@ -1094,7 +1097,7 @@ seed_base_images() {
         local local_img="${REGISTRY}/${target_img}"
 
         local tags_response
-        tags_response=$(curl -s "http://${REGISTRY}/v2/${img_name}/tags/list" 2>/dev/null)
+        tags_response=$(curl -s "${registry_api}/${repository_prefix}${img_name}/tags/list" 2>/dev/null)
         if echo "$tags_response" | grep -q "\"${img_tag}\""; then
             echo -e "${GREEN}✓ ${target_img} already in registry${NC}"
             continue

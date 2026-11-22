@@ -3,11 +3,11 @@ package repository
 import (
 	_ "embed"
 	"fmt"
-	"os"
+
 	"time"
 
 	"github.com/addp/common/cleanup"
-	commonConfig "github.com/addp/common/config"
+
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
@@ -22,7 +22,7 @@ var DB *gorm.DB
 
 // InitDatabase 初始化数据库连接
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := OpenRuntimeDatabase(cfg, "META")
+	db, err := OpenRuntimeDatabase(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -52,19 +52,12 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 // OpenRuntimeDatabase opens the connection for the selected Meta process. The
 // deployment maps the Backend and Worker to their own runtime identities.
-func OpenRuntimeDatabase(cfg *config.Config, process string) (*gorm.DB, error) {
+func OpenRuntimeDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if cfg.DBSchema != "meta" {
 		return nil, fmt.Errorf("meta module schema must be meta")
 	}
 	pg := database.Config{Host: cfg.DBHost, Port: cfg.DBPort, DBName: cfg.DBName, Schema: "meta", SSLMode: "disable"}
-	if commonConfig.GetEnv("ADDP_INFRA_DATABASE_PROVIDER", "postgres") == "postgres" {
-		prefix := "ADDP_PG_" + process
-		pg.User, pg.Password = os.Getenv(prefix+"_USER"), os.Getenv(prefix+"_PASSWORD")
-		if pg.User == "" || pg.Password == "" {
-			return nil, fmt.Errorf("Meta PostgreSQL runtime requires %s credentials", prefix)
-		}
-	}
-	db, err := bootstrap.OpenRuntimeDatabase(pg, "meta", "ADDP_MYSQL_"+process, &gorm.Config{Logger: gormLogger.Default.LogMode(gormLogger.Info)})
+	db, err := bootstrap.OpenPlatformRuntime(pg, "meta", &gorm.Config{Logger: gormLogger.Default.LogMode(gormLogger.Info)})
 	if err != nil {
 		return nil, err
 	}
@@ -84,10 +77,7 @@ func OpenPostgresInstallation(cfg *config.Config) (*gorm.DB, error) {
 //go:embed postgres_fact_triggers.sql
 var postgresFactTriggerAuthority string
 
-func PreparePostgres(db *gorm.DB, triggerOwner string, retireCollectionApproval func(*gorm.DB) error) error {
-	if triggerOwner == "" {
-		return fmt.Errorf("Meta PostgreSQL preparation requires ADDP_PG_META_TRIGGER_OWNER")
-	}
+func PreparePostgres(db *gorm.DB, retireCollectionApproval func(*gorm.DB) error) error {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return err
 	}
@@ -97,8 +87,8 @@ func PreparePostgres(db *gorm.DB, triggerOwner string, retireCollectionApproval 
 			if err := conn.Raw("SELECT COALESCE(MAX(version),0) FROM meta.startup_schema_revision").Scan(&previous).Error; err != nil {
 				return err
 			}
-			// Revision 8 only changes the deployment and fact trigger authority.
-			if previous == 7 {
+			// Revisions 8 and 9 change the trigger authority after the existing schema is verified.
+			if previous >= 7 {
 				return nil
 			}
 			if err := conn.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}, &models.ObjectIndexDeletion{}); err != nil {
@@ -118,7 +108,7 @@ func PreparePostgres(db *gorm.DB, triggerOwner string, retireCollectionApproval 
 		}); err != nil {
 			return err
 		}
-		if err := tx.Exec("SELECT set_config('search_path','pg_catalog,pg_temp',true), set_config('addp.meta_trigger_owner',?,true)", triggerOwner).Error; err != nil {
+		if err := tx.Exec("SELECT set_config('search_path','pg_catalog,pg_temp',true)").Error; err != nil {
 			return err
 		}
 		return tx.Exec(postgresFactTriggerAuthority).Error

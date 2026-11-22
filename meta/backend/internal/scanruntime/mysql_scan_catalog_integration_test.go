@@ -45,7 +45,7 @@ func TestMySQLScanCatalog(t *testing.T) {
 		t.Cleanup(func() { pool.Close() })
 		return db
 	}
-	db := open(os.Getenv("ADDP_MYSQL_META_WORKER_USER"), os.Getenv("ADDP_MYSQL_META_WORKER_PASSWORD"))
+	db := open(os.Getenv("ADDP_DATABASE_RUNTIME_USER"), os.Getenv("ADDP_DATABASE_RUNTIME_PASSWORD"))
 	if err := schema.RequireMySQL(db, "meta_scan_catalog", 2); err != nil {
 		t.Fatal(err)
 	}
@@ -108,9 +108,9 @@ func TestMySQLScanCatalog(t *testing.T) {
 		"INSERT INTO meta_node (tenant_id,engine_id,node_type,name,depth) VALUES (8,99,'bucket','invalid',1)",
 		"INSERT INTO meta_item (tenant_id,engine_id,node_id,item_type,name,fingerprint) VALUES (8,99,1,'object','invalid','invalid')",
 	} {
-		// MySQL obscures the parent identity when the writer cannot read the referenced table.
+		// The platform runtime can read the System parent and gets the full FK violation.
 		var dbErr *driver.MySQLError
-		if err := db.Exec(query).Error; !errors.As(err, &dbErr) || dbErr.Number != 1216 {
+		if err := db.Exec(query).Error; !errors.As(err, &dbErr) || dbErr.Number != 1452 {
 			t.Fatalf("mismatched tenant/engine: %v", err)
 		}
 	}

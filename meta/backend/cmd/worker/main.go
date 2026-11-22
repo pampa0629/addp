@@ -105,5 +105,5 @@ func main() {
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	return metaRepo.OpenRuntimeDatabase(cfg, "META_WORKER")
+	return metaRepo.OpenRuntimeDatabase(cfg)
 }

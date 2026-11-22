@@ -20,7 +20,7 @@ class Terminal:
     def __init__(self, binary, *args):
         self.fd, slave = pty.openpty()
         keys = ("PATH", "TZ", "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT",
-                "ADDP_MYSQL_SSLMODE", "ADDP_MYSQL_BOOTSTRAP_USER", "ADDP_MYSQL_BOOTSTRAP_PASSWORD",
+                "ADDP_MYSQL_SSLMODE", "ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD",
                 "IAM_MFA_ENCRYPTION_KEY")
         env = {key: os.environ[key] for key in keys if key in os.environ}
         env["ENV"] = "production"

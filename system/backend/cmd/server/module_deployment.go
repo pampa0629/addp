@@ -15,11 +15,10 @@ import (
 	"time"
 
 	commonclient "github.com/addp/common/client"
-	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
-	"gorm.io/gorm"
+	"github.com/addp/system/internal/repository"
 )
 
 // Both commands are short-lived deployment processes. The server never reads their stdin.
@@ -44,7 +43,7 @@ func runModuleDeployment(args []string, input io.Reader) error {
 	switch args[0] {
 	case "provision-module-publisher":
 		cfg := config.Load()
-		db, err := bootstrap.OpenRuntimeDatabase(cfg.PlatformDatabase(), "system", "ADDP_MYSQL_SYSTEM", &gorm.Config{})
+		db, err := repository.InitDB(cfg)
 		if err != nil {
 			return err
 		}

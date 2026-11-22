@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/addp/common/schema"
 	"os"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 		t.Fatalf("run target IAM migrations: %v", err)
 	}
 	before := tableColumns(t, db, "principals")
-	if err := repository.AutoMigrateNonIAM(db); err != nil {
+	if err := schema.InitializeCommon(db); err != nil {
 		t.Fatalf("run non-IAM AutoMigrate: %v", err)
 	}
 	after := tableColumns(t, db, "principals")

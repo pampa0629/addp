@@ -61,7 +61,7 @@ def main():
     work, provider = Path(sys.argv[1]).resolve(), sys.argv[2]
     issues = set()
     for i in range(2):
-        for binary, role in (("meta-worker", "META_WORKER"), ("meta-server", "META")):
+        for binary in ("meta-worker", "meta-server"):
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
@@ -69,14 +69,12 @@ def main():
                        SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1",
                        MINIO_ENDPOINT="127.0.0.1:1", MINIO_ROOT_USER="isolated", MINIO_ROOT_PASSWORD="isolated-test",
                        META_SERVICE_CLIENT_SECRET="x"*32)
+            for key in ("ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD"):
+                env[key] = os.environ[key]
             if provider == "postgres":
-                env.update(POSTGRES_HOST="127.0.0.1", POSTGRES_DB="addp_test", POSTGRES_PORT=os.environ["POSTGRES_PORT"],
-                           **{f"ADDP_PG_{role}_{key}": os.environ[f"ADDP_TEST_PG_{role}_{key}"] for key in ("USER", "PASSWORD")})
+                env.update(POSTGRES_HOST="127.0.0.1", POSTGRES_DB="addp_test", POSTGRES_PORT=os.environ["POSTGRES_PORT"])
             elif provider == "mysql":
-                prefix = f"ADDP_MYSQL_{role}"
                 env.update(ADDP_MYSQL_HOST="127.0.0.1", ADDP_MYSQL_PORT=os.environ["ADDP_TEST_MYSQL_PORT"])
-                for suffix in ("_USER", "_PASSWORD"):
-                    env[prefix+suffix] = os.environ[prefix+suffix]
             else:
                 raise ValueError("unknown platform database")
             live = f"http://127.0.0.1:{port}/health/live" if binary == "meta-server" else None

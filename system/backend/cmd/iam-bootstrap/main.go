@@ -15,8 +15,6 @@ import (
 
 	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
-	"github.com/addp/common/infra/database"
-	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/iamcli"
@@ -121,31 +119,8 @@ func run(args []string, stdin *os.File, stdout *os.File) error {
 	}
 }
 
-// Only the offline command receives the temporary MySQL credentials.
 func openBootstrapDatabase() (*gorm.DB, error) {
-	if commonconfig.GetEnv("ADDP_INFRA_DATABASE_PROVIDER", "postgres") == "mysql" {
-		cfg := database.Config{Host: os.Getenv("ADDP_MYSQL_HOST"), Port: os.Getenv("ADDP_MYSQL_PORT"),
-			User: os.Getenv("ADDP_MYSQL_BOOTSTRAP_USER"), Password: os.Getenv("ADDP_MYSQL_BOOTSTRAP_PASSWORD"),
-			DBName: "system", SSLMode: os.Getenv("ADDP_MYSQL_SSLMODE"), ConnectTimeout: 5 * time.Second}
-		if cfg.Host == "" || cfg.Port == "" || cfg.User == "" || cfg.Password == "" {
-			return nil, errors.New("MySQL offline bootstrap requires explicit host, port and temporary bootstrap credentials")
-		}
-		dialect, err := platformmysql.Dialector(cfg)
-		if err != nil {
-			return nil, err
-		}
-		db, err := gorm.Open(dialect, &gorm.Config{TranslateError: true, Logger: logger.Default.LogMode(logger.Silent)})
-		if err != nil {
-			return nil, fmt.Errorf("open MySQL bootstrap connection: %w", err)
-		}
-		return db, nil
-	}
-	cfg := config.Load()
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
-	if err != nil {
-		return nil, fmt.Errorf("open bootstrap database: %w", err)
-	}
-	return db, nil
+	return bootstrap.OpenPlatformRuntime(config.LoadPlatformDatabase(), "system", &gorm.Config{TranslateError: true, Logger: logger.Default.LogMode(logger.Silent)})
 }
 
 func readManifest(path string) (*bootstrapManifest, error) {

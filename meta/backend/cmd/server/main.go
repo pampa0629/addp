@@ -234,8 +234,8 @@ func prepareDatabase() error {
 	defer cancel()
 	if provider == "postgres" {
 		cfg := config.LoadConfig()
-		cfg.DBUser = os.Getenv("ADDP_PG_META_INSTALL_USER")
-		cfg.DBPassword = os.Getenv("ADDP_PG_META_INSTALL_PASSWORD")
+		cfg.DBUser = os.Getenv("ADDP_DATABASE_DEPLOY_USER")
+		cfg.DBPassword = os.Getenv("ADDP_DATABASE_DEPLOY_PASSWORD")
 		if cfg.DBUser == "" || cfg.DBPassword == "" {
 			return fmt.Errorf("Meta PostgreSQL preparation requires installation credentials")
 		}
@@ -248,7 +248,7 @@ func prepareDatabase() error {
 			return err
 		}
 		defer pool.Close()
-		return repository.PreparePostgres(dial.WithContext(ctx), os.Getenv("ADDP_PG_META_TRIGGER_OWNER"), func(tx *gorm.DB) error {
+		return repository.PreparePostgres(dial.WithContext(ctx), func(tx *gorm.DB) error {
 			return service.RetireCollectionApproval(ctx, tx, func(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {
 				tokens, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-meta", cfg.ServiceClientSecret, nil)
 				if err != nil {

@@ -82,6 +82,22 @@ class ReleaseVerificationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Compose source inputs"):
             self.verify()
 
+    def test_infra_selection_is_frozen_and_unverified_full_stack_is_rejected(self):
+        for key, selected in release.INFRA_PROVIDERS.items():
+            with self.subTest(key=key):
+                self.assertEqual(self.manifest["selection"][key], selected)
+                with self.assertRaisesRegex(ValueError, key):
+                    release.selection({key: "unverified"})
+
+    def test_scoped_database_release_uses_only_external_infra(self):
+        for provider in ("postgres", "mysql"):
+            env = {"ADDP_DEPLOYMENT_SCOPE": "system-meta", "ADDP_INFRA_DATABASE_PROVIDER": provider}
+            self.assertEqual(release.selection(env)["ADDP_INFRA_DATABASE_PROVIDER"], provider)
+            for project in ("infra", "runtimes"):
+                self.assertEqual(release.compose_model(project, env), {})
+        with self.assertRaisesRegex(ValueError, "ADDP_INFRA_DATABASE_PROVIDER"):
+            release.selection({"ADDP_INFRA_DATABASE_PROVIDER": "mysql"})
+
     def test_capability_change_requires_another_prepared_release(self):
         with self.assertRaisesRegex(ValueError, "Capability selection"):
             self.verify({"ADDP_OBSERVABILITY_LOGS_ENABLED": "false"})

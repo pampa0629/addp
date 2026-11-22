@@ -29,18 +29,15 @@ func TestMySQLRuntimeStartupRefusal(t *testing.T) {
 	cmd.Dir = t.TempDir()
 	cmd.Env = []string{"PROJECT_ROOT=" + cmd.Dir, "ADDP_INFRA_DATABASE_PROVIDER=mysql", "TZ=Asia/Shanghai",
 		"ADDP_MYSQL_HOST=127.0.0.1", "ADDP_MYSQL_PORT=" + os.Getenv("ADDP_TEST_MYSQL_PORT")}
-	var prefix string
+	const prefix = "ADDP_DATABASE_RUNTIME"
 	switch filepath.Base(binary) {
 	case "system-server":
-		prefix = "ADDP_MYSQL_SYSTEM"
 		redis := miniredis.RunT(t)
 		redis.RequireAuth("fixture")
 		cmd.Env = append(cmd.Env, "SYSTEM_BACKEND_PORT=0", "REDIS_HOST="+redis.Host(), "REDIS_PORT="+redis.Port(), "REDIS_PASSWORD=fixture")
 	case "meta-server":
-		prefix = "ADDP_MYSQL_META"
 		cmd.Env = append(cmd.Env, "META_BACKEND_PORT=0", "META_SERVICE_CLIENT_SECRET="+strings.Repeat("x", 32), "SYSTEM_URL=http://127.0.0.1:1")
 	case "meta-worker":
-		prefix = "ADDP_MYSQL_META_WORKER"
 	default:
 		t.Fatal("unexpected runtime binary name")
 	}

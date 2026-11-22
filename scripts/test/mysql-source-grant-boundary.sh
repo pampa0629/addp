@@ -3,35 +3,29 @@
 set -euo pipefail
 container=$1
 work=$2
+system_backend="$(cd "$(dirname "$0")/../../system/backend" && pwd)"
 runtime_password=$(openssl rand -hex 24)
-worker_password=$(openssl rand -hex 24)
-bootstrap_password=$(openssl rand -hex 24)
+export ADDP_DATABASE_RUNTIME_USER=system_gate ADDP_DATABASE_RUNTIME_PASSWORD="$runtime_password"
 admin() {
     docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --protocol=TCP -h127.0.0.1 -uroot -NB system'
 }
-sql_dir="$(cd "$(dirname "$0")/../../system/backend/internal/migration/mysql_source_grant" && pwd)"
 export ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$ADDP_TEST_MYSQL_PORT"
-export ADDP_MYSQL_INSTALL_USER=source_installer
-ADDP_MYSQL_INSTALL_PASSWORD=$(openssl rand -hex 24)
-export ADDP_MYSQL_INSTALL_PASSWORD
+export ADDP_DATABASE_DEPLOY_USER=source_installer
+ADDP_DATABASE_DEPLOY_PASSWORD=$(openssl rand -hex 24)
+export ADDP_DATABASE_DEPLOY_PASSWORD
 admin <<SQL
-CREATE USER 'source_installer'@'%' IDENTIFIED BY '$ADDP_MYSQL_INSTALL_PASSWORD';
+CREATE USER 'source_installer'@'%' IDENTIFIED BY '$ADDP_DATABASE_DEPLOY_PASSWORD';
+CREATE USER 'system_gate'@'%' IDENTIFIED BY '$runtime_password';
 SQL
 admin <<'SQL'
-GRANT SELECT, INSERT, UPDATE, CREATE, REFERENCES, INDEX, ALTER, TRIGGER, CREATE ROUTINE, EXECUTE ON `system`.* TO 'source_installer'@'%';
+GRANT ALL ON `system`.* TO 'source_installer'@'%' WITH GRANT OPTION;
 SQL
 result=0
-"$work/system-server" install-mysql-system > "$work/source-triggers.sql" || result=$?
+"$work/system-server" prepare-database system > "$work/source-triggers.sql" || result=$?
 test "$result" = 3
 admin < "$work/source-triggers.sql"
-"$work/system-server" install-mysql-system > "$work/source-replay.sql"
+"$work/system-server" prepare-database system > "$work/source-replay.sql"
 test ! -s "$work/source-replay.sql"
-admin < "$sql_dir/create_definer.sql"
-admin <<SQL
-CREATE USER 'system_gate'@'%' IDENTIFIED BY '$runtime_password';
-CREATE USER 'worker_gate'@'127.0.0.1' IDENTIFIED BY '$worker_password';
-CREATE USER 'bootstrap_gate'@'127.0.0.1' IDENTIFIED BY '$bootstrap_password';
-SQL
 admin <<'SQL'
 INSERT INTO tenants(id,code,name) VALUES(7,'grant-source','Grant source');
 INSERT INTO principals(id,principal_type) VALUES(40001,'user');
@@ -49,58 +43,22 @@ VALUES (12,7,'Grant records','postgresql',JSON_OBJECT(),JSON_OBJECT('id',12)),
        (98,7,'Grant objects','minio',JSON_OBJECT(),JSON_OBJECT('id',98));
 CREATE TABLE sample_audit (id INT PRIMARY KEY);
 SQL
+# Refuse a deployment with an inherited write path, even at a current revision.
+admin <<<"GRANT INSERT ON \`system\`.engine_access_grants TO 'system_gate'@'%'"
+if "$work/system-server" prepare-database system >"$work/unexpected.out" 2>"$work/direct-write.err"; then exit 1; fi
+grep -q 'expected runtime write denial' "$work/direct-write.err"
+test "$(admin <<<"SELECT pending_version FROM startup_schema_revision WHERE owner='system_source_grant_procedure'")" -gt 0
+admin <<<"REVOKE INSERT ON \`system\`.engine_access_grants FROM 'system_gate'@'%'"
 transfer_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-transfer'")
 manager_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-manager'")
 catalog_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-catalog'")
 human_version=$(admin <<<"SELECT authorization_version FROM principals WHERE id=40001")
-{ echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
-admin < "$sql_dir/authorize_definer.sql"
-verify_procedure() {
-    ADDP_MYSQL_INSTALL_USER=root ADDP_MYSQL_INSTALL_PASSWORD="$ADDP_TEST_MYSQL_PASSWORD" "$work/system-server" verify-mysql-source-grant
-}
-# A DBA must verify the actual definition and grants before publishing the procedure owner.
-admin <<<"GRANT UPDATE ON system.engine_access_grants TO 'addp_system_source_grant'@'localhost'"
-if verify_procedure 2>"$work/verify.err"; then exit 1; fi
-grep -q 'definer privileges differ' "$work/verify.err"
-test "$(admin <<<"SELECT COUNT(*) FROM startup_schema_revision WHERE owner='system_source_grant_procedure' AND version=1 AND pending_version=0")" = 0
-admin <<<"REVOKE UPDATE ON system.engine_access_grants FROM 'addp_system_source_grant'@'localhost'"
-verify_procedure
-verify_procedure
-test "$(admin <<<"SELECT version FROM startup_schema_revision WHERE owner='system_source_grant_procedure' AND pending_version=0")" = 1
-# A same-name procedure with an altered body invalidates an earlier attestation.
-admin <<<"DROP PROCEDURE system.persist_source_grant"
-{ echo 'DELIMITER $$'; sed 's/IF p_request_id IS NOT NULL THEN/IF FALSE THEN/' "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
-admin < "$sql_dir/authorize_definer.sql"
-if verify_procedure 2>"$work/verify.err"; then exit 1; fi
-grep -q 'procedure definition or security differs' "$work/verify.err"
-test "$(admin <<<"SELECT pending_version FROM startup_schema_revision WHERE owner='system_source_grant_procedure'")" = 1
-admin <<<"DROP PROCEDURE system.persist_source_grant"
-{ echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
-admin < "$sql_dir/authorize_definer.sql"
-verify_procedure
-admin <<'SQL'
-GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'system_gate'@'%';
-GRANT SELECT, INSERT ON system.engine_access_grant_revocations TO 'system_gate'@'%';
-GRANT SELECT, INSERT ON system.engine_access_fulfillment_outcomes TO 'system_gate'@'%';
-GRANT SELECT, INSERT, UPDATE ON system.engine_access_request_locks TO 'system_gate'@'%';
-GRANT INSERT (target_key), UPDATE (lock_marker) ON system.engine_access_target_locks TO 'system_gate'@'%';
-GRANT INSERT ON system.audit_logs TO 'system_gate'@'%';
-GRANT SELECT ON system.engine_access_grants TO 'system_gate'@'%';
-GRANT SELECT ON system.engine_access_initial_grant_outcomes TO 'system_gate'@'%';
-GRANT SELECT ON system.engine_access_upload_grant_outcomes TO 'system_gate'@'%';
-GRANT INSERT ON system.sample_audit TO 'system_gate'@'%','bootstrap_gate'@'127.0.0.1';
-SQL
+# A repeat preparation grants DML on new ordinary tables, including sample_audit.
+"$work/system-server" prepare-database system
 caller() {
     local user=$1
     shift
-    local password=$runtime_password
-    case "$user" in
-        worker_gate) password=$worker_password ;;
-        bootstrap_gate) password=$bootstrap_password ;;
-        system_gate) ;;
-        *) return 2 ;;
-    esac
-    MYSQL_PWD="$password" docker exec -i -e MYSQL_PWD "$container" mysql --protocol=TCP -h127.0.0.1 -u"$user" -NB "$@"
+    MYSQL_PWD="$runtime_password" docker exec -i -e MYSQL_PWD "$container" mysql --protocol=TCP -h127.0.0.1 -u"$user" -NB "$@"
 }
 
 # --force keeps the same connection for the explicit post-error COMMIT or ROLLBACK.
@@ -108,29 +66,9 @@ expect_error() {
     local user=$1 code=$2 statements=$3
     caller "$user" --force <<<"$statements" >"$work/boundary.out" 2>"$work/boundary.err" || true
     test "$(grep -c '^ERROR ' "$work/boundary.err")" = 1
-    grep -q "^ERROR $code " "$work/boundary.err"
+    grep -q "^ERROR $code " "$work/boundary.err" || { cat "$work/boundary.err" >&2; return 1; }
 }
-test "$(admin <<<"SELECT CONCAT(SECURITY_TYPE, '/', DEFINER) FROM information_schema.routines WHERE routine_schema='system' AND routine_name='persist_source_grant'")" = 'DEFINER/addp_system_source_grant@localhost'
-test "$(admin <<<"SELECT account_locked FROM mysql.user WHERE user='addp_system_source_grant' AND host='localhost'")" = Y
-# Check the complete grant list, including role assignments and grant options.
-check_grants() {
-    local account=$1
-    shift
-    {
-        echo "GRANT USAGE ON *.* TO $account"
-        for grant in "$@"; do echo "GRANT $grant TO $account"; done
-    } | LC_ALL=C sort >"$work/expected-grants"
-    admin <<<"SHOW GRANTS FOR '${account%@*}'@'${account#*@}'" | sed 's/`//g' | LC_ALL=C sort >"$work/actual-grants"
-    diff -u "$work/expected-grants" "$work/actual-grants"
-}
-check_grants addp_system_source_grant@localhost 'EXECUTE ON PROCEDURE system.persist_source_grant' \
-    'INSERT ON system.engine_access_grants' 'INSERT ON system.engine_access_initial_grant_outcomes' 'INSERT ON system.engine_access_upload_grant_outcomes'
-check_grants 'system_gate@%' 'EXECUTE ON PROCEDURE system.persist_source_grant' 'SELECT ON system.engine_access_grants' \
-    'SELECT, INSERT ON system.engine_access_grant_revocations' 'SELECT, INSERT ON system.engine_access_fulfillment_outcomes' 'SELECT, INSERT, UPDATE ON system.engine_access_request_locks' \
-    'INSERT (target_key), UPDATE (lock_marker) ON system.engine_access_target_locks' 'INSERT ON system.audit_logs' \
-    'SELECT ON system.engine_access_initial_grant_outcomes' 'SELECT ON system.engine_access_upload_grant_outcomes' 'INSERT ON system.sample_audit'
-check_grants worker_gate@127.0.0.1
-check_grants bootstrap_gate@127.0.0.1 'INSERT ON system.sample_audit'
+test "$(admin <<<"SELECT CONCAT(SECURITY_TYPE, '/', DEFINER) FROM information_schema.routines WHERE routine_schema='system' AND routine_name='persist_source_grant'")" = 'DEFINER/source_installer@%'
 uuid() { printf "'00000000-0000-4000-8000-%012d'" "$1"; }
 # Shared typed inputs keep the same request, issuer, tenant and source keys
 # visible across the denial, uniqueness and rollback checks.
@@ -252,20 +190,14 @@ done
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 125)")" = 0
 receipt=system.engine_access_fulfillment_outcomes
 test "$(caller system_gate <<<"SELECT outcome FROM $receipt WHERE request_id=$(uuid 13)")" = accepted
-for user in worker_gate bootstrap_gate; do
-    expect_error "$user" 1142 "SELECT outcome FROM $receipt;"
-    expect_error "$user" 1142 "INSERT INTO $receipt () VALUES ();"
-done
 for statement in "UPDATE $receipt SET outcome='closed' WHERE request_id=$(uuid 13)" "DELETE FROM $receipt WHERE request_id=$(uuid 13)"; do
-    expect_error system_gate 1142 "$statement"
+    expect_error system_gate 1644 "$statement"
     # The table's immutable triggers must reject even an account with DML privileges.
     if admin <<<"$statement" >"$work/immutable.out" 2>"$work/immutable.err"; then exit 1; fi
     grep -q '^ERROR 1644 ' "$work/immutable.err"
 done
 expect_error system_gate 1142 "TRUNCATE TABLE $receipt;"
 pair=$(call task_production "$(uuid 11)" 1 NULL)
-expect_error worker_gate 1370 "START TRANSACTION; $pair; ROLLBACK;"
-expect_error bootstrap_gate 1370 "START TRANSACTION; $pair; ROLLBACK;"
 expect_error system_gate 1305 "$pair;"
 for table in engine_access_grants engine_access_initial_grant_outcomes engine_access_upload_grant_outcomes; do
     expect_error system_gate 1142 "INSERT INTO system.$table () VALUES ();"
@@ -288,6 +220,8 @@ expect_error system_gate 1062 "START TRANSACTION; INSERT INTO system.sample_audi
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 15)")" = 0
 expect_error system_gate 1062 "START TRANSACTION; $(call upload_creation "$(uuid 16)" 6 NULL);
  INSERT INTO system.sample_audit VALUES(1); ROLLBACK;"
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 16)")" = 0
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE upload_id=$(uuid 6)")" = 0
 expect_error system_gate 1644 "START TRANSACTION; $(call independent "$(uuid 17)" 0 "'not_new'"); COMMIT;"
 expect_error system_gate 3819 "START TRANSACTION; $(call task_production NULL 7 "'not_new'"); ROLLBACK;"
 # Repeat with a missing Catalog receipt, stale human, wrong service identity,
@@ -308,7 +242,17 @@ test "$(admin <<<"SELECT COUNT(*) FROM engine_access_initial_grant_outcomes WHER
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE grant_request_id=$(uuid 12) AND upload_id=$(uuid 2) AND item_fingerprint=SHA2('99:upload_2.geojson',256)")" = 1
 test "$(admin <<<"SELECT COUNT(*) FROM sample_audit")" = 7
 echo 'MySQL System source procedure: 4 Grants, 2 issued and 2 denied across both result tables; privileges and rollback verified'
-(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_CATALOG_PRINCIPAL_ID="$catalog_id" ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
+admin <<'SQL'
+DELIMITER $$
+CREATE TRIGGER gate_refuse_initial_audit BEFORE INSERT ON audit_logs FOR EACH ROW
+BEGIN
+    IF NEW.event_name='system.engine_access_initial_grant.issued' AND NEW.entity_id='00000000-0000-4000-8000-000000000501' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='gate rejected initial grant audit';
+    END IF;
+END$$
+DELIMITER ;
+SQL
+(cd "$system_backend" && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_CATALOG_PRINCIPAL_ID="$catalog_id" ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
     go test ./internal/engineaccess -run '^Test(SourceGrantWriter|FulfillmentReceipt)AgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/source-writer.log"
 grep -q '^--- PASS: TestSourceGrantWriterAgainstMySQL ' "$work/source-writer.log"
 grep -q '^--- PASS: TestFulfillmentReceiptAgainstMySQL ' "$work/source-writer.log"
@@ -335,31 +279,16 @@ VALUES(40002,'tenant',50002,@member_version,'addp-web','first_party',JSON_ARRAY(
 SET @role_id=(SELECT id FROM roles WHERE role_key='tenant.engine_access_delegation_administrator');
 INSERT INTO role_assignments(principal_id,role_id,scope_type,tenant_id,source_type,created_by_principal_id,grant_reason)
 VALUES(40001,@role_id,'tenant',7,'manual',40001,'isolated management fixture');
-GRANT SELECT, INSERT, UPDATE (status,version,revoked_by_principal_id,revoked_at,revoked_reason) ON system.engine_access_delegations TO 'system_gate'@'%';
-GRANT SELECT, UPDATE (authorization_version,updated_at) ON system.principals TO 'system_gate'@'%';
-GRANT SELECT ON system.users TO 'system_gate'@'%';
-GRANT SELECT ON system.tenants TO 'system_gate'@'%';
-GRANT SELECT, UPDATE (status) ON system.tenant_memberships TO 'system_gate'@'%';
-GRANT SELECT, UPDATE (lifecycle_state) ON system.engines TO 'system_gate'@'%';
-GRANT SELECT ON system.roles TO 'system_gate'@'%';
-GRANT SELECT ON system.role_assignments TO 'system_gate'@'%';
-GRANT SELECT ON system.permissions TO 'system_gate'@'%';
-GRANT SELECT ON system.role_permissions TO 'system_gate'@'%';
-GRANT SELECT, UPDATE (revoked_at,revoked_reason) ON system.refresh_token_families TO 'system_gate'@'%';
 SQL
-(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
+(cd "$system_backend" && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
     go test ./internal/engineaccess -run '^TestEngineDelegationAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/delegation.log"
 grep -q '^--- PASS: TestEngineDelegationAgainstMySQL ' "$work/delegation.log"
 test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE entity_type='engine_access_delegation' AND tenant_id=7 AND principal_id=40001 AND event_name IN ('system.engine_access_delegation.created','system.engine_access_delegation.revoked')")" = 2
 test "$(admin <<<"SELECT COUNT(*) FROM refresh_token_families f JOIN principals p ON p.id=f.principal_id WHERE f.principal_id=40002 AND f.revoked_at IS NOT NULL AND f.revoked_reason='engine_access_delegation_changed' AND p.authorization_version=f.issued_authorization_version+2")" = 1
 delegations=system.engine_access_delegations
-expect_error system_gate 1143 "UPDATE $delegations SET grant_reason='changed' WHERE id=1;"
-expect_error system_gate 1142 "DELETE FROM $delegations WHERE id=1;"
+expect_error system_gate 1644 "UPDATE $delegations SET grant_reason='changed' WHERE id=1;"
+expect_error system_gate 1644 "DELETE FROM $delegations WHERE id=1;"
 expect_error system_gate 1142 "TRUNCATE TABLE $delegations;"
-for user in worker_gate bootstrap_gate; do
-    expect_error "$user" 1142 "SELECT status FROM $delegations;"
-done
-test "$(admin <<<"SELECT COUNT(*) FROM information_schema.column_privileges WHERE grantee=CONCAT(QUOTE('system_gate'),'@',QUOTE('%')) AND table_schema='system' AND table_name='engine_access_delegations' AND privilege_type='UPDATE' AND column_name IN ('status','version','revoked_by_principal_id','revoked_at','revoked_reason')")" = 5
 echo 'System delegation: restricted create, read and versioned revocation passed; overlap serialized and history preserved'
 
 # An ordinary delegated operator, a separate business confirmer and the
@@ -386,20 +315,14 @@ INSERT INTO role_assignments(principal_id,role_id,scope_type,tenant_id,source_ty
 VALUES(40002,@confirmer,'tenant',7,'manual',40001,'Catalog business confirmation'),
       (40003,@authority,'tenant',7,'manual',40001,'Catalog handling'),
       (@catalog,@runtime,'tenant',7,'manual',40001,'Catalog runtime');
-GRANT SELECT ON system.oauth_clients TO 'system_gate'@'%';
-GRANT SELECT ON system.service_principals TO 'system_gate'@'%';
 SQL
-(cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
+(cd "$system_backend" && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
     go test ./internal/engineaccess -run '^TestCatalogFulfillmentServiceAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/catalog-fulfillment.log"
 grep -q '^--- PASS: TestCatalogFulfillmentServiceAgainstMySQL ' "$work/catalog-fulfillment.log"
 test "$(admin <<<"SELECT COUNT(*) FROM audit_logs a JOIN engine_access_fulfillment_outcomes o ON o.request_id=a.entity_id WHERE a.event_name='system.engine_access_fulfillment.accepted' AND a.principal_id=$catalog_id AND o.outcome='accepted' AND o.binding->>'$.operator.principal_id'='40003'")" = 2
 revocations=system.engine_access_grant_revocations
-for user in worker_gate bootstrap_gate; do
-    expect_error "$user" 1142 "SELECT request_id FROM $revocations;"
-    expect_error "$user" 1142 "INSERT INTO $revocations () VALUES ();"
-done
 for stmt in "UPDATE $revocations SET reason='rewrite'" "DELETE FROM $revocations"; do
-    expect_error system_gate 1142 "$stmt"
+    expect_error system_gate 1644 "$stmt"
     if admin <<<"$stmt" >"$work/immutable.out" 2>"$work/immutable.err"; then exit 1; fi
     grep -q '^ERROR 1644 ' "$work/immutable.err"
 done

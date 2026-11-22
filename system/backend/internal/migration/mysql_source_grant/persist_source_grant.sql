@@ -1,4 +1,4 @@
-CREATE DEFINER='addp_system_source_grant'@'localhost' PROCEDURE system.persist_source_grant(
+CREATE PROCEDURE system.persist_source_grant(
     IN p_approval_mode VARCHAR(32), IN p_request_id CHAR(36),
     IN p_tenant_id BIGINT, IN p_engine_id BIGINT, IN p_catalog_path JSON,
     IN p_catalog_request_id CHAR(36), IN p_node_recursive BOOLEAN,

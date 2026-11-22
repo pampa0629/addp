@@ -58,8 +58,14 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("ping migration database: %w", err)
 	}
-	if _, err := db.ExecContext(ctx, `CREATE SCHEMA IF NOT EXISTS system`); err != nil {
-		return fmt.Errorf("ensure system schema: %w", err)
+	var assigned bool
+	if err := db.QueryRowContext(ctx, `SELECT to_regnamespace('system') IS NOT NULL`).Scan(&assigned); err != nil {
+		return fmt.Errorf("inspect system schema: %w", err)
+	}
+	if !assigned {
+		if _, err := db.ExecContext(ctx, `CREATE SCHEMA IF NOT EXISTS system`); err != nil {
+			return fmt.Errorf("ensure system schema: %w", err)
+		}
 	}
 	if err := rejectLegacySchema(ctx, db); err != nil {
 		return err
@@ -151,6 +157,27 @@ func (r *Runner) Run(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// CheckPostgresSystemStartup verifies the deployed IAM catalog without creating
+// the migration table or filling in missing checksums.
+func CheckPostgresSystemStartup(ctx context.Context, db *sql.DB) error {
+	catalog, err := ReadCatalog(EmbeddedSQL, DefaultMigrationsRoot)
+	if err != nil {
+		return err
+	}
+	version, dirty, exists, err := readExistingMigrationState(ctx, db)
+	if err != nil {
+		return err
+	}
+	if !exists || dirty || version != catalog.LatestVersion {
+		return fmt.Errorf("system migration is incomplete: database=%d required=%d dirty=%t", version, catalog.LatestVersion, dirty)
+	}
+	recorded, err := readRecordedMigrationChecksums(ctx, db)
+	if err != nil {
+		return err
+	}
+	return compareMigrationChecksums(catalog, version, recorded, true)
 }
 
 func readExistingMigrationState(ctx context.Context, db *sql.DB) (uint, bool, bool, error) {

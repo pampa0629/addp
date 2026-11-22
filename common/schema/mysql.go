@@ -22,6 +22,16 @@ func MigrateMySQL(db *gorm.DB, owner string, version int64, apply func(*gorm.DB)
 // MigrateMySQLWithData commits the data migration and completion revision
 // together after retryable DDL. The callback receives the last completed version.
 func MigrateMySQLWithData(db *gorm.DB, owner string, version int64, apply func(*gorm.DB) error, data func(*gorm.DB, int64) error) error {
+	return migrateMySQL(db, owner, version, apply, data, nil)
+}
+
+// MigrateMySQLVerified checks the live contract under the migration lock on every
+// deployment, including when the installed revision is already current.
+func MigrateMySQLVerified(db *gorm.DB, owner string, version int64, apply, verify func(*gorm.DB) error) error {
+	return migrateMySQL(db, owner, version, apply, nil, verify)
+}
+
+func migrateMySQL(db *gorm.DB, owner string, version int64, apply func(*gorm.DB) error, data func(*gorm.DB, int64) error, verify func(*gorm.DB) error) error {
 	if db == nil || db.Dialector.Name() != "mysql" || !validMySQLSchemaOwner(owner) || version < 1 || apply == nil {
 		return fmt.Errorf("invalid MySQL schema migration contract: %q version %d", owner, version)
 	}
@@ -69,6 +79,11 @@ func MigrateMySQLWithData(db *gorm.DB, owner string, version int64, apply func(*
 			return fmt.Errorf("schema %s version %d is newer than this process requires (%d)", owner, current.Version, version)
 		}
 		if current.Version == version && current.PendingVersion == 0 {
+			if verify != nil {
+				if err := verify(conn); err != nil {
+					return errors.Join(err, conn.Exec("UPDATE startup_schema_revision SET pending_version = ? WHERE owner = ?", version, owner).Error)
+				}
+			}
 			return nil
 		}
 		if err := conn.Exec(`INSERT INTO startup_schema_revision (owner, version, pending_version) VALUES (?, 0, ?)
@@ -77,6 +92,11 @@ func MigrateMySQLWithData(db *gorm.DB, owner string, version int64, apply func(*
 		}
 		if err := apply(conn.Session(&gorm.Session{NewDB: true})); err != nil {
 			return fmt.Errorf("migrate MySQL schema %s to %d: %w", owner, version, err)
+		}
+		if verify != nil {
+			if err := verify(conn); err != nil {
+				return err
+			}
 		}
 		return conn.Transaction(func(tx *gorm.DB) error {
 			if data != nil {

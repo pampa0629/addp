@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/create_definer.sql system/backend/internal/migration/mysql_source_grant/authorize_definer.sql system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
+# ADDP_T2_INPUT_FILES=scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -238,53 +238,24 @@ if [ "$test_group" = platform-meta-scan ]; then
     (cd "$ROOT_DIR/meta/backend" && GOWORK=off go build -o "$WORK_DIR/meta-server" ./cmd/server)
     export ADDP_TEST_META_SOURCE_PASSWORD
     ADDP_TEST_META_SOURCE_PASSWORD=$(openssl rand -hex 24)
+    export ADDP_DATABASE_RUNTIME_USER=worker_gate
+    ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 24)
+    export ADDP_DATABASE_RUNTIME_PASSWORD
     bash "$ROOT_DIR/scripts/test/mysql-meta-install-contract.sh" "$WORK_DIR" "$MYSQL_PROJECT" "$mysql_port"
     (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_MYSQL_META_SCAN=1 GOWORK=off go test ./internal/service \
         -run '^TestMetaClaimAndTaskSummaryAgainstMySQL$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-meta-scan.log"
     grep -q '^--- PASS: TestMetaClaimAndTaskSummaryAgainstMySQL ' "$WORK_DIR/platform-meta-scan.log"
     (cd "$ROOT_DIR/meta/backend" && GOWORK=off go build -o "$WORK_DIR/meta-worker" ./cmd/worker)
-    export ADDP_MYSQL_META_WORKER_USER=worker_gate
-    ADDP_MYSQL_META_WORKER_PASSWORD=$(openssl rand -hex 24)
-    export ADDP_MYSQL_META_WORKER_PASSWORD
     mysql_admin() {
         mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -h127.0.0.1 -uroot -NB meta'
     }
     mysql_admin <<SQL
-CREATE USER 'worker_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_META_WORKER_PASSWORD';
-GRANT SELECT ON meta.startup_schema_revision TO 'worker_gate'@'%';
-GRANT SELECT ON common.startup_schema_revision TO 'worker_gate'@'%';
-GRANT SELECT, INSERT, UPDATE ON meta.meta_node TO 'worker_gate'@'%';
-GRANT SELECT, INSERT, UPDATE ON meta.meta_item TO 'worker_gate'@'%';
-GRANT SELECT, INSERT, UPDATE ON meta.object_index_deletions TO 'worker_gate'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON meta.* TO 'worker_gate'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON common.* TO 'worker_gate'@'%';
 SQL
     (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_META_MYSQL_CATALOG=1 GOWORK=off go test ./internal/scanruntime \
         -run '^TestMySQLScanCatalog$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/meta-catalog.log"
     grep -q '^--- PASS: TestMySQLScanCatalog ' "$WORK_DIR/meta-catalog.log"
-    export ADDP_MYSQL_META_USER=meta_backend_gate
-    ADDP_MYSQL_META_PASSWORD=$(openssl rand -hex 24)
-    export ADDP_MYSQL_META_PASSWORD
-    mysql_admin <<SQL
-CREATE USER 'meta_backend_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_META_PASSWORD';
-GRANT SELECT ON meta.startup_schema_revision TO 'meta_backend_gate'@'%';
-GRANT SELECT ON common.startup_schema_revision TO 'meta_backend_gate'@'%';
-SQL
-    mysql_admin <<'SQL'
-GRANT SELECT ON meta.scan_tasks TO 'meta_backend_gate'@'%';
-GRANT SELECT ON meta.meta_node TO 'meta_backend_gate'@'%';
-GRANT SELECT ON meta.meta_item TO 'meta_backend_gate'@'%';
-GRANT UPDATE(status) ON common.task_executions TO 'meta_backend_gate'@'%','worker_gate'@'%';
-GRANT SELECT ON common.task_executions TO 'meta_backend_gate'@'%','worker_gate'@'%';
-GRANT SELECT ON meta.lineage_observations TO 'meta_backend_gate'@'%';
-GRANT SELECT,INSERT,UPDATE ON common.background_runtime_heartbeats TO 'worker_gate'@'%';
-SQL
-    export ADDP_TEST_HEARTBEAT_SYSTEM_PASSWORD ADDP_TEST_HEARTBEAT_WORKER_USER=worker_gate ADDP_TEST_HEARTBEAT_WORKER_PASSWORD="$ADDP_MYSQL_META_WORKER_PASSWORD"
-    ADDP_TEST_HEARTBEAT_SYSTEM_PASSWORD=$(openssl rand -hex 24)
-    mysql_admin <<SQL
-CREATE USER 'heartbeat_system'@'%' IDENTIFIED BY '$ADDP_TEST_HEARTBEAT_SYSTEM_PASSWORD';
-GRANT SELECT(expires_at),DELETE ON common.background_runtime_heartbeats TO 'heartbeat_system'@'%';
-GRANT SELECT,DELETE ON common.execution_events TO 'heartbeat_system'@'%';
-GRANT SELECT ON common.task_executions TO 'heartbeat_system'@'%';
-SQL
     (cd "$ROOT_DIR/system/backend" && ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port" ADDP_TEST_HEARTBEAT_RETENTION=1 GOWORK=off go test ./internal/service -run '^TestSystemRuntimeHeartbeatRetention$' -count=1 -v) | tee "$WORK_DIR/retention.log"
     grep -q '^--- PASS: TestSystemRuntimeHeartbeatRetention ' "$WORK_DIR/retention.log"
     mysql_admin <<'SQL'
@@ -294,8 +265,8 @@ SQL
     restart_status=0
     python3 "$ROOT_DIR/scripts/test/meta-database-restart-contract.py" "$WORK_DIR" mysql || restart_status=$?
     echo "SET GLOBAL general_log=OFF" | mysql_admin
-    test "$(echo "SELECT COUNT(*) FROM mysql.general_log WHERE SUBSTRING_INDEX(user_host,'[',1) IN ('meta_backend_gate','worker_gate') AND command_type IN ('Query','Execute') AND CAST(argument AS CHAR CHARACTER SET utf8mb4) REGEXP '^[[:space:]]*(CREATE|DROP|ALTER|TRUNCATE|RENAME)[[:space:]]'" | mysql_admin)" = 0
-    test "$(echo "SELECT COUNT(DISTINCT SUBSTRING_INDEX(user_host,'[',1)) FROM mysql.general_log WHERE SUBSTRING_INDEX(user_host,'[',1) IN ('meta_backend_gate','worker_gate') AND command_type IN ('Query','Execute')" | mysql_admin)" = 2
+    test "$(echo "SELECT COUNT(*) FROM mysql.general_log WHERE SUBSTRING_INDEX(user_host,'[',1) = 'worker_gate' AND command_type IN ('Query','Execute') AND CAST(argument AS CHAR CHARACTER SET utf8mb4) REGEXP '^[[:space:]]*(CREATE|DROP|ALTER|TRUNCATE|RENAME)[[:space:]]'" | mysql_admin)" = 0
+    test "$(echo "SELECT COUNT(DISTINCT SUBSTRING_INDEX(user_host,'[',1)) FROM mysql.general_log WHERE SUBSTRING_INDEX(user_host,'[',1) = 'worker_gate' AND command_type IN ('Query','Execute')" | mysql_admin)" = 1
     test "$(echo "SELECT COUNT(*) FROM common.background_runtime_heartbeats WHERE module='meta' AND runtime_name='scan' AND stopped_at IS NOT NULL" | mysql_admin)" = 2
     echo 'MySQL: no runtime DDL in the general query log during two starts and stops'
     test "$restart_status" = 0

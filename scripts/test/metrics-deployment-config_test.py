@@ -2430,7 +2430,7 @@ class ServiceExpectationPublicationTest(unittest.TestCase):
     def test_standard_production_start_adds_the_single_overlay_only_after_success(self):
         import shlex
         source = (ROOT/'scripts/prod/start.sh').read_text()
-        phase = source[source.index('# Publish desired services'):source.index('# 第二步：System')]
+        phase = source[source.index('# Publish desired services'):source.index('# The same deployment identity')]
         self.assertLess(source.index('addp_acquire_lifecycle_lock prod-start'), source.index('bash scripts/prod/setup-env.sh'))
         root = self.directory/'start-prod'
         (root/'scripts/utils').mkdir(parents=True)
