@@ -8,6 +8,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/authorization"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // SourceGrantRelation is a derived management view, never a second ACL or an
@@ -96,11 +97,16 @@ func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, eng
 // are never merged; approval provenance and operator do not split a relation.
 func (r *Repository) activeRelationGrants(ctx context.Context, grant sourceGrant) ([]sourceGrant, error) {
 	var rows []sourceGrant
-	err := r.db.WithContext(ctx).Where(`tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb AND node_recursive IS NOT DISTINCT FROM ?
- AND recipient_type = ? AND recipient_id = ? AND action = ? AND granted_at <= clock_timestamp()
- AND (expires_at IS NULL OR expires_at > clock_timestamp())
+	target := "catalog_path = ?::jsonb AND node_recursive IS NOT DISTINCT FROM ?"
+	if r.db.Dialector.Name() == "mysql" {
+		target = "catalog_path = CAST(? AS JSON) AND node_recursive <=> ?"
+	}
+	clock := gorm.Expr(r.wallClockSQL())
+	err := r.db.WithContext(ctx).Where(`tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND `+target+`
+ AND recipient_type = ? AND recipient_id = ? AND action = ? AND granted_at <= ?
+ AND (expires_at IS NULL OR expires_at > ?)
  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations r WHERE r.request_id = system.engine_access_grants.request_id)`,
-		grant.TenantID, grant.EngineID, grant.ItemFingerprint, string(grant.CatalogPath), grant.NodeRecursive, grant.RecipientType, grant.RecipientID, grant.Action).
+		grant.TenantID, grant.EngineID, grant.ItemFingerprint, string(grant.CatalogPath), grant.NodeRecursive, grant.RecipientType, grant.RecipientID, grant.Action, clock, clock).
 		Order("request_id").Find(&rows).Error
 	return rows, err
 }

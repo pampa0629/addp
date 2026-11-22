@@ -41,7 +41,7 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 	}
 	caller := FulfillmentRuntimeActor{Actor: actorFor(50004), ClientID: "addp-catalog"}
 	binding := shared.SharingFulfillmentBinding{ItemFingerprint: base.ItemFingerprint, BoundaryHash: base.BoundaryHash, CallerPrincipalID: caller.PrincipalID,
-		Operator: provenance(actorFor(50003)), Path: base.Path, DecisionID: base.DecisionID, RecipientType: "user", RecipientID: manager.PrincipalID,
+		Operator: provenance(actorFor(50003)), Path: base.Path, DecisionID: base.DecisionID, RecipientType: "user", RecipientID: 40002,
 		Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
 	confirmer := provenance(actorFor(50002))
 	calls := 0
@@ -61,6 +61,62 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 	if _, err := svc.AcceptFulfillment(ctx, caller, id, binding); err != nil || calls != 1 {
 		t.Fatalf("historical acceptance: basis calls=%d, %v", calls, err)
 	}
+	first, err := svc.IssueFulfillmentGrant(ctx, caller, id, binding)
+	if err != nil || first.RequestID != id || first.GrantedAt.IsZero() {
+		t.Fatalf("first issue: %+v, %v", first, err)
+	}
+	relation := sourceGrant{TenantID: 7, EngineID: int64(binding.Path.EngineID), ItemFingerprint: binding.ItemFingerprint, RecipientType: binding.RecipientType, RecipientID: binding.RecipientID, Action: binding.Action}
+	relation.CatalogPath, err = encodeFulfillmentPath(binding.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkActive := func(want uuid.UUID) {
+		t.Helper()
+		rows, err := repo.activeRelationGrants(ctx, relation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want == uuid.Nil && len(rows) == 0 {
+			return
+		}
+		if len(rows) != 1 || rows[0].RequestID != want {
+			t.Fatalf("expected active request %s, got %+v", want, rows)
+		}
+	}
+	checkActive(id)
+	secondID := uuid.New()
+	secondBinding := binding
+	secondBinding.DecisionID = uuid.New()
+	if _, err := svc.AcceptFulfillment(ctx, caller, secondID, secondBinding); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.IssueFulfillmentGrant(ctx, caller, secondID, secondBinding); !errors.Is(err, ErrGrantRelationExists) {
+		t.Fatalf("duplicate active relation: %v", err)
+	}
+	withdrawal := RevokeGrantInput{Actor: actorFor(50003), EngineID: 12, RequestID: id, Reason: "withdraw Catalog access"}
+	denied := withdrawal
+	denied.Actor = actorFor(50002)
+	if _, err := svc.RevokeGrant(ctx, denied); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatalf("unauthorized revocation: %v", err)
+	}
+	checkActive(id)
+	revoked, err := svc.RevokeGrant(ctx, withdrawal)
+	if err != nil || revoked.RevokedAt.Before(first.GrantedAt) || len(revoked.RevokedRequestIDs) != 1 || revoked.RevokedRequestIDs[0] != id {
+		t.Fatalf("withdraw: %+v, %v", revoked, err)
+	}
+	again, err := svc.RevokeGrant(ctx, withdrawal)
+	if err != nil || !again.RevokedAt.Equal(revoked.RevokedAt) {
+		t.Fatalf("repeat withdrawal: %+v, %v", again, err)
+	}
+	checkActive(uuid.Nil)
+	second, err := svc.IssueFulfillmentGrant(ctx, caller, secondID, secondBinding)
+	if err != nil || second.RequestID != secondID {
+		t.Fatalf("reissue: %+v, %v", second, err)
+	}
+	if _, err := svc.IssueFulfillmentGrant(ctx, caller, id, binding); err != nil {
+		t.Fatalf("historical retry: %v", err)
+	}
+	checkActive(secondID)
 	if _, err := svc.Revoke(ctx, RevokeInput{Actor: manager, EngineID: 12, ID: delegation.ID, Version: 1, Reason: "Catalog handling complete"}); err != nil {
 		t.Fatal(err)
 	}

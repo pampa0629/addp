@@ -84,7 +84,7 @@ func (r *Repository) persistSourceGrant(ctx context.Context, grant *sourceGrant,
 		}
 	}
 	if mysql {
-		return r.persistMySQLSourceGrant(ctx, grant, outcome)
+		return mapError(r.persistMySQLSourceGrant(ctx, grant, outcome))
 	}
 	if grant == nil {
 		return nil

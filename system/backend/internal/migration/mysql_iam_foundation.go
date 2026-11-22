@@ -68,7 +68,7 @@ func MigrateMySQLEngineDelegations(db *gorm.DB) error {
 }
 
 const mysqlSourceGrantCatalogOwner = "system_source_grant_catalog"
-const mysqlSourceGrantCatalogVersion = 1
+const mysqlSourceGrantCatalogVersion = 2
 
 func MigrateMySQLSourceGrantCatalog(db *gorm.DB) error {
 	return migrateSystemMySQL(db, mysqlSourceGrantCatalogOwner, mysqlSourceGrantCatalogVersion, "mysql_source_grant_catalog", nil)

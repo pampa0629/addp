@@ -56,6 +56,7 @@ human_version=$(admin <<<"SELECT authorization_version FROM principals WHERE id=
 admin < "$sql_dir/authorize_definer.sql"
 admin <<'SQL'
 GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'system_gate'@'%';
+GRANT SELECT, INSERT ON system.engine_access_grant_revocations TO 'system_gate'@'%';
 GRANT SELECT, INSERT ON system.engine_access_fulfillment_outcomes TO 'system_gate'@'%';
 GRANT SELECT, INSERT, UPDATE ON system.engine_access_request_locks TO 'system_gate'@'%';
 GRANT INSERT (target_key), UPDATE (lock_marker) ON system.engine_access_target_locks TO 'system_gate'@'%';
@@ -101,7 +102,7 @@ check_grants() {
 check_grants addp_system_source_grant@localhost 'EXECUTE ON PROCEDURE system.persist_source_grant' \
     'INSERT ON system.engine_access_grants' 'INSERT ON system.engine_access_initial_grant_outcomes' 'INSERT ON system.engine_access_upload_grant_outcomes'
 check_grants 'system_gate@%' 'EXECUTE ON PROCEDURE system.persist_source_grant' 'SELECT ON system.engine_access_grants' \
-    'SELECT, INSERT ON system.engine_access_fulfillment_outcomes' 'SELECT, INSERT, UPDATE ON system.engine_access_request_locks' \
+    'SELECT, INSERT ON system.engine_access_grant_revocations' 'SELECT, INSERT ON system.engine_access_fulfillment_outcomes' 'SELECT, INSERT, UPDATE ON system.engine_access_request_locks' \
     'INSERT (target_key), UPDATE (lock_marker) ON system.engine_access_target_locks' 'INSERT ON system.audit_logs' \
     'SELECT ON system.engine_access_initial_grant_outcomes' 'SELECT ON system.engine_access_upload_grant_outcomes' 'INSERT ON system.sample_audit'
 check_grants worker_gate@127.0.0.1
@@ -114,13 +115,17 @@ call() {
     local owner=NULL execution=NULL result_id=NULL upload=NULL issuer=NULL membership=NULL recorded=NULL catalog_request=NULL
     local engine=12 path="$table_path" fingerprint="SHA2('12:public.orders',256)" reason=NULL composition=NULL
     case "$mode" in
-        task_production) owner="'transfer'"; execution=$(uuid 100); result_id=$(uuid "$result"); issuer=$transfer_id; membership=31001 ;;
+        task_production) owner="'transfer'"; execution=$(uuid 100); result_id=$(uuid "$result"); issuer=$transfer_id; membership=31001
+            path="JSON_SET($table_path,'$.segments[2].name','production_$result')"
+            fingerprint="SHA2('12:public.production_$result',256)" ;;
         upload_creation)
-            engine=99; path="$file_path"; fingerprint="SHA2('99:upload.geojson',256)"; upload=$(uuid "$result")
+            engine=99; path="JSON_SET($file_path,'$.segments[1].name','upload_$result.geojson')"; fingerprint="SHA2('99:upload_$result.geojson',256)"; upload=$(uuid "$result")
             issuer=$manager_id; membership=31002
             composition="JSON_OBJECT('format','geojson','refs',JSON_ARRAY(JSON_OBJECT('target',$path,'role','data','primary',true,'required',true)))" ;;
         catalog) catalog_request=$request ;;
-        independent) reason="'fixture approval'" ;;
+        independent) reason="'fixture approval'"
+            path="JSON_SET($table_path,'$.segments[2].name','independent_orders')"
+            fingerprint="SHA2('12:public.independent_orders',256)" ;;
         *) return 2 ;;
     esac
     case "$mode" in task_production|upload_creation)
@@ -198,7 +203,7 @@ done
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants")" = 4
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE approval_mode IN ('catalog','independent') AND request_id IN ($(uuid 13),$(uuid 14))")" = 2
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_initial_grant_outcomes WHERE grant_request_id=$(uuid 11) AND result_id=$(uuid 1) AND issuer_principal_id=$transfer_id AND issuer_membership_id=31001 AND recorded_at='2026-01-02 03:04:05.123456'")" = 1
-test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE grant_request_id=$(uuid 12) AND upload_id=$(uuid 2) AND item_fingerprint=SHA2('99:upload.geojson',256)")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_upload_grant_outcomes WHERE grant_request_id=$(uuid 12) AND upload_id=$(uuid 2) AND item_fingerprint=SHA2('99:upload_2.geojson',256)")" = 1
 test "$(admin <<<"SELECT COUNT(*) FROM sample_audit")" = 7
 echo 'MySQL System source procedure: 4 Grants, 2 issued and 2 denied across both result tables; privileges and rollback verified'
 (cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_CATALOG_PRINCIPAL_ID="$catalog_id" ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
@@ -285,4 +290,17 @@ SQL
 (cd "$sql_dir/../../.." && GOWORK=off ADDP_TEST_MYSQL_SOURCE_GRANT=1 ADDP_TEST_MYSQL_PASSWORD="$runtime_password" \
     go test ./internal/engineaccess -run '^TestCatalogFulfillmentServiceAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$work/catalog-fulfillment.log"
 grep -q '^--- PASS: TestCatalogFulfillmentServiceAgainstMySQL ' "$work/catalog-fulfillment.log"
-test "$(admin <<<"SELECT COUNT(*) FROM audit_logs a JOIN engine_access_fulfillment_outcomes o ON o.request_id=a.entity_id WHERE a.event_name='system.engine_access_fulfillment.accepted' AND a.principal_id=$catalog_id AND o.outcome='accepted' AND o.binding->>'$.operator.principal_id'='40003'")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs a JOIN engine_access_fulfillment_outcomes o ON o.request_id=a.entity_id WHERE a.event_name='system.engine_access_fulfillment.accepted' AND a.principal_id=$catalog_id AND o.outcome='accepted' AND o.binding->>'$.operator.principal_id'='40003'")" = 2
+revocations=system.engine_access_grant_revocations
+for user in worker_gate bootstrap_gate; do
+    expect_error "$user" 1142 "SELECT request_id FROM $revocations;"
+    expect_error "$user" 1142 "INSERT INTO $revocations () VALUES ();"
+done
+for stmt in "UPDATE $revocations SET reason='rewrite'" "DELETE FROM $revocations"; do
+    expect_error system_gate 1142 "$stmt"
+    if admin <<<"$stmt" >"$work/immutable.out" 2>"$work/immutable.err"; then exit 1; fi
+    grep -q '^ERROR 1644 ' "$work/immutable.err"
+done
+expect_error system_gate 1142 "TRUNCATE TABLE $revocations;"
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs a JOIN engine_access_grant_revocations r ON r.request_id=a.entity_id WHERE a.event_name='system.engine_access_grant.revoked' AND a.principal_id=r.revoked_by_principal_id AND a.tenant_id=7")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs a JOIN engine_access_grants g ON g.request_id=a.entity_id WHERE a.event_name='system.engine_access_grant.issued' AND a.principal_id=$catalog_id AND a.tenant_id=7 AND g.approval_mode='catalog'")" = 2

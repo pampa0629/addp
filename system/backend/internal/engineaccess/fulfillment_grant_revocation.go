@@ -72,6 +72,18 @@ func (r *Repository) findGrantRevocation(ctx context.Context, id uuid.UUID) (*Gr
 	return &row, nil
 }
 
+// The database timestamps the withdrawal after checking the original Grant.
+func (r *Repository) insertGrantRevocation(ctx context.Context, withdrawal *GrantRevocation) error {
+	db := r.db.WithContext(ctx)
+	if db.Dialector.Name() != "mysql" {
+		return db.Clauses(clause.Returning{}).Create(withdrawal).Error
+	}
+	if err := db.Omit("RevokedAt").Create(withdrawal).Error; err != nil {
+		return err
+	}
+	return db.Model(withdrawal).Select("revoked_at").Where("request_id = ?", withdrawal.RequestID).Row().Scan(&withdrawal.RevokedAt)
+}
+
 // Unlike new fulfillment, withdrawal requires neither a running engine nor
 // remote Catalog/source access. Current human IAM and management scope still
 // gate every call, including retries, before looking up any Grant history.
@@ -127,7 +139,7 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 			for _, item := range grants {
 				withdrawal := &GrantRevocation{RequestID: item.RequestID, RevokedByPrincipalID: input.Actor.PrincipalID,
 					RevokedByMembershipID: input.Actor.MembershipID, Reason: input.Reason, RevokedRequestIDs: ids}
-				if err := tx.db.WithContext(ctx).Clauses(clause.Returning{}).Create(withdrawal).Error; err != nil {
+				if err := tx.insertGrantRevocation(ctx, withdrawal); err != nil {
 					return mapError(err)
 				}
 				if item.RequestID == input.RequestID {

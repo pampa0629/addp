@@ -163,6 +163,10 @@ func mapError(err error) error {
 	var mysqlErr *drivermysql.MySQLError
 	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1644 {
 		switch mysqlErr.Message {
+		case "engine_access_grant_revocation_expiry":
+			return ErrGrantRevocationExpired
+		case "engine_access_grant_relation_exists":
+			return ErrGrantRelationExists
 		case "engine_access_delegations_overlap":
 			return ErrOverlap
 		case "engine_access_delegations_expiry":
