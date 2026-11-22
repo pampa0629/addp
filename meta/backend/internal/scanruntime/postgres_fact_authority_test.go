@@ -40,8 +40,12 @@ func TestPostgresWorkerScanFactAuthority(t *testing.T) {
 		"host": "127.0.0.1", "port": port, "database": "addp_test", "user": "source_gate_reader", "password": os.Getenv("ADDP_TEST_META_SOURCE_PASSWORD"), "sslmode": "disable",
 	}}
 	n, tables, fields, err := runtime.ScanNamespace(t.Context(), &postgresql.PostgreSQLPlugin{}, resource, 7, 101, "scan_source", "deep", true)
-	if err != nil || n != 1 || tables != 1 || fields != 2 {
+	wantFields := 2
+	if os.Getenv("ADDP_TEST_META_RESCAN") == "1" {
+		wantFields = 3
+	}
+	if err != nil || n != 1 || tables != 1 || fields != wantFields {
 		t.Fatalf("scan returned namespaces=%d tables=%d fields=%d: %v", n, tables, fields, err)
 	}
-	t.Log("scan_source returned one table and two fields using the restricted Worker login")
+	t.Logf("scan_source returned one table and %d fields using the restricted Worker login", fields)
 }

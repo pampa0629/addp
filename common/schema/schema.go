@@ -33,10 +33,10 @@ func Require(db *gorm.DB, name string, version int64) error {
 	}
 	var current int64
 	if err := db.Raw("SELECT version FROM " + name + ".startup_schema_revision WHERE singleton = TRUE").Scan(&current).Error; err != nil {
-		return fmt.Errorf("schema %s is not initialized; start its Backend first: %w", name, err)
+		return fmt.Errorf("schema %s is not initialized; prepare the schema before startup: %w", name, err)
 	}
 	if current != version {
-		return fmt.Errorf("schema %s version mismatch: database=%d process=%d; complete Backend migration before starting Worker", name, current, version)
+		return fmt.Errorf("schema %s version mismatch: database=%d process=%d; complete the schema migration before startup", name, current, version)
 	}
 	return nil
 }

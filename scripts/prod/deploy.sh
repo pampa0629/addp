@@ -28,5 +28,5 @@ source scripts/utils/observability-env.sh
 addp_prepare_observability_env "$ROOT_DIR/.env"
 python3 scripts/prod/release-images.py prepare --tag "$version" --registry "$registry"
 if [[ "$skip_deploy" == false ]]; then
-  bash scripts/prod/start.sh
+  bash scripts/prod/start.sh --prepare-meta
 fi

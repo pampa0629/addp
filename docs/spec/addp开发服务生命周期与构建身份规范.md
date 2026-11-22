@@ -51,13 +51,13 @@ Python 环境检查和服务启动可以并行；依赖安装互斥及指纹复�
 
 ## 模块迁移与 Worker 启动顺序
 
-模块 schema 由所属 Backend 独占迁移，Worker 初始化不执行平台 schema DDL，也不通过数据库连接器或存储构造函数隐式执行迁移。Worker 启动时只读验证模块及公共 schema 的版本；缺失或不匹配即明确失败，不注册为可领取任务的实例，不自动修复数据库。已初始化的数据库允许 Worker 独立重启和扩容。
+Meta 的 PG 和 MySQL 均由部署身份在新装或升级时执行 `meta-server prepare-database`。Meta Backend 与 Worker 使用各自的运行身份，只读核验 Meta 与 Common 的结构版本。其他尚未接入部署准备入口的模块由所属 Backend 独占迁移。Worker 初始化不执行平台 schema DDL，也不通过数据库连接器或存储构造函数隐式执行迁移。Worker 启动时只读验证模块及公共 schema 的版本；缺失或不匹配即明确失败，不注册为可领取任务的实例，不自动修复数据库。已初始化的数据库允许 Worker 独立重启和扩容。
 
-Backend 使用 `common/schema` 的模块级事务 advisory lock 串行迁移，同一 schema 多实例同时启动只应用一次相同版本。`<schema>.startup_schema_revision` 记录成功提交的版本，迁移失败回滚结构和版本；旧程序不得覆盖较新的版本。模块持有自己的 `SchemaVersion`，任何数据库结构或初始化迁移变化必须同步递增；版本记录不代替已有模块 SQL 迁移目录，只作为该版本初始化完成的证明。SQLite 领域单测继续由测试夹具建立表，不作为正式启动路径。
+PG 迁移入口使用 `common/schema` 的模块级事务 advisory lock 串行迁移，同一 schema 多实例同时启动只应用一次相同版本。`<schema>.startup_schema_revision` 记录成功提交的版本，迁移失败回滚结构和版本；旧程序不得覆盖较新的版本。模块持有自己的 `SchemaVersion`，任何数据库结构或初始化迁移变化必须同步递增；版本记录不代替已有模块 SQL 迁移目录，只作为该版本初始化完成的证明。SQLite 领域单测继续由测试夹具建立表，不作为正式启动路径。
 
 Python Agent Backend 在自身事务中实现同一 PostgreSQL 协议（`addp.schema/agent` advisory lock 与 `agent.startup_schema_revision`），顺序执行 owner 的连续 SQL 文件；`agent.schema_migrations` 额外保存逐文件名和 SHA-256，拒绝历史修改或超前版本。迁移目录是结构唯一来源，不再运行 create_all/零散补列。无 Python Worker 时不预先增加 Worker 路径。
 
-`common` schema 的执行记录及运行心跳由 System Backend 在就绪前统一初始化，领域实现仍归 `common/execution` 和 `common/runtimehealth`；业务 Backend、Worker 只校验公共 schema。连接数据库与执行迁移分离。
+`common` 的执行记录及运行心跳在 PG 由 System Backend 在就绪前统一初始化，在 MySQL 由 Common 部署身份准备，领域实现仍归 `common/execution` 和 `common/runtimehealth`；业务 Backend、Worker 只校验公共 schema。连接数据库与执行迁移分离。
 
 开发脚本和 Compose 按模块执行 `Backend /health/ready 成功 → 对应 Worker 启动`。各模块之间保持并行，不等待全平台 Backend 就绪才启动 Worker。开发脚本对同一 Backend 只执行一次就绪等待，使用共用的 60 秒总预算。选中 Worker 时，该等待同时决定所属 Worker 能否启动和本次后端就绪检查的结果。启动 Worker 前须确认 Backend 进程仍存活；Backend 失败不得启动其 Worker。Backend readiness 不依赖 Worker，避免循环依赖。Worker 运行后不因所属 Backend 的短暂不可用被强制停止；涉及结构升级时，必须先停止相关 Worker 领取任务并妥善结束在途任务，再迁移和恢复，禁止新旧 schema 程序混跑。
 

@@ -15,6 +15,12 @@ func EnsureNamespace(db *gorm.DB, name string) error {
 }
 
 func createPostgresNamespace(db *gorm.DB, name string) error {
+	// PostgreSQL checks database-wide CREATE even when IF NOT EXISTS finds
+	// a namespace that the deployment already assigned to this module.
+	var exists bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = ?)", name).Scan(&exists).Error; err != nil || exists {
+		return err
+	}
 	return db.Exec("CREATE SCHEMA IF NOT EXISTS " + name).Error
 }
 

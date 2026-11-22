@@ -9,15 +9,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/addp/common/schema"
-
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/common/infra/bootstrap"
-	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
@@ -28,7 +24,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
@@ -96,35 +91,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Meta worker 心跳配置无效: %v", err)
 	}
-	go reporter.Run(ctx)
+	reporterDone := make(chan struct{})
+	go func() {
+		defer close(reporterDone)
+		reporter.Run(ctx)
+	}()
 	go scanService.RunObjectIndexDelivery(ctx)
 	logger.L().Info("meta bounded worker started", "concurrency", cfg.ConcurrentTasks, "lease", cfg.BoundedLeaseDuration)
 	runner.Run(ctx, registrationDone.IsRegistered)
+	<-reporterDone
 	<-registrationDone.Done()
 	logger.L().Info("meta bounded worker stopped")
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := bootstrap.OpenRuntimeDatabase(database.Config{
-		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
-		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
-	}, "meta", "ADDP_MYSQL_META_WORKER", &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Info)})
-	if err != nil {
-		return nil, fmt.Errorf("打开数据库失败: %w", err)
-	}
-	if db.Dialector.Name() == "mysql" {
-		err = metaRepo.RequireMySQLRuntime(db)
-	} else {
-		err = schema.Require(db, "meta", metaRepo.SchemaVersion)
-		if err == nil {
-			err = schema.Require(db, "common", schema.CommonVersion)
-		}
-	}
-	if err != nil {
-		if pool, e := db.DB(); e == nil {
-			_ = pool.Close()
-		}
-		return nil, fmt.Errorf("Worker schema: %w", err)
-	}
-	return db, nil
+	return metaRepo.OpenRuntimeDatabase(cfg, "META_WORKER")
 }

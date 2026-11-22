@@ -50,7 +50,7 @@ CREATE USER 'scan_reader'@'%' IDENTIFIED BY '$ADDP_TEST_META_SOURCE_PASSWORD';
 GRANT SELECT ON scan_source.* TO 'scan_reader'@'%';
 SQL
 export ADDP_MYSQL_INSTALL_USER=meta_setup ADDP_MYSQL_INSTALL_PASSWORD="$meta_password"
-if "$work/meta-server" install-mysql-scan 2>"$work/meta-denied.err"; then exit 1; fi
+if "$work/meta-server" prepare-database 2>"$work/meta-denied.err"; then exit 1; fi
 grep -Eiq '1142.*REFERENCES|REFERENCES.*denied' "$work/meta-denied.err"
 test "$(echo "SELECT version=0 AND pending_version=2 FROM startup_schema_revision WHERE owner='meta_scan_catalog'" | admin)" = 1
 admin <<'SQL'
@@ -62,7 +62,7 @@ revoke_parent() {
 }
 trap revoke_parent EXIT
 result=0
-"$work/meta-server" install-mysql-scan >"$work/meta-triggers.sql" || result=$?
+"$work/meta-server" prepare-database >"$work/meta-triggers.sql" || result=$?
 test "$result" = 3
 admin <<'SQL'
 INSERT INTO `system`.engines(id,tenant_id,name,engine_type,connection_info,identity_key)
@@ -72,7 +72,16 @@ INSERT INTO meta_item(tenant_id,engine_id,node_id,item_type,name,fingerprint,att
 VALUES(8,202,1,'table','fk gate','fk-gate-item','{"storage":{"schema_name":"orders"},"type_info":{"table":{"fields":[{"name":"amount","type":"int"}]}}}');
 SQL
 admin <"$work/meta-triggers.sql"
-"$work/meta-server" install-mysql-scan
+"$work/meta-server" prepare-database
+# DBA-owned triggers are verified again on installation replay.
+echo 'DROP TRIGGER cleanup_result_immutable' | admin
+result=0
+"$work/meta-server" prepare-database >"$work/meta-restore-trigger.sql" || result=$?
+test "$result" = 3
+test "$(grep -c '^CREATE DEFINER=' "$work/meta-restore-trigger.sql")" = 1
+grep -q ' TRIGGER IF NOT EXISTS cleanup_result_immutable' "$work/meta-restore-trigger.sql"
+admin <"$work/meta-restore-trigger.sql"
+"$work/meta-server" prepare-database
 # Run the real upgrade on populated v1 tables. Separate engines prove each FK independently.
 admin <<'SQL'
 ALTER TABLE meta_node DROP FOREIGN KEY fk_meta_node_engine_restrict, ADD CONSTRAINT fk_meta_node_tenant_engine
@@ -81,7 +90,7 @@ ALTER TABLE meta_item DROP FOREIGN KEY fk_meta_item_engine_restrict, ADD CONSTRA
     FOREIGN KEY (tenant_id,engine_id) REFERENCES `system`.engines(tenant_id,id) ON DELETE CASCADE;
 UPDATE startup_schema_revision SET version=1 WHERE owner='meta_scan_catalog';
 SQL
-"$work/meta-server" install-mysql-scan
+"$work/meta-server" prepare-database
 for entry in '201 meta_node' '202 meta_item'; do
     read -r id table <<<"$entry"
     if echo "DELETE FROM \`system\`.engines WHERE id=$id" | admin 2>"$work/meta-delete.err"; then exit 1; fi
@@ -106,13 +115,13 @@ echo 'Both parent deletions committed after Meta child cleanup'
 admin <<'SQL'
 ALTER TABLE meta_item DROP FOREIGN KEY fk_meta_item_engine_restrict;
 SQL
-if "$work/meta-server" install-mysql-scan 2>"$work/meta-key.err"; then exit 1; fi
+if "$work/meta-server" prepare-database 2>"$work/meta-key.err"; then exit 1; fi
 grep -q 'requires both tenant/engine foreign keys' "$work/meta-key.err"
 MYSQL_PWD="$meta_password" docker exec -i -e MYSQL_PWD "$container" mysql --protocol=TCP -h127.0.0.1 -umeta_setup meta <<'SQL'
 ALTER TABLE meta_item ADD CONSTRAINT fk_meta_item_engine_restrict FOREIGN KEY (tenant_id, engine_id)
     REFERENCES `system`.engines(tenant_id, id) ON DELETE RESTRICT;
 SQL
-"$work/meta-server" install-mysql-scan
+"$work/meta-server" prepare-database
 revoke_parent
 trap - EXIT
 

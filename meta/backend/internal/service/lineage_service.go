@@ -14,6 +14,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
 )
 
@@ -57,13 +58,7 @@ func (s *LineageService) CollectPendingExecutions(ctx context.Context, batchSize
 		return 0, fmt.Errorf("batch size must be between 1 and 5000")
 	}
 	eligible := func() *gorm.DB {
-		return s.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
-			Where("status IN ? AND metadata IS NOT NULL AND metadata ? 'lineage_facts'", lineageTerminalStatuses()).
-			// CollectExecution persists all observations and projections atomically;
-			// an existing observation therefore proves consumption of that execution.
-			Where(`NOT EXISTS (SELECT 1 FROM meta.lineage_observations AS observation
-				WHERE observation.tenant_id = task_executions.tenant_id
-				AND observation.execution_id = task_executions.execution_id)`)
+		return repository.UnobservedLineageExecutions(s.db.WithContext(ctx), lineageTerminalStatuses())
 	}
 	// New executions cannot keep extending this sweep indefinitely. A later
 	// success behind the cursor is also revisited by the next sweep.

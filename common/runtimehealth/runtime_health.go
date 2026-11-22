@@ -15,6 +15,7 @@ const (
 	RoleExecutionSupervisor = "execution_supervisor"
 	RoleContinuousWorker    = "continuous_worker"
 	RoleDispatcher          = "dispatcher"
+	HeartbeatRetention      = 7 * 24 * time.Hour
 	DefaultInterval         = 10 * time.Second
 	DefaultTTL              = 30 * time.Second
 )
@@ -115,12 +116,12 @@ func (r *Repository) ListSince(ctx context.Context, since time.Time) ([]Heartbea
 	return heartbeats, err
 }
 
-func (r *Repository) DeleteBefore(ctx context.Context, before time.Time) error {
+func (r *Repository) PruneExpired(ctx context.Context, now time.Time) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("background runtime heartbeat repository is required")
 	}
 	return r.db.WithContext(ctx).
-		Where("expires_at < ?", before.UTC()).
+		Where("expires_at < ?", now.UTC().Add(-HeartbeatRetention)).
 		Delete(&Heartbeat{}).Error
 }
 
@@ -134,7 +135,6 @@ type ReporterConfig struct {
 	CurrentCapacity func() int
 	Interval        time.Duration
 	TTL             time.Duration
-	Retention       time.Duration
 	ActiveCount     func() int
 	Logger          *slog.Logger
 }
@@ -157,9 +157,6 @@ func NewReporter(repo *Repository, config ReporterConfig) (*Reporter, error) {
 	if (config.Capacity <= 0 && config.CurrentCapacity == nil) || config.Interval <= 0 || config.TTL <= config.Interval {
 		return nil, fmt.Errorf("background runtime reporter capacity, interval, and TTL are invalid")
 	}
-	if config.Retention <= 0 {
-		config.Retention = 7 * 24 * time.Hour
-	}
 	if config.ActiveCount == nil {
 		config.ActiveCount = func() int { return 0 }
 	}
@@ -170,9 +167,6 @@ func NewReporter(repo *Repository, config ReporterConfig) (*Reporter, error) {
 }
 
 func (r *Reporter) Run(ctx context.Context) {
-	if err := r.repo.DeleteBefore(ctx, time.Now().UTC().Add(-r.config.Retention)); err != nil {
-		r.config.Logger.Warn("prune stale background runtime heartbeats failed", "error", err)
-	}
 	r.publish(ctx, time.Now().UTC())
 	ticker := time.NewTicker(r.config.Interval)
 	defer ticker.Stop()

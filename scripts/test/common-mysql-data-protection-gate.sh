@@ -268,6 +268,39 @@ CREATE USER 'meta_backend_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_META_PASSWORD';
 GRANT SELECT ON meta.startup_schema_revision TO 'meta_backend_gate'@'%';
 GRANT SELECT ON common.startup_schema_revision TO 'meta_backend_gate'@'%';
 SQL
+    mysql_admin <<'SQL'
+GRANT SELECT ON meta.scan_tasks TO 'meta_backend_gate'@'%';
+GRANT SELECT ON meta.meta_node TO 'meta_backend_gate'@'%';
+GRANT SELECT ON meta.meta_item TO 'meta_backend_gate'@'%';
+GRANT UPDATE(status) ON common.task_executions TO 'meta_backend_gate'@'%','worker_gate'@'%';
+GRANT SELECT ON common.task_executions TO 'meta_backend_gate'@'%','worker_gate'@'%';
+GRANT SELECT ON meta.lineage_observations TO 'meta_backend_gate'@'%';
+GRANT SELECT,INSERT,UPDATE ON common.background_runtime_heartbeats TO 'worker_gate'@'%';
+SQL
+    export ADDP_TEST_HEARTBEAT_SYSTEM_PASSWORD ADDP_TEST_HEARTBEAT_WORKER_USER=worker_gate ADDP_TEST_HEARTBEAT_WORKER_PASSWORD="$ADDP_MYSQL_META_WORKER_PASSWORD"
+    ADDP_TEST_HEARTBEAT_SYSTEM_PASSWORD=$(openssl rand -hex 24)
+    mysql_admin <<SQL
+CREATE USER 'heartbeat_system'@'%' IDENTIFIED BY '$ADDP_TEST_HEARTBEAT_SYSTEM_PASSWORD';
+GRANT SELECT(expires_at),DELETE ON common.background_runtime_heartbeats TO 'heartbeat_system'@'%';
+GRANT SELECT,DELETE ON common.execution_events TO 'heartbeat_system'@'%';
+GRANT SELECT ON common.task_executions TO 'heartbeat_system'@'%';
+SQL
+    (cd "$ROOT_DIR/system/backend" && ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port" ADDP_TEST_HEARTBEAT_RETENTION=1 GOWORK=off go test ./internal/service -run '^TestSystemRuntimeHeartbeatRetention$' -count=1 -v) | tee "$WORK_DIR/retention.log"
+    grep -q '^--- PASS: TestSystemRuntimeHeartbeatRetention ' "$WORK_DIR/retention.log"
+    mysql_admin <<'SQL'
+SET GLOBAL log_output='TABLE';
+SET GLOBAL general_log=ON;
+SQL
+    restart_status=0
+    python3 "$ROOT_DIR/scripts/test/meta-database-restart-contract.py" "$WORK_DIR" mysql || restart_status=$?
+    echo "SET GLOBAL general_log=OFF" | mysql_admin
+    test "$(echo "SELECT COUNT(*) FROM mysql.general_log WHERE SUBSTRING_INDEX(user_host,'[',1) IN ('meta_backend_gate','worker_gate') AND command_type IN ('Query','Execute') AND CAST(argument AS CHAR CHARACTER SET utf8mb4) REGEXP '^[[:space:]]*(CREATE|DROP|ALTER|TRUNCATE|RENAME)[[:space:]]'" | mysql_admin)" = 0
+    test "$(echo "SELECT COUNT(DISTINCT SUBSTRING_INDEX(user_host,'[',1)) FROM mysql.general_log WHERE SUBSTRING_INDEX(user_host,'[',1) IN ('meta_backend_gate','worker_gate') AND command_type IN ('Query','Execute')" | mysql_admin)" = 2
+    test "$(echo "SELECT COUNT(*) FROM common.background_runtime_heartbeats WHERE module='meta' AND runtime_name='scan' AND stopped_at IS NOT NULL" | mysql_admin)" = 2
+    echo 'MySQL: no runtime DDL in the general query log during two starts and stops'
+    test "$restart_status" = 0
+    test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner='meta' AND version>0 AND pending_version=0" | mysql_admin)" = 1
+    echo "DELETE FROM startup_schema_revision WHERE owner='meta'" | mysql_admin
     (cd "$ROOT_DIR/common" && ADDP_TEST_STARTUP_BINARY="$WORK_DIR/meta-server" ADDP_TEST_STARTUP_REASON='schema meta version mismatch: database=0' GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
     export ADDP_TEST_STARTUP_BINARY="$WORK_DIR/meta-worker"
     (cd "$ROOT_DIR/common" && ADDP_TEST_STARTUP_REASON='schema meta version mismatch: database=0' GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)

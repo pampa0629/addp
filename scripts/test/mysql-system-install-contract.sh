@@ -182,6 +182,7 @@ GRANT SELECT, UPDATE (updated_at) ON system.module_definitions TO 'iam_runtime'@
 GRANT SELECT, INSERT, UPDATE ON system.module_runtime_instances TO 'iam_runtime'@'%';
 GRANT SELECT, UPDATE (revision,updated_at) ON system.module_registry_state TO 'iam_runtime'@'%';
 GRANT SELECT, DELETE ON common.execution_events TO 'iam_runtime'@'%';
+GRANT SELECT(expires_at), DELETE ON common.background_runtime_heartbeats TO 'iam_runtime'@'%';
 GRANT SELECT ON common.task_executions TO 'iam_runtime'@'%';
 GRANT SELECT, UPDATE (applied_version,updated_at) ON system.iam_security_policy TO 'iam_runtime'@'%';
 INSERT INTO common.task_executions (tenant_id,execution_id,module,task_type,status,trigger_type,created_at,updated_at,completed_at)

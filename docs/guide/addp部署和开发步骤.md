@@ -54,7 +54,7 @@ bash scripts/infra/up.sh
 此脚本自动完成:
 - 启动 PostgreSQL (addp-postgres)、Redis (addp-redis)、FalkorDB (addp-falkordb)、MinIO (addp-minio)、Meilisearch (addp-meilisearch) 等容器
 - 默认宿主机端口被占用时自动选择空闲端口并打印实际地址；容器内部地址不变
-- 初始化所有模块的 PostgreSQL schemas
+- 创建模块的 PostgreSQL 命名空间。Meta 的表和约束在部署准备阶段建立
 - 初始化 MinIO buckets 和 Redis 配置
 - 检查 Meilisearch API 健康；各 Owner 模块自行创建和配置业务索引
 
@@ -64,6 +64,14 @@ bash scripts/infra/status.sh
 ```
 
 ### 第二步: 开发模式 (推荐用于开发)
+
+新装或升级包含 Meta 的部署时，先准备 System 引擎父表及 Common 执行存储，按[安装与运行身份规范](../spec/configuration/部署环境与密钥.md)交付 Meta 凭据。在安装机用本次发布的 Meta Backend 二进制执行下列命令。开发构建的文件名是 `.dev-bins/addp-meta`，容器内是 `/app/server`。两种数据库使用同一子命令。
+
+```bash
+meta-server prepare-database
+```
+
+PG 的安装身份持有 Meta 命名空间及其表，可切换到指定的不可登录触发器所有者。已有 PG 应先盘点 Meta 对象的归属和访问者。MySQL 首次执行若返回 3，标准输出为待 DBA 审阅的触发器 SQL。在目标库执行后，用同一安装身份再次运行，返回 0 后再启动服务。生产 Compose 的 `scripts/prod/deploy.sh` 在 System 就绪后、Meta 启动前调用同一命令。将安装凭据从密钥管理器注入本次部署的环境；持久化运行配置仅交付 Backend 和 Worker 各自的凭据。单独运行 `scripts/prod/start.sh` 或开发重启只使用运行身份。使用外部 MySQL 验证 System 与 Meta 时，在已准备的目标实例上直接运行模块安装命令；根 Compose 的全平台 Infra 启动入口目前仍包含 PG。
 
 **按正确顺序启动所有服务**,使用自动化开发脚本:
 

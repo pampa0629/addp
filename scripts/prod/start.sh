@@ -4,6 +4,13 @@
 
 set -euo pipefail
 
+prepare_meta=false
+case "$#:${1:-}" in
+  0:) ;;
+  1:--prepare-meta) prepare_meta=true ;;
+  *) echo 'Usage: scripts/prod/start.sh [--prepare-meta]' >&2; exit 2 ;;
+esac
+
 # 颜色定义
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -127,6 +134,13 @@ fi
 # 第二步：System 就绪后由部署入口发布声明
 echo -e "${YELLOW}[2/4] 等待 System 就绪并发布模块声明...${NC}"
 python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${intent_compose_args[@]}"
+
+# Only a new deployment or upgrade prepares Meta. A normal start uses runtime roles.
+if [[ "$prepare_meta" == true ]]; then
+  platform_compose run --rm -T --no-deps --entrypoint /app/server \
+    -e ADDP_PG_META_INSTALL_USER -e ADDP_PG_META_INSTALL_PASSWORD -e ADDP_PG_META_TRIGGER_OWNER \
+    -e ADDP_MYSQL_INSTALL_USER -e ADDP_MYSQL_INSTALL_PASSWORD meta-backend prepare-database
+fi
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
 platform_compose up -d --no-build --pull never --wait --wait-timeout 180

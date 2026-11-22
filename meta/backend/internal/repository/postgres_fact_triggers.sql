@@ -19,6 +19,8 @@ BEGIN
             ('meta.meta_node'::regclass, 'authorization_basis_node_update', 'meta.advance_authorization_basis_revision()'::regprocedure, 17),
             ('meta.meta_item'::regclass, 'authorization_basis_item_membership', 'meta.advance_authorization_basis_revision()'::regprocedure, 13),
             ('meta.meta_item'::regclass, 'authorization_basis_item_update', 'meta.advance_authorization_basis_revision()'::regprocedure, 17),
+            ('meta.meta_item'::regclass, 'trg_meta_item_stale_field_lineage', 'meta.stale_lineage_for_changed_fields()'::regprocedure, 17),
+            ('meta.meta_item'::regclass, 'trg_meta_item_stale_lineage', 'meta.stale_lineage_for_soft_deleted_item()'::regprocedure, 17),
             ('meta.meta_item'::regclass, 'trg_meta_item_data_item_change', 'meta.capture_data_item_change()'::regprocedure, 29)
         ), actual AS (
             SELECT tgrelid, tgname::text, tgfoid, tgtype, tgenabled
@@ -36,7 +38,10 @@ BEGIN
     EXECUTE format('GRANT INSERT (tenant_id,item_id,source_identity,operation,snapshot,observed_at) ON meta.data_item_changes TO %I',role_name);
     EXECUTE format('GRANT USAGE ON SEQUENCE %s TO %I',pg_catalog.pg_get_serial_sequence('meta.data_item_changes','id')::regclass,role_name);
 
-    FOREACH fn IN ARRAY ARRAY['meta.advance_authorization_basis_revision()'::regprocedure, 'meta.capture_data_item_change()'::regprocedure] LOOP
+    EXECUTE format('GRANT SELECT (tenant_id,source_item_id,target_item_id,granularity,status), UPDATE (status,updated_at) ON meta.lineage_item_relations TO %I',role_name);
+    EXECUTE format('GRANT SELECT (tenant_id,source_item_id,status), UPDATE (status,updated_at) ON meta.lineage_service_dependencies TO %I',role_name);
+
+    FOREACH fn IN ARRAY ARRAY['meta.advance_authorization_basis_revision()'::regprocedure, 'meta.capture_data_item_change()'::regprocedure, 'meta.stale_lineage_for_changed_fields()'::regprocedure, 'meta.stale_lineage_for_soft_deleted_item()'::regprocedure] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC',fn);
         IF EXISTS (
             SELECT FROM pg_catalog.pg_proc p, LATERAL pg_catalog.aclexplode(p.proacl) a

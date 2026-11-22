@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS meta.lineage_service_dependencies (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    source_item_id BIGINT NOT NULL,
+    service_id BIGINT NOT NULL,
+    published_revision VARCHAR(128) NOT NULL,
+    dependency_hash VARCHAR(128),
+    dependency_kind VARCHAR(32) NOT NULL,
+    granularity VARCHAR(32) NOT NULL DEFAULT 'item' CHECK (granularity IN ('item', 'field')),
+    dependency_fields JSON,
+    status VARCHAR(32) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'unverified', 'stale', 'closed')),
+    first_observed_at DATETIME(6) NOT NULL,
+    last_observed_at DATETIME(6) NOT NULL,
+    closed_at DATETIME(6),
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    FOREIGN KEY (source_item_id) REFERENCES meta.meta_item(id) ON DELETE RESTRICT,
+    service_name VARCHAR(255) NOT NULL DEFAULT '',
+    service_updated_at DATETIME(6),
+    active_dependency TINYINT GENERATED ALWAYS AS (IF(status='closed',NULL,1)) STORED,
+    UNIQUE KEY uq_lineage_service_active (tenant_id,source_item_id,service_id,published_revision,granularity,active_dependency),
+    KEY idx_lineage_service (tenant_id,service_id,published_revision,status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin

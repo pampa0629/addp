@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/addp/common/execution"
+	"github.com/addp/common/runtimehealth"
 	"gorm.io/gorm"
 )
 
@@ -14,8 +15,14 @@ import (
 func RunExecutionEventMaintenance(ctx context.Context, db *gorm.DB, log *slog.Logger) {
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
+	heartbeats := runtimehealth.NewRepository(db)
 	assessmentCursor := int64(0)
 	for {
+		pruneCtx, stopPrune := context.WithTimeout(ctx, time.Minute)
+		if err := heartbeats.PruneExpired(pruneCtx, time.Now()); err != nil && ctx.Err() == nil {
+			log.Error("运行心跳保留清理失败")
+		}
+		stopPrune()
 		batchCtx, cancel := context.WithTimeout(ctx, time.Minute)
 		total := int64(0)
 		failed := false

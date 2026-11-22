@@ -2,6 +2,7 @@ package schema
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -62,6 +63,39 @@ func TestPostgresStartupSchemaOwnership(t *testing.T) {
 	if database != "addp_test" && !(os.Getenv("CI") == "true" && strings.Contains(database, "disposable")) {
 		t.Fatalf("unsafe test database %q", database)
 	}
+	t.Run("deployment-owned namespace", func(t *testing.T) {
+		tx := db.Begin()
+		if tx.Error != nil {
+			t.Fatal(tx.Error)
+		}
+		defer tx.Rollback()
+		var pid int
+		if err := tx.Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
+			t.Fatal(err)
+		}
+		role := fmt.Sprintf("startup_owner_%d", pid)
+		for _, statement := range []string{
+			"CREATE ROLE " + role + " NOLOGIN",
+			"CREATE SCHEMA " + role + " AUTHORIZATION " + role,
+			"SET LOCAL ROLE " + role,
+		} {
+			if err := tx.Exec(statement).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		var mayCreate bool
+		if err := tx.Raw("SELECT has_database_privilege(current_user, current_database(), 'CREATE')").Scan(&mayCreate).Error; err != nil || mayCreate {
+			t.Fatalf("expected restricted installation role, database CREATE=%v, err=%v", mayCreate, err)
+		}
+		if err := Migrate(tx, role, 1, func(conn *gorm.DB) error {
+			return conn.Exec("CREATE TABLE " + role + ".sample (id bigint PRIMARY KEY)").Error
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := Require(tx, role, 1); err != nil {
+			t.Fatal(err)
+		}
+	})
 	const name = "startup_contract_test"
 	cleanup := func() {
 		if err := db.Exec("DROP SCHEMA IF EXISTS " + name + " CASCADE").Error; err != nil {

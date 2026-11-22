@@ -44,11 +44,11 @@ import (
 
 func main() {
 	if len(os.Args) > 1 {
-		if len(os.Args) != 2 || os.Args[1] != "install-mysql-scan" {
-			fmt.Fprintln(os.Stderr, "expected install-mysql-scan with no arguments")
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database with no arguments")
 			os.Exit(2)
 		}
-		if err := installMySQLScan(); err != nil {
+		if err := prepareDatabase(); err != nil {
 			var pending *schema.PendingMySQLTriggers
 			if errors.As(err, &pending) {
 				fmt.Fprintln(os.Stderr, err)
@@ -98,12 +98,7 @@ func main() {
 		os.Exit(1)
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
-	// Resolve migration engine facts through the existing tenant-bound System client.
-	db, err := repository.InitDatabase(cfg, func(tx *gorm.DB) error {
-		return service.RetireCollectionApproval(context.Background(), tx, func(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {
-			return systemClient.WithTenantID(tenantID).GetEngine(ctx, engineID)
-		})
-	})
+	db, err := repository.InitDatabase(cfg)
 	if err != nil {
 		logger.L().Error("数据库初始化失败", "error", err)
 		os.Exit(1)
@@ -231,7 +226,41 @@ func main() {
 	<-registration.Done()
 }
 
-func installMySQLScan() error {
+// Deployment injects the selected provider and installation credentials.
+// Standard output is reserved for the DBA SQL returned by this command.
+func prepareDatabase() error {
+	provider := commonConfig.GetEnv("ADDP_INFRA_DATABASE_PROVIDER", "postgres")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if provider == "postgres" {
+		cfg := config.LoadConfig()
+		cfg.DBUser = os.Getenv("ADDP_PG_META_INSTALL_USER")
+		cfg.DBPassword = os.Getenv("ADDP_PG_META_INSTALL_PASSWORD")
+		if cfg.DBUser == "" || cfg.DBPassword == "" {
+			return fmt.Errorf("Meta PostgreSQL preparation requires installation credentials")
+		}
+		dial, err := repository.OpenPostgresInstallation(cfg)
+		if err != nil {
+			return err
+		}
+		pool, err := dial.DB()
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+		return repository.PreparePostgres(dial.WithContext(ctx), os.Getenv("ADDP_PG_META_TRIGGER_OWNER"), func(tx *gorm.DB) error {
+			return service.RetireCollectionApproval(ctx, tx, func(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {
+				tokens, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-meta", cfg.ServiceClientSecret, nil)
+				if err != nil {
+					return nil, err
+				}
+				return commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokens, nil).WithTenantID(tenantID).GetEngine(ctx, engineID)
+			})
+		})
+	}
+	if provider != "mysql" {
+		return fmt.Errorf("unsupported platform database provider %q", provider)
+	}
 	db, err := platformmysql.OpenInstallation("meta")
 	if err != nil {
 		return err
@@ -241,14 +270,5 @@ func installMySQLScan() error {
 		return err
 	}
 	defer pool.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	db = db.WithContext(ctx)
-	if err := repository.MigrateMySQLScanTasks(db); err != nil {
-		return err
-	}
-	if err := repository.MigrateMySQLScanCatalog(db); err != nil {
-		return err
-	}
-	return repository.MigrateMySQLScanChanges(db)
+	return repository.PrepareMySQL(db.WithContext(ctx))
 }
