@@ -20,10 +20,23 @@ type ScopeBoundary struct {
 }
 
 func (b *ScopeBoundary) Validate(engineID uint) error {
-	if b == nil || b.Format != "filegdb" || b.RuleVersion != 1 || b.Root.EngineID != engineID || !ValidWholeScopeRoot(b.Root) {
+	if b == nil || b.RuleVersion != 1 || b.Root.EngineID != engineID {
 		return errors.New("invalid whole container boundary")
 	}
-	return nil
+	switch b.Format {
+	case "filegdb":
+		if ValidWholeScopeRoot(b.Root) {
+			return nil
+		}
+	case "parquet":
+		if ValidMetadataScopeRoot(b.Root) {
+			switch b.Root.Segments[len(b.Root.Segments)-1].Term {
+			case plugin.EngineCatalogTermBucket, plugin.EngineCatalogTermPrefix:
+				return nil
+			}
+		}
+	}
+	return errors.New("invalid whole container boundary")
 }
 
 func ValidWholeScopeRoot(root plugin.EngineCatalogPath) bool {

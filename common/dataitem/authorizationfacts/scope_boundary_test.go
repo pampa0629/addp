@@ -63,3 +63,39 @@ func TestWholeScopeBindingAndStrictWire(t *testing.T) {
 		}
 	}
 }
+
+func TestWholeParquetTableBinding(t *testing.T) {
+	root := plugin.ObjectDirectoryPath(42, "lake", "sales")
+	facts := AuthorizationFacts{SchemaVersion: AuthorizationFactsSchemaV1, EngineID: 42, ItemType: "object", FullName: root.StringPath(),
+		ItemFingerprint: models.GenerateItemFingerprint(42, root.StringPath()), ObservedAt: time.Now(), BasisState: AuthorizationBasisComplete,
+		Boundary: &AuthorizationBoundary{Layout: "whole", Scope: &ScopeBoundary{Format: "parquet", RuleVersion: 1, Root: root}}}
+	hash, err := facts.ComputeBoundaryHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts.BoundaryHash = &hash
+	binding, err := facts.ProvePrimaryTarget(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observed Binding
+	if err := json.Unmarshal(encoded, &observed); err != nil || observed.BoundaryHash != hash {
+		t.Fatalf("table binding round trip: %v", err)
+	}
+	for _, other := range []plugin.EngineCatalogPath{
+		plugin.ObjectDirectoryPath(42, "lake", "other"),
+		plugin.ObjectItemPath(42, "lake", "sales/year=2026/part.parquet"),
+		plugin.ObjectDirectoryPath(43, "lake", "sales"),
+	} {
+		if _, err := facts.ProvePrimaryTarget(other); err == nil {
+			t.Fatal("table binding accepted a different DataItem", other)
+		}
+	}
+	if err := (&ScopeBoundary{Format: "filegdb", RuleVersion: 1, Root: root}).Validate(42); err == nil {
+		t.Fatal("object prefix accepted as FileGDB")
+	}
+}

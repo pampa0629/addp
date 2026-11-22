@@ -42,7 +42,8 @@ func (b Binding) Validate() error {
 		if b.FileComposition != nil || !reflect.DeepEqual(p, plugin.EngineCatalogPath{}) || b.Scope.Validate(b.Scope.Root.EngineID) != nil {
 			return errors.New("ambiguous or invalid whole boundary")
 		}
-		p, itemType, fullName, err = b.Scope.Root, "file", b.Scope.Root.StringPath(), nil
+		p = b.Scope.Root
+		itemType, fullName, err = MetadataTargetIdentity(p)
 		boundary = &AuthorizationBoundary{Layout: "whole", Scope: b.Scope}
 	} else if b.FileComposition != nil {
 		if !reflect.DeepEqual(p, plugin.EngineCatalogPath{}) {

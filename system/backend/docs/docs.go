@@ -19310,6 +19310,9 @@ const docTemplate = `{
                 },
                 "schema_version": {
                     "type": "string"
+                },
+                "whole_table_read": {
+                    "$ref": "#/definitions/authorizationfacts.Binding"
                 }
             }
         },

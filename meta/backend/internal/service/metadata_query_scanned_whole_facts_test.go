@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -169,7 +170,7 @@ func exerciseScannedWholeAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 			query := NewMetadataQueryService(db)
 			var originalID, scopeID uint
-			var originalHash string
+			var originalHash, readHash string
 			for _, depth := range []string{"basic", "deep", "basic"} {
 				before := p.reads
 				if p.object {
@@ -210,6 +211,24 @@ func exerciseScannedWholeAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				}
 				if _, err := facts.ApprovedBinding(); err == nil {
 					t.Fatal("whole metadata identity became content permission")
+				}
+				if p.object {
+					binding := facts.WholeTableRead
+					if binding == nil || binding.Validate() != nil || binding.Scope == nil || binding.BoundaryHash == *facts.BoundaryHash ||
+						binding.ItemFingerprint != item.Fingerprint || binding.Scope.Root.StringPath() != item.FullName {
+						t.Fatalf("missing independent whole-table read boundary: %+v", binding)
+					}
+					if readHash != "" && binding.BoundaryHash != readHash {
+						t.Fatal("whole table grant identity changed after scan")
+					}
+					readHash = binding.BoundaryHash
+					raw, err := json.Marshal(facts)
+					var decoded authorizationfacts.AuthorizationFacts
+					if err != nil || json.Unmarshal(raw, &decoded) != nil || decoded.WholeTableRead == nil || decoded.WholeTableRead.BoundaryHash != readHash {
+						t.Fatal("lost table read proof on the wire")
+					}
+				} else if facts.WholeTableRead != nil {
+					t.Fatal("filesystem table received object-storage read proof")
 				}
 				if originalID == 0 {
 					originalID, scopeID, originalHash = item.ID, scope.ID, *facts.BoundaryHash

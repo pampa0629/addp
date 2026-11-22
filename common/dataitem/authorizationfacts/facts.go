@@ -52,6 +52,7 @@ type AuthorizationFacts struct {
 	Boundary        *AuthorizationBoundary  `json:"boundary"`
 	BasisState      AuthorizationBasisState `json:"basis_state" enums:"complete,incomplete,needs_refresh,unsupported"`
 	BoundaryHash    *string                 `json:"boundary_hash"`
+	WholeTableRead  *Binding                `json:"whole_table_read,omitempty"`
 	ObservedAt      time.Time               `json:"observed_at"`
 
 	AfterDeleteOperationID string `json:"after_delete_operation_id,omitempty" format:"uuid"`
@@ -91,8 +92,16 @@ func (f AuthorizationFacts) Validate() error {
 		if f.BoundaryHash == nil || *f.BoundaryHash != hash {
 			return errors.New("authorization boundary hash mismatch")
 		}
+		if b := f.WholeTableRead; b != nil {
+			m := f.Boundary.MetadataTarget
+			if m == nil || m.Layout != "whole" || m.DataType != "table" || m.Format != "parquet" ||
+				b.Scope == nil || b.Scope.Format != m.Format || !reflect.DeepEqual(b.Scope.Root, m.Target) ||
+				b.ItemFingerprint != f.ItemFingerprint || b.Validate() != nil {
+				return errors.New("whole table read boundary does not match metadata item")
+			}
+		}
 	case AuthorizationBasisIncomplete, AuthorizationBasisNeedsRefresh, AuthorizationBasisUnsupported:
-		if f.Boundary != nil || f.BoundaryHash != nil {
+		if f.Boundary != nil || f.BoundaryHash != nil || f.WholeTableRead != nil {
 			return errors.New("unresolved authorization facts must not declare a boundary")
 		}
 	default:
@@ -196,7 +205,8 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 		}
 	} else if f.Boundary.Scope != nil {
 		scope := f.Boundary.Scope
-		if f.Boundary.Layout != "whole" || f.Boundary.FileComposition != nil || !reflect.DeepEqual(f.Boundary.NativeTarget, plugin.EngineCatalogPath{}) || scope.Validate(f.EngineID) != nil || f.ItemType != "file" || f.FullName != scope.Root.StringPath() {
+		kind, fullName, err := MetadataTargetIdentity(scope.Root)
+		if f.Boundary.Layout != "whole" || f.Boundary.FileComposition != nil || !reflect.DeepEqual(f.Boundary.NativeTarget, plugin.EngineCatalogPath{}) || scope.Validate(f.EngineID) != nil || err != nil || f.ItemType != kind || f.FullName != fullName {
 			return "", errors.New("whole boundary does not match data item")
 		}
 	} else if f.Boundary.FileComposition != nil {

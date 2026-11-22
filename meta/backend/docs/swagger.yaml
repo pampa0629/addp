@@ -114,6 +114,8 @@ definitions:
         type: string
       schema_version:
         type: string
+      whole_table_read:
+        $ref: '#/definitions/authorizationfacts.Binding'
     type: object
   authorizationfacts.AuthorizationFactsBatch:
     properties:

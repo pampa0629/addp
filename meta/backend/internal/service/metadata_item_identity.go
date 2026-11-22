@@ -132,5 +132,18 @@ func projectMetadataAuthorizationFacts(lookup metadataNodeLookup, item models.Me
 	}
 	facts.BoundaryHash = &hash
 	facts.BasisState = authorizationfacts.AuthorizationBasisComplete
+	_, hasRefs := identity["refs"]
+	if item.ItemType == "object" && layout == "whole" && m.Format == "parquet" && m.DataType == "table" &&
+		identity["scope_exclusive"] == true && identity["claim_policy"] == "whole_scope" && !hasRefs &&
+		commonjson.String(item.Attributes, "storage", "physical_path") == item.FullName {
+		scope := &authorizationfacts.ScopeBoundary{Format: m.Format, RuleVersion: 1, Root: target}
+		content := *facts
+		content.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: layout, Scope: scope}
+		digest, err := content.ComputeBoundaryHash()
+		if err != nil {
+			return err
+		}
+		facts.WholeTableRead = &authorizationfacts.Binding{ItemFingerprint: facts.ItemFingerprint, BoundaryHash: digest, Scope: scope}
+	}
 	return facts.Validate()
 }
