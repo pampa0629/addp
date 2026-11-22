@@ -11,7 +11,8 @@ import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import ProxyHandler, Request, build_opener
+from uuid import uuid4
 
 work = Path(sys.argv[1]).resolve()
 root = Path(__file__).resolve().parents[2]
@@ -30,12 +31,23 @@ for key in ("ENCRYPTION_KEY", "OAUTH_USER_CODE_PEPPER"):
 for key in re.findall(r"^([A-Z][A-Z0-9_]*_SERVICE_CLIENT_SECRET)=", (root/".env.example").read_text(), re.M):
     env[key] = secrets.token_hex(32)
 
-def fetch(path):
+# Probes address the disposable loopback listener directly on both Linux and macOS.
+http = build_opener(ProxyHandler({}))
+
+def fetch(path, phase):
+    request_id = str(uuid4())
+    request = Request(f"http://127.0.0.1:{port}{path}", headers={"X-Request-ID": request_id})
     try:
-        with urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as response:
-            return response.status, json.load(response)
+        response = http.open(request, timeout=3)
     except HTTPError as error:
-        return error.code, None
+        response = error
+    with response:
+        body = json.load(response)
+        observed_id = response.headers.get("X-Request-ID", request_id)
+        print(f"System HTTP phase={phase} status={response.status} request_id={observed_id}", flush=True)
+        if path == "/health/ready" and response.status != 200:
+            print("System readiness checks:", [(c["name"], c["status"], c.get("error_code")) for c in body["checks"]], flush=True)
+        return response.status, body
 
 log_path = work / "system-runtime.log"
 with log_path.open("w") as log:
@@ -44,7 +56,7 @@ with log_path.open("w") as log:
         deadline = time.monotonic()+40
         while process.poll() is None and time.monotonic()<deadline:
             try:
-                status, health = fetch("/health/ready")
+                status, health = fetch("/health/ready", "startup")
             except (URLError, TimeoutError):
                 time.sleep(0.2)
                 continue
@@ -54,13 +66,13 @@ with log_path.open("w") as log:
             time.sleep(0.2)
         else:
             raise RuntimeError(f"System failed to become ready, exit={process.poll()}")
-        assert fetch("/api/v1/system/engines")[0] == 401, "unauthenticated engine request was not rejected"
+        assert fetch("/api/v1/system/engines", "unauthenticated")[0] == 401, "unauthenticated engine request was not rejected"
         # Wait through the registration cleanup tick, then confirm the same live process.
         try:
             process.wait(timeout=11)
         except subprocess.TimeoutExpired:
             pass
-        assert process.poll() is None and fetch("/health/ready")[0] == 200
+        assert process.poll() is None and fetch("/health/ready", "after-maintenance")[0] == 200
     finally:
         if process.poll() is None:
             process.send_signal(signal.SIGTERM)

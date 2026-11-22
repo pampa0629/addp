@@ -157,4 +157,75 @@ func TestModuleRegistryAgainstMySQL(t *testing.T) {
 	if err != nil || empty.Revision != found.Revision+1 || len(empty.Endpoints) != 0 {
 		t.Fatalf("withdrawn routing: %+v %v", empty, err)
 	}
+
+	t.Run("heartbeat during expiry scan", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
+		heartbeat := db.WithContext(ctx).Begin()
+		if heartbeat.Error != nil {
+			t.Fatal(heartbeat.Error)
+		}
+		defer heartbeat.Rollback()
+		var blocker int64
+		if err := heartbeat.Raw("SELECT CONNECTION_ID()").Row().Scan(&blocker); err != nil {
+			t.Fatal(err)
+		}
+		var id uint
+		if err := heartbeat.Raw("SELECT id FROM module_runtime_instances WHERE id=? FOR UPDATE", rows[0].ID).Row().Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		cutoff := time.Now().Add(2 * time.Minute)
+		type outcome struct {
+			changed bool
+			err     error
+		}
+		done := make(chan outcome, 1)
+		go func() {
+			changed, err := repository.NewModuleRegistryRepository(db.WithContext(ctx)).MarkStaleModules(cutoff)
+			done <- outcome{changed, err}
+		}()
+		// The observer uses the disposable gate account. Neither runtime needs diagnostic grants.
+		for {
+			var waiting bool
+			if err := db.WithContext(ctx).Raw(`SELECT EXISTS(SELECT 1 FROM performance_schema.data_lock_waits w
+				JOIN performance_schema.threads b ON b.thread_id=w.blocking_thread_id WHERE b.processlist_id=?)`, blocker).Row().Scan(&waiting); err != nil {
+				t.Fatal(err)
+			}
+			if waiting {
+				break
+			}
+			select {
+			case result := <-done:
+				t.Fatalf("expiry scan finished before heartbeat: %+v", result)
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		if changed, err := repository.NewModuleRegistryRepository(heartbeat).UpdateHeartbeat("meta", "meta-1", 3*time.Minute); err != nil || changed {
+			t.Fatalf("renew while sweep waits: changed=%v err=%v", changed, err)
+		}
+		if err := heartbeat.Commit().Error; err != nil {
+			t.Fatal(err)
+		}
+		result := <-done
+		if result.err != nil || result.changed {
+			t.Fatalf("sweep invalidated a renewed lease: changed=%v err=%v", result.changed, result.err)
+		}
+		current, err := repo.RoutingSnapshot(ctx, nil, "meta")
+		if err != nil || current.Revision != empty.Revision || len(current.Endpoints) != 1 || !current.Endpoints[0].ExpiresAt.After(cutoff) {
+			t.Fatalf("renewal lost or changed topology: %+v err=%v", current, err)
+		}
+		expiry := cutoff.Add(2 * time.Minute)
+		if changed, err := repo.MarkStaleModules(expiry); err != nil || !changed {
+			t.Fatalf("expiry: changed=%v err=%v", changed, err)
+		}
+		if changed, err := repo.MarkStaleModules(expiry); err != nil || changed {
+			t.Fatalf("repeat expiry: changed=%v err=%v", changed, err)
+		}
+		after, err := repo.RoutingSnapshot(ctx, nil, "meta")
+		if err != nil || after.Revision != current.Revision+1 || len(after.Endpoints) != 0 {
+			t.Fatalf("expired topology: %+v err=%v", after, err)
+		}
+	})
 }

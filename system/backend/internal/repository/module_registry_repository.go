@@ -495,19 +495,35 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 func (r *ModuleRegistryRepository) MarkStaleModules(now time.Time) (bool, error) {
 	changed := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// Heartbeats lock an instance before changing its lease index entry.
+		// Discover candidates without locking the index, then write by primary key.
+		const expired = "lease_expires_at <= ? AND status = ?"
+		var candidates []uint
+		if err := tx.Model(&models.ModuleRuntimeInstance{}).Where(expired, now, models.ModuleRuntimeStatusUp).
+			Order("id").Pluck("id", &candidates).Error; err != nil {
+			return err
+		}
+		var stopped []uint
+		for _, id := range candidates {
+			result := tx.Model(&models.ModuleRuntimeInstance{}).Where("id = ?", id).
+				Where(expired, now, models.ModuleRuntimeStatusUp).
+				Updates(map[string]interface{}{"status": models.ModuleRuntimeStatusDown, "stopped_at": gorm.Expr("lease_expires_at"), "stop_reason": models.ModuleRuntimeStopExpired, "updated_at": now})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 1 {
+				stopped = append(stopped, id)
+			}
+		}
+		if len(stopped) == 0 {
+			return nil
+		}
 		var routableCount int64
 		if err := tx.Model(&models.ModuleRuntimeInstance{}).
 			Joins("JOIN module_definitions ON module_definitions.id = module_runtime_instances.module_definition_id").
-			Where("module_runtime_instances.lease_expires_at <= ? AND module_runtime_instances.status = ? AND module_runtime_instances.role = ? AND module_definitions.enabled = ?",
-				now, models.ModuleRuntimeStatusUp, models.ModuleRuntimeRoleBackend, true).
-			Count(&routableCount).Error; err != nil {
+			Where("module_runtime_instances.id IN ? AND module_runtime_instances.role = ? AND module_definitions.enabled = ?",
+				stopped, models.ModuleRuntimeRoleBackend, true).Count(&routableCount).Error; err != nil {
 			return err
-		}
-		result := tx.Model(&models.ModuleRuntimeInstance{}).
-			Where("lease_expires_at <= ? AND status = ?", now, models.ModuleRuntimeStatusUp).
-			Updates(map[string]interface{}{"status": models.ModuleRuntimeStatusDown, "stopped_at": gorm.Expr("lease_expires_at"), "stop_reason": models.ModuleRuntimeStopExpired, "updated_at": now})
-		if result.Error != nil {
-			return result.Error
 		}
 		changed = routableCount > 0
 		if changed {
