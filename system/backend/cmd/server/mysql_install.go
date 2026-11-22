@@ -34,6 +34,9 @@ func installMySQL(command string, output io.Writer) error {
 	if target == "common" {
 		return schema.InitializeCommon(db.WithContext(ctx))
 	}
+	if command == "verify-mysql-source-grant" {
+		return migration.VerifyMySQLSourceGrantProcedure(db.WithContext(ctx))
+	}
 	var statements []string
 	for _, install := range []func(*gorm.DB) error{
 		migration.MigrateMySQLIAMFoundation,
@@ -43,6 +46,7 @@ func installMySQL(command string, output io.Writer) error {
 		migration.MigrateMySQLEngineCatalog,
 		migration.MigrateMySQLSourceGrantCatalog,
 		migration.MigrateMySQLEngineDelegations,
+		migration.MigrateMySQLCleanupRequests,
 	} {
 		err := install(db.WithContext(ctx))
 		if err == nil {

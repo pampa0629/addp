@@ -15,7 +15,6 @@ CREATE DEFINER='addp_system_source_grant'@'localhost' PROCEDURE system.persist_s
 SQL SECURITY DEFINER
 MODIFIES SQL DATA
 BEGIN
-    -- In autocommit mode the savepoint is gone at the next statement.
     SAVEPOINT addp_system_source_pair;
     ROLLBACK TO SAVEPOINT addp_system_source_pair;
     BEGIN

@@ -55,6 +55,29 @@ catalog_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE clie
 human_version=$(admin <<<"SELECT authorization_version FROM principals WHERE id=40001")
 { echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
 admin < "$sql_dir/authorize_definer.sql"
+verify_procedure() {
+    ADDP_MYSQL_INSTALL_USER=root ADDP_MYSQL_INSTALL_PASSWORD="$ADDP_TEST_MYSQL_PASSWORD" "$work/system-server" verify-mysql-source-grant
+}
+# A DBA must verify the actual definition and grants before publishing the procedure owner.
+admin <<<"GRANT UPDATE ON system.engine_access_grants TO 'addp_system_source_grant'@'localhost'"
+if verify_procedure 2>"$work/verify.err"; then exit 1; fi
+grep -q 'definer privileges differ' "$work/verify.err"
+test "$(admin <<<"SELECT COUNT(*) FROM startup_schema_revision WHERE owner='system_source_grant_procedure' AND version=1 AND pending_version=0")" = 0
+admin <<<"REVOKE UPDATE ON system.engine_access_grants FROM 'addp_system_source_grant'@'localhost'"
+verify_procedure
+verify_procedure
+test "$(admin <<<"SELECT version FROM startup_schema_revision WHERE owner='system_source_grant_procedure' AND pending_version=0")" = 1
+# A same-name procedure with an altered body invalidates an earlier attestation.
+admin <<<"DROP PROCEDURE system.persist_source_grant"
+{ echo 'DELIMITER $$'; sed 's/IF p_request_id IS NOT NULL THEN/IF FALSE THEN/' "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
+admin < "$sql_dir/authorize_definer.sql"
+if verify_procedure 2>"$work/verify.err"; then exit 1; fi
+grep -q 'procedure definition or security differs' "$work/verify.err"
+test "$(admin <<<"SELECT pending_version FROM startup_schema_revision WHERE owner='system_source_grant_procedure'")" = 1
+admin <<<"DROP PROCEDURE system.persist_source_grant"
+{ echo 'DELIMITER $$'; cat "$sql_dir/persist_source_grant.sql"; echo '$$'; } | admin
+admin < "$sql_dir/authorize_definer.sql"
+verify_procedure
 admin <<'SQL'
 GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'system_gate'@'%';
 GRANT SELECT, INSERT ON system.engine_access_grant_revocations TO 'system_gate'@'%';

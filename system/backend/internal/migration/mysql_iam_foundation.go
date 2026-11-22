@@ -14,7 +14,7 @@ import (
 const mysqlIAMFoundationOwner = "system_iam_foundation"
 const mysqlIAMFoundationVersion int64 = 17
 
-//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql
+//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
 // RequireMySQLIAMFoundation checks the installed owner revision without DDL.
@@ -54,10 +54,23 @@ func CheckMySQLSystemStartup(db *gorm.DB) error {
 	if err := schema.RequireMySQL(db, mysqlEngineDelegationsOwner, mysqlEngineDelegationsVersion); err != nil {
 		return err
 	}
+	if err := schema.RequireMySQL(db, mysqlCleanupOwner, mysqlCleanupVersion); err != nil {
+		return err
+	}
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return err
 	}
+	if err := schema.RequireMySQL(db, mysqlGrantProcedureOwner, mysqlGrantProcedureVersion); err != nil {
+		return err
+	}
 	return errors.New("System MySQL installation does not yet include complete source authorization guards")
+}
+
+const mysqlCleanupOwner = "system_cleanup_requests"
+const mysqlCleanupVersion = 1
+
+func MigrateMySQLCleanupRequests(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlCleanupOwner, mysqlCleanupVersion, "mysql_cleanup", nil)
 }
 
 const mysqlEngineDelegationsOwner = "system_engine_delegations"

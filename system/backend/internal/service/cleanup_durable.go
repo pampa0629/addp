@@ -155,8 +155,12 @@ func cleanupAudit(input events.CleanupRequest, name string, details map[string]a
 
 func (s *cleanupCoordinator) tick(ctx context.Context, worker string) error {
 	var parents []execution.TaskExecution
+	parentIDs := s.db.Model(&models.CleanupRequestRecord{}).Select("parent_execution_id")
+	if s.db.Dialector.Name() == "postgres" {
+		parentIDs = parentIDs.Select("parent_execution_id::text")
+	}
 	err := s.db.WithContext(ctx).Where("module = ? AND task_type = ? AND source = ? AND execution_boundary = ? AND status IN ?", execution.ModuleSystem, execution.TaskTypeCleanup, execution.ModuleSystem, execution.ExecutionBoundaryBounded, []string{execution.ExecutionStatusPending, execution.ExecutionStatusRunning}).
-		Where("execution_id IN (?)", s.db.Model(&models.CleanupRequestRecord{}).Select("parent_execution_id::text")).
+		Where("execution_id IN (?)", parentIDs).
 		Order("created_at, id").Limit(64).Find(&parents).Error
 	if err != nil {
 		return err
@@ -177,7 +181,7 @@ func (s *cleanupCoordinator) advance(ctx context.Context, id, worker string) err
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var parent execution.TaskExecution
 		query := tx.Where("execution_id = ? AND module = ? AND task_type = ? AND source = ?", id, execution.ModuleSystem, execution.TaskTypeCleanup, execution.ModuleSystem)
-		if tx.Dialector.Name() == "postgres" {
+		if tx.Dialector.Name() == "postgres" || tx.Dialector.Name() == "mysql" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		}
 		if err := query.First(&parent).Error; errors.Is(err, gorm.ErrRecordNotFound) {

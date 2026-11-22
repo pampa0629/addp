@@ -39,7 +39,7 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and an ADDP opaque access token.
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "install-mysql-system" || os.Args[1] == "install-mysql-common") {
+	if len(os.Args) > 1 && (os.Args[1] == "install-mysql-system" || os.Args[1] == "install-mysql-common" || os.Args[1] == "verify-mysql-source-grant") {
 		if len(os.Args) != 2 {
 			fmt.Fprintln(os.Stderr, os.Args[1], "takes no arguments")
 			os.Exit(2)

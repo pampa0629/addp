@@ -30,7 +30,7 @@ test "$result" = 3
 test "$(echo "SELECT version=0 AND pending_version>0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | admin)" = 1
 expected=$(grep -c '^CREATE DEFINER=' "$work/triggers.sql")
 test "$expected" -gt 0
-for name in module_node_declaration_immutable process_metrics_declaration_immutable; do
+for name in module_node_declaration_immutable process_metrics_declaration_immutable cleanup_request_immutable; do
     grep -q "TRIGGER IF NOT EXISTS $name$" "$work/triggers.sql"
 done
 test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_module_registry') AND version=0 AND pending_version>0" | admin)" = 2
@@ -85,7 +85,22 @@ GRANT SELECT ON `system`.startup_schema_revision TO 'iam_runtime'@'%';
 GRANT SELECT, INSERT ON `system`.audit_logs TO 'iam_runtime'@'%';
 SQL
 test "$(echo "SELECT version>0 AND pending_version=0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | runtime)" = 1
-test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry','system_engine_catalog','system_access_target_locks','system_source_grant_catalog','system_engine_delegations') AND version>0 AND pending_version=0" | runtime)" = 7
+test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry','system_engine_catalog','system_access_target_locks','system_source_grant_catalog','system_engine_delegations','system_cleanup_requests') AND version>0 AND pending_version=0" | runtime)" = 8
+echo "GRANT SELECT, INSERT, UPDATE (cutoff) ON system.cleanup_requests TO 'iam_runtime'@'%'" | admin
+runtime <<'SQL'
+INSERT INTO cleanup_requests(request_id,tenant_id,requested_by,parent_execution_id,intent_digest,source_operation_id,action,protocol,engine_confirmation,requested_scope)
+VALUES ('00000000-0000-4000-8000-000000000001',1,1,'00000000-0000-4000-8000-000000000002',SHA2('scan',256),'source-1','scan','{ "signed": true }','','[]');
+SQL
+test "$(runtime <<<"SELECT protocol FROM cleanup_requests")" = '{ "signed": true }'
+if runtime <<<"UPDATE cleanup_requests SET requested_by=2" 2>"$work/cleanup.err"; then exit 1; fi
+grep -q '^ERROR 1143' "$work/cleanup.err"
+if admin <<<"UPDATE cleanup_requests SET requested_by=2,cutoff='{}'" 2>"$work/cleanup.err"; then exit 1; fi
+grep -q 'cleanup acceptance and cutoff are immutable' "$work/cleanup.err"
+runtime <<<"UPDATE cleanup_requests SET cutoff='{}'"
+if runtime <<<"UPDATE cleanup_requests SET cutoff='{}'" 2>"$work/cleanup.err"; then exit 1; fi
+grep -q 'cleanup acceptance and cutoff are immutable' "$work/cleanup.err"
+if runtime <<<"DELETE FROM cleanup_requests" 2>"$work/cleanup.err"; then exit 1; fi
+grep -q '^ERROR 1142' "$work/cleanup.err"
 test "$(echo "SELECT revision FROM module_registry_state WHERE id=1" | admin)" = 1
 echo "INSERT INTO audit_logs(event_name,result,risk_level,module_name) VALUES ('iam.fixture.install','succeeded','low','system')" | runtime
 for denied in 'TRUNCATE TABLE audit_logs' 'ALTER TABLE audit_logs ADD COLUMN fixture INT' "UPDATE audit_logs SET result='failed'" 'DELETE FROM audit_logs' 'UPDATE startup_schema_revision SET version=0'; do
@@ -147,6 +162,6 @@ export ADDP_TEST_STARTUP_BINARY="$work/system-server"
 test_startup() {
     (cd "$(dirname "$0")/../../common" && ADDP_TEST_STARTUP_REASON="$1" GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
 }
-test_startup 'System MySQL installation does not yet include complete source authorization guards'
+test_startup 'schema system_source_grant_procedure version mismatch'
 echo "UPDATE startup_schema_revision SET pending_version=version+1 WHERE owner='system_module_registry'" | admin
 test_startup 'schema system_module_registry has unfinished MySQL migration'
