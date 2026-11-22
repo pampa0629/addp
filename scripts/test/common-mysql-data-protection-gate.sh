@@ -200,6 +200,16 @@ if [ "$test_group" = platform-system-install ]; then
 fi
 
 if [ "$test_group" = platform-gateway-install ]; then
+    export ADDP_DATABASE_DEPLOY_USER=platform_deploy ADDP_DATABASE_RUNTIME_USER=platform_runtime
+    ADDP_DATABASE_DEPLOY_PASSWORD=$(openssl rand -hex 24)
+    ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 24)
+    export ADDP_DATABASE_DEPLOY_PASSWORD ADDP_DATABASE_RUNTIME_PASSWORD
+    docker exec -i "$MYSQL_PROJECT" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --protocol=TCP -h127.0.0.1 -uroot' <<SQL
+CREATE USER 'platform_deploy'@'%' IDENTIFIED BY '$ADDP_DATABASE_DEPLOY_PASSWORD';
+CREATE USER 'platform_runtime'@'%' IDENTIFIED BY '$ADDP_DATABASE_RUNTIME_PASSWORD';
+GRANT ALL ON gateway.* TO 'platform_deploy'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON gateway.* TO 'platform_runtime'@'%';
+SQL
     (cd "$ROOT_DIR/gateway" && GOWORK=off go build -o "$WORK_DIR/gateway" ./cmd/gateway)
     bash "$ROOT_DIR/scripts/test/mysql-gateway-install-contract.sh" "$WORK_DIR" "$MYSQL_PROJECT" "$mysql_port"
     exit 0

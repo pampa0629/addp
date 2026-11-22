@@ -162,7 +162,10 @@ echo 'System publisher CLI: initial credential, idempotent provision and audited
 admin <<'SQL'
 CREATE DATABASE gateway;
 SQL
-export ADDP_TEST_GATEWAY_RUNTIME_PASSWORD=$(openssl rand -hex 24)
+admin <<'SQL'
+GRANT ALL ON gateway.* TO 'iam_installer'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON gateway.* TO 'iam_runtime'@'%';
+SQL
 export ADDP_TEST_MYSQL_MEMBER_PASSWORD=$(openssl rand -hex 24)
 bash "$(dirname "$0")/mysql-gateway-install-contract.sh" "$work" "$container" "$3"
 (cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_TENANT_FACTS="$work/tenant.json" GOWORK=off go test ./internal/migration -run '^TestPrepareMySQLGatewayTenant$' -count=1 -v)

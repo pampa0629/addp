@@ -10,7 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/httptrace"
 	"github.com/addp/common/infra/bootstrap"
-	"github.com/addp/common/infra/database"
+
 	"github.com/addp/common/middleware/cors"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/modulelifecycle"
@@ -177,20 +177,16 @@ func proxyRegisteredModule(c *gin.Context, moduleName string, discovery modulePr
 
 // initDatabase 初始化数据库连接
 func initDatabase(cfg *config.Config) *gorm.DB {
-	db, err := bootstrap.OpenRuntimeDatabase(database.Config{
-		Host: cfg.DBHost, Port: cfg.DBPort,
-		User: cfg.DBUser, Password: cfg.DBPassword,
-		DBName: cfg.DBName, Schema: cfg.DBSchema,
-	}, "gateway", "ADDP_MYSQL_GATEWAY", &gorm.Config{})
+	db, err := bootstrap.OpenPlatformRuntime(cfg.Database, "gateway", &gorm.Config{})
 	if err != nil {
 		log.Printf("Failed to connect to database: %v (continuing without DB)", err)
 		return nil
 	}
-	if err := middleware.PrepareAccessLog(db); err != nil {
+	if err := middleware.RequireAccessLog(db); err != nil {
 		if pool, poolErr := db.DB(); poolErr == nil {
 			_ = pool.Close()
 		}
-		log.Printf("Failed to prepare Gateway access log schema: %v (continuing without access log DB)", err)
+		log.Printf("Failed to verify Gateway access log schema: %v (continuing without access log DB)", err)
 		return nil
 	}
 

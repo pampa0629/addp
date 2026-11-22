@@ -47,7 +47,7 @@ func TestGatewayAccessLogAgainstMySQL(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := schema.RequireMySQL(db, "gateway", mysqlAccessLogVersion); err != nil {
+	if err := schema.RequireMySQL(db, "gateway", accessLogVersion); err != nil {
 		t.Fatal(err)
 	}
 

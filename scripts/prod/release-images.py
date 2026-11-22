@@ -80,12 +80,12 @@ def selection(env):
     if any(value not in ("true", "false") for value in values.values()):
         raise ValueError("Release capability selections must be true or false")
     scope = env.get("ADDP_DEPLOYMENT_SCOPE", "full")
-    if scope not in ("full", "system-meta"):
+    if scope not in ("full", "system-meta-gateway"):
         raise ValueError(f"unsupported deployment scope {scope!r}")
     values["ADDP_DEPLOYMENT_SCOPE"] = scope
     for key, supported in INFRA_PROVIDERS.items():
         configured = env.get(key, supported)
-        supported_mysql = key == "ADDP_INFRA_DATABASE_PROVIDER" and scope == "system-meta" and configured == "mysql"
+        supported_mysql = key == "ADDP_INFRA_DATABASE_PROVIDER" and scope == "system-meta-gateway" and configured == "mysql"
         if configured != supported and not supported_mysql:
             raise ValueError(f"{key}={configured!r} is not supported by the {scope} Compose release")
         values[key] = configured
@@ -112,10 +112,10 @@ def release_environment(env, version, registry, platform):
 
 def compose_model(project, env, override=None):
     source = COMPOSE_FILES[project]
-    if selection(env)["ADDP_DEPLOYMENT_SCOPE"] == "system-meta":
+    if selection(env)["ADDP_DEPLOYMENT_SCOPE"] == "system-meta-gateway":
         if project != "platform":
             return {}
-        source = "scripts/prod/system-meta.yml"
+        source = "scripts/prod/system-meta-gateway.yml"
     command = ["docker", "compose", "-f", source]
     if project == "infra" and selection(env)["ADDP_OBSERVABILITY_TRACES_ENABLED"] == "true":
         command += ["-f", "scripts/infra/traces-platform.yml"]
@@ -156,8 +156,8 @@ def native_platform(env):
 def input_fingerprints(env):
     fingerprints = compose_inputs()
     capabilities = selection(env)
-    if capabilities["ADDP_DEPLOYMENT_SCOPE"] == "system-meta":
-        name = "scripts/prod/system-meta.yml"
+    if capabilities["ADDP_DEPLOYMENT_SCOPE"] == "system-meta-gateway":
+        name = "scripts/prod/system-meta-gateway.yml"
         fingerprints[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
     for kind, flag, path in METRIC_IMAGES:
         if capabilities[flag] == "true":
@@ -274,8 +274,9 @@ def prepare(version, registry):
             owners[project, service] = owned_image(project, service, definition, env, registered)
     build_names = sorted({name for name in owners.values() if name})
     compile_args = ["make", "build"]
-    if selection(env)["ADDP_DEPLOYMENT_SCOPE"] == "system-meta":
-        compile_args.append("BUILD_ARGS=--services " + ",".join(build_names))
+    if selection(env)["ADDP_DEPLOYMENT_SCOPE"] == "system-meta-gateway":
+        compiled = [name for name in build_names if name == "gateway" or name.endswith(("-backend", "-worker"))]
+        compile_args.append("BUILD_ARGS=--services " + ",".join(compiled))
     execute(compile_args, env)
     execute(["make", "build-images", "IMAGE_BUILD_ARGS=" + shlex.join([
         "--force", "--services", ",".join(build_names), "--tag", version, "--registry", registry])], env)
@@ -328,7 +329,7 @@ def verify(filename, inherited):
         raise ValueError("Compose source inputs differ from the prepared release")
     references = set(manifest.get("sources", {}).values())
     for project, services in manifest["projects"].items():
-        external_only = manifest["selection"]["ADDP_DEPLOYMENT_SCOPE"] == "system-meta" and project in ("infra", "runtimes")
+        external_only = manifest["selection"]["ADDP_DEPLOYMENT_SCOPE"] == "system-meta-gateway" and project in ("infra", "runtimes")
         if not isinstance(services, dict) or (not services and not external_only):
             raise ValueError("Release services must be nonempty")
         references.update(services.values())

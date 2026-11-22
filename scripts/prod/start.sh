@@ -67,8 +67,8 @@ addp_prepare_observability_env "$PROJECT_ROOT/.env"
 export ADDP_RELEASE_MANIFEST
 ADDP_RELEASE_MANIFEST="$(python3 scripts/prod/release-images.py verify)"
 export ADDP_RELEASE_DIR="$(dirname "$ADDP_RELEASE_MANIFEST")"
-if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == system-meta ]]; then
-  PLATFORM_COMPOSE_FILES=(-f scripts/prod/system-meta.yml)
+if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == system-meta-gateway ]]; then
+  PLATFORM_COMPOSE_FILES=(-f scripts/prod/system-meta-gateway.yml)
 fi
 PLATFORM_COMPOSE_FILES+=(-f "$ADDP_RELEASE_DIR/platform-images.yml")
 infra_result=0
@@ -156,15 +156,16 @@ fi
 echo -e "${YELLOW}[2/4] 等待 System 就绪并发布模块声明...${NC}"
 python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${intent_compose_args[@]}"
 
-# Only a new deployment or upgrade prepares Meta. A normal start uses runtime roles.
+# Prepare downstream module schemas only during deployment or upgrade.
 if [[ "$prepare_databases" == true ]]; then
   prepare_database meta-backend
+  prepare_database gateway
 fi
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
 platform_compose up -d --no-build --pull never --wait --wait-timeout 180
 
-if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == system-meta ]]; then
+if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == system-meta-gateway ]]; then
   platform_compose ps
   exit 0
 fi

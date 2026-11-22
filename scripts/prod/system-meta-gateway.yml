@@ -16,6 +16,22 @@ services:
   meta-worker:
     extends: {file: ../../docker-compose.yml, service: meta-worker}
     environment: *endpoints
+  gateway:
+    extends: {file: ../../docker-compose.yml, service: gateway}
+    container_name: !reset null
+    environment: *endpoints
+  console:
+    extends: {file: ../../docker-compose.yml, service: console}
+    container_name: !reset null
+  meta-frontend:
+    extends: {file: ../../docker-compose.yml, service: meta-frontend}
+    container_name: !reset null
+  nginx:
+    extends: {file: ../../docker-compose.yml, service: nginx}
+    container_name: !reset null
+    depends_on: !override [console, meta-frontend, gateway]
+    ports: !override
+      - "${NGINX_BIND_HOST:-127.0.0.1}:${NGINX_PORT:?set the public port}:80"
 networks:
   addp-network:
     external: true

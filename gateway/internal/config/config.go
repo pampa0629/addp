@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"time"
+
+	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
@@ -11,12 +13,7 @@ type Config struct {
 	SystemServiceURL string
 
 	// Database
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	DBSchema   string
+	Database database.Config
 
 	// Redis
 	RedisHost     string
@@ -48,13 +45,7 @@ func Load() *Config {
 		Env:              getEnv("ENV", "development"),
 		SystemServiceURL: getEnv("SYSTEM_URL", "http://localhost:8180"),
 
-		// Database (defaults to system PostgreSQL)
-		DBHost:     getEnv("POSTGRES_HOST", "localhost"),
-		DBPort:     getEnv("POSTGRES_PORT", "5432"),
-		DBUser:     getEnv("POSTGRES_USER", "addp"),
-		DBPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
-		DBName:     getEnv("POSTGRES_DB", "addp"),
-		DBSchema:   getEnv("DB_SCHEMA", "gateway"),
+		Database: PlatformDatabase(),
 
 		// Redis (defaults to system Redis)
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),
@@ -69,6 +60,12 @@ func Load() *Config {
 		MetricsControlServerName: os.Getenv("GATEWAY_METRICS_CONTROL_SERVER_NAME"),
 		MetricsControlTLSDir:     os.Getenv("GATEWAY_METRICS_CONTROL_TLS_DIR"),
 	}
+}
+
+// PlatformDatabase reads the PostgreSQL endpoint shared by deployment and runtime.
+func PlatformDatabase() database.Config {
+	return database.Config{Host: getEnv("POSTGRES_HOST", "localhost"), Port: getEnv("POSTGRES_PORT", "5432"),
+		DBName: getEnv("POSTGRES_DB", "addp"), Schema: "gateway"}
 }
 
 func getEnv(key, defaultValue string) string {

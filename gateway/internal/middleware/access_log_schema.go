@@ -10,30 +10,27 @@ import (
 const (
 	postgresAccessLogTable = "gateway.api_access_logs"
 	mysqlAccessLogTable    = "api_access_logs"
-	mysqlAccessLogVersion  = 1
+	accessLogVersion       = 1
 )
 
-// PrepareAccessLog runs with the Gateway process credential.
-func PrepareAccessLog(db *gorm.DB) error {
-	if db.Dialector.Name() == "mysql" {
-		return schema.RequireMySQL(db, "gateway", mysqlAccessLogVersion)
-	}
-	return MigrateAccessLog(db)
+// RequireAccessLog verifies the installed revision with the runtime identity.
+func RequireAccessLog(db *gorm.DB) error {
+	return schema.Require(db, "gateway", accessLogVersion)
 }
 
 // MigrateAccessLog prepares the Gateway-owned access log in the selected database.
 func MigrateAccessLog(db *gorm.DB) error {
 	switch db.Dialector.Name() {
 	case "postgres":
-		if err := db.Exec(`
-			ALTER TABLE IF EXISTS gateway.api_access_logs DROP COLUMN IF EXISTS application_id;
-			ALTER TABLE IF EXISTS gateway.api_access_logs DROP COLUMN IF EXISTS api_key_prefix;
-		`).Error; err != nil {
-			return fmt.Errorf("remove obsolete Gateway access log columns: %w", err)
-		}
-		return db.AutoMigrate(&AccessLog{})
+		return schema.Migrate(db, "gateway", accessLogVersion, func(tx *gorm.DB) error {
+			if err := tx.Exec(`ALTER TABLE IF EXISTS gateway.api_access_logs
+				DROP COLUMN IF EXISTS application_id, DROP COLUMN IF EXISTS api_key_prefix`).Error; err != nil {
+				return fmt.Errorf("remove obsolete Gateway access log columns: %w", err)
+			}
+			return tx.AutoMigrate(&AccessLog{})
+		})
 	case "mysql":
-		return schema.MigrateMySQL(db, "gateway", mysqlAccessLogVersion, func(conn *gorm.DB) error {
+		return schema.MigrateMySQL(db, "gateway", accessLogVersion, func(conn *gorm.DB) error {
 			return conn.Exec(`CREATE TABLE IF NOT EXISTS api_access_logs (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
 				api_consumer_id BIGINT UNSIGNED,

@@ -91,7 +91,7 @@ class ReleaseVerificationTest(unittest.TestCase):
 
     def test_scoped_database_release_uses_only_external_infra(self):
         for provider in ("postgres", "mysql"):
-            env = {"ADDP_DEPLOYMENT_SCOPE": "system-meta", "ADDP_INFRA_DATABASE_PROVIDER": provider}
+            env = {"ADDP_DEPLOYMENT_SCOPE": "system-meta-gateway", "ADDP_INFRA_DATABASE_PROVIDER": provider}
             self.assertEqual(release.selection(env)["ADDP_INFRA_DATABASE_PROVIDER"], provider)
             for project in ("infra", "runtimes"):
                 self.assertEqual(release.compose_model(project, env), {})

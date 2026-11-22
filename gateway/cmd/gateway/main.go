@@ -22,17 +22,18 @@ import (
 	"github.com/addp/gateway/internal/middleware"
 	"github.com/addp/gateway/internal/router"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
 	if len(os.Args) != 1 {
-		if len(os.Args) != 2 || os.Args[1] != "install-mysql-gateway" {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
 			fmt.Fprintln(os.Stderr, "unknown Gateway command")
 			os.Exit(2)
 		}
-		if err := installMySQLAccessLog(); err != nil {
+		if err := prepareAccessLog(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -110,8 +111,19 @@ func main() {
 	<-registration.Done()
 }
 
-func installMySQLAccessLog() error {
-	db, err := platformmysql.OpenInstallation("gateway")
+func prepareAccessLog() error {
+	var db *gorm.DB
+	var err error
+	if os.Getenv("ADDP_INFRA_DATABASE_PROVIDER") == "mysql" {
+		db, err = platformmysql.OpenInstallation("gateway")
+	} else {
+		cfg := config.PlatformDatabase()
+		cfg.User, cfg.Password = os.Getenv("ADDP_DATABASE_DEPLOY_USER"), os.Getenv("ADDP_DATABASE_DEPLOY_PASSWORD")
+		if cfg.User == "" || cfg.Password == "" {
+			return errors.New("platform database deployment credentials are required")
+		}
+		db, err = bootstrap.OpenDatabase(cfg, &gorm.Config{})
+	}
 	if err != nil {
 		return err
 	}

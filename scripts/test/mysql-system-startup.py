@@ -69,8 +69,8 @@ with log_path.open("w") as log:
             raise RuntimeError(f"System failed to become ready, exit={process.poll()}")
         assert fetch("/api/v1/system/engines", "unauthenticated")[0] == 401, "unauthenticated engine request was not rejected"
         login_env = {key: os.environ[key] for key in (
-            "ADDP_TEST_GATEWAY_PUBLISHER_SECRET", "ADDP_TEST_GATEWAY_RUNTIME_PASSWORD", "ADDP_TEST_MYSQL_MEMBER_PASSWORD")}
-        for key in ("ADDP_INFRA_DATABASE_PROVIDER","ADDP_MYSQL_HOST","ADDP_MYSQL_PORT","GATEWAY_SERVICE_CLIENT_SECRET","REDIS_PORT","REDIS_PASSWORD"):
+            "ADDP_TEST_GATEWAY_PUBLISHER_SECRET", "ADDP_TEST_MYSQL_MEMBER_PASSWORD")}
+        for key in ("ADDP_INFRA_DATABASE_PROVIDER","ADDP_MYSQL_HOST","ADDP_MYSQL_PORT","ADDP_DATABASE_RUNTIME_USER","ADDP_DATABASE_RUNTIME_PASSWORD","GATEWAY_SERVICE_CLIENT_SECRET","REDIS_PORT","REDIS_PASSWORD"):
             login_env[key] = env[key]
         subprocess.run([sys.executable, str(root/"scripts/test/mysql-gateway-login.py"), str(work), f"http://127.0.0.1:{port}"],
                        env=login_env, check=True, timeout=100)
