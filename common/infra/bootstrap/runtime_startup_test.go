@@ -36,6 +36,9 @@ func TestMySQLRuntimeStartupRefusal(t *testing.T) {
 		redis := miniredis.RunT(t)
 		redis.RequireAuth("fixture")
 		cmd.Env = append(cmd.Env, "SYSTEM_BACKEND_PORT=0", "REDIS_HOST="+redis.Host(), "REDIS_PORT="+redis.Port(), "REDIS_PASSWORD=fixture")
+	case "meta-server":
+		prefix = "ADDP_MYSQL_META"
+		cmd.Env = append(cmd.Env, "META_BACKEND_PORT=0", "META_SERVICE_CLIENT_SECRET="+strings.Repeat("x", 32), "SYSTEM_URL=http://127.0.0.1:1")
 	case "meta-worker":
 		prefix = "ADDP_MYSQL_META_WORKER"
 	default:

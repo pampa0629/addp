@@ -8,10 +8,6 @@ import (
 const mysqlScanTasksOwner = "meta_scan_tasks"
 const mysqlScanTasksVersion = 1
 
-func RequireMySQLScanTasks(db *gorm.DB) error {
-	return schema.RequireMySQL(db, mysqlScanTasksOwner, mysqlScanTasksVersion)
-}
-
 // MigrateMySQLScanTasks prepares the Meta-owned scan task definitions and summary.
 func MigrateMySQLScanTasks(db *gorm.DB) error {
 	return schema.MigrateMySQL(db, mysqlScanTasksOwner, mysqlScanTasksVersion, func(conn *gorm.DB) error {

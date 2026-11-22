@@ -7,9 +7,9 @@ import (
 	"github.com/addp/common/cleanup"
 	"github.com/addp/common/schema"
 
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -24,7 +24,6 @@ func InitDatabase(cfg *config.Config, retireCollectionApproval func(*gorm.DB) er
 		return nil, fmt.Errorf("meta module schema must be meta")
 	}
 
-	// Use common repository InitDatabase
 	dbConfig := database.Config{
 		Host:     cfg.DBHost,
 		Port:     cfg.DBPort,
@@ -35,28 +34,19 @@ func InitDatabase(cfg *config.Config, retireCollectionApproval func(*gorm.DB) er
 		SSLMode:  "disable",
 	}
 
-	db, err := commonRepo.OpenDatabase(dbConfig)
+	db, err := bootstrap.OpenRuntimeDatabase(dbConfig, "meta", "ADDP_MYSQL_META", &gorm.Config{Logger: gormLogger.Default.LogMode(gormLogger.Info)})
 	if err != nil {
 		return nil, err
 	}
-	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
-		return nil, err
+	if db.Dialector.Name() == "mysql" {
+		err = RequireMySQLRuntime(db)
+	} else {
+		err = migratePostgres(db, retireCollectionApproval)
 	}
-	if err := schema.Migrate(db, "meta", SchemaVersion, func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}, &models.ObjectIndexDeletion{}); err != nil {
-			return err
+	if err != nil {
+		if pool, openErr := db.DB(); openErr == nil {
+			_ = pool.Close()
 		}
-		if err := applySQLMigrations(tx); err != nil {
-			return err
-		}
-		if retireCollectionApproval == nil {
-			return fmt.Errorf("collection approval retirement migration is required")
-		}
-		if err := retireCollectionApproval(tx); err != nil {
-			return err
-		}
-		return cleanup.MigrateResults(tx, "meta")
-	}); err != nil {
 		return nil, err
 	}
 
@@ -83,4 +73,24 @@ func InitDatabase(cfg *config.Config, retireCollectionApproval func(*gorm.DB) er
 	return db, nil
 }
 
-// Note: autoMigrate function removed - now handled by commonRepo.InitDatabase
+func migratePostgres(db *gorm.DB, retireCollectionApproval func(*gorm.DB) error) error {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		return err
+	}
+	return schema.Migrate(db, "meta", SchemaVersion, func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}, &models.ObjectIndexDeletion{}); err != nil {
+			return err
+		}
+		if err := applySQLMigrations(tx); err != nil {
+			return err
+		}
+		if retireCollectionApproval == nil {
+			return fmt.Errorf("collection approval retirement migration is required")
+		}
+		if err := retireCollectionApproval(tx); err != nil {
+			return err
+		}
+		return cleanup.MigrateResults(tx, "meta")
+	})
+
+}

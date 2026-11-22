@@ -113,13 +113,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 	if db.Dialector.Name() == "mysql" {
-		err = metaRepo.RequireMySQLScanTasks(db)
-		if err == nil {
-			err = schema.Require(db, "common", schema.CommonVersion)
-		}
-		if err == nil {
-			err = schema.Require(db, "meta", metaRepo.SchemaVersion)
-		}
+		err = metaRepo.RequireMySQLRuntime(db)
 	} else {
 		err = schema.Require(db, "meta", metaRepo.SchemaVersion)
 		if err == nil {

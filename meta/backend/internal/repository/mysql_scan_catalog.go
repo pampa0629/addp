@@ -8,6 +8,9 @@ import (
 	"gorm.io/gorm"
 )
 
+const mysqlScanCatalogOwner = "meta_scan_catalog"
+const mysqlScanCatalogVersion int64 = 2
+
 //go:embed mysql_scan_catalog/*.sql
 var mysqlScanCatalogDDL embed.FS
 
@@ -21,7 +24,7 @@ func MigrateMySQLScanCatalog(db *gorm.DB) error {
 		return fmt.Errorf("Meta scan catalog installation requires the meta database")
 	}
 	verified := false
-	err := schema.MigrateMySQL(db, "meta_scan_catalog", 2, func(conn *gorm.DB) error {
+	err := schema.MigrateMySQL(db, mysqlScanCatalogOwner, mysqlScanCatalogVersion, func(conn *gorm.DB) error {
 		entries, err := mysqlScanCatalogDDL.ReadDir("mysql_scan_catalog")
 		if err != nil {
 			return err

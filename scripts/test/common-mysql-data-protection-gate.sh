@@ -260,6 +260,15 @@ SQL
     (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_META_MYSQL_CATALOG=1 GOWORK=off go test ./internal/scanruntime \
         -run '^TestMySQLScanCatalog$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/meta-catalog.log"
     grep -q '^--- PASS: TestMySQLScanCatalog ' "$WORK_DIR/meta-catalog.log"
+    export ADDP_MYSQL_META_USER=meta_backend_gate
+    ADDP_MYSQL_META_PASSWORD=$(openssl rand -hex 24)
+    export ADDP_MYSQL_META_PASSWORD
+    mysql_admin <<SQL
+CREATE USER 'meta_backend_gate'@'%' IDENTIFIED BY '$ADDP_MYSQL_META_PASSWORD';
+GRANT SELECT ON meta.startup_schema_revision TO 'meta_backend_gate'@'%';
+GRANT SELECT ON common.startup_schema_revision TO 'meta_backend_gate'@'%';
+SQL
+    (cd "$ROOT_DIR/common" && ADDP_TEST_STARTUP_BINARY="$WORK_DIR/meta-server" ADDP_TEST_STARTUP_REASON='schema meta version mismatch: database=0' GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
     export ADDP_TEST_STARTUP_BINARY="$WORK_DIR/meta-worker"
     (cd "$ROOT_DIR/common" && ADDP_TEST_STARTUP_REASON='schema meta version mismatch: database=0' GOWORK=off go test ./infra/bootstrap -run '^TestMySQLRuntimeStartupRefusal$' -count=1 -v)
     echo "UPDATE common.startup_schema_revision SET pending_version=version+1 WHERE owner='common'" | mysql_admin

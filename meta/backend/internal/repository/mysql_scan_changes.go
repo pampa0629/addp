@@ -9,6 +9,9 @@ import (
 	"gorm.io/gorm"
 )
 
+const mysqlScanChangesOwner = "meta_scan_changes"
+const mysqlScanChangesVersion int64 = 1
+
 //go:embed mysql_scan_changes/*.sql
 var mysqlScanChangesDDL embed.FS
 
@@ -76,7 +79,7 @@ func mysqlFactTriggers() []string {
 // fact triggers and existing items and tenant revisions have been seeded atomically.
 func MigrateMySQLScanChanges(db *gorm.DB) error {
 	triggers := mysqlFactTriggers()
-	return schema.MigrateMySQLWithData(db, "meta_scan_changes", 1, func(conn *gorm.DB) error {
+	return schema.MigrateMySQLWithData(db, mysqlScanChangesOwner, mysqlScanChangesVersion, func(conn *gorm.DB) error {
 		files, err := mysqlScanChangesDDL.ReadDir("mysql_scan_changes")
 		if err != nil {
 			return err
