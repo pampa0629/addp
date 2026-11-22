@@ -175,6 +175,8 @@ INSERT INTO module_definitions(module_name,route_prefix,enabled,declaration_publ
 VALUES('system','/system',TRUE,NOW(6));
 GRANT EXECUTE ON PROCEDURE system.persist_source_grant TO 'iam_runtime'@'%';
 GRANT SELECT, UPDATE (client_secret_hash,status,updated_at) ON system.oauth_clients TO 'iam_runtime'@'%';
+GRANT SELECT (id,authorization_version), UPDATE (authorization_version,updated_at) ON system.principals TO 'iam_runtime'@'%';
+GRANT SELECT (principal_id,revoked_at), UPDATE (revoked_at,revoked_reason) ON system.refresh_token_families TO 'iam_runtime'@'%';
 GRANT SELECT ON system.engines TO 'iam_runtime'@'%';
 GRANT SELECT, UPDATE (updated_at) ON system.module_definitions TO 'iam_runtime'@'%';
 GRANT SELECT, INSERT, UPDATE ON system.module_runtime_instances TO 'iam_runtime'@'%';
@@ -189,7 +191,9 @@ VALUES ('00000000-0000-4000-8000-000000000031',1,'meta','scan',1,NOW(6)-INTERVAL
        ('00000000-0000-4000-8000-000000000031',1,'meta','scan',1,NOW(6)-INTERVAL 29 DAY,'completed');
 SQL
 
-for forbidden in "UPDATE module_definitions SET enabled=0 WHERE 1=0" \
+for forbidden in "UPDATE principals SET status='active' WHERE 1=0" \
+    "DELETE FROM refresh_token_families WHERE 1=0" \
+    "UPDATE module_definitions SET enabled=0 WHERE 1=0" \
     "DELETE FROM common.task_executions WHERE 1=0" \
     "UPDATE common.execution_events SET step_id='denied' WHERE 1=0" \
     "UPDATE iam_security_policy SET access_token_ttl_minutes=30 WHERE 1=0"; do
@@ -200,6 +204,22 @@ for forbidden in "UPDATE module_definitions SET enabled=0 WHERE 1=0" \
     grep -Eq '^ERROR (1142|1143)' "$work/denied.err"
 done
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/0'
+# Use the production deployment CLI with the same runtime credentials, through stdin only.
+publisher_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-gateway-publisher'")
+initial_version=$(admin <<<"SELECT authorization_version FROM principals WHERE id=$publisher_id")
+publisher_secret=$(openssl rand -hex 24)
+provision_publisher() {
+    printf '{"secret":"%s"}' "$publisher_secret" | "$work/system-server" provision-module-publisher gateway
+}
+provision_publisher
+provision_publisher
+publisher_secret=$(openssl rand -hex 24)
+provision_publisher
+unset publisher_secret
+test "$(admin <<<"SELECT authorization_version FROM principals WHERE id=$publisher_id")" = "$((initial_version + 1))"
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE entity_id='$publisher_id' AND event_name='iam.service_principal.credential.provisioned'")" = 1
+test "$(admin <<<"SELECT COUNT(*) FROM audit_logs WHERE entity_id='$publisher_id' AND event_name='iam.service_principal.credential.rotated'")" = 1
+echo 'System publisher CLI: initial credential, idempotent provision and audited rotation verified'
 python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
 test "$(runtime <<<"SELECT COUNT(*),MIN(kind) FROM common.execution_events WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = $'1\tcompleted'
