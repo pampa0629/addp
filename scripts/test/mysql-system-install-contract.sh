@@ -82,7 +82,7 @@ test "$(echo "SELECT COUNT(*) FROM role_assignments WHERE scope_type='platform' 
 test "$(echo "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND definer='iam_installer@%'" | admin)" = "$expected"
 admin <<'SQL'
 GRANT SELECT ON `system`.startup_schema_revision TO 'iam_runtime'@'%';
-GRANT SELECT, INSERT ON `system`.audit_logs TO 'iam_runtime'@'%';
+GRANT INSERT ON `system`.audit_logs TO 'iam_runtime'@'%';
 SQL
 test "$(echo "SELECT version>0 AND pending_version=0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | runtime)" = 1
 test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry','system_engine_catalog','system_access_target_locks','system_source_grant_catalog','system_engine_delegations','system_cleanup_requests') AND version>0 AND pending_version=0" | runtime)" = 8
@@ -103,14 +103,14 @@ if runtime <<<"DELETE FROM cleanup_requests" 2>"$work/cleanup.err"; then exit 1;
 grep -q '^ERROR 1142' "$work/cleanup.err"
 test "$(echo "SELECT revision FROM module_registry_state WHERE id=1" | admin)" = 1
 echo "INSERT INTO audit_logs(event_name,result,risk_level,module_name) VALUES ('iam.fixture.install','succeeded','low','system')" | runtime
-for denied in 'TRUNCATE TABLE audit_logs' 'ALTER TABLE audit_logs ADD COLUMN fixture INT' "UPDATE audit_logs SET result='failed'" 'DELETE FROM audit_logs' 'UPDATE startup_schema_revision SET version=0'; do
+for denied in 'SELECT event_name FROM audit_logs LIMIT 0' 'TRUNCATE TABLE audit_logs' 'ALTER TABLE audit_logs ADD COLUMN fixture INT' "UPDATE audit_logs SET result='failed'" 'DELETE FROM audit_logs' 'UPDATE startup_schema_revision SET version=0'; do
     if echo "$denied" | runtime 2>"$work/denied.err"; then
         echo 'unexpected runtime database privilege' >&2
         exit 1
     fi
     grep -q 'ERROR 1142' "$work/denied.err"
 done
-test "$(echo "SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.fixture.install' AND result='succeeded'" | runtime)" = 1
+test "$(echo "SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.fixture.install' AND result='succeeded'" | admin)" = 1
 export ADDP_MYSQL_BOOTSTRAP_USER=iam_bootstrap_gate
 export ADDP_MYSQL_BOOTSTRAP_PASSWORD=$(openssl rand -hex 24)
 export IAM_MFA_ENCRYPTION_KEY=$(openssl rand -base64 32)
