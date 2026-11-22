@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/addp/common/schema"
 	"os"
 	"testing"
 	"time"
@@ -39,17 +38,17 @@ func TestModuleRegistryAgainstMySQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close() })
-	var pending *schema.PendingMySQLTriggers
-	if err := migration.MigrateMySQLModuleRegistry(db); !errors.As(err, &pending) || len(pending.Statements) != 2 {
-		t.Fatalf("expected two pending registry triggers, got %v", err)
-	}
-	for _, ddl := range pending.Statements {
-		if err := db.Exec(ddl).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
 	if err := migration.MigrateMySQLModuleRegistry(db); err != nil {
 		t.Fatal(err)
+	}
+	var triggers int
+	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.triggers
+		WHERE trigger_schema = DATABASE() AND definer = CURRENT_USER()
+		  AND trigger_name IN ('module_node_declaration_immutable', 'process_metrics_declaration_immutable')`).Row().Scan(&triggers); err != nil {
+		t.Fatal(err)
+	}
+	if triggers != 2 {
+		t.Fatalf("expected both registry triggers to be installed, got %d", triggers)
 	}
 	if err := migration.MigrateMySQLModuleRegistry(db); err != nil {
 		t.Fatal(err)
