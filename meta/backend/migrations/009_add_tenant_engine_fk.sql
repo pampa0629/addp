@@ -15,10 +15,7 @@ WHERE (tenant_id, engine_id) NOT IN (
     SELECT tenant_id, id FROM system.engines
 );
 
--- 2. 在 system.engines 表上创建复合唯一索引（如果不存在）
--- 注意：(tenant_id, id) 组合本身应该是唯一的，因为 id 是主键
-CREATE UNIQUE INDEX IF NOT EXISTS idx_engines_tenant_engine_unique
-ON system.engines (tenant_id, id);
+-- System migration 000001 owns the unique parent key on system.engines.
 
 -- 3. 在 meta.meta_node 表上添加外键约束
 -- 确保 (tenant_id, engine_id) 必须引用 system.engines (tenant_id, id)

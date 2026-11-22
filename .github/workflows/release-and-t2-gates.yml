@@ -593,6 +593,9 @@ jobs:
           META_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_meta_test?sslmode=disable
         run: make test-meta-postgres
 
+      - name: Verify Meta scan fact authority with a restricted PostgreSQL Worker
+        run: make test-meta-postgres-fact-authority
+
       - name: Summarize Meta PostgreSQL gate
         if: always()
         uses: ./.github/actions/ci-gate-summary

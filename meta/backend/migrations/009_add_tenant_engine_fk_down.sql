@@ -2,4 +2,3 @@
 
 ALTER TABLE meta.meta_item DROP CONSTRAINT IF EXISTS fk_meta_item_tenant_engine;
 ALTER TABLE meta.meta_node DROP CONSTRAINT IF EXISTS fk_meta_node_tenant_engine;
-DROP INDEX IF EXISTS system.idx_engines_tenant_engine_unique;

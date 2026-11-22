@@ -604,6 +604,10 @@ test-t2-ci-registration: test-redis-core-runner ## 验证 T2 入口、选择、�
 test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权履约迁移门禁
 	@bash scripts/test/asset-postgres-gate.sh
 
+.PHONY: test-meta-postgres-fact-authority
+test-meta-postgres-fact-authority: ## 用独占 PG 核对 Meta 扫描写入与触发器权限
+	@bash scripts/test/meta-postgres-fact-authority-gate.sh
+
 test-meta-postgres: ## 使用测试 PostgreSQL 数据库运行 Meta 迁移、目录统计与字段血缘取证集成门禁
 	@bash scripts/test/meta-postgres-gate.sh $(META_POSTGRES_TEST_ARGS)
 
