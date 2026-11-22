@@ -2493,7 +2493,16 @@ workers=['security/backend/cmd/worker/main.go','meta/backend/cmd/worker/main.go'
 for name in workers:
  content=(root/name).read_text()
  assert not re.search(r'\.(?:Migrate|AutoMigrate|EnsureStore|InitDatabase|PrepareSchema)\(',content),name
- assert 'schema.Require(' in content,name
+ if name == 'meta/backend/cmd/worker/main.go':
+  assert 'metaRepo.OpenRuntimeDatabase(cfg, "META_WORKER")' in content,name
+  database=(root/'meta/backend/internal/repository/database.go').read_text()
+  runtime=database.split('func OpenRuntimeDatabase(',1)[1].split('\n}',1)[0]
+  assert 'RequireRuntime(db)' in runtime and not re.search(r'(?:Migrate|PreparePostgres|PrepareMySQL)\(',runtime),name
+  revision=(root/'meta/backend/internal/repository/startup_schema.go').read_text()
+  for check in ('schema.Require(db, "common", schema.CommonVersion)', 'schema.Require(db, "meta", SchemaVersion)'):
+   assert check in revision,name
+ else:
+  assert 'schema.Require(' in content,name
 # Common has two installation entry points: PostgreSQL System startup and the
 # explicit MySQL deployment command. Runtime MySQL consumers only read revisions.
 common_installers = {
