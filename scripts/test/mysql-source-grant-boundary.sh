@@ -202,6 +202,54 @@ VALUES ($(uuid 13),7,12,$catalog_id,$table_path,
     'operator',JSON_OBJECT('principal_id','40001','tenant_membership_id','50001','authorization_version','$human_version')),
   'until_revoked','accepted',@recorded,@recorded+INTERVAL 5 MINUTE);
 SQL
+# Exercise the procedure and receipt table separately. A valid-looking SHA-256
+# for a different path must be rejected at either persistence boundary.
+independent=$(call independent "$(uuid 121)" 0 NULL)
+wrong_fp="SHA2('different-item',256)"
+correct_fp="SHA2('12:public.independent_orders',256)"
+wrong="${independent/"$correct_fp"/$wrong_fp}"
+test "$wrong" != "$independent"
+expect_error system_gate 1644 "START TRANSACTION; $wrong; COMMIT;"
+grep -q 'source_item_fingerprint' "$work/boundary.err"
+expect_error system_gate 1644 "INSERT INTO system.engine_access_fulfillment_outcomes
+    (request_id,tenant_id,engine_id,caller_principal_id,catalog_path,binding,expiry_mode,outcome,recorded_at,deadline)
+    SELECT $(uuid 122),tenant_id,engine_id,caller_principal_id,catalog_path,
+    JSON_SET(binding,'$.item_fingerprint',SHA2('different-item',256)),expiry_mode,outcome,recorded_at,deadline
+    FROM system.engine_access_fulfillment_outcomes WHERE request_id=$(uuid 13);"
+grep -q 'source_item_fingerprint' "$work/boundary.err"
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_fulfillment_outcomes WHERE request_id=$(uuid 122)")" = 0
+precise_call() {
+    local engine=$1 path=$2 fingerprint=$3 composition=$4 scope=$5 metadata=$6 action=$7
+    cat <<SQL
+CALL system.persist_source_grant('independent',$(uuid 125),7,$engine,$path,NULL,NULL,
+    $fingerprint,SHA2('boundary',256),$composition,$scope,$metadata,'user',40001,'$action','until_revoked',
+    NULL,40001,50001,$human_version,'target fixture',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL)
+SQL
+}
+filegdb="JSON_SET($directory,'$.segments[1].name','survey.gdb')"
+whole="JSON_OBJECT('format','filegdb','rule_version',1,'root',$filegdb)"
+object="JSON_ARRAY_APPEND($bucket,'$.segments',JSON_OBJECT('kind','object','term','object','name','data.bin'))"
+metadata="JSON_OBJECT('target',$table_path,'layout','single','data_type','table','format','','composition_digest',SHA2('m',256))"
+raster="JSON_SET($file_path,'$.segments[1].name','scene.tif')"
+sidecar="JSON_SET($file_path,'$.segments[1].name','scene.tif.msk')"
+refs="JSON_ARRAY(JSON_OBJECT('target',$raster,'primary',true,'required',true,'role','image'),JSON_OBJECT('target',$sidecar,'primary',false,'required',false,'role','mask'))"
+tiff="JSON_OBJECT('format','tiff','source_layout','multi','refs',$refs)"
+for target_call in \
+    "$(precise_call 99 "$filegdb" "SHA2('99:survey.gdb',256)" NULL "$whole" NULL read)" \
+    "$(precise_call 98 "$object" "SHA2('98:reports/data.bin',256)" NULL NULL NULL read)" \
+    "$(precise_call 12 "$table_path" "SHA2('12:public.orders',256)" NULL NULL "$metadata" metadata_read)" \
+    "$(precise_call 99 "$raster" "SHA2('99:scene.tif',256)" "$tiff" NULL NULL read)"; do
+    test "$(caller system_gate <<<"START TRANSACTION; $target_call; SELECT COUNT(*) FROM system.engine_access_grants WHERE request_id=$(uuid 125); ROLLBACK;")" = 1
+done
+for target_call in \
+    "$(precise_call 99 "$filegdb" "SHA2('99:survey.gdb',256)" NULL NULL NULL read)" \
+    "$(precise_call 12 "$table_path" "SHA2('12:public.orders',256)" NULL NULL "$metadata" read)" \
+    "$(precise_call 99 "$raster" "SHA2('99:scene.tif',256)" "JSON_SET($tiff,'$.refs[1].target',$raster)" NULL NULL read)" \
+    "$(precise_call 99 "$raster" "SHA2('99:scene.tif',256)" "JSON_SET($tiff,'$.refs[1].target',$object)" NULL NULL read)"; do
+    expect_error system_gate 1644 "START TRANSACTION; $target_call; COMMIT;"
+    grep -Eq 'source_(item|grant)_' "$work/boundary.err"
+done
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 125)")" = 0
 receipt=system.engine_access_fulfillment_outcomes
 test "$(caller system_gate <<<"SELECT outcome FROM $receipt WHERE request_id=$(uuid 13)")" = accepted
 for user in worker_gate bootstrap_gate; do

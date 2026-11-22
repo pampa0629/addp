@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"text/template"
 
 	"github.com/addp/common/schema"
 	"gorm.io/gorm"
@@ -81,7 +82,10 @@ func MigrateMySQLEngineDelegations(db *gorm.DB) error {
 }
 
 const mysqlSourceGrantCatalogOwner = "system_source_grant_catalog"
-const mysqlSourceGrantCatalogVersion = 3
+const mysqlSourceGrantCatalogVersion = 4
+
+//go:embed mysql_source_identity.sql.tmpl
+var mysqlSourceIdentitySQL string
 
 func MigrateMySQLSourceGrantCatalog(db *gorm.DB) error {
 	return migrateSystemMySQL(db, mysqlSourceGrantCatalogOwner, mysqlSourceGrantCatalogVersion, "mysql_source_grant_catalog", nil)
@@ -130,6 +134,19 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 			}
 			if err := conn.Exec(string(ddl)).Error; err != nil {
 				return fmt.Errorf("apply System MySQL migration %s/%s: %w", directory, migration.Name(), err)
+			}
+		}
+		if owner == mysqlSourceGrantCatalogOwner {
+			identity, err := template.New("source item identity").Parse(mysqlSourceIdentitySQL)
+			if err != nil {
+				return err
+			}
+			for _, grant := range []bool{false, true} {
+				var trigger strings.Builder
+				if err := identity.Execute(&trigger, struct{ Grant bool }{grant}); err != nil {
+					return err
+				}
+				triggers = append(triggers, trigger.String())
 			}
 		}
 		return checkMySQLSystemTriggers(conn, triggers)

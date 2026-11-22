@@ -1,0 +1,175 @@
+CREATE TRIGGER IF NOT EXISTS {{if .Grant}}source_grant_item_target{{else}}source_receipt_item_target{{end}}
+BEFORE INSERT ON {{if .Grant}}engine_access_grants{{else}}engine_access_fulfillment_outcomes{{end}} FOR EACH ROW
+item_guard: BEGIN
+    DECLARE v_path, v_parts, v_part, v_leaf, v_refs, v_ref, v_meta, v_comp, v_scope JSON;
+    DECLARE v_seen_paths, v_seen_roles JSON;
+    DECLARE v_root, v_term, v_kind, v_name, v_leaf_term, v_full_name LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin;
+    DECLARE v_layout, v_format, v_role LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin;
+    DECLARE v_count, v_idx, v_reference, v_ref_count, v_primary_count, v_prefix_len INT DEFAULT 0;
+    DECLARE v_primary_parts JSON;
+    DECLARE v_separator CHAR(1);
+    DECLARE v_fingerprint VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin;
+    {{if .Grant}}IF NEW.node_recursive IS NOT NULL THEN LEAVE item_guard; END IF;
+    SET v_fingerprint=NEW.item_fingerprint, v_meta=NEW.metadata_target, v_comp=NEW.file_composition, v_scope=NEW.scope_boundary;
+    {{else}}SET v_fingerprint=JSON_UNQUOTE(JSON_EXTRACT(NEW.binding,'$.item_fingerprint'));
+    {{end}}SET v_path=NEW.catalog_path;
+    {{if .Grant}}IF v_meta IS NOT NULL THEN
+        SET v_layout=JSON_UNQUOTE(JSON_EXTRACT(v_meta,'$.layout'));
+        IF (JSON_TYPE(v_meta)='OBJECT' AND JSON_LENGTH(v_meta)=5 AND JSON_EXTRACT(v_meta,'$.target')=v_path
+            AND v_layout IN ('single','multi','whole') AND JSON_TYPE(JSON_EXTRACT(v_meta,'$.data_type'))='STRING'
+            AND OCTET_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(v_meta,'$.data_type')))<=64
+            AND JSON_TYPE(JSON_EXTRACT(v_meta,'$.format'))='STRING' AND OCTET_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(v_meta,'$.format')))<=64
+            AND JSON_TYPE(JSON_EXTRACT(v_meta,'$.composition_digest'))='STRING'
+            AND REGEXP_LIKE(JSON_UNQUOTE(JSON_EXTRACT(v_meta,'$.composition_digest')),'^[0-9a-f]{64}$','c')
+            AND v_comp IS NULL AND v_scope IS NULL{{if .Grant}}
+            AND NEW.action='metadata_read' AND NEW.approval_mode IN ('independent','upload_creation'){{end}}) IS NOT TRUE THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_metadata_target';
+        END IF;
+    END IF;
+    {{end}}target_loop: LOOP
+        SET v_parts=JSON_EXTRACT(v_path,'$.segments'), v_count=JSON_LENGTH(v_parts),
+            v_root=JSON_UNQUOTE(JSON_EXTRACT(v_parts,'$[0].term')),
+            v_leaf=JSON_EXTRACT(v_parts,'$[last]'), v_leaf_term=JSON_UNQUOTE(JSON_EXTRACT(v_leaf,'$.term'));
+        IF (JSON_TYPE(v_path)='OBJECT' AND JSON_EXTRACT(v_path,'$.version')=CAST('"catalog.path/v1"' AS JSON)
+            AND NEW.engine_id>0 AND BINARY JSON_UNQUOTE(JSON_EXTRACT(v_path,'$.engine_id'))=BINARY CAST(NEW.engine_id AS CHAR)
+            AND JSON_TYPE(v_parts)='ARRAY' AND v_count BETWEEN 2 AND 64) IS NOT TRUE THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_path';
+        END IF;
+        IF v_meta IS NULL AND v_root='server' THEN
+            IF (v_count=3 AND JSON_UNQUOTE(JSON_EXTRACT(v_parts,'$[0].kind'))='server'
+                AND JSON_UNQUOTE(JSON_EXTRACT(v_parts,'$[0].name'))=''
+                AND JSON_UNQUOTE(JSON_EXTRACT(v_parts,'$[1].kind'))='namespace'
+                AND ((JSON_UNQUOTE(JSON_EXTRACT(v_parts,'$[1].term')) IN ('schema','database') AND v_leaf_term='table')
+                    OR (JSON_UNQUOTE(JSON_EXTRACT(v_parts,'$[1].term'))='database' AND v_leaf_term='collection'))
+                AND JSON_UNQUOTE(JSON_EXTRACT(v_leaf,'$.kind'))=v_leaf_term
+                AND v_scope IS NULL AND v_comp IS NULL) IS NOT TRUE THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_record_target';
+            END IF;
+        ELSE
+            IF (JSON_LENGTH(v_path)=3 AND v_root IN ('server','root','service')
+                AND JSON_EXTRACT(v_parts,'$[0]')=JSON_OBJECT('term',v_root,'kind',v_root,'name','')) IS NOT TRUE THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_path_root';
+            END IF;
+            IF v_meta IS NOT NULL THEN
+                IF (v_leaf_term IN ('table','collection','graph','index','keyspace','topic','file','object','directory','bucket','prefix')
+                    AND (JSON_UNQUOTE(JSON_EXTRACT(v_leaf,'$.kind'))=v_leaf_term OR
+                        (v_leaf_term='table' AND JSON_UNQUOTE(JSON_EXTRACT(v_leaf,'$.kind')) IN ('view','materialized_view','external_table')))
+                    AND ((v_leaf_term IN ('directory','bucket','prefix'))=(v_layout='whole'))
+                    AND (v_leaf_term IN ('directory','bucket','prefix','file','object') OR v_layout='single')) IS NOT TRUE THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_metadata_layout';
+                END IF;
+            ELSEIF ((v_root='root' AND (v_leaf_term='file' OR (v_leaf_term='directory'
+                    AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(v_leaf,'$.name'))) LIKE '%.gdb')))
+                OR (v_root='service' AND v_count>=3 AND v_leaf_term='object')) IS NOT TRUE THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_path_leaf';
+            END IF;
+        END IF;
+        SET v_idx=1, v_full_name='', v_separator=IF(v_leaf_term IN ('directory','bucket','prefix','file','object'),'/','.');
+        WHILE v_idx<v_count DO
+            SET v_part=JSON_EXTRACT(v_parts,CONCAT('$[',v_idx,']')),
+                v_term=JSON_UNQUOTE(JSON_EXTRACT(v_part,'$.term')), v_kind=JSON_UNQUOTE(JSON_EXTRACT(v_part,'$.kind')),
+                v_name=JSON_UNQUOTE(JSON_EXTRACT(v_part,'$.name'));
+            IF (JSON_TYPE(JSON_EXTRACT(v_part,'$.name'))='STRING' AND OCTET_LENGTH(v_name)>0) IS NOT TRUE THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_segment_name';
+            END IF;
+            IF v_meta IS NOT NULL OR v_root<>'server' THEN
+                IF (v_part=JSON_OBJECT('term',v_term,'kind',v_kind,'name',v_name) AND OCTET_LENGTH(v_name)<=4096) IS NOT TRUE THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_segment';
+                END IF;
+                IF v_meta IS NOT NULL THEN
+                    IF v_idx<v_count-1 AND ((v_term IN ('schema','database','catalog') AND v_kind='namespace')
+                        OR (v_term IN ('directory','bucket','prefix') AND v_kind=v_term)) IS NOT TRUE THEN
+                        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_metadata_segment';
+                    END IF;
+                ELSEIF (v_kind=v_term AND v_term=CASE WHEN v_idx=v_count-1 THEN v_leaf_term
+                        WHEN v_root='root' THEN 'directory' WHEN v_idx=1 THEN 'bucket' ELSE 'prefix' END
+                    AND v_name NOT IN ('.','..') AND LOCATE('/',v_name)=0 AND LOCATE(CHAR(92),v_name)=0
+                    AND NOT REGEXP_LIKE(v_name,'[[:cntrl:]]')) IS NOT TRUE THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_file_segment';
+                END IF;
+            END IF;
+            IF v_reference>0 AND v_idx<v_prefix_len AND v_part<>JSON_EXTRACT(v_primary_parts,CONCAT('$[',v_idx,']')) THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_parent';
+            END IF;
+            SET v_full_name=CONCAT(v_full_name,IF(v_idx=1,'',v_separator),v_name), v_idx=v_idx+1;
+        END WHILE;
+        IF (v_root<>'server' OR v_meta IS NOT NULL) AND OCTET_LENGTH(v_full_name)>4096 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_path_length';
+        END IF;
+        IF v_reference=0 THEN
+            IF (v_fingerprint=SHA2(CONCAT(NEW.engine_id,':',v_full_name),256)) IS NOT TRUE THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_item_fingerprint';
+            END IF;
+            {{if .Grant}}IF v_meta IS NULL THEN
+                IF v_leaf_term='directory' THEN
+                    IF (NEW.approval_mode='independent' AND v_comp IS NULL AND
+                        v_scope=JSON_OBJECT('format','filegdb','rule_version',1,'root',v_path)) IS NOT TRUE THEN
+                        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_whole_scope';
+                    END IF;
+                ELSEIF v_scope IS NOT NULL THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_whole_scope';
+                ELSEIF v_leaf_term IN ('file','object') THEN
+                    IF v_comp IS NULL THEN
+                        IF v_leaf_term<>'object' OR NEW.approval_mode<>'independent' THEN
+                            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_composition';
+                        END IF;
+                    ELSE
+                        SET v_refs=JSON_EXTRACT(v_comp,'$.refs'), v_ref_count=JSON_LENGTH(v_refs),
+                            v_format=JSON_UNQUOTE(JSON_EXTRACT(v_comp,'$.format')),
+                            v_primary_parts=v_parts, v_prefix_len=v_count-1, v_seen_paths=JSON_ARRAY(), v_seen_roles=JSON_ARRAY();
+                        IF (NEW.approval_mode IN ('independent','upload_creation','task_production')
+                            AND JSON_TYPE(v_comp)='OBJECT' AND JSON_LENGTH(v_comp)=IF(v_format='tiff',3,2)
+                            AND JSON_TYPE(v_refs)='ARRAY' AND v_ref_count BETWEEN 1 AND 200
+                            AND v_format IN ('ifc','3ds','dae','obj','stl','glb','gltf','fbx','envi','geopackage','tiff','geojson')
+                            AND (v_format NOT IN ('ifc','stl','glb','fbx','geopackage','geojson') OR v_ref_count=1)
+                            AND (v_format<>'geopackage' OR v_leaf_term='file')
+                            AND (v_format<>'geojson' OR LOWER(v_name) LIKE '%.geojson')
+                            AND (v_format<>'envi' OR v_ref_count=2)
+                            AND (v_format<>'tiff' OR (REGEXP_LIKE(LOWER(v_name),'[.]tiff?$')
+                                AND JSON_UNQUOTE(JSON_EXTRACT(v_comp,'$.source_layout'))=IF(v_ref_count=1,'single','multi')))) IS NOT TRUE THEN
+                            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_composition';
+                        END IF;
+                    END IF;
+                END IF;
+            END IF;{{end}}
+        {{if .Grant}}ELSE
+            IF (v_count>=v_prefix_len+1 AND v_leaf_term=JSON_UNQUOTE(JSON_EXTRACT(v_primary_parts,'$[last].term'))
+                AND JSON_EXTRACT(v_parts,'$[0]')=JSON_EXTRACT(v_primary_parts,'$[0]')) IS NOT TRUE THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_parent';
+            END IF;
+            IF v_format IN ('tiff','envi') AND v_count<>v_prefix_len+1 THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_sibling';
+            END IF;
+            IF JSON_EXTRACT(v_ref,'$.primary')=CAST('true' AS JSON) THEN
+                SET v_primary_count=v_primary_count+1;
+                IF (v_path=NEW.catalog_path AND JSON_EXTRACT(v_ref,'$.required')=CAST('true' AS JSON)
+                    AND v_role=CASE v_format WHEN 'geojson' THEN 'data' WHEN 'geopackage' THEN 'container' WHEN 'tiff' THEN 'image'
+                        WHEN 'glb' THEN 'model' WHEN 'fbx' THEN 'model' WHEN 'gltf' THEN 'manifest' WHEN 'envi' THEN 'raster' ELSE v_role END
+                    AND (v_format<>'envi' OR LOWER(v_name) NOT LIKE '%.hdr')) IS NOT TRUE THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_primary';
+                END IF;
+            ELSEIF (v_format='tiff' AND v_role NOT IN ('world_file','crs','header','auxiliary_metadata','overview','mask'))
+                OR (v_format='envi' AND (v_role<>'header' OR LOWER(v_name) NOT LIKE '%.hdr'))
+                OR (v_format='gltf' AND NOT REGEXP_LIKE(v_role,'^(buffer|image)(_[1-9][0-9]*)?$','c')) THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_role';
+            END IF;
+        {{end}}END IF;
+        {{if .Grant}}IF v_reference=v_ref_count THEN LEAVE target_loop; END IF;
+        SET v_ref=JSON_EXTRACT(v_refs,CONCAT('$[',v_reference,']')), v_reference=v_reference+1,
+            v_path=JSON_EXTRACT(v_ref,'$.target'), v_role=JSON_UNQUOTE(JSON_EXTRACT(v_ref,'$.role'));
+        IF (JSON_TYPE(v_ref)='OBJECT' AND JSON_LENGTH(v_ref)=4 AND JSON_TYPE(v_path)='OBJECT'
+            AND JSON_TYPE(JSON_EXTRACT(v_ref,'$.role'))='STRING' AND REGEXP_LIKE(v_role,'^[a-z0-9_]{1,64}$','c')
+            AND JSON_TYPE(JSON_EXTRACT(v_ref,'$.required'))='BOOLEAN' AND JSON_TYPE(JSON_EXTRACT(v_ref,'$.primary'))='BOOLEAN'
+            AND (v_format NOT IN ('envi','gltf') OR JSON_EXTRACT(v_ref,'$.required')=CAST('true' AS JSON))
+            AND NOT JSON_CONTAINS(v_seen_paths,JSON_QUOTE(SHA2(CAST(v_path AS CHAR CHARACTER SET utf8mb4),256)))
+            AND (v_format<>'gltf' OR NOT JSON_CONTAINS(v_seen_roles,JSON_QUOTE(v_role)))) IS NOT TRUE THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_reference';
+        END IF;
+        SET v_seen_paths=JSON_ARRAY_APPEND(v_seen_paths,'$',SHA2(CAST(v_path AS CHAR CHARACTER SET utf8mb4),256)),
+            v_seen_roles=JSON_ARRAY_APPEND(v_seen_roles,'$',v_role);
+        {{else}}LEAVE target_loop;{{end}}
+    END LOOP;
+    IF v_ref_count>0 AND v_primary_count<>1 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='source_grant_file_primary';
+    END IF;
+END
