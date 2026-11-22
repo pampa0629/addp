@@ -45,7 +45,8 @@ SELECT IF(client_id='addp-transfer',31001,31002),7,service_principal_id,'manual'
 WHERE client_id IN ('addp-transfer','addp-manager');
 INSERT INTO engines(id,tenant_id,name,engine_type,connection_info,identity_key)
 VALUES (12,7,'Grant records','postgresql',JSON_OBJECT(),JSON_OBJECT('id',12)),
-       (99,7,'Grant files','nfs',JSON_OBJECT(),JSON_OBJECT('id',99));
+       (99,7,'Grant files','nfs',JSON_OBJECT(),JSON_OBJECT('id',99)),
+       (98,7,'Grant objects','minio',JSON_OBJECT(),JSON_OBJECT('id',98));
 CREATE TABLE sample_audit (id INT PRIMARY KEY);
 SQL
 transfer_id=$(admin <<<"SELECT service_principal_id FROM oauth_clients WHERE client_id='addp-transfer'")
@@ -139,6 +140,36 @@ SQL
 }
 table_path="JSON_OBJECT('version','catalog.path/v1','engine_id',12,'segments',JSON_ARRAY(JSON_OBJECT('term','server','kind','server','name',''),JSON_OBJECT('term','schema','kind','namespace','name','public'),JSON_OBJECT('term','table','kind','table','name','orders')))"
 file_path="JSON_OBJECT('version','catalog.path/v1','engine_id',99,'segments',JSON_ARRAY(JSON_OBJECT('term','root','kind','root','name',''),JSON_OBJECT('term','file','kind','file','name','upload.geojson')))"
+# Use the installed procedure with the same restricted caller for every node target.
+node_call() {
+    local engine=$1 path=$2 recursive=$3
+    cat <<SQL
+CALL system.persist_source_grant('independent',$(uuid 120),7,$engine,$path,NULL,$recursive,
+    '','',NULL,NULL,NULL,'user',40001,'read','until_revoked',NULL,40001,50001,$human_version,'node fixture',
+    NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL)
+SQL
+}
+schema_node="JSON_REMOVE($table_path,'$.segments[2]')"
+nfs_root="JSON_REMOVE($file_path,'$.segments[1]')"
+service_root="JSON_SET($nfs_root,'$.engine_id',98,'$.segments[0].kind','service','$.segments[0].term','service')"
+directory="JSON_ARRAY_APPEND($nfs_root,'$.segments',JSON_OBJECT('kind','directory','term','directory','name','docs'))"
+bucket="JSON_ARRAY_APPEND($service_root,'$.segments',JSON_OBJECT('kind','bucket','term','bucket','name','reports'))"
+prefix="JSON_ARRAY_APPEND($bucket,'$.segments',JSON_OBJECT('kind','prefix','term','prefix','name','quarter'))"
+for input in "12 $schema_node 0" "99 $directory 1" "98 $service_root 1" "98 $prefix 0"; do
+    read -r engine path recursive <<<"$input"
+    actual=$(caller system_gate <<<"START TRANSACTION; $(node_call "$engine" "$path" "$recursive");
+        SELECT COUNT(*) FROM system.engine_access_grants WHERE request_id=$(uuid 120) AND node_recursive=$recursive; ROLLBACK;")
+    test "$actual" = 1
+done
+for input in "12 $table_path 1" "98 $service_root 0" "99 JSON_SET($service_root,'$.engine_id',99) 1" \
+    "99 JSON_SET($directory,'$.segments[1].name','a/b') 1" "99 JSON_SET($directory,'$.segments[1].name',23) 1" \
+    "99 JSON_SET($directory,'$.extra',1) 1"; do
+    read -r engine path recursive <<<"$input"
+    expect_error system_gate 1644 "START TRANSACTION; $(node_call "$engine" "$path" "$recursive"); COMMIT;"
+    grep -q 'source_grant_node_' "$work/boundary.err"
+done
+test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 120)")" = 0
+echo 'System node Grants: PostgreSQL, NFS and MinIO profiles checked through restricted procedure'
 caller system_gate system <<SQL
 SET @recorded=NOW(6);
 INSERT INTO engine_access_fulfillment_outcomes (request_id,tenant_id,engine_id,caller_principal_id,catalog_path,binding,expiry_mode,outcome,recorded_at,deadline)

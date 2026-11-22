@@ -91,31 +91,34 @@ func main() {
 
 	// 初始化数据库
 	db, err := repository.InitDB(cfg)
-	if err == nil && db.Dialector.Name() == "mysql" {
-		err = migration.CheckMySQLSystemStartup(db)
-	}
 	if err != nil {
 		logger.L().Error("数据库初始化失败", "error", err)
 		os.Exit(1)
 	}
-
-	// IAM 必须先执行显式版本化 migration；非 IAM 表随后暂由 GORM 管理。
-	migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
-	migrationDSN, err := bootstrap.PostgreSQLDSN(cfg.PlatformDatabase())
-	if err != nil {
+	if db.Dialector.Name() == "mysql" {
+		if err := migration.CheckMySQLSystemStartup(db); err != nil {
+			logger.L().Error("数据库初始化失败", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		// IAM 必须先执行显式版本化 migration；非 IAM 表随后暂由 GORM 管理。
+		migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
+		migrationDSN, err := bootstrap.PostgreSQLDSN(cfg.PlatformDatabase())
+		if err != nil {
+			cancelMigration()
+			logger.L().Error("IAM 数据库迁移配置失败", "error", err)
+			os.Exit(1)
+		}
+		if err := migration.NewRunner(migrationDSN).Run(migrationContext); err != nil {
+			cancelMigration()
+			logger.L().Error("IAM 数据库迁移失败", "error", err)
+			os.Exit(1)
+		}
 		cancelMigration()
-		logger.L().Error("IAM 数据库迁移配置失败", "error", err)
-		os.Exit(1)
-	}
-	if err := migration.NewRunner(migrationDSN).Run(migrationContext); err != nil {
-		cancelMigration()
-		logger.L().Error("IAM 数据库迁移失败", "error", err)
-		os.Exit(1)
-	}
-	cancelMigration()
-	if err := repository.AutoMigrateNonIAM(db); err != nil {
-		logger.L().Error("Common 存储准备失败", "error", err)
-		os.Exit(1)
+		if err := repository.AutoMigrateNonIAM(db); err != nil {
+			logger.L().Error("Common 存储准备失败", "error", err)
+			os.Exit(1)
+		}
 	}
 	serviceCredentialProvisioner, err := iam.NewServiceCredentialProvisioner(iam.NewRepository(db), nil)
 	if err != nil {
