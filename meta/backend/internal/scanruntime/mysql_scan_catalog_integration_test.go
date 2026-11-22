@@ -46,7 +46,7 @@ func TestMySQLScanCatalog(t *testing.T) {
 		return db
 	}
 	db := open(os.Getenv("ADDP_MYSQL_META_WORKER_USER"), os.Getenv("ADDP_MYSQL_META_WORKER_PASSWORD"))
-	if err := schema.RequireMySQL(db, "meta_scan_catalog", 1); err != nil {
+	if err := schema.RequireMySQL(db, "meta_scan_catalog", 2); err != nil {
 		t.Fatal(err)
 	}
 	repo := repository.NewScanRepository(db)

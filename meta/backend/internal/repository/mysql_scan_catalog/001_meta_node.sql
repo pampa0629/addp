@@ -23,6 +23,6 @@ CREATE TABLE IF NOT EXISTS meta.meta_node (
     UNIQUE KEY uq_meta_node_child (tenant_id, engine_id, active_parent, name, node_type),
     UNIQUE KEY uq_meta_node_full_name (tenant_id, engine_id, node_type, active_full_name),
     KEY idx_meta_node_parent (parent_node_id),
-    CONSTRAINT fk_meta_node_tenant_engine FOREIGN KEY (tenant_id, engine_id)
-        REFERENCES `system`.engines (tenant_id, id) ON DELETE CASCADE
+    CONSTRAINT fk_meta_node_engine_restrict FOREIGN KEY (tenant_id, engine_id)
+        REFERENCES `system`.engines (tenant_id, id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin

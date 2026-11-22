@@ -51,7 +51,7 @@ SQL
 export ADDP_MYSQL_INSTALL_USER=meta_setup ADDP_MYSQL_INSTALL_PASSWORD="$meta_password"
 if "$work/meta-server" install-mysql-scan 2>"$work/meta-denied.err"; then exit 1; fi
 grep -Eiq '1142.*REFERENCES|REFERENCES.*denied' "$work/meta-denied.err"
-test "$(echo "SELECT version=0 AND pending_version=1 FROM startup_schema_revision WHERE owner='meta_scan_catalog'" | admin)" = 1
+test "$(echo "SELECT version=0 AND pending_version=2 FROM startup_schema_revision WHERE owner='meta_scan_catalog'" | admin)" = 1
 admin <<'SQL'
 GRANT REFERENCES ON `system`.engines TO 'meta_setup'@'%';
 SQL
@@ -61,15 +61,44 @@ revoke_parent() {
 }
 trap revoke_parent EXIT
 "$work/meta-server" install-mysql-scan
+# Run the real upgrade on populated v1 tables. Separate engines prove each FK independently.
+admin <<'SQL'
+INSERT INTO `system`.engines(id,tenant_id,name,engine_type,connection_info,identity_key)
+VALUES (201,7,'node fk','mysql','{}','{"host":"fk-node"}'),(202,8,'item fk','mysql','{}','{"host":"fk-item"}');
+INSERT INTO meta_node(tenant_id,engine_id,node_type,name,depth) VALUES(7,201,'root','fk gate',0);
+INSERT INTO meta_item(tenant_id,engine_id,node_id,item_type,name,fingerprint)
+VALUES(8,202,1,'table','fk gate','fk-gate-item');
+ALTER TABLE meta_node DROP FOREIGN KEY fk_meta_node_engine_restrict, ADD CONSTRAINT fk_meta_node_tenant_engine
+    FOREIGN KEY (tenant_id,engine_id) REFERENCES `system`.engines(tenant_id,id) ON DELETE CASCADE;
+ALTER TABLE meta_item DROP FOREIGN KEY fk_meta_item_engine_restrict, ADD CONSTRAINT fk_meta_item_tenant_engine
+    FOREIGN KEY (tenant_id,engine_id) REFERENCES `system`.engines(tenant_id,id) ON DELETE CASCADE;
+UPDATE startup_schema_revision SET version=1 WHERE owner='meta_scan_catalog';
+SQL
+"$work/meta-server" install-mysql-scan
+for entry in '201 meta_node' '202 meta_item'; do
+    read -r id table <<<"$entry"
+    if echo "DELETE FROM \`system\`.engines WHERE id=$id" | admin 2>"$work/meta-delete.err"; then exit 1; fi
+    grep -q "ERROR 1451.*fk_${table}_engine_restrict" "$work/meta-delete.err"
+done
+echo 'Both populated engine references rejected physical deletion (1451)'
+# Removing both fixtures now commits. The live scan uses different engines.
+test "$(admin <<'SQL'
+DELETE FROM meta_item WHERE tenant_id=8 AND engine_id=202;
+DELETE FROM meta_node WHERE tenant_id=7 AND engine_id=201;
+DELETE FROM `system`.engines WHERE id IN (201,202);
+SELECT ROW_COUNT();
+SQL
+)" = 2
+echo 'Both parent deletions committed after Meta child cleanup'
 # An already published revision must not hide a missing key on installation replay.
 admin <<'SQL'
-ALTER TABLE meta_item DROP FOREIGN KEY fk_meta_item_tenant_engine;
+ALTER TABLE meta_item DROP FOREIGN KEY fk_meta_item_engine_restrict;
 SQL
 if "$work/meta-server" install-mysql-scan 2>"$work/meta-key.err"; then exit 1; fi
 grep -q 'requires both tenant/engine foreign keys' "$work/meta-key.err"
 MYSQL_PWD="$meta_password" docker exec -i -e MYSQL_PWD "$container" mysql --protocol=TCP -h127.0.0.1 -umeta_setup meta <<'SQL'
-ALTER TABLE meta_item ADD CONSTRAINT fk_meta_item_tenant_engine FOREIGN KEY (tenant_id, engine_id)
-    REFERENCES `system`.engines(tenant_id, id) ON DELETE CASCADE;
+ALTER TABLE meta_item ADD CONSTRAINT fk_meta_item_engine_restrict FOREIGN KEY (tenant_id, engine_id)
+    REFERENCES `system`.engines(tenant_id, id) ON DELETE RESTRICT;
 SQL
 "$work/meta-server" install-mysql-scan
 revoke_parent

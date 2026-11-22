@@ -19,6 +19,6 @@ CREATE TABLE IF NOT EXISTS meta.meta_item (
     UNIQUE KEY uq_meta_item_fingerprint (fingerprint),
     KEY idx_meta_item_node (node_id),
     KEY idx_meta_item_engine_tenant (tenant_id, engine_id),
-    CONSTRAINT fk_meta_item_tenant_engine FOREIGN KEY (tenant_id, engine_id)
-        REFERENCES `system`.engines (tenant_id, id) ON DELETE CASCADE
+    CONSTRAINT fk_meta_item_engine_restrict FOREIGN KEY (tenant_id, engine_id)
+        REFERENCES `system`.engines (tenant_id, id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin
