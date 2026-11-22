@@ -175,6 +175,8 @@ func TestNotebookStorageEngineFixtureAgainstPostgres(t *testing.T) {
     address,err := url.Parse(dsn)
     if err != nil { t.Fatal(err) }
     password,_ := address.User.Password()
+    t.Setenv("ADDP_DATABASE_RUNTIME_USER",address.User.Username())
+    t.Setenv("ADDP_DATABASE_RUNTIME_PASSWORD",password)
     cfg := &config.Config{PostgresHost:address.Hostname(),PostgresPort:address.Port(),PostgresUser:address.User.Username(),
         PostgresPassword:password,PostgresDB:strings.TrimPrefix(address.Path,"/"),EncryptionKey:[]byte("0123456789abcdef0123456789abcdef")}
     if cfg.PostgresPort == "" { cfg.PostgresPort = "5432" }
