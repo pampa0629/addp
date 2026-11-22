@@ -356,11 +356,9 @@ mosaic 归属复用 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，保
 
 ## 数据库启动所有权
 
-本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见[模块迁移与 Worker 启动顺序](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
+新装或升级时，部署程序使用安装身份运行同一发布版本的 `meta-server prepare-database`。PG 与 MySQL 均在准备完成后发布 Meta 整库版本。Backend 与 Worker 分别使用运行身份，启动时核验 Meta 与 Common 版本。开发脚本和 Compose 在 Backend 就绪后启动 Worker。数据库结构或迁移变化须递增 `SchemaVersion`。安装凭据、触发器所有者及审批步骤见[环境与密钥规范](../docs/spec/configuration/部署环境与密钥.md)，进程顺序见[生命周期规范](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
 
-检索授权事实版本迁移028对应 Meta schema revision 6，由 Backend 同事务升级，Worker只读核验；`TestAuthorizationBasisStartupMigrationAgainstPostgres` 经正式启动版本入口验证从5升级和再次启动不重放。版本只覆盖实际授权事实和父链，不因源统计变化单独失效，不变更权限规则。
-
-whole 归属迁移 027 对应 Meta schema revision 5；已有 revision 4 的数据库由 Backend 在同一启动事务内执行并发布新版本，Worker 随后只读验证。标准 `make test-meta-postgres` 中的 `TestWholeScopeMigrationAgainstPostgres` 从已部署 revision 4 经正式 `schema.Migrate` 入口升级，并检查新 Worker 准入、旧 Worker 拒绝及再次启动不重放；仅直接执行 SQL 的测试不能证明启动时会应用迁移。
+PG 迁移 027 确定 whole 归属，028 建立租户授权依据版本。对应的历史版本分别为 revision 5 和 6。历史结构迁移及版本判定由 `make test-meta-postgres` 覆盖。revision 8 的部署验收使用独占库，`make test-meta-postgres-fact-authority` 验证新装，追加 `META_POSTGRES_INSTALL_ARGS=--upgrade` 可从实际发布的 revision 7 升级，核对条目标识、Catalog 游标和授权依据版本。MySQL 的入口为 `make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-meta-scan'`。
 
 ## 相关文档
 - [数据库架构](docs/数据库架构.md)
