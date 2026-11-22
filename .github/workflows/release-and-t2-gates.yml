@@ -1743,6 +1743,9 @@ jobs:
       - name: Run MySQL Meta claim and task summary gate
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-meta-scan'
 
+      - name: Verify Gateway MySQL installer and restricted access logging
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-gateway-install'
+
       - name: Run MySQL platform database session gate
         env:
           ADDP_TEST_MYSQL_HOST: 127.0.0.1

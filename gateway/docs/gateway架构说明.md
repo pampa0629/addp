@@ -76,7 +76,7 @@ Gateway 在替换路由池之前比较快照 revision。早于本进程已应用
 
 数据库连接或迁移失败时禁用该记录路径；下游处理返回后异步写入，单次写入超时为 5 秒，失败只记运行日志，不改变请求响应。HTTP 响应成功不代表已落库，缺少记录也不证明请求未发生；该表不能作为全入口访问计量或完整审计证据。
 
-MySQL 8 接入保留同一访问记录内容、敏感参数处理和清理规则。Gateway 维护自身 `api_access_logs` 的 DDL，使用部署绑定的物理 database、InnoDB 和原生 JSON，迁移版本由 Common 协调。对应实库门禁覆盖重复初始化、HTTP 消费请求写入和旧记录清理。平台部署仍由 PostgreSQL 提供访问日志数据库。
+MySQL 8 接入保留同一访问记录内容、敏感参数处理和清理规则。Gateway 维护自身 `api_access_logs` 的 DDL，使用部署绑定的物理 database、InnoDB 和原生 JSON，迁移版本由 Common 协调。对应实库门禁覆盖重复初始化、HTTP 消费请求写入和旧记录清理。部署选择 MySQL 时，先用仅限 `gateway` 库的安装账号运行 `gateway install-mysql-gateway`。Gateway 正常启动从 Common 打开该库的受限运行连接，只读核验版本后启用日志。PG 保留原启动迁移。两者均沿用本节约定的日志不可用处理。
 
 ## 7. 安全不变量
 

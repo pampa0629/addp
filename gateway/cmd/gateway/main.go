@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -13,10 +14,12 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/gateway/internal/config"
 	"github.com/addp/gateway/internal/metricscontrol"
+	"github.com/addp/gateway/internal/middleware"
 	"github.com/addp/gateway/internal/router"
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +27,17 @@ import (
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
+	if len(os.Args) != 1 {
+		if len(os.Args) != 2 || os.Args[1] != "install-mysql-gateway" {
+			fmt.Fprintln(os.Stderr, "unknown Gateway command")
+			os.Exit(2)
+		}
+		if err := installMySQLAccessLog(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	commonConfig.InitLogger(nil)
 
 	// 加载配置
@@ -94,4 +108,19 @@ func main() {
 		logger.L().Error("Gateway 服务关闭失败", "error", err)
 	}
 	<-registration.Done()
+}
+
+func installMySQLAccessLog() error {
+	db, err := platformmysql.OpenInstallation("gateway")
+	if err != nil {
+		return err
+	}
+	pool, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	return middleware.MigrateAccessLog(db.WithContext(ctx))
 }

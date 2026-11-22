@@ -177,17 +177,20 @@ func proxyRegisteredModule(c *gin.Context, moduleName string, discovery modulePr
 
 // initDatabase 初始化数据库连接
 func initDatabase(cfg *config.Config) *gorm.DB {
-	db, err := bootstrap.OpenDatabase(database.Config{
+	db, err := bootstrap.OpenRuntimeDatabase(database.Config{
 		Host: cfg.DBHost, Port: cfg.DBPort,
 		User: cfg.DBUser, Password: cfg.DBPassword,
 		DBName: cfg.DBName, Schema: cfg.DBSchema,
-	}, &gorm.Config{})
+	}, "gateway", "ADDP_MYSQL_GATEWAY", &gorm.Config{})
 	if err != nil {
 		log.Printf("Failed to connect to database: %v (continuing without DB)", err)
 		return nil
 	}
-	if err := middleware.MigrateAccessLog(db); err != nil {
-		log.Printf("Failed to migrate Gateway access log schema: %v (continuing without access log DB)", err)
+	if err := middleware.PrepareAccessLog(db); err != nil {
+		if pool, poolErr := db.DB(); poolErr == nil {
+			_ = pool.Close()
+		}
+		log.Printf("Failed to prepare Gateway access log schema: %v (continuing without access log DB)", err)
 		return nil
 	}
 

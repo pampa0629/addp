@@ -13,6 +13,14 @@ const (
 	mysqlAccessLogVersion  = 1
 )
 
+// PrepareAccessLog runs with the Gateway process credential.
+func PrepareAccessLog(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return schema.RequireMySQL(db, "gateway", mysqlAccessLogVersion)
+	}
+	return MigrateAccessLog(db)
+}
+
 // MigrateAccessLog prepares the Gateway-owned access log in the selected database.
 func MigrateAccessLog(db *gorm.DB) error {
 	switch db.Dialector.Name() {
