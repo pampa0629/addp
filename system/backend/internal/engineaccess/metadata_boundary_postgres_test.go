@@ -211,7 +211,7 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 					t.Fatal(err)
 				}
 				if !native {
-					if _, err := encodeBoundSourceTargets(request.Targets, []authorizationfacts.Binding{binding}, "read"); err == nil {
+					if _, err := bindSourceReadTargets(request.Targets, []authorizationfacts.Binding{binding}, "read"); err == nil {
 						t.Fatal("metadata identity encoded as content authorization")
 					}
 					if _, err := service.resolveReadBindings(ctx, tenantID, request.Targets); !errors.Is(err, ErrAuthorizationBoundaryChanged) {

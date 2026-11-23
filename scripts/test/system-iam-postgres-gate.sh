@@ -40,6 +40,7 @@ while [ "$#" -gt 0 ]; do
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Transfer delegated run approval: --package migration --test transfer-run" >&2
             echo "Transfer production receipt: --package migration --test production-receipt-runtime" >&2
+            echo "Current source visibility rules: --package engineaccess --test source-visibility" >&2
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
             echo "Meta PG basic centralized scanning: --package engineaccess|migration --test meta-collection" >&2
             echo "FTP/NFS file composition Grant/current read: --package engineaccess --test file-composition" >&2
@@ -407,6 +408,10 @@ case "$TEST_FILTER" in
             migration) test_pattern='^TestExactNativeObjectGrants(CompositionModes)?ForwardMigrationAgainstPostgres$' ;;
             *) echo "file-composition requires --package engineaccess or migration" >&2; exit 2 ;;
         esac
+        ;;
+    source-visibility)
+        [ "$PACKAGE_FILTER" = engineaccess ] || { echo "source-visibility requires --package engineaccess" >&2; exit 2; }
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^current_complete_source_read_rules$'
         ;;
     manager-search)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-search requires --package engineaccess" >&2; exit 2; }

@@ -2,7 +2,6 @@ package engineaccess
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"time"
 
@@ -33,14 +32,14 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential, action 
 	if r == nil || r.db == nil {
 		return nil, errSourceReadRules
 	}
-	batch, err := encodeBoundSourceTargets(paths, bindings, action)
+	batch, err := bindSourceReadTargets(paths, bindings, action)
 	if err != nil {
 		return nil, errSourceReadRules
 	}
 	return r.observePreparedSourceRules(ctx, action, paths, bindings, batch, expectedTenantID, resolve, qualify, expectedEngine)
 }
 
-func (r *Repository) observePreparedSourceRules(ctx context.Context, action string, paths []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, batch json.RawMessage, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
+func (r *Repository) observePreparedSourceRules(ctx context.Context, action string, paths []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, batch []sourceRuleTarget, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
 	if expectedTenantID <= 0 {
 		return nil, errSourceReadRules
 	}

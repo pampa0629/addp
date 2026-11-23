@@ -2,7 +2,6 @@ package engineaccess
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -129,16 +128,12 @@ func (s *Service) checkSourceVisibilityTargets(ctx context.Context, credential s
 		}
 		return result, err
 	}
-	batch, err := json.Marshal(rules)
 	if timing != nil {
 		timing.rulePreparation = time.Since(started)
 		timing.ruleItems = len(rules)
 	}
-	if err != nil {
-		return nil, err
-	}
 	started = time.Now()
-	observation, err := s.repository.observePreparedSourceRules(ctx, shared.SourceAccessMetadataRead, paths, nil, batch, tenant, resolve, qualify, nil)
+	observation, err := s.repository.observePreparedSourceRules(ctx, shared.SourceAccessMetadataRead, paths, nil, rules, tenant, resolve, qualify, nil)
 	if timing != nil {
 		timing.ruleObservation = time.Since(started)
 	}

@@ -67,25 +67,48 @@ func TestSourceReadSetPreservesPreciseTargets(t *testing.T) {
 	base := testFulfillmentRequest()
 	other := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "业务.域", " 表/名")
 	request := sourceReadRequest{Action: "read", TenantID: base.TenantID, Source: base.Operator, Targets: []engineplugin.EngineCatalogPath{base.Path, other, base.Path}, Bindings: testReadBindings(base.Path, other)}
-	paths, encoded, err := request.encode()
+	paths, decoded, err := request.encode()
 	if err != nil || len(paths) != 2 || paths[0].Segments[2].Name != " 表/名 " || paths[1].Segments[2].Name != " 表/名" {
-		t.Fatalf("precise dedup=%+v %s %v", paths, encoded, err)
-	}
-	var decoded []struct {
-		Binding authorizationfacts.Binding `json:"binding"`
-		Action  string                     `json:"requested_action"`
-	}
-	if err := json.Unmarshal(encoded, &decoded); err != nil || len(decoded) != 2 {
-		t.Fatalf("batch=%s %v", encoded, err)
+		t.Fatalf("precise dedup=%+v %v %v", paths, decoded, err)
 	}
 	for i, entry := range decoded {
 		if entry.Action != request.Action || !reflect.DeepEqual(entry.Binding, request.Bindings[i]) {
-			t.Fatalf("rule target lost action or boundary: %s", encoded)
+			t.Fatalf("rule target lost action or boundary: %+v", decoded)
 		}
 	}
 	request.Targets[0].Segments[2].Name = "changed"
 	if paths[0].Segments[2].Name != " 表/名 " {
 		t.Fatal("observation aliases caller targets")
+	}
+}
+
+func TestMySQLNodeGrantMustCoverEveryFile(t *testing.T) {
+	primary := engineplugin.FileItemPath(9, "models/current/model.gltf")
+	sidecar := engineplugin.FileItemPath(9, "models/shared/mesh.bin")
+	binding := authorizationfacts.Binding{FileComposition: &authorizationfacts.FileCompositionBoundary{Refs: []authorizationfacts.FileCompositionRef{
+		{Target: primary, Primary: true}, {Target: sidecar},
+	}}}
+	data, err := mysqlSourceReadTargets([]engineplugin.EngineCatalogPath{primary}, []sourceRuleTarget{{Binding: binding, Action: "read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var targets []struct {
+		Nodes []struct {
+			Path   engineplugin.EngineCatalogPath
+			Direct bool
+		}
+	}
+	if err := json.Unmarshal(data, &targets); err != nil {
+		t.Fatal(err)
+	}
+	// Only the common root and models directory can cover both files, recursively.
+	if len(targets) != 1 || len(targets[0].Nodes) != 2 {
+		t.Fatalf("unexpected ancestors: %s", data)
+	}
+	for i, node := range targets[0].Nodes {
+		if node.Direct || !reflect.DeepEqual(node.Path.Segments, primary.Segments[:i+1]) {
+			t.Fatalf("unexpected ancestor: %+v", node)
+		}
 	}
 }
 

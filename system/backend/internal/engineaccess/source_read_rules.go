@@ -84,7 +84,7 @@ type sourceReadRules struct {
 	ExpiresAt *time.Time
 }
 
-func (request sourceReadRequest) encode() ([]engineplugin.EngineCatalogPath, json.RawMessage, error) {
+func (request sourceReadRequest) encode() ([]engineplugin.EngineCatalogPath, []sourceRuleTarget, error) {
 	if request.TenantID <= 0 || !request.Source.valid() || !authorization.ValidSourceAccessAction(request.Action) {
 		return nil, nil, errSourceReadRules
 	}
@@ -92,7 +92,7 @@ func (request sourceReadRequest) encode() ([]engineplugin.EngineCatalogPath, jso
 	if err != nil {
 		return nil, nil, err
 	}
-	batch, err := encodeBoundSourceTargets(paths, request.Bindings, request.Action)
+	batch, err := bindSourceReadTargets(paths, request.Bindings, request.Action)
 	return paths, batch, err
 }
 
@@ -101,7 +101,7 @@ type sourceRuleTarget struct {
 	Action  string                     `json:"requested_action"`
 }
 
-func encodeBoundSourceTargets(paths []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, action string) (json.RawMessage, error) {
+func bindSourceReadTargets(paths []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, action string) ([]sourceRuleTarget, error) {
 	if len(paths) == 0 || len(paths) != len(bindings) || !authorization.ValidSourceAccessAction(action) {
 		return nil, errSourceReadRules
 	}
@@ -120,7 +120,7 @@ func encodeBoundSourceTargets(paths []engineplugin.EngineCatalogPath, bindings [
 	for i, binding := range bindings {
 		bound[i] = sourceRuleTarget{Binding: binding, Action: action}
 	}
-	return json.Marshal(bound)
+	return bound, nil
 }
 
 func encodeSourceReadTargets(targets []engineplugin.EngineCatalogPath) ([]engineplugin.EngineCatalogPath, json.RawMessage, error) {
@@ -213,17 +213,29 @@ func (r *Repository) readCurrentSourceRules(ctx context.Context, request sourceR
 
 // The trusted credential adapter and qualified management inspection reuse the
 // same rule CTEs; management observations never become credential evidence.
-func (r *Repository) queryCurrentSourceRules(ctx context.Context, request sourceReadRequest, paths []engineplugin.EngineCatalogPath, batch json.RawMessage) (*sourceReadRules, error) {
+func (r *Repository) queryCurrentSourceRules(ctx context.Context, request sourceReadRequest, paths []engineplugin.EngineCatalogPath, targets []sourceRuleTarget) (*sourceReadRules, error) {
 	if !authorization.ValidSourceAccessAction(request.Action) {
 		return nil, errSourceReadRules
 	}
 	var rows []sourceReadRuleRow
+	query := currentSourceReadRulesSQL
+	var batch []byte
+	var err error
+	if r.db.Dialector.Name() == "mysql" {
+		query = mysqlCurrentSourceReadRulesSQL
+		batch, err = mysqlSourceReadTargets(paths, targets)
+	} else {
+		batch, err = json.Marshal(targets)
+	}
+	if err != nil {
+		return nil, err
+	}
 	timing, _ := ctx.Value(sourceRuleTimingKey{}).(*SourceRuleTiming)
 	if timing != nil {
 		timing.queryCount++
 		timing.started = time.Now()
 	}
-	if err := r.db.WithContext(ctx).Raw(currentSourceReadRulesSQL, request.TenantID,
+	if err := r.db.WithContext(ctx).Raw(query, request.TenantID,
 		request.Source.PrincipalID, request.Source.MembershipID, request.Source.AuthorizationVersion,
 		string(batch), request.NodeFirst).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -319,7 +331,7 @@ const sourceReadSubjectCTEs = `, current_source AS (
 	  AND (m.expires_at IS NULL OR m.expires_at > input.observed_at)
 	JOIN system.tenants t ON t.id = m.tenant_id AND t.status = 'active'
 ), recipients AS (
-	SELECT 'user'::text AS recipient_type, principal_id AS recipient_id FROM current_source
+	SELECT 'user' AS recipient_type, principal_id AS recipient_id FROM current_source
 	UNION
 	SELECT 'department', d.id FROM current_source s
 	JOIN system.department_memberships m ON m.tenant_id = s.tenant_id

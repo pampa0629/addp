@@ -667,9 +667,13 @@ func (s *Service) InspectSourceGrants(ctx context.Context, actor Actor, engineID
 	if err != nil || accountID <= 0 || int64(path.EngineID) != engineID || len(path.Segments) != 3 {
 		return nil, commonapi.ErrBadRequest
 	}
-	batch, bindingErr := encodeBoundSourceTargets(paths, testReadBindings(path), "read")
+	bound, bindingErr := bindSourceReadTargets(paths, testReadBindings(path), "read")
 	if bindingErr != nil {
 		return nil, commonapi.ErrBadRequest
+	}
+	batch, err := json.Marshal(bound)
+	if err != nil {
+		return nil, err
 	}
 	var result *SourceGrantInspection
 	err = s.withEngineManagementScope(ctx, actor, engineID, authorization.PermissionSystemEngineAccessGrantRead, false,

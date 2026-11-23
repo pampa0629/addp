@@ -3,7 +3,6 @@ package engineaccess
 import (
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
 	"strconv"
 	"time"
 
@@ -12,13 +11,16 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
+	"github.com/google/uuid"
 )
 
 // Navigation uses the same live recipient and Grant predicates as actual reads.
-const navigationGrantsSQL = `WITH input AS MATERIALIZED (
+const pgNavigationInput = `WITH input AS MATERIALIZED (
  SELECT ?::bigint tenant_id,?::bigint principal_id,?::bigint membership_id,
  ?::bigint authorization_version,clock_timestamp() observed_at
-)` + sourceReadSubjectCTEs + `
+)`
+
+const navigationGrantsSQL = sourceReadSubjectCTEs + `
  SELECT g.request_id,g.catalog_path,g.item_fingerprint,g.boundary_hash,g.node_recursive FROM input JOIN system.engine_access_grants g ON g.tenant_id=input.tenant_id
  JOIN recipients r ON r.recipient_type=g.recipient_type AND r.recipient_id=g.recipient_id
  JOIN system.engines e ON e.id=g.engine_id AND e.tenant_id=g.tenant_id
@@ -76,7 +78,11 @@ func (s *Service) readNavigationGrants(ctx context.Context, credential string, e
 			}
 		}
 		tenant = ids[0]
-		query := navigationGrantsSQL
+		input := pgNavigationInput
+		if tx.db.Dialector.Name() == "mysql" {
+			input = mysqlSourceSubjectInput
+		}
+		query := input + navigationGrantsSQL
 		if nodesOnly {
 			query += " AND g.node_recursive IS NOT NULL"
 		}

@@ -2,6 +2,7 @@ package engineaccess
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -83,7 +84,22 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 			t.Fatalf("expected active request %s, got %+v", want, rows)
 		}
 	}
+	checkVisibility := func(want string) {
+		t.Helper()
+		result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{
+			Action: shared.SourceAccessMetadataRead, TenantID: 7,
+			Source:  userProvenance{PrincipalID: confirmer.PrincipalID, MembershipID: confirmer.MembershipID, AuthorizationVersion: confirmer.AuthorizationVersion},
+			Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path),
+		})
+		if err != nil || len(result.Targets) != 1 || result.Targets[0].Reason != want || result.Covered != (want == "grant") {
+			t.Fatalf("metadata visibility: expected %s, got %+v, %v", want, result, err)
+		}
+		if result.ExpiresAt != nil {
+			t.Fatalf("unexpected deadline: %v", result.ExpiresAt)
+		}
+	}
 	checkActive(id)
+	checkVisibility("grant")
 	secondID := uuid.New()
 	secondBinding := binding
 	secondBinding.DecisionID = uuid.New()
@@ -109,6 +125,7 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 		t.Fatalf("repeat withdrawal: %+v, %v", again, err)
 	}
 	checkActive(uuid.Nil)
+	checkVisibility("no_grant")
 	second, err := svc.IssueFulfillmentGrant(ctx, caller, secondID, secondBinding)
 	if err != nil || second.RequestID != secondID {
 		t.Fatalf("reissue: %+v, %v", second, err)
@@ -117,6 +134,51 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 		t.Fatalf("historical retry: %v", err)
 	}
 	checkActive(secondID)
+	checkVisibility("grant")
+	t.Run("metadata-only schema grant and natural expiry", func(t *testing.T) {
+		child := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "visibility", "orders")
+		node := child
+		node.Segments = child.Segments[:2]
+		raw, err := json.Marshal(node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		operator := actorFor(50001)
+		now, err := repo.wallClock(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expiry := now.Add(8 * time.Second)
+		recursive, reason := false, "metadata-only schema"
+		grant := sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeIndependent, TenantID: 7, EngineID: int64(node.EngineID),
+			CatalogPath: raw, NodeRecursive: &recursive, RecipientType: "user", RecipientID: confirmer.PrincipalID,
+			Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryAtTime, ExpiresAt: &expiry, Reason: &reason,
+			OperatorPrincipalID: operator.PrincipalID, OperatorMembershipID: operator.MembershipID, OperatorAuthorizationVersion: operator.AuthorizationVersion}
+		if err := repo.transaction(ctx, func(tx *Repository) error { return tx.insertSourceGrant(ctx, &grant) }); err != nil {
+			t.Fatal(err)
+		}
+		sibling := engineplugin.TabularItemPath(node.EngineID, "schema", "sibling", "orders")
+		paths := []engineplugin.EngineCatalogPath{child, child, sibling}
+		bindings := testReadBindings(child, sibling)
+		targets := []sourceRuleTarget{{Binding: bindings[0], Action: shared.SourceAccessMetadataRead}, {Binding: bindings[0], Action: shared.SourceAccessRead}, {Binding: bindings[1], Action: shared.SourceAccessMetadataRead}}
+		read := func(want bool) {
+			t.Helper()
+			result, err := repo.queryCurrentSourceRules(ctx, sourceReadRequest{Action: shared.SourceAccessMetadataRead, TenantID: 7, Source: userProvenance{PrincipalID: confirmer.PrincipalID, MembershipID: confirmer.MembershipID, AuthorizationVersion: confirmer.AuthorizationVersion}}, paths, targets)
+			if err != nil || len(result.Targets) != 3 || result.Targets[0].Covered != want || result.Targets[1].Covered || result.Targets[2].Covered || result.Covered {
+				t.Fatalf("metadata/content/sibling visibility: %+v, %v", result, err)
+			}
+			deadline := result.Targets[0].ExpiresAt
+			if (want && (deadline == nil || !deadline.Equal(expiry))) || (!want && deadline != nil) {
+				t.Fatalf("unexpected deadline: %v", deadline)
+			}
+		}
+		read(true)
+		if err := repo.db.Exec("SELECT SLEEP(GREATEST(0,TIMESTAMPDIFF(MICROSECOND,CURRENT_TIMESTAMP(6),?))/1000000+0.02)", expiry).Error; err != nil {
+			t.Fatal(err)
+		}
+		read(false)
+		t.Log("metadata visible under active grant; content and sibling denied; no visibility after natural expiry")
+	})
 	if _, err := svc.Revoke(ctx, RevokeInput{Actor: manager, EngineID: 12, ID: delegation.ID, Version: 1, Reason: "Catalog handling complete"}); err != nil {
 		t.Fatal(err)
 	}
