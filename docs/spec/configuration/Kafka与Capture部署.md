@@ -22,6 +22,8 @@ Infra Kafka 是 ADDP 部署资源，不进入 System Engine。正式实现固定
 
 Apache Kafka 4.4.0 的协议验收入口为 `make test-common-apache-kafka`。门禁使用经 SHA-512 核对的 Apache 发行包，在独占环境的回环地址启动单个 KRaft broker，以独立的 Connect 和 Transfer 身份核对 CDC 写入、消费组断点续读、受限主题拒绝，以及 Transfer 死信写入、按偏移读回和删除后状态。隔离机须设置 `ADDP_KAFKA_T2_DISPOSABLE=1`，可用 `ADDP_KAFKA_T2_ARCHIVE` 指向已下载的同版本压缩包。部署选型开放前还需验收真实 Debezium Connect、源端变更以及端到端重放。
 
+GitHub Actions 按发行包版本和 SHA-512 缓存官方压缩包。缓存未命中时，先下载并核验，再保存压缩包。运行门禁时再次核验压缩包，每次都在独占目录启动新的 broker。
+
 
 ### 环境变量示例
 

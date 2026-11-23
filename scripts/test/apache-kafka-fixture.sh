@@ -2,6 +2,13 @@
 # Native disposable Apache Kafka fixture. Only the owned child and directory are removed.
 set -euo pipefail
 umask 077
+version=4.4.0
+distribution=kafka_2.13-$version
+checksum=f5ceba8a265ab6bb2d68362b1f6859a95e15d60ef92ba83b43fdf065b557dc18e98d6383c15b9977320e25b3a2c8b6f11decb17b0fa6c0f163423793a0eb95cb
+if [[ $1 == --archive-key ]]; then
+    printf 'apache-kafka-%s-%s\n' "$distribution" "$checksum"
+    exit
+fi
 verify=$1
 work=$(mktemp -d "${TMPDIR:-/tmp}/addp-kafka-XXXXXX")
 pid=
@@ -18,11 +25,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-version=4.4.0
-distribution=kafka_2.13-$version
-checksum=f5ceba8a265ab6bb2d68362b1f6859a95e15d60ef92ba83b43fdf065b557dc18e98d6383c15b9977320e25b3a2c8b6f11decb17b0fa6c0f163423793a0eb95cb
 archive=${ADDP_KAFKA_T2_ARCHIVE:-$work/$distribution.tgz}
-if [[ -z ${ADDP_KAFKA_T2_ARCHIVE:-} ]]; then
+if [[ $verify == --prepare-archive || -z ${ADDP_KAFKA_T2_ARCHIVE:-} ]]; then
+    archive=$work/$distribution.tgz
     curl -fsSL --retry 2 --max-time 180 "https://archive.apache.org/dist/kafka/$version/$distribution.tgz" -o "$archive"
 fi
 python3 - "$archive" "$checksum" <<'PYTHON'
@@ -34,6 +39,10 @@ with open(sys.argv[1], "rb") as stream:
 if digest.hexdigest() != sys.argv[2]:
     sys.exit("Apache Kafka distribution checksum mismatch")
 PYTHON
+if [[ $verify == --prepare-archive ]]; then
+    mv "$archive" "${2:?missing destination for verified Kafka archive}"
+    exit
+fi
 tar -xzf "$archive" -C "$work"
 cd "$work"
 export PATH="$work/$distribution/bin:$PATH" KAFKA_HEAP_OPTS="-Xms128m -Xmx256m" LOG_DIR="$work/logs"
