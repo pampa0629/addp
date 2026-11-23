@@ -632,11 +632,11 @@
       "kind": "test",
       "path": "evals/agent-scenarios/model_runner.py",
       "anchor": "def fixture_executor(",
-      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
-      "sha256": "151abe59fdce5725693f91552b41c457fba57f5156eba696b9b47516d649bde7",
+      "commit": "1b81cf858f9140f69644aaaf37a8ab0b454ec0ee",
+      "sha256": "1014a3af536fa08cc4d91535376f150a30ca473ac5a3b5eb7cdb801b2e48bf25",
       "use": {
-        "zh-cn": "核验多引擎选项的正式身份。零命中场景要求仅执行一次搜索，并返回写明引擎、搜索词及未找到结果的无选项澄清。",
-        "en": "Check formal identity for multiple engine options. The zero-hit scenario requires exactly one search and a clarification with no choices that identifies the engine, search term, and absence of results."
+        "zh-cn": "核验多引擎选项的正式身份。零命中场景要求仅执行一次搜索，并返回写明引擎、搜索词及未找到结果的无选项澄清。 评测入口按部署选型核验 Agent 平台库版本并关闭连接池。",
+        "en": "Check formal identity for multiple engine options. The zero-hit scenario requires exactly one search and a clarification with no choices that identifies the engine, search term, and absence of results. The evaluation runner verifies the selected Agent database revision and closes its pool."
       }
     },
     {

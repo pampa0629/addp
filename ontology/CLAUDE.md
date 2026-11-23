@@ -329,3 +329,5 @@ Transfer 创建前向修订 76 复核已提交 `fe84ae5e0639da971a4e486b137ad07c
 创建修订 78 复核 RustFS 精确对象导入及正式预检的六项来源。Transfer 在手动执行阶段为单个 RustFS Parquet 对象绑定精确读取授权，Planner 解析服务端冻结范围。正式预检依据已登记的流式读取能力和深扫结构核对 PostgreSQL 字段定义与映射，权限交集、三态和运行时复核保留。平台创建能力仍限定停止态 bounded/snapshot 原生表任务，encoded 仍为未建模覆盖项。
 
 创建定义仅前向递增 revision，保留来源锚点、绑定与覆盖。验证使用 `make test-platform-review` 和 `make test-module MODULE=ontology GO_ONLY=1`。
+
+Transfer 创建修订 79 补审 Agent 评测入口 `evals/agent-scenarios/model_runner.py`，来源提交为 `1b81cf858f9140f69644aaaf37a8ab0b454ec0ee`。此次修改集中在 `main` 和 `run_suite`。评测按部署选定的数据库核验 Agent 版本并释放连接池。负责多引擎候选及零命中澄清的 `fixture_executor` 与修订 78 的依据一致。发布后，绑定旧修订的创建草案继续操作时需重新确认。
