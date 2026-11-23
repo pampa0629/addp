@@ -4,22 +4,16 @@ from pathlib import Path
 import sys
 
 from spark_connector import invocation_session
-from workflow_engine import SQL_RELATION_NOT_FOUND, run_operator, run_workflow
+from workflow_engine import SQL_RELATION_NOT_FOUND, run_workflow
 from workflow_result import serialize_workflow_value
 
 
 def execute_invocation(request):
-    common = {'engine_id', 'tenant_id', 'connection', 'mode'}
-    mode = request.get('mode')
-    required = common | ({'workflow_def', 'input_data'} if mode == 'workflow' else {'operator', 'params'})
-    if mode not in {'workflow', 'direct'} or set(request) != required:
+    if request.get('mode') != 'workflow' or set(request) != {'engine_id', 'tenant_id', 'connection', 'mode', 'workflow_def', 'input_data'}:
         raise ValueError('invalid Spark invocation')
     with invocation_session(request['engine_id'], request['tenant_id'], request['connection']):
-        if mode == 'workflow':
-            result = run_workflow(request['engine_id'], request['tenant_id'],
-                                  request['workflow_def'], request['input_data'])
-        else:
-            result = run_operator(request['engine_id'], request['tenant_id'], request['operator'], request['params'])
+        result = run_workflow(request['engine_id'], request['tenant_id'],
+                              request['workflow_def'], request['input_data'])
         return serialize_workflow_value(result)
 
 

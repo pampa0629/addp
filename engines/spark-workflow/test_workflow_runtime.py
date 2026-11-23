@@ -96,7 +96,7 @@ class WorkflowRuntimeTest(unittest.TestCase):
         def execute(*args):
             self.assertEqual(api_server.executions.get('00000000-0000-4000-8000-000000000008').status, 'running')
             return {'status': 'success', 'final_result': {'rows': 20}, 'all_results': {'a': {'rows': 20}}, 'task_order': ['a']}
-        with patch('api_server.uuid.uuid4', return_value='00000000-0000-4000-8000-000000000008'), patch('api_server.execute_workflow', side_effect=execute), api_server.app.test_client() as client:
+        with patch('api_server.authenticated_master',return_value={'host':'cluster','port':7077}), patch('api_server.uuid.uuid4', return_value='00000000-0000-4000-8000-000000000008'), patch('api_server.execute_workflow', side_effect=execute), api_server.app.test_client() as client:
             response = client.post('/api/workflow', json=body)
         self.assertEqual(response.status_code, 200)
         identifier = response.json['execution_id']
@@ -156,6 +156,7 @@ def execute(*args):
     return {'status': 'success', 'final_result': {'rows': 20},
             'all_results': {'a': {'rows': 20}}, 'task_order': ['a']}
 api_server.execute_workflow = execute
+api_server.authenticated_master = lambda runtime: {'host':'cluster','port':7077}
 run()
 ''')
             environment = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST='127.0.0.1', ADDP_HTTP_TEST_ROOT=directory,

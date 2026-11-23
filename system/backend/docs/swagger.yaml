@@ -4792,6 +4792,8 @@ definitions:
         type: string
       expires_at:
         type: string
+      runtime_registrar:
+        type: string
     type: object
   internal_api.IAMExecutionEngineAccessScope:
     properties:

@@ -13,6 +13,7 @@ import (
 	engineselection "github.com/addp/common/engine/selection"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
+	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -945,6 +946,16 @@ func (h *EngineHandler) RegisterRuntimeEngine(c *gin.Context) {
 		return
 	}
 
+	registrar := ""
+	if req.EngineType == "spark_workflow" && req.IsBuiltin {
+		auth, ok := middleware.IAMAuthContextFromGin(c)
+		if !ok || auth.Client.ClientID == nil || *auth.Client.ClientID != "addp-spark" {
+			respondIAMError(c, commonapi.ErrForbidden)
+			return
+		}
+		registrar = *auth.Client.ClientID
+	}
+
 	fmt.Printf("[RegisterEngine] 📥 收到引擎注册请求: type=%s, name=%s\n", req.EngineType, req.Name)
 
 	if err := h.engineService.ValidateSystemEngineRegistration(req.EngineType, req.Capabilities); err != nil {
@@ -977,6 +988,7 @@ func (h *EngineHandler) RegisterRuntimeEngine(c *gin.Context) {
 		LifecycleState:         models.EngineLifecycleActive,
 		ExternalArtifactPolicy: models.ExternalArtifactPolicyDelete,
 		IsBuiltin:              req.IsBuiltin,
+		RuntimeRegistrar:       registrar,
 		TenantID:               nil,
 		ConnectionStatus:       models.EngineConnectionUnknown,
 	}

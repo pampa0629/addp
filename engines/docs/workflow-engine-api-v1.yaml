@@ -137,6 +137,7 @@ paths:
         Spark Workflow 执行时必须传入顶层 `engine_id`，该值指向已注册且已启用的
         Apache Spark 通用引擎资源，并由 Develop 后端从
         `execution_config.engine_specific.spark_cluster_id` 映射而来。
+        Spark 工作流要求同租户 addp-develop 的 Bearer 服务令牌和 runtime.spark_cluster；Develop 从本次执行授权取得 Master。
       operationId: executeWorkflow
       tags: [Workflow]
       parameters:
@@ -173,6 +174,24 @@ paths:
                 $ref: '#/components/schemas/WorkflowExecuteResponse'
         '400':
           description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Spark 派发令牌缺失、无效或已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Spark 派发身份或租户不匹配，或执行授权已过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Spark 无法从 System 核实派发者身份
           content:
             application/json:
               schema:
@@ -610,6 +629,16 @@ components:
         - tenant_id
         - execution_authorization
       properties:
+        spark_cluster:
+          type: object
+          description: Develop-authenticated Spark workflow dispatch to a verified built-in Runtime.
+          additionalProperties: false
+          required: [execution_id, expires_at, host, port]
+          properties:
+            execution_id: { type: string, format: uuid }
+            expires_at: { type: string, format: date-time }
+            host: { type: string, minLength: 1 }
+            port: { type: integer, minimum: 1, maximum: 65535 }
         tenant_id:
           type: integer
           minimum: 1

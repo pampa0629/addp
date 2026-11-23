@@ -142,7 +142,7 @@ func (r *EngineRepository) UpdateCapabilities(engine *models.Engine) error {
 	}
 	updatedAt := time.Now()
 	result := r.db.Model(&models.Engine{}).Where("id = ? AND version = ?", engine.ID, engine.Version).
-		Updates(map[string]interface{}{"capabilities": engine.Capabilities, "version": gorm.Expr("version + 1"), "updated_at": updatedAt})
+		Updates(map[string]interface{}{"capabilities": engine.Capabilities, "runtime_registrar": engine.RuntimeRegistrar, "version": gorm.Expr("version + 1"), "updated_at": updatedAt})
 	if result.Error != nil {
 		return result.Error
 	}

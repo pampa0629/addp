@@ -15,6 +15,10 @@ def cluster_master_url(connection):
     if not isinstance(connection, dict) or set(connection) != {'host', 'port', 'web_ui_url'}:
         raise ValueError('invalid Spark cluster connection fields')
     host, port = connection['host'], connection['port']
+    return master_endpoint_url(host, port)
+
+
+def master_endpoint_url(host, port):
     if (not isinstance(host, str) or not host or host != host.strip()
             or any(char in host for char in '/@?#\\ \t\r\n')):
         raise ValueError('invalid Spark Master host')
@@ -31,7 +35,7 @@ def cluster_master_url(connection):
 def invocation_session(engine_id, tenant_id, connection):
     if any(type(value) is not int or value <= 0 for value in (engine_id, tenant_id)):
         raise ValueError('invalid Spark invocation identity')
-    master = cluster_master_url(connection)
+    master = master_endpoint_url(connection['host'], connection['port'])
     if (_binding.get() is not None or SparkSession._instantiatedSession is not None
             or SparkContext._active_spark_context is not None):
         raise ValueError('Spark invocation requires a fresh Driver')

@@ -588,3 +588,23 @@ func TestHTTPWorkflowRejectsUnfrozenLanguageBeforeDispatch(t *testing.T) {
 		t.Fatal("invalid language dispatched")
 	}
 }
+
+func TestSparkDispatchNeverForwardsBearerOnRedirect(t *testing.T) {
+	received := false
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { received = true }))
+	defer other.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer dispatch-test-token" {
+			t.Error("trusted endpoint missing bearer")
+		}
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+	address := redirect.Listener.Addr().(*net.TCPAddr)
+	_, err := HTTPExecuteWorkflow(context.Background(), ConnectionInfo{"host": address.IP.String(), "port": address.Port},
+		WorkflowExecuteRequest{DisplayLanguage: "en", Runtime: &WorkflowRuntimeContext{SparkCluster: &SparkClusterDispatch{}},
+			ServiceCredential: func(context.Context) (string, error) { return "dispatch-test-token", nil }})
+	if err == nil || received {
+		t.Fatal("Spark dispatch followed a redirect or accepted it as a successful submission")
+	}
+}

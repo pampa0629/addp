@@ -45,6 +45,10 @@ ADDP 后端通过 Common Provider 必须发送 `Accept-Language: zh-cn` 或 `Acc
 
 `engine_id` 仅用于 `spark_workflow` 的执行期绑定，必须位于请求顶层，指向已注册且启用的 `engine_type=spark` 通用引擎资源。Develop 从 `execution_config.engine_specific.spark_cluster_id` 派生该值；其他 Workflow Runtime 的请求不得携带此字段。
 
+Spark 工作流派发由 Develop 对选定的 Business Spark 集群负责。Develop 用平台执行 ID、执行授权 ID 和所需效果从 System 取得该集群的连接，核对租户、引擎类型及可用状态；Master 主机和端口仅从该结果提取。派发同时携带平台执行 ID 和授权到期时间，沿用顶层集群 ID、租户和执行授权摘要。任务参数、DAG 和外部输入均没有覆盖 Master 的权限。
+
+Develop 仅向经平台确认的内置 Spark Runtime 端点发送本租户的服务令牌，携带令牌的请求禁止跟随重定向。Spark 父 Runtime 通过 System AuthContext 校验有效的租户服务身份、固定客户端 `addp-develop` 及租户一致性；在启动 Driver 前核对派发信息完整、授权在有效期内，并沿用 DAG 效果校验。父 Runtime 使用本次派发的集群地址，Driver 不继承服务令牌。平台执行 ID 与 Spark 本地运行回执 ID 各自保留。联邦查询沿用其面向 Spark 的执行授权。
+
 `input_data` 是可选的外部输入对象；提供时必须为 JSON object，不能为 `null`。共享 Go 客户端在没有外部输入时发送 `{}`，不改变 Runtime 的对象校验契约。
 
 `runtime.tenant_id` 是 Workflow Runtime 的必填租户上下文。它必须由拥有工作流执行入口的 ADDP 后端模块从已验证的 AuthContext 派生并注入；浏览器、前端模块和外部客户端不得直接提交或覆盖该值。Runtime 使用该租户上下文获取 Tenant Service Access Token、访问租户资源，并隔离租户级运行时状态。
@@ -112,7 +116,7 @@ Content-Type: application/json
 
 `<name>` 和 `params` 必须按该运行时的算子元数据填写；空对象仅展示请求封装，不代表实际算子无必填参数。资源参数的派生遵循 [Develop 资源与执行契约](Develop资源与执行.md#算子契约分层)。
 
-对 `spark_workflow`，请求必须携带顶层 `engine_id`，指向真实 `engine_type=spark` 的通用引擎资源；Develop/Manager 等调用方必须由 `execution_config.engine_specific.spark_cluster_id` 或等价领域配置映射得到，不能和工作流运行时实例 ID 或数据源 locator 中的存储引擎 ID 混用。其他 Workflow Runtime 的 direct 请求不得携带该字段。
+当前 Spark 内置算子均只声明 `workflow`。对已知 Spark 算子发起 direct 调用返回 HTTP 403 和 `DIRECT_NOT_SUPPORTED`，不启动 Driver。
 
 GeoPython 栅格 direct 调用还需由 owner 提供顶层 `tenant_id`，用于额度计数；租户身份与授权边界见[栅格资源准入](栅格算子契约.md#geopython-栅格资源准入)。
 

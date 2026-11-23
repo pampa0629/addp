@@ -99,6 +99,9 @@ func assertInstalledMachineCatalog(t *testing.T, db *sql.DB) {
 		t.Fatal(err)
 	}
 	for _, r := range catalog.Roles {
+		if r.Key == "tenant.spark_runtime" {
+			r.Permissions = []string{"system.engine_catalog.read", "system.execution_authorization.execute"}
+		}
 		if r.Key == "tenant.quality_runtime" {
 			// The immutable v15 installation snapshot precedes the descriptor-only release.
 			r.Permissions = []string{"meta.catalog.read", "standard.domain.read", "standard.element.read", "system.cleanup_authorization.execute", "system.engine_catalog.read", "system.engine_descriptor.read", "system.execution_authorization.execute"}

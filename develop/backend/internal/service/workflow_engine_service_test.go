@@ -715,7 +715,7 @@ func TestExecuteWorkflowSendsCanonicalSparkHTTPRuntimeRequest(t *testing.T) {
 	runtime := newWorkflowRuntimeContractServer(t, "spark_workflow")
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
 		91: {
-			ID: 91, Name: "test-spark-workflow", EngineType: "spark_workflow", LifecycleState: "active",
+			ID: 91, Name: "test-spark-workflow", EngineType: "spark_workflow", IsBuiltin: true, RuntimeRegistrar: "addp-spark", LifecycleState: "active",
 			ConnectionInfo: runtime.connectionInfo,
 			Capabilities:   workflowRuntimeCapabilitiesForTest(t, "spark_workflow"),
 		},
@@ -740,7 +740,26 @@ func TestExecuteWorkflowSendsCanonicalSparkHTTPRuntimeRequest(t *testing.T) {
 	if runtime.captured["engine_id"] != float64(34) {
 		t.Fatalf("top-level engine_id = %#v, want 34: %#v", runtime.captured["engine_id"], runtime.captured)
 	}
+	fields := runtime.captured["runtime"].(map[string]interface{})["spark_cluster"].(map[string]interface{})
+	if len(fields) != 4 || fields["host"] != "localhost" || fields["port"] != float64(10000) || fields["execution_id"] == nil || fields["expires_at"] == nil {
+		t.Fatalf("Spark dispatch = %v", fields)
+	}
 	assertCanonicalWorkflowRuntimeAuthorization(t, runtime.captured)
+}
+
+func TestSparkDispatchRequiresVerifiedBuiltinBeforeSendingToken(t *testing.T) {
+	runtime := newWorkflowRuntimeContractServer(t, "spark_workflow")
+	for _, target := range []commonModels.Engine{
+		{IsBuiltin: true}, {IsBuiltin: false, RuntimeRegistrar: "addp-spark"}, {IsBuiltin: true, RuntimeRegistrar: "addp-meta"},
+	} {
+		target.ID, target.EngineType, target.LifecycleState = 91, "spark_workflow", "active"
+		target.Capabilities, target.ConnectionInfo = workflowRuntimeCapabilitiesForTest(t, "spark_workflow"), runtime.connectionInfo
+		svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{91: target, 34: testEngine(34, "spark", true)})
+		_, err := svc.ExecuteWorkflow(context.Background(), 7, map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "contract", "operator": "contract_op", "params": map[string]interface{}{}}}}, nil, `{"engine_id":91,"engine_specific":{"spark_cluster_id":34}}`)
+		if err == nil || !strings.Contains(err.Error(), "未经平台服务登记确认") || runtime.captured != nil {
+			t.Fatalf("untrusted Spark endpoint: err=%v contacted=%v", err, runtime.captured != nil)
+		}
+	}
 }
 
 func TestSparkWorkflowMissingViewRequiresMatchingFailedRuntimeReceipt(t *testing.T) {
@@ -754,7 +773,7 @@ func TestSparkWorkflowMissingViewRequiresMatchingFailedRuntimeReceipt(t *testing
 			}
 			runtime := newWorkflowRuntimeContractServer(t, "spark_workflow", status)
 			svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
-				91: {ID: 91, Name: "test-spark-workflow", EngineType: "spark_workflow", LifecycleState: "active",
+				91: {ID: 91, Name: "test-spark-workflow", EngineType: "spark_workflow", IsBuiltin: true, RuntimeRegistrar: "addp-spark", LifecycleState: "active",
 					ConnectionInfo: runtime.connectionInfo, Capabilities: workflowRuntimeCapabilitiesForTest(t, "spark_workflow")},
 				34: testEngine(34, "spark", true),
 			})
@@ -874,6 +893,9 @@ func newWorkflowRuntimeContractServer(t *testing.T, engineType string, failure .
 				},
 			})
 		case "/api/workflow":
+			if engineType == "spark_workflow" && r.Header.Get("Authorization") != "Bearer dispatch-test-token" {
+				t.Error("missing Develop service bearer")
+			}
 			if err := json.NewDecoder(r.Body).Decode(&fixture.captured); err != nil {
 				t.Errorf("decode workflow request: %v", err)
 				http.Error(w, "invalid request", http.StatusBadRequest)
@@ -1221,7 +1243,7 @@ func newWorkflowEngineServiceWithEnginesForTest(t *testing.T, engines map[uint]c
 	t.Helper()
 	tenantID := uint(7)
 	for id, engine := range engines {
-		if engine.TenantID == nil {
+		if engine.TenantID == nil && !engine.IsBuiltin {
 			engine.TenantID = &tenantID
 			engines[id] = engine
 		}
@@ -1252,7 +1274,7 @@ func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uin
 		cached[id] = &copy
 	}
 	authorization := &IssuedWorkflowExecutionAuthorization{AuthorizationID: 1, ExpiresAt: time.Now().Add(time.Hour)}
-	workflowService := NewWorkflowEngineService(nil)
+	workflowService := NewWorkflowEngineService(commonClient.NewSystemServiceClient("http://system.invalid", staticServiceTokenSource("dispatch-test-token"), nil))
 	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/meta/items/by-catalog-path" {
 			http.NotFound(w, r)

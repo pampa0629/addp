@@ -77,13 +77,14 @@ type IAMExecutionEngineAccessRequest struct {
 }
 
 type IAMExecutionEngineAccessResponse struct {
-	AuthorizationID string         `json:"authorization_id"`
-	ExecutionID     string         `json:"execution_id"`
-	Audience        string         `json:"audience"`
-	EngineID        string         `json:"engine_id"`
-	Effects         []string       `json:"effects"`
-	ExpiresAt       time.Time      `json:"expires_at"`
-	Engine          *models.Engine `json:"engine"`
+	RuntimeRegistrar string         `json:"runtime_registrar,omitempty"`
+	AuthorizationID  string         `json:"authorization_id"`
+	ExecutionID      string         `json:"execution_id"`
+	Audience         string         `json:"audience"`
+	EngineID         string         `json:"engine_id"`
+	Effects          []string       `json:"effects"`
+	ExpiresAt        time.Time      `json:"expires_at"`
+	Engine           *models.Engine `json:"engine"`
 }
 
 type iamExecutionAuthorizationService interface {
@@ -385,8 +386,9 @@ func (h *IAMExecutionAuthorizationHandler) AuthorizeEngineAccess(c *gin.Context)
 		return
 	}
 	c.JSON(http.StatusOK, IAMExecutionEngineAccessResponse{
-		AuthorizationID: strconv.FormatInt(authorized.AuthorizationID, 10),
-		ExecutionID:     authorized.ExecutionID.String(), Audience: authorized.Audience,
+		RuntimeRegistrar: engine.RuntimeRegistrar,
+		AuthorizationID:  strconv.FormatInt(authorized.AuthorizationID, 10),
+		ExecutionID:      authorized.ExecutionID.String(), Audience: authorized.Audience,
 		EngineID: strconv.FormatInt(authorized.EngineID, 10),
 		Effects:  append([]string(nil), authorized.Effects...), ExpiresAt: authorized.ExpiresAt.UTC(),
 		Engine: engine,

@@ -98,11 +98,18 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept-Language", req.DisplayLanguage)
-	if err := authorizeWorkflowRequest(ctx, httpReq, private); err != nil {
+	spark := req.Runtime != nil && req.Runtime.SparkCluster != nil
+	if spark {
+		if private || req.ServiceCredential == nil {
+			return nil, fmt.Errorf("invalid Spark workflow dispatch credential")
+		}
+		ctx = context.WithValue(ctx, workflowPrivateCredentialKey{}, req.ServiceCredential)
+	}
+	if err := authorizeWorkflowRequest(ctx, httpReq, private || spark); err != nil {
 		return nil, err
 	}
 	client := &http.Client{Timeout: workflowRuntimeTimeout(req.Timeout)}
-	if private {
+	if private || spark {
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	resp, err := client.Do(httpReq)

@@ -12,7 +12,7 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 19
+const mysqlIAMFoundationVersion int64 = 20
 
 //go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql
 var mysqlIAMFoundationSQL embed.FS
@@ -87,7 +87,7 @@ func MigrateMySQLSourceGrantCatalog(db *gorm.DB) error {
 }
 
 const mysqlEngineCatalogOwner = "system_engine_catalog"
-const mysqlEngineCatalogVersion int64 = 1
+const mysqlEngineCatalogVersion int64 = 2
 
 func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 	return migrateSystemMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion, "mysql_engine_catalog", nil)
@@ -129,6 +129,11 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 			}
 			if err := conn.Exec(string(ddl)).Error; err != nil {
 				return fmt.Errorf("apply System MySQL migration %s/%s: %w", directory, migration.Name(), err)
+			}
+		}
+		if owner == mysqlEngineCatalogOwner && !conn.Migrator().HasColumn("engines", "runtime_registrar") {
+			if err := conn.Exec("ALTER TABLE engines ADD COLUMN runtime_registrar VARCHAR(96)").Error; err != nil {
+				return err
 			}
 		}
 		if owner == mysqlSourceGrantCatalogOwner {

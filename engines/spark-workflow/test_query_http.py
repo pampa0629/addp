@@ -74,7 +74,7 @@ class QueryHTTPTest(unittest.TestCase):
         return response
 
     def test_dispatches_only_authorized_connections_and_rechecks_before_returning_rows(self):
-        with patch('system_client.get_engine', side_effect=AssertionError('no engine-wide fallback')):
+        with patch('system_client.requests.get', side_effect=AssertionError('no engine-wide fallback')):
             response = self.post()
         self.assertEqual(response.status_code, 200, response.json)
         self.assertEqual(response.json, self.result)

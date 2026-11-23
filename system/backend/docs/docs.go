@@ -25640,6 +25640,9 @@ const docTemplate = `{
                 },
                 "expires_at": {
                     "type": "string"
+                },
+                "runtime_registrar": {
+                    "type": "string"
                 }
             }
         },

@@ -369,7 +369,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.document_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.model3d_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.pointcloud_runtime", []string{"manager.derived_artifact.create"})
-	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine.read", "system.engine_catalog.read", "system.execution_authorization.execute"})
+	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine_catalog.read", "system.execution_authorization.execute"})
 	assertRepositoryRolePermissions(t, roles, "tenant.monitor_runtime", []string{
 		"audit.tenant_event.create",
 		"meta.scan_task.read",

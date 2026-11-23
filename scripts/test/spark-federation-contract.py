@@ -132,7 +132,7 @@ def verify_multicluster():
     from addp_common.auth import AuthorizationContext
     import api_server
     import query_http
-    import workflow_process
+    from uuid import uuid4
 
     hosts = {21: 'spark-master', 22: 'spark-master-b'}
     workers = {21: 'spark-worker', 22: 'spark-worker-b'}
@@ -143,7 +143,8 @@ def verify_multicluster():
                    'connection_info': {'host': 'postgres', 'port': 5432, 'database': 'addp_test',
                                        'user': 'reader', 'password': 'admission-reader-only'}}
     context = AuthorizationContext(principal_id=19, principal_type='service_principal',
-        token_type='service_access_token', client_id='addp-develop', tenant_id=7)
+        token_type='service_access_token', client_id='addp-develop', tenant_id=7,
+        expires_at=datetime.now(timezone.utc)+timedelta(hours=1))
     observations = []
 
     def master(key):
@@ -193,8 +194,10 @@ def verify_multicluster():
                 'view_name': 'private_invocation_view'}, 'depends_on': ['q']},
             {'id': 'again', 'operator': 'sql', 'params': {'query': 'SELECT * FROM private_invocation_view ORDER BY id'}, 'depends_on': ['v']}]}
         with api_server.app.test_client() as client:
-            response = client.post('/api/workflow', json={'engine_id': key, 'workflow_def': definition,
-                'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 8, 'effects': ['read']}}})
+            response = client.post('/api/workflow', headers={'Authorization':'Bearer native-fixture'}, json={'engine_id': key, 'workflow_def': definition,
+                'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 8, 'effects': ['read']},
+                            'spark_cluster': {'execution_id':str(uuid4()), 'expires_at':context.expires_at.isoformat(),
+                                              'host':hosts[key], 'port':7077}}})
         assert response.status_code == (500 if failing else 200), response.json
         result = response.json
         if failing:
@@ -244,7 +247,7 @@ def verify_multicluster():
             assert client.delete('/api/v1/queries/' + query_id, headers=headers).status_code == 204
 
     before_dirs = set(Path(tempfile.gettempdir()).glob('addp-spark-query-*'))
-    with patch('workflow_process.get_engine', side_effect=lambda key, tenant: engines[key]), \
+    with patch('api_server.resolve_authorization_context', new=AsyncMock(return_value=context)), \
          patch('query_http.resolve_authorization_context', new=AsyncMock(return_value=context)), \
          patch('query_http.get_execution_engine_access', side_effect=grant):
         for key in (21, 22, 21):

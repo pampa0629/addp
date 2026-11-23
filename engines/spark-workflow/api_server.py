@@ -8,10 +8,14 @@ from addp_common.workflow_runtime.health import health_dependency, runtime_healt
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
+import asyncio
+import httpx
+from addp_common.auth import resolve_authorization_context
+from spark_connector import master_endpoint_url
 from storage_adapters import STORAGE_ACCESS
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import os
 import time
@@ -21,7 +25,7 @@ from dotenv import load_dotenv, find_dotenv
 # 自动向上搜索 .env 文件（类似 common/config/loader.go 的 LoadEnv）
 load_dotenv(find_dotenv())
 
-from workflow_process import SQL_RELATION_NOT_FOUND, execute_workflow, execute_single_operator
+from workflow_process import SQL_RELATION_NOT_FOUND, execute_workflow
 from workflow_result import serialize_json_value, serialize_workflow_value
 from addp_common.workflow_runtime import (
     ExecutionRegistry, ExecutionSnapshot, WorkflowValidationError, validate_execution_authorization,
@@ -99,15 +103,47 @@ def error_response(error_code: str, message: str, details: str = None):
 
 
 
-def runtime_tenant_id(data):
-    """Return the tenant context derived by the owner module."""
-    runtime = data.get("runtime")
-    if not isinstance(runtime, dict):
-        raise ValueError("runtime.tenant_id 必须由调用方提供")
-    tenant_id = runtime.get("tenant_id")
-    if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
-        raise ValueError("runtime.tenant_id 必须是正整数")
-    return tenant_id
+class SparkDispatchError(Exception):
+    def __init__(self, status, code):
+        self.status = status
+        self.code = code
+
+
+def authenticated_master(runtime):
+    header = request.headers.get('Authorization', '').split()
+    if len(header) != 2 or header[0] != 'Bearer':
+        raise SparkDispatchError(401, 'UNAUTHENTICATED')
+    try:
+        identity = asyncio.run(resolve_authorization_context(os.getenv('SYSTEM_URL', 'http://localhost:8180'), header[1]))
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            raise SparkDispatchError(401, 'UNAUTHENTICATED') from None
+        raise SparkDispatchError(503, 'AUTH_UNAVAILABLE') from None
+    except (httpx.HTTPError, ValueError):
+        raise SparkDispatchError(503, 'AUTH_UNAVAILABLE') from None
+    now = datetime.now(timezone.utc)
+    if identity.expires_at <= now:
+        raise SparkDispatchError(401, 'UNAUTHENTICATED')
+    if (identity.token_type != 'service_access_token' or identity.principal_type != 'service_principal'
+            or identity.client_id != 'addp-develop' or identity.context_type != 'tenant'
+            or 'addp.api' not in identity.audiences):
+        raise SparkDispatchError(403, 'DISPATCH_FORBIDDEN')
+    if not isinstance(runtime, dict) or type(runtime.get('tenant_id')) is not int or runtime['tenant_id'] != identity.tenant_id:
+        raise SparkDispatchError(403, 'DISPATCH_FORBIDDEN')
+    cluster = runtime.get('spark_cluster')
+    if not isinstance(cluster, dict) or set(cluster) != {'execution_id', 'expires_at', 'host', 'port'}:
+        raise SparkDispatchError(400, 'INVALID_DISPATCH')
+    try:
+        execution = uuid.UUID(cluster['execution_id'])
+        deadline = datetime.fromisoformat(cluster['expires_at'])
+        if not execution.int or str(execution) != cluster['execution_id'] or deadline.tzinfo is None:
+            raise ValueError()
+        master_endpoint_url(cluster['host'], cluster['port'])
+    except (ValueError, TypeError, AttributeError):
+        raise SparkDispatchError(400, 'INVALID_DISPATCH') from None
+    if deadline <= now:
+        raise SparkDispatchError(403, 'DISPATCH_EXPIRED')
+    return {'host': cluster['host'], 'port': cluster['port']}
 
 
 # ========================================
@@ -211,7 +247,7 @@ def execute_workflow_endpoint():
         workflow_def = data.get('workflow_def')
         input_data = data.get('input_data', {})
 
-        if not engine_id:
+        if type(engine_id) is not int or engine_id <= 0:
             response = error_response(
                 ErrorCode.INVALID_PARAMS,
                 "请求体缺少 'engine_id' 字段"
@@ -238,7 +274,8 @@ def execute_workflow_endpoint():
             operator_effects=operators,
             runtime=data.get("runtime"),
         )
-        tenant_id = runtime_tenant_id(data)
+        master = authenticated_master(data.get("runtime"))
+        tenant_id = data["runtime"]["tenant_id"]
 
         # 执行工作流
         execution_id = str(uuid.uuid4())
@@ -246,7 +283,7 @@ def execute_workflow_endpoint():
 
         started_at = datetime.now().isoformat()
         executions.record(ExecutionSnapshot(execution_id=execution_id, status="running", started_at=started_at))
-        result = localize_driver_failure(execute_workflow(engine_id, tenant_id, workflow_def, input_data))
+        result = localize_driver_failure(execute_workflow(engine_id, tenant_id, workflow_def, input_data, master))
         execution_time = (time.time() - start) * 1000
         final_result = serialize_workflow_value(result.get('final_result'))
         all_results = serialize_workflow_value(result.get('all_results', {}))
@@ -285,6 +322,13 @@ def execute_workflow_endpoint():
         status_code = 200 if result['status'] == 'success' else 500
         return jsonify(response), status_code
 
+    except SparkDispatchError as exc:
+        language = request.accept_languages.best_match(['zh-cn', 'en']) or 'zh-cn'
+        message = 'Spark 工作流派发未获准。' if language == 'zh-cn' else 'Spark workflow dispatch rejected.'
+        response = error_response(exc.code, message)
+        response['execution_time_ms'] = (time.time() - start) * 1000
+        return jsonify(response), exc.status
+
     except WorkflowValidationError as e:
         response = error_response(ErrorCode.WORKFLOW_INVALID, str(e))
         response["execution_time_ms"] = (time.time() - start) * 1000
@@ -311,87 +355,16 @@ def execute_workflow_endpoint():
 
 @app.route('/api/operators/<operator_name>/invoke', methods=['POST'])
 def invoke_operator_endpoint(operator_name):
-    """
-    direct 调用单个算子。
-
-    Spark Workflow direct 调用仍必须携带顶层 engine_id，该 ID 指向真实
-    engine_type=spark 的通用引擎资源；当前内置 Spark 算子默认只支持 workflow。
-
-    Request Body:
-        {
-            "engine_id": 34,
-            "params": {...}
-        }
-
-    Response:
-        {
-            "status": "success",
-            "result": ...
-        }
-    """
     start = time.time()
-    try:
-        if operator_name not in OPERATOR_REGISTRY:
-            response = error_response(
-                ErrorCode.OPERATOR_NOT_FOUND,
-                f"算子 '{operator_name}' 不存在",
-                details=f"可用算子: {', '.join(OPERATOR_REGISTRY.keys())}"
-            )
-            response["execution_time_ms"] = (time.time() - start) * 1000
-            return jsonify(response), 404
-
-        from operator_metadata import get_operator_metadata
-        operator_meta = next(
-            (op for op in get_operator_metadata() if op.get('name') == operator_name),
-            None,
-        )
-        execution_modes = operator_meta['execution_modes']
-        if 'direct' not in execution_modes:
-            response = error_response(
-                ErrorCode.DIRECT_NOT_SUPPORTED,
-                f"算子 '{operator_name}' 不支持 direct 调用"
-            )
-            response["execution_time_ms"] = (time.time() - start) * 1000
-            return jsonify(response), 403
-
-        data = request.get_json(silent=True) or {}
-        engine_id = data.get('engine_id')
-        params = data.get('params', {})
-        tenant_id = runtime_tenant_id(data)
-
-        if not engine_id:
-            response = error_response(
-                ErrorCode.INVALID_PARAMS,
-                "请求体缺少 'engine_id' 字段"
-            )
-            response["execution_time_ms"] = (time.time() - start) * 1000
-            return jsonify(response), 400
-
-        logger.info(f"Invoking operator {operator_name} directly on Spark engine {engine_id}")
-
-        result = localize_driver_failure(execute_single_operator(engine_id, tenant_id, operator_name, params))
-        execution_time = (time.time() - start) * 1000
-
-        if result['status'] == 'success':
-            result.setdefault("execution_time_ms", execution_time)
-            return jsonify(result), 200
-
-        response = error_response(
-            ErrorCode.EXECUTION_FAILED,
-            result.get('error', '算子执行失败')
-        )
-        response["execution_time_ms"] = execution_time
-        return jsonify(response), 500
-
-    except Exception as e:
-        execution_time = (time.time() - start) * 1000
-        logger.error(f"Operator execution failed: {e}", exc_info=True)
-        response = error_response(
-            ErrorCode.EXECUTION_FAILED,
-            f"算子执行失败: {str(e)}"
-        )
-        response["execution_time_ms"] = execution_time
-        return jsonify(response), 500
+    if operator_name not in OPERATOR_REGISTRY:
+        status = 404
+        response = error_response(ErrorCode.OPERATOR_NOT_FOUND, f"算子 '{operator_name}' 不存在",
+                                  details=f"可用算子: {', '.join(OPERATOR_REGISTRY.keys())}")
+    else:
+        status = 403
+        response = error_response(ErrorCode.DIRECT_NOT_SUPPORTED, f"算子 '{operator_name}' 不支持 direct 调用")
+    response["execution_time_ms"] = (time.time() - start) * 1000
+    return jsonify(response), status
 
 
 # ========================================

@@ -504,31 +504,36 @@ func assertServiceEngineReadBoundariesAgainstPostgres(
 		t.Fatal(err)
 	}
 
-	if err := db.Exec(`INSERT INTO system.tenant_memberships (tenant_id, principal_id, status, source_type, joined_at)
-		SELECT ?, id, 'active', 'bootstrap', now() FROM system.service_principals WHERE name='addp-quality'`, tenantID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`INSERT INTO system.role_assignments (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type)
-		SELECT s.id, r.id, 'tenant', ?, 'active', now(), 'bootstrap' FROM system.service_principals s CROSS JOIN system.roles r
-		WHERE s.name='addp-quality' AND r.tenant_id IS NULL AND r.role_key='tenant.quality_runtime'`, tenantID).Error; err != nil {
-		t.Fatal(err)
-	}
-	qualityToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, "addp-quality", secrets["addp-quality"], url.Values{
-		"tenant_id": {strconv.FormatInt(tenantID, 10)},
-	})
-	if qualityToken.Code != http.StatusOK {
-		t.Fatalf("Quality tenant token status = %d", qualityToken.Code)
-	}
-	headers := map[string]string{"Authorization": "Bearer " + decodeIAMAccessToken(t, qualityToken)}
-	for _, path := range []string{"/runtime/engine-descriptors", fmt.Sprintf("/runtime/engine-descriptors/%d", engine.ID)} {
-		res := performIAMJSONRequest(t, oauthRouter, http.MethodGet, "/api/v1/system"+path, nil, headers)
-		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), engine.Name) || strings.Contains(res.Body.String(), "connection_info") {
-			t.Fatalf("Quality descriptor %s: status=%d or unexpected descriptor fields", path, res.Code)
+	for client, role := range map[string]string{"addp-quality": "tenant.quality_runtime", "addp-spark": "tenant.spark_runtime"} {
+		if err := db.Exec(`INSERT INTO system.tenant_memberships (tenant_id, principal_id, status, source_type, joined_at)
+		SELECT ?, id, 'active', 'bootstrap', now() FROM system.service_principals WHERE name=?`, tenantID, client).Error; err != nil {
+			t.Fatal(err)
 		}
-	}
-	detailResponse := performIAMJSONRequest(t, oauthRouter, http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engine.ID), nil, headers)
-	if detailResponse.Code != http.StatusForbidden {
-		t.Fatalf("Quality general engine detail status = %d, want 403", detailResponse.Code)
+		if err := db.Exec(`INSERT INTO system.role_assignments (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type)
+		SELECT s.id, r.id, 'tenant', ?, 'active', now(), 'bootstrap' FROM system.service_principals s CROSS JOIN system.roles r
+		WHERE s.name=? AND r.tenant_id IS NULL AND r.role_key=?`, tenantID, client, role).Error; err != nil {
+			t.Fatal(err)
+		}
+		tenantServiceToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, client, secrets[client], url.Values{
+			"tenant_id": {strconv.FormatInt(tenantID, 10)},
+		})
+		if tenantServiceToken.Code != http.StatusOK {
+			t.Fatalf("%s tenant token status = %d", client, tenantServiceToken.Code)
+		}
+		headers := map[string]string{"Authorization": "Bearer " + decodeIAMAccessToken(t, tenantServiceToken)}
+		if client == "addp-quality" {
+			for _, path := range []string{"/runtime/engine-descriptors", fmt.Sprintf("/runtime/engine-descriptors/%d", engine.ID)} {
+				res := performIAMJSONRequest(t, oauthRouter, http.MethodGet, "/api/v1/system"+path, nil, headers)
+				if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), engine.Name) || strings.Contains(res.Body.String(), "connection_info") {
+					t.Fatalf("Quality descriptor %s: status=%d or unexpected descriptor fields", path, res.Code)
+				}
+			}
+		}
+		detailResponse := performIAMJSONRequest(t, oauthRouter, http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engine.ID), nil, headers)
+		if detailResponse.Code != http.StatusForbidden {
+			t.Fatalf("%s general engine detail status = %d, want 403", client, detailResponse.Code)
+		}
+
 	}
 
 	tenantToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, "addp-meta", secrets["addp-meta"], url.Values{

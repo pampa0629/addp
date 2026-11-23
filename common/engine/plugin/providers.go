@@ -835,6 +835,7 @@ type OutputPortDescriptor struct {
 }
 
 type WorkflowExecuteRequest struct {
+	ServiceCredential WorkflowRuntimeCredential `json:"-"`
 	// DisplayLanguage is the frozen execution language, sent only as Accept-Language.
 	DisplayLanguage string                  `json:"-"`
 	WorkflowDef     map[string]interface{}  `json:"workflow_def"`
@@ -844,7 +845,16 @@ type WorkflowExecuteRequest struct {
 	Timeout         time.Duration           `json:"-"`
 }
 
+// SparkClusterDispatch contains only the Master endpoint resolved under the platform execution authorization.
+type SparkClusterDispatch struct {
+	ExecutionID string    `json:"execution_id"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Host        string    `json:"host"`
+	Port        int       `json:"port"`
+}
+
 type WorkflowRuntimeContext struct {
+	SparkCluster           *SparkClusterDispatch          `json:"spark_cluster,omitempty"`
 	TenantID               uint                           `json:"tenant_id"`
 	ExecutionAuthorization WorkflowExecutionAuthorization `json:"execution_authorization"`
 	PrivateFiles           *WorkflowPrivateFilesReference `json:"private_files,omitempty"`

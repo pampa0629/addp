@@ -265,6 +265,20 @@ class OperatorMetadataTest(unittest.TestCase):
         self.assertEqual([{"name": "id", "type": "int"}, {"name": "name", "type": "string"}], got["schema"])
         self.assertEqual([{"id": 1, "name": "road"}], got["preview_rows"])
 
+    def test_builtin_operators_reject_direct_dispatch(self):
+        with api_server.app.test_client() as client, patch("workflow_process.run_driver") as execute:
+            for operator in get_operator_metadata():
+                with self.subTest(operator=operator["name"]):
+                    self.assertEqual(["workflow"], operator["execution_modes"])
+                    response = client.post(
+                        f"/api/operators/{operator['name']}/invoke",
+                        json={"engine_id": 34, "runtime": {"tenant_id": 1}, "params": {}},
+                    )
+                    self.assertEqual(403, response.status_code)
+                    self.assertEqual("DIRECT_NOT_SUPPORTED", response.json["error_code"])
+                    self.assertIn("execution_time_ms", response.json)
+            execute.assert_not_called()
+
     def test_api_errors_include_execution_time(self):
         api_server.app.config["TESTING"] = True
         with api_server.app.test_client() as client:
@@ -276,16 +290,6 @@ class OperatorMetadataTest(unittest.TestCase):
             self.assertEqual(400, response.status_code)
             payload = response.get_json()
             self.assertEqual("INVALID_PARAMS", payload["error_code"])
-            self.assertIn("execution_time_ms", payload)
-
-            response = client.post(
-                "/api/operators/load/invoke",
-                json={"engine_id": 34, "params": {}},
-                content_type="application/json",
-            )
-            self.assertEqual(403, response.status_code)
-            payload = response.get_json()
-            self.assertEqual("DIRECT_NOT_SUPPORTED", payload["error_code"])
             self.assertIn("execution_time_ms", payload)
 
             response = client.get("/api/executions/unknown-execution-id")

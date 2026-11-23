@@ -10,6 +10,8 @@
 
 GeoPython Workflow / Spark Workflow 等生产内置运行时的注册由所属模块使用独立 Service Principal 和 Confidential OAuth Client 完成：先以 `context_type=platform` 通过 Client Credentials Grant 获取短期 Platform Service Access Token，再调用 System 唯一的公开注册 API，并且只发送 `Authorization: Bearer <service_access_token>`。不得调用 `/api/v1/internal/**`，不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。需要外部 SDK 或许可绑定的运行时（例如 SuperMap Workflow）也可以启动后由 System 扩展引擎表单手动注册。
 
+内置 `spark_workflow` 作为 Develop 租户服务令牌的接收端时，System 只接受固定平台服务客户端 `addp-spark` 对该内置实例的登记。System 从已认证的服务身份记录登记者，并在既有实例重新登记时核对同一运行端点；历史记录必须由该客户端重新登记后才取得此证明。Develop 从本次授权所指的运行时实例取得登记事实，发送令牌前核对内置属性、平台归属、Spark 工作流类型和登记者。租户手动登记扩展实例不会取得该证明。
+
 Math Workflow 是 `addp.workflow/v1` 参考实现，可以随 ADDP 开发环境启动服务，但不随启动自动注册。需要使用时，在 System 引擎管理中选择“注册扩展引擎”，填入 `engine_type=math_workflow`、默认端口 `8089`，可先通过表单“检查服务”确认 `/health` 与 `/api/operators` 可达，再测试连接并保存。
 
 默认部署运行时和用户自研扩展运行时在 System 中待遇一致：业务模块不得假设 `geopython_workflow`、`spark_workflow`、`math_workflow`、`model3d_workflow`、`pointcloud_workflow` 等工作流引擎一定存在；只有已注册、启用且声明 `compute.workflow.supported=true` 的 Engine Instance 才能被发现和调用。所有实现 `addp.workflow/v1` 的运行时都必须在自注册 payload 中提交或由手动注册表单生成完整 `engine.capabilities/v1`；System 校验并保存该声明，不按 `engine_type` 生成内置能力。算子列表、参数、分类、执行模式和输出端口通过 `GET /api/operators` 动态获取，不写入能力声明。

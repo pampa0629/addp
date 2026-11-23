@@ -104,6 +104,7 @@ func (r *workflowEngineAccessResolver) engine(ctx context.Context, engineID uint
 	if access.Engine == nil {
 		return nil, fmt.Errorf("System 未返回工作流执行期引擎 %d", engineID)
 	}
+	access.Engine.RuntimeRegistrar = access.RuntimeRegistrar
 	r.engines[engineID] = access.Engine
 	return access.Engine, nil
 }
@@ -221,6 +222,26 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 		InputData:       inputData,
 		EngineID:        runtimeEngineID,
 		Runtime:         runtimeContext,
+	}
+	if runtimeEngineID != 0 {
+		if !engine.IsBuiltin || engine.TenantID != nil || engine.EngineType != "spark_workflow" || engine.RuntimeRegistrar != "addp-spark" {
+			return nil, fmt.Errorf("Spark 工作流运行端点未经平台服务登记确认")
+		}
+		cluster, err := resolver.engine(ctx, runtimeEngineID)
+		if err != nil {
+			return nil, err
+		}
+		conn := plugin.ConnectionInfo(cluster.ConnectionInfo)
+		host, port := plugin.GetString(conn, "host"), plugin.GetInt(conn, "port")
+		if host == "" || port < 1 || port > 65535 {
+			return nil, fmt.Errorf("Spark 集群缺少有效 Master 地址")
+		}
+		runtimeContext.SparkCluster = &plugin.SparkClusterDispatch{
+			ExecutionID: executionID.String(), ExpiresAt: authorization.ExpiresAt.UTC(), Host: host, Port: port,
+		}
+		workflowReq.ServiceCredential = func(ctx context.Context) (string, error) {
+			return s.systemService.TenantServiceAccessToken(ctx, tenantID)
+		}
 	}
 	result, err := dbbridge.ExecuteWorkflow(ctx, engine, workflowReq)
 	// Spark synchronously reports this classified failure with a persisted Runtime receipt.

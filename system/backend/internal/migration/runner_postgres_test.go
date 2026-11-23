@@ -7270,6 +7270,37 @@ func TestModuleRuntimeHostNodeIPsForwardMigrationAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestExecutionAudienceSparkDispatchForwardMigrationAgainstPostgres(t *testing.T) {
+	testAuthorizationFactsMigration(t, "000310_spark_runtime_dispatch.up.sql", 310, 0, func(db *sql.DB) func() {
+		var id int64
+		if err := db.QueryRow(`INSERT INTO system.engines(name,engine_type,engine_origin,is_builtin,connection_info,identity_key)
+			VALUES('existing Spark Runtime','spark_workflow','extension',true,'{"host":"runtime","port":8098}','{"host":"runtime","port":8098}') RETURNING id`).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		binding := func(permission string) int {
+			t.Helper()
+			var count int
+			err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.roles r ON r.id=rp.role_id JOIN system.permissions p ON p.id=rp.permission_id WHERE r.role_key='tenant.spark_runtime' AND r.tenant_id IS NULL AND p.permission_key=$1`, permission).Scan(&count)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return count
+		}
+		if binding("system.engine.read") != 1 {
+			t.Fatal("expected original Spark role binding")
+		}
+		return func() {
+			var registrar sql.NullString
+			if err := db.QueryRow("SELECT runtime_registrar FROM system.engines WHERE id=$1", id).Scan(&registrar); err != nil || registrar.Valid {
+				t.Fatalf("historical registrar=%v err=%v", registrar, err)
+			}
+			if binding("system.engine.read") != 0 || binding("system.execution_authorization.execute") != 1 || binding("system.engine_catalog.read") != 1 {
+				t.Fatal("unexpected Spark runtime permissions after migration")
+			}
+		}
+	})
+}
+
 func TestExecutionAudienceSparkForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

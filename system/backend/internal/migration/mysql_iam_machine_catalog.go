@@ -86,9 +86,17 @@ func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
 			AND source_type = 'product'`).Error; err != nil {
 			return err
 		}
-		return tx.Exec(`INSERT INTO role_permissions (role_id,permission_id,source_type)
+		if err := tx.Exec(`INSERT INTO role_permissions (role_id,permission_id,source_type)
 			SELECT r.id,p.id,'product' FROM roles r JOIN permissions p ON p.permission_key='system.engine_descriptor.read'
-			WHERE r.tenant_id IS NULL AND r.role_key='tenant.quality_runtime'`).Error
+			WHERE r.tenant_id IS NULL AND r.role_key='tenant.quality_runtime'`).Error; err != nil {
+			return err
+		}
+	}
+	if from < 20 {
+		return tx.Exec(`DELETE FROM role_permissions
+			WHERE role_id = (SELECT id FROM roles WHERE tenant_id IS NULL AND role_key='tenant.spark_runtime')
+			  AND permission_id = (SELECT id FROM permissions WHERE permission_key='system.engine.read')
+			  AND source_type='product'`).Error
 	}
 	return nil
 }

@@ -1659,6 +1659,17 @@ func (s *EngineService) refreshRuntimeRegistration(existing, submitted *models.E
 		return nil, false, err
 	}
 	candidate := *existing
+	if existing.EngineType == "spark_workflow" && (existing.IsBuiltin || submitted.IsBuiltin) {
+		if !existing.IsBuiltin || !submitted.IsBuiltin || submitted.RuntimeRegistrar != "addp-spark" {
+			return nil, false, ErrResourceForbidden
+		}
+		stored, err := engineplugin.RuntimeBaseURL(engineplugin.ConnectionInfo(existing.ConnectionInfo))
+		offered, submittedErr := engineplugin.RuntimeBaseURL(engineplugin.ConnectionInfo(submitted.ConnectionInfo))
+		if err != nil || submittedErr != nil || stored != offered {
+			return nil, false, ErrEngineVersionConflict
+		}
+		candidate.RuntimeRegistrar = submitted.RuntimeRegistrar
+	}
 	candidate.Capabilities = submitted.Capabilities
 	if err := s.prepareEngineCapabilities(&candidate); err != nil {
 		return nil, false, err
@@ -1667,7 +1678,7 @@ func (s *EngineService) refreshRuntimeRegistration(existing, submitted *models.E
 	if existing.Capabilities != nil {
 		current = string(*existing.Capabilities)
 	}
-	if capabilitiesJSONEqual(current, string(*candidate.Capabilities)) {
+	if existing.RuntimeRegistrar == candidate.RuntimeRegistrar && capabilitiesJSONEqual(current, string(*candidate.Capabilities)) {
 		return s.sanitizeResource(existing), false, nil
 	}
 	if err := s.repo.UpdateCapabilities(&candidate); err != nil {

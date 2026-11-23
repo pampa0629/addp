@@ -68,13 +68,14 @@ type ExecutionEngineAccessRequest struct {
 }
 
 type ExecutionEngineAccess struct {
-	AuthorizationID string         `json:"authorization_id"`
-	ExecutionID     string         `json:"execution_id"`
-	Audience        string         `json:"audience"`
-	EngineID        string         `json:"engine_id"`
-	Effects         []string       `json:"effects"`
-	ExpiresAt       time.Time      `json:"expires_at"`
-	Engine          *models.Engine `json:"engine"`
+	RuntimeRegistrar string         `json:"runtime_registrar,omitempty"`
+	AuthorizationID  string         `json:"authorization_id"`
+	ExecutionID      string         `json:"execution_id"`
+	Audience         string         `json:"audience"`
+	EngineID         string         `json:"engine_id"`
+	Effects          []string       `json:"effects"`
+	ExpiresAt        time.Time      `json:"expires_at"`
+	Engine           *models.Engine `json:"engine"`
 }
 
 // TaskExecutionAuthorizationFields converts a validated System response into

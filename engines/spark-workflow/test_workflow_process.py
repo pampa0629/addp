@@ -36,7 +36,7 @@ class WorkflowProcessTest(unittest.TestCase):
         body = {'engine_id': 19, 'workflow_def': definition(), 'runtime': {
             'tenant_id': 7, 'execution_authorization': {'id': 8, 'effects': ['read']}}}
         with patch('spark_connector.current_session') as session, \
-             patch('workflow_process.get_engine', return_value=engine(19)), \
+             patch('api_server.authenticated_master', return_value={'host':'cluster-19','port':7077}), \
              patch('workflow_process.run_driver', side_effect=lambda *_a, **_k: run_workflow(19, 7, definition())), \
              api_server.app.test_client() as client:
             session.return_value.sql.side_effect = missing
@@ -52,7 +52,7 @@ class WorkflowProcessTest(unittest.TestCase):
         body = {'engine_id': 19, 'workflow_def': definition(), 'runtime': {
             'tenant_id': 7, 'execution_authorization': {'id': 8, 'effects': ['read']}}}
         for language, expected in [('zh-cn', 'Spark 工作流执行超时。'), ('en', 'Spark workflow execution timed out.')]:
-            with patch('api_server.execute_workflow', return_value={
+            with patch('api_server.authenticated_master', return_value={'host':'cluster-19','port':7077}), patch('api_server.execute_workflow', return_value={
                     'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'driver_failure': 'timeout'}), \
                  api_server.app.test_client() as client:
                 response = client.post('/api/workflow', json=body, headers={'Accept-Language': language})
@@ -69,26 +69,46 @@ class WorkflowProcessTest(unittest.TestCase):
             self.assertEqual(Path(command[1]).name, 'workflow_driver.py')
             self.assertEqual(options, {'timeout': 600, 'parse_float': float})
             return {'status': 'success', 'final_result': request['engine_id']}
-        with patch('workflow_process.get_engine', side_effect=lambda identifier, tenant: engine(identifier)), \
-             patch('workflow_process.run_driver', side_effect=driver), \
+        with patch('workflow_process.run_driver', side_effect=driver), \
              patch('spark_connector.invocation_session', side_effect=AssertionError('parent JVM')):
-            results = [workflow_process.execute_workflow(i, 7, definition()) for i in (19, 20, 19)]
+            results = [workflow_process.execute_workflow(i, 7, definition(), {}, {'host':f'cluster-{i}','port':7077}) for i in (19, 20, 19)]
         self.assertEqual([r['final_result'] for r in results], [19, 20, 19])
         self.assertEqual([r['connection']['host'] for r in calls], ['cluster-19', 'cluster-20', 'cluster-19'])
         self.assertTrue(all(set(r) == {'engine_id','tenant_id','connection','mode','workflow_def','input_data'} for r in calls))
 
-    def test_identity_mismatch_and_invalid_dag_never_spawn(self):
-        for changed in ({'id': 20}, {'tenant_id': 8}, {'engine_type': 'postgresql'}):
-            with self.subTest(changed=changed), patch('workflow_process.get_engine', return_value=dict(engine(19), **changed)), \
-                 patch('workflow_process.run_driver') as driver:
-                result = workflow_process.execute_workflow(19, 7, definition())
-            self.assertEqual(result['status'], 'failed')
+    def test_invalid_dag_never_spawns(self):
+        with patch('workflow_process.run_driver') as driver:
+            result = workflow_process.execute_workflow(19, 7, {'tasks': []}, {}, {'host':'cluster', 'port':7077})
+            self.assertEqual('failed', result['status'])
             driver.assert_not_called()
-        with patch('workflow_process.get_engine') as discovery, patch('workflow_process.run_driver') as driver:
-            result = workflow_process.execute_workflow(19, 7, {'tasks': []})
-        self.assertEqual(result['error_code'], 'WORKFLOW_INVALID')
-        discovery.assert_not_called()
-        driver.assert_not_called()
+
+    def test_parent_verifies_develop_dispatch_before_driver(self):
+        from datetime import datetime, timedelta, timezone
+        from dataclasses import replace
+        from addp_common.auth import AuthorizationContext
+        import api_server
+        now = datetime.now(timezone.utc)
+        caller = AuthorizationContext(principal_id=9, client_id='addp-develop', principal_type='service_principal',
+                                      tenant_id=7, token_type='service_access_token', expires_at=now+timedelta(minutes=4))
+        master = {'execution_id':'00000000-0000-4000-8000-000000000099', 'expires_at':caller.expires_at.isoformat(),
+                  'host':'cluster', 'port':7077}
+        for identity, token, changes, expected in [
+            (caller, None, {}, 401), (replace(caller,client_id='addp-meta'), 'fixture', {}, 403),
+            (replace(caller,tenant_id=8), 'fixture', {}, 403), (replace(caller,context_type='platform'), 'fixture', {}, 403),
+            (caller, 'fixture', {'expires_at':now.isoformat()}, 403), (caller, 'fixture', {'execution_id':'bad'}, 400),
+            (caller, 'fixture', {'port':0}, 400), (caller, 'fixture', {}, 200),
+        ]:
+            body = {'engine_id':19,'workflow_def':definition(),'input_data':{'host':'user-input'},
+                    'runtime':{'tenant_id':7,'execution_authorization':{'id':3,'effects':['read']},'spark_cluster':dict(master,**changes)}}
+            with self.subTest(identity=identity.client_id, changes=changes, token=token), api_server.app.test_client() as client, \
+                    patch('api_server.resolve_authorization_context',return_value=identity), \
+                    patch('workflow_process.run_driver',return_value={'status':'success'}) as driver:
+                response = client.post('/api/workflow', json=body, headers={'Authorization':'Bearer '+token} if token else {})
+                self.assertEqual(response.status_code,expected,response.json)
+                if expected == 200:
+                    self.assertEqual(driver.call_args.args[1]['connection'],{'host':'cluster','port':7077})
+                else:
+                    driver.assert_not_called()
 
     def test_driver_materializes_summaries_before_stopping_session(self):
         order = []

@@ -140,6 +140,9 @@ type Engine struct {
 	RestoredAt             *time.Time `gorm:"column:restored_at" json:"restored_at,omitempty"`
 	RestoredBy             *uint      `gorm:"column:restored_by" json:"restored_by,omitempty"`
 
+	// System records the authenticated registrar when a built-in Spark Runtime registers.
+	RuntimeRegistrar string `gorm:"column:runtime_registrar;size:96" json:"-"`
+
 	// 扩展引擎字段
 	IsBuiltin        bool              `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`      // 是否为内置引擎（内置引擎不可删除）
 	Capabilities     *JSONString       `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"` // 能力声明（JSONB）

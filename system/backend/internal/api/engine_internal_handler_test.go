@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -219,6 +220,57 @@ func TestRegisterRuntimeEngineKeepsSubmittedCapabilitiesForBuiltinCustomRuntime(
 	}
 	if stored.Capabilities == nil || !bytes.Contains([]byte(*stored.Capabilities), []byte(`"runtime_api":"addp.workflow/v1"`)) {
 		t.Fatalf("stored capabilities = %v, want submitted workflow declaration", stored.Capabilities)
+	}
+}
+
+func TestBuiltinSparkRegistrationRecordsAuthenticatedOwner(t *testing.T) {
+	address, port := newOfflineRuntimeTestServer(t)
+	db := newRuntimeRegistrationTestDB(t)
+	repo := repository.NewEngineRepository(db)
+	handler := NewEngineHandler(service.NewEngineService(repo, nil, nil))
+	register := func(clientID string, builtin bool) int {
+		t.Helper()
+		router := gin.New()
+		router.Use(func(c *gin.Context) {
+			if err := sharedauth.SetAuthContextForGin(c, testIAMServiceActorContext("platform", clientID)); err != nil {
+				t.Fatal(err)
+			}
+			c.Next()
+		})
+		router.POST("/runtime/engines", handler.RegisterRuntimeEngine)
+		payload := fmt.Sprintf(`{"engine_type":"spark_workflow","name":"Spark Runtime","connection_info":{"protocol":"http","port":%d},"capabilities":{"schema_version":"engine.capabilities/v1","engine_type":"spark_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}}},"is_builtin":%t}`, port, builtin)
+		req := httptest.NewRequest(http.MethodPost, "/runtime/engines", bytes.NewBufferString(payload))
+		req.RemoteAddr = address
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w.Code
+	}
+	if got := register("addp-meta", true); got != 403 {
+		t.Fatalf("foreign registrar HTTP %d", got)
+	}
+	if got := register("addp-spark", true); got != 202 {
+		t.Fatalf("Spark registration HTTP %d", got)
+	}
+	var engine models.Engine
+	if err := db.Where("engine_type=?", "spark_workflow").First(&engine).Error; err != nil || engine.RuntimeRegistrar != "addp-spark" {
+		t.Fatalf("registrar=%q err=%v", engine.RuntimeRegistrar, err)
+	}
+	if err := db.Model(&engine).UpdateColumn("runtime_registrar", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := register("addp-meta", true); got != 403 {
+		t.Fatalf("legacy registration by foreign client HTTP %d", got)
+	}
+	if got := register("addp-meta", false); got != http.StatusForbidden {
+		t.Fatalf("downgrade of legacy builtin HTTP %d", got)
+	}
+	if got := register("addp-spark", true); got != 202 {
+		t.Fatalf("legacy registration by Spark HTTP %d", got)
+	}
+	stored, err := repo.GetByID(engine.ID)
+	if err != nil || stored.RuntimeRegistrar != "addp-spark" || stored.Version <= engine.Version {
+		t.Fatalf("renewing legacy registration: %v", err)
 	}
 }
 
