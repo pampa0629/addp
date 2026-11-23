@@ -153,23 +153,21 @@ func MountMySQL(ctx context.Context, conn *sql.Conn, engine commonModels.Engine)
 	password := getString(connInfo, "password")
 	database := getString(connInfo, "database")
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, database)
-
 	if err := ensureDuckDBExtension(ctx, conn, "mysql", "mysql_scanner"); err != nil {
 		return err
 	}
-	stmts := []string{
-		fmt.Sprintf("ATTACH '%s' AS %s (TYPE mysql, READ_ONLY)", dsn, SanitizeName(engine.Name)),
+	secret := fmt.Sprintf("addp_mysql_%d", engine.ID)
+	create := fmt.Sprintf(
+		"CREATE TEMPORARY SECRET %s (TYPE mysql, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
+		secret, duckDBString(host), port, duckDBString(user), duckDBString(password), duckDBString(database),
+	)
+	if _, err := conn.ExecContext(ctx, create); err != nil {
+		// DuckDB parser diagnostics can include the SQL containing the password.
+		return fmt.Errorf("配置 MySQL 临时访问凭据失败")
 	}
-
-	for _, stmt := range stmts {
-		if _, err := conn.ExecContext(ctx, stmt); err != nil {
-			if !strings.Contains(err.Error(), "already installed") &&
-				!strings.Contains(err.Error(), "already loaded") &&
-				!strings.Contains(err.Error(), "already exists") {
-				return fmt.Errorf("mysql attach failed: %w", err)
-			}
-		}
+	attach := fmt.Sprintf(`ATTACH '' AS "%s" (TYPE mysql, READ_ONLY, SECRET %s)`, SanitizeName(engine.Name), secret)
+	if _, err := conn.ExecContext(ctx, attach); err != nil {
+		return fmt.Errorf("mysql attach failed: %w", err)
 	}
 	return nil
 }
