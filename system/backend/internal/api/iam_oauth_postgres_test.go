@@ -20,7 +20,7 @@ import (
 	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/system/internal/iam"
 	iamoauth "github.com/addp/system/internal/iam/oauth"
-	"github.com/addp/system/internal/middleware"
+
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -283,7 +283,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	if tokenAuditCount != 1 {
 		t.Fatalf("service token audit count = %d, want 1", tokenAuditCount)
 	}
-	assertMetaServiceEngineDetailAgainstPostgres(t, db, runtime, router, secrets["addp-meta"], tenantID, otherTenantID)
+	assertServiceEngineReadBoundariesAgainstPostgres(t, db, runtime, router, secrets, tenantID, otherTenantID)
 	exerciseSystemBasisCredential(t, ctx, db, runtime, router, secrets, tenantID)
 
 	platformTokenResponse := performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-meta", secrets["addp-meta"])
@@ -460,12 +460,12 @@ func assertServiceTokenDatabaseClockAgainstPostgres(t *testing.T, db *gorm.DB, r
 	}
 }
 
-func assertMetaServiceEngineDetailAgainstPostgres(
+func assertServiceEngineReadBoundariesAgainstPostgres(
 	t *testing.T,
 	db *gorm.DB,
 	runtime *IAMRuntime,
 	oauthRouter *gin.Engine,
-	metaSecret string,
+	secrets map[string]string,
 	tenantID, otherTenantID int64,
 ) {
 	t.Helper()
@@ -493,23 +493,45 @@ func assertMetaServiceEngineDetailAgainstPostgres(
 		t.Fatalf("create encrypted engine: %v", err)
 	}
 	engineHandler := NewEngineHandler(service.NewEngineService(engineRepository, encryptionKey, nil))
-	serviceCredential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeServiceAccess)
-	if err != nil {
+	routes := oauthRouter.Group("/api/v1/system")
+	if err := RegisterIAMMigratedBusinessRoutes(routes, runtime, engineHandler, &APIConsumerHandler{}, NewCleanupHandler(nil)); err != nil {
 		t.Fatal(err)
 	}
-	engineRead, err := middleware.NewIAMPermissionGuard("system.engine.read")
-	if err != nil {
+	descriptorRuntime := *runtime
+	descriptorRuntime.ExecutionAuthorizationHandler = &IAMExecutionAuthorizationHandler{}
+	descriptorRuntime.TaskAuthorizationSubjectHandler = &IAMTaskAuthorizationSubjectHandler{}
+	if err := RegisterIAMServiceRuntimeRoutes(routes, &descriptorRuntime, NewModuleRegistryHandler(nil, nil), NewTaskProviderHandler(nil), engineHandler); err != nil {
 		t.Fatal(err)
 	}
-	oauthRouter.GET(
-		"/api/v1/system/engines/:id",
-		runtime.Authentication,
-		serviceCredential,
-		engineRead,
-		engineHandler.GetByID,
-	)
 
-	tenantToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, "addp-meta", metaSecret, url.Values{
+	if err := db.Exec(`INSERT INTO system.tenant_memberships (tenant_id, principal_id, status, source_type, joined_at)
+		SELECT ?, id, 'active', 'bootstrap', now() FROM system.service_principals WHERE name='addp-quality'`, tenantID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO system.role_assignments (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type)
+		SELECT s.id, r.id, 'tenant', ?, 'active', now(), 'bootstrap' FROM system.service_principals s CROSS JOIN system.roles r
+		WHERE s.name='addp-quality' AND r.tenant_id IS NULL AND r.role_key='tenant.quality_runtime'`, tenantID).Error; err != nil {
+		t.Fatal(err)
+	}
+	qualityToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, "addp-quality", secrets["addp-quality"], url.Values{
+		"tenant_id": {strconv.FormatInt(tenantID, 10)},
+	})
+	if qualityToken.Code != http.StatusOK {
+		t.Fatalf("Quality tenant token status = %d", qualityToken.Code)
+	}
+	headers := map[string]string{"Authorization": "Bearer " + decodeIAMAccessToken(t, qualityToken)}
+	for _, path := range []string{"/runtime/engine-descriptors", fmt.Sprintf("/runtime/engine-descriptors/%d", engine.ID)} {
+		res := performIAMJSONRequest(t, oauthRouter, http.MethodGet, "/api/v1/system"+path, nil, headers)
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), engine.Name) || strings.Contains(res.Body.String(), "connection_info") {
+			t.Fatalf("Quality descriptor %s: status=%d or unexpected descriptor fields", path, res.Code)
+		}
+	}
+	detailResponse := performIAMJSONRequest(t, oauthRouter, http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engine.ID), nil, headers)
+	if detailResponse.Code != http.StatusForbidden {
+		t.Fatalf("Quality general engine detail status = %d, want 403", detailResponse.Code)
+	}
+
+	tenantToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, "addp-meta", secrets["addp-meta"], url.Values{
 		"tenant_id": {strconv.FormatInt(tenantID, 10)},
 	})
 	if tenantToken.Code != http.StatusOK {
@@ -537,7 +559,7 @@ func assertMetaServiceEngineDetailAgainstPostgres(
 		t.Fatalf("Meta engine password = %#v, want decrypted connection detail", detail.ConnectionInfo["password"])
 	}
 
-	otherTenantToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, "addp-meta", metaSecret, url.Values{
+	otherTenantToken := performIAMOAuthClientCredentialsFormRequest(t, oauthRouter, "addp-meta", secrets["addp-meta"], url.Values{
 		"tenant_id": {strconv.FormatInt(otherTenantID, 10)},
 	})
 	if otherTenantToken.Code != http.StatusOK {

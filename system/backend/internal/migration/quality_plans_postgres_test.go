@@ -18,6 +18,51 @@ func TestQualityRulesForwardMigrationAgainstPostgres(t *testing.T) {
 	testQualityPermissionsMigration(t, "000148_iam_quality_rules.up.sql", true)
 }
 
+func TestQualityEngineDescriptorForwardMigrationAgainstPostgres(t *testing.T) {
+	testAuthorizationFactsMigration(t, "000309_quality_engine_descriptor.up.sql", 309, 0, func(db *sql.DB) func() {
+		_, tenant := seedInitializedMigrationTenant(t, db, "quality-descriptor", "Quality descriptor")
+		if _, err := db.Exec(`INSERT INTO system.tenant_memberships(tenant_id, principal_id, status, source_type, joined_at)
+			SELECT $1,id,'active','bootstrap',now() FROM system.service_principals WHERE name='addp-quality'`, tenant); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO system.role_assignments(principal_id,role_id,scope_type,tenant_id,status,valid_from,source_type)
+			SELECT s.id,r.id,'tenant',$1,'active',now(),'bootstrap' FROM system.service_principals s CROSS JOIN system.roles r
+			WHERE s.name='addp-quality' AND r.tenant_id IS NULL AND r.role_key='tenant.quality_runtime'`, tenant); err != nil {
+			t.Fatal(err)
+		}
+		version := func() int64 {
+			t.Helper()
+			var current int64
+			if err := db.QueryRow(`SELECT p.authorization_version FROM system.principals p JOIN system.service_principals s ON s.id=p.id WHERE s.name='addp-quality'`).Scan(&current); err != nil {
+				t.Fatal(err)
+			}
+			return current
+		}
+		assertBindings := func(detail, descriptor int) {
+			t.Helper()
+			var old, safe, execution int
+			if err := db.QueryRow(`SELECT count(*) FILTER (WHERE p.permission_key='system.engine.read'),
+				count(*) FILTER (WHERE p.permission_key='system.engine_descriptor.read'),
+				count(*) FILTER (WHERE p.permission_key='system.execution_authorization.execute')
+				FROM system.roles r JOIN system.role_permissions rp ON rp.role_id=r.id JOIN system.permissions p ON p.id=rp.permission_id
+				WHERE r.tenant_id IS NULL AND r.role_key='tenant.quality_runtime' AND rp.source_type='product'`).Scan(&old, &safe, &execution); err != nil {
+				t.Fatal(err)
+			}
+			if old != detail || safe != descriptor || execution != 1 {
+				t.Fatalf("Quality detail/descriptor/execution bindings = %d/%d/%d, want %d/%d/1", old, safe, execution, detail, descriptor)
+			}
+		}
+		assertBindings(1, 0)
+		prior := version()
+		return func() {
+			assertBindings(0, 1)
+			if version() <= prior {
+				t.Fatal("Quality authority version did not advance after replacing its permission")
+			}
+		}
+	})
+}
+
 func TestQualityStandardReferenceForwardMigrationAgainstPostgres(t *testing.T) {
 	assertPublishedQualityReferenceMigration(t)
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")

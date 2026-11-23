@@ -99,6 +99,10 @@ func assertInstalledMachineCatalog(t *testing.T, db *sql.DB) {
 		t.Fatal(err)
 	}
 	for _, r := range catalog.Roles {
+		if r.Key == "tenant.quality_runtime" {
+			// The immutable v15 installation snapshot precedes the descriptor-only release.
+			r.Permissions = []string{"meta.catalog.read", "standard.domain.read", "standard.element.read", "system.cleanup_authorization.execute", "system.engine_catalog.read", "system.engine_descriptor.read", "system.execution_authorization.execute"}
+		}
 		slices.Sort(actual[r.Key])
 		if !slices.Equal(actual[r.Key], r.Permissions) {
 			t.Errorf("%s permissions=%v, want %v", r.Key, actual[r.Key], r.Permissions)

@@ -14,14 +14,14 @@ func requirePostgreSQLEngine(ctx context.Context, client *commonClient.SystemSer
 	if client == nil || engineID <= 0 {
 		return fmt.Errorf("%w: a PostgreSQL engine is required", commonAPI.ErrBadRequest)
 	}
-	engine, err := client.WithTenantID(uint(tenantID)).GetEngine(ctx, uint(engineID))
+	descriptor, err := client.WithTenantID(uint(tenantID)).GetEngineRuntimeDescriptor(ctx, uint(engineID))
 	if err != nil {
-		return fmt.Errorf("get target engine: %w", err)
+		return fmt.Errorf("get target engine descriptor: %w", err)
 	}
-	if !strings.EqualFold(engine.EngineType, "postgresql") {
+	if !strings.EqualFold(descriptor.EngineType, "postgresql") {
 		return fmt.Errorf("%w: quality v1 only supports PostgreSQL engines", commonAPI.ErrBadRequest)
 	}
-	if !engineselection.IsAvailable(engine) {
+	if !engineselection.IsAvailable(descriptor.AsEngine()) {
 		return fmt.Errorf("%w: target PostgreSQL engine is not currently available", commonAPI.ErrBadRequest)
 	}
 	return nil

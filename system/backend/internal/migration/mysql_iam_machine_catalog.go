@@ -71,11 +71,24 @@ func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
 		}
 	}
 	if from < 18 {
-		return tx.Exec(`INSERT INTO iam_security_policy (
+		if err := tx.Exec(`INSERT INTO iam_security_policy (
 			id,version,applied_version,access_token_ttl_minutes,delegated_access_token_ttl_minutes,resource_access_ticket_ttl_minutes,
 			refresh_token_ttl_days,oauth_authorization_code_ttl_minutes,oauth_device_code_ttl_minutes,oauth_device_poll_interval_seconds,
 			tenant_invitation_ttl_hours,oauth_public_rate_limit_per_minute,oauth_user_rate_limit_per_minute)
-			VALUES (1,1,0,15,2,15,30,5,10,5,168,60,30)`).Error
+			VALUES (1,1,0,15,2,15,30,5,10,5,168,60,30)`).Error; err != nil {
+			return err
+		}
+	}
+	if from < 19 {
+		if err := tx.Exec(`DELETE FROM role_permissions
+			WHERE role_id = (SELECT id FROM roles WHERE tenant_id IS NULL AND role_key = 'tenant.quality_runtime')
+			AND permission_id = (SELECT id FROM permissions WHERE permission_key = 'system.engine.read')
+			AND source_type = 'product'`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`INSERT INTO role_permissions (role_id,permission_id,source_type)
+			SELECT r.id,p.id,'product' FROM roles r JOIN permissions p ON p.permission_key='system.engine_descriptor.read'
+			WHERE r.tenant_id IS NULL AND r.role_key='tenant.quality_runtime'`).Error
 	}
 	return nil
 }

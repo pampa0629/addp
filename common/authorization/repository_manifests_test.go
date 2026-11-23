@@ -379,8 +379,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.domain.read",
 		"standard.element.read",
 		"system.cleanup_authorization.execute",
-		"system.engine.read",
 		"system.engine_catalog.read",
+		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.manager_runtime", []string{"service_principal"})

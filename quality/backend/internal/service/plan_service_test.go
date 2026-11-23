@@ -58,14 +58,43 @@ func TestPlanServiceValidatesCatalogOnCreateAndUpdate(t *testing.T) {
 	}
 }
 
+func TestQualityPostgreSQLEngineValidationUsesTenantDescriptor(t *testing.T) {
+	for _, tc := range []struct {
+		name, engineType, status string
+		wantErr                  error
+	}{
+		{"online PostgreSQL", "postgresql", commonModels.EngineConnectionOnline, nil},
+		{"offline PostgreSQL", "postgresql", commonModels.EngineConnectionOffline, commonAPI.ErrBadRequest},
+		{"online MySQL", "mysql", commonModels.EngineConnectionOnline, commonAPI.ErrBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/runtime/engine-descriptors/12" || r.Header.Get("Authorization") != "Bearer tenant-token" {
+					t.Errorf("unexpected descriptor request %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
+					ID: 12, EngineType: tc.engineType, LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: tc.status,
+				})
+			}))
+			defer server.Close()
+			client := commonClient.NewSystemServiceClient(server.URL, qualityCatalogTokenSource("tenant-token"), server.Client())
+			if err := requirePostgreSQLEngine(t.Context(), client, 7, 12); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("validation error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func newPlanCatalogServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tenant-token" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
-		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/system/engines/12" {
-			_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: 12, EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline})
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/system/runtime/engine-descriptors/12" {
+			_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{ID: 12, EngineType: "postgresql", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline})
 			return
 		}
 		if r.URL.Path == "/api/v1/system/engines/12/catalog/facts" {

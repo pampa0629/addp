@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -458,8 +459,8 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 			t.Fatalf("missing authorization for %s %s", r.Method, r.URL.Path)
 		}
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == fmt.Sprintf("/api/v1/system/engines/%d", engineID):
-			_ = json.NewEncoder(w).Encode(engine)
+		case r.Method == http.MethodGet && r.URL.Path == fmt.Sprintf("/api/v1/system/runtime/engine-descriptors/%d", engineID):
+			_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{ID: engine.ID, EngineType: engine.EngineType, LifecycleState: engine.LifecycleState, ConnectionStatus: engine.ConnectionStatus})
 		case r.Method == http.MethodPost && r.URL.Path == fmt.Sprintf("/api/v1/system/engines/%d/catalog/children", engineID):
 			var request commonClient.EngineCatalogListChildrenRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -484,6 +485,11 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatalf("decode authorization request: %v", err)
 			}
+			if request.Audience != commonExecution.AudienceQuality || request.ExecutionID == "" || len(request.Accesses) != 1 || request.Accesses[0].EngineID != strconv.FormatInt(engineID, 10) || !slices.Equal(request.Accesses[0].Effects, []string{"read"}) {
+				t.Error("Quality execution authorization must cover only the target engine for reading")
+				http.Error(w, "invalid execution scope", http.StatusBadRequest)
+				return
+			}
 			authorizationID := strconv.FormatInt(700000+authorizationSequence.Add(1), 10)
 			_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{ID: authorizationID, ExecutionID: request.ExecutionID, Audience: request.Audience, Accesses: request.Accesses, ExpiresAt: time.Now().UTC().Add(time.Hour), ActorPrincipalID: "42", TenantID: strconv.FormatInt(tenantID, 10), TenantMembershipID: "700002", IssuedAuthorizationVersion: "1", SourceType: "user"})
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/system/execution-authorizations/") && strings.HasSuffix(r.URL.Path, "/engine-accesses"):
@@ -500,6 +506,11 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 			var request commonClient.ExecutionEngineAccessRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatalf("decode engine access request: %v", err)
+			}
+			if request.ExecutionID == "" || request.EngineID != strconv.FormatInt(engineID, 10) || !slices.Equal(request.RequiredEffects, []string{"read"}) {
+				t.Error("Quality execution engine access must request the authorized read scope")
+				http.Error(w, "invalid engine access scope", http.StatusBadRequest)
+				return
 			}
 			authorizationID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/system/execution-authorizations/"), "/engine-accesses")
 			_ = json.NewEncoder(w).Encode(commonClient.ExecutionEngineAccess{AuthorizationID: authorizationID, ExecutionID: request.ExecutionID, Audience: commonExecution.AudienceQuality, EngineID: request.EngineID, Effects: request.RequiredEffects, ExpiresAt: time.Now().UTC().Add(time.Hour), Engine: &engine})

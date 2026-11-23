@@ -12,7 +12,7 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 18
+const mysqlIAMFoundationVersion int64 = 19
 
 //go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql
 var mysqlIAMFoundationSQL embed.FS

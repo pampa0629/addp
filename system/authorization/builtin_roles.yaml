@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 156
+manifest_version: 157
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -1156,8 +1156,8 @@ roles:
       - standard.domain.read
       - standard.element.read
       - system.cleanup_authorization.execute
-      - system.engine.read
       - system.engine_catalog.read
+      - system.engine_descriptor.read
       - system.execution_authorization.execute
   - key: tenant.security_manager
     role_type: tenant_builtin
