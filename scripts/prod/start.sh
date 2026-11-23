@@ -64,6 +64,8 @@ bash scripts/prod/setup-env.sh
 echo -e "${YELLOW}[1/4] 启动基础设施层...${NC}"
 source scripts/utils/observability-env.sh
 addp_prepare_observability_env "$PROJECT_ROOT/.env"
+source "$ROOT_DIR/scripts/infra/platform-database.sh"
+addp_select_scoped_database
 export ADDP_RELEASE_MANIFEST
 ADDP_RELEASE_MANIFEST="$(python3 scripts/prod/release-images.py verify)"
 export ADDP_RELEASE_DIR="$(dirname "$ADDP_RELEASE_MANIFEST")"
@@ -141,15 +143,16 @@ if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
 fi
 
 # The same deployment identity prepares every module in the selected instance.
-prepare_database() {
-  local service=$1
-  shift
-  platform_compose run --rm -T --no-deps --entrypoint /app/server \
-    -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service" prepare-database "$@"
+launch_compose_installer() {
+  local module=$1 language=$2 service="$1-backend" entry=/app/server
+  shift 2
+  if [[ "$module" == gateway ]]; then service=gateway; fi
+  if [[ "$language" == python ]]; then entry=python; fi
+  platform_compose run --rm -T --no-deps --entrypoint "$entry" \
+    -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service" "$@"
 }
 if [[ "$prepare_databases" == true ]]; then
-  prepare_database system-backend system
-  prepare_database system-backend common
+  addp_prepare_module_database system launch_compose_installer
 fi
 
 # 第二步：System 就绪后由部署入口发布声明
@@ -158,16 +161,13 @@ python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${inten
 
 # Prepare downstream module schemas only during deployment or upgrade.
 if [[ "$prepare_databases" == true ]]; then
-  prepare_database meta-backend
-  prepare_database gateway
+  database_modules=(meta gateway)
   if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
-    prepare_database inference-backend
-    prepare_database workbench-backend
-    for service in agent-backend copilot-backend; do
-      platform_compose run --rm -T --no-deps --entrypoint python \
-        -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service" -m prepare_database
-    done
+    database_modules+=(inference workbench agent copilot)
   fi
+  for module in "${database_modules[@]}"; do
+    addp_prepare_module_database "$module" launch_compose_installer
+  done
 fi
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"

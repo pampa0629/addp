@@ -89,6 +89,42 @@ class ReleaseVerificationTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, key):
                     release.selection({key: "unverified"})
 
+    def test_existing_scoped_mysql_selection(self):
+        prefix = """
+source "$1"
+docker() {
+    case "$1" in
+      ps) echo "${SYSTEM_ID:-}" ;;
+      inspect)
+        case "$3" in
+          *NetworkSettings*) echo "${NETWORK:-fixture-net}" ;;
+          *Config.Env*) echo mysql ;;
+          *) return 1 ;;
+        esac ;;
+      *) return 1 ;;
+    esac
+}
+"""
+        for settings, expected in [
+            ({"SYSTEM_ID": "system1"}, "mysql"),
+            ({"ADDP_INFRA_DATABASE_PROVIDER": "postgres"}, "postgres"),
+            ({}, None),
+            ({"SYSTEM_ID": "system1", "ADDP_INFRA_DATABASE_PROVIDER": "postgres"}, None),
+            ({"SYSTEM_ID": "system1", "NETWORK":"other"}, None),
+        ]:
+            with self.subTest(settings=settings):
+                env = dict(PATH=os.environ["PATH"], ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
+                           ADDP_DEPLOYMENT_PROJECT="fixture", ADDP_DEPLOYMENT_NETWORK="fixture-net", **settings)
+                result = subprocess.run(["bash", "-ec", prefix + 'addp_select_scoped_database && echo "$ADDP_INFRA_DATABASE_PROVIDER"',
+                                         "_", str(ROOT / "scripts/infra/platform-database.sh")],
+                                        env=env, text=True, capture_output=True)
+                if expected:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines()[-1], expected)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+
+
     def test_scoped_database_release_uses_only_external_infra(self):
         for provider in ("postgres", "mysql"):
             env = {"ADDP_DEPLOYMENT_SCOPE": "system-meta-gateway", "ADDP_INFRA_DATABASE_PROVIDER": provider}

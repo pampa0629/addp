@@ -202,6 +202,11 @@ if [ -z "${DOCKER_DEFAULT_PLATFORM:-}" ]; then
 fi
 
 require_docker
+if [[ "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+  source "$PROJECT_ROOT/scripts/infra/platform-database.sh"
+  addp_select_managed_database "$PROJECT_ROOT"
+fi
+
 source "${SCRIPT_DIR}/ports.sh"
 echo -e "${YELLOW}▶ 解析 ADDP Infra 宿主机端口${NC}"
 ADDP_INFRA_PORT_SCOPE=core addp_infra_resolve_ports
