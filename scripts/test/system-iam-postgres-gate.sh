@@ -34,6 +34,7 @@ while [ "$#" -gt 0 ]; do
             echo "Production result identity migration: --package migration --test production-results" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
             echo "Manager PG trusted read Runtime: --package migration --test manager-pg-read" >&2
+            echo "Manager GRIB COG source authorization: --package migration --test manager-grib-cog" >&2
             echo "Workflow private files Runtime: --package migration|api --test workflow-private-files" >&2
             echo "Develop frozen file facts runtime: --package migration|api --test develop-file-runtime" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
@@ -412,6 +413,10 @@ case "$TEST_FILTER" in
     source-visibility)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "source-visibility requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^current_complete_source_read_rules$'
+        ;;
+    manager-grib-cog)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "manager-grib-cog requires --package migration" >&2; exit 2; }
+        test_pattern='^TestManagerGRIBCOGForwardMigrationAgainstPostgres$'
         ;;
     manager-search)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-search requires --package engineaccess" >&2; exit 2; }

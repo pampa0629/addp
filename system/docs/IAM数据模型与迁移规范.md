@@ -42,6 +42,10 @@ FileGDB 精确源表授权（实施中）：沿用 `execution_authorizations.sou
 
 前向迁移扩展同一 `valid_source_file_composition`：ENVI 仅同目录、两个必需文件，主角色 `raster`、另一角色 `header` 且扩展名 `.hdr`。SQL 的唯一 `valid_manager_file_scope` 替换模型专用函数，保留原模型闭合范围，SKP 不开放。pending 触发器按真实 task type 区分 Model3D 和 COG 配置版本与组成；不重建 Grant、EA 或新增权限。验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test file-composition"`，覆盖 NFS／MinIO 完整批准、旧清单失效、当前 Grant 撤销、当前用户与目的隔离；没有实际 Hosted 前不记完成。
 
+### GRIB 气温地图的 COG 源授权
+
+System 的既有 Manager 文件组成校验和执行授权数据库触发器接受 NFS 文件或 MinIO 对象中的单份 GRIB 原件。组成只包含一个必需的 `container` 主成员，使用原件路径和 GRIB 扩展名。签发仍限当前人员发起、尚未领取的 `raster_cog_generation`；冻结的组成与执行保持一致，且只能绑定对应存储引擎。前向迁移只更新现有校验函数，不改 Grant、角色、既有执行授权或其他格式的准入。默认 System IAM PostgreSQL 门禁验证迁移前拒绝、迁移后两类存储通过及拒绝反例。定向入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test manager-grib-cog"`。
+
 ## Develop 精确文件执行授权（实施中）
 
 同一 Execution Authorization 增加不可变 `develop_file_scope`，仅当前普通 User 的 Develop/manual/root/workflow/bounded、MaxAttempts=1 用途；不复用 Manager 私域来源 sum，不新增 Grant 或角色关系。System 在 IAM 锁外读取 Develop 唯一私有 Intent 投影和 Meta 完整内容事实，再在事务内重核原始公共执行配置、Actor、current User/Service 凭据、全部当前源规则、真实 attempt/lease 与 DB StartedAt 固定截止。通用 engine-accesses 不得消费该范围；保存批准未接线和 GeoPackage 内容组成尚未正式准入时保持关闭，metadata_target 不产生内容读取权。
