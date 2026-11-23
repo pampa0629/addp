@@ -351,7 +351,7 @@ import subprocess
 import sys
 
 source = (Path(sys.argv[1]) / 'scripts/dev/start.sh').read_text()
-selection = source[source.index('# 解析命令行参数'):source.index('# 显示启动计划')]
+selection = source[source.index('# 解析命令行参数'):source.index('source "${SCRIPT_DIR}/platform-database.sh"')]
 script = 'show_usage() { exit 1; }\n' + selection + '''
 for flag in START_SYSTEM_BACKEND START_META_BACKEND START_META_WORKER START_GATEWAY START_CONSOLE START_ASSET_BACKEND START_ASSET_FRONTEND START_QUALITY_BACKEND START_QUALITY_WORKER START_STANDARD_BACKEND START_CATALOG_BACKEND; do
     echo "$flag=${!flag}"
