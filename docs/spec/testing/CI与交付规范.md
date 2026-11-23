@@ -23,7 +23,7 @@ Push按 `before...sha`，PR按base与本次SHA的merge-base差异，`changed-gat
 | `Frontend CI registration`／`make test-frontend-ci-registration` | Ubuntu24.04／10分钟，Runner Python3；所有Platform事件无路径或矩阵跳过。 |
 | `Execution online CI runner`／`make test-execution-online-ci-runner` | 独立确定性Graph/Cleanup编排、准入／报告／恢复／登记T0/T1，不启动产品／DB／T4；输入闭包、push/PR及schedule/manual选择沿统一检查，跳过须 `selected:false`。 |
 
-Platform consistency 检出提交并检查空白错误后，立即执行 `make test-platform-preflight`，核验 main 发布事务、构建登记和变更影响选择。这部分只需要系统自带的 Git、Bash、Make 和 Python。前置检查通过后，才准备 Go、Node、Swagger 和前端依赖，再运行 `make test-platform-checks`。本地完整入口 `make test-platform` 依次调用同样的两个目标，每阶段只执行一次。前置检查失败时，完整检查未执行，作业摘要的失败阶段为 `preflight`。
+Platform consistency 检出提交并检查空白错误后，立即执行 `make test-platform-preflight`，核验 main 发布事务、构建登记和变更影响选择。这部分只需要系统自带的 Git、Bash、Make 和 Python。前置检查通过后，才准备 Go、Node、Swagger 和前端依赖，再运行 `make test-platform-checks`。本地完整入口 `make test-platform` 先核验当前 Node 主版本，再依次调用同样的两个目标，每阶段只执行一次。前置检查失败时，完整检查未执行，作业摘要的失败阶段为 `preflight`。
 
 共享前端两Job复用统一摘要，不装共享库node_modules或启浏览器／产品／DB；`make test-platform` 继续聚合同入口，独立性及无条件调用由前端登记回归约束。System Cleanup PG实际消费Hosted唯一观察器，须经 `ADDP_T2_INPUT_FILES` 登记观察器／支持／机器契约；改名同步真消费者，无旧别名。
 

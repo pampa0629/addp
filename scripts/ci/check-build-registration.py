@@ -571,6 +571,8 @@ def validate_registration(repository: Path) -> list[str]:
     lifecycle_recipe = make_recipe(makefile, "test-dev-lifecycle") or ""
     if "bash scripts/test/dev-lifecycle-and-build.sh" not in lifecycle_recipe:
         errors.append("Makefile test-dev-lifecycle must run the dev lifecycle tests")
+    if not re.search(r"(?m)^test-platform: check-node-runtime[ \t]*(?:#.*)?$", makefile):
+        errors.append("Makefile test-platform must validate the local Node runtime before both stages")
     if (make_recipe(makefile, "test-platform") or "").splitlines() != [
         "\t@$(MAKE) test-platform-preflight",
         "\t@$(MAKE) test-platform-checks",

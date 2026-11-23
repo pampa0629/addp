@@ -197,7 +197,7 @@ class BuildRegistrationTest(unittest.TestCase):
             "select-image-services:\n\t@python3 scripts/ci/select-image-services.py\n\n"
             "prepare-cli-release:\n\t@python3 scripts/ci/update-cli-version.py\n\n"
             "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n"
-            "test-platform:\n\t@$(MAKE) test-platform-preflight\n\t@$(MAKE) test-platform-checks\n\n"
+            "test-platform: check-node-runtime\n\t@$(MAKE) test-platform-preflight\n\t@$(MAKE) test-platform-checks\n\n"
             "test-platform-preflight:\n\t@$(MAKE) test-main-publication\n\t@$(MAKE) test-build-registration\n"
             "\t@python3 scripts/ci/select-module-gate_test.py\n\t@python3 scripts/test/changed-gate_test.py\n\n"
             "test-platform-checks:\n\t@python3 scripts/ci/update-cli-version_test.py\n"
@@ -486,6 +486,9 @@ class BuildRegistrationTest(unittest.TestCase):
                 makefile.write_text(changed)
                 self.assertIn("Makefile test-platform must run both platform stages once in order",
                               MODULE.validate_registration(self.repository))
+        makefile.write_text(original.replace("test-platform: check-node-runtime", "test-platform:"))
+        self.assertIn("Makefile test-platform must validate the local Node runtime before both stages",
+                      MODULE.validate_registration(self.repository))
 
     def test_rejects_shallow_product_checkout(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
