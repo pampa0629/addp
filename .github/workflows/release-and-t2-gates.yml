@@ -1754,9 +1754,7 @@ jobs:
         if: steps.selection.outputs.run == 'true'
         with:
           go-version-file: engines/duckdb/go.mod
-          cache-dependency-path: |
-            engines/duckdb/go.sum
-            common/go.sum
+          cache: false
       - name: Install native build dependencies
         if: steps.selection.outputs.run == 'true'
         run: |
