@@ -604,11 +604,14 @@ watch(() => state.value.detailModule, async name => {
 })
 watch(loading, async busy => {
   if (busy || state.value.detailModule || !returnCard) return
-  await nextTick()
-  const card = document.querySelector(`.module-group[data-module="${CSS.escape(returnCard.name)}"] .module-summary`)
-  card?.focus({ preventScroll: true })
-  window.scrollTo(0, returnCard.scrollY)
+  const { name, scrollY } = returnCard
   returnCard = null
+  await nextTick()
+  // The list filters are interactive before resource sampling finishes.
+  if (document.activeElement !== document.body && document.activeElement !== pageTitle.value) return
+  const card = document.querySelector(`.module-group[data-module="${CSS.escape(name)}"] .module-summary`)
+  card?.focus({ preventScroll: true })
+  window.scrollTo(0, scrollY)
 }, { flush: 'post' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); requests.dispose() })
