@@ -16,6 +16,36 @@ import (
 	"github.com/twpayne/go-geom/encoding/ewkb"
 )
 
+func TestIntegrationPostgresQueryReadSessionNotebookPlainScan(t *testing.T) {
+	db, pg, conn := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	schema := fmt.Sprintf("notebook_scan_%d", time.Now().UnixNano())
+	createPostgresPrepareBaseTable(t, t.Context(), db, schema, "roads", "id bigint")
+	defer func() {
+		if _, err := db.ExecContext(context.Background(), `DROP SCHEMA "`+schema+`" CASCADE`); err != nil {
+			t.Error(err)
+		}
+	}()
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO "`+schema+`".roads VALUES (42)`); err != nil {
+		t.Fatal(err)
+	}
+	path := plugin.TabularItemPath(91, "schema", schema, "roads")
+	cursor, err := pg.OpenGuardedTableReadSession(t.Context(), conn, path, plugin.TableReadSessionOptions{Hints: map[string]any{plugin.TableReadHintGeometryEncoding: "ewkb"}}, func(_ context.Context, sources *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		if !reflect.DeepEqual(sources.Paths, []plugin.EngineCatalogPath{path}) || len(fields) != 1 || fields[0].Name != "id" {
+			t.Fatalf("unexpected scan evidence %+v %+v", sources, fields)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cursor.Close(t.Context())
+	batch, err := cursor.ReadBatch(t.Context(), 5)
+	if err != nil || len(batch.Rows) != 1 || fmt.Sprint(batch.Rows[0]["id"]) != "42" {
+		t.Fatal(batch, err)
+	}
+}
+
 func TestIntegrationPostgresQueryReadSessionGuardedPostGIS(t *testing.T) {
 	db, provider, info := openPostgresPrepareIntegration(t, true)
 	defer db.Close()

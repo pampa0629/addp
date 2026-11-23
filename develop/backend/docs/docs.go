@@ -1937,7 +1937,7 @@ const docTemplate = `{
         },
         "/notebook-kernel-sessions/{session_id}/queries": {
             "post": {
-                "description": "language 必须与引擎 QueryRuntimeProvider 声明一致；查询必须携带显式 max_rows 与 timeout。 | Language must match the engine QueryRuntimeProvider declaration; the query requires explicit max_rows and timeout.",
+                "description": "PostgreSQL 在实际读取和交付前核验原会话用户对查询全部来源的 read 授权。 | PostgreSQL checks the session user’s current read grants for all query sources before reading and delivery.\nlanguage 必须与引擎 QueryRuntimeProvider 声明一致；查询必须携带显式 max_rows 与 timeout。 | Language must match the engine QueryRuntimeProvider declaration; the query requires explicit max_rows and timeout.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2147,7 +2147,7 @@ const docTemplate = `{
         },
         "/notebook-kernel-sessions/{session_id}/table-scans": {
             "post": {
-                "description": "每次调用派生独立只读 Execution Authorization；连接只在 Develop 受控 Runtime 内使用。 | Each call derives an independent read-only Execution Authorization; connection details remain inside the controlled Develop runtime.",
+                "description": "PostgreSQL 表扫描逐批核验原会话用户对已绑定表的 read 授权。 | PostgreSQL checks the original user’s read grant for the bound table on each batch.\n每次调用派生独立只读 Execution Authorization；连接只在 Develop 受控 Runtime 内使用。 | Each call derives an independent read-only Execution Authorization; connection details remain inside the controlled Develop runtime.",
                 "consumes": [
                     "application/json"
                 ],

@@ -663,8 +663,31 @@ def test_mongodb_collection_scan_restores_dynamic_documents(monkeypatch, noteboo
             )
         )
 
+    descriptor_endpoint, catalog_endpoint = notebook_session
+    descriptor = native_descriptor(
+        "mongodb", "server", (("database", "branch"), ("collection", "leaf")), engine_id=5
+    )
+    root = [{"term": "server", "kind": "server", "name": ""}]
+    database = [*root, {"term": "database", "kind": "namespace", "name": "business"}]
+    path = [*database, {"term": "collection", "kind": "collection", "name": "events"}]
+
     def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == descriptor_endpoint:
+            return httpx.Response(200, json=[descriptor])
+        payload = json.loads(request.content)
+        assert payload["engine_id"] == 5
+        if str(request.url) == catalog_endpoint:
+            parent = payload["path"]["segments"]
+            if not parent:
+                entry = catalog_entry(5, "", "server", "server", "branch", root)
+            elif parent == root:
+                entry = catalog_entry(5, "business", "database", "namespace", "branch", database)
+            else:
+                assert parent == database
+                entry = catalog_entry(5, "events", "collection", "collection", "leaf", path)
+            return httpx.Response(200, json={"nodes": [entry]})
         assert str(request.url) == os.environ["ADDP_NOTEBOOK_RECORD_SCAN_API_ENDPOINT"]
+        assert payload["path"]["segments"] == path
         return httpx.Response(
             200,
             headers={"Content-Type": "application/vnd.apache.arrow.stream"},
@@ -672,17 +695,8 @@ def test_mongodb_collection_scan_restores_dynamic_documents(monkeypatch, noteboo
         )
 
     monkeypatch.setattr(engines, "_transport", httpx.MockTransport(handler))
-    mongodb = engines.MongoDBEngine(
-        engine_id=5,
-        descriptor=native_descriptor(
-            "mongodb", "server", (("database", "branch"), ("collection", "leaf")), engine_id=5
-        ),
-        timeout=10,
-    )
-    collection = engines.MongoDBCollection(
-        name="events", database="business", kind="collection", _client=mongodb,
-        _path={"version": "catalog.path/v1", "engine_id": 5, "segments": [{}]},
-    )
+    mongodb = engines.client(5)
+    collection = mongodb.collection(database="business", name="events")
     assert list(collection.scan(batch_size=2)) == [
         {"_id": "a", "value": 1},
         {"_id": "b", "extra": True},

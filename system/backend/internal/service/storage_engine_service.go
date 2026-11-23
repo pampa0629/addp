@@ -97,7 +97,7 @@ func maskString(value interface{}) string {
 
 // ListEngineCatalogChildren 列出指定 catalog 路径下的实时子节点。
 func (s *StorageEngineService) ListEngineCatalogChildren(ctx context.Context, resource *models.Engine, req models.EngineCatalogListChildrenRequest) ([]models.EngineCatalogEntry, error) {
-	nodes, err := dbbridge.ListEngineCatalogChildren(ctx, resource, toPluginEngineCatalogPath(req.Path), plugin.ListOptions{
+	nodes, err := dbbridge.ListEngineCatalogChildren(ctx, resource, ToPluginEngineCatalogPath(req.Path), plugin.ListOptions{
 		Recursive: req.Options.Recursive,
 		Limit:     req.Options.Limit,
 		Offset:    req.Options.Offset,
@@ -115,10 +115,10 @@ func (s *StorageEngineService) ListEngineCatalogChildren(ctx context.Context, re
 
 // DescribeEngineCatalogFacts 返回指定 catalog 叶子的实时结构事实。
 func (s *StorageEngineService) DescribeEngineCatalogFacts(ctx context.Context, resource *models.Engine, req models.EngineCatalogDescribeFactsRequest) (*plugin.EngineCatalogFacts, error) {
-	return dbbridge.DescribeEngineCatalogFacts(ctx, resource, toPluginEngineCatalogPath(req.Path), plugin.EngineCatalogFactsOptions{})
+	return dbbridge.DescribeEngineCatalogFacts(ctx, resource, ToPluginEngineCatalogPath(req.Path), plugin.EngineCatalogFactsOptions{})
 }
 
-func toPluginEngineCatalogPath(path models.EngineCatalogPath) plugin.EngineCatalogPath {
+func ToPluginEngineCatalogPath(path models.EngineCatalogPath) plugin.EngineCatalogPath {
 	segments := make([]plugin.EngineCatalogSegment, 0, len(path.Segments))
 	for _, segment := range path.Segments {
 		segments = append(segments, plugin.EngineCatalogSegment{

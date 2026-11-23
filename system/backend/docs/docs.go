@@ -1400,7 +1400,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "system.engine.read"
+                    "develop.task.read",
+                    "develop.notebook.update"
                 ]
             }
         },
@@ -2695,7 +2696,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-develop Tenant Service，首批限定 PostgreSQL/GaussDB。Provider 提供同次实际执行的完整来源，System 独立读取 Meta 正式身份后最终重核原用户、功能权限及全部当前 Grant。异步查询绑定原 EA 和当前执行租约；样例试读仅接收同次同步原用户凭据，不持久化或记录凭据。不签发 Grant、不返回连接、不授予可复用 Allow | Only addp-develop Tenant Service for PostgreSQL/GaussDB. Provider facts bind the actual execution. System resolves Meta facts before finally rechecking the original user, functions and all current Grants. Async queries require the original EA and current execution lease; sample reads use only the synchronous original user credential, never persisted or logged. No Grants, connections or reusable Allow are issued",
+                "description": "仅 addp-develop Tenant Service，首批限定 PostgreSQL/GaussDB。Provider 提供同次实际执行的完整来源，System 独立读取 Meta 正式身份后最终重核原用户、功能权限及全部当前 Grant。异步查询绑定原 EA 和当前执行租约；样例试读仅接收同次同步原用户凭据，不持久化或记录凭据。不签发 Grant、不返回连接、不授予可复用 Allow | Only addp-develop Tenant Service for PostgreSQL/GaussDB. Provider facts bind the actual execution. System resolves Meta facts before finally rechecking the original user, functions and all current Grants. Async queries require the original EA and current execution lease; sample reads use only the synchronous original user credential, never persisted or logged. No Grants, connections or reusable Allow are issued\nPostgreSQL 交互 Notebook 使用原会话派生执行授权及匹配的会话 ID，复核会话、令牌族和当前全部来源 | PostgreSQL interactive Notebook reads bind the derived execution authorization and matching session ID and recheck the session, token family and all current sources",
                 "consumes": [
                     "application/json"
                 ],
@@ -6910,7 +6911,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 EngineCatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and EngineCatalogProvider.ListChildren complete in one request",
+                "description": "仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 EngineCatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and EngineCatalogProvider.ListChildren complete in one request\nPostgreSQL 按原用户目录可见性分页，其他引擎沿管理读取权限浏览 | PostgreSQL paginates visible entries for the original user. Other catalogs require management read permission",
                 "consumes": [
                     "application/json"
                 ],
@@ -7002,7 +7003,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅返回 active、online 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active, online data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request",
+                "description": "按会话原用户有效来源授权列出 PostgreSQL，其他在线实时目录沿引擎管理读取资格列出 | List PostgreSQL by current session-user source grants and other live catalogs by engine management read permission",
                 "produces": [
                     "application/json"
                 ],
@@ -19841,6 +19842,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "lease_token": {
+                    "type": "string"
+                },
+                "notebook_session_id": {
                     "type": "string"
                 },
                 "read_set": {

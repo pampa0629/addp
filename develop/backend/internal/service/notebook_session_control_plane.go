@@ -9,6 +9,7 @@ import (
 )
 
 type NotebookSessionControlPlane interface {
+	ObserveQueryRead(context.Context, uint, commonClient.DevelopQueryReadRequest) (*commonClient.DevelopQueryReadObservation, error)
 	Issue(context.Context, string, commonClient.IssueNotebookSessionAuthorizationRequest) (*commonClient.IssuedNotebookSessionAuthorization, error)
 	ListChildren(context.Context, uint, string, commonClient.NotebookEngineCatalogChildrenRequest) ([]commonClient.EngineCatalogEntry, error)
 	ListEngineDescriptors(context.Context, uint, string, string) ([]commonModels.EngineRuntimeDescriptor, error)
@@ -30,6 +31,10 @@ func NewNotebookSessionControlPlane(
 		return nil, errors.New("Notebook Catalog control plane clients are required")
 	}
 	return &systemNotebookSessionControlPlane{issuer: issuer, system: system}, nil
+}
+
+func (c *systemNotebookSessionControlPlane) ObserveQueryRead(ctx context.Context, tenantID uint, request commonClient.DevelopQueryReadRequest) (*commonClient.DevelopQueryReadObservation, error) {
+	return c.system.WithTenantID(tenantID).CheckDevelopQueryRead(ctx, request)
 }
 
 func (c *systemNotebookSessionControlPlane) Issue(

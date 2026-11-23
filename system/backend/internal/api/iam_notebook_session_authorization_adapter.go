@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -53,6 +56,7 @@ type IAMNotebookExecutionEngineAccessRequest struct {
 }
 
 type iamNotebookSessionAuthorizationService interface {
+	ReviewNavigation(context.Context, iam.AuthorizeNotebookEngineCatalogInput, bool) (*iam.AuthorizedNotebookEngineCatalog, error)
 	Issue(context.Context, iam.IssueNotebookSessionAuthorizationInput) (*iam.IssuedNotebookSessionAuthorization, error)
 	Authorize(context.Context, iam.AuthorizeNotebookEngineCatalogInput) (*iam.AuthorizedNotebookEngineCatalog, error)
 	DeriveExecutionEngineAccess(context.Context, iam.DeriveNotebookExecutionEngineAccessInput) (*iam.AuthorizedExecutionEngineAccess, error)
@@ -68,22 +72,29 @@ type notebookEngineCatalogChildrenLister interface {
 	ListEngineCatalogChildren(context.Context, *models.Engine, models.EngineCatalogListChildrenRequest) ([]models.EngineCatalogEntry, error)
 }
 
+type notebookNavigationObserver interface {
+	CheckNotebookTableVisibility(context.Context, *iam.AuthorizedNotebookEngineCatalog, []engineplugin.EngineCatalogPath) ([]bool, error)
+	CheckNotebookNavigation(context.Context, *iam.AuthorizedNotebookEngineCatalog, shared.SourceNavigationCheckRequest) (*shared.SourceMetadataCheck, error)
+}
+
 type IAMNotebookSessionAuthorizationHandler struct {
-	service iamNotebookSessionAuthorizationService
-	engines notebookEngineCatalogEngineResolver
-	catalog notebookEngineCatalogChildrenLister
+	navigation notebookNavigationObserver
+	service    iamNotebookSessionAuthorizationService
+	engines    notebookEngineCatalogEngineResolver
+	catalog    notebookEngineCatalogChildrenLister
 }
 
 func NewIAMNotebookSessionAuthorizationHandler(
 	authorizationService iamNotebookSessionAuthorizationService,
 	engines notebookEngineCatalogEngineResolver,
 	catalog notebookEngineCatalogChildrenLister,
+	navigation notebookNavigationObserver,
 ) (*IAMNotebookSessionAuthorizationHandler, error) {
-	if authorizationService == nil || engines == nil || catalog == nil {
+	if authorizationService == nil || engines == nil || catalog == nil || navigation == nil {
 		return nil, fmt.Errorf("%w: notebook session authorization handler dependencies are required", commonapi.ErrBadRequest)
 	}
 	return &IAMNotebookSessionAuthorizationHandler{
-		service: authorizationService, engines: engines, catalog: catalog,
+		service: authorizationService, engines: engines, catalog: catalog, navigation: navigation,
 	}, nil
 }
 
@@ -101,7 +112,7 @@ func NewIAMNotebookSessionAuthorizationHandler(
 // @Failure      403 {object} IAMErrorResponse
 // @Failure      409 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["system.engine.read"]
+// @x-addp-required-permissions ["develop.task.read","develop.notebook.update"]
 // @Router       /auth/notebook-session-authorizations [post]
 func (h *IAMNotebookSessionAuthorizationHandler) Issue(c *gin.Context) {
 	var request IAMIssueNotebookSessionAuthorizationRequest
@@ -137,6 +148,7 @@ func (h *IAMNotebookSessionAuthorizationHandler) Issue(c *gin.Context) {
 // ListEngineCatalogChildren godoc
 // @Summary      使用 Notebook 会话授权列出实时 Catalog 子节点 | List live Catalog children with Notebook session authorization
 // @Description  仅 addp-develop Tenant Service Principal 可消费绑定 Session 的用户派生授权；授权复核与 EngineCatalogProvider.ListChildren 在同一请求完成 | Only the addp-develop tenant service principal may consume the session-bound user-derived authorization; authorization review and EngineCatalogProvider.ListChildren complete in one request
+// @Description PostgreSQL 按原用户目录可见性分页，其他引擎沿管理读取权限浏览 | PostgreSQL paginates visible entries for the original user. Other catalogs require management read permission
 // @Tags         Notebook 会话授权 | Notebook Session Authorization
 // @Accept       json
 // @Produce      json
@@ -180,11 +192,12 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineCatalogChildren(c *gi
 		respondNotebookEngineCatalogError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	authorized, err := h.service.Authorize(c.Request.Context(), iam.AuthorizeNotebookEngineCatalogInput{
+	input := iam.AuthorizeNotebookEngineCatalogInput{
 		AuthorizationID: authorizationID, SessionID: sessionID,
 		ServicePrincipalID: int64(principalID), ServiceClientID: *authContext.Client.ClientID,
 		TenantID: int64(tenantID), Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
-	})
+	}
+	authorized, err := h.service.ReviewNavigation(c.Request.Context(), input, false)
 	if err != nil {
 		respondNotebookEngineCatalogError(c, err)
 		return
@@ -194,8 +207,26 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineCatalogChildren(c *gi
 		respondNotebookEngineCatalogError(c, err)
 		return
 	}
+	if engine.EngineType != "postgresql" && !authorized.CanBrowseOtherEngines {
+		respondNotebookEngineCatalogError(c, iam.ErrNotebookSessionAuthorizationForbidden)
+		return
+	}
 	if err := requireLiveEngineCatalogCapability(engine); err != nil {
 		respondNotebookEngineCatalogError(c, err)
+		return
+	}
+	if engine.EngineType == "postgresql" {
+		nodes, err := h.postgresCatalogChildren(c.Request.Context(), authorized, engine, request)
+		if err != nil {
+			respondNotebookEngineCatalogError(c, err)
+			return
+		}
+		if _, err = h.service.ReviewNavigation(c.Request.Context(), input, true); err != nil {
+			respondNotebookEngineCatalogError(c, err)
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, models.EngineCatalogListChildrenResponse{Nodes: nodes})
 		return
 	}
 	nodes, err := h.catalog.ListEngineCatalogChildren(c.Request.Context(), engine, models.EngineCatalogListChildrenRequest{
@@ -205,13 +236,83 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineCatalogChildren(c *gi
 		respondEngineCatalogProviderError(c, err)
 		return
 	}
+	if _, err = h.service.Authorize(c.Request.Context(), input); err != nil {
+		respondNotebookEngineCatalogError(c, err)
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, models.EngineCatalogListChildrenResponse{Nodes: nodes})
 }
 
+func (h *IAMNotebookSessionAuthorizationHandler) postgresCatalogChildren(ctx context.Context, session *iam.AuthorizedNotebookEngineCatalog, engine *models.Engine, req IAMNotebookEngineCatalogChildrenRequest) ([]models.EngineCatalogEntry, error) {
+	parent := systemservice.ToPluginEngineCatalogPath(req.Path)
+	parent.EngineID = engine.ID
+	if len(parent.Segments) == 0 {
+		parent = engineplugin.EngineCatalogRootPath(engineplugin.TabularCatalogModel("schema"), engine.ID)
+	}
+	query := shared.SourceNavigationCheckRequest{Targets: []engineplugin.EngineCatalogPath{parent}}
+	permit, err := h.navigation.CheckNotebookNavigation(ctx, session, query)
+	if err != nil {
+		return nil, err
+	}
+	if !permit.MatchesNavigation(query) || !permit.Targets[0].Visible {
+		return nil, iam.ErrNotebookSessionAuthorizationForbidden
+	}
+	// PostgreSQL enumerates this level in one call. Offsets apply to the visible sequence.
+	nodes, err := h.catalog.ListEngineCatalogChildren(ctx, engine, models.EngineCatalogListChildrenRequest{Path: req.Path})
+	if err != nil {
+		return nil, err
+	}
+	visible := make([]models.EngineCatalogEntry, 0)
+	skip := req.Options.Offset
+	for start := 0; start < len(nodes); start += 200 {
+		batch := nodes[start:min(start+200, len(nodes))]
+		paths := make([]engineplugin.EngineCatalogPath, len(batch))
+		for i, n := range batch {
+			paths[i] = systemservice.ToPluginEngineCatalogPath(n.Path)
+		}
+		allowed := make([]bool, len(batch))
+		if len(parent.Segments) == 2 {
+			allowed, err = h.navigation.CheckNotebookTableVisibility(ctx, session, paths)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			query := shared.SourceNavigationCheckRequest{Targets: paths}
+			observation, err := h.navigation.CheckNotebookNavigation(ctx, session, query)
+			if err != nil {
+				return nil, err
+			}
+			if !observation.MatchesNavigation(query) {
+				return nil, errors.New("invalid Notebook navigation observation")
+			}
+			for i, t := range observation.Targets {
+				allowed[i] = t.Visible
+			}
+		}
+		for i, n := range batch {
+			if !allowed[i] {
+				continue
+			}
+			if skip > 0 {
+				skip--
+				continue
+			}
+			// Row estimates and branch totals describe content beyond navigation.
+			n.Table = nil
+			n.LeafCount = nil
+			visible = append(visible, n)
+			if len(visible) == req.Options.Limit {
+				return visible, nil
+			}
+		}
+	}
+	return visible, nil
+}
+
 // ListEngineDescriptors godoc
 // @Summary      使用 Notebook 会话授权列出可访问数据引擎 | List accessible data engines with Notebook session authorization
-// @Description  仅返回 active、online 且声明实时 CatalogModel 的数据引擎；授权复核与引擎发现在同一请求完成 | Only active, online data engines declaring a live CatalogModel are returned; authorization review and engine discovery complete in one request
+// @Description  按会话原用户有效来源授权列出 PostgreSQL，其他在线实时目录沿引擎管理读取资格列出 | List PostgreSQL by current session-user source grants and other live catalogs by engine management read permission
 // @Tags         Notebook 会话授权 | Notebook Session Authorization
 // @Produce      json
 // @Security     BearerAuth
@@ -245,11 +346,13 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineDescriptors(c *gin.Co
 		respondNotebookEngineCatalogError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	if _, err := h.service.Authorize(c.Request.Context(), iam.AuthorizeNotebookEngineCatalogInput{
+	input := iam.AuthorizeNotebookEngineCatalogInput{
 		AuthorizationID: authorizationID, SessionID: sessionID,
 		ServicePrincipalID: int64(principalID), ServiceClientID: *authContext.Client.ClientID,
 		TenantID: int64(tenantID), Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
-	}); err != nil {
+	}
+	session, err := h.service.ReviewNavigation(c.Request.Context(), input, false)
+	if err != nil {
 		respondNotebookEngineCatalogError(c, err)
 		return
 	}
@@ -264,17 +367,68 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineDescriptors(c *gin.Co
 			respondNotebookEngineCatalogError(c, err)
 			return
 		}
-		for index := range descriptors {
-			if notebookDataEngineDescriptor(&descriptors[index]) {
-				result = append(result, descriptors[index])
-			}
+		visible, err := h.visibleNotebookEngines(c.Request.Context(), session, descriptors)
+		if err != nil {
+			respondNotebookEngineCatalogError(c, err)
+			return
 		}
+		result = append(result, visible...)
 		if int64(page*pageSize) >= total {
 			break
 		}
 	}
+	current, err := h.service.ReviewNavigation(c.Request.Context(), input, true)
+	if err != nil {
+		respondNotebookEngineCatalogError(c, err)
+		return
+	}
+	if !current.CanBrowseOtherEngines {
+		result = slices.DeleteFunc(result, func(d models.EngineRuntimeDescriptor) bool { return d.EngineType != "postgresql" })
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, result)
+}
+
+func (h *IAMNotebookSessionAuthorizationHandler) visibleNotebookEngines(ctx context.Context, session *iam.AuthorizedNotebookEngineCatalog, descriptors []models.EngineRuntimeDescriptor) ([]models.EngineRuntimeDescriptor, error) {
+	var candidates []models.EngineRuntimeDescriptor
+	var visible []models.EngineRuntimeDescriptor
+	var query shared.SourceNavigationCheckRequest
+	for i := range descriptors {
+		descriptor := &descriptors[i]
+		if !notebookDataEngineDescriptor(descriptor) {
+			continue
+		}
+		if descriptor.EngineType != "postgresql" {
+			if session.CanBrowseOtherEngines {
+				visible = append(visible, *descriptor)
+			}
+			continue
+		}
+		model, err := dbbridge.EngineCatalogModel(descriptor.EngineType)
+		if err != nil {
+			continue
+		}
+		root := engineplugin.EngineCatalogRootPath(model, descriptor.ID)
+		candidates = append(candidates, *descriptor)
+		query.Targets = append(query.Targets, root)
+	}
+	if len(candidates) == 0 {
+		return visible, nil
+	}
+	observation, err := h.navigation.CheckNotebookNavigation(ctx, session, query)
+	if err != nil {
+		return nil, err
+	}
+	if !observation.MatchesNavigation(query) {
+		return nil, errors.New("invalid Notebook navigation observation")
+	}
+
+	for i, target := range observation.Targets {
+		if target.Visible {
+			visible = append(visible, candidates[i])
+		}
+	}
+	return visible, nil
 }
 
 func notebookDataEngineDescriptor(descriptor *models.EngineRuntimeDescriptor) bool {

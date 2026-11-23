@@ -59,15 +59,6 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client, mod
 		panic(fmt.Errorf("装配 IAM Execution Authorization Handler 失败: %w", err))
 	}
 	runtime.ExecutionAuthorizationHandler = executionAuthorizationHandler
-	notebookSessionAuthorizationHandler, err := NewIAMNotebookSessionAuthorizationHandler(
-		runtime.NotebookSessionAuthorizationService,
-		engineService,
-		service.NewStorageEngineService(),
-	)
-	if err != nil {
-		panic(fmt.Errorf("装配 IAM Notebook Session Authorization Handler 失败: %w", err))
-	}
-	runtime.NotebookSessionAuthorizationHandler = notebookSessionAuthorizationHandler
 	taskAuthorizationSubjectHandler, err := NewIAMTaskAuthorizationSubjectHandler(
 		runtime.TaskAuthorizationSubjectService,
 	)
@@ -121,6 +112,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client, mod
 	}
 	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil).
 		WithExecutionEngineSnapshot(engineService.DecryptAuthorizedExecutionSnapshot)
+	notebookSessionAuthorizationHandler, err := NewIAMNotebookSessionAuthorizationHandler(
+		runtime.NotebookSessionAuthorizationService,
+		engineService,
+		service.NewStorageEngineService(),
+		fulfillmentService,
+	)
+	if err != nil {
+		panic(fmt.Errorf("装配 IAM Notebook Session Authorization Handler 失败: %w", err))
+	}
+	runtime.NotebookSessionAuthorizationHandler = notebookSessionAuthorizationHandler
 	developFileAuthorization := iam.NewDevelopFileAuthorizationService(runtime.Repository, nil, fulfillmentService.PrepareDevelopFileRead)
 	developFileAuthorization.SetCreateApproverPreparer(fulfillmentService.PrepareDevelopFileCreateApprover)
 	developFileAuthorization.SetRecoveryEngine(fulfillmentService.DevelopFileTargetEngine)

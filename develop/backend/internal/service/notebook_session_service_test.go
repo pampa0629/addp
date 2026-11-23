@@ -36,6 +36,13 @@ type notebookSessionControlPlaneRecorder struct {
 	engine              *commonModels.Engine
 }
 
+func (r *notebookSessionControlPlaneRecorder) ObserveQueryRead(_ context.Context, _ uint, req commonClient.DevelopQueryReadRequest) (*commonClient.DevelopQueryReadObservation, error) {
+	if req.Validate() != nil {
+		return nil, commonClient.ErrDevelopQueryReadDenied
+	}
+	return &commonClient.DevelopQueryReadObservation{ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}, nil
+}
+
 func (r *notebookSessionControlPlaneRecorder) Issue(
 	_ context.Context,
 	userToken string,
@@ -173,6 +180,32 @@ func (p *notebookTestQueryPlugin) PrepareQuery(_ context.Context, _ plugin.Conne
 	return plugin.NewPreparedQuery(analysis, nil, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
 		return p.result, nil
 	})
+}
+
+type notebookTestQueryCursor struct {
+	*notebookTestReadSession
+	sources *plugin.QueryReadSet
+}
+
+func (c *notebookTestQueryCursor) Close(context.Context) error { return nil }
+
+func (p *notebookTestQueryPlugin) OpenQueryReadSession(context.Context, plugin.PreparedQuery) (plugin.QueryReadSession, error) {
+	return nil, errors.New("unexpected unguarded query")
+}
+
+func (c *notebookTestQueryCursor) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
+	return c.sources, nil
+}
+func (p *notebookTestQueryPlugin) OpenGuardedQueryReadSession(ctx context.Context, _ plugin.PreparedQuery, check plugin.QueryReadAuthorizer) (plugin.GuardedQueryReadSession, error) {
+	set, err := plugin.NewQueryReadSet(plugin.TabularItemPath(p.request.EngineID, "schema", "public", "roads"))
+	if err != nil {
+		return nil, err
+	}
+	if err = check(ctx, set); err != nil {
+		return nil, err
+	}
+	fields := plugin.QueryResultToBatchData(p.result, 0).Fields
+	return &notebookTestQueryCursor{&notebookTestReadSession{fields: fields, rows: p.result.Rows, closeCalled: make(chan struct{})}, set}, nil
 }
 func (p *notebookTestQueryPlugin) SQLDialect() string { return "postgresql" }
 func (p *notebookTestQueryPlugin) ExecuteSQL(context.Context, plugin.ConnectionInfo, string, plugin.QueryOptions) (*plugin.QueryResult, error) {
@@ -434,7 +467,7 @@ func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
 		}
 	})
 	catalog.engine = &commonModels.Engine{
-		ID: 21, EngineType: "postgresql", ConnectionInfo: commonModels.ConnectionInfo{"host": "database"},
+		ID: 21, Version: 1, EngineType: "postgresql", ConnectionInfo: commonModels.ConnectionInfo{"host": "database"},
 	}
 	var destination bytes.Buffer
 	err = service.StreamQuery(context.Background(), public.ID, kernelToken, NotebookQueryRequest{
@@ -448,7 +481,7 @@ func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
 	if len(ids) != 3 || ids[2] != 3 {
 		t.Fatalf("bounded query ids = %#v", ids)
 	}
-	if provider.request.Language != "sql" || provider.request.Options.Limit != 3 || !provider.request.Options.ReadOnly {
+	if provider.request.Language != "sql" || provider.request.Options.Limit != 0 || !provider.request.Options.ReadOnly {
 		t.Fatalf("query request = %#v", provider.request)
 	}
 }

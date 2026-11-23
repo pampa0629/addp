@@ -538,9 +538,30 @@ func (s *NotebookSessionService) describeCatalogFactsForSession(
 	if access.Engine == nil || access.Engine.ID != engineID {
 		return nil, ErrNotebookCopilotForbidden
 	}
-	return plugin.DescribeEngineCatalogFacts(executionCtx, &plugin.Engine{
+	var recheck func() error
+	if access.Engine.EngineType == "postgresql" {
+		set, err := plugin.NewQueryReadSet(notebookPluginCatalogPath(path))
+		if err != nil {
+			return nil, err
+		}
+		observe := s.postgresReadObserver(session, access)
+		recheck = func() error { _, err := observe(executionCtx, set); return err }
+		if err = recheck(); err != nil {
+			return nil, err
+		}
+	}
+	facts, err := plugin.DescribeEngineCatalogFacts(executionCtx, &plugin.Engine{
 		ID: access.Engine.ID, EngineType: access.Engine.EngineType,
 		Version:        access.Engine.Version,
 		ConnectionInfo: plugin.ConnectionInfo(access.Engine.ConnectionInfo),
-	}, notebookPluginCatalogPath(path), plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
+	}, notebookPluginCatalogPath(path), plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: access.Engine.EngineType != "postgresql"})
+	if err != nil {
+		return nil, err
+	}
+	if recheck != nil {
+		if err = recheck(); err != nil {
+			return nil, err
+		}
+	}
+	return facts, nil
 }

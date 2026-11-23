@@ -48,7 +48,7 @@ func RegisterIAMRoutes(
 	if err != nil {
 		return err
 	}
-	notebookEngineCatalogIssue, err := middleware.NewIAMPermissionGuard("system.engine.read")
+	notebookEngineCatalogIssue, err := middleware.NewIAMPermissionGuard("develop.task.read", "develop.notebook.update")
 	if err != nil {
 		return err
 	}

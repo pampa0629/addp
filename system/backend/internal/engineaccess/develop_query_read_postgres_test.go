@@ -8,16 +8,153 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.EngineCatalogPath, tenant, admin int64, roles *iam.TenantRoleService,
 	newUser func(*testing.T, time.Duration) (userProvenance, time.Time), grant func(*testing.T, string, int64, *time.Time) uuid.UUID, revoke func(*testing.T, uuid.UUID), credential func(*testing.T, userProvenance) string) {
+	t.Run("Notebook ordinary user PostgreSQL grants", func(t *testing.T) {
+		ctx := t.Context()
+		engine := db.Table("system.engines").Where("id=?", path.EngineID)
+		var initialStatus string
+		if err := engine.Select("connection_status").Scan(&initialStatus).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Table("system.engines").Where("id=?", path.EngineID).Update("connection_status", "online").Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Table("system.engines").Where("id=?", path.EngineID).Update("connection_status", initialStatus).Error; err != nil {
+				t.Error(err)
+			}
+		})
+		user, _ := newUser(t, time.Hour)
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant, RoleKey: "custom.notebook_source_read", Name: "Notebook source reader", PermissionKeys: []string{"develop.task.read", "develop.task.execute", "develop.notebook.update", "develop.data_read.execute"}, ActorPrincipalID: admin})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: admin, Reason: "Notebook source fixture"}); err != nil {
+			t.Fatal(err)
+		}
+		sessions, err := iam.NewNotebookSessionAuthorizationService(iam.NewRepository(db))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := uuid.New()
+		trace := "notebook-grants"
+		issued, err := sessions.Issue(ctx, iam.IssueNotebookSessionAuthorizationInput{SourceAccessToken: credential(t, user), SessionID: id, TaskID: 41, ExpiresIn: time.Minute, Audit: iam.AuditMetadata{RequestID: &trace}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var serviceID int64
+		if err = db.Table("system.service_principals").Select("id").Where("name=?", "addp-develop").Scan(&serviceID).Error; err != nil {
+			t.Fatal(err)
+		}
+		typ, contextType := iam.PrincipalTypeServicePrincipal, iam.ContextTypeTenant
+		audit := iam.AuditMetadata{RequestID: &trace, PrincipalID: &serviceID, PrincipalType: &typ, ContextType: &contextType, TenantID: &tenant}
+		input := iam.AuthorizeNotebookEngineCatalogInput{SessionID: id, AuthorizationID: issued.ID, ServicePrincipalID: serviceID, ServiceClientID: "addp-develop", TenantID: tenant, Audit: audit}
+		session, err := sessions.ReviewNavigation(ctx, input, false)
+		if err != nil || session.CanBrowseOtherEngines {
+			t.Fatalf("unexpected management access: %+v %v", session, err)
+		}
+		derived, err := sessions.DeriveExecutionEngineAccess(ctx, iam.DeriveNotebookExecutionEngineAccessInput{SessionID: id, AuthorizationID: issued.ID, EngineID: int64(path.EngineID), ExecutionID: uuid.New(), ServicePrincipalID: serviceID, ServiceClientID: "addp-develop", TenantID: tenant, ExpiresIn: time.Minute, Audit: audit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var version int64
+		if err = db.Table("system.engines").Select("version").Where("id=?", path.EngineID).Scan(&version).Error; err != nil {
+			t.Fatal(err)
+		}
+		other := plugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_notebook")
+		svc := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{path, other}})
+		request := client.DevelopQueryReadRequest{NotebookSessionID: id.String(), AuthorizationID: strconv.FormatInt(derived.AuthorizationID, 10), ExecutionID: derived.ExecutionID.String(), EngineID: strconv.Itoa(int(path.EngineID)), EngineVersion: strconv.FormatInt(version, 10)}
+		check := func(want bool, paths ...plugin.EngineCatalogPath) {
+			t.Helper()
+			request.ReadSet, err = plugin.NewQueryReadSet(paths...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := svc.CheckDevelopQueryRead(ctx, tenant, request)
+			if want && (err != nil || result == nil) || !want && (!errors.Is(err, commonapi.ErrForbidden) || result != nil) {
+				t.Fatalf("expected source access %t, got %+v %v", want, result, err)
+			}
+		}
+		visibility := func(want bool) {
+			t.Helper()
+			targets := []plugin.EngineCatalogPath{path, other}
+			visible, err := svc.CheckNotebookTableVisibility(ctx, session, targets)
+			if err != nil || len(visible) != 2 || visible[0] != want || visible[1] {
+				t.Fatal("table visibility", visible, err)
+			}
+			q := shared.SourceNavigationCheckRequest{Targets: []plugin.EngineCatalogPath{plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), path.EngineID)}}
+			v, err := svc.CheckNotebookNavigation(ctx, session, q)
+			if err != nil || !v.MatchesNavigation(q) || v.Targets[0].Visible != want {
+				t.Fatal("engine visibility", v, err)
+			}
+		}
+		visibility(false)
+		check(false, path)
+		g := grant(t, "user", user.PrincipalID, nil)
+		visibility(true)
+		check(true, path)
+		check(false, other)
+		check(false, path, other)
+		request.NotebookSessionID = uuid.NewString()
+		check(false, path)
+		request.NotebookSessionID = id.String()
+		revoke(t, g)
+		visibility(false)
+		check(false, path)
+		t.Run("existing MongoDB reader without data Grant", func(t *testing.T) {
+			tenantID := uint(tenant)
+			mongo := models.Engine{Name: "Notebook MongoDB access fixture", EngineType: "mongodb", TenantID: &tenantID,
+				LifecycleState: "active", ConnectionStatus: "online", ConnectionInfo: models.ConnectionInfo{}, IdentityKey: models.JSONString(`{"host":"notebook.invalid","database":"fixture"}`)}
+			if err := db.Table("system.engines").Create(&mongo).Error; err != nil {
+				t.Fatal(err)
+			}
+			accessInput := iam.DeriveNotebookExecutionEngineAccessInput{SessionID: id, AuthorizationID: issued.ID, EngineID: int64(mongo.ID), ExecutionID: uuid.New(), ServicePrincipalID: serviceID, ServiceClientID: "addp-develop", TenantID: tenant, ExpiresIn: time.Minute, Audit: audit}
+			if _, err := sessions.DeriveExecutionEngineAccess(ctx, accessInput); !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("unexpected ordinary MongoDB derivation: %v", err)
+			}
+			reader, _ := newUser(t, time.Hour)
+			readerRole, err := iam.NewRepository(db).GetActiveBuiltinRoleByKey(ctx, "tenant.engine_management_reader")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant, MembershipID: reader.MembershipID, RoleIDs: []int64{role.ID, readerRole.ID}, ActorPrincipalID: admin, Reason: "Existing Notebook account"}); err != nil {
+				t.Fatal(err)
+			}
+			readerID := uuid.New()
+			original, err := sessions.Issue(ctx, iam.IssueNotebookSessionAuthorizationInput{SourceAccessToken: credential(t, reader), SessionID: readerID, TaskID: 42, ExpiresIn: time.Minute, Audit: iam.AuditMetadata{RequestID: &trace}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			input.SessionID, input.AuthorizationID = readerID, original.ID
+			if scope, err := sessions.Authorize(ctx, input); err != nil || !scope.CanBrowseOtherEngines {
+				t.Fatalf("MongoDB catalog unavailable: %v", err)
+			}
+			accessInput.SessionID, accessInput.AuthorizationID = readerID, original.ID
+			access, err := sessions.DeriveExecutionEngineAccess(ctx, accessInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			executions, err := iam.NewExecutionAuthorizationService(iam.NewRepository(db))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = executions.AuthorizeEngineAccess(ctx, iam.AuthorizeExecutionEngineAccessInput{AuthorizationID: access.AuthorizationID, ExecutionID: access.ExecutionID, EngineID: int64(mongo.ID), RequiredEffects: []string{"read"}, ServicePrincipalID: serviceID, ServiceClientID: "addp-develop", TenantID: tenant, Audit: audit})
+			if err != nil {
+				t.Fatalf("MongoDB read execution access: %v", err)
+			}
+		})
+	})
 	t.Run("Develop query current Grants and final Meta recheck", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()

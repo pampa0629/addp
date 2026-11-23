@@ -51,11 +51,15 @@ type AuthorizeNotebookEngineCatalogInput struct {
 }
 
 type AuthorizedNotebookEngineCatalog struct {
-	AuthorizationID uuid.UUID
-	SessionID       uuid.UUID
-	TaskID          int64
-	TenantID        int64
-	ExpiresAt       time.Time
+	CanBrowseOtherEngines bool
+	PrincipalID           int64
+	MembershipID          int64
+	AuthorizationVersion  int64
+	AuthorizationID       uuid.UUID
+	SessionID             uuid.UUID
+	TaskID                int64
+	TenantID              int64
+	ExpiresAt             time.Time
 }
 
 type DeriveNotebookExecutionEngineAccessInput struct {
@@ -136,7 +140,7 @@ func (s *NotebookSessionAuthorizationService) Issue(
 		if err != nil {
 			return err
 		}
-		if !containsNotebookEngineCatalogPermission(permissionRows) {
+		if !hasNotebookSessionPermissions(permissionRows) {
 			return commonapi.ErrForbidden
 		}
 
@@ -177,6 +181,14 @@ func (s *NotebookSessionAuthorizationService) Authorize(
 	ctx context.Context,
 	input AuthorizeNotebookEngineCatalogInput,
 ) (*AuthorizedNotebookEngineCatalog, error) {
+	return s.reviewCatalog(ctx, input, true, false)
+}
+
+func (s *NotebookSessionAuthorizationService) ReviewNavigation(ctx context.Context, input AuthorizeNotebookEngineCatalogInput, audit bool) (*AuthorizedNotebookEngineCatalog, error) {
+	return s.reviewCatalog(ctx, input, audit, true)
+}
+
+func (s *NotebookSessionAuthorizationService) reviewCatalog(ctx context.Context, input AuthorizeNotebookEngineCatalogInput, audit, discovery bool) (*AuthorizedNotebookEngineCatalog, error) {
 	if err := validateNotebookSessionServiceActor(input.AuthorizationID, input.SessionID,
 		input.ServicePrincipalID, input.ServiceClientID, input.TenantID, input.Audit); err != nil {
 		return nil, err
@@ -202,14 +214,18 @@ func (s *NotebookSessionAuthorizationService) Authorize(
 		if err != nil {
 			return err
 		}
-		if !containsNotebookEngineCatalogPermission(permissions) {
+		if !hasNotebookSessionPermissions(permissions) || (!discovery && !containsNotebookEngineCatalogPermission(permissions)) {
 			return ErrNotebookSessionAuthorizationForbidden
 		}
-		if err := writeNotebookEngineCatalogAudit(ctx, tx, input.Audit,
-			"iam.notebook_session_authorization.consumed", authorization, nil); err != nil {
-			return err
+		if audit {
+			if err := writeNotebookEngineCatalogAudit(ctx, tx, input.Audit,
+				"iam.notebook_session_authorization.consumed", authorization, nil); err != nil {
+				return err
+			}
 		}
 		authorized = &AuthorizedNotebookEngineCatalog{
+			CanBrowseOtherEngines: containsNotebookEngineCatalogPermission(permissions),
+			PrincipalID:           principal.ID, MembershipID: membership.ID, AuthorizationVersion: principal.AuthorizationVersion,
 			AuthorizationID: authorization.ID, SessionID: authorization.SessionID,
 			TaskID: authorization.TaskID, TenantID: authorization.TenantID,
 			ExpiresAt: authorization.ExpiresAt.UTC(),
@@ -259,7 +275,7 @@ func (s *NotebookSessionAuthorizationService) DeriveExecutionEngineAccess(
 		if err != nil {
 			return err
 		}
-		if !containsNotebookEngineCatalogPermission(permissions) ||
+		if !hasNotebookSessionPermissions(permissions) ||
 			!containsAllExecutionPermissions(permissions, notebookSessionAudience, []string{"read"}) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
@@ -269,6 +285,15 @@ func (s *NotebookSessionAuthorizationService) DeriveExecutionEngineAccess(
 		}
 		if !available {
 			return ErrExecutionAuthorizationUnavailable
+		}
+		if !containsNotebookEngineCatalogPermission(permissions) {
+			var kind string
+			if err := tx.db.WithContext(ctx).Table("system.engines").Select("engine_type").Where("id=? AND tenant_id=?", input.EngineID, input.TenantID).Scan(&kind).Error; err != nil {
+				return err
+			}
+			if kind != "postgresql" {
+				return ErrExecutionAuthorizationPermissionDenied
+			}
 		}
 		expiresAt := earlierTime(now.Add(input.ExpiresIn), sessionAuthorization.ExpiresAt.UTC())
 		if !expiresAt.After(now) {
@@ -427,6 +452,10 @@ func containsNotebookSessionOperation(operations []string, required string) bool
 		}
 	}
 	return false
+}
+
+func hasNotebookSessionPermissions(rows []RoleAssignmentPermissionProjection) bool {
+	return containsPermission(rows, "develop.task.read") && containsPermission(rows, "develop.notebook.update")
 }
 
 func containsNotebookEngineCatalogPermission(rows []RoleAssignmentPermissionProjection) bool {

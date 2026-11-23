@@ -33,6 +33,30 @@ func proveGuardedPostGISTable(ctx context.Context, tx *sql.Tx, path plugin.Engin
 	if _, err := tx.ExecContext(ctx, "LOCK TABLE ONLY "+dialect.QualifiedTable(schema, table)+" IN ACCESS SHARE MODE"); err != nil {
 		return nil, fmt.Errorf("%w: lock native table: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}
+	// Plain PostgreSQL tables need no PostGIS extension. Check the actual
+	// column types under the same relation lock used for the generated SELECT.
+	var spatial bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_catalog.pg_attribute a
+		JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+		WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0
+		  AND NOT a.attisdropped AND t.typname IN ('geometry', 'geography')
+	)`, schema, table).Scan(&spatial)
+	if err != nil {
+		return nil, err
+	}
+	if !spatial {
+		var safe bool
+		if err = tx.QueryRowContext(ctx, guardedNonSpatialTableSQL, schema, table, true).Scan(&safe); err != nil {
+			return nil, err
+		}
+		if !safe {
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
+		return readSet, nil
+	}
 	var extensionSchema string
 	err = tx.QueryRowContext(ctx, guardedPostGISTableSQL, schema, table).Scan(&extensionSchema)
 	if err != nil {

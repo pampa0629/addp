@@ -18,14 +18,15 @@ import (
 // SampleCredential is used only in the current synchronous sample request;
 // callers must never persist or log it.
 type DevelopQueryReadRequest struct {
-	AuthorizationID  string               `json:"authorization_id"`
-	ExecutionID      string               `json:"execution_id"`
-	EngineID         string               `json:"engine_id"`
-	EngineVersion    string               `json:"engine_version"`
-	ReadSet          *plugin.QueryReadSet `json:"read_set"`
-	Attempt          int                  `json:"attempt,omitempty"`
-	LeaseToken       string               `json:"lease_token,omitempty"`
-	SampleCredential string               `json:"sample_credential,omitempty"`
+	NotebookSessionID string               `json:"notebook_session_id,omitempty"`
+	AuthorizationID   string               `json:"authorization_id"`
+	ExecutionID       string               `json:"execution_id"`
+	EngineID          string               `json:"engine_id"`
+	EngineVersion     string               `json:"engine_version"`
+	ReadSet           *plugin.QueryReadSet `json:"read_set"`
+	Attempt           int                  `json:"attempt,omitempty"`
+	LeaseToken        string               `json:"lease_token,omitempty"`
+	SampleCredential  string               `json:"sample_credential,omitempty"`
 }
 
 func (r DevelopQueryReadRequest) Validate() error {
@@ -40,7 +41,12 @@ func (r DevelopQueryReadRequest) Validate() error {
 	if err != nil || id == uuid.Nil || id.String() != r.ExecutionID || r.ReadSet == nil || r.ReadSet.Paths == nil || len(r.ReadSet.Paths) > 200 {
 		return invalid
 	}
-	if r.SampleCredential != "" {
+	if r.NotebookSessionID != "" {
+		session, err := uuid.Parse(r.NotebookSessionID)
+		if err != nil || session == uuid.Nil || session.String() != r.NotebookSessionID || r.Attempt != 0 || r.LeaseToken != "" || r.SampleCredential != "" || r.EngineID == "" {
+			return invalid
+		}
+	} else if r.SampleCredential != "" {
 		if r.Attempt != 0 || r.LeaseToken != "" || !strings.HasPrefix(r.SampleCredential, "addp_at_") || r.SampleCredential == "addp_at_" || strings.ContainsAny(r.SampleCredential, " \t\r\n") {
 			return invalid
 		}

@@ -214,6 +214,10 @@ Runtime 成功后，Owner 只按原私有会话取得唯一输出回执，并将
 
 Notebook Session Authorization 是独立的短期用户派生事实，不是 Delegated Token。Develop 在 Session 创建的同步栈用当前 User Bearer 请求签发，随后丢弃 Bearer；授权绑定 Session、Task、Tenant、Principal、Membership、Token Family、授权版本、固定 `develop` audience、操作和期限，不保存连接或 Engine 白名单。
 
+交互 Notebook 按 Develop 的 Notebook 编辑和任务读取权限建立会话。纯 Python 计算与保存无需源数据 Grant。本期 PostgreSQL 数据引擎列表复用查询工作台的导航裁决，按会话原用户当前有效的 `metadata_read` 或 `read` Grant 和 Meta 正式身份筛选。其他数据引擎沿现行引擎管理读取资格发现，原有内容读取继续核验执行资格。无引擎管理读取资格且无有效来源 Grant 的普通用户得到空列表。PostgreSQL 管理权限不授予业务数据发现或读取权。
+
+PostgreSQL 交互 Notebook 的会话资格为 `develop.task.read` 和 `develop.notebook.update`。浏览时，System 以会话原用户核验当前 Grant，按可见结果分页，仅交付有权数据项及可导航的父节点。仅获 `metadata_read` 可浏览名称和必要结构。读取业务内容还要求 `develop.task.execute`、`develop.data_read.execute` 及覆盖全部实际来源的当前 `read`。表扫描和 SQL 均由同次执行的 Provider 绑定真实表和完整 ReadSet，System 根据会话派生执行授权核验主体、引擎版本、Meta 身份和有效 Grant。Develop 在读前、继续取批和交付前执行来源裁决，并执行现有 Security 保护。直接指定目标和 JOIN 使用同一规则。Notebook Copilot 只使用 PostgreSQL 字段声明生成代码，无需扫描数据来推断几何类型或范围。批量 script 派发另依排队执行契约。
+
 仅 `addp-develop` Runtime 可凭自身 Service Token 消费：目录操作当次核验；数据查询／扫描须为新 execution 派生单引擎 read 授权，保留 Session 来源。Session 到期不刷新；同 Family 正常 Token 轮换不影响 Session，但撤销、重用、身份／授权版本变化或显式关闭必须阻断消费并联动撤销有效派生授权。长扫描在短租约边界重核，失效关闭 Cursor；Develop 重启丢失本地 Session 后拒绝访问。authorization ID 只是引用，不是 Bearer。
 
 ### 5.4 Owner Resource Grant 与 Asset 履约
@@ -332,7 +336,7 @@ Develop 按用户提交的 SQL 所使用的业务数据项判权，在源库原�
 
 **固定调用边界已确认。** `POST /engine-access/read-observations/develop-query` 仅接受 `addp-develop` 的当前 Tenant Service Access Token 与非委托、不可定制的 `system.develop_query_read_check.execute` 机器 Permission；只归属 `tenant.develop_runtime`，不增加人员权限。请求绑定原 EA、执行、引擎版本和 Provider 完整 ReadSet：异步查询必须有当前 attempt／lease；样例试读必须有当前同步原用户凭据且不能借此绕开已有执行的租约。样例凭据不落库、不进入日志或异步任务。System 独立核对 Meta 身份，Meta 返回后最终重核原人员、当前功能条件和源 Grant；只返回不可缓存的观察时刻及最晚期限，不返回连接、不签发 Grant、不授予机器源读取。已证明空来源仍检查原人员与执行资格；未证明来源不得提交为空。下一批与交付重新调用，不能将期限当成可以复用的 Allow。
 
-首批仅接入 Develop 的 PG／GaussDB 原生只读查询及确有源试读的样例生成路径。两种 Provider 各自证明原生绑定，不能以 PG 协议兼容、成功解析 ReadSet 或一次 PREPARE 代替。固定调用沿上述唯一边界接入，不借用 Manager 的机器资格或 `manager.data_item.read`。Notebook、非 SQL、联邦查询、查询导出和 DML 内的读取来源分别列为后续消费范围，未接入不记为完成；既有已保存结果的重读／下载规则不在本批隐式改变。
+首批仅接入 Develop 的 PG／GaussDB 原生只读查询及确有源试读的样例生成路径。两种 Provider 各自证明原生绑定，不能以 PG 协议兼容、成功解析 ReadSet 或一次 PREPARE 代替。固定调用沿上述唯一边界接入，不借用 Manager 的机器资格或 `manager.data_item.read`。交互 PostgreSQL Notebook 依 5.3 消费同一来源规则。批量 Notebook、非 SQL、联邦查询、查询导出和 DML 内的读取来源分别列为后续消费范围，未接入不记为完成；既有已保存结果的重读／下载规则不在本批隐式改变。
 
 Develop 通过 DuckDB 查询目录型 Parquet 时，Meta 已识别的一张整表是一个 DataItem。ReadSet 记录查询涉及的全部逻辑 DataItem；System 按原用户对每个 DataItem 当前有效的精确读取 Grant 或覆盖它的节点读取 Grant 裁决，字段保护按逻辑表和字段核对。Runtime 在准备阶段固定本次实际读取的分片清单，包括合法的嵌套分区；清单仅供该次执行使用。已准备的查询只读原清单，下一次查询可纳入同表新分片，无需重新授权或等待 Meta 重扫。仅授整表即可读取其合法分片。JOIN 中任一表缺权，或撤权、到期后重跑已无有效读取权，必须在打开任何来源文件读取内容前拒绝。首批验证 MinIO 整表；通用 S3 首批为精确单文件 Parquet。
 

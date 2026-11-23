@@ -76,7 +76,7 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 	}
 	if a.Audience != "develop" || a.SourceType != executionAuthorizationSourceUser || a.TenantID != tenantID ||
 		a.ExecutionID.String() != request.ExecutionID || a.SealedAt == nil || a.RevokedAt != nil ||
-		a.SourceNotebookSessionAuthorizationID != nil || a.InternalTask != nil || a.SourceReadScope != nil || a.DevelopFileScope != nil || a.CleanupScope != nil {
+		(a.SourceNotebookSessionAuthorizationID != nil) != (request.NotebookSessionID != "") || a.InternalTask != nil || a.SourceReadScope != nil || a.DevelopFileScope != nil || a.CleanupScope != nil {
 		return nil, time.Time{}, ErrExecutionAuthorizationPermissionDenied
 	}
 	principal, err := r.GetPrincipal(ctx, a.ActorPrincipalID)
@@ -105,7 +105,11 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 		return nil, time.Time{}, err
 	}
 	expires := a.ExpiresAt
-	for _, permission := range []string{developExecutionPermission, executionEffectPermissions["read"]} {
+	required := []string{developExecutionPermission, executionEffectPermissions["read"]}
+	if request.NotebookSessionID != "" {
+		required = append(required, "develop.task.read", "develop.notebook.update")
+	}
+	for _, permission := range required {
 		var until time.Time
 		for _, row := range permissions {
 			if row.ScopeType != "tenant" || row.PermissionKey != permission {
@@ -132,14 +136,28 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 		return nil, time.Time{}, ErrExecutionAuthorizationPermissionDenied
 	}
 	var count int64
-	err = r.db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=? AND version=? AND engine_type IN ('postgresql','gaussdb') AND lifecycle_state='active' AND deleted_at IS NULL", engineID, tenantID, request.EngineVersion).Count(&count).Error
+	engine := r.db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=? AND version=? AND engine_type IN ('postgresql','gaussdb') AND lifecycle_state='active' AND deleted_at IS NULL", engineID, tenantID, request.EngineVersion)
+	if request.NotebookSessionID != "" {
+		engine = engine.Where("engine_type = ?", "postgresql")
+	}
+	err = engine.Count(&count).Error
 	if err != nil || count != 1 {
 		return nil, time.Time{}, ErrExecutionAuthorizationUnavailable
 	}
 	if membership.ExpiresAt != nil && membership.ExpiresAt.Before(expires) {
 		expires = *membership.ExpiresAt
 	}
-	if request.SampleCredential != "" {
+	if request.NotebookSessionID != "" {
+		session, err := r.GetNotebookSessionAuthorization(ctx, *a.SourceNotebookSessionAuthorizationID)
+		if err != nil || session.SessionID.String() != request.NotebookSessionID || session.Audience != notebookSessionAudience || !containsNotebookSessionOperation(session.Operations, notebookExecutionAccessOperation) || session.RevokedAt != nil || session.ExpiresAt.Before(a.ExpiresAt) || session.TenantID != a.TenantID || session.ActorPrincipalID != principal.ID || session.TenantMembershipID != membership.ID || session.IssuedAuthorizationVersion != a.IssuedAuthorizationVersion {
+			return nil, time.Time{}, ErrNotebookSessionAuthorizationForbidden
+		}
+		family, err := r.GetRefreshTokenFamily(ctx, session.TokenFamilyID)
+		if err != nil || family.PrincipalID != principal.ID || family.ContextType != ContextTypeTenant || family.TenantMembershipID == nil || *family.TenantMembershipID != membership.ID || family.RevokedAt != nil {
+			return nil, time.Time{}, ErrNotebookSessionAuthorizationForbidden
+		}
+		expires = earlierTime(expires, family.ExpiresAt)
+	} else if request.SampleCredential != "" {
 		if a.SourceExecutionAttempt != nil || a.SourceExecutionLeaseToken != nil {
 			return nil, time.Time{}, ErrExecutionAuthorizationPermissionDenied
 		}

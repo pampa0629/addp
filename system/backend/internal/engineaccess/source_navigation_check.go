@@ -51,33 +51,91 @@ func (s *Service) CheckMetaNavigation(ctx context.Context, credential string, q 
 	})
 }
 
-func (s *Service) readNavigationGrants(ctx context.Context, credential string, engines []uint, nodesOnly bool, qualify func(shared.AuthContext) error) (int64, []sourceGrant, time.Time, error) {
-	var tenant int64
-	var observed time.Time
-	var grants []sourceGrant
-	err := s.repository.readCommitted(ctx, func(tx *Repository) error {
+type navigationSubject struct {
+	tenant    int64
+	source    userProvenance
+	expiresAt time.Time
+}
+
+type navigationSubjectResolver func(*Repository) (navigationSubject, error)
+
+func (s *Service) checkNavigation(ctx context.Context, credential string, q shared.SourceNavigationCheckRequest, nodesOnly bool, qualify func(shared.AuthContext) error) (*shared.SourceMetadataCheck, error) {
+	return s.observeNavigation(ctx, q, nodesOnly, func(tx *Repository) (navigationSubject, error) {
 		auth, err := iam.NewAuthContextService(tx.identity())
 		if err != nil {
-			return err
+			return navigationSubject{}, err
 		}
 		current, err := auth.ResolveUserAccessToken(ctx, credential)
 		if err != nil {
-			return err
+			return navigationSubject{}, err
 		}
 		if current == nil || current.Context.TenantID == nil || current.Context.TenantMembershipID == nil {
-			return commonapi.ErrForbidden
+			return navigationSubject{}, commonapi.ErrForbidden
 		}
 		if err = qualify(*current); err != nil {
-			return err
+			return navigationSubject{}, err
 		}
 		ids := make([]int64, 4)
 		for i, value := range []string{*current.Context.TenantID, current.Principal.ID, *current.Context.TenantMembershipID, current.Authorization.AuthorizationVersion} {
 			ids[i], err = strconv.ParseInt(value, 10, 64)
 			if err != nil || ids[i] <= 0 {
-				return commonapi.ErrForbidden
+				return navigationSubject{}, commonapi.ErrForbidden
 			}
 		}
-		tenant = ids[0]
+		return navigationSubject{tenant: ids[0], source: userProvenance{PrincipalID: ids[1], MembershipID: ids[2], AuthorizationVersion: ids[3]}, expiresAt: current.Token.ExpiresAt}, nil
+	})
+}
+
+// CheckNotebookNavigation observes only the original user already verified by IAM.
+// The caller rechecks the session binding after the external Meta observations.
+func (s *Service) CheckNotebookNavigation(ctx context.Context, session *iam.AuthorizedNotebookEngineCatalog, q shared.SourceNavigationCheckRequest) (*shared.SourceMetadataCheck, error) {
+	return s.observeNavigation(ctx, q, false, func(*Repository) (navigationSubject, error) {
+		return navigationSubject{tenant: session.TenantID, source: userProvenance{PrincipalID: session.PrincipalID, MembershipID: session.MembershipID, AuthorizationVersion: session.AuthorizationVersion}, expiresAt: session.ExpiresAt}, nil
+	})
+}
+
+func (s *Service) CheckNotebookTableVisibility(ctx context.Context, session *iam.AuthorizedNotebookEngineCatalog, paths []plugin.EngineCatalogPath) ([]bool, error) {
+	bindings, err := s.resolveMetadataBindings(ctx, session.TenantID, paths)
+	if err != nil {
+		return nil, err
+	}
+	if len(bindings) != len(paths) {
+		return nil, errSourceReadRules
+	}
+	read := sourceReadRequest{Action: shared.SourceAccessMetadataRead, TenantID: session.TenantID, Source: userProvenance{PrincipalID: session.PrincipalID, MembershipID: session.MembershipID, AuthorizationVersion: session.AuthorizationVersion}}
+	var positions []int
+	visible := make([]bool, len(paths))
+	for i, binding := range bindings {
+		if binding.ItemFingerprint != "" {
+			positions = append(positions, i)
+			read.Targets = append(read.Targets, paths[i])
+			read.Bindings = append(read.Bindings, binding)
+		}
+	}
+	if len(positions) == 0 {
+		return visible, nil
+	}
+	result, err := s.repository.readCurrentSourceRules(ctx, read)
+	if err != nil {
+		return nil, err
+	}
+	for i, rule := range result.Targets {
+		visible[positions[i]] = rule.Covered
+	}
+	return visible, nil
+}
+
+func (s *Service) readNavigationGrants(ctx context.Context, engines []uint, nodesOnly bool, resolve navigationSubjectResolver) (int64, []sourceGrant, time.Time, error) {
+	var tenant int64
+	var observed time.Time
+	var grants []sourceGrant
+	err := s.repository.readCommitted(ctx, func(tx *Repository) error {
+		subject, err := resolve(tx)
+		if err != nil {
+			return err
+		}
+		tenant = subject.tenant
+
 		input := pgNavigationInput
 		if tx.db.Dialector.Name() == "mysql" {
 			input = mysqlSourceSubjectInput
@@ -86,14 +144,14 @@ func (s *Service) readNavigationGrants(ctx context.Context, credential string, e
 		if nodesOnly {
 			query += " AND g.node_recursive IS NOT NULL"
 		}
-		if err = tx.db.WithContext(ctx).Raw(query, ids[0], ids[1], ids[2], ids[3], engines).Scan(&grants).Error; err != nil {
+		if err = tx.db.WithContext(ctx).Raw(query, tenant, subject.source.PrincipalID, subject.source.MembershipID, subject.source.AuthorizationVersion, engines).Scan(&grants).Error; err != nil {
 			return err
 		}
 		observed, err = tx.wallClock(ctx)
 		if err != nil {
 			return err
 		}
-		if !current.Token.ExpiresAt.After(observed) {
+		if !subject.expiresAt.After(observed) {
 			return commonapi.ErrUnauthorized
 		}
 		return nil
@@ -101,7 +159,7 @@ func (s *Service) readNavigationGrants(ctx context.Context, credential string, e
 	return tenant, grants, observed, err
 }
 
-func (s *Service) checkNavigation(ctx context.Context, credential string, q shared.SourceNavigationCheckRequest, nodesOnly bool, qualify func(shared.AuthContext) error) (*shared.SourceMetadataCheck, error) {
+func (s *Service) observeNavigation(ctx context.Context, q shared.SourceNavigationCheckRequest, nodesOnly bool, resolve navigationSubjectResolver) (*shared.SourceMetadataCheck, error) {
 	if !q.Valid() {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -116,7 +174,7 @@ func (s *Service) checkNavigation(ctx context.Context, credential string, q shar
 			engines = append(engines, target.EngineID)
 		}
 	}
-	tenant, grants, observed, err := s.readNavigationGrants(ctx, credential, engines, nodesOnly, qualify)
+	tenant, grants, observed, err := s.readNavigationGrants(ctx, engines, nodesOnly, resolve)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +252,7 @@ func (s *Service) checkNavigation(ctx context.Context, credential string, q shar
 		return result, nil
 	}
 	// Only immutable grant IDs that survived both snapshots may expose paths.
-	finalTenant, current, finalTime, err := s.readNavigationGrants(ctx, credential, engines, nodesOnly, qualify)
+	finalTenant, current, finalTime, err := s.readNavigationGrants(ctx, engines, nodesOnly, resolve)
 	if err != nil {
 		return nil, err
 	}
