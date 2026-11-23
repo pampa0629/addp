@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: public.ecr.aws/docker/library/postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+    environment:
+      POSTGRES_USER: inference_deploy
+      POSTGRES_PASSWORD: ${ADDP_DATABASE_DEPLOY_PASSWORD:?}
+      POSTGRES_DB: addp_inference_disposable
+    ports:
+      - "127.0.0.1::5432"
+    healthcheck:
+      test: ["CMD-SHELL", 'PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h127.0.0.1 -w -U inference_deploy -d addp_inference_disposable -Atqc "SELECT 1"']
+      interval: 2s
+      timeout: 3s
+      retries: 30

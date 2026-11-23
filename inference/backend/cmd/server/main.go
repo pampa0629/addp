@@ -15,10 +15,11 @@ import (
 	"github.com/addp/common/infra/bootstrap"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	_ "github.com/addp/inference/i18n"
 	"github.com/addp/inference/internal/api"
 	"github.com/addp/inference/internal/config"
-	"github.com/addp/inference/internal/models"
+	"github.com/addp/inference/internal/migration"
 	"github.com/addp/inference/internal/repository"
 	"github.com/addp/inference/internal/service"
 	"gorm.io/gorm"
@@ -33,23 +34,26 @@ import (
 // @in header
 // @name Authorization
 func main() {
+	if len(os.Args) != 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			log.Fatal("expected prepare-database with no arguments")
+		}
+		if err := migration.Prepare(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal(err)
 	}
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
+	db, err := bootstrap.OpenPlatformRuntime(config.PlatformDatabase(), "inference", &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS inference").Error; err != nil {
-		log.Fatal(err)
-	}
-	if err := db.AutoMigrate(&models.ProviderConnection{}, &models.ProviderTenantGrant{}, &models.ModelDeployment{}, &models.ModelProfile{}, &models.CredentialAudit{}); err != nil {
-		log.Fatal(err)
-	}
-	if err := ensureSchemaConstraints(db); err != nil {
+	if err := schema.Require(db, "inference", migration.Version); err != nil {
 		log.Fatal(err)
 	}
 	store := repository.NewStore(db)
@@ -107,36 +111,4 @@ func register(ctx context.Context, cfg *config.Config) *commonclient.ModuleRegis
 		},
 	}, time.Second, 30*time.Second)
 	return registration
-}
-
-func ensureSchemaConstraints(db *gorm.DB) error {
-	statements := []string{
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_inference_platform_profile_code ON inference.model_profiles (code) WHERE scope_type = 'platform' AND tenant_id IS NULL`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_inference_tenant_profile_code ON inference.model_profiles (tenant_id, code) WHERE scope_type = 'tenant' AND tenant_id IS NOT NULL`,
-		`CREATE INDEX IF NOT EXISTS idx_inference_profiles_resolution ON inference.model_profiles (scope_type, tenant_id, status)`,
-		`DO $$ BEGIN
-			IF NOT EXISTS (
-				SELECT 1 FROM pg_constraint WHERE conname = 'ck_inference_deployment_chat_max_output_tokens_parameter'
-			) THEN
-				ALTER TABLE inference.model_deployments
-				ADD CONSTRAINT ck_inference_deployment_chat_max_output_tokens_parameter
-				CHECK (chat_max_output_tokens_parameter IN ('max_tokens', 'max_completion_tokens'));
-			END IF;
-		END $$`,
-		`DO $$ BEGIN
-			IF NOT EXISTS (
-				SELECT 1 FROM pg_constraint WHERE conname = 'ck_inference_deployment_chat_temperature_mode'
-			) THEN
-				ALTER TABLE inference.model_deployments
-				ADD CONSTRAINT ck_inference_deployment_chat_temperature_mode
-				CHECK (chat_temperature_mode IN ('configurable', 'default_only'));
-			END IF;
-		END $$`,
-	}
-	for _, statement := range statements {
-		if err := db.Exec(statement).Error; err != nil {
-			return err
-		}
-	}
-	return nil
 }

@@ -447,6 +447,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-meta-postgres
 	@$(MAKE) test-catalog-postgres
 	@$(MAKE) test-develop-postgres
+	@$(MAKE) test-inference-postgres
 	@$(MAKE) test-model-postgres
 	@$(MAKE) test-quality-postgres
 	@$(MAKE) test-security-postgres
@@ -616,6 +617,10 @@ test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约
 
 test-develop-postgres: ## 使用测试 PostgreSQL 数据库运行 Develop schema 与目录变化集成门禁
 	@bash scripts/test/develop-postgres-gate.sh $(DEVELOP_POSTGRES_TEST_ARGS)
+
+.PHONY: test-inference-postgres
+test-inference-postgres: ## 在独占 PostgreSQL 验证 Inference 部署、受限启动和领域存储
+	@bash scripts/test/inference-postgres-gate.sh
 
 test-model-postgres: ## 使用一次性 PostgreSQL 数据库运行 Model 物化与事务集成门禁
 	@bash scripts/test/model-postgres-gate.sh

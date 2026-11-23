@@ -14,7 +14,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
-	platformmysql "github.com/addp/common/infra/database/mysql"
+
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/gateway/internal/config"
@@ -22,7 +22,6 @@ import (
 	"github.com/addp/gateway/internal/middleware"
 	"github.com/addp/gateway/internal/router"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -112,18 +111,7 @@ func main() {
 }
 
 func prepareAccessLog() error {
-	var db *gorm.DB
-	var err error
-	if os.Getenv("ADDP_INFRA_DATABASE_PROVIDER") == "mysql" {
-		db, err = platformmysql.OpenInstallation("gateway")
-	} else {
-		cfg := config.PlatformDatabase()
-		cfg.User, cfg.Password = os.Getenv("ADDP_DATABASE_DEPLOY_USER"), os.Getenv("ADDP_DATABASE_DEPLOY_PASSWORD")
-		if cfg.User == "" || cfg.Password == "" {
-			return errors.New("platform database deployment credentials are required")
-		}
-		db, err = bootstrap.OpenDatabase(cfg, &gorm.Config{})
-	}
+	db, err := bootstrap.OpenPlatformInstallation(config.PlatformDatabase(), "gateway")
 	if err != nil {
 		return err
 	}

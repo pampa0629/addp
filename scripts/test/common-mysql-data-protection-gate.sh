@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
+# ADDP_T2_INPUT_FILES=scripts/test/inference-platform-startup.py scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-meta-scan' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-meta-scan' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -46,7 +46,7 @@ if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
 fi
 
 case "$test_group" in
-    platform-execution|platform-common-install|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-meta-scan)
+    platform-execution|platform-common-install|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-meta-scan)
         if [ "$local_disposable" != true ]; then
             echo "$test_group requires a gate-owned instance (--local-disposable)" >&2
             exit 2
@@ -124,6 +124,7 @@ mysql['environment']['MYSQL_DATABASE'] = {
     'platform-system-install': 'system',
     'platform-meta-scan': 'meta',
     'platform-gateway-install': 'gateway',
+    'platform-inference-install': 'inference',
 }.get(group, 'addp_platform_mysql_test')
 
 with open(destination, 'w') as handle:
@@ -196,6 +197,30 @@ if [ "$test_group" = platform-system-install ]; then
     (cd "$ROOT_DIR/system/backend" && GOWORK=off go build -o "$WORK_DIR/iam-bootstrap" ./cmd/iam-bootstrap)
     (cd "$ROOT_DIR/gateway" && GOWORK=off go build -o "$WORK_DIR/gateway" ./cmd/gateway)
     bash "$ROOT_DIR/scripts/test/mysql-system-install-contract.sh" "$WORK_DIR" "$MYSQL_PROJECT" "$mysql_port"
+    exit 0
+fi
+
+if [ "$test_group" = platform-inference-install ]; then
+    export ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port"
+    export ADDP_DATABASE_DEPLOY_USER=platform_deploy ADDP_DATABASE_RUNTIME_USER=platform_runtime
+    ADDP_DATABASE_DEPLOY_PASSWORD=$(openssl rand -hex 24)
+    ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 24)
+    export ADDP_DATABASE_DEPLOY_PASSWORD ADDP_DATABASE_RUNTIME_PASSWORD
+    docker exec -i "$MYSQL_PROJECT" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot' <<SQL
+CREATE USER 'platform_deploy'@'%' IDENTIFIED BY '$ADDP_DATABASE_DEPLOY_PASSWORD';
+CREATE USER 'platform_runtime'@'%' IDENTIFIED BY '$ADDP_DATABASE_RUNTIME_PASSWORD';
+GRANT ALL ON inference.* TO 'platform_deploy'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON inference.* TO 'platform_runtime'@'%';
+SQL
+    cd "$ROOT_DIR/inference/backend"
+    GOWORK=off go build -o "$WORK_DIR/inference" ./cmd/server
+    python3 "$ROOT_DIR/scripts/test/inference-platform-startup.py" "$WORK_DIR/inference" unprepared
+    "$WORK_DIR/inference" prepare-database
+    "$WORK_DIR/inference" prepare-database
+    unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+    python3 "$ROOT_DIR/scripts/test/inference-platform-startup.py" "$WORK_DIR/inference"
+    ADDP_TEST_INFERENCE_PLATFORM=1 GOWORK=off go test ./internal/repository -run '^TestInferencePlatformStore$' -count=1 -v | tee "$WORK_DIR/inference.log"
+    grep -q '^--- PASS: TestInferencePlatformStore ' "$WORK_DIR/inference.log"
     exit 0
 fi
 

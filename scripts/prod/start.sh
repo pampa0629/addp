@@ -160,6 +160,9 @@ python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${inten
 if [[ "$prepare_databases" == true ]]; then
   prepare_database meta-backend
   prepare_database gateway
+  if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
+    prepare_database inference-backend
+  fi
 fi
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"

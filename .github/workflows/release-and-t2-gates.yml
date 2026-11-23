@@ -40,6 +40,7 @@ jobs:
       cli: ${{ steps.cli.outputs.run }}
       common: ${{ steps.common.outputs.run }}
       gateway: ${{ steps.gateway.outputs.run }}
+      inference: ${{ steps.inference.outputs.run }}
       develop: ${{ steps.develop.outputs.run }}
       manager: ${{ steps.manager.outputs.run }}
       meta: ${{ steps.meta.outputs.run }}
@@ -130,6 +131,15 @@ jobs:
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/ci/select-module-gate.py --module gateway
+
+      - name: Select Inference platform database gate
+        id: inference
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module inference
 
       - name: Select Common PostgreSQL gate
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -1697,7 +1707,7 @@ jobs:
   common-mysql-data-protection:
     name: Common, Owner protection and Model metric contracts (MySQL 8)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.model == 'true' || needs.selection.outputs.gateway == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.model == 'true' || needs.selection.outputs.gateway == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.inference == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -1730,6 +1740,9 @@ jobs:
 
       - name: Verify Common deployment and cross-database readiness with one runtime identity
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-common-install'
+
+      - name: Verify Inference installation and tenant profile isolation on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-inference-install'
 
       - name: Verify MySQL System startup, Gateway access logging and tenant login
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-install'
@@ -1966,6 +1979,34 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Security integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  inference-postgres:
+    name: Inference integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.inference == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: inference/backend/go.mod
+          cache: false
+
+      - name: Run Inference PostgreSQL gate
+        run: make test-inference-postgres
+
+      - name: Summarize Inference PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Inference integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   model-postgres:

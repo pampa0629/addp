@@ -12,7 +12,6 @@ import (
 type Config struct {
 	commonconfig.BaseConfig
 	Port                string
-	DBSchema            string
 	SystemURL           string
 	ServiceClientSecret string
 }
@@ -24,7 +23,6 @@ func Load() (*Config, error) {
 	}
 	cfg := &Config{
 		Port:                commonconfig.GetEnv("INFERENCE_BACKEND_PORT", "8191"),
-		DBSchema:            "inference",
 		SystemURL:           commonconfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		ServiceClientSecret: commonconfig.GetEnv("INFERENCE_SERVICE_CLIENT_SECRET", ""),
 	}
@@ -36,10 +34,6 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) PlatformDatabase() database.Config {
-	return database.Config{
-		Host: c.DBHost, Port: c.DBPort,
-		User: c.DBUser, Password: c.DBPassword,
-		DBName: c.DBName, Schema: c.DBSchema,
-	}
+func PlatformDatabase() database.Config {
+	return database.Config{Host: commonconfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonconfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonconfig.GetEnv("POSTGRES_DB", "addp"), Schema: "inference"}
 }

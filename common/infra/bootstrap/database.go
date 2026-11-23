@@ -35,6 +35,18 @@ func OpenPlatformRuntime(pg database.Config, owner string, options *gorm.Config)
 	return OpenRuntimeDatabase(pg, owner, "ADDP_DATABASE_RUNTIME", options)
 }
 
+// OpenPlatformInstallation connects a module's explicit schema preparation command.
+func OpenPlatformInstallation(pg database.Config, owner string) (*gorm.DB, error) {
+	if databaseProvider() == "mysql" {
+		return platformmysql.OpenInstallation(owner)
+	}
+	pg.User, pg.Password = os.Getenv("ADDP_DATABASE_DEPLOY_USER"), os.Getenv("ADDP_DATABASE_DEPLOY_PASSWORD")
+	if pg.User == "" || pg.Password == "" {
+		return nil, fmt.Errorf("platform database deployment credentials are required")
+	}
+	return OpenDatabase(pg, &gorm.Config{})
+}
+
 // OpenRuntimeDatabase is for consumers with a MySQL startup contract. The
 // physical database and credential prefix belong to the calling process.
 func OpenRuntimeDatabase(pg database.Config, mysqlDatabase, credentialPrefix string, options *gorm.Config) (*gorm.DB, error) {
