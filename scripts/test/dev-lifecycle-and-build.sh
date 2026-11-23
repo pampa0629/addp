@@ -401,6 +401,7 @@ shutil.copy2(repository / 'scripts/utils/node-runtime.sh', root / 'scripts/utils
 (root / 'scripts/utils/colors.sh').write_text('YELLOW= RED= GREEN= NC=\n')
 for name in ('deployment-inventory.py','metrics-project.py'):
     shutil.copy2(repository / 'scripts/utils' / name, root / 'scripts/utils' / name)
+(dev / 'platform-database.sh').write_text('addp_dev_select_database() { :; }\n')
 (root / 'scripts/infra').mkdir()
 (root / 'scripts/infra/ports.sh').write_text('addp_infra_ready() { return 0; }\naddp_infra_read_actual_ports() { :; }\n')
 (root / '.dev-pids').mkdir()
@@ -665,6 +666,7 @@ addp_prepare_python_backend() {
   echo "backend-sync $runtime" >> "$FIXTURE_ROOT/events"
 }
 """)
+    (dev / 'platform-database.sh').write_text('addp_dev_select_database() { :; }\n')
     (dev / 'ports.sh').write_text('addp_dev_load_saved_ports() { :; }\n')
     (root / '.env').write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
     infra = root / 'scripts/infra'
