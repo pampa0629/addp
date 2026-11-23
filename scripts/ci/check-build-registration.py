@@ -462,10 +462,31 @@ def validate_registration(repository: Path) -> list[str]:
             or re.search(r"(?m)^        if:", consistency_steps[1])
         ):
             errors.append("Platform CI must check whitespace immediately after checkout")
+        preflight_steps = [step for step in consistency_steps if re.search(
+            r"(?m)^(?: {8})?run: make test-platform-preflight[ \t]*$", step
+        )]
+        if (
+            len(preflight_steps) != 1
+            or len(consistency_steps) < 3
+            or preflight_steps[0] != consistency_steps[2]
+            or "id: platform-preflight" not in preflight_steps[0]
+            or re.search(r"(?m)^        (?:if|continue-on-error):", preflight_steps[0])
+        ):
+            errors.append("Platform CI must run platform preflight once, immediately after whitespace checks")
+        checks_steps = [step for step in consistency_steps if re.search(
+            r"(?m)^(?: {8})?run: make test-platform-checks[ \t]*$", step
+        )]
+        if (
+            len(checks_steps) != 1
+            or consistency_steps.index(checks_steps[0]) <= 2
+            or re.search(r"(?m)^        (?:if|continue-on-error):", checks_steps[0])
+            or re.search(r"(?m)^\s*(?:-\s*)?run: make test-platform[ \t]*$", consistency_job)
+        ):
+            errors.append("Platform CI must run the remaining checks once after a successful preflight")
         install = re.search(r"(?m)^\s*sudo apt-get install[^\n]*\bripgrep\b[^\n]*$", consistency_job)
-        check = re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform\s*$", consistency_job)
+        check = re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform-checks\s*$", consistency_job)
         if not install or not check or install.end() > check.start():
-            errors.append("Platform CI must install ripgrep before make test-platform")
+            errors.append("Platform CI must install ripgrep before make test-platform-checks")
         product_match = re.search(
             r"(?ms)^  product-build:\s*\n(?P<job>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
             platform_workflow,
@@ -550,7 +571,19 @@ def validate_registration(repository: Path) -> list[str]:
     lifecycle_recipe = make_recipe(makefile, "test-dev-lifecycle") or ""
     if "bash scripts/test/dev-lifecycle-and-build.sh" not in lifecycle_recipe:
         errors.append("Makefile test-dev-lifecycle must run the dev lifecycle tests")
-    platform_recipe = make_recipe(makefile, "test-platform") or ""
+    if (make_recipe(makefile, "test-platform") or "").splitlines() != [
+        "\t@$(MAKE) test-platform-preflight",
+        "\t@$(MAKE) test-platform-checks",
+    ]:
+        errors.append("Makefile test-platform must run both platform stages once in order")
+    if (make_recipe(makefile, "test-platform-preflight") or "").splitlines() != [
+        "\t@$(MAKE) test-main-publication",
+        "\t@$(MAKE) test-build-registration",
+        "\t@python3 scripts/ci/select-module-gate_test.py",
+        "\t@python3 scripts/test/changed-gate_test.py",
+    ]:
+        errors.append("Makefile platform preflight must run the publication, build and change-selection checks")
+    platform_recipe = make_recipe(makefile, "test-platform-checks") or ""
     if "$(MAKE) test-dev-lifecycle" not in platform_recipe:
         errors.append("Makefile test-platform must run test-dev-lifecycle")
 

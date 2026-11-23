@@ -1369,11 +1369,18 @@ test-main-publication: ## 验证共享 main 续办、基线检查与发布锁
 	@bash -n scripts/ci/publish-main.sh
 	@python3 scripts/ci/publish-main_test.py
 
-test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致性门禁
+test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-platform-preflight
+	@$(MAKE) test-platform-checks
+
+.PHONY: test-platform-preflight test-platform-checks
+test-platform-preflight:
 	@$(MAKE) test-main-publication
 	@$(MAKE) test-build-registration
 	@python3 scripts/ci/select-module-gate_test.py
 	@python3 scripts/test/changed-gate_test.py
+
+test-platform-checks: check-node-runtime
 	@$(MAKE) test-format-documentation
 	@$(MAKE) test-infra-minio-cache
 	@$(MAKE) test-platform-review

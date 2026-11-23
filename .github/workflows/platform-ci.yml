@@ -377,6 +377,10 @@ jobs:
             git show --check --format= "$ADDP_CI_HEAD"
           fi
 
+      - name: Run platform consistency preflight
+        id: platform-preflight
+        run: make test-platform-preflight
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -434,7 +438,7 @@ jobs:
       - name: Run platform consistency gate
         id: platform-gate
         # Includes Backend-owned schema startup, Worker ordering, Swagger cache invalidation and lifecycle concurrency tests.
-        run: make test-platform
+        run: make test-platform-checks
 
       - name: Summarize platform consistency gate
         if: always()
@@ -445,6 +449,7 @@ jobs:
           gate-outcome: ${{ steps.platform-gate.outcome }}
           failure-stage: >-
             ${{ steps.changed-whitespace.outcome == 'failure' && 'whitespace'
+                || steps.platform-preflight.outcome == 'failure' && 'preflight'
                 || steps.platform-gate.outcome == 'failure' && 'gate'
                 || job.status == 'failure' && steps.platform-gate.outcome != 'success' && 'preparation'
                 || '' }}

@@ -85,7 +85,7 @@ class PythonCIRegistrationTest(unittest.TestCase):
                 f"        with:\n          venv-path: {owner}/backend/venv\n"
                 "          python-version: \"3.12\"\n"
                 f"          requirements-file: {owner}/backend/requirements.txt\n")
-        workflow.write_text(workflow.read_text() + "  platform-consistency:\n    steps:\n" + setup + "      - run: make test-platform\n")
+        workflow.write_text(workflow.read_text() + "  platform-consistency:\n    steps:\n" + setup + "      - run: make test-platform-checks\n")
         regression = self.repository / "scripts/test/swagger-route-coverage_test.py"
         regression.parent.mkdir(parents=True)
         regression.write_text("# regression fixture\n")
@@ -110,12 +110,12 @@ class PythonCIRegistrationTest(unittest.TestCase):
             platform.replace("agent/backend/requirements.txt", "common-python/pyproject.toml"),
             platform.replace('python-version: "3.12"', 'python-version: "3.11"', 1),
             platform.replace("        uses:", "        if: false\n        uses:", 1),
-            platform.replace("    steps:\n", "    steps:\n      - run: make test-platform\n", 1),
+            platform.replace("    steps:\n", "    steps:\n      - run: make test-platform-checks\n", 1),
         ):
             with self.subTest(platform=changed):
                 workflow.write_text(prefix + "  platform-consistency:\n" + changed)
                 self.assertIn(
-                    "agent/backend/openapi.json: platform Swagger checks require the unconditional owner Python environment before make test-platform",
+                    "agent/backend/openapi.json: platform Swagger checks require the unconditional owner Python environment before make test-platform-checks",
                     MODULE.validate_registration(self.repository),
                 )
 

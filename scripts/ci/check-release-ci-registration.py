@@ -135,7 +135,7 @@ def validate_registration(repository: Path) -> list[str]:
                 "must remain internal to test-release"
             )
 
-    platform_recipe = make_recipe(makefile, "test-platform") or ""
+    platform_recipe = make_recipe(makefile, "test-platform-checks") or ""
     runner_recipe = make_recipe(makefile, "test-release-runner")
     if runner_recipe is None:
         errors.append("Makefile target test-release-runner is missing")

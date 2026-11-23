@@ -32,7 +32,7 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             "test-release-runner:\n"
             "\t@python3 -m unittest scripts/test/release-gate_test.py scripts/test/workflow-security-gate_test.py scripts/ci/check-release-ci-registration_test.py\n"
             "\t@python3 scripts/ci/check-release-ci-registration.py --repository .\n\n"
-            "test-platform:\n"
+            "test-platform-checks:\n"
             "\t@$(MAKE) test-release-runner\n"
             "\t@$(MAKE) test-workflow-security\n\n"
             "test-workflow-security:\n"

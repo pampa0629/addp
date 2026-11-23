@@ -199,10 +199,11 @@ def validate_registration(repository: Path) -> list[str]:
             or not (repository / "scripts/test/swagger-route-coverage_test.py").is_file()
         ):
             errors.append("FastAPI Swagger checks must retain their regression and coverage entry in test-authorization")
-        platform_jobs = [job for job in jobs if re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform\s*$", job)]
+        platform_check = re.compile(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform-checks\s*$")
+        platform_jobs = [job for job in jobs if platform_check.search(job)]
         for manifest, owner_setup in fastapi_environments:
             for job in platform_jobs or [""]:
-                gate = re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform\s*$", job)
+                gate = platform_check.search(job)
                 if not any(
                     gate and start < gate.start()
                     and PYTHON_GATE_ACTION in step
@@ -212,7 +213,7 @@ def validate_registration(repository: Path) -> list[str]:
                     and step_setting(step, "python-version") == step_setting(owner_setup, "python-version")
                     for start, step in workflow_steps(job)
                 ):
-                    errors.append(f"{Path(manifest).parent}/openapi.json: platform Swagger checks require the unconditional owner Python environment before make test-platform")
+                    errors.append(f"{Path(manifest).parent}/openapi.json: platform Swagger checks require the unconditional owner Python environment before make test-platform-checks")
     return errors
 
 

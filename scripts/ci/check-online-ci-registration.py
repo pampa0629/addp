@@ -2510,7 +2510,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     platform = (repository/'.github/workflows/platform-ci.yml').read_text()
     platform_job = re.search(r'^  platform-consistency:\n(?P<body>.*?)(?=^  \S|\Z)', platform, re.M|re.S)
     body = platform_job.group('body') if platform_job else ''
-    gate = body.find('run: make test-platform')
+    gate = body.find('run: make test-platform-checks')
     for module in ('console','manager'):
         preparation = f'uses: ./.github/actions/prepare-frontend-gate\n        with:\n          frontend-directory: {module}/frontend'
         if gate < 0 or body.find(preparation) < 0 or body.find(preparation) > gate:
@@ -7619,7 +7619,7 @@ def validate_local_http_quality_profile(repository: Path) -> None:
     job=re.search(r"(?ms)^  platform-consistency:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",workflow)
     body=job.group("body") if job else ""
     install=re.search(r"(?m)^\s*sudo apt-get install[^\n]*\bopenssl\b[^\n]*$",body)
-    gate=body.find("make test-platform")
+    gate=body.find("run: make test-platform-checks")
     verify=body.find("command -v openssl")
     if not (0<=probe<tests and install and install.end()<verify<gate):
         raise RegistrationError("local HTTP TLS requires OpenSSL admission and CI preparation before the gate")

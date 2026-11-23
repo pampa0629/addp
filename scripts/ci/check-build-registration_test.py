@@ -39,6 +39,7 @@ class GateSummaryTest(unittest.TestCase):
             for selected, status, outcome, phase in (
                 (True, "success", "success", None),
                 (False, "success", "skipped", None),
+                (None, "failure", "skipped", "preflight"),
                 (True, "failure", "skipped", "preparation"),
                 (True, "failure", "failure", "gate"),
                 (None, "failure", "skipped", "selection"),
@@ -187,6 +188,8 @@ class BuildRegistrationTest(unittest.TestCase):
             "    image: ${REGISTRY:-localhost:5001}/addp-sample-backend:${IMAGE_TAG:-latest}\n",
         )
         self._write("docker-compose.runtimes.yml", "services: {}\n")
+        self._write("scripts/ci/select-module-gate_test.py", "# fixture\n")
+        self._write("scripts/test/changed-gate_test.py", "# fixture\n")
         self._write(
             "Makefile",
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"
@@ -194,7 +197,10 @@ class BuildRegistrationTest(unittest.TestCase):
             "select-image-services:\n\t@python3 scripts/ci/select-image-services.py\n\n"
             "prepare-cli-release:\n\t@python3 scripts/ci/update-cli-version.py\n\n"
             "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n"
-            "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n"
+            "test-platform:\n\t@$(MAKE) test-platform-preflight\n\t@$(MAKE) test-platform-checks\n\n"
+            "test-platform-preflight:\n\t@$(MAKE) test-main-publication\n\t@$(MAKE) test-build-registration\n"
+            "\t@python3 scripts/ci/select-module-gate_test.py\n\t@python3 scripts/test/changed-gate_test.py\n\n"
+            "test-platform-checks:\n\t@python3 scripts/ci/update-cli-version_test.py\n"
             "\t@$(MAKE) test-format-documentation\n"
             "\t@$(MAKE) test-dev-lifecycle\n"
             "\t@$(MAKE) test-execution-fixtures\n\t@$(MAKE) test-projection-store-ownership\n\n"
@@ -213,8 +219,10 @@ class BuildRegistrationTest(unittest.TestCase):
             "jobs:\n  platform-consistency:\n    steps:\n"
             "      - uses: actions/checkout@sha\n"
             "      - id: changed-whitespace\n        run: git show --check\n"
+            "      - id: platform-preflight\n        run: make test-platform-preflight\n"
+            "      - uses: actions/setup-go@sha\n"
             "      - run: |\n          sudo apt-get install -y --no-install-recommends ripgrep\n"
-            "      - run: make test-platform\n"
+            "      - run: make test-platform-checks\n"
             "  go-tests:\n    steps:\n"
             "      - run: make test-go\n        env:\n          ADDP_CI_SUMMARY_FILE: go.md\n"
             "      - uses: ./.github/actions/ci-gate-summary\n        with:\n          details-file: go.md\n"
@@ -424,23 +432,60 @@ class BuildRegistrationTest(unittest.TestCase):
         install = "          sudo apt-get install -y --no-install-recommends ripgrep\n"
         for changed in (
             original.replace(install, ""),
-            original.replace(install, "").replace("      - run: make test-platform\n", "      - run: make test-platform\n" + install),
+            original.replace(install, "").replace("      - run: make test-platform-checks\n", "      - run: make test-platform-checks\n" + install),
         ):
             with self.subTest(workflow=changed):
                 workflow.write_text(changed)
-                self.assertIn("Platform CI must install ripgrep before make test-platform", MODULE.validate_registration(self.repository))
+                self.assertIn("Platform CI must install ripgrep before make test-platform-checks", MODULE.validate_registration(self.repository))
 
     def test_platform_whitespace_step_runs_before_dependencies(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
         original = workflow.read_text()
         step = "      - id: changed-whitespace\n        run: git show --check\n"
         for changed in (
-            original.replace(step, "").replace("      - run: make test-platform\n", step + "      - run: make test-platform\n"),
+            original.replace(step, "").replace("      - run: make test-platform-checks\n", step + "      - run: make test-platform-checks\n"),
             original.replace(step, step.replace("        run:", "        if: false\n        run:")),
         ):
             with self.subTest(workflow=changed):
                 workflow.write_text(changed)
                 self.assertIn("Platform CI must check whitespace immediately after checkout", MODULE.validate_registration(self.repository))
+
+    def test_platform_preflight_is_required_before_toolchain_preparation(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        original = workflow.read_text()
+        step = "      - id: platform-preflight\n        run: make test-platform-preflight\n"
+        go_setup = "      - uses: actions/setup-go@sha\n"
+        for changed in (
+            original.replace(step, ""),
+            original.replace(step + go_setup, go_setup + step),
+            original.replace(step, step.replace("        run:", "        if: false\n        run:")),
+            original.replace(step, step + "        continue-on-error: true\n"),
+        ):
+            with self.subTest(workflow=changed):
+                workflow.write_text(changed)
+                self.assertIn("Platform CI must run platform preflight once, immediately after whitespace checks",
+                              MODULE.validate_registration(self.repository))
+
+    def test_platform_checks_require_successful_preflight_without_repeating_it(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        original = workflow.read_text()
+        step = "      - run: make test-platform-checks\n"
+        for replacement in ("", step + "        if: always()\n", step + "      - run: make test-platform\n"):
+            with self.subTest(replacement=replacement):
+                workflow.write_text(original.replace(step, replacement))
+                self.assertIn("Platform CI must run the remaining checks once after a successful preflight",
+                              MODULE.validate_registration(self.repository))
+
+    def test_local_platform_gate_keeps_both_stages(self) -> None:
+        makefile = self.repository / "Makefile"
+        original = makefile.read_text()
+        preflight = "\t@$(MAKE) test-platform-preflight\n"
+        checks = "\t@$(MAKE) test-platform-checks\n"
+        for changed in (original.replace(preflight, ""), original.replace(preflight + checks, checks + preflight)):
+            with self.subTest(makefile=changed):
+                makefile.write_text(changed)
+                self.assertIn("Makefile test-platform must run both platform stages once in order",
+                              MODULE.validate_registration(self.repository))
 
     def test_rejects_shallow_product_checkout(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
