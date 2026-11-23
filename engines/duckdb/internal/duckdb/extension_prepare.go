@@ -30,7 +30,7 @@ func PrepareRequiredExtensions(
 	if err := os.MkdirAll(outputDirectory, 0o755); err != nil {
 		return fmt.Errorf("create DuckDB extension directory: %w", err)
 	}
-	for _, fileName := range RequiredExtensionFileNames() {
+	for _, fileName := range officialExtensionFileNames() {
 		target := filepath.Join(outputDirectory, fileName)
 		if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() && info.Size() > 0 {
 			continue

@@ -75,6 +75,9 @@ addp_source_fingerprint() {
   rm -f "$file_list" "$raw_file_list" "$module_sum_list"
   fingerprint=$({
     printf '%s\n' 'addp-go-inputs-v2' "$build_context"
+    if [[ "$source_dir" == *engines/duckdb ]]; then
+      printf 'postgres-scanner:%s\n' "${duckdb_scanner_digest:-}"
+    fi
     printf '%s\0' "$@"
     printf '\n%s\n' "$fingerprint"
   } | addp_hash_files | awk '{print $1}')
@@ -154,6 +157,10 @@ addp_atomic_go_build() (
   built_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   build_id="$(date -u '+%Y%m%dT%H%M%SZ')-${module_name}-${build_pid}-${tmp_binary##*.}"
   ldflags="-X github.com/addp/common/buildinfo.BuildID=${build_id} -X github.com/addp/common/buildinfo.GitCommit=${git_commit} -X github.com/addp/common/buildinfo.SourceFingerprint=${fingerprint_before} -X github.com/addp/common/buildinfo.BuiltAt=${built_at}"
+
+  if [[ "$source_dir" == *engines/duckdb ]]; then
+    ldflags+=" -X github.com/addp/engines/duckdb/internal/duckdb.postgresScannerSHA256=${duckdb_scanner_digest:?missing native build digest}"
+  fi
 
   if ! (cd "$source_dir" && "$go_command" build -ldflags "$ldflags" -o "$tmp_binary" "$@"); then
     rm -f "$tmp_binary"

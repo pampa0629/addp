@@ -444,6 +444,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-common-falkordb
 	@$(MAKE) test-common-hdfs
 	@$(MAKE) test-common-spark-federation
+	@$(MAKE) test-engines-duckdb-postgres-scanner
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
@@ -1339,6 +1340,10 @@ test-gdal-native-lifecycle: ## 验证 GDAL/Arrow 原生来源、准备事务和�
 	@bash -n scripts/dev/gdal-env.sh
 	@bash -n scripts/dev/geopython-workflow.sh
 	@python3 -m unittest scripts/test/gdal-native-lifecycle_test.py scripts.test.changed-gate_test.ChangedGateTest.test_native_gdal_preparation_selects_both_real_consumers
+
+.PHONY: test-engines-duckdb-postgres-scanner
+test-engines-duckdb-postgres-scanner: ## 构建并验证与 DuckDB Runtime 绑定的 PostgreSQL 扫描器
+	@bash scripts/test/engines-duckdb-postgres-scanner-gate.sh
 
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: test-gdal-native-lifecycle test-infra-runtime-log-lifecycle ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁

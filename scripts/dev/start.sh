@@ -801,6 +801,12 @@ build_service() {
     if [[ "$name" == "transfer" ]]; then
         build_args+=(-tags sqlite_load_extension)
     fi
+    local duckdb_scanner_digest=""
+    if [[ "$name" == "duckdb" ]]; then
+        duckdb_scanner_digest=$("$src_dir/postgres-scanner/build.sh" \
+            "$PROJECT_ROOT/.cache/duckdb/native-build" \
+            "${DUCKDB_EXTENSION_DIRECTORY:-$PROJECT_ROOT/.cache/duckdb/extensions}") || return 1
+    fi
     build_args+=(./cmd/server)
 
     if addp_go_build_is_current "$src_dir" "$binary_path" "${build_args[@]}" &&

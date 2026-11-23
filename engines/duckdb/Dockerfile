@@ -21,12 +21,16 @@ COPY common ./common
 COPY engines/duckdb ./engines/duckdb
 
 WORKDIR /workspace/engines/duckdb
-RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /out/addp-duckdb ./cmd/server \
-    && CGO_ENABLED=1 go build -ldflags="-s -w" -o /out/prepare-extensions ./cmd/prepare-extensions
+RUN apt-get update && apt-get install -y --no-install-recommends cmake ninja-build bison flex patch python3 libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=duckdb-scanner-${TARGETOS}-${TARGETARCH},target=/native-build \
+    digest=$(./postgres-scanner/build.sh /native-build /out/extensions) \
+    && flags="-s -w -X github.com/addp/engines/duckdb/internal/duckdb.postgresScannerSHA256=$digest" \
+    && CGO_ENABLED=1 go build -ldflags="$flags" -o /out/addp-duckdb ./cmd/server \
+    && CGO_ENABLED=1 go build -ldflags="$flags" -o /out/prepare-extensions ./cmd/prepare-extensions
 RUN --mount=type=cache,id=duckdb-extensions-${TARGETOS}-${TARGETARCH}-v1.4.5,target=/extension-cache \
-    /out/prepare-extensions --output /extension-cache \
-    && mkdir -p /out/extensions \
-    && cp /extension-cache/*.duckdb_extension /out/extensions/
+    /out/prepare-extensions --output /extension-cache --verify=false \
+    && cp /extension-cache/httpfs.duckdb_extension /extension-cache/mysql_scanner.duckdb_extension /extension-cache/spatial.duckdb_extension /out/extensions/ \
+    && /out/prepare-extensions --output /out/extensions
 
 FROM ${RUNTIME_IMAGE}
 

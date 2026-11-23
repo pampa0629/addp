@@ -1,0 +1,21 @@
+--- a/src/include/postgres_scanner.hpp
++++ b/src/include/postgres_scanner.hpp
+@@ -45,0 +46 @@
++	bool only_named_table = false;
+--- a/src/postgres_extension.cpp
++++ b/src/postgres_extension.cpp
+@@ -178,0 +179,2 @@
++	config.AddExtensionOption("pg_only_named_table", "Limit attached table scans to the named PostgreSQL relation",
++	                          LogicalType::BOOLEAN, Value::BOOLEAN(false));
+--- a/src/postgres_scanner.cpp
++++ b/src/postgres_scanner.cpp
+@@ -282 +282 @@
+-		query = StringUtil::Format(R"(SELECT %s FROM %s.%s %s%s)", col_names,
++		query = StringUtil::Format(R"(SELECT %s FROM %s%s.%s %s%s)", col_names, bind_data->only_named_table ? "ONLY " : "",
+--- a/src/storage/postgres_table_entry.cpp
++++ b/src/storage/postgres_table_entry.cpp
+@@ -46,0 +47,4 @@
++	Value only_named;
++	if (context.TryGetCurrentSetting("pg_only_named_table", only_named)) {
++		result->only_named_table = BooleanValue::Get(only_named);
++	}

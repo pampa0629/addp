@@ -53,15 +53,16 @@ func prepareFederatedSession(
 	options FederatedSessionOptions,
 ) (*FederatedSession, error) {
 	// 1. 打开 DuckDB 内存连接
-	db, err := OpenDB()
+	withPostgres := false
+	for _, engine := range engines {
+		if MountKindForEngine(engine.EngineType) == MountKindPostgres {
+			withPostgres = true
+			break
+		}
+	}
+	db, conn, err := openQueryConnection(ctx, withPostgres)
 	if err != nil {
 		return nil, err
-	}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
 	}
 	if err := configureFederatedSession(ctx, conn, options); err != nil {
 		conn.Close()

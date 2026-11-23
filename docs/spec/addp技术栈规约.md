@@ -50,6 +50,7 @@
 - **DuckDB**: `github.com/duckdb/duckdb-go/v2@v2.5.6`（DuckDB 1.4.5 LTS）
   - 原生依赖只允许存在于 `engines/duckdb`。Develop 和 Service 统一通过 `FederatedQueryRuntimeProvider` 调用独立 Runtime，不得链接 DuckDB 驱动。
   - 用户 SQL 执行前必须完成授权引擎挂载和对象路径白名单配置，再关闭 DuckDB 外部访问并锁定安全配置。
+  - Develop 通过 DuckDB 读取 PostgreSQL 普通表时，原生扫描须限定到本次核权的具名关系（`FROM ONLY`），保留列、筛选和 LIMIT 下推能力。ADDP 随 Runtime 维护对应版本的 `postgres_scanner` 补丁，固定上游源码、验证各目标平台产物，升级时复验授权表读取、关联无权表以及撤权后重跑。已发布服务继续按发布定义读取。构建时将本平台扫描器的 SHA-256 固定到 Runtime 二进制。每个需要 PostgreSQL 的独立实例只在初始化阶段加载与该摘要相符的私有副本，恢复上游签名检查后才允许加载其他扩展、挂载数据源及接收用户 SQL。
 - **MySQL**: `github.com/go-sql-driver/mysql@v1.9.3` ⚠️ **必须使用此版本**
   - **Doris 兼容性要求**: v1.8.x 版本无法正常连接 Doris,会返回 "invalid connection" 错误
   - **影响**: 所有需要连接 MySQL/Doris 的模块必须使用 v1.9.3+

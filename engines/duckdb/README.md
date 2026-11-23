@@ -10,11 +10,24 @@ Source Engine ID 从 System 获取短期连接信息。当前可挂载 PostgreSQ
 ## 扩展生命周期
 
 固定依赖 `httpfs`、`postgres_scanner`、`mysql_scanner` 和 `spatial`。开发环境由
-`scripts/dev/start.sh` 在 Runtime 启动前准备并验证扩展；生产镜像在 builder 阶段下载到
-BuildKit 扩展缓存，并随镜像写入 `/opt/addp/duckdb/extensions`。Builder 和 Runtime 固定使用
+`scripts/dev/start.sh` 在 Runtime 启动前准备并验证扩展；生产镜像在 builder 阶段构建 PostgreSQL 扫描器、下载其余三个官方扩展，并随镜像写入 `/opt/addp/duckdb/extensions`。Builder 和 Runtime 固定使用
 Debian Bookworm，保证 DuckDB CGO 链接的 glibc 版本一致。请求处理阶段关闭 DuckDB 自动安装
 和自动加载，不下载扩展。调用方通过 `QueryOptions.Spatial` 声明当前查询需要空间类型或函数；
 Runtime 只在这类独立查询会话锁定配置前从上述目录显式加载 `spatial`，普通查询不承担该加载成本。
+
+### PostgreSQL 普通表扫描器的构建验证
+
+ADDP 的补丁针对 DuckDB 1.4.5 发布树指定的 `duckdb-postgres` 提交
+`b9fce43bc5d36bc6db70844f28b7b146e756eb22`。构建对 DuckDB、扫描器及其 libpq
+源码归档逐一验证 SHA-256。使用 CMake、Ninja、C/C++ 编译器和 OpenSSL 开发库，在目标平台运行：
+
+```sh
+engines/duckdb/postgres-scanner/build.sh /tmp/addp-scanner-build /tmp/addp-scanner-out
+```
+
+标准输出给出本平台本次构建的 SHA-256，供 Go 链接器固定到 Runtime 和启动验证工具。加载时核对私有副本，恢复签名检查后再挂载源库。输出文件是该平台的 `postgres_scanner.duckdb_extension`。选项 `pg_only_named_table` 在表绑定时确定，
+具名表扫描保留原生投影、筛选与分页。发布验收须核对 Runtime 对产物的信任、工作台按原用户执行的
+DataItem 裁决，以及已发布服务原有的表读取范围。构建命令只写入指定输出目录。
 
 ## 本地运行
 

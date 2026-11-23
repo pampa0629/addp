@@ -14,13 +14,12 @@ var duckDBExtensionPart = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 const DuckDBVersion = "v1.4.5"
 
-var requiredExtensions = []struct {
+var officialExtensions = []struct {
 	loadName string
 	fileName string
 }{
 	{loadName: "httpfs", fileName: "httpfs"},
 	{loadName: "mysql", fileName: "mysql_scanner"},
-	{loadName: "postgres", fileName: "postgres_scanner"},
 	{loadName: "spatial", fileName: "spatial"},
 }
 
@@ -48,15 +47,11 @@ func ensureDuckDBExtension(ctx context.Context, conn *sql.Conn, loadName, fileNa
 // not match the embedded DuckDB version/platform. Query handling never installs
 // or downloads extensions.
 func VerifyRequiredExtensions(ctx context.Context) error {
-	db, err := OpenDB()
+	db, conn, err := openQueryConnection(ctx, true)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return err
-	}
 	defer conn.Close()
 	var version string
 	if err := conn.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
@@ -65,7 +60,7 @@ func VerifyRequiredExtensions(ctx context.Context) error {
 	if version != DuckDBVersion {
 		return fmt.Errorf("DuckDB 版本不匹配: runtime=%s extensions=%s", version, DuckDBVersion)
 	}
-	for _, extension := range requiredExtensions {
+	for _, extension := range officialExtensions {
 		if err := ensureDuckDBExtension(ctx, conn, extension.loadName, extension.fileName); err != nil {
 			return err
 		}
@@ -73,9 +68,9 @@ func VerifyRequiredExtensions(ctx context.Context) error {
 	return nil
 }
 
-func RequiredExtensionFileNames() []string {
-	files := make([]string, 0, len(requiredExtensions))
-	for _, extension := range requiredExtensions {
+func officialExtensionFileNames() []string {
+	files := make([]string, 0, len(officialExtensions))
+	for _, extension := range officialExtensions {
 		files = append(files, extension.fileName+".duckdb_extension")
 	}
 	return files

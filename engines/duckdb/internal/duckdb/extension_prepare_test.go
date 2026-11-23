@@ -23,6 +23,9 @@ func TestPrepareRequiredExtensionsDownloadsOfficialLayout(t *testing.T) {
 	}
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/"+DuckDBVersion+"/test_platform/"+postgresScannerName+".gz" {
+			t.Error("the native scanner was requested from the official repository")
+		}
 		requests++
 		response.WriteHeader(http.StatusOK)
 		_, _ = response.Write(archive.Bytes())
@@ -33,10 +36,10 @@ func TestPrepareRequiredExtensionsDownloadsOfficialLayout(t *testing.T) {
 	if err := PrepareRequiredExtensions(context.Background(), server.Client(), server.URL, "test_platform", output); err != nil {
 		t.Fatalf("PrepareRequiredExtensions() error = %v", err)
 	}
-	if requests != len(RequiredExtensionFileNames()) {
+	if requests != len(officialExtensionFileNames()) {
 		t.Fatalf("requests = %d", requests)
 	}
-	for _, fileName := range RequiredExtensionFileNames() {
+	for _, fileName := range officialExtensionFileNames() {
 		content, err := os.ReadFile(filepath.Join(output, fileName))
 		if err != nil || !bytes.Equal(content, payload) {
 			t.Fatalf("extension %s content=%q error=%v", fileName, content, err)
@@ -46,7 +49,7 @@ func TestPrepareRequiredExtensionsDownloadsOfficialLayout(t *testing.T) {
 	if err := PrepareRequiredExtensions(context.Background(), server.Client(), server.URL, "test_platform", output); err != nil {
 		t.Fatalf("second PrepareRequiredExtensions() error = %v", err)
 	}
-	if requests != len(RequiredExtensionFileNames()) {
+	if requests != len(officialExtensionFileNames()) {
 		t.Fatalf("existing extensions were downloaded again: requests=%d", requests)
 	}
 }

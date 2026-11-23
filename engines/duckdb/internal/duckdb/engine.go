@@ -122,9 +122,6 @@ func MountPostgres(ctx context.Context, conn *sql.Conn, engine commonModels.Engi
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s",
 		host, port, user, password, database)
 
-	if err := ensureDuckDBExtension(ctx, conn, "postgres", "postgres_scanner"); err != nil {
-		return err
-	}
 	stmts := []string{
 		fmt.Sprintf("ATTACH '%s' AS %s (TYPE postgres, READ_ONLY)", dsn, SanitizeName(engine.Name)),
 	}
