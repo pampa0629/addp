@@ -89,6 +89,15 @@ class HostedPublicOriginGateTest(unittest.TestCase):
               printf '%s\n' retained-business-volume
               exit 0
             fi
+            if [[ " $* " == *" prepare-database "* ]]; then
+              [ "${ADDP_DATABASE_DEPLOY_USER:-}" = platform_deploy ] &&
+                [ -n "${ADDP_DATABASE_DEPLOY_PASSWORD:-}" ] &&
+                [ "$ADDP_DATABASE_RUNTIME_USER" = platform_runtime ] &&
+                [ -n "$ADDP_DATABASE_RUNTIME_PASSWORD" ] &&
+                [ "$ADDP_DATABASE_RUNTIME_PASSWORD" != "$ADDP_DATABASE_DEPLOY_PASSWORD" ] || exit 1
+            elif [ -n "${ADDP_DATABASE_DEPLOY_PASSWORD:-}" ]; then
+              exit 1
+            fi
             echo "docker:$*" >> "$ADDP_TEST_GATE_TRACE"
             if [ "${ADDP_TEST_BUSINESS_CONFIG_FAIL:-0}" = 1 ] &&
                [[ "$*" == *"business/docker-compose.yml config --quiet"* ]]; then
@@ -176,6 +185,11 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             "docker:compose --env-file /dev/null -f " + str(self.host.repository / "business/docker-compose.yml") + " up -d --no-deps --wait --wait-timeout 180 minio",
         ):
             self.assertIn(step, trace)
+        stages = ("system-backend prepare-database system", "system-backend prepare-database common",
+                  " up -d --no-deps --wait system-backend", "meta-backend prepare-database",
+                  "gateway prepare-database", " up -d --no-deps --wait gateway console system-frontend")
+        positions = [trace.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
         self.assertNotIn("--network-alias meta-frontend", trace)
         self.assertNotIn("--network-alias manager-frontend", trace)
         self.assertNotIn("--network-alias transfer-frontend", trace)

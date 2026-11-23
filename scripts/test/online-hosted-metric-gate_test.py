@@ -105,10 +105,13 @@ class HostedMetricGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = self.host.trace.read_text()
-        for step in ("metric-fixture:start", "start:-model", "start:-service", "start:-security",
+        steps = ("metric-fixture:start", "install:addp-system:prepare-database system",
+                     "install:addp-system:prepare-database common", "start:--exact-process -system",
+                     "install:addp-meta:prepare-database", "install:addp-gateway:prepare-database", "start:-model", "start:-service", "start:-security",
                      "make:test-online ONLINE_SUITE=metric-service-revision-lifecycle", "application-stop",
-                     "metric-fixture:stop", "infra-down"):
-            self.assertIn(step, trace)
+                     "metric-fixture:stop", "infra-down")
+        positions = [trace.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("cleanup=passed", (self.host.artifacts / "summary.txt").read_text())
 

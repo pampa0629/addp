@@ -29,7 +29,9 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         (self.repository / "scripts/lib").mkdir(parents=True)
         (self.repository / "scripts/infra").mkdir(parents=True)
         self.bin.mkdir()
+        (self.repository / ".gitignore").write_text(".dev-bins/\n")
         shutil.copy2(SCRIPT, self.repository / "scripts/test/online-hosted-opengauss-gate.sh")
+        shutil.copy2(SCRIPT.with_name("hosted-platform-database.sh"), self.repository / "scripts/test/hosted-platform-database.sh")
         shutil.copy2(
             SCRIPT.parents[1] / "lib/opengauss-official-media.sh",
             self.repository / "scripts/lib/opengauss-official-media.sh",
@@ -184,10 +186,34 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             fi
             """,
         )
+        self._write_repository_script("scripts/infra/ports.sh", """
+            addp_infra_mapped_port() { [ "$1:$2" = addp-postgres:5432 ] && echo 25432; }
+        """)
+        self._write_repository_script("scripts/dev/build-identity.sh", """
+            addp_go_build_is_current() { return 1; }
+            addp_atomic_go_build() {
+                mkdir -p .dev-bins
+                cat > "$3" <<'INSTALLER'
+            #!/usr/bin/env bash
+            set -eu
+            [ "$POSTGRES_DB:$POSTGRES_PORT" = addp_online:25432 ]
+            [ "$ADDP_DATABASE_DEPLOY_USER:$ADDP_DATABASE_RUNTIME_USER" = platform_deploy:platform_runtime ]
+            [ -n "$ADDP_DATABASE_DEPLOY_PASSWORD" ] && [ -n "$ADDP_DATABASE_RUNTIME_PASSWORD" ]
+            [ "$ADDP_DATABASE_DEPLOY_PASSWORD" != "$ADDP_DATABASE_RUNTIME_PASSWORD" ]
+            echo "install:${0##*/}:$*" >> "$ADDP_TEST_GATE_TRACE"
+            [ "${ADDP_TEST_INSTALL_FAIL:-}" != "$*" ]
+            INSTALLER
+                chmod +x "$3"
+            }
+        """)
         self._write_repository_script(
             "scripts/dev/start.sh",
             """
             #!/usr/bin/env bash
+            if [ -n "${ADDP_DATABASE_RUNTIME_USER:-}" ]; then
+              [ "$ADDP_DATABASE_RUNTIME_USER" = platform_runtime ] && [ -n "$ADDP_DATABASE_RUNTIME_PASSWORD" ] &&
+                [ -z "${ADDP_DATABASE_DEPLOY_PASSWORD+x}" ] || exit 1
+            fi
             echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
             sleep 30 &
             echo "$!" >> "$ADDP_TEST_BACKGROUND_PIDS"
@@ -299,6 +325,16 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             text=True,
             timeout=10,
         )
+
+    def test_database_install_failure_stops_before_system(self):
+        self.prepare_run_fixture()
+        result = self.run_gate(ADDP_TEST_INSTALL_FAIL="prepare-database common")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.trace.read_text()
+        self.assertIn("install:addp-system:prepare-database common", trace)
+        self.assertNotIn("start:", trace)
+        self.assertNotIn("make:test-online", trace)
+        self.assertFalse(self.secrets.exists())
 
     def test_initialization_failure_prevents_registration_and_scene(self):
         self.prepare_run_fixture()

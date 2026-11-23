@@ -54,6 +54,7 @@ stop_online_fixture() {
 }
 
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 
 stop_online_application() {
   local status=0
@@ -73,7 +74,7 @@ export ALLOWED_ORIGINS="$ADDP_PUBLIC_ORIGIN"
 export REGISTRY=localhost:5001 IMAGE_TAG=latest
 run_logged compose_business config --quiet
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 run_logged docker run -d --name registry -p 127.0.0.1:5001:5000 registry:2
 registry_ready=0
@@ -98,12 +99,17 @@ run_logged make build BUILD_ARGS="--arch amd64 --services $backends"
 run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backends,$frontends,nginx,geopython-workflow-engine"
 
 application_owned=1
+run_logged hosted_prepare_compose_database system-backend system
+run_logged hosted_prepare_compose_database system-backend common
 run_logged compose_app up -d --no-deps --wait system-backend
 IFS=, read -r -a backend_services <<< "$backends"
 declaration_modules=("${backend_services[@]%-backend}")
 publisher=(python3 scripts/prod/publish-module-declarations.py --compose-file "$ROOT_DIR/docker-compose.yml" --compose-file "$COMPOSE_OVERLAY")
 run_logged "${publisher[@]}" --provision "${declaration_modules[@]}"
 run_logged "${publisher[@]}" "${declaration_modules[@]}"
+run_logged hosted_prepare_compose_database meta-backend
+run_logged hosted_prepare_compose_database gateway
+unset hosted_deploy_password
 run_logged compose_app up -d --no-deps --wait security-backend
 run_logged compose_app up -d --no-deps --wait gateway console system-frontend
 run_logged compose_app up -d --no-deps --wait meta-backend

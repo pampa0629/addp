@@ -19,6 +19,21 @@ def deployment(module, role, port):
 
 
 class ProcessMetricsPlanTest(unittest.TestCase):
+    def test_hosted_process_receives_only_its_database_runtime_credentials(self):
+        install_keys = ("POSTGRES_USER", "POSTGRES_PASSWORD",
+                        "ADDP_DATABASE_DEPLOY_USER", "ADDP_DATABASE_DEPLOY_PASSWORD")
+        env = dict.fromkeys(install_keys, "bootstrap-fixture")
+        env.update(ADDP_ONLINE_HOSTED="1", ADDP_DATABASE_RUNTIME_USER="platform_runtime",
+                   ADDP_DATABASE_RUNTIME_PASSWORD="runtime-fixture")
+        for module, role in (("system", "backend"), ("meta", "backend"), ("meta", "worker"),
+                             ("gateway", "ingress"), ("model", "backend")):
+            with self.subTest(module=module, role=role), mock.patch.object(os, "execvpe") as receiver:
+                LAUNCH.launch([module, module, role, "receiver", "program"], env)
+                actual = receiver.call_args.args[2]
+                self.assertEqual({key for key in install_keys if key in actual},
+                                 set(install_keys) if module == "model" else set())
+                self.assertEqual(actual["ADDP_DATABASE_RUNTIME_PASSWORD"], "runtime-fixture")
+
     def test_cgroup_observation_is_an_explicit_per_unit_boolean(self):
         for value in (True, False):
             plan = {"meta-worker-1": dict(deployment("meta", "worker", 19106), cgroup_v2=value)}

@@ -97,11 +97,12 @@ stop_online_fixture() {
   [ -z "$remaining" ]
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 export STANDARD_URL=http://127.0.0.1:8110 MODEL_URL=http://127.0.0.1:8181
 export SECURITY_URL=http://127.0.0.1:8194
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/metric-engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 if [ "$ADDP_ONLINE_METRIC_ENGINE_TYPE" = postgresql ]; then
   run_logged bash business/scripts/online-metric-postgres-fixture.sh start
@@ -109,6 +110,8 @@ else
   run_logged start_tidb_fixture
 fi
 application_owned=1
+hosted_prepare_native_database
+unset hosted_deploy_password
 for start_target in -model -service -security; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
