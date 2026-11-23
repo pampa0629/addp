@@ -328,6 +328,8 @@ Develop 按用户提交的 SQL 所使用的业务数据项判权，在源库原�
 - 已放行的单条在途语句不承诺瞬时中止。下一条语句、下一批读取及结果交付前重新核验当前来源授权和执行资格；撤销、到期或执行资格失效后不再发起新的读取，不交付尚未交付的内容。已交付内容无法追回。拒绝、取消、超时和执行失败均释放事务、游标、连接及本轮临时结果，不自动重跑源查询。
 - 只核验本次实际来源，不预枚举整个引擎的数据项。同次检查复用已建立的身份和正式事实，保留最终重核；不做跨请求 Allow 缓存。现有候选大小和性能预算不能用于截断 ReadSet 后放行，超出可证明范围时明确拒绝。
 
+**DuckDB 工作台的混合来源查询。** 同一条 SQL 可以关联 PostgreSQL 和尚未接入逐表授权的来源。每张参与查询的 PostgreSQL 普通表都必须按引擎 ID、schema 和表名核对原用户当前的 DataItem 读取授权。任一 PG 表缺权时，整条查询在读取业务行前拒绝。其他来源继续执行已有准入规则。字段保护仍按整条查询的来源检查，PG 子集不得作为整条查询的完整 ReadSet。撤权、到期后重跑，按本次查询重新核验。
+
 **固定调用边界已确认。** `POST /engine-access/read-observations/develop-query` 仅接受 `addp-develop` 的当前 Tenant Service Access Token 与非委托、不可定制的 `system.develop_query_read_check.execute` 机器 Permission；只归属 `tenant.develop_runtime`，不增加人员权限。请求绑定原 EA、执行、引擎版本和 Provider 完整 ReadSet：异步查询必须有当前 attempt／lease；样例试读必须有当前同步原用户凭据且不能借此绕开已有执行的租约。样例凭据不落库、不进入日志或异步任务。System 独立核对 Meta 身份，Meta 返回后最终重核原人员、当前功能条件和源 Grant；只返回不可缓存的观察时刻及最晚期限，不返回连接、不签发 Grant、不授予机器源读取。已证明空来源仍检查原人员与执行资格；未证明来源不得提交为空。下一批与交付重新调用，不能将期限当成可以复用的 Allow。
 
 首批仅接入 Develop 的 PG／GaussDB 原生只读查询及确有源试读的样例生成路径。两种 Provider 各自证明原生绑定，不能以 PG 协议兼容、成功解析 ReadSet 或一次 PREPARE 代替。固定调用沿上述唯一边界接入，不借用 Manager 的机器资格或 `manager.data_item.read`。Notebook、非 SQL、联邦查询、查询导出和 DML 内的读取来源分别列为后续消费范围，未接入不记为完成；既有已保存结果的重读／下载规则不在本批隐式改变。
