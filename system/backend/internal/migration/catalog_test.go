@@ -14,8 +14,17 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 310 {
-		t.Fatalf("LatestVersion = %d, want 310", catalog.LatestVersion)
+	const latestVersion = 311
+	if catalog.LatestVersion != latestVersion {
+		t.Fatalf("LatestVersion = %d, want %d", catalog.LatestVersion, latestVersion)
+	}
+	gribCOG := MigrationFile{
+		Version: 311,
+		Name:    "000311_manager_grib_cog_source_authorization.up.sql",
+		SHA256:  "014439d4d80ade65966c20bf586f33f78623d17eade737a47e71f96bc67a2f82",
+	}
+	if actual := catalog.Files[gribCOG.Version-1]; actual != gribCOG {
+		t.Fatalf("embedded migration 311 = %+v, want %+v; use a new forward migration for changes", actual, gribCOG)
 	}
 }
 
