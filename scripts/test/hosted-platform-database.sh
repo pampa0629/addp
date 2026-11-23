@@ -8,7 +8,7 @@ hosted_start_platform_infra() {
   hosted_deploy_password=$(openssl rand -hex 32)
   ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 32)
   export ADDP_DATABASE_RUNTIME_USER=platform_runtime ADDP_DATABASE_RUNTIME_PASSWORD
-  # The Infra initializer already created the four namespaces. Only the install
+  # The installer owns the namespaces. Only the install
   # identity owns them; tables and sequences inherit the platform runtime grants.
   docker exec -i addp-postgres sh -ec '
     test "$POSTGRES_DB" = addp_online
@@ -19,10 +19,11 @@ BEGIN;
 CREATE ROLE platform_deploy LOGIN PASSWORD '$hosted_deploy_password';
 CREATE ROLE platform_runtime LOGIN PASSWORD '$ADDP_DATABASE_RUNTIME_PASSWORD';
 GRANT CREATE ON DATABASE addp_online TO platform_deploy;
+CREATE SCHEMA inference AUTHORIZATION platform_deploy;
 DO \$roles\$
 DECLARE ns text;
 BEGIN
-  FOREACH ns IN ARRAY ARRAY['system','common','meta','gateway'] LOOP
+  FOREACH ns IN ARRAY ARRAY['system','common','meta','gateway','inference'] LOOP
     EXECUTE format('ALTER SCHEMA %I OWNER TO platform_deploy', ns);
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO platform_runtime', ns);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platform_runtime', ns);
@@ -48,7 +49,7 @@ hosted_prepare_native_database() (
   POSTGRES_PORT=$(addp_infra_mapped_port addp-postgres 5432)
   export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT
   local owner dir entry binary
-  for owner in system meta gateway; do
+  for owner in system meta gateway "$@"; do
     dir="$owner/backend"
     entry=./cmd/server
     if [ "$owner" = gateway ]; then dir=gateway; entry=./cmd/gateway; fi
@@ -68,4 +69,5 @@ hosted_prepare_native_database() (
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
   install_owner meta
   install_owner gateway
+  for owner in "$@"; do install_owner "$owner"; done
 )

@@ -21,6 +21,7 @@ if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   }
 fi
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   # All owners share this deployment key before encrypting any fixture data.
   export ENCRYPTION_KEY="$(python3 -c 'import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')"
@@ -30,7 +31,7 @@ export SERVICE_URL=http://127.0.0.1:8086 SECURITY_URL=http://127.0.0.1:8194
 export META_URL=http://127.0.0.1:8082 MANAGER_URL=http://127.0.0.1:8081
 export AGENT_URL=http://127.0.0.1:8190 INFERENCE_URL=http://127.0.0.1:8191
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   fixture_owned=1
   export ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR="$ADDP_ONLINE_SECRET_DIR/security-postgres.json"
@@ -40,6 +41,12 @@ if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   [ -f "$ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR" ] || fail "Security fixture PostgreSQL descriptor is missing"
 fi
 application_owned=1
+if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
+  hosted_prepare_native_database inference
+else
+  hosted_prepare_native_database
+fi
+unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -ontology
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   for target in -meta -manager -security -develop -graph -service -inference -agent; do

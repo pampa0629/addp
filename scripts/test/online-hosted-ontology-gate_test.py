@@ -62,6 +62,7 @@ class HostedOntologyGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         for step in ("start:-ontology", "make:test-online ONLINE_SUITE=ontology-revision-lifecycle", "application-stop", "infra-down"):
             self.assertIn(step, trace)
+        self.assertNotIn("install:addp-inference:", trace)
         self.assertNotIn("fixture:start", trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
@@ -111,6 +112,7 @@ python3 -c 'import base64,hashlib,os; key=base64.b64decode(os.environ["ENCRYPTIO
                 result = self.run_gate(ONLINE_SUITE_INPUT="ontology-agent-protection", ADDP_TEST_SUITE_FAIL=failed)
                 self.assertEqual(result.returncode == 0, failed == "0", result.stdout + result.stderr)
                 trace = self.host.trace.read_text()
+                self.assertLess(trace.index("install:addp-inference:prepare-database"), trace.index("start:-inference"))
                 for owner in ("ontology", "security", "service", "agent", "inference"):
                     self.assertIn("start:-" + owner, trace)
                 self.assertIn("make:test-online ONLINE_SUITE=ontology-agent-protection", trace)
