@@ -63,6 +63,29 @@ test('platform Infra panel separates a Redis runtime update from persistence', a
   await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0)
 })
 
+test('MySQL global settings are read only for a platform administrator', async ({ page }) => {
+  await mockRaster(page, { permissions: ['system.infra_configuration.read', 'system.infra_configuration.update'] })
+  await page.route(/\/api\/v1\/system\/platform\/infra_configuration$/, route => {
+    const headers = {
+      'access-control-allow-origin': route.request().headers().origin || browserTestOrigin('system'),
+      'access-control-allow-credentials': 'true',
+      'access-control-allow-methods': 'GET,OPTIONS',
+      'access-control-allow-headers': 'authorization,content-type'
+    }
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
+    return route.fulfill({ headers, json: [{ id: 'database', provider: 'mysql', status: 'available', parameters: [
+      { name: 'max_connections', value: '213', source: 'unknown', activation: 'online', editable: false }
+    ] }] })
+  })
+  await page.goto('/configuration?tab=infra-configuration')
+  const panel = page.getByTestId('infra-configuration')
+  await expect(panel.getByTestId('infra-component')).toContainText('MySQL')
+  const row = panel.getByRole('row').filter({ hasText: 'max_connections' })
+  await expect(row).toContainText('213')
+  await expect(row).toContainText('只读')
+  await expect(row.getByRole('button')).toHaveCount(0)
+})
+
 test('Tenant configuration has no Infra tab', async ({ page }) => {
   await mockRaster(page, { scope: 'tenant', permissions: ['system.engine_raster_policy.read', 'system.infra_configuration.read'] })
   await page.goto('/configuration?tab=infra-configuration')

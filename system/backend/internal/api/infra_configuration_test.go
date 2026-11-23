@@ -58,7 +58,7 @@ func TestInfraConfigurationPlatformAndPermissions(t *testing.T) {
 				UserAccessCredential: func(c *gin.Context) { c.Next() },
 			}
 			router := gin.New()
-			handler := &InfraConfigurationHandler{service: infraconfig.New(&config.Config{InfraDatabaseProvider: "postgres"})}
+			handler := &InfraConfigurationHandler{service: infraconfig.New(&config.Config{InfraDatabaseProvider: "postgres"}, nil)}
 			if err := RegisterInfraConfigurationRoutes(router.Group(""), runtime, handler); err != nil {
 				t.Fatal(err)
 			}
@@ -118,7 +118,7 @@ func TestInfraConfigurationAudit(t *testing.T) {
 	}
 	router := gin.New()
 	router.Use(requestid.RequestIDMiddleware())
-	handler := &InfraConfigurationHandler{service: infraconfig.New(cfg), audit: iam.NewAuditWriter(iam.NewRepository(db))}
+	handler := &InfraConfigurationHandler{service: infraconfig.New(cfg, db), audit: iam.NewAuditWriter(iam.NewRepository(db))}
 	if err := RegisterInfraConfigurationRoutes(router.Group("/api/v1/system"), runtime, handler); err != nil {
 		t.Fatal(err)
 	}

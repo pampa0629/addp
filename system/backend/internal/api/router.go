@@ -103,7 +103,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client, mod
 
 	api := router.Group("/api/v1/system")
 	if err := RegisterInfraConfigurationRoutes(api, runtime, &InfraConfigurationHandler{
-		service: infraconfig.New(cfg), audit: auditWriter,
+		service: infraconfig.New(cfg, db), audit: auditWriter,
 	}); err != nil {
 		panic(err)
 	}

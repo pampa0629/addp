@@ -13,7 +13,7 @@ import (
 )
 
 func TestUnboundAndUnsupportedProviderDoNotOpenManagementConnection(t *testing.T) {
-	settings := New(&config.Config{InfraDatabaseProvider: "other", InfraPGConfigPassword: "must-not-use"})
+	settings := New(&config.Config{InfraDatabaseProvider: "other", InfraPGConfigPassword: "must-not-use"}, nil)
 	values := settings.Read(context.Background())
 	if len(values) != 2 || values[0].Status != "unsupported" || values[1].Status != "unbound" {
 		t.Fatalf("settings = %+v", values)
@@ -34,7 +34,7 @@ func TestInfraConfigurationNative(t *testing.T) {
 		PostgresHost: "127.0.0.1", PostgresPort: os.Getenv("ADDP_INFRA_GATE_PG_PORT"), PostgresDB: "addp_test",
 		RedisHost: "127.0.0.1", RedisPort: os.Getenv("ADDP_INFRA_GATE_REDIS_PORT"),
 	}
-	s := New(cfg)
+	s := New(cfg, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	settings := s.Read(ctx)

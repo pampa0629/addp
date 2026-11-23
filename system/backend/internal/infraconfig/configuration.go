@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/system/internal/config"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 var (
@@ -60,13 +61,16 @@ type Configuration struct {
 	bindings []binding
 }
 
-func New(cfg *config.Config) *Configuration {
-	database := binding{id: "database", provider: cfg.InfraDatabaseProvider, endpoint: net.JoinHostPort(cfg.PostgresHost, cfg.PostgresPort)}
+func New(cfg *config.Config, runtimeDB *gorm.DB) *Configuration {
+	database := binding{id: "database", provider: cfg.InfraDatabaseProvider}
 	if database.provider == "postgres" && cfg.InfraPGConfigPassword != "" {
 		management := *cfg
 		management.PostgresUser = "addp_infra_config"
 		management.PostgresPassword = cfg.InfraPGConfigPassword
+		database.endpoint = net.JoinHostPort(cfg.PostgresHost, cfg.PostgresPort)
 		database.backend = postgresConfiguration{dsn: management.PostgreSQLDSN()}
+	} else if database.provider == "mysql" {
+		database.backend = mysqlConfiguration{db: runtimeDB}
 	}
 
 	cache := binding{id: "redis", provider: "redis", endpoint: net.JoinHostPort(cfg.RedisHost, cfg.RedisPort)}

@@ -109,6 +109,7 @@ function label(key, values = {}) {
 }
 function componentName(component) {
   if (component.provider === 'postgres') return 'PostgreSQL'
+  if (component.provider === 'mysql') return 'MySQL'
   if (component.provider === 'redis') return 'Redis'
   return component.provider
 }

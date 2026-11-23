@@ -168,6 +168,9 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON gateway.* TO 'iam_runtime'@'%';
 SQL
 export ADDP_TEST_MYSQL_MEMBER_PASSWORD=$(openssl rand -hex 24)
 bash "$(dirname "$0")/mysql-gateway-install-contract.sh" "$work" "$container" "$3"
+expected_settings=$(runtime <<<"SELECT CONCAT('max_connections=',@@GLOBAL.max_connections),CONCAT('time_zone=',@@GLOBAL.time_zone),CONCAT('transaction_isolation=',@@GLOBAL.transaction_isolation)")
+(cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_GLOBAL_SETTINGS="$expected_settings" GOWORK=off go test ./internal/infraconfig -run '^TestMySQLReadOnlyInstanceConfiguration$' -count=1 -v) | tee "$work/readonly-mysql-settings.log"
+grep -q '^--- PASS: TestMySQLReadOnlyInstanceConfiguration ' "$work/readonly-mysql-settings.log"
 (cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_TENANT_FACTS="$work/tenant.json" GOWORK=off go test ./internal/migration -run '^TestPrepareMySQLGatewayTenant$' -count=1 -v)
 python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
