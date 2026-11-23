@@ -1274,7 +1274,7 @@ test-online-registration-unit:
 	@python3 -m unittest scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
-.NOTPARALLEL: test-catalog-domain-online-runner test-execution-online-ci-runner test-graph-online-runner test-manager-online-runner test-online-runner test-raster-online-runner test-security-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-node-metrics-online-runner test-transfer-online-runner test-highgo-online-runner test-platform-administrator-online-runner
+.NOTPARALLEL: test-catalog-domain-online-runner test-execution-online-ci-runner test-graph-online-runner test-manager-online-runner test-online-runner test-raster-online-runner test-security-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-node-metrics-online-runner test-transfer-online-runner test-highgo-online-runner test-platform-administrator-online-runner test-dev-lifecycle test-infra-runtime-log-lifecycle
 
 test-online-runner: test-redis-core-online-runner test-notebook-storage-online-runner test-meta-scan-claim-online-runner test-ontology-online-runner test-opengauss-online-runner test-execution-retention-online-runner test-execution-events-pagination-runner test-catalog-domain-online-runner test-workflow-runtime-health-online-runner test-sql-pool-online-runner test-starrocks-online-runner test-ftp-online-runner test-common-gaussdb-unit test-security-online-runner test-highgo-online-runner test-pg-authorization-online-runner test-transfer-continuous-online-runner test-transfer-online-runner test-node-metrics-online-runner test-platform-administrator-online-runner test-hdfs-online-runner test-raster-online-runner test-vector-pmtiles-online-runner test-vector-topology-online-runner test-elasticsearch-online-runner test-orchestrator-online-runner test-manager-online-runner test-quality-online-runner test-online-dispatcher-unit test-online-registration-unit ## 运行 Online 分发器和预检器的确定性测试
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
@@ -1322,9 +1322,7 @@ test-gaussdb-certification-build: ## 验证 GaussDB 四平台构建及宿主驱�
 	@python3 scripts/test/gaussdb-official-media-release-gate.py --compile-only
 
 .PHONY: test-infra-runtime-log-lifecycle
-test-infra-runtime-log-lifecycle: test-metrics-sources ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
-	@$(MAKE) test-monitor-http-local-runner
-	@$(MAKE) test-monitor-traces-local-runner
+test-infra-runtime-log-lifecycle: test-metrics-sources test-monitor-http-local-runner test-monitor-traces-local-runner ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
 	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-http-budget_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py
 
 .PHONY: test-gdal-native-lifecycle
@@ -1334,7 +1332,7 @@ test-gdal-native-lifecycle: ## 验证 GDAL/Arrow 原生来源、准备事务和�
 	@python3 -m unittest scripts/test/gdal-native-lifecycle_test.py scripts.test.changed-gate_test.ChangedGateTest.test_native_gdal_preparation_selects_both_real_consumers
 
 .PHONY: test-dev-lifecycle
-test-dev-lifecycle: test-gdal-native-lifecycle ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
+test-dev-lifecycle: test-gdal-native-lifecycle test-infra-runtime-log-lifecycle ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
 	@bash -n scripts/dev/model3d-workflow.sh
 	@bash -n scripts/dev/document-workflow.sh
 	@bash -n scripts/dev/pointcloud-workflow.sh
@@ -1344,7 +1342,6 @@ test-dev-lifecycle: test-gdal-native-lifecycle ## 验证 Swagger 增量、增量
 	@bash -n scripts/dev/raster-mosaic-runtime.sh
 	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/worker-units.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh scripts/test/monitor-traces-gate.sh; do bash -n "$$script" || exit 1; done
 	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/document-native-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/dev-process-metrics-plan_test.py scripts/test/dev-worker-units_test.py scripts/test/model3d-linux-images_test.py scripts/test/model3d-native-lifecycle_test.py
-	@$(MAKE) test-infra-runtime-log-lifecycle
 	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore
@@ -1385,11 +1382,12 @@ test-platform-preflight:
 	@python3 scripts/ci/select-module-gate_test.py
 	@python3 scripts/test/changed-gate_test.py
 
+# Run lifecycle and Online checks in one Make invocation so shared prerequisites run once.
 test-platform-checks:
 	@$(MAKE) test-format-documentation
 	@$(MAKE) test-infra-minio-cache
 	@$(MAKE) test-platform-review
-	@$(MAKE) test-dev-lifecycle
+	@$(MAKE) test-dev-lifecycle test-online-runner -j1
 	@$(MAKE) test-infra-backup
 	@$(MAKE) test-business-config
 	@$(MAKE) test-common-frontend
@@ -1418,7 +1416,6 @@ test-platform-checks:
 	@$(MAKE) test-engine-startup-isolation
 	@$(MAKE) test-execution-fixtures
 	@$(MAKE) test-projection-store-ownership
-	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
 
 .PHONY: test-platform-review
