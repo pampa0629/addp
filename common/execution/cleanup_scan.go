@@ -18,7 +18,10 @@ func ReadCleanupScanReceipt(ctx context.Context, db *gorm.DB, current TaskExecut
 		return nil, fmt.Errorf("%w: cleanup execute baseline is invalid", commonapi.ErrConflict)
 	}
 	requestID := "CAST(execution_config ->> 'cleanup_request' AS jsonb) ->> 'request_id'"
-	if db.Dialector.Name() == "sqlite" {
+	switch db.Dialector.Name() {
+	case "mysql":
+		requestID = "JSON_UNQUOTE(JSON_EXTRACT(execution_config->>'$.cleanup_request', '$.request_id'))"
+	case "sqlite":
 		requestID = "json_extract(json_extract(execution_config, '$.cleanup_request'), '$.request_id')"
 	}
 	var children []TaskExecution

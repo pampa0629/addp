@@ -3,11 +3,13 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/events"
 	"github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -16,6 +18,22 @@ import (
 )
 
 func TestCleanupScanReceipt(t *testing.T) { testCleanupScanReceipt(t, newCleanupProtocolDB(t)) }
+
+func TestCleanupScanReceiptAgainstMySQL(t *testing.T) {
+	db, err := gorm.Open(disposableMySQLExecutionDriver(t), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+	testCleanupScanReceipt(t, db)
+}
 
 func testCleanupScanReceipt(t *testing.T, db *gorm.DB) {
 	for _, mode := range []string{"valid", "different_requester", "missing_scan", "wrong_tenant", "wrong_owner", "wrong_engine", "wrong_cause", "wrong_modules", "parent_failed", "child_failed", "missing_receipt", "forged_receipt", "parent_binding", "duplicate_scan"} {
@@ -146,14 +164,14 @@ func testCleanupScanReceipt(t *testing.T, db *gorm.DB) {
 				if err != nil || got == nil || got.ImpactDigest != impact.Digest {
 					t.Fatalf("valid source rejected: %v", err)
 				}
-			} else if err == nil || got != nil {
-				t.Fatalf("invalid scan baseline accepted: %s", mode)
+			} else if !errors.Is(err, commonapi.ErrConflict) || got != nil {
+				t.Fatalf("expected scan baseline conflict in %s, got %v", mode, err)
 			}
 			var after []TaskExecution
 			if err := db.Where("tenant_id = ?", p.TenantID).Order("id").Find(&after).Error; err != nil || !reflect.DeepEqual(before, after) {
 				t.Fatalf("baseline read wrote execution facts: %v", err)
 			}
-			if valid && db.Dialector.Name() == "postgres" {
+			if valid && db.Dialector.Name() != "sqlite" {
 				holder := db.Begin()
 				if holder.Error != nil {
 					t.Fatal(holder.Error)

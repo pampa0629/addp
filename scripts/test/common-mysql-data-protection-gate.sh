@@ -176,8 +176,9 @@ fi
 
 if [ "$test_group" = platform-execution ]; then
     (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_COMMON_EXECUTION=1 GOWORK=off go test -p 1 ./schema ./execution \
-        -run '^(TestPlatformMySQLExecutionLifecycle|TestExecutionRetentionAssessmentAgainstMySQL)$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-execution.log"
+        -run '^(TestPlatformMySQLExecutionLifecycle|TestExecutionRetentionAssessmentAgainstMySQL|TestCleanupScanReceiptAgainstMySQL)$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestPlatformMySQLExecutionLifecycle ' "$WORK_DIR/platform-execution.log"
+    grep -q '^--- PASS: TestCleanupScanReceiptAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestExecutionRetentionAssessmentAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     exit 0
 fi

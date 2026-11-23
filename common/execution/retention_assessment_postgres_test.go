@@ -28,6 +28,11 @@ func TestExecutionRetentionAssessmentAgainstPostgres(t *testing.T) {
 }
 
 func TestExecutionRetentionAssessmentAgainstMySQL(t *testing.T) {
+	testExecutionRetentionAssessment(t, disposableMySQLExecutionDriver(t))
+}
+
+func disposableMySQLExecutionDriver(t *testing.T) gorm.Dialector {
+	t.Helper()
 	if os.Getenv("ADDP_TEST_MYSQL_COMMON_EXECUTION") != "1" {
 		t.Skip("run the disposable platform-execution MySQL gate")
 	}
@@ -36,7 +41,7 @@ func TestExecutionRetentionAssessmentAgainstMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testExecutionRetentionAssessment(t, driver)
+	return driver
 }
 
 func testExecutionRetentionAssessment(t *testing.T, driver gorm.Dialector) {
