@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.logging_setup import setup_logging
 from config import settings
-from database import init_db
+from database import close_db, init_db
 from middleware.auth import auth_middleware
 from api.sessions import router as sessions_router
 from api.chat import router as chat_router
@@ -186,6 +186,7 @@ async def startup():
         _registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(_registry_task))
     except BaseException:
         try:
+            await close_db()
             await asyncio.to_thread(_trace_close)
         finally:
             _trace_close = None
@@ -218,6 +219,7 @@ async def shutdown():
         await AgentInferenceService.close()
     finally:
         try:
+            await close_db()
             if _trace_close is not None:
                 await asyncio.to_thread(_trace_close)
                 _trace_close = None

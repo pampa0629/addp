@@ -1,5 +1,5 @@
 from sqlalchemy import Boolean, Column, Index, Integer, String, Text, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import JSONB
+from addp_common.infra.sqltypes import PlatformJSON
 from sqlalchemy.orm import relationship
 from . import Base
 
@@ -13,7 +13,7 @@ class Message(Base):
     role = Column(String(50), nullable=False)  # 'user' | 'assistant' | 'system'
     content = Column(Text, nullable=False)
     protocol_message_id = Column(String(100), nullable=True)
-    parts = Column(JSONB, nullable=False, default=list)
+    parts = Column(PlatformJSON, nullable=False, default=list)
     is_complete = Column(Boolean, nullable=False, default=True, server_default='true')
     created_at = Column(DateTime, server_default=func.now())
 

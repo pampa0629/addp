@@ -1,5 +1,3 @@
-CREATE SCHEMA IF NOT EXISTS copilot;
-
 -- Clean break: Copilot no longer owns Provider endpoints, model names or credentials.
 DROP TABLE IF EXISTS copilot.llm_configs;
 

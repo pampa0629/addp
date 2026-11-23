@@ -1,7 +1,8 @@
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Column, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Uuid
+from addp_common.infra.sqltypes import Instant, PlatformJSON
 
 from . import Base
 
@@ -13,9 +14,9 @@ class AgentRunEvent(Base):
         {"schema": "agent"},
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     agent_run_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("agent.runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -23,5 +24,5 @@ class AgentRunEvent(Base):
     sequence = Column(Integer, nullable=False)
     protocol_invocation_id = Column(String(100), nullable=False)
     event_type = Column(String(80), nullable=False, index=True)
-    payload = Column(JSONB, nullable=False, default=dict)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    payload = Column(PlatformJSON, nullable=False, default=dict)
+    created_at = Column(Instant(), server_default=func.now(), nullable=False)

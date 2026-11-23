@@ -1,7 +1,9 @@
+from datetime import datetime, timezone
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Uuid
+from addp_common.infra.sqltypes import Instant, PlatformJSON
 
 from . import Base
 
@@ -13,7 +15,7 @@ class AgentRun(Base):
         {"schema": "agent"},
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id = Column(
         Integer,
         ForeignKey("agent.sessions.id", ondelete="CASCADE"),
@@ -25,17 +27,17 @@ class AgentRun(Base):
     initial_protocol_run_id = Column(String(100), nullable=False)
     status = Column(String(30), nullable=False, default="running", index=True)
     skill_name = Column(String(255), nullable=True)
-    checkpoint = Column(JSONB, nullable=False, default=dict)
-    metrics = Column(JSONB, nullable=False, default=dict)
-    context_metrics = Column(JSONB, nullable=False, default=dict)
+    checkpoint = Column(PlatformJSON, nullable=False, default=dict)
+    metrics = Column(PlatformJSON, nullable=False, default=dict)
+    context_metrics = Column(PlatformJSON, nullable=False, default=dict)
     error_source = Column(String(30), nullable=True)
     error_code = Column(String(100), nullable=True)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(Instant(), server_default=func.now(), nullable=False)
     updated_at = Column(
-        DateTime(timezone=True),
+        Instant(),
         server_default=func.now(),
-        onupdate=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    completed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(Instant(), nullable=True)

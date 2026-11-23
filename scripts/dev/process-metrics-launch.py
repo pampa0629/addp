@@ -71,7 +71,7 @@ def launch(argv, environment):
         return 2
     unit, module, role, receiver, *program = argv
     child = dict(environment)
-    if child.get("ADDP_ONLINE_HOSTED") == "1" and child.get("ADDP_DATABASE_RUNTIME_USER") and module in ("system", "meta", "gateway", "inference", "workbench"):
+    if child.get("ADDP_ONLINE_HOSTED") == "1" and child.get("ADDP_DATABASE_RUNTIME_USER") and module in ("system", "meta", "gateway", "inference", "workbench", "agent", "copilot"):
         # These processes use the prepared platform schema. The Hosted bootstrap
         # login also serves unmigrated owners and must stay outside these children.
         for key in ("POSTGRES_USER", "POSTGRES_PASSWORD", "ADDP_DATABASE_DEPLOY_USER", "ADDP_DATABASE_DEPLOY_PASSWORD"):

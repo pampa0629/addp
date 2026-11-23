@@ -76,7 +76,9 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         actions = self.host.trace.read_text().splitlines()
-        expected = ['infra-up', 'start:--exact-process -system', 'stop-exact:-system',
+        expected = ['infra-up', 'install:addp-system:prepare-database system', 'install:addp-system:prepare-database common',
+                    'start:--exact-process -system', 'install:addp-meta:prepare-database',
+                    'install:addp-gateway:prepare-database', 'install:copilot:prepare_database', 'stop-exact:-system',
                     'start:--exact-process -manager', 'observe:business-before-system',
                     'start:--exact-process -system', 'observe:backend-registered',
                     'start:--exact-process -gateway', 'observe:gateway-established',
@@ -86,11 +88,12 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
                     'start:--exact-process -manager', 'observe:backend-restarted',
                     'stop-exact:-manager', 'observe:backend-gracefully-stopped',
                     'make:test-online ONLINE_SUITE=module-registry-recovery']
-        cycle = expected[3:-1]
+        cycle = expected[expected.index('start:--exact-process -manager'):-1]
         expected += ['stop-exact:-gateway', 'stop-exact:-system']
         expected += [action.replace('-manager', '-copilot') for action in cycle]
         expected += ['application-stop', 'infra-down']
-        expected[2:2] = ['provision', 'declaration:system-cold:system', 'declaration:catalog-prebuilt:catalog',
+        first_stop = expected.index('stop-exact:-system')
+        expected[first_stop:first_stop] = ['provision', 'declaration:system-cold:system', 'declaration:catalog-prebuilt:catalog',
                          'publish:gateway', 'start:--exact-process -catalog', 'start:--exact-process -gateway',
                          'declaration:catalog-running:catalog','stop-exact:-catalog','stop-exact:-gateway']
         for module, position in [('manager', 0), ('copilot', 1)]:

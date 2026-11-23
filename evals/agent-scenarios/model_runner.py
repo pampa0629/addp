@@ -415,6 +415,7 @@ def write_report(path, report):
 
 async def run_suite(tenant_id, *, repeat=1, timeout=180):
     from model_cases import CASE_NAMES
+    from database import close_db, init_db
     from utils.llm import AgentInferenceService, get_llm
     report = {'schema': SCHEMA, 'created_at': _utc_now(), 'source': _source_identity(),
               'mode': 'real_model_synthetic_owners', 'status': 'failed',
@@ -424,6 +425,7 @@ async def run_suite(tenant_id, *, repeat=1, timeout=180):
         from config import settings
         if not settings.AGENT_SERVICE_CLIENT_SECRET:
             raise ValueError('missing_agent_service_credentials')
+        await init_db()
         AgentInferenceService.initialize()
         for repetition in range(1, repeat + 1):
             for name in CASE_NAMES:
@@ -437,8 +439,7 @@ async def run_suite(tenant_id, *, repeat=1, timeout=180):
         report['error_code'] = 'model_runtime_unavailable'
     finally:
         await AgentInferenceService.close()
-        from database import engine
-        await engine.dispose()
+        await close_db()
     return report
 
 
@@ -454,8 +455,6 @@ def main():
             raise ValueError('model_output_exists_or_invalid_tenant')
         # Only the explicit live entry loads configuration. Tests never load personal .env.
         from dotenv import dotenv_values
-        if not os.environ.get('POSTGRES_PORT'):
-            raise ValueError('verified_postgres_port_required')
         values = {**dotenv_values(REPO_ROOT / '.env'),
                   **dotenv_values(REPO_ROOT / '.dev-state/ports.env')}
         for key, value in values.items():

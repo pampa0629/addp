@@ -130,6 +130,10 @@ ports-validate: ## 校验 System/Business 端口分配是否符合策略
 	@bash scripts/utils/ports-validate.sh
 
 .PHONY: test-agent-postgres
+.PHONY: test-agent-platform-database
+test-agent-platform-database: ## 在独占 PG 与 MySQL 核对 Agent 和 Copilot 部署、启动与业务读写
+	@bash scripts/test/agent-platform-database-gate.sh
+
 test-agent-postgres: ## 验证 Agent 版本化迁移、会话版本与租户隔离，测试事务退出回滚
 	@bash scripts/test/agent-postgres-gate.sh
 
@@ -418,6 +422,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-rustfs
 	@$(MAKE) test-agent-postgres
+	@$(MAKE) test-agent-platform-database
 	@$(MAKE) test-business-redis
 	@$(MAKE) test-common-redis
 	@$(MAKE) test-common-redis-core

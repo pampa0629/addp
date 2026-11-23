@@ -657,6 +657,19 @@ jobs:
           AGENT_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_agent_test?sslmode=disable
         run: make test-agent-postgres
 
+      - name: Prepare Copilot environment
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: copilot/backend/venv
+          python-version: "3.12"
+          cache-dependency-path: |
+            copilot/backend/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: copilot/backend/requirements.txt
+
+      - name: Verify Python deployment and runtime roles on PostgreSQL and MySQL
+        run: make test-agent-platform-database
+
       - name: Summarize Agent PostgreSQL gate
         if: always()
         uses: ./.github/actions/ci-gate-summary

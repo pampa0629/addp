@@ -113,6 +113,7 @@ python3 -c 'import base64,hashlib,os; key=base64.b64decode(os.environ["ENCRYPTIO
                 self.assertEqual(result.returncode == 0, failed == "0", result.stdout + result.stderr)
                 trace = self.host.trace.read_text()
                 self.assertLess(trace.index("install:addp-inference:prepare-database"), trace.index("start:-inference"))
+                self.assertLess(trace.index("install:agent:prepare_database"), trace.index("start:-agent"))
                 for owner in ("ontology", "security", "service", "agent", "inference"):
                     self.assertIn("start:-" + owner, trace)
                 self.assertIn("make:test-online ONLINE_SUITE=ontology-agent-protection", trace)

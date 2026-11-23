@@ -1,7 +1,8 @@
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Uuid
+from addp_common.infra.sqltypes import Instant, PlatformJSON
 
 from . import Base
 
@@ -10,7 +11,7 @@ class Interaction(Base):
     __tablename__ = "interactions"
     __table_args__ = {"schema": "agent"}
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id = Column(
         Integer,
         ForeignKey("agent.sessions.id", ondelete="CASCADE"),
@@ -20,7 +21,7 @@ class Interaction(Base):
     user_id = Column(Integer, nullable=False, index=True)
     tenant_id = Column(Integer, nullable=False, index=True)
     agent_run_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("agent.runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -29,14 +30,14 @@ class Interaction(Base):
     owner_interaction_id = Column(String(100), nullable=True, index=True)
     owner_request_fingerprint = Column(String(64), nullable=True)
     open_url = Column(Text, nullable=True)
-    request_summary = Column(JSONB, nullable=False, default=dict)
+    request_summary = Column(PlatformJSON, nullable=False, default=dict)
     kind = Column(String(50), nullable=False, default="clarification")
     owner = Column(String(50), nullable=False, default="agent")
     status = Column(String(30), nullable=False, default="pending", index=True)
     prompt = Column(Text, nullable=False)
-    response_schema = Column(JSONB, nullable=False, default=dict)
-    options = Column(JSONB, nullable=False, default=list)
-    answer = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-    expires_at = Column(DateTime(timezone=True), nullable=True)
+    response_schema = Column(PlatformJSON, nullable=False, default=dict)
+    options = Column(PlatformJSON, nullable=False, default=list)
+    answer = Column(PlatformJSON, nullable=True)
+    created_at = Column(Instant(), server_default=func.now(), nullable=False)
+    completed_at = Column(Instant(), nullable=True)
+    expires_at = Column(Instant(), nullable=True)

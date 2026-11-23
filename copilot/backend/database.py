@@ -1,58 +1,40 @@
-"""
-数据库连接和初始化
-"""
-from pathlib import Path
+import asyncio
 
-from sqlalchemy import text
-from addp_common.infra.database import DatabaseConfig, open_sync_database
 from sqlalchemy.orm import declarative_base, sessionmaker
-from config import settings
 
-# 创建数据库引擎（优化配置避免延迟）
-engine = open_sync_database(
-    DatabaseConfig(
-        user=settings.postgres_user,
-        password=settings.postgres_password,
-        host=settings.postgres_host,
-        port=settings.postgres_port,
-        name=settings.postgres_db,
-    ),
-    pool_pre_ping=False,  # 禁用连接预检查
-    pool_size=5,
-    max_overflow=10,
-    pool_recycle=3600,
-)
+from addp_common.infra.database import open_sync_database, platform_target
+from addp_common.infra.schema import require_version
+from prepare_database import VERSION
 
-# 创建会话工厂
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# 创建模型基类
 Base = declarative_base()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False)
 
-# 在模块级别导入所有模型（避免在异步函数中导入导致的延迟）
-from models import inference_scenario_binding  # noqa: E402,F401
+
+def open_runtime():
+    return open_sync_database(platform_target("copilot"), pool_pre_ping=False, pool_size=5,
+                              max_overflow=10, pool_recycle=3600)
 
 
 async def init_db():
-    """初始化数据库"""
-    import asyncio
-    loop = asyncio.get_event_loop()
+    def bind():
+        engine = open_runtime()
+        try:
+            with engine.connect() as conn:
+                require_version(conn, "copilot", VERSION)
+        except BaseException:
+            engine.dispose()
+            raise
+        SessionLocal.configure(bind=engine)
+    await asyncio.to_thread(bind)
 
-    # 在线程池中执行同步数据库操作
-    def _sync_create():
-        with engine.begin() as connection:
-            for migration in sorted((Path(__file__).parent / "migrations").glob("*.sql")):
-                connection.execute(text(migration.read_text(encoding="utf-8")))
-        Base.metadata.create_all(bind=engine)
 
-    await loop.run_in_executor(None, _sync_create)
-
+async def close_db():
+    engine = SessionLocal.kw.get("bind")
+    if engine is not None:
+        SessionLocal.configure(bind=None)
+        await asyncio.to_thread(engine.dispose)
 
 
 def get_db():
-    """获取数据库会话 (用于 FastAPI Depends)"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    with SessionLocal() as session:
+        yield session

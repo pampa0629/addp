@@ -29,7 +29,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         (self.repository / "scripts/lib").mkdir(parents=True)
         (self.repository / "scripts/infra").mkdir(parents=True)
         self.bin.mkdir()
-        (self.repository / ".gitignore").write_text(".dev-bins/\n")
+        (self.repository / ".gitignore").write_text(".dev-bins/\nvenv/\n")
         shutil.copy2(SCRIPT, self.repository / "scripts/test/online-hosted-opengauss-gate.sh")
         shutil.copy2(SCRIPT.with_name("hosted-platform-database.sh"), self.repository / "scripts/test/hosted-platform-database.sh")
         shutil.copy2(
@@ -188,6 +188,20 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         )
         self._write_repository_script("scripts/infra/ports.sh", """
             addp_infra_mapped_port() { [ "$1:$2" = addp-postgres:5432 ] && echo 25432; }
+        """)
+        self._write_repository_script("scripts/dev/lifecycle-lock.sh", """
+            addp_prepare_python_backend() {
+                mkdir -p "$1/$2/backend/venv/bin"
+                cat > "$1/$2/backend/venv/bin/python" <<'INSTALLER'
+            #!/usr/bin/env bash
+            set -eu
+            test "$ADDP_DATABASE_DEPLOY_USER" = platform_deploy
+            test "$1 $2" = "-m prepare_database"
+            owner=$(basename "$(dirname "$PWD")")
+            echo "install:$owner:prepare_database" >> "$ADDP_TEST_GATE_TRACE"
+            INSTALLER
+                chmod +x "$1/$2/backend/venv/bin/python"
+            }
         """)
         self._write_repository_script("scripts/dev/build-identity.sh", """
             addp_go_build_is_current() { return 1; }

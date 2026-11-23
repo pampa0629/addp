@@ -25,13 +25,6 @@ class Settings(BaseSettings):
     def get_system_url(self) -> str:
         return self.SYSTEM_URL or f"http://{self.SERVICE_HOST}:{self.SYSTEM_BACKEND_PORT}"
 
-    # PostgreSQL 配置（与 .env 的 POSTGRES_* 变量对应）
-    POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: int = 15432
-    POSTGRES_USER: str = "addp"
-    POSTGRES_PASSWORD: str = ""
-    POSTGRES_DB: str = "addp"
-
     # Redis 配置
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 16379

@@ -1,7 +1,8 @@
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Uuid
+from addp_common.infra.sqltypes import Instant, PlatformJSON
 
 from . import Base
 
@@ -13,9 +14,9 @@ class AgentRunStep(Base):
         {"schema": "agent"},
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     agent_run_id = Column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("agent.runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -26,11 +27,11 @@ class AgentRunStep(Base):
     protocol_invocation_id = Column(String(100), nullable=False)
     tool_call_id = Column(String(100), nullable=True, index=True)
     tool_name = Column(String(255), nullable=True)
-    input_data = Column("input", JSONB, nullable=False, default=dict)
+    input_data = Column("input", PlatformJSON, nullable=False, default=dict)
     output_summary = Column(Text, nullable=True)
-    facts = Column(JSONB, nullable=False, default=dict)
+    facts = Column(PlatformJSON, nullable=False, default=dict)
     error_source = Column(String(30), nullable=True)
     error_code = Column(String(100), nullable=True)
     error_message = Column(Text, nullable=True)
-    started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    completed_at = Column(DateTime(timezone=True), nullable=True)
+    started_at = Column(Instant(), server_default=func.now(), nullable=False)
+    completed_at = Column(Instant(), nullable=True)

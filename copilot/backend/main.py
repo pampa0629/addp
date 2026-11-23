@@ -50,7 +50,7 @@ def _readiness():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动/关闭时的生命周期管理"""
-    from database import init_db
+    from database import close_db, init_db
     from services.inference_service import CopilotInferenceService
 
     trace_close = trace_runtime.start_optional(_registration)
@@ -94,6 +94,7 @@ async def lifespan(app: FastAPI):
             logger.info("Copilot Backend 已关闭")
     finally:
         try:
+            await close_db()
             await asyncio.to_thread(trace_close)
         finally:
             if metrics_source is not None:

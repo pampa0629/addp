@@ -27,11 +27,6 @@ class Settings(BaseSettings):
         return value
 
     # 数据库配置（支持环境变量）
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
-    postgres_user: str = "addp"
-    postgres_password: str = "addp_password"
-    postgres_db: str = "addp"
     db_schema: str = "copilot"
 
     # 服务 host 和端口（从 .env 读取）

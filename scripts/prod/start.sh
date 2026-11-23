@@ -163,6 +163,10 @@ if [[ "$prepare_databases" == true ]]; then
   if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
     prepare_database inference-backend
     prepare_database workbench-backend
+    for service in agent-backend copilot-backend; do
+      platform_compose run --rm -T --no-deps --entrypoint python \
+        -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service" -m prepare_database
+    done
   fi
 fi
 

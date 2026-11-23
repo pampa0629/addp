@@ -331,7 +331,7 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 
 `make test-agent-frontend` 包含独立临时端口的 T3 浏览器回归，加载正式聊天页面、AG-UI 客户端和共享 A2UI 组件，以受控 HTTP/SSE 夹具验证短输入、刷新后的文字 resume、配置复核和取消，以及多 pending 不猜测、失败保留输入。后端 `make test-agent-eval` 覆盖真实 Harness、Interaction 服务和 Run 恢复的受控模型链路，验证同一身份和取消后创建条件拒绝；数据库与 owner 是夹具，不计为真实跨模块 T4。CI 的 Agent 前端矩阵安装 Chromium 并保留失败证据，不复用个人服务或登录态。
 
-对话工作区采用模块设计共识的三批契约：个人会话组织、运行/成果索引、可见计划。归档不停止已接纳运行；新消息、恢复和重试先核对未归档。计划复用 Harness TodoListMiddleware，最多 12 条、每条 300 字符，模型报告的计划进度不代表业务成功；最新投影由安全事件恢复，保留唯一语义检查点路线。Schema 只由 `backend/migrations/` 的版本化 SQL 维护，旧 create_all/零散补列初始化删除。验证入口为 `make test-module MODULE=agent`，新增 PostgreSQL 变量及事务回滚边界见 Infra 测试库规范。
+对话工作区采用模块设计共识的三批契约：个人会话组织、运行/成果索引、可见计划。归档不停止已接纳运行；新消息、恢复和重试先核对未归档。计划复用 Harness TodoListMiddleware，最多 12 条、每条 300 字符，模型报告的计划进度不代表业务成功；最新投影由安全事件恢复，保留唯一语义检查点路线。平台部署入口调用 Agent 的 `python -m prepare_database`。PG 和 MySQL 的迁移分别在 `backend/migrations/` 与 `backend/migrations_mysql/`，部署和启动均逐文件核对已登记的文件名和 SHA-256。普通启动只读核验版本及历史。两库验收使用 `make test-agent-platform-database`。验证入口为 `make test-module MODULE=agent`，新增 PostgreSQL 变量及事务回滚边界见 Infra 测试库规范。
 
 ## 工作区交互
 

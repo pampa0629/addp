@@ -23,7 +23,7 @@ CREATE SCHEMA inference AUTHORIZATION platform_deploy;
 DO \$roles\$
 DECLARE ns text;
 BEGIN
-  FOREACH ns IN ARRAY ARRAY['system','common','meta','gateway','inference','workbench'] LOOP
+  FOREACH ns IN ARRAY ARRAY['system','common','meta','gateway','inference','workbench','agent','copilot'] LOOP
     EXECUTE format('ALTER SCHEMA %I OWNER TO platform_deploy', ns);
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO platform_runtime', ns);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platform_runtime', ns);
@@ -50,6 +50,7 @@ hosted_prepare_native_database() (
   export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT
   local owner dir entry binary
   for owner in system meta gateway "$@"; do
+    case "$owner" in agent|copilot) continue ;; esac
     dir="$owner/backend"
     entry=./cmd/server
     if [ "$owner" = gateway ]; then dir=gateway; entry=./cmd/gateway; fi
@@ -61,6 +62,13 @@ hosted_prepare_native_database() (
   install_owner() {
     local owner=$1
     shift
+    if [[ "$owner" = agent || "$owner" = copilot ]]; then
+      source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
+      addp_prepare_python_backend "$ROOT_DIR" "$owner"
+      (cd "$ROOT_DIR/$owner/backend" && ADDP_DATABASE_DEPLOY_USER=platform_deploy \
+        ADDP_DATABASE_DEPLOY_PASSWORD="$hosted_deploy_password" ./venv/bin/python -m prepare_database)
+      return
+    fi
     ADDP_DATABASE_DEPLOY_USER=platform_deploy ADDP_DATABASE_DEPLOY_PASSWORD="$hosted_deploy_password" \
       ".dev-bins/addp-$owner" prepare-database "$@"
   }

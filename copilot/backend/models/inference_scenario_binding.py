@@ -1,8 +1,10 @@
 """Copilot-owned Inference Scenario Binding."""
+from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, String, Text, func, text
+from sqlalchemy import BigInteger, CheckConstraint, Index, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
+from addp_common.infra.sqltypes import Instant
 
 from database import Base
 
@@ -36,10 +38,10 @@ class InferenceScenarioBinding(Base):
     scenario_code: Mapped[str] = mapped_column(String(80), nullable=False)
     scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
     tenant_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    model_profile_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    model_profile_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    created_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[object] = mapped_column(Instant(), nullable=False, server_default=func.now())
     updated_at: Mapped[object] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+        Instant(), nullable=False, server_default=func.now(), onupdate=lambda: datetime.now(timezone.utc)
     )

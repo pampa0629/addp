@@ -27,7 +27,11 @@ case "$MODE" in
     model)
         : "${ADDP_AGENT_MODEL_TENANT_ID:?ADDP_AGENT_MODEL_TENANT_ID is required}"
         : "${ADDP_AGENT_EVAL_REPORT:?ADDP_AGENT_EVAL_REPORT must select a new external file}"
-        : "${POSTGRES_PORT:?POSTGRES_PORT must be verified with scripts/infra/status.sh}"
+        if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == mysql ]]; then
+            : "${ADDP_MYSQL_PORT:?ADDP_MYSQL_PORT must match the selected platform database}"
+        else
+            : "${POSTGRES_PORT:?POSTGRES_PORT must be verified with scripts/infra/status.sh}"
+        fi
         exec "$PYTHON" "$ROOT_DIR/evals/agent-scenarios/model_runner.py" \
             --tenant-id "$ADDP_AGENT_MODEL_TENANT_ID" \
             --repeat "${ADDP_AGENT_MODEL_REPEATS:-1}" --output "$REPORT"

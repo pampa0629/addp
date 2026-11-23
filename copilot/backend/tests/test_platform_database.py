@@ -9,8 +9,8 @@ from addp_common.infra.database import DatabaseConfig, open_sync_database
 
 
 def test_unknown_platform_provider_rejected_before_engine_creation(monkeypatch):
-    monkeypatch.setenv("ADDP_INFRA_DATABASE_PROVIDER", "mysql")
-    with pytest.raises(ValueError, match="unsupported platform database provider 'mysql'"):
+    monkeypatch.setenv("ADDP_INFRA_DATABASE_PROVIDER", "unimplemented")
+    with pytest.raises(ValueError, match="unsupported platform database provider 'unimplemented'"):
         open_sync_database(DatabaseConfig("invalid", 5432, "unused", None, "unused"))
 
 
@@ -23,7 +23,7 @@ def test_platform_session_against_postgres():
     subprocess.run(
         [
             sys.executable, "-c",
-            "from database import engine; from sqlalchemy import text\n"
+            "from database import open_runtime; from sqlalchemy import text; engine = open_runtime()\n"
             "with engine.connect() as connection:\n"
             "    name, zone = connection.execute(text(\"SELECT current_database(), current_setting('TimeZone')\")).one()\n"
             "    assert (name, zone) == (engine.url.database, 'Asia/Tokyo'), (name, zone)\n",
@@ -34,8 +34,8 @@ def test_platform_session_against_postgres():
             **os.environ,
             "POSTGRES_HOST": target.host,
             "POSTGRES_PORT": str(target.port),
-            "POSTGRES_USER": target.username,
-            "POSTGRES_PASSWORD": target.password,
+            "ADDP_DATABASE_RUNTIME_USER": target.username,
+            "ADDP_DATABASE_RUNTIME_PASSWORD": target.password,
             "POSTGRES_DB": target.database,
             "ADDP_INFRA_DATABASE_PROVIDER": "postgres",
             "TZ": "Asia/Tokyo",

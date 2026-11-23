@@ -6,11 +6,15 @@ def test_gateway_url_uses_explicit_value_or_service_host():
     assert Settings(service_host="localhost", gateway_port=9000).get_gateway_url() == "http://localhost:9000"
 
 
-def test_database_connection_uses_password_auth_without_implicit_host_kerberos():
+def test_database_connection_uses_password_auth_without_implicit_host_kerberos(monkeypatch):
     # The real SQLAlchemy dialect exposes the arguments handed to libpq without
     # connecting. Ambient Kerberos credentials must not choose another protocol.
     from sqlalchemy import event
-    from database import engine
+    from database import open_runtime
+    for name, value in {"ADDP_DATABASE_RUNTIME_USER": "test", "ADDP_DATABASE_RUNTIME_PASSWORD": "test",
+                        "POSTGRES_HOST": "localhost", "POSTGRES_PORT": "5432", "POSTGRES_DB": "test"}.items():
+        monkeypatch.setenv(name, value)
+    engine = open_runtime()
 
     observed = {}
     def inspect_connect(_dialect, _record, _args, kwargs):

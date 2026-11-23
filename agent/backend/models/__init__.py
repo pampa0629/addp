@@ -1,6 +1,10 @@
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    # Async callers consume server timestamps immediately after flush. MySQL
+    # needs an explicit fetch because it has no INSERT ... RETURNING.
+    __mapper_args__ = {"eager_defaults": True}
 
 from .session import Session
 from .message import Message
