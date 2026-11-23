@@ -26,7 +26,25 @@ class MinioBuildCacheTest(unittest.TestCase):
         self.context = self.repository / "scripts/infra"
         self.context.mkdir(parents=True)
         (self.context / "Dockerfile.minio").write_text("FROM fixed@sha256:123 AS build\nRUN compile\n")
-        (self.repository / "docker-compose.infra.yml").write_text("services:\n  minio:\n    image: addp-minio:fixed\n")
+        (self.repository / CACHE.IGNORE_FILE).write_text("**\n!minio-observation/\n!minio-observation/**\n")
+        (self.context / "minio-observation").mkdir()
+        self.source = self.context / "minio-observation/main.go"
+        self.source.write_text("package main\n")
+        self.service = {"image": "addp-minio:fixed", "build": {
+            "context": "scripts/infra", "dockerfile": "Dockerfile.minio",
+        }}
+        check_output = subprocess.check_output
+
+        def resolved_config(command, **options):
+            if command[:2] != ["docker", "compose"]:
+                return check_output(command, **options)
+            self.assertEqual(command[-1], "minio")
+            self.assertEqual(options["env"]["COMPOSE_DISABLE_ENV_FILE"], "1")
+            return json.dumps({"services": {"minio": self.service}}).encode()
+
+        compose = patch.object(CACHE.subprocess, "check_output", side_effect=resolved_config)
+        compose.start()
+        self.addCleanup(compose.stop)
         (self.repository / "scripts/ci").mkdir()
         (self.repository / "scripts/ci/minio-build-cache.py").write_text("cache contract v1")
         subprocess.run(["git", "init", "-q", str(self.repository)], check=True)
@@ -59,16 +77,53 @@ class MinioBuildCacheTest(unittest.TestCase):
             return CACHE.build(self.repository, self.directory, require_hit)
 
     def test_every_build_input_changes_key(self):
-        for relative in ("scripts/infra/Dockerfile.minio", "scripts/ci/minio-build-cache.py",
-                         "docker-compose.infra.yml"):
-            path = self.repository / relative
-            before = CACHE.input_key(self.repository)
-            path.write_text(path.read_text() + "\nchanged")
-            self.assertNotEqual(before, CACHE.input_key(self.repository), relative)
-        before = CACHE.input_key(self.repository)
-        (self.context / ".dockerignore").write_text(".env\n")
+        for path in (self.repository / CACHE.DOCKERFILE, self.repository / CACHE.IGNORE_FILE,
+                     self.repository / "scripts/ci/minio-build-cache.py", self.source):
+            before, _ = CACHE.cache_inputs(self.repository)
+            path.write_text(path.read_text() + "\n# changed\n")
+            self.assertNotEqual(before, CACHE.cache_inputs(self.repository)[0], path)
+        before, _ = CACHE.cache_inputs(self.repository)
+        self.source.chmod(0o755)
+        self.assertNotEqual(before, CACHE.cache_inputs(self.repository)[0])
+        before, _ = CACHE.cache_inputs(self.repository)
+        (self.source.parent / "policy.json").write_text("{}\n")
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
-        self.assertNotEqual(before, CACHE.input_key(self.repository))
+        self.assertNotEqual(before, CACHE.cache_inputs(self.repository)[0])
+        before, _ = CACHE.cache_inputs(self.repository)
+        self.service["image"] = "addp-minio:new"
+        self.assertNotEqual(before, CACHE.cache_inputs(self.repository)[0])
+
+    def test_unrelated_infra_and_compose_runtime_changes_keep_the_key(self):
+        before, _ = CACHE.cache_inputs(self.repository)
+        (self.context / "run-postgres.sh").write_text("# unrelated\n")
+        (self.context / ".dockerignore").write_text("*\n")
+        self.service["ports"] = [{"target": 9000, "published": "19000"}]
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertEqual(before, CACHE.cache_inputs(self.repository)[0])
+
+    def test_new_allowed_source_directory_is_discovered(self):
+        before, _ = CACHE.cache_inputs(self.repository)
+        extra = self.context / "extras"
+        extra.mkdir()
+        (extra / "data").write_text("first\n")
+        ignore = self.repository / CACHE.IGNORE_FILE
+        ignore.write_text(ignore.read_text() + "!extras/\n!extras/**\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertNotEqual(before, CACHE.cache_inputs(self.repository)[0])
+        before, _ = CACHE.cache_inputs(self.repository)
+        (extra / "data").write_text("second\n")
+        self.assertNotEqual(before, CACHE.cache_inputs(self.repository)[0])
+
+    def test_unsupported_context_or_compose_definition_fails_before_cache_restore(self):
+        ignore = self.repository / CACHE.IGNORE_FILE
+        original = ignore.read_text()
+        ignore.write_text(original + "!anything*\n")
+        with self.assertRaisesRegex(ValueError, "context must"):
+            CACHE.cache_inputs(self.repository)
+        ignore.write_text(original)
+        self.service["build"]["args"] = {"VALUE": "changed"}
+        with self.assertRaisesRegex(ValueError, "Compose build must match"):
+            CACHE.cache_inputs(self.repository)
 
     def test_cache_path_cannot_escape_runner_or_follow_symlinks(self):
         for path in (self.repository, self.base / "other"):

@@ -169,8 +169,7 @@ def dockerignore_pattern_regex(pattern: str) -> re.Pattern[str]:
     return re.compile(prefix + result + r"(?:/.*)?$")
 
 
-def dockerignore_excludes(context_root: Path, relative_path: str) -> bool:
-    ignore_file = context_root / ".dockerignore"
+def dockerignore_excludes(ignore_file: Path, relative_path: str) -> bool:
     if not ignore_file.is_file():
         return False
     excluded = False
@@ -198,6 +197,10 @@ def dockerfile_context_errors(
     errors: list[str] = []
     repository_root = repository.resolve()
     context_root = (repository / context).resolve()
+    ignore_reference = dockerfile + ".dockerignore"
+    if not (repository / ignore_reference).is_file():
+        ignore_reference = f"{context}/.dockerignore"
+    ignore_file = repository / ignore_reference
     text = (repository / dockerfile).read_text(encoding="utf-8")
     for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
@@ -250,13 +253,13 @@ def dockerfile_context_errors(
                 match
                 for match in available_matches
                 if not dockerignore_excludes(
-                    context_root, match.relative_to(context_root).as_posix()
+                    ignore_file, match.relative_to(context_root).as_posix()
                 )
             ]
             if not visible_matches:
                 errors.append(
                     f"{service}: {dockerfile}:{line_number} COPY source is excluded by "
-                    f"{context}/.dockerignore: {source}"
+                    f"{ignore_reference}: {source}"
                 )
     return errors
 

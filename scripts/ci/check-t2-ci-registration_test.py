@@ -552,6 +552,13 @@ class T2CIRegistrationTest(unittest.TestCase):
         self.assertFalse(MODULE.MODULE_GATE.gate_input_covers(["scripts/test/build/"], "scripts/test/build-other/input.txt"))
         self.assertTrue(MODULE.MODULE_GATE.gate_input_covers(["scripts/test/build/"], "scripts/test/build/deleted.txt"))
 
+    def test_dockerfile_input_covers_its_specific_ignore_file(self) -> None:
+        covers = MODULE.MODULE_GATE.gate_input_covers
+        dockerfile = "scripts/infra/Dockerfile.minio"
+        self.assertTrue(covers([dockerfile], dockerfile + ".dockerignore"))
+        self.assertFalse(covers([dockerfile], "scripts/infra/Dockerfile.postgres.dockerignore"))
+        self.assertFalse(covers([dockerfile + "/"], dockerfile + ".dockerignore"))
+
     def test_rejects_build_parameter_override_and_external_context(self) -> None:
         self._add_owned_source_build()
         compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"

@@ -33,7 +33,7 @@ Platform consistency 检出提交并检查空白错误后，立即执行 `make t
 
 - `make build-images` 唯一调度，最多两任务、基础镜像预热先行，单／双路同实现；前端仅锁文件安装、Node取根版本，版本变化须选全部前端镜像。Platform核并发上限／失败汇总／日志隔离／中断进程与目录清理，既有产品Job实际构建。
 - `make test-workflow-security` 纳入本地test-platform及System IAM required Job：固定zizmor1.28.0，只扫 `.github/workflows/release-and-t2-gates.yml`，auditor／medium、禁在线审计／自定义配置／忽略。首次下载固定wheel，临时venv退出删除；安装／收集／扫描失败阻断，不依赖ADDP或DB。
-- Manager Hosted Infra MinIO缓存不替代构建：原Dockerfile／Infra Compose、Server/mc修订与断言不变，缓存含编译层inline及最终镜像。键绑定Linux amd64、脚本和全部已跟踪Infra上下文，仅精确命中；先核归档摘要，再核镜像身份架构，热构建复用RUN且双二进制摘要相同，损坏／缺必需热验／构建失败阻断。独立cache workflow在全新Runner实测，Compose仍实际构建；部署前删转移归档，只存公开固定源码构建层，不存身份／配置／数据／结果，不代业务T4。
+- Manager Hosted Infra MinIO 缓存含编译层 inline 及最终镜像。缓存键绑定 Linux amd64、缓存脚本、Compose 解析出的 MinIO 镜像与构建定义、Dockerfile 和它专用的 ignore 文件。Docker 只接收该 ignore 文件放行的源码目录，缓存键依同一文件纳入这些目录里的 Git 跟踪文件及其执行权限。修改其他 Infra 服务、运行配置或文档沿用原键。只接受精确命中，先核归档摘要，再核镜像身份与架构。全新 Runner 必须实际运行 Compose 构建并确认 Dockerfile RUN 命中及 Server、mc 二进制摘要一致。缺必需热验、归档损坏或构建失败均阻断。部署前删除转移归档，缓存范围限公开固定源码构建层。
 
 ### 作业预算与聚合复用
 
@@ -61,6 +61,7 @@ Workflow仅管触发／Owner选择、Runner／工具链／disposable Service、�
 模块、门禁、依赖、构建或suite变化须同次闭合：**Owner断言与安全→根Make→发现／影响选择或suite登记→workflow／报告→规范／模块或运行文档**。永久排队、接开发环境或始终Skip的占位workflow不能交付。
 
 - T2：凡 `ADDP_T2_SERVICES` 声明（包括后续新增数据库），须同时根Make、`test-integration` 串行聚合、共享影响选择与带摘要Job；实际Service存在、版本tag及sha256固定，不按数据库种类分支登记。
+- T2 登记的 Dockerfile 同时覆盖它同名的 `.dockerignore` 后缀文件。构建登记按 Docker 的优先级检查输入，优先使用 Dockerfile 专用规则。
 - T5：声明 `workflow_job` 时，统一检查只经 `test-release` 分发、仓外证据及共享摘要，不按产品类型增加检查路线。
 - NFS：`make test-common-nfs-unit` 为确定性，`make test-common-nfs-publication` 为独占Hosted Linux amd64原生export协议T2。`ADDP_T2_HOSTED_ONLY`／`ADDP_T2_NATIVE_LIFECYCLE` 必须声明，后者是 `ADDP_T2_INPUT_FILES` 中真生命周期源码；不冒充Docker、不进本地集成。Release/T2按Common选择实跑／摘要／原证据且拒Skip；准备未知保留业务残留报告，夹具最终销毁另记，不代授权或T4。
 

@@ -52,12 +52,14 @@ T2_REQUIRED_ENVIRONMENT_DECLARATION_PATTERN = re.compile(
 
 
 def gate_input_covers(declarations, candidate: str) -> bool:
-    """Input paths ending in / declare one repository subtree, including deletions."""
+    """Input files include their Dockerfile-specific ignore sibling, including deletions."""
     for declaration in declarations:
         path = declaration.rstrip("/")
         if not path or path.startswith("/") or "\\" in path or any(part in {"", ".", ".."} for part in path.split("/")):
             raise ModuleGateError("gate input must be a normalized repository-relative path")
         if candidate == path or declaration.endswith("/") and candidate.startswith(path + "/"):
+            return True
+        if not declaration.endswith("/") and candidate == path + ".dockerignore":
             return True
     return False
 
