@@ -11,6 +11,42 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCTOR = Path('scripts/dev/doctor.sh')
 
 
+class DevPlatformDatabaseTest(unittest.TestCase):
+    def test_owned_database_is_required_before_preparation(self):
+        script = """
+set -eu
+source "$ROOT_DIR/scripts/dev/platform-database.sh"
+docker() {
+  case "$1" in
+    context) echo unix:///fixture/docker.sock ;;
+    ps) echo "$INVENTORY" ;;
+    inspect) echo owned ;;
+    port) echo "$MAPPING" ;;
+    exec) test "$4" = POSTGRES_DB && echo fixture ;;
+    *) return 1 ;;
+  esac
+}
+addp_infra_verify_container() { test "$1:$2" = postgres:owned; }
+addp_dev_select_database || exit 1
+addp_dev_prepare_database system
+"""
+        for settings, expected in [
+            ({"DOCKER_HOST": "ssh://elsewhere"}, "本机 Docker"),
+            ({"POSTGRES_HOST": "elsewhere"}, "外部平台库"),
+            ({"INVENTORY": "postgres\nmysql"}, "多个平台数据库"),
+            ({"ADDP_INFRA_DATABASE_PROVIDER": "mysql"}, "不一致"),
+            ({"MAPPING": "192.0.2.1:5432"}, "端口"),
+            ({"POSTGRES_DB": "other"}, "库名"),
+        ]:
+            with self.subTest(settings=settings):
+                env = dict(PATH=os.environ["PATH"], ROOT_DIR=str(ROOT), INVENTORY="postgres",
+                           MAPPING="127.0.0.1:5432", POSTGRES_PORT="5432", POSTGRES_DB="fixture")
+                env.update(settings)
+                result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+
+
 class DevEnvironmentTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='addp-dev-doctor-')

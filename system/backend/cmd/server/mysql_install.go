@@ -21,12 +21,15 @@ import (
 
 // Installation uses a deployment connection scoped to the selected database.
 // Stdout is reserved for the SQL a DBA reviews and executes separately.
-func prepareDatabase(target string, output io.Writer) error {
+func prepareDatabase(target string, output io.Writer, requireCompleteHistory bool) error {
 	if target != "common" && target != "system" {
 		return fmt.Errorf("expected database owner common or system")
 	}
 	provider := commonConfig.GetEnv("ADDP_INFRA_DATABASE_PROVIDER", "postgres")
 	if provider == "mysql" {
+		if requireCompleteHistory {
+			return errors.New("--require-complete-history applies to PostgreSQL System migration checksums")
+		}
 		return installMySQL(target, output)
 	}
 	if provider != "postgres" {
@@ -45,7 +48,9 @@ func prepareDatabase(target string, output io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return migration.NewRunner(dsn).Run(ctx)
+		runner := migration.NewRunner(dsn)
+		runner.RequireCompleteHistory = requireCompleteHistory
+		return runner.Run(ctx)
 	}
 	db, err := bootstrap.OpenDatabase(cfg, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {

@@ -11,7 +11,7 @@ const (
 	migrationChecksumsIntroducedVersion = uint(38)
 )
 
-func verifyRecordedMigrationChecksums(ctx context.Context, db *sql.DB, catalog Catalog, appliedVersion uint) (bool, error) {
+func verifyRecordedMigrationChecksums(ctx context.Context, db *sql.DB, catalog Catalog, appliedVersion uint, requireComplete bool) (bool, error) {
 	exists, err := migrationChecksumTableExists(ctx, db)
 	if err != nil {
 		return false, err
@@ -27,7 +27,7 @@ func verifyRecordedMigrationChecksums(ctx context.Context, db *sql.DB, catalog C
 	if err != nil {
 		return false, err
 	}
-	return len(recorded) == int(appliedVersion), compareMigrationChecksums(catalog, appliedVersion, recorded, false)
+	return len(recorded) == int(appliedVersion), compareMigrationChecksums(catalog, appliedVersion, recorded, requireComplete)
 }
 
 func recordAndVerifyMigrationChecksums(ctx context.Context, db *sql.DB, catalog Catalog, appliedVersion uint) error {

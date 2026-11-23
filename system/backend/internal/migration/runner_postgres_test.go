@@ -3678,6 +3678,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 		t.Fatalf("install previous release: %v", err)
 	}
 	runner := NewRunner(dsn)
+	runner.RequireCompleteHistory = true
 	if err := runner.Run(ctx); err != nil {
 		t.Fatalf("upgrade previous release: %v", err)
 	}
@@ -3688,6 +3689,23 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 		}
 	})
 
+	t.Run("missing checksum stops automatic preparation", func(t *testing.T) {
+		if _, err := db.Exec(`DELETE FROM system.schema_migration_checksums WHERE version=37`); err != nil {
+			t.Fatal(err)
+		}
+		t.Run("automatic preparation", func(t *testing.T) {
+			t.Setenv("PGOPTIONS", "-c default_transaction_read_only=on")
+			if err := runner.Run(ctx); err == nil || !strings.Contains(err.Error(), "000037 is missing") {
+				t.Fatalf("missing history: %v", err)
+			}
+		})
+		if err := NewRunner(dsn).Run(ctx); err != nil {
+			t.Fatalf("explicit recovery: %v", err)
+		}
+		if err := runner.Run(ctx); err != nil {
+			t.Fatalf("verify recovered history: %v", err)
+		}
+	})
 	var version int
 	var dirty bool
 	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {

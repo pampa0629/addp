@@ -613,6 +613,9 @@ else
   fi
 fi
 
+source "${SCRIPT_DIR}/platform-database.sh"
+addp_dev_select_database || exit 1
+
 # 显示启动计划前核验所需的平台运行凭据
 if [[ "${ADDP_ONLINE_HOST:-0}" != 1 && "$START_SYSTEM_BACKEND" == true ]]; then
   addp_require_dev_database_runtime || exit 1
@@ -1103,6 +1106,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
   # 检查服务是否已在运行
   if check_service_running "system" "$SYSTEM_PORT"; then
     build_service "system" "system/backend"
+    addp_dev_prepare_database system || exit 1
     python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" system system backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-system" &
     SYSTEM_PID=$!
     echo $SYSTEM_PID > .dev-pids/system.pid
@@ -1362,6 +1366,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Meta Backend（带检查）
   if [ "$START_META_BACKEND" = true ]; then
     if check_service_running "meta" "$META_BACKEND_PORT"; then
+      addp_dev_prepare_database meta || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" meta meta backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-meta" &
       META_PID=$!
       echo $META_PID > .dev-pids/meta.pid
@@ -1526,6 +1531,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Workbench Backend；Service 可暂时离线，不影响 Workbench Ready。
   if [ "$START_WORKBENCH_BACKEND" = true ]; then
     if check_service_running "workbench" "$WORKBENCH_BACKEND_PORT"; then
+      addp_dev_prepare_database workbench || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" workbench workbench backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-workbench" &
       WORKBENCH_PID=$!
       echo $WORKBENCH_PID > .dev-pids/workbench.pid
@@ -1561,6 +1567,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   if [ "$START_INFERENCE_BACKEND" = true ]; then
     if check_service_running "inference" "${INFERENCE_BACKEND_PORT:-8191}"; then
+      addp_dev_prepare_database inference || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" inference inference backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-inference" &
       INFERENCE_PID=$!
       echo $INFERENCE_PID > .dev-pids/inference.pid
@@ -2055,6 +2062,7 @@ start_runtime_copilot() (
 # 正在运行的服务只复用；不能在检查 PID/端口之前改写其环境。
 if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
   addp_prepare_python_backend "$ROOT_DIR" copilot || exit 1
+  addp_dev_prepare_database copilot || exit 1
   echo "启动 Copilot Backend..."
   cd copilot/backend
 
@@ -2100,6 +2108,7 @@ start_runtime_agent() (
 
   if check_service_running "agent-backend" "$AGENT_BACKEND_PORT"; then
     addp_prepare_python_backend "$ROOT_DIR" agent || exit 1
+    addp_dev_prepare_database agent || exit 1
     echo "启动 Agent Backend..."
     cd agent/backend
     export PORT=$AGENT_BACKEND_PORT
@@ -2193,6 +2202,7 @@ if [ "$START_GATEWAY" = true ]; then
   build_gateway
   # 重置 PORT 环境变量为 Gateway 的端口
   export PORT=$GATEWAY_PORT
+  addp_dev_prepare_database gateway || exit 1
   python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" gateway gateway ingress "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-gateway" &
   GATEWAY_PID=$!
   echo $GATEWAY_PID > .dev-pids/gateway.pid

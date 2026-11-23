@@ -514,6 +514,9 @@ jobs:
           ADDP_SYSTEM_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_iam_test?sslmode=disable
         run: make test-system-iam-postgres
 
+      - name: Verify native database preparation and explicit checksum recovery
+        run: make test-dev-platform-database
+
       - name: Summarize System IAM PostgreSQL verification
         if: always()
         uses: ./.github/actions/ci-gate-summary

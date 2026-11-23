@@ -41,11 +41,12 @@ import (
 // @description Type "Bearer" followed by a space and an ADDP opaque access token.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "prepare-database" {
-		if len(os.Args) != 3 {
-			fmt.Fprintln(os.Stderr, "expected prepare-database <common|system>")
+		strictHistory := len(os.Args) == 4 && os.Args[2] == "system" && os.Args[3] == "--require-complete-history"
+		if len(os.Args) != 3 && !strictHistory {
+			fmt.Fprintln(os.Stderr, "expected prepare-database common or prepare-database system [--require-complete-history]")
 			os.Exit(2)
 		}
-		err := prepareDatabase(os.Args[2], os.Stdout)
+		err := prepareDatabase(os.Args[2], os.Stdout, strictHistory)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			var pending *schema.PendingMySQLTriggers

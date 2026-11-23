@@ -31,7 +31,7 @@ class ProcessMetricsPlanTest(unittest.TestCase):
                 LAUNCH.launch([module, module, role, "receiver", "program"], env)
                 actual = receiver.call_args.args[2]
                 self.assertEqual({key for key in install_keys if key in actual},
-                                 set(install_keys) if module == "model" else set())
+                                 {"POSTGRES_USER", "POSTGRES_PASSWORD"} if module == "model" else set())
                 self.assertEqual(actual["ADDP_DATABASE_RUNTIME_PASSWORD"], "runtime-fixture")
 
     def test_cgroup_observation_is_an_explicit_per_unit_boolean(self):

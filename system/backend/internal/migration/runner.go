@@ -22,9 +22,10 @@ const (
 )
 
 type Runner struct {
-	DSN  string
-	FS   fs.FS
-	Root string
+	DSN                    string
+	FS                     fs.FS
+	Root                   string
+	RequireCompleteHistory bool
 }
 
 func NewRunner(dsn string) *Runner {
@@ -81,7 +82,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		if preMigrationVersion > catalog.LatestVersion {
 			return fmt.Errorf("database migration version %d is newer than embedded version %d", preMigrationVersion, catalog.LatestVersion)
 		}
-		complete, err := verifyRecordedMigrationChecksums(ctx, db, catalog, preMigrationVersion)
+		complete, err := verifyRecordedMigrationChecksums(ctx, db, catalog, preMigrationVersion, r.RequireCompleteHistory)
 		if err != nil {
 			return err
 		}

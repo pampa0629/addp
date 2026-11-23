@@ -160,6 +160,8 @@ if [ "$RESTART_ALL" = true ] && [ ${#RESTART_MODULES[@]} -gt 0 ]; then
 fi
 
 if [[ "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+  source "${SCRIPT_DIR}/platform-database.sh"
+  addp_dev_select_database || exit 1
   addp_require_dev_database_runtime || exit 1
 fi
 

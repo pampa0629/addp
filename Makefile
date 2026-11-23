@@ -72,6 +72,10 @@ dev-doctor: ## 只读诊断新机器 Node/npm 的版本与实际路径，不安�
 test-dev-environment: ## 验证新机器 Node/npm 诊断、无副作用边界和文档/CI 登记
 	@python3 scripts/test/dev-environment_test.py
 
+.PHONY: test-dev-platform-database
+test-dev-platform-database: ## 用独占 PostgreSQL 验证开发启动的数据库准备与历史恢复边界
+	@bash scripts/test/dev-platform-database-gate.sh
+
 dev-start: ## 开发模式启动所有服务（按正确顺序）
 	@bash scripts/dev/start.sh
 
