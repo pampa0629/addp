@@ -26,6 +26,9 @@ runs:
   steps:
     - name: Set up Python
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      env:
+        # Keep pip's cache separate for each target virtual environment.
+        PIP_CACHE_DIR: ${{ runner.temp }}/addp-pip/${{ inputs.venv-path }}
       with:
         python-version: ${{ inputs.python-version }}
         cache: pip
@@ -34,6 +37,7 @@ runs:
     - name: Prepare isolated test runtime
       shell: bash
       env:
+        PIP_CACHE_DIR: ${{ runner.temp }}/addp-pip/${{ inputs.venv-path }}
         ADDP_PYTHON_VENV: ${{ inputs.venv-path }}
         ADDP_PYTHON_REQUIREMENTS: ${{ inputs.requirements-file }}
         ADDP_PYTHON_EDITABLE: ${{ inputs.editable-install }}
