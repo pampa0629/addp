@@ -138,12 +138,17 @@ func TestPostgresStartupSchemaOwnership(t *testing.T) {
 	if applied.Load() != 1 {
 		t.Fatalf("migration applied %d times", applied.Load())
 	}
-	// A Worker with a read-only transaction can validate and read business data.
+	// Repeated installation and runtime verification both work in a read-only transaction.
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SET TRANSACTION READ ONLY").Error; err != nil {
 			return err
 		}
-		return Require(tx, name, 1)
+		if err := Require(tx, name, 1); err != nil {
+			return err
+		}
+		return Migrate(tx, name, 1, func(*gorm.DB) error {
+			return errors.New("current version invoked migration")
+		})
 	}); err != nil {
 		t.Fatal(err)
 	}

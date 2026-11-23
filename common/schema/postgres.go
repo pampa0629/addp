@@ -33,8 +33,14 @@ func migratePostgres(db *gorm.DB, name string, version int64, apply func(*gorm.D
 			return err
 		}
 		table := name + ".startup_schema_revision"
-		if err := tx.Exec("CREATE TABLE IF NOT EXISTS " + table + " (singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton), version BIGINT NOT NULL)").Error; err != nil {
+		var installed bool
+		if err := tx.Raw("SELECT to_regclass(?) IS NOT NULL", table).Scan(&installed).Error; err != nil {
 			return err
+		}
+		if !installed {
+			if err := tx.Exec("CREATE TABLE " + table + " (singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton), version BIGINT NOT NULL)").Error; err != nil {
+				return err
+			}
 		}
 		var current int64
 		if err := tx.Raw("SELECT COALESCE(MAX(version), 0) FROM " + table).Scan(&current).Error; err != nil {

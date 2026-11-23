@@ -81,8 +81,12 @@ func (r *Runner) Run(ctx context.Context) error {
 		if preMigrationVersion > catalog.LatestVersion {
 			return fmt.Errorf("database migration version %d is newer than embedded version %d", preMigrationVersion, catalog.LatestVersion)
 		}
-		if err := verifyRecordedMigrationChecksums(ctx, db, catalog, preMigrationVersion); err != nil {
+		complete, err := verifyRecordedMigrationChecksums(ctx, db, catalog, preMigrationVersion)
+		if err != nil {
 			return err
+		}
+		if preMigrationVersion == catalog.LatestVersion && complete {
+			return nil
 		}
 	}
 

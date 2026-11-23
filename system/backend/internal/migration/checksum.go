@@ -11,23 +11,23 @@ const (
 	migrationChecksumsIntroducedVersion = uint(38)
 )
 
-func verifyRecordedMigrationChecksums(ctx context.Context, db *sql.DB, catalog Catalog, appliedVersion uint) error {
+func verifyRecordedMigrationChecksums(ctx context.Context, db *sql.DB, catalog Catalog, appliedVersion uint) (bool, error) {
 	exists, err := migrationChecksumTableExists(ctx, db)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !exists {
 		if appliedVersion >= migrationChecksumsIntroducedVersion {
-			return fmt.Errorf("migration checksum table is missing at applied version %d", appliedVersion)
+			return false, fmt.Errorf("migration checksum table is missing at applied version %d", appliedVersion)
 		}
-		return nil
+		return true, nil
 	}
 
 	recorded, err := readRecordedMigrationChecksums(ctx, db)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return compareMigrationChecksums(catalog, appliedVersion, recorded, false)
+	return len(recorded) == int(appliedVersion), compareMigrationChecksums(catalog, appliedVersion, recorded, false)
 }
 
 func recordAndVerifyMigrationChecksums(ctx context.Context, db *sql.DB, catalog Catalog, appliedVersion uint) error {

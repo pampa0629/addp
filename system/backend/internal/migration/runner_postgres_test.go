@@ -3669,13 +3669,24 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	catalog, err := ReadCatalog(EmbeddedSQL, DefaultMigrationsRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous, _ := migrationFilesBeforeAndThrough(t, catalog.Names[len(catalog.Names)-1])
+	if err := (&Runner{DSN: dsn, FS: previous, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("install previous release: %v", err)
+	}
 	runner := NewRunner(dsn)
 	if err := runner.Run(ctx); err != nil {
-		t.Fatalf("first Run() error = %v", err)
+		t.Fatalf("upgrade previous release: %v", err)
 	}
-	if err := runner.Run(ctx); err != nil {
-		t.Fatalf("second Run() error = %v", err)
-	}
+	t.Run("current release requires no writes", func(t *testing.T) {
+		t.Setenv("PGOPTIONS", "-c default_transaction_read_only=on")
+		if err := runner.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	var version int
 	var dirty bool
@@ -3722,10 +3733,6 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertRoleKeyNamespace(t, db)
 	assertForeignKeyColumnsIndexed(t, db)
 
-	catalog, err := ReadCatalog(EmbeddedSQL, DefaultMigrationsRoot)
-	if err != nil {
-		t.Fatalf("read embedded migration catalog for checksum test: %v", err)
-	}
 	_, tampered := migrationFilesBeforeAndThrough(t, catalog.Names[len(catalog.Names)-1])
 	tamperedMigration := tampered["sql/000037_iam_notebook_session_authorization.up.sql"]
 	tamperedMigration.Data = append(append([]byte(nil), tamperedMigration.Data...), []byte("\n-- rewritten\n")...)
