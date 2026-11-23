@@ -102,6 +102,19 @@ CDC 性能规则的持久化定向回归使用 `make test-monitor-postgres MONIT
 
 本地数据库先用 `bash scripts/infra/status.sh` 确认实际映射，测试资源与清理只走标准入口。需要运行验收或重启时遵守根 AGENTS.md，由用户在自己的终端执行标准生命周期命令；不接管个人服务，不执行未经单独授权的 keepalive。
 
+### 服务监控模块卡片导航的 Safari 验收
+
+修改模块卡片、详情返回或模块筛选交互时，用已有服务监控读权的账号在 Safari 打开本地 Console 的「统一监控 → 服务监控」。确认列表中有 Meta 卡片，System 模块定义中有 `asset`，分别走完以下两条路径。
+
+1. **返回后立即筛选。** 打开 Meta 详情，点击「返回模块列表」，列表一出现就点击「模块名称」并输入 `ass`。下拉框应保持展开，直至能选中 `asset`。选中后核对筛选值和地址栏中的 `module_name=asset`。有匹配实例时只显示对应模块，无匹配实例时显示空态。
+2. **直接返回原卡片。** 重置筛选，滚动到 Meta 卡片可见的非页首位置，待滚动停稳后记录卡片在视口中的位置。打开 Meta 详情并点击「返回模块列表」，此后不要点击或滚动。核对原卡片回到原来的可见位置，再直接按回车，应重新打开「meta · 模块详情」。记录前后位置和实际打开的模块。
+
+本机 Safari 实测结果单独记录。在仓库根目录运行以下命令可验证对应的[受控浏览器回归](frontend/e2e/process-resources.spec.js)。
+
+```bash
+make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS='--grep "module choices come from System definitions|module cards merge paged roles"'
+```
+
 ## 历史证据导航
 
 [Monitor 历史证据总入口](../docs/spec/testing/evidence/Monitor历史证据.md)保留原记录及旧锚点。能力表引用下列同一批专题，本入口只提供查阅导航，不另行汇总通过状态。下表仅定位已有结果；固定源码、失败／修复、清理和未覆盖项以专题原记录为准，失败、取消、排队或未执行不计通过。本机隔离闭环、Linux T2、受控页面 T3 与正式身份 Hosted T4 分别认定，不合并为当前 HEAD 或生产 T5 通过。
