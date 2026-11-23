@@ -17648,6 +17648,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "平台运行账号对租户管理员只读 | Platform runtime accounts are read-only to tenant administrators",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "账号或角色不存在或不属于当前租户 | Account or role not found in the current tenant",
                         "schema": {
@@ -17750,6 +17756,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "平台运行账号对租户管理员只读 | Platform runtime accounts are read-only to tenant administrators",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     },
                     "409": {

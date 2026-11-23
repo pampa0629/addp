@@ -285,6 +285,9 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 		if err != nil {
 			return err
 		}
+		if err := tx.requireTenantManagedRoleTarget(ctx, input.TenantID, targetPrincipal); err != nil {
+			return err
+		}
 		roles, err := tx.ListTenantRoles(ctx, input.TenantID)
 		if err != nil {
 			return err
@@ -384,7 +387,8 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 		if err != nil {
 			return err
 		}
-		if _, err := tx.lockPrincipalsInOrder(ctx, input.ActorPrincipalID, source.PrincipalID); err != nil {
+		principals, err := tx.lockPrincipalsInOrder(ctx, input.ActorPrincipalID, source.PrincipalID)
+		if err != nil {
 			return err
 		}
 		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
@@ -392,6 +396,9 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 		}
 		assignment, err = tx.LockTenantRoleAssignment(ctx, input.TenantID, input.AssignmentID)
 		if err != nil {
+			return err
+		}
+		if err := tx.requireTenantManagedRoleTarget(ctx, input.TenantID, principals[source.PrincipalID]); err != nil {
 			return err
 		}
 		if assignment.Status != "active" {

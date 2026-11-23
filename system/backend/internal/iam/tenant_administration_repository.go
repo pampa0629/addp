@@ -254,6 +254,25 @@ func (r *Repository) ListBuiltinServiceRuntimeBindings(ctx context.Context) ([]B
 	return bindings, nil
 }
 
+// Tenant role management may change only service accounts owned by that tenant.
+// Bootstrap uses CreateTenantRoleAssignment directly to install platform bindings.
+func (r *Repository) requireTenantManagedRoleTarget(ctx context.Context, tenantID int64, target *Principal) error {
+	if target.PrincipalType != PrincipalTypeServicePrincipal {
+		return nil
+	}
+	var owned bool
+	err := r.db.WithContext(ctx).Raw(`SELECT EXISTS (
+		SELECT 1 FROM system.service_principals WHERE id = ? AND owner_scope = 'tenant' AND owner_tenant_id = ?
+	)`, target.ID, tenantID).Scan(&owned).Error
+	if err != nil {
+		return wrapRepositoryError(err)
+	}
+	if !owned {
+		return commonapi.ErrForbidden
+	}
+	return nil
+}
+
 func (r *Repository) CreateTenantRoleAssignment(ctx context.Context, assignment *RoleAssignment) error {
 	if assignment == nil {
 		return commonapi.ErrBadRequest

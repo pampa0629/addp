@@ -406,6 +406,7 @@ func parseOptionalIAMQueryID(c *gin.Context, name string) (*int64, error) {
 // @Security     BearerAuth
 // @Param        request body IAMCreateTenantRoleAssignmentsRequest true "角色分配 | Role assignments"
 // @Success      201 {array} IAMTenantRoleAssignmentResponse
+// @Failure      403 {object} IAMErrorResponse "平台运行账号对租户管理员只读 | Platform runtime accounts are read-only to tenant administrators"
 // @Failure      404 {object} IAMErrorResponse "账号或角色不存在或不属于当前租户 | Account or role not found in the current tenant"
 // @Failure      409 {object} IAMErrorResponse "角色分配冲突：重复分配或账号类型不兼容 | Role assignment conflict: duplicate assignment or incompatible account type"
 // @x-addp-auth-mode "permission"
@@ -462,6 +463,7 @@ func (h *IAMTenantRoleHandler) CreateAssignments(c *gin.Context) {
 // @Param        id path string true "角色分配 ID | Role assignment ID"
 // @Param        request body IAMRevokeTenantRoleAssignmentRequest true "撤销原因 | Revocation reason"
 // @Success      200 {object} IAMTenantRoleAssignmentResponse
+// @Failure      403 {object} IAMErrorResponse "平台运行账号对租户管理员只读 | Platform runtime accounts are read-only to tenant administrators"
 // @Failure      409 {object} IAMErrorResponse "角色分配已撤销或已到期 | Role assignment is already revoked or expired"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_role_assignment.revoke"]

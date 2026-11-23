@@ -167,6 +167,54 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("create custom role with built-in role key error = %v, want conflict", err)
 	}
+	t.Run("platform runtime roles are read-only to tenant administrators", func(t *testing.T) {
+		scope := "platform"
+		for _, tc := range []struct {
+			client, role, otherRole string
+			permissions             []string
+		}{
+			{"addp-meta", "tenant.meta_runtime", "tenant.system_runtime", []string{"develop.production_receipt.read", "system.engine.read"}},
+			{"addp-system", "tenant.system_runtime", "tenant.meta_runtime", []string{"develop.production_receipt.read", "meta.task_provider.read", "meta.authorization_facts.read"}},
+		} {
+			accounts, _, err := repository.ListTenantServiceAccounts(ctx, tenant.ID, 1, 100, tc.client, nil, &scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			idx := slices.IndexFunc(accounts, func(a TenantServiceAccount) bool { return a.ClientID == tc.client })
+			if idx < 0 {
+				t.Fatalf("missing %s", tc.client)
+			}
+			account := accounts[idx]
+			filter := TenantRoleAssignmentFilter{MembershipID: &account.MembershipID}
+			before, total, err := roleService.ListAssignments(ctx, tenant.ID, filter, 1, 100)
+			if err != nil || total != 1 || len(before) != 1 || before[0].RoleKey != tc.role || before[0].SourceType != "bootstrap" {
+				t.Fatalf("%s bootstrap assignment: %v, %v", tc.client, before, err)
+			}
+			expires := currentTime.Add(time.Hour)
+			other := findTenantRoleByKey(t, roles, tc.otherRole)
+			_, err = roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{TenantID: tenant.ID, MembershipID: account.MembershipID, RoleIDs: []int64{other.ID}, ValidUntil: &expires, Reason: "temporary role", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit})
+			if !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("%s temporary grant: %v", tc.client, err)
+			}
+			_, err = roleService.RevokeAssignment(ctx, RevokeTenantRoleAssignmentInput{TenantID: tenant.ID, AssignmentID: before[0].ID, Reason: "manual revoke", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit})
+			if !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("%s revoke: %v", tc.client, err)
+			}
+			after, total, err := roleService.ListAssignments(ctx, tenant.ID, filter, 1, 100)
+			if err != nil || total != 1 || len(after) != 1 || after[0].ID != before[0].ID || after[0].EffectiveState != "effective" {
+				t.Fatalf("%s assignment after denial: %v, %v", tc.client, after, err)
+			}
+			effective, err := repository.ListEffectiveRoleAssignmentPermissions(ctx, account.ID, PrincipalTypeServicePrincipal, ContextTypeTenant, &tenant.ID, &account.MembershipID, currentTime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range tc.permissions {
+				if !containsPermission(effective, key) {
+					t.Errorf("%s lost %s", tc.client, key)
+				}
+			}
+		}
+	})
 	assetRuntimeRole := findTenantRoleByKey(t, roles, "tenant.asset_runtime")
 	infrastructureRole := findTenantRoleByKey(t, roles, "tenant.infrastructure_administrator")
 	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{

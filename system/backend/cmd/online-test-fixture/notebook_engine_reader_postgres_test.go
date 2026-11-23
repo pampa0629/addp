@@ -87,16 +87,15 @@ func TestNotebookEngineReaderIdentityAgainstPostgres(t *testing.T) {
 	memberships, roles := iam.NewTenantMembershipService(repository, clock), iam.NewTenantRoleService(repository, clock)
 	customPermissions := []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read"}
 	expectedPermissions := append(slices.Clone(customPermissions), "system.engine.read")
-	var runtimeID int64
-	if err := db.Raw("SELECT id FROM system.service_principals WHERE name='addp-develop'").Scan(&runtimeID).Error; err != nil || runtimeID == 0 {
-		t.Fatal("Develop runtime missing", err)
-	}
-	var runtimeMembershipID int64
-	if err := db.Raw("SELECT id FROM system.tenant_memberships WHERE tenant_id=? AND principal_id=?", tenant.ID, runtimeID).Scan(&runtimeMembershipID).Error; err != nil || runtimeMembershipID == 0 {
-		t.Fatal("Develop runtime membership missing", err)
+	// A tenant-managed service account reaches the role's principal-type check.
+	account, err := iam.NewTenantServiceAccountService(repository).Create(ctx, iam.CreateTenantServiceAccountInput{
+		TenantID: tenant.ID, ActorPrincipalID: admin.PrincipalID, Name: "Reader fixture service", Audit: audit("notebook-reader-service"),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: runtimeMembershipID, RoleIDs: []int64{role.ID},
+		TenantID: tenant.ID, MembershipID: account.Account.MembershipID, RoleIDs: []int64{role.ID},
 		ActorPrincipalID: admin.PrincipalID, Reason: "Reject Service Principal", Audit: audit("notebook-reader-runtime-reject"),
 	}); !errors.Is(err, iam.ErrTenantRoleAssignmentPrincipalTypeNotAllowed) {
 		t.Fatalf("User-only reader must reject Service Principal: %v", err)
