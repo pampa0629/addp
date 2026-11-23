@@ -61,12 +61,19 @@ func migrateMySQL(db *gorm.DB, owner string, version int64, apply func(*gorm.DB)
 			}
 			migrationErr = errors.Join(migrationErr, fmt.Errorf("release MySQL schema migration lock for %s: %w", owner, err))
 		}()
-		if err := conn.Exec(`CREATE TABLE IF NOT EXISTS startup_schema_revision (
-			owner VARCHAR(64) NOT NULL PRIMARY KEY,
-			version BIGINT NOT NULL,
-			pending_version BIGINT NOT NULL
-		) ENGINE=InnoDB`).Error; err != nil {
+		var installed bool
+		if err := conn.Raw(`SELECT EXISTS (SELECT 1 FROM information_schema.tables
+			WHERE table_schema = DATABASE() AND table_name = 'startup_schema_revision')`).Scan(&installed).Error; err != nil {
 			return err
+		}
+		if !installed {
+			if err := conn.Exec(`CREATE TABLE IF NOT EXISTS startup_schema_revision (
+				owner VARCHAR(64) NOT NULL PRIMARY KEY,
+				version BIGINT NOT NULL,
+				pending_version BIGINT NOT NULL
+			) ENGINE=InnoDB`).Error; err != nil {
+				return err
+			}
 		}
 		current, err := readMySQLSchemaRevision(conn, "startup_schema_revision", owner)
 		if err != nil {

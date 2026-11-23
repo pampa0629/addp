@@ -76,7 +76,15 @@ test "$(echo 'SELECT COUNT(*) FROM module_registry_state' | admin)" = 0
 admin < "$work/last-trigger.sql"
 "$work/system-server" prepare-database system > "$work/remaining.sql"
 test ! -s "$work/remaining.sql"
+# This gate owns the entire instance. A healthy repeat must not issue DDL or grants.
+schema_commands() {
+    admin <<<"SHOW GLOBAL STATUS WHERE Variable_name IN ('Com_grant','Com_create_table','Com_alter_table','Com_create_procedure','Com_create_trigger','Com_drop_procedure')"
+}
+schema_commands > "$work/schema-before"
+test -s "$work/schema-before"
 "$work/system-server" prepare-database system
+schema_commands > "$work/schema-after"
+diff -u "$work/schema-before" "$work/schema-after"
 test "$(echo "SELECT COUNT(*) FROM oauth_clients WHERE client_type='confidential' AND status='disabled' AND client_secret_hash IS NULL" | admin)" = 54
 test "$(echo "SELECT COUNT(*) FROM oauth_clients WHERE client_id='addp-cli' AND status='active' AND client_type='public' AND service_principal_id IS NULL" | admin)" = 1
 test "$(echo "SELECT COUNT(*) FROM role_assignments WHERE scope_type='platform' AND source_type='bootstrap'" | admin)" = 53

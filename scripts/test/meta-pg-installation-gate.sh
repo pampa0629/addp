@@ -90,7 +90,9 @@ SQL
 fi
 "$work/meta-server" prepare-database
 [[ "$(dba -c 'SELECT version FROM meta.startup_schema_revision')" == 9 ]]
+dba -c 'ALTER ROLE meta_install SET default_transaction_read_only TO on'
 "$work/meta-server" prepare-database
+dba -c 'ALTER ROLE meta_install RESET default_transaction_read_only'
 if [[ "$mode" == --upgrade ]]; then
     prior_facts > "$work/current"
     cmp "$work/prior" "$work/current"

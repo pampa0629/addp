@@ -44,7 +44,8 @@ async def migrate(connection, root=None):
         else:
             history = """version BIGINT PRIMARY KEY CHECK(version > 0), filename VARCHAR(255) NOT NULL,
                 sha256 CHAR(64) NOT NULL, applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"""
-        await conn.execute(text(f"CREATE TABLE IF NOT EXISTS agent.schema_migrations ({history})"))
+        if current == 0:
+            await conn.execute(text(f"CREATE TABLE IF NOT EXISTS agent.schema_migrations ({history})"))
         await verify_history(conn, catalog, current)
         for version, filename, digest, sql in catalog[current:]:
             if postgres:

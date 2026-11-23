@@ -38,8 +38,9 @@ async def prepare_schema(connection, owner, version, apply):
         await connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"), {"key": "addp.schema/" + owner})
         if not await connection.scalar(text("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname=:owner)"), params):
             await connection.execute(text(f"CREATE SCHEMA {owner}"))
-        await connection.execute(text(f"""CREATE TABLE IF NOT EXISTS {table} (
-            singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton), version BIGINT NOT NULL)"""))
+        if not await connection.scalar(text("SELECT to_regclass(:table) IS NOT NULL"), {"table": table}):
+            await connection.execute(text(f"""CREATE TABLE {table} (
+                singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton), version BIGINT NOT NULL)"""))
         row = (await connection.execute(revision, params)).one_or_none()
         current = row[0] if row else 0
         if current > version:
@@ -56,8 +57,11 @@ async def prepare_schema(connection, owner, version, apply):
     if await connection.scalar(text(f"SELECT GET_LOCK({lock},30)"), params) != 1:
         raise RuntimeError(f"{owner} database migration lock unavailable")
     try:
-        await connection.execute(text(f"""CREATE TABLE IF NOT EXISTS {table} (
-            owner VARCHAR(64) PRIMARY KEY, version BIGINT NOT NULL, pending_version BIGINT NOT NULL) ENGINE=InnoDB"""))
+        exists = await connection.scalar(text("""SELECT COUNT(*) FROM information_schema.tables
+            WHERE table_schema=DATABASE() AND table_name='startup_schema_revision'"""))
+        if not exists:
+            await connection.execute(text(f"""CREATE TABLE {table} (
+                owner VARCHAR(64) PRIMARY KEY, version BIGINT NOT NULL, pending_version BIGINT NOT NULL) ENGINE=InnoDB"""))
         row = (await connection.execute(revision, params)).one_or_none()
         current, pending = row if row else (0, 0)
         if current > version:

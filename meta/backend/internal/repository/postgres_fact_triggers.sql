@@ -24,6 +24,11 @@ BEGIN
     END IF;
 
     FOREACH fn IN ARRAY ARRAY['meta.advance_authorization_basis_revision()'::regprocedure, 'meta.capture_data_item_change()'::regprocedure, 'meta.stale_lineage_for_changed_fields()'::regprocedure, 'meta.stale_lineage_for_soft_deleted_item()'::regprocedure] LOOP
+        IF EXISTS (SELECT FROM pg_catalog.pg_proc WHERE oid = fn
+                   AND pg_catalog.pg_get_userbyid(proowner) = current_user AND NOT prosecdef
+                   AND proconfig @> ARRAY['search_path=pg_catalog, pg_temp']) THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('ALTER FUNCTION %s OWNER TO CURRENT_USER', fn);
         EXECUTE format('ALTER FUNCTION %s SECURITY INVOKER',fn);
         EXECUTE format('ALTER FUNCTION %s SET search_path = pg_catalog, pg_temp',fn);

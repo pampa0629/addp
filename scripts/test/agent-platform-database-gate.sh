@@ -56,7 +56,16 @@ SQL
             fi
             "$python" -m prepare_database
             runtime write
+            if [[ "$provider" == postgres ]]; then
+                compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U python_deploy -d "$POSTGRES_DB" \
+                    -c 'ALTER ROLE python_deploy SET default_transaction_read_only = on'
+            fi
             "$python" -m prepare_database
+            if [[ "$provider" == postgres ]]; then
+                compose exec -T postgres env PGOPTIONS='-c default_transaction_read_only=off' \
+                    psql -X -v ON_ERROR_STOP=1 -U python_deploy -d "$POSTGRES_DB" \
+                    -c 'ALTER ROLE python_deploy RESET default_transaction_read_only'
+            fi
             runtime read
             if [[ "$owner" == agent ]]; then
                 "$python" "$root/scripts/test/python-platform-database.py" agent history

@@ -51,13 +51,32 @@ func PrepareMySQLSourceGrant(db, runtime *gorm.DB) error {
 	if err := db.Raw("SELECT table_name FROM information_schema.tables WHERE table_schema='system' AND table_type='BASE TABLE' ORDER BY table_name").Scan(&tables).Error; err != nil {
 		return err
 	}
+	// Read the runtime account's own table grants. Repeated preparation must
+	// not execute DCL for grants already installed on this database.
+	var rows []struct{ TableName, PrivilegeType string }
+	if err := runtime.Raw(`SELECT table_name, privilege_type FROM information_schema.table_privileges
+		WHERE table_schema='system' AND grantee=CONCAT(QUOTE(?),'@',QUOTE(?))`, account[:at], account[at+1:]).Scan(&rows).Error; err != nil {
+		return err
+	}
+	granted := make(map[string][]string)
+	for _, row := range rows {
+		granted[row.TableName] = append(granted[row.TableName], row.PrivilegeType)
+	}
 	for _, table := range tables {
-		privileges := "SELECT, INSERT, UPDATE, DELETE"
+		required := []string{"SELECT", "INSERT", "UPDATE", "DELETE"}
 		if slices.Contains(protected, table) {
-			privileges = "SELECT"
+			required = []string{"SELECT"}
 		}
-		if err := db.Exec("GRANT " + privileges + " ON `system`." + quote(table) + " TO " + grantee).Error; err != nil {
-			return err
+		var missing []string
+		for _, privilege := range required {
+			if !slices.Contains(granted[table], privilege) {
+				missing = append(missing, privilege)
+			}
+		}
+		if len(missing) > 0 {
+			if err := db.Exec("GRANT " + strings.Join(missing, ", ") + " ON `system`." + quote(table) + " TO " + grantee).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return schema.MigrateMySQLVerified(db, mysqlGrantProcedureOwner, mysqlGrantProcedureVersion, func(conn *gorm.DB) error {
@@ -71,6 +90,17 @@ func PrepareMySQLSourceGrant(db, runtime *gorm.DB) error {
 		}
 		if err := checkAccess(); err != nil {
 			return err
+		}
+		// DROP PROCEDURE can remove the old grant. Inspect it after installation.
+		var grants []string
+		if err := runtime.Raw("SHOW GRANTS").Scan(&grants).Error; err != nil {
+			return err
+		}
+		for _, grant := range grants {
+			list, _, matches := strings.Cut(grant, " ON PROCEDURE `system`.`persist_source_grant` TO ")
+			if matches && slices.Contains(strings.Split(strings.TrimPrefix(list, "GRANT "), ", "), "EXECUTE") {
+				return nil
+			}
 		}
 		return conn.Exec("GRANT EXECUTE ON PROCEDURE `system`.persist_source_grant TO " + grantee).Error
 	})
