@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
 	"gorm.io/gorm"
 )
 
@@ -27,7 +28,7 @@ type Reference struct {
 	SourceType        string     `json:"source_type"`
 	SourceIdentity    string     `json:"source_identity"`
 	EvidenceTruncated bool       `json:"evidence_truncated"`
-	Evidence          []Evidence `gorm:"type:jsonb;serializer:json" json:"evidence"`
+	Evidence          []Evidence `json:"evidence"`
 }
 type Page struct {
 	Data       []Reference `json:"data"`
@@ -51,14 +52,43 @@ func ReadPage(ctx context.Context, db *gorm.DB, evidenceQuery *gorm.DB, page, pa
 		if result.Total > 0 {
 			result.TotalPages = int((result.Total + int64(pageSize) - 1) / int64(pageSize))
 		}
-		return tx.Raw(`WITH evidence AS (?), targets AS (
-   SELECT source_type,source_identity FROM evidence GROUP BY source_type,source_identity ORDER BY source_type,source_identity LIMIT ? OFFSET ?),
-   selected AS (SELECT DISTINCT e.* FROM targets JOIN evidence e USING(source_type,source_identity)),
-   ranked AS (SELECT selected.*,ROW_NUMBER() OVER (PARTITION BY source_type,source_identity ORDER BY owner_module,resource_type,resource_id,position,revision_id,resource_revision_id) AS evidence_rank FROM selected)
-   SELECT source_type,source_identity,MAX(evidence_rank)>100 AS evidence_truncated,
-    jsonb_agg(jsonb_build_object('owner_module',owner_module,'resource_type',resource_type,'resource_id',resource_id,
-     'resource_name',resource_name,'position',position,'revision_id',revision_id,'resource_revision_id',resource_revision_id,'state',state,'relation_kind',relation_kind) ORDER BY evidence_rank) FILTER (WHERE evidence_rank<=100) AS evidence
-   FROM ranked GROUP BY source_type,source_identity ORDER BY source_type,source_identity`, evidenceQuery, pageSize, (page-1)*pageSize).Scan(&result.Data).Error
+		rows, err := tx.Raw(`WITH evidence AS (?), targets AS (
+			SELECT source_type, source_identity FROM evidence GROUP BY source_type, source_identity
+			ORDER BY source_type, source_identity LIMIT ? OFFSET ?
+		), selected AS (
+			SELECT DISTINCT e.* FROM targets JOIN evidence e USING (source_type, source_identity)
+		), ranked AS (
+			SELECT selected.*, ROW_NUMBER() OVER (PARTITION BY source_type, source_identity
+				ORDER BY owner_module, resource_type, resource_id, position, revision_id, resource_revision_id,
+					resource_name, state, relation_kind) AS evidence_rank FROM selected
+		)
+		SELECT source_type, source_identity, evidence_rank, owner_module, resource_type, resource_id, COALESCE(resource_name, ''),
+			COALESCE(position, ''), COALESCE(revision_id, ''), COALESCE(resource_revision_id, ''), COALESCE(state, ''), relation_kind
+		FROM ranked WHERE evidence_rank <= 101 ORDER BY source_type, source_identity, evidence_rank`,
+			evidenceQuery, pageSize, (page-1)*pageSize).Rows()
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var sourceType, identity string
+			var rank int
+			var e Evidence
+			if err := rows.Scan(&sourceType, &identity, &rank, &e.OwnerModule, &e.ResourceType, &e.ResourceID,
+				&e.ResourceName, &e.Position, &e.RevisionID, &e.ResourceRevisionID, &e.State, &e.RelationKind); err != nil {
+				return err
+			}
+			if rank == 1 {
+				result.Data = append(result.Data, Reference{SourceType: sourceType, SourceIdentity: identity})
+			}
+			ref := &result.Data[len(result.Data)-1]
+			if rank == 101 {
+				ref.EvidenceTruncated = true
+			} else {
+				ref.Evidence = append(ref.Evidence, e)
+			}
+		}
+		return rows.Err()
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("read domain standard reference page: %w", err)

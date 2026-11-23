@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=scripts/test/inference-platform-startup.py scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
+# ADDP_T2_INPUT_FILES=common/domainreference/ scripts/test/inference-platform-startup.py scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -347,6 +347,8 @@ if [ "$test_group" = platform-database ]; then
     (cd "$ROOT_DIR/common" && GOWORK=off go test ./infra/database/mysql -run '^TestPlatformConnectionAgainstMySQL$' -count=1 -timeout=45s -v) \
         | tee "$WORK_DIR/platform-mysql.log"
     grep -q '^--- PASS: TestPlatformConnectionAgainstMySQL ' "$WORK_DIR/platform-mysql.log"
+    (cd "$ROOT_DIR/common" && GOWORK=off go test ./domainreference -run '^TestReferencePageAgainstMySQL$' -count=1 -timeout=45s -v) | tee "$WORK_DIR/platform-references.log"
+    grep -q '^--- PASS: TestReferencePageAgainstMySQL ' "$WORK_DIR/platform-references.log"
     (cd "$ROOT_DIR/common" && GOWORK=off go test ./schema -run '^TestPlatformMySQLSchemaMigration$' -count=1 -timeout=60s -v) \
         | tee "$WORK_DIR/platform-migration.log"
     grep -q '^--- PASS: TestPlatformMySQLSchemaMigration ' "$WORK_DIR/platform-migration.log"
