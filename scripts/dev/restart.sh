@@ -159,6 +159,10 @@ if [ "$RESTART_ALL" = true ] && [ ${#RESTART_MODULES[@]} -gt 0 ]; then
   exit 1
 fi
 
+if [[ "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+  addp_require_dev_database_runtime || exit 1
+fi
+
 echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译产物"
 echo ""
 

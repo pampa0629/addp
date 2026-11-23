@@ -65,13 +65,9 @@ bash scripts/infra/status.sh
 
 ### 第二步: 开发模式 (推荐用于开发)
 
-新装或升级包含 Meta 的部署时，先准备 System 引擎父表及 Common 执行存储，按[安装与运行身份规范](../spec/configuration/部署环境与密钥.md)交付 Meta 凭据。在安装机用本次发布的 Meta Backend 二进制执行下列命令。开发构建的文件名是 `.dev-bins/addp-meta`，容器内是 `/app/server`。两种数据库使用同一子命令。
+源码开发和生产使用相同的数据库准备顺序。每套部署选择一个平台数据库。部署阶段用平台部署账号依次执行 System 的 `prepare-database system` 和 `prepare-database common`，System 就绪后执行 Meta 与 Gateway 的 `prepare-database`。生产 Compose 由根发布入口编排。源码构建对应的程序是 `.dev-bins/addp-system`、`.dev-bins/addp-meta` 和 `.dev-bins/addp-gateway`。部署凭据只交付给安装进程。MySQL 安装命令若返回 3，由 DBA 审阅并执行输出的 SQL，再次执行安装核验。
 
-```bash
-meta-server prepare-database
-```
-
-PG 的安装身份持有 Meta 命名空间及其表，可切换到指定的不可登录触发器所有者。已有 PG 应先盘点 Meta 对象的归属和访问者。MySQL 首次执行若返回 3，标准输出为待 DBA 审阅的触发器 SQL。在目标库执行后，用同一安装身份再次运行，返回 0 后再启动服务。生产 Compose 的 `scripts/prod/deploy.sh` 在 System 就绪后、Meta 启动前调用同一命令。将安装凭据从密钥管理器注入本次部署的环境；持久化运行配置仅交付 Backend 和 Worker 各自的凭据。单独运行 `scripts/prod/start.sh` 或开发重启只使用运行身份。使用外部 MySQL 验证 System 与 Meta 时，在已准备的目标实例上直接运行模块安装命令；根 Compose 的全平台 Infra 启动入口目前仍包含 PG。
+普通启动和重启从根 `.env` 或进程环境读取 `ADDP_DATABASE_RUNTIME_USER`、`ADDP_DATABASE_RUNTIME_PASSWORD`。使用预先创建的平台运行账号。已有开发 PG 升级前，先盘点四个 schema 的所有者、运行角色和已安装的版本。System 记录在 `system.schema_migrations`，Common、Meta、Gateway 分别记录在各自的 `startup_schema_revision`。部署账号准备缺少的版本，并向运行账号交付所需的现有表、序列及后续对象权限后，再执行开发启动。部署账号与运行账号的权限以[部署环境与密钥规范](../spec/configuration/部署环境与密钥.md)为准。
 
 **按正确顺序启动所有服务**,使用自动化开发脚本:
 

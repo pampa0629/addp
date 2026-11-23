@@ -613,7 +613,11 @@ else
   fi
 fi
 
-# 显示启动计划
+# 显示启动计划前核验所需的平台运行凭据
+if [[ "${ADDP_ONLINE_HOST:-0}" != 1 && "$START_SYSTEM_BACKEND" == true ]]; then
+  addp_require_dev_database_runtime || exit 1
+fi
+
 if [ "$START_ALL" = true ]; then
   echo "🚀 启动 ADDP 开发环境 (所有模块)"
 else

@@ -1,6 +1,15 @@
 #!/bin/bash
 # lifecycle-lock.sh - ADDP 开发服务工作区生命周期互斥锁
 
+# 普通源码启动复用已经安装的平台库。先检查部署交付，尤其在 restart 停服务前。
+addp_require_dev_database_runtime() {
+  if [[ -z "${ADDP_DATABASE_RUNTIME_USER:-}" || -z "${ADDP_DATABASE_RUNTIME_PASSWORD:-}" ]]; then
+    echo '缺少平台数据库运行凭据。请在根 .env 配置 ADDP_DATABASE_RUNTIME_USER 和 ADDP_DATABASE_RUNTIME_PASSWORD。' >&2
+    echo '已有开发库须先核对运行账号与 System、Common、Meta、Gateway 版本。见 docs/guide/addp部署和开发步骤.md 的“开发模式”。' >&2
+    return 1
+  fi
+}
+
 # Python editable 安装会改写共享源码目录的元数据；仅安装命令需要串行。
 # exec 保持同一 PID，文件描述符随安装进程退出而关闭，失败也不会遗留占用。
 addp_with_python_dependency_lock() {

@@ -489,7 +489,8 @@ for name in ('launchctl', 'docker'):
     path.write_text('#!/bin/bash\nexit 1\n')
     path.chmod(0o755)
 env = {k: v for k, v in os.environ.items() if not k.startswith('ADDP_LIFECYCLE_')}
-env.update(FIXTURE_ROOT=str(root), SERVICE_HOST='localhost', MEILISEARCH_PORT='17700', PATH=str(tools) + os.pathsep + env['PATH'])
+env.update(ADDP_DATABASE_RUNTIME_USER='fixture-runtime', ADDP_DATABASE_RUNTIME_PASSWORD='fixture-password',
+           FIXTURE_ROOT=str(root), SERVICE_HOST='localhost', MEILISEARCH_PORT='17700', PATH=str(tools) + os.pathsep + env['PATH'])
 pids = set()
 monitor_stop = threading.Event()
 unavailable = []
@@ -547,12 +548,16 @@ try:
     watcher = threading.Thread(target=monitor)
     watcher.start()
     # Swagger failure and invalid parameters must leave ALL existing processes in place.
-    for args, extra in ((['-asset'], {'FAIL_SWAGGER': '1'}), (['-asset', '-all'], {}), (['-bogus'], {}),
+    for args, extra in ((['-all'], {'ADDP_DATABASE_RUNTIME_PASSWORD': ''}),
+                        (['-system'], {'ADDP_DATABASE_RUNTIME_USER': ''}), (['-asset'], {'FAIL_SWAGGER': '1'}), (['-asset', '-all'], {}), (['-bogus'], {}),
                         (['-quality'], {'ADDP_DEV_QUALITY_WORKER_REPLICAS':'3'}),
                         (['-transfer'], {'ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS':'3'}),
                         (['-transfer'], {'ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS':'2','TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID':'fixed'})):
         result = subprocess.run(['bash', str(dev / 'restart.sh'), *args], env=dict(env, **extra), capture_output=True, text=True)
         assert result.returncode != 0, result.stdout + result.stderr
+        if 'ADDP_DATABASE_RUNTIME_USER' in extra or 'ADDP_DATABASE_RUNTIME_PASSWORD' in extra:
+            assert 'ADDP_DATABASE_RUNTIME_PASSWORD' in result.stderr, result.stderr
+            assert 'fixture-password' not in result.stderr
         assert snapshot() == before, 'preflight failure stopped existing services'
         ready()
     for args, selected in ((['-asset', '-asset'], {'asset', 'asset-frontend'}),
@@ -735,7 +740,8 @@ case "$FAIL_PHASE" in coverage) exit 1;; coverage-error) exit 2;; esac
     for binary in ('system', 'asset', 'meta', 'meta-worker', 'gateway'):
         (bins / ('addp-' + binary)).write_text('old binary')
     env = {k: v for k, v in os.environ.items() if not k.startswith('ADDP_LIFECYCLE_')}
-    env.update(PATH=str(root / 'tools') + os.pathsep + env['PATH'], FIXTURE_ROOT=str(root),
+    env.update(ADDP_DATABASE_RUNTIME_USER='fixture-runtime', ADDP_DATABASE_RUNTIME_PASSWORD='fixture-password',
+               PATH=str(root / 'tools') + os.pathsep + env['PATH'], FIXTURE_ROOT=str(root),
                FIXTURE_RUNTIMES=' '.join(runtimes), FAIL_PHASE=failure,
                ALLOW_SWAGGER_FAILURE='1', SWAGGER_COVERAGE_WARN_ONLY='1',
                MEILISEARCH_PORT='17700', SERVICE_HOST='localhost')
