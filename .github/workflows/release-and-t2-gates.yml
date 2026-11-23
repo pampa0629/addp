@@ -789,6 +789,9 @@ jobs:
           WORKBENCH_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_workbench_disposable?sslmode=disable
         run: make test-workbench-postgres
 
+      - name: Verify Workbench release, Catalog feed and resource access on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-workbench-install'
+
       - name: Summarize Workbench PostgreSQL gate
         if: always()
         uses: ./.github/actions/ci-gate-summary

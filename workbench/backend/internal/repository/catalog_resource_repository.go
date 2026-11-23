@@ -66,7 +66,7 @@ func (r *CatalogResourceRepository) LatestChangeVersions(ctx context.Context, te
 		Version        int64
 	}
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT CAST(source_identity AS TEXT) AS source_identity, MAX(id) AS version
+		SELECT source_identity, MAX(id) AS version
 		FROM workbench.catalog_resource_changes
 		WHERE tenant_id = ? AND source_type = ? AND source_identity IN ?
 		GROUP BY source_identity

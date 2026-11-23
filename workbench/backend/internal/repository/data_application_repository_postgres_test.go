@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/workbench/internal/config"
 	"github.com/addp/workbench/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -42,6 +44,26 @@ func TestWorkbenchDataApplicationRepositoryAgainstPostgres(t *testing.T) {
 	if retiredViewTable != nil {
 		t.Fatalf("retired workbench view table still exists: %q", *retiredViewTable)
 	}
+	testDataApplicationRepository(t, db)
+}
+
+func TestWorkbenchDataApplicationRepositoryAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_WORKBENCH_PLATFORM") != "1" {
+		t.Skip("run the disposable Workbench MySQL gate")
+	}
+	db, err := bootstrap.OpenPlatformRuntime(config.PlatformDatabase(), "workbench", &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	testDataApplicationRepository(t, db)
+}
+
+func testDataApplicationRepository(t *testing.T, db *gorm.DB) {
 	applications := NewDataApplicationRepository(db)
 	application := postgresDataApplication(7, 11)
 	if err := applications.Create(application); err != nil {
@@ -93,6 +115,15 @@ func TestWorkbenchDataApplicationRepositoryAgainstPostgres(t *testing.T) {
 	}
 	if len(catalogChanges) != 2 || catalogChanges[1].Snapshot["name"] != "Postgres application" || catalogChanges[1].Snapshot["publication_status"] != models.PublicationStatusOffline {
 		t.Fatalf("offline application catalog changes = %#v", catalogChanges)
+	}
+	feed := NewCatalogResourceRepository(db)
+	versions, err := feed.LatestChangeVersions(t.Context(), 7, []string{application.ID})
+	if err != nil || versions[application.ID] != catalogChanges[1].ID {
+		t.Fatalf("latest Catalog version: %v, %v", versions, err)
+	}
+	otherTenant, err := feed.LatestChangeVersions(t.Context(), 8, []string{application.ID})
+	if err != nil || len(otherTenant) != 0 {
+		t.Fatalf("unexpected cross-tenant Catalog version: %v, %v", otherTenant, err)
 	}
 	if _, err := applications.GetRuntime(7, 11, application.ID); !errors.Is(err, ErrDataApplicationNotPublished) {
 		t.Fatalf("offline GetRuntime() error = %v", err)

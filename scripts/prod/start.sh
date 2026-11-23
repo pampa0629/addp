@@ -162,6 +162,7 @@ if [[ "$prepare_databases" == true ]]; then
   prepare_database gateway
   if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
     prepare_database inference-backend
+    prepare_database workbench-backend
   fi
 fi
 

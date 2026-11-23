@@ -1,32 +1,44 @@
 package repository
 
 import (
+	_ "embed"
 	"fmt"
+	"strings"
 
+	"github.com/addp/common/schema"
 	"github.com/addp/workbench/internal/models"
 	"gorm.io/gorm"
 )
 
-const workbenchSchemaLockID int64 = 2026082602
+const SchemaVersion int64 = 1
+
+//go:embed tables.mysql.sql
+var mysqlTables string
+
+//go:embed catalog_change.mysql.sql
+var mysqlCatalogTrigger string
 
 func Migrate(db *gorm.DB) error {
-	if db == nil {
-		return fmt.Errorf("workbench schema database is required")
-	}
-	return db.Transaction(func(tx *gorm.DB) error {
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS workbench").Error; err != nil {
-				return fmt.Errorf("create workbench schema: %w", err)
+	if db.Dialector.Name() == "mysql" {
+		triggers := []string{mysqlCatalogTrigger}
+		applied := false
+		err := schema.MigrateMySQL(db, "workbench", SchemaVersion, func(conn *gorm.DB) error {
+			for _, ddl := range strings.Split(strings.TrimSuffix(strings.TrimSpace(mysqlTables), ";"), ";") {
+				if err := conn.Exec(ddl).Error; err != nil {
+					return err
+				}
 			}
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", workbenchSchemaLockID).Error; err != nil {
-				return fmt.Errorf("acquire workbench schema lock: %w", err)
-			}
+			applied = true
+			return schema.CheckMySQLTriggers(conn, triggers)
+		})
+		if err != nil || applied {
+			return err
 		}
+		return schema.CheckMySQLTriggers(db, triggers)
+	}
+	return schema.Migrate(db, "workbench", SchemaVersion, func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(&models.DataApplication{}, &models.DataApplicationRevision{}, &models.CatalogResourceChangeRow{}, &models.ResourceAccessRule{}); err != nil {
 			return fmt.Errorf("auto migrate workbench schema: %w", err)
-		}
-		if tx.Dialector.Name() != "postgres" {
-			return nil
 		}
 		statements := []string{
 			`ALTER TABLE workbench.data_applications DROP CONSTRAINT IF EXISTS ck_workbench_data_applications_status`,

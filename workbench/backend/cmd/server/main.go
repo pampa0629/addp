@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -12,6 +14,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	"github.com/addp/workbench/internal/api"
 	"github.com/addp/workbench/internal/config"
 	"github.com/addp/workbench/internal/repository"
@@ -27,6 +30,27 @@ import (
 // @in header
 // @name Authorization
 func main() {
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(config.PlatformDatabase(), "workbench")
+		if err == nil {
+			err = repository.Migrate(db)
+		}
+		if err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "workbench"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load Workbench config: %v", err)
@@ -34,12 +58,12 @@ func main() {
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
+	db, err := bootstrap.OpenPlatformRuntime(config.PlatformDatabase(), "workbench", &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect Workbench database: %v", err)
 	}
-	if err := repository.Migrate(db); err != nil {
-		log.Fatalf("Failed to migrate Workbench database: %v", err)
+	if err := schema.Require(db, "workbench", repository.SchemaVersion); err != nil {
+		log.Fatalf("Workbench database version check failed: %v", err)
 	}
 	descriptorReader, err := service.NewHTTPDescriptorReader(cfg.ServiceURL, nil)
 	if err != nil {

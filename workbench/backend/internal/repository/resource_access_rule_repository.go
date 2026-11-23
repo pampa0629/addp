@@ -24,18 +24,8 @@ func (r *ResourceAccessRuleRepository) FulfillAssetGrant(input models.ResourceAc
 	input.Effect = models.ResourceAccessEffectAllow
 	var result models.ResourceAccessRule
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		create := tx.Clauses(assetGrantSourceConflictClause()).Create(&input)
-		if create.Error != nil {
-			return create.Error
-		}
-		if create.RowsAffected == 1 {
-			result = input
-			return nil
-		}
-		var existing models.ResourceAccessRule
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("tenant_id = ? AND source_module = ? AND source_identity = ?", input.TenantID, models.ResourceAccessSourceAsset, input.SourceIdentity).
-			First(&existing).Error; err != nil {
+		existing, err := lockAssetGrant(tx, &input)
+		if err != nil {
 			return err
 		}
 		if !sameAssetGrant(existing, input) || existing.RevokedAt != nil {
@@ -54,18 +44,8 @@ func (r *ResourceAccessRuleRepository) RevokeAssetGrant(input models.ResourceAcc
 	input.RevokedAt = &revokedAt
 	var result models.ResourceAccessRule
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		create := tx.Clauses(assetGrantSourceConflictClause()).Create(&input)
-		if create.Error != nil {
-			return create.Error
-		}
-		if create.RowsAffected == 1 {
-			result = input
-			return nil
-		}
-		var existing models.ResourceAccessRule
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("tenant_id = ? AND source_module = ? AND source_identity = ?", input.TenantID, models.ResourceAccessSourceAsset, input.SourceIdentity).
-			First(&existing).Error; err != nil {
+		existing, err := lockAssetGrant(tx, &input)
+		if err != nil {
 			return err
 		}
 		if !sameAssetGrant(existing, input) {
@@ -83,11 +63,24 @@ func (r *ResourceAccessRuleRepository) RevokeAssetGrant(input models.ResourceAcc
 	return &result, err
 }
 
-func assetGrantSourceConflictClause() clause.OnConflict {
-	return clause.OnConflict{
+// Read back the stored rule under the same transaction. MySQL with CLIENT_FOUND_ROWS
+// reports one affected row for both an insert and an unchanged duplicate.
+func lockAssetGrant(tx *gorm.DB, input *models.ResourceAccessRule) (models.ResourceAccessRule, error) {
+	var existing models.ResourceAccessRule
+	conflict := clause.OnConflict{
 		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "source_module"}, {Name: "source_identity"}},
 		DoNothing: true,
 	}
+	if err := tx.Clauses(conflict).Create(input).Error; err != nil {
+		return existing, err
+	}
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("tenant_id = ? AND source_module = ? AND source_identity = ?", input.TenantID, input.SourceModule, input.SourceIdentity).
+		First(&existing).Error
+	if err == nil && existing.ID == input.ID {
+		return *input, nil
+	}
+	return existing, err
 }
 
 func (r *ResourceAccessRuleRepository) CanExecuteDataApplication(tenantID, subjectID int64, resourceID string, now time.Time) (bool, error) {
