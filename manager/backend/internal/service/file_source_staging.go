@@ -95,7 +95,7 @@ func (e *fileSourceStager) withSource(
 		return err
 	}
 	source := workflowaccess.Source{Kind: sourceKind, Format: sourceFormat, Entrypoint: entrypoint, Access: access}
-	if sourceFormat == "envi" || sourceFormat == "tiff" {
+	if commonExecution.ManagerRasterCOGSourceFormat(sourceFormat) {
 		if e.taskType != commonExecution.TaskTypeRasterCOGGeneration {
 			return errors.New("raster input requires the raster COG purpose")
 		}
@@ -104,9 +104,9 @@ func (e *fileSourceStager) withSource(
 			if file.RelativePath != entrypoint {
 				header := access
 				header.Object = prefix + "/" + file.RelativePath
-				role := "header"
-				if sourceFormat == "tiff" {
-					role = file.Role
+				role := file.Role
+				if sourceFormat == "envi" {
+					role = "header"
 				}
 				source.RelatedFiles = append(source.RelatedFiles, workflowaccess.RelatedFile{Role: role, Access: header})
 			}
@@ -193,6 +193,9 @@ func validateFileStagingFiles(lease commonExecution.Lease, sourceFormat, sourceK
 	}
 	if sourceKind != workflowaccess.KindFile && sourceKind != workflowaccess.KindDirectory {
 		return errors.New("model input kind must be file or directory")
+	}
+	if sourceFormat == "grib" && (sourceKind != workflowaccess.KindFile || len(files) != 1 || files[0].Role != "container") {
+		return errors.New("GRIB staging requires exactly one container file")
 	}
 	if sourceKind == workflowaccess.KindFile && ((sourceFormat != "envi" && sourceFormat != "tiff" && len(files) != 1) || (sourceFormat == "envi" && len(files) != 2) || entrypoint != path.Base(entrypoint)) {
 		return errors.New("single model input must contain only its entrypoint")

@@ -18,7 +18,7 @@ IMG 与 JPEG2000 复用同一 COG 任务与地图显示链路：仅接受 Meta �
 
 `GET /quick-view/capability` 查询与 `POST /quick-view/actions` 请求体通过 `raster_message` 选择当前消息。GRIB COG 的内容 URL 另绑定 `source_version`，旧链接在源变更后拒绝。地图入口附在科学容器当前选中的消息上。首期只接 NFS／MinIO 自包含 GRIB2 中经 GeoPython 确认的 ECMWF IFS 0.1° 全球规则网格 2 米瞬时气温。源身份是 Meta 的完整单文件 DataItem，消息编号是预览选项。未知网格、其他要素、其他存储及缺失源版本不开放地图入口。有界数值切片保留原纬经度、原单位和原分辨率。
 
-生成复用 `raster_cog_generation`、单文件精确执行授权、现有 GeoPython direct `raster_to_cog` 与 Infra MinIO。冻结整份源文件 SHA256、消息编号和显示配置；转换前重新验证源字节及所选消息。每个消息独立使用同类型任务和当前 COG，复用还须匹配源版本与显示配置。每次读取派生内容均重新核准当前用户对完整 DataItem 的精确访问权限；无有效授权、源版本变化或消息不匹配均不得返回旧内容。
+生成复用 `raster_cog_generation`、单文件精确执行授权、现有 GeoPython direct `raster_to_cog` 与 Infra MinIO。 Manager 按 COG 用途暂存唯一的 `container` 主文件，经精确对象地址交给 GeoPython，执行结束后清理暂存对象。冻结整份源文件 SHA256、消息编号和显示配置；转换前重新验证源字节及所选消息。每个消息独立使用同类型任务和当前 COG，复用还须匹配源版本与显示配置。每次读取派生内容均重新核准当前用户对完整 DataItem 的精确访问权限；无有效授权、源版本变化或消息不匹配均不得返回旧内容。
 
 地图 COG 保留源球体定义和开尔文，覆盖 `[-180,-90,180,90]`，展示格网为 `4096×2048`，256 像元瓦片及最近邻金字塔。生成只从原网格选值，周期经度使 180° 两侧显示正确，保留两极的源行。地图使用源球体的经纬度视图；由 OpenLayers 复用 COG 分段读取，切换消息立即清除旧图层。需要精确读数时使用原始切片。
 

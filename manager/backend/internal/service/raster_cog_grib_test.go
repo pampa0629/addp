@@ -1,11 +1,16 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/engine/workflowaccess"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/google/uuid"
 )
 
 func TestGRIBMapCacheIdentityIncludesMessageAndCurrentSourceVersion(t *testing.T) {
@@ -38,5 +43,63 @@ func TestGRIBMapCacheIdentityIncludesMessageAndCurrentSourceVersion(t *testing.T
 	info["source_version"] = "sha256:" + strings.Repeat("b", 64)
 	if rasterCOGFactsMatch(result, QuickViewIdentity{}, GRIBRasterQuickViewSource(attrs, "message-1"), 14) {
 		t.Fatal("raster COG crossed committed GRIB source version")
+	}
+}
+
+func TestGRIBCOGStagesOnlyItsExactContainer(t *testing.T) {
+	for _, fixture := range []struct {
+		name, taskType, kind      string
+		addIndex, conversionFails bool
+	}{
+		{name: "single GRIB", taskType: commonExecution.TaskTypeRasterCOGGeneration, kind: workflowaccess.KindFile},
+		{name: "conversion failure", taskType: commonExecution.TaskTypeRasterCOGGeneration, kind: workflowaccess.KindFile, conversionFails: true},
+		{name: "GLB purpose", taskType: commonExecution.TaskTypeModel3DGLBGeneration, kind: workflowaccess.KindFile},
+		{name: "directory", taskType: commonExecution.TaskTypeRasterCOGGeneration, kind: workflowaccess.KindDirectory},
+		{name: "external index", taskType: commonExecution.TaskTypeRasterCOGGeneration, kind: workflowaccess.KindFile, addIndex: true},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			store := &stagingModelStore{}
+			owner := &rasterInputOwnerFixture{}
+			stager := fileSourceStager{
+				objectStore: store, taskType: fixture.taskType, defaultBucket: "manager",
+				minioEndpoint: "127.0.0.1:19000", minioAccessKey: "test", minioSecretKey: "secret",
+			}
+			lease := commonExecution.Lease{TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1}
+			main := stagingModelFile("forecast.GRIB2", "example GRIB bytes")
+			main.Role = "container"
+			files := []fileStagingFile{main}
+			if fixture.addIndex {
+				files = append(files, stagingModelFile("forecast.GRIB2.idx", "index"))
+			}
+			conversionErr := errors.New("conversion failed")
+			consumed := false
+			err := stager.withSource(t.Context(), lease, "grib", fixture.kind, main.RelativePath, files, owner, func(_ context.Context, source workflowaccess.Source) error {
+				consumed = true
+				if source.Format != "grib" || source.Kind != workflowaccess.KindFile || source.Entrypoint != "" || len(source.RelatedFiles) != 0 {
+					t.Error("expected exact GRIB file without an entrypoint override or related files")
+				}
+				if !owner.prepared || len(owner.preparation.Objects) != 1 || store.objects["manager/"+source.Access.Object] != "example GRIB bytes" ||
+					!strings.HasPrefix(source.Access.Object, "temp/raster-input/tenant_7/"+lease.ExecutionID+"/") ||
+					!strings.HasSuffix(source.Access.Object, "/forecast.GRIB2") {
+					t.Error("incorrect ownership or staged GRIB object")
+				}
+				if fixture.conversionFails {
+					return conversionErr
+				}
+				return nil
+			})
+			wantConsumed := fixture.taskType == commonExecution.TaskTypeRasterCOGGeneration && fixture.kind == workflowaccess.KindFile && !fixture.addIndex
+			if consumed != wantConsumed {
+				t.Fatalf("consumed=%v, want %v: %v", consumed, wantConsumed, err)
+			}
+			if wantConsumed {
+				if (fixture.conversionFails && !errors.Is(err, conversionErr)) || (!fixture.conversionFails && err != nil) ||
+					!owner.finished || !owner.settled || !owner.cleaned || store.puts != 1 || len(store.objects) != 0 {
+					t.Fatalf("missing conversion or cleanup evidence: err=%v owner=%+v objects=%v", err, owner, store.objects)
+				}
+			} else if err == nil || owner.prepared || store.puts != 0 {
+				t.Fatalf("invalid input reached staging: err=%v owner=%+v puts=%d", err, owner, store.puts)
+			}
+		})
 	}
 }
