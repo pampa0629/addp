@@ -26,7 +26,7 @@ func (s SourceNodeScope) Validate() error {
 // Covers compares trusted typed paths only. Callers must independently establish
 // the live tenant/engine, complete DataItem boundary and current Grant lifecycle.
 func (s SourceNodeScope) Covers(target plugin.EngineCatalogPath) bool {
-	if s.Validate() != nil || target.Version != s.Target.Version || target.EngineID != s.Target.EngineID ||
+	if s.Validate() != nil || !NavigationContains(s.Target, target) ||
 		len(target.Segments) <= len(s.Target.Segments) || (!s.Recursive && len(target.Segments) != len(s.Target.Segments)+1) {
 		return false
 	}
@@ -39,11 +39,6 @@ func (s SourceNodeScope) Covers(target plugin.EngineCatalogPath) bool {
 		}
 	} else if _, err := plugin.NewQueryReadSet(target); err != nil {
 		return false
-	}
-	for i, segment := range s.Target.Segments {
-		if target.Segments[i] != segment {
-			return false
-		}
 	}
 	return true
 }

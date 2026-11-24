@@ -143,22 +143,10 @@ func (s SourceNodeScope) CoversBinding(binding authorizationfacts.Binding) bool 
 	return true
 }
 
-func sameCatalogPrefix(parent, child plugin.EngineCatalogPath) bool {
-	if parent.EngineID != child.EngineID || parent.Version != child.Version || len(parent.Segments) > len(child.Segments) {
-		return false
-	}
-	for i, part := range parent.Segments {
-		if child.Segments[i] != part {
-			return false
-		}
-	}
-	return true
-}
-
 // CoversNode admits the node's own enumeration only when a current node Grant
 // covers it. A set of precise item Grants can never justify parent enumeration.
 func (s SourceNodeScope) CoversNode(node SourceNodeScope) bool {
-	return s.Validate() == nil && node.Validate() == nil && sameCatalogPrefix(s.Target, node.Target) &&
+	return s.Validate() == nil && node.Validate() == nil && NavigationContains(s.Target, node.Target) &&
 		(s.Recursive || (reflect.DeepEqual(s.Target, node.Target) && !node.Recursive))
 }
 
@@ -179,9 +167,9 @@ func IntersectMetadataRefreshScope(target plugin.EngineCatalogPath, grants []Met
 		if grant.Node != nil {
 			node := *grant.Node
 			switch {
-			case sameCatalogPrefix(target, node.Target):
+			case NavigationContains(target, node.Target):
 				clipped.Node = &node
-			case node.Recursive && sameCatalogPrefix(node.Target, target):
+			case node.Recursive && NavigationContains(node.Target, target):
 				node.Target = target
 				clipped.Node = &node
 			default:

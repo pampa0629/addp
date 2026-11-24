@@ -397,6 +397,10 @@ PG 的 `query-read-set` 门禁验证管理员维护的索引存在时普通来�
 
 已接入持续节点签发的范围为 PG 根／schema、NFS 根／普通目录、MinIO 服务根／bucket／普通 prefix。首批扩展以 MySQL 为业务数据源，按其原生 `server → database → table` 路径核对；System 使用的元数据库种类是独立维度。后续按各存储引擎的正式目录模型及实际读取入口逐项验证。
 
+持续节点授权以稳定的 Engine ID 和该引擎插件声明的 Engine Catalog 模型为准。System 在签发前核对正式根或分支及 Meta 对本租户、本引擎的节点存在事实，资源选择器消费同一核对结果。Meta 已识别为整项的目录（如 FileGDB）按 DataItem 办理。实际访问先取得当前 DataItem 及其组成的正式边界，再按有效 Grant 的租户、引擎和类型化路径段匹配直属项或后代。导航与局部刷新沿用同一路径包含关系，各自保留元数据可见、扫描或源读取所需的资格检查。
+
+PG 与 MySQL 两种 Infra 的 Grant 存储均须约束记录形态、租户与引擎归属、动作、期限、撤销及审计。新增复用既有目录模型的 Business 引擎，应通过节点事实、授权办理及实际消费验收，无需在数据库维护产品名称对照。切换前须核对正式写入通道并保全既有有效授权。首批对照采用 GaussDB 的 schema、FTP 的普通目录及 RustFS 的 bucket／prefix，分别核对同名跨引擎隔离、空节点、未来项、撤根保留独立项和自然到期。
+
 - MinIO 沿唯一 `service → bucket → prefix → object` 类型化路径匹配；整引擎使用服务根的递归节点 Grant，覆盖所有 bucket 下当前及未来合法识别的数据项。bucket／prefix 可独立授予 `metadata_read` 或 `read`（包含必要元数据），当前及未来合法识别的数据项按范围覆盖，不展开成逐项 Grant。非递归只覆盖直属 DataItem，递归覆盖后代；同名相邻 prefix、其他 bucket、Tenant 或 Engine 不得混入。所含部分格式只具备元数据边界不阻止节点选择内容读取；读取具体项时仍要求其完整内容边界及已有消费出口，不能用节点 Grant 将元数据边界升级为内容边界。
 - 绑定当前 Tenant、Engine、完整类型化节点路径及显式 `recursive`。非递归只匹配直属 DataItem，递归匹配全部后代；比较结构化段的 kind、term、name，不能用字符串前缀、显示名称或客户端自报祖先判断归属。Meta 数字 node ID 只是定位引用，不作为稳定许可身份。
 - 有效期内当前及以后新识别的合法 DataItem 自动进入范围，不逐项生成 Grant，不因本次扫描清单变化失效；范围外、尚未识别或组成不可靠的目标仍拒绝。node 不变为 DataItem，也不变为 whole 容器。每次真实读取仍核验当前 DataItem 和全部依赖；跨范围引用不能继承节点许可。
