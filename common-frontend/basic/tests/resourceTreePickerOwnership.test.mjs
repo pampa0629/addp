@@ -80,15 +80,8 @@ test('System grant selection uses the shared picker while retaining exact domain
   assert.ok(grantPicker)
   assert.match(grantPicker, /\bmultiple(?=\s|>)/)
   const branchSelection = grantPicker.match(/:branch-selection="([^"]+)"/)?.[1]
-  assert.equal(branchSelection, "!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)")
-  // Evaluate only the exact contract above, never an arbitrary source expression.
-  const selectsCurrentItems = new Function('engine', `return (${branchSelection})`)
-  for (const engineType of ['postgresql', 'nfs', 'minio']) {
-    assert.equal(selectsCurrentItems({ engine_type: engineType }), false, engineType)
-  }
-  for (const engineType of ['mysql', 'mongodb', 'ftp', 'spark', '']) {
-    assert.equal(selectsCurrentItems({ engine_type: engineType }), true, engineType)
-  }
+  assert.equal(branchSelection, '!engine.node_grant_root')
+  assert.doesNotMatch(grantPicker, /engine_type/)
   assert.match(editor, /createMixedApprovalCatalogAdapter/)
   assert.doesNotMatch(editor, /authorization-target-mode|changeTargetMode/)
   assert.match(editor, /nodeRecursions\[basisKey\(row\)\]/)

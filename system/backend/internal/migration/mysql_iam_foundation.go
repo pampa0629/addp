@@ -2,12 +2,14 @@ package migration
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
 	"text/template"
 
 	"github.com/addp/common/schema"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -77,7 +79,13 @@ func MigrateMySQLEngineDelegations(db *gorm.DB) error {
 }
 
 const mysqlSourceGrantCatalogOwner = "system_source_grant_catalog"
-const mysqlSourceGrantCatalogVersion = 4
+const mysqlSourceGrantCatalogVersion = 5
+
+//go:embed mysql_source_grant_node.sql
+var mysqlSourceGrantNode string
+
+//go:embed mysql_source_grant_node_v4.sql
+var mysqlSourceGrantNodeV4 string
 
 //go:embed mysql_source_identity.sql.tmpl
 var mysqlSourceIdentitySQL string
@@ -137,6 +145,7 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 			}
 		}
 		if owner == mysqlSourceGrantCatalogOwner {
+			oldPosition := len(triggers)
 			identity, err := template.New("source item identity").Parse(mysqlSourceIdentitySQL)
 			if err != nil {
 				return err
@@ -147,6 +156,28 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 					return err
 				}
 				triggers = append(triggers, trigger.String())
+			}
+			triggers = append(triggers, mysqlSourceGrantNode)
+			var legacy bool
+			if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name='source_grant_node_target')").Row().Scan(&legacy); err != nil {
+				return err
+			}
+			if legacy {
+				// Verify the exact old definition and install its successor before retiring it.
+				withOld := append([]string{}, triggers[:oldPosition]...)
+				withOld = append(withOld, mysqlSourceGrantNodeV4)
+				withOld = append(withOld, triggers[oldPosition:]...)
+				if err := schema.CheckMySQLTriggers(conn, withOld); err != nil {
+					return err
+				}
+				const retire = "DROP TRIGGER source_grant_node_target"
+				if err := conn.Exec(retire).Error; err != nil {
+					var denied *mysqlDriver.MySQLError
+					if errors.As(err, &denied) && denied.Number == 1419 {
+						return &schema.PendingMySQLTriggers{Statements: []string{retire}}
+					}
+					return err
+				}
 			}
 		}
 		return schema.CheckMySQLTriggers(conn, triggers)

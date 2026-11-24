@@ -10,6 +10,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
@@ -178,73 +179,98 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 		}
 	})
 	checkVisibility("grant")
-	t.Run("metadata-only schema grant and natural expiry", func(t *testing.T) {
-		child := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "visibility", "orders")
-		node := child
-		node.Segments = child.Segments[:2]
-		raw, err := json.Marshal(node)
-		if err != nil {
-			t.Fatal(err)
-		}
-		operator := actorFor(50001)
-		now, err := repo.wallClock(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		expiry := now.Add(8 * time.Second)
-		recursive, reason := false, "metadata-only schema"
-		grant := sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeIndependent, TenantID: 7, EngineID: int64(node.EngineID),
-			CatalogPath: raw, NodeRecursive: &recursive, RecipientType: "user", RecipientID: confirmer.PrincipalID,
-			Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryAtTime, ExpiresAt: &expiry, Reason: &reason,
-			OperatorPrincipalID: operator.PrincipalID, OperatorMembershipID: operator.MembershipID, OperatorAuthorizationVersion: operator.AuthorizationVersion}
-		if err := repo.transaction(ctx, func(tx *Repository) error { return tx.insertSourceGrant(ctx, &grant) }); err != nil {
-			t.Fatal(err)
-		}
-		sibling := engineplugin.TabularItemPath(node.EngineID, "schema", "sibling", "orders")
-		paths := []engineplugin.EngineCatalogPath{child, child, sibling}
-		bindings := testReadBindings(child, sibling)
-		targets := []sourceRuleTarget{{Binding: bindings[0], Action: shared.SourceAccessMetadataRead}, {Binding: bindings[0], Action: shared.SourceAccessRead}, {Binding: bindings[1], Action: shared.SourceAccessMetadataRead}}
-		read := func(want bool) {
-			t.Helper()
-			result, err := repo.queryCurrentSourceRules(ctx, sourceReadRequest{Action: shared.SourceAccessMetadataRead, TenantID: 7, Source: userProvenance{PrincipalID: confirmer.PrincipalID, MembershipID: confirmer.MembershipID, AuthorizationVersion: confirmer.AuthorizationVersion}}, paths, targets)
-			if err != nil || len(result.Targets) != 3 || result.Targets[0].Covered != want || result.Targets[1].Covered || result.Targets[2].Covered || result.Covered {
-				t.Fatalf("metadata/content/sibling visibility: %+v, %v", result, err)
-			}
-			deadline := result.Targets[0].ExpiresAt
-			if (want && (deadline == nil || !deadline.Equal(expiry))) || (!want && deadline != nil) {
-				t.Fatalf("unexpected deadline: %v", deadline)
-			}
-		}
-		checkListed := func(active bool) {
-			t.Helper()
-			filter := SourceGrantFilter{CatalogPath: &child, RecipientType: "user", RecipientID: confirmer.PrincipalID}
-			observed, total, err := repo.listAccountGrantRelations(ctx, 7, 12, confirmer.PrincipalID, 1, 10, filter)
+	for _, sample := range []struct {
+		name           string
+		child, sibling engineplugin.EngineCatalogPath
+	}{
+		{"metadata-only schema grant and natural expiry", engineplugin.TabularItemPath(base.Path.EngineID, "schema", "visibility", "orders"), engineplugin.TabularItemPath(base.Path.EngineID, "schema", "sibling", "orders")},
+		{"GaussDB schema", engineplugin.TabularItemPath(81, "schema", "visibility", "orders"), engineplugin.TabularItemPath(81, "schema", "sibling", "orders")},
+		{"FTP directory", engineplugin.FileItemPath(82, "visibility/orders.gpkg"), engineplugin.FileItemPath(82, "sibling/orders.gpkg")},
+		{"RustFS prefix", engineplugin.ObjectItemPath(83, "reports", "visibility/orders.csv"), engineplugin.ObjectItemPath(83, "reports", "sibling/orders.csv")},
+	} {
+		t.Run(sample.name, func(t *testing.T) {
+			child, sibling := sample.child, sample.sibling
+			node := child
+			node.Segments = child.Segments[:len(child.Segments)-1]
+			raw, err := json.Marshal(node)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if active {
-				if total != 1 || len(observed) != 1 || observed[0].Inspection == nil || !observed[0].Inspection.RuleCovered ||
-					len(observed[0].Inspection.Sources) != 1 || observed[0].Inspection.Sources[0].RequestID != grant.RequestID ||
-					observed[0].ExpiresAt == nil || !observed[0].ExpiresAt.Equal(expiry) || observed[0].NodeRecursive == nil || *observed[0].NodeRecursive {
-					t.Fatalf("active node grant missing or scope changed: %+v", observed)
+			operator := actorFor(50001)
+			now, err := repo.wallClock(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expiry := now.Add(8 * time.Second)
+			recursive, reason := false, "metadata-only schema"
+			grant := sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeIndependent, TenantID: 7, EngineID: int64(node.EngineID),
+				CatalogPath: raw, NodeRecursive: &recursive, RecipientType: "user", RecipientID: confirmer.PrincipalID,
+				Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryAtTime, ExpiresAt: &expiry, Reason: &reason,
+				OperatorPrincipalID: operator.PrincipalID, OperatorMembershipID: operator.MembershipID, OperatorAuthorizationVersion: operator.AuthorizationVersion}
+			if err := repo.transaction(ctx, func(tx *Repository) error { return tx.insertSourceGrant(ctx, &grant) }); err != nil {
+				t.Fatal(err)
+			}
+			paths := []engineplugin.EngineCatalogPath{child, child, sibling}
+			bindings := make([]authorizationfacts.Binding, 0, 2)
+			for _, path := range []engineplugin.EngineCatalogPath{child, sibling} {
+				var facts authorizationfacts.AuthorizationFacts
+				switch path.Segments[len(path.Segments)-1].Term {
+				case "file":
+					facts = *developGeoPackageFacts(t, path)
+				case "object":
+					facts = exactNativeObjectFacts(t, path)
+				default:
+					facts = testBindingFacts(path)
 				}
-			} else if total != 0 || len(observed) != 0 {
-				t.Fatal("expired account relation still listed")
+				binding, err := facts.MetadataBinding()
+				if err != nil {
+					t.Fatal(err)
+				}
+				bindings = append(bindings, binding)
 			}
-			history, n, err := repo.listSourceGrants(ctx, 7, 12, 1, 10, filter)
-			if err != nil || n != 1 || len(history) != 1 || history[0].RequestID != grant.RequestID {
-				t.Fatalf("node grant history lost: %d, %v", n, err)
+			targets := []sourceRuleTarget{{Binding: bindings[0], Action: shared.SourceAccessMetadataRead}, {Binding: bindings[0], Action: shared.SourceAccessRead}, {Binding: bindings[1], Action: shared.SourceAccessMetadataRead}}
+			read := func(want bool) {
+				t.Helper()
+				result, err := repo.queryCurrentSourceRules(ctx, sourceReadRequest{Action: shared.SourceAccessMetadataRead, TenantID: 7, Source: userProvenance{PrincipalID: confirmer.PrincipalID, MembershipID: confirmer.MembershipID, AuthorizationVersion: confirmer.AuthorizationVersion}}, paths, targets)
+				if err != nil || len(result.Targets) != 3 || result.Targets[0].Covered != want || result.Targets[1].Covered || result.Targets[2].Covered || result.Covered {
+					t.Fatalf("metadata/content/sibling visibility: %+v, %v", result, err)
+				}
+				deadline := result.Targets[0].ExpiresAt
+				if (want && (deadline == nil || !deadline.Equal(expiry))) || (!want && deadline != nil) {
+					t.Fatalf("unexpected deadline: %v", deadline)
+				}
 			}
-		}
-		read(true)
-		checkListed(true)
-		if err := repo.db.Exec("SELECT SLEEP(GREATEST(0,TIMESTAMPDIFF(MICROSECOND,CURRENT_TIMESTAMP(6),?))/1000000+0.02)", expiry).Error; err != nil {
-			t.Fatal(err)
-		}
-		read(false)
-		checkListed(false)
-		t.Log("metadata visible under active grant; content and sibling denied; no visibility after natural expiry")
-	})
+			checkListed := func(active bool) {
+				t.Helper()
+				filter := SourceGrantFilter{CatalogPath: &child, RecipientType: "user", RecipientID: confirmer.PrincipalID}
+				observed, total, err := repo.listAccountGrantRelations(ctx, 7, int64(node.EngineID), confirmer.PrincipalID, 1, 10, filter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if active {
+					if total != 1 || len(observed) != 1 || observed[0].Inspection == nil || !observed[0].Inspection.RuleCovered ||
+						len(observed[0].Inspection.Sources) != 1 || observed[0].Inspection.Sources[0].RequestID != grant.RequestID ||
+						observed[0].ExpiresAt == nil || !observed[0].ExpiresAt.Equal(expiry) || observed[0].NodeRecursive == nil || *observed[0].NodeRecursive {
+						t.Fatalf("active node grant missing or scope changed: %+v", observed)
+					}
+				} else if total != 0 || len(observed) != 0 {
+					t.Fatal("expired account relation still listed")
+				}
+				history, n, err := repo.listSourceGrants(ctx, 7, int64(node.EngineID), 1, 10, filter)
+				if err != nil || n != 1 || len(history) != 1 || history[0].RequestID != grant.RequestID {
+					t.Fatalf("node grant history lost: %d, %v", n, err)
+				}
+			}
+			read(true)
+			checkListed(true)
+			if err := repo.db.Exec("SELECT SLEEP(GREATEST(0,TIMESTAMPDIFF(MICROSECOND,CURRENT_TIMESTAMP(6),?))/1000000+0.02)", expiry).Error; err != nil {
+				t.Fatal(err)
+			}
+			read(false)
+			checkListed(false)
+			t.Log("metadata visible under active grant; content and sibling denied; no visibility after natural expiry")
+		})
+	}
 	if _, err := svc.Revoke(ctx, RevokeInput{Actor: manager, EngineID: 12, ID: delegation.ID, Version: 1, Reason: "Catalog handling complete"}); err != nil {
 		t.Fatal(err)
 	}

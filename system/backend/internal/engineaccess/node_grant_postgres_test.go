@@ -32,7 +32,19 @@ func (f nodeIdentityPageReaderFunc) QueryNodeIdentities(c context.Context, t uin
 }
 
 func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, actor Actor, base plugin.EngineCatalogPath, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
-	t.Run("persistent PG node grants use current item facts and independent sources", func(t *testing.T) {
+	useEngine := func(t *testing.T, kind string) {
+		t.Helper()
+		if err := db.Exec("UPDATE system.engines SET engine_type=? WHERE tenant_id=? AND id=?", kind, actor.TenantID, base.EngineID).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Exec("UPDATE system.engines SET engine_type='postgresql' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	schemaScope := func(t *testing.T, kind string) {
+		useEngine(t, kind)
 		ctx := context.Background()
 		repo := NewRepository(db)
 		user, _ := newUser(t, time.Hour)
@@ -50,7 +62,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 			}
 			return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
 		}))
-		scope := plugin.TabularNamespacePath(base.EngineID, "schema", "node_scope.a/ b")
+		scope := plugin.TabularNamespacePath(base.EngineID, "schema", kind+" node_scope.a/ b")
 		recursive := false
 		command := CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: scope, NodeRecursive: &recursive, RecipientType: "user", RecipientID: user.PrincipalID, Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Persistent exact schema scope"}
 		grant, err := service.CreateIndependentGrant(ctx, command)
@@ -251,19 +263,12 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		}
 		service.WithNodeIdentityPageReader(nil)
 		service.WithNodeIdentityReader(nil)
-	})
-	t.Run("NFS node scope uses current complete boundaries", func(t *testing.T) {
+	}
+	t.Run("persistent PG node grants use current item facts and independent sources", func(t *testing.T) { schemaScope(t, "postgresql") })
+	t.Run("gaussdb catalog node grant", func(t *testing.T) { schemaScope(t, "gaussdb") })
+	directoryScope := func(t *testing.T, kind string) {
+		useEngine(t, kind)
 		ctx := t.Context()
-		// This existing disposable fixture changes profile only inside this
-		// subtest; no real engine or source is contacted.
-		if err := db.Exec("UPDATE system.engines SET engine_type='nfs' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if err := db.Exec("UPDATE system.engines SET engine_type='postgresql' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
-				t.Error(err)
-			}
-		})
 		service.WithNodeIdentityReader(nodeIdentityReaderFunc(func(_ context.Context, tenant uint, q authorizationfacts.NodeIdentityQuery) (*authorizationfacts.NodeIdentity, error) {
 			return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
 		}))
@@ -272,6 +277,16 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		scope := plugin.FileDirectoryPath(base.EngineID, "models/ exact.dir ")
 		direct := false
 		command := CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: scope, NodeRecursive: &direct, RecipientType: "user", RecipientID: user.PrincipalID, Action: shared.SourceAccessRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "NFS current and future items"}
+		wrongRoot := command
+		wrongRecursive := true
+		wrongRoot.RequestID, wrongRoot.CatalogPath, wrongRoot.NodeRecursive = uuid.New(), plugin.ObjectRootPath(base.EngineID), &wrongRecursive
+		if _, err := service.CreateIndependentGrant(ctx, wrongRoot); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("object service root accepted for %s: %v", kind, err)
+		}
+		var wrongCount int64
+		if err := db.Model(&sourceGrant{}).Where("request_id=?", wrongRoot.RequestID).Count(&wrongCount).Error; err != nil || wrongCount != 0 {
+			t.Fatal("cross-model issuance left a Grant", err)
+		}
 		grant, err := service.CreateIndependentGrant(ctx, command)
 		if err != nil {
 			t.Fatal(err)
@@ -368,19 +383,12 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 				t.Fatalf("malformed scope: valid=%v covered=%v err=%v", valid, covered, err)
 			}
 		}
-	})
-	t.Run("MinIO bucket and prefix scope uses current complete boundaries", func(t *testing.T) {
+	}
+	t.Run("NFS node scope uses current complete boundaries", func(t *testing.T) { directoryScope(t, "nfs") })
+	t.Run("ftp catalog node grant", func(t *testing.T) { directoryScope(t, "ftp") })
+	objectScope := func(t *testing.T, kind string) {
+		useEngine(t, kind)
 		ctx := t.Context()
-		// This existing disposable fixture changes profile only inside this
-		// subtest; no real engine or source is contacted.
-		if err := db.Exec("UPDATE system.engines SET engine_type='minio' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if err := db.Exec("UPDATE system.engines SET engine_type='postgresql' WHERE tenant_id=? AND id=?", actor.TenantID, base.EngineID).Error; err != nil {
-				t.Error(err)
-			}
-		})
 		service.WithNodeIdentityReader(nodeIdentityReaderFunc(func(_ context.Context, tenant uint, q authorizationfacts.NodeIdentityQuery) (*authorizationfacts.NodeIdentity, error) {
 			return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
 		}))
@@ -571,5 +579,8 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 				t.Fatalf("malformed scope: valid=%v covered=%v err=%v", valid, covered, err)
 			}
 		}
-	})
+	}
+	t.Run("MinIO bucket and prefix scope uses current complete boundaries", func(t *testing.T) { objectScope(t, "minio") })
+	t.Run("rustfs catalog node grant", func(t *testing.T) { objectScope(t, "rustfs") })
+
 }

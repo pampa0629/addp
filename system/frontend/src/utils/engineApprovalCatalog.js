@@ -114,9 +114,9 @@ export function isGrantNodePath(path, engineID) {
 export const isApprovalNode = node => !!node?.metadata?.node_identity && isGrantNodePath(node.metadata.node_identity.target, node.metadata.engine_id)
 
 export function createApprovalNodeCatalogAdapter(engine, readPage) {
-  if (!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)) throw new Error('invalidCatalogTarget')
-  const id = safePickerEngineID(engine.id), term = engine.engine_type === 'postgresql' ? 'server' : engine.engine_type === 'minio' ? 'service' : 'root'
-  const rootPath = { version: 'catalog.path/v1', engine_id: id, segments: [{ term, kind: term, name: '' }] }
+  const id = safePickerEngineID(engine.id), rootPath = engine.node_grant_root
+  if (!isGrantNodePath(rootPath, id) || rootPath.segments.length !== 1) throw new Error('invalidCatalogTarget')
+  const term = rootPath.segments[0].term
   let epoch = 0, rootPromise, nodes = new Map(), childrenPromises = new Map()
   const pathKey = path => serializeEngineCatalogTarget({ ...path, engine_id: String(id) })
   const make = (fact, hasChildren) => {
@@ -178,7 +178,7 @@ export function createApprovalNodeCatalogAdapter(engine, readPage) {
 // One tree, two owner facts. Each expansion reads only the direct owner's
 // item pages; searching is filtered and bounded by Meta before transmission.
 export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, readNodes) {
-  if (!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)) return createApprovalCatalogAdapter(engine, listItems, readFacts)
+  if (!engine.node_grant_root) return createApprovalCatalogAdapter(engine, listItems, readFacts)
   const id = safePickerEngineID(engine.id)
   const scopes = createApprovalNodeCatalogAdapter(engine, readNodes)
   let generation = 0, leaves = new Map(), children = new Map()
@@ -216,7 +216,7 @@ export function createMixedApprovalCatalogAdapter(engine, listItems, readFacts, 
       if (!children.has(key)) {
         const promise = (async () => {
           const branches = await scopes.getNodeChildren(node)
-          if (engine.engine_type === 'postgresql' && path.segments.length === 1) return current(epoch, branches.map(display))
+          if (path.segments[0].term === 'server' && path.segments.length === 1) return current(epoch, branches.map(display))
           const rows = await readDataItemIdentityTree(String(id), (engineID, paging) =>
             listItems(engineID, { ...paging, parent: JSON.stringify(path) }), () => epoch === generation,
             row => { if (!direct(row, path)) throw new Error('invalidPermissionTree') })

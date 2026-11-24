@@ -395,7 +395,7 @@ PG 的 `query-read-set` 门禁验证管理员维护的索引存在时普通来�
 
 按存储引擎和实际消费入口分别验收：System 能办理元数据查看与数据读取，Meta 和 Manager 只显示有效授权对应的引擎、必要祖先及获权空节点，已有预览、查询、下载入口在读取前核对相应内容权。隔离验收覆盖单项、未来项、撤根后独立单项保留、自然到期及失败清理；多来源查询还需核对无权来源在业务读取前被拒绝。各入口的通过结果分别记录。
 
-已接入持续节点签发的范围为 PG 根／schema、NFS 根／普通目录、MinIO 服务根／bucket／普通 prefix。首批扩展以 MySQL 为业务数据源，按其原生 `server → database → table` 路径核对；System 使用的元数据库种类是独立维度。后续按各存储引擎的正式目录模型及实际读取入口逐项验证。
+持续节点签发覆盖 PostgreSQL、GaussDB 的根／schema，NFS、FTP 的根／普通目录，以及 MinIO、RustFS 的服务根／bucket／普通 prefix。Business MySQL 的接入需按其原生 `server → database → table` 路径核对；System 使用的元数据库种类是独立维度。后续按各存储引擎的正式目录模型及实际读取入口逐项验证。
 
 持续节点授权以稳定的 Engine ID 和该引擎插件声明的 Engine Catalog 模型为准。System 在签发前核对正式根或分支及 Meta 对本租户、本引擎的节点存在事实，资源选择器消费同一核对结果。Meta 已识别为整项的目录（如 FileGDB）按 DataItem 办理。实际访问先取得当前 DataItem 及其组成的正式边界，再按有效 Grant 的租户、引擎和类型化路径段匹配直属项或后代。导航与局部刷新沿用同一路径包含关系，各自保留元数据可见、扫描或源读取所需的资格检查。
 
@@ -431,7 +431,7 @@ Meta 向 System 精确投影当前数据项身份、可执行组成边界与基�
 
 **精确原生对象读取。** 对象存储的 `object` DataItem 在 basic scan 已确认 `layout=single`、完整 `service → bucket → prefix → object` 父链及一致 `storage.physical_path` 后，CSV、JSON、Parquet、文本、PNG 采用既有 `native_target` 表达一个原生物理对象。refs 可以省略；存在时必须恰为与 DataItem 全名一致的必需主 `main` ref。不得用 native_target 接收 TIFF、GeoJSON、模型、外部依赖、多对象组成、任意 multi／whole 或未识别格式；这些继续使用各自已有的完整组成契约。对象格式和内容语义由 Meta 技术事实独立消费，原生对象摘要只绑定该精确物理身份，不承诺内容历史版本。结构模型不是权限决定；System 签发和读取均重读 Meta 当前事实、比对主目标及边界摘要，复用当前用户、租户、功能权限、期限与撤销校验。新读取必须有显式 `read` Grant，已有 `metadata_read` 不自动升级；同桶同前缀的其他对象及未来对象均不获许可。持久化复用原 Grant 的 catalog_path／fingerprint／boundary_hash，不新增 ACL、字段或旁路。
 
-RustFS 首版只按上述精确原生对象和 GeoJSON／TIFF 的既有完整组成进行同步内容预览；存储流限定 single DataItem 的主对象，以当前普通 User 调用既有 current-source 读取观察，并在存储事实读取及内容打开前分别重核，不以资源票据读取源内容。不接入组成附件、节点范围 Grant，不自动准入模型转换、COG 生成或其他后台执行用途。
+RustFS 首版只按上述精确原生对象和 GeoJSON／TIFF 的既有完整组成进行同步内容预览；存储流限定 single DataItem 的主对象，以当前普通 User 调用既有 current-source 读取观察，并在存储事实读取及内容打开前分别重核，不以资源票据读取源内容。有效的精确 Grant 或覆盖该对象的节点 Grant 均可满足读取判定；组成附件不单独开放。模型转换、COG 生成和其他后台执行用途另行核验。
 
 精确原生对象的无组成 `native_target` 只允许 `independent` 签发；完整文件组成继续接受既有 `independent`、`upload_creation`、`task_production` 来源，各来源仍受自身办理及原子结果约束，不因原生对象接入而缩减或扩大。
 

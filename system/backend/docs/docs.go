@@ -23443,6 +23443,9 @@ const docTemplate = `{
                     "description": "显示名称（原 display_name）",
                     "type": "string"
                 },
+                "node_grant_root": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
                 "restored_at": {
                     "type": "string"
                 },

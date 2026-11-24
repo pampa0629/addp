@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -21,7 +22,8 @@ import (
 
 type engineResponse struct {
 	models.Engine
-	Capabilities json.RawMessage `json:"capabilities,omitempty"`
+	NodeGrantRoot *engineplugin.EngineCatalogPath `json:"node_grant_root,omitempty"`
+	Capabilities  json.RawMessage                 `json:"capabilities,omitempty"`
 }
 
 type EngineHandler struct {
@@ -790,6 +792,9 @@ func toEngineResponse(engine *models.Engine) engineResponse {
 		engineCopy.CapabilitiesView = service.BuildCapabilitiesView(engineCopy.Capabilities, engineCopy.EngineType)
 	}
 	response := engineResponse{Engine: engineCopy}
+	if root, ok := authorizationfacts.NavigationRoot(engine.EngineType, engine.ID); ok {
+		response.NodeGrantRoot = &root
+	}
 	if engine.Capabilities != nil && *engine.Capabilities != "" {
 		response.Capabilities = json.RawMessage(*engine.Capabilities)
 	}

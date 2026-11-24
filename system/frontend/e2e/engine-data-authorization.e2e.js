@@ -93,7 +93,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/authorization-nodes/query')) {
       reads.push(request.url())
       const query=request.postDataJSON(), root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
-      const nodes=query.target.segments.length===1 ? ['nfs','minio'].includes(sourceType) && ftp ? [{tenant_id:2,target:sourceType==='minio' ? minioBucketPath : ftpDirectoryPath,exists:true}] : [{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}] : []
+      const nodes=query.target.segments.length===1 ? ftp ? [{tenant_id:2,target:modelBranch,exists:true}] : [{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}] : []
       return reply({parent:{tenant_id:2,target:query.target,exists:true},nodes,total:nodes.length,page:query.page,page_size:query.page_size})
     }
     if (path.endsWith('/authorization-facts')) {
@@ -192,7 +192,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       }).map(({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }) => ({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }))
       return reply({ data: data.slice((page-1)*size,page*size), total:data.length,page,page_size:size,total_pages:Math.ceil(data.length/size) })
     }
-    const engine = { id: '2', name: collection ? '授权验证 MongoDB' : '授权验证 PostgreSQL', engine_type: ftp ? sourceType : collection ? 'mongodb' : 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
+    const engine = { id: '2', name: collection ? '授权验证 MongoDB' : '授权验证 PostgreSQL', engine_type: ftp ? sourceType : collection ? 'mongodb' : sourceType === 'gaussdb' ? 'gaussdb' : 'postgresql', node_grant_root: collection ? undefined : ftp ? modelRoot : rootPath, engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])
@@ -1575,9 +1575,9 @@ for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engin
 })
 
 
-for (const [sourceType, root] of [['postgresql', rootPath], ['nfs', ftpRootPath], ['minio', minioRootPath]]) {
+for (const [sourceType, root] of [['postgresql', rootPath], ['gaussdb', rootPath], ['nfs', ftpRootPath], ['ftp', ftpRootPath], ['minio', minioRootPath], ['rustfs', minioRootPath]]) {
   for (const [action, label] of [['metadata_read','仅查看元数据'],['read','读取数据（含元数据）']]) test(`entire engine issues one recursive ${action} node Grant for ${sourceType}`, async ({ page }) => {
-    const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: sourceType === 'postgresql' ? '' : 'gpkg' })
+    const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: ['postgresql','gaussdb'].includes(sourceType) ? '' : 'gpkg' })
     await page.goto('/engines/2?tab=data-authorization')
     await openNewAuthorization(page)
     await resourceOption(page.getByTestId('approval-resource-tree'), '授权验证 PostgreSQL').click()

@@ -1,6 +1,10 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/addp/common/engine/plugin"
+)
 
 // ErrorResponse 错误响应
 type ErrorResponse struct {
@@ -31,8 +35,9 @@ type EngineConnectionTestResponse struct {
 // EngineResponse 引擎响应
 type EngineResponse struct {
 	Engine
-	Capabilities     map[string]interface{} `json:"capabilities,omitempty"`
-	CapabilitiesView *CapabilitiesView      `json:"capabilities_view,omitempty"`
+	NodeGrantRoot    *plugin.EngineCatalogPath `json:"node_grant_root,omitempty"`
+	Capabilities     map[string]interface{}    `json:"capabilities,omitempty"`
+	CapabilitiesView *CapabilitiesView         `json:"capabilities_view,omitempty"`
 }
 
 // EngineCatalogSelector is the minimum engine projection needed by tenant business selectors.

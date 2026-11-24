@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalSelection, createApprovalNodeCatalogAdapter, isApprovalNode, createMixedApprovalCatalogAdapter, approvalScopeContains } from '../src/utils/engineApprovalCatalog'
-const engine = { id: '2', name: 'NFS', engine_type: 'nfs' }
+const grantRoot = term => ({ version: 'catalog.path/v1', engine_id: 2, segments: [{ term, kind: term, name: '' }] })
+const engine = { id: '2', name: 'NFS', engine_type: 'nfs', node_grant_root: grantRoot('root') }
 const fingerprint = name => createHash('sha256').update(`2:${name}`).digest('hex')
 const ancestors = [{ id: '1', name: 'NFS', node_type: 'root' }, { id: '2', name: 'exports', node_type: 'dir' }]
 const item = { engine_id: 2, item_fingerprint: fingerprint('exports/test.gdb'), name: 'test.gdb', full_name: 'exports/test.gdb', item_type: 'file', ancestors: [...ancestors, { id: '3', name: 'test.gdb', node_type: 'dir' }] }
@@ -99,7 +100,7 @@ describe('Meta DataItem authorization picker', () => {
 
 describe('persistent PG node candidates', () => {
  it('browses node identities by pages without loading any DataItem', async () => {
-  const pg = { id: '2', name: 'PG', engine_type: 'postgresql' }, root = { version: 'catalog.path/v1', engine_id: 2, segments: [{term:'server',kind:'server',name:''}] }
+  const pg = { id: '2', name: 'PG', engine_type: 'postgresql', node_grant_root: grantRoot('server') }, root = { version: 'catalog.path/v1', engine_id: 2, segments: [{term:'server',kind:'server',name:''}] }
   const fact = target => ({ tenant_id: 7, target, exists: true })
   const schemas = Array.from({length:205}, (_,i) => fact({...root,segments:[...root.segments,{term:'schema',kind:'namespace',name:`schema.${i}/ `}]}))
   const read = vi.fn(async (id,q) => {
@@ -115,10 +116,10 @@ describe('persistent PG node candidates', () => {
   expect(await adapter.getNodeChildren(children[0])).toEqual([])
   expect(read).toHaveBeenCalledTimes(3)
   expect((await adapter.search('2','schema.204'))).toHaveLength(1)
-  expect(() => createApprovalNodeCatalogAdapter({ ...engine, engine_type: 'mysql' },read)).toThrow()
+  expect(() => createApprovalNodeCatalogAdapter({ ...engine, engine_type: 'mysql', node_grant_root: undefined },read)).toThrow()
  })
  it('rejects changed page totals and duplicate or foreign node identities', async () => {
-  const pg={id:'2',name:'PG',engine_type:'postgresql'},root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
+  const pg={id:'2',name:'PG',engine_type:'postgresql', node_grant_root: grantRoot('server')},root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
   const child={tenant_id:7,target:{...root,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}
   for(const nodes of [[{...child,target:{...child.target,engine_id:3}}],[child,child]]){
    const adapter=createApprovalNodeCatalogAdapter(pg,async()=>({parent:{tenant_id:7,target:root,exists:true},nodes,total:nodes.length,page:1,page_size:100}))
@@ -130,7 +131,7 @@ describe('persistent PG node candidates', () => {
 // The combined picker retains typed identity owners and never enumerates items
 // just to select a scope. Pagination/capacity remain the existing item contract.
 describe('mixed PG authorization tree', () => {
-  const pg = { id: '2', name: 'PG', engine_type: 'postgresql' }
+  const pg = { id: '2', name: 'PG', engine_type: 'postgresql', node_grant_root: grantRoot('server') }
   const rootPath = { version: 'catalog.path/v1', engine_id: 2, segments: [{ term: 'server', kind: 'server', name: '' }] }
   const schemaPath = name => ({ ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name }] })
   const fact = target => ({ tenant_id: 7, target, exists: true })
@@ -163,7 +164,7 @@ describe('mixed PG authorization tree', () => {
     expect(results.filter(isApprovalNode)).toHaveLength(1)
     expect(results.filter(node => node.metadata.data_item)).toHaveLength(1)
     expect(read).not.toHaveBeenCalled()
-    const nonPG = createMixedApprovalCatalogAdapter({ ...engine, engine_type: 'ftp' }, async () => page([item]), async () => facts, () => { throw new Error('node permission must not expand') })
+    const nonPG = createMixedApprovalCatalogAdapter({ ...engine, engine_type: 'ftp', node_grant_root: undefined }, async () => page([item]), async () => facts, () => { throw new Error('node permission must not expand') })
     expect(nonPG.completeTree).toBe(true)
     expect((await nonPG.getTreeRoot()).children[0].children).toHaveLength(1)
   })
@@ -259,7 +260,7 @@ describe('bounded authorization identity discovery', () => {
   })
   it('returns only one server-filtered search page even when more than 20000 items match', async () => {
     const list = vi.fn(async (_, query) => ({ data: [], total: 0, page: query.page, page_size: query.page_size, total_pages: 0 }))
-    const pg = { ...engine, engine_type: 'postgresql' }, root = { version: 'catalog.path/v1', engine_id: 2, segments: [{ term: 'server', kind: 'server', name: '' }] }
+    const pg = { ...engine, engine_type: 'postgresql', node_grant_root: grantRoot('server') }, root = { version: 'catalog.path/v1', engine_id: 2, segments: [{ term: 'server', kind: 'server', name: '' }] }
     const nodes = async (_, query) => ({ parent: { tenant_id: 7, target: query.target, exists: true }, nodes: [], total: 0, page: query.page, page_size: query.page_size })
     const adapter = createMixedApprovalCatalogAdapter(pg, list, () => { throw new Error('facts not requested') }, nodes)
     const rows = Array.from({length:20},(_,i)=>({ ...item, item_fingerprint: i.toString(16).padStart(64,'0'), name:`table${i}`,full_name:`s.table${i}`,item_type:'table',ancestors:[{id:'1',name:'',node_type:'server'},{id:'2',name:'s',node_type:'schema'}] }))
@@ -279,7 +280,7 @@ describe('MinIO continuous bucket/prefix selection',()=>{
   const nodes=vi.fn(async(_,q)=>{const child=q.target.segments.length===1?[fact(bucket)]:q.target.segments.length===2?[fact(prefix)]:[];return {parent:fact(q.target),nodes:child,total:child.length,page:q.page,page_size:q.page_size}})
   const row={...item,name:'whole.parquet',full_name:'bucket/ exact.prefix /whole.parquet',item_type:'object',ancestors:[{id:'1',name:'',node_type:'service'},{id:'2',name:'bucket',node_type:'bucket'},{id:'3',name:' exact.prefix ',node_type:'prefix'},{id:'4',name:'whole.parquet',node_type:'prefix'}]}
   const list=vi.fn(async(_,q)=>filteredPage([row],q)),read=vi.fn()
-  const adapter=createMixedApprovalCatalogAdapter({...engine,engine_type:'minio'},list,read,nodes)
+  const adapter=createMixedApprovalCatalogAdapter({...engine,engine_type:'minio', node_grant_root: grantRoot('service')},list,read,nodes)
   const tree=await adapter.getTreeRoot(),[b]=await adapter.getNodeChildren(tree)
   expect(list.mock.calls).toHaveLength(1)
   expect(await adapter.resolveTarget(b)).toEqual(bucket)

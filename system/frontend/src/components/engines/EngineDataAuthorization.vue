@@ -14,7 +14,7 @@
       <el-alert v-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
       <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
       <template v-else>
-        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple :branch-selection="!['postgresql', 'nfs', 'minio'].includes(engine.engine_type)"
+        <ResourceTreePicker ref="picker" :key="authorizationKey" :model-value="selections" multiple :branch-selection="!engine.node_grant_root"
           :engine-id="engine.id" :adapter="adapter" mode="any" :selectable-filter="isSelectableTarget"
           :max-selections="200" :validate-selection="validateSelection" :disabled="!authorizationReady || grantBusy"
           :show-engine-selector="false" :show-selection-summary="false" :show-count="false" :title="engine.name"
@@ -22,7 +22,7 @@
           data-testid="approval-resource-tree" @update:model-value="applySelection" @busy="selecting = $event"
           @loading="loading = $event" @ready="selectionReady" @error="selectionError" />
         <template v-if="workspaceView === 'create'">
-          <p class="hint">{{ t(['postgresql', 'nfs', 'minio'].includes(engine.engine_type) ? 'system.engine.dataAuthorization.mixedSelection' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
+          <p class="hint">{{ t(engine.node_grant_root ? 'system.engine.dataAuthorization.mixedSelection' : 'system.engine.dataAuthorization.snapshotOnly') }}</p>
           <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
             <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row) || engine.name }}</template></el-table-column>
             <el-table-column :label="t('system.engine.dataAuthorization.scope')" min-width="230"><template #default="{ row }">
@@ -83,10 +83,10 @@ const busy = computed(() => !props.authorizationReady || operating.value)
 // Health polling replaces the engine projection every ten seconds. Keep
 // navigation stable unless one of its actual inputs changes; authorization
 // identity and availability continue to be checked by the session boundary.
-const catalogEngineKey = computed(() => JSON.stringify([props.engine.id, props.engine.name, props.engine.engine_type, props.engine.lifecycle_state, props.engine.connection_status]))
+const catalogEngineKey = computed(() => JSON.stringify([props.engine.id, props.engine.name, props.engine.engine_type, props.engine.lifecycle_state, props.engine.connection_status, props.engine.node_grant_root]))
 const catalogEngine = computed(() => {
-  const [id, name, engine_type, lifecycle_state, connection_status] = JSON.parse(catalogEngineKey.value)
-  return { id, name, engine_type, lifecycle_state, connection_status }
+  const [id, name, engine_type, lifecycle_state, connection_status, node_grant_root] = JSON.parse(catalogEngineKey.value)
+  return { id, name, engine_type, lifecycle_state, connection_status, node_grant_root }
 })
 const itemAdapter = computed(() => {
   if (!canBrowse.value || catalogEngine.value.lifecycle_state !== 'active' || catalogEngine.value.connection_status !== 'online') return null

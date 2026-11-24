@@ -18,7 +18,7 @@ func (s SourceNodeScope) Validate() error {
 		return err
 	}
 	if s.Target.Segments[0].Term == "service" && len(s.Target.Segments) == 1 && !s.Recursive {
-		return errors.New("MinIO service root requires recursive scope")
+		return errors.New("object service root requires recursive scope")
 	}
 	return nil
 }

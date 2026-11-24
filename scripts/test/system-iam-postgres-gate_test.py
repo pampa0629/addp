@@ -620,9 +620,9 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=("--test", "source-grant-relations"))
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = (self.root / "trace-1").read_text()
-        pattern = "^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets|ExactNativeObjectGrants(CompositionModes)?|MinIONodeSourceGrants|RecursiveEngineRoot)ForwardMigrationAgainstPostgres$"
+        pattern = "^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets|ExactNativeObjectGrants(CompositionModes)?|MinIONodeSourceGrants|RecursiveEngineRoot|CatalogNodeScopes)ForwardMigrationAgainstPostgres$"
         self.assertIn("./internal/migration -run " + pattern, trace)
-        for name in ("SourceGrantRelations", "SourceDataItemBoundary", "SourceDataItemBoundaryIdentity", "SourceSingleRecordTargets", "ExactNativeObjectGrants", "ExactNativeObjectGrantsCompositionModes", "MinIONodeSourceGrants", "RecursiveEngineRoot"):
+        for name in ("SourceGrantRelations", "SourceDataItemBoundary", "SourceDataItemBoundaryIdentity", "SourceSingleRecordTargets", "ExactNativeObjectGrants", "ExactNativeObjectGrantsCompositionModes", "MinIONodeSourceGrants", "RecursiveEngineRoot", "CatalogNodeScopes"):
             self.assertIsNotNone(re.fullmatch(pattern, "Test" + name + "ForwardMigrationAgainstPostgres"))
         for name in ("TestRecursiveEngineRootForwardMigrationAgainstPostgresExtra", "TestMinIONodeSourceGrantsForwardMigration", "TestOtherForwardMigrationAgainstPostgres"):
             self.assertIsNone(re.fullmatch(pattern, name))

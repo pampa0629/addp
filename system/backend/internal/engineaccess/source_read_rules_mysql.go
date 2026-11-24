@@ -77,9 +77,7 @@ const mysqlCurrentSourceReadRulesSQL = mysqlSourceSubjectInput + sourceReadSubje
  WHERE (g.action=t.action OR (t.action='metadata_read' AND g.action='read'))
  AND ` + sourceGrantCurrentPredicate + `
  AND ((g.node_recursive IS NULL AND g.item_fingerprint=t.fingerprint AND g.boundary_hash=t.boundary_hash)
- OR (g.node_recursive IS NOT NULL AND EXISTS (
-   SELECT 1 FROM system.engines e WHERE e.id=t.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type IN ('postgresql','nfs','minio'))
-   AND EXISTS (SELECT 1 FROM expanded n
+ OR (g.node_recursive IS NOT NULL AND EXISTS (SELECT 1 FROM expanded n
      WHERE n.position=t.position AND n.path=g.catalog_path AND (g.node_recursive OR n.direct))))
 ), ranked AS (
  SELECT candidates.*, MAX(is_node) OVER (PARTITION BY position) AS has_node FROM candidates

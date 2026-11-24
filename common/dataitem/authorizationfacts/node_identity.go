@@ -3,6 +3,7 @@ package authorizationfacts
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -17,7 +18,7 @@ type NodeIdentityQuery struct {
 	Target plugin.EngineCatalogPath `json:"target"`
 }
 
-// ValidNodeIdentityTarget admits PG, NFS and MinIO navigation identities.
+// ValidNodeIdentityTarget checks the supported tabular, filesystem and object navigation shapes.
 // Names remain opaque; a dot or slash inside a quoted schema is not a hierarchy.
 func ValidNodeIdentityTarget(path plugin.EngineCatalogPath) bool {
 	if path.EngineID == 0 || uint64(path.EngineID) > 1<<63-1 || len(path.Segments) < 1 || len(path.Segments) > 64 {
@@ -152,25 +153,49 @@ func (p NodeIdentityPage) Validate(tenantID uint, q NodeIdentityPageQuery) error
 	return nil
 }
 
-// NavigationRoot identifies the actual catalog root of the admitted node Grant profiles.
-func NavigationRoot(engineType string, engineID uint) (plugin.EngineCatalogPath, bool) {
+// nodeGrantModel limits issuance to engines with a verified Meta node projection.
+// The registered provider owns the path version, root and branch kinds.
+func nodeGrantModel(engineType string) (plugin.EngineCatalogModelSpec, bool) {
 	switch engineType {
-	case "postgresql":
-		return plugin.EngineCatalogRootPath(plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), engineID), true
-	case "nfs":
-		return plugin.FileRootPath(engineID), true
-	case "minio":
-		return plugin.ObjectRootPath(engineID), true
+	case "postgresql", "nfs", "minio", "gaussdb", "ftp", "rustfs":
 	default:
-		return plugin.EngineCatalogPath{}, false
+		return plugin.EngineCatalogModelSpec{}, false
 	}
+	p, err := plugin.Get(engineType)
+	provider, ok := p.(plugin.EngineCatalogModelProvider)
+	if err != nil || !ok {
+		return plugin.EngineCatalogModelSpec{}, false
+	}
+	model := provider.EngineCatalogModel()
+	return model, model.PathVersion == plugin.EngineCatalogPathVersion && len(model.Levels) != 0
 }
 
-// NodeIdentityMatchesEngine keeps admission aligned across discovery and signing.
+// NavigationRoot describes a selectable root. Meta separately proves its existence.
+func NavigationRoot(engineType string, engineID uint) (plugin.EngineCatalogPath, bool) {
+	model, ok := nodeGrantModel(engineType)
+	if !ok || engineID == 0 {
+		return plugin.EngineCatalogPath{}, false
+	}
+	return plugin.EngineCatalogRootPath(model, engineID), true
+}
+
 func NodeIdentityMatchesEngine(engineType string, path plugin.EngineCatalogPath) bool {
-	if !ValidNodeIdentityTarget(path) {
+	model, ok := nodeGrantModel(engineType)
+	if !ok || !ValidNodeIdentityTarget(path) || model.RootTerm != path.Segments[0].Term {
 		return false
 	}
-	root, ok := NavigationRoot(engineType, path.EngineID)
-	return ok && root.Segments[0] == path.Segments[0]
+	level := 0
+	for _, part := range path.Segments[1:] {
+		if level >= len(model.Levels) {
+			return false
+		}
+		want := model.Levels[level]
+		if want.Role != plugin.EngineCatalogRoleBranch || part.Term != want.Term || !slices.Contains(want.Kinds, part.Kind) {
+			return false
+		}
+		if part.Term != plugin.EngineCatalogTermDirectory && part.Term != plugin.EngineCatalogTermPrefix {
+			level++
+		}
+	}
+	return true
 }

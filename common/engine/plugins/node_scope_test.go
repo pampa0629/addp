@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
 )
@@ -36,6 +37,9 @@ func TestBusinessCatalogNodeScopes(t *testing.T) {
 			}
 			node := authorization.SourceNodeScope{Target: pathFor(31, tc.node, tc.path)}
 			root := authorization.SourceNodeScope{Target: plugin.EngineCatalogRootPath(model, 31), Recursive: true}
+			if !authorizationfacts.NodeIdentityMatchesEngine(tc.engine, node.Target) || !authorizationfacts.NodeIdentityMatchesEngine(tc.engine, root.Target) {
+				t.Fatal("declared node rejected for engine")
+			}
 			if !root.CoversNode(node) {
 				t.Fatal("root must cover branch even with no items")
 			}

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/nfs"
 )
 
 func TestNodeIdentityRequiresCanonicalRootOrSchema(t *testing.T) {
@@ -100,6 +102,9 @@ func TestNodeIdentityPageRejectsScopeAndPaginationDrift(t *testing.T) {
 }
 
 func TestMinIONodeIdentitiesBindBucketAndPrefix(t *testing.T) {
+	if NodeIdentityMatchesEngine("nfs", plugin.ObjectRootPath(99)) {
+		t.Fatal("an object-service root cannot be signed for an NFS engine with the same ID")
+	}
 	for _, path := range []plugin.EngineCatalogPath{plugin.ObjectRootPath(9), plugin.ObjectDirectoryPath(9, "bucket", ""), plugin.ObjectDirectoryPath(9, "bucket", "a/ exact.prefix ")} {
 		if !ValidNodeIdentityTarget(path) || !NodeIdentityMatchesEngine("minio", path) || NodeIdentityMatchesEngine("nfs", path) {
 			t.Fatal("wrong MinIO profile", path)

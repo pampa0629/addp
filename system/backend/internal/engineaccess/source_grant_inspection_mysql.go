@@ -51,7 +51,7 @@ func (r *Repository) mysqlAccountGrantRelations(ctx context.Context, tenantID, e
  COALESCE(p.item_fingerprint,''),COALESCE(p.action,''),(SELECT observed_at FROM input),
  CASE WHEN NOT EXISTS(SELECT 1 FROM current_source) THEN 'source_unavailable'
  WHEN NOT EXISTS(SELECT 1 FROM system.engines e WHERE e.tenant_id=? AND e.id=?
- AND e.lifecycle_state='active' AND (p.node_recursive IS NULL OR e.engine_type IN ('postgresql','nfs','minio')))
+ AND e.lifecycle_state='active')
  THEN 'target_unavailable' ELSE 'no_grant' END,
  s.request_id,s.catalog_path,s.node_recursive,COALESCE(s.recipient_type,''),COALESCE(s.recipient_id,0),
  COALESCE(s.action,''),COALESCE(s.grant_count,0),IF(s.permanent,'until_revoked','at_time'),
