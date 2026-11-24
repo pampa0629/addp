@@ -2142,6 +2142,9 @@ jobs:
           go-version-file: model/backend/go.mod
           cache: false
 
+      - name: Verify Model keyword search on case-sensitive MySQL 8
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-model-repository'
+
       - name: Run Model PostgreSQL gate
         env:
           ADDP_TEST_MODEL_POSTGRES_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_model_disposable?sslmode=disable
@@ -2357,8 +2360,8 @@ jobs:
           go-version-file: standard/backend/go.mod
           cache: false
 
-      - name: Verify Standard keyword search on case-sensitive MySQL 8
-        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-standard-search'
+      - name: Verify Standard keyword search and revision publication on MySQL 8
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-standard-repository'
 
       - name: Run Standard PostgreSQL and disposable MinIO integration gate
         env:

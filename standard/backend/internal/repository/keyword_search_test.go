@@ -18,7 +18,12 @@ func TestStandardKeywordSearch(t *testing.T) {
 }
 
 func TestStandardKeywordSearchAgainstMySQL(t *testing.T) {
-	if os.Getenv("ADDP_TEST_MYSQL_STANDARD_SEARCH") != "1" {
+	checkGlossaryKeywordSearch(t, openStandardMySQLTestDB(t))
+}
+
+func openStandardMySQLTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	if os.Getenv("ADDP_TEST_MYSQL_STANDARD_REPOSITORY") != "1" {
 		t.Skip("requires a gate-owned Standard database")
 	}
 	dialect, err := platformmysql.Dialector(database.Config{
@@ -36,8 +41,8 @@ func TestStandardKeywordSearchAgainstMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	checkGlossaryKeywordSearch(t, db)
+	t.Cleanup(func() { pool.Close() })
+	return db
 }
 
 // Search is exercised through the repository with case-sensitive database defaults.

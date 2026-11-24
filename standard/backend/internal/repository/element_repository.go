@@ -257,25 +257,8 @@ func (r *ElementRepository) PublishRevision(elementID, revisionID, tenantID, use
 		if revision.EffectiveFrom == nil {
 			return ErrInvalidRevisionTransition
 		}
-		var published []models.ElementRevision
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("element_id = ? AND status = ?", elementID, models.RevisionStatusPublished).Order("effective_from ASC, revision_no ASC").Find(&published).Error; err != nil {
+		if err := preparePublishedInterval(tx, &models.ElementRevision{}, "element_id", elementID, *revision.EffectiveFrom, revision.EffectiveTo); err != nil {
 			return err
-		}
-		for index := range published {
-			candidate := &published[index]
-			if candidate.EffectiveFrom == nil {
-				return ErrEffectiveIntervalConflict
-			}
-			if candidate.EffectiveTo == nil && candidate.EffectiveFrom.Before(*revision.EffectiveFrom) {
-				if err := tx.Model(&models.ElementRevision{}).Where("id = ? AND status = ?", candidate.ID, models.RevisionStatusPublished).Update("effective_to", revision.EffectiveFrom).Error; err != nil {
-					return err
-				}
-				closed := *revision.EffectiveFrom
-				candidate.EffectiveTo = &closed
-			}
-			if intervalsOverlap(*candidate.EffectiveFrom, candidate.EffectiveTo, *revision.EffectiveFrom, revision.EffectiveTo) {
-				return ErrEffectiveIntervalConflict
-			}
 		}
 		if err := requireAffectedRow(tx.Model(&models.ElementRevision{}).Where("id = ? AND element_id = ? AND status = ?", revisionID, elementID, models.RevisionStatusInReview).Updates(map[string]interface{}{
 			"status": models.RevisionStatusPublished, "compiled_quality_rules": compiled,

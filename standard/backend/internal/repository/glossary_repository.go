@@ -267,25 +267,8 @@ func (r *GlossaryRepository) PublishRevision(glossaryID, revisionID, tenantID, u
 		if err := tx.Where("id = ? AND glossary_id = ? AND status = ?", revisionID, glossaryID, models.RevisionStatusInReview).First(&revision).Error; err != nil || revision.EffectiveFrom == nil {
 			return ErrInvalidRevisionTransition
 		}
-		var published []models.GlossaryRevision
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("glossary_id = ? AND status = ?", glossaryID, models.RevisionStatusPublished).Order("effective_from ASC, revision_no ASC").Find(&published).Error; err != nil {
+		if err := preparePublishedInterval(tx, &models.GlossaryRevision{}, "glossary_id", glossaryID, *revision.EffectiveFrom, revision.EffectiveTo); err != nil {
 			return err
-		}
-		for index := range published {
-			candidate := &published[index]
-			if candidate.EffectiveFrom == nil {
-				return ErrEffectiveIntervalConflict
-			}
-			if candidate.EffectiveTo == nil && candidate.EffectiveFrom.Before(*revision.EffectiveFrom) {
-				if err := tx.Model(&models.GlossaryRevision{}).Where("id = ? AND status = ?", candidate.ID, models.RevisionStatusPublished).Update("effective_to", revision.EffectiveFrom).Error; err != nil {
-					return err
-				}
-				closed := *revision.EffectiveFrom
-				candidate.EffectiveTo = &closed
-			}
-			if intervalsOverlap(*candidate.EffectiveFrom, candidate.EffectiveTo, *revision.EffectiveFrom, revision.EffectiveTo) {
-				return ErrEffectiveIntervalConflict
-			}
 		}
 		if err := requireAffectedRow(tx.Model(&models.GlossaryRevision{}).Where("id = ? AND glossary_id = ? AND status = ?", revisionID, glossaryID, models.RevisionStatusInReview).Updates(map[string]interface{}{
 			"status": models.RevisionStatusPublished, "published_by": userID,

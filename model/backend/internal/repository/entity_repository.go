@@ -60,7 +60,7 @@ func (r *EntityRepository) List(tenantID int64, opts ListEntityOptions) ([]model
 		query = query.Where("status = ?", opts.Status)
 	}
 	if opts.Keyword != "" {
-		query = query.Where("name ILIKE ? OR code ILIKE ? OR description ILIKE ?",
+		query = query.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)",
 			"%"+opts.Keyword+"%", "%"+opts.Keyword+"%", "%"+opts.Keyword+"%")
 	}
 

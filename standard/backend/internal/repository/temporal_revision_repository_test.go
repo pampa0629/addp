@@ -2,6 +2,7 @@ package repository
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -105,7 +106,17 @@ func TestStandardAggregateRetainsLatestHistoricalContent(t *testing.T) {
 }
 
 func TestElementPublishKeepsPublishedHistoryAndResolvesByAsOf(t *testing.T) {
-	db := openTemporalRevisionTestDB(t)
+	checkElementPublication(t, openTemporalRevisionTestDB(t))
+}
+
+func TestElementPublicationAgainstMySQL(t *testing.T) {
+	db := openStandardMySQLTestDB(t)
+	createTemporalElementTables(t, db)
+	checkElementPublication(t, db)
+}
+
+func checkElementPublication(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	january := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	february := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	if err := db.Exec(`INSERT INTO standard.elements (id, tenant_id, code, draft_revision_id, version, lifecycle_state) VALUES (1, 7, 'customer_id', 102, 1, 'active')`).Error; err != nil {
@@ -139,6 +150,25 @@ func TestElementPublishKeepsPublishedHistoryAndResolvesByAsOf(t *testing.T) {
 	after, err := repo.GetAggregateAt(1, 7, february)
 	if err != nil || after.CurrentRevision == nil || after.CurrentRevision.ID != 102 || after.DraftRevision != nil {
 		t.Fatalf("February aggregate = %#v, err=%v", after, err)
+	}
+
+	// A third revision starting inside the now closed January interval must leave
+	// both published revisions and the identity's draft pointer intact.
+	if err := db.Exec(`INSERT INTO standard.element_revisions
+		(id, element_id, revision_no, status, name, definition, data_type, value_domain_kind, change_summary, effective_from)
+		VALUES (103, 1, 3, 'in_review', 'Overlap', 'v3', 'bigint', 'unrestricted', 'v3', ?)`, january.Add(time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE standard.elements SET draft_revision_id = 103 WHERE id = 1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.PublishRevision(1, 103, 7, 9, 2, models.JSONB{}); !errors.Is(err, ErrEffectiveIntervalConflict) {
+		t.Fatalf("overlapping publication error = %v", err)
+	}
+	intact, err := repo.GetAggregateAt(1, 7, february)
+	if err != nil || intact.Version != 2 || intact.DraftRevision == nil || intact.DraftRevision.ID != 103 ||
+		intact.DraftRevision.Status != models.RevisionStatusInReview || intact.CurrentRevision == nil || intact.CurrentRevision.ID != 102 {
+		t.Fatalf("after conflict: aggregate=%#v error=%v", intact, err)
 	}
 }
 
@@ -281,8 +311,6 @@ func openTemporalRevisionTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, description TEXT, file_name TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME)`,
 		`CREATE TABLE standard.glossaries (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.glossary_revisions (id INTEGER PRIMARY KEY, glossary_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, alias TEXT, definition TEXT NOT NULL, example TEXT, note TEXT, related_ids TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,
-		`CREATE TABLE standard.element_revisions (id INTEGER PRIMARY KEY, element_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL, value_domain_kind TEXT NOT NULL, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, compiled_quality_rules TEXT, published_by INTEGER, published_at DATETIME, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.code_sets (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, origin TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.code_set_revisions (id INTEGER PRIMARY KEY, code_set_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, value_type TEXT NOT NULL, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, published_by INTEGER, published_at DATETIME, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.code_set_revision_items (id INTEGER PRIMARY KEY, code_set_revision_id INTEGER NOT NULL, code TEXT NOT NULL, label TEXT NOT NULL, sort_order INTEGER, status TEXT)`,
@@ -294,5 +322,18 @@ func openTemporalRevisionTestDB(t *testing.T) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
+	createTemporalElementTables(t, db)
 	return db
+}
+
+func createTemporalElementTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, statement := range []string{
+		`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,
+		`CREATE TABLE standard.element_revisions (id INTEGER PRIMARY KEY, element_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL, value_domain_kind TEXT NOT NULL, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, compiled_quality_rules TEXT, published_by INTEGER, published_at DATETIME, updated_by INTEGER, updated_at DATETIME)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 }

@@ -337,25 +337,8 @@ func (r *MetricRepository) PublishRevision(metricID, revisionID, tenantID, userI
 		if err := replaceMetricRevisionDependencies(tx, revisionID, dependencies, true); err != nil {
 			return err
 		}
-		var published []models.MetricDefinitionRevision
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("metric_definition_id = ? AND status = ?", metricID, models.RevisionStatusPublished).Order("effective_from ASC, revision_no ASC").Find(&published).Error; err != nil {
+		if err := preparePublishedInterval(tx, &models.MetricDefinitionRevision{}, "metric_definition_id", metricID, *revision.EffectiveFrom, revision.EffectiveTo); err != nil {
 			return err
-		}
-		for index := range published {
-			candidate := &published[index]
-			if candidate.EffectiveFrom == nil {
-				return ErrEffectiveIntervalConflict
-			}
-			if candidate.EffectiveTo == nil && candidate.EffectiveFrom.Before(*revision.EffectiveFrom) {
-				if err := tx.Model(&models.MetricDefinitionRevision{}).Where("id = ? AND status = ?", candidate.ID, models.RevisionStatusPublished).Update("effective_to", revision.EffectiveFrom).Error; err != nil {
-					return err
-				}
-				closed := *revision.EffectiveFrom
-				candidate.EffectiveTo = &closed
-			}
-			if intervalsOverlap(*candidate.EffectiveFrom, candidate.EffectiveTo, *revision.EffectiveFrom, revision.EffectiveTo) {
-				return ErrEffectiveIntervalConflict
-			}
 		}
 		if err := requireAffectedRow(tx.Model(&models.MetricDefinitionRevision{}).Where("id = ? AND metric_definition_id = ? AND status = ?", revisionID, metricID, models.RevisionStatusInReview).Updates(map[string]interface{}{
 			"status": models.RevisionStatusPublished, "published_by": userID, "published_at": gorm.Expr("CURRENT_TIMESTAMP"), "updated_by": userID,

@@ -670,6 +670,10 @@ func standardSchemaStatements(dialect string) ([]string, error) {
 	}
 }
 
+// Published revisions have a lower bound; a NULL upper bound is open-ended.
+const publishedIntervalOverlapSQL = `(existing.effective_to IS NULL OR NEW.effective_from < existing.effective_to)
+					AND (NEW.effective_to IS NULL OR existing.effective_from < NEW.effective_to)`
+
 func postgresStandardSchemaStatements() []string {
 	statements := []string{
 		"DROP TRIGGER IF EXISTS trg_standard_glossary_revision_effective_interval ON standard.glossary_revisions",
@@ -846,7 +850,7 @@ func postgresStandardSchemaStatements() []string {
 				WHERE existing.glossary_id = NEW.glossary_id
 					AND existing.id <> NEW.id
 					AND existing.status = 'published'
-					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+					AND ` + publishedIntervalOverlapSQL + `
 			) THEN
 				RAISE EXCEPTION 'published glossary revision effective intervals overlap' USING ERRCODE = '23514';
 			END IF;
@@ -865,7 +869,7 @@ func postgresStandardSchemaStatements() []string {
 				WHERE existing.element_id = NEW.element_id
 					AND existing.id <> NEW.id
 					AND existing.status = 'published'
-					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+					AND ` + publishedIntervalOverlapSQL + `
 			) THEN
 				RAISE EXCEPTION 'published data element revision effective intervals overlap' USING ERRCODE = '23514';
 			END IF;
@@ -884,7 +888,7 @@ func postgresStandardSchemaStatements() []string {
 				WHERE existing.code_set_id = NEW.code_set_id
 					AND existing.id <> NEW.id
 					AND existing.status = 'published'
-					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+					AND ` + publishedIntervalOverlapSQL + `
 			) THEN
 				RAISE EXCEPTION 'published code set revision effective intervals overlap' USING ERRCODE = '23514';
 			END IF;
@@ -903,7 +907,7 @@ func postgresStandardSchemaStatements() []string {
 				WHERE existing.metric_definition_id = NEW.metric_definition_id
 					AND existing.id <> NEW.id
 					AND existing.status = 'published'
-					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+					AND ` + publishedIntervalOverlapSQL + `
 			) THEN
 				RAISE EXCEPTION 'published metric definition revision effective intervals overlap' USING ERRCODE = '23514';
 			END IF;
@@ -922,7 +926,7 @@ func postgresStandardSchemaStatements() []string {
 				WHERE existing.document_id = NEW.document_id
 					AND existing.id <> NEW.id
 					AND existing.status = 'published'
-					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+					AND ` + publishedIntervalOverlapSQL + `
 			) THEN
 				RAISE EXCEPTION 'published document revision effective intervals overlap' USING ERRCODE = '23514';
 			END IF;
