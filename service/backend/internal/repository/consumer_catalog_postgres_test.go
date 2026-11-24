@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/infra/database"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/service/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -35,15 +37,68 @@ func TestConsumerCatalogAgainstPostgres(t *testing.T) {
 		t.Fatalf("AutoMigrate() error = %v", err)
 	}
 
-	fixtures := []models.QueryService{
-		consumerCatalogPostgresService("alpha", "Alpha", 7, "active", true, false),
-		consumerCatalogPostgresService("beta", "Beta spatial", 7, "active", true, true),
-		consumerCatalogPostgresService("inactive", "Inactive", 7, "inactive", true, false),
-		consumerCatalogPostgresService("disabled", "REST disabled", 7, "active", false, false),
-		consumerCatalogPostgresService("other-tenant", "Other tenant", 8, "active", true, false),
+	checkConsumerCatalog(t, tx)
+}
+
+func TestConsumerCatalogAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_SERVICE_REPOSITORY") != "1" {
+		t.Skip("requires a gate-owned Service database")
 	}
+	driver, err := platformmysql.Dialector(database.Config{
+		Host: os.Getenv("ADDP_TEST_MYSQL_HOST"), Port: os.Getenv("ADDP_TEST_MYSQL_PORT"),
+		User: os.Getenv("ADDP_TEST_MYSQL_USER"), Password: os.Getenv("ADDP_TEST_MYSQL_PASSWORD"), DBName: "service",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(driver, &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := db.Exec(`CREATE TABLE service.query_services (
+		id BIGINT PRIMARY KEY AUTO_INCREMENT, tenant_id BIGINT, service_name VARCHAR(255), title VARCHAR(255),
+		description TEXT, config_type VARCHAR(50), engine_id BIGINT, sql_query TEXT, status VARCHAR(50),
+		data_config JSON, protocols JSON, created_by BIGINT, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	checkConsumerCatalog(t, db)
+
+	if err := db.Exec(`INSERT INTO service.query_services (tenant_id, service_name, title, config_type, data_config) VALUES
+		(7,'sales','Sales','analytical','{"source_snapshot":{"metric_source":{"implementation_id":9007199254740993,"revision_id":2}}}'),
+		(7,'stale','Sales','analytical','{"source_snapshot":{"metric_source":{"implementation_id":9007199254740993,"revision_id":1}}}'),
+		(8,'foreign','Sales','analytical','{"source_snapshot":{"metric_source":{"implementation_id":9007199254740993,"revision_id":2}}}')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	rows, total, err := NewQueryServiceRepository(db).List(7, 0, 10, models.QueryServiceListFilter{
+		Search: "sAlEs", MetricSource: &models.MetricSourceRequest{ImplementationID: 9007199254740993, RevisionID: 2},
+	})
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].ServiceName != "sales" {
+		t.Fatalf("metric source list=%v total=%d err=%v", rows, total, err)
+	}
+}
+
+func checkConsumerCatalog(t *testing.T, tx *gorm.DB) {
+	t.Helper()
+	fixtures := []models.QueryService{
+		consumerCatalogService("alpha", "Alpha", 7, "active", true, false),
+		consumerCatalogService("beta", "Beta spatial", 7, "active", true, true),
+		consumerCatalogService("inactive", "Inactive", 7, "inactive", true, false),
+		consumerCatalogService("disabled", "REST disabled", 7, "active", false, false),
+		consumerCatalogService("other-tenant", "Other tenant", 8, "active", true, false),
+	}
+	wrongType := consumerCatalogService("string", "String flag", 7, "active", true, false)
+	wrongType.Protocols = models.JSONB{"rest_api": map[string]any{"enabled": "true"}}
+	fixtures = append(fixtures, wrongType)
+	fixtures[0].DataConfig = models.JSONB{"source_snapshot": map[string]any{"spatial": map[string]any{"primary_geometry_column": nil}}}
 	for index := range fixtures {
-		if err := tx.Create(&fixtures[index]).Error; err != nil {
+		if err := tx.Select("TenantID", "ServiceName", "Title", "ConfigType", "EngineID", "SqlQuery", "Status", "CreatedBy",
+			"DataConfig", "Protocols", "CreatedAt", "UpdatedAt").Create(&fixtures[index]).Error; err != nil {
 			t.Fatalf("create fixture %s: %v", fixtures[index].ServiceName, err)
 		}
 	}
@@ -67,8 +122,12 @@ func TestConsumerCatalogAgainstPostgres(t *testing.T) {
 	if total != 1 || len(spatial) != 1 || spatial[0].ServiceName != "beta" {
 		t.Fatalf("spatial list = %#v total=%d", spatial, total)
 	}
+	tabular, total, err := repo.ListConsumerServices(models.ConsumerServiceListFilter{TenantID: 7, OutputKind: models.ConsumerOutputKindTabular, Limit: 20})
+	if err != nil || total != 1 || len(tabular) != 1 || tabular[0].ServiceName != "alpha" {
+		t.Fatalf("tabular list=%v total=%d error=%v", tabular, total, err)
+	}
 	searched, total, err := repo.ListConsumerServices(models.ConsumerServiceListFilter{
-		TenantID: 7, Search: "spatial", Offset: 0, Limit: 20,
+		TenantID: 7, Search: "sPaTiAl", Offset: 0, Limit: 20,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +143,7 @@ func TestConsumerCatalogAgainstPostgres(t *testing.T) {
 	}
 }
 
-func consumerCatalogPostgresService(
+func consumerCatalogService(
 	serviceName string,
 	title string,
 	tenantID uint,

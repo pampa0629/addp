@@ -26,13 +26,18 @@ func (r *QueryServiceRepository) ListConsumerServices(filter models.ConsumerServ
 	query := r.consumerServicesQuery(filter.TenantID)
 	if search := strings.TrimSpace(filter.Search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("title ILIKE ? OR description ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(title) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)", pattern, pattern)
+	}
+	geometryColumn := "COALESCE(data_config #>> '{source_snapshot,spatial,primary_geometry_column}', '')"
+	if r.db.Dialector.Name() == "mysql" {
+		// MySQL preserves JSON null on extraction; the catalog treats it like a missing column.
+		geometryColumn = `COALESCE(JSON_UNQUOTE(NULLIF(JSON_EXTRACT(data_config, '$.source_snapshot.spatial.primary_geometry_column'), CAST('null' AS JSON))), '')`
 	}
 	switch filter.OutputKind {
 	case models.ConsumerOutputKindSpatialTabular:
-		query = query.Where("COALESCE(data_config #>> '{source_snapshot,spatial,primary_geometry_column}', '') <> ''")
+		query = query.Where(geometryColumn + " <> ''")
 	case models.ConsumerOutputKindTabular:
-		query = query.Where("COALESCE(data_config #>> '{source_snapshot,spatial,primary_geometry_column}', '') = ''")
+		query = query.Where(geometryColumn + " = ''")
 	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -60,10 +65,11 @@ func (r *QueryServiceRepository) GetConsumerServiceByID(tenantID, serviceID uint
 }
 
 func (r *QueryServiceRepository) consumerServicesQuery(tenantID uint) *gorm.DB {
-	return r.db.Model(&models.QueryService{}).
-		Where("tenant_id = ?", tenantID).
-		Where("status = ?", "active").
-		Where("protocols @> ?::jsonb", `{"rest_api":{"enabled":true}}`)
+	query := r.db.Model(&models.QueryService{}).Where("tenant_id = ? AND status = ?", tenantID, "active")
+	if r.db.Dialector.Name() == "mysql" {
+		return query.Where(`JSON_EXTRACT(protocols, '$.rest_api.enabled') = CAST('true' AS JSON)`)
+	}
+	return query.Where("protocols @> ?::jsonb", `{"rest_api":{"enabled":true}}`)
 }
 
 func NewQueryServiceRepository(db *gorm.DB) *QueryServiceRepository {
@@ -122,10 +128,14 @@ func (r *QueryServiceRepository) List(tenantID uint, offset int, limit int, filt
 
 	query := r.db.Where("tenant_id = ?", tenantID)
 	if filter.Search != "" {
-		query = query.Where("(title ILIKE ? OR service_name ILIKE ?)", "%"+filter.Search+"%", "%"+filter.Search+"%")
+		query = query.Where("(LOWER(title) LIKE LOWER(?) OR LOWER(service_name) LIKE LOWER(?))", "%"+filter.Search+"%", "%"+filter.Search+"%")
 	}
 	if source := filter.MetricSource; source != nil {
-		query = query.Where("config_type = ? AND data_config #>> '{source_snapshot,metric_source,implementation_id}' = ? AND data_config #>> '{source_snapshot,metric_source,revision_id}' = ?", "analytical", strconv.FormatInt(source.ImplementationID, 10), strconv.FormatInt(source.RevisionID, 10))
+		sourceIDs := "data_config #>> '{source_snapshot,metric_source,implementation_id}' = ? AND data_config #>> '{source_snapshot,metric_source,revision_id}' = ?"
+		if r.db.Dialector.Name() == "mysql" {
+			sourceIDs = `data_config->>'$.source_snapshot.metric_source.implementation_id' = ? AND data_config->>'$.source_snapshot.metric_source.revision_id' = ?`
+		}
+		query = query.Where("config_type = ? AND "+sourceIDs, "analytical", strconv.FormatInt(source.ImplementationID, 10), strconv.FormatInt(source.RevisionID, 10))
 	}
 	if err := query.Model(&models.QueryService{}).Count(&total).Error; err != nil {
 		return nil, 0, err

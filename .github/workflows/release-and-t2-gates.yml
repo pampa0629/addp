@@ -2234,6 +2234,9 @@ jobs:
           go-version-file: service/backend/go.mod
           cache: false
 
+      - name: Verify Service consumer catalog and metric source filters on MySQL 8
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-service-repository'
+
       - name: Run Service PostgreSQL gate
         env:
           SERVICE_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_service_test?sslmode=disable

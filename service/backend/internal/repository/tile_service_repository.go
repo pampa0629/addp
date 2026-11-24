@@ -120,7 +120,7 @@ func (r *TileServiceRepository) SearchServices(tenantID uint, keyword string, of
 	var services []models.TileService
 	var total int64
 
-	query := r.db.Where("tenant_id = ? AND (title ILIKE ? OR service_name ILIKE ?)", tenantID, "%"+keyword+"%", "%"+keyword+"%")
+	query := r.db.Where("tenant_id = ? AND (LOWER(title) LIKE LOWER(?) OR LOWER(service_name) LIKE LOWER(?))", tenantID, "%"+keyword+"%", "%"+keyword+"%")
 	if err := query.Model(&models.TileService{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}

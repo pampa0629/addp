@@ -66,7 +66,7 @@ func (r *GraphQueryServiceRepository) Search(tenantID uint, keyword string, offs
 	var total int64
 
 	query := r.db.Where(
-		"tenant_id = ? AND (title ILIKE ? OR service_name ILIKE ?)",
+		"tenant_id = ? AND (LOWER(title) LIKE LOWER(?) OR LOWER(service_name) LIKE LOWER(?))",
 		tenantID, "%"+keyword+"%", "%"+keyword+"%",
 	)
 	if err := query.Model(&models.GraphQueryService{}).Count(&total).Error; err != nil {

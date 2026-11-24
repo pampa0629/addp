@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -46,7 +46,7 @@ if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
 fi
 
 case "$test_group" in
-    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
+    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
         if [ "$local_disposable" != true ]; then
             echo "$test_group requires a gate-owned instance (--local-disposable)" >&2
             exit 2
@@ -122,6 +122,7 @@ mysql['environment']['MYSQL_DATABASE'] = {
     'platform-manager-storage': 'manager',
     'platform-standard-repository': 'standard',
     'platform-model-repository': 'model',
+    'platform-service-repository': 'service',
     'platform-cleanup-results': 'manager',
     'platform-system-request': 'system',
     'platform-source-grant-boundary': 'system',
@@ -215,6 +216,14 @@ fi
 if [ "$test_group" = platform-cleanup-results ]; then
     (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_CLEANUP_RESULTS=1 GOWORK=off go test ./cleanup -run '^TestMySQLCleanupResultsRetainOriginal$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/cleanup-results.log"
     grep -q '^--- PASS: TestMySQLCleanupResultsRetainOriginal ' "$WORK_DIR/cleanup-results.log"
+    exit 0
+fi
+
+if [ "$test_group" = platform-service-repository ]; then
+    mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -e "ALTER DATABASE service CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"'
+    (cd "$ROOT_DIR/service/backend" && ADDP_TEST_MYSQL_SERVICE_REPOSITORY=1 GOWORK=off go test ./internal/repository \
+        -run '^TestConsumerCatalogAgainstMySQL$' -count=1 -v) | tee "$WORK_DIR/service-repository.log"
+    grep -q '^--- PASS: TestConsumerCatalogAgainstMySQL ' "$WORK_DIR/service-repository.log"
     exit 0
 fi
 
