@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Recover a K3s site's login and Catalog paths on an isolated Docker host."""
 import argparse
+import fcntl
 from datetime import datetime, timezone
 import hashlib
 import ipaddress
@@ -315,4 +316,7 @@ if __name__ == "__main__":
     elif args.action == "check-tls":
         verify_tls(args.kit, args.hostname)
     else:
-        recover(args)
+        os.umask(0o077)
+        with (args.kit / ".dr-tls.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            recover(args)

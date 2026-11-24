@@ -175,7 +175,7 @@ System 以 `engine_type=kingbase` 登记。填写集群内 `kingbase.<namespace>
        rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/dr.list
    ```
 
-### 在原签发机更新备用证书
+### 首次签发备用证书
 
 现场采用独立备用叶证书时，备用机只把签名请求送到签发机。以下示例适用于已批准 `addp.macstudio.local` 最长 72 小时有效期的站点。先在备用机的私有临时目录生成私钥与请求，保留私钥，仅传输 `leaf.csr`：
 
@@ -204,7 +204,54 @@ openssl verify -trusted "$CA_DIR/root.crt" -untrusted "$CA_DIR/intermediate.crt"
 cat signed.crt "$CA_DIR/intermediate.crt" > leaf.pem
 ```
 
-将公开的 `leaf.pem` 链送回备用机，与刚生成的私钥、原先已信任的 `ca.pem` 一起放在候选目录的 `tls/`。运行 `check-tls --kit <候选目录> --hostname addp.macstudio.local`。确认当前没有恢复任务正在启动，再将校验通过的整套材料安装到恢复包，重新运行 `check-tls` 并以新恢复项目验证登录与 Catalog。记录证书指纹和到期时间。72 小时从签发时起算，失联时剩余窗口取决于最近一次更新；现场按已批准的值班流程提前补签。
+将公开的 `leaf.pem` 链送回备用机，与刚生成的私钥、原先已信任的 `ca.pem` 一起放在候选目录的 `tls/`。运行 `check-tls --kit <候选目录> --hostname addp.macstudio.local`。确认当前没有恢复任务正在启动，再将校验通过的整套材料安装到恢复包，重新运行 `check-tls` 并以新恢复项目验证登录与 Catalog。记录证书指纹和到期时间。72 小时从签发时起算，失联时剩余窗口取决于最近一次更新；后续使用下面的定时续签入口。
+
+### 自动续签备用站 HTTPS 证书
+
+以下是双 Mac 现场的交付方式。102 的中间 CA 只签发固定域名的服务端叶证书，最长 72 小时。138 复用首次签发时在恢复虚拟机中生成的站点私钥。另建一把宿主机 SSH 密钥，只允许提交 CSR。101 仅用于初次分发和验收，日常任务由 138 独立执行。
+
+1. 将本目录的 `k3s-dr-tls.py` 安装在签发机的私有目录。将同一文件分别交付到 138 的 Linux `KIT/` 和 macOS 的私有运维目录 `OPS/`，后者同时放入 `install-dr-tls-launchagent.py`。Linux 包中的 `k3s-dr-recover.py`、`k3s_dr_capture.py` 使用同一发布版本。宿主机需有 Python 3.9 或以上、OpenSSH 和 Colima，签发机使用 OpenSSL 3 和 Python 3.9 或以上。先用 `check-tls` 确认首次交付的证书可用。
+2. 在 138 的 macOS 上执行 `umask 077; ssh-keygen -t ed25519 -N '' -f "$OPS/id_ed25519" -C addp-dr-renew-138`。经已有运维通道，将**公钥**追加到 102 的签发账号 `authorized_keys`，单独一行，格式如下。替换签发机上的绝对路径、帐号与管理网地址，固定授权域名。核对来源与公钥归属，保留其他 SSH 条目。
+
+   ```text
+   from="192.168.88.138",restrict,command="/usr/bin/python3 /Users/pampa/addp-validation/tls/standby/k3s-dr-tls.py issue --hostname addp.macstudio.local --openssl /opt/homebrew/opt/openssl@3/bin/openssl --ca-dir /Users/pampa/addp-validation/tls/data/caddy/pki/authorities/local" ssh-ed25519 <138专用公钥> addp-dr-renew-138
+   ```
+
+3. 从已验证身份的 102 读取 SSH 主机公钥，写入 138 的 `$OPS/known_hosts`，内容为地址、算法和公钥三列。在 `$OPS/ssh_config` 设置专用别名。下面的路径对应 138 当前现场：
+
+   ```sshconfig
+   Host addp-dr-issuer
+     HostName 192.168.88.102
+     User pampa
+     IdentityFile ~/addp-validation/recovery/renew-tls/id_ed25519
+     UserKnownHostsFile ~/addp-validation/recovery/renew-tls/known_hosts
+     GlobalKnownHostsFile /dev/null
+     StrictHostKeyChecking yes
+     BatchMode yes
+     IdentitiesOnly yes
+     IdentityAgent none
+     ConnectTimeout 8
+   ```
+
+4. 以运行 Colima 的 138 登录用户安装定时任务。设置 `KIT` 为 Linux 虚拟机内的绝对路径，`OPS` 为上述 macOS 私有目录。首次立即执行，此后每 6 小时检查一次，依赖该用户的登录会话及 Colima 可用。
+
+   ```bash
+   cd "$OPS"
+   python3 install-dr-tls-launchagent.py --colima-profile addp-validation --kit "$KIT" \
+     --hostname addp.macstudio.local --issuer addp-dr-issuer --ssh-config "$OPS/ssh_config"
+   launchctl print "gui/$(id -u)/com.addp.validation-dr-tls"
+   tail "$OPS/renew.log"
+   ```
+
+5. 当前证书链在未来 48 小时后仍有效时跳过签发。到期窗口内，138 将 CSR 通过受限 SSH 发送到 102。签发端验证签名和固定主体，丢弃请求自带的扩展，限制域名、用途和有效期。中间 CA 剩余不足三天时按可覆盖的整天缩短。138 在临时目录校验证书链与现有私钥，再原子替换公开证书。恢复任务与换证共用锁。对挂载本恢复包的运行中演练入口逐一平滑加载，核对实际握手返回的新证书，失败则恢复原文件并重新加载。现场可用同一个入口主动轮换一次：
+
+   ```bash
+   python3 k3s-dr-tls.py renew --force --colima-profile addp-validation --kit "$KIT" \
+     --hostname addp.macstudio.local --issuer addp-dr-issuer --ssh-config "$OPS/ssh_config" \
+     --alert-file "$OPS/ALERT.json"
+   ```
+
+6. 故障在 `$OPS/ALERT.json` 和宿主机系统日志中留痕，同时向当前 macOS 桌面请求通知；通知可见性取决于系统设置。查看 `$OPS/renew.err` 定位 SSH、签发或加载失败。恢复后执行 `launchctl kickstart "gui/$(id -u)/com.addp.validation-dr-tls"`，成功检查会清除活动告警。102 失联时，已签发证书仍可使用到实际到期时刻。撤销自动签发权限时，先在 102 移除这把专用公钥的单行授权，再在 138 执行 `launchctl bootout "gui/$(id -u)/com.addp.validation-dr-tls"` 并移除对应 plist。
 
 ### 在备用机计时恢复
 
