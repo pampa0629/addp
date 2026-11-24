@@ -43,7 +43,7 @@ func TestIntegrationRustFSPreview(t *testing.T) {
 	meta := client.NewMetaClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "rustfs-t2-metadata-token", nil }))
 	registry := objectcontent.NewObjectContentRegistry()
 	objectcontent.LoadObjectContentPlugins(registry, "../../plugins")
-	provider := NewObjectCatalogPreviewProvider(repository.NewMetadataRepository(nil), meta, registry)
+	provider := NewObjectCatalogPreviewProvider(&repository.MetadataRepository{}, meta, registry)
 	result, err := provider.Preview(t.Context(), &PreviewRequest{
 		Engine: &models.Engine{ID: 91, EngineType: p.Type(), ConnectionInfo: models.ConnectionInfo{
 			"endpoint": os.Getenv("ADDP_RUSTFS_TEST_ENDPOINT"), "access_key": os.Getenv("ADDP_RUSTFS_TEST_ACCESS_KEY"), "secret_key": os.Getenv("ADDP_RUSTFS_TEST_SECRET_KEY"), "use_ssl": false,

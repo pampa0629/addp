@@ -82,7 +82,7 @@ func main() {
 	// 初始化 repositories
 	logger.L().Info("开始初始化 Manager repositories")
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
-	metadataRepo := repository.NewMetadataRepository(db)
+	metadataRepo := &repository.MetadataRepository{}
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	embeddingConfigurationRepo := repository.NewEmbeddingConfigurationRepository(db)
 	inferenceScenarioBindingRepo := repository.NewInferenceScenarioBindingRepository(db)

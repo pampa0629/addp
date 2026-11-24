@@ -2,36 +2,17 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
-	pq "github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
-var ErrMetadataSchemaMissing = errors.New("meta schema not initialized")
-
-type MetadataRepository struct {
-	db *gorm.DB
-}
-
-func NewMetadataRepository(db *gorm.DB) *MetadataRepository {
-	return &MetadataRepository{
-		db: db,
-	}
-}
-
-func isUndefinedTableError(err error) bool {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
-		return pqErr.Code == "42P01"
-	}
-	return false
-}
+// MetadataRepository reads scan facts through the Meta client supplied by its caller.
+type MetadataRepository struct{}
 
 // ListScannedNodesAndItems 获取指定资源的顶层节点、子节点和条目
 func (r *MetadataRepository) ListScannedNodesAndItems(ctx context.Context, engineID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {

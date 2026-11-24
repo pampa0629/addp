@@ -4,7 +4,7 @@
 
 ## 模块定位
 
-Manager 模块负责数据探查、数据预览、表格数据剖析、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。Manager 的引擎资源树是技术浏览视图，不是 Enterprise Catalog，也不拥有企业 `CatalogEntry`、业务语义关联或责任事实。Catalog 落地后，Manager 只按需读取企业资源摘要并跳转企业资源目录；Catalog 不可达只影响该摘要和跳转，不得回退到旧 Asset 发现或在 Manager 内复制企业资源目录。
+Manager 模块负责数据探查、数据预览、表格数据剖析、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。资源树的节点和条目来自 Meta API，读取这些扫描事实无需连接 Manager 平台库。Manager 的引擎资源树是技术浏览视图，不是 Enterprise Catalog，也不拥有企业 `CatalogEntry`、业务语义关联或责任事实。Catalog 落地后，Manager 只按需读取企业资源摘要并跳转企业资源目录；Catalog 不可达只影响该摘要和跳转，不得回退到旧 Asset 发现或在 Manager 内复制企业资源目录。
 
 数据剖析执行和结果归 Manager，Meta 只提供身份、结构、源版本和扫描事实。剖析按需创建 `data_profiling` ad-hoc execution，不创建持久任务定义、不声明 TaskProvider capability；首版采样只开放已扫描 PostgreSQL 单表，视图、物化视图和多来源计划不支持。独立 execution 源授权、逐页／提交前复核及源端并发 DDL 的未覆盖边界，以[数据剖析规范](docs/数据剖析规范.md#当前授权切换边界)为准。
 

@@ -77,7 +77,7 @@ func TestObjectCatalogPreviewUsesScannedContainerIndexBeforeContentHandler(t *te
 			}))
 			registry := objectcontent.NewObjectContentRegistry()
 			objectcontent.LoadObjectContentPlugins(registry, "../../plugins")
-			provider := NewObjectCatalogPreviewProvider(repository.NewMetadataRepository(nil), meta, registry)
+			provider := NewObjectCatalogPreviewProvider(&repository.MetadataRepository{}, meta, registry)
 			result, err := provider.Preview(t.Context(), &PreviewRequest{
 				Engine: &models.Engine{ID: 7, EngineType: storage.Type()}, Schema: "source", Table: key,
 				TenantID: uintPtr(1), Locator: "addp://engine/7/path/source/" + key + "?type=object&item_id=42",
