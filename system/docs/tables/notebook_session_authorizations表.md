@@ -31,11 +31,11 @@ Kernel 只持有 Develop 签发的 `addp_nkc_` Notebook Kernel Capability；Deve
 
 ## 三、生命周期
 
-1. Develop 打开 Runtime 后，使用创建 Session 的 User Access Token 调用 `POST /api/v1/system/auth/notebook-session-authorizations`。System 在事务内复核 User、Tenant Context、Membership、Token Family、授权版本和 `system.engine.read`，然后创建授权和审计事件。
+1. Develop 打开 Runtime 后，使用创建 Session 的 User Access Token 调用 `POST /api/v1/system/auth/notebook-session-authorizations`。System 在事务内复核 User、Tenant Context、Membership、Token Family、授权版本及 `develop.task.read`、`develop.notebook.update`，然后创建授权和审计事件。
 2. 签发成功后，Develop 仅保存授权 ID；签发失败时回收刚创建的 Runtime，不留下无授权 Session。
 3. 每次 Catalog 请求由 Kernel Capability 到达 Develop，再由 `addp-develop` Tenant Service Access Token 调用 `POST /api/v1/system/notebook-session-authorizations/{id}/catalog/children`。
 4. 每次查询或扫描使用新的 execution ID 调用 `POST /api/v1/system/notebook-session-authorizations/{id}/execution-engine-accesses`；System 原子创建独立只读 Execution Authorization，以 `execution_authorizations.source_notebook_session_authorization_id` 记录本表 ID，并返回执行期 Engine Access。
-5. System 每次实时复核授权事实、Session、Tenant、User、Membership、Token Family、授权版本、当前读取 Permission、Engine 归属和状态。
+5. System 每次实时复核授权事实、Session、Tenant、User、Membership、Token Family、授权版本、当前操作所需的 Permission、Engine 归属和状态。PostgreSQL 目录按原用户有效来源 Grant 过滤，派生执行授权后仍须在打开读取时核验完整来源。读取期限及撤权边界见[授权上下文规范 5.3](../../../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。
 6. 普通 Access/Refresh Token 轮换不撤销本授权；退出、Refresh Token Family 撤销、User 或 Tenant 停用、Membership 失效、权限变化、授权版本变化、Session 关闭或到期都会 fail-closed。Family 或 Session 撤销会联动撤销本 Session 已派生且仍有效的 Execution Authorization，后续标准 Engine Access 租约复核也会沿来源外键重新校验本表和 Token Family。
 7. Develop 关闭、回收或停止 Session 时，先移除本地 Session 并取消活动查询，再幂等调用撤销接口并关闭 Runtime。
 

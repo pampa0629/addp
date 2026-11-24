@@ -148,7 +148,7 @@ Quality 的租户机器角色通过 `system.engine_descriptor.read` 读取本租
 
 引擎生命周期操作员（`tenant.engine_lifecycle_operator`）只允许 Tenant Scope 的 User，精确组合 `system.engine.create`、`system.engine.read`、`system.engine.delete` 和 `system.cleanup.read`。模板不默认分配账号，不新增 Permission 或资源实例 ACL，不改变上述 Permission 的不可租户自定义边界；通用 Cleanup execute、Engine update／execute、源数据访问及授权管理仍不在角色中。原生 Cleanup 验收的临时 Engine User 显式组合该模板与两项可自定义的专业结果读取权限，最终并集保持原批准六项；角色分配、会话及审计继续走 System 正式主路径。
 
-引擎管理只读（`tenant.engine_management_reader`）仅允许 Tenant Scope 的 User，精确包含 `system.engine.read`，可读取引擎管理脱敏详情。它不等同于业务目录读取 `system.engine_catalog.read`，不授予业务数据内容访问、引擎写入／执行或授权管理。模板不自动分配账号，不创建 Grant 或委托，保持该 Permission 不可租户自定义；需要时通过正式 Role Assignment 显式组合。Notebook 验收 User 将它与原五项可定制权限组合，实际 AuthContext 权限并集必须精确等于批准的六项，分配完成后才签发会话。
+引擎管理只读（`tenant.engine_management_reader`）仅允许 Tenant Scope 的 User，精确包含 `system.engine.read`，可读取引擎管理脱敏详情。它不等同于业务目录读取 `system.engine_catalog.read`，不授予业务数据内容访问、引擎写入／执行或授权管理。模板不自动分配账号，不创建 Grant 或委托，保持该 Permission 不可租户自定义；需要时通过正式 Role Assignment 显式组合。Notebook 存储验收夹具将该角色与五项可定制权限组合，核对该夹具的六项 AuthContext 权限。普通用户创建交互会话及访问 PostgreSQL 的条件见[授权上下文规范 5.3](addp授权上下文规范.md#53-notebook-会话授权)。
 
 Tenant 自定义 Role：
 

@@ -92,7 +92,7 @@ type notebookQueryRequest struct {
 
 // StreamSessionQuery executes one bounded native read query as Arrow IPC.
 // @Summary 执行 Notebook 有界只读查询 | Execute a bounded Notebook read query
-// @Description PostgreSQL 在实际读取和交付前核验原会话用户对查询全部来源的 read 授权。 | PostgreSQL checks the session user’s current read grants for all query sources before reading and delivery.
+// @Description 打开 PostgreSQL 查询时一次核验原会话用户对全部来源的 read 授权；任一来源无权即拒绝整次查询。 | When a PostgreSQL query opens, all source read grants are checked once for the session user. A missing grant denies the entire query.
 // @Description language 必须与引擎 QueryRuntimeProvider 声明一致；查询必须携带显式 max_rows 与 timeout。 | Language must match the engine QueryRuntimeProvider declaration; the query requires explicit max_rows and timeout.
 // @Tags Notebook
 // @Accept json
@@ -171,7 +171,7 @@ func (h *NotebookHandler) StreamSessionQuery(c *gin.Context) {
 
 // StreamSessionTable streams one catalog-resolved table as Arrow IPC.
 // @Summary 流式读取 Notebook 表 | Stream a Notebook table
-// @Description PostgreSQL 表扫描逐批核验原会话用户对已绑定表的 read 授权。 | PostgreSQL checks the original user’s read grant for the bound table on each batch.
+// @Description 打开 PostgreSQL 扫描时一次核验原会话用户对已绑定表的 read 授权。撤销该 Grant 从下一次读取生效。 | When a PostgreSQL scan opens, the session user’s read grant is checked once for the bound table. Revocation applies to the next read.
 // @Description 每次调用派生独立只读 Execution Authorization；连接只在 Develop 受控 Runtime 内使用。 | Each call derives an independent read-only Execution Authorization; connection details remain inside the controlled Develop runtime.
 // @Tags Notebook
 // @Accept json

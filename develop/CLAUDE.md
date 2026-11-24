@@ -270,7 +270,7 @@ Notebook 交互编辑只允许 `POST /notebooks/{id}/sessions` 创建的短期�
 
 Notebook Kernel 获取当前可用查询 Engine 及其实时 Engine Catalog 时，只允许使用 Develop 为同一交互会话签发的短期 Notebook Kernel Capability Token 调用该 Session 的只读 Engine Runtime Descriptor 与 Engine Catalog 代理。Token 绑定 Session、Tenant、User、Task 与 TTL，Develop 只保存 Hash；Runtime 只注入隔离 Kernel process，不写入 Notebook、日志或公开会话响应。接口不得返回 `connection_info`，也不得把 Notebook Script Engine 或长期数据连接伪装成当前可用查询 Engine。
 
-Develop 在创建 Session 的同步请求栈用当前 User Bearer 请求 System 签发授权，随后丢弃 Bearer，只在内存 Session 保存授权 ID。后续目录与查询／扫描的独立只读 Execution Authorization 派生，由 `addp-develop` 消费该 Session Authorization，不借用通用 `system.engine.read`；连接留在 Develop 受控 Runtime，不返回 Kernel。关闭、过期、撤权、登出或 Develop 重启后取消活动查询并 fail-closed；派生授权期限及令牌轮换规则沿上述正式会话契约。
+Develop 在创建 Session 的同步请求栈用当前 User Bearer 请求 System 签发授权，随后丢弃 Bearer，只在内存 Session 保存授权 ID。后续目录与查询／扫描的独立只读 Execution Authorization 派生，由 `addp-develop` 消费该 Session Authorization，不借用通用 `system.engine.read`；连接留在 Develop 受控 Runtime，不返回 Kernel。会话关闭或失效时按会话生命周期处理。表 Grant 单独撤销时，已获准的 PostgreSQL 读取可在原期限内完成；下一次打开读取时重新核验全部来源，复用同一 Kernel 或表对象也适用。
 
 #### 数据访问与 Native Facade
 

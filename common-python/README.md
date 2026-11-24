@@ -145,7 +145,7 @@ SDK 只返回 Consumer Contract 类型和原始 Python records。pandas、GeoPan
 
 ## Notebook 会话能力
 
-使用前先由 Develop 创建隔离 Notebook Session；原生门面的职责、类型和实时目录规则见[引擎体系](../docs/concepts/addp引擎体系图.md#notebook-原生引擎门面)。以下片段演示 PostgreSQL，运行前须提供已核实的输入：
+使用前先由 Develop 创建隔离 Notebook Session；原生门面的职责、类型和实时目录规则见[引擎体系](../docs/concepts/addp引擎体系图.md#notebook-原生引擎门面)。普通用户没有来源 Grant 时仍可计算和保存，未获引擎管理读取资格时 `engines.list()` 返回空列表。PostgreSQL 的 `metadata_read` 或 `read` 可用于发现；每次打开 `head()`、`scan()` 或 `sql()` 时，全部实际来源都须有 `read`。任一来源无权时返回 `403 notebook_data_forbidden`。功能权限与撤权时点见[授权上下文规范 5.3](../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。以下示例需要已核实的输入：
 
 | 输入 | 来源与前提 |
 | --- | --- |
