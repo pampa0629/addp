@@ -175,6 +175,37 @@ System 以 `engine_type=kingbase` 登记。填写集群内 `kingbase.<namespace>
        rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/dr.list
    ```
 
+### 在原签发机更新备用证书
+
+现场采用独立备用叶证书时，备用机只把签名请求送到签发机。以下示例适用于已批准 `addp.macstudio.local` 最长 72 小时有效期的站点。先在备用机的私有临时目录生成私钥与请求，保留私钥，仅传输 `leaf.csr`：
+
+```bash
+umask 077
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out leaf.key
+openssl req -new -key leaf.key -subj /CN=addp.macstudio.local -out leaf.csr
+```
+
+签发机使用现有中间 CA。在私有临时目录运行，将 `CA_DIR` 指向现场已有的 CA 目录。域名与用途由签发方固定。确认中间 CA 有效期覆盖计划窗口，核对 CSR 来源并验证签名，以下命令需要全部成功：
+
+```bash
+set -eu
+umask 077
+domain=addp.macstudio.local
+openssl req -config /dev/null -in leaf.csr -verify -noout
+test "$(openssl req -config /dev/null -in leaf.csr -noout -subject -nameopt RFC2253)" = "subject=CN=$domain"
+openssl verify -trusted "$CA_DIR/root.crt" "$CA_DIR/intermediate.crt"
+openssl x509 -in "$CA_DIR/intermediate.crt" -noout -checkend 259205
+printf '%s\n' 'basicConstraints=critical,CA:FALSE' 'keyUsage=critical,digitalSignature' \
+  'extendedKeyUsage=serverAuth' "subjectAltName=DNS:$domain" > leaf.ext
+openssl x509 -req -in leaf.csr -CA "$CA_DIR/intermediate.crt" -CAkey "$CA_DIR/intermediate.key" \
+  -set_serial "0x$(openssl rand -hex 16)" -days 3 -sha256 -extfile leaf.ext -out signed.crt
+openssl verify -trusted "$CA_DIR/root.crt" -untrusted "$CA_DIR/intermediate.crt" \
+  -purpose sslserver -verify_hostname "$domain" signed.crt
+cat signed.crt "$CA_DIR/intermediate.crt" > leaf.pem
+```
+
+将公开的 `leaf.pem` 链送回备用机，与刚生成的私钥、原先已信任的 `ca.pem` 一起放在候选目录的 `tls/`。运行 `check-tls --kit <候选目录> --hostname addp.macstudio.local`。确认当前没有恢复任务正在启动，再将校验通过的整套材料安装到恢复包，重新运行 `check-tls` 并以新恢复项目验证登录与 Catalog。记录证书指纹和到期时间。72 小时从签发时起算，失联时剩余窗口取决于最近一次更新；现场按已批准的值班流程提前补签。
+
 ### 在备用机计时恢复
 
 使用备用机的本地 Linux Docker。恢复入口创建独立 Compose 项目、内部网络和空卷，从故障计时开始即禁止拉取镜像。专用客户端先向原主机 IPv4 地址发起同域名 HTTPS 请求，确认路由不可达，随后在同一客户端解析原域名到恢复入口，验证受信任 TLS、Console、Catalog 前端、用户登录及经过 Gateway 的租户目录查询。
