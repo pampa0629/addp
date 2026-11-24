@@ -2019,3 +2019,4 @@ test-k3s-pilot: ## 验证 K3s 试点制品、调度、凭据和空库检查
 test-k3s-release: ## 验证 K3s 双架构发布、镜像身份和节点调度约束
 	@python3 scripts/prod/k3s-release.py --help >/dev/null
 	@python3 scripts/test/k3s-release_test.py
+	@python3 scripts/test/k3s-dr_test.py

@@ -114,3 +114,106 @@ bash business/scripts/k3s-kingbase-trial.sh verify "$SITE_NAMESPACE"
 ```
 
 System 以 `engine_type=kingbase` 登记。填写集群内 `kingbase.<namespace>.svc.cluster.local:54321`、数据库 `business` 和只读账号 `addp_reader`，在 NetworkPolicy 允许的范围内进行保存后的连接测试。重建验收使用同一 PVC，比较 Pod UID、试用有效期、样例记录数和连接结果。
+
+## 唯一控制节点失联后的隔离恢复演练
+
+主机仍可用时，将快照、站点配置、验证账号、原域名的 TLS 证书和原生镜像存到另一台机器。故障发生后，恢复入口仅使用备用机的 Docker Engine 和 Compose v2，无需原 K3s API、镜像仓库或源码。此入口恢复 Console、System 登录、Gateway、Catalog 前后端、平台 PostgreSQL、一个独立 Business PostgreSQL、Catalog 搜索和指定的业务 Bucket。Redis 从空缓存启动。其他业务引擎、Worker、监控、对象历史版本和对象访问策略有各自的恢复范围。
+
+### 故障前准备
+
+1. 两端准备 Python 3.11 或以上。源端使用现场已有的 kubectl 上下文，先核对节点、命名空间和 Deployment。脚本沿用本节所列站点的工作负载名称与 Secret。选一张有实际业务行、可完整校验的小表。查明当前在用、已经成功导出的 Meilisearch dump 的任务 UID 和文件名。在源站点操作端运行下例，私有目标目录必须尚未存在。
+
+   ```bash
+   umask 077
+   python3 scripts/prod/k3s_dr_capture.py \
+     --namespace "$SITE_NAMESPACE" --out "$PRIVATE_BACKUP/snapshot" \
+     --business-db business --business-table addp_flow_102.source_sales \
+     --search-dump 20261118-083308933.dump --search-task 84 \
+     --bucket develop --bucket graph --bucket manager --bucket meta --bucket orchestrator \
+     --bucket service --bucket standard --bucket system --bucket transfer
+   ```
+
+   dump 名称、任务号、业务库、业务表和 Bucket 按站点替换。每个 PostgreSQL 库独立导出 MVCC 快照，在同一事务核对验证表行数和内容摘要，并另存角色与授权。Bucket 保存所选范围的当前对象内容。脚本核对既有搜索导出的任务回执，记录当前索引、主键、设置和文档摘要。故障后必须能从该 dump 重现这些事实。在线采集期间，各库、对象和搜索没有共同的事务时间点。
+
+2. 在备用 Linux 主机准备权限为 0700 的 `KIT`。通过受控加密通道送入 `snapshot/`，复制本目录的 `k3s_dr_capture.py` 和 `k3s-dr-recover.py` 到 `KIT/`。单独交付下列私有文件，权限设为 0600。备份含真实数据库角色、服务凭据及账号数据，按生产数据的权限和加密保留要求存放。
+
+   | 文件 | 内容 |
+   |---|---|
+   | `tls/leaf.pem`、`tls/leaf.key` | 原域名的服务端证书链和匹配的私钥 |
+   | `tls/ca.pem` | 演练客户端已经信任的 CA 公共证书 |
+   | `login.json` | 有权读取 Catalog 的验证租户账号，字段为 `username`、`password`；存在多个租户时另填 `tenant_membership_id` |
+
+   本次验证使用已有的密码认证租户账号。保持备用机的叶证书按期续签，尤其是使用短期 Caddy 内部证书时。CA 签发私钥留在原有签发设施。密码、会话令牌、证书私钥以及生成的 `compose.json` 均留在受控目录。
+
+3. 将同一现场发布版本的原生镜像预载到备用机的本地 Docker。将如下服务名映射到逐项核对过的本地镜像引用，保存为 `references.json`。服务名为 `edge`（带 curl 的 nginx）、`console`、`catalog-frontend`、`system-backend`、`gateway`、`catalog-backend`、`postgres`、`redis`、`minio`（含 mc 和 curl）、`meilisearch`。查询归属可用 `docker image inspect`。在备用机冻结本地不可变 ID，离线转运可使用 Docker save/load：
+
+   ```bash
+   cd "$KIT"
+   python3 k3s-dr-recover.py lock-images --references references.json --out images.json
+   (cd snapshot && sha256sum -c SHA256SUMS)
+   openssl x509 -in tls/leaf.pem -checkend 3600 -noout
+   ```
+
+   PostgreSQL 镜像须支持源库全部扩展的相同版本，数据库主版本一致、修订版不低于源库。现场的 138 使用 PostgreSQL 15、PostGIS 3.4.3、pgvector 0.8.0；通用 AMD64 镜像的 PostGIS 3.7 缺少源库所需的 `postgis_tiger_geocoder`。这个站点可在已有带 pgvector 的 Debian bookworm PostgreSQL 镜像上安装签名归档中的两个匹配包。把以下内容保存为私有构建目录的 Dockerfile，将基镜像参数设置为已经核实的镜像摘要，再运行 `docker build --build-arg BASE="$BASE" -t addp-dr-postgres:15-postgis343 .`，将输出镜像列入上述清单。
+
+   ```dockerfile
+   ARG BASE
+   FROM ${BASE}
+   RUN set -eu; \
+       printf '%s\n' 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt-archive.postgresql.org/pub/repos/apt bookworm-pgdg-archive main' >/etc/apt/sources.list.d/dr.list; \
+       apt-get update; \
+       apt-get install -y --allow-downgrades --no-install-recommends \
+         postgresql-15-postgis-3=3.4.3+dfsg-2.pgdg120+1 \
+         postgresql-15-postgis-3-scripts=3.4.3+dfsg-2.pgdg120+1; \
+       test -f /usr/share/postgresql/15/extension/postgis_tiger_geocoder.control; \
+       rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/dr.list
+   ```
+
+### 在备用机计时恢复
+
+使用备用机的本地 Linux Docker。恢复入口创建独立 Compose 项目、内部网络和空卷，从故障计时开始即禁止拉取镜像。专用客户端先向原主机 IPv4 地址发起同域名 HTTPS 请求，确认路由不可达，随后在同一客户端解析原域名到恢复入口，验证受信任 TLS、Console、Catalog 前端、用户登录及经过 Gateway 的租户目录查询。
+
+```bash
+cd "$KIT"
+RUN_DIR="$PWD/../dr-$(date -u +%Y%m%dT%H%M%SZ)"
+python3 k3s-dr-recover.py restore --kit "$PWD" --run-dir "$RUN_DIR" \
+  --hostname addp.macstudio.local --primary-ip 192.168.88.102
+cat "$RUN_DIR/result.json"
+```
+
+通过条件为 `primary_unreachable`、两个数据库内容校验、所选 Bucket 回读、搜索内容与设置校验、`login_verified` 和 `catalog_verified` 全部完成。登录和 Catalog 使用同一轮恢复数据签发的新会话。RTO 从开始独立恢复至 `catalog_verified`，包含制品校验和空卷恢复；故障发现、人工决策及局域网名称切换另计。各库的 `lower` 至 `observed` 限定取得快照的时间，`age_at_fault_seconds` 以较早端保守计算本次备份年龄。记录的行数、摘要用来核验内容。实际丢失条数需要在源库有独立提交证据时另行核算。
+
+在 macOS 上运行 Colima 的现场，可以额外从操作员电脑测试同一 TLS 入口。先在 138 的 Linux 恢复环境取出该项目的入口地址：
+
+```bash
+PROJECT=$(cat "$RUN_DIR/project")
+EDGE=$(docker compose -p "$PROJECT" -f "$RUN_DIR/compose.json" ps -q edge)
+docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$EDGE"
+```
+
+在 138 的 macOS 终端将输出赋给 `EDGE_IP`，用仅本机可见的转发端口连接到恢复入口。在 101 的另一个终端建立第二段 SSH 转发。端口占用时选择另一个空闲高端口。两段转发均可用 Ctrl-C 结束。
+
+```bash
+# 138，SSH 配置来自本机现有 Colima 实例
+SSH_CONFIG=$(mktemp)
+colima ssh-config --profile addp-validation > "$SSH_CONFIG"
+ssh -F "$SSH_CONFIG" -S none -o ExitOnForwardFailure=yes -N \
+  -L "127.0.0.1:18443:$EDGE_IP:443" colima-addp-validation
+
+# 101
+ssh -o ExitOnForwardFailure=yes -N -L 127.0.0.1:18443:127.0.0.1:18443 addp-builder-138
+
+# 101，在另一个终端；原域名、SNI 和证书校验均使用正式站点配置
+/usr/bin/curl --noproxy '*' --connect-to addp.macstudio.local:443:127.0.0.1:18443 \
+  -fsS -o /dev/null -w 'HTTP %{http_code}, TLS %{ssl_verify_result}\n' https://addp.macstudio.local/
+```
+
+演练只在隔离网络内发布原域名。正式接管之前，应先隔离主站写入，确认恢复点，再将现有 HTTPS 入口或受管名称解析切到备用机。使用 `.local` 的站点还须处理原主机 mDNS 广播与客户端缓存。发生新业务写入后恢复主站，要先对账、回迁并完成流量交接。
+
+失败时检查专属项目，不会自动销毁现场。依据下列命令查看容器状态；包含服务配置的日志按私有材料保存。若需复跑，使用新的 `RUN_DIR`。演练取证完成后，以下清理仅针对该次项目及其卷：
+
+```bash
+PROJECT=$(cat "$RUN_DIR/project")
+docker compose -p "$PROJECT" -f "$RUN_DIR/compose.json" ps -a
+docker compose -p "$PROJECT" -f "$RUN_DIR/compose.json" down -v
+```
