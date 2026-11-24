@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "91d08ae6066d11f9bc837e2825cd0ee41883d259",
-      "sha256": "0de1b1a94732ade3aff8933c97f3fdf3396cf7d23204f4dbc0ce49c43a771c7b",
+      "commit": "d9778c21a4f659559ed5696f51125787e2021f02",
+      "sha256": "dd9a7d6630811d3c3bf478b9653d570477374d6cd624dcc75482afd2660565ff",
       "use": {
-        "zh-cn": "正式只读预检纳入无调度的 RustFS 单 Parquet DataItem 到 PostgreSQL 表，核对精确对象身份和深扫结构。平台创建仍限定停止态原生表任务。",
-        "en": "Formal read-only preflight covers an unscheduled single RustFS Parquet DataItem to PostgreSQL using exact identity and a deep schema snapshot. Platform creation remains limited to stopped native table tasks."
+        "zh-cn": "正式只读预检纳入无调度的 RustFS 单 Parquet DataItem 到 PostgreSQL 表，核对精确对象身份和深扫结构。平台创建仍限定停止态原生表任务。草稿通过当前租户的单项描述确认源、目标可用且归属本租户。",
+        "en": "Formal read-only preflight covers an unscheduled single RustFS Parquet DataItem to PostgreSQL using exact identity and a deep schema snapshot. Platform creation remains limited to stopped native table tasks. Drafts use tenant-scoped single descriptors to verify both engines are available and tenant-owned."
       }
     },
     {
@@ -489,11 +489,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_config_draft_owner.go",
       "anchor": "func (s *TaskConfigDraftService) Build(",
-      "commit": "a018214b7605ee9c5d53e65d0bea2b894a092a94",
-      "sha256": "bf5c0b16acdd9244fa8857e0f8824109ee6019011dfde378b8b318a8df536643",
+      "commit": "d9778c21a4f659559ed5696f51125787e2021f02",
+      "sha256": "a938d7c6dcd68efcc747e842720e5c14e23f46f097b91770a2fc82a2b0d10206",
       "use": {
-        "zh-cn": "按正式祖先链核验完整分段身份，拒绝含点名称的 full_name 碰撞；构建与预检仍只读，三种参数来源保留。",
-        "en": "Verify complete owner ancestor identity segments and reject flattened full_name collisions for dotted names, retaining read-only compilation/preflight and the three parameter sources."
+        "zh-cn": "按正式祖先链核验完整分段身份，拒绝含点名称的 full_name 碰撞；构建与预检仍只读，三种参数来源保留。按精确 ID 读取当前租户的源、目标描述，排除共享内置引擎并要求 active、online。",
+        "en": "Verify complete owner ancestor identity segments and reject flattened full_name collisions for dotted names, retaining read-only compilation/preflight and the three parameter sources. The owner reads exact source and target descriptors in the current tenant and requires active, online engines, excluding shared built-ins."
       }
     },
     {
@@ -515,11 +515,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/service/task_config_draft_test.go",
       "anchor": "func TestTaskConfigDraftComposesWithOwnerPrecheck(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "e06560e5e30a9cf264e13c885f0ad682b7e08275f7c25b598a4f0345af9da1b1",
+      "commit": "d9778c21a4f659559ed5696f51125787e2021f02",
+      "sha256": "25d47803b315e8b10cb55057325c50c837a185c8e68270fe8116d1befd0f4c01",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。草稿契约覆盖双方描述、Meta 请求、完整参数以及两端拒绝条件。",
+        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain. Draft tests assert both descriptor lookups, Meta requests, complete arguments and denial cases for either engine."
       }
     },
     {
