@@ -121,7 +121,7 @@ System 以 `engine_type=kingbase` 登记。填写集群内 `kingbase.<namespace>
 
 ### 故障前准备
 
-1. 两端准备 Python 3.11 或以上。源端使用现场已有的 kubectl 上下文，先核对节点、命名空间和 Deployment。脚本沿用本节所列站点的工作负载名称与 Secret。选一张有实际业务行、可完整校验的小表。查明当前在用、已经成功导出的 Meilisearch dump 的任务 UID 和文件名。在源站点操作端运行下例，私有目标目录必须尚未存在。
+1. 两端准备 Python 3.11 或以上，备用 Linux 主机安装 OpenSSL 命令行。源端使用现场已有的 kubectl 上下文，先核对节点、命名空间和 Deployment。脚本沿用本节所列站点的工作负载名称与 Secret。选一张有实际业务行、可完整校验的小表。查明当前在用、已经成功导出的 Meilisearch dump 的任务 UID 和文件名。在源站点操作端运行下例，私有目标目录必须尚未存在。
 
    ```bash
    umask 077
@@ -154,8 +154,11 @@ System 以 `engine_type=kingbase` 登记。填写集群内 `kingbase.<namespace>
    cd "$KIT"
    python3 k3s-dr-recover.py lock-images --references references.json --out images.json
    (cd snapshot && sha256sum -c SHA256SUMS)
-   openssl x509 -in tls/leaf.pem -checkend 3600 -noout
+   python3 k3s-dr-recover.py check-tls --kit "$PWD" --hostname addp.macstudio.local
+   openssl x509 -in tls/leaf.pem -checkend 3600 -noout -dates
    ```
+
+   更新证书后，在备用机用同一条 `check-tls` 命令核对私钥、站点域名、服务端用途和当前证书链有效性。信任根取自恢复包原有的 `tls/ca.pem`。正式恢复也会在创建容器和卷前执行这项检查。
 
    PostgreSQL 镜像须支持源库全部扩展的相同版本，数据库主版本一致、修订版不低于源库。现场的 138 使用 PostgreSQL 15、PostGIS 3.4.3、pgvector 0.8.0；通用 AMD64 镜像的 PostGIS 3.7 缺少源库所需的 `postgis_tiger_geocoder`。这个站点可在已有带 pgvector 的 Debian bookworm PostgreSQL 镜像上安装签名归档中的两个匹配包。把以下内容保存为私有构建目录的 Dockerfile，将基镜像参数设置为已经核实的镜像摘要，再运行 `docker build --build-arg BASE="$BASE" -t addp-dr-postgres:15-postgis343 .`，将输出镜像列入上述清单。
 

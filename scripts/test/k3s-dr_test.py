@@ -2,6 +2,8 @@ import hashlib
 import importlib.util
 import io
 from pathlib import Path
+import ssl
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -17,6 +19,29 @@ spec.loader.exec_module(recover)
 
 
 class RecoveryKitTest(unittest.TestCase):
+    def test_tls_uses_kit_trust_original_hostname_and_matching_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tls = root / "tls"
+            tls.mkdir()
+            for name in ("site", "other"):
+                subprocess.run(["openssl", "req", "-config", "/dev/null", "-x509", "-newkey", "rsa:2048", "-nodes",
+                                "-subj", "/CN=" + name, "-addext", "subjectAltName=DNS:" + name,
+                                "-days", "1", "-keyout", str(tls / (name + ".key")),
+                                "-out", str(tls / (name + ".pem"))], check=True, capture_output=True)
+            (tls / "leaf.pem").write_bytes((tls / "site.pem").read_bytes())
+            (tls / "leaf.key").write_bytes((tls / "site.key").read_bytes())
+            (tls / "ca.pem").write_bytes((tls / "site.pem").read_bytes())
+            recover.verify_tls(root, "site")
+            with self.assertRaises(subprocess.CalledProcessError):
+                recover.verify_tls(root, "other")
+            (tls / "ca.pem").write_bytes((tls / "other.pem").read_bytes())
+            with self.assertRaises(subprocess.CalledProcessError):
+                recover.verify_tls(root, "site")
+            (tls / "leaf.key").write_bytes((tls / "other.key").read_bytes())
+            with self.assertRaises(ssl.SSLError):
+                recover.verify_tls(root, "site")
+
     def test_snapshot_copy_must_match_inventory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

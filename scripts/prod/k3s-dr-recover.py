@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import ssl
 import subprocess
 import time
 
@@ -37,6 +38,15 @@ def verify_files(root):
         raise ValueError("incomplete snapshot inventory")
 
 
+def verify_tls(root, hostname):
+    tls = root / "tls"
+    leaf = tls / "leaf.pem"
+    # Supplying an empty password keeps unattended validation from prompting on encrypted keys.
+    ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(leaf, tls / "leaf.key", password=b"")
+    run(["openssl", "verify", "-trusted", str(tls / "ca.pem"), "-untrusted", str(leaf),
+         "-purpose", "sslserver", "-verify_hostname", hostname, str(leaf)])
+
+
 def recover(args):
     os.umask(0o077)
     start = time.time()
@@ -54,6 +64,7 @@ def recover(args):
     stage("started")
     if not re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", args.hostname):
         raise ValueError("invalid recovery hostname")
+    verify_tls(root, args.hostname)
     verify_files(snap)
     meta = json.loads((snap / "snapshot.json").read_text())
     images = json.loads((root / "images.json").read_text())
@@ -69,9 +80,6 @@ def recover(args):
     project = "addp-dr-" + secrets.token_hex(5)
     proof["project"] = project
     (work / "project").write_text(project + "\n")
-    for tls in ("leaf.pem", "leaf.key", "ca.pem"):
-        if not (root / "tls" / tls).is_file():
-            raise ValueError("missing TLS material: " + tls)
     stage("validated_kit")
     c = ["docker", "compose", "--project-name", project, "-f", str(work / "compose.json")]
 
@@ -292,6 +300,9 @@ if __name__ == "__main__":
     lock = commands.add_parser("lock-images", help="freeze locally available images before an outage")
     lock.add_argument("--references", type=Path, required=True)
     lock.add_argument("--out", type=Path, required=True)
+    check = commands.add_parser("check-tls", help="verify recovery TLS before an outage")
+    check.add_argument("--kit", type=Path, required=True)
+    check.add_argument("--hostname", required=True)
     restore = commands.add_parser("restore", help="run with the primary unreachable and no image pulls")
     restore.add_argument("--kit", type=Path, required=True)
     restore.add_argument("--run-dir", type=Path, required=True, help="new private directory for this attempt")
@@ -301,5 +312,7 @@ if __name__ == "__main__":
     args = p.parse_args()
     if args.action == "lock-images":
         lock_images(args)
+    elif args.action == "check-tls":
+        verify_tls(args.kit, args.hostname)
     else:
         recover(args)
