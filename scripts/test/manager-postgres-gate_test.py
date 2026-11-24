@@ -83,11 +83,12 @@ mode=os.environ.get('FAKE_MODE','')
 if mode.startswith('objects-'): mode=mode[8:] if './infra/objectstore/...' in sys.argv else ''
 if mode in ('term','int'): os.kill(os.getppid(),signal.SIGTERM if mode=='term' else signal.SIGINT);sys.exit(0)
 if mode=='go-fail': sys.exit(1)
+if sys.argv[1]=='build': sys.exit(0)
 if mode=='skip': print('--- SKIP: TestIntegrationPostgresManagerCleanupProductionRepositories (0.01s)');sys.exit(0)
 if mode=='no-tests': print('testing: warning: no tests to run');sys.exit(0)
 if './infra/objectstore/...' in sys.argv:
     print('--- PASS: TestManagerObjectAreaAgainstMinIO (0.01s)\n--- PASS: TestExportAreaAgainstMinIO (0.01s)');sys.exit(0)
-tests=['ExecutionReadIsolation'] if './internal/api' in sys.argv else ['CleanupProductionRepositories','CleanupRuntimeAtomicity','ContentSnapshots']
+tests=['ExecutionReadIsolation'] if './internal/api' in sys.argv else ['CleanupProductionRepositories','CleanupRuntimeAtomicity','ContentSnapshots','SearchMaintenance']
 for t in tests: print('--- PASS: TestIntegrationPostgresManager'+t+' (0.01s)')
 '''
 
@@ -159,11 +160,13 @@ class ManagerPostgresGateTest(unittest.TestCase):
         self.assertEqual("0.8.0", self.proof["vector_version"])
         self.assertNotIn("password", json.dumps(self.proof))
         self.assertIn("ROLLBACK;", self.state["probe_sql"])
-        self.assertEqual(3, len(self.state["go"]))
+        self.assertEqual(4, len(self.state["go"]))
+        self.assertEqual(["build", "-o"], self.state["go"][0][:2])
+        self.assertEqual("./cmd/server", self.state["go"][0][-1])
         for kind in ("image", "container", "network"):
             self.assertFalse(self.state["objects"][kind])
-        self.assertEqual(["test", "-p", "1", "./internal/repository", "./internal/service", "./internal/preview", "-run", "^TestIntegrationPostgresManager", "-count=1", "-v"], self.state["go"][0])
-        self.assertIn("^TestIntegrationPostgresManagerExecutionReadIsolation$", self.state["go"][1])
+        self.assertEqual(["test", "-p", "1", "./internal/repository", "./internal/service", "./internal/preview", "-run", "^TestIntegrationPostgresManager", "-count=1", "-v"], self.state["go"][1])
+        self.assertIn("^TestIntegrationPostgresManagerExecutionReadIsolation$", self.state["go"][2])
 
     def test_object_failure_skip_and_empty_run_fail_and_clean(self):
         for mode in ("objects-build-fail", "objects-up-fail", "objects-go-fail", "objects-skip", "objects-no-tests", "objects-term", "objects-int"):

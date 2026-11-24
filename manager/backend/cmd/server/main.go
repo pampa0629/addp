@@ -17,6 +17,8 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/events"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/common/infra/objectstore"
 	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/logger"
@@ -58,6 +60,22 @@ func main() {
 
 	// 加载配置
 	cfg := config.Load()
+	if len(os.Args) > 1 {
+		if len(os.Args) != 4 || os.Args[1] != "maintain-search" {
+			log.Fatal("usage: manager-backend maintain-search clear|rebuild OPERATION_UUID")
+		}
+		db, err := bootstrap.OpenPlatformInstallation(database.Config{Host: cfg.DBHost, Port: cfg.DBPort, DBName: cfg.DBName, Schema: "manager"}, "manager")
+		if err != nil {
+			log.Fatal(err)
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := service.MaintainSearch(ctx, db, cfg, os.Args[2], os.Args[3]); err != nil {
+			log.Fatalf("Manager index maintenance %s: %v", os.Args[3], err)
+		}
+		log.Printf("Manager index maintenance %s completed", os.Args[3])
+		return
+	}
 	commonConfig.InitLogger(&commonConfig.LoggerOptions{
 		Level:     cfg.LogLevel,
 		AddSource: &cfg.LogAddSource,

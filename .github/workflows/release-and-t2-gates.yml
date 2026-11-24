@@ -1856,7 +1856,7 @@ jobs:
       - name: Verify owner cleanup result immutability on MySQL
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-cleanup-results'
 
-      - name: Verify Manager upload ownership, task binding and personal preview state on MySQL
+      - name: Verify Manager storage and search maintenance on MySQL and Meilisearch
         if: needs.selection.outputs.manager == 'true' || needs.selection.outputs.common == 'true'
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-manager-storage'
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=common/domainreference/ scripts/test/inference-platform-startup.py scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
+# ADDP_T2_INPUT_FILES=docker-compose.infra.yml common/domainreference/ scripts/test/inference-platform-startup.py scripts/test/mysql-gateway-login.py scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -151,6 +151,24 @@ spec["volumes"] = {"redis_config_data": {}}
 config.write_text(json.dumps(spec))
 PYTHON
     fi
+    if [ "$test_group" = platform-manager-storage ]; then
+        export MANAGER_MEILISEARCH_TEST_KEY=$(openssl rand -hex 24)
+        python3 - "$WORK_DIR/mysql.json" "$ROOT_DIR/docker-compose.infra.yml" <<'MEILI'
+import json, os, re, sys
+from pathlib import Path
+spec = Path(sys.argv[1])
+config = json.loads(spec.read_text())
+image = re.search(r'image: (getmeili/meilisearch:[^\s]+@sha256:[0-9a-f]{64})', Path(sys.argv[2]).read_text())
+if not image:
+    sys.exit("Pinned Meilisearch image required")
+config['services']['meilisearch'] = {
+    'image': image[1], 'tmpfs': ['/meili_data'], 'ports': ['127.0.0.1::7700'],
+    'environment': {'MEILI_MASTER_KEY': os.environ['MANAGER_MEILISEARCH_TEST_KEY'], 'MEILI_NO_ANALYTICS': 'true'},
+    'healthcheck': {'test': ['CMD','curl','-fsS','http://localhost:7700/health'], 'interval': '2s','timeout': '3s','retries': 30},
+}
+spec.write_text(json.dumps(config))
+MEILI
+    fi
     existing=$(docker ps -aq --filter "label=com.docker.compose.project=$MYSQL_PROJECT")
     if [ -n "$existing" ]; then
         echo "MySQL gate refuses to reuse an existing project: $MYSQL_PROJECT" >&2
@@ -163,6 +181,12 @@ PYTHON
         redis_binding=$(mysql_compose port redis 6379)
         [[ "$redis_binding" =~ ^127\.0\.0\.1:[0-9]+$ ]]
         export REDIS_PORT=${redis_binding##*:}
+    fi
+    if [ "$test_group" = platform-manager-storage ]; then
+        mysql_compose up -d --wait --wait-timeout 90 meilisearch
+        binding=$(mysql_compose port meilisearch 7700)
+        [[ "$binding" =~ ^127\.0\.0\.1:[0-9]+$ ]]
+        export MANAGER_MEILISEARCH_TEST_URL="http://$binding"
     fi
     mysql_binding=$(docker inspect --format '{{with index (index .NetworkSettings.Ports "3306/tcp") 0}}{{.HostIp}}:{{.HostPort}}{{end}}' "$MYSQL_PROJECT")
     [[ "$mysql_binding" =~ ^127\.0\.0\.1:[0-9]+$ ]] || { echo 'MySQL gate requires a mapped loopback port' >&2; exit 1; }
@@ -198,6 +222,9 @@ if [ "$test_group" = platform-manager-storage ]; then
     grep -q '^--- PASS: TestIntegrationMySQLManagerPreviewState ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerSearchHistory ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerContentReceipt ' "$WORK_DIR/manager-storage.log"
+    (cd "$ROOT_DIR/manager/backend" && GOWORK=off go build -o "$WORK_DIR/manager-backend" ./cmd/server &&
+        ADDP_TEST_MYSQL_MANAGER_STORAGE=1 MANAGER_MAINTENANCE_TEST_BINARY="$WORK_DIR/manager-backend" GOWORK=off go test ./internal/service -run '^TestIntegrationMySQLManagerSearchMaintenance$' -count=1 -v) | tee "$WORK_DIR/manager-maintenance.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerSearchMaintenance ' "$WORK_DIR/manager-maintenance.log"
     exit 0
 fi
 

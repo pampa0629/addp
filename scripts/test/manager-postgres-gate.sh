@@ -221,6 +221,8 @@ else: raise SystemExit('Meilisearch fixture did not become healthy')
 HEALTH
 
 cd "$SOURCE_ROOT/manager/backend"
+export MANAGER_MAINTENANCE_TEST_BINARY="$WORK_DIR/manager-backend"
+go build -o "$MANAGER_MAINTENANCE_TEST_BINARY" ./cmd/server
 # These packages initialize the same Manager schema; serialize their DDL and fixtures.
 ADDP_POSTGRES_INTEGRATION=1 \
     go test -p 1 ./internal/repository ./internal/service ./internal/preview \
@@ -236,7 +238,7 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/manager-postgres.log"; then
     exit 1
 fi
 
-for required in TestIntegrationPostgresManagerCleanupProductionRepositories TestIntegrationPostgresManagerCleanupRuntimeAtomicity TestIntegrationPostgresManagerContentSnapshots TestIntegrationPostgresManagerExecutionReadIsolation; do
+for required in TestIntegrationPostgresManagerSearchMaintenance TestIntegrationPostgresManagerCleanupProductionRepositories TestIntegrationPostgresManagerCleanupRuntimeAtomicity TestIntegrationPostgresManagerContentSnapshots TestIntegrationPostgresManagerExecutionReadIsolation; do
     grep -q -- "^--- PASS: $required " "$WORK_DIR/manager-postgres.log" || {
         echo "Manager PostgreSQL gate requires the real $required test" >&2; exit 1;
     }
