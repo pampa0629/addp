@@ -52,7 +52,7 @@ func (r *ContentIndexDeliveryRepository) ReserveSearchOrdinals(ctx context.Conte
 
 func (r *ContentIndexDeliveryRepository) SearchMaterial(ctx context.Context, epoch string, tenant uint) (SearchMaterialRevision, error) {
 	var result SearchMaterialRevision
-	err := r.db.WithContext(ctx).Raw(`SELECT o.epoch,o.search_revision,o.next_search_ordinal,CAST(g.generation AS text) AS generation,COALESCE(v.version,0) AS vector_revision
+	err := r.db.WithContext(ctx).Raw(`SELECT o.epoch,o.search_revision,o.next_search_ordinal,g.generation,COALESCE(v.version,0) AS vector_revision
  FROM manager.content_index_outlets o CROSS JOIN manager.search_material_generation g
  LEFT JOIN manager.search_vector_revisions v ON v.tenant_id=?
  WHERE o.index_name=? AND o.epoch=? AND o.configured AND NOT o.isolated AND o.cleanup_hold_id='' AND g.singleton

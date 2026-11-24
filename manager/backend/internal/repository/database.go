@@ -1372,6 +1372,9 @@ func ensureEmbeddingTaskDefinitionSchema(db *gorm.DB) error {
 
 // MigrateContentIndexDeliverySchema installs the current single delivery contract.
 func MigrateContentIndexDeliverySchema(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return prepareMySQLContentIndex(db)
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(&models.ContentIndexOutlet{}, &models.ContentIndexDelivery{}, &models.ContentIndexDeletionFence{}, &models.CleanupIndexOperation{}, &models.CleanupIndexTarget{}, &models.CleanupIndexAssessment{}); err != nil {
 			return err
