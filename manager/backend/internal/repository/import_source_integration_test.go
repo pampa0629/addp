@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/infra/database"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -28,7 +30,35 @@ func TestIntegrationPostgresManagerImportSourceIsPrivateAndBoundOnce(t *testing.
 	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ImportSource{}); err != nil {
+	verifyManagerImportSource(t, db)
+}
+
+func TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_MANAGER_IMPORT") != "1" {
+		t.Skip("requires platform-manager-import disposable MySQL gate")
+	}
+	dialect, err := platformmysql.Dialector(database.Config{
+		Host: os.Getenv("ADDP_TEST_MYSQL_HOST"), Port: os.Getenv("ADDP_TEST_MYSQL_PORT"),
+		User: os.Getenv("ADDP_TEST_MYSQL_USER"), Password: os.Getenv("ADDP_TEST_MYSQL_PASSWORD"), DBName: "manager",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(dialect, &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	verifyManagerImportSource(t, db)
+}
+
+func verifyManagerImportSource(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := migrateImportSources(db); err != nil {
 		t.Fatal(err)
 	}
 	tenant := uint(time.Now().UnixNano()%10000000 + 800000000)
@@ -56,7 +86,7 @@ func TestIntegrationPostgresManagerImportSourceIsPrivateAndBoundOnce(t *testing.
 	if err != nil || !facts.Matches(tenant, request) || facts.UploadID != source.UploadUUID || facts.Files["fixture.shp"] != source.Files["fixture.shp"] {
 		t.Fatalf("facts=%+v err=%v", facts, err)
 	}
-	for _, kind := range []string{"tenant", "uploader", "task", "locator"} {
+	for _, kind := range []string{"tenant", "uploader", "task", "locator", "locator-case", "locator-space"} {
 		r := request
 		currentTenant := tenant
 		switch kind {
@@ -68,6 +98,10 @@ func TestIntegrationPostgresManagerImportSourceIsPrivateAndBoundOnce(t *testing.
 			r.TaskID++
 		case "locator":
 			r.SourceLocator += "other"
+		case "locator-case":
+			r.SourceLocator = strings.ToUpper(r.SourceLocator)
+		case "locator-space":
+			r.SourceLocator += " "
 		}
 		if _, err := repo.Verify(t.Context(), currentTenant, r); !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Errorf("accepted %s: %v", kind, err)

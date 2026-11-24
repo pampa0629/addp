@@ -1853,6 +1853,10 @@ jobs:
       - name: Verify MySQL owner protection projections and tenant checkpoints
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-projection-store'
 
+      - name: Verify Manager upload ownership and single task binding on MySQL
+        if: needs.selection.outputs.manager == 'true' || needs.selection.outputs.common == 'true'
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-manager-import'
+
       - name: Verify MySQL export session ownership and retention
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-export-store'
 

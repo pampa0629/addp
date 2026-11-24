@@ -30,7 +30,6 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Initialize database with auto-migration.
 	// Quick View / tile cache tables use an explicit clean-break schema guard below.
 	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.ImportSource{},
 		&models.EmbeddingTask{}, // 向量化任务定义表
 		&models.EmbeddingConfiguration{},
 		&models.InferenceScenarioBinding{},
@@ -39,6 +38,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	)
 	if err != nil {
 		return nil, err
+	}
+	if err := migrateImportSources(db); err != nil {
+		return nil, fmt.Errorf("prepare Manager import sources: %w", err)
 	}
 	if err := exportartifact.EnsureStore(db, "manager.export_sessions"); err != nil {
 		return nil, fmt.Errorf("failed to ensure export session store: %w", err)

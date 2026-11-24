@@ -3,10 +3,34 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+
 	"github.com/addp/common/client"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
+
+// migrateImportSources prepares the Manager upload facts with native storage types.
+func migrateImportSources(db *gorm.DB) error {
+	switch db.Dialector.Name() {
+	case "postgres":
+		return db.AutoMigrate(&models.ImportSource{})
+	case "mysql":
+		return db.Exec(`CREATE TABLE IF NOT EXISTS manager.import_sources (
+			upload_uuid CHAR(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL PRIMARY KEY,
+			tenant_id BIGINT UNSIGNED NOT NULL CHECK (tenant_id > 0),
+			uploader_id BIGINT NOT NULL CHECK (uploader_id > 0),
+			source_locator TEXT NOT NULL CHECK (source_locator <> ''),
+			transfer_task_id BIGINT UNSIGNED UNIQUE CHECK (transfer_task_id IS NULL OR transfer_task_id > 0),
+			files JSON,
+			created_at DATETIME(6) NOT NULL,
+			INDEX idx_import_sources_tenant_id (tenant_id),
+			CHECK (CHAR_LENGTH(upload_uuid) = 36 AND IS_UUID(upload_uuid))
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin`).Error
+	default:
+		return fmt.Errorf("unsupported Manager import source database %q", db.Dialector.Name())
+	}
+}
 
 type ImportSourceRepository struct{ db *gorm.DB }
 
