@@ -33,8 +33,6 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.EmbeddingTask{}, // 向量化任务定义表
 		&models.EmbeddingConfiguration{},
 		&models.InferenceScenarioBinding{},
-		&models.QuickViewPolicy{},
-		&models.BaseMapProvider{},
 	)
 	if err != nil {
 		return nil, err
@@ -61,8 +59,8 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding task definition schema: %w", err)
 	}
-	if err := ensureBaseMapProviderSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure base map provider schema: %w", err)
+	if err := preparePreviewPolicies(db); err != nil {
+		return nil, fmt.Errorf("prepare Manager preview policies: %w", err)
 	}
 	if err := dropLegacyQuickViewTables(db); err != nil {
 		return nil, fmt.Errorf("failed to drop legacy quick view tables: %w", err)
@@ -147,7 +145,13 @@ func dropLegacyExportSessionTransferTaskID(db *gorm.DB) error {
 	return db.Migrator().DropColumn("manager.export_sessions", "transfer_task_id")
 }
 
-func ensureBaseMapProviderSchema(db *gorm.DB) error {
+func preparePreviewPolicies(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return prepareManagerMySQLTables(db, mysqlPreviewPolicyTables)
+	}
+	if err := db.AutoMigrate(&models.QuickViewPolicy{}, &models.BaseMapProvider{}); err != nil {
+		return err
+	}
 	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_manager_base_map_scope_provider
 		ON manager.base_map_providers (scope_type, COALESCE(tenant_id, 0), provider)`).Error
 }
@@ -174,6 +178,9 @@ func ensureDataProfileSchema(db *gorm.DB) error {
 }
 
 func ensureTaskDefinitionSchema(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return prepareManagerMySQLTables(db, mysqlTaskDefinitionTables)
+	}
 	legacyTables := []string{
 		"vector_materialized_view_tasks",
 		"vector_tile_cache_tasks",

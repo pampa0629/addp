@@ -1,28 +1,10 @@
 package repository
 
 import (
-	_ "embed"
-	"strings"
-
 	"github.com/addp/common/schema"
 
 	"gorm.io/gorm"
 )
-
-//go:embed content_index.mysql.sql
-var mysqlContentIndexTables string
-
-//go:embed data_profile.mysql.sql
-var mysqlProfileTables string
-
-func prepareManagerMySQLTables(db *gorm.DB, ddl string) error {
-	for _, statement := range strings.Split(strings.TrimSuffix(strings.TrimSpace(ddl), ";"), ";") {
-		if err := db.Exec(statement).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func prepareMySQLContentIndex(db *gorm.DB) error {
 	if err := prepareManagerMySQLTables(db, mysqlContentIndexTables); err != nil {

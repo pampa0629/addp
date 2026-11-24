@@ -273,6 +273,19 @@ func TestIntegrationPostgresManagerUnifiedTaskDefinitionLifecycle(t *testing.T) 
 		t.Fatalf("obsolete execution count = %d, want 0", obsoleteExecutionCount)
 	}
 
+	verifyTaskDefinitionLifecycle(t, db, tenantID)
+}
+
+func TestIntegrationMySQLManagerUnifiedTaskDefinitionLifecycle(t *testing.T) {
+	db := managerMySQLStoreDB(t, "manager", "ADDP_TEST_MYSQL_MANAGER_STORAGE")
+	if err := ensureTaskDefinitionSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	verifyTaskDefinitionLifecycle(t, db, 72)
+}
+
+func verifyTaskDefinitionLifecycle(t *testing.T, db *gorm.DB, tenantID uint) {
+	t.Helper()
 	legacyBindingStatus := "missing_source"
 	task := &models.TaskDefinition{
 		TenantID:            tenantID,
