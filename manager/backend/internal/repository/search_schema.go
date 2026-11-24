@@ -11,6 +11,21 @@ import (
 // MigrateSearchSchema applies the search migrations in version order and records
 // each checksum in the same transaction as its schema changes.
 func MigrateSearchSchema(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		if err := db.Exec(`CREATE TABLE IF NOT EXISTS manager.search_history_owners (
+            tenant_id bigint unsigned NOT NULL, user_id bigint unsigned NOT NULL,
+            PRIMARY KEY(tenant_id,user_id), CHECK(tenant_id>0 AND user_id>0)
+        ) ENGINE=InnoDB`).Error; err != nil {
+			return err
+		}
+		return db.Exec(`CREATE TABLE IF NOT EXISTS manager.search_histories (
+            id bigint unsigned AUTO_INCREMENT PRIMARY KEY, tenant_id bigint unsigned NOT NULL,
+            user_id bigint unsigned NOT NULL, query varchar(512) NOT NULL,
+            created_at datetime(6), updated_at datetime(6),
+            UNIQUE KEY idx_search_history_tenant_user_query (tenant_id,user_id,query),
+            CHECK(tenant_id>0 AND user_id>0)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin`).Error
+	}
 	return migrateSearchSchema(db, "047_search_continuation.sql", "049_scope_search_history_to_tenant.sql")
 }
 

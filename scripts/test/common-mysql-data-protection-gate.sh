@@ -193,9 +193,10 @@ if [ "$test_group" = platform-cleanup-results ]; then
 fi
 
 if [ "$test_group" = platform-manager-storage ]; then
-    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_STORAGE=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManager(ImportSourceIsPrivateAndBoundOnce|PreviewState|ContentReceipt)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-storage.log"
+    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_STORAGE=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManager(ImportSourceIsPrivateAndBoundOnce|PreviewState|ContentReceipt|SearchHistory)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerPreviewState ' "$WORK_DIR/manager-storage.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerSearchHistory ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerContentReceipt ' "$WORK_DIR/manager-storage.log"
     exit 0
 fi

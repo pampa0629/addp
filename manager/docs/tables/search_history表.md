@@ -17,6 +17,8 @@
 
 [049 迁移](../../backend/migrations/049_scope_search_history_to_tenant.sql)保留拥有有效租户与用户 ID 的旧行，包括 ID、关键词和时间，按该行已有租户归属保留。旧唯一键按用户及关键词去重，因此同一词在其他租户被覆盖的历史无法恢复。迁移删除租户或用户 ID 缺失、非正数的行，安装联合唯一索引 `idx_search_history_tenant_user_query`。迁移及其校验和同事务提交，后续启动不会重复改动已迁移数据。
 
+MySQL 新装使用原生 InnoDB 表。个人历史的唯一键按大小写和尾随空格精确比较。并发写入同一用户历史时，MySQL 在事务内锁定该租户和用户的归属行，PG 使用已有事务级 advisory lock，随后共享更新与容量淘汰逻辑。真实 MySQL 用例纳入 `platform-manager-storage` 门禁。
+
 ## API
 
 | 入口 | 行为 |
