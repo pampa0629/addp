@@ -39,6 +39,15 @@ services:
     extends: {file: ../../docker-compose.yml, service: inference-frontend}
     profiles: [module-inference]
     container_name: !reset null
+  orchestrator-backend:
+    extends: {file: ../../docker-compose.yml, service: orchestrator-backend}
+    profiles: [module-orchestrator]
+    container_name: !reset null
+    environment: *endpoints
+  orchestrator-frontend:
+    extends: {file: ../../docker-compose.yml, service: orchestrator-frontend}
+    profiles: [module-orchestrator]
+    container_name: !reset null
   workbench-backend:
     extends: {file: ../../docker-compose.yml, service: workbench-backend}
     profiles: [module-workbench]

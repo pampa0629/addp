@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_INPUT_FILES=scripts/test/orchestrator-platform-deployment.sh scripts/test/orchestrator-platform-startup.py scripts/infra/platform-database.sh scripts/prod/start.sh scripts/prod/prepare-module-databases.sh scripts/prod/system-meta-gateway.yml scripts/prod/release-images.py
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # Orchestrator execution ownership, scheduling transactions and recovery.
 set -euo pipefail

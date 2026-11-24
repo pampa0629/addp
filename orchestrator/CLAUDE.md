@@ -10,7 +10,7 @@ Orchestrator 模块负责任务编排、DAG 执行、定时调度、跨模块任
 
 - 后端：Go + Gin + GORM，默认端口 `8084`，环境变量 `ORCHESTRATOR_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus，开发端口 `5177`，启动脚本环境变量 `ORCHESTRATOR_FE_PORT`。
-- 数据库：PostgreSQL `orchestrator` schema。
+- 数据库：根部署入口按平台选型准备 PostgreSQL 的 `orchestrator` schema 或 MySQL 的同名库。普通启动使用平台运行账号核验 Common 和 Orchestrator 版本。
 - 依赖：System、Redis、各任务提供者模块。
 
 ## 重要目录
@@ -60,7 +60,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 
 ### 执行、参数与授权契约
 
-Orchestrator 执行可靠性统一沿[正式契约](../docs/spec/tasks/编排与调度.md#orchestrator-执行可靠性)：Backend 内嵌监督器是唯一执行者，API／Scheduler 只入队；冻结 Steps、Common lease、失联／停机／不确定提交及不自动重放的边界由该契约维护，用户取消仍不支持。模块启动迁移由 Backend 在模块 schema 锁下执行。
+Orchestrator 执行可靠性统一沿[正式契约](../docs/spec/tasks/编排与调度.md#orchestrator-执行可靠性)：Backend 内嵌监督器是唯一执行者，API／Scheduler 只入队；冻结 Steps、Common lease、失联／停机／不确定提交及不自动重放的边界由该契约维护，用户取消仍不支持。部署安装命令在模块 schema 锁下执行迁移，Backend 启动时核验已安装版本。
 
 参数处理统一沿 [Orchestrator 默认值校验](../docs/spec/tasks/TaskProvider接口.md#orchestrator-默认值校验)，编辑器操作与绑定示例见[执行参数专题](docs/参数化模板说明.md)；本模块不另行定义合并或回退规则。
 

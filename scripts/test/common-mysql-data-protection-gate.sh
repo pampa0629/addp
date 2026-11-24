@@ -243,6 +243,7 @@ GRANT ALL ON orchestrator.* TO 'orchestrator_install'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON common.* TO 'platform_run'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON orchestrator.* TO 'platform_run'@'%';
 SQL
+    bash "$ROOT_DIR/scripts/test/orchestrator-platform-deployment.sh" "$MYSQL_PROJECT"
     (cd "$ROOT_DIR/orchestrator/backend" && ADDP_TEST_MYSQL_ORCHESTRATOR=1 GOWORK=off go test ./internal/service \
         -run '^TestMySQLOrchestratorExecutionReliability$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/orchestrator.log"
     grep -q '^--- PASS: TestMySQLOrchestratorExecutionReliability ' "$WORK_DIR/orchestrator.log"

@@ -143,16 +143,8 @@ if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
 fi
 
 # The same deployment identity prepares every module in the selected instance.
-launch_compose_installer() {
-  local module=$1 language=$2 service="$1-backend" entry=/app/server
-  shift 2
-  if [[ "$module" == gateway ]]; then service=gateway; fi
-  if [[ "$language" == python ]]; then entry=python; fi
-  platform_compose run --rm -T --no-deps --entrypoint "$entry" \
-    -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service" "$@"
-}
 if [[ "$prepare_databases" == true ]]; then
-  addp_prepare_module_database system launch_compose_installer
+  bash scripts/prod/prepare-module-databases.sh system "${PLATFORM_COMPOSE_FILES[@]}"
 fi
 
 # 第二步：System 就绪后由部署入口发布声明
@@ -161,14 +153,7 @@ python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${inten
 
 # Prepare downstream module schemas only during deployment or upgrade.
 if [[ "$prepare_databases" == true ]]; then
-  database_services=$(platform_compose config --services)
-  for module in meta gateway inference workbench manager security agent copilot; do
-    service="$module-backend"
-    if [[ "$module" == gateway ]]; then service=gateway; fi
-    if grep -Fxq "$service" <<< "$database_services"; then
-      addp_prepare_module_database "$module" launch_compose_installer
-    fi
-  done
+  bash scripts/prod/prepare-module-databases.sh selected "${PLATFORM_COMPOSE_FILES[@]}"
 fi
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"

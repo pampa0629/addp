@@ -34,7 +34,7 @@ hosted_start_platform_infra
 fixture_owned=1
 run_logged python3 business/scripts/online-quality-postgres-fixture.py start
 application_owned=1
-hosted_prepare_native_database system meta gateway
+hosted_prepare_native_database system meta gateway orchestrator
 unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -model -meta -quality -orchestrator -monitor
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite quality-dynamic-binding --output "$1"' _ "$IDENTITY_ENV"

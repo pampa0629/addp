@@ -1398,6 +1398,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Orchestrator Backend（带检查）
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
     if check_service_running "orchestrator" "$ORCHESTRATOR_BACKEND_PORT"; then
+      addp_dev_prepare_database orchestrator || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" orchestrator orchestrator backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-orchestrator" &
       ORCHESTRATOR_PID=$!
       echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid

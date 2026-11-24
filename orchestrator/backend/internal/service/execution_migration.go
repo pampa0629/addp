@@ -28,7 +28,7 @@ func PrepareSchema(db *gorm.DB) error {
 	})
 }
 
-// ReconcileLegacyExecutions is a one-way module startup migration, never a runtime fallback.
+// ReconcileLegacyExecutions is a one-way PostgreSQL installation migration, never a runtime fallback.
 func ReconcileLegacyExecutions(db *gorm.DB) error {
 	base := db.Model(&execution.TaskExecution{}).Where("module = ? AND task_type = ?", execution.ModuleOrchestrator, execution.TaskTypeOrchestration)
 	if err := base.Session(&gorm.Session{}).Where("status = ? AND COALESCE(execution_config->>'schema_version','') <> ?", execution.ExecutionStatusPending, executionPlanVersion).Updates(map[string]interface{}{

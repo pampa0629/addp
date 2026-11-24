@@ -15,8 +15,8 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
-	"github.com/addp/common/infra/database"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
@@ -36,6 +36,20 @@ import (
 
 func main() {
 	commonConfig.LoadEnv()
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(config.PlatformDatabase(), "orchestrator")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := service.PrepareSchema(db); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	// 加载配置
 	cfg := config.LoadConfig()
@@ -49,17 +63,16 @@ func main() {
 	log.Printf("✅ 端口检查通过: %s", cfg.ServerPort)
 
 	// 连接数据库
-	db, err := bootstrap.OpenDatabase(database.Config{
-		Host: cfg.DBHost, Port: cfg.DBPort,
-		User: cfg.DBUser, Password: cfg.DBPassword,
-		DBName: cfg.DBName, Schema: cfg.DBSchema,
-	}, &gorm.Config{})
+	db, err := bootstrap.OpenPlatformRuntime(config.PlatformDatabase(), "orchestrator", &gorm.Config{})
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	if err := service.PrepareSchema(db); err != nil {
-		log.Fatalf("编排存储迁移失败: %v", err)
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		log.Fatal(err)
+	}
+	if err := schema.Require(db, "orchestrator", repository.StartupSchemaVersion); err != nil {
+		log.Fatal(err)
 	}
 
 	log.Println("✅ 数据库连接成功")

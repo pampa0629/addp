@@ -105,7 +105,7 @@ declaration_modules=("${backend_services[@]%-backend}")
 publisher=(python3 scripts/prod/publish-module-declarations.py --compose-file "$ROOT_DIR/docker-compose.yml" --compose-file "$COMPOSE_OVERLAY")
 run_logged "${publisher[@]}" --provision "${declaration_modules[@]}"
 run_logged "${publisher[@]}" "${declaration_modules[@]}"
-run_logged hosted_prepare_compose_database compose_app meta gateway security manager workbench
+run_logged hosted_prepare_compose_database compose_app meta gateway security manager workbench orchestrator
 unset hosted_deploy_password
 run_logged compose_app up -d --no-deps --wait security-backend
 run_logged compose_app up -d --no-deps --wait gateway console system-frontend

@@ -231,7 +231,7 @@ class RuntimeSelectionTest(unittest.TestCase):
 
     def test_scoped_database_modules_match_installer_and_runtime_services(self):
         base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
-        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager"), ("postgres", "system,workbench")):
+        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager,orchestrator"), ("postgres", "system,workbench,orchestrator")):
             with self.subTest(provider=provider, modules=modules), tempfile.TemporaryDirectory() as temporary:
                 env = release.release_environment(dict(os.environ, ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
                     ADDP_DEPLOYMENT_NETWORK="test-net", ADDP_DEPLOYMENT_PROJECT="test-scoped", NGINX_PORT="8080",
@@ -240,6 +240,13 @@ class RuntimeSelectionTest(unittest.TestCase):
                 model = release.compose_model("platform", env)
                 expected = base | {f"{m}-{part}" for m in modules.split(",") if m for part in ("backend", "frontend")}
                 self.assertEqual(set(model), expected)
+                if "orchestrator" in modules:
+                    runtime = model["orchestrator-backend"]["environment"]
+                    self.assertEqual(runtime["ADDP_INFRA_DATABASE_PROVIDER"], provider)
+                    for key in ("ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD", "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT"):
+                        self.assertIn(key, runtime)
+                    for key in ("POSTGRES_PASSWORD", "ADDP_DATABASE_DEPLOY_USER", "ADDP_DATABASE_DEPLOY_PASSWORD"):
+                        self.assertNotIn(key, runtime)
                 override = Path(temporary) / "release.yml"
                 release.write_override(override, {name: IMAGE_ID for name in model})
                 env.pop("COMPOSE_PROFILES", None)
