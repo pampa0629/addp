@@ -136,7 +136,7 @@ func TestIntegrationMetricsProcessAlertLifecycle(t *testing.T) {
 		t.Log(label, "at", time.Now().UTC(), "phase elapsed", time.Since(phase), "total elapsed", time.Since(began))
 	}
 	readBaseline := func() map[string]float64 {
-		rows, e := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget())
+		rows, e := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget(), false)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -274,7 +274,7 @@ func TestIntegrationMetricsProcessAlertLifecycle(t *testing.T) {
 	// CPU window is a separate prerequisite to the continuous verdict window;
 	// real scrape jitter can require three samples to span a full 15 seconds.
 	wait("complete post-create native CPU window", func() bool {
-		rows, e := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget())
+		rows, e := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget(), false)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -386,7 +386,7 @@ func TestIntegrationMetricsProcessAlertLifecycle(t *testing.T) {
 	for i, peer := range records[:2] {
 		peers = append(peers, resourcequery.ProcessScope{ID: uint(i + 1), ModuleName: peer.Module, InstanceID: peer.Instance, Role: peer.Role, StartedAt: peer.Started, Instance: peer.Address})
 	}
-	values, err := backend.ProcessSummaries(ctx, peers, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget())
+	values, err := backend.ProcessSummaries(ctx, peers, time.Now().UTC().Truncate(time.Second), resourcequery.DefaultBudget(), false)
 	if err != nil || len(values) != 2 {
 		t.Fatal("peer native summaries", err)
 	}

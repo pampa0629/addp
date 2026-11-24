@@ -167,7 +167,11 @@ func (h *ResourceObservationHandler) Summaries(c *gin.Context) {
 func processSummaryIDs(c *gin.Context, single bool) ([]uint, bool) {
 	c.Header("Cache-Control", "no-store")
 	q, err := url.ParseQuery(c.Request.URL.RawQuery)
-	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(q) != 1 || len(q["instance_ids"]) != 1 {
+	keys := 1
+	if !single && len(q["view"]) == 1 && q.Get("view") == "cards" {
+		keys++
+	}
+	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(q) != keys || len(q["instance_ids"]) != 1 {
 		resourceError(c, resourcequery.ErrInvalid)
 		return nil, false
 	}
@@ -189,7 +193,8 @@ func processSummaryIDs(c *gin.Context, single bool) ([]uint, bool) {
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
-// @Param instance_ids query string true "1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；三指标乘实例数计入预算 | 1–100 unique positive System instance record IDs, comma-separated; three metrics times instance count count against budget"
+// @Param instance_ids query string true "1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；实际指标数乘实例数计入预算 | 1–100 unique positive System instance record IDs, comma-separated; requested metric count times instance count counts against budget"
+// @Param view query string false "卡片仅查询 CPU 和 RSS，详情包含运行时长 | Cards query CPU and RSS only, detail includes uptime" Enums(cards)
 // @Success 200 {object} service.ProcessResourceSummaryResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -213,7 +218,7 @@ func (h *ResourceObservationHandler) ProcessSummaries(c *gin.Context) {
 		c.Status(http.StatusUnauthorized)
 		return
 	}
-	value, err := h.service.ProcessSummaries(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids)
+	value, err := h.service.ProcessSummaries(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids, c.Query("view") == "cards")
 	if err != nil {
 		resourceError(c, err)
 		return

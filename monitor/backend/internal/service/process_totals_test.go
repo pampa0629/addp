@@ -140,6 +140,6 @@ type totalFrontendReader struct {
 	read func(string) []resourcequery.FrontendSample
 }
 
-func (f totalFrontendReader) FrontendSamples(_ context.Context, id, _, _ string, _ time.Time, _ resourcequery.Budget) ([]resourcequery.FrontendSample, error) {
+func (f totalFrontendReader) FrontendSamples(_ context.Context, id, _, _ string, _ time.Time, _ resourcequery.Budget, _ resourcequery.FrontendProjection) ([]resourcequery.FrontendSample, error) {
 	return f.read(id), nil
 }

@@ -107,8 +107,8 @@
         </el-table>
       </section>
       <div v-loading="loading && !instances.length" data-testid="process-list">
-        <el-empty v-if="!loading && !visibleInstances.length && !frontendRows.size" :description="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" />
-        <ModuleInstanceCards :detail-module="state.detailModule" @select="openModule" :instances="visibleInstances" :frontend-modules="[...frontendRows.keys()]" test-prefix="process">
+        <el-empty v-if="!loading && !visibleInstances.length && !frontendModules.length" :description="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" />
+        <ModuleInstanceCards :detail-module="state.detailModule" @select="openModule" :instances="visibleInstances" :frontend-modules="frontendModules" test-prefix="process">
           <template #overview="{ moduleName: name, rows }">
             <div class="role-metrics">
               <span></span><span>{{ t('monitor.frontend.cpu') }}</span><span>{{ t('monitor.frontend.memory') }}</span>
@@ -153,7 +153,7 @@
           </template>
         </ModuleInstanceCards>
       </div>
-      <el-pagination v-if="(!moduleView || state.historyDetail) && !errorKey && (instances.length || !loading)" :current-page="state.detailModule ? state.detailPage : state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
+      <el-pagination v-if="(!state.detailModule || state.historyDetail) && !errorKey && (instances.length || !loading)" :current-page="state.detailModule ? state.detailPage : state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
       <el-dialog :model-value="Boolean(state.instanceID)" :title="t('monitor.process.trend.title')" width="min(960px, calc(100vw - 32px))" destroy-on-close @close="closeTrend">
         <div v-loading="loading && !trend" :aria-busy="loading" data-testid="process-trend">
           <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
@@ -262,6 +262,7 @@ const uptimeMetric = processMetrics[2]
 // Registration history and endpoint filters apply to System instances only.
 const moduleView = computed(() => state.value.moduleOverview || Boolean(state.value.detailModule))
 const frontendNodes = ref([]), frontendObservation = ref(null), frontendError = ref(''), frontendBlocked = ref(false)
+const frontendModules = ref([])
 const defaultFrontendNode = ref('')
 const frontendNodeID = computed(() => state.value.nodeID || (frontendNodes.value.length ? defaultFrontendNode.value : ''))
 const frontendOptions = computed(() => frontendNodeID.value && !frontendNodes.value.some(item => item.node_id === frontendNodeID.value)
@@ -273,34 +274,37 @@ const frontendState = computed(() => {
 })
 const frontendRows = computed(() => new Map((canReadHost.value && moduleView.value && frontendObservation.value?.source_state === 'collecting'
   ? frontendObservation.value.data : []).filter(row => !(state.value.detailModule || state.value.module) || row.module === (state.value.detailModule || state.value.module)).map(row => [row.module, row])))
-async function loadFrontend(ticket) {
-  try {
-    const { data } = await requests.request(api.frontendNodes)
-    if (!requests.current(ticket)) return
-    if (!Array.isArray(data) || data.length > 100 || data.some(node => !isTargetUUID(node?.node_id) || !node.display_name?.trim() || typeof node.enabled !== 'boolean') ||
-        new Set(data.map(node => node.node_id)).size !== data.length) throw new Error('invalid_resource_response')
-    frontendNodes.value = data
-    if (!data.some(node => node.node_id === defaultFrontendNode.value)) defaultFrontendNode.value = data[0]?.node_id || ''
-  } catch (error) {
-    if (!requests.current(ticket)) return
-    frontendNodes.value = []
-    defaultFrontendNode.value = ''
-    if (!state.value.nodeID) {
-      frontendObservation.value = null
-      frontendError.value = resourceErrorKey(error)
-      frontendBlocked.value = [401, 403, 404].includes(error.response?.status)
-      return
+async function loadFrontend(ticket, view, modules) {
+  if (view !== 'cards') {
+    try {
+      const { data } = await requests.request(api.frontendNodes)
+      if (!requests.current(ticket)) return
+      if (!Array.isArray(data) || data.length > 100 || data.some(node => !isTargetUUID(node?.node_id) || !node.display_name?.trim() || typeof node.enabled !== 'boolean') ||
+          new Set(data.map(node => node.node_id)).size !== data.length) throw new Error('invalid_resource_response')
+      frontendNodes.value = data
+      if (!data.some(node => node.node_id === defaultFrontendNode.value)) defaultFrontendNode.value = data[0]?.node_id || ''
+    } catch (error) {
+      if (!requests.current(ticket)) return
+      frontendNodes.value = []
+      defaultFrontendNode.value = ''
+      if (!state.value.nodeID) {
+        frontendObservation.value = null
+        frontendError.value = resourceErrorKey(error)
+        frontendBlocked.value = [401, 403, 404].includes(error.response?.status)
+        return
+      }
     }
   }
   try {
     const id = frontendNodeID.value
     if (!id) { frontendObservation.value = null; frontendError.value = ''; return }
     if (frontendObservation.value?.node.node_id !== id) frontendObservation.value = null
-    const result = await requests.request(config => api.frontend(id, config))
+    const result = await requests.request(config => api.frontend(id, view, modules, config))
     if (!requests.current(ticket)) return
     if (result.node?.node_id !== id || !Array.isArray(result.data) || !['collecting', 'not_connected', 'disabled', 'no_sample'].includes(result.source_state)) throw new Error('invalid_resource_response')
-    frontendObservation.value = result
+    if (view !== 'inventory' || result.source_state !== 'collecting') frontendObservation.value = result
     frontendError.value = ''
+    return result.data.map(row => row.module)
   } catch (error) {
     if (!requests.current(ticket)) return
     frontendObservation.value = null
@@ -489,7 +493,7 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
   if (!automatic) cancelFilter()
   const context = JSON.stringify([{ ...state.value.query, refresh: undefined }, identity.value])
   if (context !== dataContext) {
-    frontendObservation.value = null; frontendNodes.value = []; frontendError.value = ''
+    frontendObservation.value = null; frontendModules.value = []; frontendNodes.value = []; frontendError.value = ''
     dataContext = context
     totals.value = null
     startupFailures.value = []
@@ -502,7 +506,9 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
   if (state.value.changed) { await navigate(state.value.query); return }
   if (!automatic) { stopReason.value = state.value.stopReason; timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; nodeName.value = state.value.nodeName; nodeIP.value = state.value.nodeIP; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
-  const frontendLoad = canReadHost.value && moduleView.value && !frontendBlocked.value ? loadFrontend(ticket) : null
+  const cards = state.value.moduleOverview && !state.value.detailModule
+  const readFrontend = canReadHost.value && moduleView.value && !frontendBlocked.value
+  const frontendLoad = readFrontend ? loadFrontend(ticket, cards ? 'inventory' : 'detail', cards ? undefined : [state.value.detailModule]) : null
   if (refreshModules) moduleRevision.value++
   try {
     const listParams = processInstanceParameters(state.value)
@@ -519,6 +525,30 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
       }
       list.data = [...byID.values()]
     }
+    const names = (await frontendLoad) || []
+    if (!requests.current(ticket)) return
+    if (cards) {
+      const available = names.filter(name => !state.value.module || name === state.value.module)
+      const modules = [...new Set([...list.data.map(row => row.module_name), ...available])].sort((a, b) => a.localeCompare(b))
+      const lastPage = Math.max(1, Math.ceil(modules.length / 20))
+      if (state.value.page > lastPage) {
+        await navigate({ ...state.value.query, page: lastPage === 1 ? undefined : String(lastPage) })
+        return
+      }
+      const offset = (state.value.page - 1) * 20
+      const pageModules = new Set(modules.slice(offset, offset + 20))
+      frontendModules.value = available.filter(name => pageModules.has(name))
+      list.data = list.data.filter(row => pageModules.has(row.module_name))
+      list.total = modules.length
+      if (frontendModules.value.length) {
+        await loadFrontend(ticket, 'cards', frontendModules.value)
+        if (!requests.current(ticket)) return
+      } else if (frontendObservation.value) {
+        frontendObservation.value = { ...frontendObservation.value, data: [] }
+      }
+    } else {
+      frontendModules.value = names.filter(name => name === state.value.detailModule)
+    }
     void loadStartupFailures(ticket)
     if (!instances.value.length) { instances.value = list.data; total.value = list.total }
     let currentSummaries = new Map(), currentTrend = null, currentComparisons = null
@@ -526,9 +556,9 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
       try {
         for (let offset = 0; offset < list.data.length; offset += 20) {
           const batch = list.data.slice(offset, offset + 20)
-          const observed = await requests.request(config => api.summaries(batch.map(row => row.id), config))
+          const observed = await requests.request(config => api.summaries(batch.map(row => row.id), config, cards))
           if (!requests.current(ticket)) return
-          for (const [id, summary] of validateProcessSummaries(observed, batch)) currentSummaries.set(id, summary)
+          for (const [id, summary] of validateProcessSummaries(observed, batch, cards ? headlineMetrics : processMetrics)) currentSummaries.set(id, summary)
         }
       } catch (error) {
         if (!requests.current(ticket)) return
@@ -576,7 +606,7 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
     }
     trend.value = null; comparisons.value = null; trendErrorKey.value = errorKey.value
     startupFailures.value = []
-    instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
+    instances.value = []; frontendModules.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally {
     await Promise.all([frontendLoad, requests.current(ticket) && !refreshBlocked.value && !state.value.detailModule ? loadTotals(ticket) : null])
     if (requests.current(ticket)) {

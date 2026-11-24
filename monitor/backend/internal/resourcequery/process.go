@@ -47,12 +47,16 @@ func LimitTrendStart(p Plan, started time.Time) Plan {
 	return p
 }
 
-func NewProcessSummaryPlan(count int, at time.Time, b Budget) (Plan, error) {
+func NewProcessSummaryPlan(count int, at time.Time, b Budget, cards bool) (Plan, error) {
 	if count < 1 || count > 100 {
 		return Plan{}, ErrInvalid
 	}
-	keys := make([]string, len(processDefinitions))
-	for i, d := range processDefinitions {
+	definitions := processDefinitions
+	if cards {
+		definitions = definitions[:2]
+	}
+	keys := make([]string, len(definitions))
+	for i, d := range definitions {
 		keys[i] = d.Key
 	}
 	p, err := newPlan(keys, at, at, at, false, nil, b, processDefinitions)
@@ -215,8 +219,8 @@ func (s ProcessScope) collectionExpression() string {
 
 // ProcessSummaries reuses the node transport, batch splitter and value/time
 // normalizer. Only the process identity and its fixed metric formulas differ.
-func (c *Client) ProcessSummaries(ctx context.Context, scopes []ProcessScope, at time.Time, b Budget) (map[uint]Summary, error) {
-	p, err := NewProcessSummaryPlan(len(scopes), at, b)
+func (c *Client) ProcessSummaries(ctx context.Context, scopes []ProcessScope, at time.Time, b Budget, cards bool) (map[uint]Summary, error) {
+	p, err := NewProcessSummaryPlan(len(scopes), at, b, cards)
 	if err != nil {
 		return nil, err
 	}

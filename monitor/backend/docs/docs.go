@@ -3307,6 +3307,24 @@ const docTemplate = `{
                         "name": "node_id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "enum": [
+                            "inventory",
+                            "cards",
+                            "detail"
+                        ],
+                        "type": "string",
+                        "description": "清单、当前页资源或单模块详情 | Inventory, page resources or single-module details",
+                        "name": "view",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "卡片页最多 20 个模块名，详情仅一个，清单省略 | Up to 20 module names for cards, one for detail, omit for inventory",
+                        "name": "modules",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5239,10 +5257,19 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；三指标乘实例数计入预算 | 1–100 unique positive System instance record IDs, comma-separated; three metrics times instance count count against budget",
+                        "description": "1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；实际指标数乘实例数计入预算 | 1–100 unique positive System instance record IDs, comma-separated; requested metric count times instance count counts against budget",
                         "name": "instance_ids",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "enum": [
+                            "cards"
+                        ],
+                        "type": "string",
+                        "description": "卡片仅查询 CPU 和 RSS，详情包含运行时长 | Cards query CPU and RSS only, detail includes uptime",
+                        "name": "view",
+                        "in": "query"
                     }
                 ],
                 "responses": {

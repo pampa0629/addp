@@ -107,7 +107,7 @@ func (s *ProcessAlertRuleService) Evaluate(parent context.Context, at time.Time)
 				reason = "query_budget"
 			} else {
 				scope := source.scopes[0]
-				summaries, err := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, at, cfg.Budget)
+				summaries, err := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, at, cfg.Budget, false)
 				if err != nil || summaries[scope.ID].Collection.State != "collecting" {
 					reason = "no_data"
 				} else {

@@ -75,7 +75,7 @@ export async function backend(page, options = {}) {
       const requested = new Set(url.searchParams.get('instance_ids').split(',').map(Number))
       body = { data: rows.filter(row => requested.has(row.id)).map(row => ({ subject: { kind: 'module_instance', id: row.id, module_name: row.module_name, instance_id: row.instance_id, role: row.role }, node_id: row.node_id, policy_version: 1, lookback_seconds: 300, queried_at: stamp, collection: { state: 'collecting', sampled_at: stamp }, series: [
         ['process.cpu.core_equivalents', 'cores', 60, row.id === 1 ? 1.5 : 0], ['process.memory.resident_bytes', 'bytes', 0, 1024 ** 3], ['process.uptime_seconds', 'seconds', 0, 3600]
-      ].map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: [{ evaluated_at: stamp, sampled_at: stamp, value, data_state: 'valid' }] })) })) }
+      ].slice(0, url.searchParams.get('view') === 'cards' ? 2 : 3).map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: [{ evaluated_at: stamp, sampled_at: stamp, value, data_state: 'valid' }] })) })) }
       if (mode === 'warmup') Object.assign(body.data[0].series[0].points[0], { value: null, sampled_at: null, data_state: 'no_data' })
       if (mode === 'wrong-owner') body.data[0].subject.instance_id = 'foreign'
       for (const result of body.data) {

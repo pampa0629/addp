@@ -1198,3 +1198,46 @@ test('multiple frontend nodes can be filtered in the module list and the detail 
   await page.reload()
   await expect(page.locator('.frontend-detail')).toContainText('2.00 MiB')
 })
+
+test('module pagination keeps replicas together and scopes page refresh and detail reads', async ({ page }) => {
+  const id = 'f83e9874-2164-4411-a5c0-650d143006cf'
+  const modules = [...Array.from({ length: 19 }, (_, i) => 'module' + String(i).padStart(2, '0')), 'monitor']
+  const instances = modules.map((module_name, i) => ({ id: i + 1, module_name, role: 'backend' }))
+  instances.push({ id: 21, module_name: 'monitor', role: 'worker' }, { id: 22, module_name: 'monitor', role: 'backend' })
+  const fixture = await backend(page, { instances, identity: identity(hostPermissions) })
+  const queries = []
+  const node = { node_id: id, display_name: '开发节点', enabled: true }
+  await page.route('**/api/v1/monitor/platform/frontend_*', route => {
+    const { pathname, searchParams } = new URL(route.request().url())
+    if (pathname.endsWith('/frontend_nodes')) return route.fulfill({ json: { data: [node] } })
+    const view = searchParams.get('view'), selected = searchParams.get('modules')
+    queries.push({ view, selected })
+    const names = view === 'inventory' ? ['console', 'monitor'] : selected.split(',')
+    return route.fulfill({ json: { node, source_state: 'collecting', data: names.map(module => ({
+      module, mode: 'vite', entry_up: true, cpu_cores: 0.25, memory_bytes: 65536
+    })) } })
+  })
+  await page.clock.install()
+  await page.goto('/service-resources')
+  const cards = page.getByTestId('process-module-card')
+  await expect(cards).toHaveCount(20)
+  await expect(page.locator('.process-resources')).toHaveAttribute('aria-busy', 'false')
+  expect(queries.at(-1)).toEqual({ view: 'cards', selected: 'console' })
+  expect(fixture.calls.join(',').split(',')).not.toContain('20')
+  await page.locator('.el-pagination .btn-next').click()
+  await expect(cards).toHaveCount(1)
+  await expect(cards).toContainText('2.00 GiB')
+  await expect(page.locator('.process-resources')).toHaveAttribute('aria-busy', 'false')
+  expect(fixture.calls.at(-1)).toBe('20,21,22')
+  const before = queries.length
+  await page.clock.fastForward(15001)
+  await expect.poll(() => queries.length).toBe(before + 2)
+  expect(queries.slice(before)).toEqual([{ view: 'inventory', selected: null }, { view: 'cards', selected: 'monitor' }])
+  await cards.getByRole('button', { name: 'monitor · 模块详情' }).click()
+  await expect(page.locator('.frontend-detail')).toBeVisible()
+  expect(queries.at(-1)).toEqual({ view: 'detail', selected: 'monitor' })
+  await page.getByTestId('back-to-modules').click()
+  await expect(cards).toHaveCount(1)
+  await expect(cards.locator('.module-summary')).toBeFocused()
+  await expect(page).toHaveURL(url => url.searchParams.get('page') === '2' && !url.searchParams.has('detail_module'))
+})

@@ -53,7 +53,7 @@ func (c *Client) ContainerObservation(ctx context.Context, scope ProcessScope, a
 		return Summary{}, ErrInvalid
 	}
 	scope.cgroupQuery = true
-	processPlan, err := NewProcessSummaryPlan(1, at, b)
+	processPlan, err := NewProcessSummaryPlan(1, at, b, false)
 	if err != nil {
 		return Summary{}, err
 	}

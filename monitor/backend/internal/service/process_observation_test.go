@@ -50,13 +50,13 @@ func (b *processBackend) ProcessTrend(_ context.Context, p resourcequery.Plan, s
 	return resourcequery.Empty(p, "no_data"), nil
 }
 
-func (b *processBackend) ProcessSummaries(_ context.Context, scopes []resourcequery.ProcessScope, at time.Time, budget resourcequery.Budget) (map[uint]resourcequery.Summary, error) {
+func (b *processBackend) ProcessSummaries(_ context.Context, scopes []resourcequery.ProcessScope, at time.Time, budget resourcequery.Budget, cards bool) (map[uint]resourcequery.Summary, error) {
 	b.calls++
 	b.scopes = append([]resourcequery.ProcessScope(nil), scopes...)
 	if b.complete != nil {
 		b.complete()
 	}
-	p, err := resourcequery.NewProcessSummaryPlan(len(scopes), at, budget)
+	p, err := resourcequery.NewProcessSummaryPlan(len(scopes), at, budget, cards)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func TestProcessSummaryAuthorizesBeforePrivateReadsAndNeedsNoHost(t *testing.T) 
 	svc := NewResourceObservationService(policies, nil, nil, nil, true, resourceSourcePolicyWithNetwork(t, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, []uint16{9100}), ProcessObservationDependencies{Users: users, Identities: identities, Backend: backend})
 	svc.now = func() time.Time { return now }
 	query := func() (ProcessResourceSummaryResponse, error) {
-		return svc.ProcessSummaries(context.Background(), "human", "addp_at_current_user", []uint{1, 2})
+		return svc.ProcessSummaries(context.Background(), "human", "addp_at_current_user", []uint{1, 2}, false)
 	}
 	users.err = &client.SystemAPIError{StatusCode: 403}
 	if _, err := query(); err == nil || identities.calls != 0 || backend.calls != 0 {

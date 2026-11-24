@@ -157,7 +157,7 @@ func TestIntegrationMetricsAutomaticCollection(t *testing.T) {
 		t.Helper()
 		r := records[1]
 		scope := resourcequery.ProcessScope{ID: 2, ModuleName: r.Module, InstanceID: r.Instance, Role: r.Role, Instance: r.Address, StartedAt: r.Started}
-		rows, err := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, at, resourcequery.DefaultBudget())
+		rows, err := backend.ProcessSummaries(ctx, []resourcequery.ProcessScope{scope}, at, resourcequery.DefaultBudget(), false)
 		if err != nil {
 			t.Fatal(err)
 		}

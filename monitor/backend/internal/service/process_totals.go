@@ -173,7 +173,7 @@ func (s *ResourceObservationService) ProcessTotals(ctx context.Context, principa
 			if err != nil {
 				return result, err
 			}
-			rows, err := s.frontend.FrontendSamples(ctx, id, resolved.Address, source.Target.FrontendRevision(source.Node.Version), at, cfg.Budget)
+			rows, err := s.frontend.FrontendSamples(ctx, id, resolved.Address, source.Target.FrontendRevision(source.Node.Version), at, cfg.Budget, resourcequery.FrontendTotalsProjection())
 			if err != nil {
 				return result, err
 			}

@@ -64,26 +64,26 @@ func TestProcessBatchUsesTwoRequestsAndRejectsForeignEvidence(t *testing.T) {
 	for id := uint(1); id <= 2; id++ {
 		scopes = append(scopes, ProcessScope{ID: id, ModuleName: "monitor", InstanceID: fmt.Sprint("native-", id), Role: "worker", Instance: fmt.Sprint("fixture:", 9440+id), StartedAt: time.Unix(1, 0)})
 	}
-	data, err := c.ProcessSummaries(context.Background(), scopes, testTime, DefaultBudget())
+	data, err := c.ProcessSummaries(context.Background(), scopes, testTime, DefaultBudget(), false)
 	if err != nil || calls != 2 || len(data) != 2 || data[1].Collection.State != "collecting" || *data[1].Series[0].Points[0].Value != 1.5 || *data[1].Series[1].Points[0].Value != 0 || data[2].Collection.State != "identity_mismatch" || data[2].Series[0].Points[0].Value != nil {
 		t.Fatal("cross-process or zero/cores evidence", data, err, calls)
 	}
 	foreign = true
-	if _, err = c.ProcessSummaries(context.Background(), scopes, testTime, DefaultBudget()); err == nil {
+	if _, err = c.ProcessSummaries(context.Background(), scopes, testTime, DefaultBudget(), false); err == nil {
 		t.Fatal("foreign process evidence accepted")
 	}
 }
 
 func TestProcessCatalogAndBudgetStayDistinctFromHosts(t *testing.T) {
 	b := DefaultBudget()
-	if _, err := NewProcessSummaryPlan(34, testTime, b); err != ErrBudget {
+	if _, err := NewProcessSummaryPlan(34, testTime, b, false); err != ErrBudget {
 		t.Fatal("unbounded batch", err)
 	}
 	if _, err := NewPlan([]string{"process.memory.resident_bytes"}, testTime, testTime, testTime, false, nil, b); err != ErrInvalid {
 		t.Fatal("process metric entered host catalog", err)
 	}
 	scope := ProcessScope{ID: 1, ModuleName: "monitor", InstanceID: "worker", Role: "worker", Instance: "127.0.0.1:9445", StartedAt: time.Unix(1, 0)}
-	p, err := NewProcessSummaryPlan(20, testTime, b)
+	p, err := NewProcessSummaryPlan(20, testTime, b, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestIntegrationMetricsProcessWindow(t *testing.T) {
 		t.Skip("requires standard Monitor metrics T2 gate")
 	}
 	scope := ProcessScope{ID: 1, ModuleName: "monitor", InstanceID: "native-worker", Role: "worker", Instance: "fixture:9445", StartedAt: time.Unix(1, 0)}
-	p, err := NewProcessSummaryPlan(1, testTime, DefaultBudget())
+	p, err := NewProcessSummaryPlan(1, testTime, DefaultBudget(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

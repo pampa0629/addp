@@ -31,7 +31,7 @@ export function resolveProcessRoute(input = {}) {
   const declared = ['true', 'false', 'all'].includes(input.process_metrics_declared) ? input.process_metrics_declared : 'true'
   const moduleOverview = status === 'up' && declared === 'true' && !role && !registeredHost && !nodeName && !nodeIP &&
     !stopReason && time.period === 'all' && time.timeBasis === 'registered'
-  const page = !moduleOverview && typeof input.page === 'string' && /^[1-9]\d{0,6}$/.test(input.page) ? Number(input.page) : 1
+  const page = typeof input.page === 'string' && /^[1-9]\d{0,6}$/.test(input.page) ? Number(input.page) : 1
   const historyDetail = Boolean(detailModule && status !== 'up')
   const detailPage = historyDetail && typeof input.detail_page === 'string' && /^[1-9]\d{0,6}$/.test(input.detail_page) ? Number(input.detail_page) : 1
   const instanceID = typeof input.instance_id === 'string' && /^[1-9]\d{0,15}$/.test(input.instance_id) && Number.isSafeInteger(Number(input.instance_id)) ? Number(input.instance_id) : 0
@@ -39,7 +39,7 @@ export function resolveProcessRoute(input = {}) {
   const compare = Boolean(instanceID && input.compare === 'previous' && supportsProcessComparison(range))
   const refresh = typeof input.refresh === 'string' && autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
   const query = { ...(detailModule ? { detail_module: detailModule } : {}), ...(detailPage !== 1 ? { detail_page: String(detailPage) } : {}), ...(nodeID ? { node_id: nodeID } : {}), ...time.query, ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(compare ? { compare: 'previous' } : {}), ...(range !== '5m' ? { range } : {}) } : {}) }
-  const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
+  const params = { page: moduleOverview ? 1 : page, page_size: 20, ...(module ? { module_name: module } : {}), ...(registeredHost ? { registered_host: registeredHost } : {}), ...(nodeName ? { node_name: nodeName } : {}), ...(nodeIP ? { node_ip: nodeIP } : {}), ...(role ? { role } : {}), ...(stopReason ? { stop_reason: stopReason } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
   return { nodeID, detailModule, detailPage, historyDetail, moduleOverview, timeBasis: time.timeBasis, period: time.period, from: time.from, to: time.to, page, module, registeredHost, nodeName, nodeIP, role, stopReason, status, declared, instanceID, range, compare, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
 }
 export function processInstanceParameters(state, now = Date.now()) {
@@ -107,7 +107,7 @@ export function validateProcessInstances(value, page, filters = {}, pageSize = 2
   }
   return value
 }
-export function validateProcessSummaries(value, instances) {
+export function validateProcessSummaries(value, instances, definitions = processMetrics) {
   if (!Array.isArray(value?.data) || value.data.length !== instances.length) invalid()
   const expected = new Map(instances.map(row => [row.id, row])), result = new Map()
   const anchor = value.data[0]
@@ -119,10 +119,10 @@ export function validateProcessSummaries(value, instances) {
     if (!['collecting', 'failed', 'stale', 'identity_mismatch', 'not_active', 'not_connected', 'no_sample'].includes(state)) invalid()
     const sampled = ['collecting', 'failed', 'stale', 'identity_mismatch'].includes(state)
     if (sampled ? !Number.isFinite(sample) || sample > queried || (state === 'stale' ? queried - sample <= 60000 : queried - sample > 60000) : row.collection.sampled_at !== null) invalid()
-    if (!Array.isArray(row.series) || row.series.length !== processMetrics.length) invalid()
+    if (!Array.isArray(row.series) || row.series.length !== definitions.length) invalid()
     const metrics = new Set()
     for (const series of row.series) {
-      const metric = processMetrics.find(item => item.key === series.metric_key)
+      const metric = definitions.find(item => item.key === series.metric_key)
       if (!metric || metrics.has(metric.key) || series.unit !== metric.unit || series.window_seconds !== metric.windowSeconds || !series.dimensions || Object.keys(series.dimensions).length || !Array.isArray(series.points) || series.points.length !== 1) invalid()
       metrics.add(metric.key)
       const point = series.points[0], evaluated = Date.parse(point.evaluated_at), at = Date.parse(point.sampled_at)

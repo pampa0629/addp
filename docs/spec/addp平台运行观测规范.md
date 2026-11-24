@@ -246,7 +246,7 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | --- | --- |
 | `/platform/resource_observations`、`/platform/resource_trends` | 显式 node_id、固定 metrics 白名单；趋势使用整秒 RFC3339 start/end，维度严格匹配 |
 | `/platform/resource_summaries` | 显式 `node_ids` 和 `metrics`，当前授权节点的批量摘要；指标仅允许 CPU 核数／一分钟忙碌率、内存总量／使用率、运行时长、三档系统平均负载和 TCP 当前连接数九项的非空无重复子集，同一评估锚点，不逐行查询 |
-| `/platform/process_resource_summaries` | 当前授权实例批量 CPU/RSS/时长，固定目录；普通实例 DTO 仅公开采集声明布尔值 |
+| `/platform/process_resource_summaries` | 当前授权实例批量摘要。默认读取 CPU、RSS、运行时长。模块卡片使用 `view=cards` 仅读取 CPU 和 RSS，按实际查询的指标数计入预算；普通实例 DTO 仅公开采集声明布尔值 |
 | `/platform/process_resource_totals` | 当前授权服务的一分钟 CPU、进程 RSS 和容器工作集，按模块、角色及指标返回有效覆盖 |
 | `/platform/process_resource_trends` | 仅 instance_id/start/end，固定 CPU/RSS 两条序列；不读取已退出实例历史 |
 | `/platform/container_resource_observations` | `instance_ids` 恰好一个当前实例；固定资源组 CPU 核消耗、memory.current 及两项硬上界利用率，不改变批量摘要目录；无有效证明时只读当前声明内核边界的绝对用量 |
@@ -309,7 +309,7 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 
 #### 服务列表与主机关联
 
-服务监控默认读取 System 在线且已声明采集的实例，合并各页登记；有主机读权时，一并展示所选节点的前端观测。每个模块一张等尺寸摘要卡，依次列出后端（含入口与调度）、前端和 Worker 的 CPU 与内存。同角色多个实例在该项都有有效样本时求和，缺少角色或样本显示「—」。点击卡片进入独立模块详情页，返回时恢复列表位置与筛选。详情页按模块读取各角色与副本；历史实例沿用列表的状态与时间范围，在模块内单独分页。可查看每个实例的角色、租约、采集状态和趋势，以及前端运行方式、页面入口、脚本和重启次数。使用实例条件、历史或采集覆盖筛选时，沿 System 实例分页，仅汇总当前页匹配的实例。在线状态按租约显示 `UP`／`DOWN` 和本地化文字，采集状态与在线独立。Worker 用途只读 `metadata.runtime_name`，未知时只显示正式角色。
+服务监控默认读取 System 在线且已声明采集的实例，合并各页登记；有主机读权时，一并展示所选节点的前端观测。按模块名称排序，每页 20 个模块，只查询当前页的卡片指标。每个模块一张等尺寸摘要卡，依次列出后端（含入口与调度）、前端和 Worker 的 CPU 与内存。同角色多个实例在该项都有有效样本时求和，缺少角色或样本显示「—」。点击卡片进入独立模块详情页，返回时恢复列表位置与筛选。详情页按模块读取各角色与副本；历史实例沿用列表的状态与时间范围，在模块内单独分页。可查看每个实例的角色、租约、采集状态和趋势，以及前端运行方式、页面入口、脚本和重启次数。使用实例条件、历史或采集覆盖筛选时，沿 System 实例分页，仅汇总当前页匹配的实例。在线状态按租约显示 `UP`／`DOWN` 和本地化文字，采集状态与在线独立。Worker 用途只读 `metadata.runtime_name`，未知时只显示正式角色。
 
 | 筛选 | Monitor 使用边界 |
 | --- | --- |

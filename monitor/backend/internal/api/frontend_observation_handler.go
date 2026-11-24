@@ -19,6 +19,8 @@ import (
 // @Produce json
 // @Security BearerAuth
 // @Param node_id query string true "采集节点 ID | Collection node ID"
+// @Param view query string true "清单、当前页资源或单模块详情 | Inventory, page resources or single-module details" Enums(inventory,cards,detail)
+// @Param modules query string false "卡片页最多 20 个模块名，详情仅一个，清单省略 | Up to 20 module names for cards, one for detail, omit for inventory"
 // @Success 200 {object} service.FrontendObservation
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -32,12 +34,17 @@ import (
 // @x-addp-required-permissions ["monitor.resource_observation.read","platform.host_node.read"]
 // @Router /platform/frontend_observations [get]
 func (h *ResourceObservationHandler) FrontendObservation(c *gin.Context) {
-	principal, raw, ok := deploymentNodeObservationSubject(c)
+	principal, raw, ok := deploymentNodeObservationSubject(c, true)
 	if !ok {
 		return
 	}
+	projection, err := resourcequery.NewFrontendProjection(c.Query("view"), c.Query("modules"))
+	if err != nil {
+		resourceError(c, err)
+		return
+	}
 	var result service.FrontendObservation
-	result, err := h.service.FrontendObservation(c.Request.Context(), principal, targetToken(c), raw)
+	result, err = h.service.FrontendObservation(c.Request.Context(), principal, targetToken(c), raw, projection)
 	if err != nil {
 		resourceError(c, err)
 		return
@@ -73,13 +80,28 @@ func (h *ResourceObservationHandler) FrontendNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-func deploymentNodeObservationSubject(c *gin.Context) (string, string, bool) {
-	if len(c.Request.URL.RawQuery) > 128 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
+func deploymentNodeObservationSubject(c *gin.Context, frontend bool) (string, string, bool) {
+	if len(c.Request.URL.RawQuery) > 2048 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
 		resourceError(c, resourcequery.ErrInvalid)
 		return "", "", false
 	}
 	q, err := url.ParseQuery(c.Request.URL.RawQuery)
-	if err != nil || len(q) != 1 || len(q["node_id"]) != 1 {
+	keys := 1
+	if frontend {
+		keys++
+		if len(q["view"]) != 1 {
+			resourceError(c, resourcequery.ErrInvalid)
+			return "", "", false
+		}
+		if q.Get("view") != "inventory" {
+			keys++
+			if len(q["modules"]) != 1 {
+				resourceError(c, resourcequery.ErrInvalid)
+				return "", "", false
+			}
+		}
+	}
+	if err != nil || len(q) != keys || len(q["node_id"]) != 1 {
 		resourceError(c, resourcequery.ErrInvalid)
 		return "", "", false
 	}
@@ -116,7 +138,7 @@ func deploymentNodeObservationSubject(c *gin.Context) (string, string, bool) {
 // @x-addp-required-permissions ["monitor.resource_observation.read","platform.host_node.read","platform.engine_deployment.read"]
 // @Router /platform/business_nfs_observations [get]
 func (h *ResourceObservationHandler) BusinessNFSObservation(c *gin.Context) {
-	principal, node, ok := deploymentNodeObservationSubject(c)
+	principal, node, ok := deploymentNodeObservationSubject(c, false)
 	if !ok {
 		return
 	}

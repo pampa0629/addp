@@ -5552,6 +5552,20 @@ paths:
         name: node_id
         required: true
         type: string
+      - description: 清单、当前页资源或单模块详情 | Inventory, page resources or single-module details
+        enum:
+        - inventory
+        - cards
+        - detail
+        in: query
+        name: view
+        required: true
+        type: string
+      - description: 卡片页最多 20 个模块名，详情仅一个，清单省略 | Up to 20 module names for cards, one
+          for detail, omit for inventory
+        in: query
+        name: modules
+        type: string
       produces:
       - application/json
       responses:
@@ -6840,12 +6854,19 @@ paths:
         with matching identity and start time; unknown values are not zero-filled
         and private endpoints are not exposed'
       parameters:
-      - description: 1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；三指标乘实例数计入预算 | 1–100 unique
-          positive System instance record IDs, comma-separated; three metrics times
-          instance count count against budget
+      - description: 1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；实际指标数乘实例数计入预算 | 1–100 unique
+          positive System instance record IDs, comma-separated; requested metric count
+          times instance count counts against budget
         in: query
         name: instance_ids
         required: true
+        type: string
+      - description: 卡片仅查询 CPU 和 RSS，详情包含运行时长 | Cards query CPU and RSS only, detail
+          includes uptime
+        enum:
+        - cards
+        in: query
+        name: view
         type: string
       produces:
       - application/json

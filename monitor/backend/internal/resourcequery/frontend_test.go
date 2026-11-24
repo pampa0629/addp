@@ -6,7 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/addp/monitor/internal/frontendprobe"
 )
 
 func TestFrontendSamplesChargesObservedModules(t *testing.T) {
@@ -24,7 +27,7 @@ func TestFrontendSamplesChargesObservedModules(t *testing.T) {
 	c := Client{origin: server.URL, http: server.Client()}
 	b := DefaultBudget()
 	b.MaxSeries = 3
-	rows, err := c.FrontendSamples(context.Background(), testNode, address, revision, testTime, b)
+	rows, err := c.FrontendSamples(context.Background(), testNode, address, revision, testTime, b, FrontendTotalsProjection())
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("samples %+v: %v", rows, err)
 	}
@@ -33,7 +36,7 @@ func TestFrontendSamplesChargesObservedModules(t *testing.T) {
 		t.Fatalf("unexpected module values: %+v", row)
 	}
 	b.MaxSeries = 2
-	if _, err := c.FrontendSamples(context.Background(), testNode, address, revision, testTime, b); !errors.Is(err, ErrBudget) {
+	if _, err := c.FrontendSamples(context.Background(), testNode, address, revision, testTime, b, FrontendTotalsProjection()); !errors.Is(err, ErrBudget) {
 		t.Fatalf("over budget: %v", err)
 	}
 }
@@ -65,5 +68,34 @@ func TestBusinessNFSExportBindsTheNodeAndPreservesMissingValues(t *testing.T) {
 				t.Fatalf("value=%v err=%v", value, err)
 			}
 		})
+	}
+}
+
+func TestFrontendPageProjectionQueriesOnlyRequestedSignals(t *testing.T) {
+	for _, tc := range []struct {
+		view, names              string
+		wantMetrics, wantModules int
+	}{
+		{"inventory", "", 1, len(frontendprobe.Modules)},
+		{"cards", strings.Join(frontendprobe.Modules[:20], ","), 2, 20},
+		{"detail", "monitor", 5, 1},
+		{"detail", "gateway", 5, 0},
+	} {
+		p, err := NewFrontendProjection(tc.view, tc.names)
+		if err != nil || len(p.metrics) != tc.wantMetrics || len(p.modules) != tc.wantModules {
+			t.Fatalf("%s: %+v, %v", tc.view, p, err)
+		}
+		if len(p.modules) == 0 {
+			continue
+		}
+		expr := frontendExpression(testNode, "node:9443", "3:1", p)
+		if strings.Contains(expr, "addp_frontend_restart_count") != (tc.view == "detail") || strings.Contains(expr, "addp_frontend_cpu_seconds_total") != (tc.view != "inventory") {
+			t.Fatalf("%s returned an unexpected metric selector", tc.view)
+		}
+	}
+	for _, tc := range [][2]string{{"cards", strings.Join(frontendprobe.Modules[:], ",")}, {"detail", "monitor,meta"}, {"inventory", "console"}, {"detail", "x.*"}, {"cards", "monitor,monitor"}} {
+		if _, err := NewFrontendProjection(tc[0], tc[1]); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("accepted %v", tc)
+		}
 	}
 }

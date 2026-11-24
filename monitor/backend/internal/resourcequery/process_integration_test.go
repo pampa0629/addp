@@ -66,7 +66,7 @@ func TestIntegrationMetricsProcessSources(t *testing.T) {
 		deadline = time.Now().Add(20 * time.Second)
 	}
 	for {
-		values, err := c.ProcessSummaries(context.Background(), scopes, time.Now().UTC().Truncate(time.Second), DefaultBudget())
+		values, err := c.ProcessSummaries(context.Background(), scopes, time.Now().UTC().Truncate(time.Second), DefaultBudget(), false)
 		ready := err == nil && len(values) == len(scopes)
 		if ready {
 			for _, scope := range scopes {
@@ -143,7 +143,7 @@ func TestIntegrationMetricsProcessSources(t *testing.T) {
 						wrongEndpoint.Instance = peer.Instance
 						wrongStart.StartedAt = peer.StartedAt
 						for _, foreign := range []ProcessScope{wrongInstance, wrongEndpoint, wrongStart} {
-							values, err := c.ProcessSummaries(context.Background(), []ProcessScope{foreign}, at, DefaultBudget())
+							values, err := c.ProcessSummaries(context.Background(), []ProcessScope{foreign}, at, DefaultBudget(), false)
 							if err != nil || len(values) != 1 || len(values[foreign.ID].Series) != 3 || values[foreign.ID].Collection.State == "collecting" {
 								t.Fatal("mixed Worker identity was collecting", err)
 							}

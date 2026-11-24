@@ -13,7 +13,7 @@ import (
 
 type FrontendObservationBackend interface {
 	BusinessNFSExport(context.Context, string, string, string, time.Time, resourcequery.Budget) (*bool, error)
-	FrontendSamples(context.Context, string, string, string, time.Time, resourcequery.Budget) ([]resourcequery.FrontendSample, error)
+	FrontendSamples(context.Context, string, string, string, time.Time, resourcequery.Budget, resourcequery.FrontendProjection) ([]resourcequery.FrontendSample, error)
 }
 
 type FrontendObservation struct {
@@ -116,20 +116,15 @@ type BusinessNFSObservation struct {
 	QueriedAt       time.Time                 `json:"queried_at"`
 }
 
-func (s *ResourceObservationService) FrontendObservation(ctx context.Context, principal, token, nodeID string) (FrontendObservation, error) {
+func (s *ResourceObservationService) FrontendObservation(ctx context.Context, principal, token, nodeID string, projection resourcequery.FrontendProjection) (FrontendObservation, error) {
 	data := []resourcequery.FrontendSample{}
 	state, err := s.observeDeploymentNode(ctx, principal, token, nodeID, func(ctx context.Context, id, address, revision string, at time.Time, b resourcequery.Budget) (bool, error) {
-		rows, err := s.frontend.FrontendSamples(ctx, id, address, revision, at, b)
+		rows, err := s.frontend.FrontendSamples(ctx, id, address, revision, at, b, projection)
 		if err != nil {
 			return false, err
 		}
 		data = rows
-		for _, row := range rows {
-			if row.EntryUp != nil {
-				return true, nil
-			}
-		}
-		return false, nil
+		return len(rows) > 0, nil
 	})
 	if err != nil {
 		return FrontendObservation{}, err

@@ -17,7 +17,7 @@ type processRuleBackend struct {
 	hook  func()
 }
 
-func (b *processRuleBackend) ProcessSummaries(_ context.Context, scopes []resourcequery.ProcessScope, at time.Time, _ resourcequery.Budget) (map[uint]resourcequery.Summary, error) {
+func (b *processRuleBackend) ProcessSummaries(_ context.Context, scopes []resourcequery.ProcessScope, at time.Time, _ resourcequery.Budget, _ bool) (map[uint]resourcequery.Summary, error) {
 	state := b.state
 	if state == "" {
 		state = "collecting"

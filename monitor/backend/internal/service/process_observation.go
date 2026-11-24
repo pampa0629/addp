@@ -16,7 +16,7 @@ type UserRuntimeInstanceReader interface {
 	GetRuntimeInstancesForUser(context.Context, []uint, string) ([]client.RuntimeInstanceReference, error)
 }
 type ProcessResourceBackend interface {
-	ProcessSummaries(context.Context, []resourcequery.ProcessScope, time.Time, resourcequery.Budget) (map[uint]resourcequery.Summary, error)
+	ProcessSummaries(context.Context, []resourcequery.ProcessScope, time.Time, resourcequery.Budget, bool) (map[uint]resourcequery.Summary, error)
 	ProcessTrend(context.Context, resourcequery.Plan, resourcequery.ProcessScope, resourcequery.Budget) ([]resourcequery.Series, error)
 }
 
@@ -64,24 +64,24 @@ type ProcessResourceTrendResponse struct {
 	Series          []resourcequery.Series `json:"series"`
 }
 
-func (s *ResourceObservationService) ProcessSummaries(ctx context.Context, principal, token string, ids []uint) (ProcessResourceSummaryResponse, error) {
-	result, _, err := s.observeProcesses(ctx, principal, token, ids, time.Time{}, time.Time{}, false)
+func (s *ResourceObservationService) ProcessSummaries(ctx context.Context, principal, token string, ids []uint, cards bool) (ProcessResourceSummaryResponse, error) {
+	planFor := func(count int, _, _, now time.Time, _ bool, b resourcequery.Budget) (resourcequery.Plan, error) {
+		return resourcequery.NewProcessSummaryPlan(count, now.UTC().Truncate(time.Second), b, cards)
+	}
+	read := func(ctx context.Context, plan resourcequery.Plan, scopes []resourcequery.ProcessScope, b resourcequery.Budget) (map[uint]resourcequery.Summary, error) {
+		return s.process.Backend.ProcessSummaries(ctx, scopes, plan.End, b, cards)
+	}
+	result, _, err := s.observeProcessesUsing(ctx, principal, token, ids, time.Time{}, time.Time{}, false, planFor, read, nil)
 	return result, err
 }
 
 func (s *ResourceObservationService) ProcessTrend(ctx context.Context, principal, token string, id uint, start, end time.Time) (ProcessResourceTrendResponse, error) {
-	result, plan, err := s.observeProcesses(ctx, principal, token, []uint{id}, start, end, true)
+	result, plan, err := s.observeProcessesUsing(ctx, principal, token, []uint{id}, start, end, true, nil, nil, nil)
 	if err != nil {
 		return ProcessResourceTrendResponse{}, err
 	}
 	row := result.Data[0]
 	return ProcessResourceTrendResponse{Subject: row.Subject, NodeID: row.NodeID, PolicyVersion: row.PolicyVersion, LookbackSeconds: row.LookbackSeconds, QueriedAt: row.QueriedAt, Start: plan.Start, End: plan.End, StepSeconds: plan.StepSeconds, Series: row.Series}, nil
-}
-
-// observeProcesses is the single owner authorization, identity, admission and
-// completion-time lease check for current process resources.
-func (s *ResourceObservationService) observeProcesses(ctx context.Context, principal, token string, ids []uint, start, end time.Time, trend bool) (ProcessResourceSummaryResponse, resourcequery.Plan, error) {
-	return s.observeProcessesUsing(ctx, principal, token, ids, start, end, trend, nil, nil, nil)
 }
 
 // observeProcessesUsing keeps current-user authorization, private identity,
@@ -120,13 +120,11 @@ func (s *ResourceObservationService) observeProcessesUsing(ctx context.Context, 
 	now := s.now().UTC()
 	if planFor != nil {
 		plan, err = planFor(len(ids), start, end, now, trend, cfg.Budget)
-	} else if trend {
+	} else {
 		if len(ids) != 1 {
 			return result, plan, resourcequery.ErrInvalid
 		}
 		plan, err = resourcequery.NewProcessTrendPlan(start, end, now, cfg.Budget)
-	} else {
-		plan, err = resourcequery.NewProcessSummaryPlan(len(ids), now.Truncate(time.Second), cfg.Budget)
 	}
 	if err != nil {
 		return result, plan, err
@@ -238,12 +236,10 @@ func (s *ResourceObservationService) observeProcessesUsing(ctx context.Context, 
 		var observed map[uint]resourcequery.Summary
 		if read != nil {
 			observed, err = read(ctx, plan, scopes, cfg.Budget)
-		} else if trend {
+		} else {
 			var series []resourcequery.Series
 			series, err = s.process.Backend.ProcessTrend(ctx, plan, scopes[0], cfg.Budget)
 			observed = map[uint]resourcequery.Summary{scopes[0].ID: {Series: series}}
-		} else {
-			observed, err = s.process.Backend.ProcessSummaries(ctx, scopes, plan.End, cfg.Budget)
 		}
 		if err != nil {
 			return result, plan, err

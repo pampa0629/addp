@@ -388,7 +388,7 @@ func TestIntegrationMetricsFrontendSamples(t *testing.T) {
 	other := strings.Replace(entry, testNode, "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", 1)
 	series := func(name, values string) map[string]any { return map[string]any{"series": name, "values": values} }
 	sample := func(name string, value float64) map[string]any { return map[string]any{"labels": name, "value": value} }
-	expression := frontendExpression(testNode, address, revision)
+	expression := frontendExpression(testNode, address, revision, FrontendProjection{[]string{"console", "monitor", "portal"}, frontendMetrics})
 	evaluate := func(at string, samples ...map[string]any) map[string]any {
 		return map[string]any{"expr": expression, "eval_time": at, "exp_samples": samples}
 	}
