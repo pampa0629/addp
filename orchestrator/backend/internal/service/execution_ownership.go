@@ -181,10 +181,7 @@ func (s *ExecutionService) CreateScheduled(ctx context.Context, expected *orchmo
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var orch orchmodels.Orchestration
 		query := tx.Where("id = ? AND tenant_id = ? AND enabled = ? AND schedule = ? AND next_run_at = ? AND next_run_at <= ?", expected.ID, expected.TenantID, true, expected.Schedule, expected.NextRunAt, now)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
-		}
-		if err := query.First(&orch).Error; err != nil {
+		if err := query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).First(&orch).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return nil
 			}

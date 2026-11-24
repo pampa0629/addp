@@ -961,6 +961,9 @@ jobs:
           go-version-file: orchestrator/backend/go.mod
           cache: false
 
+      - name: Verify Orchestrator installation, scheduling and execution on MySQL 8
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-orchestrator-execution'
+
       - name: Run Orchestrator PostgreSQL gate
         env:
           ADDP_TEST_POSTGRES_HOST: 127.0.0.1

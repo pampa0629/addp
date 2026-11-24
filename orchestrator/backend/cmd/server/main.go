@@ -17,11 +17,9 @@ import (
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
 	"github.com/addp/common/modulelifecycle"
-	"github.com/addp/common/schema"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
-	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/redis/go-redis/v9"
@@ -60,19 +58,7 @@ func main() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
-		log.Fatalf("统一执行记录存储初始化失败: %v", err)
-	}
-
-	if err := schema.Migrate(db, "orchestrator", repository.StartupSchemaVersion, func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&models.Orchestration{}); err != nil {
-			return err
-		}
-		if err := service.ReconcileLegacyExecutions(tx); err != nil {
-			return err
-		}
-		return repository.ApplySQLMigrations(tx)
-	}); err != nil {
+	if err := service.PrepareSchema(db); err != nil {
 		log.Fatalf("编排存储迁移失败: %v", err)
 	}
 

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	_ "embed"
 	"fmt"
 	"io/fs"
 	"log"
@@ -11,7 +12,13 @@ import (
 	"gorm.io/gorm"
 )
 
+//go:embed orchestrations.mysql.sql
+var mysqlOrchestrationsDDL string
+
 func ApplySQLMigrations(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return db.Exec(mysqlOrchestrationsDDL).Error
+	}
 	return db.Transaction(func(tx *gorm.DB) error { return applySQLMigrations(tx) })
 }
 

@@ -67,6 +67,14 @@ func postgresReliabilityDB(t *testing.T) *gorm.DB {
 
 func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 	db := postgresReliabilityDB(t)
+	checkOrchestratorExecutionReliability(t, db)
+	t.Run("startup_migration_is_atomic_and_one_way", func(t *testing.T) {
+		checkLegacyExecutionMigration(t, db)
+	})
+}
+
+func checkOrchestratorExecutionReliability(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	s := NewExecutionService(db)
 	ctx := context.Background()
 	actor := ExecutionActor{PrincipalID: 9, TenantMembershipID: 19, AuthorizationVersion: 3}
@@ -185,7 +193,7 @@ func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 		if _, err := s.CreateScheduled(ctx, &changed, time.Now().UTC(), &next, actor); err == nil {
 			t.Fatal("changed authorization admitted")
 		}
-		var admitted atomic.Int32
+		admitted := make(chan string, 8)
 		var group sync.WaitGroup
 		for range 8 {
 			group.Add(1)
@@ -197,7 +205,7 @@ func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 					return
 				}
 				if item != nil {
-					admitted.Add(1)
+					admitted <- item.ExecutionID
 					if item.ExecutionConfig["schema_version"] != executionPlanVersion {
 						t.Error("schedule missing snapshot")
 					}
@@ -205,8 +213,25 @@ func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 			}()
 		}
 		group.Wait()
-		if admitted.Load() != 1 {
-			t.Fatalf("scheduled admissions=%d", admitted.Load())
+		close(admitted)
+		if len(admitted) != 1 {
+			t.Fatalf("scheduled admissions=%d", len(admitted))
+		}
+		executionID := <-admitted
+		row, lease, err := s.ClaimNext(ctx, "scheduled-worker", time.Minute)
+		if err != nil || row == nil || row.ExecutionID != executionID || lease == nil {
+			t.Fatalf("scheduled claim: row=%v err=%v", row, err)
+		}
+		if err := s.FinishExecution(ctx, *lease, execution.ExecutionStatusSuccess, ""); err != nil {
+			t.Fatal(err)
+		}
+		record, err := s.GetExecution(ctx, uint(row.ID), definition.TenantID)
+		if err != nil || record.ExecutionID != executionID || record.Status != execution.ExecutionStatusSuccess {
+			t.Fatalf("scheduled terminal record=%v err=%v", record, err)
+		}
+		events, err := s.taskExecutionRepo.ListEvents(ctx, executionID, int(definition.TenantID), 0, 10)
+		if err != nil || len(events.Items) != 2 || events.Items[0].Kind != "started" || events.Items[1].Kind != "completed" {
+			t.Fatalf("scheduled events=%v err=%v", events, err)
 		}
 		var stored models.Orchestration
 		if err := db.First(&stored, definition.ID).Error; err != nil {
@@ -216,84 +241,85 @@ func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 			t.Fatal("schedule advancement not committed")
 		}
 	})
+}
 
-	t.Run("startup_migration_is_atomic_and_one_way", func(t *testing.T) {
-		tx := db.Begin()
-		if tx.Error != nil {
-			t.Fatal(tx.Error)
-		}
-		defer tx.Rollback()
-		// Test the actual module startup revision and SQL migrations inside a rollback fixture.
-		if err := tx.Exec("DROP TABLE IF EXISTS orchestrator.startup_schema_revision").Error; err != nil {
+func checkLegacyExecutionMigration(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	// Test the actual module startup revision and SQL migrations inside a rollback fixture.
+	if err := tx.Exec("DROP TABLE IF EXISTS orchestrator.startup_schema_revision").Error; err != nil {
+		t.Fatal(err)
+	}
+	legacyPending := execution.TaskExecution{TenantID: 999998, ExecutionID: uuid.NewString(), Module: "orchestrator", TaskType: "orchestration", Source: "orchestrator", Status: "pending", TriggerType: "manual", ExecutionBoundary: "bounded", ExecutionConfig: commonModels.JSONMap{}}
+	legacyRunning := legacyPending
+	legacyRunning.ExecutionID = uuid.NewString()
+	legacyRunning.Status = "running"
+	legacyRunning.Metadata = commonModels.JSONMap{"step_results": map[string]interface{}{"old": map[string]interface{}{"status": "success", "result": map[string]interface{}{"execution_id": "old-child"}}}}
+	complete := legacyPending
+	complete.ExecutionID = uuid.NewString()
+	complete.Status = "success"
+	frozen := legacyPending
+	frozen.ExecutionID = uuid.NewString()
+	frozen.ExecutionConfig, _ = freezeExecutionPlan(testSteps())
+	if err := execution.FreezeDisplayLanguage(&frozen, "zh-cn"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []*execution.TaskExecution{&legacyPending, &legacyRunning, &complete, &frozen} {
+		if err := tx.Create(item).Error; err != nil {
 			t.Fatal(err)
 		}
-		legacyPending := execution.TaskExecution{TenantID: 999998, ExecutionID: uuid.NewString(), Module: "orchestrator", TaskType: "orchestration", Source: "orchestrator", Status: "pending", TriggerType: "manual", ExecutionBoundary: "bounded", ExecutionConfig: commonModels.JSONMap{}}
-		legacyRunning := legacyPending
-		legacyRunning.ExecutionID = uuid.NewString()
-		legacyRunning.Status = "running"
-		legacyRunning.Metadata = commonModels.JSONMap{"step_results": map[string]interface{}{"old": map[string]interface{}{"status": "success", "result": map[string]interface{}{"execution_id": "old-child"}}}}
-		complete := legacyPending
-		complete.ExecutionID = uuid.NewString()
-		complete.Status = "success"
-		frozen := legacyPending
-		frozen.ExecutionID = uuid.NewString()
-		frozen.ExecutionConfig, _ = freezeExecutionPlan(testSteps())
-		if err := execution.FreezeDisplayLanguage(&frozen, "zh-cn"); err != nil {
+	}
+	apply := func(bound *gorm.DB) error {
+		if err := bound.AutoMigrate(&models.Orchestration{}); err != nil {
+			return err
+		}
+		if err := ReconcileLegacyExecutions(bound); err != nil {
+			return err
+		}
+		return repository.ApplySQLMigrations(bound)
+	}
+	forced := errors.New("forced migration failure")
+	if err := schema.Migrate(tx, "orchestrator", repository.StartupSchemaVersion, func(bound *gorm.DB) error {
+		if err := apply(bound); err != nil {
+			return err
+		}
+		return forced
+	}); !errors.Is(err, forced) {
+		t.Fatalf("migration rollback=%v", err)
+	}
+	var before execution.TaskExecution
+	if err := tx.First(&before, legacyPending.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if before.Status != "pending" {
+		t.Fatal("SQL migration committed through outer transaction")
+	}
+	if err := schema.Migrate(tx, "orchestrator", repository.StartupSchemaVersion, apply); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Migrate(tx, "orchestrator", repository.StartupSchemaVersion, func(*gorm.DB) error { t.Error("one-way migration ran again"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		item         execution.TaskExecution
+		status, code string
+	}{{legacyPending, "failed", "orchestrator.execution.plan_missing"}, {legacyRunning, "failed", "orchestrator.execution.lease_missing"}, {complete, "success", ""}, {frozen, "pending", ""}} {
+		var stored execution.TaskExecution
+		if err := tx.First(&stored, check.item.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		for _, item := range []*execution.TaskExecution{&legacyPending, &legacyRunning, &complete, &frozen} {
-			if err := tx.Create(item).Error; err != nil {
-				t.Fatal(err)
+		if stored.Status != check.status || (check.code != "" && stored.ErrorDetails["code"] != check.code) {
+			t.Fatalf("migration %s -> %s error=%v", check.item.Status, stored.Status, stored.ErrorDetails)
+		}
+		if check.item.ID == legacyRunning.ID {
+			results, _ := readStepResults(stored.Metadata)
+			if extractProviderExecutionID(results["old"].Result) != "old-child" {
+				t.Fatal("migration erased child facts")
 			}
 		}
-		apply := func(bound *gorm.DB) error {
-			if err := bound.AutoMigrate(&models.Orchestration{}); err != nil {
-				return err
-			}
-			if err := ReconcileLegacyExecutions(bound); err != nil {
-				return err
-			}
-			return repository.ApplySQLMigrations(bound)
-		}
-		forced := errors.New("forced migration failure")
-		if err := schema.Migrate(tx, "orchestrator", repository.StartupSchemaVersion, func(bound *gorm.DB) error {
-			if err := apply(bound); err != nil {
-				return err
-			}
-			return forced
-		}); !errors.Is(err, forced) {
-			t.Fatalf("migration rollback=%v", err)
-		}
-		var before execution.TaskExecution
-		if err := tx.First(&before, legacyPending.ID).Error; err != nil {
-			t.Fatal(err)
-		}
-		if before.Status != "pending" {
-			t.Fatal("SQL migration committed through outer transaction")
-		}
-		if err := schema.Migrate(tx, "orchestrator", repository.StartupSchemaVersion, apply); err != nil {
-			t.Fatal(err)
-		}
-		if err := schema.Migrate(tx, "orchestrator", repository.StartupSchemaVersion, func(*gorm.DB) error { t.Error("one-way migration ran again"); return nil }); err != nil {
-			t.Fatal(err)
-		}
-		for _, check := range []struct {
-			item         execution.TaskExecution
-			status, code string
-		}{{legacyPending, "failed", "orchestrator.execution.plan_missing"}, {legacyRunning, "failed", "orchestrator.execution.lease_missing"}, {complete, "success", ""}, {frozen, "pending", ""}} {
-			var stored execution.TaskExecution
-			if err := tx.First(&stored, check.item.ID).Error; err != nil {
-				t.Fatal(err)
-			}
-			if stored.Status != check.status || (check.code != "" && stored.ErrorDetails["code"] != check.code) {
-				t.Fatalf("migration %s -> %s error=%v", check.item.Status, stored.Status, stored.ErrorDetails)
-			}
-			if check.item.ID == legacyRunning.ID {
-				results, _ := readStepResults(stored.Metadata)
-				if extractProviderExecutionID(results["old"].Result) != "old-child" {
-					t.Fatal("migration erased child facts")
-				}
-			}
-		}
-	})
+	}
 }

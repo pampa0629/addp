@@ -48,11 +48,8 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 	defer stage.End(httptrace.OutcomeRejected)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var orch models.Orchestration
-		query := tx.Where("id = ? AND tenant_id = ?", orchestrationID, tenantID)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
-		if err := query.First(&orch).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", orchestrationID, tenantID).First(&orch).Error; err != nil {
 			return err
 		}
 		var err error
@@ -108,7 +105,7 @@ func createOrchestrationExecution(ctx context.Context, tx *gorm.DB, orch *models
 		// Trace association is optional; only this Runtime's real phase can be frozen.
 		_ = commonExecution.FreezeEnqueueTrace(item, ref)
 	}
-	if err := tx.WithContext(ctx).Create(item).Error; err != nil {
+	if err := commonExecution.CreatePending(ctx, tx, item); err != nil {
 		return nil, err
 	}
 	return item, nil
