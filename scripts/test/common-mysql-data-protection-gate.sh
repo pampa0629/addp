@@ -253,6 +253,9 @@ if [ "$test_group" = platform-execution ]; then
     grep -q '^--- PASS: TestIntegrationMySQLManagerGLBOutputPublication ' "$WORK_DIR/manager-queue.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerProfileActorPersistenceAndReuse ' "$WORK_DIR/manager-queue.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerQueue ' "$WORK_DIR/manager-queue.log"
+    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_QUEUE=1 GOWORK=off go test ./internal/service \
+        -run '^TestIntegrationMySQLManagerUploadContinuationNeverReplaysWrites$' -count=1 -v) | tee "$WORK_DIR/manager-upload.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerUploadContinuationNeverReplaysWrites ' "$WORK_DIR/manager-upload.log"
     exit 0
 fi
 

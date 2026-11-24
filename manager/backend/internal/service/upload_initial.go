@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -183,8 +184,8 @@ func (s *UploadService) StartUploadRecovery(ctx context.Context) {
 	}()
 }
 func (s *UploadService) continueUploads(ctx context.Context) {
-	var runs []execution.TaskExecution
-	if s.db.WithContext(ctx).Where("module=? AND task_type=? AND status IN ? AND metadata->'upload_initial'->>'status'='pending'", execution.ModuleManager, execution.TaskTypeUpload, []string{"success", "failed"}).Order("updated_at,id").Limit(8).Find(&runs).Error != nil {
+	runs, err := repository.PendingUploadContinuations(s.db.WithContext(ctx), 8)
+	if err != nil {
 		return
 	}
 	for _, run := range runs {
@@ -192,7 +193,7 @@ func (s *UploadService) continueUploads(ctx context.Context) {
 			return
 		}
 		// Rotate bounded batches even when one dependency remains unavailable.
-		_ = s.db.WithContext(ctx).Model(&execution.TaskExecution{}).Where("tenant_id=? AND execution_id=? AND module=? AND task_type=? AND metadata->'upload_initial'->>'status'='pending'", run.TenantID, run.ExecutionID, execution.ModuleManager, execution.TaskTypeUpload).UpdateColumn("updated_at", time.Now().UTC()).Error
+		_ = repository.RotateUploadContinuation(s.db.WithContext(ctx), &run, time.Now().UTC())
 		s.continueUpload(ctx, &run)
 	}
 }
@@ -231,9 +232,8 @@ func (s *UploadService) continueUpload(ctx context.Context, run *execution.TaskE
 	s.saveUploadInitial(ctx, run, state, observed.ScanExecutionID, outcomes)
 }
 func (s *UploadService) saveUploadInitial(ctx context.Context, run *execution.TaskExecution, state, scan string, outcomes []authorization.UploadInitialResult) {
-	value, _ := json.Marshal(map[string]any{"status": state, "scan_execution_id": scan, "outcomes": outcomes})
-	// A late duplicate never changes a settled result; receipt and physical state remain immutable.
-	_ = s.db.WithContext(ctx).Model(&execution.TaskExecution{}).Where("tenant_id=? AND execution_id=? AND module=? AND task_type=? AND metadata->'upload_initial'->>'status'='pending'", run.TenantID, run.ExecutionID, execution.ModuleManager, execution.TaskTypeUpload).Update("metadata", gorm.Expr("jsonb_set(metadata,'{upload_initial}',?::jsonb)", string(value))).Error
+	value := map[string]any{"status": state, "scan_execution_id": scan, "outcomes": outcomes}
+	_ = repository.SaveUploadContinuation(s.db.WithContext(ctx), run, value)
 }
 
 func (s *UploadService) GetOwnUpload(ctx context.Context, tenant uint, principal int64, id string) (*execution.TaskExecution, error) {

@@ -8,6 +8,8 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/infra/database"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/google/uuid"
@@ -34,7 +36,26 @@ func TestIntegrationPostgresManagerUploadContinuationNeverReplaysWrites(t *testi
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("requires standard Manager PostgreSQL gate")
 	}
-	db, err := gorm.Open(postgres.Open(os.Getenv("MANAGER_POSTGRES_TEST_DSN")), &gorm.Config{})
+	verifyUploadContinuation(t, postgres.Open(os.Getenv("MANAGER_POSTGRES_TEST_DSN")))
+}
+
+func TestIntegrationMySQLManagerUploadContinuationNeverReplaysWrites(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_MANAGER_QUEUE") != "1" {
+		t.Skip("requires disposable MySQL execution gate")
+	}
+	dialect, err := platformmysql.Dialector(database.Config{
+		Host: os.Getenv("ADDP_TEST_MYSQL_HOST"), Port: os.Getenv("ADDP_TEST_MYSQL_PORT"),
+		User: os.Getenv("ADDP_TEST_MYSQL_USER"), Password: os.Getenv("ADDP_TEST_MYSQL_PASSWORD"), DBName: "common",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyUploadContinuation(t, dialect)
+}
+
+func verifyUploadContinuation(t *testing.T, dialect gorm.Dialector) {
+	t.Helper()
+	db, err := gorm.Open(dialect, &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +119,8 @@ func TestIntegrationPostgresManagerUploadContinuationNeverReplaysWrites(t *testi
 			}
 			svc.continueUploads(t.Context())
 			calls := identification.calls
+			// A stale callback can arrive after the result is terminal.
+			svc.saveUploadInitial(t.Context(), run, "pending", uuid.NewString(), nil)
 			svc.continueUploads(t.Context())
 			run, err = svc.GetOwnUpload(t.Context(), tenant, 31, result.UploadID)
 			if err != nil {
