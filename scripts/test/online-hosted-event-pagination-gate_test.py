@@ -88,6 +88,9 @@ class HostedEventPaginationGateTest(unittest.TestCase):
     def test_owned_topology_and_browser_install_precede_fixture(self):
         result=self.run_gate();self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         trace=self.host.trace.read_text();offset=0
+        for owner in ('manager', 'security', 'orchestrator', 'copilot'):
+            installer = 'install:copilot:prepare_database' if owner == 'copilot' else f'install:addp-{owner}:prepare-database'
+            self.assertLess(trace.index(installer), trace.index('start:-meta -monitor -console'))
         for action in ['infra-up','start:-meta -monitor -console','make:test-online ONLINE_SUITE=execution-events-pagination','application-stop','infra-down']:
             offset=trace.index(action,offset)+len(action)
         self.assertFalse(self.host.secrets.exists())

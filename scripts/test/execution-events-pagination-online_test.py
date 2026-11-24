@@ -33,7 +33,8 @@ class EventPaginationOnlineTest(unittest.TestCase):
     p=root/n;p.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(M.ROOT/n,p)
    check.validate_event_pagination_profile(root,{M.SUITE})
    for n,part in [('.github/workflows/online-t4-gates.yml',"inputs.suite != 'execution-events-pagination'"),
-                  ('scripts/test/online-hosted-event-pagination-gate.sh','scripts/dev/start.sh -meta -monitor'),
+                  ('scripts/test/online-hosted-event-pagination-gate.sh','hosted_prepare_native_targets "${modules[@]}"'),
+                  ('scripts/test/online-hosted-event-pagination-gate.sh','scripts/dev/start.sh "${modules[@]}"'),
                   ('Makefile','ADDP_EXECUTION_EVENT_FIXTURE=1'),
                   ('Makefile','test-execution-events-pagination-runner')]:
     p=root/n;original=p.read_text()

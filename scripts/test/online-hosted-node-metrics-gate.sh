@@ -89,10 +89,10 @@ if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NO
   run_logged python3 scripts/test/platform-node-metrics-fixture.py engine-up
 fi
 application_owned=1
-hosted_prepare_native_database system meta gateway
-unset hosted_deploy_password
 modules=(-monitor -gateway)
 if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi
+hosted_prepare_native_targets "${modules[@]}"
+unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite platform-node-metrics --output "$1"' _ "$IDENTITY_ENV"

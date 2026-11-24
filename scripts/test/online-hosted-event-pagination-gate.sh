@@ -15,9 +15,10 @@ hosted_start_platform_infra
 export ADDP_ONLINE_RETENTION_POSTGRES_ID
 ADDP_ONLINE_RETENTION_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
 application_owned=1
-hosted_prepare_native_database system meta gateway
+modules=(-meta -monitor -console)
+hosted_prepare_native_targets "${modules[@]}"
 unset hosted_deploy_password
-run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -meta -monitor -console
+run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite execution-events-pagination --output "$1"' _ "$IDENTITY_ENV"
 # Consumer credentials only enter fixture and test subprocesses, never runtimes.

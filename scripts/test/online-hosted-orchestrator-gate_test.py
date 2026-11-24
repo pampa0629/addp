@@ -159,6 +159,7 @@ class HostedOrchestratorGateTest(unittest.TestCase):
                    "scheduled:observe-issuance", "start:-develop", "runtime:orchestrator-scheduled-file",
                    "scheduled:verify-build", "make:test-online", "application-stop", "scheduled:stop", "infra-down")
         self.assertEqual(sorted(trace.index(line) for line in ordered), [trace.index(line) for line in ordered])
+        self.assertLess(trace.index("install:addp-orchestrator:prepare-database"), trace.index("start:-orchestrator"))
         self.assertNotIn("alias-add", trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
@@ -205,6 +206,7 @@ class HostedOrchestratorGateTest(unittest.TestCase):
                      "make:test-online ONLINE_SUITE=orchestrator-execution", "application-stop", "source-fixture:stop", "infra-down"):
             self.assertIn(item, trace)
         self.assertLess(trace.index("application-stop"), trace.index("source-fixture:stop"))
+        self.assertLess(trace.index("install:addp-orchestrator:prepare-database"), trace.index("start:-orchestrator"))
         self.assertLess(trace.index("fault-tool:alias-add"), trace.index("start:-meta"))
         self.assertLess(trace.index("application-stop"), trace.index("fault-tool:alias-remove"))
         self.assertFalse(self.host.secrets.exists())

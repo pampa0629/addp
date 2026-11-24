@@ -110,11 +110,20 @@ hosted_prepare_native_database() (
 )
 
 hosted_prepare_native_targets() {
-  local target owner owners=(system meta gateway)
-  source "$ROOT_DIR/scripts/infra/platform-database.sh"
+  local target owner owners=(system meta gateway) targets=("$@")
+  # The ordinary -gateway and -console selectors start the same additional
+  # backends in dev/start.sh. The product DB registry selects their installers.
   for target in "$@"; do
+    case "$target" in -gateway|-console)
+      targets+=(-manager -transfer -orchestrator -develop -service -monitor -copilot
+        -standard -model -quality -security -catalog -ontology)
+      break ;;
+    esac
+  done
+  source "$ROOT_DIR/scripts/infra/platform-database.sh"
+  for target in "${targets[@]}"; do
     owner=${target#-}
-    case "$owner" in system|meta|gateway) continue ;; esac
+    case " ${owners[*]} " in *" $owner "*) continue ;; esac
     if addp_prepare_module_database "$owner" : 2>/dev/null; then owners+=("$owner"); fi
   done
   hosted_prepare_native_database "${owners[@]}"

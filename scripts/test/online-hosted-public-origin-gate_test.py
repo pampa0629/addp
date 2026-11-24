@@ -187,7 +187,8 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             self.assertIn(step, trace)
         stages = ("system-backend prepare-database system", "system-backend prepare-database common",
                   " up -d --no-deps --wait system-backend", "meta-backend prepare-database",
-                  "gateway prepare-database", " up -d --no-deps --wait gateway console system-frontend")
+                  "gateway prepare-database", "orchestrator-backend prepare-database",
+                  " up -d --no-deps --wait gateway console system-frontend", " up -d --no-deps --wait orchestrator-backend")
         positions = [trace.index(stage) for stage in stages]
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn("--network-alias meta-frontend", trace)

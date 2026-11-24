@@ -2327,6 +2327,7 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
     gate = (repository / "scripts/test/online-hosted-node-metrics-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "scripts/infra/node-metrics.py up",
                      "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", 'modules=(-monitor -gateway)',
+                     'hosted_prepare_native_targets "${modules[@]}"',
                      'if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi',
                      'scripts/dev/start.sh "${modules[@]}"',
                      'run_logged python3 scripts/test/platform-node-metrics-fixture.py standard-cleanup || status=1',
@@ -8044,7 +8045,8 @@ def validate_event_pagination_profile(repository: Path, registered: set[str]) ->
             or "inputs.suite != 'execution-events-pagination'" not in workflow):
         raise RegistrationError("Event pagination requires its manual Hosted profile")
     gate = (repository / "scripts/test/online-hosted-event-pagination-gate.sh").read_text()
-    for part in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'scripts/dev/start.sh -meta -monitor -console',
+    for part in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'modules=(-meta -monitor -console)',
+                 'hosted_prepare_native_targets "${modules[@]}"', 'scripts/dev/start.sh "${modules[@]}"',
                  'playwright install --with-deps chromium', 'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
         if part not in gate:
             raise RegistrationError("Event pagination lifecycle missing " + part)

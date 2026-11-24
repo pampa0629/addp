@@ -31,7 +31,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     self.assertIn("hosted_prepare_selected_native_database", source)
                 else:
                     self.assertEqual(first_up.split()[0], "hosted_start_platform_infra")
-                    self.assertRegex(source, r"(?m)^ *(?:run_logged )?hosted_(?:start_native_modules|prepare_(?:native|compose)_database) ")
+                    self.assertRegex(source, r"(?m)^ *(?:run_logged )?hosted_(?:start_native_modules|prepare_native_targets|prepare_(?:native|compose)_database) ")
 
     @staticmethod
     def contract_mutations(cases):
