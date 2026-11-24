@@ -217,10 +217,11 @@ if [ "$test_group" = platform-cleanup-results ]; then
 fi
 
 if [ "$test_group" = platform-manager-storage ]; then
-    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_STORAGE=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManager(ImportSourceIsPrivateAndBoundOnce|PreviewState|ContentReceipt|SearchHistory)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-storage.log"
+    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_STORAGE=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManager(ImportSourceIsPrivateAndBoundOnce|PreviewState|ContentReceipt|SearchHistory|ProfileProtectedResultRoundTrip)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerPreviewState ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerSearchHistory ' "$WORK_DIR/manager-storage.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerProfileProtectedResultRoundTrip ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerContentReceipt ' "$WORK_DIR/manager-storage.log"
     (cd "$ROOT_DIR/manager/backend" && GOWORK=off go build -o "$WORK_DIR/manager-backend" ./cmd/server &&
         ADDP_TEST_MYSQL_MANAGER_STORAGE=1 MANAGER_MAINTENANCE_TEST_BINARY="$WORK_DIR/manager-backend" GOWORK=off go test ./internal/service -run '^TestIntegrationMySQLManagerSearchMaintenance$' -count=1 -v) | tee "$WORK_DIR/manager-maintenance.log"
@@ -235,13 +236,15 @@ if [ "$test_group" = platform-export-store ]; then
 fi
 
 if [ "$test_group" = platform-execution ]; then
+    mysql_compose exec -T mysql sh -ec 'exec mysql --user=root --password="$MYSQL_ROOT_PASSWORD" --execute="CREATE DATABASE manager"'
     (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_COMMON_EXECUTION=1 GOWORK=off go test -p 1 ./schema ./execution \
         -run '^(TestPlatformMySQLExecutionLifecycle|TestExecutionRetentionAssessmentAgainstMySQL|TestCleanupScanReceiptAgainstMySQL)$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestPlatformMySQLExecutionLifecycle ' "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestCleanupScanReceiptAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestExecutionRetentionAssessmentAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_QUEUE=1 GOWORK=off go test ./internal/repository \
-        -run '^TestIntegrationMySQLManagerQueue$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-queue.log"
+        -run '^TestIntegrationMySQLManager(Queue|ProfileActorPersistenceAndReuse)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-queue.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerProfileActorPersistenceAndReuse ' "$WORK_DIR/manager-queue.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerQueue ' "$WORK_DIR/manager-queue.log"
     exit 0
 fi

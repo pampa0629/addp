@@ -42,7 +42,9 @@ func (r *DataProfileExecutionRepository) SuppressConditionalScopesByItemFingerpr
 		commonExecution.ModuleManager,
 		commonExecution.TaskTypeDataProfiling,
 	)
-	if tx.Dialector.Name() == "postgres" {
+	if tx.Dialector.Name() == "mysql" {
+		query = query.Where("BINARY JSON_UNQUOTE(JSON_EXTRACT(execution_config, '$.item_fingerprint')) IN ?", itemFingerprints)
+	} else if tx.Dialector.Name() == "postgres" {
 		query = query.Where("execution_config ->> 'item_fingerprint' IN ?", itemFingerprints)
 	} else {
 		query = query.Where("json_extract(execution_config, '$.item_fingerprint') IN ?", itemFingerprints)
@@ -88,10 +90,17 @@ func (r *DataProfileExecutionRepository) CreateOrReuseActive(
 	var result *commonExecution.TaskExecution
 	created := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", dataProfileLockID(execution.TenantID, targetKey)).Error; err != nil {
-				return fmt.Errorf("lock data profile execution target: %w", err)
-			}
+		lockID := dataProfileLockID(execution.TenantID, targetKey)
+		var lockErr error
+		switch tx.Dialector.Name() {
+		case "postgres":
+			lockErr = tx.Exec("SELECT pg_advisory_xact_lock(?)", lockID).Error
+		case "mysql":
+			lockErr = tx.Exec(`INSERT INTO manager.data_profile_target_locks (lock_id)
+				VALUES (?) ON DUPLICATE KEY UPDATE lock_id = lock_id`, lockID).Error
+		}
+		if lockErr != nil {
+			return fmt.Errorf("lock data profile execution target: %w", lockErr)
 		}
 		active, err := findActiveDataProfileExecution(tx, execution.TenantID, targetKey)
 		if err != nil {
@@ -132,11 +141,7 @@ func (r *DataProfileExecutionRepository) GetLatest(
 			commonExecution.ModuleManager,
 			commonExecution.TaskTypeDataProfiling,
 		)
-	if r.db.Dialector.Name() == "postgres" {
-		query = query.Where("execution_config ->> 'target_key' = ?", targetKey)
-	} else {
-		query = query.Where("json_extract(execution_config, '$.target_key') = ?", targetKey)
-	}
+	query = filterProfileTarget(query, targetKey)
 	err := query.Order("created_at DESC").First(&execution).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -318,25 +323,35 @@ func (r *DataProfileExecutionRepository) updateTerminal(
 
 func findActiveDataProfileExecution(db *gorm.DB, tenantID int, targetKey string) (*commonExecution.TaskExecution, error) {
 	var execution commonExecution.TaskExecution
-	query := db.
-		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where(
-			"tenant_id = ? AND module = ? AND task_type = ? AND status IN ?",
-			tenantID,
-			commonExecution.ModuleManager,
-			commonExecution.TaskTypeDataProfiling,
-			[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning},
-		)
-	if db.Dialector.Name() == "postgres" {
-		query = query.Where("execution_config ->> 'target_key' = ?", targetKey)
-	} else {
-		query = query.Where("json_extract(execution_config, '$.target_key') = ?", targetKey)
+	query := db.Where(
+		"tenant_id = ? AND module = ? AND task_type = ? AND status IN ?",
+		tenantID,
+		commonExecution.ModuleManager,
+		commonExecution.TaskTypeDataProfiling,
+		[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning},
+	)
+	// MySQL serializes admissions on its target row. A locking JSON scan
+	// here would also lock pending executions belonging to unrelated targets.
+	if db.Dialector.Name() != "mysql" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
+	query = filterProfileTarget(query, targetKey)
 	err := query.Order("created_at DESC").First(&execution).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &execution, err
+}
+
+func filterProfileTarget(db *gorm.DB, key string) *gorm.DB {
+	switch db.Dialector.Name() {
+	case "mysql":
+		return db.Where("BINARY JSON_UNQUOTE(JSON_EXTRACT(execution_config, '$.target_key')) = ?", key)
+	case "postgres":
+		return db.Where("execution_config ->> 'target_key' = ?", key)
+	default:
+		return db.Where("json_extract(execution_config, '$.target_key') = ?", key)
+	}
 }
 
 func dataProfileLockID(tenantID int, targetKey string) int64 {

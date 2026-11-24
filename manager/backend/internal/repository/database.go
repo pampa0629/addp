@@ -167,6 +167,9 @@ func dropLegacyCADPreviewTables(db *gorm.DB) error {
 }
 
 func ensureDataProfileSchema(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return prepareManagerMySQLTables(db, mysqlProfileTables)
+	}
 	return db.AutoMigrate(&models.DataProfile{}, &models.DataProfileField{})
 }
 

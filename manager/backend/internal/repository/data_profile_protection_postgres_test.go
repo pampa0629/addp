@@ -20,7 +20,7 @@ import (
 )
 
 // Standard Manager T2: a protected result is persisted without its sensitive
-// field, decoded from PostgreSQL and safely protected again at the read boundary.
+// field, decoded from storage and safely protected again at the read boundary.
 func TestIntegrationPostgresManagerProfileProtectedResultRoundTrip(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("requires standard Manager PostgreSQL gate")
@@ -37,7 +37,16 @@ func TestIntegrationPostgresManagerProfileProtectedResultRoundTrip(t *testing.T)
 	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.DataProfile{}, &models.DataProfileField{}); err != nil {
+	verifyProfileProtectedResult(t, db)
+}
+
+func TestIntegrationMySQLManagerProfileProtectedResultRoundTrip(t *testing.T) {
+	verifyProfileProtectedResult(t, managerMySQLStoreDB(t, "manager", "ADDP_TEST_MYSQL_MANAGER_STORAGE"))
+}
+
+func verifyProfileProtectedResult(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := ensureDataProfileSchema(db); err != nil {
 		t.Fatal(err)
 	}
 	key := uuid.NewString()
@@ -61,10 +70,11 @@ func TestIntegrationPostgresManagerProfileProtectedResultRoundTrip(t *testing.T)
 	})
 	fields := []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}, {Name: "phone", Type: datatype.FieldTypeString}}
 	component := dataprotection.Component{Key: "phone", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}}
-	component.SchemaFingerprint, err = dataprotection.ComponentSchemaFingerprint(fields, component)
+	fingerprint, err := dataprotection.ComponentSchemaFingerprint(fields, component)
 	if err != nil {
 		t.Fatal(err)
 	}
+	component.SchemaFingerprint = fingerprint
 	rules := []dataprotection.Rule{{Action: managerprotection.ActionProfile, Component: component, Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress}}}
 	raw := dataprofile.Build([]map[string]interface{}{{"name": "synthetic", "phone": "sensitive-fixture-only"}}, fields, dataprofile.BuildOptions{
 		Mode: dataprofile.ModeSample, DataScope: dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, ProfiledAt: time.Now().UTC(),

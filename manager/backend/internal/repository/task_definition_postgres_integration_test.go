@@ -97,6 +97,19 @@ func TestIntegrationPostgresManagerProfileActorPersistenceAndReuse(t *testing.T)
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
+	verifyProfileActorPersistenceAndReuse(t, db)
+}
+
+func TestIntegrationMySQLManagerProfileActorPersistenceAndReuse(t *testing.T) {
+	db := managerMySQLStoreDB(t, "common", "ADDP_TEST_MYSQL_MANAGER_QUEUE")
+	if err := ensureDataProfileSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	verifyProfileActorPersistenceAndReuse(t, db)
+}
+
+func verifyProfileActorPersistenceAndReuse(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	tenantID := int(time.Now().UnixNano()%100000000 + 970000000)
 	t.Cleanup(func() {
 		if err := db.Where("tenant_id = ? AND module = ? AND task_type = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling).Delete(&commonExecution.TaskExecution{}).Error; err != nil {
@@ -115,8 +128,9 @@ func TestIntegrationPostgresManagerProfileActorPersistenceAndReuse(t *testing.T)
 			Source: commonExecution.ModuleManager, TaskType: commonExecution.TaskTypeDataProfiling,
 			Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 			ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID, IssuedAuthorizationVersion: &version,
-			ExecutionConfig: commonModels.JSONMap{"target_key": key, "engine_id": 11,
-				"budget": map[string]interface{}{"sample_size": 10, "max_rows_scanned": 20, "page_size": 5, "timeout_ms": 30000}},
+			ExecutionConfig: commonModels.JSONMap{"target_key": key, "engine_id": 11, "item_fingerprint": key,
+				"data_scope": map[string]interface{}{"kind": "condition", "value": "fixture-only"},
+				"budget":     map[string]interface{}{"sample_size": 10, "max_rows_scanned": 20, "page_size": 5, "timeout_ms": 30000}},
 			CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 		}
 	}
@@ -160,6 +174,27 @@ func TestIntegrationPostgresManagerProfileActorPersistenceAndReuse(t *testing.T)
 	separate, didCreate, err := repo.CreateOrReuseActive(context.Background(), otherKey, other)
 	if err != nil || !didCreate || separate.ExecutionID == stored.ExecutionID {
 		t.Fatalf("different actor target reused: created=%v err=%v", didCreate, err)
+	}
+	ctx := t.Context()
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.SuppressConditionalScopesByItemFingerprints(ctx, tx, int64(tenantID), []string{key})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		target   string
+		id       string
+		expected string
+	}{{key, stored.ExecutionID, `{"kind":"condition","values_suppressed":true}`},
+		{otherKey, separate.ExecutionID, `{"kind":"condition","value":"fixture-only"}`}} {
+		latest, err := repo.GetLatest(ctx, tenantID, test.target)
+		if err != nil || latest == nil || latest.ExecutionID != test.id {
+			t.Fatalf("latest execution for %s: %v, %v", test.target, latest, err)
+		}
+		scope, err := json.Marshal(latest.ExecutionConfig["data_scope"])
+		if err != nil || string(scope) != test.expected {
+			t.Fatalf("stored scope after cleanup: %s, %v", scope, err)
+		}
 	}
 }
 

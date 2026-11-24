@@ -12,11 +12,21 @@ import (
 //go:embed content_index.mysql.sql
 var mysqlContentIndexTables string
 
-func prepareMySQLContentIndex(db *gorm.DB) error {
-	for _, statement := range strings.Split(strings.TrimSuffix(strings.TrimSpace(mysqlContentIndexTables), ";"), ";") {
+//go:embed data_profile.mysql.sql
+var mysqlProfileTables string
+
+func prepareManagerMySQLTables(db *gorm.DB, ddl string) error {
+	for _, statement := range strings.Split(strings.TrimSuffix(strings.TrimSpace(ddl), ";"), ";") {
 		if err := db.Exec(statement).Error; err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func prepareMySQLContentIndex(db *gorm.DB) error {
+	if err := prepareManagerMySQLTables(db, mysqlContentIndexTables); err != nil {
+		return err
 	}
 	return schema.CheckMySQLTriggers(db, []string{
 		`CREATE TRIGGER IF NOT EXISTS search_index_insert
