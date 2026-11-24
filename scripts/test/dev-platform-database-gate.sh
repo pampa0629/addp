@@ -59,10 +59,11 @@ export ADDP_DATABASE_RUNTIME_USER=platform_run_gate ADDP_DATABASE_RUNTIME_PASSWO
 pg <<SQL
 CREATE ROLE platform_run_gate LOGIN PASSWORD '$ADDP_DATABASE_RUNTIME_PASSWORD';
 CREATE SCHEMA manager AUTHORIZATION postgres;
-GRANT USAGE ON SCHEMA common,manager TO platform_run_gate;
+CREATE SCHEMA security AUTHORIZATION postgres;
+GRANT USAGE ON SCHEMA common,manager,security TO platform_run_gate;
 GRANT SELECT ON ALL TABLES IN SCHEMA common TO platform_run_gate;
-ALTER DEFAULT PRIVILEGES IN SCHEMA manager GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO platform_run_gate;
-ALTER DEFAULT PRIVILEGES IN SCHEMA manager GRANT USAGE,SELECT ON SEQUENCES TO platform_run_gate;
+ALTER DEFAULT PRIVILEGES IN SCHEMA manager,security GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO platform_run_gate;
+ALTER DEFAULT PRIVILEGES IN SCHEMA manager,security GRANT USAGE,SELECT ON SEQUENCES TO platform_run_gate;
 SQL
 check_manager() (
   unset POSTGRES_USER POSTGRES_PASSWORD ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
@@ -80,6 +81,19 @@ if [[ "$capability" = vector ]]; then
     GOWORK=off go test ./internal/repository -run '^TestIntegrationPostgresManagerSearchSchemaAndVectorBatches$' -count=1 -v)
 fi
 echo 'Manager native database preparation and two restricted runtime openings passed.'
+(cd "$repo/security/backend" && GOWORK=off go build -o "$work/.dev-bins/addp-security" ./cmd/server)
+check_security() (
+  unset POSTGRES_USER POSTGRES_PASSWORD ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+  cd "$repo/security/backend"
+  ADDP_TEST_SECURITY_PREPARED_RUNTIME="$1" GOWORK=off go test ./internal/repository -run '^TestSecurityPreparedRuntime$' -count=1 -v
+)
+check_security missing
+addp_dev_prepare_database security
+check_security ready
+PGOPTIONS='-c default_transaction_read_only=on' addp_dev_prepare_database security
+check_security ready
+echo 'Security native installation and two restricted runtime openings passed.'
+
 pg -c 'DELETE FROM system.schema_migration_checksums WHERE version=37'
 if addp_dev_prepare_database system >"$work/missing.log" 2>&1; then exit 1; fi
 grep -F '000037 is missing' "$work/missing.log"

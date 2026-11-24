@@ -12,15 +12,12 @@ import (
 	"github.com/addp/common/buildinfo"
 	commonclient "github.com/addp/common/client"
 	commonexecution "github.com/addp/common/execution"
-	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
-	"github.com/addp/common/schema"
 	"github.com/addp/security/internal/config"
 	"github.com/addp/security/internal/repository"
 	"github.com/addp/security/internal/service"
 	securityworker "github.com/addp/security/internal/worker"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -31,15 +28,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Security worker token source failed: %v", err)
 	}
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
+	db, err := repository.OpenRuntime(cfg.PlatformDatabase())
 	if err != nil {
-		log.Fatalf("Security worker database connection failed: %v", err)
-	}
-	if err := schema.Require(db, "security", repository.SchemaVersion); err != nil {
-		log.Fatalf("Security worker schema migration failed: %v", err)
-	}
-	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
-		log.Fatalf("Security worker execution store migration failed: %v", err)
+		log.Fatalf("Security platform database initialization failed: %v", err)
 	}
 	if err := service.ReconcileGraphOwnerProjections(ctx, db, time.Now().UTC()); err != nil {
 		log.Fatalf("Security Graph owner projection initialization failed: %v", err)

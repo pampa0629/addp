@@ -256,7 +256,32 @@ if [ "$test_group" = platform-execution ]; then
     (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_QUEUE=1 GOWORK=off go test ./internal/service \
         -run '^TestIntegrationMySQLManagerUploadContinuationNeverReplaysWrites$' -count=1 -v) | tee "$WORK_DIR/manager-upload.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerUploadContinuationNeverReplaysWrites ' "$WORK_DIR/manager-upload.log"
-    mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -e "CREATE DATABASE security"'
+    (
+        export ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port"
+        export ADDP_DATABASE_DEPLOY_USER=security_deploy_gate ADDP_DATABASE_RUNTIME_USER=security_run_gate
+        ADDP_DATABASE_DEPLOY_PASSWORD=$(openssl rand -hex 24)
+        ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 24)
+        export ADDP_DATABASE_DEPLOY_PASSWORD ADDP_DATABASE_RUNTIME_PASSWORD
+        mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot' <<SQL
+CREATE DATABASE security;
+CREATE USER 'security_deploy_gate'@'%' IDENTIFIED BY '$ADDP_DATABASE_DEPLOY_PASSWORD';
+CREATE USER 'security_run_gate'@'%' IDENTIFIED BY '$ADDP_DATABASE_RUNTIME_PASSWORD';
+GRANT ALL ON security.* TO 'security_deploy_gate'@'%';
+GRANT SELECT ON common.* TO 'security_deploy_gate'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON security.* TO 'security_run_gate'@'%';
+GRANT SELECT ON common.* TO 'security_run_gate'@'%';
+SQL
+        cd "$ROOT_DIR/security/backend"
+        GOWORK=off go build -o "$WORK_DIR/security-backend" ./cmd/server
+        ADDP_TEST_SECURITY_PREPARED_RUNTIME=missing GOWORK=off go test ./internal/repository -run '^TestSecurityPreparedRuntime$' -count=1
+        "$WORK_DIR/security-backend" prepare-database
+        before=$(mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysqldump --no-data --skip-comments --no-tablespaces -uroot security' | shasum -a 256)
+        ADDP_TEST_SECURITY_PREPARED_RUNTIME=ready GOWORK=off go test ./internal/repository -run '^TestSecurityPreparedRuntime$' -count=1
+        "$WORK_DIR/security-backend" prepare-database
+        ADDP_TEST_SECURITY_PREPARED_RUNTIME=ready GOWORK=off go test ./internal/repository -run '^TestSecurityPreparedRuntime$' -count=1
+        after=$(mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysqldump --no-data --skip-comments --no-tablespaces -uroot security' | shasum -a 256)
+        test "$before" = "$after"
+    )
     (cd "$ROOT_DIR/security/backend" && ADDP_TEST_MYSQL_SECURITY_STORAGE=1 GOWORK=off go test ./internal/service \
         -run '^TestProtectionAccessScopesAgainstMySQL$' -count=1 -v) | tee "$WORK_DIR/security-storage.log"
     grep -q '^--- PASS: TestProtectionAccessScopesAgainstMySQL ' "$WORK_DIR/security-storage.log"

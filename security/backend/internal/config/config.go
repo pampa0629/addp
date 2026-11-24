@@ -31,7 +31,6 @@ func Load() *Config {
 func (c *Config) PlatformDatabase() database.Config {
 	return database.Config{
 		Host: c.DBHost, Port: c.DBPort,
-		User: c.DBUser, Password: c.DBPassword,
 		DBName: c.DBName, Schema: "security",
 	}
 }

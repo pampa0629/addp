@@ -11,15 +11,12 @@ import (
 
 	commonclient "github.com/addp/common/client"
 	commonconfig "github.com/addp/common/config"
-	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
-	"github.com/addp/common/schema"
 	_ "github.com/addp/security/i18n"
 	"github.com/addp/security/internal/api"
 	"github.com/addp/security/internal/config"
 	"github.com/addp/security/internal/repository"
 	"github.com/addp/security/internal/service"
-	"gorm.io/gorm"
 )
 
 // @title ADDP Security API
@@ -33,15 +30,18 @@ func main() {
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			log.Fatal("usage: security-backend [prepare-database]")
+		}
+		if err := repository.PrepareDatabase(ctx, cfg.PlatformDatabase()); err != nil {
+			log.Fatalf("Security database preparation failed: %v", err)
+		}
+		return
+	}
+	db, err := repository.OpenRuntime(cfg.PlatformDatabase())
 	if err != nil {
-		log.Fatalf("Security database connection failed: %v", err)
-	}
-	if err := schema.Migrate(db, "security", repository.SchemaVersion, repository.Migrate); err != nil {
-		log.Fatalf("Security database migration failed: %v", err)
-	}
-	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
-		log.Fatalf("Security execution store migration failed: %v", err)
+		log.Fatalf("Security platform database initialization failed: %v", err)
 	}
 	if err := service.ReconcileGraphOwnerProjections(ctx, db, time.Now().UTC()); err != nil {
 		log.Fatalf("Security Graph owner projection initialization failed: %v", err)
