@@ -34,8 +34,13 @@ func TestIntegrationPostgresManagerImportSourceIsPrivateAndBoundOnce(t *testing.
 }
 
 func TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce(t *testing.T) {
-	if os.Getenv("ADDP_TEST_MYSQL_MANAGER_IMPORT") != "1" {
-		t.Skip("requires platform-manager-import disposable MySQL gate")
+	verifyManagerImportSource(t, managerMySQLStoreDB(t))
+}
+
+func managerMySQLStoreDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	if os.Getenv("ADDP_TEST_MYSQL_MANAGER_STORAGE") != "1" {
+		t.Skip("requires platform-manager-storage disposable MySQL gate")
 	}
 	dialect, err := platformmysql.Dialector(database.Config{
 		Host: os.Getenv("ADDP_TEST_MYSQL_HOST"), Port: os.Getenv("ADDP_TEST_MYSQL_PORT"),
@@ -53,7 +58,7 @@ func TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = pool.Close() })
-	verifyManagerImportSource(t, db)
+	return db
 }
 
 func verifyManagerImportSource(t *testing.T, db *gorm.DB) {

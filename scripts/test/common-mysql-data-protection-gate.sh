@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -46,7 +46,7 @@ if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
 fi
 
 case "$test_group" in
-    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
+    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
         if [ "$local_disposable" != true ]; then
             echo "$test_group requires a gate-owned instance (--local-disposable)" >&2
             exit 2
@@ -119,7 +119,7 @@ mysql['environment']['MYSQL_DATABASE'] = {
     'platform-common-install': 'common',
     'platform-projection-store': 'manager',
     'platform-export-store': 'manager',
-    'platform-manager-import': 'manager',
+    'platform-manager-storage': 'manager',
     'platform-cleanup-results': 'manager',
     'platform-system-request': 'system',
     'platform-source-grant-boundary': 'system',
@@ -192,9 +192,10 @@ if [ "$test_group" = platform-cleanup-results ]; then
     exit 0
 fi
 
-if [ "$test_group" = platform-manager-import ]; then
-    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_IMPORT=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-import.log"
-    grep -q '^--- PASS: TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce ' "$WORK_DIR/manager-import.log"
+if [ "$test_group" = platform-manager-storage ]; then
+    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_STORAGE=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManager(ImportSourceIsPrivateAndBoundOnce|PreviewState)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-storage.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce ' "$WORK_DIR/manager-storage.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerPreviewState ' "$WORK_DIR/manager-storage.log"
     exit 0
 fi
 

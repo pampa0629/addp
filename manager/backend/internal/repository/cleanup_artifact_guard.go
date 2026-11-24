@@ -96,7 +96,7 @@ func ReadCleanupTargetSnapshot(ctx context.Context, db *gorm.DB, key CleanupTarg
 		return token, "", commonapi.ErrConflict
 	}
 	var target models.CleanupTarget
-	if err := db.WithContext(ctx).Where("key = ?", id).Take(&target).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := db.WithContext(ctx).Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: id}).Take(&target).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return token, "", nil
 	} else if err != nil {
 		return token, "", err
@@ -122,7 +122,7 @@ func lockCleanupTarget(ctx context.Context, tx *gorm.DB, token CleanupTargetToke
 		return nil, err
 	}
 	var target models.CleanupTarget
-	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("key = ?", id).Take(&target).Error; err != nil {
+	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: id}).Take(&target).Error; err != nil {
 		return nil, err
 	}
 	if target.TenantID != token.Key.TenantID || target.Kind != token.Key.Kind || target.Identity != token.Key.Identity || target.Generation != token.Generation || target.OperationID != "" {
@@ -188,7 +188,7 @@ func FinishCleanupTargets(ctx context.Context, tx *gorm.DB, tokens []CleanupTarg
 			return err
 		}
 		var target models.CleanupTarget
-		if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("key = ?", id).Take(&target).Error; err != nil {
+		if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: id}).Take(&target).Error; err != nil {
 			return err
 		}
 		if target.TenantID != token.Key.TenantID || target.Kind != token.Key.Kind || target.Identity != token.Key.Identity || target.Generation != token.Generation || target.OperationID != operationID || target.Generation >= math.MaxInt64 {

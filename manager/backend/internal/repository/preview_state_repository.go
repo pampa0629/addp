@@ -24,6 +24,19 @@ func NewPreviewStateRepository(db *gorm.DB) *PreviewStateRepository {
 }
 
 func MigratePreviewStateSchema(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return db.Exec(`CREATE TABLE IF NOT EXISTS manager.preview_state (
+			id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			tenant_id bigint unsigned NOT NULL,
+			item_fingerprint varchar(64) COLLATE utf8mb4_0900_bin NOT NULL,
+			user_id bigint unsigned NOT NULL CHECK (user_id > 0),
+			locator text NOT NULL,
+			preferred_mode varchar(32) DEFAULT 'basic_preview',
+			view_state json NOT NULL DEFAULT (JSON_OBJECT()),
+			created_at datetime(6), updated_at datetime(6),
+			UNIQUE KEY idx_preview_state_tenant_item_user (tenant_id, item_fingerprint, user_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`).Error
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('addp.manager.preview_state_schema', 0))").Error; err != nil {
 			return err
