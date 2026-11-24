@@ -912,8 +912,8 @@ jobs:
           go-version-file: monitor/backend/go.mod
           cache: false
 
-      - name: Verify Monitor execution metrics and scoped trends on MySQL 8
-        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-monitor-metrics'
+      - name: Verify Monitor execution metrics, scoped trends and notification leases on MySQL 8
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-monitor-runtime'
 
       - name: Run Monitor PostgreSQL gate
         env:

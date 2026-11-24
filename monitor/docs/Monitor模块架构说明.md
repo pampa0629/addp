@@ -68,6 +68,6 @@ bounded 恢复时间由三组回归覆盖。[Common 租约回归](../../common/e
 
 规则类型、阈值、暂停与缺样语义统一见[CDC 性能告警契约](../../docs/spec/tasks/Transfer同步执行.md#cdc-任务持续性能告警2026-11-14-已确认)。
 
-Monitor 在既有 `monitor.alert_rules` 持久化阈值和 CDC 评估窗口，由既有 store AutoMigrate 管理，不新增公共存储；评估写入不修改配置的 `updated_at`，落事件前复核规则及当前版本。通知复用既有事务 outbox。
+Monitor 在既有 `monitor.alert_rules` 持久化阈值和 CDC 评估窗口，由既有 store AutoMigrate 管理，不新增公共存储；评估写入不修改配置的 `updated_at`，落事件前复核规则及当前版本。通知复用既有事务 outbox。租户邮件、Webhook 与平台告警投递都在短事务中选择到期行，跳过其他进程已锁定的行，并在提交前写入租约、读回投递记录。PG 和 MySQL 使用同一领取流程。发送在提交后进行，回写结果时核对原领取身份。
 
 固定版本、实际故障、通知及清理范围见[CDC 告警证据](../../docs/spec/testing/evidence/Monitor告警与规则历史证据.md#alert-evidence-cdc)：触发前暂停／恢复窗口已有实故障 T4，评估器重建仍仅 T2；其他源类型／通知渠道、告警 UI 完整实操及生产 T5 不外推。

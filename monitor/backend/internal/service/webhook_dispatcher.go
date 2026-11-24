@@ -73,35 +73,8 @@ func (d *WebhookDispatcher) DispatchOnce(ctx context.Context, now time.Time) (bo
 }
 
 func (d *WebhookDispatcher) claimDue(ctx context.Context, now time.Time) (*monitorModels.WebhookDelivery, error) {
-	leaseExpiresAt := now.Add(d.config.LeaseDuration)
-	var deliveries []monitorModels.WebhookDelivery
-	err := d.db.WithContext(ctx).Raw(`
-		WITH candidate AS (
-			SELECT id
-			FROM monitor.webhook_deliveries
-			WHERE (status = ? AND next_attempt_at <= ?)
-			   OR (status = ? AND lease_expires_at <= ?)
-			ORDER BY next_attempt_at ASC NULLS FIRST, id ASC
-			LIMIT 1
-			FOR UPDATE SKIP LOCKED
-		)
-		UPDATE monitor.webhook_deliveries AS delivery
-		SET status = ?, attempt_count = delivery.attempt_count + 1,
-			claimed_by = ?, lease_expires_at = ?, updated_at = ?
-		FROM candidate
-		WHERE delivery.id = candidate.id
-		RETURNING delivery.*`,
-		monitorModels.WebhookDeliveryPending, now,
-		monitorModels.WebhookDeliveryDelivering, now,
-		monitorModels.WebhookDeliveryDelivering, d.config.WorkerID, leaseExpiresAt, now,
-	).Scan(&deliveries).Error
-	if err != nil {
-		return nil, err
-	}
-	if len(deliveries) == 0 {
-		return nil, nil
-	}
-	return &deliveries[0], nil
+	return claimNotificationDelivery[monitorModels.WebhookDelivery](ctx, d.db, now, now.Add(d.config.LeaseDuration),
+		map[string]any{"claimed_by": d.config.WorkerID, "updated_at": now}, nil)
 }
 
 func (d *WebhookDispatcher) finishAttempt(ctx context.Context, delivery monitorModels.WebhookDelivery, result WebhookSendResult, sendErr error, now time.Time) error {

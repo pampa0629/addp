@@ -391,15 +391,19 @@ func (n *PlatformAlertService) Test(ctx context.Context, id uint, now time.Time)
 }
 func (n *PlatformAlertService) DispatchOnce(ctx context.Context, now time.Time) (bool, error) {
 	claim := uuid.NewString()
-	var deliveries []models.PlatformAlertDelivery
-	err := n.db.WithContext(ctx).Raw(`WITH candidate AS (
- SELECT id FROM monitor.platform_alert_deliveries WHERE ((status='pending' AND next_attempt_at<=?) OR (status='delivering' AND lease_expires_at<=?)) AND (channel='webhook' OR (channel='wecom' AND ?) OR (channel='email' AND ?))
- ORDER BY next_attempt_at NULLS FIRST,id LIMIT 1 FOR UPDATE SKIP LOCKED)
- UPDATE monitor.platform_alert_deliveries d SET status='delivering',attempt_count=d.attempt_count+1,claim_id=?,lease_expires_at=? FROM candidate WHERE d.id=candidate.id RETURNING d.*`, now, now, n.wecom != nil, n.email != nil, claim, now.Add(n.lease)).Scan(&deliveries).Error
-	if err != nil || len(deliveries) == 0 {
+	channels := []string{"webhook"}
+	if n.wecom != nil {
+		channels = append(channels, "wecom")
+	}
+	if n.email != nil {
+		channels = append(channels, "email")
+	}
+	delivery, err := claimNotificationDelivery[models.PlatformAlertDelivery](ctx, n.db, now, now.Add(n.lease),
+		map[string]any{"claim_id": claim}, channels)
+	if err != nil || delivery == nil {
 		return false, err
 	}
-	d := deliveries[0]
+	d := *delivery
 	cycleAttempt := d.AttemptCount - d.RetryBaseAttemptCount
 	if cycleAttempt > n.maxAttempts {
 		result := n.db.WithContext(ctx).Model(&models.PlatformAlertDelivery{}).Where("id=? AND status='delivering' AND claim_id=?", d.ID, claim).Updates(map[string]any{"status": "dead", "last_error": "notification_attempt_limit", "secret_ciphertext": "", "claim_id": "", "lease_expires_at": nil, "next_attempt_at": nil})

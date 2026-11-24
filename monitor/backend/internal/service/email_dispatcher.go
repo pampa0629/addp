@@ -68,35 +68,8 @@ func (d *EmailDispatcher) DispatchOnce(ctx context.Context, now time.Time) (bool
 }
 
 func (d *EmailDispatcher) claimDue(ctx context.Context, now time.Time) (*monitorModels.EmailDelivery, error) {
-	leaseExpiresAt := now.Add(d.config.LeaseDuration)
-	var deliveries []monitorModels.EmailDelivery
-	err := d.db.WithContext(ctx).Raw(`
-		WITH candidate AS (
-			SELECT id
-			FROM monitor.email_deliveries
-			WHERE (status = ? AND next_attempt_at <= ?)
-			   OR (status = ? AND lease_expires_at <= ?)
-			ORDER BY next_attempt_at ASC NULLS FIRST, id ASC
-			LIMIT 1
-			FOR UPDATE SKIP LOCKED
-		)
-		UPDATE monitor.email_deliveries AS delivery
-		SET status = ?, attempt_count = delivery.attempt_count + 1,
-			claimed_by = ?, lease_expires_at = ?, updated_at = ?
-		FROM candidate
-		WHERE delivery.id = candidate.id
-		RETURNING delivery.*`,
-		monitorModels.EmailDeliveryPending, now,
-		monitorModels.EmailDeliveryDelivering, now,
-		monitorModels.EmailDeliveryDelivering, d.config.WorkerID, leaseExpiresAt, now,
-	).Scan(&deliveries).Error
-	if err != nil {
-		return nil, err
-	}
-	if len(deliveries) == 0 {
-		return nil, nil
-	}
-	return &deliveries[0], nil
+	return claimNotificationDelivery[monitorModels.EmailDelivery](ctx, d.db, now, now.Add(d.config.LeaseDuration),
+		map[string]any{"claimed_by": d.config.WorkerID, "updated_at": now}, nil)
 }
 
 func (d *EmailDispatcher) finishAttempt(ctx context.Context, delivery monitorModels.EmailDelivery, sendErr error, now time.Time) error {
