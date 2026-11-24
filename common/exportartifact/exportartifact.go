@@ -190,7 +190,12 @@ func EnsureStore(db *gorm.DB, table string) error {
 	if db == nil || strings.TrimSpace(table) == "" {
 		return errors.New("export session database and table are required")
 	}
-	if err := db.Table(strings.TrimSpace(table)).AutoMigrate(&Session{}); err != nil {
+	table = strings.TrimSpace(table)
+	if db.Dialector.Name() == "mysql" {
+		if err := prepareMySQLExportSessions(db, table); err != nil {
+			return err
+		}
+	} else if err := db.Table(table).AutoMigrate(&Session{}); err != nil {
 		return err
 	}
 	var active int64
