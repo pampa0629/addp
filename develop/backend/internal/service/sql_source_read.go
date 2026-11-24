@@ -97,7 +97,7 @@ func executeGuardedSQL(ctx context.Context, enginePlugin plugin.EnginePlugin, pr
 
 func (s *SQLEngineService) generateGuardedExecutableSampleQuery(ctx context.Context, tenantID uint, userCredential string, executionID uuid.UUID, engine *commonModels.Engine,
 	enginePlugin plugin.EnginePlugin, authorization *IssuedSQLExecutionAuthorization, selectedPath *plugin.EngineCatalogPath) (string, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version), 10*time.Second)
 	defer cancel()
 	provider, ok := enginePlugin.(plugin.GuardedQueryReadSessionProvider)
 	if !ok {

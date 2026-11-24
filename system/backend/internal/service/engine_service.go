@@ -476,6 +476,9 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 		}
 	}
 
+	originalName, originalDescription, originalState := engine.Name, engine.Description, engine.LifecycleState
+	originalCapabilities := engine.Capabilities
+	poolChange := false
 	addressChanged := false
 	if req.Name != nil {
 		engine.Name = *req.Name
@@ -511,6 +514,7 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 			}
 		}
 
+		poolChange = engineplugin.OnlySharedSQLPoolSettingsChanged(engineplugin.ConnectionInfo(plainConnInfo), engineplugin.ConnectionInfo(mergedConnInfo))
 		// 加密敏感字段
 		encryptedConnInfo, err := s.encryptConnectionInfoForStorage(engine.EngineType, mergedConnInfo)
 		if err != nil {
@@ -544,7 +548,17 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 		}
 	}
 
-	if err := s.persistEngine(engine); err != nil {
+	sameCapabilities := originalCapabilities == engine.Capabilities ||
+		originalCapabilities != nil && engine.Capabilities != nil && capabilitiesJSONEqual(string(*originalCapabilities), string(*engine.Capabilities))
+	if poolChange && engine.Name == originalName && engine.Description == originalDescription && engine.LifecycleState == originalState && sameCapabilities {
+		err = s.repo.UpdatePoolPolicy(engine)
+		if errors.Is(err, repository.ErrEngineVersionConflict) {
+			return nil, ErrEngineVersionConflict
+		}
+	} else {
+		err = s.persistEngine(engine)
+	}
+	if err != nil {
 		if addressChanged {
 			if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, engine.IdentityKey); findErr == nil && existing.ID != engine.ID {
 				return nil, ErrEngineAddressConflict

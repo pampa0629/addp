@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"reflect"
 	"time"
 )
 
@@ -50,6 +52,19 @@ func SupportsSharedSQLPoolPolicy(engine EnginePlugin) bool {
 	}
 	_, ok = provider.ConnectionSpec().Field(poolMaxOpen)
 	return ok
+}
+
+// OnlySharedSQLPoolSettingsChanged compares validated plaintext configurations.
+func OnlySharedSQLPoolSettingsChanged(before, after ConnectionInfo) bool {
+	if reflect.DeepEqual(before, after) {
+		return false
+	}
+	left, right := maps.Clone(before), maps.Clone(after)
+	for _, field := range sharedSQLPoolFields {
+		delete(left, field.key)
+		delete(right, field.key)
+	}
+	return reflect.DeepEqual(left, right)
 }
 
 // ValidateSharedSQLPoolSettings is used by System before saving connection_info.

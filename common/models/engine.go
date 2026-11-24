@@ -117,17 +117,18 @@ func (c *ConnectionInfo) Scan(value interface{}) error {
 
 // Engine 引擎信息（对应 system.engines 表）
 type Engine struct {
-	ID             uint           `gorm:"column:id" json:"id"`
-	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"`                              // 租户ID，平台共享引擎为 null
-	Name           string         `gorm:"column:name;not null;size:255;index" json:"name"`                      // 显示名称（原 display_name）
-	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"`                 // 引擎类型（postgresql, mysql, acme_geo_workflow 等）
-	EngineOrigin   string         `gorm:"column:engine_origin;not null;default:'general'" json:"engine_origin"` // 引擎来源：general 或 extension
-	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
-	Description    string         `gorm:"column:description;type:text" json:"description"`
-	IdentityKey    JSONString     `gorm:"column:identity_key;type:jsonb;not null" json:"-"`
-	Version        int64          `gorm:"column:version;not null;default:1" json:"version"`
-	LifecycleState string         `gorm:"column:lifecycle_state;size:20;not null;default:'active';index" json:"lifecycle_state"`
-	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
+	ID                   uint           `gorm:"column:id" json:"id"`
+	TenantID             *uint          `gorm:"column:tenant_id;index" json:"tenant_id"`                              // 租户ID，平台共享引擎为 null
+	Name                 string         `gorm:"column:name;not null;size:255;index" json:"name"`                      // 显示名称（原 display_name）
+	EngineType           string         `gorm:"column:engine_type;not null;index" json:"engine_type"`                 // 引擎类型（postgresql, mysql, acme_geo_workflow 等）
+	EngineOrigin         string         `gorm:"column:engine_origin;not null;default:'general'" json:"engine_origin"` // 引擎来源：general 或 extension
+	ConnectionInfo       ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
+	Description          string         `gorm:"column:description;type:text" json:"description"`
+	IdentityKey          JSONString     `gorm:"column:identity_key;type:jsonb;not null" json:"-"`
+	PoolOnlySinceVersion *int64         `gorm:"column:pool_only_since_version" json:"-"`
+	Version              int64          `gorm:"column:version;not null;default:1" json:"version"`
+	LifecycleState       string         `gorm:"column:lifecycle_state;size:20;not null;default:'active';index" json:"lifecycle_state"`
+	CreatedBy            *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 
 	DeletionScanTaskID     *string    `gorm:"column:deletion_scan_task_id;size:64" json:"deletion_scan_task_id,omitempty"`
 	DeletionExecuteTaskID  *string    `gorm:"column:deletion_execute_task_id;size:64" json:"deletion_execute_task_id,omitempty"`

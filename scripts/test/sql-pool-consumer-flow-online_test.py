@@ -70,8 +70,14 @@ pid=30 user=fixture_admin LOG:  statement: SELECT * FROM public.pool_source
 pid=31 user=pool_reader LOG:  statement: SELECT * FROM public.pool_source_other
 pid=32 user=pool_reader LOG:  statement: SELECT 1
 pid=33 user=pool_reader LOG:  statement: UPDATE pool_source SET id=0
+pid=34 user=pool_reader LOG:  execute stmt_2: DECLARE addp_query_read_cursor NO SCROLL CURSOR FOR SELECT id FROM ONLY "public"."pool_source"
+pid=35 user=pool_reader LOG:  statement: DECLARE addp_transfer_read_cursor NO SCROLL CURSOR FOR
+    SELECT label FROM ONLY public.pool_source
+pid=36 user=pool_reader LOG:  statement: LOCK TABLE ONLY public.pool_source IN ACCESS SHARE MODE
+pid=37 user=pool_reader LOG:  statement: FETCH FORWARD 0 FROM addp_query_read_cursor
+pid=38 user=pool_reader LOG:  statement: DECLARE addp_query_read_cursor NO SCROLL CURSOR FOR SELECT id FROM ONLY public.pool_source_other
 """
-        self.assertEqual(POOL.pg_statement_ids(lines), [27, 28])
+        self.assertEqual(POOL.pg_statement_ids(lines), [27, 28, 34, 35])
 
     def test_native_postgres_evidence_separates_credential_changes(self):
         lines = """
@@ -412,8 +418,5 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                     POOL.concurrency_barrier("postgresql", directory, directory, "run-pool", "observe", purpose)
                 statement = query.call_args.args[1]
                 self.assertIn("pg_blocking_pids", statement)
-                if purpose == "queue":
-                    self.assertIn("pg_total_relation_size", statement)
-                    self.assertIn("l.relation='public.pool_source'::regclass AND NOT l.granted", statement)
-                else:
-                    self.assertNotIn("pg_total_relation_size", statement)
+                self.assertIn("l.relation='public.pool_source'::regclass AND NOT l.granted", statement)
+                self.assertIn("wait_event_type='Lock'", statement)

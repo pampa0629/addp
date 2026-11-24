@@ -2,7 +2,6 @@ package postgresql
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
@@ -34,15 +33,11 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryOutputLineage(
 		return &plugin.QueryOutputLineage{Sources: sources}, nil
 	}
 
-	dsn, err := p.BuildDSN(connInfo)
+	db, err := p.openQueryCatalog(ctx, connInfo, req.EngineID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: build PostgreSQL lineage connection: %v", plugin.ErrQueryOutputLineageUnresolved, err)
+		return nil, fmt.Errorf("%w: open PostgreSQL lineage connection: %w", plugin.ErrQueryOutputLineageUnresolved, err)
 	}
-	db, err := sql.Open(p.sqlDriverName(), dsn)
-	if err != nil {
-		return nil, fmt.Errorf("%w: open PostgreSQL lineage connection: %v", plugin.ErrQueryOutputLineageUnresolved, err)
-	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close()
 	resolvedSources, err := resolvePostgresSelectOutputLineage(ctx, &postgresDatabaseReadCatalog{db: db}, statement, sources)
 	if err != nil {
 		return nil, err

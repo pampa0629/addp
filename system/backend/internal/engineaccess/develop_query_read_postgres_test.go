@@ -209,6 +209,27 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 		check(false)
 		id := grant(t, "user", user.PrincipalID, nil)
 		check(true)
+		t.Run("pool edits preserve only valid source versions", func(t *testing.T) {
+			engine := db.Table("system.engines").Where("id=?", path.EngineID)
+			if err := engine.Updates(map[string]any{"version": version + 2, "pool_only_since_version": version}).Error; err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := engine.Updates(map[string]any{"version": version, "pool_only_since_version": nil}).Error; err != nil {
+					t.Error(err)
+				}
+				request.EngineVersion = strconv.FormatInt(version, 10)
+			}()
+			for _, v := range []int64{version, version + 1, version + 2, version + 3} {
+				request.EngineVersion = strconv.FormatInt(v, 10)
+				check(v <= version+2)
+			}
+			request.EngineVersion = strconv.FormatInt(version, 10)
+			if err := engine.Updates(map[string]any{"version": version + 3, "pool_only_since_version": nil}).Error; err != nil {
+				t.Fatal(err)
+			}
+			check(false)
+		})
 		revoke(t, id)
 		check(false)
 		id = grant(t, "user", user.PrincipalID, nil)

@@ -95,7 +95,7 @@ func MigrateMySQLSourceGrantCatalog(db *gorm.DB) error {
 }
 
 const mysqlEngineCatalogOwner = "system_engine_catalog"
-const mysqlEngineCatalogVersion int64 = 2
+const mysqlEngineCatalogVersion int64 = 3
 
 func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 	return migrateSystemMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion, "mysql_engine_catalog", nil)
@@ -141,6 +141,11 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 		}
 		if owner == mysqlEngineCatalogOwner && !conn.Migrator().HasColumn("engines", "runtime_registrar") {
 			if err := conn.Exec("ALTER TABLE engines ADD COLUMN runtime_registrar VARCHAR(96)").Error; err != nil {
+				return err
+			}
+		}
+		if owner == mysqlEngineCatalogOwner && !conn.Migrator().HasColumn("engines", "pool_only_since_version") {
+			if err := conn.Exec("ALTER TABLE engines ADD COLUMN pool_only_since_version BIGINT NULL, ADD CONSTRAINT ck_engine_pool_version CHECK (pool_only_since_version >= 1 AND pool_only_since_version < version)").Error; err != nil {
 				return err
 			}
 		}

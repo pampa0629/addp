@@ -6,6 +6,8 @@
 
 `sql-pool-consumer-flow`仅手动 Hosted Linux x86_64，自有 PG／MySQL 随机回环、合成表／SELECT 账号。登记者 `tenant.infrastructure_administrator`同 User 在 System 页只改本轮两 Engine，准备者扫两表／签精确 read，页面前清两类 Token；普通消费八项：引擎／Meta 目录、Manager 项／内容、Develop 任务读／执行、数据读、执行授权签发，不随改池增权。当前构建／保护投影先就绪。
 
+Develop 原生 PostgreSQL／MySQL 读取中，引擎配置版本用于选取连接池。System 仅对连续的纯调池变更保留旧读取版本的有效性，依据实际提交前后的连接配置、生命周期及能力判定。地址、登录身份、凭据或其他来源配置变化后，先前的读取版本失效，即使后来改回原值也不恢复。每次读取和交付仍按当前用户、执行租约及 DataItem Grant 重核。源端取证同时覆盖 PostgreSQL 直接 SELECT 与只读游标。
+
 **固定四步。** 真实 Manager／Develop 先建立闲连接，System 页顺序：`127.0.0.1`→同实例 `localhost`（正式同实例确认＋原生身份／容器 ID）、同表同 SELECT 的第二 DB 账号、该账号密码、最大空闲 1→0。最大连接一直 2，前三留 1 闲置、最后无闲；库／端口／Engine 身份／两 Grant／八权限不变，DB 账号不等 ADDP User。
 
 PG TCP 含回环 `scram-sha-256`、socket 仅初始化；MySQL 原生密码。启动前全新连接证错密码认证拒绝／正确成功，不用 trust 或网络失败充数。改密先一次源端更新、全新连接证旧拒新成，再页面保存。每次正式连接测试 online、不再次增 version；核请求连续版本、两页面精确值、当前 DB 账号原生会话／旧连接释放／新连接接替且消费进程未重启。日志只会话标识／分类、无 SQL／密码。

@@ -344,6 +344,7 @@ async function concurrentUpdate(page, operatorPage, sample, operator, consumer, 
     const oldID = oldBlocked.waiters[0].id
     const newID = bothBlocked.waiters.find(waiter => waiter.phase === 'new').id
     const queryState = observe(engine, readers[1])
+    expect(queryState.statement_ids).toEqual(expect.arrayContaining([oldID, newID]))
     expect(queryState.active_ids).not.toContain(oldID)
     expect(queryState.active_ids).toContain(newID)
     expect(queryState.source_identity).toEqual(sample.source_identity)
@@ -439,6 +440,7 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
       content: { query: poolQuery(sample, 'saturation_holder'), query_type: 'sql', target_locator: sample.locator },
       execution_config: { engine_id: sample.engine_id },
     } }), 'Develop saturation holder')
+    if (engine === 'postgresql') await waitForNativeReaders(engine, 'queue', ['holder'])
     const managerRead = managerSQLTimeout(managerPage, sample)
     pending.push(managerRead)
     managerRead.catch(() => {})

@@ -44,6 +44,18 @@ type postgresTableSessionConnection interface {
 	Close() error
 }
 
+func (p *PostgreSQLPlugin) borrowReadConnection(ctx context.Context, info plugin.ConnectionInfo, engineID uint, version int64) (*plugin.SQLReadConnection, error) {
+	pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: engineID, EngineType: p.Type(), Version: version, ConnectionInfo: info}, nil)
+	if err != nil {
+		return nil, err
+	}
+	db, err := pool.DB()
+	if err != nil {
+		return nil, err
+	}
+	return plugin.AcquireSQLReadConnection(ctx, db, p)
+}
+
 func (p *PostgreSQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	limit := opts.Limit
 	if limit <= 0 && strings.TrimSpace(opts.Query) == "" {
@@ -74,16 +86,8 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	}
 	var db postgresTableSessionConnection
 	var readConn *plugin.SQLReadConnection
-	if opts.Page != nil && plugin.PoolEngineVersion(ctx, path.EngineID) > 0 {
-		pool, poolErr := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: path.EngineID, EngineType: p.Type(), Version: plugin.PoolEngineVersion(ctx, path.EngineID), ConnectionInfo: connInfo}, nil)
-		if poolErr != nil {
-			return nil, poolErr
-		}
-		sqlDB, poolErr := pool.DB()
-		if poolErr != nil {
-			return nil, poolErr
-		}
-		readConn, err = plugin.AcquireSQLReadConnection(ctx, sqlDB, p)
+	if version := plugin.PoolEngineVersion(ctx, path.EngineID); opts.Page != nil && version > 0 {
+		readConn, err = p.borrowReadConnection(ctx, connInfo, path.EngineID, version)
 		db = readConn
 	} else {
 		db, err = sql.Open(p.sqlDriverName(), connStr)

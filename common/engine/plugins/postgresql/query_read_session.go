@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -26,7 +27,10 @@ func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared pl
 	var err error
 	if authorize != nil {
 		expected, err = prepared.ReadSet(ctx)
-		if err != nil || expected == nil {
+		if err != nil {
+			return nil, err
+		}
+		if expected == nil {
 			return nil, plugin.ErrQueryReadSetUnresolved
 		}
 	}
@@ -38,7 +42,12 @@ func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared pl
 	if err := validatePostgresQueryReadSession(request); err != nil {
 		return nil, err
 	}
-	db, err := p.openQueryDB(connInfo)
+	var db postgresTableSessionConnection
+	if version := plugin.PoolEngineVersion(ctx, request.EngineID); authorize != nil && p.Type() == "postgresql" && version > 0 {
+		db, err = p.borrowReadConnection(ctx, connInfo, request.EngineID, version)
+	} else {
+		db, err = p.openQueryDB(connInfo)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open PostgreSQL query read database: %w", err)
 	}
@@ -68,6 +77,9 @@ func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared pl
 		}
 		for _, path := range actual.Paths {
 			if _, err := p.checkOrdinaryTable(ctx, tx, path, false); err != nil {
+				if ctx.Err() != nil {
+					err = plugin.SQLExecutionError(errors.Join(ctx.Err(), err))
+				}
 				_ = tx.Rollback()
 				_ = db.Close()
 				return nil, err
@@ -108,6 +120,9 @@ func (p *PostgreSQLPlugin) openQueryReadSession(ctx context.Context, prepared pl
 	if err != nil {
 		_ = tx.Rollback()
 		_ = db.Close()
+		if ctx.Err() != nil {
+			err = plugin.SQLExecutionError(errors.Join(ctx.Err(), err))
+		}
 		return nil, fmt.Errorf("declare PostgreSQL query read session: %w", err)
 	}
 	if authorize == nil {
@@ -174,7 +189,7 @@ func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
 }
 
 type postgresQueryReadSession struct {
-	db       *sql.DB
+	db       postgresTableSessionConnection
 	tx       *sql.Tx
 	cursor   string
 	readSet  *plugin.QueryReadSet
@@ -203,6 +218,9 @@ func (s *postgresQueryReadSession) ReadBatch(ctx context.Context, limit int) (*p
 	rows, err := s.tx.QueryContext(ctx, fmt.Sprintf("FETCH FORWARD %d FROM %s", limit, s.cursor))
 	if err != nil {
 		_ = s.abort()
+		if ctx.Err() != nil {
+			err = plugin.SQLExecutionError(errors.Join(ctx.Err(), err))
+		}
 		return nil, fmt.Errorf("fetch PostgreSQL query read rows: %w", err)
 	}
 	defer rows.Close()

@@ -84,15 +84,11 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryReadSet(
 		return nil, err
 	}
 
-	dsn, err := p.BuildDSN(connInfo)
+	db, err := p.openQueryCatalog(ctx, connInfo, req.EngineID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: build PostgreSQL connection: %w", plugin.ErrQueryReadSetUnresolved, err)
+		return nil, postgresQueryReadSetCatalogError("open catalog connection", err)
 	}
-	db, err := sql.Open(p.sqlDriverName(), dsn)
-	if err != nil {
-		return nil, fmt.Errorf("%w: open PostgreSQL catalog connection: %w", plugin.ErrQueryReadSetUnresolved, err)
-	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close()
 
 	return p.resolvePostgresQueryReadSet(ctx, req, dependencies, &postgresDatabaseReadCatalog{db: db, gaussDB: p.Type() == "gaussdb"})
 }
@@ -450,6 +446,22 @@ func postgresReadRelationKind(relkind string) (string, error) {
 type postgresCatalogQuerier interface {
 	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+}
+
+type postgresCatalogConnection interface {
+	postgresCatalogQuerier
+	Close() error
+}
+
+func (p *PostgreSQLPlugin) openQueryCatalog(ctx context.Context, info plugin.ConnectionInfo, engineID uint) (postgresCatalogConnection, error) {
+	if version := plugin.PoolEngineVersion(ctx, engineID); version > 0 && p.Type() == "postgresql" {
+		return p.borrowReadConnection(ctx, info, engineID, version)
+	}
+	dsn, err := p.BuildDSN(info)
+	if err != nil {
+		return nil, err
+	}
+	return sql.Open(p.sqlDriverName(), dsn)
 }
 
 type postgresDatabaseReadCatalog struct {

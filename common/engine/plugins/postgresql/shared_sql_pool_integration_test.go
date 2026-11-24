@@ -15,6 +15,58 @@ import (
 func TestIntegrationPostgresSharedSQLPool(t *testing.T) {
 	db, provider, info := openPostgresPrepareIntegration(t, true)
 	t.Cleanup(func() { _ = db.Close() })
+	t.Run("guarded query borrows and returns the registered native connection", func(t *testing.T) {
+		const id = 8411
+		t.Cleanup(func() { _ = plugin.ClosePool(id) })
+		settings := make(plugin.ConnectionInfo, len(info))
+		for key, value := range info {
+			settings[key] = value
+		}
+		settings["pool_max_open_conns"] = 1
+		settings["pool_max_idle_conns"] = 1
+		ctx := plugin.WithPoolEngineVersion(t.Context(), id, 1)
+		pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: id, Version: 1, EngineType: provider.Type(), ConnectionInfo: settings}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		native, err := pool.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var before, during, after int
+		if err := native.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		prepared, err := provider.PrepareQuery(ctx, settings, plugin.QueryRequest{EngineID: id, Language: "sql", Query: "SELECT 42 AS answer", Options: plugin.QueryOptions{ReadOnly: true}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		authorized := false
+		session, err := provider.OpenGuardedQueryReadSession(ctx, prepared, func(_ context.Context, set *plugin.QueryReadSet) error {
+			authorized = set != nil && len(set.Paths) == 0
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.Close(ctx)
+		if err := session.(*postgresQueryReadSession).tx.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&during); err != nil {
+			t.Fatal(err)
+		}
+		if before != during || !authorized {
+			t.Fatalf("guarded cursor native PID=%d, pool PID=%d, authorized=%t", during, before, authorized)
+		}
+		batch, err := session.ReadBatch(ctx, 1)
+		if err != nil || len(batch.Rows) != 1 {
+			t.Fatalf("guarded read: %v, %v", batch, err)
+		}
+		if err := session.Close(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := native.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&after); err != nil || after != during {
+			t.Fatalf("returned PID=%d, want %d: %v", after, during, err)
+		}
+	})
 	const engineID = 8410
 	t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
 	info["pool_max_open_conns"] = 1

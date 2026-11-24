@@ -116,6 +116,7 @@ func (r *EngineRepository) Update(engine *models.Engine) error {
 	if engine == nil || engine.ID == 0 || engine.Version < 1 {
 		return ErrEngineVersionConflict
 	}
+	engine.PoolOnlySinceVersion = nil
 	expectedVersion := engine.Version
 	engine.Version = expectedVersion + 1
 	engine.UpdatedAt = time.Now()
@@ -135,6 +136,27 @@ func (r *EngineRepository) Update(engine *models.Engine) error {
 	return nil
 }
 
+// UpdatePoolPolicy preserves the first revision of a continuous run of pool-only edits.
+func (r *EngineRepository) UpdatePoolPolicy(engine *models.Engine) error {
+	expected := engine.Version
+	from := engine.PoolOnlySinceVersion
+	if from == nil {
+		from = &expected
+	}
+	now := time.Now()
+	result := r.db.Model(&models.Engine{}).Where("id = ? AND version = ?", engine.ID, expected).
+		Updates(map[string]any{"connection_info": engine.ConnectionInfo, "version": expected + 1,
+			"pool_only_since_version": *from, "updated_at": now})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrEngineVersionConflict
+	}
+	engine.Version, engine.PoolOnlySinceVersion, engine.UpdatedAt = expected+1, from, now
+	return nil
+}
+
 // UpdateCapabilities uses the aggregate version without overwriting concurrent connectivity observations.
 func (r *EngineRepository) UpdateCapabilities(engine *models.Engine) error {
 	if engine == nil || engine.ID == 0 || engine.Version < 1 {
@@ -142,7 +164,7 @@ func (r *EngineRepository) UpdateCapabilities(engine *models.Engine) error {
 	}
 	updatedAt := time.Now()
 	result := r.db.Model(&models.Engine{}).Where("id = ? AND version = ?", engine.ID, engine.Version).
-		Updates(map[string]interface{}{"capabilities": engine.Capabilities, "runtime_registrar": engine.RuntimeRegistrar, "version": gorm.Expr("version + 1"), "updated_at": updatedAt})
+		Updates(map[string]interface{}{"capabilities": engine.Capabilities, "runtime_registrar": engine.RuntimeRegistrar, "pool_only_since_version": nil, "version": gorm.Expr("version + 1"), "updated_at": updatedAt})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -150,6 +172,7 @@ func (r *EngineRepository) UpdateCapabilities(engine *models.Engine) error {
 		return ErrEngineVersionConflict
 	}
 	engine.Version++
+	engine.PoolOnlySinceVersion = nil
 	engine.UpdatedAt = updatedAt
 	return nil
 }

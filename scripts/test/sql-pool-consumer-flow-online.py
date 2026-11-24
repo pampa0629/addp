@@ -217,9 +217,11 @@ def pg_statement_ids(log, reader=READER):
     require(reader in READERS, "unknown SQL pool fixture reader")
     entries = re.split(r"(?m)(?=^pid=)", log)
     table = r'\bFROM\s+(?:ONLY\s+)?(?:"?public"?\.)?"?pool_source"?(?![a-z_0-9])'
+    cursor = r'(?:DECLARE\s+addp_(?:query|transfer)_read_cursor\s+NO\s+SCROLL\s+CURSOR\s+FOR\s+)?'
+    header = re.compile(r'^pid=(\d+) user=' + re.escape(reader) + r' LOG:\s+(?:statement:|execute [^:]+:)\s*' + cursor + r'(?:SELECT|WITH)\b', re.I)
     return sorted({
         int(match.group(1)) for entry in entries
-        if (match := re.match(r"^pid=(\d+) user=" + re.escape(reader) + r" LOG:\s+(?:statement:|execute [^:]+:)\s*(?:SELECT|WITH)\b", entry, re.I))
+        if (match := header.match(entry))
         and re.search(table, entry, re.I)
     })
 
@@ -312,22 +314,13 @@ def concurrency_barrier(engine, private, artifacts, run_id, operation, purpose="
     journal = private / f"{engine}-{purpose}-barrier.json"
     hold_seconds = 90 if purpose == "concurrency" else 220
     if engine == "postgresql":
-        phase = ("CASE WHEN strpos(query,'pool concurrent_old')>0 THEN 'old' ELSE 'new' END"
-                 if purpose == "concurrency" else
-                 "CASE WHEN strpos(query,'pool saturation_holder')>0 THEN 'holder' "
-                 "WHEN strpos(query,'pool saturation_queued')>0 THEN 'queued' "
-                 "WHEN strpos(query,'pool saturation_native')>0 THEN 'native' ELSE 'manager' END")
-        predicate = ("AND (strpos(query,'pool concurrent_old')>0 OR strpos(query,'pool concurrent_new')>0)"
-                     if purpose == "concurrency" else "")
-        table_read = f"""query ~* 'FROM[[:space:]]+(["[:alnum:]_]+[.])?[" ]*{TABLE}'"""
-        if purpose == "queue":
-            # Manager borrows its only pooled connection for table facts before
-            # preview SQL. pg_total_relation_size can wait on the same table lock.
-            catalog_read = f"""strpos(query,'pg_total_relation_size(')>0
-                AND strpos(query,'FROM information_schema.tables t')>0
-                AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid=pg_stat_activity.pid
+        # Admission can block while locking the relation, before the user SELECT
+        # or its cursor exists. Attribute these waiters by their native PIDs at
+        # the separately submitted requests, independently of SQL comments.
+        phase = "'reader'"
+        predicate = ""
+        table_read = f"""EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid=pg_stat_activity.pid
                     AND l.locktype='relation' AND l.relation='public.{TABLE}'::regclass AND NOT l.granted)"""
-            table_read = f"({table_read} OR ({catalog_read}))"
         holder = f"(SELECT pid FROM pg_stat_activity WHERE application_name='{marker}' AND datname='{DATABASE}' AND wait_event='PgSleep')"
         inspection = f"""SELECT json_build_object('holder_id', {holder}, 'waiters', COALESCE(json_agg(
             json_build_object('id',pid,'phase',{phase})
@@ -372,6 +365,21 @@ def concurrency_barrier(engine, private, artifacts, run_id, operation, purpose="
         require(receipt["source_identity"] == source, "barrier source changed")
         state = snapshot()
         require(state["holder_id"] == receipt["holder_id"], "owned native barrier disappeared")
+        if engine == "postgresql" and operation == "observe":
+            waiters = state["waiters"]
+            if purpose == "native":
+                for waiter in waiters:
+                    waiter["phase"] = "native"
+            else:
+                # The UI starts a second request only after capturing the first PID.
+                phases = receipt.setdefault("reader_phases", {})
+                names = ("old", "new") if purpose == "concurrency" else ("holder", "manager")
+                unknown = [w for w in waiters if str(w["id"]) not in phases]
+                if len(unknown) == 1 and len(phases) < len(names):
+                    phases[str(unknown[0]["id"])] = names[len(phases)]
+                    private_write(journal, json.dumps(receipt))
+                for waiter in waiters:
+                    waiter["phase"] = phases.get(str(waiter["id"]), "unattributed")
         if operation == "release":
             identity = receipt["holder_id"]
             require(type(identity) is int and identity > 0, "invalid owned barrier connection")

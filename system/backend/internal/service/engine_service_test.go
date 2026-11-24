@@ -1306,6 +1306,33 @@ func TestUpdateSharedSQLPoolSettingsPreservesEngineIdentity(t *testing.T) {
 				stored.ConnectionInfo["pool_max_lifetime_seconds"] != float64(0) {
 				t.Fatal("pool update changed the instance identity or lost the configured limits")
 			}
+			if stored.PoolOnlySinceVersion == nil || *stored.PoolOnlySinceVersion != created.Version {
+				t.Fatalf("first pool edit lost original revision: %+v", stored.PoolOnlySinceVersion)
+			}
+			for _, edit := range []struct {
+				patch models.ConnectionInfo
+				want  int64
+			}{
+				{models.ConnectionInfo{"pool_max_idle_conns": 1}, created.Version},
+				{models.ConnectionInfo{"user": "replacement", "pool_max_idle_conns": 0}, 0},
+				{models.ConnectionInfo{"user": "reader"}, 0},
+				{models.ConnectionInfo{"pool_max_idle_conns": 1}, created.Version + 4},
+			} {
+				if _, err := service.Update(stored.ID, tenantID, &models.EngineUpdateRequest{Version: stored.Version, ConnectionInfo: &edit.patch}); err != nil {
+					t.Fatal(err)
+				}
+				stored, err = repo.GetByID(stored.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var since int64
+				if stored.PoolOnlySinceVersion != nil {
+					since = *stored.PoolOnlySinceVersion
+				}
+				if since != edit.want {
+					t.Fatalf("version %d, readable since %d, want %d", stored.Version, since, edit.want)
+				}
+			}
 		})
 	}
 }
