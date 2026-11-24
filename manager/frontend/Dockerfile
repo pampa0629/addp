@@ -24,7 +24,7 @@ COPY manager/frontend/src ./src
 COPY manager/frontend/public ./public
 
 # 构建
-RUN npm run build
+RUN NODE_OPTIONS=--max-old-space-size=4096 npm run build
 
 # 运行阶段
 FROM localhost:5001/nginx:alpine
