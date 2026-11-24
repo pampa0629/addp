@@ -168,7 +168,7 @@ func main() {
 	taskService.SetEngineResolver(planner.NewSystemEngineResolver(systemClient))
 	metaFacts := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
 	taskService.SetTaskConfigChecker(service.NewTaskConfigCheckService(systemClient, metaFacts))
-	taskService.SetTaskConfigDrafter(service.NewTaskConfigDraftService(systemClient, metaFacts))
+	taskService.SetTaskConfigDrafter(service.NewTaskConfigDraftService(engineDescriptor, metaFacts))
 	taskService.SetObjectAuthorizationIssuer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil))
 	taskService.SetRoleProtection(service.NewRoleProtectionService(systemRuntimeClient, commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil), protectionGate))
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）

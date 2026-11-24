@@ -18,6 +18,7 @@ import (
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/transfer/internal/protection"
 )
 
 var draftPermissions = []string{"transfer.task.create", "meta.catalog.read", "system.engine.read", "manager.data_item.read"}
@@ -30,7 +31,7 @@ type draftMetadata interface {
 }
 
 type TaskConfigDraftService struct {
-	engines  ConfigCheckEngineFacts
+	engines  protection.EngineDescriptorGetter
 	metadata func(uint) draftMetadata
 }
 
@@ -38,7 +39,7 @@ type TaskConfigDraftResponse struct {
 	Arguments map[string]interface{} `json:"arguments"`
 }
 
-func NewTaskConfigDraftService(engines ConfigCheckEngineFacts, metadata *commonclient.MetaClient) *TaskConfigDraftService {
+func NewTaskConfigDraftService(engines protection.EngineDescriptorGetter, metadata *commonclient.MetaClient) *TaskConfigDraftService {
 	return &TaskConfigDraftService{engines: engines, metadata: func(tenant uint) draftMetadata { return metadata.WithTenantID(tenant) }}
 }
 func (s *TaskService) SetTaskConfigDrafter(drafter *TaskConfigDraftService) {
@@ -88,12 +89,12 @@ func (s *TaskConfigDraftService) Build(ctx context.Context, subject authorizatio
 	if s == nil || s.engines == nil || s.metadata == nil {
 		return nil, ErrConfigCheckDependency
 	}
-	sourceEngine, err := s.engines.GetEngineForTenant(ctx, uint(tenant), source.EngineID)
-	if err != nil || !draftEngineMatches(sourceEngine, uint(tenant), source.EngineID) {
+	sourceEngine, err := s.engines(ctx, uint(tenant), source.EngineID)
+	if err != nil || !draftEngineMatches(sourceEngine, source.EngineID) {
 		return nil, ErrConfigCheckDependency
 	}
-	targetEngine, err := s.engines.GetEngineForTenant(ctx, uint(tenant), parent.EngineID)
-	if err != nil || !draftEngineMatches(targetEngine, uint(tenant), parent.EngineID) {
+	targetEngine, err := s.engines(ctx, uint(tenant), parent.EngineID)
+	if err != nil || !draftEngineMatches(targetEngine, parent.EngineID) {
 		return nil, ErrConfigCheckDependency
 	}
 	metadata := s.metadata(uint(tenant))
@@ -154,6 +155,6 @@ func (s *TaskConfigDraftService) Build(ctx context.Context, subject authorizatio
 	}
 	return &TaskConfigDraftResponse{Arguments: args}, nil
 }
-func draftEngineMatches(engine *commonmodels.Engine, tenant, id uint) bool {
-	return engine != nil && engine.ID == id && engine.TenantID != nil && *engine.TenantID == tenant && engine.DeletedAt == nil && engineselection.IsAvailable(engine)
+func draftEngineMatches(engine *commonmodels.EngineRuntimeDescriptor, id uint) bool {
+	return engine != nil && engine.ID == id && !engine.IsBuiltin && engineselection.IsAvailable(engine.AsEngine())
 }

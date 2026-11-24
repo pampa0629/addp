@@ -3,18 +3,20 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"github.com/addp/common/authorization"
-	commonclient "github.com/addp/common/client"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"sort"
 	"testing"
 
+	"github.com/addp/common/authorization"
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/query"
+	"github.com/addp/transfer/internal/protection"
 )
 
 func draftFixture(t *testing.T) (TaskConfigDraftRequest, taskConfigDraftFacts) {
@@ -176,22 +178,26 @@ func (f *draftMetadataFixture) GetNodeByCatalogPath(context.Context, uint, strin
 }
 
 func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
-	for _, name := range []string{"user", "delegated", "missing_manager_permission", "extra_scope", "tenant_mismatch", "source_mismatch", "source_path_collision", "source_dotted_name", "parent_mismatch", "missing_structure", "untrusted_schema", "dependency"} {
+	for _, name := range []string{"user", "delegated", "missing_manager_permission", "extra_scope", "source_mismatch", "source_path_collision", "source_dotted_name", "parent_mismatch", "missing_structure", "untrusted_schema", "dependency"} {
 		t.Run(name, func(t *testing.T) {
 			_, engines, subject, _ := configCheckFixture(t)
 			subject.Authorization.RoleAssignments[0].Permissions = append([]string{}, draftPermissions...)
 			sort.Strings(subject.Authorization.RoleAssignments[0].Permissions)
 			request, facts := draftFixture(t)
-			for _, engine := range engines.engines {
-				engine.ConnectionStatus = commonmodels.EngineConnectionOnline
-			}
 			item := engines.items[1]
 			item.ItemType = "collection"
 			item.NodeID = 90
 			item.Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(facts.source)
-			engines.engines[1].EngineType = "mongodb"
 			metadata := &draftMetadataFixture{item: item, ancestors: &commonmodels.MetaItemAncestors{Item: *item, Ancestors: []commonmodels.MetaNode{{ID: 90, TenantID: 7, EngineID: 1, Name: "synthetic", FullName: "synthetic", NodeType: "database"}}}, parent: &commonmodels.MetaNode{ID: 20, TenantID: 7, EngineID: 2, Name: "synthetic", FullName: "synthetic", NodeType: "schema"}}
-			svc := &TaskConfigDraftService{engines: engines, metadata: func(tenant uint) draftMetadata {
+			descriptorReads := 0
+			svc := &TaskConfigDraftService{engines: func(_ context.Context, tenant, id uint) (*commonmodels.EngineRuntimeDescriptor, error) {
+				descriptorReads++
+				if tenant != 7 || (id != 1 && id != 2) {
+					t.Fatalf("unexpected descriptor tenant=%d id=%d", tenant, id)
+				}
+				engineType := map[uint]string{1: facts.sourceEngineType, 2: facts.targetEngineType}[id]
+				return &commonmodels.EngineRuntimeDescriptor{ID: id, EngineType: engineType, LifecycleState: "active", ConnectionStatus: "online"}, nil
+			}, metadata: func(tenant uint) draftMetadata {
 				if tenant != 7 {
 					t.Fatal("wrong tenant")
 				}
@@ -210,9 +216,6 @@ func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
 			case "missing_manager_permission":
 				subject.Authorization.RoleAssignments[0].Permissions = configCheckPermissions
 				sort.Strings(subject.Authorization.RoleAssignments[0].Permissions)
-			case "tenant_mismatch":
-				tenant := uint(8)
-				engines.engines[1].TenantID = &tenant
 			case "source_mismatch":
 				metadata.ancestors.Item.ID++
 			case "source_path_collision":
@@ -262,7 +265,7 @@ func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
 				t.Fatal("unauthorized or unresolved facts produced arguments")
 			}
 			if name == "missing_manager_permission" || name == "extra_scope" || name == "untrusted_schema" {
-				if metadata.calls != 0 || engines.calls != 0 {
+				if metadata.calls != 0 || descriptorReads != 0 {
 					t.Fatal("read before authorization/input validation")
 				}
 			}
@@ -270,49 +273,91 @@ func TestTaskConfigDraftOwnerReadsAndAuthorization(t *testing.T) {
 	}
 }
 
-func TestTaskConfigDraftUsesTenantServiceCredentialForMeta(t *testing.T) {
+func TestTaskConfigDraftReadsOnlyTenantDescriptorsAndMeta(t *testing.T) {
 	_, engines, subject, _ := configCheckFixture(t)
 	subject.Authorization.RoleAssignments[0].Permissions = append([]string{}, draftPermissions...)
 	sort.Strings(subject.Authorization.RoleAssignments[0].Permissions)
 	request, facts := draftFixture(t)
-	for _, engine := range engines.engines {
-		engine.ConnectionStatus = commonmodels.EngineConnectionOnline
-	}
-	engines.engines[1].EngineType = "mongodb"
 	item := engines.items[1]
 	item.ItemType = "collection"
 	item.NodeID = 90
 	item.Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(facts.source)
 	ancestors := commonmodels.MetaItemAncestors{Item: *item, Ancestors: []commonmodels.MetaNode{{ID: 90, TenantID: 7, EngineID: 1, Name: "synthetic", FullName: "synthetic", NodeType: "database"}}}
-	reads := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reads++
-		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer addp_st_fixture" || r.Header.Get("X-Tenant-ID") != "" {
-			t.Errorf("unexpected owner credential or operation: %s %s", r.Method, r.URL)
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := buildTaskConfigDraft(request, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const descriptors = "/api/v1/system/runtime/engine-descriptors/"
+	for _, side := range []string{"1", "2"} {
+		for _, state := range []string{"online", "offline", "deleted", "other_tenant", "shared_builtin", "wrong_id"} {
+			if state == "online" && side == "2" {
+				continue
+			}
+			t.Run(side+"/"+state, func(t *testing.T) {
+				var paths []string
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					paths = append(paths, r.URL.Path)
+					if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer tenant-7" || r.Header.Get("X-Tenant-ID") != "" {
+						t.Errorf("unexpected owner credential or operation on %s", r.URL)
+					}
+					switch r.URL.Path {
+					case descriptors + "1", descriptors + "2":
+						d := commonmodels.EngineRuntimeDescriptor{ID: 1, EngineType: "mongodb", LifecycleState: "active", ConnectionStatus: "online"}
+						if r.URL.Path == descriptors+"2" {
+							d.ID, d.EngineType = 2, "postgresql"
+						}
+						if r.URL.Path == descriptors+side {
+							switch state {
+							case "other_tenant":
+								w.WriteHeader(http.StatusForbidden)
+								return
+							case "offline":
+								d.ConnectionStatus = "offline"
+							case "deleted":
+								d.LifecycleState = "deleted"
+							case "shared_builtin":
+								d.IsBuiltin = true
+							case "wrong_id":
+								d.ID = 99
+							}
+						}
+						json.NewEncoder(w).Encode(d)
+					case "/api/v1/meta/items/by-catalog-path":
+						json.NewEncoder(w).Encode(item)
+					case "/api/v1/meta/items/11/ancestors":
+						json.NewEncoder(w).Encode(ancestors)
+					case "/api/v1/meta/nodes/by-catalog-path":
+						json.NewEncoder(w).Encode(commonmodels.MetaNode{ID: 20, TenantID: 7, EngineID: 2, Name: "synthetic", FullName: "synthetic", NodeType: "schema"})
+					default:
+						t.Errorf("unexpected route %s", r.URL)
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				defer server.Close()
+				tokens := recommendationTokenSource{}
+				system := commonclient.NewSystemServiceClient(server.URL, tokens, server.Client())
+				svc := NewTaskConfigDraftService(protection.EngineDescriptorLookup(system), commonclient.NewMetaClient(server.URL, tokens))
+				result, err := svc.Build(context.Background(), subject, body)
+				wantPaths := []string{descriptors + "1"}
+				if state == "online" || side == "2" {
+					wantPaths = append(wantPaths, descriptors+"2")
+				}
+				if state == "online" {
+					wantPaths = append(wantPaths, "/api/v1/meta/items/by-catalog-path", "/api/v1/meta/items/11/ancestors", "/api/v1/meta/nodes/by-catalog-path")
+					if err != nil || result == nil || !reflect.DeepEqual(result.Arguments, want) {
+						t.Fatalf("unexpected draft: %v, err=%v", result, err)
+					}
+				} else if !errors.Is(err, ErrConfigCheckDependency) || result != nil {
+					t.Fatalf("expected dependency rejection, got %v, err=%v", result, err)
+				}
+				if !reflect.DeepEqual(paths, wantPaths) {
+					t.Fatalf("read paths=%v, want %v", paths, wantPaths)
+				}
+			})
 		}
-		switch r.URL.Path {
-		case "/api/v1/meta/items/by-catalog-path":
-			json.NewEncoder(w).Encode(item)
-		case "/api/v1/meta/items/11/ancestors":
-			json.NewEncoder(w).Encode(ancestors)
-		case "/api/v1/meta/nodes/by-catalog-path":
-			json.NewEncoder(w).Encode(commonmodels.MetaNode{ID: 20, TenantID: 7, EngineID: 2, Name: "synthetic", FullName: "synthetic", NodeType: "schema"})
-		default:
-			t.Errorf("unexpected metadata route %s", r.URL)
-			w.WriteHeader(404)
-		}
-	}))
-	defer server.Close()
-	client := commonclient.NewMetaClient(server.URL, commonclient.ServiceTokenProviderFunc(func(_ context.Context, tenant uint) (string, error) {
-		if tenant != 7 {
-			t.Fatal("wrong tenant")
-		}
-		return "addp_st_fixture", nil
-	}))
-	svc := NewTaskConfigDraftService(engines, client)
-	body, _ := json.Marshal(request)
-	result, err := svc.Build(context.Background(), subject, body)
-	if err != nil || result == nil || reads != 3 {
-		t.Fatalf("result=%v err=%v reads=%d", result, err, reads)
 	}
 }
