@@ -870,6 +870,24 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "401": {
+                        "description": "当前身份或源表读取授权不满足 | Current user or source read authorization rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份或源表读取授权不满足 | Current user or source read authorization rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "422": {
                         "description": "源或目标不支持分析 | Source or target does not support analysis",
                         "schema": {

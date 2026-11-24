@@ -8769,6 +8769,59 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.manager_pg_read_check.execute
+  /engine-access/read-checks/transfer-field-recommendation:
+    post:
+      consumes:
+      - application/json
+      description: 当前普通租户用户对一张源表的当次 read Grant 检查，用于读表前及交付统计前，不签发访问凭据。 | Checks the
+        current tenant user's read Grant for one table before scanning and before
+        releasing statistics. Issues no credential.
+      parameters:
+      - description: 一张表的精确目录路径 | Exactly one native table path
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核对字段推荐源表读取权 | Check source table read access for Transfer field recommendations
+      tags:
+      - 源数据读取检查 | Source Data Read Checks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.create
   /engine-access/read-observations/current-source:
     post:
       consumes:

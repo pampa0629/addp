@@ -166,8 +166,9 @@ func main() {
 	taskService := service.NewTaskService(db, executionEngineService, cfg)
 	taskService.SetTaskSubjectAuthorizer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil))
 	taskService.SetEngineResolver(planner.NewSystemEngineResolver(systemClient))
-	taskService.SetTaskConfigChecker(service.NewTaskConfigCheckService(systemClient, commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)))
-	taskService.SetTaskConfigDrafter(service.NewTaskConfigDraftService(systemClient, commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)))
+	metaFacts := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
+	taskService.SetTaskConfigChecker(service.NewTaskConfigCheckService(systemClient, metaFacts))
+	taskService.SetTaskConfigDrafter(service.NewTaskConfigDraftService(systemClient, metaFacts))
 	taskService.SetObjectAuthorizationIssuer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil))
 	taskService.SetRoleProtection(service.NewRoleProtectionService(systemRuntimeClient, commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil), protectionGate))
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
@@ -245,7 +246,7 @@ func main() {
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("transfer", commonClient.ModuleRuntimeRoleBackend)
-	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(systemClient, engineDescriptor, protectionGate)
+	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(systemClient, engineDescriptor, metaFacts, systemRuntimeClient, protectionGate)
 	router := api.SetupRouter(api.NewCleanupResultHandler(db), taskService, executionService, continuousPolicyService, fieldDefinitionRecommendationService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	listener, err := net.Listen("tcp", addr)

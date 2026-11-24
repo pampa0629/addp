@@ -17,6 +17,7 @@ import (
 )
 
 type sourceReadCheckService interface {
+	CheckTransferFieldRecommendationRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 	ObserveCurrentSourceRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 	CheckManagerPGRead(context.Context, int64, client.ManagerPGReadCheckRequest, bool) (*engineaccess.SourceReadCheck, error)
 	CheckDevelopWorkflowResultRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
@@ -68,6 +69,11 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 	if err != nil {
 		return err
 	}
+	transferPermission, err := middleware.NewIAMPermissionGuard("transfer.task.create")
+	if err != nil {
+		return err
+	}
+	routes.POST("/transfer-field-recommendation", runtime.Authentication, runtime.UserAccessCredential, tenant, transferPermission, handler.CheckTransferFieldRecommendation)
 	api.POST("/engine-access/read-checks/develop-workflow-result", runtime.Authentication, runtime.UserAccessCredential, tenant, developPermission, handler.CheckDevelopWorkflowResult)
 	return nil
 }
@@ -162,4 +168,21 @@ func (h *EngineAccessSourceReadCheckHandler) check(c *gin.Context, check func(co
 // @Router /engine-access/read-checks/develop-workflow-result [post]
 func (h *EngineAccessSourceReadCheckHandler) CheckDevelopWorkflowResult(c *gin.Context) {
 	h.check(c, h.service.CheckDevelopWorkflowResultRead)
+}
+
+// CheckTransferFieldRecommendation godoc
+// @Summary 核对字段推荐源表读取权 | Check source table read access for Transfer field recommendations
+// @Description 当前普通租户用户对一张源表的当次 read Grant 检查，用于读表前及交付统计前，不签发访问凭据。 | Checks the current tenant user's read Grant for one table before scanning and before releasing statistics. Issues no credential.
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body engineaccess.SourceReadCheckRequest true "一张表的精确目录路径 | Exactly one native table path"
+// @Success 200 {object} engineaccess.SourceReadCheck
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.task.create"]
+// @Router /engine-access/read-checks/transfer-field-recommendation [post]
+func (h *EngineAccessSourceReadCheckHandler) CheckTransferFieldRecommendation(c *gin.Context) {
+	h.check(c, h.service.CheckTransferFieldRecommendationRead)
 }

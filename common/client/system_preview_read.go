@@ -84,3 +84,8 @@ func (c *SystemServiceClient) checkSourceReadRequest(ctx context.Context, creden
 func (c *SystemServiceClient) CheckDevelopWorkflowResultRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) error {
 	return c.checkSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/develop-workflow-result", false)
 }
+
+// CheckTransferFieldRecommendationRead observes one source table for the current user.
+func (c *SystemServiceClient) CheckTransferFieldRecommendationRead(ctx context.Context, credential string, target plugin.EngineCatalogPath) error {
+	return c.checkSourceRead(ctx, credential, []plugin.EngineCatalogPath{target}, "/api/v1/system/engine-access/read-checks/transfer-field-recommendation", false)
+}

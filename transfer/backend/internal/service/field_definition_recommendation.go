@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 
+	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
@@ -50,6 +53,8 @@ type fieldRecommendationEngineGetter interface {
 }
 
 type FieldDefinitionRecommendationService struct {
+	metadata         ConfigCheckMetaFacts
+	system           *client.SystemServiceClient
 	engines          fieldRecommendationEngineGetter
 	targetDescriptor protection.EngineDescriptorGetter
 	protectionGate   interface {
@@ -57,18 +62,19 @@ type FieldDefinitionRecommendationService struct {
 	}
 }
 
-func NewFieldDefinitionRecommendationService(engines fieldRecommendationEngineGetter, targetDescriptor protection.EngineDescriptorGetter, protectionGate interface {
+func NewFieldDefinitionRecommendationService(engines fieldRecommendationEngineGetter, targetDescriptor protection.EngineDescriptorGetter, metadata ConfigCheckMetaFacts, system *client.SystemServiceClient, protectionGate interface {
 	RequireLocator(context.Context, uint, string) error
 }) *FieldDefinitionRecommendationService {
-	return &FieldDefinitionRecommendationService{engines: engines, targetDescriptor: targetDescriptor, protectionGate: protectionGate}
+	return &FieldDefinitionRecommendationService{metadata: metadata, system: system, engines: engines, targetDescriptor: targetDescriptor, protectionGate: protectionGate}
 }
 
 func (s *FieldDefinitionRecommendationService) Recommend(
 	ctx context.Context,
 	tenantID uint,
+	credential string,
 	request FieldDefinitionRecommendationRequest,
 ) (*FieldDefinitionRecommendationResult, error) {
-	if s == nil || s.engines == nil || s.targetDescriptor == nil || s.protectionGate == nil {
+	if s == nil || s.engines == nil || s.metadata == nil || s.system == nil || s.targetDescriptor == nil || s.protectionGate == nil {
 		return nil, ErrFieldRecommendationUnavailable
 	}
 	targetEngine, err := s.targetDescriptor(ctx, tenantID, request.TargetEngineID)
@@ -91,7 +97,7 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 		return nil, err
 	}
 	locator, err := resourcetree.ParseURI(strings.TrimSpace(request.SourceLocator))
-	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || locator.ItemID == nil {
+	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || locator.ItemID == nil || *locator.ItemID == 0 {
 		return nil, fmt.Errorf("%w: source_locator must identify a scanned table item", ErrFieldRecommendationInvalid)
 	}
 	if err := s.protectionGate.RequireLocator(ctx, tenantID, request.SourceLocator); err != nil {
@@ -118,8 +124,29 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 		return nil, fmt.Errorf("%w: %v", ErrFieldRecommendationInvalid, err)
 	}
 
+	sourceFingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(path)
+	if err != nil || len(path.Segments) != 3 || path.Segments[2].Term != plugin.EngineCatalogTermTable {
+		return nil, client.ErrManagerPreviewReadDenied
+	}
 	analysisCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	// Resolve the numeric DataItem and check the same native path used by the reader.
+	checkRead := func() error {
+		item, err := s.metadata.GetItemSnapshot(analysisCtx, tenantID, locator.EngineID, *locator.ItemID, locator.FullName())
+		if errors.Is(err, commonapi.ErrNotFound) {
+			return client.ErrManagerPreviewReadDenied
+		}
+		if err != nil {
+			return ErrFieldRecommendationUnavailable
+		}
+		if item == nil || item.ItemType != "table" || item.Fingerprint != sourceFingerprint || item.Name != path.Segments[2].Name {
+			return client.ErrManagerPreviewReadDenied
+		}
+		return s.system.CheckTransferFieldRecommendationRead(analysisCtx, credential, path)
+	}
+	if err := checkRead(); err != nil {
+		return nil, err
+	}
 	session, err := reader.OpenTableReadSession(analysisCtx, plugin.ConnectionInfo(engine.ConnectionInfo), path, plugin.TableReadSessionOptions{
 		Hints: map[string]interface{}{
 			format.FieldSelectionOptionKey: format.FieldSelectionOptions{Include: fields},
@@ -173,6 +200,9 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 			NonNullCount: accumulators[field].NonNullCount,
 			FitsTarget:   fitsDecimalFieldLimits(precision, scale, decimalLimits),
 		})
+	}
+	if err := checkRead(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

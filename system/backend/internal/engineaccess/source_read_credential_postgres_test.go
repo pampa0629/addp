@@ -68,6 +68,35 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			return session.AccessToken
 		})
 
+		t.Run("Transfer field recommendation current User grants and withdrawal", func(t *testing.T) {
+			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
+			user, _ := newUser(t, time.Hour)
+			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.transfer_field_recommendation", Name: "Transfer field recommendation fixture", PermissionKeys: []string{"transfer.task.create"}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Transfer field recommendation fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			session, _ := issue(t, user, time.Minute)
+			request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
+			check := func(want error) {
+				t.Helper()
+				result, err := service.CheckTransferFieldRecommendationRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request)
+				if want == nil {
+					if err != nil || result == nil {
+						t.Fatal(result, err)
+					}
+				} else if result != nil || !errors.Is(err, want) {
+					t.Fatal(result, err, want)
+				}
+			}
+			check(commonapi.ErrForbidden)
+			id := grant(t, "user", user.PrincipalID, nil)
+			check(nil)
+			revoke(t, id)
+			check(commonapi.ErrForbidden)
+		})
 		t.Run("Develop workflow result current User grants and withdrawal", func(t *testing.T) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 			user, _ := newUser(t, time.Hour)

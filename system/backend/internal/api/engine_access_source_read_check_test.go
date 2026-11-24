@@ -189,7 +189,7 @@ func sourceReadCheckAuth() auth.AuthContext {
 }
 
 func TestSourceReadCheckRouteContract(t *testing.T) {
-	for _, path := range []string{"/api/v1/system/engine-access/read-observations/current-source", "/api/v1/system/engine-access/read-checks/develop-workflow-result"} {
+	for _, path := range []string{"/api/v1/system/engine-access/read-observations/current-source", "/api/v1/system/engine-access/read-checks/develop-workflow-result", "/api/v1/system/engine-access/read-checks/transfer-field-recommendation"} {
 		t.Run(path, func(t *testing.T) { testSourceReadCheckRouteContract(t, path) })
 	}
 }
@@ -221,6 +221,9 @@ func testSourceReadCheckRouteContract(t *testing.T, path string) {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := &sourceReadCheckFixture{err: tc.err, incomplete: tc.incomplete}
 			current := sourceReadCheckAuth()
+			if strings.HasSuffix(path, "transfer-field-recommendation") {
+				current.Authorization.RoleAssignments[0].Permissions = []string{"transfer.task.create"}
+			}
 			if strings.HasSuffix(path, "develop-workflow-result") {
 				current.Authorization.RoleAssignments[0].Permissions = []string{"develop.data_read.execute", "develop.task.read"}
 			}
@@ -276,5 +279,9 @@ func TestProfileResultRouteDoesNotAcceptPreviewDelegate(t *testing.T) {
 }
 
 func (f *sourceReadCheckFixture) CheckDevelopWorkflowResultRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
+	return f.ObserveCurrentSourceRead(ctx, credential, request)
+}
+
+func (f *sourceReadCheckFixture) CheckTransferFieldRecommendationRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
 	return f.ObserveCurrentSourceRead(ctx, credential, request)
 }

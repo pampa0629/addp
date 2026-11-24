@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	transferi18n "github.com/addp/transfer/i18n"
@@ -28,6 +29,7 @@ func NewFieldDefinitionRecommendationHandler(recommendationService *service.Fiel
 // @Param request body service.FieldDefinitionRecommendationRequest true "推荐请求 | Recommendation request"
 // @Success 200 {object} service.FieldDefinitionRecommendationResult "推荐结果 | Recommendation result"
 // @Failure 400 {object} map[string]string "请求无效 | Invalid request"
+// @Failure 401,403 {object} map[string]string "当前身份或源表读取授权不满足 | Current user or source read authorization rejected"
 // @Failure 422 {object} map[string]string "源或目标不支持分析 | Source or target does not support analysis"
 // @Failure 503 {object} map[string]string "分析服务不可用 | Analysis unavailable"
 // @x-addp-auth-mode "permission"
@@ -44,9 +46,13 @@ func (h *FieldDefinitionRecommendationHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, transferi18n.MsgFieldRecommendationInvalid)})
 		return
 	}
-	result, err := h.service.Recommend(c.Request.Context(), commonAuth.GetTenantID(c), request)
+	result, err := h.service.Recommend(c.Request.Context(), commonAuth.GetTenantID(c), commonAuth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
 	if err != nil {
 		switch {
+		case errors.Is(err, client.ErrManagerPreviewCredentialRejected):
+			c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, commoni18n.MsgUnauthorized)})
+		case errors.Is(err, client.ErrManagerPreviewReadDenied):
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, commoni18n.MsgForbidden)})
 		case errors.Is(err, service.ErrFieldRecommendationInvalid):
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, transferi18n.MsgFieldRecommendationInvalid)})
 		case errors.Is(err, service.ErrFieldRecommendationUnsupported):

@@ -176,3 +176,17 @@ func qualifyDevelopWorkflowResultRead(current commonauth.AuthContext) error {
 	}
 	return nil
 }
+
+// CheckTransferFieldRecommendationRead covers only the native table being scanned.
+func (s *Service) CheckTransferFieldRecommendationRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
+	if request.ExpectedSource != nil || len(request.Targets) != 1 {
+		return nil, commonapi.ErrBadRequest
+	}
+	segments := request.Targets[0].Segments
+	if len(segments) != 3 || segments[2].Term != engineplugin.EngineCatalogTermTable {
+		return nil, commonapi.ErrBadRequest
+	}
+	return s.checkSourceRead(ctx, credential, request, false, func(current commonauth.AuthContext) error {
+		return qualifyOrdinarySourceUser(current, "transfer.task.create")
+	})
+}

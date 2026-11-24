@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"github.com/addp/common/client"
@@ -44,20 +45,29 @@ func (allowFieldRecommendationProtectionGate) RequireLocator(context.Context, ui
 }
 
 // Use the production PostgreSQL catalog model and a deterministic source row stream.
-type recommendationSource struct{ postgresql.PostgreSQLPlugin }
+type recommendationSource struct {
+	postgresql.PostgreSQLPlugin
+	opens    atomic.Int32
+	finished atomic.Bool
+}
 
 func (*recommendationSource) Type() string { return "recommendation-test-source" }
-func (*recommendationSource) OpenTableReadSession(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+func (s *recommendationSource) OpenTableReadSession(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	if !reflect.DeepEqual(path, plugin.TabularItemPath(8, "schema", "public", "amounts")) {
 		return nil, fmt.Errorf("unexpected source path: %v", path)
 	}
-	return &recommendationRows{}, nil
+	s.opens.Add(1)
+	return &recommendationRows{source: s}, nil
 }
 
-type recommendationRows struct{ done bool }
+type recommendationRows struct {
+	done   bool
+	source *recommendationSource
+}
 
 func (r *recommendationRows) ReadBatch(context.Context, int) (*plugin.BatchData, error) {
 	if r.done {
+		r.source.finished.Store(true)
 		return &plugin.BatchData{}, nil
 	}
 	r.done = true
@@ -74,6 +84,8 @@ func (recommendationTokenSource) Token(_ context.Context, tenant uint) (string, 
 
 func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 	const descriptorPath = "/api/v1/system/runtime/engine-descriptors/9"
+	const checkPath = "/api/v1/system/engine-access/read-checks/transfer-field-recommendation"
+	const itemPath = "/api/v1/meta/items/60"
 	const sourcePath = "/api/v1/system/engines/8"
 	source := &recommendationSource{}
 	plugin.Register(source)
@@ -84,11 +96,19 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 		connectionStatus string
 		status           int
 		wantErr          error
+		checks           []int
+		itemMismatch     string
 	}{
-		{"available", "mysql", "online", 200, nil},
-		{"other tenant", "", "", 403, ErrFieldRecommendationUnavailable},
-		{"offline", "mysql", "offline", 200, ErrFieldRecommendationUnavailable},
-		{"no decimal limit", "postgresql", "online", 200, ErrFieldRecommendationUnsupported},
+		{"available", "mysql", "online", 200, nil, []int{200, 200}, ""},
+		{"other tenant", "", "", 403, ErrFieldRecommendationUnavailable, nil, ""},
+		{"offline", "mysql", "offline", 200, ErrFieldRecommendationUnavailable, nil, ""},
+		{"no decimal limit", "postgresql", "online", 200, ErrFieldRecommendationUnsupported, nil, ""},
+		{"missing read", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, []int{403}, ""},
+		{"revoked at release", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, []int{200, 403}, ""},
+		{"expired user", "mysql", "online", 200, client.ErrManagerPreviewCredentialRejected, []int{200, 401}, ""},
+		{"unavailable at release", "mysql", "online", 200, client.ErrManagerPreviewReadUnavailable, []int{200, 503}, ""},
+		{"item does not match native leaf", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, nil, "name"},
+		{"wrong scanned fingerprint", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, nil, "fingerprint"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var target commonmodels.EngineRuntimeDescriptor
@@ -108,8 +128,37 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 				}
 			}
 			var paths []string
+			checks := 0
+			source.opens.Store(0)
+			source.finished.Store(false)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				paths = append(paths, r.URL.Path)
+				if r.URL.Path == checkPath {
+					if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer addp_at_current" || checks >= len(tc.checks) {
+						t.Error("unexpected source observation identity or count")
+						w.WriteHeader(403)
+						return
+					}
+					var body struct {
+						Targets []plugin.EngineCatalogPath `json:"targets"`
+					}
+					if json.NewDecoder(r.Body).Decode(&body) != nil || !reflect.DeepEqual(body.Targets, []plugin.EngineCatalogPath{plugin.TabularItemPath(8, "schema", "public", "amounts")}) {
+						t.Error("source observation path mismatch")
+						w.WriteHeader(400)
+						return
+					}
+					if (checks == 1) != source.finished.Load() {
+						t.Error("source check performed at the wrong phase")
+					}
+					status := tc.checks[checks]
+					checks++
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(status)
+					if status == 200 {
+						_, _ = w.Write([]byte(`{"observed_at":"2026-11-24T00:00:00Z"}`))
+					}
+					return
+				}
 				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer tenant-7" {
 					t.Error("unexpected System request method or tenant identity")
 					w.WriteHeader(403)
@@ -123,6 +172,16 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 						return
 					}
 					_ = json.NewEncoder(w).Encode(target)
+				case itemPath:
+					name := "amounts"
+					fingerprint := commonmodels.GenerateItemFingerprint(8, "public.amounts")
+					if tc.itemMismatch == "fingerprint" {
+						fingerprint = commonmodels.GenerateItemFingerprint(8, "public.other")
+					}
+					if tc.itemMismatch == "name" {
+						name = "other"
+					}
+					_ = json.NewEncoder(w).Encode(commonmodels.MetaItem{ID: 60, TenantID: 7, EngineID: 8, Name: name, FullName: "public.amounts", Fingerprint: fingerprint, ItemType: "table"})
 				case sourcePath:
 					tenant := uint(7)
 					_ = json.NewEncoder(w).Encode(commonmodels.Engine{ID: 8, TenantID: &tenant, EngineType: source.Type(), LifecycleState: "active", ConnectionStatus: "online"})
@@ -134,14 +193,29 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 			tokens := recommendationTokenSource{}
 			engines := client.NewSystemClient(server.URL, tokens)
 			descriptor := protection.EngineDescriptorLookup(client.NewSystemServiceClient(server.URL, tokens, server.Client()))
-			svc := NewFieldDefinitionRecommendationService(engines, descriptor, allowFieldRecommendationProtectionGate{})
-			got, err := svc.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{SourceLocator: "addp://engine/8/path/public/amounts?type=table&item_id=60", SourceFields: []string{"amount"}, TargetEngineID: 9})
+			svc := NewFieldDefinitionRecommendationService(engines, descriptor, client.NewMetaClient(server.URL, tokens), client.NewSystemServiceClient(server.URL, nil, server.Client()), allowFieldRecommendationProtectionGate{})
+			got, err := svc.Recommend(context.Background(), 7, "addp_at_current", FieldDefinitionRecommendationRequest{SourceLocator: "addp://engine/8/path/public/amounts?type=table&item_id=60", SourceFields: []string{"amount"}, TargetEngineID: 9})
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("recommendation error = %v, want %v", err, tc.wantErr)
 			}
 			wantPaths := []string{descriptorPath}
+			if len(tc.checks) > 0 || tc.itemMismatch != "" {
+				wantPaths = append(wantPaths, sourcePath, itemPath)
+			}
+			for i := range tc.checks {
+				if i > 0 {
+					wantPaths = append(wantPaths, itemPath)
+				}
+				wantPaths = append(wantPaths, checkPath)
+			}
+			wantOpens := int32(0)
+			if len(tc.checks) > 0 && tc.checks[0] == 200 {
+				wantOpens = 1
+			}
+			if source.opens.Load() != wantOpens || (tc.wantErr != nil && got != nil) {
+				t.Fatalf("opens=%d, want %d; result=%+v", source.opens.Load(), wantOpens, got)
+			}
 			if tc.wantErr == nil {
-				wantPaths = append(wantPaths, sourcePath)
 				want := &FieldDefinitionRecommendationResult{TargetEngineType: tc.engineType, Basis: "exact_source_values", RowsScanned: 3,
 					Fields: []DecimalFieldRecommendation{{SourceField: "amount", Precision: 6, Scale: 3, NonNullCount: 2, FitsTarget: true}}}
 				if !reflect.DeepEqual(got, want) {
