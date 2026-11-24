@@ -217,13 +217,14 @@ if [ "$test_group" = platform-cleanup-results ]; then
 fi
 
 if [ "$test_group" = platform-manager-storage ]; then
-    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_STORAGE=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManager(ImportSourceIsPrivateAndBoundOnce|PreviewState|ContentReceipt|SearchHistory|ProfileProtectedResultRoundTrip|UnifiedTaskDefinitionLifecycle|PreviewPolicies)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-storage.log"
+    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_STORAGE=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationMySQLManager(ImportSourceIsPrivateAndBoundOnce|PreviewState|ContentReceipt|SearchHistory|ProfileProtectedResultRoundTrip|UnifiedTaskDefinitionLifecycle|PreviewPolicies|PreviewArtifactIdentity)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerImportSourceIsPrivateAndBoundOnce ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerPreviewState ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerSearchHistory ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerProfileProtectedResultRoundTrip ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerUnifiedTaskDefinitionLifecycle ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerPreviewPolicies ' "$WORK_DIR/manager-storage.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerPreviewArtifactIdentity ' "$WORK_DIR/manager-storage.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerContentReceipt ' "$WORK_DIR/manager-storage.log"
     (cd "$ROOT_DIR/manager/backend" && GOWORK=off go build -o "$WORK_DIR/manager-backend" ./cmd/server &&
         ADDP_TEST_MYSQL_MANAGER_STORAGE=1 MANAGER_MAINTENANCE_TEST_BINARY="$WORK_DIR/manager-backend" GOWORK=off go test ./internal/service -run '^TestIntegrationMySQLManagerSearchMaintenance$' -count=1 -v) | tee "$WORK_DIR/manager-maintenance.log"
@@ -245,7 +246,8 @@ if [ "$test_group" = platform-execution ]; then
     grep -q '^--- PASS: TestCleanupScanReceiptAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestExecutionRetentionAssessmentAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_QUEUE=1 GOWORK=off go test ./internal/repository \
-        -run '^TestIntegrationMySQLManager(Queue|ProfileActorPersistenceAndReuse)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-queue.log"
+        -run '^TestIntegrationMySQLManager(Queue|ProfileActorPersistenceAndReuse|GLBOutputPublication)$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-queue.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerGLBOutputPublication ' "$WORK_DIR/manager-queue.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerProfileActorPersistenceAndReuse ' "$WORK_DIR/manager-queue.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerQueue ' "$WORK_DIR/manager-queue.log"
     exit 0

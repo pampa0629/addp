@@ -21,7 +21,7 @@ type Model3DTilesRepository struct {
 func (r *Model3DTilesRepository) GetTaskByItemFingerprintAndFormat(ctx context.Context, tenantID uint, itemFingerprint, targetFormat string) (*models.Model3DTilesTask, error) {
 	var task models.Model3DTilesTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ? AND config->>'target_format' = ?", tenantID, commonExecution.TaskTypeModel3DTilesGeneration, strings.TrimSpace(itemFingerprint), strings.TrimSpace(targetFormat)).
+		Where("tenant_id = ? AND task_type = ? AND "+previewJSONText(r.db, "config", "source.item_fingerprint")+" = ? AND "+previewJSONText(r.db, "config", "target_format")+" = ?", tenantID, commonExecution.TaskTypeModel3DTilesGeneration, strings.TrimSpace(itemFingerprint), strings.TrimSpace(targetFormat)).
 		Order("updated_at DESC, id DESC").First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil

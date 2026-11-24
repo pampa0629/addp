@@ -182,7 +182,7 @@ func (r *VectorMaterializedViewRepository) ListResults(ctx context.Context, filt
 	if q := strings.TrimSpace(filter.Q); q != "" {
 		like := "%" + q + "%"
 		query = query.Where(
-			"locator ILIKE ? OR item_fingerprint ILIKE ? OR target_table ILIKE ? OR error_message ILIKE ?",
+			"LOWER(locator) LIKE LOWER(?) OR LOWER(item_fingerprint) LIKE LOWER(?) OR LOWER(target_table) LIKE LOWER(?) OR LOWER(error_message) LIKE LOWER(?)",
 			like, like, like, like,
 		)
 	}

@@ -56,7 +56,7 @@ func (r *TileCacheRepository) GetTaskByTargetFingerprintAndProfile(ctx context.C
 	}
 	query := r.db.WithContext(ctx).
 		Where(
-			"tenant_id = ? AND task_type = ? AND config -> 'target' ->> 'item_fingerprint' = ? AND config ->> 'profile_hash' = ?",
+			"tenant_id = ? AND task_type = ? AND "+previewJSONText(r.db, "config", "target.item_fingerprint")+" = ? AND "+previewJSONText(r.db, "config", "profile_hash")+" = ?",
 			tenantID,
 			commonExecution.TaskTypeVectorTileCacheGeneration,
 			itemFingerprint,
@@ -264,7 +264,7 @@ func (r *TileCacheRepository) ListTileCache(ctx context.Context, filter TileCach
 	}
 	if q := strings.TrimSpace(filter.Q); q != "" {
 		like := "%" + q + "%"
-		query = query.Where("locator ILIKE ? OR item_fingerprint ILIKE ? OR storage_ref ILIKE ? OR error_message ILIKE ?", like, like, like, like)
+		query = query.Where("LOWER(locator) LIKE LOWER(?) OR LOWER(item_fingerprint) LIKE LOWER(?) OR LOWER(storage_ref) LIKE LOWER(?) OR LOWER(error_message) LIKE LOWER(?)", like, like, like, like)
 	}
 
 	var total int64

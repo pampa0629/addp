@@ -34,7 +34,7 @@ func (r *PPTXPDFRepository) GetTask(ctx context.Context, id, tenantID uint) (*mo
 func (r *PPTXPDFRepository) GetTaskByFingerprint(ctx context.Context, tenantID uint, fingerprint string) (*models.PPTXPDFTask, error) {
 	var task models.PPTXPDFTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypePPTXPDFGeneration, strings.TrimSpace(fingerprint)).
+		Where("tenant_id = ? AND task_type = ? AND "+previewJSONText(r.db, "config", "source.item_fingerprint")+" = ?", tenantID, commonExecution.TaskTypePPTXPDFGeneration, strings.TrimSpace(fingerprint)).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil

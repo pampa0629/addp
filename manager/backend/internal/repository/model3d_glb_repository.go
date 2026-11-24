@@ -47,7 +47,7 @@ func (r *Model3DGLBRepository) GetTaskByItemFingerprint(ctx context.Context, ten
 	}
 	var task models.Model3DGLBTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypeModel3DGLBGeneration, itemFingerprint).
+		Where("tenant_id = ? AND task_type = ? AND "+previewJSONText(r.db, "config", "source.item_fingerprint")+" = ?", tenantID, commonExecution.TaskTypeModel3DGLBGeneration, itemFingerprint).
 		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -90,7 +90,7 @@ func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID
 			return err
 		}
 		var active int64
-		if err := tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ? AND execution_config->>'config_version' = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, *commonExecution.NewSourceTaskIDFromUint(id), []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, models.Model3DGLBFileConfigVersion).Count(&active).Error; err != nil {
+		if err := tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ? AND "+executionConfigVersionSQL(tx)+" = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, *commonExecution.NewSourceTaskIDFromUint(id), []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, models.Model3DGLBFileConfigVersion).Count(&active).Error; err != nil {
 			return err
 		}
 		if active != 0 {
@@ -239,7 +239,7 @@ func (r *Model3DGLBRepository) List(ctx context.Context, filter Model3DGLBFilter
 	if q := strings.TrimSpace(filter.Q); q != "" {
 		like := "%" + q + "%"
 		query = query.Where(
-			"locator ILIKE ? OR item_fingerprint ILIKE ? OR file_name ILIKE ? OR error_message ILIKE ?",
+			"LOWER(locator) LIKE LOWER(?) OR LOWER(item_fingerprint) LIKE LOWER(?) OR LOWER(file_name) LIKE LOWER(?) OR LOWER(error_message) LIKE LOWER(?)",
 			like, like, like, like,
 		)
 	}

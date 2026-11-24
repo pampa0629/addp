@@ -204,7 +204,7 @@ func (r *EmbeddingRepository) ListEmbeddings(ctx context.Context, filter Embeddi
 	}
 	if q := strings.TrimSpace(filter.Query); q != "" {
 		like := "%" + q + "%"
-		query = query.Where("locator ILIKE ? OR item_fingerprint ILIKE ? OR error_message ILIKE ?", like, like, like)
+		query = query.Where("LOWER(locator) LIKE LOWER(?) OR LOWER(item_fingerprint) LIKE LOWER(?) OR LOWER(error_message) LIKE LOWER(?)", like, like, like)
 	}
 
 	var total int64

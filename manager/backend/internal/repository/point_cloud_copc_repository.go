@@ -44,7 +44,7 @@ func (r *PointCloudCOPCRepository) GetTaskByItemFingerprint(ctx context.Context,
 	}
 	var task models.PointCloudCOPCTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypePointCloudCOPCGeneration, itemFingerprint).
+		Where("tenant_id = ? AND task_type = ? AND "+previewJSONText(r.db, "config", "source.item_fingerprint")+" = ?", tenantID, commonExecution.TaskTypePointCloudCOPCGeneration, itemFingerprint).
 		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -196,7 +196,7 @@ func (r *PointCloudCOPCRepository) List(ctx context.Context, filter PointCloudCO
 	if q := strings.TrimSpace(filter.Q); q != "" {
 		like := "%" + q + "%"
 		query = query.Where(
-			"locator ILIKE ? OR item_fingerprint ILIKE ? OR file_name ILIKE ? OR error_message ILIKE ?",
+			"LOWER(locator) LIKE LOWER(?) OR LOWER(item_fingerprint) LIKE LOWER(?) OR LOWER(file_name) LIKE LOWER(?) OR LOWER(error_message) LIKE LOWER(?)",
 			like, like, like, like,
 		)
 	}

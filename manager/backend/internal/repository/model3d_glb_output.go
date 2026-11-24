@@ -152,7 +152,11 @@ func activeModel3DGLBSourceExecutions(tx *gorm.DB, tenantID uint, fingerprint st
 		return 0, commonAPI.ErrConflict
 	}
 	var count int64
-	err := tx.Table("common.task_executions AS executions").Joins("JOIN manager.task_definitions AS definitions ON definitions.tenant_id = executions.tenant_id AND CAST(definitions.id AS TEXT) = executions.source_task_id").Where("executions.tenant_id = ? AND executions.module = ? AND executions.task_type = ? AND executions.status IN ? AND definitions.task_type = ? AND definitions.semantic_key = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, commonExecution.TaskTypeModel3DGLBGeneration, fingerprint).Count(&count).Error
+	definitionID := "CAST(definitions.id AS TEXT)"
+	if tx.Dialector.Name() == "mysql" {
+		definitionID = "CAST(definitions.id AS CHAR)"
+	}
+	err := tx.Table("common.task_executions AS executions").Joins("JOIN manager.task_definitions AS definitions ON definitions.tenant_id = executions.tenant_id AND "+definitionID+" = executions.source_task_id").Where("executions.tenant_id = ? AND executions.module = ? AND executions.task_type = ? AND executions.status IN ? AND definitions.task_type = ? AND definitions.semantic_key = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, commonExecution.TaskTypeModel3DGLBGeneration, fingerprint).Count(&count).Error
 	return count, err
 }
 
@@ -290,11 +294,25 @@ func (r *Model3DGLBRepository) CleanupExecutionOutputs(ctx context.Context, limi
 		return 0, commonAPI.ErrConflict
 	}
 	var ids []uint
-	operationSnapshot := "operation.snapshot"
+	// Collection and completion share the same exclusion for unfinished cleanup
+	// operations. The snapshot column is text; PostgreSQL requires a JSON cast.
+	idExpression := "CAST(operation.snapshot ->> 'ID' AS BIGINT)"
+	state := "metadata -> '" + model3DGLBOutputStateKey + "'"
+	hasWork := "(" + state + " -> 'pending') IS NOT NULL OR (" + state + " -> 'garbage') IS NOT NULL OR (" + state + " -> 'input_cleanup_pending') IS NOT NULL"
 	if r.db.Dialector.Name() == "postgres" {
-		operationSnapshot = "CAST(operation.snapshot AS jsonb)"
+		idExpression = "CAST(CAST(operation.snapshot AS jsonb) ->> 'ID' AS BIGINT)"
 	}
-	if err := r.db.WithContext(ctx).Unscoped().Model(&models.Model3DGLB{}).Where("NOT EXISTS (SELECT 1 FROM manager.cleanup_artifact_operations AS operation WHERE operation.origin = ? AND operation.state IN ? AND operation.tenant_id = model_3d_glb.tenant_id AND CAST("+operationSnapshot+" ->> 'ID' AS BIGINT) = model_3d_glb.id)", "background", []string{"prepared", "submitting", "unknown"}).Where("(metadata -> ? -> 'pending') IS NOT NULL OR (metadata -> ? -> 'garbage') IS NOT NULL OR (metadata -> ? -> 'input_cleanup_pending') IS NOT NULL", model3DGLBOutputStateKey, model3DGLBOutputStateKey, model3DGLBOutputStateKey).Order("COALESCE(metadata->'"+model3DGLBOutputStateKey+"'->>'checked_at',''), id").Limit(limit).Pluck("id", &ids).Error; err != nil {
+	if r.db.Dialector.Name() == "mysql" {
+		idExpression = "CAST(JSON_UNQUOTE(JSON_EXTRACT(operation.snapshot, '$.ID')) AS UNSIGNED)"
+		path := "$." + model3DGLBOutputStateKey
+		hasWork = "JSON_CONTAINS_PATH(metadata, 'one', '" + path + ".pending', '" + path + ".garbage', '" + path + ".input_cleanup_pending')"
+	}
+	available := "NOT EXISTS (SELECT 1 FROM manager.cleanup_artifact_operations AS operation " +
+		"WHERE operation.origin = ? AND operation.state IN ? AND operation.tenant_id = model_3d_glb.tenant_id AND " + idExpression + " = model_3d_glb.id)"
+	checkedAt := previewJSONText(r.db, "metadata", model3DGLBOutputStateKey+".checked_at")
+	if err := r.db.WithContext(ctx).Unscoped().Model(&models.Model3DGLB{}).
+		Where(available, "background", []string{"prepared", "submitting", "unknown"}).
+		Where(hasWork).Order("COALESCE("+checkedAt+",''), id").Limit(limit).Pluck("id", &ids).Error; err != nil {
 		return 0, err
 	}
 	deleted := 0

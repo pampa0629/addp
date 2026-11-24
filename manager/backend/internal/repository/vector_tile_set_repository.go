@@ -26,7 +26,7 @@ func (r *VectorTileSetRepository) GetTaskBySemanticHash(ctx context.Context, ten
 		return nil, nil
 	}
 	query := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND task_type = ? AND config ->> 'semantic_hash' = ?", tenantID, commonExecution.TaskTypeVectorTileSetGeneration, semanticHash)
+		Where("tenant_id = ? AND task_type = ? AND "+previewJSONText(r.db, "config", "semantic_hash")+" = ?", tenantID, commonExecution.TaskTypeVectorTileSetGeneration, semanticHash)
 	if excludeTaskID > 0 {
 		query = query.Where("id <> ?", excludeTaskID)
 	}

@@ -71,35 +71,8 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureTaskDefinitionSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure unified Manager task definition schema: %w", err)
 	}
-	if err := ensureTileCacheStateSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure tile cache state schema: %w", err)
-	}
-	if err := ensureVectorMaterializedViewSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure vector materialized view schema: %w", err)
-	}
-	if err := ensureRasterCOGSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure raster COG schema: %w", err)
-	}
-	if err := ensureRasterMosaicSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure raster mosaic schema: %w", err)
-	}
-	if err := ensureVectorTileSetSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure vector tile set schema: %w", err)
-	}
-	if err := ensureModel3DGLBSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure model 3d GLB schema: %w", err)
-	}
-	if err := ensureGaussianSplatKSplatSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure gaussian splat KSplat schema: %w", err)
-	}
-	if err := ensurePointCloudCOPCSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure point cloud COPC schema: %w", err)
-	}
-	if err := ensurePPTXPDFSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure PPTX PDF schema: %w", err)
-	}
-	if err := ensureModel3DTilesSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
+	if err := preparePreviewArtifacts(db); err != nil {
+		return nil, err
 	}
 	if err := ensureDataProfileSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure data profile schema: %w", err)
@@ -143,6 +116,43 @@ func dropLegacyExportSessionTransferTaskID(db *gorm.DB) error {
 		return nil
 	}
 	return db.Migrator().DropColumn("manager.export_sessions", "transfer_task_id")
+}
+
+func preparePreviewArtifacts(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return prepareManagerMySQLTables(db, mysqlPreviewArtifactTables)
+	}
+	if err := ensureTileCacheStateSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure tile cache state schema: %w", err)
+	}
+	if err := ensureVectorMaterializedViewSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure vector materialized view schema: %w", err)
+	}
+	if err := ensureRasterCOGSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure raster COG schema: %w", err)
+	}
+	if err := ensureRasterMosaicSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure raster mosaic schema: %w", err)
+	}
+	if err := ensureVectorTileSetSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure vector tile set schema: %w", err)
+	}
+	if err := ensureModel3DGLBSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure model 3d GLB schema: %w", err)
+	}
+	if err := ensureGaussianSplatKSplatSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure gaussian splat KSplat schema: %w", err)
+	}
+	if err := ensurePointCloudCOPCSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure point cloud COPC schema: %w", err)
+	}
+	if err := ensurePPTXPDFSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure PPTX PDF schema: %w", err)
+	}
+	if err := ensureModel3DTilesSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
+	}
+	return nil
 }
 
 func preparePreviewPolicies(db *gorm.DB) error {

@@ -41,6 +41,25 @@ func exerciseManagerGLBIsolatedOutputPublication(t *testing.T, sourceFormat stri
 	if err := db.AutoMigrate(&models.Model3DGLBTask{}, &models.Model3DGLB{}, &models.TaskResourceBinding{}); err != nil {
 		t.Fatal(err)
 	}
+	verifyGLBOutputPublication(t, db, sourceFormat)
+}
+
+func TestIntegrationMySQLManagerGLBOutputPublication(t *testing.T) {
+	db := managerMySQLStoreDB(t, "manager", "ADDP_TEST_MYSQL_MANAGER_QUEUE")
+	if err := ensureTaskDefinitionSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := preparePreviewArtifacts(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateCleanupArtifactSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	verifyGLBOutputPublication(t, db, "ifc")
+}
+
+func verifyGLBOutputPublication(t *testing.T, db *gorm.DB, sourceFormat string) {
+	t.Helper()
 	tenantID := uint(time.Now().UnixNano()%100000000 + 980000000)
 	t.Cleanup(func() {
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.TaskResourceBinding{}).Error
