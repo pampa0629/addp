@@ -60,3 +60,19 @@ func TestBusinessCatalogNodeScopes(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeGrantMatchesRegisteredStorageModel(t *testing.T) {
+	if authorizationfacts.NodeIdentityMatchesEngine("nfs", plugin.ObjectRootPath(99)) {
+		t.Fatal("an object-service root cannot be signed for an NFS engine with the same ID")
+	}
+	for _, path := range []plugin.EngineCatalogPath{plugin.ObjectRootPath(9), plugin.ObjectDirectoryPath(9, "bucket", ""), plugin.ObjectDirectoryPath(9, "bucket", "a/ exact.prefix ")} {
+		if !authorizationfacts.NodeIdentityMatchesEngine("minio", path) || authorizationfacts.NodeIdentityMatchesEngine("nfs", path) {
+			t.Fatal("wrong MinIO profile", path)
+		}
+	}
+	for _, path := range []plugin.EngineCatalogPath{plugin.ObjectItemPath(9, "bucket", "a/file.ifc"), plugin.FileDirectoryPath(9, "bucket/a")} {
+		if authorizationfacts.NodeIdentityMatchesEngine("minio", path) {
+			t.Fatal("non-node or wrong profile", path)
+		}
+	}
+}
