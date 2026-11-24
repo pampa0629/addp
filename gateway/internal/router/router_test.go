@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/addp/gateway/internal/proxy"
@@ -13,8 +14,13 @@ import (
 )
 
 type fakeModuleProxyLookup struct {
-	proxies map[string]*proxy.ServiceProxy
-	calls   []string
+	proxies   map[string]*proxy.ServiceProxy
+	calls     []string
+	alternate *proxy.ServiceProxy
+}
+
+func (f *fakeModuleProxyLookup) AlternateProxy(moduleName, excludeURL string) *proxy.ServiceProxy {
+	return f.alternate
 }
 
 func (f *fakeModuleProxyLookup) GetProxy(moduleName string) (*proxy.ServiceProxy, error) {
@@ -128,5 +134,77 @@ func TestQueryServiceRouteProxiesCanonicalPostOnly(t *testing.T) {
 	legacyResponse.Body.Close()
 	if legacyResponse.StatusCode != http.StatusNotFound {
 		t.Fatalf("legacy GET status = %d, want %d", legacyResponse.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestCatalogReadSwitchesOnlyBeforeDispatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const entries = "/api/v1/catalog/entries"
+	var calls atomic.Int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.RequestURI() != entries+"?page=1" || r.Header.Get("Authorization") != "Bearer fixture" {
+			t.Errorf("alternate received changed request")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer second.Close()
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+	var received atomic.Int32
+	accepted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received.Add(1)
+		if r.URL.Query().Has("disconnect") {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn.Close()
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer accepted.Close()
+	for _, tc := range []struct {
+		name, primary, method, uri, body string
+		want                             int
+		switched                         bool
+	}{
+		{"dial failure", closed.URL, "GET", entries + "?page=1", "", 200, true},
+		{"business failure", accepted.URL, "GET", entries, "", 503, false},
+		{"disconnect after dispatch", accepted.URL, "GET", entries + "?disconnect=1", "", 502, false},
+		{"write", closed.URL, "POST", entries, "{}", 502, false},
+		{"body", closed.URL, "GET", entries, "{}", 502, false},
+		{"other read", closed.URL, "GET", entries + "/audit", "", 502, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			discovery := &fakeModuleProxyLookup{proxies: map[string]*proxy.ServiceProxy{"catalog": proxy.NewServiceProxy(tc.primary)}, alternate: proxy.NewServiceProxy(second.URL)}
+			router := gin.New()
+			registerModuleRoutes(router.Group("/api/v1"), nil, discovery)
+			server := httptest.NewServer(router)
+			defer server.Close()
+			req, err := http.NewRequest(tc.method, server.URL+tc.uri, strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer fixture")
+			before := calls.Load()
+			response, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			wantCalls := int32(0)
+			if tc.switched {
+				wantCalls = 1
+			}
+			if response.StatusCode != tc.want || calls.Load()-before != wantCalls {
+				t.Fatalf("HTTP %d; alternate calls %d", response.StatusCode, calls.Load()-before)
+			}
+		})
+	}
+	if received.Load() != 2 {
+		t.Fatalf("requests delivered to accepting primary = %d", received.Load())
 	}
 }

@@ -77,9 +77,21 @@ func TestModuleDiscoveryRoundRobinsValidBackendsAndStopsAtLeaseExpiry(t *testing
 		}
 	}
 
+	first, err := discovery.GetProxy("manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := discovery.AlternateProxy("manager", first.GetTargetURL())
+	if other == nil || other.GetTargetURL() == first.GetTargetURL() {
+		t.Fatal("expected a different live endpoint")
+	}
+
 	now = now.Add(2 * time.Minute)
 	if _, err := discovery.GetProxy("manager"); err == nil {
 		t.Fatal("expected expired Backend pool to be unavailable")
+	}
+	if discovery.AlternateProxy("manager", first.GetTargetURL()) != nil {
+		t.Fatal("expired alternate selected")
 	}
 	if modules := discovery.RouteAddresses(); len(modules) != 0 {
 		t.Fatalf("expired module snapshot = %#v, want empty", modules)

@@ -169,8 +169,18 @@ func indexModuleBackends(backends []moduleBackend) map[string]moduleBackend {
 	return result
 }
 
-// GetProxy 从当前有效 Backend 池轮询选择代理；不在 Gateway 内重放失败请求。
+// AlternateProxy consults the current snapshot without advancing the round-robin cursor.
+func (md *ModuleDiscovery) AlternateProxy(moduleName, excludeURL string) *proxy.ServiceProxy {
+	p, _ := md.selectProxy(moduleName, excludeURL)
+	return p
+}
+
+// GetProxy 从当前有效 Backend 池轮询选择代理。
 func (md *ModuleDiscovery) GetProxy(moduleName string) (*proxy.ServiceProxy, error) {
+	return md.selectProxy(moduleName, "")
+}
+
+func (md *ModuleDiscovery) selectProxy(moduleName, excludeURL string) (*proxy.ServiceProxy, error) {
 	md.mu.Lock()
 	defer md.mu.Unlock()
 
@@ -182,10 +192,15 @@ func (md *ModuleDiscovery) GetProxy(moduleName string) (*proxy.ServiceProxy, err
 	for offset := uint64(0); offset < uint64(len(pool)); offset++ {
 		index := (start + offset) % uint64(len(pool))
 		backend := pool[index]
+		if excludeURL != "" && backend.moduleURL == excludeURL {
+			continue
+		}
 		if backend.proxy == nil || !backend.expiresAt.After(md.now()) {
 			continue
 		}
-		md.nextBackend[moduleName] = index + 1
+		if excludeURL == "" {
+			md.nextBackend[moduleName] = index + 1
+		}
 		return backend.proxy, nil
 	}
 	return nil, fmt.Errorf("模块 %s 没有有效 Backend 租约", moduleName)

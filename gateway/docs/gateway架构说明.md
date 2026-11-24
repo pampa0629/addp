@@ -53,6 +53,8 @@ Service 的二次验证和精确 Grant 检查是最终授权点，因此绕过 G
 
 System 是模块注册表权威。Gateway 使用自身 Platform Service Access Token 读取快照和 revision watch，只代理满足 `enabled + backend + up + lease valid` 的业务模块实例。同一业务模块的多个有效 Backend 参与请求级轮询，失败请求不做隐式重放。System 是引导控制面，其自注册实例供观测和配置入口声明；Gateway 在监听建立后通过部署提供的 `SYSTEM_URL` 直连 System，以不可路由的 `ingress` 角色注册自身并续租。容器部署用 `SERVICE_HOST=gateway` 提供可定位的实例地址，本地开发使用监听所在主机的地址。Gateway Ingress 不进入业务路由池、动态入口或可路由模块计数，System 与 Gateway 的 `enabled` 固定为 true。
 
+对无请求体、无协议升级的 `GET /api/v1/catalog/entries`，若同一模块还有其他有效地址，Gateway 在发送 HTTP 请求前为选中的端点新建 TCP 连接。每次建连最多 1 秒，并遵守客户端取消。首次 TCP 建连失败时，重新读取当前路由池，排除原地址，最多再选一个有效端点。建连成功后只向该端点发送一次请求。业务处理、响应读取、HTTP 错误和已经发送的写请求均不触发端点切换。单地址和其他接口沿用原代理连接池。这项保证覆盖节点在请求开始前失联的情形，已建立连接上的在途请求仍可能失败。
+
 Gateway 使用公共 `/health/live` 与 `/health/ready`；就绪检查包含 `system_registry_snapshot` 与启动注入客户端的 `redis`，要求成功应用过完整快照且 Redis 有界 Ping 成功。后续 watch 失败不清除已有快照，代理仍逐请求检查 Backend 租约；Redis 运行中故障时 Ready 503、live 200，既有就绪中间件暂时拒绝全部业务，保留快照和进程；恢复同一端点连通后恢复 Ready，真实限流仍检查命令结果。因此 Ready 不等于所有模块可路由或所有依赖健康。
 
 Gateway 为每次路由 watch 单独限定请求时间。已有端点时，服务端长轮询最多占用最近有效端点剩余租约的一半，另外预留 2 秒传输时间。失联后沿用原 watch 退避重新连接，使一个无响应的连接不会耗尽完整的 30 秒端点有效期。转发仍逐请求遵守原始绝对截止时间。

@@ -138,6 +138,7 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) (*gin.Engine, *c
 }
 
 type moduleProxyLookup interface {
+	AlternateProxy(moduleName, excludeURL string) *proxy.ServiceProxy
 	GetProxy(moduleName string) (*proxy.ServiceProxy, error)
 }
 
@@ -171,6 +172,15 @@ func proxyRegisteredModule(c *gin.Context, moduleName string, discovery modulePr
 			"error": fmt.Sprintf("module %s is unavailable", moduleName),
 		})
 		return
+	}
+	r := c.Request
+	if moduleName == "catalog" && r.Method == http.MethodGet && r.URL.EscapedPath() == "/api/v1/catalog/entries" &&
+		(r.Body == nil || r.Body == http.NoBody) && r.Header.Get("Upgrade") == "" {
+		alternate := func() *proxy.ServiceProxy { return discovery.AlternateProxy(moduleName, p.GetTargetURL()) }
+		if alternate() != nil {
+			p.HandleReadWithAlternate(c, alternate)
+			return
+		}
 	}
 	p.Handle(c)
 }
