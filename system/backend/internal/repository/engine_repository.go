@@ -168,7 +168,7 @@ func (r *EngineRepository) UpdateConnectionObservation(
 	query := r.db.Model(&models.Engine{}).
 		Where("id = ? AND lifecycle_state <> ?", engineID, models.EngineLifecycleDeleted)
 	if expectedAddressKey != nil {
-		query = query.Where("identity_key = ?", *expectedAddressKey)
+		query = whereEngineIdentityKey(query, *expectedAddressKey)
 	}
 	observation := map[string]interface{}{
 		"connection_status": status, "last_check_at": checkedAt, "check_message": message,
@@ -187,10 +187,18 @@ func (r *EngineRepository) UpdateConnectionObservation(
 	return true, nil
 }
 
+// MySQL compares a bound string to a JSON string unless the operand is typed as JSON.
+func whereEngineIdentityKey(query *gorm.DB, key models.JSONString) *gorm.DB {
+	if query.Dialector.Name() == "mysql" {
+		return query.Where("identity_key = CAST(? AS JSON)", key)
+	}
+	return query.Where("identity_key = ?", key)
+}
+
 // FindByIdentityKey 返回当前占用该连接地址的非删除 Engine Instance。
 func (r *EngineRepository) FindByIdentityKey(engineType string, tenantID *uint, identityKey models.JSONString) (*models.Engine, error) {
 	var engine models.Engine
-	query := r.db.Where("lower(engine_type) = lower(?) AND identity_key = ? AND lifecycle_state <> ?", engineType, identityKey, models.EngineLifecycleDeleted)
+	query := whereEngineIdentityKey(r.db, identityKey).Where("lower(engine_type) = lower(?) AND lifecycle_state <> ?", engineType, models.EngineLifecycleDeleted)
 	if tenantID == nil {
 		query = query.Where("tenant_id IS NULL")
 	} else {
