@@ -161,12 +161,13 @@ python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${inten
 
 # Prepare downstream module schemas only during deployment or upgrade.
 if [[ "$prepare_databases" == true ]]; then
-  database_modules=(meta gateway)
-  if [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full ]]; then
-    database_modules+=(inference workbench agent copilot)
-  fi
-  for module in "${database_modules[@]}"; do
-    addp_prepare_module_database "$module" launch_compose_installer
+  database_services=$(platform_compose config --services)
+  for module in meta gateway inference workbench agent copilot; do
+    service="$module-backend"
+    if [[ "$module" == gateway ]]; then service=gateway; fi
+    if grep -Fxq "$service" <<< "$database_services"; then
+      addp_prepare_module_database "$module" launch_compose_installer
+    fi
   done
 fi
 

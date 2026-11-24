@@ -229,6 +229,25 @@ class RuntimeSelectionTest(unittest.TestCase):
                                           "fixture", "registry.invalid", platform)
         return release.compose_model("runtimes", env), env
 
+    def test_scoped_database_modules_match_installer_and_runtime_services(self):
+        base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
+        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference"), ("postgres", "workbench")):
+            with self.subTest(provider=provider, modules=modules), tempfile.TemporaryDirectory() as temporary:
+                env = release.release_environment(dict(os.environ, ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
+                    ADDP_DEPLOYMENT_NETWORK="test-net", ADDP_DEPLOYMENT_PROJECT="test-scoped", NGINX_PORT="8080",
+                    ADDP_INFRA_DATABASE_PROVIDER=provider, ADDP_DEPLOYMENT_MODULES=modules),
+                    "fixture", "registry.invalid", "linux/amd64")
+                model = release.compose_model("platform", env)
+                expected = base | {f"{m}-{part}" for m in modules.split(",") if m for part in ("backend", "frontend")}
+                self.assertEqual(set(model), expected)
+                override = Path(temporary) / "release.yml"
+                release.write_override(override, {name: IMAGE_ID for name in model})
+                env.pop("COMPOSE_PROFILES", None)
+                self.assertEqual(set(release.compose_model("platform", env, override)), expected)
+        for scope, modules in (("full", "workbench"), ("system-meta-gateway", "unknown")):
+            with self.assertRaisesRegex(ValueError, "ADDP_DEPLOYMENT_MODULES"):
+                release.selection({"ADDP_DEPLOYMENT_SCOPE": scope, "ADDP_DEPLOYMENT_MODULES": modules})
+
     def test_amd64_release_explicitly_excludes_supermap(self):
         model, _ = self.runtime_model("false")
         self.assertNotIn("supermap-workflow-engine", model)

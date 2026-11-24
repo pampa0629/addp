@@ -83,6 +83,12 @@ def selection(env):
     if scope not in ("full", "system-meta-gateway"):
         raise ValueError(f"unsupported deployment scope {scope!r}")
     values["ADDP_DEPLOYMENT_SCOPE"] = scope
+    extra = env.get("ADDP_DEPLOYMENT_MODULES", "").strip()
+    if extra:
+        modules = {name.strip() for name in extra.split(",")}
+        if scope == "full" or not modules.issubset({"inference", "workbench"}):
+            raise ValueError(f"unsupported ADDP_DEPLOYMENT_MODULES for {scope}: {extra!r}")
+        values["ADDP_DEPLOYMENT_MODULES"] = ",".join(sorted(modules))
     for key, supported in INFRA_PROVIDERS.items():
         configured = env.get(key, supported)
         supported_mysql = key == "ADDP_INFRA_DATABASE_PROVIDER" and scope == "system-meta-gateway" and configured == "mysql"
@@ -96,7 +102,10 @@ def release_environment(env, version, registry, platform):
     result = dict(env, IMAGE_TAG=version, REGISTRY=registry, DOCKER_DEFAULT_PLATFORM=platform)
     result.pop("ADDP_RELEASE_MANIFEST", None)
     result.pop("COMPOSE_PROFILES", None)
-    profiles = [profile for flag, profile in PROFILES.items() if selection(result)[flag] == "true"]
+    selected = selection(result)
+    profiles = [profile for flag, profile in PROFILES.items() if selected[flag] == "true"]
+    if "ADDP_DEPLOYMENT_MODULES" in selected:
+        profiles.extend("module-" + module for module in selected["ADDP_DEPLOYMENT_MODULES"].split(","))
     if profiles:
         result["COMPOSE_PROFILES"] = ",".join(profiles)
     # Inactive observability ports are still interpolated by Compose.
