@@ -55,6 +55,12 @@ args=sys.argv[1:];state=pathlib.Path(os.environ['ADDP_TEST_STATE']);trace=pathli
 def log(s):
  with trace.open('a') as f:f.write(s+'\\n')
 def image(name):return state/('image-'+name.split('/addp-')[-1])
+if args[:3]==['exec','-i','addp-postgres'] and 'exec psql ' in args[5]:
+ sql=sys.stdin.read()
+ if 'CREATE ROLE platform_deploy' in sql:log('database-roles')
+ elif 'ALTER DEFAULT PRIVILEGES' in sql:log('database-namespace:'+args[-1])
+ else:sys.exit(1)
+ sys.exit(0)
 if args[:2]==['compose','version']:sys.exit(0)
 if args[0]=='ps' or args[:2] in (['network','ls'],['volume','ls']):sys.exit(0)
 if args[:2]==['container','inspect']:sys.exit(0 if (state/args[2]).exists() else 1)
@@ -121,7 +127,10 @@ sys.exit(1)
         result=self.run_gate()
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         trace=self.host.trace.read_text()
-        order=['docker-run:addp-health-registry','make:build-images','infra-up','start:--exact-process -system',
+        order=['docker-run:addp-health-registry','make:build-images','infra-up','database-roles',
+               'database-namespace:system','database-namespace:common','database-namespace:gateway',
+               'install:addp-system:prepare-database system','install:addp-system:prepare-database common',
+               'install:addp-gateway:prepare-database','start:--exact-process -system',
                'start:--exact-process -gateway','--suite workflow-runtime-health-recovery','assert-empty',
                'fault-image:pointcloud-workflow-engine:startup-missing','docker-run:addp-health-pointcloud',
                'docker-run:addp-health-model3d','docker-run:addp-health-document','make:test-online',
