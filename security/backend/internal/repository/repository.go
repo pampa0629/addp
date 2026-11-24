@@ -1,10 +1,12 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 
 	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
+	"github.com/addp/security/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -68,4 +70,15 @@ func (r *Repository[T]) Delete(id, tenantID int64) error {
 
 func IsConflict(err error) bool {
 	return errors.Is(err, gorm.ErrDuplicatedKey) || errors.Is(err, commonapi.ErrConflict)
+}
+
+func FilterAccessScope(query *gorm.DB, owner, action string) *gorm.DB {
+	if query.Dialector.Name() == "sqlite" {
+		return query.Where("EXISTS (SELECT 1 FROM json_each(scopes) AS outlet WHERE json_extract(outlet.value, '$.consumer_owner') = ? AND json_extract(outlet.value, '$.action') = ?)", owner, action)
+	}
+	encoded, _ := json.Marshal([]models.ProtectionAccessScope{{ConsumerOwner: owner, Action: action}})
+	if query.Dialector.Name() == "mysql" {
+		return query.Where("JSON_CONTAINS(scopes, ?)", string(encoded))
+	}
+	return query.Where("scopes::jsonb @> ?::jsonb", string(encoded))
 }

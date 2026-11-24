@@ -80,10 +80,7 @@ func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64
 	var created models.ProtectionEnrollment
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var source models.ProtectionEnrollment
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ?", tenantID, id).First(&source).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return commonapi.ErrNotFound
@@ -253,10 +250,7 @@ func (s *EnrollmentService) Release(ctx context.Context, tenantID, actorID int64
 	now := s.now().UTC()
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var enrollment models.ProtectionEnrollment
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ?", tenantID, id).First(&enrollment).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return commonapi.ErrNotFound
@@ -348,10 +342,7 @@ func (s *EnrollmentService) CreateDiscoveryExecution(ctx context.Context, tenant
 	var response *models.ProtectionDiscoveryExecutionResponse
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var enrollment models.ProtectionEnrollment
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, id, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return commonapi.ErrNotFound
@@ -814,10 +805,7 @@ func (s *EnrollmentService) UpdateValidity(ctx context.Context, tenantID, userID
 
 func lockProtectionEnrollment(tx *gorm.DB, tenantID int64, id string) (models.ProtectionEnrollment, error) {
 	var row models.ProtectionEnrollment
-	query := tx
-	if tx.Dialector.Name() == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 	if err := query.Where("tenant_id = ? AND id = ?", tenantID, id).First(&row).Error; err != nil {
 		return row, policyDBError(err)
 	}

@@ -37,10 +37,7 @@ func (s *ExemptionService) appendRevocation(ctx context.Context, tenantID, userI
 	var result *models.ProtectionExemptionResponse
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var exemption models.ProtectionExemption
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ?", tenantID, exemptionID).First(&exemption).Error; err != nil {
 			return policyDBError(err)
 		}

@@ -1795,7 +1795,7 @@ jobs:
   common-mysql-data-protection:
     name: Common, Owner protection and Model metric contracts (MySQL 8)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.model == 'true' || needs.selection.outputs.gateway == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.inference == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.model == 'true' || needs.selection.outputs.gateway == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.inference == 'true' || needs.selection.outputs.security == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -1823,7 +1823,7 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
-      - name: Run MySQL Common execution lifecycle gate
+      - name: Verify MySQL execution lifecycle, Manager queue and Security approval storage
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-execution'
 
       - name: Verify Common deployment and cross-database readiness with one runtime identity

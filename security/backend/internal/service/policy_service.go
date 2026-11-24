@@ -100,10 +100,7 @@ func (s *PolicyService) appendRevision(ctx context.Context, tenantID, userID int
 	var result *models.ProtectionPolicyResponse
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var policy models.ProtectionPolicy
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ?", tenantID, policyID).First(&policy).Error; err != nil {
 			return policyDBError(err)
 		}

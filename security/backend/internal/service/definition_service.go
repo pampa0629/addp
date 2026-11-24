@@ -375,10 +375,7 @@ func queueDetectorImpactDiscovery(tx *gorm.DB, tenantID, actorID int64, now time
 		ids = append(ids, enrollment.ID)
 	}
 	var active []commonexecution.TaskExecution
-	activeQuery := tx
-	if tx.Dialector.Name() == "postgres" {
-		activeQuery = activeQuery.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
+	activeQuery := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 	if err := activeQuery.Where(
 		"tenant_id = ? AND module = ? AND task_type = ? AND source = ? AND source_task_id IN ? AND status IN ?",
 		tenantID, commonexecution.ModuleSecurity, commonexecution.TaskTypeSensitiveDataDiscovery, commonexecution.ModuleSecurity,

@@ -8,6 +8,9 @@ import (
 )
 
 func Migrate(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return migrateMySQL(db)
+	}
 	hadValidity, err := protectionValidityColumnExists(db)
 	if err != nil {
 		return err

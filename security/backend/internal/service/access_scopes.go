@@ -1,12 +1,10 @@
 package service
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 
 	"github.com/addp/security/internal/models"
-	"gorm.io/gorm"
 )
 
 func validAccessScope(owner, action string) bool {
@@ -32,12 +30,4 @@ func canonicalAccessScopes(scopes []models.ProtectionAccessScope) ([]models.Prot
 	}
 	slices.SortFunc(result, func(a, b models.ProtectionAccessScope) int { return strings.Compare(a.ConsumerOwner, b.ConsumerOwner) })
 	return result, true
-}
-
-func filterAccessScope(query *gorm.DB, owner, action string) *gorm.DB {
-	if query.Dialector.Name() == "sqlite" {
-		return query.Where("EXISTS (SELECT 1 FROM json_each(scopes) AS outlet WHERE json_extract(outlet.value, '$.consumer_owner') = ? AND json_extract(outlet.value, '$.action') = ?)", owner, action)
-	}
-	encoded, _ := json.Marshal([]models.ProtectionAccessScope{{ConsumerOwner: owner, Action: action}})
-	return query.Where("scopes::jsonb @> ?::jsonb", string(encoded))
 }

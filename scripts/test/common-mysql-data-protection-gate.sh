@@ -256,6 +256,10 @@ if [ "$test_group" = platform-execution ]; then
     (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_QUEUE=1 GOWORK=off go test ./internal/service \
         -run '^TestIntegrationMySQLManagerUploadContinuationNeverReplaysWrites$' -count=1 -v) | tee "$WORK_DIR/manager-upload.log"
     grep -q '^--- PASS: TestIntegrationMySQLManagerUploadContinuationNeverReplaysWrites ' "$WORK_DIR/manager-upload.log"
+    mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -e "CREATE DATABASE security"'
+    (cd "$ROOT_DIR/security/backend" && ADDP_TEST_MYSQL_SECURITY_STORAGE=1 GOWORK=off go test ./internal/service \
+        -run '^TestProtectionAccessScopesAgainstMySQL$' -count=1 -v) | tee "$WORK_DIR/security-storage.log"
+    grep -q '^--- PASS: TestProtectionAccessScopesAgainstMySQL ' "$WORK_DIR/security-storage.log"
     exit 0
 fi
 

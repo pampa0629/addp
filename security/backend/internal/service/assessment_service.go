@@ -218,10 +218,7 @@ func (s *AssessmentService) CreateManual(ctx context.Context, tenantID, reviewer
 
 	var response *models.ResourceSecurityAssessmentResponse
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, request.EnrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
 			return assessmentDBError(err)
 		}
@@ -280,10 +277,7 @@ func (s *AssessmentService) Revise(ctx context.Context, tenantID, reviewerID int
 	var response *models.ResourceSecurityAssessmentResponse
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var assessment models.ResourceSecurityAssessment
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ?", tenantID, assessmentID).First(&assessment).Error; err != nil {
 			return assessmentDBError(err)
 		}
@@ -349,10 +343,7 @@ func (s *AssessmentService) Revoke(ctx context.Context, tenantID, reviewerID int
 	var response *models.ResourceSecurityAssessmentResponse
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var assessment models.ResourceSecurityAssessment
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ?", tenantID, assessmentID).First(&assessment).Error; err != nil {
 			return assessmentDBError(err)
 		}
@@ -446,10 +437,7 @@ func (s *AssessmentService) Get(ctx context.Context, tenantID int64, assessmentI
 
 func lockOrCreateAssessment(tx *gorm.DB, tenantID, reviewerID int64, finding models.SensitiveFinding, now time.Time) (*models.ResourceSecurityAssessment, int64, error) {
 	var assessment models.ResourceSecurityAssessment
-	query := tx
-	if tx.Dialector.Name() == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 	err := query.Where("tenant_id = ? AND enrollment_id = ? AND component_key = ?", tenantID, finding.EnrollmentID, finding.ComponentKey).First(&assessment).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		assessment = models.ResourceSecurityAssessment{

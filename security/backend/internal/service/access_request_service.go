@@ -166,7 +166,7 @@ func (s *AccessRequestService) targets(db *gorm.DB, tenantID, userID int64, targ
 		target.AssessmentID, target.AssessmentRevision, target.Requestable, target.UnavailableReason = assessment.ID, revision.Revision, true, ""
 		var latestRequest models.ProtectionAccessRequest
 		query := db.Where("tenant_id = ? AND assessment_id = ? AND subject_type = ? AND subject_id = ?", tenantID, assessment.ID, "user", userIDString(userID))
-		if err := filterAccessScope(query, owner, action).Order("created_at DESC,id DESC").First(&latestRequest).Error; err == nil {
+		if err := repository.FilterAccessScope(query, owner, action).Order("created_at DESC,id DESC").First(&latestRequest).Error; err == nil {
 			latestRequest = effectiveAccessRequest(latestRequest, now)
 			target.AccessRequest = &models.ProtectionAccessRequestSummary{
 				ID: latestRequest.ID, State: latestRequest.State, RequestedExpiresAt: latestRequest.RequestedExpiresAt,
@@ -469,10 +469,7 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 	var response *models.ProtectionAccessRequestResponse
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row models.ProtectionAccessRequest
-		query := tx
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND id = ?", tenantID, requestID).First(&row).Error; err != nil {
 			return policyDBError(err)
 		}

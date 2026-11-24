@@ -366,10 +366,7 @@ func publishProtectionProjection(tx *gorm.DB, enrollment models.ProtectionEnroll
 		return err
 	}
 	var record models.ProtectionProjectionRecord
-	query := tx
-	if tx.Dialector.Name() == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"})
 	if err := query.Where("tenant_id = ? AND enrollment_id = ? AND consumer_owner = ?", enrollment.TenantID, enrollment.ID, consumerOwner).First(&record).Error; err != nil {
 		return err
 	}
