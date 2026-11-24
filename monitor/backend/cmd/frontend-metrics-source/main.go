@@ -30,11 +30,12 @@ import (
 var errConfiguration = errors.New("frontend source configuration is invalid")
 
 type configuration struct {
-	BusinessNFS  bool   `json:"business_nfs,omitempty"`
-	Mode         string `json:"mode"`
-	PublicOrigin string `json:"public_origin"`
-	Workspace    string `json:"workspace"`
-	DockerSocket string `json:"docker_socket"`
+	Kubernetes   *kubeConfig `json:"kubernetes,omitempty"`
+	BusinessNFS  bool        `json:"business_nfs,omitempty"`
+	Mode         string      `json:"mode"`
+	PublicOrigin string      `json:"public_origin"`
+	Workspace    string      `json:"workspace"`
+	DockerSocket string      `json:"docker_socket"`
 }
 
 type frontend struct {
@@ -53,8 +54,16 @@ type resource struct {
 func (c configuration) validate() (*url.URL, error) {
 	origin, err := url.Parse(c.PublicOrigin)
 	if err != nil || (origin.Scheme != "http" && origin.Scheme != "https") || origin.Hostname() == "" ||
-		origin.Path != "" || origin.RawQuery != "" || origin.ForceQuery || origin.Fragment != "" || origin.User != nil ||
-		!filepath.IsAbs(c.Workspace) || filepath.Clean(c.Workspace) != c.Workspace {
+		origin.Path != "" || origin.RawQuery != "" || origin.ForceQuery || origin.Fragment != "" || origin.User != nil {
+		return nil, errConfiguration
+	}
+	if c.Mode == "kubernetes" {
+		if c.Workspace != "" || c.DockerSocket != "" || c.BusinessNFS || c.Kubernetes == nil || !c.Kubernetes.valid() {
+			return nil, errConfiguration
+		}
+		return origin, nil
+	}
+	if c.Kubernetes != nil || !filepath.IsAbs(c.Workspace) || filepath.Clean(c.Workspace) != c.Workspace {
 		return nil, errConfiguration
 	}
 	switch c.Mode {
@@ -323,16 +332,20 @@ func deployedFrontends(cfg configuration) ([]frontend, error) {
 		if err != nil || port < 1 || port > 65535 {
 			return nil, errConfiguration
 		}
-		entry := "/module-ui/" + module + "/"
-		switch module {
-		case "console":
-			entry = "/"
-		case "portal":
-			entry = "/portal/"
-		}
-		rows = append(rows, frontend{module: module, entry: entry, port: port})
+
+		rows = append(rows, frontend{module: module, entry: frontendEntry(module), port: port})
 	}
 	return rows, nil
+}
+
+func frontendEntry(module string) string {
+	switch module {
+	case "console":
+		return "/"
+	case "portal":
+		return "/portal/"
+	}
+	return "/module-ui/" + module + "/"
 }
 
 // Export visibility describes mountd's advertised directory, without opening any exported files.
@@ -362,13 +375,19 @@ func businessNFS(ctx context.Context, workspace string, run command) []byte {
 func collect(ctx context.Context, cfg configuration, probe *frontendprobe.Prober, run command) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	frontends, err := deployedFrontends(cfg)
+	var frontends []frontend
+	var native map[string]*resource
+	var err error
+	if cfg.Kubernetes != nil {
+		frontends, native, err = cfg.Kubernetes.snapshot(ctx)
+	} else {
+		frontends, err = deployedFrontends(cfg)
+		if err == nil && cfg.Mode == "vite" {
+			native = nativeResources(ctx, run, cfg.Workspace, frontends)
+		}
+	}
 	if err != nil {
 		return nil, err
-	}
-	var native map[string]*resource
-	if cfg.Mode == "vite" {
-		native = nativeResources(ctx, run, cfg.Workspace, frontends)
 	}
 	metrics := make([][]byte, len(frontends))
 	var work sync.WaitGroup

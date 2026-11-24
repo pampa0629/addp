@@ -1110,7 +1110,7 @@ test('module cards merge paged roles with frontend samples and expand to per-ins
     return route.fulfill({ json: { node: { node_id: nodeID }, source_state: 'collecting', queried_at: '2026-11-19T06:00:00Z', data: [
       { module: 'console', mode: 'vite', entry_up: true, asset_up: true, cpu_cores: 0, memory_bytes: 65536, restart_count: null },
       { module: 'monitor', mode: 'compose', entry_up: true, asset_up: false, cpu_cores: null, memory_bytes: null, restart_count: 0 },
-      { module: 'portal', mode: 'vite', entry_up: true, asset_up: true, cpu_cores: 0.25, memory_bytes: 16777216, restart_count: null }
+      { module: 'portal', mode: 'kubernetes', entry_up: true, asset_up: true, cpu_cores: 0.25, memory_bytes: 16777216, restart_count: null }
     ] } })
   })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
@@ -1157,6 +1157,11 @@ test('module cards merge paged roles with frontend samples and expand to per-ins
   await expect(page.getByTestId('process-instance')).toHaveCount(0)
   await page.reload()
   await expect(page.locator('.frontend-detail')).toContainText('64.00 KiB')
+  await page.goBack()
+  await page.getByRole('button', { name: 'portal · 模块详情' }).click()
+  await expect(page.locator('.frontend-detail')).toContainText('Kubernetes · Nginx')
+  await expect(page.locator('.frontend-detail')).toContainText('容器工作集')
+  await expect(page.locator('.frontend-detail')).toContainText('16.00 MiB')
 })
 
 test('empty frontend discovery reports its status without a configuration shortcut', async ({ page }) => {

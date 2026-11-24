@@ -1120,7 +1120,8 @@
       "selectNode": "选择前端采集节点",
       "modes": {
         "vite": "开发 · Vite",
-        "compose": "Compose · Nginx"
+        "compose": "Compose · Nginx",
+        "kubernetes": "Kubernetes · Nginx"
       },
       "states": {
         "up": "可用",

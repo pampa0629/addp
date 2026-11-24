@@ -26,7 +26,7 @@ const fields = computed(() => {
     ['restarts', row.restart_count ?? '—'],
     ['entry', reachability(row.entry_up)], ['asset', reachability(row.asset_up)],
     ['cpu', row.cpu_cores == null ? (row.memory_bytes == null ? '—' : t('monitor.frontend.cpuPending')) : formatFieldPresentationValue(row.cpu_cores, { precision: 2, unit: t('monitor.processTotals.cores') }, locale.value)],
-    [row.mode === 'compose' ? 'workingSet' : 'rss', row.memory_bytes == null ? '—' : formatBytes(row.memory_bytes, 2, locale.value)]
+    [row.mode === 'vite' ? 'rss' : 'workingSet', row.memory_bytes == null ? '—' : formatBytes(row.memory_bytes, 2, locale.value)]
   ]
 })
 </script>

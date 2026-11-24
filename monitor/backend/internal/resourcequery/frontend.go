@@ -20,6 +20,8 @@ type FrontendSample struct {
 	RestartCount *float64 `json:"restart_count"`
 }
 
+var frontendModes = []string{"vite", "compose", "kubernetes"}
+
 var frontendMetrics = []string{"entry_up", "asset_up", "cpu_cores", "memory_bytes", "restart_count"}
 
 func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision string, at time.Time, budget Budget) ([]FrontendSample, error) {
@@ -42,7 +44,7 @@ func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision 
 	}
 	allowed := make(map[string]bool)
 	for _, module := range frontendprobe.Modules {
-		for _, mode := range []string{"vite", "compose"} {
+		for _, mode := range frontendModes {
 			for _, metric := range frontendMetrics {
 				allowed[module+":"+mode+":"+metric] = true
 			}
@@ -62,7 +64,7 @@ func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision 
 	rows := make([]FrontendSample, 0, len(frontendprobe.Modules))
 	for _, module := range frontendprobe.Modules {
 		row := FrontendSample{Module: module}
-		for _, mode := range []string{"vite", "compose"} {
+		for _, mode := range frontendModes {
 			lookup := func(key string) *float64 {
 				value, ok := values[module+":"+mode+":"+key]
 				if !ok {
@@ -77,7 +79,7 @@ func (c *Client) FrontendSamples(ctx context.Context, nodeID, address, revision 
 				continue
 			}
 			if row.Mode != "" || entry == nil || (*entry != 0 && *entry != 1) || (asset != nil && ((*asset != 0 && *asset != 1) || *entry == 0)) ||
-				(restarts != nil && (mode != "compose" || *restarts != math.Trunc(*restarts))) {
+				(restarts != nil && (mode == "vite" || *restarts != math.Trunc(*restarts))) {
 				return nil, ErrUnavailable
 			}
 			up := *entry == 1
@@ -103,7 +105,7 @@ func frontendExpression(nodeID, address, revision string) string {
 	// operand so freshness comparison cannot merge across the catalog.
 	parts := make([]string, 0, len(frontendMetrics))
 	for _, key := range frontendMetrics {
-		labels := `{frontend_module=~` + strconv.Quote(strings.Join(frontendprobe.Modules[:], "|")) + `,frontend_mode=~"vite|compose",` + selector + "}"
+		labels := `{frontend_module=~` + strconv.Quote(strings.Join(frontendprobe.Modules[:], "|")) + ",frontend_mode=~" + strconv.Quote(strings.Join(frontendModes, "|")) + "," + selector + "}"
 		field := "addp_frontend_" + key + labels
 		if key == "cpu_cores" {
 			counter := "addp_frontend_cpu_seconds_total" + strings.TrimSuffix(labels, "}") + `,frontend_generation!=""}`

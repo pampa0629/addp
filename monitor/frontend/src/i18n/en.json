@@ -1120,7 +1120,8 @@
       "selectNode": "Select a frontend collection node",
       "modes": {
         "vite": "Development · Vite",
-        "compose": "Compose · Nginx"
+        "compose": "Compose · Nginx",
+        "kubernetes": "Kubernetes · Nginx"
       },
       "states": {
         "up": "Available",

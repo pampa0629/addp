@@ -190,7 +190,7 @@ func (s *ResourceObservationService) ProcessTotals(ctx context.Context, principa
 				}
 				row.Expected++
 				memory := &row.RSS
-				if sample.Mode == "compose" {
+				if sample.Mode != "vite" {
 					row.ContainerExpected++
 					memory = &row.WorkingSet
 				}
