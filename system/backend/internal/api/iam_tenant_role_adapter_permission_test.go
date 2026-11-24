@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/addp/system/internal/iam"
-	"github.com/lib/pq"
 )
 
 func TestMapIAMTenantAssignablePermissionPreservesPresentationMetadata(t *testing.T) {
@@ -14,7 +13,7 @@ func TestMapIAMTenantAssignablePermissionPreservesPresentationMetadata(t *testin
 		OwnerModule:        "manager",
 		Action:             "read",
 		RiskLevel:          "low",
-		AllowedScopeTypes:  pq.StringArray{"tenant"},
+		AllowedScopeTypes:  iam.DBStringList{"tenant"},
 		NameI18nKey:        "permissions.manager.data_item.read.name",
 		DescriptionI18nKey: "permissions.manager.data_item.read.description",
 	}

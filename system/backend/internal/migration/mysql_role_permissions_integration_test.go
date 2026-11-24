@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,6 +26,43 @@ func testMySQLRolePermissionProjection(t *testing.T, db *gorm.DB) {
 	exec(`INSERT INTO permissions (id,permission_key,owner_module,action,risk_level,allowed_scope_types,name_i18n_key,description_i18n_key)
 		  VALUES (500,'sample.projection.read','sample','read','low',JSON_ARRAY('tenant'),'name','description')`)
 	repo := iam.NewRepository(db)
+	t.Run("tenant custom role permission scopes", func(t *testing.T) {
+		tx := db.Begin()
+		if tx.Error != nil {
+			t.Fatal(tx.Error)
+		}
+		defer tx.Rollback()
+		if err := tx.Exec("UPDATE permissions SET tenant_customizable=true WHERE id=500").Error; err != nil {
+			t.Fatal(err)
+		}
+		repo := iam.NewRepository(tx)
+		available, err := repo.ListTenantAssignablePermissions(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := slices.ContainsFunc(available, func(permission iam.TenantAssignablePermission) bool {
+			return permission.PermissionKey == "sample.projection.read" && slices.Equal(permission.AllowedScopeTypes, []string{"tenant"})
+		})
+		if !found {
+			t.Fatal("missing tenant-customizable permission or its tenant scope")
+		}
+		roleService := iam.NewTenantRoleService(repo, nil)
+		keys := []string{"sample.projection.read"}
+		created, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{
+			TenantID: 500, ActorPrincipalID: 100, RoleKey: "isolation.role", Name: "Before", PermissionKeys: keys,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		edited, err := roleService.UpdateRole(ctx, iam.UpdateTenantRoleInput{
+			TenantID: 500, RoleID: created.ID, ActorPrincipalID: 100, Name: "After", PermissionKeys: keys,
+		})
+		if err != nil || edited.Name == nil || *edited.Name != "After" || !slices.Equal(edited.AllowedScopeTypes, []string{"tenant"}) {
+			t.Fatalf("custom role update: %v", err)
+		}
+
+	})
+
 	version := func() int64 {
 		t.Helper()
 		principal, err := repo.GetPrincipal(ctx, 100)

@@ -8,7 +8,6 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -27,7 +26,7 @@ type TenantAdministratorCandidate struct {
 
 type TenantRole struct {
 	Role
-	PermissionKeys pq.StringArray `gorm:"column:permission_keys;type:text[]"`
+	PermissionKeys []string
 }
 
 type TenantAssignablePermission struct {
@@ -35,7 +34,7 @@ type TenantAssignablePermission struct {
 	OwnerModule        string
 	Action             string
 	RiskLevel          string
-	AllowedScopeTypes  pq.StringArray `gorm:"column:allowed_scope_types;type:text[]"`
+	AllowedScopeTypes  DBStringList `gorm:"column:allowed_scope_types"`
 	NameI18nKey        string
 	DescriptionI18nKey string
 }
@@ -368,7 +367,7 @@ func (r *Repository) CreateTenantCustomRole(ctx context.Context, role *Role, per
 
 func (r *Repository) UpdateTenantCustomRole(ctx context.Context, roleID int64, name, description string, scopes []string, permissionKeys []string, actorID int64) error {
 	result := r.db.WithContext(ctx).Model(&Role{}).Where("id = ?", roleID).Updates(map[string]any{
-		"name": name, "description": description, "allowed_scope_types": pq.Array(scopes),
+		"name": name, "description": description, "allowed_scope_types": DBStringList(scopes),
 	})
 	if result.Error != nil || result.RowsAffected != 1 {
 		if result.Error != nil {
