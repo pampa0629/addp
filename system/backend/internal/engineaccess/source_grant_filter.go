@@ -62,8 +62,8 @@ func (f SourceGrantFilter) ValidateForEngine(engineID int64) error {
 
 // Both current relations and history use identical parameter-bound predicates.
 // strpos keeps SQL wildcard characters literal, including % and _ in table names.
-func (f SourceGrantFilter) predicate() (string, []any) {
-	target, args := f.targetPredicate()
+func (f SourceGrantFilter) predicate(dialect string) (string, []any) {
+	target, args := f.targetPredicate(dialect)
 	clauses := []string{target}
 	if f.RecipientType != "" {
 		clauses = append(clauses, "recipient_type = ?")
@@ -77,7 +77,10 @@ func (f SourceGrantFilter) predicate() (string, []any) {
 }
 
 // Apply the same target filter before account-source expansion and pagination.
-func (f SourceGrantFilter) targetPredicate() (string, []any) {
+func (f SourceGrantFilter) targetPredicate(dialect string) (string, []any) {
+	if dialect == "mysql" {
+		return f.mysqlTargetPredicate()
+	}
 	clauses := []string{"TRUE"}
 	args := make([]any, 0, 1)
 	if f.CatalogPath != nil {

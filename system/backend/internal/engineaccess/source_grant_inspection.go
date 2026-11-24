@@ -106,12 +106,15 @@ const accountGrantRelationsSQL = `WITH account AS MATERIALIZED (
  (SELECT count(*) FROM applicable) AS total`
 
 func (r *Repository) listAccountGrantRelations(ctx context.Context, tenantID, engineID, accountID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantRelation, int64, error) {
+	if r.db.Dialector.Name() == "mysql" {
+		return r.mysqlAccountGrantRelations(ctx, tenantID, engineID, accountID, page, size, filter)
+	}
 	var result struct {
 		AccountExists bool
 		Items         json.RawMessage
 		Total         int64
 	}
-	predicate, args := filter.targetPredicate()
+	predicate, args := filter.targetPredicate(r.db.Dialector.Name())
 	parameters := append([]any{tenantID, accountID, engineID}, args...)
 	parameters = append(parameters, size, (page-1)*size)
 	if err := r.db.WithContext(ctx).Raw(fmt.Sprintf(accountGrantRelationsSQL, predicate), parameters...).Scan(&result).Error; err != nil {

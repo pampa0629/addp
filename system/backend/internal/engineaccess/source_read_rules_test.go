@@ -31,7 +31,7 @@ func TestSourceReadRuleSQLPreservesGORMParameterPositions(t *testing.T) {
 		if filtered {
 			filter.TableSearch = "table ? 'literal'_%"
 		}
-		predicate, args := filter.targetPredicate()
+		predicate, args := filter.targetPredicate("postgres")
 		parameters := append([]any{int64(1), int64(2), int64(3)}, args...)
 		parameters = append(parameters, 17, 34)
 		tests = append(tests, struct {

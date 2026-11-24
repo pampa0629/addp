@@ -9,6 +9,10 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
+  system-frontend:
+    extends: {file: ../../docker-compose.yml, service: system-frontend}
+    profiles: [module-system]
+    container_name: !reset null
   meta-backend:
     extends: {file: ../../docker-compose.yml, service: meta-backend}
     container_name: !reset null

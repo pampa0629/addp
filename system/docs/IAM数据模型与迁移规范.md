@@ -76,6 +76,8 @@ System 自身拥有引擎访问控制领域，`engine_access_grants` 是精确�
 
 ### PG 元数据查看动作与查询核验（实施中）
 
+System 仓储按所选平台数据库实现授权管理清单。直接关系和指定账号观察都在同一条数据库语句中计算总数及本页结果，空页保留总数。账号观察沿用当前租户成员、部门和项目组规则，保留每条来源自己的撤销锚点。MySQL 实库门禁覆盖重新签发后的当前关系、节点范围筛选、授权到期及历史保留。
+
 `metadata_read` 与 `read` 共用不可变 Grant、Deny、期限、组织关系及撤销存储。迁移 000260 只扩展动作约束，不回填 Grant 或给账号补权；新增元数据动作首期只接受 PostgreSQL。读取包含元数据的计算及两类禁止的包含关系唯一沿授权上下文规范 5.5.1.1，当前关系按动作分组，来源与禁止都返回实际动作，撤销不能跨动作收回。
 
 Meta 面向用户的 PG 身份查询通过统一 System client 提交当前真实用户凭据和候选完整目标，使用固定 `POST /engine-access/metadata-checks/meta-query` 观察。接口固定要求 `meta.catalog.read`，首期普通第一方／OAuth User 使用自身凭据，Service 身份不能代替当前用户。现有 Meta `resource.children.list`／`resource.ancestors.get` 委托工具可进入该固定只读核验端点：必须是唯一 `meta` audience、两种既有 Scope 中恰好一种，绑定原用户、委托 Client、AgentRun 与 ToolCall；仍由 IAM 核验来源凭据族、成员和授权版本。不能访问相邻 System API，不能扩展到其他 Scope 或机器身份。请求只含 1–200 个目标，不含主体、权限、自报 Meta 边界或 Allow。System 在锁外读取自己的 Meta 身份事实，再以同一真实凭据和规则快照重核；每个目标只返回原目标和可见布尔值及统一观察时刻，不泄漏 Grant、Deny、组织来源或不可见原因，不形成缓存许可。

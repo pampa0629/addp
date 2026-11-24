@@ -66,31 +66,43 @@ func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, eng
 				}
 				return check()
 			}
-			// One statement captures the wall clock, current rows and total together,
-			// including an empty page. No unbounded history load or in-memory grouping.
-			var result struct {
-				Items json.RawMessage
-				Total int64
+			var err error
+			rows, total, err = tx.directGrantRelations(ctx, actor.TenantID, engineID, page, size, filter)
+			if err != nil {
+				return err
 			}
-			predicate, args := filter.predicate()
-			query := `WITH current_relations AS (` + currentGrantRelationsSQL + `), filtered AS (
+			return check()
+		})
+	return rows, total, err
+}
+
+func (r *Repository) directGrantRelations(ctx context.Context, tenantID, engineID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantRelation, int64, error) {
+	if r.db.Dialector.Name() == "mysql" {
+		return r.mysqlDirectGrantRelations(ctx, tenantID, engineID, page, size, filter)
+	}
+	// One statement captures the wall clock, current rows and total together,
+	// including an empty page. No unbounded history load or in-memory grouping.
+	var result struct {
+		Items json.RawMessage
+		Total int64
+	}
+	predicate, args := filter.predicate(r.db.Dialector.Name())
+	query := `WITH current_relations AS (` + currentGrantRelationsSQL + `), filtered AS (
  SELECT * FROM current_relations WHERE ` + predicate + `), page AS (
  SELECT * FROM filtered ORDER BY granted_at DESC, request_id DESC LIMIT ? OFFSET ?)
  SELECT COALESCE((SELECT jsonb_agg(to_jsonb(p) || jsonb_build_object('recipient_id', p.recipient_id::text)
  ORDER BY p.granted_at DESC, p.request_id DESC) FROM page p), '[]'::jsonb) AS items,
  (SELECT count(*) FROM filtered) AS total`
-			parameters := append([]any{actor.TenantID, engineID}, args...)
-			parameters = append(parameters, size, (page-1)*size)
-			if err := tx.db.WithContext(ctx).Raw(query, parameters...).Scan(&result).Error; err != nil {
-				return err
-			}
-			if err := json.Unmarshal(result.Items, &rows); err != nil {
-				return err
-			}
-			total = result.Total
-			return check()
-		})
-	return rows, total, err
+	parameters := append([]any{tenantID, engineID}, args...)
+	parameters = append(parameters, size, (page-1)*size)
+	if err := r.db.WithContext(ctx).Raw(query, parameters...).Scan(&result).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []SourceGrantRelation
+	if err := json.Unmarshal(result.Items, &rows); err != nil {
+		return nil, 0, err
+	}
+	return rows, result.Total, nil
 }
 
 // Caller holds the exact target boundary. Personal and organization recipients

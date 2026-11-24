@@ -15,7 +15,7 @@ func TestSourceGrantFilterExactTarget(t *testing.T) {
 	if err := filter.ValidateForEngine(2); err != nil {
 		t.Fatal(err)
 	}
-	predicate, args := filter.predicate()
+	predicate, args := filter.predicate("postgres")
 	var decoded engineplugin.EngineCatalogPath
 	if len(args) != 4 || (!strings.Contains(predicate, "catalog_path = ?::jsonb") || !strings.Contains(predicate, "source_node_covers") || args[0] != args[1]) || strings.Contains(predicate, "strpos") {
 		t.Fatalf("exact filter lost: %s %+v", predicate, args)
@@ -66,12 +66,12 @@ func TestSourceGrantFilterValidation(t *testing.T) {
 
 func TestSourceGrantFilterBindsRecipientTypeAndID(t *testing.T) {
 	for _, kind := range []string{"user", "department", "project_group"} {
-		predicate, args := (SourceGrantFilter{TableSearch: "表_%", RecipientType: kind, RecipientID: 33}).predicate()
+		predicate, args := (SourceGrantFilter{TableSearch: "表_%", RecipientType: kind, RecipientID: 33}).predicate("postgres")
 		if !strings.Contains(predicate, "recipient_type = ? AND recipient_id = ?") || !reflect.DeepEqual(args, []any{"表_%", kind, int64(33)}) {
 			t.Fatalf("recipient identity lost: %s %+v", predicate, args)
 		}
 	}
-	predicate, args := (SourceGrantFilter{RecipientType: "department"}).predicate()
+	predicate, args := (SourceGrantFilter{RecipientType: "department"}).predicate("postgres")
 	if strings.Contains(predicate, "recipient_id") || !reflect.DeepEqual(args, []any{"department"}) {
 		t.Fatalf("type-only filter: %s %+v", predicate, args)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,6 +135,48 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 		t.Fatalf("historical retry: %v", err)
 	}
 	checkActive(secondID)
+	t.Run("current grant management list", func(t *testing.T) {
+		path := base.Path
+		filter := SourceGrantFilter{CatalogPath: &path, RecipientType: binding.RecipientType, RecipientID: binding.RecipientID}
+		observed, count, err := repo.listAccountGrantRelations(ctx, 7, 12, binding.RecipientID, 1, 100, filter)
+		if err != nil || count != 1 || len(observed) != 1 {
+			t.Fatalf("account target count %d: %v", count, err)
+		}
+		item := observed[0]
+		if item.RequestID != nil || item.GrantCount != 1 || item.Inspection == nil || item.Inspection.Reason != "grant" || !item.Inspection.RuleCovered ||
+			len(item.Inspection.Sources) != 1 || item.Inspection.Sources[0].RequestID != secondID || item.Inspection.Sources[0].RecipientID != binding.RecipientID {
+			t.Fatalf("account source/anchor mismatch: %+v", item.Inspection)
+		}
+		empty, count, err := repo.listAccountGrantRelations(ctx, 7, 12, binding.RecipientID, 2, 1, filter)
+		if err != nil || count != 1 || len(empty) != 0 {
+			t.Fatalf("empty account page: %d, %v", count, err)
+		}
+		if _, _, err := repo.listAccountGrantRelations(ctx, 7, 12, 999999, 1, 1, filter); !errors.Is(err, commonapi.ErrNotFound) {
+			t.Fatalf("unknown account: %v", err)
+		}
+		for _, f := range []SourceGrantFilter{filter, {TableSearch: strings.TrimSpace(path.Segments[len(path.Segments)-1].Name), RecipientType: binding.RecipientType, RecipientID: binding.RecipientID}} {
+			rows, total, err := repo.directGrantRelations(ctx, 7, 12, 1, 100, f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, row := range rows {
+				if row.RequestID != nil && *row.RequestID == secondID {
+					found = row.GrantCount == 1 && row.GrantedAt != nil && row.Action == binding.Action
+				}
+				if row.RequestID != nil && *row.RequestID == id {
+					t.Fatal("revoked anchor returned")
+				}
+			}
+			if !found || total < int64(len(rows)) {
+				t.Fatalf("current relation missing: count=%d rows=%d", total, len(rows))
+			}
+			empty, otherTotal, err := repo.directGrantRelations(ctx, 7, 12, int(total)+1, 1, f)
+			if err != nil || len(empty) != 0 || otherTotal != total {
+				t.Fatalf("empty page total %d, want %d: %v", otherTotal, total, err)
+			}
+		}
+	})
 	checkVisibility("grant")
 	t.Run("metadata-only schema grant and natural expiry", func(t *testing.T) {
 		child := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "visibility", "orders")
@@ -172,11 +215,34 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 				t.Fatalf("unexpected deadline: %v", deadline)
 			}
 		}
+		checkListed := func(active bool) {
+			t.Helper()
+			filter := SourceGrantFilter{CatalogPath: &child, RecipientType: "user", RecipientID: confirmer.PrincipalID}
+			observed, total, err := repo.listAccountGrantRelations(ctx, 7, 12, confirmer.PrincipalID, 1, 10, filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if active {
+				if total != 1 || len(observed) != 1 || observed[0].Inspection == nil || !observed[0].Inspection.RuleCovered ||
+					len(observed[0].Inspection.Sources) != 1 || observed[0].Inspection.Sources[0].RequestID != grant.RequestID ||
+					observed[0].ExpiresAt == nil || !observed[0].ExpiresAt.Equal(expiry) || observed[0].NodeRecursive == nil || *observed[0].NodeRecursive {
+					t.Fatalf("active node grant missing or scope changed: %+v", observed)
+				}
+			} else if total != 0 || len(observed) != 0 {
+				t.Fatal("expired account relation still listed")
+			}
+			history, n, err := repo.listSourceGrants(ctx, 7, 12, 1, 10, filter)
+			if err != nil || n != 1 || len(history) != 1 || history[0].RequestID != grant.RequestID {
+				t.Fatalf("node grant history lost: %d, %v", n, err)
+			}
+		}
 		read(true)
+		checkListed(true)
 		if err := repo.db.Exec("SELECT SLEEP(GREATEST(0,TIMESTAMPDIFF(MICROSECOND,CURRENT_TIMESTAMP(6),?))/1000000+0.02)", expiry).Error; err != nil {
 			t.Fatal(err)
 		}
 		read(false)
+		checkListed(false)
 		t.Log("metadata visible under active grant; content and sibling denied; no visibility after natural expiry")
 	})
 	if _, err := svc.Revoke(ctx, RevokeInput{Actor: manager, EngineID: 12, ID: delegation.ID, Version: 1, Reason: "Catalog handling complete"}); err != nil {

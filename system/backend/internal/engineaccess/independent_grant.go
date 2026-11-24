@@ -271,7 +271,7 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 
 func (r *Repository) listSourceGrants(ctx context.Context, tenantID, engineID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantView, int64, error) {
 	query := r.db.WithContext(ctx).Model(&sourceGrant{}).Where("tenant_id = ? AND engine_id = ?", tenantID, engineID)
-	predicate, args := filter.predicate()
+	predicate, args := filter.predicate(r.db.Dialector.Name())
 	query = query.Where(predicate, args...)
 	if filter.State != "" {
 		now, err := r.wallClock(ctx)
