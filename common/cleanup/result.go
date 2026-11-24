@@ -17,6 +17,7 @@ import (
 	"github.com/addp/common/execution"
 	commonauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/schema"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -59,6 +60,12 @@ func resultTable(owner string) (string, error) {
 // MigrateResults is called by the Owner's standard schema migration. Each Owner
 // stores its own rows; System never reads these tables.
 func MigrateResults(db *gorm.DB, owner string) error {
+	if db.Dialector.Name() == "mysql" {
+		if err := PrepareMySQLResultTable(db, owner); err != nil {
+			return err
+		}
+		return schema.CheckMySQLTriggers(db, []string{MySQLResultUpdateGuard})
+	}
 	table, err := resultTable(owner)
 	if err != nil {
 		return err

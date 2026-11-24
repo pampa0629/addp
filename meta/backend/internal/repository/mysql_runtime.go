@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/cleanup"
 	"github.com/addp/common/schema"
 	"gorm.io/gorm"
 )
@@ -31,7 +32,7 @@ func PrepareMySQL(db *gorm.DB) error {
 		return err
 	}
 	var tables []string
-	triggers := mysqlFactTriggers()
+	triggers := append(mysqlFactTriggers(), cleanup.MySQLResultUpdateGuard)
 	for _, file := range files {
 		data, err := mysqlRuntimeDDL.ReadFile("mysql_runtime/" + file.Name())
 		if err != nil {
@@ -50,6 +51,9 @@ func PrepareMySQL(db *gorm.DB) error {
 			if err := conn.Exec(ddl).Error; err != nil {
 				return fmt.Errorf("prepare Meta runtime tables: %w", err)
 			}
+		}
+		if err := cleanup.PrepareMySQLResultTable(conn, "meta"); err != nil {
+			return err
 		}
 		if err := schema.CheckMySQLTriggers(conn, triggers); err != nil {
 			return err

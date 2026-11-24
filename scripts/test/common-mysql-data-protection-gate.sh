@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -46,7 +46,7 @@ if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
 fi
 
 case "$test_group" in
-    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
+    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-import|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
         if [ "$local_disposable" != true ]; then
             echo "$test_group requires a gate-owned instance (--local-disposable)" >&2
             exit 2
@@ -120,6 +120,7 @@ mysql['environment']['MYSQL_DATABASE'] = {
     'platform-projection-store': 'manager',
     'platform-export-store': 'manager',
     'platform-manager-import': 'manager',
+    'platform-cleanup-results': 'manager',
     'platform-system-request': 'system',
     'platform-source-grant-boundary': 'system',
     'platform-system-iam-foundation': 'system',
@@ -182,6 +183,12 @@ if [ "$test_group" = platform-projection-store ]; then
     export ADDP_TEST_MYSQL_PROJECTION_DATABASE=manager
     (cd "$ROOT_DIR/common" && GOWORK=off go test ./dataprotection/projectionstore -run '^TestOwnerStoreAgainstMySQL$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/projection-store.log"
     grep -q '^--- PASS: TestOwnerStoreAgainstMySQL ' "$WORK_DIR/projection-store.log"
+    exit 0
+fi
+
+if [ "$test_group" = platform-cleanup-results ]; then
+    (cd "$ROOT_DIR/common" && ADDP_TEST_MYSQL_CLEANUP_RESULTS=1 GOWORK=off go test ./cleanup -run '^TestMySQLCleanupResultsRetainOriginal$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/cleanup-results.log"
+    grep -q '^--- PASS: TestMySQLCleanupResultsRetainOriginal ' "$WORK_DIR/cleanup-results.log"
     exit 0
 fi
 

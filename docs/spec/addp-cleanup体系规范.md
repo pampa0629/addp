@@ -336,6 +336,8 @@ cleanup request（资源回收请求）必须保持中性。
 | 专业结果和待核清 | Owner私有业务／控制事实 | 不把原始statistics、details、自由文本错误、SQL、对象路径、凭据或任意响应放入标准回执，不由System跨读私表 |
 | 协调结论 | System请求／父execution及审计 | 由System当前lease汇总标准结果并同事务收尾；父恢复只重新汇总，不重置或替换子项，不重放已开始的execute |
 
+Common 维护各 Owner 的 `cleanup_results` 表定义与禁止更新结果的触发器。选择 MySQL 时，部署程序连接所选 Owner 库准备表，并与该库其余触发器一起核验。部署账号受 binlog 限制时，沿用同一部署入口输出的 DBA 安装清单。
+
 标准回执只包含：协议版本、确定action/mode、请求／确认摘要、既有结果分类、安全稳定原因、标准summary计数和impact digest；保存与本子execution、Tenant、module、parent_execution_id及完成attempt的绑定，写入端和System消费端都从权威记录交叉核对，不接受调用方覆盖身份。字段类型、大小／数量上限及规范摘要算法须在同次实现的协议校验中固定；未知版本、未知字段、类型错误、越界、身份不符或摘要不匹配均失败关闭，不能截断专业正文后当作标准回执。回执随子终态冻结，终态后不得新增或改写；旧实例停止证据只能进入Owner窄控制事实。失败／超时缺少合法Owner回执时，System只记“未取得回执”及可核验公共事实，不伪造模块成功、专业统计或停止证明。回执落库不自动扩大Monitor白名单或读取权限。
 
 实现使用`addp.cleanup-request/v1`冻结中性请求、`addp.cleanup-receipt/v1`绑定完成回执，严格拒绝未知字段；单对象最多16 KiB，计数为0至10^12的整数，参与模块沿现有十个Owner的注册集合校验、排序并去重。请求仅允许engine_id、tenant_id及显式external_artifact_policy中性上下文；摘要为确定结构JSON的SHA-256，不包含原始确认文本、凭据或专业正文。冻结deadline不可超过受理后24小时，现行scan／execute的30秒／5分钟预算保持不变。正式领取、回执与读取投影共用此闭合校验，旧Redis记录不补造该来源证明。
