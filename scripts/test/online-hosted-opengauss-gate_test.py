@@ -60,6 +60,13 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             "docker",
             """
             #!/usr/bin/env bash
+            if [ "$1 $2" = "exec -i" ] && [ "${ADDP_TEST_RECORD_NAMESPACES:-0}" = 1 ]; then
+              if [ "${@: -2:1}" = _ ]; then
+                echo "namespace:${!#}" >> "$ADDP_TEST_GATE_TRACE"
+              fi
+              cat >/dev/null
+              exit 0
+            fi
             if [ "$1 $2" = "compose version" ]; then
               exit 0
             fi
@@ -377,7 +384,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         """
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", ROOT_DIR=str(self.repository),
                    ADDP_TEST_GATE_TRACE=str(self.trace), ADDP_TEST_BACKGROUND_PIDS=str(self.background_pids),
-                   ADDP_ONLINE_HOSTED="1", POSTGRES_DB="addp_online", ADDP_DATABASE_DEPLOY_USER="ambient",
+                   ADDP_TEST_RECORD_NAMESPACES="1", ADDP_ONLINE_HOSTED="1", POSTGRES_DB="addp_online", ADDP_DATABASE_DEPLOY_USER="ambient",
                    ADDP_DATABASE_DEPLOY_PASSWORD="ambient", hosted_deploy_password="ambient")
         result = subprocess.run(["bash", "-c", script], cwd=self.repository, env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=10)
@@ -387,6 +394,10 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             "install:addp-system:prepare-database system", "install:addp-system:prepare-database common",
             "install:addp-meta:prepare-database", "install:addp-gateway:prepare-database",
             "install:addp-future:prepare-database", "install:addp-security:prepare-database"])
+        first_install = trace.index("install:addp-system:prepare-database system")
+        self.assertEqual([line for line in trace[:first_install] if line.startswith("namespace:")], [
+            "namespace:system", "namespace:common", "namespace:meta", "namespace:gateway",
+            "namespace:future", "namespace:security"])
         self.assertLess(trace.index("install:addp-security:prepare-database"), trace.index("start:-future"))
         self.assertIn("start:-develop", trace)
 

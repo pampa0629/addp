@@ -28,6 +28,7 @@ SQL
 # On Hosted the database is empty except for Infra's preinstalled namespaces.
 hosted_prepare_namespace() {
   local namespace=$1
+  if [[ "$1" == system ]]; then namespace=$4; fi
   docker exec -i addp-postgres sh -ec '
     test "$POSTGRES_DB" = addp_online
     export PGPASSWORD="$POSTGRES_PASSWORD"
@@ -56,7 +57,6 @@ hosted_install_database() (
   local owner=$1 language=$2 namespace=$1
   shift 2
   if [[ "$owner" == system ]]; then namespace=$2; fi
-  hosted_prepare_namespace "$namespace" || exit 1
   echo "Preparing Hosted platform database: $namespace"
   local command
   if [[ -n "${hosted_compose:-}" ]]; then
@@ -83,24 +83,30 @@ hosted_install_database() (
     "${command[@]}" "$@"
 )
 
-hosted_prepare_compose_database() (
-  local hosted_compose=$1 owner
-  shift
+# System migrations inspect Common even before its own installer has run.
+hosted_prepare_registered_databases() {
+  local owner action
   source "$ROOT_DIR/scripts/infra/platform-database.sh"
-  for owner in "$@"; do addp_prepare_module_database "$owner" hosted_install_database || exit 1; done
+  for action in hosted_prepare_namespace hosted_install_database; do
+    for owner in "$@"; do
+      addp_prepare_module_database "$owner" "$action" || return 1
+    done
+  done
+}
+
+hosted_prepare_compose_database() (
+  local hosted_compose=$1
+  shift
+  hosted_prepare_registered_databases "$@"
 )
 
 hosted_prepare_native_database() (
-  source "$ROOT_DIR/scripts/infra/platform-database.sh"
   source "$ROOT_DIR/scripts/dev/build-identity.sh"
   source "$ROOT_DIR/scripts/infra/ports.sh"
   export GOPATH="$ROOT_DIR/.gopath" GOMODCACHE="$ROOT_DIR/.gomodcache" GOTOOLCHAIN=local
   POSTGRES_PORT=$(addp_infra_mapped_port addp-postgres 5432)
   export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT
-  local owner
-  for owner in "$@"; do
-    addp_prepare_module_database "$owner" hosted_install_database || exit 1
-  done
+  hosted_prepare_registered_databases "$@"
 )
 
 hosted_prepare_native_targets() {

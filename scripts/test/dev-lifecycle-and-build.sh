@@ -2500,8 +2500,16 @@ assert result.returncode==0,(result.returncode,result.stdout,result.stderr,
 workers=['security/backend/cmd/worker/main.go','meta/backend/cmd/worker/main.go','quality/backend/cmd/worker/main.go','transfer/backend/cmd/worker/main.go','transfer/backend/cmd/continuous-worker/main.go']
 for name in workers:
  content=(root/name).read_text()
- assert not re.search(r'\.(?:Migrate|AutoMigrate|EnsureStore|InitDatabase|PrepareSchema)\(',content),name
- if name == 'meta/backend/cmd/worker/main.go':
+ assert not re.search(r'\.(?:Migrate|AutoMigrate|EnsureStore|InitDatabase|PrepareSchema|PrepareDatabase|OpenPlatformInstallation)\(',content),name
+ if name == 'security/backend/cmd/worker/main.go':
+  assert 'repository.OpenRuntime(cfg.PlatformDatabase())' in content,name
+  database=(root/'security/backend/internal/repository/startup_schema.go').read_text()
+  runtime=database.split('func OpenRuntime(',1)[1].split('\n}',1)[0]
+  for check in ('bootstrap.OpenPlatformRuntime(cfg, "security"', 'schema.Require(db, "security", SchemaVersion)',
+                'schema.Require(db, "common", schema.CommonVersion)'):
+   assert check in runtime,name
+  assert not re.search(r'\b(?:Migrate|MigrateMySQL|AutoMigrate|PrepareDatabase|OpenPlatformInstallation)\(',runtime),name
+ elif name == 'meta/backend/cmd/worker/main.go':
   assert 'metaRepo.OpenRuntimeDatabase(cfg)' in content,name
   database=(root/'meta/backend/internal/repository/database.go').read_text()
   runtime=database.split('func OpenRuntimeDatabase(',1)[1].split('\n}',1)[0]
