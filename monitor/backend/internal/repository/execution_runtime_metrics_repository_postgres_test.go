@@ -10,7 +10,10 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/infra/database"
+	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/common/models"
+	"github.com/addp/common/schema"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -28,6 +31,37 @@ func TestIntegrationPostgresExecutionRuntimeMetrics(t *testing.T) {
 		t.Fatalf("ensure common execution store: %v", err)
 	}
 
+	checkRuntimeMetrics(t, db)
+}
+
+func TestMonitorRuntimeMetricsAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_MONITOR_METRICS") != "1" {
+		t.Skip("requires a gate-owned Common database")
+	}
+	driver, err := platformmysql.Dialector(database.Config{
+		Host: os.Getenv("ADDP_TEST_MYSQL_HOST"), Port: os.Getenv("ADDP_TEST_MYSQL_PORT"),
+		User: os.Getenv("ADDP_TEST_MYSQL_USER"), Password: os.Getenv("ADDP_TEST_MYSQL_PASSWORD"), DBName: "common",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(driver, &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	if err := schema.InitializeCommon(db); err != nil {
+		t.Fatal(err)
+	}
+	checkRuntimeMetrics(t, db)
+}
+
+func checkRuntimeMetrics(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	tenantID := int(now.UnixNano()%50000000 + 940000000)
 	t.Cleanup(func() {
@@ -102,6 +136,37 @@ func TestIntegrationPostgresExecutionRuntimeMetrics(t *testing.T) {
 	rows, err = NewExecutionRuntimeMetricsRepository(db).List(ctx, tenantID, "", now.Add(-24*time.Hour), now)
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("denied metrics=%#v err=%v", rows, err)
+	}
+
+	// A never-started execution contributes to queue time only. A separate group
+	// with pending work entirely before the window must still appear in backlog.
+	for i, queueMS := range []int{0, 100, 200, 0} {
+		item := commonExecution.TaskExecution{TenantID: tenantID, ExecutionID: uuid.NewString(), Module: "meta",
+			TaskType: "scan", Source: "meta", ExecutionBoundary: "bounded", Status: "pending", TriggerType: "manual",
+			CreatedAt: now.Add(-time.Duration(queueMS) * time.Millisecond), UpdatedAt: now}
+		switch i {
+		case 0, 1:
+			started := now.Add(-time.Second)
+			length := int64(10 + 40*i)
+			completed := started.Add(time.Duration(length) * time.Millisecond)
+			item.CreatedAt = started.Add(-time.Duration(queueMS) * time.Millisecond)
+			item.Status, item.StartedAt, item.CompletedAt, item.ExecutionTimeMs = "success", &started, &completed, &length
+		case 3:
+			item.TaskType, item.CreatedAt = "outside_window", now.Add(-48*time.Hour)
+		}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err = NewExecutionRuntimeMetricsRepository(db).List(t.Context(), tenantID, "meta", now.Add(-time.Hour), now)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("mixed window rows=%+v err=%v", rows, err)
+	}
+	backlog, sample := rows[0], rows[1]
+	if backlog.TaskType != "outside_window" || backlog.PendingCount != 1 || backlog.CreatedCount != 0 ||
+		sample.TaskType != "scan" || sample.CreatedCount != 3 || sample.PendingCount != 1 ||
+		math.Abs(sample.P95QueueDurationMs-190) > 0.001 || math.Abs(sample.P95ExecutionDurationMs-48) > 0.001 {
+		t.Fatalf("backlog or interpolated P95 differs: %+v", rows)
 	}
 
 }

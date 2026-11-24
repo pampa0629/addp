@@ -269,6 +269,10 @@ func (r *TaskExecutionRepository) buildFilterQuery(ctx context.Context, filter T
 
 // GetTrendData 获取趋势数据（按天聚合）
 func (r *TaskExecutionRepository) GetTrendData(ctx context.Context, tenantID int, module string, days int) ([]TrendDataPoint, error) {
+	cutoff := "NOW() - INTERVAL '1 day' * ?"
+	if r.db.Dialector.Name() == "mysql" {
+		cutoff = "DATE_SUB(NOW(6), INTERVAL ? DAY)"
+	}
 	query := `
 		SELECT
 			DATE(created_at) as date,
@@ -278,7 +282,7 @@ func (r *TaskExecutionRepository) GetTrendData(ctx context.Context, tenantID int
 			AVG(CASE WHEN execution_time_ms IS NOT NULL THEN execution_time_ms ELSE NULL END) as avg_time_ms
 		FROM common.task_executions
 		WHERE tenant_id = ?
-		  AND created_at >= NOW() - INTERVAL '1 day' * ?
+		  AND created_at >= ` + cutoff + `
 		  AND (? = '' OR module = ?)
 		  AND /*EXECUTION_READ_SCOPE*/
 		GROUP BY DATE(created_at)
