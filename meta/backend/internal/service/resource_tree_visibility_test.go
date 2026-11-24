@@ -317,19 +317,19 @@ func visibilityTestTargetResolver(root *resourcetree.TreeNode, engineType string
 }
 
 func TestGrantedEmptyNodesAndIndependentItemSurviveRootRevocation(t *testing.T) {
-	for _, engineType := range []string{"postgresql", "nfs", "minio"} {
+	for _, engineType := range []string{"postgresql", "gaussdb", "nfs", "ftp", "minio", "rustfs"} {
 		t.Run(engineType, func(t *testing.T) {
 			rootPath := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9)
 			branch := plugin.TabularNamespacePath(9, "schema", "public")
 			empty := plugin.TabularNamespacePath(9, "schema", "empty")
 			leafPath := plugin.TabularItemPath(9, "schema", "public", "visible")
-			if engineType == "nfs" {
+			if engineType == "nfs" || engineType == "ftp" {
 				rootPath = plugin.FileDirectoryPath(9, "")
 				branch = plugin.FileDirectoryPath(9, "public")
 				empty = plugin.FileDirectoryPath(9, "empty")
 				leafPath = plugin.FileItemPath(9, "public/visible")
 			}
-			if engineType == "minio" {
+			if engineType == "minio" || engineType == "rustfs" {
 				rootPath = plugin.ObjectRootPath(9)
 				branch = plugin.ObjectDirectoryPath(9, "public", "")
 				empty = plugin.ObjectDirectoryPath(9, "empty", "")

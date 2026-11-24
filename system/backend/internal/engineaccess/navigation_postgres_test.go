@@ -78,26 +78,24 @@ func exerciseEngineNavigation(t *testing.T, db *gorm.DB, s *Service, ctx context
 	}
 	check([]plugin.EngineCatalogPath{root, parent, empty}, []bool{true, false, true})
 	revoke(grant.RequestID)
-	// All three root profiles use the same PostgreSQL rule storage and lifecycle.
+	// Each provider uses its registered root and the same Grant lifecycle.
 	profile := *s // The parent TIFF fixture intentionally enables only its single profile.
 	profile.catalogEligible = func(e *models.Engine) bool {
-		return e.EngineType == "postgresql" || e.EngineType == "nfs" || e.EngineType == "minio"
+		_, ok := authorizationfacts.NavigationRoot(e.EngineType, e.ID)
+		return ok
 	}
 	defer func() {
 		if err := db.Exec("UPDATE system.engines SET engine_type='nfs' WHERE id=? AND tenant_id=?", target.EngineID, actor.TenantID).Error; err != nil {
 			t.Error(err)
 		}
 	}()
-	for _, kind := range []string{"postgresql", "nfs", "minio"} {
+	for _, kind := range []string{"postgresql", "gaussdb", "nfs", "ftp", "minio", "rustfs"} {
 		if err := db.Exec("UPDATE system.engines SET engine_type=? WHERE id=? AND tenant_id=?", kind, target.EngineID, actor.TenantID).Error; err != nil {
 			t.Fatal(err)
 		}
-		path := root
-		switch kind {
-		case "postgresql":
-			path = plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), target.EngineID)
-		case "minio":
-			path = plugin.ObjectRootPath(target.EngineID)
+		path, ok := authorizationfacts.NavigationRoot(kind, target.EngineID)
+		if !ok {
+			t.Fatalf("missing root for %s", kind)
 		}
 		node.RequestID = uuid.New()
 		node.CatalogPath = path
@@ -109,9 +107,9 @@ func exerciseEngineNavigation(t *testing.T, db *gorm.DB, s *Service, ctx context
 		check([]plugin.EngineCatalogPath{path}, []bool{true})
 		future := plugin.FileItemPath(target.EngineID, "future/new.csv")
 		switch kind {
-		case "postgresql":
+		case "postgresql", "gaussdb":
 			future = plugin.TabularItemPath(target.EngineID, "schema", "future", "new_table")
-		case "minio":
+		case "minio", "rustfs":
 			future = plugin.ObjectItemPath(target.EngineID, "future-bucket", "new.csv")
 		}
 		rawNode, _ := json.Marshal(path)
@@ -146,5 +144,5 @@ func exerciseEngineNavigation(t *testing.T, db *gorm.DB, s *Service, ctx context
 		t.Fatal(err)
 	}
 	check([]plugin.EngineCatalogPath{root, empty}, []bool{false, false})
-	t.Log("navigation: ungranted hidden, precise ancestors, empty node, root revocation preserves precise item, PG/NFS/MinIO future items, expiry passed")
+	t.Log("navigation: ungranted hidden, precise ancestors, empty node, root revocation preserves precise item, current and future items in all enrolled engines, expiry passed")
 }
