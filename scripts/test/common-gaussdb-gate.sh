@@ -38,3 +38,4 @@ for required in CatalogAndPreciseValues PreparedReadAndCancellation GuardedTable
     exit 1
   }
 done
+python3 "$ROOT_DIR/business/scripts/online-gaussdb-consumer-fixture.py" check-source-log

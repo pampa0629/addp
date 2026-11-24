@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 from urllib.parse import urlencode
 
 API=import_module('scripts.utils.online-api')
@@ -51,7 +52,7 @@ def prepare(profile, tenant, engine):
     consumer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
     preparer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
     API.validate_user_identity(consumer, tenant, PERMISSIONS)
-    REGISTRATION.source_grant_participants(preparer, consumer, tenant, scan_preparation=True)
+    participants = REGISTRATION.source_grant_participants(preparer, consumer, tenant, scan_preparation=True)
     scan = SUPPORT.wait_for_scan(preparer, engine, time.monotonic()+180, scan_depth='deep', targets=[
         f'addp://engine/{engine}/path/{profile.namespace}/{name}?type=table' for name in profile.catalog_tables])
     journal = private / 'readonly-sql-grants.json'
@@ -63,6 +64,8 @@ def prepare(profile, tenant, engine):
     def on_pending(engine_id, request_id, target):
         reads.append(dict(engine=engine_id, request_id=request_id, target=target, action='read'))
         checkpoint()
+    if profile.engine_type == 'gaussdb':
+        verify_gaussdb_future_table(preparer, consumer, engine, private, participants, journal)
     REGISTRATION.initialize_exact_record_read_grants(preparer, consumer, tenant,
         [(engine, profile.namespace_term, profile.namespace, 'source')], scan_preparation=True, on_pending=on_pending)
     def on_metadata(rows):
@@ -73,6 +76,61 @@ def prepare(profile, tenant, engine):
         grants.grant(engine, profile.namespace, name, 'table')
         consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (403,), {'targets':[grants.target(engine,profile.namespace,name,'table')]})
     (private / 'readonly-sql-scan.json').write_text(json.dumps(scan))
+
+
+def verify_gaussdb_future_table(preparer, consumer, engine, private, participants, journal):
+    fixture = import_module('business.scripts.online-gaussdb-consumer-fixture')
+    state = json.loads((private / 'gaussdb-state.json').read_text())
+    operator, recipient = participants
+    future = REGISTRATION.ExactRecordGrants.target(engine, 'addp_acceptance', 'node_future', 'table', 'schema')
+    scope = dict(future, segments=future['segments'][:-1])
+    command = str(uuid.uuid4())
+    base = f'/api/v1/system/engines/{engine}/access_grants'
+    body = dict(request_id=command, catalog_path=scope, node_recursive=False, action='read',
+                recipient_type='user', recipient_id=recipient, expiry_mode='until_revoked',
+                reason='Disposable GaussDB schema read for a future table')
+    # Before the POST, persist the command and an existing leaf for the outer
+    # cleanup hook. This also covers a lost POST or revoke response.
+    current = REGISTRATION.ExactRecordGrants.target(engine, 'addp_acceptance', 'source', 'table', 'schema')
+    journal.write_text(json.dumps([dict(engine=engine, request_id=command, target=current, action='read')]))
+    receipt = preparer.request('POST', base, (201,), body).payload
+    require(all(receipt.get(key) == body[key] for key in
+                ('request_id', 'catalog_path', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')) and
+            receipt.get('node_recursive') is False and receipt.get('engine_id') == str(engine) and
+            receipt.get('operator_principal_id') == operator and not receipt.get('item_fingerprint'),
+            'GaussDB schema Grant did not bind the exact node and participants')
+    # Test-owned isolated GaussDB. The original source role keeps native SELECT
+    # even after platform withdrawal, so a native ACL cannot mask a regression.
+    fixture.sql(state, """BEGIN;
+CREATE TABLE addp_acceptance.node_future(id INTEGER PRIMARY KEY);
+INSERT INTO addp_acceptance.node_future VALUES (37);
+GRANT SELECT ON addp_acceptance.node_future TO fixture_reader;
+COMMIT;""")
+    scan = SUPPORT.wait_for_scan(preparer, engine, time.monotonic()+180, scan_depth='basic',
+                                 targets=[f'addp://engine/{engine}/path/addp_acceptance/node_future?type=table'])
+    items = consumer.request('GET', f'/api/v1/meta/engines/{engine}/items?branch=addp_acceptance', (200,)).payload
+    future_items = [item for item in items if item.get('full_name') == 'addp_acceptance.node_future']
+    require(len(future_items) == 1, 'new table missing under the original schema grant')
+    locator = SUPPORT.build_item_locator(engine, future_items[0])
+    query = 'SELECT id FROM addp_acceptance.node_future ORDER BY id'
+    before = fixture.table_read_count(state, 'node_future')
+    allowed = gaussdb_execution(consumer, engine, query, locator)
+    require(allowed.get('status') == 'success' and
+            allowed.get('metadata', {}).get('result', {}).get('summary', {}).get('preview_rows') == [{'id':37}],
+            'schema Grant did not return the new table row')
+    after = fixture.table_read_count(state, 'node_future')
+    require(after > before, 'allowed query was absent from the owned source execution log')
+    preparer.request('POST', base + '/' + command + '/revoke', (200,), {'reason':'End future-table read'})
+    denied = gaussdb_execution(consumer, engine, query, locator)
+    require(denied['execution_id'] != allowed['execution_id'], 'replayed the previous execution')
+    assert_gaussdb_read_denied(denied)
+    final = fixture.table_read_count(state, 'node_future')
+    require(final == after, 'withdrawn execution issued a new source SELECT')
+    evidence = dict(engine_id=engine, principal_id=recipient, scope=scope, grant=command, scan=scan,
+                    allowed_execution=allowed['execution_id'], denied_execution=denied['execution_id'],
+                    allowed_source_selects=after-before, denied_source_selects=final-after)
+    Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'gaussdb-node-read.json').write_text(json.dumps(evidence))
+    journal.write_text('[]')
 
 
 def cleanup(profile):
@@ -208,6 +266,35 @@ def run(client,tenant,engine,timeout,profile):
     return report
 
 
+def gaussdb_execution(client, engine, query, locator):
+    submitted = client.request('POST', '/api/v1/develop/executions', (200,), {
+        'dev_type': 'query', 'trigger_type': 'manual', 'execution_config': {'engine_id': engine},
+        'content': {'query_type': 'sql', 'query': query, 'target_locator': locator},
+        'timeout': 120,
+    }).payload['execution_id']
+    require(isinstance(submitted, str) and submitted, 'missing GaussDB execution ID')
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        result = client.request('GET', f'/api/v1/develop/executions/{submitted}/result', (200,)).payload
+        require(result.get('execution_id') == submitted, 'wrong execution result')
+        if result.get('status') not in ('pending', 'running'):
+            break
+        time.sleep(1)
+    else:
+        raise API.SuiteError('GaussDB execution did not reach a terminal state within 120 seconds')
+    return result
+
+
+def assert_gaussdb_read_denied(result):
+    details = result.get('error_details') or {}
+    diagnostic = details.get('diagnostic') or {}
+    require(result.get('status') == 'failed' and details.get('code') == 'develop.query.source_read_denied' and
+            diagnostic.get('stage') == 'authorization' and diagnostic.get('reason') == 'permission_denied',
+            'revoked execution did not fail during source authorization')
+    require((result.get('metadata') or {}).get('result') is None and not result.get('rows_affected'),
+            'revoked execution returned a result')
+
+
 def verify_gaussdb_revoked_execution(client, tenant, engine, directory):
     report = json.loads((directory / 'gaussdb-consumer-flow.json').read_text())
     browser = report['browser']
@@ -227,27 +314,13 @@ def verify_gaussdb_revoked_execution(client, tenant, engine, directory):
     require(first['status'] == 'success' and len(first['rows']) == 2 and
             first['query'] == 'SELECT id,name,amount,optional_text FROM addp_acceptance.source ORDER BY id',
             'successful reference query required before revocation')
-    submitted = client.request('POST', '/api/v1/develop/executions', (200,), {
-        'dev_type': 'query', 'trigger_type': 'manual', 'execution_config': {'engine_id': engine},
-        'content': {'query_type': 'sql', 'query': first['query'], 'target_locator': first['target_locator']},
-        'timeout': 120,
-    }).payload['execution_id']
-    require(submitted and submitted not in {q['execution_id'] for q in browser['queries']},
+    result = gaussdb_execution(client, engine, first['query'], first['target_locator'])
+    submitted = result['execution_id']
+    require(submitted not in {q['execution_id'] for q in browser['queries']},
             'revocation check requires a fresh execution')
-    deadline = time.monotonic() + 120
-    while time.monotonic() < deadline:
-        result = client.request('GET', f'/api/v1/develop/executions/{submitted}/result', (200,)).payload
-        require(result.get('execution_id') == submitted, 'wrong execution result')
-        if result.get('status') not in ('pending', 'running'):
-            break
-        time.sleep(1)
-    details = result.get('error_details') or {}
-    diagnostic = details.get('diagnostic') or {}
-    require(result.get('status') == 'failed' and details.get('code') == 'develop.query.source_read_denied' and
-            diagnostic.get('stage') == 'authorization' and diagnostic.get('reason') == 'permission_denied',
-            'revoked execution did not fail during source authorization')
-    require((result.get('metadata') or {}).get('result') is None and not result.get('rows_affected'),
-            'revoked execution returned a result')
+    assert_gaussdb_read_denied(result)
+    details = result['error_details']
+    diagnostic = details['diagnostic']
     evidence = dict(run_id=run_id, tenant_id=tenant, engine_id=engine, principal_id=browser['principal_id'],
                     allowed_execution=first['execution_id'], denied_execution=submitted, code=details['code'],
                     stage=diagnostic['stage'], result_delivered=False)

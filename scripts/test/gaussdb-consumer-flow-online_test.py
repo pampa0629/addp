@@ -148,6 +148,56 @@ class GaussDBConsumerTest(unittest.TestCase):
             FLOW.validate_item(item,profile)
             with self.assertRaises(FLOW.API.SuiteError): FLOW.validate_structure(item,profile)
 
+    def test_gaussdb_source_observation_counts_only_executed_future_table_reads(self):
+        lines = [
+            'LOG: statement: SELECT id FROM addp_acceptance.node_future ORDER BY id',
+            'LOG: execute <unnamed>: SELECT id FROM "addp_acceptance"."node_future"',
+            'LOG: statement: EXPLAIN SELECT id FROM addp_acceptance.node_future',
+            'LOG: statement: SELECT id FROM addp_acceptance.node_future_archive',
+            'LOG: statement: SELECT id FROM other.node_future',
+            'LOG: statement: SELECT c.oid FROM pg_class c WHERE c.relname = node_future',
+        ]
+        self.assertEqual(FIXTURE.count_table_reads('\n'.join(lines), 'node_future'), 2)
+
+    def test_future_table_requires_source_activity_only_while_granted(self):
+        for counters, expected in (([1,2,2], True), ([1,1], False), ([1,2,3], False)):
+            with self.subTest(counters=counters), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root/'gaussdb-state.json').write_text('{}')
+                journal = root/'readonly-sql-grants.json'
+                journal.write_text('[]')
+                issuer, consumer = Mock(), Mock()
+                def issue(method, path, statuses, command):
+                    pending, = json.loads(journal.read_text())
+                    if path.endswith('/revoke'):
+                        self.assertIn(pending['request_id'], path)
+                        return SimpleNamespace(payload={})
+                    self.assertEqual(command['request_id'], pending['request_id'])
+                    self.assertEqual(command['catalog_path']['segments'][-1]['name'], 'addp_acceptance')
+                    self.assertFalse(command['node_recursive'])
+                    return SimpleNamespace(payload=dict(command, engine_id='17', operator_principal_id='41'))
+                issuer.request.side_effect = issue
+                consumer.request.return_value = SimpleNamespace(payload=[dict(
+                    full_name='addp_acceptance.node_future', id=8, item_type='table')])
+                allowed = dict(status='success', execution_id='allowed', metadata=dict(result=dict(
+                    summary=dict(preview_rows=[{'id':37}]))))
+                denied = dict(status='failed', execution_id='denied', error_details=dict(
+                    code='develop.query.source_read_denied', diagnostic=dict(stage='authorization', reason='permission_denied')))
+                with patch.object(FIXTURE, 'sql') as ddl, patch.object(FIXTURE, 'table_read_count', side_effect=counters), \
+                     patch.object(FLOW.SUPPORT, 'wait_for_scan', return_value='scan'), \
+                     patch.object(FLOW.SUPPORT, 'required_environment', return_value=temp), \
+                     patch.object(FLOW, 'gaussdb_execution', side_effect=[allowed, denied]) as execute:
+                    if expected:
+                        FLOW.verify_gaussdb_future_table(issuer, consumer, 17, root, ('41','33'), journal)
+                        self.assertEqual(json.loads(journal.read_text()), [])
+                        self.assertEqual(execute.call_args_list[0], execute.call_args_list[1])
+                    else:
+                        with self.assertRaises(FLOW.API.SuiteError):
+                            FLOW.verify_gaussdb_future_table(issuer, consumer, 17, root, ('41','33'), journal)
+                        self.assertTrue(json.loads(journal.read_text()))
+                    ddl.assert_called_once()
+                    self.assertEqual((root/'gaussdb-node-read.json').exists(), expected)
+
     def test_exact_preparation_scopes_and_private_intents_for_both_profiles(self):
         for profile in FLOW.PROFILES.values():
             for fail_after_intent in (False,True):
@@ -178,11 +228,13 @@ class GaussDBConsumerTest(unittest.TestCase):
                     with patch.object(FLOW,'private_directory',return_value=root), patch.object(FLOW.SUPPORT,'required_environment',return_value='token'), \
                          patch.object(FLOW.SUPPORT,'GatewayClient',side_effect=[consumer,preparer]), patch.object(FLOW.API,'validate_user_identity'), \
                          patch.object(FLOW.REGISTRATION,'source_grant_participants'), patch.object(FLOW.SUPPORT,'wait_for_scan',return_value='scan-id') as scan, \
+                         patch.object(FLOW,'verify_gaussdb_future_table') as future, \
                          patch.object(FLOW.REGISTRATION,'initialize_exact_record_read_grants',side_effect=reads), \
                          patch.object(FLOW.REGISTRATION,'ExactRecordGrants',side_effect=create_metadata):
                         if fail_after_intent:
                             with self.assertRaisesRegex(RuntimeError,'unknown write'): FLOW.prepare(profile,2,17)
                         else: FLOW.prepare(profile,2,17)
+                        self.assertEqual(future.call_count, int(profile.engine_type == 'gaussdb'))
                     self.assertIs(scan.call_args.args[0],preparer)
                     self.assertEqual(scan.call_args.kwargs,dict(scan_depth='deep',targets=[f'addp://engine/17/path/{profile.namespace}/{n}?type=table' for n in profile.catalog_tables]))
                     pending=json.loads((root/'readonly-sql-grants.json').read_text())

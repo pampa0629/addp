@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import secrets
 import subprocess
 import tempfile
@@ -65,6 +66,23 @@ def sql(state, statement):
     return run('docker', 'exec', '-i', state['name'], 'gsql', '-X', '-v', 'ON_ERROR_STOP=1', '-h', '/data/run', '-p', '5432', '-U', 'omm', '-d', 'business', '-At', input=statement, timeout=30)
 
 
+def table_read_count(state, table):
+    """Count data statements on this fixture table; never publish the server log."""
+    if owned('container', state) is None:
+        raise RuntimeError('missing owned GaussDB source')
+    result = subprocess.run(['docker', 'logs', state['name']], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, check=True, timeout=30)
+    return count_table_reads(result.stdout, table)
+
+
+def count_table_reads(log, table):
+    # The guarded Provider also prepares plans using EXPLAIN. Only execution
+    # of an actual SELECT is evidence that source contents were requested.
+    statements = re.findall(r'(?:statement|execute [^:\n]+):\s*(SELECT\b[^\n]*)', log, re.I)
+    return sum(bool(re.search(r'\bFROM\s+(?:"?addp_acceptance"?\s*\.\s*)?"?' + re.escape(table) + r'"?(?![\w$])', sql, re.I))
+               for sql in statements)
+
+
 def start():
     path = directory()
     state = {'run_id': uuid.uuid4().hex}
@@ -105,6 +123,7 @@ CREATE SCHEMA private_schema;
 CREATE TABLE private_schema.hidden(id INT PRIMARY KEY);
 GRANT USAGE ON SCHEMA addp_acceptance TO fixture_reader;
 GRANT SELECT ON addp_acceptance.source TO fixture_reader;
+ALTER ROLE fixture_reader SET log_statement TO 'all';
 """ % password)
     data=owned('container',state)
     mapping=data['NetworkSettings']['Ports']['5432/tcp']
@@ -136,10 +155,17 @@ def stop():
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
-    parser.add_argument('action',choices=['start','stop'])
+    parser.add_argument('action',choices=['start','stop','check-source-log'])
     args=parser.parse_args()
     try:
-        globals()[args.action]()
+        if args.action == 'check-source-log':
+            state = json.loads((directory()/'gaussdb-state.json').read_text())
+            count = table_read_count(state, 'source')
+            if count <= 0:
+                raise RuntimeError('native source SELECT missing')
+            print(f'GAUSSDB_SOURCE_SELECT_LOG_PASS executed_selects={count}')
+        else:
+            globals()[args.action]()
     except (RuntimeError, OSError, subprocess.SubprocessError):
         # Preserve ownership state for the caller's EXIT cleanup, never print secrets.
         raise SystemExit('GaussDB owned fixture '+args.action+' failed; retained ownership state for cleanup') from None
