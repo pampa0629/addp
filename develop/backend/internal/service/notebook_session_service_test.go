@@ -23,6 +23,8 @@ import (
 )
 
 type notebookSessionControlPlaneRecorder struct {
+	readChecks          int
+	deniedTable         string
 	issueError          error
 	issuedAuthorization string
 	issuedRequest       commonClient.IssueNotebookSessionAuthorizationRequest
@@ -37,8 +39,14 @@ type notebookSessionControlPlaneRecorder struct {
 }
 
 func (r *notebookSessionControlPlaneRecorder) ObserveQueryRead(_ context.Context, _ uint, req commonClient.DevelopQueryReadRequest) (*commonClient.DevelopQueryReadObservation, error) {
+	r.readChecks++
 	if req.Validate() != nil {
 		return nil, commonClient.ErrDevelopQueryReadDenied
+	}
+	for _, path := range req.ReadSet.Paths {
+		if path.Segments[len(path.Segments)-1].Name == r.deniedTable {
+			return nil, commonClient.ErrDevelopQueryReadDenied
+		}
 	}
 	return &commonClient.DevelopQueryReadObservation{ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}, nil
 }
@@ -150,8 +158,9 @@ func (s *notebookTestReadSession) Close(ctx context.Context) error {
 }
 
 type notebookTestQueryPlugin struct {
-	request plugin.QueryRequest
-	result  *plugin.QueryResult
+	request      plugin.QueryRequest
+	extraSources []plugin.EngineCatalogPath
+	result       *plugin.QueryResult
 }
 
 func (p *notebookTestQueryPlugin) Type() string         { return "postgresql" }
@@ -197,7 +206,8 @@ func (c *notebookTestQueryCursor) ReadSet(context.Context) (*plugin.QueryReadSet
 	return c.sources, nil
 }
 func (p *notebookTestQueryPlugin) OpenGuardedQueryReadSession(ctx context.Context, _ plugin.PreparedQuery, check plugin.QueryReadAuthorizer) (plugin.GuardedQueryReadSession, error) {
-	set, err := plugin.NewQueryReadSet(plugin.TabularItemPath(p.request.EngineID, "schema", "public", "roads"))
+	paths := append([]plugin.EngineCatalogPath{plugin.TabularItemPath(p.request.EngineID, "schema", "public", "roads")}, p.extraSources...)
+	set, err := plugin.NewQueryReadSet(paths...)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +217,24 @@ func (p *notebookTestQueryPlugin) OpenGuardedQueryReadSession(ctx context.Contex
 	fields := plugin.QueryResultToBatchData(p.result, 0).Fields
 	return &notebookTestQueryCursor{&notebookTestReadSession{fields: fields, rows: p.result.Rows, closeCalled: make(chan struct{})}, set}, nil
 }
+func (p *notebookTestQueryPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (p *notebookTestQueryPlugin) OpenTableReadSession(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+	return nil, errors.New("unexpected unguarded scan")
+}
+func (p *notebookTestQueryPlugin) OpenGuardedTableReadSession(ctx context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.TableReadSessionOptions, check plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+	set, err := plugin.NewQueryReadSet(path)
+	if err != nil {
+		return nil, err
+	}
+	fields := plugin.QueryResultToBatchData(p.result, 0).Fields
+	if err := check(ctx, set, fields); err != nil {
+		return nil, err
+	}
+	return &notebookTestReadSession{fields: fields, rows: p.result.Rows, closeCalled: make(chan struct{})}, nil
+}
+
 func (p *notebookTestQueryPlugin) SQLDialect() string { return "postgresql" }
 func (p *notebookTestQueryPlugin) ExecuteSQL(context.Context, plugin.ConnectionInfo, string, plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return p.result, nil
@@ -444,7 +472,8 @@ func TestNotebookSessionQueryRejectsMissingLanguageOrQuery(t *testing.T) {
 	}
 }
 
-func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
+func newNotebookPostgresReadTest(t *testing.T) (*NotebookSessionService, *notebookSessionControlPlaneRecorder, *notebookTestQueryPlugin, string, string) {
+	t.Helper()
 	service, catalog, _ := newNotebookEngineCatalogSessionTestService(t, nil)
 	public, _, err := service.Create(context.Background(), "addp_at_user", 7, 9, 14)
 	if err != nil {
@@ -469,8 +498,13 @@ func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
 	catalog.engine = &commonModels.Engine{
 		ID: 21, Version: 1, EngineType: "postgresql", ConnectionInfo: commonModels.ConnectionInfo{"host": "database"},
 	}
+	return service, catalog, provider, public.ID, kernelToken
+}
+
+func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
+	service, catalog, provider, sessionID, kernelToken := newNotebookPostgresReadTest(t)
 	var destination bytes.Buffer
-	err = service.StreamQuery(context.Background(), public.ID, kernelToken, NotebookQueryRequest{
+	err := service.StreamQuery(context.Background(), sessionID, kernelToken, NotebookQueryRequest{
 		EngineID: 21, Language: "sql", Query: "SELECT id FROM public.roads", Params: []interface{}{},
 		MaxRows: 3, Timeout: 30 * time.Second,
 	}, &destination, nil)
@@ -483,6 +517,40 @@ func TestNotebookSessionQueryAppliesServerMaxRows(t *testing.T) {
 	}
 	if provider.request.Language != "sql" || provider.request.Options.Limit != 0 || !provider.request.Options.ReadOnly {
 		t.Fatalf("query request = %#v", provider.request)
+	}
+
+	if catalog.readChecks != 1 {
+		t.Fatalf("query made %d source checks", catalog.readChecks)
+	}
+	provider.extraSources = []plugin.EngineCatalogPath{plugin.TabularItemPath(21, "schema", "public", "closed")}
+	catalog.deniedTable = "closed"
+	destination.Reset()
+	err = service.StreamQuery(context.Background(), sessionID, kernelToken, NotebookQueryRequest{EngineID: 21, Language: "sql", Query: "SELECT roads.id FROM public.roads JOIN public.closed USING (id)", MaxRows: 3, Timeout: 30 * time.Second}, &destination, nil)
+	if !errors.Is(err, commonClient.ErrDevelopQueryReadDenied) || catalog.readChecks != 2 || destination.Len() != 0 {
+		t.Fatalf("mixed-source query: err=%v checks=%d bytes=%d", err, catalog.readChecks, destination.Len())
+	}
+}
+
+func TestNotebookPostgresScanGrantRevokedAfterFirstBatch(t *testing.T) {
+	service, catalog, _, sessionID, kernelToken := newNotebookPostgresReadTest(t)
+	path := plugin.TabularItemPath(21, "schema", "public", "roads")
+	request := NotebookTableScanRequest{EngineID: 21, BatchSize: 1, Path: commonClient.EngineCatalogPath{Version: path.Version, EngineID: path.EngineID}}
+	for _, segment := range path.Segments {
+		request.Path.Segments = append(request.Path.Segments, commonClient.EngineCatalogSegment(segment))
+	}
+	var destination bytes.Buffer
+	err := service.StreamTable(context.Background(), sessionID, kernelToken, request, &destination, func() { catalog.deniedTable = "roads" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, batches := notebookArrowIDs(t, destination.Bytes())
+	if len(ids) != 4 || batches != 4 || catalog.readChecks != 1 {
+		t.Fatalf("ids=%v batches=%d source checks=%d", ids, batches, catalog.readChecks)
+	}
+	destination.Reset()
+	err = service.StreamTable(context.Background(), sessionID, kernelToken, request, &destination, nil)
+	if !errors.Is(err, commonClient.ErrDevelopQueryReadDenied) || catalog.readChecks != 2 || destination.Len() != 0 {
+		t.Fatalf("next scan: err=%v checks=%d bytes=%d", err, catalog.readChecks, destination.Len())
 	}
 }
 

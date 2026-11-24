@@ -35,14 +35,15 @@ func (s *SQLEngineService) observeSQLSourceRead(ctx context.Context, tenantID ui
 // source-authorized path. Unsupported proof never falls back to Execute.
 func (s *SQLEngineService) executeSourceAuthorizedSQL(ctx context.Context, tenantID uint, executionID uuid.UUID, engine *commonModels.Engine, authorization *IssuedSQLExecutionAuthorization,
 	enginePlugin plugin.EnginePlugin, prepared plugin.PreparedQuery, limit int, sampleCredential string, protect func(*plugin.QueryResult) error) (*plugin.QueryResult, error) {
-	return executeGuardedSQL(ctx, enginePlugin, prepared, limit, protect, func(ctx context.Context, set *plugin.QueryReadSet) (*client.DevelopQueryReadObservation, error) {
+	observe := func(ctx context.Context, set *plugin.QueryReadSet) (*client.DevelopQueryReadObservation, error) {
 		return s.observeSQLSourceRead(ctx, tenantID, executionID, engine, authorization, set, sampleCredential)
-	})
+	}
+	return executeGuardedSQL(ctx, enginePlugin, prepared, limit, protect, observe, observe)
 }
 
 type queryReadObserver func(context.Context, *plugin.QueryReadSet) (*client.DevelopQueryReadObservation, error)
 
-func executeGuardedSQL(ctx context.Context, enginePlugin plugin.EnginePlugin, prepared plugin.PreparedQuery, limit int, protect func(*plugin.QueryResult) error, observe queryReadObserver) (*plugin.QueryResult, error) {
+func executeGuardedSQL(ctx context.Context, enginePlugin plugin.EnginePlugin, prepared plugin.PreparedQuery, limit int, protect func(*plugin.QueryResult) error, atOpen, beforeDelivery queryReadObserver) (*plugin.QueryResult, error) {
 	provider, ok := enginePlugin.(plugin.GuardedQueryReadSessionProvider)
 	if !ok || limit <= 0 || protect == nil {
 		return nil, plugin.ErrQueryReadSetUnresolved
@@ -50,7 +51,7 @@ func executeGuardedSQL(ctx context.Context, enginePlugin plugin.EnginePlugin, pr
 	var observed *client.DevelopQueryReadObservation
 	session, err := provider.OpenGuardedQueryReadSession(ctx, prepared, func(ctx context.Context, set *plugin.QueryReadSet) error {
 		var err error
-		observed, err = observe(ctx, set)
+		observed, err = atOpen(ctx, set)
 		if errors.Is(err, client.ErrDevelopQueryReadDenied) {
 			return plugin.NewQueryError("develop.query.source_read_denied", err)
 		}
@@ -86,8 +87,10 @@ func executeGuardedSQL(ctx context.Context, enginePlugin plugin.EnginePlugin, pr
 	if err := protect(result); err != nil {
 		return nil, err
 	}
-	if _, err := observe(ctx, readSet); err != nil {
-		return nil, err
+	if beforeDelivery != nil {
+		if _, err := beforeDelivery(ctx, readSet); err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }

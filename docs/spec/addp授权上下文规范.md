@@ -216,7 +216,7 @@ Notebook Session Authorization 是独立的短期用户派生事实，不是 Del
 
 交互 Notebook 按 Develop 的 Notebook 编辑和任务读取权限建立会话。纯 Python 计算与保存无需源数据 Grant。本期 PostgreSQL 数据引擎列表复用查询工作台的导航裁决，按会话原用户当前有效的 `metadata_read` 或 `read` Grant 和 Meta 正式身份筛选。其他数据引擎沿现行引擎管理读取资格发现，原有内容读取继续核验执行资格。无引擎管理读取资格且无有效来源 Grant 的普通用户得到空列表。PostgreSQL 管理权限不授予业务数据发现或读取权。
 
-PostgreSQL 交互 Notebook 的会话资格为 `develop.task.read` 和 `develop.notebook.update`。浏览时，System 以会话原用户核验当前 Grant，按可见结果分页，仅交付有权数据项及可导航的父节点。仅获 `metadata_read` 可浏览名称和必要结构。读取业务内容还要求 `develop.task.execute`、`develop.data_read.execute` 及覆盖全部实际来源的当前 `read`。表扫描和 SQL 均由同次执行的 Provider 绑定真实表和完整 ReadSet，System 根据会话派生执行授权核验主体、引擎版本、Meta 身份和有效 Grant。Develop 在读前、继续取批和交付前执行来源裁决，并执行现有 Security 保护。直接指定目标和 JOIN 使用同一规则。Notebook Copilot 只使用 PostgreSQL 字段声明生成代码，无需扫描数据来推断几何类型或范围。批量 script 派发另依排队执行契约。
+PostgreSQL 交互 Notebook 的会话资格为 `develop.task.read` 和 `develop.notebook.update`。浏览时，System 以会话原用户核验当前 Grant，按可见结果分页，仅交付有权数据项及可导航的父节点。仅获 `metadata_read` 可浏览名称和必要结构。读取业务内容还要求 `develop.task.execute`、`develop.data_read.execute` 及覆盖全部实际来源的当前 `read`。表扫描和 SQL 均由同次执行的 Provider 绑定真实表和完整 ReadSet，System 根据会话派生执行授权核验主体、引擎版本、Meta 身份和有效 Grant。每次 `head()`、`scan()` 或 `sql()` 实际打开读取时，Develop 对 Provider 已绑定的完整来源请求一次裁决。任一来源缺少有效 `read` 即拒绝整次读取，包括直接指定表和跨表 JOIN。获准的读取在本次既定期限内可以取完并交付全部批次。运行期间撤销表 Grant，从下一次读取起生效，即使复用同一 Kernel 和表对象也须重新裁决。会话关闭、执行取消、超时和 Security 保护仍在各自边界生效。Notebook Copilot 只使用 PostgreSQL 字段声明生成代码，无需扫描数据来推断几何类型或范围。批量 script 派发另依排队执行契约。
 
 仅 `addp-develop` Runtime 可凭自身 Service Token 消费：目录操作当次核验；数据查询／扫描须为新 execution 派生单引擎 read 授权，保留 Session 来源。Session 到期不刷新；同 Family 正常 Token 轮换不影响 Session，但撤销、重用、身份／授权版本变化或显式关闭必须阻断消费并联动撤销有效派生授权。长扫描在短租约边界重核，失效关闭 Cursor；Develop 重启丢失本地 Session 后拒绝访问。authorization ID 只是引用，不是 Bearer。
 

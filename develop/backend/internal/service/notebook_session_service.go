@@ -324,18 +324,20 @@ func (s *NotebookSessionService) StreamTable(
 			return plugin.ErrQueryReadSetUnresolved
 		}
 		observe := s.postgresReadObserver(session, access)
-		var sources *plugin.QueryReadSet
+		var observed *commonClient.DevelopQueryReadObservation
 		readSession, err = guarded.OpenGuardedTableReadSession(executionCtx, plugin.ConnectionInfo(access.Engine.ConnectionInfo), path, opts, func(ctx context.Context, set *plugin.QueryReadSet, _ []datatype.FieldInfo) error {
-			sources = set.Clone()
-			_, err := observe(ctx, sources)
-			return err
+			var checkErr error
+			observed, checkErr = observe(ctx, set)
+			return checkErr
 		})
 		if err == nil {
-			if sources == nil {
+			if observed == nil {
 				closeNotebookReadSession(readSession)
 				return plugin.ErrQueryReadSetUnresolved
 			}
-			readSession = &notebookAuthorizedCursor{TableReadSession: readSession, observe: observe, sources: sources}
+			var cancelRead context.CancelFunc
+			executionCtx, cancelRead = context.WithDeadline(executionCtx, observed.ExpiresAt)
+			defer cancelRead()
 		}
 	} else {
 		readSession, err = provider.OpenTableReadSession(executionCtx, plugin.ConnectionInfo(access.Engine.ConnectionInfo), path, opts)
@@ -443,7 +445,7 @@ func (s *NotebookSessionService) StreamQuery(
 	defer endProtection()
 	var result *plugin.QueryResult
 	if access.Engine.EngineType == "postgresql" {
-		result, err = executeGuardedSQL(executionCtx, enginePlugin, prepared, int(request.MaxRows), protectResult, s.postgresReadObserver(session, access))
+		result, err = executeGuardedSQL(executionCtx, enginePlugin, prepared, int(request.MaxRows), protectResult, s.postgresReadObserver(session, access), nil)
 	} else {
 		result, err = prepared.Execute(executionCtx)
 		if err == nil {
@@ -479,29 +481,6 @@ func (s *NotebookSessionService) postgresReadObserver(session *NotebookSession, 
 			EngineID: access.EngineID, EngineVersion: strconv.FormatInt(access.Engine.Version, 10), ReadSet: set,
 		})
 	}
-}
-
-type notebookAuthorizedCursor struct {
-	plugin.TableReadSession
-	observe queryReadObserver
-	sources *plugin.QueryReadSet
-}
-
-func (c *notebookAuthorizedCursor) ReadBatch(ctx context.Context, limit int) (*plugin.BatchData, error) {
-	observed, err := c.observe(ctx, c.sources)
-	if err != nil {
-		return nil, err
-	}
-	readCtx, cancel := context.WithDeadline(ctx, observed.ExpiresAt)
-	defer cancel()
-	batch, err := c.TableReadSession.ReadBatch(readCtx, limit)
-	if err != nil {
-		return nil, err
-	}
-	if _, err = c.observe(ctx, c.sources); err != nil {
-		return nil, err
-	}
-	return batch, nil
 }
 
 func notebookQueryLanguageSupported(languages []string, requested string) bool {
