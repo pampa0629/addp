@@ -12,7 +12,10 @@ case "$provider" in
   postgres)
     # This fixture creates roles. Only the dedicated Actions service can enter.
     [[ ${GITHUB_ACTIONS:-} == true && $container == "${ORCHESTRATOR_CI_PG_ID:?}" && $container =~ ^[a-f0-9]{64}$ ]]
-    export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 POSTGRES_DB=addp_orchestrator_test
+    # Leave the service's original database empty for the legacy migration suite.
+    docker exec "$container" psql -Xw -v ON_ERROR_STOP=1 -U addp_ci -d postgres \
+      -c 'CREATE DATABASE addp_orchestrator_deployment'
+    export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 POSTGRES_DB=addp_orchestrator_deployment
     export ADDP_DATABASE_DEPLOY_USER=orchestrator_install ADDP_DATABASE_RUNTIME_USER=platform_run
     ADDP_DATABASE_DEPLOY_PASSWORD=$(openssl rand -hex 24)
     ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 24)
@@ -21,7 +24,7 @@ case "$provider" in
     pg <<SQL
 CREATE ROLE orchestrator_install LOGIN PASSWORD '$ADDP_DATABASE_DEPLOY_PASSWORD';
 CREATE ROLE platform_run LOGIN PASSWORD '$ADDP_DATABASE_RUNTIME_PASSWORD';
-GRANT CREATE ON DATABASE addp_orchestrator_test TO orchestrator_install;
+GRANT CREATE ON DATABASE addp_orchestrator_deployment TO orchestrator_install;
 CREATE SCHEMA common AUTHORIZATION orchestrator_install;
 CREATE SCHEMA orchestrator AUTHORIZATION orchestrator_install;
 GRANT USAGE ON SCHEMA common,orchestrator TO platform_run;
