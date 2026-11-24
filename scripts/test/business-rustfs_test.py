@@ -47,11 +47,14 @@ class RustFSDeploymentTest(unittest.TestCase):
 set -eu
 case "$1 $2" in
     'compose --env-file')
-        echo '{"services":{"rustfs":{"ports":[{"published":"9004","target":9000}]}}}'
+        test "${8-} ${9-} ${10-}" = 'config --format json'
+        exec "$COMPOSE_DOCKER" compose --env-file /dev/null --file "$5" --profile rustfs config --format json
         ;;
     'compose --project-name')
         case "$6" in
-            up) echo "$(( $(cat "$STATE") + 1 ))" > "$STATE" ;;
+            up)
+                cp "$5" "$STATE.compose.json"
+                echo "$(( $(cat "$STATE") + 1 ))" > "$STATE" ;;
             port) echo "127.0.0.1:$((32767 + $(cat "$STATE")))" ;;
             ps) echo "container-$(cat "$STATE")" ;;
             rm|down) ;;
@@ -100,11 +103,15 @@ printf -- '--- PASS: %s (0.00s)\n' "$contract"
             state = root/'state'
             state.write_text('0')
             env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'], STATE=str(state),
+                       COMPOSE_DOCKER=shutil.which('docker'),
                        GITHUB_ACTIONS='true', ADDP_TEST_POSTGRES_PORT='5432',
                        ADDP_TEST_POSTGRES_PASSWORD='fixture')
             run = subprocess.run(['bash', str(ROOT/'scripts/test/common-rustfs-gate.sh')],
                                  env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(run.returncode, 0, run.stdout+run.stderr)
+            service = json.loads((root/'state.compose.json').read_text())['services']['rustfs']
+            self.assertEqual(service['environment']['RUSTFS_OBS_LOGGER_LEVEL'], 'warn,rustfs::app::object::get=debug')
+            self.assertEqual(service['environment']['RUSTFS_OBS_LOG_STDOUT_ENABLED'], 'true')
             self.assertIn('container=container-1 endpoint=127.0.0.1:32768', run.stdout)
             self.assertIn('container=container-2 endpoint=127.0.0.1:32769', run.stdout)
             volumes = [line.split('data_volume=')[1] for line in run.stdout.splitlines() if 'data_volume=' in line]
