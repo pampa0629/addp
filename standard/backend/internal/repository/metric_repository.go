@@ -140,7 +140,7 @@ func (r *MetricRepository) List(tenantID int64, opts ListMetricOptions) ([]model
 	}
 	if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
 		pattern := "%" + keyword + "%"
-		query = query.Where(`metric_definitions.code ILIKE ? OR EXISTS (SELECT 1 FROM standard.metric_definition_revisions mr WHERE mr.metric_definition_id = metric_definitions.id AND (mr.name ILIKE ? OR mr.definition ILIKE ? OR mr.statistical_caliber ILIKE ?))`, pattern, pattern, pattern, pattern)
+		query = query.Where(`LOWER(metric_definitions.code) LIKE LOWER(?) OR EXISTS (SELECT 1 FROM standard.metric_definition_revisions mr WHERE mr.metric_definition_id = metric_definitions.id AND (LOWER(mr.name) LIKE LOWER(?) OR LOWER(mr.definition) LIKE LOWER(?) OR LOWER(mr.statistical_caliber) LIKE LOWER(?)))`, pattern, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Distinct("metric_definitions.id").Count(&total).Error; err != nil {

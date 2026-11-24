@@ -139,8 +139,8 @@ func (r *DocumentRepository) List(tenantID int64, opts ListDocumentOptions) ([]m
 	}
 	if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
 		pattern := "%" + keyword + "%"
-		query = query.Where(`documents.code ILIKE ? OR documents.source_org ILIKE ? OR EXISTS (
-			SELECT 1 FROM standard.document_revisions dr WHERE dr.document_id = documents.id AND (dr.name ILIKE ? OR dr.description ILIKE ?)
+		query = query.Where(`LOWER(documents.code) LIKE LOWER(?) OR LOWER(documents.source_org) LIKE LOWER(?) OR EXISTS (
+			SELECT 1 FROM standard.document_revisions dr WHERE dr.document_id = documents.id AND (LOWER(dr.name) LIKE LOWER(?) OR LOWER(dr.description) LIKE LOWER(?))
 		)`, pattern, pattern, pattern, pattern)
 	}
 	var total int64

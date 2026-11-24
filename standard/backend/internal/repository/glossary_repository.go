@@ -105,9 +105,9 @@ func (r *GlossaryRepository) List(tenantID int64, opts ListGlossaryOptions) ([]m
 	}
 	if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
 		pattern := "%" + keyword + "%"
-		query = query.Where(`glossaries.code ILIKE ? OR EXISTS (
+		query = query.Where(`LOWER(glossaries.code) LIKE LOWER(?) OR EXISTS (
 			SELECT 1 FROM standard.glossary_revisions gr
-			WHERE gr.glossary_id = glossaries.id AND (gr.name ILIKE ? OR gr.definition ILIKE ?)
+			WHERE gr.glossary_id = glossaries.id AND (LOWER(gr.name) LIKE LOWER(?) OR LOWER(gr.definition) LIKE LOWER(?))
 		)`, pattern, pattern, pattern)
 	}
 	var total int64

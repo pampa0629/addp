@@ -91,11 +91,11 @@ func TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts(t *testing.T) {
 	if err != nil || len(domains) != 2 || domains[0].Name != "Sales" || domains[1].LifecycleState != "deleting" {
 		t.Fatalf("domains=%#v err=%v", domains, err)
 	}
-	glossaries, total, err := repository.ListGlossaryCandidates(context.Background(), tenantID, "customer", 1, 20)
+	glossaries, total, err := repository.ListGlossaryCandidates(context.Background(), tenantID, "cUsToMeR", 1, 20)
 	if err != nil || total != 1 || len(glossaries) != 1 || glossaries[0].Status != models.RevisionStatusPublished || glossaries[0].RevisionID == 0 {
 		t.Fatalf("glossaries=%#v total=%d err=%v", glossaries, total, err)
 	}
-	elements, total, err := repository.ListElementCandidates(context.Background(), tenantID, "customer", 1, 20)
+	elements, total, err := repository.ListElementCandidates(context.Background(), tenantID, "cUsToMeR", 1, 20)
 	if err != nil || total != 1 || len(elements) != 1 || elements[0].Code != "customer_id"+codeSuffix || elements[0].ScopeType != models.StandardScopeTenantCommon || elements[0].OwnerDomainID != nil {
 		t.Fatalf("elements=%#v total=%d err=%v", elements, total, err)
 	}

@@ -101,9 +101,9 @@ func (r *ElementRepository) List(tenantID int64, opts ListElementOptions) ([]mod
 	}
 	if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
 		pattern := "%" + keyword + "%"
-		query = query.Where(`elements.code ILIKE ? OR EXISTS (
+		query = query.Where(`LOWER(elements.code) LIKE LOWER(?) OR EXISTS (
 			SELECT 1 FROM standard.element_revisions er
-			WHERE er.element_id = elements.id AND (er.name ILIKE ? OR er.definition ILIKE ?)
+			WHERE er.element_id = elements.id AND (LOWER(er.name) LIKE LOWER(?) OR LOWER(er.definition) LIKE LOWER(?))
 		)`, pattern, pattern, pattern)
 	}
 	var total int64

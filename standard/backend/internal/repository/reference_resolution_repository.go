@@ -102,7 +102,7 @@ func (r *ReferenceResolutionRepository) ListGlossaryCandidates(ctx context.Conte
 		Where("g.tenant_id = ? AND g.lifecycle_state = ?", tenantID, "active")
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("gr.name ILIKE ? OR g.code ILIKE ? OR gr.definition ILIKE ?", pattern, pattern, pattern)
+		query = query.Where("LOWER(gr.name) LIKE LOWER(?) OR LOWER(g.code) LIKE LOWER(?) OR LOWER(gr.definition) LIKE LOWER(?)", pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -121,7 +121,7 @@ func (r *ReferenceResolutionRepository) ListElementCandidates(ctx context.Contex
 		Where("e.tenant_id = ? AND e.lifecycle_state = ?", tenantID, "active")
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("er.name ILIKE ? OR e.code ILIKE ? OR er.definition ILIKE ?", pattern, pattern, pattern)
+		query = query.Where("LOWER(er.name) LIKE LOWER(?) OR LOWER(e.code) LIKE LOWER(?) OR LOWER(er.definition) LIKE LOWER(?)", pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

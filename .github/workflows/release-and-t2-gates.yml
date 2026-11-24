@@ -2357,6 +2357,9 @@ jobs:
           go-version-file: standard/backend/go.mod
           cache: false
 
+      - name: Verify Standard keyword search on case-sensitive MySQL 8
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-standard-search'
+
       - name: Run Standard PostgreSQL and disposable MinIO integration gate
         env:
           STANDARD_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_standard_test?sslmode=disable

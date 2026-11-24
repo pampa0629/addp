@@ -92,9 +92,9 @@ func (r *CodeSetRepository) List(tenantID int64, opts ListCodeSetOptions) ([]mod
 	}
 	if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
 		pattern := "%" + keyword + "%"
-		query = query.Where(`code_sets.code ILIKE ? OR EXISTS (
+		query = query.Where(`LOWER(code_sets.code) LIKE LOWER(?) OR EXISTS (
 			SELECT 1 FROM standard.code_set_revisions csr
-			WHERE csr.code_set_id = code_sets.id AND (csr.name ILIKE ? OR csr.description ILIKE ?)
+			WHERE csr.code_set_id = code_sets.id AND (LOWER(csr.name) LIKE LOWER(?) OR LOWER(csr.description) LIKE LOWER(?))
 		)`, pattern, pattern, pattern)
 	}
 	var total int64
