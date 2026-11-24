@@ -2,42 +2,22 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
+	"github.com/addp/common/engine/plugins/postgresql"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/transfer/internal/protection"
 )
-
-type fieldRecommendationEngineGetterStub struct {
-	tenantIDs []uint
-	engineIDs []uint
-	engines   map[uint]*commonmodels.Engine
-	errors    map[uint]error
-}
-
-func availableFieldRecommendationEngine(t *testing.T, id uint, engineType string) *commonmodels.Engine {
-	t.Helper()
-	plug, err := plugin.Get(engineType)
-	if err != nil {
-		t.Fatal(err)
-	}
-	capabilitiesJSON, err := plugin.MarshalEngineCapabilities(plug.Capabilities())
-	if err != nil {
-		t.Fatal(err)
-	}
-	capabilities := commonmodels.JSONString(capabilitiesJSON)
-	return &commonmodels.Engine{
-		ID:               id,
-		EngineType:       engineType,
-		LifecycleState:   commonmodels.EngineLifecycleActive,
-		ConnectionStatus: commonmodels.EngineConnectionOnline,
-		Capabilities:     &capabilities,
-	}
-}
 
 func TestFieldRecommendationTargetUsesDeclaredDecimalLimits(t *testing.T) {
 	for _, engineType := range []string{"mysql", "oceanbase"} {
@@ -57,34 +37,122 @@ func TestFieldRecommendationTargetUsesDeclaredDecimalLimits(t *testing.T) {
 	}
 }
 
-func TestFieldRecommendationRejectsTargetWithoutDecimalLimits(t *testing.T) {
-	getter := &fieldRecommendationEngineGetterStub{engines: map[uint]*commonmodels.Engine{
-		9: availableFieldRecommendationEngine(t, 9, "postgresql"),
-	}}
-	service := NewFieldDefinitionRecommendationService(getter, allowFieldRecommendationProtectionGate{})
-	_, err := service.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{
-		SourceLocator:  "addp://engine/8/path/public/amounts?type=table&item_id=60",
-		SourceFields:   []string{"amount"},
-		TargetEngineID: 9,
-	})
-	if !errors.Is(err, ErrFieldRecommendationUnsupported) || !reflect.DeepEqual(getter.engineIDs, []uint{9}) {
-		t.Fatalf("Recommend() error = %v, engine lookups = %v", err, getter.engineIDs)
-	}
-}
-
 type allowFieldRecommendationProtectionGate struct{}
 
 func (allowFieldRecommendationProtectionGate) RequireLocator(context.Context, uint, string) error {
 	return nil
 }
 
-func (s *fieldRecommendationEngineGetterStub) GetEngineForTenant(_ context.Context, tenantID, engineID uint) (*commonmodels.Engine, error) {
-	s.tenantIDs = append(s.tenantIDs, tenantID)
-	s.engineIDs = append(s.engineIDs, engineID)
-	if err := s.errors[engineID]; err != nil {
-		return nil, err
+// Use the production PostgreSQL catalog model and a deterministic source row stream.
+type recommendationSource struct{ postgresql.PostgreSQLPlugin }
+
+func (*recommendationSource) Type() string { return "recommendation-test-source" }
+func (*recommendationSource) OpenTableReadSession(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+	if !reflect.DeepEqual(path, plugin.TabularItemPath(8, "schema", "public", "amounts")) {
+		return nil, fmt.Errorf("unexpected source path: %v", path)
 	}
-	return s.engines[engineID], nil
+	return &recommendationRows{}, nil
+}
+
+type recommendationRows struct{ done bool }
+
+func (r *recommendationRows) ReadBatch(context.Context, int) (*plugin.BatchData, error) {
+	if r.done {
+		return &plugin.BatchData{}, nil
+	}
+	r.done = true
+	return &plugin.BatchData{Fields: []datatype.FieldInfo{{Name: "amount", Type: datatype.FieldTypeDecimal}},
+		Rows: []map[string]interface{}{{"amount": "123.45"}, {"amount": nil}, {"amount": "0.001"}}}, nil
+}
+func (*recommendationRows) Close(context.Context) error { return nil }
+
+type recommendationTokenSource struct{ executionTestTokenSource }
+
+func (recommendationTokenSource) Token(_ context.Context, tenant uint) (string, error) {
+	return fmt.Sprintf("tenant-%d", tenant), nil
+}
+
+func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
+	const descriptorPath = "/api/v1/system/runtime/engine-descriptors/9"
+	const sourcePath = "/api/v1/system/engines/8"
+	source := &recommendationSource{}
+	plugin.Register(source)
+	t.Cleanup(func() { plugin.Unregister(source.Type()) })
+	for _, tc := range []struct {
+		name             string
+		engineType       string
+		connectionStatus string
+		status           int
+		wantErr          error
+	}{
+		{"available", "mysql", "online", 200, nil},
+		{"other tenant", "", "", 403, ErrFieldRecommendationUnavailable},
+		{"offline", "mysql", "offline", 200, ErrFieldRecommendationUnavailable},
+		{"no decimal limit", "postgresql", "online", 200, ErrFieldRecommendationUnsupported},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var target commonmodels.EngineRuntimeDescriptor
+			if tc.status == http.StatusOK {
+				plug, err := plugin.Get(tc.engineType)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := plugin.MarshalEngineCapabilities(plug.Capabilities())
+				if err != nil {
+					t.Fatal(err)
+				}
+				caps := commonmodels.JSONString(data)
+				target = commonmodels.EngineRuntimeDescriptor{
+					ID: 9, EngineType: tc.engineType, LifecycleState: "active",
+					ConnectionStatus: tc.connectionStatus, Capabilities: &caps,
+				}
+			}
+			var paths []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer tenant-7" {
+					t.Error("unexpected System request method or tenant identity")
+					w.WriteHeader(403)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case descriptorPath:
+					if tc.status != 200 {
+						w.WriteHeader(tc.status)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(target)
+				case sourcePath:
+					tenant := uint(7)
+					_ = json.NewEncoder(w).Encode(commonmodels.Engine{ID: 8, TenantID: &tenant, EngineType: source.Type(), LifecycleState: "active", ConnectionStatus: "online"})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			tokens := recommendationTokenSource{}
+			engines := client.NewSystemClient(server.URL, tokens)
+			descriptor := protection.EngineDescriptorLookup(client.NewSystemServiceClient(server.URL, tokens, server.Client()))
+			svc := NewFieldDefinitionRecommendationService(engines, descriptor, allowFieldRecommendationProtectionGate{})
+			got, err := svc.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{SourceLocator: "addp://engine/8/path/public/amounts?type=table&item_id=60", SourceFields: []string{"amount"}, TargetEngineID: 9})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("recommendation error = %v, want %v", err, tc.wantErr)
+			}
+			wantPaths := []string{descriptorPath}
+			if tc.wantErr == nil {
+				wantPaths = append(wantPaths, sourcePath)
+				want := &FieldDefinitionRecommendationResult{TargetEngineType: tc.engineType, Basis: "exact_source_values", RowsScanned: 3,
+					Fields: []DecimalFieldRecommendation{{SourceField: "amount", Precision: 6, Scale: 3, NonNullCount: 2, FitsTarget: true}}}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("recommendation = %+v, want %+v", got, want)
+				}
+			}
+			if !reflect.DeepEqual(paths, wantPaths) {
+				t.Fatalf("System requests = %v, want %v", paths, wantPaths)
+			}
+		})
+	}
 }
 
 func TestDecimalValueShapePreservesExactRequiredDigits(t *testing.T) {
@@ -142,23 +210,5 @@ func TestRecommendationFieldsPreserveQuotedIdentifierCase(t *testing.T) {
 	}
 	if err := validateDecimalRecommendationFields(actual, []string{"amount"}); err == nil {
 		t.Fatal("case-distinct non-decimal field should be rejected")
-	}
-}
-
-func TestFieldRecommendationReadsSourceEngineInCurrentTenant(t *testing.T) {
-	getter := &fieldRecommendationEngineGetterStub{
-		engines: map[uint]*commonmodels.Engine{
-			9: availableFieldRecommendationEngine(t, 9, "oceanbase"),
-		},
-		errors: map[uint]error{8: errors.New("stop after tenant binding")},
-	}
-	service := NewFieldDefinitionRecommendationService(getter, allowFieldRecommendationProtectionGate{})
-	_, err := service.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{
-		SourceLocator:  "addp://engine/8/path/public/amounts?type=table&item_id=60",
-		SourceFields:   []string{"amount"},
-		TargetEngineID: 9,
-	})
-	if err == nil || !reflect.DeepEqual(getter.tenantIDs, []uint{7, 7}) || !reflect.DeepEqual(getter.engineIDs, []uint{9, 8}) {
-		t.Fatalf("tenant/engine bindings = (%v,%v), err=%v", getter.tenantIDs, getter.engineIDs, err)
 	}
 }

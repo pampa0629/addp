@@ -109,7 +109,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
 	}
-	protectionGate := transferprotection.NewGate(protectionStore, transferprotection.EngineDescriptorLookup(systemRuntimeClient))
+	engineDescriptor := transferprotection.EngineDescriptorLookup(systemRuntimeClient)
+	protectionGate := transferprotection.NewGate(protectionStore, engineDescriptor)
 	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, serviceTokenSource, nil)
 	projectionstore.NewRunner(
 		protectionStore, securityClient, systemRuntimeClient, 30*time.Second,
@@ -244,7 +245,7 @@ func main() {
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("transfer", commonClient.ModuleRuntimeRoleBackend)
-	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(systemClient, protectionGate)
+	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(systemClient, engineDescriptor, protectionGate)
 	router := api.SetupRouter(api.NewCleanupResultHandler(db), taskService, executionService, continuousPolicyService, fieldDefinitionRecommendationService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	listener, err := net.Listen("tcp", addr)

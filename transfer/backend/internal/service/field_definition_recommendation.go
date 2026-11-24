@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/format"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/transfer/internal/protection"
 )
 
 var (
@@ -49,16 +50,17 @@ type fieldRecommendationEngineGetter interface {
 }
 
 type FieldDefinitionRecommendationService struct {
-	engines        fieldRecommendationEngineGetter
-	protectionGate interface {
+	engines          fieldRecommendationEngineGetter
+	targetDescriptor protection.EngineDescriptorGetter
+	protectionGate   interface {
 		RequireLocator(context.Context, uint, string) error
 	}
 }
 
-func NewFieldDefinitionRecommendationService(engines fieldRecommendationEngineGetter, protectionGate interface {
+func NewFieldDefinitionRecommendationService(engines fieldRecommendationEngineGetter, targetDescriptor protection.EngineDescriptorGetter, protectionGate interface {
 	RequireLocator(context.Context, uint, string) error
 }) *FieldDefinitionRecommendationService {
-	return &FieldDefinitionRecommendationService{engines: engines, protectionGate: protectionGate}
+	return &FieldDefinitionRecommendationService{engines: engines, targetDescriptor: targetDescriptor, protectionGate: protectionGate}
 }
 
 func (s *FieldDefinitionRecommendationService) Recommend(
@@ -66,15 +68,12 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 	tenantID uint,
 	request FieldDefinitionRecommendationRequest,
 ) (*FieldDefinitionRecommendationResult, error) {
-	if s == nil || s.engines == nil || s.protectionGate == nil {
+	if s == nil || s.engines == nil || s.targetDescriptor == nil || s.protectionGate == nil {
 		return nil, ErrFieldRecommendationUnavailable
 	}
-	targetEngine, err := s.engines.GetEngineForTenant(ctx, tenantID, request.TargetEngineID)
-	if err != nil || !engineselection.IsAvailable(targetEngine) {
+	targetEngine, err := s.targetDescriptor(ctx, tenantID, request.TargetEngineID)
+	if err != nil || !engineselection.IsAvailable(targetEngine.AsEngine()) {
 		return nil, fmt.Errorf("%w: target engine is unavailable", ErrFieldRecommendationUnavailable)
-	}
-	if targetEngine.TenantID != nil && *targetEngine.TenantID != tenantID {
-		return nil, fmt.Errorf("%w: target engine is outside the current tenant", ErrFieldRecommendationInvalid)
 	}
 	targetCaps, err := engineselection.ParseCapabilities(targetEngine.Capabilities)
 	if err != nil {
