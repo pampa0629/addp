@@ -394,8 +394,51 @@ class FakeSourceIssuer:
 
 
 class FTPConsumerTest(unittest.TestCase):
+    def test_future_glb_requires_new_bytes_source_events_and_failure_cleanup(self):
+        good = (Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
+        original = 'models/glb/ 原名 %.GLB'
+        for case in ('pass', 'wrong bytes', 'positive observation absent', 'denied source transfer'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp).resolve()
+                parent = root/'data/models/glb'
+                parent.mkdir(parents=True)
+                (root/'data'/original).write_bytes(good)
+                auth, client = unittest.mock.Mock(), unittest.mock.Mock()
+                def grant(scope, **kw):
+                    self.assertEqual([s['name'] for s in scope['segments']], ['', 'models', 'glb'])
+                    self.assertEqual(kw, dict(action='read', recursive=False, seconds=None))
+                    self.assertEqual(len(list(parent.iterdir())), 1)
+                    return dict(request_id='grant')
+                auth.node_grant.side_effect = grant
+                def request(method, url, statuses, *args, **kwargs):
+                    if '/items' in url:
+                        return SimpleNamespace(payload=[dict(full_name=str(p.relative_to(root/'data')), id=n)
+                                                        for n,p in enumerate(parent.iterdir(), 1)])
+                    if statuses == (403,):
+                        self.assertIn('node-',url)
+                        return SimpleNamespace(payload={'error':'denied'})
+                    return SimpleNamespace(payload=b'wrong' if case=='wrong bytes' and 'node-' in url else good)
+                client.request.side_effect = request
+                counts = [b'2', b'2' if case=='positive observation absent' else b'3',
+                          b'4' if case=='denied source transfer' else b'3']
+                with patch.object(M,'owned_ftp_fixture',return_value=root), \
+                     patch.object(M,'scan_scope',return_value='scan'), patch.object(M,'source_read_control'), \
+                     patch.object(M,'exact_user_principal',return_value='8'), \
+                     patch.object(M,'ModelSourceAuthorization',return_value=auth), \
+                     patch.object(M.SUPPORT,'required_environment',return_value='unused'), \
+                     patch.object(M.SUPPORT,'GatewayClient'), patch.object(M.subprocess,'check_output',side_effect=counts):
+                    if case=='pass':
+                        result = M.verify_ftp_future_glb(client,2,17,30)
+                        self.assertEqual((result['allowed_transfers'],result['denied_transfers']), (1,0))
+                        self.assertEqual(result['bytes'],len(good))
+                    else:
+                        with self.assertRaises(M.SuiteError):
+                            M.verify_ftp_future_glb(client,2,17,30)
+                auth.cleanup.assert_called_once_with()
+                self.assertEqual(list(parent.iterdir()), [root/'data'/original])
+
     def test_file_node_grant_without_clock_expiry_revokes_its_own_command(self):
-        for source_type in ('minio', 'nfs'):
+        for source_type in ('minio', 'nfs', 'ftp'):
             with self.subTest(source_type=source_type):
                 report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8'}
                 issuer = unittest.mock.Mock()

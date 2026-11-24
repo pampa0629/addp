@@ -639,7 +639,7 @@ class ModelSourceAuthorization:
         self.node_receipts.pop(command, None)
 
     def node_grant(self, target, *, action, recursive, seconds=300):
-        require(self.source_type in {'minio', 'nfs'} and action in {'metadata_read', 'read'} and
+        require(self.source_type in {'minio', 'nfs', 'ftp'} and action in {'metadata_read', 'read'} and
                 type(recursive) is bool and (seconds is None or type(seconds) is int and 0 < seconds <= 300),
                 'bounded file node fixture required')
         command = str(uuid.uuid4())
@@ -1780,15 +1780,80 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     return report
 
+def verify_ftp_future_glb(client, tenant, engine, timeout):
+    root = owned_ftp_fixture()
+    data = root / 'data'
+    source = next(path for kind, path, _ in SEED.MODEL_SAMPLE_FILES if kind == 'glb')
+    parent = Path(source).parent
+    require((data / source).resolve() == data / source, 'expected the owned GLB fixture')
+    filename = parent / ('node-' + uuid.uuid4().hex + '.glb')
+    physical = data / filename
+    expected = (Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
+    require((data / source).read_bytes() == expected, 'unexpected GLB source fixture')
+    scan_scope(client, engine, [str(parent)], 'basic', timeout)
+    issuer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),
+                                   SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+    recipient = exact_user_principal(client, tenant, PERMISSIONS)
+    auth = ModelSourceAuthorization(issuer, client, dict(tenant_id=tenant, engine_id=engine, principal_id=recipient),
+                                    source_type='ftp', issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+    scope = file_target(engine, source, 'ftp')
+    scope['segments'].pop()
+    def download_count():
+        script = Path(__file__).resolve().parents[2] / 'business/ftp/admission.py'
+        return int(subprocess.check_output([sys.executable, str(script), 'count-downloads', str(filename)], timeout=35))
+
+    def download(path):
+        items = client.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,)).payload
+        item, = [row for row in items if row['full_name'] == path]
+        url = '/api/v1/manager/downloads/file?' + urlencode({'locator':file_locator(engine, item)})
+        raw = client.request('GET', url, (200,), raw_response=True).payload
+        require(raw == expected, 'FTP download differs from the pinned model')
+        return url
+    try:
+        grant = auth.node_grant(scope, action='read', recursive=False, seconds=None)
+        download(source)
+        with physical.open('xb') as stream:
+            try:
+                stream.write(expected)
+                stream.flush()
+                os.fchmod(stream.fileno(), 0o644)
+                scan = scan_scope(client, engine, [str(parent)], 'basic', timeout)
+                before = download_count()
+                url = download(str(filename))
+                after = download_count()
+                require(after > before, 'FTP allowed read missing from source transfer log')
+                auth.revoke(grant['request_id'])
+                source_read_control(client, engine, {'full_name':str(filename)}, 403)
+                denied = client.request('GET', url, (403,)).payload
+                require(denied.get('error') and set(denied) <= {'error', 'error_code'} and
+                        denied.get('error_code') != 'security_protection_required', 'expected source read denial')
+                require(download_count() == after,
+                        'withdrawn FTP read transferred the new model')
+            finally:
+                physical.unlink()
+    finally:
+        auth.cleanup()
+    return dict(engine_id=engine, principal_id=recipient, request_id=grant['request_id'], scope=scope,
+                scan=scan, allowed_transfers=after-before, denied_transfers=0, bytes=len(expected),
+                sha256=hashlib.sha256(expected).hexdigest(), fixture_removed=not physical.exists())
+
+
 def main():
     require(os.environ.get('ADDP_ONLINE_TEST') == '1' and os.environ.get('ADDP_ONLINE_HOSTED') == '1', 'FTP suite requires the Hosted Online entry')
     tenant = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant')
     engine = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_FTP_ENGINE_ID'), 'engine')
     timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
-    samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-samples.json').read_text())
-    model_samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-model-samples.json').read_text())
     client = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
     root_artifacts = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
+    case = os.environ.get('ADDP_ONLINE_FTP_CASE', 'full')
+    if case == 'node-glb':
+        node = verify_ftp_future_glb(client, tenant, engine, timeout)
+        (root_artifacts/'ftp-node-read.json').write_text(json.dumps(node))
+        print(json.dumps(node))
+        return 0
+    require(case == 'full', 'unknown FTP acceptance case')
+    samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-samples.json').read_text())
+    model_samples = json.loads((Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR')) / 'ftp-model-samples.json').read_text())
     report = run_profile(client, tenant, engine, samples, model_samples, timeout, 'ftp')
     nfs_engine = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_NFS_ENGINE_ID'), 'NFS engine')
     require(nfs_engine != engine, 'FTP and NFS must use distinct actual Engines')

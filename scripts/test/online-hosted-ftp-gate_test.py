@@ -113,6 +113,18 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
 
+    def test_node_glb_case_uses_only_the_owned_ftp_source(self):
+        result = self.run_gate(ADDP_ONLINE_FTP_CASE='node-glb')
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        trace = self.host.trace.read_text()
+        self.assertEqual(trace.count('register:'),1)
+        for expected in ('ftp-fixture:start','register:ftp-engine.json','make:test-online ONLINE_SUITE=ftp-consumer-flow',
+                         'ftp-fixture:stop','infra-down'):
+            self.assertIn(expected,trace)
+        for unrelated in ('nfs-fixture:', 'minio-fixture:', 'build-images:', 'docker-rm:addp-ftp-model3d-runtime'):
+            self.assertNotIn(unrelated,trace)
+        self.assertFalse(self.host.secrets.exists())
+
     def test_failure_at_each_owned_stage_still_cleans_platform_and_fixture(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL':'start'},{'ADDP_TEST_IDENTITY_FAIL':'1'},
                       {'ADDP_TEST_PROTECTION_WAIT_FAIL':'1'},{'ADDP_TEST_MINIO_FIXTURE_FAIL':'start'},

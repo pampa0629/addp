@@ -63,6 +63,22 @@ def allocate():
     raise RuntimeError('no isolated matching passive range available')
 
 
+def downloads_for_path(container, relative_path):
+    """Read server transfer events for one path in this admission's data mount."""
+    physical = '/srv/sftpgo/data/' + relative_path
+    result = subprocess.run(['docker', 'logs', container], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, check=True, timeout=30)
+    downloads = 0
+    for line in result.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get('sender') == 'Download' and event.get('file_path') == physical:
+            downloads += 1
+    return downloads
+
+
 def capture_server_logs(root, container, phase):
     """Publish counts only; keep bounded raw diagnostics in the private owner."""
     try:
@@ -268,6 +284,8 @@ def persistence():
         client.retrbinary('RETR /新增 目录%/嵌套/host-added.csv', contents.write)
         if contents.getvalue() != added_file.read_bytes():
             raise RuntimeError('FTP did not expose the live host directory')
+    if downloads_for_path(name, '新增 目录%/嵌套/host-added.csv') < 1:
+        raise RuntimeError('FTP source log did not record the completed native download')
     run('docker', 'rm', '-f', name)
     # The same host initialization used by standard startup restores only missing
     # examples. The container never copies or writes files in the read-only root.
@@ -332,7 +350,11 @@ def stop():
 
 if __name__ == '__main__':
     try:
-        {'start': start, 'stop': stop, 'persistence': persistence}[sys.argv[1]]()
+        if sys.argv[1] == 'count-downloads':
+            state = json.loads((owner() / 'state.json').read_text())
+            print(downloads_for_path(state['name'], sys.argv[2]))
+        else:
+            {'start': start, 'stop': stop, 'persistence': persistence}[sys.argv[1]]()
     except subprocess.CalledProcessError as exc:
         # Bootstrap command output can contain user records; never publish it.
         command_failure(exc, sys.argv[1])
