@@ -11,8 +11,10 @@ stop_online_fixture() { return 0; } # IAM history is owned by this run's Infra v
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export CONSOLE_URL=http://127.0.0.1:5170
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 application_owned=1
+hosted_prepare_native_database system meta gateway
+unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -system
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite platform-administrator-governance --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

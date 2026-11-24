@@ -19,7 +19,7 @@ export SECURITY_URL=http://127.0.0.1:8194
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/transfer-engine.json"
 export ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/transfer-mongodb-engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 ADDP_ONLINE_SCAN_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
 [[ "$ADDP_ONLINE_SCAN_POSTGRES_ID" =~ ^[0-9a-f]{64}$ ]] || fail 'Hosted scan requires the exact Infra PostgreSQL container ID'
 export ADDP_ONLINE_SCAN_POSTGRES_ID
@@ -27,9 +27,7 @@ fixture_owned=1
 run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start
 application_owned=1
 # Owners require the initial Security protection projection before data reads.
-for start_target in -security -transfer -manager -develop -orchestrator -monitor; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -security -transfer -manager -develop -orchestrator -monitor
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite transfer-relational-sql-etl --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

@@ -43,13 +43,11 @@ run_logged docker pull python:3.11-slim
 run_logged docker tag python:3.11-slim localhost:5001/python:3.11-slim
 run_logged docker push localhost:5001/python:3.11-slim
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 run_logged python3 business/scripts/online-raster-contour-fixture.py start
 CONTOUR_ROOT=$(cat "$ADDP_ONLINE_SECRET_DIR/contour-root")
 application_owned=1
-for start_target in -security -develop -manager -monitor; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -security -develop -manager -monitor
 start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,source=$CONTOUR_ROOT,target=$CONTOUR_ROOT"
 run_logged python3 business/scripts/online-raster-contour-fixture.py seed
 # Reuse the existing ordinary raster identity and its exact twelve permissions.

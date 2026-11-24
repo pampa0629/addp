@@ -29,7 +29,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         (self.repository / "scripts/lib").mkdir(parents=True)
         (self.repository / "scripts/infra").mkdir(parents=True)
         self.bin.mkdir()
-        (self.repository / ".gitignore").write_text(".dev-bins/\nvenv/\n")
+        (self.repository / ".gitignore").write_text(".dev-bins/\nvenv/\n__pycache__/\n")
         shutil.copy2(SCRIPT, self.repository / "scripts/test/online-hosted-opengauss-gate.sh")
         shutil.copy2(SCRIPT.with_name("hosted-platform-database.sh"), self.repository / "scripts/test/hosted-platform-database.sh")
         shutil.copy2(
@@ -44,6 +44,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         shutil.copy2(SCRIPT.parents[1] / "utils/hosted-online.sh", self.repository / "scripts/utils/hosted-online.sh")
         shutil.copy2(SCRIPT.parents[1] / "utils/hosted-product-runtime.sh", self.repository / "scripts/utils/hosted-product-runtime.sh")
         shutil.copy2(SCRIPT.parents[1] / "utils/observability-env.sh", self.repository / "scripts/utils/observability-env.sh")
+        shutil.copy2(SCRIPT.parents[1] / "infra/platform-database.sh", self.repository / "scripts/infra/platform-database.sh")
         self._executable(
             "uname",
             """
@@ -187,6 +188,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             """,
         )
         self._write_repository_script("scripts/infra/ports.sh", """
+            addp_infra_verify_container() { [ "$1:$2" = postgres:addp-postgres ] && [ "${ADDP_TEST_FOREIGN_DATABASE:-0}" = 0 ]; }
             addp_infra_mapped_port() { [ "$1:$2" = addp-postgres:5432 ] && echo 25432; }
         """)
         self._write_repository_script("scripts/dev/lifecycle-lock.sh", """
@@ -226,7 +228,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             if [ -n "${ADDP_DATABASE_RUNTIME_USER:-}" ]; then
               [ "$ADDP_DATABASE_RUNTIME_USER" = platform_runtime ] && [ -n "$ADDP_DATABASE_RUNTIME_PASSWORD" ] &&
-                [ -z "${ADDP_DATABASE_DEPLOY_PASSWORD+x}" ] || exit 1
+                [ -z "${ADDP_DATABASE_DEPLOY_USER+x}${ADDP_DATABASE_DEPLOY_PASSWORD+x}${hosted_deploy_password+x}" ] || exit 1
             fi
             echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
             sleep 30 &
@@ -340,6 +342,16 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             timeout=10,
         )
 
+    def test_foreign_database_stops_before_installation(self):
+        self.prepare_run_fixture()
+        result = self.run_gate(ADDP_TEST_FOREIGN_DATABASE="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.trace.read_text()
+        self.assertNotIn("install:", trace)
+        self.assertNotIn("start:", trace)
+        self.assertNotIn("make:test-online", trace)
+        self.assertFalse(self.secrets.exists())
+
     def test_database_install_failure_stops_before_system(self):
         self.prepare_run_fixture()
         result = self.run_gate(ADDP_TEST_INSTALL_FAIL="prepare-database common")
@@ -349,6 +361,61 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         self.assertNotIn("start:", trace)
         self.assertNotIn("make:test-online", trace)
         self.assertFalse(self.secrets.exists())
+
+    def test_native_targets_follow_the_product_registry_and_isolate_installer_credentials(self):
+        self.prepare_run_fixture()
+        registry = self.repository / "scripts/infra/platform-database.sh"
+        registry.write_text(registry.read_text().replace("meta|gateway|", "future|meta|gateway|"))
+        script = r"""
+            set -euo pipefail
+            source scripts/test/hosted-platform-database.sh
+            run_logged() { "$@"; }
+            run_daemon_launcher_logged() { "$@" >> "$ADDP_TEST_GATE_TRACE.launch" 2>&1; }
+            infra_owned=1
+            hosted_start_platform_infra
+            hosted_start_native_modules -future -develop -security
+        """
+        env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", ROOT_DIR=str(self.repository),
+                   ADDP_TEST_GATE_TRACE=str(self.trace), ADDP_TEST_BACKGROUND_PIDS=str(self.background_pids),
+                   ADDP_ONLINE_HOSTED="1", POSTGRES_DB="addp_online", ADDP_DATABASE_DEPLOY_USER="ambient",
+                   ADDP_DATABASE_DEPLOY_PASSWORD="ambient", hosted_deploy_password="ambient")
+        result = subprocess.run(["bash", "-c", script], cwd=self.repository, env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = self.trace.read_text().splitlines()
+        self.assertEqual([line for line in trace if line.startswith("install:")], [
+            "install:addp-system:prepare-database system", "install:addp-system:prepare-database common",
+            "install:addp-meta:prepare-database", "install:addp-gateway:prepare-database",
+            "install:addp-future:prepare-database", "install:addp-security:prepare-database"])
+        self.assertLess(trace.index("install:addp-security:prepare-database"), trace.index("start:-future"))
+        self.assertIn("start:-develop", trace)
+
+    def test_split_checkout_uses_the_selected_products_database_contract(self):
+        helper = SCRIPT.with_name("hosted-platform-database.sh")
+        product = self.root / "selected"
+        (product / "scripts/infra").mkdir(parents=True)
+        (product / "scripts/test").mkdir()
+        env = dict(os.environ, ROOT_DIR=str(product), HARNESS_DATABASE=str(helper))
+        script = r"""
+            set -eu
+            source "$HARNESS_DATABASE"
+            run_logged() { echo "old product: $*"; }
+            hosted_start_platform_infra() { echo current-infra; }
+            hosted_prepare_native_database() { echo "current-install: $*"; }
+            hosted_start_selected_platform_infra
+            hosted_prepare_selected_native_database manager security
+        """
+        def run():
+            return subprocess.check_output(["bash", "-c", script], env=env, text=True).splitlines()
+
+        self.assertEqual(run(), ["old product: bash scripts/infra/up.sh"])
+        (product / "scripts/test/hosted-platform-database.sh").write_text(
+            'hosted_start_platform_infra() { echo pinned-infra; }\n'
+            'hosted_prepare_native_database() { echo "pinned-install: $#"; }\n')
+        self.assertEqual(run(), ["pinned-infra", "pinned-install: 0"])
+        registry = product / "scripts/infra/platform-database.sh"
+        registry.write_text('addp_prepare_module_database() { [[ "$1" == manager ]]; }\n')
+        self.assertEqual(run(), ["current-infra", "current-install: system meta gateway manager"])
 
     def test_initialization_failure_prevents_registration_and_scene(self):
         self.prepare_run_fixture()

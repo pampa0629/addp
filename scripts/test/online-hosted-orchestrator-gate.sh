@@ -67,7 +67,7 @@ if [ "$ORCHESTRATOR_CASE" = scheduled-controlled-file ]; then
   export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1740
   export SECURITY_URL=http://127.0.0.1:8194
   infra_owned=1
-  run_logged bash scripts/infra/up.sh
+  hosted_start_platform_infra
   ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
   export ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID
   fixture_owned=1
@@ -84,6 +84,8 @@ if [ "$ORCHESTRATOR_CASE" = scheduled-controlled-file ]; then
   run_logged docker tag python:3.11-slim localhost:5001/python:3.11-slim
   run_logged docker push localhost:5001/python:3.11-slim
   application_owned=1
+  hosted_prepare_native_database system meta gateway security
+  unset hosted_deploy_password
   for start_target in -security -meta -orchestrator -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
@@ -111,7 +113,7 @@ if [ "$ORCHESTRATOR_CASE" = scheduled-controlled-file ]; then
   exit 0
 fi
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
 export ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID
 fixture_owned=1
@@ -129,6 +131,8 @@ done
 source "$ADDP_ONLINE_SECRET_DIR/orchestrator-proxy.env"
 export ADDP_ONLINE_ORCHESTRATOR_PROXY_URL
 application_owned=1
+hosted_prepare_native_database system meta gateway
+unset hosted_deploy_password
 for start_target in -meta -orchestrator -monitor; do
   case "$start_target" in
     -meta)

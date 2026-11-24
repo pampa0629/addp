@@ -101,7 +101,8 @@ class HostedFTPTest(HIGHGO.HostedHighGoTest):
         result=self.run_gate()
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         trace=self.host.trace.read_text()
-        order=['docker-run:addp-ftp-online-registry','build:','infra-up','ftp-fixture:start','start:-security','start:-meta','start:-manager','docker-run:addp-ftp-model3d-runtime','--suite ftp-consumer-flow',
+        order=['docker-run:addp-ftp-online-registry','build:','infra-up','ftp-fixture:start','install:addp-system:prepare-database system','install:addp-system:prepare-database common',
+            'install:addp-meta:prepare-database','install:addp-gateway:prepare-database','install:addp-security:prepare-database','install:addp-manager:prepare-database','start:-security','start:-meta','start:-manager','docker-run:addp-ftp-model3d-runtime','--suite ftp-consumer-flow',
             '--wait-protection-owners manager',
             'register:ftp-engine.json','register:ftp-nfs-engine.json','register:ftp-minio-engine.json','make:test-online ONLINE_SUITE=ftp-consumer-flow',
             'application-stop','docker-rm:addp-ftp-model3d-runtime','ftp-fixture:stop','docker-rm:addp-ftp-online-registry','infra-down']

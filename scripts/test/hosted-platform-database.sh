@@ -2,14 +2,15 @@
 # admitted an empty addp-infra project and takes responsibility for its cleanup.
 hosted_start_platform_infra() {
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "$POSTGRES_DB" = addp_online ] && [ "$infra_owned" = 1 ] || return 1
+  unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD hosted_deploy_password
   POSTGRES_PASSWORD=$(openssl rand -hex 32)
   export POSTGRES_PASSWORD
-  run_logged bash scripts/infra/up.sh
+  run_logged env "$@" bash scripts/infra/up.sh
+  source "$ROOT_DIR/scripts/infra/ports.sh"
+  addp_infra_verify_container postgres addp-postgres || return 1
   hosted_deploy_password=$(openssl rand -hex 32)
   ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 32)
   export ADDP_DATABASE_RUNTIME_USER=platform_runtime ADDP_DATABASE_RUNTIME_PASSWORD
-  # The installer owns the namespaces. Only the install
-  # identity owns them; tables and sequences inherit the platform runtime grants.
   docker exec -i addp-postgres sh -ec '
     test "$POSTGRES_DB" = addp_online
     export PGPASSWORD="$POSTGRES_PASSWORD"
@@ -19,63 +20,129 @@ BEGIN;
 CREATE ROLE platform_deploy LOGIN PASSWORD '$hosted_deploy_password';
 CREATE ROLE platform_runtime LOGIN PASSWORD '$ADDP_DATABASE_RUNTIME_PASSWORD';
 GRANT CREATE ON DATABASE addp_online TO platform_deploy;
-CREATE SCHEMA inference AUTHORIZATION platform_deploy;
-DO \$roles\$
-DECLARE ns text;
-BEGIN
-  FOREACH ns IN ARRAY ARRAY['system','common','meta','gateway','manager','inference','workbench','agent','copilot'] LOOP
-    EXECUTE format('ALTER SCHEMA %I OWNER TO platform_deploy', ns);
-    EXECUTE format('GRANT USAGE ON SCHEMA %I TO platform_runtime', ns);
-    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platform_runtime', ns);
-    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA %I GRANT USAGE, SELECT ON SEQUENCES TO platform_runtime', ns);
-  END LOOP;
-END \$roles\$;
 COMMIT;
 SQL
 }
 
+# The module registry supplies the installer command and the actual schema name.
+# On Hosted the database is empty except for Infra's preinstalled namespaces.
+hosted_prepare_namespace() {
+  local namespace=$1
+  docker exec -i addp-postgres sh -ec '
+    test "$POSTGRES_DB" = addp_online
+    export PGPASSWORD="$POSTGRES_PASSWORD"
+    exec psql -Xq -v ON_ERROR_STOP=1 -v ns="$1" -h 127.0.0.1 -U "$POSTGRES_USER" -d addp_online
+  ' _ "$namespace" <<'SQL'
+BEGIN;
+CREATE SCHEMA IF NOT EXISTS :"ns" AUTHORIZATION platform_deploy;
+ALTER SCHEMA :"ns" OWNER TO platform_deploy;
+GRANT USAGE ON SCHEMA :"ns" TO platform_runtime;
+SELECT has_schema_privilege('platform_runtime', :'ns', 'USAGE')
+   AND NOT has_schema_privilege('platform_runtime', :'ns', 'CREATE')
+   AND NOT has_database_privilege('platform_runtime', current_database(), 'CREATE') AS restricted \gset
+\if :restricted
+\else
+  DO $$ BEGIN RAISE EXCEPTION 'Hosted runtime has incorrect schema privileges'; END $$;
+\endif
+ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA :"ns"
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platform_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA :"ns"
+  GRANT USAGE, SELECT ON SEQUENCES TO platform_runtime;
+COMMIT;
+SQL
+}
+
+hosted_install_database() (
+  local owner=$1 language=$2 namespace=$1
+  shift 2
+  if [[ "$owner" == system ]]; then namespace=$2; fi
+  hosted_prepare_namespace "$namespace" || exit 1
+  echo "Preparing Hosted platform database: $namespace"
+  local command
+  if [[ -n "${hosted_compose:-}" ]]; then
+    local service="$owner-backend" entry=/app/server
+    if [[ "$owner" == gateway ]]; then service=gateway; fi
+    if [[ "$language" == python ]]; then entry=python; fi
+    command=("$hosted_compose" run --rm -T --no-deps --entrypoint "$entry"
+      -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service")
+  elif [[ "$language" == python ]]; then
+    source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
+    addp_prepare_python_backend "$ROOT_DIR" "$owner" || exit 1
+    cd "$ROOT_DIR/$owner/backend" || exit 1
+    command=(./venv/bin/python)
+  else
+    local dir="$owner/backend" entry=./cmd/server binary=".dev-bins/addp-$owner"
+    if [[ "$owner" == gateway ]]; then dir=gateway; entry=./cmd/gateway; fi
+    # The registry invokes System then Common on the same System binary.
+    if [[ "$namespace" != common ]] && ! addp_go_build_is_current "$dir" "$binary" "$entry"; then
+      addp_atomic_go_build "$owner" "$dir" "$binary" "$entry" || exit 1
+    fi
+    command=("$ROOT_DIR/$binary")
+  fi
+  ADDP_DATABASE_DEPLOY_USER=platform_deploy ADDP_DATABASE_DEPLOY_PASSWORD="${hosted_deploy_password:?}" \
+    "${command[@]}" "$@"
+)
+
 hosted_prepare_compose_database() (
-  export ADDP_DATABASE_DEPLOY_USER=platform_deploy ADDP_DATABASE_DEPLOY_PASSWORD="$hosted_deploy_password"
-  local service=$1
+  local hosted_compose=$1 owner
   shift
-  compose_app run --rm -T --no-deps --entrypoint /app/server \
-    -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service" prepare-database "$@"
+  source "$ROOT_DIR/scripts/infra/platform-database.sh"
+  for owner in "$@"; do addp_prepare_module_database "$owner" hosted_install_database || exit 1; done
 )
 
 hosted_prepare_native_database() (
+  source "$ROOT_DIR/scripts/infra/platform-database.sh"
   source "$ROOT_DIR/scripts/dev/build-identity.sh"
   source "$ROOT_DIR/scripts/infra/ports.sh"
   export GOPATH="$ROOT_DIR/.gopath" GOMODCACHE="$ROOT_DIR/.gomodcache" GOTOOLCHAIN=local
   POSTGRES_PORT=$(addp_infra_mapped_port addp-postgres 5432)
   export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT
-  local owner dir entry binary
-  for owner in system meta gateway "$@"; do
-    case "$owner" in agent|copilot) continue ;; esac
-    dir="$owner/backend"
-    entry=./cmd/server
-    if [ "$owner" = gateway ]; then dir=gateway; entry=./cmd/gateway; fi
-    binary=".dev-bins/addp-$owner"
-    if ! addp_go_build_is_current "$dir" "$binary" "$entry"; then
-      addp_atomic_go_build "$owner" "$dir" "$binary" "$entry"
-    fi
+  local owner
+  for owner in "$@"; do
+    addp_prepare_module_database "$owner" hosted_install_database || exit 1
   done
-  install_owner() {
-    local owner=$1
-    shift
-    if [[ "$owner" = agent || "$owner" = copilot ]]; then
-      source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
-      addp_prepare_python_backend "$ROOT_DIR" "$owner"
-      (cd "$ROOT_DIR/$owner/backend" && ADDP_DATABASE_DEPLOY_USER=platform_deploy \
-        ADDP_DATABASE_DEPLOY_PASSWORD="$hosted_deploy_password" ./venv/bin/python -m prepare_database)
-      return
-    fi
-    ADDP_DATABASE_DEPLOY_USER=platform_deploy ADDP_DATABASE_DEPLOY_PASSWORD="$hosted_deploy_password" \
-      ".dev-bins/addp-$owner" prepare-database "$@"
-  }
-  install_owner system system
-  install_owner system common
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
-  install_owner meta
-  install_owner gateway
-  for owner in "$@"; do install_owner "$owner"; done
 )
+
+hosted_prepare_native_targets() {
+  local target owner owners=(system meta gateway)
+  source "$ROOT_DIR/scripts/infra/platform-database.sh"
+  for target in "$@"; do
+    owner=${target#-}
+    case "$owner" in system|meta|gateway) continue ;; esac
+    if addp_prepare_module_database "$owner" : 2>/dev/null; then owners+=("$owner"); fi
+  done
+  hosted_prepare_native_database "${owners[@]}"
+}
+
+# Use the same targets for preparation and ordinary one-at-a-time startup.
+hosted_start_native_modules() {
+  local target
+  hosted_prepare_native_targets "$@"
+  unset hosted_deploy_password
+  for target in "$@"; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
+  done
+}
+
+# Split-checkout HTTP suites keep their current observers, but the product SHA
+# determines which deployment commands actually exist.
+hosted_start_selected_platform_infra() {
+  if [[ -f "$ROOT_DIR/scripts/infra/platform-database.sh" ]]; then
+    hosted_start_platform_infra
+  elif [[ -f "$ROOT_DIR/scripts/test/hosted-platform-database.sh" ]]; then
+    source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
+    hosted_start_platform_infra
+  else
+    run_logged bash scripts/infra/up.sh
+  fi
+}
+
+hosted_prepare_selected_native_database() {
+  if [[ -f "$ROOT_DIR/scripts/infra/platform-database.sh" ]]; then
+    hosted_prepare_native_targets "$@"
+  elif [[ -f "$ROOT_DIR/scripts/test/hosted-platform-database.sh" ]]; then
+    # These product revisions shipped the System/Common, Meta and Gateway installer.
+    hosted_prepare_native_database
+  fi
+  unset hosted_deploy_password
+}

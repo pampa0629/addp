@@ -35,7 +35,7 @@ class SQLPoolEvidenceTest(unittest.TestCase):
 
         def without_system(path, *args, **kwargs):
             text = original(path, *args, **kwargs)
-            return text.replace("in -system -security", "in -security") if path == lifecycle else text
+            return text.replace("hosted_start_native_modules -system ", "hosted_start_native_modules ") if path == lifecycle else text
 
         with patch.object(Path, "read_text", without_system):
             with self.assertRaisesRegex(CI.RegistrationError, "System frontend lifecycle"):

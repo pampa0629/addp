@@ -15,15 +15,17 @@ stop_online_fixture() {
   ! docker container inspect addp-metric-online-disposable >/dev/null 2>&1
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+source "$HARNESS/scripts/test/hosted-platform-database.sh"
 
 export ADDP_INFRA_DATABASE_PROVIDER=postgres
 export META_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_selected_platform_infra
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 application_owned=1
+hosted_prepare_selected_native_database
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
 # The product launcher waits for Meta Backend readiness before launching its workers.

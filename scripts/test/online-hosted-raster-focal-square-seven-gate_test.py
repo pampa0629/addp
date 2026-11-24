@@ -27,6 +27,8 @@ ENGINE_RESULT_ENV="$ADDP_ONLINE_SECRET_DIR/engine.env"
 trace() { printf '%s\n' "$*" >> "$TRACE"; }
 docker() { return 1; }
 curl() { return 0; }
+hosted_start_platform_infra() { trace infra; }
+hosted_start_native_modules() { trace "start $*"; }
 run_daemon_launcher_logged() { trace "owner $*"; }
 start_online_geopython_runtime() { trace "runtime $*"; }
 run_logged() {
@@ -70,7 +72,7 @@ run_logged() {
       [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
       trace business
       [ "${FAIL_PHASE:-}" != business ] ;;
-    docker\ *|bash\ scripts/infra/up.sh) ;;
+    docker\ *) ;;
     *) trace "unexpected $*"; return 1 ;;
   esac
 }

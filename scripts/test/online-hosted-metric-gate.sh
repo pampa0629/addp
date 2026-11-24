@@ -97,7 +97,6 @@ stop_online_fixture() {
   [ -z "$remaining" ]
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 export STANDARD_URL=http://127.0.0.1:8110 MODEL_URL=http://127.0.0.1:8181
 export SECURITY_URL=http://127.0.0.1:8194
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/metric-engine.json"
@@ -110,11 +109,7 @@ else
   run_logged start_tidb_fixture
 fi
 application_owned=1
-hosted_prepare_native_database
-unset hosted_deploy_password
-for start_target in -model -service -security; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -model -service -security
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite metric-service-revision-lifecycle --wait-protection-owners service --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 [ -n "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || fail 'independent metric source preparing User required'

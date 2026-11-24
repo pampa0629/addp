@@ -14,13 +14,11 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/redis-engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 run_logged bash business/scripts/online-redis-consumer-fixture.sh start
 application_owned=1
-for start_target in -meta -manager; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -meta -manager
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite redis-consumer-flow --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

@@ -13,11 +13,12 @@ export COPILOT_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secret
 export GATEWAY_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export ADDP_HOST_NODE_IPS=127.0.0.1
 infra_owned=1
-source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 hosted_start_platform_infra
 application_owned=1
 # Bootstrap identities before the Manager-first scenario, then stop System.
-hosted_prepare_native_database manager copilot
+hosted_prepare_native_database system gateway manager copilot
+unset hosted_deploy_password
+run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite module-registry-recovery --output "$1"' _ "$IDENTITY_ENV"
 declaration_phase() (
   source "$IDENTITY_ENV"

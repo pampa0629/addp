@@ -30,7 +30,7 @@ export META_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.t
 export CATALOG_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/pg-authorization-engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 # Observation only, on the fresh disposable Infra admitted by hosted-online.sh.
 # Do not alter durability, audit persistence, permissions or application code.
 run_logged docker exec addp-postgres psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d addp_online \
@@ -40,6 +40,8 @@ run_logged docker exec addp-postgres psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_US
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 application_owned=1
+hosted_prepare_native_database system meta gateway manager security
+unset hosted_deploy_password
 export ADDP_ONLINE_PG_SOURCE_PREFIX="pg_auth_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:16])')"
 # Start shared dependencies separately so a module's PGAPPNAME never labels
 # another module's source connections. All launches use the standard lifecycle.

@@ -179,7 +179,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         self.host._executable('docker', '''
             #!/usr/bin/env bash
             [ "$1 $2" != 'container inspect' ] || exit 1
-            if [ "$1" = exec ]; then
+            if [[ "$*" == *"ALTER SYSTEM SET track_io_timing"* ]]; then
               echo 'timing-enabled' >> "$ADDP_TEST_GATE_TRACE"
               [ "${ADDP_TEST_OBSERVATION_FAIL:-0}" != 1 ] || exit 1
             fi

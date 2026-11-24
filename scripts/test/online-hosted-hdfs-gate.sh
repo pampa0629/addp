@@ -31,13 +31,11 @@ export ADDP_ONLINE_TEST_RUN_ID="run-$(python3 -c 'import uuid; print(uuid.uuid4(
 # Explicitly refuse inherited local-mode settings; real Worker evidence is mandatory.
 [ -z "${SPARK_MODE:-}" ] || fail 'SPARK_MODE override is forbidden'
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 run_logged bash business/scripts/online-hdfs-spark-fixture.sh start
 application_owned=1
-for start_target in -security -meta -manager -develop; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -security -meta -manager -develop
 start_online_spark_image_registry
 start_online_spark_runtime online-hdfs hdfs
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium

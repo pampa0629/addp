@@ -18,10 +18,12 @@ HOSTED_FIXTURE_CONTAINERS=()
 stop_online_fixture() { return 0; }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 export ADDP_ONLINE_RETENTION_POSTGRES_ID
 ADDP_ONLINE_RETENTION_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
 application_owned=1
+hosted_prepare_native_database system gateway
+unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$2" --output "$1"' _ "$IDENTITY_ENV" "$ONLINE_SUITE"
 # Test User credentials stay in acceptance subprocesses, never product runtimes.

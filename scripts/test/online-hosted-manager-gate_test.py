@@ -39,7 +39,7 @@ class HostedManagerGateTest(unittest.TestCase):
             fi
         ''')
         self.host._write_repository_script("scripts/infra/ports.sh", '''
-            addp_infra_verify_container() { [ "$*" = "meilisearch addp-meilisearch" ]; }
+            addp_infra_verify_container() { [[ "$*" = "postgres addp-postgres" || "$*" = "meilisearch addp-meilisearch" ]]; }
             addp_infra_mapped_port() { if [ "$*" = "addp-postgres 5432" ]; then echo 25432; return; fi; [ "$*" = "addp-meilisearch 7700" ] && printf '%s\n' 17700; }
         ''')
         self.host._write_repository_script("business/scripts/online-manager-nfs-fixture.sh", """

@@ -21,7 +21,6 @@ if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   }
 fi
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   # All owners share this deployment key before encrypting any fixture data.
   export ENCRYPTION_KEY="$(python3 -c 'import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')"
@@ -42,9 +41,9 @@ if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
 fi
 application_owned=1
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
-  hosted_prepare_native_database manager inference agent
+  hosted_prepare_native_database system meta gateway manager security inference agent
 else
-  hosted_prepare_native_database
+  hosted_prepare_native_database system gateway
 fi
 unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -ontology

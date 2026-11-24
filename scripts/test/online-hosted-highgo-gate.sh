@@ -33,13 +33,11 @@ if [ "$ADDP_ONLINE_HIGHGO_CASE" = sql-timeout ]; then
   identity_command=(bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite highgo-consumer-flow --output "$1" "${@:2}"' _ "$IDENTITY_ENV" --wait-protection-owners manager,develop)
 fi
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 run_logged python3 business/scripts/online-highgo-consumer-fixture.py start
 application_owned=1
-for start_target in "${targets[@]}"; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules "${targets[@]}"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged "${identity_command[@]}"
 source "$IDENTITY_ENV"

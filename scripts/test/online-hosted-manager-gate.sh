@@ -122,10 +122,9 @@ from pathlib import Path
 }, indent=2) + '\n')
 PYCASE
 [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ATTEMPT:-}" ] || fail 'GitHub run ID and attempt are required before Runtime startup'
-source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 start_manager_dependencies() {
   application_owned=1
-  hosted_prepare_native_database manager
+  hosted_prepare_native_database system meta gateway manager security
   unset hosted_deploy_password
 }
 export ADDP_ONLINE_TEST_RUN_ID="manager-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"

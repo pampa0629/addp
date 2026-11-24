@@ -14,6 +14,7 @@ stop_online_fixture() {
   run_logged bash "$HARNESS/scripts/test/infra-object-source-fixture.sh" stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+source "$HARNESS/scripts/test/hosted-platform-database.sh"
 
 export ADDP_INFRA_OBJECTSTORE_PROVIDER=minio
 export ADDP_INFRA_OBJECTSTORE_BINDINGS=
@@ -22,11 +23,12 @@ export SECURITY_URL=http://127.0.0.1:8194
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=2400
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_selected_platform_infra
 run_logged make -C "$HARNESS" test-infra-object-barrier-postgres
 fixture_owned=1
 run_logged bash "$HARNESS/scripts/test/infra-object-source-fixture.sh" start
 application_owned=1
+hosted_prepare_selected_native_database manager security
 for target in -security -meta -transfer -manager -develop; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
 done

@@ -30,10 +30,12 @@ export MODEL_URL=http://127.0.0.1:8181 QUALITY_URL=http://127.0.0.1:8182
 export ORCHESTRATOR_URL=http://127.0.0.1:8084 MONITOR_URL=http://127.0.0.1:8100
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/quality-engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 run_logged python3 business/scripts/online-quality-postgres-fixture.py start
 application_owned=1
+hosted_prepare_native_database system meta gateway
+unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -model -meta -quality -orchestrator -monitor
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite quality-dynamic-binding --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

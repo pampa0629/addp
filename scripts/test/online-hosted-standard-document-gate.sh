@@ -11,14 +11,16 @@ ONLINE_SUITE=standard-document-storage
 HOSTED_FIXTURE_IMAGES=()
 HOSTED_FIXTURE_CONTAINERS=()
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+source "$HARNESS/scripts/test/hosted-platform-database.sh"
 
 export ADDP_INFRA_OBJECTSTORE_PROVIDER=minio
 export ADDP_INFRA_OBJECTSTORE_BINDINGS=standard=standard-http-documents
 export STANDARD_URL=http://127.0.0.1:8110
 export STANDARD_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_selected_platform_infra
 application_owned=1
+hosted_prepare_selected_native_database
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -standard

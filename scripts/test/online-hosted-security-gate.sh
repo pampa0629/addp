@@ -146,7 +146,7 @@ if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-executi
   run_logged compose_graph config --quiet
 fi
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 if [ "$ONLINE_SUITE" = graph-protection ]; then
   run_logged python3 business/scripts/online-graph-fixture.py start
@@ -170,6 +170,8 @@ if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-executi
   run_logged make build BUILD_ARGS="--arch amd64 --services $backend_images"
   if [ "$ONLINE_SUITE" = cleanup-execution ]; then
     run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,system-frontend,nginx"
+    run_logged hosted_prepare_compose_database compose_graph system meta gateway manager
+    unset hosted_deploy_password
     for service in system-backend gateway meta-backend manager-backend transfer-backend develop-backend service-backend quality-backend graph-backend asset-backend model-backend standard-backend monitor-backend; do
       run_logged compose_graph up -d --no-deps --wait "$service"
     done
@@ -180,6 +182,8 @@ if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-executi
   else
   run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,graph-frontend,develop-frontend,service-frontend,nginx"
   run_logged compose_graph up -d --no-deps --wait graph-review-extractor
+  run_logged hosted_prepare_compose_database compose_graph system meta gateway security manager
+  unset hosted_deploy_password
   for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend service-backend graph-backend monitor-backend develop-backend meta-worker security-worker console graph-frontend develop-frontend service-frontend; do
     run_logged compose_graph up -d --no-deps --wait "$service"
   done
@@ -197,6 +201,8 @@ if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-executi
   run_logged npm --prefix console/frontend ci
   fi
 else
+  hosted_prepare_native_database system meta gateway security manager
+  unset hosted_deploy_password
   for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done

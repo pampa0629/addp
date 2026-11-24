@@ -23,14 +23,12 @@ export SPARK_WORKFLOW_SHARED_HOST=127.0.0.1 REGISTRY=localhost:5001 IMAGE_TAG=on
 [ -z "${SPARK_MODE:-}" ] || fail 'SPARK_MODE override is forbidden'
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/elasticsearch-engine.json"
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 fixture_owned=1
 run_logged bash business/scripts/online-elasticsearch-consumer-fixture.sh start
 start_online_spark_image_registry
 application_owned=1
-for start_target in -meta -manager -develop; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -meta -manager -develop
 start_online_spark_runtime online-elasticsearch elasticsearch
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite elasticsearch-consumer-flow --output "$1"' _ "$IDENTITY_ENV"

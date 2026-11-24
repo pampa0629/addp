@@ -18,6 +18,21 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_hosted_database_preparation_covers_every_registered_lifecycle(self):
+        for gate in (SCRIPT.parents[2] / "scripts/test").glob("online-hosted-*-gate.sh"):
+            with self.subTest(gate=gate.name):
+                source = gate.read_text()
+                if gate.name == "online-hosted-redis-core-gate.sh":
+                    self.assertIn('== "$PINNED"', source)
+                    continue
+                first_up = source.split("infra_owned=1", 1)[1].lstrip().splitlines()[0]
+                if "HARNESS=" in source:
+                    self.assertEqual(first_up, "hosted_start_selected_platform_infra")
+                    self.assertIn("hosted_prepare_selected_native_database", source)
+                else:
+                    self.assertEqual(first_up.split()[0], "hosted_start_platform_infra")
+                    self.assertRegex(source, r"(?m)^ *(?:run_logged )?hosted_(?:start_native_modules|prepare_(?:native|compose)_database) ")
+
     @staticmethod
     def contract_mutations(cases):
         """Mutate required Make edges and required test definitions at their owners."""
@@ -3841,7 +3856,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_vector_pmtiles_profile(self.repository, {'vector-pmtiles-workflow'})
         faults = [(paths[0], "inputs.suite != 'vector-pmtiles-workflow'"),
             (paths[2], '--wait-protection-owners develop,manager'),
-            (paths[2], 'for start_target in -security -develop -manager -monitor'),
+            (paths[2], 'hosted_start_native_modules -security -develop -manager -monitor'),
             (paths[2], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
             (paths[2], 'business.scripts.online-vector-pmtiles-fixture stop'),
             (paths[3], 'stop_online_product_runtime || status=1'),

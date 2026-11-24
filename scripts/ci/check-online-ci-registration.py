@@ -2001,7 +2001,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     hosted = hosted_path.read_text(encoding="utf-8")
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
-        'for start_target in -security -transfer -manager -develop -orchestrator -monitor', 'CONSOLE_URL=', 'SECURITY_URL=',
+        'hosted_start_native_modules -security -transfer -manager -develop -orchestrator -monitor', 'CONSOLE_URL=', 'SECURITY_URL=',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify',
@@ -2467,7 +2467,7 @@ def validate_vector_pmtiles_profile(repository: Path, registered: set[str]) -> N
         "scripts/test/online-hosted-vector-pmtiles-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite vector-pmtiles-workflow',
             '--wait-protection-owners develop,manager',
-            'start_online_geopython_runtime', 'for start_target in -security -develop -manager -monitor',
+            'start_online_geopython_runtime', 'hosted_start_native_modules -security -develop -manager -monitor',
             'business.scripts.online-vector-pmtiles-fixture stop', 'scripts/test/online-engine-registration.py',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'env -u POSTGRES_PASSWORD make test-online'),
         "scripts/utils/hosted-online.sh": ('stop_online_product_runtime || status=1',),
@@ -7173,7 +7173,7 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
             'online-raster-capacity-fixture.py stop', 'online-raster-capacity-fixture.py seed',
             'scripts/test/online-engine-registration.py', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
             'env -u POSTGRES_PASSWORD make test-online', 'launch_online_geopython_runtime',
-            'for start_target in -security -develop -manager -monitor;', 'export SECURITY_URL=',
+            'hosted_start_native_modules -security -develop -manager -monitor', 'export SECURITY_URL=',
         ),
         "scripts/utils/hosted-product-runtime.sh": (
             'com.addp.online-run-id', 'Runtime default entry mismatch', 'Runtime image identity mismatch',
@@ -7266,7 +7266,7 @@ def validate_sql_pool_profile(repository: Path, registry: dict[str, object]) -> 
     if not make_target_commands((repository / "Makefile").read_text(), "test-sql-pool-online-runner"):
         raise RegistrationError("SQL pool deterministic gate is missing")
     lifecycle = (repository / "scripts/test/online-hosted-sql-pool-gate.sh").read_text()
-    if "for target in -system -security -meta -manager -develop; do" not in lifecycle:
+    if "hosted_start_native_modules -system -security -meta -manager -develop" not in lifecycle:
         raise RegistrationError("SQL pool page acceptance requires the System frontend lifecycle")
 
 

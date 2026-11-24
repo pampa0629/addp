@@ -15,7 +15,6 @@ stop_online_fixture() {
   run_logged bash business/scripts/online-opengauss-consumer-fixture.sh stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 export ADDP_OPENGAUSS_MEDIA_CACHE="${RUNNER_TEMP}/addp-opengauss-media-cache"
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/opengauss-engine.json"
 unset ADDP_TEST_OPENGAUSS_DSN ADDP_TEST_OPENGAUSS_HOST ADDP_TEST_OPENGAUSS_PORT
@@ -26,7 +25,7 @@ hosted_start_platform_infra
 fixture_owned=1
 run_logged bash business/scripts/online-opengauss-consumer-fixture.sh start
 application_owned=1
-hosted_prepare_native_database manager
+hosted_prepare_native_database system meta gateway manager security
 unset hosted_deploy_password
 for start_target in -security -manager -develop -service -transfer; do
   # start.sh deliberately leaves application processes running. Writing its

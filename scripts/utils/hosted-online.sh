@@ -315,3 +315,5 @@ export PROJECT_ROOT="$ROOT_DIR"
 export ADDP_ONLINE_ENV_FILE="$ADDP_ONLINE_SECRET_DIR/runtime.env"
 source "$ROOT_DIR/scripts/utils/observability-env.sh"
 addp_prepare_observability_env "$ADDP_ONLINE_ENV_FILE"
+
+source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"

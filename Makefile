@@ -1888,7 +1888,9 @@ test-execution-online-ci-syntax:
 
 test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
-	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
+	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py \
+		scripts.test.online-hosted-opengauss-gate_test.OnlineHostedOpenGaussGateTest.test_native_targets_follow_the_product_registry_and_isolate_installer_credentials \
+		scripts.test.online-hosted-opengauss-gate_test.OnlineHostedOpenGaussGateTest.test_split_checkout_uses_the_selected_products_database_contract
 
 .PHONY: test-cleanup-native-online-runner
 test-cleanup-native-online-runner: ## 验证原生 Cleanup 显式选择、隔离编排、代理及证据反例，不启动 Hosted

@@ -58,8 +58,10 @@ for attempt in $(seq 1 30); do
 done
 run_logged make build-images IMAGE_BUILD_ARGS='--verify --jobs 1 --registry 127.0.0.1:5001 --tag online --services model3d-workflow-engine,pointcloud-workflow-engine,document-workflow-engine'
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 application_owned=1
+hosted_prepare_native_database system gateway
+unset hosted_deploy_password
 for target in -system -gateway; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process "$target"
 done

@@ -15,7 +15,6 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
-        (self.host.repository / '.gitignore').write_text('__pycache__/\n')
         (self.host.repository / 'system/backend/go.mod').write_text('module fixture/system\n')
         (self.host.repository / 'go.work.sum').write_text('fixture-checksums\n')
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test/online-hosted-security-gate.sh')

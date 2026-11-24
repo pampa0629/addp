@@ -52,7 +52,7 @@ done
 run_logged bash scripts/build/build-images.sh --verify --jobs 1 \
   --registry 127.0.0.1:5001 --tag online --services model3d-workflow-engine
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 run_logged python3 business/ftp/admission.py start
 run_logged python3 -B -m scripts.test.online-file-model-nfs-fixture start
 run_logged python3 -B -m scripts.test.online-file-model-minio-fixture start
@@ -60,9 +60,7 @@ ADDP_NFS_TEST_EXPORT="$(cat "$ADDP_ONLINE_SECRET_DIR/ftp-root")/data"
 export ADDP_NFS_TEST_EXPORT
 run_logged make test-common-nfs-integration
 application_owned=1
-for start_target in -security -meta -manager; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -security -meta -manager
 start_online_model3d_runtime addp-ftp-model3d-runtime 127.0.0.1:5001/addp-model3d-workflow-engine:online
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite ftp-consumer-flow --wait-protection-owners manager --output "$1"' _ "$IDENTITY_ENV"

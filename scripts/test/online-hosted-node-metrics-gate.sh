@@ -74,7 +74,7 @@ if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then
   (umask 077; printf '\nexport REDIS_PASSWORD=%s\n' "$REDIS_PASSWORD" >> "$ADDP_ONLINE_ENV_FILE")
 fi
 infra_owned=1
-run_logged env ADDP_OBSERVABILITY_METRICS_ENABLED=false ADDP_OBSERVABILITY_LOGS_ENABLED=false bash scripts/infra/up.sh
+hosted_start_platform_infra ADDP_OBSERVABILITY_METRICS_ENABLED=false ADDP_OBSERVABILITY_LOGS_ENABLED=false
 fixture_owned=1
 run_logged python3 scripts/test/platform-node-metrics-fixture.py prepare
 source "$ADDP_ONLINE_SECRET_DIR/metrics.env"
@@ -89,6 +89,8 @@ if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NO
   run_logged python3 scripts/test/platform-node-metrics-fixture.py engine-up
 fi
 application_owned=1
+hosted_prepare_native_database system meta gateway
+unset hosted_deploy_password
 modules=(-monitor -gateway)
 if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
