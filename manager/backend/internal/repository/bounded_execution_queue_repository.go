@@ -116,6 +116,14 @@ func UpdateExecutionWithOwnership(ctx context.Context, db *gorm.DB, executionID 
 	return commonExecution.UpdateWithEvent(ctx, db, lease, fields, commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"progress": int64(progress)}})
 }
 
+// MySQL expects a JSON path; the binary comparison keeps version identities exact.
+func executionConfigVersionSQL(db *gorm.DB) string {
+	if db.Dialector.Name() == "mysql" {
+		return "CAST(execution_config->>'$.config_version' AS BINARY)"
+	}
+	return "execution_config->>'config_version'"
+}
+
 func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTypes []string, owner string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
 	if len(taskTypes) == 0 {
 		return nil, nil, fmt.Errorf("Manager bounded task types are required")
@@ -133,7 +141,7 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 		// System consumption under the exact running attempt and lease.
 		claimDB := tx.Where("(task_type <> ? OR (execution_authorization_id IS NOT NULL AND authorization_expires_at IS NOT NULL))", commonExecution.TaskTypeDataProfiling)
 		for _, policy := range managerFileSourcePolicies {
-			claimDB = claimDB.Where("(task_type <> ? OR COALESCE(execution_config->>'config_version','') <> ? OR (execution_authorization_id > 0 AND authorization_expires_at > ? AND source = ? AND trigger_type = ? AND parent_execution_id IS NULL AND source_task_id IS NOT NULL AND actor_principal_id > 0 AND actor_tenant_membership_id > 0 AND issued_authorization_version > 0 AND triggered_by = actor_principal_id))", policy.taskType, policy.configVersion, now.UTC(), commonExecution.ModuleManager, commonExecution.TriggerTypeManual)
+			claimDB = claimDB.Where("(task_type <> ? OR COALESCE("+executionConfigVersionSQL(tx)+",'') <> ? OR (execution_authorization_id > 0 AND authorization_expires_at > ? AND source = ? AND trigger_type = ? AND parent_execution_id IS NULL AND source_task_id IS NOT NULL AND actor_principal_id > 0 AND actor_tenant_membership_id > 0 AND issued_authorization_version > 0 AND triggered_by = actor_principal_id))", policy.taskType, policy.configVersion, now.UTC(), commonExecution.ModuleManager, commonExecution.TriggerTypeManual)
 		}
 		execution, lease, err = commonExecution.ClaimNext(ctx, claimDB, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleManager, TaskTypes: taskTypes, WorkerID: owner, LeaseDuration: leaseDuration,
@@ -250,9 +258,7 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 		// response. Such rows are never claimable and must not pin the reuse key.
 		var abandoned []commonExecution.TaskExecution
 		unbound := tx.Where("module = ? AND source = ? AND task_type = ? AND execution_boundary = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL AND created_at < ?", commonExecution.ModuleManager, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusPending, now.UTC().Add(-2*time.Minute)).Order("created_at ASC, id ASC").Limit(limit)
-		if tx.Dialector.Name() == "postgres" {
-			unbound = unbound.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
-		}
+		unbound = unbound.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		if err := unbound.Find(&abandoned).Error; err != nil {
 			return err
 		}
@@ -265,10 +271,8 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 		}
 		for _, policy := range managerFileSourcePolicies {
 			var modelsPending []commonExecution.TaskExecution
-			modelUnbound := tx.Where("module = ? AND task_type = ? AND execution_config->>'config_version' = ? AND execution_boundary = ? AND status = ? AND attempt = 0 AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at IS NULL AND created_at < ?", commonExecution.ModuleManager, policy.taskType, policy.configVersion, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusPending, now.UTC().Add(-2*time.Minute)).Where("(execution_authorization_id IS NULL OR authorization_expires_at IS NULL OR execution_authorization_id <= 0 OR authorization_expires_at <= ? OR source <> ? OR trigger_type <> ? OR parent_execution_id IS NOT NULL OR source_task_id IS NULL OR actor_principal_id IS NULL OR actor_principal_id <= 0 OR actor_tenant_membership_id IS NULL OR actor_tenant_membership_id <= 0 OR issued_authorization_version IS NULL OR issued_authorization_version <= 0 OR triggered_by IS NULL OR triggered_by <> actor_principal_id)", now.UTC(), commonExecution.ModuleManager, commonExecution.TriggerTypeManual).Order("created_at ASC, id ASC").Limit(limit)
-			if tx.Dialector.Name() == "postgres" {
-				modelUnbound = modelUnbound.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
-			}
+			modelUnbound := tx.Where("module = ? AND task_type = ? AND "+executionConfigVersionSQL(tx)+" = ? AND execution_boundary = ? AND status = ? AND attempt = 0 AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at IS NULL AND created_at < ?", commonExecution.ModuleManager, policy.taskType, policy.configVersion, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusPending, now.UTC().Add(-2*time.Minute)).Where("(execution_authorization_id IS NULL OR authorization_expires_at IS NULL OR execution_authorization_id <= 0 OR authorization_expires_at <= ? OR source <> ? OR trigger_type <> ? OR parent_execution_id IS NOT NULL OR source_task_id IS NULL OR actor_principal_id IS NULL OR actor_principal_id <= 0 OR actor_tenant_membership_id IS NULL OR actor_tenant_membership_id <= 0 OR issued_authorization_version IS NULL OR issued_authorization_version <= 0 OR triggered_by IS NULL OR triggered_by <> actor_principal_id)", now.UTC(), commonExecution.ModuleManager, commonExecution.TriggerTypeManual).Order("created_at ASC, id ASC").Limit(limit)
+			modelUnbound = modelUnbound.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 			if err := modelUnbound.Find(&modelsPending).Error; err != nil {
 				return err
 			}
@@ -283,9 +287,7 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 			"module = ? AND task_type IN ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
 			commonExecution.ModuleManager, ManagerBoundedTaskTypes(), commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
 		).Order("created_at ASC, id ASC").Limit(limit)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
-		}
+		query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		var items []commonExecution.TaskExecution
 		if err := query.Find(&items).Error; err != nil {
 			return err

@@ -211,6 +211,9 @@ if [ "$test_group" = platform-execution ]; then
     grep -q '^--- PASS: TestPlatformMySQLExecutionLifecycle ' "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestCleanupScanReceiptAgainstMySQL ' "$WORK_DIR/platform-execution.log"
     grep -q '^--- PASS: TestExecutionRetentionAssessmentAgainstMySQL ' "$WORK_DIR/platform-execution.log"
+    (cd "$ROOT_DIR/manager/backend" && ADDP_TEST_MYSQL_MANAGER_QUEUE=1 GOWORK=off go test ./internal/repository \
+        -run '^TestIntegrationMySQLManagerQueue$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/manager-queue.log"
+    grep -q '^--- PASS: TestIntegrationMySQLManagerQueue ' "$WORK_DIR/manager-queue.log"
     exit 0
 fi
 

@@ -12,7 +12,7 @@ import (
 )
 
 func TestIntegrationMySQLManagerPreviewState(t *testing.T) {
-	db := managerMySQLStoreDB(t)
+	db := managerMySQLStoreDB(t, "manager", "ADDP_TEST_MYSQL_MANAGER_STORAGE")
 	if err := MigratePreviewStateSchema(db); err != nil {
 		t.Fatal(err)
 	}
