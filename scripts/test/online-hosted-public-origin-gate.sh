@@ -109,6 +109,7 @@ run_logged "${publisher[@]}" --provision "${declaration_modules[@]}"
 run_logged "${publisher[@]}" "${declaration_modules[@]}"
 run_logged hosted_prepare_compose_database meta-backend
 run_logged hosted_prepare_compose_database gateway
+run_logged hosted_prepare_compose_database manager-backend
 run_logged hosted_prepare_compose_database workbench-backend
 unset hosted_deploy_password
 run_logged compose_app up -d --no-deps --wait security-backend

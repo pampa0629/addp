@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
@@ -94,6 +95,11 @@ type ExecutionSupervisorConfig struct {
 
 func resolveMeilisearchURL() string {
 	return commonConfig.GetEnv("MEILISEARCH_URL", "")
+}
+
+// PlatformDatabase reads the connection target without loading runtime services.
+func PlatformDatabase() database.Config {
+	return database.Config{Host: commonConfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonConfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonConfig.GetEnv("POSTGRES_DB", "addp"), Schema: "manager", ConnectTimeout: 5 * time.Second}
 }
 
 func Load() *Config {

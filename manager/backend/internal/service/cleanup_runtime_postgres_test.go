@@ -393,6 +393,16 @@ func TestIntegrationPostgresManagerCleanupProductionRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = bootstrapPool.Close()
+	t.Setenv("ADDP_DATABASE_DEPLOY_USER", cfg.DBUser)
+	t.Setenv("ADDP_DATABASE_DEPLOY_PASSWORD", cfg.DBPassword)
+	t.Setenv("ADDP_DATABASE_RUNTIME_USER", cfg.DBUser)
+	t.Setenv("ADDP_DATABASE_RUNTIME_PASSWORD", cfg.DBPassword)
+	t.Setenv("POSTGRES_HOST", cfg.DBHost)
+	t.Setenv("POSTGRES_PORT", cfg.DBPort)
+	t.Setenv("POSTGRES_DB", cfg.DBName)
+	if err := repository.PrepareDatabase(t.Context(), config.PlatformDatabase()); err != nil {
+		t.Fatal(err)
+	}
 	db, err := repository.InitDatabase(cfg)
 	if err != nil {
 		t.Fatalf("production repository initialization: %v", err)
@@ -436,7 +446,7 @@ func TestIntegrationPostgresManagerCleanupProductionRepositories(t *testing.T) {
 		previewStateRepo: repository.NewPreviewStateRepository(tx), embeddingRepo: repository.NewEmbeddingRepository(tx),
 		tileCacheSvc:        &TileCacheTaskService{tileCacheRepo: repository.NewTileCacheRepository(tx)},
 		optimizationSvc:     &VectorMaterializedViewTaskService{repo: repository.NewVectorMaterializedViewRepository(tx)},
-		taskDefinitionRepo:  repository.NewCleanupTaskDefinitionRepository(tx, repository.ManagerTaskDefinitionSpecs()),
+		taskDefinitionRepo:  repository.NewCleanupTaskDefinitionRepository(tx, repository.ManagerTaskDefinitionSpecs(repository.ManagerBoundedTaskTypes())),
 		managedArtifactRepo: repository.NewCleanupManagedArtifactRepository(tx, repository.ManagerManagedArtifactSpecs())}
 	tenant := uint(942000007)
 	snapshot, err := svc.freezeCleanupPlan(ctx, tenant, map[string]interface{}{"engine_id": uint(9)})

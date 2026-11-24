@@ -122,20 +122,26 @@ from pathlib import Path
 }, indent=2) + '\n')
 PYCASE
 [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ATTEMPT:-}" ] || fail 'GitHub run ID and attempt are required before Runtime startup'
+source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
+start_manager_dependencies() {
+  application_owned=1
+  hosted_prepare_native_database manager
+  unset hosted_deploy_password
+}
 export ADDP_ONLINE_TEST_RUN_ID="manager-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export SECURITY_URL=http://127.0.0.1:8194
 if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-mysql-export ]; then
   export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-native-export-engine.json"
   infra_owned=1
-  run_logged bash scripts/infra/up.sh
+  hosted_start_platform_infra
   fixture_owned=1
   if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-mysql-export ]; then
     run_logged bash business/scripts/online-manager-mysql-fixture.sh start
   else
     run_logged bash business/scripts/online-metric-postgres-fixture.sh start
   fi
-  application_owned=1
+  start_manager_dependencies
   for start_target in -security -meta -manager -monitor -transfer; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
@@ -170,10 +176,10 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ] || [ "$ADDP_ONLINE_MANAG
     export "$credential=$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   done
   infra_owned=1
-  run_logged bash scripts/infra/up.sh
+  hosted_start_platform_infra
   fixture_owned=1
   run_logged bash business/scripts/online-manager-nfs-fixture.sh start
-  application_owned=1
+  start_manager_dependencies
   for start_target in -security -meta -manager -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
@@ -196,12 +202,12 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
     sleep 1
   done
   infra_owned=1
-  run_logged bash scripts/infra/up.sh
+  hosted_start_platform_infra
   run_logged bash business/scripts/online-manager-nfs-fixture.sh start
   run_logged python3 -m scripts.test.manager-filegdb-physical mount
   nfs_root=$(cat "$ADDP_ONLINE_SECRET_DIR/nfs-root")
   nfs_read_mount=$(cat "$ADDP_ONLINE_SECRET_DIR/filegdb-nfs-mount")
-  application_owned=1
+  start_manager_dependencies
   for start_target in -security -meta -manager -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
@@ -231,14 +237,14 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = minio-node-rescan ]; then
     export "$credential=$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   done
   infra_owned=1
-  run_logged bash scripts/infra/up.sh
+  hosted_start_platform_infra
   source "$ROOT_DIR/scripts/infra/ports.sh"
   addp_infra_verify_container meilisearch addp-meilisearch
   export ADDP_ONLINE_MANAGER_MEILI_PORT
   ADDP_ONLINE_MANAGER_MEILI_PORT=$(addp_infra_mapped_port addp-meilisearch 7700)
   fixture_owned=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh start
-  application_owned=1
+  start_manager_dependencies
   for start_target in -security -meta -manager -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
@@ -266,10 +272,10 @@ run_logged docker pull python:3.11-slim
 run_logged docker tag python:3.11-slim localhost:5001/python:3.11-slim
 run_logged docker push localhost:5001/python:3.11-slim
 infra_owned=1
-run_logged bash scripts/infra/up.sh
+hosted_start_platform_infra
 run_logged bash business/scripts/online-manager-minio-fixture.sh start
 run_logged bash business/scripts/online-manager-nfs-fixture.sh start
-application_owned=1
+start_manager_dependencies
 # Manager must install its initial Security projection before protected reads.
 if [ "$ADDP_ONLINE_MANAGER_CASE" = delimited-read-settings ] || [ "$ADDP_ONLINE_MANAGER_CASE" = native-netcdf ] || [ "$ADDP_ONLINE_MANAGER_CASE" = native-grib ] || [ "$ADDP_ONLINE_MANAGER_CASE" = native-envi ]; then
   for start_target in -security -meta -manager -monitor; do

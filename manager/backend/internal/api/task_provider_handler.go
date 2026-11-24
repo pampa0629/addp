@@ -635,6 +635,7 @@ type PointCloudCOPCTaskResponse struct {
 // @Success 200 {object} TaskListResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.task_provider.read"]
 // @Router /task-provider/tasks [get]
@@ -652,6 +653,7 @@ func (h *TaskProviderHandler) ProviderListTasks(c *gin.Context) {
 // @Success 200 {object} TaskProviderTaskDetailResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.task_provider.read"]
 // @Router /task-provider/tasks/{task_type}/{id} [get]
@@ -675,6 +677,7 @@ func (h *TaskProviderHandler) ProviderTaskDetail(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "当前任务不支持此执行来源 | Execution origin is not supported for this task"
 // @Failure 404 {object} map[string]interface{}
 // @Failure 409 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.task_provider.execute"]
 // @Router /task-provider/tasks/{task_type}/{id}/execute [post]
@@ -728,6 +731,7 @@ func (h *TaskProviderHandler) ProviderExecutionStatus(c *gin.Context) {
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
 // @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /tasks [get]
@@ -959,7 +963,7 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 		}
 	case commonExecution.TaskTypeEmbedding:
 		if h.embeddingTaskSvc == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "embedding task service is unavailable"})
+			vectorStorageUnavailable(c)
 			return
 		}
 		tasks, t, err := h.embeddingTaskSvc.List(ctx, tenantID, page, pageSize)
@@ -1318,11 +1322,16 @@ func (h *TaskProviderHandler) ListTileCacheTasks(c *gin.Context) {
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /embedding_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
+	if h.embeddingTaskSvc == nil {
+		vectorStorageUnavailable(c)
+		return
+	}
 	tenantID := tenantIDValue(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -1360,6 +1369,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Success 200 {object} TaskProviderTaskDetailResponse "任务详情与具体任务执行契约；任务类型专有字段位于同一顶层 | Task detail and concrete execution contract; task-type-specific fields remain at the same top level"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /tasks/{task_type}/{id} [get]
@@ -1505,6 +1515,10 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 		}
 		h.respondManagerTaskDetail(c, taskType, task)
 	case commonExecution.TaskTypeEmbedding:
+		if h.embeddingTaskSvc == nil {
+			vectorStorageUnavailable(c)
+			return
+		}
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1816,6 +1830,10 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	case commonExecution.TaskTypePPTXPDFGeneration:
 		executionID, err = h.pptxPDFTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeEmbedding:
+		if h.embeddingTaskSvc == nil {
+			vectorStorageUnavailable(c)
+			return
+		}
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的任务类型: " + taskType})
@@ -1948,11 +1966,16 @@ func (h *TaskProviderHandler) loadDerivedTaskExecution(ctx context.Context, exec
 // @Param body body EmbeddingTaskRequest true "向量化任务配置 | Embedding task configuration"
 // @Success 201 {object} EmbeddingTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /embedding_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
+	if h.embeddingTaskSvc == nil {
+		vectorStorageUnavailable(c)
+		return
+	}
 	tenantID := tenantIDValue(c)
 	userID := userIDValue(c)
 
@@ -1994,11 +2017,16 @@ func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 // @Success 200 {object} EmbeddingTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
 // @Router /embedding_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
+	if h.embeddingTaskSvc == nil {
+		vectorStorageUnavailable(c)
+		return
+	}
 	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -2047,11 +2075,16 @@ func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "此部署缺少向量存储能力 | Vector storage unavailable in this deployment"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
 // @Router /embedding_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
+	if h.embeddingTaskSvc == nil {
+		vectorStorageUnavailable(c)
+		return
+	}
 	tenantID := tenantIDValue(c)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {

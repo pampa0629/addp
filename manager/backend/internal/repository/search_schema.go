@@ -26,7 +26,8 @@ func MigrateSearchSchema(db *gorm.DB) error {
             CHECK(tenant_id>0 AND user_id>0)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin`).Error
 	}
-	return migrateSearchSchema(db, "047_search_continuation.sql", "049_scope_search_history_to_tenant.sql")
+	return migrateSearchSchema(db, "047_search_continuation.sql", "049_scope_search_history_to_tenant.sql",
+		"050_keyword_search.sql", "051_vector_search_revision.sql")
 }
 
 func migrateSearchSchema(db *gorm.DB, names ...string) error {
@@ -52,6 +53,20 @@ func migrateSearchSchema(db *gorm.DB, names ...string) error {
 			}
 			if applied != "" {
 				return fmt.Errorf("applied Manager search migration checksum differs: %s", name)
+			}
+			// A published 047 is immutable. Fresh installations prepare keyword
+			// and vector materials independently with 050 and 051.
+			if name == "047_search_continuation.sql" {
+				continue
+			}
+			if name == "051_vector_search_revision.sql" {
+				var installed bool
+				if err := tx.Raw("SELECT to_regclass('manager.embeddings') IS NOT NULL").Scan(&installed).Error; err != nil {
+					return err
+				}
+				if !installed {
+					continue
+				}
 			}
 			if err := tx.Exec(string(sql)).Error; err != nil {
 				return fmt.Errorf("apply Manager search migration %s: %w", name, err)

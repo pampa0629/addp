@@ -41,7 +41,7 @@ func (h *EmbeddingHandler) SetExecutionEnqueueNotifier(notify func()) {
 // @Security BearerAuth
 func (h *EmbeddingHandler) CreateEmbeddingExecution(c *gin.Context) {
 	if h.embeddingService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "向量化服务不可用"})
+		vectorStorageUnavailable(c)
 		return
 	}
 
@@ -94,7 +94,7 @@ func decodeEmbeddingExecutionRequest(c *gin.Context) (service.EmbeddingExecution
 // @Security BearerAuth
 func (h *EmbeddingHandler) ListEmbeddings(c *gin.Context) {
 	if h.embeddingService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "向量化服务不可用"})
+		vectorStorageUnavailable(c)
 		return
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -150,7 +150,7 @@ func (h *EmbeddingHandler) ListEmbeddings(c *gin.Context) {
 // @Security BearerAuth
 func (h *EmbeddingHandler) GetItemEmbedding(c *gin.Context) {
 	if h.embeddingService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "向量化服务不可用"})
+		vectorStorageUnavailable(c)
 		return
 	}
 	itemID, err := strconv.ParseUint(c.Param("item_id"), 10, 64)
@@ -199,7 +199,7 @@ func (h *EmbeddingHandler) GetItemEmbedding(c *gin.Context) {
 // @Security BearerAuth
 func (h *EmbeddingHandler) DeleteEmbedding(c *gin.Context) {
 	if h.embeddingService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "向量化服务不可用"})
+		vectorStorageUnavailable(c)
 		return
 	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

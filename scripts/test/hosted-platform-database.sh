@@ -23,7 +23,7 @@ CREATE SCHEMA inference AUTHORIZATION platform_deploy;
 DO \$roles\$
 DECLARE ns text;
 BEGIN
-  FOREACH ns IN ARRAY ARRAY['system','common','meta','gateway','inference','workbench','agent','copilot'] LOOP
+  FOREACH ns IN ARRAY ARRAY['system','common','meta','gateway','manager','inference','workbench','agent','copilot'] LOOP
     EXECUTE format('ALTER SCHEMA %I OWNER TO platform_deploy', ns);
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO platform_runtime', ns);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platform_runtime', ns);

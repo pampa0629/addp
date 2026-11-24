@@ -54,7 +54,7 @@ func TestIntegrationMySQLManagerQueue(t *testing.T) {
 	if err != nil || item != nil {
 		t.Fatalf("unbound file claimed: %+v, %v", item, err)
 	}
-	recovered, err := queue.RecoverUnleased(ctx, now.Add(3*time.Minute), 10)
+	recovered, err := queue.RecoverUnleased(ctx, ManagerBoundedTaskTypes(), now.Add(3*time.Minute), 10)
 	if err != nil || recovered != 1 {
 		t.Fatalf("recover expired preparation: %d, %v", recovered, err)
 	}

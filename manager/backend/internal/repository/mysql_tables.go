@@ -16,6 +16,9 @@ var mysqlProfileTables string
 //go:embed task_definition.mysql.sql
 var mysqlTaskDefinitionTables string
 
+//go:embed inference_settings.mysql.sql
+var mysqlInferenceSettingsTables string
+
 //go:embed preview_policy.mysql.sql
 var mysqlPreviewPolicyTables string
 

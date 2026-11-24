@@ -1381,3 +1381,32 @@ type rasterCOGAbsentMeta struct{}
 func (rasterCOGAbsentMeta) GetItemSnapshot(context.Context, uint, uint, uint, string) (*commonModels.MetaItem, error) {
 	return nil, commonAPI.ErrNotFound
 }
+
+func TestEmbeddingRequestsWithoutVectorStorage(t *testing.T) {
+	h := NewTaskProviderHandler(nil, nil, nil, nil, nil)
+	e := NewEmbeddingHandler(nil)
+	for _, probe := range []struct {
+		name    string
+		handler gin.HandlerFunc
+		method  string
+		url     string
+	}{
+		{"embedding result", e.ListEmbeddings, http.MethodGet, "/probe/embedding/17"},
+		{"explicit task list", h.ListTasks, http.MethodGet, "/probe/embedding/17?task_type=embedding"},
+		{"task detail", h.TaskDetail, http.MethodGet, "/probe/embedding/17"},
+		{"task creation", h.CreateEmbeddingTask, http.MethodPost, "/probe/embedding/17"},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			router := gin.New()
+			router.Handle(probe.method, "/probe/:task_type/:id", probe.handler)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(probe.method, probe.url, nil))
+			var body struct {
+				Code string `json:"error_code"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusServiceUnavailable || body.Code != "vector_storage_unavailable" {
+				t.Fatalf("response %d %q", w.Code, w.Body.String())
+			}
+		})
+	}
+}

@@ -48,6 +48,15 @@ services:
     extends: {file: ../../docker-compose.yml, service: workbench-frontend}
     profiles: [module-workbench]
     container_name: !reset null
+  manager-backend:
+    extends: {file: ../../docker-compose.yml, service: manager-backend}
+    profiles: [module-manager]
+    container_name: !reset null
+    environment: *endpoints
+  manager-frontend:
+    extends: {file: ../../docker-compose.yml, service: manager-frontend}
+    profiles: [module-manager]
+    container_name: !reset null
   nginx:
     extends: {file: ../../docker-compose.yml, service: nginx}
     container_name: !reset null

@@ -6,7 +6,7 @@ addp_prepare_module_database() {
     system)
       "$launch" system go prepare-database system || return $?
       "$launch" system go prepare-database common ;;
-    meta|gateway|inference|workbench) "$launch" "$module" go prepare-database ;;
+    meta|gateway|inference|workbench|manager) "$launch" "$module" go prepare-database ;;
     agent|copilot) "$launch" "$module" python -m prepare_database ;;
     *) echo "Unknown platform database module: $module" >&2; return 1 ;;
   esac

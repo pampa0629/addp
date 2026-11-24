@@ -3831,6 +3831,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 列出向量化任务配置 | List embedding task configurations
@@ -3863,6 +3868,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 创建向量化任务配置 | Create embedding task configuration
@@ -3890,6 +3900,11 @@ paths:
             type: object
         "400":
           description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
           schema:
             additionalProperties: true
             type: object
@@ -3925,6 +3940,11 @@ paths:
             type: object
         "404":
           description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
           schema:
             additionalProperties: true
             type: object
@@ -3966,6 +3986,11 @@ paths:
             type: object
         "404":
           description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
           schema:
             additionalProperties: true
             type: object
@@ -7266,6 +7291,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 列出 TaskProvider Manager 任务 | List TaskProvider Manager tasks
@@ -7301,6 +7331,11 @@ paths:
             type: object
         "404":
           description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
           schema:
             additionalProperties: true
             type: object
@@ -7363,6 +7398,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 执行 TaskProvider Manager 任务 | Execute TaskProvider Manager task
@@ -7417,6 +7457,11 @@ paths:
             type: object
         "500":
           description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
           schema:
             additionalProperties: true
             type: object
@@ -7523,6 +7568,11 @@ paths:
             type: object
         "404":
           description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 此部署缺少向量存储能力 | Vector storage unavailable in this deployment
           schema:
             additionalProperties: true
             type: object

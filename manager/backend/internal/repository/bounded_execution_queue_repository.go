@@ -83,8 +83,7 @@ func ManagerBoundedTaskTypes() []string {
 
 // ManagerTaskDefinitionSpecs exposes the single Manager task ownership registry
 // to lifecycle consumers such as cleanup.
-func ManagerTaskDefinitionSpecs() []CleanupTaskDefinitionSpec {
-	taskTypes := ManagerBoundedTaskTypes()
+func ManagerTaskDefinitionSpecs(taskTypes []string) []CleanupTaskDefinitionSpec {
 	specs := make([]CleanupTaskDefinitionSpec, 0, len(taskTypes))
 	for _, taskType := range taskTypes {
 		ownership := managerExecutionOwnerships[taskType]
@@ -248,7 +247,7 @@ func (r *BoundedExecutionQueueRepository) FailClaimed(ctx context.Context, execu
 // violate the lease protocol. A valid claim changes status and lease identity
 // atomically, so a visible running row without a complete lease can never be a
 // legal current attempt.
-func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, now time.Time, limit int) (int, error) {
+func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, taskTypes []string, now time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -285,7 +284,7 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 		}
 		query := tx.Where(
 			"module = ? AND task_type IN ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
-			commonExecution.ModuleManager, ManagerBoundedTaskTypes(), commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
+			commonExecution.ModuleManager, taskTypes, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
 		).Order("created_at ASC, id ASC").Limit(limit)
 		query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		var items []commonExecution.TaskExecution
@@ -313,14 +312,14 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 	return recovered, err
 }
 
-func (r *BoundedExecutionQueueRepository) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
+func (r *BoundedExecutionQueueRepository) RecoverExpired(ctx context.Context, taskTypes []string, now time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	recovered := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleManager, TaskTypes: ManagerBoundedTaskTypes(), Limit: limit,
+			Module: commonExecution.ModuleManager, TaskTypes: taskTypes, Limit: limit,
 		})
 		if err != nil {
 			return err

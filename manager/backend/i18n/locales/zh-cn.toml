@@ -397,3 +397,6 @@ other = "检索容量不足，本次查询已停止"
 
 [manager.error.tiff_source_composition_changed]
 other = "TIFF 源组成已变化：已登记的组成文件缺失或内容改变，请刷新元数据后重新核验。"
+
+[manager.error.vector_storage_unavailable]
+other = "此部署未提供向量存储能力。"

@@ -397,3 +397,6 @@ other = "Search capacity was exceeded. This query has stopped."
 
 [manager.error.tiff_source_composition_changed]
 other = "The TIFF source composition changed: a registered component is missing or its content changed. Refresh metadata before retrying."
+
+[manager.error.vector_storage_unavailable]
+other = "Vector storage is unavailable in this deployment."

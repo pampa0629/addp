@@ -231,7 +231,7 @@ class RuntimeSelectionTest(unittest.TestCase):
 
     def test_scoped_database_modules_match_installer_and_runtime_services(self):
         base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
-        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system"), ("postgres", "system,workbench")):
+        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager"), ("postgres", "system,workbench")):
             with self.subTest(provider=provider, modules=modules), tempfile.TemporaryDirectory() as temporary:
                 env = release.release_environment(dict(os.environ, ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
                     ADDP_DEPLOYMENT_NETWORK="test-net", ADDP_DEPLOYMENT_PROJECT="test-scoped", NGINX_PORT="8080",

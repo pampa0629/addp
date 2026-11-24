@@ -17,7 +17,7 @@ source "$ROOT_DIR/scripts/test/hosted-platform-database.sh"
 hosted_start_platform_infra
 application_owned=1
 # Bootstrap identities before the Manager-first scenario, then stop System.
-hosted_prepare_native_database copilot
+hosted_prepare_native_database manager copilot
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite module-registry-recovery --output "$1"' _ "$IDENTITY_ENV"
 declaration_phase() (
   source "$IDENTITY_ENV"

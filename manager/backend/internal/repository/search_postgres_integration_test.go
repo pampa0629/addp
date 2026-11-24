@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/migrations"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -40,6 +42,52 @@ func TestIntegrationPostgresManagerSearchSchemaAndVectorBatches(t *testing.T) {
 	if err := MigrateContentIndexDeliverySchema(tx); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("upgrade recorded keyword and vector materials", func(t *testing.T) {
+		// Roll back the historical fixture to exercise a fresh install below as well.
+		stop := errors.New("end historical fixture")
+		err := tx.Transaction(func(legacy *gorm.DB) error {
+			const name = "047_search_continuation.sql"
+			sql, err := migrations.SearchFS.ReadFile(name)
+			if err != nil {
+				return err
+			}
+			if err := legacy.Exec(string(sql)).Error; err != nil {
+				return err
+			}
+			if err := legacy.Exec("CREATE TABLE manager.search_schema_migrations(name text PRIMARY KEY, checksum text NOT NULL)").Error; err != nil {
+				return err
+			}
+			if err := legacy.Exec("INSERT INTO manager.search_schema_migrations VALUES(?,?)", name, fmt.Sprintf("%x", sha256.Sum256(sql))).Error; err != nil {
+				return err
+			}
+			if err := legacy.Exec("INSERT INTO manager.search_document_ordinals VALUES('historical','document',37)").Error; err != nil {
+				return err
+			}
+			var before, after string
+			if err := legacy.Raw("SELECT generation FROM manager.search_material_generation").Scan(&before).Error; err != nil {
+				return err
+			}
+			if err := MigrateSearchSchema(legacy); err != nil {
+				return err
+			}
+			if err := legacy.Raw("SELECT generation FROM manager.search_material_generation WHERE EXISTS (SELECT 1 FROM manager.search_document_ordinals WHERE index_name='historical' AND document_id='document' AND search_ordinal=37)").Scan(&after).Error; err != nil {
+				return err
+			}
+			if before == "" || after != before {
+				return fmt.Errorf("historical search material changed")
+			}
+			if err := legacy.Exec("UPDATE manager.search_schema_migrations SET checksum='changed' WHERE name=?", name).Error; err != nil {
+				return err
+			}
+			if err := MigrateSearchSchema(legacy); err == nil || !strings.Contains(err.Error(), "checksum differs") {
+				return fmt.Errorf("historical checksum rejection: %v", err)
+			}
+			return stop
+		})
+		if !errors.Is(err, stop) {
+			t.Fatal(err)
+		}
+	})
 	for range 2 {
 		if err := MigrateSearchSchema(tx); err != nil {
 			t.Fatal(err)

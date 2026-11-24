@@ -26,8 +26,8 @@ type BoundedExecutionQueue interface {
 	RenewLease(context.Context, commonExecution.Lease, time.Duration) error
 	AttemptIsTerminal(context.Context, commonExecution.Lease) (bool, error)
 	FailClaimed(context.Context, *commonExecution.TaskExecution, commonExecution.Lease, string, string, time.Time) error
-	RecoverUnleased(context.Context, time.Time, int) (int, error)
-	RecoverExpired(context.Context, time.Time, int) (int, error)
+	RecoverUnleased(context.Context, []string, time.Time, int) (int, error)
+	RecoverExpired(context.Context, []string, time.Time, int) (int, error)
 }
 
 type BoundedExecutionDispatcher interface {
@@ -220,7 +220,7 @@ func (s *BoundedExecutionSupervisor) recoveryLoop(ctx context.Context, canRecove
 	for {
 		if canRecover == nil || canRecover() {
 			now := time.Now().UTC()
-			unleased, err := s.queue.RecoverUnleased(ctx, now, 100)
+			unleased, err := s.queue.RecoverUnleased(ctx, s.config.TaskTypes, now, 100)
 			if err != nil {
 				if ctx.Err() == nil {
 					s.logger.Error("recover unleased Manager bounded executions failed", "error", err)
@@ -228,7 +228,7 @@ func (s *BoundedExecutionSupervisor) recoveryLoop(ctx context.Context, canRecove
 			} else if unleased > 0 {
 				s.logger.Warn("unleased Manager bounded executions converged", "count", unleased)
 			}
-			if count, err := s.queue.RecoverExpired(ctx, now, 100); err != nil {
+			if count, err := s.queue.RecoverExpired(ctx, s.config.TaskTypes, now, 100); err != nil {
 				if ctx.Err() == nil {
 					s.logger.Error("recover expired Manager bounded executions failed", "error", err)
 				}

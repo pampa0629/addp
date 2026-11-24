@@ -503,6 +503,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -547,6 +554,13 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -599,6 +613,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -665,6 +686,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -705,6 +733,13 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5453,6 +5488,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -5507,6 +5549,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5596,6 +5645,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -5673,6 +5729,13 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5788,6 +5851,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "此部署缺少向量存储能力 | Vector storage unavailable in this deployment",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

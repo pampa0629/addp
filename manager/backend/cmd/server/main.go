@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +26,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/mvt"
@@ -55,6 +58,22 @@ import (
 // @name Authorization
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "prepare-database" {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := repository.PrepareDatabase(ctx, config.PlatformDatabase()); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				fmt.Fprintln(os.Stderr, err)
+				if err := pending.WriteSQL(os.Stdout, "manager"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
 
@@ -62,7 +81,7 @@ func main() {
 	cfg := config.Load()
 	if len(os.Args) > 1 {
 		if len(os.Args) != 4 || os.Args[1] != "maintain-search" {
-			log.Fatal("usage: manager-backend maintain-search clear|rebuild OPERATION_UUID")
+			log.Fatal("usage: manager-backend prepare-database | maintain-search clear|rebuild OPERATION_UUID")
 		}
 		db, err := bootstrap.OpenPlatformInstallation(database.Config{Host: cfg.DBHost, Port: cfg.DBPort, DBName: cfg.DBName, Schema: "manager"}, "manager")
 		if err != nil {
@@ -101,7 +120,18 @@ func main() {
 	logger.L().Info("开始初始化 Manager repositories")
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := &repository.MetadataRepository{}
-	embeddingRepo := repository.NewEmbeddingRepository(db)
+	vectorAvailable, err := repository.HasEmbeddingStorage(db)
+	if err != nil {
+		logger.L().Error("核验向量存储失败", "error", err)
+		os.Exit(1)
+	}
+	var embeddingRepo *repository.EmbeddingRepository
+	taskTypes := repository.ManagerBoundedTaskTypes()
+	if vectorAvailable {
+		embeddingRepo = repository.NewEmbeddingRepository(db)
+	} else {
+		taskTypes = slices.DeleteFunc(taskTypes, func(kind string) bool { return kind == commonExecution.TaskTypeEmbedding })
+	}
 	embeddingConfigurationRepo := repository.NewEmbeddingConfigurationRepository(db)
 	inferenceScenarioBindingRepo := repository.NewInferenceScenarioBindingRepository(db)
 	quickViewPolicyRepo := repository.NewQuickViewPolicyRepository(db)
@@ -120,7 +150,7 @@ func main() {
 	dataProfileRepo := repository.NewDataProfileRepository(db)
 	dataProfileExecutionRepo := repository.NewDataProfileExecutionRepository(db)
 	boundedExecutionQueue := repository.NewBoundedExecutionQueueRepository(db)
-	cleanupTaskDefinitionRepo := repository.NewCleanupTaskDefinitionRepository(db, repository.ManagerTaskDefinitionSpecs())
+	cleanupTaskDefinitionRepo := repository.NewCleanupTaskDefinitionRepository(db, repository.ManagerTaskDefinitionSpecs(taskTypes))
 	cleanupManagedArtifactRepo := repository.NewCleanupManagedArtifactRepository(db, repository.ManagerManagedArtifactSpecs())
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	embeddingConfigurationService := service.NewEmbeddingConfigurationService(embeddingConfigurationRepo)
@@ -208,7 +238,7 @@ func main() {
 	metadataService.SetMetaScanUserClient(commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
 	indexDeliveries := repository.NewContentIndexDeliveryRepository(db, cfg.MeilisearchManagerContentIndex)
 	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, indexDeliveries)
-	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "manager", managerProjectionBarrier)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "manager", managerProjectionBarrier)
 	if err != nil {
 		logger.L().Error("保护投影本地存储初始化失败", "error", err)
 		os.Exit(1)
@@ -277,15 +307,17 @@ func main() {
 	})
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
-	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, inferenceClient, taskExecRepo, embeddingConfigurationProvider, inferenceScenarioBindingService, logger.L())
-	if err != nil {
-		logger.L().Error("向量化服务初始化失败", "error", err)
-		os.Exit(1)
+	var embeddingService *service.EmbeddingService
+	var embeddingTaskSvc *service.EmbeddingTaskService
+	if vectorAvailable {
+		embeddingService, err = service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, inferenceClient, taskExecRepo, embeddingConfigurationProvider, inferenceScenarioBindingService, logger.L())
+		if err != nil {
+			logger.L().Error("向量化服务初始化失败", "error", err)
+			os.Exit(1)
+		}
+		embeddingTaskSvc = service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, embeddingConfigurationProvider)
 	}
-	logger.L().Info("向量化服务已初始化（推理由 Inference Runtime 提供）")
 
-	// 初始化任务定义服务
-	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, embeddingConfigurationProvider)
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
 	vectorMaterializedViewTaskSvc := service.NewVectorMaterializedViewTaskService(vectorMaterializedViewRepo, taskExecRepo)
 	rasterCOGTaskSvc := service.NewRasterCOGTaskService(rasterCOGRepo)
@@ -561,7 +593,7 @@ func main() {
 			Concurrency: cfg.ExecutionSupervisor.Concurrency, LeaseDuration: cfg.ExecutionSupervisor.LeaseDuration,
 			HeartbeatInterval: cfg.ExecutionSupervisor.HeartbeatInterval, ClaimInterval: cfg.ExecutionSupervisor.ClaimInterval,
 			IdleMaxInterval: cfg.ExecutionSupervisor.IdleMaxInterval,
-			TaskTypes:       repository.ManagerBoundedTaskTypes(),
+			TaskTypes:       taskTypes,
 		},
 		logger.With("component", "manager_bounded_execution_supervisor"),
 	)

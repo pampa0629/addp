@@ -42,7 +42,7 @@ if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
 fi
 application_owned=1
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
-  hosted_prepare_native_database inference agent
+  hosted_prepare_native_database manager inference agent
 else
   hosted_prepare_native_database
 fi

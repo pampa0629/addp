@@ -228,7 +228,7 @@ func TestManagerCleanupTaskRegistryCoversTaskProviderDeclaration(t *testing.T) {
 		t.Fatalf("decode Manager task provider capabilities: %v", err)
 	}
 	registered := map[string]bool{}
-	for _, spec := range repository.ManagerTaskDefinitionSpecs() {
+	for _, spec := range repository.ManagerTaskDefinitionSpecs(repository.ManagerBoundedTaskTypes()) {
 		registered[spec.TaskType] = true
 	}
 	for _, capability := range payload.TaskCapabilities {

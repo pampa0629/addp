@@ -157,7 +157,7 @@ func TestManagerQueueRecoversOnlyAbandonedUnboundProfiles(t *testing.T) {
 	if err := db.Model(&commonExecution.TaskExecution{}).Where("id IN ?", []int64{old.ID, bound.ID}).Update("created_at", now.Add(-3*time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
-	count, err := NewBoundedExecutionQueueRepository(db).RecoverUnleased(t.Context(), now, 100)
+	count, err := NewBoundedExecutionQueueRepository(db).RecoverUnleased(t.Context(), ManagerBoundedTaskTypes(), now, 100)
 	if err != nil || count != 1 {
 		t.Fatalf("recovered=%d %v", count, err)
 	}

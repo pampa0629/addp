@@ -87,7 +87,7 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 	if err := db.Model(execution).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := queue.RecoverExpired(context.Background(), time.Now().UTC(), 100)
+	recovered, err := queue.RecoverExpired(context.Background(), ManagerBoundedTaskTypes(), time.Now().UTC(), 100)
 	if err != nil {
 		t.Fatalf("recover expired PPTX execution: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestPPTXPDFUnleasedRunningExecutionFailsExecutionTaskAndBuildingResult(t *t
 		t.Fatalf("create building PPTX result: %v", err)
 	}
 
-	recovered, err := queue.RecoverUnleased(context.Background(), startedAt.Add(time.Minute), 100)
+	recovered, err := queue.RecoverUnleased(context.Background(), ManagerBoundedTaskTypes(), startedAt.Add(time.Minute), 100)
 	if err != nil {
 		t.Fatalf("recover unleased PPTX execution: %v", err)
 	}

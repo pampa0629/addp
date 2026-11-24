@@ -125,10 +125,10 @@ func (q *supervisorTestQueue) FailClaimed(context.Context, *commonExecution.Task
 	close(q.failed)
 	return nil
 }
-func (q *supervisorTestQueue) RecoverUnleased(context.Context, time.Time, int) (int, error) {
+func (q *supervisorTestQueue) RecoverUnleased(context.Context, []string, time.Time, int) (int, error) {
 	return 0, nil
 }
-func (q *supervisorTestQueue) RecoverExpired(context.Context, time.Time, int) (int, error) {
+func (q *supervisorTestQueue) RecoverExpired(context.Context, []string, time.Time, int) (int, error) {
 	return 0, nil
 }
 

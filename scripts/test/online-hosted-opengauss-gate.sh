@@ -26,7 +26,7 @@ hosted_start_platform_infra
 fixture_owned=1
 run_logged bash business/scripts/online-opengauss-consumer-fixture.sh start
 application_owned=1
-hosted_prepare_native_database
+hosted_prepare_native_database manager
 unset hosted_deploy_password
 for start_target in -security -manager -develop -service -transfer; do
   # start.sh deliberately leaves application processes running. Writing its

@@ -162,7 +162,7 @@ python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${inten
 # Prepare downstream module schemas only during deployment or upgrade.
 if [[ "$prepare_databases" == true ]]; then
   database_services=$(platform_compose config --services)
-  for module in meta gateway inference workbench agent copilot; do
+  for module in meta gateway inference workbench manager agent copilot; do
     service="$module-backend"
     if [[ "$module" == gateway ]]; then service=gateway; fi
     if grep -Fxq "$service" <<< "$database_services"; then

@@ -29,9 +29,6 @@ func MaintainSearch(ctx context.Context, db *gorm.DB, cfg *config.Config, action
 	index := cfg.MeilisearchManagerContentIndex
 	repo := repository.NewContentIndexDeliveryRepository(db, index)
 	client := ms.New(cfg.MeilisearchURL, ms.WithAPIKey(cfg.MeilisearchMasterKey), ms.WithCustomClient(&http.Client{Timeout: 15 * time.Second}), ms.DisableRetries())
-	if err := repository.PrepareSearchMaintenance(db); err != nil {
-		return err
-	}
 	endpoint := contentIndexEndpointID(cfg.MeilisearchURL)
 	for {
 		op, err := repo.BeginSearchMaintenance(ctx, id, endpoint, action)

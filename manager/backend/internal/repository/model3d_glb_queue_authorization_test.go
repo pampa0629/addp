@@ -56,7 +56,7 @@ func TestFTPModelGLBQueueRequiresBoundCurrentAuthorization(t *testing.T) {
 			if err != nil || stored.Status != commonExecution.ExecutionStatusPending || stored.Attempt != 0 {
 				t.Fatalf("queue changed pending: %+v %v", stored, err)
 			}
-			if n, err := queue.RecoverUnleased(t.Context(), now, 100); err != nil || n != 1 {
+			if n, err := queue.RecoverUnleased(t.Context(), ManagerBoundedTaskTypes(), now, 100); err != nil || n != 1 {
 				t.Fatalf("preparation recovery=%d %v", n, err)
 			}
 			stored, err = repo.GetExecution(t.Context(), 7, item.ExecutionID)

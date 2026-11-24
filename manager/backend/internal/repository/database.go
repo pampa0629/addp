@@ -1,98 +1,195 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/addp/common/cleanup"
+	"github.com/addp/common/dataprotection/projectionstore"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
-	commonRepo "github.com/addp/common/repository"
+	"github.com/addp/common/schema"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
 
-func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	// Use common repository InitDatabase
-	// Note: Manager needs access to manager, meta, and system schemas
-	dbConfig := database.Config{
-		Host:     cfg.DBHost,
-		Port:     cfg.DBPort,
-		User:     cfg.DBUser,
-		Password: cfg.DBPassword,
-		DBName:   cfg.DBName,
-		Schema:   cfg.DBSchema,
-		SSLMode:  "disable",
+const DatabaseVersion int64 = 1
+
+func platformDatabaseConfig(cfg *config.Config) database.Config {
+	return database.Config{Host: cfg.DBHost, Port: cfg.DBPort, DBName: cfg.DBName, Schema: "manager", ConnectTimeout: 5 * time.Second}
+}
+
+// PrepareDatabase owns Manager's installation. The root launcher supplies the
+// same deployment identity used by the other module installers.
+func PrepareDatabase(ctx context.Context, pg database.Config) error {
+	db, err := bootstrap.OpenPlatformInstallation(pg, "manager")
+	if err != nil {
+		return err
+	}
+	pool, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	db = db.WithContext(ctx)
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		return err
+	}
+	if db.Dialector.Name() == "mysql" {
+		// The protection store holds and verifies its own schema revision and
+		// connection-scoped migration lock before Manager publishes its revision.
+		if _, err := projectionstore.Migrate(db, "manager", "manager", nil); err != nil {
+			return err
+		}
+		return schema.MigrateMySQL(db, "manager", DatabaseVersion, prepareManagerMySQL)
+	}
+	return schema.Migrate(db, "manager", DatabaseVersion, prepareManagerPostgres)
+}
+
+func prepareManagerPostgres(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.EmbeddingConfiguration{}, &models.InferenceScenarioBinding{}); err != nil {
+		return err
+	}
+	if err := migrateImportSources(db); err != nil {
+		return fmt.Errorf("prepare Manager import sources: %w", err)
+	}
+	if err := exportartifact.EnsureStore(db, "manager.export_sessions"); err != nil {
+		return fmt.Errorf("failed to ensure export session store: %w", err)
+	}
+	if err := migrateImportObjectReferences(db); err != nil {
+		return err
+	}
+	if err := dropLegacyExportSessionTransferTaskID(db); err != nil {
+		return fmt.Errorf("failed to remove legacy export session transfer task identity: %w", err)
 	}
 
-	// Initialize database with auto-migration.
-	// Quick View / tile cache tables use an explicit clean-break schema guard below.
-	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.EmbeddingTask{}, // 向量化任务定义表
-		&models.EmbeddingConfiguration{},
-		&models.InferenceScenarioBinding{},
-	)
+	var vectorAvailable bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_available_extensions WHERE name='vector')").Scan(&vectorAvailable).Error; err != nil {
+		return err
+	}
+	if vectorAvailable {
+		if err := ensureEmbeddingArtifactStateSchema(db, models.EmbeddingVectorDimension); err != nil {
+			return fmt.Errorf("failed to ensure embedding artifact state schema: %w", err)
+		}
+		if err := db.AutoMigrate(&models.EmbeddingTask{}); err != nil {
+			return err
+		}
+		if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
+			return err
+		}
+	}
+	if err := ensureEmbeddingConfigurationSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure embedding configuration schema: %w", err)
+	}
+	if err := preparePreviewPolicies(db); err != nil {
+		return fmt.Errorf("prepare Manager preview policies: %w", err)
+	}
+	if err := dropLegacyQuickViewTables(db); err != nil {
+		return fmt.Errorf("failed to drop legacy quick view tables: %w", err)
+	}
+	if err := dropLegacyCADPreviewTables(db); err != nil {
+		return fmt.Errorf("failed to drop legacy CAD preview tables: %w", err)
+	}
+	return prepareManagerStores(db)
+}
+
+func prepareManagerStores(db *gorm.DB) error {
+	if err := ensureTaskDefinitionSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure unified Manager task definition schema: %w", err)
+	}
+	if err := preparePreviewArtifacts(db); err != nil {
+		return err
+	}
+	if err := ensureDataProfileSchema(db); err != nil {
+		return fmt.Errorf("failed to ensure data profile schema: %w", err)
+	}
+	if err := MigrateCleanupArtifactSchema(db); err != nil {
+		return err
+	}
+	if db.Dialector.Name() == "mysql" {
+		// Return all DBA statements together before certifying the owner revision.
+		if err := cleanup.PrepareMySQLResultTable(db, "manager"); err != nil {
+			return err
+		}
+		if err := prepareManagerMySQLTables(db, mysqlContentIndexTables); err != nil {
+			return err
+		}
+		if err := schema.CheckMySQLTriggers(db, append(contentIndexMySQLTriggers(), cleanup.MySQLResultUpdateGuard)); err != nil {
+			return err
+		}
+	} else {
+		if err := cleanup.MigrateResults(db, "manager"); err != nil {
+			return err
+		}
+		if err := MigrateContentIndexDeliverySchema(db); err != nil {
+			return fmt.Errorf("failed to ensure content index delivery schema: %w", err)
+		}
+	}
+	if err := MigrateSearchSchema(db); err != nil {
+		return fmt.Errorf("failed to migrate Manager search schema: %w", err)
+	}
+	if db.Dialector.Name() == "postgres" {
+		if err := normalizePreviewArtifactSchemaNames(db); err != nil {
+			return err
+		}
+	}
+	if err := PrepareSearchMaintenance(db); err != nil {
+		return err
+	}
+	if db.Dialector.Name() == "mysql" {
+		return nil
+	}
+	_, err := projectionstore.Migrate(db, "manager", "manager", nil)
+	return err
+}
+
+func prepareManagerMySQL(db *gorm.DB) error {
+	if err := prepareManagerMySQLTables(db, mysqlInferenceSettingsTables); err != nil {
+		return err
+	}
+	if err := migrateImportSources(db); err != nil {
+		return err
+	}
+	if err := exportartifact.EnsureStore(db, "manager.export_sessions"); err != nil {
+		return err
+	}
+	if err := MigratePreviewStateSchema(db); err != nil {
+		return err
+	}
+	if err := preparePreviewPolicies(db); err != nil {
+		return err
+	}
+	return prepareManagerStores(db)
+}
+
+// HasEmbeddingStorage reads the installed capability. A partially installed
+// PostgreSQL vector schema must be repaired during deployment.
+func HasEmbeddingStorage(db *gorm.DB) (bool, error) {
+	if db.Dialector.Name() == "mysql" {
+		return false, nil
+	}
+	var state struct{ Extension, Artifacts, Tasks bool }
+	err := db.Raw(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'vector') AS extension,
+		to_regclass('manager.embeddings') IS NOT NULL AS artifacts,
+		to_regclass('manager.embedding_tasks') IS NOT NULL AS tasks`).Scan(&state).Error
+	if err != nil {
+		return false, err
+	}
+	if state.Extension != state.Artifacts || state.Artifacts != state.Tasks {
+		return false, fmt.Errorf("incomplete Manager embedding storage")
+	}
+	return state.Artifacts, nil
+}
+
+func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
+	db, err := bootstrap.OpenPlatformRuntime(platformDatabaseConfig(cfg), "manager", &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
-	if err := migrateImportSources(db); err != nil {
-		return nil, fmt.Errorf("prepare Manager import sources: %w", err)
-	}
-	if err := exportartifact.EnsureStore(db, "manager.export_sessions"); err != nil {
-		return nil, fmt.Errorf("failed to ensure export session store: %w", err)
-	}
-	if err := migrateImportObjectReferences(db); err != nil {
-		return nil, err
-	}
-	if err := dropLegacyExportSessionTransferTaskID(db); err != nil {
-		return nil, fmt.Errorf("failed to remove legacy export session transfer task identity: %w", err)
-	}
-
-	if err := ensureEmbeddingArtifactStateSchema(db, models.EmbeddingVectorDimension); err != nil {
-		return nil, fmt.Errorf("failed to ensure embedding artifact state schema: %w", err)
-	}
-	if err := ensureEmbeddingConfigurationSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure embedding configuration schema: %w", err)
-	}
-	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure embedding task definition schema: %w", err)
-	}
-	if err := preparePreviewPolicies(db); err != nil {
-		return nil, fmt.Errorf("prepare Manager preview policies: %w", err)
-	}
-	if err := dropLegacyQuickViewTables(db); err != nil {
-		return nil, fmt.Errorf("failed to drop legacy quick view tables: %w", err)
-	}
-	if err := dropLegacyCADPreviewTables(db); err != nil {
-		return nil, fmt.Errorf("failed to drop legacy CAD preview tables: %w", err)
-	}
-	if err := ensureTaskDefinitionSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure unified Manager task definition schema: %w", err)
-	}
-	if err := preparePreviewArtifacts(db); err != nil {
-		return nil, err
-	}
-	if err := ensureDataProfileSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure data profile schema: %w", err)
-	}
-	if err := MigrateCleanupArtifactSchema(db); err != nil {
-		return nil, err
-	}
-	if err := cleanup.MigrateResults(db, "manager"); err != nil {
-		return nil, err
-	}
-	if err := MigrateContentIndexDeliverySchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure content index delivery schema: %w", err)
-	}
-	if err := MigrateSearchSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to migrate Manager search schema: %w", err)
-	}
-	if err := normalizePreviewArtifactSchemaNames(db); err != nil {
-		return nil, fmt.Errorf("failed to normalize preview artifact schema names: %w", err)
-	}
-
 	// Configure connection pool for optimal performance
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -104,9 +201,14 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(20)                  // 最大空闲连接数 (连接复用)
 	sqlDB.SetConnMaxLifetime(10 * time.Minute) // 连接最大生命周期
 
-	// Set search_path to manager schema only
-	// Access to metadata and system schemas should be done via MetaClient and SystemClient
-	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
+	if err := schema.Require(db, "manager", DatabaseVersion); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
 
 	return db, nil
 }

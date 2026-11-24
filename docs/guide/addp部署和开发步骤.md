@@ -65,9 +65,9 @@ bash scripts/infra/status.sh
 
 ### 第二步: 开发模式 (推荐用于开发)
 
-源码开发和生产使用相同的数据库准备顺序。每套部署选择一个平台数据库。部署阶段用平台部署账号依次执行 System 的 `prepare-database system` 和 `prepare-database common`，System 就绪后执行 Meta、Gateway 和本次部署包含的 Inference、Workbench 的 `prepare-database`。Agent、Copilot 使用各自 Python 环境的 `python -m prepare_database`。生产 Compose 由根发布入口编排这些步骤。源码构建对应的程序是 `.dev-bins/addp-system`、`.dev-bins/addp-meta`、`.dev-bins/addp-gateway`、`.dev-bins/addp-inference` 和 `.dev-bins/addp-workbench`。部署凭据只交付给安装进程。MySQL 安装命令若返回 3，由 DBA 审阅并执行输出的 SQL，再次执行安装核验。
+源码开发和生产使用相同的数据库准备顺序。每套部署选择一个平台数据库。部署阶段用平台部署账号依次执行 System 的 `prepare-database system` 和 `prepare-database common`，System 就绪后执行 Meta、Gateway 和本次部署包含的 Manager、Inference、Workbench 的 `prepare-database`。Agent、Copilot 使用各自 Python 环境的 `python -m prepare_database`。生产 Compose 由根发布入口编排这些步骤。源码构建对应的程序是 `.dev-bins/addp-system`、`.dev-bins/addp-meta`、`.dev-bins/addp-gateway`、`.dev-bins/addp-manager`、`.dev-bins/addp-inference` 和 `.dev-bins/addp-workbench`。部署凭据只交付给安装进程。MySQL 安装命令若返回 3，由 DBA 审阅并执行输出的 SQL，再次执行安装核验。
 
-普通启动和重启从根 `.env` 或进程环境读取 `ADDP_DATABASE_RUNTIME_USER`、`ADDP_DATABASE_RUNTIME_PASSWORD`。使用预先创建的平台运行账号。已有开发 PG 升级前，先盘点本次部署所含模块 schema 的所有者、运行角色和已安装的版本。System 记录在 `system.schema_migrations`，Common、Meta、Gateway、Inference、Workbench、Agent、Copilot 分别记录在各自的 `startup_schema_revision`。首次安装时，部署账号向运行账号交付所需的表、序列及后续对象权限。日常执行 `bash scripts/dev/start.sh` 或 `bash scripts/dev/restart.sh -system` 即可。入口核对本工作区的容器归属、实际端口和库名，在启动各服务之前调用模块准备命令。已启动的服务沿用原进程。System 遇到历史摘要缺失时报告迁移版本并停止；核验历史后，由部署人员用 `prepare-database system` 恢复缺失记录。部署账号与运行账号的权限以[部署环境与密钥规范](../spec/configuration/部署环境与密钥.md)为准。
+普通启动和重启从根 `.env` 或进程环境读取 `ADDP_DATABASE_RUNTIME_USER`、`ADDP_DATABASE_RUNTIME_PASSWORD`。使用预先创建的平台运行账号。已有开发 PG 升级前，先盘点本次部署所含模块 schema 的所有者、运行角色和已安装的版本。System 记录在 `system.schema_migrations`，Common、Meta、Gateway、Manager、Inference、Workbench、Agent、Copilot 分别记录在各自的 `startup_schema_revision`。首次安装时，部署账号向运行账号交付所需的表、序列及后续对象权限。日常执行 `bash scripts/dev/start.sh` 或 `bash scripts/dev/restart.sh -system` 即可。入口核对本工作区的容器归属、实际端口和库名，在启动各服务之前调用模块准备命令。已启动的服务沿用原进程。System 遇到历史摘要缺失时报告迁移版本并停止；核验历史后，由部署人员用 `prepare-database system` 恢复缺失记录。部署账号与运行账号的权限以[部署环境与密钥规范](../spec/configuration/部署环境与密钥.md)为准。
 
 **按正确顺序启动所有服务**,使用自动化开发脚本:
 

@@ -64,3 +64,10 @@ func invalidDownloadBundle(c *gin.Context) {
 func downloadSourceChanged(c *gin.Context) {
 	c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgDownloadSourceChanged), "error_code": "download_source_changed"})
 }
+
+func vectorStorageUnavailable(c *gin.Context) {
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error":      commoni18n.T(c, manageri18n.MsgVectorStorageUnavailable),
+		"error_code": "vector_storage_unavailable",
+	})
+}

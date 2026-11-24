@@ -160,7 +160,7 @@ func runManagerExecutionEvents(t *testing.T, database func(*testing.T) *gorm.DB)
 			case "complete":
 				err = NewTileCacheRepository(db).CompleteExecution(commonExecution.ContextWithLease(t.Context(), *lease), taskID, uint(item.TenantID), item.ExecutionID, artifact.ID, map[string]interface{}{"status": "ready"}, map[string]interface{}{"status": "success"}, time.Now().UTC())
 			case "recover":
-				_, err = queue.RecoverExpired(t.Context(), time.Now().UTC(), 100)
+				_, err = queue.RecoverExpired(t.Context(), ManagerBoundedTaskTypes(), time.Now().UTC(), 100)
 			}
 			if err == nil {
 				t.Fatal("event failure did not roll back operation")
@@ -269,7 +269,7 @@ func runManagerExecutionEvents(t *testing.T, database func(*testing.T) *gorm.DB)
 					t.Fatal(err)
 				}
 				var count int
-				count, err = queue.RecoverExpired(t.Context(), time.Now().UTC(), 100)
+				count, err = queue.RecoverExpired(t.Context(), ManagerBoundedTaskTypes(), time.Now().UTC(), 100)
 				if count != 1 {
 					t.Fatalf("recovered %d: %v", count, err)
 				}
@@ -280,7 +280,7 @@ func runManagerExecutionEvents(t *testing.T, database func(*testing.T) *gorm.DB)
 				if err := db.Model(item).Updates(map[string]interface{}{"attempt": 0, "lease_token": nil}).Error; err != nil {
 					t.Fatal(err)
 				}
-				_, err = queue.RecoverUnleased(t.Context(), time.Now().UTC(), 100)
+				_, err = queue.RecoverUnleased(t.Context(), ManagerBoundedTaskTypes(), time.Now().UTC(), 100)
 				// The original real claim remains; recovery cannot invent a second event.
 				assertManagerEvents(t, db, item, "started")
 				if err != nil {

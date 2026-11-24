@@ -13,6 +13,7 @@ const MsgTIFFSourceCompositionChanged = "manager.error.tiff_source_composition_c
 
 // Manager 模块消息 key 常量（目前 manager 后端错误消息均通过 commonAPI 返回英文，此处预留扩展）
 const (
+	MsgVectorStorageUnavailable  = "manager.error.vector_storage_unavailable"
 	MsgSearchContextChanged      = "manager.search.context_changed"
 	MsgSearchContinuationExpired = "manager.search.continuation_expired"
 	MsgSearchParametersInvalid   = "manager.search.parameters_invalid"

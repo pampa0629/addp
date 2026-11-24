@@ -1360,6 +1360,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Manager Backend（带检查）
   if [ "$START_MANAGER_BACKEND" = true ]; then
     if check_service_running "manager" "$MANAGER_BACKEND_PORT"; then
+      addp_dev_prepare_database manager || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" manager manager backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-manager" &
       MANAGER_PID=$!
       echo $MANAGER_PID > .dev-pids/manager.pid
