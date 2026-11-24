@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"github.com/addp/common/authorization"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +54,18 @@ func (p *rustfsLivePreview) Preview(ctx context.Context, req *preview.PreviewReq
 		p.after()
 	}
 	return r, e
+}
+
+func rustfsFixtureGetCount(t *testing.T) int {
+	t.Helper()
+	container := os.Getenv("ADDP_RUSTFS_TEST_CONTAINER")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	logs, err := exec.CommandContext(ctx, "docker", "logs", container).CombinedOutput()
+	if err != nil {
+		t.Fatalf("cannot observe owned RustFS source: %v", err)
+	}
+	return bytes.Count(logs, []byte("GetObject request started with "))
 }
 
 func TestIntegrationRustFSAuthorizedPreview(t *testing.T) {
@@ -103,7 +117,14 @@ func TestIntegrationRustFSAuthorizedPreview(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/preview?locator="+urlQueryEscape(locator), nil)
 			req.Header.Set("Authorization", "Bearer addp_at_original_user")
 			out := httptest.NewRecorder()
+			before := rustfsFixtureGetCount(t)
 			router.ServeHTTP(out, req)
+			gets := rustfsFixtureGetCount(t) - before
+			expectRead := scenario == "read" || scenario == "withdraw during read"
+			if (expectRead && gets <= 0) || (!expectRead && gets != 0) {
+				t.Fatalf("expected source read=%v, observed %d GetObject requests", expectRead, gets)
+			}
+			t.Logf("source GetObject requests=%d", gets)
 			want := http.StatusOK
 			if scenario == "no grant" {
 				want = http.StatusNotFound

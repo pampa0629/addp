@@ -1039,6 +1039,59 @@ def rustfs_order_physical(repository):
     return _object(json.loads(result.stdout), "RustFS PostgreSQL physical result")
 
 
+def verify_rustfs_node_read(client, initializer, repository, engine, current_target, actor, recipient, timeout):
+    scope = dict(current_target, segments=current_target["segments"][:-1])
+    path = "addp-demo/tables/node-future.csv"
+    grant_id = str(uuid.uuid4())
+    grants = f"/api/v1/system/engines/{engine}/access_grants"
+    body = dict(request_id=grant_id, catalog_path=scope, node_recursive=False, action="read",
+                recipient_type="user", recipient_id=recipient, expiry_mode="until_revoked",
+                reason="Disposable RustFS prefix read for a new object")
+    def fixture(action):
+        result = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", action],
+                                cwd=repository, text=True, capture_output=True, timeout=60)
+        if result.returncode:
+            raise SuiteError("owned RustFS node fixture failed: " + action)
+        return result.stdout.strip()
+
+    issued = revoked = False
+    try:
+        receipt = initializer.request("POST", grants, (201,), body).payload
+        issued = True
+        if (any(receipt.get(key) != body[key] for key in
+                ("request_id","catalog_path","action","recipient_type","recipient_id","expiry_mode"))
+                or receipt.get("node_recursive") is not False or receipt.get("item_fingerprint")
+                or receipt.get("operator_principal_id") != actor or receipt.get("engine_id") != str(engine)):
+            raise SuiteError("RustFS prefix receipt differs from its command")
+        client.request("POST", "/api/v1/system/engine-access/read-observations/current-source", (200,),
+                       {"targets":[current_target]})
+        fixture("rustfs-node-seed")
+        scan = wait_for_scan(initializer, engine, time.monotonic()+timeout,
+                             targets=[f"addp://engine/{engine}/path/{path}?type=object"])
+        item = find_item(client, engine, path, "object")
+        locator = (f"addp://engine/{engine}/path/" + urllib.parse.quote(path, safe="/") + "?" +
+                   urllib.parse.urlencode({"type": "object", "item_id": item["id"]}))
+        url = "/api/v1/manager/storage-stream?" + urllib.parse.urlencode(dict(locator=locator, storage_ref=path))
+        before = int(fixture("rustfs-node-gets"))
+        data = client.request("GET", url, (200,), raw_response=True).payload
+        after = int(fixture("rustfs-node-gets"))
+        if data != b"id,name\n37,node-future\n" or after <= before:
+            raise SuiteError("new RustFS object was not read from the source through Manager")
+        initializer.request("POST", grants + "/" + grant_id + "/revoke", (200,), {"reason":"End prefix read"})
+        revoked = True
+        denied = client.request("GET", url, (403,)).payload
+        if (not denied.get("error") or set(denied) - {"error","error_code"}
+                or denied.get("error_code") == "security_protection_required"
+                or int(fixture("rustfs-node-gets")) != after):
+            raise SuiteError("withdrawn RustFS stream did not stop before GetObject")
+        return dict(engine_id=engine, principal_id=recipient, grant=grant_id, scope=scope, scan=scan,
+                    allowed_source_gets=after-before, denied_source_gets=0, bytes=len(data))
+    finally:
+        if not revoked:
+            initializer.request("POST", grants + "/" + grant_id + "/revoke", (200,) if issued else (200,404),
+                                {"reason":"Clean up disposable RustFS prefix Grant"})
+
+
 def run_rustfs_orders(client, checker, initializer, outsider, identity, repository, source_engine,
                       target_engine, name, timeout, owned_ids):
     tenant_id = int(identity["tenant_id"])
@@ -1057,6 +1110,8 @@ def run_rustfs_orders(client, checker, initializer, outsider, identity, reposito
         {"term": term, "kind": term, "name": value} for term, value in
         (("service", ""), ("bucket", "addp-demo"), ("prefix", "tables"), ("object", "订单.parquet"))]}
     fingerprint = hashlib.sha256(f"{source_engine}:{RUSTFS_ORDERS_SOURCE}".encode()).hexdigest()
+    node = verify_rustfs_node_read(client, initializer, repository, source_engine, target, actor, recipient, timeout)
+    (Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))/"rustfs-node-read.json").write_text(json.dumps(node))
     source_grants = f"/api/v1/system/engines/{source_engine}/access_grants"
     facts = initializer.request("GET", f"/api/v1/system/engines/{source_engine}/data-items/{fingerprint}/authorization-facts", (200,)).payload
     boundary_hash = validate_rustfs_order_source_boundary(facts, source_engine, fingerprint, target)

@@ -39,8 +39,8 @@ database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
-  start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|rustfs-orders|verify|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|rustfs-orders|verify|stop|status" ;;
+  start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|rustfs-orders|rustfs-node-seed|rustfs-node-gets|verify|stop|status) ;;
+  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|rustfs-orders|rustfs-node-seed|rustfs-node-gets|verify|stop|status" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 containers=("$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container" "$rustfs_container")
@@ -485,7 +485,8 @@ with (root / 'transfer-rustfs-fixture.log').open('ab') as log:
     env = dict(os.environ, RUSTFS_ACCESS_KEY=access_key, RUSTFS_SECRET_KEY=secret_key)
     command(['docker', 'run', '-d', '--name', name, '--label', 'com.addp.online-fixture=' + owner,
              '--tmpfs', '/data:mode=1777', '-p', '127.0.0.1::9000', '-e', 'RUSTFS_ACCESS_KEY',
-             '-e', 'RUSTFS_SECRET_KEY', '-e', 'RUSTFS_VOLUMES=/data', '-e', 'RUSTFS_CONSOLE_ENABLE=false', image], env=env)
+             '-e', 'RUSTFS_SECRET_KEY', '-e', 'RUSTFS_OBS_LOGGER_LEVEL=warn,rustfs::app::object::get=debug',
+             '-e', 'RUSTFS_OBS_LOG_STDOUT_ENABLED=true', '-e', 'RUSTFS_VOLUMES=/data', '-e', 'RUSTFS_CONSOLE_ENABLE=false', image], env=env)
     endpoint = command(['docker', 'port', name, '9000/tcp']).decode().strip()
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
@@ -573,6 +574,25 @@ PY_DESCRIPTOR
   object-facts)
     assert_owned "$minio_container"
     object_storage_fixture facts
+    ;;
+  rustfs-node-gets)
+    assert_owned "$rustfs_container"
+    docker logs "$rustfs_container" 2>&1 | python3 -c 'import sys; print(sum("GetObject request started with " in line for line in sys.stdin))'
+    ;;
+  rustfs-node-seed)
+    assert_owned "$rustfs_container"
+    python3 - "$rustfs_container" <<'PY_NODE'
+import importlib, json, os, subprocess, sys
+from pathlib import Path
+from urllib.parse import quote
+source = json.loads((Path(os.environ['ADDP_ONLINE_SECRET_DIR'])/'transfer-rustfs-engine.json').read_text())['connection_info']
+image = importlib.import_module('business.scripts.online-raster-minio-fixture').MINIO_IMAGE
+alias = 'http://' + quote(source['access_key'], safe='') + ':' + quote(source['secret_key'], safe='') + '@127.0.0.1:9000'
+subprocess.run(['docker', 'run', '--rm', '-i', '--network', 'container:' + sys.argv[1],
+                '-e', 'MC_HOST_fixture', '--entrypoint', 'mc', image, 'pipe', 'fixture/addp-demo/tables/node-future.csv'],
+               input=b'id,name\n37,node-future\n', env=dict(os.environ, MC_HOST_fixture=alias),
+               check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=45)
+PY_NODE
     ;;
   rustfs-orders)
     assert_owned

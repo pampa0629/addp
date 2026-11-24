@@ -68,6 +68,8 @@ service = json.loads((work/'business.json').read_text())['services']['rustfs']
 for key in ('container_name', 'profiles', 'networks'):
     service.pop(key, None)
 service['restart'] = 'no'
+service['environment']['RUSTFS_OBS_LOGGER_LEVEL'] = 'warn,rustfs::app::object::get=debug'
+service['environment']['RUSTFS_OBS_LOG_STDOUT_ENABLED'] = 'true'
 for port in service['ports']:
     port['published'] = '0'
 (work/'compose.json').write_text(json.dumps({'services': {'rustfs': service}, 'volumes': {'rustfs_data': {}}}))
@@ -86,7 +88,7 @@ start_rustfs() {
         echo "RustFS gate expected its named data volume, found $volume" >&2
         return 1
     fi
-    export ADDP_RUSTFS_TEST_ENDPOINT="$endpoint"
+    export ADDP_RUSTFS_TEST_ENDPOINT="$endpoint" ADDP_RUSTFS_TEST_CONTAINER="$container"
     printf 'RustFS container=%s endpoint=%s data_volume=%s\n' "$container" "$endpoint" "$volume"
 }
 start_rustfs

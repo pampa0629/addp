@@ -24,6 +24,45 @@ SPEC.loader.exec_module(ONLINE)
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
+    def test_rustfs_node_read_observes_source_and_retires_unknown_commands(self):
+        target = dict(version='catalog.path/v1', engine_id=17, segments=[
+            dict(term=k,kind=k,name=n) for k,n in [('service',''),('bucket','addp-demo'),
+                                                   ('prefix','tables'),('object','订单.parquet')]])
+        for case in ('pass', 'no source event', 'extra denied GET', 'unknown issue', 'wrong bytes'):
+            with self.subTest(case=case):
+                issuer, client = Mock(), Mock()
+                def issue(method, url, statuses, body):
+                    if url.endswith('/revoke'):
+                        return SimpleNamespace(payload={})
+                    self.assertEqual(body['catalog_path']['segments'], target['segments'][:-1])
+                    self.assertFalse(body['node_recursive'])
+                    if case == 'unknown issue':
+                        raise ONLINE.SuiteError('unknown issue outcome')
+                    return SimpleNamespace(payload=dict(body, operator_principal_id='21', engine_id='17'))
+                issuer.request.side_effect = issue
+                def consume(method, url, statuses, *args, **kwargs):
+                    if method == 'POST':
+                        return SimpleNamespace(payload={'observed_at':'now'})
+                    locator = ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(url).query)['locator'][0]
+                    self.assertEqual(locator, 'addp://engine/17/path/addp-demo/tables/node-future.csv?type=object&item_id=4')
+                    if statuses == (403,):
+                        return SimpleNamespace(payload={'error':'denied'})
+                    return SimpleNamespace(payload=b'wrong' if case=='wrong bytes' else b'id,name\n37,node-future\n')
+                client.request.side_effect = consume
+                counts = iter([3, 3 if case=='no source event' else 4, 5 if case=='extra denied GET' else 4])
+                def physical(command, **kwargs):
+                    return SimpleNamespace(returncode=0, stdout=str(next(counts)) if command[-1]=='rustfs-node-gets' else '')
+                with patch.object(ONLINE.subprocess,'run',side_effect=physical), \
+                     patch.object(ONLINE,'wait_for_scan',return_value='scan'), \
+                     patch.object(ONLINE,'find_item',return_value={'id':4}):
+                    if case == 'pass':
+                        result = ONLINE.verify_rustfs_node_read(client,issuer,Path('/tmp'),17,target,'21','33',30)
+                        self.assertEqual((result['allowed_source_gets'],result['denied_source_gets']), (1,0))
+                    else:
+                        with self.assertRaises(ONLINE.SuiteError):
+                            ONLINE.verify_rustfs_node_read(client,issuer,Path('/tmp'),17,target,'21','33',30)
+                self.assertEqual(sum(c.args[1].endswith('/revoke') for c in issuer.request.call_args_list),1)
+
     def test_rustfs_order_source_uses_system_boundary_and_meta_format_separately(self):
         target = {"version": "catalog.path/v1", "engine_id": 3, "segments": [
             {"term": term, "kind": term, "name": name} for term, name in (
