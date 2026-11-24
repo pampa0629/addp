@@ -76,6 +76,7 @@ services:
       ADDP_MYSQL_HOST: 127.0.0.1
       ADDP_MYSQL_PORT: "3306"
 YAML
+runtime missing-credentials
 snapshot >before-common.sql
 runtime missing common
 snapshot >refused.sql

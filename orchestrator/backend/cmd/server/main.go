@@ -35,7 +35,6 @@ import (
 // @name Authorization
 
 func main() {
-	commonConfig.LoadEnv()
 	if len(os.Args) > 1 {
 		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
 			fmt.Fprintln(os.Stderr, "expected prepare-database")

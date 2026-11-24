@@ -7,6 +7,7 @@ import secrets
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 binary = Path(sys.argv[1]).resolve()
@@ -20,6 +21,20 @@ with socket.socket() as reservation:
     port = reservation.getsockname()[1]
 env.update(ORCHESTRATOR_BACKEND_PORT=str(port), ORCHESTRATOR_SERVICE_CLIENT_SECRET=secrets.token_hex(32),
            SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1", GIN_MODE="release")
+
+if sys.argv[2] == "missing-credentials":
+    # A development checkout may have credentials in its root .env. A service
+    # receives its role from the launcher and must never import that file again.
+    with tempfile.TemporaryDirectory() as root:
+        Path(root, ".env").write_text("ADDP_DATABASE_RUNTIME_USER=fixture\nADDP_DATABASE_RUNTIME_PASSWORD=fixture\n")
+        env.pop("ADDP_DATABASE_RUNTIME_USER", None)
+        env.pop("ADDP_DATABASE_RUNTIME_PASSWORD", None)
+        env["PROJECT_ROOT"] = root
+        result = subprocess.run([binary], env=env, cwd=root, capture_output=True, timeout=15)
+    if result.returncode != 1 or b"platform database runtime credentials are required" not in result.stderr:
+        raise RuntimeError(f"runtime did not refuse missing injected credentials, exit={result.returncode}")
+    print("Runtime refused missing injected credentials despite a populated root .env, exit=1")
+    sys.exit(0)
 
 if sys.argv[2] == "missing":
     owner = sys.argv[3]
