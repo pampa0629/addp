@@ -221,8 +221,8 @@ fi
 if [ "$test_group" = platform-model-repository ]; then
     mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -e "ALTER DATABASE model CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"'
     (cd "$ROOT_DIR/model/backend" && ADDP_TEST_MYSQL_MODEL_REPOSITORY=1 GOWORK=off go test ./internal/repository \
-        -run '^TestModelKeywordListsAgainstMySQL$' -count=1 -v) | tee "$WORK_DIR/model-repository.log"
-    grep -q '^--- PASS: TestModelKeywordListsAgainstMySQL ' "$WORK_DIR/model-repository.log"
+        -run '^TestModelRepositoryReadsAgainstMySQL$' -count=1 -v) | tee "$WORK_DIR/model-repository.log"
+    grep -q '^--- PASS: TestModelRepositoryReadsAgainstMySQL ' "$WORK_DIR/model-repository.log"
     exit 0
 fi
 

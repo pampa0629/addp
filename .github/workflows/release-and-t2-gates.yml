@@ -2142,7 +2142,7 @@ jobs:
           go-version-file: model/backend/go.mod
           cache: false
 
-      - name: Verify Model keyword search on case-sensitive MySQL 8
+      - name: Verify Model keyword search and domain references on MySQL 8
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-model-repository'
 
       - name: Run Model PostgreSQL gate
