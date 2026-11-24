@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/jsonmap"
+	platformschema "github.com/addp/common/schema"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -127,27 +128,44 @@ func Open(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionCha
 	if err != nil {
 		return nil, err
 	}
-	applied, err := store.appliedMigrations(db)
-	if err != nil {
-		return nil, err
-	}
-	if len(applied) != len(storeMigrations) {
-		return nil, fmt.Errorf("projection store migrations are not current")
-	}
-	for _, migration := range storeMigrations {
-		if _, ok := applied[migration.version]; !ok {
-			return nil, fmt.Errorf("projection store migration missing: %s", migration.version)
-		}
-	}
-	if db.Dialector.Name() == "postgres" {
-		if err := store.verifyPostgresSchema(db); err != nil {
+	if db.Dialector.Name() == "mysql" {
+		if err := store.requireMySQLDatabase(db); err != nil {
 			return nil, err
 		}
+		if err := platformschema.RequireMySQL(db, mysqlProjectionOwner, mysqlProjectionVersion); err != nil {
+			return nil, err
+		}
+		if err := verifyMySQLStore(db); err != nil {
+			return nil, err
+		}
+	} else if err := store.verifyInstalledMigrations(db); err != nil {
+		return nil, err
 	}
 	if err := store.reload(context.Background()); err != nil {
 		return nil, err
 	}
 	return store, nil
+}
+
+func (store *Store) verifyInstalledMigrations(db *gorm.DB) error {
+	applied, err := store.appliedMigrations(db)
+	if err != nil {
+		return err
+	}
+	if len(applied) != len(storeMigrations) {
+		return fmt.Errorf("projection store migrations are not current")
+	}
+	for _, migration := range storeMigrations {
+		if _, ok := applied[migration.version]; !ok {
+			return fmt.Errorf("projection store migration missing: %s", migration.version)
+		}
+	}
+	if db.Dialector.Name() == "postgres" {
+		if err := store.verifyPostgresSchema(db); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) CurrentCursor(ctx context.Context, tenantID int64) (string, error) {
@@ -477,7 +495,7 @@ func (s *Store) lockCheckpoint(tx *gorm.DB, tenantID int64) (*checkpointRow, err
 	}
 	var row checkpointRow
 	query := tx.Table(s.checkpointTable)
-	if tx.Dialector.Name() == "postgres" {
+	if tx.Dialector.Name() == "postgres" || tx.Dialector.Name() == "mysql" {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	err := query.Where("tenant_id = ?", tenantID).First(&row).Error
@@ -582,7 +600,7 @@ func (s *Store) reloadTenant(ctx context.Context, tenantID int64) error {
 	var checkpoint checkpointRow
 	var rows []projectionRow
 	var options []*sql.TxOptions
-	if s.db.Dialector.Name() == "postgres" {
+	if s.db.Dialector.Name() == "postgres" || s.db.Dialector.Name() == "mysql" {
 		options = append(options, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

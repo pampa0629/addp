@@ -62,6 +62,9 @@ var expectedPostgresProjectionStoreColumns = map[string][]postgresColumnDefiniti
 }
 
 func (s *Store) ensureSchema() error {
+	if s.db.Dialector.Name() == "mysql" {
+		return s.prepareMySQL()
+	}
 	if s.db.Dialector.Name() == "postgres" {
 		return s.db.Transaction(func(tx *gorm.DB) error {
 			lockKey := "addp.protection_projection_store/" + s.schema
