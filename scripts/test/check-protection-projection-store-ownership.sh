@@ -30,6 +30,8 @@ is_allowed_schema_owner() {
     case "$1" in
         common/dataprotection/projectionstore/store.go | \
         common/dataprotection/projectionstore/schema.go | \
+        common/dataprotection/projectionstore/schema_mysql.go | \
+        common/dataprotection/projectionstore/store_mysql_integration_test.go | \
         common/dataprotection/projectionstore/store_postgres_integration_test.go)
             return 0
             ;;

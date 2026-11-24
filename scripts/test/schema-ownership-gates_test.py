@@ -139,6 +139,8 @@ class ProjectionStoreGateTest(SchemaOwnershipCases, unittest.TestCase):
     allowed = (
         "common/dataprotection/projectionstore/store.go",
         "common/dataprotection/projectionstore/schema.go",
+        "common/dataprotection/projectionstore/schema_mysql.go",
+        "common/dataprotection/projectionstore/store_mysql_integration_test.go",
         "common/dataprotection/projectionstore/store_postgres_integration_test.go",
     )
     untracked_status = 1
