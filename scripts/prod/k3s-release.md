@@ -145,9 +145,12 @@ System 以 `engine_type=kingbase` 登记。填写集群内 `kingbase.<namespace>
 
    本次验证使用已有的密码认证租户账号。保持备用机的叶证书按期续签，尤其是使用短期 Caddy 内部证书时。CA 签发私钥留在原有签发设施。密码、会话令牌、证书私钥以及生成的 `compose.json` 均留在受控目录。
 
-3. 将同一现场发布版本的原生镜像预载到备用机的本地 Docker。将如下服务名映射到逐项核对过的本地镜像引用，保存为 `references.json`。服务名为 `edge`（带 curl 的 nginx）、`console`、`catalog-frontend`、`system-backend`、`gateway`、`catalog-backend`、`postgres`、`redis`、`minio`（含 mc 和 curl）、`meilisearch`。查询归属可用 `docker image inspect`。在备用机冻结本地不可变 ID，离线转运可使用 Docker save/load：
+3. 将同一现场发布版本的原生镜像预载到备用机的本地 Docker。将如下服务名映射到逐项核对过的本地镜像引用，保存为 `references.json`。服务名为 `edge`（带 curl 的 nginx）、`console`、`catalog-frontend`、`system-backend`、`gateway`、`catalog-backend`、`postgres`、`redis`、`minio`（含 mc 和 curl）、`meilisearch`。查询归属可用 `docker image inspect`。离线转运时，先用明确的服务标签导出目标平台归档并保存 SHA-256，再在备用机导入、核对发布方提供的服务配置和层身份，最后按导入后的标签冻结本地不可变 ID。Docker 将多架构镜像导出为单架构归档后，本地 ID 可能变化。恢复包中的 `images.json` 必须对应实际交付的归档。
 
    ```bash
+   # 在保存离线镜像归档的目录执行；镜像已按同一归档导入时可跳过导入
+   sha256sum -c SHA256SUMS
+   gzip -dc images-linux-amd64.tar.gz | docker image load --platform linux/amd64
    cd "$KIT"
    python3 k3s-dr-recover.py lock-images --references references.json --out images.json
    (cd snapshot && sha256sum -c SHA256SUMS)
