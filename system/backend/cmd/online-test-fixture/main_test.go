@@ -1940,12 +1940,15 @@ func TestFileGDBOutsiderHasOnlyReadFunctionsAndIsScopedToItsCase(t *testing.T) {
 	}
 }
 
-func TestGridFileCaseUsesExistingSixReadPermissions(t *testing.T) {
+func TestGridFileCasePermissions(t *testing.T) {
 	for _, name := range []string{"native-netcdf", "native-grib"} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("ADDP_ONLINE_MANAGER_CASE", name)
 			got, err := suitePermissions("manager-internal-artifact-lineage")
 			want := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
+			if name == "native-grib" {
+				want = append(want, "manager.derived_artifact.create", "manager.derived_artifact.read", "manager.derived_artifact.delete")
+			}
 			if err != nil || !slices.Equal(got, want) {
 				t.Fatalf("Grid file read-only identity: %v %v", got, err)
 			}
@@ -2256,14 +2259,14 @@ func TestFileGDBRootAuthorizationUsesManagedScannerAndReadOnlyOutsider(t *testin
 	}
 }
 
-func TestManagerGRIBScanPreparationKeepsConsumerReadOnly(t *testing.T) {
+func TestManagerGRIBScanPreparationIsSeparateFromMapConsumer(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-grib")
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	if len(want) != 13 || !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), want) {
 		t.Fatal("GRIB initialization must have exactly the approved scan qualifications")
 	}
 	actual, err := suitePermissions("manager-internal-artifact-lineage")
-	consumer := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
+	consumer := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read", "manager.derived_artifact.create", "manager.derived_artifact.read", "manager.derived_artifact.delete"}
 	if err != nil || !slices.Equal(actual, consumer) {
 		t.Fatal(actual, err)
 	}

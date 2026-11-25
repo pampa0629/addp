@@ -483,7 +483,9 @@ func suitePermissions(suite string) ([]string, error) {
 		case "filegdb-export", "filegdb-mysql-export":
 			return []string{"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read",
 				"meta.catalog.read", "monitor.execution.read", "transfer.task.read"}, nil
-		case "native-netcdf", "native-grib":
+		case "native-grib":
+			return append(slices.Clone(managerFileGDBPermissions), "manager.derived_artifact.create", "manager.derived_artifact.read", "manager.derived_artifact.delete"), nil
+		case "native-netcdf":
 			return managerFileGDBPermissions, nil
 		case "native-table-orc", "native-table-avro", "native-table-feather":
 			return managerORCPermissions, nil

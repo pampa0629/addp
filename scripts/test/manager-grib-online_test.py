@@ -28,6 +28,37 @@ class GRIBOracleTest(unittest.TestCase):
             self.assertEqual((offset,count),(len(raw),len(spec['fields'])))
         self.assertEqual([s['sha256'] for s in FIXTURE.sources()[:2]],['98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110','addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6'])
 
+    def test_temperature_map_has_two_pinned_official_messages(self):
+        raw = FIXTURE.map_source(Path(__file__).resolve().parents[2])
+        offset = 0
+        for length in (1350847, 1349013):
+            self.assertEqual(raw[offset:offset+4], b'GRIB')
+            self.assertEqual(int.from_bytes(raw[offset+8:offset+16], 'big'), length)
+            offset += length
+            self.assertEqual(raw[offset-4:offset], b'7777')
+        self.assertEqual(len(raw), offset)
+        self.assertNotIn(FIXTURE.MAP_KEY.split('/')[-1], FIXTURE.NAMES)
+
+    def test_map_proof_rejects_shared_cache_wrong_version_or_missing_range(self):
+        version = 'sha256:' + FIXTURE.MAP_SHA
+        tasks = [dict(message=f'message-{i}', task_id=i, execution_id=f'exec-{i}') for i in (1, 2)]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            visits = []
+            for step, i in enumerate((1,2,1,2), 1):
+                path = f'/api/v1/manager/raster_cog/{i}/content'
+                screenshot = f'grib-temperature-map-{step}.png'
+                (root/screenshot).write_bytes(b'\x89PNG\r\n\x1a\n')
+                visits.append(dict(message=f'message-{i}', preview_url=path+'?source_version='+version,
+                    screenshot=screenshot, ranges=[dict(path=path, version=version, range='bytes 0-63/256')]))
+            proof = dict(run_id='run', locator='item', source_version=version, result='passed', generations=tasks, visits=visits)
+            self.assertEqual(len(SCENE.map_browser_artifacts(proof,'run','item',root)), 2)
+            for key, value in (('preview_url',visits[1]['preview_url']),('ranges',[]),('message','message-2')):
+                bad = copy.deepcopy(proof)
+                bad['visits'][2][key] = value
+                with self.assertRaises(ValueError):
+                    SCENE.map_browser_artifacts(bad,'run','item',root)
+
     def response(self,spec,field):
         selection=FIXTURE.selection(field)
         values,valid=FIXTURE.expected(field,selection['x'],selection['y'],selection['width'],selection['height'])

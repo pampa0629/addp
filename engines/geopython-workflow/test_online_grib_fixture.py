@@ -165,6 +165,11 @@ def test_grib_map_cog_keeps_message_identity_and_world_bounds(tmp_path):
         assert band.GetBlockSize() == [256, 256] and band.GetUnitType() == 'K'
         values = band.ReadAsArray()
         np.testing.assert_array_equal(values[:, 0], values[:, -1])
+        proof = FIXTURE.inspect_map_pixels(target.read_bytes(), message)
+        assert proof['equator_kelvin'] == float(values[1023, 0])
+        other = 'message-2' if message == 'message-1' else 'message-1'
+        with pytest.raises(AssertionError):
+            FIXTURE.inspect_map_pixels(target.read_bytes(), other)
         maps.append(values)
         del band, ds
     assert maps[0][1023, 0] != maps[1][1023, 0]

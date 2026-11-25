@@ -377,6 +377,50 @@ def sources():
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return result
 
+MAP_KEY = 'grib-map/ecmwf-ifs-0p1-2t-00h-06h.grib2'
+MAP_SHA = '3c3f4aabaff2eb520c3efb4039db9d42336d39f1ae445bee56ee044e21b5fbe4'
+
+
+def map_source(repository):
+    directory = Path(repository) / 'business/fixtures/manager'
+    initial = (directory / 'ecmwf-ifs-20261117-2t-0p1-initial.grib2').read_bytes()
+    forecast = (directory / 'ecmwf-ifs-20261117-instant-0p1.grib2').read_bytes()
+    raw = initial + forecast[:int.from_bytes(forecast[8:16], 'big')]
+    if hashlib.sha256(raw).hexdigest() != MAP_SHA:
+        raise ValueError('two-message GRIB fixture differs from the pinned original')
+    return raw
+
+
+def inspect_map_pixels(raw, message):
+    from osgeo import gdal
+    import numpy as np
+
+    poles = {'message-1': (252.9948272705078, 240.7448272705078),
+             'message-2': (254.3425750732422, 240.8425750732422)}
+    north, south = poles[message]
+    path = '/vsimem/hosted-grib-map.tif'
+    gdal.FileFromMemBuffer(path, raw)
+    try:
+        ds = gdal.Open(path)
+        assert ds.GetDriver().ShortName == 'GTiff' and ds.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') == 'COG'
+        assert (ds.RasterXSize, ds.RasterYSize, ds.RasterCount) == (4096, 2048, 1)
+        assert ds.GetGeoTransform() == (-180., 360/4096, 0., 90., 0., -180/2048)
+        crs = ds.GetSpatialRef()
+        assert crs.IsGeographic() and crs.GetSemiMajor() == crs.GetSemiMinor() == 6371229
+        band = ds.GetRasterBand(1)
+        assert band.GetUnitType() == 'K' and band.GetBlockSize() == [256, 256]
+        west = band.ReadAsArray(0, 0, 1, 2048)
+        east = band.ReadAsArray(4095, 0, 1, 2048)
+        assert np.isfinite(west).all() and np.array_equal(west, east)
+        assert float(band.ReadAsArray(2275, 0, 1, 1).item()) == north
+        assert float(band.ReadAsArray(2275, 2047, 1, 1).item()) == south
+        return dict(north_kelvin=north, south_kelvin=south, seam_rows_verified=len(west),
+                    equator_kelvin=float(west[1023, 0]), size_bytes=len(raw),
+                    sha256=hashlib.sha256(raw).hexdigest())
+    finally:
+        gdal.Unlink(path)
+
+
 def _owned_sources(request):
     specs=request['sources'];raws=request['source_bytes']
     if len(specs)!=len(NAMES) or {s['name'] for s in specs}!=set(NAMES) or set(raws)!=set(NAMES):
@@ -395,6 +439,23 @@ def worker(request):
     storage=request['storage'];client=Minio(storage['endpoint'],access_key=storage['access_key'],secret_key=storage['secret_key'],secure=False)
     root=Path(request['nfs_root']);bucket=storage['bucket'];action=request['action']
     directory=root/'grib'
+    if action == 'map-seed':
+        raw = bytes.fromhex(request['map_source'])
+        assert hashlib.sha256(raw).hexdigest() == MAP_SHA
+        client.put_object(bucket, MAP_KEY, io.BytesIO(raw), len(raw), content_type='application/x-grib')
+        return dict(key=MAP_KEY, sha256=MAP_SHA)
+    if action == 'map-inspect':
+        return inspect_map_pixels(bytes.fromhex(request['cog_bytes']), request['message'])
+    if action == 'map-delete':
+        client.remove_object(bucket, MAP_KEY)
+        assert not any(obj.object_name == MAP_KEY for obj in client.list_objects(bucket, prefix=MAP_KEY))
+        infra = request['infra']
+        storage_client = Minio(infra['endpoint'], access_key=infra['access_key'], secret_key=infra['secret_key'], secure=False)
+        tenant = request['tenant_id']
+        assert type(tenant) is int and tenant > 1
+        for prefix in (f'tenant_{tenant}/cog/', f'temp/raster-input/tenant_{tenant}/'):
+            assert not list(storage_client.list_objects('manager', prefix=prefix, recursive=True)), 'GRIB residual objects'
+        return dict(source_removed=True, cog_objects_removed=True, temporary_inputs_removed=True)
     if action=='seed':
         owned=_owned_sources(request)
         directory.mkdir(mode=0o755,exist_ok=False)
@@ -426,8 +487,8 @@ def worker(request):
     raise ValueError('unknown GRIB physical action')
 
 
-def physical(action,repository,environment):
-    if action not in {'seed','verify','drift','restore','delete'}:raise ValueError('unknown fixture action')
+def physical(action,repository,environment,*,message=None,cog=None):
+    if action not in {'seed','verify','drift','restore','delete','map-seed','map-inspect','map-delete'}:raise ValueError('unknown fixture action')
     for key,value in {'ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','ADDP_ONLINE_MANAGER_CASE':'native-grib'}.items():
         if environment.get(key)!=value:raise ValueError('GRIB requires exclusive Hosted case')
     state=Path(environment['ADDP_ONLINE_SECRET_DIR'])/'nfs-root'
@@ -435,8 +496,16 @@ def physical(action,repository,environment):
     root=Path(state.read_text().strip())
     if not re.fullmatch(r'/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}',str(root)) or root.is_symlink() or (root/'.addp-online-owner').read_text().strip()!=environment['ADDP_ONLINE_TEST_RUN_ID']:
         raise ValueError('GRIB fixture ownership mismatch')
-    specs=sources()
+    specs=[] if action.startswith('map-') else sources()
     config={'action':action,'nfs_root':str(root),'sources':specs,'source_bytes':{spec['name']:source_bytes(spec).hex() for spec in specs},'storage':{'endpoint':'127.0.0.1:'+environment['ADDP_ONLINE_MANAGER_MINIO_PORT'],'access_key':environment['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],'secret_key':environment['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],'bucket':environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']}}
+    if action == 'map-seed':
+        config['map_source'] = map_source(repository).hex()
+    elif action == 'map-inspect':
+        config.update(message=message, cog_bytes=cog.hex())
+    elif action == 'map-delete':
+        config.update(tenant_id=int(environment['ADDP_ONLINE_TEST_TENANT_ID']),
+                      infra=dict(endpoint='127.0.0.1:'+environment['MINIO_API_PORT'],
+                                 access_key=environment['MINIO_ROOT_USER'], secret_key=environment['MINIO_ROOT_PASSWORD']))
     script=Path(repository)/'business/scripts/online-grib-fixture.py'
     result=subprocess.run(['docker','run','--rm','-i','--user',f'{os.getuid()}:{os.getgid()}','--name','addp-manager-raster-verifier','--network','host','--label','com.addp.online-fixture=manager-internal-artifact-lineage','--mount',f'type=bind,src={script},dst=/fixture.py,readonly','--mount',f'type=bind,src={root},dst={root}',environment['ADDP_ONLINE_RASTER_RUNTIME_IMAGE'],'python','/fixture.py','worker'],input=json.dumps(config),text=True,capture_output=True,timeout=120)
     if result.returncode:raise ValueError(f'GRIB physical {action} failed (exit {result.returncode})')

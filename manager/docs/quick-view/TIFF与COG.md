@@ -260,3 +260,7 @@ Raster COG 管理页的 canonical URL 为：
 ```
 
 该地址在统一任务工作区展示只读任务定义，也是 TaskProvider `edit_url`。TaskProvider `create_url` 指向 `/manager/tasks/quick-view?task_type=raster_cog_generation&create=1`，由统一页面选择源 item；该入口不是空白任务配置表单，不允许调用方提交目标位置或 Manager 私有生成参数。
+
+#### GRIB 双时刻地图的 Hosted 验收
+
+`native-grib` 保留原有两种存储共 22 个只读样例。地图另用一份 MinIO 单文件，把同一起报时间的 00h、06h 两条 ECMWF 2 米气温原始消息拼接。消费用户在原六项权限上增加衍生成果的创建、读取和删除，仅为这份文件签发精确读取授权。页面按 00h、06h、00h、06h 切换，前两次分别生成，后两次复用对应成果。验收分别核对受保护的 Range 读取、两个 COG 的源版本和时刻、全球网格、南北极像元及日期变更线两侧，再删除任务、成果、授权和样例。运行报告与部署清理均通过后登记正式结果。
