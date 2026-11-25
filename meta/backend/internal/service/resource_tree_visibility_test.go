@@ -317,7 +317,7 @@ func visibilityTestTargetResolver(root *resourcetree.TreeNode, engineType string
 }
 
 func TestGrantedEmptyNodesAndIndependentItemSurviveRootRevocation(t *testing.T) {
-	for _, engineType := range []string{"postgresql", "gaussdb", "mysql", "tidb", "mongodb", "nfs", "ftp", "minio", "rustfs"} {
+	for _, engineType := range []string{"postgresql", "gaussdb", "highgo", "mysql", "tidb", "mongodb", "nfs", "ftp", "minio", "rustfs"} {
 		t.Run(engineType, func(t *testing.T) {
 			namespace := "schema"
 			if engineType == "mysql" || engineType == "tidb" || engineType == "mongodb" {

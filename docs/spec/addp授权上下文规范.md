@@ -397,7 +397,7 @@ PG 的 `query-read-set` 门禁验证管理员维护的索引存在时普通来�
 
 按存储引擎和实际消费入口分别验收：System 能办理元数据查看与数据读取，Meta 和 Manager 只显示有效授权对应的引擎、必要祖先及获权空节点，已有预览、查询、下载入口在读取前核对相应内容权。隔离验收覆盖单项、未来项、撤根后独立单项保留、自然到期及失败清理；多来源查询还需核对无权来源在业务读取前被拒绝。各入口的通过结果分别记录。
 
-持续节点签发覆盖 PostgreSQL、GaussDB 的根／schema，NFS、FTP 的根／普通目录，以及 MinIO、RustFS 的服务根／bucket／普通 prefix。Business MySQL、TiDB 的根／database 授权使用原生 `server → database → table` 路径，System 向 Meta 查询直接子节点时携带插件声明的命名空间类型。MongoDB 使用同一 database 节点及递归根，成员身份取自插件声明的 collection。不同 database 中的同名表或集合分别裁决；System 使用的元数据库种类是独立维度。后续按各存储引擎的正式目录模型及实际读取入口逐项验证。
+持续节点签发覆盖 PostgreSQL、GaussDB、HighGo 的根／schema，NFS、FTP 的根／普通目录，以及 MinIO、RustFS 的服务根／bucket／普通 prefix。Business MySQL、TiDB 的根／database 授权使用原生 `server → database → table` 路径，System 向 Meta 查询直接子节点时携带插件声明的命名空间类型。MongoDB 使用同一 database 节点及递归根，成员身份取自插件声明的 collection。不同 database 中的同名表或集合分别裁决；System 使用的元数据库种类是独立维度。后续按各存储引擎的正式目录模型及实际读取入口逐项验证。
 
 持续节点授权以稳定的 Engine ID 和该引擎插件声明的 Engine Catalog 模型为准。System 在签发前核对正式根或分支及 Meta 对本租户、本引擎的节点存在事实，资源选择器消费同一核对结果。Meta 已识别为整项的目录（如 FileGDB）按 DataItem 办理。实际访问先取得当前 DataItem 及其组成的正式边界，再按有效 Grant 的租户、引擎和类型化路径段匹配直属项或后代。导航与局部刷新沿用同一路径包含关系，各自保留元数据可见、扫描或源读取所需的资格检查。
 

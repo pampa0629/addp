@@ -276,7 +276,9 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		service.WithNodeIdentityReader(nil)
 	}
 	t.Run("persistent PG node grants use current item facts and independent sources", func(t *testing.T) { namespaceScope(t, "postgresql", "schema") })
-	t.Run("gaussdb catalog node grant", func(t *testing.T) { namespaceScope(t, "gaussdb", "schema") })
+	for _, kind := range []string{"gaussdb", "highgo"} {
+		t.Run(kind+" catalog node grant", func(t *testing.T) { namespaceScope(t, kind, "schema") })
+	}
 	for _, kind := range []string{"mysql", "tidb", "mongodb"} {
 		t.Run(kind+" database node grant", func(t *testing.T) { namespaceScope(t, kind, "database") })
 	}
