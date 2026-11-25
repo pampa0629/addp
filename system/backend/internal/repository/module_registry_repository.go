@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -650,42 +649,10 @@ func (r *ModuleRegistryRepository) RoutingSnapshot(ctx context.Context, bindings
 // WithDiscoveryWriter pins observation and every publication to the same physical
 // database session. A disconnected observer cannot use a replacement connection.
 func (r *ModuleRegistryRepository) WithDiscoveryWriter(ctx context.Context, module, binding string, observe func(func([]commonmodels.ModuleRoutingEndpoint) error) error) error {
-	pool, err := r.db.DB()
-	if err != nil {
-		return err
-	}
-	conn, err := pool.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	key := "system.module_discovery/" + module
-	acquire, release := "SELECT pg_try_advisory_lock(hashtextextended($1, 0))", "SELECT pg_advisory_unlock(hashtextextended($1, 0))"
-	mysql := r.db.Dialector.Name() == "mysql"
-	if mysql {
-		// MySQL named locks are server-wide and names are limited to 64 bytes.
-		const lockName = "SHA2(CONCAT(DATABASE(), '/', ?), 256)"
-		acquire, release = "SELECT GET_LOCK("+lockName+", 0)", "SELECT RELEASE_LOCK("+lockName+")"
-	}
-	var locked bool
-	if err := conn.QueryRowContext(ctx, acquire, key).Scan(&locked); err != nil {
-		// The server may have acquired the lock before the reply was lost.
-		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		return err
-	}
-	if !locked {
-		return nil
-	}
-	defer func() {
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		var released bool
-		if err := conn.QueryRowContext(releaseCtx, release, key).Scan(&released); err != nil || !released {
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-	}()
-	return observe(func(endpoints []commonmodels.ModuleRoutingEndpoint) error {
-		return publishDiscoverySnapshot(ctx, conn, mysql, module, binding, endpoints)
+	return commonrepo.WithSessionLock(ctx, r.db, "system.module_discovery/"+module, func(conn *sql.Conn) error {
+		return observe(func(endpoints []commonmodels.ModuleRoutingEndpoint) error {
+			return publishDiscoverySnapshot(ctx, conn, r.db.Dialector.Name() == "mysql", module, binding, endpoints)
+		})
 	})
 }
 

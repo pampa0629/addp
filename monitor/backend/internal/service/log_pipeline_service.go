@@ -27,6 +27,7 @@ type logModuleLister interface {
 	ListModules(context.Context) ([]*client.ModuleInfo, error)
 }
 type LogPipelineService struct {
+	writer          *evaluationWriter
 	db              *gorm.DB
 	nodes           string
 	node            string
@@ -67,26 +68,49 @@ func (s *LogPipelineService) initializeNode(ctx context.Context, now time.Time) 
 		return ErrLogInvalid
 	}
 	node := models.LogPipelineNode{Node: s.node, StartedAt: now, Signals: map[string]models.LogSignalState{}}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&node).Error; err != nil {
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&node).Error
+}
+
+func (s *LogPipelineService) resetEvaluationWindow(ctx context.Context) error {
+	if s.deploymentState != "enabled" {
+		return nil
+	}
+	for _, node := range strings.Split(s.nodes, ",") {
+		node = strings.TrimSpace(node)
+		if node == "" {
+			continue
+		}
+		err := s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
+			var stored models.LogPipelineNode
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node=?", node).Take(&stored).Error; err != nil {
+				return err
+			}
+			// A new evaluation lifecycle cannot count samples from before a pause
+			// toward recovery. Keep incidents, observations and replay guards intact.
+			for key, signal := range stored.Signals {
+				signal.Failures, signal.Successes = 0, 0
+				stored.Signals[key] = signal
+			}
+			return tx.Model(&stored).Select("Signals").Updates(&stored).Error
+		})
+		if err != nil {
 			return err
 		}
-		var stored models.LogPipelineNode
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node=?", s.node).Take(&stored).Error; err != nil {
-			return err
-		}
-		// A new evaluation lifecycle cannot count samples from before a pause
-		// toward recovery. Keep incidents, observations and replay guards intact.
-		for key, signal := range stored.Signals {
-			signal.Failures, signal.Successes = 0, 0
-			stored.Signals[key] = signal
-		}
-		return tx.Model(&stored).Select("Signals").Updates(&stored).Error
-	})
+	}
+	return nil
 }
 func (s *LogPipelineService) Policy(ctx context.Context) (models.LogPipelinePolicy, error) {
 	p := defaultLogPolicy()
-	err := s.db.WithContext(ctx).FirstOrCreate(&p, models.LogPipelinePolicy{ID: 1}).Error
+	db := s.db.WithContext(ctx)
+	err := db.First(&p, 1).Error
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return p, err
+	}
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&p)
+	if result.Error != nil {
+		return p, result.Error
+	}
+	err = db.First(&p, 1).Error
 	return p, err
 }
 func (s *LogPipelineService) UpdatePolicy(ctx context.Context, p models.LogPipelinePolicy) (models.LogPipelinePolicy, error) {
@@ -231,7 +255,7 @@ func (s *LogPipelineService) checkStaleNode(ctx context.Context, now time.Time) 
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
 		var node models.LogPipelineNode
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node=?", s.node).Take(&node).Error; err != nil {
 			return err

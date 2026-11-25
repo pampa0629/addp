@@ -50,6 +50,7 @@ type HTTPAlertRulePage struct {
 	TotalPages int                    `json:"total_pages"`
 }
 type HTTPAlertRuleService struct {
+	writer       *evaluationWriter
 	db           *gorm.DB
 	observations *ResourceObservationService
 	identities   metricsdiscovery.IdentityReader

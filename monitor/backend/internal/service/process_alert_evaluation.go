@@ -149,7 +149,7 @@ func (s *ProcessAlertRuleService) Evaluate(parent context.Context, at time.Time)
 }
 
 func (s *ProcessAlertRuleService) applyProcessRule(ctx context.Context, old models.ProcessAlertRule, source runtimeAlertSources, cfg ResourceQueryPolicyResponse, series []resourcequery.Series, at time.Time, reason string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
 		var rule models.ProcessAlertRule
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", old.ID).Take(&rule).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil

@@ -171,7 +171,7 @@ func advanceCDCWindow(rule models.AlertRule, row commonClient.TransferCDCRiskIte
 func (s *AlertService) evaluateCDCPerformanceRules(ctx context.Context, rows []commonClient.TransferCDCRiskItem, complete bool, now time.Time) ([]activeAlertSignal, []string, error) {
 	signals := []activeAlertSignal{}
 	preserve := []string{}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
 		var rules []models.AlertRule
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("enabled=? AND rule_type IN ?", true, cdcPerformanceCodes).Order("id").Find(&rules).Error; err != nil {
 			return err

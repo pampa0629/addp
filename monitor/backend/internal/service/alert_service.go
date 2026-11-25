@@ -49,6 +49,7 @@ type activeAlertSignal struct {
 }
 
 type AlertService struct {
+	writer              *evaluationWriter
 	db                  *gorm.DB
 	notificationService *NotificationService
 	cdcRiskReader       cdcRiskReader
@@ -227,7 +228,7 @@ func (s *AlertService) reconcileSignals(ctx context.Context, signals []activeAle
 		return *signals[i].AlertRuleID < *signals[j].AlertRuleID
 	})
 	activeFingerprints := append(make([]string, 0, len(signals)+len(preserve)), preserve...)
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
 		for _, signal := range signals {
 			if signal.AlertRuleID != nil {
 				validated, active, err := validateRuleSignalTx(tx, signal)

@@ -208,7 +208,7 @@ func (s *ResourceAlertRuleService) resourceRuleSources(ctx context.Context) (map
 }
 
 func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expected models.ResourceAlertRule, at time.Time, source *resourceRuleSource, cfg ResourceQueryPolicyResponse, series []resourcequery.Series, verdict PlatformAlertVerdict, reason string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
 		var r models.ResourceAlertRule
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", expected.ID).Take(&r).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -354,5 +354,7 @@ func (s *ResourceAlertRuleService) resetResourceRules(ctx context.Context, rules
 		clauses = append(clauses, "(id=? AND version=?)")
 		args = append(args, r.ID, r.Version)
 	}
-	return s.db.WithContext(ctx).Model(&models.ResourceAlertRule{}).Where("enabled=?", true).Where("last_evaluated_at IS NULL OR last_evaluated_at<?", at).Where("("+strings.Join(clauses, " OR ")+")", args...).UpdateColumns(map[string]any{"last_evaluated_at": at, "last_verdict": string(verdict), "last_error": reason, "last_sample_at": nil, "last_value": nil, "window_signature": "", "window_since": nil}).Error
+	return s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
+		return tx.Model(&models.ResourceAlertRule{}).Where("enabled=?", true).Where("last_evaluated_at IS NULL OR last_evaluated_at<?", at).Where("("+strings.Join(clauses, " OR ")+")", args...).UpdateColumns(map[string]any{"last_evaluated_at": at, "last_verdict": string(verdict), "last_error": reason, "last_sample_at": nil, "last_value": nil, "window_signature": "", "window_since": nil}).Error
+	})
 }

@@ -160,7 +160,6 @@ func main() {
 	if err := logPipeline.Initialize(runtimeContext, time.Now().UTC()); err != nil {
 		log.Fatalf("Failed to initialize platform log pipeline: %v", err)
 	}
-	go logPipeline.Run(runtimeContext)
 	go platformAlerts.Run(runtimeContext)
 
 	var resourceBackend service.ResourceBackend
@@ -176,13 +175,9 @@ func main() {
 		WithProcessTotals(service.ProcessTotalDependencies{Users: systemServiceClient, Backend: cfg.MetricsQueryClient}).
 		WithCollectionHealth(cfg.MetricsQueryClient).WithAutomaticCollection(automaticCollection).WithFrontend(cfg.MetricsQueryClient)
 	resourceRules := service.NewResourceAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
-	go resourceRules.Run(runtimeContext)
 	httpRules := service.NewHTTPAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
-	go httpRules.Run(runtimeContext)
 	processRules := service.NewProcessAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
-	go processRules.Run(runtimeContext)
 	availabilityRules := service.NewServiceAvailabilityRuleService(db, systemServiceClient, systemServiceClient, platformAlerts)
-	go availabilityRules.Run(runtimeContext)
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("monitor", commonClient.ModuleRuntimeRoleBackend)
 	traceService := service.NewTraceService(systemServiceClient, tracequery.FromEnvironment())
@@ -207,20 +202,9 @@ func main() {
 		resourceObservations, resourceRules, httpRules,
 		traceService, processRules, availabilityRules)
 
-	go func() {
-		ticker := time.NewTicker(cfg.AlertEvaluationInterval)
-		defer ticker.Stop()
-		for {
-			if err := alertService.Evaluate(runtimeContext, time.Now()); err != nil && err != context.Canceled {
-				log.Printf("Alert evaluation failed: %v", err)
-			}
-			select {
-			case <-runtimeContext.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
+	evaluators := service.PeriodicEvaluators{Tenant: *alertService, Logs: *logPipeline, Resources: *resourceRules, HTTP: *httpRules, Processes: *processRules, Availability: *availabilityRules}
+	evaluationDone := make(chan struct{})
+	go func() { defer close(evaluationDone); evaluators.Run(runtimeContext, cfg.AlertEvaluationInterval) }()
 	webhookReporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
 		InstanceID: webhookWorkerID, Module: commonExecution.ModuleMonitor, Role: commonRuntimeHealth.RoleDispatcher,
 		RuntimeName: "webhook", Capacity: 1, Interval: commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL,
@@ -284,4 +268,5 @@ func main() {
 
 	<-runtimeContext.Done()
 	<-registration.Done()
+	<-evaluationDone
 }

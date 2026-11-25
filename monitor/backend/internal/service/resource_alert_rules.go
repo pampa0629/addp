@@ -53,6 +53,7 @@ type ResourceAlertRulePage struct {
 }
 
 type ResourceAlertRuleService struct {
+	writer       *evaluationWriter
 	db           *gorm.DB
 	observations *ResourceObservationService
 	identities   metricsdiscovery.IdentityReader

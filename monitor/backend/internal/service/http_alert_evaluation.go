@@ -247,7 +247,7 @@ func aggregateHTTPRuleSeries(rows [][]resourcequery.HTTPObservation, key string)
 }
 
 func (s *HTTPAlertRuleService) applyHTTPRule(ctx context.Context, old models.HTTPAlertRule, source runtimeAlertSources, cfg ResourceQueryPolicyResponse, series []resourcequery.Series, at time.Time, reason string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
 		var rule models.HTTPAlertRule
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", old.ID).Take(&rule).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil

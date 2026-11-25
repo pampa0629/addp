@@ -115,7 +115,11 @@ func evaluateLogObservation(node *models.LogPipelineNode, obs logpipeline.Observ
 	}
 	for key, e := range evidence {
 		e.instance = receiverLogSignalInstance(key)
-		node.Signals[key] = stepLogSignal(node.Signals[key], e, p)
+		state := node.Signals[key]
+		if !comparable {
+			state.Failures, state.Successes = 0, 0
+		}
+		node.Signals[key] = stepLogSignal(state, e, p)
 	}
 	node.Observation = obs
 	node.RegistryValid = registryValid

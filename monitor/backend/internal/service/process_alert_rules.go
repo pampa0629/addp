@@ -47,6 +47,7 @@ type ProcessAlertRulePage struct {
 	TotalPages int                       `json:"total_pages"`
 }
 type ProcessAlertRuleService struct {
+	writer       *evaluationWriter
 	db           *gorm.DB
 	observations *ResourceObservationService
 	identities   metricsdiscovery.IdentityReader

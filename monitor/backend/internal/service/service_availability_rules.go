@@ -57,6 +57,7 @@ type ServiceAvailabilityRulePage struct {
 	TotalPages int                              `json:"total_pages"`
 }
 type ServiceAvailabilityRuleService struct {
+	writer     *evaluationWriter
 	db         *gorm.DB
 	users      UserModuleReader
 	identities metricsdiscovery.IdentityReader

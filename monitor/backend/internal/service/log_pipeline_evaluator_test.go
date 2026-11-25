@@ -217,3 +217,26 @@ func TestLogPipelineUnselectedDoesNotUseRegistryOrDatabase(t *testing.T) {
 		}
 	}
 }
+
+func TestLogPipelineNewObserverCannotCompletePreviousRecovery(t *testing.T) {
+	now := time.Now().UTC()
+	for _, reason := range []string{"boot change", "sample gap"} {
+		t.Run(reason, func(t *testing.T) {
+			prev := healthyLogObservation(now, 1)
+			node := models.LogPipelineNode{ReceivedAt: &now, Observation: prev, Signals: map[string]models.LogSignalState{"delivery_probe": {Active: true, Severity: "critical", Successes: 2}}}
+			at := now.Add(time.Second)
+			if reason == "sample gap" {
+				at = now.Add(3 * time.Minute)
+			}
+			next := healthyLogObservation(at, 2)
+			if reason == "boot change" {
+				next.BootID = "boot-b"
+			}
+			evaluateLogObservation(&node, next, defaultLogPolicy(), nil, true, at)
+			signal := node.Signals["delivery_probe"]
+			if !signal.Active || signal.Successes != 1 {
+				t.Fatalf("recovery crossed %s: %+v", reason, signal)
+			}
+		})
+	}
+}

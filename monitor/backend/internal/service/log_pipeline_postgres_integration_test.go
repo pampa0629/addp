@@ -708,6 +708,13 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 	if err := resumed.Initialize(ctx, now); err != nil {
 		t.Fatal(err)
 	}
+	standby, err := resumed.Summary(ctx, now)
+	if err != nil || standby.Node.Signals["delivery_probe"].Successes != policy.RecoverySamples-1 {
+		t.Fatalf("standby reset shared consecutive samples: %v", err)
+	}
+	if err := resumed.resetEvaluationWindow(ctx); err != nil {
+		t.Fatal(err)
+	}
 	summary, err := resumed.Summary(ctx, now)
 	if err != nil || summary.ActiveIncidents != 1 || activeLogTestIncident(t, f.db, f.incident.SubjectID).Status != "open" {
 		t.Fatalf("resume synthesized recovery: %#v %v", summary, err)

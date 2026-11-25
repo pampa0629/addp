@@ -154,7 +154,7 @@ func (s *ServiceAvailabilityRuleService) Evaluate(parent context.Context, at tim
 }
 func (s *ServiceAvailabilityRuleService) evaluateAvailabilitySnapshots(ctx context.Context, rules []models.ServiceAvailabilityRule, before, after *commonmodels.ServiceGroupSnapshot, reason string, at time.Time) error {
 	for _, selected := range rules {
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
 			var r models.ServiceAvailabilityRule
 			err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("id=? AND enabled=?", selected.ID, true).Take(&r).Error
 			if err == gorm.ErrRecordNotFound {
