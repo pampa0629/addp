@@ -131,7 +131,6 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 		return engine.Version, nil
 	}
 	var binding *authorizationfacts.Binding
-	formats := make(map[string]string)
 	if input.Action == shared.SourceAccessMetadataRead {
 		bindings, err := s.resolveMetadataBindings(ctx, row.TenantID, []plugin.EngineCatalogPath{input.CatalogPath})
 		if err != nil {
@@ -143,7 +142,7 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 		binding = &bindings[0]
 	} else {
 		var err error
-		binding, err = s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash, formats)
+		binding, err = s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash)
 		if err != nil {
 			return 0, err
 		}
@@ -179,7 +178,7 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 	if s.independentTarget == nil {
 		return 0, ErrIndependentGrantSourceUnavailable
 	}
-	version, err := s.independentTarget.VerifyIndependentReadTarget(ctx, input.Actor.TenantID, input.CatalogPath, formats[row.ItemFingerprint])
+	version, err := s.independentTarget.VerifyIndependentReadTarget(ctx, input.Actor.TenantID, input.CatalogPath)
 	if err != nil {
 		return 0, err
 	}
