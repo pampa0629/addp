@@ -429,7 +429,13 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
   const engine = sample.engine_type
   const configuration = await saveChange(operatorPage, sample, operator, 'saturation', credentials)
   const managerPage = await page.context().newPage()
-  const waitingPage = await page.context().newPage()
+  // Chromium serializes identical GETs while a response is pending in one
+  // browser cache. Use the same signed-in user with a separate cache.
+  const waitingContext = await page.context().browser().newContext({
+    baseURL: process.env.CONSOLE_URL,
+    storageState: await page.context().storageState(),
+  })
+  const waitingPage = await waitingContext.newPage()
   const gateFile = name => resolve(process.env.ADDP_POOL_META_GATE, name)
   const target = `${sample.engine_id}\n${sample.namespace}.${sample.table}`
   const pending = []
@@ -510,7 +516,7 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
     } finally {
       if (api) await api.dispose()
       await Promise.allSettled(pending)
-      await waitingPage.close()
+      await waitingContext.close()
       await managerPage.close()
     }
   }
