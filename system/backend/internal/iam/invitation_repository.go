@@ -3,6 +3,7 @@ package iam
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -92,13 +93,22 @@ func (r *Repository) ExpirePendingTenantInvitations(
 	ctx context.Context,
 	tenantID int64,
 	now time.Time,
-) ([]TenantInvitation, error) {
-	var invitations []TenantInvitation
-	err := r.db.WithContext(ctx).Model(&invitations).
-		Clauses(clause.Returning{}).
+) ([]int64, error) {
+	// The caller appends one audit per transitioned ID in this same transaction.
+	var ids []int64
+	db := r.db.WithContext(ctx)
+	err := db.Model(&TenantInvitation{}).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("tenant_id = ? AND status = ? AND expires_at <= ?", tenantID, TenantInvitationStatusPending, now).
-		Updates(map[string]any{"status": TenantInvitationStatusExpired, "expired_at": now}).Error
-	return invitations, wrapRepositoryError(err)
+		Order("id").Pluck("id", &ids).Error
+	if err != nil {
+		return nil, wrapRepositoryError(err)
+	}
+	for batch := range slices.Chunk(ids, 500) {
+		if err := db.Model(&TenantInvitation{}).Where("id IN ?", batch).Updates(map[string]any{"status": TenantInvitationStatusExpired, "expired_at": now}).Error; err != nil {
+			return nil, wrapRepositoryError(err)
+		}
+	}
+	return ids, nil
 }
 
 func (r *Repository) TransitionTenantInvitation(

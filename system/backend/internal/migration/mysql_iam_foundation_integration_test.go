@@ -618,6 +618,7 @@ func testMySQLBrowserSession(t *testing.T, db *gorm.DB) {
 	}
 	session := result.Session
 	verifyMySQLBrowserOrganization(t, db, member, session.AccessToken)
+	t.Run("tenant invitation lifecycle", func(t *testing.T) { checkMySQLTenantInvitation(t, db, repo, tokens, member) })
 	if len(session.ResourceAccessTickets) != len(models.BrowserResourceAccessOwners) || session.AccessToken == "" || session.RefreshToken == "" {
 		t.Fatal("incomplete first-party browser credentials")
 	}

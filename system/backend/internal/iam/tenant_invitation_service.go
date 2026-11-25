@@ -463,8 +463,9 @@ func (s *TenantInvitationService) expireTenantInvitationsTx(
 	if err != nil {
 		return err
 	}
-	for index := range expired {
-		if err := s.writeInvitationAudit(ctx, tx, &expired[index], audit, "iam.tenant_invitation.expired", AuditRiskLow, nil); err != nil {
+	for _, id := range expired {
+		invitation := TenantInvitation{ID: id, TenantID: tenantID, Status: TenantInvitationStatusExpired}
+		if err := s.writeInvitationAudit(ctx, tx, &invitation, audit, "iam.tenant_invitation.expired", AuditRiskLow, nil); err != nil {
 			return err
 		}
 	}

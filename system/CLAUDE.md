@@ -44,6 +44,8 @@ Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与
 
 平台节点指标 Hosted T4 的 `cmd/online-test-fixture --suite platform-node-metrics` 使用正式三员 Bootstrap，独立准备临时系统/安全管理员登录及 TOTP 凭据，不直接签发平台 User Token。两个不同的非默认 Tenant User 仅授予 `monitor.execution.read`，用于验证平台入口越权拒绝。凭据只写入 owner-only 临时文件，身份随当次 Hosted Infra 销毁；真实登录/MFA、节点/目标管理与独立 Prometheus 发现身份由同名 T4 suite 验证，身份数据库回归纳入既有 Online fixture PostgreSQL 门禁。
 
+MySQL 的 System 安装入口同时准备租户邀请的待处理邮箱唯一约束、终态不可变和历史保留约束。邀请到期与逐条审计由 System 在同一事务内完成，部署账号和运行账号沿用平台约定。
+
 ## 项目概述
 
 Meta 授权资源事实核对使用 `GET /api/v1/system/engines/:id/data-items/:fingerprint/authorization-facts`：当前 User 须同时具备 `system.engine_access_grant.read` 及本引擎管理资格。System 在 IAM 事务外以独立 `addp-system` Tenant Service 通过统一批量契约读取 Meta（单项查询提交一个指纹，元数据可见性每批最多64项；逐项保留身份／边界证明，依赖故障整批失败），返回后重核 User 资格及 Engine；只读、不签发 Grant。迁移 000205 仅向 `tenant.system_runtime` 增加 `meta.authorization_facts.read`，复用可选 `SYSTEM_SERVICE_CLIENT_SECRET`；缺失或依赖故障明确 503，不影响 Ready。当前实施和端到端验收聚焦 PG schema 普通表 single，批准与 Manager 的源规则核验绑定数据项指纹及边界摘要。共享协议与数据库身份约束可表达 MySQL database 普通单表及 MongoDB database 单集合，但不表示这些引擎的 Manager 实际读取已接入；不将协议或仓储测试通过解释为其他引擎的数据授权闭环。000207 清理已获准丢弃的旧源授权测试事实，不清 IAM、角色、委派或通用审计；Grant 匹配身份与摘要，Deny 仅按同 Tenant／Engine 的稳定身份持续约束。新请求必须提交预期边界摘要，服务端独立重核，历史恢复不自动重批或续期；共享协议和未完成范围见平台《元数据扫描机制规范》的“授权资源描述契约”。
