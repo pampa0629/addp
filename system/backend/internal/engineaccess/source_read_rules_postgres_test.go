@@ -624,7 +624,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatal(err)
 			}
 			return requestID
-		}, roles, runtime.TenantID, adminID, revoke)
+		}, roles, runtime.TenantID, adminID, revoke, actor)
 		exerciseManagerProfileAuthorization(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, revoke)
 		exerciseFileGDBExportAuthorization(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, revoke)
 		t.Run("later handler suspension does not revoke recipient Grant", func(t *testing.T) {

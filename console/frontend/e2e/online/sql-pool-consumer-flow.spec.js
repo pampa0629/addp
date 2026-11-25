@@ -440,7 +440,7 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
       content: { query: poolQuery(sample, 'saturation_holder'), query_type: 'sql', target_locator: sample.locator },
       execution_config: { engine_id: sample.engine_id },
     } }), 'Develop saturation holder')
-    if (engine === 'postgresql') await waitForNativeReaders(engine, 'queue', ['holder'])
+    await waitForNativeReaders(engine, 'queue', ['holder'])
     const managerRead = managerSQLTimeout(managerPage, sample)
     pending.push(managerRead)
     managerRead.catch(() => {})

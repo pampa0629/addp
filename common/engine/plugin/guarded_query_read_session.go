@@ -15,6 +15,6 @@ type GuardedQueryReadSession interface {
 // consumes the same immutable prepared query once and releases all resources
 // when proof or authorization fails, without falling back to ordinary Execute.
 type GuardedQueryReadSessionProvider interface {
-	QueryReadSessionProvider
+	QueryRuntimeProvider
 	OpenGuardedQueryReadSession(context.Context, PreparedQuery, QueryReadAuthorizer) (GuardedQueryReadSession, error)
 }

@@ -32,6 +32,8 @@ bash business/scripts/restart.sh -rustfs
 
 Business MySQL、TiDB 的 database 节点使用 Catalog 的 `term=database, kind=namespace`。平台库只保存与校验路径形态，System 在签发前按引擎插件目录模型和 Meta 节点事实核对。接入验收应在两个 database 建同名普通表，仅给其中一个 database 授权，并在授权后新建一张表。分别核对可读、同名表拒绝和撤权；整引擎授权另用递归根节点验收。
 
+Develop 原生 SQL 优先核对各表的来源授权。MySQL、TiDB 的固定零行探测与业务读取分别记录，PG 协议读取还需观察承载用户查询的游标。余下原生入口按能力推进：HighGo、openGauss、KingbaseES 可复用 PG 查询准备；OceanBase、StarRocks 已提供来源解析。Oracle、达梦、Doris 还需为原生查询提供可核对的表来源。ClickHouse 缺少该入口要求的受控只读能力；SuperMap SDX+ 的 PostgreSQL 原生 SQL 与 SDX SDK 读取分别验收。统一口径见[授权上下文规范](../docs/spec/addp授权上下文规范.md)。
+
 ## 部署来源清单
 
 Infra 生命周期管理独立发现进程，Business 和开发启动幂等确保其存在；进程每轮完成后间隔 30 秒刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。

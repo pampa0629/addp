@@ -135,8 +135,8 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 	if err != nil || !containsAllExecutionEffects(access.Effects, []string{"read"}) {
 		return nil, time.Time{}, ErrExecutionAuthorizationPermissionDenied
 	}
-	var count int64
-	engine := r.db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=? AND engine_type IN ('postgresql','gaussdb') AND lifecycle_state='active' AND deleted_at IS NULL", engineID, tenantID)
+	var kind string
+	engine := r.db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=? AND engine_type IN ('postgresql','gaussdb','mysql','tidb') AND lifecycle_state='active' AND deleted_at IS NULL", engineID, tenantID)
 	if request.NotebookSessionID == "" {
 		engine = engine.Where("version=? OR (engine_type IN ? AND ? BETWEEN pool_only_since_version AND version)", request.EngineVersion, []string{"postgresql", "mysql"}, request.EngineVersion)
 	} else {
@@ -145,10 +145,20 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 	if request.NotebookSessionID != "" {
 		engine = engine.Where("engine_type = ?", "postgresql")
 	}
-	err = engine.Count(&count).Error
-	if err != nil || count != 1 {
+	err = engine.Select("engine_type").Scan(&kind).Error
+	if err != nil || kind == "" {
 		return nil, time.Time{}, ErrExecutionAuthorizationUnavailable
 	}
+	namespace := "schema"
+	if kind == "mysql" || kind == "tidb" {
+		namespace = "database"
+	}
+	for _, path := range request.ReadSet.Paths {
+		if path.Segments[1].Term != namespace {
+			return nil, time.Time{}, ErrExecutionAuthorizationPermissionDenied
+		}
+	}
+
 	if membership.ExpiresAt != nil && membership.ExpiresAt.Before(expires) {
 		expires = *membership.ExpiresAt
 	}
@@ -182,6 +192,7 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 		}
 		// A synchronous sample credential cannot turn a queued/running execution
 		// into an unleased request, including attempts that have already ended.
+		var count int64
 		if err := r.db.WithContext(ctx).Table("common.task_executions").Where("execution_id=?", a.ExecutionID).Count(&count).Error; err != nil || count != 0 {
 			return nil, time.Time{}, ErrExecutionAuthorizationUnavailable
 		}

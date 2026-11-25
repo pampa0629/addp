@@ -50,7 +50,9 @@ func (p MySQLCompatibleQueryProvenance) ResolveOutputLineage(
 	if err != nil {
 		return nil, err
 	}
-	statement, err := parseMySQLReadQuery(req.Query)
+	statement, err := parseMySQLReadQuery(req.Query, func(name string) bool {
+		return p.NativeValueFunctions[name] != nil
+	})
 	if err != nil {
 		return nil, p.outputLineageError("query must contain exactly one supported SELECT")
 	}
@@ -383,9 +385,6 @@ func (p MySQLCompatibleQueryProvenance) buildAliasedLineageRelation(
 	alias := strings.TrimSpace(expression.As.String())
 	switch relation := expression.Expr.(type) {
 	case sqlparser.TableName:
-		if relation.DbQualifier.IsEmpty() && strings.EqualFold(relation.Name.String(), "dual") {
-			return scope, nil
-		}
 		database := strings.TrimSpace(relation.DbQualifier.String())
 		if database == "" {
 			database = defaultDatabase

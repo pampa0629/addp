@@ -22,6 +22,8 @@ type MySQLCompatibleQueryProvenance struct {
 	DescribeFacts     func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error)
 	// Native table engine admitted by the owner (for example InnoDB or StarRocks).
 	TableEngine string
+	// Extra native value operations and the server products/versions that own them.
+	NativeValueFunctions map[string]func(version, product string) bool
 }
 
 type mysqlCompatibleRelationReference struct {
@@ -40,8 +42,13 @@ type mysqlCompatibleReadCatalog interface {
 	ResolveRelation(context.Context, mysqlCompatibleRelationReference) (mysqlCompatibleResolvedRelation, error)
 }
 
+type mysqlCompatibleQueryConnection interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 type mysqlCompatibleDatabaseReadCatalog struct {
-	db *sql.DB
+	db mysqlCompatibleQueryConnection
 }
 
 // ResolveReadSet resolves every base table read by a supported SELECT.
@@ -57,7 +64,7 @@ func (p MySQLCompatibleQueryProvenance) ResolveReadSet(
 	if defaultDatabase == "" {
 		return nil, p.readSetError("current database is required")
 	}
-	references, err := p.inspectReadReferences(req.Query)
+	references, nativeFunctions, err := p.inspectReadReferences(req.Query)
 	if err != nil {
 		return nil, err
 	}
@@ -74,20 +81,58 @@ func (p MySQLCompatibleQueryProvenance) ResolveReadSet(
 	}
 	defer db.Close() //nolint:errcheck
 
+	if err := p.checkNativeValueFunctions(ctx, db, nativeFunctions); err != nil {
+		return nil, err
+	}
 	return p.resolveReadSet(ctx, req, defaultDatabase, references, &mysqlCompatibleDatabaseReadCatalog{db: db})
 }
 
-func (p MySQLCompatibleQueryProvenance) inspectReadReferences(query string) ([]mysqlCompatibleRelationReference, error) {
+// ResolveTransactionReadSet resolves a prepared query against its actual
+// execution session. The native provider retains the table locks and performs
+// authorization before executing the query.
+func (p MySQLCompatibleQueryProvenance) ResolveTransactionReadSet(ctx context.Context, tx *sql.Tx, req plugin.QueryRequest) (*plugin.QueryReadSet, error) {
+	if strings.Contains(req.Query, "/*+") {
+		return nil, p.readSetError("statement-level optimizer hints are not supported in a bound read")
+	}
+	var database sql.NullString
+	var mode string
+	if err := tx.QueryRowContext(ctx, "SELECT DATABASE(), @@SESSION.sql_mode").Scan(&database, &mode); err != nil {
+		return nil, fmt.Errorf("%w: read MySQL execution session: %w", plugin.ErrQueryReadSetUnresolved, err)
+	}
+	for _, option := range strings.Split(mode, ",") {
+		switch option {
+		case "ANSI_QUOTES", "NO_BACKSLASH_ESCAPES", "IGNORE_SPACE":
+			return nil, p.readSetError("session SQL mode is not supported in a bound read")
+		}
+	}
+	references, nativeFunctions, err := p.inspectReadReferences(req.Query)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.checkNativeValueFunctions(ctx, tx, nativeFunctions); err != nil {
+		return nil, err
+	}
+	return p.resolveReadSet(ctx, req, database.String, references, &mysqlCompatibleDatabaseReadCatalog{db: tx})
+}
+
+func (p MySQLCompatibleQueryProvenance) inspectReadReferences(query string) ([]mysqlCompatibleRelationReference, []string, error) {
 	query = strings.TrimSpace(query)
 	if strings.Contains(query, "/*!") {
-		return nil, p.readSetError("executable comments are not supported")
+		return nil, nil, p.readSetError("executable comments are not supported")
 	}
-	statement, err := parseMySQLReadQuery(query)
+	var nativeFunctions []string
+	statement, err := parseMySQLReadQuery(query, func(name string) bool {
+		if p.NativeValueFunctions[name] == nil {
+			return false
+		}
+		nativeFunctions = append(nativeFunctions, name)
+		return true
+	})
 	if err != nil {
-		return nil, p.readSetError("query must contain exactly one supported SELECT")
+		return nil, nil, p.readSetError("query must contain exactly one supported SELECT")
 	}
 	if _, ok := statement.(sqlparser.SelectStatement); !ok {
-		return nil, p.readSetError("query must contain exactly one SELECT")
+		return nil, nil, p.readSetError("query must contain exactly one SELECT")
 	}
 
 	references := make([]mysqlCompatibleRelationReference, 0)
@@ -105,24 +150,37 @@ func (p MySQLCompatibleQueryProvenance) inspectReadReferences(query string) ([]m
 			if !relation.SchemaQualifier.IsEmpty() {
 				return false, p.readSetError("external or three-part catalog references are unsupported")
 			}
-			name := strings.TrimSpace(relation.Name.String())
-			if relation.DbQualifier.IsEmpty() && strings.EqualFold(name, "dual") {
-				return false, nil
-			}
-			if name == "" {
+			name, database := relation.Name.String(), relation.DbQualifier.String()
+			if name == "" || name != strings.TrimSpace(name) || database != strings.TrimSpace(database) {
 				return false, p.readSetError("relation name is unresolved")
 			}
 			references = append(references, mysqlCompatibleRelationReference{
-				Database: strings.TrimSpace(relation.DbQualifier.String()),
+				Database: database,
 				Name:     name,
 			})
 		}
 		return true, nil
 	}, statement)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return references, nil
+	return references, nativeFunctions, nil
+}
+
+func (p MySQLCompatibleQueryProvenance) checkNativeValueFunctions(ctx context.Context, db mysqlCompatibleQueryConnection, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	var version, product string
+	if err := db.QueryRowContext(ctx, "SELECT @@version, @@version_comment").Scan(&version, &product); err != nil {
+		return fmt.Errorf("%w: identify native functions: %w", plugin.ErrQueryReadSetUnresolved, err)
+	}
+	for _, name := range names {
+		if !p.NativeValueFunctions[name](version, product) {
+			return p.readSetError("function " + name + " has no verified native implementation on this server")
+		}
+	}
+	return nil
 }
 
 func (p MySQLCompatibleQueryProvenance) resolveReadSet(
@@ -138,8 +196,6 @@ func (p MySQLCompatibleQueryProvenance) resolveReadSet(
 	}
 	paths := make([]plugin.EngineCatalogPath, 0, len(references))
 	for _, reference := range references {
-		reference.Database = strings.TrimSpace(reference.Database)
-		reference.Name = strings.TrimSpace(reference.Name)
 		if reference.Database == "" {
 			reference.Database = defaultDatabase
 		}

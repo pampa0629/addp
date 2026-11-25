@@ -15,7 +15,7 @@ import (
 
 func TestMySQLCompatibleQueryProvenanceInspectsPublishedServiceJoin(t *testing.T) {
 	provenance := testMySQLCompatibleQueryProvenance("OceanBase")
-	references, err := provenance.inspectReadReferences(`
+	references, _, err := provenance.inspectReadReferences(`
 		SELECT addp_source.order_no, addp_source.customer_code
 		FROM (
 			SELECT o.order_no, c.customer_code
@@ -42,7 +42,7 @@ func TestMySQLCompatibleQueryProvenanceRejectsUnprovenSources(t *testing.T) {
 		"recursive cte":     `WITH RECURSIVE recent AS (SELECT * FROM orders) SELECT * FROM recent`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := provenance.inspectReadReferences(query)
+			_, _, err := provenance.inspectReadReferences(query)
 			if !errors.Is(err, plugin.ErrQueryReadSetUnresolved) {
 				t.Fatalf("error = %v, want ErrQueryReadSetUnresolved", err)
 			}
@@ -102,7 +102,7 @@ func TestMySQLCompatibleQueryProvenanceRequiresOwnerNativeTableEngine(t *testing
 		}
 	}
 	p := testMySQLCompatibleQueryProvenance("StarRocks")
-	if _, err := p.inspectReadReferences("SELECT id FROM external_catalog.business.source"); err == nil {
+	if _, _, err := p.inspectReadReferences("SELECT id FROM external_catalog.business.source"); err == nil {
 		t.Fatal("external catalog reference accepted")
 	}
 }
@@ -345,7 +345,7 @@ func TestMySQLCompatibleExpressionValueLineage(t *testing.T) {
 		{"selection_only", "SELECT id AS value FROM people WHERE phone IS NOT NULL ORDER BY phone", []string{"people.id->value:direct"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			stmt, err := parseMySQLReadQuery(test.query)
+			stmt, err := parseMySQLReadQuery(test.query, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -375,7 +375,7 @@ func TestMySQLCompatibleExpressionValueLineage(t *testing.T) {
 		"SELECT w.value FROM (SELECT (SELECT phone FROM people LIMIT 1) AS value FROM people) w",
 		"SELECT (SELECT phone FROM people LIMIT 1) AS value FROM people UNION ALL SELECT phone AS value FROM customers",
 	} {
-		stmt, err := parseMySQLReadQuery(query)
+		stmt, err := parseMySQLReadQuery(query, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -390,7 +390,7 @@ func TestMySQLCompatibleExpressionValueLineage(t *testing.T) {
 		}
 	}
 	for _, query := range []string{"SELECT coalesce(missing,NULL) AS value FROM people", "SELECT coalesce(phone,NULL) AS value FROM people p JOIN customers c ON p.id=c.id"} {
-		stmt, err := parseMySQLReadQuery(query)
+		stmt, err := parseMySQLReadQuery(query, nil)
 		if err != nil {
 			continue
 		}

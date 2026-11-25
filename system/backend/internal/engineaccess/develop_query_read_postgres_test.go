@@ -19,7 +19,7 @@ import (
 )
 
 func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.EngineCatalogPath, tenant, admin int64, roles *iam.TenantRoleService,
-	newUser func(*testing.T, time.Duration) (userProvenance, time.Time), grant func(*testing.T, string, int64, *time.Time) uuid.UUID, revoke func(*testing.T, uuid.UUID), credential func(*testing.T, userProvenance) string) {
+	newUser func(*testing.T, time.Duration) (userProvenance, time.Time), grant func(*testing.T, string, int64, *time.Time) uuid.UUID, revoke func(*testing.T, uuid.UUID), actor Actor, credential func(*testing.T, userProvenance) string) {
 	t.Run("Notebook ordinary user PostgreSQL grants", func(t *testing.T) {
 		ctx := t.Context()
 		engine := db.Table("system.engines").Where("id=?", path.EngineID)
@@ -241,6 +241,70 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 		check(true)
 		if metaCalls != before {
 			t.Fatal("proven empty source enumerated Meta")
+		}
+		for _, engineType := range []string{"mysql", "tidb"} {
+			t.Run(engineType+" database paths and current Grants", func(t *testing.T) {
+				tenantID := uint(tenant)
+				nativeEngine := models.Engine{Name: "Develop " + engineType + " source authorization fixture", EngineType: engineType, TenantID: &tenantID, Version: 1, LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{}, IdentityKey: models.JSONString(`{"host":"develop-` + engineType + `-grant.invalid","database":"fixture"}`)}
+				if err := db.WithContext(ctx).Table("system.engines").Create(&nativeEngine).Error; err != nil {
+					t.Fatal(err)
+				}
+				issued, err := executions.Issue(ctx, iam.IssueExecutionAuthorizationInput{SourceAccessToken: token, Audience: "develop", ExecutionID: uuid.New(), Accesses: []iam.ExecutionEngineAccessScope{{EngineID: int64(nativeEngine.ID), Effects: []string{"read"}}}, ExpiresIn: time.Minute, Audit: iam.AuditMetadata{RequestID: &requestID}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				first := plugin.TabularItemPath(nativeEngine.ID, "database", "fixture", "authorized")
+				second := plugin.TabularItemPath(nativeEngine.ID, "database", "fixture", "ungranted")
+				service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{first, second}})
+				request := client.DevelopQueryReadRequest{AuthorizationID: strconv.FormatInt(issued.ID, 10), ExecutionID: issued.ExecutionID.String(), EngineID: strconv.FormatUint(uint64(nativeEngine.ID), 10), EngineVersion: strconv.FormatInt(nativeEngine.Version, 10), SampleCredential: token}
+				check := func(allowed bool, paths ...plugin.EngineCatalogPath) {
+					t.Helper()
+					var err error
+					request.ReadSet, err = plugin.NewQueryReadSet(paths...)
+					if err != nil {
+						t.Fatal(err)
+					}
+					observation, err := service.CheckDevelopQueryRead(ctx, tenant, request)
+					if allowed {
+						if err != nil || observation == nil || !observation.ExpiresAt.After(observation.ObservedAt) {
+							t.Fatalf("qualified observation=%+v err=%v", observation, err)
+						}
+					} else if observation != nil || !errors.Is(err, commonapi.ErrForbidden) {
+						t.Fatalf("uncovered observation=%+v err=%v", observation, err)
+					}
+				}
+				check(true) // A proven empty source still needs the actual engine and EA.
+				check(false, first)
+				binding := testReadBindings(first)[0]
+				input := CreateIndependentGrantInput{Actor: actor, EngineID: int64(nativeEngine.ID), RequestID: uuid.New(), CatalogPath: first, ItemFingerprint: binding.ItemFingerprint, ExpectedBoundaryHash: binding.BoundaryHash, RecipientType: "user", RecipientID: user.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Native query source fixture"}
+				grant, err := prepareIndependentGrant(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := NewRepository(db).insertSourceGrant(ctx, grant); err != nil {
+					t.Fatal(err)
+				}
+				check(true, first)
+				check(false, first, second)
+				check(false, plugin.TabularItemPath(nativeEngine.ID, "schema", "fixture", "authorized"))
+				row := GrantRevocation{RequestID: grant.RequestID, RevokedByPrincipalID: actor.PrincipalID, RevokedByMembershipID: actor.MembershipID, Reason: "Withdraw native source fixture", RevokedRequestIDs: []uuid.UUID{grant.RequestID}}
+				if err := db.WithContext(ctx).Create(&row).Error; err != nil {
+					t.Fatal(err)
+				}
+				check(false, first)
+				expiry := time.Now().UTC().Add(time.Second)
+				input.RequestID, input.ExpiryMode, input.ExpiresAt = uuid.New(), shared.SharingExpiryAtTime, &expiry
+				temporary, err := prepareIndependentGrant(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := NewRepository(db).insertSourceGrant(ctx, temporary); err != nil {
+					t.Fatal(err)
+				}
+				check(true, first)
+				time.Sleep(time.Until(expiry))
+				check(false, first)
+			})
 		}
 	})
 }

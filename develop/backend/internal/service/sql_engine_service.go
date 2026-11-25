@@ -476,7 +476,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 		if !ok {
 			return nil, ErrControlledSQLExecutionUnsupported
 		}
-		guarded := engine.EngineType == "postgresql" || engine.EngineType == "gaussdb"
+		_, guarded := enginePlugin.(plugin.GuardedQueryReadSessionProvider)
 		prepareLimit := limit
 		if guarded {
 			prepareLimit = 0 // The guarded cursor applies the limit when fetching the batch.
@@ -644,7 +644,7 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 	if err != nil {
 		return "", "", err
 	}
-	if engine.EngineType == "postgresql" || engine.EngineType == "gaussdb" {
+	if _, guarded := enginePlugin.(plugin.GuardedQueryReadSessionProvider); guarded {
 		return s.generateGuardedExecutableSampleQuery(ctx, tenantID, userAccessToken, executionID, engine, enginePlugin, authorization, selectedPath)
 	}
 	if selectedPath != nil {

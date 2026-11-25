@@ -174,17 +174,28 @@ def verify_mysql_database_grant(preparer, consumer, tenant, engine, pending):
     # Both allowed and denied statements are fully qualified and run as the same source reader.
     runner = import_module("scripts.test.security-mysql-owner-protection-online")
     evidence = {}
-    def query(phase, db, table, expected):
+    def query(phase, db, table, expected, statement=None):
+        # Each window runs exactly one known query under the isolated source account.
+        # The fixture's business SQL is distinct from the provider-generated identity probe.
         def count():
-            result = sql("mysql", f"""SELECT COUNT(*) FROM mysql.general_log
+            probe = f"SELECT 1 FROM `{db}`.`{table}` LIMIT 0"
+            result = sql("mysql", f"""SELECT COUNT(*), COUNT(CASE WHEN BINARY argument=BINARY '{probe}' THEN 1 END)
+                FROM mysql.general_log
                 WHERE SUBSTRING_INDEX(user_host,'[',1)='{READER}' AND command_type IN ('Query','Execute')
                 AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]'
-                AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+`?{db}`?[.]`?{table}`?([^a-z_0-9]|$)';""")
-            return int(result.stdout.strip())
-        before = count()
+                AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]](from|join)[[:space:]]+`?{db}`?[.]`?{table}`?([^a-z_0-9]|$)';""")
+            total, probes = map(int, result.stdout.split())
+            return total - probes, probes
+
+        before, probes_before = count()
         result = runner.develop_execution(consumer, engine, f"addp://engine/{engine}/path/{db}/{table}?type=table",
-                    time.monotonic()+120, f"SELECT id FROM {db}.{table} ORDER BY id", "sql")
-        delta = count() - before
+                    time.monotonic()+120, statement or f"SELECT id FROM {db}.{table} ORDER BY id", "sql")
+        after, probes_after = count()
+        delta = after - before
+        observation = dict(execution_id=result.get("execution_id"), status=result.get("status"),
+                           source_selects=delta, identity_probes=probes_after - probes_before)
+        directory = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
+        (directory / "mysql-node-read-observations.json").write_text(json.dumps({**evidence, phase: observation}))
         if expected is None:
             details = result.get("error_details") or {}
             diagnostic = details.get("diagnostic") or {}
@@ -199,11 +210,13 @@ def verify_mysql_database_grant(preparer, consumer, tenant, engine, pending):
         execution = result.get("execution_id")
         require(execution and all(row["execution_id"] != execution for row in evidence.values()),
                 "MySQL database Grant check reused a previous execution")
-        evidence[phase] = dict(execution_id=execution, source_selects=delta, status=result["status"])
+        evidence[phase] = observation
 
     query("existing", DATABASE, "node_existing", 37)
     query("future", DATABASE, "node_future", 41)
     query("same_name_outside", "pool_control", "node_future", None)
+    query("join_outside", "pool_control", "node_future", None,
+          f"SELECT a.id FROM {DATABASE}.node_future a JOIN pool_control.node_future b ON a.id=b.id")
     preparer.request("POST", f"{base}/{command}/revoke", (200,), {"reason":"End disposable MySQL database Grant"})
     query("revoked", DATABASE, "node_future", None)
     report = dict(engine_id=engine, principal_id=recipient, grant=command, scope=scope, scan=scan, checks=evidence)
@@ -401,18 +414,11 @@ def concurrency_barrier(engine, private, artifacts, run_id, operation, purpose="
               AND {holder}=ANY(pg_blocking_pids(pid)) AND {table_read}
               {predicate};"""
     else:
-        phase = ("IF(INSTR(INFO,'pool concurrent_old')>0,'old','new')" if purpose == "concurrency" else
-                 "CASE WHEN INSTR(INFO,'pool saturation_holder')>0 THEN 'holder' "
-                 "WHEN INSTR(INFO,'pool saturation_queued')>0 THEN 'queued' "
-                 "WHEN INSTR(INFO,'pool saturation_native')>0 THEN 'native' ELSE 'manager' END")
-        predicate = ("AND (INSTR(INFO,'pool concurrent_old')>0 OR INSTR(INFO,'pool concurrent_new')>0)"
-                     if purpose == "concurrency" else "")
         holder = f"(SELECT ID FROM information_schema.PROCESSLIST WHERE ID=IS_USED_LOCK('{marker}') AND USER='root' AND DB='{DATABASE}' AND STATE='User sleep')"
         inspection = f"""SELECT JSON_OBJECT('holder_id',{holder},'waiters',COALESCE(JSON_ARRAYAGG(
-            JSON_OBJECT('id',ID,'phase',{phase})),JSON_ARRAY()))
+            JSON_OBJECT('id',ID,'phase','reader')),JSON_ARRAY()))
             FROM information_schema.PROCESSLIST WHERE USER='{READERS[1]}' AND DB='{DATABASE}'
-              AND STATE='Waiting for table metadata lock' AND INFO REGEXP '[[:space:]]FROM[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?'
-              {predicate};"""
+              AND STATE='Waiting for table metadata lock' AND INFO REGEXP '[[:space:]]FROM[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)';"""
 
     def snapshot():
         return json.loads(sql(engine, inspection).stdout)
@@ -437,7 +443,7 @@ def concurrency_barrier(engine, private, artifacts, run_id, operation, purpose="
         require(receipt["source_identity"] == source, "barrier source changed")
         state = snapshot()
         require(state["holder_id"] == receipt["holder_id"], "owned native barrier disappeared")
-        if engine == "postgresql" and operation == "observe":
+        if operation == "observe":
             waiters = state["waiters"]
             if purpose == "native":
                 for waiter in waiters:
@@ -494,6 +500,7 @@ def observe(engine, run_id, reader=READER):
         log_contract = mysql_log_contract()
         logged = sql(engine, f"""SELECT DISTINCT thread_id FROM mysql.general_log
             WHERE SUBSTRING_INDEX(user_host, '[', 1) = '{reader}' AND command_type IN ('Query','Execute')
+            AND BINARY argument <> BINARY 'SELECT 1 FROM `{DATABASE}`.`{TABLE}` LIMIT 0'
             AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]'
             AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)';""").stdout
         statements = sorted(int(value) for value in logged.split())

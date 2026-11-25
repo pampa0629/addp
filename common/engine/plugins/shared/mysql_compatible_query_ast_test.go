@@ -13,14 +13,14 @@ func TestMySQLAnalyticalReadClosureAndLineage(t *testing.T) {
 	query := `WITH base AS (SELECT o.customer_id, o.total_amount FROM orders o),
 	 totals AS (SELECT customer_id, COUNT(*) AS value FROM base GROUP BY customer_id)
 	 SELECT t.customer_id, t.value, c.customer_code FROM totals t JOIN customers c ON c.id=t.customer_id`
-	refs, err := p.inspectReadReferences(query)
+	refs, _, err := p.inspectReadReferences(query)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if fmt.Sprint(refs) != fmt.Sprint([]mysqlCompatibleRelationReference{{Name: "orders"}, {Name: "customers"}}) {
 		t.Fatalf("CTE leaked into physical closure: %#v", refs)
 	}
-	statement, err := parseMySQLReadQuery(query)
+	statement, err := parseMySQLReadQuery(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestMySQLCTEScopePreservesQualifiedPhysicalRelations(t *testing.T) {
 	p := testMySQLCompatibleQueryProvenance("MySQL")
 	query := `WITH orders AS (SELECT id FROM business.orders)
 	 SELECT a.id FROM orders a JOIN (WITH orders AS (SELECT id FROM archive.orders) SELECT id FROM orders) z ON a.id=z.id`
-	refs, err := p.inspectReadReferences(query)
+	refs, _, err := p.inspectReadReferences(query)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestMySQLAnalyticalASTRejectsUnprovenEffects(t *testing.T) {
 		`SELECT /*!50000 load_file('/tmp/private'), */ id FROM orders`,
 	} {
 		t.Run(query, func(t *testing.T) {
-			if _, err := parseMySQLReadQuery(query); err == nil {
+			if _, err := parseMySQLReadQuery(query, nil); err == nil {
 				t.Fatal("unproven query accepted")
 			}
 		})
@@ -84,14 +84,14 @@ func TestMySQLAnalyticalASTRejectsUnprovenEffects(t *testing.T) {
 func TestMySQLTruncateIsScalarWithPreservedReadDependency(t *testing.T) {
 	p := testMySQLCompatibleQueryProvenance("MySQL")
 	query := `SELECT TRUNCATE(total_amount, 0) AS amount FROM orders`
-	refs, err := p.inspectReadReferences(query)
+	refs, _, err := p.inspectReadReferences(query)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(refs) != 1 || refs[0].Name != "orders" {
 		t.Fatalf("lost scalar source: %#v", refs)
 	}
-	statement, err := parseMySQLReadQuery(query)
+	statement, err := parseMySQLReadQuery(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestMySQLTruncateIsScalarWithPreservedReadDependency(t *testing.T) {
 
 func TestMySQLUnionDoesNotInventDirectLineage(t *testing.T) {
 	p := testMySQLCompatibleQueryProvenance("MySQL")
-	statement, err := parseMySQLReadQuery(`SELECT id AS value FROM orders UNION ALL SELECT id AS value FROM customers`)
+	statement, err := parseMySQLReadQuery(`SELECT id AS value FROM orders UNION ALL SELECT id AS value FROM customers`, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestMySQLCTEExpansionIsBounded(t *testing.T) {
 	for i := 1; i < 24; i++ {
 		ctes = append(ctes, fmt.Sprintf("x%d AS (SELECT a.id FROM x%d a JOIN x%d b ON a.id=b.id)", i, i-1, i-1))
 	}
-	if _, err := parseMySQLReadQuery("WITH " + strings.Join(ctes, ",") + " SELECT id FROM x23"); err == nil || !strings.Contains(err.Error(), "budget") {
+	if _, err := parseMySQLReadQuery("WITH "+strings.Join(ctes, ",")+" SELECT id FROM x23", nil); err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("unbounded expansion: %v", err)
 	}
 }
@@ -145,7 +145,7 @@ func TestMySQLCalendarReadSyntax(t *testing.T) {
 		`SELECT SUBSTRING(CONVERT(X'323032362d30312d3031' USING utf8mb4), 1, 4) FROM dates`,
 		`SELECT CAST(CASE WHEN char_length(d)=10 THEN SUBSTRING(d FROM 1 FOR 4) ELSE NULL END AS signed) FROM dates`,
 	} {
-		if _, err := parseMySQLReadQuery(query); err != nil {
+		if _, err := parseMySQLReadQuery(query, nil); err != nil {
 			t.Errorf("%s: %v", query, err)
 		}
 	}
@@ -154,11 +154,11 @@ func TestMySQLCalendarReadSyntax(t *testing.T) {
 func TestMySQLCalendarScalarPreservesSourceWithoutDirectLineage(t *testing.T) {
 	p := testMySQLCompatibleQueryProvenance("MySQL")
 	query := `SELECT char_length(d) AS size, substring(d, 1, 4) AS year FROM dates`
-	refs, err := p.inspectReadReferences(query)
+	refs, _, err := p.inspectReadReferences(query)
 	if err != nil || len(refs) != 1 || refs[0].Name != "dates" {
 		t.Fatalf("refs=%#v err=%v", refs, err)
 	}
-	statement, err := parseMySQLReadQuery(query)
+	statement, err := parseMySQLReadQuery(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,11 +178,11 @@ func TestMySQLCalendarScalarPreservesSourceWithoutDirectLineage(t *testing.T) {
 func TestMySQLContainsPreservesReadClosureAndDirectProjection(t *testing.T) {
 	p := testMySQLCompatibleQueryProvenance("MySQL")
 	query := `SELECT id, LOCATE(CAST('a%_' AS binary), CAST(nickname AS binary)) > 0 AS matched FROM persons WHERE LOCATE(CAST('a' AS binary), CAST(nickname AS binary)) > 0`
-	refs, err := p.inspectReadReferences(query)
+	refs, _, err := p.inspectReadReferences(query)
 	if err != nil || len(refs) != 1 || refs[0].Name != "persons" {
 		t.Fatalf("%#v %v", refs, err)
 	}
-	statement, err := parseMySQLReadQuery(query)
+	statement, err := parseMySQLReadQuery(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

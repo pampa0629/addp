@@ -10,11 +10,11 @@ import (
 // parseMySQLReadQuery is the single AST entry for read-set and output-lineage
 // analysis. Nonrecursive CTEs become scoped derived relations in the analysis
 // tree only; execution retains the original parameter-bound SQL.
-func parseMySQLReadQuery(query string) (sqlparser.Statement, error) {
+func parseMySQLReadQuery(query string, nativeFunction func(string) bool) (sqlparser.Statement, error) {
 	if len(query) > 1<<20 {
 		return nil, fmt.Errorf("query exceeds analysis size budget")
 	}
-	if strings.Contains(query, "/*!") {
+	if strings.Contains(query, "/*!") || strings.Contains(strings.ToUpper(query), "/*T!") {
 		return nil, fmt.Errorf("executable comments are unsupported")
 	}
 	statement, err := sqlparser.Parse(strings.TrimSpace(query))
@@ -34,6 +34,9 @@ func parseMySQLReadQuery(query string) (sqlparser.Statement, error) {
 		case *sqlparser.AssignmentExpr, *sqlparser.SetVarExpr, *sqlparser.Nextval:
 			return false, fmt.Errorf("variable assignments are unsupported")
 		case *sqlparser.AliasedTableExpr:
+			if n.AsOf != nil {
+				return false, fmt.Errorf("historical table access is unsupported")
+			}
 			switch n.Expr.(type) {
 			case sqlparser.TableName, *sqlparser.Subquery:
 			default:
@@ -51,10 +54,13 @@ func parseMySQLReadQuery(query string) (sqlparser.Statement, error) {
 			if !n.Qualifier.IsEmpty() || n.Over != nil {
 				return false, fmt.Errorf("qualified and window functions are unsupported")
 			}
-			switch strings.ToLower(n.Name.String()) {
+			name := strings.ToLower(n.Name.String())
+			switch name {
 			case "count", "sum", "coalesce", "date_format", "date_add", "truncate", "char_length", "substring", "locate":
 			default:
-				return false, fmt.Errorf("unproven function %s", n.Name.String())
+				if nativeFunction == nil || !nativeFunction(name) {
+					return false, fmt.Errorf("unproven function %s", name)
+				}
 			}
 		}
 		return true, nil

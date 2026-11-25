@@ -198,7 +198,7 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 		begin = conn.BeginTx
 		defer func() { err = SQLExecutionError(err) }()
 	}
-	tx, err := beginControlledReadOnlySQLTransaction(ctx, begin, dialect, boundary, isolation)
+	tx, err := BeginControlledReadOnlySQLTransactionWith(ctx, begin, dialect, boundary, isolation)
 	if err != nil {
 		return nil, fmt.Errorf("开启只读事务失败：%w", err)
 	}
@@ -249,10 +249,11 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 	if db == nil {
 		return nil, fmt.Errorf("SQL database cannot be nil")
 	}
-	return beginControlledReadOnlySQLTransaction(ctx, db.BeginTx, dialect, boundary, isolation)
+	return BeginControlledReadOnlySQLTransactionWith(ctx, db.BeginTx, dialect, boundary, isolation)
 }
 
-func beginControlledReadOnlySQLTransaction(ctx context.Context, begin func(context.Context, *sql.TxOptions) (*sql.Tx, error), dialect string, boundary ControlledReadOnlySQLBoundary, isolation sql.IsolationLevel) (*sql.Tx, error) {
+// BeginControlledReadOnlySQLTransactionWith uses the same transaction boundary on a borrowed connection.
+func BeginControlledReadOnlySQLTransactionWith(ctx context.Context, begin func(context.Context, *sql.TxOptions) (*sql.Tx, error), dialect string, boundary ControlledReadOnlySQLBoundary, isolation sql.IsolationLevel) (*sql.Tx, error) {
 	dialectName := strings.ToLower(strings.TrimSpace(dialect))
 	switch boundary {
 	case ControlledReadOnlySQLBoundaryDatabaseTransaction:

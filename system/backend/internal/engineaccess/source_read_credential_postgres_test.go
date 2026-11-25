@@ -28,6 +28,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 	grant func(*testing.T, string, int64, *time.Time) uuid.UUID,
 	roles *iam.TenantRoleService, tenantID, adminID int64,
 	revoke func(*testing.T, uuid.UUID),
+	actor Actor,
 ) {
 	t.Run("trusted current User credential and precise rules", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -63,7 +64,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			return session, tokens
 		}
 
-		exerciseDevelopQueryReadGrants(t, db, path, tenantID, adminID, roles, newUser, grant, revoke, func(t *testing.T, user userProvenance) string {
+		exerciseDevelopQueryReadGrants(t, db, path, tenantID, adminID, roles, newUser, grant, revoke, actor, func(t *testing.T, user userProvenance) string {
 			session, _ := issue(t, user, time.Minute)
 			return session.AccessToken
 		})

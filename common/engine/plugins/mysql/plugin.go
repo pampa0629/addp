@@ -3,6 +3,8 @@ package mysql
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -176,7 +178,21 @@ func (p *MySQLPlugin) queryProvenance() shared.MySQLCompatibleQueryProvenance {
 		BuildDSN:          p.BuildDSN,
 		IsSystemNamespace: p.isSystemSchema,
 		DescribeFacts:     p.DescribeEngineCatalogFacts,
+		NativeValueFunctions: map[string]func(version, product string) bool{
+			"abs":          analyticalVersionSupported,
+			"st_astext":    analyticalVersionSupported,
+			"st_transform": mysqlNativeTransformSupported,
+		},
 	}
+}
+
+func mysqlNativeTransformSupported(version, product string) bool {
+	if !analyticalVersionSupported(version, product) {
+		return false
+	}
+	base, _, _ := strings.Cut(version, "-")
+	patch, err := strconv.Atoi(strings.TrimPrefix(base, "8.0."))
+	return err == nil && patch >= 13
 }
 
 func (p *MySQLPlugin) SQLDialect() string {

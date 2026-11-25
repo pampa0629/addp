@@ -58,7 +58,7 @@ func (r DevelopQueryReadRequest) Validate() error {
 	}
 	seen := make(map[string]bool, len(r.ReadSet.Paths))
 	for _, path := range r.ReadSet.Paths {
-		if strconv.FormatUint(uint64(path.EngineID), 10) != r.EngineID || len(path.Segments) != 3 || path.Segments[1].Term != plugin.EngineCatalogTermSchema || path.Segments[2].Term != plugin.EngineCatalogTermTable {
+		if strconv.FormatUint(uint64(path.EngineID), 10) != r.EngineID || len(path.Segments) != 3 || (path.Segments[1].Term != plugin.EngineCatalogTermSchema && path.Segments[1].Term != plugin.EngineCatalogTermDatabase) || path.Segments[2].Term != plugin.EngineCatalogTermTable {
 			return invalid
 		}
 		encoded, err := authorization.EncodeSharingTarget(path)
