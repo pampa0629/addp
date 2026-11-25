@@ -1509,6 +1509,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Asset Backend（带检查）
   if [ "$START_ASSET_BACKEND" = true ]; then
     if check_service_running "asset" "$ASSET_BACKEND_PORT"; then
+      addp_dev_prepare_database asset || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" asset asset backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-asset" &
       ASSET_PID=$!
       echo $ASSET_PID > .dev-pids/asset.pid

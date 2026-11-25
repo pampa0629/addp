@@ -37,9 +37,11 @@ func (s *TypeService) GetType(id int64) (*models.TypeDefinition, error) {
 // 若记录已存在则更新当前内置展示定义。
 func (s *TypeService) SeedBuiltinTypes() error {
 	// 迁移：将旧 code=model 重命名为 algo_model
-	s.db.Model(&models.TypeDefinition{}).
+	if err := s.db.Model(&models.TypeDefinition{}).
 		Where("code = ? AND tenant_id = 0", "model").
-		Updates(map[string]interface{}{"code": "algo_model", "name": "算法模型"})
+		Updates(map[string]interface{}{"code": "algo_model", "name": "算法模型"}).Error; err != nil {
+		return err
+	}
 	builtinTypes := []models.TypeDefinition{
 		{
 			TenantID:    0,
@@ -98,13 +100,17 @@ func (s *TypeService) SeedBuiltinTypes() error {
 			if err := s.db.Create(&t).Error; err != nil {
 				return err
 			}
-		} else if err == nil {
+		} else if err != nil {
+			return err
+		} else {
 			// 更新发布期内置展示定义，确保与代码一致。
-			s.db.Model(&existing).Updates(map[string]interface{}{
+			if err := s.db.Model(&existing).Updates(map[string]interface{}{
 				"name":        t.Name,
 				"description": t.Description,
 				"enabled":     t.Enabled,
-			})
+			}).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil

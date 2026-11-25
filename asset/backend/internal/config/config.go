@@ -31,7 +31,6 @@ type Config struct {
 }
 
 func LoadConfig() (*Config, error) {
-	commonConfig.LoadEnv()
 
 	cfg := &Config{
 		Port:     commonConfig.GetEnv("ASSET_BACKEND_PORT", "8183"),
@@ -61,8 +60,9 @@ func LoadConfig() (*Config, error) {
 
 func (c *Config) PlatformDatabase() database.Config {
 	return database.Config{
-		Host: c.DBHost, Port: c.DBPort,
-		User: c.DBUser, Password: c.DBPassword,
-		DBName: c.DBName, Schema: c.DBSchema,
+		Host:   commonConfig.GetEnv("POSTGRES_HOST", "localhost"),
+		Port:   commonConfig.GetEnv("POSTGRES_PORT", "15432"),
+		DBName: commonConfig.GetEnv("POSTGRES_DB", "addp"),
+		Schema: c.DBSchema,
 	}
 }

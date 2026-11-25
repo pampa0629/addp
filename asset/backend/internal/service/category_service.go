@@ -273,9 +273,7 @@ func (s *CategoryService) Update(tenantID uint, id int64, req *UpdateAssetCatego
 
 func lockTenantCategoryGraph(tx *gorm.DB, tenantID uint) ([]models.AssetCategory, error) {
 	query := tx.Where("tenant_id = ?", tenantID).Order("id ASC")
-	if tx.Dialector.Name() == "postgres" {
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
+	query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	var categories []models.AssetCategory
 	if err := query.Find(&categories).Error; err != nil {
 		return nil, err

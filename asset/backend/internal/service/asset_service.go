@@ -929,7 +929,9 @@ func (s *AssetService) dailyTrend(query *gorm.DB, dateCol string) ([]DailyCount,
 		Count int64  `gorm:"column:count"`
 	}
 	dateExpression := fmt.Sprintf("TO_CHAR(DATE_TRUNC('day', %s), 'YYYY-MM-DD')", dateCol)
-	if s.db.Dialector.Name() == "sqlite" {
+	if s.db.Dialector.Name() == "mysql" {
+		dateExpression = fmt.Sprintf("DATE_FORMAT(%s, '%%Y-%%m-%%d')", dateCol)
+	} else if s.db.Dialector.Name() == "sqlite" {
 		dateExpression = fmt.Sprintf("strftime('%%Y-%%m-%%d', %s)", dateCol)
 	}
 	var rows []row

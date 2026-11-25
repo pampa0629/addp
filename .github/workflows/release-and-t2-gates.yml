@@ -767,6 +767,15 @@ jobs:
           go-version-file: asset/backend/go.mod
           cache: false
 
+      - name: Verify Asset installation, runtime restarts and category tree on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-asset-install'
+
+      - name: Verify Asset installation, runtime restarts and category tree on PostgreSQL
+        env:
+          ADDP_INFRA_DATABASE_PROVIDER: postgres
+          PLATFORM_CI_PG_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/test/module-platform-deployment.sh "$PLATFORM_CI_PG_ID" asset
+
       - name: Run Asset PostgreSQL gate
         env:
           ASSET_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_asset_test?sslmode=disable

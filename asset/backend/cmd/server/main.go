@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -40,10 +41,31 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(cfg.PlatformDatabase(), "asset")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := repository.PrepareDatabase(db, func(tx *gorm.DB) error { return service.NewTypeService(tx).SeedBuiltinTypes() }); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "asset"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
+	db, err := bootstrap.OpenPlatformRuntime(cfg.PlatformDatabase(), "asset", &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -51,19 +73,9 @@ func main() {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
-	if err := repository.Migrate(db); err != nil {
-		log.Fatalf("Asset 数据库迁移失败: %v", err)
+	if err := schema.Require(db, "asset", repository.SchemaVersion); err != nil {
+		log.Fatal(err)
 	}
-	log.Printf("✅ 数据库迁移完成")
-
-	// 初始化内置资产类型（幂等，重复执行安全）
-	typeSvc := service.NewTypeService(db)
-	if err := typeSvc.SeedBuiltinTypes(); err != nil {
-		log.Printf("⚠️  内置资产类型初始化失败: %v", err)
-	} else {
-		log.Printf("✅ 内置资产类型初始化完成")
-	}
-
 	// Catalog 只是创建、编辑和发布时的运行时软依赖，不进入 Asset Ready。
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
 		cfg.SystemURL, "addp-asset", cfg.ServiceClientSecret, nil,

@@ -8,7 +8,7 @@ Asset 模块负责数据资产管理，包括资产类型、`AssetCategory` 多�
 
 - 后端：Go + Gin + GORM，默认端口 `8183`，环境变量 `ASSET_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus，开发端口 `5184`，启动脚本环境变量 `ASSET_FE_PORT`。
-- 数据库：PostgreSQL `asset` schema。
+- 平台数据库在部署时选定 PG 或 MySQL。`asset-backend prepare-database` 由根发布入口调用，安装 Asset 表、分类同名约束、授权状态约束及内置资产类型。运行账号只核验 Common 与 Asset 版本。
 - 依赖：System 认证与模块注册，Redis 认证缓存，Meilisearch 资产全文搜索可选。
 - Elasticsearch 适配复用同一已上架资产文档和租户、状态、类型、分类过滤。Asset 负责索引映射与重建，Common 提供连接与请求传输。生产启动继续使用 Meilisearch，候选资产回查仍由 Asset 关系库处理。真实索引门禁为 `make test-common-elasticsearch COMMON_ELASTICSEARCH_TEST_ARGS='--test platform-asset'`。
 

@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 container=${1:?expected gate-owned container ID}
 owner=${2:?expected database owner}
-case "$owner" in service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
+case "$owner" in asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
 provider=${ADDP_INFRA_DATABASE_PROVIDER:?}
 work=$(mktemp -d)
 install_volume=""
@@ -118,7 +118,7 @@ snapshot >refused.sql
 cmp before-owner.sql refused.sql
 # The same release database phase and the same module command run on both providers.
 prepare=(bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml")
-if [[ ( $owner == standard || $owner == model || $owner == service ) && $provider == mysql ]]; then
+if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset ) && $provider == mysql ]]; then
   status=0
   "${prepare[@]}" >"$work/installer.out" || status=$?
   case "$status" in
@@ -136,6 +136,8 @@ fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
+elif [[ $owner == asset ]]; then
+  grep -qi 'CREATE TABLE.*asset_components' installed.sql
 elif [[ $owner == service ]]; then
   grep -qi 'CREATE TABLE.*query_services' installed.sql
 elif [[ $owner == model ]]; then
@@ -162,4 +164,7 @@ if [[ $owner == model ]]; then
 fi
 if [[ $owner == service ]]; then
   (cd "$root/service/backend" && ADDP_TEST_SERVICE_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledServiceCatalog$' -count=1 -v)
+fi
+if [[ "$owner" == asset ]]; then
+  (cd "$root/asset/backend" && ADDP_TEST_ASSET_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledAssetCategories$' -count=1 -v)
 fi

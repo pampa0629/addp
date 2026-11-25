@@ -79,14 +79,20 @@ func (s *RatingService) List(tenantID uint, params RatingListParams) ([]RatingWi
 		query = query.Where("r.user_id = ?", params.UserID)
 	}
 	if params.HasFeedback {
-		query = query.Where("jsonb_array_length(r.tags) > 0")
+		if s.db.Dialector.Name() == "mysql" {
+			query = query.Where("JSON_LENGTH(r.tags) > 0")
+		} else {
+			query = query.Where("jsonb_array_length(r.tags) > 0")
+		}
 	}
 	if params.IsHandled != nil {
 		query = query.Where("r.is_handled = ?", *params.IsHandled)
 	}
 
 	var total int64
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	var results []RatingWithUser
 	err := query.
@@ -238,20 +244,22 @@ func (s *RatingService) GetStats(tenantID uint, assetID int64) (map[string]inter
 
 	// 各分数段分布
 	type distRow struct {
-		Score int   `json:"score"`
-		Count int64 `json:"count"`
+		Score float64 `json:"score"`
+		Count int64   `json:"count"`
 	}
 	var dist []distRow
-	s.db.Table("asset.ratings").
-		Select("ROUND(score)::int AS score, COUNT(*) AS count").
+	if err := s.db.Table("asset.ratings").
+		Select("ROUND(score) AS score, COUNT(*) AS count").
 		Where("tenant_id = ? AND asset_id = ?", tenantID, assetID).
-		Group("ROUND(score)::int").
+		Group("ROUND(score)").
 		Order("score").
-		Scan(&dist)
+		Scan(&dist).Error; err != nil {
+		return nil, err
+	}
 
 	distribution := make(map[int]int64)
 	for _, d := range dist {
-		distribution[d.Score] = d.Count
+		distribution[int(d.Score)] = d.Count
 	}
 	_ = time.Now() // suppress import if needed
 
