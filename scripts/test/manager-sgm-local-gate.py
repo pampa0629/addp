@@ -69,6 +69,7 @@ def defaults():
     for key in ("ENCRYPTION_KEY", "IAM_MFA_ENCRYPTION_KEY", "OAUTH_USER_CODE_PEPPER"):
         values[key] = base64.b64encode(secrets.token_bytes(32)).decode()
     values.update(ENV="test", POSTGRES_DB="addp_online", POSTGRES_HOST="127.0.0.1",
+                  ADDP_DATABASE_RUNTIME_USER="platform_runtime", ADDP_DATABASE_RUNTIME_PASSWORD=secrets.token_hex(32),
                   POSTGRES_USER="sgm_fixture", ADDP_ONLINE_TEST="1", ADDP_ONLINE_LOCAL_SGM="1",
                   ADDP_OBSERVABILITY_LOGS_ENABLED="false", ADDP_OBSERVABILITY_METRICS_ENABLED="false",
                   COMPOSE_DISABLE_ENV_FILE="1", NO_PROXY="127.0.0.1,localhost", no_proxy="127.0.0.1,localhost")
@@ -315,13 +316,18 @@ def setup(life, environment, images):
     config["services"]["business-minio"] = business
     path = life.private_json("compose.json", config)
 
-    def compose(*args):
+    def compose(*args, data=None):
         return T2.command(["docker", "compose", "--env-file", "/dev/null", "-f", str(path), *args],
-                          environment=environment, timeout=360)
+                          environment=environment, timeout=360, data=data)
     compose("up", "-d", "--wait", *INFRA, "business-minio")
     # Init uses the standard bucket/lifecycle owner, scoped to the generated Compose file.
     T2.command(["bash", "scripts/infra/init-minio.sh", "--compose-file", str(path)],
                environment={**environment, "ADDP_INFRA_RESOLVED": "1"})
+    compose("exec", "-T", "postgres", "sh", "-ec",
+            'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"',
+            data=(T2.ROOT / "scripts/infra/init-postgresql.sql").read_bytes())
+    T2.command(["bash", "scripts/test/hosted-platform-database.sh", life.run_id, str(path), LABEL, *BACKENDS],
+               environment=environment, timeout=360)
     compose("up", "-d", "--wait", "system-backend")
     for name in ("meta-backend", "meta-worker", "manager-backend", "monitor-backend", "gateway"):
         compose("up", "-d", "--wait", name)

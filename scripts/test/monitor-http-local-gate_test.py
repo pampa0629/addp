@@ -15,6 +15,79 @@ spec=importlib.util.spec_from_file_location('http_local',Path(__file__).with_nam
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 class HTTPProductLocalTests(unittest.TestCase):
+    def test_private_database_installs_selected_services_with_scoped_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            trace = work / 'calls'
+            docker = work / 'docker'
+            docker.write_text("""#!/usr/bin/env bash
+set -eu
+if [[ $1 == inspect ]]; then echo "${FIXTURE_OWNER:-private-run}"; exit; fi
+[[ "$1 $2 $3 $4 $5 $6 $7" == "compose --env-file /dev/null -p private-run -f private.json" ]]
+shift 7
+if [[ $1 == ps ]]; then
+  [[ "$*" == "ps -q postgres" ]]; echo private-postgres; exit
+fi
+case $1 in
+  exec)
+    sql=$(cat)
+    if [[ $sql == *'CREATE ROLE platform_deploy'* ]]; then
+      [[ $sql == *"CREATE ROLE platform_runtime LOGIN PASSWORD '$ADDP_DATABASE_RUNTIME_PASSWORD'"* ]]
+      echo roles
+    else
+      [[ $sql == *'ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy'* ]]
+      echo "schema:${!#}"
+    fi ;;
+  run)
+    [[ "$1 $2 $3 $4 $5" == "run --label local.label.role=oneshot -T --no-deps" ]]
+    [[ "$6 $8 $9 ${10} ${11}" == "--entrypoint -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD" ]]
+    [[ $ADDP_DATABASE_DEPLOY_USER == platform_deploy && $ADDP_DATABASE_RUNTIME_USER == platform_runtime ]]
+    [[ -n $ADDP_DATABASE_DEPLOY_PASSWORD && $ADDP_DATABASE_DEPLOY_PASSWORD != "$ADDP_DATABASE_RUNTIME_PASSWORD" ]]
+    echo "install:${*:12}"
+    [[ "${12}" != "${FAIL_SERVICE:-}" ]] ;;
+  *) exit 2 ;;
+esac >> "$TRACE_FILE"
+""")
+            docker.chmod(0o700)
+            environment = dict(os.environ, PATH=f"{work}:{os.environ['PATH']}", TRACE_FILE=str(trace),
+                               POSTGRES_DB='addp_test', ADDP_DATABASE_RUNTIME_USER='platform_runtime',
+                               ADDP_DATABASE_RUNTIME_PASSWORD='a'*64)
+            command = ['bash', 'scripts/test/hosted-platform-database.sh', 'private-run', 'private.json',
+                       'local.label', 'system-backend', 'gateway', 'monitor-backend', 'agent-backend', 'copilot-backend']
+            def invoke(**extra):
+                trace.write_text('')
+                return subprocess.run(command, cwd=m.core.ROOT, env={**environment, **extra}, capture_output=True, text=True)
+
+            self.assertNotEqual(invoke(FIXTURE_OWNER='another-project').returncode, 0)
+            self.assertEqual(trace.read_text(), '')
+            self.assertNotEqual(invoke(FAIL_SERVICE='monitor-backend').returncode, 0)
+            self.assertNotIn('install:agent-backend', trace.read_text())
+            result = invoke()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(trace.read_text().splitlines(), ['roles', 'schema:system', 'schema:common',
+                'schema:gateway', 'schema:monitor', 'schema:agent', 'schema:copilot',
+                'install:system-backend prepare-database system', 'install:system-backend prepare-database common',
+                'install:gateway prepare-database', 'install:monitor-backend prepare-database',
+                'install:agent-backend -m prepare_database', 'install:copilot-backend -m prepare_database'])
+
+    def test_database_preparation_failure_stops_both_local_product_launches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'compose.json'
+            for gate in (m, m.core):
+                with self.subTest(gate=gate.__name__):
+                    life = SimpleNamespace(checkout=m.core.ROOT, compose_path=path, run_id='private-run',
+                        label=gate.LABEL, compose=mock.Mock(), deployment_config={'services': {}},
+                        command=mock.Mock(side_effect=m.core.GateError('installer failed')))
+                    with self.assertRaisesRegex(m.core.GateError, 'installer failed'):
+                        if gate is m:
+                            gate.setup(life, {})
+                        else:
+                            gate.setup(life, {}, {})
+                    life.command.assert_called_once_with(['bash', 'scripts/test/hosted-platform-database.sh',
+                        life.run_id, str(path), life.label, *gate.BACKENDS], timeout=300)
+                    started = [call.args for call in life.compose.call_args_list if call.args[0] == 'up']
+                    self.assertFalse(any('system-backend' in args for args in started))
+
     def test_archived_compile_resume_requires_a_unique_pair_before_cancel(self):
         container_id = 'a'*64
         identity = m.core.compile_resume_request_identity(container_id)

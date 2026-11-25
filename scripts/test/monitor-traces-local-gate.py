@@ -49,7 +49,8 @@ OWN_INPUTS = (
     'scripts/test/trace-deployment-fixture.py',
     'scripts/test/monitor-traces-local-gate.py', 'scripts/test/monitor-traces-local-gate_test.py',
     'scripts/test/monitor-traces-local-online.py', 'scripts/test/monitor-traces-local-online_test.py',
-    'scripts/test/monitor-traces-gate.sh', 'scripts/infra/init-postgresql.sql', 'scripts/infra/Dockerfile.minio', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
+    'scripts/test/monitor-traces-gate.sh', 'scripts/test/hosted-platform-database.sh', 'scripts/infra/platform-database.sh',
+    'scripts/infra/init-postgresql.sql', 'scripts/infra/Dockerfile.minio', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
     'common/httptrace/tracetest/runtime.go', 'develop/backend/internal/repository/execution_repository.go',
     'develop/backend/internal/repository/execution_trace.go', 'develop/backend/internal/repository/execution_trace_test.go',
     'develop/backend/internal/service/execution_trace.go', 'develop/backend/internal/service/execution_trace_test.go',
@@ -1871,6 +1872,7 @@ def isolated_defaults(life):
             env[key] = secrets.token_hex(32)
     for key in ('ENCRYPTION_KEY', 'IAM_MFA_ENCRYPTION_KEY', 'OAUTH_USER_CODE_PEPPER'):
         env[key] = base64.b64encode(secrets.token_bytes(32)).decode()
+    env.update(ADDP_DATABASE_RUNTIME_USER='platform_runtime', ADDP_DATABASE_RUNTIME_PASSWORD=secrets.token_hex(32))
     return env
 
 
@@ -2291,6 +2293,12 @@ def start_dependencies(compose, initialization_sql, progress=lambda phase:None):
     compose('up','-d','--wait','--no-build','loki','runtime-log-api','tempo','trace-query','alloy')
 
 
+def prepare_product_databases(life, backends):
+    life.phase='isolated_product_database_preparation'
+    life.command(['bash','scripts/test/hosted-platform-database.sh',life.run_id,str(life.compose_path),life.label,*backends],
+                 timeout=300)
+
+
 def start_deployment(compose):
     for group in [('system-backend',),('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'),FRONTENDS]:
         compose('up','-d','--wait','--no-build',*group)
@@ -2370,6 +2378,7 @@ def setup(life, env, images):
     config=life.deployment_config
     for name,image in images.items():config['services'][name]['image']=image
     life.compose_path.write_text(json.dumps(config))
+    prepare_product_databases(life, BACKENDS)
     life.phase='isolated_deployment_start'
     start_deployment(life.compose)
     rows=json.loads(life.docker('inspect',*[life.run_id+'-'+name for name in BACKENDS]))

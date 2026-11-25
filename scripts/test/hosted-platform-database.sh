@@ -1,5 +1,5 @@
-# Database preparation for fresh addp_online installations. The Hosted owner has
-# admitted an empty addp-infra project and takes responsibility for its cleanup.
+# Database preparation for disposable test projects. Hosted sources these functions
+# after admission. Private local gates execute the Compose entry at the end.
 hosted_start_platform_infra() {
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "$POSTGRES_DB" = addp_online ] && [ "$infra_owned" = 1 ] || return 1
   unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD hosted_deploy_password
@@ -11,29 +11,40 @@ hosted_start_platform_infra() {
   hosted_deploy_password=$(openssl rand -hex 32)
   ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 32)
   export ADDP_DATABASE_RUNTIME_USER=platform_runtime ADDP_DATABASE_RUNTIME_PASSWORD
-  docker exec -i addp-postgres sh -ec '
-    test "$POSTGRES_DB" = addp_online
-    export PGPASSWORD="$POSTGRES_PASSWORD"
-    exec psql -Xq -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$POSTGRES_USER" -d addp_online
-  ' <<SQL
+  fixture_create_database_roles hosted_database_psql
+}
+
+# Both profiles feed SQL through stdin to the PostgreSQL container they own.
+fixture_create_database_roles() {
+  "$1" <<SQL
 BEGIN;
 CREATE ROLE platform_deploy LOGIN PASSWORD '$hosted_deploy_password';
 CREATE ROLE platform_runtime LOGIN PASSWORD '$ADDP_DATABASE_RUNTIME_PASSWORD';
-GRANT CREATE ON DATABASE addp_online TO platform_deploy;
+GRANT CREATE ON DATABASE :"db" TO platform_deploy;
 COMMIT;
 SQL
 }
 
-# The module registry supplies the installer command and the actual schema name.
-# On Hosted the database is empty except for Infra's preinstalled namespaces.
-hosted_prepare_namespace() {
+hosted_database_psql() {
+  local pg_exec=(docker exec -i addp-postgres)
+  fixture_database_psql addp_online "$@"
+}
+
+fixture_database_psql() {
+  local expected=$1
+  shift
+  "${pg_exec[@]}" env "EXPECTED_DATABASE=$expected" sh -ec '
+    test "$POSTGRES_DB" = "$EXPECTED_DATABASE"
+    export PGPASSWORD="$POSTGRES_PASSWORD"
+    exec psql -Xq -v ON_ERROR_STOP=1 -v db="$POSTGRES_DB" -v ns="${1:-}" -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+  ' _ "$@"
+}
+
+# The registry supplies the installer command and the actual schema name.
+fixture_prepare_namespace() {
   local namespace=$1
   if [[ "$1" == system ]]; then namespace=$4; fi
-  docker exec -i addp-postgres sh -ec '
-    test "$POSTGRES_DB" = addp_online
-    export PGPASSWORD="$POSTGRES_PASSWORD"
-    exec psql -Xq -v ON_ERROR_STOP=1 -v ns="$1" -h 127.0.0.1 -U "$POSTGRES_USER" -d addp_online
-  ' _ "$namespace" <<'SQL'
+  "$database_psql" "$namespace" <<'SQL'
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS :"ns" AUTHORIZATION platform_deploy;
 ALTER SCHEMA :"ns" OWNER TO platform_deploy;
@@ -43,7 +54,7 @@ SELECT has_schema_privilege('platform_runtime', :'ns', 'USAGE')
    AND NOT has_database_privilege('platform_runtime', current_database(), 'CREATE') AS restricted \gset
 \if :restricted
 \else
-  DO $$ BEGIN RAISE EXCEPTION 'Hosted runtime has incorrect schema privileges'; END $$;
+  DO $$ BEGIN RAISE EXCEPTION 'Runtime has incorrect schema privileges'; END $$;
 \endif
 ALTER DEFAULT PRIVILEGES FOR ROLE platform_deploy IN SCHEMA :"ns"
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platform_runtime;
@@ -63,7 +74,7 @@ hosted_install_database() (
     local service="$owner-backend" entry=/app/server
     if [[ "$owner" == gateway ]]; then service=gateway; fi
     if [[ "$language" == python ]]; then entry=python; fi
-    command=("$hosted_compose" run --rm -T --no-deps --entrypoint "$entry"
+    command=("$hosted_compose" run "${installer_options[@]}" -T --no-deps --entrypoint "$entry"
       -e ADDP_DATABASE_DEPLOY_USER -e ADDP_DATABASE_DEPLOY_PASSWORD "$service")
   elif [[ "$language" == python ]]; then
     source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
@@ -85,9 +96,9 @@ hosted_install_database() (
 
 # System migrations inspect Common even before its own installer has run.
 hosted_prepare_registered_databases() {
-  local owner action
+  local owner action database_psql=hosted_database_psql
   source "$ROOT_DIR/scripts/infra/platform-database.sh"
-  for action in hosted_prepare_namespace hosted_install_database; do
+  for action in fixture_prepare_namespace hosted_install_database; do
     for owner in "$@"; do
       addp_prepare_module_database "$owner" "$action" || return 1
     done
@@ -95,14 +106,41 @@ hosted_prepare_registered_databases() {
 }
 
 hosted_prepare_compose_database() (
-  local hosted_compose=$1 services=${2//,/$'\n'} action
+  local hosted_compose=$1 database_psql=hosted_database_psql installer_options=(--rm)
+  fixture_prepare_compose_services "${2//,/$'\n'}"
+)
+
+fixture_prepare_compose_services() {
+  local services=$1 action
   source "$ROOT_DIR/scripts/infra/platform-database.sh"
-  for action in hosted_prepare_namespace hosted_install_database; do
+  for action in fixture_prepare_namespace hosted_install_database; do
     if grep -Fxq system-backend <<< "$services"; then
       addp_prepare_module_database system "$action" || return 1
     fi
     addp_prepare_selected_databases "$action" "$services" || return 1
   done
+}
+
+# The caller has rendered this run's private, labelled compose.json. Retain
+# one-off exit states for the local sampler and the project's normal cleanup.
+local_prepare_compose_database() (
+  set -euo pipefail
+  local project=$1 file=$2 label=$3
+  shift 3
+  local ROOT_DIR=$PWD database_psql=local_database_psql hosted_compose=local_database_compose
+  local installer_options=(--label "$label.role=oneshot")
+  local_database_compose() { docker compose --env-file /dev/null -p "$project" -f "$file" "$@"; }
+  local_database_psql() {
+    local pg_exec=(local_database_compose exec -T postgres)
+    fixture_database_psql "$POSTGRES_DB" "$@"
+  }
+  local container hosted_deploy_password
+  container=$(local_database_compose ps -q postgres)
+  [[ -n "$container" && $(docker inspect --format "{{index .Config.Labels \"$label\"}}" "$container") == "$project" ]] || return 1
+  [[ "$ADDP_DATABASE_RUNTIME_USER" == platform_runtime && "$ADDP_DATABASE_RUNTIME_PASSWORD" =~ ^[a-f0-9]{64}$ ]] || return 1
+  hosted_deploy_password=$(openssl rand -hex 32)
+  fixture_create_database_roles "$database_psql"
+  fixture_prepare_compose_services "$(printf '%s\n' "$@")"
 )
 
 hosted_prepare_native_database() (
@@ -167,3 +205,8 @@ hosted_prepare_selected_native_database() {
   fi
   unset hosted_deploy_password
 }
+
+# Local gates call this entry from their verified product checkout.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  local_prepare_compose_database "$@"
+fi

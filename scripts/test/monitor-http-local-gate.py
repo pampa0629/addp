@@ -34,7 +34,7 @@ LIMITS={name:(.025,32) for name in FRONTENDS}|{
 SAMPLER_IMAGE='nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284'
 CASE_LIMITS={'full':(3600,3300),'compile-checkpoints':(900,780)}
 OWN_INPUTS=('scripts/prod/gateway-metrics-control.yml','scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-gate_test.py',
-    'scripts/test/http-quality-local-browser_test.mjs',
+    'scripts/test/http-quality-local-browser_test.mjs', 'scripts/test/hosted-platform-database.sh', 'scripts/infra/platform-database.sh',
     'scripts/test/monitor-http-local-online.py','scripts/test/monitor-http-local-online_test.py',
     'scripts/test/monitor-traces-local-gate.py','scripts/test/monitor-traces-local-online.py',
     'system/backend/cmd/online-test-fixture/http_quality_local.go',
@@ -319,6 +319,7 @@ def setup(life,env):
     life.compose('up','-d','--wait','--no-build','postgres','redis')
     life.compose('exec','-T','postgres','sh','-ec','exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"',
         data=(life.checkout/'scripts/infra/init-postgresql.sql').read_text())
+    core.prepare_product_databases(life, BACKENDS)
     life.phase='owned_source_tls_preparation';prepare_source_tls(life)
     life.phase='formal_product_start'
     for group in [('system-backend',),('gateway','monitor-backend'),('prometheus',),

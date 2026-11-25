@@ -146,6 +146,7 @@ def defaults(life):
         values[key]=base64.b64encode(secrets.token_bytes(32)).decode()
     values.update(life.env)
     values.update(ENV='test',POSTGRES_DB='addp_test',POSTGRES_USER='catalog_fixture',POSTGRES_HOST='127.0.0.1',
+        ADDP_DATABASE_RUNTIME_USER='platform_runtime',ADDP_DATABASE_RUNTIME_PASSWORD=secrets.token_hex(32),
         POSTGRES_PASSWORD=secrets.token_hex(24),COMPOSE_DISABLE_ENV_FILE='1',ADDP_CATALOG_BROWSER_LOCAL='1',
         ADDP_CATALOG_BROWSER_RUN_ID=life.uuid,ADDP_CATALOG_BROWSER_MINUTES=str(life.minutes),
         ADDP_OBSERVABILITY_LOGS_ENABLED='false',ADDP_OBSERVABILITY_METRICS_ENABLED='false',
@@ -244,6 +245,7 @@ def prepare(life):
     life.command(['docker','compose','--env-file','/dev/null','-f',str(life.work/'compose.json'),'exec','-T','postgres',
         'psql','-v','ON_ERROR_STOP=1','-U',life.env['POSTGRES_USER'],'-d','addp_test'],
         data=(life.checkout/'scripts/infra/init-postgresql.sql').read_bytes())
+    life.command(['bash','scripts/test/hosted-platform-database.sh',life.run_id,str(life.work/'compose.json'),LABEL,*BACKENDS],timeout=360)
     life.compose('up','-d','--wait','system-backend')
     for name in BACKENDS[1:]:life.compose('up','-d','--wait',name)
     life.compose('up','-d','--wait',*FRONTENDS)
