@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { browserAPIFromResponse, identity, json, login, selectSearchResult } from './transfer-browser-support.js'
 
 const root = resolve(process.cwd(), '../..')
+const setChineseLocale = () => localStorage.setItem('addp-lang', 'zh-cn')
 const frameOf = page => page.frameLocator('iframe[data-testid="module-iframe"]')
 const previewRoute = sample => `/manager/data-explorer?locator=${encodeURIComponent(sample.locator)}`
 const openKey = 'pool_max_open_conns'
@@ -433,6 +434,7 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
   // browser cache. The same user signs in separately so each isolated cache
   // rotates its own refresh cookie through the normal Console flow.
   const waitingContext = await page.context().browser().newContext({ baseURL: process.env.CONSOLE_URL })
+  await waitingContext.addInitScript(setChineseLocale)
   const waitingPage = await waitingContext.newPage()
   const gateFile = name => resolve(process.env.ADDP_POOL_META_GATE, name)
   const target = `${sample.engine_id}\n${sample.namespace}.${sample.table}`
@@ -530,8 +532,8 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
   const expected = JSON.parse(readFileSync(process.env.ADDP_ONLINE_POOL_EXPECTATIONS, 'utf8'))
   const operatorContext = await browser.newContext()
   const operatorPage = await operatorContext.newPage()
-  await operatorPage.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await operatorContext.addInitScript(setChineseLocale)
+  await page.context().addInitScript(setChineseLocale)
   const [operator, engineListResponse] = await Promise.all([
     login(operatorPage, process.env.ADDP_ONLINE_POOL_OPERATOR_USERNAME,
       process.env.ADDP_ONLINE_POOL_OPERATOR_PASSWORD, '/system/engines'),
