@@ -229,7 +229,8 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         self.assertLess(trace.index('monitor-backend prepare-database'), trace.index('up -d --no-deps --wait monitor-backend'))
-        self.assertNotIn('standard-backend prepare-database', trace)
+        for owner in ('standard', 'model'):
+            self.assertNotIn(f'{owner}-backend prepare-database', trace)
         self.assertIn('up -d --no-deps --wait graph-backend-peer', trace)
         self.assertIn('graph-case:execution-lifecycle', trace)
         self.assertLess(trace.index('execution-resume'), trace.index('down --remove-orphans --volumes'))
@@ -241,7 +242,8 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         self.assertLess(trace.index('monitor-backend prepare-database'), trace.index('up -d --no-deps --wait monitor-backend'))
-        self.assertLess(trace.index('standard-backend prepare-database'), trace.index('up -d --no-deps --wait standard-backend'))
+        for owner in ('standard', 'model'):
+            self.assertLess(trace.index(f'{owner}-backend prepare-database'), trace.index(f'up -d --no-deps --wait {owner}-backend'))
         for owner in ('meta','manager','transfer','develop','service','quality','graph','asset','model','standard'):
             self.assertEqual(trace.count('up -d --no-deps --wait ' + owner + '-backend'), 1)
         self.assertNotIn('up -d --no-deps --wait graph-backend-peer', trace)

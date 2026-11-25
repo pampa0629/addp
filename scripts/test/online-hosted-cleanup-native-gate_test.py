@@ -161,7 +161,8 @@ for name in "${names[@]}"; do definitions+=("$name:fixture"); done
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 trace = self.host.trace.read_text()
                 order = ['infra-up', 'native:prepare', 'business:start-obj' if case.startswith('manager-') else 'business:start',
-                         'native:manifest', 'make:build ', 'make:build-images ', 'monitor-backend prepare-database', 'standard-backend prepare-database', 'up -d --no-deps --wait system-backend',
+                         'native:manifest', 'make:build ', 'make:build-images ', 'monitor-backend prepare-database', 'standard-backend prepare-database', 'model-backend prepare-database',
+                         'up -d --no-deps --wait system-backend',
                          'make:test-online', 'execution-resume', 'down --remove-orphans --volumes', 'native:stop', 'business:stop', 'infra-down']
                 self.assertEqual([trace.index(x) for x in order], sorted(trace.index(x) for x in order))
                 self.assertIn('up -d --no-deps --wait model3d-workflow-engine' if case.startswith('manager-') else
