@@ -9,7 +9,17 @@ import (
 	"gorm.io/gorm"
 )
 
-const MonitorSchemaVersion = 1
+const (
+	monitorPostgresVersion = 1
+	monitorMySQLVersion    = 2
+)
+
+func RequireMonitorStore(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return schema.RequireMySQL(db, "monitor", monitorMySQLVersion)
+	}
+	return schema.Require(db, "monitor", monitorPostgresVersion)
+}
 
 //go:embed tables.mysql.sql
 var mysqlSchema string
@@ -19,7 +29,7 @@ func PrepareMonitorStore(db *gorm.DB) error {
 		return err
 	}
 	if db.Dialector.Name() == "mysql" {
-		return schema.MigrateMySQL(db, "monitor", MonitorSchemaVersion, func(conn *gorm.DB) error {
+		return schema.MigrateMySQL(db, "monitor", monitorMySQLVersion, func(conn *gorm.DB) error {
 			for _, statement := range strings.Split(mysqlSchema, ";") {
 				if statement = strings.TrimSpace(statement); statement != "" {
 					if err := conn.Exec(statement).Error; err != nil {
@@ -30,7 +40,7 @@ func PrepareMonitorStore(db *gorm.DB) error {
 			return nil
 		})
 	}
-	return schema.Migrate(db, "monitor", MonitorSchemaVersion, EnsureMonitorStore)
+	return schema.Migrate(db, "monitor", monitorPostgresVersion, EnsureMonitorStore)
 }
 
 func EnsureMonitorStore(db *gorm.DB) error {

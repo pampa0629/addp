@@ -499,3 +499,7 @@ CREATE TABLE IF NOT EXISTS `platform_alert_deliveries` (
     INDEX `idx_monitor_platform_alert_deliveries_created_at` (`created_at`),
     KEY idx_delivery_due (status, next_attempt_at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin;
+
+CREATE TABLE IF NOT EXISTS platform_alert_identity_locks (
+    identity_key BINARY(32) NOT NULL PRIMARY KEY
+) ENGINE=InnoDB;

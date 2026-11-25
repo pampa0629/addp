@@ -19,7 +19,7 @@ Monitor 聚合各 Owner 写入的执行事实，提供授权诊断、统计、�
 
 ## 平台数据库部署
 
-根部署入口使用平台部署账号运行 `monitor-backend prepare-database`，准备 Monitor 的告警、通知与观测表。普通启动仅核验 Common 和 Monitor 版本。租户告警按指纹、平台告警按类别／主体类型／主体标识／信号约束唯一活跃记录。`open` 和 `acknowledged` 共用该约束，已解决的历史允许保留多条。
+根部署入口使用平台部署账号运行 `monitor-backend prepare-database`，准备 Monitor 的告警、通知与观测表。普通启动仅核验 Common 和 Monitor 版本。租户告警按指纹、平台告警按类别／主体类型／主体标识／信号约束唯一活跃记录。`open` 和 `acknowledged` 共用该约束，已解决的历史允许保留多条。同一告警身份的首次评估也在调用者事务内串行。PG 使用事务级 advisory lock，MySQL 由部署入口准备 InnoDB 锁表，重复写入同一锁键取得行锁。锁随业务事务提交或回滚释放。
 
 ## 核心边界
 

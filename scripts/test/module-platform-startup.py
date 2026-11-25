@@ -44,15 +44,21 @@ if sys.argv[2] == "missing-credentials":
     print("Runtime refused missing injected credentials despite a populated root .env, exit=1")
     sys.exit(0)
 
-if sys.argv[2] == "missing":
+if sys.argv[2] in ("missing", "outdated"):
     owner = sys.argv[3]
     result = subprocess.run([binary], env=env, cwd=binary.parent, capture_output=True, timeout=15)
     output = (result.stderr + result.stdout).decode(errors="replace")
-    expected = (f"schema {owner} is not initialized" if env["ADDP_INFRA_DATABASE_PROVIDER"] == "postgres"
-                else f"cannot read installed MySQL schema revision for {owner}")
-    if result.returncode != 1 or expected not in output or f"{owner}.startup_schema_revision" not in output:
-        raise RuntimeError(f"expected refusal for missing {owner} revision, exit={result.returncode}: {output[-2000:]}")
-    print(f"Runtime rejected missing {owner} revision, exit=1")
+    if sys.argv[2] == "outdated":
+        installed, required = sys.argv[4:]
+        expected = [f"schema {owner} version mismatch: database={installed} process={required}"]
+    else:
+        expected = [f"{owner}.startup_schema_revision", (
+            f"schema {owner} is not initialized" if env["ADDP_INFRA_DATABASE_PROVIDER"] == "postgres"
+            else f"cannot read installed MySQL schema revision for {owner}"
+        )]
+    if result.returncode != 1 or any(message not in output for message in expected):
+        raise RuntimeError(f"expected refusal for {sys.argv[2]} {owner} revision, exit={result.returncode}: {output[-2000:]}")
+    print(f"Runtime rejected {sys.argv[2]} {owner} revision, exit=1")
     sys.exit(0)
 
 

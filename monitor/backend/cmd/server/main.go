@@ -82,7 +82,7 @@ func main() {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
-	if err := schema.Require(db, "monitor", service.MonitorSchemaVersion); err != nil {
+	if err := service.RequireMonitorStore(db); err != nil {
 		log.Fatalf("Failed to ensure monitor store: %v", err)
 	}
 	runtimePolicyService := service.NewRuntimePolicyService(repository.NewRuntimePolicyRepository(db))

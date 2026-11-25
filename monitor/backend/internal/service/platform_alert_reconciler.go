@@ -77,8 +77,8 @@ func (e PlatformAlertEvaluation) valid() bool {
 }
 
 // The caller supplies the transaction that owns the source evaluation state.
-// The advisory lock also protects a previously absent incident across competing
-// evaluators; the partial unique index remains the durable invariant.
+// Lock the identity even when there is no incident row yet. Both providers
+// release this lock together with the caller's transaction.
 func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e PlatformAlertEvaluation, now time.Time) error {
 	if !e.valid() || now.IsZero() {
 		return ErrLogInvalid
@@ -87,7 +87,12 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 		return nil
 	}
 	key := "monitor.platform-alert:" + e.Category + ":" + e.SubjectKind + ":" + e.SubjectID + ":" + e.Signal
-	if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+	lockSQL := "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))"
+	if tx.Dialector.Name() == "mysql" {
+		lockSQL = `INSERT INTO monitor.platform_alert_identity_locks (identity_key)
+			VALUES (UNHEX(SHA2(?, 256))) ON DUPLICATE KEY UPDATE identity_key=identity_key`
+	}
+	if err := tx.Exec(lockSQL, key).Error; err != nil {
 		return err
 	}
 	var incident models.PlatformAlertIncident

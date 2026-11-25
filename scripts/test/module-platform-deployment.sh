@@ -137,6 +137,23 @@ if [[ ( $owner == standard || $owner == model || $owner == service || $owner == 
 else
   "${prepare[@]}"
 fi
+if [[ $owner == monitor && $provider == mysql ]]; then
+  # Revision 1 contained all existing Monitor tables except the alert identity lock table.
+  gate_mysql() {
+    docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -N -B monitor'
+  }
+  gate_mysql <<'SQL'
+INSERT INTO platform_alert_incidents (version,category,subject_kind,subject_id,signal,severity,status,opened_at,last_observed_at)
+VALUES (1,'log_pipeline','observer','upgrade-fixture','delivery_probe','warning','resolved',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+DROP TABLE platform_alert_identity_locks;
+UPDATE startup_schema_revision SET version=1 WHERE owner='monitor' AND version=2;
+SQL
+  [[ $(gate_mysql <<<"SELECT version FROM startup_schema_revision WHERE owner='monitor'") == 1 ]]
+  runtime outdated "$owner" 1 2
+  "${prepare[@]}"
+  [[ $(gate_mysql <<<"SELECT version FROM startup_schema_revision WHERE owner='monitor'") == 2 ]]
+  [[ $(gate_mysql <<<"SELECT COUNT(*) FROM platform_alert_incidents WHERE subject_id='upgrade-fixture' AND status='resolved'") == 1 ]]
+fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql

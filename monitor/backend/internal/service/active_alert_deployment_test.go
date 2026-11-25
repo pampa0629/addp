@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -22,6 +23,7 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("platform notification and search", func(t *testing.T) { checkPlatformAlertNotificationAndSearch(t, db) })
+	t.Run("concurrent first evaluations", func(t *testing.T) { checkConcurrentPlatformAlertEvaluations(t, db) })
 	key := uuid.NewString()
 	now := time.Now().UTC()
 	tests := []struct {
@@ -128,5 +130,63 @@ func checkPlatformAlertNotificationAndSearch(t *testing.T, db *gorm.DB) {
 	page, err = svc.Incidents(t.Context(), filter, "")
 	if err != nil || page.Total != 0 {
 		t.Fatalf("wildcard matched a literal: %+v error=%v", page, err)
+	}
+}
+
+func checkConcurrentPlatformAlertEvaluations(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	ev := PlatformAlertEvaluation{Category: models.PlatformAlertCategoryLog, SubjectKind: models.PlatformAlertSubjectLogObserver,
+		SubjectID: uuid.NewString(), Signal: "delivery_probe", Severity: "warning", Verdict: PlatformAlertRisk}
+	rollback := errors.New("rollback first evaluation")
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := reconcilePlatformAlert(tx, nil, ev, now); err != nil {
+			return err
+		}
+		return rollback
+	}); !errors.Is(err, rollback) {
+		t.Fatal(err)
+	}
+	// Both transactions are open on different pool connections before either observes the identity.
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	ready := make(chan struct{}, 2)
+	start := make(chan struct{})
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			done <- db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				ready <- struct{}{}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-start:
+				}
+				return reconcilePlatformAlert(tx, nil, ev, now)
+			})
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		select {
+		case <-ready:
+		case err := <-done:
+			t.Fatalf("begin: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var incidents []models.PlatformAlertIncident
+	if err := db.Where("subject_id=?", ev.SubjectID).Find(&incidents).Error; err != nil || len(incidents) != 1 || incidents[0].Status != "open" || incidents[0].Version != 2 {
+		t.Fatalf("incidents=%v error=%v", incidents, err)
+	}
+	var events []models.PlatformAlertEvent
+	if err := db.Where("incident_id=?", incidents[0].ID).Find(&events).Error; err != nil || len(events) != 1 || events[0].Type != "opened" {
+		t.Fatalf("events=%v error=%v", events, err)
 	}
 }
