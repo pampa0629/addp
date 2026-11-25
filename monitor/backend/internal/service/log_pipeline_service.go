@@ -28,6 +28,7 @@ type logModuleLister interface {
 }
 type LogPipelineService struct {
 	db              *gorm.DB
+	nodes           string
 	node            string
 	registry        logModuleLister
 	notifications   *PlatformAlertService
@@ -35,9 +36,27 @@ type LogPipelineService struct {
 }
 
 func NewLogPipelineService(db *gorm.DB, node string, registry logModuleLister, n *PlatformAlertService) *LogPipelineService {
-	return &LogPipelineService{db: db, node: node, registry: registry, notifications: n, deploymentState: commonconfig.RuntimeLogDeploymentState()}
+	first, _, _ := strings.Cut(node, ",")
+	return &LogPipelineService{db: db, nodes: node, node: strings.TrimSpace(first), registry: registry, notifications: n, deploymentState: commonconfig.RuntimeLogDeploymentState()}
 }
+func (s *LogPipelineService) ObserverNodes() string { return s.nodes }
+
+// ForNode selects a node on an independent copy; requests never change shared state.
+func (s *LogPipelineService) ForNode(node string) *LogPipelineService {
+	selected := *s
+	selected.node = node
+	return &selected
+}
+
 func (s *LogPipelineService) Initialize(ctx context.Context, now time.Time) error {
+	for _, node := range strings.Split(s.nodes, ",") {
+		if err := s.ForNode(strings.TrimSpace(node)).initializeNode(ctx, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (s *LogPipelineService) initializeNode(ctx context.Context, now time.Time) error {
 	if s.deploymentState != "enabled" {
 		return nil
 	}
@@ -193,6 +212,15 @@ func (s *LogPipelineService) reconcile(tx *gorm.DB, node models.LogPipelineNode,
 	return nil
 }
 func (s *LogPipelineService) CheckStale(ctx context.Context, now time.Time) error {
+	var failures []error
+	for _, node := range strings.Split(s.nodes, ",") {
+		if err := s.ForNode(strings.TrimSpace(node)).checkStaleNode(ctx, now); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+func (s *LogPipelineService) checkStaleNode(ctx context.Context, now time.Time) error {
 	if s.deploymentState != "enabled" {
 		return nil
 	}

@@ -143,6 +143,30 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	router.Use(runtime.OAuthFailureAudit)
 	router.POST("/api/v1/system/oauth/token", runtime.OAuthHandler.Token)
 
+	observerSecret := "node-138-observer-test-credential-0123456789"
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := provisioner.ProvisionLogObserver(ctx, "node-138", observerSecret); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := provisioner.ProvisionLogObserver(ctx, "node-102", observerSecret); err == nil {
+		t.Fatal("shared observer secret accepted")
+	}
+	nodeToken := decodeIAMAccessToken(t, performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-log-observer-node-138", observerSecret))
+	nodeActor, err := runtime.AuthContextService.ResolveAccessToken(ctx, nodeToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observerRoles := nodeActor.Authorization.RoleAssignments
+	if len(observerRoles) != 1 || observerRoles[0].RoleKey != "platform.log_observer_runtime" || len(observerRoles[0].Permissions) != 2 || !slices.Contains(observerRoles[0].Permissions, "system.module_log_source.create") || !slices.Contains(observerRoles[0].Permissions, "monitor.log_observation.create") {
+		t.Fatal("node observer permissions differ")
+	}
+	if err := provisioner.ProvisionLogObserver(ctx, "node-138", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.AuthContextService.ResolveAccessToken(ctx, nodeToken); err == nil {
+		t.Fatal("revoked node token accepted")
+	}
 	publisherSecret := "independent-manager-deployment-secret-0123456789"
 	if err := provisioner.ProvisionPublisher(ctx, "addp-manager-publisher", publisherSecret); err != nil {
 		t.Fatal(err)

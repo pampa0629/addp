@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/addp/common/logpipeline"
 	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/runtimelog"
 	sysi18n "github.com/addp/system/i18n"
@@ -17,6 +17,7 @@ import (
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // ReportLogSources godoc
@@ -39,14 +40,10 @@ import (
 // @Router /runtime/module-log-source-observations [post]
 func (h *ModuleRegistryHandler) ReportLogSources(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	a, ok := sharedauth.AuthContextFromGin(c)
-	if !ok || a.Token.Type != "service_access_token" || a.Delegation != nil {
+	actor, _ := sharedauth.AuthContextFromGin(c)
+	node, ok := logpipeline.ObserverNode(actor, os.Getenv("ADDP_LOG_OBSERVER_NODES"))
+	if !ok {
 		runtimeLogError(c, 403, sysi18n.MsgRuntimeLogSourceForbidden)
-		return
-	}
-	node := strings.TrimSpace(os.Getenv("ADDP_HOST_NODE_NAME"))
-	if node == "" {
-		runtimeLogError(c, 503, sysi18n.MsgRuntimeLogUnavailable)
 		return
 	}
 	var report runtimelog.SourceReport
@@ -129,7 +126,7 @@ func (h *ModuleRegistryHandler) ListLogSources(c *gin.Context) {
 			}
 		}
 	}
-	result, err := h.service.ListLogSources(c.Request.Context(), f, strings.TrimSpace(os.Getenv("ADDP_HOST_NODE_NAME")), time.Now().UTC())
+	result, err := h.service.ListLogSources(c.Request.Context(), f, os.Getenv("ADDP_LOG_OBSERVER_NODES"), time.Now().UTC())
 	if err != nil {
 		status, key := 500, sysi18n.MsgRuntimeLogUnavailable
 		if errors.Is(err, service.ErrRuntimeLogsInvalid) {
@@ -139,4 +136,57 @@ func (h *ModuleRegistryHandler) ListLogSources(c *gin.Context) {
 		return
 	}
 	c.JSON(200, result)
+}
+
+type LogProbeRequest struct {
+	InstanceID string `json:"instance_id"`
+	Marker     string `json:"marker"`
+}
+
+type LogProbeResult struct {
+	Delivered bool `json:"delivered"`
+}
+
+// ConfirmLogProbe godoc
+// @Summary 确认本节点日志探针 | Confirm this node's log delivery probe
+// @Description 按观察器身份限定节点并精确匹配最近一分钟的技术标记，仅返回送达结果 | Check the authenticated observer's node for an exact technical marker in the last minute and return only delivery status
+// @Tags 运行时注册 | Runtime Registry
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body LogProbeRequest true "技术实例与标记 | Technical instance and marker"
+// @Success 200 {object} LogProbeResult
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.module_log_source.create"]
+// @Router /runtime/module-log-probes/confirm [post]
+func (h *ModuleRegistryHandler) ConfirmLogProbe(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	actor, _ := sharedauth.AuthContextFromGin(c)
+	node, ok := logpipeline.ObserverNode(actor, os.Getenv("ADDP_LOG_OBSERVER_NODES"))
+	if !ok {
+		runtimeLogError(c, 403, sysi18n.MsgRuntimeLogSourceForbidden)
+		return
+	}
+	var probe LogProbeRequest
+	d := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1024))
+	d.DisallowUnknownFields()
+	if d.Decode(&probe) != nil || d.Decode(new(any)) != io.EOF || !canonicalProbeUUID(probe.InstanceID) || !canonicalProbeUUID(probe.Marker) {
+		runtimeLogError(c, 400, sysi18n.MsgRuntimeLogSourceInvalid)
+		return
+	}
+	delivered, err := h.runtimeLogs.ProbeDelivered(c.Request.Context(), node, probe.InstanceID, probe.Marker)
+	if err != nil {
+		runtimeLogError(c, 503, sysi18n.MsgRuntimeLogUnavailable)
+		return
+	}
+	c.JSON(http.StatusOK, LogProbeResult{Delivered: delivered})
+}
+
+func canonicalProbeUUID(value string) bool {
+	id, err := uuid.Parse(value)
+	return err == nil && id.Version() == 4 && id.Variant() == uuid.RFC4122 && id.String() == value
 }

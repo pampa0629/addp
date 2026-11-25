@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/addp/common/runtimelog"
@@ -114,22 +115,32 @@ func (r *ModuleRegistryRepository) ListLogSources(ctx context.Context, f models.
 	result := &models.ModuleLogSourcePage{Data: []models.ModuleLogSource{}, Page: f.Page, PageSize: f.PageSize, DiscoveryState: "unknown", DiscoveryIssues: []runtimelog.SourceIssue{{Code: "observer_unobserved"}}}
 	// Count and rows are bounded management queries, not a promised snapshot.
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var observation models.ModuleLogSourceNode
-		if err := tx.Where("node=?", node).Take(&observation).Error; err == nil {
-			result.Observation = &observation
+		nodes := strings.Split(node, ",")
+		if f.Node != "" {
+			nodes = []string{f.Node}
+		}
+		result.DiscoveryIssues = []runtimelog.SourceIssue{}
+		for _, name := range nodes {
+			var observation models.ModuleLogSourceNode
+			err := tx.Where("node=?", strings.TrimSpace(name)).Take(&observation).Error
 			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				result.DiscoveryIssues = append(result.DiscoveryIssues, runtimelog.SourceIssue{Code: "observer_unobserved"})
+			case err != nil:
+				return err
 			case now.Sub(observation.ReceivedAt) > 120*time.Second:
-				result.DiscoveryIssues = []runtimelog.SourceIssue{{Code: "observer_stale"}}
+				result.DiscoveryIssues = append(result.DiscoveryIssues, runtimelog.SourceIssue{Code: "observer_stale"})
 			case observation.ScanIssues == nil:
-				result.DiscoveryIssues = []runtimelog.SourceIssue{{Code: "diagnostics_unavailable"}}
-			case observation.Complete:
-				result.DiscoveryState = "observed"
-				result.DiscoveryIssues = []runtimelog.SourceIssue{}
-			default:
-				result.DiscoveryIssues = observation.ScanIssues
+				result.DiscoveryIssues = append(result.DiscoveryIssues, runtimelog.SourceIssue{Code: "diagnostics_unavailable"})
+			case !observation.Complete:
+				result.DiscoveryIssues = append(result.DiscoveryIssues, observation.ScanIssues...)
 			}
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			if err == nil && len(nodes) == 1 {
+				result.Observation = &observation
+			}
+		}
+		if len(result.DiscoveryIssues) == 0 {
+			result.DiscoveryState = "observed"
 		}
 		q := tx.Model(&models.ModuleLogSource{}).Where("expires_at > ?", now).
 			Where(`NOT EXISTS (SELECT 1 FROM module_runtime_instances i JOIN module_definitions d ON d.id=i.module_definition_id WHERE i.instance_id=module_log_sources.instance_id AND d.module_name=module_log_sources.module_name AND i.host_node_name=module_log_sources.host_node_name AND i.role=module_log_sources.role)`)

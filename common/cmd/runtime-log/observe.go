@@ -38,8 +38,7 @@ func observe() error {
 	if err != nil {
 		return err
 	}
-	httpClient := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	source, err := client.NewOAuthServiceTokenSource(os.Getenv("SYSTEM_URL"), "addp-log-observer", os.Getenv("LOG_OBSERVER_SERVICE_CLIENT_SECRET"), httpClient)
+	httpClient, source, system, err := observerClients(node)
 	if err != nil {
 		return err
 	}
@@ -59,7 +58,7 @@ func observe() error {
 		seq++
 		catalog := runtimelog.DiscoverSources(o, node, boot, seq)
 		catalogAccepted := deliverReport(ctx, httpClient, source, strings.TrimRight(os.Getenv("SYSTEM_URL"), "/")+"/api/v1/system/runtime/module-log-source-observations", catalog)
-		obs := runtimelog.Observe(ctx, o, probe, node, boot, seq, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"), os.Getenv("ALLOY_URL"))
+		obs := runtimelog.Observe(ctx, o, probe, node, boot, seq, os.Getenv("LOKI_URL"), os.Getenv("ALLOY_URL"), system.ConfirmLogProbe)
 		accepted := deliverReport(ctx, httpClient, source, endpoint+"/api/v1/monitor/platform/log-observations", obs)
 		if *once {
 			if !accepted || !catalogAccepted {
@@ -112,4 +111,13 @@ func deliverReport(ctx context.Context, httpClient *http.Client, source *client.
 	}
 	fmt.Fprintln(os.Stderr, "log observer report not accepted")
 	return false
+}
+
+func observerClients(node string) (*http.Client, *client.OAuthServiceTokenSource, *client.SystemServiceClient, error) {
+	httpClient := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	source, err := client.NewOAuthServiceTokenSource(os.Getenv("SYSTEM_URL"), logpipeline.ObserverClientID(node), os.Getenv("LOG_OBSERVER_SERVICE_CLIENT_SECRET"), httpClient)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return httpClient, source, client.NewSystemServiceClient(os.Getenv("SYSTEM_URL"), source, httpClient), nil
 }

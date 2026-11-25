@@ -41,7 +41,7 @@ func runModuleDeployment(args []string, input io.Reader) error {
 
 	clientID := "addp-" + module + "-publisher"
 	switch args[0] {
-	case "provision-module-publisher":
+	case "provision-module-publisher", "provision-log-observer":
 		cfg := config.Load()
 		db, err := repository.InitDB(cfg)
 		if err != nil {
@@ -50,6 +50,14 @@ func runModuleDeployment(args []string, input io.Reader) error {
 		provisioner, err := iam.NewServiceCredentialProvisioner(iam.NewRepository(db), nil)
 		if err != nil {
 			return err
+		}
+		if args[0] == "provision-log-observer" {
+			for _, other := range cfg.ServiceClientSecrets {
+				if request.Secret != "" && request.Secret == other {
+					return errors.New("node observer credential must be independent")
+				}
+			}
+			return provisioner.ProvisionLogObserver(ctx, module, request.Secret)
 		}
 		return provisioner.ProvisionPublisher(ctx, clientID, request.Secret)
 	case "publish-module-declaration":

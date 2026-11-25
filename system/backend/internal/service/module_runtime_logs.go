@@ -353,3 +353,17 @@ func (s *RuntimeLogService) fetch(ctx context.Context, module, id string, q Runt
 	sortRuntimeLogs(entries)
 	return entries, count == limit, nil
 }
+
+// ProbeDelivered looks up one exact technical event in a server-selected time window.
+func (s *RuntimeLogService) ProbeDelivered(ctx context.Context, node, instance, marker string) (bool, error) {
+	if s.configInvalid || s.endpoint == "" || s.token == "" {
+		return false, ErrRuntimeLogsUpstream
+	}
+	now := s.now().UTC()
+	message := "runtime-log-delivery-probe " + marker
+	entries, _, err := s.fetch(ctx, "runtime-probe", instance, RuntimeLogQuery{Node: node, Keyword: message}, now.Add(-time.Minute), now, 1)
+	if err != nil {
+		return false, err
+	}
+	return len(entries) == 1 && entries[0].entry.Message == message, nil
+}

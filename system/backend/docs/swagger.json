@@ -13224,6 +13224,73 @@
                 ]
             }
         },
+        "/runtime/module-log-probes/confirm": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按观察器身份限定节点并精确匹配最近一分钟的技术标记，仅返回送达结果 | Check the authenticated observer's node for an exact technical marker in the last minute and return only delivery status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时注册 | Runtime Registry"
+                ],
+                "summary": "确认本节点日志探针 | Confirm this node's log delivery probe",
+                "parameters": [
+                    {
+                        "description": "技术实例与标记 | Technical instance and marker",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.LogProbeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.LogProbeResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.module_log_source.create"
+                ]
+            }
+        },
         "/runtime/module-log-source-observations": {
             "post": {
                 "security": [
@@ -27265,6 +27332,25 @@
                 "value": {
                     "type": "string",
                     "maxLength": 32
+                }
+            }
+        },
+        "internal_api.LogProbeRequest": {
+            "type": "object",
+            "properties": {
+                "instance_id": {
+                    "type": "string"
+                },
+                "marker": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.LogProbeResult": {
+            "type": "object",
+            "properties": {
+                "delivered": {
+                    "type": "boolean"
                 }
             }
         },

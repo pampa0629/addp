@@ -8,7 +8,11 @@ from pathlib import Path
 import sys
 import subprocess
 import threading
-from urllib.parse import parse_qs
+import time
+import uuid
+import urllib.request
+from urllib.error import URLError
+from urllib.parse import parse_qs, urlencode
 
 root = Path(sys.argv[1])
 secret = os.environ['LOKI_TEST_SECRET']
@@ -27,11 +31,29 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400); return
         body = self.rfile.read(size)
         if self.path == '/api/v1/system/oauth/token':
-            expected = 'Basic ' + base64.b64encode(('addp-log-observer:'+secret).encode()).decode()
+            expected = 'Basic ' + base64.b64encode(('addp-log-observer-observer-t2:'+secret).encode()).decode()
             data = parse_qs(body.decode())
             if self.headers.get('Authorization') != expected or data != {'grant_type':['client_credentials'], 'scope':['addp.api'], 'audience':['addp.api'], 'context_type':['platform']}:
                 self.send_error(403); return
             reply = {'access_token':token, 'token_type':'Bearer', 'expires_in':300, 'scope':'addp.api'}
+        elif self.path == '/api/v1/system/runtime/module-log-probes/confirm':
+            if self.headers.get('Authorization') != 'Bearer '+token:
+                self.send_error(403); return
+            data = json.loads(body)
+            assert set(data) == {'instance_id','marker'}
+            instance = str(uuid.UUID(data['instance_id']))
+            message = 'runtime-log-delivery-probe ' + str(uuid.UUID(data['marker']))
+            query = '{deployment="addp",module_name="runtime-probe"} | node_name="observer-t2" | instance_id=' + json.dumps(instance) + ' |= ' + json.dumps(message)
+            now = time.time_ns()
+            url = os.environ['LOKI_TEST_URL']+'/loki/api/v1/query_range?'+urlencode(
+                {'query':query, 'start':now-60_000_000_000, 'end':now, 'limit':1})
+            request = urllib.request.Request(url, headers={'Authorization':'Bearer '+os.environ['LOKI_READ_TOKEN']})
+            try:
+                with urllib.request.urlopen(request,timeout=3) as upstream:
+                    streams = json.load(upstream)['data']['result']
+            except (OSError, URLError):
+                self.send_error(503); return
+            reply = {'delivered':any(json.loads(line)['message']==message for stream in streams for _,line in stream['values'])}
         elif self.path == '/api/v1/system/runtime/module-log-source-observations':
             if self.headers.get('Authorization') != 'Bearer '+token:
                 self.send_error(403); return
@@ -73,7 +95,7 @@ thread.start()
 endpoint = f'http://host.docker.internal:{server.server_port}'
 environment = dict(os.environ, ADDP_HOST_NODE_NAME='observer-t2', LOG_OBSERVER_SERVICE_CLIENT_SECRET=secret, SYSTEM_URL=endpoint, MONITOR_URL=endpoint, ALLOY_URL='http://alloy:12345', LOKI_URL='http://runtime-log-api:3100')
 command = ['docker', 'compose', '--env-file', '/dev/null', '-p', os.environ['LOKI_TEST_PROJECT'], '-f', os.environ['LOKI_TEST_COMPOSE'], 'run', '--rm', '-T', '--no-deps']
-for key in ['ADDP_HOST_NODE_NAME','LOG_OBSERVER_SERVICE_CLIENT_SECRET','SYSTEM_URL','MONITOR_URL','ALLOY_URL','LOKI_URL','LOKI_READ_TOKEN']:
+for key in ['ADDP_HOST_NODE_NAME','LOG_OBSERVER_SERVICE_CLIENT_SECRET','SYSTEM_URL','MONITOR_URL','ALLOY_URL','LOKI_URL']:
     command.extend(['-e', key])
 owned_name = os.environ['LOKI_TEST_PROJECT']+'-observer-repeat'
 if repeated:

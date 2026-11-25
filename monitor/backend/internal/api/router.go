@@ -107,7 +107,7 @@ func SetupRouter(
 		platform.GET("/platform/log-pipeline", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineRead), handler.Summary)
 		platform.GET("/platform/log-pipeline/policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineRead), handler.Policy)
 		platform.PUT("/platform/log-pipeline/policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineUpdate), handler.UpdatePolicy)
-		platform.POST("/platform/log-observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogObservationCreate), commonAuth.MustNewServiceClientGuard("addp-log-observer"), handler.Observe)
+		platform.POST("/platform/log-observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogObservationCreate), handler.Observe)
 	}
 	if platformAlerts != nil {
 		handler := NewPlatformAlertHandler(platformAlerts)

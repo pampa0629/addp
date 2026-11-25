@@ -84,6 +84,14 @@ def deploy_modules(args, compose, modules, provision):
             raw = None if provision else (args.artifact_dir / module / "module-declaration.json").read_bytes()
             command = [str(Path(".dev-bins/addp-system").resolve())]
         if provision:
+            if module == "system":
+                node = os.environ.get("ADDP_HOST_NODE_NAME")
+                secret = os.environ.get("LOG_OBSERVER_SERVICE_CLIENT_SECRET")
+                if os.environ.get("ADDP_OBSERVABILITY_LOGS_ENABLED", "true") != "true":
+                    secret = ""
+                if node:
+                    subprocess.run([*command, "provision-log-observer", node],
+                                   input=json.dumps({"secret": secret or ""}).encode(), check=True)
             action = "provision-module-publisher"
             payload = {"secret": publisher_secret(args.credential_dir, module)}
         else:

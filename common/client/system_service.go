@@ -916,3 +916,15 @@ func pathWithoutQuery(path string) string {
 	}
 	return path
 }
+
+// ConfirmLogProbe returns only the delivery status for the observer's authenticated node.
+func (c *SystemServiceClient) ConfirmLogProbe(ctx context.Context, instance, marker string) (bool, error) {
+	var result struct {
+		Delivered *bool `json:"delivered"`
+	}
+	err := c.doPlatformJSONBounded(ctx, http.MethodPost, "/api/v1/system/runtime/module-log-probes/confirm", map[string]string{"instance_id": instance, "marker": marker}, &result, 1024)
+	if err != nil || result.Delivered == nil {
+		return false, errors.New("System log probe confirmation unavailable")
+	}
+	return *result.Delivered, nil
+}

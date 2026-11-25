@@ -92,7 +92,7 @@ func LoadConfig() (*Config, error) {
 	emailMaxAttempts := 8
 
 	cfg := &Config{
-		LogObserverNode: os.Getenv("ADDP_HOST_NODE_NAME"),
+		LogObserverNode: os.Getenv("ADDP_LOG_OBSERVER_NODES"),
 		ServerPort:      getEnvOrDefault("MONITOR_BACKEND_PORT", "8100"),
 
 		RedisHost:     getEnvOrDefault("REDIS_HOST", "localhost"),

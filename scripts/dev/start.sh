@@ -1044,6 +1044,7 @@ if [ "${ADDP_ONLINE_HOST:-0}" != 1 ] && [ -f "${ROOT_DIR}/.env" ]; then
   export ADDP_RUNTIME_LOG_ROOT="${ADDP_RUNTIME_LOG_ROOT:-${PROJECT_ROOT}/logs/runtime}"
   case "$ADDP_RUNTIME_LOG_ROOT" in /*) ;; *) export ADDP_RUNTIME_LOG_ROOT="${PROJECT_ROOT}/${ADDP_RUNTIME_LOG_ROOT}" ;; esac
 fi
+export ADDP_LOG_OBSERVER_NODES="${ADDP_LOG_OBSERVER_NODES:-${ADDP_HOST_NODE_NAME:-}}"
 ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 if addp_runtime_logs_enabled && ! ADDP_INFRA_PORT_SCOPE=logs addp_infra_read_actual_ports; then
   infra_optional_result=1

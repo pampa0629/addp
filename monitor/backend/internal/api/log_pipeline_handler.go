@@ -97,7 +97,8 @@ func (h *LogPipelineHandler) UpdatePolicy(c *gin.Context) {
 // @Router /platform/log-observations [post]
 func (h *LogPipelineHandler) Observe(c *gin.Context) {
 	identity, ok := commonAuth.AuthContextFromGin(c)
-	if !ok || identity.Token.Type != "service_access_token" || identity.Delegation != nil {
+	node, bound := logpipeline.ObserverNode(identity, h.pipeline.ObserverNodes())
+	if !ok || !bound {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": "permission_denied"})
 		return
 	}
@@ -105,7 +106,7 @@ func (h *LogPipelineHandler) Observe(c *gin.Context) {
 	if !logBind(c, &input) {
 		return
 	}
-	err := h.pipeline.Ingest(c.Request.Context(), input, time.Now().UTC())
+	err := h.pipeline.ForNode(node).Ingest(c.Request.Context(), input, time.Now().UTC())
 	logRespond(c, gin.H{"accepted": err == nil}, err)
 }
 

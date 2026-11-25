@@ -2,12 +2,8 @@ package runtimelog
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,14 +72,13 @@ func (r *probeInput) Read(dst []byte) (int, error) {
 }
 
 // Probe writes through the normal receiver and waits for this exact new event.
-func (p *ProbeReceiver) Probe(ctx context.Context, endpoint, token string) (time.Duration, error) {
+func (p *ProbeReceiver) Probe(ctx context.Context, confirm func(context.Context, string, string) (bool, error)) (time.Duration, error) {
 	started := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(p.ctx, cancel)
 	defer func() { stop(); cancel() }()
-	target, err := url.Parse(endpoint)
-	if err != nil || target.Host == "" || target.User != nil || (target.Scheme != "http" && target.Scheme != "https") {
-		return 0, fmt.Errorf("invalid probe endpoint")
+	if confirm == nil {
+		return 0, fmt.Errorf("probe requires System confirmation")
 	}
 	select {
 	case p.busy <- struct{}{}:
@@ -99,7 +94,8 @@ func (p *ProbeReceiver) Probe(ctx context.Context, endpoint, token string) (time
 		return time.Since(started), io.ErrClosedPipe
 	default:
 	}
-	message := "runtime-log-delivery-probe " + uuid.NewString()
+	marker := uuid.NewString()
+	message := "runtime-log-delivery-probe " + marker
 	select {
 	case p.input.events <- []byte(message + "\n"):
 	case <-p.input.closed:
@@ -107,38 +103,13 @@ func (p *ProbeReceiver) Probe(ctx context.Context, endpoint, token string) (time
 	case <-ctx.Done():
 		return time.Since(started), ctx.Err()
 	}
-	target.Path = "/loki/api/v1/query_range"
-	target.Fragment = ""
-	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for {
-		target.RawQuery = url.Values{"query": {`{deployment="addp",module_name="runtime-probe"} | instance_id=` + strconv.Quote(p.o.InstanceID) + ` |= ` + strconv.Quote(message)}, "start": {strconv.FormatInt(started.Add(-time.Second).UnixNano(), 10)}, "end": {strconv.FormatInt(time.Now().UnixNano(), 10)}, "limit": {"1"}}.Encode()
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		res, e := client.Do(req)
-		if e == nil {
-			var data struct {
-				Status string `json:"status"`
-				Data   struct {
-					Result []struct {
-						Values [][]string `json:"values"`
-					} `json:"result"`
-				} `json:"data"`
-			}
-			e = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&data)
-			res.Body.Close()
-			if e == nil && res.StatusCode == 200 && data.Status == "success" {
-				for _, stream := range data.Data.Result {
-					for _, v := range stream.Values {
-						if len(v) != 2 {
-							continue
-						}
-						var entry Entry
-						if json.Unmarshal([]byte(v[1]), &entry) == nil && entry.InstanceID == p.o.InstanceID && entry.Module == p.o.Module && entry.Message == message {
-							return time.Since(started), nil
-						}
-					}
-				}
-			}
+		delivered, err := confirm(ctx, p.o.InstanceID, marker)
+		if err != nil {
+			return time.Since(started), err
+		}
+		if delivered {
+			return time.Since(started), nil
 		}
 		timer := time.NewTimer(time.Second)
 		select {

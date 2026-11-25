@@ -155,7 +155,11 @@ func probe() error {
 	defer cancel()
 	probe := runtimelog.NewProbeReceiver(o)
 	defer probe.Close()
-	delay, err := probe.Probe(ctx, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"))
+	_, _, system, err := observerClients(o.Node)
+	if err != nil {
+		return err
+	}
+	delay, err := probe.Probe(ctx, system.ConfirmLogProbe)
 	if err != nil {
 		return err
 	}

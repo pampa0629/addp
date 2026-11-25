@@ -202,8 +202,7 @@ if [ -z "$ALLOY_PORT" ]; then echo "Not deployed"; elif curl -fsS --max-time 3 "
 
 # A successful probe proves this node's current path, never historical completeness.
 if [ -n "${LOKI_PORT:-}" ] && [ -n "${ALLOY_PORT:-}" ]; then
-  export LOKI_URL=http://runtime-log-api:3100
-  docker exec -e LOKI_URL -e LOKI_READ_TOKEN addp-runtime-log-pruner runtime-log probe || true
+  docker exec addp-runtime-log-observer runtime-log probe || true
 fi
 
 # Print counters only; never emit arbitrary labels, event bodies or tokens.

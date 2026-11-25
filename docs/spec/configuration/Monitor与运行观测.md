@@ -73,7 +73,7 @@ Console 的 SMTP 投递页签在读取配置成功后展示表单，只有具有
 
 `ADDP_RUNTIME_LOG_OWNER` 是日志观察器与清理器的数值 `UID:GID`。标准宿主启动使用调用用户身份并提前创建 `logs` 和源目录；直接容器部署未覆盖时使用 `0:0`，覆盖值须与受控源目录所有者一致。root 业务容器中的独立日志接收器使用源目录所有者身份写入，业务进程身份保持原样；目录 `0700`、文件 `0600` 不放宽，也不自动修改既有目录所有权。
 
-Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME`；Monitor 使用相同节点配置绑定观测来源。缺少节点身份或独立 `LOG_OBSERVER_SERVICE_CLIENT_SECRET` 时观测器拒绝启动，不从载荷自由接入节点。开发 `infra/up.sh` 只生成缺失的凭据，并在没有节点配置时持久化当前宿主机名称；生产部署必须明确设置节点身份和凭据。System 使用这份 Secret 启用 `addp-log-observer` 的独立 Platform 服务账号。
+节点观察器与本节点的应用接收器使用相同的 `ADDP_HOST_NODE_NAME`。部署方为每个观察器分配单独的 `LOG_OBSERVER_SERVICE_CLIENT_SECRET`，通过 System 部署命令 `provision-log-observer <node>` 从标准输入传入含 `secret` 的 JSON，签发 `addp-log-observer-<node>` 身份。System 和 Monitor 按同一份逗号分隔的 `ADDP_LOG_OBSERVER_NODES` 清单核对已认证的服务身份。K3s 中该清单在同一服务的所有副本上一致。每个观察器只接收本节点的秘密，通过 System 确认本轮技术标记。Loki 全站读取凭据由中心查询端持有。
 
 `LOG_OBSERVER_SYSTEM_URL` / `LOG_OBSERVER_MONITOR_URL` 是 Infra 到控制面的受控地址，默认 `http://host.docker.internal:8180` / `http://host.docker.internal:8100`；使用非默认端口或容器部署时必须按实际地址设置。观测器每 30 秒采样，探针最多 20 秒，上报最多尝试两次，不上传日志正文。监测阈值通过 Monitor 平台规则 API 统一管理。
 

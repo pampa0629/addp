@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 
-	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/database"
 )
 
@@ -156,7 +155,7 @@ func Load() *Config {
 			"addp-ontology":     getEnv("ONTOLOGY_SERVICE_CLIENT_SECRET", ""),
 			"addp-model3d":      getEnv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-prometheus":   getEnv("PROMETHEUS_SERVICE_CLIENT_SECRET", ""),
-			"addp-log-observer": getEnv("LOG_OBSERVER_SERVICE_CLIENT_SECRET", ""),
+			"addp-log-observer": "", // The former shared client is disabled during credential reconciliation.
 			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-portal":       getEnv("PORTAL_SERVICE_CLIENT_SECRET", ""),
@@ -213,11 +212,8 @@ func Load() *Config {
 
 // Optional observers are independently disabled without invalidating business clients.
 func (c *Config) configureOptionalObservers() {
-	logValid := c.observerCredentialValid("addp-log-observer", commonconfig.RuntimeLogDeploymentState() == "enabled")
 	metricsValid := c.observerCredentialValid("addp-prometheus", os.Getenv("ADDP_OBSERVABILITY_METRICS_ENABLED") == "true")
-	if !logValid {
-		c.ServiceClientSecrets["addp-log-observer"] = ""
-	}
+	c.ServiceClientSecrets["addp-log-observer"] = ""
 	if !metricsValid {
 		c.ServiceClientSecrets["addp-prometheus"] = ""
 	}

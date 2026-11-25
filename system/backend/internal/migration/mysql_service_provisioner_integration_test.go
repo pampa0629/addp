@@ -39,6 +39,18 @@ func testMySQLServiceProvisioner(t *testing.T, db *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	nodeSecret := "mysql-node-observer-secret-for-this-fixture-only"
+	for range 2 {
+		if err := provisioner.ProvisionLogObserver(ctx, "mysql-node", nodeSecret); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := provisioner.ProvisionLogObserver(ctx, "other-node", nodeSecret); err == nil {
+		t.Fatal("shared observer secret accepted")
+	}
+	if err := provisioner.ProvisionLogObserver(ctx, "mysql-node", ""); err != nil {
+		t.Fatal(err)
+	}
 	for range 2 {
 		if err := provisioner.ProvisionPublisher(ctx, clientID, originalSecret); err != nil {
 			t.Fatal(err)

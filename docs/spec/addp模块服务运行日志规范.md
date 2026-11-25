@@ -64,6 +64,10 @@ Python HTTPX 的成功例行请求仅在 DEBUG 输出：范围限于 POST 模块
 
 每个应用节点使用独立 Alloy 只读采集源目录，不挂载 Docker Socket。Loki 采用单进程部署，复用 Infra MinIO 的独立日志 bucket 与最小权限凭据，不额外部署 Grafana 页面。Alloy positions、Loki WAL、Compactor 工作目录和源目录持久化，不能依赖容器可写层；备份范围按 Infra 指南执行。
 
+K3s/Kubernetes 的部署契约按节点交付。允许调度模块进程的每个节点提供自己的受控日志目录，Backend、Worker、Scheduler 和 Gateway 的各实例按实际所在节点写入。每个启用采集的节点运行一个独立的 Alloy Pod，同节点的模块共享该采集器。实例迁移后，新实例从目标节点开始写，原节点按既定期限保留旧实例的段。节点目录和 Alloy 读取位置须能跨 Pod 重建保留。
+
+跨节点验收应记录两个节点上的实际进程实例 ID，分别核对源文件所属节点、Alloy 投递以及 System 授权查询返回的实例和节点。替换一个实例后，核对新实例的首批日志和保留期内已送达的旧实例日志；单独看到 Pod Ready 或 Loki 收到技术探针不足以判定模块日志查询通过。
+
 组件固定版本、镜像 digest、架构、端口、网络和健康检查纳入标准 `up/down/status/ports`。读写入口仅向受控调用方开放，跨节点接入要求认证和 TLS；Loki tenant header 不替代 ADDP 用户授权。
 
 集中日志按 `ADDP_OBSERVABILITY_LOGS_ENABLED` 独立选择。关闭时不创建集中日志组件，保留数据卷，源接收器和清理器继续受限工作；正文查询返回未接入，不能改成直接读文件。暂停观测不产生恢复事件，重新启用先重建计数基线与连续采样。具体配置、凭据撤销及部分启动失败行为唯一遵循[配置规范](configuration/Monitor与运行观测.md#模块服务运行日志配置)。
@@ -89,6 +93,8 @@ Python HTTPX 的成功例行请求仅在 DEBUG 输出：范围限于 POST 模块
 
 常驻观察进程在启动时建立一个技术探针接收器，逐轮复用来源身份和递增序号；每轮生成独立消息标记，查询同时匹配身份与本轮标记，旧成功不能证明新投递。单次 `runtime-log probe` 检测结束后关闭接收器。
 
+逐节点部署时，部署方为每个节点分配独立的 Platform 观察器身份与秘密。System 各副本使用同一份部署绑定，从已认证的非委托观察器身份确定节点。观察器提交本轮技术实例 UUID 与标记 UUID，System 在最近一分钟内限定该节点及 `runtime-probe` 来源查询 Loki，只返回布尔值。其他节点的标记与未找到的标记具有相同结果。上游故障以错误返回；观察器在本地计量本轮确认耗时，Monitor 负责健康及告警裁决。观察器不持有 Loki 正文读取凭据。
+
 技术源 `runtime-probe` 的已关闭段按最后写入时间最多保留一小时，业务源配置更短时取较短值，持续技术段每小时轮转。标准清理器使用非阻塞段锁，仅清理关闭段；删除段和过期空目录共用节点锁，保护活跃接收器与业务源。不得保留每轮新建来源或另加旁路删除命令。
 
 positions 表示读取位置，不表示远端持久化确认。首版不默认启用实验发送队列，未读取且仍保留的源可恢复采集，已读取后发送失败不能仅凭源文件宣称会补齐。极端断连、提前清理、接收器故障、机器损坏与未刷新缓冲均可能产生缺口；近期探针健康不证明所有实例或历史日志完整。
@@ -104,7 +110,7 @@ POST /api/v1/system/runtime/module-log-source-observations
 GET  /api/v1/system/platform/module-log-sources
 ```
 
-上报仅接受绑定节点的非委托 `addp-log-observer` Platform Service 与 `system.module_log_source.create`。报告唯一协议为 `addp.log-sources/v2`，最多 2048 个来源、2 MiB 请求；必需 `issues` 数组，完整扫描为空，不完整扫描包含合法原因及有界正整数次数，不支持 v1。节点、模块、角色、实例、接收器建立时间不可变，boot 与单调序号执行幂等、冲突和乱序校验。
+上报仅接受绑定节点的非委托 `addp-log-observer-<node>` Platform Service 与 `system.module_log_source.create`。报告唯一协议为 `addp.log-sources/v2`，最多 2048 个来源、2 MiB 请求；必需 `issues` 数组，完整扫描为空，不完整扫描包含合法原因及有界正整数次数，不支持 v1。节点、模块、角色、实例、接收器建立时间不可变，boot 与单调序号执行幂等、冲突和乱序校验。
 
 诊断原因固定为 `metadata_missing`、`metadata_invalid`、`entry_unreadable`、`unsafe_entry`、`scan_limit`、`source_limit`。次数只表示本次有限扫描已发现的次数，不估算未扫描数量，不发送路径、正文或 OS 错误。旧元数据缺字段不推断可信身份，也不证明一定来自旧版本。
 
@@ -168,7 +174,7 @@ System 服务实例的 UP/DOWN 均可打开日志抽屉，固定模块与实例�
 
 ### 6.1 观测契约与权限
 
-Infra 每 30 秒执行一轮不重叠观测，探针最长 20 秒，上报最多两次尝试。节点由部署与控制面绑定，独立非委托 `addp-log-observer` Platform Service 通过 `monitor.log_observation.create` 上报 `/api/v1/monitor/platform/log-observations`；User、其他服务或委托身份不能伪造。
+Infra 每 30 秒执行一轮不重叠观测，探针最长 20 秒，上报最多两次尝试。节点由部署与控制面绑定，逐节点独立的非委托 `addp-log-observer-<node>` Platform Service 通过 `monitor.log_observation.create` 上报 `/api/v1/monitor/platform/log-observations`；User、其他服务或委托身份不能伪造。
 
 载荷只含节点、观察进程 boot、单调序号、采样/接收时间、组件状态、探针结果/延迟及安全计数，不含任意指标标签、日志正文、令牌、业务参数或租户数据。Monitor 检查幂等、旧 boot、乱序、时钟边界和新鲜期，以接收时间裁决过期；上报失败不无限缓存或重放历史。
 

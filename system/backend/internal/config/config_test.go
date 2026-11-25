@@ -67,26 +67,12 @@ func TestValidateTrustedProxiesRejectsUniversalNetworks(t *testing.T) {
 	}
 }
 
-func TestLogObserverConfigurationDoesNotInvalidateBusinessCredentials(t *testing.T) {
-	for _, tc := range []struct {
-		state, observer string
-		active          bool
-	}{
-		{"true", strings.Repeat("o", 32), true},
-		{"false", strings.Repeat("o", 32), false},
-		{"invalid", strings.Repeat("o", 32), false},
-		{"true", "short", false},
-		{"true", strings.Repeat("m", 32), false},
-	} {
-		t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", tc.state)
-		c := &Config{ServiceClientSecrets: map[string]string{"addp-manager": strings.Repeat("m", 32), "addp-log-observer": tc.observer}}
-		c.configureOptionalObservers()
-		if (c.ServiceClientSecrets["addp-log-observer"] != "") != tc.active {
-			t.Fatalf("selection %s: unexpected observer credential state", tc.state)
-		}
-		if c.ServiceClientSecrets["addp-manager"] != strings.Repeat("m", 32) {
-			t.Fatal("business credential changed")
-		}
+func TestSharedLogObserverStaysDisabled(t *testing.T) {
+	business := strings.Repeat("m", 32)
+	c := &Config{ServiceClientSecrets: map[string]string{"addp-manager": business, "addp-log-observer": strings.Repeat("o", 32)}}
+	c.configureOptionalObservers()
+	if c.ServiceClientSecrets["addp-log-observer"] != "" || c.ServiceClientSecrets["addp-manager"] != business {
+		t.Fatal("shared observer enabled or business credential changed")
 	}
 }
 

@@ -2,12 +2,15 @@ package iam
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/logpipeline"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -137,7 +140,7 @@ func (s *ServiceCredentialProvisioner) applyClient(ctx context.Context, reposito
 		return fmt.Errorf("%w: OAuth client %s is not bound to a service principal", commonapi.ErrConflict, clientID)
 	}
 	// Removing an optional capability credential disables its client and tokens.
-	if optionalServiceCredential(clientID) && secret == "" {
+	if secret == "" {
 		if client.Status == "disabled" {
 			return nil
 		}
@@ -214,4 +217,67 @@ func validateBuiltinServiceSecrets(secrets map[string]string) error {
 		seen[secret] = clientID
 	}
 	return nil
+}
+
+// ProvisionLogObserver installs a deployment-owned platform identity for one node.
+// The role lock serializes provisioning across concurrent installers.
+func (s *ServiceCredentialProvisioner) ProvisionLogObserver(ctx context.Context, node, secret string) error {
+	if !logpipeline.Identity.MatchString(node) || secret != "" && (len(secret) < 32 || len(secret) > 72 || strings.TrimSpace(secret) != secret) {
+		return commonapi.ErrBadRequest
+	}
+	clientID := logpipeline.ObserverClientID(node)
+	return s.repository.Transaction(ctx, func(tx *Repository) error {
+		db := tx.db.WithContext(ctx)
+		var role Role
+		if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id IS NULL AND role_key=? AND status='active'", "platform.log_observer_runtime").Take(&role).Error; err != nil {
+			return err
+		}
+		var client serviceOAuthClientCredentialRow
+		err := db.Where("client_id=?", clientID).Take(&client).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil {
+			var count int64
+			if err := db.Table("system.service_principals s").Joins("JOIN system.role_assignments a ON a.principal_id=s.id").Where("s.id=? AND s.name=? AND s.owner_scope='platform' AND a.role_id=? AND a.scope_type='platform' AND a.status='active'", client.ServicePrincipalID, clientID, role.ID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 1 {
+				return commonapi.ErrConflict
+			}
+		} else {
+			if secret == "" {
+				return nil
+			}
+			principal := Principal{PrincipalType: PrincipalTypeServicePrincipal, Status: PrincipalStatusActive, AuthorizationVersion: 1}
+			if err := tx.CreatePrincipal(ctx, &principal); err != nil {
+				return err
+			}
+			if err := db.Table("system.service_principals").Create(map[string]any{"id": principal.ID, "name": clientID, "description": "Node runtime log observer", "owner_scope": "platform", "created_by_principal_id": principal.ID, "version": 1}).Error; err != nil {
+				return err
+			}
+			if err := db.Table("system.oauth_clients").Create(map[string]any{
+				"client_id": clientID, "display_name": clientID, "client_type": "confidential", "service_principal_id": principal.ID,
+				"redirect_uris": DBStringList{}, "grant_types": DBStringList{"client_credentials"}, "response_types": DBStringList{},
+				"allowed_scopes": DBStringList{"addp.api"}, "allowed_audiences": DBStringList{"addp.api"}, "token_endpoint_auth_method": "client_secret_basic",
+				"status": "disabled", "owner_scope": "platform", "request_uris": DBStringList{}, "created_by_principal_id": principal.ID, "version": 1,
+			}).Error; err != nil {
+				return err
+			}
+			reason := "Node runtime log observation"
+			if err := db.Create(&RoleAssignment{PrincipalID: principal.ID, RoleID: role.ID, ScopeType: "platform", Status: "active", ValidFrom: s.now().UTC(), SourceType: "bootstrap", GrantReason: &reason}).Error; err != nil {
+				return err
+			}
+		}
+		var others []serviceOAuthClientCredentialRow
+		if err := db.Table("system.oauth_clients c").Select("c.client_secret_hash").Joins("JOIN system.role_assignments a ON a.principal_id=c.service_principal_id").Where("a.role_id=? AND c.client_id<>? AND c.status='active'", role.ID, clientID).Scan(&others).Error; err != nil {
+			return err
+		}
+		for _, other := range others {
+			if other.ClientSecretHash != nil && bcrypt.CompareHashAndPassword([]byte(*other.ClientSecretHash), []byte(secret)) == nil {
+				return fmt.Errorf("%w: observer credentials must be distinct", commonapi.ErrBadRequest)
+			}
+		}
+		return s.applyClient(ctx, tx, clientID, secret)
+	})
 }

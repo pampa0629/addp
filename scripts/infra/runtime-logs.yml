@@ -61,5 +61,4 @@ services:
       MONITOR_URL: ${LOG_OBSERVER_MONITOR_URL:-http://host.docker.internal:8100}
       ALLOY_URL: http://alloy:12345
       LOKI_URL: http://runtime-log-api:3100
-      LOKI_READ_TOKEN: ${LOKI_READ_TOKEN:-}
     restart: unless-stopped

@@ -130,7 +130,8 @@ func RegisterIAMServiceRuntimeRoutes(
 	if err != nil {
 		return err
 	}
-	runtimeRoutes.POST("/module-log-source-observations", platformContext, logSourceCreate, sharedauth.MustNewServiceClientGuard("addp-log-observer"), moduleHandler.ReportLogSources)
+	runtimeRoutes.POST("/module-log-probes/confirm", platformContext, logSourceCreate, moduleHandler.ConfirmLogProbe)
+	runtimeRoutes.POST("/module-log-source-observations", platformContext, logSourceCreate, moduleHandler.ReportLogSources)
 	runtimeRoutes.POST("/execution-authorizations", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromExecution)
 	runtimeRoutes.POST("/execution-authorizations/service-definitions", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromServiceDefinition)
 	runtimeRoutes.POST("/task-authorization-subjects/:id/resolve", tenantContext, taskAuthorizationResolve, runtime.TaskAuthorizationSubjectHandler.Resolve)

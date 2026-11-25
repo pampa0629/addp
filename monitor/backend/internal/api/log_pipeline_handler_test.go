@@ -23,11 +23,11 @@ func TestLogObservationRequiresPlatformObserverServiceToken(t *testing.T) {
 		{"tenant", "tenant", "user", "addp-web", "first_party_access_token", true, 403},
 		{"platform user cannot observe", "platform", "user", "addp-web", "first_party_access_token", true, 403},
 		{"other service cannot observe", "platform", "service_principal", "addp-monitor", "service_access_token", true, 403},
-		{"missing permission", "platform", "service_principal", "addp-log-observer", "service_access_token", false, 403},
-		{"wrong token type", "platform", "service_principal", "addp-log-observer", "oauth_access_token", true, 403},
-		{"observer validates payload", "platform", "service_principal", "addp-log-observer", "service_access_token", true, 400},
-		{"collection disabled", "platform", "service_principal", "addp-log-observer", "service_access_token", true, 409},
-		{"deployment invalid", "platform", "service_principal", "addp-log-observer", "service_access_token", true, 503},
+		{"missing permission", "platform", "service_principal", "addp-log-observer-node", "service_access_token", false, 403},
+		{"wrong token type", "platform", "service_principal", "addp-log-observer-node", "oauth_access_token", true, 403},
+		{"observer validates payload", "platform", "service_principal", "addp-log-observer-node", "service_access_token", true, 400},
+		{"collection disabled", "platform", "service_principal", "addp-log-observer-node", "service_access_token", true, 409},
+		{"deployment invalid", "platform", "service_principal", "addp-log-observer-node", "service_access_token", true, 503},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

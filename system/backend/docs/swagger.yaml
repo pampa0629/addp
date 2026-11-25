@@ -5805,6 +5805,18 @@ definitions:
     required:
     - value
     type: object
+  internal_api.LogProbeRequest:
+    properties:
+      instance_id:
+        type: string
+      marker:
+        type: string
+    type: object
+  internal_api.LogProbeResult:
+    properties:
+      delivered:
+        type: boolean
+    type: object
   internal_api.RasterPlatformUpdate:
     properties:
       cache_mib:
@@ -15998,6 +16010,51 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.meta_collection.execute
+  /runtime/module-log-probes/confirm:
+    post:
+      consumes:
+      - application/json
+      description: 按观察器身份限定节点并精确匹配最近一分钟的技术标记，仅返回送达结果 | Check the authenticated observer's
+        node for an exact technical marker in the last minute and return only delivery
+        status
+      parameters:
+      - description: 技术实例与标记 | Technical instance and marker
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.LogProbeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.LogProbeResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 确认本节点日志探针 | Confirm this node's log delivery probe
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.module_log_source.create
   /runtime/module-log-source-observations:
     post:
       consumes:

@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -38,48 +35,32 @@ func TestProbeReceiverReusesSourceAndRejectsPreviousEvent(t *testing.T) {
 	var mu sync.Mutex
 	var previous Entry
 	stale := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/loki/api/v1/query_range" || r.Header.Get("Authorization") != "Bearer probe-read" {
-			t.Error("invalid probe request")
-			w.WriteHeader(403)
-			return
-		}
+	confirm := func(ctx context.Context, instance, marker string) (bool, error) {
 		mu.Lock()
 		old, onlyOld := previous, stale
 		mu.Unlock()
-		var matches []Entry
+		message := "runtime-log-delivery-probe " + marker
 		if onlyOld {
-			matches = []Entry{old}
-		} else {
-			deadline := time.Now().Add(time.Second)
-			for time.Now().Before(deadline) {
-				for _, entry := range probeEntries(o.Root) {
-					query := `{deployment="addp",module_name="runtime-probe"} | instance_id=` + strconv.Quote(entry.InstanceID) + ` |= ` + strconv.Quote(entry.Message)
-					if r.URL.Query().Get("query") == query {
-						matches = append(matches, entry)
-					}
+			return old.InstanceID == instance && old.Message == message, nil
+		}
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) && ctx.Err() == nil {
+			for _, entry := range probeEntries(o.Root) {
+				if entry.InstanceID == instance && entry.Message == message {
+					mu.Lock()
+					previous = entry
+					mu.Unlock()
+					return true, nil
 				}
-				if len(matches) > 0 {
-					break
-				}
-				time.Sleep(time.Millisecond)
 			}
+			time.Sleep(time.Millisecond)
 		}
-		values := make([][]string, 0, len(matches))
-		for _, entry := range matches {
-			body, _ := json.Marshal(entry)
-			values = append(values, []string{"1", string(body)})
-			mu.Lock()
-			previous = entry
-			mu.Unlock()
-		}
-		json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"result": []any{map[string]any{"values": values}}}})
-	}))
-	defer server.Close()
+		return false, ctx.Err()
+	}
 	run := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_, err := p.Probe(ctx, server.URL, "probe-read")
+		_, err := p.Probe(ctx, confirm)
 		return err
 	}
 	for i := 0; i < 40; i++ {
@@ -91,7 +72,7 @@ func TestProbeReceiverReusesSourceAndRejectsPreviousEvent(t *testing.T) {
 	stale = true
 	mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	_, err := p.Probe(ctx, server.URL, "probe-read")
+	_, err := p.Probe(ctx, confirm)
 	cancel()
 	if err != context.DeadlineExceeded {
 		t.Fatalf("previous success accepted as current: %v", err)
@@ -134,7 +115,7 @@ func TestProbeReceiverReusesSourceAndRejectsPreviousEvent(t *testing.T) {
 	if json.Unmarshal(body, &status) != nil || status.Written != 42 || status.Received != 42 || status.Dropped != 0 || !status.ObservedAt.After(status.CaptureStartedAt) {
 		t.Fatalf("capture lifecycle is not continuous: %s", body)
 	}
-	_, err = p.Probe(context.Background(), server.URL, "probe-read")
+	_, err = p.Probe(context.Background(), confirm)
 	if err == nil {
 		t.Fatal("closed receiver accepted a detection")
 	}
@@ -143,12 +124,15 @@ func TestProbeReceiverReusesSourceAndRejectsPreviousEvent(t *testing.T) {
 func TestProbeInvalidAndCancelledCallsDoNotEmit(t *testing.T) {
 	o := options(t)
 	p := NewProbeReceiver(o)
-	if _, err := p.Probe(context.Background(), "file:///unsafe", "probe-read"); err == nil {
+	if _, err := p.Probe(context.Background(), nil); err == nil {
 		t.Fatal("invalid endpoint accepted")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := p.Probe(ctx, "http://localhost:1", "probe-read"); err != context.Canceled {
+	if _, err := p.Probe(ctx, func(context.Context, string, string) (bool, error) {
+		t.Fatal("cancelled probe queried")
+		return false, nil
+	}); err != context.Canceled {
 		t.Fatalf("cancelled detection: %v", err)
 	}
 	p.Close()
@@ -161,19 +145,20 @@ func TestProbeCloseCancelsInFlightAndWaitingDetections(t *testing.T) {
 	o := options(t)
 	p := NewProbeReceiver(o)
 	entered := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	confirm := func(ctx context.Context, instance, marker string) (bool, error) {
 		close(entered)
-		<-r.Context().Done()
-	}))
-	defer func() { p.Close(); server.Close() }()
+		<-ctx.Done()
+		return false, ctx.Err()
+	}
+	defer p.Close()
 	result := make(chan error, 2)
-	go func() { _, err := p.Probe(context.Background(), server.URL, "probe-read"); result <- err }()
+	go func() { _, err := p.Probe(context.Background(), confirm); result <- err }()
 	select {
 	case <-entered:
 	case <-time.After(3 * time.Second):
 		t.Fatal("probe did not start request")
 	}
-	go func() { _, err := p.Probe(context.Background(), server.URL, "probe-read"); result <- err }()
+	go func() { _, err := p.Probe(context.Background(), confirm); result <- err }()
 	if err := p.Close(); err != nil {
 		t.Fatal(err)
 	}
