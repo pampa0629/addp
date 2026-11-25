@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization"
 	"github.com/addp/common/engine/plugin"
 )
 
@@ -140,4 +141,91 @@ func TestIntegrationTiDBGuardedQueryReadSession(t *testing.T) {
 			}
 		})
 	}
+	t.Run("database_scope_native_observations", func(t *testing.T) {
+		const outside = "addp_tidb_guard_disposable_other"
+		if _, err := admin.ExecContext(ctx, "CREATE DATABASE "+outside); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if _, err := admin.ExecContext(cleanup, "DROP DATABASE "+outside); err != nil {
+				t.Error(err)
+			}
+		}()
+		scope := authorization.SourceNodeScope{Target: plugin.TabularNamespacePath(engineID, plugin.EngineCatalogTermDatabase, database)}
+		active := true
+		authorize := func(_ context.Context, sources *plugin.QueryReadSet) error {
+			if !active || len(sources.Paths) == 0 {
+				return denied
+			}
+			for _, path := range sources.Paths {
+				if !scope.Covers(path) {
+					return denied
+				}
+			}
+			return nil
+		}
+		// The reserved result alias identifies the user SELECT across these five
+		// windows. TiDB's catalog and the Provider's zero-row probes never use it.
+		businessSelects := func(t *testing.T) int64 {
+			t.Helper()
+			var count int64
+			err := admin.QueryRowContext(ctx, "SELECT COALESCE(SUM(exec_count),0) FROM information_schema.statements_summary WHERE sample_user=? AND stmt_type='Select' AND LOCATE(?, digest_text)>0", readerInfo["user"], "`node_scope_value`").Scan(&count)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return count
+		}
+		check := func(name, query string, allowed bool, value int64) {
+			t.Run(name, func(t *testing.T) {
+				before := businessSelects(t)
+				prepared, err := p.PrepareQuery(ctx, readerInfo, plugin.QueryRequest{EngineID: engineID, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				session, err := p.OpenGuardedQueryReadSession(ctx, prepared, authorize)
+				if session != nil {
+					defer session.Close(ctx)
+				}
+				var wantReads int64
+				if allowed {
+					wantReads = 1
+					if err != nil || session == nil {
+						t.Fatalf("authorized open: %v", err)
+					}
+					batch, err := session.ReadBatch(ctx, 2)
+					if err != nil || batch == nil || len(batch.Rows) != 1 || batch.Rows[0]["node_scope_value"] != value {
+						t.Fatalf("business rows=%+v err=%v", batch, err)
+					}
+					if err := session.Close(ctx); err != nil {
+						t.Fatal(err)
+					}
+				} else if session != nil || !errors.Is(err, denied) {
+					t.Fatalf("uncovered table returned a session or unexpected error: %v", err)
+				}
+				delta := businessSelects(t) - before
+				if delta != wantReads {
+					t.Fatalf("native business SELECTs=%d, want %d", delta, wantReads)
+				}
+				t.Logf("native business SELECTs=%d", delta)
+			})
+		}
+		const selectID = "SELECT id AS node_scope_value FROM "
+		check("existing", selectID+database+".addp_query_read_first", true, 7)
+		for i, dbName := range []string{database, outside} {
+			table := dbName + ".node_future"
+			for _, sql := range []string{"CREATE TABLE " + table + " (id BIGINT PRIMARY KEY)", fmt.Sprintf("INSERT INTO %s VALUES (%d)", table, 41+i), "GRANT SELECT ON " + table + " TO " + reader} {
+				if _, err := admin.ExecContext(ctx, sql); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		future := database + ".node_future"
+		check("future", selectID+future, true, 41)
+		check("same_name_outside", selectID+outside+".node_future", false, 0)
+		check("join_outside", "SELECT a.id AS node_scope_value FROM "+future+" a JOIN "+outside+".node_future b ON a.id=b.id", false, 0)
+		active = false
+		check("withdrawn", selectID+future, false, 0)
+	})
 }
