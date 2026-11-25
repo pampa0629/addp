@@ -2386,6 +2386,15 @@ jobs:
         with:
           go-version-file: ontology/backend/go.mod
           cache: false
+      - name: Verify Ontology installation, runtime restarts and immutable revision storage on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-ontology-install'
+
+      - name: Verify Ontology installation, runtime restarts and immutable revision storage on PostgreSQL
+        env:
+          ADDP_INFRA_DATABASE_PROVIDER: postgres
+          PLATFORM_CI_PG_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/test/module-platform-deployment.sh "$PLATFORM_CI_PG_ID" ontology
+
       - name: Run Ontology revision and publication gate
         env:
           ONTOLOGY_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_ontology_test?sslmode=disable

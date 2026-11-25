@@ -15,6 +15,7 @@ import (
 	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	"github.com/addp/ontology/internal/api"
 	"github.com/addp/ontology/internal/config"
 	"github.com/addp/ontology/internal/falkor"
@@ -35,6 +36,27 @@ import (
 // @in header
 // @name Authorization
 func main() {
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			log.Print("expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(config.PlatformDatabase(), "ontology")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err = repository.PrepareDatabase(db); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "ontology"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Print("Ontology backend stopped: ", err)
 		os.Exit(1)
@@ -49,9 +71,9 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// Do not log DSNs, bound definitions or execution authorization facts.
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true, Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := bootstrap.OpenPlatformRuntime(config.PlatformDatabase(), "ontology", &gorm.Config{TranslateError: true, Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
-		return errors.New("ontology database connection failed")
+		return err
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -61,8 +83,11 @@ func run() error {
 	sqlDB.SetMaxOpenConns(16)
 	sqlDB.SetMaxIdleConns(4)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
-	if err := repository.Migrate(db); err != nil {
-		return errors.New("ontology schema migration failed")
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		return err
+	}
+	if err := schema.Require(db, "ontology", repository.SchemaVersion); err != nil {
+		return err
 	}
 	graph, err := falkor.New(falkor.Config{Address: cfg.FalkorAddress, Password: cfg.FalkorPassword})
 	if err != nil {
@@ -86,7 +111,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	lifecycle := modulelifecycle.NewBusiness("ontology", client.ModuleRuntimeRoleBackend, readyCheck("postgres", sqlDB.PingContext), readyCheck("falkordb", graph.Health))
+	lifecycle := modulelifecycle.NewBusiness("ontology", client.ModuleRuntimeRoleBackend, readyCheck("platform_database", sqlDB.PingContext), readyCheck("falkordb", graph.Health))
 	platformRepo := repository.NewPlatformRevisionRepository(db)
 	platformAuthorizer, err := service.NewSystemPlatformPublicationAuthorizer(system)
 	if err != nil {

@@ -45,12 +45,16 @@ func (r *RevisionRepository) ProjectionIntent(ctx context.Context, actor models.
 }
 
 func pendingProjection(db *gorm.DB, actor models.Actor, record *models.Projection) *gorm.DB {
+	configIdentity := "execution_config = jsonb_build_object('ontology_id',?::text,'revision',?::text,'digest',?::text,'generation',?::text)"
+	if db.Dialector.Name() == "mysql" {
+		configIdentity = "execution_config=JSON_OBJECT('ontology_id',?,'revision',?,'digest',?,'generation',?)"
+	}
 	return db.Model(&execution.TaskExecution{}).
 		Where("execution_id = ? AND tenant_id = ? AND module = ? AND source = ? AND task_type = ? AND execution_boundary = ?",
 			record.ExecutionID, actor.TenantID, models.Module, models.Module, models.ProjectionTaskType, execution.ExecutionBoundaryBounded).
 		Where("status = ? AND execution_authorization_id IS NULL", execution.ExecutionStatusPending).
 		Where("actor_principal_id = ? AND actor_tenant_membership_id = ? AND issued_authorization_version = ?", actor.PrincipalID, actor.MembershipID, actor.AuthorizationVersion).
-		Where("execution_config = jsonb_build_object('ontology_id',?::text,'revision',?::text,'digest',?::text,'generation',?::text)",
+		Where(configIdentity,
 			record.OntologyID, strconv.FormatUint(record.Revision, 10), record.Digest, record.Generation)
 }
 
@@ -90,7 +94,7 @@ func (r *RevisionRepository) AttachProjectionAuthorization(ctx context.Context, 
 			issued.TenantMembershipID != strconv.FormatInt(actor.MembershipID, 10) || issued.IssuedAuthorizationVersion != strconv.FormatInt(actor.AuthorizationVersion, 10) {
 			return ErrInvalid
 		}
-		result := pendingProjection(tx, actor, &projection).Where("?::timestamptz > clock_timestamp()", issued.ExpiresAt).Updates(fields)
+		result := pendingProjection(tx, actor, &projection).Where("? > "+projectionClock(tx), issued.ExpiresAt).Updates(fields)
 		if result.Error != nil {
 			return result.Error
 		}

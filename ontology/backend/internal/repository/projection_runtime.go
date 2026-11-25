@@ -29,7 +29,7 @@ func (r *RevisionRepository) ClaimProjection(ctx context.Context, owner string, 
 	var lease *execution.Lease
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		_, lease, err = execution.ClaimNext(ctx, tx.Where("EXISTS (SELECT 1 FROM ontology.projections p WHERE p.execution_id::text=common.task_executions.execution_id AND p.status='pending')"), execution.ClaimOptions{Module: models.Module, Source: models.Module,
+		_, lease, err = execution.ClaimNext(ctx, tx.Where("EXISTS (SELECT 1 FROM ontology.projections p WHERE "+projectionExecutionID(tx)+"=common.task_executions.execution_id AND p.status='pending')"), execution.ClaimOptions{Module: models.Module, Source: models.Module,
 			TaskType: models.ProjectionTaskType, WorkerID: owner, LeaseDuration: duration, RequireAuthorization: true})
 		return err
 	})
@@ -73,7 +73,7 @@ func lockProjectionWork(tx *gorm.DB, lease execution.Lease, expired bool) (*Proj
 	}
 	if expired {
 		owned := queue.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("status='running' AND attempt=? AND lease_token=? AND lease_owner=? AND lease_expires_at <= clock_timestamp()", lease.Attempt, lease.Token, lease.Owner)
+			Where("status='running' AND attempt=? AND lease_token=? AND lease_owner=? AND lease_expires_at <= "+projectionClock(tx), lease.Attempt, lease.Token, lease.Owner)
 		if err := owned.First(&w.Execution).Error; err != nil {
 			return nil, nil, normalizeError(err)
 		}
@@ -147,7 +147,7 @@ func (r *RevisionRepository) BeginProjection(ctx context.Context, lease executio
 		if w.Projection.Status != "pending" || head.ActivationVersion != w.Projection.BaselineVersion {
 			return ErrConflict
 		}
-		if err := tx.Model(&w.Projection).Updates(map[string]any{"status": "building", "updated_at": gorm.Expr("clock_timestamp()")}).Error; err != nil {
+		if err := tx.Model(&w.Projection).Updates(map[string]any{"status": "building", "updated_at": gorm.Expr(projectionClock(tx))}).Error; err != nil {
 			return err
 		}
 		return projectionEvent(tx, w, "building")
@@ -166,7 +166,7 @@ func (r *RevisionRepository) ActivateProjection(ctx context.Context, lease execu
 		if w.Projection.Status != "building" || head.ActivationVersion != w.Projection.BaselineVersion {
 			return ErrConflict
 		}
-		if err := tx.Model(&w.Projection).Updates(map[string]any{"status": "ready", "updated_at": gorm.Expr("clock_timestamp()")}).Error; err != nil {
+		if err := tx.Model(&w.Projection).Updates(map[string]any{"status": "ready", "updated_at": gorm.Expr(projectionClock(tx))}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(head).Updates(map[string]any{"active_revision": w.Revision.Revision, "active_generation": w.Projection.Generation, "activation_version": head.ActivationVersion + 1}).Error; err != nil {
@@ -177,7 +177,7 @@ func (r *RevisionRepository) ActivateProjection(ctx context.Context, lease execu
 		}
 		// This last write fences even a deadline that elapsed while waiting on
 		// audit/trigger work; failure rolls back ready, pointer and audit together.
-		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > clock_timestamp() AND ?::timestamptz > clock_timestamp()", receipt.ExpiresAt), lease, execution.ExecutionStatusSuccess, nil)
+		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > "+projectionClock(tx)+" AND ? > "+projectionClock(tx), receipt.ExpiresAt), lease, execution.ExecutionStatusSuccess, nil)
 	})
 }
 
@@ -191,7 +191,7 @@ func (r *RevisionRepository) FailProjection(ctx context.Context, lease execution
 			if w.Projection.Status != "pending" && w.Projection.Status != "building" {
 				return ErrConflict
 			}
-			if err := tx.Model(&w.Projection).Updates(map[string]any{"status": "failed", "updated_at": gorm.Expr("clock_timestamp()")}).Error; err != nil {
+			if err := tx.Model(&w.Projection).Updates(map[string]any{"status": "failed", "updated_at": gorm.Expr(projectionClock(tx))}).Error; err != nil {
 				return err
 			}
 			if err := projectionEvent(tx, w, "failed"); err != nil {
@@ -202,7 +202,7 @@ func (r *RevisionRepository) FailProjection(ctx context.Context, lease execution
 		if expired {
 			return execution.FailExpired(ctx, tx, lease, fields)
 		}
-		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > clock_timestamp()"), lease, execution.ExecutionStatusFailed, fields)
+		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > "+projectionClock(tx)), lease, execution.ExecutionStatusFailed, fields)
 	})
 }
 
@@ -218,8 +218,8 @@ func (r *RevisionRepository) RecoverProjections(ctx context.Context) error {
 	// Discovery takes no row lock. Each candidate is revalidated with the
 	// normal owner lock order; no side effects are retried on lease expiry.
 	var items []execution.TaskExecution
-	if err := r.db.WithContext(ctx).Where("module=? AND source=? AND task_type=? AND status='running' AND lease_expires_at <= clock_timestamp()", models.Module, models.Module, models.ProjectionTaskType).
-		Where("EXISTS (SELECT 1 FROM ontology.projections p WHERE p.execution_id::text=common.task_executions.execution_id)").
+	if err := r.db.WithContext(ctx).Where("module=? AND source=? AND task_type=? AND status='running' AND lease_expires_at <= "+projectionClock(r.db), models.Module, models.Module, models.ProjectionTaskType).
+		Where("EXISTS (SELECT 1 FROM ontology.projections p WHERE " + projectionExecutionID(r.db) + "=common.task_executions.execution_id)").
 		Order("lease_expires_at, id").Limit(16).Find(&items).Error; err != nil {
 		return err
 	}
@@ -247,9 +247,23 @@ func failPendingProjection(tx *gorm.DB, actor models.Actor, record *models.Proje
 	if result.Error != nil || result.RowsAffected == 0 {
 		return result.Error
 	}
-	if err := tx.Model(&p).Updates(map[string]any{"status": "failed", "updated_at": gorm.Expr("clock_timestamp()")}).Error; err != nil {
+	if err := tx.Model(&p).Updates(map[string]any{"status": "failed", "updated_at": gorm.Expr(projectionClock(tx))}).Error; err != nil {
 		return err
 	}
 	return tx.Create(&models.ProjectionEvent{Generation: p.Generation, Action: "failed", Attempt: 0, ActorPrincipalID: actor.PrincipalID,
 		ActorMembershipID: actor.MembershipID, AuthorizationVersion: actor.AuthorizationVersion, CreatedAt: time.Now().UTC()}).Error
+}
+
+func projectionClock(db *gorm.DB) string {
+	if db.Dialector.Name() == "mysql" {
+		return "CURRENT_TIMESTAMP(6)"
+	}
+	return "clock_timestamp()"
+}
+
+func projectionExecutionID(db *gorm.DB) string {
+	if db.Dialector.Name() == "mysql" {
+		return "p.execution_id"
+	}
+	return "p.execution_id::text"
 }

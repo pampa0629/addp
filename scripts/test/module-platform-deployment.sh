@@ -4,12 +4,14 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 container=${1:?expected gate-owned container ID}
 owner=${2:?expected database owner}
-case "$owner" in graph|catalog|asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
+case "$owner" in ontology|graph|catalog|asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
 provider=${ADDP_INFRA_DATABASE_PROVIDER:?}
 work=$(mktemp -d)
 install_volume=""
 search_container=""
+falkor_project=""
 cleanup() {
+  if [[ -n "$falkor_project" ]]; then docker compose -p "$falkor_project" -f "$root/scripts/infra/falkordb.yml" -f "$work/falkor.yml" down -v >/dev/null; fi
   if [[ -n "$search_container" ]]; then docker rm -fv "$search_container" >/dev/null; fi
   if [[ -n "$install_volume" ]]; then docker volume rm "$install_volume" >/dev/null; fi
   rm -rf "$work"
@@ -120,7 +122,7 @@ snapshot >refused.sql
 cmp before-owner.sql refused.sql
 # The same release database phase and the same module command run on both providers.
 prepare=(bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml")
-if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset || $owner == catalog || $owner == graph ) && $provider == mysql ]]; then
+if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset || $owner == catalog || $owner == graph || $owner == ontology ) && $provider == mysql ]]; then
   status=0
   "${prepare[@]}" >"$work/installer.out" || status=$?
   case "$status" in
@@ -138,6 +140,8 @@ fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
+elif [[ $owner == ontology ]]; then
+  grep -qi 'CREATE TABLE.*platform_revisions' installed.sql
 elif [[ $owner == graph ]]; then
   grep -qi 'CREATE TABLE.*graph_operations' installed.sql
 elif [[ $owner == catalog ]]; then
@@ -158,6 +162,18 @@ if [[ $owner == catalog ]]; then
   export MEILISEARCH_MASTER_KEY=$(openssl rand -hex 24)
   search_container=$(docker run -d --label addp.deployment-gate=catalog -e MEILI_MASTER_KEY="$MEILISEARCH_MASTER_KEY" -p 127.0.0.1::7700 "$image")
   export MEILISEARCH_URL="http://$(docker port "$search_container" 7700/tcp)"
+fi
+if [[ $owner == ontology ]]; then
+  export INFRA_FALKORDB_PASSWORD=$(openssl rand -hex 24)
+  cat >"$work/falkor.yml" <<'YAML'
+services:
+  falkordb:
+    ports: ["127.0.0.1::6379"]
+YAML
+  falkor_project="addp-ontology-deployment-$$"
+  falkor=(docker compose -p "$falkor_project" -f "$root/scripts/infra/falkordb.yml" -f "$work/falkor.yml")
+  "${falkor[@]}" up -d --wait
+  export INFRA_FALKORDB_ADDRESS=$("${falkor[@]}" port falkordb 6379)
 fi
 for cycle in 1 2; do
   runtime ready
@@ -185,4 +201,7 @@ if [[ "$owner" == catalog ]]; then
 fi
 if [[ "$owner" == graph ]]; then
   (cd "$root/graph/backend" && ADDP_TEST_GRAPH_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledGraphOntology$' -count=1 -v)
+fi
+if [[ "$owner" == ontology ]]; then
+  (cd "$root/ontology/backend" && ADDP_TEST_ONTOLOGY_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledOntologyRevision$' -count=1 -v)
 fi

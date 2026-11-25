@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_INPUT_FILES=scripts/infra/falkordb.yml scripts/test/module-platform-deployment.sh scripts/test/module-platform-startup.py scripts/infra/platform-database.sh scripts/prod/start.sh scripts/prod/prepare-module-databases.sh scripts/prod/system-meta-gateway.yml scripts/prod/release-images.py scripts/test/common-mysql-data-protection-gate.sh
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=ONTOLOGY_POSTGRES_TEST_DSN
 # A local run uses addp_test; hosted CI owns addp_ontology_test as a disposable service.

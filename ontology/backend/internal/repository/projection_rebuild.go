@@ -114,7 +114,7 @@ func cancelPendingProjections(tx *gorm.DB, actor models.Actor, record *models.Re
 		}
 		if err := tx.Model(&execution.TaskExecution{}).Where("execution_id=? AND tenant_id=? AND module=? AND status=?",
 			p.ExecutionID, actor.TenantID, models.Module, execution.ExecutionStatusPending).
-			Updates(map[string]any{"status": execution.ExecutionStatusCancelled, "completed_at": gorm.Expr("clock_timestamp()"), "updated_at": gorm.Expr("clock_timestamp()")}).Error; err != nil {
+			Updates(map[string]any{"status": execution.ExecutionStatusCancelled, "completed_at": gorm.Expr(projectionClock(tx)), "updated_at": gorm.Expr(projectionClock(tx))}).Error; err != nil {
 			return err
 		}
 	}

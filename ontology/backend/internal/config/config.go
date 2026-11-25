@@ -23,7 +23,6 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	commonconfig.LoadEnv()
 	c := fromEnvironment()
 	if err := c.Validate(); err != nil {
 		return nil, err
@@ -50,16 +49,12 @@ func (c *Config) Validate() error {
 	u, urlErr := url.Parse(c.SystemURL)
 	if err != nil || port < 1 || port > 65535 || strconv.Itoa(port) != c.Port || graphErr != nil || host == "" || gpErr != nil || gp < 1 || gp > 65535 ||
 		urlErr != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
-		len(c.ServiceClientSecret) < 32 || len(c.ServiceClientSecret) > 72 || c.FalkorPassword == "" || c.DBHost == "" || c.DBName == "" {
+		len(c.ServiceClientSecret) < 32 || len(c.ServiceClientSecret) > 72 || c.FalkorPassword == "" {
 		return errors.New("invalid ontology deployment configuration")
 	}
 	return nil
 }
 
-func (c *Config) PlatformDatabase() database.Config {
-	return database.Config{
-		Host: c.DBHost, Port: c.DBPort,
-		User: c.DBUser, Password: c.DBPassword,
-		DBName: c.DBName, Schema: "ontology", ConnectTimeout: 5 * time.Second,
-	}
+func PlatformDatabase() database.Config {
+	return database.Config{Host: commonconfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonconfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonconfig.GetEnv("POSTGRES_DB", "addp"), Schema: "ontology", ConnectTimeout: 5 * time.Second}
 }
