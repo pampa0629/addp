@@ -261,7 +261,11 @@ func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertE
 	}
 	var destinations []models.PlatformAlertDestination
 	categoryJSON, _ := json.Marshal([]string{incident.Category})
-	if err := tx.Where("enabled=true AND categories @> ?::jsonb", string(categoryJSON)).Order("id").Find(&destinations).Error; err != nil {
+	containsCategory := "categories @> ?::jsonb"
+	if tx.Dialector.Name() == "mysql" {
+		containsCategory = "JSON_CONTAINS(categories, ?)"
+	}
+	if err := tx.Where("enabled=true").Where(containsCategory, string(categoryJSON)).Order("id").Find(&destinations).Error; err != nil {
 		return err
 	}
 	payload := map[string]any{"schema": "addp.platform-log-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "node": incident.SubjectID, "signal": logSignalName(incident.Signal), "instance_id": incident.InstanceID, "severity": incident.Severity, "occurred_at": now}

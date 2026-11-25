@@ -115,8 +115,15 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAle
 		q = q.Where("opened_at < ?", *filter.TimeTo)
 	}
 	if filter.Search != "" {
-		pattern := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(filter.Search) + "%"
-		const ruleNameSQL = `(CASE category WHEN 'resource' THEN resource_evidence->>'rule_name' WHEN 'http_quality' THEN http_evidence->>'rule_name' WHEN 'process_resource' THEN process_evidence->>'rule_name' WHEN 'service_availability' THEN availability_evidence->>'rule_name' END) ILIKE ? ESCAPE '\'`
+		const evidence = "(CASE category WHEN 'resource' THEN resource_evidence WHEN 'http_quality' THEN http_evidence WHEN 'process_resource' THEN process_evidence WHEN 'service_availability' THEN availability_evidence END)"
+		ruleName := evidence + "->>'rule_name'"
+		signalPrefix := "split_part(signal, ':', 1)"
+		if s.db.Dialector.Name() == "mysql" {
+			ruleName = "JSON_UNQUOTE(JSON_EXTRACT(" + evidence + ", '$.rule_name'))"
+			signalPrefix = "SUBSTRING_INDEX(signal, ':', 1)"
+		}
+		// User input is a literal substring, including %, _ and backslashes.
+		ruleNameSQL := "POSITION(LOWER(?) IN LOWER(" + ruleName + ")) > 0"
 		logSignals := []string{}
 		for _, signal := range platformLogNameSignals {
 			if strings.Contains(strings.ToLower(platformLogAlertName(signal, filter.Language)), strings.ToLower(filter.Search)) {
@@ -124,9 +131,9 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAle
 			}
 		}
 		if len(logSignals) == 0 {
-			q = q.Where(ruleNameSQL, pattern)
+			q = q.Where(ruleNameSQL, filter.Search)
 		} else {
-			q = q.Where("("+ruleNameSQL+" OR (category=? AND split_part(signal, ':', 1) IN ?))", pattern, models.PlatformAlertCategoryLog, logSignals)
+			q = q.Where("("+ruleNameSQL+" OR (category=? AND "+signalPrefix+" IN ?))", filter.Search, models.PlatformAlertCategoryLog, logSignals)
 		}
 	}
 	if err := q.Count(&result.Total).Error; err != nil {

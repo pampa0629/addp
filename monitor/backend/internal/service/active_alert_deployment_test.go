@@ -21,6 +21,7 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("platform notification and search", func(t *testing.T) { checkPlatformAlertNotificationAndSearch(t, db) })
 	key := uuid.NewString()
 	now := time.Now().UTC()
 	tests := []struct {
@@ -66,5 +67,66 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func checkPlatformAlertNotificationAndSearch(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	t.Cleanup(func() { tx.Rollback() })
+	create := func(v any) {
+		t.Helper()
+		if err := tx.Create(v).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC()
+	id := uuid.NewString()
+	incident := models.PlatformAlertIncident{Category: models.PlatformAlertCategoryLog, SubjectKind: models.PlatformAlertSubjectLogObserver, SubjectID: id, Signal: "delivery_probe", Severity: "warning", Status: "open", OpenedAt: now, LastObservedAt: now}
+	create(&incident)
+	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: "opened", Severity: "warning", OccurredAt: now}
+	create(&event)
+	var included uint
+	for _, dest := range []struct {
+		category string
+		enabled  bool
+	}{{incident.Category, true}, {models.PlatformAlertCategoryResource, true}, {incident.Category, false}} {
+		d := models.PlatformAlertDestination{Name: uuid.NewString(), Channel: "email", Recipients: models.StringList{"platform@example.invalid"}, Categories: models.StringList{dest.category}, EventTypes: models.StringList{"opened"}, Enabled: dest.enabled}
+		create(&d)
+		if dest.category == incident.Category && dest.enabled {
+			included = d.ID
+		}
+	}
+	svc := &PlatformAlertService{db: tx}
+	if err := svc.RecordTx(tx, event, incident, now); err != nil {
+		t.Fatal(err)
+	}
+	var deliveries []models.PlatformAlertDelivery
+	if err := tx.Where("event_id=?", event.ID).Find(&deliveries).Error; err != nil || len(deliveries) != 1 || deliveries[0].DestinationID != included || deliveries[0].Status != "pending" {
+		t.Fatalf("deliveries=%v error=%v", deliveries, err)
+	}
+	logName := platformLogAlertName(incident.Signal, "en")
+	if logName == "" {
+		t.Fatal("missing log signal name")
+	}
+	filter := PlatformAlertFilter{Page: 1, PageSize: 5, Language: "en", SubjectID: id, Search: logName}
+	page, err := svc.Incidents(t.Context(), filter, "")
+	if err != nil || page.Total != 1 || len(page.Data) != 1 || page.Data[0].ID != incident.ID {
+		t.Fatalf("log search=%+v error=%v", page, err)
+	}
+	resource := models.PlatformAlertIncident{Category: models.PlatformAlertCategoryResource, SubjectKind: models.PlatformAlertSubjectHostNode, SubjectID: id, Signal: "node.cpu.busy_percent", Severity: "warning", Status: "open", OpenedAt: now, LastObservedAt: now, ResourceEvidence: &models.ResourceAlertEvidence{RuleName: "Infra_%Rule"}}
+	create(&resource)
+	filter.Search = "RA_%r"
+	page, err = svc.Incidents(t.Context(), filter, "")
+	if err != nil || page.Total != 1 || len(page.Data) != 1 || page.Data[0].ID != resource.ID {
+		t.Fatalf("literal rule search=%+v error=%v", page, err)
+	}
+	filter.Search = "ra__r"
+	page, err = svc.Incidents(t.Context(), filter, "")
+	if err != nil || page.Total != 0 {
+		t.Fatalf("wildcard matched a literal: %+v error=%v", page, err)
 	}
 }
