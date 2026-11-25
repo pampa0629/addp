@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/addp/common/execution"
 	"math"
 	"strconv"
 	"strings"
@@ -45,11 +46,9 @@ type sharingRecipientBasis struct {
 func (s *EntryService) sharingRecipientBasis(ctx context.Context, tenantID, principal int64, access EntryAccess, entryID uuid.UUID, auth authorization.AuthContext) (sharingRecipientBasis, error) {
 	var basis sharingRecipientBasis
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
+		now, clockErr := execution.DatabaseNow(tx)
+		if clockErr != nil {
+			return clockErr
 		}
 		if !sharingPermissionsAt(auth, now) {
 			return ErrSharingConfirmationForbidden
@@ -136,11 +135,9 @@ func (s *EntryService) ListSharingRecipientCandidates(ctx context.Context, tenan
 			if !owner {
 				return ErrSharingConfirmationForbidden
 			}
-			now := time.Now().UTC()
-			if local.db.Dialector.Name() == "postgres" {
-				if err := local.db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-					return err
-				}
+			now, clockErr := execution.DatabaseNow(local.db)
+			if clockErr != nil {
+				return clockErr
 			}
 			var approvals []models.SharingDecision
 			if err := local.sharingCandidateQuery(ctx, tenantID, access, entryID, now).

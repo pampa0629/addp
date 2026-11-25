@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"time"
+	"github.com/addp/common/execution"
 
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/common/authorization"
@@ -61,11 +61,9 @@ func lockCurrentSharingDecisionBasis(ctx context.Context, tx *gorm.DB, tenantID 
 	}
 	// Permissions/identity must be rechecked by the trusted consumer too. A
 	// cached VerifiedAt/snapshot on this relation never proves current IAM state.
-	now := time.Now().UTC()
-	if tx.Dialector.Name() == "postgres" {
-		if err := tx.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-			return nil, err
-		}
+	now, clockErr := execution.DatabaseNow(tx.WithContext(ctx))
+	if clockErr != nil {
+		return nil, clockErr
 	}
 	if !authorization.SharingExpiryFuture(decision.ExpiryMode, decision.ExpiresAt, now) {
 		return nil, ErrInvalidEntryUpdate

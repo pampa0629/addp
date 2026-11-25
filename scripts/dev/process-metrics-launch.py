@@ -73,7 +73,7 @@ def launch(argv, environment):
     child = dict(environment)
     child.pop("ADDP_DATABASE_DEPLOY_USER", None)
     child.pop("ADDP_DATABASE_DEPLOY_PASSWORD", None)
-    if child.get("ADDP_DATABASE_RUNTIME_USER") and module in ("system", "meta", "gateway", "inference", "workbench", "manager", "security", "agent", "copilot", "orchestrator", "monitor", "standard", "model", "service", "asset"):
+    if child.get("ADDP_DATABASE_RUNTIME_USER") and module in ("system", "meta", "gateway", "inference", "workbench", "manager", "security", "agent", "copilot", "orchestrator", "monitor", "standard", "model", "service", "asset", "catalog"):
         # These processes use the prepared platform schema. The bootstrap
         # login also serves unmigrated owners and must stay outside these children.
         for key in ("POSTGRES_USER", "POSTGRES_PASSWORD"):

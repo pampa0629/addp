@@ -67,12 +67,12 @@ func (s *EntryService) ListDomainStandardReferences(ctx context.Context, tenantI
 	if err != nil {
 		return nil, err
 	}
-	visible = applyPrimaryDomainFilter(visible, domainID).Select("entries.id,COALESCE(entries.business_name,source_name.observed_snapshot->>'name','') AS name, entries.governance_status").Joins("LEFT JOIN catalog.source_bindings source_name ON source_name.tenant_id=entries.tenant_id AND source_name.catalog_entry_id=entries.id AND source_name.is_current=TRUE")
+	visible = applyPrimaryDomainFilter(visible, domainID).Select("entries.id,COALESCE(entries.business_name," + jsonText(s.db, "source_name.observed_snapshot", "name") + ",'') AS name, entries.governance_status").Joins("LEFT JOIN catalog.source_bindings source_name ON source_name.tenant_id=entries.tenant_id AND source_name.catalog_entry_id=entries.id AND source_name.is_current=TRUE")
 	evidence := s.db.Raw(`WITH visible AS (?)
-  SELECT 'glossary' AS source_type,a.semantic_id::TEXT AS source_identity,'catalog' AS owner_module,'entry' AS resource_type,v.id::TEXT AS resource_id,v.name AS resource_name,'semantic_association' AS position,'' AS revision_id,'' AS resource_revision_id,v.governance_status AS state,'catalog.entry.glossary' AS relation_kind
+  SELECT 'glossary' AS source_type,`+textExpression(s.db, "a.semantic_id")+` AS source_identity,'catalog' AS owner_module,'entry' AS resource_type,`+textExpression(s.db, "v.id")+` AS resource_id,v.name AS resource_name,'semantic_association' AS position,'' AS revision_id,'' AS resource_revision_id,v.governance_status AS state,'catalog.entry.glossary' AS relation_kind
    FROM visible v JOIN catalog.semantic_associations a ON a.catalog_entry_id=v.id AND a.tenant_id=? AND a.semantic_type='glossary'
   UNION ALL
-  SELECT 'element',m.element_id::TEXT,'catalog','entry',v.id::TEXT,v.name,c.display_name,m.element_revision_id::TEXT,'',m.review_status,'catalog.component.standard_mapping'
+  SELECT 'element',`+textExpression(s.db, "m.element_id")+`,'catalog','entry',`+textExpression(s.db, "v.id")+`,v.name,c.display_name,`+textExpression(s.db, "m.element_revision_id")+`,'',m.review_status,'catalog.component.standard_mapping'
    FROM visible v JOIN catalog.standard_mappings m ON m.catalog_entry_id=v.id AND m.tenant_id=? AND m.review_status=?
    JOIN catalog.components c ON c.id=m.component_id AND c.tenant_id=m.tenant_id AND c.component_status='active'`, visible, tenantID, tenantID, models.StandardMappingApproved)
 	return domainreference.ReadPage(ctx, s.db, evidence, page, pageSize)

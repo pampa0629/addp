@@ -4,11 +4,13 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 container=${1:?expected gate-owned container ID}
 owner=${2:?expected database owner}
-case "$owner" in asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
+case "$owner" in catalog|asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
 provider=${ADDP_INFRA_DATABASE_PROVIDER:?}
 work=$(mktemp -d)
 install_volume=""
+search_container=""
 cleanup() {
+  if [[ -n "$search_container" ]]; then docker rm -fv "$search_container" >/dev/null; fi
   if [[ -n "$install_volume" ]]; then docker volume rm "$install_volume" >/dev/null; fi
   rm -rf "$work"
 }
@@ -118,7 +120,7 @@ snapshot >refused.sql
 cmp before-owner.sql refused.sql
 # The same release database phase and the same module command run on both providers.
 prepare=(bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml")
-if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset ) && $provider == mysql ]]; then
+if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset || $owner == catalog ) && $provider == mysql ]]; then
   status=0
   "${prepare[@]}" >"$work/installer.out" || status=$?
   case "$status" in
@@ -136,6 +138,8 @@ fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
+elif [[ $owner == catalog ]]; then
+  grep -qi 'CREATE TABLE.*fulfillment_checks' installed.sql
 elif [[ $owner == asset ]]; then
   grep -qi 'CREATE TABLE.*asset_components' installed.sql
 elif [[ $owner == service ]]; then
@@ -146,6 +150,12 @@ elif [[ $owner == standard ]]; then
   grep -qi 'CREATE TABLE.*element_revisions' installed.sql
 else
   grep -qi 'CREATE TABLE.*orchestrations' installed.sql
+fi
+if [[ $owner == catalog ]]; then
+  image=$(awk '/image: getmeili\/meilisearch:/ {print $2}' "$root/docker-compose.infra.yml")
+  export MEILISEARCH_MASTER_KEY=$(openssl rand -hex 24)
+  search_container=$(docker run -d --label addp.deployment-gate=catalog -e MEILI_MASTER_KEY="$MEILISEARCH_MASTER_KEY" -p 127.0.0.1::7700 "$image")
+  export MEILISEARCH_URL="http://$(docker port "$search_container" 7700/tcp)"
 fi
 for cycle in 1 2; do
   runtime ready
@@ -167,4 +177,7 @@ if [[ $owner == service ]]; then
 fi
 if [[ "$owner" == asset ]]; then
   (cd "$root/asset/backend" && ADDP_TEST_ASSET_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledAssetCategories$' -count=1 -v)
+fi
+if [[ "$owner" == catalog ]]; then
+  (cd "$root/catalog/backend" && ADDP_TEST_CATALOG_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledCatalogFulfillment$' -count=1 -v)
 fi

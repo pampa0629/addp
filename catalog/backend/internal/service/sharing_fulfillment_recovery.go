@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/addp/common/execution"
 	"io"
-	"time"
 
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/common/authorization"
@@ -124,11 +124,9 @@ func resolveSharingFulfillment(ctx context.Context, tx *gorm.DB, tenantID int64,
 	if check.ResolvedAt != nil {
 		return &check, nil
 	}
-	now := time.Now().UTC()
-	if tx.Dialector.Name() == "postgres" {
-		if err := tx.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-			return nil, err
-		}
+	now, clockErr := execution.DatabaseNow(tx.WithContext(ctx))
+	if clockErr != nil {
+		return nil, clockErr
 	}
 	updated := tx.WithContext(ctx).Model(&models.FulfillmentCheck{}).Where(
 		"tenant_id = ? AND catalog_entry_id = ? AND request_id = ? AND resolved_at IS NULL", tenantID, entryID, requestID,

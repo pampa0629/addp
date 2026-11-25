@@ -1522,6 +1522,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Catalog Backend（Meta / Model 同步由进程后台重试，不是启动依赖）
   if [ "$START_CATALOG_BACKEND" = true ]; then
     if check_service_running "catalog" "$CATALOG_BACKEND_PORT"; then
+      addp_dev_prepare_database catalog || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" catalog catalog backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-catalog" &
       CATALOG_PID=$!
       echo $CATALOG_PID > .dev-pids/catalog.pid

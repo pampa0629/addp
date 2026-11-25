@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/addp/common/execution"
 	"math"
 	"net/http"
 	"strings"
@@ -118,11 +119,9 @@ func (s *EntryService) ListSharingDecisionCandidates(ctx context.Context, tenant
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			local := *s
 			local.db = tx
-			now := time.Now().UTC()
-			if tx.Dialector.Name() == "postgres" {
-				if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-					return err
-				}
+			now, clockErr := execution.DatabaseNow(tx)
+			if clockErr != nil {
+				return clockErr
 			}
 			if !sharingUserPermissionsAt(auth, now, "catalog.entry.read", sourceHandlingPermission) {
 				return ErrSharingHandlingForbidden

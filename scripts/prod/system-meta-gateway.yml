@@ -93,6 +93,15 @@ services:
     extends: {file: ../../docker-compose.yml, service: asset-frontend}
     profiles: [module-asset]
     container_name: !reset null
+  catalog-backend:
+    extends: {file: ../../docker-compose.yml, service: catalog-backend}
+    profiles: [module-catalog]
+    container_name: !reset null
+    environment: *endpoints
+  catalog-frontend:
+    extends: {file: ../../docker-compose.yml, service: catalog-frontend}
+    profiles: [module-catalog]
+    container_name: !reset null
   workbench-backend:
     extends: {file: ../../docker-compose.yml, service: workbench-backend}
     profiles: [module-workbench]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/addp/common/execution"
 	"math"
 	"net/http"
 	"strconv"
@@ -41,11 +42,13 @@ type SharingFulfillmentHistory struct {
 	UnissuedReason string     `json:"unissued_reason,omitempty" enums:"relation_exists,window_expired,closed"`
 }
 
-const originalFulfillmentEngine = "CAST(request_binding -> 'path' ->> 'engine_id' AS BIGINT)"
+func originalFulfillmentEngine(db *gorm.DB) string {
+	return integerExpression(db, jsonText(db, "request_binding", "path", "engine_id"))
+}
 
 func (s *EntryService) ownFulfillmentQuery(ctx context.Context, tenantID int64, entryID uuid.UUID, principal int64) *gorm.DB {
 	return s.db.WithContext(ctx).Model(&models.FulfillmentCheck{}).
-		Where("tenant_id = ? AND catalog_entry_id = ? AND request_binding -> 'operator' ->> 'principal_id' = ?",
+		Where("tenant_id = ? AND catalog_entry_id = ? AND "+jsonText(s.db, "request_binding", "operator", "principal_id")+" = ?",
 			tenantID, entryID, strconv.FormatInt(principal, 10))
 }
 
@@ -58,11 +61,9 @@ func (s *EntryService) readFulfillmentSnapshot(ctx context.Context, tenantID int
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		local := *s
 		local.db = tx
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
+		now, clockErr := execution.DatabaseNow(tx)
+		if clockErr != nil {
+			return clockErr
 		}
 		if !sharingUserPermissionsAt(auth, now, "catalog.entry.read", sourceHandlingPermission) {
 			return ErrSharingHandlingForbidden
@@ -121,7 +122,8 @@ func (s *EntryService) ListSharingFulfillments(ctx context.Context, tenantID int
 	}
 	var engines []int64
 	err = s.readFulfillmentSnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService) error {
-		return local.ownFulfillmentQuery(ctx, tenantID, entryID, p).Distinct(originalFulfillmentEngine).Order(originalFulfillmentEngine).Pluck(originalFulfillmentEngine, &engines).Error
+		engine := originalFulfillmentEngine(local.db)
+		return local.ownFulfillmentQuery(ctx, tenantID, entryID, p).Distinct(engine).Order(engine).Pluck(engine, &engines).Error
 	})
 	if err != nil {
 		return nil, 0, err
@@ -146,7 +148,7 @@ func (s *EntryService) ListSharingFulfillments(ctx context.Context, tenantID int
 			return nil
 		}
 		query := func() *gorm.DB {
-			return local.ownFulfillmentQuery(ctx, tenantID, entryID, p).Where(originalFulfillmentEngine+" IN ?", allowed)
+			return local.ownFulfillmentQuery(ctx, tenantID, entryID, p).Where(originalFulfillmentEngine(local.db)+" IN ?", allowed)
 		}
 		if err := query().Count(&total).Error; err != nil {
 			return err
@@ -310,7 +312,7 @@ func (s *EntryService) ListSharingDecisionFulfillments(ctx context.Context, tena
 			return sharingBasisReadError(err)
 		}
 		query := func() *gorm.DB {
-			return local.db.WithContext(ctx).Model(&models.FulfillmentCheck{}).Where("tenant_id = ? AND catalog_entry_id = ? AND request_binding ->> 'decision_id' = ?", tenantID, entryID, decisionID.String())
+			return local.db.WithContext(ctx).Model(&models.FulfillmentCheck{}).Where("tenant_id = ? AND catalog_entry_id = ? AND "+jsonText(local.db, "request_binding", "decision_id")+" = ?", tenantID, entryID, decisionID.String())
 		}
 		if err := query().Count(&total).Error; err != nil {
 			return err

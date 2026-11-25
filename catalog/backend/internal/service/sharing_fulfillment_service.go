@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/addp/common/execution"
 	"net/http"
 	"time"
 
@@ -80,11 +81,9 @@ func (s *EntryService) PrepareSharingFulfillment(ctx context.Context, tenantID i
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND id = ?", tenantID, entryID).Take(&entry).Error; err != nil {
 			return sharingBasisReadError(err)
 		}
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
+		now, clockErr := execution.DatabaseNow(tx)
+		if clockErr != nil {
+			return clockErr
 		}
 		if !sharingUserPermissionsAt(auth, now, "catalog.entry.read", sourceHandlingPermission) {
 			return ErrSharingHandlingForbidden

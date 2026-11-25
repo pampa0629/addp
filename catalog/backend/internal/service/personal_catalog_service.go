@@ -101,7 +101,13 @@ func (s *PersonalCatalogService) ReplaceMarks(ctx context.Context, tenantID, use
 	}
 	now := s.now().UTC()
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if tx.Dialector.Name() == "postgres" {
+		switch tx.Dialector.Name() {
+		case "mysql":
+			if err := tx.Exec(`INSERT INTO entry_mark_locks (tenant_id, user_id, catalog_entry_id) VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE user_id = user_id`, tenantID, userID, entryID).Error; err != nil {
+				return fmt.Errorf("lock Catalog entry marks: %w", err)
+			}
+		case "postgres":
 			lockKey := fmt.Sprintf("catalog-entry-marks:%d:%d:%s", tenantID, userID, entryID)
 			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
 				return fmt.Errorf("lock Catalog entry marks: %w", err)

@@ -6,7 +6,7 @@ addp_prepare_module_database() {
     system)
       "$launch" system go prepare-database system || return $?
       "$launch" system go prepare-database common ;;
-    meta|gateway|inference|workbench|manager|security|orchestrator|monitor|standard|model|service|asset) "$launch" "$module" go prepare-database ;;
+    meta|gateway|inference|workbench|manager|security|orchestrator|monitor|standard|model|service|asset|catalog) "$launch" "$module" go prepare-database ;;
     agent|copilot) "$launch" "$module" python -m prepare_database ;;
     *) echo "Unknown platform database module: $module" >&2; return 1 ;;
   esac
@@ -15,7 +15,7 @@ addp_prepare_module_database() {
 # Prepare only services selected in the verified release after System/Common.
 addp_prepare_selected_databases() {
   local launch=$1 database_services=$2 module service
-  for module in meta gateway inference workbench manager security orchestrator monitor standard model service asset agent copilot; do
+  for module in meta gateway inference workbench manager security orchestrator monitor standard model service asset catalog agent copilot; do
     service="$module-backend"
     if [[ "$module" == gateway ]]; then service=gateway; fi
     if grep -Fxq "$service" <<< "$database_services"; then

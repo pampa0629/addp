@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
+	"github.com/addp/common/execution"
 	"net/http"
-	"time"
 
 	"github.com/addp/catalog/internal/models"
 	shared "github.com/addp/common/authorization"
@@ -96,11 +96,9 @@ func continueSharingFulfillment(ctx context.Context, db *gorm.DB, tenantID int64
 			return ErrSharingDecisionConflict
 		}
 		if current.GrantReconciledAt == nil {
-			now := time.Now().UTC()
-			if tx.Dialector.Name() == "postgres" {
-				if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-					return err
-				}
+			now, clockErr := execution.DatabaseNow(tx)
+			if clockErr != nil {
+				return clockErr
 			}
 			update := tx.Model(&models.FulfillmentCheck{}).Where("tenant_id = ? AND request_id = ? AND grant_reconciled_at IS NULL", tenantID, requestID).Update("grant_reconciled_at", now)
 			if update.Error != nil {

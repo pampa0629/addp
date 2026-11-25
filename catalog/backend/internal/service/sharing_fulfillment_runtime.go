@@ -102,7 +102,10 @@ func (r *SharingFulfillmentReconciliationRunner) reconcileTenant(ctx context.Con
 	// A one-minute grace lets the foreground perform its first post-commit
 	// send; it is not an authorization window or evidence that closure won.
 	cutoff := "CURRENT_TIMESTAMP - INTERVAL '1 minute'"
-	if r.db.Dialector.Name() == "sqlite" {
+	switch r.db.Dialector.Name() {
+	case "mysql":
+		cutoff = "CURRENT_TIMESTAMP(6) - INTERVAL 1 MINUTE"
+	case "sqlite":
 		cutoff = "datetime('now', '-1 minute')"
 	}
 	var failures []error

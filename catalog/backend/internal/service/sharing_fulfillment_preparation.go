@@ -100,7 +100,7 @@ func prepareSharingFulfillment(ctx context.Context, tx *gorm.DB, tenantID int64,
 	check := models.FulfillmentCheck{RequestID: input.RequestID, TenantID: tenantID, CatalogEntryID: entryID, RequestBinding: binding}
 	if err := tx.WithContext(ctx).Create(&check).Error; err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "fulfillment_checks_pkey" {
+		if errors.Is(err, gorm.ErrDuplicatedKey) || errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "fulfillment_checks_pkey" {
 			// Concurrent reuse on another aggregate cannot be serialized by this
 			// entry lock. Abort the caller transaction, never continue after 23505.
 			return nil, false, ErrSharingDecisionConflict

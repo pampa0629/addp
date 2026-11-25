@@ -50,27 +50,9 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	newEntry := func(tenant int64) (models.Entry, models.SourceBinding) {
-		t.Helper()
-		name, description, established := "Fixture", "Business prose", true
-		entry := models.Entry{ID: uuid.New(), TenantID: tenant, EntryType: models.EntryTypeDataItem,
-			EntryStatus: models.EntryStatusActive, GovernanceStatus: models.GovernanceStatusCurated,
-			BusinessName: &name, BusinessDescription: &description, Visibility: models.VisibilityInventory,
-			BusinessResponsibilityEstablished: &established, Version: 1}
-		if err := db.Create(&entry).Error; err != nil {
-			t.Fatal(err)
-		}
-		binding := models.SourceBinding{ID: uuid.New(), TenantID: tenant, CatalogEntryID: entry.ID,
-			SourceModule: models.SourceModuleMeta, SourceType: models.SourceTypeDataItem, SourceIdentity: uuid.NewString(),
-			SourceStatus: models.SourceStatusActive, SourceVersion: "00000000000000000001", IsCurrent: true,
-			BoundAt: time.Now(), ObservedAt: time.Now(), ObservedSnapshot: commonModels.JSONMap{"name": "fixture"}}
-		if err := db.Create(&binding).Error; err != nil {
-			t.Fatal(err)
-		}
-		return entry, binding
-	}
-	entry, binding := newEntry(7)
-	other, _ := newEntry(7)
+
+	entry, binding := createFulfillmentEntry(t, db, 7)
+	other, _ := createFulfillmentEntry(t, db, 7)
 	responsibility := models.Responsibility{ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID,
 		Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 91,
 		Status: models.ResponsibilityStatusActive, ObservedSnapshot: commonModels.JSONMap{}, VerifiedAt: time.Now()}
@@ -205,7 +187,7 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 		t.Fatal("cross-tenant coordination accepted")
 	}
 	t.Run("responsibility is independent of completed curation", func(t *testing.T) {
-		candidate, _ := newEntry(7)
+		candidate, _ := createFulfillmentEntry(t, db, 7)
 		if err := db.Model(&candidate).Update("governance_status", models.GovernanceStatusDiscovered).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -221,7 +203,7 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 		}
 	})
 	t.Run("prepare and basis change serialize on the entry", func(t *testing.T) {
-		candidate, _ := newEntry(7)
+		candidate, _ := createFulfillmentEntry(t, db, 7)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		ready, release := make(chan struct{}), make(chan struct{})
@@ -257,7 +239,7 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 			t.Fatalf("concurrent basis change escaped pending guard: %v", err)
 		}
 		// Opposite order: a committed deprecation prevents a later preparation.
-		first, _ := newEntry(7)
+		first, _ := createFulfillmentEntry(t, db, 7)
 		if err := db.Model(&first).Update("governance_status", models.GovernanceStatusDeprecated).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -266,4 +248,24 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 			t.Fatal("preparation escaped an earlier basis change")
 		}
 	})
+}
+
+func createFulfillmentEntry(t *testing.T, db *gorm.DB, tenant int64) (models.Entry, models.SourceBinding) {
+	t.Helper()
+	name, description, established := "Fixture", "Business prose", true
+	entry := models.Entry{ID: uuid.New(), TenantID: tenant, EntryType: models.EntryTypeDataItem,
+		EntryStatus: models.EntryStatusActive, GovernanceStatus: models.GovernanceStatusCurated,
+		BusinessName: &name, BusinessDescription: &description, Visibility: models.VisibilityInventory,
+		BusinessResponsibilityEstablished: &established, Version: 1}
+	if err := db.Create(&entry).Error; err != nil {
+		t.Fatal(err)
+	}
+	binding := models.SourceBinding{ID: uuid.New(), TenantID: tenant, CatalogEntryID: entry.ID,
+		SourceModule: models.SourceModuleMeta, SourceType: models.SourceTypeDataItem, SourceIdentity: uuid.NewString(),
+		SourceStatus: models.SourceStatusActive, SourceVersion: "00000000000000000001", IsCurrent: true,
+		BoundAt: time.Now(), ObservedAt: time.Now(), ObservedSnapshot: commonModels.JSONMap{"name": "fixture"}}
+	if err := db.Create(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	return entry, binding
 }

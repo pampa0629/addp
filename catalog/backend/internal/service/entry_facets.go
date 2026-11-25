@@ -173,11 +173,12 @@ func (s *EntryService) primaryDomainFacetCounts(ctx context.Context, tenantID in
 		return nil, err
 	}
 	var ownerManaged []facetCountRow
+	domainIDValue := jsonText(base, "source_facet.observed_snapshot", "domain_id")
 	if err := base.
 		Joins("JOIN catalog.source_bindings AS source_facet ON source_facet.catalog_entry_id = entries.id AND source_facet.tenant_id = entries.tenant_id AND source_facet.is_current = ?", true).
-		Where("source_facet.source_module IN ? AND source_facet.observed_snapshot ->> 'domain_id' <> ''", []string{"model", "standard"}).
-		Select("CAST(source_facet.observed_snapshot ->> 'domain_id' AS BIGINT) AS id, COUNT(DISTINCT entries.id) AS count").
-		Group("CAST(source_facet.observed_snapshot ->> 'domain_id' AS BIGINT)").Scan(&ownerManaged).Error; err != nil {
+		Where("source_facet.source_module IN ? AND "+domainIDValue+" <> ''", []string{"model", "standard"}).
+		Select(integerExpression(base, domainIDValue) + " AS id, COUNT(DISTINCT entries.id) AS count").
+		Group(integerExpression(base, domainIDValue)).Scan(&ownerManaged).Error; err != nil {
 		return nil, err
 	}
 	mergeFacetCounts(counts, ownerManaged)
@@ -250,11 +251,12 @@ func (s *EntryService) sourceEngineFacetCounts(ctx context.Context, tenantID int
 		base = base.Where("entries.entry_type = ?", filter.EntryType)
 	}
 	var rows []facetCountRow
+	engineIDValue := jsonText(base, "source_facet.observed_snapshot", "engine_id")
 	if err := base.
 		Joins("JOIN catalog.source_bindings AS source_facet ON source_facet.catalog_entry_id = entries.id AND source_facet.tenant_id = entries.tenant_id AND source_facet.is_current = ?", true).
-		Where("source_facet.observed_snapshot ->> 'engine_id' <> ''").
-		Select("CAST(source_facet.observed_snapshot ->> 'engine_id' AS BIGINT) AS id, COUNT(DISTINCT entries.id) AS count").
-		Group("CAST(source_facet.observed_snapshot ->> 'engine_id' AS BIGINT)").Scan(&rows).Error; err != nil {
+		Where("" + engineIDValue + " <> ''").
+		Select(integerExpression(base, engineIDValue) + " AS id, COUNT(DISTINCT entries.id) AS count").
+		Group(integerExpression(base, engineIDValue)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	counts := make(map[int64]int64, len(rows))

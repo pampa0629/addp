@@ -157,7 +157,7 @@ func (w *ProjectionWorker) claimNext(ctx context.Context) (*models.ProjectionTas
 		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 			"status = ? AND available_at <= ?", "pending", now,
 		).Order("id ASC").Limit(1)
-		if tx.Dialector.Name() == "postgres" {
+		if tx.Dialector.Name() != "sqlite" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		}
 		result := query.Find(&task)

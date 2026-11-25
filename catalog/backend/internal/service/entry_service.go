@@ -346,7 +346,7 @@ func (s *EntryService) List(ctx context.Context, tenantID int64, access EntryAcc
 	filter.SourceIdentity = strings.TrimSpace(filter.SourceIdentity)
 	filter.CoverageDimension = strings.TrimSpace(filter.CoverageDimension)
 	filter.CoverageState = strings.TrimSpace(filter.CoverageState)
-	if tenantID <= 0 || filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 200 || !validEntryListFilter(filter) {
+	if tenantID <= 0 || filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 200 || !s.validEntryListFilter(filter) {
 		return nil, ErrInvalidPage
 	}
 	query, err := s.entriesForViewQuery(ctx, tenantID, access, filter.View)
@@ -397,7 +397,7 @@ func (s *EntryService) List(ctx context.Context, tenantID int64, access EntryAcc
 		query = applyAccountableDepartmentFilter(query, filter.DepartmentID)
 	}
 	if filter.SourceEngineID > 0 {
-		query = query.Where("CAST(source.observed_snapshot ->> 'engine_id' AS BIGINT) = ?", filter.SourceEngineID)
+		query = query.Where(integerExpression(query, jsonText(query, "source.observed_snapshot", "engine_id"))+" = ?", filter.SourceEngineID)
 	}
 	if filter.CoverageDimension != "" {
 		query = applyMissingCoverageFilter(query, filter.CoverageDimension)
@@ -440,8 +440,8 @@ func (s *EntryService) List(ctx context.Context, tenantID int64, access EntryAcc
 	return &EntryListResult{Data: data, Total: total, Page: filter.Page, PageSize: filter.PageSize, TotalPages: totalPages(total, filter.PageSize)}, nil
 }
 
-func validEntryListFilter(filter EntryListFilter) bool {
-	_, validCoverageDimension := coveragePredicateFor(filter.CoverageDimension)
+func (s *EntryService) validEntryListFilter(filter EntryListFilter) bool {
+	_, validCoverageDimension := coveragePredicateFor(s.db, filter.CoverageDimension)
 	validCoverageFilter := (filter.CoverageDimension == "" && filter.CoverageState == "") ||
 		(filter.View == EntryViewInventory && validCoverageDimension && filter.CoverageState == CoverageStateMissing && filter.Search == "")
 	return oneOf(filter.View, EntryViewGovernance, EntryViewInventory) &&
@@ -481,7 +481,7 @@ func applyPrimaryDomainFilter(query *gorm.DB, domainID int64) *gorm.DB {
 		  AND domain_source_filter.catalog_entry_id = entries.id
 		  AND domain_source_filter.is_current = TRUE
 		  AND domain_source_filter.source_module IN ('model', 'standard')
-		  AND domain_source_filter.observed_snapshot ->> 'domain_id' = ?
+		  AND `+jsonText(query, "domain_source_filter.observed_snapshot", "domain_id")+` = ?
 	)`, domainID, fmt.Sprintf("%d", domainID))
 }
 

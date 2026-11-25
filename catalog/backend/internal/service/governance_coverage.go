@@ -26,37 +26,11 @@ type governanceCoveragePredicate struct {
 }
 
 const (
-	coverageAllEntriesPredicate              = "TRUE"
-	coveragePrimaryDomainApplicablePredicate = `NOT EXISTS (
-		SELECT 1 FROM catalog.source_bindings source
-		WHERE source.tenant_id = entries.tenant_id
-		  AND source.catalog_entry_id = entries.id
-		  AND source.is_current = TRUE
-		  AND source.source_module = 'standard'
-		  AND source.source_type IN ('metric','element','glossary','code_set','document')
-		  AND source.observed_snapshot ->> 'scope_type' IN ('platform', 'tenant_common')
-		  AND COALESCE(source.observed_snapshot ->> 'domain_id', '') = ''
-	)`
+	coverageAllEntriesPredicate = "TRUE"
+
 	coverageStandardSourcePredicate     = `EXISTS (SELECT 1 FROM catalog.source_bindings definition_source WHERE definition_source.tenant_id=entries.tenant_id AND definition_source.catalog_entry_id=entries.id AND definition_source.is_current=TRUE AND definition_source.source_module='standard')`
 	coverageGlossaryApplicablePredicate = `NOT (` + coverageStandardSourcePredicate + `)`
-	coverageBusinessDefinitionPredicate = `((NOT (` + coverageStandardSourcePredicate + `) AND entries.business_name IS NOT NULL AND TRIM(entries.business_name)<>'' AND entries.business_description IS NOT NULL AND TRIM(entries.business_description)<>'') OR EXISTS (SELECT 1 FROM catalog.source_bindings definition_source WHERE definition_source.tenant_id=entries.tenant_id AND definition_source.catalog_entry_id=entries.id AND definition_source.is_current=TRUE AND definition_source.source_module='standard' AND definition_source.observed_snapshot->'definition_complete'='true'))`
 
-	coveragePrimaryDomainPredicate = `(
-		EXISTS (
-			SELECT 1 FROM catalog.semantic_associations semantic
-			WHERE semantic.tenant_id = entries.tenant_id
-			  AND semantic.catalog_entry_id = entries.id
-			  AND semantic.semantic_type = 'domain'
-			  AND semantic.relation_role = 'primary'
-		) OR EXISTS (
-			SELECT 1 FROM catalog.source_bindings source
-			WHERE source.tenant_id = entries.tenant_id
-			  AND source.catalog_entry_id = entries.id
-			  AND source.is_current = TRUE
-			  AND source.source_module IN ('model', 'standard')
-			  AND COALESCE(source.observed_snapshot ->> 'domain_id', '') <> ''
-		)
-	)`
 	coverageGlossaryPredicate = `EXISTS (
 		SELECT 1 FROM catalog.semantic_associations semantic
 		WHERE semantic.tenant_id = entries.tenant_id
@@ -96,12 +70,52 @@ func coverageResponsibilityPredicate(role string) string {
 	)`, role)
 }
 
-func coveragePredicateFor(dimension string) (governanceCoveragePredicate, bool) {
+func coveragePrimaryDomainApplicablePredicate(db *gorm.DB) string {
+	return `NOT EXISTS (
+		SELECT 1 FROM catalog.source_bindings source
+		WHERE source.tenant_id = entries.tenant_id
+		  AND source.catalog_entry_id = entries.id
+		  AND source.is_current = TRUE
+		  AND source.source_module = 'standard'
+		  AND source.source_type IN ('metric','element','glossary','code_set','document')
+		  AND ` + jsonText(db, "source.observed_snapshot", "scope_type") + ` IN ('platform', 'tenant_common')
+		  AND COALESCE(` + jsonText(db, "source.observed_snapshot", "domain_id") + `, '') = ''
+	)`
+}
+
+func coveragePrimaryDomainPredicate(db *gorm.DB) string {
+	return `(
+		EXISTS (
+			SELECT 1 FROM catalog.semantic_associations semantic
+			WHERE semantic.tenant_id = entries.tenant_id
+			  AND semantic.catalog_entry_id = entries.id
+			  AND semantic.semantic_type = 'domain'
+			  AND semantic.relation_role = 'primary'
+		) OR EXISTS (
+			SELECT 1 FROM catalog.source_bindings source
+			WHERE source.tenant_id = entries.tenant_id
+			  AND source.catalog_entry_id = entries.id
+			  AND source.is_current = TRUE
+			  AND source.source_module IN ('model', 'standard')
+			  AND COALESCE(` + jsonText(db, "source.observed_snapshot", "domain_id") + `, '') <> ''
+		)
+	)`
+}
+
+func coverageBusinessDefinitionPredicate(db *gorm.DB) string {
+	complete := "definition_source.observed_snapshot->'definition_complete'='true'"
+	if db.Dialector.Name() == "mysql" {
+		complete = "JSON_EXTRACT(definition_source.observed_snapshot,'$.definition_complete')=CAST('true' AS JSON)"
+	}
+	return `((NOT (` + coverageStandardSourcePredicate + `) AND entries.business_name IS NOT NULL AND TRIM(entries.business_name)<>'' AND entries.business_description IS NOT NULL AND TRIM(entries.business_description)<>'') OR EXISTS (SELECT 1 FROM catalog.source_bindings definition_source WHERE definition_source.tenant_id=entries.tenant_id AND definition_source.catalog_entry_id=entries.id AND definition_source.is_current=TRUE AND definition_source.source_module='standard' AND ` + complete + `))`
+}
+
+func coveragePredicateFor(db *gorm.DB, dimension string) (governanceCoveragePredicate, bool) {
 	switch dimension {
 	case CoverageDimensionBusinessDefinition:
-		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageBusinessDefinitionPredicate}, true
+		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageBusinessDefinitionPredicate(db)}, true
 	case CoverageDimensionPrimaryDomain:
-		return governanceCoveragePredicate{applicable: coveragePrimaryDomainApplicablePredicate, covered: coveragePrimaryDomainPredicate}, true
+		return governanceCoveragePredicate{applicable: coveragePrimaryDomainApplicablePredicate(db), covered: coveragePrimaryDomainPredicate(db)}, true
 	case CoverageDimensionAccountableDepartment:
 		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageResponsibilityPredicate(models.ResponsibilityRoleAccountableDepartment)}, true
 	case CoverageDimensionBusinessOwner:
@@ -118,7 +132,7 @@ func coveragePredicateFor(dimension string) (governanceCoveragePredicate, bool) 
 }
 
 func applyMissingCoverageFilter(query *gorm.DB, dimension string) *gorm.DB {
-	predicate, _ := coveragePredicateFor(dimension)
+	predicate, _ := coveragePredicateFor(query, dimension)
 	return query.
 		Where("entries.entry_status = ?", models.EntryStatusActive).
 		Where("(" + predicate.applicable + ") AND NOT (" + predicate.covered + ")")
@@ -170,13 +184,13 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 		ComponentStandardMappingCovered int64
 	}
 	var aggregate aggregateRow
-	businessDefinition, _ := coveragePredicateFor(CoverageDimensionBusinessDefinition)
-	primaryDomain, _ := coveragePredicateFor(CoverageDimensionPrimaryDomain)
-	accountableDepartment, _ := coveragePredicateFor(CoverageDimensionAccountableDepartment)
-	businessOwner, _ := coveragePredicateFor(CoverageDimensionBusinessOwner)
-	dataSteward, _ := coveragePredicateFor(CoverageDimensionDataSteward)
-	glossary, _ := coveragePredicateFor(CoverageDimensionGlossary)
-	componentMapping, _ := coveragePredicateFor(CoverageDimensionComponentStandardMapping)
+	businessDefinition, _ := coveragePredicateFor(s.db, CoverageDimensionBusinessDefinition)
+	primaryDomain, _ := coveragePredicateFor(s.db, CoverageDimensionPrimaryDomain)
+	accountableDepartment, _ := coveragePredicateFor(s.db, CoverageDimensionAccountableDepartment)
+	businessOwner, _ := coveragePredicateFor(s.db, CoverageDimensionBusinessOwner)
+	dataSteward, _ := coveragePredicateFor(s.db, CoverageDimensionDataSteward)
+	glossary, _ := coveragePredicateFor(s.db, CoverageDimensionGlossary)
+	componentMapping, _ := coveragePredicateFor(s.db, CoverageDimensionComponentStandardMapping)
 	selectExpression := fmt.Sprintf(`
 		COUNT(*) AS total_entries,
 		COALESCE(SUM(CASE WHEN entries.governance_status = 'discovered' THEN 1 ELSE 0 END), 0) AS discovered,

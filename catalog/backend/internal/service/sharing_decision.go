@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/execution"
 	"math"
 	"strconv"
 	"strings"
@@ -202,11 +203,9 @@ func (s *EntryService) readSharingHistorySnapshot(ctx context.Context, tenantID 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		local := *s
 		local.db = tx
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
+		now, clockErr := execution.DatabaseNow(tx)
+		if clockErr != nil {
+			return clockErr
 		}
 		if !sharingPermissionsAt(auth, now) {
 			return ErrSharingConfirmationForbidden
@@ -413,11 +412,9 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 			}
 			return err
 		}
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
+		now, clockErr := execution.DatabaseNow(tx)
+		if clockErr != nil {
+			return clockErr
 		}
 		if !authorization.SharingExpiryFuture(input.ExpiryMode, input.ExpiresAt, now) {
 			return ErrInvalidEntryUpdate
@@ -454,6 +451,9 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 			RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action, SelfBeneficiary: input.RecipientType == "user" && input.RecipientID == principal,
 			ConfirmerInProjectGroup: inGroup, Reason: input.Reason, ExpiryMode: input.ExpiryMode, ExpiresAt: input.ExpiresAt, CreatedAt: now}
 		if err := tx.Create(&decision).Error; err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return ErrSharingDecisionConflict
+			}
 			return err
 		}
 		if err := tx.Model(&entry).Updates(map[string]any{"version": decision.EntryVersion, "updated_at": now}).Error; err != nil {
