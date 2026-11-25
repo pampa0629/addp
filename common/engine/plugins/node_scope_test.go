@@ -16,6 +16,7 @@ func TestBusinessCatalogNodeScopes(t *testing.T) {
 		node, item resourcetree.ResourceType
 		path       []string
 	}{
+		{"mongodb", "database", "collection", []string{"analytics"}},
 		{"tidb", "database", "table", []string{"a.b"}},
 		{"gaussdb", "schema", "table", []string{"a.b"}},
 		{"ftp", "directory", "file", []string{"reports", "2026"}},

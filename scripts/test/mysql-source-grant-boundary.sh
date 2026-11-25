@@ -79,7 +79,8 @@ VALUES (12,7,'Grant records','postgresql',JSON_OBJECT(),JSON_OBJECT('id',12)),
        (81,7,'Catalog schema','gaussdb',JSON_OBJECT(),JSON_OBJECT('id',81)),
        (82,7,'Catalog directory','ftp',JSON_OBJECT(),JSON_OBJECT('id',82)),
        (83,7,'Catalog prefix','rustfs',JSON_OBJECT(),JSON_OBJECT('id',83)),
-       (84,7,'Catalog database','mysql',JSON_OBJECT(),JSON_OBJECT('id',84));
+       (84,7,'Catalog database','mysql',JSON_OBJECT(),JSON_OBJECT('id',84)),
+       (85,7,'Document database','mongodb',JSON_OBJECT(),JSON_OBJECT('id',85));
 CREATE TABLE sample_audit (id INT PRIMARY KEY);
 SQL
 # Refuse a deployment with an inherited write path, even at a current revision.

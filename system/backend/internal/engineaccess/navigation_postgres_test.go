@@ -89,7 +89,7 @@ func exerciseEngineNavigation(t *testing.T, db *gorm.DB, s *Service, ctx context
 			t.Error(err)
 		}
 	}()
-	for _, kind := range []string{"postgresql", "gaussdb", "mysql", "tidb", "nfs", "ftp", "minio", "rustfs"} {
+	for _, kind := range []string{"postgresql", "gaussdb", "mysql", "tidb", "mongodb", "nfs", "ftp", "minio", "rustfs"} {
 		if err := db.Exec("UPDATE system.engines SET engine_type=? WHERE id=? AND tenant_id=?", kind, target.EngineID, actor.TenantID).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -107,6 +107,8 @@ func exerciseEngineNavigation(t *testing.T, db *gorm.DB, s *Service, ctx context
 		check([]plugin.EngineCatalogPath{path}, []bool{true})
 		future := plugin.FileItemPath(target.EngineID, "future/new.csv")
 		switch kind {
+		case "mongodb":
+			future = plugin.EngineCatalogBranchLeafPath(plugin.DynamicSchemaCatalogModel(), target.EngineID, "database", "future", "collection", "collection", "new_collection")
 		case "mysql", "tidb":
 			future = plugin.TabularItemPath(target.EngineID, "database", "future", "new_table")
 		case "postgresql", "gaussdb":

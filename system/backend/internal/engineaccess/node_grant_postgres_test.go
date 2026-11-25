@@ -86,9 +86,17 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrGrantRelationExists) {
 			t.Fatalf("duplicate scope relation: %v", err)
 		}
-		current := plugin.TabularItemPath(base.EngineID, namespace, scope.Segments[1].Name, "current")
-		future := plugin.TabularItemPath(base.EngineID, namespace, scope.Segments[1].Name, "identified_later")
-		sibling := plugin.TabularItemPath(base.EngineID, namespace, scope.Segments[1].Name+"_sibling", "current")
+		model := plugin.TabularCatalogModel(namespace)
+		if kind == "mongodb" {
+			model = plugin.DynamicSchemaCatalogModel()
+		}
+		leaf := model.Levels[1]
+		item := func(database, name string) plugin.EngineCatalogPath {
+			return plugin.EngineCatalogBranchLeafPath(model, base.EngineID, namespace, database, leaf.Term, leaf.Kinds[0], name)
+		}
+		current := item(scope.Segments[1].Name, "current")
+		future := item(scope.Segments[1].Name, "identified_later")
+		sibling := item(scope.Segments[1].Name+"_sibling", "current")
 		read := func(action string, path plugin.EngineCatalogPath, covered bool) {
 			t.Helper()
 			for _, nodeFirst := range []bool{false, true} {
@@ -146,7 +154,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		// Engine root grants explicitly distinguish direct and recursive coverage.
 		rootCommand := command
 		rootCommand.RequestID = uuid.New()
-		rootCommand.CatalogPath = plugin.EngineCatalogRootPath(plugin.TabularCatalogModel(namespace), base.EngineID)
+		rootCommand.CatalogPath = plugin.EngineCatalogRootPath(model, base.EngineID)
 		direct, err := service.CreateIndependentGrant(ctx, rootCommand)
 		if err != nil {
 			t.Fatal(err)
@@ -269,7 +277,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 	}
 	t.Run("persistent PG node grants use current item facts and independent sources", func(t *testing.T) { namespaceScope(t, "postgresql", "schema") })
 	t.Run("gaussdb catalog node grant", func(t *testing.T) { namespaceScope(t, "gaussdb", "schema") })
-	for _, kind := range []string{"mysql", "tidb"} {
+	for _, kind := range []string{"mysql", "tidb", "mongodb"} {
 		t.Run(kind+" database node grant", func(t *testing.T) { namespaceScope(t, kind, "database") })
 	}
 	directoryScope := func(t *testing.T, kind string) {
