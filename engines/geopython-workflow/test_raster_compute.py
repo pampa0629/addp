@@ -5258,7 +5258,7 @@ def test_focal_statistics_metadata_and_executable_example(tmp_path):
     assert not params['window_size']['required'] and params['window_size']['show_when']=={'window_type':['square_pixels']}
     assert '3、5或7' in params['window_size']['description']
     assert '7×7' in params['weights']['description']
-    assert '最多5×5' in params['radius_metres']['description']
+    assert '候选外接窗口最多7×7' in params['radius_metres']['description']
     assert 'mode' in params['method']['description'] and '并列' in params['method']['description']
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster'] and spec['output_ports'][0]['type']=='raster'
