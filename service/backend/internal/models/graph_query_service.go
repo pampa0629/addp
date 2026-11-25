@@ -3,27 +3,27 @@ package models
 import (
 	"time"
 
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/infra/database/dbtypes"
 )
 
 // GraphQueryService 图查询服务模型（对应 service.graph_query_services 表）
 type GraphQueryService struct {
 	ID uint `gorm:"primarykey" json:"id"`
 
-	TenantID    uint                     `gorm:"not null;index:idx_graph_query_services_tenant" json:"tenant_id"`
-	ServiceName string                   `gorm:"not null;size:255;uniqueIndex:unique_graph_service_name" json:"service_name"`
-	Title       string                   `gorm:"not null;size:255" json:"title"`
-	Description string                   `gorm:"type:text" json:"description"`
-	Keywords    commonModels.StringArray `gorm:"type:text[]" json:"keywords"`
+	TenantID    uint                `gorm:"not null;index:idx_graph_query_services_tenant" json:"tenant_id"`
+	ServiceName string              `gorm:"not null;size:255;uniqueIndex:unique_graph_service_name" json:"service_name"`
+	Title       string              `gorm:"not null;size:255" json:"title"`
+	Description string              `gorm:"type:text" json:"description"`
+	Keywords    dbtypes.StringArray `gorm:"type:text[]" json:"keywords"`
 
 	EngineID     uint   `gorm:"not null;index:idx_graph_query_services_engine" json:"engine_id"`
 	DatabaseName string `gorm:"size:255;not null;default:'neo4j'" json:"database_name"`
 
 	// 配置类型: 'shape' | 'cypher'
-	ConfigType  string                   `gorm:"size:50;not null;check:config_type IN ('shape', 'cypher')" json:"config_type"`
-	NodeShape   string                   `gorm:"size:255" json:"node_shape,omitempty"`
-	NodeLabels  commonModels.StringArray `gorm:"type:text[]" json:"node_labels,omitempty"`
-	CypherQuery string                   `gorm:"type:text" json:"cypher_query,omitempty"`
+	ConfigType  string              `gorm:"size:50;not null;check:config_type IN ('shape', 'cypher')" json:"config_type"`
+	NodeShape   string              `gorm:"size:255" json:"node_shape,omitempty"`
+	NodeLabels  dbtypes.StringArray `gorm:"type:text[]" json:"node_labels,omitempty"`
+	CypherQuery string              `gorm:"type:text" json:"cypher_query,omitempty"`
 
 	// 数据配置（JSONB）— 同时存储模式特定配置和参数定义
 	// shape 模式: {"properties":["id","name"],"filterable_properties":["name"]}

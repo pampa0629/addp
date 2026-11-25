@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/infra/database/dbtypes"
 )
 
 // RegisteredService 注册服务模型
@@ -11,11 +11,11 @@ type RegisteredService struct {
 	ID uint `gorm:"primarykey" json:"id"`
 
 	// 基本信息
-	TenantID    uint                     `gorm:"not null;index:idx_registered_services_tenant" json:"tenant_id"`
-	ServiceName string                   `gorm:"not null;size:255;uniqueIndex:unique_registered_service_name" json:"service_name"`
-	Title       string                   `gorm:"not null;size:255" json:"title"`
-	Description string                   `gorm:"type:text" json:"description"`
-	Keywords    commonModels.StringArray `gorm:"type:text[]" json:"keywords"`
+	TenantID    uint                `gorm:"not null;index:idx_registered_services_tenant" json:"tenant_id"`
+	ServiceName string              `gorm:"not null;size:255;uniqueIndex:unique_registered_service_name" json:"service_name"`
+	Title       string              `gorm:"not null;size:255" json:"title"`
+	Description string              `gorm:"type:text" json:"description"`
+	Keywords    dbtypes.StringArray `gorm:"type:text[]" json:"keywords"`
 
 	// 服务类型
 	ServiceType string `gorm:"size:50;not null;check:service_type IN ('wms', 'wfs', 'wmts', 'ogc_api', 'xyz', 'rest');index:idx_registered_services_type" json:"service_type"`

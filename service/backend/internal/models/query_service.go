@@ -5,7 +5,7 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/infra/database/dbtypes"
 )
 
 // QueryService 查询服务模型
@@ -14,11 +14,11 @@ type QueryService struct {
 	Version int64 `gorm:"type:bigint;not null;default:1;check:chk_query_service_version,version > 0" json:"version"`
 
 	// 基本信息
-	TenantID    uint                     `gorm:"not null;index:idx_query_services_tenant" json:"tenant_id"`
-	ServiceName string                   `gorm:"not null;size:255;uniqueIndex:unique_query_service_name" json:"service_name"`
-	Title       string                   `gorm:"not null;size:255" json:"title"`
-	Description string                   `gorm:"type:text" json:"description"`
-	Keywords    commonModels.StringArray `gorm:"type:text[]" json:"keywords"`
+	TenantID    uint                `gorm:"not null;index:idx_query_services_tenant" json:"tenant_id"`
+	ServiceName string              `gorm:"not null;size:255;uniqueIndex:unique_query_service_name" json:"service_name"`
+	Title       string              `gorm:"not null;size:255" json:"title"`
+	Description string              `gorm:"type:text" json:"description"`
+	Keywords    dbtypes.StringArray `gorm:"type:text[]" json:"keywords"`
 
 	// 配置方式（互斥）
 	ConfigType string `gorm:"size:50;not null;check:config_type IN ('table', 'sql', 'analytical');index:idx_query_services_config_type" json:"config_type"`

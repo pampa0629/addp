@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/infra/database/dbtypes"
 	commonJSON "github.com/addp/common/jsonmap"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -72,7 +72,7 @@ func (s *TileServiceService) CreateService(ctx context.Context, req *models.Crea
 		ServiceName:  req.ServiceName,
 		Title:        req.Title,
 		Description:  req.Description,
-		Keywords:     commonModels.StringArray(req.Keywords),
+		Keywords:     dbtypes.StringArray(req.Keywords),
 		DefaultSRID:  defaultSRID,
 		Protocols:    protocols,
 		PublicAccess: req.PublicAccess,
@@ -188,7 +188,7 @@ func (s *TileServiceService) UpdateService(id, tenantID uint, req *models.Update
 		updates["description"] = *req.Description
 	}
 	if req.Keywords != nil {
-		updates["keywords"] = commonModels.StringArray(req.Keywords)
+		updates["keywords"] = dbtypes.StringArray(req.Keywords)
 	}
 	if req.Protocols != nil {
 		// 合并现有协议配置和新配置

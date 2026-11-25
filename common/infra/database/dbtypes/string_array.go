@@ -1,4 +1,5 @@
-package models
+// Package dbtypes provides persistence types shared by platform database consumers.
+package dbtypes
 
 import (
 	"context"

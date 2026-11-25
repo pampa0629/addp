@@ -13,8 +13,8 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/service/internal/models"
@@ -206,7 +206,7 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		ServiceName: req.ServiceName,
 		Title:       req.Title,
 		Description: req.Description,
-		Keywords:    commonModels.StringArray(req.Keywords),
+		Keywords:    dbtypes.StringArray(req.Keywords),
 
 		ConfigType:      req.ConfigType,
 		EngineID:        req.EngineID,
@@ -799,7 +799,7 @@ func (s *QueryServiceService) UpdateService(ctx context.Context, id, tenantID ui
 			item.Description = *req.Description
 		}
 		if req.Keywords != nil {
-			item.Keywords = commonModels.StringArray(req.Keywords)
+			item.Keywords = dbtypes.StringArray(req.Keywords)
 		}
 		if req.DataConfig != nil {
 			mutableConfig, err := queryServiceMutableDataConfig(req.DataConfig, item.ConfigType)
