@@ -48,6 +48,15 @@ services:
     extends: {file: ../../docker-compose.yml, service: orchestrator-frontend}
     profiles: [module-orchestrator]
     container_name: !reset null
+  monitor-backend:
+    extends: {file: ../../docker-compose.yml, service: monitor-backend}
+    profiles: [module-monitor]
+    container_name: !reset null
+    environment: *endpoints
+  monitor-frontend:
+    extends: {file: ../../docker-compose.yml, service: monitor-frontend}
+    profiles: [module-monitor]
+    container_name: !reset null
   workbench-backend:
     extends: {file: ../../docker-compose.yml, service: workbench-backend}
     profiles: [module-workbench]

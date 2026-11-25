@@ -22,14 +22,6 @@ type Config struct {
 	ServerPort      string
 	LogObserverNode string
 
-	// 数据库配置
-	DatabaseHost     string
-	DatabasePort     string
-	DatabaseUser     string
-	DatabasePassword string
-	DatabaseName     string
-	DatabaseSSLMode  string
-
 	// Redis 配置
 	RedisHost     string
 	RedisPort     string
@@ -103,13 +95,6 @@ func LoadConfig() (*Config, error) {
 		LogObserverNode: os.Getenv("ADDP_HOST_NODE_NAME"),
 		ServerPort:      getEnvOrDefault("MONITOR_BACKEND_PORT", "8100"),
 
-		DatabaseHost:     getEnvOrDefault("POSTGRES_HOST", "localhost"),
-		DatabasePort:     getEnvOrDefault("POSTGRES_PORT", "15432"),
-		DatabaseUser:     getEnvOrDefault("POSTGRES_USER", "addp"),
-		DatabasePassword: getEnvOrDefault("POSTGRES_PASSWORD", "addp123"),
-		DatabaseName:     getEnvOrDefault("POSTGRES_DB", "addp"),
-		DatabaseSSLMode:  getEnvOrDefault("POSTGRES_SSLMODE", "disable"),
-
 		RedisHost:     getEnvOrDefault("REDIS_HOST", "localhost"),
 		RedisPort:     getEnvOrDefault("REDIS_PORT", "16379"),
 		RedisPassword: os.Getenv("REDIS_PASSWORD"),
@@ -162,11 +147,11 @@ func boolEnv(key string, defaultValue bool) (bool, error) {
 	return parsed, nil
 }
 
-func (c *Config) PlatformDatabase() database.Config {
+func PlatformDatabase() database.Config {
 	return database.Config{
-		Host: c.DatabaseHost, Port: c.DatabasePort,
-		User: c.DatabaseUser, Password: c.DatabasePassword,
-		DBName: c.DatabaseName, SSLMode: c.DatabaseSSLMode,
+		Host: getEnvOrDefault("POSTGRES_HOST", "localhost"), Port: getEnvOrDefault("POSTGRES_PORT", "15432"),
+		DBName: getEnvOrDefault("POSTGRES_DB", "addp"), SSLMode: getEnvOrDefault("POSTGRES_SSLMODE", "disable"),
+		Schema: "monitor",
 	}
 }
 

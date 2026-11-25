@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -46,7 +46,7 @@ if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
 fi
 
 case "$test_group" in
-    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
+    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
         if [ "$local_disposable" != true ]; then
             echo "$test_group requires a gate-owned instance (--local-disposable)" >&2
             exit 2
@@ -125,6 +125,7 @@ mysql['environment']['MYSQL_DATABASE'] = {
     'platform-service-repository': 'service',
     'platform-orchestrator-execution': 'orchestrator',
     'platform-monitor-runtime': 'common',
+    'platform-monitor-install': 'monitor',
     'platform-cleanup-results': 'manager',
     'platform-system-request': 'system',
     'platform-source-grant-boundary': 'system',
@@ -232,22 +233,25 @@ if [ "$test_group" = platform-monitor-runtime ]; then
     exit 0
 fi
 
-if [ "$test_group" = platform-orchestrator-execution ]; then
+if [[ "$test_group" == platform-orchestrator-execution || "$test_group" == platform-monitor-install ]]; then
+    owner=orchestrator
+    if [[ "$test_group" == platform-monitor-install ]]; then owner=monitor; fi
     export ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port"
-    export ADDP_DATABASE_DEPLOY_USER=orchestrator_install ADDP_DATABASE_RUNTIME_USER=platform_run
+    export ADDP_DATABASE_DEPLOY_USER=platform_install ADDP_DATABASE_RUNTIME_USER=platform_run
     ADDP_DATABASE_DEPLOY_PASSWORD=$(openssl rand -hex 20)
     ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 20)
     export ADDP_DATABASE_DEPLOY_PASSWORD ADDP_DATABASE_RUNTIME_PASSWORD
     mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot' <<SQL
 CREATE DATABASE common;
-CREATE USER 'orchestrator_install'@'%' IDENTIFIED BY '$ADDP_DATABASE_DEPLOY_PASSWORD';
+CREATE USER 'platform_install'@'%' IDENTIFIED BY '$ADDP_DATABASE_DEPLOY_PASSWORD';
 CREATE USER 'platform_run'@'%' IDENTIFIED BY '$ADDP_DATABASE_RUNTIME_PASSWORD';
-GRANT ALL ON common.* TO 'orchestrator_install'@'%';
-GRANT ALL ON orchestrator.* TO 'orchestrator_install'@'%';
+GRANT ALL ON common.* TO 'platform_install'@'%';
+GRANT ALL ON $owner.* TO 'platform_install'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON common.* TO 'platform_run'@'%';
-GRANT SELECT,INSERT,UPDATE,DELETE ON orchestrator.* TO 'platform_run'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON $owner.* TO 'platform_run'@'%';
 SQL
-    bash "$ROOT_DIR/scripts/test/orchestrator-platform-deployment.sh" "$MYSQL_PROJECT"
+    bash "$ROOT_DIR/scripts/test/module-platform-deployment.sh" "$MYSQL_PROJECT" "$owner"
+    if [[ "$owner" == monitor ]]; then exit 0; fi
     (cd "$ROOT_DIR/orchestrator/backend" && ADDP_TEST_MYSQL_ORCHESTRATOR=1 GOWORK=off go test ./internal/service \
         -run '^TestMySQLOrchestratorExecutionReliability$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/orchestrator.log"
     grep -q '^--- PASS: TestMySQLOrchestratorExecutionReliability ' "$WORK_DIR/orchestrator.log"

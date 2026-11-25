@@ -49,7 +49,20 @@ func (l serviceTaskProviderLister) ListTaskProviders() ([]*commonModels.TaskProv
 // @name Authorization
 
 func main() {
-	commonConfig.LoadEnv()
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(config.PlatformDatabase(), "monitor")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := service.PrepareMonitorStore(db); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	// 加载配置
 	cfg, err := config.LoadConfig()
@@ -60,7 +73,7 @@ func main() {
 	defer stopRuntime()
 
 	// 连接数据库
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{})
+	db, err := bootstrap.OpenPlatformRuntime(config.PlatformDatabase(), "monitor", &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -69,7 +82,7 @@ func main() {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
-	if err := service.EnsureMonitorStore(db); err != nil {
+	if err := schema.Require(db, "monitor", service.MonitorSchemaVersion); err != nil {
 		log.Fatalf("Failed to ensure monitor store: %v", err)
 	}
 	runtimePolicyService := service.NewRuntimePolicyService(repository.NewRuntimePolicyRepository(db))

@@ -1,12 +1,40 @@
 package service
 
 import (
+	_ "embed"
+	"strings"
+
+	"github.com/addp/common/schema"
 	monitorModels "github.com/addp/monitor/internal/models"
 	"gorm.io/gorm"
 )
 
+const MonitorSchemaVersion = 1
+
+//go:embed tables.mysql.sql
+var mysqlSchema string
+
+func PrepareMonitorStore(db *gorm.DB) error {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		return err
+	}
+	if db.Dialector.Name() == "mysql" {
+		return schema.MigrateMySQL(db, "monitor", MonitorSchemaVersion, func(conn *gorm.DB) error {
+			for _, statement := range strings.Split(mysqlSchema, ";") {
+				if statement = strings.TrimSpace(statement); statement != "" {
+					if err := conn.Exec(statement).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+	}
+	return schema.Migrate(db, "monitor", MonitorSchemaVersion, EnsureMonitorStore)
+}
+
 func EnsureMonitorStore(db *gorm.DB) error {
-	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS monitor").Error; err != nil {
+	if err := schema.EnsureNamespace(db, "monitor"); err != nil {
 		return err
 	}
 	if err := migratePlatformAlertStore(db, "monitor"); err != nil {

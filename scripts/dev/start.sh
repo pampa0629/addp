@@ -1444,6 +1444,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Monitor Backend（带检查）
   if [ "$START_MONITOR_BACKEND" = true ]; then
     if check_service_running "monitor" "$MONITOR_BACKEND_PORT"; then
+      addp_dev_prepare_database monitor || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" monitor monitor backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-monitor" &
       MONITOR_PID=$!
       echo $MONITOR_PID > .dev-pids/monitor.pid

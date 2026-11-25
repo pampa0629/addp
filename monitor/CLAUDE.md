@@ -17,6 +17,10 @@ Monitor 聚合各 Owner 写入的执行事实，提供授权诊断、统计、�
 | Platform 能力状态与验收缺口 | [后续事项能力表](../docs/next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)统一维护实现状态和剩余覆盖；本入口保留模块规则及标准命令 |
 | 历史通过、失败与覆盖限制 | [主题证据导航](#历史证据导航)；固定版本及未覆盖范围由各专题维护 |
 
+## 平台数据库部署
+
+根部署入口使用平台部署账号运行 `monitor-backend prepare-database`，准备 Monitor 的告警、通知与观测表。普通启动仅核验 Common 和 Monitor 版本。租户告警按指纹、平台告警按类别／主体类型／主体标识／信号约束唯一活跃记录。`open` 和 `acknowledged` 共用该约束，已解决的历史允许保留多条。
+
 ## 核心边界
 
 - 任务定义和执行事实归业务 Owner / Common；Monitor 不读取 Owner 私表或直连业务 Kafka、源数据库来补判状态，不成为第二个执行者。新增执行写入复用 `common/execution` 与 `EnsureStore`。

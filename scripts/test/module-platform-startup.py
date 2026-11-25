@@ -1,4 +1,4 @@
-"""Start the released Orchestrator process with only runtime database credentials."""
+"""Start the released module process with only runtime database credentials."""
 from http.client import HTTPConnection
 import json
 import os
@@ -11,6 +11,8 @@ import tempfile
 import time
 
 binary = Path(sys.argv[1]).resolve()
+module = binary.name
+route = {"orchestrator": "orchestrations", "monitor": "executions"}[module]
 env = {key: os.environ[key] for key in (
     "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD",
     "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "POSTGRES_HOST", "POSTGRES_PORT",
@@ -19,8 +21,9 @@ env = {key: os.environ[key] for key in (
 with socket.socket() as reservation:
     reservation.bind(("127.0.0.1", 0))
     port = reservation.getsockname()[1]
-env.update(ORCHESTRATOR_BACKEND_PORT=str(port), ORCHESTRATOR_SERVICE_CLIENT_SECRET=secrets.token_hex(32),
-           SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1", GIN_MODE="release")
+env[module.upper() + "_BACKEND_PORT"] = str(port)
+env[module.upper() + "_SERVICE_CLIENT_SECRET"] = secrets.token_hex(32)
+env.update(SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1", GIN_MODE="release")
 
 if sys.argv[2] == "missing-credentials":
     # A development checkout may have credentials in its root .env. A service
@@ -58,7 +61,7 @@ def request(path):
         connection.close()
 
 
-logfile = binary.parent / "orchestrator-runtime.log"
+logfile = binary.parent / f"{module}-runtime.log"
 with logfile.open("wb") as log:
     process = subprocess.Popen([binary], cwd=binary.parent, env=env, stdout=log, stderr=subprocess.STDOUT)
     try:
@@ -66,14 +69,14 @@ with logfile.open("wb") as log:
         while process.poll() is None and time.monotonic() < deadline:
             try:
                 status, body = request("/health/ready")
-                if status == 200 and json.loads(body)["module"] == "orchestrator":
+                if status == 200 and json.loads(body)["module"] == module:
                     break
             except OSError:
                 pass
             time.sleep(.1)
         else:
-            raise RuntimeError(f"Orchestrator failed to start: {logfile.read_text()[-2000:]}")
-        if request("/api/v1/orchestrator/orchestrations")[0] != 401:
+            raise RuntimeError(f"{module} failed to start: {logfile.read_text()[-2000:]}")
+        if request(f"/api/v1/{module}/{route}")[0] != 401:
             raise RuntimeError("protected Orchestrator route did not return 401")
     finally:
         if process.poll() is None:
@@ -84,5 +87,5 @@ with logfile.open("wb") as log:
                 process.kill()
                 process.wait()
     if process.returncode != 0:
-        raise RuntimeError(f"Orchestrator shutdown failed with exit={process.returncode}")
-    print("Orchestrator runtime: Ready 200, protected route 401, SIGTERM exit=0")
+        raise RuntimeError(f"{module} shutdown failed with exit={process.returncode}")
+    print(f"{module} runtime: Ready 200, protected route 401, SIGTERM exit=0")
