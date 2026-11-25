@@ -486,11 +486,11 @@ func (r *Repository) GetAuditSummary(ctx context.Context, query AuditQuery) (*Au
 	var summary AuditSummary
 	err := applyAuditQuery(r.db.WithContext(ctx).Model(&AuditLog{}), query).Select(`
 		count(*) AS total,
-		count(*) FILTER (WHERE result = 'succeeded') AS succeeded,
-		count(*) FILTER (WHERE result = 'failed') AS failed,
-		count(*) FILTER (WHERE result = 'denied') AS denied,
-		count(*) FILTER (WHERE result = 'ignored') AS ignored,
-		count(*) FILTER (WHERE risk_level IN ('high', 'critical')) AS high_risk
+		COUNT(CASE WHEN result = 'succeeded' THEN 1 END) AS succeeded,
+		COUNT(CASE WHEN result = 'failed' THEN 1 END) AS failed,
+		COUNT(CASE WHEN result = 'denied' THEN 1 END) AS denied,
+		COUNT(CASE WHEN result = 'ignored' THEN 1 END) AS ignored,
+		COUNT(CASE WHEN risk_level IN ('high', 'critical') THEN 1 END) AS high_risk
 	`).Scan(&summary).Error
 	if err != nil {
 		return nil, wrapRepositoryError(err)
@@ -500,13 +500,17 @@ func (r *Repository) GetAuditSummary(ctx context.Context, query AuditQuery) (*Au
 
 func (r *Repository) GetAuditTrends(ctx context.Context, query AuditQuery) ([]AuditTrendPoint, error) {
 	var points []AuditTrendPoint
+	day := "date_trunc('day', created_at)"
+	if r.db.Dialector.Name() == "mysql" {
+		day = "DATE(created_at)"
+	}
 	err := applyAuditQuery(r.db.WithContext(ctx).Model(&AuditLog{}), query).Select(`
-		date_trunc('day', created_at) AS date,
+		` + day + ` AS date,
 		count(*) AS total,
-		count(*) FILTER (WHERE result = 'succeeded') AS succeeded,
-		count(*) FILTER (WHERE result = 'failed') AS failed,
-		count(*) FILTER (WHERE result = 'denied') AS denied
-	`).Group("date_trunc('day', created_at)").Order("date ASC").Scan(&points).Error
+		COUNT(CASE WHEN result = 'succeeded' THEN 1 END) AS succeeded,
+		COUNT(CASE WHEN result = 'failed' THEN 1 END) AS failed,
+		COUNT(CASE WHEN result = 'denied' THEN 1 END) AS denied
+	`).Group(day).Order("date ASC").Scan(&points).Error
 	if err != nil {
 		return nil, wrapRepositoryError(err)
 	}

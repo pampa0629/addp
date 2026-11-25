@@ -165,6 +165,37 @@ func TestMySQLIAMFoundation(t *testing.T) {
 		t.Fatalf("identity rollback left a principal: %d, %v", leftovers, err)
 	}
 
+	t.Run("tenant audit summary and day trend", func(t *testing.T) {
+		ctx := t.Context()
+		const eventName = "system.audit_report_test"
+		mustExec(`INSERT INTO audit_logs (event_name,module_name,result,risk_level,context_type,tenant_id,created_at) VALUES
+			(?,'system','succeeded','low','tenant',1,'2026-01-01 23:59:59'),
+			(?,'system','failed','high','tenant',1,'2026-01-02 00:00:00'),
+			(?,'system','denied','critical','tenant',1,'2026-01-02 00:00:01'),
+			(?,'system','ignored','low','tenant',1,'2026-01-02 00:00:02'),
+			(?,'system','succeeded','high','platform',NULL,'2026-01-01 23:59:59')`, eventName, eventName, eventName, eventName, eventName)
+		repo := iam.NewRepository(db)
+		tenant := int64(1)
+		q := iam.AuditQuery{TenantID: &tenant, EventName: eventName}
+		summary, err := repo.GetAuditSummary(ctx, q)
+		want := iam.AuditSummary{Total: 4, Succeeded: 1, Failed: 1, Denied: 1, Ignored: 1, HighRisk: 2}
+		if err != nil || *summary != want {
+			t.Fatalf("summary=%+v err=%v", summary, err)
+		}
+		points, err := repo.GetAuditTrends(ctx, q)
+		if err != nil || len(points) != 2 {
+			t.Fatalf("trends=%+v err=%v", points, err)
+		}
+		if points[0].Date.Format("2006-01-02") != "2026-01-01" || points[0].Total != 1 || points[0].Succeeded != 1 ||
+			points[1].Date.Format("2006-01-02") != "2026-01-02" || points[1].Total != 3 || points[1].Failed != 1 || points[1].Denied != 1 {
+			t.Fatalf("daily counts=%+v", points)
+		}
+		q.EventName = "system.audit_report_empty"
+		summary, err = repo.GetAuditSummary(ctx, q)
+		if err != nil || *summary != (iam.AuditSummary{}) {
+			t.Fatalf("empty summary=%+v err=%v", summary, err)
+		}
+	})
 	t.Run("tenant membership and authorization version", func(t *testing.T) {
 		testMySQLIAMMembership(t, db)
 	})
