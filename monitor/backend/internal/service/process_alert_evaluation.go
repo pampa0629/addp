@@ -203,7 +203,7 @@ func (s *ProcessAlertRuleService) applyProcessRule(ctx context.Context, old mode
 				since = source.collectionChanged
 			}
 			var active models.PlatformAlertIncident
-			err = tx.Where("category=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryProcess, fmt.Sprint(rule.AnchorInstanceID), rule.ID, []string{"open", "acknowledged"}).Take(&active).Error
+			err = tx.Where("category=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?", models.PlatformAlertCategoryProcess, fmt.Sprint(rule.AnchorInstanceID), rule.ID, []string{"open", "acknowledged"}).Take(&active).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}

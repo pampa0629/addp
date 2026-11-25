@@ -117,10 +117,10 @@ func (s *PlatformAlertService) Incidents(ctx context.Context, filter PlatformAle
 	if filter.Search != "" {
 		const evidence = "(CASE category WHEN 'resource' THEN resource_evidence WHEN 'http_quality' THEN http_evidence WHEN 'process_resource' THEN process_evidence WHEN 'service_availability' THEN availability_evidence END)"
 		ruleName := evidence + "->>'rule_name'"
-		signalPrefix := "split_part(signal, ':', 1)"
+		signalPrefix := "split_part(platform_alert_incidents.signal, ':', 1)"
 		if s.db.Dialector.Name() == "mysql" {
 			ruleName = "JSON_UNQUOTE(JSON_EXTRACT(" + evidence + ", '$.rule_name'))"
-			signalPrefix = "SUBSTRING_INDEX(signal, ':', 1)"
+			signalPrefix = "SUBSTRING_INDEX(platform_alert_incidents.signal, ':', 1)"
 		}
 		// User input is a literal substring, including %, _ and backslashes.
 		ruleNameSQL := "POSITION(LOWER(?) IN LOWER(" + ruleName + ")) > 0"

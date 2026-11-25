@@ -246,7 +246,7 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 				evidenceVersion := r.Version
 				ruleName := r.Name
 				var active models.PlatformAlertIncident
-				e = tx.Where("category=? AND subject_kind=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, r.NodeID, models.ResourceAlertSignal(r.MetricKey, r.Dimensions), []string{"open", "acknowledged"}).Take(&active).Error
+				e = tx.Where("category=? AND subject_kind=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, r.NodeID, models.ResourceAlertSignal(r.MetricKey, r.Dimensions), []string{"open", "acknowledged"}).Take(&active).Error
 				if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
 					return e
 				}

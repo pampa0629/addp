@@ -97,7 +97,7 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 	}
 	var incident models.PlatformAlertIncident
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
-		"category=? AND subject_kind=? AND subject_id=? AND signal=? AND status IN ?",
+		"category=? AND subject_kind=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?",
 		e.Category, e.SubjectKind, e.SubjectID, e.Signal, []string{"open", "acknowledged"},
 	).Take(&incident).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {

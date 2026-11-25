@@ -164,7 +164,7 @@ func (s *ProcessAlertRuleService) Delete(ctx context.Context, id string, version
 			return ErrLogConflict
 		}
 		var active int64
-		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryProcess, fmt.Sprint(rule.AnchorInstanceID), rule.ID, []string{"open", "acknowledged"}).Count(&active).Error; err != nil {
+		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?", models.PlatformAlertCategoryProcess, fmt.Sprint(rule.AnchorInstanceID), rule.ID, []string{"open", "acknowledged"}).Count(&active).Error; err != nil {
 			return err
 		}
 		if active > 0 {

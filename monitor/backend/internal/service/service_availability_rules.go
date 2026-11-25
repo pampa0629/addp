@@ -274,7 +274,7 @@ func (s *ServiceAvailabilityRuleService) Delete(ctx context.Context, token, id s
 			return ErrLogConflict
 		}
 		var count int64
-		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryAvailability, r.SubjectKey, r.ID, []string{"open", "acknowledged"}).Count(&count).Error; err != nil {
+		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?", models.PlatformAlertCategoryAvailability, r.SubjectKey, r.ID, []string{"open", "acknowledged"}).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {

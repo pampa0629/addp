@@ -226,7 +226,7 @@ func (s *ResourceAlertRuleService) Delete(ctx context.Context, id string, versio
 			return ErrLogConflict
 		}
 		var active int64
-		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_kind=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, rule.NodeID, models.ResourceAlertSignal(rule.MetricKey, rule.Dimensions), []string{"open", "acknowledged"}).Count(&active).Error; err != nil {
+		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_kind=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, rule.NodeID, models.ResourceAlertSignal(rule.MetricKey, rule.Dimensions), []string{"open", "acknowledged"}).Count(&active).Error; err != nil {
 			return err
 		}
 		if active > 0 {

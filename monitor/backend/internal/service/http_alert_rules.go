@@ -168,7 +168,7 @@ func (s *HTTPAlertRuleService) Delete(ctx context.Context, id string, version ui
 			return ErrLogConflict
 		}
 		var active int64
-		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryHTTP, rule.ModuleName, rule.ID, []string{"open", "acknowledged"}).Count(&active).Error; err != nil {
+		if err := tx.Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?", models.PlatformAlertCategoryHTTP, rule.ModuleName, rule.ID, []string{"open", "acknowledged"}).Count(&active).Error; err != nil {
 			return err
 		}
 		if active > 0 {

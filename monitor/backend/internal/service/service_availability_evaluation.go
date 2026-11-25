@@ -167,7 +167,7 @@ func (s *ServiceAvailabilityRuleService) evaluateAvailabilitySnapshots(ctx conte
 				return nil
 			}
 			var active models.PlatformAlertIncident
-			activeErr := tx.Where("category=? AND subject_kind=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryAvailability, models.PlatformAlertSubjectGroup, r.SubjectKey, r.ID, []string{"open", "acknowledged"}).Take(&active).Error
+			activeErr := tx.Where("category=? AND subject_kind=? AND subject_id=? AND platform_alert_incidents.signal=? AND status IN ?", models.PlatformAlertCategoryAvailability, models.PlatformAlertSubjectGroup, r.SubjectKey, r.ID, []string{"open", "acknowledged"}).Take(&active).Error
 			if activeErr != nil && activeErr != gorm.ErrRecordNotFound {
 				return activeErr
 			}
