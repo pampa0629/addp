@@ -1,12 +1,15 @@
 package models
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // JSONB 类型 - 用于 PostgreSQL JSONB 字段
@@ -46,35 +49,41 @@ func (JSONB) GormDataType() string {
 	return "jsonb"
 }
 
-// StringArray 类型 - 用于 PostgreSQL TEXT[] 字段
+// StringArray uses native text arrays on PostgreSQL and JSON arrays on MySQL.
 type StringArray []string
 
-// Value 实现 driver.Valuer 接口
-func (a StringArray) Value() (driver.Value, error) {
-	if a == nil {
-		return nil, nil
+func (a StringArray) GormValue(_ context.Context, db *gorm.DB) clause.Expr {
+	var value driver.Valuer = pq.StringArray(a)
+	if db.Dialector.Name() == "mysql" && a != nil {
+		data, err := json.Marshal(a)
+		if err != nil {
+			db.AddError(err)
+		}
+		return clause.Expr{SQL: "?", Vars: []any{string(data)}}
 	}
-	return pq.Array(a).Value()
+	return clause.Expr{SQL: "?", Vars: []any{value}}
 }
 
-// Scan 实现 sql.Scanner 接口
-func (a *StringArray) Scan(value interface{}) error {
+func (a *StringArray) Scan(value any) error {
 	if value == nil {
 		*a = nil
 		return nil
 	}
-
-	// 使用 pq.Array 来扫描
-	arr := pq.StringArray{}
-	if err := arr.Scan(value); err != nil {
-		return fmt.Errorf("failed to scan StringArray: %w", err)
+	var data []byte
+	switch v := value.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		return fmt.Errorf("cannot scan string array from %T", value)
 	}
-
-	*a = StringArray(arr)
-	return nil
+	if len(data) > 0 && data[0] == '[' {
+		return json.Unmarshal(data, a)
+	}
+	return (*pq.StringArray)(a).Scan(data)
 }
 
-// GormDataType 指定 gorm 数据类型
 func (StringArray) GormDataType() string {
 	return "text[]"
 }

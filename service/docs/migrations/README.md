@@ -2,21 +2,11 @@
 
 [返回核心架构总入口](../service核心概念和架构设计.md)
 
-本页维护启动迁移顺序、历史 SQL 的用途及验证入口；当前表及存储边界见[数据库架构](../数据库架构.md)，字段与声明差异见对应表说明。
+根发布入口在启动 Service 之前执行 `service-backend prepare-database`。部署账号准备自有结构与保护投影，运行账号只读核验 Common、Service 与保护投影版本。查询服务发布规则、访问范围和服务名唯一性沿用现行数据库约束。
 
 ## 当前入口
 
-下表按[主程序](../../backend/cmd/server/main.go)的调用顺序排列；前三项位于 `InitDatabase / AutoMigrate` 内，后两项由主程序另行调用。
-
-| 范围 | 权威实现与说明 |
-| --- | --- |
-| 模型结构 | [InitDatabase / AutoMigrate](../../backend/internal/repository/database.go)建立 schema，逐个迁移[表清单](../数据库架构.md#模块与表清单)中的八个模型；共享保护投影存储由后续独立入口维护。 |
-| analytical 发布数据 | [版本化迁移](../../backend/internal/repository/analytical_migration.go)由 AutoMigrate 调用；版本是否应用以 `service.data_migrations` 账本及执行结果为准。 |
-| Catalog 变化流 | [迁移实现](../../backend/internal/repository/database.go)负责初始摘要、索引与变化捕获触发器；不等于企业 Catalog 专业定义迁移。 |
-| 保护投影存储 | 主程序调用共享 [projectionstore.Migrate](../../../common/dataprotection/projectionstore/store.go)；结构及版本核对由[共享迁移实现](../../../common/dataprotection/projectionstore/schema.go)负责，使用独立的 `protection_projection_store_migrations` 账本，不记入 `service.data_migrations`。存储初始化不证明保护投影已同步或实际请求已通过保护验收。 |
-| Query 消费契约 | 主程序建立消费目录服务后调用[契约迁移服务](../../backend/internal/service/consumer_catalog_service.go)，由 [Repository](../../backend/internal/repository/query_service_consumer_contract_migration.go)按版本将不满足当前消费契约的 active REST 记录置为 `error`；不伪造输出契约。 |
-
-各阶段没有共同事务；后续阶段失败会阻止启动，但不承诺撤销此前已完成的迁移。`service.data_migrations` 记录 analytical、Catalog 初始摘要及消费契约等版本化数据迁移，不是所有模型结构或约束的安装清单。Catalog 索引与触发器仍由当前启动代码维护，不能按账本版本号推导执行顺序或完整结构状态。
+PG 在版本事务内迁移八个领域模型、analytical 发布记录、Catalog 初始摘要和变更触发器、清理结果、保护投影以及 Query 消费契约。关键字和图节点标签在 PG 保留原生 TEXT[]，MySQL 使用原生 JSON 数组。Service 仓储模型负责两种存储格式的编解码，保留元素顺序、空数组和数据库 NULL。MySQL 新装时，模块自行安装约束和 Catalog 触发器，保护投影使用 Common 的安装入口。两个引擎均在相关步骤成功后发布 Service 版本。
 
 ## 历史 SQL 与数据库约束
 

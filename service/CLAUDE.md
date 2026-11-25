@@ -18,7 +18,7 @@ Service 模块负责数据服务发布与外部服务注册，覆盖查询服务
 
 - 后端：Go + Gin + GORM，默认端口 `8086`，环境变量 `SERVICE_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus + OpenLayers，开发端口 `5180`，启动脚本环境变量 `SERVICE_FE_PORT`。
-- 数据库：PostgreSQL `service` schema。
+- 平台数据库由部署选型，Service 在部署阶段准备 `service`，启动时只核验版本。
 - 依赖：System、Manager、Meta、DuckDB Federated Query Runtime、Gateway、Redis、MinIO。
 
 ## 重要目录
@@ -106,7 +106,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 
 启动、访问地址和重启入口沿[模块 README](README.md)及[模块选择指南](../scripts/docs/模块选择启动指南.md)。实际地址以标准启动输出和 `.dev-state/ports.env` 为准，不固定请求 localhost:8086；需要启动或重启时按根 AGENTS.md 由用户操作，仅测试或构建无需重启。
 
-启动迁移顺序与账本归属见[迁移说明](docs/migrations/README.md#当前入口)，排查与断言见[启动迁移失败](docs/testing/验收方法与排查.md#失败定位)及[迁移与持久化覆盖](docs/testing/验收方法与排查.md#迁移与持久化覆盖)。各阶段无共同事务，后续失败不代表此前已落库变更已回滚。
+部署迁移顺序与账本归属见[迁移说明](docs/migrations/README.md#当前入口)，排查与断言见[启动迁移失败](docs/testing/验收方法与排查.md#失败定位)及[迁移与持久化覆盖](docs/testing/验收方法与排查.md#迁移与持久化覆盖)。发布完成版本后运行账号才可启动。
 
 验证分层统一沿[标准入口与证据](docs/testing/验收方法与排查.md#标准入口与证据)，API 样例先完成[公共准备](docs/API测试指南.md#公共准备)，结论按[能力与验收边界](docs/API测试指南.md#能力与验收边界)记录。从项目根目录运行 Service 门禁：
 

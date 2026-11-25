@@ -39,10 +39,6 @@ func NewConsumerCatalogService(repo *repository.QueryServiceRepository, systemCl
 	return &ConsumerCatalogService{repo: repo, systemClient: systemClient}
 }
 
-func (s *ConsumerCatalogService) MigrateInvalidQueryServiceContracts() (int64, error) {
-	return s.repo.MigrateInvalidQueryServiceConsumerContracts(ValidateQueryConsumerContract)
-}
-
 func (s *ConsumerCatalogService) ListQueryServices(ctx context.Context, filter models.ConsumerServiceListFilter) ([]models.ConsumerServiceSummary, int64, error) {
 	services, total, err := s.repo.ListConsumerServices(filter)
 	if err != nil {

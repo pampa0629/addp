@@ -12,7 +12,7 @@ import time
 
 binary = Path(sys.argv[1]).resolve()
 module = binary.name
-route = {"orchestrator": "orchestrations", "monitor": "executions", "standard": "elements", "model": "entities"}[module]
+route = {"orchestrator": "orchestrations", "monitor": "executions", "standard": "elements", "model": "entities", "service": "registered"}[module]
 env = {key: os.environ[key] for key in (
     "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD",
     "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "POSTGRES_HOST", "POSTGRES_PORT",
@@ -36,7 +36,7 @@ if sys.argv[2] == "missing-credentials":
         env.pop("ADDP_DATABASE_RUNTIME_PASSWORD", None)
         env["PROJECT_ROOT"] = root
         result = subprocess.run([binary], env=env, cwd=root, capture_output=True, timeout=15)
-    if result.returncode != 1 or b"platform database runtime credentials are required" not in result.stderr:
+    if result.returncode != 1 or b"platform database runtime credentials are required" not in (result.stderr + result.stdout):
         raise RuntimeError(f"runtime did not refuse missing injected credentials, exit={result.returncode}")
     print("Runtime refused missing injected credentials despite a populated root .env, exit=1")
     sys.exit(0)
@@ -79,7 +79,7 @@ with logfile.open("wb") as log:
         else:
             raise RuntimeError(f"{module} failed to start: {logfile.read_text()[-2000:]}")
         if request(f"/api/v1/{module}/{route}")[0] != 401:
-            raise RuntimeError("protected Orchestrator route did not return 401")
+            raise RuntimeError(f"protected {module} route did not return 401")
     finally:
         if process.poll() is None:
             process.terminate()

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -14,9 +16,12 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	commonScheduler "github.com/addp/common/scheduler"
+	"github.com/addp/common/schema"
 	"github.com/addp/service/internal/api"
 	"github.com/addp/service/internal/config"
 	serviceprotection "github.com/addp/service/internal/protection"
@@ -26,6 +31,8 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // @title           ADDP Service API
@@ -37,8 +44,27 @@ import (
 // @name Authorization
 
 func main() {
-	// 加载根目录统一的环境变量
-	commonConfig.LoadEnv()
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(platformDatabase(), "service")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := repository.PrepareDatabase(db, serviceInternal.ValidateQueryConsumerContract); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "service"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 
 	// 加载配置
 	cfg := config.Load()
@@ -55,12 +81,18 @@ func main() {
 	logger.L().Info("端口检查通过", "port", cfg.Port)
 
 	// 初始化数据库
-	db, err := repository.InitDatabase(cfg)
+	db, err := bootstrap.OpenPlatformRuntime(platformDatabase(), "service", &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Info)})
 	if err != nil {
 		logger.L().Error("数据库初始化失败", "error", err)
 		os.Exit(1)
 	}
 
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		log.Fatal(err)
+	}
+	if err := schema.Require(db, "service", repository.SchemaVersion); err != nil {
+		log.Fatal(err)
+	}
 	// 初始化 repositories
 	queryServiceRepo := repository.NewQueryServiceRepository(db)
 	registeredServiceRepo := repository.NewRegisteredServiceRepository(db)
@@ -96,7 +128,7 @@ func main() {
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, tokenSource, nil)
-	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "service", nil)
+	protectionStore, err := projectionstore.Open(db, "service", "service", nil)
 	if err != nil {
 		logger.L().Error("Service 保护投影存储初始化失败", "error", err)
 		os.Exit(1)
@@ -174,14 +206,6 @@ func main() {
 	resourceCapabilityHandler := api.NewResourceCapabilityHandler(systemClient, metaClient)
 	resourceCapabilityHandler.SetQuerySampleService(querySampleService)
 	consumerCatalogService := serviceInternal.NewConsumerCatalogService(queryServiceRepo, systemClient)
-	migratedConsumerContracts, err := consumerCatalogService.MigrateInvalidQueryServiceContracts()
-	if err != nil {
-		logger.L().Error("Query Service 消费契约迁移失败", "error", err)
-		os.Exit(1)
-	}
-	if migratedConsumerContracts > 0 {
-		logger.L().Warn("已将不满足当前消费契约的 Query Service 置为 error", "count", migratedConsumerContracts)
-	}
 	consumerCatalogHandler := api.NewConsumerCatalogHandler(consumerCatalogService)
 	catalogResourceService := serviceInternal.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
 	catalogResourceHandler := api.NewCatalogResourceHandler(catalogResourceService)
@@ -403,7 +427,7 @@ func main() {
 	}
 
 	// 启动 HTTP 服务（在 goroutine 中运行）
-	logger.L().Info("Service 模块启动", "addr", addr, "schema", cfg.DBSchema)
+	logger.L().Info("Service 模块启动", "addr", addr, "schema", "service")
 
 	go func() {
 		if err := router.RunListener(listener); err != nil {
@@ -437,4 +461,8 @@ func main() {
 	}
 
 	logger.L().Info("Service 模块已优雅关闭")
+}
+
+func platformDatabase() database.Config {
+	return database.Config{Host: commonConfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonConfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonConfig.GetEnv("POSTGRES_DB", "addp"), Schema: "service"}
 }

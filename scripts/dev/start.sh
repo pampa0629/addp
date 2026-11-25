@@ -1433,6 +1433,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Service Backend（带检查）
   if [ "$START_SERVICE_BACKEND" = true ]; then
     if check_service_running "service" "$SERVICE_BACKEND_PORT"; then
+      addp_dev_prepare_database service || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" service service backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-service" &
       SERVICE_PID=$!
       echo $SERVICE_PID > .dev-pids/service.pid

@@ -5,40 +5,9 @@ import (
 	"log"
 
 	"github.com/addp/common/cleanup"
-	"github.com/addp/common/infra/bootstrap"
-	"github.com/addp/common/infra/database"
-	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
-
-// InitDatabase 初始化数据库连接
-func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := bootstrap.OpenDatabase(database.Config{
-		Host: cfg.DBHost, Port: cfg.DBPort,
-		User: cfg.DBUser, Password: cfg.DBPassword,
-		DBName: cfg.DBName,
-	}, &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
-	}
-
-	// 创建 schema
-	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
-		return nil, fmt.Errorf("failed to create schema: %w", err)
-	}
-
-	// 自动迁移表结构
-	if err := AutoMigrate(db); err != nil {
-		return nil, err
-	}
-
-	log.Printf("✅ Database initialized successfully (schema: %s)", cfg.DBSchema)
-	return db, nil
-}
 
 // AutoMigrate 自动迁移所有表结构
 func AutoMigrate(db *gorm.DB) error {

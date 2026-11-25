@@ -2267,6 +2267,15 @@ jobs:
       - name: Verify Service consumer catalog and metric source filters on MySQL 8
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-service-repository'
 
+      - name: Verify Service installation, runtime restarts and catalog on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-service-install'
+
+      - name: Verify Service installation, runtime restarts and catalog on PostgreSQL
+        env:
+          ADDP_INFRA_DATABASE_PROVIDER: postgres
+          PLATFORM_CI_PG_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/test/module-platform-deployment.sh "$PLATFORM_CI_PG_ID" service
+
       - name: Run Service PostgreSQL gate
         env:
           SERVICE_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_service_test?sslmode=disable
