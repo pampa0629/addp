@@ -35,7 +35,7 @@ func mustUnitTranslationsJSON(v models.UnitTranslations) string {
 }
 
 func migrateMeasurementCatalog(tx *gorm.DB) error {
-	if tx.Dialector.Name() != "postgres" {
+	if tx.Dialector.Name() != "postgres" && tx.Dialector.Name() != "mysql" {
 		return nil
 	}
 	var applied int64
@@ -53,7 +53,7 @@ func migrateMeasurementCatalog(tx *gorm.DB) error {
 	categoryMoves := map[int64]int64{}
 	legacyCategories := []models.MeasurementCategory{}
 	legacyUnits := []models.Unit{}
-	hasLegacy := tx.Migrator().HasColumn("standard.measurement_categories", "is_system")
+	hasLegacy := tx.Dialector.Name() == "postgres" && tx.Migrator().HasColumn("standard.measurement_categories", "is_system")
 	if hasLegacy {
 		if err := tx.Where("is_system = true").Order("id").Find(&legacyCategories).Error; err != nil {
 			return err
@@ -126,21 +126,23 @@ func migrateMeasurementCatalog(tx *gorm.DB) error {
 			}
 		}
 	}
-	for _, table := range []string{"standard.units", "standard.measurement_categories"} {
-		if err := tx.Exec("ALTER TABLE " + table + " DROP COLUMN IF EXISTS is_system").Error; err != nil {
-			return err
+	if tx.Dialector.Name() == "postgres" {
+		for _, table := range []string{"standard.units", "standard.measurement_categories"} {
+			if err := tx.Exec("ALTER TABLE " + table + " DROP COLUMN IF EXISTS is_system").Error; err != nil {
+				return err
+			}
 		}
-	}
-	for _, statement := range []string{
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_platform_measurement_category_code ON standard.measurement_categories(code) WHERE tenant_id IS NULL",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_platform_unit_code ON standard.units(code) WHERE tenant_id IS NULL",
-		"ALTER TABLE standard.measurement_categories ADD CONSTRAINT ck_standard_measurement_category_owner CHECK (tenant_id IS NULL OR tenant_id > 0)",
-		"ALTER TABLE standard.units ADD CONSTRAINT ck_standard_unit_owner CHECK (tenant_id IS NULL OR tenant_id > 0)",
-		"ALTER TABLE standard.measurement_categories ADD CONSTRAINT ck_standard_platform_category_text CHECK (tenant_id IS NOT NULL OR (name = '' AND COALESCE(description,'') = '' AND COALESCE(translations->'zh-cn'->>'name','') <> '' AND COALESCE(translations->'en'->>'name','') <> ''))",
-		"ALTER TABLE standard.units ADD CONSTRAINT ck_standard_platform_unit_text CHECK (tenant_id IS NOT NULL OR (code <> '' AND name = '' AND COALESCE(description,'') = '' AND COALESCE(symbol,'') = '' AND COALESCE(translations->'zh-cn'->>'name','') <> '' AND COALESCE(translations->'en'->>'name','') <> ''))",
-	} {
-		if err := tx.Exec(statement).Error; err != nil {
-			return err
+		for _, statement := range []string{
+			"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_platform_measurement_category_code ON standard.measurement_categories(code) WHERE tenant_id IS NULL",
+			"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_platform_unit_code ON standard.units(code) WHERE tenant_id IS NULL",
+			"ALTER TABLE standard.measurement_categories ADD CONSTRAINT ck_standard_measurement_category_owner CHECK (tenant_id IS NULL OR tenant_id > 0)",
+			"ALTER TABLE standard.units ADD CONSTRAINT ck_standard_unit_owner CHECK (tenant_id IS NULL OR tenant_id > 0)",
+			"ALTER TABLE standard.measurement_categories ADD CONSTRAINT ck_standard_platform_category_text CHECK (tenant_id IS NOT NULL OR (name = '' AND COALESCE(description,'') = '' AND COALESCE(translations->'zh-cn'->>'name','') <> '' AND COALESCE(translations->'en'->>'name','') <> ''))",
+			"ALTER TABLE standard.units ADD CONSTRAINT ck_standard_platform_unit_text CHECK (tenant_id IS NOT NULL OR (code <> '' AND name = '' AND COALESCE(description,'') = '' AND COALESCE(symbol,'') = '' AND COALESCE(translations->'zh-cn'->>'name','') <> '' AND COALESCE(translations->'en'->>'name','') <> ''))",
+		} {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Exec("INSERT INTO standard.data_migrations(version,name) VALUES (?,?)", measurementCatalogMigration, "standard_platform_measurement_catalog_v1").Error

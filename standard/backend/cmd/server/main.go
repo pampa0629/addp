@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -34,6 +36,27 @@ import (
 // @name Authorization
 
 func main() {
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := dbbootstrap.OpenPlatformInstallation(platformDatabase(), "standard")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := repository.PrepareDatabase(db); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "standard"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -41,7 +64,7 @@ func main() {
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 
-	db, err := openDatabase(cfg)
+	db, err := openDatabase()
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -50,8 +73,8 @@ func main() {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
-	if err := repository.Migrate(db); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
+	if err := schema.Require(db, "standard", repository.SchemaVersion); err != nil {
+		log.Fatalf("Failed to verify Standard database: %v", err)
 	}
 
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
@@ -169,11 +192,10 @@ func main() {
 	<-registration.Done()
 }
 
-// openDatabase binds the deployment provider to Standard's platform schema at startup.
-func openDatabase(cfg *config.Config) (*gorm.DB, error) {
-	return dbbootstrap.OpenDatabase(database.Config{
-		Host: cfg.DBHost, Port: cfg.DBPort,
-		User: cfg.DBUser, Password: cfg.DBPassword,
-		DBName: cfg.DBName, Schema: cfg.DBSchema,
-	}, &gorm.Config{TranslateError: true})
+func platformDatabase() database.Config {
+	return database.Config{Host: commonConfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonConfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonConfig.GetEnv("POSTGRES_DB", "addp"), Schema: "standard"}
+}
+
+func openDatabase() (*gorm.DB, error) {
+	return dbbootstrap.OpenPlatformRuntime(platformDatabase(), "standard", &gorm.Config{TranslateError: true})
 }

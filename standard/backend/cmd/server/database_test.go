@@ -12,7 +12,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/schema"
-	"github.com/addp/standard/internal/config"
+
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"gorm.io/driver/postgres"
@@ -22,6 +22,7 @@ import (
 // Run the real main in a child process so its fatal exit is observable.
 func TestStandardServerProcess(t *testing.T) {
 	if os.Getenv("STANDARD_TEST_RUN_MAIN") == "1" {
+		os.Args = os.Args[:1]
 		main()
 	}
 }
@@ -51,8 +52,10 @@ func TestDatabaseStartupFailure(t *testing.T) {
 	t.Setenv("POSTGRES_HOST", socketDir)
 	t.Setenv("POSTGRES_PORT", "5432")
 	t.Setenv("POSTGRES_DB", "addp_test")
+	t.Setenv("ADDP_DATABASE_RUNTIME_USER", "test")
+	t.Setenv("ADDP_DATABASE_RUNTIME_PASSWORD", "test")
 	for _, tc := range []struct{ provider, cause string }{
-		{"mysql", `Failed to connect to database: unsupported platform database provider "mysql"`},
+		{"unknown", `unsupported platform database provider "unknown"`},
 		{"postgres", "dial unix " + socketDir + "/.s.PGSQL.5432: connect: no such file or directory"},
 	} {
 		t.Run(tc.provider, func(t *testing.T) {
@@ -89,10 +92,14 @@ func TestDatabaseStartupAgainstPostgres(t *testing.T) {
 	t.Setenv("POSTGRES_PORT", target.Port())
 	t.Setenv("POSTGRES_USER", target.User.Username())
 	password, _ := target.User.Password()
-	t.Setenv("POSTGRES_PASSWORD", password)
+	t.Setenv("ADDP_DATABASE_RUNTIME_USER", target.User.Username())
+	t.Setenv("ADDP_DATABASE_RUNTIME_PASSWORD", password)
+	if err := repository.PrepareDatabase(admin); err != nil {
+		t.Fatal(err)
+	}
 	name := strings.TrimPrefix(target.Path, "/")
 	t.Setenv("POSTGRES_DB", name)
-	// This is the next startup stage after common.Require and Standard.Migrate.
+	// Runtime must reach service identity setup after both version checks.
 	// Stop there without contacting another module or starting background workers.
 	t.Setenv("STANDARD_SERVICE_CLIENT_SECRET", "")
 	for _, tc := range []struct{ label, provider, zone, expectedZone string }{
@@ -103,11 +110,7 @@ func TestDatabaseStartupAgainstPostgres(t *testing.T) {
 			t.Setenv("ADDP_INFRA_DATABASE_PROVIDER", tc.provider)
 			t.Setenv("TZ", tc.zone)
 			requireStartupExit(t, "service token source requires System URL, client ID and a 32-byte client secret")
-			cfg, err := config.LoadConfig()
-			if err != nil {
-				t.Fatal(err)
-			}
-			db, err := openDatabase(cfg)
+			db, err := openDatabase()
 			if err != nil {
 				t.Fatal(err)
 			}

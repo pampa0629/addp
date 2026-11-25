@@ -11,8 +11,7 @@ type Config struct {
 	commonConfig.BaseConfig
 
 	// Standard 模块特有配置
-	Port     string
-	DBSchema string
+	Port string
 
 	// Redis 配置
 	RedisHost     string
@@ -34,12 +33,9 @@ type Config struct {
 
 // LoadConfig 加载配置
 func LoadConfig() (*Config, error) {
-	// 使用 common/config 统一加载 .env 文件
-	commonConfig.LoadEnv()
 
 	cfg := &Config{
-		Port:     commonConfig.GetEnv("STANDARD_BACKEND_PORT", "8110"),
-		DBSchema: "standard",
+		Port: commonConfig.GetEnv("STANDARD_BACKEND_PORT", "8110"),
 
 		RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:     commonConfig.GetEnv("REDIS_PORT", "16379"),

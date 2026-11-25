@@ -57,6 +57,15 @@ services:
     extends: {file: ../../docker-compose.yml, service: monitor-frontend}
     profiles: [module-monitor]
     container_name: !reset null
+  standard-backend:
+    extends: {file: ../../docker-compose.yml, service: standard-backend}
+    profiles: [module-standard]
+    container_name: !reset null
+    environment: *endpoints
+  standard-frontend:
+    extends: {file: ../../docker-compose.yml, service: standard-frontend}
+    profiles: [module-standard]
+    container_name: !reset null
   workbench-backend:
     extends: {file: ../../docker-compose.yml, service: workbench-backend}
     profiles: [module-workbench]

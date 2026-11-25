@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 container=${1:?expected gate-owned container ID}
 owner=${2:?expected database owner}
-case "$owner" in monitor|orchestrator) ;; *) exit 2 ;; esac
+case "$owner" in standard|monitor|orchestrator) ;; *) exit 2 ;; esac
 provider=${ADDP_INFRA_DATABASE_PROVIDER:?}
 work=$(mktemp -d)
 install_volume=""
@@ -102,10 +102,27 @@ runtime missing "$owner"
 snapshot >refused.sql
 cmp before-owner.sql refused.sql
 # The same release database phase and the same module command run on both providers.
-bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml"
+prepare=(bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml")
+if [[ $owner == standard && $provider == mysql ]]; then
+  status=0
+  "${prepare[@]}" >"$work/installer.out" || status=$?
+  case "$status" in
+    0) ;;
+    3)
+      sed -n '/^USE `standard`;$/,/^DELIMITER ;$/p' "$work/installer.out" >"$work/triggers.sql"
+      grep -q '^CREATE DEFINER=' "$work/triggers.sql"
+      docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot' <"$work/triggers.sql"
+      "${prepare[@]}" ;;
+    *) cat "$work/installer.out"; exit "$status" ;;
+  esac
+else
+  "${prepare[@]}"
+fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
+elif [[ $owner == standard ]]; then
+  grep -qi 'CREATE TABLE.*element_revisions' installed.sql
 else
   grep -qi 'CREATE TABLE.*orchestrations' installed.sql
 fi
@@ -117,4 +134,7 @@ for cycle in 1 2; do
 done
 if [[ "$owner" == monitor ]]; then
   (cd "$root/monitor/backend" && ADDP_TEST_MONITOR_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledActiveAlertUniqueness$' -count=1 -v)
+fi
+if [[ $owner == standard ]]; then
+  (cd "$root/standard/backend" && ADDP_TEST_STANDARD_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledElementPublication$' -count=1 -v)
 fi
