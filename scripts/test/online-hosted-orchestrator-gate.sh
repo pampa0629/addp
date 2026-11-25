@@ -84,7 +84,7 @@ if [ "$ORCHESTRATOR_CASE" = scheduled-controlled-file ]; then
   run_logged docker tag python:3.11-slim localhost:5001/python:3.11-slim
   run_logged docker push localhost:5001/python:3.11-slim
   application_owned=1
-  hosted_prepare_native_database system meta gateway security orchestrator
+  hosted_prepare_native_database system meta gateway security orchestrator monitor
   unset hosted_deploy_password
   for start_target in -security -meta -orchestrator -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
@@ -131,7 +131,7 @@ done
 source "$ADDP_ONLINE_SECRET_DIR/orchestrator-proxy.env"
 export ADDP_ONLINE_ORCHESTRATOR_PROXY_URL
 application_owned=1
-hosted_prepare_native_database system meta gateway orchestrator
+hosted_prepare_native_database system meta gateway orchestrator monitor
 unset hosted_deploy_password
 for start_target in -meta -orchestrator -monitor; do
   case "$start_target" in

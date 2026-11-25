@@ -121,7 +121,7 @@ image_services=$backend_images
 if [[ "$ADDP_ONLINE_NATIVE_CASE" = manager-* ]]; then image_services+=,model3d-workflow-engine; fi
 run_native_phase images make build-images IMAGE_BUILD_ARGS="--verify --services $image_services --jobs 1"
 application_owned=1
-run_logged hosted_prepare_compose_database compose_native system meta gateway security manager
+run_logged hosted_prepare_compose_database compose_native system meta gateway security manager monitor
 unset hosted_deploy_password
 for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend develop-backend service-backend quality-backend graph-backend asset-backend model-backend standard-backend monitor-backend meta-worker; do
   run_native_phase "application_$service" compose_native up -d --no-deps --wait "$service"

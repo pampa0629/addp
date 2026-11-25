@@ -127,7 +127,7 @@ class HostedTransferGateTest(unittest.TestCase):
         result = self.run_gate(ADDP_ONLINE_TEST_RUN_ID='stale-inherited-run')
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        sequence = ('infra-up', 'transfer-fixture:start', 'install:addp-orchestrator:prepare-database', 'start:-security', 'start:-transfer', 'start:-manager', 'start:-develop', 'start:-orchestrator', 'start:-monitor',
+        sequence = ('infra-up', 'transfer-fixture:start', 'install:addp-orchestrator:prepare-database', 'install:addp-monitor:prepare-database', 'start:-security', 'start:-transfer', 'start:-manager', 'start:-develop', 'start:-orchestrator', 'start:-monitor',
                     'playwright install --with-deps chromium', '--suite transfer-relational-sql-etl',
                     'engine-register:transfer-engine.json', 'engine-register:transfer-mongodb-engine.json', 'engine-register:transfer-doris-engine.json', 'engine-register:transfer-clickhouse-engine.json', 'engine-register:transfer-minio-engine.json', 'engine-register:transfer-rustfs-engine.json', 'make:test-online ONLINE_SUITE=transfer-relational-sql-etl',
                     'transfer-fixture:verify', 'application-stop', 'transfer-fixture:stop', 'infra-down')

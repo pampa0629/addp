@@ -107,7 +107,7 @@ class HostedMetricsGateTest(unittest.TestCase):
                      "browser-prepare:--prefix console/frontend exec -- playwright install --with-deps chromium", "make:test-online ONLINE_SUITE=platform-node-metrics", "application-stop", "metrics-fixture:down", "node-source:down", "infra-down"):
             self.assertIn(item, trace)
         self.assertLess(trace.index("metrics-fixture:query"), trace.index("start:-monitor"))
-        for owner in ("manager", "security", "orchestrator", "copilot"):
+        for owner in ("manager", "security", "orchestrator", "copilot", "monitor"):
             installer = "install:copilot:prepare_database" if owner == "copilot" else f"install:addp-{owner}:prepare-database"
             self.assertLess(trace.index(installer), trace.index("start:-monitor -gateway"))
         self.assertEqual(trace.count("infra-up"), 2)

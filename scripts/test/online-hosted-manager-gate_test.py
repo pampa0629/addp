@@ -545,6 +545,7 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         self.assertIn("start:-security", trace)
+        self.assertLess(trace.index("install:addp-monitor:prepare-database"), trace.index("start:-monitor"))
         self.assertLess(trace.index("start:-security"), trace.index("start:-manager"))
         self.assertIn("security-url:http://127.0.0.1:8194", trace)
         self.assertIn("--wait-protection-owners manager", trace)

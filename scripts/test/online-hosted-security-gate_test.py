@@ -228,6 +228,7 @@ class HostedSecurityGateTest(unittest.TestCase):
                                ADDP_ONLINE_GRAPH_CASE='execution-lifecycle')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
+        self.assertLess(trace.index('monitor-backend prepare-database'), trace.index('up -d --no-deps --wait monitor-backend'))
         self.assertIn('up -d --no-deps --wait graph-backend-peer', trace)
         self.assertIn('graph-case:execution-lifecycle', trace)
         self.assertLess(trace.index('execution-resume'), trace.index('down --remove-orphans --volumes'))
@@ -238,6 +239,7 @@ class HostedSecurityGateTest(unittest.TestCase):
         result = self.run_gate(ONLINE_SUITE_INPUT='cleanup-execution')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
+        self.assertLess(trace.index('monitor-backend prepare-database'), trace.index('up -d --no-deps --wait monitor-backend'))
         for owner in ('meta','manager','transfer','develop','service','quality','graph','asset','model','standard'):
             self.assertEqual(trace.count('up -d --no-deps --wait ' + owner + '-backend'), 1)
         self.assertNotIn('up -d --no-deps --wait graph-backend-peer', trace)
@@ -371,6 +373,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             self.assertIn('start:' + target, trace)
         self.assertIn('initialize', trace)
         self.assertLess(trace.index('go-workspace'), trace.index('start:-meta'))
+        self.assertLess(trace.index('install:addp-monitor:prepare-database'), trace.index('start:-monitor'))
         self.assertFalse((self.host.repository / 'go.work').exists())
         self.assertIn('chromium', trace)
         self.assertIn('make:test-online ONLINE_SUITE=security-mysql-owner-protection', trace)

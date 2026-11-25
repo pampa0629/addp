@@ -96,7 +96,7 @@ class HostedQualityGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = self.host.trace.read_text().splitlines()
-        expected = ["infra-up", "source:start", "install:addp-orchestrator:prepare-database", "start:-model -meta -quality -orchestrator -monitor", "owner:prepare",
+        expected = ["infra-up", "source:start", "install:addp-orchestrator:prepare-database", "install:addp-monitor:prepare-database", "start:-model -meta -quality -orchestrator -monitor", "owner:prepare",
                     "source:seed", "owner:scan", "make:test-online ONLINE_SUITE=quality-dynamic-binding", "source:verify",
                     "application-stop", "source:stop", "infra-down"]
         self.assertEqual([item for item in trace if item in expected], expected)
