@@ -13,7 +13,8 @@ import (
 var _ plugin.GuardedQueryReadSessionProvider = (*MySQLPlugin)(nil)
 
 func (p *MySQLPlugin) OpenGuardedQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery, authorize plugin.QueryReadAuthorizer) (plugin.GuardedQueryReadSession, error) {
-	return shared.OpenGuardedMySQLCompatibleQueryReadSession(ctx, p, p.BuildDSN, mysqlCatalogFieldType, p.DecodeSQLQueryValue, prepared, authorize, p.bindQuerySources)
+	session, err := shared.OpenGuardedMySQLCompatibleQueryReadSession(ctx, p, p.BuildDSN, mysqlCatalogFieldType, p.DecodeSQLQueryValue, prepared, authorize, p.bindQuerySources)
+	return session, mysqlReadError(err)
 }
 
 // OpenQueryReadSession consumes the already bound, one-shot plan. The driver

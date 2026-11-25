@@ -444,8 +444,23 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 			if _, err := prepared.Execute(bounded); plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeExecutionBudgetInvalid {
 				t.Fatalf("production allowed a larger SQL budget: %v", err)
 			}
+			req.Query = "SELECT id FROM " + table
+			guarded, err := provider.PrepareQuery(bounded, readerInfo, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := guarded.ReadSet(bounded); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := lock.ExecContext(ctx, "LOCK TABLES "+table+" WRITE"); err != nil {
 				t.Fatal(err)
+			}
+			session, err := provider.OpenGuardedQueryReadSession(bounded, guarded, func(context.Context, *plugin.QueryReadSet) error {
+				t.Fatal("authorization reached while the source table was write-locked")
+				return nil
+			})
+			if session != nil || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout || !errors.As(err, &sourceError) || sourceError.Number != 3024 || bounded.Err() != nil {
+				t.Fatalf("guarded query lost the native execution timeout: %v", err)
 			}
 			batch, err := provider.ReadBatch(bounded, readerInfo, plugin.TabularItemPath(engineID, "database", database, "pool_sample"), plugin.BatchReadOptions{Limit: 1})
 			if plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout || batch != nil {
