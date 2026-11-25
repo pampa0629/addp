@@ -815,13 +815,15 @@ test('automatic service refresh keeps the applied reason separate from its draft
   await reason.click()
   await page.getByRole('option', { name: '正常退出', exact: true }).click()
   await expect.poll(() => state.calls.at(-1)).toBe('2')
-  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+  const refresh = page.getByRole('button', { name: '刷新', exact: true })
+  await expect(refresh).toBeEnabled()
   const before = state.listCalls.length
   await page.clock.fastForward(10001)
   await expect.poll(() => state.listCalls.length).toBeGreaterThan(before)
   expect(state.listCalls.at(-1).stop_reason).toBe('graceful')
   await expect(reason).toContainText('正常退出')
   await expect(page.getByTestId('process-stop-reason')).toHaveText(['正常退出'])
+  await expect(refresh).toBeEnabled()
   state.setStatus(2, 'up')
   const beforeRecovery = state.listCalls.length
   await page.clock.fastForward(10001)
