@@ -201,11 +201,7 @@ if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-executi
   run_logged npm --prefix console/frontend ci
   fi
 else
-  hosted_prepare_native_database system meta gateway security manager monitor
-  unset hosted_deploy_password
-  for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
-    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-  done
+  hosted_start_native_modules -meta -security -manager -develop -service -transfer -graph -monitor
 fi
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 if [ "$ONLINE_SUITE" = graph-protection ]; then

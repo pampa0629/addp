@@ -377,6 +377,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             self.assertIn('start:' + target, trace)
         self.assertIn('initialize', trace)
         self.assertLess(trace.index('go-workspace'), trace.index('start:-meta'))
+        self.assertLess(trace.index('install:addp-service:prepare-database'), trace.index('start:-meta'))
         self.assertLess(trace.index('install:addp-monitor:prepare-database'), trace.index('start:-monitor'))
         self.assertFalse((self.host.repository / 'go.work').exists())
         self.assertIn('chromium', trace)

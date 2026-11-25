@@ -211,7 +211,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         steps = (
             "postgres-source:start",
-            "standard-backend prepare-database",
+            "standard-backend prepare-database", "service-backend prepare-database",
             " up -d --no-deps --wait service-backend standard-backend",
             " up -d --no-deps --wait catalog-backend",
             "--wait-protection-owners manager,transfer,service",

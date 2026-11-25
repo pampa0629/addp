@@ -4537,7 +4537,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "bash business/scripts/online-opengauss-consumer-fixture.sh start\n"
             "python3 scripts/test/online-engine-registration.py\n"
             '--descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"\n'
-            "for start_target in -security -manager -develop -service -transfer\n"
+            "hosted_start_native_modules -security -manager -develop -service -transfer\n"
             "--wait-protection-owners manager,develop,service,transfer\n"
             "unset ADDP_TEST_OPENGAUSS_DSN\n"
             "python3 scripts/test/relational-consumer-flow-online.py --initialize-source-read\n"

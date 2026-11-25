@@ -41,16 +41,11 @@ if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
 fi
 application_owned=1
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
-  hosted_prepare_native_database system meta gateway manager security inference agent
+  hosted_start_native_modules -ontology -meta -manager -security -develop -graph -service -inference -agent
 else
   hosted_prepare_native_database system gateway
-fi
-unset hosted_deploy_password
-run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -ontology
-if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
-  for target in -meta -manager -security -develop -graph -service -inference -agent; do
-    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
-  done
+  unset hosted_deploy_password
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -ontology
 fi
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2"' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

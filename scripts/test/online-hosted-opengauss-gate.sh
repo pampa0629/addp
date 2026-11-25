@@ -25,14 +25,7 @@ hosted_start_platform_infra
 fixture_owned=1
 run_logged bash business/scripts/online-opengauss-consumer-fixture.sh start
 application_owned=1
-hosted_prepare_native_database system meta gateway manager security
-unset hosted_deploy_password
-for start_target in -security -manager -develop -service -transfer; do
-  # start.sh deliberately leaves application processes running. Writing its
-  # output straight to the gate log prevents those children from retaining a
-  # tee pipe and blocking the Hosted lifecycle after the launcher exits.
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+hosted_start_native_modules -security -manager -develop -service -transfer
 
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite opengauss-consumer-flow --wait-protection-owners manager,develop,service,transfer --output "$1"' _ "$IDENTITY_ENV"
 # shellcheck disable=SC1090

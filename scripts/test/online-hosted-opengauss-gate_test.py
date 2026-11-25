@@ -212,11 +212,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
                 chmod +x "$1/$2/backend/venv/bin/python"
             }
         """)
-        self._write_repository_script("scripts/dev/build-identity.sh", """
-            addp_go_build_is_current() { return 1; }
-            addp_atomic_go_build() {
-                mkdir -p .dev-bins
-                cat > "$3" <<'INSTALLER'
+        self._write_repository_script("scripts/test/fixture-database-installer.sh", """
             #!/usr/bin/env bash
             set -eu
             [ "$POSTGRES_DB:$POSTGRES_PORT" = addp_online:25432 ]
@@ -225,8 +221,12 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             [ "$ADDP_DATABASE_DEPLOY_PASSWORD" != "$ADDP_DATABASE_RUNTIME_PASSWORD" ]
             echo "install:${0##*/}:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_INSTALL_FAIL:-}" != "$*" ]
-            INSTALLER
-                chmod +x "$3"
+        """)
+        self._write_repository_script("scripts/dev/build-identity.sh", """
+            addp_go_build_is_current() { return 1; }
+            addp_atomic_go_build() {
+                mkdir -p .dev-bins
+                ln -sf "$ROOT_DIR/scripts/test/fixture-database-installer.sh" "$3"
             }
         """)
         self._write_repository_script(
@@ -427,11 +427,14 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         registry = product / "scripts/infra/platform-database.sh"
         registry.write_text('addp_prepare_module_database() { [[ "$1" == manager ]]; }\n')
         self.assertEqual(run("manager", "security", "-standard"), ["current-infra", "current-install: system meta gateway manager"])
-        registry.write_text('addp_prepare_module_database() { [[ "$1" == manager || "$1" == standard ]]; }\n')
+        registry.write_text('addp_prepare_module_database() { [[ "$1" == manager || "$1" == standard || "$1" == workbench ]]; }\n')
         self.assertEqual(run("manager", "security", "-standard"), ["current-infra", "current-install: system meta gateway manager standard"])
         standard_gate = SCRIPT.with_name("online-hosted-standard-document-gate.sh").read_text().splitlines()
         preparation = next(line for line in standard_gate if line.startswith("hosted_prepare_selected_native_database"))
         self.assertEqual(run(*preparation.split()[1:]), ["current-infra", "current-install: system meta gateway standard"])
+        self.assertEqual(run("-workbench"), ["current-infra", "current-install: system meta gateway workbench"])
+        shutil.copy2(SCRIPT.parents[1] / "infra/platform-database.sh", registry)
+        self.assertEqual(run("-workbench"), ["current-infra", "current-install: system meta gateway workbench service"])
 
     def test_initialization_failure_prevents_registration_and_scene(self):
         self.prepare_run_fixture()
@@ -455,6 +458,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.trace.read_text()
+        self.assertLess(trace.index("install:addp-service:prepare-database"), trace.index("start:-security"))
         self.assertLess(trace.index("prepare:exact-two-table-read"), trace.index("make:test-online"))
 
     def test_source_grant_failure_cleans_up_without_starting_consumers(self):
