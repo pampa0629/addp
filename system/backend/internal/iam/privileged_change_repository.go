@@ -158,7 +158,7 @@ func (r *Repository) listAdministratorChangeCandidates(ctx context.Context, page
 	var total int64
 	q := r.db.WithContext(ctx).Table("system.principals p").Joins("JOIN system.users u ON u.id=p.id").Where("p.principal_type='user' AND p.status IN ('active','suspended')")
 	if search != "" {
-		q = q.Where("u.display_name ILIKE ?", "%"+search+"%")
+		q = q.Where("LOWER(u.display_name) LIKE LOWER(?)", "%"+search+"%")
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, wrapRepositoryError(err)

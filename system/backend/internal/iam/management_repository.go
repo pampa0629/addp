@@ -87,7 +87,7 @@ func (r *Repository) ListManagedTenants(
 	query := r.db.WithContext(ctx).Model(&Tenant{})
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
-		query = query.Where("code ILIKE ? OR name ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(code) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?)", pattern, pattern)
 	}
 	if status != nil {
 		query = query.Where("status = ?", *status)
@@ -175,7 +175,7 @@ func (r *Repository) ListManagedUsers(
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
 		base = base.Where(
-			"user_profile.display_name ILIKE ? OR user_profile.primary_email ILIKE ? OR account.username ILIKE ?",
+			"LOWER(user_profile.display_name) LIKE LOWER(?) OR LOWER(user_profile.primary_email) LIKE LOWER(?) OR LOWER(account.username) LIKE LOWER(?)",
 			pattern, pattern, pattern,
 		)
 	}
@@ -335,7 +335,7 @@ func (r *Repository) ListManagedTenantMemberships(
 	if normalized := strings.TrimSpace(filter.Search); normalized != "" {
 		pattern := "%" + normalized + "%"
 		base = base.Where(
-			"user_profile.display_name ILIKE ? OR account.username ILIKE ? OR service_principal.name ILIKE ?",
+			"LOWER(user_profile.display_name) LIKE LOWER(?) OR LOWER(account.username) LIKE LOWER(?) OR LOWER(service_principal.name) LIKE LOWER(?)",
 			pattern, pattern, pattern,
 		)
 	}

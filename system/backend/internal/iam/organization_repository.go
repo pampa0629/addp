@@ -39,7 +39,7 @@ func (r *Repository) ListDepartments(ctx context.Context, tenantID int64, page, 
 	query := r.db.WithContext(ctx).Model(&Department{}).Where("tenant_id = ?", tenantID)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
-		query = query.Where("code ILIKE ? OR name ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(code) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?)", pattern, pattern)
 	}
 	if status != nil {
 		query = query.Where("status = ?", *status)
@@ -49,7 +49,7 @@ func (r *Repository) ListDepartments(ctx context.Context, tenantID int64, page, 
 		return nil, 0, wrapRepositoryError(err)
 	}
 	var departments []Department
-	err := query.Order("parent_id NULLS FIRST, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&departments).Error
+	err := query.Order("(parent_id IS NOT NULL) ASC, parent_id ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&departments).Error
 	return departments, total, wrapRepositoryError(err)
 }
 
@@ -195,7 +195,7 @@ func (r *Repository) ListProjectGroups(ctx context.Context, tenantID int64, page
 	query := r.db.WithContext(ctx).Model(&ProjectGroup{}).Where("tenant_id = ?", tenantID)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
-		query = query.Where("code ILIKE ? OR name ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(code) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?)", pattern, pattern)
 	}
 	if status != nil {
 		query = query.Where("status = ?", *status)

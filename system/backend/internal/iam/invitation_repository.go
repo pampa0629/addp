@@ -27,7 +27,7 @@ func (r *Repository) ListTenantInvitations(
 ) ([]TenantInvitation, int64, error) {
 	query := r.db.WithContext(ctx).Model(&TenantInvitation{}).Where("tenant_id = ?", tenantID)
 	if normalized := strings.TrimSpace(search); normalized != "" {
-		query = query.Where("email ILIKE ?", "%"+normalized+"%")
+		query = query.Where("LOWER(email) LIKE LOWER(?)", "%"+normalized+"%")
 	}
 	if status != nil {
 		query = query.Where("status = ?", *status)

@@ -58,7 +58,7 @@ func (r *Repository) ListTenantServiceAccounts(
 	query := r.tenantServiceAccountListQuery(ctx, tenantID)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
-		query = query.Where("service_principal.name ILIKE ? OR service_principal.description ILIKE ? OR oauth_client.client_id ILIKE ?", pattern, pattern, pattern)
+		query = query.Where("LOWER(service_principal.name) LIKE LOWER(?) OR LOWER(service_principal.description) LIKE LOWER(?) OR LOWER(oauth_client.client_id) LIKE LOWER(?)", pattern, pattern, pattern)
 	}
 	if status != nil {
 		query = query.Where("principal.status = ?", *status)

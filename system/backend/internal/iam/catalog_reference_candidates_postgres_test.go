@@ -62,11 +62,11 @@ func TestCatalogReferenceCandidatesAgainstPostgres(t *testing.T) {
 		t.Fatalf("create project group reference: %v", err)
 	}
 
-	departments, total, err := repository.ListCatalogDepartmentCandidates(ctx, tenant.ID, "Sales", 1, 20)
+	departments, total, err := repository.ListCatalogDepartmentCandidates(ctx, tenant.ID, "aLe", 1, 20)
 	if err != nil || total != 1 || len(departments) != 1 || departments[0].ID != department.ID || departments[0].SubjectType != CatalogSubjectTypeDepartment {
 		t.Fatalf("departments=%#v total=%d err=%v", departments, total, err)
 	}
-	users, total, err := repository.ListCatalogUserCandidates(ctx, tenant.ID, "catalog-candidate", 1, 20)
+	users, total, err := repository.ListCatalogUserCandidates(ctx, tenant.ID, "CATALOG-CANDIDATE", 1, 20)
 	if err != nil || total != 1 || len(users) != 1 || users[0].ID != user.PrincipalID || users[0].SubjectType != CatalogSubjectTypeUser {
 		t.Fatalf("users=%#v total=%d err=%v", users, total, err)
 	}
@@ -76,7 +76,7 @@ func TestCatalogReferenceCandidatesAgainstPostgres(t *testing.T) {
 	}
 	// No Project Group membership was created. Empty active groups remain
 	// valid recipients; membership is not inferred from candidate discovery.
-	groups, total, err := repository.ListCatalogProjectGroupCandidates(ctx, tenant.ID, " delivery ", 1, 1)
+	groups, total, err := repository.ListCatalogProjectGroupCandidates(ctx, tenant.ID, " eLiVe ", 1, 1)
 	if err != nil || total != 1 || len(groups) != 1 || groups[0].ID != projectGroup.ID || groups[0].SubjectType != CatalogSubjectTypeProjectGroup {
 		t.Fatalf("group candidates=%+v total=%d err=%v", groups, total, err)
 	}

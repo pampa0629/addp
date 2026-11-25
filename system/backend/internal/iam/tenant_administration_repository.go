@@ -98,7 +98,7 @@ func (r *Repository) ListManagedTenantViews(
 	base := r.db.WithContext(ctx).Table("system.tenants tenant")
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
-		base = base.Where("tenant.code ILIKE ? OR tenant.name ILIKE ?", pattern, pattern)
+		base = base.Where("LOWER(tenant.code) LIKE LOWER(?) OR LOWER(tenant.name) LIKE LOWER(?)", pattern, pattern)
 	}
 	if status != nil {
 		base = base.Where("tenant.status = ?", *status)
@@ -178,7 +178,7 @@ func (r *Repository) ListTenantAdministratorCandidates(ctx context.Context, sear
 		)`)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
-		query = query.Where("user_profile.display_name ILIKE ? OR user_profile.primary_email ILIKE ? OR account.username ILIKE ?", pattern, pattern, pattern)
+		query = query.Where("LOWER(user_profile.display_name) LIKE LOWER(?) OR LOWER(user_profile.primary_email) LIKE LOWER(?) OR LOWER(account.username) LIKE LOWER(?)", pattern, pattern, pattern)
 	}
 	var candidates []TenantAdministratorCandidate
 	err := query.Select("principal.id AS principal_id, user_profile.display_name, user_profile.primary_email, account.username").

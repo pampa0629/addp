@@ -48,7 +48,37 @@ func prepareMySQLBrowserOrganization(t *testing.T, db *gorm.DB, member iam.Tenan
 func verifyMySQLBrowserOrganization(t *testing.T, db *gorm.DB, member iam.TenantMembership, token string) {
 	t.Helper()
 	ctx := context.Background()
-	resolver, err := iam.NewAuthContextService(iam.NewRepository(db))
+	repo := iam.NewRepository(db)
+	departments, total, err := repo.ListDepartments(ctx, member.TenantID, 1, 3, "", nil)
+	if err != nil || total != 3 || len(departments) != 3 || departments[0].ID != 601 || departments[1].ID != 602 || departments[2].ID != 603 {
+		t.Fatalf("department hierarchy order: rows=%v total=%d error=%v", departments, total, err)
+	}
+	for _, tc := range []struct {
+		name   string
+		list   func(context.Context, int64, string, int, int) ([]iam.CatalogReferenceCandidate, int64, error)
+		search string
+		id     int64
+	}{
+		{"department", repo.ListCatalogDepartmentCandidates, " iDd ", 602},
+		{"project group", repo.ListCatalogProjectGroupCandidates, "eAm", 601},
+		{"user", repo.ListCatalogUserCandidates, "oThEr Us", member.PrincipalID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, total, err := tc.list(ctx, member.TenantID, tc.search, 1, 1)
+			if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != tc.id {
+				t.Fatalf("search: rows=%v total=%d error=%v", rows, total, err)
+			}
+			rows, total, err = tc.list(ctx, member.TenantID, tc.search, 2, 1)
+			if err != nil || total != 1 || len(rows) != 0 {
+				t.Fatalf("second page: rows=%v total=%d error=%v", rows, total, err)
+			}
+			rows, total, err = tc.list(ctx, 999999, tc.search, 1, 1)
+			if err != nil || total != 0 || len(rows) != 0 {
+				t.Fatalf("other tenant: rows=%v total=%d error=%v", rows, total, err)
+			}
+		})
+	}
+	resolver, err := iam.NewAuthContextService(repo)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -67,7 +67,7 @@ func (r *Repository) ListManagedOAuthClients(
 		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND service_principal_id IS NULL", tenantID)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
-		query = query.Where("client_id ILIKE ? OR display_name ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(client_id) LIKE LOWER(?) OR LOWER(display_name) LIKE LOWER(?)", pattern, pattern)
 	}
 	if status != nil {
 		query = query.Where("status = ?", *status)

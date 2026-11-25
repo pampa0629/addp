@@ -82,7 +82,7 @@ func (r *Repository) ListCatalogDepartmentCandidates(
 		Where("tenant_id = ? AND status = ?", tenantID, DepartmentStatusActive)
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("name ILIKE ? OR code ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?)", pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -113,7 +113,7 @@ func (r *Repository) ListCatalogUserCandidates(
 		)`, tenantID)
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("user_profile.display_name ILIKE ? OR account.username ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(user_profile.display_name) LIKE LOWER(?) OR LOWER(account.username) LIKE LOWER(?)", pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -132,7 +132,7 @@ func (r *Repository) ListCatalogProjectGroupCandidates(ctx context.Context, tena
 		Where("tenant_id = ? AND status = ?", tenantID, ProjectGroupStatusActive)
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("name ILIKE ? OR code ILIKE ?", pattern, pattern)
+		query = query.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?)", pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
