@@ -127,6 +127,38 @@ case "$host_port" in
         ;;
 esac
 
+if [ "$SPATIAL_INTEGRATION" = 1 ]; then
+    seed_business_samples() {
+        ORACLE_CONTAINER="$CONTAINER_NAME" ORACLE_APP_USER="$ORACLE_USER" \
+            ORACLE_APP_PASSWORD="$ORACLE_APP_PASSWORD" bash "$ROOT_DIR/business/oracle/test-data.sh"
+    }
+    sample_sql() {
+        docker exec -i "$CONTAINER_NAME" sqlplus -s "$ORACLE_USER/$ORACLE_APP_PASSWORD@//localhost:1521/FREEPDB1"
+    }
+    seed_business_samples
+    sample_sql <<'SQL'
+WHENEVER SQLERROR EXIT FAILURE ROLLBACK
+UPDATE customers SET name = 'edited before reseeding' WHERE id = 1;
+DELETE FROM orders WHERE id = 1002;
+COMMIT;
+SQL
+    seed_business_samples
+    sample_sql <<'SQL'
+WHENEVER SQLERROR EXIT FAILURE
+DECLARE
+  kept NUMBER;
+  restored NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO kept FROM customers WHERE id = 1 AND name = 'edited before reseeding';
+  SELECT COUNT(*) INTO restored FROM orders WHERE id = 1002 AND amount = 88;
+  IF kept <> 1 OR restored <> 1 THEN
+    RAISE_APPLICATION_ERROR(-20002, 'Oracle business samples did not preserve the edit and restore the missing row');
+  END IF;
+END;
+/
+SQL
+fi
+
 cd "$ROOT_DIR/common"
 ADDP_ORACLE_SPATIAL_INTEGRATION="$SPATIAL_INTEGRATION" \
 ADDP_ORACLE_DECIMAL_INTEGRATION=1 \

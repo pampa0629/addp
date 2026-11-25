@@ -57,6 +57,52 @@ docker() {
         self.assertNotEqual(result.returncode, 0)
 
 
+class BusinessEngineReadinessTest(unittest.TestCase):
+    def test_selected_engine_probe_controls_startup_result(self):
+        source = (ROOT / 'business/scripts/start.sh').read_text()
+        ready = source[source.index('# 6. 等待服务就绪'):source.index('# 7. 验证 PostGIS')]
+        flags = set(re.findall(r'\$ENABLE_([A-Z0-9_]+)', ready))
+        for flag, label, attempts in (('CLICKHOUSE', 'ClickHouse', 30), ('MONGODB', 'MongoDB', 30),
+                                      ('NEO4J', 'Neo4j', 60)):
+            for succeeds_on in (2, attempts + 1):
+                with self.subTest(engine=label, succeeds_on=succeeds_on):
+                    # Run the production readiness section without containers or real sleeps.
+                    script = """
+set -e
+GREEN= RED= YELLOW= NC= NEO4J_HTTP_PORT_VAL=7474
+count=0
+sleep() { :; }
+probe() { count=$((count + 1)); [ "$count" -eq "$SUCCEEDS_ON" ]; }
+docker() { probe; }
+curl() { probe; }
+""" + ready + '\nprintf "completed %s" "$count"'
+                    env = {**os.environ, **{'ENABLE_' + engine: str(engine == flag).lower() for engine in flags},
+                           'SUCCEEDS_ON': str(succeeds_on)}
+                    result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True)
+                    if succeeds_on <= attempts:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertIn('completed 2', result.stdout)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn(label, result.stderr)
+                        self.assertNotIn('completed', result.stdout)
+
+    def test_oracle_initializes_cdc_before_seeding_once(self):
+        source = (ROOT / 'business/scripts/start.sh').read_text()
+        ready = source[source.index('# 6. 等待服务就绪'):source.index('# 7. 验证 PostGIS')]
+        flags = set(re.findall(r'\$ENABLE_([A-Z0-9_]+)', ready))
+        script = """
+set -e
+GREEN= RED= YELLOW= NC=
+docker() { echo healthy; }
+bash() { echo "called ${1##*/}"; }
+""" + ready
+        env = {**os.environ, **{'ENABLE_' + flag: str(flag == 'ORACLE').lower() for flag in flags}}
+        result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(re.findall(r'^called (.*)$', result.stdout, re.M), ['init-cdc.sh', 'test-data.sh'])
+
+
 class StartupResultsTest(unittest.TestCase):
     def test_every_selected_backend_reaches_the_health_barrier(self):
         source = (ROOT / 'scripts/dev/start.sh').read_text()

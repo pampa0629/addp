@@ -851,7 +851,8 @@ if [ "$ENABLE_ORACLE" = true ]; then
         echo -e "${RED}✗ Oracle 未在 240 秒内就绪${NC}"
         exit 1
     fi
-    bash "${PROJECT_ROOT}/oracle/test-data.sh"
+    bash oracle/init-cdc.sh
+    bash oracle/test-data.sh
 fi
 
 if [ "$ENABLE_SUPERMAP_PG" = true ]; then
@@ -895,24 +896,26 @@ if [ "$ENABLE_MINIO" = true ]; then
     fi
 fi
 
-if [ "$ENABLE_CLICKHOUSE" = true ]; then
-    for i in {1..30}; do
-        if docker exec business-clickhouse clickhouse-client --query 'SELECT 1' >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ ClickHouse 就绪${NC}"
-            break
+wait_for_business_probe() {
+    local service=$1 attempts=$2 i
+    shift 2
+    for ((i=1; i<=attempts; i++)); do
+        if "$@" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ ${service} 就绪${NC}"
+            return 0
         fi
-        sleep 1
+        if ((i < attempts)); then sleep 1; fi
     done
+    echo -e "${RED}✗ ${service} 连续 ${attempts} 次就绪检查失败${NC}" >&2
+    return 1
+}
+
+if [ "$ENABLE_CLICKHOUSE" = true ]; then
+    wait_for_business_probe ClickHouse 30 docker exec business-clickhouse clickhouse-client --query 'SELECT 1'
 fi
 
 if [ "$ENABLE_MONGODB" = true ]; then
-    for i in {1..30}; do
-        if docker exec business-mongodb mongosh --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ MongoDB 就绪${NC}"
-            break
-        fi
-        sleep 1
-    done
+    wait_for_business_probe MongoDB 30 docker exec business-mongodb mongosh --eval "db.adminCommand('ping')"
 fi
 
 if [ "$ENABLE_DORIS" = true ]; then
@@ -963,13 +966,7 @@ fi
 
 if [ "$ENABLE_NEO4J" = true ]; then
     echo -e "${YELLOW}等待 Neo4j 启动 (可能需要 30-60 秒)...${NC}"
-    for i in {1..60}; do
-        if curl -sf http://localhost:${NEO4J_HTTP_PORT_VAL} >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ Neo4j 就绪${NC}"
-            break
-        fi
-        sleep 1
-    done
+    wait_for_business_probe Neo4j 60 curl -sf "http://localhost:${NEO4J_HTTP_PORT_VAL}"
 fi
 
 if [ "$ENABLE_NFS" = true ]; then
@@ -1139,25 +1136,6 @@ if [ "$ENABLE_OPENGAUSS" = true ]; then
         echo -e "${RED}✗ openGauss 未在 600 秒内完成初始化${NC}"
         exit 1
     fi
-fi
-
-if [ "$ENABLE_ORACLE" = true ]; then
-    ORACLE_READY=false
-    for i in {1..120}; do
-        if docker exec business-oracle healthcheck.sh >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ Oracle 就绪${NC}"
-            ORACLE_READY=true
-            break
-        fi
-        sleep 2
-    done
-    if [ "$ORACLE_READY" != true ]; then
-        echo -e "${RED}✗ Oracle 未在 240 秒内就绪${NC}"
-        exit 1
-    fi
-
-    bash oracle/init-cdc.sh
-    bash oracle/test-data.sh
 fi
 
 if [ "$ENABLE_REDPANDA" = true ]; then

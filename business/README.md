@@ -443,7 +443,7 @@ bash mysql/test-data.sh
 
 Oracle 必须使用常规镜像 `gvenzl/oracle-free:23`。官方 `-slim` 镜像会卸载 Oracle Spatial 和 Oracle Locator，不能通过用户授权或普通初始化 SQL 恢复。
 
-`bash scripts/start.sh -oracle` 会幂等初始化普通表、`CUSTOMER_LOCATIONS` 点要素表和 `SPATIAL_FEATURES` 综合空间表，并验证：
+`bash scripts/start.sh -oracle` 在 CDC 准备完成后执行一次样例初始化。按主键补齐缺失样例并保留已有行的业务值，覆盖普通表、`CUSTOMER_LOCATIONS` 点要素表和 `SPATIAL_FEATURES` 综合空间表，并验证：
 
 - `MDSYS.SDO_GEOMETRY` 可用；
 - `Point`、`LineString`、`Polygon`、`MultiPoint`、`MultiLineString`、`MultiPolygon` 和 `GeometryCollection` 均可转换为标准 WKB；三维 `SDO_GEOMETRY` 由 Oracle `TO_GEOJSON` 保留 Z 后再由 Transfer 归一化为 EWKB；

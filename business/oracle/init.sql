@@ -154,21 +154,18 @@ END;
 MERGE INTO customers target
 USING (SELECT 1 id, 'CUST-001' customer_code, 'ADDP Demo' name, 1 active, DATE '2026-01-15' created_at FROM dual) source
 ON (target.id = source.id)
-WHEN MATCHED THEN UPDATE SET target.customer_code = source.customer_code, target.name = source.name, target.active = source.active
 WHEN NOT MATCHED THEN INSERT (id, customer_code, name, active, created_at)
 VALUES (source.id, source.customer_code, source.name, source.active, source.created_at);
 
 MERGE INTO customers target
 USING (SELECT 2 id, 'CUST-002' customer_code, 'Oracle Reader' name, 1 active, DATE '2026-02-20' created_at FROM dual) source
 ON (target.id = source.id)
-WHEN MATCHED THEN UPDATE SET target.customer_code = source.customer_code, target.name = source.name, target.active = source.active
 WHEN NOT MATCHED THEN INSERT (id, customer_code, name, active, created_at)
 VALUES (source.id, source.customer_code, source.name, source.active, source.created_at);
 
 MERGE INTO orders target
 USING (SELECT 1001 id, 'ORD-1001' order_no, 1 customer_id, 1299.50 amount, TIMESTAMP '2026-03-01 09:30:00' ordered_at, 'first order' notes FROM dual) source
 ON (target.id = source.id)
-WHEN MATCHED THEN UPDATE SET target.order_no = source.order_no, target.customer_id = source.customer_id, target.amount = source.amount, target.ordered_at = source.ordered_at, target.notes = source.notes
 WHEN NOT MATCHED THEN INSERT (id, order_no, customer_id, amount, ordered_at, notes)
 VALUES (source.id, source.order_no, source.customer_id, source.amount, source.ordered_at, source.notes);
 
@@ -180,12 +177,11 @@ USING (
     FROM dual
 ) source
 ON (target.id = source.id)
-WHEN MATCHED THEN UPDATE SET target.name = source.name, target.shape = source.shape
 WHEN NOT MATCHED THEN INSERT (id, name, shape)
 VALUES (source.id, source.name, source.shape);
 
 DECLARE
-  PROCEDURE upsert_spatial_feature(feature_id NUMBER, feature_type VARCHAR2, feature_wkt VARCHAR2) IS
+  PROCEDURE seed_spatial_feature(feature_id NUMBER, feature_type VARCHAR2, feature_wkt VARCHAR2) IS
     geometry MDSYS.SDO_GEOMETRY;
   BEGIN
     geometry := SDO_UTIL.FROM_WKTGEOMETRY(feature_wkt);
@@ -193,17 +189,16 @@ DECLARE
     MERGE INTO spatial_features target
     USING (SELECT feature_id id, feature_type geometry_type, geometry shape FROM dual) source
        ON (target.id = source.id)
-     WHEN MATCHED THEN UPDATE SET target.geometry_type = source.geometry_type, target.shape = source.shape
      WHEN NOT MATCHED THEN INSERT (id, geometry_type, shape)
           VALUES (source.id, source.geometry_type, source.shape);
   END;
 BEGIN
-  upsert_spatial_feature(1, 'LineString', 'LINESTRING (116.35 39.90, 116.45 39.95)');
-  upsert_spatial_feature(2, 'Polygon', 'POLYGON ((116.30 39.85, 116.40 39.85, 116.40 39.95, 116.30 39.95, 116.30 39.85))');
-  upsert_spatial_feature(3, 'MultiPoint', 'MULTIPOINT ((116.30 39.80), (116.50 40.00))');
-  upsert_spatial_feature(4, 'MultiLineString', 'MULTILINESTRING ((116.20 39.80, 116.30 39.90), (116.40 39.90, 116.50 40.00))');
-  upsert_spatial_feature(5, 'MultiPolygon', 'MULTIPOLYGON (((116.10 39.70, 116.15 39.70, 116.15 39.75, 116.10 39.75, 116.10 39.70)), ((116.50 40.00, 116.55 40.00, 116.55 40.05, 116.50 40.05, 116.50 40.00)))');
-  upsert_spatial_feature(6, 'GeometryCollection', 'GEOMETRYCOLLECTION (POINT (116.397 39.908), LINESTRING (116.35 39.90, 116.45 39.95))');
+  seed_spatial_feature(1, 'LineString', 'LINESTRING (116.35 39.90, 116.45 39.95)');
+  seed_spatial_feature(2, 'Polygon', 'POLYGON ((116.30 39.85, 116.40 39.85, 116.40 39.95, 116.30 39.95, 116.30 39.85))');
+  seed_spatial_feature(3, 'MultiPoint', 'MULTIPOINT ((116.30 39.80), (116.50 40.00))');
+  seed_spatial_feature(4, 'MultiLineString', 'MULTILINESTRING ((116.20 39.80, 116.30 39.90), (116.40 39.90, 116.50 40.00))');
+  seed_spatial_feature(5, 'MultiPolygon', 'MULTIPOLYGON (((116.10 39.70, 116.15 39.70, 116.15 39.75, 116.10 39.75, 116.10 39.70)), ((116.50 40.00, 116.55 40.00, 116.55 40.05, 116.50 40.05, 116.50 40.00)))');
+  seed_spatial_feature(6, 'GeometryCollection', 'GEOMETRYCOLLECTION (POINT (116.397 39.908), LINESTRING (116.35 39.90, 116.45 39.95))');
 END;
 /
 
@@ -215,7 +210,6 @@ USING (
     FROM dual
 ) source
 ON (target.id = source.id)
-WHEN MATCHED THEN UPDATE SET target.name = source.name, target.shape = source.shape
 WHEN NOT MATCHED THEN INSERT (id, name, shape)
 VALUES (source.id, source.name, source.shape);
 
@@ -276,14 +270,12 @@ END;
 MERGE INTO order_events target
 USING (SELECT 1 id, DATE '2026-03-01' event_time, 'created' event_type, '{"order_no":"ORD-1001"}' payload FROM dual) source
 ON (target.id = source.id AND target.event_time = source.event_time)
-WHEN MATCHED THEN UPDATE SET target.event_type = source.event_type, target.payload = source.payload
 WHEN NOT MATCHED THEN INSERT (id, event_time, event_type, payload)
 VALUES (source.id, source.event_time, source.event_type, source.payload);
 
 MERGE INTO orders target
 USING (SELECT 1002 id, 'ORD-1002' order_no, 2 customer_id, 88.00 amount, TIMESTAMP '2026-03-05 16:10:00' ordered_at, 'second order' notes FROM dual) source
 ON (target.id = source.id)
-WHEN MATCHED THEN UPDATE SET target.order_no = source.order_no, target.customer_id = source.customer_id, target.amount = source.amount, target.ordered_at = source.ordered_at, target.notes = source.notes
 WHEN NOT MATCHED THEN INSERT (id, order_no, customer_id, amount, ordered_at, notes)
 VALUES (source.id, source.order_no, source.customer_id, source.amount, source.ordered_at, source.notes);
 
