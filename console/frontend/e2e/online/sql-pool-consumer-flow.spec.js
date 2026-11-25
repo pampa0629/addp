@@ -430,21 +430,24 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
   const configuration = await saveChange(operatorPage, sample, operator, 'saturation', credentials)
   const managerPage = await page.context().newPage()
   // Chromium serializes identical GETs while a response is pending in one
-  // browser cache. Use the same signed-in user with a separate cache.
-  const waitingContext = await page.context().browser().newContext({
-    baseURL: process.env.CONSOLE_URL,
-    storageState: await page.context().storageState(),
-  })
+  // browser cache. The same user signs in separately so each isolated cache
+  // rotates its own refresh cookie through the normal Console flow.
+  const waitingContext = await page.context().browser().newContext({ baseURL: process.env.CONSOLE_URL })
   const waitingPage = await waitingContext.newPage()
   const gateFile = name => resolve(process.env.ADDP_POOL_META_GATE, name)
   const target = `${sample.engine_id}\n${sample.namespace}.${sample.table}`
   const pending = []
   let api, queue, released
   try {
+    const permissions = [...consumer.permissions].sort()
+    const token = await login(waitingPage, process.env.ADDP_ONLINE_TEST_USER_USERNAME,
+      process.env.ADDP_ONLINE_TEST_USER_PASSWORD, '/manager/data-explorer')
+    const waitingUser = await checkIdentity(token, consumer.tenantID, permissions)
+    expect(waitingUser.principalID).toBe(consumer.principalID)
     // The existing fixture API token belongs to the same ordinary user and
     // outlives the intentional waits. Page assertions use browser login.
     const fixtureToken = process.env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN
-    const fixtureIdentity = await checkIdentity(fixtureToken, consumer.tenantID, [...consumer.permissions].sort())
+    const fixtureIdentity = await checkIdentity(fixtureToken, consumer.tenantID, permissions)
     expect(fixtureIdentity.principalID).toBe(consumer.principalID)
     api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${fixtureToken}` } })
     for (const name of ['forwarded', 'released']) rmSync(gateFile(name), { force: true })
