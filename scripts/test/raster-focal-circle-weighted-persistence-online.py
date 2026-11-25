@@ -34,7 +34,7 @@ DIAGNOSTICS = {
     'window': ('米制圆窗不得提供window_size', 'Metre circle windows do not accept window_size'),
     'radius': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'),
     'grid': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'),
-    'oversize': ('米制圆窗的候选像元外接窗口不得超过5×5，不能截断半径', 'The candidate pixel bounding window of a metre circle must not exceed 5x5; the radius cannot be truncated'),
+    'oversize': ('米制圆窗的候选像元外接窗口不得超过7×7，不能截断半径', 'The candidate pixel bounding window of a metre circle must not exceed 7x7; the radius cannot be truncated'),
     'band': ('band must be a valid one-based index', 'band must be a valid one-based index'),
     'alpha': ('Focal statistics require a data band, not alpha', 'Focal statistics require a data band, not alpha'),
 }
@@ -63,7 +63,7 @@ def definition(sources, parent, name, *, invalid=None, language='zh-cn'):
     if invalid and invalid+'.tif' in fixture.SOURCES:
         source = invalid+'.tif'
         if invalid in ('x_oversize', 'y_oversize'):
-            radius = 3.
+            radius = 4.
     if invalid in ('band_zero', 'band_high', 'band_fraction', 'alpha'):
         band = {'band_zero': 0, 'band_high': 99, 'band_fraction': 1.5, 'alpha': 4}[invalid]
     tasks = [{'id': 'source', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': sources[source]}}]

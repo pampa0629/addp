@@ -1677,7 +1677,7 @@ def test_focal_circle_single_entry_conditional_windows_preserves_twelve_methods(
     for name,mode in [('window_size','square_pixels'),('radius_metres','circle_metres')]:
         assert not params[name]['required']and 'default'not in params[name]
         assert params[name]['show_when']=={'window_type':[mode]}
-    assert params['radius_metres']['type']=='float'and '5×5'in params['radius_metres']['description']and 'epsilon'in params['radius_metres']['description']
+    assert params['radius_metres']['type']=='float'and '7×7'in params['radius_metres']['description']and 'epsilon'in params['radius_metres']['description']
     assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile','variety','weighted_mean','weighted_stddev','weighted_sum']
     assert params['percentiles']['show_when']=={'method':['percentile']}and params['weights']['show_when']=={'method':['weighted_mean','weighted_stddev','weighted_sum']}
     assert '两种窗口均支持十二种方法' in params['window_type']['description']

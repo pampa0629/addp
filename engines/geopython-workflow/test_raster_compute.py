@@ -18284,8 +18284,8 @@ def _focal_circle_oracle(values, valid, transform, units, radius, method, percen
             return x*x + y*y
 
         for row, col in zip(*np.nonzero(valid)):
-            samples = [float(values[y,x]) for y in range(max(0,row-2),min(values.shape[0],row+3))
-                       for x in range(max(0,col-2),min(values.shape[1],col+3))
+            samples = [float(values[y,x]) for y in range(max(0,row-3),min(values.shape[0],row+4))
+                       for x in range(max(0,col-3),min(values.shape[1],col+4))
                        if valid[y,x] and distance_squared(int(y-row), int(x-col)) <= limit]
             if method == 'mode':
                 counts=Counter(samples); modes=[v for v,n in counts.items()if n==max(counts.values())]
@@ -18318,6 +18318,8 @@ def _focal_circle_oracle(values, valid, transform, units, radius, method, percen
     ('EPSG:2222',(200.,0.,-4.,300.,-3.,0.),5.),
     ('EPSG:3857',(200.,1.,.1,300.,.1,-1.),2.),
     ('EPSG:2277',(2.**60,3.,8.,-2.**60,4.,-6.),11.),
+    ('EPSG:3857',(200.,1.,0.,300.,0.,-2.),3.),
+    ('EPSG:3857',(200.,3.,8.,300.,4.,-6.),15.),
 ])
 def test_focal_circle_full_oracle_units_rectangles_band_mask_and_old_source(tmp_path,method,crs,transform,radius_units):
     reference=osr.SpatialReference()
@@ -18363,14 +18365,14 @@ def test_focal_circle_boundary_exact_equality_and_one_ulp_no_epsilon(tmp_path,tr
 
 
 @pytest.mark.parametrize('case',['just-below','equal','tiny','underflow-step','overflow-step'])
-def test_focal_circle_five_by_five_bound_not_clipped_and_exact_step_products(tmp_path,case):
-    radius=float(np.nextafter(3.,0.));pitch=1.;expected=25.
-    if case=='equal':radius=3.
+def test_focal_circle_seven_by_seven_bound_not_clipped_and_exact_step_products(tmp_path,case):
+    radius=float(np.nextafter(4.,0.));pitch=1.;expected=45.
+    if case=='equal':radius=4.
     elif case=='tiny':radius=float(np.nextafter(0.,1.));expected=1.
     elif case=='underflow-step':pitch=float(np.nextafter(0.,1.));radius=pitch;expected=5.
     elif case=='overflow-step':pitch=1e308;radius=1e308;expected=5.
     # Use a valid GDAL grid, but isolate unit product extremes from GDAL inverse determinant limitations.
-    source=create_raster(tmp_path/'limit.tif',np.ones((5,5)),(0,1,0,5,0,-1),'EPSG:3857')
+    source=create_raster(tmp_path/'limit.tif',np.ones((7,7)),(0,1,0,7,0,-1),'EPSG:3857')
     import operators.raster_compute as c
     if case in ('underflow-step','overflow-step'):
         # Helper tested directly with exact fake grid facts; real admission is tested separately.
@@ -18382,11 +18384,11 @@ def test_focal_circle_five_by_five_bound_not_clipped_and_exact_step_products(tmp
         assert (size,len(offsets))==((5,13)if case=='underflow-step'else(1,1));return
     with raster_workspace():
         if case=='equal':
-            with pytest.raises(ValueError,match='5'):
+            with pytest.raises(ValueError,match='7'):
                 raster_focal_statistics(raster_load(source_plan(source)),1,method='mean',window_type='circle_metres',radius_metres=radius)
         else:
             result=raster_focal_statistics(raster_load(source_plan(source)),1,method='sum',window_type='circle_metres',radius_metres=radius)
-            ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[2,2]==expected;ds=None
+            ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[3,3]==expected;ds=None
 
 
 @pytest.mark.parametrize('shape',[(1,1),(1,7),(7,1),(2,2)])
@@ -18397,8 +18399,8 @@ def test_focal_circle_thin_all_invalid_and_radius_limit_even_on_small_image(tmp_
         result=raster_focal_statistics(raster_load(source_plan(source)),1,method='stddev',window_type='circle_metres',radius_metres=2.)
         ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();ds=None
         np.testing.assert_array_equal(actual,values)
-        with pytest.raises(ValueError,match='5'):
-            raster_focal_statistics(raster_load(source_plan(source)),1,method='mean',window_type='circle_metres',radius_metres=3.)
+        with pytest.raises(ValueError,match='7'):
+            raster_focal_statistics(raster_load(source_plan(source)),1,method='mean',window_type='circle_metres',radius_metres=4.)
 
 
 @pytest.mark.parametrize('params,code',[
@@ -18484,6 +18486,7 @@ def test_focal_circle_weighted_asymmetric_full_oracle_crosses_both_block_axes(tm
     (4., [[0, 1, 0], [1, 1, 1], [0, 1, 0]]),
     (5., [[1]*3 for _ in range(3)]),
     (6., [[0]*5, [0, 1, 1, 1, 0], [1]*5, [0, 1, 1, 1, 0], [0]*5]),
+    (9., [[int(16*dy*dy + 9*dx*dx <= 81) for dx in range(-3, 4)] for dy in range(-3, 4)]),
 ])
 def test_focal_circle_weighted_members_all_one_match_unweighted(tmp_path, monkeypatch, method, radius, weights):
     import operators.raster_compute as c
@@ -18496,6 +18499,31 @@ def test_focal_circle_weighted_members_all_one_match_unweighted(tmp_path, monkey
         reference = raster_focal_statistics(source, 1, method=method.removeprefix('weighted_'), **options)
         result = raster_focal_statistics(source, 1, method=method, weights=weights, **options)
         np.testing.assert_array_equal(_twi_read(result), _twi_read(reference))
+
+
+@pytest.mark.parametrize('method', _CIRCLE_WEIGHTED_REFERENCES)
+def test_focal_circle_seven_weighted_cog_crosses_both_block_axes(tmp_path, method):
+    rows, cols = np.indices((366, 368))
+    valid = ((rows >= 354) & (cols >= 354)) | ((rows < 5) & (cols < 5))
+    valid[360, 359] = False
+    values = ((2*rows - cols) % 11 - 5).astype(float)
+    transform = (100., 3., 8., 500., 4., -6.)
+    # The column axis is 5 m and the row axis 10 m. Both third-column offsets are exactly 15 m.
+    weights = [[(dy+3)*7 + dx+4 if 100*dy*dy + 25*dx*dx <= 225 else 0
+                for dx in range(-3, 4)] for dy in range(-3, 4)]
+    expected = _CIRCLE_WEIGHTED_REFERENCES[method](values, valid, weights)
+    source = create_raster(tmp_path/'source.tif', np.where(valid, values, -9999), transform, 'EPSG:3857')
+    target = tmp_path/'weighted.cog.tif'
+    with raster_workspace():
+        result = raster_focal_statistics(raster_load(source_plan(source)), 1, method=method,
+                                         window_type='circle_metres', radius_metres=15., weights=weights)
+        raster_save(result, target_plan(target), profile='cog', blocksize=128)
+    ds = gdal.Open(str(target))
+    assert ds.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') == 'COG'
+    assert ds.GetGeoTransform() == transform and ds.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    np.testing.assert_array_equal(ds.ReadAsArray(), expected)
+    np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(), np.isfinite(expected)*255)
+    ds = None
 
 
 @pytest.mark.parametrize('method', _CIRCLE_WEIGHTED_REFERENCES)
@@ -18599,7 +18627,7 @@ def test_focal_circle_async_cog_and_all_exit_cleanup(tmp_path,monkeypatch,method
     values=(np.arange(56).reshape(7,8)-20).astype(float);values[2,3]=-9999
     source=create_raster(tmp_path/'async.tif',values,transform,'EPSG:3857');before=source.read_bytes()
     previous=tmp_path/'previous.tif';previous.write_bytes(b'prior artifact');target=tmp_path/'circle.cog.tif'
-    params={'input_raster':{'$ref':'source'},'band':1,'method':method,'window_type':'circle_metres','radius_metres':9. if failure=='radius'else 5.}
+    params={'input_raster':{'$ref':'source'},'band':1,'method':method,'window_type':'circle_metres','radius_metres':12. if failure=='radius'else 5.}
     weights = [[0, .5, 0], [2, 0, 4], [0, 0, 0]]
     if method in _CIRCLE_WEIGHTED_REFERENCES:
         params['weights'] = [[1]] if failure == 'weights' else weights

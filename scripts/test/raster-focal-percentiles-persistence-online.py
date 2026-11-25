@@ -36,7 +36,7 @@ MESSAGES.update({
  'square_radius':('像元方窗不得提供radius_metres','Pixel square windows do not accept radius_metres'),
  'circle_window':('米制圆窗不得提供window_size','Metre circle windows do not accept window_size'),
  'circle_radius_missing':('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值','Circular focal radius_metres must be an explicit finite positive number, excluding booleans'),
- 'circle_size':('米制圆窗的候选像元外接窗口不得超过5×5，不能截断半径','The candidate pixel bounding window of a metre circle must not exceed 5x5; the radius cannot be truncated'),
+ 'circle_size':('米制圆窗的候选像元外接窗口不得超过7×7，不能截断半径','The candidate pixel bounding window of a metre circle must not exceed 7x7; the radius cannot be truncated'),
  'circle_geographic':('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影','Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'),
 })
 
@@ -64,7 +64,7 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
  if invalid=='square_radius':params['radius_metres']=1.
  if invalid=='circle_window':params['window_size']=3
  if invalid=='circle_radius_missing':params.pop('radius_metres')
- if invalid=='circle_size':params['radius_metres']=6.
+ if invalid=='circle_size':params['radius_metres']=8.
  if stage=='singles':
   for index,p in enumerate(fixture.PERCENTILES,1):tasks.append({'id':'p'+str(index),'operator':'raster_focal_statistics','depends_on':[prior],'params':{**params,'percentiles':[p]}})
   final='p1'
