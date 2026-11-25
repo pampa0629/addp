@@ -66,6 +66,8 @@ Ontology 自身 PG 和 FalkorDB 构成 HTTP Ready 前置；除 System 外，不�
 
 平台 Transfer 创建修订 54 保留显式可选后续运行／结果依赖，创建效果仍只保存停止态定义；运行 `transfer.task.start` 修订 2 和结果 `transfer.execution.get` 修订 2 独立发布。运行条件为已保存的首期支持任务、Transfer 持有且用户在 Agent 内手动决定的一次性审批、当前执行授权；本体不保存审批、execution 或业务数据。Runtime 只主动读取本次选中能力，再按操作与 requirements 收窄 Skill Tool 白名单；运行审批恢复由 Runtime 确定性提交，受理不当作成功，失败或结果不明不重试。缺少明确能力身份的旧 Run 拒绝恢复，使用新会话验收。审批绑定完整保存配置和身份版本，不证明实时结构、业务值或实际写入资格已通过检查。
 
+运行能力 `transfer.task.start` 修订 14 复核 PG 与 MySQL 对同一任务审批的消费。用户在 Transfer 确认审批后，任务与审批在同一事务内关联执行。恢复等待中的 Agent 操作时，若当前能力修订或摘要已变化，以 `run_review_changed` 结束本次恢复，用户可发起新的启动请求。
+
 发布来源为创建 36 项、运行 19 项、读取 8 项，逐项冻结已提交字节、整文件 SHA-256、锚点与用途。共享 UI 的分页收敛及测试计时器清理按已提交交接单独核对；创建的完整参数／预检／确认／提交屏障保持。三个发布入口仅用于部署，运行读取仍以 PG 激活记录选择同版 FalkorDB 依赖，无 JSON 回退；标准 PG 与独占 FalkorDB 门禁新增真实三项发布及读取断言，不放宽原漂移、字节、隔离和清理限制。验证状态以本轮实际门禁和运行验收分别记录，不能复用以下旧修订的证据作为新功能通过。
 
 运行首期（创建 52／运行 1／读取 1）的历史本地验证通过：`make test-platform-review`、`GOFLAGS=-count=1 make test-module MODULE=ontology GO_ONLY=1`、串行 `make test-ontology-postgres`／`make test-ontology-falkor`、Transfer Go T1／PG T2、System IAM `--package migration --test transfer-run`、`make test-system-iam-runner`、`make test-agent-eval`、Agent PG、共享前端及 Agent 前端 T1/T3。运行与读取均拒绝未知本体条件；批准恢复不请求模型，不确定结果不重发。全局授权／Swagger 检查和 System 全包 T1 因并行 System／Meta 的停用权限旧引用及未同步路由文档未通过，已交对应 owner 协调，本轮不修改其实现。运行态激活、自由模型端到端、用户手动批准后的真实业务执行、Hosted/T4 尚未验证；本轮未运行或写入个人 Business 库。

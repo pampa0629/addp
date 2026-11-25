@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/run_approval.go",
       "anchor": "func (s *TaskService) StartApprovedTask(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "c9c7d866e1f02277b8dfd607a2af547c715c5996bb8b1ed7c9b5e2988b71e5d8",
+      "commit": "8c02fd8f11ede38fb99487a0a22e6ae0e8146715",
+      "sha256": "09a2531fe143e5d4b14a29dc2da0d8cf0f61b6fdeb4d433ec8e9b4b7fe6dd580",
       "use": {
-        "zh-cn": "一次性审批绑定身份版本和任务配置，消费进入唯一启动路径",
-        "en": "One-shot approval bound to identity version and config, consumed in the sole start path"
+        "zh-cn": "确认与消费审批时在锁定审批行后使用平台数据库时间；身份、指纹、期限及一次消费仍由 Transfer 核验。",
+        "en": "Decision and consumption sample the platform database clock after locking the approval. Transfer retains identity, fingerprint, expiry and single-use checks."
       }
     },
     {
@@ -47,11 +47,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/repository/task_repository.go",
       "anchor": "func (r *TaskRepository) ClaimExecutionWithReview(",
-      "commit": "879ba19cb545ec99c04fd51d7212815a2fdfe397",
-      "sha256": "93c29c63477145bcbae02881138561cbed0a9e3f9d4b15fee24f8ef9434e2f94",
+      "commit": "8c02fd8f11ede38fb99487a0a22e6ae0e8146715",
+      "sha256": "a35f9beb6aa5966327742729912d2688ed357c3d8f4bf69b04f843316ad7fdf8",
       "use": {
-        "zh-cn": "复核仅在 List 中增加计数／分页前 CDC 查询过滤；ClaimExecutionWithReview 逐字不变，仍在任务锁下复核并原子提交审批消费与执行。",
-        "en": "Reviewed CDC query filtering before count/pagination only in List. ClaimExecutionWithReview is byte-identical and retains task-locked review with atomic approval consumption and execution."
+        "zh-cn": "同步位点按任务、来源身份和分区加锁，两个平台库均由 GORM 引用分区列；审批消费与执行仍在同一事务中。",
+        "en": "Both providers quote the partition column when locking the task and source checkpoint. Approval consumption and execution creation share the transaction."
       }
     },
     {
@@ -112,11 +112,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/service/run_approval_test.go",
       "anchor": "func TestRunApprovalRequiresUserClickAndConsumesOnce(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "c8083f71a98c6da5df63039b4f1ef39efde9bc7bf36ab3c54830121a06355e2a",
+      "commit": "8c02fd8f11ede38fb99487a0a22e6ae0e8146715",
+      "sha256": "186e40cf9e45ff70e67bc3b205ec84093368d3fcb2cfc0a0eaaccbb2273d3f78",
       "use": {
-        "zh-cn": "未批准零执行，身份和配置漂移拒绝，一次消费及回滚",
-        "en": "No execution before approval; identity/config drift refusal, one consumption and rollback"
+        "zh-cn": "分开测试表准备和任务准备，使同一业务夹具可以使用已安装的平台库；保留指纹、身份、失效及回滚断言。",
+        "en": "Separating schema and task setup permits use of an installed platform database with the same identity, fingerprint, expiry and rollback assertions."
       }
     },
     {
@@ -177,11 +177,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/service/run_approval_postgres_test.go",
       "anchor": "func TestIntegrationPostgresRunApprovalAtomicity(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "3e9be0003fcbbfa11d47bd2785ad42a1f85efe38d035304b8e83c6f041506369",
+      "commit": "8c02fd8f11ede38fb99487a0a22e6ae0e8146715",
+      "sha256": "ebd407a020fadaba2e99b9b9bec5b4c803c025615e3097f90e1a8a39b219fdf0",
       "use": {
-        "zh-cn": "标准 PG 门禁验证并发只能消费一次，执行身份关联且无 Worker 或业务库写入",
-        "en": "Standard PG gate verifies single concurrent consumption and associated execution identity without workers or business writes"
+        "zh-cn": "两种平台库共用并发消费断言，同一批准只能提交一个执行。PG 原有迁移与清理验证保留。",
+        "en": "PostgreSQL and MySQL share the concurrent consumer assertions. One execution may commit for the approval. The original PostgreSQL migration and cleanup checks remain."
       }
     },
     {
