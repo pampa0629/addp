@@ -164,7 +164,7 @@ for name in "${names[@]}"; do definitions+=("$name:fixture"); done
                          'native:manifest', 'make:build ', 'make:build-images ', 'monitor-backend prepare-database', 'standard-backend prepare-database', 'model-backend prepare-database',
                          'up -d --no-deps --wait system-backend',
                          'make:test-online', 'execution-resume', 'down --remove-orphans --volumes', 'native:stop', 'business:stop', 'infra-down']
-                for owner in ("asset", "graph", "develop"):
+                for owner in ("asset", "graph", "develop", "transfer"):
                     self.assertLess(trace.index(f"{owner}-backend prepare-database"), trace.index("up -d --no-deps --wait system-backend"))
                 self.assertEqual([trace.index(x) for x in order], sorted(trace.index(x) for x in order))
                 self.assertIn('up -d --no-deps --wait model3d-workflow-engine' if case.startswith('manager-') else

@@ -124,7 +124,7 @@ PYCASE
 [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ATTEMPT:-}" ] || fail 'GitHub run ID and attempt are required before Runtime startup'
 start_manager_dependencies() {
   application_owned=1
-  hosted_prepare_native_database system meta gateway manager security monitor
+  hosted_prepare_native_targets -manager -security -monitor
   unset hosted_deploy_password
 }
 export ADDP_ONLINE_TEST_RUN_ID="manager-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"

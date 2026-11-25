@@ -134,6 +134,8 @@ class HostedTransferGateTest(unittest.TestCase):
                     'transfer-fixture:verify', 'application-stop', 'transfer-fixture:stop', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
+        self.assertEqual(trace.count('install:addp-transfer:prepare-database'), 1)
+        self.assertLess(trace.index('install:addp-transfer:prepare-database'), trace.index('start:-security'))
         self.assertNotIn('start:-all', trace)
         self.assertFalse(self.host.secrets.exists())
         summary = (self.host.artifacts / 'summary.txt').read_text()

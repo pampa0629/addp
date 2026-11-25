@@ -158,6 +158,7 @@ hosted_prepare_native_targets() {
   for target in "$@"; do
     case "$target" in
       -copilot) targets+=(-develop) ;;
+      -manager) targets+=(-transfer) ;;
       -workbench) targets+=(-service) ;;
       -portal) targets+=(-asset) ;;
       -model|-quality) targets+=(-standard) ;;
