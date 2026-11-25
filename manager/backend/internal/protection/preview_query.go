@@ -33,6 +33,9 @@ func PreviewQueryExecutor(checker PreviewSourceChecker, store PreviewQueryProtec
 			return nil, nil, ErrRequired
 		}
 		readSet, err := prepared.ReadSet(ctx)
+		if plugin.QueryErrorCodeOf(err) == plugin.QueryErrorCodeConnectionAcquisitionTimeout {
+			return nil, nil, err
+		}
 		if err != nil || readSet == nil || len(readSet.Paths) == 0 || len(readSet.Paths) > 200 {
 			return nil, nil, ErrRequired
 		}

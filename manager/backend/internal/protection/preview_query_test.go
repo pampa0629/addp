@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -112,6 +113,7 @@ func TestPreviewQueryExecutorUsesCurrentCredentialAndSameCompletePlan(t *testing
 func TestPreviewQueryExecutorRejectsBeforeSourceRead(t *testing.T) {
 	base := plugin.TabularItemPath(12, "schema", "public", "base")
 	valid, _ := plugin.NewQueryReadSet(base)
+	acquireErr := plugin.NewQueryError(plugin.QueryErrorCodeConnectionAcquisitionTimeout, context.DeadlineExceeded)
 	for _, test := range []struct {
 		name                string
 		set                 *plugin.QueryReadSet
@@ -121,6 +123,8 @@ func TestPreviewQueryExecutorRejectsBeforeSourceRead(t *testing.T) {
 		want                error
 		checks, protections int
 	}{
+		{"pool acquisition deadline", nil, fmt.Errorf("%w: open catalog connection: %w", plugin.ErrQueryReadSetUnresolved, acquireErr), 200, nil, acquireErr, 0, 0},
+		{"unclassified catalog deadline", nil, context.DeadlineExceeded, 200, nil, ErrRequired, 0, 0},
 		{"no read set", nil, nil, 200, nil, ErrRequired, 0, 0},
 		{"incomplete proof", valid, plugin.ErrQueryReadSetUnresolved, 200, nil, ErrRequired, 0, 0},
 		{"empty proof", &plugin.QueryReadSet{}, nil, 200, nil, ErrRequired, 0, 0},
