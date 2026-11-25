@@ -433,8 +433,11 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         preparation = next(line for line in standard_gate if line.startswith("hosted_prepare_selected_native_database"))
         self.assertEqual(run(*preparation.split()[1:]), ["current-infra", "current-install: system meta gateway standard"])
         self.assertEqual(run("-workbench"), ["current-infra", "current-install: system meta gateway workbench"])
+        self.assertEqual(run("-portal"), ["current-infra", "current-install: system meta gateway"])
         shutil.copy2(SCRIPT.parents[1] / "infra/platform-database.sh", registry)
         self.assertEqual(run("-workbench"), ["current-infra", "current-install: system meta gateway workbench service"])
+        self.assertEqual(run("-portal"), ["current-infra", "current-install: system meta gateway asset"])
+        self.assertIn("asset", run("-gateway", "-portal")[1].split())
 
     def test_initialization_failure_prevents_registration_and_scene(self):
         self.prepare_run_fixture()

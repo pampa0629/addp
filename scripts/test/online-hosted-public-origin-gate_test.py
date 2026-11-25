@@ -191,6 +191,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
                   " up -d --no-deps --wait gateway console system-frontend", " up -d --no-deps --wait orchestrator-backend")
         positions = [trace.index(stage) for stage in stages]
         self.assertEqual(positions, sorted(positions))
+        self.assertLess(trace.index("asset-backend prepare-database"), trace.index(" up -d --no-deps --wait workbench-backend asset-backend"))
         self.assertNotIn("--network-alias meta-frontend", trace)
         self.assertNotIn("--network-alias manager-frontend", trace)
         self.assertNotIn("--network-alias transfer-frontend", trace)

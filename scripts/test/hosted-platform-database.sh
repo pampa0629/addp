@@ -158,11 +158,11 @@ hosted_prepare_native_targets() {
   for target in "$@"; do
     case "$target" in
       -workbench) targets+=(-service) ;;
+      -portal) targets+=(-asset) ;;
       -model|-quality) targets+=(-standard) ;;
       -gateway|-console)
         targets+=(-manager -transfer -orchestrator -develop -service -monitor -copilot
-          -standard -model -quality -security -catalog -ontology)
-        break ;;
+          -standard -model -quality -security -catalog -ontology) ;;
     esac
   done
   source "$ROOT_DIR/scripts/infra/platform-database.sh"
