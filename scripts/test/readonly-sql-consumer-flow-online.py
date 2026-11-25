@@ -105,9 +105,15 @@ def verify_gaussdb_future_table(preparer, consumer, engine, private, participant
 CREATE TABLE addp_acceptance.node_future(id INTEGER PRIMARY KEY);
 INSERT INTO addp_acceptance.node_future VALUES (37);
 GRANT SELECT ON addp_acceptance.node_future TO fixture_reader;
+CREATE SCHEMA node_control;
+CREATE TABLE node_control.outside_source(id INTEGER PRIMARY KEY);
+INSERT INTO node_control.outside_source VALUES (83);
+GRANT USAGE ON SCHEMA node_control TO fixture_reader;
+GRANT SELECT ON node_control.outside_source TO fixture_reader;
 COMMIT;""")
     scan = SUPPORT.wait_for_scan(preparer, engine, time.monotonic()+180, scan_depth='basic',
-                                 targets=[f'addp://engine/{engine}/path/addp_acceptance/node_future?type=table'])
+                                 targets=[f'addp://engine/{engine}/path/addp_acceptance/node_future?type=table',
+                                          f'addp://engine/{engine}/path/node_control/outside_source?type=table'])
     items = consumer.request('GET', f'/api/v1/meta/engines/{engine}/items?branch=addp_acceptance', (200,)).payload
     future_items = [item for item in items if item.get('full_name') == 'addp_acceptance.node_future']
     require(len(future_items) == 1, 'new table missing under the original schema grant')
@@ -120,6 +126,21 @@ COMMIT;""")
             'schema Grant did not return the new table row')
     after = fixture.table_read_count(state, 'node_future')
     require(after > before, 'allowed query was absent from the owned source execution log')
+    existing, = [item for item in items if item.get('full_name') == 'addp_acceptance.source']
+    current_before = fixture.table_read_count(state, 'source')
+    existing_result = gaussdb_execution(consumer, engine,
+        'SELECT name FROM addp_acceptance.source WHERE id = 9007199254740993', SUPPORT.build_item_locator(engine, existing))
+    require(existing_result.get('status') == 'success' and
+            existing_result.get('metadata', {}).get('result', {}).get('summary', {}).get('preview_rows') == [{'name':'高斯正式接入中文'}],
+            'schema Grant did not return the existing table row')
+    current_reads = fixture.table_read_count(state, 'source') - current_before
+    require(current_reads > 0, 'existing table query was absent from the owned source log')
+    outside_before = fixture.table_read_count(state, 'outside_source', 'node_control')
+    outside_result = gaussdb_execution(consumer, engine, 'SELECT id FROM node_control.outside_source ORDER BY id',
+                                      f'addp://engine/{engine}/path/node_control/outside_source?type=table')
+    assert_gaussdb_read_denied(outside_result)
+    outside_reads = fixture.table_read_count(state, 'outside_source', 'node_control') - outside_before
+    require(outside_reads == 0, 'schema Grant allowed a source read outside its namespace')
     preparer.request('POST', base + '/' + command + '/revoke', (200,), {'reason':'End future-table read'})
     denied = gaussdb_execution(consumer, engine, query, locator)
     require(denied['execution_id'] != allowed['execution_id'], 'replayed the previous execution')
@@ -128,7 +149,9 @@ COMMIT;""")
     require(final == after, 'withdrawn execution issued a new source SELECT')
     evidence = dict(engine_id=engine, principal_id=recipient, scope=scope, grant=command, scan=scan,
                     allowed_execution=allowed['execution_id'], denied_execution=denied['execution_id'],
-                    allowed_source_selects=after-before, denied_source_selects=final-after)
+                    allowed_source_selects=after-before, denied_source_selects=final-after,
+                    existing_execution=existing_result['execution_id'], existing_source_selects=current_reads,
+                    outside_denied_execution=outside_result['execution_id'], outside_source_selects=outside_reads)
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'gaussdb-node-read.json').write_text(json.dumps(evidence))
     journal.write_text('[]')
 

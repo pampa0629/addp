@@ -152,15 +152,20 @@ class GaussDBConsumerTest(unittest.TestCase):
         lines = [
             'LOG: statement: SELECT id FROM addp_acceptance.node_future ORDER BY id',
             'LOG: execute <unnamed>: SELECT id FROM "addp_acceptance"."node_future"',
+            'LOG: statement: DECLARE addp_query_read_cursor NO SCROLL CURSOR FOR SELECT id FROM addp_acceptance.node_future',
+            'LOG: statement: FETCH FORWARD 20 FROM addp_query_read_cursor',
             'LOG: statement: EXPLAIN SELECT id FROM addp_acceptance.node_future',
             'LOG: statement: SELECT id FROM addp_acceptance.node_future_archive',
             'LOG: statement: SELECT id FROM other.node_future',
             'LOG: statement: SELECT c.oid FROM pg_class c WHERE c.relname = node_future',
         ]
-        self.assertEqual(FIXTURE.count_table_reads('\n'.join(lines), 'node_future'), 2)
+        self.assertEqual(FIXTURE.count_table_reads('\n'.join(lines), 'node_future'), 3)
+        self.assertEqual(FIXTURE.count_table_reads('\n'.join(lines), 'node_future', 'other'), 1)
 
     def test_future_table_requires_source_activity_only_while_granted(self):
-        for counters, expected in (([1,2,2], True), ([1,1], False), ([1,2,3], False)):
+        for counters, expected in (
+                ([1,2,4,5,0,0,2], True), ([1,1], False), ([1,2,4,4], False),
+                ([1,2,4,5,0,1], False), ([1,2,4,5,0,0,3], False)):
             with self.subTest(counters=counters), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 (root/'gaussdb-state.json').write_text('{}')
@@ -178,19 +183,23 @@ class GaussDBConsumerTest(unittest.TestCase):
                     return SimpleNamespace(payload=dict(command, engine_id='17', operator_principal_id='41'))
                 issuer.request.side_effect = issue
                 consumer.request.return_value = SimpleNamespace(payload=[dict(
-                    full_name='addp_acceptance.node_future', id=8, item_type='table')])
+                    full_name='addp_acceptance.node_future', id=8, item_type='table'), dict(
+                    full_name='addp_acceptance.source', id=9, item_type='table')])
                 allowed = dict(status='success', execution_id='allowed', metadata=dict(result=dict(
                     summary=dict(preview_rows=[{'id':37}]))))
+                existing = dict(status='success', execution_id='existing', metadata=dict(result=dict(
+                    summary=dict(preview_rows=[{'name':'高斯正式接入中文'}]))))
                 denied = dict(status='failed', execution_id='denied', error_details=dict(
                     code='develop.query.source_read_denied', diagnostic=dict(stage='authorization', reason='permission_denied')))
                 with patch.object(FIXTURE, 'sql') as ddl, patch.object(FIXTURE, 'table_read_count', side_effect=counters), \
                      patch.object(FLOW.SUPPORT, 'wait_for_scan', return_value='scan'), \
                      patch.object(FLOW.SUPPORT, 'required_environment', return_value=temp), \
-                     patch.object(FLOW, 'gaussdb_execution', side_effect=[allowed, denied]) as execute:
+                     patch.object(FLOW, 'gaussdb_execution', side_effect=[allowed, existing, dict(denied, execution_id='outside'), denied]) as execute:
                     if expected:
                         FLOW.verify_gaussdb_future_table(issuer, consumer, 17, root, ('41','33'), journal)
                         self.assertEqual(json.loads(journal.read_text()), [])
-                        self.assertEqual(execute.call_args_list[0], execute.call_args_list[1])
+                        self.assertEqual(execute.call_args_list[0], execute.call_args_list[3])
+                        self.assertIn('node_control.outside_source', execute.call_args_list[2].args[2])
                     else:
                         with self.assertRaises(FLOW.API.SuiteError):
                             FLOW.verify_gaussdb_future_table(issuer, consumer, 17, root, ('41','33'), journal)

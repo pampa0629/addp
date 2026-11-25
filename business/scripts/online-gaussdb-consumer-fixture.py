@@ -66,21 +66,22 @@ def sql(state, statement):
     return run('docker', 'exec', '-i', state['name'], 'gsql', '-X', '-v', 'ON_ERROR_STOP=1', '-h', '/data/run', '-p', '5432', '-U', 'omm', '-d', 'business', '-At', input=statement, timeout=30)
 
 
-def table_read_count(state, table):
+def table_read_count(state, table, schema='addp_acceptance'):
     """Count data statements on this fixture table; never publish the server log."""
     if owned('container', state) is None:
         raise RuntimeError('missing owned GaussDB source')
     result = subprocess.run(['docker', 'logs', state['name']], stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, check=True, timeout=30)
-    return count_table_reads(result.stdout, table)
+    return count_table_reads(result.stdout, table, schema)
 
 
-def count_table_reads(log, table):
-    # The guarded Provider also prepares plans using EXPLAIN. Only execution
-    # of an actual SELECT is evidence that source contents were requested.
-    statements = re.findall(r'(?:statement|execute [^:\n]+):\s*(SELECT\b[^\n]*)', log, re.I)
-    return sum(bool(re.search(r'\bFROM\s+(?:"?addp_acceptance"?\s*\.\s*)?"?' + re.escape(table) + r'"?(?![\w$])', sql, re.I))
-               for sql in statements)
+def count_table_reads(log, table, schema='addp_acceptance'):
+    # A guarded read opens its cursor before FETCH. Count the source query at
+    # DECLARE, never EXPLAIN or a later FETCH on the same cursor.
+    statements = re.findall(r'(?:statement|execute [^:\n]+):\s*'
+                            r'(?:DECLARE\s+"?\w+"?\s+(?:NO SCROLL\s+)?CURSOR FOR\s+)?(SELECT\b[^\n]*)', log, re.I)
+    relation = r'\bFROM\s+(?:"?' + re.escape(schema) + r'"?\s*\.\s*)?"?' + re.escape(table) + r'"?(?![\w$])'
+    return sum(bool(re.search(relation, query, re.I)) for query in statements)
 
 
 def start():
