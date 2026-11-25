@@ -1,0 +1,26 @@
+CREATE TABLE IF NOT EXISTS task_authorization_subjects (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    owner_module VARCHAR(32) NOT NULL,
+    task_type VARCHAR(32) NOT NULL,
+    task_ref VARCHAR(36) NOT NULL,
+    definition_hash VARCHAR(64) NOT NULL,
+    tenant_id BIGINT NOT NULL,
+    principal_id BIGINT NOT NULL,
+    tenant_membership_id BIGINT NOT NULL,
+    authorization_version BIGINT NOT NULL,
+    authorized_at DATETIME(6) NOT NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    UNIQUE KEY uq_task_subject_owner_ref (owner_module, task_ref),
+    KEY idx_task_subject_tenant (tenant_id, owner_module, task_type),
+    KEY idx_task_subject_principal (principal_id, tenant_id),
+    KEY idx_task_subject_membership (tenant_membership_id),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (principal_id) REFERENCES principals(id),
+    FOREIGN KEY (tenant_membership_id) REFERENCES tenant_memberships(id),
+    CHECK ((owner_module = 'orchestrator' AND task_type = 'orchestration')
+        OR (owner_module = 'transfer' AND task_type = 'sync')),
+    CHECK (REGEXP_LIKE(task_ref, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', 'c')),
+    CHECK (REGEXP_LIKE(definition_hash, '^[0-9a-f]{64}$', 'c')),
+    CHECK (authorization_version > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin

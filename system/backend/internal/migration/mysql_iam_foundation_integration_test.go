@@ -19,6 +19,7 @@ import (
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	passwordutils "github.com/addp/system/pkg/utils"
+	"github.com/google/uuid"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -265,6 +266,35 @@ func TestMySQLIAMFoundation(t *testing.T) {
 			t.Fatalf("administrators=%d runtimes=%d memberships=%d creation audits=%d", admins, runtimes, members, audits)
 		}
 		testMySQLScanIdentity(t, db, tenant.ID, 103)
+		t.Run("task authorization subjects", func(t *testing.T) {
+			ctx := t.Context()
+			var memberID int64
+			if err := db.Table("tenant_memberships").Select("id").Where("tenant_id=? AND principal_id=103", tenant.ID).Take(&memberID).Error; err != nil {
+				t.Fatal(err)
+			}
+			repo := iam.NewRepository(db)
+			subject := iam.TaskAuthorizationSubject{OwnerModule: "orchestrator", TaskType: "orchestration", TaskRef: uuid.New(),
+				DefinitionHash: strings.Repeat("a", 64), TenantID: tenant.ID, PrincipalID: 103, TenantMembershipID: memberID, AuthorizationVersion: 1, AuthorizedAt: time.Now().UTC()}
+			if err := repo.CreateTaskAuthorizationSubject(ctx, &subject); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := repo.GetTaskAuthorizationSubject(ctx, subject.ID)
+			if err != nil || stored.TaskRef != subject.TaskRef || stored.DefinitionHash != subject.DefinitionHash {
+				t.Fatalf("read task subject: %v", err)
+			}
+			subject.ID = 0
+			if err := repo.CreateTaskAuthorizationSubject(ctx, &subject); !errors.Is(err, commonapi.ErrConflict) {
+				t.Fatalf("duplicate subject: %v", err)
+			}
+			subject.OwnerModule = "transfer"
+			if err := repo.CreateTaskAuthorizationSubject(ctx, &subject); err == nil {
+				t.Fatal("accepted a mismatched owner and task type")
+			}
+			subject.TaskType = "sync"
+			if err := repo.CreateTaskAuthorizationSubject(ctx, &subject); err != nil {
+				t.Fatal(err)
+			}
+		})
 	})
 }
 
