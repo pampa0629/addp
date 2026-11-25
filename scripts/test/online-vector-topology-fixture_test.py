@@ -908,7 +908,7 @@ class TopologySeedBindingTest(unittest.TestCase):
 class TopologyPublicationCaseTest(unittest.TestCase):
     def test_only_approved_file_cases_share_private_staging(self):
         import inspect
-        self.assertEqual(m.FILE_PUBLICATION_CASES,(m.DIFFERENCE_CASE,m.ADJACENCY_CASE,m.COMPONENTS_CASE))
+        self.assertEqual(m.FILE_PUBLICATION_CASES,(m.DIFFERENCE_CASE,m.ADJACENCY_CASE,m.COMPONENTS_CASE,m.OVERLAY_CASE))
         self.assertIn('publication_staging=case in FILE_PUBLICATION_CASES',inspect.getsource(m.main))
         self.assertIn('if case in FILE_PUBLICATION_CASES:',inspect.getsource(m.mixed_overlay_worker))
         for case in m.FILE_PUBLICATION_CASES:

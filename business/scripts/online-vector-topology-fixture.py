@@ -917,7 +917,7 @@ COMPONENTS_FAILURES=(
     ('components-part-no',5,5,'operator_field_conflict','input_gdf','part_no'),
     ('components-component-id',6,6,'operator_field_conflict','input_gdf','component_id'),
 )
-FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE,COMPONENTS_CASE)
+FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE,COMPONENTS_CASE,OVERLAY_CASE)
 ADJACENCY_FAILURES=(('adjacency-id',1,1,'operator_input_invalid','input_gdf'),('adjacency-empty',2,2,'operator_input_invalid','input_gdf'),('adjacency-crs',3,3,'operator_crs_invalid',''),('adjacency-overlap',4,4,'operator_input_overlap','input_gdf'))
 
 

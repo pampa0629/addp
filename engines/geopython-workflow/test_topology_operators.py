@@ -7399,9 +7399,14 @@ def test_intersection_overlay_t4_fixture_full_mixed_and_four_refusals(tmp_path,p
     f=importlib.import_module('business.scripts.online-vector-topology-fixture')
     a=importlib.import_module('scripts.test.vector-topology-persistence-online')
     (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    (tmp_path/'.addp-publication').mkdir(mode=0o700)
     seeded=f.worker('seed',tmp_path,f.OVERLAY_CASE)
     def definition(failure=None):
         result=a.overlay_definition(list(f.OVERLAY_SOURCES),'unused',failure)
+        if failure:
+            # Exercise the real downstream save despite the Hosted negatives being read-only.
+            result['tasks'].append(a.overlay_definition(list(f.OVERLAY_SOURCES),'unused')['tasks'][-1])
+            result['tasks'][-1]['params']['target_name']='unexpected-'+failure+'.gpkg'
         for task in result['tasks']:
             if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
             elif task['operator']=='save':

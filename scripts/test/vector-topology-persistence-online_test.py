@@ -2355,20 +2355,33 @@ class OverlayClient(InputDiagnosticClient):
 class OverlayOnlineTest(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
-        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.OVERLAY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.OVERLAY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,
+                  'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
     def run_case(self,client=None,physical=overlay_physical,browser=lambda *a:a[2]):
-        return m.run_scenario(Path('.'),self.env,client or OverlayClient(),physical,browser)
+        client=client or FormalFileClient(m.fixture.OVERLAY_CASE)
+        with patch.object(m.fixture,'capture_publication',return_value={'state':'missing'}), patch.object(m.raster,'GatewayClient',return_value=client.issuer), patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)):
+            return m.run_scenario(Path('.'),self.env,client,physical,browser)
     def test_overlay_one_success_four_failures_dual_source_single_scan_and_original_facts(self):
-        client=OverlayClient();report=self.run_case(client)
+        client=FormalFileClient(m.fixture.OVERLAY_CASE);report=self.run_case(client)
         self.assertEqual((report['result'],report['schema_version']),('passed','addp.intersection-overlay/v1'))
         self.assertEqual(len(report['browser']['expected']['result']),16)
-        self.assertEqual([len(report[k]) for k in ('initial_scan_inventory','final_scan_inventory','meta_after')],[4,5,5])
+        self.assertEqual([len(report[k]) for k in ('initial_scan_inventory','final_scan_inventory','meta_after')],[0,1,5])
         self.assertEqual(len(report['raw_lineage']['edges']),2)
+        publication=report['publication']
+        stages=[s['stage'] for s in publication['stages']]
+        self.assertEqual(stages.count('source_read_granted'),4)
+        self.assertEqual(stages.count('approval_confirmed'),1)
+        self.assertEqual(stages.count('result_initial_read_granted'),1)
+        self.assertEqual(publication['cleanup'],{'result':'passed','errors':[]})
+        approved=next(s['context'] for s in publication['stages'] if s['stage']=='approval_intent')
+        self.assertEqual(approved['target']['target']['segments'][-1]['name'],'intersection.gpkg')
+        for failure in report['failures']:
+            self.assertEqual([task['operator'] for task in failure['definition']['tasks']],['intersection','load','load'])
         self.assertEqual([v['key'] for v in report['failures']],[v[0] for v in m.fixture.OVERLAY_FAILURES])
         self.assertEqual(len({v['execution_id'] for v in report['failures']}),4)
         self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls),5)
     def test_overlay_requires_formal_resource_visibility_before_any_business_execution(self):
-        client=OverlayClient();client.preflight_denied=True
+        client=FormalFileClient(m.fixture.OVERLAY_CASE);client.preflight_denied=True
         with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)
         self.assertFalse(client.executions)
         self.assertFalse(any(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls))
@@ -2381,7 +2394,7 @@ class OverlayOnlineTest(unittest.TestCase):
             lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
             lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])))]
         for change in changes:
-            client=OverlayClient();change(client)
+            client=FormalFileClient(m.fixture.OVERLAY_CASE);change(client)
             with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
     def test_overlay_failures_reject_publication_scan_wrong_node_private_and_derive(self):
         changes=[lambda v:v.update(outputs={'save':{}}),lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),
@@ -2389,9 +2402,9 @@ class OverlayOnlineTest(unittest.TestCase):
             lambda v:v['error_details']['diagnostic']['operator'].update(field='PRIVATE'),lambda v:v['error_details']['diagnostic']['operator'].update(parameter='id_field'),
             lambda v:v['error_details'].update(message='PRIVATE_OVERLAY_SOURCE')]
         for change in changes:
-            client=OverlayClient();client.mutate_failed=change
+            client=FormalFileClient(m.fixture.OVERLAY_CASE);client.mutate_failed=change
             with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
-        client=OverlayClient();client.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'overlay-failed-a-id'}})
+        client=FormalFileClient(m.fixture.OVERLAY_CASE);client.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'overlay-failed-a-id'}})
         with self.assertRaises(m.SuiteError):self.run_case(client)
     def test_overlay_dual_graph_never_accepts_boolean_dataitem_identity(self):
         graph={'truncated':False,'edges':[{'source':{'item_id':True},'target':{'item_id':3},'relation_kind':'derive','status':'active','evidence':{'execution_id':'current'}},
@@ -2408,7 +2421,7 @@ class OverlayOnlineTest(unittest.TestCase):
             if len(calls)>5:native['targets'][m.fixture.OVERLAY_TARGET]['sha256']='changed'
             return native
         with self.assertRaisesRegex(m.SuiteError,'physical files'):self.run_case(physical=physical)
-        client=OverlayClient()
+        client=FormalFileClient(m.fixture.OVERLAY_CASE)
         def browser(*args):client.sources[0]['size_bytes']=1;return args[2]
         with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(client,browser=browser)
 

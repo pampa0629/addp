@@ -740,16 +740,19 @@ def overlay_definition(sources,parent,failure=None):
     spec=next((s for s in fixture.OVERLAY_FAILURES if s[0]==failure),None)
     if failure is not None and spec is None:raise SuiteError('unknown intersection failure')
     a,b=spec[1:3] if spec else (0,1)
-    return {'tasks':[
+    tasks=[
         {'id':'PRIVATE_OVERLAY_NODE','operator':'intersection','depends_on':['load_a','load_b'],
          'params':{'input_gdf':{'$ref':'load_a'},'gdf_b':{'$ref':'load_b'},
                    'id_field':'PRIVATE_OVERLAY_MISSING_A' if failure=='a-id' else 'a_key',
                    'reference_id_field':'PRIVATE_OVERLAY_MISSING_B' if failure=='b-id' else 'b_key'}},
         {'id':'load_a','operator':'load','depends_on':[],'params':{'locator':sources[a]}},
         {'id':'load_b','operator':'load','depends_on':[],'params':{'locator':sources[b]}},
-        {'id':'save_result','operator':'save','depends_on':['PRIVATE_OVERLAY_NODE'],
-         'params':{'input_df':{'$ref':'PRIVATE_OVERLAY_NODE'},'target_parent_locator':parent,
-                   'target_name':('failed-'+failure+'-' if failure else '')+fixture.OVERLAY_TARGET,'mode':'fail'}}]}
+    ]
+    if failure is None:
+        tasks.append({'id':'save_result','operator':'save','depends_on':['PRIVATE_OVERLAY_NODE'],
+                      'params':{'input_df':{'$ref':'PRIVATE_OVERLAY_NODE'},'target_parent_locator':parent,
+                                'target_name':fixture.OVERLAY_TARGET,'mode':'fail'}})
+    return {'tasks':tasks}
 
 
 def overlay_diagnostic(spec):
@@ -849,7 +852,7 @@ def validate_nodes_graph(graph,sources,target,identifier):
 
 
 def run_overlay_scenario(repository,env,client,physical_runner,browser_runner):
-    return run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.OVERLAY_CASE)
+    return run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,fixture.OVERLAY_CASE)
 
 
 class _FilePublication:
@@ -1115,7 +1118,7 @@ def verify_difference_logs(client, executions, deadline, checkpoint, persist):
     return evidence['samples']
 
 
-def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication=None):
+def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication):
     profile=mixed_overlay_profile(case);input_nodes=profile.get('input_nodes',('load_a','load_b'));schema=profile['schema'];names=profile['sources'];target_name=profile['target'];count=profile['result_count']
     definition=profile['definition'];validate_failure=profile['failure_validator'];diagnostic=profile['diagnostic'];features=profile['features']
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'mixed overlay tenant')
@@ -1129,28 +1132,26 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[];preflight=[]
     for name in names:
         scope=f'addp://engine/{engine}/path/{name}?type=file'
-        scan=(publication.source(engine,name,scope,remaining) if publication else support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]}))
+        scan=publication.source(engine,name,scope,remaining)
         item=support.find_fixture_item(client,engine,name,'mixed overlay source')
         before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
-        if publication:publication.fact_snapshot(engine,before,name,'source_prepared')
+        publication.fact_snapshot(engine,before,name,'source_prepared')
         graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=downstream',(200,)).payload,'mixed overlay resource preflight')
         if graph.get('truncated') is not False:raise SuiteError('mixed overlay requires complete authorized source lineage before execution')
         preflight.append({'source_item_id':item['id'],'graph':graph})
         sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
     initial=scan_ids(client)
-    expected_initial=sorted(s['scan_execution_id'] for s in sources) if publication is None else []
-    if publication:publication.check_preparation_scans()
-    if initial!=expected_initial:raise SuiteError('mixed overlay initial scan inventory differs')
+    publication.check_preparation_scans()
+    if initial:raise SuiteError('mixed overlay initial scan inventory differs')
     runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
     if len(runtimes)!=1:raise SuiteError('mixed overlay requires one product Runtime')
     runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
     target=f'addp://engine/{engine}/path/outputs/{target_name}?type=file';locators=[s['locator'] for s in sources]
     workflow=definition(locators,parent)
-    if publication:publication.before_submit(identity,engine,runtime,sources,workflow)
+    publication.before_submit(identity,engine,runtime,sources,workflow)
     identifier=raster.submit(client,runtime,workflow)
-    if publication:
-        publication.record(dict(stage='execution_submitted',execution_id=identifier,failure=None))
-        publication.approve(identifier,principal,engine,'outputs/'+target_name)
+    publication.record(dict(stage='execution_submitted',execution_id=identifier,failure=None))
+    publication.approve(identifier,principal,engine,'outputs/'+target_name)
     directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR']);path=directory/profile['checkpoint']
     checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
         'identity':identity,'runtime_id':runtime,'execution_id':identifier,'definition':workflow,'sources':sources,
@@ -1167,18 +1168,9 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('mixed overlay execution actor differs')
     if obj(obj(execution.get('execution_config'),'mixed overlay frozen config').get('content'),'mixed overlay content').get('workflow_definition')!=workflow:raise SuiteError('mixed overlay frozen DAG differs')
     bindings=[(f'input.{node}',locator)for node,locator in zip(input_nodes,locators)]
-    inspection_scans=[]
-    if publication:
-        facts=validate_saved_facts(execution,bindings,{'result':target},1)
-        scans,observed,deep=publication.produced(engine,'outputs/'+target_name,identifier,principal,initial,remaining)
-        publication.check_preparation_scans()
-    else:
-        facts,scans=validate_saved_success(execution,bindings,{'result':target},1)
-        observed=[]
-    for scan in ([] if publication else scans):
-        value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
-        if type(value.get('tenant_id')) is not int or value['tenant_id']!=tenant or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal:raise SuiteError('mixed overlay automatic scan public User/Tenant differs')
-        observed.append(value)
+    facts=validate_saved_facts(execution,bindings,{'result':target},1)
+    scans,observed,_=publication.produced(engine,'outputs/'+target_name,identifier,principal,initial,remaining)
+    publication.check_preparation_scans()
     monitor_response=client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload
     checkpoint.update(automatic_scans=observed,lineage_facts=facts,monitor=monitor_response)
     persist('monitor_returned')
@@ -1188,11 +1180,11 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     native=physical_runner(repository,env)
     if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(names) or set(native.get('targets',{}))!={target_name}:raise SuiteError('mixed overlay physical inventory differs')
     for source,kind in zip(sources,profile['kinds']):
-        rows=features(kind);before=publication.fact_baselines[source['id']] if publication else source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        rows=features(kind);before=publication.fact_baselines[source['id']];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
         if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=len(rows) or type(children[0].get('column_count')) is not int or children[0]['column_count']!=len(rows[0]['properties'])+2:raise SuiteError('mixed overlay source Meta size/rows/columns differ')
     item=support.find_fixture_item(client,engine,'outputs/'+target_name,'mixed overlay output')
     detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'mixed overlay output Meta')
-    statistics=publication.fact_snapshot(engine,detail,'outputs/'+target_name,'result_prepared') if publication else detail
+    statistics=publication.fact_snapshot(engine,detail,'outputs/'+target_name,'result_prepared')
     physical=native['targets'][target_name];sizes=validate_item(statistics,physical,target_name)
     child=statistics['attributes']['type_info']['container']['children'][0]
     if type(child.get('row_count')) is not int or child['row_count']!=count or type(child.get('column_count')) is not int or child['column_count']!=len(features('result')[0]['properties'])+2:raise SuiteError('mixed overlay output rows/columns differ')
@@ -1202,10 +1194,9 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         for entry in [*sources,output]:
             item_id=entry.get('item_id',entry.get('id'));after=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
             if after!=entry['before']:raise SuiteError('mixed overlay source or result Meta changed')
-            if publication:
-                name=entry['name'] if entry in sources else 'outputs/'+entry['name']
-                snapshot=publication.fact_snapshot(engine,after,name,'unchanged_check')
-                if snapshot!=publication.fact_baselines[item_id]:raise SuiteError('mixed overlay source or result Meta changed')
+            name=entry['name'] if entry in sources else 'outputs/'+entry['name']
+            snapshot=publication.fact_snapshot(engine,after,name,'unchanged_check')
+            if snapshot!=publication.fact_baselines[item_id]:raise SuiteError('mixed overlay source or result Meta changed')
             result[entry['name']]=after
         return result
     checkpoint.update(outputs=[output],physical=native,stable_outputs=execution['outputs'])
@@ -1213,13 +1204,13 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     for source in sources[:len(input_nodes)]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
     graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'mixed overlay original dual-source graph')
     validate_proximity_graph(graph,sources[:len(input_nodes)],output['item_id'],identifier);checkpoint['raw_lineage']=graph
-    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans],*inspection_scans])
+    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
     if scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay scan inventory differs before failures')
     for spec in profile['failures']:
         key=spec[0];failed_workflow=definition(locators,parent,key)
-        if publication:publication.before_submit(identity,engine,runtime,sources,failed_workflow,failure=key)
+        publication.before_submit(identity,engine,runtime,sources,failed_workflow,failure=key)
         failed_id=raster.submit(client,runtime,failed_workflow)
-        if publication:publication.record(dict(stage='execution_submitted',execution_id=failed_id,failure=key))
+        publication.record(dict(stage='execution_submitted',execution_id=failed_id,failure=key))
         failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'expected_diagnostic':diagnostic(spec),'source_lineage':[]}
         checkpoint['pending_failure']=failure
         def observe_failure(response):
@@ -1256,7 +1247,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     remaining();browser_report=browser_runner(repository,browser_env,evidence);remaining()
     final=physical_runner(repository,env)
     if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay browser changed physical files or scans')
-    if publication:publication.check_preparation_scans()
+    publication.check_preparation_scans()
     meta_after=unchanged_meta()
     remaining()
     if case == fixture.DIFFERENCE_CASE:
