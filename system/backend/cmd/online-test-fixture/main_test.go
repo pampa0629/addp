@@ -2206,7 +2206,7 @@ func TestFeatherCaseRetainsApprovedConsumerAndInitializerPermissions(t *testing.
 func TestFilePublicationSourceInitializerHasOnlyPreparationAndApprovalPermissions(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS", "0")
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
-	for _, caseName := range []string{"geometry-difference", "polygon-adjacency", "polygon-components"} {
+	for _, caseName := range []string{"geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay"} {
 		t.Run(caseName, func(t *testing.T) {
 			t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", caseName)
 			got := suiteSourceInitializerPermissions("vector-topology-persistence")
@@ -2228,7 +2228,7 @@ func TestFilePublicationSourceInitializerHasOnlyPreparationAndApprovalPermission
 			}
 		})
 	}
-	for _, caseName := range []string{"", "full", "intersection-overlay", "polygon-dissolve", "line-nodes", "vertex-extraction", "unknown"} {
+	for _, caseName := range []string{"", "full", "intersection_overlay", "polygon-dissolve", "line-nodes", "vertex-extraction", "unknown"} {
 		t.Run("unrelated_"+caseName, func(t *testing.T) {
 			t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", caseName)
 			if got := suiteSourceInitializerPermissions("vector-topology-persistence"); len(got) != 0 {

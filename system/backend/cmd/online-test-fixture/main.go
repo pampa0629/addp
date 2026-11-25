@@ -131,7 +131,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "vector-topology-persistence":
 		switch os.Getenv("ADDP_ONLINE_TOPOLOGY_CASE") {
-		case "geometry-difference", "polygon-adjacency", "polygon-components":
+		case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay":
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
 		}
 		if topologyLineagePermissions(suite) {

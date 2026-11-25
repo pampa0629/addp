@@ -2583,7 +2583,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'business/scripts/online-vector-topology-fixture.py': ('COMPONENTS_FAILURES', 'def components_features(', 'def components_field_types('),
         'scripts/test/vector-topology-persistence-online.py': ('def components_definition(', 'def validate_components_failure(', 'topology-components-browser-raw.json'),
         'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面连通分组独立普通User单源面成果及六失败保护', 'assertComponentsPolygonPixels('),
-        'system/backend/cmd/online-test-fixture/main.go': ('case "geometry-difference", "polygon-adjacency", "polygon-components":',),
+        'system/backend/cmd/online-test-fixture/main.go': ('case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay":',),
         'engines/geopython-workflow/test_topology_operators.py': ('test_polygon_components_t4_one_save_six_readonly_refusals_independent_ogr',),
         'scripts/test/vector-topology-persistence-online_test.py': ('class PolygonComponentsOnlineTest',),
         'scripts/test/online-hosted-topology-gate_test.py': ('test_components_case_is_bound_without_old_business_or_capacity',),
