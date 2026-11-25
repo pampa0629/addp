@@ -209,7 +209,7 @@ async function displayedWorld(page, viewport) {
 }
 
 test('ordinary user generates two temperature maps and reuses each forecast', async ({ page }) => {
-  test.setTimeout(480000)
+  test.setTimeout(240000)
   const env = process.env
   const context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON)
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
@@ -236,7 +236,7 @@ test('ordinary user generates two temperature maps and reuses each forecast', as
   const byMessage = new Map()
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const map = frame.getByTestId('grib-temperature-map')
-  const canvas = map.locator('.raster-map .ol-layer canvas').first()
+  const canvas = map.locator('.raster-map canvas').first()
   try {
     for (const [step, number] of [1, 2, 1, 2].entries()) {
       const message = 'message-' + number
@@ -280,7 +280,8 @@ test('ordinary user generates two temperature maps and reuses each forecast', as
       else expect(info.preview_url).toBe(byMessage.get(message))
       await expect.poll(() => ranges.slice(rangeStart).some(r => r.path === url.pathname &&
         r.version === source.version && /^bytes \d+-\d+\/\d+$/.test(r.range) && /^bytes=/.test(r.requested))).toBe(true)
-      await canvas.scrollIntoViewIfNeeded()
+      await expect(canvas).toBeVisible({ timeout: 30000 })
+      await canvas.scrollIntoViewIfNeeded({ timeout: 10000 })
       await expect.poll(async () => {
         const pixels = await modelPixels(page, canvas)
         return pixels.colored / pixels.total
