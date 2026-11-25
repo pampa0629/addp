@@ -139,9 +139,9 @@ func productionScanRequest(r production.Receipt) (*models.ScanRequest, error) {
 }
 func findProductionBasicScan(db *gorm.DB, tenant uint, ref production.Reference) (*execution.TaskExecution, error) {
 	q := db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, ref.ExecutionID)
-	q = repository.WithScanConfigValue(q, "scan_depth", "basic")
-	q = repository.WithScanConfigValue(q, "initial_production_receipt.reference.owner", ref.Owner)
-	q = repository.WithScanConfigValue(q, "initial_production_receipt.reference.result_id", ref.ResultID)
+	q = execution.WithConfigString(q, "scan_depth", "basic")
+	q = execution.WithConfigString(q, "initial_production_receipt.reference.owner", ref.Owner)
+	q = execution.WithConfigString(q, "initial_production_receipt.reference.result_id", ref.ResultID)
 	return productionScanRecord(q.Order("id"))
 }
 func frozenProductionReceipt(run *execution.TaskExecution) (*production.Receipt, error) {

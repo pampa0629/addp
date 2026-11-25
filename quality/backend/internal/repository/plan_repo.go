@@ -192,7 +192,12 @@ func (r *PlanRepository) CreateExecution(ctx context.Context, taskID, tenantID i
 			return fmt.Errorf("%w: %v", commonAPI.ErrBadRequest, err)
 		}
 		var active int64
-		err = tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ? AND execution_config->>'target_key' = ?", tenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, strconv.FormatInt(taskID, 10), []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, targetKey).Count(&active).Error
+		pending := tx.Model(&commonExecution.TaskExecution{}).Where(
+			"tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ?",
+			tenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, strconv.FormatInt(taskID, 10),
+			[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning},
+		)
+		err = commonExecution.WithConfigString(pending, "target_key", targetKey).Count(&active).Error
 		if err != nil {
 			return err
 		}

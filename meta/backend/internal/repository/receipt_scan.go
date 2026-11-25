@@ -17,15 +17,3 @@ func LockReceiptScan(tx *gorm.DB, key string) error {
 		return gorm.ErrNotImplemented
 	}
 }
-
-// WithScanConfigValue matches a string at a module-defined dotted key path.
-func WithScanConfigValue(db *gorm.DB, path, value string) *gorm.DB {
-	switch db.Dialector.Name() {
-	case "postgres":
-		return db.Where("execution_config #>> string_to_array(?, '.') = ?", path, value)
-	case "mysql":
-		return db.Where("JSON_UNQUOTE(JSON_EXTRACT(execution_config, ?)) = ?", "$."+path, value)
-	default:
-		return db.Where("json_extract(execution_config, ?) = ?", "$."+path, value)
-	}
-}

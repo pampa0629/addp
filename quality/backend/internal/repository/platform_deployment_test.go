@@ -6,6 +6,9 @@ import (
 	commonapi "github.com/addp/common/api"
 	"os"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
@@ -44,5 +47,25 @@ func TestInstalledQualityStorage(t *testing.T) {
 		t.Fatalf("other tenant rule: %v", err)
 	}
 	checkQualityOverview(t, db)
+	t.Run("duplicate plan target is excluded while active", func(t *testing.T) {
+		const tenant = 18
+		plan := createPlanRepositoryTestTask(t, db, tenant)
+		plans := NewPlanRepository(db)
+		for _, tc := range []struct {
+			region   string
+			conflict bool
+		}{{"east", false}, {"east", true}, {"west", false}} {
+			run := newQualityRepositoryTestExecution(uuid.NewString(), tenant, time.Now().UTC())
+			request := models.PlanRunRequest{TableBindings: map[string]string{"orders": "addp://engine/12/path/" + tc.region + "/orders?type=table"}}
+			_, err := plans.CreateExecution(ctx, plan.ID, tenant, run, request)
+			if tc.conflict {
+				if !errors.Is(err, commonapi.ErrConflict) {
+					t.Fatalf("expected same-target conflict, got %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("create %s execution: %v", tc.region, err)
+			}
+		}
+	})
 	t.Logf("quality rule=%d revision=1, tenant isolation and attempt/observation overview confirmed", rule.ID)
 }

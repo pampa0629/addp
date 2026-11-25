@@ -115,7 +115,7 @@ func uploadReceiptRefGroups(paths []string) []models.ScanRefGroup {
 func findUploadScan(db *gorm.DB, tenant uint, id string) (*execution.TaskExecution, error) {
 	var run execution.TaskExecution
 	query := db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, id)
-	err := repository.WithScanConfigValue(query, "upload_receipt.upload_id", id).Order("id").Take(&run).Error
+	err := execution.WithConfigString(query, "upload_receipt.upload_id", id).Order("id").Take(&run).Error
 	return &run, err
 }
 func (s *ScanExecutionService) ReadUploadIdentification(ctx context.Context, tenant uint, id string) (*client.MetaUploadIdentification, error) {

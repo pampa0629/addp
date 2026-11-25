@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/production"
-	"github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scantask"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -36,7 +35,7 @@ func (s *ScanExecutionService) EnsureProductionDeepScan(ctx context.Context, ten
 			return commonapi.ErrConflict
 		}
 		children := tx.Where("tenant_id=? AND module=? AND task_type=?", tenant, execution.ModuleMeta, execution.TaskTypeScan)
-		child, err := productionScanRecord(repository.WithScanConfigValue(children, "production_basic_execution_id", original.ExecutionID).Order("id"))
+		child, err := productionScanRecord(execution.WithConfigString(children, "production_basic_execution_id", original.ExecutionID).Order("id"))
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			req, err := productionScanRequest(*receipt)
 			if err != nil {
