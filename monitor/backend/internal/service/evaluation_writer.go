@@ -51,6 +51,7 @@ func (e PeriodicEvaluators) Run(ctx context.Context, interval time.Duration) {
 		if err := e.Logs.resetEvaluationWindow(active); err != nil {
 			return err
 		}
+		log.Print("Monitor periodic evaluation started")
 		var group sync.WaitGroup
 		for _, run := range []func(context.Context){e.Logs.Run, e.Resources.Run, e.HTTP.Run, e.Processes.Run, e.Availability.Run} {
 			group.Add(1)

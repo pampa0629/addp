@@ -106,9 +106,11 @@ func (s *LogPipelineService) Policy(ctx context.Context) (models.LogPipelinePoli
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return p, err
 	}
-	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&p)
-	if result.Error != nil {
-		return p, result.Error
+	err = s.writer.transaction(ctx, s.db, func(tx *gorm.DB) error {
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&p).Error
+	})
+	if err != nil {
+		return p, err
 	}
 	err = db.First(&p, 1).Error
 	return p, err

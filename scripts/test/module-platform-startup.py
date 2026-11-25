@@ -1,4 +1,5 @@
 """Start the released module process with only runtime database credentials."""
+from contextlib import ExitStack, contextmanager
 from http.client import HTTPConnection
 import json
 import os
@@ -18,10 +19,6 @@ env = {key: os.environ[key] for key in (
     "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "POSTGRES_HOST", "POSTGRES_PORT",
     "POSTGRES_DB", "TZ", "MEILISEARCH_URL", "MEILISEARCH_MASTER_KEY", "INFRA_FALKORDB_ADDRESS", "INFRA_FALKORDB_PASSWORD",
 ) if key in os.environ}
-with socket.socket() as reservation:
-    reservation.bind(("127.0.0.1", 0))
-    port = reservation.getsockname()[1]
-env[module.upper() + "_BACKEND_PORT"] = str(port)
 env[module.upper() + "_SERVICE_CLIENT_SECRET"] = secrets.token_hex(32)
 if module == "ontology":
     env.setdefault("INFRA_FALKORDB_PASSWORD", secrets.token_hex(24))
@@ -29,6 +26,8 @@ if module in ("standard", "develop", "transfer"):
     env.update(MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture-secret",MINIO_ENDPOINT="127.0.0.1:1")
 if module == "standard":
     env.update(MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture-secret", MINIO_ENDPOINT="127.0.0.1:1", STANDARD_DOCUMENT_STORAGE_TIMEOUT="250ms")
+if module == "monitor":
+    env["GATEWAY_URL"] = "http://127.0.0.1:1"
 env.update(SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1", GIN_MODE="release")
 
 if sys.argv[2] == "missing-credentials":
@@ -57,7 +56,7 @@ if sys.argv[2] == "missing":
     sys.exit(0)
 
 
-def request(path):
+def request(port, path):
     connection = HTTPConnection("127.0.0.1", port, timeout=2)
     try:
         connection.request("GET", path)
@@ -67,31 +66,69 @@ def request(path):
         connection.close()
 
 
-logfile = binary.parent / f"{module}-runtime.log"
-with logfile.open("wb") as log:
-    process = subprocess.Popen([binary], cwd=binary.parent, env=env, stdout=log, stderr=subprocess.STDOUT)
-    try:
-        deadline = time.monotonic() + 25
-        while process.poll() is None and time.monotonic() < deadline:
-            try:
-                status, body = request("/health/ready")
-                if status == 200 and json.loads(body)["module"] == module:
-                    break
-            except OSError:
-                pass
-            time.sleep(.1)
-        else:
-            raise RuntimeError(f"{module} failed to start: {logfile.read_text()[-2000:]}")
-        if request(f"/api/v1/{module}/{route}")[0] != 401:
-            raise RuntimeError(f"protected {module} route did not return 401")
-    finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-    if process.returncode != 0:
-        raise RuntimeError(f"{module} shutdown failed with exit={process.returncode}")
-    print(f"{module} runtime: Ready 200, protected route 401, SIGTERM exit=0")
+def check_http(port):
+    status, body = request(port, "/health/ready")
+    if status != 200 or json.loads(body)["module"] != module:
+        raise RuntimeError(f"{module} did not report Ready")
+    if request(port, f"/api/v1/{module}/{route}")[0] != 401:
+        raise RuntimeError(f"protected {module} route did not return 401")
+
+
+@contextmanager
+def runtime(label):
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    logfile = binary.parent / f"{module}-{label}.log"
+    with logfile.open("wb") as log:
+        process = subprocess.Popen([binary], cwd=binary.parent, env={
+            **env, module.upper() + "_BACKEND_PORT": str(port),
+        }, stdout=log, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 25
+            while process.poll() is None and time.monotonic() < deadline:
+                try:
+                    status, body = request(port, "/health/ready")
+                    if status == 200 and json.loads(body)["module"] == module:
+                        break
+                except OSError:
+                    pass
+                time.sleep(.1)
+            else:
+                raise RuntimeError(f"{module} failed to start: {logfile.read_text()[-2000:]}")
+            check_http(port)
+            yield port, logfile
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            if process.returncode != 0:
+                raise RuntimeError(f"{module} shutdown failed with exit={process.returncode}")
+
+
+def await_monitor_election(log):
+    started = time.monotonic()
+    while "Monitor periodic evaluation started" not in log.read_text():
+        if time.monotonic() - started >= 20:
+            raise RuntimeError("Monitor failed to acquire periodic evaluation")
+        time.sleep(.1)
+    return time.monotonic() - started
+
+
+with ExitStack() as replicas:
+    with runtime("primary") as (first, first_log):
+        if module == "monitor":
+            await_monitor_election(first_log)
+            second, second_log = replicas.enter_context(runtime("standby"))
+            check_http(first)
+            if "Monitor periodic evaluation started" in second_log.read_text():
+                raise RuntimeError("standby acquired evaluation while primary was alive")
+    if module == "monitor":
+        elapsed = await_monitor_election(second_log)
+        check_http(second)
+        print(f"Monitor dual HTTP Ready 200/protected route 401; standby acquired evaluation {elapsed:.2f}s after primary exit")
+print(f"{module} runtime: Ready 200, protected route 401, SIGTERM exit=0")
