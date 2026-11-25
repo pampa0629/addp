@@ -76,8 +76,6 @@ func graphRuntimeInt(key string, defaultValue int) int {
 
 func (c *Config) PlatformDatabase() database.Config {
 	return database.Config{
-		Host: c.DBHost, Port: c.DBPort,
-		User: c.DBUser, Password: c.DBPassword,
-		DBName: c.DBName, Schema: c.DBSchema,
+		Host: commonConfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonConfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonConfig.GetEnv("POSTGRES_DB", "addp"), Schema: c.DBSchema,
 	}
 }

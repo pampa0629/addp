@@ -26,7 +26,7 @@ func (r *BuildRepository) DB() *gorm.DB { return r.db }
 // graph creation provision it before the graph becomes usable.
 func LockAdmission(tx *gorm.DB, tenantID uint, exclusive bool) error {
 	q := tx.Where("tenant_id = ?", tenantID)
-	if tx.Dialector.Name() == "postgres" {
+	if tx.Dialector.Name() != "sqlite" {
 		strength := "SHARE"
 		if exclusive {
 			strength = "UPDATE"

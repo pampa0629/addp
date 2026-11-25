@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 container=${1:?expected gate-owned container ID}
 owner=${2:?expected database owner}
-case "$owner" in catalog|asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
+case "$owner" in graph|catalog|asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
 provider=${ADDP_INFRA_DATABASE_PROVIDER:?}
 work=$(mktemp -d)
 install_volume=""
@@ -65,7 +65,7 @@ runtime() { python3 "$root/scripts/test/module-platform-startup.py" "$work/$owne
 install_dir="$work/linux"
 mkdir "$install_dir"
 arch=$(docker image inspect "$(docker inspect -f '{{.Image}}' "$container")" -f '{{.Architecture}}')
-if [[ $owner == model || $owner == service ]]; then
+if [[ $owner == model || $owner == service || $owner == graph ]]; then
   # The registered engine plugins include the native PostgreSQL parser.
   # Link its C runtime statically so the installer also runs in the DB fixture image.
   build=(go build -tags netgo,osusergo -ldflags '-linkmode external -extldflags -static')
@@ -120,7 +120,7 @@ snapshot >refused.sql
 cmp before-owner.sql refused.sql
 # The same release database phase and the same module command run on both providers.
 prepare=(bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml")
-if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset || $owner == catalog ) && $provider == mysql ]]; then
+if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset || $owner == catalog || $owner == graph ) && $provider == mysql ]]; then
   status=0
   "${prepare[@]}" >"$work/installer.out" || status=$?
   case "$status" in
@@ -138,6 +138,8 @@ fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
+elif [[ $owner == graph ]]; then
+  grep -qi 'CREATE TABLE.*graph_operations' installed.sql
 elif [[ $owner == catalog ]]; then
   grep -qi 'CREATE TABLE.*fulfillment_checks' installed.sql
 elif [[ $owner == asset ]]; then
@@ -180,4 +182,7 @@ if [[ "$owner" == asset ]]; then
 fi
 if [[ "$owner" == catalog ]]; then
   (cd "$root/catalog/backend" && ADDP_TEST_CATALOG_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledCatalogFulfillment$' -count=1 -v)
+fi
+if [[ "$owner" == graph ]]; then
+  (cd "$root/graph/backend" && ADDP_TEST_GRAPH_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledGraphOntology$' -count=1 -v)
 fi

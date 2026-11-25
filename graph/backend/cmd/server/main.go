@@ -14,8 +14,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/addp/common/dataprotection/projectionstore"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/schema"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -41,9 +45,30 @@ import (
 )
 
 func main() {
-	commonConfig.LoadEnv()
 
 	cfg := config.Load()
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(cfg.PlatformDatabase(), "graph")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := repository.PrepareDatabase(db); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "graph"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
+
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 	commonConfig.InitLogger(&commonConfig.LoggerOptions{
@@ -103,7 +128,7 @@ func main() {
 		os.Exit(1)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, graphTokenSource, nil)
-	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "graph", nil)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "graph", nil)
 	if err != nil {
 		logger.Error("Graph protection store initialization failed", "error", err)
 		os.Exit(1)

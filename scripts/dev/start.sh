@@ -1572,6 +1572,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Graph Backend（带检查）
   if [ "$START_GRAPH_BACKEND" = true ]; then
     if check_service_running "graph" "$GRAPH_BACKEND_PORT"; then
+      addp_dev_prepare_database graph || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" graph graph backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-graph" &
       GRAPH_PID=$!
       echo $GRAPH_PID > .dev-pids/graph.pid

@@ -881,6 +881,15 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends postgresql-client
 
+      - name: Verify Graph installation, runtime restarts and ontology storage on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-graph-install'
+
+      - name: Verify Graph installation, runtime restarts and ontology storage on PostgreSQL
+        env:
+          ADDP_INFRA_DATABASE_PROVIDER: postgres
+          PLATFORM_CI_PG_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/test/module-platform-deployment.sh "$PLATFORM_CI_PG_ID" graph
+
       - name: Run Common PostgreSQL gate
         env:
           ADDP_TEST_POSTGRES_HOST: 127.0.0.1

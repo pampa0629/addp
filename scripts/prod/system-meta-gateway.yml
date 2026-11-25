@@ -102,6 +102,15 @@ services:
     extends: {file: ../../docker-compose.yml, service: catalog-frontend}
     profiles: [module-catalog]
     container_name: !reset null
+  graph-backend:
+    extends: {file: ../../docker-compose.yml, service: graph-backend}
+    profiles: [module-graph]
+    container_name: !reset null
+    environment: *endpoints
+  graph-frontend:
+    extends: {file: ../../docker-compose.yml, service: graph-frontend}
+    profiles: [module-graph]
+    container_name: !reset null
   workbench-backend:
     extends: {file: ../../docker-compose.yml, service: workbench-backend}
     profiles: [module-workbench]
