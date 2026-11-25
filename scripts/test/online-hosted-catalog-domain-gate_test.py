@@ -62,7 +62,7 @@ class HostedCatalogDomainGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         for step in ("start:-model -catalog -quality", "make:test-online ONLINE_SUITE=catalog-domain-overview", "application-stop", "infra-down"):
             self.assertIn(step, trace)
-        for owner in ("standard", "model"):
+        for owner in ("standard", "model", "catalog"):
             self.assertLess(trace.index(f"install:addp-{owner}:prepare-database"), trace.index("start:-model -catalog -quality"))
         self.assertNotIn("fixture:start", trace)
         self.assertFalse(self.host.secrets.exists())

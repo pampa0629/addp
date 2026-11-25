@@ -77,7 +77,8 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         actions = self.host.trace.read_text().splitlines()
         expected = ['infra-up', 'install:addp-system:prepare-database system', 'install:addp-system:prepare-database common',
-                    'install:addp-gateway:prepare-database', 'install:addp-manager:prepare-database', 'install:copilot:prepare_database', 'start:--exact-process -system', 'stop-exact:-system',
+                    'install:addp-gateway:prepare-database', 'install:addp-manager:prepare-database', 'install:copilot:prepare_database',
+                    'install:addp-catalog:prepare-database', 'start:--exact-process -system', 'stop-exact:-system',
                     'start:--exact-process -manager', 'observe:business-before-system',
                     'start:--exact-process -system', 'observe:backend-registered',
                     'start:--exact-process -gateway', 'observe:gateway-established',

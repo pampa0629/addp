@@ -200,6 +200,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertNotIn("--network-alias portal-frontend", trace)
         self.assertNotIn("postgres-source:", trace)
         self.assertNotIn("standard-backend prepare-database", trace)
+        self.assertNotIn("catalog-backend prepare-database", trace)
         self.assertNotIn("service-backend", trace)
         self.assertLess(trace.index("make:test-online ONLINE_SUITE=compose-public-origin"), trace.index("business/docker-compose.yml down --remove-orphans --volumes"))
         self.assertLess(trace.index("business/docker-compose.yml down --remove-orphans --volumes"), trace.index("docker-compose.runtimes.yml down --remove-orphans --volumes"))
@@ -220,6 +221,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             "postgres-source:stop",
             "infra-down",
         )
+        self.assertLess(trace.index("catalog-backend prepare-database"), trace.index(" up -d --no-deps --wait catalog-backend"))
         positions = [trace.index(step) for step in steps]
         self.assertEqual(positions, sorted(positions))
         self.assertFalse(self.host.secrets.exists())

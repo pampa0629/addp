@@ -16,7 +16,7 @@ infra_owned=1
 hosted_start_platform_infra
 application_owned=1
 # Bootstrap identities before the Manager-first scenario, then stop System.
-hosted_prepare_native_database system gateway manager copilot
+hosted_prepare_native_database system gateway manager copilot catalog
 unset hosted_deploy_password
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite module-registry-recovery --output "$1"' _ "$IDENTITY_ENV"

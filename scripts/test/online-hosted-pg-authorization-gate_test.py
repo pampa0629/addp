@@ -160,6 +160,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = self.host.trace.read_text()
+        self.assertLess(trace.index('install:addp-catalog:prepare-database'), trace.index('start:--exact-process -system'))
         self.assertLess(trace.index('start:-security'), trace.index('start:-manager'))
         self.assertLess(trace.index('start:-security'), trace.index('make:test-online'))
         starts = [line.removeprefix('start:') for line in trace.splitlines() if line.startswith('start:')]

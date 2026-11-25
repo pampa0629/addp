@@ -40,7 +40,7 @@ run_logged docker exec addp-postgres psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_US
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 application_owned=1
-hosted_prepare_native_database system meta gateway manager security
+hosted_prepare_native_targets -manager -security -transfer -catalog
 unset hosted_deploy_password
 export ADDP_ONLINE_PG_SOURCE_PREFIX="pg_auth_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:16])')"
 # Start shared dependencies separately so a module's PGAPPNAME never labels
