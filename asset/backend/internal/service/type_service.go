@@ -102,7 +102,7 @@ func (s *TypeService) SeedBuiltinTypes() error {
 			}
 		} else if err != nil {
 			return err
-		} else {
+		} else if existing.Name != t.Name || existing.Description != t.Description || existing.Enabled != t.Enabled {
 			// 更新发布期内置展示定义，确保与代码一致。
 			if err := s.db.Model(&existing).Updates(map[string]interface{}{
 				"name":        t.Name,
