@@ -2517,6 +2517,14 @@ for name in workers:
   revision=(root/'meta/backend/internal/repository/startup_schema.go').read_text()
   for check in ('schema.Require(db, "common", schema.CommonVersion)', 'schema.Require(db, "meta", SchemaVersion)'):
    assert check in revision,name
+ elif name.startswith('transfer/'):
+  assert 'repository.OpenDatabase(cfg.PlatformDatabase())' in content,name
+  database=(root/'transfer/backend/internal/repository/platform_database.go').read_text()
+  runtime=database.split('func OpenDatabase(',1)[1].split('\n}',1)[0]
+  for check in ('bootstrap.OpenPlatformRuntime(config, "transfer"', 'schema.Require(db, "common", schema.CommonVersion)',
+                'schema.Require(db, "transfer", SchemaVersion)'):
+   assert check in runtime,name
+  assert not re.search(r'\b(?:Migrate|MigrateMySQL|AutoMigrate|EnsureStore|PrepareDatabase|OpenPlatformInstallation)\(',runtime),name
  else:
   assert 'schema.Require(' in content,name
 # Common has two installation entry points: PostgreSQL System startup and the
