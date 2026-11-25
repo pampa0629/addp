@@ -30,13 +30,18 @@ func TestPersistentNodeGrantHasOneExplicitTargetVariant(t *testing.T) {
 		func(i *CreateIndependentGrantInput) {
 			i.CatalogPath = plugin.TabularItemPath(8, "schema", "public", "table")
 		},
-		func(i *CreateIndependentGrantInput) { i.CatalogPath = plugin.TabularNamespacePath(8, "database", "db") },
+		func(i *CreateIndependentGrantInput) { i.CatalogPath = plugin.TabularNamespacePath(8, "catalog", "db") },
 	} {
 		bad := input
 		mutation(&bad)
 		if _, err := prepareIndependentGrant(bad); !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("ambiguous target accepted: %+v %v", bad, err)
 		}
+	}
+	database := input
+	database.CatalogPath = plugin.TabularNamespacePath(8, "database", "db")
+	if _, err := prepareIndependentGrant(database); err != nil {
+		t.Fatalf("canonical database namespace: %v", err)
 	}
 	root := input
 	root.CatalogPath = plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 8)

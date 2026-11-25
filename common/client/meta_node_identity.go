@@ -37,7 +37,7 @@ func (c *MetaClient) ResolveNodeIdentity(ctx context.Context, tenantID uint, que
 }
 
 // QueryNodeIdentities is one bounded, non-retrying child-node identity query.
-func (c *MetaClient) QueryNodeIdentities(ctx context.Context, tenantID uint, query authorizationfacts.NodeIdentityPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
+func (c *MetaClient) QueryNodeIdentities(ctx context.Context, tenantID uint, query authorizationfacts.NodeIdentityOwnerPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
 	if c == nil || c.httpClient == nil || c.baseURL == "" || tenantID == 0 || query.Validate() != nil {
 		return nil, errors.New("invalid Meta child node query")
 	}
@@ -61,7 +61,7 @@ func (c *MetaClient) QueryNodeIdentities(ctx context.Context, tenantID uint, que
 	var result authorizationfacts.NodeIdentityPage
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&result) != nil || result.Validate(tenantID, query) != nil {
+	if decoder.Decode(&result) != nil || query.ValidatePage(tenantID, &result) != nil {
 		return nil, errors.New("invalid Meta child node response")
 	}
 	return &result, nil

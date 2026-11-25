@@ -1,4 +1,4 @@
-CREATE TRIGGER IF NOT EXISTS source_grant_catalog_node
+CREATE TRIGGER IF NOT EXISTS source_grant_namespace_node
 BEFORE INSERT ON engine_access_grants FOR EACH ROW
 BEGIN
     DECLARE parts, part JSON;
@@ -27,10 +27,12 @@ BEGIN
         WHILE pos_index<segment_count DO
             SET part=JSON_EXTRACT(parts,CONCAT('$[',pos_index,']')),
                 segment_name=JSON_UNQUOTE(JSON_EXTRACT(part,'$.name'));
-            SET segment_term=CASE root_term WHEN 'server' THEN 'schema' WHEN 'root' THEN 'directory'
+            SET segment_term=CASE root_term WHEN 'server' THEN
+                CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(part,'$.term')) IN ('database','schema')
+                     THEN JSON_UNQUOTE(JSON_EXTRACT(part,'$.term')) END WHEN 'root' THEN 'directory'
                 ELSE IF(pos_index=1,'bucket','prefix') END;
             SET segment_kind=IF(root_term='server','namespace',segment_term);
-            IF (JSON_TYPE(JSON_EXTRACT(part,'$.name'))='STRING'
+            IF (segment_term IS NOT NULL AND JSON_TYPE(JSON_EXTRACT(part,'$.name'))='STRING'
                 AND part=JSON_OBJECT('term',segment_term,'kind',segment_kind,'name',segment_name)
                 AND OCTET_LENGTH(segment_name) BETWEEN 1 AND IF(root_term='server',512,4096)
                 AND (root_term='server' OR (segment_name NOT IN ('.','..')

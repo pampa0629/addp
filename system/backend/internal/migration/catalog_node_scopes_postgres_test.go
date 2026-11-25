@@ -104,3 +104,36 @@ func TestCatalogNodeScopesForwardMigrationAgainstPostgres(t *testing.T) {
 		}
 	})
 }
+
+func TestCatalogDatabaseNamespaceForwardMigrationAgainstPostgres(t *testing.T) {
+	testAuthorizationFactsMigration(t, "000315_catalog_database_namespace.up.sql", 315, 0, func(db *sql.DB) func() {
+		const engine = 9
+		namespace := plugin.TabularNamespacePath(engine, "database", "sales")
+		root := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("database"), engine)
+		item := plugin.TabularItemPath(engine, "database", "sales", "orders")
+		check := func(scope, target plugin.EngineCatalogPath, recursive, want bool) {
+			t.Helper()
+			path, err := json.Marshal(scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			leaf, err := json.Marshal(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var covered bool
+			if err := db.QueryRow("SELECT system.source_node_covers($1::jsonb,$2,$3::jsonb)", string(path), recursive, string(leaf)).Scan(&covered); err != nil || covered != want {
+				t.Fatalf("scope %v recursive=%t target %v: got %t, want %t, err=%v", scope, recursive, target, covered, want, err)
+			}
+		}
+		check(namespace, item, false, false)
+		return func() {
+			check(namespace, item, false, true)
+			check(root, item, true, true)
+			check(root, item, false, false)
+			check(namespace, plugin.TabularItemPath(engine, "database", "sales_archive", "orders"), true, false)
+			check(namespace, plugin.TabularItemPath(engine, "schema", "sales", "orders"), true, false)
+			check(namespace, plugin.TabularItemPath(engine+1, "database", "sales", "orders"), true, false)
+		}
+	})
+}

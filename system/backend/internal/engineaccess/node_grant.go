@@ -16,7 +16,7 @@ type NodeIdentityReader interface {
 }
 
 type NodeIdentityPageReader interface {
-	QueryNodeIdentities(context.Context, uint, authorizationfacts.NodeIdentityPageQuery) (*authorizationfacts.NodeIdentityPage, error)
+	QueryNodeIdentities(context.Context, uint, authorizationfacts.NodeIdentityOwnerPageQuery) (*authorizationfacts.NodeIdentityPage, error)
 }
 
 func (s *Service) WithNodeIdentityPageReader(reader NodeIdentityPageReader) *Service {
@@ -30,13 +30,15 @@ func (s *Service) ListAuthorizationNodes(ctx context.Context, actor Actor, engin
 	if query.Validate() != nil || int64(query.Target.EngineID) != engineID {
 		return nil, commonapi.ErrBadRequest
 	}
+	var owner authorizationfacts.NodeIdentityOwnerPageQuery
 	qualify := func() error {
 		return s.withEngineManagementScope(ctx, actor, engineID, authorization.PermissionSystemEngineAccessGrantRead, false, func(tx *Repository, check func() error) error {
 			engine, err := tx.engine(ctx, actor.TenantID, engineID, false)
 			if err != nil {
 				return err
 			}
-			if !authorizationfacts.NodeIdentityMatchesEngine(engine.EngineType, query.Target) {
+			owner, err = query.ForEngine(engine.EngineType)
+			if err != nil {
 				return commonapi.ErrBadRequest
 			}
 			return check()
@@ -48,11 +50,11 @@ func (s *Service) ListAuthorizationNodes(ctx context.Context, actor Actor, engin
 	if s.nodeIdentityPages == nil {
 		return nil, ErrAuthorizationFactsUnavailable
 	}
-	result, err := s.nodeIdentityPages.QueryNodeIdentities(ctx, uint(actor.TenantID), query)
+	result, err := s.nodeIdentityPages.QueryNodeIdentities(ctx, uint(actor.TenantID), owner)
 	if qualifyErr := qualify(); qualifyErr != nil {
 		return nil, qualifyErr
 	}
-	if err != nil || result == nil || result.Validate(uint(actor.TenantID), query) != nil {
+	if err != nil || result == nil || owner.ValidatePage(uint(actor.TenantID), result) != nil {
 		return nil, ErrAuthorizationFactsUnavailable
 	}
 	return result, nil
@@ -129,6 +131,7 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 		return engine.Version, nil
 	}
 	var binding *authorizationfacts.Binding
+	formats := make(map[string]string)
 	if input.Action == shared.SourceAccessMetadataRead {
 		bindings, err := s.resolveMetadataBindings(ctx, row.TenantID, []plugin.EngineCatalogPath{input.CatalogPath})
 		if err != nil {
@@ -140,7 +143,7 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 		binding = &bindings[0]
 	} else {
 		var err error
-		binding, err = s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash)
+		binding, err = s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash, formats)
 		if err != nil {
 			return 0, err
 		}
@@ -176,7 +179,7 @@ func (s *Service) verifyNewIndependentGrantTarget(ctx context.Context, input Cre
 	if s.independentTarget == nil {
 		return 0, ErrIndependentGrantSourceUnavailable
 	}
-	version, err := s.independentTarget.VerifyIndependentReadTarget(ctx, input.Actor.TenantID, input.CatalogPath)
+	version, err := s.independentTarget.VerifyIndependentReadTarget(ctx, input.Actor.TenantID, input.CatalogPath, formats[row.ItemFingerprint])
 	if err != nil {
 		return 0, err
 	}

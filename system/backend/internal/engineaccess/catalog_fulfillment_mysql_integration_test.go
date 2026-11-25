@@ -184,6 +184,7 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 		child, sibling engineplugin.EngineCatalogPath
 	}{
 		{"metadata-only schema grant and natural expiry", engineplugin.TabularItemPath(base.Path.EngineID, "schema", "visibility", "orders"), engineplugin.TabularItemPath(base.Path.EngineID, "schema", "sibling", "orders")},
+		{"MySQL database", engineplugin.TabularItemPath(84, "database", "visibility", "orders"), engineplugin.TabularItemPath(84, "database", "sibling", "orders")},
 		{"GaussDB schema", engineplugin.TabularItemPath(81, "schema", "visibility", "orders"), engineplugin.TabularItemPath(81, "schema", "sibling", "orders")},
 		{"FTP directory", engineplugin.FileItemPath(82, "visibility/orders.gpkg"), engineplugin.FileItemPath(82, "sibling/orders.gpkg")},
 		{"RustFS prefix", engineplugin.ObjectItemPath(83, "reports", "visibility/orders.csv"), engineplugin.ObjectItemPath(83, "reports", "sibling/orders.csv")},

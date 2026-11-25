@@ -56,6 +56,9 @@ func resolveNodeIdentitySnapshot(tx *gorm.DB, tenantID uint, input authorization
 	}
 	parent := roots[0].ID
 	for i, segment := range target.Segments[1:] {
+		if rootType == "server" {
+			childType = segment.Term
+		}
 		if rootType == "service" && i > 0 {
 			childType = "prefix"
 		}
@@ -95,7 +98,7 @@ func resolveNodeIdentitySnapshot(tx *gorm.DB, tenantID uint, input authorization
 // QueryNodeIdentities enumerates only direct owner nodes in one read-only
 // snapshot. Whole-container ownership is checked internally, but item identities,
 // technical attributes, item counts and source IO are never returned.
-func (s *MetadataQueryService) QueryNodeIdentities(ctx context.Context, tenantID uint, input authorizationfacts.NodeIdentityPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
+func (s *MetadataQueryService) QueryNodeIdentities(ctx context.Context, tenantID uint, input authorizationfacts.NodeIdentityOwnerPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
 	if tenantID == 0 || input.Validate() != nil {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -109,7 +112,7 @@ func (s *MetadataQueryService) QueryNodeIdentities(ctx context.Context, tenantID
 		if !parent.Exists || (input.Target.Segments[0].Term == "server" && len(input.Target.Segments) != 1) {
 			return nil
 		}
-		childType := "schema"
+		childType := input.NamespaceTerm
 		if input.Target.Segments[0].Term == "service" {
 			childType = "bucket"
 			if len(input.Target.Segments) > 1 {
@@ -140,7 +143,7 @@ func (s *MetadataQueryService) QueryNodeIdentities(ctx context.Context, tenantID
 			if expected != node.FullName {
 				return errors.New("inconsistent child node identity")
 			}
-			target := plugin.TabularNamespacePath(input.Target.EngineID, plugin.EngineCatalogTermSchema, node.Name)
+			target := plugin.TabularNamespacePath(input.Target.EngineID, childType, node.Name)
 			if childType == "dir" || childType == "prefix" {
 				target = plugin.FileDirectoryPath(input.Target.EngineID, node.FullName)
 			}
@@ -152,10 +155,10 @@ func (s *MetadataQueryService) QueryNodeIdentities(ctx context.Context, tenantID
 			}
 			result.Nodes = append(result.Nodes, authorizationfacts.NodeIdentity{TenantID: tenantID, Target: target, Exists: true})
 		}
-		return result.Validate(tenantID, input)
+		return input.ValidatePage(tenantID, result)
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
-	return result, result.Validate(tenantID, input)
+	return result, input.ValidatePage(tenantID, result)
 }

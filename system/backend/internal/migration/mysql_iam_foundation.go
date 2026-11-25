@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -79,10 +80,13 @@ func MigrateMySQLEngineDelegations(db *gorm.DB) error {
 }
 
 const mysqlSourceGrantCatalogOwner = "system_source_grant_catalog"
-const mysqlSourceGrantCatalogVersion = 5
+const mysqlSourceGrantCatalogVersion = 6
 
 //go:embed mysql_source_grant_node.sql
 var mysqlSourceGrantNode string
+
+//go:embed mysql_source_grant_node_v5.sql
+var mysqlSourceGrantNodeV5 string
 
 //go:embed mysql_source_grant_node_v4.sql
 var mysqlSourceGrantNodeV4 string
@@ -163,19 +167,33 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 				triggers = append(triggers, trigger.String())
 			}
 			triggers = append(triggers, mysqlSourceGrantNode)
-			var legacy bool
-			if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name='source_grant_node_target')").Row().Scan(&legacy); err != nil {
-				return err
+			// Check the installed guards in their original order before retiring any.
+			withOld := append([]string{}, triggers...)
+			var retireNames []string
+			for _, old := range []struct{ name, ddl string }{
+				{"source_grant_node_target", mysqlSourceGrantNodeV4},
+				{"source_grant_catalog_node", mysqlSourceGrantNodeV5},
+			} {
+				var present bool
+				if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name=?)", old.name).Row().Scan(&present); err != nil {
+					return err
+				}
+				if present {
+					position := len(withOld) - 1
+					if old.name == "source_grant_node_target" {
+						position = oldPosition
+					}
+					withOld = slices.Insert(withOld, position, old.ddl)
+					retireNames = append(retireNames, old.name)
+				}
 			}
-			if legacy {
-				// Verify the exact old definition and install its successor before retiring it.
-				withOld := append([]string{}, triggers[:oldPosition]...)
-				withOld = append(withOld, mysqlSourceGrantNodeV4)
-				withOld = append(withOld, triggers[oldPosition:]...)
+			if len(retireNames) > 0 {
 				if err := schema.CheckMySQLTriggers(conn, withOld); err != nil {
 					return err
 				}
-				const retire = "DROP TRIGGER source_grant_node_target"
+			}
+			for _, name := range retireNames {
+				retire := "DROP TRIGGER " + name
 				if err := conn.Exec(retire).Error; err != nil {
 					var denied *mysqlDriver.MySQLError
 					if errors.As(err, &denied) && denied.Number == 1419 {

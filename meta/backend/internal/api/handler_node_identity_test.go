@@ -29,7 +29,7 @@ func TestNodeIdentityRuntimeGuardAndStrictReadOnlyContract(t *testing.T) {
 	for _, mode := range []string{"resolve", "query"} {
 		var input any = query
 		if mode == "query" {
-			input = authorizationfacts.NodeIdentityPageQuery{Target: query.Target, Page: 1, PageSize: 100}
+			input = authorizationfacts.NodeIdentityOwnerPageQuery{NodeIdentityPageQuery: authorizationfacts.NodeIdentityPageQuery{Target: query.Target, Page: 1, PageSize: 100}, NamespaceTerm: "schema"}
 		}
 		encoded, _ := json.Marshal(input)
 		const permission = "meta.node_identity.read"

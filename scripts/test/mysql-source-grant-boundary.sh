@@ -26,35 +26,41 @@ test "$result" = 3
 admin < "$work/source-triggers.sql"
 "$work/system-server" prepare-database system > "$work/source-replay.sql"
 test ! -s "$work/source-replay.sql"
-# Reconstruct the previous installed revision in this disposable database.
-# Exercise both the interrupted DBA handoff and replay before running the Grant cases.
-admin <<<"DROP TRIGGER source_grant_catalog_node"
-{
-    echo 'DELIMITER $$'
-    sed -e '1s/CREATE TRIGGER/CREATE DEFINER=`source_installer`@`%` TRIGGER/' \
-        -e '2a\
-PRECEDES source_grant_item_target' \
-        -e '$s/$/$$/' "$system_backend/internal/migration/mysql_source_grant_node_v4.sql"
-    echo 'DELIMITER ;'
-} | admin
-admin <<<"UPDATE startup_schema_revision SET version=4,pending_version=0 WHERE owner='system_source_grant_catalog'"
-result=0
-"$work/system-server" prepare-database system > "$work/node-upgrade.sql" || result=$?
-test "$result" = 3
-test "$(admin <<<"SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='system' AND trigger_name='source_grant_node_target'")" = 1
-admin < "$work/node-upgrade.sql"
-result=0
-"$work/system-server" prepare-database system > "$work/node-retire.sql" || result=$?
-if [ "$result" = 3 ]; then
-    admin < "$work/node-retire.sql"
-    "$work/system-server" prepare-database system
-else
-    test "$result" = 0
-fi
-test "$(admin <<<"SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='system' AND trigger_name='source_grant_node_target'")" = 0
-test "$(admin <<<"SELECT version FROM startup_schema_revision WHERE owner='system_source_grant_catalog' AND pending_version=0")" = 5
-"$work/system-server" prepare-database system > "$work/node-replay.sql"
-test ! -s "$work/node-replay.sql"
+# Reconstruct each previously deployed guard in the gate-owned database.
+for revision in 4 5; do
+    old_guard=source_grant_catalog_node
+    if [ "$revision" = 4 ]; then old_guard=source_grant_node_target; fi
+    admin <<<"DROP TRIGGER source_grant_namespace_node"
+    {
+        echo 'DELIMITER $$'
+        awk -v revision="$revision" '
+            NR==1 { sub("CREATE TRIGGER","CREATE DEFINER=`source_installer`@`%` TRIGGER") }
+            { print }
+            NR==2 && revision==4 { print "PRECEDES source_grant_item_target" }
+            END { print "$$" }
+        ' "$system_backend/internal/migration/mysql_source_grant_node_v${revision}.sql"
+        echo 'DELIMITER ;'
+    } | admin
+    admin <<<"UPDATE startup_schema_revision SET version=$revision,pending_version=0 WHERE owner='system_source_grant_catalog'"
+    result=0
+    "$work/system-server" prepare-database system > "$work/node-upgrade.sql" || result=$?
+    test "$result" = 3
+    guard_count="SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='system' AND trigger_name='$old_guard'"
+    test "$(admin <<<"$guard_count")" = 1
+    admin < "$work/node-upgrade.sql"
+    result=0
+    "$work/system-server" prepare-database system > "$work/node-retire.sql" || result=$?
+    if [ "$result" = 3 ]; then
+        admin < "$work/node-retire.sql"
+        "$work/system-server" prepare-database system
+    else
+        test "$result" = 0
+    fi
+    test "$(admin <<<"$guard_count")" = 0
+    test "$(admin <<<"SELECT version FROM startup_schema_revision WHERE owner='system_source_grant_catalog' AND pending_version=0")" = 6
+    "$work/system-server" prepare-database system > "$work/node-replay.sql"
+    test ! -s "$work/node-replay.sql"
+done
 admin <<'SQL'
 INSERT INTO tenants(id,code,name) VALUES(7,'grant-source','Grant source');
 INSERT INTO principals(id,principal_type) VALUES(40001,'user');
@@ -72,7 +78,8 @@ VALUES (12,7,'Grant records','postgresql',JSON_OBJECT(),JSON_OBJECT('id',12)),
        (98,7,'Grant objects','minio',JSON_OBJECT(),JSON_OBJECT('id',98)),
        (81,7,'Catalog schema','gaussdb',JSON_OBJECT(),JSON_OBJECT('id',81)),
        (82,7,'Catalog directory','ftp',JSON_OBJECT(),JSON_OBJECT('id',82)),
-       (83,7,'Catalog prefix','rustfs',JSON_OBJECT(),JSON_OBJECT('id',83));
+       (83,7,'Catalog prefix','rustfs',JSON_OBJECT(),JSON_OBJECT('id',83)),
+       (84,7,'Catalog database','mysql',JSON_OBJECT(),JSON_OBJECT('id',84));
 CREATE TABLE sample_audit (id INT PRIMARY KEY);
 SQL
 # Refuse a deployment with an inherited write path, even at a current revision.
@@ -148,7 +155,8 @@ service_root="JSON_SET($nfs_root,'$.engine_id',98,'$.segments[0].kind','service'
 directory="JSON_ARRAY_APPEND($nfs_root,'$.segments',JSON_OBJECT('kind','directory','term','directory','name','docs'))"
 bucket="JSON_ARRAY_APPEND($service_root,'$.segments',JSON_OBJECT('kind','bucket','term','bucket','name','reports'))"
 prefix="JSON_ARRAY_APPEND($bucket,'$.segments',JSON_OBJECT('kind','prefix','term','prefix','name','quarter'))"
-for input in "12 $schema_node 0" "99 $directory 1" "98 $service_root 1" "98 $prefix 0" \
+database_node="JSON_SET($schema_node,'$.engine_id',84,'$.segments[1].term','database')"
+for input in "84 $database_node 0" "12 $schema_node 0" "99 $directory 1" "98 $service_root 1" "98 $prefix 0" \
     "81 JSON_SET($schema_node,'$.engine_id',81) 0" "82 JSON_SET($directory,'$.engine_id',82) 1" \
     "83 JSON_SET($service_root,'$.engine_id',83) 1" "83 JSON_SET($prefix,'$.engine_id',83) 0"; do
     read -r engine path recursive <<<"$input"
@@ -156,7 +164,7 @@ for input in "12 $schema_node 0" "99 $directory 1" "98 $service_root 1" "98 $pre
         SELECT COUNT(*) FROM system.engine_access_grants WHERE request_id=$(uuid 120) AND node_recursive=$recursive; ROLLBACK;")
     test "$actual" = 1
 done
-for input in "12 $table_path 1" "98 $service_root 0" "99 $service_root 1" \
+for input in "84 JSON_SET($database_node,'$.segments[1].term','table') 1" "12 $table_path 1" "98 $service_root 0" "99 $service_root 1" \
     "99 JSON_SET($directory,'$.segments[1].name','a/b') 1" "99 JSON_SET($directory,'$.segments[1].name',23) 1" \
     "99 JSON_SET($directory,'$.extra',1) 1"; do
     read -r engine path recursive <<<"$input"
@@ -164,7 +172,7 @@ for input in "12 $table_path 1" "98 $service_root 0" "99 $service_root 1" \
     grep -q 'source_grant_node_' "$work/boundary.err"
 done
 test "$(admin <<<"SELECT COUNT(*) FROM engine_access_grants WHERE request_id=$(uuid 120)")" = 0
-echo 'System node Grants: PostgreSQL/GaussDB schemas, NFS/FTP directories and MinIO/RustFS object scopes checked through restricted procedure'
+echo 'System node Grants: MySQL databases, PostgreSQL/GaussDB schemas, NFS/FTP directories and MinIO/RustFS object scopes checked through restricted procedure'
 caller system_gate system <<SQL
 SET @recorded=NOW(6);
 INSERT INTO engine_access_fulfillment_outcomes (request_id,tenant_id,engine_id,caller_principal_id,catalog_path,binding,expiry_mode,outcome,recorded_at,deadline)

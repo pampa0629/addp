@@ -81,7 +81,7 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 			} else if parent.EngineID != 0 {
 				part := plugin.EngineCatalogSegment{Term: node.Type, Kind: node.Type, Name: node.Label}
 				switch node.Type {
-				case "schema":
+				case "schema", "database":
 					part.Kind = "namespace"
 				case "dir":
 					part.Term = "directory"
@@ -92,7 +92,7 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 			}
 			fullName, _ := node.Metadata["full_name"].(string)
 			expected := path.StringPath()
-			if node.Type == "schema" {
+			if node.Type == "schema" || node.Type == "database" {
 				expected = node.Label
 			}
 			if authorizationfacts.NodeIdentityMatchesEngine(engineType, path) && expected == fullName {

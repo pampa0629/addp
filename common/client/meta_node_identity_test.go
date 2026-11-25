@@ -63,7 +63,7 @@ func TestMetaNodeIdentityIsBoundedBoundAndOneAttempt(t *testing.T) {
 }
 
 func TestMetaChildNodeIdentityQueryRejectsUnboundOrMalformedPages(t *testing.T) {
-	query := authorizationfacts.NodeIdentityPageQuery{Target: plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9), Page: 1, PageSize: 100}
+	query := authorizationfacts.NodeIdentityOwnerPageQuery{NodeIdentityPageQuery: authorizationfacts.NodeIdentityPageQuery{Target: plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9), Page: 1, PageSize: 100}, NamespaceTerm: "schema"}
 	page := authorizationfacts.NodeIdentityPage{Parent: authorizationfacts.NodeIdentity{TenantID: 7, Target: query.Target, Exists: true}, Nodes: []authorizationfacts.NodeIdentity{{TenantID: 7, Target: plugin.TabularNamespacePath(9, "schema", "quoted.name/ "), Exists: true}}, Total: 1, Page: 1, PageSize: 100}
 	raw, _ := json.Marshal(page)
 	for _, tc := range []struct {
@@ -78,6 +78,7 @@ func TestMetaChildNodeIdentityQueryRejectsUnboundOrMalformedPages(t *testing.T) 
 		{"missing existence", strings.ReplaceAll(string(raw), `,"exists":true`, ``), 200, false},
 		{"null existence", strings.ReplaceAll(string(raw), `"exists":true`, `"exists":null`), 200, false},
 		{"unknown fact", strings.Replace(string(raw), `"exists":true`, `"exists":true,"attributes":{}`, 1), 200, false},
+		{"wrong namespace", strings.Replace(string(raw), `"term":"schema"`, `"term":"database"`, 1), 200, false},
 		{"wrong total", strings.Replace(string(raw), `"total":1`, `"total":2`, 1), 200, false},
 		{"wrong page", strings.Replace(string(raw), `"page":1`, `"page":2`, 1), 200, false},
 		{"oversize", strings.Repeat(" ", authorizationfacts.MaxNodeIdentityPageBytes+1), 200, false},

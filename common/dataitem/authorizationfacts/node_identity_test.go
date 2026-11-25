@@ -9,7 +9,7 @@ import (
 
 func TestNodeIdentityRequiresCanonicalRootOrSchema(t *testing.T) {
 	root := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9)
-	for _, target := range []plugin.EngineCatalogPath{root, plugin.TabularNamespacePath(9, "schema", " exact.schema/ "), plugin.FileRootPath(9), plugin.FileDirectoryPath(9, "public/ a.b ")} {
+	for _, target := range []plugin.EngineCatalogPath{root, plugin.TabularNamespacePath(9, "database", "sales"), plugin.TabularNamespacePath(9, "schema", " exact.schema/ "), plugin.FileRootPath(9), plugin.FileDirectoryPath(9, "public/ a.b ")} {
 		query := NodeIdentityQuery{Target: target}
 		if query.Validate() != nil {
 			t.Fatal("canonical node rejected")
@@ -25,7 +25,7 @@ func TestNodeIdentityRequiresCanonicalRootOrSchema(t *testing.T) {
 		plugin.TabularNamespacePath(0, "schema", "public"),
 		plugin.TabularNamespacePath(9, "schema", ""),
 		plugin.TabularNamespacePath(9, "schema", "bad\x00name"),
-		plugin.TabularNamespacePath(9, "database", "public"),
+		plugin.TabularNamespacePath(9, "catalog", "public"),
 		plugin.TabularItemPath(9, "schema", "public", "people"),
 		plugin.FileItemPath(9, "public/file.csv"),
 	} {

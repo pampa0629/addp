@@ -72,7 +72,11 @@ func ValidNodeIdentityTarget(path plugin.EngineCatalogPath) bool {
 		if name == "" || !utf8.ValidString(name) || len(name) > 512 || strings.ContainsRune(name, 0) {
 			return false
 		}
-		want = plugin.TabularNamespacePath(path.EngineID, plugin.EngineCatalogTermSchema, name)
+		term := path.Segments[1].Term
+		if term != plugin.EngineCatalogTermSchema && term != plugin.EngineCatalogTermDatabase {
+			return false
+		}
+		want = plugin.TabularNamespacePath(path.EngineID, term, name)
 	}
 	return reflect.DeepEqual(path, want)
 }
@@ -108,6 +112,55 @@ type NodeIdentityPageQuery struct {
 func (q NodeIdentityPageQuery) Validate() error {
 	if !ValidNodeIdentityTarget(q.Target) || q.Page < 1 || q.PageSize < 1 || q.PageSize > 100 || q.Page > int(^uint(0)>>1)/q.PageSize {
 		return errors.New("invalid node identity page query")
+	}
+	return nil
+}
+
+// NodeIdentityOwnerPageQuery binds System's catalog namespace to its private Meta request.
+type NodeIdentityOwnerPageQuery struct {
+	NodeIdentityPageQuery
+	NamespaceTerm string `json:"namespace_term,omitempty"`
+}
+
+func (q NodeIdentityPageQuery) ForEngine(kind string) (NodeIdentityOwnerPageQuery, error) {
+	owner := NodeIdentityOwnerPageQuery{NodeIdentityPageQuery: q}
+	if !NodeIdentityMatchesEngine(kind, q.Target) {
+		return owner, errors.New("node path differs from engine catalog")
+	}
+	if q.Target.Segments[0].Term == plugin.EngineCatalogTermServer {
+		model, _ := nodeGrantModel(kind)
+		branch, ok := plugin.EngineCatalogFirstBusinessBranch(model)
+		if !ok {
+			return owner, errors.New("catalog has no namespace branch")
+		}
+		owner.NamespaceTerm = branch.Term
+	}
+	return owner, owner.Validate()
+}
+
+func (q NodeIdentityOwnerPageQuery) Validate() error {
+	if err := q.NodeIdentityPageQuery.Validate(); err != nil {
+		return err
+	}
+	if q.Target.Segments[0].Term == plugin.EngineCatalogTermServer {
+		if (q.NamespaceTerm == plugin.EngineCatalogTermDatabase || q.NamespaceTerm == plugin.EngineCatalogTermSchema) &&
+			(len(q.Target.Segments) == 1 || q.Target.Segments[1].Term == q.NamespaceTerm) {
+			return nil
+		}
+	} else if q.NamespaceTerm == "" {
+		return nil
+	}
+	return errors.New("invalid catalog namespace for node page")
+}
+
+func (q NodeIdentityOwnerPageQuery) ValidatePage(tenantID uint, page *NodeIdentityPage) error {
+	if err := page.Validate(tenantID, q.NodeIdentityPageQuery); err != nil {
+		return err
+	}
+	for _, node := range page.Nodes {
+		if q.NamespaceTerm != "" && node.Target.Segments[1].Term != q.NamespaceTerm {
+			return errors.New("node page differs from engine catalog")
+		}
 	}
 	return nil
 }
@@ -157,7 +210,7 @@ func (p NodeIdentityPage) Validate(tenantID uint, q NodeIdentityPageQuery) error
 // The registered provider owns the path version, root and branch kinds.
 func nodeGrantModel(engineType string) (plugin.EngineCatalogModelSpec, bool) {
 	switch engineType {
-	case "postgresql", "nfs", "minio", "gaussdb", "ftp", "rustfs":
+	case "postgresql", "nfs", "minio", "gaussdb", "ftp", "rustfs", "mysql":
 	default:
 		return plugin.EngineCatalogModelSpec{}, false
 	}

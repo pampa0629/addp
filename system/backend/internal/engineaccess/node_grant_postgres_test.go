@@ -25,9 +25,9 @@ func (f nodeIdentityReaderFunc) ResolveNodeIdentity(c context.Context, t uint, q
 	return f(c, t, q)
 }
 
-type nodeIdentityPageReaderFunc func(context.Context, uint, authorizationfacts.NodeIdentityPageQuery) (*authorizationfacts.NodeIdentityPage, error)
+type nodeIdentityPageReaderFunc func(context.Context, uint, authorizationfacts.NodeIdentityOwnerPageQuery) (*authorizationfacts.NodeIdentityPage, error)
 
-func (f nodeIdentityPageReaderFunc) QueryNodeIdentities(c context.Context, t uint, q authorizationfacts.NodeIdentityPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
+func (f nodeIdentityPageReaderFunc) QueryNodeIdentities(c context.Context, t uint, q authorizationfacts.NodeIdentityOwnerPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
 	return f(c, t, q)
 }
 
@@ -43,7 +43,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 			}
 		})
 	}
-	schemaScope := func(t *testing.T, kind string) {
+	namespaceScope := func(t *testing.T, kind, namespace string) {
 		useEngine(t, kind)
 		ctx := context.Background()
 		repo := NewRepository(db)
@@ -62,7 +62,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 			}
 			return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
 		}))
-		scope := plugin.TabularNamespacePath(base.EngineID, "schema", kind+" node_scope.a/ b")
+		scope := plugin.TabularNamespacePath(base.EngineID, namespace, kind+" node_scope.a/ b")
 		recursive := false
 		command := CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: scope, NodeRecursive: &recursive, RecipientType: "user", RecipientID: user.PrincipalID, Action: shared.SourceAccessMetadataRead, ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Persistent exact schema scope"}
 		grant, err := service.CreateIndependentGrant(ctx, command)
@@ -86,9 +86,9 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrGrantRelationExists) {
 			t.Fatalf("duplicate scope relation: %v", err)
 		}
-		current := plugin.TabularItemPath(base.EngineID, "schema", scope.Segments[1].Name, "current")
-		future := plugin.TabularItemPath(base.EngineID, "schema", scope.Segments[1].Name, "identified_later")
-		sibling := plugin.TabularItemPath(base.EngineID, "schema", scope.Segments[1].Name+"_sibling", "current")
+		current := plugin.TabularItemPath(base.EngineID, namespace, scope.Segments[1].Name, "current")
+		future := plugin.TabularItemPath(base.EngineID, namespace, scope.Segments[1].Name, "identified_later")
+		sibling := plugin.TabularItemPath(base.EngineID, namespace, scope.Segments[1].Name+"_sibling", "current")
 		read := func(action string, path plugin.EngineCatalogPath, covered bool) {
 			t.Helper()
 			for _, nodeFirst := range []bool{false, true} {
@@ -146,7 +146,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		// Engine root grants explicitly distinguish direct and recursive coverage.
 		rootCommand := command
 		rootCommand.RequestID = uuid.New()
-		rootCommand.CatalogPath = plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), base.EngineID)
+		rootCommand.CatalogPath = plugin.EngineCatalogRootPath(plugin.TabularCatalogModel(namespace), base.EngineID)
 		direct, err := service.CreateIndependentGrant(ctx, rootCommand)
 		if err != nil {
 			t.Fatal(err)
@@ -235,8 +235,11 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		rootQuery := authorizationfacts.NodeIdentityPageQuery{Target: rootCommand.CatalogPath, Page: 1, PageSize: 100}
 		pageCalls := 0
 		qualifyDuringIO := true
-		service.WithNodeIdentityPageReader(nodeIdentityPageReaderFunc(func(c context.Context, tenant uint, q authorizationfacts.NodeIdentityPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
+		service.WithNodeIdentityPageReader(nodeIdentityPageReaderFunc(func(c context.Context, tenant uint, q authorizationfacts.NodeIdentityOwnerPageQuery) (*authorizationfacts.NodeIdentityPage, error) {
 			pageCalls++
+			if q.NamespaceTerm != namespace {
+				t.Fatalf("namespace %q, want %q", q.NamespaceTerm, namespace)
+			}
 			if err := db.WithContext(c).Transaction(func(tx *gorm.DB) error {
 				return tx.Exec("SELECT id FROM system.principals WHERE id=? FOR UPDATE NOWAIT", actor.PrincipalID).Error
 			}); err != nil {
@@ -264,8 +267,9 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		service.WithNodeIdentityPageReader(nil)
 		service.WithNodeIdentityReader(nil)
 	}
-	t.Run("persistent PG node grants use current item facts and independent sources", func(t *testing.T) { schemaScope(t, "postgresql") })
-	t.Run("gaussdb catalog node grant", func(t *testing.T) { schemaScope(t, "gaussdb") })
+	t.Run("persistent PG node grants use current item facts and independent sources", func(t *testing.T) { namespaceScope(t, "postgresql", "schema") })
+	t.Run("gaussdb catalog node grant", func(t *testing.T) { namespaceScope(t, "gaussdb", "schema") })
+	t.Run("mysql database node grant", func(t *testing.T) { namespaceScope(t, "mysql", "database") })
 	directoryScope := func(t *testing.T, kind string) {
 		useEngine(t, kind)
 		ctx := t.Context()

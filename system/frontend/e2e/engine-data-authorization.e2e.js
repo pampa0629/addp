@@ -59,6 +59,9 @@ test('all records state filter applies before pagination and survives current vi
 })
 async function fixture(page, { allowed = permissions, conflict = false, denied = false, identityRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', ftp = '', sourceType = 'ftp', factsTarget = null, metadataOnly = false, wholeMetadata = false,
   collection = false, factsHash = 'b'.repeat(64), grantBasisConflict = false } = {}) {
+  const namespaceTerm = sourceType === 'mysql' ? 'database' : 'schema'
+  const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: namespaceTerm, kind: 'namespace', name: 'outdoor' }] }
+  const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
   const objectSource = ['minio','rustfs'].includes(sourceType)
   const modelRoot = objectSource ? minioRootPath : ftpRootPath
   const modelBranch = objectSource ? minioBucketPath : ftpDirectoryPath
@@ -69,7 +72,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
   const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : collection ? 'collection' : 'table' })
   const nativeItems = collection ? [collectionPath] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
   const items = ftp ? [modelPath(`model.${ftp}`)] : nativeItems
-  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: objectSource ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: objectSource ? 'bucket' : 'dir' }, ...(ftp === 'gdb' || wholeMetadata ? [{ id: '3', name: `model.${ftp}`, node_type: objectSource ? 'prefix' : 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: collection ? 'Outdoor' : 'outdoor', node_type: collection ? 'database' : 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
+  let rows = (identityRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: objectSource ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: objectSource ? 'bucket' : 'dir' }, ...(ftp === 'gdb' || wholeMetadata ? [{ id: '3', name: `model.${ftp}`, node_type: objectSource ? 'prefix' : 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: collection ? 'Outdoor' : 'outdoor', node_type: collection ? 'database' : namespaceTerm }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
   let grants = [...history], failedGrant = false
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -93,7 +96,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/authorization-nodes/query')) {
       reads.push(request.url())
       const query=request.postDataJSON(), root={version:'catalog.path/v1',engine_id:2,segments:[{term:'server',kind:'server',name:''}]}
-      const nodes=query.target.segments.length===1 ? ftp ? [{tenant_id:2,target:modelBranch,exists:true}] : [{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:'schema',kind:'namespace',name:'public'}]},exists:true}] : []
+      const nodes=query.target.segments.length===1 ? ftp ? [{tenant_id:2,target:modelBranch,exists:true}] : [{tenant_id:2,target:schemaPath,exists:true},{tenant_id:2,target:{...schemaPath,segments:[...root.segments,{term:namespaceTerm,kind:'namespace',name:'public'}]},exists:true}] : []
       return reply({parent:{tenant_id:2,target:query.target,exists:true},nodes,total:nodes.length,page:query.page,page_size:query.page_size})
     }
     if (path.endsWith('/authorization-facts')) {
@@ -192,7 +195,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       }).map(({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }) => ({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }))
       return reply({ data: data.slice((page-1)*size,page*size), total:data.length,page,page_size:size,total_pages:Math.ceil(data.length/size) })
     }
-    const engine = { id: '2', name: collection ? '授权验证 MongoDB' : '授权验证 PostgreSQL', engine_type: ftp ? sourceType : collection ? 'mongodb' : sourceType === 'gaussdb' ? 'gaussdb' : 'postgresql', node_grant_root: collection ? undefined : ftp ? modelRoot : rootPath, engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
+    const engine = { id: '2', name: collection ? '授权验证 MongoDB' : '授权验证 PostgreSQL', engine_type: ftp ? sourceType : collection ? 'mongodb' : ['gaussdb','mysql'].includes(sourceType) ? sourceType : 'postgresql', node_grant_root: collection ? undefined : ftp ? modelRoot : rootPath, engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])
@@ -1448,8 +1451,8 @@ test('new PG authorization requires an explicit action and freezes metadata acro
 })
 
 
-for(const recursive of [false,true]) test(`persistent PG schema scope is explicit, recursive=${recursive} and never reads item identities`,async({page})=>{
- const {reads,writes}=await fixture(page,{allowed:grantPermissions})
+for(const [sourceType,term] of [['postgresql','schema'],['mysql','database']]) for(const recursive of [false,true]) test(`persistent ${sourceType} ${term} scope is explicit, recursive=${recursive} and never reads item identities`,async({page})=>{
+ const {reads,writes}=await fixture(page,{allowed:grantPermissions,sourceType})
  await page.goto('/engines/2?tab=data-authorization')
  await openNewAuthorization(page)
  const picker=page.getByTestId('approval-resource-tree')
@@ -1465,7 +1468,7 @@ for(const recursive of [false,true]) test(`persistent PG schema scope is explici
  await confirmation.getByRole('button',{name:'确定',exact:true}).click()
  await expect(page.getByTestId('source-grant-form')).toBeHidden()
  expect(writes).toHaveLength(1)
- expect(writes[0].body).toMatchObject({catalog_path:schemaPath,node_recursive:recursive,action:'read'})
+ expect(writes[0].body).toMatchObject({catalog_path:{...schemaPath,segments:[...rootPath.segments,{...schemaPath.segments[1],term}]},node_recursive:recursive,action:'read'})
  expect(writes[0].body).not.toHaveProperty('item_fingerprint')
  expect(writes[0].body).not.toHaveProperty('expected_boundary_hash')
  expect(reads.some(url=>/\/data-items(?:\?|$)|authorization-facts/.test(url))).toBe(false)
@@ -1575,9 +1578,9 @@ for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engin
 })
 
 
-for (const [sourceType, root] of [['postgresql', rootPath], ['gaussdb', rootPath], ['nfs', ftpRootPath], ['ftp', ftpRootPath], ['minio', minioRootPath], ['rustfs', minioRootPath]]) {
+for (const [sourceType, root] of [['postgresql', rootPath], ['gaussdb', rootPath], ['mysql', rootPath], ['nfs', ftpRootPath], ['ftp', ftpRootPath], ['minio', minioRootPath], ['rustfs', minioRootPath]]) {
   for (const [action, label] of [['metadata_read','仅查看元数据'],['read','读取数据（含元数据）']]) test(`entire engine issues one recursive ${action} node Grant for ${sourceType}`, async ({ page }) => {
-    const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: ['postgresql','gaussdb'].includes(sourceType) ? '' : 'gpkg' })
+    const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: ['postgresql','gaussdb','mysql'].includes(sourceType) ? '' : 'gpkg' })
     await page.goto('/engines/2?tab=data-authorization')
     await openNewAuthorization(page)
     await resourceOption(page.getByTestId('approval-resource-tree'), '授权验证 PostgreSQL').click()

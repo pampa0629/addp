@@ -107,7 +107,7 @@ export function isGrantNodePath(path, engineID) {
   const [root, ...parts] = path.segments
   if (root?.name !== '' || root.kind !== root.term) return false
   const validName = (name, limit) => typeof name === 'string' && name.length > 0 && new TextEncoder().encode(name).length <= limit && new TextDecoder().decode(new TextEncoder().encode(name)) === name && !name.includes('\0')
-  if (root.term === 'server') return parts.length <= 1 && parts.every(part => part.term === 'schema' && part.kind === 'namespace' && validName(part.name, 512))
+  if (root.term === 'server') return parts.length <= 1 && parts.every(part => ['schema', 'database'].includes(part.term) && part.kind === 'namespace' && validName(part.name, 512))
   if (root.term === 'service') return parts.length <= 63 && parts.every((part, index) => part.term === (index === 0 ? 'bucket' : 'prefix') && part.kind === part.term && validName(part.name, 4096) && !['.', '..'].includes(part.name) && !/[\\/]/.test(part.name))
   return root.term === 'root' && parts.length <= 63 && parts.every(part => part.term === 'directory' && part.kind === 'directory' && validName(part.name, 4096) && !['.', '..'].includes(part.name) && !/[\\/]/.test(part.name))
 }
@@ -122,7 +122,7 @@ export function createApprovalNodeCatalogAdapter(engine, readPage) {
   const make = (fact, hasChildren) => {
     if (fact?.exists !== true || !isGrantNodePath(fact.target, id) || fact.target.segments[0].term !== term) throw new Error('invalidCatalogTarget')
     const path = structuredClone(fact.target), root = path.segments.length === 1
-    const type = root ? 'root' : term === 'server' ? 'schema' : term === 'service' ? path.segments.at(-1).term : 'dir'
+    const type = root ? 'root' : term === 'root' ? 'dir' : path.segments.at(-1).term
     const locator = buildLocator({ engineId: id, path: path.segments.slice(1).map(part => part.name), type })
     const node = { id: pathKey(path), locator, label: root ? engine.name : path.segments.at(-1).name, type, hasChildren,
       metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: hasChildren, node_identity: { target: path, exists: true } } }
