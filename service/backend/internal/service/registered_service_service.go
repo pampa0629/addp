@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 	"github.com/gin-gonic/gin"
@@ -58,7 +59,7 @@ func (s *RegisteredServiceService) CreateService(req *models.CreateRegisteredSer
 		ServiceName: req.ServiceName,
 		Title:       req.Title,
 		Description: req.Description,
-		Keywords:    models.StringArray(req.Keywords),
+		Keywords:    commonModels.StringArray(req.Keywords),
 
 		ServiceType: req.ServiceType,
 		EndpointURL: req.EndpointURL,
@@ -166,7 +167,7 @@ func (s *RegisteredServiceService) UpdateService(id, tenantID uint, req *models.
 		updates["description"] = *req.Description
 	}
 	if req.Keywords != nil {
-		updates["keywords"] = models.StringArray(req.Keywords)
+		updates["keywords"] = commonModels.StringArray(req.Keywords)
 	}
 	if req.AuthType != nil {
 		updates["auth_type"] = *req.AuthType

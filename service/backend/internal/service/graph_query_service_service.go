@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -100,12 +101,12 @@ func (s *GraphQueryServiceService) CreateService(
 		ServiceName:  req.ServiceName,
 		Title:        req.Title,
 		Description:  req.Description,
-		Keywords:     models.StringArray(req.Keywords),
+		Keywords:     commonModels.StringArray(req.Keywords),
 		EngineID:     req.EngineID,
 		DatabaseName: dbName,
 		ConfigType:   req.ConfigType,
 		NodeShape:    req.NodeShape,
-		NodeLabels:   models.StringArray(req.NodeLabels),
+		NodeLabels:   commonModels.StringArray(req.NodeLabels),
 		CypherQuery:  req.CypherQuery,
 		DataConfig:   dataConfig,
 		PublicAccess: req.PublicAccess,
@@ -145,7 +146,7 @@ func (s *GraphQueryServiceService) UpdateService(
 		updates["description"] = *req.Description
 	}
 	if req.Keywords != nil {
-		updates["keywords"] = models.StringArray(req.Keywords)
+		updates["keywords"] = commonModels.StringArray(req.Keywords)
 	}
 	if req.CypherQuery != nil {
 		if err := validateCypher(*req.CypherQuery); err != nil {

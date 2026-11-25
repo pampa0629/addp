@@ -120,6 +120,15 @@ services:
     extends: {file: ../../docker-compose.yml, service: ontology-frontend}
     profiles: [module-ontology]
     container_name: !reset null
+  develop-backend:
+    extends: {file: ../../docker-compose.yml, service: develop-backend}
+    profiles: [module-develop]
+    container_name: !reset null
+    environment: *endpoints
+  develop-frontend:
+    extends: {file: ../../docker-compose.yml, service: develop-frontend}
+    profiles: [module-develop]
+    container_name: !reset null
   workbench-backend:
     extends: {file: ../../docker-compose.yml, service: workbench-backend}
     profiles: [module-workbench]

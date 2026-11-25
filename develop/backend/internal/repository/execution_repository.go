@@ -38,7 +38,7 @@ func (r *ExecutionRepository) RecoverUnleased(ctx context.Context, now time.Time
 			"module = ? AND task_type IN ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
 			commonExecution.ModuleDevelop, executionTaskTypes, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
 		).Order("created_at ASC, id ASC").Limit(limit)
-		if tx.Dialector.Name() == "postgres" {
+		if tx.Dialector.Name() != "sqlite" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		}
 		var items []commonExecution.TaskExecution
@@ -143,6 +143,9 @@ func excludeQueryEngines(tx *gorm.DB, engineIDs []uint) (*gorm.DB, error) {
 			END,
 			-1
 		) NOT IN ?`, engineIDs), nil
+	case "mysql":
+		return tx.Where(`COALESCE(CASE WHEN JSON_TYPE(JSON_EXTRACT(execution_config,'$.engine_id')) IN ('INTEGER','UNSIGNED INTEGER','DOUBLE','DECIMAL')
+            THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(execution_config,'$.engine_id')) AS DECIMAL(65,16)) END,-1) NOT IN ?`, engineIDs), nil
 	case "sqlite":
 		return tx.Where(`COALESCE(
 			CASE

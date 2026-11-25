@@ -176,7 +176,9 @@ func (r *FileExecutionRepository) ClaimPrivatePublicationDispatch(ctx context.Co
 			return err
 		}
 		update := tx.Model(row)
-		if tx.Dialector.Name() == "postgres" {
+		if tx.Dialector.Name() == "mysql" {
+			update = update.Where("CURRENT_TIMESTAMP(6) < ?", release.ExpiresAt)
+		} else if tx.Dialector.Name() == "postgres" {
 			update = update.Where("clock_timestamp() < ?", release.ExpiresAt)
 		}
 		changed := update.Updates(map[string]any{"publication_json": raw, "version": row.Version + 1})

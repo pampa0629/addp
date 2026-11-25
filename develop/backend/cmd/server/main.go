@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -18,10 +19,12 @@ import (
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/objectstore"
 	objectbootstrap "github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
+	"github.com/addp/common/schema"
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
 	developprotection "github.com/addp/develop/backend/internal/protection"
@@ -42,10 +45,30 @@ import (
 
 func main() {
 	// 加载 .env 文件
-	commonConfig.LoadEnv() // 从项目根目录加载 .env
 
 	// 加载配置
 	cfg := config.Load()
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(cfg.PlatformDatabase(), "develop")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := repository.PrepareDatabase(db); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "develop"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 
 	// 检查端口是否可用
 	if err := commonConfig.CheckPortAvailable(cfg.ServerAddr); err != nil {
@@ -86,7 +109,7 @@ func main() {
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
 	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, serviceTokenSource, nil)
-	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "develop", nil)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "develop", nil)
 	if err != nil {
 		log.Fatalf("Develop 保护投影存储初始化失败: %v", err)
 	}

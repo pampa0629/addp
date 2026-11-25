@@ -1412,6 +1412,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Develop Backend（带检查）
   if [ "$START_DEVELOP_BACKEND" = true ]; then
     if check_service_running "develop" "$DEVELOP_BACKEND_PORT"; then
+      addp_dev_prepare_database develop || exit 1
       develop_system_url="$SYSTEM_URL"
       if [ -n "${ADDP_ONLINE_DEVELOP_SYSTEM_OBSERVER:-}" ]; then
         if [ "${ADDP_ONLINE_HOSTED:-0}" != 1 ] || [ "${ADDP_ONLINE_ORCHESTRATOR_CASE:-}" != scheduled-controlled-file ] ||

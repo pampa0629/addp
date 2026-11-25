@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
@@ -14,12 +16,10 @@ type Config struct {
 	ServerAddr string
 
 	// PostgreSQL 配置
-	PostgresHost     string
-	PostgresPort     string
-	PostgresUser     string
-	PostgresPassword string
-	PostgresDB       string
-	DBSchema         string // develop schema
+	PostgresHost string
+	PostgresPort string
+	PostgresDB   string
+	DBSchema     string // develop schema
 
 	// System 服务配置（用于获取资源配置和认证）
 	SystemServiceURL    string
@@ -56,12 +56,10 @@ func Load() *Config {
 		ServerAddr: ":" + getEnv("DEVELOP_BACKEND_PORT", "8185"),
 
 		// PostgreSQL 配置
-		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
-		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
-		PostgresUser:     getEnv("POSTGRES_USER", "addp"),
-		PostgresPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
-		PostgresDB:       getEnv("POSTGRES_DB", "addp"),
-		DBSchema:         "develop",
+		PostgresHost: getEnv("POSTGRES_HOST", "localhost"),
+		PostgresPort: getEnv("POSTGRES_PORT", "5432"),
+		PostgresDB:   getEnv("POSTGRES_DB", "addp"),
+		DBSchema:     "develop",
 
 		// System 服务集成
 		SystemServiceURL:    getEnv("SYSTEM_URL", "http://localhost:8180"),
@@ -137,4 +135,8 @@ func loadEncryptionKey() []byte {
 	}
 
 	return key
+}
+
+func (c *Config) PlatformDatabase() database.Config {
+	return database.Config{Host: c.PostgresHost, Port: c.PostgresPort, DBName: c.PostgresDB, Schema: c.DBSchema + ",public"}
 }

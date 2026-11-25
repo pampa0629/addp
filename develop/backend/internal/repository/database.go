@@ -2,12 +2,10 @@ package repository
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/addp/common/cleanup"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/infra/bootstrap"
-	"github.com/addp/common/infra/database"
 	commonlogger "github.com/addp/common/logger"
 	"github.com/addp/common/schema"
 	"github.com/addp/develop/backend/internal/config"
@@ -26,12 +24,19 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return nil, fmt.Errorf("failed to ensure execution store: %w", err)
 	}
+	if err := schema.Require(db, "develop", SchemaVersion); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+func preparePostgres(db *gorm.DB) error {
 	if err := exportartifact.EnsureStore(db, "develop.export_sessions"); err != nil {
-		return nil, fmt.Errorf("failed to ensure export session store: %w", err)
+		return fmt.Errorf("failed to ensure export session store: %w", err)
 	}
 
 	if err := migrateExecutionPolicy(db); err != nil {
-		return nil, err
+		return err
 	}
 
 	// AutoMigrate - 确保表结构最新
@@ -43,35 +48,33 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.FileExecution{},   // 私有文件执行意图和原授权绑定
 		&models.CatalogResourceChangeRow{},
 	); err != nil {
-		return nil, fmt.Errorf("failed to auto migrate: %w", err)
+		return fmt.Errorf("failed to auto migrate: %w", err)
 	}
 
 	if err := db.Exec("DROP TABLE IF EXISTS develop.dev_items").Error; err != nil {
-		return nil, fmt.Errorf("failed to drop legacy develop.dev_items: %w", err)
+		return fmt.Errorf("failed to drop legacy develop.dev_items: %w", err)
 	}
 
 	if err := normalizeDevTaskContent(db); err != nil {
-		return nil, err
+		return err
 	}
 	if err := migrateCatalogDevTaskChanges(db); err != nil {
-		return nil, err
+		return err
 	}
 	if err := migrateSharedEditorLayout(db); err != nil {
-		return nil, err
+		return err
 	}
 	if err := migrateNotebookStorage(db); err != nil {
-		return nil, err
+		return err
 	}
 	if err := migrateQueryResultStorage(db); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := cleanup.MigrateResults(db, "develop"); err != nil {
-		return nil, err
+		return err
 	}
-	log.Println("✅ Database connected successfully (AutoMigrate 完成)")
-
-	return db, nil
+	return nil
 }
 
 func migrateCatalogDevTaskChanges(db *gorm.DB) error {
@@ -170,13 +173,9 @@ func migrateCatalogDevTaskChanges(db *gorm.DB) error {
 }
 
 // ConnectDatabase opens the Develop store without running owner migrations.
-// InitDatabase remains the only schema-owner entry point.
+// The root deployment command prepares the schema before runtime startup.
 func ConnectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := bootstrap.OpenDatabase(database.Config{
-		Host: cfg.PostgresHost, Port: cfg.PostgresPort,
-		User: cfg.PostgresUser, Password: cfg.PostgresPassword,
-		DBName: cfg.PostgresDB, Schema: cfg.DBSchema + ",public",
-	}, &gorm.Config{
+	db, err := bootstrap.OpenPlatformRuntime(cfg.PlatformDatabase(), "develop", &gorm.Config{
 		Logger: commonlogger.WithoutSQLValues(logger.Default.LogMode(logger.Info)),
 	})
 	if err != nil {

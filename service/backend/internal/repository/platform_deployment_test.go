@@ -7,7 +7,7 @@ import (
 
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
-	"github.com/addp/service/internal/models"
+	commonModels "github.com/addp/common/models"
 	"gorm.io/gorm"
 )
 
@@ -27,7 +27,7 @@ func TestInstalledServiceCatalog(t *testing.T) {
 	checkConsumerCatalog(t, db)
 	repo := NewQueryServiceRepository(db)
 	item := consumerCatalogService("roundtrip", "Query 服务", 17, "active", true, false)
-	item.Keywords = models.StringArray{"中文", "逗,号", "双\"引号"}
+	item.Keywords = commonModels.StringArray{"中文", "逗,号", "双\"引号"}
 	if err := repo.Create(&item); err != nil {
 		t.Fatal(err)
 	}

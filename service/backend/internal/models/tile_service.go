@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+
+	commonModels "github.com/addp/common/models"
 )
 
 // ============================================================================
@@ -10,21 +12,21 @@ import (
 
 // TileService 瓦片服务主表模型
 type TileService struct {
-	ID           uint        `gorm:"primarykey" json:"id"`
-	TenantID     uint        `gorm:"not null;index:idx_tile_services_tenant" json:"tenant_id"`
-	ServiceName  string      `gorm:"type:varchar(255);not null;uniqueIndex:unique_tile_service_name" json:"service_name"`
-	Title        string      `gorm:"type:varchar(255);not null" json:"title"`
-	Description  string      `gorm:"type:text" json:"description"`
-	Keywords     StringArray `gorm:"type:text[]" json:"keywords"`
-	DefaultSRID  int         `gorm:"column:default_srid;type:integer;default:3857" json:"default_srid"`
-	Extent       JSONB       `gorm:"type:jsonb" json:"extent"`
-	Protocols    JSONB       `gorm:"type:jsonb;not null" json:"protocols"`
-	PublicAccess bool        `gorm:"type:boolean;default:false" json:"public_access"`
-	Status       string      `gorm:"type:varchar(50);default:'active'" json:"status"`
-	ErrorMessage string      `gorm:"type:text" json:"error_message"`
-	CreatedBy    uint        `gorm:"not null" json:"created_by"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
+	ID           uint                     `gorm:"primarykey" json:"id"`
+	TenantID     uint                     `gorm:"not null;index:idx_tile_services_tenant" json:"tenant_id"`
+	ServiceName  string                   `gorm:"type:varchar(255);not null;uniqueIndex:unique_tile_service_name" json:"service_name"`
+	Title        string                   `gorm:"type:varchar(255);not null" json:"title"`
+	Description  string                   `gorm:"type:text" json:"description"`
+	Keywords     commonModels.StringArray `gorm:"type:text[]" json:"keywords"`
+	DefaultSRID  int                      `gorm:"column:default_srid;type:integer;default:3857" json:"default_srid"`
+	Extent       JSONB                    `gorm:"type:jsonb" json:"extent"`
+	Protocols    JSONB                    `gorm:"type:jsonb;not null" json:"protocols"`
+	PublicAccess bool                     `gorm:"type:boolean;default:false" json:"public_access"`
+	Status       string                   `gorm:"type:varchar(50);default:'active'" json:"status"`
+	ErrorMessage string                   `gorm:"type:text" json:"error_message"`
+	CreatedBy    uint                     `gorm:"not null" json:"created_by"`
+	CreatedAt    time.Time                `json:"created_at"`
+	UpdatedAt    time.Time                `json:"updated_at"`
 
 	// 关联：图层列表（用于 Preload）
 	Layers []TileServiceLayer `gorm:"foreignKey:ServiceID" json:"layers,omitempty"`

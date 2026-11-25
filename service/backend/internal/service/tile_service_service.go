@@ -7,6 +7,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonJSON "github.com/addp/common/jsonmap"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -71,7 +72,7 @@ func (s *TileServiceService) CreateService(ctx context.Context, req *models.Crea
 		ServiceName:  req.ServiceName,
 		Title:        req.Title,
 		Description:  req.Description,
-		Keywords:     models.StringArray(req.Keywords),
+		Keywords:     commonModels.StringArray(req.Keywords),
 		DefaultSRID:  defaultSRID,
 		Protocols:    protocols,
 		PublicAccess: req.PublicAccess,
@@ -94,7 +95,7 @@ func (s *TileServiceService) CreateService(ctx context.Context, req *models.Crea
 	// 注意：GORM 会自动通过 ForeignKey 设置 ServiceID
 	service.Layers = []models.TileServiceLayer{*firstLayer}
 
-	if err := s.repo.CreateService( service); err != nil {
+	if err := s.repo.CreateService(service); err != nil {
 		return nil, fmt.Errorf("create service failed: %w", err)
 	}
 
@@ -187,7 +188,7 @@ func (s *TileServiceService) UpdateService(id, tenantID uint, req *models.Update
 		updates["description"] = *req.Description
 	}
 	if req.Keywords != nil {
-		updates["keywords"] = models.StringArray(req.Keywords)
+		updates["keywords"] = commonModels.StringArray(req.Keywords)
 	}
 	if req.Protocols != nil {
 		// 合并现有协议配置和新配置
@@ -344,7 +345,7 @@ func (s *TileServiceService) UpdateLayer(ctx context.Context, layerID, serviceID
 	}
 
 	// 执行更新
-	if err := s.repo.UpdateLayer( layerID, serviceID, tenantID, updates); err != nil {
+	if err := s.repo.UpdateLayer(layerID, serviceID, tenantID, updates); err != nil {
 		return nil, fmt.Errorf("update layer failed: %w", err)
 	}
 

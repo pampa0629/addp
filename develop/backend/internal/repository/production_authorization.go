@@ -24,8 +24,13 @@ func (r *FileExecutionRepository) ClaimProductionAuthorization(ctx context.Conte
 	var claim *ProductionAuthorizationClaim
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row models.FileExecution
-		query := tx.Where("publication_json->'initial_authorization'->>'status'='pending' AND CAST(publication_json->'initial_authorization'->>'next_attempt_unix' AS BIGINT)<=?", now.Unix()).
-			Order("CAST(publication_json->'initial_authorization'->>'next_attempt_unix' AS BIGINT),execution_id")
+		status := "publication_json->'initial_authorization'->>'status'"
+		due := "CAST(publication_json->'initial_authorization'->>'next_attempt_unix' AS BIGINT)"
+		if tx.Dialector.Name() == "mysql" {
+			status = "JSON_UNQUOTE(JSON_EXTRACT(publication_json,'$.initial_authorization.status'))"
+			due = "CAST(JSON_UNQUOTE(JSON_EXTRACT(publication_json,'$.initial_authorization.next_attempt_unix')) AS SIGNED)"
+		}
+		query := tx.Where(status+"='pending' AND "+due+"<=?", now.Unix()).Order(due + ",execution_id")
 		if err := query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Take(&row).Error; err != nil {
 			return err
 		}

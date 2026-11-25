@@ -114,13 +114,13 @@ func (r *DevTaskRepository) List(req *models.ListDevTasksRequest, tenantID uint)
 
 	// 标签过滤 (PostgreSQL array contains)
 	if req.Tag != "" {
-		query = query.Where("? = ANY(tags)", req.Tag)
+		query = taskTagFilter(query, req.Tag)
 	}
 
 	// 关键词搜索（名称或描述）
 	if req.Keyword != "" {
 		keyword := "%" + req.Keyword + "%"
-		query = query.Where("name ILIKE ? OR description ILIKE ?", keyword, keyword)
+		query = query.Where("LOWER(name) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)", keyword, keyword)
 	}
 
 	// 查询总数
@@ -145,20 +145,25 @@ func (r *DevTaskRepository) ListNotebookScripts(req *models.ListDevTasksRequest,
 	var items []models.DevTask
 	var total int64
 
+	locator := "content->>'notebook_locator'"
+	if r.db.Dialector.Name() == "mysql" {
+		locator = "NULLIF(JSON_UNQUOTE(JSON_EXTRACT(content,'$.notebook_locator')),'null')"
+	}
+
 	query := r.db.Model(&models.DevTask{}).
-		Where("tenant_id = ? AND dev_type = ? AND content->>'notebook_locator' IS NOT NULL", tenantID, "script")
+		Where("tenant_id = ? AND dev_type = ? AND "+locator+" IS NOT NULL", tenantID, "script")
 
 	if req.Status != "" {
 		query = query.Where("status = ?", req.Status)
 	}
 
 	if req.Tag != "" {
-		query = query.Where("? = ANY(tags)", req.Tag)
+		query = taskTagFilter(query, req.Tag)
 	}
 
 	if req.Keyword != "" {
 		keyword := "%" + req.Keyword + "%"
-		query = query.Where("name ILIKE ? OR description ILIKE ?", keyword, keyword)
+		query = query.Where("LOWER(name) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)", keyword, keyword)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -290,4 +295,11 @@ func (r *DevTaskRepository) PopulateLatestExecutions(items []models.DevTask, ten
 		}
 	}
 	return nil
+}
+
+func taskTagFilter(query *gorm.DB, tag string) *gorm.DB {
+	if query.Dialector.Name() == "mysql" {
+		return query.Where("JSON_CONTAINS(tags,JSON_QUOTE(?))", tag)
+	}
+	return query.Where("? = ANY(tags)", tag)
 }

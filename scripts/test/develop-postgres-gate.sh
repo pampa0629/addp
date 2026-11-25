@@ -3,7 +3,7 @@
 # ADDP_T2_OWNED_SERVICES=minio
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.manager-postgres-t2.yml
 # ADDP_T2_LIFECYCLE_SCRIPT=scripts/test/manager-objectstore-gate.sh
-# ADDP_T2_INPUT_FILES=scripts/infra/init-minio.sh scripts/test/manager-objectstore-gate.sh scripts/test/docker-compose.manager-postgres-t2.yml scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ common/infra/objectstore/ common-python/ engines/jupyter/
+# ADDP_T2_INPUT_FILES=scripts/infra/init-minio.sh scripts/test/manager-objectstore-gate.sh scripts/test/docker-compose.manager-postgres-t2.yml scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ common/infra/objectstore/ common-python/ engines/jupyter/ scripts/test/module-platform-deployment.sh scripts/test/module-platform-startup.py scripts/infra/platform-database.sh scripts/prod/start.sh scripts/prod/prepare-module-databases.sh scripts/prod/system-meta-gateway.yml scripts/prod/release-images.py scripts/test/common-mysql-data-protection-gate.sh
 # ADDP_T2_REQUIRED_ENV=DEVELOP_POSTGRES_TEST_DSN
 # develop-postgres-gate.sh - Run Develop owner-local PostgreSQL schema and catalog tests.
 

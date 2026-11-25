@@ -12,7 +12,7 @@ import time
 
 binary = Path(sys.argv[1]).resolve()
 module = binary.name
-route = {"orchestrator": "orchestrations", "monitor": "executions", "standard": "elements", "model": "entities", "service": "registered", "asset": "categories", "catalog": "entries", "graph": "ontologies", "ontology": "ontologies/release-check"}[module]
+route = {"orchestrator": "orchestrations", "monitor": "executions", "standard": "elements", "model": "entities", "service": "registered", "asset": "categories", "catalog": "entries", "graph": "ontologies", "ontology": "ontologies/release-check", "develop": "task-definitions"}[module]
 env = {key: os.environ[key] for key in (
     "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD",
     "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "POSTGRES_HOST", "POSTGRES_PORT",
@@ -25,6 +25,8 @@ env[module.upper() + "_BACKEND_PORT"] = str(port)
 env[module.upper() + "_SERVICE_CLIENT_SECRET"] = secrets.token_hex(32)
 if module == "ontology":
     env.setdefault("INFRA_FALKORDB_PASSWORD", secrets.token_hex(24))
+if module in ("standard","develop"):
+    env.update(MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture-secret",MINIO_ENDPOINT="127.0.0.1:1")
 if module == "standard":
     env.update(MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture-secret", MINIO_ENDPOINT="127.0.0.1:1", STANDARD_DOCUMENT_STORAGE_TIMEOUT="250ms")
 env.update(SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1", GIN_MODE="release")

@@ -8,7 +8,6 @@ import (
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -30,10 +29,10 @@ type DevTask struct {
 	Timeout int `gorm:"default:300" json:"timeout"` // 超时时间（秒）
 
 	// 元数据
-	Description string         `gorm:"type:text" json:"description,omitempty"`
-	Tags        pq.StringArray `gorm:"type:text[]" json:"tags,omitempty"`
-	CreatedBy   *uint          `json:"created_by,omitempty"`
-	UpdatedBy   *uint          `json:"updated_by,omitempty"`
+	Description string                   `gorm:"type:text" json:"description,omitempty"`
+	Tags        commonModels.StringArray `gorm:"type:text[]" json:"tags,omitempty"`
+	CreatedBy   *uint                    `json:"created_by,omitempty"`
+	UpdatedBy   *uint                    `json:"updated_by,omitempty"`
 
 	// 审计字段
 	CreatedAt time.Time      `json:"created_at"`
@@ -84,7 +83,7 @@ type ProviderDevTask struct {
 	Parameters          DevTaskContent                  `json:"parameters,omitempty"`
 	Timeout             int                             `json:"timeout"`
 	Description         string                          `json:"description,omitempty"`
-	Tags                pq.StringArray                  `json:"tags,omitempty"`
+	Tags                commonModels.StringArray        `json:"tags,omitempty"`
 	CreatedBy           *uint                           `json:"created_by,omitempty"`
 	UpdatedBy           *uint                           `json:"updated_by,omitempty"`
 	CreatedAt           time.Time                       `json:"created_at"`
