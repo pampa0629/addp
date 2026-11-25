@@ -125,6 +125,7 @@ func TestMetaClaimAndTaskSummaryAgainstMySQL(t *testing.T) {
 		testProductionBasicScan(t, db, true)
 	})
 	exerciseUploadScanTerminalIdentity(t, db)
+	exerciseUploadLeaseScope(t, db)
 	t.Run("logical file ownership", func(t *testing.T) {
 		tx := db.Begin()
 		if tx.Error != nil {

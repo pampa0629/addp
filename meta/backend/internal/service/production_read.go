@@ -47,7 +47,7 @@ func (s *ScanExecutionService) productionReadContext(ctx context.Context, run *e
 		if engine != nil && (engine.ID != receipt.Primary.EngineID || engine.TenantID == nil || int64(*engine.TenantID) != receipt.TenantID || engine.Version != receipt.TargetEngineVersion || engine.LifecycleState != "active") {
 			return commonapi.ErrForbidden
 		}
-		active, err := productionScanRecord(s.db.WithContext(call).Where("tenant_id=? AND execution_id=? AND module=? AND task_type=? AND status='running' AND attempt=? AND lease_token=? AND lease_owner=? AND lease_expires_at>clock_timestamp()", run.TenantID, run.ExecutionID, execution.ModuleMeta, execution.TaskTypeScan, lease.Attempt, lease.Token, lease.Owner))
+		active, err := productionScanRecord(execution.WithActiveLease(s.db.WithContext(call), lease).Where("execution_id=? AND tenant_id=? AND module=? AND task_type=?", run.ExecutionID, run.TenantID, execution.ModuleMeta, execution.TaskTypeScan))
 		if err != nil {
 			return err
 		}

@@ -41,6 +41,11 @@ func DatabaseNow(db *gorm.DB) (time.Time, error) {
 	return now.UTC(), err
 }
 
+// WithActiveLease scopes a read to the running bounded attempt whose lease is still valid at the database.
+func WithActiveLease(db *gorm.DB, lease Lease) *gorm.DB {
+	return ownedActiveExecution(db, lease, time.Now())
+}
+
 func ownedActiveExecution(db *gorm.DB, lease Lease, now time.Time) *gorm.DB {
 	query := ownedExecution(db, lease)
 	return query.Where("lease_expires_at > ?", leaseClockValue(db, now))

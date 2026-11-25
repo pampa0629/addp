@@ -219,7 +219,7 @@ func (s *ScanExecutionService) bindUploadedContent(ctx context.Context, run *exe
 			return commonapi.ErrForbidden
 		}
 		var current execution.TaskExecution
-		if err := s.db.WithContext(call).Where("tenant_id=? AND execution_id=? AND module=? AND task_type=? AND status='running' AND attempt=? AND lease_token=? AND lease_owner=? AND lease_expires_at>clock_timestamp()", run.TenantID, run.ExecutionID, execution.ModuleMeta, execution.TaskTypeScan, lease.Attempt, lease.Token, lease.Owner).Take(&current).Error; err != nil {
+		if err := execution.WithActiveLease(s.db.WithContext(call), lease).Where("execution_id=? AND tenant_id=? AND module=? AND task_type=?", run.ExecutionID, run.TenantID, execution.ModuleMeta, execution.TaskTypeScan).Take(&current).Error; err != nil {
 			return err
 		}
 		currentDigest, err := execution.ComputeMetaScanExecutionPlanDigest(mustScanJSON(current.ExecutionConfig))

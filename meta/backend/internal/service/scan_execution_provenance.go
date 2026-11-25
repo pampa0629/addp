@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	commonapi "github.com/addp/common/api"
 	commonclient "github.com/addp/common/client"
@@ -77,11 +76,9 @@ func verifiedProducedTargetParent(tx *gorm.DB, tenantID int, req *models.ScanReq
 		if parent.TaskType != execution.TaskTypeRasterMosaicGeneration && parent.TaskType != execution.TaskTypeVectorTileSetGeneration && parent.TaskType != execution.TaskTypeImageSegmentation {
 			return nil, commonapi.ErrNotFound
 		}
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return nil, err
-			}
+		now, err := execution.DatabaseNow(tx)
+		if err != nil {
+			return nil, err
 		}
 		if parent.ExecutionBoundary != execution.ExecutionBoundaryBounded || parent.Attempt <= 0 || parent.LeaseToken == nil || *parent.LeaseToken == "" || parent.LeaseOwner == nil || *parent.LeaseOwner == "" || parent.LeaseExpiresAt == nil || !parent.LeaseExpiresAt.After(now) || !matchesManagerProducedTarget(parent, req) {
 			return nil, commonapi.ErrNotFound
@@ -276,11 +273,9 @@ func inheritAppliedSchemaChangeActor(tx *gorm.DB, child *execution.TaskExecution
 	if err != nil || json.Unmarshal(encoded, &fact) != nil {
 		return commonapi.ErrNotFound
 	}
-	now := time.Now().UTC()
-	if tx.Dialector.Name() == "postgres" {
-		if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-			return err
-		}
+	now, err := execution.DatabaseNow(tx)
+	if err != nil {
+		return err
 	}
 	if fact.RequestID != ref.RequestID || fact.TaskID == 0 || historical.SourceTaskID == nil || *historical.SourceTaskID != strconv.FormatUint(uint64(fact.TaskID), 10) || fact.Generation == 0 || fact.FromRevision == 0 || fact.ToRevision != fact.FromRevision+1 || fact.AppliedAt.IsZero() || fact.AppliedAt.After(now) || fact.Attempt == 0 || fact.ClaimToken != ref.ClaimToken || fact.LeaseUntil == nil || !fact.LeaseUntil.After(now) || historical.Metadata["stop_reason"] != "schema_change_blocked" {
 		return commonapi.ErrNotFound
