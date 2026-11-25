@@ -185,6 +185,10 @@
 
 固定提交 `a552b2136` 的[首跑](https://github.com/pampa0629/addp/actions/runs/45631920757/job/139267131715)在首次源扫描时返回 403，业务矩阵未开始。同一请求在 System 的元数据刷新范围校验返回 403。业务进度记录为 224 毫秒，成功链、双语节点拒绝、成果全检及归档 COG 均为 0。隔离环境清理通过，Infra 零残留。[原始归档](https://github.com/pampa0629/addp/actions/runs/45631920757/artifacts/15035787643)
 
+固定提交 `d6d689292` 在 Ubuntu 24.04 x86_64／GDAL 3.8.4 运行无筛选的 `make test-geopython-workflow`，22,109 项通过，141 条警告，耗时 1574.45 秒，失败、跳过及筛除均为 0。前置 NetCDF 专项另有 109 项通过。[修后 Linux](https://github.com/pampa0629/addp/actions/runs/45648191072/job/139324816601)
+
+[实现提交 Linux](https://github.com/pampa0629/addp/actions/runs/45630922450/job/139263576757)与[验收提交 Linux](https://github.com/pampa0629/addp/actions/runs/45631571311/job/139265868233)各 22,108 项通过、1 项失败，均为元数据测试仍要求 5×5。断言已同步至 7×7，本地专项 9 项通过。
+
 ## 点数据IDW插值独立 Hosted 验收
 
 独立手工 `raster-interpolate-idw-persistence`；`make test-raster-interpolate-idw-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。 Runtime保持4 CPU／2 GiB／无额外swap。
