@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 POOL = import_module("scripts.test.sql-pool-consumer-flow-online")
 DISPATCH = import_module("scripts.test.online-gate")
@@ -14,6 +14,48 @@ CI = import_module("scripts.ci.check-online-ci-registration")
 
 
 class SQLPoolEvidenceTest(unittest.TestCase):
+    def test_mysql_node_grant_requires_real_selects_only_for_allowed_tables(self):
+        runner = import_module("scripts.test.security-mysql-owner-protection-online")
+        for fault in ("", "missing allowed SELECT", "revoked SELECT", "unrelated denial"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                grantor, reader, pending = Mock(), Mock(), Mock()
+                def grant(method, path, statuses, body):
+                    if path.endswith("/revoke"):
+                        return Mock(payload={})
+                    self.assertEqual(body["node_recursive"], False)
+                    self.assertEqual(body["catalog_path"]["segments"][-1]["term"], "database")
+                    pending.assert_called_once()
+                    return Mock(payload=dict(body, engine_id="4", operator_principal_id="11"))
+                grantor.request.side_effect = grant
+                counts = iter([0, 0 if fault == "missing allowed SELECT" else 1, 0, 1, 0, 0, 1, 2 if fault == "revoked SELECT" else 1])
+                def native(engine, sql):
+                    if "general_log" in sql:
+                        self.assertIn("command_type IN ('Query','Execute')", sql)
+                        return Mock(stdout=str(next(counts)))
+                    self.assertIn("pool_control.node_future", sql)
+                    return Mock()
+                def result(i, value=None):
+                    if value is not None:
+                        return dict(execution_id=str(i), status="success", metadata={"result":{"summary":{"preview_rows":[{"id":value}]}}})
+                    return dict(execution_id=str(i), status="failed", error_details={
+                        "code":"different" if fault == "unrelated denial" else "develop.query.source_read_denied",
+                        "diagnostic":{"stage":"authorization","reason":"permission_denied"}})
+                executions = [result(1,37), result(2,41), result(3), result(4)]
+                with patch.object(POOL.REGISTRATION, "source_grant_participants", return_value=("11","12")), \
+                     patch.object(POOL.SUPPORT, "wait_for_scan", return_value="scan"), \
+                     patch.object(POOL.SUPPORT, "required_environment", return_value=directory), \
+                     patch.object(POOL, "sql", side_effect=native), \
+                     patch.object(runner, "develop_execution", side_effect=executions):
+                    if fault:
+                        with self.assertRaises(POOL.SUPPORT.SuiteError):
+                            POOL.verify_mysql_database_grant(grantor, reader, 2, 4, pending)
+                        self.assertFalse((Path(directory) / "mysql-node-read.json").exists())
+                    else:
+                        POOL.verify_mysql_database_grant(grantor, reader, 2, 4, pending)
+                        checks = json.loads((Path(directory) / "mysql-node-read.json").read_text())["checks"]
+                        self.assertEqual({k:v["source_selects"] for k,v in checks.items()},
+                                         {"existing":1,"future":1,"same_name_outside":0,"revoked":0})
+
     def test_mysql_observer_rejects_unverified_native_log_type_or_conversion(self):
         valid = {"argument_type": "mediumblob", "binary_lower": "53454C454354", "decoded_lower": "73656C656374"}
         for facts in (valid, {**valid, "decoded_lower": valid["binary_lower"]}, {**valid, "argument_type": "mediumtext"}):

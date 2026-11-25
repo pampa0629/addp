@@ -21,6 +21,10 @@ PG TCP 含回环 `scram-sha-256`、socket 仅初始化；MySQL 原生密码。�
 
 停服前原身份撤两 read／验拒绝，自有环境销毁。迟到版本拒绝沿 T2；`make test-sql-pool-online-runner`、原 CI 发现／`sql-pool-hosted-t4`，各报告版本／本地与 Hosted 单独认定，不新 suite／服务／端口。
 
+### MySQL 数据库节点授权
+
+独立准备阶段先给普通用户签发一份 MySQL database 节点 read。以实际 Develop 查询分别读取已有表、获权后新建的表，再访问另一 database 中的同名表，最后撤权并以新 execution 重读。两个库的源账号均有原生 SELECT 权。记录成功时的行值及业务 SELECT、拒绝时的权限原因及零业务 SELECT，输出 `mysql-node-read.json`。命令签发前写入清理清单。此阶段使用独立表名，完成后再进入原连接池验收。
+
 ### 关系型原生预览来源授权入口回归
 
 原 SQL 池及 HighGo business 复用身份／范围：准备者仅对 MySQL `pool_fixture.pool_source`、HighGo `addp_business.customers`临签 metadata_read，普通 User 见同 Meta 身份但内容 read-check／真实 Manager 均 403、失败面板无旧表。撤临时 metadata 核隐藏后才办原 read，继续换池／查询／replace，不扩权限或把办理 Token 给浏览器。GaussDB／StarRocks 仍五表及 metadata-only 反例。

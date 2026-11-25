@@ -10,6 +10,7 @@ import re
 import secrets
 import subprocess
 import time
+import uuid
 
 SUPPORT = import_module("scripts.test.security-transfer-protection-online")
 REGISTRATION = import_module("scripts.test.online-engine-registration")
@@ -107,6 +108,8 @@ def start(private, run_id):
                 f"GRANT SELECT ON {DATABASE}.{TABLE} TO '{READER}'@'%';"
                 f"CREATE USER '{READERS[1]}'@'%' IDENTIFIED BY '{next_password}';"
                 f"GRANT SELECT ON {DATABASE}.{TABLE} TO '{READERS[1]}'@'%';"
+                "CREATE TABLE node_existing(id INT PRIMARY KEY); INSERT INTO node_existing VALUES (37);"
+                f"GRANT SELECT ON {DATABASE}.node_existing TO '{READER}'@'%';"
                 "SET GLOBAL log_output='TABLE'; SET GLOBAL general_log=ON;"
             )
         sql(engine, statement)
@@ -142,6 +145,72 @@ def client(key):
     return SUPPORT.GatewayClient(SUPPORT.required_environment("GATEWAY_URL"), SUPPORT.required_environment(key), 30)
 
 
+def verify_mysql_database_grant(preparer, consumer, tenant, engine, pending):
+    operator, recipient = REGISTRATION.source_grant_participants(preparer, consumer, tenant, scan_preparation=True)
+    target = REGISTRATION.ExactRecordGrants.target(engine, DATABASE, "node_existing", "table")
+    scope = dict(target, segments=target["segments"][:-1])
+    command = str(uuid.uuid4())
+    base = f"/api/v1/system/engines/{engine}/access_grants"
+    body = dict(request_id=command, catalog_path=scope, node_recursive=False, action="read",
+                recipient_type="user", recipient_id=recipient, expiry_mode="until_revoked",
+                reason="Disposable MySQL database Grant acceptance")
+    pending(engine, command, target)
+    receipt = preparer.request("POST", base, (201,), body).payload
+    require(all(receipt.get(k) == body[k] for k in
+                ("request_id", "catalog_path", "action", "recipient_type", "recipient_id", "expiry_mode"))
+            and receipt.get("node_recursive") is False and not receipt.get("item_fingerprint")
+            and receipt.get("engine_id") == str(engine) and receipt.get("operator_principal_id") == operator,
+            "MySQL database Grant returned a different scope or identity")
+    sql("mysql", f"""CREATE DATABASE pool_control;
+        CREATE TABLE pool_control.node_future (id INT PRIMARY KEY);
+        INSERT INTO pool_control.node_future VALUES (83);
+        CREATE TABLE {DATABASE}.node_future (id INT PRIMARY KEY);
+        INSERT INTO {DATABASE}.node_future VALUES (41);
+        GRANT SELECT ON pool_control.node_future TO '{READER}'@'%';
+        GRANT SELECT ON {DATABASE}.node_future TO '{READER}'@'%';""")
+    scan = SUPPORT.wait_for_scan(preparer, engine, time.monotonic() + 120, scan_depth="basic",
+                                 targets=[f"addp://engine/{engine}/path/{db}/node_future?type=table"
+                                          for db in (DATABASE, "pool_control")])
+    # Both allowed and denied statements are fully qualified and run as the same source reader.
+    runner = import_module("scripts.test.security-mysql-owner-protection-online")
+    evidence = {}
+    def query(phase, db, table, expected):
+        def count():
+            result = sql("mysql", f"""SELECT COUNT(*) FROM mysql.general_log
+                WHERE SUBSTRING_INDEX(user_host,'[',1)='{READER}' AND command_type IN ('Query','Execute')
+                AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]'
+                AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+`?{db}`?[.]`?{table}`?([^a-z_0-9]|$)';""")
+            return int(result.stdout.strip())
+        before = count()
+        result = runner.develop_execution(consumer, engine, f"addp://engine/{engine}/path/{db}/{table}?type=table",
+                    time.monotonic()+120, f"SELECT id FROM {db}.{table} ORDER BY id", "sql")
+        delta = count() - before
+        if expected is None:
+            details = result.get("error_details") or {}
+            diagnostic = details.get("diagnostic") or {}
+            require(result.get("status") == "failed" and details.get("code") == "develop.query.source_read_denied"
+                    and diagnostic.get("stage") == "authorization" and diagnostic.get("reason") == "permission_denied"
+                    and not (result.get("metadata") or {}).get("result") and not result.get("rows_affected") and delta == 0,
+                    f"MySQL {phase}: expected source authorization denial and zero business SELECTs")
+        else:
+            rows = (result.get("metadata") or {}).get("result", {}).get("summary", {}).get("preview_rows")
+            require(result.get("status") == "success" and rows == [{"id": expected}] and delta > 0,
+                    f"MySQL {phase}: missing expected row or native SELECT")
+        execution = result.get("execution_id")
+        require(execution and all(row["execution_id"] != execution for row in evidence.values()),
+                "MySQL database Grant check reused a previous execution")
+        evidence[phase] = dict(execution_id=execution, source_selects=delta, status=result["status"])
+
+    query("existing", DATABASE, "node_existing", 37)
+    query("future", DATABASE, "node_future", 41)
+    query("same_name_outside", "pool_control", "node_future", None)
+    preparer.request("POST", f"{base}/{command}/revoke", (200,), {"reason":"End disposable MySQL database Grant"})
+    query("revoked", DATABASE, "node_future", None)
+    report = dict(engine_id=engine, principal_id=recipient, grant=command, scope=scope, scan=scan, checks=evidence)
+    (Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "mysql-node-read.json").write_text(json.dumps(report))
+    return command
+
+
 def prepare(private, run_id):
     consumer = client("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN")
     preparer = client("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN")
@@ -175,6 +244,9 @@ def prepare(private, run_id):
         engine_id = REGISTRATION.register_engine(provisioner.base_url, provisioner.token, descriptor)
         scan_id = SUPPORT.wait_for_scan(preparer, engine_id, time.monotonic() + 120)
         if engine == "mysql":
+            node_grant = verify_mysql_database_grant(preparer, consumer, tenant, engine_id, pending)
+            grants[:] = [row for row in grants if row["request_id"] != node_grant]
+            private_write(private / "pool-grants.json", json.dumps(grants))
             def on_metadata(rows):
                 retained = [row for row in grants if row["engine_id"] != engine_id]
                 grants[:] = retained + [{"engine_id": row["engine"], "request_id": row["request_id"], "target": row["target"]} for row in rows]
