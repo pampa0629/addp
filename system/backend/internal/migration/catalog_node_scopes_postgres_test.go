@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestCatalogNodeScopesForwardMigrationAgainstPostgres(t *testing.T) {
-	testAuthorizationFactsMigration(t, "000312_catalog_node_source_grants.up.sql", 312, 0, func(db *sql.DB) func() {
+	testAuthorizationFactsMigration(t, "000312_business_node_profiles.up.sql", 312, 0, func(db *sql.DB) func() {
 		owner, tenant := seedInitializedMigrationTenant(t, db, "business-nodes", "Business nodes")
 		var membership, version int64
 		if err := db.QueryRow(`SELECT m.id,p.authorization_version FROM system.tenant_memberships m
@@ -53,6 +54,38 @@ func TestCatalogNodeScopesForwardMigrationAgainstPostgres(t *testing.T) {
 			check(root, true, "read", false)
 		}
 		return func() {
+			check(plugin.FileDirectoryPath(engines["ftp"], "existing"), false, "read", true)
+			grants := func() string {
+				t.Helper()
+				var snapshot string
+				if err := db.QueryRow(`SELECT jsonb_agg(to_jsonb(g) ORDER BY request_id)::text
+					FROM system.engine_access_grants g WHERE tenant_id=$1`, tenant).Scan(&snapshot); err != nil {
+					t.Fatal(err)
+				}
+				return snapshot
+			}
+			checkOriginal := func() {
+				t.Helper()
+				var name, digest string
+				if err := db.QueryRow(`SELECT filename,sha256 FROM system.schema_migration_checksums WHERE version=312`).Scan(&name, &digest); err != nil {
+					t.Fatal(err)
+				}
+				if name != "000312_business_node_profiles.up.sql" || digest != "682c2350b4177d2270bb52887aebcc900e25a840807edea2a4556d54fcaac3a8" {
+					t.Fatalf("unexpected deployed migration: %s %s", name, digest)
+				}
+			}
+			checkOriginal()
+			saved := grants()
+			runner := NewRunner(os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN"))
+			for range 2 {
+				if err := runner.Run(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				checkOriginal()
+				if grants() != saved {
+					t.Fatal("migration changed existing Grants")
+				}
+			}
 			nodes := []plugin.EngineCatalogPath{
 				plugin.TabularNamespacePath(engines["gaussdb"], "schema", "sales"),
 				plugin.FileDirectoryPath(engines["ftp"], "samples"),
