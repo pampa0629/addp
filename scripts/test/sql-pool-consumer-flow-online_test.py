@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 from importlib import import_module
 from io import StringIO
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -89,6 +90,31 @@ class SQLPoolEvidenceTest(unittest.TestCase):
         with patch.object(Path, "read_text", without_system):
             with self.assertRaisesRegex(CI.RegistrationError, "System frontend lifecycle"):
                 CI.validate_sql_pool_profile(root, registry)
+
+    def test_only_manager_backend_uses_gate_after_native_url_generation(self):
+        root = Path(__file__).resolve().parents[2]
+        lifecycle = (root / "scripts/test/online-hosted-sql-pool-gate.sh").read_text()
+        start = (root / "scripts/dev/start.sh").read_text()
+        generate_urls = start.split("generate_service_urls() {", 1)[1].split("\n}", 1)[0]
+        loop = lifecycle.split('unset hosted_deploy_password\n', 1)[1].split("\ndone", 1)[0]
+        probe = '''
+export SERVICE_HOST=localhost META_BACKEND_PORT=8082 META_URL=http://localhost:8082
+proxy_url=http://127.0.0.1:49999
+targets=(-system -security -meta -manager -develop)
+run_daemon_launcher_logged() (
+    shift
+    while [[ "$1" == *=* ]]; do export "$1"; shift; done
+    shift
+    generate_service_urls
+    printf '%s=%s\\n' "$*" "$META_URL"
+)
+'''
+        outcome = subprocess.run(["bash", "-c", "generate_service_urls() {" + generate_urls
+            + "\n}\n" + probe + loop + "\ndone"], check=True, capture_output=True, text=True)
+        self.assertEqual(outcome.stdout.splitlines(), [
+            f"scripts/dev/start.sh {args}=http://localhost:{port}" for args, port in (
+                ("-system", 8082), ("-security", 8082), ("-meta", 8082),
+                ("--exact-process -manager", 49999), ("-manager", 8082), ("-develop", 8082))])
 
     def test_verified_browser_output_is_returned_to_online_dispatcher(self):
         evidence = {"schema_version": "addp.sql-pool-console/v8", "run_id": "run-pool", "cases": []}

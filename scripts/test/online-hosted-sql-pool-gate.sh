@@ -45,15 +45,28 @@ targets=(-system -security -meta -manager -develop)
 hosted_prepare_native_targets "${targets[@]}"
 unset hosted_deploy_password
 for target in "${targets[@]}"; do
-  meta_url=$META_URL
-  if [[ "$target" == -manager ]]; then meta_url=$proxy_url; fi
-  run_daemon_launcher_logged env META_URL="$meta_url" SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
+  if [[ "$target" == -manager ]]; then
+    # start.sh generates META_URL from the port. Set it only on the backend,
+    # so the ordinary module launch continues to discover the real Meta service.
+    run_daemon_launcher_logged env META_BACKEND_PORT="${proxy_url##*:}" SKIP_MODTIDY=1 \
+      bash scripts/dev/start.sh --exact-process -manager
+  fi
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
 done
 # This representative deployment records only the role and revision. Check the
 # environment passed to both Security launchers without logging its values.
 run_logged python3 - <<'PYRUNTIME'
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
+
+gate = urlsplit((Path(os.environ["ADDP_POOL_META_GATE"]) / "url").read_text())
+manager_pid = int(Path(".dev-pids/manager.pid").read_text())
+meta_url, = (entry.split(b"=", 1)[1] for entry in Path(f"/proc/{manager_pid}/environ").read_bytes().split(b"\0")
+             if entry.startswith(b"META_URL="))
+actual = urlsplit(meta_url.decode())
+if actual.hostname not in ("localhost", "127.0.0.1") or actual.port != gate.port:
+    raise SystemExit("Manager did not start with the loopback Meta fixture")
 
 for unit in ("security", "security-worker"):
     pid = int(Path(f".dev-pids/{unit}.pid").read_text())
