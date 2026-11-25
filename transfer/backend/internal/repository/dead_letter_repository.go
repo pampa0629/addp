@@ -49,22 +49,29 @@ func (r *DeadLetterRepository) UpsertObservation(ctx context.Context, observatio
 		"occurrence_count":  gorm.Expr("dead_letters.occurrence_count + 1"),
 		"updated_at":        gorm.Expr("CURRENT_TIMESTAMP"),
 	}
-	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "identity"}},
-		DoUpdates: clause.Assignments(updates),
-	}).Create(observation).Error; err != nil {
-		return nil, fmt.Errorf("upsert transfer dead-letter observation: %w", err)
-	}
+	var stored models.DeadLetter
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "identity"}},
+			DoUpdates: clause.Assignments(updates),
+		}).Create(observation).Error; err != nil {
+			return fmt.Errorf("upsert transfer dead-letter observation: %w", err)
+		}
 
-	stored, err := r.Get(ctx, observation.Identity)
+		err := tx.Where("identity=?", observation.Identity).First(&stored).Error
+		if err != nil {
+			return err
+		}
+		if stored.ApplyIdentity != observation.ApplyIdentity || stored.SourceIdentity != observation.SourceIdentity ||
+			stored.SourcePartition != observation.SourcePartition || stored.SourceOffset != observation.SourceOffset {
+			return fmt.Errorf("dead-letter identity conflicts with an existing source record")
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if stored.ApplyIdentity != observation.ApplyIdentity || stored.SourceIdentity != observation.SourceIdentity ||
-		stored.SourcePartition != observation.SourcePartition || stored.SourceOffset != observation.SourceOffset {
-		return nil, fmt.Errorf("dead-letter identity conflicts with an existing source record")
-	}
-	return stored, nil
+	return &stored, nil
 }
 
 func (r *DeadLetterRepository) Get(ctx context.Context, identity string) (*models.DeadLetter, error) {

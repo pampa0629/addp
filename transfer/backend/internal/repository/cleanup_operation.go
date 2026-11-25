@@ -78,12 +78,12 @@ func ExecuteCleanupOperation(ctx context.Context, db *gorm.DB, tenant, task uint
 		if insert.Error != nil {
 			return insert.Error
 		}
-		if insert.RowsAffected == 1 {
-			return nil
-		}
 		var existing models.CleanupOperation
 		if err := tx.Where("target_key = ?", op.TargetKey).First(&existing).Error; err != nil {
 			return err
+		}
+		if existing.OperationID == op.OperationID {
+			return nil
 		}
 		if existing.TenantID != tenant || existing.TaskID != task || existing.Kind != kind || existing.Target != string(encoded) || existing.Status != "succeeded" {
 			return ErrCleanupOperationUnresolved

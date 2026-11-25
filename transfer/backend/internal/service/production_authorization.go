@@ -74,9 +74,15 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 	var item execution.TaskExecution
 	var state models.ProductionAuthorization
 	err := c.executions.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		statusField := "metadata->'initial_authorization'->>'status'"
+		due := "CAST(metadata->'initial_authorization'->>'next_attempt_unix' AS BIGINT)"
+		if tx.Dialector.Name() == "mysql" {
+			statusField = "metadata->>'$.initial_authorization.status'"
+			due = "CAST(metadata->>'$.initial_authorization.next_attempt_unix' AS SIGNED)"
+		}
+
 		err := tx.Model(&execution.TaskExecution{}).Where("module=? AND task_type=? AND execution_boundary=?", execution.ModuleTransfer, execution.TaskTypeSync, execution.ExecutionBoundaryBounded).
-			Where("metadata->'initial_authorization'->>'status'='pending' AND CAST(metadata->'initial_authorization'->>'next_attempt_unix' AS BIGINT)<=?", now.Unix()).
-			Order("CAST(metadata->'initial_authorization'->>'next_attempt_unix' AS BIGINT),id").Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Take(&item).Error
+			Where(statusField+"='pending' AND "+due+"<=?", now.Unix()).Order(due + ",id").Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Take(&item).Error
 		if err != nil {
 			return err
 		}

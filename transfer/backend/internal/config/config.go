@@ -10,6 +10,7 @@ import (
 
 	commonConfig "github.com/addp/common/config"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
@@ -257,4 +258,8 @@ func getEnvInt64(key string, fallback int64) int64 {
 		return fallback
 	}
 	return parsed
+}
+
+func (c *Config) PlatformDatabase() database.Config {
+	return database.Config{Host: commonConfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonConfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonConfig.GetEnv("POSTGRES_DB", "addp"), Schema: c.DBSchema}
 }

@@ -184,11 +184,22 @@ func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, du
 	return claim, err
 }
 
+// The recovery deadline is stored as RFC3339 with an offset in execution metadata.
+type continuousSQL struct{ taskID, now, recoveryReady, stopReason string }
+
+func continuousExpressions(tx *gorm.DB) continuousSQL {
+	if tx.Dialector.Name() == "mysql" {
+		return continuousSQL{"CAST(t.id AS CHAR)", "CURRENT_TIMESTAMP(6)", `e.metadata->>'$.recovery_not_before' IS NULL OR CAST(REPLACE(e.metadata->>'$.recovery_not_before','Z','+00:00') AS DATETIME(6))<=CURRENT_TIMESTAMP(6)`, "last_execution.metadata->>'$.stop_reason'"}
+	}
+	return continuousSQL{"CAST(t.id AS TEXT)", "clock_timestamp()", `e.metadata->>'recovery_not_before' IS NULL OR (e.metadata->>'recovery_not_before')::timestamptz<=clock_timestamp()`, "last_execution.metadata->>'stop_reason'"}
+}
+
 func selectPendingContinuousExecution(tx *gorm.DB, execution *commonExecution.TaskExecution) error {
+	expr := continuousExpressions(tx)
 	return tx.Table("common.task_executions AS e").
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED", Table: clause.Table{Name: "e, t", Raw: true}}).
 		Select("e.*").
-		Joins("JOIN transfer.transfer_tasks AS t ON CAST(t.id AS TEXT) = e.source_task_id AND t.tenant_id = e.tenant_id").
+		Joins("JOIN transfer.transfer_tasks AS t ON "+expr.taskID+" = e.source_task_id AND t.tenant_id = e.tenant_id").
 		Joins("LEFT JOIN transfer.runtime_leases AS l ON l.task_id = t.id").
 		Where("NOT EXISTS (SELECT 1 FROM transfer.cleanup_operations cleanup WHERE cleanup.task_id=t.id AND cleanup.tenant_id=t.tenant_id)").
 		Where("e.module = ? AND e.task_type = ? AND e.status = ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, commonExecution.ExecutionStatusPending).
@@ -198,13 +209,14 @@ func selectPendingContinuousExecution(tx *gorm.DB, execution *commonExecution.Ta
 				SELECT 1 FROM transfer.schema_change_requests AS scr
 				WHERE scr.task_id = t.id AND scr.tenant_id = t.tenant_id AND scr.status = ?
 			)`, models.SchemaChangeRequestPending).
-		Where("l.id IS NULL OR l.lease_until <= clock_timestamp()").
-		Where("e.metadata->>'recovery_not_before' IS NULL OR (e.metadata->>'recovery_not_before')::timestamptz <= clock_timestamp()").
+		Where("l.id IS NULL OR l.lease_until <= " + expr.now).
+		Where(expr.recoveryReady).
 		Order("e.created_at ASC, e.id ASC").Limit(1).
 		Scan(execution).Error
 }
 
 func reconcileNextContinuousExecution(tx *gorm.DB, policy ContinuousRecoveryPolicy) (bool, error) {
+	expr := continuousExpressions(tx)
 	var task models.TransferTask
 	err := tx.Table("transfer.transfer_tasks AS t").
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED", Table: clause.Table{Name: "t"}}).
@@ -212,7 +224,7 @@ func reconcileNextContinuousExecution(tx *gorm.DB, policy ContinuousRecoveryPoli
 		Joins(`JOIN LATERAL (
 			SELECT e.execution_id, e.status, e.metadata, e.created_at, e.id
 			FROM common.task_executions AS e
-			WHERE e.module = ? AND e.task_type = ? AND e.source_task_id = CAST(t.id AS TEXT)
+			WHERE e.module = ? AND e.task_type = ? AND e.source_task_id = `+expr.taskID+`
 			  AND e.tenant_id = t.tenant_id AND e.execution_boundary = 'continuous'
 			ORDER BY e.created_at DESC, e.id DESC
 			LIMIT 1
@@ -222,14 +234,14 @@ func reconcileNextContinuousExecution(tx *gorm.DB, policy ContinuousRecoveryPoli
 		Where("t.status <> ? AND t.deleted_at IS NULL", models.TaskStatusBlocked).
 		Where(`NOT EXISTS (
 			SELECT 1 FROM common.task_executions AS active
-			WHERE active.module = ? AND active.task_type = ? AND active.source_task_id = CAST(t.id AS TEXT)
+			WHERE active.module = ? AND active.task_type = ? AND active.source_task_id = `+expr.taskID+`
 			  AND active.tenant_id = t.tenant_id AND active.execution_boundary = 'continuous'
 			  AND active.status = ?
 		)`, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, commonExecution.ExecutionStatusPending).
 		Where(`(
-			(last_execution.status = ? AND (l.id IS NULL OR l.lease_until <= clock_timestamp()))
+			(last_execution.status = ? AND (l.id IS NULL OR l.lease_until <= `+expr.now+`))
 			OR
-			(last_execution.status = ? AND last_execution.metadata->>'stop_reason' = ? AND t.desired_state = ?)
+			(last_execution.status = ? AND `+expr.stopReason+` = ? AND t.desired_state = ?)
 		)`, commonExecution.ExecutionStatusRunning, commonExecution.ExecutionStatusCancelled, "worker_shutdown", models.TaskDesiredStateRunning).
 		Order("last_execution.created_at ASC, last_execution.id ASC").
 		Limit(1).
@@ -442,10 +454,10 @@ func (r *RuntimeLeaseRepository) Renew(ctx context.Context, taskID uint, owner s
 		}
 		leaseUntil := now.Add(duration)
 		query := tx.Model(&lease)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Where("lease_until > clock_timestamp()")
+		if tx.Dialector.Name() == "sqlite" {
+			query = query.Where("lease_until > ?", now)
 		} else {
-			query = query.Where("lease_until > ?", time.Now().UTC())
+			query = query.Where("lease_until > " + continuousExpressions(tx).now)
 		}
 		result := query.Updates(map[string]interface{}{"lease_until": leaseUntil, "heartbeat_at": now})
 		if result.Error != nil {
@@ -625,11 +637,9 @@ func (r *RuntimeLeaseRepository) ClaimInitialMetadataScan(
 		if lockErr != nil {
 			return lockErr
 		}
-		checkedAt := now
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&checkedAt).Error; err != nil {
-				return err
-			}
+		checkedAt, err := commonExecution.DatabaseNow(tx)
+		if err != nil {
+			return err
 		}
 		if task.DesiredState != models.TaskDesiredStateRunning || !lease.LeaseUntil.After(checkedAt) {
 			return ErrRuntimeLeaseLost

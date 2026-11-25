@@ -1387,6 +1387,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Transfer Backend（带检查）
   if [ "$START_TRANSFER_BACKEND" = true ]; then
     if check_service_running "transfer" "$TRANSFER_BACKEND_PORT"; then
+      addp_dev_prepare_database transfer || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" transfer transfer backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-transfer" &
       TRANSFER_PID=$!
       echo $TRANSFER_PID > .dev-pids/transfer.pid

@@ -20,7 +20,7 @@ func NewSyncStateRepository(db *gorm.DB) *SyncStateRepository { return &SyncStat
 func (r *SyncStateRepository) Get(ctx context.Context, taskID uint, sourceIdentity, partition string) (*models.SyncState, error) {
 	var state models.SyncState
 	err := r.db.WithContext(ctx).
-		Where("task_id = ? AND source_identity = ? AND partition = ?", taskID, sourceIdentity, partition).
+		Where("task_id = ? AND source_identity = ?", taskID, sourceIdentity).Where(map[string]interface{}{"partition": partition}).
 		First(&state).Error
 	return &state, err
 }
@@ -68,7 +68,7 @@ func (r *SyncStateRepository) ClaimContinuousPartition(
 			return err
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("task_id = ? AND source_identity = ? AND partition = ?", taskID, sourceIdentity, partition).
+			Where("task_id = ? AND source_identity = ?", taskID, sourceIdentity).Where(map[string]interface{}{"partition": partition}).
 			First(&state).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}

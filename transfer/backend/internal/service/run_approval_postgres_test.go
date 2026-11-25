@@ -48,6 +48,12 @@ func TestIntegrationPostgresRunApprovalAtomicity(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, task := seedRunApprovalTask(t, db)
+	checkApprovalConsumption(t, db, svc, task)
+}
+
+func checkApprovalConsumption(t *testing.T, db *gorm.DB, svc *TaskService, task *models.TransferTask) {
+	t.Helper()
+	var err error
 	t.Cleanup(func() {
 		for _, query := range []func() error{
 			func() error {

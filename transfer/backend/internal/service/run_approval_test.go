@@ -39,6 +39,11 @@ func seedRunApprovalTask(t *testing.T, db *gorm.DB) (*TaskService, *models.Trans
 	} else if err := db.AutoMigrate(&models.RunApproval{}); err != nil {
 		t.Fatal(err)
 	}
+	return seedStoredApprovalTask(t, db)
+}
+
+func seedStoredApprovalTask(t *testing.T, db *gorm.DB) (*TaskService, *models.TransferTask) {
+	t.Helper()
 	cfg := validOverridableTargetTransferTaskConfig()
 	delete(cfg["target"].(map[string]interface{}), "override_policy")
 	task := &models.TransferTask{TenantID: 7, Name: "approved-table-sync", TaskType: "sync", Config: cfg, BatchSize: 100, Status: models.TaskStatusIdle, DesiredState: models.TaskDesiredStateStopped}

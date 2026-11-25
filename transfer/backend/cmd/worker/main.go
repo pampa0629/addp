@@ -12,18 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/addp/common/schema"
-
 	commonClient "github.com/addp/common/client"
-	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/common/infra/database"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
-	commonRepo "github.com/addp/common/repository"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
@@ -32,24 +27,18 @@ import (
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 func main() {
-	commonConfig.LoadEnv()
+
 	cfg := config.Load()
 	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), AddSource: true, RedirectStdLog: true})
 
-	db, err := connectDatabase(cfg)
+	db, err := repository.OpenDatabase(cfg.PlatformDatabase())
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	if err := schema.Require(db, "transfer", repository.SchemaVersion); err != nil {
-		log.Fatalf("Worker schema is not ready: %v", err)
-	}
-	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
-		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
-	}
+
 	taskRepo := repository.NewTaskRepository(db)
 	executionRepo := commonExecution.NewTaskExecutionRepository(db)
 	executionService := service.NewExecutionService(db, executionRepo)
@@ -128,17 +117,6 @@ func main() {
 	<-continuationDone
 	<-registrationDone.Done()
 	logger.L().Info("transfer bounded worker stopped")
-}
-
-func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := commonRepo.OpenDatabase(database.Config{
-		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
-		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("打开数据库失败: %w", err)
-	}
-	return db, nil
 }
 
 func envOr(key, fallback string) string {

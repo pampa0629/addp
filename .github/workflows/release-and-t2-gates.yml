@@ -2513,6 +2513,15 @@ jobs:
           go-version-file: transfer/backend/go.mod
           cache: false
 
+      - name: Verify Transfer installation, runtime restarts and business storage on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-transfer-install'
+
+      - name: Verify Transfer installation, runtime restarts and business storage on PostgreSQL
+        env:
+          ADDP_INFRA_DATABASE_PROVIDER: postgres
+          PLATFORM_CI_PG_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/test/module-platform-deployment.sh "$PLATFORM_CI_PG_ID" transfer
+
       - name: Run Transfer PostgreSQL gate
         env:
           ADDP_TEST_POSTGRES_HOST: 127.0.0.1

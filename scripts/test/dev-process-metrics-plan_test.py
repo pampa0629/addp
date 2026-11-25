@@ -26,7 +26,7 @@ class ProcessMetricsPlanTest(unittest.TestCase):
         env.update(ADDP_ONLINE_HOSTED="1", ADDP_DATABASE_RUNTIME_USER="platform_runtime",
                    ADDP_DATABASE_RUNTIME_PASSWORD="runtime-fixture")
         for module, role in (("system", "backend"), ("meta", "backend"), ("meta", "worker"),
-                             ("gateway", "ingress"), ("inference", "backend"), ("workbench", "backend"), ("agent", "backend"), ("copilot", "backend"), ("orchestrator", "backend"), ("monitor", "backend"), ("standard", "backend"), ("model", "backend"), ("service", "backend"), ("asset", "backend"), ("catalog", "backend"), ("graph", "backend"), ("ontology", "backend"), ("develop", "backend"), ("quality", "backend"), ("quality", "worker")):
+                             ("gateway", "ingress"), ("inference", "backend"), ("workbench", "backend"), ("agent", "backend"), ("copilot", "backend"), ("orchestrator", "backend"), ("monitor", "backend"), ("standard", "backend"), ("model", "backend"), ("service", "backend"), ("asset", "backend"), ("catalog", "backend"), ("graph", "backend"), ("ontology", "backend"), ("develop", "backend"), ("quality", "backend"), ("quality", "worker"), ("transfer", "backend"), ("transfer", "worker")):
             with self.subTest(module=module, role=role), mock.patch.object(os, "execvpe") as receiver:
                 LAUNCH.launch([module, module, role, "receiver", "program"], env)
                 actual = receiver.call_args.args[2]

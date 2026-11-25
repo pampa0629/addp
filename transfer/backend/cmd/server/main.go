@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/addp/common/cleanup"
+	"errors"
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dataprotection/projectionstore"
@@ -20,24 +20,23 @@ import (
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/common/infra/database"
+	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
-	commonRepo "github.com/addp/common/repository"
+
 	"github.com/addp/common/schema"
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/capture"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
 	"github.com/addp/transfer/internal/deadletter"
-	"github.com/addp/transfer/internal/models"
+
 	"github.com/addp/transfer/internal/planner"
 	transferprotection "github.com/addp/transfer/internal/protection"
 	transferRepo "github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 )
 
 // @title           ADDP Transfer API
@@ -60,11 +59,30 @@ func main() {
 		log.Printf("✅ 时区已设置为: %s", loc.String())
 	}
 
-	// 加载 .env 文件（从项目根目录，使用无参数版本）
-	commonConfig.LoadEnv()
-
 	// 加载配置
 	cfg := config.Load()
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(cfg.PlatformDatabase(), "transfer")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := transferRepo.PrepareDatabase(db); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "transfer"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
+
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-transfer", cfg.ServiceClientSecret, nil)
 	if err != nil {
 		log.Fatalf("Service Token Source 配置无效: %v", err)
@@ -97,7 +115,7 @@ func main() {
 	logger.L().Info("端口检查通过", "port", cfg.Port)
 
 	// 连接数据库
-	db, err := connectDatabase(cfg)
+	db, err := transferRepo.OpenDatabase(cfg.PlatformDatabase())
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -281,8 +299,6 @@ func main() {
 
 	// 启动服务器
 	log.Printf("🚀 Transfer service starting on %s", addr)
-	log.Printf("📊 Database: %s@%s:%s/%s (schema: %s)",
-		cfg.DBUser, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBSchema)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
 	log.Printf("✅ Readiness check: http://localhost%s/health/ready", addr)
 
@@ -295,75 +311,5 @@ func main() {
 	<-runtimeContext.Done()
 	if registration != nil {
 		<-registration.Done()
-	}
-}
-
-// connectDatabase 连接数据库
-func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	// Use common repository InitDatabase
-	dbConfig := database.Config{
-		Host:     cfg.DBHost,
-		Port:     cfg.DBPort,
-		User:     cfg.DBUser,
-		Password: cfg.DBPassword,
-		DBName:   cfg.DBName,
-		Schema:   cfg.DBSchema,
-		SSLMode:  "disable",
-	}
-
-	// Connect first so the one-way capture schema split can run before AutoMigrate
-	// attempts to enforce the new non-null source_type column.
-	db, err := commonRepo.OpenDatabase(dbConfig)
-	if err != nil {
-		return nil, err
-	}
-	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
-		return nil, err
-	}
-	if err := schema.Migrate(db, "transfer", transferRepo.SchemaVersion, func(tx *gorm.DB) error {
-		if err := transferRepo.MigrateCaptureProviderResources(tx); err != nil {
-			return err
-		}
-		if err := transferRepo.RetireDevelopmentAuthorizationHistory(tx); err != nil {
-			return err
-		}
-		if err := transferRepo.RemoveExecutionLogs(tx); err != nil {
-			return err
-		}
-		if err := tx.AutoMigrate(transferSchemaModels()...); err != nil {
-			return fmt.Errorf("auto-migrate transfer models: %w", err)
-		}
-
-		if err := transferRepo.MigrateInfraObjectReferences(tx); err != nil {
-			return err
-		}
-		if err := cleanup.MigrateResults(tx, "transfer"); err != nil {
-			return err
-		}
-		_, err := projectionstore.Migrate(tx, cfg.DBSchema, "transfer", nil)
-		return err
-	}); err != nil {
-		return nil, err
-	}
-
-	return db, nil
-}
-
-func transferSchemaModels() []interface{} {
-	return []interface{}{
-		&models.TransferTask{},
-		&models.RunApproval{},
-		&models.SyncState{},
-		&models.RuntimeLease{},
-		&models.RuntimeSession{},
-		&models.CleanupOperation{},
-		&models.CaptureResource{},
-		&models.CaptureMetricHistory{},
-		&models.PostgreSQLCaptureResource{},
-		&models.MySQLCaptureResource{},
-		&models.OracleCaptureResource{},
-		&models.SchemaChangeRequest{},
-		&models.DeadLetter{},
-		&models.ContinuousPolicy{},
 	}
 }

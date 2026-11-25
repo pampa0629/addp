@@ -10,7 +10,11 @@ import (
 // ReadCDCRisks publishes the current CDC inventory, independently of execution retention.
 func (s *TaskService) ReadCDCRisks(ctx context.Context, afterID uint) (*commonClient.TransferCDCRisks, error) {
 	var tasks []models.TransferTask
-	if err := s.db.WithContext(ctx).Where("id > ? AND config -> 'runtime' ->> 'boundary' = ? AND config -> 'load' -> 'change_detection' ->> 'type' = ?", afterID, "continuous", "cdc").Order("id ASC").Limit(commonClient.TransferCDCRiskBatchSize + 1).Find(&tasks).Error; err != nil {
+	filter := "config -> 'runtime' ->> 'boundary' = ? AND config -> 'load' -> 'change_detection' ->> 'type' = ?"
+	if s.db.Dialector.Name() == "mysql" {
+		filter = "config->>'$.runtime.boundary' = ? AND config->>'$.load.change_detection.type' = ?"
+	}
+	if err := s.db.WithContext(ctx).Where("id > ? AND "+filter, afterID, "continuous", "cdc").Order("id ASC").Limit(commonClient.TransferCDCRiskBatchSize + 1).Find(&tasks).Error; err != nil {
 		return nil, err
 	}
 	more := len(tasks) > commonClient.TransferCDCRiskBatchSize

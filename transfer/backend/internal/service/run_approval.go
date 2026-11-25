@@ -189,15 +189,6 @@ func approvalState(item *models.RunApproval, now time.Time, required string) err
 	return nil
 }
 
-func approvalClock(tx *gorm.DB) (time.Time, error) {
-	if tx.Dialector.Name() != "postgres" {
-		return time.Now().UTC(), nil
-	}
-	var now time.Time
-	err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error
-	return now, err
-}
-
 func (s *TaskService) DecideRunApproval(ctx context.Context, a authorization.AuthContext, id string, req models.RunApprovalDecision) (*models.RunApproval, error) {
 	if err := runIdentity(a, false, "transfer.task.execute"); err != nil {
 		return nil, err
@@ -225,7 +216,7 @@ func (s *TaskService) DecideRunApproval(ctx context.Context, a authorization.Aut
 		if req.RequestFingerprint != item.RequestFingerprint {
 			return runApprovalError("approval_request_mismatch")
 		}
-		now, err := approvalClock(tx)
+		now, err := commonExecution.DatabaseNow(tx)
 		if err != nil {
 			return err
 		}
@@ -282,7 +273,7 @@ func consumeRunApproval(expected *models.RunApproval, executionID string) func(*
 		if item.RequestFingerprint != expected.RequestFingerprint {
 			return runApprovalError("approval_request_mismatch")
 		}
-		now, err := approvalClock(tx)
+		now, err := commonExecution.DatabaseNow(tx)
 		if err != nil {
 			return err
 		}

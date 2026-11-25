@@ -70,7 +70,7 @@ func (r *TaskRepository) ClaimExecutionWithReview(ctx context.Context, taskID, t
 			}
 			var state models.SyncState
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("task_id = ? AND source_identity = ? AND partition = ?", taskID, sourceIdentity, "default").
+				Where("task_id = ? AND source_identity = ?", taskID, sourceIdentity).Where(map[string]interface{}{"partition": "default"}).
 				First(&state).Error; err != nil {
 				return err
 			}
@@ -474,7 +474,7 @@ func (r *TaskRepository) ClaimDueScheduledExecution(ctx context.Context, taskID 
 				return err
 			}
 			var state models.SyncState
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ? AND source_identity = ? AND partition = ?", task.ID, sourceIdentity, "default").First(&state).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ? AND source_identity = ?", task.ID, sourceIdentity).Where(map[string]interface{}{"partition": "default"}).First(&state).Error; err != nil {
 				return err
 			}
 			state.FencingToken++
@@ -574,8 +574,7 @@ func (r *TaskRepository) fillExecutionStatistics(tenantID uint, stats *models.Ta
 	var taskIDs []string
 	if err := r.db.Model(&models.TransferTask{}).
 		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
-		Select("CAST(id AS TEXT)").
-		Pluck("CAST(id AS TEXT)", &taskIDs).Error; err != nil {
+		Pluck("id", &taskIDs).Error; err != nil {
 		return err
 	}
 	if len(taskIDs) == 0 {

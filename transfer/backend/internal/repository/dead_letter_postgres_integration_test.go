@@ -41,6 +41,11 @@ func TestIntegrationPostgresDeadLetterMigrationAndIdempotentUpsert(t *testing.T)
 		t.Fatalf("GORM model differs from SQL-migrated dead_letters: %v", err)
 	}
 
+	checkStoredDeadLetter(t, db)
+}
+
+func checkStoredDeadLetter(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	observedAt := time.Now().UTC().Truncate(time.Microsecond)
 	observation := deadLetterObservation(observedAt)
 	observation.Identity = "a59a0ac0-f042-5277-834d-0f982d26b7e5"
@@ -64,6 +69,15 @@ func TestIntegrationPostgresDeadLetterMigrationAndIdempotentUpsert(t *testing.T)
 	}
 	if second.OccurrenceCount != 2 || second.FirstExecutionID != "execution-1" || second.LastExecutionID != "execution-2" {
 		t.Fatalf("PostgreSQL idempotent upsert = %#v", second)
+	}
+	collision := *observation
+	collision.Identity = "4ddda389-0cd6-4dea-bc2e-c52329a3bdac"
+	if _, err := repo.UpsertObservation(context.Background(), &collision); err == nil {
+		t.Fatal("conflicting source record accepted")
+	}
+	after, err := repo.Get(context.Background(), observation.Identity)
+	if err != nil || after.OccurrenceCount != second.OccurrenceCount {
+		t.Fatalf("conflict changed existing dead letter: %+v %v", after, err)
 	}
 	staleUpdated, err := repo.MarkPayloadUnavailable(context.Background(), models.DeadLetterPayloadReference{
 		Identity: second.Identity, Topic: second.PayloadTopic, Partition: second.PayloadPartition, Offset: first.PayloadOffset,

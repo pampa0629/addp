@@ -32,7 +32,7 @@ func (r *TaskRepository) BindFileGDBExportAuthorization(ctx context.Context, ten
 		query := tx.Model(&commonExecution.TaskExecution{}).Select("*, execution_config AS frozen_config").
 			Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND source = ?", id, tenant, identity.Module, identity.TaskType, identity.Source).
 			Where("execution_boundary = ? AND trigger_type = ? AND source_task_id IS NULL AND parent_execution_id IS NULL AND max_attempts = 1", commonExecution.ExecutionBoundaryBounded, commonExecution.TriggerTypeManual)
-		if tx.Dialector.Name() == "postgres" {
+		if tx.Dialector.Name() != "sqlite" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		if err := query.Take(&row).Error; err != nil {
@@ -66,8 +66,9 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 		var err error
 		// Exact-source executions are frozen before System issues authorization.
 		// Leave them pending until the owner binds that authorization.
+		object, filegdb := boundedSourceFields(tx)
 		eligible := tx.Where(`(
-			(execution_config->'object_source' IS NULL AND (source <> ? OR source_task_id IS NOT NULL OR execution_config->'filegdb_source' IS NULL))
+			(`+object+` IS NULL AND (source <> ? OR source_task_id IS NOT NULL OR `+filegdb+` IS NULL))
    OR (execution_authorization_id IS NOT NULL AND authorization_expires_at IS NOT NULL)
 		)`, commonExecution.ModuleManager)
 		execution, lease, err = commonExecution.ClaimNext(ctx, eligible, commonExecution.ClaimOptions{
@@ -184,14 +185,15 @@ func failAbandonedSourcePreparations(ctx context.Context, tx *gorm.DB, limit int
 	if err != nil {
 		return 0, err
 	}
+	object, filegdb := boundedSourceFields(tx)
 	query := tx.Where(`
-		module = ? AND ((source = ? AND source_task_id IS NULL AND execution_config->'filegdb_source' IS NOT NULL) OR (source='transfer' AND source_task_id IS NOT NULL AND execution_config->'object_source' IS NOT NULL)) AND task_type = ? AND execution_boundary = ? AND status = ?
+		module = ? AND ((source = ? AND source_task_id IS NULL AND `+filegdb+` IS NOT NULL) OR (source='transfer' AND source_task_id IS NOT NULL AND `+object+` IS NOT NULL)) AND task_type = ? AND execution_boundary = ? AND status = ?
   AND parent_execution_id IS NULL AND attempt = 0 AND execution_authorization_id IS NULL
 		AND authorization_expires_at IS NULL AND created_at < ?
 	`, commonExecution.ModuleTransfer, commonExecution.ModuleManager, commonExecution.TaskTypeSync,
 		commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusPending, now.Add(-2*time.Minute)).
 		Order("created_at ASC, id ASC").Limit(limit)
-	if tx.Dialector.Name() == "postgres" {
+	if tx.Dialector.Name() != "sqlite" {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 	}
 	var items []commonExecution.TaskExecution
@@ -237,4 +239,11 @@ func isReplayExecution(execution *commonExecution.TaskExecution) bool {
 	}
 	_, ok := execution.Metadata["replay"]
 	return ok
+}
+
+func boundedSourceFields(tx *gorm.DB) (string, string) {
+	if tx.Dialector.Name() == "mysql" {
+		return "execution_config->'$.object_source'", "execution_config->'$.filegdb_source'"
+	}
+	return "execution_config->'object_source'", "execution_config->'filegdb_source'"
 }

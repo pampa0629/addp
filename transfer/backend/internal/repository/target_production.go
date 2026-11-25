@@ -123,11 +123,9 @@ func (r *TaskRepository) changeTargetProduction(ctx context.Context, lease execu
 			}
 			return err
 		}
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
+		now, err := execution.DatabaseNow(tx)
+		if err != nil {
+			return err
 		}
 		if item.LeaseExpiresAt == nil || !item.LeaseExpiresAt.After(now) {
 			return fmt.Errorf("%w: target production lease expired", commonapi.ErrConflict)
@@ -151,10 +149,6 @@ func (r *TaskRepository) changeTargetProduction(ctx context.Context, lease execu
 				item.Metadata[models.ProductionAuthorizationMetadataKey] = state
 			}
 		}
-		guarded := tx
-		if tx.Dialector.Name() == "postgres" {
-			guarded = tx.Where("lease_expires_at > clock_timestamp()")
-		}
-		return execution.UpdateWithLease(ctx, guarded, lease, map[string]interface{}{"metadata": item.Metadata})
+		return execution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{"metadata": item.Metadata})
 	})
 }
