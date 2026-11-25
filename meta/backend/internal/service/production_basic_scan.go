@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/production"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
 	"github.com/google/uuid"
@@ -80,10 +81,8 @@ func (s *ScanExecutionService) EnsureProductionBasicScan(ctx context.Context, te
 		user = uint(receipt.Origin.PrincipalID)
 	}
 	_, err = s.createManualRun(ctx, tenant, user, req, func(tx *gorm.DB, child *execution.TaskExecution) (*execution.TaskExecution, error) {
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", fmt.Sprintf("meta.initial_production|%d|%s|%s|%s", tenant, ref.Owner, ref.ExecutionID, ref.ResultID)).Error; err != nil {
-				return nil, err
-			}
+		if err := repository.LockReceiptScan(tx, fmt.Sprintf("meta.initial_production|%d|%s|%s|%s", tenant, ref.Owner, ref.ExecutionID, ref.ResultID)); err != nil {
+			return nil, err
 		}
 		if prior, err := findProductionBasicScan(tx, tenant, ref); err == nil {
 			return prior, nil
@@ -139,7 +138,11 @@ func productionScanRequest(r production.Receipt) (*models.ScanRequest, error) {
 	return req, nil
 }
 func findProductionBasicScan(db *gorm.DB, tenant uint, ref production.Reference) (*execution.TaskExecution, error) {
-	return productionScanRecord(db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=? AND execution_config->>'scan_depth'='basic' AND execution_config->'initial_production_receipt'->'reference'->>'owner'=? AND execution_config->'initial_production_receipt'->'reference'->>'result_id'=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, ref.ExecutionID, ref.Owner, ref.ResultID).Order("id"))
+	q := db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, ref.ExecutionID)
+	q = repository.WithScanConfigValue(q, "scan_depth", "basic")
+	q = repository.WithScanConfigValue(q, "initial_production_receipt.reference.owner", ref.Owner)
+	q = repository.WithScanConfigValue(q, "initial_production_receipt.reference.result_id", ref.ResultID)
+	return productionScanRecord(q.Order("id"))
 }
 func frozenProductionReceipt(run *execution.TaskExecution) (*production.Receipt, error) {
 	raw, err := json.Marshal(run.ExecutionConfig["initial_production_receipt"])

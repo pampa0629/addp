@@ -17,6 +17,7 @@ import (
 	"github.com/addp/common/format"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanresource"
 	"gorm.io/gorm"
@@ -61,10 +62,8 @@ func (s *ScanExecutionService) EnsureUploadBasicScan(ctx context.Context, tenant
 	refs := uploadReceiptRefGroups(paths)
 	req := &models.ScanRequest{EngineID: receipt.EngineID, RefGroups: refs, ScanDepth: "basic", Force: true, Source: execution.ModuleManager}
 	_, err = s.createManualRun(ctx, tenant, uint(receipt.Uploader.PrincipalID), req, func(tx *gorm.DB, child *execution.TaskExecution) (*execution.TaskExecution, error) {
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", fmt.Sprintf("meta.initial_upload|%d|%s", tenant, id)).Error; err != nil {
-				return nil, err
-			}
+		if err := repository.LockReceiptScan(tx, fmt.Sprintf("meta.initial_upload|%d|%s", tenant, id)); err != nil {
+			return nil, err
 		}
 		existing, err := findUploadScan(tx, tenant, id)
 		if err == nil {
@@ -115,7 +114,8 @@ func uploadReceiptRefGroups(paths []string) []models.ScanRefGroup {
 }
 func findUploadScan(db *gorm.DB, tenant uint, id string) (*execution.TaskExecution, error) {
 	var run execution.TaskExecution
-	err := db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=? AND execution_config->'upload_receipt'->>'upload_id'=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, id, id).Order("id").Take(&run).Error
+	query := db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, id)
+	err := repository.WithScanConfigValue(query, "upload_receipt.upload_id", id).Order("id").Take(&run).Error
 	return &run, err
 }
 func (s *ScanExecutionService) ReadUploadIdentification(ctx context.Context, tenant uint, id string) (*client.MetaUploadIdentification, error) {

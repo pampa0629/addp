@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/infra/database"
 	platformmysql "github.com/addp/common/infra/database/mysql"
@@ -120,4 +121,34 @@ func TestMetaClaimAndTaskSummaryAgainstMySQL(t *testing.T) {
 		}
 	}
 	t.Logf("task_id=%d execution_id=%s attempt=1 events=started,completed status=%s", deepTask.ID, deepID, terminal.Status)
+	t.Run("concurrent production receipt and terminal replay", func(t *testing.T) {
+		testProductionBasicScan(t, db, true)
+	})
+	exerciseUploadScanTerminalIdentity(t, db)
+	t.Run("logical file ownership", func(t *testing.T) {
+		tx := db.Begin()
+		if tx.Error != nil {
+			t.Fatal(tx.Error)
+		}
+		defer tx.Rollback()
+		if err := tx.Exec(`INSERT INTO meta.meta_item(tenant_id,engine_id,node_id,item_type,name,full_name,fingerprint,attributes)
+			VALUES (7,99,1,'file','root','资料/目录',?,JSON_OBJECT('item',JSON_OBJECT('layout','whole'))),
+			(7,99,1,'file','primary','group/main',?,JSON_OBJECT('item',JSON_OBJECT('refs',JSON_ARRAY(JSON_OBJECT('path','group/配图.png','role','sidecar')))))`,
+			uuid.NewString(), uuid.NewString()).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			tenant uint
+			path   string
+			known  bool
+		}{
+			{7, "资料/目录/子项", true}, {7, "资料/目录二/子项", false},
+			{7, "group/配图.png", true}, {7, "group/配图.PNG", false},
+			{8, "group/配图.png", false},
+		} {
+			if _, known, err := logicalItemAlreadyKnown(tx, tc.tenant, plugin.FileItemPath(99, tc.path)); err != nil || known != tc.known {
+				t.Fatalf("tenant %d path %q known=%t, err=%v", tc.tenant, tc.path, known, err)
+			}
+		}
+	})
 }

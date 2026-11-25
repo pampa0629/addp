@@ -6,12 +6,12 @@ import (
 )
 
 const mysqlScanTasksOwner = "meta_scan_tasks"
-const mysqlScanTasksVersion = 1
+const mysqlScanTasksVersion = 2
 
 // MigrateMySQLScanTasks prepares the Meta-owned scan task definitions and summary.
 func MigrateMySQLScanTasks(db *gorm.DB) error {
 	return schema.MigrateMySQL(db, mysqlScanTasksOwner, mysqlScanTasksVersion, func(conn *gorm.DB) error {
-		return conn.Exec(`CREATE TABLE IF NOT EXISTS meta.scan_tasks (
+		if err := conn.Exec(`CREATE TABLE IF NOT EXISTS meta.scan_tasks (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
 			tenant_id BIGINT UNSIGNED NOT NULL,
 			engine_id BIGINT UNSIGNED NOT NULL,
@@ -36,6 +36,11 @@ func MigrateMySQLScanTasks(db *gorm.DB) error {
 			KEY idx_scan_tasks_engine_id (engine_id),
 			KEY idx_scan_tasks_owner (owner_module, owner_ref),
 			KEY idx_scan_tasks_deleted_at (deleted_at)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin`).Error
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin`).Error; err != nil {
+			return err
+		}
+		return conn.Exec(`CREATE TABLE IF NOT EXISTS meta.receipt_scan_locks (
+			receipt_key BINARY(32) NOT NULL PRIMARY KEY
+		) ENGINE=InnoDB`).Error
 	})
 }

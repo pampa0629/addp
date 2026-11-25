@@ -77,9 +77,13 @@ ALTER TABLE meta_node DROP FOREIGN KEY fk_meta_node_engine_restrict, ADD CONSTRA
     FOREIGN KEY (tenant_id,engine_id) REFERENCES `system`.engines(tenant_id,id) ON DELETE CASCADE;
 ALTER TABLE meta_item DROP FOREIGN KEY fk_meta_item_engine_restrict, ADD CONSTRAINT fk_meta_item_tenant_engine
     FOREIGN KEY (tenant_id,engine_id) REFERENCES `system`.engines(tenant_id,id) ON DELETE CASCADE;
+DROP TABLE receipt_scan_locks;
+UPDATE startup_schema_revision SET version=1 WHERE owner='meta_scan_tasks';
 UPDATE startup_schema_revision SET version=1 WHERE owner='meta_scan_catalog';
 SQL
 "$work/meta-server" prepare-database
+test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner='meta_scan_tasks' AND version=2 AND pending_version=0" | admin)" = 1
+test "$(echo 'SELECT COUNT(*) FROM receipt_scan_locks' | admin)" = 0
 for entry in '201 meta_node' '202 meta_item'; do
     read -r id table <<<"$entry"
     if echo "DELETE FROM \`system\`.engines WHERE id=$id" | admin 2>"$work/meta-delete.err"; then exit 1; fi
