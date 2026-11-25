@@ -28,11 +28,21 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         target = dict(version='catalog.path/v1', engine_id=17, segments=[
             dict(term=k,kind=k,name=n) for k,n in [('service',''),('bucket','addp-demo'),
                                                    ('prefix','tables'),('object','订单.parquet')]])
-        for case in ('pass', 'no source event', 'extra denied GET', 'unknown issue', 'wrong bytes'):
+        repo = SCRIPT.resolve().parents[2]
+        parquet_bytes = (repo / 'transfer/backend/internal/planner/testdata/rustfs-orders/orders.parquet').read_bytes()
+        csv = 'addp-demo/tables/node-future.csv'
+        parquet = 'addp-demo/tables/node-future.parquet'
+        sibling = 'addp-demo/tables-other/node-future.parquet'
+        ids = {csv: 4, parquet: 5, ONLINE.RUSTFS_ORDERS_SOURCE: 6, sibling: 7}
+        for case in ('pass', 'no source event', 'extra denied GET', 'sibling GET', 'unknown issue', 'wrong bytes'):
             with self.subTest(case=case):
                 issuer, client = Mock(), Mock()
+                revoked, source_reads = False, 0
+                denied = []
                 def issue(method, url, statuses, body):
+                    nonlocal revoked
                     if url.endswith('/revoke'):
+                        revoked = True
                         return SimpleNamespace(payload={})
                     self.assertEqual(body['catalog_path']['segments'], target['segments'][:-1])
                     self.assertFalse(body['node_recursive'])
@@ -41,26 +51,43 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     return SimpleNamespace(payload=dict(body, operator_principal_id='21', engine_id='17'))
                 issuer.request.side_effect = issue
                 def consume(method, url, statuses, *args, **kwargs):
+                    nonlocal source_reads
                     if method == 'POST':
+                        self.assertEqual(args[0]['targets'], [target])
                         return SimpleNamespace(payload={'observed_at':'now'})
-                    locator = ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(url).query)['locator'][0]
-                    self.assertEqual(locator, 'addp://engine/17/path/addp-demo/tables/node-future.csv?type=object&item_id=4')
-                    if statuses == (403,):
+                    query = ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(url).query)
+                    path = query['storage_ref'][0]
+                    self.assertEqual(ONLINE.urllib.parse.unquote(query['locator'][0]),
+                                     f'addp://engine/17/path/{path}?type=object&item_id={ids[path]}')
+                    if revoked or path == sibling:
+                        self.assertEqual(statuses, (403,))
+                        denied.append(path)
+                        if (case == 'extra denied GET' and revoked) or (case == 'sibling GET' and path == sibling):
+                            source_reads += 1
                         return SimpleNamespace(payload={'error':'denied'})
-                    return SimpleNamespace(payload=b'wrong' if case=='wrong bytes' else b'id,name\n37,node-future\n')
+                    self.assertEqual(statuses, (200,))
+                    if case != 'no source event' or path != parquet:
+                        source_reads += 1
+                    data = b'id,name\n37,node-future\n' if path == csv else parquet_bytes
+                    return SimpleNamespace(payload=b'wrong' if case == 'wrong bytes' and path == parquet else data)
                 client.request.side_effect = consume
-                counts = iter([3, 3 if case=='no source event' else 4, 5 if case=='extra denied GET' else 4])
                 def physical(command, **kwargs):
-                    return SimpleNamespace(returncode=0, stdout=str(next(counts)) if command[-1]=='rustfs-node-gets' else '')
-                with patch.object(ONLINE.subprocess,'run',side_effect=physical), \
-                     patch.object(ONLINE,'wait_for_scan',return_value='scan'), \
-                     patch.object(ONLINE,'find_item',return_value={'id':4}):
+                    return SimpleNamespace(returncode=0, stdout=str(source_reads) if command[-1]=='rustfs-node-gets' else '')
+                with patch.object(ONLINE.subprocess, 'run', side_effect=physical), \
+                     patch.object(ONLINE, 'wait_for_scan', return_value='scan') as scan, \
+                     patch.object(ONLINE, 'find_item', side_effect=lambda c,e,p,k: {'id':ids[p]}), \
+                     patch.object(ONLINE, 'read_scanned_fixture_item', return_value={'id':ids[sibling]}) as outside:
                     if case == 'pass':
-                        result = ONLINE.verify_rustfs_node_read(client,issuer,Path('/tmp'),17,target,'21','33',30)
+                        result = ONLINE.verify_rustfs_node_read(client,issuer,repo,2,17,target,'21','33',30)
                         self.assertEqual((result['allowed_source_gets'],result['denied_source_gets']), (1,0))
+                        self.assertEqual(set(result['reads']), {csv, parquet, ONLINE.RUSTFS_ORDERS_SOURCE})
+                        self.assertCountEqual(denied, ids)
+                        outside.assert_called_once_with(2,17,'scan',sibling)
+                        self.assertEqual(scan.call_args.kwargs['targets'],
+                                         [f'addp://engine/17/path/{p}?type=object' for p in (csv,parquet,sibling)])
                     else:
                         with self.assertRaises(ONLINE.SuiteError):
-                            ONLINE.verify_rustfs_node_read(client,issuer,Path('/tmp'),17,target,'21','33',30)
+                            ONLINE.verify_rustfs_node_read(client,issuer,repo,2,17,target,'21','33',30)
                 self.assertEqual(sum(c.args[1].endswith('/revoke') for c in issuer.request.call_args_list),1)
 
     def test_rustfs_order_source_uses_system_boundary_and_meta_format_separately(self):
@@ -2044,7 +2071,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                             "item_fingerprint": "other" if failure == "grant-fingerprint" else item["fingerprint"]}
                 client.request.side_effect = request
                 grants.grant.side_effect = grant
-                with patch.object(ONLINE, "wait_owner_execution", side_effect=get_scan), patch.object(ONLINE, "read_scanned_fixture_table", side_effect=read):
+                with patch.object(ONLINE, "wait_owner_execution", side_effect=get_scan), patch.object(ONLINE, "read_scanned_fixture_item", side_effect=read):
                     if failure is None:
                         self.assertEqual(ONLINE.grant_mongodb_ods_read(client, state, identity, 3, execution, 30), item)
                         self.assertTrue(state["proof"]["ods_target_access"]["visible_after_grant"])
@@ -2268,7 +2295,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 client.request.side_effect = [SimpleNamespace(payload={}), SimpleNamespace(payload=dict(scanned, id=99 if outcome == "wrong_item" else 24)),
                                               SimpleNamespace(payload={}), SimpleNamespace(payload={})]
                 with patch.dict(os.environ, {"ADDP_ONLINE_TEST_RUN_ID": "test-run", "ADDP_ONLINE_ARTIFACT_DIR": directory}), patch.object(
-                    ONLINE, "read_scanned_fixture_table", return_value=scanned) as read:
+                    ONLINE, "read_scanned_fixture_item", return_value=scanned) as read:
                     with self.assertRaisesRegex(ONLINE.SuiteError, "scanned DataItem" if outcome == "wrong_item" else "downstream failure"):
                         with ONLINE.fixture_table_read_access(client, grants, 2, 3, "scan", "a" * 40, table) as proof:
                             if outcome == "passed":

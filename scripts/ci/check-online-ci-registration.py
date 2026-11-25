@@ -2042,7 +2042,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
             "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v22",
             "mongodb_source_access", "addp.mongodb-source-access/v2", "ExactRecordGrants", "rejected_before_read_write",
-            "grant_mongodb_ods_read", "read_scanned_fixture_table", "ods_target_access", "preview_denied_after_revoke",
+            "grant_mongodb_ods_read", "read_scanned_fixture_item", "ods_target_access", "preview_denied_after_revoke",
             "fixture_table_read_access", "verify_dim_read_orchestration", "dim-table-access.json", "addp.transfer-dim-table-access/v1",
             "dwd-table-access.json", "addp.transfer-dwd-table-access/v1", "dwd_table_access", "orchestrated_chain",
             "verify_scan_trace_visibility", "record_scan_trace_receipt", "scan-trace-visibility.json", "addp.scan-trace-visibility/v2", "meta_basic_scan_execution_id", "parent_read_does_not_grant_scan_read", "peer_hidden_endpoints", "owner_visible_observations", "peer_denials",

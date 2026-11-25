@@ -588,10 +588,13 @@ from urllib.parse import quote
 source = json.loads((Path(os.environ['ADDP_ONLINE_SECRET_DIR'])/'transfer-rustfs-engine.json').read_text())['connection_info']
 image = importlib.import_module('business.scripts.online-raster-minio-fixture').MINIO_IMAGE
 alias = 'http://' + quote(source['access_key'], safe='') + ':' + quote(source['secret_key'], safe='') + '@127.0.0.1:9000'
-subprocess.run(['docker', 'run', '--rm', '-i', '--network', 'container:' + sys.argv[1],
-                '-e', 'MC_HOST_fixture', '--entrypoint', 'mc', image, 'pipe', 'fixture/addp-demo/tables/node-future.csv'],
-               input=b'id,name\n37,node-future\n', env=dict(os.environ, MC_HOST_fixture=alias),
-               check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=45)
+parquet = Path('transfer/backend/internal/planner/testdata/rustfs-orders/orders.parquet').read_bytes()
+for key, data in [('tables/node-future.csv', b'id,name\n37,node-future\n'),
+                  ('tables/node-future.parquet', parquet), ('tables-other/node-future.parquet', parquet)]:
+    subprocess.run(['docker', 'run', '--rm', '-i', '--network', 'container:' + sys.argv[1],
+                    '-e', 'MC_HOST_fixture', '--entrypoint', 'mc', image, 'pipe', 'fixture/addp-demo/' + key],
+                   input=data, env=dict(os.environ, MC_HOST_fixture=alias),
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=45)
 PY_NODE
     ;;
   rustfs-orders)

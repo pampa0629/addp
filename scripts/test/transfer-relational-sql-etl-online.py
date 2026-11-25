@@ -1039,9 +1039,11 @@ def rustfs_order_physical(repository):
     return _object(json.loads(result.stdout), "RustFS PostgreSQL physical result")
 
 
-def verify_rustfs_node_read(client, initializer, repository, engine, current_target, actor, recipient, timeout):
+def verify_rustfs_node_read(client, initializer, repository, tenant, engine, current_target, actor, recipient, timeout):
     scope = dict(current_target, segments=current_target["segments"][:-1])
-    path = "addp-demo/tables/node-future.csv"
+    csv = "addp-demo/tables/node-future.csv"
+    parquet = "addp-demo/tables/node-future.parquet"
+    sibling = "addp-demo/tables-other/node-future.parquet"
     grant_id = str(uuid.uuid4())
     grants = f"/api/v1/system/engines/{engine}/access_grants"
     body = dict(request_id=grant_id, catalog_path=scope, node_recursive=False, action="read",
@@ -1053,6 +1055,19 @@ def verify_rustfs_node_read(client, initializer, repository, engine, current_tar
         if result.returncode:
             raise SuiteError("owned RustFS node fixture failed: " + action)
         return result.stdout.strip()
+
+    def stream_url(path, item):
+        locator = (f"addp://engine/{engine}/path/" + urllib.parse.quote(path, safe="/") + "?" +
+                   urllib.parse.urlencode({"type": "object", "item_id": item["id"]}))
+        return "/api/v1/manager/storage-stream?" + urllib.parse.urlencode(dict(locator=locator, storage_ref=path))
+
+    def verify_denied(url):
+        before = int(fixture("rustfs-node-gets"))
+        denied = client.request("GET", url, (403,)).payload
+        if (not denied.get("error") or set(denied) - {"error", "error_code"}
+                or denied.get("error_code") == "security_protection_required"
+                or int(fixture("rustfs-node-gets")) != before):
+            raise SuiteError("denied RustFS stream did not stop before GetObject")
 
     issued = revoked = False
     try:
@@ -1067,25 +1082,29 @@ def verify_rustfs_node_read(client, initializer, repository, engine, current_tar
                        {"targets":[current_target]})
         fixture("rustfs-node-seed")
         scan = wait_for_scan(initializer, engine, time.monotonic()+timeout,
-                             targets=[f"addp://engine/{engine}/path/{path}?type=object"])
-        item = find_item(client, engine, path, "object")
-        locator = (f"addp://engine/{engine}/path/" + urllib.parse.quote(path, safe="/") + "?" +
-                   urllib.parse.urlencode({"type": "object", "item_id": item["id"]}))
-        url = "/api/v1/manager/storage-stream?" + urllib.parse.urlencode(dict(locator=locator, storage_ref=path))
-        before = int(fixture("rustfs-node-gets"))
-        data = client.request("GET", url, (200,), raw_response=True).payload
-        after = int(fixture("rustfs-node-gets"))
-        if data != b"id,name\n37,node-future\n" or after <= before:
-            raise SuiteError("new RustFS object was not read from the source through Manager")
+                             targets=[f"addp://engine/{engine}/path/{path}?type=object" for path in (csv, parquet, sibling)])
+        parquet_bytes = (repository / "transfer/backend/internal/planner/testdata/rustfs-orders/orders.parquet").read_bytes()
+        reads, urls = {}, {}
+        for path, expected in ((csv, b"id,name\n37,node-future\n"), (parquet, parquet_bytes),
+                               (RUSTFS_ORDERS_SOURCE, parquet_bytes)):
+            urls[path] = stream_url(path, find_item(client, engine, path, "object"))
+            before = int(fixture("rustfs-node-gets"))
+            data = client.request("GET", urls[path], (200,), raw_response=True).payload
+            delta = int(fixture("rustfs-node-gets")) - before
+            if data != expected or delta <= 0:
+                raise SuiteError("RustFS source bytes or GetObject count differ for " + path)
+            reads[path] = dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest(), source_gets=delta)
+
+        outside = read_scanned_fixture_item(tenant, engine, scan, sibling)
+        verify_denied(stream_url(sibling, outside))
         initializer.request("POST", grants + "/" + grant_id + "/revoke", (200,), {"reason":"End prefix read"})
         revoked = True
-        denied = client.request("GET", url, (403,)).payload
-        if (not denied.get("error") or set(denied) - {"error","error_code"}
-                or denied.get("error_code") == "security_protection_required"
-                or int(fixture("rustfs-node-gets")) != after):
-            raise SuiteError("withdrawn RustFS stream did not stop before GetObject")
+        for url in urls.values():
+            verify_denied(url)
         return dict(engine_id=engine, principal_id=recipient, grant=grant_id, scope=scope, scan=scan,
-                    allowed_source_gets=after-before, denied_source_gets=0, bytes=len(data))
+                    allowed_source_gets=reads[csv]["source_gets"], denied_source_gets=0, bytes=reads[csv]["bytes"],
+                    reads=reads, outside_scope=dict(path=sibling, status=403, source_gets=0),
+                    after_revocation={path: dict(status=403, source_gets=0) for path in urls})
     finally:
         if not revoked:
             initializer.request("POST", grants + "/" + grant_id + "/revoke", (200,) if issued else (200,404),
@@ -1110,7 +1129,7 @@ def run_rustfs_orders(client, checker, initializer, outsider, identity, reposito
         {"term": term, "kind": term, "name": value} for term, value in
         (("service", ""), ("bucket", "addp-demo"), ("prefix", "tables"), ("object", "订单.parquet"))]}
     fingerprint = hashlib.sha256(f"{source_engine}:{RUSTFS_ORDERS_SOURCE}".encode()).hexdigest()
-    node = verify_rustfs_node_read(client, initializer, repository, source_engine, target, actor, recipient, timeout)
+    node = verify_rustfs_node_read(client, initializer, repository, tenant_id, source_engine, target, actor, recipient, timeout)
     (Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))/"rustfs-node-read.json").write_text(json.dumps(node))
     source_grants = f"/api/v1/system/engines/{source_engine}/access_grants"
     facts = initializer.request("GET", f"/api/v1/system/engines/{source_engine}/data-items/{fingerprint}/authorization-facts", (200,)).payload
@@ -1853,9 +1872,13 @@ def fixture_table_preview_route(locator):
     return "/api/v1/manager/preview?" + urllib.parse.urlencode({"locator": locator, "page": 1, "page_size": 20})
 
 
-def read_scanned_fixture_table(tenant_id, engine_id, scan_id, table, *, execution_id=None):
-    if table not in (MONGODB_TARGET, DIM_TARGET, DWD_TARGET):
-        raise SuiteError("unexpected exact Hosted fixture table")
+def read_scanned_fixture_item(tenant_id, engine_id, scan_id, name, *, execution_id=None):
+    if name in (MONGODB_TARGET, DIM_TARGET, DWD_TARGET):
+        full_name, kind = "public." + name, "table"
+    elif name == "addp-demo/tables-other/node-future.parquet":
+        full_name, kind = name, "object"
+    else:
+        raise SuiteError("unexpected exact Hosted fixture item")
     hosted = import_module("scripts.test.execution-online-support")
     try:
         tenant, engine = hosted.positive(tenant_id), hosted.positive(engine_id)
@@ -1868,7 +1891,7 @@ def read_scanned_fixture_table(tenant_id, engine_id, scan_id, table, *, executio
             SELECT i.id, i.engine_id, i.full_name, i.item_type, i.fingerprint
             FROM meta.meta_item i JOIN common.task_executions e ON e.tenant_id=i.tenant_id
             WHERE i.tenant_id={tenant} AND i.engine_id={engine} AND i.deleted_at IS NULL
-              AND i.full_name='public.{table}' AND i.item_type='table' AND i.scanned_depth='deep'
+              AND i.full_name='{full_name}' AND i.item_type='{kind}' AND i.scanned_depth='deep'
               AND e.execution_id='{scan}' AND {origin}
               AND e.module='meta' AND e.task_type='scan' AND e.status='success'
               AND i.scanned_at BETWEEN e.started_at AND e.completed_at
@@ -1878,7 +1901,7 @@ def read_scanned_fixture_table(tenant_id, engine_id, scan_id, table, *, executio
         raise SuiteError("owned fixture scan observation failed") from error
     if len(items) != 1:
         raise SuiteError("fixture scan did not persist one exact DataItem")
-    return _object(items[0], "persisted fixture table item")
+    return _object(items[0], "persisted fixture item")
 
 
 def grant_mongodb_ods_read(client, access, identity, engine_id, execution, timeout):
@@ -1893,7 +1916,7 @@ def grant_mongodb_ods_read(client, access, identity, engine_id, execution, timeo
             or str(child.get("triggered_by")) != identity["principal_id"]
             or child.get("scan_context") != {"engine_id": engine_id, "scan_depth": "deep"}):
         raise SuiteError("MongoDB ODS automatic scan lost its execution, User, Tenant or target")
-    scanned = read_scanned_fixture_table(int(identity["tenant_id"]), engine_id, scan_id, MONGODB_TARGET, execution_id=parent)
+    scanned = read_scanned_fixture_item(int(identity["tenant_id"]), engine_id, scan_id, MONGODB_TARGET, execution_id=parent)
     scanned_id = positive_int(scanned.get("id"), "MongoDB ODS scanned item id")
     route = fixture_table_catalog_route(engine_id, MONGODB_TARGET)
     client.request("GET", route, (404,))
@@ -2240,7 +2263,7 @@ def fixture_table_read_access(client, grants, tenant_id, engine_id, scan_id, com
         DIM_TARGET: ("DIM", "addp.transfer-dim-table-access/v1", "dim-table-access.json", "orchestrated_read"),
         DWD_TARGET: ("DWD", "addp.transfer-dwd-table-access/v1", "dwd-table-access.json", "orchestrated_chain"),
     }[table]
-    scanned = read_scanned_fixture_table(tenant_id, engine_id, scan_id, table)
+    scanned = read_scanned_fixture_item(tenant_id, engine_id, scan_id, table)
     route = fixture_table_catalog_route(engine_id, table)
     client.request("GET", route, (404,))
     proof = {"schema_version": schema, "result": "incomplete", "git_commit": commit,
