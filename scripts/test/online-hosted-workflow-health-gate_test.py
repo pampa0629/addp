@@ -55,7 +55,9 @@ args=sys.argv[1:];state=pathlib.Path(os.environ['ADDP_TEST_STATE']);trace=pathli
 def log(s):
  with trace.open('a') as f:f.write(s+'\\n')
 def image(name):return state/('image-'+name.split('/addp-')[-1])
-if args[:3]==['exec','-i','addp-postgres'] and 'exec psql ' in args[5]:
+if args[:3]==['exec','-i','addp-postgres']:
+ assert args[3:7]==['env','EXPECTED_DATABASE=addp_online','sh','-ec']
+ assert 'exec psql ' in args[7]
  sql=sys.stdin.read()
  if 'CREATE ROLE platform_deploy' in sql:log('database-roles')
  elif 'ALTER DEFAULT PRIVILEGES' in sql:log('database-namespace:'+args[-1])
