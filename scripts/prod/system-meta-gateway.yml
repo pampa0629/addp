@@ -129,6 +129,19 @@ services:
     extends: {file: ../../docker-compose.yml, service: develop-frontend}
     profiles: [module-develop]
     container_name: !reset null
+  quality-backend:
+    extends: {file: ../../docker-compose.yml, service: quality-backend}
+    profiles: [module-quality]
+    container_name: !reset null
+    environment: *endpoints
+  quality-frontend:
+    extends: {file: ../../docker-compose.yml, service: quality-frontend}
+    profiles: [module-quality]
+    container_name: !reset null
+  quality-worker:
+    extends: {file: ../../docker-compose.yml, service: quality-worker}
+    profiles: [module-quality]
+    environment: *endpoints
   workbench-backend:
     extends: {file: ../../docker-compose.yml, service: workbench-backend}
     profiles: [module-workbench]

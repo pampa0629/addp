@@ -1486,6 +1486,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Quality Backend（带检查）
   if [ "$START_QUALITY_BACKEND" = true ]; then
     if check_service_running "quality" "$QUALITY_BACKEND_PORT"; then
+      addp_dev_prepare_database quality || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" quality quality backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-quality" &
       QUALITY_PID=$!
       echo $QUALITY_PID > .dev-pids/quality.pid

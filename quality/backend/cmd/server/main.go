@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -39,10 +39,32 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(cfg.PlatformDatabase(), "quality")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := migration.PrepareDatabase(db); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "quality"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
+
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 
-	db, err := bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
+	db, err := bootstrap.OpenPlatformRuntime(cfg.PlatformDatabase(), "quality", &gorm.Config{TranslateError: true})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -51,10 +73,8 @@ func main() {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
-	migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancelMigration()
-	if err := schema.Migrate(db.WithContext(migrationContext), "quality", migration.SchemaVersion, func(tx *gorm.DB) error { return migration.NewRunner(tx).Run(migrationContext) }); err != nil {
-		log.Fatalf("Failed to migrate Quality database: %v", err)
+	if err := schema.Require(db, "quality", migration.SchemaVersion); err != nil {
+		log.Fatal(err)
 	}
 
 	var redisClient *redis.Client

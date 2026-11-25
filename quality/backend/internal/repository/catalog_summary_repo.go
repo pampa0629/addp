@@ -38,7 +38,7 @@ func (r *CatalogSummaryRepository) Resolve(ctx context.Context, tenantID int64, 
 	for _, r := range references {
 		requested[catalogSummaryKey(r.EngineID, r.SchemaName, r.TableName)] = true
 	}
-	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("last_run_at DESC NULLS LAST, id DESC").Find(&allTasks).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("CASE WHEN last_run_at IS NULL THEN 1 ELSE 0 END, last_run_at DESC, id DESC").Find(&allTasks).Error; err != nil {
 		return nil, err
 	}
 	for _, task := range allTasks {

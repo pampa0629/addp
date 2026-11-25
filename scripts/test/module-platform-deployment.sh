@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 container=${1:?expected gate-owned container ID}
 owner=${2:?expected database owner}
-case "$owner" in develop|ontology|graph|catalog|asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
+case "$owner" in quality|develop|ontology|graph|catalog|asset|service|model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
 provider=${ADDP_INFRA_DATABASE_PROVIDER:?}
 work=$(mktemp -d)
 install_volume=""
@@ -67,7 +67,7 @@ runtime() { python3 "$root/scripts/test/module-platform-startup.py" "$work/$owne
 install_dir="$work/linux"
 mkdir "$install_dir"
 arch=$(docker image inspect "$(docker inspect -f '{{.Image}}' "$container")" -f '{{.Architecture}}')
-if [[ $owner == model || $owner == service || $owner == graph || $owner == develop ]]; then
+if [[ $owner == model || $owner == service || $owner == graph || $owner == develop || $owner == quality ]]; then
   # The registered engine plugins include the native PostgreSQL parser.
   # Link its C runtime statically so the installer also runs in the DB fixture image.
   build=(go build -tags netgo,osusergo -ldflags '-linkmode external -extldflags -static')
@@ -122,7 +122,7 @@ snapshot >refused.sql
 cmp before-owner.sql refused.sql
 # The same release database phase and the same module command run on both providers.
 prepare=(bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml")
-if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset || $owner == catalog || $owner == graph || $owner == ontology || $owner == develop ) && $provider == mysql ]]; then
+if [[ ( $owner == standard || $owner == model || $owner == service || $owner == asset || $owner == catalog || $owner == graph || $owner == ontology || $owner == develop || $owner == quality ) && $provider == mysql ]]; then
   status=0
   "${prepare[@]}" >"$work/installer.out" || status=$?
   case "$status" in
@@ -140,6 +140,8 @@ fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
+elif [[ $owner == quality ]]; then
+  grep -qi 'CREATE TABLE.*rule_revisions' installed.sql
 elif [[ $owner == develop ]]; then
   grep -qi 'CREATE TABLE.*dev_tasks' installed.sql
 elif [[ $owner == ontology ]]; then
@@ -209,4 +211,7 @@ if [[ "$owner" == ontology ]]; then
 fi
 if [[ "$owner" == develop ]]; then
   (cd "$root/develop/backend" && ADDP_TEST_DEVELOP_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledDevelopTask$' -count=1 -v)
+fi
+if [[ "$owner" == quality ]]; then
+  (cd "$root/quality/backend" && ADDP_TEST_QUALITY_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledQualityStorage$' -count=1 -v)
 fi

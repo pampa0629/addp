@@ -28,6 +28,12 @@ func TestIntegrationPostgresOverviewSeparatesAttemptAndObservation(t *testing.T)
 	if err = qualityMigration.NewRunner(db).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	checkQualityOverview(t, db)
+}
+
+func checkQualityOverview(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var err error
 	tenant := time.Now().UnixNano()%100000000 + 970000000
 	t.Cleanup(func() {
 		db.Where("tenant_id=?", tenant).Delete(&commonExecution.TaskExecution{})
