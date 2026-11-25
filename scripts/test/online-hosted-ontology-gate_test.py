@@ -65,6 +65,7 @@ class HostedOntologyGateTest(unittest.TestCase):
         self.assertNotIn("install:addp-service:", trace)
         self.assertNotIn("install:addp-graph:", trace)
         self.assertNotIn("install:addp-inference:", trace)
+        self.assertLess(trace.index("install:addp-ontology:prepare-database"), trace.index("start:-ontology"))
         self.assertNotIn("fixture:start", trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
@@ -117,6 +118,7 @@ python3 -c 'import base64,hashlib,os; key=base64.b64decode(os.environ["ENCRYPTIO
                 for owner in ("service", "graph"):
                     self.assertLess(trace.index(f"install:addp-{owner}:prepare-database"), trace.index("start:-ontology"))
                 self.assertLess(trace.index("install:addp-inference:prepare-database"), trace.index("start:-inference"))
+                self.assertLess(trace.index("install:addp-ontology:prepare-database"), trace.index("start:-ontology"))
                 self.assertLess(trace.index("install:agent:prepare_database"), trace.index("start:-agent"))
                 for owner in ("ontology", "security", "service", "agent", "inference"):
                     self.assertIn("start:-" + owner, trace)

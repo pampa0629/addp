@@ -43,7 +43,7 @@ application_owned=1
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   hosted_start_native_modules -ontology -meta -manager -security -develop -graph -service -inference -agent
 else
-  hosted_prepare_native_database system gateway
+  hosted_prepare_native_database system gateway ontology
   unset hosted_deploy_password
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -ontology
 fi
