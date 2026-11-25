@@ -13,7 +13,13 @@ before_online_application_stop() {
 }
 
 stop_online_fixture() {
-  run_logged python3 -m scripts.test.sql-pool-consumer-flow-online stop
+  local status=0
+  if [[ -n "${meta_proxy_pid:-}" ]]; then
+    kill "$meta_proxy_pid" 2>/dev/null || :
+    wait "$meta_proxy_pid" || [[ $? == 143 ]] || status=1
+  fi
+  run_logged python3 -m scripts.test.sql-pool-consumer-flow-online stop || status=1
+  return "$status"
 }
 
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
@@ -24,7 +30,25 @@ hosted_start_platform_infra
 fixture_owned=1
 run_logged python3 -m scripts.test.sql-pool-consumer-flow-online start
 application_owned=1
-hosted_start_native_modules -system -security -meta -manager -develop
+export ADDP_POOL_META_GATE="$ADDP_ONLINE_SECRET_DIR/meta-gate"
+mkdir -m 700 "$ADDP_POOL_META_GATE"
+go build -o "$ADDP_POOL_META_GATE/proxy" scripts/test/testdata/sql-pool-meta/main.go
+env -i "$ADDP_POOL_META_GATE/proxy" "$ADDP_POOL_META_GATE" &
+meta_proxy_pid=$!
+for _ in {1..100}; do
+  [[ ! -f "$ADDP_POOL_META_GATE/url" ]] || break
+  kill -0 "$meta_proxy_pid" || exit 1
+  sleep 0.1
+done
+proxy_url=$(cat "$ADDP_POOL_META_GATE/url")
+targets=(-system -security -meta -manager -develop)
+hosted_prepare_native_targets "${targets[@]}"
+unset hosted_deploy_password
+for target in "${targets[@]}"; do
+  meta_url=$META_URL
+  if [[ "$target" == -manager ]]; then meta_url=$proxy_url; fi
+  run_daemon_launcher_logged env META_URL="$meta_url" SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
+done
 # This representative deployment records only the role and revision. Check the
 # environment passed to both Security launchers without logging its values.
 run_logged python3 - <<'PYRUNTIME'

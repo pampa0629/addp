@@ -7281,7 +7281,9 @@ def validate_sql_pool_profile(repository: Path, registry: dict[str, object]) -> 
     if not make_target_commands((repository / "Makefile").read_text(), "test-sql-pool-online-runner"):
         raise RegistrationError("SQL pool deterministic gate is missing")
     lifecycle = (repository / "scripts/test/online-hosted-sql-pool-gate.sh").read_text()
-    if "hosted_start_native_modules -system -security -meta -manager -develop" not in lifecycle:
+    if not all(part in lifecycle for part in (
+            "targets=(-system -security -meta -manager -develop)", 'hosted_prepare_native_targets "${targets[@]}"',
+            'for target in "${targets[@]}"', 'bash scripts/dev/start.sh "$target"')):
         raise RegistrationError("SQL pool page acceptance requires the System frontend lifecycle")
 
 

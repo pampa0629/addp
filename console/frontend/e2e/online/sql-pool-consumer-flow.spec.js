@@ -1,6 +1,6 @@
 import { expect, request, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, identity, json, login, selectSearchResult } from './transfer-browser-support.js'
 
@@ -395,7 +395,10 @@ async function developTimeout(page, sample, phase, consumer, observeNative) {
   })
 }
 
-async function managerSQLTimeout(page, sample) {
+async function managerTimeout(page, sample, phase, observeAtResponse) {
+  const acquisition = phase === 'queued'
+  const expectedCode = acquisition ? 'preview_connection_acquisition_timeout' : 'preview_sql_execution_timeout'
+  const expectedText = acquisition ? '获取数据库连接超时' : '数据库 SQL 执行超时'
   let started
   const request = page.waitForRequest(req => {
     const url = new URL(req.url())
@@ -412,12 +415,13 @@ async function managerSQLTimeout(page, sample) {
   const response = await submitted.response()
   expect(response?.status()).toBe(504)
   const body = await response.json()
-  expect(body.error_code).toBe('preview_sql_execution_timeout')
-  await expect(panel).toContainText('数据库 SQL 执行超时')
+  expect(body.error_code).toBe(expectedCode)
+  await expect(panel).toContainText(expectedText)
   await expect(frame.locator('.el-message--error')).toHaveCount(0)
   const proof = { elapsed_ms: Date.now() - started, http_status: response.status(), code: body.error_code,
     heading: await panel.locator('.el-empty__description').innerText() }
-  await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${sample.engine_type}-saturation-manager-native.png`) })
+  if (observeAtResponse) proof.during = observeAtResponse()
+  await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${sample.engine_type}-saturation-manager-${phase}.png`) })
   return proof
 }
 
@@ -425,6 +429,9 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
   const engine = sample.engine_type
   const configuration = await saveChange(operatorPage, sample, operator, 'saturation', credentials)
   const managerPage = await page.context().newPage()
+  const waitingPage = await page.context().newPage()
+  const gateFile = name => resolve(process.env.ADDP_POOL_META_GATE, name)
+  const target = `${sample.engine_id}\n${sample.namespace}.${sample.table}`
   const pending = []
   let api, queue, released
   try {
@@ -434,6 +441,14 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
     const fixtureIdentity = await checkIdentity(fixtureToken, consumer.tenantID, [...consumer.permissions].sort())
     expect(fixtureIdentity.principalID).toBe(consumer.principalID)
     api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${fixtureToken}` } })
+    for (const name of ['forwarded', 'released']) rmSync(gateFile(name), { force: true })
+    writeFileSync(gateFile('target.tmp'), target)
+    renameSync(gateFile('target.tmp'), gateFile('armed'))
+    const waiting = managerTimeout(waitingPage, sample, 'queued', () => barrierAction(engine, 'observe', 'queue'))
+    pending.push(waiting)
+    waiting.catch(() => {})
+    await expect.poll(() => existsSync(gateFile('held')), { timeout: 15_000 }).toBe(true)
+    expect(readFileSync(gateFile('held'), 'utf8')).toBe(target)
     queue = barrierAction(engine, 'acquire', 'queue')
     const queryHolder = await json(await api.post('/api/v1/develop/executions', { data: {
       dev_type: 'query', trigger_type: 'manual', timeout: 200,
@@ -441,14 +456,20 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
       execution_config: { engine_id: sample.engine_id },
     } }), 'Develop saturation holder')
     await waitForNativeReaders(engine, 'queue', ['holder'])
-    const managerRead = managerSQLTimeout(managerPage, sample)
+    // Leave time to capture the older request's 504 with the younger reader still blocked.
+    await new Promise(resolve => setTimeout(resolve, 8_000))
+    const managerRead = managerTimeout(managerPage, sample, 'native')
     pending.push(managerRead)
     managerRead.catch(() => {})
     const holders = await waitForNativeReaders(engine, 'queue', ['holder', 'manager'])
-    const [managerNative, queued] = await Promise.all([
+    writeFileSync(gateFile('released'), '')
+    const [managerQueued, managerNative, queued] = await Promise.all([
+      waiting,
       managerRead,
       developTimeout(page, sample, 'saturation_queued', consumer, () => waitForNativeReaders(engine, 'queue', ['holder', 'manager'])),
     ])
+    expect(readFileSync(gateFile('forwarded'), 'utf8')).toBe(target)
+    expect(managerQueued.during).toEqual(holders)
     expect(queued.execution_id).not.toBe(queryHolder.execution_id)
     const queueTerminal = barrierAction(engine, 'observe', 'queue')
     expect(queueTerminal.held).toBe(true)
@@ -474,9 +495,9 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
       barrierAction(engine, 'release', 'native')
     }
     const recoveredExecution = await developQuery(page, sample, 'saturation_recovered', consumer)
-    await managerPreview(managerPage, sample, () => managerPage.goto(previewRoute(sample)))
+    await managerPreview(waitingPage, sample, () => waitingPage.goto(previewRoute(sample)))
     const proof = { configuration, queue, holders, queue_terminal: queueTerminal, released, queued,
-      native, manager_native: managerNative, engine_status: engineStatus,
+      native, manager_native: managerNative, manager_queued: managerQueued, engine_status: engineStatus,
       holder_execution_id: queryHolder.execution_id, recovered_execution_id: recoveredExecution, recovered_manager_rows: 1 }
     for (const secret of Object.values(credentials)) {
       expect(JSON.stringify(proof).includes(secret), 'pool diagnostic must not expose credentials').toBe(false)
@@ -484,10 +505,12 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
     return proof
   } finally {
     try {
+      writeFileSync(gateFile('released'), '')
       if (queue && !released) barrierAction(engine, 'release', 'queue')
     } finally {
       if (api) await api.dispose()
       await Promise.allSettled(pending)
+      await waitingPage.close()
       await managerPage.close()
     }
   }
@@ -576,7 +599,7 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
       cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery, concurrency, saturation })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
-      schema_version: 'addp.sql-pool-console/v7', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
+      schema_version: 'addp.sql-pool-console/v8', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
   } finally {
     if (!operatorPage.isClosed()) await operatorContext.close()

@@ -84,14 +84,14 @@ class SQLPoolEvidenceTest(unittest.TestCase):
 
         def without_system(path, *args, **kwargs):
             text = original(path, *args, **kwargs)
-            return text.replace("hosted_start_native_modules -system ", "hosted_start_native_modules ") if path == lifecycle else text
+            return text.replace("targets=(-system ", "targets=(") if path == lifecycle else text
 
         with patch.object(Path, "read_text", without_system):
             with self.assertRaisesRegex(CI.RegistrationError, "System frontend lifecycle"):
                 CI.validate_sql_pool_profile(root, registry)
 
     def test_verified_browser_output_is_returned_to_online_dispatcher(self):
-        evidence = {"schema_version": "addp.sql-pool-console/v7", "run_id": "run-pool", "cases": []}
+        evidence = {"schema_version": "addp.sql-pool-console/v8", "run_id": "run-pool", "cases": []}
         processes = {"system": [19, "9"]}
         with tempfile.TemporaryDirectory() as tmp:
             private = Path(tmp)
@@ -142,7 +142,7 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
 
     def connection_evidence(self):
         expected = {"run_id": "run-pool", "principal_id": "4", "operator_principal_id": "6", "cases": []}
-        evidence = {"schema_version": "addp.sql-pool-console/v7", "run_id": "run-pool",
+        evidence = {"schema_version": "addp.sql-pool-console/v8", "run_id": "run-pool",
                     "consumer_principal_id": "4", "operator_principal_id": "6", "cases": []}
         for engine_id, engine in ((5, "postgresql"), (8, "mysql")):
             source = {"container_id": engine, "database": "pool_fixture", "native_id": "native-" + engine}
@@ -217,6 +217,8 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                            "elapsed_ms": 120_000, "during": deepcopy(holders), "heading": "获取数据库连接超时。"},
                 "native": {"execution_id": f"{engine}-native", "status": "timeout", "reason": "sql_execution_timeout",
                            "elapsed_ms": 120_000, "during": native, "heading": "数据库 SQL 执行超时。"},
+                "manager_queued": {"http_status": 504, "elapsed_ms": 55_000, "code": "preview_connection_acquisition_timeout",
+                                   "heading": "获取数据库连接超时。", "during": deepcopy(holders)},
                 "manager_native": {"http_status": 504, "elapsed_ms": 55_000, "code": "preview_sql_execution_timeout", "heading": "数据库 SQL 执行超时。"},
                 "engine_status": "online",
                 "holder_execution_id": f"{engine}-holder", "recovered_execution_id": f"{engine}-recovered",
@@ -404,6 +406,8 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
             lambda p: p["queued"]["during"]["waiters"].append({"id": 110, "phase": "queued"}),
             lambda p: p["native"]["during"].update(waiters=[]),
             lambda p: p["manager_native"].update(elapsed_ms=300),
+            lambda p: p["manager_queued"].update(code="preview_sql_execution_timeout"),
+            lambda p: p["manager_queued"]["during"]["waiters"].pop(),
             lambda p: p["manager_native"].update(code="preview_connection_acquisition_timeout"),
             lambda p: p["queued"].update(reason="sql_execution_timeout"),
             lambda p: p["native"].update(execution_id=p["queued"]["execution_id"]),

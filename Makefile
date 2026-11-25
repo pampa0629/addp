@@ -1301,6 +1301,7 @@ test-ontology-online-runner: ## 核验本体发布与受保护单记录 Agent �
 
 .PHONY: test-sql-pool-online-runner
 test-sql-pool-online-runner: check-node-runtime ## 验证 PostgreSQL 与 MySQL 连接池页面验收的证据约束
+	@go test scripts/test/testdata/sql-pool-meta/main.go scripts/test/testdata/sql-pool-meta/main_test.go
 	@bash -n scripts/test/online-hosted-sql-pool-gate.sh
 	@cd console/frontend && npm exec -- playwright test e2e/online/sql-pool-consumer-flow.spec.js e2e/online/native-preview-authorization.spec.js --config=playwright.online.config.js --list
 	@python3 -m unittest scripts/test/sql-pool-consumer-flow-online_test.py

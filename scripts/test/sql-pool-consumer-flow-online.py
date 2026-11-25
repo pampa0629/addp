@@ -612,7 +612,7 @@ def validate_concurrency(case, run_id, executions):
 
 def validate_saturation(case, run_id, executions):
     proof = case["saturation"]
-    require(set(proof) == {"configuration", "queue", "holders", "queue_terminal", "released", "queued", "manager_native", "engine_status",
+    require(set(proof) == {"configuration", "queue", "holders", "queue_terminal", "released", "queued", "manager_native", "manager_queued", "engine_status",
                            "native", "holder_execution_id", "recovered_execution_id", "recovered_manager_rows"},
             "missing pool saturation evidence")
     version = case["concurrency"]["configuration"]["after_version"]
@@ -650,10 +650,15 @@ def validate_saturation(case, run_id, executions):
                 and outcome["status"] == "timeout" and outcome["elapsed_ms"] >= 105_000
                 and outcome["reason"] == reason and outcome["heading"],
                 "missing Develop timeout panel evidence")
-    manager = proof["manager_native"]
-    require(set(manager) == {"http_status", "code", "elapsed_ms", "heading"} and manager["elapsed_ms"] >= 50_000
-            and manager["http_status"] == 504 and manager["code"] == "preview_sql_execution_timeout" and manager["heading"],
-            "missing Manager native SQL timeout panel evidence")
+    for phase, code in (("manager_native", "preview_sql_execution_timeout"),
+                        ("manager_queued", "preview_connection_acquisition_timeout")):
+        manager = proof[phase]
+        fields = {"http_status", "code", "elapsed_ms", "heading"}
+        if phase == "manager_queued":
+            fields.add("during")
+            require(manager.get("during") == proof["holders"], "Manager acquisition timed out without the original occupied pool")
+        require(set(manager) == fields and manager["elapsed_ms"] >= 50_000 and manager["http_status"] == 504
+                and manager["code"] == code and manager["heading"], "missing Manager timeout panel evidence")
     require(proof["recovered_manager_rows"] == 1, "missing Manager recovery evidence")
     for execution in (proof["holder_execution_id"], proof["queued"]["execution_id"],
                       proof["native"]["execution_id"], proof["recovered_execution_id"]):
@@ -665,7 +670,7 @@ def validate_saturation(case, run_id, executions):
 def validate_browser(evidence, expected):
     require(set(evidence) == {"schema_version", "run_id", "consumer_principal_id", "operator_principal_id", "cases"},
             "unexpected Console report fields")
-    require(evidence.get("schema_version") == "addp.sql-pool-console/v7"
+    require(evidence.get("schema_version") == "addp.sql-pool-console/v8"
             and evidence.get("run_id") == expected["run_id"], "wrong Console evidence identity")
     require(evidence.get("consumer_principal_id") == expected["principal_id"], "wrong Console consumer")
     require(evidence.get("operator_principal_id") == expected["operator_principal_id"]
