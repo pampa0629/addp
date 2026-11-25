@@ -183,6 +183,8 @@
 
 36类双语72准确focal失败（权重14、方法窗10、网格CRS8、波段4）；2322全检／含基线100物理轮，27COG／源／冻结预期与SHA归档，像元mask／六仿射／CRS／Float64NaN／实际nearest及布局精核；极限／注入仅Native。
 
+固定提交 `a552b2136` 的[首跑](https://github.com/pampa0629/addp/actions/runs/45631920757/job/139267131715)在首次源扫描时返回 403，业务矩阵未开始。同一请求在 System 的元数据刷新范围校验返回 403。业务进度记录为 224 毫秒，成功链、双语节点拒绝、成果全检及归档 COG 均为 0。隔离环境清理通过，Infra 零残留。[原始归档](https://github.com/pampa0629/addp/actions/runs/45631920757/artifacts/15035787643)
+
 ## 点数据IDW插值独立 Hosted 验收
 
 独立手工 `raster-interpolate-idw-persistence`；`make test-raster-interpolate-idw-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。 Runtime保持4 CPU／2 GiB／无额外swap。
