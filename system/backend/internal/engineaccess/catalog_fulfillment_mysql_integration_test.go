@@ -96,6 +96,11 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 		if err != nil || len(result.Targets) != 1 || result.Targets[0].Reason != want || result.Covered != (want == "grant") {
 			t.Fatalf("metadata visibility: expected %s, got %+v, %v", want, result, err)
 		}
+		source := userProvenance{PrincipalID: confirmer.PrincipalID, MembershipID: confirmer.MembershipID, AuthorizationVersion: confirmer.AuthorizationVersion}
+		ranges, err := repo.metadataRefreshRanges(ctx, 7, source, shared.MetadataRefreshQuery{Kind: "item", Target: base.Path})
+		if err != nil || (len(ranges) == 1) != (want == "grant") || len(ranges) > 1 {
+			t.Fatalf("item refresh expected %s, ranges=%+v error=%v", want, ranges, err)
+		}
 		if result.ExpiresAt != nil {
 			t.Fatalf("unexpected deadline: %v", result.ExpiresAt)
 		}

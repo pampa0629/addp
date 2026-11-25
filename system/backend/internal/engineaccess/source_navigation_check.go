@@ -15,10 +15,17 @@ import (
 )
 
 // Navigation uses the same live recipient and Grant predicates as actual reads.
-const pgNavigationInput = `WITH input AS MATERIALIZED (
+const pgSourceSubjectInput = `WITH input AS MATERIALIZED (
  SELECT ?::bigint tenant_id,?::bigint principal_id,?::bigint membership_id,
  ?::bigint authorization_version,clock_timestamp() observed_at
 )`
+
+func (tx *Repository) sourceSubjectInput() string {
+	if tx.db.Dialector.Name() == "mysql" {
+		return mysqlSourceSubjectInput
+	}
+	return pgSourceSubjectInput
+}
 
 const navigationGrantsSQL = sourceReadSubjectCTEs + `
  SELECT g.request_id,g.catalog_path,g.item_fingerprint,g.boundary_hash,g.node_recursive FROM input JOIN system.engine_access_grants g ON g.tenant_id=input.tenant_id
@@ -136,11 +143,7 @@ func (s *Service) readNavigationGrants(ctx context.Context, engines []uint, node
 		}
 		tenant = subject.tenant
 
-		input := pgNavigationInput
-		if tx.db.Dialector.Name() == "mysql" {
-			input = mysqlSourceSubjectInput
-		}
-		query := input + navigationGrantsSQL
+		query := tx.sourceSubjectInput() + navigationGrantsSQL
 		if nodesOnly {
 			query += " AND g.node_recursive IS NOT NULL"
 		}

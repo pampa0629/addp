@@ -17,10 +17,7 @@ const metadataRefreshPermission = "meta.scan_task.execute"
 
 // Uses the same current principal/membership/department/project CTE as actual
 // reads. Querying owned source rules never enumerates the source catalog.
-const metadataRefreshGrantsSQL = `WITH input AS MATERIALIZED (
- SELECT ?::bigint AS tenant_id, ?::bigint AS principal_id, ?::bigint AS membership_id,
- ?::bigint AS authorization_version, clock_timestamp() AS observed_at
-)` + sourceReadSubjectCTEs + ` SELECT DISTINCT g.catalog_path,g.node_recursive,g.item_fingerprint,g.boundary_hash,
+const metadataRefreshGrantsSQL = sourceReadSubjectCTEs + ` SELECT DISTINCT g.catalog_path,g.node_recursive,g.item_fingerprint,g.boundary_hash,
  g.file_composition,g.scope_boundary,g.metadata_target
  FROM input JOIN system.engine_access_grants g ON g.tenant_id=input.tenant_id AND g.engine_id=?
  JOIN recipients r ON r.recipient_type=g.recipient_type AND r.recipient_id=g.recipient_id
@@ -272,7 +269,7 @@ func metadataRefreshGrantRange(grant sourceGrant) (shared.MetadataRefreshRange, 
 func (tx *Repository) metadataRefreshRanges(ctx context.Context, tenant int64, source userProvenance, query shared.MetadataRefreshQuery) ([]shared.MetadataRefreshRange, error) {
 	var err error
 	var grants []sourceGrant
-	if err := tx.db.WithContext(ctx).Raw(metadataRefreshGrantsSQL, tenant, source.PrincipalID, source.MembershipID, source.AuthorizationVersion, query.Target.EngineID).Scan(&grants).Error; err != nil {
+	if err := tx.db.WithContext(ctx).Raw(tx.sourceSubjectInput()+metadataRefreshGrantsSQL, tenant, source.PrincipalID, source.MembershipID, source.AuthorizationVersion, query.Target.EngineID).Scan(&grants).Error; err != nil {
 		return nil, err
 	}
 	ranges := make([]shared.MetadataRefreshRange, 0, len(grants))
