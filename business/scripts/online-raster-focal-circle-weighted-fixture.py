@@ -29,6 +29,15 @@ CASES = {
     'reclassified.cog.tif': ('north.tif', 'weighted_stddev', 4., 'north', 'reclassify'),
     'invalid.cog.tif': ('invalid.tif', 'weighted_sum', 10., 'rotated', 'direct'),
     'below.cog.tif': ('north.tif', 'weighted_mean', 3.9999999999999996, 'below', 'direct'),
+    'seven-north-mean.cog.tif': ('north.tif', 'weighted_mean', 9.0, 'seven-asymmetric', 'direct'),
+    'seven-rotated-stddev.cog.tif': ('rotated-values.tif', 'weighted_stddev', 15.0, 'seven-asymmetric', 'direct'),
+    'seven-cross-sum.cog.tif': ('cross-block.tif', 'weighted_sum', 15.0, 'seven-asymmetric', 'direct'),
+    'seven-ones-mean.cog.tif': ('control.tif', 'weighted_mean', 9.0, 'seven-ones', 'direct'),
+    'seven-control-mean.cog.tif': ('control.tif', 'mean', 9.0, None, 'direct'),
+    'seven-ones-stddev.cog.tif': ('control.tif', 'weighted_stddev', 9.0, 'seven-ones', 'direct'),
+    'seven-control-stddev.cog.tif': ('control.tif', 'stddev', 9.0, None, 'direct'),
+    'seven-ones-sum.cog.tif': ('control.tif', 'weighted_sum', 9.0, 'seven-ones', 'direct'),
+    'seven-control-sum.cog.tif': ('control.tif', 'sum', 9.0, None, 'direct'),
 }
 KERNELS = {
     'north': [[0, 2, 0], [1, 0, 3], [0, 0, 0]],
@@ -37,6 +46,24 @@ KERNELS = {
     'ones': [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
     'center': [[2]],
     'below': [[0, 0, 0], [1, 0, 3], [0, 0, 0]],
+    'seven-asymmetric': [
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0.5, 0, 0, 0],
+        [2, 0, 0, 0, 1, 0, 3],
+        [0, 0, 4, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+    ],
+    'seven-ones': [
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 1, 1, 0, 0],
+        [0, 1, 1, 1, 1, 1, 0],
+        [1, 1, 1, 1, 1, 1, 1],
+        [0, 1, 1, 1, 1, 1, 0],
+        [0, 0, 1, 1, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0],
+    ],
 }
 FAILURES = (
     'weight_missing', 'weight_null', 'weight_scalar', 'weight_flat', 'weight_ragged',
@@ -57,6 +84,9 @@ COMPARISONS = (
     ('ones-mean.cog.tif', 'control-mean.cog.tif'),
     ('ones-stddev.cog.tif', 'control-stddev.cog.tif'),
     ('ones-sum.cog.tif', 'control-sum.cog.tif'),
+    ('seven-ones-mean.cog.tif', 'seven-control-mean.cog.tif'),
+    ('seven-ones-stddev.cog.tif', 'seven-control-stddev.cog.tif'),
+    ('seven-ones-sum.cog.tif', 'seven-control-sum.cog.tif'),
 )
 BOUNDARY_PAIR = ('north-mean.cog.tif', 'below.cog.tif')
 class FixtureError(RuntimeError):pass
@@ -150,9 +180,13 @@ def source_arrays(name):
             values[row, 10:12] = [0., 4.]
             values[row, 20:22] = [-4., 4.]
             values[row, 30:32] = [2., 2.]
+        values[75, [70, 73]] = [0., 8.]
     elif name == 'invalid.tif':
         values[:] = spec['nodata']
     elif name == 'cross-block.tif':
+        mask[359, 359] = 0
+        alpha[360, 361] = 0.
+        values[360, 357:364] = [12., -1., 0., 1., 2., 3., -8.]
         values[508, 508] = spec['nodata']
         alpha[509, 509] = 0.
         mask[510, 510] = 0
@@ -208,7 +242,7 @@ def scalar_value(samples, method):
     return float((sum(weight * (value - mean)**2 for value, weight in pairs) / mass).sqrt())
 
 
-@lru_cache(maxsize=18)
+@lru_cache(maxsize=len(CASES))
 def expected_pixels(name):
     # Independently enumerate grid centres with Decimal and reduce positional weights.
     from decimal import Decimal, localcontext
@@ -224,7 +258,7 @@ def expected_pixels(name):
         _, column_x, row_x, _, column_y, row_y = map(d, source_spec(source)['grid'])
         units = d(reference(source).GetLinearUnits())
         radius_squared = d(radius)**2
-        offsets = [(dr, dc) for dr in range(-2, 3) for dc in range(-2, 3)
+        offsets = [(dr, dc) for dr in range(-3, 4) for dc in range(-3, 4)
                    if ((dc*column_x + dr*row_x)*units)**2
                    + ((dc*column_y + dr*row_y)*units)**2 <= radius_squared]
         if kernel is None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eighteen original COGs, 72 accurate failures, 1467 full output rereads, fixed 600s."""
+"""Twenty-seven original COGs, 72 accurate failures, 2322 full output rereads, fixed 600s."""
 from __future__ import annotations
 import copy
 import hashlib
@@ -216,8 +216,8 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
         baseline=physical_runner(repository,env,'prepare-oracle',[],remaining());remaining()
         anchor=baseline.get('anchor_sha256');scope=baseline.get('scope_sha256')
         if any(not isinstance(v,str) or not re.fullmatch('[0-9a-f]{64}',v) for v in (anchor,scope)):raise SuiteError('frozen oracle identity missing')
-        if type(baseline.get('expected_array_count')) is not int or baseline['expected_array_count']!=18:raise SuiteError('eighteen frozen independent arrays required')
-        if type(baseline.get('cache_bytes')) is not int or not fixture.expected_cache_bytes()<baseline['cache_bytes']<fixture.expected_cache_bytes()+18*1024:raise SuiteError('per-case cache byte bound differs')
+        if type(baseline.get('expected_array_count')) is not int or baseline['expected_array_count']!=27:raise SuiteError('twenty-seven frozen independent arrays required')
+        if type(baseline.get('cache_bytes')) is not int or not fixture.expected_cache_bytes()<baseline['cache_bytes']<fixture.expected_cache_bytes()+27*1024:raise SuiteError('per-case cache byte bound differs')
         env['ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_ORACLE_ANCHOR_SHA256']=anchor
         immutable(directory/'circle-weighted-oracle-preparation.json',encoded(baseline))
         check_physical(baseline,baseline.get('sources'),{},scope,[])
@@ -280,7 +280,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                 physical_calls += 1; full_checks += len(names)
                 failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic, 'no_publication_or_scan_or_lineage': True})
                 stages[-1]['status'] = 'passed'; progress('running')
-        if len(cases) != 18 or len(failures) != 72 or full_checks != 1467 or physical_calls != 91: raise SuiteError('all 18 successes, 72 failures, 1467 COG checks and 91 physical calls required')
+        if len(cases) != 27 or len(failures) != 72 or full_checks != 2322 or physical_calls != 100: raise SuiteError('all 27 successes, 72 failures, 2322 COG checks and 100 physical calls required')
         source_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name,item in items.items()}
         if source_metadata_after != before: raise SuiteError('source metadata changed')
         target_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{case["target_item_id"]}', (200,)).payload for name,case in zip(names,cases)}

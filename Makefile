@@ -887,7 +887,7 @@ test-raster-focal-circle-orthogonal-online-runner: test-raster-lineage-observer-
 	@python3 -m unittest scripts/test/raster-focal-circle-orthogonal-persistence-online_test.py scripts/test/online-raster-focal-circle-orthogonal-fixture_test.py scripts/test/online-hosted-raster-focal-circle-orthogonal-gate_test.py
 
 .PHONY: test-raster-focal-circle-weighted-online-runner
-test-raster-focal-circle-weighted-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证加权圆窗18成功72失败1467全检及600秒隔离生命周期
+test-raster-focal-circle-weighted-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证加权圆窗27成功72失败2322全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-circle-weighted-gate.sh
 	@python3 -m unittest scripts/test/raster-focal-circle-weighted-persistence-online_test.py scripts/test/online-raster-focal-circle-weighted-fixture_test.py scripts/test/online-hosted-raster-focal-circle-weighted-gate_test.py
 

@@ -24,12 +24,12 @@ def circle_scene(tmp_path_factory,request):
         m.validate_affine(artifact['transform'], f.artifact_expectation(name), 'Native artifact')
     return root,initial,control
 
-def test_weighted_circle_hosted_eighteen_real_cogs_complete_oracle_circle_boundaries_controls_and_original_bytes(circle_scene,tmp_path):
+def test_weighted_circle_hosted_twenty_seven_real_cogs_complete_oracle_circle_boundaries_controls_and_original_bytes(circle_scene,tmp_path):
     root,initial,control=circle_scene;report=f.verify(root,list(f.TARGETS),control)
-    assert report['sources']==initial['sources'] and report['full_source_pixels_verified'] is True and len(report['targets'])==18
+    assert report['sources']==initial['sources'] and report['full_source_pixels_verified'] is True and len(report['targets'])==27
     archived=f.archive_cogs(root,tmp_path,report,{})
     expectations=f.archive_expectations(root,tmp_path,{})
-    assert len(expectations)==18
+    assert len(expectations)==27
     for name in f.TARGETS:
         path=tmp_path/expectations[name+'.npy']['path']
         assert path.read_bytes()==(f.oracle_path(control['scope'])/(name+'.npy')).read_bytes()
@@ -44,6 +44,10 @@ def test_weighted_circle_hosted_eighteen_real_cogs_complete_oracle_circle_bounda
     assert json.loads((tmp_path/'circle-weighted-cogs-manifest.json').read_text())==archived
     assert report['comparisons'] == [list(pair) for pair in f.COMPARISONS]
     assert report['boundary_witness'] == {'equal': 4., 'below': 2.}
+    for method, expected in [('mean', 4.), ('stddev', 4.), ('sum', 8.)]:
+        ds = gdal.Open(str(root/'outputs'/f'seven-ones-{method}.cog.tif'))
+        assert ds.ReadAsArray(70, 75, 1, 1).item() == expected
+        ds = None
     for left, right in f.COMPARISONS:
         np.testing.assert_array_equal(f.expected_pixels(left), f.expected_pixels(right))
     for name, wanted in [('ones-mean.cog.tif', [2., 0., 2.]),
@@ -137,7 +141,7 @@ def test_weighted_circle_hosted_stdin_worker_has_no_repository_dependency_and_ex
         assert result.returncode==0,result.stderr.decode();return json.loads(result.stdout)
     child=call('prepare-oracle',control['scope'])
     try:
-        report=call('verify',child,list(f.TARGETS));assert report['sources']==initial['sources'] and report['oracle_cache']['full_target_checks']==18
+        report=call('verify',child,list(f.TARGETS));assert report['sources']==initial['sources'] and report['oracle_cache']['full_target_checks']==27
     finally:assert call('cleanup-oracle',child)['oracle_cache_removed'] is True
     assert not list(scratch.iterdir())
 

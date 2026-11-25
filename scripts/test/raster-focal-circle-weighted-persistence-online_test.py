@@ -34,7 +34,7 @@ def physical(repository,env,action,names,timeout):
         'archived_cogs':{n:{'path':'circle-weighted-cogs/'+n,**{k:v[k] for k in ('size_bytes','sha256')}} for n,v in targets.items()},
         'boundary_witness':{'equal':4.,'below':2.} if all(n in names for n in m.fixture.BOUNDARY_PAIR) else None,
         'comparisons':[list(pair) for pair in m.fixture.COMPARISONS if all(n in names for n in pair)]}
-    if action=='prepare-oracle':result.update(scope_sha256='a'*64,anchor_sha256='b'*64,expected_array_count=18,cache_bytes=m.fixture.expected_cache_bytes()+18*128)
+    if action=='prepare-oracle':result.update(scope_sha256='a'*64,anchor_sha256='b'*64,expected_array_count=27,cache_bytes=m.fixture.expected_cache_bytes()+27*128)
     return result
 
 def diagnostic(repository, env, identifier, problem, language, timeout):
@@ -67,7 +67,7 @@ class Client:
         elif '/meta/items/' in path: data = next(copy.deepcopy(v) for v in self.items.values() if v['id'] == int(path.rsplit('/',1)[-1]))
         elif '/meta/scan/runs?' in path: data = {'total':len(self.scans), 'items':[{'execution_id':n} for n in self.scans]}
         elif '/meta/lineage/graph?' in path:
-            data = {'truncated':False,'nodes':[], 'edges':[{'status':'active','relation_kind':'derive','execution_id':'bad'}] if self.added_edge and len(self.executions)>18 else []}
+            data = {'truncated':False,'nodes':[], 'edges':[{'status':'active','relation_kind':'derive','execution_id':'bad'}] if self.added_edge and len(self.executions)>27 else []}
         elif path == '/api/v1/develop/executions' and method == 'POST':
             dag = body['content']['workflow_definition']; target_name = dag['tasks'][-1]['params']['target_name']; success = target_name in m.fixture.CASES
             identifier = str(uuid.UUID(int=len(self.executions)+1)); language = headers['Accept-Language']
@@ -108,17 +108,17 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
         with patch.object(m.raster,'wait_lineage',side_effect=relation):
             return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader)
-    def test_full_matrix_18_success_72_failures_1467_checks_and_cleanup(self):
+    def test_full_matrix_27_success_72_failures_2322_checks_and_cleanup(self):
         client=Client();calls=[]
         def worker(*args): calls.append((args[2],list(args[3]))); return physical(*args)
         report=self.run_case(client,worker)
-        self.assertEqual((len(report['cases']),len(report['failed_parameters']),report['full_target_checks'],report['physical_verification_calls']),(18,72,1467,91))
-        self.assertEqual(sum(len(names) for action,names in calls if action=='verify'),1467)
-        self.assertEqual(len(self.relations),18);self.assertTrue(report['oracle_cache_removed'])
+        self.assertEqual((len(report['cases']),len(report['failed_parameters']),report['full_target_checks'],report['physical_verification_calls']),(27,72,2322,100))
+        self.assertEqual(sum(len(names) for action,names in calls if action=='verify'),2322)
+        self.assertEqual(len(self.relations),27);self.assertTrue(report['oracle_cache_removed'])
         self.assertEqual(report['source_scan_identity']['parent_execution_id'],None)
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
         self.assertEqual({(x['problem'],x['language']) for x in report['failed_parameters']},{(p,l) for p in m.FAILURES for l in ('zh-cn','en')})
-        self.assertEqual(len(list((self.root/'evidence/circle-weighted-lineage').iterdir())),18)
+        self.assertEqual(len(list((self.root/'evidence/circle-weighted-lineage').iterdir())),27)
         offset=0
         for case in report['cases']:
             count=len(m.case_inputs(case['name']));observed=self.relations[offset:offset+count];offset+=count
@@ -193,8 +193,8 @@ class FrozenExpectedReceiptTest(unittest.TestCase):
 
 
 class CircleContractTest(ZonalPercentileWorkflowTest):
-    def test_exact_18_36_matrix_circle_radius_weights_and_actual_controls(self):
-        self.assertEqual((len(m.fixture.CASES),len(m.FAILURES),len(m.MESSAGES)),(18,36,36))
+    def test_exact_27_36_matrix_circle_radius_weights_and_actual_controls(self):
+        self.assertEqual((len(m.fixture.CASES),len(m.FAILURES),len(m.MESSAGES)),(27,36,36))
         sources={n:n for n in m.fixture.SOURCES}
         for name in m.fixture.TARGETS:
             dag=m.definition(sources,'parent',name);params=dag['tasks'][-2]['params']
@@ -212,11 +212,11 @@ class CircleContractTest(ZonalPercentileWorkflowTest):
         report=self.run_case()
         self.assertEqual(report['source_metadata_before'],report['source_metadata_after'])
         self.assertEqual(report['target_metadata_before'],report['target_metadata_after'])
-        self.assertEqual(len(report['target_metadata_before']),18)
+        self.assertEqual(len(report['target_metadata_before']),27)
         class Changed(Client):
             def request(self,method,path,expected,body=None,headers=None):
                 result=super().request(method,path,expected,body,headers)
-                if '/meta/items/'in path and len(self.executions)==90 and result.payload.get('full_name','').startswith('outputs/'):
+                if '/meta/items/'in path and len(self.executions)==99 and result.payload.get('full_name','').startswith('outputs/'):
                     result.payload['fingerprint']='changed'
                 return result
         with tempfile.TemporaryDirectory()as path:
