@@ -78,5 +78,8 @@ func (r *AutomaticCollectionRepository) Save(ctx context.Context, scope metricsd
 
 // Serialize policy changes with commits based on current metric evidence.
 func LockAutomaticCollection(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "mysql" {
+		return lockMySQLConfiguration(tx, "monitor.automatic-collection")
+	}
 	return tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", models.AutomaticCollectionLockNamespace, models.AutomaticCollectionLockID).Error
 }

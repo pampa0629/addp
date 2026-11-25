@@ -10,6 +10,7 @@ import (
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/resourcequery"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -169,7 +170,7 @@ func (s *ProcessAlertRuleService) applyProcessRule(ctx context.Context, old mode
 			// Serialize with the existing query-policy CAS, including its absent
 			// default row. A queued database write cannot publish an expired lease
 			// or evidence obtained under a replaced query policy.
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", models.ResourceQueryPolicyLockNamespace, models.ResourceQueryPolicyLockID).Error; err != nil {
+			if err := repository.LockResourceQueryPolicy(tx); err != nil {
 				return err
 			}
 			var currentPolicy models.ResourceQueryPolicy

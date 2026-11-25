@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/resourcequery"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -164,7 +165,7 @@ func (s *ResourceAlertRuleService) Save(ctx context.Context, id, token string, i
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if id == "" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('monitor.resource-alert-rules',0))").Error; err != nil {
+			if err := repository.LockAlertRuleSet(tx, "monitor.resource-alert-rules"); err != nil {
 				return err
 			}
 			var count int64

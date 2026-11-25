@@ -503,3 +503,7 @@ CREATE TABLE IF NOT EXISTS `platform_alert_deliveries` (
 CREATE TABLE IF NOT EXISTS platform_alert_identity_locks (
     identity_key BINARY(32) NOT NULL PRIMARY KEY
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS configuration_locks (
+    configuration_key VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY
+) ENGINE=InnoDB;

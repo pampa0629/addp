@@ -12,6 +12,7 @@ import (
 
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/resourcequery"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -224,7 +225,7 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 		var evidence *models.ResourceAlertEvidence
 		if reason == "" && source != nil {
 			// Share the policy CAS lock, including the not-yet-created default row.
-			if err = tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", models.ResourceQueryPolicyLockNamespace, models.ResourceQueryPolicyLockID).Error; err != nil {
+			if err = repository.LockResourceQueryPolicy(tx); err != nil {
 				return err
 			}
 			var policy models.ResourceQueryPolicy

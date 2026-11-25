@@ -9,7 +9,10 @@ import (
 
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/monitor/internal/config"
+	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/repository"
+	"github.com/addp/monitor/internal/resourcequery"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -24,6 +27,40 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 	}
 	t.Run("platform notification and search", func(t *testing.T) { checkPlatformAlertNotificationAndSearch(t, db) })
 	t.Run("concurrent first evaluations", func(t *testing.T) { checkConcurrentPlatformAlertEvaluations(t, db) })
+	t.Run("configuration compare and swap", func(t *testing.T) {
+		tx := db.Begin()
+		if tx.Error != nil {
+			t.Fatal(tx.Error)
+		}
+		t.Cleanup(func() { tx.Rollback() })
+		ctx := t.Context()
+		policies := repository.NewResourceQueryPolicyRepository(tx)
+		current, err := policies.Get(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, err := policies.Save(ctx, current, current.Version)
+		if err != nil || next.Version != current.Version+1 {
+			t.Fatalf("policy version=%d err=%v", next.Version, err)
+		}
+		if _, err = policies.Save(ctx, current, current.Version); !errors.Is(err, resourcequery.ErrConflict) {
+			t.Fatalf("stale policy: %v", err)
+		}
+		scope := metricsdiscovery.AutomaticScope{ID: "process:monitor:backend", Kind: "process", ModuleName: "monitor", Role: "backend"}
+		scopes := repository.NewAutomaticCollectionRepository(tx)
+		paused, err := scopes.Save(ctx, scope, false, 1)
+		if err != nil || paused.Enabled || paused.Version != 2 {
+			t.Fatalf("collection pause=%+v err=%v", paused, err)
+		}
+		if _, err = scopes.Save(ctx, scope, true, 1); !errors.Is(err, repository.ErrTargetConflict) {
+			t.Fatalf("stale collection scope: %v", err)
+		}
+		for _, key := range []string{"monitor.resource-alert-rules", "monitor.http-alert-rules", "monitor.process-alert-rules", "monitor.service-availability-rules"} {
+			if err := repository.LockAlertRuleSet(tx, key); err != nil {
+				t.Fatalf("%s: %v", key, err)
+			}
+		}
+	})
 	key := uuid.NewString()
 	now := time.Now().UTC()
 	tests := []struct {

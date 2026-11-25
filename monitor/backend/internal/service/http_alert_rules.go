@@ -14,6 +14,7 @@ import (
 
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/resourcequery"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -108,7 +109,7 @@ func (s *HTTPAlertRuleService) Save(ctx context.Context, id, token string, input
 	subjectKey := fmt.Sprintf("%x", sha256.Sum256(encoded))
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if id == "" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('monitor.http-alert-rules',0))").Error; err != nil {
+			if err := repository.LockAlertRuleSet(tx, "monitor.http-alert-rules"); err != nil {
 				return err
 			}
 			var count int64

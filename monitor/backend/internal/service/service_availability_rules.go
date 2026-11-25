@@ -17,6 +17,7 @@ import (
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -200,7 +201,7 @@ func (s *ServiceAvailabilityRuleService) Save(ctx context.Context, id, token str
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if id == "" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('monitor.service-availability-rules',0))").Error; err != nil {
+			if err := repository.LockAlertRuleSet(tx, "monitor.service-availability-rules"); err != nil {
 				return err
 			}
 			var count int64
