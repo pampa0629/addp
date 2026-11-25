@@ -44,7 +44,7 @@ Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与
 
 平台节点指标 Hosted T4 的 `cmd/online-test-fixture --suite platform-node-metrics` 使用正式三员 Bootstrap，独立准备临时系统/安全管理员登录及 TOTP 凭据，不直接签发平台 User Token。两个不同的非默认 Tenant User 仅授予 `monitor.execution.read`，用于验证平台入口越权拒绝。凭据只写入 owner-only 临时文件，身份随当次 Hosted Infra 销毁；真实登录/MFA、节点/目标管理与独立 Prometheus 发现身份由同名 T4 suite 验证，身份数据库回归纳入既有 Online fixture PostgreSQL 门禁。
 
-MySQL 的 System 安装入口同时准备租户邀请的待处理邮箱唯一约束、终态不可变和历史保留约束。邀请到期与逐条审计由 System 在同一事务内完成，部署账号和运行账号沿用平台约定。
+MySQL 的 System 安装入口同时准备租户邀请的待处理邮箱唯一约束、终态不可变和历史保留约束。邀请到期与逐条审计由 System 在同一事务内完成，部署账号和运行账号沿用平台约定。用户自行绑定 TOTP 时，PG 和 MySQL 均保存加密登记、校验原会话，并在一次性消费登记后将会话替换为相同租户的 AAL2 会话。
 
 ## 项目概述
 

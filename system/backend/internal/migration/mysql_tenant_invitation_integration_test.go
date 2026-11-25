@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/iam"
+	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
 
@@ -64,4 +66,47 @@ func checkMySQLTenantInvitation(t *testing.T, db *gorm.DB, repo *iam.Repository,
 	if accepted.Invitation.Status != iam.TenantInvitationStatusAccepted || accepted.Membership.TenantID != member.TenantID || accepted.Membership.SourceType != iam.TenantMembershipSourceInvitation || accepted.Session.AccessToken == "" {
 		t.Fatal("registration did not create a tenant membership and login session")
 	}
+	t.Run("self-service MFA enrollment replaces only the original family", func(t *testing.T) {
+		cipher, err := iam.NewMFACredentialCipher(bytes.Repeat([]byte{1}, 32))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mfa, err := iam.NewMFASessionService(repo, cipher, tokens, iam.MFAServiceConfig{}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := accepted.Session
+		begin := iam.BeginMFAEnrollmentInput{AccessToken: source.AccessToken, RefreshToken: source.RefreshToken, CurrentPassword: "invalid"}
+		if _, err := mfa.BeginEnrollment(ctx, begin); !errors.Is(err, iam.ErrInvalidCurrentPassword) {
+			t.Fatalf("invalid current password: %v", err)
+		}
+		begin.CurrentPassword = "invited-mysql-password"
+		enrollment, err := mfa.BeginEnrollment(ctx, begin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		code, err := totp.GenerateCode(enrollment.Secret, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		complete := iam.CompleteMFAEnrollmentInput{AccessToken: source.AccessToken, RefreshToken: source.RefreshToken, EnrollmentToken: enrollment.EnrollmentToken, Code: code}
+		replacement, err := mfa.CompleteEnrollment(ctx, complete)
+		if err != nil {
+			t.Fatal(err)
+		}
+		old, err := repo.GetRefreshTokenFamily(ctx, source.FamilyID)
+		if err != nil || old.RevokedAt == nil {
+			t.Fatalf("old family still active: %v", err)
+		}
+		current, err := repo.GetRefreshTokenFamily(ctx, replacement.FamilyID)
+		if err != nil || current.ID == old.ID || current.AssuranceLevel != iam.AssuranceLevelAAL2 || current.TenantMembershipID == nil || *current.TenantMembershipID != accepted.Membership.ID || !current.ExpiresAt.Equal(old.ExpiresAt) {
+			t.Fatalf("replacement family binding: %v", err)
+		}
+		if _, err := mfa.CompleteEnrollment(ctx, complete); err == nil {
+			t.Fatal("enrollment was consumed twice")
+		}
+		if err := db.Exec("UPDATE mfa_enrollments SET consumed_at=NULL WHERE source_family_id=?", source.FamilyID).Error; err == nil {
+			t.Fatal("reopened consumed enrollment")
+		}
+	})
 }
