@@ -143,7 +143,7 @@ if [[ $owner == monitor && $provider == mysql ]]; then
     docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -N -B monitor'
   }
   gate_mysql <<'SQL'
-INSERT INTO platform_alert_incidents (version,category,subject_kind,subject_id,signal,severity,status,opened_at,last_observed_at)
+INSERT INTO platform_alert_incidents (version,category,subject_kind,subject_id,`signal`,severity,status,opened_at,last_observed_at)
 VALUES (1,'log_pipeline','observer','upgrade-fixture','delivery_probe','warning','resolved',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
 DROP TABLE platform_alert_identity_locks, configuration_locks;
 UPDATE startup_schema_revision SET version=1 WHERE owner='monitor' AND version=3;
