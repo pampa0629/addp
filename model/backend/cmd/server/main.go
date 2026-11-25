@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/addp/common/infra/database"
 	"log"
 	"net"
 	"os"
@@ -36,6 +38,27 @@ import (
 // @name Authorization
 
 func main() {
+	if len(os.Args) > 1 {
+		if len(os.Args) != 2 || os.Args[1] != "prepare-database" {
+			fmt.Fprintln(os.Stderr, "expected prepare-database")
+			os.Exit(2)
+		}
+		db, err := bootstrap.OpenPlatformInstallation(platformDatabase(), "model")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := modelmigration.Prepare(db); err != nil {
+			var pending *schema.PendingMySQLTriggers
+			if errors.As(err, &pending) {
+				if err := pending.WriteSQL(os.Stdout, "model"); err != nil {
+					log.Fatal(err)
+				}
+				os.Exit(3)
+			}
+			log.Fatal(err)
+		}
+		return
+	}
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -45,7 +68,7 @@ func main() {
 	defer stopRuntime()
 
 	// 连接数据库
-	db, err := openDatabase(cfg)
+	db, err := openDatabase()
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -53,8 +76,8 @@ func main() {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
-	if err := modelmigration.Run(db); err != nil {
-		log.Fatalf("Failed to migrate Model database: %v", err)
+	if err := schema.Require(db, "model", modelmigration.SchemaVersion); err != nil {
+		log.Fatalf("Failed to verify Model database: %v", err)
 	}
 
 	// 连接 Redis
@@ -181,6 +204,10 @@ func main() {
 	<-registration.Done()
 }
 
-func openDatabase(cfg *config.Config) (*gorm.DB, error) {
-	return bootstrap.OpenDatabase(cfg.PlatformDatabase(), &gorm.Config{TranslateError: true})
+func platformDatabase() database.Config {
+	return database.Config{Host: commonConfig.GetEnv("POSTGRES_HOST", "localhost"), Port: commonConfig.GetEnv("POSTGRES_PORT", "15432"), DBName: commonConfig.GetEnv("POSTGRES_DB", "addp"), Schema: "model"}
+}
+
+func openDatabase() (*gorm.DB, error) {
+	return bootstrap.OpenPlatformRuntime(platformDatabase(), "model", &gorm.Config{TranslateError: true})
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
-# ADDP_T2_INPUT_FILES=common/domainreference/ docker-compose.yml common/infra/bootstrap/ common/infra/database/ common/config/timezone.go
+# ADDP_T2_INPUT_FILES=scripts/test/module-platform-deployment.sh scripts/test/module-platform-startup.py scripts/infra/platform-database.sh scripts/prod/start.sh scripts/prod/prepare-module-databases.sh scripts/prod/system-meta-gateway.yml scripts/prod/release-images.py scripts/test/common-mysql-data-protection-gate.sh common/domainreference/ docker-compose.yml common/infra/bootstrap/ common/infra/database/ common/config/timezone.go
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MODEL_POSTGRES_DSN
 # model-postgres-gate.sh - Run Model PostgreSQL integration tests against a disposable database.
 

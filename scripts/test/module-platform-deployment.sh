@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 container=${1:?expected gate-owned container ID}
 owner=${2:?expected database owner}
-case "$owner" in standard|monitor|orchestrator) ;; *) exit 2 ;; esac
+case "$owner" in model|standard|monitor|orchestrator) ;; *) exit 2 ;; esac
 provider=${ADDP_INFRA_DATABASE_PROVIDER:?}
 work=$(mktemp -d)
 install_volume=""
@@ -63,7 +63,22 @@ runtime() { python3 "$root/scripts/test/module-platform-startup.py" "$work/$owne
 install_dir="$work/linux"
 mkdir "$install_dir"
 arch=$(docker image inspect "$(docker inspect -f '{{.Image}}' "$container")" -f '{{.Architecture}}')
-(cd "$root/$owner/backend" && CGO_ENABLED=0 GOWORK=off GOOS=linux GOARCH="$arch" go build -o "$install_dir/server" ./cmd/server)
+if [[ $owner == model ]]; then
+  # The registered Model engine plugins include the native PostgreSQL parser.
+  # Link its C runtime statically so the installer also runs in the DB fixture image.
+  build=(go build -tags netgo,osusergo -ldflags '-linkmode external -extldflags -static')
+  if [[ $(go env GOHOSTOS)/$(go env GOHOSTARCH) == "linux/$arch" ]]; then
+    (cd "$root/$owner/backend" && CGO_ENABLED=1 GOWORK=off "${build[@]}" -o "$install_dir/server" ./cmd/server)
+  else
+    docker run --rm --platform "linux/$arch" -v "$root:/workspace:ro" \
+      -v "${ADDP_BUILD_GOMODCACHE:-$(go env GOMODCACHE)}:/go/pkg/mod" \
+      -v "${ADDP_BUILD_GOCACHE:-$(go env GOCACHE)}:/root/.cache/go-build" \
+      -e CGO_ENABLED=1 -e GOWORK=off -w "/workspace/$owner/backend" golang:1.24 \
+      sh -ec '"$@" -o /tmp/server ./cmd/server >&2; cat /tmp/server' build "${build[@]}" >"$install_dir/server"
+  fi
+else
+  (cd "$root/$owner/backend" && CGO_ENABLED=0 GOWORK=off GOOS=linux GOARCH="$arch" go build -o "$install_dir/server" ./cmd/server)
+fi
 export MODULE_GATE_IMAGE
 MODULE_GATE_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$container")
 install_volume=$(docker volume create --label "addp.deployment-gate=$owner")
@@ -103,13 +118,13 @@ snapshot >refused.sql
 cmp before-owner.sql refused.sql
 # The same release database phase and the same module command run on both providers.
 prepare=(bash "$root/scripts/prod/prepare-module-databases.sh" selected -p "owner-install-$$" -f "$work/install.yml")
-if [[ $owner == standard && $provider == mysql ]]; then
+if [[ ( $owner == standard || $owner == model ) && $provider == mysql ]]; then
   status=0
   "${prepare[@]}" >"$work/installer.out" || status=$?
   case "$status" in
     0) ;;
     3)
-      sed -n '/^USE `standard`;$/,/^DELIMITER ;$/p' "$work/installer.out" >"$work/triggers.sql"
+      sed -n "/^USE \`$owner\`;$/,/^DELIMITER ;$/p" "$work/installer.out" >"$work/triggers.sql"
       grep -q '^CREATE DEFINER=' "$work/triggers.sql"
       docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot' <"$work/triggers.sql"
       "${prepare[@]}" ;;
@@ -121,6 +136,8 @@ fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
+elif [[ $owner == model ]]; then
+  grep -qi 'CREATE TABLE.*logical_tables' installed.sql
 elif [[ $owner == standard ]]; then
   grep -qi 'CREATE TABLE.*element_revisions' installed.sql
 else
@@ -137,4 +154,7 @@ if [[ "$owner" == monitor ]]; then
 fi
 if [[ $owner == standard ]]; then
   (cd "$root/standard/backend" && ADDP_TEST_STANDARD_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledElementPublication$' -count=1 -v)
+fi
+if [[ $owner == model ]]; then
+  (cd "$root/model/backend" && ADDP_TEST_MODEL_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledModelEntity$' -count=1 -v)
 fi

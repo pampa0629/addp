@@ -1471,6 +1471,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Model Backend（带检查）
   if [ "$START_MODEL_BACKEND" = true ]; then
     if check_service_running "model" "$MODEL_BACKEND_PORT"; then
+      addp_dev_prepare_database model || exit 1
       python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" model model backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-model" &
       MODEL_PID=$!
       echo $MODEL_PID > .dev-pids/model.pid

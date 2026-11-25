@@ -18,8 +18,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-standard-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-standard-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-standard-install|platform-model-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read|platform-database|platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-standard-install|platform-model-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -46,7 +46,7 @@ if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
 fi
 
 case "$test_group" in
-    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-standard-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
+    platform-execution|platform-common-install|platform-projection-store|platform-export-store|platform-manager-storage|platform-standard-repository|platform-model-repository|platform-service-repository|platform-orchestrator-execution|platform-monitor-runtime|platform-monitor-install|platform-standard-install|platform-model-install|platform-cleanup-results|platform-system-request|platform-source-grant-boundary|platform-system-iam-foundation|platform-system-registry|platform-system-install|platform-gateway-install|platform-inference-install|platform-workbench-install|platform-meta-scan)
         if [ "$local_disposable" != true ]; then
             echo "$test_group requires a gate-owned instance (--local-disposable)" >&2
             exit 2
@@ -127,6 +127,7 @@ mysql['environment']['MYSQL_DATABASE'] = {
     'platform-monitor-runtime': 'common',
     'platform-monitor-install': 'monitor',
     'platform-standard-install': 'standard',
+    'platform-model-install': 'model',
     'platform-cleanup-results': 'manager',
     'platform-system-request': 'system',
     'platform-source-grant-boundary': 'system',
@@ -234,7 +235,7 @@ if [ "$test_group" = platform-monitor-runtime ]; then
     exit 0
 fi
 
-if [[ "$test_group" == platform-orchestrator-execution || "$test_group" == platform-monitor-install || "$test_group" == platform-standard-install ]]; then
+if [[ "$test_group" == platform-orchestrator-execution || "$test_group" == platform-monitor-install || "$test_group" == platform-standard-install || "$test_group" == platform-model-install ]]; then
     owner=orchestrator
     if [[ "$test_group" == *-install ]]; then owner=${test_group#platform-}; owner=${owner%-install}; fi
     export ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port"

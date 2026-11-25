@@ -13,7 +13,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/schema"
-	"github.com/addp/model/internal/config"
+
 	"github.com/addp/model/internal/migration"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
@@ -22,6 +22,7 @@ import (
 
 func TestModelServerProcess(t *testing.T) {
 	if os.Getenv("ADDP_TEST_RUN_MODEL_MAIN") == "1" {
+		os.Args = os.Args[:1]
 		main()
 	}
 }
@@ -50,8 +51,10 @@ func TestPostgresStartupErrors(t *testing.T) {
 	t.Setenv("POSTGRES_HOST", socket)
 	t.Setenv("POSTGRES_PORT", "5432")
 	t.Setenv("POSTGRES_DB", "addp_test")
-	t.Setenv("ADDP_INFRA_DATABASE_PROVIDER", "mysql")
-	requireModelStartupExit(t, `unsupported platform database provider "mysql"`)
+	t.Setenv("ADDP_DATABASE_RUNTIME_USER", "fixture")
+	t.Setenv("ADDP_DATABASE_RUNTIME_PASSWORD", "fixture")
+	t.Setenv("ADDP_INFRA_DATABASE_PROVIDER", "unknown")
+	requireModelStartupExit(t, `unsupported platform database provider "unknown"`)
 	t.Setenv("ADDP_INFRA_DATABASE_PROVIDER", "postgres")
 	requireModelStartupExit(t, "dial unix "+socket+"/.s.PGSQL.5432")
 }
@@ -70,17 +73,14 @@ func TestPostgresModelDatabaseStartup(t *testing.T) {
 	t.Setenv("POSTGRES_PORT", target.Port())
 	t.Setenv("POSTGRES_USER", target.User.Username())
 	password, _ := target.User.Password()
-	t.Setenv("POSTGRES_PASSWORD", password)
+	t.Setenv("ADDP_DATABASE_RUNTIME_USER", target.User.Username())
+	t.Setenv("ADDP_DATABASE_RUNTIME_PASSWORD", password)
 	database := strings.TrimPrefix(target.Path, "/")
 	t.Setenv("POSTGRES_DB", database)
 	t.Setenv("MODEL_SERVICE_CLIENT_SECRET", "")
 	t.Setenv("TZ", "")
 	t.Setenv("ADDP_INFRA_DATABASE_PROVIDER", "")
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := openDatabase(cfg)
+	db, err := openDatabase()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,10 @@ func TestPostgresModelDatabaseStartup(t *testing.T) {
 		if err := db.Exec("CREATE SCHEMA model; CREATE TABLE model.standard_reference_guards (fixture boolean)").Error; err != nil {
 			t.Fatal(err)
 		}
-		requireModelStartupExit(t, "apply model migration 005_add_standard_reference_guards.up.sql")
+		requireModelStartupExit(t, "Failed to verify Model database:")
+		if err := migration.Prepare(db); err == nil || !strings.Contains(err.Error(), "005_add_standard_reference_guards.up.sql") {
+			t.Fatalf("installation must reject conflicting structure: %v", err)
+		}
 		assertModelRelations(t, db, false, "model.entities", "model.schema_migrations")
 		assertModelRelations(t, db, true, "model.standard_reference_guards")
 		if err := db.Exec("DROP TABLE model.standard_reference_guards").Error; err != nil {
@@ -116,6 +119,9 @@ func TestPostgresModelDatabaseStartup(t *testing.T) {
 	const serviceIdentity = "service token source requires System URL, client ID and a 32-byte client secret"
 	if hasCommonRevision {
 		if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+			t.Fatal(err)
+		}
+		if err := migration.Prepare(db); err != nil {
 			t.Fatal(err)
 		}
 		requireModelStartupExit(t, serviceIdentity)
@@ -149,7 +155,7 @@ func TestPostgresModelDatabaseStartup(t *testing.T) {
 		requireModelStartupExit(t, serviceIdentity)
 	}
 
-	explicit, err := openDatabase(cfg)
+	explicit, err := openDatabase()
 	if err != nil {
 		t.Fatal(err)
 	}

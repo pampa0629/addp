@@ -4,15 +4,13 @@ import (
 	"os"
 
 	commonConfig "github.com/addp/common/config"
-	"github.com/addp/common/infra/database"
 )
 
 type Config struct {
 	commonConfig.BaseConfig
 
 	// Model 模块特有配置
-	Port     string
-	DBSchema string
+	Port string
 
 	// Redis 配置
 	RedisHost     string
@@ -31,12 +29,9 @@ type Config struct {
 
 // LoadConfig 加载配置
 func LoadConfig() (*Config, error) {
-	// 使用 common/config 统一加载 .env 文件
-	commonConfig.LoadEnv()
 
 	cfg := &Config{
-		Port:     commonConfig.GetEnv("MODEL_BACKEND_PORT", "8181"),
-		DBSchema: "model",
+		Port: commonConfig.GetEnv("MODEL_BACKEND_PORT", "8181"),
 
 		RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:     commonConfig.GetEnv("REDIS_PORT", "16379"),
@@ -56,12 +51,4 @@ func LoadConfig() (*Config, error) {
 	cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
 
 	return cfg, nil
-}
-
-func (c *Config) PlatformDatabase() database.Config {
-	return database.Config{
-		Host: c.DBHost, Port: c.DBPort,
-		User: c.DBUser, Password: c.DBPassword,
-		DBName: c.DBName, Schema: c.DBSchema,
-	}
 }

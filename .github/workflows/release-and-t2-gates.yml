@@ -2166,6 +2166,15 @@ jobs:
       - name: Verify Model keyword search and domain references on MySQL 8
         run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-model-repository'
 
+      - name: Verify Model installation, runtime restarts and entity creation on MySQL
+        run: make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-model-install'
+
+      - name: Verify Model installation, runtime restarts and entity creation on PostgreSQL
+        env:
+          ADDP_INFRA_DATABASE_PROVIDER: postgres
+          PLATFORM_CI_PG_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/test/module-platform-deployment.sh "$PLATFORM_CI_PG_ID" model
+
       - name: Run Model PostgreSQL gate
         env:
           ADDP_TEST_MODEL_POSTGRES_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_model_disposable?sslmode=disable

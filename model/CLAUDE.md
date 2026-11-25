@@ -40,7 +40,7 @@ Model 以持久化 LogicalTable 提供 `logical_table_materialization` TaskProvi
 
 **数据库 Schema**: `model`
 
-Model Backend 通过 Common Infra 在启动时装配平台数据库，搜索路径为 `model`，PG 会话使用平台 `TZ`。建连后先检查 System 发布的 `common` schema 版本，再执行 Model 的事务化迁移。物化目标通过执行授权取得业务 Engine 连接。部署参数见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。
+Model Backend 通过 Common Infra 在启动时装配平台数据库，搜索路径为 `model`，PG 会话使用平台 `TZ`。建连后先检查 System 发布的 `common` schema 版本，再只读核验 Model 版本。根部署入口用部署身份准备 Model 自有表、冻结引用约束和 Catalog 变更触发器；PG 沿用逐文件迁移事务及历史，MySQL 初始化等价约束。物化目标通过执行授权取得业务 Engine 连接。部署参数见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。
 
 导航顺序、根路径的按权限落点、登录默认返回及显式业务地址处理，统一见[正式建模导航规范](docs/model概念与数据约束规范.md#建模导航与物理目标操作入口)。
 
