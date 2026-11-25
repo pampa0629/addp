@@ -29,7 +29,7 @@ application_owned=1
 # Owners require the initial Security protection projection before data reads.
 hosted_start_native_modules -security -transfer -manager -develop -orchestrator -monitor
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite transfer-relational-sql-etl --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite transfer-relational-sql-etl --wait-protection-owners manager,transfer,develop --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"

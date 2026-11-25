@@ -34,6 +34,7 @@ class HostedTransferGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_IDENTITY_FAIL:-0}" != 1 ] || exit 1
+            [[ "$*" == *'--wait-protection-owners manager,transfer,develop'* ]] || exit 1
             previous=
             for argument in "$@"; do
               if [ "$previous" = --output ]; then
