@@ -60,7 +60,7 @@ func verifyInstalledModelConstraints(t *testing.T, db *gorm.DB, entityID int64) 
 		t.Fatal(err)
 	}
 	approve := func() error { return db.Exec("UPDATE model.entities SET status='approved' WHERE id=?", entityID).Error }
-	if err := approve(); err == nil || !strings.Contains(err.Error(), "freeze") && !strings.Contains(err.Error(), "unfrozen") {
+	if err := approve(); !errors.Is(err, gorm.ErrCheckConstraintViolated) && (err == nil || !strings.Contains(err.Error(), "freeze") && !strings.Contains(err.Error(), "unfrozen")) {
 		t.Fatalf("unfrozen revision not rejected by owner constraint: %v", err)
 	}
 	if err := db.Exec("UPDATE model.entity_attributes SET element_revision_id=1 WHERE entity_id=?", entityID).Error; err != nil {
