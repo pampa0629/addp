@@ -59,7 +59,7 @@ func openMySQLCompatibleQueryReadSession(
 	prepared plugin.PreparedQuery,
 	authorize plugin.QueryReadAuthorizer,
 	bindSources mysqlCompatibleSourceBinder,
-) (_ *mysqlCompatibleQueryReadSession, err error) {
+) (*mysqlCompatibleQueryReadSession, error) {
 	var expected *plugin.QueryReadSet
 	if authorize != nil {
 		var err error
@@ -98,7 +98,6 @@ func openMySQLCompatibleQueryReadSession(
 			return nil, err
 		}
 		db = borrowed
-		defer func() { err = plugin.SQLExecutionError(err) }()
 	} else {
 		dsn, err := buildDSN(binding.ConnectionInfo)
 		if err != nil {
@@ -111,16 +110,21 @@ func openMySQLCompatibleQueryReadSession(
 	}
 	sessionCtx, cancel := context.WithCancel(ctx)
 	s := &mysqlCompatibleQueryReadSession{db: db, binding: binding, cancel: cancel, decode: decode}
+	closeAfterSQLError := func(err error) error {
+		_ = s.Close(ctx)
+		if borrowed != nil {
+			return plugin.SQLExecutionError(err)
+		}
+		return err
+	}
 	s.tx, err = plugin.BeginControlledReadOnlySQLTransactionWith(sessionCtx, db.BeginTx, provider.SQLDialect(), provider.ControlledReadOnlySQLBoundary(), sql.LevelRepeatableRead)
 	if err != nil {
-		_ = s.Close(ctx)
-		return nil, err
+		return nil, closeAfterSQLError(err)
 	}
 	if authorize != nil {
 		actual, err := bindSources(sessionCtx, s.tx, request, expected)
 		if err != nil {
-			_ = s.Close(ctx)
-			return nil, err
+			return nil, closeAfterSQLError(err)
 		}
 		if err := authorize(sessionCtx, actual.Clone()); err != nil {
 			_ = s.Close(ctx)
@@ -129,24 +133,20 @@ func openMySQLCompatibleQueryReadSession(
 		s.readSet = actual
 	}
 	if err = binding.ValidateExecution(sessionCtx, s.tx); err != nil {
-		_ = s.Close(ctx)
-		return nil, err
+		return nil, closeAfterSQLError(err)
 	}
 	if borrowed != nil {
 		if err := borrowed.BeforeQuery(sessionCtx, s.tx, request.Query); err != nil {
-			_ = s.Close(ctx)
-			return nil, err
+			return nil, closeAfterSQLError(err)
 		}
 	}
 	s.rows, err = s.tx.QueryContext(sessionCtx, request.Query, request.Options.Args...)
 	if err != nil {
-		_ = s.Close(ctx)
-		return nil, err
+		return nil, closeAfterSQLError(err)
 	}
 	types, err := s.rows.ColumnTypes()
 	if err != nil {
-		_ = s.Close(ctx)
-		return nil, err
+		return nil, closeAfterSQLError(err)
 	}
 	mapField := plugin.SQLResultFieldMapper(mapType)
 	for _, column := range types {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
@@ -479,6 +480,38 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 			}
 			if restoredID != originalID || restoredBudget != 100 {
 				t.Fatalf("production did not restore the original session: id=%d/%d budget=%d", restoredID, originalID, restoredBudget)
+			}
+			guarded, err = provider.PrepareQuery(ctx, readerInfo, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			versioned := plugin.WithPoolEngineVersion(ctx, engineID, 1)
+			// Expire the client during a real native read while the server permits it to continue.
+			session, err = shared.OpenGuardedMySQLCompatibleQueryReadSession(versioned, provider, provider.BuildDSN,
+				mysqlCatalogFieldType, provider.DecodeSQLQueryValue, guarded,
+				func(context.Context, *plugin.QueryReadSet) error {
+					t.Fatal("authorization reached after the catalog read timed out")
+					return nil
+				},
+				func(ctx context.Context, tx *sql.Tx, _ plugin.QueryRequest, _ *plugin.QueryReadSet) (*plugin.QueryReadSet, error) {
+					clientCtx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
+					defer cancel()
+					var value int
+					err := tx.QueryRowContext(clientCtx, "SELECT SLEEP(1)").Scan(&value)
+					return nil, err
+				})
+			if session != nil || !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout {
+				t.Fatalf("client deadline after borrowing the connection lost its SQL stage: %v", err)
+			}
+			guarded, err = provider.PrepareQuery(ctx, readerInfo, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err = provider.OpenGuardedQueryReadSession(versioned, guarded, func(context.Context, *plugin.QueryReadSet) error {
+				return context.DeadlineExceeded
+			})
+			if session != nil || !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != "" {
+				t.Fatalf("authorization deadline was attributed to SQL: %v", err)
 			}
 			t.Log("production budget: SELECT-only query, table page, catalog facts, hint rejection, same-session restoration passed")
 		})
