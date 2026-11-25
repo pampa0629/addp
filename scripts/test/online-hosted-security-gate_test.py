@@ -231,7 +231,10 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertLess(trace.index('monitor-backend prepare-database'), trace.index('up -d --no-deps --wait monitor-backend'))
         for owner in ('standard', 'model', 'asset'):
             self.assertNotIn(f'{owner}-backend prepare-database', trace)
-        self.assertIn('up -d --no-deps --wait graph-backend-peer', trace)
+        self.assertEqual(trace.count('graph-backend prepare-database'), 1)
+        base_start = trace.index('up -d --no-deps --wait graph-backend\n')
+        self.assertLess(trace.index('graph-backend prepare-database'), base_start)
+        self.assertLess(base_start, trace.index('up -d --no-deps --wait graph-backend-peer'))
         self.assertIn('graph-case:execution-lifecycle', trace)
         self.assertLess(trace.index('execution-resume'), trace.index('down --remove-orphans --volumes'))
         self.assertIn('control_recovery=passed', (self.host.artifacts / 'execution-recovery.txt').read_text())
@@ -377,7 +380,8 @@ class HostedSecurityGateTest(unittest.TestCase):
             self.assertIn('start:' + target, trace)
         self.assertIn('initialize', trace)
         self.assertLess(trace.index('go-workspace'), trace.index('start:-meta'))
-        self.assertLess(trace.index('install:addp-service:prepare-database'), trace.index('start:-meta'))
+        for owner in ('service', 'graph'):
+            self.assertLess(trace.index(f'install:addp-{owner}:prepare-database'), trace.index('start:-meta'))
         self.assertLess(trace.index('install:addp-monitor:prepare-database'), trace.index('start:-monitor'))
         self.assertFalse((self.host.repository / 'go.work').exists())
         self.assertIn('chromium', trace)
