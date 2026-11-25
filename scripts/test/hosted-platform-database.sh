@@ -157,6 +157,7 @@ hosted_prepare_native_targets() {
   # Expand ordinary dev/start.sh selectors before querying the product registry.
   for target in "$@"; do
     case "$target" in
+      -copilot) targets+=(-develop) ;;
       -workbench) targets+=(-service) ;;
       -portal) targets+=(-asset) ;;
       -model|-quality) targets+=(-standard) ;;

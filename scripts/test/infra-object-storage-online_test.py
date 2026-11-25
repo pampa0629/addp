@@ -156,6 +156,11 @@ class ObserverTest(unittest.TestCase):
         self.assertNotIn("restart.sh", host)
         self.assertNotIn("RETENTION=", host)
         self.assertIn("test-infra-object-barrier-postgres", host)
+        steps = ["modules=(-security -meta -transfer -manager -develop)",
+                 'hosted_prepare_selected_native_database "${modules[@]}"',
+                 'for target in "${modules[@]}"; do',
+                 'bash scripts/dev/start.sh "$target"']
+        self.assertEqual([host.index(step) for step in steps], sorted(host.index(step) for step in steps))
         fixture = (ROOT / "scripts/test/infra-object-source-fixture.sh").read_text()
         self.assertNotIn("CREATE TABLE", fixture)
 

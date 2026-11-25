@@ -44,7 +44,7 @@ run_logged docker exec addp-minio mc anonymous set private local/develop
 fixture_owned=1
 start_online_spark_image_registry
 application_owned=1
-hosted_prepare_selected_native_database
+hosted_prepare_selected_native_database -develop
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -jupyter

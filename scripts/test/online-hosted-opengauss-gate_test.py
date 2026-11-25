@@ -380,7 +380,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             run_daemon_launcher_logged() { "$@" >> "$ADDP_TEST_GATE_TRACE.launch" 2>&1; }
             infra_owned=1
             hosted_start_platform_infra
-            hosted_start_native_modules -future -develop -security
+            hosted_start_native_modules -future -geopython-workflow -security
         """
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", ROOT_DIR=str(self.repository),
                    ADDP_TEST_GATE_TRACE=str(self.trace), ADDP_TEST_BACKGROUND_PIDS=str(self.background_pids),
@@ -399,7 +399,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             "namespace:system", "namespace:common", "namespace:meta", "namespace:gateway",
             "namespace:future", "namespace:security"])
         self.assertLess(trace.index("install:addp-security:prepare-database"), trace.index("start:-future"))
-        self.assertIn("start:-develop", trace)
+        self.assertIn("start:-geopython-workflow", trace)
 
     def test_split_checkout_uses_the_selected_products_database_contract(self):
         helper = SCRIPT.with_name("hosted-platform-database.sh")
@@ -438,6 +438,10 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         self.assertEqual(run("-workbench"), ["current-infra", "current-install: system meta gateway workbench service"])
         self.assertEqual(run("-portal"), ["current-infra", "current-install: system meta gateway asset"])
         self.assertIn("asset", run("-gateway", "-portal")[1].split())
+        self.assertEqual(run("-copilot"), ["current-infra", "current-install: system meta gateway copilot develop"])
+        notebook_gate = SCRIPT.with_name("online-hosted-notebook-storage-gate.sh").read_text().splitlines()
+        notebook_targets = next(line.split()[1:] for line in notebook_gate if line.startswith("hosted_prepare_selected_native_database"))
+        self.assertEqual(run(*notebook_targets), ["current-infra", "current-install: system meta gateway develop"])
 
     def test_initialization_failure_prevents_registration_and_scene(self):
         self.prepare_run_fixture()

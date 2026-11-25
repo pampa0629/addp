@@ -28,8 +28,9 @@ run_logged make -C "$HARNESS" test-infra-object-barrier-postgres
 fixture_owned=1
 run_logged bash "$HARNESS/scripts/test/infra-object-source-fixture.sh" start
 application_owned=1
-hosted_prepare_selected_native_database manager security
-for target in -security -meta -transfer -manager -develop; do
+modules=(-security -meta -transfer -manager -develop)
+hosted_prepare_selected_native_database "${modules[@]}"
+for target in "${modules[@]}"; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
 done
 # Only this command checkout receives the scenario IAM patch. Product services
