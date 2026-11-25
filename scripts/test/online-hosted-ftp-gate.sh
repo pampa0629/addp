@@ -11,7 +11,7 @@ case "$ADDP_ONLINE_FTP_CASE" in
     HOSTED_FIXTURE_CONTAINERS=(addp-ftp-model3d-runtime addp-ftp-online-registry addp-ftp-model-source)
     HOSTED_FIXTURE_IMAGES=(127.0.0.1:5001/addp-model3d-converter:online 127.0.0.1:5001/addp-model3d-workflow-engine:online)
     ;;
-  node-glb)
+  node-glb|node-models)
     HOSTED_FIXTURE_CONTAINERS=()
     HOSTED_FIXTURE_IMAGES=()
     ;;

@@ -219,6 +219,7 @@ on:
         options:
           - full
           - node-glb
+          - node-models
       highgo_case:
         description: HighGo acceptance scope
         required: true

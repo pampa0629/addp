@@ -1838,6 +1838,72 @@ def verify_ftp_future_glb(client, tenant, engine, timeout):
                 sha256=hashlib.sha256(expected).hexdigest(), fixture_removed=not physical.exists())
 
 
+def verify_ftp_node_models(client, tenant, engine, timeout):
+    issuer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),
+                                   SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+    recipient = exact_user_principal(client, tenant, PERMISSIONS)
+    auth = ModelSourceAuthorization(issuer, client, dict(tenant_id=tenant, engine_id=engine, principal_id=recipient),
+                                    source_type='ftp', issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+    fixture = Path(SUPPORT.required_environment('ADDP_FTP_ADMISSION_DIR'))
+    samples = json.loads((fixture / 'ftp-model-samples.json').read_text())
+    scope = file_target(engine, 'models/glb', 'ftp')
+    scope['segments'].pop()
+    scan = scan_scope(client, engine, ['models'], 'basic', timeout)
+    report = dict(engine_id=engine, principal_id=recipient, scope=scope, scan=scan, downloads=[])
+    script = Path(__file__).resolve().parents[2] / 'business/ftp/admission.py'
+
+    def transfers(paths):
+        return {path: int(subprocess.check_output([sys.executable, str(script), 'count-downloads', path], timeout=35))
+                for path in paths}
+
+    try:
+        grant = auth.node_grant(scope, action='read', recursive=True, seconds=None)
+        report['request_id'] = grant['request_id']
+        items = client.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,)).payload
+        # The ordinary user's catalog projects only safe identity fields. The expected
+        # bytes and ZIP members come from the independent fixed FTP seed.
+        kinds = ('glb', 'stl', 'fbx', 'ifc', '3ds', 'dae', 'obj', 'gltf')
+        models = []
+        for kind in kinds:
+            sample, = [entry for entry in samples if entry['format'] == kind]
+            primary, = [path for key, path, _ in SEED.MODEL_SAMPLE_FILES if key == kind]
+            require(sample['full_name'] == primary, f'{kind} primary differs from FTP seed')
+            item, = [row for row in items if row['full_name'] == primary]
+            require(item.get('engine_id') == engine and item.get('item_type') == 'file' and
+                    type(item.get('id')) is int and item['id'] > 0 and
+                    item.get('attributes', {}).get('item', {}).get('format') == kind,
+                    f'invalid FTP item identity for {kind}')
+            members = [{'path': path} for _, path, _ in SEED.MODEL_SAMPLE_FILES
+                       if path.startswith(f'models/{kind}/')]
+            models.append(dict(sample, locator=file_locator(engine, item), composition=members))
+        paths = sorted({ref['path'] for model in models for ref in model['composition']})
+        before = transfers(paths)
+        urls = []
+        for model in models:
+            url = '/api/v1/manager/downloads/file?' + urlencode({'locator': model['locator']})
+            raw = client.request('GET', url, (200,), raw_response=True).payload
+            validate_logical_source_bytes(raw, model)
+            urls.append(url)
+            report['downloads'].append(dict(format=model['format'], members=len(model['composition']),
+                                            size=len(raw), sha256=hashlib.sha256(raw).hexdigest(), granted_status=200))
+        allowed = transfers(paths)
+        require(all(allowed[path] > before[path] for path in paths), 'missing FTP transfer for granted model member')
+        auth.revoke(grant['request_id'])
+        for url, model, observation in zip(urls, models, report['downloads']):
+            source_read_control(client, engine, model, 403)
+            denied = client.request('GET', url, (403,)).payload
+            require(isinstance(denied, dict) and denied.get('error') and set(denied) <= {'error', 'error_code'} and
+                    denied.get('error_code') != 'security_protection_required', 'expected source read denial')
+            observation['revoked_status'] = 403
+        after = transfers(paths)
+        require(after == allowed, 'revoked FTP request transferred a model member')
+        report['transfers'] = {path: dict(granted=allowed[path]-before[path], revoked=after[path]-allowed[path])
+                               for path in paths}
+    finally:
+        auth.cleanup()
+    return report
+
+
 def main():
     require(os.environ.get('ADDP_ONLINE_TEST') == '1' and os.environ.get('ADDP_ONLINE_HOSTED') == '1', 'FTP suite requires the Hosted Online entry')
     tenant = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant')
@@ -1846,8 +1912,9 @@ def main():
     client = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
     root_artifacts = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
     case = os.environ.get('ADDP_ONLINE_FTP_CASE', 'full')
-    if case == 'node-glb':
-        node = verify_ftp_future_glb(client, tenant, engine, timeout)
+    if case in {'node-glb', 'node-models'}:
+        verify = verify_ftp_future_glb if case == 'node-glb' else verify_ftp_node_models
+        node = verify(client, tenant, engine, timeout)
         (root_artifacts/'ftp-node-read.json').write_text(json.dumps(node))
         print(json.dumps(node))
         return 0
