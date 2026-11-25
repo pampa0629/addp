@@ -152,7 +152,7 @@ class GaussDBConsumerTest(unittest.TestCase):
         lines = [
             'LOG: statement: SELECT id FROM addp_acceptance.node_future ORDER BY id',
             'LOG: execute <unnamed>: SELECT id FROM "addp_acceptance"."node_future"',
-            'LOG: statement: DECLARE addp_query_read_cursor NO SCROLL CURSOR FOR SELECT id FROM addp_acceptance.node_future',
+            'LOG: statement: DECLARE addp_query_read_cursor NO SCROLL CURSOR FOR SELECT id FROM ONLY addp_acceptance.node_future',
             'LOG: statement: FETCH FORWARD 20 FROM addp_query_read_cursor',
             'LOG: statement: EXPLAIN SELECT id FROM addp_acceptance.node_future',
             'LOG: statement: SELECT id FROM addp_acceptance.node_future_archive',

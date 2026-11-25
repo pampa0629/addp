@@ -80,7 +80,7 @@ def count_table_reads(log, table, schema='addp_acceptance'):
     # DECLARE, never EXPLAIN or a later FETCH on the same cursor.
     statements = re.findall(r'(?:statement|execute [^:\n]+):\s*'
                             r'(?:DECLARE\s+"?\w+"?\s+(?:NO SCROLL\s+)?CURSOR FOR\s+)?(SELECT\b[^\n]*)', log, re.I)
-    relation = r'\bFROM\s+(?:"?' + re.escape(schema) + r'"?\s*\.\s*)?"?' + re.escape(table) + r'"?(?![\w$])'
+    relation = r'\bFROM\s+(?:ONLY\s+)?(?:"?' + re.escape(schema) + r'"?\s*\.\s*)?"?' + re.escape(table) + r'"?(?![\w$])'
     return sum(bool(re.search(relation, query, re.I)) for query in statements)
 
 
