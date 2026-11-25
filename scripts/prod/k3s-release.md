@@ -66,6 +66,14 @@ kubectl -n "$SITE_NAMESPACE" get endpointslices -l kubernetes.io/service-name=sy
 
 验收须在两个不同节点各看到一个 Ready System Pod，并确认 System Service 选中了这两个端点。使用已授权的业务账号通过 Gateway 访问 Catalog。先撤回一个 Catalog Pod，确认两个 System 返回相同的剩余端点，再退出当前的发现写入者。持续检查 Gateway 业务响应和存活副本的路由 revision、端点标识及截止时间，观测窗口应超过原端点截止时间。通过条件为业务请求持续成功、已撤回的端点未重新出现、存活副本重新核对后延长了剩余端点的截止时间。恢复两个副本后，可交换故障方向复验。这个演练覆盖 System 进程失效，数据库和 K3s 控制节点的容灾各自验收。可信 Service 绑定、Meta 后台资格及单模块查询权限见[健康与平台控制面规范](../../docs/spec/api/健康与平台控制面.md#第三阶段-catalog-服务发现契约)。
 
+## Gateway 双副本与业务路由验收
+
+Gateway 与 System 应使用相容的路由快照契约。升级前后均从原 HTTPS 入口登录，用同一个租户会话读取 `GET /api/v1/catalog/entries?page=1&page_size=1`，校验状态码和目录列表结构。登录成功、两个 Catalog Pod Ready 时，旧 Gateway 仍可能因无法读取 System 的端点快照而返回 503。
+
+1. 冻结与 System 配套的 Gateway 源码版本，核对两节点上各自的原生镜像。备份 Gateway 的数据库 schema 和站点清单。使用发布镜像与短期部署凭据执行 `/app/server prepare-database`。运行容器只投影运行凭据。在 PostgreSQL 上验证运行角色能读结构版本、写访问日志并取得数据库返回的字段，检查其没有建表和改写结构版本的权限。
+2. Gateway 使用与 System 相同的跨节点分布配置，将选择器换成 Gateway 的 Pod 标签。保持原入口指向同一个 Gateway Service。对使用节点日志的模块，从 Pod 的 `spec.nodeName` 取得调度节点，再映射到站点为该节点配置的日志名称；在 System 的有效登记中按 Pod 地址逐项核对。
+3. 从客户端持续请求上述目录接口，每次记录起止时间、状态和响应结构校验结果。受控退出一个 Gateway Pod，等到它消失且 EndpointSlice 仅剩另一节点的就绪端点，维持单端点窗口并核对业务读取。恢复双副本，再交换节点复验。保留两次窗口内的端点和逐次请求结果；每个窗口均须有成功样本，切换期间的失败单独计数。此项覆盖 Gateway 进程退出；整机失联按下文的恢复演练验收。
+
 ## 节点日志观察器
 
 System 与 Monitor 的所有副本使用相同的 `ADDP_LOG_OBSERVER_NODES`，列出允许部署日志观察器的节点名。按节点准备独立的 Secret。对每个节点使用同一版本的 System 部署二进制执行以下命令。凭据文件由站点配置单独交付，内容为仅含 `secret` 字段的 JSON，权限为 0600。同一命令传入空秘密可停用该节点凭据，撤销已有令牌。
