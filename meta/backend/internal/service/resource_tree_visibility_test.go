@@ -317,10 +317,10 @@ func visibilityTestTargetResolver(root *resourcetree.TreeNode, engineType string
 }
 
 func TestGrantedEmptyNodesAndIndependentItemSurviveRootRevocation(t *testing.T) {
-	for _, engineType := range []string{"postgresql", "gaussdb", "mysql", "nfs", "ftp", "minio", "rustfs"} {
+	for _, engineType := range []string{"postgresql", "gaussdb", "mysql", "tidb", "nfs", "ftp", "minio", "rustfs"} {
 		t.Run(engineType, func(t *testing.T) {
 			namespace := "schema"
-			if engineType == "mysql" {
+			if engineType == "mysql" || engineType == "tidb" {
 				namespace = "database"
 			}
 			rootPath := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel(namespace), 9)

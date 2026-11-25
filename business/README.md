@@ -24,14 +24,14 @@ bash business/scripts/restart.sh -rustfs
 
 | 接入进度 | 存储引擎 | 先验证的读取范围 |
 | --- | --- | --- |
-| 已接入持续节点授权（7 类） | PostgreSQL、GaussDB、MySQL、NFS、FTP、MinIO、RustFS | 关系库的 schema 或 database、文件目录、对象 bucket／prefix，以及递归根。具体读能力随正式接入的格式和入口确定 |
-| 第一批待接入（2 类） | TiDB、MongoDB | TiDB 的 database → table，MongoDB 的 database → collection。沿已有单表／集合读取核验，补 database 与整引擎范围 |
+| 已接入持续节点授权（8 类） | PostgreSQL、GaussDB、MySQL、TiDB、NFS、FTP、MinIO、RustFS | 关系库的 schema 或 database、文件目录、对象 bucket／prefix，以及递归根。具体读能力随正式接入的格式和入口确定 |
+| 第一批待接入（1 类） | MongoDB | MongoDB 的 database → collection。沿已有集合读取核验，补 database 与整引擎范围 |
 | 第二批待接入（10 类） | StarRocks、HighGo、openGauss、OceanBase、Doris、ClickHouse、Oracle、KingbaseES、达梦、SuperMap SDX+ for PostgreSQL | 逐类核对插件声明的目录、扫描落库的节点和普通表读取入口。协议相同的引擎仍各自验收 |
 | 第三批待接入（6 类） | HDFS、Elasticsearch、Neo4j、FalkorDB、Redis、Kafka | 从现有文件、索引、图、键空间或 Topic 的 DataItem 身份及消费入口开始，先验证真实可授权范围，再验节点继承 |
 
 每类使用隔离账号核对有效节点下现有项、以后新增项、范围外拒绝、撤权及清理。对已经提供内容读取的入口，记录成功读取和拒绝时的源端观测。详细用例和运行结果分别维护在[测试与验收规范](../docs/spec/addp测试与验收规范.md)所指的场景和证据页。
 
-Business MySQL 的 database 节点使用 Catalog 的 `term=database, kind=namespace`。平台库只保存与校验路径形态，System 在签发前按引擎插件目录模型和 Meta 节点事实核对。接入验收应在两个 database 建同名普通表，仅给其中一个 database 授权，并在授权后新建一张表。分别核对可读、同名表拒绝和撤权；整引擎授权另用递归根节点验收。
+Business MySQL、TiDB 的 database 节点使用 Catalog 的 `term=database, kind=namespace`。平台库只保存与校验路径形态，System 在签发前按引擎插件目录模型和 Meta 节点事实核对。接入验收应在两个 database 建同名普通表，仅给其中一个 database 授权，并在授权后新建一张表。分别核对可读、同名表拒绝和撤权；整引擎授权另用递归根节点验收。
 
 ## 部署来源清单
 

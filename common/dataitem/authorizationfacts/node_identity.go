@@ -210,7 +210,7 @@ func (p NodeIdentityPage) Validate(tenantID uint, q NodeIdentityPageQuery) error
 // The registered provider owns the path version, root and branch kinds.
 func nodeGrantModel(engineType string) (plugin.EngineCatalogModelSpec, bool) {
 	switch engineType {
-	case "postgresql", "nfs", "minio", "gaussdb", "ftp", "rustfs", "mysql":
+	case "postgresql", "nfs", "minio", "gaussdb", "ftp", "rustfs", "mysql", "tidb":
 	default:
 		return plugin.EngineCatalogModelSpec{}, false
 	}
