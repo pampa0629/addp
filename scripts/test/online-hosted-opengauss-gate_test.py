@@ -414,19 +414,24 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             hosted_start_platform_infra() { echo current-infra; }
             hosted_prepare_native_database() { echo "current-install: $*"; }
             hosted_start_selected_platform_infra
-            hosted_prepare_selected_native_database manager security
+            hosted_prepare_selected_native_database "$@"
         """
-        def run():
-            return subprocess.check_output(["bash", "-c", script], env=env, text=True).splitlines()
+        def run(*targets):
+            return subprocess.check_output(["bash", "-c", script, "_", *targets], env=env, text=True).splitlines()
 
-        self.assertEqual(run(), ["old product: bash scripts/infra/up.sh"])
+        self.assertEqual(run("manager", "security", "-standard"), ["old product: bash scripts/infra/up.sh"])
         (product / "scripts/test/hosted-platform-database.sh").write_text(
             'hosted_start_platform_infra() { echo pinned-infra; }\n'
             'hosted_prepare_native_database() { echo "pinned-install: $#"; }\n')
-        self.assertEqual(run(), ["pinned-infra", "pinned-install: 0"])
+        self.assertEqual(run("manager", "security", "-standard"), ["pinned-infra", "pinned-install: 0"])
         registry = product / "scripts/infra/platform-database.sh"
         registry.write_text('addp_prepare_module_database() { [[ "$1" == manager ]]; }\n')
-        self.assertEqual(run(), ["current-infra", "current-install: system meta gateway manager"])
+        self.assertEqual(run("manager", "security", "-standard"), ["current-infra", "current-install: system meta gateway manager"])
+        registry.write_text('addp_prepare_module_database() { [[ "$1" == manager || "$1" == standard ]]; }\n')
+        self.assertEqual(run("manager", "security", "-standard"), ["current-infra", "current-install: system meta gateway manager standard"])
+        standard_gate = SCRIPT.with_name("online-hosted-standard-document-gate.sh").read_text().splitlines()
+        preparation = next(line for line in standard_gate if line.startswith("hosted_prepare_selected_native_database"))
+        self.assertEqual(run(*preparation.split()[1:]), ["current-infra", "current-install: system meta gateway standard"])
 
     def test_initialization_failure_prevents_registration_and_scene(self):
         self.prepare_run_fixture()

@@ -95,9 +95,14 @@ hosted_prepare_registered_databases() {
 }
 
 hosted_prepare_compose_database() (
-  local hosted_compose=$1
-  shift
-  hosted_prepare_registered_databases "$@"
+  local hosted_compose=$1 services=${2//,/$'\n'} action
+  source "$ROOT_DIR/scripts/infra/platform-database.sh"
+  for action in hosted_prepare_namespace hosted_install_database; do
+    if grep -Fxq system-backend <<< "$services"; then
+      addp_prepare_module_database system "$action" || return 1
+    fi
+    addp_prepare_selected_databases "$action" "$services" || return 1
+  done
 )
 
 hosted_prepare_native_database() (
@@ -111,13 +116,14 @@ hosted_prepare_native_database() (
 
 hosted_prepare_native_targets() {
   local target owner owners=(system meta gateway) targets=("$@")
-  # The ordinary -gateway and -console selectors start the same additional
-  # backends in dev/start.sh. The product DB registry selects their installers.
+  # Expand ordinary dev/start.sh selectors before querying the product registry.
   for target in "$@"; do
-    case "$target" in -gateway|-console)
-      targets+=(-manager -transfer -orchestrator -develop -service -monitor -copilot
-        -standard -model -quality -security -catalog -ontology)
-      break ;;
+    case "$target" in
+      -model|-quality) targets+=(-standard) ;;
+      -gateway|-console)
+        targets+=(-manager -transfer -orchestrator -develop -service -monitor -copilot
+          -standard -model -quality -security -catalog -ontology)
+        break ;;
     esac
   done
   source "$ROOT_DIR/scripts/infra/platform-database.sh"

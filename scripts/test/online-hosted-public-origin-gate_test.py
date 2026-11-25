@@ -198,6 +198,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertNotIn("--network-alias workbench-frontend", trace)
         self.assertNotIn("--network-alias portal-frontend", trace)
         self.assertNotIn("postgres-source:", trace)
+        self.assertNotIn("standard-backend prepare-database", trace)
         self.assertNotIn("service-backend", trace)
         self.assertLess(trace.index("make:test-online ONLINE_SUITE=compose-public-origin"), trace.index("business/docker-compose.yml down --remove-orphans --volumes"))
         self.assertLess(trace.index("business/docker-compose.yml down --remove-orphans --volumes"), trace.index("docker-compose.runtimes.yml down --remove-orphans --volumes"))
@@ -210,6 +211,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         steps = (
             "postgres-source:start",
+            "standard-backend prepare-database",
             " up -d --no-deps --wait service-backend standard-backend",
             " up -d --no-deps --wait catalog-backend",
             "--wait-protection-owners manager,transfer,service",

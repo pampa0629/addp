@@ -13,9 +13,10 @@ export STANDARD_URL=http://127.0.0.1:8110 MODEL_URL=http://127.0.0.1:8181 CATALO
 infra_owned=1
 hosted_start_platform_infra
 application_owned=1
-hosted_prepare_native_database system meta gateway
+modules=(-model -catalog -quality)
+hosted_prepare_native_targets "${modules[@]}"
 unset hosted_deploy_password
-run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -model -catalog -quality
+run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite catalog-domain-overview --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

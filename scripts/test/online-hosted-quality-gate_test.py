@@ -100,6 +100,7 @@ class HostedQualityGateTest(unittest.TestCase):
                     "source:seed", "owner:scan", "make:test-online ONLINE_SUITE=quality-dynamic-binding", "source:verify",
                     "application-stop", "source:stop", "infra-down"]
         self.assertEqual([item for item in trace if item in expected], expected)
+        self.assertLess(trace.index("install:addp-standard:prepare-database"), trace.index("start:-model -meta -quality -orchestrator -monitor"))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("cleanup=passed", (self.host.artifacts / "summary.txt").read_text())
 

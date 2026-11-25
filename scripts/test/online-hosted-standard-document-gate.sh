@@ -20,7 +20,7 @@ export STANDARD_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secre
 infra_owned=1
 hosted_start_selected_platform_infra
 application_owned=1
-hosted_prepare_selected_native_database
+hosted_prepare_selected_native_database -standard
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -standard

@@ -98,14 +98,14 @@ run_logged make build BUILD_ARGS="--arch amd64 --services $backends"
 run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backends,$frontends,nginx,geopython-workflow-engine"
 
 application_owned=1
-run_logged hosted_prepare_compose_database compose_app system
+run_logged hosted_prepare_compose_database compose_app system-backend
 run_logged compose_app up -d --no-deps --wait system-backend
 IFS=, read -r -a backend_services <<< "$backends"
 declaration_modules=("${backend_services[@]%-backend}")
 publisher=(python3 scripts/prod/publish-module-declarations.py --compose-file "$ROOT_DIR/docker-compose.yml" --compose-file "$COMPOSE_OVERLAY")
 run_logged "${publisher[@]}" --provision "${declaration_modules[@]}"
 run_logged "${publisher[@]}" "${declaration_modules[@]}"
-run_logged hosted_prepare_compose_database compose_app meta gateway security manager workbench orchestrator
+run_logged hosted_prepare_compose_database compose_app "${backends#system-backend,}"
 unset hosted_deploy_password
 run_logged compose_app up -d --no-deps --wait security-backend
 run_logged compose_app up -d --no-deps --wait gateway console system-frontend

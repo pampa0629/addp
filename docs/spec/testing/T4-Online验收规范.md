@@ -21,7 +21,7 @@ T4只在隔离部署执行，profile由 `.github/workflows/online-t4-gates.yml`�
 - 根目录无T4 `.env`。self-hosted长期夹具凭据仅专用设备仓库外owner-only文件／加密存储；Hosted仅当次 `runner.temp` owner-only材料，均不接收长期仓库业务Secret。
 - 标准T4的 `POSTGRES_DB=addp_online`，拒 `addp`／`addp_test`／`addp_iam_test`，不属本地共享PG清单。证据在仓库外且不归档凭据目录；构建身份与干净checkout一致。
 
-Hosted 在通过空 Infra 准入后，用 `hosted_start_platform_infra` 建立当轮安装与运行身份。顺序启动多个原生模块时，将原有启动目标按业务顺序传给 `hosted_start_native_modules`。它先按产品的 `addp_prepare_module_database` 登记执行各模块安装命令，再用同一组目标启动进程。一次调用开发入口并使用普通 `-gateway` 或 `-console` 时，将同一组启动参数先传给 `hosted_prepare_native_targets`，使展开后的后端也按登记完成安装。新增模块沿用产品登记，运行身份只取得已准备 schema 的使用权及表、序列权限。分阶段启动、恢复测试和 Compose 场景在对应产品进程前显式调用原生或 Compose 准备函数。指定历史产品 SHA 的场景按该检出的安装能力准备，数据库对象随当轮 Infra 卷清除。
+Hosted 在通过空 Infra 准入后，用 `hosted_start_platform_infra` 建立当轮安装与运行身份。顺序启动多个原生模块时，将原有启动目标按业务顺序传给 `hosted_start_native_modules`。它先按产品的 `addp_prepare_module_database` 登记执行各模块安装命令，再用同一组目标启动进程。一次启动多个原生模块时，将同一组启动参数先传给 `hosted_prepare_native_targets`。普通 `-model`、`-quality` 会连带启动 Standard，`-gateway`、`-console` 也会展开后端，准备阶段按展开结果选择已登记模块。新增模块沿用产品登记，运行身份只取得已准备 schema 的使用权及表、序列权限。Compose 场景把该阶段选用的后端服务清单交给 `hosted_prepare_compose_database`，用产品的 `addp_prepare_selected_databases` 选择安装命令。分阶段启动和恢复测试沿用该实例已经准备好的数据库。指定历史产品 SHA 的场景按该检出的安装能力准备，数据库对象随当轮 Infra 卷清除。
 
 下列本机技术例外均非正式Linux Runner T4，不能推广到其他引擎或伪造GitHub profile：
 

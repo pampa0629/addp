@@ -105,6 +105,7 @@ class HostedMetricGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = self.host.trace.read_text()
+        self.assertLess(trace.index("install:addp-standard:prepare-database"), trace.index("start:-model"))
         steps = ("metric-fixture:start", "install:addp-system:prepare-database system",
                      "install:addp-system:prepare-database common",
                      "install:addp-meta:prepare-database", "install:addp-gateway:prepare-database", "install:addp-security:prepare-database", "start:-model", "start:-service", "start:-security",
