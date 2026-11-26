@@ -36,7 +36,7 @@ class TiDBNodeReadTest(unittest.TestCase):
                     return {
                         "execution_id": str(index),
                         "status": "success",
-                        "metadata": {"result": {"summary": {"preview_rows": [{"id": (37, 41)[index - 1]}]}}},
+                        "metadata": {"result": {"summary": {"preview_rows": [{"id": ("37", "41")[index - 1]}]}}},
                     }
                 return {
                     "execution_id": str(index),
@@ -81,6 +81,36 @@ class TiDBNodeReadTest(unittest.TestCase):
             evidence = json.loads((root / "tidb-node-read.json").read_text())
             self.assertEqual([c["source_selects"] for c in evidence["checks"].values()], [1, 1, 0, 0, 0])
             self.assertEqual([c["execution_id"] for c in evidence["checks"].values()], list("12345"))
+            self.assertEqual(
+                [evidence["checks"][phase]["returned_id"] for phase in ("existing", "future")],
+                ["37", "41"],
+            )
+
+    def test_invalid_read_results_leave_only_bounded_evidence(self):
+        for rows, returned_type, returned_id in (
+            ([{"id": 37}], "int", 37),
+            ([{"id": "38"}], "str", "38"),
+            ([{"id": "37", "other": "private"}], "str", "37"),
+            ([{"id": "private"}], "str", None),
+            ([{"id": "37"}, {"id": "37"}], None, None),
+            ([], None, None),
+        ):
+            with self.subTest(rows=rows):
+                result = {
+                    "execution_id": "sample",
+                    "status": "success",
+                    "metadata": {"result": {"summary": {"preview_rows": rows}}},
+                }
+                checks = {}
+                with patch.object(NODE, "counts", side_effect=[(3, 4), (4, 5)]):
+                    with self.assertRaisesRegex(NODE.FLOW.SuiteError, "expected one native SELECT and row"):
+                        NODE.observe(Mock(return_value=result), 5, checks, "existing", "tidb_scope", "node_existing", 37)
+                observation = checks["existing"]
+                self.assertEqual(observation["source_selects"], 1)
+                self.assertEqual(observation["preview_row_count"], len(rows))
+                self.assertEqual(observation.get("returned_id_type"), returned_type)
+                self.assertEqual(observation.get("returned_id"), returned_id)
+                self.assertNotIn("private", json.dumps(observation))
 
     def test_denial_requires_zero_business_reads_and_the_authorization_reason(self):
         denied = {

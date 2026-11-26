@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -65,14 +66,19 @@ def observe(execute, engine, checks, phase, database, table, expected, statement
             or delta != 0
         ):
             raise FLOW.SuiteError(f"TiDB {phase}: expected authorization denial and zero business SELECTs")
-    elif (
-        result.get("status") != "success"
-        or (summary or {}).get("summary", {}).get("preview_rows") != [{"id": expected}]
-        or delta != 1
-    ):
-        raise FLOW.SuiteError(f"TiDB {phase}: expected one native SELECT and row {expected}")
     else:
-        observation["returned_id"] = expected
+        # The fixture's BIGINT primary key has an exact JSON string representation.
+        expected_id = str(expected)
+        rows = ((summary or {}).get("summary") or {}).get("preview_rows")
+        row_count = len(rows) if isinstance(rows, list) else None
+        observation.update(expected_id=expected_id, preview_row_count=row_count)
+        if row_count == 1 and isinstance(rows[0], dict) and "id" in rows[0]:
+            returned_id = rows[0]["id"]
+            observation["returned_id_type"] = type(returned_id).__name__
+            if type(returned_id) in (str, int) and re.fullmatch(r"-?[0-9]{1,19}", str(returned_id)):
+                observation["returned_id"] = returned_id
+        if result.get("status") != "success" or rows != [{"id": expected_id}] or delta != 1:
+            raise FLOW.SuiteError(f"TiDB {phase}: expected one native SELECT and row {expected_id!r}")
 
 
 def revoke(preparer, consumer, entry, *, confirmed=False):
