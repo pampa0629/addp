@@ -185,11 +185,15 @@
 
 沿用晕渲专项的隔离准备账号。该账号只发起本轮首次精确源扫描，并按实际目录边界发放限时 `metadata_read`，范围限本轮指定的源和已核对自动扫描及当次执行的成果。普通 User 以原 12 项权限执行全部业务，分别核对两账号的扫描库存。公开结构与隔离库内绑定 DataItem、扫描和执行的只读快照分别核对，三方大小及源和旧成果快照保持严格校验。600 秒含预检、授权、业务与收尾，预留撤销和缓存清理时间，逐笔归档撤销回执及撤销后不可见证据。
 
+固定提交 `6da5e10aa` 的单次 Hosted 通过。27 条保存链中 9 条覆盖 7×7。原 36 类双语提交共 72 次，14 次在 Develop 入口按 HTTP 400、`invalid_workflow_parameters`、`parameter_type_invalid`、精确参数路径及提交语言拒绝，原始响应齐全且无新增执行；58 次在 focal 节点按本次执行及原日志精确拒绝。共 85 条实际执行、2,322 次成果全检及 100 轮物理调用，业务含预检与收尾 483.120／600 秒。27 份原始 COG、27 份冻结期望、15 份原始源及大小／SHA-256 已复核，离线重读 957,045 个基础像元和 31 个概览层的 278,342 个像元及对应掩膜。六组全 1 对照、原仿射与 CRS、精确扫描、当前内外血缘、源及旧成果不变、42 笔临时授权逐笔撤销且不可见通过；缓存、部署及 Infra 零残留。原始 ZIP 的 SHA-256 为 `ffdd3da4fe4a6382cfaddc4ddcc7f3e9b52151e3d3cfe6e31054df1ef4887688`。 [Hosted 作业](https://github.com/pampa0629/addp/actions/runs/45768615395/job/139735575180) · [原始 ZIP](https://github.com/pampa0629/addp/actions/runs/45768615395/artifacts/15094522161)
+
+同一提交在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 执行无筛选 `make test-geopython-workflow`，22,110 项通过、141 条警告、1933.23 秒，0 失败／跳过／筛除。单列的 NetCDF 专项 109 项通过。完整作业日志 SHA-256 为 `87fc06972198cd38b016ff0a178e295deca0150d26261f6f7247385ea70a590b`。 [Linux 全量](https://github.com/pampa0629/addp/actions/runs/45768411547/job/139734881639)
+
 固定提交 `85a14d5ea` 的[复验](https://github.com/pampa0629/addp/actions/runs/45750401121/job/139676538609)仅运行一次。27 条成功链均通过，`weight_missing` 中英文各一次准确命中 focal；`weights: null` 首次提交被 Develop 公开参数类型校验拦截并返回 HTTP 500，未进入 focal。整套失败，未完成 72 次节点拒绝及 2322 次全检。业务 144.305／600 秒，42 笔限时授权逐笔撤销并复核不可见，待撤／失败均为 0，部署及 Infra 清理零残留。归档 27 份原 COG、27 份冻结期望和 15 份源原件。离线核对 957,045 个基础像元及掩膜、31 个概览层的 278,342 个像元及掩膜、全部仿射／CRS、六组全 1 精确对照和 27 份本次公开／内部血缘。[ZIP 原件](https://github.com/pampa0629/addp/actions/runs/45750401121/artifacts/15085364175) 的 SHA-256 为 `dac861512b35108d11893075c15d56fb91bc5c6017daeffb1144cd7fa77d63be`。
 
 同一固定源码的[Linux 全量](https://github.com/pampa0629/addp/actions/runs/45748586268/job/139670567863)在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 上通过标准 `make test-geopython-workflow`，22,110 项通过、141 条警告、1576.08 秒，0 失败／跳过／筛除；NetCDF 专项另有 109 项通过。
 
-补测提交 `b15fd1cbf` 的[Linux 全量](https://github.com/pampa0629/addp/actions/runs/45753331656/job/139686025616)同样在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 上运行标准入口，22,110 项通过、141 条警告、1576.55 秒，0 失败／跳过／筛除；NetCDF 专项 109 项通过。本次覆盖新增的标量权重、一维权重和小数波段 Native 拒绝断言；Hosted 仍以 `85a14d5ea` 的固定失败证据为准。
+补测提交 `b15fd1cbf` 的[Linux 全量](https://github.com/pampa0629/addp/actions/runs/45753331656/job/139686025616)同样在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 上运行标准入口，22,110 项通过、141 条警告、1576.55 秒，0 失败／跳过／筛除；NetCDF 专项 109 项通过。本次覆盖新增的标量权重、一维权重和小数波段 Native 拒绝断言。
 
 固定提交 `969363c42` 的复验完成首次源扫描及 15 笔限时授权，逐笔撤销且复核不可见。首个工作流返回成功后，夹具因要求公开执行回执带 `tenant_id` 而在成果核验前失败，业务矩阵尚未通过。公开回执核执行标识、触发者和状态，并断言省略内部租户字段。隔离库的只读回执核同一次执行的租户、Actor、Runtime、提交语言与完整 DAG。[复验日志](https://github.com/pampa0629/addp/actions/runs/45745745065/job/139661253363) · [复验原始归档](https://github.com/pampa0629/addp/actions/runs/45745745065/artifacts/15083693782)
 
