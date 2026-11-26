@@ -108,6 +108,18 @@ class RasterLineageTest(unittest.TestCase):
             with patch.dict(os.environ,{**self.env,key:value},clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret),self.subTest(key=key),self.assertRaises(m.SuiteError):m.boundary(os.environ)
         with patch.dict(os.environ,self.env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:2],('raster-tpi-persistence',))
 
+    def test_sampling_uses_the_exact_hosted_run_prefix(self):
+        for prefix in ('raster-sample-points', 'raster-sample-points-bilinear', 'raster-sample-lines'):
+            suite = prefix + '-persistence'
+            run_id = prefix + '-123-1'
+            env = {**self.env, 'ONLINE_SUITE': suite, 'ADDP_ONLINE_TEST_RUN_ID': run_id}
+            with self.subTest(suite=suite), patch.object(m.BASE.HOSTED, 'deployment_secret', return_value=self.secret):
+                with patch.dict(os.environ, env, clear=True):
+                    self.assertEqual(m.boundary(os.environ), (self.secret, suite, run_id))
+                with patch.dict(os.environ, {**env, 'ADDP_ONLINE_TEST_RUN_ID': run_id.removeprefix('raster-')}, clear=True):
+                    with self.assertRaisesRegex(m.SuiteError, 'observer Run ID differs'):
+                        m.boundary(os.environ)
+
     def test_tri_is_only_an_additional_closed_suite_and_not_a_cross_suite_receipt(self):
         for suite,prefix in [('raster-cut-fill-persistence','cut-fill'),('raster-tpi-persistence','tpi'),('raster-tri-persistence','tri'),('raster-roughness-persistence','roughness'),('raster-surface-area-persistence','surface-area'),('raster-line-of-sight-persistence','line-of-sight'),('raster-viewshed-persistence','viewshed'),('raster-sight-orthogonal-persistence','sight-orthogonal'),('raster-twi-persistence','twi')]:
             env={**self.env,'ONLINE_SUITE':suite,'ADDP_ONLINE_TEST_RUN_ID':prefix+'-123-1'}

@@ -61,7 +61,10 @@ def boundary(env):
             'observer only owns approved Hosted raster suites')
     run = env.get('ADDP_ONLINE_TEST_RUN_ID', '')
     prefix = suite.removesuffix('-persistence')
-    if suite != 'raster-focal-square-seven-persistence':
+    if suite not in (
+        'raster-focal-square-seven-persistence', 'raster-sample-points-persistence',
+        'raster-sample-points-bilinear-persistence', 'raster-sample-lines-persistence',
+    ):
         prefix = prefix.removeprefix('raster-')
     require(run == prefix + '-' + env.get('GITHUB_RUN_ID', '') + '-' + env.get('GITHUB_RUN_ATTEMPT', '')
             and re.fullmatch(r'[a-z-]+-\d+-\d+', run), 'observer Run ID differs')

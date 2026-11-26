@@ -111,13 +111,18 @@ def test_sample_bilinear_hosted_oracle_does_not_call_product_inverse_or_reader(m
 
 def test_sample_bilinear_hosted_worker_stdin_scope_poison_and_cleanup(tmp_path):
  import hashlib
- root=tmp_path/'source';root.mkdir();(root/'outputs').mkdir();(root/'.addp-online-owner').write_text('raster-sample-points-bilinear-123-1')
+ scratch=tmp_path.resolve()
+ root=scratch/('addp-'+f.PREFIX+'-owned');root.mkdir();(root/'outputs').mkdir();(root/'.addp-online-owner').write_text('raster-sample-points-bilinear-123-1')
  script=Path(f.__file__).read_bytes();sha=hashlib.sha256(script).hexdigest();env=os.environ.copy();env.pop('PYTHONPATH',None)
- scratch=tmp_path/'runtime-tmp';scratch.mkdir();env['TMPDIR']=str(scratch)
+ env['TMPDIR']=str(scratch)
  def call(action,*names):return subprocess.run([sys.executable,'-','--worker',action,str(root),*names],input=script,cwd=tmp_path,env=env,capture_output=True)
  assert call('seed').returncode==0
  result=call('oracle',sha);assert result.returncode==0,result.stderr.decode();anchor=json.loads(result.stdout)['oracle_sha256']
  assert call('verify',anchor,sha).returncode==0
+ residual=scratch/'addp-raster-execution-leftover';residual.mkdir()
+ failure=call('verify',anchor,sha)
+ assert failure.returncode==1 and b'Runtime execution workspace residual' in failure.stderr
+ residual.rmdir()
  assert call('verify',anchor,'b'*64).returncode!=0
  (root/'.addp-online-owner').write_text('raster-sample-points-bilinear-124-1')
  assert call('verify',anchor,sha).returncode!=0
