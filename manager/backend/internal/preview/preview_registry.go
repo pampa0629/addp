@@ -68,6 +68,7 @@ type PreviewRequest struct {
 	// format requires native dependencies from a workflow runtime.
 	ScopeTableReaderProvider format.ScopeTableReaderProvider
 	RuntimeTableProvider     format.BoundTableProvider
+	TablePage                *TablePageRequest
 	KeyValueOptions          plugin.KeyValueReadOptions
 	executePrepared          PreparedPreviewExecutor
 }

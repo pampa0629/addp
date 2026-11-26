@@ -273,7 +273,7 @@ func TestDatabaseTablePreviewProviderBindsProfileConditionsBeforePaging(t *testi
 			Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd,
 			Conditions: []dataprofile.DataScopeCondition{{Field: "status", Operator: "eq", Value: "active"}},
 		},
-	}, []datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}}, 0, 500)
+	}, []datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}}, 0, 500, nil)
 	if err != nil {
 		t.Fatalf("queryData() error = %v", err)
 	}
@@ -468,7 +468,7 @@ func TestDatabasePreviewPostgreSQLUsesExactLeafName(t *testing.T) {
 	_, err := (&DatabaseTablePreviewProvider{}).preparePostgreSQLPreview(context.Background(), &PreviewRequest{
 		Engine: &models.Engine{ID: 7}, EnginePlugin: reader, Schema: "public", Table: "public.fake",
 		ProviderPath: plugin.TabularItemPath(7, plugin.EngineCatalogTermSchema, "public", "public.real.name"),
-	}, []datatype.FieldInfo{{Name: "id"}}, 0, 20)
+	}, []datatype.FieldInfo{{Name: "id"}}, 0, 20, nil)
 	if err != nil || !strings.Contains(reader.prepareCalls[0].Query, `"public"."public.real.name"`) {
 		t.Fatalf("leaf name was guessed from UI name: %v %#v", err, reader.prepareCalls)
 	}

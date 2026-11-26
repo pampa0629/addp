@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/addp/common/opaquetoken"
 	"io"
 	"mime"
 	"net/http"
@@ -49,6 +50,7 @@ func writeCatalogPreviewError(c *gin.Context, err error) bool {
 // ExplorerHandler 数据探查 API Handler（新版本）
 // 基于 ResourceLocator URI 系统
 type ExplorerHandler struct {
+	tableCursors      *opaquetoken.Codec
 	navigationChecker interface {
 		CheckManagerNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
 	}
@@ -121,6 +123,8 @@ func bearerToken(c *gin.Context) string {
 // @Description 表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
 // @Description bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
 // @Param page query int false "页码，默认1 | Page number, default 1"
+// @Description 顺序分页返回 sequential=true，以 has_more 和 next_page_cursor 续页；已知总数也不允许无游标跳页 | Sequential pages return sequential=true and use has_more and next_page_cursor even when an exact total is known
+// @Param page_cursor query string false "顺序翻页时使用前一页返回的游标 | Cursor from the preceding sequential table page"
 // @Param page_size query int false "每页数量，默认20，最大2000 | Page size, default 20, max 2000"
 // @Param trajectory_selection query string false "单文件轨迹范围 JSON：device_field,time_field,time_encoding,devices,start,end；page=1、page_size=2000；时间左闭右开；最多2000点、32MiB、250000行、15秒 | Single-file trajectory selection JSON; device_field,time_field,time_encoding,devices,start,end; page=1,page_size=2000; half-open time range; budgets 2000 points,32MiB,250000 rows,15 seconds"
 // @Description 范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected
@@ -278,6 +282,13 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			return h.previewSourceChecker.ObserveCurrentSourceRead(ctx, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), []plugin.EngineCatalogPath{root})
 		}
 		req.CheckNativeTableRead = req.CheckWholeContainerRead
+		cursor := c.Query("page_cursor")
+		if req.Engine.EngineType == "postgresql" && req.ItemType == "table" && protectionSubject.ID != "" && tenant != 0 {
+			req.TablePage = &preview.TablePageRequest{Codec: h.tableCursors, Cursor: cursor, Subject: protectionSubject, Rules: protectionRules}
+		} else if cursor != "" {
+			writeCatalogPreviewError(c, preview.ErrTablePageCursor)
+			return
+		}
 		checker := h.previewSourceChecker
 		if req.Engine.EngineType == "postgresql" {
 			checker = managerprotection.PreviewSourceCheckFunc(func(ctx context.Context, credential string, paths []plugin.EngineCatalogPath) error {
@@ -314,6 +325,10 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			return
 		}
 		if writePreviewSourceError(c, err) {
+			return
+		}
+		if errors.Is(err, preview.ErrTablePageKeyUnavailable) {
+			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgPreviewFailed)
 			return
 		}
 		if writePreviewTimeout(c, err) {

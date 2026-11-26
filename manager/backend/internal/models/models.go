@@ -118,6 +118,10 @@ type MetaItemLite struct {
 
 // TablePreview 表数据预览结果
 type TablePreview struct {
+	Sequential     bool                                         `json:"sequential,omitempty"`
+	NextPageCursor string                                       `json:"next_page_cursor,omitempty"`
+	FinishPage     func(map[string]interface{}) (string, error) `json:"-" swaggerignore:"true"`
+
 	TrajectoryScope     *TrajectoryScope               `json:"trajectory_scope,omitempty"`
 	Mode                string                         `json:"mode"`
 	Columns             []string                       `json:"columns"`

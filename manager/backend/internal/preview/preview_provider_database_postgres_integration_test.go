@@ -3,12 +3,15 @@ package preview
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	commonquery "github.com/addp/common/query"
 	"net/url"
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
+	"github.com/addp/common/opaquetoken"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
@@ -70,6 +74,107 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 		}
 	}
 	pg := &postgresql.PostgreSQLPlugin{}
+	t.Run("two replicas seek composite constraint in index order", func(t *testing.T) {
+		const engineID = 14815
+		t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
+		if _, err := db.ExecContext(ctx, `CREATE TABLE "`+schema+`".seek_rows(id bigint NOT NULL, grp text NOT NULL, PRIMARY KEY(grp,id))`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO "`+schema+`".seek_rows VALUES(20,'b'),(10,'b'),(20,'a'),(10,'a')`); err != nil {
+			t.Fatal(err)
+		}
+		path := plugin.TabularItemPath(engineID, "schema", schema, "seek_rows")
+		makeReq := func(page int, cursor string) *PreviewRequest {
+			return &PreviewRequest{Engine: &models.Engine{ID: engineID, EngineType: "postgresql", ConnectionInfo: map[string]interface{}(conn)}, EnginePlugin: pg, ProviderPath: path, Schema: schema, Table: "seek_rows", Page: page, PageSize: 1, TablePage: &TablePageRequest{Codec: opaquetoken.New([]byte("only this fixture"), "manager.table-preview.v1"), Subject: dataprotection.SubjectReference{Type: "user", ID: "1"}, Cursor: cursor}, executePrepared: func(ctx context.Context, provider plugin.EnginePlugin, plan plugin.PreparedQuery) (*plugin.QueryResult, *dataprotection.PreparedTableProtection, error) {
+				set, err := plan.ReadSet(ctx)
+				if err != nil || set == nil || !reflect.DeepEqual(set.Paths, []plugin.EngineCatalogPath{path}) {
+					t.Fatalf("page source identity: %v %v", set, err)
+				}
+				return executeDatabasePreviewTestPlan(ctx, provider, plan)
+			}}
+		}
+		var token string
+		for i, want := range []string{"a10", "a20", "b10", "b20"} {
+			page, err := (&DatabaseTablePreviewProvider{}).Preview(ctx, makeReq(i+1, token))
+			if err != nil || !page.Sequential || len(page.Rows) != 1 || fmt.Sprint(page.Rows[0]["grp"], page.Rows[0]["id"]) != want || page.HasMore != (i < 3) {
+				t.Fatalf("page %d: %+v %v", i+1, page, err)
+			}
+			if page.HasMore {
+				token, err = page.FinishPage(page.Rows[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		req := makeReq(4, token)
+		req.TablePage.Subject.ID = "2"
+		if _, err := (&DatabaseTablePreviewProvider{}).Preview(ctx, req); !errors.Is(err, ErrTablePageCursor) {
+			t.Fatalf("wrong subject: %v", err)
+		}
+		req = makeReq(4, token)
+		req.TablePage.Rules = []dataprotection.Rule{{Action: "preview", Component: dataprotection.Component{Path: []dataprotection.PathSegment{{Name: "grp"}}}, Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress}}}
+		if _, err := (&DatabaseTablePreviewProvider{}).Preview(ctx, req); !errors.Is(err, ErrTablePageCursor) {
+			t.Fatalf("key no longer readable: %v", err)
+		}
+		req.TablePage.Cursor = ""
+		page, err := (&DatabaseTablePreviewProvider{}).Preview(ctx, req)
+		if err != nil || page.Sequential {
+			t.Fatalf("protected ordinary pagination: %+v %v", page, err)
+		}
+	})
+	t.Run("deep page seeks into source index", func(t *testing.T) {
+		relation := `"` + schema + `".deep_page`
+		for _, statement := range []string{"CREATE TABLE " + relation + " (id bigint PRIMARY KEY)", "INSERT INTO " + relation + " SELECT generate_series(1,60000)", "ANALYZE " + relation} {
+			if _, err := db.ExecContext(ctx, statement); err != nil {
+				t.Fatal(err)
+			}
+		}
+		dialect := commonquery.ForDialect("postgresql")
+		seek := tableSeek{keys: []string{"id"}, after: []string{"50000"}}
+		predicate, args := seek.predicate(dialect, "", nil)
+		planRows := func(where string, args []interface{}, offset int) int {
+			query := databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, `"__addp_src"."id"`, schema, "deep_page", seek.keys, where, 51, offset)
+			var raw string
+			if err := db.QueryRowContext(ctx, "EXPLAIN (ANALYZE, FORMAT JSON) "+query, args...).Scan(&raw); err != nil {
+				t.Fatal(err)
+			}
+			type plan struct {
+				Node      string `json:"Node Type"`
+				Rows      int    `json:"Actual Rows"`
+				Condition string `json:"Index Cond"`
+				Children  []plan `json:"Plans"`
+			}
+			var out []struct {
+				Root plan `json:"Plan"`
+			}
+			if err := json.Unmarshal([]byte(raw), &out); err != nil {
+				t.Fatal(err)
+			}
+			var maxRows int
+			found := false
+			var walk func(plan)
+			walk = func(p plan) {
+				if strings.Contains(p.Node, "Index") {
+					maxRows = max(maxRows, p.Rows)
+					found = found || strings.Contains(p.Condition, "50000")
+				}
+				for _, child := range p.Children {
+					walk(child)
+				}
+			}
+			walk(out[0].Root)
+			if where != "" && !found {
+				t.Fatalf("no index range for deep cursor: %s", raw)
+			}
+			return maxRows
+		}
+		indexed := planRows(predicate, args, 0)
+		offsetRows := planRows("", nil, 50000)
+		if indexed != 51 || offsetRows < 50051 {
+			t.Fatalf("index rows read: seek=%d offset=%d", indexed, offsetRows)
+		}
+		t.Logf("position 50000, page+lookahead 51, maximum rows from index node: seek=%d offset=%d", indexed, offsetRows)
+	})
 	t.Run("prepared profile pages", func(t *testing.T) {
 		// This isolated Provider test proves preparation and exact plan execution,
 		// not IAM approval. Production profiling remains closed until owner gates connect.

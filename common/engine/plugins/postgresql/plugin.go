@@ -440,6 +440,7 @@ const postgresListTablesQuery = `
 			t.table_name as name,
 			t.table_type,
 			COALESCE(c.relkind::text, '') as relkind,
+			c.relhassubclass,
 			CASE
 				WHEN t.table_type = 'VIEW' THEN 'view'
 				WHEN t.table_type = 'BASE TABLE' THEN 'table'
@@ -518,7 +519,7 @@ func (p *PostgreSQLPlugin) queryTables(ctx context.Context, db *gorm.DB, schema 
 			EstimatedRowCount: row.RowCount,
 			SizeBytes:         row.SizeBytes,
 			UpdatedAt:         row.UpdatedAt,
-			Native:            postgresTableNative(row.TableType, row.Relkind),
+			Native:            postgresTableNative(row.TableType, row.Relkind, row.Relhassubclass),
 		})
 	}
 
@@ -526,24 +527,26 @@ func (p *PostgreSQLPlugin) queryTables(ctx context.Context, db *gorm.DB, schema 
 }
 
 type postgresTableRow struct {
-	Name      string
-	TableType string
-	Relkind   string
-	Kind      string
-	RowCount  *int64
-	SizeBytes *int64
-	UpdatedAt *time.Time
+	Name           string
+	TableType      string
+	Relkind        string
+	Relhassubclass bool
+	Kind           string
+	RowCount       *int64
+	SizeBytes      *int64
+	UpdatedAt      *time.Time
 }
 
-var postgresTableNativeKeys = datatype.NewNativeAllowedKeys("table_type", "relkind")
+var postgresTableNativeKeys = datatype.NewNativeAllowedKeys("table_type", "relkind", "relhassubclass")
 
-func postgresTableNative(tableType, relkind string) map[string]interface{} {
+func postgresTableNative(tableType, relkind string, hasSubclass bool) map[string]interface{} {
 	native := map[string]interface{}{}
 	if tableType = strings.TrimSpace(tableType); tableType != "" {
 		native["table_type"] = tableType
 	}
 	if relkind = strings.TrimSpace(relkind); relkind != "" {
 		native["relkind"] = relkind
+		native["relhassubclass"] = hasSubclass
 	}
 	return datatype.FilterTableNative(native, postgresTableNativeKeys)
 }

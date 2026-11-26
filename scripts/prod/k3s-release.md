@@ -76,6 +76,8 @@ Gateway 与 System 应使用相容的路由快照契约。升级前后均从原 
 
 ## Manager 混合搜索双副本
 
+Manager Backend 的所有副本从同一站点 Secret 读取 `MANAGER_TABLE_CURSOR_KEY`。用 `openssl rand -base64 32` 为该站点单独生成一次；滚动升级继续引用原值，轮换后从第一页重新浏览。Compose 的 `setup-env.sh` 会生成并验证此密钥。
+
 将同一源码版本的 `scripts/infra/manager-search-redis.sh` 作为 ConfigMap 文件交给站点。以下两条命令中的 `NS` 是业务命名空间，`KEY_FILE` 是现场单独交付的随机凭据文件（权限 0600，内容为一个无换行的高熵值）。更新前核对当前 namespace 和 context。
 
 ```bash

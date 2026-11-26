@@ -5492,6 +5492,7 @@ paths:
         CSV/TSV 已扫描稀疏索引在读前和读后核对源版本；变化或绑定不完整返回 409/preview_source_refresh_required，提示刷新元数据；源事实不可读返回 503/preview_source_unavailable，不返回部分数据 | CSV/TSV sparse indexes verify source versions before and after reading; changed or incomplete bindings return 409/preview_source_refresh_required; unavailable source facts return 503/preview_source_unavailable; no partial data is returned
         表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
         bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
+        顺序分页返回 sequential=true，以 has_more 和 next_page_cursor 续页；已知总数也不允许无游标跳页 | Sequential pages return sequential=true and use has_more and next_page_cursor even when an exact total is known
         范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected
         ClickHouse 已声明的二进制列在保护后以 Base64 字符串返回，空字节为空串，SQL NULL 为 null，保护文本保持原样 | Declared ClickHouse binary cells use Base64 strings after protection, empty bytes use an empty string, SQL NULL remains null, and protected text is unchanged
       parameters:
@@ -5518,6 +5519,11 @@ paths:
         in: query
         name: page
         type: integer
+      - description: 顺序翻页时使用前一页返回的游标 | Cursor from the preceding sequential table
+          page
+        in: query
+        name: page_cursor
+        type: string
       - description: 每页数量，默认20，最大2000 | Page size, default 20, max 2000
         in: query
         name: page_size

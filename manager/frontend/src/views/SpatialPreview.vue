@@ -108,6 +108,7 @@
 </template>
 
 <script setup>
+import { requestTablePage, rememberTablePage } from '../utils/tablePageHistory'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -225,6 +226,7 @@ const showVectorMaterializedViewAction = computed(() => {
 const basicPreviewData = ref(null)
 const basicPreviewLoading = ref(false)
 let basicPreviewRequestSeq = 0
+let tablePageHistory = {}
 
 const unpackPreviewResponse = (response) => {
   if (response?.preview_type && response?.data) return response.data
@@ -242,11 +244,13 @@ const loadBasicPreview = async (page = 1, pageSize = 20) => {
       params: {
         locator: locator.value,
         page,
-        page_size: pageSize
+        page_size: pageSize,
+        ...requestTablePage(tablePageHistory, locator.value, pageSize, page)
       }
     })
     if (seq === basicPreviewRequestSeq) {
       basicPreviewData.value = unpackPreviewResponse(response)
+      rememberTablePage(tablePageHistory, page, basicPreviewData.value)
     }
   } catch (error) {
     console.error('加载基础预览失败:', error)
@@ -267,6 +271,7 @@ const handleBasicPreviewPageChange = async (payload) => {
 }
 
 const clearBasicPreview = () => {
+  tablePageHistory = {}
   basicPreviewRequestSeq += 1
   basicPreviewData.value = null
   basicPreviewLoading.value = false

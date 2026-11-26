@@ -1361,8 +1361,19 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Manager Backend（带检查）
   if [ "$START_MANAGER_BACKEND" = true ]; then
     if check_service_running "manager" "$MANAGER_BACKEND_PORT"; then
+      manager_table_cursor_key="${MANAGER_TABLE_CURSOR_KEY:-}"
+      if [[ -z "$manager_table_cursor_key" && "${ENV:-development}" == development && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+        key_file="$PROJECT_ROOT/.dev-state/manager-table-cursor.key"
+        mkdir -p "$(dirname "$key_file")"
+        if [[ ! -e "$key_file" ]]; then
+          tmp_key=$(mktemp "${key_file}.XXXXXX")
+          openssl rand -base64 32 > "$tmp_key" && { ln "$tmp_key" "$key_file" 2>/dev/null || [[ -s "$key_file" ]]; } || { rm -f "$tmp_key"; exit 1; }
+          rm -f "$tmp_key"
+        fi
+        manager_table_cursor_key=$(cat "$key_file")
+      fi
       addp_dev_prepare_database manager || exit 1
-      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" manager manager backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-manager" &
+      MANAGER_TABLE_CURSOR_KEY="$manager_table_cursor_key" python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" manager manager backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-manager" &
       MANAGER_PID=$!
       echo $MANAGER_PID > .dev-pids/manager.pid
       BACKEND_STARTS+=("manager:$MANAGER_PID")

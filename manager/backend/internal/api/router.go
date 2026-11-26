@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/addp/common/opaquetoken"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
@@ -306,6 +307,9 @@ func SetupRouter(
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService, protectionStore, systemServiceClient)
 		explorerHandler.SetPGSourceChecker(systemServiceClient)
+		if len(cfg.TableCursorKey) != 0 {
+			explorerHandler.tableCursors = opaquetoken.New(cfg.TableCursorKey, "manager.table-preview.v1")
+		}
 		explorerHandler.SetObjectPreviewChecker(systemServiceClient)
 		explorerHandler.navigationChecker = systemServiceClient
 		metadataHandler := NewMetadataHandler(metadataService)

@@ -102,7 +102,7 @@ func prepareProfilePages(ctx context.Context, req *PreviewRequest, fields []data
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		query, err := (&DatabaseTablePreviewProvider{}).preparePostgreSQLPreview(ctx, &bound, fields, page.Offset, page.Limit)
+		query, err := (&DatabaseTablePreviewProvider{}).preparePostgreSQLPreview(ctx, &bound, fields, page.Offset, page.Limit, nil)
 		if err != nil || query == nil {
 			if err != nil {
 				return nil, err

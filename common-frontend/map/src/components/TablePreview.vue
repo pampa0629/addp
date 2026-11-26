@@ -100,7 +100,7 @@
       <DataPagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
-        :total="total"
+        :total="data.sequential ? null : total"
         :has-more="data.has_more"
         @change="handlePaginationChange"
       />

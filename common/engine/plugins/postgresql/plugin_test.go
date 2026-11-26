@@ -139,9 +139,9 @@ func TestProtocolCompatibleCatalogFiltersAndRejectsAdditionalSystemTables(t *tes
 }
 
 func TestPostgresTableNativeKeepsSourceFactsOnly(t *testing.T) {
-	native := postgresTableNative(" BASE TABLE ", " r ")
+	native := postgresTableNative(" BASE TABLE ", " r ", true)
 
-	if native["table_type"] != "BASE TABLE" || native["relkind"] != "r" {
+	if native["table_type"] != "BASE TABLE" || native["relkind"] != "r" || native["relhassubclass"] != true {
 		t.Fatalf("postgresTableNative() = %#v, want table_type and relkind", native)
 	}
 	if native["kind"] != nil {
@@ -150,7 +150,7 @@ func TestPostgresTableNativeKeepsSourceFactsOnly(t *testing.T) {
 }
 
 func TestPostgresTableNativeReturnsNilForEmptyFacts(t *testing.T) {
-	if got := postgresTableNative("", " "); got != nil {
+	if got := postgresTableNative("", " ", false); got != nil {
 		t.Fatalf("postgresTableNative() = %#v, want nil", got)
 	}
 }

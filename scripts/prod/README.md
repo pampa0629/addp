@@ -2,6 +2,8 @@
 
 本目录包含 ADDP 生产环境部署和管理脚本。
 
+升级包含 Manager 的现有站点时，在现场私有配置中保留原有密钥，并补齐两项独立值。用 `openssl rand -base64 32` 生成 `MANAGER_TABLE_CURSOR_KEY`，仅交给同一部署的 Manager Backend 副本。用 `openssl rand -hex 32` 生成 `MANAGER_SEARCH_REDIS_PASSWORD`，仅交给 Manager Backend 和专用短时 Redis。首次安装由 `scripts/prod/setup-env.sh` 生成。游标密钥轮换后从第一页重新浏览；独立进程按相同变量配置。
+
 ## 目录
 
 - [start.sh](#startsh) - 生产环境启动脚本

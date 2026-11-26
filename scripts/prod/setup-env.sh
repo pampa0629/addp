@@ -114,6 +114,7 @@ validate_production_env() {
   done
 
   if [[ "$(env_value ADDP_DEPLOYMENT_SCOPE)" != system-meta-gateway || ",$(env_value ADDP_DEPLOYMENT_MODULES)," == *,manager,* ]]; then
+    require_b64_key MANAGER_TABLE_CURSOR_KEY || return 1
     require_secret MANAGER_SEARCH_REDIS_PASSWORD || return 1
     if [ "$(env_value MANAGER_SEARCH_REDIS_PASSWORD)" = "$(env_value REDIS_PASSWORD)" ]; then
       echo "Manager 搜索凭据与 Infra Redis 密码不得复用" >&2
@@ -189,6 +190,7 @@ chmod 600 "$ENV_FILE"
 replace_env ENV production
 replace_env POSTGRES_PASSWORD "$(gen_password)"
 replace_env REDIS_PASSWORD "$(gen_password)"
+replace_env MANAGER_TABLE_CURSOR_KEY "$(gen_b64_key)"
 replace_env MANAGER_SEARCH_REDIS_PASSWORD "$(gen_secret)"
 replace_env INFRA_FALKORDB_PASSWORD "$(gen_password)"
 replace_env MINIO_ROOT_PASSWORD "$(gen_password)"

@@ -147,6 +147,7 @@ type PreviewResolverRequest struct {
 	GraphSample             plugin.GraphSampleFilter      // 图预览样本过滤条件
 	DataScope               dataprofile.DataScope         // Manager 剖析内部使用的数据范围；公共预览不接受该参数
 	QueryCatalogPath        *plugin.EngineCatalogPath     // Only set from tenant-bound Meta ancestor facts, never caller locator names.
+	TablePage               *TablePageRequest
 	KeyValueOptions         plugin.KeyValueReadOptions
 }
 
@@ -734,6 +735,7 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 
 	return &PreviewRequest{
 		Locator:              req.Locator.ToURI(),
+		TablePage:            req.TablePage,
 		KeyValueOptions:      req.KeyValueOptions,
 		TrajectorySelection:  req.TrajectorySelection,
 		CheckTrajectoryRead:  req.CheckTrajectoryRead,

@@ -1,3 +1,4 @@
+import { requestTablePage, rememberTablePage } from '../utils/tablePageHistory'
 import { defineStore } from 'pinia'
 import { toRaw } from 'vue'
 import { hasExpandableChildren } from '@common-ui/utils/resourceTreeState.mjs'
@@ -65,6 +66,7 @@ export const useExplorerStore = defineStore('explorer', {
     childPreviewRequestSeq: 0,
 
     // 分页
+    tablePageHistory: {},
     pagination: {
       page: 1,
       pageSize: 20
@@ -540,7 +542,8 @@ export const useExplorerStore = defineStore('explorer', {
         const params = {
           locator,
           page,
-          page_size: this.pagination.pageSize
+          page_size: this.pagination.pageSize,
+          ...requestTablePage(this.tablePageHistory, locator, this.pagination.pageSize, page)
         }
         if (normalizedChildName) {
           params.child_name = normalizedChildName
@@ -584,6 +587,7 @@ export const useExplorerStore = defineStore('explorer', {
         if (!isCurrentRequest()) {
           return null
         }
+        rememberTablePage(this.tablePageHistory, page, preview)
         this.previewData = preview
         const defaultChild = this.defaultContainerChildName(preview)
         if (defaultChild) {
@@ -705,6 +709,7 @@ export const useExplorerStore = defineStore('explorer', {
      * 重置状态
      */
     reset() {
+      this.tablePageHistory = {}
       this.cancelLocatorReveal()
       this.selectedLocator = null
       this.selectedNodeContext = null

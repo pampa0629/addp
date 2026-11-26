@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"log"
 	"os"
@@ -14,6 +15,8 @@ import (
 
 type Config struct {
 	commonConfig.BaseConfig
+
+	TableCursorKey []byte
 
 	// Manager 模块特有配置
 	Port                string
@@ -145,6 +148,13 @@ func Load() *Config {
 
 	// Bootstrap 部署配置只从根 env / 进程环境读取。
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
+	if raw := os.Getenv("MANAGER_TABLE_CURSOR_KEY"); raw != "" {
+		key, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(key) != 32 {
+			log.Fatal("MANAGER_TABLE_CURSOR_KEY must be a base64-encoded 32-byte key")
+		}
+		cfg.TableCursorKey = key
+	}
 
 	cfg.VectorConfig.Dimension = 2560
 

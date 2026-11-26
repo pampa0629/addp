@@ -22,6 +22,12 @@ func previewResultForJSON(result *preview.PreviewResult) (*preview.PreviewResult
 	if err != nil {
 		return nil, err
 	}
+	if table.FinishPage != nil && table.HasMore {
+		wireTable.NextPageCursor, err = table.FinishPage(table.Rows[len(table.Rows)-1])
+		if err != nil {
+			return nil, err
+		}
+	}
 	wireResult := *result
 	wireResult.Data = &wireTable
 	return &wireResult, nil

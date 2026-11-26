@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -162,8 +163,18 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("preview pagination overflow"))
 	}
 	offset := (page - 1) * pageSize
+	var seek *tableSeek
+	if req.TablePage != nil {
+		seek, err = req.TablePage.resolve(req, catalogFacts, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		if seek != nil {
+			offset = 0
+		}
+	}
 	limit := pageSize
-	if total == nil {
+	if total == nil || seek != nil {
 		limit++
 	}
 
@@ -177,7 +188,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	var rows []map[string]interface{}
 	var preparedProtection *dataprotection.PreparedTableProtection
 	if plug.Type() == "postgresql" {
-		prepared, prepareErr := p.preparePostgreSQLPreview(ctx, req, columns, offset, limit)
+		prepared, prepareErr := p.preparePostgreSQLPreview(ctx, req, columns, offset, limit, seek)
 		if prepareErr != nil {
 			return nil, prepareErr
 		}
@@ -186,6 +197,13 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		if err == nil {
 			if result == nil || preparedProtection == nil || preparedProtection.Apply == nil {
 				return nil, ErrSourceAuthorizationRequired
+			}
+			if seek != nil {
+				for _, key := range seek.keys {
+					if slices.Contains(preparedProtection.DerivedFields, key) {
+						return nil, ErrTablePageCursor
+					}
+				}
 			}
 			rows, columnNames = result.Rows, result.Columns
 		}
@@ -263,12 +281,17 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
-	hasMore := total == nil && len(rows) > pageSize
+	hasMore := (total == nil || seek != nil) && len(rows) > pageSize
 	if hasMore {
 		rows = rows[:pageSize]
 	}
 
+	var finishPage func(map[string]interface{}) (string, error)
+	if seek != nil {
+		finishPage = seek.next
+	}
 	return &models.TablePreview{
+		Sequential: seek != nil, FinishPage: finishPage,
 		PreparedProtection:  preparedProtection,
 		Mode:                PreviewModeTable,
 		Columns:             columnNames,
@@ -299,7 +322,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 
 // The server generates a bounded table query, not a user SQL endpoint. The
 // resolved instance owns preparation, complete dependency proof and execution.
-func (p *DatabaseTablePreviewProvider) preparePostgreSQLPreview(ctx context.Context, req *PreviewRequest, columns []datatype.FieldInfo, offset, limit int) (plugin.PreparedQuery, error) {
+func (p *DatabaseTablePreviewProvider) preparePostgreSQLPreview(ctx context.Context, req *PreviewRequest, columns []datatype.FieldInfo, offset, limit int, seek *tableSeek) (plugin.PreparedQuery, error) {
 	runtime, ok := req.EnginePlugin.(plugin.QueryRuntimeProvider)
 	dialectProvider, hasDialect := req.EnginePlugin.(plugin.SQLDialectProvider)
 	// Preview may fetch one lookahead row beyond the maximum response size.
@@ -325,6 +348,10 @@ func (p *DatabaseTablePreviewProvider) preparePostgreSQLPreview(ctx context.Cont
 		return nil, err
 	}
 	keys := databasePrimaryKeyColumns(columns)
+	if seek != nil {
+		keys = seek.keys
+		where, args = seek.predicate(dialect, where, args)
+	}
 	query := ""
 	if len(keys) > 0 {
 		query = databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias), schema, table, keys, where, limit, offset)
@@ -733,7 +760,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 		return nil, nil, fmt.Errorf("engine %s does not implement EngineCatalogFactsProvider", plug.Type())
 	}
 	catalogFacts, err := catalogFactsProvider.DescribeEngineCatalogFacts(ctx, connInfo, providerPath, plugin.EngineCatalogFactsOptions{
-		IncludeIndexes: true,
+		IncludeIndexes: true, IncludeConstraints: plug.Type() == "postgresql",
 	})
 	if err != nil {
 		return nil, nil, err
