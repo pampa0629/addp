@@ -41,6 +41,12 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
 EXECUTION_INVENTORY_LIMITS = {
+    'raster-focal-percentile-persistence': 36,
+    'raster-focal-percentiles-persistence': 48,
+    'raster-focal-weighted-mean-persistence': 56,
+    'raster-focal-weighted-stddev-persistence': 56,
+    'raster-focal-weighted-sum-persistence': 56,
+    'raster-focal-variety-persistence': 36,
     'raster-region-group-persistence': 38,
     'raster-boundary-clean-two-rounds-persistence': 28,
     'raster-sieve-protected-persistence': 42,

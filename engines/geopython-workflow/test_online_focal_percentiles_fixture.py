@@ -82,11 +82,24 @@ def test_archive_existing_bytes_are_not_repaired_or_overwritten(complete_sources
  assert p.read_bytes()==changed
 
 def test_worker_stdin_frozen_source_run_scope_poison_and_cleanup(tmp_path):
- script=Path(f.__file__).read_text();sha=hashlib.sha256(script.encode()).hexdigest();root=tmp_path/'owned';root.mkdir();(root/'outputs').mkdir();(root/'.addp-online-owner').write_text(f.PREFIX+'-123-1');scratch=tmp_path/'scratch';scratch.mkdir();env={**os.environ,'TMPDIR':str(scratch)}
- def call(action,*names):return subprocess.run([sys.executable,'-','--worker',action,str(root),*names],input=script.encode(),cwd=tmp_path,env=env,capture_output=True)
+ script=Path(f.__file__).read_bytes()
+ sha=hashlib.sha256(script).hexdigest()
+ scratch=tmp_path.resolve()
+ root=scratch/'addp-raster-focal-percentiles-owned'
+ root.mkdir()
+ (root/'outputs').mkdir()
+ (root/'.addp-online-owner').write_text(f.PREFIX+'-123-1')
+ env={**os.environ,'TMPDIR':str(scratch)}
+ def call(action,*names):return subprocess.run([sys.executable,'-','--worker',action,str(root),*names],input=script,cwd=tmp_path,env=env,capture_output=True,timeout=60)
  seeded=call('seed');assert seeded.returncode==0,seeded.stderr
  baseline=call('oracle',sha);assert baseline.returncode==0,baseline.stderr;anchor=json.loads(baseline.stdout)['oracle_sha256']
  assert call('verify',anchor,sha).returncode==0
+ residual=scratch/'addp-raster-execution-leftover'
+ residual.mkdir()
+ failure=call('verify',anchor,sha)
+ assert failure.returncode==1
+ assert b'FixtureError: Runtime execution workspace residual' in failure.stderr
+ residual.rmdir()
  assert call('verify',anchor,'b'*64).returncode!=0
  (root/'.addp-online-owner').write_text(f.PREFIX+'-124-1');assert call('verify',anchor,sha).returncode!=0;(root/'.addp-online-owner').write_text(f.PREFIX+'-123-1')
  (root/f.ORACLE).chmod(0o644);assert call('verify',anchor,sha).returncode!=0

@@ -41,6 +41,7 @@ def diagnostic(repository, env, identifier, problem, language, timeout):
             'exact_cause': m.MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}
 
 class Client:
+    entry_fault = None
     timeout = 30
     mutation = None
     added_scan = False
@@ -70,7 +71,29 @@ class Client:
         elif path == '/api/v1/develop/executions' and method == 'POST':
             dag = body['content']['workflow_definition']; target_name = dag['tasks'][-1]['params']['target_name']; success = target_name in m.fixture.CASES
             identifier = str(uuid.UUID(int=len(self.executions)+1)); language = headers['Accept-Language']
-            data = {'execution_id':identifier,'tenant_id':2,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
+            problem = target_name.removeprefix('failed-').removesuffix(f'-{language}.cog.tif')
+            if problem in m.ENTRY_PARAMETERS:
+                assert expected == (400,)
+                index = next(index for index, task in enumerate(dag['tasks']) if task['id'] == 'focal')
+                field = f'workflow_definition.tasks[{index}].params.{m.ENTRY_PARAMETERS[problem]}'
+                if language == 'zh-cn':
+                    message = '工作流参数无效，请检查节点参数'
+                    detail = '参数类型与算子声明不符：' + field
+                else:
+                    message = 'Invalid workflow parameters. Review the node parameters'
+                    detail = 'Parameter type differs from the operator declaration: ' + field
+                data = {'error': message, 'error_code': 'invalid_workflow_parameters',
+                        'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': detail}]}
+                if self.entry_fault == 'execution':
+                    self.executions[identifier] = {}
+                if self.entry_fault == 'scan':
+                    self.scans.append('unexpected-entry-scan')
+                if self.entry_fault == 'path':
+                    data['errors'][0]['path'] += '.other'
+                return SimpleNamespace(status=500 if self.entry_fault == 'http500' else 400, payload=data,
+                                       raw=b'{}' if self.entry_fault == 'raw' else json.dumps(data).encode())
+            assert expected == (200,)
+            data = {'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
                     'execution_config':{'engine_id':7,'display_language':language,'content':{'workflow_definition':copy.deepcopy(dag)}}, 'error_msg':None if success else 'frozen-'+language,
                     'error_details':{} if success else {'category':'execution_failed'}, 'outputs':{}, 'metadata':{'result':{}}}
             if success:
@@ -103,10 +126,21 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
             assert tenant==2 and principal==33 and identifier in client.executions
             name=dag['tasks'][-1]['params']['target_name']; target='addp://engine/3/path/outputs/'+name+'?type=file'
             return m.expected_lineage(client.locators(), name, target)
+        def failed_reader(env, identifier, tenant, principal, dag):
+            saved = client.executions[identifier]
+            assert tenant == 2 and principal == 33 and saved['status'] == 'failed'
+            assert dag == saved['execution_config']['content']['workflow_definition']
+            return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
+                    'triggered_by': principal, 'module': 'develop', 'task_type': 'workflow',
+                    'status': 'failed', 'workflow_matches': True}
+        def inventory_reader(env, tenant, execution_ids):
+            if tenant != 2 or sorted(execution_ids) != sorted(client.executions):
+                raise m.SuiteError('entry rejection changed the current Develop execution inventory')
         def relation(client, source, target, execution, timeout):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
         with patch.object(m.raster,'wait_lineage',side_effect=relation):
-            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader)
+            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader,
+                                  failed_reader=failed_reader,inventory_reader=inventory_reader)
     def test_full_matrix_16_success_56_failures_1032_checks_and_cleanup(self):
         client=Client();calls=[]
         def worker(*args): calls.append((args[2],list(args[3]))); return physical(*args)
@@ -116,6 +150,19 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
         self.assertEqual(len(self.relations),16);self.assertTrue(report['oracle_cache_removed'])
         self.assertEqual(report['source_scan_identity']['parent_execution_id'],None)
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
+        entry = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'develop_entry']
+        node = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'analysis_node']
+        self.assertEqual((len(entry), len(node), len(client.executions)), (16, 40, 56))
+        for failure in entry:
+            self.assertTrue(failure['no_execution_created'])
+            self.assertNotIn('execution_id', failure)
+            receipt = failure['submission']
+            raw = (self.root/'evidence'/receipt['path']).read_bytes()
+            self.assertEqual((receipt['http_status'], receipt['size_bytes'], receipt['sha256']),
+                             (400, len(raw), hashlib.sha256(raw).hexdigest()))
+        for failure in node:
+            self.assertEqual(failure['internal_execution_identity']['execution_id'], failure['execution_id'])
+            self.assertEqual(failure['internal_execution_identity']['tenant_id'], 2)
         self.assertEqual({(x['problem'],x['language']) for x in report['failed_parameters']},{(p,l) for p in m.FAILURES for l in ('zh-cn','en')})
         self.assertEqual(len(list((self.root/'evidence/weighted_stddev-lineage').iterdir())),16)
         offset=0
@@ -123,6 +170,21 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
             count=len(m.case_inputs(case['name']));observed=self.relations[offset:offset+count];offset+=count
             self.assertEqual([r[0] for r in observed],[client.items[n]['id'] for n in m.case_inputs(case['name'])])
             self.assertTrue(all(r[1:]==(case['target_item_id'],case['execution_id']) for r in observed))
+    def test_entry_rejection_requires_original_response_and_no_execution_or_scan(self):
+        for fault, error in (
+            ('raw', 'original JSON differs'),
+            ('http500', 'entry rejection status'),
+            ('path', 'parameter path differs'),
+            ('execution', 'changed the current Develop execution inventory'),
+            ('scan', 'failed execution added scan'),
+        ):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                self.env['ADDP_ONLINE_ARTIFACT_DIR'] = directory
+                client = Client()
+                client.entry_fault = fault
+                with self.assertRaisesRegex(m.SuiteError, error):
+                    self.run_case(client)
+
     def test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection(self):
         wanted=m.expected_lineage({n:n for n in m.fixture.SOURCES},'weighted-3.cog.tif','target')
         for public in (False,True):

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 
+base=importlib.import_module('scripts.test.raster-statistics-percentile-workflow-online')
 raster=importlib.import_module('scripts.test.raster-workflow-online')
 rasterize=importlib.import_module('scripts.test.vector-rasterize-persistence-online')
 fixture=importlib.import_module('business.scripts.online-raster-focal-percentile-fixture')
@@ -64,6 +65,17 @@ class DiagnosticClient(rasterize.DiagnosticClient):
 FAILURES=('percentile_missing','percentile_null','percentile_boolean','percentile_string','percentile_array',
           'percentile_low','percentile_high','unused','method','window_value','window_boolean','window_string',
           'band','band_zero','band_boolean','band_string','alpha','complex')
+ENTRY_PARAMETERS = {
+    'band_boolean': 'band',
+    'band_string': 'band',
+    'percentile_array': 'percentiles',
+    'percentile_boolean': 'percentiles',
+    'percentile_null': 'percentiles',
+    'percentile_string': 'percentiles',
+    'window_boolean': 'window_size',
+    'window_string': 'window_size',
+}
+
 SubmittedLanguageClient=importlib.import_module('scripts.test.raster-disk-pressure-online').SubmittedLanguageClient
 
 
@@ -230,7 +242,7 @@ def validate_lineage(facts,bindings,target):
     lineage_observer.validate(facts,expected_lineage(bindings,target),public=False)
 
 
-def _run_scenario(repository,env,client,progress,scope_hash,tenant,identity,physical_runner,diagnostic_runner,lineage_reader):
+def _run_scenario(repository,env,client,progress,scope_hash,tenant,identity,physical_runner,diagnostic_runner,lineage_reader,failed_reader,inventory_reader):
     timeout=float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
     full_checks=0;physical_calls=0
     engine=positive(env['ADDP_ONLINE_FOCAL_PERCENTILE_NFS_ENGINE_ID'],'NFS engine')
@@ -292,42 +304,68 @@ def _run_scenario(repository,env,client,progress,scope_hash,tenant,identity,phys
     before_scans=scan_ids(client)
     if before_scans!=sorted([source_scan,*scans]):raise SuiteError('unexpected source or output scan')
     failures=[]
+    known_executions=[case['execution_id'] for case in cases]
     old_edges={name:source_edges(client,item['id']) for name,item in items.items()}
     for problem in FAILURES:
         for language in ('zh-cn','en'):
             with progress.stage('negative',len(failures)+1):
-                with progress.measure('submit_wait'):
-                    identifier=raster.submit(SubmittedLanguageClient(client,language),runtime,definition(sources,parent,'p25-3.cog.tif',invalid=problem,language=language))
-                    failed=raster.wait_execution(client,'develop',identifier,timeout,expected='failed')
-                if obj(failed.get('error_details'),'failed error').get('category')!='execution_failed':
-                    raise SuiteError('classification percentile failure has the wrong error category')
-                with progress.measure('diagnostic'):
-                    diagnostic=diagnostic_runner(repository,env,identifier,problem,language,timeout)
-                with progress.measure('monitor_query'):
-                    observed=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'failed Monitor execution')
-                    if (observed.get('status')!='failed' or observed.get('module')!='develop'
-                        or obj(observed.get('error_details'),'Monitor failure').get('category')!='execution_failed'
-                        or obj(observed.get('metadata'),'failed Monitor metadata').get('lineage_facts',{}).get('outputs')):
-                        raise SuiteError('Monitor failed status/category or absence of output lineage differs')
-                    opposite=SubmittedLanguageClient(client,'en' if language=='zh-cn' else 'zh-cn')
-                    queried=raster.wait_execution(opposite,'develop',identifier,timeout,expected='failed')
-                    if queried.get('error')!=failed.get('error') or queried.get('error_details')!=failed.get('error_details'):
-                        raise SuiteError('query language rewrote stored failure')
+                workflow=definition(sources,parent,'p25-3.cog.tif',invalid=problem,language=language)
+                failure={'problem':problem,'language':language,'no_publication_or_scan_or_lineage':True}
+                parameter=ENTRY_PARAMETERS.get(problem)
+                if parameter is not None:
+                    with progress.measure('submit_wait'):
+                        raw=base.reject_workflow_parameter(client,runtime,workflow,'focal',parameter,language,
+                                                           min(180,max(1,int(timeout))))
+                    with progress.measure('absence_checks'):
+                        inventory_reader(env,tenant,known_executions)
+                    receipt=base.immutable(Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/f'entry-{problem}-{language}.json',raw)
+                    failure.update(rejection_stage='develop_entry',no_execution_created=True,
+                                   submission={**receipt,'http_status':400})
+                else:
+                    with progress.measure('submit_wait'):
+                        identifier=raster.submit(SubmittedLanguageClient(client,language),runtime,workflow)
+                        known_executions.append(identifier)
+                        failed=raster.wait_execution(client,'develop',identifier,timeout,expected='failed')
+                    base.readonly.actor(failed,identity,'develop')
+                    base.readonly.execution_snapshot(failed,workflow,runtime)
+                    if ('tenant_id' in failed or failed.get('execution_id')!=identifier or failed.get('task_type')!='workflow'
+                        or failed['execution_config'].get('display_language')!=language
+                        or obj(failed.get('error_details'),'failed error').get('category')!='execution_failed'):
+                        raise SuiteError('current failed execution identity, language or category differs')
+                    with progress.measure('internal_lineage'):
+                        failed_identity=failed_reader(env,identifier,tenant,int(identity['principal_id']),workflow)
+                    with progress.measure('diagnostic'):
+                        diagnostic=diagnostic_runner(repository,env,identifier,problem,language,timeout)
+                    if diagnostic!={'execution_id':identifier,'task':'focal','cause':'invalid_'+problem,
+                                    'language':language,'source':'develop_runtime_log','exact_cause':MESSAGES[problem][language=='en']}:
+                        raise SuiteError('wrong exact failure task/cause')
+                    with progress.measure('monitor_query'):
+                        observed=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'failed Monitor execution')
+                        base.readonly.actor(observed,identity,'develop')
+                        base.readonly.no_publication(observed)
+                        if (observed.get('execution_id')!=identifier or 'tenant_id' in observed or observed.get('status')!='failed'
+                            or obj(observed.get('error_details'),'Monitor failure').get('category')!='execution_failed'):
+                            raise SuiteError('Monitor failed identity/category differs')
+                        opposite=SubmittedLanguageClient(client,'en' if language=='zh-cn' else 'zh-cn')
+                        queried=raster.wait_execution(opposite,'develop',identifier,timeout,expected='failed')
+                        if any(queried.get(key)!=failed.get(key) for key in ('error','error_msg','error_details','execution_config')):
+                            raise SuiteError('query language rewrote stored failure')
+                    base.readonly.no_publication(failed)
+                    failure.update(rejection_stage='analysis_node',execution_id=identifier,status='failed',
+                                   monitor_verified=True,query_language_did_not_rewrite_failure=True,
+                                   diagnostic=diagnostic,internal_execution_identity=failed_identity)
                 with progress.measure('absence_checks'):
-                    failed_result=obj(failed.get('metadata'),'failed metadata').get('result')
-                    if failed_result is not None:failed_result=obj(failed_result,'failed result')
-                    if failed.get('outputs') or (failed_result is not None and failed_result.get('meta_scan_runs')):
-                        raise SuiteError('invalid parameter published a target or automatic scan')
                     if scan_ids(client)!=before_scans:raise SuiteError('invalid parameter added a scan')
                     if any(source_edges(client,item['id'])!=old_edges[name] for name,item in items.items()):
                         raise SuiteError('invalid parameter added derived lineage')
-                    if failed.get('metadata',{}).get('lineage_facts',{}).get('outputs'):
-                        raise SuiteError('invalid parameter published output lineage')
                 with progress.measure('physical_verify_archive'):
                     native=physical_runner(repository,env,names);check_physical(native,previous,scope_hash)
                 progress.physical_profile(native);full_checks+=len(names);physical_calls+=1
-                failures.append({'problem':problem,'language':language,'execution_id':identifier,'status':'failed','no_publication_or_scan_or_lineage':True,'monitor_verified':True,'query_language_did_not_rewrite_failure':True,'diagnostic':diagnostic})
+                failures.append(failure)
     with progress.stage('source_metadata'):
+        inventory_reader(env,tenant,known_executions)
+        if sum(failure['rejection_stage']=='develop_entry' for failure in failures)!=16:
+            raise SuiteError('exact Develop entry rejection count differs')
         for name,item in items.items():
             if client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload!=before[name]:
                 raise SuiteError('source metadata changed')
@@ -339,7 +377,9 @@ def _run_scenario(repository,env,client,progress,scope_hash,tenant,identity,phys
         'physical':native,'archived_cogs':native['archived_cogs'],'cleanup_boundary':'owned NFS export/directory and disposable deployment; no business DELETE acceptance'}
 
 
-def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage_observer.read_current,oracle_runner=fixture_call):
+def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage_observer.read_current,oracle_runner=fixture_call,
+                 *,failed_reader=lineage_observer.read_failed_execution,
+                 inventory_reader=lineage_observer.check_execution_inventory):
     # Both first construction and cleanup run inside the unchanged business child budget.
     env=dict(env);progress=PercentileProgress(env,SUITE);primary=None;cleanup_error=None;report=None;prepared=None
     try:
@@ -356,7 +396,7 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
             build=obj(prepared.get('timing_ms'),'oracle prepare timings')
             if set(build)!={'expected_build_ms','cache_write_ms'}or any(type(v)is not int or not 0<=v<=600000 for v in build.values()):raise SuiteError('oracle preparation timings differ')
             env['ADDP_ONLINE_FOCAL_PERCENTILE_ORACLE_ANCHOR_SHA256']=prepared['anchor_sha256']
-        report=_run_scenario(repository,env,client,progress,prepared['scope_sha256'],tenant,identity,physical_runner,diagnostic_runner,lineage_reader)
+        report=_run_scenario(repository,env,client,progress,prepared['scope_sha256'],tenant,identity,physical_runner,diagnostic_runner,lineage_reader,failed_reader,inventory_reader)
     except BaseException as error:primary=error
     finally:
         try:

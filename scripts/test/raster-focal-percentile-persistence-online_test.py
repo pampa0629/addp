@@ -36,6 +36,7 @@ def target_item(name,identifier):
 
 
 class Client:
+    entry_fault=None
     actor=33
     corrupt_size=False
     failure_publishes=False
@@ -60,6 +61,30 @@ class Client:
             tasks=body['content']['workflow_definition']['tasks'];name=tasks[-1]['params']['target_name'];identifier='exec-'+name
             if tasks[-1]['params'].get('write_mode')!='create' or 'mode' in tasks[-1]['params']:
                 raise AssertionError('raster_save requires the formal write_mode parameter')
+            language=(headers or {}).get('Accept-Language','zh-cn')
+            problem = name.removeprefix('failed-').removesuffix(f'-{language}.cog.tif')
+            if problem in m.ENTRY_PARAMETERS:
+                assert expected == (400,)
+                index = next(index for index, task in enumerate(tasks) if task['id'] == 'focal')
+                field = f'workflow_definition.tasks[{index}].params.{m.ENTRY_PARAMETERS[problem]}'
+                if language == 'zh-cn':
+                    message = '工作流参数无效，请检查节点参数'
+                    detail = '参数类型与算子声明不符：' + field
+                else:
+                    message = 'Invalid workflow parameters. Review the node parameters'
+                    detail = 'Parameter type differs from the operator declaration: ' + field
+                data = {'error': message, 'error_code': 'invalid_workflow_parameters',
+                        'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': detail}]}
+                if self.entry_fault == 'execution':
+                    self.executions[identifier] = {}
+                if self.entry_fault == 'scan':
+                    self.scans.append('unexpected-entry-scan')
+                if self.entry_fault == 'path':
+                    data['errors'][0]['path'] += '.other'
+                return SimpleNamespace(status=500 if self.entry_fault == 'http500' else 400, payload=data,
+                                       raw=b'{}' if self.entry_fault == 'raw' else json.dumps(data).encode())
+            assert expected == (200,)
+            assert expected == (200,)
             if name.startswith('failed-'):
                 self.executions[identifier]={'status':'failed','outputs':{'save':{}} if self.failure_publishes else {},'metadata':{'result':{}},'error_details':{'category':'execution_failed'}}
                 if self.failure_scans:self.scans.append('invalid-scan')
@@ -75,6 +100,11 @@ class Client:
                     'metadata':{'lineage_facts':facts,'result':{'final_result':artifact,'meta_scan_runs':[{'status':'submitted','target_locator':target,'execution_id':scan}]}}}
                 identifier_item=100+len(self.targets);self.targets[identifier_item]=target_item(name,identifier_item)
                 if self.corrupt_size:self.targets[identifier_item]['size_bytes']=2049
+            self.executions[identifier].update(
+                execution_id=identifier, module='develop', task_type='workflow', triggered_by=self.actor,
+                execution_config={'engine_id':7,'display_language':language,
+                                  'content':{'workflow_definition':copy.deepcopy(body['content']['workflow_definition'])}},
+            )
             data={'execution_id':identifier}
         elif '/develop/executions/' in path:data=self.executions[path.rsplit('/',1)[-1]]
         elif '/monitor/executions/' in path:data={'module':'develop',**self.executions[path.rsplit('/',1)[-1]]}
@@ -98,15 +128,26 @@ class Client:
         if method=='GET' and ('/develop/executions/' in path or '/monitor/executions/' in path):
             facts=result.get('metadata',{}).get('lineage_facts')
             if isinstance(facts,dict):facts['operations']=None
-        return SimpleNamespace(payload=result)
+        return SimpleNamespace(payload=result, raw=json.dumps(result).encode(), status=expected[0])
 
 
 class PercentilePersistenceTest(unittest.TestCase):
     def run_scene(self,client=None,physical_runner=physical):
         with tempfile.TemporaryDirectory() as root:
             client=client or Client();env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root}
+            def failed_reader(env, identifier, tenant, principal, dag):
+                saved = client.executions[identifier]
+                assert tenant == 2 and principal == 33 and saved['status'] == 'failed'
+                assert dag == saved['execution_config']['content']['workflow_definition']
+                return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
+                        'triggered_by': principal, 'module': 'develop', 'task_type': 'workflow',
+                        'status': 'failed', 'workflow_matches': True}
+            def inventory_reader(env, tenant, execution_ids):
+                if tenant != 2 or sorted(execution_ids) != sorted(client.executions):
+                    raise m.SuiteError('entry rejection changed the current Develop execution inventory')
             return m.run_scenario(Path('.'),env,client,physical_runner,diagnostic,
-                                 lambda e,i,t,p,w: copy.deepcopy(client.executions[i]['metadata']['lineage_facts']),oracle)
+                                 lambda e,i,t,p,w: copy.deepcopy(client.executions[i]['metadata']['lineage_facts']),oracle,
+                                 failed_reader=failed_reader,inventory_reader=inventory_reader)
 
     def test_identity_scan_sizes_and_failure_publication_remain_fail_closed(self):
         for attr,value in [('corrupt_size',True),('actor',True),('actor','33'),('actor',34),('failure_publishes',True),('failure_scans',True)]:
@@ -233,7 +274,17 @@ class PercentilePersistenceTest(unittest.TestCase):
         def observed(repo,env,names):calls.append(tuple(names));return physical(repo,env,names)
         report=self.run_scene(client,observed);targets=tuple(m.fixture.TARGETS)
         self.assertEqual(calls,[targets[:i]for i in range(1,17)]+[targets]*36)
-        self.assertEqual(len(client.executions),52);self.assertEqual(len(client.scans),17)
+        self.assertEqual(len(client.executions),36);self.assertEqual(len(client.scans),17)
+        entry=[failure for failure in report['failed_parameters'] if failure['rejection_stage']=='develop_entry']
+        node=[failure for failure in report['failed_parameters'] if failure['rejection_stage']=='analysis_node']
+        self.assertEqual((len(entry),len(node)),(16,20))
+        for failure in entry:
+            self.assertTrue(failure['no_execution_created'])
+            self.assertNotIn('execution_id',failure)
+            self.assertEqual(failure['submission']['http_status'],400)
+            self.assertRegex(failure['submission']['sha256'],r'^[0-9a-f]{64}$')
+        for failure in node:
+            self.assertEqual(failure['internal_execution_identity']['execution_id'],failure['execution_id'])
         self.assertEqual(report['physical_verification_calls'],52);self.assertEqual(report['full_target_checks'],712)
         self.assertEqual(sum(map(len,calls)),712);self.assertEqual(len(report['archived_cogs']),16)
         self.assertEqual([len(c['lineage'])for c in report['cases']],[len(m.case_inputs(n))for n in targets])
@@ -244,6 +295,20 @@ class PercentilePersistenceTest(unittest.TestCase):
         self.assertTrue(report['oracle_cache']['removed'])
         stages=report['stage_progress']['stages'];self.assertEqual(stages[0]['stage'],'identity');self.assertEqual(stages[1]['stage'],'oracle_prepare');self.assertEqual(stages[-1]['stage'],'oracle_cleanup')
         self.assertTrue(all('physical_profile_ms'in s for s in stages if s['stage']in('physical','negative')))
+
+    def test_entry_rejection_requires_original_response_and_no_execution_or_scan(self):
+        for fault, error in (
+            ('raw', 'original JSON differs'),
+            ('http500', 'entry rejection status'),
+            ('path', 'parameter path differs'),
+            ('execution', 'changed the current Develop execution inventory'),
+            ('scan', 'invalid parameter added a scan'),
+        ):
+            with self.subTest(fault=fault):
+                client = Client()
+                client.entry_fault = fault
+                with self.assertRaisesRegex(m.SuiteError, error):
+                    self.run_scene(client)
 
     def test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations(self):
         bindings={'input.source':'source'};expected=m.expected_lineage(bindings,'target')
