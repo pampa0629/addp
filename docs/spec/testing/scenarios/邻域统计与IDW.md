@@ -169,7 +169,7 @@
 
 **固定复验失败。** `27c65e1d8` 越过首跑目录冲突，首次执行 `b58b297c-e9f7-4e56-8135-ccf58110ed3e` 返回成功并生成 `sum.cog.tif`。离线重算期望并逐像元复读原 COG，核掩膜、仿射、CRS、1,000 字节及同次公开与内部血缘。成果 Meta 核验读取未声明的夹具 `TARGETS`，本次 0 条完整保存链、0 次拒绝，成果 Meta 回执及隐藏文件名的冻结预期原件缺失。五笔限时源授权逐笔撤销并复核不可见，Infra 零残留。夹具目标清单取自唯一 `CASES`，方窗及多百分位冻结预期使用可归档文件名并核原字节，既有 600 秒及校验保持。 [复验 Job](https://github.com/pampa0629/addp/actions/runs/45854410066/job/140028927972) · [原始归档](https://github.com/pampa0629/addp/actions/runs/45854410066/artifacts/15140197354)
 
-**邻域共享 Runner 失败。** 固定 `e9719887f` 的[邻域 CI](https://github.com/pampa0629/addp/actions/runs/45865714108/job/140067882991) 与 `3540ac7a` 的 [IDW 和密度 CI](https://github.com/pampa0629/addp/actions/runs/45866912268/job/140071976880) 均在同一个方窗测试桩对已隐藏的 `tenant_id` 再次执行删除，各轮 41 项中分别报告 4 个 `KeyError`。后续 `74616a50` 已移除重复操作，保留原公开／私有身份断言；本地共享准备门禁 42 项和隔离身份 Go T1 通过。[固定修复 CI](https://github.com/pampa0629/addp/actions/runs/45867435547/job/140073777627) 仍按实际日志认定。原 Hosted 首跑、复验和待验矩阵分别保留。
+**邻域共享 Runner 失败。** 固定 `e9719887f` 的[邻域 Runner](https://github.com/pampa0629/addp/actions/runs/45865714108/job/140067882991)、[平台一致性](https://github.com/pampa0629/addp/actions/runs/45865714108/job/140067884764)与 `3540ac7a` 的 [IDW 和密度 Runner](https://github.com/pampa0629/addp/actions/runs/45866912268/job/140071976880) 均在同一个方窗测试桩对已隐藏的 `tenant_id` 再次执行删除，每个失败作业均报告 4 个 `KeyError`。后续 `74616a50` 已移除重复操作，保留原公开／私有身份断言；本地共享准备门禁 42 项和隔离身份 Go T1 通过。[固定修复 CI](https://github.com/pampa0629/addp/actions/runs/45867435547/job/140073777627) 仍按实际日志认定。原 Hosted 首跑、复验和待验矩阵分别保留。
 
 ## 米制圆形邻域统计独立验收
 
