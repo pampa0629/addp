@@ -54,18 +54,6 @@ func (r *ContentIndexDeliveryRepository) BeginCleanupIndex(ctx context.Context, 
 	return &operation, nil
 }
 
-// RequireNoCleanupHold protects index initialization as well as reopening.
-func (r *ContentIndexDeliveryRepository) RequireNoCleanupHold(ctx context.Context, epoch string) error {
-	state, err := r.State(ctx, epoch)
-	if err != nil {
-		return err
-	}
-	if state.CleanupHoldID != "" {
-		return ErrContentIndexIsolated
-	}
-	return nil
-}
-
 // QueueCleanupDelete authorizes exactly one pre-registered C-bound deletion.
 // Generic maintenance workers must never dispatch this delivery.
 func (r *ContentIndexDeliveryRepository) QueueCleanupDelete(ctx context.Context, tx *gorm.DB, lease execution.Lease, operationID string, engineID uint) (*models.ContentIndexDelivery, error) {

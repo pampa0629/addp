@@ -237,11 +237,8 @@ func (s *HybridSearchService) reconcileContentDeliveries(ctx context.Context) er
 		return err
 	}
 	if !s.initialized.Load() {
-		if err := s.deliveries.RequireNoCleanupHold(ctx, s.epoch); err != nil {
+		if err := s.deliveries.InitializeIndex(ctx, s.epoch, s.initIndexes); err != nil {
 			return err
-		}
-		if err := s.initIndexes(ctx); err != nil {
-			return ErrSearchDisabled
 		}
 		s.initialized.Store(true)
 	}

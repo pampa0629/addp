@@ -503,6 +503,26 @@ func (r *ContentIndexDeliveryRepository) Finish(ctx context.Context, op *models.
 	})
 }
 
+// InitializeIndex serializes remote index preparation with other replicas and
+// changes to the deployment epoch or cleanup hold. The caller bounds the work
+// with its startup or recovery context.
+func (r *ContentIndexDeliveryRepository) InitializeIndex(ctx context.Context, epoch string, prepare func(context.Context) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var state models.ContentIndexOutlet
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("index_name = ?", r.index).Take(&state).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrContentIndexIsolated
+		}
+		if err != nil {
+			return err
+		}
+		if !state.Configured || state.Epoch != epoch || state.CleanupHoldID != "" {
+			return ErrContentIndexIsolated
+		}
+		return prepare(ctx)
+	})
+}
+
 func (r *ContentIndexDeliveryRepository) ActivateIfSettled(ctx context.Context, epoch string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		state, err := r.lock(tx)

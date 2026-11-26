@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -232,7 +233,7 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 		if !errors.Is(repo.ActivateIfSettled(ctx, reopened), ErrContentIndexIsolated) {
 			t.Fatal("restart removed Cleanup hold")
 		}
-		if !errors.Is(repo.RequireNoCleanupHold(ctx, reopened), ErrContentIndexIsolated) {
+		if !errors.Is(repo.InitializeIndex(ctx, reopened, func(context.Context) error { return nil }), ErrContentIndexIsolated) {
 			t.Fatal("restart allowed index reinitialization")
 		}
 		if _, err := repo.ConfirmTarget(ctx, "other", true); !errors.Is(err, ErrContentIndexIsolated) {

@@ -8,9 +8,13 @@ import (
 	"github.com/addp/manager/internal/config"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,6 +71,31 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	if err := store.ApplyBatch(t.Context(), 8, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
+	// Allow both cold starts to observe the empty index if initialization is
+	// uncoordinated. Forward all requests and inspect the real engine's task log.
+	upstream, err := url.Parse(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	var creates atomic.Int32
+	secondCreate := make(chan struct{})
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost && req.URL.Path == "/indexes" {
+			switch creates.Add(1) {
+			case 1:
+				select {
+				case <-secondCreate:
+				case <-time.After(500 * time.Millisecond):
+				}
+			case 2:
+				close(secondCreate)
+			}
+		}
+		proxy.ServeHTTP(w, req)
+	}))
+	t.Cleanup(site.Close)
+	endpoint = site.URL
 	client := meilisearch.New(endpoint, meilisearch.WithAPIKey(key), meilisearch.WithCustomClient(&http.Client{Timeout: 10 * time.Second}), meilisearch.DisableRetries())
 	index := "snapshot-test-" + uuid.NewString()
 	wait := func(ctx context.Context, task *meilisearch.TaskInfo, err error) {
@@ -81,8 +110,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	task, err := client.CreateIndexWithContext(ctx, &meilisearch.IndexConfig{Uid: index, PrimaryKey: "id"})
-	wait(ctx, task, err)
+
 	t.Cleanup(func() {
 		clean, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
@@ -114,6 +142,38 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := &HybridSearchService{client: client, contentIndex: index, enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: config.SearchEndpointID(endpoint), log: slog.Default()}
+	t.Run("concurrent_first_start_creates_and_configures_once", func(t *testing.T) {
+		cfg := &config.Config{MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: index}
+		type result struct {
+			svc *HybridSearchService
+			err error
+		}
+		start := make(chan struct{})
+		results := make(chan result, 2)
+		for range 2 {
+			go func() {
+				<-start
+				peer, err := NewHybridSearchService(cfg, nil, nil, nil, nil, repo, store)
+				results <- result{peer, err}
+			}()
+		}
+		close(start)
+		for range 2 {
+			got := <-results
+			if got.svc != nil {
+				t.Cleanup(got.svc.Close)
+			}
+			if got.err != nil || got.svc == nil || !got.svc.initialized.Load() || !got.svc.ordinalReady.Load() {
+				t.Errorf("cold start did not finish on both replicas: %v", got.err)
+			}
+		}
+		for _, kind := range []meilisearch.TaskType{meilisearch.TaskTypeIndexCreation, meilisearch.TaskTypeSettingsUpdate} {
+			tasks, err := client.GetTasksWithContext(ctx, &meilisearch.TasksQuery{Types: []meilisearch.TaskType{kind}, IndexUIDS: []string{index}, Limit: 2})
+			if err != nil || tasks.Total != 1 || len(tasks.Results) != 1 || tasks.Results[0].Status != meilisearch.TaskStatusSucceeded {
+				t.Errorf("expected exactly one successful %s task, got %+v, %v", kind, tasks, err)
+			}
+		}
+	})
 	t.Run("replica_rechecks_settings_without_invalidating_search_material", func(t *testing.T) {
 		if err := svc.initIndexes(ctx); err != nil {
 			t.Fatal(err)
@@ -786,7 +846,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		t.Fatalf("unexpected document count after exact delete: %+v %v", stats, err)
 	}
 	// Losing the index permits only this new write, not historical recovery.
-	task, err = client.DeleteIndexWithContext(ctx, index)
+	task, err := client.DeleteIndexWithContext(ctx, index)
 	wait(ctx, task, err)
 	recreated := commonClient.ManagerContentDocument{DocumentID: "after-index-loss", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "collection", Name: "new-collection"}
 	if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{recreated}); err != nil {

@@ -84,7 +84,7 @@ func TestCleanupIndexHoldAndLateRegistration(t *testing.T) {
 			if !errors.Is(repo.ActivateIfSettled(ctx, epoch), ErrContentIndexIsolated) {
 				t.Fatal("recovery released hold")
 			}
-			if !errors.Is(repo.RequireNoCleanupHold(ctx, epoch), ErrContentIndexIsolated) {
+			if !errors.Is(repo.InitializeIndex(ctx, epoch, func(context.Context) error { return nil }), ErrContentIndexIsolated) {
 				t.Fatal("initialization ignored hold")
 			}
 			if _, err := repo.QueueDelete(ctx, epoch, 7, "tenant_id = 7", commonClient.ManagerContentDeleteScope{}); !errors.Is(err, ErrContentIndexIsolated) {
