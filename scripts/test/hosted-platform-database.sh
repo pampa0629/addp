@@ -4,7 +4,8 @@ hosted_start_platform_infra() {
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "$POSTGRES_DB" = addp_online ] && [ "$infra_owned" = 1 ] || return 1
   unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD hosted_deploy_password
   POSTGRES_PASSWORD=$(openssl rand -hex 32)
-  export POSTGRES_PASSWORD
+  MANAGER_SEARCH_REDIS_PASSWORD=$(openssl rand -hex 32)
+  export POSTGRES_PASSWORD MANAGER_SEARCH_REDIS_PASSWORD
   run_logged env "$@" bash scripts/infra/up.sh
   source "$ROOT_DIR/scripts/infra/ports.sh"
   addp_infra_verify_container postgres addp-postgres || return 1

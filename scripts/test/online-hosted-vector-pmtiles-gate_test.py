@@ -20,6 +20,11 @@ class HostedPMTilesGateTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
+        self.host._write_repository_script('scripts/infra/up.sh', '''
+            #!/usr/bin/env bash
+            [[ -n "${MANAGER_SEARCH_REDIS_PASSWORD:-}" && "$MANAGER_SEARCH_REDIS_PASSWORD" != "${REDIS_PASSWORD:-}" ]] || exit 1
+            echo infra-up >> "$ADDP_TEST_GATE_TRACE"
+        ''')
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test/online-hosted-vector-pmtiles-gate.sh')
         self.host._write_repository_script('business/scripts/online-vector-pmtiles-fixture.py', '''
             #!/usr/bin/env python3
