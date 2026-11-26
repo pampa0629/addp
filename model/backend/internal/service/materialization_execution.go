@@ -45,13 +45,8 @@ func materializationTask(table models.LogicalTable) MaterializationTask {
 }
 
 func (s *MaterializationService) ListMaterializationTasks(ctx context.Context, tenantID int64, page, size int) ([]MaterializationTask, int64, error) {
-	var tables []models.LogicalTable
-	query := s.logicalTableRepo.DB().WithContext(ctx).Model(&models.LogicalTable{}).Where("tenant_id = ? AND status = ? AND materialization->>'target_name' <> '' AND materialization->>'target_parent_locator' <> ''", tenantID, "approved")
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	if err := query.Order("id ASC").Offset((page - 1) * size).Limit(size).Find(&tables).Error; err != nil {
+	tables, total, err := s.logicalTableRepo.ListMaterializationCandidates(ctx, tenantID, page, size)
+	if err != nil {
 		return nil, 0, err
 	}
 	items := make([]MaterializationTask, 0, len(tables))

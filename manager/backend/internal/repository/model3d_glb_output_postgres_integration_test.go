@@ -56,6 +56,14 @@ func TestIntegrationMySQLManagerGLBOutputPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	verifyGLBOutputPublication(t, db, "ifc")
+	t.Run("unstarted authorization failure releases exact generation holds", func(t *testing.T) {
+		tx := db.Begin()
+		if tx.Error != nil {
+			t.Fatal(tx.Error)
+		}
+		defer tx.Rollback()
+		verifyFileClaimSettlesOnlyUnstarted(t, tx, "unstarted")
+	})
 }
 
 func verifyGLBOutputPublication(t *testing.T, db *gorm.DB, sourceFormat string) {

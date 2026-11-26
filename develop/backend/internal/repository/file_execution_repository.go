@@ -55,8 +55,15 @@ func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commo
 				return errors.New("invalid private file parent")
 			}
 			var authoritative commonexecution.TaskExecution
-			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id=? AND tenant_id=? AND module='orchestrator' AND task_type='orchestration' AND status='running' AND trigger_type=? AND lease_expires_at > clock_timestamp() AND actor_principal_id=? AND actor_tenant_membership_id=? AND issued_authorization_version=? AND triggered_by=actor_principal_id", *item.ParentExecutionID, item.TenantID, item.TriggerType, *item.ActorPrincipalID, *item.ActorTenantMembershipID, *item.IssuedAuthorizationVersion).Take(&authoritative).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id=? AND tenant_id=? AND module='orchestrator' AND task_type='orchestration' AND status='running' AND trigger_type=? AND actor_principal_id=? AND actor_tenant_membership_id=? AND issued_authorization_version=? AND triggered_by=actor_principal_id", *item.ParentExecutionID, item.TenantID, item.TriggerType, *item.ActorPrincipalID, *item.ActorTenantMembershipID, *item.IssuedAuthorizationVersion).Take(&authoritative).Error; err != nil {
 				return err
+			}
+			now, err := commonexecution.DatabaseNow(tx)
+			if err != nil {
+				return err
+			}
+			if authoritative.LeaseExpiresAt == nil || !authoritative.LeaseExpiresAt.After(now) {
+				return gorm.ErrRecordNotFound
 			}
 			if authoritative.LeaseToken == nil {
 				return errors.New("parent lease unavailable")

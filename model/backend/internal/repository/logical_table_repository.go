@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
@@ -29,8 +30,12 @@ func (r *LogicalTableRepository) ExistsByPhysicalTarget(parentLocator, targetNam
 	if parentLocator == "" || targetName == "" {
 		return false, nil
 	}
-	query := r.db.Model(&models.LogicalTable{}).
-		Where("materialization->>'target_parent_locator' = ? AND materialization->>'target_name' = ?", parentLocator, targetName)
+	match := "materialization->>'target_parent_locator' = ? AND materialization->>'target_name' = ?"
+	if r.db.Dialector.Name() == "mysql" {
+		// Use the same generated digest as the uniqueness constraint.
+		match = "physical_target_digest = UNHEX(SHA2(JSON_ARRAY(?, ?), 256))"
+	}
+	query := r.db.Model(&models.LogicalTable{}).Where(match, parentLocator, targetName)
 	if excludeID > 0 {
 		query = query.Where("id <> ?", excludeID)
 	}
@@ -39,6 +44,22 @@ func (r *LogicalTableRepository) ExistsByPhysicalTarget(parentLocator, targetNam
 		return false, commonrepo.WrapDBError(err)
 	}
 	return count > 0, nil
+}
+
+func (r *LogicalTableRepository) ListMaterializationCandidates(ctx context.Context, tenantID int64, page, size int) ([]models.LogicalTable, int64, error) {
+	targetPresent := "materialization->>'target_name' <> '' AND materialization->>'target_parent_locator' <> ''"
+	if r.db.Dialector.Name() == "mysql" {
+		targetPresent = "physical_target_digest IS NOT NULL"
+	}
+	query := r.db.WithContext(ctx).Model(&models.LogicalTable{}).
+		Where("tenant_id = ? AND status = ?", tenantID, "approved").Where(targetPresent)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var tables []models.LogicalTable
+	err := query.Order("id ASC").Offset((page - 1) * size).Limit(size).Find(&tables).Error
+	return tables, total, err
 }
 
 func (r *LogicalTableRepository) GetByID(id, tenantID int64) (*models.LogicalTable, error) {

@@ -264,8 +264,8 @@ func assertAppliedScanOriginClaimRoundTrip(t *testing.T, db *gorm.DB, request mo
 	if claimed.AppliedAt == nil || !claimed.AppliedAt.Equal(origin.AppliedAt) {
 		t.Fatalf("stored approval time %v differs from source time %v", claimed.AppliedAt, origin.AppliedAt)
 	}
-	if db.Dialector.Name() == "postgres" && claimed.AppliedAt.Equal(inputTime) {
-		t.Fatal("PostgreSQL fixture did not exercise nanosecond precision loss")
+	if db.Dialector.Name() != "sqlite" && claimed.AppliedAt.Equal(inputTime) {
+		t.Fatalf("%s fixture did not exercise nanosecond precision loss", db.Dialector.Name())
 	}
 	record := read()
 	data, _ := json.Marshal(record.Metadata[commonExecution.SchemaChangeScanOriginKey])

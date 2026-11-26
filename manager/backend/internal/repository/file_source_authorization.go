@@ -132,7 +132,7 @@ func prepareFileTaskClaim(ctx context.Context, tx *gorm.DB, expected *FileTaskSn
 	}
 	var failed []commonExecution.TaskExecution
 	if err := tx.Table(commonExecution.TaskExecution{}.TableName()+" AS failed_source").Clauses(clause.Locking{Strength: "UPDATE"}).Where(
-		"tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status = ? AND error_details->>'code' = ?",
+		"tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status = ? AND "+previewJSONText(tx, "failed_source.error_details", "code")+" = ?",
 		int(expected.TenantID), commonExecution.ModuleManager, taskType, fmt.Sprint(expected.TaskID), commonExecution.ExecutionStatusFailed, "source_authorization_required").
 		Where("EXISTS (SELECT 1 FROM manager.cleanup_targets held WHERE held.tenant_id = failed_source.tenant_id AND held.operation_id = failed_source.execution_id)").Find(&failed).Error; err != nil {
 		return err

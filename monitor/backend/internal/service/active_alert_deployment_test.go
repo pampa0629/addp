@@ -26,6 +26,29 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("platform notification and search", func(t *testing.T) { checkPlatformAlertNotificationAndSearch(t, db) })
+	t.Run("filesystem rule lookup uses exact mount dimensions", func(t *testing.T) {
+		node := uuid.NewString()
+		dimensions := resourcequery.Dimensions{"device": "/dev/sdb", "mountpoint": "/data/资料", "fstype": "ext4"}
+		rule := &models.ResourceAlertRule{
+			ID: uuid.NewString(), Version: 1, Name: "filesystem fixture", NodeID: node, MetricKey: models.FilesystemCapacityMetric,
+			Dimensions: dimensions, MountKey: models.ResourceMountKey(dimensions),
+			ResourcePressurePolicy: defaultResourcePressurePolicy(models.FilesystemCapacityMetric),
+		}
+		if err := db.Create(rule).Error; err != nil {
+			t.Fatal(err)
+		}
+		svc := &ResourceAlertRuleService{db: db}
+		filter := ResourceAlertRuleFilter{NodeID: node, MetricKey: models.FilesystemCapacityMetric, Dimensions: dimensions}
+		page, err := svc.List(t.Context(), 1, 10, filter)
+		if err != nil || page.Total != 1 || len(page.Data) != 1 || page.Data[0].ID != rule.ID {
+			t.Fatalf("exact mount lookup: count=%d err=%v", page.Total, err)
+		}
+		filter.Dimensions = resourcequery.Dimensions{"device": "/dev/sdb", "mountpoint": "/data/other", "fstype": "ext4"}
+		page, err = svc.List(t.Context(), 1, 10, filter)
+		if err != nil || page.Total != 0 || len(page.Data) != 0 {
+			t.Fatalf("different mount lookup: count=%d err=%v", page.Total, err)
+		}
+	})
 	t.Run("concurrent first evaluations", func(t *testing.T) { checkConcurrentPlatformAlertEvaluations(t, db) })
 	t.Run("configuration compare and swap", func(t *testing.T) {
 		tx := db.Begin()

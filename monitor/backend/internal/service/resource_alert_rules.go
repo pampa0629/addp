@@ -107,7 +107,11 @@ func (s *ResourceAlertRuleService) List(ctx context.Context, page, size int, fil
 	}
 	if len(filter.Dimensions) != 0 {
 		d := filter.Dimensions
-		query = query.Where("mount_key=? AND dimensions->>'device'=? AND dimensions->>'mountpoint'=? AND dimensions->>'fstype'=?", models.ResourceMountKey(d), d["device"], d["mountpoint"], d["fstype"])
+		match := "mount_key=? AND dimensions->>'device'=? AND dimensions->>'mountpoint'=? AND dimensions->>'fstype'=?"
+		if s.db.Dialector.Name() == "mysql" {
+			match = "mount_key=? AND dimensions->>'$.device'=? AND dimensions->>'$.mountpoint'=? AND dimensions->>'$.fstype'=?"
+		}
+		query = query.Where(match, models.ResourceMountKey(d), d["device"], d["mountpoint"], d["fstype"])
 	}
 	if err := query.Count(&result.Total).Error; err != nil {
 		return result, err

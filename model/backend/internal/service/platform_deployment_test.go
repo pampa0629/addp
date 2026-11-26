@@ -72,7 +72,8 @@ func verifyInstalledModelConstraints(t *testing.T, db *gorm.DB, entityID int64) 
 	insert := func(tenant int, code, target string) error {
 		return db.Exec("INSERT INTO model.logical_tables(tenant_id,code,name,table_type,created_by,materialization) VALUES (?,?,'Customer','entity',9,?)", tenant, code, target).Error
 	}
-	const physical = `{"target_parent_locator":"addp://engine/1/path/public?type=schema","target_name":"customer"}`
+	const parent = "addp://engine/1/path/public?type=schema"
+	const physical = `{"target_parent_locator":"` + parent + `","target_name":"customer"}`
 	if err := insert(7, "table_a", physical); err != nil {
 		t.Fatal(err)
 	}
@@ -85,4 +86,32 @@ func verifyInstalledModelConstraints(t *testing.T, db *gorm.DB, entityID int64) 
 			t.Fatal(err)
 		}
 	}
+	repo := repository.NewLogicalTableRepository(db)
+	var table models.LogicalTable
+	if err := db.Where("tenant_id=? AND code=?", 7, "table_a").First(&table).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		exclude int64
+		want    bool
+	}{{"customer", 0, true}, {"customer", table.ID, false}, {"customer_history", 0, false}} {
+		found, err := repo.ExistsByPhysicalTarget(parent, tc.name, tc.exclude)
+		if err != nil || found != tc.want {
+			t.Fatalf("target %s, exclude %d: found=%v want=%v err=%v", tc.name, tc.exclude, found, tc.want, err)
+		}
+	}
+	if err := db.Model(&models.LogicalTable{}).Where("code IN ?", []string{"table_a", "unbound_a", "unbound_b"}).Update("status", "approved").Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewMaterializationService(nil, repo, nil)
+	items, total, err := svc.ListMaterializationTasks(t.Context(), 7, 1, 1)
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != table.ID {
+		t.Fatalf("approved materialization list: count=%d records=%+v err=%v", total, items, err)
+	}
+	items, total, err = svc.ListMaterializationTasks(t.Context(), 8, 1, 10)
+	if err != nil || total != 0 || len(items) != 0 {
+		t.Fatalf("unbound targets or other tenant returned: count=%d records=%+v err=%v", total, items, err)
+	}
+
 }

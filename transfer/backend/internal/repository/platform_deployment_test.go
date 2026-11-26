@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
-	"github.com/addp/common/infra/database"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/addp/common/infra/database"
+	"github.com/addp/transfer/internal/models"
 )
 
 func TestInstalledTransferStorage(t *testing.T) {
@@ -31,5 +33,14 @@ func TestInstalledTransferStorage(t *testing.T) {
 	if err != nil || claim != nil {
 		t.Fatalf("empty continuous queue: %+v %v", claim, err)
 	}
+	t.Run("CDC approval and scan origin share stored time", func(t *testing.T) {
+		now := time.Now().UTC()
+		_, parent, _ := seedPendingSchemaChangeRuntime(t, db, 7, now, now.Add(time.Minute))
+		var request models.SchemaChangeRequest
+		if err := db.Where("execution_id = ?", parent.ExecutionID).First(&request).Error; err != nil {
+			t.Fatal(err)
+		}
+		assertAppliedScanOriginClaimRoundTrip(t, db, request)
+	})
 	t.Log("dead letter repeat and collision verified; bounded and continuous worker polling succeeded")
 }
