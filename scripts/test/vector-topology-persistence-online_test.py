@@ -2150,9 +2150,10 @@ class NodesClient(InputDiagnosticClient):
               'outputs':[{'port':'output.save_'+p,'locator':t,'write_mode':'create'} for p,t in targets.items()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
     def request(self,method,path,expected,body=None):
         if method=='POST' and path.endswith('/develop/executions'):
-            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
-            if name.startswith('failed-'):
-                spec=next(v for v in m.fixture.NODES_FAILURES if name.startswith('failed-'+v[0]+'-'))
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition']
+            if len(definition['tasks']) == 2:
+                spec = next(entry for entry in m.fixture.NODES_FAILURES
+                            if definition == m.nodes_definition(self.locators, self.parent, failure=entry[0]))
                 value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
                     'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.nodes_diagnostic(spec)}}
                 if self.mutate_failed:self.mutate_failed(value)
@@ -2197,6 +2198,10 @@ class NodesOnlineTest(unittest.TestCase):
         self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.NODES_FAILURES])
         self.assertEqual(len({f['execution_id'] for f in report['failures']}),9)
         self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),10)
+        for failure in report['failures']:
+            self.assertEqual([node['operator'] for node in failure['definition']['tasks']],
+                             ['extract_line_nodes', 'load'])
+
     def test_multi_output_lineage_binds_each_save_port_to_its_file(self):
         execution = NodesClient().success
         facts = execution['metadata']['lineage_facts']
@@ -2555,11 +2560,14 @@ class DissolveClient(InputDiagnosticClient):
         self.scans=['scan-'+n for n in m.fixture.DISSOLVE_SOURCES];self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}'for i,n in enumerate(m.fixture.DISSOLVE_SOURCES)];self.parent='addp://engine/3/path/outputs?type=directory'
     def request(self,method,path,expected,body=None):
         if method=='POST'and path.endswith('/develop/executions'):
-            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
-            if name.startswith('failed-'):
-                spec=next(v for v in m.fixture.DISSOLVE_FAILURES if name.startswith('failed-'+v[0]+'-'));value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.dissolve_diagnostic(spec)}}
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition']
+            if len(definition['tasks']) == 2:
+                spec = next(entry for entry in m.fixture.DISSOLVE_FAILURES
+                            if definition == m.dissolve_definition(self.locators, self.parent, failure=entry[0]))
+                value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.dissolve_diagnostic(spec)}}
                 if self.mutate_failed:self.mutate_failed(value)
             else:
+                name=definition['tasks'][-1]['params']['target_name']
                 variant='grouped'if name.startswith('grouped-')else'global';self.success_count+=1;targets={port:self.parent.removesuffix('?type=directory')+'/'+variant+'-'+port+'.gpkg?type=file'for port in('result','members')}
                 value={'execution_id':variant+'-run','status':'success','triggered_by':33,'execution_config':{'content':{'workflow_definition':definition}},
                     'outputs':{'save_'+port:{'resource':{'locator':target,'type':'file','write_mode':'create'}}for port,target in targets.items()},
@@ -2596,6 +2604,10 @@ class DissolveOnlineTest(unittest.TestCase):
         self.assertEqual([o['feature_count']for o in report['outputs']],[4,10,1,10])
         self.assertEqual(len({r['execution_id']for r in[*report['successes'],*report['failures']]}),10)
         self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),10)
+        for failure in report['failures']:
+            self.assertEqual([node['operator'] for node in failure['definition']['tasks']],
+                             ['dissolve', 'load'])
+
     def test_dissolve_requires_resource_visibility_before_any_execution(self):
         client=DissolveClient();client.preflight_denied=True
         with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)
@@ -3327,9 +3339,10 @@ class VerticesClient(InputDiagnosticClient):
         if path.endswith('/auth/context'):
             return SimpleNamespace(payload={'principal':{'id':33,'type':'user'},'context':{'type':'tenant','tenant_id':'2'},'token':{'type':'first_party_access_token'},'authorization':{'role_assignments':[{'role_key':'topology-consumer','permissions':self.permissions}]}})
         if method=='POST' and path.endswith('/develop/executions'):
-            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
-            if name.startswith('failed-'):
-                spec=next(v for v in m.fixture.VERTICES_FAILURES if name=='failed-'+v[0]+'.gpkg')
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition']
+            if len(definition['tasks']) == 2:
+                spec = next(entry for entry in m.fixture.VERTICES_FAILURES
+                            if definition == m.vertices_definition(self.locators, self.parent, failure=entry[0]))
                 value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
                     'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.vertices_diagnostic(spec)}}
                 if self.mutate_failed:self.mutate_failed(value)
@@ -3368,6 +3381,10 @@ class VerticesOnlineTest(unittest.TestCase):
         self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.VERTICES_FAILURES])
         self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),8)
         self.assertEqual(len({report['execution_id'],*[f['execution_id'] for f in report['failures']]}),8)
+        for failure in report['failures']:
+            self.assertEqual([node['operator'] for node in failure['definition']['tasks']],
+                             ['extract_vertices', 'load'])
+
     def test_vertices_formal_resource_visibility_precedes_any_business_execution(self):
         c=VerticesClient();original=c.request
         def deny(method,path,expected,body=None):

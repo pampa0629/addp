@@ -7353,6 +7353,11 @@ def test_hosted_line_nodes_dual_point_nine_failures_and_independent_oracle(tmp_p
     (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seed=f.worker('seed',tmp_path,f.NODES_CASE)
     def definition(failure=None):
         result=a.nodes_definition(list(f.NODES_SOURCES),'unused',failure)
+        if failure:
+            saves=a.nodes_definition(list(f.NODES_SOURCES),'unused')['tasks'][2:]
+            for task in saves:
+                task['params']['target_name']='unexpected-'+task['params']['target_name']
+            result['tasks'].extend(saves)
         for task in result['tasks']:
             if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
             elif task['operator']=='save':
@@ -8310,6 +8315,11 @@ def test_dissolve_t4_two_success_eight_refusals_four_saves_and_ogr(tmp_path,prob
     (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seeded=f.worker('seed',tmp_path,f.DISSOLVE_CASE)
     def definition(variant='grouped',failure=None):
         value=a.dissolve_definition(list(f.DISSOLVE_SOURCES),'unused',variant,failure)
+        if failure:
+            saves=a.dissolve_definition(list(f.DISSOLVE_SOURCES),'unused',variant)['tasks'][2:]
+            for task in saves:
+                task['params']['target_name']='unexpected-'+task['params']['target_name']
+            value['tasks'].extend(saves)
         for task in value['tasks']:
             if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
             elif task['operator']=='save':
@@ -10795,17 +10805,14 @@ def test_vertex_extraction_t4_three_saves_seven_refusals_and_independent_ogr(tmp
         with pytest.raises(VertexInputError) as failure:get_operator('extract_vertices')(sources[index],'feature_key')
         assert failure.value.code=={'operator_field_conflict':'field','operator_input_invalid':'source','operator_crs_invalid':'crs'}[spec[1]]
         assert fixture.vertices_worker('verify',root)==before
-    # Real Runtime failure protocol and dependent save barrier for every rejection.
-    import workflow_engine
-    original=workflow_engine.get_operator
-    def resolve(name):
-        if name=='load':return lambda locator:sources[int(locator)]
-        if name=='save':return lambda **kw:pytest.fail('vertex rejected batch must never reach save')
-        return original(name)
-    from unittest.mock import patch
-    for index,spec in enumerate(fixture.VERTICES_FAILURES,3):
-        tasks=owner.vertices_definition([str(i) for i in range(10)],'unused',spec[0])['tasks']
-        with patch.object(workflow_engine,'get_operator',resolve),pytest.raises(WorkflowExecutionError) as failure:GeoPythonWorkflowRunner().execute({'tasks':tasks})
+    for spec in fixture.VERTICES_FAILURES:
+        tasks=owner.vertices_definition(list(fixture.VERTICES_SOURCES),'unused',spec[0])['tasks']
+        tasks[1]['params']={'connection_info':connection,'path':tasks[1]['params']['locator']}
+        tasks.append({'id':'save_result','operator':'save','depends_on':['vertices'],
+                      'params':{'input_df':{'$ref':'vertices'},'connection_info':connection,
+                                'path':'outputs/unexpected-'+spec[0]+'.gpkg','mode':'fail'}})
+        with pytest.raises(WorkflowExecutionError) as failure:
+            GeoPythonWorkflowRunner().execute({'tasks':tasks})
         assert failure.value.error_code=='INVALID_PARAMS'
         assert failure.value.diagnostic==owner.vertices_diagnostic(spec)
         assert fixture.vertices_worker('verify',root)==before

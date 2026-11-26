@@ -488,11 +488,13 @@ def dissolve_definition(sources,parent,variant='grouped',failure=None):
     if failure=='dissolve-groups-type':groups='zone'
     if failure=='dissolve-groups-duplicate':groups=['zone','zone']
     if failure=='dissolve-groups-missing':groups=['PRIVATE_DISSOLVE_MISSING']
-    prefix='failed-'+failure if failure else variant
-    return {'tasks':[
+    tasks=[
         {'id':'PRIVATE_DISSOLVE_NODE','operator':'dissolve','depends_on':['load_source'],'params':{'input_gdf':{'$ref':'load_source'},'id_field':'PRIVATE_DISSOLVE_ID'if failure=='dissolve-id-missing'else'parcel_key','group_fields':groups}},
         {'id':'load_source','operator':'load','depends_on':[],'params':{'locator':sources[spec[1]if spec else 0]}},
-        *[{'id':'save_'+port,'operator':'save','depends_on':['PRIVATE_DISSOLVE_NODE'],'params':{'input_df':{'$ref':'PRIVATE_DISSOLVE_NODE','port':port},'target_parent_locator':parent,'target_name':prefix+'-'+port+'.gpkg','mode':'fail'}}for port in fixture.DISSOLVE_PORTS]]}
+    ]
+    if failure is None:
+        tasks.extend([{'id':'save_'+port,'operator':'save','depends_on':['PRIVATE_DISSOLVE_NODE'],'params':{'input_df':{'$ref':'PRIVATE_DISSOLVE_NODE','port':port},'target_parent_locator':parent,'target_name':variant+'-'+port+'.gpkg','mode':'fail'}}for port in fixture.DISSOLVE_PORTS])
+    return {'tasks':tasks}
 
 
 def dissolve_diagnostic(spec):
@@ -773,8 +775,7 @@ def vertices_definition(sources,parent,failure=None):
     if failure is not None:
         index=3+[v[0] for v in fixture.VERTICES_FAILURES].index(failure)
         return {'tasks':[{'id':'vertices','operator':'extract_vertices','params':{'input_gdf':{'$ref':'load_source'},'id_field':'feature_key'},'depends_on':['load_source']},
-          {'id':'load_source','operator':'load','params':{'locator':sources[index]},'depends_on':[]},
-          {'id':'save_result','operator':'save','params':{'input_df':{'$ref':'vertices'},'target_parent_locator':parent,'target_name':'failed-'+failure+'.gpkg','mode':'fail'},'depends_on':['vertices']}]}
+          {'id':'load_source','operator':'load','params':{'locator':sources[index]},'depends_on':[]}]}
     tasks=[]
     for index,(family,name) in enumerate(zip(fixture.VERTICES_FAMILIES,fixture.VERTICES_TARGETS)):
         tasks.extend([{'id':'load_'+family,'operator':'load','params':{'locator':sources[index]},'depends_on':[]},
@@ -818,12 +819,15 @@ def run_vertices_scenario(repository,env,client,physical_runner,browser_runner):
 
 def nodes_definition(sources,parent,failure=None):
     index=0 if failure is None else 1+[s[0] for s in fixture.NODES_FAILURES].index(failure)
-    return {'tasks':[
+    tasks=[
         {'id':'nodes','operator':'extract_line_nodes','params':{'input_gdf':{'$ref':'load_source'},'id_field':'route_key'},'depends_on':['load_source']},
         {'id':'load_source','operator':'load','params':{'locator':sources[index]},'depends_on':[]},
-        *[{'id':'save_'+port,'operator':'save','params':{'input_df':{'$ref':'nodes','port':port},'target_parent_locator':parent,
-            'target_name':('failed-'+failure+'-' if failure else '')+name,'mode':'fail'},'depends_on':['nodes']}
-          for port,name in zip(fixture.NODES_PORTS,fixture.NODES_TARGETS)]]}
+    ]
+    if failure is None:
+        tasks.extend([{'id':'save_'+port,'operator':'save','params':{'input_df':{'$ref':'nodes','port':port},'target_parent_locator':parent,
+            'target_name':name,'mode':'fail'},'depends_on':['nodes']}
+          for port,name in zip(fixture.NODES_PORTS,fixture.NODES_TARGETS)])
+    return {'tasks':tasks}
 
 
 def nodes_diagnostic(spec):
