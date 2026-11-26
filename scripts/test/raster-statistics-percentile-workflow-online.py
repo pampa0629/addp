@@ -168,28 +168,36 @@ WORKFLOW_ENTRY_MESSAGES = {
 
 
 def reject_workflow_parameter(client, runtime, dag, task_id, parameter, language, execution_timeout,
-                              *, issue_code='parameter_type_invalid', issue_message=None):
+                              *, issue_code='parameter_type_invalid', issue_message=None, additional_issues=()):
     index = next(index for index, task in enumerate(dag['tasks']) if task['id'] == task_id)
-    field = f'workflow_definition.tasks[{index}].params.{parameter}'
     message, issue_prefix = WORKFLOW_ENTRY_MESSAGES[language]
-    expected = {'error': message, 'error_code': 'invalid_workflow_parameters',
-                'errors': [{'code': issue_code, 'path': field,
-                            'message': issue_prefix + field if issue_message is None else issue_message}]}
+    expected_issues = []
+    for name, code, detail in ((parameter, issue_code, issue_message), *additional_issues):
+        field = f'workflow_definition.tasks[{index}].params.{name}'
+        expected_issues.append({'code': code, 'path': field,
+                                'message': issue_prefix + field if detail is None else detail})
     response = SubmittedLanguageClient(client, language).request('POST', '/api/v1/develop/executions', (400,), {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': execution_timeout,
         'content': {'workflow_definition': dag}, 'execution_config': {'engine_id': runtime},
     })
     raw = response.raw
-    if response.status != 400 or response.payload != expected or not isinstance(raw, bytes) or not 0 < len(raw) <= 4096:
+    payload = response.payload
+    if (response.status != 400 or not isinstance(raw, bytes) or not 0 < len(raw) <= 4096
+        or not isinstance(payload, dict) or set(payload) != {'error', 'error_code', 'errors'}
+        or payload['error'] != message or payload['error_code'] != 'invalid_workflow_parameters'):
+        raise SuiteError('entry rejection status, localized message, issue or parameter path differs')
+    # Develop discovers invalid fields from a parameter map, so issue order is not contractual.
+    issues = payload['errors']
+    if (not isinstance(issues, list) or len(issues) != len(expected_issues)
+        or any(issues.count(issue) != 1 for issue in expected_issues)):
         raise SuiteError('entry rejection status, localized message, issue or parameter path differs')
     try:
         observed = json.loads(raw)
     except (ValueError, TypeError) as error:
         raise SuiteError('entry rejection original JSON is invalid') from error
-    if observed != expected:
+    if observed != payload:
         raise SuiteError('entry rejection original JSON differs from its exact receipt')
     return raw
-
 
 def archive_response(directory, label, response):
     raw = response.raw

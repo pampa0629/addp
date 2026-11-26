@@ -50,6 +50,12 @@ EXECUTION_INVENTORY_LIMITS = {
     'raster-zonal-class-frequency-persistence': 68,
     'raster-zonal-percentiles-persistence': 66,
     'vector-zonal-percentiles-persistence': 62,
+    'raster-zonal-weighted-stddev-persistence': 80,
+    'raster-zonal-weighted-persistence': 78,
+    'vector-zonal-area-weighted-stddev-persistence': 66,
+    'vector-zonal-area-weighted-persistence': 58,
+    'vector-zonal-weighted-stddev-persistence': 84,
+    'vector-zonal-weighted-persistence': 80,
     'vector-zonal-class-frequency-persistence': 56,
 }
 
