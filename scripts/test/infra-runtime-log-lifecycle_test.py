@@ -112,7 +112,7 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
 
     def run_up(self, cli=(), **values):
         env = self.fixture_environment()
-        env.update(PATH=f"{self.bin}:{env['PATH']}", ENV="development", INFRA_FALKORDB_PASSWORD="graph-test", REDIS_PASSWORD="redis-test")
+        env.update(PATH=f"{self.bin}:{env['PATH']}", ENV="development", MANAGER_SEARCH_REDIS_PASSWORD="manager-search-fixture", INFRA_FALKORDB_PASSWORD="graph-test", REDIS_PASSWORD="redis-test")
         env.update(values)
         # Full startup spans core services and both optional observability
         # selections. Bound hangs without treating host scheduling as failure.
@@ -223,7 +223,7 @@ case "$1" in
     port)
         case "${3%/*}" in
             5432) port=15432 ;;
-            6379) if [[ "$2" == addp-falkordb ]]; then port=16479; else port=16379; fi ;;
+            6379) case "$2" in addp-falkordb) port=16479 ;; addp-manager-search-redis) port=16380 ;; addp-redis) port=16379 ;; *) exit 1 ;; esac ;;
             9000) port=19000 ;; 9001) port=19001 ;; 7700) port=17700 ;;
             9092) port=19092 ;; 8083) port=18083 ;; 8778) port=18778 ;; 3100) port=13100 ;;
             12345) port=12345 ;; 9090) port=19090 ;;
