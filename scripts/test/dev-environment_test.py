@@ -19,14 +19,20 @@ source "$ROOT_DIR/scripts/dev/platform-database.sh"
 docker() {
   case "$1" in
     context) echo unix:///fixture/docker.sock ;;
-    ps) echo "$INVENTORY" ;;
-    inspect) echo owned ;;
+    ps)
+      case "$2" in
+        -a) echo "$INVENTORY" ;;
+        -q)
+          [[ "$*" = "ps -q --no-trunc --filter label=com.docker.compose.project=addp-infra --filter label=com.docker.compose.service=postgres --filter label=com.docker.compose.project.working_dir=$ROOT_DIR" ]] || return 1
+          echo "$CONTAINER_ID" ;;
+        *) return 1 ;;
+      esac ;;
     port) echo "$MAPPING" ;;
     exec) test "$4" = POSTGRES_DB && echo fixture ;;
     *) return 1 ;;
   esac
 }
-addp_infra_verify_container() { test "$1:$2" = postgres:owned; }
+addp_infra_verify_container() { test "$1:$2" = "postgres:$CONTAINER_ID"; }
 addp_dev_select_database || exit 1
 addp_dev_prepare_database system
 """
@@ -35,11 +41,13 @@ addp_dev_prepare_database system
             ({"POSTGRES_HOST": "elsewhere"}, "外部平台库"),
             ({"INVENTORY": "postgres\nmysql"}, "多个平台数据库"),
             ({"ADDP_INFRA_DATABASE_PROVIDER": "mysql"}, "不一致"),
+            ({"CONTAINER_ID": ""}, "无法唯一确定"),
+            ({"CONTAINER_ID": "a" * 64 + "\n" + "b" * 64}, "无法唯一确定"),
             ({"MAPPING": "192.0.2.1:5432"}, "端口"),
             ({"POSTGRES_DB": "other"}, "库名"),
         ]:
             with self.subTest(settings=settings):
-                env = dict(PATH=os.environ["PATH"], ROOT_DIR=str(ROOT), INVENTORY="postgres",
+                env = dict(PATH=os.environ["PATH"], ROOT_DIR=str(ROOT), INVENTORY="postgres", CONTAINER_ID="a" * 64,
                            MAPPING="127.0.0.1:5432", POSTGRES_PORT="5432", POSTGRES_DB="fixture")
                 env.update(settings)
                 result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
