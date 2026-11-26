@@ -2,6 +2,12 @@ name: Online MySQL platform
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Isolated release scenario
+        type: choice
+        default: gateway
+        options: [gateway, service-lineage]
 
 permissions:
   contents: read
@@ -31,6 +37,7 @@ jobs:
 
       - name: Run Hosted MySQL limited release
         env:
+          ADDP_MYSQL_ONLINE_SUITE: ${{ inputs.suite }}
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-mysql-platform-evidence
         run: bash scripts/test/compose-mysql-platform-online.sh
 

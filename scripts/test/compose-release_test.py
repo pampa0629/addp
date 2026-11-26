@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -76,7 +77,12 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         for part in parts[1:]:
             compile(part.split("\nPY\n", 1)[0], str(entry), "exec")
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
-        self.assertIn("\non:\n  workflow_dispatch:\n\npermissions:\n  contents: read\n", workflow)
+        events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+        self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
+        self.assertIn("options: [gateway, service-lineage]", events)
+        probe = ROOT / "scripts/test/mysql-service-lineage-online.py"
+        compile(probe.read_text(), str(probe), "exec")
+        self.assertIn("\npermissions:\n  contents: read\n", workflow)
         self.assertIn(f"run: bash {entry.relative_to(ROOT)}", workflow)
 
 

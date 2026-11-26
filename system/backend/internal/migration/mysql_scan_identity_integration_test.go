@@ -33,7 +33,7 @@ func testMySQLScanIdentity(t *testing.T, db *gorm.DB, tenantID, adminID int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assignScanMember(t, repo, tenantID, adminID, newUser.PrincipalID)
+	assignMySQLFixtureRole(t, repo, tenantID, adminID, newUser.PrincipalID, "tenant.data_steward")
 	tokens, err := iam.NewTokenFamilyService(repo, iam.BrowserSessionConfig{ResourceTicketOwners: models.BrowserResourceAccessOwners}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func testMySQLScanIdentity(t *testing.T, db *gorm.DB, tenantID, adminID int64) {
 	}
 }
 
-func assignScanMember(t *testing.T, repo *iam.Repository, tenantID, adminID, principalID int64) {
+func assignMySQLFixtureRole(t *testing.T, repo *iam.Repository, tenantID, adminID, principalID int64, roleKey string) {
 	t.Helper()
 	ctx := t.Context()
 	member, err := iam.NewTenantMembershipService(repo, nil).EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
@@ -89,12 +89,12 @@ func assignScanMember(t *testing.T, repo *iam.Repository, tenantID, adminID, pri
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := repo.GetActiveBuiltinRoleByKey(ctx, "tenant.data_steward")
+	role, err := repo.GetActiveBuiltinRoleByKey(ctx, roleKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assignments, err := iam.NewTenantRoleService(repo, nil).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenantID, MembershipID: member.Membership.ID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "metadata scan",
+		TenantID: tenantID, MembershipID: member.Membership.ID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "MySQL platform acceptance",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +151,14 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assignScanMember(t, repo, tenant.ID, admin.PrincipalID, member.PrincipalID)
+	assignMySQLFixtureRole(t, repo, tenant.ID, admin.PrincipalID, member.PrincipalID, "tenant.data_steward")
+	if password := os.Getenv("ADDP_TEST_LINEAGE_PUBLISHER_PASSWORD"); password != "" {
+		publisher, err := identities.CreateLocalUser(ctx, iam.CreateLocalUserInput{Username: "lineage-publisher", DisplayName: "Lineage publisher", Password: password})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assignMySQLFixtureRole(t, repo, tenant.ID, admin.PrincipalID, publisher.PrincipalID, "tenant.service_publisher")
+	}
 	t.Run("ExecutionAuthorization", func(t *testing.T) {
 		testMySQLExecutionAuthorization(t, db, tenant.ID, admin.PrincipalID)
 	})

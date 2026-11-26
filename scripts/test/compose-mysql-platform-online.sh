@@ -10,6 +10,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 docker info >/dev/null
 
 export ADDP_DEPLOYMENT_SCOPE=system-meta-gateway ADDP_DEPLOYMENT_MODULES=
+schemas=(system common meta gateway)
+case "${ADDP_MYSQL_ONLINE_SUITE:-gateway}" in
+  gateway) ;;
+  service-lineage) ADDP_DEPLOYMENT_MODULES=service; schemas+=(service) ;;
+  *) echo "unknown Hosted MySQL suite" >&2; exit 2 ;;
+esac
 export ADDP_DEPLOYMENT_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 export ADDP_DEPLOYMENT_NETWORK="$ADDP_DEPLOYMENT_PROJECT" ADDP_INFRA_DATABASE_PROVIDER=mysql
 export NGINX_BIND_HOST=127.0.0.1 NGINX_PORT=18080 ADDP_PUBLIC_ORIGIN=http://127.0.0.1:18080
@@ -30,6 +36,7 @@ export ADDP_ONLINE_SECRET_DIR="$work"
 export ADDP_MYSQL_FIXTURE_PROJECT="$ADDP_DEPLOYMENT_PROJECT-infra"
 fixture() { docker compose --env-file /dev/null -f "$work/compose.yml" "$@"; }
 app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
+if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then app+=(--profile module-service); fi
 infra_started=false
 release_started=false
 stage=fixture
@@ -186,7 +193,14 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON common.* TO 'platform_runtime'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON meta.* TO 'platform_runtime'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON gateway.* TO 'platform_runtime'@'%';
 SQL
-for schema in system common meta gateway; do
+if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then
+  admin <<'SQL'
+CREATE DATABASE service;
+GRANT ALL ON service.* TO 'platform_deploy'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON service.* TO 'platform_runtime'@'%';
+SQL
+fi
+for schema in "${schemas[@]}"; do
   [[ $(admin <<<"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$schema'") == 0 ]]
 done
 
@@ -214,7 +228,11 @@ ids = subprocess.check_output(
 containers = json.loads(subprocess.check_output(["docker", "inspect", *ids], text=True))
 services = {item["Config"]["Labels"]["com.docker.compose.service"]: item for item in containers}
 assert set(services) == set(manifest["projects"]["platform"])
-for name in ("system-backend", "meta-backend", "meta-worker", "gateway"):
+backends = ["system-backend", "meta-backend", "meta-worker", "gateway"]
+if os.environ["ADDP_DEPLOYMENT_MODULES"] == "service":
+    assert manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] == "service"
+    backends.append("service-backend")
+for name in backends:
     container = services[name]
     settings = dict(value.split("=", 1) for value in container["Config"]["Env"])
     assert settings["ADDP_INFRA_DATABASE_PROVIDER"] == "mysql", name
@@ -228,7 +246,7 @@ for name in ("system-backend", "meta-backend", "meta-worker", "gateway"):
 Path(sys.argv[1], "runtime.json").write_text(json.dumps({"provider": "mysql", "verified_services": sorted(services)}))
 PY
 printf 'server_version=%s\n' "$(admin <<<'SELECT VERSION()')" | tee "$artifacts/mysql-versions.txt"
-for schema in system common meta gateway; do
+for schema in "${schemas[@]}"; do
   versions=$(runtime <<<"SELECT owner, version, pending_version FROM \`$schema\`.startup_schema_revision ORDER BY owner")
   [[ -n "$versions" ]]
   awk -F '\t' 'NF != 3 || $2 < 1 || $3 != 0 { exit 1 }' <<<"$versions"
@@ -247,6 +265,10 @@ ADDP_TEST_MYSQL_MEMBER_PASSWORD=$(openssl rand -hex 24)
 mapping=$(fixture port mysql 3306)
 [[ "$mapping" =~ ^127\.0\.0\.1:([0-9]+)$ ]]
 ADDP_TEST_MYSQL_PORT="${BASH_REMATCH[1]}"
+if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then
+  export ADDP_TEST_LINEAGE_PUBLISHER_PASSWORD
+  ADDP_TEST_LINEAGE_PUBLISHER_PASSWORD=$(openssl rand -hex 24)
+fi
 make build-iam-bootstrap
 ln -s "$PWD/dist/release-linux-amd64/addp-iam-bootstrap" "$work/iam-bootstrap"
 ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$ADDP_TEST_MYSQL_PORT" \
@@ -308,6 +330,12 @@ replacement = login("login_with_new_password", updated_password)
 after = call("profile_after_rotation", "GET", "/users/me", 200, token=replacement)
 assert after["id"] == initial["id"] and after["local_account"] == initial["local_account"]
 Path(sys.argv[2], "gateway.json").write_text(json.dumps(checks))
+if os.environ["ADDP_DEPLOYMENT_MODULES"] == "service":
+    Path(sys.argv[1]).with_name("lineage-reader.token").write_text(replacement)
 print(json.dumps(checks))
 PY
+if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then
+  stage=service-lineage
+  python3 scripts/test/mysql-service-lineage-online.py "$work" "$(fixture ps -q mysql)" "$artifacts"
+fi
 stage=complete
