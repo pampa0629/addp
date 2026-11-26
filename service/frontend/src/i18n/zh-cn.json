@@ -749,7 +749,7 @@
       "exampleLabel": "示例",
       "mapPreviewTitle": "地图预览",
       "selectLayerPlaceholder": "选择图层",
-      "selectLayerForPreview": "请选择图层查看地图预览",
+      "noPublishedLayers": "当前服务没有可预览的已发布图层",
       "integrationExamplesTitle": "集成示例",
       "copyCodeBtn": "复制代码",
       "addLayerTitle": "添加图层",

@@ -194,3 +194,10 @@ export async function copyToClipboard(text) {
     return false
   }
 }
+
+export function getTileProtocolTypes(service) {
+  const types = []
+  if (service.protocols?.xyz?.enabled) types.push('xyz', 'wmts')
+  if (service.protocols?.ogc_tiles?.enabled) types.push('ogc_api')
+  return types
+}

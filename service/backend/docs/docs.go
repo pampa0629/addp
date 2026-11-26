@@ -1661,6 +1661,33 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "public"
@@ -1709,6 +1736,33 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "public"
@@ -1751,6 +1805,33 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1812,6 +1893,33 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "public"
@@ -1854,6 +1962,33 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1936,6 +2071,33 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4207,6 +4369,33 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "public"
@@ -4251,6 +4440,24 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ExceptionReport"
+                        }
+                    },
+                    "404": {
+                        "description": "资源未发布或不存在 | Resource unpublished or missing",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ExceptionReport"
+                        }
+                    },
+                    "500": {
+                        "description": "服务读取失败 | Service read failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ExceptionReport"
+                        }
+                    },
+                    "503": {
+                        "description": "服务未启用 | Service inactive",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ExceptionReport"
                         }

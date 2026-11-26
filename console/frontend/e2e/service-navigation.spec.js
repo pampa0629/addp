@@ -225,6 +225,33 @@ test('tile edit loads the current service and only updates its editable metadata
   expect(writes).toEqual(Array(2).fill({ title: 'Updated tiles', description: 'Example', keywords: ['one', 'two'], public_access: true }))
 })
 
+test('tile preview requests OGC tiles when XYZ is off and skips disabled layers', async ({ page }) => {
+  const tile = {
+    id: 64, service_name: 'fixture', title: 'Fixture tiles', status: 'active',
+    protocols: { xyz: { enabled: false }, ogc_tiles: { enabled: true } },
+    layers: [
+      { id: 1, layer_name: 'hidden', title: 'Hidden layer', enabled: false },
+      { id: 2, layer_name: 'roads', title: 'Roads', enabled: true }
+    ]
+  }
+  const tileRequests = []
+  await page.route('**/api/v1/service/tile/64', route => route.fulfill({ json: tile }))
+  await page.route('https://tile.openstreetmap.org/**', route => route.fulfill({ status: 204 }))
+  await page.route(url => /^\/(ogc\/tiles|tiles)\/fixture\//.test(url.pathname), route => {
+    tileRequests.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ status: 200, contentType: 'application/vnd.mapbox-vector-tile', body: '' })
+  })
+  await page.goto(`${standaloneURL}#/tile/64`)
+  await expect(page.locator('pre.code-example').first()).toContainText('/ogc/tiles/fixture/tiles/roads/WebMercatorQuad/{z}/{y}/{x}')
+  await page.locator('.preview-controls').scrollIntoViewIfNeeded()
+  await expect.poll(() => tileRequests.length).toBeGreaterThan(0)
+  expect(tileRequests.every(path => path.startsWith('/ogc/tiles/fixture/tiles/roads/WebMercatorQuad/'))).toBe(true)
+  tile.status = 'inactive'
+  await page.reload()
+  await expect(page.getByText('当前服务没有可预览的已发布图层')).toBeVisible()
+  await expect(page.locator('pre.code-example')).toHaveCount(0)
+})
+
 test('tile detail adds, edits and deletes a layer under its original parent', async ({ page }) => {
   const tile = { id: 64, service_name: 'fixture', title: 'Fixture tiles', layers: [], protocols: {}, status: 'active' }
   const root = 'addp://engine/9/path/?type=root&node_id=2'

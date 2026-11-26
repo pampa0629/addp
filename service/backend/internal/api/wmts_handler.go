@@ -35,28 +35,16 @@ func NewWMTSHandler(tileServiceService tileServiceLookup) *WMTSHandler {
 // @Success 200 {object} Capabilities "WMTS Capabilities XML | WMTS Capabilities XML"
 // @Failure 401 {object} ExceptionReport "需要认证 | Authentication required"
 // @Failure 403 {object} ExceptionReport "无权访问 | Access denied"
+// @Failure 404 {object} ExceptionReport "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} ExceptionReport "服务读取失败 | Service read failed"
+// @Failure 503 {object} ExceptionReport "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /wmts/{serviceName} [get]
 func (h *WMTSHandler) GetCapabilities(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 
-	// 查询服务
-	tileService, err := h.tileServiceService.GetServiceModelByName(serviceName)
-	if err != nil {
-		logger.L().Error("WMTS 服务未找到",
-			"service_name", serviceName,
-			"error", err)
-		c.XML(http.StatusNotFound, buildErrorXML("ServiceNotFound", "Service not found"))
-		return
-	}
-
-	// 检查访问权限
-	if status := serviceAccessStatus(c, tileService.PublicAccess, tileService.TenantID); status != 0 {
-		if status == http.StatusUnauthorized {
-			c.XML(status, buildErrorXML("Unauthorized", "Authentication required"))
-		} else {
-			c.XML(status, buildErrorXML("Forbidden", "Access denied"))
-		}
+	tileService, ok := publishedTileService(c, h.tileServiceService, tileWMTS)
+	if !ok {
 		return
 	}
 

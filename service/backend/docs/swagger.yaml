@@ -3538,6 +3538,24 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 服务未启用 | Service inactive
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: OGC Tiles API Landing Page | OGC Tiles API Landing Page
       tags:
       - OGC Tiles
@@ -3570,6 +3588,24 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 服务未启用 | Service inactive
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: OGC API Conformance | OGC API Conformance
       tags:
       - OGC Tiles
@@ -3598,6 +3634,24 @@ paths:
             type: object
         "403":
           description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 服务未启用 | Service inactive
           schema:
             additionalProperties:
               type: string
@@ -3639,6 +3693,24 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 服务未启用 | Service inactive
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 获取单个 Tile Matrix Set | Get single Tile Matrix Set
       tags:
       - OGC Tiles
@@ -3667,6 +3739,24 @@ paths:
             type: object
         "403":
           description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 服务未启用 | Service inactive
           schema:
             additionalProperties:
               type: string
@@ -3723,6 +3813,24 @@ paths:
             type: object
         "403":
           description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 服务未启用 | Service inactive
           schema:
             additionalProperties:
               type: string
@@ -5227,6 +5335,24 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 服务未启用 | Service inactive
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 获取 XYZ 瓦片 | Get XYZ tile
       tags:
       - Tiles
@@ -5256,6 +5382,18 @@ paths:
             $ref: '#/definitions/internal_api.ExceptionReport'
         "403":
           description: 无权访问 | Access denied
+          schema:
+            $ref: '#/definitions/internal_api.ExceptionReport'
+        "404":
+          description: 资源未发布或不存在 | Resource unpublished or missing
+          schema:
+            $ref: '#/definitions/internal_api.ExceptionReport'
+        "500":
+          description: 服务读取失败 | Service read failed
+          schema:
+            $ref: '#/definitions/internal_api.ExceptionReport'
+        "503":
+          description: 服务未启用 | Service inactive
           schema:
             $ref: '#/definitions/internal_api.ExceptionReport'
       summary: 获取 WMTS Capabilities | Get WMTS Capabilities

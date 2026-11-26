@@ -157,9 +157,9 @@
         <div class="endpoint-url">
           <el-input :value="xyzTilesEndpoint" readonly />
           <el-button @click="copyEndpoint(xyzTilesEndpoint)">{{ t('service.common.copy') }}</el-button>
-          <el-button @click="testXYZTile">{{ t('service.tile.testBtn') }}</el-button>
+          <el-button :disabled="!xyzTilesExample" @click="testXYZTile">{{ t('service.tile.testBtn') }}</el-button>
         </div>
-        <div style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
+        <div v-if="xyzTilesExample" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
           {{ t('service.tile.exampleLabel') }}: <code>{{ xyzTilesExample }}</code>
         </div>
       </div>
@@ -214,9 +214,9 @@
     <!-- 地图预览卡片 -->
     <el-card :header="t('service.tile.mapPreviewTitle')" style="margin-bottom: 20px">
       <div class="preview-controls" style="margin-bottom: 16px">
-        <el-select v-model="selectedLayerForPreview" :placeholder="t('service.tile.selectLayerPlaceholder')">
+        <el-select v-if="previewLayers.length" v-model="selectedLayerForPreview" :placeholder="t('service.tile.selectLayerPlaceholder')">
           <el-option
-            v-for="layer in service?.layers"
+            v-for="layer in previewLayers"
             :key="layer.id"
             :label="layer.title"
             :value="layer.layer_name"
@@ -224,7 +224,7 @@
         </el-select>
       </div>
 
-      <div v-if="selectedLayerForPreview" style="width: 100%; height: 600px; border: 1px solid var(--addp-border-color); border-radius: 4px">
+      <div v-if="previewTileUrl" style="width: 100%; height: 600px; border: 1px solid var(--addp-border-color); border-radius: 4px">
         <TilePreview
           :tile-url="previewTileUrl"
           base-map="osm"
@@ -242,12 +242,12 @@
         v-else
         style="width: 100%; height: 600px; border: 1px solid var(--addp-border-color); border-radius: 4px; display: flex; align-items: center; justify-content: center"
       >
-        <el-empty :description="t('service.tile.selectLayerForPreview')" />
+        <el-empty :description="t('service.tile.noPublishedLayers')" />
       </div>
     </el-card>
 
     <!-- 集成示例卡片 -->
-    <el-card :header="t('service.tile.integrationExamplesTitle')">
+    <el-card v-if="previewTileUrl" :header="t('service.tile.integrationExamplesTitle')">
       <el-tabs>
         <el-tab-pane label="OpenLayers">
           <pre class="code-example">{{ openLayersExample }}</pre>
@@ -380,7 +380,7 @@ import tileServiceAPI from '@/api/tileService'
 import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
-import { tilePreviewConfig, tilePreviewCoordinate } from '../utils/tileServicePreview'
+import { tileReadTemplate, tilePreviewConfig, tilePreviewCoordinate } from '../utils/tileServicePreview'
 import { useAuthStore } from '../store/auth'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection, useConsolePageDescriptor } from '@common-ui'
 import {
@@ -438,23 +438,19 @@ const xyzTilesEndpoint = computed(() => {
   return `${baseURL.value}/tiles/${service.value.service_name}/{layerName}/{z}/{x}/{y}.mvt`
 })
 
-// 地图预览的瓦片 URL
-const previewTileUrl = computed(() => {
-  if (!service.value || !selectedLayerForPreview.value) return ''
-  return `${baseURL.value}/tiles/${service.value.service_name}/${selectedLayerForPreview.value}/{z}/{x}/{y}.mvt`
-})
-
-const selectedPreviewLayer = computed(() => {
-  return service.value?.layers?.find(layer => layer.layer_name === selectedLayerForPreview.value) || null
-})
-
+const previewLayers = computed(() =>
+  (service.value?.layers || []).filter(layer => tileReadTemplate(service.value, layer, baseURL.value))
+)
+const selectedPreviewLayer = computed(() =>
+  previewLayers.value.find(layer => layer.layer_name === selectedLayerForPreview.value)
+)
+const previewTileUrl = computed(() => tileReadTemplate(service.value, selectedPreviewLayer.value, baseURL.value))
 const previewMapConfig = computed(() => tilePreviewConfig(selectedPreviewLayer.value))
 
 const xyzTilesExample = computed(() => {
-  if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
-  const firstLayer = service.value.layers[0]
-  const { z, x, y } = tilePreviewCoordinate(firstLayer)
-  return `${baseURL.value}/tiles/${service.value.service_name}/${firstLayer.layer_name}/${z}/${x}/${y}.mvt`
+  if (!isProtocolEnabled('xyz') || !previewTileUrl.value) return ''
+  const { z, x, y } = tilePreviewCoordinate(selectedPreviewLayer.value)
+  return previewTileUrl.value.replace('{z}', z).replace('{x}', x).replace('{y}', y)
 })
 
 const wmtsEndpoint = computed(() => {
@@ -474,9 +470,8 @@ const ogcTileMatrixSets = computed(() => {
 
 // 集成示例代码
 const openLayersExample = computed(() => {
-  if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
-  const firstLayer = service.value.layers[0]
-  const preview = tilePreviewConfig(firstLayer)
+  if (!previewTileUrl.value) return ''
+  const preview = previewMapConfig.value
   return `import VectorTileLayer from 'ol/layer/VectorTile'
 import VectorTileSource from 'ol/source/VectorTile'
 import MVT from 'ol/format/MVT'
@@ -486,7 +481,7 @@ import { fromLonLat } from 'ol/proj'
 const layer = new VectorTileLayer({
   source: new VectorTileSource({
     format: new MVT(),
-    url: '${baseURL.value}/tiles/${service.value.service_name}/${firstLayer.layer_name}/{z}/{x}/{y}.mvt'
+    url: '${previewTileUrl.value}'
   })
 })
 
@@ -501,9 +496,8 @@ const map = new Map({
 })
 
 const leafletExample = computed(() => {
-  if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
-  const firstLayer = service.value.layers[0]
-  const preview = tilePreviewConfig(firstLayer)
+  if (!previewTileUrl.value) return ''
+  const preview = previewMapConfig.value
   return `// 使用 Leaflet.VectorGrid 插件
 import L from 'leaflet'
 import 'leaflet.vectorgrid'
@@ -518,15 +512,14 @@ const vectorTileOptions = {
 }
 
 const layer = L.vectorGrid.protobuf(
-  '${baseURL.value}/tiles/${service.value.service_name}/${firstLayer.layer_name}/{z}/{x}/{y}.mvt',
+  '${previewTileUrl.value}',
   vectorTileOptions
 ).addTo(map)`
 })
 
 const mapboxExample = computed(() => {
-  if (!service.value || !service.value.layers || service.value.layers.length === 0) return ''
-  const firstLayer = service.value.layers[0]
-  const preview = tilePreviewConfig(firstLayer)
+  if (!previewTileUrl.value) return ''
+  const preview = previewMapConfig.value
   return `import mapboxgl from 'mapbox-gl'
 
 const map = new mapboxgl.Map({
@@ -536,18 +529,18 @@ const map = new mapboxgl.Map({
 })
 
 map.on('load', () => {
-  map.addSource('${firstLayer.layer_name}', {
+  map.addSource('${selectedPreviewLayer.value.layer_name}', {
     type: 'vector',
-    tiles: ['${baseURL.value}/tiles/${service.value.service_name}/${firstLayer.layer_name}/{z}/{x}/{y}.mvt'],
+    tiles: ['${previewTileUrl.value}'],
     minzoom: ${preview.minZoom},
     maxzoom: ${preview.maxZoom}
   })
 
   map.addLayer({
-    id: '${firstLayer.layer_name}',
+    id: '${selectedPreviewLayer.value.layer_name}',
     type: 'line', // 或 'fill', 'circle' 等
-    source: '${firstLayer.layer_name}',
-    'source-layer': '${firstLayer.layer_name}'
+    source: '${selectedPreviewLayer.value.layer_name}',
+    'source-layer': '${selectedPreviewLayer.value.layer_name}'
   })
 })`
 })
@@ -626,9 +619,7 @@ const loadService = async () => {
     if (serviceId.value !== id) return
 
     service.value = response
-
-
-    selectedLayerForPreview.value = response.layers?.[0]?.layer_name || null
+    if (!selectedPreviewLayer.value) selectedLayerForPreview.value = previewLayers.value[0]?.layer_name || null
   } catch (error) {
     if (serviceId.value !== id) return
     ElMessage.error(t('service.tile.loadDetailFailed') + ': ' + (error.response?.data?.error || error.message))

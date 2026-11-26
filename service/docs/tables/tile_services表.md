@@ -44,7 +44,7 @@
 
 ## 管理、访问与删除
 
-管理操作按当前 Tenant 限定服务，使用精确 `service.definition.*` Permission；公开消费的身份、数据保护以及 status/protocols/enabled 阻断缺口统一见[管理与消费状态](../architecture/瓦片发布与缓存.md#管理与消费状态)。字段保存不保证消费阻断生效。
+管理操作按当前 Tenant 限定服务，使用精确 `service.definition.*` Permission；公开消费的身份、数据保护以及服务、协议和图层的读取条件统一见[管理与消费状态](../architecture/瓦片发布与缓存.md#管理与消费状态)。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |

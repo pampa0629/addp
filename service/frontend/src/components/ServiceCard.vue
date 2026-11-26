@@ -50,7 +50,7 @@
 <script setup>
 import { Link, Clock, Grid } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { getEnabledProtocols } from '../utils/serviceHelper'
+import { getEnabledProtocols, getTileProtocolTypes } from '../utils/serviceHelper'
 
 const { t } = useI18n()
 
@@ -90,12 +90,7 @@ const getServiceTypes = (service) => {
     const protocols = getEnabledProtocols(service)
     return protocols.map(p => p.key)
   } else if (props.source === 'tile') {
-    const types = []
-    if (service.protocols?.xyz?.enabled) types.push('xyz')
-    if (service.protocols?.wmts?.enabled || service.protocols?.wmts !== false) types.push('wmts')
-    if (service.protocols?.ogc_tiles?.enabled) types.push('ogc_api')
-    if (service.protocols?.tms?.enabled) types.push('tms')
-    return types.length > 0 ? types : ['xyz']
+    return getTileProtocolTypes(service)
   } else if (props.source === 'registered') {
     return [service.service_type || 'unknown']
   } else if (props.source === 'graph') {
@@ -158,9 +153,8 @@ const getServiceUrl = (service) => {
   } else if (props.source === 'tile') {
     const serviceName = service.service_name
     if (service.protocols?.xyz?.enabled) return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`
-    if (service.protocols?.wmts?.enabled) return `/wmts/${serviceName}?request=GetCapabilities`
     if (service.protocols?.ogc_tiles?.enabled) return `/ogc/tiles/${serviceName}`
-    return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`
+    return t('service.common.notConfigured')
   } else if (props.source === 'registered') {
     return service.endpoint_url || t('service.common.notConfigured')
   } else if (props.source === 'graph') {

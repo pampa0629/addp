@@ -36,7 +36,7 @@ import registeredServiceAPI from '../api/registeredService'
 import tileServiceAPI from '../api/tileService'
 import graphQueryServiceAPI from '../api/graphQueryService'
 import ServiceCard from '../components/ServiceCard.vue'
-import { getEnabledProtocols } from '../utils/serviceHelper'
+import { getEnabledProtocols, getTileProtocolTypes } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
 
@@ -80,17 +80,7 @@ const visibleServices = computed(() => {
       }
       return false
     } else if (s._source === 'tile') {
-      // 瓦片服务：检查协议配置
-      if (type === 'xyz' && s.protocols?.xyz?.enabled) {
-        return true
-      }
-      if (type === 'wmts' && s.protocols?.wmts?.enabled) {
-        return true
-      }
-      if (type === 'ogc_api' && s.protocols?.ogc_tiles?.enabled) {
-        return true
-      }
-      return false
+      return getTileProtocolTypes(s).includes(type)
     } else if (s._source === 'registered') {
       // 注册服务：直接匹配 service_type
       return s.service_type === type

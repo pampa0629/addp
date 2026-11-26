@@ -38,10 +38,10 @@ func (r *TileServiceRepository) GetServiceByIDAndTenant(id, tenantID uint) (*mod
 	return &service, nil
 }
 
-// GetServiceByName 根据服务名称获取服务（不过滤租户，用于公开服务）
-func (r *TileServiceRepository) GetServiceByName(serviceName string) (*models.TileService, error) {
+// GetServiceForConsumption loads the service and the layers exposed by its protocols.
+func (r *TileServiceRepository) GetServiceForConsumption(serviceName string) (*models.TileService, error) {
 	var service models.TileService
-	err := r.db.Preload("Layers").Where("service_name = ?", serviceName).First(&service).Error
+	err := r.db.Preload("Layers", "enabled = ?", true).Where("service_name = ?", serviceName).First(&service).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}

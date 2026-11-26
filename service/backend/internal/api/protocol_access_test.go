@@ -3,17 +3,19 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonAuth "github.com/addp/common/authorization"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/models"
+	"github.com/addp/service/internal/repository"
 	serviceInternal "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -22,25 +24,20 @@ type protocolTileServiceLookup struct {
 	services map[string]*models.TileService
 }
 
-func (s *protocolTileServiceLookup) GetServiceModelByName(serviceName string) (*models.TileService, error) {
+func (s *protocolTileServiceLookup) GetServiceForConsumption(serviceName string) (*models.TileService, error) {
 	tileService, ok := s.services[serviceName]
 	if !ok {
-		return nil, errors.New("service not found")
+		return nil, commonapi.ErrNotFound
 	}
 	return tileService, nil
 }
 
-type protocolStaticTileReader struct{}
+type protocolStaticTileReader struct {
+	reads [][3]int
+}
 
-func (protocolStaticTileReader) GetStaticTile(
-	context.Context,
-	uint,
-	*models.TileServiceLayer,
-	int,
-	int,
-	int,
-	string,
-) (*serviceInternal.StaticTile, error) {
+func (r *protocolStaticTileReader) GetStaticTile(_ context.Context, _ uint, _ *models.TileServiceLayer, z, x, y int, _ string) (*serviceInternal.StaticTile, error) {
+	r.reads = append(r.reads, [3]int{z, x, y})
 	return &serviceInternal.StaticTile{
 		Data:        []byte("tile"),
 		ContentType: "application/vnd.mapbox-vector-tile",
@@ -48,39 +45,10 @@ func (protocolStaticTileReader) GetStaticTile(
 }
 
 func TestProtocolRoutesEnforcePrivateServiceTenant(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	systemServer := newProtocolAuthSystemServer(t)
-	defer systemServer.Close()
-
 	lookup := &protocolTileServiceLookup{services: map[string]*models.TileService{
-		"public":  protocolTileService("public", 7, true),
-		"private": protocolTileService("private", 7, false),
+		"public": protocolTileService("public", 7, true), "private": protocolTileService("private", 7, false),
 	}}
-	tileEndpointHandler := NewTileEndpointHandler(lookup, protocolStaticTileReader{}, nil, nil)
-	wmtsHandler := NewWMTSHandler(lookup)
-	ogcTilesHandler := NewOGCTilesHandler(lookup, tileEndpointHandler)
-	cfg := &config.Config{}
-	cfg.SystemServiceURL = systemServer.URL
-	router := SetupRouter(
-		cfg,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		tileEndpointHandler,
-		wmtsHandler,
-		ogcTilesHandler,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		modulelifecycle.NewStandalone("service"),
-	)
+	router := tileProtocolRouter(t, lookup, &protocolStaticTileReader{})
 
 	tests := []struct {
 		name       string
@@ -117,6 +85,142 @@ func TestProtocolRoutesEnforcePrivateServiceTenant(t *testing.T) {
 	}
 }
 
+func tileProtocolRouter(t *testing.T, lookup tileServiceLookup, reader staticTileReader) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	systemServer := newProtocolAuthSystemServer(t)
+	t.Cleanup(systemServer.Close)
+	tileEndpointHandler := NewTileEndpointHandler(lookup, reader, nil, nil)
+	wmtsHandler := NewWMTSHandler(lookup)
+	ogcTilesHandler := NewOGCTilesHandler(lookup, tileEndpointHandler)
+	cfg := &config.Config{}
+	cfg.SystemServiceURL = systemServer.URL
+	return SetupRouter(
+		cfg,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		tileEndpointHandler,
+		wmtsHandler,
+		ogcTilesHandler,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		modulelifecycle.NewStandalone("service"),
+	)
+}
+
+func TestTilePublicationLifecycle(t *testing.T) {
+	db := tileProtocolTestDB(t)
+	const serviceID, tenantID = 1, 7
+	statements := []string{
+		`INSERT INTO service.tile_services (id, tenant_id, service_name, title, public_access, status, protocols) VALUES (1, 7, 'map', 'Map', true, 'active', CAST('{"xyz":{"enabled":true},"ogc_tiles":{"enabled":true}}' AS BLOB))`,
+		`INSERT INTO service.tile_service_layers (id, service_id, layer_name, title, layer_type, enabled) VALUES (1, 1, 'layer', 'Layer', 'static', true), (2, 1, 'sibling', 'Sibling', 'static', true)`,
+		`INSERT INTO service.tile_service_layers (id, service_id, layer_name, title, layer_type, layer_config, enabled) VALUES (3, 1, 'cached', 'Cached', 'dynamic', CAST('{"cache":{"enabled":true}}' AS BLOB), false)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := serviceInternal.NewTileServiceService(repository.NewTileServiceRepository(db), nil, "")
+	reader := &protocolStaticTileReader{}
+	router := tileProtocolRouter(t, svc, reader)
+	changeService := func(body string) {
+		t.Helper()
+		var req models.UpdateTileServiceRequest
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.UpdateService(serviceID, tenantID, &req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setLayerEnabled := func(enabled bool) {
+		t.Helper()
+		if _, err := svc.UpdateLayer(context.Background(), 1, serviceID, tenantID, &models.UpdateTileLayerRequest{Enabled: &enabled}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const xyz = "/tiles/map/layer/3/2/5.mvt"
+	const ogc = "/ogc/tiles/map/tiles/layer/WebMercatorQuad/3/5/2"
+	const wmts = "/wmts/map"
+	const sets = "/ogc/tiles/map/tiles"
+	get := func(path string, want int) string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		before := len(reader.reads)
+		router.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != want {
+			t.Fatalf("%s status = %d, want %d: %s", path, w.Code, want, w.Body)
+		}
+		if want != http.StatusOK {
+			ct := "application/json"
+			if path == wmts {
+				ct = "application/xml"
+			}
+			if !strings.HasPrefix(w.Header().Get("Content-Type"), ct) || len(reader.reads) != before {
+				t.Fatalf("rejected %s: type %s, storage reads %d", path, w.Header().Get("Content-Type"), len(reader.reads)-before)
+			}
+		} else if path == xyz || path == ogc {
+			if len(reader.reads) != before+1 || reader.reads[before] != [3]int{3, 2, 5} || w.Body.String() != "tile" {
+				t.Fatalf("%s returned %q, read %v", path, w.Body.String(), reader.reads[before:])
+			}
+		}
+		return w.Body.String()
+	}
+	get(xyz, 200)
+	get(ogc, 200)
+	changeService(`{"status":"inactive"}`)
+	for _, path := range []string{xyz, ogc, wmts, sets, "/ogc/tiles/map", "/ogc/tiles/map/conformance", "/ogc/tiles/map/tileMatrixSets", "/ogc/tiles/map/tileMatrixSets/WebMercatorQuad"} {
+		get(path, 503)
+	}
+	changeService(`{"public_access":false}`)
+	get(wmts, 401)
+	get(ogc, 401)
+	changeService(`{"public_access":true}`)
+	changeService(`{"status":"active"}`)
+	changeService(`{"protocols":{"xyz":{"enabled":false}}}`)
+	get(xyz, 404)
+	get(wmts, 404)
+	get(ogc, 200)
+	changeService(`{"protocols":{"xyz":{"enabled":true}}}`)
+	changeService(`{"protocols":{"ogc_tiles":{"enabled":false}}}`)
+	get(xyz, 200)
+	get(wmts, 200)
+	get(ogc, 404)
+	get(sets, 404)
+	changeService(`{"protocols":{"ogc_tiles":{"enabled":true}}}`)
+	setLayerEnabled(false)
+	get(xyz, 404)
+	get(ogc, 404)
+	get("/tiles/map/cached/3/2/5.mvt", 404)
+	get("/ogc/tiles/map/tiles/cached/WebMercatorQuad/3/5/2", 404)
+	get("/tiles/map/sibling/3/2/5.mvt", 200)
+	for _, path := range []string{wmts, sets} {
+		body := get(path, 200)
+		if strings.Contains(body, "/layer/") || !strings.Contains(body, "/sibling/") {
+			t.Fatalf("%s discovery: %s", path, body)
+		}
+	}
+	setLayerEnabled(true)
+	get(xyz, 200)
+	get(ogc, 200)
+	for _, path := range []string{wmts, sets} {
+		if !strings.Contains(get(path, 200), "/layer/") {
+			t.Fatalf("%s missing restored layer", path)
+		}
+	}
+}
+
 func protocolTileService(name string, tenantID uint, publicAccess bool) *models.TileService {
 	return &models.TileService{
 		ID:           tenantID,
@@ -124,6 +228,8 @@ func protocolTileService(name string, tenantID uint, publicAccess bool) *models.
 		ServiceName:  name,
 		Title:        name,
 		PublicAccess: publicAccess,
+		Status:       "active",
+		Protocols:    models.JSONB{"xyz": map[string]interface{}{"enabled": true}, "ogc_tiles": map[string]interface{}{"enabled": true}},
 		Layers: []models.TileServiceLayer{
 			{ID: 1, LayerName: "layer", LayerType: "static", Enabled: true},
 		},

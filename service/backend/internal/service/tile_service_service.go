@@ -117,15 +117,6 @@ func (s *TileServiceService) GetService(id, tenantID uint) (*models.TileServiceD
 	return s.convertToDTO(service), nil
 }
 
-// GetServiceByName 根据名称获取服务（不过滤租户，用于公开服务）
-func (s *TileServiceService) GetServiceByName(serviceName string) (*models.TileServiceDTO, error) {
-	service, err := s.repo.GetServiceByName(serviceName)
-	if err != nil {
-		return nil, fmt.Errorf("get service failed: %w", err)
-	}
-	return s.convertToDTO(service), nil
-}
-
 // GetServiceByNameAndTenant 根据名称和租户获取服务
 func (s *TileServiceService) GetServiceByNameAndTenant(serviceName string, tenantID uint) (*models.TileServiceDTO, error) {
 	service, err := s.repo.GetServiceByNameAndTenant(serviceName, tenantID)
@@ -135,9 +126,9 @@ func (s *TileServiceService) GetServiceByNameAndTenant(serviceName string, tenan
 	return s.convertToDTO(service), nil
 }
 
-// GetServiceModelByName 获取服务模型（用于瓦片端点）
-func (s *TileServiceService) GetServiceModelByName(serviceName string) (*models.TileService, error) {
-	return s.repo.GetServiceByName(serviceName)
+// GetServiceForConsumption 获取服务模型（用于瓦片端点）
+func (s *TileServiceService) GetServiceForConsumption(serviceName string) (*models.TileService, error) {
+	return s.repo.GetServiceForConsumption(serviceName)
 }
 
 // ListServices 列出租户下的所有瓦片服务
@@ -506,6 +497,7 @@ func (s *TileServiceService) buildEndpoints(service *models.TileService) map[str
 	if service.IsXYZEnabled() {
 		// 示例: /tiles/{serviceName}/{layerName}/{z}/{x}/{y}.mvt
 		endpoints["xyz_tiles"] = fmt.Sprintf("%s/tiles/%s/{layerName}/{z}/{x}/{y}.{format}", s.baseURL, service.ServiceName)
+		endpoints["wmts"] = fmt.Sprintf("%s/wmts/%s?request=GetCapabilities", s.baseURL, service.ServiceName)
 	}
 
 	// OGC Tiles API 端点
@@ -513,9 +505,6 @@ func (s *TileServiceService) buildEndpoints(service *models.TileService) map[str
 		endpoints["ogc_tiles"] = fmt.Sprintf("%s/ogc/tiles/%s", s.baseURL, service.ServiceName)
 		endpoints["ogc_tiles_tilesets"] = fmt.Sprintf("%s/ogc/tiles/%s/tiles", s.baseURL, service.ServiceName)
 	}
-
-	// WMTS 端点
-	endpoints["wmts"] = fmt.Sprintf("%s/wmts/%s?request=GetCapabilities", s.baseURL, service.ServiceName)
 
 	return endpoints
 }

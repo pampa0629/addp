@@ -26,7 +26,7 @@ type TileEndpointHandler struct {
 }
 
 type tileServiceLookup interface {
-	GetServiceModelByName(serviceName string) (*models.TileService, error)
+	GetServiceForConsumption(serviceName string) (*models.TileService, error)
 }
 
 type staticTileReader interface {
@@ -67,13 +67,13 @@ func NewTileEndpointHandler(
 // @Success 200 {file} binary "瓦片数据 | Tile data"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} map[string]string "服务读取失败 | Service read failed"
+// @Failure 503 {object} map[string]string "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format} [get]
 func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
-	ctx := c.Request.Context()
-
 	// 1. 解析路径参数
-	serviceName := c.Param("serviceName")
 	layerName := c.Param("layerName")
 	zStr := c.Param("z")
 	xStr := c.Param("x")
@@ -110,21 +110,16 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 		return
 	}
 
-	// 2. 查询瓦片服务（不过滤租户，因为可能是公开服务）
-	tileService, err := h.tileServiceService.GetServiceModelByName(serviceName)
-	if err != nil {
-		logger.L().Error("瓦片服务不存在",
-			"service_name", serviceName,
-			"error", err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
-		return
+	tileService, ok := publishedTileService(c, h.tileServiceService, tileXYZ)
+	if ok {
+		h.serveTile(c, tileService, layerName, z, x, y, format)
 	}
+}
 
-	// 3. 检查访问权限
-	if !requireJSONServiceAccess(c, tileService.PublicAccess, tileService.TenantID) {
-		return
-	}
-
+func (h *TileEndpointHandler) serveTile(c *gin.Context, tileService *models.TileService, layerName string, z, x, y int, format string) {
+	ctx := c.Request.Context()
+	serviceName := tileService.ServiceName
+	var err error
 	// 4. 查找图层
 	var layer *models.TileServiceLayer
 	for i := range tileService.Layers {

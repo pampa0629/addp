@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/addp/common/logger"
-	"github.com/addp/service/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -43,13 +42,16 @@ func NewOGCTilesHandler(
 // @Success 200 {object} map[string]interface{} "Landing Page | Landing Page"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} map[string]string "服务读取失败 | Service read failed"
+// @Failure 503 {object} map[string]string "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName} [get]
 func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 	host := c.Request.Host
 
-	tileService, ok := h.getAuthorizedService(c, serviceName)
+	tileService, ok := publishedTileService(c, h.tileServiceService, tileOGC)
 	if !ok {
 		return
 	}
@@ -104,10 +106,13 @@ func (h *OGCTilesHandler) GetLandingPage(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "符合性声明 | Conformance declaration"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} map[string]string "服务读取失败 | Service read failed"
+// @Failure 503 {object} map[string]string "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/conformance [get]
 func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
-	if _, ok := h.getAuthorizedService(c, c.Param("serviceName")); !ok {
+	if _, ok := publishedTileService(c, h.tileServiceService, tileOGC); !ok {
 		return
 	}
 
@@ -139,12 +144,15 @@ func (h *OGCTilesHandler) GetConformance(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "瓦片矩阵集列表 | Tile Matrix Set list"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} map[string]string "服务读取失败 | Service read failed"
+// @Failure 503 {object} map[string]string "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets [get]
 func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 	host := c.Request.Host
 	serviceName := c.Param("serviceName")
-	if _, ok := h.getAuthorizedService(c, serviceName); !ok {
+	if _, ok := publishedTileService(c, h.tileServiceService, tileOGC); !ok {
 		return
 	}
 
@@ -182,10 +190,13 @@ func (h *OGCTilesHandler) GetTileMatrixSets(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "瓦片矩阵集详情 | Tile Matrix Set details"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} map[string]string "服务读取失败 | Service read failed"
+// @Failure 503 {object} map[string]string "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId} [get]
 func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
-	if _, ok := h.getAuthorizedService(c, c.Param("serviceName")); !ok {
+	if _, ok := publishedTileService(c, h.tileServiceService, tileOGC); !ok {
 		return
 	}
 
@@ -240,13 +251,16 @@ func (h *OGCTilesHandler) GetTileMatrixSet(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "瓦片集列表 | Tileset list"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} map[string]string "服务读取失败 | Service read failed"
+// @Failure 503 {object} map[string]string "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tiles [get]
 func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 	serviceName := c.Param("serviceName")
 	host := c.Request.Host
 
-	tileService, ok := h.getAuthorizedService(c, serviceName)
+	tileService, ok := publishedTileService(c, h.tileServiceService, tileOGC)
 	if !ok {
 		return
 	}
@@ -304,10 +318,12 @@ func (h *OGCTilesHandler) GetTilesets(c *gin.Context) {
 // @Success 200 {file} application/vnd.mapbox-vector-tile "瓦片数据 | Tile data"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string "资源未发布或不存在 | Resource unpublished or missing"
+// @Failure 500 {object} map[string]string "服务读取失败 | Service read failed"
+// @Failure 503 {object} map[string]string "服务未启用 | Service inactive"
 // @x-addp-auth-mode "public"
 // @Router /ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol} [get]
 func (h *OGCTilesHandler) GetTile(c *gin.Context) {
-	serviceName := c.Param("serviceName")
 	layerName := c.Param("layer")
 	tileMatrixSetId := c.Param("tileMatrixSetId")
 	tileMatrixStr := c.Param("tileMatrix")
@@ -339,35 +355,8 @@ func (h *OGCTilesHandler) GetTile(c *gin.Context) {
 		return
 	}
 
-	// 设置参数到上下文，复用 XYZ Tiles 逻辑
-	c.Params = append(c.Params[:0],
-		gin.Param{Key: "serviceName", Value: serviceName},
-		gin.Param{Key: "layerName", Value: layerName},
-		gin.Param{Key: "z", Value: tileMatrixStr},
-		gin.Param{Key: "x", Value: tileColStr},
-		gin.Param{Key: "yformat", Value: fmt.Sprintf("/%d.mvt", y)},
-	)
-
-	// 复用 XYZ Tiles Handler
-	h.tileEndpointHandler.GetXYZTile(c)
-
-	logger.L().Debug("OGC Tiles GetTile 请求转发到 XYZ Tiles",
-		"service_name", serviceName,
-		"layer_name", layerName,
-		"z", z, "x", x, "y", y)
-}
-
-func (h *OGCTilesHandler) getAuthorizedService(c *gin.Context, serviceName string) (*models.TileService, bool) {
-	tileService, err := h.tileServiceService.GetServiceModelByName(serviceName)
-	if err != nil {
-		logger.L().Error("OGC Tiles 服务未找到",
-			"service_name", serviceName,
-			"error", err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
-		return nil, false
+	tileService, ok := publishedTileService(c, h.tileServiceService, tileOGC)
+	if ok {
+		h.tileEndpointHandler.serveTile(c, tileService, layerName, z, x, y, "mvt")
 	}
-	if !requireJSONServiceAccess(c, tileService.PublicAccess, tileService.TenantID) {
-		return nil, false
-	}
-	return tileService, true
 }

@@ -42,3 +42,12 @@ export function tilePreviewCoordinate(layer) {
     y: Math.floor((1 - Math.log(Math.tan(latitudeRadians) + 1 / Math.cos(latitudeRadians)) / Math.PI) / 2 * scale)
   }
 }
+
+export function tileReadTemplate(service, layer, baseURL) {
+  if (service?.status !== 'active' || !layer?.enabled) return ''
+  const name = encodeURIComponent(service.service_name)
+  const layerName = encodeURIComponent(layer.layer_name)
+  if (service.protocols?.xyz?.enabled) return `${baseURL}/tiles/${name}/${layerName}/{z}/{x}/{y}.mvt`
+  if (service.protocols?.ogc_tiles?.enabled) return `${baseURL}/ogc/tiles/${name}/tiles/${layerName}/WebMercatorQuad/{z}/{y}/{x}`
+  return ''
+}

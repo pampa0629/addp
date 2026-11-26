@@ -749,7 +749,7 @@
       "exampleLabel": "Example",
       "mapPreviewTitle": "Map Preview",
       "selectLayerPlaceholder": "Select layer",
-      "selectLayerForPreview": "Select a layer to preview the map",
+      "noPublishedLayers": "No published layer is available for preview",
       "integrationExamplesTitle": "Integration Examples",
       "copyCodeBtn": "Copy Code",
       "addLayerTitle": "Add Layer",

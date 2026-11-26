@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { tilePreviewConfig, tilePreviewCoordinate } from '../src/utils/tileServicePreview.js'
+import { getTileProtocolTypes } from '../src/utils/serviceHelper.js'
+import { tileReadTemplate, tilePreviewConfig, tilePreviewCoordinate } from '../src/utils/tileServicePreview.js'
 
 test('uses PMTiles snapshot camera and zoom range', () => {
   const layer = {
@@ -66,4 +67,24 @@ test('falls back to the published center when the spatial extent is invalid', ()
     minZoom: 4,
     maxZoom: 12
   })
+})
+
+test('preview follows the enabled protocol, service and layer at the same coordinate', () => {
+  const service = { service_name: 'map', status: 'active', protocols: { xyz: { enabled: true }, ogc_tiles: { enabled: true } } }
+  const layer = { layer_name: 'roads', enabled: true }
+  const url = () => tileReadTemplate(service, layer, 'https://data.example')
+  assert.deepEqual(getTileProtocolTypes(service), ['xyz', 'wmts', 'ogc_api'])
+  assert.equal(url(), 'https://data.example/tiles/map/roads/{z}/{x}/{y}.mvt')
+  service.protocols.xyz.enabled = false
+  assert.deepEqual(getTileProtocolTypes(service), ['ogc_api'])
+  assert.equal(url(), 'https://data.example/ogc/tiles/map/tiles/roads/WebMercatorQuad/{z}/{y}/{x}')
+  layer.enabled = false
+  assert.equal(url(), '')
+  layer.enabled = true
+  service.status = 'inactive'
+  assert.equal(url(), '')
+  service.status = 'active'
+  service.protocols.ogc_tiles.enabled = false
+  assert.deepEqual(getTileProtocolTypes(service), [])
+  assert.equal(url(), '')
 })

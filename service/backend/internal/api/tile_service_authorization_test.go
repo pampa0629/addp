@@ -15,8 +15,9 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func TestTileManagementChecksTenantAndLayerParent(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:service-tile-tenant-api?mode=memory&cache=shared"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+func tileProtocolTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,18 +26,33 @@ func TestTileManagementChecksTenantAndLayerParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	connection.SetMaxOpenConns(1)
+	t.Cleanup(func() { connection.Close() })
 	for _, statement := range []string{
 		`ATTACH DATABASE ':memory:' AS service`,
-		`CREATE TABLE service.tile_services (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, service_name TEXT NOT NULL, title TEXT NOT NULL, protocols JSON, created_by INTEGER, updated_at DATETIME)`,
+		`CREATE TABLE service.tile_services (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, service_name TEXT NOT NULL, title TEXT NOT NULL, protocols JSON, status TEXT, public_access BOOLEAN, created_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE service.tile_service_layers (id INTEGER PRIMARY KEY, service_id INTEGER NOT NULL, layer_name TEXT NOT NULL, title TEXT NOT NULL, layer_type TEXT NOT NULL, layer_config JSON, enabled BOOLEAN, updated_at DATETIME)`,
-		`INSERT INTO service.tile_services (id, tenant_id, service_name, title) VALUES (7, 7, 'ours', 'Ours'), (8, 8, 'theirs', 'Theirs'), (9, 7, 'sibling', 'Sibling')`,
-		`INSERT INTO service.tile_service_layers (id, service_id, layer_name, title, layer_type) VALUES (71, 7, 'ours', 'Ours', 'dynamic'), (81, 8, 'theirs', 'Theirs', 'dynamic'), (91, 9, 'sibling', 'Sibling', 'dynamic')`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	handler := NewTileServiceHandler(service.NewTileServiceService(repository.NewTileServiceRepository(db), nil, ""))
+	return db
+}
+
+func TestTileManagementChecksTenantAndLayerParent(t *testing.T) {
+	db := tileProtocolTestDB(t)
+	for _, statement := range []string{
+		`INSERT INTO service.tile_services (id, tenant_id, service_name, title) VALUES (7, 7, 'ours', 'Ours'), (8, 8, 'theirs', 'Theirs'), (9, 7, 'sibling', 'Sibling')`,
+		`INSERT INTO service.tile_service_layers (id, service_id, layer_name, title, layer_type) VALUES (71, 7, 'ours', 'Ours', 'static'), (81, 8, 'theirs', 'Theirs', 'dynamic'), (91, 9, 'sibling', 'Sibling', 'dynamic')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := service.NewTileServiceService(repository.NewTileServiceRepository(db), nil, "")
+	handler := NewTileServiceHandler(svc)
+	reader := &protocolStaticTileReader{}
+	tiles := NewTileEndpointHandler(svc, reader, nil, nil)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -45,6 +61,7 @@ func TestTileManagementChecksTenantAndLayerParent(t *testing.T) {
 		}
 		c.Next()
 	})
+	router.GET("/tiles/:serviceName/:layerName/:z/:x/*yformat", tiles.GetXYZTile)
 	router.GET("/tile/:id", handler.GetTileService)
 	router.PUT("/tile/:id", handler.UpdateTileService)
 	router.DELETE("/tile/:id", handler.DeleteTileService)
@@ -87,6 +104,24 @@ func TestTileManagementChecksTenantAndLayerParent(t *testing.T) {
 	request(http.MethodPut, "/tile/7", `{"title":"Updated service"}`, http.StatusOK)
 	request(http.MethodGet, "/tile-layers/7/71", "", http.StatusOK)
 	request(http.MethodPut, "/tile-layers/7/71", `{"title":"Updated"}`, http.StatusOK)
+	// Management writes take effect on the next request to the same tile URL.
+	const url = "/tiles/ours/ours/3/2/5.mvt"
+	request("PUT", "/tile/7", `{"status":"active","protocols":{"xyz":{"enabled":true}}}`, 200)
+	request("PUT", "/tile-layers/7/71", `{"enabled":true}`, 200)
+	request("GET", url, "", 200)
+	request("PUT", "/tile/7", `{"status":"inactive"}`, 200)
+	request("GET", url, "", 503)
+	request("PUT", "/tile/7", `{"status":"active","protocols":{"xyz":{"enabled":false}}}`, 200)
+	request("GET", url, "", 404)
+	request("PUT", "/tile/7", `{"protocols":{"xyz":{"enabled":true}}}`, 200)
+	request("PUT", "/tile-layers/7/71", `{"enabled":false}`, 200)
+	request("GET", url, "", 404)
+	request("GET", "/tile-layers/7/71", "", 200)
+	request("PUT", "/tile-layers/7/71", `{"enabled":true}`, 200)
+	request("GET", url, "", 200)
+	if len(reader.reads) != 2 {
+		t.Fatalf("storage reads = %d, want 2", len(reader.reads))
+	}
 	request(http.MethodDelete, "/tile-layers/7/71", "", http.StatusNoContent)
 	request(http.MethodGet, "/tile-layers/7/71", "", http.StatusNotFound)
 	var foreignTitle string
