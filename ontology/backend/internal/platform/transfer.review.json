@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "d9778c21a4f659559ed5696f51125787e2021f02",
-      "sha256": "dd9a7d6630811d3c3bf478b9653d570477374d6cd624dcc75482afd2660565ff",
+      "commit": "8f29a50c1f8f596cd70bb6341c3dfa999955c2d6",
+      "sha256": "d653e357c74f240a38be0c7925f69306acec4b2c05baf94c5cb8bb3af5f8218e",
       "use": {
-        "zh-cn": "正式只读预检纳入无调度的 RustFS 单 Parquet DataItem 到 PostgreSQL 表，核对精确对象身份和深扫结构。平台创建仍限定停止态原生表任务。草稿通过当前租户的单项描述确认源、目标可用且归属本租户。",
-        "en": "Formal read-only preflight covers an unscheduled single RustFS Parquet DataItem to PostgreSQL using exact identity and a deep schema snapshot. Platform creation remains limited to stopped native table tasks. Drafts use tenant-scoped single descriptors to verify both engines are available and tenant-owned."
+        "zh-cn": "正式只读预检纳入无调度的 RustFS 单 Parquet DataItem 到 PostgreSQL 表，核对精确对象身份和深扫结构。平台创建仍限定停止态原生表任务。草稿通过当前租户的单项描述确认源、目标可用且归属本租户。预检按当前生命周期和登记修订号接受正式恢复的租户引擎。",
+        "en": "Formal read-only preflight covers an unscheduled single RustFS Parquet DataItem to PostgreSQL using exact identity and a deep schema snapshot. Platform creation remains limited to stopped native table tasks. Drafts use tenant-scoped single descriptors to verify both engines are available and tenant-owned. Preflight admits formally restored tenant engines using current lifecycle and record revision."
       }
     },
     {
@@ -424,11 +424,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_config_check.go",
       "anchor": "func (s *TaskConfigCheckService) Check(",
-      "commit": "91d08ae6066d11f9bc837e2825cd0ee41883d259",
-      "sha256": "69c13703ab19c53afc821e66ddbd2c2292afd841a904864ee8b15580f1407788",
+      "commit": "8f29a50c1f8f596cd70bb6341c3dfa999955c2d6",
+      "sha256": "5b6aff569147fffd48f4f6596e1526ac6baf8d461ce5a7adb2cbffc911d27b88",
       "use": {
-        "zh-cn": "只用 RustFS 精确对象的已保存深扫结构及已登记读取能力检查 PostgreSQL 定义。原生和采样结构检查保留三态；业务内容在运行时读取。",
-        "en": "Checks PostgreSQL definitions against exact RustFS object deep snapshots and registered read support. Native and sampled checks retain their three states; business content is read at execution."
+        "zh-cn": "只用 RustFS 精确对象的已保存深扫结构及已登记读取能力检查 PostgreSQL 定义。原生和采样结构检查保留三态；业务内容在运行时读取。源、目标分别读取租户单项描述，允许已启用的离线实例，报告绑定正整数修订号。",
+        "en": "Checks PostgreSQL definitions against exact RustFS object deep snapshots and registered read support. Native and sampled checks retain their three states; business content is read at execution. Both endpoints use tenant-scoped single descriptors and bind positive revisions, including active offline engines."
       }
     },
     {
@@ -450,11 +450,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/service/task_config_check_test.go",
       "anchor": "func TestConfigCheckMongoObservedArrayMismatchIsNotHiddenBySampleCoverage(",
-      "commit": "91d08ae6066d11f9bc837e2825cd0ee41883d259",
-      "sha256": "5146c164640386bfb935068a9b378b8ab577e51cb964a3368d7ee38b0c3a3888",
+      "commit": "8f29a50c1f8f596cd70bb6341c3dfa999955c2d6",
+      "sha256": "5de8943758609f2c401464e128dbb45e74da9577217da9fc49c02234952b245e",
       "use": {
-        "zh-cn": "回归覆盖 9 个 Parquet 字段以及快照缺失、身份不符、能力不足、转换待验证和范围外配置。原 Mongo 样例反例保留。",
-        "en": "Regressions cover nine Parquet fields, missing snapshots, identity mismatch, missing capabilities, unproven conversion and excluded scopes. Existing Mongo sampled-schema counterexamples remain."
+        "zh-cn": "回归覆盖 9 个 Parquet 字段以及快照缺失、身份不符、能力不足、转换待验证和范围外配置。原 Mongo 样例反例保留。覆盖两端的离线、修订变更、租户令牌、精确访问路径和拒绝条件。",
+        "en": "Regressions cover nine Parquet fields, missing snapshots, identity mismatch, missing capabilities, unproven conversion and excluded scopes. Existing Mongo sampled-schema counterexamples remain. Covers offline engines, revision changes, tenant tokens, exact routes and rejection cases on both endpoints."
       }
     },
     {
