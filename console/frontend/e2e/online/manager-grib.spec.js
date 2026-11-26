@@ -136,7 +136,15 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           await expect(last).toHaveText(values.at(-1).at(-1))
           await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${screenshot}.png`) })
           await expect(frame.locator('.geojson-preview')).toHaveCount(0)
-          await expect(frame.getByTestId('grid-no-location')).toContainText(/暂不提供地图预览|map preview is not available/)
+          const map = frame.getByTestId('grib-field-map')
+          if (highResolution) {
+            await expect(map).toHaveAttribute('data-message', selection.variable)
+            await expect(map.getByTestId('generate-grib-map')).toHaveText(/生成累计降水地图|Generate precipitation map/)
+            await expect(frame.getByTestId('grid-no-location')).toHaveCount(0)
+          } else {
+            await expect(map).toHaveCount(0)
+            await expect(frame.getByTestId('grid-no-location')).toContainText(/暂不提供地图预览|map preview is not available/)
+          }
         }
         const intervalProof = sameEnd ? { distinct_accumulation_windows_verified: true } : {}
         if (highResolution) intervalProof.high_resolution_accumulation_verified = true
