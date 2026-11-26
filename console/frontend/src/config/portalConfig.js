@@ -370,7 +370,7 @@ export const SIDEBAR_MENUS = {
             index: '/system/iam/accounts', icon: Tickets, label: 'console.menus.system.iamAccounts',
             access: [
               { context: 'platform', permissions: ['iam.user.read', 'iam.platform_administrator_change.read', 'iam.emergency_session_revocation.read'] },
-              { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read', 'iam.emergency_session_revocation.read'] },
+              { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read', 'iam.service_account.read', 'iam.emergency_session_revocation.read'] },
             ],
           },
           {
@@ -381,7 +381,7 @@ export const SIDEBAR_MENUS = {
           },
           {
             index: '/system/iam/application-access', icon: Link, label: 'console.menus.system.iamApplicationAccess',
-            access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.api_consumer.read', 'iam.oauth_client.read'] }],
+            access: [{ context: 'tenant', permissions: ['iam.api_consumer.read', 'iam.oauth_client.read'] }],
           },
           {
             index: '/system/iam/security', icon: Lock, label: 'console.menus.system.iamSecurity',

@@ -92,13 +92,11 @@ describe('System recoverable route state', () => {
     })
   })
 
-  it('removes the retired mixed machine-identity tab instead of keeping a compatibility route', () => {
+  it.each(['service-accounts', 'platform-runtime-accounts', 'tenant-service-accounts'])('removes retired application tab %s', tab => {
     expect(resolveIAMCategoryRouteState([
       'api-consumers',
-      'oauth-clients',
-      'tenant-service-accounts',
-      'platform-runtime-accounts'
-    ], { tab: 'service-accounts' })).toEqual({
+      'oauth-clients'
+    ], { tab })).toEqual({
       activeTab: 'api-consumers',
       query: {},
       changed: true

@@ -321,7 +321,7 @@
         "departments": "部门管理",
         "projectGroups": "项目组管理",
         "apiConsumers": "API 消费方",
-        "externalApplications": "外部应用（OAuth）",
+        "externalApplications": "外部应用（用户委托）",
         "tenantServiceAccounts": "租户服务账号",
         "platformRuntimeAccounts": "平台运行账号",
         "userInvitations": "用户邀请",
@@ -687,7 +687,7 @@
           "all": "全部角色",
           "hints": {
             "user": "用于真实用户；角色分配在本页的“角色分配”中完成。",
-            "service_principal": "用于租户服务账号和平台运行账号；租户服务账号可在“应用接入”中配置角色，平台运行账号仅可查看。",
+            "service_principal": "用于租户服务账号和平台运行账号；租户服务账号可在“账号管理”中配置角色，平台运行账号仅可查看。",
             "all": "同时查看用户账号角色和机器身份角色。"
           }
         },
@@ -943,6 +943,11 @@
       "roleAssignments": {
         "create": "分配角色",
         "detail": "授权详情",
+        "runtimeModule": "所属模块或运行时",
+        "currentPermissions": "当前角色的功能权限",
+        "definitionUnavailable": "当前角色定义不可用",
+        "emptyPermissions": "此角色没有功能权限",
+        "tenantScope": "租户 {id}",
         "assignmentInfo": "授权对象",
         "assignmentId": "授权记录 ID",
         "allMembers": "全部用户账号",

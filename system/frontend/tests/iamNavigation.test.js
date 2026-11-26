@@ -58,6 +58,8 @@ describe('System IAM information architecture', () => {
     ])
     expect(availableIAMTabs('accounts', 'tenant', can).map(tab => tab.key)).toEqual([
       'user-accounts',
+      'tenant-service-accounts',
+      'platform-runtime-accounts',
       'invitations'
     ])
     expect(availableIAMTabs('roles', 'tenant', can).map(tab => tab.key)).toEqual([
@@ -66,9 +68,7 @@ describe('System IAM information architecture', () => {
     ])
     expect(availableIAMTabs('application-access', 'tenant', can).map(tab => tab.key)).toEqual([
       'api-consumers',
-      'oauth-clients',
-      'tenant-service-accounts',
-      'platform-runtime-accounts'
+      'oauth-clients'
     ])
   })
 

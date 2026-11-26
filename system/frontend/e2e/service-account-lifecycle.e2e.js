@@ -37,6 +37,7 @@ const permissions = [
   'iam.service_account.suspend',
   'iam.service_account.update',
   'iam.service_credential.update',
+  'iam.tenant_membership.read',
   'iam.api_consumer.read',
   'iam.oauth_client.read',
   'iam.tenant_role.read',
@@ -71,11 +72,11 @@ function serviceAccount(overrides = {}) {
 function platformRuntimeAccount() {
   return serviceAccount({
     id: '301',
-    name: 'addp-manager',
-    description: 'Manager runtime identity',
+    name: 'addp-meta',
+    description: 'Meta runtime identity',
     owner_scope: 'platform',
     membership_id: '401',
-    client_id: 'addp-manager',
+    client_id: 'addp-meta',
     created_by_principal_id: '1'
   })
 }
@@ -95,6 +96,14 @@ async function fulfillJSON(route, status, body) {
 }
 
 test('tenant administrator manages a service account lifecycle without leaking secrets', async ({ page }) => {
+  await exerciseServiceAccounts(page, true)
+})
+
+test('assignment reader sees machine identity and history without reading role definitions', async ({ page }) => {
+  await exerciseServiceAccounts(page, false)
+})
+
+async function exerciseServiceAccounts(page, readDefinitions) {
   let account = null
   let tenantAssignments = []
   const mutations = []
@@ -137,7 +146,7 @@ test('tenant administrator manages a service account lifecycle without leaking s
         context: { type: 'tenant', tenant_id: '1', tenant_membership_id: '11' },
         authentication: { assurance_level: 'aal2' },
         authorization: {
-          role_assignments: [{ role_key: 'tenant.administrator', scope: { type: 'tenant', tenant_id: '1' }, permissions }]
+          role_assignments: [{ role_key: 'tenant.administrator', scope: { type: 'tenant', tenant_id: '1' }, permissions: permissions.filter(key => readDefinitions || key !== 'iam.tenant_role.read') }]
         }
       })
       return
@@ -159,9 +168,9 @@ test('tenant administrator manages a service account lifecycle without leaking s
         membership_id: '401',
         principal_id: '301',
         principal_type: 'service_principal',
-        display_name: 'addp-manager',
-        role_key: 'tenant.manager_runtime',
-        role_name: 'Manager Runtime',
+        display_name: 'addp-meta',
+        role_key: 'tenant.meta_runtime',
+        role_name: 'Metadata Scan Runtime',
         scope_type: 'tenant',
         status: 'active',
         valid_until: null
@@ -169,8 +178,17 @@ test('tenant administrator manages a service account lifecycle without leaking s
       await fulfillJSON(route, 200, paginated(assignments))
       return
     }
+    if (path.endsWith('/tenant/role_assignments/501') && method === 'GET') {
+      await fulfillJSON(route, 200, {
+        id: '501', role_id: '703', role_key: 'tenant.meta_runtime', scope_type: 'tenant',
+        principal_id: '301', service_principal_name: 'addp-meta', display_name: 'addp-meta',
+        role_name: 'Metadata Scan Runtime', effective_state: 'effective', source_type: 'bootstrap'
+      })
+      return
+    }
     if (path.endsWith('/tenant/roles') && method === 'GET') {
-      await fulfillJSON(route, 200, [machineRole, userRole])
+      expect(readDefinitions).toBe(true)
+      await fulfillJSON(route, 200, [machineRole, userRole, { ...machineRole, id: '703', role_key: 'tenant.meta_runtime', name_i18n_key: 'roles.tenant.meta_runtime.name', permission_keys: ['system.meta_collection.execute'] }])
       return
     }
     if ((path.endsWith('/tenant/departments') || path.endsWith('/tenant/project_groups')) && method === 'GET') {
@@ -229,41 +247,55 @@ test('tenant administrator manages a service account lifecycle without leaking s
     throw new Error(`unexpected IAM E2E request: ${method} ${path}`)
   })
 
-  await page.goto(`/login?redirect=${encodeURIComponent('/iam/application-access?tab=tenant-service-accounts')}`)
+  await page.goto(`/login?redirect=${encodeURIComponent('/iam/accounts?tab=tenant-service-accounts')}`)
   await page.locator('input[autocomplete="username"]').fill('e2e-admin')
   await page.locator('input[autocomplete="current-password"]').fill('not-transmitted')
   await page.locator('button.auth-login-primary').click()
 
-  await expect(page).toHaveURL(/\/iam\/application-access\?tab=tenant-service-accounts$/)
-  await expect(page.getByRole('heading', { name: '应用接入' })).toBeVisible()
+  await expect(page).toHaveURL(/\/iam\/accounts\?tab=tenant-service-accounts$/)
+  await expect(page.getByRole('heading', { name: '账号管理' })).toBeVisible()
   expect((await page.getByRole('tab').allTextContents()).map(text => text.trim())).toEqual([
-    'API 消费方',
-    '外部应用（OAuth）',
+    '用户账号',
     '租户服务账号',
     '平台运行账号'
   ])
   await expect(page.getByText('平台内部定时任务和模块运行无需创建此账号。')).toBeVisible()
-  await expect(page.getByRole('row').filter({ hasText: 'addp-manager' })).toHaveCount(0)
+  await expect(page.getByRole('row').filter({ hasText: 'addp-meta' })).toHaveCount(0)
 
   await page.getByRole('tab', { name: '平台运行账号' }).click()
-  await expect(page).toHaveURL(/\/iam\/application-access\?tab=platform-runtime-accounts$/)
+  await expect(page).toHaveURL(/\/iam\/accounts\?tab=platform-runtime-accounts$/)
   await expect(page.getByRole('button', { name: '创建租户服务账号', exact: true })).toHaveCount(0)
 
-  const platformRow = page.getByRole('row').filter({ hasText: 'addp-manager' })
+  const platformRow = page.getByRole('row').filter({ hasText: 'addp-meta' })
   await expect(platformRow.getByRole('button', { name: '查看角色', exact: true })).toBeVisible()
   await expect(platformRow.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
   await expect(platformRow.getByRole('button', { name: '轮换密钥', exact: true })).toHaveCount(0)
   await platformRow.getByRole('button', { name: '查看角色', exact: true }).click()
-  const roleDrawer = page.getByRole('dialog', { name: 'addp-manager · 角色' })
+  const roleDrawer = page.getByRole('dialog', { name: 'addp-meta · 角色' })
   await expect(roleDrawer).toContainText('平台运行账号由系统维护')
-  await expect(roleDrawer).toContainText('tenant.manager_runtime')
+  await expect(roleDrawer).toContainText('tenant.meta_runtime')
   await expect(roleDrawer.getByRole('button', { name: '分配角色', exact: true })).toHaveCount(0)
   await expect(roleDrawer.getByRole('button', { name: '撤销', exact: true })).toHaveCount(0)
+  await roleDrawer.getByRole('button', { name: '查看', exact: true }).click()
+  const details = page.getByRole('dialog', { name: '授权详情' })
+  await expect(details).toContainText('所属模块或运行时')
+  await expect(details.getByText('meta', { exact: true })).toBeVisible()
+  await expect(details).toContainText('租户 1')
+  if (readDefinitions) {
+    await expect(details).toContainText('system.meta_collection.execute')
+  } else {
+    await expect(details).not.toContainText('当前角色的功能权限')
+    await expect(details).not.toContainText('system.meta_collection.execute')
+  }
+  await expect(details).not.toContainText('inference.runtime.execute')
+  await expect(details).toContainText('初始引导')
+  if (!readDefinitions) return
+  await details.locator('.el-drawer__close-btn').click()
   await roleDrawer.locator('.el-drawer__close-btn').click()
 
   await page.getByRole('tab', { name: '租户服务账号' }).click()
-  await expect(page).toHaveURL(/\/iam\/application-access\?tab=tenant-service-accounts$/)
-  await expect(page.getByRole('row').filter({ hasText: 'addp-manager' })).toHaveCount(0)
+  await expect(page).toHaveURL(/\/iam\/accounts\?tab=tenant-service-accounts$/)
+  await expect(page.getByRole('row').filter({ hasText: 'addp-meta' })).toHaveCount(0)
 
   await page.getByRole('button', { name: '创建租户服务账号', exact: true }).click()
   const createDialog = page.getByRole('dialog', { name: '创建租户服务账号' })
@@ -346,4 +378,4 @@ test('tenant administrator manages a service account lifecycle without leaking s
     { action: 'restore', input: { version: 2, reason: 'scheduled resume' } },
     { action: 'rotate-secret', input: { version: 3, reason: 'scheduled rotation' } }
   ])
-})
+}

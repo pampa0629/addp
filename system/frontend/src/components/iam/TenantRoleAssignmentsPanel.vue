@@ -117,8 +117,24 @@
           <el-descriptions :title="t('system.iam.roleAssignments.assignmentInfo')" :column="1" border>
             <el-descriptions-item :label="t('system.iam.roleAssignments.assignmentId')">{{ detail.id }}</el-descriptions-item>
             <el-descriptions-item :label="t('system.iam.memberships.member')">{{ assignmentMemberLabel(detail) }}</el-descriptions-item>
+            <el-descriptions-item v-if="runtimeModule" :label="t('system.iam.roleAssignments.runtimeModule')">
+              {{ resolveIAMModuleName(runtimeModule, t, te) }} <code>{{ runtimeModule }}</code>
+            </el-descriptions-item>
+            <el-descriptions-item v-if="machineAccount" :label="t('system.iam.roleAssignments.scope')">
+              {{ detail.scope_type === 'tenant' ? t('system.iam.roleAssignments.tenantScope', { id: authStore.authContext.context.tenant_id }) : t(`system.iam.roles.scope.${detail.scope_type}`) }}
+            </el-descriptions-item>
           </el-descriptions>
 
+          <section v-if="machineAccount && can('iam.tenant_role.read')" class="iam-machine-permissions">
+            <h4>{{ t('system.iam.roleAssignments.currentPermissions') }}</h4>
+            <p v-if="!detailRole">{{ t('system.iam.roleAssignments.definitionUnavailable') }}</p>
+            <p v-else-if="!detailRole.permission_keys.length">{{ t('system.iam.roleAssignments.emptyPermissions') }}</p>
+            <ul v-else>
+              <li v-for="key in detailRole.permission_keys" :key="key">
+                <span>{{ permissionLabel(key) }}</span> <code>{{ key }}</code>
+              </li>
+            </ul>
+          </section>
           <el-descriptions :title="t('system.iam.roleAssignments.grantInfo')" :column="1" border>
             <el-descriptions-item :label="t('system.iam.roleAssignments.source')">{{ assignmentSourceLabel(detail.source_type) }}</el-descriptions-item>
             <el-descriptions-item :label="t('system.iam.roleAssignments.grantedBy')">{{ assignmentActorLabel(detail.granted_by) }}</el-descriptions-item>
@@ -152,6 +168,7 @@ import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import MFAStepUpDialog from './MFAStepUpDialog.vue'
+import { resolveIAMModuleName, permissionIdentity, permissionResourceI18nKey } from '../../utils/iamPresentation'
 import TenantMemberIdentity from './TenantMemberIdentity.vue'
 import TenantMemberSelect from './TenantMemberSelect.vue'
 import {
@@ -193,6 +210,20 @@ const formRef = ref()
 const filters = reactive({ membership_id: '', effective_state: 'effective' })
 const form = reactive({ membershipId: '', roleIds: [], validUntil: null, reason: '' })
 const fixedMembership = computed(() => props.fixedMembership)
+const machineAccount = computed(() => fixedMembership.value?.owner_scope)
+const runtimeModule = computed(() => {
+  const account = fixedMembership.value
+  return account?.owner_scope === 'platform' && account.client_id?.startsWith('addp-')
+    ? account.client_id.slice(5)
+    : ''
+})
+const detailRole = ref(null)
+function permissionLabel(key) {
+  const resource = permissionResourceI18nKey(key)
+  const identity = permissionIdentity(key)
+  const action = `system.iam.roles.actions.${identity.action}`
+  return [te(resource) ? t(resource) : identity.resource, te(action) ? t(action) : identity.action].join(' · ')
+}
 const fixedMember = computed(() => {
   const membership = fixedMembership.value
   if (!membership) return null
@@ -386,16 +417,25 @@ async function revoke(row) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed'))
   }
 }
+let detailRequest = 0
 async function openDetails(assignmentId) {
+  const request = ++detailRequest
   detailVisible.value = true
   detailLoading.value = true
+  detail.value = null
+  detailRole.value = null
   try {
-    detail.value = await iamAPI.tenantRoleAssignments.get(assignmentId)
+    const assignment = await iamAPI.tenantRoleAssignments.get(assignmentId)
+    if (request !== detailRequest) return
+    detail.value = assignment
+    if (machineAccount.value && can('iam.tenant_role.read')) {
+      const definitions = await iamAPI.tenantRoles.list()
+      if (request === detailRequest) detailRole.value = definitions.find(role => role.id === assignment.role_id)
+    }
   } catch (error) {
-    detail.value = null
-    ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
+    if (request === detailRequest) ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
   } finally {
-    detailLoading.value = false
+    if (request === detailRequest) detailLoading.value = false
   }
 }
 async function refreshCurrentMemberAuthorization(membershipId) {
@@ -436,6 +476,9 @@ watch(() => fixedMember.value?.id, () => {
 .iam-role-option-key { overflow-wrap: anywhere; }
 .iam-role-key { overflow-wrap: anywhere; }
 .iam-role-selection-detail { width: 100%; margin-top: 6px; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
+.iam-machine-permissions { margin-bottom: 16px; overflow-wrap: anywhere; }
+.iam-machine-permissions ul { padding-inline-start: 20px; }
+.iam-machine-permissions code { color: var(--addp-text-secondary); }
 .iam-assignment-detail { min-height: 160px; }
 .iam-assignment-detail__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .iam-assignment-detail :deep(.el-alert), .iam-assignment-detail :deep(.el-descriptions) { margin-bottom: 16px; }

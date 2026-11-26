@@ -105,9 +105,9 @@ export const SEARCH_INDEX = [
     labelKey: 'console.menus.system.iamAccounts', module: 'system', route: '/system/iam/accounts',
     access: [
       { context: 'platform', permissions: ['iam.user.read', 'iam.platform_administrator_change.read', 'iam.emergency_session_revocation.read'] },
-      { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read', 'iam.emergency_session_revocation.read'] },
+      { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read', 'iam.service_account.read', 'iam.emergency_session_revocation.read'] },
     ],
-    keywords: ['账号', '用户', '邀请', 'account', 'user', 'invitation']
+    keywords: ['账号', '用户', '邀请', '租户服务账号', '平台运行账号', 'Client Credentials', 'service account', 'account', 'user', 'invitation']
   },
   {
     labelKey: 'console.personalCenter', module: 'system', route: '/system/account',
@@ -121,8 +121,8 @@ export const SEARCH_INDEX = [
   },
   {
     labelKey: 'console.menus.system.iamApplicationAccess', module: 'system', route: '/system/iam/application-access',
-    access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.api_consumer.read', 'iam.oauth_client.read'] }],
-    keywords: ['应用接入', '服务账号', 'API消费方', 'API密钥', '外部应用', 'OAuth', 'Client Credentials', 'service account', 'api consumer', 'oauth client']
+    access: [{ context: 'tenant', permissions: ['iam.api_consumer.read', 'iam.oauth_client.read'] }],
+    keywords: ['应用接入', 'API消费方', 'API密钥', '外部应用', '用户委托', 'OAuth', 'api consumer', 'oauth client']
   },
   {
     labelKey: 'console.menus.system.iamSecurity', module: 'system', route: '/system/iam/security',

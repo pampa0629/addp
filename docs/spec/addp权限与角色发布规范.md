@@ -204,7 +204,7 @@ Role Assignment 必须直接保存授权生命周期所需事实：授予原因 
 
 Role 选择器必须把兼容 Role 分为“可分配角色”和“已分配角色”两组；同一 Membership、同一 Scope 下已有 `effective` Assignment 的 Role 保留可见但禁止重复选择，只有历史 `revoked` 或 `expired` Assignment 时不得阻止重新分配。同一 Principal、Role 和 Scope 的多条 `active` Assignment 以授权有效区间判定重复：有效区间不得重叠，已结束区间不得占用当前或未来授权位置。
 
-Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > 角色分配”只查询和选择 User Membership；Tenant-owned Service Account 的角色只从“应用接入 > 租户服务账号”管理；Platform-owned Runtime Service Principal 的角色只从“应用接入 > 平台运行账号”查看。两个入口继续复用相同的 Role Assignment API、校验和审计事实，但不得混排数据或共用可变更操作。System 初始化和维护 Platform-owned Runtime Service Principal 的角色。Tenant Role Assignment 的创建与撤销入口以目标服务账号的持久归属为准；对平台拥有的账号返回 `403 Forbidden`，包括临时追加角色及撤销既有人工分配。租户管理员可读取其当前分配与历史；Tenant-owned Service Account 只可选择 `allowed_principal_types` 包含 `service_principal` 的 Role。
+Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > 角色分配”只查询和选择 User Membership；Tenant-owned Service Account 的角色只从“账号管理 > 租户服务账号”管理；Platform-owned Runtime Service Principal 的角色只从“账号管理 > 平台运行账号”查看。两个入口继续复用相同的 Role Assignment API、校验和审计事实，但不得混排数据或共用可变更操作。System 初始化和维护 Platform-owned Runtime Service Principal 的角色。Tenant Role Assignment 的创建与撤销入口以目标服务账号的持久归属为准；对平台拥有的账号返回 `403 Forbidden`，包括临时追加角色及撤销既有人工分配。租户管理员可读取其当前分配与历史；Tenant-owned Service Account 只可选择 `allowed_principal_types` 包含 `service_principal` 的 Role。
 
 ## 七、租户阶段的部分授权账号
 

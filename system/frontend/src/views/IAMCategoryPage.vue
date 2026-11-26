@@ -17,7 +17,7 @@
 
     <el-alert v-if="!availableTabs.length" type="warning" :closable="false" show-icon :title="t('system.iam.noPermission')" />
     <el-tabs v-else v-model="activeTab" class="iam-tabs" @tab-change="selectTab">
-      <el-tab-pane v-for="tab in availableTabs" :key="`${tab.key}:${tab.context}`" :name="tab.key">
+      <el-tab-pane v-for="tab in availableTabs" :key="`${tab.key}:${tab.context}:${authContext?.context?.tenant_id || ''}`" :name="tab.key">
         <template #label>
           <el-icon><component :is="tabIcon(tab.panel)" /></el-icon>
           <span>{{ t(tab.label) }}</span>

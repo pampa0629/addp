@@ -205,7 +205,7 @@ test('tenant administrator manages a custom role with localized bulk permission 
   await expect(page.getByRole('row').filter({ hasText: 'tenant.agent_runtime' })).toHaveCount(0)
 
   await page.locator('.el-radio-button').filter({ hasText: '机器身份角色' }).click()
-  await expect(page.getByText('租户服务账号可在“应用接入”中配置角色，平台运行账号仅可查看。')).toBeVisible()
+  await expect(page.getByText('租户服务账号可在“账号管理”中配置角色，平台运行账号仅可查看。')).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'tenant.agent_runtime' })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'tenant.administrator' })).toHaveCount(0)
   await page.locator('.el-radio-button').filter({ hasText: '用户账号角色' }).click()

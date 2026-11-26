@@ -50,6 +50,27 @@ describe('Console navigation access filtering', () => {
     }
   })
 
+  it('routes machine account and external application readers to their own category', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'localhost', origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig.js')
+      const { SEARCH_INDEX } = await import('../src/config/searchIndex.js')
+      for (const [permission, category] of [['iam.service_account.read', 'accounts'], ['iam.oauth_client.read', 'application-access'], ['iam.api_consumer.read', 'application-access']]) {
+        const permissions = [permission]
+        const visible = filterSidebarMenus({ system: SIDEBAR_MENUS.system }, 'tenant', permissions)
+        expect(firstAccessibleModuleRoute(visible.system)).toBe(`/system/iam/${category}`)
+        for (const candidate of ['accounts', 'application-access']) {
+          const path = `/system/iam/${candidate}`
+          for (const entry of [SEARCH_INDEX.find(item => item.route === path), { access: consoleRouteAccess(path) }]) {
+            expect(matchesNavigationAccess(entry, 'tenant', permissions)).toBe(candidate === category)
+          }
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('allows emergency records through the existing accounts entry for either authorized context', async () => {
     vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'localhost', origin: 'http://localhost' } })
     try {

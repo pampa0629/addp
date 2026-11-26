@@ -39,6 +39,8 @@ export const IAM_TABS = [
   { page: 'accounts', key: 'users', context: 'platform', permission: 'iam.user.read', label: 'system.iam.tabs.userAccounts', panel: 'users' },
   { page: 'accounts', key: 'administrator-changes', context: 'platform', permission: 'iam.platform_administrator_change.read', label: 'system.iam.tabs.administratorChanges', panel: 'administrator-changes' },
   { page: 'accounts', key: 'user-accounts', context: 'tenant', permission: 'iam.tenant_membership.read', label: 'system.iam.tabs.userAccounts', panel: 'user-accounts' },
+  { page: 'accounts', key: 'tenant-service-accounts', context: 'tenant', permission: 'iam.service_account.read', label: 'system.iam.tabs.tenantServiceAccounts', panel: 'service-principal-accounts', props: { ownerScope: 'tenant' } },
+  { page: 'accounts', key: 'platform-runtime-accounts', context: 'tenant', permission: 'iam.service_account.read', label: 'system.iam.tabs.platformRuntimeAccounts', panel: 'service-principal-accounts', props: { ownerScope: 'platform' } },
   { page: 'accounts', key: 'invitations', context: 'tenant', permission: 'iam.tenant_invitation.read', label: 'system.iam.tabs.userInvitations', panel: 'invitations' },
   { page: 'accounts', key: 'emergency-sessions', context: 'platform', permission: 'iam.emergency_session_revocation.read', label: 'system.iam.emergencySessions.title', panel: 'emergency-sessions' },
   { page: 'accounts', key: 'emergency-sessions', context: 'tenant', permission: 'iam.emergency_session_revocation.read', label: 'system.iam.emergencySessions.title', panel: 'emergency-sessions' },
@@ -48,8 +50,6 @@ export const IAM_TABS = [
 
   { page: 'application-access', key: 'api-consumers', context: 'tenant', permission: 'iam.api_consumer.read', label: 'system.iam.tabs.apiConsumers', panel: 'api-consumers' },
   { page: 'application-access', key: 'oauth-clients', context: 'tenant', permission: 'iam.oauth_client.read', label: 'system.iam.tabs.externalApplications', panel: 'oauth-clients' },
-  { page: 'application-access', key: 'tenant-service-accounts', context: 'tenant', permission: 'iam.service_account.read', label: 'system.iam.tabs.tenantServiceAccounts', panel: 'service-principal-accounts', props: { ownerScope: 'tenant' } },
-  { page: 'application-access', key: 'platform-runtime-accounts', context: 'tenant', permission: 'iam.service_account.read', label: 'system.iam.tabs.platformRuntimeAccounts', panel: 'service-principal-accounts', props: { ownerScope: 'platform' } },
 
   { page: 'security', key: 'security-policy', context: 'platform', permission: 'iam.security_policy.read', label: 'system.iam.tabs.securityPolicy', panel: 'security-policy' },
   { page: 'security', key: 'audit', context: 'platform', permission: 'audit.event.read', label: 'system.iam.tabs.audit', panel: 'audit', props: { scope: 'platform' } },
