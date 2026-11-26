@@ -56,9 +56,6 @@ class Client:
         if path.endswith('/auth/context'):
             data = {'principal': {'id':33,'type':'user'}, 'context': {'type':'tenant','tenant_id':'2'}, 'token': {'type':'first_party_access_token'},
                     'authorization': {'role_assignments': [{'role_key':'raster-consumer','permissions':sorted(m.raster.EDITOR_PERMISSIONS)}]}}
-        elif path.endswith('/scan/run/manual'):
-            assert body['targets'] == [f'addp://engine/3/path/{n}?type=file' for n in m.fixture.SOURCES]
-            self.scans.append('source-scan'); self.scan_parents['source-scan'] = None; data = {'execution_id':'source-scan'}
         elif '/meta/executions/' in path:
             identifier = path.rsplit('/',1)[-1]
             data = {'execution_id':identifier,'parent_execution_id':self.scan_parents[identifier],'module':'meta','task_type':'scan','status':'success','tenant_id':2,'triggered_by':33,'scan_context':{'engine_id':4 if self.scan_fault else 3}}
@@ -92,22 +89,75 @@ class Client:
         return SimpleNamespace(payload=copy.deepcopy(data),raw=json.dumps(data).encode(),status=expected[0])
     def preview(self,name):return artifact(name)
 
+class SourceInitializer:
+    def __init__(self):
+        self.targets = []
+
+    def request(self, method, path, expected, body=None, headers=None):
+        if path.endswith('/scan/run/manual'):
+            assert method == 'POST' and not self.targets
+            self.targets = body['targets']
+            assert self.targets == [f'addp://engine/3/path/{name}?type=file' for name in m.fixture.SOURCES]
+            data = {'execution_id':'source-scan'}
+        elif path.endswith('/meta/executions/source-scan'):
+            assert self.targets
+            data = {'execution_id':'source-scan','module':'meta','task_type':'scan',
+                    'status':'success','tenant_id':2,'triggered_by':44,'scan_context':{'engine_id':3}}
+        elif '/meta/scan/runs?' in path:
+            data = {'total':1,'items':[{'execution_id':'source-scan'}]}
+        else:
+            raise AssertionError((method, path))
+        return SimpleNamespace(payload=data)
+
 class ZonalPercentileWorkflowTest(unittest.TestCase):
     def setUp(self):
         self.work=tempfile.TemporaryDirectory();self.addCleanup(self.work.cleanup);self.root=Path(self.work.name)
         self.env={'ONLINE_SUITE':m.SUITE,'ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_NFS_ENGINE_ID':'3',
                   'ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'600','ADDP_ONLINE_TEST_RUN_ID':'focal-circle-weighted-123-1','ADDP_ONLINE_ARTIFACT_DIR':str(self.root/'evidence')}
         self.relations=[]
-    def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic):
+    def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic, *, metadata_fault=None):
         client=client or Client()
+        initializer = SourceInitializer()
+        self.metadata_events = []
         def reader(env, identifier, tenant, principal, dag):
+            assert 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN' not in env
             assert tenant==2 and principal==33 and identifier in client.executions
             name=dag['tasks'][-1]['params']['target_name']; target='addp://engine/3/path/outputs/'+name+'?type=file'
             return m.expected_lineage(client.locators(), name, target)
         def relation(client, source, target, execution, timeout):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
-        with patch.object(m.raster,'wait_lineage',side_effect=relation):
-            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader)
+        test = self
+        class Metadata:
+            path = Path('focal-circle-weighted-metadata.json')
+            def __init__(self, env, consumer, engine, identity, scan, remaining, *, grant_remaining):
+                assert env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'preparer-only'
+                assert (engine, identity['principal_id'], scan) == (3, '33', 'source-scan')
+                assert 44 < grant_remaining() - remaining() < 46
+            def find(self, name, *, binding=None):
+                if binding is not None:
+                    assert binding['execution'] == client.scan_parents[binding['scan']]
+                    assert binding['locator'] == f'addp://engine/3/path/{name}?type=file'
+                else:
+                    assert name in m.fixture.SOURCES
+                test.metadata_events.append(('find', name))
+                if metadata_fault == 'grant' and len(test.metadata_events) == 2:
+                    raise m.SuiteError('source grant failed')
+                return client.items[name]
+            def snapshot(self, identifier):
+                return client.request('GET', f'/api/v1/meta/items/{identifier}', (200,)).payload
+            def cleanup(self):
+                test.metadata_events.append(('cleanup', None))
+                if metadata_fault == 'revoke':
+                    raise m.SuiteError('revocation failed')
+        env = {**self.env, 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'preparer-only'}
+        def isolated_worker(repo, worker_env, action, names, timeout):
+            assert 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN' not in worker_env
+            return worker(repo, worker_env, action, names, timeout)
+        with patch.object(m.raster,'wait_lineage',side_effect=relation), \
+                patch.object(m.hillshade,'source_scan_client',return_value=(initializer, {'principal_id':'44'})), \
+                patch.object(m,'CircleMetadata',Metadata):
+            return m.run_scenario(self.root,env,client,isolated_worker,diagnostic_runner,reader,
+                                  hard_deadline=m.time.monotonic()+600)
     def test_full_matrix_27_success_72_failures_2322_checks_and_cleanup(self):
         client=Client();calls=[]
         def worker(*args): calls.append((args[2],list(args[3]))); return physical(*args)
@@ -116,6 +166,10 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
         self.assertEqual(sum(len(names) for action,names in calls if action=='verify'),2322)
         self.assertEqual(len(self.relations),27);self.assertTrue(report['oracle_cache_removed'])
         self.assertEqual(report['source_scan_identity']['parent_execution_id'],None)
+        self.assertEqual(report['source_scan_identity']['triggered_by'],44)
+        self.assertEqual(report['source_preparation_identity']['principal_id'],'44')
+        self.assertEqual(len(client.scans),27)
+        self.assertEqual(self.metadata_events[-1],('cleanup', None))
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
         self.assertEqual({(x['problem'],x['language']) for x in report['failed_parameters']},{(p,l) for p in m.FAILURES for l in ('zh-cn','en')})
         self.assertEqual(len(list((self.root/'evidence/circle-weighted-lineage').iterdir())),27)
@@ -162,6 +216,16 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
             raise m.SuiteError('cleanup also failed')
         with self.assertRaisesRegex(m.SuiteError,'first oracle failed; oracle cleanup also failed'):self.run_case(worker=broken)
         self.assertEqual(actions,['prepare-oracle','cleanup-oracle'])
+
+    def test_source_grants_cleanup_on_partial_preparation_and_revoke_failure_rejects_success(self):
+        for fault, reason in (('grant', 'source grant failed'), ('revoke', 'metadata Grant cleanup also failed')):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                self.env['ADDP_ONLINE_ARTIFACT_DIR'] = directory
+                client = Client()
+                with self.assertRaisesRegex(m.SuiteError, reason):
+                    self.run_case(client, metadata_fault=fault)
+                self.assertEqual(self.metadata_events[-1], ('cleanup', None))
+                self.assertEqual(len(client.executions), 0 if fault == 'grant' else 99)
     def test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced(self):
         for fault in ('diagnostic','query','scan','edge','identity','parent','budget','cleanup'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:

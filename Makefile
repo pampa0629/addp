@@ -890,6 +890,7 @@ test-raster-focal-circle-orthogonal-online-runner: test-raster-lineage-observer-
 test-raster-focal-circle-weighted-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证加权圆窗27成功72失败2322全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-circle-weighted-gate.sh
 	@python3 -m unittest scripts/test/raster-focal-circle-weighted-persistence-online_test.py scripts/test/online-raster-focal-circle-weighted-fixture_test.py scripts/test/online-hosted-raster-focal-circle-weighted-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'FocalCircleWeighted' -count=1
 
 .PHONY: test-raster-boundary-clean-two-rounds-online-runner
 test-raster-boundary-clean-two-rounds-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证边界清理两轮12成功32失败462全检及600秒隔离生命周期

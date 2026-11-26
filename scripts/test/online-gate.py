@@ -1495,14 +1495,16 @@ def run_online(
                     "online_scenario_timeout",
                     "scenario exceeded the Online total timeout",
                 )
+            scenario_environment = environment
+            if suite_name == "raster-hillshade-orthogonal-persistence":
+                scenario_environment = dict(environment, ADDP_ONLINE_HILLSHADE_DEADLINE=str(started_at + timeout))
+            elif suite_name == "raster-focal-circle-weighted-persistence":
+                scenario_environment = dict(environment, ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE=str(started_at + timeout))
             suite_report, scenario_ms = run_stage(
                 "scenario",
                 suite.command,
                 repository=repository,
-                environment=(
-                    dict(environment, ADDP_ONLINE_HILLSHADE_DEADLINE=str(started_at + timeout))
-                    if suite_name == "raster-hillshade-orthogonal-persistence" else environment
-                ),
+                environment=scenario_environment,
                 timeout=remaining,
             )
             report["suite_report"] = suite_report

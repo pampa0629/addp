@@ -16,6 +16,7 @@ import time
 base = importlib.import_module('scripts.test.raster-statistics-percentile-workflow-online')
 fixture = importlib.import_module('business.scripts.online-raster-focal-circle-weighted-fixture')
 lineage = importlib.import_module('scripts.utils.online_raster_lineage')
+hillshade = importlib.import_module('scripts.test.raster-hillshade-orthogonal-persistence-online')
 def source_edges(client, identifier):
     graph = obj(client.request('GET', f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={identifier}&direction=downstream', (200,)).payload, 'source graph')
     if graph.get('truncated') is not False: raise SuiteError('source graph is incomplete')
@@ -24,6 +25,7 @@ def source_edges(client, identifier):
 raster, support, readonly = base.raster, base.support, base.readonly
 obj, array, positive, SuiteError = base.obj, base.array, base.positive, base.SuiteError
 SUITE, FAILURES = fixture.SUITE, fixture.FAILURES
+CLEANUP_RESERVE_SECONDS = 45
 SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.BudgetClient
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
 DIAGNOSTICS = {
@@ -52,6 +54,13 @@ MESSAGES = {
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name='circle-weighted-submission-error.json'
     diagnostic_schema='addp.raster-focal-circle-weighted-submission-diagnostic/v1'
+
+
+class CircleMetadata(hillshade.ViewshedMetadata):
+    prefix = 'focal-circle-weighted'
+    suite = SUITE
+    fixture = fixture
+
 
 def case_inputs(name):return [fixture.CASES[name][0]]
 
@@ -186,15 +195,22 @@ def current(execution, identity, identifier, dag, runtime, language, status):
         or execution['tenant_id'] != int(identity['tenant_id']) or execution.get('task_type') != 'workflow'
         or execution.get('status') != status or execution['execution_config'].get('display_language') != language): raise SuiteError('current execution identity/status/language differs')
 
-def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current):
+def run_scenario(repository, env, client, physical_runner=fixture_call,
+                 diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current, *,
+                 hard_deadline):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('focal circle business budget must be exactly 600 seconds')
+    if not 0 < hard_deadline - started <= budget:
+        raise SuiteError('focal circle requires the current Online gate deadline')
+    operation_deadline = hard_deadline - CLEANUP_RESERVE_SECONDS
     def remaining():
-        left = budget-(time.monotonic()-started)
+        left = operation_deadline - time.monotonic()
         if left <= 0: raise SuiteError('focal circle business budget exhausted')
         return left
     client = BudgetClient(client, remaining); directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR']); directory.mkdir(parents=True, exist_ok=True)
-    stages = []; primary = cleanup_error = report = None
+    stages = []; primary = report = metadata = None
+    cleanup_errors = []
+    producer_env = {key: value for key, value in env.items() if key != 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
     def progress(status):
         (directory/'circle-weighted-progress.json').write_bytes(encoded({'suite': SUITE, 'result': status,
             'budget_ms': 600000, 'elapsed_ms': round((time.monotonic()-started)*1000), 'stages': stages}))
@@ -204,26 +220,31 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
         identity = raster.validate_identity(client, tenant, required_permissions=raster.EDITOR_PERMISSIONS)
         engine = positive(env['ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_NFS_ENGINE_ID'], 'NFS engine')
         scopes = {name: f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
-        scan = support.wait_for_meta_scan(client, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
-        items = {name: support.find_fixture_item(client, engine, name, 'circle source') for name in fixture.SOURCES}
+        initializer, source_identity = hillshade.source_scan_client(env, client, identity, remaining)
+        scan = support.wait_for_meta_scan(initializer, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
+        scanned = raster.wait_execution(initializer, 'meta', scan, remaining())
+        source_scan_identity = base.validate_scan(scanned, scan, None, tenant, int(source_identity['principal_id']), engine)
+        immutable(directory/'meta-source-scan.json', encoded(scanned))
+        hillshade.check_scan_inventory(client, initializer, scan, [])
+        metadata = CircleMetadata(env, client, engine, identity, scan, remaining,
+                                  grant_remaining=lambda: hard_deadline-time.monotonic())
+        items = {name: metadata.find(name) for name in fixture.SOURCES}
         sources = {name: scopes[name]+f'&item_id={items[name]["id"]}' for name in fixture.SOURCES}
-        before = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name, item in items.items()}
-        source_scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', scan, remaining()), scan, None, tenant, int(identity['principal_id']), engine)
+        before = {name: metadata.snapshot(item['id']) for name, item in items.items()}
         selected = [v for v in array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
                     if v.get('engine_type') == 'geopython_workflow' and v.get('connection_status') == 'online']
         if len(selected) != 1: raise SuiteError('exactly one same-source product Runtime is required')
         runtime = positive(selected[0].get('id'), 'Runtime'); parent = f'addp://engine/{engine}/path/outputs?type=directory'
-        baseline=physical_runner(repository,env,'prepare-oracle',[],remaining());remaining()
+        baseline=physical_runner(repository,producer_env,'prepare-oracle',[],remaining());remaining()
         anchor=baseline.get('anchor_sha256');scope=baseline.get('scope_sha256')
         if any(not isinstance(v,str) or not re.fullmatch('[0-9a-f]{64}',v) for v in (anchor,scope)):raise SuiteError('frozen oracle identity missing')
         if type(baseline.get('expected_array_count')) is not int or baseline['expected_array_count']!=27:raise SuiteError('twenty-seven frozen independent arrays required')
         if type(baseline.get('cache_bytes')) is not int or not fixture.expected_cache_bytes()<baseline['cache_bytes']<fixture.expected_cache_bytes()+27*1024:raise SuiteError('per-case cache byte bound differs')
-        env['ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_ORACLE_ANCHOR_SHA256']=anchor
+        producer_env['ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_ORACLE_ANCHOR_SHA256']=anchor
         immutable(directory/'circle-weighted-oracle-preparation.json',encoded(baseline))
         check_physical(baseline,baseline.get('sources'),{},scope,[])
         for name in fixture.SOURCES:
             if type(before[name].get('size_bytes')) is not int or before[name]['size_bytes'] != baseline['sources'][name]['size_bytes']: raise SuiteError('physical/Meta source size differs')
-        if base.scan_ids(client) != [scan]: raise SuiteError('unexpected source initialization scan')
         physical_calls, full_checks = 1, 0; cases, failures, names, scans, previous = [], [], [], [], {}; target_metadata_before = {}
         for index, name in enumerate(fixture.CASES, 1):
             stages.append({'case': name, 'status': 'running'}); progress('running')
@@ -231,23 +252,23 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
             execution = raster.wait_execution(client, 'develop', identifier, remaining()); current(execution, identity, identifier, dag, runtime, language, 'success')
             wanted = expected_lineage(sources, name, target)
-            evidence = lineage.collect(env, SUITE, identifier, name, wanted, execution, tenant, int(identity['principal_id']), dag, lineage_reader); remaining()
+            evidence = lineage.collect(producer_env, SUITE, identifier, name, wanted, execution, tenant, int(identity['principal_id']), dag, lineage_reader); remaining()
             expectation=fixture.artifact_expectation(name)
             facts,output_scan=raster.validate_success(execution,[sources[n] for n in case_inputs(name)],target,'create',expectation,resource_type='file')
             artifact = obj(execution['metadata']['result']['final_result'], 'Develop raster artifact')
             validate_affine(artifact.get('transform'), expectation, 'artifact')
             lineage.validate(facts,wanted,public=True)
-            if output_scan in scans: raise SuiteError('duplicate automatic COG scan')
+            if output_scan in [scan, *scans]: raise SuiteError('duplicate automatic COG scan')
             scans.append(output_scan)
             scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', output_scan, remaining()), output_scan, identifier, tenant, int(identity['principal_id']), engine)
             monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
             readonly.actor(monitor, identity, 'develop')
             if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'success' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
-            names.append(name); native = physical_runner(repository, env, 'verify', names, remaining()); remaining()
+            names.append(name); native = physical_runner(repository, producer_env, 'verify', names, remaining()); remaining()
             check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations']); previous = copy.deepcopy(native['targets'])
             physical_calls += 1; full_checks += len(names)
-            item0 = support.find_fixture_item(client, engine, 'outputs/'+name, 'COG')
-            item = client.request('GET', f'/api/v1/meta/items/{item0["id"]}', (200,)).payload
+            item0 = metadata.find('outputs/'+name, binding={'execution':identifier, 'scan':output_scan, 'locator':target})
+            item = metadata.snapshot(item0['id'])
             raster.validate_target_item(item,expectation,native['targets'][name])
             artifact=obj(obj(execution['metadata'].get('result'),'result').get('final_result'),'artifact')
             size=raster.strict_sizes(artifact,native['targets'][name],item,name)
@@ -257,7 +278,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             stages[-1]['status'] = 'passed'; progress('running')
         for case in cases:
             case['lineage'] = [raster.wait_lineage(client, items[name]['id'], case['target_item_id'], case['execution_id'], remaining()) for name in case_inputs(case['name'])]
-        if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('unexpected automatic scan inventory')
+        hillshade.check_scan_inventory(client, initializer, scan, scans)
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
         for problem in FAILURES:
             for language in ('zh-cn', 'en'):
@@ -266,7 +287,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                 identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
                 execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
                 if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
-                diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
+                diagnostic = diagnostic_runner(repository, producer_env, identifier, problem, language, remaining()); remaining()
                 if diagnostic != {'execution_id': identifier, 'task': 'focal', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
                 readonly.no_publication(execution)
                 monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
@@ -274,34 +295,44 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                 if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
                 queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
                 if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
-                if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('failed execution added scan')
+                if base.scan_ids(client) != sorted(scans): raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()): raise SuiteError('failed execution added derived lineage')
-                native = physical_runner(repository, env, 'verify', names, remaining()); remaining(); check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations'])
+                native = physical_runner(repository, producer_env, 'verify', names, remaining()); remaining(); check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations'])
                 physical_calls += 1; full_checks += len(names)
                 failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic, 'no_publication_or_scan_or_lineage': True})
                 stages[-1]['status'] = 'passed'; progress('running')
         if len(cases) != 27 or len(failures) != 72 or full_checks != 2322 or physical_calls != 100: raise SuiteError('all 27 successes, 72 failures, 2322 COG checks and 100 physical calls required')
-        source_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name,item in items.items()}
+        hillshade.check_scan_inventory(client, initializer, scan, scans)
+        source_metadata_after = {name: metadata.snapshot(item['id']) for name,item in items.items()}
         if source_metadata_after != before: raise SuiteError('source metadata changed')
-        target_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{case["target_item_id"]}', (200,)).payload for name,case in zip(names,cases)}
+        target_metadata_after = {case['name']: metadata.snapshot(case['target_item_id']) for case in cases}
         if target_metadata_after != target_metadata_before: raise SuiteError('target metadata changed')
-        lineage.verify_archive(env, SUITE, cases); remaining()
+        lineage.verify_archive(producer_env, SUITE, cases); remaining()
         report = {'schema_version': 'addp.'+SUITE+'/v1', 'suite': SUITE, 'result': 'passed', 'identity': identity,
                   'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'sources': sources, 'runtime_engine_id': runtime,
                   'source_scan_execution_id': scan, 'source_scan_identity': source_scan_identity,
+                  'source_preparation_identity': source_identity, 'metadata_evidence': metadata.path.name,
                   'cases': cases, 'failed_parameters': failures, 'full_target_checks': full_checks, 'physical_verification_calls': physical_calls,
                   'physical': native, 'archived_cogs': native['archived_cogs'], 'source_unchanged': True, 'oracle_scope_sha256':scope,'oracle_anchor_sha256':anchor,'source_metadata_before':before,'source_metadata_after':source_metadata_after,'target_metadata_before':target_metadata_before,'target_metadata_after':target_metadata_after}
     except BaseException as error: primary = error
     finally:
+        operation_deadline = hard_deadline - 1
+        if metadata is not None:
+            try:
+                metadata.cleanup()
+            except BaseException as error:
+                cleanup_errors.append('metadata Grant cleanup also failed: '+type(error).__name__)
         try:
-            removed = physical_runner(repository, env, 'cleanup-oracle', [], remaining()); remaining()
+            removed = physical_runner(repository, producer_env, 'cleanup-oracle', [], remaining()); remaining()
             if removed.get('oracle_cache_removed') is not True: raise SuiteError('oracle cleanup proof missing')
-        except BaseException as error: cleanup_error = error
+        except BaseException as error:
+            cleanup_errors.append('oracle cleanup also failed: '+str(error) if isinstance(error, SuiteError)
+                                  else 'oracle cleanup also failed: '+type(error).__name__)
     if primary is not None:
         progress('failed')
-        if cleanup_error is not None: raise SuiteError(str(primary)+'; oracle cleanup also failed: '+type(cleanup_error).__name__) from primary
+        if cleanup_errors: raise SuiteError(str(primary)+'; '+'; '.join(cleanup_errors)) from primary
         raise primary
-    if cleanup_error is not None: progress('failed'); raise cleanup_error
+    if cleanup_errors: progress('failed'); raise SuiteError('; '.join(cleanup_errors))
     report['oracle_cache_removed'] = True; remaining(); progress('passed'); remaining()
     report.update(elapsed_ms=round((time.monotonic()-started)*1000), business_budget_ms=600000)
     if report['elapsed_ms'] > 600000: raise SuiteError('business budget exceeded')
@@ -309,7 +340,8 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
 
 def main():
     env = dict(os.environ)
-    report = run_scenario(Path(__file__).resolve().parents[2], env, DiagnosticClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30, env['ADDP_ONLINE_ARTIFACT_DIR']))
+    report = run_scenario(Path(__file__).resolve().parents[2], env, DiagnosticClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30, env['ADDP_ONLINE_ARTIFACT_DIR']),
+                          hard_deadline=float(env.get('ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE', 'nan')))
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'circle-weighted-persistence.json').write_bytes(encoded(report)); print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 if __name__ == '__main__':

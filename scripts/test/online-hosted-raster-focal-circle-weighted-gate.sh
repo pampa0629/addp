@@ -51,8 +51,8 @@ application_owned=1
 hosted_start_native_modules -security -develop -manager -monitor
 start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,source=$FOCAL_CIRCLE_WEIGHTED_ROOT,target=$FOCAL_CIRCLE_WEIGHTED_ROOT"
 run_logged python3 business/scripts/online-raster-focal-circle-weighted-fixture.py seed
-# Reuse the existing ordinary raster identity and its exact twelve permissions.
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+# Keep the ordinary Raster User's twelve permissions and create a separate preparer.
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-focal-circle-weighted-persistence --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/focal-circle-weighted-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"

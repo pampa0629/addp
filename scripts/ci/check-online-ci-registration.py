@@ -5389,7 +5389,7 @@ def validate_raster_focal_circle_orthogonal(repository: Path, registered: set[st
 
 WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weighted-gate.sh': ('start_online_geopython_runtime',
                                                                      '--mount',
-                                                                     '--suite raster-workflow',
+                                                                     '--suite raster-focal-circle-weighted-persistence',
                                                                      '--wait-protection-owners develop,manager',
                                                                      'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
                                                                      'online_raster_lineage.py prepare',
@@ -5444,6 +5444,11 @@ WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weig
  'scripts/test/raster-focal-circle-weighted-persistence-online.py': ('raster.validate_identity',
                                                                      'raster.EDITOR_PERMISSIONS',
                                                                      'budget != 600',
+                                                                     'hard_deadline',
+                                                                     'hillshade.source_scan_client',
+                                                                     'hillshade.check_scan_inventory',
+                                                                     'CircleMetadata(hillshade.ViewshedMetadata)',
+                                                                     'metadata.cleanup()',
                                                                      'BudgetClient',
                                                                      'remaining()',
                                                                      'validate_success',
@@ -5495,6 +5500,7 @@ WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weig
                                                                              'test_weighted_circle_hosted_actual_grid_witnesses'),
  'scripts/test/raster-focal-circle-weighted-persistence-online_test.py': ('test_full_matrix_27_success_72_failures_2322_checks_and_cleanup',
                                                                           'test_every_affine_coefficient_and_type_is_required',
+                                                                          'test_source_grants_cleanup_on_partial_preparation_and_revoke_failure_rejects_success',
                                                                           'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
                                                                           'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
                                                                           'test_failures_preserve_primary_and_cleanup_error',
@@ -5517,7 +5523,11 @@ WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weig
               'scripts/test/raster-focal-circle-weighted-persistence-online_test.py',
               'scripts/test/online-raster-focal-circle-weighted-fixture_test.py',
               'scripts/test/online-hosted-raster-focal-circle-weighted-gate_test.py',
-              'test_weighted_circle_requires_exact_cog_matrix_budget_and_regressions')}
+              'test_weighted_circle_requires_exact_cog_matrix_budget_and_regressions',
+              "go test ./cmd/online-test-fixture -run 'FocalCircleWeighted'"),
+ 'scripts/test/online-gate.py': ('ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE',),
+ 'system/backend/cmd/online-test-fixture/main_test.go': (
+     'TestFocalCircleWeightedPreparationKeepsConsumerTwelveAndSeparateThirteen',)}
 
 
 def validate_raster_focal_circle_weighted(repository: Path, registered: set[str]) -> None:

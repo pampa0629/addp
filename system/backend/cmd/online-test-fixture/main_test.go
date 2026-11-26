@@ -2191,6 +2191,28 @@ func TestHillshadeOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen(t 
 	}
 }
 
+func TestFocalCircleWeightedPreparationKeepsConsumerTwelveAndSeparateThirteen(t *testing.T) {
+	const suite = "raster-focal-circle-weighted-persistence"
+	consumer, err := suitePermissions(suite)
+	ordinary, ordinaryErr := suitePermissions("raster-workflow")
+	if err != nil || ordinaryErr != nil || len(consumer) != 12 || !slices.Equal(consumer, ordinary) {
+		t.Fatal("weighted circle must use the original twelve business permissions")
+	}
+	preparation := suiteSourceInitializerPermissions(suite)
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if len(preparation) != 13 || !slices.Equal(preparation, want) || rasterBranchLineage(suite) || !needsEngineProvisioner(suite) {
+		t.Fatal("weighted circle requires a separate scan and exact metadata Grant preparer")
+	}
+	env := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux"}
+	output := filepath.Join(t.TempDir(), "identity.env")
+	if err := validateExternalEnvironment(append(slices.Clone(env), "ADDP_ONLINE_OWNER_MANAGED=1"), output, suite); err == nil {
+		t.Fatal("weighted circle preparation must be Hosted only")
+	}
+	if err := validateExternalEnvironment(append(env, "ADDP_ONLINE_HOSTED=1"), output, suite); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFeatherCaseRetainsApprovedConsumerAndInitializerPermissions(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-table-feather")
 	got, err := suitePermissions("manager-internal-artifact-lineage")

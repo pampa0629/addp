@@ -4,6 +4,12 @@ base=importlib.import_module('scripts.test.online-hosted-raster-contour-gate_tes
 class HostedCircleGateTest(base.HostedContourGateTest):
     prefix='focal-circle-weighted'
 
+    def test_identity_fixture_requests_the_exact_circle_suite(self):
+        result = self.run_gate()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn('--suite raster-focal-circle-weighted-persistence --wait-protection-owners develop,manager',
+                      self.host.trace.read_text())
+
     def setUp(self):
         super().setUp()
         self.host._write_repository_script('scripts/utils/online_raster_lineage.py', """
