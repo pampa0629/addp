@@ -81,6 +81,7 @@
       }
     },
     "catalog": {
+      "sourcesFailed": "Could not load the following services: {sources}",
       "title": "Service Catalog",
       "manageQuery": "Manage Query Services",
       "manageRegistered": "Manage Registered Services",
@@ -740,7 +741,6 @@
       "colCache": "Cache",
       "cacheEnabled": "Enabled",
       "cacheDisabled": "Disabled",
-      "clearCacheBtn": "Clear Cache",
       "layerEnabled": "Enabled",
       "layerDisabled": "Disabled",
       "noLayers": "No layers",
@@ -762,14 +762,10 @@
       "deleteServiceConfirm": "Are you sure you want to delete this tile service? This action cannot be undone.",
       "deleteConfirmTitle": "Confirm Delete",
       "deleteLayerConfirm": "Are you sure you want to delete layer \"{title}\"? This action cannot be undone.",
-      "clearCacheConfirm": "Are you sure you want to clear all cache for layer \"{title}\"?",
-      "clearCacheTitle": "Confirm Clear Cache",
       "layerAdded": "Layer added",
       "layerUpdated": "Layer updated",
       "layerDeleted": "Layer deleted",
       "saveFailed": "Save failed",
-      "cacheCleared": "Cache cleared",
-      "clearCacheFailed": "Clear cache failed",
       "tileLoadFailed": "Tile load failed, please check service configuration"
     },
     "graph": {

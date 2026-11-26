@@ -165,3 +165,120 @@ for (const outcome of ['success', 'failure']) {
     await expect(detail.getByRole('button', { name: '删除', exact: true })).toBeEnabled()
   })
 }
+
+test('catalog follows the graph list pagination and distinguishes a failed source from an empty one', async ({ page }) => {
+  const pages = []
+  const graphs = Array.from({ length: 101 }, (_, index) => ({
+    id: index + 1, title: 'Graph ' + (index + 1), config_type: 'shape'
+  }))
+  await page.route('**/api/v1/service/graph?*', route => {
+    const params = new URL(route.request().url()).searchParams
+    const number = Number(params.get('page'))
+    const limit = Number(params.get('page_size'))
+    expect(limit).toBeLessThanOrEqual(100)
+    pages.push(number)
+    return route.fulfill({ json: { data: graphs.slice((number - 1) * limit, number * limit), total: graphs.length } })
+  })
+  let fail = true
+  await page.route('**/api/v1/service/registered?*', route => fail
+    ? route.fulfill({ status: 503, json: { error: 'fixture unavailable' } })
+    : route.fulfill({ json: { data: [registered], total: 1 } }))
+  await page.goto(`${standaloneURL}#/catalog?tab=graph`)
+  await expect(page.getByRole('heading', { name: 'Graph 101', exact: true })).toBeVisible()
+  expect(pages).toEqual([1, 2])
+  await expect(page.getByRole('alert')).toContainText('注册服务')
+  await page.getByRole('tab', { name: 'REST API' }).click()
+  await expect(page.getByText('暂无 REST API 服务')).toHaveCount(0)
+  fail = false
+  await page.getByRole('button', { name: '刷新' }).click()
+  await expect(page.getByRole('heading', { name: registered.title })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('tile edit loads the current service and only updates its editable metadata', async ({ page }) => {
+  const tile = {
+    id: 64, title: 'Original tiles', service_name: 'example_tiles', description: 'Example',
+    keywords: ['one', 'two'], public_access: true, layers: [], protocols: {}, status: 'active'
+  }
+  const writes = []
+  await page.route('**/api/v1/service/tile/64', async route => {
+    if (route.request().method() === 'PUT') {
+      const fields = route.request().postDataJSON()
+      writes.push(fields)
+      if (writes.length === 1) return route.fulfill({ status: 503, json: { error: 'fixture unavailable' } })
+      Object.assign(tile, fields)
+    }
+    return route.fulfill({ json: tile })
+  })
+  await page.goto(`${standaloneURL}#/tile/64`)
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  const title = page.getByPlaceholder('输入服务显示标题')
+  await expect(title).toHaveValue('Original tiles')
+  await expect(page.getByPlaceholder('输入服务名称（英文、数字、下划线）')).toBeDisabled()
+  await title.fill('Updated tiles')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.el-message--error')).toContainText('fixture unavailable')
+  await expect(title).toHaveValue('Updated tiles')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page).toHaveURL(`${standaloneURL}#/tile/64`)
+  await expect(page.getByRole('heading', { name: 'Updated tiles' })).toBeVisible()
+  expect(writes).toEqual(Array(2).fill({ title: 'Updated tiles', description: 'Example', keywords: ['one', 'two'], public_access: true }))
+})
+
+test('tile detail adds, edits and deletes a layer under its original parent', async ({ page }) => {
+  const tile = { id: 64, service_name: 'fixture', title: 'Fixture tiles', layers: [], protocols: {}, status: 'active' }
+  const root = 'addp://engine/9/path/?type=root&node_id=2'
+  const locator = 'addp://engine/9/path/roads.pmtiles?type=file&item_id=71'
+  const file = { id: locator, locator, label: 'roads.pmtiles', type: 'file',
+    metadata: { item_id: 71, data_type: 'media', format: 'pmtiles', layout: 'single' } }
+  const source = { locator }
+  await page.route('**/api/v1/service/tile/64', route => route.fulfill({ json: tile }))
+  await page.route('**/api/v1/meta/engines', route => route.fulfill({ json: [
+    { id: 9, name: 'Business files', engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online',
+      capabilities: { engine_family: 'file', storage: {} } }
+  ] }))
+  await page.route('**/api/v1/meta/resource-tree/9**', route => route.fulfill({ json: {
+    id: root, locator: root, label: 'Business files', type: 'root', hasChildren: true, children: [file]
+  } }))
+  await page.route('**/api/v1/meta/items/71', route => route.fulfill({ json: {
+    attributes: { format_info: { pmtiles: { tile_type: 'mvt', tile_compression: 'gzip', min_zoom: 0, max_zoom: 12 } } }
+  } }))
+  const methods = []
+  await page.route('**/api/v1/service/tile-layers/64**', async route => {
+    const method = route.request().method()
+    const path = new URL(route.request().url()).pathname
+    methods.push(method)
+    if (method === 'POST') {
+      expect(path).toBe('/api/v1/service/tile-layers/64')
+      const layer = route.request().postDataJSON()
+      expect(layer).toMatchObject({ layer_type: 'static', layer_config: { source } })
+      tile.layers = [{ ...layer, id: 18, enabled: true }]
+    } else {
+      expect(path).toBe('/api/v1/service/tile-layers/64/18')
+      if (method === 'PUT') {
+        const update = route.request().postDataJSON()
+        expect(update).not.toHaveProperty('layer_type')
+        expect(update).not.toHaveProperty('layer_name')
+        Object.assign(tile.layers[0], update)
+      } else if (method === 'DELETE') tile.layers = []
+      else throw new Error(method)
+    }
+    return route.fulfill({ json: {} })
+  })
+  await page.goto(`${standaloneURL}#/tile/64`)
+  await page.getByRole('button', { name: '添加图层' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByText('静态图层', { exact: true }).click()
+  await dialog.getByText(file.label, { exact: true }).click()
+  await dialog.getByPlaceholder('输入图层显示标题').fill('Road layer')
+  await dialog.getByRole('button', { name: '保存' }).click()
+  const row = page.getByRole('row').filter({ hasText: 'Road layer' })
+  await row.getByRole('button', { name: '编辑' }).click()
+  await dialog.getByPlaceholder('输入图层显示标题').fill('Changed road layer')
+  await dialog.getByRole('button', { name: '保存' }).click()
+  const changed = page.getByRole('row').filter({ hasText: 'Changed road layer' })
+  await changed.getByRole('button', { name: '删除' }).click()
+  await page.locator('.el-message-box').getByRole('button', { name: '确定' }).click()
+  await expect(changed).toHaveCount(0)
+  expect(methods).toEqual(['POST', 'PUT', 'DELETE'])
+})

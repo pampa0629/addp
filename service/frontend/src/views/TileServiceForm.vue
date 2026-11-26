@@ -4,14 +4,17 @@
       <h2>{{ isEditing ? $t('service.tile.formEditTitle') : $t('service.tile.formCreateTitle') }}</h2>
     </div>
 
-    <el-steps :active="currentStep" finish-status="success" align-center class="service-steps">
+    <el-steps v-if="!isEditing" :active="currentStep" finish-status="success" align-center class="service-steps">
       <el-step :title="$t('service.tile.step1Title')" />
       <el-step :title="$t('service.tile.step2Title')" />
       <el-step :title="$t('service.tile.step3Title')" />
     </el-steps>
 
+    <el-skeleton v-if="loading" :rows="4" animated />
+    <el-alert v-else-if="loadError" type="error" :closable="false" :title="loadError" />
+
     <!-- Step 0: 添加第一个图层 -->
-    <el-card v-if="currentStep === 0" class="form-card" shadow="never">
+    <el-card v-if="!isEditing && currentStep === 0" class="form-card" shadow="never">
       <template #header>
         <span>{{ $t('service.tile.selectLayerType') }}</span>
       </template>
@@ -154,14 +157,14 @@
     </el-card>
 
     <!-- Step 1: 配置服务信息 -->
-    <el-card v-if="currentStep === 1" class="form-card" shadow="never">
+    <el-card v-if="!loading && !loadError && currentStep === 1" class="form-card" shadow="never">
       <template #header>
         <span>{{ $t('service.tile.serviceInfoTitle') }}</span>
       </template>
 
-      <el-form :model="form" label-position="top">
+      <el-form :model="form" :disabled="submitting" label-position="top">
         <el-form-item :label="$t('service.tile.serviceNameLabel')" required>
-          <el-input v-model="form.serviceName" :placeholder="$t('service.tile.serviceNamePlaceholder')" />
+          <el-input v-model="form.serviceName" :disabled="isEditing" :placeholder="$t('service.tile.serviceNamePlaceholder')" />
           <div class="help-text">{{ $t('service.tile.serviceNameHelp') }}</div>
         </el-form-item>
         <el-form-item :label="$t('service.tile.serviceTitleLabel')" required>
@@ -179,8 +182,8 @@
           <el-input v-model="form.keywords" :placeholder="$t('service.tile.keywordsPlaceholder')" />
         </el-form-item>
 
-        <el-divider content-position="left">{{ $t('service.tile.protocolConfigTitle') }}</el-divider>
-        <el-form-item>
+        <el-divider v-if="!isEditing" content-position="left">{{ $t('service.tile.protocolConfigTitle') }}</el-divider>
+        <el-form-item v-if="!isEditing">
           <div class="protocols-config">
             <el-checkbox v-model="protocols.xyz.enabled">{{ $t('service.tile.xyzProtocol') }}</el-checkbox>
             <el-checkbox v-model="protocols.ogc_tiles.enabled">OGC Tiles API</el-checkbox>
@@ -195,14 +198,15 @@
       </el-form>
 
       <div class="form-actions">
-        <el-button @click="previousStep">{{ $t('service.tile.prevStep') }}</el-button>
+        <el-button v-if="isEditing" :disabled="submitting" @click="cancelForm">{{ $t('service.common.cancel') }}</el-button>
+        <el-button v-else :disabled="submitting" @click="previousStep">{{ $t('service.tile.prevStep') }}</el-button>
         <el-button
           type="primary"
           :disabled="!validateStep1()"
           :loading="submitting"
           @click="submitForm"
         >
-          {{ $t('service.tile.createBtn') }}
+          {{ $t(isEditing ? 'service.common.save' : 'service.tile.createBtn') }}
         </el-button>
       </div>
     </el-card>
@@ -293,6 +297,9 @@ export default {
   data() {
     return {
       currentStep: 0,
+      loading: false,
+      loadError: '',
+      identity: 0,
       layerType: 'dynamic',
       form: {
         serviceName: '',
@@ -332,6 +339,40 @@ export default {
     metaApiBaseUrl() {
       return '/api/v1/meta'
     },
+  },
+  watch: {
+    '$route.params.id': {
+      immediate: true,
+      async handler(id) {
+        const identity = ++this.identity
+        this.createAnother()
+        this.submitting = false
+        this.loadError = ''
+        this.loading = Boolean(id)
+        if (!id) return
+        this.currentStep = 1
+        try {
+          const service = await tileServiceAPI.getService(id)
+          if (identity !== this.identity) return
+          Object.assign(this.form, {
+            serviceName: service.service_name,
+            title: service.title,
+            description: service.description,
+            keywords: (service.keywords || []).join(', '),
+            publicAccess: service.public_access
+          })
+        } catch (error) {
+          if (identity === this.identity) {
+            this.loadError = this.$t('service.tile.loadFailed') + '：' + (error.response?.data?.error || error.message)
+          }
+        } finally {
+          if (identity === this.identity) this.loading = false
+        }
+      }
+    }
+  },
+  beforeUnmount() {
+    this.identity++
   },
   methods: {
     isNativeTableEngine,
@@ -450,9 +491,25 @@ export default {
         return
       }
 
+      const identity = this.identity
+      const id = this.$route.params.id
       this.submitting = true
 
       try {
+        const fields = {
+          title: this.form.title,
+          description: this.form.description,
+          keywords: this.form.keywords.split(',').map(k => k.trim()).filter(Boolean),
+          public_access: this.form.publicAccess
+        }
+        if (id) {
+          await tileServiceAPI.updateService(id, fields)
+          if (identity === this.identity) {
+            await navigateServiceRoute(this.$router, `/tile/${id}`, { history: 'replace' })
+          }
+          return
+        }
+
         // 构建图层配置
         const layerConfig = this.layerType === 'dynamic'
           ? {
@@ -482,11 +539,8 @@ export default {
         // 构建请求数据
         const requestData = {
           service_name: this.form.serviceName,
-          title: this.form.title,
-          description: this.form.description,
-          keywords: this.form.keywords.split(',').map(k => k.trim()).filter(k => k),
+          ...fields,
           protocols: this.protocols,
-          public_access: this.form.publicAccess,
           first_layer: {
             layer_name: this.form.layerName,
             title: this.form.layerTitle,
@@ -497,7 +551,7 @@ export default {
         }
 
         const response = await tileServiceAPI.createService(requestData)
-        console.log('[TileServiceForm] 创建响应:', response)
+        if (identity !== this.identity) return
 
         // createAPIClient 默认 extractData=true，已经自动提取了 .data
         // 所以 response 本身就是服务对象
@@ -509,10 +563,10 @@ export default {
         this.createdService = response
         this.currentStep = 2
       } catch (error) {
-        console.error('创建瓦片服务失败:', error)
-        ElMessage.error(this.$t('service.tile.createFailed') + ': ' + (error.response?.data?.error || error.message))
+        if (identity !== this.identity) return
+        ElMessage.error(this.$t(id ? 'service.tile.saveFailed' : 'service.tile.createFailed') + ': ' + (error.response?.data?.error || error.message))
       } finally {
-        this.submitting = false
+        if (identity === this.identity) this.submitting = false
       }
     },
 
@@ -523,7 +577,7 @@ export default {
     },
 
     cancelForm() {
-      navigateServiceRoute(this.$router, '/tile', { history: 'replace' })
+      navigateServiceRoute(this.$router, this.isEditing ? `/tile/${this.$route.params.id}` : '/tile', { history: 'replace' })
     },
 
     createAnother() {

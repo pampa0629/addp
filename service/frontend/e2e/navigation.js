@@ -18,7 +18,9 @@ const router = createRouter({ history: createWebHashHistory(), routes: serviceRo
 const { i18n, init } = createAddpI18n({ moduleMessages: { 'zh-cn': zh, en } })
 init()
 const pinia = createPinia()
-useAuthStore(pinia).authContext = {
+const authStore = useAuthStore(pinia)
+authStore.bindAuthSession()
+authStore.authContext = {
   context: { type: 'tenant', tenant_id: '7' },
   authorization: { role_assignments: [{
     scope: { type: 'tenant', tenant_id: '7' },

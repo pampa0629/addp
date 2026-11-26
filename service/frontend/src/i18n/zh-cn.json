@@ -81,6 +81,7 @@
       }
     },
     "catalog": {
+      "sourcesFailed": "部分服务未能加载：{sources}",
       "title": "服务目录",
       "manageQuery": "查询服务管理",
       "manageRegistered": "注册服务管理",
@@ -740,7 +741,6 @@
       "colCache": "缓存",
       "cacheEnabled": "已启用",
       "cacheDisabled": "未启用",
-      "clearCacheBtn": "清理缓存",
       "layerEnabled": "启用",
       "layerDisabled": "禁用",
       "noLayers": "暂无图层",
@@ -762,14 +762,10 @@
       "deleteServiceConfirm": "确定要删除此瓦片服务吗？删除后无法恢复。",
       "deleteConfirmTitle": "确认删除",
       "deleteLayerConfirm": "确定要删除图层 \"{title}\" 吗？此操作不可恢复。",
-      "clearCacheConfirm": "确定要清理图层 \"{title}\" 的所有缓存吗？",
-      "clearCacheTitle": "确认清理",
       "layerAdded": "图层已添加",
       "layerUpdated": "图层已更新",
       "layerDeleted": "图层已删除",
       "saveFailed": "保存失败",
-      "cacheCleared": "缓存已清理",
-      "clearCacheFailed": "清理失败",
       "tileLoadFailed": "瓦片加载失败，请检查服务配置"
     },
     "graph": {

@@ -76,7 +76,7 @@
 | PUT | `/api/v1/service/tile-layers/:serviceId/:layerId` | 更新配置或显示控制。 |
 | DELETE | `/api/v1/service/tile-layers/:serviceId/:layerId` | 删除图层配置；不删除源表或源文件。 |
 
-当前前端[图层 API 客户端](../../frontend/src/api/tileService.js)的新增、更新和删除仍调用相对路径 `/service/tile/{serviceId}/layers` 及其图层 ID 子路径，与上述后端 `tile-layers` 契约不一致，页面动作不能计为已接通。不新增服务端别名掩盖差异；清缓存按钮和删除后的缓存行为统一见[缓存边界](../architecture/瓦片发布与缓存.md#动态缓存与过期边界)，实际核对见[管理与清理验证](../testing/瓦片协议.md#图层操作与缓存清理核对)。
+详情页通过[图层客户端](../../frontend/src/api/tileService.js)调用上表的新增、更新和删除接口。编辑时图层名与类型只读，缓存行为见[缓存架构](../architecture/瓦片发布与缓存.md#动态缓存与过期边界)。
 
 ## 相关表
 

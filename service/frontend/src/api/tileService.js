@@ -37,22 +37,17 @@ export default {
 
   // 添加图层
   addLayer(serviceId, data) {
-    return client.post(`/service/tile/${serviceId}/layers`, data)
+    return client.post(`/service/tile-layers/${serviceId}`, data)
   },
 
   // 更新图层
   updateLayer(serviceId, layerId, data) {
-    return client.put(`/service/tile/${serviceId}/layers/${layerId}`, data)
+    return client.put(`/service/tile-layers/${serviceId}/${layerId}`, data)
   },
 
   // 删除图层
   deleteLayer(serviceId, layerId) {
-    return client.delete(`/service/tile/${serviceId}/layers/${layerId}`)
-  },
-
-  // 清理图层缓存
-  clearLayerCache(serviceId, layerId) {
-    return client.delete(`/service/tile/${serviceId}/layers/${layerId}/cache`)
+    return client.delete(`/service/tile-layers/${serviceId}/${layerId}`)
   },
 
   // 瓦片端点测试 API

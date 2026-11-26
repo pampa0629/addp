@@ -134,15 +134,6 @@
         <el-table-column :label="t('service.common.actions')" width="220" fixed="right">
           <template #default="{ row }">
             <el-button v-if="canUpdate" size="small" @click="showEditLayerDialog(row)">{{ t('service.common.edit') }}</el-button>
-            <el-button
-              v-if="canUpdate"
-              size="small"
-              type="warning"
-              @click="clearLayerCache(row)"
-              :disabled="row.layer_type !== 'dynamic' || !row.layer_config?.cache?.enabled"
-            >
-              {{ t('service.tile.clearCacheBtn') }}
-            </el-button>
             <el-button v-if="canUpdate" size="small" type="danger" @click="deleteLayer(row)">{{ t('service.common.delete') }}</el-button>
           </template>
         </el-table-column>
@@ -281,7 +272,7 @@
     >
       <el-form :model="layerForm" label-width="100px">
         <el-form-item :label="t('service.tile.layerNameLabel')">
-          <el-input v-model="layerForm.layer_name" :placeholder="t('service.tile.layerNamePlaceholder')" />
+          <el-input v-model="layerForm.layer_name" :disabled="layerDialogMode === 'edit'" :placeholder="t('service.tile.layerNamePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('service.tile.layerTitleLabel')">
           <el-input v-model="layerForm.title" :placeholder="t('service.tile.layerTitlePlaceholder')" />
@@ -290,7 +281,7 @@
           <el-input v-model="layerForm.description" type="textarea" rows="2" />
         </el-form-item>
         <el-form-item :label="t('service.tile.colLayerType')">
-          <el-radio-group v-model="layerForm.layer_type">
+          <el-radio-group v-model="layerForm.layer_type" :disabled="layerDialogMode === 'edit'" @change="resetLayerSource">
             <el-radio value="dynamic">{{ t('service.tile.dynamicLayer') }}</el-radio>
             <el-radio value="static">{{ t('service.tile.staticLayer') }}</el-radio>
           </el-radio-group>
@@ -366,21 +357,21 @@
           </el-descriptions>
         </template>
 
-        <el-form-item :label="t('service.tile.enabledStatusLabel')">
+        <el-form-item v-if="layerDialogMode === 'edit'" :label="t('service.tile.enabledStatusLabel')">
           <el-switch v-model="layerForm.enabled" />
         </el-form-item>
       </el-form>
 
       <template #footer>
         <el-button @click="layerDialogVisible = false">{{ t('service.common.cancel') }}</el-button>
-        <el-button v-if="canUpdate" type="primary" @click="saveLayer">{{ t('service.common.save') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" :disabled="!layerReady" @click="saveLayer">{{ t('service.common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -425,31 +416,7 @@ const layerDialogVisible = ref(false)
 const layerDialogMode = ref('add') // 'add' or 'edit'
 const layerFormSpatialMetadata = ref(null) // 空间字段元数据
 const layerFormTileMetadata = ref(null)
-const layerForm = ref({
-  layer_name: '',
-  title: '',
-  description: '',
-  layer_type: 'dynamic',
-  enabled: true,
-  layer_config: {
-    source: {
-      locator: '',
-      engine_id: null,
-      schema: '',
-      table: '',
-      geometry_column: 'geom',
-      srid: 4326
-    },
-    mvt: {
-      extent: 4096,
-      buffer: 256
-    },
-    cache: {
-      enabled: true,
-      ttl: 3600
-    }
-  }
-})
+const layerForm = ref({})
 
 const serviceId = computed(() => route.params.id)
 
@@ -652,31 +619,28 @@ const testXYZTile = () => {
 
 // 方法：加载服务详情
 const loadService = async () => {
+  const id = serviceId.value
   loading.value = true
   try {
-    const response = await tileServiceAPI.getService(serviceId.value)
+    const response = await tileServiceAPI.getService(id)
+    if (serviceId.value !== id) return
 
-    // createAPIClient extractData=true 已提取 .data
-    // 后端返回: { id: 1, service_name: "test", layers: [...] }
-    // response 直接就是服务对象
     service.value = response
 
-    console.log('[TileServiceDetail] 加载服务详情:', service.value)
 
-    // 默认选择第一个图层
-    if (service.value.layers && service.value.layers.length > 0) {
-      selectedLayerForPreview.value = service.value.layers[0].layer_name
-    }
+    selectedLayerForPreview.value = response.layers?.[0]?.layer_name || null
   } catch (error) {
+    if (serviceId.value !== id) return
     ElMessage.error(t('service.tile.loadDetailFailed') + ': ' + (error.response?.data?.error || error.message))
     console.error('Failed to load service:', error)
   } finally {
-    loading.value = false
+    if (serviceId.value === id) loading.value = false
   }
 }
 
 // 方法：删除服务
 const handleDelete = async () => {
+  const id = serviceId.value
   try {
     await ElMessageBox.confirm(
       t('service.tile.deleteServiceConfirm'),
@@ -688,7 +652,9 @@ const handleDelete = async () => {
       }
     )
 
-    await tileServiceAPI.deleteService(serviceId.value)
+    if (id !== serviceId.value) return
+    await tileServiceAPI.deleteService(id)
+    if (id !== serviceId.value) return
     ElMessage.success(t('service.tile.deleteSuccess'))
     await navigateServiceRoute(router, '/tile', { history: 'replace' })
   } catch (error) {
@@ -717,6 +683,10 @@ const showAddLayerDialog = () => {
 const showEditLayerDialog = (layer) => {
   layerDialogMode.value = 'edit'
   layerForm.value = JSON.parse(JSON.stringify(layer)) // 深拷贝
+  layerFormSpatialMetadata.value = null
+  if (layer.layer_type === 'dynamic' && !layerForm.value.layer_config.cache) {
+    layerForm.value.layer_config.cache = { enabled: false, ttl: 3600 }
+  }
   const snapshot = layer.layer_config?.source_snapshot
   layerFormTileMetadata.value = snapshot
     ? {
@@ -736,24 +706,28 @@ const resetLayerForm = () => {
     title: '',
     description: '',
     layer_type: 'dynamic',
-    enabled: true,
-    layer_config: {
-      source: {
-        locator: '',
-        engine_id: null,
-        schema: '',
-        table: '',
-        geometry_column: 'geom',
-        srid: 4326
-      },
-      mvt: {
-        extent: 4096,
-        buffer: 256
-      },
-      cache: {
-        enabled: true,
-        ttl: 3600
-      }
+    enabled: true
+  }
+  resetLayerSource('dynamic')
+}
+
+const resetLayerSource = (type) => {
+  layerForm.value.layer_config = type === 'static' ? { source: { locator: '' } } : {
+    source: {
+      locator: '',
+      engine_id: null,
+      schema: '',
+      table: '',
+      geometry_column: '',
+      srid: 4326
+    },
+    mvt: {
+      extent: 4096,
+      buffer: 256
+    },
+    cache: {
+      enabled: true,
+      ttl: 3600
     }
   }
   layerFormSpatialMetadata.value = null
@@ -770,7 +744,7 @@ const handleLayerTableSelection = async (selection) => {
     layerForm.value.layer_config.source.engine_id = null
     layerForm.value.layer_config.source.schema = ''
     layerForm.value.layer_config.source.table = ''
-    layerForm.value.layer_config.source.geometry_column = 'geom'
+    layerForm.value.layer_config.source.geometry_column = ''
     layerForm.value.layer_config.source.srid = 4326
     layerFormSpatialMetadata.value = null
     return
@@ -784,12 +758,15 @@ const handleLayerTableSelection = async (selection) => {
   layerForm.value.layer_config.source.schema = path[0] || ''
   layerForm.value.layer_config.source.table = path[path.length - 1] || selection.display?.label || ''
 
+  layerForm.value.layer_config.source.geometry_column = ''
+  const target = layerForm.value.layer_config.source
   const geometry = await detectTableMetadata('/api/v1/meta', {
     locator: layerForm.value.layer_config.source.locator,
     item_id: selection.identity?.item_id
   })
 
   // 如果检测到几何列，自动填充
+  if (target !== layerForm.value.layer_config.source || target.locator !== selection.identity?.locator) return
   if (geometry.has_geometry) {
     layerForm.value.layer_config.source.geometry_column = geometry.geometry_column
     layerForm.value.layer_config.source.srid = geometry.srid || 4326
@@ -811,6 +788,7 @@ const handleLayerTableSelection = async (selection) => {
 
 const handleLayerTileSelection = async (selection) => {
   layerForm.value.layer_config = { source: { locator: '' } }
+  const config = layerForm.value.layer_config
   layerFormTileMetadata.value = null
   if (!selection) return
   const itemId = selection.identity?.item_id
@@ -818,6 +796,7 @@ const handleLayerTileSelection = async (selection) => {
   if (!itemId || !locator) return
   try {
     const item = await tileServiceAPI.getMetaItem(itemId)
+    if (config !== layerForm.value.layer_config) return
     const info = item?.attributes?.format_info?.pmtiles
     if (!info) throw new Error(t('service.tile.invalidTileDataset'))
     layerForm.value.layer_config = { source: { locator } }
@@ -836,13 +815,31 @@ const handleLayerTileSelection = async (selection) => {
   }
 }
 
+const layerReady = computed(() => {
+  const { layer_name, title, layer_type, layer_config } = layerForm.value
+  if (!layer_name || !title || !layer_config) return false
+  const source = layer_config.source
+  return layer_type === 'static' ? Boolean(source?.locator) : Boolean(source?.engine_id && source.geometry_column)
+})
+
 const saveLayer = async () => {
   try {
     if (layerDialogMode.value === 'add') {
-      await tileServiceAPI.addLayer(serviceId.value, layerForm.value)
+      const { layer_name, title, description, layer_type, layer_config } = layerForm.value
+      await tileServiceAPI.addLayer(serviceId.value, { layer_name, title, description, layer_type, layer_config })
       ElMessage.success(t('service.tile.layerAdded'))
     } else {
-      await tileServiceAPI.updateLayer(serviceId.value, layerForm.value.id, layerForm.value)
+      const { id, title, description, enabled, layer_config, layer_type } = layerForm.value
+      const update = { title, description, enabled }
+      const original = service.value.layers.find(layer => layer.id === id)
+      if (layer_type === 'static') {
+        if (original.layer_config.source.locator !== layer_config.source.locator) {
+          update.layer_config = { source: { locator: layer_config.source.locator } }
+        }
+      } else {
+        update.layer_config = layer_config
+      }
+      await tileServiceAPI.updateLayer(serviceId.value, id, update)
       ElMessage.success(t('service.tile.layerUpdated'))
     }
 
@@ -854,6 +851,7 @@ const saveLayer = async () => {
 }
 
 const deleteLayer = async (layer) => {
+  const id = serviceId.value
   try {
     await ElMessageBox.confirm(
       t('service.tile.deleteLayerConfirm', { title: layer.title }),
@@ -865,33 +863,14 @@ const deleteLayer = async (layer) => {
       }
     )
 
-    await tileServiceAPI.deleteLayer(serviceId.value, layer.id)
+    if (serviceId.value !== id) return
+    await tileServiceAPI.deleteLayer(id, layer.id)
+    if (serviceId.value !== id) return
     ElMessage.success(t('service.tile.layerDeleted'))
     await loadService() // 重新加载服务
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(t('service.tile.deleteFailed') + ': ' + (error.response?.data?.error || error.message))
-    }
-  }
-}
-
-const clearLayerCache = async (layer) => {
-  try {
-    await ElMessageBox.confirm(
-      t('service.tile.clearCacheConfirm', { title: layer.title }),
-      t('service.tile.clearCacheTitle'),
-      {
-        confirmButtonText: t('service.common.confirm'),
-        cancelButtonText: t('service.common.cancel'),
-        type: 'warning'
-      }
-    )
-
-    await tileServiceAPI.clearLayerCache(serviceId.value, layer.id)
-    ElMessage.success(t('service.tile.cacheCleared'))
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(t('service.tile.clearCacheFailed') + ': ' + (error.response?.data?.error || error.message))
     }
   }
 }
@@ -911,9 +890,12 @@ const handleTileLoadError = (tile) => {
 }
 
 // 生命周期
-onMounted(() => {
-  loadService()
-})
+watch(serviceId, id => {
+  service.value = null
+  selectedLayerForPreview.value = null
+  layerDialogVisible.value = false
+  if (id) loadService()
+}, { immediate: true })
 </script>
 
 <style scoped>
