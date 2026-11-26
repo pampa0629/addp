@@ -489,23 +489,11 @@ class OnlineHostGateTest(unittest.TestCase):
             ],
         )
 
-    def test_runs_tidb_consumer_flow_with_owned_fixture(self) -> None:
+    def test_tidb_has_no_dedicated_host_route(self) -> None:
         result = self._run("tidb-consumer-flow")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.command_log.read_text(encoding="utf-8").splitlines(),
-            [
-                "stop",
-                "infra-up",
-                "tidb-fixture:stop",
-                "tidb-fixture:start",
-                "start:-all",
-                "make:test-online:ONLINE_SUITE=tidb-consumer-flow",
-                "stop",
-                "tidb-fixture:stop",
-            ],
-        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no dedicated deployment profile", result.stderr)
+        self.assertFalse(self.command_log.exists() and self.command_log.read_text().strip())
 
     def test_daemon_launcher_does_not_keep_gate_log_pipe_open(self) -> None:
         result = self._run(

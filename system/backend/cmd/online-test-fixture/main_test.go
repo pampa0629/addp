@@ -1766,6 +1766,26 @@ func TestOpenGaussFixtureSeparatesExactSourceIssuerFromConsumer(t *testing.T) {
 	}
 }
 
+func TestTiDBConsumerFixtureSeparatesGrantAndExecution(t *testing.T) {
+	const suite = "tidb-consumer-flow"
+	profile := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux"}
+	output := filepath.Join(t.TempDir(), "fixture.env")
+	if err := validateExternalEnvironment(append(slices.Clone(profile), "ADDP_ONLINE_HOSTED=1"), output, suite); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateExternalEnvironment(append(slices.Clone(profile), "ADDP_ONLINE_OWNER_MANAGED=1"), output, suite); err == nil {
+		t.Fatal("TiDB fixture accepted a persistent runner")
+	}
+	consumer, err := suitePermissions(suite)
+	if err != nil || !slices.Equal(consumer, consumerPermissions) || !needsEngineProvisioner(suite) {
+		t.Fatalf("unexpected TiDB fixture roles: %v %v", consumer, err)
+	}
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions(suite), want) {
+		t.Fatal("TiDB Grant preparation requires an independent issuer with scan access")
+	}
+}
+
 func TestWorkflowRuntimeHealthFixtureRequiresNoUserPermissionsOrEngineProvisioner(t *testing.T) {
 	permissions, err := suitePermissions("workflow-runtime-health-recovery")
 	if err != nil || len(permissions) != 0 || needsEngineProvisioner("workflow-runtime-health-recovery") {

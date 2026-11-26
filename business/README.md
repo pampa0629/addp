@@ -401,7 +401,7 @@ bash scripts/online-oceanbase-consumer-fixture.sh stop
 
 ### scripts/online-tidb-consumer-fixture.sh - TiDB 消费链路 T4 Fixture
 
-该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用，只接受仓库外 `ADDP_ONLINE_TIDB_*` 环境变量，并复用 `scripts/test/docker-compose.tidb-t2.yml` 中固定 digest、无数据卷的 PD/TiKV/TiDB 三组件拓扑。`start` 重建 5 行 watermark 源表和同构空目标表，`advance` 更新 1 行并新增 1 行，`stop` 执行 `down --volumes --remove-orphans` 并验证本次 Compose project 容器零残留。永久 Engine Instance 必须以 `engine_type=tidb` 指向 `localhost:${ADDP_ONLINE_TIDB_PORT}`；Fixture 不创建、修改或删除 Engine Instance。个人开发环境不得调用该脚本。
+GitHub Hosted Linux 隔离套件复用 T2 的固定镜像和无卷 PD/TiKV/TiDB 拓扑。夹具生成当轮引擎描述，初始化 5 行源表和空目标表，推进两行 watermark；节点授权的已有表、新增表和跨库对照使用独立数据库。停止后检查容器、网络和卷零残留。
 
 ```bash
 bash scripts/online-tidb-consumer-fixture.sh start

@@ -83,3 +83,28 @@ docker run --rm --network "${COMPOSE_PROJECT}_default" \
         echo "Common TiDB gate left disposable database $database" >&2
         exit 1
     }
+
+# Exercise the T4 source-side oracle on the real, gate-owned TiDB cluster.
+(
+    source "$ROOT_DIR/business/scripts/online-tidb-consumer-fixture.sh"
+    ADDP_ONLINE_TIDB_PORT="$TIDB_T2_PORT"
+    export ADDP_ONLINE_SECRET_DIR="$WORK_DIR" ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$WORK_DIR/tidb-engine.json"
+    reset_fixture
+    advance_fixture
+    create_future
+    export MYSQL_PWD
+    MYSQL_PWD=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["connection_info"]["password"])' "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE")
+    source_client() {
+        docker run --rm -i --network "${COMPOSE_PROJECT}_default" -e MYSQL_PWD "$MYSQL_CLIENT_IMAGE" \
+            mysql -htidb -P4000 -utidb_consumer -Dtidb_fixture --protocol=tcp -NB "$@"
+    }
+    [ "$(count_statements)" = $'0\t0' ]
+    source_client -e 'SELECT 1 FROM `tidb_scope`.`node_existing` LIMIT 0'
+    [ "$(count_statements)" = $'0\t1' ]
+    [ "$(source_client -e 'SELECT id FROM tidb_scope.node_existing ORDER BY id')" = 37 ]
+    [ "$(source_client -e 'SELECT id FROM tidb_scope.node_future ORDER BY id')" = 41 ]
+    [ "$(source_client -e 'SELECT id FROM tidb_outside.node_future ORDER BY id')" = 83 ]
+    source_client -e 'SELECT a.id FROM tidb_scope.node_future a JOIN tidb_outside.node_future b ON a.id=b.id'
+    [ "$(count_statements)" = $'4\t1' ]
+    echo "TiDB fixture: both namespaces readable; four business SELECTs and one zero-row identity probe verified"
+)

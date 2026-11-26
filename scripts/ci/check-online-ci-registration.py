@@ -1571,19 +1571,19 @@ def validate_tidb_consumer_flow_profile(
 ) -> None:
     if "tidb-consumer-flow" not in registered:
         return
-    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(
-        encoding="utf-8"
-    )
+    host_gate = (repository / "scripts/test/online-hosted-tidb-gate.sh").read_text(encoding="utf-8")
     required_fragments = (
-        "tidb-consumer-flow)",
-        "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL",
-        "ADDP_ONLINE_TIDB_ENGINE_ID",
-        "ADDP_ONLINE_TIDB_PORT",
-        "ADDP_ONLINE_TIDB_DATABASE",
-        "ADDP_ONLINE_TIDB_USER",
+        "ADDP_ONLINE_SUITES=tidb-consumer-flow",
+        'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+        "hosted_start_native_modules -security -manager -develop -service -transfer",
+        "go run ./cmd/online-test-fixture --suite tidb-consumer-flow",
+        "python3 scripts/test/online-engine-registration.py",
         "bash business/scripts/online-tidb-consumer-fixture.sh start",
         "bash business/scripts/online-tidb-consumer-fixture.sh stop",
-        'bash scripts/dev/start.sh "$START_TARGET"',
+        "scripts.test.tidb-node-read-online verify",
+        "scripts.test.tidb-node-read-online cleanup",
+        "unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
+        'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     )
     missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:

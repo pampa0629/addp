@@ -90,7 +90,7 @@ Business Fixture 只输出 owner-only Engine 描述，System IAM owner helper �
 
 `tidb-consumer-flow` 与 OceanBase/openGauss 复用同一个 `relational-consumer-flow-online.py`，使用 `engine_type=tidb` 的 database catalog profile，不在 Manager、Transfer、Develop 或 Service 增加数据库分支。
 
-macOS 专用 Runner 预置永久 TiDB Engine Instance；[TiDB 正式场景](../../docs/spec/testing/scenarios/关系型引擎消费验收.md#tidb)维护部署与三组件清理边界。仓库外环境文件提供 `ADDP_ONLINE_TIDB_ENGINE_ID`、`ADDP_ONLINE_TIDB_PORT`、`ADDP_ONLINE_TIDB_DATABASE`、`ADDP_ONLINE_TIDB_USER` 和可为空的 `ADDP_ONLINE_TIDB_PASSWORD`，完整必需项沿[Host Gate](../test/online-host-gate.sh)。
+GitHub Hosted Linux 在当轮平台库内创建租户、登记 TiDB 引擎，并分配独立的授权办理账号和普通消费账号。节点授权的五个场景、执行 ID 与源端计数的对照见[TiDB 正式场景](../../docs/spec/testing/scenarios/关系型引擎消费验收.md#tidb)。
 
 `online-tidb-consumer-fixture.sh` 复用 T2 的固定 digest、无卷 PD/TiKV/TiDB Compose，重建 5 行源和空目标，推进 2 行 watermark 后由同一 Transfer 任务得到 5/2/0 读取计数，并由 Manager、Develop、Service 比较 6 行同 checksum。
 

@@ -4448,18 +4448,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             )
 
     def test_requires_tidb_consumer_flow_owner_and_digest_contract(self) -> None:
-        host = self.repository / "scripts/test/online-host-gate.sh"
-        host.write_text(
-            host.read_text(encoding="utf-8")
-            + "\ntidb-consumer-flow)\n"
-            + "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL\n"
-            + "ADDP_ONLINE_TIDB_ENGINE_ID ADDP_ONLINE_TIDB_PORT\n"
-            + "ADDP_ONLINE_TIDB_DATABASE ADDP_ONLINE_TIDB_USER\n"
-            + "bash business/scripts/online-tidb-consumer-fixture.sh start\n"
-            + "bash business/scripts/online-tidb-consumer-fixture.sh stop\n"
-            + 'bash scripts/dev/start.sh "$START_TARGET"\n',
-            encoding="utf-8",
-        )
+        host = self.repository / "scripts/test/online-hosted-tidb-gate.sh"
+        host.write_text((Path(__file__).parents[2] / "scripts/test/online-hosted-tidb-gate.sh").read_text())
         fixture = self.repository / "business/scripts/online-tidb-consumer-fixture.sh"
         fixture.parent.mkdir(parents=True, exist_ok=True)
         fixture.write_text(

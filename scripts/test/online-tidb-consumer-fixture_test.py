@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -25,7 +26,7 @@ class OnlineTiDBConsumerFixtureTest(unittest.TestCase):
         self.bin.mkdir()
         shutil.copy2(SCRIPT, self.root / "business/scripts")
         shutil.copy2(COMPOSE, self.root / "scripts/test")
-        self._executable("uname", "#!/bin/bash\necho Darwin\n")
+        self._executable("uname", "#!/bin/bash\necho Linux\n")
         self._executable(
             "docker",
             """#!/bin/bash
@@ -44,11 +45,15 @@ if [ "$1" = "ps" ]; then
   [ -f "$ADDP_TEST_CONTAINER_STATE" ] && echo residual
   exit 0
 fi
+if [ "$1" = "${ADDP_TEST_RESIDUAL_KIND:-}" ]; then
+  echo residual
+  exit 0
+fi
 if [ "$1" = "run" ]; then
   [ -f "$ADDP_TEST_CONTAINER_STATE" ] || exit 1
   input=""
   mysql_execute_count=$(printf '%s' " $* " | grep -o -- ' -e ' | wc -l | tr -d ' ')
-  [ "$mysql_execute_count" -gt 1 ] || input=$(cat)
+  [ "$mysql_execute_count" -gt 0 ] || input=$(cat)
   printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_DOCKER_LOG"
   case " $* " in
     *"updated_at >"*) echo 2 ;;
@@ -64,7 +69,12 @@ fi
             {
                 "PATH": str(self.bin) + os.pathsep + self.environment["PATH"],
                 "ADDP_ONLINE_HOST": "1",
-                "ADDP_ONLINE_TIDB_PORT": "54000",
+                "GITHUB_ACTIONS": "true",
+                "RUNNER_OS": "Linux",
+                "ADDP_ONLINE_HOSTED": "1",
+                "ONLINE_SUITE_INPUT": "tidb-consumer-flow",
+                "ADDP_ONLINE_SECRET_DIR": str(self.root),
+                "ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE": str(self.root / "descriptor.json"),
                 "ADDP_ONLINE_TIDB_DATABASE": "tidb_fixture",
                 "ADDP_ONLINE_TIDB_USER": "root",
                 "ADDP_ONLINE_TIDB_PASSWORD": "",
@@ -107,12 +117,24 @@ fi
             "compose -p addp-online-tidb-consumer -f ", commands
         )
         self.assertIn(
-            "up -d --force-recreate tidb-pd tidb-tikv tidb|54000", commands
+            "up -d --force-recreate tidb-pd tidb-tikv tidb|55434", commands
         )
-        self.assertIn("down --volumes --remove-orphans|54000", commands)
+        self.assertIn("down --volumes --remove-orphans|55434", commands)
         self.assertIn("CREATE TABLE `addp_online_consumer_source`", commands)
         self.assertIn("VALUES (6, 'TIDB-1006'", commands)
         self.assertFalse(self.state.exists())
+
+    def test_future_tables_and_observation_are_separate_from_initial_seed(self):
+        self.assertEqual(self.run_fixture("start").returncode, 0)
+        self.assertNotIn("CREATE TABLE tidb_scope.node_future", self.log.read_text())
+        self.assertEqual(self.run_fixture("create-future").returncode, 0)
+        self.assertEqual(self.run_fixture("counts").returncode, 0)
+        commands = self.log.read_text()
+        self.assertIn("CREATE TABLE tidb_outside.node_future", commands)
+        self.assertIn("information_schema.statements_summary", commands)
+        descriptor = json.loads((self.root / "descriptor.json").read_text())
+        self.assertEqual(descriptor["connection_info"]["user"], "tidb_consumer")
+        self.assertEqual((self.root / "descriptor.json").stat().st_mode & 0o777, 0o600)
 
     def test_compose_pins_all_official_images_by_digest(self) -> None:
         compose = (self.root / "scripts/test/docker-compose.tidb-t2.yml").read_text(
@@ -121,13 +143,20 @@ fi
         for image in ("pingcap/pd:v8.5.8", "pingcap/tikv:v8.5.8", "pingcap/tidb:v8.5.8"):
             self.assertRegex(compose, image.replace("/", r"/") + r"@sha256:[0-9a-f]{64}")
 
-    def test_rejects_unsafe_database_before_docker(self) -> None:
+    def test_cleanup_reports_project_network_or_volume_residue(self):
+        for kind in ("network", "volume"):
+            with self.subTest(kind=kind):
+                result = self.run_fixture("stop", ADDP_TEST_RESIDUAL_KIND=kind)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"left {kind} resources", result.stderr)
+
+    def test_rejects_personal_environment_before_docker(self) -> None:
         result = self.run_fixture(
-            "start", ADDP_ONLINE_TIDB_DATABASE="personal-database"
+            "start", ADDP_ONLINE_HOSTED="0"
         )
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("safe TiDB identifier", result.stderr)
+        self.assertIn("disposable GitHub Hosted", result.stderr)
         self.assertFalse(self.log.exists())
 
 
