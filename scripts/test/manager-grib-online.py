@@ -324,6 +324,30 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             require(isinstance(denied.payload,dict) and bool(denied.payload.get('error')), 'stale map Range denial missing')
         map_report['stale_version_range_denied'] = True
         map_report['browser'] = proof
+
+        stage = 'temperature_map_revocation'
+        range_header = {'Range': 'bytes=0-63'}
+        range_checks = map_report['source_revocation'] = {'results': {}}
+        for message, url in urls.items():
+            allowed = client.request('GET', url, (206,), headers=range_header)
+            headers = {name.lower(): value for name, value in allowed.headers.items()}
+            require(len(allowed.raw) == 64 and headers.get('content-range') == f"bytes 0-63/{pixels[message]['size_bytes']}",
+                    f'{message} original Range did not return the expected COG bytes before revocation')
+            range_checks['results'][message] = {'url': url, 'range': range_header['Range'], 'before': allowed.status}
+        map_grant.revoke(map_report['read_grant']['request_id'])
+        range_checks['source_detail_status'] = client.request('GET', f"/api/v1/meta/items/{map_item['id']}", (404,)).status
+        for message, url in urls.items():
+            result_path = urlsplit(url).path.removesuffix('/content')
+            result = client.request('GET', result_path, (200,)).payload
+            require(result.get('status') == 'ready' and result.get('item_fingerprint') == map_item['fingerprint'],
+                    f'{message} cached result must still be ready after source revocation')
+            denied = client.request('GET', url, (403,), headers=range_header)
+            headers = {name.lower(): value for name, value in denied.headers.items()}
+            require(headers.get('content-type', '').startswith('application/json')
+                    and 'content-range' not in headers and 'content-disposition' not in headers
+                    and isinstance(denied.payload, dict) and bool(denied.payload.get('error')),
+                    f'{message} revoked Range must return a JSON denial without COG bytes')
+            range_checks['results'][message].update(result_id=result['id'], result_status=result['status'], after=denied.status)
         if not physical_runner:
             inspected=subprocess.run(['docker','exec','addp-manager-raster-runtime','python','-c',
                 'import pathlib,json,tempfile; print(json.dumps([p.name for p in pathlib.Path(tempfile.gettempdir()).glob("addp-grib-*")]))'],
