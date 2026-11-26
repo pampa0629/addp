@@ -2099,6 +2099,7 @@ async function verifyDissolveCase(page) {
     expect(observation.decoded_rows).toEqual(expected)
     const table=frame.locator('.table-preview'),renderer=table.locator('.openlayers-map-renderer');await expect(table).toBeVisible();await expect(table.locator('.map-placeholder')).toHaveCount(0)
     observation.rendered=await assertDissolveMap(renderer,expected)
+    persist('rendered_'+output.name)
     for(const field of fields)await expect(table.locator('thead')).toContainText(field)
     // A click probes the actual popup; its property rows must preserve the original business geometry field.
     const popupProperties=await renderer.evaluate((element,fields)=>{
@@ -2108,10 +2109,20 @@ async function verifyDissolveCase(page) {
       if(!feature)throw new Error('dissolve popup has no actual feature hit')
       const properties=Object.fromEntries(fields.map(f=>[f,feature.get(f)]));map.dispatchEvent({type:'singleclick',coordinate,pixel});return properties
     },fields)
-    expect(expected.some(row=>JSON.stringify(row.properties)===JSON.stringify(popupProperties))).toBe(true)
-    const popup=renderer.locator('.map-popup');await expect(popup).toBeVisible()
-    for(const field of fields){const row=popup.locator('.attribute-item').filter({has:frame.locator('.attr-key').filter({hasText:new RegExp('^'+field+':$')})});await expect(row).toHaveCount(1);await expect(row.locator('.attr-value')).toHaveText(popupProperties[field]===null?'空值':String(popupProperties[field]))}
-    observation.popup={properties:popupProperties,rows:await popup.locator('.attribute-item').evaluateAll(rows=>rows.map(row=>({key:row.querySelector('.attr-key').textContent,value:row.querySelector('.attr-value').textContent}))) }
+    const popupIndex = expected.findIndex(row => JSON.stringify(row.properties) === JSON.stringify(popupProperties))
+    expect(popupIndex).toBeGreaterThanOrEqual(0)
+    const popup = renderer.locator('.map-popup-content')
+    await expect(popup).toBeVisible()
+    const popupRows = popup.locator('.map-popup-row')
+    const fieldsWithFID = { ...popupProperties, [output.fid_column]: popupIndex + 1 }
+    await expect(popupRows).toHaveCount(Object.keys(fieldsWithFID).length)
+    const rows = await popupRows.evaluateAll(entries => entries.map(row => ({
+      key: row.querySelector('.map-popup-label').textContent,
+      value: row.querySelector('.map-popup-value').textContent,
+    })))
+    const displayed = Object.fromEntries(Object.entries(fieldsWithFID).map(([key, value]) => [key, value === null ? '' : String(value)]))
+    expect(Object.fromEntries(rows.map(row => [row.key, row.value]))).toEqual(displayed)
+    observation.popup = { properties: popupProperties, rows }
     await page.screenshot({path:resolve(directory,`dissolve-${output.name}-map.png`)});persist('map_'+output.name)
     await frame.getByRole('tab',{name:'属性',exact:true}).click();await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
     const graphRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/meta/lineage/graph'&&u.searchParams.get('item_id')===String(output.item_id)&&u.searchParams.get('direction')==='both'})

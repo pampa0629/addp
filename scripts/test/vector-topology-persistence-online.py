@@ -2232,8 +2232,8 @@ def validate_dissolve_browser_raw(raw,evidence):
         popup=obj(observation.get('popup'),'dissolve actual popup');properties=obj(popup.get('properties'),'dissolve popup properties')
         matches=[i for i,row in enumerate(expected)if row['properties']==properties and all(type(properties.get(k))is type(v)for k,v in row['properties'].items())]
         entries=array(popup.get('rows'),'dissolve popup DOM rows')
-        wanted={k+':':('空值'if v is None else str(v).lower()if type(v)is bool else str(v))for k,v in properties.items()}
-        wanted[output['fid_column']+':']=str(matches[0]+1)if matches else''
+        wanted={k:('' if v is None else str(v).lower() if type(v) is bool else str(v)) for k,v in properties.items()}
+        wanted[output['fid_column']]=str(matches[0]+1) if matches else ''
         if len(matches)!=1 or len(entries)!=len(wanted)or{r.get('key'):r.get('value')for r in entries}!=wanted:raise SuiteError('dissolve popup original properties/null/type differs')
         decoded=array(observation.get('decoded_rows'),'dissolve decoded rows')
         if decoded!=expected or any(type(a['properties'][k])is not type(b['properties'][k])for a,b in zip(decoded,expected)for k in fields):raise SuiteError('dissolve original geometry/properties differ')

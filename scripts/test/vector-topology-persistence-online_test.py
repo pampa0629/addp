@@ -2779,12 +2779,16 @@ assert.throws(() => verify([...observations, ...observations.slice(0, 4)]), {cod
             'successes':[{'variant':r['variant'],'execution_id':r['execution_id'],'execution':r['execution']}for r in e['successes']],'observations':[],'failures':[]}
         for output in e['outputs']:
             expected=output['features'];encoded=overlay_wire_and_projected(expected);fields=list(expected[0]['properties']);count=len(expected)
+            popup_index = next((i for i, row in enumerate(expected) if None in row['properties'].values()), 0)
+            popup_properties = expected[popup_index]['properties']
+            popup_rows = [{'key': key, 'value': '' if value is None else str(value).lower() if type(value) is bool else str(value)}
+                          for key, value in {'fid': popup_index + 1, **popup_properties}.items()]
             self.raw['observations'].append({'name':output['name'],'port':output['port'],'execution_id':output['execution_id'],'output_item_id':output['item_id'],
                 'sources':[{'item_id':s['id'],'item':s['before']}for s in e['sources']],'output':output['before'],'graph':output['raw_lineage'],'lineage_page':output['raw_lineage'],'lineage_rendered':output['raw_lineage'],
                 'lineage_canvas':{'rows':[{'text':n}for n in(e['sources'][0]['name'],output['name'])],'paths':[[[0,0],[1,1]]]},
                 'preview':{'preview_type':'table','data':{'page':1,'total':count,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required',
                     'geometry_columns':['parcel_shape'],'columns':['fid','parcel_shape',*fields],'rows':[{**row['properties'],'fid':i+1,'parcel_shape':wire}for i,(row,wire)in enumerate(zip(expected,encoded['wire']))]}},
-                'popup':{'properties':expected[0]['properties'],'rows':[{'key':k+':','value':'空值'if v is None else str(v).lower()if type(v)is bool else str(v)}for k,v in{'fid':1,**expected[0]['properties']}.items()]},'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'painted_pixels':31}})
+                'popup':{'properties':popup_properties,'rows':popup_rows},'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'painted_pixels':31}})
         for failed in e['failures']:
             self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'key':failed['key'],'execution_id':failed['execution_id'],'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
         self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
@@ -2796,6 +2800,8 @@ assert.throws(() => verify([...observations, ...observations.slice(0, 4)]), {cod
             lambda r:r['observations'][1]['preview']['data']['rows'][0].update(parcel_shape=r['observations'][1]['preview']['data']['rows'][1]['parcel_shape']),
             lambda r:r['observations'][0]['rendered']['features'].pop(),lambda r:r['observations'][0]['rendered'].update(painted_pixels=0),
             lambda r:r['observations'][1]['popup']['rows'].pop(),
+            lambda r:next(row for row in r['observations'][1]['popup']['rows'] if row['value']=='').update(value='NULL'),
+            lambda r:next(row for row in r['observations'][0]['popup']['rows'] if row['key']=='fid').update(value='999'),
             lambda r:r['observations'][2]['graph']['edges'][0]['evidence'].update(execution_id='grouped-run'),
             lambda r:r['failures'][0]['observations'].pop(),lambda r:r['failures'][0]['observations'][0].update(clipboard='wrong'),
             lambda r:r['observations'][1]['decoded_rows'][0]['properties'].update(source_id=1)]
@@ -2842,16 +2848,34 @@ await assert.rejects(check(renderer(native,0),expected));"""
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 
-    def test_dissolve_popup_null_literal_matches_real_shared_chinese_formatter(self):
-        import subprocess
-        repo=Path(__file__).resolve().parents[2]
-        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{pathToFileURL}from'node:url';
-const root=process.argv[1],locale=JSON.parse(readFileSync(root+'/common-frontend/map/src/i18n/zh-cn.json','utf8')).map;
-assert.equal(locale.nullValue,'空值');const{formatFeatureProperties}=await import(pathToFileURL(root+'/common-frontend/map/src/utils/mapFormatters.js'));
-const html=formatFeatureProperties({fid:1,parcel_key:1099511627805,zone:'B',rank:null,enabled:false,geometry:'PRIVATE_DISSOLVE_BUSINESS_0'},{geometryType:'Polygon',labels:{nullValue:locale.nullValue}});
-assert.ok(html.includes('class="null-value">空值</span>'));assert.ok(html.includes('PRIVATE_DISSOLVE_BUSINESS_0'));assert.ok(html.includes('false'));
-const source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');assert.ok(source.includes("popupProperties[field]===null?'空值':String(popupProperties[field])"));"""
-        result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)
+    def test_dissolve_popup_uses_table_preview_content_and_formats_original_values(self):
+        repo = Path(__file__).resolve().parents[2]
+        script = '''
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+import {pathToFileURL} from 'node:url'
+const root = process.argv[1]
+const table = readFileSync(root + '/common-frontend/map/src/components/TablePreview.vue', 'utf8')
+const {formatResultCell, tabularCellValue} = await import(pathToFileURL(root + '/common-frontend/basic/src/utils/tabularResult.js'))
+const text = table.slice(table.indexOf('const escapeHtml ='), table.indexOf('const availableDisplayColumns ='))
+const values = {fid: 3, rank: null, enabled: false, geometry: 'original<&'}
+const displayColumns = {value: Object.keys(values).map(key => ({key, label: key}))}
+const build = new Function('formatResultCell', 'tabularCellValue', 'displayColumns', text + ';return buildPopupContent')
+  (formatResultCell, tabularCellValue, displayColumns)
+const html = build(values)
+for (const [label, value] of Object.entries({fid: '3', rank: '', enabled: 'false', geometry: 'original&lt;&amp;'})) {
+  assert.ok(html.includes('<span class="map-popup-label">' + label + '</span><span class="map-popup-value">' + value + '</span>'))
+}
+const source = readFileSync(root + '/console/frontend/e2e/online/vector-topology-persistence.spec.js', 'utf8')
+const owner = source.slice(source.indexOf('async function verifyDissolveCase('), source.indexOf("test('融合几何独立普通User"))
+for (const fragment of [".locator('.map-popup-content')", ".locator('.map-popup-row')",
+  ".querySelector('.map-popup-label')", ".querySelector('.map-popup-value')", "value === null ? '' : String(value)"]) {
+  assert.ok(owner.includes(fragment), fragment)
+}
+'''
+        result = m.subprocess.run(['node', '--input-type=module', '-e', script, str(repo)],
+                                  capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class FilePublicationInitializer:
