@@ -104,9 +104,6 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			}
 		}
 	})
-	attrs := []interface{}{"tenant_id", "engine_id", "document_id", "search_ordinal"}
-	task, err = client.Index(index).UpdateFilterableAttributesWithContext(ctx, &attrs)
-	wait(ctx, task, err)
 	repo := repository.NewContentIndexDeliveryRepository(db, index)
 	epoch, err := repo.Open(ctx, contentIndexEndpointID(endpoint), true)
 	if err != nil {
@@ -116,6 +113,26 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := &HybridSearchService{client: client, contentIndex: index, enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: contentIndexEndpointID(endpoint), log: slog.Default()}
+	t.Run("replica_rechecks_settings_without_invalidating_search_material", func(t *testing.T) {
+		if err := svc.initIndexes(ctx); err != nil {
+			t.Fatal(err)
+		}
+		before, err := client.GetIndexWithContext(ctx, index)
+		if err != nil {
+			t.Fatal(err)
+		}
+		peer := &HybridSearchService{client: client, contentIndex: index, log: slog.Default()}
+		if err := peer.initIndexes(ctx); err != nil {
+			t.Fatal(err)
+		}
+		after, err := client.GetIndexWithContext(ctx, index)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !before.UpdatedAt.Equal(after.UpdatedAt) {
+			t.Fatalf("unchanged settings advanced index timestamp from %s to %s", before.UpdatedAt, after.UpdatedAt)
+		}
+	})
 	svc.initialized.Store(true)
 	svc.ordinalReady.Store(true)
 	svc.searchSessions = newSearchSessionRegistry()

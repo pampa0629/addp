@@ -225,7 +225,7 @@ export MANAGER_MAINTENANCE_TEST_BINARY="$WORK_DIR/manager-backend"
 go build -o "$MANAGER_MAINTENANCE_TEST_BINARY" ./cmd/server
 # These packages initialize the same Manager schema; serialize their DDL and fixtures.
 ADDP_POSTGRES_INTEGRATION=1 \
-    go test -p 1 ./internal/repository ./internal/service ./internal/preview \
+    go test -p 1 ./internal/repository ./internal/service ./internal/preview ./internal/protection \
     -run '^TestIntegrationPostgresManager' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/manager-postgres.log"
 
@@ -238,7 +238,7 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/manager-postgres.log"; then
     exit 1
 fi
 
-for required in TestIntegrationPostgresManagerSearchMaintenance TestIntegrationPostgresManagerCleanupProductionRepositories TestIntegrationPostgresManagerCleanupRuntimeAtomicity TestIntegrationPostgresManagerContentSnapshots TestIntegrationPostgresManagerExecutionReadIsolation; do
+for required in TestIntegrationPostgresManagerProtectionReadDisconnect TestIntegrationPostgresManagerSearchMaintenance TestIntegrationPostgresManagerCleanupProductionRepositories TestIntegrationPostgresManagerCleanupRuntimeAtomicity TestIntegrationPostgresManagerContentSnapshots TestIntegrationPostgresManagerExecutionReadIsolation; do
     grep -q -- "^--- PASS: $required " "$WORK_DIR/manager-postgres.log" || {
         echo "Manager PostgreSQL gate requires the real $required test" >&2; exit 1;
     }

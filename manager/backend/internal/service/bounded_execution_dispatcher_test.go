@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/addp/manager/internal/testfixture"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -29,7 +30,7 @@ type trackedProfileSampler struct {
 }
 
 func (s *trackedProfileSampler) Sample(ctx context.Context, target *DataProfileTarget, scope dataprofile.DataScope, budget DataProfileBudget, plan *DataProfileSamplePlan, beforeRead func(context.Context) error) (*DataProfileSample, error) {
-	if !s.reads.HasActiveExecutionsForTenant(7) {
+	if s.reads.RequireDrained(context.Background(), 7) == nil {
 		s.t.Error("sampling was not registered")
 	}
 	return s.dataProfileServiceTestSampler.Sample(ctx, target, scope, budget, plan, beforeRead)
@@ -42,7 +43,7 @@ type trackedProfileStore struct {
 }
 
 func (s *trackedProfileStore) ReplaceCurrent(ctx context.Context, tx *gorm.DB, state *managermodels.DataProfile, profile dataprofile.Profile) error {
-	if !s.reads.HasActiveExecutionsForTenant(7) {
+	if s.reads.RequireDrained(context.Background(), 7) == nil {
 		s.t.Error("result persistence was not registered")
 	}
 	return s.dataProfileServiceTestProfileStore.ReplaceCurrent(ctx, tx, state, profile)
@@ -51,7 +52,7 @@ func (s *trackedProfileStore) ReplaceCurrent(ctx context.Context, tx *gorm.DB, s
 func TestBoundedExecutionDispatcherTracksProfileThroughPersistence(t *testing.T) {
 	for _, failure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "sampling-fails"}[failure], func(t *testing.T) {
-			reads := managerprotection.NewReadBoundary(dispatcherFreshener{})
+			reads := managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")
 			target := &DataProfileTarget{EngineID: 1, Locator: "addp://engine/1/path/public/orders?type=table", ItemFingerprint: "orders", SourceVersion: "version"}
 			set, err := plugin.NewQueryReadSet(plugin.TabularItemPath(1, "schema", "public", "orders"))
 			if err != nil {
@@ -85,7 +86,7 @@ func TestBoundedExecutionDispatcherTracksProfileThroughPersistence(t *testing.T)
 			if !failure && profiles.replaceCalls != 1 {
 				t.Fatal("profile was not stored")
 			}
-			if reads.HasActiveExecutionsForTenant(7) {
+			if reads.RequireDrained(context.Background(), 7) != nil {
 				t.Fatal("completed dispatcher retained read")
 			}
 		})
@@ -93,13 +94,13 @@ func TestBoundedExecutionDispatcherTracksProfileThroughPersistence(t *testing.T)
 }
 
 func TestBoundedExecutionDispatcherFailsBeforeDomainWorkWhenRefreshFails(t *testing.T) {
-	for _, boundary := range []*managerprotection.ReadBoundary{nil, managerprotection.NewReadBoundary(dispatcherFreshener{err: errors.New("checkpoint unavailable")})} {
+	for _, boundary := range []*managerprotection.ReadBoundary{nil, managerprotection.NewReadBoundary(dispatcherFreshener{err: errors.New("checkpoint unavailable")}, testfixture.ReadDatabase(t), "reader")} {
 		dispatcher := &BoundedExecutionDispatcher{readBoundary: boundary}
 		item := &execution.TaskExecution{ExecutionID: "profile", TenantID: 7, TaskType: execution.TaskTypeDataProfiling}
 		if err := dispatcher.RunClaimedExecution(t.Context(), item, execution.Lease{ExecutionID: item.ExecutionID, TenantID: 7}); !errors.Is(err, managerprotection.ErrRequired) {
 			t.Fatalf("RunClaimedExecution: %v", err)
 		}
-		if boundary.HasActiveExecutionsForTenant(7) {
+		if boundary != nil && boundary.RequireDrained(context.Background(), 7) != nil {
 			t.Fatal("failed dispatcher retained read")
 		}
 	}

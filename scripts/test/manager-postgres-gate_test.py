@@ -88,7 +88,7 @@ if mode=='skip': print('--- SKIP: TestIntegrationPostgresManagerCleanupProductio
 if mode=='no-tests': print('testing: warning: no tests to run');sys.exit(0)
 if './infra/objectstore/...' in sys.argv:
     print('--- PASS: TestManagerObjectAreaAgainstMinIO (0.01s)\n--- PASS: TestExportAreaAgainstMinIO (0.01s)');sys.exit(0)
-tests=['ExecutionReadIsolation'] if './internal/api' in sys.argv else ['CleanupProductionRepositories','CleanupRuntimeAtomicity','ContentSnapshots','SearchMaintenance']
+tests=['ExecutionReadIsolation'] if './internal/api' in sys.argv else ['CleanupProductionRepositories','CleanupRuntimeAtomicity','ContentSnapshots','SearchMaintenance','ProtectionReadDisconnect']
 for t in tests: print('--- PASS: TestIntegrationPostgresManager'+t+' (0.01s)')
 '''
 
@@ -165,7 +165,7 @@ class ManagerPostgresGateTest(unittest.TestCase):
         self.assertEqual("./cmd/server", self.state["go"][0][-1])
         for kind in ("image", "container", "network"):
             self.assertFalse(self.state["objects"][kind])
-        self.assertEqual(["test", "-p", "1", "./internal/repository", "./internal/service", "./internal/preview", "-run", "^TestIntegrationPostgresManager", "-count=1", "-v"], self.state["go"][1])
+        self.assertEqual(["test", "-p", "1", "./internal/repository", "./internal/service", "./internal/preview", "./internal/protection", "-run", "^TestIntegrationPostgresManager", "-count=1", "-v"], self.state["go"][1])
         self.assertIn("^TestIntegrationPostgresManagerExecutionReadIsolation$", self.state["go"][2])
 
     def test_object_failure_skip_and_empty_run_fail_and_clean(self):

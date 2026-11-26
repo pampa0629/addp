@@ -233,7 +233,7 @@ class HTTPProxy(BaseHTTPRequestHandler):
         finally:
             if upstream is not None: upstream.close()
 
-    do_GET = do_POST = do_DELETE = do_PUT = do_HEAD = relay
+    do_GET = do_POST = do_DELETE = do_PUT = do_PATCH = do_HEAD = relay
 
 
 def read_exact(connection, size):

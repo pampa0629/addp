@@ -29,8 +29,8 @@ func (b *AcknowledgementBarrier) ReadyToAcknowledge(ctx context.Context, tenantI
 	if b == nil || b.db == nil || b.reads == nil || b.reads.store == nil || b.index == nil || tenantID <= 0 || cursor == "" {
 		return fmt.Errorf("manager protection acknowledgement barrier is unavailable")
 	}
-	if b.reads.HasActiveExecutionsForTenant(tenantID) {
-		return fmt.Errorf("manager protection reads are still active")
+	if err := b.reads.RequireDrained(ctx, tenantID); err != nil {
+		return err
 	}
 	var active int64
 	if err := b.db.WithContext(ctx).Model(&execution.TaskExecution{}).

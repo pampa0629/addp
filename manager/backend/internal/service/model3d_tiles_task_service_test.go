@@ -73,7 +73,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 	if err != nil {
 		t.Fatalf("first Execute() error = %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 	waitForModel3DTilesExecution(t, execRepo, firstExecutionID, int(task.TenantID))
 	firstResult, err := repo.GetCurrentResult(context.Background(), task.TenantID, "fp-repeat", models.Model3DTilesTargetFormatS3M)
 	if err != nil || firstResult == nil {
@@ -99,7 +99,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 	if err != nil {
 		t.Fatalf("confirmed refresh Execute() error = %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 	waitForModel3DTilesExecution(t, execRepo, secondExecutionID, int(task.TenantID))
 	secondResult, err := repo.GetCurrentResult(context.Background(), task.TenantID, "fp-repeat", models.Model3DTilesTargetFormatS3M)
 	if err != nil || secondResult == nil {
@@ -142,7 +142,7 @@ func TestModel3DTilesTaskServiceRejectsConcurrentExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Execute() error = %v", err)
 	}
-	done := runManagerBoundedExecutionAsyncForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	done := runManagerBoundedExecutionAsyncForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 	select {
 	case <-executor.started:
 	case <-done:

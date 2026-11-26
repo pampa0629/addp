@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/manager/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -665,7 +666,7 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	}
 	dispatcher := service.NewBoundedExecutionDispatcher(
 		nil, nil, nil, nil, nil, nil, handler.model3DTilesTaskSvc,
-		nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}),
+		nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}, testfixture.ReadDatabase(t), "reader"),
 	)
 	if err := dispatcher.RunClaimedExecution(context.Background(), claimed, *lease); err != nil {
 		t.Fatalf("dispatch first model3d tiles execution: %v", err)

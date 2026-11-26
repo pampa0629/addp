@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/addp/common/buildinfo"
 	"log"
 	"net"
 	"os"
@@ -253,7 +254,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer searchService.Close()
-	protectionReadBoundary := managerprotection.NewReadBoundary(protectionStore)
+	protectionReadBoundary := managerprotection.NewReadBoundary(protectionStore, db, buildinfo.ProcessInstanceID())
 	dataProfileService := service.NewDataProfileService(dataProfileRepo, dataProfileExecutionRepo, dataProfileSampler, protectionStore)
 	dataProfileService.SetResultReadChecker(systemServiceClient)
 	dataProfileService.SetAuthorizationIssuer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil))
@@ -602,6 +603,7 @@ func main() {
 		os.Exit(1)
 	}
 	notifyExecutionEnqueued = supervisor.Notify
+	go protectionReadBoundary.RecoverFinished(runtimeContext)
 	searchService.StartContentRecovery(runtimeContext)
 	uploadService.StartUploadRecovery(runtimeContext)
 	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second,

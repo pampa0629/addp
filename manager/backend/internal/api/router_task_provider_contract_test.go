@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/addp/manager/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,7 +29,7 @@ func TestManagerTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing.
 	router := SetupRouter(NewCleanupResultHandler(nil),
 		cfg, metadataService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, taskHandler, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}, testfixture.ReadDatabase(t), "reader"), modulelifecycle.NewStandalone("manager"), nil, nil, nil,
 	)
 
 	for _, test := range []struct {

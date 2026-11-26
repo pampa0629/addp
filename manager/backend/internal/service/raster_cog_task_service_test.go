@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/manager/internal/testfixture"
 	"net"
 	"net/http"
 	"strings"
@@ -139,7 +140,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 	if err != nil {
 		t.Fatalf("execute raster COG generation task: %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeRasterCOGGeneration, &BoundedExecutionDispatcher{rasterCOG: taskSvc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeRasterCOGGeneration, &BoundedExecutionDispatcher{rasterCOG: taskSvc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 
 	exec := waitForRasterCOGTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusFailed {

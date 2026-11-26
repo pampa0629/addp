@@ -30,7 +30,7 @@ runtime_probe() (
 status=0
 "$work/manager-backend" prepare-database > "$work/manager-preparation.sql" || status=$?
 if [ "$status" = 3 ]; then
-    test "$(echo "SELECT version,pending_version FROM manager.startup_schema_revision WHERE owner='manager'" | admin)" = $'0\t1'
+    test "$(echo "SELECT version,pending_version FROM manager.startup_schema_revision WHERE owner='manager'" | admin)" = $'0\t2'
     runtime_probe missing
     admin < "$work/manager-preparation.sql"
     "$work/manager-backend" prepare-database
@@ -38,7 +38,7 @@ elif [ "$status" != 0 ]; then
     exit "$status"
 fi
 test "$(echo "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema='manager' AND trigger_name IN ('search_index_insert','search_index_update','search_index_delete','cleanup_result_immutable')" | admin)" = 4
-test "$(echo "SELECT version,pending_version FROM manager.startup_schema_revision WHERE owner='manager'" | admin)" = $'1\t0'
+test "$(echo "SELECT version,pending_version FROM manager.startup_schema_revision WHERE owner='manager'" | admin)" = $'2\t0'
 schema_digest() {
     docker exec "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysqldump --no-data --skip-comments --skip-dump-date --skip-lock-tables --no-tablespaces -uroot manager' | sed -E 's/ AUTO_INCREMENT=[0-9]+//g' | shasum -a 256
 }

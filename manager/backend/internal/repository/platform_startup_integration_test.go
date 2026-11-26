@@ -4,6 +4,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/manager/internal/config"
@@ -47,6 +50,18 @@ func TestManagerPreparedRuntime(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
+	read := models.ProtectionRead{ReadID: uuid.NewString(), TenantID: 801, ProcessInstanceID: "runtime-probe", StartedAt: time.Now().UTC()}
+	if err := tx.Create(&read).Error; err != nil {
+		t.Fatal(err)
+	}
+	var found models.ProtectionRead
+	if err := tx.First(&found, "read_id = ? AND tenant_id = ?", read.ReadID, read.TenantID).Error; err != nil || found.ProcessInstanceID != read.ProcessInstanceID {
+		t.Fatalf("read registration: %v, owner=%q", err, found.ProcessInstanceID)
+	}
+	if result := tx.Delete(&read); result.Error != nil || result.RowsAffected != 1 {
+		t.Fatalf("read release: %v, affected=%d", result.Error, result.RowsAffected)
+	}
+
 	repo := NewInferenceScenarioBindingRepository(tx)
 	const id = "f8d30286-3a1f-45a2-ba30-235695100001"
 	const overrideID = "f8d30286-3a1f-45a2-ba30-235695100002"

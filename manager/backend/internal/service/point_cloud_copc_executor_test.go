@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/addp/manager/internal/testfixture"
 	"net"
 	"net/http"
 	"strings"
@@ -335,7 +336,7 @@ func TestPointCloudCOPCTaskExecutionMarksResultReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute point cloud COPC generation task: %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypePointCloudCOPCGeneration, &BoundedExecutionDispatcher{pointCloudCOPC: taskSvc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypePointCloudCOPCGeneration, &BoundedExecutionDispatcher{pointCloudCOPC: taskSvc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 	exec := waitForPointCloudCOPCTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, want success", exec.Status)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/addp/manager/internal/testfixture"
 	"strings"
 	"testing"
 	"time"
@@ -122,7 +123,7 @@ func TestPostGISTileCacheGenerationUsesNativePMTilesAndPersistsIdentity(t *testi
 	if err != nil {
 		t.Fatalf("execute task: %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 	exec := waitForTileCacheTaskExecution(t, execRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, error=%#v", exec.Status, exec.ErrorDetails)
@@ -179,7 +180,7 @@ func TestObjectTileCacheGenerationUsesWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute object task: %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 	exec := waitForTileCacheTaskExecution(t, execRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, error=%#v", exec.Status, exec.ErrorDetails)
@@ -225,7 +226,7 @@ func TestDatabaseTableTileCacheGenerationUsesFlatGeobufWorkflow(t *testing.T) {
 			if err != nil {
 				t.Fatalf("execute %s table task: %v", engineType, err)
 			}
-			runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+			runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{}, testfixture.ReadDatabase(t), "reader")})
 			exec := waitForTileCacheTaskExecution(t, execRepo, executionID, int(task.TenantID))
 			if exec.Status != commonExecution.ExecutionStatusSuccess {
 				t.Fatalf("execution status = %s, error=%#v", exec.Status, exec.ErrorDetails)

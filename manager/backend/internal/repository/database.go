@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const DatabaseVersion int64 = 1
+const DatabaseVersion int64 = 2
 
 func platformDatabaseConfig(cfg *config.Config) database.Config {
 	return database.Config{Host: cfg.DBHost, Port: cfg.DBPort, DBName: cfg.DBName, Schema: "manager", ConnectTimeout: 5 * time.Second}
@@ -98,6 +98,9 @@ func prepareManagerPostgres(db *gorm.DB) error {
 }
 
 func prepareManagerStores(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.ProtectionRead{}); err != nil {
+		return fmt.Errorf("prepare Manager protection reads: %w", err)
+	}
 	if err := ensureTaskDefinitionSchema(db); err != nil {
 		return fmt.Errorf("failed to ensure unified Manager task definition schema: %w", err)
 	}

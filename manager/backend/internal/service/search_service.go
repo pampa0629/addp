@@ -201,66 +201,54 @@ func (s *HybridSearchService) initIndexes(ctx context.Context) error {
 		return fmt.Errorf("Manager content index primary key is %q, expected id", existing.PrimaryKey)
 	}
 
-	// 配置技术内容索引（存储表、对象、文档元数据和内容）。
-	contentIdx := s.client.Index(s.contentIndex)
-
-	// 设置可搜索字段（按权重排序，与 Meta 模块保持一致）
-	task, err := contentIdx.UpdateSearchableAttributesWithContext(ctx, &[]string{
-		"name",            // 文件名/表名 - 最高权重
-		"title",           // 文档标题
-		"full_name",       // 完整路径名
-		"content_preview", // 内容预览（中等权重）
-		"description",     // 描述
-		"tags",            // 标签
-		"content",         // 全文内容（权重较低但范围广）
-		"fields.name",     // 表字段名
-		"fields.comment",  // 字段注释
-		"keywords",        // 关键词
-		"author",          // 作者
-	})
+	// Searchable field order affects ranking. Filterable and sortable fields
+	// are sets; Meilisearch may return them in a different order.
+	idx := s.client.Index(s.contentIndex)
+	searchable, err := idx.GetSearchableAttributesWithContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to update searchable attributes: %w", err)
+		return fmt.Errorf("read searchable attributes: %w", err)
+	}
+	filterable, err := idx.GetFilterableAttributesWithContext(ctx)
+	if err != nil {
+		return fmt.Errorf("read filterable attributes: %w", err)
+	}
+	sortable, err := idx.GetSortableAttributesWithContext(ctx)
+	if err != nil {
+		return fmt.Errorf("read sortable attributes: %w", err)
+	}
+	wantSearch := []string{"name", "title", "full_name", "content_preview", "description", "tags", "content", "fields.name", "fields.data_type", "fields.comment", "keywords", "author"}
+	wantFilter := []string{"bucket", "data_item_type", "document_id", "document_type", "engine_id", "engine_type", "locator", "schema", "search_ordinal", "table_kind", "tenant_id"}
+	wantSort := []string{"data_updated_at", "page_count", "row_count", "size_bytes", "word_count"}
+	patch := &meilisearch.Settings{}
+	if !slices.Equal(*searchable, wantSearch) {
+		patch.SearchableAttributes = wantSearch
+	}
+	// The SDK can also return structured filter rules. Manager owns this
+	// index and requires the plain attribute form for all of its filters.
+	currentFilters := make([]string, 0, len(*filterable))
+	for _, value := range *filterable {
+		if name, ok := value.(string); ok {
+			currentFilters = append(currentFilters, name)
+		}
+	}
+	slices.Sort(currentFilters)
+	if len(currentFilters) != len(*filterable) || !slices.Equal(currentFilters, wantFilter) {
+		patch.FilterableAttributes = wantFilter
+	}
+	slices.Sort(*sortable)
+	if !slices.Equal(*sortable, wantSort) {
+		patch.SortableAttributes = wantSort
+	}
+	if patch.SearchableAttributes == nil && patch.FilterableAttributes == nil && patch.SortableAttributes == nil {
+		return nil
+	}
+	task, err := idx.UpdateSettingsWithContext(ctx, patch)
+	if err != nil {
+		return fmt.Errorf("update Manager content index settings: %w", err)
 	}
 	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
-		return fmt.Errorf("failed to update searchable attributes: %w", err)
+		return fmt.Errorf("update Manager content index settings: %w", err)
 	}
-
-	// 设置可过滤字段
-	task, err = contentIdx.UpdateFilterableAttributesWithContext(ctx, &[]interface{}{
-		"search_ordinal",
-		"tenant_id",
-		"document_id",
-		"engine_id",
-		"engine_type",
-		"data_item_type", // 可过滤表/对象
-		"locator",
-		"schema",
-		"bucket",
-		"table_kind",
-		"document_type", // 可过滤文档类型
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update filterable attributes: %w", err)
-	}
-	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
-		return fmt.Errorf("failed to update filterable attributes: %w", err)
-	}
-
-	// 设置可排序字段
-	task, err = contentIdx.UpdateSortableAttributesWithContext(ctx, &[]string{
-		"data_updated_at",
-		"size_bytes",
-		"row_count",
-		"word_count",
-		"page_count",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update sortable attributes: %w", err)
-	}
-	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
-		return fmt.Errorf("failed to update sortable attributes: %w", err)
-	}
-
 	s.log.Info("索引配置已更新", "index", s.contentIndex)
 	return nil
 }

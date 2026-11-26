@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"github.com/addp/manager/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,7 +30,7 @@ type boundaryResponseWriter struct {
 
 func (w *boundaryResponseWriter) Write(body []byte) (int, error) {
 	w.wrote = true
-	if !w.boundary.HasActiveExecutionsForTenant(7) {
+	if w.boundary.RequireDrained(context.Background(), 7) == nil {
 		w.t.Error("read ended before HTTP serialization")
 	}
 	return w.ResponseRecorder.Write(body)
@@ -42,7 +43,7 @@ func TestProtectionReadBoundaryCoversResponseAndFailure(t *testing.T) {
 			if mode == "refresh-failed" {
 				store.err = errors.New("checkpoint failed")
 			}
-			boundary := managerprotection.NewReadBoundary(store)
+			boundary := managerprotection.NewReadBoundary(store, testfixture.ReadDatabase(t), "reader")
 			router := gin.New()
 			router.Use(func(c *gin.Context) {
 				if mode != "missing-tenant" {
@@ -52,7 +53,7 @@ func TestProtectionReadBoundaryCoversResponseAndFailure(t *testing.T) {
 			handled := false
 			router.GET("/read", func(c *gin.Context) {
 				handled = true
-				if !boundary.HasActiveExecutionsForTenant(7) {
+				if boundary.RequireDrained(context.Background(), 7) == nil {
 					t.Error("handler was not registered")
 				}
 				switch mode {
@@ -86,7 +87,7 @@ func TestProtectionReadBoundaryCoversResponseAndFailure(t *testing.T) {
 					t.Fatal("response not serialized")
 				}
 			}
-			if boundary.HasActiveExecutionsForTenant(7) {
+			if boundary.RequireDrained(context.Background(), 7) != nil {
 				t.Fatal("request retained after completion")
 			}
 		})

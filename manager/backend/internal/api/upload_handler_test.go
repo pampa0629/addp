@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/addp/manager/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,7 +51,7 @@ func TestUploadRouteChecksUserAndUploadPermissionBeforeReadingFiles(t *testing.T
 	cfg.SystemServiceURL = authServer.URL
 	router := SetupRouter(NewCleanupResultHandler(nil), cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil, nil, nil, nil), nil, NewUploadHandler(nil), nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil, nil)
+		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}, testfixture.ReadDatabase(t), "reader"), modulelifecycle.NewStandalone("manager"), nil, nil, nil)
 	for token := range identities {
 		t.Run(token, func(t *testing.T) {
 			body := &uploadReadProbe{}

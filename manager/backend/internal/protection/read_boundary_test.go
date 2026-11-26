@@ -10,7 +10,7 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
-	"gorm.io/driver/sqlite"
+	"github.com/addp/manager/internal/testfixture"
 	"gorm.io/gorm"
 )
 
@@ -31,9 +31,9 @@ func (s *boundaryTestStore) EnsureCurrent(ctx context.Context, tenant int64) err
 
 func TestReadBoundaryRegistersBeforeRefreshAndReleasesOnFailure(t *testing.T) {
 	store := &boundaryTestStore{}
-	boundary := NewReadBoundary(store)
+	boundary := NewReadBoundary(store, newReadBoundaryTestDB(t), "reader")
 	store.refresh = func(_ context.Context, tenant int64) error {
-		if !boundary.HasActiveExecutionsForTenant(tenant) {
+		if boundary.RequireDrained(context.Background(), tenant) == nil {
 			t.Fatal("refresh preceded registration")
 		}
 		return errors.New("checkpoint unavailable")
@@ -41,7 +41,7 @@ func TestReadBoundaryRegistersBeforeRefreshAndReleasesOnFailure(t *testing.T) {
 	if end, err := boundary.BeginRead(t.Context(), 7); !errors.Is(err, ErrRequired) || end != nil {
 		t.Fatalf("BeginRead returned end=%t, error=%v", end != nil, err)
 	}
-	if boundary.HasActiveExecutionsForTenant(7) {
+	if boundary.RequireDrained(context.Background(), 7) != nil {
 		t.Fatal("failed read blocks acknowledgement forever")
 	}
 	store.refresh = nil
@@ -50,14 +50,14 @@ func TestReadBoundaryRegistersBeforeRefreshAndReleasesOnFailure(t *testing.T) {
 	if end, err := boundary.BeginRead(ctx, 7); !errors.Is(err, context.Canceled) || end != nil {
 		t.Fatalf("canceled begin: %v", err)
 	}
-	if boundary.HasActiveExecutionsForTenant(7) {
+	if boundary.RequireDrained(context.Background(), 7) != nil {
 		t.Fatal("canceled read retained")
 	}
 }
 
 func TestManagerAcknowledgementWaitsForLocalAndLiveLeasedWork(t *testing.T) {
 	db := newReadBoundaryTestDB(t)
-	boundary := NewReadBoundary(&boundaryTestStore{})
+	boundary := NewReadBoundary(&boundaryTestStore{}, db, "reader")
 	barrier := NewAcknowledgementBarrier(db, boundary, boundaryTestIndex{})
 	now := time.Now().UTC()
 	past, future := now.Add(-time.Minute), now.Add(time.Minute)
@@ -114,26 +114,15 @@ func TestManagerAcknowledgementWaitsForLocalAndLiveLeasedWork(t *testing.T) {
 
 func newReadBoundaryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := testfixture.ReadDatabase(t)
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 
 func TestManagerAcknowledgementKeepsInstalledCursorWhileOldReadFinishes(t *testing.T) {
 	db := newReadBoundaryTestDB(t)
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
-		t.Fatal(err)
-	}
 	installer, err := projectionstore.Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -145,8 +134,9 @@ func TestManagerAcknowledgementKeepsInstalledCursorWhileOldReadFinishes(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundary := NewReadBoundary(reader)
-	barrier := NewAcknowledgementBarrier(db, boundary, boundaryTestIndex{})
+	boundary := NewReadBoundary(reader, db, "reader")
+	peer := NewReadBoundary(reader, db, "peer")
+	barrier := NewAcknowledgementBarrier(db, peer, boundaryTestIndex{})
 	endOld, err := boundary.BeginRead(t.Context(), 7)
 	if err != nil {
 		t.Fatal(err)
