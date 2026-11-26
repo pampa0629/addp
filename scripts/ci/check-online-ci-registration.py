@@ -3695,7 +3695,11 @@ def validate_raster_slope_orthogonal(repository: Path, registered: set[str]) -> 
         except (StopIteration,ValueError,SyntaxError):raise RegistrationError('orthogonal slope matrix is invalid')from None
     groups=literal('business/scripts/online-raster-slope-orthogonal-fixture.py','GROUPS')
     failures=literal('scripts/test/raster-slope-orthogonal-persistence-online.py','FAILURES')
-    if groups!=('north','rotated','quarter-turn','half-turn','feet','survey','coverage-cross-block','invalid') or set(failures)!=set(('shear','near-orthogonal','reflect-column','reflect-row','geographic','no-crs','no-grid','degenerate','band-zero','band-high','alpha','unit','unit-bool','unit-conflict','unit-unknown','scale','offset','slope-unit')):
+    if (groups != ('north', 'rotated', 'quarter-turn', 'half-turn', 'feet', 'survey', 'coverage-cross-block', 'invalid')
+        or set(failures) != {'shear', 'near-orthogonal', 'reflect-column', 'reflect-row', 'geographic', 'no-crs',
+                            'no-grid', 'degenerate', 'band-zero', 'band-high', 'alpha', 'unit', 'unit-empty',
+                            'unit-conflict', 'unit-unknown', 'scale', 'offset', 'slope-unit'}
+        or failures['unit-empty'] != ('unit', 'north.tif', {'elevation_unit': ''})):
         raise RegistrationError('orthogonal slope requires eight fixed groups and eighteen bilingual categories')
     fixture=(repository/'business/scripts/online-raster-slope-orthogonal-fixture.py').read_text()
     if "for g in GROUPS for u in('degree','percent')"not in fixture or "'expected_array_count':16"not in fixture:
@@ -3767,9 +3771,10 @@ def validate_raster_aspect_orthogonal(repository: Path, registered: set[str]) ->
     if set(planes) != {'north-n', 'north-e', 'north-s', 'north-w', 'rotated-n', 'rotated-e', 'rotated-s',
                        'rotated-w', 'quarter-turn', 'half-turn', 'wrap-west', 'wrap-east', 'feet', 'survey'}:
         raise RegistrationError('orthogonal aspect requires the fourteen fixed directional planes')
-    if set(failures) != {'shear', 'near-orthogonal', 'reflect-column', 'reflect-row', 'geographic', 'no-crs',
-                         'no-grid', 'degenerate', 'band-zero', 'band-high', 'alpha', 'unit', 'unit-bool',
-                         'unit-conflict', 'unit-unknown', 'scale', 'offset'}:
+    if (set(failures) != {'shear', 'near-orthogonal', 'reflect-column', 'reflect-row', 'geographic', 'no-crs',
+                         'no-grid', 'degenerate', 'band-zero', 'band-high', 'alpha', 'unit', 'unit-empty',
+                         'unit-conflict', 'unit-unknown', 'scale', 'offset'}
+        or failures['unit-empty'] != ('unit', 'north-n.tif', {'elevation_unit': ''})):
         raise RegistrationError('orthogonal aspect requires the seventeen fixed bilingual refusal categories')
 
 

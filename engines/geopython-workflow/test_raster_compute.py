@@ -23403,6 +23403,25 @@ def test_dem_terrain_orthogonal_exact_grid_refusal_before_normalizing(tmp_path, 
 
 
 @pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('operation,messages_name', [
+    (raster_slope, '_SLOPE_MESSAGES'),
+    (raster_aspect, '_ASPECT_MESSAGES'),
+])
+@pytest.mark.parametrize('unit', [True, ''], ids=['boolean', 'empty'])
+def test_dem_terrain_orthogonal_exact_elevation_unit_refusal(tmp_path, language, operation, messages_name, unit):
+    import operators.raster_compute as compute
+
+    path = create_raster(tmp_path/'dem.tif', np.ones((5, 5)), _SLOPE_ORTHOGONAL_GRIDS[0], 'EPSG:3857')
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path))
+        before = set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:
+            operation(source, unit)
+        assert str(error.value) == getattr(compute, messages_name)['unit'][language == 'en']
+        assert set(source.workspace.iterdir()) == before
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
 @pytest.mark.parametrize('case', ['direct', 'bad-grid', 'bad-unit', 'save-existing'])
 def test_dem_slope_orthogonal_async_full_cog_language_and_cleanup(tmp_path, monkeypatch, language, case):
     import api_server, workflow_engine, operators.raster_compute as c

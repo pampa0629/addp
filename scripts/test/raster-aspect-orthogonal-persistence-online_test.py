@@ -18,6 +18,8 @@ class AspectOrthogonalScenarioTest(unittest.TestCase):
         self.assertEqual(scene.COUNTS, (16, 34, 680, 51))
         self.assertEqual(len(targets), 16)
         self.assertEqual(len(scene.FAILURES), 17)
+        self.assertEqual(scene.FAILURES['unit-empty'], ('unit', 'north-n.tif', {'elevation_unit': ''}))
+        self.assertNotIn('unit-bool', scene.FAILURES)
         self.assertEqual(len(set(sources.values())), len(sources))
 
         for name in targets:

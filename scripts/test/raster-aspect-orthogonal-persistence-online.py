@@ -23,7 +23,7 @@ FAILURES={
  'no-grid':('grid','no-grid.tif',{}),'degenerate':('grid','degenerate.tif',{}),
  'band-zero':('band','north-n.tif',{'band':0}),'band-high':('band','north-n.tif',{'band':99}),
  'alpha':('alpha','north-n.tif',{'band':4}),'unit':('unit','north-n.tif',{'elevation_unit':'yard'}),
- 'unit-bool':('unit','north-n.tif',{'elevation_unit':True}),
+ 'unit-empty':('unit','north-n.tif',{'elevation_unit':''}),
  'unit-conflict':('unit-conflict','north-n.tif',{'elevation_unit':'foot'}),
  'unit-unknown':('unit-conflict','unknown-unit.tif',{}),
  'scale':('scale','scaled.tif',{}),'offset':('scale','offset.tif',{})}

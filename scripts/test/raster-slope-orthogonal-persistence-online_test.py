@@ -208,6 +208,8 @@ class SlopeOrthogonalWorkflowTest(unittest.TestCase):
         return report
 
     def test_complete_fixed_matrix_rereads_and_original_manifest(self):
+        self.assertEqual(scene.FAILURES['unit-empty'], ('unit', 'north.tif', {'elevation_unit': ''}))
+        self.assertNotIn('unit-bool', scene.FAILURES)
         calls = []
 
         def tracked(*args):
