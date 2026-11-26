@@ -2,7 +2,7 @@ import { expect, request, test } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, json, login } from './transfer-browser-support.js'
+import { browserAPIFromResponse, identity, json, login } from './transfer-browser-support.js'
 
 test.use({ locale: 'zh-CN' })
 
@@ -21,8 +21,8 @@ async function verifyTileService(page, api, evidence) {
   const report = { run_id: evidence.run_id, principal_id: evidence.principal_id, tenant_id: evidence.tenant_id,
     service_id: published.id, item_locator: locator, url, archive_tile_sha256: evidence.tile_sha256, reads: [] }
   const reportPath = resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'pmtiles-service-lifecycle.json')
-  const readTile = async (phase, status) => {
-    const response = await api.get(url, { maxRedirects: 0, headers: { 'Cache-Control': 'no-cache' } })
+  const readTile = async (session, phase, status) => {
+    const response = await session.get(url, { maxRedirects: 0, headers: { 'Cache-Control': 'no-cache' } })
     const body = await response.body()
     const read = { phase, status: response.status(), content_type: response.headers()['content-type'] }
     if (response.status() === 200) {
@@ -49,16 +49,24 @@ async function verifyTileService(page, api, evidence) {
     await frame.locator('.el-switch').filter({ has: control }).click()
     const saved = page.waitForResponse(resp => new URL(resp.url()).pathname === `/api/v1/service/tile/${published.id}` && resp.request().method() === 'PUT')
     await frame.getByRole('button', { name: '保存', exact: true }).click()
-    const result = await json(await saved, 'save service state')
+    const response = await saved
+    const result = await json(response, 'save service state')
     expect(result.status).toBe(active ? 'active' : 'inactive')
     await expect(frame.locator('.page-header').getByRole('button', { name: '编辑', exact: true })).toBeVisible()
+    return response
   }
-  await readTile('published', 200)
+  await readTile(api, 'published', 200)
   await page.goto(`/service/tile/${published.id}`)
-  await setActive(false)
-  await readTile('inactive', 503)
-  await setActive(true)
-  await readTile('restored', 200)
+  const expectedUser = { principalID: evidence.principal_id, tenantID: evidence.tenant_id, permissions: evidence.permissions_verified }
+  for (const active of [false, true]) {
+    const saved = await setActive(active)
+    const session = await browserAPIFromResponse(saved, process.env.GATEWAY_URL, expectedUser)
+    try {
+      await readTile(session, active ? 'restored' : 'inactive', active ? 200 : 503)
+    } finally {
+      await session.dispose()
+    }
+  }
 }
 
 test('PMTiles 真实生成与替换后地图、内容、身份一致', async ({ page }) => {
