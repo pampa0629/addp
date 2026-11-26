@@ -37,7 +37,7 @@ func (r *SyncStateRepository) List(ctx context.Context, taskID uint, sourceIdent
 	var states []models.SyncState
 	err := r.db.WithContext(ctx).
 		Where("task_id = ? AND source_identity = ?", taskID, sourceIdentity).
-		Order("partition ASC").Find(&states).Error
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "partition"}}).Find(&states).Error
 	return states, err
 }
 
@@ -52,7 +52,7 @@ func (r *SyncStateRepository) ClaimContinuousPartition(
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var leaseCount int64
 		if err := tx.Model(&models.RuntimeLease{}).
-			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > CURRENT_TIMESTAMP", taskID, owner, fencingToken).
+			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > "+continuousExpressions(tx).now, taskID, owner, fencingToken).
 			Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", taskID, models.TaskDesiredStateRunning).
 			Count(&leaseCount).Error; err != nil {
 			return err
@@ -124,15 +124,16 @@ func (r *SyncStateRepository) CommitContinuousPosition(
 	position models.JSONMap,
 	executionID string,
 ) error {
+	clock := continuousExpressions(r.db).now
 	result := r.db.WithContext(ctx).Model(&models.SyncState{}).
 		Where("id = ? AND task_id = ? AND state_version = ? AND fencing_token = ?", id, taskID, expectedVersion, fencingToken).
-		Where("EXISTS (SELECT 1 FROM transfer.runtime_leases l WHERE l.task_id = ? AND l.owner_instance_id = ? AND l.fencing_token = ? AND l.lease_until > CURRENT_TIMESTAMP)", taskID, owner, fencingToken).
+		Where("EXISTS (SELECT 1 FROM transfer.runtime_leases l WHERE l.task_id = ? AND l.owner_instance_id = ? AND l.fencing_token = ? AND l.lease_until > "+clock+")", taskID, owner, fencingToken).
 		Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", taskID, models.TaskDesiredStateRunning).
 		Updates(map[string]interface{}{
 			"position":              position,
 			"state_version":         expectedVersion + 1,
 			"updated_execution_id":  executionID,
-			"position_committed_at": gorm.Expr("CURRENT_TIMESTAMP"),
+			"position_committed_at": gorm.Expr(clock),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("commit continuous transfer sync position: %w", result.Error)
