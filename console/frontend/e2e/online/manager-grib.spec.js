@@ -139,7 +139,10 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           const map = frame.getByTestId('grib-field-map')
           if (highResolution) {
             await expect(map).toHaveAttribute('data-message', selection.variable)
-            await expect(map.getByTestId('generate-grib-map')).toHaveText(/生成累计降水地图|Generate precipitation map/)
+            await expect(map.locator('.grib-map-toolbar')).toContainText(utc(field.forecast))
+            // The read-only slice fixture has a metadata grant. The map cases
+            // exercise generation after receiving their separate source read grant.
+            await expect(map.getByTestId('generate-grib-map')).toHaveCount(0)
             await expect(frame.getByTestId('grid-no-location')).toHaveCount(0)
           } else {
             await expect(map).toHaveCount(0)
