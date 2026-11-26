@@ -65,9 +65,16 @@ func TestIntegrationMySQLManagerContentReceipt(t *testing.T) {
 	if err := MigrateContentIndexDeliverySchema(db); err != nil {
 		t.Fatal(err)
 	}
-	next := openActiveContentIndex(t, repo)
-	after, err := repo.SearchMaterial(ctx, next, 7)
-	if err != nil || after.Generation != before.Generation || after.SearchRevision <= before.SearchRevision || after.NextSearchOrdinal != original || next == epoch {
+	peer := NewContentIndexDeliveryRepository(db, index)
+	next, err := peer.JoinConfiguredIndex(ctx, index, "endpoint", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := peer.ActivateIfSettled(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	after, err := peer.SearchMaterial(ctx, next, 7)
+	if err != nil || after.Generation != before.Generation || after.SearchRevision <= before.SearchRevision || after.NextSearchOrdinal != original || next != epoch {
 		t.Fatalf("search material after delivery and restart: %+v -> %+v, %v", before, after, err)
 	}
 	ordinals := reserve(next, "orders", "Orders")
