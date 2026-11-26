@@ -1500,6 +1500,15 @@ def run_online(
                 scenario_environment = dict(environment, ADDP_ONLINE_HILLSHADE_DEADLINE=str(started_at + timeout))
             elif suite_name == "raster-focal-circle-weighted-persistence":
                 scenario_environment = dict(environment, ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE=str(started_at + timeout))
+            elif suite_name in ("raster-focal-circle-persistence", "raster-focal-circle-orthogonal-persistence",
+                               "raster-focal-square-seven-persistence"):
+                deadline = started_at + timeout
+                if suite_name == "raster-focal-square-seven-persistence":
+                    initialized_at = float(environment["ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED"])
+                    if not 0 < initialized_at <= started_at:
+                        raise OnlineStageError("scenario", "online_scenario_timeout", "invalid square fixture start")
+                    deadline = min(deadline, initialized_at + timeout)
+                scenario_environment = dict(environment, ADDP_ONLINE_FOCAL_PREPARATION_DEADLINE=str(deadline))
             suite_report, scenario_ms = run_stage(
                 "scenario",
                 suite.command,

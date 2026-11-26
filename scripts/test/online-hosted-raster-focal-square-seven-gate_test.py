@@ -52,7 +52,7 @@ run_logged() {
       [ "$ADDP_ONLINE_TEST_RUN_ID" = raster-focal-square-seven-123-1 ]
       trace seed
       [ "${FAIL_PHASE:-}" != seed ] ;;
-    *'--suite raster-workflow --wait-protection-owners develop,manager'*)
+    *'--suite raster-focal-square-seven-persistence --wait-protection-owners develop,manager'*)
       [ "$bounded" = 1 ]
       printf 'export ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN=temporary\n' > "$IDENTITY_ENV"
       trace identity ;;

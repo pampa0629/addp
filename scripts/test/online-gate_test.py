@@ -261,6 +261,27 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(scenario.kwargs["environment"][variable], "610.0")
         self.assertEqual(scenario.kwargs["timeout"], 598.0)
 
+    def test_prepared_neighborhood_deadline_preserves_preflight_and_square_initialization(self):
+        variable = "ADDP_ONLINE_FOCAL_PREPARATION_DEADLINE"
+        self.environment["ADDP_ONLINE_TEST_TIMEOUT_SECONDS"] = "600"
+        self.environment["ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED"] = "5.0"
+        for name, expected in (
+            ("raster-focal-circle-persistence", "610.0"),
+            ("raster-focal-circle-orthogonal-persistence", "610.0"),
+            ("raster-focal-square-seven-persistence", "605.0"),
+        ):
+            self.environment["ADDP_ONLINE_TEST_RUN_ID"] = name
+            with (self.subTest(name=name),
+                  patch.object(ONLINE_GATE.time, "monotonic", side_effect=(10.0, 12.0, 14.0)),
+                  patch.object(ONLINE_GATE, "run_stage", side_effect=(
+                      ({"schema_version": "addp.online-preflight/v1", "git_commit": "abc"}, 2000),
+                      ({"schema_version": "addp.online-suite/v1", "result": "passed"}, 20),
+                  )) as stage):
+                ONLINE_GATE.run_online(name, self.repository, self.environment, {name: self.suites["owner-scenario"]})
+                preflight, scenario = stage.call_args_list
+                self.assertNotIn(variable, preflight.kwargs["environment"])
+                self.assertEqual(scenario.kwargs["environment"][variable], expected)
+
     def test_notebook_preflight_identifies_product_and_observer_identifies_harness(self):
         product = self.root / "notebook-http-product"
         product.mkdir()

@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 m = importlib.import_module('scripts.test.raster-focal-square-seven-persistence-online')
+preparation = importlib.import_module('scripts.test.raster-focal-circle-weighted-persistence-online_test')
 prior = importlib.import_module('scripts.test.raster-focal-percentiles-persistence-online_test')
 
 
@@ -113,7 +114,7 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
         }
         self.enterContext(patch.object(prior, 'm', m))
 
-    def run_case(self, client=None, worker=physical, diag=diagnostic):
+    def run_case(self, client=None, worker=physical, diag=diagnostic, *, cleanup_failure=False):
         client = client or PublicReceiptClient()
 
         def reader(env, identifier, tenant, principal, dag):
@@ -135,9 +136,22 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
             return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal, 'status': 'failed'}
 
         self.env.setdefault('ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED', str(time.monotonic()))
-        with patch.object(m.raster, 'wait_lineage', return_value={'active': True}):
-            return m.run_scenario(self.root, self.env, client, worker, diag, reader,
-                                  failed_reader=failed_reader, inventory_reader=inventory_reader)
+        initializer = preparation.SourceInitializer(m.fixture.SOURCES)
+        self.preparation_events = []
+        metadata = preparation.prepared_metadata_factory(m, client, self.preparation_events,
+                                                         cleanup_failure=cleanup_failure)
+        env = {**self.env, 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'preparer-only'}
+
+        def isolated_worker(repo, worker_env, action, names, timeout):
+            self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', worker_env)
+            return worker(repo, worker_env, action, names, timeout)
+
+        with (patch.object(m.raster, 'wait_lineage', return_value={'active': True}),
+              patch.object(m.circle.hillshade, 'source_scan_client', return_value=(initializer, {'principal_id': '44'})),
+              patch.object(m, 'PreparedMetadata', metadata)):
+            return m.run_scenario(self.root, env, client, isolated_worker, diag, reader,
+                                  failed_reader=failed_reader, inventory_reader=inventory_reader,
+                                  hard_deadline=float(env['ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED']) + 600)
 
     def test_exact_18_success_60_failures_1251_full_reads_and_cleanup(self):
         calls = []
@@ -147,6 +161,9 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
             return physical(*args)
 
         report = self.run_case(worker=worker)
+        self.assertEqual(report['source_preparation_identity']['principal_id'], '44')
+        self.assertEqual(report['source_scan_identity']['triggered_by'], 44)
+        self.assertEqual(self.preparation_events[-1], ('cleanup', None))
         self.assertEqual(
             (
                 len(report['cases']),

@@ -69,7 +69,7 @@ CLOCK
 }
 run_business python3 business/scripts/online-raster-focal-square-seven-fixture.py seed
 # Reuse the existing ordinary raster identity and its exact twelve permissions.
-run_business bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+run_business bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-focal-square-seven-persistence --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_business python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/raster-focal-square-seven-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"

@@ -41,6 +41,12 @@ CIRCLE_WEIGHTS_ERROR = (
 )
 MESSAGES={'type_null': ('window_type必须为square_pixels或circle_metres', 'window_type must be square_pixels or circle_metres'), 'type_bool': ('window_type必须为square_pixels或circle_metres', 'window_type must be square_pixels or circle_metres'), 'type_unknown': ('window_type必须为square_pixels或circle_metres', 'window_type must be square_pixels or circle_metres'), 'type_object': ('window_type必须为square_pixels或circle_metres', 'window_type must be square_pixels or circle_metres'), 'radius_missing': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'radius_null': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'radius_zero': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'radius_negative': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'radius_bool': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'radius_string': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'radius_list': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'radius_object': ('圆形邻域的radius_metres必须显式提供有限正数，不能为布尔值', 'Circular focal radius_metres must be an explicit finite positive number, excluding booleans'), 'circle_window': ('米制圆窗不得提供window_size', 'Metre circle windows do not accept window_size'), 'circle_window_null': ('米制圆窗不得提供window_size', 'Metre circle windows do not accept window_size'), 'square_radius': ('像元方窗不得提供radius_metres', 'Pixel square windows do not accept radius_metres'), 'square_radius_null': ('像元方窗不得提供radius_metres', 'Pixel square windows do not accept radius_metres'), 'weighted_mean': CIRCLE_WEIGHTS_ERROR, 'weighted_stddev': CIRCLE_WEIGHTS_ERROR, 'weighted_sum': CIRCLE_WEIGHTS_ERROR, 'unused_weights': ('只有method=weighted_mean、weighted_stddev或weighted_sum时才能提供weights参数', 'weights is only accepted when method=weighted_mean, weighted_stddev or weighted_sum'), 'method': ('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum', 'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'), 'percentile_missing': ('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表', 'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100'), 'percentile_null': ('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表', 'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100'), 'percentile_bool': ('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表', 'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100'), 'percentile_string': ('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表', 'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100'), 'percentile_low': ('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表', 'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100'), 'percentile_high': ('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表', 'percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100'), 'unused_percentile': ('只有method=percentile时才能提供percentiles参数', 'percentiles is only accepted when method=percentile'), 'geographic': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'compound': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'missing_crs': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'missing_grid': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'rotated': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'west_up': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'south_up': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'singular': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'unknown_unit': ('米制圆窗要求已知线性单位的二维投影及保持北向轴手性的有限可逆正交网格，请显式重投影', 'Metre circle windows require a two-dimensional projection with known linear units and a finite invertible orthogonal grid with north-up handedness; reproject explicitly'), 'x_oversize': ('米制圆窗的候选像元外接窗口不得超过7×7，不能截断半径', 'The candidate pixel bounding window of a metre circle must not exceed 7x7; the radius cannot be truncated'), 'y_oversize': ('米制圆窗的候选像元外接窗口不得超过7×7，不能截断半径', 'The candidate pixel bounding window of a metre circle must not exceed 7x7; the radius cannot be truncated'), 'small_oversize': ('米制圆窗的候选像元外接窗口不得超过7×7，不能截断半径', 'The candidate pixel bounding window of a metre circle must not exceed 7x7; the radius cannot be truncated'), 'band_zero': ('band must be a valid one-based index', 'band must be a valid one-based index'), 'band_high': ('band must be a valid one-based index', 'band must be a valid one-based index'), 'band_boolean': ('band must be a valid one-based index', 'band must be a valid one-based index'), 'band_string': ('band must be a valid one-based index', 'band must be a valid one-based index'), 'band_fraction': ('band must be a valid one-based index', 'band must be a valid one-based index'), 'alpha': ('Focal statistics require a data band, not alpha', 'Focal statistics require a data band, not alpha'), 'mode_fractional': ('floating classification values must be exact safe integers', 'floating classification values must be exact safe integers'), 'variety_fractional': ('floating classification values must be exact safe integers', 'floating classification values must be exact safe integers'), 'mode_unsafe': ('classification values must be exact safe integers', 'classification values must be exact safe integers'), 'variety_unsafe': ('classification values must be exact safe integers', 'classification values must be exact safe integers')}
 
+class PreparedMetadata(circle.hillshade.ViewshedMetadata):
+    prefix = 'focal-circle'
+    suite = SUITE
+    fixture = fixture
+
+
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name='circle-submission-error.json'
     diagnostic_schema='addp.raster-focal-circle-submission-diagnostic/v1'
@@ -182,15 +188,22 @@ def fixture_call(repository, env, action, names, timeout):
 
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current, *,
                  failed_reader=lineage.read_failed_focal_execution,
-                 inventory_reader=lineage.check_focal_execution_inventory):
+                 inventory_reader=lineage.check_focal_execution_inventory, hard_deadline):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('focal circle business budget must be exactly 600 seconds')
+    if not 0 < hard_deadline - started <= budget:
+        raise SuiteError('focal circle requires the current Online gate deadline')
+    operation_deadline = hard_deadline - circle.CLEANUP_RESERVE_SECONDS
+
     def remaining():
-        left = budget-(time.monotonic()-started)
+        left = operation_deadline - time.monotonic()
         if left <= 0: raise SuiteError('focal circle business budget exhausted')
         return left
+
     client = BudgetClient(client, remaining); directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR']); directory.mkdir(parents=True, exist_ok=True)
-    stages = []; primary = cleanup_error = report = None
+    stages = []; primary = report = metadata = None
+    cleanup_errors = []
+    producer_env = {key: value for key, value in env.items() if key != 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
     def progress(status):
         (directory/'circle-progress.json').write_bytes(encoded({'suite': SUITE, 'result': status,
             'budget_ms': 600000, 'elapsed_ms': round((time.monotonic()-started)*1000), 'stages': stages}))
@@ -200,26 +213,34 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
         identity = raster.validate_identity(client, tenant, required_permissions=raster.EDITOR_PERMISSIONS)
         engine = positive(env['ADDP_ONLINE_FOCAL_CIRCLE_NFS_ENGINE_ID'], 'NFS engine')
         scopes = {name: f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
-        scan = support.wait_for_meta_scan(client, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
-        items = {name: support.find_fixture_item(client, engine, name, 'circle source') for name in fixture.SOURCES}
-        sources = {name: scopes[name]+f'&item_id={items[name]["id"]}' for name in fixture.SOURCES}
-        before = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name, item in items.items()}
-        source_scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', scan, remaining()), scan, None, tenant, int(identity['principal_id']), engine)
+        initializer, source_identity = circle.hillshade.source_scan_client(env, client, identity, remaining)
+        scan = support.wait_for_meta_scan(
+            initializer, engine, time.monotonic() + remaining(), scope={'targets': list(scopes.values())}
+        )
+        scanned = raster.wait_execution(initializer, 'meta', scan, remaining())
+        source_scan_identity = base.validate_scan(scanned, scan, None, tenant, int(source_identity['principal_id']), engine)
+        immutable(directory / 'meta-source-scan.json', encoded(scanned))
+        circle.hillshade.check_scan_inventory(client, initializer, scan, [])
+        metadata = PreparedMetadata(env, client, engine, identity, scan, remaining,
+                                    grant_remaining=lambda: hard_deadline - time.monotonic())
+        items = {name: metadata.find(name) for name in fixture.SOURCES}
+        sources = {name: scopes[name] + f'&item_id={items[name]["id"]}' for name in fixture.SOURCES}
+        before = {name: metadata.snapshot(item['id']) for name, item in items.items()}
         selected = [v for v in array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
                     if v.get('engine_type') == 'geopython_workflow' and v.get('connection_status') == 'online']
         if len(selected) != 1: raise SuiteError('exactly one same-source product Runtime is required')
         runtime = positive(selected[0].get('id'), 'Runtime'); parent = f'addp://engine/{engine}/path/outputs?type=directory'
-        baseline=physical_runner(repository,env,'prepare-oracle',[],remaining());remaining()
+        baseline=physical_runner(repository,producer_env,'prepare-oracle',[],remaining());remaining()
         anchor=baseline.get('anchor_sha256');scope=baseline.get('scope_sha256')
         if any(not isinstance(v,str) or not re.fullmatch('[0-9a-f]{64}',v) for v in (anchor,scope)):raise SuiteError('frozen oracle identity missing')
         if type(baseline.get('expected_array_count')) is not int or baseline['expected_array_count']!=18:raise SuiteError('eighteen frozen independent arrays required')
         if type(baseline.get('cache_bytes')) is not int or not fixture.expected_cache_bytes()<baseline['cache_bytes']<fixture.expected_cache_bytes()+18*1024:raise SuiteError('per-case cache byte bound differs')
-        env['ADDP_ONLINE_FOCAL_CIRCLE_ORACLE_ANCHOR_SHA256']=anchor
+        producer_env['ADDP_ONLINE_FOCAL_CIRCLE_ORACLE_ANCHOR_SHA256']=anchor
         immutable(directory/'circle-oracle-preparation.json',encoded(baseline))
         check_physical(baseline,baseline.get('sources'),{},scope,[])
         for name in fixture.SOURCES:
             if type(before[name].get('size_bytes')) is not int or before[name]['size_bytes'] != baseline['sources'][name]['size_bytes']: raise SuiteError('physical/Meta source size differs')
-        if base.scan_ids(client) != [scan]: raise SuiteError('unexpected source initialization scan')
+        circle.hillshade.check_scan_inventory(client, initializer, scan, [])
         physical_calls, full_checks = 1, 0; cases, failures, names, scans, previous = [], [], [], [], {}; target_metadata_before = {}
         for index, name in enumerate(fixture.CASES, 1):
             stages.append({'case': name, 'status': 'running'}); progress('running')
@@ -227,7 +248,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
             execution = raster.wait_execution(client, 'develop', identifier, remaining()); circle.current(execution, identity, identifier, dag, runtime, language, 'success')
             wanted = expected_lineage(sources, name, target)
-            evidence = lineage.collect(env, SUITE, identifier, name, wanted, execution, tenant, int(identity['principal_id']), dag, lineage_reader); remaining()
+            evidence = lineage.collect(producer_env, SUITE, identifier, name, wanted, execution, tenant, int(identity['principal_id']), dag, lineage_reader); remaining()
             expectation=fixture.artifact_expectation(name)
             facts,output_scan=validate_success(execution,[sources[n] for n in case_inputs(name)],target,'create',expectation)
             lineage.validate(facts,wanted,public=True)
@@ -236,11 +257,11 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', output_scan, remaining()), output_scan, identifier, tenant, int(identity['principal_id']), engine)
             monitor = circle.monitor_observation(client, identity, identifier, 'success')
             if obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
-            names.append(name); native = physical_runner(repository, env, 'verify', names, remaining()); remaining()
+            names.append(name); native = physical_runner(repository, producer_env, 'verify', names, remaining()); remaining()
             check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations']); previous = copy.deepcopy(native['targets'])
             physical_calls += 1; full_checks += len(names)
-            item0 = support.find_fixture_item(client, engine, 'outputs/'+name, 'COG')
-            item = client.request('GET', f'/api/v1/meta/items/{item0["id"]}', (200,)).payload
+            item0 = metadata.find('outputs/'+name, binding={'execution': identifier, 'scan': output_scan, 'locator': target})
+            item = metadata.snapshot(item0['id'])
             validate_target_item(item,expectation,native['targets'][name])
             artifact=obj(obj(execution['metadata'].get('result'),'result').get('final_result'),'artifact')
             size=raster.strict_sizes(artifact,native['targets'][name],item,name)
@@ -250,7 +271,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             stages[-1]['status'] = 'passed'; progress('running')
         for case in cases:
             case['lineage'] = [raster.wait_lineage(client, items[name]['id'], case['target_item_id'], case['execution_id'], remaining()) for name in case_inputs(case['name'])]
-        if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('unexpected automatic scan inventory')
+        circle.hillshade.check_scan_inventory(client, initializer, scan, scans)
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
         known_executions = [case['execution_id'] for case in cases]
         entry_count = 0
@@ -276,7 +297,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                     failed_observation = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
                     remaining()
                     if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
-                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
+                    diagnostic = diagnostic_runner(repository, producer_env, identifier, problem, language, remaining()); remaining()
                     if diagnostic != {'execution_id': identifier, 'task': 'focal', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
                     readonly.no_publication(execution)
                     monitor = circle.monitor_observation(client, identity, identifier, 'failed')
@@ -286,38 +307,50 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                     if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
                     failure.update(rejection_stage='focal_node', execution_id=identifier,
                                    diagnostic=diagnostic, private_execution=failed_observation)
-                if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('failed execution added scan')
+                if base.scan_ids(client) != sorted(scans): raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()): raise SuiteError('failed execution added derived lineage')
-                native = physical_runner(repository, env, 'verify', names, remaining()); remaining(); check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations'])
+                native = physical_runner(repository, producer_env, 'verify', names, remaining()); remaining(); check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations'])
                 physical_calls += 1; full_checks += len(names)
                 failures.append(failure)
                 stages[-1]['status'] = 'passed'; progress('running')
         if entry_count != 32:
             raise SuiteError('exact Develop entry rejection count differs')
         inventory_reader(env, tenant, known_executions)
+        circle.hillshade.check_scan_inventory(client, initializer, scan, scans)
         remaining()
         if len(cases) != 18 or len(failures) != 100 or full_checks != 1971 or physical_calls != 119: raise SuiteError('all 18 successes, 100 failures, 1971 COG checks and 119 physical calls required')
-        source_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name,item in items.items()}
+        source_metadata_after = {name: metadata.snapshot(item['id']) for name,item in items.items()}
         if source_metadata_after != before: raise SuiteError('source metadata changed')
-        target_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{case["target_item_id"]}', (200,)).payload for name,case in zip(names,cases)}
+        target_metadata_after = {name: metadata.snapshot(case['target_item_id']) for name,case in zip(names,cases)}
         if target_metadata_after != target_metadata_before: raise SuiteError('target metadata changed')
-        lineage.verify_archive(env, SUITE, cases); remaining()
+        lineage.verify_archive(producer_env, SUITE, cases); remaining()
         report = {'schema_version': 'addp.'+SUITE+'/v1', 'suite': SUITE, 'result': 'passed', 'identity': identity,
                   'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'sources': sources, 'runtime_engine_id': runtime,
                   'source_scan_execution_id': scan, 'source_scan_identity': source_scan_identity,
+                  'source_preparation_identity': source_identity, 'metadata_evidence': metadata.path.name,
                   'cases': cases, 'failed_parameters': failures, 'full_target_checks': full_checks, 'physical_verification_calls': physical_calls,
                   'physical': native, 'archived_cogs': native['archived_cogs'], 'source_unchanged': True, 'oracle_scope_sha256':scope,'oracle_anchor_sha256':anchor,'source_metadata_before':before,'source_metadata_after':source_metadata_after,'target_metadata_before':target_metadata_before,'target_metadata_after':target_metadata_after}
     except BaseException as error: primary = error
     finally:
+        operation_deadline = hard_deadline - 1
+        if metadata is not None:
+            try:
+                metadata.cleanup()
+            except BaseException as error:
+                cleanup_errors.append('metadata Grant cleanup also failed: ' + type(error).__name__)
         try:
-            removed = physical_runner(repository, env, 'cleanup-oracle', [], remaining()); remaining()
+            removed = physical_runner(repository, producer_env, 'cleanup-oracle', [], remaining()); remaining()
             if removed.get('oracle_cache_removed') is not True: raise SuiteError('oracle cleanup proof missing')
-        except BaseException as error: cleanup_error = error
+        except BaseException as error:
+            cleanup_errors.append('oracle cleanup also failed: ' + (str(error) if isinstance(error, SuiteError) else type(error).__name__))
     if primary is not None:
         progress('failed')
-        if cleanup_error is not None: raise SuiteError(str(primary)+'; oracle cleanup also failed: '+type(cleanup_error).__name__) from primary
+        if cleanup_errors:
+            raise SuiteError(str(primary) + '; ' + '; '.join(cleanup_errors)) from primary
         raise primary
-    if cleanup_error is not None: progress('failed'); raise cleanup_error
+    if cleanup_errors:
+        progress('failed')
+        raise SuiteError('; '.join(cleanup_errors))
     report['oracle_cache_removed'] = True; remaining(); progress('passed'); remaining()
     report.update(elapsed_ms=round((time.monotonic()-started)*1000), business_budget_ms=600000)
     if report['elapsed_ms'] > 600000: raise SuiteError('business budget exceeded')
@@ -325,7 +358,8 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
 
 def main():
     env = dict(os.environ)
-    report = run_scenario(Path(__file__).resolve().parents[2], env, DiagnosticClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30, env['ADDP_ONLINE_ARTIFACT_DIR']))
+    report = run_scenario(Path(__file__).resolve().parents[2], env, DiagnosticClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30, env['ADDP_ONLINE_ARTIFACT_DIR']),
+                          hard_deadline=float(env['ADDP_ONLINE_FOCAL_PREPARATION_DEADLINE']))
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'circle-persistence.json').write_bytes(encoded(report)); print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 if __name__ == '__main__':

@@ -175,6 +175,8 @@
 
 夹具修正提交 `8276ea44f` 在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 执行标准 `make test-geopython-workflow`，22,111 项通过、141 条警告、1561.88 秒，0 失败、跳过或筛除。独立 NetCDF 专项 109 项通过。`make test-execution-online-ci-runner` 通过，覆盖共享登记、分发及 38 项加权圆窗回归。同版本 Platform consistency 因 PG 固定源码检查的 3 项断言失败。三套邻域的独立 Hosted 保持待验。 [Linux 全量](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194912) · [Runner](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194781) · [Platform](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194608)
 
+北向矩形圆窗、正交旋转圆窗和 7×7 方窗共用隔离准备账号。该账号只做首次精确源扫描和本轮限时元数据读取授权。普通 User 仍用原 12 项权限提交工作流。各套在原 600 秒内预留 45 秒，逐笔撤销、复核撤后不可见并清理校验夹具。三套实际 Hosted 均待验。
+
 ## 正交旋转网格米制圆形邻域统计独立验收
 
 `raster-focal-circle-orthogonal-persistence`；`make test-raster-focal-circle-orthogonal-online-runner`；沿[邻域共同要求](#邻域与-idw-专项共同要求)。19COG含九非加权方法、90°/180°/270°及斜向正交、非方形、跨轴／薄行列／三单位、半径等号邻接浮点；同轴长北向／P50-median／方窗／中心／重分类／全无效实际对照。

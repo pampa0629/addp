@@ -3,12 +3,14 @@ import hashlib
 import importlib
 import json
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
 import uuid
 from unittest.mock import patch
 m = importlib.import_module('scripts.test.raster-focal-circle-orthogonal-persistence-online')
+preparation = importlib.import_module('scripts.test.raster-focal-circle-weighted-persistence-online_test')
 
 def artifact(name):
     spec=m.fixture.artifact_expectation(name)
@@ -115,7 +117,7 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
         self.env={'ONLINE_SUITE':m.SUITE,'ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_FOCAL_CIRCLE_ORTHOGONAL_NFS_ENGINE_ID':'3',
                   'ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'600','ADDP_ONLINE_TEST_RUN_ID':'focal-circle-orthogonal-123-1','ADDP_ONLINE_ARTIFACT_DIR':str(self.root/'evidence')}
         self.relations=[]
-    def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic):
+    def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic, *, cleanup_failure=False):
         client=client or Client()
         def reader(env, identifier, tenant, principal, dag):
             assert tenant==2 and principal==33 and identifier in client.executions
@@ -134,13 +136,29 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
             return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal, 'status': 'failed'}
         def relation(client, source, target, execution, timeout):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
-        with patch.object(m.raster,'wait_lineage',side_effect=relation):
-            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader,
-                                  failed_reader=failed_reader, inventory_reader=inventory_reader)
+        initializer = preparation.SourceInitializer(m.fixture.SOURCES)
+        self.preparation_events = []
+        metadata = preparation.prepared_metadata_factory(m, client, self.preparation_events,
+                                                         cleanup_failure=cleanup_failure)
+        env = {**self.env, 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'preparer-only'}
+
+        def isolated_worker(repo, worker_env, action, names, timeout):
+            self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', worker_env)
+            return worker(repo, worker_env, action, names, timeout)
+
+        with (patch.object(m.raster, 'wait_lineage', side_effect=relation),
+              patch.object(m.circle.hillshade, 'source_scan_client', return_value=(initializer, {'principal_id': '44'})),
+              patch.object(m, 'PreparedMetadata', metadata)):
+            return m.run_scenario(self.root, env, client, isolated_worker, diagnostic_runner, reader,
+                                  failed_reader=failed_reader, inventory_reader=inventory_reader,
+                                  hard_deadline=time.monotonic() + 600)
     def test_full_matrix_19_success_106_failures_2204_checks_and_cleanup(self):
         client=Client();calls=[]
         def worker(*args): calls.append((args[2],list(args[3]))); return physical(*args)
         report=self.run_case(client,worker)
+        self.assertEqual(report['source_preparation_identity']['principal_id'], '44')
+        self.assertEqual(report['source_scan_identity']['triggered_by'], 44)
+        self.assertEqual(self.preparation_events[-1], ('cleanup', None))
         self.assertEqual((len(report['cases']),len(report['failed_parameters']),report['full_target_checks'],report['physical_verification_calls']),(19,106,2204,126))
         entry = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'develop_entry']
         self.assertEqual(len(entry), 32)

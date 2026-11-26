@@ -876,6 +876,12 @@ test-raster-focal-variety-online-runner: test-raster-lineage-observer-unit test-
 	@bash -n scripts/test/online-hosted-raster-focal-variety-gate.sh
 	@python3 -m unittest scripts/test/raster-focal-variety-persistence-online_test.py scripts/test/online-raster-focal-variety-fixture_test.py scripts/test/online-hosted-raster-focal-variety-gate_test.py
 
+# Local fixtures only. Formal Hosted runs remain separate manual jobs.
+.PHONY: test-raster-focal-neighborhood-preparation
+test-raster-focal-neighborhood-preparation:
+	@python3 -m unittest scripts/test/raster-focal-circle-persistence-online_test.py scripts/test/raster-focal-circle-orthogonal-persistence-online_test.py scripts/test/raster-focal-square-seven-persistence-online_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'FocalCircleWeighted' -count=1
+
 .PHONY: test-raster-focal-circle-online-runner
 test-raster-focal-circle-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证分类种类数18成功100失败1971全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-circle-gate.sh
@@ -1897,7 +1903,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner test-raster-focal-neighborhood-preparation ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py \
 		scripts.test.online-hosted-opengauss-gate_test.OnlineHostedOpenGaussGateTest.test_native_targets_follow_the_product_registry_and_isolate_installer_credentials \

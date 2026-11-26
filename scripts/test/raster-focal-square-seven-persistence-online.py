@@ -71,6 +71,12 @@ MESSAGES = {
 }
 
 
+class PreparedMetadata(circle.hillshade.ViewshedMetadata):
+    prefix = 'raster-focal-square-seven'
+    suite = SUITE
+    fixture = fixture
+
+
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name = 'raster-focal-square-seven-submission-error.json'
     diagnostic_schema = 'addp.raster-focal-square-seven-submission-diagnostic/v1'
@@ -312,6 +318,7 @@ def run_scenario(
     *,
     failed_reader=lineage.read_failed_focal_execution,
     inventory_reader=lineage.check_focal_execution_inventory,
+    hard_deadline,
 ):
     env = dict(env)
     now = time.monotonic()
@@ -322,8 +329,14 @@ def run_scenario(
     if not math.isfinite(budget) or budget != 600:
         raise SuiteError('seven-pixel square business budget must be exactly 600 seconds')
 
+    if hard_deadline <= now:
+        raise SuiteError('seven-pixel square business budget exhausted')
+    if not hard_deadline <= started + budget:
+        raise SuiteError('square requires the current Online gate deadline')
+    operation_deadline = hard_deadline - circle.CLEANUP_RESERVE_SECONDS
+
     def remaining():
-        left = budget - (time.monotonic() - started)
+        left = operation_deadline - time.monotonic()
         if left <= 0:
             raise SuiteError('seven-pixel square business budget exhausted')
         return left
@@ -333,7 +346,9 @@ def run_scenario(
     directory.mkdir(parents=True, exist_ok=True)
     (directory / 'focal-square-seven-terminal-responses').mkdir()
     stages = []
-    primary = cleanup_error = report = None
+    primary = report = metadata = None
+    cleanup_errors = []
+    producer_env = {key: value for key, value in env.items() if key != 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
 
     def progress(status):
         (directory / 'raster-focal-square-seven-progress.json').write_bytes(
@@ -356,27 +371,20 @@ def run_scenario(
         identity = raster.validate_identity(client, tenant, required_permissions=raster.EDITOR_PERMISSIONS)
         engine = positive(env['ADDP_ONLINE_FOCAL_SQUARE_SEVEN_NFS_ENGINE_ID'], 'NFS engine')
         scopes = {name: f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
+        initializer, source_identity = circle.hillshade.source_scan_client(env, client, identity, remaining)
         scan = support.wait_for_meta_scan(
-            client, engine, time.monotonic() + remaining(), scope={'targets': list(scopes.values())}
+            initializer, engine, time.monotonic() + remaining(), scope={'targets': list(scopes.values())}
         )
-        items = {
-            name: support.find_fixture_item(client, engine, name, 'seven-pixel square source')
-            for name in fixture.SOURCES
-        }
+        scanned = raster.wait_execution(initializer, 'meta', scan, remaining())
+        source_scan_identity = base.validate_scan(scanned, scan, None, tenant, int(source_identity['principal_id']), engine)
+        immutable(directory / 'meta-source-scan.json', encoded(scanned))
+        circle.hillshade.check_scan_inventory(client, initializer, scan, [])
+        metadata = PreparedMetadata(env, client, engine, identity, scan, remaining,
+                                    grant_remaining=lambda: hard_deadline - time.monotonic())
+        items = {name: metadata.find(name) for name in fixture.SOURCES}
         sources = {name: scopes[name] + f'&item_id={items[name]["id"]}' for name in fixture.SOURCES}
-        before = {
-            name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload
-            for name, item in items.items()
-        }
+        before = {name: metadata.snapshot(item['id']) for name, item in items.items()}
         immutable(directory / 'source-meta-before.json', encoded(before))
-        source_scan_identity = base.validate_scan(
-            raster.wait_execution(client, 'meta', scan, remaining()),
-            scan,
-            None,
-            tenant,
-            int(identity['principal_id']),
-            engine,
-        )
         selected = [
             v
             for v in array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
@@ -386,12 +394,12 @@ def run_scenario(
             raise SuiteError('exactly one same-source product Runtime is required')
         runtime = positive(selected[0].get('id'), 'Runtime')
         parent = f'addp://engine/{engine}/path/outputs?type=directory'
-        baseline = physical_runner(repository, env, 'oracle', [], remaining())
+        baseline = physical_runner(repository, producer_env, 'oracle', [], remaining())
         remaining()
         anchor = baseline.get('oracle_sha256')
         if not isinstance(anchor, str) or not re.fullmatch('[0-9a-f]{64}', anchor):
             raise SuiteError('missing frozen independent oracle digest')
-        env['ADDP_ONLINE_FOCAL_SQUARE_SEVEN_ORACLE_SHA256'] = anchor
+        producer_env['ADDP_ONLINE_FOCAL_SQUARE_SEVEN_ORACLE_SHA256'] = anchor
         check_physical(baseline, baseline.get('sources'), {}, anchor, [])
         for name in fixture.SOURCES:
             if (
@@ -399,8 +407,7 @@ def run_scenario(
                 or before[name]['size_bytes'] != baseline['sources'][name]['size_bytes']
             ):
                 raise SuiteError('physical/Meta source size differs')
-        if base.scan_ids(client) != [scan]:
-            raise SuiteError('unexpected source initialization scan')
+        circle.hillshade.check_scan_inventory(client, initializer, scan, [])
         physical_calls, full_checks = 1, 0
         cases, failures, names, scans, previous = [], [], [], [], {}
         for index, name in enumerate(fixture.CASES, 1):
@@ -419,7 +426,7 @@ def run_scenario(
             circle.current(execution, identity, identifier, dag, runtime, language, 'success')
             wanted = expected_lineage(sources, name, target)
             evidence = lineage.collect(
-                env,
+                producer_env,
                 SUITE,
                 identifier,
                 name,
@@ -469,14 +476,14 @@ def run_scenario(
                 directory / 'focal-square-seven-terminal-responses', f'{index:02}-monitor', monitor_response
             )
             names.append(name)
-            native = physical_runner(repository, env, 'verify', names, remaining())
+            native = physical_runner(repository, producer_env, 'verify', names, remaining())
             remaining()
             check_physical(native, baseline['sources'], previous, anchor, names)
             previous = copy.deepcopy(native['targets'])
             physical_calls += 1
             full_checks += len(names)
-            item0 = support.find_fixture_item(client, engine, 'outputs/' + name, 'COG')
-            item = client.request('GET', f'/api/v1/meta/items/{item0["id"]}', (200,)).payload
+            item0 = metadata.find('outputs/' + name, binding={'execution': identifier, 'scan': output_scan, 'locator': target})
+            item = metadata.snapshot(item0['id'])
             raster.validate_target_item(item, expectation, native['targets'][name])
             artifact = obj(obj(execution['metadata'].get('result'), 'result').get('final_result'), 'artifact')
             sizes = raster.strict_sizes(artifact, native['targets'][name], item, name)
@@ -503,8 +510,7 @@ def run_scenario(
                 )
                 for name in case_inputs(case['name'])
             ]
-        if base.scan_ids(client) != sorted([scan, *scans]):
-            raise SuiteError('unexpected automatic scan inventory')
+        circle.hillshade.check_scan_inventory(client, initializer, scan, scans)
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
         known_executions = [case['execution_id'] for case in cases]
         entry_count = 0
@@ -538,7 +544,7 @@ def run_scenario(
                     remaining()
                     if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed':
                         raise SuiteError('wrong failure category')
-                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining())
+                    diagnostic = diagnostic_runner(repository, producer_env, identifier, problem, language, remaining())
                     remaining()
                     if diagnostic != {
                         'execution_id': identifier,
@@ -579,11 +585,11 @@ def run_scenario(
                         raise SuiteError('query language rewrote stored failure')
                     failure.update(rejection_stage='focal_node', execution_id=identifier,
                                    diagnostic=diagnostic, private_execution=failed_observation)
-                if base.scan_ids(client) != sorted([scan, *scans]):
+                if base.scan_ids(client) != sorted(scans):
                     raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()):
                     raise SuiteError('failed execution added derived lineage')
-                native = physical_runner(repository, env, 'verify', names, remaining())
+                native = physical_runner(repository, producer_env, 'verify', names, remaining())
                 remaining()
                 check_physical(native, baseline['sources'], previous, anchor, names)
                 physical_calls += 1
@@ -594,6 +600,7 @@ def run_scenario(
         if entry_count != 10:
             raise SuiteError('exact Develop entry rejection count differs')
         inventory_reader(env, tenant, known_executions)
+        circle.hillshade.check_scan_inventory(client, initializer, scan, scans)
         remaining()
         if len(cases) != 18 or len(failures) != 60 or full_checks != 1251 or physical_calls != 79:
             raise SuiteError('all 18 successes, 60 failures, 1251 COG checks and 79 physical calls required')
@@ -604,20 +611,20 @@ def run_scenario(
             for case in cases
         }
         target_metadata_after = {
-            identifier: client.request('GET', f'/api/v1/meta/items/{identifier}', (200,)).payload
+            identifier: metadata.snapshot(identifier)
             for identifier in target_metadata_before
         }
         immutable(directory / 'target-meta-after.json', encoded(target_metadata_after))
         if target_metadata_after != target_metadata_before:
             raise SuiteError('target metadata changed')
         source_metadata_after = {
-            name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload
+            name: metadata.snapshot(item['id'])
             for name, item in items.items()
         }
         immutable(directory / 'source-meta-after.json', encoded(source_metadata_after))
         if source_metadata_after != before:
             raise SuiteError('source metadata changed')
-        lineage.verify_archive(env, SUITE, cases)
+        lineage.verify_archive(producer_env, SUITE, cases)
         remaining()
         report = {
             'schema_version': 'addp.' + SUITE + '/v1',
@@ -629,6 +636,8 @@ def run_scenario(
             'runtime_engine_id': runtime,
             'source_scan_execution_id': scan,
             'source_scan_identity': source_scan_identity,
+            'source_preparation_identity': source_identity,
+            'metadata_evidence': metadata.path.name,
             'cases': cases,
             'failed_parameters': failures,
             'full_target_checks': full_checks,
@@ -643,23 +652,27 @@ def run_scenario(
     except BaseException as error:
         primary = error
     finally:
+        operation_deadline = hard_deadline - 1
+        if metadata is not None:
+            try:
+                metadata.cleanup()
+            except BaseException as error:
+                cleanup_errors.append('metadata Grant cleanup also failed: ' + type(error).__name__)
         try:
-            removed = physical_runner(repository, env, 'cleanup-oracle', [], remaining())
+            removed = physical_runner(repository, producer_env, 'cleanup-oracle', [], remaining())
             remaining()
             if removed.get('oracle_cache_removed') is not True:
                 raise SuiteError('oracle cleanup proof missing')
         except BaseException as error:
-            cleanup_error = error
+            cleanup_errors.append('oracle cleanup also failed: ' + (str(error) if isinstance(error, SuiteError) else type(error).__name__))
     if primary is not None:
         progress('failed')
-        if cleanup_error is not None:
-            raise SuiteError(
-                str(primary) + '; oracle cleanup also failed: ' + type(cleanup_error).__name__
-            ) from primary
+        if cleanup_errors:
+            raise SuiteError(str(primary) + '; ' + '; '.join(cleanup_errors)) from primary
         raise primary
-    if cleanup_error is not None:
+    if cleanup_errors:
         progress('failed')
-        raise cleanup_error
+        raise SuiteError('; '.join(cleanup_errors))
     report['oracle_cache_removed'] = True
     remaining()
     progress('passed')
@@ -678,6 +691,7 @@ def main():
         DiagnosticClient(
             env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30, env['ADDP_ONLINE_ARTIFACT_DIR']
         ),
+        hard_deadline=float(env['ADDP_ONLINE_FOCAL_PREPARATION_DEADLINE']),
     )
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'raster-focal-square-seven-persistence.json').write_bytes(
         encoded(report)

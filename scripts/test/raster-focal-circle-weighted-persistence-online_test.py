@@ -112,14 +112,15 @@ class Client:
     def preview(self,name):return artifact(name)
 
 class SourceInitializer:
-    def __init__(self):
+    def __init__(self, sources=None):
         self.targets = []
+        self.sources = m.fixture.SOURCES if sources is None else sources
 
     def request(self, method, path, expected, body=None, headers=None):
         if path.endswith('/scan/run/manual'):
             assert method == 'POST' and not self.targets
             self.targets = body['targets']
-            assert self.targets == [f'addp://engine/3/path/{name}?type=file' for name in m.fixture.SOURCES]
+            assert self.targets == [f'addp://engine/3/path/{name}?type=file' for name in self.sources]
             data = {'execution_id':'source-scan'}
         elif path.endswith('/meta/executions/source-scan'):
             assert self.targets
@@ -130,6 +131,35 @@ class SourceInitializer:
         else:
             raise AssertionError((method, path))
         return SimpleNamespace(payload=data)
+
+def prepared_metadata_factory(scene, client, events, *, cleanup_failure=False):
+    class PreparedMetadata:
+        path = Path('preparation-metadata.json')
+
+        def __init__(self, env, consumer, engine, identity, scan, remaining, *, grant_remaining):
+            assert env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'preparer-only'
+            assert (engine, identity['principal_id'], scan) == (3, '33', 'source-scan')
+            assert 44 < grant_remaining() - remaining() < 46
+
+        def find(self, name, *, binding=None):
+            if binding is None:
+                assert name in scene.fixture.SOURCES
+            else:
+                assert binding['execution'] == client.scan_parents[binding['scan']]
+                assert binding['locator'] == f'addp://engine/3/path/{name}?type=file'
+            events.append(('find', name))
+            return client.items[name]
+
+        def snapshot(self, identifier):
+            return client.request('GET', f'/api/v1/meta/items/{identifier}', (200,)).payload
+
+        def cleanup(self):
+            events.append(('cleanup', None))
+            if cleanup_failure:
+                raise scene.SuiteError('revocation failed')
+
+    return PreparedMetadata
+
 
 class ZonalPercentileWorkflowTest(unittest.TestCase):
     def setUp(self):
