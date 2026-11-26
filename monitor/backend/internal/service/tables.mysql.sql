@@ -507,3 +507,6 @@ CREATE TABLE IF NOT EXISTS platform_alert_identity_locks (
 CREATE TABLE IF NOT EXISTS configuration_locks (
     configuration_key VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY
 ) ENGINE=InnoDB;
+
+INSERT INTO configuration_locks (configuration_key) VALUES ('monitor.monitoring-targets')
+ON DUPLICATE KEY UPDATE configuration_key=configuration_key;

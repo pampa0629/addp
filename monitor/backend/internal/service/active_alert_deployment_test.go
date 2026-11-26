@@ -25,6 +25,7 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("monitoring target writes and budget", func(t *testing.T) { checkMonitoringTargetWrites(t, db) })
 	t.Run("platform notification and search", func(t *testing.T) { checkPlatformAlertNotificationAndSearch(t, db) })
 	t.Run("filesystem rule lookup uses exact mount dimensions", func(t *testing.T) {
 		node := uuid.NewString()

@@ -67,12 +67,8 @@ func (r *MonitoringTargetRepository) Mutate(ctx context.Context, target metricsd
 		return target, metricsdiscovery.ErrUnconfigured
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var acquired bool
-		if err := tx.Raw("SELECT pg_try_advisory_xact_lock(?, ?)", 1094992976, 6001).Scan(&acquired).Error; err != nil {
+		if err := tryLockMonitoringTargets(tx); err != nil {
 			return err
-		}
-		if !acquired {
-			return ErrTargetBusy
 		}
 		current, err := NewMonitoringTargetRepository(tx, r.targetLimit).Snapshot(ctx)
 		if err != nil {

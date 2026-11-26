@@ -142,23 +142,34 @@ if [[ $owner == monitor && $provider == mysql ]]; then
   gate_mysql() {
     docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -N -B monitor'
   }
+  [[ $(gate_mysql <<<"SELECT COUNT(*) FROM configuration_locks WHERE configuration_key='monitor.monitoring-targets'") == 1 ]]
   gate_mysql <<'SQL'
 INSERT INTO platform_alert_incidents (version,category,subject_kind,subject_id,`signal`,severity,status,opened_at,last_observed_at)
 VALUES (1,'log_pipeline','observer','upgrade-fixture','delivery_probe','warning','resolved',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
 DROP TABLE platform_alert_identity_locks, configuration_locks;
-UPDATE startup_schema_revision SET version=1 WHERE owner='monitor' AND version=3;
+UPDATE startup_schema_revision SET version=1 WHERE owner='monitor' AND version=4;
 SQL
   [[ $(gate_mysql <<<"SELECT version FROM startup_schema_revision WHERE owner='monitor'") == 1 ]]
-  runtime outdated "$owner" 1 3
+  runtime outdated "$owner" 1 4
   "${prepare[@]}"
   # Revision 2 already has alert identity locks. Its independent configuration lock table is new in 3.
   gate_mysql <<'SQL'
 DROP TABLE configuration_locks;
-UPDATE startup_schema_revision SET version=2 WHERE owner='monitor' AND version=3;
+UPDATE startup_schema_revision SET version=2 WHERE owner='monitor' AND version=4;
 SQL
-  runtime outdated "$owner" 2 3
+  runtime outdated "$owner" 2 4
   "${prepare[@]}"
-  [[ $(gate_mysql <<<"SELECT version FROM startup_schema_revision WHERE owner='monitor'") == 3 ]]
+  # Revision 3 has configuration locks and no preinstalled monitoring-target key.
+  gate_mysql <<'SQL'
+DELETE FROM configuration_locks WHERE configuration_key='monitor.monitoring-targets';
+INSERT INTO configuration_locks (configuration_key) VALUES ('monitor.resource-query-policy');
+UPDATE startup_schema_revision SET version=3 WHERE owner='monitor' AND version=4;
+SQL
+  runtime outdated "$owner" 3 4
+  "${prepare[@]}"
+  [[ $(gate_mysql <<<"SELECT version FROM startup_schema_revision WHERE owner='monitor'") == 4 ]]
+  [[ $(gate_mysql <<<"SELECT COUNT(*) FROM configuration_locks WHERE configuration_key IN ('monitor.monitoring-targets','monitor.resource-query-policy')") == 2 ]]
+  echo 'MySQL Monitor upgrade 3→4 installed the target lock and preserved existing policy configuration locks'
   [[ $(gate_mysql <<<"SELECT COUNT(*) FROM platform_alert_incidents WHERE subject_id='upgrade-fixture' AND status='resolved'") == 1 ]]
 fi
 if [[ "$owner" == standard && "$provider" == mysql ]]; then

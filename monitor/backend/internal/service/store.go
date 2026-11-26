@@ -11,7 +11,7 @@ import (
 
 const (
 	monitorPostgresVersion = 1
-	monitorMySQLVersion    = 3
+	monitorMySQLVersion    = 4
 )
 
 func RequireMonitorStore(db *gorm.DB) error {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
@@ -37,6 +38,11 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	checkMonitoringTargetWrites(t, db)
+}
+
+func checkMonitoringTargetWrites(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	r := repository.NewMonitoringTargetRepository(db, metricsdiscovery.DefaultExternalTargetLimit)
 	ctx := context.Background()
 	existing, err := r.Snapshot(ctx)
@@ -67,6 +73,19 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 		if _, err := r.Mutate(ctx, newTarget(i), true, false, nil); err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	// The callback runs in the winning transaction while a second connection attempts its own write.
+	rollback := errors.New("rollback fixture target")
+	if _, err := r.Mutate(ctx, newTarget(seedCount), true, false, func(ctx context.Context, _ []metricsdiscovery.NodeTarget) error {
+		competingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if _, err := r.Mutate(competingCtx, newTarget(seedCount+1), true, false, nil); !errors.Is(err, repository.ErrTargetBusy) {
+			return fmt.Errorf("competing target write must report busy while the lock is held: %v", err)
+		}
+		return rollback
+	}); !errors.Is(err, rollback) {
+		t.Fatalf("roll back the held target write: %v", err)
 	}
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
