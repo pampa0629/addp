@@ -191,14 +191,15 @@ def item_snapshot(client, item):
 def current(execution, identity, identifier, dag, runtime, language, status):
     readonly.actor(execution, identity, 'develop')
     readonly.execution_snapshot(execution, dag, runtime)
-    if (execution.get('execution_id') != identifier or type(execution.get('tenant_id')) is not int
-            or execution['tenant_id'] != int(identity['tenant_id']) or execution.get('task_type') != 'workflow'
+    if (execution.get('execution_id') != identifier or 'tenant_id' in execution
+            or execution.get('task_type') != 'workflow'
             or execution.get('status') != status or execution['execution_config'].get('display_language') != language):
         raise SuiteError('current execution identity, status or submitted language differs')
 
 
 def run_scenario(repository, env, client, physical_runner=physical, diagnostic_runner=invalid_diagnostic,
-                 lineage_reader=lineage.read_current):
+                 lineage_reader=lineage.read_current, *, failed_reader=lineage.read_failed_execution,
+                 inventory_reader=lineage.check_execution_inventory):
     started = time.monotonic()
     budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if budget != 600:
@@ -228,8 +229,8 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         current(execution, identity, identifier, dag, runtime, language, status)
         monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
         readonly.actor(monitor, identity, 'develop')
-        if (monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int
-                or monitor['tenant_id'] != tenant or monitor.get('status') != status):
+        if (monitor.get('execution_id') != identifier or 'tenant_id' in monitor
+                or monitor.get('status') != status):
             raise SuiteError('Monitor execution identity or terminal state differs')
         case = dag['tasks'][-1]['params']['target_name']
         immutable(directory/f'develop-{case}.json', encoded(execution))
@@ -355,6 +356,8 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
                     readonly.no_publication(terminal)
                     if obj(terminal.get('error_details'), 'terminal error').get('category') != 'execution_failed':
                         raise SuiteError('wrong failed execution category')
+                failed_identity = failed_reader(env, identifier, tenant, principal, dag)
+                remaining()
                 diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining())
                 if diagnostic != diagnostic_fact(identifier, problem, language):
                     raise SuiteError('wrong exact failure node, language or cause')
@@ -370,10 +373,13 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
                 previous = check_and_archive(native, names, source_bytes, frozen, archive, previous)
                 physical_calls += 1
                 full_checks += len(names)
-                failures.append({**diagnostic, 'no_publication_or_scan_or_lineage': True})
+                failures.append({**diagnostic, 'internal_execution_identity': failed_identity,
+                                 'no_publication_or_scan_or_lineage': True})
                 stages[-1]['status'] = 'passed'
                 progress('running')
 
+        inventory_reader(env, tenant, sorted(execution_ids))
+        remaining()
         if (len(cases), len(failures), full_checks, physical_calls) != (16, 36, 712, 53):
             raise SuiteError('requires 16 successful chains, 36 failures and 712 actual CSV checks')
         final_targets = {key: item_snapshot(client, key) for key in target_metadata}

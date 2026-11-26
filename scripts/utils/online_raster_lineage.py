@@ -41,6 +41,9 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
 EXECUTION_INVENTORY_LIMITS = {
+    'raster-line-of-sight-persistence': 52,
+    'raster-proximity-rectangular-persistence': 58,
+    'raster-proximity-orthogonal-persistence': 68,
     'raster-interpolate-idw-max-points-persistence': 62,
     'raster-interpolate-idw-min-points-persistence': 52,
     'raster-interpolate-idw-persistence': 48,

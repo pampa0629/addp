@@ -61,7 +61,7 @@ class Client:
         success = name in fixture.CASES
         identifier = str(uuid.UUID(int=len(self.executions)+1))
         language = headers['Accept-Language']
-        execution = {'execution_id': identifier, 'tenant_id': 2, 'module': 'develop', 'task_type': 'workflow',
+        execution = {'execution_id': identifier, 'module': 'develop', 'task_type': 'workflow',
                      'status': 'success' if success else 'failed', 'triggered_by': 33,
                      'execution_config': {'engine_id': 7, 'display_language': language,
                                           'content': {'workflow_definition': dag}},
@@ -165,7 +165,19 @@ class LineOfSightWorkflowTest(unittest.TestCase):
                 expected['operations'] = []
             return expected
 
-        return scene.run_scenario(root, env, client, worker, diagnostic_runner, reader)
+        def failed_reader(env, identifier, tenant, principal, dag):
+            self.assertEqual((tenant, principal), (2, 33))
+            stored = client.executions[identifier]
+            self.assertEqual((stored['status'], stored['execution_config']['content']['workflow_definition']),
+                             ('failed', dag))
+            return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal}
+
+        def inventory_reader(env, tenant, expected):
+            self.assertEqual(tenant, 2)
+            self.assertEqual(expected, sorted(client.executions))
+
+        return scene.run_scenario(root, env, client, worker, diagnostic_runner, reader,
+                                  failed_reader=failed_reader, inventory_reader=inventory_reader)
 
     def test_complete_fixed_matrix_rereads_and_original_manifest(self):
         calls = []
@@ -181,6 +193,9 @@ class LineOfSightWorkflowTest(unittest.TestCase):
         self.assertEqual({(case['problem'], case['language']) for case in result['failed_parameters']},
                          {(problem, language) for problem in scene.FAILURES for language in ('zh-cn', 'en')})
         self.assertEqual(len({case['execution_id'] for case in result['cases']+result['failed_parameters']}), 52)
+        for failure in result['failed_parameters']:
+            self.assertEqual(failure['internal_execution_identity']['execution_id'], failure['execution_id'])
+            self.assertEqual(failure['internal_execution_identity']['tenant_id'], 2)
         self.assertEqual(len(result['archived_csvs']), 16)
         manifest = json.loads((self.evidence/'line-of-sight-csv-manifest.json').read_bytes())
         self.assertEqual(manifest, result['archived_csvs'])
