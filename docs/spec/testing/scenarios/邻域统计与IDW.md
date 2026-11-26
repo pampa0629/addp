@@ -173,6 +173,8 @@
 
 **Hosted 待验。** 本地用两套原夹具和 Runtime 参数描述调用 Develop 校验，确认每套有 16 类参数类型错误在提交入口截获。北向矩形 100 次双语提交按入口 32 次、focal 节点 68 次核验，正交旋转 106 次按入口 32 次、focal 节点 74 次核验。入口核准确 HTTP 400、字段路径、提交语言及无新增执行，节点核当前执行的原始诊断。方窗及两套圆窗夹具均已按公开回执核对执行身份，租户在隔离只读证据中核验，入口拒绝后核隔离执行清单。两套均保留原 COG 矩阵、成果全检、零副作用和 600 秒预算。固定提交 `6da5e10aa` 的 Native 覆盖两套完整双语节点矩阵。 [Linux 作业](https://github.com/pampa0629/addp/actions/runs/45768411547/job/139734881639)
 
+夹具修正提交 `8276ea44f` 在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 执行标准 `make test-geopython-workflow`，22,111 项通过、141 条警告、1561.88 秒，0 失败、跳过或筛除。独立 NetCDF 专项 109 项通过。`make test-execution-online-ci-runner` 通过，覆盖共享登记、分发及 38 项加权圆窗回归。同版本 Platform consistency 因 PG 固定源码检查的 3 项断言失败。三套邻域的独立 Hosted 保持待验。 [Linux 全量](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194912) · [Runner](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194781) · [Platform](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194608)
+
 ## 正交旋转网格米制圆形邻域统计独立验收
 
 `raster-focal-circle-orthogonal-persistence`；`make test-raster-focal-circle-orthogonal-online-runner`；沿[邻域共同要求](#邻域与-idw-专项共同要求)。19COG含九非加权方法、90°/180°/270°及斜向正交、非方形、跨轴／薄行列／三单位、半径等号邻接浮点；同轴长北向／P50-median／方窗／中心／重分类／全无效实际对照。
