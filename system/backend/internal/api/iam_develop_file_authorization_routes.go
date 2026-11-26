@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -39,6 +40,7 @@ type IAMIssueDevelopFileRequest struct {
 }
 
 type IAMApproveDevelopFileCreateRequest struct {
+	TargetIndex *int      `json:"target_index"`
 	ScopeDigest string    `json:"scope_digest"`
 	ExpiresAt   time.Time `json:"expires_at"`
 }
@@ -94,10 +96,13 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.develop_file_create_approval.create"]
+// @Param target_index query int true "冻结清单的目标序号，从 0 开始 | Zero-based frozen target ordinal"
 // @Router /execution-authorizations/develop-file-workflows/{execution_id}/create-approval-context [get]
 func (h *IAMDevelopFileAuthorizationHandler) ReadCreateApprovalContext(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
+	value := c.Query("target_index")
+	index, parseErr := strconv.Atoi(value)
+	if parseErr != nil || index < 0 || c.Request.URL.RawQuery != "target_index="+strconv.Itoa(index) || c.Request.ContentLength != 0 {
 		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
 		return
 	}
@@ -106,7 +111,7 @@ func (h *IAMDevelopFileAuthorizationHandler) ReadCreateApprovalContext(c *gin.Co
 		respondExecutionAuthorizationError(c, err)
 		return
 	}
-	result, err := h.service.ReadCreateApprovalContext(c.Request.Context(), iam.ReadDevelopFileCreateApprovalContextInput{UserAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), ExecutionID: id})
+	result, err := h.service.ReadCreateApprovalContext(c.Request.Context(), iam.ReadDevelopFileCreateApprovalContextInput{UserAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), ExecutionID: id, TargetIndex: index})
 	if err != nil {
 		respondExecutionAuthorizationError(c, err)
 		return
@@ -163,7 +168,7 @@ func (h *IAMDevelopFileAuthorizationHandler) PublicationHistory(c *gin.Context) 
 // @Router /execution-authorizations/{id}/develop-geopackage-publications [post]
 func (h *IAMDevelopFileAuthorizationHandler) Publication(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	var request client.DevelopFilePublicationRequest
+	request := client.DevelopFilePublicationRequest{TargetIndex: -1}
 	if bindDevelopFileRequest(c, &request) != nil || request.Validate() != nil {
 		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
 		return
@@ -204,13 +209,13 @@ func (h *IAMDevelopFileAuthorizationHandler) ApproveCreate(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	id, err := parseIAMDecimalID(c.Param("id"))
 	var request IAMApproveDevelopFileCreateRequest
-	if err != nil || bindDevelopFileRequest(c, &request) != nil {
+	if err != nil || bindDevelopFileRequest(c, &request) != nil || request.TargetIndex == nil || *request.TargetIndex < 0 {
 		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
 		return
 	}
 	result, err := h.service.ApproveCreate(c.Request.Context(), iam.ApproveDevelopFileCreateInput{
 		UserAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), AuthorizationID: id,
-		ScopeDigest: request.ScopeDigest, ExpiresAt: request.ExpiresAt, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
+		TargetIndex: *request.TargetIndex, ScopeDigest: request.ScopeDigest, ExpiresAt: request.ExpiresAt, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
 	})
 	if err != nil {
 		respondExecutionAuthorizationError(c, err)

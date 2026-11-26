@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -84,7 +85,7 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 		return nil, ErrExecutionAuthorizationConflict
 	}
 	requiredPermissions := []string{developExecutionPermission, executionEffectPermissions["read"]}
-	if facts.Intent.Target != nil {
+	if len(facts.Intent.Targets) != 0 {
 		requiredPermissions = append(requiredPermissions, executionEffectPermissions["write"])
 		if sourceUser.Principal.Type != "user" || !authorization.HasContextPermissions(*sourceUser, executionEffectPermissions["write"]) {
 			return nil, ErrExecutionAuthorizationPermissionDenied
@@ -212,15 +213,13 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			return nil, nil, ErrExecutionAuthorizationPermissionDenied
 		}
 	}
-	var approval *developFileCreateApproval
-	if pre.DevelopFileScope.Target != nil {
-		approval, err = s.repository.findDevelopFileCreateApproval(ctx, pre.ID)
-		if err != nil {
-			return nil, nil, err
-		}
-		if running && approval == nil {
-			return nil, nil, ErrExecutionAuthorizationPermissionDenied
-		}
+	approvals, err := s.repository.developFileApprovals(ctx, pre)
+	if err != nil {
+		return nil, nil, err
+	}
+	complete := len(approvals) == len(pre.DevelopFileScope.Targets)
+	if running && !complete {
+		return nil, nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	facts, err := s.readOwner(ctx, pre, input.ExecutionID)
 	if err != nil {
@@ -229,13 +228,15 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 	if facts.AuthorizationID != strconv.FormatInt(pre.ID, 10) || facts.ScopeDigest != input.ScopeDigest || !reflect.DeepEqual(facts.BoundScope, pre.DevelopFileScope) || facts.AdmissionState == "rejected" {
 		return nil, nil, ErrExecutionAuthorizationUnavailable
 	}
-	if facts.Publication != nil && (approval == nil || facts.Publication.ApprovalID != approval.ID.String()) {
-		return nil, nil, ErrExecutionAuthorizationPermissionDenied
+	for i, publication := range facts.Publications {
+		if i >= len(approvals) || approvals[i].TargetIndex != i || publication.ApprovalID != approvals[i].ID.String() {
+			return nil, nil, ErrExecutionAuthorizationPermissionDenied
+		}
 	}
 	if running && facts.AdmissionState != "ready" {
 		return nil, nil, ErrExecutionAuthorizationUnavailable
 	}
-	if input.publication != nil && (approval == nil || !input.publication.matches(facts)) {
+	if input.publication != nil && !input.publication.matches(facts) {
 		return nil, nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	prepared, err := s.prepare(ctx, pre, facts.Intent)
@@ -255,24 +256,30 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 		if err := matchDevelopFileAuthorization(row, input); err != nil {
 			return err
 		}
-		if approval != nil {
+		principals := []int64{row.ActorPrincipalID}
+		activeApprovals := approvals
+		if input.publication != nil {
+			index := input.publication.request.TargetIndex
+			activeApprovals = approvals[index : index+1]
+		}
+		for _, approval := range activeApprovals {
 			if approval.ScopeDigest != input.ScopeDigest || approval.ApproverPrincipalID == row.ActorPrincipalID {
 				return ErrExecutionAuthorizationPermissionDenied
 			}
-			// Acquire the entire Principal set before any Membership or EA
-			// locks. A concurrent IAM update must see the same lock order.
-			for _, id := range []int64{min(row.ActorPrincipalID, approval.ApproverPrincipalID), max(row.ActorPrincipalID, approval.ApproverPrincipalID)} {
-				if _, err := tx.LockPrincipal(ctx, id); err != nil {
-					return err
-				}
+			principals = append(principals, approval.ApproverPrincipalID)
+		}
+		slices.Sort(principals)
+		for _, id := range slices.Compact(principals) {
+			if _, err := tx.LockPrincipal(ctx, id); err != nil {
+				return err
 			}
 		}
 		principal, membership, _, err := lockAndValidateExecutionSource(ctx, tx, row)
 		if err != nil {
 			return err
 		}
-		var approvingMembership *TenantMembership
-		if approval != nil {
+		memberships := make([]*TenantMembership, len(activeApprovals))
+		for i, approval := range activeApprovals {
 			approver, approverMember, _, err := tx.LockUserAuthorizationSource(ctx, approval.ApproverPrincipalID, approval.ApproverMembershipID, row.TenantID)
 			if err != nil {
 				return err
@@ -281,7 +288,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 				approver.AuthorizationVersion == approval.ApproverAuthorizationVersion &&
 				approverMember.TenantID == row.TenantID && approverMember.PrincipalID == approver.ID &&
 				approverMember.Status == TenantMembershipStatusActive {
-				approvingMembership = approverMember
+				memberships[i] = approverMember
 			}
 		}
 		row, err = tx.LockExecutionAuthorization(ctx, row.ID)
@@ -291,21 +298,24 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 		if err := matchDevelopFileAuthorization(row, input); err != nil {
 			return err
 		}
-		if approval != nil {
-			currentApproval, err := tx.findDevelopFileCreateApproval(ctx, row.ID)
-			if err != nil {
-				return err
-			}
-			if !reflect.DeepEqual(currentApproval, approval) {
-				return ErrExecutionAuthorizationUnavailable
-			}
+		currentApprovals, err := tx.developFileApprovals(ctx, row)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(currentApprovals, approvals) {
+			return ErrExecutionAuthorizationUnavailable
 		}
 		var observation *DevelopFileReadObservation
 		var expires, observedAt, businessDeadline time.Time
-		state, approvalID := "ready", ""
-		var checkApproval func(time.Time) (time.Time, error)
-		if row.DevelopFileScope.Target != nil && approval == nil {
+		var approvalIDs []string
+		state := "ready"
+		if !complete {
 			state = "awaiting_approval"
+		}
+		checks := make([]func(time.Time) (time.Time, error), len(activeApprovals))
+		preparationErrors := make([]error, len(activeApprovals))
+		for i := range activeApprovals {
+			checks[i], preparationErrors[i] = s.prepareCurrentCreateApproval(ctx, tx, row, &activeApprovals[i], memberships[i])
 		}
 		check := func() error {
 			currentService, err := tx.developFileService(ctx, input)
@@ -326,10 +336,6 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			if observation == nil || observation.ObservedAt.IsZero() {
 				return ErrExecutionAuthorizationUnavailable
 			}
-			var approvalErr error
-			if approval != nil && checkApproval == nil {
-				checkApproval, approvalErr = s.prepareCurrentCreateApproval(ctx, tx, row, approval, approvingMembership)
-			}
 			observedAt, err = tx.internalTaskDatabaseTime(ctx)
 			if err != nil {
 				return err
@@ -338,28 +344,32 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			if err != nil {
 				return err
 			}
-			if !developFilePermissions(permissions, row.DevelopFileScope.Target != nil) {
+			if !developFilePermissions(permissions, len(row.DevelopFileScope.Targets) != 0) {
 				return ErrExecutionAuthorizationPermissionDenied
 			}
 			expires = row.ExpiresAt
 			if !running && !window.LeaseExpiresAt.IsZero() && window.LeaseExpiresAt.Before(expires) {
 				expires = window.LeaseExpiresAt
 			}
-			if approval != nil {
+			approvalIDs = nil
+			for i, approval := range activeApprovals {
+				approvalErr := preparationErrors[i]
 				var approvalExpiry time.Time
 				if approvalErr == nil {
-					approvalExpiry, approvalErr = checkApproval(observedAt)
+					approvalExpiry, approvalErr = checks[i](observedAt)
 				}
-				switch {
-				case approvalErr == nil:
-					state, approvalID = "ready", approval.ID.String()
-					if approvalExpiry.Before(expires) {
-						expires = approvalExpiry
+				if approvalErr != nil {
+					if !running && (errors.Is(approvalErr, commonapi.ErrForbidden) || errors.Is(approvalErr, ErrExecutionAuthorizationPermissionDenied)) {
+						state, approvalIDs = "rejected", nil
+						break
 					}
-				case !running && (errors.Is(approvalErr, commonapi.ErrForbidden) || errors.Is(approvalErr, ErrExecutionAuthorizationPermissionDenied)):
-					state, approvalID = "rejected", ""
-				default:
 					return approvalErr
+				}
+				if state == "ready" {
+					approvalIDs = append(approvalIDs, approval.ID.String())
+				}
+				if approvalExpiry.Before(expires) {
+					expires = approvalExpiry
 				}
 			}
 			for _, bound := range []*time.Time{membership.ExpiresAt, observation.ExpiresAt} {
@@ -368,7 +378,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 				}
 			}
 			requiredPermissions := []string{developExecutionPermission, executionEffectPermissions["read"]}
-			if row.DevelopFileScope.Target != nil {
+			if len(row.DevelopFileScope.Targets) != 0 {
 				requiredPermissions = append(requiredPermissions, executionEffectPermissions["write"])
 			}
 			for _, key := range requiredPermissions {
@@ -443,10 +453,10 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			return err
 		}
 		if input.publication != nil {
-			return input.publication.consume(ctx, tx, row, prepared, facts.Publication.Request, observedAt, expires, businessDeadline)
+			return input.publication.consume(ctx, tx, row, prepared, facts.Publications[input.publication.request.TargetIndex].Request, observedAt, expires, businessDeadline)
 		}
 		if input.Source == nil {
-			admission = &client.DevelopFileAdmissionObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), ExpectedAttempt: input.ExpectedAttempt, ScopeDigest: input.ScopeDigest, State: state, ApprovalID: approvalID, ObservedAt: observedAt, ExpiresAt: expires}
+			admission = &client.DevelopFileAdmissionObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), ExpectedAttempt: input.ExpectedAttempt, ScopeDigest: input.ScopeDigest, State: state, ApprovalIDs: approvalIDs, ObservedAt: observedAt, ExpiresAt: expires}
 		} else {
 			access = &client.DevelopFileSourceAccessObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), Attempt: input.ExpectedAttempt, ScopeDigest: input.ScopeDigest, Source: *input.Source, ObservedAt: observedAt, ExpiresAt: expires, BusinessDeadline: businessDeadline, Engine: observation.Engine}
 			if access.Engine == nil {
@@ -625,7 +635,7 @@ func (r *Repository) developFileExecution(ctx context.Context, auth *ExecutionAu
 		}
 	} else {
 		frozen := facts.Intent.Parent
-		if facts.Intent.Target != nil || row.Source != "orchestrator" || row.ParentExecutionID == nil || *row.ParentExecutionID != frozen.ExecutionID {
+		if len(facts.Intent.Targets) != 0 || row.Source != "orchestrator" || row.ParentExecutionID == nil || *row.ParentExecutionID != frozen.ExecutionID {
 			return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 		}
 		var parent execution.TaskExecution
@@ -639,7 +649,7 @@ func (r *Repository) developFileExecution(ctx context.Context, auth *ExecutionAu
 		}
 		parentLeaseExpiresAt = parent.LeaseExpiresAt
 	}
-	intent, err := execution.NewDevelopFileIntent(row.ExecutionConfig, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target, facts.Intent.Parent)
+	intent, err := execution.NewDevelopFileIntent(row.ExecutionConfig, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Targets, facts.Intent.Parent)
 	if err != nil || !reflect.DeepEqual(intent, &facts.Intent) || facts.Intent.ExpectedAttempt != 1 {
 		return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 	}

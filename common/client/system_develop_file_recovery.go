@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -24,8 +23,9 @@ type DevelopFilePublicationRecoveryAccess struct {
 // Recovery returns an observation for Resolve/Cleanup only. It is never a
 // DevelopFilePublicationObservation and cannot claim another dispatch.
 func (c *SystemServiceClient) RecoverDevelopFilePublication(ctx context.Context, issued IssuedDevelopFileAuthorization, approval string, original plugin.NewFilePublicationRequest) (*DevelopFilePublicationRecoveryAccess, error) {
-	if issued.validateBinding() != nil || issued.Scope.Target == nil || !canonicalExecutionUUID(approval) ||
-		original.Validate() != nil || !reflect.DeepEqual(original.Target, issued.Scope.Target.Target) {
+	index := issued.Scope.TargetIndex(original.Target)
+	if issued.validateBinding() != nil || index < 0 || !canonicalExecutionUUID(approval) ||
+		original.Validate() != nil {
 		return nil, errors.New("invalid Develop publication recovery binding")
 	}
 	credential, err := c.developFileTenantCredential(ctx, issued.Authorization.TenantID)
@@ -40,7 +40,7 @@ func (c *SystemServiceClient) RecoverDevelopFilePublication(ctx context.Context,
 	h, e := result.History, result.Engine
 	preparation, preparationErr := hex.DecodeString(h.PreparationDigest)
 	digest, _ := DevelopFilePublicationRequestDigest(original)
-	version, _ := strconv.ParseInt(issued.Scope.Target.EngineVersion, 10, 64)
+	version, _ := strconv.ParseInt(issued.Scope.Targets[index].EngineVersion, 10, 64)
 	if h.AuthorizationID != issued.Authorization.ID || h.ExecutionID != issued.Authorization.ExecutionID || h.Attempt != issued.Scope.ExpectedAttempt ||
 		h.ScopeDigest != issued.ScopeDigest || h.ApprovalID != approval || h.OperationID != original.OperationID || h.RequestDigest != digest ||
 		h.PrepareAdmittedAt.IsZero() || h.PrepareAdmittedAt.After(result.ObservedAt) ||

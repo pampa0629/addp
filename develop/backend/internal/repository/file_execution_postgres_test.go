@@ -48,6 +48,8 @@ func TestFileExecutionAgainstPostgres(t *testing.T) {
 	if err := tx.AutoMigrate(&models.FileExecution{}, &models.DevTask{}); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("original file cutover", func(t *testing.T) { runOriginalFileCutover(t, tx) })
+	t.Run("per file grant delivery", func(t *testing.T) { runFileProductionDelivery(t, tx) })
 	repo := NewFileExecutionRepository(tx)
 	item, sources := newFilePendingValues()
 	runFileQueueCase(t, tx, repo, item, sources, "101")

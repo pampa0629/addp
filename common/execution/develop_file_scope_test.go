@@ -13,12 +13,12 @@ import (
 
 func developIntentFixture(t *testing.T, write bool) *DevelopFileIntent {
 	t.Helper()
-	var target *DevelopFileTargetIntent
+	var targets []DevelopFileTargetIntent
 	if write {
-		target = &DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(12, "outputs/result.gpkg"), Mode: "fail"}
+		targets = []DevelopFileTargetIntent{{NodeID: "save", Target: plugin.FileItemPath(12, "outputs/result.gpkg"), Mode: "fail"}}
 	}
 	intent, err := NewDevelopFileIntent(json.RawMessage(`{"large":9007199254740993,"options":{"mode":"test"}}`), 1, 45,
-		[]DevelopFileSourceIntent{{NodeID: "load_b", Target: plugin.FileItemPath(11, "sources/B.gpkg")}, {NodeID: "load_a", Target: plugin.FileItemPath(11, "sources/ A.gpkg ")}}, target, nil)
+		[]DevelopFileSourceIntent{{NodeID: "load_b", Target: plugin.FileItemPath(11, "sources/B.gpkg")}, {NodeID: "load_a", Target: plugin.FileItemPath(11, "sources/ A.gpkg ")}}, targets, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,8 +36,8 @@ func TestDevelopFileIntentFreezesCompleteConfigurationAndNodeBindings(t *testing
 	intent := developIntentFixture(t, true)
 	config := json.RawMessage(`{ "options":{"mode":"test"}, "large":9007199254740993 }`)
 	sources := intent.Clone().Sources
-	target := *intent.Clone().Target
-	reordered, err := NewDevelopFileIntent(config, 1, 45, sources, &target, nil)
+	targets := intent.Clone().Targets
+	reordered, err := NewDevelopFileIntent(config, 1, 45, sources, targets, nil)
 	if err != nil || intent.ConfigDigest != reordered.ConfigDigest {
 		t.Fatal("raw complete configuration was not canonicalized", err)
 	}
@@ -46,11 +46,11 @@ func TestDevelopFileIntentFreezesCompleteConfigurationAndNodeBindings(t *testing
 		t.Fatal("equivalent intent changed digest")
 	}
 	sources[0].Target.Segments[2].Name = "caller-mutated.gpkg"
-	target.Target.Segments[2].Name = "caller-output.gpkg"
+	targets[0].Target.Segments[2].Name = "caller-output.gpkg"
 	if got, _ := reordered.Digest(); got != want {
 		t.Fatal("intent aliases caller-owned source or target segments")
 	}
-	changed, err := NewDevelopFileIntent(json.RawMessage(`{"large":9007199254740992,"options":{"mode":"test"}}`), 1, 45, intent.Clone().Sources, intent.Clone().Target, nil)
+	changed, err := NewDevelopFileIntent(json.RawMessage(`{"large":9007199254740992,"options":{"mode":"test"}}`), 1, 45, intent.Clone().Sources, intent.Clone().Targets, nil)
 	if err != nil || changed.ConfigDigest == intent.ConfigDigest {
 		t.Fatal("large JSON number lost precision", err)
 	}
@@ -58,7 +58,7 @@ func TestDevelopFileIntentFreezesCompleteConfigurationAndNodeBindings(t *testing
 		func(s *DevelopFileIntent) { s.Sources[0].NodeID = "load_A" },
 		func(s *DevelopFileIntent) { s.TimeoutSeconds++ },
 		func(s *DevelopFileIntent) { s.ExpectedAttempt++ },
-		func(s *DevelopFileIntent) { s.Target.Target.Segments[2].Name = "neighbor.gpkg" },
+		func(s *DevelopFileIntent) { s.Targets[0].Target.Segments[2].Name = "neighbor.gpkg" },
 	} {
 		changed := intent.Clone()
 		mutate(changed)
@@ -71,7 +71,7 @@ func TestDevelopFileIntentFreezesCompleteConfigurationAndNodeBindings(t *testing
 func TestDevelopFileIntentRejectsAmbiguousAndNoncanonicalDeclarations(t *testing.T) {
 	intent := developIntentFixture(t, true)
 	for _, raw := range []string{"", "null", "[]", `{"x":1,"x":2}`, `{"a":{"x":1,"x":2}}`, strings.Repeat(" ", MaxExecutionConfigBytes) + "{}"} {
-		if got, err := NewDevelopFileIntent(json.RawMessage(raw), 1, 45, intent.Sources, intent.Target, nil); got != nil || err == nil {
+		if got, err := NewDevelopFileIntent(json.RawMessage(raw), 1, 45, intent.Sources, intent.Targets, nil); got != nil || err == nil {
 			t.Fatal("accepted ambiguous raw config")
 		}
 	}
@@ -87,8 +87,8 @@ func TestDevelopFileIntentRejectsAmbiguousAndNoncanonicalDeclarations(t *testing
 		func(s *DevelopFileIntent) { s.Sources[0].Target.EngineID = 0 },
 		func(s *DevelopFileIntent) { s.Sources[0].Target.Segments[1].Name = ".." },
 		func(s *DevelopFileIntent) { s.Sources[0].Target = plugin.FileDirectoryPath(11, "sources") },
-		func(s *DevelopFileIntent) { s.Target.Mode = "replace" },
-		func(s *DevelopFileIntent) { s.Target.NodeID = s.Sources[0].NodeID },
+		func(s *DevelopFileIntent) { s.Targets[0].Mode = "replace" },
+		func(s *DevelopFileIntent) { s.Targets[0].NodeID = s.Sources[0].NodeID },
 	} {
 		bad := intent.Clone()
 		mutate(bad)
@@ -108,7 +108,7 @@ func TestDevelopBoundScopeKeepsNodeMappingAndExactUniqueSourceClosure(t *testing
 	intent.Sources = append(intent.Sources, DevelopFileSourceIntent{NodeID: "load_c", Target: plugin.FileItemPath(11, "sources/B.gpkg")})
 	refs := developReferences()
 	refs = append(refs, refs[0])
-	bound, err := NewDevelopBoundFileScope(*intent, refs, "3")
+	bound, err := NewDevelopBoundFileScope(*intent, refs, []string{"3"})
 	if err != nil || len(bound.Sources) != 2 || len(intent.Sources) != 3 || bound.ValidateAgainstIntent(*intent) != nil {
 		t.Fatal("lost logical binding or physical closure", bound, err)
 	}
@@ -117,7 +117,7 @@ func TestDevelopBoundScopeKeepsNodeMappingAndExactUniqueSourceClosure(t *testing
 	refs[0].BoundaryHash = strings.Repeat("e", 64)
 	copy := bound.Clone()
 	copy.Sources[0].Target.Segments[2].Name = "changed.gpkg"
-	copy.Target.Target.Segments[2].Name = "changed-output.gpkg"
+	copy.Targets[0].Target.Segments[2].Name = "changed-output.gpkg"
 	if got, _ := bound.Digest(); got != want {
 		t.Fatal("sealed scope aliases caller or clone")
 	}
@@ -131,8 +131,8 @@ func TestDevelopBoundScopeKeepsNodeMappingAndExactUniqueSourceClosure(t *testing
 		func(s *DevelopBoundFileScope) { s.IntentDigest = strings.Repeat("e", 64) },
 		func(s *DevelopBoundFileScope) { s.ExpectedAttempt++ },
 		func(s *DevelopBoundFileScope) { s.TimeoutSeconds++ },
-		func(s *DevelopBoundFileScope) { s.Target.Target.Segments[2].Name = "neighbor.gpkg" },
-		func(s *DevelopBoundFileScope) { s.Target = nil },
+		func(s *DevelopBoundFileScope) { s.Targets[0].Target.Segments[2].Name = "neighbor.gpkg" },
+		func(s *DevelopBoundFileScope) { s.Targets = nil },
 	} {
 		bad := bound.Clone()
 		mutate(bad)
@@ -144,21 +144,21 @@ func TestDevelopBoundScopeKeepsNodeMappingAndExactUniqueSourceClosure(t *testing
 	other := conflicting[0]
 	other.EngineVersion = "3"
 	conflicting = append(conflicting, other)
-	if _, err := NewDevelopBoundFileScope(*intent, conflicting, "3"); err == nil {
+	if _, err := NewDevelopBoundFileScope(*intent, conflicting, []string{"3"}); err == nil {
 		t.Fatal("conflicting evidence for the same source accepted")
 	}
 }
 
 func TestDevelopReadOnlyIntentNeverAcquiresPublicationTarget(t *testing.T) {
 	intent := developIntentFixture(t, false)
-	bound, err := NewDevelopBoundFileScope(*intent, developReferences(), "")
-	if err != nil || intent.Target != nil || bound.Target != nil || bound.ValidateAgainstIntent(*intent) != nil {
+	bound, err := NewDevelopBoundFileScope(*intent, developReferences(), nil)
+	if err != nil || len(intent.Targets) != 0 || len(bound.Targets) != 0 || bound.ValidateAgainstIntent(*intent) != nil {
 		t.Fatal("read-only declaration requires a fake write", err)
 	}
-	if _, err := NewDevelopBoundFileScope(*intent, developReferences(), "3"); err == nil {
+	if _, err := NewDevelopBoundFileScope(*intent, developReferences(), []string{"3"}); err == nil {
 		t.Fatal("read-only intent accepted a target engine version")
 	}
-	bound.Target = &DevelopBoundFileTarget{Target: plugin.FileItemPath(12, "outputs/forged.gpkg"), EngineVersion: "3", Mode: "fail"}
+	bound.Targets = []DevelopBoundFileTarget{{Target: plugin.FileItemPath(12, "outputs/forged.gpkg"), EngineVersion: "3", Mode: "fail"}}
 	if bound.ValidateAgainstIntent(*intent) == nil {
 		t.Fatal("read-only intent upgraded to create")
 	}
@@ -166,7 +166,7 @@ func TestDevelopReadOnlyIntentNeverAcquiresPublicationTarget(t *testing.T) {
 
 func TestDevelopFileDeadlineUsesOriginalDatabaseClaimTime(t *testing.T) {
 	intent := developIntentFixture(t, false)
-	bound, err := NewDevelopBoundFileScope(*intent, developReferences(), "")
+	bound, err := NewDevelopBoundFileScope(*intent, developReferences(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,12 +197,37 @@ func TestDevelopFileIntentUsesSharedByteBudgetWithoutNewCountPolicy(t *testing.T
 	if err != nil {
 		t.Fatal("unrelated source-count policy rejected valid intent", err)
 	}
-	if _, err := NewDevelopBoundFileScope(*intent, refs, ""); err != nil {
+	if _, err := NewDevelopBoundFileScope(*intent, refs, nil); err != nil {
 		t.Fatal("unrelated source-count policy rejected bound scope", err)
 	}
 	oversized := intent.Clone()
 	oversized.Sources[len(oversized.Sources)-1].NodeID = strings.Repeat("z", MaxExecutionConfigBytes)
 	if oversized.Validate() == nil {
 		t.Fatal("unbounded wire intent accepted")
+	}
+}
+
+func TestDevelopMultiFileTargetsBindOrderAndRejectRepeatedLeaves(t *testing.T) {
+	base := developIntentFixture(t, true)
+	base.Targets = append(base.Targets, DevelopFileTargetIntent{NodeID: "save_members", Target: plugin.FileItemPath(12, "outputs/members.gpkg"), Mode: "fail"})
+	bound, err := NewDevelopBoundFileScope(*base, developReferences(), []string{"3", "4"})
+	if err != nil || bound.TargetIndex(base.Targets[1].Target) != 1 {
+		t.Fatalf("second frozen target: %v, %v", bound, err)
+	}
+	swapped := base.Clone()
+	swapped.Targets[0], swapped.Targets[1] = swapped.Targets[1], swapped.Targets[0]
+	if bound.ValidateAgainstIntent(*swapped) == nil {
+		t.Fatal("approval order changed")
+	}
+	for _, change := range []func(*DevelopFileIntent){
+		func(i *DevelopFileIntent) { i.Targets[1].NodeID = i.Targets[0].NodeID },
+		func(i *DevelopFileIntent) { i.Targets[1].Target = i.Targets[0].Target },
+		func(i *DevelopFileIntent) { i.Targets[1].NodeID = i.Sources[0].NodeID },
+	} {
+		invalid := base.Clone()
+		change(invalid)
+		if invalid.Validate() == nil {
+			t.Fatal("ambiguous file declaration accepted")
+		}
 	}
 }

@@ -140,19 +140,19 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 					}
 					digest, _ := pending.Intent.Digest()
 					if pending.AdmissionState != "pending" || pending.AuthorizationID != "" || digest != request.IntentDigest ||
-						(pending.Intent.Target != nil) != scenario.saving || len(pending.Intent.Sources) != 1 || pending.Intent.Sources[0].Target.StringPath() != path {
+						(len(pending.Intent.Targets) != 0) != scenario.saving || len(pending.Intent.Sources) != 1 || pending.Intent.Sources[0].Target.StringPath() != path {
 						t.Error("wrong pending intent")
 					}
 					if scenario.status != 201 {
 						w.WriteHeader(scenario.status)
 						return
 					}
-					targetVersion := ""
+					var targetVersion []string
 					if scenario.saving {
-						if pending.Intent.Target.NodeID != "save_result" || pending.Intent.Target.Target.EngineID != 12 || pending.Intent.Target.Target.StringPath() != "outputs/result.gpkg" || pending.Intent.Target.Mode != "fail" {
+						if pending.Intent.Targets[0].NodeID != "save_result" || pending.Intent.Targets[0].Target.EngineID != 12 || pending.Intent.Targets[0].Target.StringPath() != "outputs/result.gpkg" || pending.Intent.Targets[0].Mode != "fail" {
 							t.Error("target was not frozen exactly")
 						}
-						targetVersion = "4"
+						targetVersion = []string{"4"}
 					}
 					scope, err := execution.NewDevelopBoundFileScope(pending.Intent, []execution.DevelopFileSourceReference{{
 						Target: pending.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2",
@@ -178,12 +178,13 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 					if json.NewDecoder(r.Body).Decode(&request) != nil {
 						t.Error("invalid observation request")
 					}
-					state, approval := "awaiting_approval", ""
+					state := "awaiting_approval"
+					var approvals []string
 					if admissionCalls.Add(1) > 1 {
-						state, approval = "ready", approvalID
+						state, approvals = "ready", []string{approvalID}
 					}
 					now := time.Now()
-					_ = json.NewEncoder(w).Encode(client.DevelopFileAdmissionObservation{AuthorizationID: "9", ExecutionID: request.ExecutionID, ExpectedAttempt: request.ExpectedAttempt, ScopeDigest: request.ScopeDigest, State: state, ApprovalID: approval, ObservedAt: now, ExpiresAt: now.Add(time.Minute)})
+					_ = json.NewEncoder(w).Encode(client.DevelopFileAdmissionObservation{AuthorizationID: "9", ExecutionID: request.ExecutionID, ExpectedAttempt: request.ExpectedAttempt, ScopeDigest: request.ScopeDigest, State: state, ApprovalIDs: approvals, ObservedAt: now, ExpiresAt: now.Add(time.Minute)})
 				case "/api/v1/system/auth/execution-authorizations":
 					genericCalls.Add(1)
 					var req client.IssueExecutionAuthorizationRequest
@@ -366,7 +367,7 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 					t.Fatal(recoverErr)
 				}
 				ready, readErr := fileRepo.Read(ctx, 3, id)
-				if readErr != nil || ready.AdmissionState != "ready" || ready.AuthorizationID != "9" || ready.BoundScope.Target.EngineVersion != "4" {
+				if readErr != nil || ready.AdmissionState != "ready" || ready.AuthorizationID != "9" || ready.BoundScope.Targets[0].EngineVersion != "4" {
 					t.Fatal("original save scope did not activate", readErr)
 				}
 				if _, lease, claimErr := repository.NewExecutionRepository(db).ClaimNext("workflow", ctx, "fixture", time.Now(), time.Minute, nil); claimErr != nil || lease == nil || lease.ExecutionID != id || lease.Attempt != 1 {

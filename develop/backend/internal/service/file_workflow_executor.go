@@ -175,7 +175,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	if item.StartedAt == nil {
 		return s.fail(ctx, item, lease, time.Time{}, "snapshot_invalid", fmt.Errorf("%s", commoni18n.ForLanguage(language, "develop.workflow.private_file_unavailable")))
 	}
-	if (facts.Intent.Target != nil && f.publication == nil) || f.authority == nil || f.provider == nil || f.endpoint == nil || f.credential == nil || f.protectSource == nil {
+	if (len(facts.Intent.Targets) != 0 && f.publication == nil) || f.authority == nil || f.provider == nil || f.endpoint == nil || f.credential == nil || f.protectSource == nil {
 		return unavailable()
 	}
 	var config map[string]json.RawMessage
@@ -252,7 +252,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 			s.executor.workflowResults.remove(item.ExecutionID, lease.Token)
 		}
 	}()
-	if err == nil && status != nil && status.Status == "success" && facts.Intent.Target == nil {
+	if err == nil && status != nil && status.Status == "success" && len(facts.Intent.Targets) == 0 {
 		var table *plugin.WorkflowTableResult
 		table, err = b.runtime.ProfessionalResult(runCtx)
 		if err == nil {
@@ -268,23 +268,35 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 			err = s.executor.workflowResults.put(item, lease, issued.Authorization.ExpiresAt, sources, table)
 		}
 	}
-	var published *plugin.NewFilePublicationOutcome
-	if err == nil && status != nil && status.Status == "success" && facts.Intent.Target != nil {
-		file, receipt, downloadErr := b.downloadOutput(runCtx, 0)
-		err = downloadErr
-		if err == nil {
-			published, err = f.publishPrivateFile(runCtx, lease, b.runtimeID, receipt, file)
+	var committed []WorkflowProducedTarget
+	publishing := err == nil && status != nil && status.Status == "success" && len(facts.Intent.Targets) > 0
+	if publishing {
+		for index, target := range facts.Intent.Targets {
+			file, receipt, downloadErr := b.downloadOutput(runCtx, index)
+			if downloadErr != nil {
+				err = downloadErr
+				break
+			}
+			published, publishErr := f.publishPrivateFile(runCtx, lease, b.runtimeID, receipt, file)
 			_ = file.Close()
-			// Confirmed physical publication may succeed with private cleanup
-			// pending; the terminal transaction rechecks its durable evidence.
-			if published != nil && published.State == plugin.NewFilePublished {
-				err = nil
+			if published == nil || published.State != plugin.NewFilePublished {
+				err = errPrivatePublication
+				break
+			}
+			locator := resourcetree.LocatorFromFullName(target.Target.EngineID, "nfs", "file", target.Target.StringPath(), nil)
+			if locator == nil {
+				return errPrivatePublication
+			}
+			committed = append(committed, WorkflowProducedTarget{TaskID: target.NodeID, Locator: locator.ToURI(), Type: "file", WriteMode: "create"})
+			if errors.Is(publishErr, errPrivatePublicationResolved) && index+1 < len(facts.Intent.Targets) {
+				err = publishErr
+				break
 			}
 		}
 	}
 	result := commonModels.JSONMap{}
 	message := ""
-	if status != nil && err == nil {
+	if status != nil && (err == nil || publishing) {
 		result["logs"] = status.Logs
 		raw := map[string]interface{}{"status": status.Status, "error_code": status.ErrorCode}
 		if status.Diagnostic != nil {
@@ -294,7 +306,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 			raw["diagnostic"] = diagnostic
 		}
 		result["runtime_status"] = raw
-		if status.Status == "success" && status.Result != nil && facts.Intent.Target == nil {
+		if status.Status == "success" && status.Result != nil && len(facts.Intent.Targets) == 0 {
 			data, marshalErr := json.Marshal(status.Result)
 			if marshalErr == nil {
 				if preview, ok := workflowFinalResultForExecution(string(data)); ok {
@@ -318,6 +330,21 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	for key, value := range item.Metadata {
 		metadata[key] = value
 	}
+	if len(committed) > 0 {
+		outputs := workflowExecutionOutputs(committed)
+		var config map[string]interface{}
+		decoder := json.NewDecoder(bytes.NewReader(facts.ConfigJSON))
+		decoder.UseNumber()
+		if decoder.Decode(&config) != nil {
+			return errPrivatePublication
+		}
+		content, _ := config["content"].(map[string]interface{})
+		lineage := workflowLineageFacts(content["workflow_definition"], outputs)
+		if lineage == nil {
+			return errPrivatePublication
+		}
+		metadata["outputs"], metadata["lineage_facts"] = outputs, lineage
+	}
 	terminal := execution.ExecutionStatusSuccess
 	fields := terminalQueryFields(metadata, nil)
 	if message != "" {
@@ -332,28 +359,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	if terminal == execution.ExecutionStatusSuccess {
 		finalCtx, stop := b.bounded(runCtx)
 		defer stop()
-		if facts.Intent.Target != nil {
-			if published == nil || published.State != plugin.NewFilePublished {
-				return errPrivatePublication
-			}
-			target := facts.Intent.Target
-			locator := resourcetree.LocatorFromFullName(target.Target.EngineID, "nfs", "file", target.Target.StringPath(), nil)
-			if locator == nil {
-				return errPrivatePublication
-			}
-			outputs := workflowExecutionOutputs([]WorkflowProducedTarget{{TaskID: target.NodeID, Locator: locator.ToURI(), Type: "file", WriteMode: "create"}})
-			var config map[string]interface{}
-			decoder := json.NewDecoder(bytes.NewReader(facts.ConfigJSON))
-			decoder.UseNumber()
-			if decoder.Decode(&config) != nil {
-				return errPrivatePublication
-			}
-			content, _ := config["content"].(map[string]interface{})
-			lineage := workflowLineageFacts(content["workflow_definition"], outputs)
-			if lineage == nil {
-				return errPrivatePublication
-			}
-			metadata["outputs"], metadata["lineage_facts"] = outputs, lineage
+		if len(facts.Intent.Targets) > 0 {
 			return f.repository.CompletePrivatePublication(finalCtx, item, lease, fields)
 		}
 		err = s.queue.CompleteWithLease(finalCtx, item, lease, terminal, time.Now().UTC(), fields)

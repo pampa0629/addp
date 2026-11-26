@@ -303,7 +303,15 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	fileRef := production.Reference{Owner: "develop", ExecutionID: id, ResultID: uuid.NewString()}
 	fileTarget := plugin.FileItemPath(19, "out/new.gpkg")
 	fileReceipt := production.Receipt{Reference: fileRef, TenantID: int64(tenant), Attempt: 1, TargetEngineVersion: 3, OperationID: uuid.NewString(), CommittedAt: time.Now(), Primary: fileTarget, Objects: []production.CommittedObject{{Target: fileTarget, Created: true}}, Sources: production.SourceEvidence{Kind: production.SourcesNone}}
-	registry, err := production.NewRegistry(production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: func(context.Context, uint, production.Reference) (*production.Receipt, error) {
+	sibling := fileReceipt
+	sibling.Reference.ResultID = uuid.NewString()
+	sibling.OperationID = sibling.Reference.ResultID
+	sibling.Primary = plugin.FileItemPath(19, "out/members.gpkg")
+	sibling.Objects = []production.CommittedObject{{Target: sibling.Primary, Created: true}}
+	registry, err := production.NewRegistry(production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: func(_ context.Context, _ uint, ref production.Reference) (*production.Receipt, error) {
+		if ref == sibling.Reference {
+			return &sibling, nil
+		}
 		return &fileReceipt, nil
 	}})
 	if err != nil {
@@ -327,6 +335,18 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	fileFacts, err := svc.GetScanPlanFacts(t.Context(), tenant, fileRun.ExecutionID)
 	if err != nil || fileFacts.SourceScope == nil || !reflect.DeepEqual(fileFacts.SourceScope.Anchors, []plugin.EngineCatalogPath{fileTarget}) {
 		t.Fatal("file scope broadened", fileFacts, err)
+	}
+	secondScan, err := svc.EnsureProductionBasicScan(t.Context(), tenant, sibling.Reference)
+	if err != nil || secondScan.ScanExecutionID == fileScan.ScanExecutionID {
+		t.Fatal("different committed outputs shared a scan", secondScan, err)
+	}
+	secondFacts, err := svc.GetScanPlanFacts(t.Context(), tenant, secondScan.ScanExecutionID)
+	if err != nil || secondFacts.SourceScope == nil || !reflect.DeepEqual(secondFacts.SourceScope.Anchors, []plugin.EngineCatalogPath{sibling.Primary}) {
+		t.Fatal("second scan lost the exact file boundary", secondFacts, err)
+	}
+	again, err := svc.EnsureProductionBasicScan(t.Context(), tenant, sibling.Reference)
+	if err != nil || again.ScanExecutionID != secondScan.ScanExecutionID {
+		t.Fatal("duplicate scan on continued delivery", again, err)
 	}
 	if concurrent {
 		token, owner := uuid.NewString(), "production-scan-fixture"

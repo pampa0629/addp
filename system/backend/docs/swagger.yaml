@@ -737,8 +737,10 @@ definitions:
     type: object
   client.DevelopFileAdmissionObservation:
     properties:
-      approval_id:
-        type: string
+      approval_ids:
+        items:
+          type: string
+        type: array
       authorization_id:
         type: string
       execution_id:
@@ -842,6 +844,8 @@ definitions:
         type: string
       stage:
         type: string
+      target_index:
+        type: integer
     type: object
   client.DevelopFileSourceAccessObservation:
     properties:
@@ -1498,8 +1502,10 @@ definitions:
         items:
           $ref: '#/definitions/execution.DevelopFileSourceReference'
         type: array
-      target:
-        $ref: '#/definitions/execution.DevelopBoundFileTarget'
+      targets:
+        items:
+          $ref: '#/definitions/execution.DevelopBoundFileTarget'
+        type: array
       timeout_seconds:
         type: integer
     type: object
@@ -2124,6 +2130,8 @@ definitions:
         type: string
       target:
         $ref: '#/definitions/execution.DevelopBoundFileTarget'
+      target_index:
+        type: integer
       tenant_id:
         type: string
     type: object
@@ -4180,6 +4188,8 @@ definitions:
         type: string
       scope_digest:
         type: string
+      target_index:
+        type: integer
     type: object
   internal_api.IAMAuditEventResponse:
     properties:
@@ -11653,6 +11663,11 @@ paths:
         name: execution_id
         required: true
         type: string
+      - description: 冻结清单的目标序号，从 0 开始 | Zero-based frozen target ordinal
+        in: query
+        name: target_index
+        required: true
+        type: integer
       produces:
       - application/json
       responses:

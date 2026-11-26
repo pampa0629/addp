@@ -261,6 +261,11 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON common.* TO 'platform_run'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON $owner.* TO 'platform_run'@'%';
 SQL
     bash "$ROOT_DIR/scripts/test/module-platform-deployment.sh" "$MYSQL_PROJECT" "$owner"
+    if [[ "$owner" == develop ]]; then
+        (cd "$ROOT_DIR/develop/backend" && ADDP_TEST_MYSQL_DEVELOP_FILE_DELIVERY=1 GOWORK=off go test ./internal/repository \
+            -run '^TestMySQLFileProductionDelivery$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/develop-delivery.log"
+        grep -q '^--- PASS: TestMySQLFileProductionDelivery ' "$WORK_DIR/develop-delivery.log"
+    fi
     if [[ "$owner" != orchestrator ]]; then exit 0; fi
     (cd "$ROOT_DIR/orchestrator/backend" && ADDP_TEST_MYSQL_ORCHESTRATOR=1 GOWORK=off go test ./internal/service \
         -run '^TestMySQLOrchestratorExecutionReliability$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/orchestrator.log"

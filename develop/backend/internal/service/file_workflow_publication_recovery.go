@@ -29,8 +29,14 @@ func (f *privateFileWorkflowExecutor) recoverPrivatePublications(ctx context.Con
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := f.recoverPrivatePublication(ctx, row); err != nil {
+		records, err := f.repository.ReadPrivatePublications(ctx, row.TenantID, row.ExecutionID)
+		if err != nil {
 			failures = append(failures, err)
+		}
+		for i := range records {
+			if err := f.recoverPrivatePublication(ctx, row, &records[i]); err != nil {
+				failures = append(failures, err)
+			}
 		}
 		f.mu.Lock()
 		f.publicationCursor = row.ExecutionID
@@ -44,11 +50,7 @@ func (f *privateFileWorkflowExecutor) recoverPrivatePublications(ctx context.Con
 	return errors.Join(failures...)
 }
 
-func (f *privateFileWorkflowExecutor) recoverPrivatePublication(ctx context.Context, id repository.PrivatePublicationIdentity) error {
-	original, err := f.repository.ReadPrivatePublication(ctx, id.TenantID, id.ExecutionID)
-	if err != nil {
-		return errPrivatePublication
-	}
+func (f *privateFileWorkflowExecutor) recoverPrivatePublication(ctx context.Context, id repository.PrivatePublicationIdentity, original *repository.PrivateFilePublicationRecovery) error {
 	outcome := original.Outcome
 	if original.RecoveryOutcome != nil {
 		outcome = original.RecoveryOutcome

@@ -34,7 +34,7 @@ func (s *ProductionReceiptService) ReadCommittedProduction(ctx context.Context, 
 	}
 	facts := &original.Facts
 	workflow, err := fileWorkflowRuntimeDefinition(facts)
-	if err != nil || facts.Intent.Target == nil || facts.BoundScope == nil || facts.BoundScope.Target == nil || original.OperationID != ref.ResultID || facts.ExecutionID != ref.ExecutionID || facts.TenantID != strconv.FormatUint(uint64(tenant), 10) {
+	if err != nil || original.TargetIndex < 0 || original.TargetIndex >= len(facts.Intent.Targets) || facts.BoundScope == nil || original.TargetIndex >= len(facts.BoundScope.Targets) || original.OperationID != ref.ResultID || facts.ExecutionID != ref.ExecutionID || facts.TenantID != strconv.FormatUint(uint64(tenant), 10) {
 		return nil, production.ErrEvidence
 	}
 	var definition map[string]interface{}
@@ -50,7 +50,7 @@ func (s *ProductionReceiptService) ReadCommittedProduction(ctx context.Context, 
 	for _, source := range facts.Intent.Sources {
 		direct[source.NodeID] = true
 	}
-	dependencies, valid := workflowDataSources(byID, direct, []string{facts.Intent.Target.NodeID})
+	dependencies, valid := workflowDataSources(byID, direct, []string{facts.Intent.Targets[original.TargetIndex].NodeID})
 	if !valid {
 		return nil, production.ErrEvidence
 	}
@@ -74,7 +74,7 @@ func (s *ProductionReceiptService) ReadCommittedProduction(ctx context.Context, 
 		var paths []plugin.EngineCatalogPath
 		versions := map[int64]int64{}
 		completeVersions := true
-		for _, node := range dependencies[facts.Intent.Target.NodeID] {
+		for _, node := range dependencies[facts.Intent.Targets[original.TargetIndex].NodeID] {
 			read := reads[node]
 			paths = append(paths, read.ReadSet.Paths...)
 			id := int64(read.ReadSet.Paths[0].EngineID)
@@ -105,14 +105,14 @@ func (s *ProductionReceiptService) ReadCommittedProduction(ctx context.Context, 
 			}
 		}
 	}
-	version, _ := strconv.ParseInt(facts.BoundScope.Target.EngineVersion, 10, 64)
+	version, _ := strconv.ParseInt(facts.BoundScope.Targets[original.TargetIndex].EngineVersion, 10, 64)
 	principal, _ := strconv.ParseInt(facts.Actor.PrincipalID, 10, 64)
 	membership, _ := strconv.ParseInt(facts.Actor.TenantMembershipID, 10, 64)
 	authorizationVersion, _ := strconv.ParseInt(facts.Actor.AuthorizationVersion, 10, 64)
 	result := &production.Receipt{Reference: ref, TenantID: int64(tenant), TargetEngineVersion: version,
 		RetryOfExecutionID: original.RetryOfExecutionID, Attempt: original.Attempt, OperationID: original.OperationID,
 		CommittedAt: original.CommittedAt, Origin: &production.UserOrigin{PrincipalID: principal, MembershipID: membership, AuthorizationVersion: authorizationVersion},
-		Primary: facts.Intent.Target.Target, Objects: []production.CommittedObject{{Target: facts.Intent.Target.Target, Created: true}}, Sources: sources}
+		Primary: facts.Intent.Targets[original.TargetIndex].Target, Objects: []production.CommittedObject{{Target: facts.Intent.Targets[original.TargetIndex].Target, Created: true}}, Sources: sources}
 	if err := result.Validate(); err != nil {
 		return nil, err
 	}

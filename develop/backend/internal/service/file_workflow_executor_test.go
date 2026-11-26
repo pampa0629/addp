@@ -25,6 +25,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/production"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
 )
@@ -32,9 +33,17 @@ import (
 // Actual claimed Owner SQL, private HTTP client and local staging. Authority,
 // NFS bytes and native computation remain explicit doubles, not business T4.
 func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
-	for _, scenario := range []string{"success", "table-success", "child-success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "expired-source-window", "late-success"} {
+	for _, scenario := range []string{"success", "table-success", "child-success", "saved-success", "two-saves", "second-conflict-failure", "second-response-unknown", "second-late-unknown", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "expired-source-window", "late-success"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, repo, item, lease, _, issued, base := privateFileWorkerFixture(t, scenario == "saved-success")
+			var extra []string
+			switch scenario {
+			case "two-saves", "second-conflict-failure":
+				extra = []string{"members"}
+			case "second-response-unknown", "second-late-unknown":
+				extra = []string{"members", "unattempted"}
+			}
+			saving := scenario == "saved-success" || len(extra) > 0
+			db, repo, item, lease, _, issued, base := privateFileWorkerFixture(t, saving, extra...)
 			queue := repository.NewExecutionRepository(db)
 			executor := NewDevExecutor(nil, execution.NewTaskExecutionRepository(db), nil, nil, nil, NewSQLEngineService(&config.Config{}, nil, nil), nil, nil)
 			s, err := NewExecutionService(executor, queue, repo, "fixture-instance")
@@ -82,7 +91,9 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			f.provider = fileInputsProvider(fileInputsData(t))
 			outputBytes := fileInputsData(t)["sources/A.gpkg"]
 			outputHash := sha256.Sum256(outputBytes)
-			if scenario == "saved-success" {
+			var publishedFiles []plugin.PreparedNewFile
+			resolves := 0
+			if saving {
 				source := f.provider.(*sourceWindowProvider)
 				p := &publicationProviderFixture{sourceWindowProvider: source}
 				p.prepare = func(_ context.Context, _ plugin.ConnectionInfo, r plugin.NewFilePublicationRequest, content io.Reader) (plugin.PreparedNewFile, error) {
@@ -93,6 +104,25 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 					return plugin.PreparedNewFile{NewFilePublicationRequest: r, ProviderState: []byte("private prepared bytes")}, nil
 				}
 				p.publish = func(_ context.Context, _ plugin.ConnectionInfo, r plugin.PreparedNewFile, _ plugin.NewFilePublicationState) (plugin.NewFilePublicationOutcome, error) {
+					publishedFiles = append(publishedFiles, r)
+					if len(publishedFiles) == 2 {
+						switch scenario {
+						case "second-conflict-failure":
+							return plugin.NewFilePublicationOutcome{State: plugin.NewFileNotPublished}, fmt.Errorf("name exists")
+						case "second-response-unknown", "second-late-unknown":
+							return plugin.NewFilePublicationOutcome{State: plugin.NewFileUnknown}, fmt.Errorf("response lost")
+						}
+					}
+					return plugin.NewFilePublicationOutcome{State: plugin.NewFilePublished, Evidence: &plugin.ContentWriteEvidence{Target: r.Target, Disposition: "created", SizeBytes: r.SizeBytes, Committed: true}}, nil
+				}
+				p.resolve = func(_ context.Context, _ plugin.ConnectionInfo, r plugin.PreparedNewFile) (plugin.NewFilePublicationOutcome, error) {
+					resolves++
+					if len(publishedFiles) != 2 || r.OperationID != publishedFiles[1].OperationID {
+						t.Fatal("resolved a different operation", r.OperationID)
+					}
+					if scenario == "second-late-unknown" && resolves == 1 {
+						return plugin.NewFilePublicationOutcome{State: plugin.NewFileUnknown}, fmt.Errorf("original commit still unknown")
+					}
 					return plugin.NewFilePublicationOutcome{State: plugin.NewFilePublished, Evidence: &plugin.ContentWriteEvidence{Target: r.Target, Disposition: "created", SizeBytes: r.SizeBytes, Committed: true}}, nil
 				}
 				f.provider = p
@@ -168,7 +198,7 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 					}
 					w.WriteHeader(202)
 					_ = json.NewEncoder(w).Encode(map[string]any{"execution_id": id, "status": "running"})
-				case scenario == "saved-success" && r.Method == "GET" && r.URL.Path == "/api/private-files/"+id:
+				case saving && r.Method == "GET" && r.URL.Path == "/api/private-files/"+id:
 					stored, err := repo.ReadPrivateRuntime(r.Context(), 3, item.ExecutionID)
 					if err != nil {
 						t.Fatal(err)
@@ -179,8 +209,12 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 						states[i] = "ready"
 					}
 					pending := false
-					_ = json.NewEncoder(w).Encode(plugin.WorkflowPrivateFileStatus{RuntimeExecutionID: id, ExecutionID: m.ExecutionID, Attempt: m.Attempt, ScopeDigest: m.ScopeDigest, Inputs: states, Outputs: []plugin.WorkflowPrivateFile{{NodeID: "save", Size: int64(len(outputBytes)), SHA256: hex.EncodeToString(outputHash[:])}}, CleanupPending: &pending, Execution: json.RawMessage(`{"status":"success"}`)})
-				case scenario == "saved-success" && r.Method == "GET" && r.URL.Path == "/api/private-files/"+id+"/outputs/0":
+					var receipts []plugin.WorkflowPrivateFile
+					for _, node := range m.Outputs {
+						receipts = append(receipts, plugin.WorkflowPrivateFile{NodeID: node, Size: int64(len(outputBytes)), SHA256: hex.EncodeToString(outputHash[:])})
+					}
+					_ = json.NewEncoder(w).Encode(plugin.WorkflowPrivateFileStatus{RuntimeExecutionID: id, ExecutionID: m.ExecutionID, Attempt: m.Attempt, ScopeDigest: m.ScopeDigest, Inputs: states, Outputs: receipts, CleanupPending: &pending, Execution: json.RawMessage(`{"status":"success"}`)})
+				case saving && r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/private-files/"+id+"/outputs/"):
 					w.Header().Set("Content-Type", "application/geopackage+sqlite3")
 					_, _ = w.Write(outputBytes)
 				case r.Method == "GET" && r.URL.Path == "/api/executions/"+id:
@@ -314,7 +348,7 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 					t.Fatalf("private terminal lost recorded logs: %v", err)
 				}
 				expected := "workflow_succeeded"
-				if strings.Contains(scenario, "failure") {
+				if scenario == "native-failure" || scenario == "parameter-failure" {
 					expected = "workflow_failed"
 				}
 				if logs[0].Event != expected {
@@ -341,7 +375,85 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			if strings.Contains(string(serialized), private.InputDirectory) || strings.Contains(string(serialized), private.RuntimeExecutionID) || strings.Contains(string(serialized), "private path must not leak") {
 				t.Fatal("private facts escaped", string(serialized))
 			}
-			if scenario == "saved-success" {
+			if len(extra) > 0 {
+				if len(publishedFiles) != 2 || publishedFiles[0].OperationID == publishedFiles[1].OperationID {
+					t.Fatal("wrong publication attempts", publishedFiles)
+				}
+				if (resolves == 1) != (scenario == "second-response-unknown" || scenario == "second-late-unknown") {
+					t.Fatal("unexpected original-operation resolution", resolves)
+				}
+				delivery := &fileProductionRuntime{t: t}
+				f.productionRuntime = func(uint) client.ProductionGrantRuntime { return delivery }
+				f.productionScanner = delivery
+				if err := f.continueProductionAuthorization(t.Context()); err != nil || delivery.calls != 1 {
+					t.Fatal("first committed output did not reach continuation", err)
+				}
+				if scenario == "second-late-unknown" {
+					original := publishedFiles[1]
+					ref := production.Reference{Owner: "develop", ExecutionID: item.ExecutionID, ResultID: original.OperationID}
+					if receipt, err := NewProductionReceiptService(repo).ReadCommittedProduction(t.Context(), 3, ref); err == nil || receipt != nil {
+						t.Fatal("unknown publication produced a receipt before recovery")
+					}
+					if err := f.continueProductionAuthorization(t.Context()); err != nil || delivery.calls != 1 {
+						t.Fatal("unknown publication queued initial authorization", err)
+					}
+					record, err := repo.ReadPrivatePublication(t.Context(), 3, item.ExecutionID, original.OperationID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					restarted := &privateFileWorkflowExecutor{repository: repo, provider: f.provider}
+					restarted.publication = func(uint) filePublicationAuthority {
+						return publicationRecoveryAuthorityFixture{recover: func(_ context.Context, ea client.IssuedDevelopFileAuthorization, approval string, req plugin.NewFilePublicationRequest) (*client.DevelopFilePublicationRecoveryAccess, error) {
+							if ea.Authorization.ID != issued.Authorization.ID || approval != record.ApprovalID || !reflect.DeepEqual(req, original.NewFilePublicationRequest) {
+								t.Fatal("recovery did not bind original second approval and operation")
+							}
+							now := time.Now()
+							return &client.DevelopFilePublicationRecoveryAccess{ExpiresAt: now.Add(time.Minute), Engine: &commonModels.Engine{ConnectionInfo: commonModels.ConnectionInfo{"server": "private-target"}}, History: client.DevelopFilePublicationHistory{ReleasedAt: &now, PreparationDigest: record.PreparationDigest}}, nil
+						}}
+					}
+					if err := restarted.recoverPrivatePublications(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+					if err := restarted.recoverPrivatePublications(t.Context()); err != nil || resolves != 2 || len(publishedFiles) != 2 {
+						t.Fatal("replayed after recovery", err)
+					}
+					var recovered execution.TaskExecution
+					if err := db.First(&recovered, "execution_id = ?", item.ExecutionID).Error; err != nil || !reflect.DeepEqual(done, recovered) {
+						t.Fatal("late result rewrote the failed execution", err)
+					}
+				}
+				if err := f.continueProductionAuthorization(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.continueProductionAuthorization(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				wantDelivered := 2
+				if scenario == "second-conflict-failure" {
+					wantDelivered = 1
+				}
+				if delivery.calls != wantDelivered {
+					t.Fatal("incorrect number of initial authorization deliveries", delivery.calls)
+				}
+
+				for i, file := range publishedFiles {
+					ref := production.Reference{Owner: "develop", ExecutionID: item.ExecutionID, ResultID: file.OperationID}
+					receipt, err := NewProductionReceiptService(repo).ReadCommittedProduction(t.Context(), 3, ref)
+					if i == 1 && scenario == "second-conflict-failure" {
+						if err == nil || receipt != nil {
+							t.Fatal("conflict produced a receipt")
+						}
+						continue
+					}
+					if err != nil || receipt == nil || !reflect.DeepEqual(receipt.Primary, file.Target) {
+						t.Fatal("wrong independent production", receipt, err)
+					}
+					if i == 1 && (receipt.Sources.ReadSet == nil || len(receipt.Sources.ReadSet.Paths) != 1 || receipt.Sources.ReadSet.Paths[0].StringPath() != "sources/B.gpkg") {
+						t.Fatal("wrong branch sources", receipt.Sources)
+					}
+				}
+			}
+			if saving {
 				if done.Metadata["outputs"] == nil || done.Metadata["lineage_facts"] == nil {
 					t.Fatal("published output lacks atomic resource and lineage facts")
 				}

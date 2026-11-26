@@ -94,29 +94,26 @@ func (e *DevExecutor) submitPrivateFileWorkflow(ctx context.Context, item *execu
 	content, _ := mapValue(item.ExecutionConfig["content"])
 	definition, _ := mapValue(content["workflow_definition"])
 	tasks, _ := workflowTasksFromInterface(definition["tasks"])
-	var target *execution.DevelopFileTargetIntent
+	var targets []execution.DevelopFileTargetIntent
 	for _, task := range tasks {
 		if stringParam(task, "operator") != "save" {
 			continue
 		}
-		if target != nil {
-			return &ExecutionParametersError{Cause: errFileWorkflowInputs}
-		}
 		params, _ := task["params"].(map[string]interface{})
-		var err error
-		target, err = fileWorkflowSaveTarget(stringParam(task, "id"), params)
+		target, err := fileWorkflowSaveTarget(stringParam(task, "id"), params)
 		if err != nil {
 			return &ExecutionParametersError{Cause: err}
 		}
+		targets = append(targets, *target)
 	}
-	if target != nil {
+	if len(targets) != 0 {
 		for _, source := range sources {
 			if _, err := plugin.RequireObjectLeafPath(source.Target); err == nil {
 				return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 			}
 		}
 	}
-	if item.ParentExecutionID != nil && target != nil {
+	if item.ParentExecutionID != nil && len(targets) != 0 {
 		return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
 	// The same projection proves full source/target coverage before persistence;
@@ -126,11 +123,11 @@ func (e *DevExecutor) submitPrivateFileWorkflow(ctx context.Context, item *execu
 		return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
 	if _, err := fileWorkflowRuntimeDefinition(&client.DevelopFileExecutionFacts{
-		ConfigJSON: raw, Intent: execution.DevelopFileIntent{Sources: sources, Target: target},
+		ConfigJSON: raw, Intent: execution.DevelopFileIntent{Sources: sources, Targets: targets},
 	}); err != nil {
 		return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
-	pending, err := e.fileExecutions.CreatePending(ctx, item, sources, target)
+	pending, err := e.fileExecutions.CreatePending(ctx, item, sources, targets)
 	if err != nil {
 		return err
 	}

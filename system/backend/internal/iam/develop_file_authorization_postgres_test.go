@@ -136,9 +136,9 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 	targetSnapshots := 0
 	var sourceExpiresAt *time.Time // Explicit source-rule double; never a real GPKG Grant.
 	prepare := func(ctx context.Context, auth *ExecutionAuthorization, intent execution.DevelopFileIntent) (*DevelopFileReadPreparation, error) {
-		version := ""
-		if intent.Target != nil {
-			version = "1"
+		var version []string
+		for range intent.Targets {
+			version = append(version, "1")
 		}
 		scope, err := execution.NewDevelopBoundFileScope(intent, []execution.DevelopFileSourceReference{{Target: path, ItemFingerprint: commonmodels.GenerateItemFingerprint(uint(engineID), path.StringPath()), Format: "geopackage", BoundaryHash: strings.Repeat("a", 64), EngineVersion: "1"}}, version)
 		if err != nil {
@@ -161,7 +161,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 				out.Engine = &commonmodels.Engine{ID: uint(engineID), TenantID: &tenantID, EngineType: "nfs", Version: 1, LifecycleState: "active", ConnectionInfo: commonmodels.ConnectionInfo{"server": "fixture-only"}}
 			}
 			return out, nil
-		}, TargetSnapshot: func(context.Context, *gorm.DB) (*commonmodels.Engine, error) {
+		}, TargetSnapshot: func(context.Context, *gorm.DB, execution.DevelopBoundFileTarget) (*commonmodels.Engine, error) {
 			targetSnapshots++
 			tenantID := uint(tenant.ID)
 			return &commonmodels.Engine{ID: uint(engineID), TenantID: &tenantID, EngineType: "nfs", Version: 1,
@@ -169,7 +169,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		}}, nil
 	}
 	svc := NewDevelopFileAuthorizationService(repo, owner, prepare)
-	newPending := func(t *testing.T, save bool) (*client.DevelopFileExecutionFacts, uuid.UUID) {
+	newPending := func(t *testing.T, save bool, extra ...execution.DevelopFileTargetIntent) (*client.DevelopFileExecutionFacts, uuid.UUID) {
 		t.Helper()
 		id := uuid.New()
 		by := int(user.PrincipalID)
@@ -182,11 +182,11 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw := stored.ExecutionConfig
-		var target *execution.DevelopFileTargetIntent
+		var target []execution.DevelopFileTargetIntent
 		if save {
-			target = &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(uint(engineID), "outputs/result.gpkg"), Mode: "fail"}
+			target = []execution.DevelopFileTargetIntent{{NodeID: "save", Target: plugin.FileItemPath(uint(engineID), "outputs/result.gpkg"), Mode: "fail"}}
 		}
-		intent, err := execution.NewDevelopFileIntent(raw, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: path}}, target, nil)
+		intent, err := execution.NewDevelopFileIntent(raw, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: path}}, append(target, extra...), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,9 +194,9 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		owner[id.String()] = facts
 		return facts, id
 	}
-	issue := func(t *testing.T, save bool) (*client.DevelopFileExecutionFacts, *client.IssuedDevelopFileAuthorization, IssueDevelopFileAuthorizationInput) {
+	issue := func(t *testing.T, save bool, extra ...execution.DevelopFileTargetIntent) (*client.DevelopFileExecutionFacts, *client.IssuedDevelopFileAuthorization, IssueDevelopFileAuthorizationInput) {
 		t.Helper()
-		facts, id := newPending(t, save)
+		facts, id := newPending(t, save, extra...)
 		digest, _ := facts.Intent.Digest()
 		input := IssueDevelopFileAuthorizationInput{SourceAccessToken: userToken, ExecutionID: id, IntentDigest: digest, Audit: audit}
 		issued, err := svc.Issue(ctx, input)
@@ -325,7 +325,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
 		check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id, ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit}
 		admission, access, err := svc.Check(ctx, check)
-		if err != nil || access != nil || admission == nil || admission.State != "ready" || admission.ApprovalID != "" {
+		if err != nil || access != nil || admission == nil || admission.State != "ready" || len(admission.ApprovalIDs) != 0 {
 			t.Fatal("admission", admission, err)
 		}
 		var pending ExecutionAuthorization
@@ -450,7 +450,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		_, issued, input := issue(t, true)
 		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
 		a, b, err := svc.Check(ctx, CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id, ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit})
-		if err != nil || a == nil || a.State != "awaiting_approval" || a.ApprovalID != "" || b != nil {
+		if err != nil || a == nil || a.State != "awaiting_approval" || len(a.ApprovalIDs) != 0 || b != nil {
 			t.Fatal("invented publication readiness", err)
 		}
 	})
@@ -499,10 +499,84 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		var managementExpiry *time.Time
 		svc.SetCreateApproverPreparer(func(_ context.Context, _ *gorm.DB, gotTenant, gotMembership int64, target execution.DevelopBoundFileTarget) (func(time.Time) (*time.Time, error), error) {
 			if gotTenant != tenant.ID || (gotMembership != firstMember && gotMembership != secondMember) ||
-				!reflect.DeepEqual(target, *issued.Scope.Target) || !allowManagement {
+				!reflect.DeepEqual(target, issued.Scope.Targets[0]) || !allowManagement {
 				return nil, commonapi.ErrForbidden
 			}
 			return func(time.Time) (*time.Time, error) { return managementExpiry, nil }, nil
+		})
+		t.Run("every frozen target must be independently approved before claim", func(t *testing.T) {
+			membersTarget := execution.DevelopFileTargetIntent{NodeID: "members", Target: plugin.FileItemPath(uint(engineID), "outputs/members.gpkg"), Mode: "fail"}
+			two, bound, issueInput := issue(t, true, membersTarget)
+			authID, _ := strconv.ParseInt(two.AuthorizationID, 10, 64)
+			check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: authID, ExecutionID: issueInput.ExecutionID, TenantID: tenant.ID,
+				ExpectedAttempt: 1, ScopeDigest: bound.ScopeDigest, Audit: serviceAudit}
+			approve := ApproveDevelopFileCreateInput{UserAccessToken: first, AuthorizationID: authID, ScopeDigest: bound.ScopeDigest, ExpiresAt: bound.Authorization.ExpiresAt.Add(-time.Second), Audit: audit}
+			// Grant management over the two exact targets to the fixture approvers.
+			old := svc.prepareCreateApprover
+			t.Cleanup(func() { svc.SetCreateApproverPreparer(old) })
+			svc.SetCreateApproverPreparer(func(_ context.Context, _ *gorm.DB, tid, member int64, target execution.DevelopBoundFileTarget) (func(time.Time) (*time.Time, error), error) {
+				if tid != tenant.ID || (member != firstMember && member != secondMember) || bound.Scope.TargetIndex(target.Target) < 0 {
+					return nil, commonapi.ErrForbidden
+				}
+				return func(time.Time) (*time.Time, error) { return nil, nil }, nil
+			})
+			approve.TargetIndex = 1
+			secondReceipt, err := svc.ApproveCreate(ctx, approve)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if obs, access, err := svc.Check(ctx, check); err != nil || access != nil || obs == nil || obs.State != "awaiting_approval" || len(obs.ApprovalIDs) != 0 {
+				t.Fatal(obs, access, err)
+			}
+			if _, err := svc.ApproveCreate(ctx, approve); err == nil {
+				t.Fatal("repeated second approval consumed the missing first target")
+			}
+			approve.TargetIndex = 2
+			if _, err := svc.ApproveCreate(ctx, approve); err == nil {
+				t.Fatal("unfrozen target approved")
+			}
+			approve.TargetIndex, approve.UserAccessToken = 0, second
+			firstReceipt, err := svc.ApproveCreate(ctx, approve)
+			if err != nil {
+				t.Fatal(err)
+			}
+			obs, access, err := svc.Check(ctx, check)
+			if err != nil || access != nil || obs == nil || obs.State != "ready" || !reflect.DeepEqual(obs.ApprovalIDs, []string{firstReceipt.ApprovalID, secondReceipt.ApprovalID}) {
+				t.Fatal(obs, access, err)
+			}
+			_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: two.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "two-file-test", LeaseDuration: time.Minute, RequireAuthorization: true}, nil)
+			if err != nil || lease == nil {
+				t.Fatal("fully approved execution not claimed", err)
+			}
+			two.AdmissionState = "ready"
+			check.LeaseToken, check.Source = uuid.MustParse(lease.Token), &path
+			if _, access, err := svc.Check(ctx, check); err != nil || access == nil {
+				t.Fatal("source check after both approvals", err)
+			}
+			check.Source = nil
+			snapshotsBefore := targetSnapshots
+			t.Cleanup(func() { targetSnapshots = snapshotsBefore })
+			for index, approval := range obs.ApprovalIDs {
+				request := client.DevelopFilePublicationRequest{TargetIndex: index, ExecutionID: two.ExecutionID, Attempt: 1, LeaseToken: lease.Token, ScopeDigest: bound.ScopeDigest, ApprovalID: approval, OperationID: uuid.NewString(), Stage: client.DevelopFilePublicationPrepare}
+				two.Publications = append(two.Publications, client.DevelopFilePublicationFacts{ApprovalID: approval, Request: plugin.NewFilePublicationRequest{OperationID: request.OperationID, Target: bound.Scope.Targets[index].Target, SizeBytes: 8192, SHA256: strings.Repeat("a", 64)}})
+				other := request
+				other.ApprovalID = obs.ApprovalIDs[1-index]
+				if value, err := svc.AuthorizePublication(ctx, check, other); err == nil || value != nil {
+					t.Fatal("used sibling approval for own target")
+				}
+				if value, err := svc.AuthorizePublication(ctx, check, request); err != nil || value == nil || value.Engine == nil {
+					t.Fatal("missing original prepare", index, err)
+				}
+				request.Stage, request.PreparationDigest = client.DevelopFilePublicationRelease, strings.Repeat("b", 64)
+				two.Publications[index].PreparationDigest = request.PreparationDigest
+				if value, err := svc.AuthorizePublication(ctx, check, request); err != nil || value == nil || value.Engine != nil {
+					t.Fatal("missing original release", index, err)
+				}
+				history, err := svc.ReadPublicationHistory(ctx, check, uuid.MustParse(request.OperationID))
+				if err != nil || history == nil || history.ApprovalID != approval || history.ReleasedAt == nil {
+					t.Fatal("unbound per-file history", index, err)
+				}
+			}
 		})
 		for _, token := range []string{userToken, serviceToken, noPermission, noScope, foreign} {
 			if value, err := svc.ReadCreateApprovalContext(ctx, ReadDevelopFileCreateApprovalContextInput{UserAccessToken: token, ExecutionID: uuid.MustParse(facts.ExecutionID)}); err == nil || value != nil {
@@ -517,7 +591,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			if err != nil || value == nil {
 				t.Fatal(value, err)
 			}
-			if value.AuthorizationID != issued.Authorization.ID || value.ExecutionID != facts.ExecutionID || value.TenantID != issued.Authorization.TenantID || value.ActorPrincipalID != issued.Authorization.ActorPrincipalID || value.ScopeDigest != issued.ScopeDigest || value.ExpectedAttempt != 1 || value.State != "awaiting_approval" || value.Approval != nil || !reflect.DeepEqual(value.Target, *issued.Scope.Target) || !value.AuthorizationExpiresAt.Equal(issued.Authorization.ExpiresAt) || value.ObservedAt.IsZero() {
+			if value.AuthorizationID != issued.Authorization.ID || value.ExecutionID != facts.ExecutionID || value.TenantID != issued.Authorization.TenantID || value.ActorPrincipalID != issued.Authorization.ActorPrincipalID || value.ScopeDigest != issued.ScopeDigest || value.ExpectedAttempt != 1 || value.State != "awaiting_approval" || value.Approval != nil || !reflect.DeepEqual(value.Target, issued.Scope.Targets[0]) || !value.AuthorizationExpiresAt.Equal(issued.Authorization.ExpiresAt) || value.ObservedAt.IsZero() {
 				t.Fatal("approval view changed original binding", value)
 			}
 		}
@@ -587,7 +661,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit}
 		allowManagement = false
 		a, b, err := svc.Check(ctx, check)
-		if err != nil || a == nil || a.State != "rejected" || a.ApprovalID != "" || b != nil {
+		if err != nil || a == nil || a.State != "rejected" || len(a.ApprovalIDs) != 0 || b != nil {
 			t.Fatal("lost management scope reported ready", a, err)
 		}
 		allowManagement = true
@@ -602,7 +676,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if dbErr := db.Where("execution_id=?", facts.ExecutionID).Take(&stillPending).Error; dbErr != nil {
 			t.Fatal(dbErr)
 		}
-		if err != nil || a == nil || a.State != "ready" || a.ApprovalID != winner.ApprovalID || a.ExpiresAt.After(winner.ExpiresAt) ||
+		if err != nil || a == nil || a.State != "ready" || !reflect.DeepEqual(a.ApprovalIDs, []string{winner.ApprovalID}) || a.ExpiresAt.After(winner.ExpiresAt) ||
 			!a.ExpiresAt.Equal(managementDeadline) || b != nil || stillPending.Status != "pending" || stillPending.StartedAt != nil {
 			t.Fatal("approval observation changed the original execution or omitted the approval", a, err)
 		}
@@ -622,9 +696,9 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		publicationCheck.Source = nil
 		request := client.DevelopFilePublicationRequest{ExecutionID: facts.ExecutionID, Attempt: 1, LeaseToken: lease.Token,
 			ScopeDigest: issued.ScopeDigest, ApprovalID: winner.ApprovalID, OperationID: operation, Stage: client.DevelopFilePublicationPrepare}
-		facts.Publication = &client.DevelopFilePublicationFacts{ApprovalID: winner.ApprovalID,
-			Request: plugin.NewFilePublicationRequest{OperationID: operation, Target: issued.Scope.Target.Target,
-				SizeBytes: 8192, SHA256: strings.Repeat("a", 64)}}
+		facts.Publications = []client.DevelopFilePublicationFacts{{ApprovalID: winner.ApprovalID,
+			Request: plugin.NewFilePublicationRequest{OperationID: operation, Target: issued.Scope.Targets[0].Target,
+				SizeBytes: 8192, SHA256: strings.Repeat("a", 64)}}}
 		if value, err := svc.AuthorizePublication(ctx, publicationCheck, request); err == nil || value != nil || targetSnapshots != 0 {
 			t.Fatal("target preparation created the source-read deadline")
 		}
@@ -634,11 +708,11 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		}
 		release := request
 		release.Stage, release.PreparationDigest = client.DevelopFilePublicationRelease, strings.Repeat("c", 64)
-		facts.Publication.PreparationDigest = release.PreparationDigest
+		facts.Publications[0].PreparationDigest = release.PreparationDigest
 		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); err == nil || value != nil || targetSnapshots != 0 {
 			t.Fatal("release worked before preparation admission")
 		}
-		facts.Publication.PreparationDigest = ""
+		facts.Publications[0].PreparationDigest = ""
 		badRequest := request
 		badRequest.OperationID = uuid.NewString()
 		if value, err := svc.AuthorizePublication(ctx, publicationCheck, badRequest); err == nil || value != nil {
@@ -667,12 +741,12 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); err == nil || value != nil {
 			t.Fatal("release accepted without a trusted prepared receipt")
 		}
-		facts.Publication.PreparationDigest = release.PreparationDigest
-		facts.Publication.Request.SizeBytes++
+		facts.Publications[0].PreparationDigest = release.PreparationDigest
+		facts.Publications[0].Request.SizeBytes++
 		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); !errors.Is(err, ErrExecutionAuthorizationConflict) || value != nil {
 			t.Fatal("changed output bytes released the original operation", err)
 		}
-		facts.Publication.Request.SizeBytes--
+		facts.Publications[0].Request.SizeBytes--
 		allowManagement = false
 		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); err == nil || value != nil {
 			t.Fatal("revoked management scope released the operation")
@@ -735,7 +809,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		history, historyErr := isolated.ReadPublicationHistory(ctx, publicationCheck, operationID)
-		digest, digestErr := client.DevelopFilePublicationRequestDigest(facts.Publication.Request)
+		digest, digestErr := client.DevelopFilePublicationRequestDigest(facts.Publications[0].Request)
 		if historyErr != nil || digestErr != nil || history == nil || history.ReleasedAt == nil ||
 			history.PreparationDigest != release.PreparationDigest || history.RequestDigest != digest ||
 			history.ApprovalID != winner.ApprovalID || history.OperationID != operation ||
@@ -745,7 +819,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		recoveryCalls := 0
 		svc.SetRecoveryEngine(func(_ context.Context, _ *gorm.DB, tenant int64, target execution.DevelopBoundFileTarget) (*commonmodels.Engine, error) {
 			recoveryCalls++
-			if tenant != publicationCheck.TenantID || !reflect.DeepEqual(target, *issued.Scope.Target) {
+			if tenant != publicationCheck.TenantID || !reflect.DeepEqual(target, issued.Scope.Targets[0]) {
 				t.Fatal("recovery changed original target")
 			}
 			tenantID := uint(tenant)
@@ -756,12 +830,12 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			recovered.Engine.ConnectionInfo["server"] != "recovery-only" || recovered.ExpiresAt.Sub(recovered.ObservedAt) > 15*time.Second || recoveryCalls != 1 {
 			t.Fatal("revoked original operation not recoverable", err)
 		}
-		originalSize := facts.Publication.Request.SizeBytes
-		facts.Publication.Request.SizeBytes++
+		originalSize := facts.Publications[0].Request.SizeBytes
+		facts.Publications[0].Request.SizeBytes++
 		if value, err := svc.PublicationRecoveryAccess(ctx, publicationCheck, operationID); value != nil || err == nil || recoveryCalls != 1 {
 			t.Fatal("retargeted recovery obtained connection")
 		}
-		facts.Publication.Request.SizeBytes = originalSize
+		facts.Publications[0].Request.SizeBytes = originalSize
 
 	})
 	t.Run("wrong owner actor and rejected before issuance", func(t *testing.T) {

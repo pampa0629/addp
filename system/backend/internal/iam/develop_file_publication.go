@@ -47,9 +47,12 @@ func (s *DevelopFileAuthorizationService) AuthorizePublication(ctx context.Conte
 }
 
 func (u *developFilePublicationUse) matches(facts *client.DevelopFileExecutionFacts) bool {
-	return facts.Publication != nil && facts.Publication.ApprovalID == u.request.ApprovalID &&
-		facts.Publication.Request.OperationID == u.request.OperationID &&
-		facts.Publication.PreparationDigest == u.request.PreparationDigest
+	index := u.request.TargetIndex
+	if index < 0 || index >= len(facts.Publications) {
+		return false
+	}
+	fact := facts.Publications[index]
+	return fact.ApprovalID == u.request.ApprovalID && fact.Request.OperationID == u.request.OperationID && fact.PreparationDigest == u.request.PreparationDigest
 }
 
 func (u *developFilePublicationUse) audit(ctx context.Context, tx *Repository, metadata AuditMetadata) error {
@@ -57,7 +60,7 @@ func (u *developFilePublicationUse) audit(ctx context.Context, tx *Repository, m
 	return NewAuditWriter(tx).Write(ctx, AuditEvent{Metadata: metadata, EventName: "iam.develop_file_publication." + r.Stage,
 		Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system",
 		EntityType: "develop_file_publication", EntityID: r.OperationID,
-		Details: map[string]any{"approval_id": r.ApprovalID, "execution_id": r.ExecutionID, "scope_digest": r.ScopeDigest, "attempt": r.Attempt}})
+		Details: map[string]any{"approval_id": r.ApprovalID, "execution_id": r.ExecutionID, "scope_digest": r.ScopeDigest, "attempt": r.Attempt, "target_index": r.TargetIndex}})
 }
 
 // Called with the EA locked after the final current eligibility check. No
@@ -87,11 +90,11 @@ func (u *developFilePublicationUse) consume(ctx context.Context, tx *Repository,
 		if prepared.TargetSnapshot == nil {
 			return ErrDevelopFileDependencyUnavailable
 		}
-		engine, err := prepared.TargetSnapshot(ctx, tx.db)
+		target := row.DevelopFileScope.Targets[request.TargetIndex]
+		engine, err := prepared.TargetSnapshot(ctx, tx.db, target)
 		if err != nil {
 			return err
 		}
-		target := row.DevelopFileScope.Target
 		version, _ := strconv.ParseInt(target.EngineVersion, 10, 64)
 		if engine == nil || engine.ID != target.Target.EngineID || engine.TenantID == nil || int64(*engine.TenantID) != row.TenantID ||
 			engine.Version != version || engine.EngineType != "nfs" || engine.LifecycleState != "active" ||
@@ -130,28 +133,27 @@ func (s *DevelopFileAuthorizationService) ReadPublicationHistory(ctx context.Con
 	if _, err := s.repository.developFileService(ctx, input); err != nil {
 		return nil, err
 	}
-	ea, err := s.repository.GetExecutionAuthorization(ctx, input.AuthorizationID)
-	if errors.Is(err, commonapi.ErrNotFound) {
-		return nil, ErrExecutionAuthorizationPermissionDenied
+	// An accepted approval stores the digest of the original frozen scope.
+	// Historical reads must not reinterpret that scope using a later schema.
+	var record struct {
+		ApprovalID  uuid.UUID
+		OperationID uuid.UUID
+		ExecutionID uuid.UUID
+		FrozenScope struct {
+			ExpectedAttempt int `json:"expected_attempt"`
+		} `gorm:"column:frozen_scope;serializer:json"`
+		ScopeDigest       string
+		RequestDigest     string
+		PrepareAdmittedAt time.Time
+		ReleasedAt        *time.Time
+		PreparationDigest *string
 	}
-	if err != nil {
-		return nil, err
-	}
-	if ea.TenantID != input.TenantID || ea.Audience != "develop" || ea.SourceType != "user" ||
-		ea.SealedAt == nil || ea.InternalTask != nil || ea.SourceReadScope != nil || ea.CleanupScope != nil ||
-		ea.DevelopFileScope == nil || ea.DevelopFileScope.Target == nil {
-		return nil, ErrExecutionAuthorizationPermissionDenied
-	}
-	scopeDigest, err := ea.DevelopFileScope.Digest()
-	if err != nil {
-		return nil, err
-	}
-	var record developFilePublication
-	err = s.repository.db.WithContext(ctx).Model(&developFilePublication{}).
-		Select("p.approval_id,p.operation_id,p.request_digest,p.prepare_admitted_at,p.released_at,p.preparation_digest").
-		Table("system.develop_file_publications AS p").
+	err := s.repository.db.WithContext(ctx).Table("system.develop_file_publications AS p").
+		Select("p.approval_id,p.operation_id,p.request_digest,p.prepare_admitted_at,p.released_at,p.preparation_digest,a.scope_digest,ea.execution_id,ea.develop_file_scope AS frozen_scope").
 		Joins("JOIN system.develop_file_create_approvals a ON a.id=p.approval_id").
-		Where("a.authorization_id=? AND a.scope_digest=? AND p.operation_id=?", ea.ID, scopeDigest, operation).Take(&record).Error
+		Joins("JOIN system.execution_authorizations ea ON ea.id=a.authorization_id").
+		Where("ea.id=? AND ea.tenant_id=? AND ea.audience='develop' AND ea.source_type='user' AND ea.sealed_at IS NOT NULL AND ea.develop_file_scope IS NOT NULL AND p.operation_id=?", input.AuthorizationID, input.TenantID, operation).
+		Take(&record).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
@@ -159,8 +161,8 @@ func (s *DevelopFileAuthorizationService) ReadPublicationHistory(ctx context.Con
 		return nil, err
 	}
 	history := &client.DevelopFilePublicationHistory{
-		AuthorizationID: strconv.FormatInt(ea.ID, 10), ExecutionID: ea.ExecutionID.String(),
-		Attempt: ea.DevelopFileScope.ExpectedAttempt, ScopeDigest: scopeDigest, ApprovalID: record.ApprovalID.String(),
+		AuthorizationID: strconv.FormatInt(input.AuthorizationID, 10), ExecutionID: record.ExecutionID.String(),
+		Attempt: record.FrozenScope.ExpectedAttempt, ScopeDigest: record.ScopeDigest, ApprovalID: record.ApprovalID.String(),
 		OperationID: record.OperationID.String(), RequestDigest: record.RequestDigest,
 		PrepareAdmittedAt: record.PrepareAdmittedAt, ReleasedAt: record.ReleasedAt,
 	}

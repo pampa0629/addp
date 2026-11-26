@@ -22,21 +22,21 @@ const developFileClientApproval = "ca5846c6-1fbb-40ae-bfda-7ed0e7be08f4"
 // These are mocked wire tests, not implemented System routes or IAM evidence.
 func developFileClientFixture(t *testing.T, write bool) (execution.DevelopFileIntent, IssuedDevelopFileAuthorization) {
 	t.Helper()
-	var target *execution.DevelopFileTargetIntent
+	var targets []execution.DevelopFileTargetIntent
 	if write {
-		target = &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(12, "outputs/result.gpkg"), Mode: "fail"}
+		targets = []execution.DevelopFileTargetIntent{{NodeID: "save", Target: plugin.FileItemPath(12, "outputs/result.gpkg"), Mode: "fail"}}
 	}
 	intent, err := execution.NewDevelopFileIntent(json.RawMessage(`{"task":"load-difference","number":9007199254740993}`), 1, 45,
-		[]execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, target, nil)
+		[]execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, targets, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	version := ""
+	var versions []string
 	if write {
-		version = "4"
+		versions = []string{"4"}
 	}
 	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target,
-		ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, version)
+		ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, versions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,8 +49,8 @@ func developFileClientFixture(t *testing.T, write bool) (execution.DevelopFileIn
 func developFileClientAdmission(issued IssuedDevelopFileAuthorization) DevelopFileAdmissionObservation {
 	value := DevelopFileAdmissionObservation{AuthorizationID: issued.Authorization.ID, ExecutionID: developFileClientExecution,
 		ScopeDigest: issued.ScopeDigest, ExpectedAttempt: 1, State: "ready", ObservedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Minute)}
-	if issued.Scope.Target != nil {
-		value.ApprovalID = developFileClientApproval
+	if len(issued.Scope.Targets) != 0 {
+		value.ApprovalIDs = []string{developFileClientApproval}
 	}
 	return value
 }
@@ -204,7 +204,7 @@ func TestDevelopFileClientRejectsUnboundOrExpandedIssuance(t *testing.T) {
 				response.Scope.Sources[0].Target.Segments[2].Name = "hidden.gpkg"
 				response.ScopeDigest, _ = response.Scope.Digest()
 			case "hidden-target":
-				response.Scope.Target = &execution.DevelopBoundFileTarget{Target: plugin.FileItemPath(12, "outputs/hidden.gpkg"), Mode: "fail", EngineVersion: "2"}
+				response.Scope.Targets = []execution.DevelopBoundFileTarget{{Target: plugin.FileItemPath(12, "outputs/hidden.gpkg"), Mode: "fail", EngineVersion: "2"}}
 				response.ScopeDigest, _ = response.Scope.Digest()
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +235,7 @@ func TestDevelopFileClientReadOnlyAdmissionCannotAcquireWriteApproval(t *testing
 			case "awaiting":
 				observation.State = "awaiting_approval"
 			case "approval":
-				observation.ApprovalID = developFileClientApproval
+				observation.ApprovalIDs = []string{developFileClientApproval}
 			case "unknown-state":
 				observation.State = "maybe"
 			case "wrong-attempt":
@@ -354,7 +354,7 @@ func TestDevelopFileClientFreezesIntentBeforeIssuanceHTTP(t *testing.T) {
 	changed := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		intent.Sources[0].Target.Segments[2].Name = "caller-changed.gpkg"
-		intent.Target.Target.Segments[2].Name = "caller-changed-output.gpkg"
+		intent.Targets[0].Target.Segments[2].Name = "caller-changed-output.gpkg"
 		close(changed)
 		w.WriteHeader(201)
 		_ = json.NewEncoder(w).Encode(expected)
@@ -362,7 +362,7 @@ func TestDevelopFileClientFreezesIntentBeforeIssuanceHTTP(t *testing.T) {
 	defer server.Close()
 	value, err := NewSystemExecutionAuthorizationClient(server.URL, server.Client()).IssueDevelopFile(t.Context(), "addp_at_user", developFileClientExecution, intent)
 	<-changed
-	if err != nil || value == nil || value.Scope.Sources[0].Target.StringPath() != "sources/A.gpkg" || value.Scope.Target.Target.StringPath() != "outputs/result.gpkg" {
+	if err != nil || value == nil || value.Scope.Sources[0].Target.StringPath() != "sources/A.gpkg" || value.Scope.Targets[0].Target.StringPath() != "outputs/result.gpkg" {
 		t.Fatal("caller mutation altered the issuance boundary", value, err)
 	}
 }
@@ -389,7 +389,7 @@ func TestDevelopFileClientPublicationHistoryChecksOriginalRequest(t *testing.T) 
 	_, issued := developFileClientFixture(t, true)
 	issued.Authorization.ExpiresAt = time.Now().Add(-time.Minute)
 	original := plugin.NewFilePublicationRequest{
-		OperationID: "0b33cbf0-5c67-4c99-8ac3-5573d505630f", Target: issued.Scope.Target.Target,
+		OperationID: "0b33cbf0-5c67-4c99-8ac3-5573d505630f", Target: issued.Scope.Targets[0].Target,
 		SizeBytes: 891, SHA256: strings.Repeat("a", 64),
 	}
 	digest, err := DevelopFilePublicationRequestDigest(original)
@@ -441,7 +441,7 @@ func TestDevelopFileClientSourceEngineMatchesSealedFormat(t *testing.T) {
 					intent.Sources[0].Target = plugin.ObjectItemPath(11, "sources", "A.geojson")
 					refs := []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, Format: format,
 						ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}
-					scope, err := execution.NewDevelopBoundFileScope(intent, refs, "")
+					scope, err := execution.NewDevelopBoundFileScope(intent, refs, nil)
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -31,14 +31,24 @@ const fileInputRuntimeID = "5cb603c1-7544-42ca-a998-6a196a7e31c4"
 
 // All sources/authority/Runtime here are explicit doubles. Real temp files and
 // the Common HTTP client exercise the consumer, not NFS/IAM/GeoPython or T4.
-func fileInputsFixture(t *testing.T, save bool) (*client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, execution.Lease, client.DevelopFileSourceAccessObservation) {
+func fileInputsFixture(t *testing.T, save bool, extraOutputs ...string) (*client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, execution.Lease, client.DevelopFileSourceAccessObservation) {
 	t.Helper()
 	_, _, base := fileSourceFixture(t, time.Minute)
-	target := (*execution.DevelopFileTargetIntent)(nil)
+	var target []execution.DevelopFileTargetIntent
 	tail := ""
 	if save {
-		target = &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(11, "outputs/result.gpkg"), Mode: "fail"}
+		target = []execution.DevelopFileTargetIntent{{NodeID: "save", Target: plugin.FileItemPath(11, "outputs/result.gpkg"), Mode: "fail"}}
 		tail = `,{"id":"save","operator":"save","params":{"input_df":{"$ref":"buffer"},"mode":"fail","target_parent_locator":"addp://engine/11/path/outputs?type=directory","target_name":"result.gpkg"},"depends_on":["buffer"]}`
+	}
+	for _, node := range extraOutputs {
+		name := node + ".gpkg"
+		target = append(target, execution.DevelopFileTargetIntent{NodeID: node, Target: plugin.FileItemPath(11, "outputs/"+name), Mode: "fail"})
+		task, err := json.Marshal(map[string]any{"id": node, "operator": "save", "params": map[string]any{
+			"input_df": map[string]string{"$ref": "b"}, "mode": "fail", "target_parent_locator": "addp://engine/11/path/outputs?type=directory", "target_name": name}, "depends_on": []string{"b"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tail += "," + string(task)
 	}
 	raw := json.RawMessage(`{"timeout":600,"number":9007199254740993,"content":{"workflow_definition":{"tasks":[{"id":"a","operator":"load","params":{"locator":"addp://engine/11/path/sources/A.gpkg?type=file","geom_column":"shape","source_resource":{"item_id":"not-authority"}},"depends_on":[]},{"id":"b","operator":"load","params":{"locator":"addp://engine/11/path/sources/B.gpkg?type=file"},"depends_on":[]},{"id":"buffer","operator":"buffer","params":{"input_gdf":{"$ref":"a"},"distance":9007199254740993},"depends_on":["a"]}` + tail + `]}}}`)
 	intent, err := execution.NewDevelopFileIntent(raw, 1, 600, []execution.DevelopFileSourceIntent{{NodeID: "a", Target: plugin.FileItemPath(11, "sources/A.gpkg")}, {NodeID: "b", Target: plugin.FileItemPath(11, "sources/B.gpkg")}}, target, nil)
@@ -49,9 +59,9 @@ func fileInputsFixture(t *testing.T, save bool) (*client.DevelopFileExecutionFac
 	for i, source := range intent.Sources {
 		refs = append(refs, execution.DevelopFileSourceReference{Target: source.Target, ItemFingerprint: strings.Repeat(string(rune('a'+i)), 64), Format: "geopackage", BoundaryHash: strings.Repeat(string(rune('c'+i)), 64), EngineVersion: "2"})
 	}
-	version := ""
-	if save {
-		version = "2"
+	var version []string
+	for range target {
+		version = append(version, "2")
 	}
 	scope, err := execution.NewDevelopBoundFileScope(*intent, refs, version)
 	if err != nil {
@@ -275,13 +285,13 @@ func TestFileWorkflowInputsRejectRawDAGMismatchBeforeOpen(t *testing.T) {
 			case "replace-mode":
 				raw = strings.Replace(raw, `"mode":"fail"`, `"mode":"replace"`, 1)
 			}
-			intent, err := execution.NewDevelopFileIntent(json.RawMessage(raw), 1, 600, facts.Intent.Sources, facts.Intent.Target, nil)
+			intent, err := execution.NewDevelopFileIntent(json.RawMessage(raw), 1, 600, facts.Intent.Sources, facts.Intent.Targets, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			facts.ConfigJSON = json.RawMessage(raw)
 			facts.Intent = *intent
-			scope, err := execution.NewDevelopBoundFileScope(*intent, facts.BoundScope.Sources, map[bool]string{false: "", true: "2"}[save])
+			scope, err := execution.NewDevelopBoundFileScope(*intent, facts.BoundScope.Sources, map[bool][]string{true: {"2"}}[save])
 			if err != nil {
 				t.Fatal(err)
 			}

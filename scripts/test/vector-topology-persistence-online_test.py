@@ -2766,9 +2766,9 @@ class FilePublicationInitializer:
             rows=[row for row in c.grants.values() if row.get('production_execution_id')==c.run_id];data={'data':rows,'total':len(rows)}
         elif path.endswith('/revoke'):
             c.grants[path.split('/')[-2]]['revocation']={'revoked':True};data={}
-        elif path.endswith('/create-approval-context'):
+        elif path.endswith('/create-approval-context?target_index=0'):
             now=datetime.now(timezone.utc);c.approval_expires=(now+timedelta(minutes=20)).isoformat()
-            data=dict(authorization_id='9',execution_id=c.run_id,tenant_id='2',actor_principal_id='33',expected_attempt=1,scope_digest='b'*64,
+            data=dict(authorization_id='9',execution_id=c.run_id,tenant_id='2',actor_principal_id='33',expected_attempt=1,scope_digest='b'*64,target_index=0,
                 target=dict(target=registration.ExactFileReadGrants.target(3,'outputs/'+c.profile['target'],'nfs'),mode='fail',engine_version='238'),
                 authorization_expires_at=c.approval_expires,observed_at=(now-timedelta(seconds=1)).isoformat(),state='awaiting_approval')
             if self.mutate_context:self.mutate_context(data)
@@ -3183,7 +3183,7 @@ class DifferenceOnlineTest(unittest.TestCase):
     def test_difference_records_returned_execution_before_approval_or_wait(self):
         client=DifferenceClient();original=client.issuer.request
         def request(method,path,expected=(200,),body=None):
-            if path.endswith('/create-approval-context'):
+            if path.endswith('/create-approval-context?target_index=0'):
                 journal=json.loads((Path(self.directory.name)/'topology-difference-publication.json').read_text())
                 self.assertEqual(journal['stages'][-1],dict(stage='execution_submitted',execution_id=client.run_id,failure=None))
             return original(method,path,expected,body)
@@ -3545,8 +3545,7 @@ class AdjacencyOnlineTest(unittest.TestCase):
         self.assertEqual(len(approvals),1)
         intent=next(row for row in publication['stages']if row['stage']=='approval_intent')['context']
         self.assertEqual(intent['target']['target']['segments'][-1]['name'],m.fixture.ADJACENCY_TARGET)
-        self.assertEqual(set(approvals[0]),{'scope_digest','expires_at'})
-        self.assertEqual(approvals[0]['scope_digest'],intent['scope_digest'])
+        self.assertEqual(approvals[0],dict(target_index=0,scope_digest=intent['scope_digest'],expires_at=intent['authorization_expires_at']))
         self.assertFalse(any(path.endswith('/scan/run/manual')for _,path,_ in client.calls))
         self.assertNotIn('meta_scan_runs',report['execution']['metadata'])
         saved=json.loads((Path(self.directory.name)/'topology-adjacency-publication.json').read_text());self.assertEqual(saved,publication)

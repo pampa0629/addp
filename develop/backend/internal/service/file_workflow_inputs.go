@@ -88,8 +88,8 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 	b := &fileWorkflowInputs{ctx: batchCtx, cancel: cancel, directory: root, instanceID: instanceID, manifest: plugin.WorkflowPrivateFileManifest{
 		SchemaVersion: plugin.WorkflowPrivateFilesAPIV2, TenantID: uint(tenant), ExecutionID: facts.ExecutionID, Attempt: lease.Attempt,
 		AuthorizationID: authorization, ScopeDigest: facts.ScopeDigest, WorkflowJSON: workflow, Inputs: []plugin.WorkflowPrivateFile{}, Outputs: []string{}}}
-	if facts.Intent.Target != nil {
-		b.manifest.Outputs = append(b.manifest.Outputs, facts.Intent.Target.NodeID)
+	for _, target := range facts.Intent.Targets {
+		b.manifest.Outputs = append(b.manifest.Outputs, target.NodeID)
 	}
 	if err := registerDirectory(b.ctx, instanceID, root); err != nil {
 		b.cancel(err)

@@ -55,8 +55,10 @@ definitions:
         type: string
       intent:
         $ref: '#/definitions/execution.DevelopFileIntent'
-      publication:
-        $ref: '#/definitions/client.DevelopFilePublicationFacts'
+      publications:
+        items:
+          $ref: '#/definitions/client.DevelopFilePublicationFacts'
+        type: array
       schema_version:
         type: string
       scope_digest:
@@ -379,8 +381,10 @@ definitions:
         items:
           $ref: '#/definitions/execution.DevelopFileSourceReference'
         type: array
-      target:
-        $ref: '#/definitions/execution.DevelopBoundFileTarget'
+      targets:
+        items:
+          $ref: '#/definitions/execution.DevelopBoundFileTarget'
+        type: array
       timeout_seconds:
         type: integer
     type: object
@@ -407,8 +411,10 @@ definitions:
         items:
           $ref: '#/definitions/execution.DevelopFileSourceIntent'
         type: array
-      target:
-        $ref: '#/definitions/execution.DevelopFileTargetIntent'
+      targets:
+        items:
+          $ref: '#/definitions/execution.DevelopFileTargetIntent'
+        type: array
       timeout_seconds:
         type: integer
     type: object

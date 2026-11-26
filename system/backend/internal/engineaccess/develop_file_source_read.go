@@ -55,9 +55,9 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 		formats[engine.ID] = binding.FileComposition.Format
 		refs[i] = execution.DevelopFileSourceReference{Target: set.Paths[i], ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash, Format: binding.FileComposition.Format, EngineVersion: strconv.FormatInt(engine.Version, 10)}
 	}
-	targetVersion := ""
-	if intent.Target != nil {
-		engine, err := s.repository.engine(ctx, auth.TenantID, int64(intent.Target.Target.EngineID), false)
+	var targetVersions []string
+	for _, target := range intent.Targets {
+		engine, err := s.repository.engine(ctx, auth.TenantID, int64(target.Target.EngineID), false)
 		if err != nil || !developNFSVersion(engine, auth.TenantID, 0) {
 			return nil, commonapi.ErrForbidden
 		}
@@ -66,9 +66,9 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 		}
 		versions[engine.ID] = engine.Version
 		formats[engine.ID] = "geopackage"
-		targetVersion = strconv.FormatInt(engine.Version, 10)
+		targetVersions = append(targetVersions, strconv.FormatInt(engine.Version, 10))
 	}
-	scope, err := execution.NewDevelopBoundFileScope(intent, refs, targetVersion)
+	scope, err := execution.NewDevelopBoundFileScope(intent, refs, targetVersions)
 	if err != nil || (auth.DevelopFileScope != nil && !reflect.DeepEqual(auth.DevelopFileScope, scope)) {
 		return nil, ErrAuthorizationBoundaryChanged
 	}
@@ -143,11 +143,8 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 		return observation, nil
 	}
 	prepared := &iam.DevelopFileReadPreparation{Scope: *scope.Clone(), Verify: verify}
-	if scope.Target != nil {
-		target := *scope.Target
-		prepared.TargetSnapshot = func(ctx context.Context, db *gorm.DB) (*models.Engine, error) {
-			return s.DevelopFileTargetEngine(ctx, db, identity.TenantID, target)
-		}
+	prepared.TargetSnapshot = func(ctx context.Context, db *gorm.DB, target execution.DevelopBoundFileTarget) (*models.Engine, error) {
+		return s.DevelopFileTargetEngine(ctx, db, identity.TenantID, target)
 	}
 	return prepared, nil
 }

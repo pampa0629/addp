@@ -24,23 +24,42 @@ func (r *FileExecutionRepository) ClaimProductionAuthorization(ctx context.Conte
 	var claim *ProductionAuthorizationClaim
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row models.FileExecution
-		status := "publication_json->'initial_authorization'->>'status'"
-		due := "CAST(publication_json->'initial_authorization'->>'next_attempt_unix' AS BIGINT)"
-		if tx.Dialector.Name() == "mysql" {
-			status = "JSON_UNQUOTE(JSON_EXTRACT(publication_json,'$.initial_authorization.status'))"
-			due = "CAST(JSON_UNQUOTE(JSON_EXTRACT(publication_json,'$.initial_authorization.next_attempt_unix')) AS SIGNED)"
+		// Select the earliest due independent result, retaining the execution row
+		// lock that serializes the original publication journal.
+		due := `(SELECT min((p->'initial_authorization'->>'next_attempt_unix')::bigint)
+			FROM jsonb_array_elements(CASE WHEN jsonb_typeof(publication_json)='array' THEN publication_json ELSE '[]'::jsonb END) p
+			WHERE p->'initial_authorization'->>'status'='pending')`
+		switch tx.Dialector.Name() {
+		case "sqlite":
+			due = `(SELECT min(json_extract(p.value,'$.initial_authorization.next_attempt_unix')) FROM json_each(publication_json) p
+				WHERE json_type(publication_json)='array' AND json_extract(p.value,'$.initial_authorization.status')='pending')`
+		case "mysql":
+			due = `(SELECT min(p.next_attempt) FROM JSON_TABLE(publication_json, '$[*]' COLUMNS (
+				state VARCHAR(16) PATH '$.initial_authorization.status', next_attempt BIGINT PATH '$.initial_authorization.next_attempt_unix')) p
+				WHERE JSON_TYPE(publication_json)='ARRAY' AND p.state='pending')`
 		}
-		query := tx.Where(status+"='pending' AND "+due+"<=?", now.Unix()).Order(due + ",execution_id")
+		query := tx.Where(due+"<=?", now.Unix()).Order(due + ",execution_id")
 		if err := query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Take(&row).Error; err != nil {
 			return err
 		}
-		record, err := privateFilePublication(&row)
+		records, err := privateFilePublications(&row)
 		if err != nil {
 			return err
 		}
+		var record *privatePublicationRecord
+		for i := range records {
+			state := records[i].InitialAuthorization
+			if state != nil && state.Status == "pending" && state.NextAttemptUnix <= now.Unix() &&
+				(record == nil || state.NextAttemptUnix < record.InitialAuthorization.NextAttemptUnix) {
+				record = &records[i]
+			}
+		}
+		if record == nil {
+			return production.ErrEvidence
+		}
 		state := record.InitialAuthorization
 		state.Claim(now)
-		body, err := json.Marshal(record)
+		body, err := json.Marshal(records)
 		if err != nil {
 			return err
 		}
@@ -65,7 +84,11 @@ func (r *FileExecutionRepository) RecordProductionAuthorization(ctx context.Cont
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND execution_id=?", claim.TenantID, claim.Reference.ExecutionID).Take(&row).Error; err != nil {
 			return err
 		}
-		record, err := privateFilePublication(&row)
+		records, err := privateFilePublications(&row)
+		if err != nil {
+			return err
+		}
+		record, err := records.find(claim.Reference.ResultID)
 		if err != nil {
 			return err
 		}
@@ -77,7 +100,7 @@ func (r *FileExecutionRepository) RecordProductionAuthorization(ctx context.Cont
 			return nil
 		}
 		record.InitialAuthorization = &state
-		body, err := json.Marshal(record)
+		body, err := json.Marshal(records)
 		if err != nil {
 			return err
 		}

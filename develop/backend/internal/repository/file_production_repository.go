@@ -14,6 +14,7 @@ import (
 // PrivateFileProduction remains inside Develop. The HTTP projection must not
 // expose the frozen configuration, Runtime manifest or Provider receipt.
 type PrivateFileProduction struct {
+	TargetIndex        int
 	Facts              client.DevelopFileExecutionFacts
 	SourceReads        []PrivateFileSourceRead
 	OperationID        string
@@ -42,12 +43,13 @@ func (r *FileExecutionRepository) ReadPrivateProduction(ctx context.Context, ten
 	if len(row.PublicationJSON) == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
-	facts, record, err := privateFileFactsAndPublication(&row.FileExecution)
+	facts, records, err := privateFileFactsAndPublication(&row.FileExecution)
 	if err != nil {
 		return nil, err
 	}
-	if record.Facts.Request.OperationID != resultID {
-		return nil, gorm.ErrRecordNotFound
+	record, err := records.find(resultID)
+	if err != nil {
+		return nil, err
 	}
 	outcome, observed := record.Outcome, record.OutcomeObservedAt
 	if outcome == nil {
@@ -62,6 +64,6 @@ func (r *FileExecutionRepository) ReadPrivateProduction(ctx context.Context, ten
 			return nil, err
 		}
 	}
-	return &PrivateFileProduction{Facts: *facts, SourceReads: reads, OperationID: resultID,
+	return &PrivateFileProduction{TargetIndex: facts.BoundScope.TargetIndex(record.Facts.Request.Target), Facts: *facts, SourceReads: reads, OperationID: resultID,
 		Attempt: row.ProductionAttempt, RetryOfExecutionID: row.ProductionRetry, CommittedAt: *observed}, nil
 }

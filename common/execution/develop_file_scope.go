@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	DevelopFileIntentSchema     = "develop.file-intent/v1"
-	DevelopBoundFileScopeSchema = "develop.file-bound-scope/v1"
+	DevelopFileIntentSchema     = "develop.file-intent/v2"
+	DevelopBoundFileScopeSchema = "develop.file-bound-scope/v2"
 )
 
 var errDevelopFileScope = errors.New("invalid Develop file execution boundary")
@@ -62,11 +62,11 @@ type DevelopFileIntent struct {
 	ExpectedAttempt int                       `json:"expected_attempt"`
 	TimeoutSeconds  int                       `json:"timeout_seconds"`
 	Sources         []DevelopFileSourceIntent `json:"sources"`
-	Target          *DevelopFileTargetIntent  `json:"target,omitempty"`
+	Targets         []DevelopFileTargetIntent `json:"targets,omitempty"`
 	Parent          *DevelopFileParent        `json:"parent,omitempty"`
 }
 
-func NewDevelopFileIntent(raw json.RawMessage, expectedAttempt, timeoutSeconds int, sources []DevelopFileSourceIntent, target *DevelopFileTargetIntent, parent *DevelopFileParent) (*DevelopFileIntent, error) {
+func NewDevelopFileIntent(raw json.RawMessage, expectedAttempt, timeoutSeconds int, sources []DevelopFileSourceIntent, targets []DevelopFileTargetIntent, parent *DevelopFileParent) (*DevelopFileIntent, error) {
 	if len(sources) == 0 {
 		return nil, errDevelopFileScope
 	}
@@ -75,7 +75,7 @@ func NewDevelopFileIntent(raw json.RawMessage, expectedAttempt, timeoutSeconds i
 		return nil, errDevelopFileScope
 	}
 	value := (&DevelopFileIntent{SchemaVersion: DevelopFileIntentSchema, ConfigDigest: digest,
-		ExpectedAttempt: expectedAttempt, TimeoutSeconds: timeoutSeconds, Sources: sources, Target: target, Parent: parent}).Clone()
+		ExpectedAttempt: expectedAttempt, TimeoutSeconds: timeoutSeconds, Sources: sources, Targets: targets, Parent: parent}).Clone()
 	sort.Slice(value.Sources, func(i, j int) bool { return value.Sources[i].NodeID < value.Sources[j].NodeID })
 	if err := value.Validate(); err != nil {
 		return nil, err
@@ -90,20 +90,24 @@ func (s *DevelopFileIntent) Validate() error {
 	}
 	if s.Parent != nil {
 		id, err := uuid.Parse(s.Parent.ExecutionID)
-		if err != nil || id == uuid.Nil || id.String() != s.Parent.ExecutionID || s.Parent.Attempt <= 0 || !developFileDigest(s.Parent.LeaseDigest) || s.Target != nil {
+		if err != nil || id == uuid.Nil || id.String() != s.Parent.ExecutionID || s.Parent.Attempt <= 0 || !developFileDigest(s.Parent.LeaseDigest) || len(s.Targets) != 0 {
 			return errDevelopFileScope
 		}
 	}
+	nodes := make(map[string]bool, len(s.Sources)+len(s.Targets))
 	for i, source := range s.Sources {
 		if !developFileNodeID(source.NodeID) || !developFileLeaf(source.Target) || (i > 0 && s.Sources[i-1].NodeID >= source.NodeID) {
 			return errDevelopFileScope
 		}
-		if s.Target != nil && source.NodeID == s.Target.NodeID {
+		nodes[source.NodeID] = true
+	}
+	paths := make(map[string]bool, len(s.Targets))
+	for _, target := range s.Targets {
+		key := developFilePathKey(target.Target)
+		if !developFileNodeID(target.NodeID) || nodes[target.NodeID] || paths[key] || target.Mode != "fail" || !developFileLeaf(target.Target) || developObjectLeaf(target.Target) {
 			return errDevelopFileScope
 		}
-	}
-	if s.Target != nil && (!developFileNodeID(s.Target.NodeID) || s.Target.Mode != "fail" || (!developFileLeaf(s.Target.Target) || developObjectLeaf(s.Target.Target))) {
-		return errDevelopFileScope
+		nodes[target.NodeID], paths[key] = true, true
 	}
 	return boundedDevelopFileValue(s)
 }
@@ -128,10 +132,9 @@ func (s *DevelopFileIntent) Clone() *DevelopFileIntent {
 	for i := range result.Sources {
 		result.Sources[i].Target = cloneDevelopFilePath(result.Sources[i].Target)
 	}
-	if s.Target != nil {
-		target := *s.Target
-		target.Target = cloneDevelopFilePath(target.Target)
-		result.Target = &target
+	result.Targets = append([]DevelopFileTargetIntent(nil), s.Targets...)
+	for i := range result.Targets {
+		result.Targets[i].Target = cloneDevelopFilePath(result.Targets[i].Target)
 	}
 	return &result
 }
@@ -160,10 +163,10 @@ type DevelopBoundFileScope struct {
 	ExpectedAttempt int                          `json:"expected_attempt"`
 	TimeoutSeconds  int                          `json:"timeout_seconds"`
 	Sources         []DevelopFileSourceReference `json:"sources"`
-	Target          *DevelopBoundFileTarget      `json:"target,omitempty"`
+	Targets         []DevelopBoundFileTarget     `json:"targets,omitempty"`
 }
 
-func NewDevelopBoundFileScope(intent DevelopFileIntent, sources []DevelopFileSourceReference, targetEngineVersion string) (*DevelopBoundFileScope, error) {
+func NewDevelopBoundFileScope(intent DevelopFileIntent, sources []DevelopFileSourceReference, targetEngineVersions []string) (*DevelopBoundFileScope, error) {
 	digest, err := intent.Digest()
 	if err != nil || len(sources) == 0 {
 		return nil, errDevelopFileScope
@@ -192,12 +195,11 @@ func NewDevelopBoundFileScope(intent DevelopFileIntent, sources []DevelopFileSou
 		ref.Target = cloneDevelopFilePath(path)
 		result.Sources = append(result.Sources, ref)
 	}
-	if intent.Target == nil {
-		if targetEngineVersion != "" {
-			return nil, errDevelopFileScope
-		}
-	} else {
-		result.Target = &DevelopBoundFileTarget{Target: cloneDevelopFilePath(intent.Target.Target), Mode: intent.Target.Mode, EngineVersion: targetEngineVersion}
+	if len(targetEngineVersions) != len(intent.Targets) {
+		return nil, errDevelopFileScope
+	}
+	for index, target := range intent.Targets {
+		result.Targets = append(result.Targets, DevelopBoundFileTarget{Target: cloneDevelopFilePath(target.Target), Mode: target.Mode, EngineVersion: targetEngineVersions[index]})
 	}
 	if err := result.ValidateAgainstIntent(intent); err != nil {
 		return nil, err
@@ -213,7 +215,7 @@ func (s *DevelopBoundFileScope) Validate() error {
 	paths := make([]plugin.EngineCatalogPath, 0, len(s.Sources))
 	seen := make(map[string]bool, len(s.Sources))
 	for _, source := range s.Sources {
-		if !validDevelopFileSourceReference(source) || seen[source.ItemFingerprint] || (s.Target != nil && source.Format != "geopackage") {
+		if !validDevelopFileSourceReference(source) || seen[source.ItemFingerprint] || (len(s.Targets) != 0 && source.Format != "geopackage") {
 			return errDevelopFileScope
 		}
 		seen[source.ItemFingerprint] = true
@@ -223,15 +225,20 @@ func (s *DevelopBoundFileScope) Validate() error {
 	if err != nil || !reflect.DeepEqual(canonical.Paths, paths) {
 		return errDevelopFileScope
 	}
-	if s.Target != nil && (!developFileLeaf(s.Target.Target) || s.Target.Mode != "fail" || !developFileVersion(s.Target.EngineVersion)) {
-		return errDevelopFileScope
+	targetPaths := make(map[string]bool, len(s.Targets))
+	for _, target := range s.Targets {
+		key := developFilePathKey(target.Target)
+		if targetPaths[key] || !developFileLeaf(target.Target) || developObjectLeaf(target.Target) || target.Mode != "fail" || !developFileVersion(target.EngineVersion) {
+			return errDevelopFileScope
+		}
+		targetPaths[key] = true
 	}
 	return boundedDevelopFileValue(s)
 }
 
 func (s *DevelopBoundFileScope) ValidateAgainstIntent(intent DevelopFileIntent) error {
 	digest, err := intent.Digest()
-	if err != nil || s.Validate() != nil || s.IntentDigest != digest || s.ExpectedAttempt != intent.ExpectedAttempt || s.TimeoutSeconds != intent.TimeoutSeconds || (s.Target == nil) != (intent.Target == nil) {
+	if err != nil || s.Validate() != nil || s.IntentDigest != digest || s.ExpectedAttempt != intent.ExpectedAttempt || s.TimeoutSeconds != intent.TimeoutSeconds || len(s.Targets) != len(intent.Targets) {
 		return errDevelopFileScope
 	}
 	paths := make([]plugin.EngineCatalogPath, 0, len(intent.Sources))
@@ -247,10 +254,22 @@ func (s *DevelopBoundFileScope) ValidateAgainstIntent(intent DevelopFileIntent) 
 			return errDevelopFileScope
 		}
 	}
-	if s.Target != nil && (!reflect.DeepEqual(s.Target.Target, intent.Target.Target) || s.Target.Mode != intent.Target.Mode) {
-		return errDevelopFileScope
+	for i, target := range s.Targets {
+		if !reflect.DeepEqual(target.Target, intent.Targets[i].Target) || target.Mode != intent.Targets[i].Mode {
+			return errDevelopFileScope
+		}
 	}
 	return nil
+}
+
+// TargetIndex identifies the exact file in the frozen publication order.
+func (s *DevelopBoundFileScope) TargetIndex(path plugin.EngineCatalogPath) int {
+	for i, target := range s.Targets {
+		if reflect.DeepEqual(path, target.Target) {
+			return i
+		}
+	}
+	return -1
 }
 
 func (s *DevelopBoundFileScope) Digest() (string, error) {
@@ -281,10 +300,9 @@ func (s *DevelopBoundFileScope) Clone() *DevelopBoundFileScope {
 	for i := range result.Sources {
 		result.Sources[i].Target = cloneDevelopFilePath(result.Sources[i].Target)
 	}
-	if s.Target != nil {
-		target := *s.Target
-		target.Target = cloneDevelopFilePath(target.Target)
-		result.Target = &target
+	result.Targets = append([]DevelopBoundFileTarget(nil), s.Targets...)
+	for i := range result.Targets {
+		result.Targets[i].Target = cloneDevelopFilePath(result.Targets[i].Target)
 	}
 	return &result
 }

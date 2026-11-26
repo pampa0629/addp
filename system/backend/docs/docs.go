@@ -5468,6 +5468,13 @@ const docTemplate = `{
                         "name": "execution_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "冻结清单的目标序号，从 0 开始 | Zero-based frozen target ordinal",
+                        "name": "target_index",
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -19740,8 +19747,11 @@ const docTemplate = `{
         "client.DevelopFileAdmissionObservation": {
             "type": "object",
             "properties": {
-                "approval_id": {
-                    "type": "string"
+                "approval_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "authorization_id": {
                     "type": "string"
@@ -19899,6 +19909,9 @@ const docTemplate = `{
                 },
                 "stage": {
                     "type": "string"
+                },
+                "target_index": {
+                    "type": "integer"
                 }
             }
         },
@@ -20885,8 +20898,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/execution.DevelopFileSourceReference"
                     }
                 },
-                "target": {
-                    "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                    }
                 },
                 "timeout_seconds": {
                     "type": "integer"
@@ -21815,6 +21831,9 @@ const docTemplate = `{
                 },
                 "target": {
                     "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                },
+                "target_index": {
+                    "type": "integer"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -24844,6 +24863,9 @@ const docTemplate = `{
                 },
                 "scope_digest": {
                     "type": "string"
+                },
+                "target_index": {
+                    "type": "integer"
                 }
             }
         },

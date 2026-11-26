@@ -61,7 +61,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 		{"unknown prepare", "admit prepare", plugin.NewFileNotPublished, false, true},
 		{"release response lost", "admit prepare release", plugin.NewFileNotPublished, false, true},
 		{"concurrent target creation", "admit prepare release publish cleanup", plugin.NewFileNotPublished, false, true},
-		{"link response lost and resolved", "admit prepare release publish resolve cleanup", plugin.NewFilePublished, false, false},
+		{"link response lost and resolved", "admit prepare release publish resolve cleanup", plugin.NewFilePublished, false, true},
 		{"link remains unknown", "admit prepare release publish resolve", plugin.NewFileUnknown, false, true},
 		{"cleanup pending", "admit prepare release publish cleanup", plugin.NewFilePublished, true, true},
 	} {
@@ -72,7 +72,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			if err := repo.RecordPrivateInputDirectory(ctx, *lease, "fixture-instance", directory); err != nil {
 				t.Fatal(err)
 			}
-			target := facts.Intent.Target
+			target := facts.Intent.Targets[0]
 			authorizationID, err := strconv.ParseInt(issued.Authorization.ID, 10, 64)
 			if err != nil {
 				t.Fatal(err)
@@ -97,6 +97,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			dropped := errors.New("test lost response")
 			var calls []string
 			var original plugin.PreparedNewFile
+			var operationID string
 			connection := plugin.ConnectionInfo{"server": "only from original admission"}
 			assertOriginal := func(got plugin.ConnectionInfo, value plugin.PreparedNewFile) {
 				t.Helper()
@@ -129,7 +130,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			provider.publish = func(_ context.Context, c plugin.ConnectionInfo, value plugin.PreparedNewFile, previous plugin.NewFilePublicationState) (plugin.NewFilePublicationOutcome, error) {
 				calls = append(calls, "publish")
 				assertOriginal(c, value)
-				durable, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+				durable, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID, original.OperationID)
 				if err != nil || durable.DispatchState != plugin.NewFileUnknown || previous != plugin.NewFileNotPublished {
 					t.Fatal("publish did not follow one durable dispatch", err)
 				}
@@ -153,7 +154,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			provider.cleanup = func(_ context.Context, c plugin.ConnectionInfo, value plugin.PreparedNewFile, state plugin.NewFilePublicationState) error {
 				calls = append(calls, "cleanup")
 				assertOriginal(c, value)
-				durable, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+				durable, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID, original.OperationID)
 				if err != nil || state != tc.state || durable.Outcome == nil || durable.Outcome.State != state || !durable.Outcome.CleanupPending {
 					t.Fatal("cleanup lacks original durable Provider evidence", err)
 				}
@@ -169,7 +170,8 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 					t.Fatal("wrong tenant for publication")
 				}
 				return publicationAuthorityFunc(func(_ context.Context, ea client.IssuedDevelopFileAuthorization, r client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error) {
-					record, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+					operationID = r.OperationID
+					record, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID, r.OperationID)
 					if err != nil || r.Validate() != nil || ea.Authorization.ID != issued.Authorization.ID || r.LeaseToken != lease.Token ||
 						record.Prepared.OperationID != r.OperationID || record.ApprovalID != r.ApprovalID {
 						t.Fatal("System called without original operation and lease", err)
@@ -197,7 +199,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			if (err != nil) != tc.wantError || strings.Join(calls, " ") != tc.calls {
 				t.Fatal(calls, err)
 			}
-			record, err := repository.NewFileExecutionRepository(db).ReadPrivatePublication(ctx, 3, item.ExecutionID)
+			record, err := repository.NewFileExecutionRepository(db).ReadPrivatePublication(ctx, 3, item.ExecutionID, operationID)
 			if err != nil || record.DispatchState != tc.state || (record.Outcome != nil && record.Outcome.CleanupPending != tc.cleanupPending) {
 				t.Fatal("unexpected durable outcome", err)
 			}
@@ -242,7 +244,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 				provider.cleanup = func(_ context.Context, c plugin.ConnectionInfo, value plugin.PreparedNewFile, state plugin.NewFilePublicationState) error {
 					calls = append(calls, "recovery-cleanup")
 					assertOriginal(c, value)
-					saved, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+					saved, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID, original.OperationID)
 					if err != nil || saved.RecoveryOutcome == nil || !saved.RecoveryOutcome.CleanupPending || saved.Outcome != nil {
 						t.Fatal("late evidence was not stored separately", err)
 					}
@@ -278,7 +280,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 				if err := restarted.recoverPrivatePublications(ctx); err == nil {
 					t.Fatal("expired recovery window allowed cleanup")
 				}
-				pending, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+				pending, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID, original.OperationID)
 				if err != nil || pending.RecoveryOutcome == nil || !pending.RecoveryOutcome.CleanupPending || pending.Outcome != nil {
 					t.Fatal("late Resolve evidence was lost or promoted", err)
 				}
@@ -286,7 +288,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 				if err := restarted.recoverPrivatePublications(ctx); err != nil {
 					t.Fatal(err)
 				}
-				late, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+				late, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID, original.OperationID)
 				if err != nil || late.RecoveryOutcome == nil || late.RecoveryOutcome.State != plugin.NewFilePublished || late.RecoveryOutcome.CleanupPending || late.Outcome != nil || late.DispatchState != plugin.NewFileUnknown {
 					t.Fatal("late observation promoted into original outcome", err)
 				}

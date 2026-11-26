@@ -33,7 +33,7 @@ type DevelopFileAdmissionObservation struct {
 	ExpectedAttempt int       `json:"expected_attempt"`
 	ScopeDigest     string    `json:"scope_digest"`
 	State           string    `json:"state"`
-	ApprovalID      string    `json:"approval_id,omitempty"`
+	ApprovalIDs     []string  `json:"approval_ids,omitempty"`
 	ObservedAt      time.Time `json:"observed_at"`
 	ExpiresAt       time.Time `json:"expires_at"`
 }
@@ -158,15 +158,28 @@ func (c *SystemServiceClient) CheckDevelopFileAdmission(ctx context.Context, iss
 	default:
 		return nil, errors.New("unknown Develop file admission state")
 	}
-	if issued.Scope.Target == nil {
-		if result.State == "awaiting_approval" || result.ApprovalID != "" {
-			return nil, errors.New("read-only file execution acquired write approval")
-		}
-	} else if (result.State == "ready" && !canonicalExecutionUUID(result.ApprovalID)) ||
-		(result.ApprovalID != "" && !canonicalExecutionUUID(result.ApprovalID)) {
+	if !result.ValidApprovals(len(issued.Scope.Targets)) {
 		return nil, errors.New("invalid Develop file approval binding")
 	}
 	return &result, nil
+}
+
+// ValidApprovals checks the ordered, complete approval set used by a ready execution.
+func (o DevelopFileAdmissionObservation) ValidApprovals(targetCount int) bool {
+	if o.State != "ready" {
+		return len(o.ApprovalIDs) == 0 && (o.State != "awaiting_approval" || targetCount > 0)
+	}
+	if len(o.ApprovalIDs) != targetCount {
+		return false
+	}
+	seen := make(map[string]bool, targetCount)
+	for _, id := range o.ApprovalIDs {
+		if !canonicalExecutionUUID(id) || seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
 }
 
 // Source access is a fresh exact guarded I/O observation, not a general engine

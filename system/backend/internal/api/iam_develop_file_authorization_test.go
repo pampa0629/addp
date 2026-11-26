@@ -119,7 +119,7 @@ func developFileHTTPIssued(t *testing.T) (execution.DevelopFileIntent, *client.I
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, "")
+	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestDevelopFileHTTPGuardsAndStrictInputs(t *testing.T) {
 	issue := `{"execution_id":"` + profileHTTPExecution + `","intent_digest":"` + digest + `"}`
 	admit := `{"execution_id":"` + profileHTTPExecution + `","expected_attempt":1,"scope_digest":"` + issued.ScopeDigest + `"}`
 	publication := `{"execution_id":"` + profileHTTPExecution + `","attempt":1,"scope_digest":"` + issued.ScopeDigest +
-		`","lease_token":"05b4b5f6-3343-41c4-97d3-a0aa527e42dc","approval_id":"ca5846c6-1fbb-40ae-bfda-7ed0e7be08f4","operation_id":"0b33cbf0-5c67-4c99-8ac3-5573d505630f","stage":"prepare"}`
+		`","lease_token":"05b4b5f6-3343-41c4-97d3-a0aa527e42dc","approval_id":"ca5846c6-1fbb-40ae-bfda-7ed0e7be08f4","operation_id":"0b33cbf0-5c67-4c99-8ac3-5573d505630f","target_index":0,"stage":"prepare"}`
 	for _, tc := range []struct {
 		name, path, body string
 		service          bool
@@ -146,6 +146,8 @@ func TestDevelopFileHTTPGuardsAndStrictInputs(t *testing.T) {
 		{"issue", "/auth/execution-authorizations/develop-file-workflows", issue, false, 201, 1, nil, nil},
 		{"admit", "/execution-authorizations/9/develop-file-admission-checks", admit, true, 200, 1, nil, nil},
 		{"publication", "/execution-authorizations/9/develop-geopackage-publications", publication, true, 200, 1, nil, nil},
+		{"missing publication target index", "/execution-authorizations/9/develop-geopackage-publications", strings.Replace(publication, `"target_index":0,`, "", 1), true, 400, 0, nil, nil},
+		{"null publication target index", "/execution-authorizations/9/develop-geopackage-publications", strings.Replace(publication, `"target_index":0`, `"target_index":null`, 1), true, 400, 0, nil, nil},
 		{"user cannot publish", "/execution-authorizations/9/develop-geopackage-publications", publication, false, 403, 0, nil, nil},
 		{"release requires confirmed digest", "/execution-authorizations/9/develop-geopackage-publications", strings.Replace(publication, `"prepare"`, `"release"`, 1), true, 400, 0, nil, nil},
 		{"unavailable", "/execution-authorizations/9/develop-file-admission-checks", admit, true, 503, 1, nil, iam.ErrDevelopFileDependencyUnavailable},
@@ -184,13 +186,14 @@ func TestDevelopFileHTTPGuardsAndStrictInputs(t *testing.T) {
 
 func TestDevelopFileHTTPCreateApprovalRequiresHumanPermission(t *testing.T) {
 	const path = "/api/v1/system/execution-authorizations/9/develop-geopackage-create-approvals"
-	body := `{"scope_digest":"` + strings.Repeat("a", 64) + `","expires_at":"2030-01-01T00:00:00Z"}`
+	body := `{"target_index":0,"scope_digest":"` + strings.Repeat("a", 64) + `","expires_at":"2030-01-01T00:00:00Z"}`
 	for _, tc := range []struct {
 		name, body         string
 		service, permitted bool
 		status, calls      int
 	}{
 		{"human", body, false, true, 201, 1},
+		{"omitted target", strings.Replace(body, `"target_index":0,`, "", 1), false, true, 400, 0},
 		{"missing permission", body, false, false, 403, 0},
 		{"machine", body, true, true, 403, 0},
 		{"invented target", strings.TrimSuffix(body, "}") + `,"target":"other.gpkg"}`, false, true, 400, 0},
@@ -223,7 +226,9 @@ func TestDevelopFileHTTPApprovalContextIsHumanOnlyAndReadOnly(t *testing.T) {
 		machine, permission bool
 		status, calls       int
 	}{
-		{"human", base, "", false, true, 200, 1},
+		{"human", base + "?target_index=1", "", false, true, 200, 1},
+		{"missing index", base, "", false, true, 400, 0},
+		{"duplicate index", base + "?target_index=0&target_index=1", "", false, true, 400, 0},
 		{"no permission", base, "", false, false, 403, 0},
 		{"service", base, "", true, true, 403, 0},
 		{"query", base + "?target=other.gpkg", "", false, true, 400, 0},

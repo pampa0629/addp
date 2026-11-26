@@ -88,7 +88,7 @@ func fileSourceFixture(t *testing.T, window time.Duration) (client.IssuedDevelop
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, "")
+	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -30,6 +30,11 @@ if module == "monitor":
     env["GATEWAY_URL"] = "http://127.0.0.1:1"
 env.update(SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1", GIN_MODE="release")
 
+# Database rejection probes never serve a request. A running developer
+# service must not turn the expected database rejection into a port failure.
+if sys.argv[2] in ("missing-credentials", "missing", "outdated"):
+    env[module.upper() + "_BACKEND_PORT"] = "0"
+
 if sys.argv[2] == "missing-credentials":
     # A development checkout may have credentials in its root .env. A service
     # receives its role from the launcher and must never import that file again.

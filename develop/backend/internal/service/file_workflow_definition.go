@@ -33,7 +33,7 @@ func fileWorkflowRuntimeDefinition(facts *client.DevelopFileExecutionFacts) (str
 		sources[source.NodeID] = source
 	}
 	read := map[string]bool{}
-	saved := false
+	saved := 0
 	projectedTasks := make([]map[string]interface{}, 0, len(tasks))
 	for _, task := range tasks {
 		id := task["id"].(string)
@@ -60,18 +60,18 @@ func fileWorkflowRuntimeDefinition(facts *client.DevelopFileExecutionFacts) (str
 				projected["geom_column"] = geometry
 			}
 		case "save":
-			if facts.Intent.Target == nil || saved || id != facts.Intent.Target.NodeID || !fileWorkflowOnlyKeys(params, "input_df", "mode", "target_parent_locator", "target_name", "target_resource") {
+			if saved >= len(facts.Intent.Targets) || id != facts.Intent.Targets[saved].NodeID || !fileWorkflowOnlyKeys(params, "input_df", "mode", "target_parent_locator", "target_name", "target_resource") {
 				return "", errFileWorkflowInputs
 			}
 			_, hasInput := params["input_df"]
 			target, err := fileWorkflowSaveTarget(id, params)
-			if err != nil || !hasInput || !reflect.DeepEqual(target, facts.Intent.Target) {
+			if err != nil || !hasInput || !reflect.DeepEqual(*target, facts.Intent.Targets[saved]) {
 				return "", errFileWorkflowInputs
 			}
-			saved = true
+			saved++
 			projected = map[string]interface{}{"input_df": params["input_df"], "mode": target.Mode}
 		default:
-			if _, boundSource := sources[id]; boundSource || (facts.Intent.Target != nil && facts.Intent.Target.NodeID == id) {
+			if _, boundSource := sources[id]; boundSource {
 				return "", errFileWorkflowInputs
 			}
 			// Runtime additionally admits only its own pure vector operator metadata.
@@ -83,7 +83,7 @@ func fileWorkflowRuntimeDefinition(facts *client.DevelopFileExecutionFacts) (str
 		}
 		projectedTasks = append(projectedTasks, map[string]interface{}{"id": id, "operator": operator, "params": projected, "depends_on": task["depends_on"]})
 	}
-	if len(read) != len(sources) || saved != (facts.Intent.Target != nil) {
+	if len(read) != len(sources) || saved != len(facts.Intent.Targets) {
 		return "", errFileWorkflowInputs
 	}
 	raw, err := json.Marshal(map[string]interface{}{"tasks": projectedTasks})

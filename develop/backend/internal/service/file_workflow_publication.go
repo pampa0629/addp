@@ -14,6 +14,8 @@ import (
 
 var errPrivatePublication = errors.New("private GeoPackage publication requires reconciliation")
 
+var errPrivatePublicationResolved = errors.New("original publication reconciled after uncertain response")
+
 type filePublicationAuthority interface {
 	AuthorizeDevelopFilePublication(context.Context, client.IssuedDevelopFileAuthorization, client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error)
 }
@@ -31,13 +33,13 @@ func (f *privateFileWorkflowExecutor) publishPrivateFile(ctx context.Context, le
 	if err := f.repository.RegisterPrivatePublication(ctx, lease, runtimeID, operation, output); err != nil {
 		return nil, errPrivatePublication
 	}
-	record, err := f.repository.ReadPrivatePublication(ctx, tenant, lease.ExecutionID)
+	record, err := f.repository.ReadPrivatePublication(ctx, tenant, lease.ExecutionID, operation)
 	if err != nil {
 		return nil, errPrivatePublication
 	}
 	authority := f.publication(tenant)
 	request := client.DevelopFilePublicationRequest{
-		ExecutionID: lease.ExecutionID, Attempt: lease.Attempt, LeaseToken: lease.Token,
+		TargetIndex: record.TargetIndex, ExecutionID: lease.ExecutionID, Attempt: lease.Attempt, LeaseToken: lease.Token,
 		ScopeDigest: record.Issued.ScopeDigest, ApprovalID: record.ApprovalID, OperationID: operation,
 		Stage: client.DevelopFilePublicationPrepare,
 	}
@@ -64,7 +66,7 @@ func (f *privateFileWorkflowExecutor) publishPrivateFile(ctx context.Context, le
 	if err := f.repository.RecordPrivatePublicationPreparation(prepareCtx, lease, prepared, true); err != nil {
 		return nil, errPrivatePublication
 	}
-	record, err = f.repository.ReadPrivatePublication(prepareCtx, tenant, lease.ExecutionID)
+	record, err = f.repository.ReadPrivatePublication(prepareCtx, tenant, lease.ExecutionID, operation)
 	if err != nil {
 		return nil, errPrivatePublication
 	}
@@ -79,6 +81,7 @@ func (f *privateFileWorkflowExecutor) publishPrivateFile(ctx context.Context, le
 	if err != nil || publishCtx.Err() != nil {
 		return nil, errPrivatePublication
 	}
+	resolved := false
 	outcome, publishErr := provider.PublishNewFile(publishCtx, connection, *claimed, plugin.NewFileNotPublished)
 	if outcome.Validate(*claimed) != nil || (publishErr != nil && outcome.State != plugin.NewFileNotPublished) || outcome.State == plugin.NewFileUnknown {
 		if publishCtx.Err() != nil {
@@ -86,28 +89,33 @@ func (f *privateFileWorkflowExecutor) publishPrivateFile(ctx context.Context, le
 		}
 		// One observation of the original prepared object after the call
 		// returned. Only Provider evidence can settle an uncertain LINK.
+		resolved = true
 		outcome, err = provider.ResolveNewFile(publishCtx, connection, *claimed)
 		if err != nil || outcome.State != plugin.NewFilePublished || outcome.Validate(*claimed) != nil {
 			return nil, errPrivatePublication
 		}
 	}
-	if err := f.repository.RecordPrivatePublicationOutcome(publishCtx, lease, *claimed, outcome); err != nil {
+	if err := f.repository.RecordPrivatePublicationOutcome(publishCtx, lease, *claimed, outcome, resolved); err != nil {
 		return nil, errPrivatePublication
+	}
+	var stopPublishing error
+	if resolved {
+		stopPublishing = errPrivatePublicationResolved
 	}
 	if outcome.CleanupPending {
 		if publishCtx.Err() != nil {
-			return &outcome, errPrivatePublication
+			return &outcome, errors.Join(stopPublishing, errPrivatePublication)
 		}
 		if err := provider.CleanupNewFile(publishCtx, connection, *claimed, outcome.State); err != nil {
-			return &outcome, errPrivatePublication
+			return &outcome, errors.Join(stopPublishing, errPrivatePublication)
 		}
 		if err := f.repository.MarkPrivatePublicationCleaned(publishCtx, lease, *claimed); err != nil {
-			return &outcome, errPrivatePublication
+			return &outcome, errors.Join(stopPublishing, errPrivatePublication)
 		}
 		outcome.CleanupPending = false
 	}
 	if outcome.State != plugin.NewFilePublished {
 		return &outcome, errPrivatePublication
 	}
-	return &outcome, nil
+	return &outcome, stopPublishing
 }

@@ -18,7 +18,7 @@ type DevelopFileReadPreparer func(context.Context, *ExecutionAuthorization, exec
 type DevelopFileReadPreparation struct {
 	Scope          execution.DevelopBoundFileScope
 	Verify         func(context.Context, *gorm.DB, *ExecutionAuthorization, *plugin.EngineCatalogPath) (*DevelopFileReadObservation, error)
-	TargetSnapshot func(context.Context, *gorm.DB) (*models.Engine, error)
+	TargetSnapshot func(context.Context, *gorm.DB, execution.DevelopBoundFileTarget) (*models.Engine, error)
 }
 
 type DevelopFileReadObservation struct {

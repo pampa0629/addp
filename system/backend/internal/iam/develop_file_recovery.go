@@ -32,13 +32,20 @@ func (s *DevelopFileAuthorizationService) PublicationRecoveryAccess(ctx context.
 	if err != nil {
 		return nil, err
 	}
-	if facts.Publication == nil || facts.AuthorizationID != history.AuthorizationID || facts.ScopeDigest != history.ScopeDigest ||
-		!reflect.DeepEqual(facts.BoundScope, ea.DevelopFileScope) || facts.Publication.ApprovalID != history.ApprovalID ||
-		facts.Publication.Request.OperationID != history.OperationID {
+	var publication *client.DevelopFilePublicationFacts
+	for i := range facts.Publications {
+		if facts.Publications[i].Request.OperationID == history.OperationID {
+			publication = &facts.Publications[i]
+			break
+		}
+	}
+	if publication == nil || facts.AuthorizationID != history.AuthorizationID || facts.ScopeDigest != history.ScopeDigest ||
+		!reflect.DeepEqual(facts.BoundScope, ea.DevelopFileScope) || publication.ApprovalID != history.ApprovalID {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
-	digest, err := client.DevelopFilePublicationRequestDigest(facts.Publication.Request)
-	if err != nil || digest != history.RequestDigest || (history.ReleasedAt != nil && facts.Publication.PreparationDigest != history.PreparationDigest) {
+	index := ea.DevelopFileScope.TargetIndex(publication.Request.Target)
+	digest, err := client.DevelopFilePublicationRequestDigest(publication.Request)
+	if index < 0 || err != nil || digest != history.RequestDigest || (history.ReleasedAt != nil && publication.PreparationDigest != history.PreparationDigest) {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	var result *client.DevelopFilePublicationRecoveryAccess
@@ -46,7 +53,7 @@ func (s *DevelopFileAuthorizationService) PublicationRecoveryAccess(ctx context.
 		if _, err := tx.developFileService(ctx, input); err != nil {
 			return err
 		}
-		engine, err := s.recoveryEngine(ctx, tx.db, input.TenantID, *ea.DevelopFileScope.Target)
+		engine, err := s.recoveryEngine(ctx, tx.db, input.TenantID, ea.DevelopFileScope.Targets[index])
 		if err != nil {
 			return err
 		}

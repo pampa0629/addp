@@ -16,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -80,14 +81,17 @@ func TestFileWorkflowInputsDurableOwnerRecordBeforeRuntimeCreate(t *testing.T) {
 	}
 }
 
-func privateFileWorkerFixture(t *testing.T, save bool) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *execution.Lease, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
+func privateFileWorkerFixture(t *testing.T, save bool, extraOutputs ...string) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *execution.Lease, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
 	t.Helper()
-	db, repo, item, _, issued, base := privateFilePendingFixture(t, save)
-	approval := ""
+	db, repo, item, _, issued, base := privateFilePendingFixture(t, save, extraOutputs...)
+	var approvals []string
 	if save {
-		approval = "caf37625-52f9-429f-861b-5f8c45ec8938"
+		approvals = []string{"caf37625-52f9-429f-861b-5f8c45ec8938"}
+		for range extraOutputs {
+			approvals = append(approvals, uuid.NewString())
+		}
 	}
-	if err := repo.ApplyAdmission(t.Context(), 3, item.ExecutionID, client.DevelopFileAdmissionObservation{ApprovalID: approval, AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+	if err := repo.ApplyAdmission(t.Context(), 3, item.ExecutionID, client.DevelopFileAdmissionObservation{ApprovalIDs: approvals, AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 	_, lease, err := repository.NewExecutionRepository(db).ClaimNext("workflow", t.Context(), "private-input-worker", time.Now(), time.Minute, nil)
@@ -101,9 +105,9 @@ func privateFileWorkerFixture(t *testing.T, save bool) (*gorm.DB, *repository.Fi
 	return db, repo, item, lease, frozen, issued, base
 }
 
-func privateFilePendingFixture(t *testing.T, save bool) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
+func privateFilePendingFixture(t *testing.T, save bool, extraOutputs ...string) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
 	t.Helper()
-	facts, issued, _, base := fileInputsFixture(t, save)
+	facts, issued, _, base := fileInputsFixture(t, save, extraOutputs...)
 	db := privateFileSQLiteDB(t)
 	decoder := json.NewDecoder(bytes.NewReader(facts.ConfigJSON))
 	decoder.UseNumber()
@@ -116,11 +120,15 @@ func privateFilePendingFixture(t *testing.T, save bool) (*gorm.DB, *repository.F
 	actor, membership, version, trigger := int64(31), int64(41), int64(5), 31
 	item := &execution.TaskExecution{ExecutionID: facts.ExecutionID, TenantID: 3, Module: execution.ModuleDevelop, Source: execution.ModuleDevelop, TaskType: execution.TaskTypeWorkflow, TriggerType: execution.TriggerTypeManual, Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, MaxAttempts: 1, ActorPrincipalID: &actor, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, TriggeredBy: &trigger, ExecutionConfig: config}
 	repo := repository.NewFileExecutionRepository(db)
-	pending, err := repo.CreatePending(t.Context(), item, facts.Intent.Sources, facts.Intent.Target)
+	pending, err := repo.CreatePending(t.Context(), item, facts.Intent.Sources, facts.Intent.Targets)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope, err := execution.NewDevelopBoundFileScope(pending.Intent, facts.BoundScope.Sources, map[bool]string{false: "", true: "2"}[save])
+	var versions []string
+	for _, target := range facts.BoundScope.Targets {
+		versions = append(versions, target.EngineVersion)
+	}
+	scope, err := execution.NewDevelopBoundFileScope(pending.Intent, facts.BoundScope.Sources, versions)
 	if err != nil {
 		t.Fatal(err)
 	}

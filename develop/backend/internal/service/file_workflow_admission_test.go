@@ -52,15 +52,15 @@ func TestPrivateFileAdmissionUsesOriginalScopeAndNeverReadsSources(t *testing.T)
 					}
 					observation := client.DevelopFileAdmissionObservation{AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}
 					if save {
-						observation.ApprovalID = uuid.NewString()
+						observation.ApprovalIDs = []string{uuid.NewString()}
 					}
 
 					switch scenario {
 					case "awaiting":
 						observation.State = "awaiting_approval"
-						observation.ApprovalID = ""
+						observation.ApprovalIDs = nil
 					case "missing-approval":
-						observation.ApprovalID = ""
+						observation.ApprovalIDs = nil
 					case "wrong-execution":
 						observation.ExecutionID = uuid.NewString()
 					case "wrong-scope":
@@ -71,6 +71,7 @@ func TestPrivateFileAdmissionUsesOriginalScopeAndNeverReadsSources(t *testing.T)
 						observation.AuthorizationID = "10"
 					case "rejected":
 						observation.State = "rejected"
+						observation.ApprovalIDs = nil
 					case "cancelled-during-observation":
 						if err := db.Model(item).Update("status", "cancelled").Error; err != nil {
 							t.Error(err)

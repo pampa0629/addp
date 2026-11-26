@@ -452,15 +452,16 @@ class ExactFileReadGrants(_ExactGrantLifecycle):
         return row
 
 
-def approve_geopackage_save(authorizer, execution_id, tenant_id, actor_id, target, *, on_evidence):
+def approve_geopackage_save(authorizer, execution_id, tenant_id, actor_id, target, *, on_evidence, target_index=0):
     """One command against the formal original context; unknown outcomes never resubmit."""
-    path = f'/api/v1/system/execution-authorizations/develop-file-workflows/{execution_id}/create-approval-context'
+    path = f'/api/v1/system/execution-authorizations/develop-file-workflows/{execution_id}/create-approval-context?target_index={target_index}'
     context = authorizer.request('GET', path, (200,)).payload
     if (not isinstance(context, dict) or context.get('execution_id') != execution_id
         or context.get('tenant_id') != str(tenant_id) or context.get('actor_principal_id') != str(actor_id)
         or type(context.get('expected_attempt')) is not int or context['expected_attempt'] != 1
         or not re.fullmatch('[1-9][0-9]*', str(context.get('authorization_id', '')))
         or not re.fullmatch('[0-9a-f]{64}', str(context.get('scope_digest', '')))
+        or type(context.get('target_index')) is not int or context['target_index'] != target_index
         or not isinstance(context.get('target'), dict) or context['target'].get('target') != target
         or context['target'].get('mode') != 'fail' or not context['target'].get('engine_version')
         or context.get('state') != 'awaiting_approval' or context.get('approval') is not None):
@@ -474,11 +475,11 @@ def approve_geopackage_save(authorizer, execution_id, tenant_id, actor_id, targe
         raise MetadataGrantError('approval_context', 'expiry_invalid') from None
     # Archive the original binding and intent before the only possible write.
     on_evidence(dict(stage='approval_intent', context=context))
-    body = dict(scope_digest=context['scope_digest'], expires_at=context['authorization_expires_at'])
+    body = dict(target_index=target_index, scope_digest=context['scope_digest'], expires_at=context['authorization_expires_at'])
     try:
         receipt = authorizer.request('POST', f"/api/v1/system/execution-authorizations/{context['authorization_id']}/develop-geopackage-create-approvals", (201,), body).payload
     except Exception:
-        on_evidence(dict(stage='approval_outcome_unknown', authorization_id=context['authorization_id']))
+        on_evidence(dict(stage='approval_outcome_unknown', authorization_id=context['authorization_id'], target_index=target_index))
         raise MetadataGrantError('approval_command', 'outcome_unknown_no_resubmit') from None
     try:
         valid = (isinstance(receipt, dict) and str(uuid.UUID(receipt['approval_id'])) == receipt['approval_id']
@@ -488,7 +489,7 @@ def approve_geopackage_save(authorizer, execution_id, tenant_id, actor_id, targe
         valid = False
     if not valid:
         raise MetadataGrantError('approval_receipt', 'receipt_mismatch_no_resubmit')
-    on_evidence(dict(stage='approval_confirmed', receipt=receipt))
+    on_evidence(dict(stage='approval_confirmed', target_index=target_index, receipt=receipt))
     return receipt
 
 

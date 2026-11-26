@@ -27,7 +27,7 @@ func NewFileExecutionRepository(db *gorm.DB) *FileExecutionRepository {
 // CreatePending freezes the actual stored JSON in the same Owner transaction.
 // The caller has already resolved DAG source coverage and verified User origin.
 // No System/Meta/network operation takes place while this transaction is open.
-func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commonexecution.TaskExecution, sources []commonexecution.DevelopFileSourceIntent, target *commonexecution.DevelopFileTargetIntent) (*commonclient.DevelopFileExecutionFacts, error) {
+func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commonexecution.TaskExecution, sources []commonexecution.DevelopFileSourceIntent, targets []commonexecution.DevelopFileTargetIntent) (*commonclient.DevelopFileExecutionFacts, error) {
 	if item == nil || item.Module != commonexecution.ModuleDevelop || (item.Source != commonexecution.ModuleDevelop && item.Source != commonexecution.ModuleOrchestrator) ||
 		item.TaskType != commonexecution.TaskTypeWorkflow || (item.TriggerType != commonexecution.TriggerTypeManual && (item.Source != commonexecution.ModuleOrchestrator || item.TriggerType != commonexecution.TriggerTypeScheduled)) || item.MaxAttempts != 1 ||
 		item.ExecutionBoundary != commonexecution.ExecutionBoundaryBounded || item.RetryOfExecutionID != nil ||
@@ -51,7 +51,7 @@ func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commo
 		}
 		var parent *commonexecution.DevelopFileParent
 		if item.Source == commonexecution.ModuleOrchestrator {
-			if item.ParentExecutionID == nil || target != nil {
+			if item.ParentExecutionID == nil || len(targets) != 0 {
 				return errors.New("invalid private file parent")
 			}
 			var authoritative commonexecution.TaskExecution
@@ -75,7 +75,7 @@ func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commo
 		} else if item.ParentExecutionID != nil {
 			return errors.New("unexpected private file parent")
 		}
-		intent, err := commonexecution.NewDevelopFileIntent(raw, item.Attempt+1, timeout, sources, target, parent)
+		intent, err := commonexecution.NewDevelopFileIntent(raw, item.Attempt+1, timeout, sources, targets, parent)
 		if err != nil {
 			return err
 		}
@@ -116,8 +116,8 @@ func privateFileFacts(row *models.FileExecution) (*commonclient.DevelopFileExecu
 	return value, err
 }
 
-func privateFileFactsAndPublication(row *models.FileExecution) (*commonclient.DevelopFileExecutionFacts, *privatePublicationRecord, error) {
-	var publication *privatePublicationRecord
+func privateFileFactsAndPublication(row *models.FileExecution) (*commonclient.DevelopFileExecutionFacts, privatePublications, error) {
+	var publications privatePublications
 	value := &commonclient.DevelopFileExecutionFacts{SchemaVersion: commonclient.DevelopFileExecutionSchema,
 		ExecutionID: row.ExecutionID, TenantID: strconv.FormatUint(uint64(row.TenantID), 10), ConfigJSON: bytes.Clone(row.ConfigJSON),
 		AdmissionState: row.AdmissionState, Actor: commonclient.DevelopFileExecutionActor{
@@ -135,14 +135,16 @@ func privateFileFactsAndPublication(row *models.FileExecution) (*commonclient.De
 		value.BoundScope, value.ScopeDigest = issued.Scope.Clone(), issued.ScopeDigest
 	}
 	if len(row.PublicationJSON) != 0 {
-		record, err := privateFilePublication(row)
+		records, err := privateFilePublications(row)
 		if err != nil {
 			return nil, nil, err
 		}
-		publication = record
-		value.Publication = &record.Facts
+		publications = records
+		for _, record := range records {
+			value.Publications = append(value.Publications, record.Facts)
+		}
 	}
-	return value, publication, value.Validate()
+	return value, publications, value.Validate()
 }
 
 func (r *FileExecutionRepository) Read(ctx context.Context, tenant uint, executionID string) (*commonclient.DevelopFileExecutionFacts, error) {
@@ -219,7 +221,7 @@ func (r *FileExecutionRepository) BindAuthorization(ctx context.Context, tenant 
 		if err != nil {
 			return err
 		}
-		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target, facts.Intent.Parent)
+		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Targets, facts.Intent.Parent)
 		if err != nil || !reflect.DeepEqual(current, &facts.Intent) {
 			return commonapi.ErrConflict
 		}
@@ -256,7 +258,7 @@ func (r *FileExecutionRepository) ApplyAdmission(ctx context.Context, tenant uin
 		if err != nil {
 			return err
 		}
-		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target, facts.Intent.Parent)
+		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Targets, facts.Intent.Parent)
 		if err != nil || !reflect.DeepEqual(current, &facts.Intent) {
 			return commonapi.ErrConflict
 		}
@@ -271,7 +273,7 @@ func (r *FileExecutionRepository) ApplyAdmission(ctx context.Context, tenant uin
 		if err != nil {
 			return err
 		}
-		if (facts.Intent.Target == nil && observation.ApprovalID != "") || (facts.Intent.Target != nil && state == "ready" && observation.ApprovalID == "") {
+		if !observation.ValidApprovals(len(facts.Intent.Targets)) {
 			return commonapi.ErrConflict
 		}
 		if state == "rejected" {

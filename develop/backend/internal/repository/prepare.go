@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 //go:embed tables.mysql.sql
 var mysqlTables string
@@ -30,6 +30,9 @@ func PrepareDatabase(db *gorm.DB) error {
 		return schema.MigrateMySQL(db, "develop", SchemaVersion, prepareMySQL)
 	}
 	return schema.Migrate(db, "develop", SchemaVersion, func(tx *gorm.DB) error {
+		if err := schema.CheckDevelopFileCutover(tx.Statement.Context, tx.Statement.ConnPool, "postgres"); err != nil {
+			return err
+		}
 		if err := preparePostgres(tx); err != nil {
 			return err
 		}
@@ -41,6 +44,9 @@ func PrepareDatabase(db *gorm.DB) error {
 }
 
 func prepareMySQL(db *gorm.DB) error {
+	if err := schema.CheckDevelopFileCutover(db.Statement.Context, db.Statement.ConnPool, "mysql"); err != nil {
+		return err
+	}
 	if err := exportartifact.EnsureStore(db, "develop.export_sessions"); err != nil {
 		return err
 	}

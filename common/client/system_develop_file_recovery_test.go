@@ -16,7 +16,7 @@ import (
 func TestDevelopFileRecoveryAfterOriginalExpiry(t *testing.T) {
 	_, issued := developFileClientFixture(t, true)
 	issued.Authorization.ExpiresAt = time.Now().Add(-time.Minute)
-	original := plugin.NewFilePublicationRequest{OperationID: "0b33cbf0-5c67-4c99-8ac3-5573d505630f", Target: issued.Scope.Target.Target, SizeBytes: 1, SHA256: strings.Repeat("a", 64)}
+	original := plugin.NewFilePublicationRequest{OperationID: "0b33cbf0-5c67-4c99-8ac3-5573d505630f", Target: issued.Scope.Targets[0].Target, SizeBytes: 1, SHA256: strings.Repeat("a", 64)}
 	digest, _ := DevelopFilePublicationRequestDigest(original)
 	for _, fault := range []string{"valid", "version", "digest", "expired"} {
 		t.Run(fault, func(t *testing.T) {

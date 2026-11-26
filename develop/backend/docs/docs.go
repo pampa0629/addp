@@ -4262,8 +4262,11 @@ const docTemplate = `{
                 "intent": {
                     "$ref": "#/definitions/execution.DevelopFileIntent"
                 },
-                "publication": {
-                    "$ref": "#/definitions/client.DevelopFilePublicationFacts"
+                "publications": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.DevelopFilePublicationFacts"
+                    }
                 },
                 "schema_version": {
                     "type": "string"
@@ -4741,8 +4744,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/execution.DevelopFileSourceReference"
                     }
                 },
-                "target": {
-                    "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                    }
                 },
                 "timeout_seconds": {
                     "type": "integer"
@@ -4784,8 +4790,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/execution.DevelopFileSourceIntent"
                     }
                 },
-                "target": {
-                    "$ref": "#/definitions/execution.DevelopFileTargetIntent"
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DevelopFileTargetIntent"
+                    }
                 },
                 "timeout_seconds": {
                     "type": "integer"

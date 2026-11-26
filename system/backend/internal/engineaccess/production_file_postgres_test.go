@@ -133,6 +133,22 @@ func exerciseFileProductionGrants(t *testing.T, db *gorm.DB, tenantID, adminID i
 		if !coverage(source, sourceBinding) || !coverage(target, bindings[targetFP]) {
 			t.Fatal("canonical file Grant unreadable")
 		}
+		t.Run("independent file grants within one execution", func(t *testing.T) {
+			fresh(targetEngine.ID, sources)
+			receipt.Reference.ExecutionID = secondRef.ExecutionID
+			sibling, err := svc.IssueInitialProductionGrant(ctx, actor, receipt.Reference)
+			if err != nil || sibling.Outcome != "issued" || sibling.Grant == nil || sibling.Grant.RequestID == second.Grant.RequestID {
+				t.Fatal("sibling reused the first initial grant", sibling, err)
+			}
+			var persisted sourceGrant
+			if err := db.Where("request_id=?", sibling.Grant.RequestID).Take(&persisted).Error; err != nil || persisted.Action != "read" {
+				t.Fatal("sibling did not receive a read grant", err)
+			}
+			siblingFP, _ := authorizationfacts.PrimaryCandidateFingerprint(receipt.Primary)
+			if !coverage(receipt.Primary, bindings[siblingFP]) || !coverage(target, bindings[targetFP]) {
+				t.Fatal("independent DataItem coverage missing")
+			}
+		})
 		// A separately qualified administrator withdraws the source permission.
 		op, _ := newUser(t, time.Hour)
 		opRole, e := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_production_revoke", Name: "File revoke", PermissionKeys: []string{"system.engine_access_delegation.create", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +21,7 @@ const (
 )
 
 type DevelopFilePublicationRequest struct {
+	TargetIndex       int    `json:"target_index"`
 	ExecutionID       string `json:"execution_id"`
 	Attempt           int    `json:"attempt"`
 	LeaseToken        string `json:"lease_token"`
@@ -37,7 +37,7 @@ func (r DevelopFilePublicationRequest) Validate() error {
 		decoded, err := hex.DecodeString(value)
 		return err == nil && len(decoded) == 32 && strings.ToLower(value) == value
 	}
-	if !canonicalExecutionUUID(r.ExecutionID) || r.Attempt <= 0 || !canonicalExecutionUUID(r.LeaseToken) ||
+	if r.TargetIndex < 0 || !canonicalExecutionUUID(r.ExecutionID) || r.Attempt <= 0 || !canonicalExecutionUUID(r.LeaseToken) ||
 		!canonicalExecutionUUID(r.ApprovalID) || !canonicalExecutionUUID(r.OperationID) || !digest(r.ScopeDigest) {
 		return errors.New("invalid Develop file publication binding")
 	}
@@ -65,7 +65,7 @@ type DevelopFilePublicationObservation struct {
 
 func (c *SystemServiceClient) AuthorizeDevelopFilePublication(ctx context.Context, issued IssuedDevelopFileAuthorization, request DevelopFilePublicationRequest) (*DevelopFilePublicationObservation, error) {
 	issued = *issued.Clone()
-	if request.Validate() != nil || issued.Scope.Target == nil || request.ExecutionID != issued.Authorization.ExecutionID ||
+	if request.Validate() != nil || request.TargetIndex >= len(issued.Scope.Targets) || request.ExecutionID != issued.Authorization.ExecutionID ||
 		request.Attempt != issued.Scope.ExpectedAttempt || request.ScopeDigest != issued.ScopeDigest {
 		return nil, errors.New("invalid Develop file publication request")
 	}
@@ -87,7 +87,7 @@ func (c *SystemServiceClient) AuthorizeDevelopFilePublication(ctx context.Contex
 		return nil, errors.New("invalid current Develop file publication observation")
 	}
 	if request.Stage == DevelopFilePublicationPrepare {
-		target, engine := issued.Scope.Target, result.Engine
+		target, engine := issued.Scope.Targets[request.TargetIndex], result.Engine
 		version, _ := strconv.ParseInt(target.EngineVersion, 10, 64)
 		if engine == nil || engine.ID != target.Target.EngineID || engine.TenantID == nil || *engine.TenantID != *c.tenantID ||
 			engine.EngineType != "nfs" || engine.Version != version || engine.LifecycleState != models.EngineLifecycleActive ||
@@ -126,8 +126,7 @@ func DevelopFilePublicationRequestDigest(request plugin.NewFilePublicationReques
 
 func (c *SystemServiceClient) ReadDevelopFilePublicationHistory(ctx context.Context, issued IssuedDevelopFileAuthorization, approvalID string, original plugin.NewFilePublicationRequest) (*DevelopFilePublicationHistory, error) {
 	issued = *issued.Clone()
-	if issued.validateBinding() != nil || !canonicalExecutionUUID(approvalID) || original.Validate() != nil || issued.Scope.Target == nil ||
-		!reflect.DeepEqual(original.Target, issued.Scope.Target.Target) {
+	if issued.validateBinding() != nil || !canonicalExecutionUUID(approvalID) || original.Validate() != nil || issued.Scope.TargetIndex(original.Target) < 0 {
 		return nil, errors.New("invalid Develop file publication history request")
 	}
 	credential, err := c.developFileTenantCredential(ctx, issued.Authorization.TenantID)

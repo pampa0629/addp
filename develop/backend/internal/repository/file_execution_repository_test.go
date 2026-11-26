@@ -36,9 +36,9 @@ func newFilePendingValues() (*commonexecution.TaskExecution, []commonexecution.D
 
 func fileIssuedFixture(t *testing.T, facts *commonclient.DevelopFileExecutionFacts) commonclient.IssuedDevelopFileAuthorization {
 	t.Helper()
-	targetVersion := ""
-	if facts.Intent.Target != nil {
-		targetVersion = "2"
+	var targetVersion []string
+	if len(facts.Intent.Targets) != 0 {
+		targetVersion = []string{"2"}
 	}
 	scope, err := commonexecution.NewDevelopBoundFileScope(facts.Intent, []commonexecution.DevelopFileSourceReference{{
 		Target: facts.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, targetVersion)
@@ -95,7 +95,7 @@ func TestFileExecutionPendingPrivateFactsAndOriginalActorBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready, err := repo.Read(t.Context(), 7, item.ExecutionID)
-	if err != nil || ready.AdmissionState != "ready" || ready.Intent.Target != nil {
+	if err != nil || ready.AdmissionState != "ready" || len(ready.Intent.Targets) != 0 {
 		t.Fatalf("read-only admission failed: %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestFileExecutionAdmissionRejectsLateOrCancelledAndCanCloseUnstarted(t *tes
 			case "config":
 				_ = db.Model(&commonexecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("execution_config", `{"timeout":62}`).Error
 			case "approval":
-				observation.ApprovalID = uuid.NewString()
+				observation.ApprovalIDs = []string{uuid.NewString()}
 			case "rejected":
 				observation.State = "rejected"
 			}

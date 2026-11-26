@@ -169,7 +169,7 @@ GET /api/executions/uuid-1234-5678
 
 用于已确认的 Develop / GeoPython 受控单文件输入（NFS GeoPackage、MinIO GeoJSON）及原 GeoPackage 精确保存。Develop 是业务 I/O owner：经正式授权读取源并保存实际来源会话、完整长度和 SHA-256；主动向 Runtime 传输本次私有输入，取回完整编码成果后消费 System 精确新建放行及完整文件发布 Provider。Runtime 不接收业务 NFS 挂载、业务存储连接或调用方指定的回调地址。上述存储授权与成果初始 Grant 沿[精确读写契约](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)，私有传输不授予任何业务数据权限。
 
-Owner 声明、System 封存和私有事实投影分别使用 `develop.file-intent/v1`、`develop.file-bound-scope/v1` 与 `develop.file-execution/v1`，仅保留当前协议主路径；旧记录不转译、不重放。私有文件绑定同一 Tenant、原 owner execution、attempt、Execution Authorization、绝对截止、冻结 DAG 摘要以及明确的输入/输出节点。每个输入声明完整长度与 SHA-256；节点标识只用于绑定，不作为文件系统路径。输入结构在 HTTP 边界校验并转换为不可变内部类型；每次实际操作仍须核验当前机器身份、所属执行、状态和截止时间。机器调用沿 System 当前 Tenant Service AuthContext，限定原 Develop Service Principal；不得用用户 Token、服务凭据写进 JSON、租户请求头或自报授权摘要替代。文件、摘要、恢复私有状态不进入公共 `result/all_results`。
+Owner 声明、System 封存和私有事实投影分别使用 `develop.file-intent/v2`、`develop.file-bound-scope/v2` 与 `develop.file-execution/v2`，仅保留当前协议主路径；旧记录不转译、不重放。私有文件绑定同一 Tenant、原 owner execution、attempt、Execution Authorization、绝对截止、冻结 DAG 摘要以及明确的输入/输出节点。每个输入声明完整长度与 SHA-256；节点标识只用于绑定，不作为文件系统路径。输入结构在 HTTP 边界校验并转换为不可变内部类型；每次实际操作仍须核验当前机器身份、所属执行、状态和截止时间。机器调用沿 System 当前 Tenant Service AuthContext，限定原 Develop Service Principal；不得用用户 Token、服务凭据写进 JSON、租户请求头或自报授权摘要替代。文件、摘要、恢复私有状态不进入公共 `result/all_results`。
 
 Runtime 只在全部输入完整核验后启动本次执行专用的可终止工作进程，内部复用原 DAG Runner 与算子，不复制计算实现。运行中输入与成果仅位于本次私有目录。退出、取消、超时及取回后的资源清理返回实际结果；失败不假报已清理。长度/摘要不符、未完成输入、错 execution/attempt 或迟到结果均不能进入正式发布。对上述受控文件输入与 GeoPackage 输出，原业务挂载读写路径不作为兼容路线。
 

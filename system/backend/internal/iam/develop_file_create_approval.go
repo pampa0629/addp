@@ -27,6 +27,7 @@ func (s *DevelopFileAuthorizationService) SetCreateApproverPreparer(prepare Deve
 }
 
 type ApproveDevelopFileCreateInput struct {
+	TargetIndex     int
 	UserAccessToken string
 	AuthorizationID int64
 	ScopeDigest     string
@@ -41,6 +42,7 @@ type DevelopFileCreateApprovalReceipt struct {
 }
 
 type ReadDevelopFileCreateApprovalContextInput struct {
+	TargetIndex     int
 	UserAccessToken string
 	ExecutionID     uuid.UUID
 }
@@ -48,6 +50,7 @@ type ReadDevelopFileCreateApprovalContextInput struct {
 // Descriptive original binding only; the approval command checks current
 // eligibility again and this view never activates or extends an execution.
 type DevelopFileCreateApprovalContext struct {
+	TargetIndex            int                               `json:"target_index"`
 	AuthorizationID        string                            `json:"authorization_id"`
 	ExecutionID            string                            `json:"execution_id"`
 	TenantID               string                            `json:"tenant_id"`
@@ -62,7 +65,7 @@ type DevelopFileCreateApprovalContext struct {
 }
 
 func (s *DevelopFileAuthorizationService) ReadCreateApprovalContext(ctx context.Context, input ReadDevelopFileCreateApprovalContextInput) (*DevelopFileCreateApprovalContext, error) {
-	if input.ExecutionID == uuid.Nil {
+	if input.TargetIndex < 0 || input.ExecutionID == uuid.Nil {
 		return nil, commonapi.ErrBadRequest
 	}
 	if s == nil || s.repository == nil || s.owner == nil || s.prepareCreateApprover == nil {
@@ -80,7 +83,7 @@ func (s *DevelopFileAuthorizationService) ReadCreateApprovalContext(ctx context.
 	if err != nil {
 		return nil, err
 	}
-	if sealed.TenantID != approver.TenantID || sealed.ActorPrincipalID == approver.ActorPrincipalID || sealed.DevelopFileScope == nil || sealed.DevelopFileScope.Target == nil || !strings.EqualFold(path.Ext(sealed.DevelopFileScope.Target.Target.StringPath()), ".gpkg") {
+	if sealed.TenantID != approver.TenantID || sealed.ActorPrincipalID == approver.ActorPrincipalID || sealed.DevelopFileScope == nil || input.TargetIndex >= len(sealed.DevelopFileScope.Targets) || !strings.EqualFold(path.Ext(sealed.DevelopFileScope.Targets[input.TargetIndex].Target.StringPath()), ".gpkg") {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	digest, err := sealed.DevelopFileScope.Digest()
@@ -120,14 +123,14 @@ func (s *DevelopFileAuthorizationService) ReadCreateApprovalContext(ctx context.
 		if _, err := tx.developFileExecution(ctx, &row, facts, binding.ExpectedAttempt, uuid.Nil, true); err != nil {
 			return err
 		}
-		checkScope, err := s.prepareCreateApprover(ctx, tx.db, approver.TenantID, approver.TenantMembershipID, *row.DevelopFileScope.Target)
+		checkScope, err := s.prepareCreateApprover(ctx, tx.db, approver.TenantID, approver.TenantMembershipID, row.DevelopFileScope.Targets[input.TargetIndex])
 		if err != nil {
 			return err
 		}
 		if checkScope == nil {
 			return ErrDevelopFileDependencyUnavailable
 		}
-		approval, err := tx.findDevelopFileCreateApproval(ctx, row.ID)
+		approval, err := tx.findDevelopFileCreateApproval(ctx, row.ID, input.TargetIndex)
 		if err != nil {
 			return err
 		}
@@ -145,7 +148,7 @@ func (s *DevelopFileAuthorizationService) ReadCreateApprovalContext(ctx context.
 		if _, err := checkScope(now); err != nil {
 			return err
 		}
-		result = &DevelopFileCreateApprovalContext{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), TenantID: strconv.FormatInt(row.TenantID, 10), ActorPrincipalID: strconv.FormatInt(row.ActorPrincipalID, 10), ExpectedAttempt: binding.ExpectedAttempt, ScopeDigest: digest, Target: *row.DevelopFileScope.Target, AuthorizationExpiresAt: row.ExpiresAt, ObservedAt: now, State: "awaiting_approval"}
+		result = &DevelopFileCreateApprovalContext{TargetIndex: input.TargetIndex, AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), TenantID: strconv.FormatInt(row.TenantID, 10), ActorPrincipalID: strconv.FormatInt(row.ActorPrincipalID, 10), ExpectedAttempt: binding.ExpectedAttempt, ScopeDigest: digest, Target: row.DevelopFileScope.Targets[input.TargetIndex], AuthorizationExpiresAt: row.ExpiresAt, ObservedAt: now, State: "awaiting_approval"}
 		if approval != nil {
 			result.State = "approved"
 			if !approval.ExpiresAt.After(now) {
@@ -162,6 +165,7 @@ type developFileCreateApproval struct {
 	ID                           uuid.UUID `gorm:"type:uuid;primaryKey"`
 	AuthorizationID              int64
 	ScopeDigest                  string
+	TargetIndex                  int
 	ApproverPrincipalID          int64
 	ApproverMembershipID         int64
 	ApproverAuthorizationVersion int64
@@ -171,9 +175,23 @@ type developFileCreateApproval struct {
 
 func (developFileCreateApproval) TableName() string { return "system.develop_file_create_approvals" }
 
-func (r *Repository) findDevelopFileCreateApproval(ctx context.Context, authorizationID int64) (*developFileCreateApproval, error) {
+func (r *Repository) developFileApprovals(ctx context.Context, row *ExecutionAuthorization) ([]developFileCreateApproval, error) {
+	var approvals []developFileCreateApproval
+	err := r.db.WithContext(ctx).Where("authorization_id = ?", row.ID).Order("target_index").Find(&approvals).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, approval := range approvals {
+		if approval.TargetIndex < 0 || approval.TargetIndex >= len(row.DevelopFileScope.Targets) {
+			return nil, ErrExecutionAuthorizationConflict
+		}
+	}
+	return approvals, nil
+}
+
+func (r *Repository) findDevelopFileCreateApproval(ctx context.Context, authorizationID int64, targetIndex int) (*developFileCreateApproval, error) {
 	var approval developFileCreateApproval
-	err := r.db.WithContext(ctx).Where("authorization_id = ?", authorizationID).Take(&approval).Error
+	err := r.db.WithContext(ctx).Where("authorization_id = ? AND target_index = ?", authorizationID, targetIndex).Take(&approval).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -186,14 +204,14 @@ func (r *Repository) findDevelopFileCreateApproval(ctx context.Context, authoriz
 // The caller has already locked the original and approving Principals in
 // ascending order. Check current scope under the same transaction as the EA.
 func (s *DevelopFileAuthorizationService) prepareCurrentCreateApproval(ctx context.Context, tx *Repository, row *ExecutionAuthorization, approval *developFileCreateApproval, membership *TenantMembership) (func(time.Time) (time.Time, error), error) {
-	if approval == nil || membership == nil || row.DevelopFileScope.Target == nil || approval.ID == uuid.Nil ||
+	if approval == nil || membership == nil || approval.TargetIndex < 0 || approval.TargetIndex >= len(row.DevelopFileScope.Targets) || approval.ID == uuid.Nil ||
 		approval.AuthorizationID != row.ID || approval.ApproverPrincipalID == row.ActorPrincipalID {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	if s.prepareCreateApprover == nil {
 		return nil, ErrDevelopFileDependencyUnavailable
 	}
-	checkScope, err := s.prepareCreateApprover(ctx, tx.db, row.TenantID, approval.ApproverMembershipID, *row.DevelopFileScope.Target)
+	checkScope, err := s.prepareCreateApprover(ctx, tx.db, row.TenantID, approval.ApproverMembershipID, row.DevelopFileScope.Targets[approval.TargetIndex])
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +261,7 @@ func (s *DevelopFileAuthorizationService) prepareCurrentCreateApproval(ctx conte
 }
 
 func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, input ApproveDevelopFileCreateInput) (*DevelopFileCreateApprovalReceipt, error) {
-	if input.AuthorizationID <= 0 || !validDevelopDigest(input.ScopeDigest) || input.ExpiresAt.IsZero() {
+	if input.TargetIndex < 0 || input.AuthorizationID <= 0 || !validDevelopDigest(input.ScopeDigest) || input.ExpiresAt.IsZero() {
 		return nil, commonapi.ErrBadRequest
 	}
 	if s == nil || s.repository == nil || s.owner == nil || s.prepareCreateApprover == nil {
@@ -262,8 +280,8 @@ func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, inp
 		return nil, err
 	}
 	if sealed.TenantID != approver.TenantID || sealed.ActorPrincipalID == approver.ActorPrincipalID ||
-		sealed.DevelopFileScope == nil || sealed.DevelopFileScope.Target == nil ||
-		!strings.EqualFold(path.Ext(sealed.DevelopFileScope.Target.Target.StringPath()), ".gpkg") {
+		sealed.DevelopFileScope == nil || input.TargetIndex >= len(sealed.DevelopFileScope.Targets) ||
+		!strings.EqualFold(path.Ext(sealed.DevelopFileScope.Targets[input.TargetIndex].Target.StringPath()), ".gpkg") {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	binding := CheckDevelopFileInput{AuthorizationID: sealed.ID, ExecutionID: sealed.ExecutionID, TenantID: approver.TenantID,
@@ -303,7 +321,7 @@ func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, inp
 		if _, err := tx.developFileExecution(ctx, row, facts, binding.ExpectedAttempt, uuid.Nil, true); err != nil {
 			return err
 		}
-		checkScope, err := s.prepareCreateApprover(ctx, tx.db, approver.TenantID, approver.TenantMembershipID, *row.DevelopFileScope.Target)
+		checkScope, err := s.prepareCreateApprover(ctx, tx.db, approver.TenantID, approver.TenantMembershipID, row.DevelopFileScope.Targets[input.TargetIndex])
 		if err != nil {
 			return err
 		}
@@ -331,10 +349,10 @@ func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, inp
 		if err != nil {
 			return err
 		}
-		record := developFileCreateApproval{ID: id, AuthorizationID: row.ID, ScopeDigest: input.ScopeDigest,
+		record := developFileCreateApproval{TargetIndex: input.TargetIndex, ID: id, AuthorizationID: row.ID, ScopeDigest: input.ScopeDigest,
 			ApproverPrincipalID: approver.ActorPrincipalID, ApproverMembershipID: approver.TenantMembershipID,
 			ApproverAuthorizationVersion: approver.IssuedAuthorizationVersion, ApprovedAt: now, ExpiresAt: expires}
-		created := tx.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "authorization_id"}}, DoNothing: true}).Create(&record)
+		created := tx.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "authorization_id"}, {Name: "target_index"}}, DoNothing: true}).Create(&record)
 		if created.Error != nil {
 			return created.Error
 		}
@@ -346,7 +364,7 @@ func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, inp
 		audit.PrincipalID, audit.PrincipalType, audit.ContextType, audit.TenantID = &record.ApproverPrincipalID, &user, &tenant, &row.TenantID
 		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{Metadata: audit, EventName: "iam.develop_file_create_approval.created", Result: AuditResultSucceeded,
 			RiskLevel: AuditRiskHigh, ModuleName: "system", EntityType: "develop_file_create_approval", EntityID: id.String(),
-			Details: map[string]any{"execution_id": row.ExecutionID.String(), "scope_digest": input.ScopeDigest}}); err != nil {
+			Details: map[string]any{"execution_id": row.ExecutionID.String(), "scope_digest": input.ScopeDigest, "target_index": input.TargetIndex}}); err != nil {
 			return err
 		}
 		final, credential, err := tx.developFileUser(ctx, input.UserAccessToken, true, permission)

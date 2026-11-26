@@ -9,6 +9,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/addp/common/schema"
+
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -81,6 +83,30 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 		if preMigrationVersion > catalog.LatestVersion {
 			return fmt.Errorf("database migration version %d is newer than embedded version %d", preMigrationVersion, catalog.LatestVersion)
+		}
+		// Check before migrate.Up marks a version dirty. The old services can
+		// still finish their original work after a rejected maintenance window.
+		if preMigrationVersion >= 273 && preMigrationVersion < 317 && catalog.LatestVersion >= 317 {
+			var hasOldAuthorization bool
+			if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM system.execution_authorizations WHERE develop_file_scope IS NOT NULL)").Scan(&hasOldAuthorization); err != nil {
+				return err
+			}
+			if err := schema.CheckDevelopFileCutover(ctx, db, "postgres"); err != nil {
+				return err
+			}
+			if hasOldAuthorization {
+				var liveID string
+				err := db.QueryRowContext(ctx, `SELECT a.execution_id::text FROM system.execution_authorizations a
+					WHERE a.develop_file_scope IS NOT NULL AND a.revoked_at IS NULL AND a.expires_at>clock_timestamp()
+					AND NOT EXISTS (SELECT 1 FROM common.task_executions e WHERE e.execution_id=a.execution_id::text
+					AND e.tenant_id=a.tenant_id AND e.status NOT IN ('pending','running')) ORDER BY a.id LIMIT 1`).Scan(&liveID)
+				if err == nil {
+					return fmt.Errorf("drain live Develop file execution %s before upgrading", liveID)
+				}
+				if !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+			}
 		}
 		complete, err := verifyRecordedMigrationChecksums(ctx, db, catalog, preMigrationVersion, r.RequireCompleteHistory)
 		if err != nil {

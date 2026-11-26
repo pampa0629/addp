@@ -21,52 +21,79 @@ import (
 const publicationAuthorizationSchema = "develop.initial-authorization/v1"
 
 type privatePublicationRecord struct {
-	InitialAuthorization *production.DeliveryState          `json:"initial_authorization,omitempty"`
-	Facts                client.DevelopFilePublicationFacts `json:"facts"`
-	PreparationObserved  bool                               `json:"preparation_observed"`
-	ProviderState        []byte                             `json:"provider_state,omitempty"`
-	DispatchReleasedAt   *time.Time                         `json:"dispatch_released_at,omitempty"`
-	OutcomeObservedAt    *time.Time                         `json:"outcome_observed_at,omitempty"`
-	RecoveryObservedAt   *time.Time                         `json:"recovery_observed_at,omitempty"`
-	Outcome              *plugin.NewFilePublicationOutcome  `json:"outcome,omitempty"`
-	RecoveryOutcome      *plugin.NewFilePublicationOutcome  `json:"recovery_outcome,omitempty"`
+	ResolvedAfterDispatch bool                               `json:"resolved_after_dispatch,omitempty"`
+	InitialAuthorization  *production.DeliveryState          `json:"initial_authorization,omitempty"`
+	Facts                 client.DevelopFilePublicationFacts `json:"facts"`
+	PreparationObserved   bool                               `json:"preparation_observed"`
+	ProviderState         []byte                             `json:"provider_state,omitempty"`
+	DispatchReleasedAt    *time.Time                         `json:"dispatch_released_at,omitempty"`
+	OutcomeObservedAt     *time.Time                         `json:"outcome_observed_at,omitempty"`
+	RecoveryObservedAt    *time.Time                         `json:"recovery_observed_at,omitempty"`
+	Outcome               *plugin.NewFilePublicationOutcome  `json:"outcome,omitempty"`
+	RecoveryOutcome       *plugin.NewFilePublicationOutcome  `json:"recovery_outcome,omitempty"`
 }
 
-func privateFilePublication(row *models.FileExecution) (*privatePublicationRecord, error) {
-	var record privatePublicationRecord
-	if err := json.Unmarshal(row.PublicationJSON, &record); err != nil {
+type privatePublications []privatePublicationRecord
+
+func (records privatePublications) find(operation string) (*privatePublicationRecord, error) {
+	for i := range records {
+		if records[i].Facts.Request.OperationID == operation {
+			return &records[i], nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
+func privateFilePublications(row *models.FileExecution) (privatePublications, error) {
+	if len(row.PublicationJSON) == 0 {
+		return nil, nil
+	}
+	var records privatePublications
+	if err := json.Unmarshal(row.PublicationJSON, &records); err != nil {
 		return nil, err
 	}
 	var admission client.DevelopFileAdmissionObservation
 	if err := json.Unmarshal(row.AdmissionJSON, &admission); err != nil {
 		return nil, err
 	}
-	if (record.OutcomeObservedAt != nil && (record.Outcome == nil || record.OutcomeObservedAt.IsZero())) || (record.RecoveryObservedAt != nil && (record.RecoveryOutcome == nil || record.RecoveryObservedAt.IsZero())) {
+	if len(records) == 0 || len(records) > len(admission.ApprovalIDs) {
 		return nil, commonapi.ErrConflict
+	}
+	for i := range records {
+		if err := records[i].validate(admission.ApprovalIDs[i]); err != nil {
+			return nil, err
+		}
+	}
+	return records, nil
+}
+
+func (record *privatePublicationRecord) validate(approvalID string) error {
+	if (record.OutcomeObservedAt != nil && (record.Outcome == nil || record.OutcomeObservedAt.IsZero())) || (record.RecoveryObservedAt != nil && (record.RecoveryOutcome == nil || record.RecoveryObservedAt.IsZero())) {
+		return commonapi.ErrConflict
 	}
 	if record.InitialAuthorization != nil && record.InitialAuthorization.Validate(publicationAuthorizationSchema) != nil {
-		return nil, commonapi.ErrConflict
+		return commonapi.ErrConflict
 	}
 	if record.InitialAuthorization != nil && !((record.Outcome != nil && record.Outcome.State == plugin.NewFilePublished && record.OutcomeObservedAt != nil) || (record.Outcome == nil && record.RecoveryOutcome != nil && record.RecoveryOutcome.State == plugin.NewFilePublished && record.RecoveryObservedAt != nil)) {
-		return nil, commonapi.ErrConflict
+		return commonapi.ErrConflict
 	}
 	digest := record.Facts.PreparationDigest
-	if admission.ApprovalID != record.Facts.ApprovalID ||
+	if approvalID != record.Facts.ApprovalID ||
 		(!record.PreparationObserved && (digest != "" || len(record.ProviderState) != 0)) ||
 		(record.DispatchReleasedAt != nil && (record.DispatchReleasedAt.IsZero() || digest == "")) ||
 		(digest != "" && (len(record.ProviderState) == 0 || digest != providerPreparationDigest(record.ProviderState))) {
-		return nil, commonapi.ErrConflict
+		return commonapi.ErrConflict
 	}
 	if record.Outcome != nil && (record.DispatchReleasedAt == nil ||
 		record.Outcome.State == plugin.NewFileUnknown || record.Outcome.Validate(record.prepared()) != nil) {
-		return nil, commonapi.ErrConflict
+		return commonapi.ErrConflict
 	}
 	if record.RecoveryOutcome != nil && (record.RecoveryOutcome.State == plugin.NewFileUnknown ||
 		record.RecoveryOutcome.Validate(record.prepared()) != nil ||
 		(record.RecoveryOutcome.State == plugin.NewFilePublished && record.DispatchReleasedAt == nil)) {
-		return nil, commonapi.ErrConflict
+		return commonapi.ErrConflict
 	}
-	return &record, nil
+	return nil
 }
 
 func (r *privatePublicationRecord) prepared() plugin.PreparedNewFile {
@@ -78,12 +105,12 @@ func providerPreparationDigest(state []byte) string {
 	return hex.EncodeToString(digest[:])
 }
 
-// RegisterPrivatePublication records the sole operation before any target I/O.
+// RegisterPrivatePublication records the next file’s original operation before target I/O.
 // The receipt comes from the Owner's bound Runtime output, not a User request.
 func (r *FileExecutionRepository) RegisterPrivatePublication(ctx context.Context, lease execution.Lease, runtimeID, operationID string, output plugin.WorkflowPrivateFile) error {
 	return r.withPrivateFileLease(ctx, lease, func(tx *gorm.DB, row *models.FileExecution, issued client.IssuedDevelopFileAuthorization) error {
-		if issued.Scope.Target == nil || runtimeID == "" || row.RuntimeExecutionID == nil ||
-			*row.RuntimeExecutionID != runtimeID || len(row.PublicationJSON) != 0 {
+		if len(issued.Scope.Targets) == 0 || runtimeID == "" || row.RuntimeExecutionID == nil ||
+			*row.RuntimeExecutionID != runtimeID {
 			return commonapi.ErrConflict
 		}
 		var manifest plugin.WorkflowPrivateFileManifest
@@ -94,24 +121,32 @@ func (r *FileExecutionRepository) RegisterPrivatePublication(ctx context.Context
 		if err := json.Unmarshal(row.AdmissionJSON, &admission); err != nil {
 			return err
 		}
-		facts, err := privateFileFacts(row)
+		facts, records, err := privateFileFactsAndPublication(row)
 		if err != nil {
 			return err
 		}
-		if len(manifest.Outputs) != 1 || facts.Intent.Target == nil ||
-			manifest.Outputs[0] != facts.Intent.Target.NodeID || output.NodeID != facts.Intent.Target.NodeID {
+		index := len(records)
+		if len(manifest.Outputs) != len(facts.Intent.Targets) || !admission.ValidApprovals(len(facts.Intent.Targets)) ||
+			index >= len(manifest.Outputs) || manifest.Outputs[index] != output.NodeID || facts.Intent.Targets[index].NodeID != output.NodeID {
 			return commonapi.ErrConflict
 		}
+		if index > 0 {
+			previous := records[index-1]
+			if previous.Outcome == nil || previous.Outcome.State != plugin.NewFilePublished || previous.ResolvedAfterDispatch {
+				return commonapi.ErrConflict
+			}
+		}
 		record := privatePublicationRecord{Facts: client.DevelopFilePublicationFacts{
-			ApprovalID: admission.ApprovalID,
-			Request: plugin.NewFilePublicationRequest{OperationID: operationID, Target: issued.Scope.Target.Target,
+			ApprovalID: admission.ApprovalIDs[index],
+			Request: plugin.NewFilePublicationRequest{OperationID: operationID, Target: issued.Scope.Targets[index].Target,
 				SizeBytes: output.Size, SHA256: output.SHA256},
 		}}
-		facts.Publication = &record.Facts
+		records = append(records, record)
+		facts.Publications = append(facts.Publications, record.Facts)
 		if err := facts.Validate(); err != nil {
 			return err
 		}
-		raw, err := json.Marshal(record)
+		raw, err := json.Marshal(records)
 		if err != nil {
 			return err
 		}
@@ -123,7 +158,11 @@ func (r *FileExecutionRepository) RegisterPrivatePublication(ctx context.Context
 // when Prepare is uncertain. Only a confirmed receipt is exposed as prepared.
 func (r *FileExecutionRepository) RecordPrivatePublicationPreparation(ctx context.Context, lease execution.Lease, result plugin.PreparedNewFile, confirmed bool) error {
 	return r.withPrivateFileLease(ctx, lease, func(tx *gorm.DB, row *models.FileExecution, _ client.IssuedDevelopFileAuthorization) error {
-		record, err := privateFilePublication(row)
+		records, err := privateFilePublications(row)
+		if err != nil {
+			return err
+		}
+		record, err := records.find(result.OperationID)
 		if err != nil {
 			return err
 		}
@@ -136,7 +175,7 @@ func (r *FileExecutionRepository) RecordPrivatePublicationPreparation(ctx contex
 		if confirmed {
 			record.Facts.PreparationDigest = providerPreparationDigest(result.ProviderState)
 		}
-		raw, err := json.Marshal(record)
+		raw, err := json.Marshal(records)
 		if err != nil {
 			return err
 		}
@@ -150,7 +189,11 @@ func (r *FileExecutionRepository) RecordPrivatePublicationPreparation(ctx contex
 func (r *FileExecutionRepository) ClaimPrivatePublicationDispatch(ctx context.Context, lease execution.Lease, release client.DevelopFilePublicationObservation) (*plugin.PreparedNewFile, error) {
 	var prepared *plugin.PreparedNewFile
 	err := r.withPrivateFileLease(ctx, lease, func(tx *gorm.DB, row *models.FileExecution, issued client.IssuedDevelopFileAuthorization) error {
-		record, err := privateFilePublication(row)
+		records, err := privateFilePublications(row)
+		if err != nil {
+			return err
+		}
+		record, err := records.find(release.OperationID)
 		if err != nil {
 			return err
 		}
@@ -171,7 +214,7 @@ func (r *FileExecutionRepository) ClaimPrivatePublicationDispatch(ctx context.Co
 			return commonapi.ErrConflict
 		}
 		record.DispatchReleasedAt = &release.ObservedAt
-		raw, err := json.Marshal(record)
+		raw, err := json.Marshal(records)
 		if err != nil {
 			return err
 		}
@@ -201,6 +244,7 @@ func (r *FileExecutionRepository) ClaimPrivatePublicationDispatch(ctx context.Co
 // PrivateFilePublicationRecovery is only used by the Develop owner. A past
 // dispatch claim carries no authority to publish again.
 type PrivateFilePublicationRecovery struct {
+	TargetIndex        int
 	Issued             client.IssuedDevelopFileAuthorization
 	ApprovalID         string
 	Prepared           plugin.PreparedNewFile
@@ -212,15 +256,12 @@ type PrivateFilePublicationRecovery struct {
 	RecoveryOutcome    *plugin.NewFilePublicationOutcome
 }
 
-func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, tenant uint, executionID string) (*PrivateFilePublicationRecovery, error) {
+func (r *FileExecutionRepository) ReadPrivatePublications(ctx context.Context, tenant uint, executionID string) ([]PrivateFilePublicationRecovery, error) {
 	var row models.FileExecution
 	if err := r.db.WithContext(ctx).Where("execution_id = ? AND tenant_id = ?", executionID, tenant).First(&row).Error; err != nil {
 		return nil, err
 	}
-	if len(row.PublicationJSON) == 0 {
-		return nil, gorm.ErrRecordNotFound
-	}
-	record, err := privateFilePublication(&row)
+	records, err := privateFilePublications(&row)
 	if err != nil {
 		return nil, err
 	}
@@ -228,26 +269,44 @@ func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, te
 	if err := json.Unmarshal(row.IssuedAuthorizationJSON, &issued); err != nil {
 		return nil, err
 	}
-	state := plugin.NewFileNotPublished
-	if record.DispatchReleasedAt != nil {
-		state = plugin.NewFileUnknown
+	var result []PrivateFilePublicationRecovery
+	for i, record := range records {
+		state := plugin.NewFileNotPublished
+		if record.DispatchReleasedAt != nil {
+			state = plugin.NewFileUnknown
+		}
+		if record.Outcome != nil {
+			state = record.Outcome.State
+		}
+		result = append(result, PrivateFilePublicationRecovery{TargetIndex: i,
+			Issued: issued, ApprovalID: record.Facts.ApprovalID, PreparationDigest: record.Facts.PreparationDigest,
+			Prepared: record.prepared(), DispatchState: state, Outcome: record.Outcome, RecoveryOutcome: record.RecoveryOutcome, OutcomeObservedAt: record.OutcomeObservedAt, RecoveryObservedAt: record.RecoveryObservedAt,
+		})
 	}
-	if record.Outcome != nil {
-		state = record.Outcome.State
-	}
-	return &PrivateFilePublicationRecovery{
-		Issued: issued, ApprovalID: record.Facts.ApprovalID, PreparationDigest: record.Facts.PreparationDigest,
-		Prepared: record.prepared(), DispatchState: state, Outcome: record.Outcome, RecoveryOutcome: record.RecoveryOutcome, OutcomeObservedAt: record.OutcomeObservedAt, RecoveryObservedAt: record.RecoveryObservedAt,
-	}, nil
+	return result, nil
 }
 
 // RecordPrivatePublicationOutcome keeps the exact original Provider evidence.
 // Unknown is already durable in the dispatch claim and cannot authorize cleanup.
-func (r *FileExecutionRepository) RecordPrivatePublicationOutcome(ctx context.Context, lease execution.Lease, prepared plugin.PreparedNewFile, outcome plugin.NewFilePublicationOutcome) error {
+func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, tenant uint, executionID, operationID string) (*PrivateFilePublicationRecovery, error) {
+	records, err := r.ReadPrivatePublications(ctx, tenant, executionID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range records {
+		if records[i].Prepared.OperationID == operationID {
+			return &records[i], nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
+func (r *FileExecutionRepository) RecordPrivatePublicationOutcome(ctx context.Context, lease execution.Lease, prepared plugin.PreparedNewFile, outcome plugin.NewFilePublicationOutcome, resolved bool) error {
 	return r.updatePrivatePublicationOutcome(ctx, lease, prepared, func(record *privatePublicationRecord) error {
 		if record.Outcome != nil || outcome.State == plugin.NewFileUnknown || outcome.Validate(prepared) != nil {
 			return commonapi.ErrConflict
 		}
+		record.ResolvedAfterDispatch = resolved
 		record.Outcome = &outcome
 		return nil
 	})
@@ -265,7 +324,11 @@ func (r *FileExecutionRepository) MarkPrivatePublicationCleaned(ctx context.Cont
 
 func (r *FileExecutionRepository) updatePrivatePublicationOutcome(ctx context.Context, lease execution.Lease, prepared plugin.PreparedNewFile, change func(*privatePublicationRecord) error) error {
 	return r.withPrivateFileLease(ctx, lease, func(tx *gorm.DB, row *models.FileExecution, _ client.IssuedDevelopFileAuthorization) error {
-		record, err := privateFilePublication(row)
+		records, err := privateFilePublications(row)
+		if err != nil {
+			return err
+		}
+		record, err := records.find(prepared.OperationID)
 		if err != nil {
 			return err
 		}
@@ -286,7 +349,7 @@ func (r *FileExecutionRepository) updatePrivatePublicationOutcome(ctx context.Co
 				record.InitialAuthorization = &production.DeliveryState{SchemaVersion: publicationAuthorizationSchema, Status: "pending", NextAttemptUnix: now.Unix()}
 			}
 		}
-		raw, err := json.Marshal(record)
+		raw, err := json.Marshal(records)
 		if err != nil {
 			return err
 		}
@@ -303,10 +366,17 @@ type PrivatePublicationIdentity struct {
 // records behind already completed recovery. No new execution is enqueued.
 func (r *FileExecutionRepository) ListPrivatePublicationRecoveries(ctx context.Context, after string) ([]PrivatePublicationIdentity, error) {
 	var rows []PrivatePublicationIdentity
+	shape := "jsonb_typeof(f.publication_json)='array'"
+	switch r.db.Dialector.Name() {
+	case "mysql":
+		shape = "JSON_TYPE(f.publication_json)='ARRAY'"
+	case "sqlite":
+		shape = "json_type(f.publication_json)='array'"
+	}
 	err := r.db.WithContext(ctx).Table("develop.file_executions f").
 		Select("f.execution_id,f.tenant_id").
 		Joins("JOIN common.task_executions e ON e.execution_id=f.execution_id AND e.tenant_id=f.tenant_id").
-		Where("f.publication_json IS NOT NULL AND f.execution_id > ? AND e.status NOT IN ?", after, []string{"pending", "running"}).
+		Where(shape+" AND f.execution_id > ? AND e.status NOT IN ?", after, []string{"pending", "running"}).
 		Order("f.execution_id").Limit(100).Scan(&rows).Error
 	return rows, err
 }
@@ -319,7 +389,11 @@ func (r *FileExecutionRepository) RecordPrivatePublicationRecovery(ctx context.C
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id=? AND tenant_id=?", executionID, tenant).First(&row).Error; err != nil {
 			return err
 		}
-		record, err := privateFilePublication(&row)
+		records, err := privateFilePublications(&row)
+		if err != nil {
+			return err
+		}
+		record, err := records.find(prepared.OperationID)
 		if err != nil {
 			return err
 		}
@@ -345,7 +419,7 @@ func (r *FileExecutionRepository) RecordPrivatePublicationRecovery(ctx context.C
 			}
 		}
 		record.RecoveryOutcome = &outcome
-		raw, err := json.Marshal(record)
+		raw, err := json.Marshal(records)
 		if err != nil {
 			return err
 		}
@@ -368,12 +442,21 @@ func (r *FileExecutionRepository) CompletePrivatePublication(ctx context.Context
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id=? AND tenant_id=?", lease.ExecutionID, lease.TenantID).First(&row).Error; err != nil {
 			return err
 		}
-		record, err := privateFilePublication(&row)
+		records, err := privateFilePublications(&row)
 		if err != nil {
 			return err
 		}
-		if record.DispatchReleasedAt == nil || record.Outcome == nil || record.Outcome.State != plugin.NewFilePublished || record.Outcome.Validate(record.prepared()) != nil {
+		var intent execution.DevelopFileIntent
+		if err := json.Unmarshal(row.IntentJSON, &intent); err != nil {
+			return err
+		}
+		if len(records) == 0 || len(records) != len(intent.Targets) {
 			return commonapi.ErrConflict
+		}
+		for _, record := range records {
+			if record.DispatchReleasedAt == nil || record.Outcome == nil || record.Outcome.State != plugin.NewFilePublished || record.Outcome.Validate(record.prepared()) != nil {
+				return commonapi.ErrConflict
+			}
 		}
 		return NewExecutionRepository(tx).CompleteWithLease(ctx, item, lease, execution.ExecutionStatusSuccess, time.Now().UTC(), fields)
 	})

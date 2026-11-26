@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -13,7 +14,11 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/production"
+	"github.com/addp/common/schema"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -36,7 +41,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	ctx := t.Context()
 	item, sources := newFilePendingValues()
 	target := &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(11, "outputs/result.gpkg"), Mode: "fail"}
-	facts, err := repo.CreatePending(ctx, item, sources, target)
+	facts, err := repo.CreatePending(ctx, item, sources, []execution.DevelopFileTargetIntent{*target})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +71,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	}
 	approval := fileAdmissionFixture(facts)
 	approval.AuthorizationID = issued.Authorization.ID
-	approval.ApprovalID = uuid.NewString()
+	approval.ApprovalIDs = []string{uuid.NewString()}
 	if err := repo.ApplyAdmission(ctx, 7, item.ExecutionID, approval); err != nil {
 		t.Fatal(err)
 	}
@@ -116,8 +121,8 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	}
 	facts, err = repo.Read(ctx, 7, item.ExecutionID)
 	expected := plugin.NewFilePublicationRequest{OperationID: op, Target: target.Target, SizeBytes: output.Size, SHA256: output.SHA256}
-	if err != nil || facts.Publication == nil || facts.Publication.ApprovalID != approval.ApprovalID ||
-		!reflect.DeepEqual(facts.Publication.Request, expected) || facts.Publication.PreparationDigest != "" {
+	if err != nil || len(facts.Publications) == 0 || facts.Publications[0].ApprovalID != approval.ApprovalIDs[0] ||
+		!reflect.DeepEqual(facts.Publications[0].Request, expected) || facts.Publications[0].PreparationDigest != "" {
 		t.Fatal(facts, err)
 	}
 	rawProviderState := []byte("sensitive Provider handle and staging path")
@@ -140,7 +145,11 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := db.Where("execution_id = ?", item.ExecutionID).First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	record, err := privateFilePublication(&row)
+	records, err := privateFilePublications(&row)
+	if err != nil || len(records) != 1 {
+		t.Fatal(records, err)
+	}
+	record := &records[0]
 	if err != nil || !record.PreparationObserved || !bytes.Equal(record.ProviderState, rawProviderState) {
 		t.Fatal("original private receipt not retained", err)
 	}
@@ -149,7 +158,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if confirmed {
 		digest = providerPreparationDigest(rawProviderState)
 	}
-	if err != nil || facts.Publication == nil || facts.Publication.PreparationDigest != digest {
+	if err != nil || len(facts.Publications) == 0 || facts.Publications[0].PreparationDigest != digest {
 		t.Fatal(facts, err)
 	}
 	encoded, err := json.Marshal(facts)
@@ -162,14 +171,14 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	}
 	release := client.DevelopFilePublicationObservation{
 		AuthorizationID: issued.Authorization.ID, ExecutionID: lease.ExecutionID, Attempt: lease.Attempt,
-		ScopeDigest: issued.ScopeDigest, ApprovalID: approval.ApprovalID, OperationID: op,
+		ScopeDigest: issued.ScopeDigest, ApprovalID: approval.ApprovalIDs[0], OperationID: op,
 		Stage: client.DevelopFilePublicationRelease, PreparationDigest: providerPreparationDigest(rawProviderState),
 		ObservedAt: now, ExpiresAt: now.Add(10 * time.Second), BusinessDeadline: manifest.Deadline,
 	}
-	if _, err := repo.ReadPrivatePublication(ctx, 8, item.ExecutionID); err == nil {
+	if _, err := repo.ReadPrivatePublication(ctx, 8, item.ExecutionID, op); err == nil {
 		t.Fatal("wrong tenant could read publication")
 	}
-	before, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	before, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID, op)
 	if err != nil || before.DispatchState != plugin.NewFileNotPublished || before.PreparationDigest != digest {
 		t.Fatal("new operation has an unexpected dispatch state", err)
 	}
@@ -211,9 +220,9 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if prepared, err := repo.ClaimPrivatePublicationDispatch(ctx, *lease, release); prepared != nil || err == nil {
 		t.Fatal("replay obtained a second dispatch claim")
 	}
-	recovered, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	recovered, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID, op)
 	if err != nil || recovered.DispatchState != plugin.NewFileUnknown || recovered.Issued.Authorization.ID != issued.Authorization.ID ||
-		recovered.ApprovalID != approval.ApprovalID || recovered.PreparationDigest != digest || !reflect.DeepEqual(recovered.Prepared, result) {
+		recovered.ApprovalID != approval.ApprovalIDs[0] || recovered.PreparationDigest != digest || !reflect.DeepEqual(recovered.Prepared, result) {
 		t.Fatal("original dispatch is not recoverable as unknown", err)
 	}
 	after, err := repo.Read(ctx, 7, item.ExecutionID)
@@ -232,16 +241,16 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		Evidence: &plugin.ContentWriteEvidence{Target: expected.Target, Disposition: "created", SizeBytes: expected.SizeBytes, Committed: true}}
 	wrongEvidence := outcome
 	wrongEvidence.Evidence = &plugin.ContentWriteEvidence{Target: wrong.Target, Disposition: "created", SizeBytes: expected.SizeBytes, Committed: true}
-	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, wrongEvidence); err == nil {
+	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, wrongEvidence, false); err == nil {
 		t.Fatal("outcome for another target was accepted")
 	}
-	if err := repo.RecordPrivatePublicationOutcome(ctx, otherLease, *prepared, outcome); err == nil {
+	if err := repo.RecordPrivatePublicationOutcome(ctx, otherLease, *prepared, outcome, false); err == nil {
 		t.Fatal("wrong lease recorded outcome")
 	}
-	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome); err != nil {
+	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome, false); err != nil {
 		t.Fatal(err)
 	}
-	observed, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	observed, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID, op)
 	if err != nil || observed.OutcomeObservedAt == nil || observed.OutcomeObservedAt.IsZero() || observed.RecoveryObservedAt != nil {
 		t.Fatal("first outcome lost its persisted observation time", observed, err)
 	}
@@ -283,7 +292,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		}
 	}
 
-	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome); err == nil {
+	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome, false); err == nil {
 		t.Fatal("original outcome was replaced")
 	}
 	if err := repo.MarkPrivatePublicationCleaned(ctx, *lease, wrong); err == nil {
@@ -292,7 +301,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := repo.MarkPrivatePublicationCleaned(ctx, *lease, *prepared); err != nil {
 		t.Fatal(err)
 	}
-	final, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	final, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID, op)
 	outcome.CleanupPending = false
 	if err != nil || final.OutcomeObservedAt == nil || !final.OutcomeObservedAt.Equal(firstObserved) || final.DispatchState != plugin.NewFilePublished || !reflect.DeepEqual(final.Outcome, &outcome) {
 		t.Fatal("outcome and cleanup state did not survive the original record", err)
@@ -334,7 +343,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, outcome); err != nil {
 		t.Fatal(err)
 	}
-	recoveredTime, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	recoveredTime, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID, op)
 	if err != nil || recoveredTime.RecoveryObservedAt == nil || recoveredTime.RecoveryObservedAt.IsZero() || recoveredTime.OutcomeObservedAt == nil || !recoveredTime.OutcomeObservedAt.Equal(firstObserved) {
 		t.Fatal("recovery rewrote original observation", recoveredTime, err)
 	}
@@ -342,7 +351,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, outcome); err != nil {
 		t.Fatal(err)
 	}
-	repeated, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	repeated, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID, op)
 	if err != nil || repeated.RecoveryObservedAt == nil || !repeated.RecoveryObservedAt.Equal(firstRecovery) {
 		t.Fatal("repeated reconciliation renewed observation time", repeated, err)
 	}
@@ -364,7 +373,8 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := db.Where("execution_id=?", item.ExecutionID).First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := privateFilePublication(&row)
+	archived, err := privateFilePublications(&row)
+	legacy := &archived[0]
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +382,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	// original dispatch acknowledgement was lost; retain that first time.
 	legacy.Outcome = nil
 	legacy.OutcomeObservedAt = nil
-	recoveryOnly, err := json.Marshal(legacy)
+	recoveryOnly, err := json.Marshal(archived)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +395,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	}
 	legacy.RecoveryObservedAt = nil
 	legacy.InitialAuthorization = nil
-	rawLegacy, err := json.Marshal(legacy)
+	rawLegacy, err := json.Marshal(archived)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +405,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, outcome); err != nil {
 		t.Fatal(err)
 	}
-	unchanged, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	unchanged, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID, op)
 	if err != nil || unchanged.OutcomeObservedAt != nil || unchanged.RecoveryObservedAt != nil {
 		t.Fatal("historical observation time was invented during replay", unchanged, err)
 	}
@@ -403,4 +413,119 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		t.Fatal("historical missing observation became a new production", err)
 	}
 
+}
+
+func TestMySQLFileProductionDelivery(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_DEVELOP_FILE_DELIVERY") != "1" {
+		t.Skip("requires the isolated Develop MySQL gate")
+	}
+	db, err := bootstrap.OpenPlatformRuntime(database.Config{}, "develop", &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	runFileProductionDelivery(t, db)
+	runOriginalFileCutover(t, db)
+}
+
+// Two pending results share one row. After the earliest is claimed and
+// finalized, the next claim selects the other without reviving the first.
+func runFileProductionDelivery(t *testing.T, db *gorm.DB) {
+	now := time.Now().UTC().Truncate(time.Second)
+	var records privatePublications
+	var approvals []string
+	for _, name := range []string{"main.gpkg", "members.gpkg"} {
+		target := plugin.FileItemPath(5, name)
+		approval := uuid.NewString()
+		prepared := []byte(name)
+		request := plugin.NewFilePublicationRequest{OperationID: uuid.NewString(), Target: target, SizeBytes: 100, SHA256: strings.Repeat("d", 64)}
+		outcome := plugin.NewFilePublicationOutcome{State: plugin.NewFilePublished, Evidence: &plugin.ContentWriteEvidence{Target: target, Disposition: "created", SizeBytes: 100, Committed: true}}
+		record := privatePublicationRecord{
+			Facts:               client.DevelopFilePublicationFacts{Request: request, ApprovalID: approval, PreparationDigest: providerPreparationDigest(prepared)},
+			PreparationObserved: true, ProviderState: prepared, DispatchReleasedAt: &now, Outcome: &outcome, OutcomeObservedAt: &now,
+			InitialAuthorization: &production.DeliveryState{SchemaVersion: publicationAuthorizationSchema, Status: "pending", NextAttemptUnix: now.Unix()},
+		}
+		records = append(records, record)
+		approvals = append(approvals, approval)
+	}
+	publications, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, err := json.Marshal(client.DevelopFileAdmissionObservation{ApprovalIDs: approvals})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := models.FileExecution{ExecutionID: uuid.NewString(), TenantID: 7, ActorPrincipalID: 31, ActorMembershipID: 41, AuthorizationVersion: 1, AdmissionState: "ready", ConfigJSON: json.RawMessage("{}"), IntentJSON: json.RawMessage("{}"), AdmissionJSON: admission, PublicationJSON: publications, Version: 1}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := db.Delete(&row).Error; err != nil {
+			t.Error(err)
+		}
+	}()
+	repo := NewFileExecutionRepository(db)
+	for _, record := range records {
+		claim, err := repo.ClaimProductionAuthorization(t.Context(), now)
+		if err != nil || claim == nil || claim.Reference.ExecutionID != row.ExecutionID || claim.Reference.ResultID != record.Facts.Request.OperationID {
+			t.Fatal("wrong per-file claim", claim, err)
+		}
+		state := claim.State
+		state.Status, state.GrantRequestID = "issued", uuid.NewString()
+		if err := repo.RecordProductionAuthorization(t.Context(), *claim, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if claim, err := repo.ClaimProductionAuthorization(t.Context(), now.Add(time.Hour)); err != nil || claim != nil {
+		t.Fatal("completed file requeued", claim, err)
+	}
+}
+
+func runOriginalFileCutover(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	ctx := t.Context()
+	oldRow := func(journal string) models.FileExecution {
+		row := models.FileExecution{ExecutionID: uuid.NewString(), TenantID: 7, ActorPrincipalID: 31, ActorMembershipID: 41, AuthorizationVersion: 1, AdmissionState: "ready", ConfigJSON: json.RawMessage("{}"), IntentJSON: json.RawMessage(`{"schema_version":"develop.file-intent/v1"}`), PublicationJSON: json.RawMessage(journal), Version: 1}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Delete(&row).Error; err != nil {
+				t.Error(err)
+			}
+		})
+		return row
+	}
+	unknown := oldRow(`{"dispatch_released_at":"2020-01-01T00:00:00Z"}`)
+	pending := oldRow(`{"outcome":{"State":"published"},"initial_authorization":{"status":"pending"}}`)
+	check := func() error { return schema.CheckDevelopFileCutover(ctx, db.Statement.ConnPool, db.Dialector.Name()) }
+	if err := check(); err == nil || !strings.Contains(err.Error(), unknown.ExecutionID) || !strings.Contains(err.Error(), pending.ExecutionID) {
+		t.Fatal("original unresolved or ungranted execution missing", err)
+	}
+	// A completed observation from the old owner remains read-only forever.
+	settled := `{"dispatch_released_at":"2020-01-01T00:00:00Z","recovery_outcome":{"State":"published","CleanupPending":false},"initial_authorization":{"status":"issued"}}`
+	if err := db.Model(&unknown).UpdateColumn("publication_json", settled).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := check(); err == nil || strings.Contains(err.Error(), unknown.ExecutionID) || !strings.Contains(err.Error(), pending.ExecutionID) {
+		t.Fatal("did not distinguish independent old records", err)
+	}
+	if err := db.Model(&pending).UpdateColumn("publication_json", `{"outcome":{"State":"published"},"initial_authorization":{"status":"denied"}}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	var before, after models.FileExecution
+	if err := db.First(&before, "execution_id=?", unknown.ExecutionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := check(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&after, "execution_id=?", unknown.ExecutionID).Error; err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("cutover altered the original evidence", err)
+	}
 }

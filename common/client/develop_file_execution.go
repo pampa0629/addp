@@ -17,7 +17,7 @@ import (
 	"github.com/addp/common/jsonmap"
 )
 
-const DevelopFileExecutionSchema = "develop.file-execution/v1"
+const DevelopFileExecutionSchema = "develop.file-execution/v2"
 
 // The projection carries three separately bounded values (raw config, Intent,
 // optional sealed Scope), plus a fixed envelope of canonical IDs and digests.
@@ -51,7 +51,7 @@ type DevelopFileExecutionFacts struct {
 	BoundScope      *execution.DevelopBoundFileScope `json:"bound_scope,omitempty"`
 	ScopeDigest     string                           `json:"scope_digest,omitempty"`
 	AdmissionState  string                           `json:"admission_state"`
-	Publication     *DevelopFilePublicationFacts     `json:"publication,omitempty"`
+	Publications    []DevelopFilePublicationFacts    `json:"publications,omitempty"`
 }
 
 func (f *DevelopFileExecutionFacts) Validate() error {
@@ -63,7 +63,7 @@ func (f *DevelopFileExecutionFacts) Validate() error {
 			return errors.New("invalid Develop file execution actor")
 		}
 	}
-	intent, err := execution.NewDevelopFileIntent(f.ConfigJSON, f.Intent.ExpectedAttempt, f.Intent.TimeoutSeconds, f.Intent.Sources, f.Intent.Target, f.Intent.Parent)
+	intent, err := execution.NewDevelopFileIntent(f.ConfigJSON, f.Intent.ExpectedAttempt, f.Intent.TimeoutSeconds, f.Intent.Sources, f.Intent.Targets, f.Intent.Parent)
 	if err != nil || !reflect.DeepEqual(intent, &f.Intent) {
 		return errors.New("invalid frozen Develop file intent")
 	}
@@ -83,14 +83,17 @@ func (f *DevelopFileExecutionFacts) Validate() error {
 			return errors.New("invalid bound Develop file digest")
 		}
 	}
-	if p := f.Publication; p != nil {
+	approvals := make(map[string]bool, len(f.Publications))
+	operations := make(map[string]bool, len(f.Publications))
+	for index, p := range f.Publications {
 		digest, err := hex.DecodeString(p.PreparationDigest)
-		if f.AdmissionState != "ready" || f.BoundScope == nil || f.BoundScope.Target == nil ||
+		if f.AdmissionState != "ready" || f.BoundScope == nil || index >= len(f.BoundScope.Targets) ||
 			!canonicalExecutionUUID(p.ApprovalID) || p.Request.Validate() != nil || p.Request.SizeBytes <= 0 ||
-			!reflect.DeepEqual(p.Request.Target, f.BoundScope.Target.Target) ||
+			approvals[p.ApprovalID] || operations[p.Request.OperationID] || !reflect.DeepEqual(p.Request.Target, f.BoundScope.Targets[index].Target) ||
 			(p.PreparationDigest != "" && (err != nil || len(digest) != sha256.Size || strings.ToLower(p.PreparationDigest) != p.PreparationDigest)) {
 			return errors.New("invalid Develop file publication binding")
 		}
+		approvals[p.ApprovalID], operations[p.Request.OperationID] = true, true
 	}
 	encoded, err := json.Marshal(f)
 	if err != nil || len(encoded) > MaxDevelopFileExecutionFactsBytes {
@@ -107,10 +110,10 @@ func (f *DevelopFileExecutionFacts) Clone() *DevelopFileExecutionFacts {
 	v.ConfigJSON = bytes.Clone(f.ConfigJSON)
 	v.Intent = *f.Intent.Clone()
 	v.BoundScope = f.BoundScope.Clone()
-	if f.Publication != nil {
-		publication := *f.Publication
-		publication.Request.Target.Segments = append([]plugin.EngineCatalogSegment(nil), publication.Request.Target.Segments...)
-		v.Publication = &publication
+	v.Publications = append([]DevelopFilePublicationFacts(nil), f.Publications...)
+	for index := range v.Publications {
+		target := &v.Publications[index].Request.Target
+		target.Segments = append([]plugin.EngineCatalogSegment(nil), target.Segments...)
 	}
 	return &v
 }
