@@ -25,6 +25,24 @@ IMAGE_ID = "sha256:" + "c" * 64
 
 
 class HostedMySQLReleaseTest(unittest.TestCase):
+    def test_fixture_file_carries_the_project_used_by_minio_initialization(self):
+        entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
+        fixture = entry.read_text().split("<<'YAML'\n", 1)[1].split("\nYAML\n", 1)[0]
+        env = dict(os.environ, ADDP_MYSQL_FIXTURE_PROJECT="hosted-infra-test", ADDP_DEPLOYMENT_NETWORK="hosted-net",
+                   MYSQL_FIXTURE_IMAGE="mysql:8.0", MYSQL_ROOT_PASSWORD="fixture", REDIS_PASSWORD="fixture",
+                   MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture", GITHUB_WORKSPACE=str(ROOT))
+        env.pop("COMPOSE_PROJECT_NAME", None)
+        with tempfile.TemporaryDirectory() as directory:
+            compose = Path(directory, "compose.yml")
+            compose.write_text(fixture)
+            config = json.loads(subprocess.check_output(
+                ["docker", "compose", "--env-file", "/dev/null", "-f", compose, "config", "--format", "json"],
+                env=env,
+            ))
+        self.assertEqual(config["name"], "hosted-infra-test")
+        self.assertEqual(config["networks"]["default"]["name"], "hosted-net")
+        self.assertIn("minio", config["services"])
+
     def test_hosted_selection_survives_production_env_loading(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
         env_writer = entry.read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]

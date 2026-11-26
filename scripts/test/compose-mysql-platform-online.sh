@@ -26,8 +26,8 @@ artifacts="${ADDP_ONLINE_ARTIFACT_DIR:?}"
 mkdir -p "$artifacts"
 work=$(mktemp -d "${RUNNER_TEMP:?}/addp-mysql-platform.XXXXXXXX")
 export ADDP_ONLINE_SECRET_DIR="$work"
-fixture_project="$ADDP_DEPLOYMENT_PROJECT-infra"
-fixture() { docker compose --env-file /dev/null -p "$fixture_project" -f "$work/compose.yml" "$@"; }
+export ADDP_MYSQL_FIXTURE_PROJECT="$ADDP_DEPLOYMENT_PROJECT-infra"
+fixture() { docker compose --env-file /dev/null -f "$work/compose.yml" "$@"; }
 app=(docker compose --profile '*' -f scripts/prod/system-meta-gateway.yml)
 infra_started=false
 release_started=false
@@ -42,7 +42,7 @@ cleanup() {
   if [ "$infra_started" = true ]; then
     fixture down --volumes --remove-orphans || cleanup_status=failed
   fi
-  for project in "$ADDP_DEPLOYMENT_PROJECT" "$fixture_project"; do
+  for project in "$ADDP_DEPLOYMENT_PROJECT" "$ADDP_MYSQL_FIXTURE_PROJECT"; do
     remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || cleanup_status=failed
     [[ -z "$remaining" ]] || cleanup_status=failed
     for kind in network volume; do
@@ -93,6 +93,7 @@ unset value
 export MYSQL_FIXTURE_IMAGE
 MYSQL_FIXTURE_IMAGE=$(docker compose -f scripts/test/docker-compose.local-macos-ci.yml config --images mysql)
 cat > "$work/compose.yml" <<'YAML'
+name: ${ADDP_MYSQL_FIXTURE_PROJECT:?}
 services:
   mysql:
     image: ${MYSQL_FIXTURE_IMAGE:?}
