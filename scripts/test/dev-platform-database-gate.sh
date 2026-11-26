@@ -12,8 +12,10 @@ if [[ "$#" != 0 ]]; then
   image=$2
   capability=vector
 fi
+falkor_project=""
 cleanup() {
   local result=$?
+  if [[ -n "$falkor_project" ]]; then "${falkor[@]}" down -v >/dev/null || result=1; fi
   if [[ -s "$work/container.id" ]]; then docker rm -fv "$(cat "$work/container.id")" >/dev/null || result=1; fi
   rm -rf "$work"
   exit "$result"
@@ -25,12 +27,12 @@ cp "$repo/scripts/infra/"{platform-database,ports}.sh "$work/scripts/infra/"
 cp "$repo/scripts/utils/observability-env.sh" "$work/scripts/utils/"
 source "$work/scripts/dev/platform-database.sh"
 source "$work/scripts/infra/ports.sh"
-# A fixed name is part of native dev discovery. Docker refuses collisions; cleanup uses only the created ID.
+# Discovery uses the isolated workspace label. Cleanup uses only the created ID.
 unset ADDP_ONLINE_HOST ADDP_INFRA_DATABASE_PROVIDER ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
 export POSTGRES_DB=addp_test POSTGRES_HOST=127.0.0.1 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 export POSTGRES_PASSWORD
-docker run -d --cidfile "$work/container.id" --name addp-postgres \
+docker run -d --cidfile "$work/container.id" --name "addp-dev-platform-postgres-$$" \
   --label com.docker.compose.project=addp-infra --label com.docker.compose.service=postgres \
   --label "com.docker.compose.project.working_dir=$ROOT_DIR" -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD \
   -p 127.0.0.1::5432 "$image" >/dev/null
@@ -93,6 +95,54 @@ check_security ready
 PGOPTIONS='-c default_transaction_read_only=on' addp_dev_prepare_database security
 check_security ready
 echo 'Security native installation and two restricted runtime openings passed.'
+
+# A legacy workspace can own the schema and its data without runtime grants.
+pg_runtime() {
+  PGPASSWORD="$ADDP_DATABASE_RUNTIME_PASSWORD" docker exec -i -e PGPASSWORD "$(cat "$work/container.id")" \
+    psql -XwAtq -h 127.0.0.1 -U "$ADDP_DATABASE_RUNTIME_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 "$@"
+}
+export INFRA_FALKORDB_PASSWORD=$(openssl rand -hex 24)
+cat >"$work/falkor.yml" <<'YAML'
+services:
+  falkordb:
+    ports: ["127.0.0.1::6379"]
+YAML
+falkor=(docker compose -p "addp-dev-platform-falkor-$$" -f "$repo/scripts/infra/falkordb.yml" -f "$work/falkor.yml")
+pg <<'SQL'
+CREATE SCHEMA unrelated;
+CREATE TABLE unrelated.private_record (id BIGINT PRIMARY KEY);
+SQL
+for owner in develop monitor ontology quality transfer; do
+  (cd "$repo/$owner/backend" && GOWORK=off go build -o "$work/$owner" ./cmd/server)
+  ln -s "$work/$owner" "$work/.dev-bins/addp-$owner"
+  pg <<SQL
+CREATE SCHEMA $owner AUTHORIZATION postgres;
+CREATE TABLE $owner.upgrade_probe (id BIGSERIAL PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO $owner.upgrade_probe (value) VALUES ('legacy');
+SQL
+  if pg_runtime -c "SELECT value FROM $owner.upgrade_probe" >"$work/old-permissions.log" 2>&1; then exit 1; fi
+  grep -F "permission denied for schema $owner" "$work/old-permissions.log"
+  addp_dev_prepare_database "$owner"
+  [[ $(pg_runtime -c "SELECT version > 0 FROM $owner.startup_schema_revision") == t ]]
+  [[ $(pg_runtime -c "SELECT value FROM $owner.upgrade_probe") == legacy ]]
+  [[ $(pg_runtime -c "SELECT NOT has_schema_privilege('unrelated','USAGE')") == t ]]
+  [[ $(pg_runtime -c "SELECT NOT has_schema_privilege('$owner','CREATE') AND NOT has_table_privilege('$owner.startup_schema_revision','UPDATE')") == t ]]
+  pg_runtime <<SQL
+BEGIN;
+INSERT INTO $owner.upgrade_probe (value) VALUES ('new');
+UPDATE $owner.upgrade_probe SET value='changed' WHERE value='new';
+DELETE FROM $owner.upgrade_probe WHERE value='changed';
+ROLLBACK;
+SQL
+  PGOPTIONS='-c default_transaction_read_only=on' addp_dev_prepare_database "$owner"
+  if [[ "$owner" == ontology ]]; then
+    falkor_project="addp-dev-platform-falkor-$$"
+    "${falkor[@]}" up -d --wait
+    export INFRA_FALKORDB_ADDRESS=$("${falkor[@]}" port falkordb 6379)
+  fi
+  python3 "$repo/scripts/test/module-platform-startup.py" "$work/$owner" ready
+  echo "$owner native upgrade preserved legacy data and provided runtime access."
+done
 
 pg -c 'DELETE FROM system.schema_migration_checksums WHERE version=37'
 if addp_dev_prepare_database system >"$work/missing.log" 2>&1; then exit 1; fi
