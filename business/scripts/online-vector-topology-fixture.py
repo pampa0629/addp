@@ -2625,6 +2625,20 @@ def worker(action, root, case=None):
     return {'sources': {name: digest(root / name) for name in SOURCES}, 'targets': results, 'exact_inventory_verified': True}
 
 
+MULTIFILE_CAPTURE_CASES = (NODES_CASE, VERTICES_CASE, DISSOLVE_CASE)
+
+
+def capture_enabled(env, case):
+    return (case in FILE_PUBLICATION_CASES or
+            (case in MULTIFILE_CAPTURE_CASES and env.get('ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS') != '1'))
+
+
+def capture_targets(root, directory, case, run_id, phase='before_verification'):
+    if case in MULTIFILE_CAPTURE_CASES:
+        return capture_declared_multifile_targets(root, directory, case, run_id, phase=phase)
+    return capture_declared_target(root, directory, case, run_id, phase=phase)
+
+
 def runtime_worker(action, root):
     info = json.loads(command(['docker', 'inspect', RUNTIME]))[0]
     labels = info['Config']['Labels']
@@ -2637,21 +2651,45 @@ def runtime_worker(action, root):
         checks.mkdir(parents=True, exist_ok=True)
         evidence_directory = checks / f'{len(list(checks.iterdir()))+1:04d}'
         evidence_directory.mkdir()
-        if case in FILE_PUBLICATION_CASES:
-            capture_declared_target(root, evidence_directory, case, os.environ['ADDP_ONLINE_TEST_RUN_ID'])
+        if capture_enabled(os.environ, case):
+            capture_targets(root, evidence_directory, case, os.environ['ADDP_ONLINE_TEST_RUN_ID'])
     return json.loads(command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), case],
                               input=Path(__file__).read_text(), evidence_directory=evidence_directory))
 
 
 def capture_declared_target(root, directory, case, run_id, *, phase='before_verification'):
-    """Retain one exact raw output, independently of its validity or publication state."""
     if case not in FILE_PUBLICATION_CASES:
         raise FixtureError('raw target capture requires a formal file publication case')
+    return _capture_target(root, directory, case, run_id, mixed_fixture_profile(case)['target'], phase)
+
+
+def capture_declared_multifile_targets(root, directory, case, run_id, *, phase='before_verification'):
+    """Preserve each declared target, including the prefix of a failed publication."""
+    if case not in MULTIFILE_CAPTURE_CASES:
+        raise FixtureError('raw multi-file capture requires a declared topology case')
+    if directory.is_symlink():
+        raise FixtureError('target capture must not follow an evidence directory symlink')
+    captured = {}
+    errors = []
+    for name in network_profile(case)['targets']:
+        target_directory = directory / name
+        try:
+            target_directory.mkdir()
+            captured[name] = _capture_target(root, target_directory, case, run_id, name, phase)
+        except (OSError, FixtureError) as error:
+            errors.append((name, error))
+    if errors:
+        names = ', '.join(name for name, _ in errors)
+        raise FixtureError('raw output capture failed for: '+names) from errors[0][1]
+    return captured
+
+
+def _capture_target(root, directory, case, run_id, name, phase):
+    """Retain one exact raw output, independently of its validity or publication state."""
     if directory.is_symlink():
         raise FixtureError('target capture must not follow an evidence directory symlink')
     if (directory/'target-capture.json').exists() or (directory/'target-capture.json').is_symlink():
         raise FileExistsError('refusing to replace an existing target capture')
-    name = mixed_fixture_profile(case)['target']
     source = root / 'outputs' / name
     target = {'name':name, 'state':'missing'}
     try:
@@ -2690,7 +2728,7 @@ def capture_declared_target(root, directory, case, run_id, *, phase='before_veri
 def capture_publication(env, phase):
     """Host boundary shared by business failure and final owned-root cleanup."""
     case = topology_case(env)
-    if case not in FILE_PUBLICATION_CASES or phase not in {'before_grant_cleanup','before_owned_root_cleanup'}:
+    if not capture_enabled(env, case) or phase not in {'before_grant_cleanup','before_owned_root_cleanup'}:
         raise FixtureError('target capture case or exit phase differs')
     export = NFSExport('topology', command, publication_staging=True)
     secret = export.guard(env)
@@ -2702,7 +2740,7 @@ def capture_publication(env, phase):
         raise FixtureError('target capture must not follow an archive symlink')
     directory = captures/phase
     directory.mkdir(parents=True)
-    return capture_declared_target(root,directory,case,run_id,phase=phase)
+    return capture_targets(root, directory, case, run_id, phase)
 
 
 def archive_physical_evidence(root, directory, result, case=None, *, sources_only=False):
@@ -2733,7 +2771,7 @@ def main(action):
     export = NFSExport('topology', command, publication_staging=case in FILE_PUBLICATION_CASES)
     secret = export.guard(os.environ)
     run_id = os.environ['ADDP_ONLINE_TEST_RUN_ID']
-    if action == 'stop' and case in FILE_PUBLICATION_CASES and (secret/'topology-root').exists():
+    if action == 'stop' and capture_enabled(os.environ, case) and (secret/'topology-root').exists():
         # Capture failure must not skip ownership-checked resource cleanup.
         try:
             capture = dict(result='captured',target=capture_publication(dict(os.environ),'before_owned_root_cleanup'))

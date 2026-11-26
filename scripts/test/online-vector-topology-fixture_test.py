@@ -38,6 +38,55 @@ class FilePublicationTargetCaptureTest(unittest.TestCase):
                 self.assertEqual({f.name for f in directory.iterdir()},{target,'target-capture.json'})
                 with patch.object(m,'command',side_effect=self.command),self.assertRaises(FileExistsError):m.capture_publication(env,'before_grant_cleanup')
                 self.assertEqual((directory/target).read_bytes(),raw)
+    def test_multifile_stop_archives_declared_target_bytes_before_removing_partial_run(self):
+        for case in m.MULTIFILE_CAPTURE_CASES:
+            with self.subTest(case=case):
+                outputs = self.root / 'outputs'
+                names = m.network_profile(case)['targets']
+                (outputs/names[0]).write_bytes(b'first committed file')
+                (outputs/'outside.gpkg').write_bytes(b'PRIVATE_OUTSIDE')
+                env = {**self.env, 'ADDP_ONLINE_TOPOLOGY_CASE':case,
+                       'ADDP_ONLINE_ARTIFACT_DIR':str(self.base/case)}
+                phase = self.base/case/'topology-target-captures'/'before_owned_root_cleanup'
+
+                def stop(export, action, secret, run_id):
+                    self.assertEqual(action, 'stop')
+                    self.assertEqual({p.name for p in phase.iterdir()}, set(names))
+                    self.assertEqual((phase/names[0]/names[0]).read_bytes(), b'first committed file')
+                    for name in names[1:]:
+                        record = json.loads((phase/name/'target-capture.json').read_text())
+                        self.assertEqual(record['target'], {'name':name, 'state':'missing'})
+                    return {'cleanup':'passed'}
+
+                with patch.dict(os.environ, env), patch.object(m, 'command', side_effect=self.command), \
+                     patch.object(m.NFSExport, 'lifecycle', autospec=True, side_effect=stop):
+                    self.assertEqual(m.main('stop')['cleanup'], 'passed')
+
+    def test_multifile_preserves_other_declared_files_when_one_is_not_regular(self):
+        case = m.VERTICES_CASE
+        names = m.VERTICES_TARGETS
+        (self.root/'outputs'/names[0]).write_bytes(b'first')
+        (self.root/'outputs'/names[1]).symlink_to(self.root/'outputs'/names[0])
+        (self.root/'outputs'/names[2]).write_bytes(b'third')
+        capture = self.base/'multifile-invalid'
+        capture.mkdir()
+        with self.assertRaisesRegex(m.FixtureError, names[1]):
+            m.capture_declared_multifile_targets(self.root, capture, case, 'topology-123-1')
+        self.assertEqual((capture/names[0]/names[0]).read_bytes(), b'first')
+        self.assertEqual((capture/names[2]/names[2]).read_bytes(), b'third')
+        record = json.loads((capture/names[1]/'target-capture.json').read_text())
+        self.assertEqual(record['target']['state'], 'not_regular')
+        self.assertFalse((capture/names[1]/names[1]).exists())
+
+    def test_nodes_lineage_permission_profile_uses_its_existing_cleanup(self):
+        env = {**self.env, 'ADDP_ONLINE_TOPOLOGY_CASE':m.NODES_CASE,
+               'ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS':'1'}
+        with patch.dict(os.environ, env), patch.object(m, 'command', side_effect=self.command), \
+             patch.object(m.NFSExport, 'lifecycle', return_value={'cleanup':'passed'}), \
+             patch.object(m, 'capture_publication') as capture:
+            self.assertEqual(m.main('stop'), {'cleanup':'passed'})
+        capture.assert_not_called()
+
     def test_missing_empty_nonregular_and_copy_failure_have_distinct_immutable_records(self):
         target=self.root/'outputs'/m.ADJACENCY_TARGET
         for state in ('missing','captured_empty','not_regular','copy_failed'):
