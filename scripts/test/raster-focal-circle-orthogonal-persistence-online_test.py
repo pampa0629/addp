@@ -41,6 +41,7 @@ def diagnostic(repository, env, identifier, problem, language, timeout):
             'exact_cause': m.MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}
 
 class Client:
+    entry_fault = None
     timeout = 30
     mutation = None
     added_scan = False
@@ -52,6 +53,23 @@ class Client:
         self.items = {name: {'id': i+10, 'full_name': name, 'item_type': 'file', 'size_bytes': 4096, 'fingerprint': name, 'scanned_at': 'now'} for i,name in enumerate(m.fixture.SOURCES)}
     def locators(self): return {n: f'addp://engine/3/path/{n}?type=file&item_id={self.items[n]["id"]}' for n in m.fixture.SOURCES}
     def request(self, method, path, expected, body=None, headers=None):
+        if method == 'POST' and path == '/api/v1/develop/executions' and expected == (400,):
+            tasks = body['content']['workflow_definition']['tasks']
+            language = headers['Accept-Language']
+            target = tasks[-1]['params']['target_name']
+            problem = target.removeprefix('failed-').removesuffix('-' + language + '.cog.tif')
+            parameter = m.ENTRY_PARAMETERS[problem]
+            field = 'workflow_definition.tasks[1].params.' + parameter
+            summary, prefix = {
+                'en': ('Invalid workflow parameters. Review the node parameters',
+                       'Parameter type differs from the operator declaration: '),
+                'zh-cn': ('工作流参数无效，请检查节点参数', '参数类型与算子声明不符：'),
+            }[language]
+            data = {'error': summary, 'error_code': 'invalid_workflow_parameters',
+                    'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': prefix + field}]}
+            if self.entry_fault:
+                self.entry_fault(data, self)
+            return SimpleNamespace(payload=data, status=400, raw=json.dumps(data).encode())
         if path.endswith('/auth/context'):
             data = {'principal': {'id':33,'type':'user'}, 'context': {'type':'tenant','tenant_id':'2'}, 'token': {'type':'first_party_access_token'},
                     'authorization': {'role_assignments': [{'role_key':'raster-consumer','permissions':sorted(m.raster.EDITOR_PERMISSIONS)}]}}
@@ -70,7 +88,7 @@ class Client:
         elif path == '/api/v1/develop/executions' and method == 'POST':
             dag = body['content']['workflow_definition']; target_name = dag['tasks'][-1]['params']['target_name']; success = target_name in m.fixture.CASES
             identifier = str(uuid.UUID(int=len(self.executions)+1)); language = headers['Accept-Language']
-            data = {'execution_id':identifier,'tenant_id':2,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
+            data = {'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
                     'execution_config':{'engine_id':7,'display_language':language,'content':{'workflow_definition':copy.deepcopy(dag)}}, 'error_msg':None if success else 'frozen-'+language,
                     'error_details':{} if success else {'category':'execution_failed'}, 'outputs':{}, 'metadata':{'result':{}}}
             if success:
@@ -103,15 +121,38 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
             assert tenant==2 and principal==33 and identifier in client.executions
             name=dag['tasks'][-1]['params']['target_name']; target='addp://engine/3/path/outputs/'+name+'?type=file'
             return m.expected_lineage(client.locators(), name, target)
+        def inventory_reader(env, tenant, expected):
+            self.assertEqual(tenant, 2)
+            if sorted(client.executions) != sorted(expected):
+                raise m.SuiteError('entry rejection changed the current Develop execution inventory')
+
+        def failed_reader(env, identifier, tenant, principal, dag):
+            self.assertEqual((tenant, principal), (2, 33))
+            row = client.executions[identifier]
+            self.assertEqual((row['status'], row['execution_config']['content']['workflow_definition']),
+                             ('failed', dag))
+            return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal, 'status': 'failed'}
         def relation(client, source, target, execution, timeout):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
         with patch.object(m.raster,'wait_lineage',side_effect=relation):
-            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader)
+            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader,
+                                  failed_reader=failed_reader, inventory_reader=inventory_reader)
     def test_full_matrix_19_success_106_failures_2204_checks_and_cleanup(self):
         client=Client();calls=[]
         def worker(*args): calls.append((args[2],list(args[3]))); return physical(*args)
         report=self.run_case(client,worker)
         self.assertEqual((len(report['cases']),len(report['failed_parameters']),report['full_target_checks'],report['physical_verification_calls']),(19,106,2204,126))
+        entry = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'develop_entry']
+        self.assertEqual(len(entry), 32)
+        for failure in report['failed_parameters']:
+            if failure['rejection_stage'] == 'develop_entry':
+                self.assertIs(failure['no_execution_created'], True)
+                self.assertEqual(failure['submission']['http_status'], 400)
+                self.assertNotIn('execution_id', failure)
+                self.assertTrue((self.root / 'evidence' / failure['submission']['path']).is_file())
+            else:
+                self.assertEqual(failure['private_execution']['execution_id'], failure['execution_id'])
+                self.assertEqual(failure['private_execution']['tenant_id'], 2)
         self.assertEqual(sum(len(names) for action,names in calls if action=='verify'),2204)
         self.assertEqual(len(self.relations),19);self.assertTrue(report['oracle_cache_removed'])
         self.assertEqual(report['source_scan_identity']['parent_execution_id'],None)
@@ -209,7 +250,7 @@ class CircleContractTest(ZonalPercentileWorkflowTest):
         class Changed(Client):
             def request(self,method,path,expected,body=None,headers=None):
                 result=super().request(method,path,expected,body,headers)
-                if '/meta/items/'in path and len(self.executions)==125 and result.payload.get('full_name','').startswith('outputs/'):
+                if '/meta/items/'in path and len(self.executions)==93 and result.payload.get('full_name','').startswith('outputs/'):
                     result.payload['fingerprint']='changed'
                 return result
         with tempfile.TemporaryDirectory()as path:

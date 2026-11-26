@@ -223,9 +223,8 @@ def current(execution, identity, identifier, dag, runtime, language, status):
         raise SuiteError('current execution submitted language differs')
 
 
-def monitor_observation(client, identity, identifier, status):
-    monitor = obj(client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload,
-                  'Monitor execution')
+def verify_monitor_receipt(monitor, identity, identifier, status):
+    monitor = obj(monitor, 'Monitor execution')
     readonly.actor(monitor, identity, 'develop')
     if 'tenant_id' in monitor:
         raise SuiteError('public Monitor receipt exposes tenant_id')
@@ -234,9 +233,14 @@ def monitor_observation(client, identity, identifier, status):
     return monitor
 
 
-def reject_entry(client, runtime, dag, problem, language, execution_timeout):
+def monitor_observation(client, identity, identifier, status):
+    response = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,))
+    return verify_monitor_receipt(response.payload, identity, identifier, status)
+
+
+def reject_entry(client, runtime, dag, parameter, language, execution_timeout):
     index = next(index for index, task in enumerate(dag['tasks']) if task['id'] == 'focal')
-    field = f'workflow_definition.tasks[{index}].params.{ENTRY_PARAMETERS[problem]}'
+    field = f'workflow_definition.tasks[{index}].params.{parameter}'
     message, issue_prefix = ENTRY_MESSAGES[language]
     expected = {'error': message, 'error_code': 'invalid_workflow_parameters',
                 'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': issue_prefix+field}]}
@@ -350,7 +354,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call,
                 dag = definition(sources, parent, 'north-mean.cog.tif', invalid=problem, language=language)
                 timeout = min(180, max(1, int(remaining())))
                 if stage == 'develop_entry':
-                    raw = reject_entry(client, runtime, dag, problem, language, timeout)
+                    raw = reject_entry(client, runtime, dag, ENTRY_PARAMETERS[problem], language, timeout)
                     metadata.check_execution_inventory(known_executions); remaining()
                     entry_count += 1
                 else:

@@ -211,6 +211,56 @@ class RasterLineageTest(unittest.TestCase):
             changed=copy.deepcopy(self.value);changed[key]=value
             with self.subTest(key=key,value=value),self.assertRaises(m.SuiteError):self.read(value=changed)
 
+    def test_failed_focal_execution_uses_its_own_identity_and_cannot_publish_lineage(self):
+        suite = 'raster-focal-circle-persistence'
+        run = 'focal-circle-123-1'
+        self.path.write_text(json.dumps({**self.owner, 'suite': suite, 'run_id': run}))
+        env = {**self.env, 'ONLINE_SUITE': suite, 'ADDP_ONLINE_TEST_RUN_ID': run}
+        row = {**self.value, 'status': 'failed', 'facts': None}
+        with (patch.object(m, 'boundary', return_value=(self.secret, suite, run)),
+              patch.object(m, 'inspect', return_value=self.container),
+              patch.object(m.subprocess, 'run') as query):
+            def read(value):
+                query.return_value = SimpleNamespace(returncode=0, stdout=json.dumps(value))
+                return m.read_failed_focal_execution(env, IDENTIFIER, 2, 33, {'tasks': []})
+
+            self.assertEqual(read(row), {key: value for key, value in row.items() if key != 'facts'})
+            self.assertIn('status=failed', query.call_args.args[0])
+            self.assertIn("AND status=:'status'", query.call_args.kwargs['input'])
+            self.assertIn("metadata->'lineage_facts' IS NULL THEN NULL", query.call_args.kwargs['input'])
+            for changes in ({'tenant_id': 3}, {'principal_id': 34}, {'workflow_matches': False},
+                            {'status': 'success'}, {'facts': EXPECTED}):
+                with self.subTest(changes=changes), self.assertRaises(m.SuiteError):
+                    read({**row, **changes})
+            query.reset_mock()
+            with self.assertRaisesRegex(m.SuiteError, 'approved focal suite'):
+                m.read_failed_focal_execution(self.env, IDENTIFIER, 2, 33, {'tasks': []})
+            query.assert_not_called()
+
+    def test_square_inventory_is_bound_to_actual_fixture_run_and_rejects_extra_executions(self):
+        suite = 'raster-focal-square-seven-persistence'
+        run = 'raster-focal-square-seven-123-1'
+        env = {**self.env, 'ONLINE_SUITE': suite, 'ADDP_ONLINE_TEST_RUN_ID': run}
+        self.path.write_text(json.dumps({**self.owner, 'suite': suite, 'run_id': run}))
+        with (patch.dict(os.environ, env, clear=True),
+              patch.object(m.BASE.HOSTED, 'deployment_secret', return_value=self.secret),
+              patch.object(m, 'inspect', return_value=self.container),
+              patch.object(m.subprocess, 'run') as query):
+            query.return_value = SimpleNamespace(returncode=0, stdout=json.dumps({'execution_ids': [IDENTIFIER]}))
+            m.check_focal_execution_inventory(os.environ, 2, [IDENTIFIER])
+            self.assertIn('limit=69', query.call_args.args[0])
+            sql = query.call_args.kwargs['input']
+            self.assertIn('BEGIN READ ONLY', sql)
+            self.assertIn("tenant_id=:'tenant_id'::integer", sql)
+            query.return_value = SimpleNamespace(returncode=0, stdout=json.dumps({'execution_ids': [IDENTIFIER, 'extra']}))
+            with self.assertRaisesRegex(m.SuiteError, 'changed the current Develop execution inventory'):
+                m.check_focal_execution_inventory(os.environ, 2, [IDENTIFIER])
+            query.reset_mock()
+            with patch.dict(os.environ, {'ADDP_ONLINE_TEST_RUN_ID': 'focal-square-seven-123-1'}):
+                with self.assertRaisesRegex(m.SuiteError, 'observer Run ID differs'):
+                    m.check_focal_execution_inventory(os.environ, 2, [IDENTIFIER])
+            query.assert_not_called()
+
     def test_container_identity_restart_labels_and_database_cannot_change(self):
         for fault in ('id','restart','project','service','root','database','stopped'):
             c=copy.deepcopy(self.container)

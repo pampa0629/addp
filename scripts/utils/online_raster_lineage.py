@@ -40,6 +40,11 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
     'raster-focal-percentiles-persistence': 'raster-focal-percentiles-lineage', 'raster-focal-square-seven-persistence': 'raster-focal-square-seven-lineage', 'vector-zonal-weighted-persistence': 'vector-zonal-weighted-lineage', 'vector-zonal-weighted-stddev-persistence': 'vector-zonal-weighted-stddev-lineage', 'vector-zonal-area-weighted-persistence': 'vector-zonal-area-weighted-lineage', 'vector-zonal-area-weighted-stddev-persistence': 'vector-zonal-area-weighted-stddev-lineage'}
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
+FOCAL_EXECUTION_LIMITS = {
+    'raster-focal-circle-persistence': 86,
+    'raster-focal-circle-orthogonal-persistence': 93,
+    'raster-focal-square-seven-persistence': 68,
+}
 
 
 def require(ok, message):
@@ -55,7 +60,9 @@ def boundary(env):
             and not env.get('ADDP_ONLINE_OWNER_MANAGED') and not env.get('ADDP_EXECUTION_TRACE_LOCAL'),
             'observer only owns approved Hosted raster suites')
     run = env.get('ADDP_ONLINE_TEST_RUN_ID', '')
-    prefix = suite.removeprefix('raster-').removesuffix('-persistence')
+    prefix = suite.removesuffix('-persistence')
+    if suite != 'raster-focal-square-seven-persistence':
+        prefix = prefix.removeprefix('raster-')
     require(run == prefix + '-' + env.get('GITHUB_RUN_ID', '') + '-' + env.get('GITHUB_RUN_ATTEMPT', '')
             and re.fullmatch(r'[a-z-]+-\d+-\d+', run), 'observer Run ID differs')
     artifacts = Path(env['ADDP_ONLINE_ARTIFACT_DIR']).resolve(strict=True)
@@ -90,10 +97,22 @@ def prepare():
 
 
 def read_current(env, identifier, tenant, principal, workflow):
+    return _read_execution(env, identifier, tenant, principal, workflow, 'success')['facts']
+
+
+def read_failed_focal_execution(env, identifier, tenant, principal, workflow):
+    require(env.get('ONLINE_SUITE') in FOCAL_EXECUTION_LIMITS,
+            'failed execution observation requires an approved focal suite')
+    evidence = _read_execution(env, identifier, tenant, principal, workflow, 'failed')
+    facts = evidence.pop('facts')
+    require(facts is None or (isinstance(facts, dict) and set(facts) <= FIELDS
+                              and not facts.get('outputs') and not facts.get('operations')),
+            'failed execution published private output lineage')
+    return evidence
+
+
+def _owned_execution_observer(env):
     secret, suite, run = boundary(env)
-    require(type(tenant) is int and tenant > 1 and type(principal) is int and principal > 0
-            and isinstance(identifier, str) and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', identifier),
-            'observer requires current User/Tenant/execution identities')
     path = secret / RECEIPT
     require(not path.is_symlink() and path.is_file() and path.stat().st_uid == os.getuid()
             and path.stat().st_mode & 0o777 == 0o600, 'observer owner receipt is not private')
@@ -106,6 +125,33 @@ def read_current(env, identifier, tenant, principal, workflow):
     user = BASE.validate_container(container, owner['container_id'], values)
     require(user == owner['postgres_user'] and container['State']['StartedAt'] == owner['started_at'],
             'observer container restarted or changed')
+    return owner
+
+
+def check_focal_execution_inventory(env, tenant, expected):
+    limit = FOCAL_EXECUTION_LIMITS.get(env.get('ONLINE_SUITE'))
+    require(limit is not None and type(tenant) is int and tenant > 1 and len(expected) <= limit,
+            'execution inventory requires an approved focal suite and dedicated tenant')
+    owner = _owned_execution_observer(env)
+    statement = """BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+SELECT json_build_object('execution_ids', COALESCE(json_agg(execution_id ORDER BY execution_id), '[]'::json))
+FROM (SELECT execution_id FROM common.task_executions
+ WHERE tenant_id=:'tenant_id'::integer AND module='develop' AND task_type='workflow'
+ AND created_at>=:'started_at'::timestamptz ORDER BY execution_id LIMIT :'limit'::integer) AS current_run;
+COMMIT;
+"""
+    result = _query(owner, statement, {'tenant_id': tenant, 'limit': limit + 1})
+    unique = set(expected)
+    require(len(unique) == len(expected) and result == {'execution_ids': sorted(unique)},
+            'entry rejection changed the current Develop execution inventory')
+
+
+def _read_execution(env, identifier, tenant, principal, workflow, status):
+    require(type(tenant) is int and tenant > 1 and type(principal) is int and principal > 0
+            and isinstance(identifier, str) and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', identifier),
+            'observer requires current User/Tenant/execution identities')
+    owner = _owned_execution_observer(env)
     require(isinstance(workflow, dict) and len(json.dumps(workflow).encode()) <= 65536, 'workflow evidence exceeds bound')
     # Fixed read-only query; psql quoted variables never become SQL source.
     statement = """BEGIN READ ONLY;
@@ -114,34 +160,41 @@ SELECT json_build_object('execution_id',execution_id,'tenant_id',tenant_id,
  'principal_id',actor_principal_id,'triggered_by',triggered_by,'module',module,
  'task_type',task_type,'status',status,
  'workflow_matches',execution_config->'content'->'workflow_definition' = :'workflow'::jsonb,
- 'facts',CASE WHEN octet_length((metadata->'lineage_facts')::text)<=32768
+ 'facts',CASE WHEN metadata->'lineage_facts' IS NULL THEN NULL
+ WHEN octet_length((metadata->'lineage_facts')::text)<=32768
  THEN metadata->'lineage_facts' ELSE '{"unavailable_or_oversize":true}'::jsonb END)
 FROM common.task_executions WHERE execution_id=:'execution_id'
  AND tenant_id=:'tenant_id'::integer AND actor_principal_id=:'principal_id'::bigint
  AND triggered_by=:'principal_id'::integer AND module='develop' AND task_type='workflow'
- AND status='success' AND created_at>=:'started_at'::timestamptz LIMIT 1;
+ AND status=:'status' AND created_at>=:'started_at'::timestamptz LIMIT 1;
 COMMIT;
 """
+    value = _query(owner, statement, {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
+                                      'status': status, 'workflow': json.dumps(workflow, sort_keys=True)})
+    require(set(value) == {'execution_id', 'tenant_id', 'principal_id', 'triggered_by', 'module',
+                           'task_type', 'status', 'workflow_matches', 'facts'}, 'internal evidence envelope differs')
+    expected = {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
+                'triggered_by': principal, 'module': 'develop', 'task_type': 'workflow',
+                'status': status, 'workflow_matches': True}
+    require(all(value.get(k) == v and type(value.get(k)) is type(v) for k, v in expected.items()),
+            'internal evidence is not the current workflow/User/Tenant')
+    return value
+
+
+def _query(owner, statement, arguments):
     command = ['docker', 'exec', '-i', owner['container_id'], 'psql', '-X', '-qAt',
-               '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online']
-    for key, value in {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
-                       'started_at': owner['started_at'], 'workflow': json.dumps(workflow, sort_keys=True)}.items():
+               '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', owner['postgres_user'], '-d', 'addp_online']
+    for key, value in {**arguments, 'started_at': owner['started_at']}.items():
         command.extend(['-v', key + '=' + str(value)])
     try:
         result = subprocess.run(command, input=statement, capture_output=True, text=True, timeout=8)
         require(result.returncode == 0 and 0 < len(result.stdout.encode()) <= 40000,
                 'bounded internal lineage read unavailable')
         value = json.loads(result.stdout)
+        require(isinstance(value, dict), 'bounded internal lineage read was not an object')
+        return value
     except Exception:
         raise SuiteError('bounded internal lineage read unavailable') from None
-    require(set(value) == {'execution_id', 'tenant_id', 'principal_id', 'triggered_by', 'module',
-                           'task_type', 'status', 'workflow_matches', 'facts'}, 'internal evidence envelope differs')
-    expected = {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
-                'triggered_by': principal, 'module': 'develop', 'task_type': 'workflow',
-                'status': 'success', 'workflow_matches': True}
-    require(all(value.get(k) == v and type(value.get(k)) is type(v) for k, v in expected.items()),
-            'internal evidence is not the current workflow/User/Tenant')
-    return value['facts']
 
 
 def validate(facts, expected, *, public):

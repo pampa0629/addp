@@ -3,6 +3,7 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import time
 import unittest
@@ -69,6 +70,34 @@ def diagnostic(repository, env, identifier, problem, language, timeout):
     }
 
 
+class PublicReceiptClient(prior.Client):
+    entry_fault = None
+
+    def request(self, method, path, expected, body=None, headers=None):
+        if method == 'POST' and path == '/api/v1/develop/executions' and expected == (400,):
+            tasks = body['content']['workflow_definition']['tasks']
+            language = headers['Accept-Language']
+            target = tasks[-1]['params']['target_name']
+            problem = target.removeprefix('failed-').removesuffix('-' + language + '.cog.tif')
+            parameter = m.ENTRY_PARAMETERS[problem]
+            field = 'workflow_definition.tasks[1].params.' + parameter
+            summary, prefix = {
+                'en': ('Invalid workflow parameters. Review the node parameters',
+                       'Parameter type differs from the operator declaration: '),
+                'zh-cn': ('工作流参数无效，请检查节点参数', '参数类型与算子声明不符：'),
+            }[language]
+            data = {'error': summary, 'error_code': 'invalid_workflow_parameters',
+                    'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': prefix + field}]}
+            if self.entry_fault:
+                self.entry_fault(data, self)
+            return SimpleNamespace(payload=data, status=400, raw=json.dumps(data).encode())
+        response = super().request(method, path, expected, body, headers)
+        if method == 'GET' and ('/develop/executions/' in path or '/monitor/executions/' in path):
+            response.payload.pop('tenant_id')
+            response.raw = json.dumps(response.payload).encode()
+        return response
+
+
 class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
     def setUp(self):
         work = tempfile.TemporaryDirectory()
@@ -85,7 +114,7 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
         self.enterContext(patch.object(prior, 'm', m))
 
     def run_case(self, client=None, worker=physical, diag=diagnostic):
-        client = client or prior.Client()
+        client = client or PublicReceiptClient()
 
         def reader(env, identifier, tenant, principal, dag):
             self.assertEqual((tenant, principal), (2, 33))
@@ -93,9 +122,22 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
             name = dag['tasks'][-1]['params']['target_name']
             return m.expected_lineage(client.locators(), name, 'addp://engine/3/path/outputs/' + name + '?type=file')
 
+        def inventory_reader(env, tenant, expected):
+            self.assertEqual(tenant, 2)
+            if sorted(client.executions) != sorted(expected):
+                raise m.SuiteError('entry rejection changed the current Develop execution inventory')
+
+        def failed_reader(env, identifier, tenant, principal, dag):
+            self.assertEqual((tenant, principal), (2, 33))
+            row = client.executions[identifier]
+            self.assertEqual((row['status'], row['execution_config']['content']['workflow_definition']),
+                             ('failed', dag))
+            return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal, 'status': 'failed'}
+
         self.env.setdefault('ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED', str(time.monotonic()))
         with patch.object(m.raster, 'wait_lineage', return_value={'active': True}):
-            return m.run_scenario(self.root, self.env, client, worker, diag, reader)
+            return m.run_scenario(self.root, self.env, client, worker, diag, reader,
+                                  failed_reader=failed_reader, inventory_reader=inventory_reader)
 
     def test_exact_18_success_60_failures_1251_full_reads_and_cleanup(self):
         calls = []
@@ -118,7 +160,7 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
         self.assertEqual(calls[0], ('oracle', []))
         self.assertEqual(calls[-1], ('cleanup-oracle', []))
         self.assertEqual(set(report['archived_cogs']), set(m.fixture.CASES))
-        self.assertEqual(len(list((self.root / 'evidence/focal-square-seven-terminal-responses').iterdir())), 156)
+        self.assertEqual(len(list((self.root / 'evidence/focal-square-seven-terminal-responses').iterdir())), 136)
         self.assertTrue(report['oracle_cache_removed'])
         self.assertTrue(
             all(case['scan_identity']['parent_execution_id'] == case['execution_id'] for case in report['cases'])
@@ -127,6 +169,17 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
             {(row['problem'], row['language']) for row in report['failed_parameters']},
             {(problem, language) for problem in m.FAILURES for language in ('zh-cn', 'en')},
         )
+        entry = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'develop_entry']
+        self.assertEqual(len(entry), 10)
+        for failure in report['failed_parameters']:
+            if failure['rejection_stage'] == 'develop_entry':
+                self.assertIs(failure['no_execution_created'], True)
+                self.assertEqual(failure['submission']['http_status'], 400)
+                self.assertNotIn('execution_id', failure)
+                self.assertTrue((self.root / 'evidence' / failure['submission']['path']).is_file())
+            else:
+                self.assertEqual(failure['private_execution']['execution_id'], failure['execution_id'])
+                self.assertEqual(failure['private_execution']['tenant_id'], 2)
         self.assertEqual(len(list((self.root / 'evidence/raster-focal-square-seven-lineage').iterdir())), 18)
 
     def test_every_dag_has_exact_window_and_weight_matrix_and_focal_failure(self):
@@ -171,7 +224,7 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
         for fault in ('focal', 'scan', 'language', 'cleanup'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
                 self.env['ADDP_ONLINE_ARTIFACT_DIR'] = directory
-                client, worker, diag = prior.Client(), physical, diagnostic
+                client, worker, diag = PublicReceiptClient(), physical, diagnostic
                 if fault == 'focal':
 
                     def diag(*args):
