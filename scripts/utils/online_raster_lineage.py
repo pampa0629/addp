@@ -47,6 +47,7 @@ EXECUTION_INVENTORY_LIMITS = {
     'raster-sample-points-persistence': 42,
     'raster-sample-points-bilinear-persistence': 48,
     'raster-sample-lines-persistence': 54,
+    'raster-zonal-class-frequency-persistence': 68,
     'vector-zonal-class-frequency-persistence': 56,
 }
 
