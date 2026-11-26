@@ -1,11 +1,15 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/redis/go-redis/v9"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -216,16 +220,18 @@ func TestSearchContinuationExpiryCapacityAndMaterialChange(t *testing.T) {
 				t.Fatal(err)
 			}
 			cursor, _ := uuid.Parse(first.NextCursor)
-			session, err := svc.searchSessions.find(cursor, searchSubject(searchTestActor(7)))
+			ref, _, err := loadSearchCheckpoint(t.Context(), svc.checkpoints, cursor, searchSubject(searchTestActor(7)))
 			if err != nil {
 				t.Fatal(err)
 			}
 			expected := ErrSearchContinuationExpired
 			switch mode {
 			case "expired":
-				session.expires = time.Now().Add(-time.Second)
+				if err := svc.checkpoints.HSet(t.Context(), checkpointKeys(ref.id)[0], "e", time.Now().Add(-time.Second).UnixMilli()).Err(); err != nil {
+					t.Fatal(err)
+				}
 			case "capacity":
-				svc.searchSessions.perQueryBytes = session.bytes
+				svc.searchSessions.perQueryBytes = 4096
 				expected = ErrSearchCapacityExceeded
 			case "material":
 				expected = ErrSearchContextChanged
@@ -303,5 +309,98 @@ func TestSearchRegistryExpiresIdleStateAndCloseReleasesAllBytes(t *testing.T) {
 	registry.closeAll()
 	if registry.bytes != 0 || !sessions[1].closed {
 		t.Fatal("close retained state", registry.bytes)
+	}
+}
+
+func TestSearchContinuationCacheOutagePreservesIssuedProgress(t *testing.T) {
+	svc, _ := continuationServiceFixture(t, 3)
+	checker := searchVisibilityFixture{}
+	first, err := testSearchDocuments(t, svc, t.Context(), 7, nil, checker, "Table", 1, "")
+	if err != nil || first.NextCursor == "" {
+		t.Fatal(first, err)
+	}
+	client := svc.checkpoints
+	disconnected := redis.NewClient(client.Options())
+	if err = disconnected.Close(); err != nil {
+		t.Fatal(err)
+	}
+	svc.checkpoints = disconnected
+	for _, cursor := range []string{"", first.NextCursor} {
+		if result, err := testSearchDocuments(t, svc, t.Context(), 7, nil, checker, "Table", 1, cursor); result != nil || !errors.Is(err, ErrSearchVisibilityUnavailable) {
+			t.Fatalf("offline cache returned %v, %v", result, err)
+		}
+	}
+	svc.checkpoints = client
+	next, err := testSearchDocuments(t, svc, t.Context(), 7, nil, checker, "Table", 1, first.NextCursor)
+	if err != nil || len(next.Hits) != 1 || next.Hits[0].DocumentID == first.Hits[0].DocumentID {
+		t.Fatal(next, err)
+	}
+}
+
+func TestCheckpointRetainsBothRankingStreamsWithoutQueryText(t *testing.T) {
+	newSession := func() *searchSession {
+		s := &searchSession{query: "sensitive search phrase for checkpoint test", tenant: 7, pageSize: 2}
+		if err := newSearchSessionRegistry().create(s); err != nil {
+			t.Fatal(err)
+		}
+		s.rrf = newSearchRRF(s.reserve)
+		return s
+	}
+	a := newSession()
+	if err := a.initializeStreams(); err != nil {
+		t.Fatal(err)
+	}
+	for _, hit := range []struct {
+		source int
+		id     byte
+	}{{0, 1}, {0, 2}, {1, 3}, {1, 2}} {
+		if err := a.rrf.accept(hit.source, searchIdentity{hit.id}, searchKeywordContent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.streams[1].(*searchAuthorizedStream).pending = []searchSourceHit{{searchSourceCandidate: searchSourceCandidate{ID: searchIdentity{9}}, ExpectedEngine: 42, ExpectedLocator: [32]byte{11}, Kind: searchVectorContent}}
+	body, err := a.encodeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte(a.query)) {
+		t.Fatal("checkpoint contains raw query")
+	}
+	b := newSession()
+	var c searchCheckpoint
+	if err := gob.NewDecoder(bytes.NewReader(body)).Decode(&c); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.restore(b); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(a.streams[1].(*searchAuthorizedStream).pending, b.streams[1].(*searchAuthorizedStream).pending) {
+		t.Fatal("vector candidate lost its expected source")
+	}
+	var baseline []searchRankedIdentity
+	for i, s := range []*searchSession{a, b} {
+		if err := s.rrf.accept(1, searchIdentity{1}, searchVectorContent); err != nil {
+			t.Fatal(err)
+		}
+		s.rrf.done = [2]bool{true, true}
+		if _, err := s.rrf.promote(8); err != nil {
+			t.Fatal(err)
+		}
+		var ranks []searchRankedIdentity
+		for {
+			row, ok := s.rrf.pop()
+			if !ok {
+				break
+			}
+			ranks = append(ranks, row)
+		}
+		if len(ranks) != 3 {
+			t.Fatal(ranks)
+		}
+		if i == 0 {
+			baseline = ranks
+		} else if !reflect.DeepEqual(baseline, ranks) {
+			t.Fatalf("restored ranks differ: %v %v", baseline, ranks)
+		}
 	}
 }

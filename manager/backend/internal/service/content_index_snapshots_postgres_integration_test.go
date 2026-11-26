@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/manager/internal/config"
+	"github.com/redis/go-redis/v9"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -143,7 +145,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	}
 	svc := &HybridSearchService{client: client, contentIndex: index, enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: config.SearchEndpointID(endpoint), log: slog.Default()}
 	t.Run("concurrent_first_start_creates_and_configures_once", func(t *testing.T) {
-		cfg := &config.Config{MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: index}
+		cfg := &config.Config{MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: index, SearchRedisHost: os.Getenv("MANAGER_SEARCH_REDIS_HOST"), SearchRedisPort: os.Getenv("MANAGER_SEARCH_REDIS_PORT"), SearchRedisPassword: os.Getenv("MANAGER_SEARCH_REDIS_PASSWORD")}
 		type result struct {
 			svc *HybridSearchService
 			err error
@@ -197,8 +199,10 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	svc.initialized.Store(true)
 	svc.ordinalReady.Store(true)
 	svc.searchSessions = newSearchSessionRegistry()
+	svc.checkpoints = redis.NewClient(&redis.Options{Addr: net.JoinHostPort(os.Getenv("MANAGER_SEARCH_REDIS_HOST"), os.Getenv("MANAGER_SEARCH_REDIS_PORT")), Username: "manager_search", Password: os.Getenv("MANAGER_SEARCH_REDIS_PASSWORD"), MaxRetries: -1})
+	t.Cleanup(svc.Close)
 	t.Run("two_backends_join_deployed_target", func(t *testing.T) {
-		cfg := &config.Config{MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: index}
+		cfg := &config.Config{MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: index, SearchRedisHost: os.Getenv("MANAGER_SEARCH_REDIS_HOST"), SearchRedisPort: os.Getenv("MANAGER_SEARCH_REDIS_PORT"), SearchRedisPassword: os.Getenv("MANAGER_SEARCH_REDIS_PASSWORD")}
 		start := func(cfg *config.Config) *HybridSearchService {
 			t.Helper()
 			reader, err := NewHybridSearchService(cfg, nil, nil, nil, nil, repo, store)
@@ -788,13 +792,23 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		if err := db.Model(&models.ContentIndexDelivery{}).Where("index_name=?", index).Count(&before).Error; err != nil {
 			t.Fatal(err)
 		}
+		cfg := &config.Config{MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: index, SearchRedisHost: os.Getenv("MANAGER_SEARCH_REDIS_HOST"), SearchRedisPort: os.Getenv("MANAGER_SEARCH_REDIS_PORT"), SearchRedisPassword: os.Getenv("MANAGER_SEARCH_REDIS_PASSWORD")}
+		startReader := func() *HybridSearchService {
+			peer, err := NewHybridSearchService(cfg, nil, nil, nil, nil, repo, store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(peer.Close)
+			return peer
+		}
+		readers := [2]*HybridSearchService{startReader(), startReader()}
 		cursor := ""
 		found := []string{}
 		empty := 0
 		steps := 0
 		for ; steps < 100; steps++ {
 			input := cursor
-			batch, err := testSearchDocuments(t, svc, ctx, 7, nil, checker, "needle", 7, cursor)
+			batch, err := testSearchDocuments(t, readers[steps%2], ctx, 7, nil, checker, "needle", 7, cursor)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -804,11 +818,16 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			for _, hit := range batch.Hits {
 				found = append(found, hit.DocumentID)
 			}
-			if steps == 1 && input != "" {
-				replay, err := testSearchDocuments(t, svc, ctx, 7, nil, checker, "needle", 7, input)
+			if (steps == 1 || batch.Exhausted) && input != "" {
+				replay, err := testSearchDocuments(t, readers[(steps+1)%2], ctx, 7, nil, checker, "needle", 7, input)
 				if err != nil || !reflect.DeepEqual(searchIDs(batch), searchIDs(replay)) || batch.NextCursor != replay.NextCursor || batch.Exhausted != replay.Exhausted {
 					t.Fatalf("native replay differs: %+v %+v %v", batch, replay, err)
 				}
+			}
+			if steps == 0 {
+				// The issuing Backend exits before any client can resume.
+				readers[0].Close()
+				readers[0] = startReader()
 			}
 			if batch.Exhausted {
 				break

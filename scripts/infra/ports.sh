@@ -4,6 +4,10 @@
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../utils" && pwd)/observability-env.sh"
 
+addp_manager_search_cache_selected() {
+  [[ "${ADDP_DEPLOYMENT_SCOPE:-full}" == full || ",${ADDP_DEPLOYMENT_MODULES:-}," == *,manager,* ]]
+}
+
 addp_infra_port_specs() {
   local scope="${ADDP_INFRA_PORT_SCOPE:-all}"
   if [[ "$scope" == all || "$scope" == logs ]] && addp_runtime_logs_enabled; then
@@ -20,6 +24,9 @@ addp_infra_port_specs() {
     echo 'trace-query TRACE_QUERY_PORT 8443 14320 addp-trace-query'
   fi
   case "$scope" in logs|metrics|traces) return 0 ;; esac
+  if addp_manager_search_cache_selected; then
+    echo 'manager-search-redis MANAGER_SEARCH_REDIS_PORT 6379 16380 addp-manager-search-redis'
+  fi
   cat <<'EOF'
 postgres POSTGRES_PORT 5432 15432 addp-postgres
 redis REDIS_PORT 6379 16379 addp-redis
@@ -175,13 +182,13 @@ addp_infra_resolve_ports() {
 addp_infra_read_actual_ports() {
   local service variable internal preferred container mapped
   while read -r service variable internal preferred container; do
-    if [[ "$service" = runtime-log-api || "$service" = alloy || "$service" = prometheus || "$service" = trace-query ]] && ! docker inspect "$container" >/dev/null 2>&1; then
+    if [[ "$service" = manager-search-redis || "$service" = runtime-log-api || "$service" = alloy || "$service" = prometheus || "$service" = trace-query ]] && ! docker inspect "$container" >/dev/null 2>&1; then
       printf -v "$variable" '%s' ''
       export "$variable"
       continue
     fi
     addp_infra_verify_container "$service" "$container" || return 1
-    if [[ "$service" = runtime-log-api || "$service" = alloy || "$service" = prometheus || "$service" = trace-query ]] && [ "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null)" != true ]; then
+    if [[ "$service" = manager-search-redis || "$service" = runtime-log-api || "$service" = alloy || "$service" = prometheus || "$service" = trace-query ]] && [ "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null)" != true ]; then
       printf -v "$variable" '%s' ''
       export "$variable"
       continue
@@ -193,6 +200,9 @@ addp_infra_read_actual_ports() {
     printf -v "$variable" '%s' "$mapped"
     export "$variable"
   done < <(addp_infra_port_specs)
+  if [[ "${ENV:-development}" == development && -z "${MANAGER_SEARCH_REDIS_PASSWORD:-}" && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+    export MANAGER_SEARCH_REDIS_PASSWORD_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/.dev-state/manager-search-redis.key"
+  fi
   addp_infra_apply_endpoints
 }
 

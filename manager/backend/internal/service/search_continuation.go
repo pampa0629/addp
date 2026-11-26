@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/gob"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +52,14 @@ type SearchContinuationResult struct {
 }
 
 func (s *HybridSearchService) SearchDocuments(ctx context.Context, current shared.AuthContext, engineID *uint, credential string, checker SearchVisibilityChecker, input searchContinuationInput) (result *SearchContinuationResult, err error) {
+	result, err = s.searchPage(ctx, current, engineID, credential, checker, input)
+	if errors.Is(err, errCheckpointAdvanced) {
+		return s.searchPage(ctx, current, engineID, credential, checker, input)
+	}
+	return result, err
+}
+
+func (s *HybridSearchService) searchPage(ctx context.Context, current shared.AuthContext, engineID *uint, credential string, checker SearchVisibilityChecker, input searchContinuationInput) (result *SearchContinuationResult, err error) {
 	if !s.Enabled() {
 		return nil, ErrSearchDisabled
 	}
@@ -69,42 +79,59 @@ func (s *HybridSearchService) SearchDocuments(ctx context.Context, current share
 		engine = *engineID
 	}
 	initial := input.cursor == uuid.Nil
-	var session *searchSession
-	if initial {
-		session = &searchSession{service: s, subject: subject, query: strings.Clone(input.query), tenant: uint(tenant), engine: engine, pageSize: input.pageSize, nonce: searchQueryNonce(), currentCursor: searchCursor()}
-		session.bytes = int64(unsafe.Sizeof(searchSession{})) + int64(unsafe.Sizeof(searchRRF{})) + int64(len(session.query)) + 2*int64(input.pageSize)*int64(unsafe.Sizeof(searchRankedIdentity{}))
-		if err := s.searchSessions.create(session); err != nil {
-			return nil, err
-		}
-		session.working = make([]searchRankedIdentity, 0, input.pageSize)
-		session.last = make([]searchRankedIdentity, 0, input.pageSize)
-		session.rrf = newSearchRRF(session.reserve)
-	} else {
-		session, err = s.searchSessions.find(input.cursor, subject)
-		if err != nil {
-			return nil, err
-		}
+	if s.checkpoints == nil {
+		return nil, ErrSearchVisibilityUnavailable
 	}
+	session := &searchSession{service: s, subject: subject, query: input.query, tenant: uint(tenant), engine: engine, pageSize: input.pageSize}
+	session.bytes = int64(unsafe.Sizeof(searchSession{})) + int64(unsafe.Sizeof(searchRRF{})) + int64(len(session.query)) + 2*int64(input.pageSize)*int64(unsafe.Sizeof(searchRankedIdentity{}))
+	if err := s.searchSessions.create(session); err != nil {
+		return nil, err
+	}
+	// The local registry bounds work in flight. Committed progress lives only
+	// in the dedicated cache and survives this process closing.
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	if session.closed {
-		return nil, ErrSearchContinuationNotFound
-	}
-	if !time.Now().Before(session.expires) {
-		session.close()
 		return nil, ErrSearchContinuationExpired
 	}
-	if session.query != input.query || session.engine != engine || session.pageSize != input.pageSize {
-		return nil, ErrSearchContinuationParameters
-	}
-	if !initial && input.cursor != session.currentCursor && input.cursor != session.lastInput {
-		return nil, ErrSearchContinuationNotFound
-	}
-	defer func() {
-		if err != nil && (initial || errors.Is(err, ErrSearchContextChanged) || errors.Is(err, ErrSearchContinuationExpired) || errors.Is(err, ErrSearchCapacityExceeded) || errors.Is(err, commonClient.ErrMetadataCredentialRejected) || errors.Is(err, commonClient.ErrMetadataQueryDenied)) {
-			session.close()
+	defer session.close()
+	session.working = make([]searchRankedIdentity, 0, input.pageSize)
+	session.last = make([]searchRankedIdentity, 0, input.pageSize)
+	session.rrf = newSearchRRF(session.reserve)
+	ref := checkpointRef{}
+	var saved searchCheckpoint
+	if initial {
+		cacheTime, err := s.checkpoints.Time(ctx).Result()
+		if err != nil {
+			return nil, fmt.Errorf("%w: search cache: %w", ErrSearchVisibilityUnavailable, err)
 		}
-	}()
+		session.nonce = searchQueryNonce()
+		ref = checkpointRef{id: uuid.NewString(), expires: cacheTime.Add(searchStateTTL)}
+	} else {
+		var raw string
+		ref, raw, err = loadSearchCheckpoint(ctx, s.checkpoints, input.cursor, subject)
+		if err != nil {
+			return nil, err
+		}
+		session.expires = time.Now().Add(ref.remaining)
+		defer func() {
+			if errors.Is(err, ErrSearchContextChanged) || errors.Is(err, ErrSearchContinuationExpired) || errors.Is(err, ErrSearchCapacityExceeded) || errors.Is(err, commonClient.ErrMetadataCredentialRejected) || errors.Is(err, commonClient.ErrMetadataQueryDenied) {
+				_, discardErr := discardCheckpoint.Run(ctx, s.checkpoints, checkpointKeys(ref.id), ref.version, checkpointPrefix, ref.id).Result()
+				if discardErr != nil {
+					err = fmt.Errorf("%w: discard search progress: %w", ErrSearchVisibilityUnavailable, discardErr)
+				}
+			}
+		}()
+		if ref.remaining <= 0 {
+			return nil, ErrSearchContinuationExpired
+		}
+		if err = gob.NewDecoder(strings.NewReader(raw)).Decode(&saved); err != nil {
+			return nil, fmt.Errorf("%w: invalid search progress", ErrSearchVisibilityUnavailable)
+		}
+		if err = saved.restore(session); err != nil {
+			return nil, err
+		}
+	}
 	step, err := session.newStep(credential, checker)
 	if err != nil {
 		return nil, err
@@ -113,8 +140,11 @@ func (s *HybridSearchService) SearchDocuments(ctx context.Context, current share
 	if _, err = step.observe(ctx, nil); err != nil {
 		return nil, err
 	}
-	if err = session.prepareModel(ctx, initial); err != nil {
+	if err = session.prepareModel(ctx, true); err != nil {
 		return nil, err
+	}
+	if !initial && (session.modelKey != saved.Model || vectorFingerprint(session.vectorQuery) != saved.Vector) {
+		return nil, ErrSearchContextChanged
 	}
 	material, high, err := s.searchMaterial(ctx, session.tenant)
 	if err != nil {
@@ -204,13 +234,15 @@ func (s *HybridSearchService) SearchDocuments(ctx context.Context, current share
 	if err != nil {
 		return nil, err
 	}
-	session.publish(session.currentCursor, next, exhausted)
+	if initial && exhausted {
+		return result, nil
+	}
+	session.publish(input.cursor, next, exhausted)
 	if exhausted {
-		if initial {
-			session.close()
-		} else {
-			session.releaseCompletedWorkingState(step.bytes)
-		}
+		session.releaseCompletedWorkingState(step.bytes)
+	}
+	if err = ref.save(ctx, s.checkpoints, session, input.cursor); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

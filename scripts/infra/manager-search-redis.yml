@@ -1,0 +1,17 @@
+# Shared by the standard deployment and the Manager Redis acceptance fixture.
+services:
+  manager-search-redis:
+    image: redis:7-alpine@sha256:ee64a64eaab618d88051c3ade8f6352d11531fcf79d9a4818b9b183d8c1d18ba
+    command: ["sh", "/addp/manager-search-redis.sh"]
+    volumes:
+      - ./manager-search-redis.sh:/addp/manager-search-redis.sh:ro
+    environment:
+      MANAGER_SEARCH_REDIS_PASSWORD: ${MANAGER_SEARCH_REDIS_PASSWORD:-}
+    tmpfs:
+      - /data
+      - /run/addp-redis:mode=0700
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$MANAGER_SEARCH_REDIS_PASSWORD" redis-cli --user manager_search ping | grep -qx PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5

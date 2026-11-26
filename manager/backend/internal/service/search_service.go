@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	commonClient "github.com/addp/common/client"
+	"github.com/redis/go-redis/v9"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -50,6 +52,7 @@ type HybridSearchService struct {
 	initialized           atomic.Bool
 	ordinalReady          atomic.Bool
 	searchSessions        *searchSessionRegistry
+	checkpoints           *redis.Client
 }
 
 // SearchDocument 表示检索结果中的单个文档（混合检索的统一格式）
@@ -146,6 +149,9 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 		return svc, nil
 	}
 
+	if cfg.SearchRedisPassword != "" {
+		svc.checkpoints = redis.NewClient(&redis.Options{Addr: net.JoinHostPort(cfg.SearchRedisHost, cfg.SearchRedisPort), Username: "manager_search", Password: cfg.SearchRedisPassword, MaxRetries: -1})
+	}
 	// 创建 Meilisearch 客户端
 	client := meilisearch.New(cfg.MeilisearchURL, meilisearch.WithAPIKey(cfg.MeilisearchMasterKey), meilisearch.WithCustomClient(&http.Client{Timeout: 5 * time.Second}), meilisearch.DisableRetries())
 	svc.client = client
@@ -310,6 +316,9 @@ func mergeVectorSearchFacts(target *SearchDocument, vector SearchDocument) {
 }
 
 func (s *HybridSearchService) Close() {
+	if s.checkpoints != nil {
+		_ = s.checkpoints.Close()
+	}
 	if s.searchSessions != nil {
 		s.searchSessions.closeAll()
 	}

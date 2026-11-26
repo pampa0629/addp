@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -32,10 +33,11 @@ type Config struct {
 	}
 
 	// Redis 配置（用于资源变更事件同步）
-	RedisHost     string
-	RedisPort     string
-	RedisPassword string
-	RedisDB       int
+	RedisHost                                             string
+	RedisPort                                             string
+	RedisPassword                                         string
+	RedisDB                                               int
+	SearchRedisHost, SearchRedisPort, SearchRedisPassword string
 
 	// MinIO 配置（用于 MVT 瓦片存储和数据导入中转，读取平台内置 MinIO）
 	MinioEndpoint  string
@@ -151,6 +153,15 @@ func Load() *Config {
 	cfg.RedisPort = commonConfig.GetEnv("REDIS_PORT", "6379")
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
+	cfg.SearchRedisHost = commonConfig.GetEnv("MANAGER_SEARCH_REDIS_HOST", "127.0.0.1")
+	cfg.SearchRedisPort = commonConfig.GetEnv("MANAGER_SEARCH_REDIS_PORT", "16380")
+	cfg.SearchRedisPassword = os.Getenv("MANAGER_SEARCH_REDIS_PASSWORD")
+	if cfg.SearchRedisPassword == "" && os.Getenv("MANAGER_SEARCH_REDIS_PASSWORD_FILE") != "" {
+		key, err := os.ReadFile(os.Getenv("MANAGER_SEARCH_REDIS_PASSWORD_FILE"))
+		if err == nil {
+			cfg.SearchRedisPassword = strings.TrimSpace(string(key))
+		}
+	}
 
 	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
 	cfg.MinioEndpoint = minioCfg.Endpoint

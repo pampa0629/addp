@@ -221,7 +221,21 @@ func (s *searchRRF) accept(source int, id searchIdentity, keywordKind uint8) err
 		ranks[1-source] = 0
 	}
 	ranks[source] = s.ranks[source] + 1
-	class := searchRankClass(ranks)
+	if source == 1 {
+		keywordKind = 0
+		if found {
+			keywordKind = s.rows[slot].KeywordKind
+		}
+	}
+	if err := s.putAt(searchRankedIdentity{ID: id, Ranks: ranks, KeywordKind: keywordKind}, slot, found); err != nil {
+		return err
+	}
+	s.ranks[source]++
+	return nil
+}
+
+func (s *searchRRF) putAt(row searchRankedIdentity, slot uint32, found bool) error {
+	class := searchRankClass(row.Ranks)
 	if err := s.prepare(class, !found); err != nil {
 		return err
 	}
@@ -235,19 +249,15 @@ func (s *searchRRF) accept(source int, id searchIdentity, keywordKind uint8) err
 			slot = uint32(len(s.rows))
 			s.rows = append(s.rows, searchRRFRow{})
 		}
-		_, pos, _ := s.find(id)
+		_, pos, _ := s.find(row.ID)
 		if s.table[pos] == searchDeletedSlot {
 			s.tombstones--
 		}
 		s.table[pos] = slot + 1
 		s.count++
-		s.rows[slot] = searchRRFRow{searchRankedIdentity: searchRankedIdentity{ID: id}, Live: true}
+		s.rows[slot] = searchRRFRow{searchRankedIdentity: row, Live: true}
 	}
-	s.rows[slot].Ranks = ranks
-	if source == 0 {
-		s.rows[slot].KeywordKind = keywordKind
-	}
-	s.ranks[source]++
+	s.rows[slot].searchRankedIdentity = row
 	heap.Push(&s.heaps[class], slot)
 	return nil
 }

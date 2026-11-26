@@ -1,4 +1,13 @@
 services:
+  manager-search-redis:
+    extends:
+      file: ../infra/manager-search-redis.yml
+      service: manager-search-redis
+    labels:
+      addp.test-owner: manager-postgres
+      addp.test-run: ${MANAGER_PG_TEST_OWNER:?owned run required}
+    ports:
+      - "127.0.0.1::6379"
   postgres:
     image: ${MANAGER_PG_TEST_IMAGE:?owned image tag required}
     platform: linux/amd64

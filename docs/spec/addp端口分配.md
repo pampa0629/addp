@@ -216,6 +216,7 @@ System 连接测试只验证发起方在当时配置下的连接结果；其他 
 | Document Workflow Engine   | 8105     | 8105        | 文档转换工作流引擎         |
 | Raster Mosaic Runtime     | 8291     | 8291        | Manager 栅格镶嵌渲染；容器值为镜像声明 |
 | PostgreSQL (System)   | 15432    | 5432 | ADDP 系统元数据            |
+| Manager 搜索短时 Redis | 16380    | 6379 | 混合搜索续页，只绑定本机回环 |
 | Redis                 | 16379    | 6379 | 缓存、事件和分布式锁       |
 | FalkorDB              | 16479    | 6379        | Ontology Infra，仅绑定回环，不注册为业务 Engine |
 | Business FalkorDB     | 6381     | 6379        | 独立业务图副本，仅绑定回环；由 System Engine 登记 |

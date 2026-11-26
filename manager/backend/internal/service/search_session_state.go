@@ -136,16 +136,6 @@ func (r *searchSessionRegistry) closeAll() {
 		}
 	}
 }
-func (r *searchSessionRegistry) find(cursor uuid.UUID, subject [32]byte) (*searchSession, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, s := range r.sessions {
-		if s != nil && !s.closed && s.subject == subject && (s.currentCursor == cursor || s.lastInput == cursor) {
-			return s, nil
-		}
-	}
-	return nil, ErrSearchContinuationNotFound
-}
 func (s *searchSession) reserve(delta int64) error {
 	r := s.registry
 	r.mu.Lock()

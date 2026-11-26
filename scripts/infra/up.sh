@@ -209,6 +209,25 @@ fi
 
 source "${SCRIPT_DIR}/ports.sh"
 echo -e "${YELLOW}▶ 解析 ADDP Infra 宿主机端口${NC}"
+if addp_manager_search_cache_selected; then
+  CORE_SERVICES+=(manager-search-redis)
+  if [[ -z "${MANAGER_SEARCH_REDIS_PASSWORD:-}" && "${ENV:-development}" == development && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
+    key_dir="$PROJECT_ROOT/.dev-state"
+    mkdir -p "$key_dir"
+    key_file="$key_dir/manager-search-redis.key"
+    if [[ ! -f "$key_file" ]]; then
+      candidate=$(mktemp "$key_dir/.manager-search-redis.XXXXXX")
+      openssl rand -hex 32 > "$candidate"
+      ln "$candidate" "$key_file" 2>/dev/null || [[ -s "$key_file" ]]
+      rm -f "$candidate"
+    fi
+    MANAGER_SEARCH_REDIS_PASSWORD=$(cat "$key_file")
+    export MANAGER_SEARCH_REDIS_PASSWORD
+  fi
+  : "${MANAGER_SEARCH_REDIS_PASSWORD:?Dedicated Manager search credential required}"
+  [[ "$MANAGER_SEARCH_REDIS_PASSWORD" != "${REDIS_PASSWORD:-}" ]] || { echo "Manager search and Infra Redis require distinct credentials" >&2; exit 1; }
+fi
+
 ADDP_INFRA_PORT_SCOPE=core addp_infra_resolve_ports
 export ADDP_INFRA_RESOLVED=1
 ALL_SERVICES_RUNNING=false
@@ -274,7 +293,7 @@ RUNNING_SERVICES=$(compose ps --status running --format "{{.Service}}" 2>/dev/nu
 if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|falkordb|minio|meilisearch|redpanda|kafka-connect"; then
   echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
   echo "  运行中的服务:"
-  for svc in postgres redis falkordb minio meilisearch redpanda kafka-connect loki alloy runtime-log-api runtime-log-pruner runtime-log-observer; do
+  for svc in postgres redis manager-search-redis falkordb minio meilisearch redpanda kafka-connect loki alloy runtime-log-api runtime-log-pruner runtime-log-observer; do
     if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
       echo -e "    ${GREEN}✓ $svc${NC}"
     fi

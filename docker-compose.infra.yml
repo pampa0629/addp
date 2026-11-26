@@ -67,6 +67,16 @@ services:
       timeout: 5s
       retries: 5
 
+  manager-search-redis:
+    extends:
+      file: scripts/infra/manager-search-redis.yml
+      service: manager-search-redis
+    container_name: addp-manager-search-redis
+    ports:
+      - "127.0.0.1:${MANAGER_SEARCH_REDIS_PORT:-16380}:6379"
+    networks: [addp-network]
+    restart: unless-stopped
+
   falkordb:
     extends:
       file: scripts/infra/falkordb.yml

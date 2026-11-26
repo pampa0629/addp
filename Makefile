@@ -590,7 +590,7 @@ test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 De
 	@bash scripts/test/common-clickhouse-decimal-gate.sh
 
 test-manager-postgres: ## 使用测试 PostGIS 与独占 MinIO 运行 Manager 任务、对象区域、导出和清理集成门禁
-	@bash scripts/test/manager-postgres-gate.sh $(MANAGER_POSTGRES_TEST_ARGS)
+	@bash scripts/test/manager-search-redis-gate.sh bash scripts/test/manager-postgres-gate.sh $(MANAGER_POSTGRES_TEST_ARGS)
 
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
 	@bash scripts/test/manager-mongodb-security-gate.sh

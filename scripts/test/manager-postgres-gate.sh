@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=meilisearch
-# ADDP_T2_OWNED_SERVICES=postgres,minio
+# ADDP_T2_OWNED_SERVICES=postgres,minio,manager-search-redis
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.manager-postgres-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.postgres scripts/test/manager-postgres-gate_test.py scripts/test/native-effect-proxy.py scripts/test/manager-objectstore-gate.sh scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ common/infra/objectstore/
+# ADDP_T2_INPUT_FILES=scripts/test/manager-search-redis-gate.sh scripts/infra/manager-search-redis.yml scripts/infra/manager-search-redis.sh scripts/infra/Dockerfile.postgres scripts/test/manager-postgres-gate_test.py scripts/test/native-effect-proxy.py scripts/test/manager-objectstore-gate.sh scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ common/infra/objectstore/
 # ADDP_T2_REQUIRED_ENV=MANAGER_POSTGRES_TEST_DSN
 # manager-postgres-gate.sh - Verify Manager lifecycle, geometry, preview and independent search snapshots.
 

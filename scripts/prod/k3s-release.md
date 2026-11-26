@@ -74,6 +74,19 @@ Gateway 与 System 应使用相容的路由快照契约。升级前后均从原 
 2. Gateway 使用与 System 相同的跨节点分布配置，将选择器换成 Gateway 的 Pod 标签。保持原入口指向同一个 Gateway Service。对使用节点日志的模块，从 Pod 的 `spec.nodeName` 取得调度节点，再映射到站点为该节点配置的日志名称；在 System 的有效登记中按 Pod 地址逐项核对。
 3. 从客户端持续请求上述目录接口，每次记录起止时间、状态和响应结构校验结果。受控退出一个 Gateway Pod，等到它消失且 EndpointSlice 仅剩另一节点的就绪端点，维持单端点窗口并核对业务读取。恢复双副本，再交换节点复验。保留两次窗口内的端点和逐次请求结果；每个窗口均须有成功样本，切换期间的失败单独计数。此项覆盖 Gateway 进程退出；整机失联按下文的恢复演练验收。
 
+## Manager 混合搜索双副本
+
+将同一源码版本的 `scripts/infra/manager-search-redis.sh` 作为 ConfigMap 文件交给站点。以下两条命令中的 `NS` 是业务命名空间，`KEY_FILE` 是现场单独交付的随机凭据文件（权限 0600，内容为一个无换行的高熵值）。更新前核对当前 namespace 和 context。
+
+```bash
+kubectl -n "$NS" create configmap manager-search-redis-start --from-file=scripts/infra/manager-search-redis.sh --dry-run=client -o yaml | kubectl -n "$NS" apply -f -
+kubectl -n "$NS" create secret generic manager-search-redis --from-file=password="$KEY_FILE" --dry-run=client -o yaml | kubectl -n "$NS" apply -f -
+```
+
+在站点模板中增加一个单副本 `manager-search-redis` Deployment 和同名 ClusterIP Service（6379/TCP）。镜像引用为 `addp-release.invalid/infra/manager-search-redis`，启动命令为 `["sh","/addp/manager-search-redis.sh"]`。将上述 ConfigMap 只读挂到 `/addp`，在 `/run/addp-redis` 和 `/data` 分别挂载 `emptyDir.medium: Memory`。采用 Recreate 避免切换期间有两套互不共享的进度。Redis 与 Manager Backend 各副本通过 `secretKeyRef` 引用同一个 `password` 作为 `MANAGER_SEARCH_REDIS_PASSWORD`。仅在 Manager Backend 设置 `MANAGER_SEARCH_REDIS_HOST=manager-search-redis` 和 `MANAGER_SEARCH_REDIS_PORT=6379`。健康探针使用 `REDISCLI_AUTH="$MANAGER_SEARCH_REDIS_PASSWORD" redis-cli --user manager_search ping`。站点网络策略仅向 Manager Backend 开放该 Service 的后端端口，备份作业排除此工作负载。独立进程可使用等价的专用缓存，将这三个环境变量提供给 Manager。
+
+现场验收先从 A 发起检索，将同一游标交给 B，再从 A 重放，核对每批身份、顺序和后继游标。关闭 A 后由 B 接手，同一输入并发提交只推进一次。缓存重建后旧游标失效，新查询正常。表浏览的排序键分页单独验收。本机和 CI 的集成测试使用不同 Manager 服务对象及同一真实缓存；跨 Pod、网络策略和经 Gateway 分流在站点验证。
+
 ## Monitor 双副本
 
 升级单实例站点时先保留一份现场清单。确认数据库连接直达同一平台库、支持持续持有同一物理会话，两个节点均已导入支持周期评估选主的原生镜像。先用新版本替换唯一旧副本，确认旧进程已退出，再扩至两个；旧版会自行评估，不能与新选主机制混跑。

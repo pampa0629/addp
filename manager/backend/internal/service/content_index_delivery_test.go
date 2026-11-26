@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/addp/common/dataprotection"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +61,9 @@ func contentDeliveryServiceFixture(t *testing.T, handler http.Handler) (*HybridS
 	svc := &HybridSearchService{client: meilisearch.New(server.URL, meilisearch.WithCustomClient(&http.Client{Timeout: time.Second}), meilisearch.DisableRetries()), contentIndex: "content", enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: config.SearchEndpointID(server.URL), log: slog.Default()}
 	svc.initialized.Store(true)
 	svc.ordinalReady.Store(true)
+	cache := miniredis.RunT(t)
+	svc.checkpoints = redis.NewClient(&redis.Options{Addr: cache.Addr(), MaxRetries: -1})
+	t.Cleanup(func() { _ = svc.checkpoints.Close() })
 	svc.searchSessions = newSearchSessionRegistry()
 	return svc, db
 }

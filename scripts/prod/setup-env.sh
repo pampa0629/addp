@@ -113,6 +113,14 @@ validate_production_env() {
     require_secret "$key" || return 1
   done
 
+  if [[ "$(env_value ADDP_DEPLOYMENT_SCOPE)" != system-meta-gateway || ",$(env_value ADDP_DEPLOYMENT_MODULES)," == *,manager,* ]]; then
+    require_secret MANAGER_SEARCH_REDIS_PASSWORD || return 1
+    if [ "$(env_value MANAGER_SEARCH_REDIS_PASSWORD)" = "$(env_value REDIS_PASSWORD)" ]; then
+      echo "Manager 搜索凭据与 Infra Redis 密码不得复用" >&2
+      return 1
+    fi
+  fi
+
   if [ "$(env_value INFRA_FALKORDB_PASSWORD)" = "$(env_value REDIS_PASSWORD)" ]; then
     echo -e "${RED}错误: FalkorDB 与 Redis 密码不得复用${NC}"
     return 1
@@ -181,6 +189,7 @@ chmod 600 "$ENV_FILE"
 replace_env ENV production
 replace_env POSTGRES_PASSWORD "$(gen_password)"
 replace_env REDIS_PASSWORD "$(gen_password)"
+replace_env MANAGER_SEARCH_REDIS_PASSWORD "$(gen_secret)"
 replace_env INFRA_FALKORDB_PASSWORD "$(gen_password)"
 replace_env MINIO_ROOT_PASSWORD "$(gen_password)"
 replace_env MEILISEARCH_MASTER_KEY "$(gen_secret)"
