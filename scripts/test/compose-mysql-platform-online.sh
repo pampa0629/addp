@@ -15,6 +15,7 @@ export ADDP_DEPLOYMENT_NETWORK="$ADDP_DEPLOYMENT_PROJECT" ADDP_INFRA_DATABASE_PR
 export NGINX_BIND_HOST=127.0.0.1 NGINX_PORT=18080 ADDP_PUBLIC_ORIGIN=http://127.0.0.1:18080
 export ALLOWED_ORIGINS="$ADDP_PUBLIC_ORIGIN" CONSOLE_URL="$ADDP_PUBLIC_ORIGIN" PUBLIC_API_URL="$ADDP_PUBLIC_ORIGIN"
 export ADDP_MYSQL_HOST=mysql ADDP_MYSQL_PORT=3306 ADDP_MYSQL_SSLMODE=disable
+export REDIS_HOST=redis REDIS_PORT=6379
 export ADDP_DATABASE_RUNTIME_USER=platform_runtime ADDP_DATABASE_DEPLOY_USER=platform_deploy
 export ADDP_DATABASE_RUNTIME_PASSWORD ADDP_DATABASE_DEPLOY_PASSWORD MYSQL_ROOT_PASSWORD
 ADDP_DATABASE_RUNTIME_PASSWORD=$(openssl rand -hex 24)
@@ -37,6 +38,25 @@ cleanup() {
   trap - EXIT INT TERM
   set +e
   if [ "$release_started" = true ]; then
+    if [[ "$status" != 0 && "$stage" == deploy ]]; then
+      # Report application error messages before removing the failed containers.
+      # JSON attributes may contain sensitive values, so retain only static messages.
+      "${app[@]}" logs --no-color --no-log-prefix --tail 60 2>/dev/null | python3 -c '
+import json
+import sys
+
+messages = set()
+for line in sys.stdin:
+    try:
+        record = json.loads(line)
+    except ValueError:
+        continue
+    if isinstance(record, dict) and record.get("level") == "ERROR" and isinstance(record.get("msg"), str):
+        messages.add(record["msg"])
+for message in sorted(messages):
+    print(f"Application startup error: {message}")
+'
+    fi
     "${app[@]}" down --volumes --remove-orphans || cleanup_status=failed
   fi
   if [ "$infra_started" = true ]; then
@@ -75,7 +95,7 @@ keys = (
     "ADDP_DEPLOYMENT_SCOPE", "ADDP_DEPLOYMENT_MODULES", "ADDP_DEPLOYMENT_PROJECT",
     "ADDP_DEPLOYMENT_NETWORK", "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_MYSQL_HOST",
     "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "ADDP_DATABASE_RUNTIME_USER",
-    "ADDP_DATABASE_RUNTIME_PASSWORD", "NGINX_BIND_HOST", "NGINX_PORT",
+    "ADDP_DATABASE_RUNTIME_PASSWORD", "REDIS_HOST", "REDIS_PORT", "NGINX_BIND_HOST", "NGINX_PORT",
     "ADDP_PUBLIC_ORIGIN", "ALLOWED_ORIGINS", "CONSOLE_URL", "PUBLIC_API_URL",
     "ADDP_OBSERVABILITY_LOGS_ENABLED",
 )
@@ -199,6 +219,7 @@ for name in ("system-backend", "meta-backend", "meta-worker", "gateway"):
     settings = dict(value.split("=", 1) for value in container["Config"]["Env"])
     assert settings["ADDP_INFRA_DATABASE_PROVIDER"] == "mysql", name
     assert settings["ADDP_MYSQL_HOST"] == "mysql", name
+    assert (settings["REDIS_HOST"], settings["REDIS_PORT"]) == ("redis", "6379"), name
     assert settings["ADDP_DATABASE_RUNTIME_USER"] == "platform_runtime", name
     assert settings["ADDP_DATABASE_RUNTIME_PASSWORD"] == os.environ["ADDP_DATABASE_RUNTIME_PASSWORD"], name
     assert not any(key.startswith("ADDP_DATABASE_DEPLOY_") for key in settings), name

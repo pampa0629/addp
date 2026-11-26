@@ -50,22 +50,22 @@ class HostedMySQLReleaseTest(unittest.TestCase):
             "ADDP_DEPLOYMENT_SCOPE", "ADDP_DEPLOYMENT_MODULES", "ADDP_DEPLOYMENT_PROJECT",
             "ADDP_DEPLOYMENT_NETWORK", "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_MYSQL_HOST",
             "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "ADDP_DATABASE_RUNTIME_USER",
-            "ADDP_DATABASE_RUNTIME_PASSWORD", "NGINX_BIND_HOST", "NGINX_PORT",
+            "ADDP_DATABASE_RUNTIME_PASSWORD", "REDIS_HOST", "REDIS_PORT", "NGINX_BIND_HOST", "NGINX_PORT",
             "ADDP_PUBLIC_ORIGIN", "ALLOWED_ORIGINS", "CONSOLE_URL", "PUBLIC_API_URL",
             "ADDP_OBSERVABILITY_LOGS_ENABLED",
         )
         env = dict(os.environ, **dict.fromkeys(keys, "fixture"))
-        env.update(ADDP_INFRA_DATABASE_PROVIDER="mysql", NGINX_PORT="18080",
+        env.update(ADDP_INFRA_DATABASE_PROVIDER="mysql", NGINX_PORT="18080", REDIS_HOST="redis", REDIS_PORT="6379",
                    ADDP_DATABASE_DEPLOY_PASSWORD="deploy-fixture-only")
         with tempfile.TemporaryDirectory() as work:
             path = Path(work, ".env")
-            path.write_text("ADDP_INFRA_DATABASE_PROVIDER=postgres\nNGINX_PORT=80\n")
+            path.write_text("ADDP_INFRA_DATABASE_PROVIDER=postgres\nNGINX_PORT=80\nREDIS_HOST=localhost\nREDIS_PORT=16379\n")
             subprocess.run([sys.executable, "-c", env_writer], cwd=work, env=env, check=True)
             sourced = subprocess.check_output(
-                ["bash", "-ec", 'source .env; printf "%s %s" "$ADDP_INFRA_DATABASE_PROVIDER" "$NGINX_PORT"'],
+                ["bash", "-ec", 'source .env; printf "%s %s %s:%s" "$ADDP_INFRA_DATABASE_PROVIDER" "$NGINX_PORT" "$REDIS_HOST" "$REDIS_PORT"'],
                 cwd=work, text=True,
             )
-            self.assertEqual(sourced, "mysql 18080")
+            self.assertEqual(sourced, "mysql 18080 redis:6379")
             self.assertNotIn("ADDP_DATABASE_DEPLOY_", path.read_text())
 
     def test_manual_hosted_gate_shell_and_python_syntax(self):
