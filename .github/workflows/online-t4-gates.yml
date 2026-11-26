@@ -154,6 +154,13 @@ on:
           - transfer-relational-sql-etl
           - transfer-continuous-events
           - workbench-service-consumption
+      pmtiles_case:
+        description: PMTiles acceptance case (vector-pmtiles-workflow only)
+        type: choice
+        default: workflow
+        options:
+          - workflow
+          - service-lifecycle
       orchestrator_case:
         description: Orchestrator execution case (orchestrator-execution only)
         required: false
@@ -2606,6 +2613,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: vector-pmtiles-workflow
+      ADDP_ONLINE_PMTILES_CASE: ${{ inputs.pmtiles_case }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

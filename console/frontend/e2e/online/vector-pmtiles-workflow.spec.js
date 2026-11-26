@@ -63,10 +63,12 @@ async function verifyTileService(page, api, evidence) {
 
 test('PMTiles 真实生成与替换后地图、内容、身份一致', async ({ page }) => {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_PMTILES_EVIDENCE || '{}')
-  for (const field of ['run_id', 'principal_id', 'tenant_id', 'execution_id', 'phase', 'source_item_id', 'target_item_id', 'target_locator', 'layer', 'feature_count', 'tile_sha256']) {
+  const serviceOnly = evidence.phase === 'service'
+  const workflowFields = serviceOnly ? [] : ['execution_id', 'source_item_id']
+  for (const field of ['run_id', 'principal_id', 'tenant_id', ...workflowFields, 'phase', 'target_item_id', 'target_locator', 'layer', 'feature_count', 'tile_sha256']) {
     expect(evidence[field], field).toBeTruthy()
   }
-  const redirect = `/manager/data-explorer?locator=${encodeURIComponent(`${evidence.target_locator}&item_id=${evidence.target_item_id}`)}`
+  const redirect = serviceOnly ? '/service/tile' : `/manager/data-explorer?locator=${encodeURIComponent(`${evidence.target_locator}&item_id=${evidence.target_item_id}`)}`
   // Observe only: no API routes or responses are mocked in Hosted acceptance.
   await page.addInitScript(() => {
     localStorage.setItem('addp-lang', 'zh-cn')
@@ -90,6 +92,13 @@ test('PMTiles 真实生成与替换后地图、内容、身份一致', async ({ 
     expect(auth.principalType).toBe('user')
     expect(auth.contextType).toBe('tenant')
     expect([...auth.permissions].sort()).toEqual(evidence.permissions_verified)
+    if (serviceOnly) {
+      await verifyTileService(page, api, evidence)
+      writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'pmtiles-service-browser.json'), JSON.stringify({
+        ...evidence, schema_version: 'addp.pmtiles-browser/v1', result: 'passed'
+      }))
+      return
+    }
     const preview = await json(await api.get(`/api/v1/manager/preview?locator=${encodeURIComponent(evidence.target_locator)}`), 'PMTiles preview')
     const content = preview.data.object.content
     expect(content.kind).toBe('vector_tile')

@@ -53,11 +53,17 @@ application_owned=1
 # Owners install their first protection projection from Security before data reads.
 hosted_start_native_modules -security -develop -manager -monitor -service
 start_online_geopython_runtime "$RUNTIME_TAG"
-run_logged python3 -m business.scripts.online-vector-pmtiles-fixture seed
+case "${ADDP_ONLINE_PMTILES_CASE:-workflow}" in
+  workflow) run_logged python3 -m business.scripts.online-vector-pmtiles-fixture seed ;;
+  service-lifecycle) run_logged python3 -m business.scripts.online-vector-pmtiles-fixture seed-service ;;
+  *) fail "unknown PMTiles acceptance case" ;;
+esac
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite vector-pmtiles-workflow --wait-protection-owners develop,manager,service --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
-for role in source target; do
+roles=(target)
+if [[ "${ADDP_ONLINE_PMTILES_CASE:-workflow}" == workflow ]]; then roles=(source target); fi
+for role in "${roles[@]}"; do
   run_logged python3 scripts/test/online-engine-registration.py \
     --descriptor "$ADDP_ONLINE_SECRET_DIR/pmtiles-$role-engine.json" --output "$ENGINE_RESULT_ENV"
   source "$ENGINE_RESULT_ENV"

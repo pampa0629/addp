@@ -1639,6 +1639,15 @@ func TestVectorPMTilesIdentityHasExactConsumerPermissions(t *testing.T) {
 	}
 }
 
+func TestPMTilesServiceIdentityAndSeparateIssuer(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_PMTILES_CASE", "service-lifecycle")
+	got, err := suitePermissions("vector-pmtiles-workflow")
+	want := []string{"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "service.definition.create", "service.definition.read", "service.definition.update"}
+	if err != nil || !slices.Equal(got, want) || !slices.Equal(suiteSourceInitializerPermissions("vector-pmtiles-workflow"), sourceInitializerPermissions) {
+		t.Fatal("Service consumer and independent grant issuer must keep their exact permissions")
+	}
+}
+
 func TestVectorTopologyIdentityHasExactlyElevenPermissions(t *testing.T) {
 	actual, err := suitePermissions("vector-topology-persistence")
 	expected := append(append([]string{}, rasterWorkflowPermissions...), "manager.data_item.read")

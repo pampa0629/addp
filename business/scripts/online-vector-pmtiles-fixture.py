@@ -151,6 +151,28 @@ def worker(action, path):
     config = json.loads(Path(path).read_text())
     clients = {role: Minio(entry['endpoint'], access_key=entry['access_key'], secret_key=entry['secret_key'], secure=False)
                for role, entry in config.items()}
+    if action == 'seed-service':
+        sys.path.insert(0, '/app')
+        from operators.vector_tile_operators import vector_to_pmtiles
+        client, bucket = clients['target'], config['target']['bucket']
+        key = 'service-only/result.pmtiles'
+        client.make_bucket(bucket)
+        with tempfile.TemporaryDirectory() as temporary:
+            source, target = Path(temporary)/'areas.geojson', Path(temporary)/TARGET
+            source.write_text(json.dumps(features(True), ensure_ascii=False))
+            plan = {'schema_version': 'addp.workflow.access-plan/v1',
+                    'source': {'kind': 'file', 'format': 'geojson', 'access': {'method': 'mounted_path', 'path': str(source)}},
+                    'target': {'kind': 'file', 'format': 'pmtiles', 'name': target.name, 'write_mode': 'create',
+                               'access': {'method': 'mounted_path', 'path': str(target)}}}
+            tile = {'min_zoom': 0, 'max_zoom': 5, 'extent': [120, 30, 121.52, 30.72], 'extent_srid': 4326, 'source_srs': 'EPSG:4326'}
+            vector_to_pmtiles(plan, tile, {'layer_name': 'areas_after', 'attributes': ['name', 'rank']})
+            client.fput_object(bucket, key, str(target))
+        targets = objects(client, bucket)
+        if set(targets) != {key}: raise shared.FixtureError('Service PMTiles prefix contents differ')
+        response = client.get_object(bucket, key)
+        try: archive = inspect_archive(response.read(), True)
+        finally: response.close(); response.release_conn()
+        return {'bucket': bucket, 'key': key, 'object': targets[key], 'archive': archive}
     if action == 'seed':
         from osgeo import gdal
         for role, client in clients.items(): client.make_bucket(config[role]['bucket'])
@@ -192,10 +214,11 @@ def main():
     root = shared.environment()
     if action == 'start': start(root); return {'result': 'started'}
     if action == 'stop': stop(); return {'result': 'removed', 'residual_resources': 0}
-    if action not in ('seed', 'verify-create', 'verify-replace'): raise shared.FixtureError('unknown PMTiles action')
+    if action not in ('seed', 'seed-service', 'verify-create', 'verify-replace'): raise shared.FixtureError('unknown PMTiles action')
     result = physical_worker(action, root)
-    if action == 'seed':
-        (Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])/'pmtiles-fixture-baseline.json').write_text(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if action in ('seed', 'seed-service'):
+        name = 'pmtiles-service-baseline.json' if action == 'seed-service' else 'pmtiles-fixture-baseline.json'
+        (Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])/name).write_text(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return result
 
 

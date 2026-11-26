@@ -14,6 +14,8 @@ raster = importlib.import_module('scripts.test.raster-workflow-online')
 support = raster.support
 obj, array, positive, SuiteError = raster.obj, raster.array, raster.positive, raster.SuiteError
 PERMISSIONS = raster.PERMISSIONS | {'manager.data_item.read', 'manager.derived_artifact.read', 'service.definition.create', 'service.definition.read', 'service.definition.update'}
+SERVICE_PERMISSIONS = {'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
+                       'service.definition.create', 'service.definition.read', 'service.definition.update'}
 SUITE = 'vector-pmtiles-workflow'
 
 
@@ -190,10 +192,44 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-vector-pmtiles-gate.sh'}}
 
 
+def run_service_lifecycle(repository, env, client):
+    grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+    tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
+    engine = positive(env['ADDP_ONLINE_PMTILES_TARGET_ENGINE_ID'], 'business MinIO')
+    identity = raster.validate_identity(client, tenant, required_permissions=SERVICE_PERMISSIONS)
+    issuer = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+    authorization = grants.ModelSourceAuthorization(
+        issuer, client, dict(tenant_id=tenant, engine_id=engine, principal_id=identity['principal_id']),
+        source_type='minio', consumer_permissions=SERVICE_PERMISSIONS,
+        issuer_permissions=grants.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+    artifacts = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    baseline = json.loads((artifacts/'pmtiles-service-baseline.json').read_text())
+    name = baseline['bucket'] + '/' + baseline['key']
+    target = grants.file_target(engine, name, 'minio')
+    target['segments'].pop()  # Direct children of this fixture prefix.
+    support.wait_for_meta_scan(client, engine, time.monotonic() + float(env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS']))
+    try:
+        receipt = authorization.node_grant(target, action='read', recursive=False, seconds=None)
+        item = support.find_fixture_item(client, engine, name, 'Service PMTiles')
+        archive = baseline['archive']
+        evidence = dict(identity, phase='service', run_id=env['ADDP_ONLINE_TEST_RUN_ID'], target_item_id=item['id'],
+                        target_locator=f'addp://engine/{engine}/path/{name}?type=object', layer=archive['layer'],
+                        feature_count=archive['feature_count'], tile_sha256=archive['tile_sha256'])
+        browser_env = {key: value for key, value in env.items() if key != 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
+        report = browser(repository, browser_env, evidence)
+    finally:
+        authorization.cleanup()
+    client.request('GET', f"/api/v1/meta/items/{item['id']}", (404,))
+    return {'schema_version': 'addp.vector-pmtiles-service-online/v1', 'suite': SUITE, 'case': 'service-lifecycle',
+            'run_id': evidence['run_id'], 'result': 'passed', 'browser': report,
+            'grant': {'request_id': receipt['request_id'], 'catalog_path': target, 'revoked': True, 'meta_after_revoke': 404}}
+
+
 def main():
     env = dict(os.environ)
     client = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
-    print(json.dumps(run_scenario(Path(__file__).resolve().parents[2], env, client), ensure_ascii=False, sort_keys=True))
+    scenario = run_service_lifecycle if env.get('ADDP_ONLINE_PMTILES_CASE') == 'service-lifecycle' else run_scenario
+    print(json.dumps(scenario(Path(__file__).resolve().parents[2], env, client), ensure_ascii=False, sort_keys=True))
 
 
 if __name__ == '__main__':

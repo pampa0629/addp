@@ -74,7 +74,11 @@ class HostedPMTilesGateTest(unittest.TestCase):
             [ -z "${POSTGRES_PASSWORD:-}" ]
             [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1740 ] || exit 1
             [ "${SECURITY_URL:-}" = http://127.0.0.1:8194 ] || exit 1
-            [ "$ADDP_ONLINE_PMTILES_SOURCE_ENGINE_ID" = 11 ]
+            if [ "${ADDP_ONLINE_PMTILES_CASE:-workflow}" = service-lifecycle ]; then
+              [ -z "${ADDP_ONLINE_PMTILES_SOURCE_ENGINE_ID:-}" ] || exit 1
+            else
+              [ "$ADDP_ONLINE_PMTILES_SOURCE_ENGINE_ID" = 11 ] || exit 1
+            fi
             [ "$ADDP_ONLINE_PMTILES_TARGET_ENGINE_ID" = 12 ]
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
@@ -109,6 +113,13 @@ class HostedPMTilesGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
+
+    def test_service_case_seeds_only_the_published_archive(self):
+        result = self.run_gate(ADDP_ONLINE_PMTILES_CASE='service-lifecycle')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = self.host.trace.read_text().splitlines()
+        self.assertIn('pmtiles-fixture:seed-service', trace)
+        self.assertNotIn('pmtiles-fixture:seed', trace)
 
     def test_startup_registers_distinct_engines_and_removes_credentials_before_business_scene(self):
         result = self.run_gate()

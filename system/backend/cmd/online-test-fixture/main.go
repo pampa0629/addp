@@ -133,6 +133,11 @@ func suiteSourceInitializerPermissions(suite string) []string {
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	}
 	switch suite {
+	case "vector-pmtiles-workflow":
+		if os.Getenv("ADDP_ONLINE_PMTILES_CASE") == "service-lifecycle" {
+			return slices.Clone(sourceInitializerPermissions)
+		}
+		return nil
 	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "raster-aspect-orthogonal-persistence", "raster-hillshade-orthogonal-persistence":
@@ -419,6 +424,9 @@ func suitePermissions(suite string) ([]string, error) {
 	case "vector-topology-persistence":
 		return append(append([]string{}, rasterWorkflowPermissions...), "manager.data_item.read"), nil
 	case "vector-pmtiles-workflow":
+		if os.Getenv("ADDP_ONLINE_PMTILES_CASE") == "service-lifecycle" {
+			return []string{"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "service.definition.create", "service.definition.read", "service.definition.update"}, nil
+		}
 		return vectorPMTilesPermissions, nil
 	case "raster-aspect-orthogonal-persistence", "raster-hillshade-orthogonal-persistence":
 		return suitePermissions("raster-workflow")
