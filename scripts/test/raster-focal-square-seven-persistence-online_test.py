@@ -93,14 +93,45 @@ class PublicReceiptClient(prior.Client):
             if self.entry_fault:
                 self.entry_fault(data, self)
             return SimpleNamespace(payload=data, status=400, raw=json.dumps(data).encode())
-        response = super().request(method, path, expected, body, headers)
-        if method == 'GET' and ('/develop/executions/' in path or '/monitor/executions/' in path):
-            response.payload.pop('tenant_id')
-            response.raw = json.dumps(response.payload).encode()
-        return response
+        return super().request(method, path, expected, body, headers)
 
 
 class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
+    def test_real_preparer_validates_first_output_target_before_grant(self):
+        # Retain the production fixture and shared find/ensure methods. Only
+        # replace the Hosted connection, read-only facts and ordinary API.
+        metadata = object.__new__(m.PreparedMetadata)
+        metadata.engine = 3
+        metadata.bindings, metadata.issued, metadata.items = {}, {}, {}
+        name = 'outputs/sum.cog.tif'
+        binding = {
+            'execution': '00000000-0000-0000-0000-000000000001',
+            'scan': '00000000-0000-0000-0000-000000000002',
+            'locator': 'addp://engine/3/path/outputs/sum.cog.tif?type=file',
+        }
+        target = {'engine_id': 3, 'path': name}
+        facts = {'boundary': {'layout': 'single'}, 'boundary_hash': 'b'*64, 'item_fingerprint': 'a'*64}
+        item = {'id': 17, 'full_name': name, 'fingerprint': 'a'*64,
+                'attributes': {'item': {'format': 'tiff'}}}
+        metadata.grants = SimpleNamespace(metadata_facts=lambda *args, **kwargs: facts,
+                                         target=lambda *args, **kwargs: target)
+        metadata.observer = SimpleNamespace(inspect=lambda: {})
+        metadata.client = SimpleNamespace(request=lambda *args, **kwargs: SimpleNamespace(
+            payload={'observed_at': '2026-11-27T01:12:45Z',
+                     'targets': [{'target': target, 'visible': True}]}))
+        with (patch.object(metadata, 'boundary'), patch.object(metadata, 'container_user'),
+              patch.object(m.support, 'find_fixture_item', return_value=item) as public):
+            self.assertEqual(metadata.find(name, binding=binding), item)
+            public.assert_called_once_with(metadata.client, 3, name, 'viewshed TIFF')
+            self.assertEqual(metadata.bindings, {name: binding})
+            self.assertIn(name, metadata.issued)
+            with self.assertRaisesRegex(m.SuiteError, 'wrong current viewshed execution or automatic scan binding'):
+                metadata.find('outputs/unowned.cog.tif', binding=binding)
+            with self.assertRaisesRegex(m.SuiteError, 'wrong current viewshed execution or automatic scan binding'):
+                metadata.find(name, binding={**binding, 'scan': 'foreign'})
+            with self.assertRaisesRegex(m.SuiteError, 'unconfirmed viewshed target'):
+                metadata.find('outputs/mean.cog.tif')
+
     def test_runtime_worker_reports_its_stderr(self):
         failure = subprocess.CalledProcessError(
             1, ['docker', 'exec'], stderr='Seven-pixel square fixture failed: FixtureError: Runtime execution workspace residual\n'

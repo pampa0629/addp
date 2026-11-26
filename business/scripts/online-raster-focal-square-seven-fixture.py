@@ -20,7 +20,7 @@ import tempfile
 PREFIX = 'raster-focal-square-seven'
 SUITE = PREFIX + '-persistence'
 RUNTIME = 'addp-' + PREFIX + '-runtime'
-ORACLE = '.' + PREFIX + '-oracle.npz'
+ORACLE = PREFIX + '-expected.npz'
 ORACLE_SCHEMA = 'addp.focal-square-seven-oracle/v1'
 PERCENTILES = (0.0, 25.0, 50.0, 75.0, 100.0)
 BLOCK_SIZE = 128
@@ -51,6 +51,8 @@ CASES = {
     'square5.cog.tif': ('control.tif', 5, 'mean', None, False),
     'invalid.cog.tif': ('invalid.tif', 7, 'weighted_sum', 'asymmetric', False),
 }
+TARGETS = tuple(CASES)
+
 # All four outer sides contribute and the centre carries no weight.
 ASYMMETRIC = (
     (0, 0, 0, 0, 0, 0, 2),

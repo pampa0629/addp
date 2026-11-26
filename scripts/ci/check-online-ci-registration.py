@@ -8605,6 +8605,7 @@ SQUARE_SEVEN_REQUIRED = {
         'test_physical_corruption_is_rejected', 'test_sixty_accurate_failures_are_at_focal_and_clear_workspace'),
     'scripts/test/raster-focal-square-seven-persistence-online_test.py': (
         'test_exact_18_success_60_failures_1251_full_reads_and_cleanup',
+        'test_real_preparer_validates_first_output_target_before_grant',
         'test_budget_includes_prior_initialization_and_stops_at_exhaustion'),
     'Makefile': ('test_online_focal_square_seven_fixture.py', '@$(MAKE) test-raster-focal-square-seven-online-runner',
                  'scripts/test/online-hosted-raster-focal-square-seven-gate_test.py'),

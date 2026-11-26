@@ -8,7 +8,7 @@ from pathlib import Path
 SUITE='raster-focal-percentiles-persistence'
 PREFIX='raster-focal-percentiles'
 RUNTIME='addp-raster-focal-percentiles-runtime'
-ORACLE='.raster-focal-percentiles-oracle.json'
+ORACLE=PREFIX+'-expected.json'
 PERCENTILES=[0.,25.,33.3,50.,75.,100.]
 # Source, window kind/size or metres, computation path. Controls retain their
 # existing empty band descriptions; batch descriptions are asserted separately.

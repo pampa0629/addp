@@ -64,6 +64,10 @@ def test_eighteen_real_cogs_original_archives_and_1251_full_reads(results, tmp_p
     root, sources, script_sha, anchor, previews = results
     archives = f.archive_files(root / 'outputs', tmp_path, list(f.CASES), {}, f.PREFIX + '-cogs')
     assert len(archives) == 18
+    expected = f.archive_files(root, tmp_path, [f.ORACLE], {}, f.PREFIX + '-oracle')[f.ORACLE]
+    assert all(not part.startswith('.') for part in Path(expected['path']).parts)
+    assert expected['sha256'] == anchor
+    assert (tmp_path / expected['path']).read_bytes() == (root / f.ORACLE).read_bytes()
     for name in f.CASES:
         m.raster.validate_raster_artifact(previews[name], f.artifact_expectation(name))
         archive = tmp_path / archives[name]['path']
