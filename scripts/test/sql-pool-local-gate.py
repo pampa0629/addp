@@ -250,7 +250,9 @@ class LocalPool(CORE.Lifecycle):
                       "-U", self.env["POSTGRES_USER"], "-d", "addp_test"],
                      data=(self.checkout / "scripts/infra/init-postgresql.sql").read_bytes())
         self.execute(["bash", "scripts/test/hosted-platform-database.sh", self.run_id, str(self.work / "compose.json"), LABEL, *BACKENDS], timeout=420)
-        self.compose("up", "-d", "--wait", "system-backend")
+        self.announce("publish_module_declarations")
+        self.execute([sys.executable, "scripts/prod/publish-module-declarations.py", "--bootstrap-compose",
+                      "--compose-file", str(self.work / "compose.json")], environment=build_env, timeout=420)
         self.compose("up", "-d", "--wait", "meta-backend", "security-backend")
         self.compose("up", "-d", "--wait", "meta-worker", "security-worker")
         self.compose("up", "-d", "--wait", "pool-meta")
