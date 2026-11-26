@@ -48,6 +48,7 @@ class Client:
     added_edge = False
     rewrite = False
     scan_fault = False
+    execution_tenant = 2
     def __init__(self):
         self.scans, self.executions, self.scan_parents = [], {}, {}
         self.items = {name: {'id': i+10, 'full_name': name, 'item_type': 'file', 'size_bytes': 4096, 'fingerprint': name, 'scanned_at': 'now'} for i,name in enumerate(m.fixture.SOURCES)}
@@ -68,7 +69,7 @@ class Client:
         elif path == '/api/v1/develop/executions' and method == 'POST':
             dag = body['content']['workflow_definition']; target_name = dag['tasks'][-1]['params']['target_name']; success = target_name in m.fixture.CASES
             identifier = str(uuid.UUID(int=len(self.executions)+1)); language = headers['Accept-Language']
-            data = {'execution_id':identifier,'tenant_id':2,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
+            data = {'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
                     'execution_config':{'engine_id':7,'display_language':language,'content':{'workflow_definition':copy.deepcopy(dag)}}, 'error_msg':None if success else 'frozen-'+language,
                     'error_details':{} if success else {'category':'execution_failed'}, 'outputs':{}, 'metadata':{'result':{}}}
             if success:
@@ -145,6 +146,14 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
                 return client.items[name]
             def snapshot(self, identifier):
                 return client.request('GET', f'/api/v1/meta/items/{identifier}', (200,)).payload
+            def execution(self, identifier, dag, runtime, language, status):
+                terminal = client.executions[identifier]
+                expected = {'engine_id':runtime, 'display_language':language,
+                            'content':{'workflow_definition':dag}}
+                if (client.execution_tenant != 2 or terminal['triggered_by'] != 33
+                    or terminal['status'] != status or terminal['execution_config'] != expected):
+                    raise m.SuiteError('private execution User/Tenant, state or frozen snapshot differs')
+                test.metadata_events.append(('execution', identifier))
             def cleanup(self):
                 test.metadata_events.append(('cleanup', None))
                 if metadata_fault == 'revoke':
@@ -170,6 +179,8 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
         self.assertEqual(report['source_preparation_identity']['principal_id'],'44')
         self.assertEqual(len(client.scans),27)
         self.assertEqual(self.metadata_events[-1],('cleanup', None))
+        self.assertEqual([identifier for event, identifier in self.metadata_events if event == 'execution'],
+                         list(client.executions))
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
         self.assertEqual({(x['problem'],x['language']) for x in report['failed_parameters']},{(p,l) for p in m.FAILURES for l in ('zh-cn','en')})
         self.assertEqual(len(list((self.root/'evidence/circle-weighted-lineage').iterdir())),27)
@@ -226,6 +237,28 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
                     self.run_case(client, metadata_fault=fault)
                 self.assertEqual(self.metadata_events[-1], ('cleanup', None))
                 self.assertEqual(len(client.executions), 0 if fault == 'grant' else 99)
+
+    def test_public_receipts_omit_tenant_and_private_receipts_still_require_it(self):
+        class MonitorTenantLeak(Client):
+            def request(self, method, path, expected, body=None, headers=None):
+                response = super().request(method, path, expected, body, headers)
+                if path.startswith('/api/v1/monitor/executions/'):
+                    response.payload['tenant_id'] = 2
+                return response
+        for mode, pattern in (
+            ('develop', 'public Develop receipt exposes tenant_id'),
+            ('monitor', 'public Monitor receipt exposes tenant_id'),
+            ('private', 'private execution User/Tenant'),
+        ):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                self.env['ADDP_ONLINE_ARTIFACT_DIR'] = directory
+                client = MonitorTenantLeak() if mode == 'monitor' else Client()
+                if mode == 'develop':
+                    client.mutation = lambda value: value.update(tenant_id=2)
+                if mode == 'private':
+                    client.execution_tenant = 3
+                with self.assertRaisesRegex(m.SuiteError, pattern):
+                    self.run_case(client)
     def test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced(self):
         for fault in ('diagnostic','query','scan','edge','identity','parent','budget','cleanup'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:

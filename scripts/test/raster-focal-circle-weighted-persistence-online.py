@@ -191,9 +191,24 @@ def fixture_call(repository, env, action, names, timeout):
 
 def current(execution, identity, identifier, dag, runtime, language, status):
     readonly.actor(execution, identity, 'develop'); readonly.execution_snapshot(execution, dag, runtime)
-    if (execution.get('execution_id') != identifier or type(execution.get('tenant_id')) is not int
-        or execution['tenant_id'] != int(identity['tenant_id']) or execution.get('task_type') != 'workflow'
-        or execution.get('status') != status or execution['execution_config'].get('display_language') != language): raise SuiteError('current execution identity/status/language differs')
+    if 'tenant_id' in execution:
+        raise SuiteError('public Develop receipt exposes tenant_id')
+    if (execution.get('execution_id') != identifier or execution.get('task_type') != 'workflow'
+        or execution.get('status') != status):
+        raise SuiteError('current execution identity or status differs')
+    if execution['execution_config'].get('display_language') != language:
+        raise SuiteError('current execution submitted language differs')
+
+
+def monitor_observation(client, identity, identifier, status):
+    monitor = obj(client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload,
+                  'Monitor execution')
+    readonly.actor(monitor, identity, 'develop')
+    if 'tenant_id' in monitor:
+        raise SuiteError('public Monitor receipt exposes tenant_id')
+    if monitor.get('execution_id') != identifier or monitor.get('status') != status:
+        raise SuiteError('Monitor execution identity or status differs')
+    return monitor
 
 def run_scenario(repository, env, client, physical_runner=fixture_call,
                  diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current, *,
@@ -251,6 +266,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call,
             language = 'zh-cn' if index % 2 else 'en'; dag = definition(sources, parent, name); target = parent.replace('/outputs?type=directory', '/outputs/'+name+'?type=file')
             identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
             execution = raster.wait_execution(client, 'develop', identifier, remaining()); current(execution, identity, identifier, dag, runtime, language, 'success')
+            metadata.execution(identifier, dag, runtime, language, 'success'); remaining()
             wanted = expected_lineage(sources, name, target)
             evidence = lineage.collect(producer_env, SUITE, identifier, name, wanted, execution, tenant, int(identity['principal_id']), dag, lineage_reader); remaining()
             expectation=fixture.artifact_expectation(name)
@@ -261,9 +277,8 @@ def run_scenario(repository, env, client, physical_runner=fixture_call,
             if output_scan in [scan, *scans]: raise SuiteError('duplicate automatic COG scan')
             scans.append(output_scan)
             scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', output_scan, remaining()), output_scan, identifier, tenant, int(identity['principal_id']), engine)
-            monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
-            readonly.actor(monitor, identity, 'develop')
-            if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'success' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
+            monitor = monitor_observation(client, identity, identifier, 'success')
+            if obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
             names.append(name); native = physical_runner(repository, producer_env, 'verify', names, remaining()); remaining()
             check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations']); previous = copy.deepcopy(native['targets'])
             physical_calls += 1; full_checks += len(names)
@@ -286,13 +301,14 @@ def run_scenario(repository, env, client, physical_runner=fixture_call,
                 dag = definition(sources, parent, 'north-mean.cog.tif', invalid=problem, language=language)
                 identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
                 execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
+                metadata.execution(identifier, dag, runtime, language, 'failed'); remaining()
                 if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
                 diagnostic = diagnostic_runner(repository, producer_env, identifier, problem, language, remaining()); remaining()
                 if diagnostic != {'execution_id': identifier, 'task': 'focal', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
                 readonly.no_publication(execution)
-                monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
-                readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
-                if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
+                monitor = monitor_observation(client, identity, identifier, 'failed')
+                readonly.no_publication(monitor)
+                if obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed category differs')
                 queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
                 if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
                 if base.scan_ids(client) != sorted(scans): raise SuiteError('failed execution added scan')
