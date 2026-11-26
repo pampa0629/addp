@@ -25,11 +25,36 @@ IMAGE_ID = "sha256:" + "c" * 64
 
 
 class HostedMySQLReleaseTest(unittest.TestCase):
+    def test_hosted_selection_survives_production_env_loading(self):
+        entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
+        env_writer = entry.read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        keys = (
+            "ADDP_DEPLOYMENT_SCOPE", "ADDP_DEPLOYMENT_MODULES", "ADDP_DEPLOYMENT_PROJECT",
+            "ADDP_DEPLOYMENT_NETWORK", "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_MYSQL_HOST",
+            "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "ADDP_DATABASE_RUNTIME_USER",
+            "ADDP_DATABASE_RUNTIME_PASSWORD", "NGINX_BIND_HOST", "NGINX_PORT",
+            "ADDP_PUBLIC_ORIGIN", "ALLOWED_ORIGINS", "CONSOLE_URL", "PUBLIC_API_URL",
+            "ADDP_OBSERVABILITY_LOGS_ENABLED",
+        )
+        env = dict(os.environ, **dict.fromkeys(keys, "fixture"))
+        env.update(ADDP_INFRA_DATABASE_PROVIDER="mysql", NGINX_PORT="18080",
+                   ADDP_DATABASE_DEPLOY_PASSWORD="deploy-fixture-only")
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work, ".env")
+            path.write_text("ADDP_INFRA_DATABASE_PROVIDER=postgres\nNGINX_PORT=80\n")
+            subprocess.run([sys.executable, "-c", env_writer], cwd=work, env=env, check=True)
+            sourced = subprocess.check_output(
+                ["bash", "-ec", 'source .env; printf "%s %s" "$ADDP_INFRA_DATABASE_PROVIDER" "$NGINX_PORT"'],
+                cwd=work, text=True,
+            )
+            self.assertEqual(sourced, "mysql 18080")
+            self.assertNotIn("ADDP_DATABASE_DEPLOY_", path.read_text())
+
     def test_manual_hosted_gate_shell_and_python_syntax(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
         subprocess.run(["bash", "-n", entry], check=True)
         parts = entry.read_text().split("<<'PY'\n")
-        self.assertEqual(len(parts), 3)
+        self.assertEqual(len(parts), 4)
         for part in parts[1:]:
             compile(part.split("\nPY\n", 1)[0], str(entry), "exec")
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()

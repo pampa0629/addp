@@ -64,8 +64,26 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 bash scripts/prod/setup-env.sh
-# Read generated fixture credentials. Keep the deployment and platform overrides
-# in the invoking environment, which Compose prioritizes over the generated file.
+# The production entry sources this file again. Store the selected database and
+# public endpoint here, keeping the installation credentials in the shell only.
+python3 - <<'PY'
+import os
+from pathlib import Path
+import shlex
+
+keys = (
+    "ADDP_DEPLOYMENT_SCOPE", "ADDP_DEPLOYMENT_MODULES", "ADDP_DEPLOYMENT_PROJECT",
+    "ADDP_DEPLOYMENT_NETWORK", "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_MYSQL_HOST",
+    "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "ADDP_DATABASE_RUNTIME_USER",
+    "ADDP_DATABASE_RUNTIME_PASSWORD", "NGINX_BIND_HOST", "NGINX_PORT",
+    "ADDP_PUBLIC_ORIGIN", "ALLOWED_ORIGINS", "CONSOLE_URL", "PUBLIC_API_URL",
+    "ADDP_OBSERVABILITY_LOGS_ENABLED",
+)
+env_file = Path(".env")
+lines = [line for line in env_file.read_text().splitlines() if line.partition("=")[0] not in keys]
+lines.extend(f"{key}={shlex.quote(os.environ[key])}" for key in keys)
+env_file.write_text("\n".join(lines) + "\n")
+PY
 for key in REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD IAM_MFA_ENCRYPTION_KEY; do
   value=$(source .env && printf '%s' "${!key}")
   [[ -n "$value" ]]
