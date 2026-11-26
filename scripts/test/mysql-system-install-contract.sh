@@ -176,6 +176,8 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON gateway.* TO 'iam_runtime'@'%';
 SQL
 export ADDP_TEST_MYSQL_MEMBER_PASSWORD=$(openssl rand -hex 24)
 bash "$(dirname "$0")/mysql-gateway-install-contract.sh" "$work" "$container" "$3"
+(cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_CLEANUP_ACCEPTANCE=1 GOWORK=off go test ./internal/service -run '^TestCleanupAcceptanceAgainstMySQL$' -count=1 -v) | tee "$work/cleanup-acceptance.log"
+grep -q '^--- PASS: TestCleanupAcceptanceAgainstMySQL ' "$work/cleanup-acceptance.log"
 expected_settings=$(runtime <<<"SELECT CONCAT('max_connections=',@@GLOBAL.max_connections),CONCAT('time_zone=',@@GLOBAL.time_zone),CONCAT('transaction_isolation=',@@GLOBAL.transaction_isolation)")
 (cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_ENGINE_OBSERVATION=1 GOWORK=off go test ./internal/repository -run '^TestEngineAddressObservationAgainstMySQL$' -count=1 -v) | tee "$work/engine-observation.log"
 grep -q '^--- PASS: TestEngineAddressObservationAgainstMySQL ' "$work/engine-observation.log"

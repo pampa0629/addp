@@ -79,36 +79,6 @@ func (s *cleanupCoordinator) accept(ctx context.Context, input events.CleanupReq
 	}
 	var accepted models.CleanupRequestRecord
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Serialize only this acceptance identity. The unique indexes remain the
-		// final constraint; this lock also makes concurrent same-ID retries read
-		// the committed original instead of aborting their transaction.
-		if tx.Dialector.Name() == "postgres" {
-			key := input.RequestID
-			if input.SourceOperationID != "" {
-				key = fmt.Sprintf("%d:%s:%s", input.TenantID, input.SourceOperationID, input.Action)
-			}
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "cleanup:"+key).Error; err != nil {
-				return err
-			}
-		}
-		query := tx.Where("request_id = ?", input.RequestID)
-		if input.SourceOperationID != "" {
-			query = query.Or("tenant_id = ? AND source_operation_id = ? AND action = ?", input.TenantID, input.SourceOperationID, input.Action)
-		}
-		var rows []models.CleanupRequestRecord
-		if err := query.Find(&rows).Error; err != nil {
-			return err
-		}
-		if len(rows) > 0 {
-			if len(rows) != 1 || rows[0].TenantID != input.TenantID || rows[0].RequestedBy != input.RequestedBy || rows[0].IntentDigest != intent {
-				return commonapi.ErrConflict
-			}
-			if _, err := rows[0].Input(); err != nil {
-				return err
-			}
-			accepted = rows[0]
-			return nil
-		}
 		encoded, err := json.Marshal(input)
 		if err != nil {
 			return err
@@ -118,8 +88,33 @@ func (s *cleanupCoordinator) accept(ctx context.Context, input events.CleanupReq
 		if _, err := accepted.Input(); err != nil {
 			return err
 		}
-		if err = tx.Create(&accepted).Error; err != nil {
-			return err
+		// Both unique acceptance identities arbitrate the first writer. A savepoint
+		// keeps the outer transaction usable after a duplicate on PostgreSQL.
+		insertErr := tx.Transaction(func(sp *gorm.DB) error { return sp.Create(&accepted).Error })
+		if insertErr != nil {
+			translator, ok := tx.Dialector.(gorm.ErrorTranslator)
+			if !ok || !errors.Is(translator.Translate(insertErr), gorm.ErrDuplicatedKey) {
+				return insertErr
+			}
+			query := tx.Where("request_id = ?", input.RequestID)
+			if input.SourceOperationID != "" {
+				query = query.Or("tenant_id = ? AND source_operation_id = ? AND action = ?", input.TenantID, input.SourceOperationID, input.Action)
+			}
+			var rows []models.CleanupRequestRecord
+			if err := query.Find(&rows).Error; err != nil {
+				return err
+			}
+			if len(rows) == 0 {
+				return insertErr
+			}
+			if len(rows) != 1 || rows[0].TenantID != input.TenantID || rows[0].RequestedBy != input.RequestedBy || rows[0].IntentDigest != intent {
+				return commonapi.ErrConflict
+			}
+			if _, err := rows[0].Input(); err != nil {
+				return err
+			}
+			accepted = rows[0]
+			return nil
 		}
 		children, err := execution.CreateCleanupExecutions(ctx, tx, &parent, input)
 		if err != nil {
