@@ -18,6 +18,7 @@ mock_service() {
   case "$1" in
     addp-postgres) echo postgres ;;
     addp-redis) echo redis ;;
+    addp-manager-search-redis) echo manager-search-redis ;;
     addp-falkordb) echo falkordb ;;
     addp-minio) echo minio ;;
     addp-runtime-log-api) echo runtime-log-api ;;
@@ -60,6 +61,7 @@ docker() {
       case "$2:$3" in
         addp-postgres:5432/tcp) echo '0.0.0.0:25432' ;;
         addp-redis:6379/tcp) echo '0.0.0.0:26379' ;;
+        addp-manager-search-redis:6379/tcp) echo '127.0.0.1:26380' ;;
         addp-falkordb:6379/tcp) echo '127.0.0.1:16479' ;;
         addp-runtime-log-api:3100/tcp) echo '127.0.0.1:13100' ;;
         addp-alloy:12345/tcp) echo '127.0.0.1:12345' ;;
@@ -130,6 +132,7 @@ addp_infra_resolve_ports >/dev/null
 [ "$POSTGRES_PORT" = 25432 ]
 [ "$REDIS_PORT" = 26379 ]
 addp_infra_read_actual_ports
+[ "$MANAGER_SEARCH_REDIS_PORT" = 26380 ]
 [ "$KAFKA_CONNECT_METRICS_URL" = http://127.0.0.1:28778 ]
 [ "$POSTGRES_PORT" = 25432 ]
 [ "$REDIS_PORT" = 26379 ]
