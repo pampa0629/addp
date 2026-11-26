@@ -32,6 +32,21 @@ MESSAGES = {**{name: base.PERCENTILES_MESSAGES for name in INVALID_LISTS},
             'complex': ('Complex-valued bands are not supported by numeric analysis',)*2}
 
 
+ENTRY_PARAMETERS = {
+    'band_boolean': 'band',
+    'band_string': 'band',
+    'item_boolean': 'percentiles',
+    'item_list': 'percentiles',
+    'item_null': 'percentiles',
+    'item_object': 'percentiles',
+    'item_string': 'percentiles',
+    'list_boolean': 'percentiles',
+    'list_null': 'percentiles',
+    'list_number': 'percentiles',
+    'list_object': 'percentiles',
+    'list_string': 'percentiles',
+}
+
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name = 'statistics-percentiles-submission-error.json'
     diagnostic_schema = 'addp.raster-statistics-percentiles-submission-diagnostic/v1'
@@ -134,52 +149,68 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
         if scans != [scan]: raise SuiteError('only the exact source initialization scan is permitted')
         cases, failures, prior = [], [], []
         physical_calls, previous_checks = 1, 0
+        known_executions = []
+        base.check_workflow_execution_inventory(client, identity, known_executions)
         matrix = [(name, None, 'zh-cn' if index % 2 == 0 else 'en') for index, name in enumerate(fixture.CASES)]
         matrix += [('quartiles', problem, language) for problem in FAILURES for language in ('zh-cn', 'en')]
         for index, (name, problem, language) in enumerate(matrix, 1):
             stage = {'index': index, 'name': name, 'problem': problem, 'language': language, 'status': 'running'}
             stages.append(stage); progress('running')
             dag = definition(sources, name, invalid=problem); status = 'failed' if problem else 'success'
-            identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
-            raster.wait_execution(client, 'develop', identifier, remaining(), expected=status)
-            response = client.request('GET', '/api/v1/develop/executions/'+identifier, (200,))
-            execution = obj(response.payload, 'professional execution')
-            current_execution(execution, identity, identifier, dag, runtime, language, status)
-            receipts[f'{index:02}-develop'] = archive_response(responses, f'{index:02}-develop', response)
-            monitor_response = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,))
-            monitor = obj(monitor_response.payload, 'Monitor')
-            readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
-            if (monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int
-                or monitor['tenant_id'] != tenant or monitor.get('status') != status): raise SuiteError('Monitor current identity/status differs')
-            receipts[f'{index:02}-monitor'] = archive_response(responses, f'{index:02}-monitor', monitor_response)
-            if problem:
-                diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining())
-                expected_diagnostic = {'execution_id': identifier, 'task': 'analysis', 'problem': problem, 'language': language,
-                                       'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}
-                if diagnostic != expected_diagnostic: raise SuiteError('exact current execution diagnostic differs')
-                opposite = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn')
-                reread = opposite.request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
-                if any(reread.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')):
-                    raise SuiteError('query language rewrote stored failure')
-                failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic})
+            parameter = ENTRY_PARAMETERS.get(problem)
+            identifier = None
+            if parameter is not None:
+                raw = base.reject_workflow_parameter(
+                    client, runtime, dag, 'analysis', parameter, language, min(180, max(1, int(remaining())))
+                )
+                base.check_workflow_execution_inventory(client, identity, known_executions)
+                label = f'{index:02}-entry'
+                receipts[label] = {**immutable(responses/(label+'.json'), raw), 'http_status': 400}
+                failures.append({'problem': problem, 'language': language, 'rejection_stage': 'develop_entry',
+                                 'no_execution_created': True, 'submission': receipts[label]})
             else:
-                actual = raster.transient_result(execution); compare(actual, expectations[name])
-                completed = {case['name']: case['json_result'] for case in cases}
-                if fixture.CASES[name]['source'] == 'values.tif' and not fixture.CASES[name].get('stage'):
-                    if {k:v for k,v in actual.items() if k != 'percentiles'} != completed.get('original', actual):
-                        raise SuiteError('requested list changed original statistics')
-                if name == 'endpoints' and [item['value'] for item in actual['percentiles']] != [actual['min'], actual['max']]:
-                    raise SuiteError('endpoint values differ from min/max')
-                if name == 'p50-control' and actual['percentiles'][0] != completed['quartiles']['percentiles'][2]:
-                    raise SuiteError('same-source singleton P50 and batch differ')
-                if name == 'reversed' and actual['percentiles'] != completed['fractional']['percentiles']:
-                    raise SuiteError('source ordering changed the complete percentile list')
-                if name == 'odd' and [actual['percentiles'][i]['value'] for i in (1, 2)] != [0., 0.]:
-                    raise SuiteError('equal zero results for distinct percentiles were merged or changed')
-                if name == 'constant' and (len(actual['percentiles']) != 5 or any(item['value'] != 0. for item in actual['percentiles'])):
-                    raise SuiteError('constant zero batch lost requested positions')
-                cases.append({'name': name, 'execution_id': identifier, 'source_locator': sources[fixture.CASES[name]['source']],
-                              'json_result': actual, 'complete_object_verified': True})
+                identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
+                known_executions.append(identifier)
+                raster.wait_execution(client, 'develop', identifier, remaining(), expected=status)
+                response = client.request('GET', '/api/v1/develop/executions/'+identifier, (200,))
+                execution = obj(response.payload, 'professional execution')
+                current_execution(execution, identity, identifier, dag, runtime, language, status)
+                receipts[f'{index:02}-develop'] = archive_response(responses, f'{index:02}-develop', response)
+                monitor_response = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,))
+                monitor = obj(monitor_response.payload, 'Monitor')
+                readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
+                if (monitor.get('execution_id') != identifier or 'tenant_id' in monitor
+                    or monitor.get('status') != status): raise SuiteError('Monitor current identity/status differs')
+                receipts[f'{index:02}-monitor'] = archive_response(responses, f'{index:02}-monitor', monitor_response)
+                if problem:
+                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining())
+                    expected_diagnostic = {'execution_id': identifier, 'task': 'analysis', 'problem': problem, 'language': language,
+                                           'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}
+                    if diagnostic != expected_diagnostic: raise SuiteError('exact current execution diagnostic differs')
+                    opposite = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn')
+                    reread = opposite.request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
+                    if any(reread.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')):
+                        raise SuiteError('query language rewrote stored failure')
+                    failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic,
+                                     'rejection_stage': 'analysis_node'})
+                else:
+                    actual = raster.transient_result(execution); compare(actual, expectations[name])
+                    completed = {case['name']: case['json_result'] for case in cases}
+                    if fixture.CASES[name]['source'] == 'values.tif' and not fixture.CASES[name].get('stage'):
+                        if {k:v for k,v in actual.items() if k != 'percentiles'} != completed.get('original', actual):
+                            raise SuiteError('requested list changed original statistics')
+                    if name == 'endpoints' and [item['value'] for item in actual['percentiles']] != [actual['min'], actual['max']]:
+                        raise SuiteError('endpoint values differ from min/max')
+                    if name == 'p50-control' and actual['percentiles'][0] != completed['quartiles']['percentiles'][2]:
+                        raise SuiteError('same-source singleton P50 and batch differ')
+                    if name == 'reversed' and actual['percentiles'] != completed['fractional']['percentiles']:
+                        raise SuiteError('source ordering changed the complete percentile list')
+                    if name == 'odd' and [actual['percentiles'][i]['value'] for i in (1, 2)] != [0., 0.]:
+                        raise SuiteError('equal zero results for distinct percentiles were merged or changed')
+                    if name == 'constant' and (len(actual['percentiles']) != 5 or any(item['value'] != 0. for item in actual['percentiles'])):
+                        raise SuiteError('constant zero batch lost requested positions')
+                    cases.append({'name': name, 'execution_id': identifier, 'source_locator': sources[fixture.CASES[name]['source']],
+                                  'json_result': actual, 'complete_object_verified': True})
             native = physical_runner(repository, env, 'verify', remaining()); remaining(); physical_calls += 1; check_physical(native, baseline)
             if scan_ids(client) != scans: raise SuiteError('read-only statistics added a scan')
             source_name = 'complex.tif' if problem == 'complex' else fixture.CASES[name]['source']
@@ -187,14 +218,22 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             for previous_id, previous_result, previous_config in prior:
                 previous = client.request('GET', '/api/v1/develop/executions/'+previous_id, (200,)).payload
                 readonly.actor(previous, identity, 'develop'); readonly.no_publication(previous)
-                if (previous.get('execution_id') != previous_id or type(previous.get('tenant_id')) is not int
-                    or previous['tenant_id'] != tenant or previous.get('status') != 'success'
+                if (previous.get('execution_id') != previous_id or 'tenant_id' in previous
+                    or previous.get('status') != 'success'
                     or raster.transient_result(previous) != previous_result
                     or previous.get('execution_config') != previous_config): raise SuiteError('previous execution result changed')
                 previous_checks += 1
             if not problem: prior.append((identifier, copy.deepcopy(actual), copy.deepcopy(execution['execution_config'])))
             immutable(directory/'statistics-expectations.json', encoded(expectations))
-            stage.update(status='passed', execution_id=identifier); progress('running')
+            stage['status'] = 'passed'
+            if identifier is not None:
+                stage['execution_id'] = identifier
+            else:
+                stage['rejection_stage'] = 'develop_entry'
+            progress('running')
+        base.check_workflow_execution_inventory(client, identity, known_executions)
+        if sum(failure['rejection_stage'] == 'develop_entry' for failure in failures) != 24:
+            raise SuiteError('exact Develop entry rejection count differs')
         if len(cases) != 16 or len(failures) != 40 or physical_calls != 57 or previous_checks != 760:
             raise SuiteError('all 56 calls, 57 physical checks and 760 previous-result checks are required')
         for name, item in items.items():

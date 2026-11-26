@@ -4777,7 +4777,7 @@ ZONAL_PERCENTILE_REQUIRED = {
         'GDAL_TIFF_INTERNAL_MASK', 'full_csv_checks', 'full_source_pixels_verified', 'runtime_workspaces_removed', 'archive_files',
         'previous archive was deleted', 'previous archived bytes changed', 'oracle cache hash changed', 'source file changed',
         'requested percentile changed original nine columns', 'source order changed percentile', 'zonal-percentile-csvs'),
-    'scripts/test/raster-zonal-percentile-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS',
+    'scripts/test/raster-zonal-percentile-persistence-online.py': ('base.reject_workflow_parameter', 'lineage.check_execution_inventory', 'lineage.read_failed_execution', 'raster.validate_identity', 'raster.EDITOR_PERMISSIONS',
         'budget != 600', 'BudgetClient', 'remaining()', 'validate_preview', 'legacy.validate_success', 'lineage.collect',
         'lineage.validate(facts, wanted, public=True)', 'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage',
         'source_edges', 'readonly.no_publication', 'query language rewrote stored failure', 'previous complete CSV changed',
@@ -5072,7 +5072,7 @@ VECTOR_ZONAL_PERCENTILE_REQUIRED = {
         'full_source_vectors_verified', 'runtime_workspaces_removed', 'archive_files', 'oracle cache hash changed',
         'source file changed', 'percentile changed original eight fields', 'vector-zonal-percentile-gpkgs',
     ),
-    'scripts/test/vector-zonal-percentile-persistence-online.py': (
+    'scripts/test/vector-zonal-percentile-persistence-online.py': ('base.reject_workflow_parameter', 'lineage.check_execution_inventory', 'lineage.read_failed_execution',
         'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()',
         'validate_preview', 'legacy.validate_success', 'lineage.collect',
         'lineage.validate(facts, wanted, public=True)', 'lineage.verify_archive', 'base.validate_scan',
@@ -5457,7 +5457,7 @@ WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weig
                                                                      'masks differ',
                                                                      'actual exact/below boundary witness '
                                                                      'differs'),
- 'scripts/test/raster-statistics-percentile-workflow-online.py': ('def reject_workflow_parameter', 'invalid_workflow_parameters', 'parameter_type_invalid'),
+ 'scripts/test/raster-statistics-percentile-workflow-online.py': ('check_workflow_execution_inventory', 'reject_workflow_parameter', 'def reject_workflow_parameter', 'invalid_workflow_parameters', 'parameter_type_invalid'),
  'scripts/test/raster-focal-circle-weighted-persistence-online.py': ('raster.validate_identity',
                                                                      'raster.EDITOR_PERMISSIONS',
                                                                      'budget != 600',
@@ -6870,7 +6870,7 @@ STATISTICS_PERCENTILES_REQUIRED = {
         'worker_source', 'types.ModuleType', 'fixture_sources_sha256', 'hashlib.sha256',
         'source file or fixture source changed', 'Worker source binding differs',
         'runtime_workspaces_removed', "'constant': True"),
-    'scripts/test/raster-statistics-percentiles-workflow-online.py': (
+    'scripts/test/raster-statistics-percentiles-workflow-online.py': ('base.check_workflow_execution_inventory', 'base.reject_workflow_parameter',
         'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'raster.transient_result',
         'readonly.no_publication', 'readonly.graph',
         'BudgetClient', 'budget != 600', 'physical_runner(repository, env, \'oracle\', remaining())',

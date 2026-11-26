@@ -50,6 +50,7 @@ class Client:
     previous_changed = False
     language_rewrite = False
     scan_mutation = None
+    entry_fault = None
     timeout = 30
 
     def __init__(self):
@@ -76,18 +77,42 @@ class Client:
             data = list(self.sources.values())
         elif '/meta/items/' in path:
             data = copy.deepcopy(next(v for v in self.sources.values() if v['id'] == int(path.rsplit('/', 1)[-1])))
-            if self.changed_meta and len(self.executions) == 40: data['size_bytes'] += 1
+            if self.changed_meta and len(self.executions) == 26: data['size_bytes'] += 1
         elif '/meta/lineage/graph?' in path:
             data = {'nodes': [], 'edges': [{'relation_kind': 'derive'}] if self.changed_graph and self.executions else [], 'truncated': False}
         elif '/meta/scan/runs?' in path:
             data = {'total': len(self.scans), 'items': [{'execution_id': v} for v in self.scans]}
+        elif path == '/api/v1/develop/executions?page=1&page_size=100&dev_type=workflow':
+            data = {'total': len(self.executions), 'executions': list(self.executions.values())}
+            if self.entry_fault == 'truncated':
+                data['total'] += 1
         elif path == '/api/v1/develop/executions' and method == 'POST':
             locators = {name: f'addp://engine/3/path/{name}?type=file&item_id={item["id"]}' for name, item in self.sources.items()}
             dag = body['content']['workflow_definition']; name = next((n for n in m.fixture.CASES if m.definition(locators, n) == dag), None)
             problem = next((p for p in m.FAILURES if m.definition(locators, 'p25', invalid=p) == dag), None)
             assert name or problem
             identifier = 'exec-'+str(len(self.executions)+1); language = headers['Accept-Language']
-            data = {'execution_id': identifier, 'tenant_id': 2, 'module': 'develop', 'task_type': 'workflow',
+            if problem in m.ENTRY_PARAMETERS:
+                assert expected == (400,)
+                index = next(index for index, task in enumerate(dag['tasks']) if task['id'] == 'analysis')
+                parameter = f'workflow_definition.tasks[{index}].params.{m.ENTRY_PARAMETERS[problem]}'
+                if language == 'zh-cn':
+                    message = '工作流参数无效，请检查节点参数'
+                    detail = '参数类型与算子声明不符：' + parameter
+                else:
+                    message = 'Invalid workflow parameters. Review the node parameters'
+                    detail = 'Parameter type differs from the operator declaration: ' + parameter
+                data = {'error': message, 'error_code': 'invalid_workflow_parameters',
+                        'errors': [{'code': 'parameter_type_invalid', 'path': parameter, 'message': detail}]}
+                if self.entry_fault == 'execution':
+                    self.executions[identifier] = {'execution_id': identifier, 'module': 'develop',
+                                                  'triggered_by': 33, 'task_type': 'workflow'}
+                if self.entry_fault == 'path':
+                    data['errors'][0]['path'] += '.other'
+                return SimpleNamespace(payload=data, status=400,
+                                       raw=b'{}' if self.entry_fault == 'raw' else json.dumps(data).encode())
+            assert expected == (200,)
+            data = {'execution_id': identifier, 'module': 'develop', 'task_type': 'workflow',
                     'triggered_by': 33, 'status': 'success' if name else 'failed', 'outputs': {},
                     'execution_config': {'engine_id': 7, 'display_language': language, 'content': {'workflow_definition': copy.deepcopy(dag)}},
                     'metadata': {'result': {'summary': {'has_result': True}, 'final_result': expectations()[name]}} if name else {'result': {}},
@@ -128,13 +153,32 @@ class StatisticsPercentileWorkflowTest(unittest.TestCase):
         self.assertEqual(len(report['identity']['permissions_verified']),12)
         self.assertTrue(report['only_source_scan_verified'] and report['no_resource_outputs_or_derive'])
         self.assertEqual(client.scans,['source-scan'])
-        self.assertEqual(len(report['raw_response_receipts']),80)
+        entry = [case for case in report['failed_parameters'] if case['rejection_stage'] == 'develop_entry']
+        node = [case for case in report['failed_parameters'] if case['rejection_stage'] == 'analysis_node']
+        self.assertEqual((len(entry), len(node), len(client.executions)), (14, 10, 26))
+        self.assertTrue(all(case['no_execution_created'] and 'execution_id' not in case for case in entry))
+        self.assertEqual(len(report['raw_response_receipts']),66)
+        self.assertEqual(sum(value['http_status'] == 400 for value in report['raw_response_receipts'].values()),14)
         for receipt in report['raw_response_receipts'].values():
             path = Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'statistics-responses'/receipt['path']
             self.assertEqual(receipt['size_bytes'],path.stat().st_size)
             self.assertEqual(receipt['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual(json.loads((Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'statistics-percentile-progress.json').read_text())['result'],'passed')
         self.assertFalse(any(task['operator']=='raster_save' for _,_,body,_ in client.calls if body and 'content' in body for task in body['content']['workflow_definition']['tasks']))
+
+    def test_entry_rejection_proves_owned_execution_inventory_and_original_response(self):
+        for fault, error in (
+            ('execution', 'inventory differs'),
+            ('truncated', 'inventory is incomplete'),
+            ('path', 'parameter path differs'),
+            ('raw', 'original JSON differs'),
+        ):
+            with self.subTest(fault=fault):
+                client = Client()
+                client.entry_fault = fault
+                self.env['ADDP_ONLINE_ARTIFACT_DIR'] = str(self.root/f'entry-{fault}')
+                with self.assertRaisesRegex(m.SuiteError, error):
+                    self.run_case(client)
 
     def test_current_identity_dag_runtime_language_and_no_publication_are_strict(self):
         mutations = [lambda e:e.update(triggered_by=True),lambda e:e.update(tenant_id=3),lambda e:e.update(task_type='query'),
