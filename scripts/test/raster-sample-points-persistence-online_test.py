@@ -37,6 +37,7 @@ class Client:
     added_edge = False
     rewrite = False
     scan_fault = False
+    entry_fault = None
     def __init__(self):
         self.scans, self.executions, self.scan_parents = [], {}, {}
         self.items = {name: {'id': i+10, 'full_name': name, 'item_type': 'file', 'size_bytes': 4096, 'fingerprint': name, 'scanned_at': 'now'} for i,name in enumerate(m.fixture.SOURCES)}
@@ -60,6 +61,30 @@ class Client:
         elif path == '/api/v1/develop/executions' and method == 'POST':
             dag = body['content']['workflow_definition']; target_name = dag['tasks'][-1]['params']['target_name']; success = target_name in m.fixture.CASES
             identifier = str(uuid.UUID(int=len(self.executions)+1)); language = headers['Accept-Language']
+            problem = target_name.removeprefix('failed-').removesuffix(f'-{language}.gpkg')
+            if problem in m.ENTRY_PARAMETERS:
+                assert expected == (400,)
+                index = next(index for index, task in enumerate(dag['tasks']) if task['id'] == 'sample')
+                parameter = m.ENTRY_PARAMETERS[problem]
+                path = f'workflow_definition.tasks[{index}].params.{parameter}'
+                if language == 'zh-cn':
+                    message = '工作流参数无效，请检查节点参数'
+                    detail = '参数类型与算子声明不符：' + path
+                else:
+                    message = 'Invalid workflow parameters. Review the node parameters'
+                    detail = 'Parameter type differs from the operator declaration: ' + path
+                issue_code = 'parameter_type_invalid'
+                entry = {'error': message, 'error_code': 'invalid_workflow_parameters',
+                         'errors': [{'code': issue_code, 'path': path, 'message': detail}]}
+                if self.entry_fault == 'execution':
+                    self.executions[identifier] = {}
+                if self.entry_fault == 'scan':
+                    self.scans.append('unexpected-entry-scan')
+                if self.entry_fault == 'wrong-path':
+                    entry['errors'][0]['path'] += '.changed'
+                return SimpleNamespace(status=500 if self.entry_fault == 'http500' else 400, payload=entry,
+                                       raw=b'{}' if self.entry_fault == 'raw' else json.dumps(entry).encode())
+            assert expected == (200,)
             data = {'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
                     'execution_config':{'engine_id':7,'display_language':language,'content':{'workflow_definition':copy.deepcopy(dag)}}, 'error_msg':None if success else 'frozen-'+language,
                     'error_details':{} if success else {'category':'execution_failed'}, 'outputs':{}, 'metadata':{'result':{}}}
@@ -101,10 +126,13 @@ class SamplePointsWorkflowTest(unittest.TestCase):
             return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
                     'triggered_by': principal, 'module': 'develop', 'task_type': 'workflow',
                     'status': 'failed', 'workflow_matches': True}
+        def inventory_reader(env, tenant, execution_ids):
+            if tenant != 2 or sorted(execution_ids) != sorted(client.executions):
+                raise m.SuiteError('entry rejection changed the current Develop execution inventory')
         def relation(client, source, target, execution, timeout):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
         with patch.object(m.raster,'wait_lineage',side_effect=relation):
-            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader,failed_reader=failed_reader)
+            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader,failed_reader=failed_reader,inventory_reader=inventory_reader)
     def test_full_matrix_16_success_36_failures_712_checks_and_cleanup(self):
         client=Client();calls=[]
         def worker(*args): calls.append((args[2],list(args[3]))); return physical(*args)
@@ -114,7 +142,17 @@ class SamplePointsWorkflowTest(unittest.TestCase):
         self.assertEqual(len(self.relations),32);self.assertTrue(report['oracle_cache_removed'])
         self.assertEqual(report['source_scan_identity']['parent_execution_id'],None)
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
-        for failure in report['failed_parameters']:
+        entry = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'develop_entry']
+        node = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'sample_node']
+        self.assertEqual((len(entry), len(node), len(client.executions)), (10, 26, 42))
+        for failure in entry:
+            self.assertTrue(failure['no_execution_created'])
+            self.assertNotIn('execution_id', failure)
+            receipt = failure['submission']
+            raw = (self.root/'evidence'/receipt['path']).read_bytes()
+            self.assertEqual((receipt['http_status'], receipt['size_bytes'], receipt['sha256']),
+                             (400, len(raw), hashlib.sha256(raw).hexdigest()))
+        for failure in node:
             self.assertEqual(failure['internal_execution_identity']['execution_id'], failure['execution_id'])
             self.assertEqual(failure['internal_execution_identity']['tenant_id'], 2)
         self.assertEqual({(x['problem'],x['language']) for x in report['failed_parameters']},{(p,l) for p in m.FAILURES for l in ('zh-cn','en')})
@@ -124,6 +162,21 @@ class SamplePointsWorkflowTest(unittest.TestCase):
             count=len(m.case_inputs(case['name']));observed=self.relations[offset:offset+count];offset+=count
             self.assertEqual([r[0] for r in observed],[client.items[n]['id'] for n in m.case_inputs(case['name'])])
             self.assertTrue(all(r[1:]==(case['target_item_id'],case['execution_id']) for r in observed))
+    def test_entry_rejection_requires_original_response_and_no_execution_or_scan(self):
+        for fault, error in (
+            ('raw', 'original JSON differs'),
+            ('http500', 'entry rejection status'),
+            ('wrong-path', 'parameter path differs'),
+            ('execution', 'changed the current Develop execution inventory'),
+            ('scan', 'failed execution added scan'),
+        ):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                self.env['ADDP_ONLINE_ARTIFACT_DIR'] = directory
+                client = Client()
+                client.entry_fault = fault
+                with self.assertRaisesRegex(m.SuiteError, error):
+                    self.run_case(client)
+
     def test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection(self):
         wanted=m.expected_lineage({n:n for n in m.fixture.SOURCES},'base.gpkg','target')
         for public in (False,True):

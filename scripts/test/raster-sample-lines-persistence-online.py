@@ -30,6 +30,13 @@ encoded, immutable, archive_response = base.encoded, base.immutable, base.archiv
 MESSAGES = {'band_zero': ('点位栅格采样必须显式选择有效的一基数据波段', 'Raster point sampling requires an explicit valid one-based data band'), 'band_high': ('点位栅格采样必须显式选择有效的一基数据波段', 'Raster point sampling requires an explicit valid one-based data band'), 'band_boolean': ('点位栅格采样必须显式选择有效的一基数据波段', 'Raster point sampling requires an explicit valid one-based data band'), 'band_string': ('点位栅格采样必须显式选择有效的一基数据波段', 'Raster point sampling requires an explicit valid one-based data band'), 'band_null': ('点位栅格采样必须显式选择有效的一基数据波段', 'Raster point sampling requires an explicit valid one-based data band'), 'alpha': ('点位栅格采样不能选择alpha作为数据波段', 'Raster point sampling cannot select alpha as data'), 'method_null': ('沿线栅格采样方法必须为cell或bilinear', 'Raster line sampling method must be cell or bilinear'), 'method_unknown': ('沿线栅格采样方法必须为cell或bilinear', 'Raster line sampling method must be cell or bilinear'), 'spacing_zero': ('沿线采样间距须为可精确表示的有限正实数米值，不能为布尔值', 'Line sampling spacing must be a representable finite positive real number of metres, not a boolean'), 'spacing_negative': ('沿线采样间距须为可精确表示的有限正实数米值，不能为布尔值', 'Line sampling spacing must be a representable finite positive real number of metres, not a boolean'), 'spacing_boolean': ('沿线采样间距须为可精确表示的有限正实数米值，不能为布尔值', 'Line sampling spacing must be a representable finite positive real number of metres, not a boolean'), 'spacing_string': ('沿线采样间距须为可精确表示的有限正实数米值，不能为布尔值', 'Line sampling spacing must be a representable finite positive real number of metres, not a boolean'), 'spacing_null': ('沿线采样间距须为可精确表示的有限正实数米值，不能为布尔值', 'Line sampling spacing must be a representable finite positive real number of metres, not a boolean'), 'spacing_list': ('沿线采样间距须为可精确表示的有限正实数米值，不能为布尔值', 'Line sampling spacing must be a representable finite positive real number of metres, not a boolean'), 'id_geometry': ('沿线采样须显式指定现有非几何、非空且唯一的标量编号字段', 'Line sampling requires an explicit existing non-geometry, non-null unique scalar identifier field'), 'id_null': ('沿线采样须显式指定现有非几何、非空且唯一的标量编号字段', 'Line sampling requires an explicit existing non-geometry, non-null unique scalar identifier field'), 'id_unknown': ('沿线采样须显式指定现有非几何、非空且唯一的标量编号字段', 'Line sampling requires an explicit existing non-geometry, non-null unique scalar identifier field'), 'id_duplicate': ('沿线采样须显式指定现有非几何、非空且唯一的标量编号字段', 'Line sampling requires an explicit existing non-geometry, non-null unique scalar identifier field'), 'different_crs': ('线与栅格须具有相同明确的二维投影CRS及相同已知有限正水平线性单位', 'Lines and raster require the same explicit two-dimensional projected CRS with matching known finite positive horizontal linear units'), 'geographic': ('线与栅格须具有相同明确的二维投影CRS及相同已知有限正水平线性单位', 'Lines and raster require the same explicit two-dimensional projected CRS with matching known finite positive horizontal linear units'), 'point': ('沿线栅格采样仅接受非空、有效、有限XY的二维非零长度LineString', 'Raster line sampling requires non-empty valid finite XY nonzero-length two-dimensional LineStrings'), 'polygon': ('沿线栅格采样仅接受非空、有效、有限XY的二维非零长度LineString', 'Raster line sampling requires non-empty valid finite XY nonzero-length two-dimensional LineStrings'), 'multiline': ('沿线栅格采样仅接受非空、有效、有限XY的二维非零长度LineString', 'Raster line sampling requires non-empty valid finite XY nonzero-length two-dimensional LineStrings'), 'zero_line': ('沿线栅格采样仅接受非空、有效、有限XY的二维非零长度LineString', 'Raster line sampling requires non-empty valid finite XY nonzero-length two-dimensional LineStrings'), 'z_line': ('沿线栅格采样仅接受非空、有效、有限XY的二维非零长度LineString', 'Raster line sampling requires non-empty valid finite XY nonzero-length two-dimensional LineStrings'), 'collision_distance': ('沿线采样结果字段不能覆盖原字段或活动几何列', 'Line sampling result columns must not overwrite source fields or active geometry'), 'collision_value': ('沿线采样结果字段不能覆盖原字段或活动几何列', 'Line sampling result columns must not overwrite source fields or active geometry'), 'collision_status': ('沿线采样结果字段不能覆盖原字段或活动几何列', 'Line sampling result columns must not overwrite source fields or active geometry')}
 vector_persistence=importlib.import_module('scripts.utils.online_vector_persistence')
 
+ENTRY_PARAMETERS = {
+    **dict.fromkeys(('band_boolean', 'band_null', 'band_string'), 'band'),
+    'id_null': 'id_field',
+    'method_null': 'method',
+    **dict.fromkeys(('spacing_boolean', 'spacing_list', 'spacing_null', 'spacing_string'), 'spacing_metres'),
+}
+
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name = 'raster-sample-lines-submission-error.json'
     diagnostic_schema = 'addp.raster-sample-lines-submission-diagnostic/v1'
@@ -135,7 +142,8 @@ def current(execution, identity, identifier, dag, runtime, language, status):
         raise SuiteError('current execution identity/status/language differs')
 
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current,
-                 *, failed_reader=lineage.read_failed_execution):
+                 *, failed_reader=lineage.read_failed_execution,
+                 inventory_reader=lineage.check_execution_inventory):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('point sampling business budget must be exactly 600 seconds')
     def remaining():
@@ -202,30 +210,49 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             case['lineage'] = [raster.wait_lineage(client, items[name]['id'], case['target_item_id'], case['execution_id'], remaining()) for name in case_inputs(case['name'])]
         if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('unexpected automatic scan inventory')
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
+        known_executions = [case['execution_id'] for case in cases]
         for problem in FAILURES:
             for language in ('zh-cn', 'en'):
                 stages.append({'problem': problem, 'language': language, 'status': 'running'}); progress('running')
                 dag = definition(sources, parent, 'cell.gpkg', invalid=problem, language=language)
-                identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
-                execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
-                if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
-                failed_identity = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
-                remaining()
-                diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
-                if diagnostic != {'execution_id': identifier, 'task': 'sample', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
-                readonly.no_publication(execution)
-                monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
-                readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
-                if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
-                queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
-                if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                failure = {'problem': problem, 'language': language, 'no_publication_or_scan_or_lineage': True}
+                parameter = ENTRY_PARAMETERS.get(problem)
+                if parameter is not None:
+                    raw = base.reject_workflow_parameter(
+                        client, runtime, dag, 'sample', parameter, language, min(180, max(1, int(remaining())))
+                    )
+                    inventory_reader(env, tenant, known_executions)
+                    remaining()
+                    receipt = immutable(directory/f'entry-{problem}-{language}.json', raw)
+                    failure.update(rejection_stage='develop_entry', no_execution_created=True,
+                                   submission={**receipt, 'http_status': 400})
+                else:
+                    identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
+                    known_executions.append(identifier)
+                    execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
+                    if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
+                    failed_identity = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
+                    remaining()
+                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
+                    if diagnostic != {'execution_id': identifier, 'task': 'sample', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
+                    readonly.no_publication(execution)
+                    monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
+                    readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
+                    if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
+                    queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
+                    if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                    failure.update(rejection_stage='sample_node', execution_id=identifier,
+                                   diagnostic=diagnostic, internal_execution_identity=failed_identity)
                 if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()): raise SuiteError('failed execution added derived lineage')
                 native = physical_runner(repository, env, 'verify', names, remaining()); remaining(); check_physical(native, baseline['sources'], previous, anchor, names)
                 physical_calls += 1; full_checks += len(names)
-                failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic,
-                                 'internal_execution_identity': failed_identity, 'no_publication_or_scan_or_lineage': True})
+                failures.append(failure)
                 stages[-1]['status'] = 'passed'; progress('running')
+        inventory_reader(env, tenant, known_executions)
+        remaining()
+        if sum(failure['rejection_stage'] == 'develop_entry' for failure in failures) != 18:
+            raise SuiteError('exact Develop entry rejection count differs')
         if len(cases) != 16 or len(failures) != 56 or full_checks != 1032 or physical_calls != 73: raise SuiteError('all 16 successes, 56 failures, 1032 GeoPackage checks and 73 physical calls required')
         target_metadata_before={case['target_item_id']:json.loads((directory/('target-'+case['name']+'-meta-before.json')).read_bytes())for case in cases}
         target_metadata_after={identifier:client.request('GET',f'/api/v1/meta/items/{identifier}',(200,)).payload for identifier in target_metadata_before}

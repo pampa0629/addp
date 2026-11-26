@@ -317,7 +317,7 @@ def run_scenario(
     lineage_reader=lineage.read_current,
     *,
     failed_reader=lineage.read_failed_execution,
-    inventory_reader=lineage.check_focal_execution_inventory,
+    inventory_reader=lineage.check_execution_inventory,
     hard_deadline,
 ):
     env = dict(env)
@@ -523,7 +523,7 @@ def run_scenario(
                 parameter = ENTRY_PARAMETERS.get(problem)
                 failure = {'problem': problem, 'language': language, 'no_publication_or_scan_or_lineage': True}
                 if parameter is not None:
-                    raw = circle.reject_entry(client, runtime, dag, parameter, language, timeout)
+                    raw = base.reject_workflow_parameter(client, runtime, dag, 'focal', parameter, language, timeout)
                     inventory_reader(env, tenant, known_executions)
                     remaining()
                     receipt = immutable(directory / f'entry-{problem}-{language}.json', raw)

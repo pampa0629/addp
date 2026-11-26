@@ -33,11 +33,6 @@ ENTRY_PARAMETERS = {
     'circle_window_null': 'window_size', 'radius_null': 'radius_metres',
     'radius_bool': 'radius_metres', 'band_fraction': 'band',
 }
-ENTRY_MESSAGES = {
-    'zh-cn': ('工作流参数无效，请检查节点参数', '参数类型与算子声明不符：'),
-    'en': ('Invalid workflow parameters. Review the node parameters',
-           'Parameter type differs from the operator declaration: '),
-}
 DIAGNOSTICS = {
     'weight': ('米制圆窗的weights必须为与派生最小正方形同尺寸的二维列表，元素为有限非负数且不能为布尔值，圆外必须为零，圆内至少一个为正', 'Metre circle weights must be a square list matching the derived smallest square, with finite nonnegative non-boolean values, zeros outside the circle and at least one positive value inside'),
     'method': ('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean、weighted_stddev或weighted_sum', 'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean, weighted_stddev or weighted_sum'),
@@ -238,27 +233,6 @@ def monitor_observation(client, identity, identifier, status):
     return verify_monitor_receipt(response.payload, identity, identifier, status)
 
 
-def reject_entry(client, runtime, dag, parameter, language, execution_timeout):
-    index = next(index for index, task in enumerate(dag['tasks']) if task['id'] == 'focal')
-    field = f'workflow_definition.tasks[{index}].params.{parameter}'
-    message, issue_prefix = ENTRY_MESSAGES[language]
-    expected = {'error': message, 'error_code': 'invalid_workflow_parameters',
-                'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': issue_prefix+field}]}
-    response = SubmittedLanguageClient(client, language).request('POST', '/api/v1/develop/executions', (400,), {
-        'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': execution_timeout,
-        'content': {'workflow_definition': dag}, 'execution_config': {'engine_id': runtime},
-    })
-    raw = response.raw
-    if response.status != 400 or response.payload != expected or not isinstance(raw, bytes) or not 0 < len(raw) <= 4096:
-        raise SuiteError('entry rejection status, localized message, issue or parameter path differs')
-    try:
-        observed = json.loads(raw)
-    except (ValueError, TypeError) as error:
-        raise SuiteError('entry rejection original JSON is invalid') from error
-    if observed != expected:
-        raise SuiteError('entry rejection original JSON differs from its exact receipt')
-    return raw
-
 
 def run_scenario(repository, env, client, physical_runner=fixture_call,
                  diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current, *,
@@ -354,7 +328,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call,
                 dag = definition(sources, parent, 'north-mean.cog.tif', invalid=problem, language=language)
                 timeout = min(180, max(1, int(remaining())))
                 if stage == 'develop_entry':
-                    raw = reject_entry(client, runtime, dag, ENTRY_PARAMETERS[problem], language, timeout)
+                    raw = base.reject_workflow_parameter(client, runtime, dag, 'focal', ENTRY_PARAMETERS[problem], language, timeout)
                     metadata.check_execution_inventory(known_executions); remaining()
                     entry_count += 1
                 else:

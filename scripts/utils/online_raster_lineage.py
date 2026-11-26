@@ -40,10 +40,14 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
     'raster-focal-percentiles-persistence': 'raster-focal-percentiles-lineage', 'raster-focal-square-seven-persistence': 'raster-focal-square-seven-lineage', 'vector-zonal-weighted-persistence': 'vector-zonal-weighted-lineage', 'vector-zonal-weighted-stddev-persistence': 'vector-zonal-weighted-stddev-lineage', 'vector-zonal-area-weighted-persistence': 'vector-zonal-area-weighted-lineage', 'vector-zonal-area-weighted-stddev-persistence': 'vector-zonal-area-weighted-stddev-lineage'}
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
-FOCAL_EXECUTION_LIMITS = {
+EXECUTION_INVENTORY_LIMITS = {
     'raster-focal-circle-persistence': 86,
     'raster-focal-circle-orthogonal-persistence': 93,
     'raster-focal-square-seven-persistence': 68,
+    'raster-sample-points-persistence': 42,
+    'raster-sample-points-bilinear-persistence': 48,
+    'raster-sample-lines-persistence': 54,
+    'vector-zonal-class-frequency-persistence': 56,
 }
 
 
@@ -104,11 +108,8 @@ def read_current(env, identifier, tenant, principal, workflow):
 
 
 def read_failed_execution(env, identifier, tenant, principal, workflow):
-    suite = env.get('ONLINE_SUITE')
-    require(suite in FOCAL_EXECUTION_LIMITS or suite in (
-        'raster-sample-points-persistence', 'raster-sample-points-bilinear-persistence',
-        'raster-sample-lines-persistence', 'vector-zonal-class-frequency-persistence',
-    ), 'failed execution observation requires an approved Hosted suite')
+    require(env.get('ONLINE_SUITE') in EXECUTION_INVENTORY_LIMITS,
+            'failed execution observation requires an approved Hosted suite')
     evidence = _read_execution(env, identifier, tenant, principal, workflow, 'failed')
     facts = evidence.pop('facts')
     require(facts is None or (isinstance(facts, dict) and set(facts) <= FIELDS
@@ -134,10 +135,10 @@ def _owned_execution_observer(env):
     return owner
 
 
-def check_focal_execution_inventory(env, tenant, expected):
-    limit = FOCAL_EXECUTION_LIMITS.get(env.get('ONLINE_SUITE'))
+def check_execution_inventory(env, tenant, expected):
+    limit = EXECUTION_INVENTORY_LIMITS.get(env.get('ONLINE_SUITE'))
     require(limit is not None and type(tenant) is int and tenant > 1 and len(expected) <= limit,
-            'execution inventory requires an approved focal suite and dedicated tenant')
+            'execution inventory requires an approved Hosted suite and dedicated tenant')
     owner = _owned_execution_observer(env)
     statement = """BEGIN READ ONLY;
 SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';

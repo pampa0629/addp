@@ -259,18 +259,18 @@ class RasterLineageTest(unittest.TestCase):
               patch.object(m, 'inspect', return_value=self.container),
               patch.object(m.subprocess, 'run') as query):
             query.return_value = SimpleNamespace(returncode=0, stdout=json.dumps({'execution_ids': [IDENTIFIER]}))
-            m.check_focal_execution_inventory(os.environ, 2, [IDENTIFIER])
+            m.check_execution_inventory(os.environ, 2, [IDENTIFIER])
             self.assertIn('limit=69', query.call_args.args[0])
             sql = query.call_args.kwargs['input']
             self.assertIn('BEGIN READ ONLY', sql)
             self.assertIn("tenant_id=:'tenant_id'::integer", sql)
             query.return_value = SimpleNamespace(returncode=0, stdout=json.dumps({'execution_ids': [IDENTIFIER, 'extra']}))
             with self.assertRaisesRegex(m.SuiteError, 'changed the current Develop execution inventory'):
-                m.check_focal_execution_inventory(os.environ, 2, [IDENTIFIER])
+                m.check_execution_inventory(os.environ, 2, [IDENTIFIER])
             query.reset_mock()
             with patch.dict(os.environ, {'ADDP_ONLINE_TEST_RUN_ID': 'focal-square-seven-123-1'}):
                 with self.assertRaisesRegex(m.SuiteError, 'observer Run ID differs'):
-                    m.check_focal_execution_inventory(os.environ, 2, [IDENTIFIER])
+                    m.check_execution_inventory(os.environ, 2, [IDENTIFIER])
             query.assert_not_called()
 
     def test_container_identity_restart_labels_and_database_cannot_change(self):

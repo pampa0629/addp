@@ -74,7 +74,7 @@ class Client:
             if problem in m.ENTRY_PARAMETERS:
                 assert expected == (400,)
                 field = f'workflow_definition.tasks[1].params.{m.ENTRY_PARAMETERS[problem]}'
-                msg, prefix = m.ENTRY_MESSAGES[language]
+                msg, prefix = m.base.WORKFLOW_ENTRY_MESSAGES[language]
                 entry = {'error': msg, 'error_code': 'invalid_workflow_parameters',
                          'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': prefix+field}]}
                 status = 400
@@ -83,7 +83,7 @@ class Client:
                 if self.entry_fault == 'code': entry['error_code'] = 'validation_failed'
                 if self.entry_fault == 'issue': entry['errors'][0]['code'] = 'wrong_issue'
                 if self.entry_fault == 'path': entry['errors'][0]['path'] += '.wrong'
-                if self.entry_fault == 'language': entry['error'] = m.ENTRY_MESSAGES['en'][0]
+                if self.entry_fault == 'language': entry['error'] = m.base.WORKFLOW_ENTRY_MESSAGES['en'][0]
                 if self.entry_fault == 'extra_field': entry['execution_id'] = identifier
                 if self.entry_fault == 'execution': self.executions[identifier] = {}
                 if self.entry_fault == 'scan': self.scans.append('unexpected-entry-scan')

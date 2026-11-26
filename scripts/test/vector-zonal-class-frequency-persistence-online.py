@@ -30,6 +30,17 @@ encoded, immutable, archive_response = base.encoded, base.immutable, base.archiv
 MESSAGES = {'method_null': ('矢量分区统计方法必须为summary或class_frequency', 'Vector zonal statistics method must be summary or class_frequency'), 'method_unknown': ('矢量分区统计方法必须为summary或class_frequency', 'Vector zonal statistics method must be summary or class_frequency'), 'percentile_null': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentiles, external weights or enabled weighted/area modes'), 'weights_null': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentiles, external weights or enabled weighted/area modes'), 'weights_band': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentiles, external weights or enabled weighted/area modes'), 'stddev': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentiles, external weights or enabled weighted/area modes'), 'area': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentiles, external weights or enabled weighted/area modes'), 'area_stddev': ('矢量分类频数不能提供百分位、外部权重或启用加权／面积模式', 'Vector class frequency cannot accept percentiles, external weights or enabled weighted/area modes'), 'flag_string': ('include_weighted_stddev必须是布尔值', 'include_weighted_stddev must be a boolean'), 'id_missing': ('分类频数须显式选择现有非几何、非空唯一标量面编号列', 'Class frequency requires an explicit existing non-geometry unique non-null scalar zone identifier column'), 'id_null': ('分类频数须显式选择现有非几何、非空唯一标量面编号列', 'Class frequency requires an explicit existing non-geometry unique non-null scalar zone identifier column'), 'id_duplicate': ('分类频数须显式选择现有非几何、非空唯一标量面编号列', 'Class frequency requires an explicit existing non-geometry unique non-null scalar zone identifier column'), 'id_unknown': ('分类频数须显式选择现有非几何、非空唯一标量面编号列', 'Class frequency requires an explicit existing non-geometry unique non-null scalar zone identifier column'), 'band_zero': ('分类频数必须显式选择有效的一基分类波段', 'Class frequency requires an explicit valid one-based class band'), 'band_high': ('分类频数必须显式选择有效的一基分类波段', 'Class frequency requires an explicit valid one-based class band'), 'band_boolean': ('分类频数必须显式选择有效的一基分类波段', 'Class frequency requires an explicit valid one-based class band'), 'band_string': ('分类频数必须显式选择有效的一基分类波段', 'Class frequency requires an explicit valid one-based class band'), 'band_null': ('分类频数必须显式选择有效的一基分类波段', 'Class frequency requires an explicit valid one-based class band'), 'alpha': ('分类频数不能选择alpha作为数据波段', 'Class frequency cannot select alpha as data'), 'fractional': ('分类频数的有效类别必须为±(2^53−1)内的精确整数', 'Valid frequency classes must be exact integers within plus or minus (2^53-1)'), 'unsafe': ('分类频数的有效类别必须为±(2^53−1)内的精确整数', 'Valid frequency classes must be exact integers within plus or minus (2^53-1)'), 'different_crs': ('分类频数的面与栅格必须具有相同明确CRS', 'Class frequency polygons and raster require the same explicit CRS'), 'prefix_null': ('field_prefix必须是字符串', 'field_prefix must be a string'), 'collision': ('分类频数结果列不能覆盖原属性或活动几何', 'Class frequency result columns must not overwrite source attributes or active geometry'), 'touched_numeric': ('all_touched必须是布尔值', 'all_touched must be a boolean'), 'point': ('分类频数要求唯一几何列及有效非空有限二维面，允许空批', 'Class frequency requires one geometry column and valid non-empty finite XY polygons; empty batches are allowed'), 'invalid_polygon': ('分类频数要求唯一几何列及有效非空有限二维面，允许空批', 'Class frequency requires one geometry column and valid non-empty finite XY polygons; empty batches are allowed'), 'z_geometry': ('分类频数要求唯一几何列及有效非空有限二维面，允许空批', 'Class frequency requires one geometry column and valid non-empty finite XY polygons; empty batches are allowed'), 'summary_id': ('summary方法不能提供id_field', 'The summary method cannot accept id_field'), 'prefix_boolean': ('field_prefix必须是字符串', 'field_prefix must be a string'), 'touched_null': ('all_touched必须是布尔值', 'all_touched must be a boolean'), 'complex': ('分类频数不支持所选复数数据或复数alpha', 'Class frequency does not support selected complex data or complex alpha')}
 vector_persistence=importlib.import_module('scripts.utils.online_vector_persistence')
 
+ENTRY_PARAMETERS = {
+    **dict.fromkeys(('band_boolean', 'band_null', 'band_string'), 'band'),
+    'flag_string': 'include_weighted_stddev',
+    'id_null': 'id_field',
+    'method_null': 'method',
+    'percentile_null': 'percentiles',
+    **dict.fromkeys(('prefix_boolean', 'prefix_null'), 'field_prefix'),
+    **dict.fromkeys(('touched_null', 'touched_numeric'), 'all_touched'),
+    'weights_null': 'weights_raster',
+}
+
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name = 'vector-zonal-class-frequency-submission-error.json'
     diagnostic_schema = 'addp.vector-zonal-class-frequency-submission-diagnostic/v1'
@@ -145,7 +156,8 @@ def current(execution, identity, identifier, dag, runtime, language, status):
         raise SuiteError('current execution identity/status/language differs')
 
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current,
-                 *, failed_reader=lineage.read_failed_execution):
+                 *, failed_reader=lineage.read_failed_execution,
+                 inventory_reader=lineage.check_execution_inventory):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('point sampling business budget must be exactly 600 seconds')
     def remaining():
@@ -212,30 +224,53 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             case['lineage'] = [raster.wait_lineage(client, items[name]['id'], case['target_item_id'], case['execution_id'], remaining()) for name in case_inputs(case['name'])]
         if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('unexpected automatic scan inventory')
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
+        known_executions = [case['execution_id'] for case in cases]
         for problem in FAILURES:
             for language in ('zh-cn', 'en'):
                 stages.append({'problem': problem, 'language': language, 'status': 'running'}); progress('running')
                 dag = definition(sources, parent, 'direct.gpkg', invalid=problem, language=language)
-                identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
-                execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
-                if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
-                failed_identity = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
-                remaining()
-                diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
-                if diagnostic != {'execution_id': identifier, 'task': 'analysis', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
-                readonly.no_publication(execution)
-                monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
-                readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
-                if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
-                queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
-                if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                failure = {'problem': problem, 'language': language, 'no_publication_or_scan_or_lineage': True}
+                parameter = ENTRY_PARAMETERS.get(problem)
+                if parameter is not None:
+                    issue = {}
+                    if problem == 'weights_null':
+                        issue = {'issue_code': 'raster_reference_required',
+                                 'issue_message': '算子 raster_vector_zonal_statistics 的栅格输入 weights_raster 必须引用当前工作流的栅格端口'}
+                    raw = base.reject_workflow_parameter(
+                        client, runtime, dag, 'analysis', parameter, language, min(180, max(1, int(remaining()))), **issue
+                    )
+                    inventory_reader(env, tenant, known_executions)
+                    remaining()
+                    receipt = immutable(directory/f'entry-{problem}-{language}.json', raw)
+                    failure.update(rejection_stage='develop_entry', no_execution_created=True,
+                                   submission={**receipt, 'http_status': 400})
+                else:
+                    identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
+                    known_executions.append(identifier)
+                    execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
+                    if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
+                    failed_identity = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
+                    remaining()
+                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
+                    if diagnostic != {'execution_id': identifier, 'task': 'analysis', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
+                    readonly.no_publication(execution)
+                    monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
+                    readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
+                    if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
+                    queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
+                    if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                    failure.update(rejection_stage='analysis_node', execution_id=identifier,
+                                   diagnostic=diagnostic, internal_execution_identity=failed_identity)
                 if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()): raise SuiteError('failed execution added derived lineage')
                 native = physical_runner(repository, env, 'verify', names, remaining()); remaining(); check_physical(native, baseline['sources'], previous, anchor, names)
                 physical_calls += 1; full_checks += len(names)
-                failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic,
-                                 'internal_execution_identity': failed_identity, 'no_publication_or_scan_or_lineage': True})
+                failures.append(failure)
                 stages[-1]['status'] = 'passed'; progress('running')
+        inventory_reader(env, tenant, known_executions)
+        remaining()
+        if sum(failure['rejection_stage'] == 'develop_entry' for failure in failures) != 24:
+            raise SuiteError('exact Develop entry rejection count differs')
         if len(cases) != 16 or len(failures) != 64 or full_checks != 1160 or physical_calls != 81: raise SuiteError('all 16 successes, 64 failures, 1160 GeoPackage checks and 81 physical calls required')
         target_metadata_before={case['target_item_id']:json.loads((directory/('target-'+case['name']+'-meta-before.json')).read_bytes())for case in cases}
         target_metadata_after={identifier:client.request('GET',f'/api/v1/meta/items/{identifier}',(200,)).payload for identifier in target_metadata_before}

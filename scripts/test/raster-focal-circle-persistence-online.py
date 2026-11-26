@@ -188,7 +188,7 @@ def fixture_call(repository, env, action, names, timeout):
 
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current, *,
                  failed_reader=lineage.read_failed_execution,
-                 inventory_reader=lineage.check_focal_execution_inventory, hard_deadline):
+                 inventory_reader=lineage.check_execution_inventory, hard_deadline):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('focal circle business budget must be exactly 600 seconds')
     if not 0 < hard_deadline - started <= budget:
@@ -283,7 +283,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                 parameter = ENTRY_PARAMETERS.get(problem)
                 failure = {'problem': problem, 'language': language, 'no_publication_or_scan_or_lineage': True}
                 if parameter is not None:
-                    raw = circle.reject_entry(client, runtime, dag, parameter, language, timeout)
+                    raw = base.reject_workflow_parameter(client, runtime, dag, 'focal', parameter, language, timeout)
                     inventory_reader(env, tenant, known_executions)
                     remaining()
                     receipt = immutable(directory / f'entry-{problem}-{language}.json', raw)

@@ -160,6 +160,37 @@ def current_execution(execution, identity, identifier, dag, runtime, language, s
     readonly.no_publication(execution)
 
 
+WORKFLOW_ENTRY_MESSAGES = {
+    'zh-cn': ('工作流参数无效，请检查节点参数', '参数类型与算子声明不符：'),
+    'en': ('Invalid workflow parameters. Review the node parameters',
+           'Parameter type differs from the operator declaration: '),
+}
+
+
+def reject_workflow_parameter(client, runtime, dag, task_id, parameter, language, execution_timeout,
+                              *, issue_code='parameter_type_invalid', issue_message=None):
+    index = next(index for index, task in enumerate(dag['tasks']) if task['id'] == task_id)
+    field = f'workflow_definition.tasks[{index}].params.{parameter}'
+    message, issue_prefix = WORKFLOW_ENTRY_MESSAGES[language]
+    expected = {'error': message, 'error_code': 'invalid_workflow_parameters',
+                'errors': [{'code': issue_code, 'path': field,
+                            'message': issue_prefix + field if issue_message is None else issue_message}]}
+    response = SubmittedLanguageClient(client, language).request('POST', '/api/v1/develop/executions', (400,), {
+        'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': execution_timeout,
+        'content': {'workflow_definition': dag}, 'execution_config': {'engine_id': runtime},
+    })
+    raw = response.raw
+    if response.status != 400 or response.payload != expected or not isinstance(raw, bytes) or not 0 < len(raw) <= 4096:
+        raise SuiteError('entry rejection status, localized message, issue or parameter path differs')
+    try:
+        observed = json.loads(raw)
+    except (ValueError, TypeError) as error:
+        raise SuiteError('entry rejection original JSON is invalid') from error
+    if observed != expected:
+        raise SuiteError('entry rejection original JSON differs from its exact receipt')
+    return raw
+
+
 def archive_response(directory, label, response):
     raw = response.raw
     def invalid_constant(value): raise SuiteError('nonfinite JSON constant in original response')
