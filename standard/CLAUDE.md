@@ -745,6 +745,7 @@ draft → in_review → published → withdrawn
 - 当前生效修订不是持久化指针。Standard 按 `[effective_from, effective_to)` 和请求的 `as_of` 动态解析，未传 `as_of` 时使用服务端当前时间。
 - 同一稳定身份的已发布修订生效区间不得重叠。发布新修订时，服务端可以在同一事务中把前一条开放区间的 `effective_to` 收口到新修订的 `effective_from`；除此之外不得修改已发布定义。
 - `withdrawn` 用于撤回错误发布，不代表创建新版本；稳定身份仍保留历史。
+- 指标草稿修改和修订发布在 Standard 仓储的写入事务内按租户串行，锁从读取依赖到提交或回滚始终有效。PostgreSQL 使用事务级 advisory lock，MySQL 结构版本 2 由部署入口准备 Standard 自有的 `metric_dependency_locks`，运行时按当前租户主键获取 InnoDB 行锁。
 - 业务术语、数据元、码值集、指标定义与标准文档稳定身份各自最多持有一个草稿，可以有多个区间不重叠的已发布修订。
 
 ### 值域与质量规则的单一事实源

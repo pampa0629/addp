@@ -440,10 +440,15 @@ func replaceMetricRevisionDependencies(tx *gorm.DB, revisionID int64, dependenci
 	return nil
 }
 func lockMetricDependencies(db *gorm.DB, tenantID int64) error {
-	if db.Dialector.Name() != "postgres" {
-		return nil
+	switch db.Dialector.Name() {
+	case "mysql":
+		// Updating the existing key to itself still takes the InnoDB row lock.
+		return db.Exec(`INSERT INTO standard.metric_dependency_locks (tenant_id) VALUES (?)
+			ON DUPLICATE KEY UPDATE tenant_id=tenant_id`, tenantID).Error
+	case "postgres":
+		return db.Exec("SELECT pg_advisory_xact_lock(?)", standardMetricDependencyLockBase+tenantID).Error
 	}
-	return db.Exec("SELECT pg_advisory_xact_lock(?)", standardMetricDependencyLockBase+tenantID).Error
+	return nil
 }
 func metricDependencyCycle(db *gorm.DB, metricID, tenantID int64, dependencies []models.MetricDefinitionRevisionDependency) (bool, error) {
 	type edge struct {

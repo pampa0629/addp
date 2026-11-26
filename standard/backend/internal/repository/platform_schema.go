@@ -10,7 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const SchemaVersion = 1
+const (
+	postgresSchemaVersion = 1
+	mysqlSchemaVersion    = 2
+)
 
 //go:embed tables.mysql.sql
 var mysqlTables string
@@ -23,11 +26,22 @@ func PrepareDatabase(db *gorm.DB) error {
 		return err
 	}
 	if db.Dialector.Name() == "mysql" {
-		return schema.MigrateMySQLWithData(db, "standard", SchemaVersion, prepareMySQL, func(tx *gorm.DB, _ int64) error {
-			return migrateMeasurementCatalog(tx)
+		return schema.MigrateMySQLWithData(db, "standard", mysqlSchemaVersion, prepareMySQL, func(tx *gorm.DB, installed int64) error {
+			if installed == 0 {
+				return migrateMeasurementCatalog(tx)
+			}
+			return nil
 		})
 	}
-	return schema.Migrate(db, "standard", SchemaVersion, Migrate)
+	return schema.Migrate(db, "standard", postgresSchemaVersion, Migrate)
+}
+
+// RequireDatabase checks the installed Standard schema without performing DDL.
+func RequireDatabase(db *gorm.DB) error {
+	if db.Dialector.Name() == "mysql" {
+		return schema.RequireMySQL(db, "standard", mysqlSchemaVersion)
+	}
+	return schema.Require(db, "standard", postgresSchemaVersion)
 }
 
 func prepareMySQL(db *gorm.DB) error {

@@ -477,6 +477,10 @@ CREATE TABLE IF NOT EXISTS metric_categories (
     UNIQUE KEY uq_standard_metric_categories_tenant_code (tenant_id, code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin;
 
+CREATE TABLE IF NOT EXISTS metric_dependency_locks (
+    tenant_id bigint NOT NULL PRIMARY KEY
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS metric_definition_revision_dependencies (
     `id` bigint NOT NULL AUTO_INCREMENT,
     `metric_definition_revision_id` bigint NOT NULL,

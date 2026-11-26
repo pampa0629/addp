@@ -73,7 +73,7 @@ func main() {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
-	if err := schema.Require(db, "standard", repository.SchemaVersion); err != nil {
+	if err := repository.RequireDatabase(db); err != nil {
 		log.Fatalf("Failed to verify Standard database: %v", err)
 	}
 

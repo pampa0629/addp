@@ -161,6 +161,29 @@ SQL
   [[ $(gate_mysql <<<"SELECT version FROM startup_schema_revision WHERE owner='monitor'") == 3 ]]
   [[ $(gate_mysql <<<"SELECT COUNT(*) FROM platform_alert_incidents WHERE subject_id='upgrade-fixture' AND status='resolved'") == 1 ]]
 fi
+if [[ "$owner" == standard && "$provider" == mysql ]]; then
+  snapshot >standard-v2-fresh.sql
+  standard_mysql() {
+    docker exec -i "$container" sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot -N -B standard'
+  }
+  # Version 2 adds only the lock table. Recreate the version 1 footprint
+  # with an existing owner record before running the formal upgrade.
+  standard_mysql <<'SQL'
+INSERT INTO metric_categories (tenant_id, name, code, created_by)
+VALUES (53,'Existing category','upgrade_category',9);
+DROP TABLE metric_dependency_locks;
+UPDATE startup_schema_revision SET version=1 WHERE owner='standard' AND version=2;
+SQL
+  existing_category=$(standard_mysql <<<"SELECT id FROM metric_categories WHERE tenant_id=53 AND code='upgrade_category'")
+  [[ -n "$existing_category" ]]
+  runtime outdated standard 1 2
+  "${prepare[@]}"
+  [[ $(standard_mysql <<<"SELECT version FROM startup_schema_revision WHERE owner='standard'") == 2 ]]
+  [[ $(standard_mysql <<<"SELECT id FROM metric_categories WHERE tenant_id=53 AND code='upgrade_category' AND name='Existing category'") == "$existing_category" ]]
+  snapshot >standard-v2-upgraded.sql
+  cmp standard-v2-fresh.sql standard-v2-upgraded.sql
+  echo 'MySQL Standard upgrade 1→2 preserved the existing category and matched the fresh schema'
+fi
 snapshot >installed.sql
 if [[ "$owner" == monitor ]]; then
   grep -qi 'CREATE TABLE.*platform_alert_incidents' installed.sql
@@ -216,6 +239,7 @@ if [[ "$owner" == monitor ]]; then
 fi
 if [[ $owner == standard ]]; then
   (cd "$root/standard/backend" && ADDP_TEST_STANDARD_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledElementPublication$' -count=1 -v)
+  (cd "$root/standard/backend" && ADDP_TEST_STANDARD_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledMetricDependencyTransactions$' -count=1 -timeout=60s -v)
 fi
 if [[ $owner == model ]]; then
   (cd "$root/model/backend" && ADDP_TEST_MODEL_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledModelEntity$' -count=1 -v)
