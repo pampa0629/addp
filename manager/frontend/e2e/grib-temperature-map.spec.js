@@ -3,25 +3,28 @@ import { expect, test } from '@playwright/test'
 import { gribScreenshotColors } from './grib-pixels.js'
 import { managerAuthContext } from './managerAuthContext.js'
 
-for (const kind of ['temperature', 'precipitation']) {
+for (const kind of ['temperature', 'precipitation', 'noaa-precipitation']) {
   test(`GRIB ${kind} map stays bound to the selected message`, async ({ page }) => {
     await verifyMap(page, kind)
   })
 }
 
 async function verifyMap(page, kind) {
-  const precipitation = kind === 'precipitation'
+  const noaa = kind === 'noaa-precipitation'
+  const precipitation = kind !== 'temperature'
   const fixture = precipitation ? readFileSync(new URL('./fixtures/grib-precipitation-mask.tif', import.meta.url)) : null
   const locator = 'addp://engine/14/path/forecast.grib2?type=file&item_id=30'
   const rootLocator = 'addp://engine/14/path/?type=server&node_id=1'
   const item = { id: locator, locator, label: 'forecast.grib2', type: 'file', hasChildren: false }
   const root = { id: rootLocator, locator: rootLocator, label: 'GRIB fixture', type: 'server', hasChildren: true, children: [item] }
   const version = 'sha256:' + 'a'.repeat(64)
-  const profile = `ecmwf_ifs_01_${kind}/v1`
+  const profile = noaa ? 'noaa_gfs_025_precipitation/v1' : `ecmwf_ifs_01_${kind}/v1`
   const children = [1, 2].map((number) => ({ name: `message-${number}`, format: 'grib', child_kind: 'array', data_type: 'media', native: {
     map_profile: profile, value_mode: 'decoded_native_units', type: 'Float64', slice_supported: true,
     dimensions: [{ name: 'y', size: '1801' }, { name: 'x', size: '3600' }],
-    message: { time: { start_utc: '2026-11-17T00:00:00+00:00', interval_length: (number - 1) * 6, end_utc: `2026-11-17T0${(number-1)*6}:00:00+00:00` } }
+    message: { time: noaa
+      ? { start_utc: `2026-11-17T0${(number - 1) * 6}:00:00+00:00`, interval_length: 15 - number * 6, end_utc: '2026-11-17T09:00:00+00:00' }
+      : { start_utc: '2026-11-17T00:00:00+00:00', interval_length: (number - 1) * 6, end_utc: `2026-11-17T0${(number-1)*6}:00:00+00:00` } }
   } }))
   const generated = []
   const requests = []
@@ -75,7 +78,9 @@ async function verifyMap(page, kind) {
   const map = page.getByTestId('grib-field-map')
   const generate = page.getByTestId('generate-grib-map')
   await expect(map).toHaveAttribute('data-message', 'message-1')
-  if (precipitation) await expect(map.locator('.grib-map-toolbar')).toContainText('Forecast baseline · 2026-11-17T00:00:00+00:00 · 0 mm')
+  if (precipitation) await expect(map.locator('.grib-map-toolbar')).toContainText(noaa
+    ? 'Accumulation 2026-11-17T00:00:00+00:00 to 2026-11-17T09:00:00+00:00 · 9 h'
+    : 'Forecast baseline · 2026-11-17T00:00:00+00:00 · 0 mm')
   await generate.click()
   await expect.poll(() => requests).toContain('message-1')
   if (precipitation) {
@@ -89,7 +94,7 @@ async function verifyMap(page, kind) {
       const canvas = preview.locator('.raster-map canvas').first()
       if (!(await canvas.isVisible())) return false
       const { counts } = await gribScreenshotColors(page, canvas, legend.locator('.grib-swatch:not(.grib-missing)'))
-      return counts[0] > 100 && counts[3] > 100
+      return counts[0] > 100 && counts[noaa ? 1 : 3] > 100
     }).toBe(true)
     await expect.poll(async () => {
       const pixels = await preview.evaluate(element => {
@@ -124,8 +129,9 @@ async function verifyMap(page, kind) {
     await expect(map).toHaveAttribute('data-message', message)
   }
   await select('message-2')
-  if (precipitation) await expect(map.locator('.grib-map-toolbar')).toContainText(
-    'Accumulation 2026-11-17T00:00:00+00:00 to 2026-11-17T06:00:00+00:00 · 6 h')
+  if (precipitation) await expect(map.locator('.grib-map-toolbar')).toContainText(noaa
+    ? 'Accumulation 2026-11-17T06:00:00+00:00 to 2026-11-17T09:00:00+00:00 · 3 h'
+    : 'Accumulation 2026-11-17T00:00:00+00:00 to 2026-11-17T06:00:00+00:00 · 6 h')
   await expect(map.locator('.raster-tiff-quick-view')).toHaveCount(0)
   await generate.click()
   await expect.poll(() => requests).toContain('message-2')

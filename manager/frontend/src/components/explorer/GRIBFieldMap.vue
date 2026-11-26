@@ -18,7 +18,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/store/auth'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
-import { GRIB_PRECIPITATION_MAP } from '@/utils/gribMapProfile'
+import { gribPrecipitationSourceUnitsPerMillimetre } from '@/utils/gribMapProfile'
 import { quickViewAPI } from '@/api/quickView'
 import { waitForRasterCOGExecution } from '@/utils/rasterCOGTask'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
@@ -42,7 +42,7 @@ const confirmCurrentResult = useCurrentResultConfirmation()
 const canRead = computed(() => auth.hasPermission('manager.content.read') && auth.hasPermission('manager.derived_artifact.read'))
 const canCreate = computed(() => auth.hasPermission('manager.derived_artifact.create'))
 const canGenerate = computed(() => status.value?.available_actions?.includes('generate_raster_cog'))
-const isPrecipitation = computed(() => props.profile === GRIB_PRECIPITATION_MAP)
+const isPrecipitation = computed(() => gribPrecipitationSourceUnitsPerMillimetre(props.profile) !== undefined)
 const timeLabel = computed(() => {
   const time = props.time
   if (!time?.end_utc) return ''

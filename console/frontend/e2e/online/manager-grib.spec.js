@@ -137,7 +137,7 @@ test('ordinary user reads independent GRIB messages with native units and downlo
           await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${screenshot}.png`) })
           await expect(frame.locator('.geojson-preview')).toHaveCount(0)
           const map = frame.getByTestId('grib-field-map')
-          if (highResolution) {
+          if (highResolution || sameEnd) {
             await expect(map).toHaveAttribute('data-message', selection.variable)
             await expect(map.locator('.grib-map-toolbar')).toContainText(utc(field.forecast))
             // The read-only slice fixture has a metadata grant. The map cases
@@ -228,6 +228,7 @@ async function verifyGRIBMaps(page, storage, kind) {
 
   const caseName = `${storage}-${kind}`
   const source = context.maps[caseName]
+  const precipitation = kind !== 'temperature'
   const path = resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-grib-${caseName}-map-browser.json`)
   const proof = { run_id: context.run_id, case: caseName, locator: source.locator, source_version: source.version,
     generations: [], visits: [], result: 'incomplete' }
@@ -268,7 +269,16 @@ async function verifyGRIBMaps(page, storage, kind) {
       }
       await expect(map).toHaveAttribute('data-message', message)
       await expect(map).toHaveAttribute('data-source-version', source.version)
-      await expect(map).toContainText('2026-11-17T' + (number === 1 ? '00' : '06') + ':00:00+00:00')
+      const interval = source.intervals?.[number - 1]
+      if (interval) {
+        const [start, end, hours] = interval
+        const label = map.locator('.grib-map-toolbar .el-text')
+        await expect(label).toHaveText(new RegExp(
+          `^(累计区间 ${start} 至 ${end} · ${hours} 小时|Accumulation ${start} to ${end} · ${hours} h)$`.replaceAll('+', '\\+')
+        ))
+      } else {
+        await expect(map).toContainText('2026-11-17T' + (number === 1 ? '00' : '06') + ':00:00+00:00')
+      }
       if (kind === 'precipitation') {
         const toolbar = map.locator('.grib-map-toolbar')
         if (number === 1) {
@@ -305,7 +315,7 @@ async function verifyGRIBMaps(page, storage, kind) {
       await expect(canvas).toBeVisible({ timeout: 30000 })
       await canvas.scrollIntoViewIfNeeded({ timeout: 10000 })
       let precipitationColors
-      if (kind === 'precipitation') {
+      if (precipitation) {
         const legend = map.getByTestId('grib-precipitation-legend')
         await expect(legend).toContainText(/缺测|No data/)
         await expect(legend).toContainText('0 mm')
@@ -316,6 +326,7 @@ async function verifyGRIBMaps(page, storage, kind) {
           precipitationColors = await gribScreenshotColors(page, canvas, swatches)
           const { counts, total } = precipitationColors
           const rain = counts.slice(1).reduce((sum, count) => sum + count, 0) / total
+          if (interval) return counts[0] / total > 0.1 && counts[1] / total > 0.1 && rain > 0.15
           return counts[0] / total > 0.1 && (number === 1 ? rain === 0 : rain > 0.03)
         }).toBe(true)
       } else {
@@ -347,6 +358,7 @@ async function verifyGRIBMaps(page, storage, kind) {
         proof.date_line = { initial_view: world, pan_css_pixels: halfWorld, final_view: await displayedWorld(page, viewport) }
       }
       proof.visits.push({ message, preview_url: info.preview_url, screenshot,
+        ...(interval ? { accumulation_interval: interval } : {}),
         ...(precipitationColors ? { precipitation_style_verified: true, precipitation_colors: precipitationColors } : {}),
         ranges: ranges.slice(rangeStart).filter(r => r.path === url.pathname) })
       save()
@@ -358,7 +370,7 @@ async function verifyGRIBMaps(page, storage, kind) {
 }
 
 for (const storage of ['minio', 'nfs']) {
-  for (const kind of ['temperature', 'precipitation']) {
+  for (const kind of ['temperature', 'precipitation', 'noaa-precipitation']) {
     test(`ordinary user generates two ${kind} maps and reuses each interval from ${storage}`, async ({ page }) => {
       test.setTimeout(240000)
       await verifyGRIBMaps(page, storage, kind)

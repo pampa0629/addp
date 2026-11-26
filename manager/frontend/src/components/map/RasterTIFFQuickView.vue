@@ -98,7 +98,7 @@ import GeoTIFFSource from 'ol/source/GeoTIFF'
 import XYZ from 'ol/source/XYZ.js'
 import TileLayer from 'ol/layer/Tile.js'
 import WebGLTileLayer from 'ol/layer/WebGLTile.js'
-import { GRIB_PRECIPITATION_MAP, isGRIBMapProfile } from '@/utils/gribMapProfile'
+import { gribPrecipitationSourceUnitsPerMillimetre, isGRIBMapProfile } from '@/utils/gribMapProfile'
 import TileState from 'ol/TileState.js'
 import { defaults as defaultControls, ZoomToExtent } from 'ol/control.js'
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js'
@@ -163,7 +163,8 @@ let viewInitialized = false
 
 const quickViewInfo = computed(() => props.status?.quick_view || {})
 const isGRIBMap = computed(() => isGRIBMapProfile(quickViewInfo.value.map_profile))
-const isGRIBPrecipitationMap = computed(() => quickViewInfo.value.map_profile === GRIB_PRECIPITATION_MAP)
+const precipitationUnitsPerMM = computed(() => gribPrecipitationSourceUnitsPerMillimetre(quickViewInfo.value.map_profile))
+const isGRIBPrecipitationMap = computed(() => precipitationUnitsPerMM.value !== undefined)
 const precipitationBins = computed(() => [
   { upperMM: 0, token: '--grib-dry', label: t('manager.spatialPreview.gribPrecipitationZero') },
   { upperMM: 1, token: '--grib-rain-light', label: '>0–1 mm' },
@@ -494,9 +495,9 @@ async function createRasterLayer() {
     if (isGRIBPrecipitationMap.value) {
       const bins = precipitationBins.value
       // GeoTIFF exposes its declared NoData through the source alpha band.
-      // Match the threshold in source metres. The legend labels are millimetres.
+      // Translate the millimetre thresholds to the band’s native unit.
       const classes = bins.slice(0, -1).flatMap(({ upperMM, token }) =>
-        [['<=', value, Math.fround(upperMM / 1000)], color(token)])
+        [['<=', value, Math.fround(upperMM * precipitationUnitsPerMM.value)], color(token)])
       style = { color: ['case', ['==', ['band', 2], 0], [0, 0, 0, 0], ...classes, color(bins.at(-1).token)] }
     } else {
       const stops = [[225, '--grib-cold'], [255, '--grib-cool'], [285, '--grib-warm'], [315, '--grib-hot']]

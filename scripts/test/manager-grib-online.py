@@ -176,6 +176,9 @@ def map_browser_artifacts(proof, run_id, locator, directory, case, spec):
     urls = [v['preview_url'] for v in visits]
     require(urls[:2] == urls[2:] and urls[0] != urls[1], 'GRIB message cache mismatch')
     for step, visit in enumerate(visits, 1):
+        if 'intervals' in spec:
+            require(visit.get('accumulation_interval') == spec['intervals'][(step - 1) % len(messages)],
+                    'NOAA map did not display the original start, common end and duration')
         url = urlsplit(visit['preview_url'])
         require(not url.netloc and not url.scheme and not url.fragment
                 and re.fullmatch(r'/api/v1/manager/raster_cog/[1-9][0-9]*/content', url.path)
@@ -309,6 +312,8 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                 map_report['original'] = validate_original_download(
                     original, spec, allowed=download_allowed)
                 context['maps'][case] = dict(locator=locator, version='sha256:'+spec['sha256'], profile=spec['profile'])
+                if 'intervals' in spec:
+                    context['maps'][case]['intervals'] = spec['intervals']
         stage = 'browser'
         if browser_runner:browser=browser_runner(context)
         else:
@@ -350,6 +355,10 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             else:
                 require(all(visit.get('precipitation_style_verified') is True for visit in proof['visits']),
                         'precipitation browser zero or interval evidence missing')
+                if kind == 'noaa-precipitation':
+                    require(all(v['unit'] == 'kg/m²' and v['verified_pixels'] == 4096 * 2048 for v in pixels.values()),
+                            'NOAA raw units and full COG pixel evidence required')
+                    map_report['same_end_distinct_intervals_verified'] = True
             for url in urls.values():
                 stale = urlsplit(url).path + '?' + urlencode({'source_version':'sha256:'+'0'*64})
                 denied = client.request('GET', stale, (403,), headers={'Range':'bytes=0-63'})

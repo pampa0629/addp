@@ -20,12 +20,13 @@ import (
 )
 
 const (
-	GRIBTemperatureMapProfile   = "ecmwf_ifs_01_temperature/v1"
-	GRIBPrecipitationMapProfile = "ecmwf_ifs_01_precipitation/v1"
+	GRIBTemperatureMapProfile       = "ecmwf_ifs_01_temperature/v1"
+	GRIBPrecipitationMapProfile     = "ecmwf_ifs_01_precipitation/v1"
+	GRIBNOAAPrecipitationMapProfile = "noaa_gfs_025_precipitation/v1"
 )
 
 func IsGRIBMapProfile(profile string) bool {
-	return profile == GRIBTemperatureMapProfile || profile == GRIBPrecipitationMapProfile
+	return profile == GRIBTemperatureMapProfile || profile == GRIBPrecipitationMapProfile || profile == GRIBNOAAPrecipitationMapProfile
 }
 
 func validGRIBMapMessage(name string) bool {

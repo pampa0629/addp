@@ -9274,7 +9274,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "ecmwf_ifs_01_temperature/v1",
-                        "ecmwf_ifs_01_precipitation/v1"
+                        "ecmwf_ifs_01_precipitation/v1",
+                        "noaa_gfs_025_precipitation/v1"
                     ]
                 },
                 "max_zoom": {

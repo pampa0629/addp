@@ -382,7 +382,7 @@ type QuickViewRealtimeTileInfo struct {
 
 type QuickViewRenderInfo struct {
 	// GRIB 地图显示配置 | GRIB map display profile
-	MapProfile          string                  `json:"map_profile,omitempty" enums:"ecmwf_ifs_01_temperature/v1,ecmwf_ifs_01_precipitation/v1"`
+	MapProfile          string                  `json:"map_profile,omitempty" enums:"ecmwf_ifs_01_temperature/v1,ecmwf_ifs_01_precipitation/v1,noaa_gfs_025_precipitation/v1"`
 	RasterMessage       string                  `json:"raster_message,omitempty"`
 	RasterSourceVersion string                  `json:"raster_source_version,omitempty"`
 	RenderSource        string                  `json:"render_source,omitempty"`

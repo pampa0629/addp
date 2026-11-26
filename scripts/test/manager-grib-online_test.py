@@ -96,6 +96,28 @@ class GRIBOracleTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     SCENE.map_browser_artifacts(bad,'run','item',root,'minio-temperature',FIXTURE.MAP_SOURCES['temperature'])
 
+    def test_noaa_map_proof_rejects_swapped_starts_even_when_end_times_match(self):
+        spec = FIXTURE.MAP_SOURCES['noaa-precipitation']
+        case = 'minio-noaa-precipitation'
+        version = 'sha256:' + spec['sha256']
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            visits = []
+            for step, number in enumerate((1, 2, 1, 2), 1):
+                path = f'/api/v1/manager/raster_cog/{number}/content'
+                screenshot = f'grib-{case}-map-{step}.png'
+                (root / screenshot).write_bytes(b'\x89PNG\r\n\x1a\n')
+                visits.append(dict(message=f'message-{number}', accumulation_interval=spec['intervals'][number-1],
+                                   preview_url=f'{path}?source_version={version}', screenshot=screenshot,
+                                   ranges=[dict(path=path, version=version, range='bytes 0-63/256')]))
+            proof = dict(run_id='run', case=case, locator='item', source_version=version, result='passed',
+                         visits=visits, generations=[
+                             dict(message=f'message-{i}', task_id=i, execution_id=f'exec-{i}') for i in (1, 2)])
+            self.assertEqual(len(SCENE.map_browser_artifacts(proof, 'run', 'item', root, case, spec)), 2)
+            visits[3]['accumulation_interval'] = spec['intervals'][0]
+            with self.assertRaisesRegex(ValueError, 'NOAA map did not display'):
+                SCENE.map_browser_artifacts(proof, 'run', 'item', root, case, spec)
+
     def response(self,spec,field):
         selection=FIXTURE.selection(field)
         values,valid=FIXTURE.expected(field,selection['x'],selection['y'],selection['width'],selection['height'])

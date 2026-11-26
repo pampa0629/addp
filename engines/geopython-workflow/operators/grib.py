@@ -27,7 +27,13 @@ MAX_TOTAL_POINTS = 1 << 26
 PROFILES = {1: 'grib1_regular_fields/v1', 2: 'grib2_regular_fields/v1'}
 MAP_PROFILE = 'ecmwf_ifs_01_temperature/v1'
 PRECIPITATION_MAP_PROFILE = 'ecmwf_ifs_01_precipitation/v1'
-MAP_UNITS = {MAP_PROFILE: 'K', PRECIPITATION_MAP_PROFILE: 'm'}
+NOAA_PRECIPITATION_MAP_PROFILE = 'noaa_gfs_025_precipitation/v1'
+MAP_UNITS = {MAP_PROFILE: 'K', PRECIPITATION_MAP_PROFILE: 'm', NOAA_PRECIPITATION_MAP_PROFILE: 'kg/m²'}
+MAP_GRIDS = {
+    MAP_PROFILE: (179.95, .1, 0, 90.05, 0, -.1),
+    PRECIPITATION_MAP_PROFILE: (179.95, .1, 0, 90.05, 0, -.1),
+    NOAA_PRECIPITATION_MAP_PROFILE: (-.125, .25, 0, 90.125, 0, -.25),
+}
 
 
 class SliceSelectionError(ValueError):
@@ -316,7 +322,17 @@ def _grib2_fields(raw):
         if drt == 42:
             fields[-1]['facts'] = facts
         elif drt == 3:
-            fields[-1]['facts']=_grib2_complex_facts(sections[1],product,representation,raw[offset+6])
+            identification = sections[1]
+            facts = _grib2_complex_facts(identification, product, representation, raw[offset+6])
+            fields[-1]['facts'] = facts
+            # NCEP GFS forecast process 96, standard surface APCP on the
+            # unrotated pole-to-pole 0.25° grid, with no missing data.
+            if (pdt == 8 and facts['element'] == 'APCP' and facts['level']['type_code'] == 1
+                    and identification[5:12] == bytes.fromhex('00070000020101')
+                    and identification[19:21] == b'\x00\x01' and product[11:14] == b'\x02\x00\x60'
+                    and bitmap[5] == 255 and facts['time']['missing_count'] == 0
+                    and (width, height, scan, grid[14]) == (1440, 721, 0, 6)):
+                facts['map_profile'] = NOAA_PRECIPITATION_MAP_PROFILE
         offset = end
     if not fields:
         raise ValueError('empty GRIB2 file')
@@ -567,7 +583,7 @@ def _description(dataset, field):
     if profile in MAP_UNITS:
         crs = osr.SpatialReference(wkt=dataset.GetProjectionRef())
         if (crs.IsGeographic() and crs.GetSemiMajor() == crs.GetSemiMinor() == 6371229
-                and np.allclose(transform, (179.95, .1, 0, 90.05, 0, -.1), rtol=0, atol=1e-12)):
+                and np.allclose(transform, MAP_GRIDS[profile], rtol=0, atol=1e-12)):
             description['map_profile'] = profile
     return description
 
@@ -635,15 +651,17 @@ def _write_map_geotiff(access_plan, source_version, message, path):
             if profile not in MAP_UNITS:
                 raise ValueError('GRIB decoded grid conflicts with the map profile')
             values = source.GetRasterBand(1).ReadAsArray()
-            if values is None or values.shape != (1801, 3600) or not np.isfinite(values).all():
+            if values is None or values.shape != (field['height'], field['width']) or not np.isfinite(values).all():
                 raise ValueError('GRIB map field is incomplete')
-            if profile == PRECIPITATION_MAP_PROFILE and np.any(values < 0):
+            precipitation = profile != MAP_PROFILE
+            if precipitation and np.any(values < 0):
                 raise ValueError('GRIB precipitation field contains negative values')
             # A periodic longitude lookup and an unwrapped latitude lookup
             # choose the source pixel nearest each display pixel center.
             spacing = 360 / 4096
-            columns = np.floor((np.arange(4096) + .5) * spacing / .1 + .5).astype(int) % 3600
-            rows = np.floor((np.arange(2048) + .5) * spacing / .1 + .5).astype(int)
+            west, dx, _, north, _, dy = MAP_GRIDS[profile]
+            columns = np.floor(((-180 - west) + (np.arange(4096) + .5) * spacing) / dx).astype(int) % field['width']
+            rows = np.floor(((north - 90) + (np.arange(2048) + .5) * spacing) / -dy).astype(int)
             target = gdal.GetDriverByName('GTiff').Create(path, 4096, 2048, 1, gdal.GDT_Float32)
             if target is None:
                 raise ValueError('GRIB display grid could not be created')
@@ -651,7 +669,7 @@ def _write_map_geotiff(access_plan, source_version, message, path):
             target.SetGeoTransform((-180, spacing, 0, 90, 0, -spacing))
             band = target.GetRasterBand(1)
             band.SetUnitType(MAP_UNITS[profile])
-            if profile == PRECIPITATION_MAP_PROFILE:
+            if precipitation:
                 band.SetNoDataValue(float('nan'))
             if band.WriteArray(values[np.ix_(rows, columns)].astype('float32')) != 0:
                 raise ValueError('GRIB display grid could not be written')

@@ -209,6 +209,53 @@ def test_grib_precipitation_map_keeps_original_metres_and_valid_zero(tmp_path):
         FIXTURE.inspect_map_pixels(target.read_bytes(), child['name'], 'precipitation')
 
 
+def test_noaa_grib_map_preserves_distinct_intervals_and_source_units(tmp_path):
+    from operators.raster_compute import raster_to_cog
+
+    kind = 'noaa-precipitation'
+    raw = FIXTURE.map_source(ROOT, kind)
+    source = tmp_path / 'gfs.grib2'
+    source.write_bytes(raw)
+    version = 'sha256:' + sha256(raw).hexdigest()
+    plan = {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+        'kind': 'file', 'format': 'grib', 'access': {'method': 'mounted_path', 'path': str(source)},
+    }}
+    children = grib.OPERATORS['grib.inspect']['function'](access_plan=plan)['container']['children']
+    spec = FIXTURE.MAP_SOURCES[kind]
+    assert len(children) == len(spec['intervals']) == 2
+    for child, (start, end, hours) in zip(children, spec['intervals']):
+        assert child['native']['map_profile'] == spec['profile']
+        time = child['native']['message']['time']
+        assert (time['start_utc'], time['end_utc'], time['interval_length']) == (start, end, hours)
+        message = child['name']
+        target = tmp_path / (message + '.tif')
+        access = {**plan, 'target': {'kind': 'file', 'format': 'tiff', 'name': target.name,
+                                    'write_mode': 'replace', 'access': {'method': 'mounted_path', 'path': str(target)}}}
+        selection = {'source_version': version, 'message': message}
+        result = raster_to_cog(access, {'grib_map_selection': selection})
+        assert result['map_profile'] == spec['profile'] and result['grib_map_selection'] == selection
+        payload = target.read_bytes()
+        assert FIXTURE.inspect_map_pixels(payload, message, kind)['verified_pixels'] == 4096 * 2048
+        other = 'message-2' if message == 'message-1' else 'message-1'
+        with pytest.raises(AssertionError):
+            FIXTURE.inspect_map_pixels(payload, other, kind)
+
+    # A different NCEP process continues to qualify for the existing read-only
+    # slice, but cannot use the GFS map admission.
+    altered = bytearray(raw[:int.from_bytes(raw[8:16], 'big')])
+    product = 16 + 21 + 72
+    assert altered[product + 4] == 4 and altered[product + 13] == 96
+    altered[product + 13] = 0
+    source.write_bytes(altered)
+    alteration = grib.OPERATORS['grib.inspect']['function'](access_plan=plan)
+    assert 'map_profile' not in alteration['container']['children'][0]['native']
+    target.unlink()
+    with pytest.raises(ValueError, match='GRIB map'):
+        raster_to_cog(access, {'grib_map_selection': {
+            'source_version': 'sha256:' + sha256(altered).hexdigest(), 'message': 'message-1'}})
+    assert not target.exists()
+
+
 def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):
     docker=(ROOT/'engines/geopython-workflow/Dockerfile').read_text()
     smoke=docker.split("RUN python - <<'PYGRIB'\n",1)[1].split('\nPYGRIB',1)[0]

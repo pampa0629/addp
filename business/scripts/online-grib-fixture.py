@@ -384,6 +384,11 @@ MAP_SOURCES = {
     'precipitation': dict(key='grib-map/ecmwf-ifs-0p1-tp-00h-06h.grib2', size_bytes=1067597,
         sha256='774c7eeeb90b1cbebcdba504388abc4e04062fc6b614b6d683b6a123187f06e7',
         profile='ecmwf_ifs_01_precipitation/v1'),
+    'noaa-precipitation': dict(key='grib-map/' + NOAA_INTERVALS, size_bytes=709765,
+        sha256='3f6b645fe67ac2000a80a55b99b2c4ee59d86653a8e347bd5259bcafb95f7585',
+        profile='noaa_gfs_025_precipitation/v1', intervals=[
+            ['2026-11-17T00:00:00+00:00', '2026-11-17T09:00:00+00:00', 9],
+            ['2026-11-17T06:00:00+00:00', '2026-11-17T09:00:00+00:00', 3]]),
 }
 
 
@@ -393,8 +398,10 @@ def map_source(repository, kind):
         initial = (directory / 'ecmwf-ifs-20261117-2t-0p1-initial.grib2').read_bytes()
         forecast = (directory / 'ecmwf-ifs-20261117-instant-0p1.grib2').read_bytes()
         raw = initial + forecast[:int.from_bytes(forecast[8:16], 'big')]
-    else:
+    elif kind == 'precipitation':
         raw = (directory / ECMWF_HIGH_RES_PRECIPITATION).read_bytes()
+    else:
+        raw = (directory / NOAA_INTERVALS).read_bytes()
     source = MAP_SOURCES[kind]
     if len(raw) != source['size_bytes'] or hashlib.sha256(raw).hexdigest() != source['sha256']:
         raise ValueError('two-message GRIB fixture differs from the pinned original')
@@ -430,8 +437,23 @@ def inspect_map_pixels(raw, message, kind):
             assert float(band.ReadAsArray(2275, 2047, 1, 1).item()) == south
             return dict(proof, north_kelvin=north, south_kelvin=south,
                         equator_kelvin=float(west[1023, 0]))
-        assert kind == 'precipitation' and band.GetUnitType() == 'm'
         assert np.isnan(band.GetNoDataValue())
+        if kind == 'noaa-precipitation':
+            # All output cells independently mapped from the ecCodes 2.50.0
+            # raw grid using exact integer nearest-neighbor indices.
+            assert band.GetUnitType() == 'kg/m²' and band.DataType == gdal.GDT_Float32
+            values = band.ReadAsArray()
+            digest = hashlib.sha256(values.astype('<f4', copy=False).tobytes()).hexdigest()
+            expected = {
+                'message-1': ('b59d8e11d461a2b5299f013a7f78287d4d1afa6942b54e52e8e46aaa3881c87e', 3506812, 292.0, 369.125),
+                'message-2': ('021de7503a7a7865354737e10a82ab3dd1b17f3dc01a2af9e7c7d8263a66f977', 4858331, 134.5, 134.5),
+            }
+            zero_pixels = int(np.count_nonzero(values == 0))
+            sample = float(values[876, 3024])
+            assert (digest, zero_pixels, sample, float(values.max())) == expected[message]
+            return dict(proof, unit='kg/m²', zero_pixels=zero_pixels, missing_pixels=0,
+                        sample_kg_m2=sample, verified_pixels=values.size, pixels_sha256=digest)
+        assert kind == 'precipitation' and band.GetUnitType() == 'm'
         values = band.ReadAsArray()
         assert np.isfinite(values).all() and np.min(values) == 0
         zeros = int(np.count_nonzero(values == 0))
