@@ -323,7 +323,12 @@ func (s *EngineService) GetRuntimeDescriptor(id, tenantID uint) (*models.EngineR
 	if err := s.authorizeResourceAccess(engine, tenantID); err != nil {
 		return nil, err
 	}
-	return s.buildRuntimeDescriptor(engine)
+	descriptor, err := s.buildRuntimeDescriptor(engine)
+	if err != nil {
+		return nil, err
+	}
+	descriptor.Version = engine.Version
+	return descriptor, nil
 }
 
 func (s *EngineService) buildRuntimeDescriptor(engine *models.Engine) (*models.EngineRuntimeDescriptor, error) {

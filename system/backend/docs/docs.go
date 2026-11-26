@@ -12450,9 +12450,22 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "单项引擎描述及 System 登记版本 | Engine descriptor with its System record revision",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRuntimeDescriptor"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "version": {
+                                            "type": "integer",
+                                            "format": "int64"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {

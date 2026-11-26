@@ -264,7 +264,7 @@ func (h *EngineHandler) ListRuntimeDescriptors(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
-// @Success      200 {object} models.EngineRuntimeDescriptor
+// @Success      200 {object} models.EngineRuntimeDescriptor{version=int64} "单项引擎描述及 System 登记版本 | Engine descriptor with its System record revision"
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse

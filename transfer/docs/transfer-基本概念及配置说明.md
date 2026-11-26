@@ -292,6 +292,8 @@ Parquet writer 使用 `target.options.compression`；默认值、允许 codec、
 
 Agent Tool 与 SDK 只接入上述 HTTP 契约；`transfer.task.config.check` 的输入 Schema、SDK 映射与权限声明统一见 [Tool 契约](../../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)。System 签发与 Transfer 委托路由均按上述三项 Permission 执行 all-of 校验；完成当前主体校验后，由 Transfer 使用已有 Tenant Service 客户端读取租户绑定的控制面事实，不转发委托 token 给 Meta/System，不增加权限。
 
+预检分别读取当前租户的源、目标单项引擎描述，使用既有 `system.engine_descriptor.read`，以 System 登记修订号绑定预检报告。仅接受归本租户且生命周期为 `active` 的实例。已正式恢复的实例按恢复后的修订号检查，暂时离线仍可使用已登记能力及 Meta 快照完成定义检查。
+
 #### 报告与三态结果
 
 HTTP 200 返回 `addp.transfer_task_config_check/v1` 报告，`status` 为 `supported / unsupported / unknown`；字段诊断含 `code`、`check`、`config_path`、`source_field / target_field` 及 Provider 物理类型。`checked` 记录实际检查，`not_checked` 与 `runtime_checks_required` 列出剩余门禁。

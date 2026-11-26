@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	commonauth "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -44,10 +45,19 @@ func TestServiceRuntimeEngineDescriptorsAreTenantScopedAndMasked(t *testing.T) {
 	if payload.Data[1].RuntimeEndpoint != nil {
 		t.Fatalf("data engine exposed runtime endpoint: %#v", payload.Data[1].RuntimeEndpoint)
 	}
-	for _, forbidden := range []string{"connection_info", "secret-value", "tenant-8.internal", "other_database"} {
+	for _, forbidden := range []string{`"version"`, "connection_info", "secret-value", "tenant-8.internal", "other_database"} {
 		if strings.Contains(response.Body.String(), forbidden) {
 			t.Fatalf("descriptor response leaked %q: %s", forbidden, response.Body.String())
 		}
+	}
+	detail := httptest.NewRecorder()
+	router.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, "/api/v1/system/runtime/engine-descriptors/2", nil))
+	var engine models.EngineRuntimeDescriptor
+	if detail.Code != http.StatusOK || json.Unmarshal(detail.Body.Bytes(), &engine) != nil || engine.ID != 2 || engine.Version != 23 || engine.LifecycleState != models.EngineLifecycleActive || engine.ConnectionStatus != "offline" {
+		t.Fatalf("single descriptor status=%d id=%d version=%d", detail.Code, engine.ID, engine.Version)
+	}
+	if strings.Contains(detail.Body.String(), "connection_info") || strings.Contains(detail.Body.String(), "secret-value") {
+		t.Fatal("single descriptor exposed connection details")
 	}
 }
 
@@ -141,6 +151,8 @@ func newEngineDescriptorServiceRuntimeRouter(t *testing.T, authContext commonaut
 	if err != nil {
 		t.Fatal(err)
 	}
+	deleted := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	restored := deleted.Add(time.Hour)
 	capabilitiesJSON := models.JSONString(capabilities)
 	for _, engine := range []models.Engine{
 		{
@@ -152,7 +164,7 @@ func newEngineDescriptorServiceRuntimeRouter(t *testing.T, authContext commonaut
 			},
 		},
 		{
-			TenantID: &tenant3, Name: "PostgreSQL", EngineType: "postgresql",
+			TenantID: &tenant3, Name: "PostgreSQL", EngineType: "postgresql", Version: 23, DeletedAt: &deleted, RestoredAt: &restored, ConnectionStatus: "offline",
 			EngineOrigin: "general", LifecycleState: models.EngineLifecycleActive,
 			ConnectionInfo: models.ConnectionInfo{
 				"host": "database.internal", "port": 5432, "database": "business", "password": "secret-value",

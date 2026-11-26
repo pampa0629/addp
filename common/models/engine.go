@@ -190,6 +190,8 @@ type EngineRuntimeEndpoint struct {
 // EngineRuntimeDescriptor is System's masked control-plane projection for
 // runtime discovery. It intentionally has no connection_info field.
 type EngineRuntimeDescriptor struct {
+	// Version is the System record revision. Only the single-engine response includes it.
+	Version          int64                  `json:"version,omitempty" swaggerignore:"true"`
 	ID               uint                   `json:"id"`
 	Name             string                 `json:"name"`
 	EngineType       string                 `json:"engine_type"`

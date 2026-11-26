@@ -7,6 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,20 +18,22 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/transfer/internal/protection"
 )
 
 type configFactsStub struct {
-	engines            map[uint]*commonmodels.Engine
+	engines            map[uint]*commonmodels.EngineRuntimeDescriptor
 	items              map[uint]*commonmodels.MetaItem
 	calls              int
 	engineErr, metaErr error
 }
 
-func (f *configFactsStub) GetEngineForTenant(_ context.Context, tenantID, engineID uint) (*commonmodels.Engine, error) {
+func (f *configFactsStub) descriptor(_ context.Context, tenantID, engineID uint) (*commonmodels.EngineRuntimeDescriptor, error) {
 	f.calls++
 	if tenantID != 7 {
 		panic("wrong tenant")
@@ -50,21 +55,20 @@ func (f *configFactsStub) GetItemSnapshot(_ context.Context, tenantID, engineID,
 }
 func configCheckFixture(t *testing.T) (*TaskConfigCheckService, *configFactsStub, authorization.AuthContext, []byte) {
 	t.Helper()
-	tenant := uint(7)
 	now := time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC)
 	registered, _ := plugin.Get("postgresql")
 	caps, _ := plugin.MarshalEngineCapabilities(registered.Capabilities())
 	declared := commonmodels.JSONString(caps)
-	f := &configFactsStub{engines: map[uint]*commonmodels.Engine{}, items: map[uint]*commonmodels.MetaItem{}}
+	f := &configFactsStub{engines: map[uint]*commonmodels.EngineRuntimeDescriptor{}, items: map[uint]*commonmodels.MetaItem{}}
 	for id, name := range map[uint]string{1: "source", 2: "target"} {
-		f.engines[id] = &commonmodels.Engine{ID: id, TenantID: &tenant, EngineType: "postgresql", Version: 1, LifecycleState: "active", Capabilities: &declared, ConnectionInfo: commonmodels.ConnectionInfo{"password": "never-return-secret"}}
+		f.engines[id] = &commonmodels.EngineRuntimeDescriptor{ID: id, EngineType: "postgresql", Version: 1, LifecycleState: "active", Capabilities: &declared}
 		f.items[id] = &commonmodels.MetaItem{ID: id + 10, TenantID: 7, EngineID: id, ItemType: "table", Name: name, FullName: "synthetic." + name, ScannedAt: &now, ScannedDepth: "basic", Attributes: map[string]interface{}{
 			"type_info": map[string]interface{}{"table": datatype.TableInfoPayload(&datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeJSON, NativeType: "jsonb", Nullable: true}}})},
 		}}
 	}
 	subject := authtest.NewTenantUserAuthContext("7", "91", configCheckPermissions)
 	body := []byte(`{"name":"synthetic check","task_type":"sync","enabled":false,"auto_scan_metadata":false,"config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"},"source":{"locator":"addp://engine/1/path/synthetic/source?type=table","data_type":"table","representation":"native"},"target":{"parent_locator":"addp://engine/2/path/synthetic?type=schema","name":"target","data_type":"table","representation":"native","policy":{"apply_mode":"replace"}},"transforms":[{"type":"field_mapping","version":"v1","mode":"project","fields":[{"source":"payload","target":"payload","target_type":"json","nullable":true}]}]}}`)
-	return NewTaskConfigCheckService(f, f), f, subject, body
+	return NewTaskConfigCheckService(f.descriptor, f), f, subject, body
 }
 func checkFixtureReport(t *testing.T, svc *TaskConfigCheckService, subject authorization.AuthContext, body []byte) *TaskConfigCheckReport {
 	t.Helper()
@@ -854,10 +858,95 @@ func TestConfigCheckBindingUsesWireObjectsAndAllSnapshotFields(t *testing.T) {
 	if strings.Contains(string(encoded), "private default expression") {
 		t.Fatal("default expression leaked")
 	}
-	beforeEngine := after.Facts[0].EngineFactsHash
-	f.engines[1].Version++
-	if checkFixtureReport(t, svc, a, body).Facts[0].EngineFactsHash == beforeEngine {
-		t.Fatal("engine revision not bound")
+}
+
+func TestConfigCheckReadsOnlyTenantEngineDescriptors(t *testing.T) {
+	for _, id := range []uint{1, 2} {
+		for _, state := range []string{"active", "foreign", "builtin", "disabled", "deleting", "deleted", "wrong_id", "missing_version"} {
+			t.Run(strconv.Itoa(int(id))+"/"+state, func(t *testing.T) {
+				_, facts, subject, body := configCheckFixture(t)
+				const path = "/api/v1/system/runtime/engine-descriptors/"
+				var paths []string
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					paths = append(paths, r.URL.Path)
+					if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer tenant-7" || r.Header.Get("X-Tenant-ID") != "" {
+						t.Errorf("unexpected descriptor request %s %s", r.Method, r.URL)
+					}
+					n, err := strconv.ParseUint(strings.TrimPrefix(r.URL.Path, path), 10, 32)
+					d := facts.engines[uint(n)]
+					if err != nil || d == nil {
+						t.Errorf("unexpected engine path %s", r.URL.Path)
+						w.WriteHeader(http.StatusNotFound)
+						return
+					}
+					item := *d
+					if uint(n) == id {
+						switch state {
+						case "foreign":
+							w.WriteHeader(http.StatusForbidden)
+							return
+						case "builtin":
+							item.IsBuiltin = true
+						case "disabled", "deleting", "deleted":
+							item.LifecycleState = state
+						case "wrong_id":
+							item.ID = 99
+						case "missing_version":
+							item.Version = 0
+						}
+					}
+					_ = json.NewEncoder(w).Encode(item)
+				}))
+				defer server.Close()
+				client := commonclient.NewSystemServiceClient(server.URL, recommendationTokenSource{}, server.Client())
+				svc := NewTaskConfigCheckService(protection.EngineDescriptorLookup(client), facts)
+				result, err := svc.Check(context.Background(), subject, body)
+				expected := []string{path + "1", path + "2"}
+				wantSnapshots := 2
+				if state == "active" {
+					if err != nil || result == nil {
+						t.Fatalf("active preflight: %v", err)
+					}
+				} else {
+					if result != nil || !errors.Is(err, ErrConfigCheckDependency) {
+						t.Fatalf("invalid descriptor: result=%v err=%v", result, err)
+					}
+					expected = expected[:id]
+					wantSnapshots = int(id) - 1
+				}
+				if !reflect.DeepEqual(paths, expected) || facts.calls != wantSnapshots {
+					t.Fatalf("paths=%v snapshots=%d, want %v and %d", paths, facts.calls, expected, wantSnapshots)
+				}
+			})
+		}
+	}
+}
+
+func TestConfigCheckBindsSourceAndTargetRevisionsWhileOffline(t *testing.T) {
+	for index, role := range []string{"source", "target"} {
+		t.Run(role, func(t *testing.T) {
+			svc, facts, subject, body := configCheckFixture(t)
+			engine := facts.engines[uint(index+1)]
+			engine.ConnectionStatus = "offline"
+			before := checkFixtureReport(t, svc, subject, body)
+			engine.Version++
+			after := checkFixtureReport(t, svc, subject, body)
+			if len(before.Facts) != 2 || len(after.Facts) != 2 {
+				t.Fatal("offline preflight requires facts for both endpoints")
+			}
+			changed := after.Facts[index]
+			if changed.Role != role || changed.EngineVersion != engine.Version || changed.EngineFactsHash == before.Facts[index].EngineFactsHash {
+				t.Fatalf("%s revision missing from engine facts", role)
+			}
+			if !reflect.DeepEqual(before.Facts[1-index], after.Facts[1-index]) || before.ConfigHash != after.ConfigHash || before.Status != after.Status {
+				t.Fatal("engine revision changed unrelated facts or the definition check")
+			}
+			// Hold observation time fixed so it cannot account for a new binding.
+			after.ObservedAt = before.ObservedAt
+			if finishConfigCheck(after).BindingHash == before.BindingHash {
+				t.Fatal("report binding did not change with the engine revision")
+			}
+		})
 	}
 }
 

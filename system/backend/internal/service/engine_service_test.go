@@ -1195,6 +1195,8 @@ func TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deletedAt := time.Now().UTC()
+	stored.DeletedAt = &deletedAt
 	stored.LifecycleState = models.EngineLifecycleDeleted
 	if err := repo.Update(stored); err != nil {
 		t.Fatal(err)
@@ -1220,6 +1222,12 @@ func TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress(t *testing.T) {
 	}
 	if stored.ConnectionStatus != models.EngineConnectionOffline || stored.LastCheckAt == nil {
 		t.Fatalf("restored engine observation was not persisted: %#v", stored)
+	}
+	descriptor, err := service.GetRuntimeDescriptor(restored.ID, tenantID)
+	if err != nil || stored.DeletedAt == nil || stored.RestoredAt == nil ||
+		descriptor.ID != restored.ID || descriptor.Version != stored.Version || descriptor.IsBuiltin ||
+		descriptor.LifecycleState != models.EngineLifecycleActive || descriptor.ConnectionStatus != models.EngineConnectionOffline {
+		t.Fatalf("restored engine descriptor=%+v error=%v", descriptor, err)
 	}
 	stored.LifecycleState = models.EngineLifecycleDeleted
 	if err := repo.Update(stored); err != nil {

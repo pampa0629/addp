@@ -22,12 +22,12 @@ import (
 
 type configCheckRouteFacts struct{ calls int }
 
-func (f *configCheckRouteFacts) GetEngineForTenant(_ context.Context, tenant, id uint) (*commonmodels.Engine, error) {
+func (f *configCheckRouteFacts) descriptor(_ context.Context, tenant, id uint) (*commonmodels.EngineRuntimeDescriptor, error) {
 	f.calls++
 	pg, _ := plugin.Get("postgresql")
 	caps, _ := plugin.MarshalEngineCapabilities(pg.Capabilities())
 	declared := commonmodels.JSONString(caps)
-	return &commonmodels.Engine{ID: id, TenantID: &tenant, EngineType: "postgresql", Version: 1, LifecycleState: "active", Capabilities: &declared}, nil
+	return &commonmodels.EngineRuntimeDescriptor{ID: id, EngineType: "postgresql", Version: 1, LifecycleState: "active", Capabilities: &declared}, nil
 }
 func (f *configCheckRouteFacts) GetItemSnapshot(context.Context, uint, uint, uint, string) (*commonmodels.MetaItem, error) {
 	f.calls++
@@ -108,7 +108,7 @@ func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 			if name == "dependency_failure" {
 				svc.SetTaskConfigChecker(service.NewTaskConfigCheckService(nil, nil))
 			} else {
-				svc.SetTaskConfigChecker(service.NewTaskConfigCheckService(facts, facts))
+				svc.SetTaskConfigChecker(service.NewTaskConfigCheckService(facts.descriptor, facts))
 			}
 			router := SetupRouter(NewCleanupResultHandler(nil), svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 			config := validTransferTaskHandlerConfig()

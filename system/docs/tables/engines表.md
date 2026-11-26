@@ -736,6 +736,8 @@ curl -H "Authorization: Bearer ${TENANT_SERVICE_ACCESS_TOKEN}" \
   "http://localhost:8180/api/v1/system/runtime/engine-descriptors?engine_family=workflow&page=1&page_size=100"
 ```
 
+单项读取 `GET /api/v1/system/runtime/engine-descriptors/{id}` 同时返回该条 System 引擎登记记录的正整数 `version`，供下游绑定本次读取的控制面事实。列表省略此字段。
+
 响应只包含当前 Tenant 可见的脱敏 Runtime Descriptor；调用模块通过 Common Engine Provider 消费，不能按固定端口拼接 Runtime endpoint。
 
 ---

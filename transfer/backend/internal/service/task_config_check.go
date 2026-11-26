@@ -24,6 +24,7 @@ import (
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/addp/transfer/internal/protection"
 )
 
 var ErrConfigCheckDependency = errors.New("task config check dependency unavailable")
@@ -31,19 +32,16 @@ var ErrConfigCheckForbidden = errors.New("task config check requires tenant user
 
 var configCheckPermissions = []string{"transfer.task.create", "meta.catalog.read", "system.engine.read"}
 
-type ConfigCheckEngineFacts interface {
-	GetEngineForTenant(context.Context, uint, uint) (*commonmodels.Engine, error)
-}
 type ConfigCheckMetaFacts interface {
 	GetItemSnapshot(context.Context, uint, uint, uint, string) (*commonmodels.MetaItem, error)
 }
 
 type TaskConfigCheckService struct {
-	engines  ConfigCheckEngineFacts
+	engines  protection.EngineDescriptorGetter
 	metadata ConfigCheckMetaFacts
 }
 
-func NewTaskConfigCheckService(engines ConfigCheckEngineFacts, metadata ConfigCheckMetaFacts) *TaskConfigCheckService {
+func NewTaskConfigCheckService(engines protection.EngineDescriptorGetter, metadata ConfigCheckMetaFacts) *TaskConfigCheckService {
 	return &TaskConfigCheckService{engines: engines, metadata: metadata}
 }
 func (s *TaskService) SetTaskConfigChecker(checker *TaskConfigCheckService) {
@@ -358,8 +356,8 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 	if s == nil || s.engines == nil || s.metadata == nil {
 		return nil, nil, fact, nil, ErrConfigCheckDependency
 	}
-	engine, err := s.engines.GetEngineForTenant(ctx, tenantID, locator.EngineID)
-	if err != nil || engine == nil || engine.ID != locator.EngineID || engine.TenantID == nil || *engine.TenantID != tenantID || engine.DeletedAt != nil || engine.LifecycleState != "active" {
+	engine, err := s.engines(ctx, tenantID, locator.EngineID)
+	if err != nil || engine == nil || engine.ID != locator.EngineID || engine.IsBuiltin || engine.LifecycleState != commonmodels.EngineLifecycleActive || engine.Version < 1 {
 		return nil, nil, fact, nil, ErrConfigCheckDependency
 	}
 	fact.EngineType, fact.EngineVersion = engine.EngineType, engine.Version
