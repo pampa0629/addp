@@ -51,11 +51,11 @@ hosted_start_platform_infra
 run_logged python3 -m business.scripts.online-vector-pmtiles-fixture start
 application_owned=1
 # Owners install their first protection projection from Security before data reads.
-hosted_start_native_modules -security -develop -manager -monitor
+hosted_start_native_modules -security -develop -manager -monitor -service
 start_online_geopython_runtime "$RUNTIME_TAG"
 run_logged python3 -m business.scripts.online-vector-pmtiles-fixture seed
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite vector-pmtiles-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite vector-pmtiles-workflow --wait-protection-owners develop,manager,service --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 for role in source target; do
   run_logged python3 scripts/test/online-engine-registration.py \

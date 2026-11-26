@@ -1629,7 +1629,7 @@ func TestVectorPMTilesIdentityHasExactConsumerPermissions(t *testing.T) {
 	actual, err := suitePermissions("vector-pmtiles-workflow")
 	expected := []string{"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
 		"system.execution_authorization.create", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
-		"meta.lineage.read", "monitor.execution.read", "manager.data_item.read", "manager.derived_artifact.read"}
+		"meta.lineage.read", "monitor.execution.read", "manager.data_item.read", "manager.derived_artifact.read", "service.definition.create", "service.definition.read", "service.definition.update"}
 	if err != nil || !slices.Equal(actual, expected) || !needsEngineProvisioner("vector-pmtiles-workflow") {
 		t.Fatal("PMTiles fixture must grant exactly the ordinary consumer permissions plus an independent provisioner")
 	}

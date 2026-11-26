@@ -132,7 +132,7 @@ class PMTilesWorkflowTest(unittest.TestCase):
             self.assertEqual([phase['target']['id'] for phase in report['phases']], [9,9])
 
     def test_suite_identity_includes_only_actual_scene_permissions(self):
-        self.assertEqual(scene.PERMISSIONS - scene.raster.PERMISSIONS, {'manager.data_item.read','manager.derived_artifact.read'})
+        self.assertEqual(scene.PERMISSIONS - scene.raster.PERMISSIONS, {'manager.data_item.read','manager.derived_artifact.read', 'service.definition.create', 'service.definition.read', 'service.definition.update'})
         self.assertNotIn('develop.task.create', scene.PERMISSIONS)
         self.assertNotIn('manager.derived_artifact.create', scene.PERMISSIONS)
 

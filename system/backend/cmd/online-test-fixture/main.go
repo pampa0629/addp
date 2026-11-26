@@ -376,7 +376,7 @@ var rasterWorkflowPermissions = []string{
 var vectorPMTilesPermissions = []string{
 	"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
 	"system.execution_authorization.create", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
-	"meta.lineage.read", "monitor.execution.read", "manager.data_item.read", "manager.derived_artifact.read",
+	"meta.lineage.read", "monitor.execution.read", "manager.data_item.read", "manager.derived_artifact.read", "service.definition.create", "service.definition.read", "service.definition.update",
 }
 
 var readWorkflowConsumerPermissions = []string{

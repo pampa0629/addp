@@ -109,7 +109,7 @@ class HostedPMTilesGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
-        for step in ('pmtiles-fixture:start', 'pmtiles-fixture:seed', 'start:-develop', 'start:-manager', 'start:-monitor', 'start:-security',
+        for step in ('pmtiles-fixture:start', 'pmtiles-fixture:seed', 'start:-develop', 'start:-manager', 'start:-monitor', 'start:-security', 'start:-service',
                      'make:build-images IMAGE_BUILD_ARGS=--services geopython-workflow-engine --tag pmtiles-online --verify --jobs 1',
                      'docker-run:addp-pmtiles-online-runtime', 'make:test-online ONLINE_SUITE=vector-pmtiles-workflow',
                      'application-stop', 'pmtiles-fixture:stop', 'docker-rm:addp-pmtiles-registry', 'infra-down'):
@@ -117,7 +117,7 @@ class HostedPMTilesGateTest(unittest.TestCase):
         self.assertNotIn('start:-geopython-workflow', trace)
         self.assertIn('start:-security', trace)
         self.assertLess(trace.index('start:-security'), trace.index('start:-develop'))
-        self.assertIn('--wait-protection-owners develop,manager', trace)
+        self.assertIn('--wait-protection-owners develop,manager,service', trace)
         self.assertLess(trace.index('identity:'), trace.index('make:test-online'))
         self.assertIn('docker-rm:addp-pmtiles-online-runtime', trace)
         self.assertLess(trace.index('application-stop'), trace.index('pmtiles-fixture:stop'))
@@ -130,12 +130,13 @@ class HostedPMTilesGateTest(unittest.TestCase):
     def test_preflight_requires_security_with_the_same_build_identity(self):
         gate = importlib.import_module('scripts.test.online-gate')
         self.assertIn(('security', 'SECURITY_URL'), gate.SUITES['vector-pmtiles-workflow'].services)
+        self.assertIn(('service', 'SERVICE_URL'), gate.SUITES['vector-pmtiles-workflow'].services)
 
     def test_protection_readiness_failure_prevents_business_and_still_cleans(self):
         result = self.run_gate(ADDP_TEST_IDENTITY_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
         trace = self.host.trace.read_text()
-        self.assertIn('--wait-protection-owners develop,manager', trace)
+        self.assertIn('--wait-protection-owners develop,manager,service', trace)
         self.assertNotIn('make:test-online', trace)
         for step in ('application-stop', 'pmtiles-fixture:stop', 'infra-down'):
             self.assertIn(step, trace)

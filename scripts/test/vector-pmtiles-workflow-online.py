@@ -13,7 +13,7 @@ import urllib.parse
 raster = importlib.import_module('scripts.test.raster-workflow-online')
 support = raster.support
 obj, array, positive, SuiteError = raster.obj, raster.array, raster.positive, raster.SuiteError
-PERMISSIONS = raster.PERMISSIONS | {'manager.data_item.read', 'manager.derived_artifact.read'}
+PERMISSIONS = raster.PERMISSIONS | {'manager.data_item.read', 'manager.derived_artifact.read', 'service.definition.create', 'service.definition.read', 'service.definition.update'}
 SUITE = 'vector-pmtiles-workflow'
 
 

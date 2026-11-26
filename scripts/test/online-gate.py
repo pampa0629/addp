@@ -121,7 +121,7 @@ SUITES: Mapping[str, Suite] = {
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
                   ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
-                  ("security", "SECURITY_URL")),
+                  ("security", "SECURITY_URL"), ("service", "SERVICE_URL")),
     ),
     "raster-contour-persistence": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-contour-persistence-online"),
