@@ -163,6 +163,8 @@
 
 30 类双语 60 次提交分为 Develop 入口 10 次和 focal 节点 50 次，共1251全检；18COG／源／冻结预期及SHA归档，六仿射CRS／Float64NaN／布局及实际nearest核。数值极限、读块大小／注入仅Native。
 
+**Hosted 首跑失败。** `c5117bb0a` 的合法同路径 NFS 根目录命中 Runtime 临时目录残留检查，在首个业务用例前停止，0 保存链、0 双语拒绝。5 笔授权均已撤销并复核不可见，基础设施零残留。夹具只排除当前已验证的 NFS 根目录，仍拒绝其他匹配的残留，并保留 worker 原始错误。修复的本地 Native 76 项及标准 Runner 通过，正式复验待协调。 [首跑 Job](https://github.com/pampa0629/addp/actions/runs/45838196659/job/139972579555) · [原始归档](https://github.com/pampa0629/addp/actions/runs/45838196659/artifacts/15131262706)
+
 ## 米制圆形邻域统计独立验收
 
 `raster-focal-circle-persistence`；`make test-raster-focal-circle-online-runner`；沿[邻域共同要求](#邻域与-idw-专项共同要求)。18COG涵九非加权方法，3/4米步长半径5及邻接浮点、P50＝median、两英尺／仅中心／重分类／无效／方窗对照；519×515跨轴、薄行列／常量单样本／零负／NoData/mask/alpha、raw scale-offset。
@@ -171,11 +173,12 @@
 
 扩加权后原两套圆窗的三旧方法拒绝，改为加权mean尺寸错、weighted stddev全零、weighted sum圆外非零，旧固定证据不追认新版本。原十二方窗方法不改，准备不算Hosted／UI／容量。
 
-**Hosted 待验。** 本地用两套原夹具和 Runtime 参数描述调用 Develop 校验，确认每套有 16 类参数类型错误在提交入口截获。北向矩形 100 次双语提交按入口 32 次、focal 节点 68 次核验，正交旋转 106 次按入口 32 次、focal 节点 74 次核验。入口核准确 HTTP 400、字段路径、提交语言及无新增执行，节点核当前执行的原始诊断。方窗及两套圆窗夹具均已按公开回执核对执行身份，租户在隔离只读证据中核验，入口拒绝后核隔离执行清单。两套均保留原 COG 矩阵、成果全检、零副作用和 600 秒预算。固定提交 `6da5e10aa` 的 Native 覆盖两套完整双语节点矩阵。 [Linux 作业](https://github.com/pampa0629/addp/actions/runs/45768411547/job/139734881639)
+**固定 Hosted 通过。** 北向矩形圆窗和正交旋转圆窗均使用 `c5117bb0a`。入口拒绝核准确 HTTP 400、字段路径、提交语言和无新增执行，节点拒绝核当前执行诊断。离线重读两套共 37 份 COG 的完整像元、掩膜、仿射、CRS、概览和布局，核三方正整数大小、精确扫描、本次血缘、源与已保存成果不变。首次扫描及限时元数据授权由隔离准备账号执行，普通执行 User 使用原 12 项权限。在各自 600 秒内逐笔撤权、核撤后不可见及全部清理。
 
-夹具修正提交 `8276ea44f` 在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 执行标准 `make test-geopython-workflow`，22,111 项通过、141 条警告、1561.88 秒，0 失败、跳过或筛除。独立 NetCDF 专项 109 项通过。`make test-execution-online-ci-runner` 通过，覆盖共享登记、分发及 38 项加权圆窗回归。同版本 Platform consistency 因 PG 固定源码检查的 3 项断言失败。三套邻域的独立 Hosted 保持待验。 [Linux 全量](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194912) · [Runner](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194781) · [Platform](https://github.com/pampa0629/addp/actions/runs/45781016360/job/139776194608)
+- 北向矩形圆窗完成 18 条保存链、32 次双语入口拒绝、68 次双语节点拒绝、1,971 次成果全检，逐笔核销 40 笔授权，业务 477.763 秒。 [Job](https://github.com/pampa0629/addp/actions/runs/45838178776/job/139972517941) · [归档](https://github.com/pampa0629/addp/actions/runs/45838178776/artifacts/15130414159)
+- 正交旋转圆窗完成 19 条保存链、32 次双语入口拒绝、74 次双语节点拒绝、2,204 次成果全检，逐笔核销 45 笔授权，业务 521.097 秒。 [Job](https://github.com/pampa0629/addp/actions/runs/45838186904/job/139972545072) · [归档](https://github.com/pampa0629/addp/actions/runs/45838186904/artifacts/15130683129)
 
-北向矩形圆窗、正交旋转圆窗和 7×7 方窗共用隔离准备账号。该账号只做首次精确源扫描和本轮限时元数据读取授权。普通 User 仍用原 12 项权限提交工作流。各套在原 600 秒内预留 45 秒，逐笔撤销、复核撤后不可见并清理校验夹具。三套实际 Hosted 均待验。
+同一提交在 Ubuntu 24.04 x86_64／GDAL 3.8.4 执行标准 `make test-geopython-workflow`，22,111 项通过、141 条警告、1,567.03 秒，另有 NetCDF 专项 109 项通过。 [固定 Linux 全量](https://github.com/pampa0629/addp/actions/runs/45837177733/job/139969015113)
 
 ## 正交旋转网格米制圆形邻域统计独立验收
 

@@ -205,15 +205,14 @@ def test_physical_corruption_is_rejected(results, tmp_path, fault):
         f.worker('verify', dest, arguments)
 
 
-def test_worker_stdin_is_repository_independent_and_frozen_scope_cleans(results, tmp_path):
+def test_worker_stdin_is_repository_independent_and_frozen_scope_cleans(tmp_path):
     script = Path(f.__file__).read_bytes()
     sha = hashlib.sha256(script).hexdigest()
-    root = (tmp_path / 'owned').resolve()
+    scratch = tmp_path.resolve()
+    root = scratch / 'addp-raster-focal-square-seven-owned'
     root.mkdir()
     (root / 'outputs').mkdir()
     (root / '.addp-online-owner').write_text(f.PREFIX + '-123-1')
-    scratch = tmp_path / 'scratch'
-    scratch.mkdir()
     env = {**os.environ, 'TMPDIR': str(scratch)}
 
     def call(action, *names):
@@ -232,6 +231,12 @@ def test_worker_stdin_is_repository_independent_and_frozen_scope_cleans(results,
     assert baseline.returncode == 0, baseline.stderr
     anchor = json.loads(baseline.stdout)['oracle_sha256']
     assert call('verify', anchor, sha).returncode == 0
+    residual = scratch / 'addp-raster-execution-leftover'
+    residual.mkdir()
+    failure = call('verify', anchor, sha)
+    assert failure.returncode == 1
+    assert b'FixtureError: Runtime execution workspace residual' in failure.stderr
+    residual.rmdir()
     assert call('verify', anchor, 'b' * 64).returncode != 0
     (root / '.addp-online-owner').write_text(f.PREFIX + '-124-1')
     assert call('verify', anchor, sha).returncode != 0

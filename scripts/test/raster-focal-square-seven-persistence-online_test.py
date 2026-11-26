@@ -3,6 +3,7 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 import tempfile
 import time
@@ -100,6 +101,14 @@ class PublicReceiptClient(prior.Client):
 
 
 class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
+    def test_runtime_worker_reports_its_stderr(self):
+        failure = subprocess.CalledProcessError(
+            1, ['docker', 'exec'], stderr='Seven-pixel square fixture failed: FixtureError: Runtime execution workspace residual\n'
+        )
+        with patch.object(m.fixture, 'run_runtime_worker', side_effect=failure):
+            with self.assertRaisesRegex(m.fixture.FixtureError, 'oracle worker exited 1: .*Runtime execution workspace residual'):
+                m.fixture.runtime_worker('oracle', Path('/tmp/owned'))
+
     def setUp(self):
         work = tempfile.TemporaryDirectory()
         self.addCleanup(work.cleanup)

@@ -567,7 +567,8 @@ def worker(action, root, names):
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != anchor:
         raise FixtureError('oracle cache hash changed')
-    if list(Path(tempfile.gettempdir()).glob('addp-raster-*')):
+    # The same-path NFS bind lives in the Runtime's temporary directory in Hosted.
+    if any(candidate != root for candidate in Path(tempfile.gettempdir()).resolve().glob('addp-raster-*')):
         raise FixtureError('Runtime execution workspace residual')
     with np.load(io.BytesIO(data), allow_pickle=False) as expected:
         if (
@@ -586,7 +587,10 @@ def worker(action, root, names):
 
 
 def runtime_worker(action, root, names=()):
-    return run_runtime_worker(command, RUNTIME, SUITE, Path(__file__), action, root, names)
+    try:
+        return run_runtime_worker(command, RUNTIME, SUITE, Path(__file__), action, root, names)
+    except subprocess.CalledProcessError as error:
+        raise FixtureError(f'{action} worker exited {error.returncode}: {error.stderr.strip()}') from error
 
 
 def main(action):
