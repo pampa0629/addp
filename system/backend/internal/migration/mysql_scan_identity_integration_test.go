@@ -326,4 +326,65 @@ func testMySQLExecutionAuthorization(t *testing.T, db *gorm.DB, tenantID, adminI
 		t.Fatalf("expired authorization error = %v, want unavailable", err)
 	}
 	t.Log("active authorization accepted; revoked and naturally expired authorizations rejected")
+	t.Run("LeaseExpiryPrecision", func(t *testing.T) {
+		testMySQLExecutionAuthorizationLeaseClock(t, db, issued)
+	})
+}
+
+func testMySQLExecutionAuthorizationLeaseClock(t *testing.T, db *gorm.DB, issued *iam.IssuedExecutionAuthorization) {
+	t.Helper()
+	ctx := t.Context()
+	if err := db.WithContext(ctx).Connection(func(conn *gorm.DB) error {
+		// Pin just this test session so both probes see an expiry in the same second.
+		if err := conn.Exec("SET timestamp = 1795659000.750000").Error; err != nil {
+			return err
+		}
+		defer func() {
+			if err := conn.Exec("SET timestamp = DEFAULT").Error; err != nil {
+				t.Errorf("restore test database session clock: %v", err)
+			}
+		}()
+		parentID, childID, leaseToken := uuid.New(), uuid.New(), uuid.New()
+		const attempt = 1
+		if err := conn.Exec(`INSERT INTO common.task_executions
+			(tenant_id,execution_id,module,task_type,status,trigger_type,actor_principal_id,actor_tenant_membership_id,issued_authorization_version,created_at,updated_at)
+			VALUES (?,?,'orchestrator','workflow','running','manual',?,?,?,NOW(6),NOW(6))`,
+			issued.TenantID, parentID, issued.ActorPrincipalID, issued.TenantMembershipID, issued.IssuedAuthorizationVersion).Error; err != nil {
+			return err
+		}
+		if err := conn.Exec(`INSERT INTO common.task_executions
+			(tenant_id,execution_id,module,task_type,status,trigger_type,actor_principal_id,actor_tenant_membership_id,issued_authorization_version,
+			 parent_execution_id,attempt,lease_token,lease_expires_at,created_at,updated_at)
+			VALUES (?,?,'quality','quality_plan','running','manual',?,?,?,?,?,?,TIMESTAMPADD(MICROSECOND,100000,NOW(6)),NOW(6),NOW(6))`,
+			issued.TenantID, childID, issued.ActorPrincipalID, issued.TenantMembershipID, issued.IssuedAuthorizationVersion,
+			parentID, attempt, leaseToken).Error; err != nil {
+			return err
+		}
+		leaseAttempt := attempt
+		authorization := &iam.ExecutionAuthorization{
+			ExecutionID: childID, TenantID: issued.TenantID, Audience: "quality",
+			SourceExecutionAttempt: &leaseAttempt, SourceExecutionLeaseToken: &leaseToken,
+			ActorPrincipalID: issued.ActorPrincipalID, TenantMembershipID: issued.TenantMembershipID,
+			IssuedAuthorizationVersion: issued.IssuedAuthorizationVersion,
+		}
+		repo := iam.NewRepository(conn)
+		if _, err := repo.GetExecutionAuthorizationProvenance(ctx, parentID, childID, "quality", attempt, leaseToken); err != nil {
+			t.Fatalf("unexpired lease did not permit deriving authorization: %v", err)
+		}
+		if current, err := repo.ExecutionAuthorizationLeaseCurrent(ctx, authorization); err != nil || !current {
+			t.Fatalf("unexpired lease current=%t, error=%v", current, err)
+		}
+		if err := conn.Exec("UPDATE common.task_executions SET lease_expires_at=TIMESTAMPADD(MICROSECOND,-250000,NOW(6)) WHERE execution_id=?", childID).Error; err != nil {
+			return err
+		}
+		if _, err := repo.GetExecutionAuthorizationProvenance(ctx, parentID, childID, "quality", attempt, leaseToken); !errors.Is(err, commonapi.ErrNotFound) {
+			t.Errorf("expired lease provenance error=%v, want not found", err)
+		}
+		if current, err := repo.ExecutionAuthorizationLeaseCurrent(ctx, authorization); err != nil || current {
+			t.Errorf("expired lease current=%t, error=%v, want false and no error", current, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }

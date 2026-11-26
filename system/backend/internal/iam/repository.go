@@ -567,7 +567,7 @@ func (r *Repository) ExecutionAuthorizationLeaseCurrent(
 		return false, commonapi.ErrBadRequest
 	}
 	var current bool
-	err := r.db.WithContext(ctx).Raw(`
+	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT EXISTS (
 			SELECT 1
 			FROM common.task_executions child
@@ -580,14 +580,14 @@ func (r *Repository) ExecutionAuthorizationLeaseCurrent(
 			  AND child.status = 'running'
 			  AND child.attempt = ?
 			  AND child.lease_token = ?
-			  AND child.lease_expires_at > NOW()
+			  AND child.lease_expires_at > %s
 			  AND parent.module = 'orchestrator'
 			  AND parent.status = 'running'
 			  AND child.actor_principal_id = ?
 			  AND child.actor_tenant_membership_id = ?
 			  AND child.issued_authorization_version = ?
 		)
-	`, authorization.ExecutionID, authorization.TenantID, authorization.Audience,
+	`, r.statementTimeSQL()), authorization.ExecutionID, authorization.TenantID, authorization.Audience,
 		*authorization.SourceExecutionAttempt, *authorization.SourceExecutionLeaseToken,
 		authorization.ActorPrincipalID, authorization.TenantMembershipID,
 		authorization.IssuedAuthorizationVersion).Scan(&current).Error
@@ -762,7 +762,7 @@ func (r *Repository) GetExecutionAuthorizationProvenance(
 	executionStatePredicate := "child.status = 'pending'"
 	queryArgs := []interface{}{parentExecutionID, executionID, audience}
 	if hasAttempt {
-		executionStatePredicate = "child.status = 'running' AND child.attempt = ? AND child.lease_token = ? AND child.lease_expires_at > NOW()"
+		executionStatePredicate = "child.status = 'running' AND child.attempt = ? AND child.lease_token = ? AND child.lease_expires_at > " + r.statementTimeSQL()
 		queryArgs = append(queryArgs, attempt, leaseToken)
 	}
 	var provenance ExecutionAuthorizationProvenance

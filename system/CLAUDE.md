@@ -46,7 +46,7 @@ Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与
 
 MySQL 的 System 安装入口同时准备租户邀请的待处理邮箱唯一约束、终态不可变和历史保留约束。邀请到期与逐条审计由 System 在同一事务内完成，部署账号和运行账号沿用平台约定。用户自行绑定 TOTP 时，PG 和 MySQL 均保存加密登记、校验原会话，并在一次性消费登记后将会话替换为相同租户的 AAL2 会话。
 
-MySQL 的 System 安装入口准备通用执行授权及引擎访问明细，并核验独立版本 `system_execution_authorization`。System 在同一事务内写入授权、引擎明细并封存、追加签发审计。执行进程消费时重新检查原主体、当前权限、有效期和撤销状态。绑定 Manager 源读取、Develop 文件、Notebook、专业清理或 Ontology 内部任务的专用授权仍需各自的 MySQL 守卫。实库门禁沿用 `make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-install'`。
+MySQL 的 System 安装入口准备通用执行授权及引擎访问明细，并核验独立版本 `system_execution_authorization`。System 在同一事务内写入授权、引擎明细并封存、追加签发审计。执行进程消费时重新检查原主体、当前权限、有效期和撤销状态。编排子任务的签发和消费均用数据库语句时间核对当前租约，MySQL 比较保留微秒精度。绑定 Manager 源读取、Develop 文件、Notebook、专业清理或 Ontology 内部任务的专用授权仍需各自的 MySQL 守卫。实库门禁沿用 `make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test platform-system-install'`。
 
 ## 项目概述
 

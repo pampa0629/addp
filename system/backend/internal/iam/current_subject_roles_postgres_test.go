@@ -29,8 +29,9 @@ func testCurrentSubjectRoles(t *testing.T, ctx context.Context, db *gorm.DB, tok
 		if err := tx.Exec(`INSERT INTO system.roles (tenant_id,role_key,name,role_type,allowed_scope_types,allowed_principal_types,immutable,created_by_principal_id) VALUES (?,'custom.self_role_probe','Self role probe','tenant_custom',ARRAY['tenant'],ARRAY['user'],false,?)`, tenantID, principalID).Error; err != nil {
 			t.Fatal(err)
 		}
-		deadline := time.Now().Add(1500 * time.Millisecond)
-		insertRoleAssignment(t, tx, principalID, "custom.self_role_probe", "tenant", &tenantID, nil, nil, time.Now().Add(-time.Minute), &deadline, "manual")
+		clock := testFixtureDatabaseClock(t, tx)
+		deadline := clock().Add(1500 * time.Millisecond)
+		insertRoleAssignment(t, tx, principalID, "custom.self_role_probe", "tenant", &tenantID, nil, nil, clock().Add(-time.Minute), &deadline, "manual")
 		if _, err := svc.ResolveCurrentSubjectRoles(ctx, token); err == nil {
 			t.Fatal("old token survived changed authorization version")
 		}
@@ -42,7 +43,7 @@ func testCurrentSubjectRoles(t *testing.T, ctx context.Context, db *gorm.DB, tok
 		if err != nil {
 			t.Fatal(err)
 		}
-		selection, err := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: principalID, Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: time.Now()}})
+		selection, err := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: principalID, Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: clock()}})
 		if err != nil || selection.Session == nil {
 			t.Fatalf("fresh session: %v", err)
 		}
@@ -69,10 +70,10 @@ func testCurrentSubjectRoles(t *testing.T, ctx context.Context, db *gorm.DB, tok
 				t.Fatal("functional AuthContext contract was broadened")
 			}
 		}
-		if err := roles.ValidateFor(current, time.Now()); err != nil {
+		if err := roles.ValidateFor(current, clock()); err != nil {
 			t.Fatal(err)
 		}
-		for time.Now().Before(deadline) {
+		for clock().Before(deadline) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		after, err := svc.ResolveCurrentSubjectRoles(ctx, fresh)

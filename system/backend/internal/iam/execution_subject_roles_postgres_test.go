@@ -37,8 +37,9 @@ func testExecutionSubjectRoles(t *testing.T, ctx context.Context, db *gorm.DB, i
 				if err := tx.Exec(`INSERT INTO system.roles (tenant_id,role_key,name,role_type,allowed_scope_types,allowed_principal_types,immutable,created_by_principal_id) VALUES (?,'tenant.role_option_test','Role option test','tenant_custom',ARRAY['tenant'],ARRAY['user'],false,?)`, issued.TenantID, issued.ActorPrincipalID).Error; err != nil {
 					t.Fatal(err)
 				}
-				roleExpires := time.Now().Add(2 * time.Second)
-				insertRoleAssignment(t, tx, issued.ActorPrincipalID, "tenant.role_option_test", "tenant", &issued.TenantID, nil, nil, time.Now().Add(-time.Minute), &roleExpires, "manual")
+				clock := testFixtureDatabaseClock(t, tx)
+				roleExpires := clock().Add(2 * time.Second)
+				insertRoleAssignment(t, tx, issued.ActorPrincipalID, "tenant.role_option_test", "tenant", &issued.TenantID, nil, nil, clock().Add(-time.Minute), &roleExpires, "manual")
 				// Adding a role advances the identity version: old EA must fail.
 				if result, err := s.ResolveSubjectRoles(ctx, in); err == nil || result != nil {
 					t.Fatal("role change reused old authorization")
@@ -52,7 +53,7 @@ func testExecutionSubjectRoles(t *testing.T, ctx context.Context, db *gorm.DB, i
 					if err != nil {
 						t.Fatal(err)
 					}
-					selection, err := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: issued.ActorPrincipalID, Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: time.Now()}, Audit: audit})
+					selection, err := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: issued.ActorPrincipalID, Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: clock()}, Audit: audit})
 					if err != nil || selection.Session == nil {
 						t.Fatalf("refresh fixture session: %v", err)
 					}
@@ -68,12 +69,12 @@ func testExecutionSubjectRoles(t *testing.T, ctx context.Context, db *gorm.DB, i
 				}
 				refresh()
 				result, err := s.ResolveSubjectRoles(ctx, in)
-				if err != nil || !reflect.DeepEqual(result.RoleKeys, []string{"tenant.data_engineer", "tenant.role_option_test"}) || result.Attempt != 1 || !result.ExpiresAt.After(result.ObservedAt) || result.ExpiresAt.After(time.Now().Add(time.Minute)) {
+				if err != nil || !reflect.DeepEqual(result.RoleKeys, []string{"tenant.data_engineer", "tenant.role_option_test"}) || result.Attempt != 1 || !result.ExpiresAt.After(result.ObservedAt) || result.ExpiresAt.After(clock().Add(time.Minute)) {
 					t.Fatalf("role observation=%+v err=%v", result, err)
 				}
 				// Current assignments, not cached EA issuance roles. Natural validity is
 				// checked even when no authorization-version change was needed.
-				time.Sleep(time.Until(roleExpires) + 50*time.Millisecond)
+				time.Sleep(roleExpires.Sub(clock()) + 50*time.Millisecond)
 				result, err = s.ResolveSubjectRoles(ctx, in)
 				if err != nil || !reflect.DeepEqual(result.RoleKeys, []string{"tenant.data_engineer"}) {
 					t.Fatalf("expired roles=%+v err=%v", result, err)
