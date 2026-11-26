@@ -18,6 +18,7 @@ import socket
 import sys
 import tempfile
 import time
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -29,6 +30,8 @@ BACKENDS = ("system-backend", "meta-backend", "meta-worker", "security-backend",
             "security-worker", "manager-backend", "develop-backend", "gateway")
 FRONTENDS = ("console", "system-frontend", "meta-frontend", "manager-frontend", "develop-frontend", "nginx")
 INFRA = ("postgres", "redis", "minio", "meilisearch")
+ROUTES = {"meta": "http://meta-backend:8082", "manager": "http://manager-backend:8081",
+          "develop": "http://develop-backend:8185"}
 require = CORE.require
 
 
@@ -89,6 +92,21 @@ def validate_local_browser(evidence, expected):
     require(case.get("engine_type") == "mysql" and all(case.get(key) == value for key, value in sample.items()),
             "local MySQL browser evidence differs from the prepared source")
     POOL.validate_saturation(case, expected["run_id"], set(), local=True)
+
+
+def wait_for_routes(gateway, timeout=60):
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with opener.open(gateway + "/", timeout=3) as response:
+                modules = json.load(response).get("modules", {})
+            if all(modules.get(name) == endpoint for name, endpoint in ROUTES.items()):
+                return
+        except OSError:
+            pass
+        time.sleep(0.5)
+    raise CORE.GateError("Gateway did not discover the isolated Meta, Manager and Develop endpoints")
 
 
 class LocalPool(CORE.Lifecycle):
@@ -233,7 +251,8 @@ class LocalPool(CORE.Lifecycle):
                      data=(self.checkout / "scripts/infra/init-postgresql.sql").read_bytes())
         self.execute(["bash", "scripts/test/hosted-platform-database.sh", self.run_id, str(self.work / "compose.json"), LABEL, *BACKENDS], timeout=420)
         self.compose("up", "-d", "--wait", "system-backend")
-        self.compose("up", "-d", "--wait", "meta-backend", "meta-worker", "security-backend", "security-worker")
+        self.compose("up", "-d", "--wait", "meta-backend", "security-backend")
+        self.compose("up", "-d", "--wait", "meta-worker", "security-worker")
         self.compose("up", "-d", "--wait", "pool-meta")
         deadline = time.monotonic() + 15
         while not (gate / "url").is_file():
@@ -243,6 +262,8 @@ class LocalPool(CORE.Lifecycle):
         self.compose("up", "-d", "--wait", *FRONTENDS[:-1])
         self.compose("up", "-d", "--wait", "nginx")
         self.env.update(GATEWAY_URL="http://127.0.0.1:" + self.port("gateway", 8000), POSTGRES_PORT=self.port("postgres", 5432))
+        self.announce("wait_for_gateway_routes")
+        wait_for_routes(self.env["GATEWAY_URL"])
         servers = ("system-backend", "manager-backend", "develop-backend", "gateway")
         def runtime_identity():
             rows = json.loads(self.docker("inspect", *(f"{self.run_id}-{name}" for name in servers)))

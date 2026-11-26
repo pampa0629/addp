@@ -1,9 +1,11 @@
 from copy import deepcopy
 from importlib import import_module
+import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 LOCAL = import_module("scripts.test.sql-pool-local-gate")
 HOSTED = import_module("scripts.test.sql-pool-consumer-flow-online_test")
@@ -67,6 +69,15 @@ class LocalSQLPoolTest(unittest.TestCase):
             self.assertEqual(LOCAL.POOL.container("mysql"), RUN + "-mysql")
             with self.assertRaises(RuntimeError):
                 LOCAL.POOL.container("postgresql")
+
+    def test_gateway_requires_the_routes_of_this_deployment(self):
+        origin = "http://127.0.0.1:53197"
+        wrong = {**LOCAL.ROUTES, "meta": "http://localhost:8082"}
+        opener = Mock()
+        opener.open.side_effect = [io.StringIO(json.dumps({"modules": routes})) for routes in (wrong, LOCAL.ROUTES)]
+        with patch.object(LOCAL.urllib.request, "build_opener", return_value=opener), patch.object(LOCAL.time, "sleep"):
+            LOCAL.wait_for_routes(origin)
+        self.assertEqual(opener.open.call_count, 2)
 
 
 if __name__ == "__main__":
