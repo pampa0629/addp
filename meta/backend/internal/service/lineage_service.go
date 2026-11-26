@@ -16,6 +16,7 @@ import (
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type LineageService struct {
@@ -146,21 +147,27 @@ func (s *LineageService) RecordServicePublication(ctx context.Context, tenantID 
 	if request.ServiceID == 0 || strings.TrimSpace(request.PublishedRevision) == "" || strings.TrimSpace(request.ServiceName) == "" || request.ServiceUpdatedAt.IsZero() {
 		return fmt.Errorf("service_id, service_name, service_updated_at and published_revision are required")
 	}
-	now := time.Now().UTC()
+	request.ServiceUpdatedAt = request.ServiceUpdatedAt.UTC().Truncate(time.Microsecond)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Serialize publications for a service on PostgreSQL, including its first publication.
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", int32(tenantID), int32(request.ServiceID)).Error; err != nil {
+		// A service can publish an empty dependency set, including on its first notification.
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.LineageServicePublicationTime{
+			TenantID: tenantID, ServiceID: request.ServiceID, ServiceUpdatedAt: request.ServiceUpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+		var current models.LineageServicePublicationTime
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND service_id = ?", tenantID, request.ServiceID).Take(&current).Error; err != nil {
+			return err
+		}
+		if current.ServiceUpdatedAt.After(request.ServiceUpdatedAt) {
+			return nil
+		}
+		if request.ServiceUpdatedAt.After(current.ServiceUpdatedAt) {
+			if err := tx.Model(&current).Update("service_updated_at", request.ServiceUpdatedAt).Error; err != nil {
 				return err
 			}
 		}
-		var newer int64
-		if err := tx.Model(&models.LineageServiceDependency{}).Where("tenant_id = ? AND service_id = ? AND service_updated_at > ?", tenantID, request.ServiceID, request.ServiceUpdatedAt).Count(&newer).Error; err != nil {
-			return err
-		}
-		if newer > 0 {
-			return nil
-		}
+		now := time.Now().UTC().Truncate(time.Microsecond)
 		for _, dependency := range request.Dependencies {
 			if dependency.SourceItemID == 0 {
 				continue

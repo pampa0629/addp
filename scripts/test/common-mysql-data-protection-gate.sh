@@ -497,6 +497,8 @@ SQL
     (cd "$ROOT_DIR/meta/backend" && ADDP_TEST_META_MYSQL_CATALOG=1 GOWORK=off go test ./internal/scanruntime \
         -run '^TestMySQLScanCatalog$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/meta-catalog.log"
     grep -q '^--- PASS: TestMySQLScanCatalog ' "$WORK_DIR/meta-catalog.log"
+    (cd "$ROOT_DIR/meta/backend" && ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port" ADDP_TEST_LINEAGE_CONCURRENCY=1 GOWORK=off go test ./internal/service -run '^TestLineageProjectionConcurrency$' -count=1 -timeout=60s -v) | tee "$WORK_DIR/lineage-concurrency.log"
+    grep -q '^--- PASS: TestLineageProjectionConcurrency ' "$WORK_DIR/lineage-concurrency.log"
     (cd "$ROOT_DIR/system/backend" && ADDP_INFRA_DATABASE_PROVIDER=mysql ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$mysql_port" ADDP_TEST_HEARTBEAT_RETENTION=1 GOWORK=off go test ./internal/service -run '^TestSystemRuntimeHeartbeatRetention$' -count=1 -v) | tee "$WORK_DIR/retention.log"
     grep -q '^--- PASS: TestSystemRuntimeHeartbeatRetention ' "$WORK_DIR/retention.log"
     mysql_admin <<'SQL'

@@ -59,9 +59,13 @@ VALUES (201,7,'node fk','mysql','{}','{"host":"fk-node"}'),(202,8,'item fk','mys
 INSERT INTO meta_node(tenant_id,engine_id,node_type,name,depth) VALUES(7,201,'root','fk gate',0);
 INSERT INTO meta_item(tenant_id,engine_id,node_id,item_type,name,fingerprint,attributes)
 VALUES(8,202,1,'table','fk gate','fk-gate-item','{"storage":{"schema_name":"orders"},"type_info":{"table":{"fields":[{"name":"amount","type":"int"}]}}}');
+INSERT INTO lineage_service_dependencies(tenant_id,source_item_id,service_id,published_revision,dependency_kind,first_observed_at,last_observed_at,service_updated_at)
+SELECT 8,id,202,'prior','table',NOW(),NOW(),'2026-01-01' FROM meta_item WHERE fingerprint='fk-gate-item';
 SQL
 admin <"$work/meta-triggers.sql"
 "$work/meta-server" prepare-database
+test "$(echo "SELECT COUNT(*) FROM lineage_service_publication_times WHERE tenant_id=8 AND service_id=202 AND service_updated_at='2026-01-01'" | admin)" = 1
+echo "DELETE FROM lineage_service_dependencies WHERE tenant_id=8 AND service_id=202" | admin
 # DBA-owned triggers are verified again on installation replay.
 echo 'DROP TRIGGER cleanup_result_immutable' | admin
 result=0

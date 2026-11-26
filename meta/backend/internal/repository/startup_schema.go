@@ -6,7 +6,7 @@ import (
 )
 
 // SchemaVersion increases with every module schema or startup migration change.
-const SchemaVersion int64 = 9
+const SchemaVersion int64 = 10
 
 // RequireRuntime checks installed owner revisions without preparing or mutating the database.
 func RequireRuntime(db *gorm.DB) error {

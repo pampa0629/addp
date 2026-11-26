@@ -36,6 +36,17 @@ type LineageItemRelation struct {
 
 func (LineageItemRelation) TableName() string { return "meta.lineage_item_relations" }
 
+// LineageServicePublicationTime preserves the owner's ordering even for an empty publication.
+type LineageServicePublicationTime struct {
+	TenantID         uint `gorm:"primaryKey;autoIncrement:false"`
+	ServiceID        uint `gorm:"primaryKey;autoIncrement:false"`
+	ServiceUpdatedAt time.Time
+}
+
+func (LineageServicePublicationTime) TableName() string {
+	return "meta.lineage_service_publication_times"
+}
+
 // LineageServiceDependency 是 data item 到已发布服务版本的当前依赖投影。
 type LineageServiceDependency struct {
 	ServiceName       string     `gorm:"size:255;not null" json:"service_name"`

@@ -87,9 +87,9 @@ func PreparePostgres(db *gorm.DB, retireCollectionApproval func(*gorm.DB) error)
 			if err := conn.Raw("SELECT COALESCE(MAX(version),0) FROM meta.startup_schema_revision").Scan(&previous).Error; err != nil {
 				return err
 			}
-			// Revisions 8 and 9 change the trigger authority after the existing schema is verified.
+			// Revision 7 already has the base tables and migration ledger.
 			if previous >= 7 {
-				return nil
+				return applySQLMigrations(conn)
 			}
 			if err := conn.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}, &models.ObjectIndexDeletion{}); err != nil {
 				return err

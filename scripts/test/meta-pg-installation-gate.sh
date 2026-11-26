@@ -81,6 +81,8 @@ SET ROLE meta_install;
 INSERT INTO meta.meta_node(tenant_id,engine_id,node_type,name,depth) VALUES(9,71,'schema','upgrade_source',0);
 INSERT INTO meta.meta_item(tenant_id,engine_id,node_id,item_type,name,fingerprint,attributes)
 SELECT 9,71,id,'table','already_scanned','pg-v7-kept','{}' FROM meta.meta_node WHERE tenant_id=9;
+INSERT INTO meta.lineage_service_dependencies(tenant_id, source_item_id, service_id, published_revision, dependency_kind, first_observed_at, last_observed_at, service_updated_at)
+SELECT 9,id,71,'prior','table',now(),now(),'2026-01-01 00:00:00+00' FROM meta.meta_item WHERE fingerprint='pg-v7-kept';
 SQL
     prior_facts() {
         dba -c "SELECT i.id,i.fingerprint,c.id,c.operation,r.version FROM meta.meta_item i JOIN meta.data_item_changes c ON c.item_id=i.id JOIN meta.authorization_basis_revisions r ON r.tenant_id=i.tenant_id WHERE i.tenant_id=9 ORDER BY c.id"
@@ -89,14 +91,15 @@ SQL
     test -s "$work/prior"
 fi
 "$work/meta-server" prepare-database
-[[ "$(dba -c 'SELECT version FROM meta.startup_schema_revision')" == 9 ]]
+[[ "$(dba -c 'SELECT version FROM meta.startup_schema_revision')" == 10 ]]
 dba -c 'ALTER ROLE meta_install SET default_transaction_read_only TO on'
 "$work/meta-server" prepare-database
 dba -c 'ALTER ROLE meta_install RESET default_transaction_read_only'
 if [[ "$mode" == --upgrade ]]; then
+    [[ "$(dba -c "SELECT count(*) FROM meta.lineage_service_publication_times WHERE tenant_id=9 AND service_id=71 AND service_updated_at='2026-01-01 00:00:00+00'")" == 1 ]]
     prior_facts > "$work/current"
     cmp "$work/prior" "$work/current"
-    echo 'Released PG v7 Backend -> deployment revision 9: item ID, Catalog cursor and tenant basis preserved.'
+    echo 'Released PG v7 Backend -> deployment revision 10: item ID, Catalog cursor and tenant basis preserved.'
 fi
 echo 'Meta installation and repeat preparation completed against PostgreSQL with the System parent key owned separately.'
 export ADDP_TEST_META_WORKER_PASSWORD ADDP_TEST_META_SOURCE_PASSWORD
@@ -147,6 +150,8 @@ docker exec -e PGPASSWORD="$ADDP_TEST_META_WORKER_PASSWORD" "$name" psql -h127.0
 [[ "$(dba -c "SELECT count(*) FROM meta.lineage_service_dependencies WHERE service_id=77 AND status='stale' AND updated_at>'2001-01-01'")" == 1 ]]
 (cd "$root/meta/backend" && GOWORK=off go build -o "$work/meta-worker" ./cmd/worker)
 export ADDP_DATABASE_RUNTIME_USER=meta_gate_worker ADDP_DATABASE_RUNTIME_PASSWORD="$ADDP_TEST_META_WORKER_PASSWORD"
+(cd "$root/meta/backend" && ADDP_TEST_LINEAGE_CONCURRENCY=1 GOWORK=off go test ./internal/service -run '^TestLineageProjectionConcurrency$' -count=1 -timeout=60s -v) | tee "$work/lineage-concurrency.log"
+grep -q '^--- PASS: TestLineageProjectionConcurrency ' "$work/lineage-concurrency.log"
 dba <<'SQL'
 CREATE TABLE public.ddl_seen(command text);
 CREATE FUNCTION public.note_ddl() RETURNS event_trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$

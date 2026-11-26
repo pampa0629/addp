@@ -12,6 +12,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
+	"gorm.io/gorm/clause"
 )
 
 func (p relationPair) granularity() string {
@@ -119,10 +120,10 @@ func (s *LineageService) prepareLineageProjection(ctx context.Context, tenantID 
 	ordered := append([]*resolvedRef(nil), outputs...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].item.ID < ordered[j].item.ID })
 	for _, output := range ordered {
-		if s.db.Dialector.Name() == "postgres" {
-			if err := s.db.Exec("SELECT pg_advisory_xact_lock(?, ?)", int32(tenantID), int32(output.item.ID)).Error; err != nil {
-				return err
-			}
+		var item models.MetaItem
+		if err := s.db.WithContext(ctx).Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("tenant_id = ? AND id = ?", tenantID, output.item.ID).Take(&item).Error; err != nil {
+			return err
 		}
 		if output.ref.WriteMode != "replace" {
 			continue

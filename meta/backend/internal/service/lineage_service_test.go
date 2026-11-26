@@ -248,6 +248,9 @@ func TestRecordServicePublicationIsIdempotentAndReturnsEvidence(t *testing.T) {
 func openLineageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := metatest.OpenMetadataDB(t)
+	if err := db.AutoMigrate(&models.LineageServicePublicationTime{}); err != nil {
+		t.Fatal(err)
+	}
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
