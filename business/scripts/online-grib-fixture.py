@@ -442,12 +442,21 @@ def worker(request):
     if action == 'map-seed':
         raw = bytes.fromhex(request['map_source'])
         assert hashlib.sha256(raw).hexdigest() == MAP_SHA
+        path = root / MAP_KEY
+        path.parent.mkdir(mode=0o755)
+        path.write_bytes(raw)
+        path.chmod(0o644)
         client.put_object(bucket, MAP_KEY, io.BytesIO(raw), len(raw), content_type='application/x-grib')
         return dict(key=MAP_KEY, sha256=MAP_SHA)
     if action == 'map-inspect':
         return inspect_map_pixels(bytes.fromhex(request['cog_bytes']), request['message'])
     if action == 'map-delete':
+        path = root / MAP_KEY
+        path.unlink(missing_ok=True)
+        if path.parent.exists():
+            path.parent.rmdir()
         client.remove_object(bucket, MAP_KEY)
+        assert not path.parent.exists()
         assert not any(obj.object_name == MAP_KEY for obj in client.list_objects(bucket, prefix=MAP_KEY))
         infra = request['infra']
         storage_client = Minio(infra['endpoint'], access_key=infra['access_key'], secret_key=infra['secret_key'], secure=False)
@@ -455,7 +464,7 @@ def worker(request):
         assert type(tenant) is int and tenant > 1
         for prefix in (f'tenant_{tenant}/cog/', f'temp/raster-input/tenant_{tenant}/'):
             assert not list(storage_client.list_objects('manager', prefix=prefix, recursive=True)), 'GRIB residual objects'
-        return dict(source_removed=True, cog_objects_removed=True, temporary_inputs_removed=True)
+        return dict(nfs_source_removed=True, minio_source_removed=True, cog_objects_removed=True, temporary_inputs_removed=True)
     if action=='seed':
         owned=_owned_sources(request)
         directory.mkdir(mode=0o755,exist_ok=False)

@@ -208,16 +208,15 @@ async function displayedWorld(page, viewport) {
   }, png.toString('base64'))
 }
 
-test('ordinary user generates two temperature maps and reuses each forecast', async ({ page }) => {
-  test.setTimeout(240000)
+async function verifyTemperatureMaps(page, storage) {
   const env = process.env
   const context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON)
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
   await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
 
-  const source = context.temperature_map
-  const path = resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-grib-map-browser.json')
-  const proof = { run_id: context.run_id, locator: source.locator, source_version: source.version,
+  const source = context.temperature_maps[storage]
+  const path = resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-grib-${storage}-map-browser.json`)
+  const proof = { run_id: context.run_id, storage, locator: source.locator, source_version: source.version,
     generations: [], visits: [], result: 'incomplete' }
   const save = () => writeFileSync(path, JSON.stringify(proof, null, 2) + '\n')
   const actions = '/api/v1/manager/quick-view/actions'
@@ -286,7 +285,7 @@ test('ordinary user generates two temperature maps and reuses each forecast', as
         const pixels = await modelPixels(page, canvas)
         return pixels.colored / pixels.total
       }).toBeGreaterThan(0.1)
-      const screenshot = 'grib-temperature-map-' + (step + 1) + '.png'
+      const screenshot = `grib-${storage}-temperature-map-${step + 1}.png`
       await map.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, screenshot) })
       if (step === 1) {
         const viewport = map.locator('.raster-map')
@@ -305,7 +304,7 @@ test('ordinary user generates two temperature maps and reuses each forecast', as
         await expect.poll(async () => (await displayedWorld(page, viewport)).seamColors).toBe(true)
         await page.mouse.up()
         await expect.poll(async () => (await displayedWorld(page, viewport)).seamColors).toBe(true)
-        await viewport.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'grib-map-date-line.png') })
+        await viewport.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${storage}-map-date-line.png`) })
         proof.date_line = { initial_view: world, pan_css_pixels: halfWorld, final_view: await displayedWorld(page, viewport) }
       }
       proof.visits.push({ message, preview_url: info.preview_url, screenshot,
@@ -316,4 +315,11 @@ test('ordinary user generates two temperature maps and reuses each forecast', as
     expect(posts.map(body => body.raster_message)).toEqual(['message-1', 'message-2'])
     proof.result = 'passed'
   } finally { save() }
-})
+}
+
+for (const storage of ['minio', 'nfs']) {
+  test(`ordinary user generates two temperature maps and reuses each forecast from ${storage}`, async ({ page }) => {
+    test.setTimeout(240000)
+    await verifyTemperatureMaps(page, storage)
+  })
+}

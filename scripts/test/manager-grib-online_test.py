@@ -39,6 +39,40 @@ class GRIBOracleTest(unittest.TestCase):
         self.assertEqual(len(raw), offset)
         self.assertNotIn(FIXTURE.MAP_KEY.split('/')[-1], FIXTURE.NAMES)
 
+    def test_map_fixture_seeds_identical_nfs_and_minio_sources_and_cleans_both(self):
+        objects = {}
+
+        class Client:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def put_object(self, bucket, name, stream, size, **kwargs):
+                objects[bucket, name] = stream.read(size)
+
+            def remove_object(self, bucket, name):
+                objects.pop((bucket, name), None)
+
+            def list_objects(self, bucket, prefix, **kwargs):
+                return [types.SimpleNamespace(object_name=name) for store, name in objects
+                        if store == bucket and name.startswith(prefix)]
+
+        raw = FIXTURE.map_source(Path(__file__).resolve().parents[2])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            unrelated = root / 'unrelated'
+            unrelated.write_text('keep')
+            credentials = dict(endpoint='local', access_key='a', secret_key='b')
+            request = dict(nfs_root=temp, storage=dict(credentials, bucket='test'), infra=credentials, tenant_id=2)
+            with mock.patch.dict(sys.modules, {'minio': types.SimpleNamespace(Minio=Client)}):
+                FIXTURE.worker(dict(request, action='map-seed', map_source=raw.hex()))
+                self.assertEqual((root / FIXTURE.MAP_KEY).read_bytes(), raw)
+                self.assertEqual(objects['test', FIXTURE.MAP_KEY], raw)
+                result = FIXTURE.worker(dict(request, action='map-delete'))
+            self.assertEqual(result, dict(nfs_source_removed=True, minio_source_removed=True,
+                                          cog_objects_removed=True, temporary_inputs_removed=True))
+            self.assertEqual(list(root.iterdir()), [unrelated])
+            self.assertEqual(objects, {})
+
     def test_map_proof_rejects_shared_cache_wrong_version_or_missing_range(self):
         version = 'sha256:' + FIXTURE.MAP_SHA
         tasks = [dict(message=f'message-{i}', task_id=i, execution_id=f'exec-{i}') for i in (1, 2)]
@@ -47,17 +81,19 @@ class GRIBOracleTest(unittest.TestCase):
             visits = []
             for step, i in enumerate((1,2,1,2), 1):
                 path = f'/api/v1/manager/raster_cog/{i}/content'
-                screenshot = f'grib-temperature-map-{step}.png'
+                screenshot = f'grib-minio-temperature-map-{step}.png'
                 (root/screenshot).write_bytes(b'\x89PNG\r\n\x1a\n')
                 visits.append(dict(message=f'message-{i}', preview_url=path+'?source_version='+version,
                     screenshot=screenshot, ranges=[dict(path=path, version=version, range='bytes 0-63/256')]))
-            proof = dict(run_id='run', locator='item', source_version=version, result='passed', generations=tasks, visits=visits)
-            self.assertEqual(len(SCENE.map_browser_artifacts(proof,'run','item',root)), 2)
+            proof = dict(run_id='run', storage='minio', locator='item', source_version=version, result='passed', generations=tasks, visits=visits)
+            self.assertEqual(len(SCENE.map_browser_artifacts(proof,'run','item',root,'minio')), 2)
+            with self.assertRaises(ValueError):
+                SCENE.map_browser_artifacts(proof, 'run', 'item', root, 'nfs')
             for key, value in (('preview_url',visits[1]['preview_url']),('ranges',[]),('message','message-2')):
                 bad = copy.deepcopy(proof)
                 bad['visits'][2][key] = value
                 with self.assertRaises(ValueError):
-                    SCENE.map_browser_artifacts(bad,'run','item',root)
+                    SCENE.map_browser_artifacts(bad,'run','item',root,'minio')
 
     def response(self,spec,field):
         selection=FIXTURE.selection(field)
@@ -262,14 +298,14 @@ class GRIBOracleTest(unittest.TestCase):
     def test_nfs_original_denial_cannot_masquerade_as_a_download(self):
         spec=FIXTURE.sources()[2];raw=FIXTURE.source_bytes(spec)
         good=types.SimpleNamespace(status=403,headers={'Content-Type':'application/json'},payload={'error':'access denied'},raw=b'{"error":"access denied"}')
-        self.assertEqual(SCENE.validate_original_download(good,'nfs',spec),dict(http_status=403,json_error=True,attachment=False))
+        self.assertEqual(SCENE.validate_original_download(good, spec, allowed=False),dict(http_status=403,json_error=True,attachment=False))
         for key,value in [('status',200),('headers',{'Content-Type':'application/octet-stream'}),('headers',{'Content-Type':'application/json','Content-Disposition':'attachment; filename=source.grib1'}),('payload',{'ok':True})]:
             bad=copy.deepcopy(good);setattr(bad,key,value)
-            with self.assertRaises(ValueError):SCENE.validate_original_download(bad,'nfs',spec)
+            with self.assertRaises(ValueError):SCENE.validate_original_download(bad, spec, allowed=False)
         original=types.SimpleNamespace(status=200,raw=raw)
-        self.assertEqual(SCENE.validate_original_download(original,'minio',spec)['sha256'],spec['sha256'])
+        self.assertEqual(SCENE.validate_original_download(original, spec, allowed=True)['sha256'],spec['sha256'])
         original.raw=raw[:-1]
-        with self.assertRaises(ValueError):SCENE.validate_original_download(original,'minio',spec)
+        with self.assertRaises(ValueError):SCENE.validate_original_download(original, spec, allowed=True)
         case=dict(locator='nfs-source',source_case='nfs',spec=spec)
         observed=dict(locator='nfs-source',values_verified=True,viewport_grid_verified=True,visible_message_count=3,original_download_disabled=True,original_download_denied_verified=True)
         SCENE.validate_browser_case(case,observed)

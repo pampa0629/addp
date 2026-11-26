@@ -115,8 +115,8 @@ def validate_slice(result,spec,field,x=None,y=None,width=None,height=None):
     require(result.get('spatial') is None,'GRIB gained unapproved map preview')
 
 
-def validate_original_download(response,storage,spec):
-    if storage=='nfs':
+def validate_original_download(response, spec, *, allowed):
+    if not allowed:
         headers={key.lower():value for key,value in response.headers.items()}
         require(response.status==403 and headers.get('content-type','').startswith('application/json')
             and 'content-disposition' not in headers and isinstance(response.payload,dict)
@@ -124,7 +124,7 @@ def validate_original_download(response,storage,spec):
             'GRIB NFS original must be a JSON denial without an attachment')
         return dict(http_status=403,json_error=True,attachment=False)
     require(response.status==200 and len(response.raw)==spec['size_bytes'] and hashlib.sha256(response.raw).hexdigest()==spec['sha256'],
-        'GRIB MinIO original differs from the complete source')
+        'GRIB original differs from the complete source')
     return dict(http_status=200,sha256=spec['sha256'],size_bytes=spec['size_bytes'])
 
 
@@ -162,11 +162,11 @@ def read(client,locator,selection,status=200):
     return response.get('data',{}).get('object',{}).get('content',{}).get('json') if status==200 else response
 
 
-def map_browser_artifacts(proof, run_id, locator, directory):
+def map_browser_artifacts(proof, run_id, locator, directory, storage):
     messages = ['message-1', 'message-2']
     version = 'sha256:' + FIXTURE.MAP_SHA
     require(proof.get('result') == 'passed' and proof.get('run_id') == run_id
-            and proof.get('locator') == locator and proof.get('source_version') == version,
+            and proof.get('storage') == storage and proof.get('locator') == locator and proof.get('source_version') == version,
             'GRIB browser map evidence belongs to a different run or source')
     visits, generations = proof['visits'], proof['generations']
     require([v['message'] for v in visits] == messages * 2 and
@@ -183,7 +183,7 @@ def map_browser_artifacts(proof, run_id, locator, directory):
         require(any(r.get('path') == url.path and r.get('version') == version and
                     re.fullmatch(r'bytes \d+-\d+/\d+', r.get('range', '')) for r in visit['ranges']),
                 'browser did not read this protected COG with Range')
-        screenshot = f'grib-temperature-map-{step}.png'
+        screenshot = f'grib-{storage}-temperature-map-{step}.png'
         require(visit['screenshot'] == screenshot and (directory/screenshot).read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),
                 'GRIB map screenshot missing')
     return dict(zip(messages, urls[:2]))
@@ -192,7 +192,7 @@ def map_browser_artifacts(proof, run_id, locator, directory):
 def run(repository,environment,owner,*,physical_runner=None,browser_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE')=='native-grib','GRIB requires its independent case')
     artifact=Path(environment['ADDP_ONLINE_ARTIFACT_DIR']);physical=physical_runner or (lambda action, **kwargs:FIXTURE.physical(action,repository,environment,**kwargs))
-    report={'schema_version':'addp.manager-grib/v2','case':'native-grib','run_id':environment['ADDP_ONLINE_TEST_RUN_ID'],'result':'incomplete','cases':[],'cleanup':{}}
+    report={'schema_version':'addp.manager-grib/v3','case':'native-grib','run_id':environment['ADDP_ONLINE_TEST_RUN_ID'],'result':'incomplete','cases':[],'cleanup':{}}
     client=owner.GatewayClient(environment['GATEWAY_URL'],environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     tenant=owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'],'GRIB tenant')
     report['identity']=owner.validate_user_identity(client,tenant,PERMISSIONS)
@@ -200,8 +200,8 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     grants=REGISTRATION.ExactFileMetadataGrants(issuer,client,tenant,scan_preparation=True)
     report['metadata_authorization']={'operator_principal_id':grants.operator,'recipient_principal_id':grants.recipient,'initializer_permissions_verified':sorted(REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS|{'meta.scan_task.execute','meta.scan_task.read'}),'grants':[]}
     map_seeded = False
-    map_grant = map_item = None
-    map_proof_path = artifact / 'manager-grib-map-browser.json'
+    map_items = {}
+    map_grants = {}
     seeded=False;stage='seed'
     try:
         seeded=True;seed=physical('seed');require(seed=={'sources':FIXTURE.sources()},'GRIB source bytes differ from the independent oracle')
@@ -244,7 +244,7 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                     invalid=dict(selection,**change);denied=read(client,locator,invalid,400);require(denied.get('error_code')=='grid_slice_selection_invalid','invalid window was not a controlled rejection')
                 stage='download'
                 original=client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(403 if storage=='nfs' else 200,))
-                original_proof=validate_original_download(original,storage,spec)
+                original_proof=validate_original_download(original, spec, allowed=storage == 'minio')
                 if storage=='minio':(artifact/f"grib-{storage}-{spec['case_id']}{Path(spec['name']).suffix}").write_bytes(original.raw)
                 else:(artifact/f"grib-{storage}-{spec['case_id']}-download-denied.json").write_text(json.dumps(original_proof,indent=2)+'\n')
                 require(client.request('GET',f"/api/v1/meta/items/{item['id']}",(200,)).payload==detail,'GRIB preview changed metadata')
@@ -266,27 +266,42 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             browser_cases.append(dict(case, expected_windows=windows))
         context = dict(run_id=report['run_id'], identity=report['identity'], cases=browser_cases)
         stage = 'temperature_map_source'
-        map_report = report['temperature_map'] = {'cleanup': {}}
-        engine = int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'])
-        name = bucket + '/' + FIXTURE.MAP_KEY
-        require(not map_proof_path.exists(), 'stale map browser evidence in run directory')
+        maps = report['temperature_maps'] = {}
+        context['temperature_maps'] = {}
         map_seeded = True
         require(physical('map-seed') == dict(key=FIXTURE.MAP_KEY, sha256=FIXTURE.MAP_SHA), 'map seed mismatch')
-        map_report['scan'] = owner.wait_for_meta_scan(client, engine, time.monotonic()+180,
-            scope={'catalog_paths':[name.rsplit('/', 1)[0]]})
-        model = dict(format='grib', full_name=name, fingerprint=hashlib.sha256(f'{engine}:{name}'.encode()).hexdigest(),
-                     composition=[dict(path=name, role='container', required=True, primary=True)])
         rules = importlib.import_module('scripts.test.ftp-consumer-flow-online')
-        map_grant = rules.ModelSourceAuthorization(issuer, client, dict(tenant_id=tenant, engine_id=engine,
-            principal_id=report['identity']['principal_id']), source_type='minio', consumer_permissions=PERMISSIONS,
-            issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {'meta.scan_task.execute','meta.scan_task.read'})
-        map_report['read_grant'] = map_grant.grant(model)
-        map_item = owner.find_fixture_item(client, engine, name, 'GRIB exact map source')
-        require(map_item['fingerprint'] == model['fingerprint'], 'map source fingerprint differs')
-        locator = owner.build_item_locator(engine, map_item)
-        original = client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(200,))
-        map_report['original'] = validate_original_download(original, 'minio', dict(size_bytes=2699860, sha256=FIXTURE.MAP_SHA))
-        context['temperature_map'] = dict(locator=locator, version='sha256:'+FIXTURE.MAP_SHA)
+        for storage, engine, prefix, scan_client in (
+            ('minio', int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID']), bucket+'/', client),
+            ('nfs', int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID']), '', issuer),
+        ):
+            stage = f'temperature_map_source_{storage}'
+            map_report = maps[storage] = {'cleanup': {}}
+            name = prefix + FIXTURE.MAP_KEY
+            require(not (artifact / f'manager-grib-{storage}-map-browser.json').exists(),
+                    'stale map browser evidence in run directory')
+            scope = {'catalog_paths': [name.rsplit('/', 1)[0]]}
+            map_report['source'] = dict(storage=storage, engine_id=engine, full_name=name, scan_scope=scope,
+                scan_principal_id=grants.operator if storage == 'nfs' else grants.recipient)
+            map_report['scan'] = owner.wait_for_meta_scan(scan_client, engine, time.monotonic()+180, scope=scope)
+            visible = client.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,)).payload
+            require(isinstance(visible, list) and not any(row.get('full_name') == name for row in visible),
+                    f'unapproved {storage} map source visible in the consumer catalog')
+            model = dict(format='grib', full_name=name, fingerprint=hashlib.sha256(f'{engine}:{name}'.encode()).hexdigest(),
+                         composition=[dict(path=name, role='container', required=True, primary=True)])
+            map_grant = map_grants[storage] = rules.ModelSourceAuthorization(issuer, client,
+                dict(tenant_id=tenant, engine_id=engine, principal_id=report['identity']['principal_id']),
+                source_type=storage, consumer_permissions=PERMISSIONS,
+                issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {'meta.scan_task.execute','meta.scan_task.read'})
+            map_report['read_grant'] = map_grant.grant(model)
+            item = owner.find_fixture_item(client, engine, name, f'GRIB exact {storage} map source')
+            require(item['fingerprint'] == model['fingerprint'], 'map source fingerprint differs')
+            locator = owner.build_item_locator(engine, item)
+            map_items[storage] = (item, locator)
+            original = client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(200,))
+            map_report['original'] = validate_original_download(
+                original, dict(size_bytes=2699860, sha256=FIXTURE.MAP_SHA), allowed=True)
+            context['temperature_maps'][storage] = dict(locator=locator, version='sha256:'+FIXTURE.MAP_SHA)
         stage = 'browser'
         if browser_runner:browser=browser_runner(context)
         else:
@@ -305,49 +320,56 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
                     screenshot = artifact / (prefix + suffix)
                     require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),
                             'GRIB visible slice screenshot missing')
-        stage = 'temperature_map_pixels'
-        proof = json.loads(map_proof_path.read_text())
-        urls = map_browser_artifacts(proof, report['run_id'], locator, artifact)
-        pixels = map_report['pixels'] = {}
-        for message, url in urls.items():
-            cog = client.request('GET', url, (200,)).raw
-            pixels[message] = physical('map-inspect', message=message, cog=cog)
-            require(pixels[message]['sha256'] == hashlib.sha256(cog).hexdigest(), 'map readback hash differs')
-        a, b = pixels.values()
-        require(a['sha256'] != b['sha256'] and a['equator_kelvin'] != b['equator_kelvin'], 'map time fields crossed')
-        require(proof.get('date_line', {}).get('final_view', {}).get('seamColors') is True
-                and (artifact/'grib-map-date-line.png').read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),
-                'date line page evidence missing')
-        for url in urls.values():
-            stale = urlsplit(url).path + '?' + urlencode({'source_version':'sha256:'+'0'*64})
-            denied = client.request('GET', stale, (403,), headers={'Range':'bytes=0-63'})
-            require(isinstance(denied.payload,dict) and bool(denied.payload.get('error')), 'stale map Range denial missing')
-        map_report['stale_version_range_denied'] = True
-        map_report['browser'] = proof
+        content_paths = set()
+        for storage, map_report in maps.items():
+            stage = f'temperature_map_pixels_{storage}'
+            map_item, locator = map_items[storage]
+            proof = json.loads((artifact / f'manager-grib-{storage}-map-browser.json').read_text())
+            urls = map_browser_artifacts(proof, report['run_id'], locator, artifact, storage)
+            pixels = map_report['pixels'] = {}
+            for message, url in urls.items():
+                cog = client.request('GET', url, (200,)).raw
+                pixels[message] = physical('map-inspect', message=message, cog=cog)
+                require(pixels[message]['sha256'] == hashlib.sha256(cog).hexdigest(), 'map readback hash differs')
+            a, b = pixels.values()
+            require(a['sha256'] != b['sha256'] and a['equator_kelvin'] != b['equator_kelvin'], 'map time fields crossed')
+            require(proof.get('date_line', {}).get('final_view', {}).get('seamColors') is True
+                    and (artifact/f'grib-{storage}-map-date-line.png').read_bytes().startswith(b'\x89PNG\r\n\x1a\n'),
+                    'date line page evidence missing')
+            for url in urls.values():
+                stale = urlsplit(url).path + '?' + urlencode({'source_version':'sha256:'+'0'*64})
+                denied = client.request('GET', stale, (403,), headers={'Range':'bytes=0-63'})
+                require(isinstance(denied.payload,dict) and bool(denied.payload.get('error')), 'stale map Range denial missing')
+            map_report['stale_version_range_denied'] = True
+            map_report['browser'] = proof
 
-        stage = 'temperature_map_revocation'
-        range_header = {'Range': 'bytes=0-63'}
-        range_checks = map_report['source_revocation'] = {'results': {}}
-        for message, url in urls.items():
-            allowed = client.request('GET', url, (206,), headers=range_header)
-            headers = {name.lower(): value for name, value in allowed.headers.items()}
-            require(len(allowed.raw) == 64 and headers.get('content-range') == f"bytes 0-63/{pixels[message]['size_bytes']}",
-                    f'{message} original Range did not return the expected COG bytes before revocation')
-            range_checks['results'][message] = {'url': url, 'range': range_header['Range'], 'before': allowed.status}
-        map_grant.revoke(map_report['read_grant']['request_id'])
-        range_checks['source_detail_status'] = client.request('GET', f"/api/v1/meta/items/{map_item['id']}", (404,)).status
-        for message, url in urls.items():
-            result_path = urlsplit(url).path.removesuffix('/content')
-            result = client.request('GET', result_path, (200,)).payload
-            require(result.get('status') == 'ready' and result.get('item_fingerprint') == map_item['fingerprint'],
-                    f'{message} cached result must still be ready after source revocation')
-            denied = client.request('GET', url, (403,), headers=range_header)
-            headers = {name.lower(): value for name, value in denied.headers.items()}
-            require(headers.get('content-type', '').startswith('application/json')
-                    and 'content-range' not in headers and 'content-disposition' not in headers
-                    and isinstance(denied.payload, dict) and bool(denied.payload.get('error')),
-                    f'{message} revoked Range must return a JSON denial without COG bytes')
-            range_checks['results'][message].update(result_id=result['id'], result_status=result['status'], after=denied.status)
+            stage = f'temperature_map_revocation_{storage}'
+            range_header = {'Range': 'bytes=0-63'}
+            range_checks = map_report['source_revocation'] = {'results': {}}
+            for message, url in urls.items():
+                allowed = client.request('GET', url, (206,), headers=range_header)
+                headers = {name.lower(): value for name, value in allowed.headers.items()}
+                require(len(allowed.raw) == 64 and headers.get('content-range') == f"bytes 0-63/{pixels[message]['size_bytes']}",
+                        f'{message} original Range did not return the expected COG bytes before revocation')
+                range_checks['results'][message] = {'url': url, 'range': range_header['Range'], 'before': allowed.status}
+            map_grants[storage].revoke(map_report['read_grant']['request_id'])
+            range_checks['source_detail_status'] = client.request('GET', f"/api/v1/meta/items/{map_item['id']}", (404,)).status
+            for message, url in urls.items():
+                result_path = urlsplit(url).path.removesuffix('/content')
+                result = client.request('GET', result_path, (200,)).payload
+                require(result.get('status') == 'ready' and result.get('item_fingerprint') == map_item['fingerprint'],
+                        f'{message} cached result must still be ready after source revocation')
+                denied = client.request('GET', url, (403,), headers=range_header)
+                headers = {name.lower(): value for name, value in denied.headers.items()}
+                require(headers.get('content-type', '').startswith('application/json')
+                        and 'content-range' not in headers and 'content-disposition' not in headers
+                        and isinstance(denied.payload, dict) and bool(denied.payload.get('error')),
+                        f'{message} revoked Range must return a JSON denial without COG bytes')
+                range_checks['results'][message].update(result_id=result['id'], result_status=result['status'], after=denied.status)
+            paths = {urlsplit(url).path for url in urls.values()}
+            require(content_paths.isdisjoint(paths), 'map results shared across source engines')
+            content_paths.update(paths)
+        report['temperature_map_source_isolation_verified'] = True
         if not physical_runner:
             inspected=subprocess.run(['docker','exec','addp-manager-raster-runtime','python','-c',
                 'import pathlib,json,tempfile; print(json.dumps([p.name for p in pathlib.Path(tempfile.gettempdir()).glob("addp-grib-*")]))'],
@@ -361,38 +383,43 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
     finally:
         cleanup_errors=[]
         if map_seeded:
-            cleanup = report['temperature_map']['cleanup']
-            cleanup['tasks'] = []
-            if map_item is not None and map_proof_path.exists():
+            for storage, map_report in maps.items():
+                cleanup = map_report['cleanup']
+                cleanup['tasks'] = []
+                map_item, locator = map_items.get(storage, (None, None))
+                map_grant = map_grants.get(storage)
+                map_proof_path = artifact / f'manager-grib-{storage}-map-browser.json'
+                if map_item is not None and map_proof_path.exists():
+                    try:
+                        partial = json.loads(map_proof_path.read_text())
+                        require(partial['run_id'] == report['run_id'] and partial['storage'] == storage and partial['locator'] == locator, 'foreign task evidence')
+                        for task in partial['generations']:
+                            try:
+                                fixture = owner.ArtifactFixture('grib', map_item, locator,
+                                    owner.positive_int(task['task_id'], 'map task'), task['execution_id'])
+                                removed = owner.cleanup_managed_artifact(client, fixture, 180, 'raster_cog', owner.RASTER_TASK_TYPE)
+                                if partial.get('result') == 'passed':
+                                    require(len(removed) == 1 and
+                                        any(v['message'] == task['message'] and urlsplit(v['preview_url']).path ==
+                                            f"/api/v1/manager/raster_cog/{removed[0]['id']}/content" for v in partial['visits']), 'map cleanup result mismatch')
+                                cleanup['tasks'].append(dict(task_id=fixture.task_id, **fixture.cleanup))
+                            except Exception as error:
+                                cleanup_errors.append(f"{storage} map task {task.get('task_id')}: {type(error).__name__}")
+                    except Exception as error:
+                        cleanup_errors.append(storage+' map task evidence: '+type(error).__name__)
                 try:
-                    partial = json.loads(map_proof_path.read_text())
-                    require(partial['run_id'] == report['run_id'] and partial['locator'] == locator, 'foreign task evidence')
-                    for task in partial['generations']:
-                        try:
-                            fixture = owner.ArtifactFixture('grib', map_item, locator,
-                                owner.positive_int(task['task_id'], 'map task'), task['execution_id'])
-                            removed = owner.cleanup_managed_artifact(client, fixture, 180, 'raster_cog', owner.RASTER_TASK_TYPE)
-                            if partial.get('result') == 'passed':
-                                require(len(removed) == 1 and
-                                    urlsplit(partial['visits'][len(cleanup['tasks'])]['preview_url']).path ==
-                                    f"/api/v1/manager/raster_cog/{removed[0]['id']}/content", 'map cleanup result mismatch')
-                            cleanup['tasks'].append(dict(task_id=fixture.task_id, **fixture.cleanup))
-                        except Exception as error:
-                            cleanup_errors.append(f"map task {task.get('task_id')}: {type(error).__name__}")
+                    if map_grant is not None:
+                        map_grant.cleanup()
+                        if map_item is not None:
+                            client.request('GET', f"/api/v1/meta/items/{map_item['id']}", (404,))
+                        cleanup['read_grant_revoked'] = True
                 except Exception as error:
-                    cleanup_errors.append('map task evidence: '+type(error).__name__)
+                    cleanup_errors.append(storage+' map Grant cleanup: '+type(error).__name__)
             try:
-                if map_grant is not None:
-                    map_grant.cleanup()
-                    if map_item is not None:
-                        client.request('GET', f"/api/v1/meta/items/{map_item['id']}", (404,))
-                    cleanup['read_grant_revoked'] = True
-            except Exception as error:
-                cleanup_errors.append('map Grant cleanup: '+type(error).__name__)
-            try:
-                cleanup['storage'] = physical('map-delete')
-                require(cleanup['storage'] == dict(source_removed=True, cog_objects_removed=True, temporary_inputs_removed=True),
-                        'map storage cleanup incomplete')
+                report['temperature_maps_storage_cleanup'] = physical('map-delete')
+                require(report['temperature_maps_storage_cleanup'] == dict(
+                    nfs_source_removed=True, minio_source_removed=True, cog_objects_removed=True, temporary_inputs_removed=True),
+                    'map storage cleanup incomplete')
             except Exception as error:
                 cleanup_errors.append('map storage cleanup: '+type(error).__name__)
         try:
