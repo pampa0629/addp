@@ -231,7 +231,7 @@ class RuntimeSelectionTest(unittest.TestCase):
 
     def test_scoped_database_modules_match_installer_and_runtime_services(self):
         base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
-        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager,orchestrator,monitor,standard,model,service,asset,catalog,graph,ontology,develop,quality,transfer"), ("postgres", "system,workbench,orchestrator,monitor,standard,model,service,asset,catalog,graph,ontology,develop,quality,transfer")):
+        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager,orchestrator,monitor,standard,model,service,asset,portal,catalog,graph,ontology,develop,quality,transfer"), ("postgres", "system,workbench,orchestrator,monitor,standard,model,service,asset,portal,catalog,graph,ontology,develop,quality,transfer")):
             with self.subTest(provider=provider, modules=modules), tempfile.TemporaryDirectory() as temporary:
                 env = release.release_environment(dict(os.environ, ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
                     ADDP_DEPLOYMENT_NETWORK="test-net", ADDP_DEPLOYMENT_PROJECT="test-scoped", NGINX_PORT="8080",
@@ -251,6 +251,10 @@ class RuntimeSelectionTest(unittest.TestCase):
                         self.assertIn(key, runtime)
                     for key in ("POSTGRES_PASSWORD", "ADDP_DATABASE_DEPLOY_USER", "ADDP_DATABASE_DEPLOY_PASSWORD"):
                         self.assertNotIn(key, runtime)
+                if "portal-backend" in model:
+                    portal = model["portal-backend"]["environment"]
+                    self.assertEqual(portal["ASSET_URL"], "http://asset-backend:8183")
+                    self.assertFalse(any(key.startswith(("ADDP_DATABASE_", "POSTGRES_", "ADDP_MYSQL_")) for key in portal))
                 override = Path(temporary) / "release.yml"
                 release.write_override(override, {name: IMAGE_ID for name in model})
                 env.pop("COMPOSE_PROFILES", None)

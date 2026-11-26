@@ -93,6 +93,17 @@ services:
     extends: {file: ../../docker-compose.yml, service: asset-frontend}
     profiles: [module-asset]
     container_name: !reset null
+  portal-backend:
+    extends: {file: ../../docker-compose.yml, service: portal-backend}
+    profiles: [module-portal]
+    container_name: !reset null
+    environment:
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+  portal-frontend:
+    extends: {file: ../../docker-compose.yml, service: portal-frontend}
+    profiles: [module-portal]
+    container_name: !reset null
   catalog-backend:
     extends: {file: ../../docker-compose.yml, service: catalog-backend}
     profiles: [module-catalog]

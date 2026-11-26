@@ -86,7 +86,7 @@ def selection(env):
     extra = env.get("ADDP_DEPLOYMENT_MODULES", "").strip()
     if extra:
         modules = {name.strip() for name in extra.split(",")}
-        if scope == "full" or not modules.issubset({"inference", "manager", "monitor", "standard", "model", "service", "asset", "catalog", "graph", "ontology", "develop", "quality", "transfer", "orchestrator", "security", "system", "workbench"}):
+        if scope == "full" or not modules.issubset({"inference", "manager", "monitor", "standard", "model", "service", "asset", "portal", "catalog", "graph", "ontology", "develop", "quality", "transfer", "orchestrator", "security", "system", "workbench"}):
             raise ValueError(f"unsupported ADDP_DEPLOYMENT_MODULES for {scope}: {extra!r}")
         values["ADDP_DEPLOYMENT_MODULES"] = ",".join(sorted(modules))
     for key, supported in INFRA_PROVIDERS.items():
