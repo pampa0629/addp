@@ -15,7 +15,7 @@ import tempfile
 SUITE='vector-zonal-class-frequency-persistence'
 PREFIX='vector-zonal-class-frequency'
 RUNTIME='addp-vector-zonal-class-frequency-runtime'
-ORACLE='.vector-zonal-class-frequency-oracle.json'
+ORACLE=PREFIX + '-expected.json'
 GRID=(100.,2.,0.,200.,0.,-3.)
 CASES={
  'direct.gpkg':('values.tif','zones.gpkg','frequency',False,'zonal_'),

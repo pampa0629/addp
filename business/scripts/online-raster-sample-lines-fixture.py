@@ -16,7 +16,7 @@ import tempfile
 SUITE='raster-sample-lines-persistence'
 PREFIX='raster-sample-lines'
 RUNTIME='addp-raster-sample-lines-runtime'
-ORACLE='.raster-sample-lines-oracle.json'
+ORACLE=PREFIX + '-expected.json'
 GRID=(100.,2.,0.,200.,0.,-3.)
 CASES={
  'cell.gpkg':('values.tif','lines.gpkg','direct','cell',1.),

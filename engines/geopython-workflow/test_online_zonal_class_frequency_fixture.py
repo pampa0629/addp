@@ -130,6 +130,10 @@ def test_zonal_class_frequency_worker_stdin_frozen_oracle_poison_and_cleanup(tmp
         cwd=tmp_path, env={**os.environ, 'TMPDIR': str(scratch)}, capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stderr
     evidence = json.loads(result.stdout); assert len(evidence['expectations']) == 16 and evidence['full_source_pixels_verified'] is True
+    original = f.archive_files(root, tmp_path, [f.ORACLE], {}, f.PREFIX + '-oracle')[f.ORACLE]
+    assert all(not part.startswith('.') for part in Path(original['path']).parts)
+    assert original['sha256'] == evidence['oracle_sha256']
+    assert (tmp_path / original['path']).read_bytes() == (root / f.ORACLE).read_bytes()
     path = root/f.ORACLE; anchor = evidence['oracle_sha256']
     if fault == 'hash': path.chmod(0o644); path.write_bytes(path.read_bytes()+b' ')
     elif fault == 'scope':

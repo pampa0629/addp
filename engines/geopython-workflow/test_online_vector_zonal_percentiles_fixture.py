@@ -143,6 +143,10 @@ def test_vector_zonal_percentiles_worker_stdin_frozen_oracle_poison_and_cleanup(
     result=call('oracle',sha);assert result.returncode==0,result.stderr.decode();anchor=json.loads(result.stdout)['oracle_sha256']
     assert len(json.loads(result.stdout)['expectations'])==16
     assert call('verify',anchor,sha).returncode==0
+    original = f.archive_files(root, tmp_path, [f.ORACLE], {}, f.PREFIX + '-oracle')[f.ORACLE]
+    assert all(not part.startswith('.') for part in Path(original['path']).parts)
+    assert original['sha256'] == anchor
+    assert (tmp_path / original['path']).read_bytes() == (root / f.ORACLE).read_bytes()
     (root/f.ORACLE).chmod(0o644);(root/f.ORACLE).write_bytes(b'{}')
     result=call('verify',anchor,sha);assert result.returncode!=0 and b'oracle cache hash changed'in result.stderr
     assert json.loads(call('cleanup-oracle').stdout)['oracle_cache_removed']is True

@@ -16,7 +16,7 @@ import tempfile
 SUITE='raster-sample-points-persistence'
 PREFIX='raster-sample-points'
 RUNTIME='addp-raster-sample-points-runtime'
-ORACLE='.raster-sample-points-oracle.json'
+ORACLE=PREFIX + '-expected.json'
 GRID=(100.,2.,0.,200.,0.,-3.)
 CASES={
  'base.gpkg':('values.tif','points.gpkg','direct'),

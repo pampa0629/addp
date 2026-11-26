@@ -113,6 +113,10 @@ def test_sample_hosted_worker_stdin_scope_poison_and_cleanup(tmp_path):
  assert call('seed').returncode==0
  result=call('oracle',sha);assert result.returncode==0,result.stderr.decode();anchor=json.loads(result.stdout)['oracle_sha256']
  assert call('verify',anchor,sha).returncode==0
+ original = f.archive_files(root, tmp_path, [f.ORACLE], {}, f.PREFIX + '-oracle')[f.ORACLE]
+ assert all(not part.startswith('.') for part in Path(original['path']).parts)
+ assert original['sha256'] == anchor
+ assert (tmp_path / original['path']).read_bytes() == (root / f.ORACLE).read_bytes()
  residual=scratch/'addp-raster-execution-leftover';residual.mkdir()
  failure=call('verify',anchor,sha)
  assert failure.returncode==1 and b'Runtime execution workspace residual' in failure.stderr

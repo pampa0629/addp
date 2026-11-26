@@ -16,7 +16,7 @@ import tempfile
 SUITE='raster-sample-points-bilinear-persistence'
 PREFIX='raster-sample-points-bilinear'
 RUNTIME='addp-raster-sample-points-bilinear-runtime'
-ORACLE='.raster-sample-points-bilinear-oracle.json'
+ORACLE=PREFIX + '-expected.json'
 GRID=(100.,2.,0.,200.,0.,-3.)
 CASES={
  'cell-default.gpkg':('values.tif','points.gpkg','direct',None),
