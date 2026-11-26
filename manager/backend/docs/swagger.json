@@ -9263,7 +9263,12 @@
                     "type": "string"
                 },
                 "map_profile": {
-                    "type": "string"
+                    "description": "GRIB 地图显示配置 | GRIB map display profile",
+                    "type": "string",
+                    "enum": [
+                        "ecmwf_ifs_01_temperature/v1",
+                        "ecmwf_ifs_01_precipitation/v1"
+                    ]
                 },
                 "max_zoom": {
                     "type": "integer"

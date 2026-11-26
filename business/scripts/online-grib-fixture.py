@@ -377,27 +377,34 @@ def sources():
     result.append(dict(spec, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return result
 
-MAP_KEY = 'grib-map/ecmwf-ifs-0p1-2t-00h-06h.grib2'
-MAP_SHA = '3c3f4aabaff2eb520c3efb4039db9d42336d39f1ae445bee56ee044e21b5fbe4'
+MAP_SOURCES = {
+    'temperature': dict(key='grib-map/ecmwf-ifs-0p1-2t-00h-06h.grib2', size_bytes=2699860,
+        sha256='3c3f4aabaff2eb520c3efb4039db9d42336d39f1ae445bee56ee044e21b5fbe4',
+        profile='ecmwf_ifs_01_temperature/v1'),
+    'precipitation': dict(key='grib-map/ecmwf-ifs-0p1-tp-00h-06h.grib2', size_bytes=1067597,
+        sha256='774c7eeeb90b1cbebcdba504388abc4e04062fc6b614b6d683b6a123187f06e7',
+        profile='ecmwf_ifs_01_precipitation/v1'),
+}
 
 
-def map_source(repository):
+def map_source(repository, kind):
     directory = Path(repository) / 'business/fixtures/manager'
-    initial = (directory / 'ecmwf-ifs-20261117-2t-0p1-initial.grib2').read_bytes()
-    forecast = (directory / 'ecmwf-ifs-20261117-instant-0p1.grib2').read_bytes()
-    raw = initial + forecast[:int.from_bytes(forecast[8:16], 'big')]
-    if hashlib.sha256(raw).hexdigest() != MAP_SHA:
+    if kind == 'temperature':
+        initial = (directory / 'ecmwf-ifs-20261117-2t-0p1-initial.grib2').read_bytes()
+        forecast = (directory / 'ecmwf-ifs-20261117-instant-0p1.grib2').read_bytes()
+        raw = initial + forecast[:int.from_bytes(forecast[8:16], 'big')]
+    else:
+        raw = (directory / ECMWF_HIGH_RES_PRECIPITATION).read_bytes()
+    source = MAP_SOURCES[kind]
+    if len(raw) != source['size_bytes'] or hashlib.sha256(raw).hexdigest() != source['sha256']:
         raise ValueError('two-message GRIB fixture differs from the pinned original')
     return raw
 
 
-def inspect_map_pixels(raw, message):
+def inspect_map_pixels(raw, message, kind):
     from osgeo import gdal
     import numpy as np
 
-    poles = {'message-1': (252.9948272705078, 240.7448272705078),
-             'message-2': (254.3425750732422, 240.8425750732422)}
-    north, south = poles[message]
     path = '/vsimem/hosted-grib-map.tif'
     gdal.FileFromMemBuffer(path, raw)
     try:
@@ -408,15 +415,32 @@ def inspect_map_pixels(raw, message):
         crs = ds.GetSpatialRef()
         assert crs.IsGeographic() and crs.GetSemiMajor() == crs.GetSemiMinor() == 6371229
         band = ds.GetRasterBand(1)
-        assert band.GetUnitType() == 'K' and band.GetBlockSize() == [256, 256]
+        assert band.GetBlockSize() == [256, 256]
         west = band.ReadAsArray(0, 0, 1, 2048)
         east = band.ReadAsArray(4095, 0, 1, 2048)
         assert np.isfinite(west).all() and np.array_equal(west, east)
-        assert float(band.ReadAsArray(2275, 0, 1, 1).item()) == north
-        assert float(band.ReadAsArray(2275, 2047, 1, 1).item()) == south
-        return dict(north_kelvin=north, south_kelvin=south, seam_rows_verified=len(west),
-                    equator_kelvin=float(west[1023, 0]), size_bytes=len(raw),
-                    sha256=hashlib.sha256(raw).hexdigest())
+        proof = dict(seam_rows_verified=len(west), size_bytes=len(raw),
+                     sha256=hashlib.sha256(raw).hexdigest())
+        if kind == 'temperature':
+            poles = {'message-1': (252.9948272705078, 240.7448272705078),
+                     'message-2': (254.3425750732422, 240.8425750732422)}
+            north, south = poles[message]
+            assert band.GetUnitType() == 'K'
+            assert float(band.ReadAsArray(2275, 0, 1, 1).item()) == north
+            assert float(band.ReadAsArray(2275, 2047, 1, 1).item()) == south
+            return dict(proof, north_kelvin=north, south_kelvin=south,
+                        equator_kelvin=float(west[1023, 0]))
+        assert kind == 'precipitation' and band.GetUnitType() == 'm'
+        assert np.isnan(band.GetNoDataValue())
+        values = band.ReadAsArray()
+        assert np.isfinite(values).all() and np.min(values) == 0
+        zeros = int(np.count_nonzero(values == 0))
+        sample = float(values[862, 3027])
+        # Target row/column select the independent ecCodes sample at 758/2661.
+        expected = {'message-1': (8388608, 0.), 'message-2': (4475721, 0.28564453125)}
+        assert (zeros, sample) == expected[message]
+        assert float(values.max()) == sample
+        return dict(proof, unit='m', zero_pixels=zeros, missing_pixels=0, sample_metres=sample)
     finally:
         gdal.Unlink(path)
 
@@ -440,24 +464,29 @@ def worker(request):
     root=Path(request['nfs_root']);bucket=storage['bucket'];action=request['action']
     directory=root/'grib'
     if action == 'map-seed':
-        raw = bytes.fromhex(request['map_source'])
-        assert hashlib.sha256(raw).hexdigest() == MAP_SHA
-        path = root / MAP_KEY
-        path.parent.mkdir(mode=0o755)
-        path.write_bytes(raw)
-        path.chmod(0o644)
-        client.put_object(bucket, MAP_KEY, io.BytesIO(raw), len(raw), content_type='application/x-grib')
-        return dict(key=MAP_KEY, sha256=MAP_SHA)
+        directory = root / 'grib-map'
+        directory.mkdir(mode=0o755)
+        for kind, spec in MAP_SOURCES.items():
+            raw = bytes.fromhex(request['map_sources'][kind])
+            assert len(raw) == spec['size_bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256']
+            key = spec['key']
+            path = root / key
+            path.write_bytes(raw)
+            path.chmod(0o644)
+            client.put_object(bucket, key, io.BytesIO(raw), len(raw), content_type='application/x-grib')
+        return dict(sources=MAP_SOURCES)
     if action == 'map-inspect':
-        return inspect_map_pixels(bytes.fromhex(request['cog_bytes']), request['message'])
+        return inspect_map_pixels(bytes.fromhex(request['cog_bytes']), request['message'], request['kind'])
     if action == 'map-delete':
-        path = root / MAP_KEY
-        path.unlink(missing_ok=True)
-        if path.parent.exists():
-            path.parent.rmdir()
-        client.remove_object(bucket, MAP_KEY)
-        assert not path.parent.exists()
-        assert not any(obj.object_name == MAP_KEY for obj in client.list_objects(bucket, prefix=MAP_KEY))
+        for spec in MAP_SOURCES.values():
+            key = spec['key']
+            (root / key).unlink(missing_ok=True)
+            client.remove_object(bucket, key)
+        directory = root / 'grib-map'
+        if directory.exists():
+            directory.rmdir()
+        assert not directory.exists()
+        assert not list(client.list_objects(bucket, prefix='grib-map/', recursive=True))
         infra = request['infra']
         storage_client = Minio(infra['endpoint'], access_key=infra['access_key'], secret_key=infra['secret_key'], secure=False)
         tenant = request['tenant_id']
@@ -496,7 +525,7 @@ def worker(request):
     raise ValueError('unknown GRIB physical action')
 
 
-def physical(action,repository,environment,*,message=None,cog=None):
+def physical(action,repository,environment,*,kind=None,message=None,cog=None):
     if action not in {'seed','verify','drift','restore','delete','map-seed','map-inspect','map-delete'}:raise ValueError('unknown fixture action')
     for key,value in {'ADDP_ONLINE_HOSTED':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','ADDP_ONLINE_MANAGER_CASE':'native-grib'}.items():
         if environment.get(key)!=value:raise ValueError('GRIB requires exclusive Hosted case')
@@ -508,9 +537,9 @@ def physical(action,repository,environment,*,message=None,cog=None):
     specs=[] if action.startswith('map-') else sources()
     config={'action':action,'nfs_root':str(root),'sources':specs,'source_bytes':{spec['name']:source_bytes(spec).hex() for spec in specs},'storage':{'endpoint':'127.0.0.1:'+environment['ADDP_ONLINE_MANAGER_MINIO_PORT'],'access_key':environment['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],'secret_key':environment['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],'bucket':environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']}}
     if action == 'map-seed':
-        config['map_source'] = map_source(repository).hex()
+        config['map_sources'] = {kind: map_source(repository, kind).hex() for kind in MAP_SOURCES}
     elif action == 'map-inspect':
-        config.update(message=message, cog_bytes=cog.hex())
+        config.update(kind=kind, message=message, cog_bytes=cog.hex())
     elif action == 'map-delete':
         config.update(tenant_id=int(environment['ADDP_ONLINE_TEST_TENANT_ID']),
                       infra=dict(endpoint='127.0.0.1:'+environment['MINIO_API_PORT'],

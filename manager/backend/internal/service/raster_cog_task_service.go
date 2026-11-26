@@ -626,7 +626,7 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) (RasterCOGRasterConfi
 		"band_count":        raster.BandCount,
 	}
 	if raster.SourceFormat == "grib" {
-		if !validGRIBMapMessage(raster.Message) || !format.ValidContainerSourceVersion(raster.SourceVersion) {
+		if !IsGRIBMapProfile(raster.SourceProfile) || !validGRIBMapMessage(raster.Message) || !format.ValidContainerSourceVersion(raster.SourceVersion) {
 			return raster, ErrFileSourceAuthorizationRequired
 		}
 		normalized["message"] = raster.Message

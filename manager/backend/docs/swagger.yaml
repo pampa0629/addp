@@ -1765,6 +1765,10 @@ definitions:
       geometry_column:
         type: string
       map_profile:
+        description: GRIB 地图显示配置 | GRIB map display profile
+        enum:
+        - ecmwf_ifs_01_temperature/v1
+        - ecmwf_ifs_01_precipitation/v1
         type: string
       max_zoom:
         type: integer

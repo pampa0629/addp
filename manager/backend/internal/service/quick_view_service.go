@@ -381,7 +381,8 @@ type QuickViewRealtimeTileInfo struct {
 }
 
 type QuickViewRenderInfo struct {
-	MapProfile          string                  `json:"map_profile,omitempty"`
+	// GRIB 地图显示配置 | GRIB map display profile
+	MapProfile          string                  `json:"map_profile,omitempty" enums:"ecmwf_ifs_01_temperature/v1,ecmwf_ifs_01_precipitation/v1"`
 	RasterMessage       string                  `json:"raster_message,omitempty"`
 	RasterSourceVersion string                  `json:"raster_source_version,omitempty"`
 	RenderSource        string                  `json:"render_source,omitempty"`
@@ -2274,7 +2275,7 @@ func renderInfoFromRasterCOG(result *models.RasterCOG, raster *RasterQuickViewSo
 		info.SourceSRID = raster.SourceSRID
 	}
 	if raster != nil && raster.Format == "grib" {
-		info.MapProfile = GRIBTemperatureMapProfile
+		info.MapProfile = raster.Profile
 		info.RasterMessage = raster.Message
 		info.RasterSourceVersion = raster.SourceVersion
 	}
@@ -2653,7 +2654,7 @@ func rasterCOGContentURL(result *models.RasterCOG) string {
 		return ""
 	}
 	url := fmt.Sprintf("/api/v1/manager/raster_cog/%d/content", result.ID)
-	if result.SourceProfile == GRIBTemperatureMapProfile {
+	if IsGRIBMapProfile(result.SourceProfile) {
 		url += "?source_version=" + commonJSON.String(result.Metadata, "grib_map", "source_version")
 	}
 	return url

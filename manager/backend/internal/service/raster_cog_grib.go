@@ -19,7 +19,14 @@ import (
 	managerprotection "github.com/addp/manager/internal/protection"
 )
 
-const GRIBTemperatureMapProfile = "ecmwf_ifs_01_temperature/v1"
+const (
+	GRIBTemperatureMapProfile   = "ecmwf_ifs_01_temperature/v1"
+	GRIBPrecipitationMapProfile = "ecmwf_ifs_01_precipitation/v1"
+)
+
+func IsGRIBMapProfile(profile string) bool {
+	return profile == GRIBTemperatureMapProfile || profile == GRIBPrecipitationMapProfile
+}
 
 func validGRIBMapMessage(name string) bool {
 	number, err := strconv.Atoi(strings.TrimPrefix(name, "message-"))
@@ -44,8 +51,9 @@ func GRIBRasterQuickViewSource(attrs map[string]interface{}, message string) *Ra
 		return nil
 	}
 	for _, child := range container.Children {
-		if child.Name == message && child.Format == "grib" && child.ChildKind == "array" && child.Native["map_profile"] == GRIBTemperatureMapProfile {
-			return &RasterQuickViewSource{Format: "grib", Layout: "single", Profile: GRIBTemperatureMapProfile,
+		profile, _ := child.Native["map_profile"].(string)
+		if child.Name == message && child.Format == "grib" && child.ChildKind == "array" && IsGRIBMapProfile(profile) {
+			return &RasterQuickViewSource{Format: "grib", Layout: "single", Profile: profile,
 				Message: message, SourceVersion: version, Width: 4096, Height: 2048, BandCount: 1,
 				SourceCRS: "ADDP:ECMWF_SPHERE_6371229", Extent: []float64{-180, -90, 180, 90}}
 		}
@@ -54,7 +62,7 @@ func GRIBRasterQuickViewSource(attrs map[string]interface{}, message string) *Ra
 }
 
 func gribCOGVersionMatches(result *models.RasterCOG, raster *RasterQuickViewSource) bool {
-	return result != nil && raster != nil && result.SourceProfile == GRIBTemperatureMapProfile &&
+	return result != nil && raster != nil && result.SourceProfile == raster.Profile &&
 		commonjson.String(result.Metadata, "grib_map", "message") == raster.Message &&
 		commonjson.String(result.Metadata, "grib_map", "source_version") == raster.SourceVersion
 }

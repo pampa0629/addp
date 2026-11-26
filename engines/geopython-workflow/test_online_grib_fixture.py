@@ -19,6 +19,8 @@ def test_hosted_grib_oracle_through_actual_native_worker(tmp_path,spec):
     info=grib.OPERATORS['grib.inspect']['function'](access_plan=plan)
     assert info['format_info']['source_version']=='sha256:'+spec['sha256']
     assert [c['name'] for c in info['container']['children']]==[f"message-{field['number']}" for field in spec['fields']]
+    if spec['case_id'] in ('ecmwf-precipitation', 'ecmwf-precipitation-0h'):
+        assert all('map_profile' not in child['native'] for child in info['container']['children'])
     for field in spec['fields']:
         select=FIXTURE.selection(field)
         result=grib.OPERATORS['grib.read_slice']['function'](access_plan=plan,source_version=info['format_info']['source_version'],selection=select)
@@ -165,11 +167,11 @@ def test_grib_map_cog_keeps_message_identity_and_world_bounds(tmp_path):
         assert band.GetBlockSize() == [256, 256] and band.GetUnitType() == 'K'
         values = band.ReadAsArray()
         np.testing.assert_array_equal(values[:, 0], values[:, -1])
-        proof = FIXTURE.inspect_map_pixels(target.read_bytes(), message)
+        proof = FIXTURE.inspect_map_pixels(target.read_bytes(), message, 'temperature')
         assert proof['equator_kelvin'] == float(values[1023, 0])
         other = 'message-2' if message == 'message-1' else 'message-1'
         with pytest.raises(AssertionError):
-            FIXTURE.inspect_map_pixels(target.read_bytes(), other)
+            FIXTURE.inspect_map_pixels(target.read_bytes(), other, 'temperature')
         maps.append(values)
         del band, ds
     assert maps[0][1023, 0] != maps[1][1023, 0]
@@ -179,6 +181,32 @@ def test_grib_map_cog_keeps_message_identity_and_world_bounds(tmp_path):
                       {'source_version': 'sha256:' + '0' * 64, 'message': 'message-1'}):
         with pytest.raises(ValueError, match='GRIB map'):
             raster_to_cog(access, {'grib_map_selection': selection})
+
+
+def test_grib_precipitation_map_keeps_original_metres_and_valid_zero(tmp_path):
+    from operators.raster_compute import raster_to_cog
+
+    raw = FIXTURE.map_source(ROOT, 'precipitation')
+    source = tmp_path / 'forecast.grib2'
+    source.write_bytes(raw)
+    version = 'sha256:' + sha256(raw).hexdigest()
+    plan = {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+        'kind': 'file', 'format': 'grib', 'access': {'method': 'mounted_path', 'path': str(source)},
+    }}
+    children = grib.OPERATORS['grib.inspect']['function'](access_plan=plan)['container']['children']
+    for index, child in enumerate(children):
+        profile = grib.PRECIPITATION_MAP_PROFILE
+        assert child['native']['map_profile'] == profile
+        time = child['native']['message']['time']
+        assert time['operation'] == 'accumulation' and time['interval_length'] == index * 6
+        target = tmp_path / (child['name'] + '.tif')
+        access = {**plan, 'target': {'kind': 'file', 'format': 'tiff', 'name': target.name, 'write_mode': 'replace',
+                                    'access': {'method': 'mounted_path', 'path': str(target)}}}
+        selection = {'source_version': version, 'message': child['name']}
+        result = raster_to_cog(access, {'grib_map_selection': selection})
+        assert result['map_profile'] == profile and result['grib_map_selection'] == selection
+        assert result['extent'] == [-180, -90, 180, 90]
+        FIXTURE.inspect_map_pixels(target.read_bytes(), child['name'], 'precipitation')
 
 
 def test_product_image_grib_smoke_uses_real_packaged_worker_bytes(capsys):

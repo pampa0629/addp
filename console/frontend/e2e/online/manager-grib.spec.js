@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { gribScreenshotColors } from '../../../../manager/frontend/e2e/grib-pixels.js'
 import { modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
 import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
@@ -208,15 +209,16 @@ async function displayedWorld(page, viewport) {
   }, png.toString('base64'))
 }
 
-async function verifyTemperatureMaps(page, storage) {
+async function verifyGRIBMaps(page, storage, kind) {
   const env = process.env
   const context = JSON.parse(env.ADDP_ONLINE_MANAGER_GRIB_JSON)
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
   await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
 
-  const source = context.temperature_maps[storage]
-  const path = resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-grib-${storage}-map-browser.json`)
-  const proof = { run_id: context.run_id, storage, locator: source.locator, source_version: source.version,
+  const caseName = `${storage}-${kind}`
+  const source = context.maps[caseName]
+  const path = resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-grib-${caseName}-map-browser.json`)
+  const proof = { run_id: context.run_id, case: caseName, locator: source.locator, source_version: source.version,
     generations: [], visits: [], result: 'incomplete' }
   const save = () => writeFileSync(path, JSON.stringify(proof, null, 2) + '\n')
   const actions = '/api/v1/manager/quick-view/actions'
@@ -234,7 +236,7 @@ async function verifyTemperatureMaps(page, storage) {
   })
   const byMessage = new Map()
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-  const map = frame.getByTestId('grib-temperature-map')
+  const map = frame.getByTestId('grib-field-map')
   const canvas = map.locator('.raster-map canvas').first()
   try {
     for (const [step, number] of [1, 2, 1, 2].entries()) {
@@ -256,6 +258,16 @@ async function verifyTemperatureMaps(page, storage) {
       await expect(map).toHaveAttribute('data-message', message)
       await expect(map).toHaveAttribute('data-source-version', source.version)
       await expect(map).toContainText('2026-11-17T' + (number === 1 ? '00' : '06') + ':00:00+00:00')
+      if (kind === 'precipitation') {
+        const toolbar = map.locator('.grib-map-toolbar')
+        if (number === 1) {
+          await expect(toolbar).toContainText(/起报基线|Forecast baseline/)
+          await expect(toolbar).toContainText('0 mm')
+        } else {
+          await expect(toolbar).toContainText('2026-11-17T00:00:00+00:00')
+          await expect(toolbar).toContainText(/6 小时|6 h/)
+        }
+      }
       if (step < 2) {
         const action = page.waitForResponse(response => new URL(response.url()).pathname === actions &&
           response.request().method() === 'POST')
@@ -271,7 +283,7 @@ async function verifyTemperatureMaps(page, storage) {
       }
       const info = (await (await capability).json()).quick_view
       expect(info).toMatchObject({ raster_message: message, raster_source_version: source.version,
-        map_profile: 'ecmwf_ifs_01_temperature/v1', extent: [-180, -90, 180, 90] })
+        map_profile: source.profile, extent: [-180, -90, 180, 90] })
       const url = new URL(info.preview_url, page.url())
       expect(url.pathname).toMatch(/^\/api\/v1\/manager\/raster_cog\/[1-9]\d*\/content$/)
       expect(url.searchParams.get('source_version')).toBe(source.version)
@@ -281,13 +293,29 @@ async function verifyTemperatureMaps(page, storage) {
         r.version === source.version && /^bytes \d+-\d+\/\d+$/.test(r.range) && /^bytes=/.test(r.requested))).toBe(true)
       await expect(canvas).toBeVisible({ timeout: 30000 })
       await canvas.scrollIntoViewIfNeeded({ timeout: 10000 })
-      await expect.poll(async () => {
-        const pixels = await modelPixels(page, canvas)
-        return pixels.colored / pixels.total
-      }).toBeGreaterThan(0.1)
-      const screenshot = `grib-${storage}-temperature-map-${step + 1}.png`
+      let precipitationColors
+      if (kind === 'precipitation') {
+        const legend = map.getByTestId('grib-precipitation-legend')
+        await expect(legend).toContainText(/缺测|No data/)
+        await expect(legend).toContainText('0 mm')
+        await expect(legend).toContainText('>50 mm')
+        await map.getByRole('slider').press('End')
+        const swatches = legend.locator('.grib-swatch:not(.grib-missing)')
+        await expect.poll(async () => {
+          precipitationColors = await gribScreenshotColors(page, canvas, swatches)
+          const { counts, total } = precipitationColors
+          const rain = counts.slice(1).reduce((sum, count) => sum + count, 0) / total
+          return counts[0] / total > 0.1 && (number === 1 ? rain === 0 : rain > 0.03)
+        }).toBe(true)
+      } else {
+        await expect.poll(async () => {
+          const pixels = await modelPixels(page, canvas)
+          return pixels.colored / pixels.total
+        }).toBeGreaterThan(0.1)
+      }
+      const screenshot = `grib-${caseName}-map-${step + 1}.png`
       await map.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, screenshot) })
-      if (step === 1) {
+      if (step === 1 && kind === 'temperature') {
         const viewport = map.locator('.raster-map')
         await expect.poll(async () => {
           const view = await displayedWorld(page, viewport)
@@ -304,10 +332,11 @@ async function verifyTemperatureMaps(page, storage) {
         await expect.poll(async () => (await displayedWorld(page, viewport)).seamColors).toBe(true)
         await page.mouse.up()
         await expect.poll(async () => (await displayedWorld(page, viewport)).seamColors).toBe(true)
-        await viewport.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${storage}-map-date-line.png`) })
+        await viewport.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `grib-${caseName}-map-date-line.png`) })
         proof.date_line = { initial_view: world, pan_css_pixels: halfWorld, final_view: await displayedWorld(page, viewport) }
       }
       proof.visits.push({ message, preview_url: info.preview_url, screenshot,
+        ...(precipitationColors ? { precipitation_style_verified: true, precipitation_colors: precipitationColors } : {}),
         ranges: ranges.slice(rangeStart).filter(r => r.path === url.pathname) })
       save()
     }
@@ -318,8 +347,10 @@ async function verifyTemperatureMaps(page, storage) {
 }
 
 for (const storage of ['minio', 'nfs']) {
-  test(`ordinary user generates two temperature maps and reuses each forecast from ${storage}`, async ({ page }) => {
-    test.setTimeout(240000)
-    await verifyTemperatureMaps(page, storage)
-  })
+  for (const kind of ['temperature', 'precipitation']) {
+    test(`ordinary user generates two ${kind} maps and reuses each interval from ${storage}`, async ({ page }) => {
+      test.setTimeout(240000)
+      await verifyGRIBMaps(page, storage, kind)
+    })
+  }
 }

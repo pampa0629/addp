@@ -135,7 +135,7 @@ func (e *ManagerRasterCOGExecutor) buildRasterCOG(ctx context.Context, req Raste
 	facts := operatorInvokeJSONFacts(invokeResult)
 	if req.Config.Raster.SourceFormat == "grib" {
 		selection, _ := asJSONMap(facts["grib_map_selection"])
-		if jsonString(facts["map_profile"]) != GRIBTemperatureMapProfile || jsonString(selection["message"]) != req.Config.Raster.Message || jsonString(selection["source_version"]) != req.Config.Raster.SourceVersion {
+		if jsonString(facts["map_profile"]) != req.Config.Raster.SourceProfile || jsonString(selection["message"]) != req.Config.Raster.Message || jsonString(selection["source_version"]) != req.Config.Raster.SourceVersion {
 			return nil, errors.New("GRIB map result differs from the selected source message")
 		}
 	}

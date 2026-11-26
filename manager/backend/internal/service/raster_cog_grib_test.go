@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestGRIBMapCacheIdentityIncludesMessageAndCurrentSourceVersion(t *testing.T) {
+func TestGRIBMapCacheIdentityIncludesProfileMessageAndCurrentSourceVersion(t *testing.T) {
 	version := "sha256:" + strings.Repeat("a", 64)
 	info := map[string]interface{}{"scan_complete": true, "encoding": "GRIB2", "source_version": version}
 	attrs := map[string]interface{}{
@@ -21,7 +21,7 @@ func TestGRIBMapCacheIdentityIncludesMessageAndCurrentSourceVersion(t *testing.T
 		"format_info": map[string]interface{}{"grib": info},
 		"type_info": map[string]interface{}{"container": map[string]interface{}{"resource_count": 1, "children": []map[string]interface{}{
 			{"name": "message-1", "format": "grib", "child_kind": "array", "native": map[string]interface{}{"map_profile": GRIBTemperatureMapProfile}},
-			{"name": "message-2", "format": "grib", "child_kind": "array", "native": map[string]interface{}{"map_profile": GRIBTemperatureMapProfile}},
+			{"name": "message-2", "format": "grib", "child_kind": "array", "native": map[string]interface{}{"map_profile": GRIBPrecipitationMapProfile}},
 			{"name": "message-3", "format": "grib", "child_kind": "array", "native": map[string]interface{}{}},
 		}}},
 	}
@@ -40,8 +40,20 @@ func TestGRIBMapCacheIdentityIncludesMessageAndCurrentSourceVersion(t *testing.T
 		mapInfo.PreviewURL != "/api/v1/manager/raster_cog/52/content?source_version="+version || mapInfo.ExtentSRID != 0 {
 		t.Fatalf("unexpected GRIB map delivery: %+v", mapInfo)
 	}
+	mismatched := *first
+	mismatched.Profile = GRIBPrecipitationMapProfile
+	if rasterCOGFactsMatch(result, QuickViewIdentity{}, &mismatched, 14) {
+		t.Fatal("raster COG crossed GRIB map profiles")
+	}
+	result.SourceProfile = GRIBPrecipitationMapProfile
+	result.Metadata["grib_map"] = commonModels.JSONMap{"message": second.Message, "source_version": second.SourceVersion}
+	precipitation := renderInfoFromRasterCOG(result, second)
+	if second.Profile != GRIBPrecipitationMapProfile || !rasterCOGFactsMatch(result, QuickViewIdentity{}, second, 14) ||
+		precipitation.MapProfile != GRIBPrecipitationMapProfile || precipitation.PreviewURL != mapInfo.PreviewURL {
+		t.Fatalf("unexpected precipitation delivery: %+v", precipitation)
+	}
 	info["source_version"] = "sha256:" + strings.Repeat("b", 64)
-	if rasterCOGFactsMatch(result, QuickViewIdentity{}, GRIBRasterQuickViewSource(attrs, "message-1"), 14) {
+	if rasterCOGFactsMatch(result, QuickViewIdentity{}, GRIBRasterQuickViewSource(attrs, "message-2"), 14) {
 		t.Fatal("raster COG crossed committed GRIB source version")
 	}
 }

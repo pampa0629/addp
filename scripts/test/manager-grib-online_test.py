@@ -29,7 +29,7 @@ class GRIBOracleTest(unittest.TestCase):
         self.assertEqual([s['sha256'] for s in FIXTURE.sources()[:2]],['98d4150bb752fbdd54219060d67e7f3446e0263c6fff1bd2fbe8d4992f61f110','addd8a56405b421b3645e592808af3c576ee501ed325e93651f30a891ca4dce6'])
 
     def test_temperature_map_has_two_pinned_official_messages(self):
-        raw = FIXTURE.map_source(Path(__file__).resolve().parents[2])
+        raw = FIXTURE.map_source(Path(__file__).resolve().parents[2], 'temperature')
         offset = 0
         for length in (1350847, 1349013):
             self.assertEqual(raw[offset:offset+4], b'GRIB')
@@ -37,7 +37,7 @@ class GRIBOracleTest(unittest.TestCase):
             offset += length
             self.assertEqual(raw[offset-4:offset], b'7777')
         self.assertEqual(len(raw), offset)
-        self.assertNotIn(FIXTURE.MAP_KEY.split('/')[-1], FIXTURE.NAMES)
+        self.assertNotIn(FIXTURE.MAP_SOURCES['temperature']['key'].split('/')[-1], FIXTURE.NAMES)
 
     def test_map_fixture_seeds_identical_nfs_and_minio_sources_and_cleans_both(self):
         objects = {}
@@ -56,7 +56,7 @@ class GRIBOracleTest(unittest.TestCase):
                 return [types.SimpleNamespace(object_name=name) for store, name in objects
                         if store == bucket and name.startswith(prefix)]
 
-        raw = FIXTURE.map_source(Path(__file__).resolve().parents[2])
+        raws = {kind: FIXTURE.map_source(Path(__file__).resolve().parents[2], kind) for kind in FIXTURE.MAP_SOURCES}
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             unrelated = root / 'unrelated'
@@ -64,9 +64,10 @@ class GRIBOracleTest(unittest.TestCase):
             credentials = dict(endpoint='local', access_key='a', secret_key='b')
             request = dict(nfs_root=temp, storage=dict(credentials, bucket='test'), infra=credentials, tenant_id=2)
             with mock.patch.dict(sys.modules, {'minio': types.SimpleNamespace(Minio=Client)}):
-                FIXTURE.worker(dict(request, action='map-seed', map_source=raw.hex()))
-                self.assertEqual((root / FIXTURE.MAP_KEY).read_bytes(), raw)
-                self.assertEqual(objects['test', FIXTURE.MAP_KEY], raw)
+                FIXTURE.worker(dict(request, action='map-seed', map_sources={kind: raw.hex() for kind, raw in raws.items()}))
+                for kind, spec in FIXTURE.MAP_SOURCES.items():
+                    self.assertEqual((root / spec['key']).read_bytes(), raws[kind])
+                    self.assertEqual(objects['test', spec['key']], raws[kind])
                 result = FIXTURE.worker(dict(request, action='map-delete'))
             self.assertEqual(result, dict(nfs_source_removed=True, minio_source_removed=True,
                                           cog_objects_removed=True, temporary_inputs_removed=True))
@@ -74,7 +75,7 @@ class GRIBOracleTest(unittest.TestCase):
             self.assertEqual(objects, {})
 
     def test_map_proof_rejects_shared_cache_wrong_version_or_missing_range(self):
-        version = 'sha256:' + FIXTURE.MAP_SHA
+        version = 'sha256:' + FIXTURE.MAP_SOURCES['temperature']['sha256']
         tasks = [dict(message=f'message-{i}', task_id=i, execution_id=f'exec-{i}') for i in (1, 2)]
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -85,15 +86,15 @@ class GRIBOracleTest(unittest.TestCase):
                 (root/screenshot).write_bytes(b'\x89PNG\r\n\x1a\n')
                 visits.append(dict(message=f'message-{i}', preview_url=path+'?source_version='+version,
                     screenshot=screenshot, ranges=[dict(path=path, version=version, range='bytes 0-63/256')]))
-            proof = dict(run_id='run', storage='minio', locator='item', source_version=version, result='passed', generations=tasks, visits=visits)
-            self.assertEqual(len(SCENE.map_browser_artifacts(proof,'run','item',root,'minio')), 2)
+            proof = dict(run_id='run', case='minio-temperature', locator='item', source_version=version, result='passed', generations=tasks, visits=visits)
+            self.assertEqual(len(SCENE.map_browser_artifacts(proof,'run','item',root,'minio-temperature',FIXTURE.MAP_SOURCES['temperature'])), 2)
             with self.assertRaises(ValueError):
-                SCENE.map_browser_artifacts(proof, 'run', 'item', root, 'nfs')
+                SCENE.map_browser_artifacts(proof, 'run', 'item', root, 'nfs-temperature', FIXTURE.MAP_SOURCES['temperature'])
             for key, value in (('preview_url',visits[1]['preview_url']),('ranges',[]),('message','message-2')):
                 bad = copy.deepcopy(proof)
                 bad['visits'][2][key] = value
                 with self.assertRaises(ValueError):
-                    SCENE.map_browser_artifacts(bad,'run','item',root,'minio')
+                    SCENE.map_browser_artifacts(bad,'run','item',root,'minio-temperature',FIXTURE.MAP_SOURCES['temperature'])
 
     def response(self,spec,field):
         selection=FIXTURE.selection(field)

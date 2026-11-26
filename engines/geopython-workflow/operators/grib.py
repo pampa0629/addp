@@ -26,6 +26,8 @@ MAX_POINTS = 1 << 24
 MAX_TOTAL_POINTS = 1 << 26
 PROFILES = {1: 'grib1_regular_fields/v1', 2: 'grib2_regular_fields/v1'}
 MAP_PROFILE = 'ecmwf_ifs_01_temperature/v1'
+PRECIPITATION_MAP_PROFILE = 'ecmwf_ifs_01_precipitation/v1'
+MAP_UNITS = {MAP_PROFILE: 'K', PRECIPITATION_MAP_PROFILE: 'm'}
 
 
 class SliceSelectionError(ValueError):
@@ -206,8 +208,8 @@ def _grib2_ecmwf_ccsds(sections, discipline, point_count):
         reference_seconds=int(reference.timestamp()), forecast_seconds=forecast_hours * 3600,
         valid_seconds=int(valid.timestamp()), element=element, unit=unit,
     )
-    if not cumulative and identity == (0, 0) and _ecmwf_global_01_grid(sections[3]):
-        facts['map_profile'] = MAP_PROFILE
+    if (cumulative or identity == (0, 0)) and _ecmwf_global_01_grid(sections[3]):
+        facts['map_profile'] = PRECIPITATION_MAP_PROFILE if cumulative else MAP_PROFILE
     return facts
 
 
@@ -561,11 +563,12 @@ def _description(dataset, field):
         attributes={key:dict(type='String',values=[value]) for key,value in metadata.items()}, attributes_coverage='selected',slice_supported=True,
         value_mode='decoded_native_units',grid=dict(transform=list(transform),crs_wkt=dataset.GetProjectionRef(),longitude_policy='unchanged'),
         message=message)
-    if field.get('facts', {}).get('map_profile') == MAP_PROFILE:
+    profile = field.get('facts', {}).get('map_profile')
+    if profile in MAP_UNITS:
         crs = osr.SpatialReference(wkt=dataset.GetProjectionRef())
         if (crs.IsGeographic() and crs.GetSemiMajor() == crs.GetSemiMinor() == 6371229
                 and np.allclose(transform, (179.95, .1, 0, 90.05, 0, -.1), rtol=0, atol=1e-12)):
-            description['map_profile'] = MAP_PROFILE
+            description['map_profile'] = profile
     return description
 
 
@@ -625,14 +628,17 @@ def read_slice(access_plan, source_version, selection):
 def _write_map_geotiff(access_plan, source_version, message, path):
     with _source(access_plan, source_version) as (raw, fields, _):
         field = next((candidate for candidate in fields if candidate['name'] == message), None)
-        if field is None or field.get('facts', {}).get('map_profile') != MAP_PROFILE:
-            raise ValueError('GRIB message is outside the map profile')
+        if field is None:
+            raise ValueError('GRIB map message was not found')
         with _dataset(raw, field) as source:
-            if _description(source, field).get('map_profile') != MAP_PROFILE:
+            profile = _description(source, field).get('map_profile')
+            if profile not in MAP_UNITS:
                 raise ValueError('GRIB decoded grid conflicts with the map profile')
             values = source.GetRasterBand(1).ReadAsArray()
             if values is None or values.shape != (1801, 3600) or not np.isfinite(values).all():
-                raise ValueError('GRIB temperature field is incomplete')
+                raise ValueError('GRIB map field is incomplete')
+            if profile == PRECIPITATION_MAP_PROFILE and np.any(values < 0):
+                raise ValueError('GRIB precipitation field contains negative values')
             # A periodic longitude lookup and an unwrapped latitude lookup
             # choose the source pixel nearest each display pixel center.
             spacing = 360 / 4096
@@ -644,12 +650,14 @@ def _write_map_geotiff(access_plan, source_version, message, path):
             target.SetProjection(source.GetProjectionRef())
             target.SetGeoTransform((-180, spacing, 0, 90, 0, -spacing))
             band = target.GetRasterBand(1)
-            band.SetUnitType('K')
+            band.SetUnitType(MAP_UNITS[profile])
+            if profile == PRECIPITATION_MAP_PROFILE:
+                band.SetNoDataValue(float('nan'))
             if band.WriteArray(values[np.ix_(rows, columns)].astype('float32')) != 0:
                 raise ValueError('GRIB display grid could not be written')
             band = None
             target.Close()
-    return {'map_profile': MAP_PROFILE}
+    return {'map_profile': profile}
 
 
 def _native_main():

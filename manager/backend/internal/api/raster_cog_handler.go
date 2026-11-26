@@ -71,7 +71,7 @@ func (h *RasterCOGHandler) GetRasterCOGContent(c *gin.Context) {
 		return
 	}
 
-	if result.SourceProfile == service.GRIBTemperatureMapProfile {
+	if service.IsGRIBMapProfile(result.SourceProfile) {
 		commonAPI.NoStore(c)
 		if c.Query("source_version") == "" || c.Query("source_version") != commonjson.String(result.Metadata, "grib_map", "source_version") || !commonauth.HasAllRolePermissions(c, "manager.content.read") {
 			accessDeniedToEngine(c)

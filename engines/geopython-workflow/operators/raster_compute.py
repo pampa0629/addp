@@ -778,11 +778,12 @@ def raster_to_cog(access_plan, options=None):
             result = grib._invoke_native('_write_map_geotiff', dict(access_plan=source_plan, path=str(source_path), **selection))
             if result.get('error_code') == 'GRIB_SOURCE_CHANGED':
                 raise ValueError('GRIB map source changed; refresh metadata')
-            if result.get('result', {}).get('map_profile') != grib.MAP_PROFILE:
+            profile = result.get('result', {}).get('map_profile')
+            if profile not in grib.MAP_UNITS:
                 raise ValueError('GRIB map message is outside the supported profile')
             options['blocksize'] = 256
             return {**raster_save(_raster(source_path), target_plan, profile='cog', **options),
-                    'map_profile': grib.MAP_PROFILE, 'grib_map_selection': selection}
+                    'map_profile': profile, 'grib_map_selection': selection}
         if selection is not None:
             raise ValueError('GRIB map selection requires a GRIB source')
         source = raster_load(source_plan, source_crs)

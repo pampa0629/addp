@@ -1,11 +1,11 @@
 <template>
   <GridContainerPreview :key="locator" :variables="variables" :load-slice="readSlice">
     <template #message-preview="{ child }">
-      <GRIBTemperatureMap
-        v-if="gribSourceVersion && child.native?.map_profile === 'ecmwf_ifs_01_temperature/v1'"
+      <GRIBFieldMap
+        v-if="gribSourceVersion && isGRIBMapProfile(child.native?.map_profile)"
         :key="`${locator}:${gribSourceVersion}:${child.name}`"
         :locator="locator" :source-version="gribSourceVersion" :message="child.name"
-        :valid-time="child.native.message?.time?.end_utc || ''" />
+        :profile="child.native.map_profile" :time="child.native.message?.time" />
     </template>
     <template #spatial="{ spatial }">
       <GeoJsonPreview :data="footprintPreview(spatial)" />
@@ -16,7 +16,8 @@
 import { computed } from 'vue'
 import { GridContainerPreview } from '@common-ui/previews'
 import { GeoJsonPreview } from '@common-ui-map'
-import GRIBTemperatureMap from './GRIBTemperatureMap.vue'
+import GRIBFieldMap from './GRIBFieldMap.vue'
+import { isGRIBMapProfile } from '@/utils/gribMapProfile'
 import dataExplorerAPI from '../../api/dataExplorer'
 const props = defineProps({ data: { type: Object, required: true }, locator: { type: String, required: true } })
 const variables = computed(() => (props.data.object?.attributes?.type_info?.container?.children || [])
