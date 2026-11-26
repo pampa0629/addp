@@ -275,10 +275,13 @@ class HostedFocalSquareSevenWorkflowTest(unittest.TestCase):
                     self.run_case(client, worker, diag)
 
     def test_budget_includes_prior_initialization_and_stops_at_exhaustion(self):
-        self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS'] = '601'
-        with self.assertRaisesRegex(m.SuiteError, 'exactly 600'):
-            self.run_case()
-        self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS'] = '600'
-        self.env['ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED'] = str(time.monotonic() - 601)
-        with self.assertRaisesRegex(m.SuiteError, 'budget exhausted'):
-            self.run_case()
+        self.env['ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED'] = '1000'
+        with patch.object(m.time, 'monotonic', return_value=1001.0) as clock:
+            self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS'] = '601'
+            with self.assertRaisesRegex(m.SuiteError, 'exactly 600'):
+                self.run_case()
+            self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS'] = '600'
+            clock.return_value = 1601.0
+            with self.assertRaisesRegex(m.SuiteError, 'budget exhausted'):
+                self.run_case()
+        self.assertFalse((self.root / 'evidence').exists())
