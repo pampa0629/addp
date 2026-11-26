@@ -28,6 +28,21 @@ SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.Budge
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
 MESSAGES={'threshold_missing': ('小斑块筛除的min_pixels与min_area_m2必须且只能提供一个', 'Raster sieve requires exactly one of min_pixels or min_area_m2'), 'threshold_both': ('小斑块筛除的min_pixels与min_area_m2必须且只能提供一个', 'Raster sieve requires exactly one of min_pixels or min_area_m2'), 'threshold_pixel_null': ('小斑块筛除的min_pixels与min_area_m2必须且只能提供一个', 'Raster sieve requires exactly one of min_pixels or min_area_m2'), 'threshold_area_null_with_pixel': ('小斑块筛除的min_pixels与min_area_m2必须且只能提供一个', 'Raster sieve requires exactly one of min_pixels or min_area_m2'), 'area_null': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米', 'Raster sieve min_area_m2 must be a finite positive number in square metres'), 'area_boolean': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米', 'Raster sieve min_area_m2 must be a finite positive number in square metres'), 'area_zero': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米', 'Raster sieve min_area_m2 must be a finite positive number in square metres'), 'area_negative': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米', 'Raster sieve min_area_m2 must be a finite positive number in square metres'), 'area_string': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米', 'Raster sieve min_area_m2 must be a finite positive number in square metres'), 'area_array': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米', 'Raster sieve min_area_m2 must be a finite positive number in square metres'), 'area_object': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米', 'Raster sieve min_area_m2 must be a finite positive number in square metres'), 'grid_geographic': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'), 'grid_no_crs': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'), 'grid_no_transform': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'), 'grid_rotated_x': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'), 'grid_rotated_y': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'), 'grid_unknown_unit': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'), 'grid_compound': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'), 'band': ('小斑块筛除必须显式选择有效的一基数据波段', 'Raster sieve requires an explicit valid one-based data band'), 'alpha': ('小斑块筛除不能选择alpha作为数据波段', 'Raster sieve cannot use an alpha band as data'), 'complex': ('小斑块筛除不支持复数数据或复数alpha', 'Raster sieve does not support complex data or alpha'), 'connectivity_value': ('小斑块筛除必须显式选择整数4或8邻接', 'Raster sieve requires explicit integer connectivity 4 or 8'), 'connectivity_fractional': ('小斑块筛除必须显式选择整数4或8邻接', 'Raster sieve requires explicit integer connectivity 4 or 8'), 'connectivity_boolean': ('小斑块筛除必须显式选择整数4或8邻接', 'Raster sieve requires explicit integer connectivity 4 or 8'), 'fractional': ('小斑块筛除的有效分类必须为安全范围内的精确整数', 'Raster sieve valid classes must be exact integers within the safe range'), 'unsafe': ('小斑块筛除的有效分类必须为安全范围内的精确整数', 'Raster sieve valid classes must be exact integers within the safe range'), 'int64': ('小斑块筛除的有效分类必须为安全范围内的精确整数', 'Raster sieve valid classes must be exact integers within the safe range'), 'uint64': ('小斑块筛除的有效分类必须为安全范围内的精确整数', 'Raster sieve valid classes must be exact integers within the safe range'), 'protected_null': ('小斑块筛除的protected_values必须为不重复的安全整数列表，可为空', 'Raster sieve protected_values must be a list of distinct exact safe integers, possibly empty'), 'protected_item_object': ('小斑块筛除的protected_values必须为不重复的安全整数列表，可为空', 'Raster sieve protected_values must be a list of distinct exact safe integers, possibly empty'), 'protected_duplicate': ('小斑块筛除的protected_values必须为不重复的安全整数列表，可为空', 'Raster sieve protected_values must be a list of distinct exact safe integers, possibly empty'), 'protected_positive_unsafe': ('小斑块筛除的protected_values必须为不重复的安全整数列表，可为空', 'Raster sieve protected_values must be a list of distinct exact safe integers, possibly empty')}
 
+ENTRY_PARAMETERS = {
+    'area_array': 'min_area_m2',
+    'area_boolean': 'min_area_m2',
+    'area_null': 'min_area_m2',
+    'area_object': 'min_area_m2',
+    'area_string': 'min_area_m2',
+    'connectivity_boolean': 'connectivity',
+    'connectivity_fractional': 'connectivity',
+    'protected_item_object': 'protected_values',
+    'protected_null': 'protected_values',
+    'threshold_area_null_with_pixel': 'min_area_m2',
+    'threshold_pixel_null': 'min_pixels',
+}
+
+
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name='sieve-area-submission-error.json'
     diagnostic_schema='addp.raster-sieve-area-submission-diagnostic/v1'
@@ -121,11 +136,16 @@ def fixture_call(repository, env, action, names, timeout):
 
 def current(execution, identity, identifier, dag, runtime, language, status):
     readonly.actor(execution, identity, 'develop'); readonly.execution_snapshot(execution, dag, runtime)
-    if (execution.get('execution_id') != identifier or type(execution.get('tenant_id')) is not int
-        or execution['tenant_id'] != int(identity['tenant_id']) or execution.get('task_type') != 'workflow'
-        or execution.get('status') != status or execution['execution_config'].get('display_language') != language): raise SuiteError('current execution identity/status/language differs')
+    if 'tenant_id' in execution:
+        raise SuiteError('public Develop receipt exposes tenant_id')
+    if (execution.get('execution_id') != identifier or execution.get('task_type') != 'workflow'
+        or execution.get('status') != status or execution['execution_config'].get('display_language') != language):
+        raise SuiteError('current execution identity/status/language differs')
 
-def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current):
+
+def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current,
+                 *, failed_reader=lineage.read_failed_execution,
+                 inventory_reader=lineage.check_execution_inventory):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('area sieve business budget must be exactly 600 seconds')
     def remaining():
@@ -179,7 +199,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', output_scan, remaining()), output_scan, identifier, tenant, int(identity['principal_id']), engine)
             monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
             readonly.actor(monitor, identity, 'develop')
-            if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'success' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
+            if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'success' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
             names.append(name); native = physical_runner(repository, env, 'verify', names, remaining()); remaining()
             check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations']); previous = copy.deepcopy(native['targets'])
             physical_calls += 1; full_checks += len(names)
@@ -195,27 +215,49 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             case['lineage'] = [raster.wait_lineage(client, items[name]['id'], case['target_item_id'], case['execution_id'], remaining()) for name in case_inputs(case['name'])]
         if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('unexpected automatic scan inventory')
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
+        known_executions = [case['execution_id'] for case in cases]
         for problem in FAILURES:
             for language in ('zh-cn', 'en'):
                 stages.append({'problem': problem, 'language': language, 'status': 'running'}); progress('running')
                 dag = definition(sources, parent, 'area-four.cog.tif', invalid=problem, language=language)
-                identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
-                execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
-                if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
-                diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
-                if diagnostic != {'execution_id': identifier, 'task': 'sieve', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
-                readonly.no_publication(execution)
-                monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
-                readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
-                if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
-                queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
-                if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                failure = {'problem': problem, 'language': language, 'no_publication_or_scan_or_lineage': True}
+                parameter = ENTRY_PARAMETERS.get(problem)
+                if parameter is not None:
+                    raw = base.reject_workflow_parameter(
+                        client, runtime, dag, 'sieve', parameter, language, min(180, max(1, int(remaining())))
+                    )
+                    inventory_reader(env, tenant, known_executions)
+                    remaining()
+                    receipt = immutable(directory / f'entry-{problem}-{language}.json', raw)
+                    failure.update(rejection_stage='develop_entry', no_execution_created=True,
+                                   submission={**receipt, 'http_status': 400})
+                else:
+                    identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
+                    known_executions.append(identifier)
+                    execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
+                    if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
+                    failed_identity = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
+                    remaining()
+                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
+                    if diagnostic != {'execution_id': identifier, 'task': 'sieve', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
+                    readonly.no_publication(execution)
+                    monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
+                    readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
+                    if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
+                    queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
+                    if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                    failure.update(rejection_stage='analysis_node', execution_id=identifier,
+                                   diagnostic=diagnostic, internal_execution_identity=failed_identity)
                 if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()): raise SuiteError('failed execution added derived lineage')
                 native = physical_runner(repository, env, 'verify', names, remaining()); remaining(); check_physical(native,baseline['sources'],previous,scope,names,baseline['archived_expectations'])
                 physical_calls += 1; full_checks += len(names)
-                failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic, 'no_publication_or_scan_or_lineage': True})
+                failures.append(failure)
                 stages[-1]['status'] = 'passed'; progress('running')
+        inventory_reader(env, tenant, known_executions)
+        remaining()
+        if sum(failure['rejection_stage'] == 'develop_entry' for failure in failures) != 22:
+            raise SuiteError('exact Develop entry rejection count differs')
         if len(cases) != 16 or len(failures) != 64 or full_checks != 1160 or physical_calls != 81: raise SuiteError('all 16 successes, 64 failures, 1160 COG checks and 81 physical calls required')
         for name, item in items.items():
             if client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload != before[name]: raise SuiteError('source metadata changed')

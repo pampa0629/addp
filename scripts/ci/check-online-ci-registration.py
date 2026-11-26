@@ -5732,7 +5732,7 @@ TWO_ROUND_BOUNDARY_REQUIRED = {'scripts/test/online-hosted-raster-boundary-clean
                                                                          'alpha[505, 511] = 0.',
                                                                          'boundary-two-rounds-cogs',
                                                                          'boundary-two-rounds-expectations'),
- 'scripts/test/raster-boundary-clean-two-rounds-persistence-online.py': ('raster.validate_identity',
+ 'scripts/test/raster-boundary-clean-two-rounds-persistence-online.py': ('base.reject_workflow_parameter', 'inventory_reader(env, tenant, known_executions)', 'failed_reader(env, identifier', 'internal_execution_identity', 'no_execution_created=True', 'raster.validate_identity',
                                                                          'raster.EDITOR_PERMISSIONS',
                                                                          'budget != 600',
                                                                          'BudgetClient',
@@ -5788,7 +5788,7 @@ TWO_ROUND_BOUNDARY_REQUIRED = {'scripts/test/online-hosted-raster-boundary-clean
                                                                                  'test_boundary_two_rounds_hosted_independent_semantic_mutations_cannot_pass',
                                                                                  'test_boundary_two_rounds_hosted_oracle_never_calls_product_kernel_or_reducer',
                                                                                  'test_boundary_two_rounds_hosted_actual_grid_witnesses'),
- 'scripts/test/raster-boundary-clean-two-rounds-persistence-online_test.py': ('test_full_matrix_12_success_32_failures_462_checks_and_cleanup',
+ 'scripts/test/raster-boundary-clean-two-rounds-persistence-online_test.py': ('test_entry_rejection_requires_original_response_and_no_execution_or_scan', 'test_full_matrix_12_success_32_failures_462_checks_and_cleanup',
                                                                               'test_every_affine_coefficient_and_type_is_required',
                                                                               'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
                                                                               'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
@@ -5899,7 +5899,7 @@ def validate_raster_boundary_clean_two_rounds(repository: Path, registered: set[
         raise RegistrationError('two-round boundary cleaning oracle must remain independent')
 
 
-REGION_REQUIRED = {'business/scripts/online-raster-region-group-fixture.py': ('NFSExport', 'source_arrays', 'from collections import deque', 'answer[row,col]=number', 'values[yy,xx]==values[row,col]', 'np.array_equal(actual,expected,equal_nan=True)', 'verify_csv', 'validate_records', 'pixel_conservation_verified', 'full_check=True', 'nearest_overviews(ds,actual)', 'def prepare_oracle', 'def cleanup_oracle', 'allow_pickle=False', 'private_control', 'archive_files', 'archive_expectations', 'validate_expected_export', 'full_source_pixels_verified', 'GetNoDataValueAsUInt64'), 'scripts/test/raster-region-group-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'remaining()', 'budget != 600', 'full_checks != 819', 'len(cases) != 18', 'len(failures) != 36', 'physical_calls != 55', 'current(execution', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'raster.strict_sizes', 'validate_table_preview', 'validate_item(item', 'target_metadata_after != target_metadata_before', 'source_metadata_after != before', "for language in ('zh-cn', 'en')", 'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage', "physical_runner(repository, env, 'cleanup-oracle'", 'archived_outputs'), 'scripts/test/online-hosted-raster-region-group-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', 'online_raster_lineage.py prepare', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-region-group-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'engines/geopython-workflow/test_online_region_group_fixture.py': ('test_region_hosted_eighteen_mixed_results_complete_oracle_and_original_bytes', 'test_region_hosted_thirty_six_exact_submitted_failures_no_output_and_clean_workspace', 'test_region_hosted_independent_semantic_mutations_cannot_pass', 'test_region_hosted_oracle_never_calls_product_kernel_or_reducer', 'test_region_hosted_csv_corruption_cannot_pass'), 'scripts/test/raster-region-group-persistence-online_test.py': ('test_full_matrix_18_success_36_failures_819_checks_and_cleanup', 'test_exact_18_18_matrix_region_parameters_and_csv_routes', 'test_all_source_and_target_meta_snapshots_archived_and_mutation_rejected'), 'Makefile': ('test_online_region_group_fixture.py', 'test-raster-region-group-online-runner', 'scripts/test/raster-region-group-persistence-online_test.py', 'test_region_requires_exact_cog_matrix_budget_and_regressions')}
+REGION_REQUIRED = {'business/scripts/online-raster-region-group-fixture.py': ('NFSExport', 'source_arrays', 'from collections import deque', 'answer[row,col]=number', 'values[yy,xx]==values[row,col]', 'np.array_equal(actual,expected,equal_nan=True)', 'verify_csv', 'validate_records', 'pixel_conservation_verified', 'full_check=True', 'nearest_overviews(ds,actual)', 'def prepare_oracle', 'def cleanup_oracle', 'allow_pickle=False', 'private_control', 'archive_files', 'archive_expectations', 'validate_expected_export', 'full_source_pixels_verified', 'GetNoDataValueAsUInt64'), 'scripts/test/raster-region-group-persistence-online.py': ('base.reject_workflow_parameter', 'inventory_reader(env, tenant, known_executions)', 'failed_reader(env, identifier', 'internal_execution_identity', 'no_execution_created=True', 'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'remaining()', 'budget != 600', 'full_checks != 819', 'len(cases) != 18', 'len(failures) != 36', 'physical_calls != 55', 'current(execution', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'raster.strict_sizes', 'validate_table_preview', 'validate_item(item', 'target_metadata_after != target_metadata_before', 'source_metadata_after != before', "for language in ('zh-cn', 'en')", 'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage', "physical_runner(repository, env, 'cleanup-oracle'", 'archived_outputs'), 'scripts/test/online-hosted-raster-region-group-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', 'online_raster_lineage.py prepare', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-region-group-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'engines/geopython-workflow/test_online_region_group_fixture.py': ('test_region_hosted_eighteen_mixed_results_complete_oracle_and_original_bytes', 'test_region_hosted_thirty_six_exact_submitted_failures_no_output_and_clean_workspace', 'test_region_hosted_independent_semantic_mutations_cannot_pass', 'test_region_hosted_oracle_never_calls_product_kernel_or_reducer', 'test_region_hosted_csv_corruption_cannot_pass'), 'scripts/test/raster-region-group-persistence-online_test.py': ('test_entry_rejection_requires_original_response_and_no_execution_or_scan', 'test_full_matrix_18_success_36_failures_819_checks_and_cleanup', 'test_exact_18_18_matrix_region_parameters_and_csv_routes', 'test_all_source_and_target_meta_snapshots_archived_and_mutation_rejected'), 'Makefile': ('test_online_region_group_fixture.py', 'test-raster-region-group-online-runner', 'scripts/test/raster-region-group-persistence-online_test.py', 'test_region_requires_exact_cog_matrix_budget_and_regressions')}
 
 def validate_raster_region_group(repository: Path, registered: set[str]) -> None:
     suite = 'raster-region-group-persistence'
@@ -6287,7 +6287,7 @@ PROTECTED_SIEVE_REQUIRED = {
         'sieve-protected-expectations', 'validate_expected_export', 'archive_expectations',
         'allow_pickle=False', 'def cleanup_oracle', 'full_check=True', 'nearest_overviews', 'private_control',
     ),
-    'scripts/test/raster-sieve-protected-persistence-online.py': (
+    'scripts/test/raster-sieve-protected-persistence-online.py': ('base.reject_workflow_parameter', 'inventory_reader(env, tenant, known_executions)', 'failed_reader(env, identifier', 'internal_execution_identity', 'no_execution_created=True',
         'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()',
         'validate_success', 'lineage.collect', 'lineage.validate(facts,wanted,public=True)',
         'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'source_edges',
@@ -6308,7 +6308,7 @@ PROTECTED_SIEVE_REQUIRED = {
         'test_protected_sieve_native_only_integral_float_rejection',
         'test_protected_sieve_hosted_independent_oracle_rejects_wrong_protection_and_old_semantics', 'small_protected_donor', 'large_protected_refused',
     ),
-    'scripts/test/raster-sieve-protected-persistence-online_test.py': (
+    'scripts/test/raster-sieve-protected-persistence-online_test.py': ('test_entry_rejection_requires_original_response_and_no_execution_or_scan',
         'test_full_matrix_16_success_52_failures_968_checks_and_cleanup',
         'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
         'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
@@ -6377,7 +6377,7 @@ AREA_SIEVE_REQUIRED = {
         'sieve-area-expectations', 'validate_expected_export', 'archive_expectations',
         'allow_pickle=False', 'def cleanup_oracle', 'full_check=True', 'nearest_overviews', 'private_control',
     ),
-    'scripts/test/raster-sieve-area-persistence-online.py': (
+    'scripts/test/raster-sieve-area-persistence-online.py': ('base.reject_workflow_parameter', 'inventory_reader(env, tenant, known_executions)', 'failed_reader(env, identifier', 'internal_execution_identity', 'no_execution_created=True',
         'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()',
         'validate_success', 'lineage.collect', 'lineage.validate(facts,wanted,public=True)',
         'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'source_edges',
@@ -6398,7 +6398,7 @@ AREA_SIEVE_REQUIRED = {
         'test_area_sieve_native_only_integral_float_rejection', 'test_area_sieve_source_crs_roundtrip_and_complete_native_source_facts',
         'test_area_sieve_hosted_independent_oracle_rejects_area_protection_and_original_semantic_tampering', 'small_protected_donor', 'large_protected_refused',
     ),
-    'scripts/test/raster-sieve-area-persistence-online_test.py': (
+    'scripts/test/raster-sieve-area-persistence-online_test.py': ('test_entry_rejection_requires_original_response_and_no_execution_or_scan',
         'test_full_matrix_16_success_64_failures_1160_checks_and_cleanup',
         'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
         'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
