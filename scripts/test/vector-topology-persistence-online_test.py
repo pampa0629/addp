@@ -2,6 +2,7 @@ import copy
 import importlib
 import json
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -2912,11 +2913,15 @@ def run_formal_multifile(environment, consumer, physical, browser):
                 consumer.executions[identifier]['metadata'].pop('result',None)
         return response
 
+    production_identity=copy.deepcopy(observer.identity)
+    production_identity['client']['client_id']='addp-system'
+    production_identity['authorization']['role_assignments']=[
+        {'role_key':'tenant.system_runtime','permissions':['meta.task_provider.read']}]
     with patch.object(consumer,'request',side_effect=request), \
          patch.object(m.raster,'GatewayClient',return_value=consumer.issuer), \
          patch.object(m.online_api,'manager_service_client',return_value=(observer,observer.identity)), \
          patch.object(m.online_api,'system_production_observer',return_value=(
-             SimpleNamespace(request=production_identification),{'client':{'client_id':'addp-system'}})), \
+             SimpleNamespace(request=production_identification),production_identity)), \
          patch.object(m.fixture,'capture_publication',return_value={}):
         return m.run_scenario(Path('.'),env,consumer,physical,browser)
 
@@ -2924,7 +2929,8 @@ def run_formal_multifile(environment, consumer, physical, browser):
 class FilePublicationFactReader:
     def __init__(self, consumer):
         self.consumer=consumer;self.calls=[];self.mutate=None;self.denied=False
-        self.identity={'principal':{'type':'service_principal','id':'44'},'token':{'type':'service_access_token'},
+        self.identity={'principal':{'type':'service_principal','id':'44'},'token':{'type':'service_access_token',
+            'expires_at':(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat()},
             'context':{'type':'tenant','tenant_id':'2'},'client':{'client_id':'addp-manager'},
             'authorization':{'role_assignments':[{'role_key':'tenant.manager_runtime','permissions':['meta.catalog.read']}]}}
     def request(self, method, path, expected):
@@ -4012,6 +4018,50 @@ class FilePublicationMachineFactsTest(unittest.TestCase):
             owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);client=AdjacencyClient();client.observer.mutate=mutate
             with self.assertRaises(m.SuiteError):owner.run_case(client)
             self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),1)
+
+    def test_meta_observer_renews_before_post_browser_read_after_original_expiry(self):
+        owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups)
+        client=AdjacencyClient()
+        original=client.observer
+        renewed=FilePublicationFactReader(client)
+        start=m.datetime.fromisoformat('2026-11-26T05:56:02+00:00')
+        end=m.datetime.fromisoformat('2026-11-26T06:01:31+00:00')
+        original.identity['token']['expires_at']='2026-11-26T06:01:02+00:00'
+        renewed.identity['token']['expires_at']='2026-11-26T06:06:31+00:00'
+        original_request=original.request
+        with patch.object(m,'datetime',wraps=m.datetime) as clock, \
+             patch.object(m.raster,'GatewayClient',return_value=client.issuer), \
+             patch.object(m.online_api,'manager_service_client',side_effect=(
+                 (original,original.identity),(renewed,renewed.identity))) as issue:
+            clock.now.return_value=start
+            def expiring_request(*args):
+                if clock.now.return_value == end:
+                    raise m.online_api.SuiteError('HTTP 401 (service_token_expired)')
+                return original_request(*args)
+            with patch.object(original,'request',side_effect=expiring_request):
+                publication=m._FilePublication(owner.env,client,m.fixture.ADJACENCY_CASE)
+                item=copy.deepcopy(client.sources[0])
+                before=publication.fact_snapshot(3,item,item['full_name'],'source_prepared')
+                clock.now.return_value=end
+                after=publication.fact_snapshot(3,item,item['full_name'],'unchanged_check')
+            self.assertEqual(before,after)
+            self.assertEqual(issue.call_count,2)
+            self.assertEqual(len(renewed.calls),1)
+            events=[entry for entry in publication.evidence['stages'] if entry['stage']=='observer_renewed']
+            self.assertEqual([entry['observer'] for entry in events],['meta_fact_observer'])
+
+    def test_meta_observer_denial_does_not_renew_unexpired_token(self):
+        owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups)
+        client=AdjacencyClient()
+        with patch.object(m.raster,'GatewayClient',return_value=client.issuer), \
+             patch.object(m.online_api,'manager_service_client',return_value=(client.observer,client.observer.identity)) as issue:
+            publication=m._FilePublication(owner.env,client,m.fixture.ADJACENCY_CASE)
+            item=copy.deepcopy(client.sources[0])
+            client.observer.denied=True
+            with self.assertRaisesRegex(m.SuiteError,'Meta fact read unavailable'):
+                publication.fact_snapshot(3,item,item['full_name'],'unchanged_check')
+        self.assertEqual(issue.call_count,1)
+        self.assertEqual(publication.evidence['stages'][-1]['stage'],'meta_fact_read_failed')
 
     def test_observer_scope_refuses_other_path_before_http(self):
         owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);client=AdjacencyClient()

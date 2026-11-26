@@ -5,7 +5,7 @@ import importlib
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import sys
@@ -898,15 +898,9 @@ class _FilePublication:
         self.issuer = raster.GatewayClient(env['GATEWAY_URL'], token, 30)
         self.tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'difference Tenant')
         self.registration = registration
-        try:
-            self.observer, context = online_api.manager_service_client(env, self.tenant)
-        except online_api.SuiteError as error:
-            raise SuiteError('topology Meta fact observer unavailable') from error
-        roles=obj(context.get('authorization'),'Meta fact observer authorization').get('role_assignments')
-        if not isinstance(roles,list) or not any(isinstance(role,dict) and role.get('role_key')=='tenant.manager_runtime'
-                and 'meta.catalog.read' in role.get('permissions',[]) for role in roles):
-            raise SuiteError('topology Meta fact observer requires the existing Manager runtime qualification')
-        self.evidence['meta_fact_observer'] = context
+        self.observer_env = env
+        self.observers = {}
+        self.service_observer('meta_fact_observer')
         self.fact_paths = {*profile['sources'], *('outputs/'+name for name in targets)}
         self.fact_baselines = {}
         self.grants = registration.ExactFileReadGrants(self.issuer, consumer, self.tenant,
@@ -916,10 +910,42 @@ class _FilePublication:
         self.approval_scopes = {}
         self.approved_versions = {}
         self.unbound_scans = {}
-        self.production_observer = None
         if case in fixture.MULTIFILE_CAPTURE_CASES:
-            self.production_observer, identity = online_api.system_production_observer(env,self.tenant)
-            self.evidence['production_observer'] = identity
+            self.service_observer('production_observer')
+
+    def service_observer(self, key):
+        prior = self.observers.get(key)
+        if prior is not None and prior[2] > datetime.now(timezone.utc) + timedelta(seconds=30):
+            return prior[0]
+        if key == 'meta_fact_observer':
+            factory = online_api.manager_service_client
+            role_key, permission = 'tenant.manager_runtime', 'meta.catalog.read'
+        else:
+            factory = online_api.system_production_observer
+            role_key, permission = 'tenant.system_runtime', 'meta.task_provider.read'
+        try:
+            client, identity = factory(self.observer_env, self.tenant)
+        except online_api.SuiteError as error:
+            raise SuiteError('topology service observer unavailable') from error
+        roles = obj(identity.get('authorization'), 'service observer authorization').get('role_assignments')
+        if not isinstance(roles, list) or not any(isinstance(role, dict) and role.get('role_key') == role_key
+                and permission in role.get('permissions', []) for role in roles):
+            raise SuiteError('topology service observer qualification differs')
+        try:
+            expires = datetime.fromisoformat(identity['token']['expires_at'])
+            if expires.tzinfo is None or expires <= datetime.now(timezone.utc):
+                raise ValueError()
+        except (KeyError, TypeError, ValueError):
+            raise SuiteError('topology service observer expiry is invalid') from None
+        identity_binding = {field: identity.get(field) for field in ('principal', 'context', 'client', 'authorization')}
+        if prior is not None and prior[1] != identity_binding:
+            raise SuiteError('topology service observer identity or qualification changed')
+        self.observers[key] = (client, identity_binding, expires)
+        if prior is None:
+            self.evidence[key] = identity
+        else:
+            self.record(dict(stage='observer_renewed', observer=key, identity=identity))
+        return client
 
     def record(self, value):
         self.evidence['stages'].append(value)
@@ -951,8 +977,11 @@ class _FilePublication:
                 or not isinstance(visible.get('fingerprint'),str) or not visible['fingerprint']):
             raise SuiteError('topology Meta fact target is outside the exact visible file scope')
         try:
-            snapshot=self.observer.request('GET',f'/api/v1/meta/items/{visible["id"]}',(200,)).payload
+            observer = self.service_observer('meta_fact_observer')
+            snapshot = observer.request('GET', f'/api/v1/meta/items/{visible["id"]}', (200,)).payload
         except online_api.SuiteError as error:
+            self.record(dict(stage='meta_fact_read_failed', phase=phase, item_id=visible['id'],
+                             failure=self.registration.metadata_error_evidence(error, phase)))
             raise SuiteError('topology Meta fact read unavailable') from error
         description=snapshot.get('attributes',{}).get('item') if isinstance(snapshot,dict) else None
         visible_description=visible.get('attributes',{}).get('item')
@@ -1023,7 +1052,7 @@ class _FilePublication:
             time.sleep(min(0.2, remaining()))
         self.published_targets.append(self.grants.target(engine, name, 'nfs'))
         self.record(dict(stage='result_initial_read_granted', grant=receipt))
-        if self.production_observer is not None:
+        if 'production_observer' in self.observers:
             self.bind_result_scan(identifier,name,receipt)
         deep = support.wait_for_meta_scan(self.issuer, engine, time.monotonic()+remaining(), depth='deep', scope={'targets':[target]})
         self.record(dict(stage='result_deep_inspected', execution_id=deep))
@@ -1036,7 +1065,7 @@ class _FilePublication:
                 raise ValueError()
         except (AttributeError,TypeError,ValueError):
             raise SuiteError('topology production result identity differs') from None
-        evidence=self.production_observer.request('GET',
+        evidence=self.service_observer('production_observer').request('GET',
             f'/api/v1/meta/runtime/productions/develop/{identifier}/{result_id}/basic-scan',(200,)).payload
         binding=obj(evidence.get('binding'),'production scan DataItem binding')
         scan_id=evidence.get('scan_execution_id')
