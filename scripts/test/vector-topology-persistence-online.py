@@ -1645,7 +1645,8 @@ def validate_saved_facts(execution,bindings,targets,count):
     inputs=array(facts.get('inputs'),'normalize inputs');produced=array(facts.get('outputs'),'normalize outputs')
     if (facts.get('schema_version')!='addp.lineage-facts/v1' or
         len(inputs)!=len(bindings) or {(x.get('port'),x.get('locator')) for x in inputs}!=set(bindings) or
-        len(produced)!=count or {x.get('locator') for x in produced}!=set(targets.values()) or
+        len(produced)!=count or
+        {(x.get('port'),x.get('locator')) for x in produced}!={(f'output.save_{port}',locator) for port,locator in targets.items()} or
         any(x.get('write_mode')!='create' for x in produced)):
         raise SuiteError('normalization source port or selected create facts differ')
     return facts

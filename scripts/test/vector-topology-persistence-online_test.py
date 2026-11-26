@@ -848,7 +848,7 @@ def normalize_execution():
     source=f'addp://engine/3/path/{m.fixture.NORMALIZE_SOURCE}?type=file&item_id=10'
     targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.NORMALIZE_PORTS,m.fixture.NORMALIZE_TARGETS)}
     facts={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.normal_input','locator':source}],
-           'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]}
+           'outputs':[{'port':'output.save_'+p,'locator':t,'write_mode':'create'} for p,t in targets.items()]}
     return {'status':'success','outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
         'metadata':{'lineage_facts':facts,'result':{'meta_scan_runs':[{'execution_id':'scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
 
@@ -1041,7 +1041,7 @@ class CompositionClient(NormalizeClient):
         targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.COMPOSITION_PORTS,m.fixture.COMPOSITION_TARGETS)}
         original['outputs']={'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()}
         original['metadata']['lineage_facts']={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.normal_input','locator':source}],
-            'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]}
+            'outputs':[{'port':'output.save_'+p,'locator':t,'write_mode':'create'} for p,t in targets.items()]}
         original['metadata']['result']['meta_scan_runs']=[{'execution_id':'scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]
         self.executions['normalize-execution']=original
         self.executions['normalize-failed']['error_details']['diagnostic']['operator'] = {
@@ -1130,7 +1130,7 @@ class BufferClient(NormalizeClient):
         value=normalize_execution();target='addp://engine/3/path/outputs/buffers.gpkg?type=file'
         value['outputs']={'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}}
         value['metadata']['lineage_facts']['inputs']=[{'port':'input.normal_input','locator':f'addp://engine/3/path/{self.source_name}?type=file&item_id=10'}]
-        value['metadata']['lineage_facts']['outputs']=[{'locator':target,'write_mode':'create'}]
+        value['metadata']['lineage_facts']['outputs']=[{'port':'output.save_result','locator':target,'write_mode':'create'}]
         value['metadata']['result']['meta_scan_runs']=[{'execution_id':'scan-result','target_locator':target,'status':'submitted'}]
         self.executions['normalize-execution']=value
     def request(self,method,path,expected,body=None):
@@ -1829,7 +1829,7 @@ class RingsClient(InputDiagnosticClient):
         self.scans=['scan-'+n for n in m.fixture.RINGS_SOURCES];self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(m.fixture.RINGS_SOURCES)];self.parent='addp://engine/3/path/outputs?type=directory'
         target='addp://engine/3/path/outputs/rings.gpkg?type=file'
         self.success={'execution_id':'rings-run','status':'success','triggered_by':33,'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
-            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.rings_input','locator':self.locators[0]}],'outputs':[{'locator':target,'write_mode':'create'}]},
+            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.rings_input','locator':self.locators[0]}],'outputs':[{'port':'output.save_result','locator':target,'write_mode':'create'}]},
                 'result':{'meta_scan_runs':[{'execution_id':'rings-output-scan','target_locator':target,'status':'submitted'}]}},
             'execution_config':{'content':{'workflow_definition':m.rings_definition(self.locators,self.parent)}}}
     def request(self,method,path,expected,body=None):
@@ -2147,7 +2147,7 @@ class NodesClient(InputDiagnosticClient):
             'outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
             'execution_config':{'content':{'workflow_definition':m.nodes_definition(self.locators,self.parent)}},
             'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_source','locator':self.locators[0]}],
-              'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
+              'outputs':[{'port':'output.save_'+p,'locator':t,'write_mode':'create'} for p,t in targets.items()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
     def request(self,method,path,expected,body=None):
         if method=='POST' and path.endswith('/develop/executions'):
             self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
@@ -2197,6 +2197,25 @@ class NodesOnlineTest(unittest.TestCase):
         self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.NODES_FAILURES])
         self.assertEqual(len({f['execution_id'] for f in report['failures']}),9)
         self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),10)
+    def test_multi_output_lineage_binds_each_save_port_to_its_file(self):
+        execution = NodesClient().success
+        facts = execution['metadata']['lineage_facts']
+        bindings = [(entry['port'], entry['locator']) for entry in facts['inputs']]
+        targets = {port: execution['outputs']['save_'+port]['resource']['locator']
+                   for port in m.fixture.NODES_PORTS}
+        facts['outputs'].reverse()
+        self.assertEqual(m.validate_saved_facts(execution, bindings, targets, 2), facts)
+        first, second = facts['outputs']
+        first['port'], second['port'] = second['port'], first['port']
+        with self.assertRaisesRegex(m.SuiteError, 'create facts differ'):
+            m.validate_saved_facts(execution, bindings, targets, 2)
+        first['port'] = second['port']
+        with self.assertRaisesRegex(m.SuiteError, 'create facts differ'):
+            m.validate_saved_facts(execution, bindings, targets, 2)
+        first.pop('port')
+        with self.assertRaisesRegex(m.SuiteError, 'create facts differ'):
+            m.validate_saved_facts(execution, bindings, targets, 2)
+
     def test_nodes_rejects_output_scan_identity_boolean_size_port_and_stale_extra_graph(self):
         changes=[lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
             lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.other'),
@@ -2324,7 +2343,7 @@ class OverlayClient(InputDiagnosticClient):
             'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
             'execution_config':{'content':{'workflow_definition':self.profile['definition'](self.locators,self.parent)}},
             'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.'+node,'locator':self.locators[i]}for i,node in reversed(list(enumerate(self.profile.get('input_nodes',('load_a','load_b')))))],
-              'outputs':[{'locator':target,'write_mode':'create'}]},'result':{'meta_scan_runs':[{'execution_id':'overlay-output-scan','target_locator':target,'status':'submitted'}]}}}
+              'outputs':[{'port':'output.save_result','locator':target,'write_mode':'create'}]},'result':{'meta_scan_runs':[{'execution_id':'overlay-output-scan','target_locator':target,'status':'submitted'}]}}}
     def request(self,method,path,expected,body=None):
         if method=='POST' and path.endswith('/develop/executions'):
             self.calls.append((method,path,body));definition=body['content']['workflow_definition']
@@ -2544,7 +2563,7 @@ class DissolveClient(InputDiagnosticClient):
                 variant='grouped'if name.startswith('grouped-')else'global';self.success_count+=1;targets={port:self.parent.removesuffix('?type=directory')+'/'+variant+'-'+port+'.gpkg?type=file'for port in('result','members')}
                 value={'execution_id':variant+'-run','status':'success','triggered_by':33,'execution_config':{'content':{'workflow_definition':definition}},
                     'outputs':{'save_'+port:{'resource':{'locator':target,'type':'file','write_mode':'create'}}for port,target in targets.items()},
-                    'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_source','locator':self.locators[0]}],'outputs':[{'locator':target,'write_mode':'create'}for target in targets.values()]},
+                    'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_source','locator':self.locators[0]}],'outputs':[{'port':'output.save_'+port,'locator':target,'write_mode':'create'}for port,target in targets.items()]},
                         'result':{'meta_scan_runs':[{'execution_id':variant+'-'+port+'-scan','target_locator':target,'status':'submitted'}for port,target in targets.items()]}}}
                 self.scans.extend(variant+'-'+port+'-scan'for port in targets)
                 if self.mutate_success:self.mutate_success(value)
@@ -3303,7 +3322,7 @@ class VerticesClient(InputDiagnosticClient):
             'outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
             'execution_config':{'content':{'workflow_definition':m.vertices_definition(self.locators,self.parent)}},
             'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_'+p,'locator':self.locators[i]} for i,p in enumerate(m.fixture.VERTICES_FAMILIES)],
-              'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
+              'outputs':[{'port':'output.save_'+p,'locator':t,'write_mode':'create'} for p,t in targets.items()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
     def request(self,method,path,expected,body=None):
         if path.endswith('/auth/context'):
             return SimpleNamespace(payload={'principal':{'id':33,'type':'user'},'context':{'type':'tenant','tenant_id':'2'},'token':{'type':'first_party_access_token'},'authorization':{'role_assignments':[{'role_key':'topology-consumer','permissions':self.permissions}]}})
