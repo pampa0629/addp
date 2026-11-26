@@ -2748,6 +2748,31 @@ const expected=new Function(source.slice(start,end)+';return inputDiagnosticPage
 
 
 class DissolveBrowserRawTest(unittest.TestCase):
+    def test_dissolve_browser_counts_only_runtime_rejections_across_owners_and_languages(self):
+        spec = Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/vector-topology-persistence.spec.js'
+        keys = [failure[0] for failure in m.DISSOLVE_RUNTIME_FAILURES]
+        self.assertEqual(len(keys), 7)
+        script = r'''
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const source = readFileSync(process.argv[1], 'utf8')
+const emission = source.indexOf('observations.push({key:run.key,owner,locale,execution_id:run.execution_id,raw,clipboard,screenshot})')
+const start = source.indexOf('\n  }\n', emission) + '\n  }\n'.length
+const end = source.indexOf('  expect(publicationRequests).toEqual([])', start)
+assert.ok(emission >= 0 && end > start)
+const check = new Function('expect', 'observations', 'keys', 'owners', 'locales', source.slice(start, end))
+const keys = JSON.parse(process.argv[2])
+const observations = keys.flatMap(key => ['develop', 'monitor'].flatMap(owner => ['zh-cn', 'en'].map(locale => ({key, owner, locale}))))
+const expect = actual => ({toHaveLength: length => assert.equal(actual.length, length)})
+const verify = pages => check(expect, pages, keys, ['develop', 'monitor'], ['zh-cn', 'en'])
+verify(observations)
+assert.throws(() => verify(observations.slice(0, -4)), {code: 'ERR_ASSERTION'})
+assert.throws(() => verify([...observations, ...observations.slice(0, 4)]), {code: 'ERR_ASSERTION'})
+'''
+        run = m.subprocess.run(['node', '--input-type=module', '-e', script, str(spec), json.dumps(keys)],
+                               text=True, capture_output=True, timeout=15)
+        self.assertEqual(run.returncode, 0, run.stderr)
+
     def setUp(self):
         self.owner=DissolveOnlineTest();self.owner.setUp();self.addCleanup(self.owner.doCleanups);self.report=self.owner.run_case();self.evidence=self.report['browser'];e=self.evidence
         self.raw={'schema_version':'addp.polygon-dissolve-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'stage':'complete','result':'passed','publication_requests':[],

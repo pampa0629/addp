@@ -974,6 +974,7 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
   // The combined overlay scene is already logged in; standalone diagnostics still log in here.
   let loggedIn=(overlay||dissolve||difference||adjacency||components)&&supplied!==null
+  const owners = ['develop', 'monitor'], locales = ['zh-cn', 'en']
   const observations=[],publicationRequests=[]
   page.on('request',request=>{
     const path=new URL(request.url()).pathname
@@ -981,7 +982,7 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
       (path.startsWith('/api/v1/develop/executions')||path.startsWith('/api/v1/meta/scan')||path.startsWith('/api/v1/meta/lineage')))
       publicationRequests.push({method:request.method(),path})
   })
-  for(const run of evidence.executions)for(const owner of ['develop','monitor']){
+  for(const run of evidence.executions)for(const owner of owners){
     const path=owner==='develop'?`/develop/executions/${run.execution_id}`:`/monitor/executions?execution_id=${run.execution_id}`
     const matches=response=>response.request().method()==='GET'&&new URL(response.url()).pathname===
       (owner==='develop'?`/api/v1/develop/executions/${run.execution_id}`:`/api/v1/monitor/executions/by-execution-id/${run.execution_id}/tree`)
@@ -993,7 +994,7 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
     await bound.dispose()
     const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
     const panel=frame.locator(owner==='develop'?'.execution-detail-page > .execution-failure':'.execution-detail-content > .execution-failure')
-    for(const locale of ['zh-cn','en']){
+    for(const locale of locales){
       await page.locator('.header-language button').click()
       await page.getByRole('menuitem',{name:locale==='zh-cn'?'中文':'English',exact:true}).click()
       await assertInputDiagnosticPanel(panel,run.key,locale,run.execution_id)
@@ -1024,10 +1025,7 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
       observations.push({key:run.key,owner,locale,execution_id:run.execution_id,raw,clipboard,screenshot})
     }
   }
-  if(components) expect(observations).toHaveLength(24)
-  else if(dissolve) expect(observations).toHaveLength(32)
-  else if(rings) expect(observations).toHaveLength(8)
-  else expect(observations).toHaveLength(16)
+  expect(observations).toHaveLength(keys.length * owners.length * locales.length)
   expect(publicationRequests).toEqual([])
   if(adjacency||components)return observations
   if(overlay||dissolve||difference)return observations

@@ -2553,7 +2553,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/vector-topology-persistence-online.py': ('def run_diagnostic_scenario(', 'def validate_input_failure(', 'sixteen same-UUID observations', 'expected_input_diagnostic'),
         'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_input_diagnostic_sources_reach_exact_typed_failure_without_save',),
         'scripts/test/vector-topology-persistence-online_test.py': ('class InputDiagnosticOnlineTest', 'test_diagnostic_rejects_wrong_tuple_private_context_and_any_publication'),
-        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('算子参数诊断独立普通User双语失败页', 'assertInputDiagnosticPanel', 'navigator.clipboard.readText()', 'await page.reload()', 'browserAPIFromResponse(response', 'observations).toHaveLength(16)'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('算子参数诊断独立普通User双语失败页', 'assertInputDiagnosticPanel', 'navigator.clipboard.readText()', 'await page.reload()', 'browserAPIFromResponse(response', 'observations).toHaveLength(keys.length * owners.length * locales.length)'),
     }
     for relative,fragments in diagnostics_required.items():
         if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
@@ -2694,7 +2694,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate.sh': ('polygon-rings|polygon-rings-input-diagnostics',),
         'business/scripts/online-vector-topology-fixture.py': ('def rings_diagnostic_worker(', 'RINGS_DIAGNOSTIC_SOURCES', 'no physical publication'),
         'scripts/test/vector-topology-persistence-online.py': ('RINGS_DIAGNOSTIC_SPECS', 'def input_diagnostic_specs(', 'diagnostic frozen definition differs', 'distinct executions for the selected case'),
-        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面界提取参数诊断独立普通User双语失败页', 'verifyInputDiagnosticCase', 'observations).toHaveLength(8)', 'ring-geometry-invalid'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面界提取参数诊断独立普通User双语失败页', 'verifyInputDiagnosticCase', 'observations).toHaveLength(keys.length * owners.length * locales.length)', 'ring-geometry-invalid'),
         'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_polygon_ring_diagnostics_only_two_real_file_rejections',),
         'scripts/test/vector-topology-persistence-online_test.py': ('class RingInputDiagnosticOnlineTest', 'test_rings_diagnostic_requires_exact_eight_uuid_owner_locale_bindings'),
         'scripts/test/online-hosted-topology-gate_test.py': ('test_rings_diagnostic_case_runs_only_two_failures_without_old_business',),
