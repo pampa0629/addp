@@ -187,7 +187,7 @@ def fixture_call(repository, env, action, names, timeout):
     return obj(json.loads(result.stdout), 'circle physical evidence')
 
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current, *,
-                 failed_reader=lineage.read_failed_focal_execution,
+                 failed_reader=lineage.read_failed_execution,
                  inventory_reader=lineage.check_focal_execution_inventory, hard_deadline):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('focal circle business budget must be exactly 600 seconds')

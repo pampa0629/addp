@@ -234,7 +234,7 @@ class RasterLineageTest(unittest.TestCase):
               patch.object(m.subprocess, 'run') as query):
             def read(value):
                 query.return_value = SimpleNamespace(returncode=0, stdout=json.dumps(value))
-                return m.read_failed_focal_execution(env, IDENTIFIER, 2, 33, {'tasks': []})
+                return m.read_failed_execution(env, IDENTIFIER, 2, 33, {'tasks': []})
 
             self.assertEqual(read(row), {key: value for key, value in row.items() if key != 'facts'})
             self.assertIn('status=failed', query.call_args.args[0])
@@ -245,8 +245,8 @@ class RasterLineageTest(unittest.TestCase):
                 with self.subTest(changes=changes), self.assertRaises(m.SuiteError):
                     read({**row, **changes})
             query.reset_mock()
-            with self.assertRaisesRegex(m.SuiteError, 'approved focal suite'):
-                m.read_failed_focal_execution(self.env, IDENTIFIER, 2, 33, {'tasks': []})
+            with self.assertRaisesRegex(m.SuiteError, 'approved Hosted suite'):
+                m.read_failed_execution(self.env, IDENTIFIER, 2, 33, {'tasks': []})
             query.assert_not_called()
 
     def test_square_inventory_is_bound_to_actual_fixture_run_and_rejects_extra_executions(self):

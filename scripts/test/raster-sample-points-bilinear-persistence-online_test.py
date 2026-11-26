@@ -60,7 +60,7 @@ class Client:
         elif path == '/api/v1/develop/executions' and method == 'POST':
             dag = body['content']['workflow_definition']; target_name = dag['tasks'][-1]['params']['target_name']; success = target_name in m.fixture.CASES
             identifier = str(uuid.UUID(int=len(self.executions)+1)); language = headers['Accept-Language']
-            data = {'execution_id':identifier,'tenant_id':2,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
+            data = {'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
                     'execution_config':{'engine_id':7,'display_language':language,'content':{'workflow_definition':copy.deepcopy(dag)}}, 'error_msg':None if success else 'frozen-'+language,
                     'error_details':{} if success else {'category':'execution_failed'}, 'outputs':{}, 'metadata':{'result':{}}}
             if success:
@@ -94,10 +94,17 @@ class SamplePointsBilinearWorkflowTest(unittest.TestCase):
             assert tenant==2 and principal==33 and identifier in client.executions
             name=dag['tasks'][-1]['params']['target_name']; target='addp://engine/3/path/outputs/'+name+'?type=file'
             return m.expected_lineage(client.locators(), name, target)
+        def failed_reader(env, identifier, tenant, principal, dag):
+            execution = client.executions[identifier]
+            assert tenant == 2 and principal == 33 and execution['status'] == 'failed'
+            assert dag == execution['execution_config']['content']['workflow_definition']
+            return {'execution_id': identifier, 'tenant_id': tenant, 'principal_id': principal,
+                    'triggered_by': principal, 'module': 'develop', 'task_type': 'workflow',
+                    'status': 'failed', 'workflow_matches': True}
         def relation(client, source, target, execution, timeout):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
         with patch.object(m.raster,'wait_lineage',side_effect=relation):
-            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader)
+            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader,failed_reader=failed_reader)
     def test_full_matrix_16_success_52_failures_968_checks_and_cleanup(self):
         client=Client();calls=[]
         def worker(*args): calls.append((args[2],list(args[3]))); return physical(*args)
@@ -107,6 +114,9 @@ class SamplePointsBilinearWorkflowTest(unittest.TestCase):
         self.assertEqual(len(self.relations),32);self.assertTrue(report['oracle_cache_removed'])
         self.assertEqual(report['source_scan_identity']['parent_execution_id'],None)
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
+        for failure in report['failed_parameters']:
+            self.assertEqual(failure['internal_execution_identity']['execution_id'], failure['execution_id'])
+            self.assertEqual(failure['internal_execution_identity']['tenant_id'], 2)
         self.assertEqual({(x['problem'],x['language']) for x in report['failed_parameters']},{(p,l) for p in m.FAILURES for l in ('zh-cn','en')})
         self.assertEqual(len(list((self.root/'evidence/raster-sample-points-bilinear-lineage').iterdir())),16)
         offset=0
@@ -152,7 +162,7 @@ class SamplePointsBilinearWorkflowTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError,'first oracle failed; oracle cleanup also failed'):self.run_case(worker=broken)
         self.assertEqual(actions,['oracle','cleanup-oracle'])
     def test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced(self):
-        for fault in ('diagnostic','query','scan','edge','identity','parent','budget','cleanup'):
+        for fault in ('diagnostic','query','scan','edge','identity','tenant-projection','parent','budget','cleanup'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
                 self.env['ADDP_ONLINE_ARTIFACT_DIR']=directory;client=Client();diag=diagnostic;worker=physical;self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS']='600'
                 if fault=='diagnostic':
@@ -161,11 +171,12 @@ class SamplePointsBilinearWorkflowTest(unittest.TestCase):
                 elif fault=='scan':client.added_scan=True
                 elif fault=='edge':client.added_edge=True
                 elif fault=='identity':client.mutation=lambda value:value.update(triggered_by=34)
+                elif fault=='tenant-projection':client.mutation=lambda value:value.update(tenant_id=2)
                 elif fault=='parent':client.scan_fault=True
                 elif fault=='budget':self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS']='601'
                 else:
                     def worker(*args):return {'oracle_cache_removed':False} if args[2]=='cleanup-oracle' else physical(*args)
-                expected = {'diagnostic':'wrong exact failure', 'query':'query language rewrote', 'scan':'failed execution added scan', 'edge':'failed execution added derived', 'identity':'execution owner', 'parent':'scan identity', 'budget':'exactly 600', 'cleanup':'oracle cleanup proof'}[fault]
+                expected = {'diagnostic':'wrong exact failure', 'query':'query language rewrote', 'scan':'failed execution added scan', 'edge':'failed execution added derived', 'identity':'execution owner', 'tenant-projection':'exposes tenant_id', 'parent':'scan identity', 'budget':'exactly 600', 'cleanup':'oracle cleanup proof'}[fault]
                 with self.assertRaisesRegex(m.SuiteError,expected):self.run_case(client,worker,diag)
 
     def test_all_source_and_target_meta_snapshots_and_two_inputs(self):

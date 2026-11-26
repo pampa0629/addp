@@ -316,7 +316,7 @@ def run_scenario(
     diagnostic_runner=invalid_diagnostic,
     lineage_reader=lineage.read_current,
     *,
-    failed_reader=lineage.read_failed_focal_execution,
+    failed_reader=lineage.read_failed_execution,
     inventory_reader=lineage.check_focal_execution_inventory,
     hard_deadline,
 ):

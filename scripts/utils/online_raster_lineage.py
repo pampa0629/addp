@@ -103,9 +103,12 @@ def read_current(env, identifier, tenant, principal, workflow):
     return _read_execution(env, identifier, tenant, principal, workflow, 'success')['facts']
 
 
-def read_failed_focal_execution(env, identifier, tenant, principal, workflow):
-    require(env.get('ONLINE_SUITE') in FOCAL_EXECUTION_LIMITS,
-            'failed execution observation requires an approved focal suite')
+def read_failed_execution(env, identifier, tenant, principal, workflow):
+    suite = env.get('ONLINE_SUITE')
+    require(suite in FOCAL_EXECUTION_LIMITS or suite in (
+        'raster-sample-points-persistence', 'raster-sample-points-bilinear-persistence',
+        'raster-sample-lines-persistence', 'vector-zonal-class-frequency-persistence',
+    ), 'failed execution observation requires an approved Hosted suite')
     evidence = _read_execution(env, identifier, tenant, principal, workflow, 'failed')
     facts = evidence.pop('facts')
     require(facts is None or (isinstance(facts, dict) and set(facts) <= FIELDS
