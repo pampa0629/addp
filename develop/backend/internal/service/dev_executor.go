@@ -520,14 +520,10 @@ func (e *DevExecutor) validateWorkflowBeforeExecution(
 	if err != nil {
 		return err
 	}
-	if result.Valid {
-		return nil
+	if !result.Valid {
+		return &WorkflowParametersError{Issues: result.Errors}
 	}
-	messages := make([]string, 0, len(result.Errors))
-	for _, issue := range result.Errors {
-		messages = append(messages, issue.Message)
-	}
-	return fmt.Errorf("工作流校验失败: %s", strings.Join(messages, "; "))
+	return nil
 }
 
 func workflowEngineIDFromExecutionConfig(executionConfig map[string]interface{}) uint {

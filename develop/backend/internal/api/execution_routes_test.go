@@ -2,16 +2,23 @@ package api
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/addp/common/authorization/authtest"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -220,5 +227,134 @@ func assertStandardTaskProviderListShape(t *testing.T, body []byte) {
 		if _, ok := resp[legacyField]; ok {
 			t.Fatalf("response contains non-standard field %q: %s", legacyField, body)
 		}
+	}
+}
+
+func TestExecuteContentRejectsPublicParameterTypesBeforeAdmission(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	engineType := "contract_test_workflow"
+	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewWorkflowCapabilities(engineType, plugin.WorkflowRuntimeAPIAddpV1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilitiesJSON := commonModels.JSONString(capabilities)
+	var rejectDiscovery atomic.Bool
+	var unexpectedRequests atomic.Int64
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/operators" {
+			unexpectedRequests.Add(1)
+			http.NotFound(w, r)
+			return
+		}
+		if rejectDiscovery.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"operators": []plugin.OperatorDescriptor{{
+			ID: "weighted_focal", Name: "weighted_focal", DisplayName: "Weighted focal", EngineType: engineType,
+			Category: "raster", CategoryPath: []string{"Raster"}, Description: "Weighted focal declaration",
+			ExecutionModes: []string{"workflow"}, Effects: []string{"read"},
+			OutputPorts: []plugin.OutputPortDescriptor{{Name: "default", Type: "raster", IsDefault: true}},
+			Parameters: []plugin.ParameterDescriptor{
+				{Name: "weights", Type: "array", ItemType: "array"},
+				{Name: "window_size", Type: "array", ItemType: "integer"},
+				{Name: "radius_metres", Type: "number"},
+				{Name: "band", Type: "integer"},
+			},
+		}}})
+	}))
+	defer runtime.Close()
+	host, portText, err := net.SplitHostPort(runtime.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/oauth/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "addp_at_test", "token_type": "Bearer", "expires_in": 300, "scope": "addp.api",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/system/runtime/engine-descriptors/12":
+			_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{
+				ID: 12, Name: "Fixture runtime", EngineType: engineType,
+				ConnectionStatus: commonModels.EngineConnectionOnline, LifecycleState: "active",
+				Capabilities:    &capabilitiesJSON,
+				RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{Protocol: "http", Host: host, Port: port},
+			})
+		default:
+			unexpectedRequests.Add(1)
+			http.NotFound(w, r)
+		}
+	}))
+	defer system.Close()
+	source, err := commonClient.NewOAuthServiceTokenSource(system.URL, "addp-develop", strings.Repeat("a", 48), system.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	discovery := service.NewOperatorDiscoveryService(commonClient.NewSystemServiceClient(system.URL, source, system.Client()))
+	executor := service.NewDevExecutor(nil, commonExecution.NewTaskExecutionRepository(db), nil, discovery, nil, nil, nil, nil)
+	handler := NewExecutionHandler(executor, nil, nil)
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 3); c.Next() })
+	const route = "/api/v1/develop/executions"
+	router.POST(route, handler.ExecuteContent)
+
+	submit := func(lang, field, value string) *httptest.ResponseRecorder {
+		body := `{"dev_type":"workflow","trigger_type":"manual","execution_config":{"engine_id":12},"content":{"workflow_definition":{"tasks":[{"id":"focal","operator":"weighted_focal","params":{` +
+			strconv.Quote(field) + ":" + value + `},"depends_on":[]}]}}}`
+		req := httptest.NewRequest(http.MethodPost, route, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept-Language", lang)
+		req.Header.Set("Authorization", "Bearer addp_at_user")
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, req)
+		return out
+	}
+	for _, locale := range []struct{ lang, summary, messagePrefix string }{
+		{"zh-cn", "工作流参数无效，请检查节点参数", "参数类型与算子声明不符："},
+		{"en", "Invalid workflow parameters. Review the node parameters", "Parameter type differs from the operator declaration: "},
+	} {
+		for _, input := range []struct{ name, field, value string }{
+			{"weight_null", "weights", "null"}, {"weight_scalar", "weights", "5"}, {"weight_flat", "weights", "[1,2]"},
+			{"circle_window_null", "window_size", "null"}, {"radius_null", "radius_metres", "null"},
+			{"radius_bool", "radius_metres", "false"}, {"band_fraction", "band", "1.5"},
+		} {
+			t.Run(locale.lang+"/"+input.name, func(t *testing.T) {
+				out := submit(locale.lang, input.field, input.value)
+				if out.Code != http.StatusBadRequest {
+					t.Fatalf("status=%d body=%s", out.Code, out.Body.String())
+				}
+				path := "workflow_definition.tasks[0].params." + input.field
+				var envelope WorkflowParametersErrorResponse
+				if err := json.Unmarshal(out.Body.Bytes(), &envelope); err != nil {
+					t.Fatal(err)
+				}
+				want := service.WorkflowValidationIssue{Code: "parameter_type_invalid", Path: path, Message: locale.messagePrefix + path}
+				if envelope.Error != locale.summary || envelope.ErrorCode != "invalid_workflow_parameters" ||
+					len(envelope.Errors) != 1 || envelope.Errors[0] != want || strings.Contains(out.Body.String(), "execution_id") {
+					t.Fatalf("unexpected error: %s", out.Body.String())
+				}
+			})
+		}
+	}
+	rejectDiscovery.Store(true)
+	out := submit("en", "weights", "null")
+	if out.Code != http.StatusInternalServerError || strings.Contains(out.Body.String(), "invalid_workflow_parameters") {
+		t.Fatalf("Runtime discovery failure classified as user input: %d %s", out.Code, out.Body.String())
+	}
+	var count int64
+	if err := db.Table("common.task_executions").Count(&count).Error; err != nil || count != 0 || unexpectedRequests.Load() != 0 {
+		t.Fatalf("rejected requests acquired effects: execution count=%d unexpected HTTP=%d error=%v", count, unexpectedRequests.Load(), err)
 	}
 }

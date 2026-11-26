@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -117,6 +118,21 @@ func (h *OperatorHandler) ValidateWorkflow(c *gin.Context) {
 	}
 	localizeWorkflowTypeIssues(c, result.Errors)
 	c.JSON(http.StatusOK, result)
+}
+
+func writeWorkflowParametersError(c *gin.Context, err error) bool {
+	var validation *service.WorkflowParametersError
+	if !errors.As(err, &validation) {
+		return false
+	}
+	issues := append([]service.WorkflowValidationIssue(nil), validation.Issues...)
+	localizeWorkflowTypeIssues(c, issues)
+	c.JSON(http.StatusBadRequest, WorkflowParametersErrorResponse{
+		Error:     commoni18n.T(c, developi18n.MsgWorkflowParametersInvalid),
+		ErrorCode: "invalid_workflow_parameters",
+		Errors:    issues,
+	})
+	return true
 }
 
 func localizeWorkflowTypeIssues(c *gin.Context, issues []service.WorkflowValidationIssue) {

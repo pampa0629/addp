@@ -309,7 +309,7 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 // @Param body body models.CreateExecutionSwaggerRequest true "执行请求 | Execution request"
 // @Success 200 {object} models.ExecutionStartedResponse "执行已启动 | Execution started"
 // @Success 202 {object} models.ApprovalRequiredResponse "需要在 Develop 完成审批 | Develop approval required"
-// @Failure 400 {object} models.ToolApprovalErrorResponse "请求无效 | Invalid request"
+// @Failure 400 {object} WorkflowParametersErrorResponse "请求或公开参数无效；委托审批请求错误使用 ToolApprovalErrorResponse | Invalid request or public parameters; delegated approval request errors use ToolApprovalErrorResponse"
 // @Failure 403 {object} models.ToolApprovalErrorResponse "审批身份无效 | Invalid approval identity"
 // @Failure 409 {object} models.ToolApprovalErrorResponse "审批状态冲突 | Approval state conflict"
 // @Failure 410 {object} models.ToolApprovalErrorResponse "审批已过期 | Approval expired"
@@ -405,6 +405,9 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 	)
 	if err != nil {
 		if writeExecutionAuthorizationError(c, err) {
+			return
+		}
+		if writeWorkflowParametersError(c, err) {
 			return
 		}
 		var parameterDefinitionsError *service.QueryParameterDefinitionsError

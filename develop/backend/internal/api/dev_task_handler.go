@@ -60,11 +60,7 @@ func (h *DevTaskHandler) CreateDevTask(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookFileIdentityInvalid), "error_code": "invalid_notebook_file_identity"})
 			return
 		}
-		var workflowError *service.WorkflowParametersError
-		if errors.As(err, &workflowError) {
-			issues := workflowError.Issues
-			localizeWorkflowTypeIssues(c, issues)
-			c.JSON(http.StatusBadRequest, WorkflowParametersErrorResponse{Error: commoni18n.T(c, developi18n.MsgWorkflowParametersInvalid), ErrorCode: "invalid_workflow_parameters", Errors: issues})
+		if writeWorkflowParametersError(c, err) {
 			return
 		}
 		if writeQueryProtectionError(c, err) {
@@ -120,11 +116,7 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, developi18n.MsgNotebookFileIdentityInvalid), "error_code": "invalid_notebook_file_identity"})
 			return
 		}
-		var workflowError *service.WorkflowParametersError
-		if errors.As(err, &workflowError) {
-			issues := workflowError.Issues
-			localizeWorkflowTypeIssues(c, issues)
-			c.JSON(http.StatusBadRequest, WorkflowParametersErrorResponse{Error: commoni18n.T(c, developi18n.MsgWorkflowParametersInvalid), ErrorCode: "invalid_workflow_parameters", Errors: issues})
+		if writeWorkflowParametersError(c, err) {
 			return
 		}
 		if writeQueryProtectionError(c, err) {

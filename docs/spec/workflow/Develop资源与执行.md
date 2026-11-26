@@ -212,6 +212,8 @@ Owner 唯一事实接口为 `GET /api/v1/develop/runtime/file-executions/{execut
 
 保存成功的 Develop 工作流必须包含完整、可直接执行的公开参数；执行输入只允许对本次 execution 覆盖保存值，不能用于补齐不完整任务。工作流任务的执行输入契约由 Develop 根据当前 `workflow_definition`、目标 Workflow Runtime 的 Public Operator Spec 和 Develop Adapter Spec 动态生成，不在任务内容中复制保存第二份 Schema 或默认值。
 
+普通用户向 `POST /api/v1/develop/executions` 提交即时工作流时，公开算子参数在生成 execution UUID、签发授权和持久化执行之前校验。发现服务给出的无效公开参数复用工作流保存的 HTTP 400 响应。返回本地化的 `error`、稳定的 `error_code=invalid_workflow_parameters` 和 `errors[]`；参数类型条目使用 `code=parameter_type_invalid`、`path=workflow_definition.tasks[<零基序号>].params.<公开参数>` 和随 `Accept-Language` 返回的 `message`。该响应没有 execution_id。发现服务或内部异常继续使用服务端错误，已进入执行的算子参数诊断继续使用其原执行契约。
+
 执行输入自动包含每个节点中未被内部数据连线占用、可序列化且可完整校验的 Public Operator 参数：
 
 - 标量、枚举和普通对象参数按 `task_id -> public_parameter` 分组暴露。

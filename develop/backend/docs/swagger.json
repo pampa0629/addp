@@ -609,9 +609,9 @@
                         }
                     },
                     "400": {
-                        "description": "请求无效 | Invalid request",
+                        "description": "请求或公开参数无效；委托审批请求错误使用 ToolApprovalErrorResponse | Invalid request or public parameters; delegated approval request errors use ToolApprovalErrorResponse",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ToolApprovalErrorResponse"
+                            "$ref": "#/definitions/internal_api.WorkflowParametersErrorResponse"
                         }
                     },
                     "403": {
