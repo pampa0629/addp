@@ -93,6 +93,20 @@ services:
     extends: {file: ../../docker-compose.yml, service: asset-frontend}
     profiles: [module-asset]
     container_name: !reset null
+  agent-backend:
+    extends: {file: ../../docker-compose.yml, service: agent-backend}
+    profiles: [module-agent]
+    container_name: !reset null
+    environment: *endpoints
+  agent-frontend:
+    extends: {file: ../../docker-compose.yml, service: agent-frontend}
+    profiles: [module-agent]
+    container_name: !reset null
+  copilot-backend:
+    extends: {file: ../../docker-compose.yml, service: copilot-backend}
+    profiles: [module-copilot]
+    container_name: !reset null
+    environment: *endpoints
   portal-backend:
     extends: {file: ../../docker-compose.yml, service: portal-backend}
     profiles: [module-portal]

@@ -231,7 +231,7 @@ class RuntimeSelectionTest(unittest.TestCase):
 
     def test_scoped_database_modules_match_installer_and_runtime_services(self):
         base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
-        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager,orchestrator,monitor,standard,model,service,asset,portal,catalog,graph,ontology,develop,quality,transfer"), ("postgres", "system,workbench,orchestrator,monitor,standard,model,service,asset,portal,catalog,graph,ontology,develop,quality,transfer")):
+        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager,orchestrator,monitor,standard,model,service,asset,portal,agent,copilot,catalog,graph,ontology,develop,quality,transfer"), ("postgres", "system,workbench,orchestrator,monitor,standard,model,service,asset,portal,agent,copilot,catalog,graph,ontology,develop,quality,transfer")):
             with self.subTest(provider=provider, modules=modules), tempfile.TemporaryDirectory() as temporary:
                 env = release.release_environment(dict(os.environ, ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
                     ADDP_DEPLOYMENT_NETWORK="test-net", ADDP_DEPLOYMENT_PROJECT="test-scoped", NGINX_PORT="8080",
@@ -239,12 +239,13 @@ class RuntimeSelectionTest(unittest.TestCase):
                     "fixture", "registry.invalid", "linux/amd64")
                 model = release.compose_model("platform", env)
                 expected = base | {f"{m}-{part}" for m in modules.split(",") if m for part in ("backend", "frontend")}
+                expected.discard("copilot-frontend")
                 if "quality" in modules.split(","):
                     expected.add("quality-worker")
                 if "transfer" in modules.split(","):
                     expected.update({"transfer-bounded-worker","transfer-continuous-worker"})
                 self.assertEqual(set(model), expected)
-                for owner in {"orchestrator", "monitor", "standard", "model", "service", "asset", "catalog", "graph", "ontology", "develop", "quality", "transfer"}.intersection(modules.split(",")):
+                for owner in {"orchestrator", "monitor", "standard", "model", "service", "asset", "agent", "copilot", "catalog", "graph", "ontology", "develop", "quality", "transfer"}.intersection(modules.split(",")):
                     runtime = model[f"{owner}-backend"]["environment"]
                     self.assertEqual(runtime["ADDP_INFRA_DATABASE_PROVIDER"], provider)
                     for key in ("ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD", "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT"):

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=postgres,mysql
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.agent-platform-database-t2.yml
-# ADDP_T2_INPUT_FILES=common-python/addp_common/infra/ agent/backend/ copilot/backend/ scripts/test/python-platform-database.py
+# ADDP_T2_INPUT_FILES=common-python/addp_common/infra/ agent/backend/ copilot/backend/ scripts/test/python-platform-database.py scripts/infra/platform-database.sh
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
+source "$root/scripts/infra/platform-database.sh"
 project="addp-python-disposable-$(openssl rand -hex 6)"
 export ADDP_DATABASE_DEPLOY_USER=python_deploy ADDP_DATABASE_RUNTIME_USER=python_runtime TZ=Asia/Shanghai
 ADDP_DATABASE_DEPLOY_PASSWORD=$(openssl rand -hex 24)
@@ -46,6 +47,11 @@ SQL
         (
             cd "$root/$owner/backend"
             export PYTHONPATH="$PWD:$root/common-python"
+            launch_installer() {
+                [[ "$1" == "$owner" && "$2" == python ]] || return 1
+                shift 2
+                "$python" "$@"
+            }
             runtime() {
                 env -u ADDP_DATABASE_DEPLOY_USER -u ADDP_DATABASE_DEPLOY_PASSWORD \
                     "$python" "$root/scripts/test/python-platform-database.py" "$owner" "$1"
@@ -54,13 +60,13 @@ SQL
             if [[ "$owner" == agent ]]; then
                 "$python" "$root/scripts/test/python-platform-database.py" agent prior
             fi
-            "$python" -m prepare_database
+            addp_prepare_module_database "$owner" launch_installer
             runtime write
             if [[ "$provider" == postgres ]]; then
                 compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U python_deploy -d "$POSTGRES_DB" \
                     -c 'ALTER ROLE python_deploy SET default_transaction_read_only = on'
             fi
-            "$python" -m prepare_database
+            addp_prepare_module_database "$owner" launch_installer
             if [[ "$provider" == postgres ]]; then
                 compose exec -T postgres env PGOPTIONS='-c default_transaction_read_only=off' \
                     psql -X -v ON_ERROR_STOP=1 -U python_deploy -d "$POSTGRES_DB" \
