@@ -482,6 +482,33 @@ def run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,
         'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
 
 
+DISSOLVE_ENTRY_REJECTION = 'dissolve-groups-type'
+DISSOLVE_RUNTIME_FAILURES = tuple(spec for spec in fixture.DISSOLVE_FAILURES if spec[0] != DISSOLVE_ENTRY_REJECTION)
+
+
+def dissolve_execution_inventory(client):
+    response = obj(client.request('GET', '/api/v1/develop/executions?page=1&page_size=50&dev_type=workflow',
+                                  (200,)).payload, 'dissolve execution inventory')
+    ids = [entry.get('execution_id') for entry in array(response.get('executions'), 'dissolve execution list')]
+    if (type(response.get('total')) is not int or response['total'] != len(ids)
+            or any(not isinstance(value, str) or not value for value in ids) or len(ids) != len(set(ids))):
+        raise SuiteError('dissolve execution inventory is incomplete')
+    return sorted(ids)
+
+
+def validate_dissolve_entry_rejection(response):
+    path = 'workflow_definition.tasks[0].params.group_fields'
+    expected_messages = (
+        ('工作流参数无效，请检查节点参数', '参数类型与算子声明不符：' + path),
+        ('Invalid workflow parameters. Review the node parameters', 'Parameter type differs from the operator declaration: ' + path),
+    )
+    if response.status != 400 or not any(response.payload == {
+            'error': summary, 'error_code': 'invalid_workflow_parameters',
+            'errors': [{'code': 'parameter_type_invalid', 'path': path, 'message': message}],
+        } for summary, message in expected_messages):
+        raise SuiteError('dissolve entry rejection does not match the public type diagnostic')
+
+
 def dissolve_definition(sources,parent,variant='grouped',failure=None):
     spec=next((s for s in fixture.DISSOLVE_FAILURES if s[0]==failure),None)
     if failure is not None and spec is None:raise SuiteError('unknown dissolve failure')
@@ -594,7 +621,30 @@ def run_prepared_dissolve(repository,env,client,physical_runner,browser_runner,p
         persist('success_'+variant+'_verified')
     checkpoint['physical']=native;expected_scans=sorted([*initial,*all_scans])
     for spec in fixture.DISSOLVE_FAILURES:
-        key=spec[0];definition=dissolve_definition(locators,parent,failure=key);identifier=publication.submit(identity,engine,runtime,sources,definition,failure=key);execution=raster.wait_execution(client,'develop',identifier,remaining(),expected='failed');validate_dissolve_failure(execution,identifier,principal,spec)
+        key = spec[0]
+        definition = dissolve_definition(locators, parent, failure=key)
+        if key == DISSOLVE_ENTRY_REJECTION:
+            source_graph_path = f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={sources[spec[1]]["id"]}&direction=downstream'
+            before_graph = obj(client.request('GET', source_graph_path, (200,)).payload, 'before dissolve entry rejection')
+            before_ids = dissolve_execution_inventory(client)
+            if before_ids != sorted(entry['execution_id'] for entry in [*successes, *checkpoint['failures']]):
+                raise SuiteError('dissolve entry rejection starts with an unexpected execution inventory')
+            publication.before_submit(identity, engine, runtime, sources, definition, failure=key)
+            remaining()
+            response = client.request('POST', '/api/v1/develop/executions', (400,),
+                                      raster.workflow_submission_payload(runtime, definition))
+            validate_dissolve_entry_rejection(response)
+            if (dissolve_execution_inventory(client) != before_ids or scan_ids(client) != expected_scans
+                    or physical_runner(repository, env) != native or before_graph.get('truncated') is not False
+                    or client.request('GET', source_graph_path, (200,)).payload != before_graph):
+                raise SuiteError('dissolve entry rejection changed execution, scan, physical or lineage facts')
+            checkpoint['entry_rejection'] = dict(key=key, definition=definition, status=response.status,
+                response=response.payload, unchanged_executions=before_ids, source_lineage=before_graph,
+                meta_after=unchanged_meta())
+            publication.record(dict(stage='submission_rejected', failure=key, status=response.status))
+            persist('entry_rejection_verified')
+            continue
+        identifier=publication.submit(identity,engine,runtime,sources,definition,failure=key);execution=raster.wait_execution(client,'develop',identifier,remaining(),expected='failed');validate_dissolve_failure(execution,identifier,principal,spec)
         if obj(obj(execution.get('execution_config'),'dissolve failed config').get('content'),'dissolve failed content').get('workflow_definition')!=definition:raise SuiteError('dissolve failed frozen workflow differs')
         monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'dissolve failed Monitor');validate_dissolve_failure(monitor,identifier,principal,spec)
         if monitor.get('module')!='develop'or monitor.get('error_details')!=execution.get('error_details'):raise SuiteError('dissolve failed Monitor differs')
@@ -602,7 +652,10 @@ def run_prepared_dissolve(repository,env,client,physical_runner,browser_runner,p
         if graph.get('truncated')is not False or any(e.get('relation_kind')=='derive'and e.get('evidence',{}).get('execution_id')==identifier for e in array(graph.get('edges'),'dissolve failed edges')):raise SuiteError('dissolve failure published derive or incomplete graph')
         if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('dissolve failure changed physical files or scans')
         checkpoint['failures'].append({'key':key,'execution_id':identifier,'definition':definition,'execution':execution,'monitor':monitor,'expected_diagnostic':dissolve_diagnostic(spec),'source_lineage':graph,'meta_after':unchanged_meta()});persist('failure_'+key+'_verified')
-    if len({r['execution_id']for r in [*successes,*checkpoint['failures']]})!=10:raise SuiteError('dissolve requires ten distinct executions')
+    execution_ids = sorted({entry['execution_id'] for entry in [*successes, *checkpoint['failures']]})
+    if (len(execution_ids) != 2 + len(DISSOLVE_RUNTIME_FAILURES)
+            or dissolve_execution_inventory(client) != execution_ids or 'entry_rejection' not in checkpoint):
+        raise SuiteError('dissolve requires two successful executions, seven failed executions and one entry rejection')
     persist('before_browser')
     evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'sources':sources,'successes':successes,'outputs':outputs,'failures':checkpoint['failures']}
     publication.check_preparation_scans()
@@ -2198,8 +2251,9 @@ assert.deepEqual(keys(v.rendered),keys(v.expected.map(r=>({properties:r.properti
         repo=Path(__file__).resolve().parents[2];result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'manager/frontend/e2e/geometry-preview-coordinate.js'),str(repo/'manager/frontend/e2e/geometry-preview-support.js')],input=json.dumps({'rows':rows,'column':output['geometry_column'],'expected':expected,'rendered':rendered['features']}),capture_output=True,text=True,timeout=30)
         if result.returncode:raise SuiteError('dissolve raw EWKB/OL coordinates or properties differ')
     failures=array(raw.get('failures'),'dissolve browser failures')
-    if[f.get('key')for f in failures]!=[s[0]for s in fixture.DISSOLVE_FAILURES]:raise SuiteError('dissolve browser needs eight exact failures')
-    for record,failed,spec in zip(failures,evidence['failures'],fixture.DISSOLVE_FAILURES):
+    if [f.get('key') for f in failures] != [spec[0] for spec in DISSOLVE_RUNTIME_FAILURES]:
+        raise SuiteError('dissolve browser needs the seven exact execution failures')
+    for record,failed,spec in zip(failures,evidence['failures'],DISSOLVE_RUNTIME_FAILURES,strict=True):
         reads=array(record.get('observations'),'dissolve owner/locale pages')
         if record.get('execution_id')!=failed['execution_id']or len(reads)!=4 or{(v.get('owner'),v.get('locale'))for v in reads}!={(o,l)for o in('develop','monitor')for l in('zh-cn','en')}:raise SuiteError('dissolve failure UUID/owner/locale differs')
         for read in reads:

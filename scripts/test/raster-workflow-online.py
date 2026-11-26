@@ -509,11 +509,16 @@ def validate_utility_json(execution, case_name, physical_evidence):
     return actual
 
 
-def submit(client, engine_id, definition, *, execution_timeout=180):
-    response = obj(client.request('POST', '/api/v1/develop/executions', (200,), {
+def workflow_submission_payload(engine_id, definition, *, execution_timeout=180):
+    return {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': execution_timeout,
         'content': {'workflow_definition': definition}, 'execution_config': {'engine_id': engine_id},
-    }).payload, 'execution submission')
+    }
+
+
+def submit(client, engine_id, definition, *, execution_timeout=180):
+    body = workflow_submission_payload(engine_id, definition, execution_timeout=execution_timeout)
+    response = obj(client.request('POST', '/api/v1/develop/executions', (200,), body).payload, 'execution submission')
     value = response.get('execution_id')
     if not isinstance(value, str) or not value:
         raise SuiteError('Develop did not return an execution_id')

@@ -2574,7 +2574,7 @@ def dissolve_physical(count=4):
 
 class DissolveClient(InputDiagnosticClient):
     def __init__(self):
-        super().__init__();self.sources=[];self.outputs=[];self.preflight_denied=False;self.success_count=0;self.mutate_success=None;self.mutate_failed=None;self.mutate_graph=None;self.failed_graph=None;self.scan_actor=33;self.scan_tenant=2
+        super().__init__();self.sources=[];self.outputs=[];self.preflight_denied=False;self.success_count=0;self.mutate_success=None;self.mutate_failed=None;self.mutate_graph=None;self.failed_graph=None;self.mutate_entry=None;self.scan_actor=33;self.scan_tenant=2
         for i,(name,kind)in enumerate(zip(m.fixture.DISSOLVE_SOURCES,m.fixture.DISSOLVE_KINDS)):
             rows=m.fixture.dissolve_features(kind);item=base.item(name,10+i);item.update(full_name=name,size_bytes=98304);item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
         for i,name in enumerate(m.fixture.DISSOLVE_TARGETS):
@@ -2586,6 +2586,15 @@ class DissolveClient(InputDiagnosticClient):
             if len(definition['tasks']) == 2:
                 spec = next(entry for entry in m.fixture.DISSOLVE_FAILURES
                             if definition == m.dissolve_definition(self.locators, self.parent, failure=entry[0]))
+                if spec[0]=='dissolve-groups-type':
+                    if expected!=(400,):
+                        raise m.SuiteError('POST /api/v1/develop/executions returned HTTP 400 (invalid_workflow_parameters)')
+                    path='workflow_definition.tasks[0].params.group_fields'
+                    data={'error':'工作流参数无效，请检查节点参数','error_code':'invalid_workflow_parameters',
+                          'errors':[{'code':'parameter_type_invalid','path':path,'message':'参数类型与算子声明不符：'+path}]}
+                    if self.mutate_entry:
+                        self.mutate_entry(data)
+                    return SimpleNamespace(status=400,payload=data)
                 value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.dissolve_diagnostic(spec)}}
                 if self.mutate_failed:self.mutate_failed(value)
             else:
@@ -2598,6 +2607,8 @@ class DissolveClient(InputDiagnosticClient):
                 self.scans.extend(variant+'-'+port+'-scan'for port in targets)
                 if self.mutate_success:self.mutate_success(value)
             self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif method=='GET' and path=='/api/v1/develop/executions?page=1&page_size=50&dev_type=workflow':
+            data={'executions':list(self.executions.values()),'total':len(self.executions),'page':1,'page_size':50}
         elif path.endswith('/engines/3/items'):data=[*self.sources,*self.outputs]
         elif path.startswith('/api/v1/meta/items/'):data=next(v for v in[*self.sources,*self.outputs]if v['id']==int(path.rsplit('/',1)[1]))
         elif '/meta/executions/'in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
@@ -2622,16 +2633,35 @@ class DissolveOnlineTest(unittest.TestCase):
     def test_dissolve_two_success_eight_failures_four_scans_and_execution_bound_source_edges(self):
         client=DissolveClient();report=self.run_case(client)
         self.assertEqual((report['result'],report['schema_version']),('passed','addp.polygon-dissolve/v1'))
-        self.assertEqual([len(report[k])for k in('successes','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[2,4,8,0,4,9])
+        self.assertEqual([len(report[k])for k in('successes','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[2,4,7,0,4,9])
         self.assertEqual([o['feature_count']for o in report['outputs']],[4,10,1,10])
         self.assertEqual([(index,name) for _,index,name in client.issuer.approvals],
                          list(enumerate(m.fixture.DISSOLVE_TARGETS[:2]))+list(enumerate(m.fixture.DISSOLVE_TARGETS[2:])))
         self.assertEqual(sum(s['stage']=='result_initial_read_granted' for s in report['publication']['stages']),4)
-        self.assertEqual(len({r['execution_id']for r in[*report['successes'],*report['failures']]}),10)
+        self.assertEqual(len({r['execution_id']for r in[*report['successes'],*report['failures']]}),9)
         self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),10)
+        entry = report['entry_rejection']
+        self.assertEqual(entry['key'], 'dissolve-groups-type')
+        self.assertEqual(entry['status'], 400)
+        self.assertEqual(entry['response']['errors'][0]['path'], 'workflow_definition.tasks[0].params.group_fields')
+        self.assertEqual(len(entry['unchanged_executions']),6)
+        self.assertEqual(sum(stage['stage']=='submission_rejected' for stage in report['publication']['stages']),1)
         for failure in report['failures']:
             self.assertEqual([node['operator'] for node in failure['definition']['tasks']],
                              ['dissolve', 'load'])
+
+    def test_dissolve_entry_rejection_refuses_wrong_diagnostic_or_new_execution(self):
+        for mutation in (lambda p:p.update(error_code='execution_start_failed'),
+                         lambda p:p['errors'][0].update(path='workflow_definition.tasks[1].params.group_fields'),
+                         lambda p:p.update(execution_id='forged')):
+            client = DissolveClient()
+            client.mutate_entry = mutation
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(m.SuiteError, 'public type diagnostic'):
+                self.run_case(client)
+        client = DissolveClient()
+        client.mutate_entry = lambda _:client.executions.update(hidden={'execution_id':'hidden'})
+        with self.assertRaisesRegex(m.SuiteError, 'changed execution'):
+            self.run_case(client)
 
     def test_dissolve_requires_resource_visibility_before_any_execution(self):
         client=DissolveClient();client.preflight_denied=True
@@ -2659,7 +2689,7 @@ class DissolveOnlineTest(unittest.TestCase):
         with self.assertRaises(m.SuiteError):self.run_case(client)
     def test_dissolve_browser_failure_preserves_checkpoint_and_source_or_result_changes_refuse(self):
         with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in()).throw(m.SuiteError('browser broke')))
-        checkpoint=json.loads((Path(self.directory.name)/'topology-dissolve-checkpoint.json').read_text());self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_browser'));self.assertEqual(len(checkpoint['failures']),8)
+        checkpoint=json.loads((Path(self.directory.name)/'topology-dissolve-checkpoint.json').read_text());self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_browser'));self.assertEqual(len(checkpoint['failures']),7)
         client=DissolveClient()
         def physical(*a):
             value=dissolve_physical(2 if client.success_count==1 else 4)
@@ -2697,7 +2727,7 @@ class DissolveBrowserRawTest(unittest.TestCase):
         for failed in e['failures']:
             self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'key':failed['key'],'execution_id':failed['execution_id'],'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
         self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
-    def test_dissolve_browser_accepts_four_maps_two_execution_pages_and_32_exact_diagnostic_reads(self):
+    def test_dissolve_browser_accepts_four_maps_two_execution_pages_and_28_exact_diagnostic_reads(self):
         m.validate_dissolve_browser_raw(self.raw,self.evidence)
     def test_dissolve_browser_refuses_wrong_ewkb_member_properties_pixels_graph_uuid_and_clipboard(self):
         changes=[lambda r:r.update(result='incomplete'),lambda r:r['successes'][1]['execution'].update(status='failed'),lambda r:r['observations'].pop(),
@@ -2720,7 +2750,7 @@ class DissolveBrowserContractTest(unittest.TestCase):
         script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');
 const start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start);const values=new Function(source.slice(start,end)+';return inputDiagnosticText')();
 for(const locale of ['zh-cn','en']){const d=JSON.parse(readFileSync(root+'/common-frontend/basic/src/i18n/'+locale+'.json','utf8')).common.executionFailure;
-for(const[key,reason,param]of [['dissolve-id-missing','operator_input_invalid','input_gdf'],['dissolve-id-duplicate','operator_input_invalid','input_gdf'],['dissolve-invalid','operator_input_invalid','input_gdf'],['dissolve-crs','operator_crs_invalid',''],['dissolve-groups-type','operator_group_fields_invalid','group_fields'],['dissolve-groups-duplicate','operator_group_fields_invalid','group_fields'],['dissolve-groups-missing','operator_group_fields_invalid','group_fields'],['dissolve-fields','operator_dissolve_fields_conflict','']])assert.deepEqual(values[key][locale],[d.reasons[reason],d.operatorNames.dissolve,param?d.operatorParameters[param]:'','',d.actions[reason]]);}
+for(const[key,reason,param]of [['dissolve-id-missing','operator_input_invalid','input_gdf'],['dissolve-id-duplicate','operator_input_invalid','input_gdf'],['dissolve-invalid','operator_input_invalid','input_gdf'],['dissolve-crs','operator_crs_invalid',''],['dissolve-groups-duplicate','operator_group_fields_invalid','group_fields'],['dissolve-groups-missing','operator_group_fields_invalid','group_fields'],['dissolve-fields','operator_dissolve_fields_conflict','']])assert.deepEqual(values[key][locale],[d.reasons[reason],d.operatorNames.dissolve,param?d.operatorParameters[param]:'','',d.actions[reason]]);}
 assert.ok(source.includes('await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)'));assert.ok(source.includes('if(overlay||dissolve||difference)return observations'));assert.ok(source.includes('topology-dissolve-browser-raw.json'));
 """
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)
@@ -2904,7 +2934,7 @@ def run_formal_multifile(environment, consumer, physical, browser):
                 raise AssertionError('successful execution became visible before all approvals')
         previous = list(consumer.scans)
         response = original(method, path, expected, body)
-        if method=='POST' and path.endswith('/develop/executions'):
+        if method=='POST' and path.endswith('/develop/executions') and expected==(200,):
             identifier = response.payload['execution_id']
             if consumer.executions[identifier]['status']=='success':
                 consumer.pending_scans[identifier] = consumer.scans[len(previous):]

@@ -814,22 +814,6 @@ Object.assign(inputDiagnosticText, {
       "Explicitly align both projected CRSs and horizontal units before submitting a new execution."
     ]
   },
-  "dissolve-groups-type": {
-    "zh-cn": [
-      "分组字段列表无效、重复或包含非标量值。",
-      "融合几何",
-      "分组字段（group_fields）",
-      "",
-      "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。"
-    ],
-    "en": [
-      "The group field list is invalid, duplicated or contains non-scalar values.",
-      "Dissolve geometry",
-      "Group fields (group_fields)",
-      "",
-      "Explicitly select distinct existing non-geometry scalar fields; [] means global dissolve and null groups are retained."
-    ]
-  },
   "dissolve-groups-duplicate": {
     "zh-cn": [
       "分组字段列表无效、重复或包含非标量值。",
@@ -979,7 +963,7 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
   expect(evidence.case).toBe(caseName)
   const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve',difference=caseName==='geometry-difference',adjacency=caseName==='polygon-adjacency',components=caseName==='polygon-components'
-  const keys=components?["components-id", "components-crs", "components-overlap", "components-source-id", "components-part-no", "components-component-id"]:adjacency?['adjacency-id','adjacency-empty','adjacency-crs','adjacency-overlap']:difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
+  const keys=components?["components-id", "components-crs", "components-overlap", "components-source-id", "components-part-no", "components-component-id"]:adjacency?['adjacency-id','adjacency-empty','adjacency-crs','adjacency-overlap']:difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
   expect(evidence.executions.map(run=>run.key)).toEqual(keys)
   expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(keys.length)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
