@@ -10,6 +10,7 @@ import (
 	commonclient "github.com/addp/common/client"
 	"time"
 
+	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -58,18 +59,145 @@ func (r *ContentIndexDeliveryRepository) lock(tx *gorm.DB) (*models.ContentIndex
 	return &row, err
 }
 
-// Open fences previous startup generations; it never clears pending deliveries.
-func (r *ContentIndexDeliveryRepository) Open(ctx context.Context, endpointID string, configured bool) (string, error) {
-	epoch := uuid.NewString()
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := r.lock(tx); err != nil {
+// The logical index owns document ordinals and deletion fences. A new physical
+// endpoint can serve that index; adopting a different name requires migrating
+// those facts as well as the external documents.
+type searchBinding struct {
+	Singleton int `gorm:"primaryKey;autoIncrement:false"`
+	IndexName string
+}
+
+func (searchBinding) TableName() string { return "manager.content_search_binding" }
+
+func DeployedSearchIndex(ctx context.Context, db *gorm.DB) (string, error) {
+	var binding searchBinding
+	err := db.WithContext(ctx).Where("singleton = 1").Take(&binding).Error
+	return binding.IndexName, err
+}
+
+func confirmDeployedSearchTarget(ctx context.Context, db *gorm.DB, index, endpoint string, reconcile func(context.Context, *gorm.DB, *ContentIndexDeliveryRepository) error) error {
+	if index == "" || len(index) > 128 {
+		return errors.New("invalid Manager content index name")
+	}
+	id := config.SearchEndpointID(endpoint)
+	enabled := strings.TrimSpace(endpoint) != ""
+	repo := NewContentIndexDeliveryRepository(db, index)
+	current, err := DeployedSearchIndex(ctx, db)
+	if err == nil {
+		if current != index {
+			return fmt.Errorf("Manager content index %q owns the stored ordinals and deletion fences; migrate them before renaming it", current)
+		}
+		// An unchanged release is also supported on a read-only connection.
+		if _, err = repo.JoinTarget(ctx, id, enabled); err == nil {
+			return nil
+		}
+		if !errors.Is(err, ErrContentIndexIsolated) {
 			return err
 		}
-		return tx.Model(&models.ContentIndexOutlet{}).Where("index_name = ?", r.index).Updates(map[string]any{
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		binding := searchBinding{Singleton: 1, IndexName: index}
+		insert := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&binding)
+		if insert.Error != nil {
+			return insert.Error
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("singleton=1").Take(&binding).Error; err != nil {
+			return err
+		}
+		if binding.IndexName != index {
+			return errors.New("Manager content index binding changed during deployment")
+		}
+		target := NewContentIndexDeliveryRepository(tx, index)
+		if insert.RowsAffected == 1 {
+			// Older installations had only the per-index rows. Do not silently
+			// adopt a fresh name while an earlier deployment still has a ledger.
+			var other int64
+			if err := tx.Model(&models.ContentIndexOutlet{}).Where("index_name <> ? AND epoch <> ''", index).Count(&other).Error; err != nil {
+				return err
+			}
+			if other != 0 {
+				return errors.New("existing Manager search outlets differ from the deployment binding; reconcile their ledgers before adoption")
+			}
+		} else {
+			if _, err := target.JoinTarget(ctx, id, enabled); err == nil {
+				return nil
+			} else if !errors.Is(err, ErrContentIndexIsolated) {
+				return err
+			}
+		}
+		if _, err := target.ConfirmTarget(ctx, id, enabled); err != nil {
+			return err
+		}
+		return reconcile(ctx, tx, target)
+	})
+}
+
+// ConfirmTarget is a deployment operation. Repeating a release must not
+// replace a live epoch or change an in-progress isolation decision.
+func (r *ContentIndexDeliveryRepository) ConfirmTarget(ctx context.Context, endpointID string, configured bool) (string, error) {
+	var epoch string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row, err := r.lock(tx)
+		if err != nil {
+			return err
+		}
+		if row.Epoch != "" && row.Configured == configured && (!configured || row.EndpointID == endpointID) {
+			epoch = row.Epoch
+			return nil
+		}
+		if row.CleanupHoldID != "" {
+			return ErrContentIndexIsolated
+		}
+		if configured && row.Epoch != "" {
+			// Unsent protection purges have no external effect yet. A receipt or
+			// uncertain submission must be reconciled against its original target.
+			var pending int64
+			if err := tx.Model(&models.ContentIndexDelivery{}).
+				Where("index_name = ? AND status IN ? AND NOT (kind = ? AND status = ? AND endpoint_id = '')", r.index, unfinishedIndexDeliveries, IndexDeliveryPurge, IndexDeliveryQueued).
+				Count(&pending).Error; err != nil {
+				return err
+			}
+			if pending != 0 && row.EndpointID != endpointID {
+				return ErrContentIndexIsolated
+			}
+		}
+		epoch = uuid.NewString()
+		// Keep the last physical target on disable, so a return to that target
+		// can drain its outstanding receipts without admitting a different one.
+		if !configured {
+			endpointID = row.EndpointID
+		}
+		return tx.Model(row).Updates(map[string]any{
 			"epoch": epoch, "endpoint_id": endpointID, "configured": configured, "isolated": true,
 		}).Error
 	})
 	return epoch, err
+}
+
+func (r *ContentIndexDeliveryRepository) JoinConfiguredIndex(ctx context.Context, index, endpointID string, configured bool) (string, error) {
+	if index != r.index {
+		return "", ErrContentIndexIsolated
+	}
+	return r.JoinTarget(ctx, endpointID, configured)
+}
+
+// JoinTarget performs no writes. A replica must keep its own epoch to be fenced
+// by a later deployment, even when the deployment returns to the same address.
+func (r *ContentIndexDeliveryRepository) JoinTarget(ctx context.Context, endpointID string, configured bool) (string, error) {
+	var row models.ContentIndexOutlet
+	err := r.db.WithContext(ctx).Where("index_name = ?", r.index).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrContentIndexIsolated
+	}
+	if err != nil {
+		return "", err
+	}
+	if row.Epoch == "" || configured != row.Configured || (configured && row.EndpointID != endpointID) {
+		return "", ErrContentIndexIsolated
+	}
+	return row.Epoch, nil
 }
 
 func (r *ContentIndexDeliveryRepository) State(ctx context.Context, epoch string) (*models.ContentIndexOutlet, error) {

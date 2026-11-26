@@ -49,14 +49,14 @@ func contentDeliveryServiceFixture(t *testing.T, handler http.Handler) (*HybridS
 	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	epoch, err := repo.Open(t.Context(), contentIndexEndpointID(server.URL), true)
+	epoch, err := repo.ConfirmTarget(t.Context(), config.SearchEndpointID(server.URL), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.ActivateIfSettled(t.Context(), epoch); err != nil {
 		t.Fatal(err)
 	}
-	svc := &HybridSearchService{client: meilisearch.New(server.URL, meilisearch.WithCustomClient(&http.Client{Timeout: time.Second}), meilisearch.DisableRetries()), contentIndex: "content", enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: contentIndexEndpointID(server.URL), log: slog.Default()}
+	svc := &HybridSearchService{client: meilisearch.New(server.URL, meilisearch.WithCustomClient(&http.Client{Timeout: time.Second}), meilisearch.DisableRetries()), contentIndex: "content", enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: config.SearchEndpointID(server.URL), log: slog.Default()}
 	svc.initialized.Store(true)
 	svc.ordinalReady.Store(true)
 	svc.searchSessions = newSearchSessionRegistry()
@@ -145,8 +145,8 @@ func TestContentDeliveryTimeoutRecoversKnownTaskWithoutResending(t *testing.T) {
 	if len(op.DocumentIDs) != 2 || op.Status != repository.IndexDeliverySubmitted || op.TaskUID == nil || *op.TaskUID != 0 {
 		t.Fatalf("receipt not durable: %#v", op)
 	}
-	// New startup generation resumes polling; no original payload is available.
-	next, err := svc.deliveries.Open(t.Context(), svc.endpointID, true)
+	// A restarted replica resumes polling; no original payload is available.
+	next, err := svc.deliveries.JoinTarget(t.Context(), svc.endpointID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,6 +357,9 @@ func TestContentDeliveryPurgeWaitsForActualLateWriteAndTechnicalReplacement(t *t
 
 func TestContentDeliveryOptionalAndUnavailableIndexDoesNotFailManagerConstruction(t *testing.T) {
 	svc, _ := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
+	if _, err := svc.deliveries.ConfirmTarget(t.Context(), "", false); err != nil {
+		t.Fatal(err)
+	}
 	disabled, err := NewHybridSearchService(&config.Config{MeilisearchManagerContentIndex: "content"}, nil, nil, nil, nil, svc.deliveries, svc.protectionStore)
 	if err != nil || disabled.Enabled() {
 		t.Fatalf("optional index: %v", err)
@@ -368,6 +371,9 @@ func TestContentDeliveryOptionalAndUnavailableIndexDoesNotFailManagerConstructio
 	// rather than failing the Manager process or pretending deletion succeeded.
 	unavailable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
 	t.Cleanup(unavailable.Close)
+	if _, err := svc.deliveries.ConfirmTarget(t.Context(), config.SearchEndpointID(unavailable.URL), true); err != nil {
+		t.Fatal(err)
+	}
 	configured, err := NewHybridSearchService(&config.Config{MeilisearchManagerContentIndex: "content", MeilisearchURL: unavailable.URL}, nil, nil, nil, nil, svc.deliveries, svc.protectionStore)
 	if err != nil || configured.initialized.Load() {
 		t.Fatalf("unavailable index construction: %v", err)
@@ -419,7 +425,7 @@ func TestContentDeliveryLostResponseRecoversOriginalCorrelatedTask(t *testing.T)
 		t.Fatalf("missing durable correlation: %#v", op)
 	}
 	// A new startup continues the original submission without its payload.
-	epoch, err := svc.deliveries.Open(t.Context(), svc.endpointID, true)
+	epoch, err := svc.deliveries.JoinTarget(t.Context(), svc.endpointID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -560,7 +566,7 @@ func TestContentDeliveryLostDeleteResponseRecoversWithoutResubmitting(t *testing
 	if marker == "" || marker != op.ID {
 		t.Fatal("delete did not send its persistent identity")
 	}
-	svc.epoch, err = svc.deliveries.Open(t.Context(), svc.endpointID, true)
+	svc.epoch, err = svc.deliveries.JoinTarget(t.Context(), svc.endpointID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,7 +691,7 @@ func TestContentPurgeLostResponseRecoversWithoutResubmitting(t *testing.T) {
 	if marker != op.ID {
 		t.Fatal("missing persistent correlation")
 	}
-	svc.epoch, err = svc.deliveries.Open(t.Context(), svc.endpointID, true)
+	svc.epoch, err = svc.deliveries.JoinTarget(t.Context(), svc.endpointID, true)
 	if err != nil {
 		t.Fatal(err)
 	}

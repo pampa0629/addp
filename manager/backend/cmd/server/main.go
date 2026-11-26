@@ -62,7 +62,8 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "prepare-database" {
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
-		if err := repository.PrepareDatabase(ctx, config.PlatformDatabase()); err != nil {
+		index, endpoint := config.SearchTarget()
+		if err := repository.PrepareDatabase(ctx, config.PlatformDatabase(), index, endpoint, service.ReconcileDeployedSearchProtection); err != nil {
 			var pending *schema.PendingMySQLTriggers
 			if errors.As(err, &pending) {
 				fmt.Fprintln(os.Stderr, err)
@@ -237,15 +238,16 @@ func main() {
 	metadataService.SetObjectSourceReadChecker(systemServiceClient)
 	metadataService.SetWholeSourceReadChecker(systemServiceClient)
 	metadataService.SetMetaScanUserClient(commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
-	indexDeliveries := repository.NewContentIndexDeliveryRepository(db, cfg.MeilisearchManagerContentIndex)
+	deployedIndex, err := repository.DeployedSearchIndex(context.Background(), db)
+	if err != nil {
+		logger.L().Error("Manager 搜索部署记录不可读", "error", err)
+		os.Exit(1)
+	}
+	indexDeliveries := repository.NewContentIndexDeliveryRepository(db, deployedIndex)
 	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, indexDeliveries)
 	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "manager", managerProjectionBarrier)
 	if err != nil {
 		logger.L().Error("保护投影本地存储初始化失败", "error", err)
-		os.Exit(1)
-	}
-	if err := managerProjectionBarrier.ReconcileInstalled(context.Background(), db, protectionStore.ManagedTargets()); err != nil {
-		logger.L().Error("已安装保护投影的派生数据收敛失败", "error", err)
 		os.Exit(1)
 	}
 	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo, embeddingConfigurationProvider, inferenceScenarioBindingService, inferenceClient, indexDeliveries, protectionStore)

@@ -98,7 +98,7 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 	}
 	defer restartedPool.Close()
 	restarted := NewContentIndexDeliveryRepository(restartedDB, index)
-	next, err := restarted.Open(t.Context(), "endpoint", true)
+	next, err := restarted.JoinTarget(t.Context(), "endpoint", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,12 +115,12 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 	if err := restarted.ActivateIfSettled(t.Context(), next); err != nil {
 		t.Fatal(err)
 	}
-	if !errors.Is(repo.ActivateIfSettled(t.Context(), epoch), ErrContentIndexIsolated) {
-		t.Fatal("stale instance reopened index")
+	if err := repo.RequireActive(t.Context(), epoch); err != nil || next != epoch {
+		t.Fatal("peer invalidated the first reader", err)
 	}
 
 	settledGuard, err := restarted.ObserveInventoryGuard(t.Context(), next)
-	if err != nil || settledGuard.Registered != 1 || settledGuard.Epoch == guard.Epoch {
+	if err != nil || settledGuard.Registered != 1 || settledGuard.Epoch != guard.Epoch {
 		t.Fatal("settled/restarted observation", settledGuard, err)
 	}
 	rollback := errors.New("rollback purge")
@@ -224,8 +224,8 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 				}
 			}
 		})
-		// A separate process generation cannot reopen or dispatch a generic delete.
-		reopened, err := repo.Open(ctx, "endpoint", true)
+		// Joining the same generation must preserve a cleanup hold.
+		reopened, err := repo.ConfirmTarget(ctx, "endpoint", true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,16 +235,8 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 		if !errors.Is(repo.RequireNoCleanupHold(ctx, reopened), ErrContentIndexIsolated) {
 			t.Fatal("restart allowed index reinitialization")
 		}
-		if err := db.Transaction(func(tx *gorm.DB) error {
-			_, e := restarted.QueueCleanupDelete(ctx, tx, lease, operation.ID, 9)
-			return e
-		}); !errors.Is(err, ErrContentIndexIsolated) {
-			t.Fatal("previous generation dispatched", err)
-		}
-		// Restore this test's original outlet generation to exercise final-result
-		// rollback independently; production has no such recovery/reset operation.
-		if err := db.Model(&models.ContentIndexOutlet{}).Where("index_name=?", index).Update("epoch", next).Error; err != nil {
-			t.Fatal(err)
+		if _, err := repo.ConfirmTarget(ctx, "other", true); !errors.Is(err, ErrContentIndexIsolated) {
+			t.Fatal("deployment switched an index under cleanup", err)
 		}
 		var deletion *models.ContentIndexDelivery
 		if err := db.Transaction(func(tx *gorm.DB) error {

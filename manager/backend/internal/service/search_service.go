@@ -129,9 +129,13 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 		inferenceClient:       inferenceClient,
 		deliveries:            deliveries,
 		protectionStore:       protectionStore,
-		endpointID:            contentIndexEndpointID(cfg.MeilisearchURL),
+		endpointID:            config.SearchEndpointID(cfg.MeilisearchURL),
 	}
-	epoch, err := deliveries.Open(context.Background(), svc.endpointID, svc.enabled)
+	epoch, err := deliveries.JoinConfiguredIndex(context.Background(), svc.contentIndex, svc.endpointID, svc.enabled)
+	if errors.Is(err, repository.ErrContentIndexIsolated) {
+		svc.log.Warn("本进程的搜索目标未获部署确认，暂停搜索", "index", svc.contentIndex)
+		return svc, nil
+	}
 	if err != nil {
 		return nil, err
 	}

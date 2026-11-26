@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/manager/internal/config"
 	"log/slog"
 	"net/http"
 	"os"
@@ -105,14 +106,14 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		}
 	})
 	repo := repository.NewContentIndexDeliveryRepository(db, index)
-	epoch, err := repo.Open(ctx, contentIndexEndpointID(endpoint), true)
+	epoch, err := repo.ConfirmTarget(ctx, config.SearchEndpointID(endpoint), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.ActivateIfSettled(ctx, epoch); err != nil {
 		t.Fatal(err)
 	}
-	svc := &HybridSearchService{client: client, contentIndex: index, enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: contentIndexEndpointID(endpoint), log: slog.Default()}
+	svc := &HybridSearchService{client: client, contentIndex: index, enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: config.SearchEndpointID(endpoint), log: slog.Default()}
 	t.Run("replica_rechecks_settings_without_invalidating_search_material", func(t *testing.T) {
 		if err := svc.initIndexes(ctx); err != nil {
 			t.Fatal(err)
@@ -136,6 +137,50 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	svc.initialized.Store(true)
 	svc.ordinalReady.Store(true)
 	svc.searchSessions = newSearchSessionRegistry()
+	t.Run("two_backends_join_deployed_target", func(t *testing.T) {
+		cfg := &config.Config{MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: index}
+		start := func(cfg *config.Config) *HybridSearchService {
+			t.Helper()
+			reader, err := NewHybridSearchService(cfg, nil, nil, nil, nil, repo, store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(reader.Close)
+			return reader
+		}
+		a := start(cfg)
+		material, _, err := a.searchMaterial(ctx, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := start(cfg)
+		if b.epoch != epoch || a.epoch != epoch {
+			t.Fatal("normal startup rotated the deployment epoch")
+		}
+		for _, peer := range []*HybridSearchService{a, b} {
+			page, err := testSearchDocuments(t, peer, ctx, 7, nil, searchVisibilityFixture{}, "replica-probe", 2, "")
+			if err != nil || page == nil || len(page.Hits) != 0 {
+				t.Fatalf("search on joined replica: %+v, %v", page, err)
+			}
+			current, _, err := peer.searchMaterial(ctx, 7)
+			if err != nil || current != material {
+				t.Fatal("replica invalidated active search", err)
+			}
+		}
+		other := *cfg
+		other.MeilisearchURL = "http://127.0.0.1:1"
+		if start(&other).Enabled() {
+			t.Fatal("unconfirmed physical target enabled")
+		}
+		other = *cfg
+		other.MeilisearchManagerContentIndex = index + "-other"
+		if start(&other).Enabled() {
+			t.Fatal("unconfirmed logical index enabled")
+		}
+		if current, _, err := a.searchMaterial(ctx, 7); err != nil || current != material {
+			t.Fatal("mismatched replica changed active reader", err)
+		}
+	})
 	read := func(t *testing.T, id string) map[string]interface{} {
 		t.Helper()
 		var doc map[string]interface{}
@@ -529,8 +574,8 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			// A new startup generation must finish the queued purge without payload storage.
-			svc.epoch, err = repo.Open(ctx, svc.endpointID, true)
+			// A restarted replica must finish the queued purge without payload storage.
+			svc.epoch, err = repo.JoinTarget(ctx, svc.endpointID, true)
 			if err != nil {
 				t.Fatal(err)
 			}

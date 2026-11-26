@@ -121,8 +121,8 @@ func verifyIndexMaintenance(t *testing.T, dialect gorm.Dialector) {
 		})
 	}
 	repo := repository.NewContentIndexDeliveryRepository(db, index)
-	endpoint := contentIndexEndpointID(cfg.MeilisearchURL)
-	epoch, err := repo.Open(ctx, endpoint, true)
+	endpoint := config.SearchEndpointID(cfg.MeilisearchURL)
+	epoch, err := repo.ConfirmTarget(ctx, endpoint, true)
 	if err != nil {
 		t.Fatal(err)
 	}

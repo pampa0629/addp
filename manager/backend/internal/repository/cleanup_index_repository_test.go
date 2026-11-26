@@ -91,7 +91,7 @@ func TestCleanupIndexHoldAndLateRegistration(t *testing.T) {
 				t.Fatal("generic delete bypassed hold", err)
 			}
 			if scenario == "restart" {
-				next, err := repo.Open(ctx, "endpoint", true)
+				next, err := repo.ConfirmTarget(ctx, "endpoint", true)
 				if err != nil {
 					t.Fatal(err)
 				}

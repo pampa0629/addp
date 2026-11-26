@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/addp/manager/internal/config"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -89,9 +90,9 @@ func TestContentIndexInventoryNativeProxyTransport(t *testing.T) {
 	}
 	proxy := nativeContentIndexProxy(t, <-origin)
 	svc.client = meilisearch.New(proxy, meilisearch.WithCustomClient(&http.Client{Timeout: 2 * time.Second}), meilisearch.DisableRetries())
-	svc.endpointID = contentIndexEndpointID(proxy)
+	svc.endpointID = config.SearchEndpointID(proxy)
 	var err error
-	svc.epoch, err = svc.deliveries.Open(t.Context(), svc.endpointID, true)
+	svc.epoch, err = svc.deliveries.ConfirmTarget(t.Context(), svc.endpointID, true)
 	if err != nil {
 		t.Fatal(err)
 	}

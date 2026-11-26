@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/testfixture"
 	"gorm.io/driver/sqlite"
@@ -32,7 +33,7 @@ func newContentDeliveryTestDB(t *testing.T) *gorm.DB {
 
 func openActiveContentIndex(t *testing.T, repo *ContentIndexDeliveryRepository) string {
 	t.Helper()
-	epoch, err := repo.Open(t.Context(), "endpoint", true)
+	epoch, err := repo.ConfirmTarget(t.Context(), "endpoint", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestContentBatchChecksEveryPendingMemberAndKeepsTenantBoundary(t *testing.T
 	}
 }
 
-func TestContentDeliveryPersistsZeroUIDAndFencesOldGeneration(t *testing.T) {
+func TestContentDeliveryPeersShareEpochAndZeroUID(t *testing.T) {
 	db := newContentDeliveryTestDB(t)
 	repo := NewContentIndexDeliveryRepository(db, "content")
 	epoch := openActiveContentIndex(t, repo)
@@ -120,12 +121,12 @@ func TestContentDeliveryPersistsZeroUIDAndFencesOldGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	restarted := NewContentIndexDeliveryRepository(db, "content")
-	next, err := restarted.Open(t.Context(), "endpoint", true)
+	next, err := restarted.JoinTarget(t.Context(), "endpoint", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !errors.Is(repo.ActivateIfSettled(t.Context(), epoch), ErrContentIndexIsolated) {
-		t.Fatal("old generation reopened outlet")
+	if epoch != next {
+		t.Fatal("peer changed epoch")
 	}
 	if !errors.Is(restarted.ActivateIfSettled(t.Context(), next), ErrContentIndexIsolated) {
 		t.Fatal("restart ignored pending task")
@@ -177,7 +178,7 @@ func TestContentDeliveryUnknownNeverExpiresOrReplays(t *testing.T) {
 	if !errors.Is(repo.ActivateIfSettled(t.Context(), epoch), ErrContentIndexIsolated) {
 		t.Fatal("unknown aged into completion")
 	}
-	next, err := repo.Open(t.Context(), "", false)
+	next, err := repo.ConfirmTarget(t.Context(), "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,5 +316,93 @@ func TestContentMaintenanceSerializesPurgeAndResourceDeletion(t *testing.T) {
 	}
 	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, deletion); err != nil || !claimed {
 		t.Fatal("settled purge still blocked delete", err)
+	}
+}
+
+func TestContentTargetSwitchRejectsUnsettledWritesAndFencesOldReaders(t *testing.T) {
+	ctx := t.Context()
+	db := newContentDeliveryTestDB(t)
+	repo := NewContentIndexDeliveryRepository(db, "content")
+	if _, err := repo.JoinTarget(ctx, "endpoint", true); !errors.Is(err, ErrContentIndexIsolated) {
+		t.Fatal("unpublished join", err)
+	}
+	epoch := openActiveContentIndex(t, repo)
+	op := registerContentWrite(t, db, repo, epoch, 7, "orders")
+	if same, err := repo.ConfirmTarget(ctx, "endpoint", true); err != nil || same != epoch {
+		t.Fatal("repeat deployment changed epoch", err)
+	}
+	if _, err := repo.ConfirmTarget(ctx, "other", true); !errors.Is(err, ErrContentIndexIsolated) {
+		t.Fatal("switched unresolved write", err)
+	}
+	if _, err := repo.JoinTarget(ctx, "other", true); !errors.Is(err, ErrContentIndexIsolated) {
+		t.Fatal("mismatched join", err)
+	}
+	if _, err := repo.ConfirmTarget(ctx, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.ConfirmTarget(ctx, "other", true); !errors.Is(err, ErrContentIndexIsolated) {
+		t.Fatal("disable lost pending receipt", err)
+	}
+	if _, err := repo.ConfirmTarget(ctx, "endpoint", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Receipt(ctx, op, 42, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Finish(ctx, op, IndexDeliverySucceeded); err != nil {
+		t.Fatal(err)
+	}
+	next, err := repo.ConfirmTarget(ctx, "other", true)
+	if err != nil || next == epoch {
+		t.Fatal("switch", err)
+	}
+	if err := repo.ActivateIfSettled(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RequireActive(ctx, epoch); !errors.Is(err, ErrContentIndexIsolated) {
+		t.Fatal("old reader still active", err)
+	}
+}
+
+func TestDeploySearchBindingAdoptionAndAtomicSwitch(t *testing.T) {
+	ctx := t.Context()
+	db := newContentDeliveryTestDB(t)
+	if err := db.Exec("CREATE TABLE manager.content_search_binding (singleton INTEGER PRIMARY KEY, index_name TEXT NOT NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewContentIndexDeliveryRepository(db, "content")
+	openActiveContentIndex(t, repo)
+	calls := 0
+	var inject error
+	reconcile := func(_ context.Context, _ *gorm.DB, _ *ContentIndexDeliveryRepository) error { calls++; return inject }
+	if err := confirmDeployedSearchTarget(ctx, db, "wrong", "http://first", reconcile); err == nil {
+		t.Fatal("abandoned legacy outlet")
+	}
+	if err := confirmDeployedSearchTarget(ctx, db, "content", "http://first", reconcile); err != nil {
+		t.Fatal(err)
+	}
+	first, err := repo.JoinConfiguredIndex(ctx, "content", config.SearchEndpointID("http://first"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := confirmDeployedSearchTarget(ctx, db, "content", "http://first/", reconcile); err != nil || calls != 1 {
+		t.Fatal("repeat redeployed", calls, err)
+	}
+	if err := confirmDeployedSearchTarget(ctx, db, "wrong", "http://first", reconcile); err == nil {
+		t.Fatal("changed logical binding")
+	}
+	inject = errors.New("projection reconciliation interrupted")
+	if err := confirmDeployedSearchTarget(ctx, db, "content", "http://second", reconcile); !errors.Is(err, inject) {
+		t.Fatal(err)
+	}
+	if actual, err := repo.JoinTarget(ctx, config.SearchEndpointID("http://first"), true); err != nil || actual != first {
+		t.Fatal("rolled back switch changed target", err)
+	}
+	inject = nil
+	if err := confirmDeployedSearchTarget(ctx, db, "content", "http://second", reconcile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.State(ctx, first); !errors.Is(err, ErrContentIndexIsolated) {
+		t.Fatal("old epoch survived switch", err)
 	}
 }

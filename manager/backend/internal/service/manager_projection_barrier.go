@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
+	"github.com/addp/manager/internal/repository"
 	"gorm.io/gorm"
 )
 
@@ -55,6 +56,17 @@ func (b *ManagerProjectionBarrier) ApplyProjectionChanges(
 		fingerprints[target.ResourceIdentity] = struct{}{}
 	}
 	return b.converge(ctx, tx, tenantID, sortedFingerprintSet(fingerprints))
+}
+
+// ReconcileDeployedSearchProtection fences previously installed targets in the
+// same transaction as publishing the index binding. Replica startup only reads it.
+func ReconcileDeployedSearchProtection(ctx context.Context, tx *gorm.DB, deliveries *repository.ContentIndexDeliveryRepository) error {
+	store, err := projectionstore.Open(tx, "manager", "manager", nil)
+	if err != nil {
+		return err
+	}
+	barrier := NewManagerProjectionBarrier(repository.NewDataProfileRepository(tx), repository.NewDataProfileExecutionRepository(tx), deliveries)
+	return barrier.ReconcileInstalled(ctx, tx, store.ManagedTargets())
 }
 
 // ReconcileInstalled clears local derived material and queues external purges

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
 	"strings"
 	"time"
@@ -93,8 +95,17 @@ type ExecutionSupervisorConfig struct {
 	IdleMaxInterval   time.Duration
 }
 
-func resolveMeilisearchURL() string {
-	return commonConfig.GetEnv("MEILISEARCH_URL", "")
+func SearchEndpointID(endpoint string) string {
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if endpoint == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(endpoint))
+	return hex.EncodeToString(sum[:])
+}
+
+func SearchTarget() (index, endpoint string) {
+	return strings.TrimSpace(commonConfig.GetEnv("MEILISEARCH_MANAGER_CONTENT_INDEX", "manager_content_documents")), strings.TrimSpace(commonConfig.GetEnv("MEILISEARCH_URL", ""))
 }
 
 // PlatformDatabase reads the connection target without loading runtime services.
@@ -124,9 +135,8 @@ func Load() *Config {
 		ServiceClientSecret: commonConfig.GetEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
 	}
 
-	cfg.MeilisearchURL = resolveMeilisearchURL()
+	cfg.MeilisearchManagerContentIndex, cfg.MeilisearchURL = SearchTarget()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
-	cfg.MeilisearchManagerContentIndex = commonConfig.GetEnv("MEILISEARCH_MANAGER_CONTENT_INDEX", "manager_content_documents")
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL

@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const DatabaseVersion int64 = 2
+const DatabaseVersion int64 = 3
 
 func platformDatabaseConfig(cfg *config.Config) database.Config {
 	return database.Config{Host: cfg.DBHost, Port: cfg.DBPort, DBName: cfg.DBName, Schema: "manager", ConnectTimeout: 5 * time.Second}
@@ -25,7 +25,7 @@ func platformDatabaseConfig(cfg *config.Config) database.Config {
 
 // PrepareDatabase owns Manager's installation. The root launcher supplies the
 // same deployment identity used by the other module installers.
-func PrepareDatabase(ctx context.Context, pg database.Config) error {
+func PrepareDatabase(ctx context.Context, pg database.Config, index, endpoint string, reconcile func(context.Context, *gorm.DB, *ContentIndexDeliveryRepository) error) error {
 	db, err := bootstrap.OpenPlatformInstallation(pg, "manager")
 	if err != nil {
 		return err
@@ -45,9 +45,14 @@ func PrepareDatabase(ctx context.Context, pg database.Config) error {
 		if _, err := projectionstore.Migrate(db, "manager", "manager", nil); err != nil {
 			return err
 		}
-		return schema.MigrateMySQL(db, "manager", DatabaseVersion, prepareManagerMySQL)
+		err = schema.MigrateMySQL(db, "manager", DatabaseVersion, prepareManagerMySQL)
+	} else {
+		err = schema.Migrate(db, "manager", DatabaseVersion, prepareManagerPostgres)
 	}
-	return schema.Migrate(db, "manager", DatabaseVersion, prepareManagerPostgres)
+	if err != nil {
+		return err
+	}
+	return confirmDeployedSearchTarget(ctx, db, index, endpoint, reconcile)
 }
 
 func prepareManagerPostgres(db *gorm.DB) error {
@@ -98,6 +103,9 @@ func prepareManagerPostgres(db *gorm.DB) error {
 }
 
 func prepareManagerStores(db *gorm.DB) error {
+	if err := db.Exec("CREATE TABLE IF NOT EXISTS manager.content_search_binding (singleton integer PRIMARY KEY CHECK (singleton=1), index_name varchar(128) NOT NULL)").Error; err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(&models.ProtectionRead{}); err != nil {
 		return fmt.Errorf("prepare Manager protection reads: %w", err)
 	}

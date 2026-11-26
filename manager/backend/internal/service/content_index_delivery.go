@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"sort"
 	"strconv"
@@ -18,14 +16,6 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 	"gorm.io/gorm"
 )
-
-func contentIndexEndpointID(endpoint string) string {
-	if strings.TrimSpace(endpoint) == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(strings.TrimRight(strings.TrimSpace(endpoint), "/")))
-	return hex.EncodeToString(sum[:])
-}
 
 func applyContentIndexProtection(gate projectionstore.GateReader, tenantID uint, document *commonClient.ManagerContentDocument) error {
 	if document == nil {

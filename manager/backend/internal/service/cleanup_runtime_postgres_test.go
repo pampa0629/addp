@@ -144,8 +144,8 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 			}))
 			defer server.Close()
 			deliveries := repository.NewContentIndexDeliveryRepository(tx, "content")
-			endpoint := contentIndexEndpointID(server.URL)
-			epoch, err := deliveries.Open(t.Context(), endpoint, true)
+			endpoint := config.SearchEndpointID(server.URL)
+			epoch, err := deliveries.ConfirmTarget(t.Context(), endpoint, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -400,7 +400,7 @@ func TestIntegrationPostgresManagerCleanupProductionRepositories(t *testing.T) {
 	t.Setenv("POSTGRES_HOST", cfg.DBHost)
 	t.Setenv("POSTGRES_PORT", cfg.DBPort)
 	t.Setenv("POSTGRES_DB", cfg.DBName)
-	if err := repository.PrepareDatabase(t.Context(), config.PlatformDatabase()); err != nil {
+	if err := repository.PrepareDatabase(t.Context(), config.PlatformDatabase(), "manager_gate_content", "", ReconcileDeployedSearchProtection); err != nil {
 		t.Fatal(err)
 	}
 	db, err := repository.InitDatabase(cfg)
@@ -421,6 +421,9 @@ func TestIntegrationPostgresManagerCleanupProductionRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveries := repository.NewContentIndexDeliveryRepository(tx, cfg.MeilisearchManagerContentIndex)
+	if _, err := deliveries.ConfirmTarget(ctx, config.SearchEndpointID(cfg.MeilisearchURL), true); err != nil {
+		t.Fatal(err)
+	}
 	search, err := NewHybridSearchService(cfg, repository.NewEmbeddingRepository(tx), nil, nil, nil, deliveries, store)
 	if err != nil {
 		t.Fatal(err)
