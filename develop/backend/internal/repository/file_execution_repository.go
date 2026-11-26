@@ -295,13 +295,21 @@ type PendingFileAdmission struct {
 	Issued commonclient.IssuedDevelopFileAuthorization
 }
 
+func fileAdmissionClock(db *gorm.DB) string {
+	if db.Dialector.Name() == "mysql" {
+		return "CURRENT_TIMESTAMP(6)"
+	}
+	return "CURRENT_TIMESTAMP"
+}
+
 func (r *FileExecutionRepository) PendingAdmissions(ctx context.Context, limit int) ([]PendingFileAdmission, error) {
 	var rows []models.FileExecution
+	clock := fileAdmissionClock(r.db)
 	err := r.db.WithContext(ctx).Model(&models.FileExecution{}).
 		Joins("JOIN common.task_executions AS original ON original.execution_id = file_executions.execution_id AND original.tenant_id = file_executions.tenant_id").
 		Where("original.module = ? AND original.source IN ? AND original.task_type = ? AND original.status = ? AND original.attempt = 0 AND original.lease_token IS NULL AND original.started_at IS NULL", commonexecution.ModuleDevelop, []string{commonexecution.ModuleDevelop, commonexecution.ModuleOrchestrator}, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).
-		Where("original.execution_authorization_id IS NOT NULL AND original.authorization_expires_at > CURRENT_TIMESTAMP AND file_executions.issued_authorization_json IS NOT NULL").
-		Where("file_executions.admission_state = ? OR (file_executions.admission_state = ? AND file_executions.admission_expires_at <= CURRENT_TIMESTAMP)", "pending", "ready").
+		Where("original.execution_authorization_id IS NOT NULL AND original.authorization_expires_at > "+clock+" AND file_executions.issued_authorization_json IS NOT NULL").
+		Where("file_executions.admission_state = ? OR (file_executions.admission_state = ? AND file_executions.admission_expires_at <= "+clock+")", "pending", "ready").
 		Order("file_executions.updated_at ASC, file_executions.execution_id ASC").Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, err

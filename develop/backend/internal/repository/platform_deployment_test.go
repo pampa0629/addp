@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -51,6 +52,27 @@ func TestInstalledDevelopTask(t *testing.T) {
 	}
 	t.Run("compiled workflow keeps original parent lease", func(t *testing.T) {
 		testInstalledFileWorkflowParent(t, db)
+	})
+	t.Run("file workflow admission expiry", func(t *testing.T) {
+		if err := db.WithContext(t.Context()).Connection(func(conn *gorm.DB) error {
+			conn = conn.Session(&gorm.Session{NewDB: true})
+			if conn.Dialector.Name() == "mysql" {
+				if err := conn.Exec(fmt.Sprintf("SET timestamp = %d.750000", time.Now().Unix())).Error; err != nil {
+					return err
+				}
+				defer func() {
+					if err := conn.Exec("SET timestamp = DEFAULT").Error; err != nil {
+						t.Errorf("restore database fixture clock: %v", err)
+					}
+				}()
+			}
+			item, sources := newFilePendingValues()
+			runFileQueueCase(t, conn, NewFileExecutionRepository(conn), item, sources, "101")
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("expired admission returned for observation; refreshed admission permitted exactly one claim")
 	})
 	t.Logf("task %d: tags and query definition read in tenant; catalog upsert observed", task.ID)
 }

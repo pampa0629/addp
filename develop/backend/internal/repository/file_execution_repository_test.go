@@ -280,15 +280,19 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 0 {
 		t.Fatal("fresh ready unnecessarily reobserved", rows, err)
 	}
+	var expiredAt any = time.Now().UTC().Add(-time.Minute)
+	if db.Dialector.Name() == "mysql" {
+		expiredAt = gorm.Expr("TIMESTAMPADD(MICROSECOND, -250000, CURRENT_TIMESTAMP(6))")
+	}
 	if err := db.Model(&models.FileExecution{}).Where("execution_id = ?", item.ExecutionID).
-		Update("admission_expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		Update("admission_expires_at", expiredAt).Error; err != nil {
 		t.Fatal(err)
 	}
-	if candidate, _, err := queue.ClaimNext("workflow", t.Context(), "file-worker", time.Now(), time.Minute, nil); err != nil || candidate != nil {
-		t.Fatalf("expired admission claimed: %#v %v", candidate, err)
-	}
 	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 1 {
-		t.Fatal("expired ready not scheduled for fresh observation", rows, err)
+		t.Errorf("expired ready not scheduled for fresh observation: count=%d err=%v", len(rows), err)
+	}
+	if candidate, _, err := queue.ClaimNext("workflow", t.Context(), "file-worker", time.Now(), time.Minute, nil); err != nil || candidate != nil {
+		t.Fatalf("expired admission: claimed=%t, err=%v", candidate != nil, err)
 	}
 	// An expired observation is not an Allow. A fresh System observation may
 	// refresh pending eligibility; the original attempt and EA do not change.

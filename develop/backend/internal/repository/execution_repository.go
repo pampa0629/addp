@@ -91,14 +91,15 @@ func (r *ExecutionRepository) ClaimNext(
 			// A registered file purpose cannot escape through the generic queue
 			// before its original EA/scope admission. Other workflows, including
 			// parent-derived execution paths, retain their existing claim rules.
+			clock := fileAdmissionClock(tx)
 			claimDB = claimDB.Where(`NOT EXISTS (
 				SELECT 1 FROM develop.file_executions AS private_file
 				WHERE private_file.execution_id = task_executions.execution_id AND private_file.tenant_id = task_executions.tenant_id
 			) OR (
-				execution_authorization_id IS NOT NULL AND authorization_expires_at > CURRENT_TIMESTAMP AND EXISTS (
+				execution_authorization_id IS NOT NULL AND authorization_expires_at > ` + clock + ` AND EXISTS (
 					SELECT 1 FROM develop.file_executions AS private_file
 					WHERE private_file.execution_id = task_executions.execution_id AND private_file.tenant_id = task_executions.tenant_id
-					AND private_file.admission_state = 'ready' AND private_file.admission_expires_at > CURRENT_TIMESTAMP
+					AND private_file.admission_state = 'ready' AND private_file.admission_expires_at > ` + clock + `
 				)
 			)`)
 		}
