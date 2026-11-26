@@ -298,9 +298,11 @@ def run(repository,environment,owner,*,physical_runner=None,browser_runner=None)
             require(item['fingerprint'] == model['fingerprint'], 'map source fingerprint differs')
             locator = owner.build_item_locator(engine, item)
             map_items[storage] = (item, locator)
-            original = client.request('GET','/api/v1/manager/downloads/file?'+urlencode({'locator':locator}),(200,))
+            download_allowed = storage == 'minio'
+            original = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': locator}),
+                                      (200,) if download_allowed else (403,))
             map_report['original'] = validate_original_download(
-                original, dict(size_bytes=2699860, sha256=FIXTURE.MAP_SHA), allowed=True)
+                original, dict(size_bytes=2699860, sha256=FIXTURE.MAP_SHA), allowed=download_allowed)
             context['temperature_maps'][storage] = dict(locator=locator, version='sha256:'+FIXTURE.MAP_SHA)
         stage = 'browser'
         if browser_runner:browser=browser_runner(context)
