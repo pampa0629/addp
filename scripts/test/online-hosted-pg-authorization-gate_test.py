@@ -24,8 +24,8 @@ class PGSourcePinWorkflowTest(unittest.TestCase):
         self.dispatch = self.git('rev-parse', 'HEAD')
         self.foreign = self.git('commit-tree', 'HEAD^{tree}', '-m', 'unrelated root')
         workflow = (SCRIPT.parents[2] / '.github/workflows/online-t4-gates.yml').read_text()
-        self.assertEqual(workflow.count('ref: ${{ inputs.pg_source_commit || github.sha }}'), 1)
         self.job = re.search(r'(?ms)^  pg-authorization-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow).group(1)
+        self.assertEqual(self.job.count('ref: ${{ inputs.pg_source_commit || github.sha }}'), 1)
 
     def git(self, *args):
         return subprocess.check_output(['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid',
