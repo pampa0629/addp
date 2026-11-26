@@ -26,6 +26,8 @@
 
 独立精确矩形裁剪，Byte三态0/1/2、NoData255／mask／六仿射／CRS／nearest／COG精核；136＋576＝712原件全检，预检＋52现场共53物理调用，存16 COG／大小SHA，期望／准备／收尾纳600秒。初始化仅本轮精确NFS文件限时metadata_read并全退出撤，填洼链保原DEM的raster_save输入；大小／内容仅隔离Hosted当轮User／scan／execution／target绑定的有界只读SQL，不改公开投影／权限。
 
+**首次源扫描待验。** 当前夹具由普通栅格执行 User 发起 19 个固定 NFS 源的集中扫描。Meta 将尚未登记 DataItem 的这批文件选择归入引擎级扫描，System 要求该引擎的管理范围；原 12 项业务权限和成果血缘校验不能提供该准备身份。已分别核对本地工作流准入和首次扫描调用，尚无本场景的实际 Hosted 响应。待确认是否沿用正交专项的隔离准备身份，仅承担首次源扫描和本轮精确限时元数据读取授权。
+
 ## 正交旋转网格通视与可视域独立 Hosted 验收
 
 `raster-sight-orthogonal-persistence`，准备者复用办理角色13权限（原11＋扫描执行／读取），只扫固定源后给执行User精确限时metadata_read，不给执行者引擎管理。源扫／物理Meta快照绑准备者，16业务链／自动扫／血缘绑原12权限User，两清单分核，全部退出撤Grant。
