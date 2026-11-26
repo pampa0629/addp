@@ -14,7 +14,7 @@ import tempfile
 SUITE='raster-interpolate-idw-power-persistence'
 PREFIX='raster-interpolate-idw-power'
 RUNTIME='addp-raster-interpolate-idw-power-runtime'
-ORACLE='.raster-interpolate-idw-power-oracle.json'
+ORACLE=PREFIX+'-expected.json'
 CASES={'p1-base.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, 1), 'p1-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 1, None, 1), 'p1-nearest.cog.tif': ('profile.tif', 'ties.gpkg', 1.0, 2, 2, 1), 'p1-coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10, 10, 1), 'p1-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 1, None, 1), 'p1-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 1, None, 1), 'p1-foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 10000.0, 1, 2, 1), 'p1-survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 10000.0, 1, 2, 1), 'p2-default.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, None), 'p2-explicit.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, 2), 'p2-nearest.cog.tif': ('profile.tif', 'ties.gpkg', 1.0, 2, 2, 2), 'p2-coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10, 10, 2), 'p2-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 1, None, 2), 'p2-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 1, None, 2), 'p2-foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 10000.0, 1, 2, 2), 'p2-survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 10000.0, 1, 2, 2), 'p3-base.cog.tif': ('template.tif', 'points.gpkg', 4.0, 1, None, 3), 'p3-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 1, None, 3), 'p3-nearest.cog.tif': ('profile.tif', 'ties.gpkg', 1.0, 2, 2, 3), 'p3-coincident.cog.tif': ('template.tif', 'coincident.gpkg', 4.0, 10, 10, 3), 'p3-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 1, None, 3), 'p3-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 1, None, 3), 'p3-foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 10000.0, 1, 2, 3), 'p3-survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 10000.0, 1, 2, 3)}
 CONTROLS=(('p1-base.cog.tif', 'p1-reversed.cog.tif'), ('p1-base.cog.tif', 'p1-masked.cog.tif'), ('p2-default.cog.tif', 'p2-explicit.cog.tif'), ('p2-default.cog.tif', 'p2-masked.cog.tif'), ('p3-base.cog.tif', 'p3-reversed.cog.tif'), ('p3-base.cog.tif', 'p3-masked.cog.tif'))
 FAILURES=('power_null', 'power_true', 'power_false', 'power_zero', 'power_negative', 'power_large', 'power_fraction', 'power_string', 'power_array', 'power_object', 'p1_min_zero', 'p1_max_zero', 'p1_counts_regular', 'p1_counts_empty', 'p1_counts_coincident', 'p1_duplicate_outside', 'p1_outside_null', 'p1_unselected_null', 'p1_line', 'p1_different_crs', 'p2_min_zero', 'p2_max_zero', 'p2_counts_regular', 'p2_counts_empty', 'p2_counts_coincident', 'p2_duplicate_outside', 'p2_outside_null', 'p2_unselected_null', 'p2_line', 'p2_different_crs', 'p3_min_zero', 'p3_max_zero', 'p3_counts_regular', 'p3_counts_empty', 'p3_counts_coincident', 'p3_duplicate_outside', 'p3_outside_null', 'p3_unselected_null', 'p3_line', 'p3_different_crs')
@@ -223,7 +223,9 @@ def worker(action, root, names):
         expectations = envelope['expectations']
         if set(expectations) != set(CASES): raise FixtureError('oracle scope changed')
     else: raise FixtureError('unknown oracle action or anchor')
-    if list(Path(tempfile.gettempdir()).glob('addp-raster-*')): raise FixtureError('Runtime execution workspace residual')
+    # Hosted binds the validated NFS root at its original path under /tmp.
+    if any(candidate != root for candidate in Path(tempfile.gettempdir()).resolve().glob('addp-raster-*')):
+        raise FixtureError('Runtime execution workspace residual')
     result = {**verify(root, names, expectations), 'runtime_workspaces_removed': True, 'oracle_sha256': anchor}
     if action == 'oracle': result['expectations'] = expectations
     return result

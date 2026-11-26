@@ -14,7 +14,7 @@ import tempfile
 SUITE='raster-line-kernel-density-persistence'
 PREFIX='raster-line-kernel-density'
 RUNTIME='addp-raster-line-kernel-density-runtime'
-ORACLE='.raster-line-kernel-density-oracle.json'
+ORACLE=PREFIX+'-expected.json'
 CASES={'uniform-default.cog.tif': ('template.tif', 'lines.gpkg', 4.0, None, None), 'uniform-explicit.cog.tif': ('template.tif', 'lines.gpkg', 4.0, None, 'uniform'), 'uniform-weighted-default.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'mass', None), 'uniform-weighted-explicit.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'mass', 'uniform'), 'uniform-zero.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'zero', 'uniform'), 'uniform-boundary-profile.cog.tif': ('profile.tif', 'profile.gpkg', 1.0, 'mass', 'uniform'), 'omitted.cog.tif': ('template.tif', 'lines.gpkg', 4.0, None, 'quartic'), 'ones.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'ones', 'quartic'), 'mixed.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'mass', 'quartic'), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'mass', 'quartic'), 'integer.cog.tif': ('template.tif', 'integer.gpkg', 4.0, 'mass', 'quartic'), 'replicated.cog.tif': ('template.tif', 'replicated.gpkg', 4.0, None, 'quartic'), 'scaled.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'scaled', 'quartic'), 'retraced.cog.tif': ('template.tif', 'retraced.gpkg', 4.0, 'mass', 'quartic'), 'multipart.cog.tif': ('template.tif', 'multipart.gpkg', 4.0, 'mass', 'quartic'), 'subdivided.cog.tif': ('template.tif', 'subdivided.gpkg', 4.0, 'mass', 'quartic'), 'zero.cog.tif': ('template.tif', 'lines.gpkg', 4.0, 'zero', 'quartic'), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'mass', 'quartic'), 'mask-alpha.cog.tif': ('coverage.tif', 'lines.gpkg', 4.0, 'mass', 'quartic'), 'boundary-profile.cog.tif': ('profile.tif', 'profile.gpkg', 1.0, 'mass', 'quartic'), 'foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0, 'mass', 'quartic'), 'survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0, 'mass', 'quartic'), 'diameter.cog.tif': ('profile.tif', 'diameter.gpkg', 1.0, 'mass', 'quartic'), 'chord.cog.tif': ('profile.tif', 'chord.gpkg', 1.0, 'mass', 'quartic')}
 CONTROLS=(('uniform-default.cog.tif', 'uniform-explicit.cog.tif'), ('uniform-weighted-default.cog.tif', 'uniform-weighted-explicit.cog.tif'), ('uniform-zero.cog.tif', 'zero.cog.tif'), ('omitted.cog.tif', 'ones.cog.tif'), ('mixed.cog.tif', 'reversed.cog.tif'), ('integer.cog.tif', 'replicated.cog.tif'), ('mixed.cog.tif', 'multipart.cog.tif'), ('mixed.cog.tif', 'subdivided.cog.tif'), ('mixed.cog.tif', 'mask-alpha.cog.tif'), ('zero.cog.tif', 'empty.cog.tif'))
 SCALE_CONTROLS=(('mixed.cog.tif', 'scaled.cog.tif', 8), ('mixed.cog.tif', 'retraced.cog.tif', 2))
@@ -265,7 +265,9 @@ def worker(action, root, names):
         expectations = envelope['expectations']
         if set(expectations) != set(CASES): raise FixtureError('oracle scope changed')
     else: raise FixtureError('unknown oracle action or anchor')
-    if list(Path(tempfile.gettempdir()).glob('addp-raster-*')): raise FixtureError('Runtime execution workspace residual')
+    # Hosted binds the validated NFS root at its original path under /tmp.
+    if any(candidate != root for candidate in Path(tempfile.gettempdir()).resolve().glob('addp-raster-*')):
+        raise FixtureError('Runtime execution workspace residual')
     result = {**verify(root, names, expectations), 'runtime_workspaces_removed': True, 'oracle_sha256': anchor}
     if action == 'oracle': result['expectations'] = expectations
     return result

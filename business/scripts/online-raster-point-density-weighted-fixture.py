@@ -14,7 +14,7 @@ import tempfile
 SUITE='raster-point-density-weighted-persistence'
 PREFIX='raster-point-density-weighted'
 RUNTIME='addp-raster-point-density-weighted-runtime'
-ORACLE='.raster-point-density-weighted-oracle.json'
+ORACLE=PREFIX+'-expected.json'
 CASES={'uniform-omitted.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', None), 'uniform-ones.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', 'ones'), 'uniform-mixed.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', 'mass'), 'uniform-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'uniform', 'mass'), 'uniform-integer.cog.tif': ('template.tif', 'integer.gpkg', 4.0, 'uniform', 'mass'), 'uniform-replicated.cog.tif': ('template.tif', 'replicated.gpkg', 4.0, 'uniform', None), 'uniform-scaled.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'uniform', 'scaled'), 'uniform-zero.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'uniform', 'zero'), 'uniform-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'uniform', 'mass'), 'uniform-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'uniform', 'mass'), 'uniform-rectangular.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0, 'uniform', 'mass'), 'uniform-rotated.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0, 'uniform', 'mass'), 'quartic-omitted.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', None), 'quartic-ones.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', 'ones'), 'quartic-mixed.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', 'mass'), 'quartic-reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0, 'quartic', 'mass'), 'quartic-integer.cog.tif': ('template.tif', 'integer.gpkg', 4.0, 'quartic', 'mass'), 'quartic-replicated.cog.tif': ('template.tif', 'replicated.gpkg', 4.0, 'quartic', None), 'quartic-scaled.cog.tif': ('template.tif', 'points.gpkg', 4.0, 'quartic', 'scaled'), 'quartic-zero.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'quartic', 'zero'), 'quartic-empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0, 'quartic', 'mass'), 'quartic-masked.cog.tif': ('coverage.tif', 'points.gpkg', 4.0, 'quartic', 'mass'), 'quartic-rectangular.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0, 'quartic', 'mass'), 'quartic-rotated.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0, 'quartic', 'mass')}
 CONTROLS=(('uniform-omitted.cog.tif', 'uniform-ones.cog.tif'), ('uniform-mixed.cog.tif', 'uniform-reversed.cog.tif'), ('uniform-integer.cog.tif', 'uniform-replicated.cog.tif'), ('uniform-mixed.cog.tif', 'uniform-masked.cog.tif'), ('quartic-omitted.cog.tif', 'quartic-ones.cog.tif'), ('quartic-mixed.cog.tif', 'quartic-reversed.cog.tif'), ('quartic-integer.cog.tif', 'quartic-replicated.cog.tif'), ('quartic-mixed.cog.tif', 'quartic-masked.cog.tif'))
 SCALE_CONTROLS=(('uniform-mixed.cog.tif', 'uniform-scaled.cog.tif', 8), ('quartic-mixed.cog.tif', 'quartic-scaled.cog.tif', 8))
@@ -215,7 +215,9 @@ def worker(action, root, names):
         expectations = envelope['expectations']
         if set(expectations) != set(CASES): raise FixtureError('oracle scope changed')
     else: raise FixtureError('unknown oracle action or anchor')
-    if list(Path(tempfile.gettempdir()).glob('addp-raster-*')): raise FixtureError('Runtime execution workspace residual')
+    # Hosted binds the validated NFS root at its original path under /tmp.
+    if any(candidate != root for candidate in Path(tempfile.gettempdir()).resolve().glob('addp-raster-*')):
+        raise FixtureError('Runtime execution workspace residual')
     result = {**verify(root, names, expectations), 'runtime_workspaces_removed': True, 'oracle_sha256': anchor}
     if action == 'oracle': result['expectations'] = expectations
     return result

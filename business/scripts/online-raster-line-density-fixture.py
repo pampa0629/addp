@@ -14,7 +14,7 @@ import tempfile
 SUITE='raster-line-density-persistence'
 PREFIX='raster-line-density'
 RUNTIME='addp-raster-line-density-runtime'
-ORACLE='.raster-line-density-oracle.json'
+ORACLE=PREFIX+'-expected.json'
 CASES={'base.cog.tif': ('template.tif', 'lines.gpkg', 4.0), 'reversed.cog.tif': ('template.tif', 'reversed.gpkg', 4.0), 'doubled.cog.tif': ('template.tif', 'doubled.gpkg', 4.0), 'retraced.cog.tif': ('template.tif', 'retraced.gpkg', 4.0), 'multipart.cog.tif': ('template.tif', 'multipart.gpkg', 4.0), 'subdivided.cog.tif': ('template.tif', 'subdivided.gpkg', 4.0), 'overlap.cog.tif': ('template.tif', 'overlap.gpkg', 4.0), 'tangent.cog.tif': ('one.tif', 'tangent.gpkg', 1.0), 'inside-tangent.cog.tif': ('one.tif', 'inside-tangent.gpkg', 1.0), 'outside-tangent.cog.tif': ('one.tif', 'outside-tangent.gpkg', 1.0), 'endpoint.cog.tif': ('one.tif', 'endpoint.gpkg', 1.0), 'outside.cog.tif': ('template.tif', 'outside.gpkg', 4.0), 'empty.cog.tif': ('template.tif', 'empty.gpkg', 4.0), 'mask-alpha.cog.tif': ('coverage.tif', 'lines.gpkg', 4.0), 'foot-block.cog.tif': ('rectangular.tif', 'foot.gpkg', 4.0), 'survey-block.cog.tif': ('sheared.tif', 'survey.gpkg', 4.0)}
 CONTROLS=(('base.cog.tif', 'reversed.cog.tif'), ('base.cog.tif', 'multipart.cog.tif'), ('base.cog.tif', 'subdivided.cog.tif'), ('base.cog.tif', 'mask-alpha.cog.tif'), ('tangent.cog.tif', 'outside-tangent.cog.tif'), ('tangent.cog.tif', 'endpoint.cog.tif'), ('outside.cog.tif', 'empty.cog.tif'))
 SCALE_CONTROLS=(('base.cog.tif', 'doubled.cog.tif', 2), ('base.cog.tif', 'retraced.cog.tif', 2))
@@ -237,7 +237,9 @@ def worker(action, root, names):
         expectations = envelope['expectations']
         if set(expectations) != set(CASES): raise FixtureError('oracle scope changed')
     else: raise FixtureError('unknown oracle action or anchor')
-    if list(Path(tempfile.gettempdir()).glob('addp-raster-*')): raise FixtureError('Runtime execution workspace residual')
+    # Hosted binds the validated NFS root at its original path under /tmp.
+    if any(candidate != root for candidate in Path(tempfile.gettempdir()).resolve().glob('addp-raster-*')):
+        raise FixtureError('Runtime execution workspace residual')
     result = {**verify(root, names, expectations), 'runtime_workspaces_removed': True, 'oracle_sha256': anchor}
     if action == 'oracle': result['expectations'] = expectations
     return result

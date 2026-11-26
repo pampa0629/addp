@@ -14,7 +14,7 @@ import tempfile
 SUITE='raster-point-kernel-density-persistence'
 PREFIX='raster-point-kernel-density'
 RUNTIME='addp-raster-point-kernel-density-runtime'
-ORACLE='.raster-point-kernel-density-oracle.json'
+ORACLE=PREFIX+'-expected.json'
 CASES={
  'base.cog.tif':('template.tif','points.gpkg',4.,'quartic'),
  'reversed.cog.tif':('template.tif','reversed.gpkg',4.,'quartic'),
@@ -236,7 +236,9 @@ def worker(action, root, names):
         expectations = envelope['expectations']
         if set(expectations) != set(CASES): raise FixtureError('oracle scope changed')
     else: raise FixtureError('unknown oracle action or anchor')
-    if list(Path(tempfile.gettempdir()).glob('addp-raster-*')): raise FixtureError('Runtime execution workspace residual')
+    # Hosted binds the validated NFS root at its original path under /tmp.
+    if any(candidate != root for candidate in Path(tempfile.gettempdir()).resolve().glob('addp-raster-*')):
+        raise FixtureError('Runtime execution workspace residual')
     result = {**verify(root, names, expectations), 'runtime_workspaces_removed': True, 'oracle_sha256': anchor}
     if action == 'oracle': result['expectations'] = expectations
     return result
