@@ -173,7 +173,12 @@ on:
         type: boolean
         default: false
       pg_source_commit:
-        description: Product ancestor SHA for PG authorization, Meta scan, Standard HTTP, Infra object or TiDB acceptance
+        description: Product ancestor SHA for PG authorization, Meta scan, Standard HTTP or Infra object acceptance
+        required: false
+        type: string
+        default: ''
+      tidb_source_commit:
+        description: Optional full ancestor SHA for tidb-consumer-flow only
         required: false
         type: string
         default: ''
@@ -2393,7 +2398,7 @@ jobs:
     steps:
       - name: Validate requested TiDB source commit
         env:
-          SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
+          SOURCE_COMMIT: ${{ inputs.tidb_source_commit }}
         run: |
           [[ -z "$SOURCE_COMMIT" || "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
 
@@ -2401,12 +2406,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          ref: ${{ inputs.pg_source_commit || github.sha }}
+          ref: ${{ inputs.tidb_source_commit || github.sha }}
           persist-credentials: false
 
       - name: Verify TiDB source ancestry
         env:
-          SOURCE_COMMIT: ${{ inputs.pg_source_commit || github.sha }}
+          SOURCE_COMMIT: ${{ inputs.tidb_source_commit || github.sha }}
           DISPATCH_COMMIT: ${{ github.sha }}
         run: |
           [ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]
