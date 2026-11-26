@@ -40,7 +40,7 @@
 
 ### 邻域加权求和独立 Hosted 验收
 
-`raster-focal-weighted-sum-persistence`；`make test-raster-focal-weighted-sum-online-runner`，沿上述矩阵及[完整复核](#三种邻域加权方法的共同复核)。weighted_sum全1与原sum的实际全像元／mask及解析0／4、−4／4、2／2对照须得4／0／4；非均匀权重放大8倍的实际总量严格同比例。独立逐位置2000位Decimal乘积累计、最终Float64舍入，不用生产整数编码／归约，不除权重和／抽样／容差；常量按实际有效正权重质量，单样本保加权值，合法零／负结果保留。真正溢出像元转NaN只沿Native证据；旧加权均值Runner生命周期超时仍独立，不由本套覆盖。
+`raster-focal-weighted-sum-persistence`；`make test-raster-focal-weighted-sum-online-runner`，沿上述矩阵及[完整复核](#三种邻域加权方法的共同复核)。weighted_sum全1与原sum的实际全像元／mask及解析0／4、−4／4、2／2对照须得4／0／4；非均匀权重放大8倍的实际总量严格同比例。独立逐位置2000位Decimal乘积累计、最终Float64舍入，不用生产整数编码／归约，不除权重和／抽样／容差；常量按实际有效正权重质量，单样本保加权值，合法零／负结果保留。真正溢出像元转NaN只沿Native证据；加权均值 Runner 证据见均值专项。
 
 ### 邻域加权总体标准差独立 Hosted 验收
 
@@ -48,7 +48,7 @@
 
 ### 邻域加权均值独立 Hosted 验收
 
-`raster-focal-weighted-mean-persistence`；`make test-raster-focal-weighted-mean-online-runner`，沿上述矩阵及[完整复核](#三种邻域加权方法的共同复核)。weighted_mean全1与实际mean、同比例放大权重均核完整像元／mask相同，合法零／负值保持。独立逐位置2000位Decimal构造、最终Float64舍入并精确比，不调生产／容差／抽样。原九方法及数值极限另列Native，不以平台前置拒绝代目标诊断。
+`raster-focal-weighted-mean-persistence`；`make test-raster-focal-weighted-mean-online-runner`，沿上述矩阵及[完整复核](#三种邻域加权方法的共同复核)。weighted_mean全1与实际mean、同比例放大权重均核完整像元／mask相同，合法零／负值保持。独立逐位置2000位Decimal构造、最终Float64舍入并精确比，不调生产／容差／抽样。原九方法及数值极限另列Native，不以平台前置拒绝代目标诊断。本地标准 `make test-raster-focal-weighted-mean-online-runner` 退出 0，专项 19 项通过，含清理失败判例。历史 60 秒模拟清理超时仍保留，现行 Runner 未复现。真实 Hosted 待验。
 
 ## raster-focal-statistics-persistence
 
