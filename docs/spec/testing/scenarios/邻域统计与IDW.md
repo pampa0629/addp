@@ -189,6 +189,8 @@
 
 同一固定源码的[Linux 全量](https://github.com/pampa0629/addp/actions/runs/45748586268/job/139670567863)在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 上通过标准 `make test-geopython-workflow`，22,110 项通过、141 条警告、1576.08 秒，0 失败／跳过／筛除；NetCDF 专项另有 109 项通过。
 
+补测提交 `b15fd1cbf` 的[Linux 全量](https://github.com/pampa0629/addp/actions/runs/45753331656/job/139686025616)同样在 Ubuntu 24.04.5 x86_64／GDAL 3.8.4 上运行标准入口，22,110 项通过、141 条警告、1576.55 秒，0 失败／跳过／筛除；NetCDF 专项 109 项通过。本次覆盖新增的标量权重、一维权重和小数波段 Native 拒绝断言；Hosted 仍以 `85a14d5ea` 的固定失败证据为准。
+
 固定提交 `969363c42` 的复验完成首次源扫描及 15 笔限时授权，逐笔撤销且复核不可见。首个工作流返回成功后，夹具因要求公开执行回执带 `tenant_id` 而在成果核验前失败，业务矩阵尚未通过。公开回执核执行标识、触发者和状态，并断言省略内部租户字段。隔离库的只读回执核同一次执行的租户、Actor、Runtime、提交语言与完整 DAG。[复验日志](https://github.com/pampa0629/addp/actions/runs/45745745065/job/139661253363) · [复验原始归档](https://github.com/pampa0629/addp/actions/runs/45745745065/artifacts/15083693782)
 
 固定提交 `a552b2136` 的[首跑](https://github.com/pampa0629/addp/actions/runs/45631920757/job/139267131715)在首次源扫描时返回 403，业务矩阵未开始。同一请求在 System 的元数据刷新范围校验返回 403。业务进度记录为 224 毫秒，成功链、双语节点拒绝、成果全检及归档 COG 均为 0。隔离环境清理通过，Infra 零残留。[原始归档](https://github.com/pampa0629/addp/actions/runs/45631920757/artifacts/15035787643)
