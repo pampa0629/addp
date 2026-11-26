@@ -175,7 +175,9 @@ class LocalPool(CORE.Lifecycle):
 
     def run(self, commit, architecture):
         self.report["source_commit"] = commit
-        self.execute(["git", "clone", "--shared", "--no-checkout", "--local", str(ROOT), str(self.checkout)], timeout=300)
+        # The Linux compiler mounts only this checkout. Its Git objects must
+        # be present inside the mount for Go's VCS provenance check.
+        self.execute(["git", "clone", "--no-hardlinks", "--no-checkout", "--local", str(ROOT), str(self.checkout)], timeout=300)
         CORE.ROOT = self.checkout
         self.execute(["git", "checkout", "--detach", commit], timeout=300)
         require(self.execute(["git", "rev-parse", "HEAD"]).strip() == commit, "isolated source changed")
