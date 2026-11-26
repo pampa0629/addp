@@ -85,7 +85,12 @@ func (w MySQLCompatibleTableWriter) PrepareTableUpsertWithTargetPolicy(ctx conte
 			fields[index].Nullable = false
 		}
 	}
-	if err := w.createTableIfNotExistsWithPrimaryKeys(ctx, db, database, table, fields, keys); err != nil {
+	if exists {
+		err = w.evolveTableSchema(ctx, db, database, table, mysqlCompatibleWriteFields(fields))
+	} else {
+		err = w.createTableIfNotExistsWithPrimaryKeys(ctx, db, database, table, fields, keys)
+	}
+	if err != nil {
 		return err
 	}
 	return w.validateTableUpsertTarget(ctx, db, database, table, keys)

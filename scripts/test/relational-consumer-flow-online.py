@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -266,7 +267,7 @@ def create_task(
 
 
 def run_task(
-    client: GatewayClient, task_id: int, deadline: float
+    client: GatewayClient, task_id: int, deadline: float, phase: str
 ) -> dict[str, object]:
     started = _object(
         client.request(
@@ -290,7 +291,22 @@ def run_task(
         if status == "success":
             return execution
         if status in TERMINAL_STATUSES:
-            raise SuiteError(f"Transfer execution ended with status {status}")
+            error = execution.get("error_details") or {}
+            diagnostic = error.get("diagnostic") or {}
+            evidence = dict(task_id=task_id, execution_id=execution_id, status=status, phase=phase)
+            for key in ("records_read", "records_written"):
+                value = execution.get(key)
+                if type(value) is int and value >= 0:
+                    evidence[key] = value
+            for key, value in (
+                ("error_code", error.get("code") or error.get("error_code")),
+                ("failure_category", error.get("category")),
+                ("failure_stage", diagnostic.get("stage")),
+                ("failure_reason", diagnostic.get("reason")),
+            ):
+                if isinstance(value, str) and re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_.]{0,79}", value):
+                    evidence[key] = value
+            raise SuiteError("Transfer execution failed: " + json.dumps(evidence, sort_keys=True))
         time.sleep(1)
     raise SuiteError("Transfer execution did not finish before the deadline")
 
@@ -559,7 +575,7 @@ def run_scenario(
             task_ids,
         )
         initial_transfer = assert_transfer_counts(
-            run_task(client, task_id, deadline), 5, "initial watermark execution"
+            run_task(client, task_id, deadline, "initial"), 5, "initial watermark execution"
         )
         manager_initial = assert_rows(
             manager_rows(client, target_locator, profile),
@@ -593,10 +609,10 @@ def run_scenario(
 
         advance_fixture(profile)
         incremental_transfer = assert_transfer_counts(
-            run_task(client, task_id, deadline), 2, "incremental watermark execution"
+            run_task(client, task_id, deadline, "incremental"), 2, "incremental watermark execution"
         )
         empty_transfer = assert_transfer_counts(
-            run_task(client, task_id, deadline), 0, "empty watermark execution"
+            run_task(client, task_id, deadline, "empty_resume"), 0, "empty watermark execution"
         )
         manager_final = assert_rows(
             manager_rows(client, target_locator, profile),

@@ -1,5 +1,6 @@
 import importlib.util
 import hashlib
+import json
 import os
 import sys
 import unittest
@@ -269,7 +270,7 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
             ),
         ]
 
-        execution = ONLINE.run_task(client, 17, 10.0)
+        execution = ONLINE.run_task(client, 17, 10.0, "incremental")
         evidence = ONLINE.assert_transfer_counts(execution, 2, "incremental")
 
         self.assertEqual(evidence["execution_id"], "execution-1")
@@ -278,6 +279,42 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
             client.request.call_args_list[0].args[:3],
             ("POST", "/api/v1/transfer/task-definitions/17/start", (200,)),
         )
+
+    def test_failed_transfer_preserves_only_public_diagnostic_fields(self):
+        client = Mock()
+        client.request.side_effect = [
+            ONLINE.SUPPORT.Response(200, {"execution_id": "e8bb34d4-2ade-4714-b196-8a57b63266fb"}),
+            ONLINE.SUPPORT.Response(200, {
+                "status": "failed",
+                "records_read": 5,
+                "records_written": 0,
+                "error_message": "private raw message",
+                "error_details": {
+                    "code": "data_protection_required",
+                    "category": "execution_failed",
+                    "diagnostic": {
+                        "stage": "preparation",
+                        "reason": "protection_not_ready",
+                        "sql": {"object": {"name": "private object"}},
+                    },
+                },
+            }),
+        ]
+        with self.assertRaisesRegex(ONLINE.SuiteError, "^Transfer execution failed: ") as caught:
+            ONLINE.run_task(client, 17, ONLINE.time.monotonic() + 10, "initial")
+        self.assertEqual(json.loads(str(caught.exception).split(": ", 1)[1]), {
+            "task_id": 17,
+            "execution_id": "e8bb34d4-2ade-4714-b196-8a57b63266fb",
+            "status": "failed",
+            "phase": "initial",
+            "records_read": 5,
+            "records_written": 0,
+            "error_code": "data_protection_required",
+            "failure_category": "execution_failed",
+            "failure_stage": "preparation",
+            "failure_reason": "protection_not_ready",
+        })
+        self.assertEqual(client.request.call_count, 2)
 
     def test_consumer_identity_does_not_require_system_engine_control_plane(self) -> None:
         self.assertIn(

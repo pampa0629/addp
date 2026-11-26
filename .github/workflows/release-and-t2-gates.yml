@@ -1442,7 +1442,7 @@ jobs:
           status: ${{ job.status }}
 
   common-tidb:
-    name: Common, Meta, Model and Service contracts (TiDB 8.5.8)
+    name: Common, Meta, Model, Service and Transfer contracts (TiDB 8.5.8)
     needs: selection
     if: needs.selection.outputs.model == 'true' || needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.meta == 'true'
     runs-on: ubuntu-24.04
@@ -1466,7 +1466,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common, Meta, Model and Service contracts (TiDB 8.5.8)
+          gate: Common, Meta, Model, Service and Transfer contracts (TiDB 8.5.8)
           status: ${{ job.status }}
 
   common-rustfs:

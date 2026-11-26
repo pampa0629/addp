@@ -90,7 +90,6 @@ docker run --rm --network "${COMPOSE_PROJECT}_default" \
     ADDP_ONLINE_TIDB_PORT="$TIDB_T2_PORT"
     export ADDP_ONLINE_SECRET_DIR="$WORK_DIR" ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$WORK_DIR/tidb-engine.json"
     reset_fixture
-    advance_fixture
     create_future
     export MYSQL_PWD
     MYSQL_PWD=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["connection_info"]["password"])' "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE")
@@ -121,4 +120,11 @@ SQL
         ADDP_TEST_TIDB_META_FIXTURE="$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" \
             go test ./internal/scanadapter -run '^TestIntegrationTiDBAuthorizationFacts$' -count=1 -v
     )
+    (
+        cd "$ROOT_DIR/transfer/backend"
+        ADDP_TEST_TIDB_CONSUMER_FIXTURE="$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" \
+            go test ./internal/executor -run '^TestIntegrationTiDBConsumerInitialWatermark$' -count=1 -v
+    )
+    [ "$(source_client -e "SELECT COUNT(*) FROM \`$TARGET_TABLE\`")" = 5 ]
+    advance_fixture
 )
