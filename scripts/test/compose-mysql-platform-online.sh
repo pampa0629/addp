@@ -28,7 +28,7 @@ work=$(mktemp -d "${RUNNER_TEMP:?}/addp-mysql-platform.XXXXXXXX")
 export ADDP_ONLINE_SECRET_DIR="$work"
 export ADDP_MYSQL_FIXTURE_PROJECT="$ADDP_DEPLOYMENT_PROJECT-infra"
 fixture() { docker compose --env-file /dev/null -f "$work/compose.yml" "$@"; }
-app=(docker compose --profile '*' -f scripts/prod/system-meta-gateway.yml)
+app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
 infra_started=false
 release_started=false
 stage=fixture
@@ -172,7 +172,8 @@ done
 
 stage=deploy
 release_started=true
-bash scripts/prod/deploy.sh "$GITHUB_SHA"
+# The image builder offers option 2 to use the Runner's existing Docker configuration.
+bash scripts/prod/deploy.sh "$GITHUB_SHA" <<<2
 unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
 stage=runtime
 python3 - "$artifacts" <<'PY'
