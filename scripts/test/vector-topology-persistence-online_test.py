@@ -2179,7 +2179,7 @@ class NodesOnlineTest(unittest.TestCase):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
         self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.NODES_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
     def run_case(self,client=None,physical=nodes_physical,browser=lambda *a:a[2]):
-        return m.run_scenario(Path('.'),self.env,client or NodesClient(),physical,browser,diagnostic_runner=lambda *a,**k:self.fail('no private log oracle'))
+        return run_formal_multifile(self.env,client or NodesClient(),physical,browser)
     def test_nodes_lineage_permissions_requires_exported_reader_before_any_scan(self):
         self.env.update(ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS='1', ADDP_ONLINE_HOST='1',
                         ADDP_ONLINE_HOSTED='1', GITHUB_ACTIONS='true', RUNNER_OS='Linux')
@@ -2193,8 +2193,17 @@ class NodesOnlineTest(unittest.TestCase):
         c=NodesClient();report=self.run_case(c)
         self.assertEqual(report['result'],'passed');self.assertEqual(report['schema_version'],'addp.line-nodes/v1')
         self.assertEqual([len(report['browser']['expected'][k]) for k in m.fixture.NODES_PORTS],[15,22])
-        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[10,12,12])
+        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[0,2,12])
         self.assertEqual(sum(len(g['edges']) for g in report['raw_lineage'].values()),2)
+        self.assertEqual([(index,name) for _,index,name in c.issuer.approvals],
+                         list(enumerate(m.fixture.NODES_TARGETS)))
+        stages = report['publication']['stages']
+        self.assertEqual(sum(s['stage']=='result_initial_read_granted' for s in stages),2)
+        self.assertEqual(sum(s['stage']=='materialized_result_still_readable' for s in stages),2)
+        joined=[row for row in stages if row['stage']=='result_basic_bound_to_grant']
+        self.assertEqual([row['name'] for row in joined],['outputs/'+name for name in m.fixture.NODES_TARGETS])
+        self.assertEqual({row['identification']['scan_execution_id'] for row in joined},set(report['final_scan_inventory']))
+        self.assertFalse(report['publication']['pending_grants'])
         self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.NODES_FAILURES])
         self.assertEqual(len({f['execution_id'] for f in report['failures']}),9)
         self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),10)
@@ -2221,11 +2230,20 @@ class NodesOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'create facts differ'):
             m.validate_saved_facts(execution, bindings, targets, 2)
 
+    def test_nodes_second_approval_must_match_the_same_frozen_scope(self):
+        client=NodesClient()
+        client.mutate_approval_context=lambda context:context.update(scope_digest='c'*64)
+        with self.assertRaisesRegex(m.SuiteError,'original execution scope'):
+            self.run_case(client)
+        self.assertEqual([(index,name) for _,index,name in client.issuer.approvals],[(0,'nodes.gpkg')])
+        self.assertFalse(client.scans)
+        self.assertFalse(any(grant['approval_mode']=='task_production' for grant in client.grants.values()))
+
     def test_nodes_rejects_output_scan_identity_boolean_size_port_and_stale_extra_graph(self):
         changes=[lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
             lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.other'),
             lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
-            lambda c:c.success['metadata']['result']['meta_scan_runs'][0].update(execution_id=''),
+            lambda c:setattr(c,'mutate_scan_binding',lambda evidence:evidence.update(scan_execution_id='other')),
             lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
             lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])))]
         for change in changes:
@@ -2596,12 +2614,15 @@ class DissolveOnlineTest(unittest.TestCase):
     def run_case(self,client=None,physical=None,browser=lambda *a:a[2]):
         client=client or DissolveClient();physical=physical or(lambda *a:dissolve_physical(2 if client.success_count==1 else 4))
         with patch.object(m.raster,'wait_lineage',return_value={}):
-            return m.run_scenario(Path('.'),self.env,client,physical,browser)
+            return run_formal_multifile(self.env,client,physical,browser)
     def test_dissolve_two_success_eight_failures_four_scans_and_execution_bound_source_edges(self):
         client=DissolveClient();report=self.run_case(client)
         self.assertEqual((report['result'],report['schema_version']),('passed','addp.polygon-dissolve/v1'))
-        self.assertEqual([len(report[k])for k in('successes','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[2,4,8,5,9,9])
+        self.assertEqual([len(report[k])for k in('successes','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[2,4,8,0,4,9])
         self.assertEqual([o['feature_count']for o in report['outputs']],[4,10,1,10])
+        self.assertEqual([(index,name) for _,index,name in client.issuer.approvals],
+                         list(enumerate(m.fixture.DISSOLVE_TARGETS[:2]))+list(enumerate(m.fixture.DISSOLVE_TARGETS[2:])))
+        self.assertEqual(sum(s['stage']=='result_initial_read_granted' for s in report['publication']['stages']),4)
         self.assertEqual(len({r['execution_id']for r in[*report['successes'],*report['failures']]}),10)
         self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),10)
         for failure in report['failures']:
@@ -2781,6 +2802,121 @@ class FilePublicationInitializer:
             data=dict(approval_id=str(uuid.uuid4()),approved_at=datetime.now(timezone.utc).isoformat(),expires_at=body['expires_at'])
         else:raise AssertionError((method,path,body))
         return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class MultifileInitializer(FilePublicationInitializer):
+    def __init__(self, consumer):
+        super().__init__(consumer)
+        self.approvals = []
+        self.unissued_grants = {}
+
+    def request(self, method, path, expected, body=None):
+        consumer = self.consumer
+        if '/create-approval-context?' in path:
+            index = int(path.split('target_index=')[1])
+            execution_id = path.split('/')[-2]
+            consumer.run_id = execution_id
+            self.set_target(execution_id, index)
+            response = super().request(method, path.split('?')[0]+'?target_index=0', expected, body)
+            response.payload['target_index'] = index
+            if index and getattr(consumer,'mutate_approval_context',None):
+                consumer.mutate_approval_context(response.payload)
+            return response
+        if path.endswith('/develop-geopackage-create-approvals'):
+            index = body['target_index']
+            execution_id = consumer.run_id
+            self.set_target(execution_id, index)
+            previous_grants = set(consumer.grants)
+            response = super().request(method, path, expected, body)
+            pending = self.unissued_grants.setdefault(execution_id,{})
+            for key in set(consumer.grants)-previous_grants:
+                pending[key] = consumer.grants.pop(key)
+            self.approvals.append((execution_id, index, consumer.profile['target']))
+            if len([v for v in self.approvals if v[0]==execution_id]) == len(consumer.pending_scans[execution_id]):
+                consumer.grants.update(self.unissued_grants.pop(execution_id))
+                consumer.scans.extend(consumer.pending_scans[execution_id])
+            return response
+        return super().request(method, path, expected, body)
+
+    def set_target(self, execution_id, index):
+        tasks = self.consumer.executions[execution_id]['execution_config']['content']['workflow_definition']['tasks']
+        targets = [node['params']['target_name'] for node in tasks if node['operator']=='save']
+        self.consumer.profile['target'] = targets[index]
+
+
+def run_formal_multifile(environment, consumer, physical, browser):
+    env = {**environment, 'GATEWAY_URL':'http://deterministic.invalid',
+           'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token'}
+    consumer.scans = []
+    consumer.pending_scans = {}
+    consumer.grants = {}
+    consumer.profile = dict(m.fixture.network_profile(m.fixture.topology_case(env)))
+    consumer.profile['sources'] = tuple(item['full_name'] for item in consumer.sources)
+    for item in [*consumer.sources,*consumer.outputs]:
+        item.update(tenant_id=2,engine_id=3,scanned_depth='deep')
+        item['attributes']['item'].update(file_count=1,refs=[dict(extension='.gpkg',path=item['full_name'],
+            primary=True,required=True,role='container')])
+    if hasattr(consumer,'success'):
+        consumer.success['metadata'].pop('result',None)
+    consumer.issuer = MultifileInitializer(consumer)
+    observer = FilePublicationFactReader(consumer)
+    original = consumer.request
+
+    def production_identification(method, path, expected):
+        assert method=='GET' and expected==(200,)
+        identifier,result_id=path.split('/')[-3:-1]
+        receipt=next(g for g in consumer.grants.values() if g.get('production_result_id')==result_id)
+        assert receipt['production_execution_id']==identifier
+        approvals=[entry for entry in consumer.issuer.approvals if entry[0]==identifier]
+        index=next(index for _,index,name in approvals if receipt['catalog_path']['segments'][-1]['name']==name)
+        evidence=dict(reference=dict(owner='develop',execution_id=identifier,result_id=result_id),tenant_id='2',
+            status='success',logical_item_state='new',engine_version='238',scan_execution_id=consumer.pending_scans[identifier][index],
+            binding={**{key:receipt[key] for key in ('item_fingerprint','boundary_hash','file_composition')},
+                     'native_target':receipt['catalog_path']})
+        if getattr(consumer,'mutate_scan_binding',None):
+            consumer.mutate_scan_binding(evidence)
+        return SimpleNamespace(payload=evidence)
+
+    def request(method, path, expected, body=None):
+        if path.endswith('/auth/context'):
+            response = original(method,path,expected,body)
+            response.payload['principal']['id'] = '33'
+            return response
+        if path.endswith('/scan/run/manual'):
+            raise AssertionError('ordinary User must not manually scan a prepared or produced file')
+        if path.endswith('/read-observations/current-source'):
+            allowed = any(grant['catalog_path']==body['targets'][0] and grant['revocation'] is None for grant in consumer.grants.values())
+            if expected != ((200,) if allowed else (403,)):
+                raise m.SuiteError('read-check mismatch')
+            return SimpleNamespace(payload={'observed_at':'2026-11-26T00:00:00Z'} if allowed else {})
+        if '/meta/executions/' in path:
+            scan_id = path.split('/')[-1]
+            execution_id = next(key for key, scans in consumer.pending_scans.items() if scan_id in scans)
+            return SimpleNamespace(payload=dict(status='success',execution_id=scan_id,tenant_id=consumer.scan_tenant,
+                triggered_by=consumer.scan_actor,source='develop',parent_execution_id=execution_id,
+                scan_context=dict(scan_depth='basic',engine_id=3)))
+        if path.startswith('/api/v1/develop/executions/') and path.split('/')[-1] in consumer.pending_scans:
+            identifier = path.split('/')[-1]
+            if not set(consumer.pending_scans[identifier]) <= set(consumer.scans):
+                raise AssertionError('successful execution became visible before all approvals')
+        previous = list(consumer.scans)
+        response = original(method, path, expected, body)
+        if method=='POST' and path.endswith('/develop/executions'):
+            identifier = response.payload['execution_id']
+            if consumer.executions[identifier]['status']=='success':
+                consumer.pending_scans[identifier] = consumer.scans[len(previous):]
+                assert consumer.pending_scans[identifier]
+                consumer.scans = previous
+                consumer.executions[identifier]['metadata'].pop('result',None)
+        return response
+
+    with patch.object(consumer,'request',side_effect=request), \
+         patch.object(m.raster,'GatewayClient',return_value=consumer.issuer), \
+         patch.object(m.online_api,'manager_service_client',return_value=(observer,observer.identity)), \
+         patch.object(m.online_api,'system_production_observer',return_value=(
+             SimpleNamespace(request=production_identification),{'client':{'client_id':'addp-system'}})), \
+         patch.object(m.fixture,'capture_publication',return_value={}):
+        return m.run_scenario(Path('.'),env,consumer,physical,browser)
 
 
 class FilePublicationFactReader:
@@ -3370,14 +3506,17 @@ class VerticesOnlineTest(unittest.TestCase):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
         self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.VERTICES_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
     def run_case(self,client=None,physical=vertices_physical,browser=lambda *a:a[2]):
-        return m.run_scenario(Path('.'),self.env,client or VerticesClient(),physical,browser,diagnostic_runner=lambda *a,**k:self.fail('no private log oracle'))
+        return run_formal_multifile(self.env,client or VerticesClient(),physical,browser)
     def test_vertices_one_success_seven_failures_three_point_scans_exact_sources(self):
         c=VerticesClient();report=self.run_case(c)
         self.assertEqual((report['result'],report['schema_version']),('passed','addp.vertex-extraction/v1'))
         self.assertEqual([len(report['browser']['expected'][p]) for p in m.fixture.VERTICES_FAMILIES],[3,8,20])
-        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[10,13,13])
+        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[0,3,13])
         self.assertEqual(sum(len(g['edges']) for g in report['raw_lineage'].values()),3)
         self.assertEqual(len(report['source_authorization_preflight']),10)
+        self.assertEqual([(index,name) for _,index,name in c.issuer.approvals],
+                         list(enumerate(m.fixture.VERTICES_TARGETS)))
+        self.assertEqual(sum(s['stage']=='result_initial_read_granted' for s in report['publication']['stages']),3)
         self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.VERTICES_FAILURES])
         self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),8)
         self.assertEqual(len({report['execution_id'],*[f['execution_id'] for f in report['failures']]}),8)

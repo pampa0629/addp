@@ -90,13 +90,13 @@ class GatewayClient:
         return Response(status=status, payload=payload)
 
 
-def manager_service_client(environment, tenant):
-    """Use the existing Manager Tenant Service; return its observed identity separately."""
-    secret = environment.get('MANAGER_SERVICE_CLIENT_SECRET')
+def _tenant_service_client(environment, tenant, service):
+    secret = environment.get(service.upper()+'_SERVICE_CLIENT_SECRET')
     if not secret:
-        raise SuiteError('Manager service credential missing')
+        raise SuiteError(f'{service.title()} service credential missing')
+    client_id = 'addp-'+service
     client = GatewayClient(environment['GATEWAY_URL'], '', 30)
-    auth = 'Basic ' + base64.b64encode(('addp-manager:' + secret).encode()).decode()
+    auth = 'Basic ' + base64.b64encode((client_id+':' + secret).encode()).decode()
     response = client.request('POST', '/api/v1/system/oauth/token', (200,), encoded_body=urllib.parse.urlencode({
         'grant_type': 'client_credentials', 'scope': 'addp.api', 'audience': 'addp.api',
         'tenant_id': str(tenant)}).encode(),
@@ -109,9 +109,23 @@ def manager_service_client(environment, tenant):
             and identity.get('token', {}).get('type') == 'service_access_token'
             and identity.get('context', {}).get('type') == 'tenant'
             and identity.get('context', {}).get('tenant_id') == str(tenant)
-            and identity.get('client', {}).get('client_id') == 'addp-manager'):
+            and identity.get('client', {}).get('client_id') == client_id):
         raise SuiteError('Runtime identity mismatch')
     return runtime, identity
+
+
+def manager_service_client(environment, tenant):
+    return _tenant_service_client(environment, tenant, 'manager')
+
+
+def system_production_observer(environment, tenant):
+    """Observe existing Meta production identities with System's deployed qualification."""
+    runtime, identity = _tenant_service_client(environment, tenant, 'system')
+    roles = identity.get('authorization', {}).get('role_assignments', [])
+    if not any(role.get('role_key') == 'tenant.system_runtime' and
+               'meta.task_provider.read' in role.get('permissions', []) for role in roles):
+        raise SuiteError('System production identification qualification missing')
+    return GatewayClient(environment['META_URL'], runtime.token, 30, name='META_URL'), identity
 
 
 FORBIDDEN_ADMIN_ROLES = {

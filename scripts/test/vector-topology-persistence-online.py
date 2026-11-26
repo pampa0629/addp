@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 
 raster = importlib.import_module('scripts.test.raster-workflow-online')
 fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
@@ -519,6 +520,10 @@ def validate_dissolve_graph(graph,source,target,identifier):
 
 
 def run_dissolve_scenario(repository,env,client,physical_runner,browser_runner):
+    return run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,fixture.DISSOLVE_CASE)
+
+
+def run_prepared_dissolve(repository,env,client,physical_runner,browser_runner,publication):
     case=fixture.DISSOLVE_CASE;schema=fixture.DISSOLVE_SCHEMA;names=fixture.DISSOLVE_SOURCES
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'dissolve tenant')
     if tenant<=1:raise SuiteError('dissolve forbids default Tenant')
@@ -530,13 +535,15 @@ def run_dissolve_scenario(repository,env,client,physical_runner,browser_runner):
         return value
     engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[];preflight=[]
     for name in names:
-        scope=f'addp://engine/{engine}/path/{name}?type=file';scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        scope=f'addp://engine/{engine}/path/{name}?type=file';scan=publication.source(engine,name,scope,remaining)
         item=support.find_fixture_item(client,engine,name,'dissolve source');before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        publication.fact_snapshot(engine,before,name,'source_prepared')
         graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=downstream',(200,)).payload,'dissolve resource preflight')
         if graph.get('truncated')is not False:raise SuiteError('dissolve requires complete authorized source lineage before execution')
         preflight.append({'source_item_id':item['id'],'graph':graph});sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
     initial=scan_ids(client)
-    if initial!=sorted(s['scan_execution_id']for s in sources):raise SuiteError('dissolve initial scans differ')
+    publication.check_preparation_scans()
+    if initial:raise SuiteError('dissolve initial scans differ')
     runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes')if r.get('engine_type')=='geopython_workflow'and r.get('connection_status')=='online']
     if len(runtimes)!=1:raise SuiteError('dissolve requires one product Runtime')
     runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory';locators=[s['locator']for s in sources]
@@ -550,32 +557,34 @@ def run_dissolve_scenario(repository,env,client,physical_runner,browser_runner):
         for entry in [*sources,*outputs]:
             item_id=entry.get('item_id',entry.get('id'));value=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
             if value!=entry['before']:raise SuiteError('dissolve source or result Meta changed')
+            name=entry['name'] if entry in sources else 'outputs/'+entry['name']
+            if publication.fact_snapshot(engine,value,name,'unchanged_check')!=publication.fact_baselines[item_id]:
+                raise SuiteError('dissolve source or result Meta facts changed')
             after[entry['name']]=value
         return after
     def check_physical(value,expected_targets):
         if value.get('exact_inventory_verified')is not True or set(value.get('sources',{}))!=set(names)or set(value.get('targets',{}))!=set(expected_targets):raise SuiteError('dissolve physical inventory differs')
         if native and(value['sources']!=native['sources']or any(value['targets'].get(n)!=v for n,v in native['targets'].items())):raise SuiteError('dissolve existing physical files changed')
         for source,kind in zip(sources,fixture.DISSOLVE_KINDS):
-            rows=fixture.dissolve_features(kind);detail=source['before'];size=detail.get('size_bytes');children=detail.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+            rows=fixture.dissolve_features(kind);detail=publication.fact_baselines[source['id']];size=detail.get('size_bytes');children=detail.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
             if type(size)is not int or size<=0 or size!=value['sources'][source['name']]['size_bytes']or len(children)!=1 or type(children[0].get('row_count'))is not int or children[0]['row_count']!=len(rows)or type(children[0].get('column_count'))is not int or children[0]['column_count']!=len(rows[0]['properties'])+2:raise SuiteError('dissolve source Meta rows/columns/size differ')
     for variant in ('grouped','global'):
-        workflow=dissolve_definition(locators,parent,variant);identifier=raster.submit(client,runtime,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
+        workflow=dissolve_definition(locators,parent,variant);identifier=publication.submit(identity,engine,runtime,sources,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
         if execution.get('execution_id')!=identifier or type(execution.get('triggered_by'))is not int or execution['triggered_by']!=principal:raise SuiteError('dissolve execution User differs')
         if obj(obj(execution.get('execution_config'),'dissolve config').get('content'),'dissolve content').get('workflow_definition')!=workflow:raise SuiteError('dissolve frozen workflow differs')
         targets={port:parent.removesuffix('?type=directory')+'/'+variant+'-'+port+'.gpkg?type=file'for port in fixture.DISSOLVE_PORTS}
-        facts,scans=validate_saved_success(execution,[('input.load_source',locators[0])],targets,2);observed=[]
-        for scan in scans:
-            value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
-            if type(value.get('tenant_id'))is not int or value['tenant_id']!=tenant or type(value.get('triggered_by'))is not int or value['triggered_by']!=principal:raise SuiteError('dissolve automatic scan User/Tenant differs')
-            observed.append(value)
-        all_scans.extend(s['execution_id']for s in scans)
+        facts=validate_saved_facts(execution,[('input.load_source',locators[0])],targets,2)
+        observed=publication.observed_scans(engine,identifier,principal,[*initial,*all_scans],2,remaining)
+        for name in (variant+'-'+port+'.gpkg' for port in targets):
+            publication.observe_result(engine,'outputs/'+name,identifier,remaining)
+        all_scans.extend(scan['execution_id'] for scan in observed)
         monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'dissolve Monitor')
         if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop'or monitor.get('status')!='success'or type(monitor.get('triggered_by'))is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'dissolve Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('dissolve Monitor/facts differ')
         value=physical_runner(repository,env);check_physical(value,fixture.DISSOLVE_TARGETS[:2]if variant=='grouped'else fixture.DISSOLVE_TARGETS);native=value
         record={'variant':variant,'execution_id':identifier,'definition':workflow,'execution':execution,'stable_outputs':execution['outputs'],'lineage_facts':facts,'automatic_scans':observed,'monitor':monitor,'outputs':[]};successes.append(record)
         for port,target in targets.items():
-            name=variant+'-'+port+'.gpkg';item=support.find_fixture_item(client,engine,'outputs/'+name,'dissolve result');detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'dissolve output Meta');physical=native['targets'][name];sizes=validate_item(detail,physical,name)
-            child=detail['attributes']['type_info']['container']['children'][0];expected=fixture.dissolve_features(variant+'-'+port)
+            name=variant+'-'+port+'.gpkg';item=support.find_fixture_item(client,engine,'outputs/'+name,'dissolve result');detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'dissolve output Meta');physical=native['targets'][name];statistics=publication.fact_snapshot(engine,detail,'outputs/'+name,'result_prepared');sizes=validate_item(statistics,physical,name)
+            child=statistics['attributes']['type_info']['container']['children'][0];expected=fixture.dissolve_features(variant+'-'+port)
             if type(child.get('row_count'))is not int or child['row_count']!=len(expected)or type(child.get('column_count'))is not int or child['column_count']!=len(expected[0]['properties'])+2:raise SuiteError('dissolve result Meta rows/columns differ')
             output={'name':name,'port':port,'variant':variant,'execution_id':identifier,'locator':target,'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes};outputs.append(output);record['outputs'].append(output);persist('before_lineage_'+name)
             raster.wait_lineage(client,sources[0]['id'],output['item_id'],identifier,remaining());graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'dissolve original graph')
@@ -585,7 +594,7 @@ def run_dissolve_scenario(repository,env,client,physical_runner,browser_runner):
         persist('success_'+variant+'_verified')
     checkpoint['physical']=native;expected_scans=sorted([*initial,*all_scans])
     for spec in fixture.DISSOLVE_FAILURES:
-        key=spec[0];definition=dissolve_definition(locators,parent,failure=key);identifier=raster.submit(client,runtime,definition);execution=raster.wait_execution(client,'develop',identifier,remaining(),expected='failed');validate_dissolve_failure(execution,identifier,principal,spec)
+        key=spec[0];definition=dissolve_definition(locators,parent,failure=key);identifier=publication.submit(identity,engine,runtime,sources,definition,failure=key);execution=raster.wait_execution(client,'develop',identifier,remaining(),expected='failed');validate_dissolve_failure(execution,identifier,principal,spec)
         if obj(obj(execution.get('execution_config'),'dissolve failed config').get('content'),'dissolve failed content').get('workflow_definition')!=definition:raise SuiteError('dissolve failed frozen workflow differs')
         monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'dissolve failed Monitor');validate_dissolve_failure(monitor,identifier,principal,spec)
         if monitor.get('module')!='develop'or monitor.get('error_details')!=execution.get('error_details'):raise SuiteError('dissolve failed Monitor differs')
@@ -596,9 +605,10 @@ def run_dissolve_scenario(repository,env,client,physical_runner,browser_runner):
     if len({r['execution_id']for r in [*successes,*checkpoint['failures']]})!=10:raise SuiteError('dissolve requires ten distinct executions')
     persist('before_browser')
     evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'sources':sources,'successes':successes,'outputs':outputs,'failures':checkpoint['failures']}
+    publication.check_preparation_scans()
     remaining();browser_report=browser_runner(repository,env,evidence);remaining();final=physical_runner(repository,env)
     if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('dissolve browser changed physical files or scans')
-    meta_after=unchanged_meta();remaining()
+    meta_after=unchanged_meta();publication.check_preparation_scans();remaining()
     return {**checkpoint,'schema_version':schema+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable deployment; not business DELETE acceptance'}
 
 
@@ -710,7 +720,12 @@ def run_adjacency_scenario(repository,env,client,physical_runner,browser_runner)
 def run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,case):
     publication=_FilePublication(env,client,case)
     try:
-        result=run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication)
+        if case == fixture.DISSOLVE_CASE:
+            result = run_prepared_dissolve(repository,env,client,physical_runner,browser_runner,publication)
+        elif case in (fixture.NODES_CASE,fixture.VERTICES_CASE):
+            result = run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,case,publication)
+        else:
+            result = run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication)
     except BaseException as error:
         # Keep the first business failure even when evidence or revocation fails.
         # Capture raw bytes without requiring any product/scan/OGR validation.
@@ -814,7 +829,7 @@ def vertices_clipboard(failure,locale):
 
 
 def run_vertices_scenario(repository,env,client,physical_runner,browser_runner):
-    return run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,fixture.VERTICES_CASE)
+    return run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,fixture.VERTICES_CASE)
 
 
 def nodes_definition(sources,parent,failure=None):
@@ -860,16 +875,23 @@ def run_overlay_scenario(repository,env,client,physical_runner,browser_runner):
 
 
 class _FilePublication:
-    """One formal preparation route for the approved single-file topology cases."""
+    """Formal preparation and produced-file Grant evidence for topology."""
     def __init__(self, env, consumer, case):
-        if case not in fixture.FILE_PUBLICATION_CASES or fixture.topology_case(env)!=case:
+        if fixture.topology_case(env)!=case or not fixture.capture_enabled(env,case):
             raise SuiteError('formal file publication case binding differs')
-        profile=mixed_overlay_profile(case)
+        if case in fixture.MULTIFILE_CAPTURE_CASES:
+            profile = fixture.network_profile(case)
+            prefix = {fixture.NODES_CASE:'nodes',fixture.VERTICES_CASE:'vertices',fixture.DISSOLVE_CASE:'dissolve'}[case]
+            targets = profile['targets']
+        else:
+            profile = mixed_overlay_profile(case)
+            prefix = profile['prefix']
+            targets = (profile['target'],)
         registration = importlib.import_module('scripts.test.online-engine-registration')
         token = env.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
         if not token:
             raise SuiteError('topology file case requires its separate source initializer and approver')
-        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / ('topology-'+profile['prefix']+'-publication.json')
+        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / ('topology-'+prefix+'-publication.json')
         self.evidence = {'schema_version':profile['schema']+'-publication/v1', 'case':case, 'result':'incomplete',
                          'run_id':env['ADDP_ONLINE_TEST_RUN_ID'], 'stages':[], 'pending_grants':[]}
         self.consumer = consumer
@@ -885,11 +907,19 @@ class _FilePublication:
                 and 'meta.catalog.read' in role.get('permissions',[]) for role in roles):
             raise SuiteError('topology Meta fact observer requires the existing Manager runtime qualification')
         self.evidence['meta_fact_observer'] = context
-        self.fact_paths = {*profile['sources'], 'outputs/'+profile['target']}
+        self.fact_paths = {*profile['sources'], *('outputs/'+name for name in targets)}
         self.fact_baselines = {}
         self.grants = registration.ExactFileReadGrants(self.issuer, consumer, self.tenant,
                         scan_preparation=True, approval_preparation=True, on_change=self.pending)
-        self.target = None
+        self.published_targets = []
+        self.submitted_targets = []
+        self.approval_scopes = {}
+        self.approved_versions = {}
+        self.unbound_scans = {}
+        self.production_observer = None
+        if case in fixture.MULTIFILE_CAPTURE_CASES:
+            self.production_observer, identity = online_api.system_production_observer(env,self.tenant)
+            self.evidence['production_observer'] = identity
 
     def record(self, value):
         self.evidence['stages'].append(value)
@@ -945,42 +975,100 @@ class _FilePublication:
                          engine_id=engine,runtime_id=runtime,sources=sources,definition=definition,
                          failure=failure,execution_id=None,scope_state='not_yet_observed'))
 
-    def approve(self, identifier, principal, engine, name):
+    def approve(self, identifier, principal, engine, name, *, index=0):
         self.evidence['execution_id'] = identifier
         self.write()
         target = self.grants.target(engine, name, 'nfs')
+        def observe(entry):
+            if entry['stage']=='approval_intent':
+                context=entry['context']
+                binding=(context['authorization_id'],context['scope_digest'],context['expected_attempt'])
+                if self.approval_scopes.setdefault(identifier,binding)!=binding:
+                    raise SuiteError('topology approval changed the original execution scope')
+                self.approved_versions[(identifier,name)]=context['target']['engine_version']
+            self.record(entry)
         return self.registration.approve_geopackage_save(self.issuer, identifier, self.tenant, principal,
-                                                        target, on_evidence=self.record)
+                                                        target, on_evidence=observe, target_index=index)
 
-    def produced(self, engine, name, identifier, principal, initial, remaining):
-        target = f'addp://engine/{engine}/path/{name}?type=file'
+    def observed_scans(self, engine, identifier, principal, initial, count, remaining):
         while True:
             remaining()
             added = sorted(set(scan_ids(self.consumer))-set(initial))
-            if len(added)>1:
-                raise SuiteError('topology file case requires exactly one automatic production scan')
-            if added:
+            if len(added)>count:
+                raise SuiteError('topology file case automatic production scan count differs')
+            if len(added)==count:
                 break
             time.sleep(min(0.2, remaining()))
-        scan = raster.wait_execution(self.consumer, 'meta', added[0], remaining())
-        config = obj(scan.get('scan_context'), 'production scan context')
-        if (scan.get('source')!='develop' or scan.get('parent_execution_id')!=identifier
-            or type(scan.get('tenant_id')) is not int or scan['tenant_id']!=self.tenant
-            or type(scan.get('triggered_by')) is not int or scan['triggered_by']!=principal
-            or config.get('scan_depth')!='basic' or type(config.get('engine_id')) is not int or config['engine_id']!=engine):
-            raise SuiteError('topology file automatic basic scan binding differs')
-        self.record(dict(stage='result_basic_identified', execution=scan))
+        scans = []
+        for scan_id in added:
+            scan = raster.wait_execution(self.consumer, 'meta', scan_id, remaining())
+            config = obj(scan.get('scan_context'), 'production scan context')
+            if (scan.get('execution_id')!=scan_id or scan.get('source')!='develop' or scan.get('parent_execution_id')!=identifier
+                or type(scan.get('tenant_id')) is not int or scan['tenant_id']!=self.tenant
+                or type(scan.get('triggered_by')) is not int or scan['triggered_by']!=principal
+                or config.get('scan_depth')!='basic' or type(config.get('engine_id')) is not int or config['engine_id']!=engine):
+                raise SuiteError('topology file automatic basic scan binding differs')
+            self.record(dict(stage='result_basic_identified', execution=scan))
+            scans.append(scan)
+        self.unbound_scans[identifier]=set(added)
+        return scans
+
+    def observe_result(self, engine, name, identifier, remaining):
+        target = f'addp://engine/{engine}/path/{name}?type=file'
         while True:
             remaining()
             receipt = self.grants.production_grant(engine, name, identifier)
             if receipt is not None:
                 break
             time.sleep(min(0.2, remaining()))
-        self.target = self.grants.target(engine, name, 'nfs')
+        self.published_targets.append(self.grants.target(engine, name, 'nfs'))
         self.record(dict(stage='result_initial_read_granted', grant=receipt))
+        if self.production_observer is not None:
+            self.bind_result_scan(identifier,name,receipt)
         deep = support.wait_for_meta_scan(self.issuer, engine, time.monotonic()+remaining(), depth='deep', scope={'targets':[target]})
         self.record(dict(stage='result_deep_inspected', execution_id=deep))
-        return [dict(execution_id=added[0], target_locator=target, status='submitted')], [scan], deep
+        return deep
+
+    def bind_result_scan(self, identifier, name, grant):
+        result_id=grant['production_result_id']
+        try:
+            if str(uuid.UUID(result_id))!=result_id:
+                raise ValueError()
+        except (AttributeError,TypeError,ValueError):
+            raise SuiteError('topology production result identity differs') from None
+        evidence=self.production_observer.request('GET',
+            f'/api/v1/meta/runtime/productions/develop/{identifier}/{result_id}/basic-scan',(200,)).payload
+        binding=obj(evidence.get('binding'),'production scan DataItem binding')
+        scan_id=evidence.get('scan_execution_id')
+        remaining=self.unbound_scans[identifier]
+        if (evidence.get('reference')!=dict(owner='develop',execution_id=identifier,result_id=result_id)
+                or evidence.get('tenant_id')!=str(self.tenant) or evidence.get('status')!='success'
+                or evidence.get('logical_item_state')!='new' or scan_id not in remaining
+                or evidence.get('engine_version')!=self.approved_versions[(identifier,name)]
+                or binding.get('native_target')!=grant['catalog_path']
+                or any(binding.get(key)!=grant[key] for key in ('item_fingerprint','boundary_hash','file_composition'))):
+            raise SuiteError('topology produced file, automatic scan and Grant binding differs')
+        remaining.remove(scan_id)
+        self.record(dict(stage='result_basic_bound_to_grant',name=name,identification=evidence))
+
+    def produced(self, engine, name, identifier, principal, initial, remaining):
+        observed = self.observed_scans(engine, identifier, principal, initial, 1, remaining)
+        deep = self.observe_result(engine, name, identifier, remaining)
+        target = f'addp://engine/{engine}/path/{name}?type=file'
+        return [dict(execution_id=observed[0]['execution_id'], target_locator=target, status='submitted')], observed, deep
+
+    def submit(self, identity, engine, runtime, sources, definition, *, failure=None):
+        self.before_submit(identity,engine,runtime,sources,definition,failure=failure)
+        names = [node['params']['target_name'] for node in definition['tasks'] if node['operator']=='save']
+        if (bool(names) == bool(failure) or len(names)!=len(set(names))
+                or any('outputs/'+name not in self.fact_paths for name in names)):
+            raise SuiteError('topology workflow submitted a wrong write inventory')
+        identifier = raster.submit(self.consumer,runtime,definition)
+        self.record(dict(stage='execution_submitted',execution_id=identifier,failure=failure))
+        self.submitted_targets.extend((engine,'outputs/'+name,identifier) for name in names)
+        for index,name in enumerate(names):
+            self.approve(identifier,positive(identity['principal_id'],'User'),engine,'outputs/'+name,index=index)
+        return identifier
 
     def check_preparation_scans(self):
         expected=sorted(row['execution_id'] for row in self.evidence['stages']
@@ -999,15 +1087,28 @@ class _FilePublication:
             failure=self.registration.metadata_error_evidence(error,'before_grant_cleanup_evidence')
             errors.append(failure)
             print('Topology cleanup evidence failure: '+json.dumps(failure),file=sys.stderr)
-        sources = [row for row in self.grants.pending if row['target']!=self.target]
+        sources = [row for row in self.grants.pending if row['target'] not in self.published_targets]
         try:
             self.grants.cleanup(rows=sources)
             self.record(dict(stage='source_grants_revoked'))
-            if self.target:
-                self.grants.observe(self.target, True, phase='result_independent_of_source_revocation')
-                self.record(dict(stage='materialized_result_still_readable'))
+            for target in self.published_targets:
+                self.grants.observe(target, True, phase='result_independent_of_source_revocation')
+                self.record(dict(stage='materialized_result_still_readable',target=target))
         except Exception as error:
             errors.append(self.registration.metadata_error_evidence(error, 'source_cleanup'))
+        if self.submitted_targets:
+            # A failed observation can precede discovery of a committed target's Grant.
+            # Query exact history once after source revocation and revoke original records.
+            tracked = [row['target'] for row in self.grants.pending]
+            for engine,name,identifier in self.submitted_targets:
+                if self.grants.target(engine,name,'nfs') in tracked:
+                    continue
+                try:
+                    receipt = self.grants.production_grant(engine,name,identifier)
+                    if receipt is not None:
+                        self.record(dict(stage='result_grant_found_during_cleanup',grant=receipt))
+                except Exception as error:
+                    errors.append(self.registration.metadata_error_evidence(error,'result_grant_exit_observation'))
         try:
             self.grants.cleanup()
             self.record(dict(stage='all_grants_revoked'))
@@ -1261,7 +1362,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
 
 
 def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
-    return run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,fixture.NODES_CASE)
+    return run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,fixture.NODES_CASE)
 
 
 def run_nodes_lineage_permissions(repository, env, client, physical_runner):
@@ -1396,7 +1497,7 @@ def run_nodes_lineage_permissions(repository, env, client, physical_runner):
     return report
 
 
-def run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,case):
+def run_point_outputs_scenario(repository,env,client,physical_runner,browser_runner,case,publication):
     vertices=case==fixture.VERTICES_CASE
     names=fixture.VERTICES_SOURCES if vertices else fixture.NODES_SOURCES
     kinds=fixture.VERTICES_KINDS if vertices else fixture.NODES_KINDS
@@ -1421,9 +1522,10 @@ def run_point_outputs_scenario(repository,env,client,physical_runner,browser_run
     engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[]
     for name in names:
         scope=f'addp://engine/{engine}/path/{name}?type=file'
-        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        scan=publication.source(engine,name,scope,remaining)
         item=support.find_fixture_item(client,engine,name,'nodes source')
         before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        publication.fact_snapshot(engine,before,name,'source_prepared')
         sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
     preflight=[]
     if vertices:
@@ -1432,35 +1534,34 @@ def run_point_outputs_scenario(repository,env,client,physical_runner,browser_run
             if graph.get('truncated') is not False or graph.get('permission_filtered') is not False:raise SuiteError('vertices require complete formally authorized source lineage before execution')
             preflight.append({'source_item_id':source['id'],'graph':graph})
     initial=scan_ids(client)
-    if initial!=sorted(s['scan_execution_id'] for s in sources):raise SuiteError('nodes initial scan inventory differs')
+    publication.check_preparation_scans()
+    if initial:raise SuiteError('nodes initial scan inventory differs')
     runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
     if len(runtimes)!=1:raise SuiteError('nodes requires one product Runtime')
     runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
     targets={port:f'addp://engine/{engine}/path/outputs/{name}?type=file' for port,name in zip(ports,targets_names)}
     workflow=definition([s['locator'] for s in sources],parent)
-    identifier=raster.submit(client,runtime,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
+    identifier=publication.submit(identity,engine,runtime,sources,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('nodes execution actor differs')
     if obj(obj(execution.get('execution_config'),'nodes frozen config').get('content'),'nodes content').get('workflow_definition')!=workflow:raise SuiteError('nodes frozen DAG differs')
     inputs=[('input.load_'+family,sources[index]['locator']) for index,family in enumerate(ports)] if vertices else [('input.load_source',sources[0]['locator'])]
-    facts,scans=validate_saved_success(execution,inputs,targets,len(ports))
-    observed=[]
-    for scan in scans:
-        value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
-        if type(value.get('tenant_id')) is not int or value['tenant_id']!=tenant or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal:raise SuiteError('nodes automatic scan public User/Tenant differs')
-        observed.append(value)
+    facts=validate_saved_facts(execution,inputs,targets,len(ports))
+    observed=publication.observed_scans(engine,identifier,principal,initial,len(ports),remaining)
+    for name in targets_names:
+        publication.observe_result(engine,'outputs/'+name,identifier,remaining)
     monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'nodes Monitor')
     if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop' or monitor.get('status')!='success' or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('nodes Monitor facts differ')
     native=physical_runner(repository,env)
     if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(names) or set(native.get('targets',{}))!=set(targets_names):raise SuiteError('nodes physical inventory differs')
     for source,kind in zip(sources,kinds):
         rows=fixture.vertices_features(kind) if vertices else expected(kind);count=len(rows);columns=len(rows[0]['properties'])+2
-        before=source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        before=publication.fact_baselines[source['id']];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
         if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=count or type(children[0].get('column_count')) is not int or children[0]['column_count']!=columns:raise SuiteError('nodes source Meta size/rows/columns differ')
     outputs=[]
     for port,name in zip(ports,targets_names):
         rows=expected(port);count=len(rows);columns=len(rows[0]['properties'])+2
         item=support.find_fixture_item(client,engine,'outputs/'+name,'nodes output');detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'nodes output Meta')
-        physical=native['targets'][name];sizes=validate_item(detail,physical,name);child=detail['attributes']['type_info']['container']['children'][0]
+        physical=native['targets'][name];statistics=publication.fact_snapshot(engine,detail,'outputs/'+name,'result_prepared');sizes=validate_item(statistics,physical,name);child=statistics['attributes']['type_info']['container']['children'][0]
         if type(child.get('row_count')) is not int or child['row_count']!=count or type(child.get('column_count')) is not int or child['column_count']!=columns:raise SuiteError('nodes output Meta rows/columns differ')
         outputs.append({'name':name,'port':port,'locator':targets[port],'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes})
     directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
@@ -1473,14 +1574,14 @@ def run_point_outputs_scenario(repository,env,client,physical_runner,browser_run
         for source in bound_sources:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
         graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'nodes original graph')
         (validate_vertices_graph if vertices else validate_nodes_graph)(graph,bound_sources,output['item_id'],identifier);graphs[output['port']]=graph
-    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
+    expected_scans=sorted([*initial,*[s['execution_id'] for s in observed]])
     if scan_ids(client)!=expected_scans:raise SuiteError('nodes scan inventory differs before failure')
     failures=[]
     checkpoint['failures']=failures
     for spec in specs:
         key=spec[0]
         failed_workflow=definition([s['locator'] for s in sources],parent,failure=key)
-        failed_id=raster.submit(client,runtime,failed_workflow);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
+        failed_id=publication.submit(identity,engine,runtime,sources,failed_workflow,failure=key);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
         validate_failure(failed,failed_id,principal,spec)
         if obj(obj(failed.get('execution_config'),'nodes failed config').get('content'),'nodes failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('nodes failed frozen DAG differs')
         diagnostic=diagnostic_for(spec)
@@ -1512,7 +1613,11 @@ def run_point_outputs_scenario(repository,env,client,physical_runner,browser_run
     for entry in [*sources,*outputs]:
         item_id=entry.get('item_id',entry.get('id'));after=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
         if after!=entry['before']:raise SuiteError('nodes source or output Meta changed')
+        name=entry['name'] if entry in sources else 'outputs/'+entry['name']
+        if publication.fact_snapshot(engine,after,name,'unchanged_check')!=publication.fact_baselines[item_id]:
+            raise SuiteError('nodes source or result Meta facts changed')
         meta_after[entry['name']]=after
+    publication.check_preparation_scans()
     remaining()
     return {**checkpoint,'schema_version':schema+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,
         'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
@@ -1967,7 +2072,7 @@ def validate_point_outputs_browser_raw(raw,evidence,vertices):
         or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id'))):raise SuiteError('nodes browser raw incomplete or foreign')
     principal=positive(evidence['principal_id'],'nodes browser principal')
     inputs=[('input.load_'+family,evidence['sources'][i]['locator']) for i,family in enumerate(ports)] if vertices else [('input.load_source',evidence['sources'][0]['locator'])]
-    validate_saved_success(obj(raw.get('execution'),'Point browser execution'),inputs,{o['port']:o['locator'] for o in evidence['outputs']},len(ports))
+    validate_saved_facts(obj(raw.get('execution'),'Point browser execution'),inputs,{o['port']:o['locator'] for o in evidence['outputs']},len(ports))
     if raw['execution'].get('execution_id')!=evidence['execution_id'] or type(raw['execution'].get('triggered_by')) is not int or raw['execution']['triggered_by']!=principal:raise SuiteError('nodes browser execution identity differs')
     observations=array(raw.get('observations'),'nodes browser maps')
     if [v.get('port') for v in observations]!=list(ports):raise SuiteError('nodes browser requires exactly both Point maps')

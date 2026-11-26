@@ -530,13 +530,13 @@ def verify_vertices(path,kind):
     return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom,'fid_column':layer.GetFIDColumn(),'features':rows,'source_crs':None if kind=='crs' else 'EPSG:3857'}
 
 
-def vertices_worker(action,root):
+def vertices_worker(action,root,*,publication_staging=False):
     if action=='seed':
         if any((root/n).exists() for n in VERTICES_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing vertex data')
         for name,kind in zip(VERTICES_SOURCES,VERTICES_KINDS):seed_vertices(root/name,kind)
         return {'sources':{name:digest(root/name) for name in VERTICES_SOURCES}}
     if action!='verify':raise FixtureError('unknown vertex action')
-    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*VERTICES_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(VERTICES_TARGETS):raise FixtureError('vertex exact three target inventory differs')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*VERTICES_SOURCES,*(['.addp-publication'] if publication_staging else [])]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(VERTICES_TARGETS):raise FixtureError('vertex exact three target inventory differs')
     return {'sources':{name:digest(root/name) for name in VERTICES_SOURCES},'source_tables':{name:verify_vertices(root/name,kind) for name,kind in zip(VERTICES_SOURCES,VERTICES_KINDS)},
             'targets':{name:verify_vertices(root/'outputs'/name,kind+'-result') for name,kind in zip(VERTICES_TARGETS,VERTICES_FAMILIES)},'exact_inventory_verified':True}
 
@@ -651,13 +651,13 @@ def verify_nodes(path,kind):
     return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom.GetName(),'fid_column':layer.GetFIDColumn(),'features':rows,'source_crs':'EPSG:4326' if kind=='crs' else 'EPSG:3857'}
 
 
-def nodes_worker(action,root):
+def nodes_worker(action,root,*,publication_staging=False):
     if action=='seed':
         if any((root/n).exists() for n in NODES_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing nodes data')
         for name,kind in zip(NODES_SOURCES,NODES_KINDS):seed_nodes(root/name,kind)
         return {'sources':{name:digest(root/name) for name in NODES_SOURCES}}
     if action!='verify':raise FixtureError('unknown nodes action')
-    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*NODES_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(NODES_TARGETS):raise FixtureError('nodes exact source/dual target inventory differs')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*NODES_SOURCES,*(['.addp-publication'] if publication_staging else [])]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(NODES_TARGETS):raise FixtureError('nodes exact source/dual target inventory differs')
     return {'sources':{name:digest(root/name) for name in NODES_SOURCES},
             'source_tables':{name:verify_nodes(root/name,kind) for name,kind in zip(NODES_SOURCES,NODES_KINDS)},
             'targets':{name:verify_nodes(root/'outputs'/name,kind) for name,kind in zip(NODES_TARGETS,NODES_PORTS)},'exact_inventory_verified':True}
@@ -815,6 +815,22 @@ def verify_mixed_overlay(path,kind,case):
 def overlay_worker(action,root):return mixed_overlay_worker(action,root,OVERLAY_CASE)
 
 
+def verify_publication_staging(root):
+    stage=root/'.addp-publication'
+    # The host entrance verified this root's publisher ownership. The
+    # read-only OGR worker can run under a different container UID.
+    staging_observation={'publisher_uid':root.stat().st_uid,'observer_uid':os.getuid(),
+        'staging_uid':None,'mode':None,'is_directory':False,'is_symlink':stage.is_symlink(),'empty':None}
+    if not staging_observation['is_symlink'] and stage.is_dir():
+        observed=stage.stat()
+        staging_observation.update(is_directory=True,staging_uid=observed.st_uid,mode=observed.st_mode & 0o7777)
+        if observed.st_uid==staging_observation['publisher_uid'] and staging_observation['mode']==0o700:
+            staging_observation['empty']=not any(stage.iterdir())
+    if staging_observation['empty'] is not True:
+        raise FixtureError('file publication staging must be owned, 0700 and empty after publication: '+json.dumps(staging_observation,sort_keys=True))
+    return staging_observation
+
+
 def mixed_overlay_worker(action,root,case):
     profile=mixed_fixture_profile(case);names=profile['sources'];target=profile['target']
     if action=='seed':
@@ -828,19 +844,8 @@ def mixed_overlay_worker(action,root,case):
     inventory=['.addp-online-owner','outputs',*names]
     staging_observation=None
     if case in FILE_PUBLICATION_CASES:
-        stage=root/'.addp-publication'
-        # The host entrance verified this root's publisher ownership. The
-        # read-only OGR worker can run under a different container UID.
-        staging_observation={'publisher_uid':root.stat().st_uid,'observer_uid':os.getuid(),
-            'staging_uid':None,'mode':None,'is_directory':False,'is_symlink':stage.is_symlink(),'empty':None}
-        if not staging_observation['is_symlink'] and stage.is_dir():
-            observed=stage.stat()
-            staging_observation.update(is_directory=True,staging_uid=observed.st_uid,mode=observed.st_mode & 0o7777)
-            if observed.st_uid==staging_observation['publisher_uid'] and staging_observation['mode']==0o700:
-                staging_observation['empty']=not any(stage.iterdir())
-        if staging_observation['empty'] is not True:
-            raise FixtureError('file publication staging must be owned, 0700 and empty after publication: '+json.dumps(staging_observation,sort_keys=True))
-        inventory.append(stage.name)
+        staging_observation=verify_publication_staging(root)
+        inventory.append('.addp-publication')
     if sorted(p.name for p in root.iterdir())!=sorted(inventory)or sorted(p.name for p in(root/'outputs').iterdir())!=[target]:raise FixtureError('mixed exact inventory differs')
     result={'sources':{name:digest(root/name)for name in names},'source_tables':{name:verify_mixed_overlay(root/name,kind,case)for name,kind in zip(names,profile['kinds'])},
         'targets':{target:verify_mixed_overlay(root/'outputs'/target,'result',case)},'exact_inventory_verified':True}
@@ -1111,7 +1116,7 @@ def verify_dissolve(path,kind):
     return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom.GetName(),'fid_column':layer.GetFIDColumn(),'features':rows,'source_crs':'EPSG:4326'if kind=='crs'else'EPSG:3857'}
 
 
-def dissolve_worker(action,root):
+def dissolve_worker(action,root,*,publication_staging=False):
     if action=='seed':
         if any((root/n).exists()for n in DISSOLVE_SOURCES)or list((root/'outputs').iterdir()):raise FixtureError('refusing existing dissolve fixture')
         for name,kind in zip(DISSOLVE_SOURCES,DISSOLVE_KINDS):seed_dissolve(root/name,kind)
@@ -1119,7 +1124,7 @@ def dissolve_worker(action,root):
     if action!='verify':raise FixtureError('unknown dissolve worker action')
     # The first successful DAG has only two files; the final state has all four.
     names=sorted(p.name for p in(root/'outputs').iterdir());targets=DISSOLVE_TARGETS[:2]if names==sorted(DISSOLVE_TARGETS[:2])else DISSOLVE_TARGETS
-    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*DISSOLVE_SOURCES])or names!=sorted(targets):raise FixtureError('dissolve exact physical inventory differs')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*DISSOLVE_SOURCES,*(['.addp-publication'] if publication_staging else [])])or names!=sorted(targets):raise FixtureError('dissolve exact physical inventory differs')
     return {'sources':{n:digest(root/n)for n in DISSOLVE_SOURCES},'source_tables':{n:verify_dissolve(root/n,k)for n,k in zip(DISSOLVE_SOURCES,DISSOLVE_KINDS)},
         'targets':{n:verify_dissolve(root/'outputs'/n,n.removesuffix('.gpkg'))for n in targets},'exact_inventory_verified':True}
 
@@ -1144,7 +1149,7 @@ def network_profile(case):
     if case==DIFFERENCE_CASE:return {"ports":("result",),"targets":(DIFFERENCE_TARGET,),"sources":DIFFERENCE_SOURCES,"schema":DIFFERENCE_SCHEMA,"title":DIFFERENCE_TITLE}
     if case==DISSOLVE_CASE:return {"ports":DISSOLVE_PORTS,"targets":DISSOLVE_TARGETS,"sources":DISSOLVE_SOURCES,"schema":DISSOLVE_SCHEMA,"title":DISSOLVE_TITLE}
     if case==OVERLAY_CASE:return {"ports":("result",),"targets":(OVERLAY_TARGET,),"sources":OVERLAY_SOURCES,"schema":OVERLAY_SCHEMA,"title":OVERLAY_TITLE}
-    if case==NODES_CASE:return {"ports":NODES_PORTS,"targets":NODES_TARGETS,"schema":NODES_SCHEMA,"title":NODES_TITLE}
+    if case==NODES_CASE:return {"ports":NODES_PORTS,"targets":NODES_TARGETS,"sources":NODES_SOURCES,"schema":NODES_SCHEMA,"title":NODES_TITLE}
     if case==TRIM_CASE:return {"ports":EXTENSION_PORTS,"targets":TRIM_TARGETS,"schema":TRIM_SCHEMA,"title":TRIM_TITLE}
     if case==RINGS_DIAGNOSTIC_CASE:
         return {"schema":RINGS_DIAGNOSTIC_SCHEMA,"title":RINGS_DIAGNOSTIC_TITLE,"ports":(),"targets":(),"diagnostic_sources":RINGS_DIAGNOSTIC_SOURCES}
@@ -2514,15 +2519,15 @@ def validate_features(name, features):
         raise FixtureError('output differs from the independent coordinate oracle')
 
 
-def worker(action, root, case=None):
+def worker(action, root, case=None, *, publication_staging=False):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
     if case==COMPONENTS_CASE:return mixed_overlay_worker(action,root,case)
     if case==ADJACENCY_CASE:return adjacency_worker(action,root)
-    if case==VERTICES_CASE:return vertices_worker(action,root)
+    if case==VERTICES_CASE:return vertices_worker(action,root,publication_staging=publication_staging)
     if case==DIFFERENCE_CASE:return difference_worker(action,root)
-    if case==DISSOLVE_CASE:return dissolve_worker(action,root)
+    if case==DISSOLVE_CASE:return dissolve_worker(action,root,publication_staging=publication_staging)
     if case==OVERLAY_CASE:return overlay_worker(action,root)
-    if case==NODES_CASE:return nodes_worker(action,root)
+    if case==NODES_CASE:return nodes_worker(action,root,publication_staging=publication_staging)
     if case==RINGS_DIAGNOSTIC_CASE:return rings_diagnostic_worker(action,root)
     if case==TRIM_CASE:return trim_worker(action,root)
     if case==RINGS_CASE:return rings_worker(action,root)
@@ -2653,8 +2658,15 @@ def runtime_worker(action, root):
         evidence_directory.mkdir()
         if capture_enabled(os.environ, case):
             capture_targets(root, evidence_directory, case, os.environ['ADDP_ONLINE_TEST_RUN_ID'])
-    return json.loads(command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), case],
-                              input=Path(__file__).read_text(), evidence_directory=evidence_directory))
+    multipart = case in MULTIFILE_CAPTURE_CASES and capture_enabled(os.environ, case)
+    staging = verify_publication_staging(root) if multipart and action == 'verify' else None
+    args = ['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), case]
+    if multipart:
+        args.append('--publication-staging')
+    result = json.loads(command(args, input=Path(__file__).read_text(), evidence_directory=evidence_directory))
+    if staging is not None:
+        result['publication_staging'] = staging
+    return result
 
 
 def capture_declared_target(root, directory, case, run_id, *, phase='before_verification'):
@@ -2746,7 +2758,7 @@ def capture_publication(env, phase):
 def archive_physical_evidence(root, directory, result, case=None, *, sources_only=False):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(COMPONENTS_SOURCES,(COMPONENTS_TARGET,)) if case==COMPONENTS_CASE else (ADJACENCY_SOURCES,(ADJACENCY_TARGET,)) if case==ADJACENCY_CASE else (VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result["targets"])) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(COMPONENTS_SOURCES,(COMPONENTS_TARGET,)) if case==COMPONENTS_CASE else (ADJACENCY_SOURCES,(ADJACENCY_TARGET,)) if case==ADJACENCY_CASE else (VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result.get('targets', {}))) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     if sources_only:
         targets=()
     archive = directory / 'topology-physical'
@@ -2768,7 +2780,7 @@ def archive_physical_evidence(root, directory, result, case=None, *, sources_onl
 
 def main(action):
     case=topology_case()
-    export = NFSExport('topology', command, publication_staging=case in FILE_PUBLICATION_CASES)
+    export = NFSExport('topology', command, publication_staging=capture_enabled(os.environ, case))
     secret = export.guard(os.environ)
     run_id = os.environ['ADDP_ONLINE_TEST_RUN_ID']
     if action == 'stop' and capture_enabled(os.environ, case) and (secret/'topology-root').exists():
@@ -2787,7 +2799,7 @@ def main(action):
     baseline = secret / 'topology-source.json'
     if action == 'seed':
         baseline.write_text(json.dumps(result))
-        if case in FILE_PUBLICATION_CASES:
+        if capture_enabled(os.environ, case):
             directory=Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])
             archive_physical_evidence(root,directory,result,case,sources_only=True)
             (directory/'topology-source-preflight.json').write_text(json.dumps({
@@ -2802,7 +2814,8 @@ def main(action):
 
 if __name__ == '__main__':
     try:
-        result = worker(sys.argv[2], Path(sys.argv[3]), sys.argv[4] if len(sys.argv)>4 else 'full') if sys.argv[1:2] == ['--worker'] else main(sys.argv[1])
+        result = worker(sys.argv[2], Path(sys.argv[3]), sys.argv[4] if len(sys.argv)>4 else 'full',
+                        publication_staging=sys.argv[5:]==['--publication-staging']) if sys.argv[1:2] == ['--worker'] else main(sys.argv[1])
         print(json.dumps(result, sort_keys=True))
         if result.get('target_capture',{}).get('result') == 'failed':
             raise SystemExit(1)

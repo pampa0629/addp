@@ -927,7 +927,8 @@ class VerticesFixtureTest(unittest.TestCase):
     def test_vertices_case_dispatch_uses_only_owned_fixture_and_inventory(self):
         self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.VERTICES_CASE}),m.VERTICES_CASE)
         with patch.object(m,'vertices_worker',return_value={'owned':True}) as worker,patch.object(m,'seed_snap',side_effect=AssertionError('old scenario')):
-            self.assertEqual(m.worker('seed',Path('/unused'),m.VERTICES_CASE),{'owned':True});worker.assert_called_once_with('seed',Path('/unused'))
+            self.assertEqual(m.worker('seed',Path('/unused'),m.VERTICES_CASE,publication_staging=True),{'owned':True})
+            worker.assert_called_once_with('seed',Path('/unused'),publication_staging=True)
 
 
 class AdjacencyFixtureTest(unittest.TestCase):
@@ -958,7 +959,7 @@ class TopologyPublicationCaseTest(unittest.TestCase):
     def test_only_approved_file_cases_share_private_staging(self):
         import inspect
         self.assertEqual(m.FILE_PUBLICATION_CASES,(m.DIFFERENCE_CASE,m.ADJACENCY_CASE,m.COMPONENTS_CASE,m.OVERLAY_CASE))
-        self.assertIn('publication_staging=case in FILE_PUBLICATION_CASES',inspect.getsource(m.main))
+        self.assertIn('publication_staging=capture_enabled(os.environ, case)',inspect.getsource(m.main))
         self.assertIn('if case in FILE_PUBLICATION_CASES:',inspect.getsource(m.mixed_overlay_worker))
         for case in m.FILE_PUBLICATION_CASES:
             with self.subTest(case=case):self.assertEqual(len(m.network_profile(case)['targets']),1)
