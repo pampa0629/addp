@@ -77,6 +77,42 @@ ENV = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID': 
 
 
 class TopologyOnlineTest(unittest.TestCase):
+    def test_browser_reads_complete_large_evidence_from_temporary_file(self):
+        import os
+        repository = Path(__file__).resolve().parents[2]
+        evidence = {'case': 'full', 'run_id': 'current', 'features': [{'note': '汉' * 54000}]}
+        path = Path(self.env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-browser.json'
+        spec = repository / 'console/frontend/e2e/online/vector-topology-persistence.spec.js'
+        real_run = m.subprocess.run
+        observed = []
+        script = '''
+import {readFileSync} from 'node:fs'
+const source = readFileSync(process.argv[1], 'utf8')
+const body = source.slice(source.indexOf('function readTopologyEvidence('), source.indexOf('function canonical('))
+const read = new Function('readFileSync', body + ';return readTopologyEvidence')(readFileSync)
+console.log(JSON.stringify({...read(), schema_version: 'addp.topology-browser/v14', result: 'passed'}))
+'''
+
+        def run(_command, **kwargs):
+            env = kwargs['env']
+            self.assertFalse('ADDP_ONLINE_TOPOLOGY_EVIDENCE' in env, 'scenario evidence must not be an environment value')
+            evidence_file = Path(env['ADDP_ONLINE_TOPOLOGY_EVIDENCE_FILE'])
+            observed.append(evidence_file)
+            self.assertTrue(evidence_file.is_absolute())
+            self.assertGreater(evidence_file.stat().st_size, 128 * 1024)
+            self.assertEqual(json.loads(evidence_file.read_text()), evidence)
+            child = real_run(['node', '--input-type=module', '-e', script, str(spec)],
+                             env=env, cwd=kwargs['cwd'], capture_output=True, text=True, timeout=15)
+            self.assertEqual(child.returncode, 0, child.stderr)
+            path.write_text(child.stdout)
+            return child
+
+        with patch.object(m.subprocess, 'run', side_effect=run):
+            self.assertEqual(m.browser(repository, {'PATH': os.environ['PATH'], **self.env}, evidence),
+                             {**evidence, 'schema_version': 'addp.topology-browser/v14', 'result': 'passed'})
+        self.assertEqual(len(observed), 1)
+        self.assertFalse(observed[0].exists())
+
     def test_chain_double_ports_bind_exact_source_identity_scans_and_complete_members(self):
         tasks={t['id']:t for t in m.definition('s0','parent',*[f's{i}' for i in range(1,len(m.fixture.SOURCES))])['tasks']}
         self.assertEqual(tasks['line_chain_input']['params'],{'locator':'s14'})
@@ -1628,12 +1664,12 @@ const end=source.indexOf('\n})',start);assert.ok(end>start);
 const body=source.slice(start+marker.length,end);
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 const helper=source.slice(source.indexOf('async function verifyLineEditCase('),source.indexOf("test('线端延伸独立普通User双成果与精确首次交点拒绝'"));
-const run=new AsyncFunction('page','expect','process','observeLineageCanvas','login','writeFileSync','resolve',helper+';'+body);
+const run=new AsyncFunction('page','expect','process','readTopologyEvidence','observeLineageCanvas','login','writeFileSync','resolve',helper+';'+body);
 const events=[],stop=new Error('stop after first navigation'),page={on(){},waitForResponse(){events.push('read');return Promise.resolve({})}};
 const evidence={case:config.case,sources:Array(config.count),outputs:[{port:'result'},{port:'details'}],expected:{result:Array(config.case==='line-trimming'?15:config.case==='line-extension'?7:12),details:Array(config.case==='line-trimming'?9:config.case==='line-extension'?8:10)}};
 const expect=value=>({toBe:x=>assert.equal(value,x),toHaveLength:x=>assert.equal(value.length,x),toEqual:x=>assert.deepEqual(value,x)});
 let installed=false;
-await assert.rejects(()=>run(page,expect,{env:{ADDP_ONLINE_TOPOLOGY_EVIDENCE:JSON.stringify(evidence)}},async actual=>{assert.equal(actual,page);await Promise.resolve();installed=true;events.push('observer')},async()=>{assert.ok(installed,'Canvas observer was not awaited before login');events.push('login');throw stop},()=>{},(...parts)=>parts.join('/')),error=>error===stop);
+await assert.rejects(()=>run(page,expect,{env:{}},()=>evidence,async actual=>{assert.equal(actual,page);await Promise.resolve();installed=true;events.push('observer')},async()=>{assert.ok(installed,'Canvas observer was not awaited before login');events.push('login');throw stop},()=>{},(...parts)=>parts.join('/')),error=>error===stop);
 assert.deepEqual(events,['observer','read','login']);
 '''
         for config in ({'case':m.fixture.TRIM_CASE,'count':11,'title':m.fixture.TRIM_TITLE},{'case':'line-extension','count':3,'title':m.fixture.EXTENSION_TITLE},{'case':m.fixture.ENDPOINT_CASE,'count':7,'title':m.fixture.ENDPOINT_TITLE}):
@@ -2556,11 +2592,11 @@ const source=readFileSync(process.argv[1]+'/console/frontend/e2e/online/vector-t
 const start=source.indexOf('async function verifyInputDiagnosticCase('),end=source.indexOf("test('算子参数诊断独立普通User双语失败页'",start);
 const expect=value=>({toBe:other=>assert.equal(value,other),toEqual:other=>assert.deepEqual(value,other)}),stop=new Error('first navigation');
 let calls;const login=async()=>{calls.login++;throw stop};
-const check=new Function('expect','login',source.slice(start,end)+';return verifyInputDiagnosticCase')(expect,login);
+const check=new Function('expect','login','readTopologyEvidence',source.slice(start,end)+';return verifyInputDiagnosticCase')(expect,login,()=>evidence);
 const evidence={case:'intersection-overlay',executions:['a-id','b-id','crs','fields'].map((key,i)=>({key,execution_id:String(i)})),permissions_verified:[]};
 const page={context:()=>({grantPermissions:async()=>{}}),on(){},waitForResponse:()=>Promise.resolve({}),goto:async()=>{calls.goto++;throw stop}};
 calls={login:0,goto:0};await assert.rejects(check(page,evidence.case,evidence),error=>error===stop);assert.deepEqual(calls,{login:0,goto:1});
-process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE=JSON.stringify(evidence);calls={login:0,goto:0};await assert.rejects(check(page,evidence.case),error=>error===stop);assert.deepEqual(calls,{login:1,goto:0});"""
+calls={login:0,goto:0};await assert.rejects(check(page,evidence.case),error=>error===stop);assert.deepEqual(calls,{login:1,goto:0});"""
         result=subprocess.run(['node','--input-type=module','-e',script,str(repository)],capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 

@@ -2,13 +2,17 @@ import { differenceArchive, verifyDifferenceLogPages } from './difference-execut
 import { sampleComponentsPolygonPixels } from './polygon-components-map.mjs'
 import { expect, request, test } from '@playwright/test'
 import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
 import { webMercatorPreviewCoordinate, webMercatorPreviewGeometry } from '../../../../manager/frontend/e2e/geometry-preview-coordinate.js'
 import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
 test.use({ locale: 'zh-CN' })
+
+function readTopologyEvidence() {
+  return JSON.parse(readFileSync(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE_FILE, 'utf8'))
+}
 
 function canonical(points, ring = false) {
   const vertices = ring ? points.slice(0, -1) : points
@@ -53,7 +57,7 @@ function expectedOriginalLines(evidence, port) {
 }
 
 test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败', async ({ page }) => {
-  const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}')
+  const evidence = readTopologyEvidence()
   for (const key of ['run_id', 'principal_id', 'tenant_id', 'execution_id']) expect(evidence[key]).toBeTruthy()
   expect(evidence.outputs.map(output => output.port)).toEqual(['faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines', 'line_components', 'line_chains', 'line_chain_members'])
   expect(evidence.overlap_expected).toHaveLength(7)
@@ -382,7 +386,7 @@ function normalizedMapExpectation(features) {
 }
 
 async function verifyNetworkCase(page,caseName,counts,schema) {
-  const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}')
+  const evidence = readTopologyEvidence()
   expect(evidence.case).toBe(caseName)
   expect(evidence.outputs.map(o=>o.port)).toEqual(Object.keys(counts))
   expect(Object.keys(evidence.expected)).toEqual(Object.keys(counts))
@@ -960,7 +964,7 @@ async function assertInputDiagnosticViewport(panel) {
 }
 
 async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
-  const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
+  const evidence=supplied||readTopologyEvidence()
   expect(evidence.case).toBe(caseName)
   const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve',difference=caseName==='geometry-difference',adjacency=caseName==='polygon-adjacency',components=caseName==='polygon-components'
   const keys=components?["components-id", "components-crs", "components-overlap", "components-source-id", "components-part-no", "components-component-id"]:adjacency?['adjacency-id','adjacency-empty','adjacency-crs','adjacency-overlap']:difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
@@ -1093,7 +1097,7 @@ function persistProximityEvidence(directory,raw,stage,result='incomplete') {
 }
 
 test('近接检查独立普通User双源Point成果',async({page})=>{
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
+  const evidence=readTopologyEvidence()
   expect(evidence.case).toBe('line-proximity')
   expect(evidence.sources).toHaveLength(2);expect(evidence.expected).toHaveLength(7)
   const output=evidence.output,fields=Object.keys(evidence.expected[0].properties)
@@ -1376,14 +1380,14 @@ async function verifyLineEditCase(page,evidence,directory) {
 }
 
 test('线端延伸独立普通User双成果与精确首次交点拒绝',async({page})=>{
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const evidence=readTopologyEvidence(),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
   expect(evidence.case).toBe('line-extension')
   await observeLineageCanvas(page)
   await verifyLineEditCase(page,evidence,directory)
 })
 
 test('端点吸附独立普通User线与Point双成果及四失败保护',async({page})=>{
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const evidence=readTopologyEvidence(),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
   expect(evidence.case).toBe('endpoint-snapping')
   await observeLineageCanvas(page)
   await verifyLineEditCase(page,evidence,directory)
@@ -1401,7 +1405,7 @@ function persistRingsEvidence(directory,raw,stage,result='incomplete') {
 }
 
 test('面界提取独立普通User单成果与两失败保护',async({page})=>{
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const evidence=readTopologyEvidence(),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
   expect(evidence.case).toBe('polygon-rings');expect(evidence.sources).toHaveLength(3);expect(evidence.outputs).toHaveLength(1)
   expect(evidence.failures.map(f=>f.key)).toEqual(['conflict','invalid'])
   const expected=evidence.expected.result,output=evidence.outputs[0],identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
@@ -1473,7 +1477,7 @@ test('面界提取独立普通User单成果与两失败保护',async({page})=>{
 
 
 test('线端修剪独立普通User线与Point双成果及八失败保护',async({page})=>{
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const evidence=readTopologyEvidence(),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
   expect(evidence.case).toBe('line-trimming')
   await observeLineageCanvas(page)
   await verifyLineEditCase(page,evidence,directory)
@@ -1640,12 +1644,12 @@ async function verifyPointExtractionCase(page,evidence,directory,vertices) {
 }
 
 test('节点提取独立普通User节点与来源明细双Point及九失败保护',async({page})=>{
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}');await observeLineageCanvas(page)
+  const evidence=readTopologyEvidence();await observeLineageCanvas(page)
   await verifyNodesCase(page,evidence,process.env.ADDP_ONLINE_ARTIFACT_DIR)
 })
 
 test('NFS GeoPackage 同一普通用户撤权血缘', async ({ page }) => {
-  const binding = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE)
+  const binding = readTopologyEvidence()
   const directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
   const { source, output } = binding
   const report = { binding, result: 'incomplete', observations: [] }
@@ -1918,7 +1922,7 @@ async function verifyDifferenceCase(page){return verifyMixedOverlayCase(page,'ge
 
 async function verifyMixedOverlayCase(page,caseName) {
   const config=mixedOverlayCases[caseName],inputCount=config.inputCount||2
-  const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}'), directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const evidence = readTopologyEvidence(), directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
   await observeLineageCanvas(page)
   expect(evidence.case).toBe(caseName); expect(evidence.sources).toHaveLength(config.sourceCount); expect(evidence.outputs).toHaveLength(1)
   expect(evidence.expected.result).toHaveLength(config.resultCount)
@@ -2057,7 +2061,7 @@ function assertDissolveLineage(graph,evidence,output) {
 }
 
 async function verifyDissolveCase(page) {
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const evidence=readTopologyEvidence(),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
   expect(evidence.case).toBe('polygon-dissolve');expect(evidence.sources).toHaveLength(5);expect(evidence.successes.map(s=>s.variant)).toEqual(['grouped','global']);expect(evidence.outputs).toHaveLength(4)
   await observeLineageCanvas(page)
   const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
@@ -2137,7 +2141,7 @@ test('几何差集独立普通User双源混合成果及四失败保护',async({p
 
 
 test('顶点提取独立普通User三Point成果及七失败保护',async({page})=>{
-  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}');await observeLineageCanvas(page)
+  const evidence=readTopologyEvidence();await observeLineageCanvas(page)
   await verifyVerticesCase(page,evidence,process.env.ADDP_ONLINE_ARTIFACT_DIR)
 })
 

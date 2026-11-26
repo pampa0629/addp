@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -1552,16 +1553,13 @@ def run_nodes_lineage_permissions(repository, env, client, physical_runner):
                    'output': {key: value for key, value in report['outputs'][0].items() if key != 'graph'}}
         browser_path = directory/'topology-lineage-permissions-browser.json'
         browser_path.unlink(missing_ok=True)
-        browser_env = dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(binding))
+        browser_env = dict(env)
         for key in ('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
                     'ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_READ_USER_ACCESS_TOKEN'):
             browser_env.pop(key, None)
         stage = 'browser'
-        result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test',
-            'e2e/online/vector-topology-persistence.spec.js', '--config=playwright.online.config.js',
-            '--grep', 'NFS GeoPackage 同一普通用户撤权血缘$'], cwd=repository/'console/frontend',
-            env=browser_env, stdout=sys.stderr, stderr=sys.stderr,
-            timeout=min(200, remaining()))
+        result = run_topology_playwright(repository, browser_env, binding,
+            'NFS GeoPackage 同一普通用户撤权血缘$', min(200, remaining()))
         if result.returncode or not browser_path.is_file():
             raise SuiteError('nodes lineage permissions browser evidence missing or failed')
         browser_report = obj(json.loads(browser_path.read_text()), 'nodes lineage permissions browser evidence')
@@ -2368,6 +2366,17 @@ assert.deepEqual(keys(actual),keys(expected.map(row=>({properties:row.properties
     validate_frozen_diagnostic_clipboards(failures)
 
 
+def run_topology_playwright(repository, env, evidence, pattern, timeout):
+    with tempfile.TemporaryDirectory(prefix='addp-topology-browser-') as directory:
+        evidence_path = Path(directory).resolve() / 'evidence.json'
+        evidence_path.write_text(json.dumps(evidence, ensure_ascii=False), encoding='utf-8')
+        return subprocess.run(['npm', 'exec', '--', 'playwright', 'test',
+            'e2e/online/vector-topology-persistence.spec.js', '--config=playwright.online.config.js',
+            '--grep', pattern], cwd=repository/'console/frontend',
+            env=dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE_FILE=str(evidence_path)),
+            stdout=sys.stderr, stderr=sys.stderr, timeout=timeout)
+
+
 def browser(repository, env, evidence):
     path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-browser.json'
     path.unlink(missing_ok=True)
@@ -2383,9 +2392,7 @@ def browser(repository, env, evidence):
         timeout = float(env.get('ADDP_TOPOLOGY_COMPONENTS_BROWSER_SECONDS', '0'))
         if not 0 < timeout <= 240:
             raise SuiteError('polygon components browser budget invalid')
-    result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/vector-topology-persistence.spec.js',
-        '--config=playwright.online.config.js','--grep',pattern], cwd=repository/'console/frontend',
-        env=dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(evidence)), stdout=sys.stderr, stderr=sys.stderr, timeout=timeout)
+    result = run_topology_playwright(repository, env, evidence, pattern, timeout)
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
