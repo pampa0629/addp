@@ -22,7 +22,7 @@
  	"github.com/addp/system/internal/testsupport"
  	"github.com/pquerna/otp/totp"
  	"gorm.io/driver/postgres"
-@@ -363,10 +367,35 @@
+@@ -393,6 +397,29 @@
  	"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
  	"manager.data_item.read", "manager.content.read", "develop.task.read", "develop.task.execute",
  	"develop.data_read.execute", "system.execution_authorization.create",
@@ -52,6 +52,7 @@
  }
  
  func suitePermissions(suite string) ([]string, error) {
+@@ -402,4 +429,6 @@
  	switch suite {
 +	case "develop-notebook-storage":
 +		return []string{"develop.notebook.create", "develop.notebook.read", "develop.notebook.update", "develop.notebook.delete", "develop.task.read"}, nil
