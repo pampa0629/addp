@@ -2358,7 +2358,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'vector-topology-persistence'"),
             (paths[0], '          - polygon-components'), (paths[3], '|polygon-components)'),
             (paths[5], 'def components_features('), (paths[4], 'def components_definition('),
-            (paths[7], 'assertComponentsPolygonPixels('), (paths[8], 'case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay":'),
+            (paths[7], 'assertComponentsPolygonPixels('), (paths[8], 'case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay", "line-nodes", "vertex-extraction", "polygon-dissolve":'),
             (paths[9], 'test_polygon_components_t4_one_save_six_readonly_refusals_independent_ogr'),
             (paths[0], '          - polygon-adjacency'), (paths[3], '|polygon-adjacency|'),
             (paths[4], 'def adjacency_definition('), (paths[4], 'class _FilePublication:'), (paths[4], 'def run_prepared_file_scenario('), (paths[5], 'FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE,COMPONENTS_CASE,OVERLAY_CASE)'), (paths[13], 'test_adjacency_missing_initializer_or_wrong_case_never_uses_legacy_scan_route'), (paths[4], "'input_nodes':('load_source',)"),

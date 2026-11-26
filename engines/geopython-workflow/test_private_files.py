@@ -89,6 +89,37 @@ def test_private_files_complete_bytes_original_dag_and_cleanup(tmp_path):
         files.cleanup(CREATOR)
 
 
+def test_private_files_two_outputs_have_independent_ordered_receipts(tmp_path):
+    import geopandas as gpd
+
+    raw, contents = _manifest(tmp_path)
+    workflow = json.loads(raw["workflow_json"])
+    workflow["tasks"].append({"id": "save_mask", "operator": "save", "depends_on": ["mask"],
+                              "params": {"input_df": {"$ref": "mask"}, "mode": "fail"}})
+    raw["workflow_json"] = json.dumps(workflow)
+    raw["outputs"] = ["save", "save_mask"]
+    files = PrivateFiles(FileManifest.parse(raw), CREATOR, parent=tmp_path)
+    try:
+        for index, data in enumerate(contents):
+            files.put_input(CREATOR, index, io.BytesIO(data))
+        files.start(CREATOR, "en")
+        assert files.worker.wait(50) and files.worker.snapshot()["status"] == "success"
+        second = files.directory / "output-1.gpkg"
+        held = second.rename(files.directory / "held.gpkg")
+        with pytest.raises(FileNotFoundError):
+            files.status(CREATOR)
+        held.rename(second)
+        receipts = files.status(CREATOR)["outputs"]
+        assert [r["node_id"] for r in receipts] == ["save", "save_mask"]
+        for index, receipt in enumerate(receipts):
+            with files.open_output(CREATOR, index) as stream:
+                data = stream.read()
+            assert (receipt["size_bytes"], receipt["sha256"]) == (str(len(data)), hashlib.sha256(data).hexdigest())
+        assert gpd.read_file(second).equals(gpd.read_file(tmp_path / "business" / "mask.gpkg"))
+    finally:
+        assert files.cleanup(CREATOR) == {"cleanup": "passed"}
+
+
 def test_private_files_read_only_rejection_has_no_target_or_output(tmp_path):
     raw, contents = _manifest(tmp_path, save=False)
     workflow = json.loads(raw["workflow_json"])

@@ -45,12 +45,12 @@ type fileWorkflowInputs struct {
 	manifest    plugin.WorkflowPrivateFileManifest
 	sourceReads []repository.PrivateFileSourceRead
 
-	prepared        bool
-	attempted       bool
-	uploaded        bool
-	dispatched      bool
-	runtime         *plugin.WorkflowPrivateFilesClient
-	outputAttempted bool
+	prepared   bool
+	attempted  bool
+	uploaded   bool
+	dispatched bool
+	runtime    *plugin.WorkflowPrivateFilesClient
+	nextOutput int
 }
 
 // One Owner attempt calls the batch methods sequentially; only the source

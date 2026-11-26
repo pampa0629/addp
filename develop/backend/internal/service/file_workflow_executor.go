@@ -270,7 +270,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	}
 	var published *plugin.NewFilePublicationOutcome
 	if err == nil && status != nil && status.Status == "success" && facts.Intent.Target != nil {
-		file, receipt, downloadErr := b.downloadOutput(runCtx)
+		file, receipt, downloadErr := b.downloadOutput(runCtx, 0)
 		err = downloadErr
 		if err == nil {
 			published, err = f.publishPrivateFile(runCtx, lease, b.runtimeID, receipt, file)

@@ -96,7 +96,7 @@ func NewWorkflowPrivateFilesClient(conn ConnectionInfo, runtimeID string, manife
 	if err != nil || credential == nil || !workflowPrivateUUID(runtimeID) || manifest.SchemaVersion != WorkflowPrivateFilesAPIV2 ||
 		manifest.TenantID == 0 || !workflowPrivateUUID(manifest.ExecutionID) || manifest.Attempt < 1 || manifest.AuthorizationID <= 0 ||
 		!workflowPrivateDigest(manifest.ScopeDigest) || manifest.Deadline.IsZero() || !json.Valid([]byte(manifest.WorkflowJSON)) ||
-		len(manifest.Inputs) == 0 || len(manifest.Outputs) > 1 {
+		len(manifest.Inputs) == 0 {
 		return nil, errors.New("invalid workflow private-file binding")
 	}
 	seen := map[string]bool{}

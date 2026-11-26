@@ -89,7 +89,7 @@ class FileManifest:
                 raise PrivateFileError("PRIVATE_FILES_INVALID", 400)
             inputs.append(InputFile(item["node_id"], int(item["size_bytes"]), item["sha256"], item["format"]))
         outputs = value["outputs"]
-        if (not isinstance(outputs, list) or len(outputs) > 1 or
+        if (not isinstance(outputs, list) or
                 any(not isinstance(node, str) or not node for node in outputs)):
             raise PrivateFileError("PRIVATE_FILES_INVALID", 400)
         ids = [part.node_id for part in inputs] + outputs
@@ -221,13 +221,15 @@ class PrivateFiles:
             self._admit(creator, active=False)
             report = self.worker.snapshot() if self.worker else {"status": "pending"}
             if report["status"] == "success" and not self._outputs and self.manifest.outputs and not self._cleaned:
+                receipts = []
                 for index, node in enumerate(self.manifest.outputs):
                     digest = hashlib.sha256()
                     with (self.directory / f"output-{index}.gpkg").open("rb") as stream:
                         for data in iter(lambda: stream.read(64 * 1024), b""):
                             digest.update(data)
                         size = stream.tell()
-                    self._outputs.append({"node_id": node, "size_bytes": str(size), "sha256": digest.hexdigest()})
+                    receipts.append({"node_id": node, "size_bytes": str(size), "sha256": digest.hexdigest()})
+                self._outputs = receipts
             return {"execution_id": self.manifest.execution_id, "attempt": self.manifest.attempt,
                     "scope_digest": self.manifest.scope_digest, "inputs": list(self._inputs),
                     "execution": report, "outputs": [dict(x) for x in self._outputs],

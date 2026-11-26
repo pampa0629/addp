@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -31,6 +32,13 @@ func TestPrivateWorkflowOutputDownload(t *testing.T) {
 			}
 			sum := sha256.Sum256(payload)
 			receipt := plugin.WorkflowPrivateFile{NodeID: b.manifest.Outputs[0], Size: int64(len(payload)), SHA256: hex.EncodeToString(sum[:])}
+			receipts := []plugin.WorkflowPrivateFile{receipt}
+			if fault == "valid" {
+				b.manifest.Outputs = append(b.manifest.Outputs, "save_members")
+				second := receipt
+				second.NodeID = "save_members"
+				receipts = append(receipts, second)
+			}
 			downloads := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "Bearer addp_at_runtime_current" {
@@ -43,8 +51,11 @@ func TestPrivateWorkflowOutputDownload(t *testing.T) {
 						states[i] = "ready"
 					}
 					pending := false
-					_ = json.NewEncoder(w).Encode(plugin.WorkflowPrivateFileStatus{RuntimeExecutionID: fileInputRuntimeID, ExecutionID: b.manifest.ExecutionID, Attempt: b.manifest.Attempt, ScopeDigest: b.manifest.ScopeDigest, Inputs: states, Outputs: []plugin.WorkflowPrivateFile{receipt}, CleanupPending: &pending, Execution: json.RawMessage(`{"status":"success"}`)})
-				case "/api/private-files/" + fileInputRuntimeID + "/outputs/0":
+					_ = json.NewEncoder(w).Encode(plugin.WorkflowPrivateFileStatus{RuntimeExecutionID: fileInputRuntimeID, ExecutionID: b.manifest.ExecutionID, Attempt: b.manifest.Attempt, ScopeDigest: b.manifest.ScopeDigest, Inputs: states, Outputs: receipts, CleanupPending: &pending, Execution: json.RawMessage(`{"status":"success"}`)})
+				case "/api/private-files/" + fileInputRuntimeID + "/outputs/0", "/api/private-files/" + fileInputRuntimeID + "/outputs/1":
+					if !strings.HasSuffix(r.URL.Path, "/"+strconv.Itoa(downloads)) {
+						t.Error("unexpected output ordinal", r.URL.Path)
+					}
 					downloads++
 					w.Header().Set("Content-Type", "application/geopackage+sqlite3")
 					bytes := append([]byte(nil), payload...)
@@ -67,7 +78,7 @@ func TestPrivateWorkflowOutputDownload(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			file, got, err := b.downloadOutput(t.Context())
+			file, got, err := b.downloadOutput(t.Context(), 0)
 			if (err == nil) != (fault == "valid") || downloads != 1 {
 				t.Fatal(fault, downloads, err)
 			}
@@ -79,8 +90,18 @@ func TestPrivateWorkflowOutputDownload(t *testing.T) {
 					t.Fatal("download lost exact bytes or privacy")
 				}
 			}
-			if again, _, err := b.downloadOutput(t.Context()); again != nil || err == nil || downloads != 1 {
+			if again, _, err := b.downloadOutput(t.Context(), 0); again != nil || err == nil || downloads != 1 {
 				t.Fatal("download replayed")
+			}
+			if len(receipts) == 2 {
+				second, got, err := b.downloadOutput(t.Context(), 1)
+				if err != nil || got != receipts[1] || downloads != 2 {
+					t.Fatal("second output", got, downloads, err)
+				}
+				defer second.Close()
+				if file.Name() == second.Name() {
+					t.Fatal("outputs share a private path")
+				}
 			}
 		})
 	}

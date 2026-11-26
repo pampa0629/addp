@@ -130,12 +130,12 @@ func suiteSourceInitializerPermissions(suite string) []string {
 	case "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "sql-pool-consumer-flow", "transfer-continuous-events", "metric-service-revision-lifecycle":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "vector-topology-persistence":
-		switch os.Getenv("ADDP_ONLINE_TOPOLOGY_CASE") {
-		case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay":
-			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
-		}
 		if topologyLineagePermissions(suite) {
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+		}
+		switch os.Getenv("ADDP_ONLINE_TOPOLOGY_CASE") {
+		case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay", "line-nodes", "vertex-extraction", "polygon-dissolve":
+			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
 		}
 		return nil
 	case "raster-workflow":
