@@ -42,6 +42,25 @@ MESSAGES.update({name: ('Raster grids must match; use raster_align before combin
 MESSAGES.update({p:('栅格分区统计的权重与percentiles参数不能同时提供','Zonal statistics weights and percentiles cannot be provided together')for p in('weights_conflict','weighted_stddev_conflict')})
 MESSAGES.update({p:('分类频数模式不能提供percentiles或外部权重，也不能启用加权标准差','Class frequency cannot accept percentiles or external weights, or enable weighted standard deviation')for p in('frequency_conflict','frequency_null_conflict')})
 
+
+ENTRY_PARAMETERS = {
+    'frequency_null_conflict': 'percentiles',
+    'item_boolean': 'percentiles',
+    'item_list': 'percentiles',
+    'item_null': 'percentiles',
+    'item_object': 'percentiles',
+    'item_string': 'percentiles',
+    'list_null': 'percentiles',
+    'scalar_boolean': 'percentiles',
+    'scalar_number': 'percentiles',
+    'scalar_object': 'percentiles',
+    'scalar_string': 'percentiles',
+    'values_band_boolean': 'band',
+    'values_band_string': 'band',
+    'zones_band_boolean': 'zones_band',
+    'zones_band_string': 'zones_band',
+}
+
 class DiagnosticClient(base.DiagnosticClient):
     diagnostic_name = 'zonal-percentiles-submission-error.json'
     diagnostic_schema = 'addp.raster-zonal-percentiles-submission-diagnostic/v1'
@@ -162,11 +181,15 @@ def fixture_call(repository, env, action, names, timeout):
 
 def current(execution, identity, identifier, dag, runtime, language, status):
     readonly.actor(execution, identity, 'develop'); readonly.execution_snapshot(execution, dag, runtime)
-    if (execution.get('execution_id') != identifier or type(execution.get('tenant_id')) is not int
-        or execution['tenant_id'] != int(identity['tenant_id']) or execution.get('task_type') != 'workflow'
-        or execution.get('status') != status or execution['execution_config'].get('display_language') != language): raise SuiteError('current execution identity/status/language differs')
+    if 'tenant_id' in execution:
+        raise SuiteError('public Develop receipt exposes tenant_id')
+    if (execution.get('execution_id') != identifier or execution.get('task_type') != 'workflow'
+        or execution.get('status') != status or execution['execution_config'].get('display_language') != language):
+        raise SuiteError('current execution identity/status/language differs')
 
-def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current):
+def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current,
+                 *, failed_reader=lineage.read_failed_execution,
+                 inventory_reader=lineage.check_execution_inventory):
     env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('zonal percentile business budget must be exactly 600 seconds')
     def remaining():
@@ -218,7 +241,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', output_scan, remaining()), output_scan, identifier, tenant, int(identity['principal_id']), engine)
             monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
             readonly.actor(monitor, identity, 'develop')
-            if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'success' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
+            if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'success' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts: raise SuiteError('Monitor current output lineage differs')
             archive_response(directory/'zonal-percentiles-terminal-responses',f'{index:02}-develop',client.request('GET','/api/v1/develop/executions/'+identifier,(200,)))
             archive_response(directory/'zonal-percentiles-terminal-responses',f'{index:02}-monitor',client.request('GET','/api/v1/monitor/executions/by-execution-id/'+identifier,(200,)))
             names.append(name); native = physical_runner(repository, env, 'verify', names, remaining()); remaining()
@@ -235,29 +258,51 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             case['lineage'] = [raster.wait_lineage(client, items[name]['id'], case['target_item_id'], case['execution_id'], remaining()) for name in case_inputs(case['name'])]
         if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('unexpected automatic scan inventory')
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
+        known_executions = [case['execution_id'] for case in cases]
         for problem in FAILURES:
             for language in ('zh-cn', 'en'):
                 stages.append({'problem': problem, 'language': language, 'status': 'running'}); progress('running')
                 dag = definition(sources, parent, 'coverage.csv', invalid=problem, language=language)
-                identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
-                execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
-                if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
-                diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
-                if diagnostic != {'execution_id': identifier, 'task': 'analysis', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
-                archive_response(directory/'zonal-percentiles-terminal-responses',f'failed-{problem}-{language}-develop',client.request('GET','/api/v1/develop/executions/'+identifier,(200,)))
-                readonly.no_publication(execution)
-                monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
-                archive_response(directory/'zonal-percentiles-terminal-responses',f'failed-{problem}-{language}-monitor',client.request('GET','/api/v1/monitor/executions/by-execution-id/'+identifier,(200,)))
-                readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
-                if monitor.get('execution_id') != identifier or type(monitor.get('tenant_id')) is not int or monitor.get('tenant_id') != tenant or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
-                queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
-                if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                failure = {'problem': problem, 'language': language, 'no_publication_or_scan_or_lineage': True}
+                parameter = ENTRY_PARAMETERS.get(problem)
+                if parameter is not None:
+                    raw = base.reject_workflow_parameter(
+                        client, runtime, dag, 'analysis', parameter, language, min(180, max(1, int(remaining())))
+                    )
+                    inventory_reader(env, tenant, known_executions)
+                    remaining()
+                    receipt = immutable(directory / f'entry-{problem}-{language}.json', raw)
+                    failure.update(rejection_stage='develop_entry', no_execution_created=True,
+                                   submission={**receipt, 'http_status': 400})
+                else:
+                    identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
+                    known_executions.append(identifier)
+                    execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
+                    if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
+                    failed_identity = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
+                    remaining()
+                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
+                    if diagnostic != {'execution_id': identifier, 'task': 'analysis', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
+                    archive_response(directory/'zonal-percentiles-terminal-responses',f'failed-{problem}-{language}-develop',client.request('GET','/api/v1/develop/executions/'+identifier,(200,)))
+                    readonly.no_publication(execution)
+                    monitor = client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload
+                    archive_response(directory/'zonal-percentiles-terminal-responses',f'failed-{problem}-{language}-monitor',client.request('GET','/api/v1/monitor/executions/by-execution-id/'+identifier,(200,)))
+                    readonly.actor(monitor, identity, 'develop'); readonly.no_publication(monitor)
+                    if monitor.get('execution_id') != identifier or 'tenant_id' in monitor or monitor.get('status') != 'failed' or obj(monitor.get('error_details'), 'Monitor error').get('category') != 'execution_failed': raise SuiteError('Monitor failed identity/category differs')
+                    queried = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn').request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
+                    if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
+                    failure.update(rejection_stage='analysis_node', execution_id=identifier,
+                                   diagnostic=diagnostic, internal_execution_identity=failed_identity)
                 if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()): raise SuiteError('failed execution added derived lineage')
                 native = physical_runner(repository, env, 'verify', names, remaining()); remaining(); check_physical(native, baseline['sources'], previous, anchor, names)
                 physical_calls += 1; full_checks += len(names)
-                failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic, 'no_publication_or_scan_or_lineage': True})
+                failures.append(failure)
                 stages[-1]['status'] = 'passed'; progress('running')
+        inventory_reader(env, tenant, known_executions)
+        remaining()
+        if sum(failure['rejection_stage'] == 'develop_entry' for failure in failures) != 30:
+            raise SuiteError('exact Develop entry rejection count differs')
         if len(cases) != 16 or len(failures) != 80 or full_checks != 1416 or physical_calls != 97: raise SuiteError('all 16 successes, 80 failures, 1416 CSV checks and 97 physical calls required')
         target_metadata_before={case['target_item_id']:json.loads((directory/('target-'+case['name']+'-meta-before.json')).read_bytes())for case in cases}
         target_metadata_after={identifier:client.request('GET',f'/api/v1/meta/items/{identifier}',(200,)).payload for identifier in target_metadata_before}
