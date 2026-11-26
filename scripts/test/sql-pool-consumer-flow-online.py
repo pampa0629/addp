@@ -22,6 +22,9 @@ READER = "pool_reader"
 READERS = (READER, "pool_reader_next")
 PHASES = ("address", "account", "password", "pool")
 LABEL = "addp.online.sql-pool"
+LOCAL_RUN = "ADDP_SQL_POOL_LOCAL_RUN_ID"
+LOCAL_LABEL = "com.addp.sql-pool-local"
+LOCAL_RUN_PATTERN = r"addp-sql-pool-local-[0-9a-f]{32}"
 PROVISIONER_ROLE = "tenant.infrastructure_administrator"
 PROFILES = {"postgresql": ("postgres", 5432, "public", "schema"), "mysql": ("mysql", 3306, DATABASE, "database")}
 PERMISSIONS = {
@@ -36,6 +39,11 @@ def require(condition, message):
 
 
 def container(engine):
+    local = os.environ.get(LOCAL_RUN)
+    if local:
+        require(re.fullmatch(LOCAL_RUN_PATTERN, local) and engine == "mysql",
+                "local pool fixture requires an owned MySQL run")
+        return f"{local}-mysql"
     return "addp-sql-pool-" + engine
 
 
@@ -63,9 +71,10 @@ def private_write(path, payload):
     temporary.replace(path)
 
 
-def start(private, run_id):
+def start(private, run_id, *, local=False):
     pins = (ROOT / "scripts/test/docker-compose.spark-federation-t2.yml").read_text()
-    for engine, (service, port, namespace, _) in PROFILES.items():
+    for engine in ("mysql",) if local else PROFILES:
+        service, port, namespace, _ = PROFILES[engine]
         match = re.search(rf"(?m)^  {service}:\n    image: ([\w:.-]+@sha256:[0-9a-f]{{64}})$", pins)
         require(match, f"fixed {service} fixture image is missing")
         admin, password, next_password, rotated_password, invalidated_password = (secrets.token_hex(24) for _ in range(5))
@@ -84,8 +93,9 @@ def start(private, run_id):
         options = (
             "postgres", "-c", "log_statement=all", "-c", "log_line_prefix=pid=%p user=%u "
         ) if engine == "postgresql" else ()
+        network = ("--network", run_id, "--label", f"{LOCAL_LABEL}={run_id}") if local else ("-p", f"127.0.0.1::{port}")
         docker("run", "-d", "--name", container(engine), "--label", f"{LABEL}={run_id}",
-               "--env-file", str(env_file), "--tmpfs", directory, "-p", f"127.0.0.1::{port}", match[1], *options)
+               "--env-file", str(env_file), "--tmpfs", directory, *network, match[1], *options)
         deadline = time.monotonic() + 150
         while sql(engine, "SELECT 1;", check=False).returncode != 0:
             require(time.monotonic() < deadline, f"{engine} fixture did not become ready")
@@ -113,16 +123,20 @@ def start(private, run_id):
                 "SET GLOBAL log_output='TABLE'; SET GLOBAL general_log=ON;"
             )
         sql(engine, statement)
-        mapping = docker("port", container(engine), f"{port}/tcp").stdout.strip()
-        require(re.fullmatch(r"127\.0\.0\.1:[1-9][0-9]{0,4}", mapping), "fixture must expose only its loopback port")
+        if local:
+            host, connection_port, reader, secret = container(engine), port, READERS[1], next_password
+        else:
+            mapping = docker("port", container(engine), f"{port}/tcp").stdout.strip()
+            require(re.fullmatch(r"127\.0\.0\.1:[1-9][0-9]{0,4}", mapping), "fixture must expose only its loopback port")
+            host, connection_port, reader, secret = "127.0.0.1", int(mapping.split(":")[-1]), READER, password
         connection = {
-            "host": "127.0.0.1", "port": int(mapping.split(":")[-1]), "database": DATABASE,
-            "user": READER, "password": password, "pool_max_open_conns": 2, "pool_max_idle_conns": 1,
+            "host": host, "port": connection_port, "database": DATABASE,
+            "user": reader, "password": secret, "pool_max_open_conns": 1 if local else 2, "pool_max_idle_conns": 1,
         }
         if engine == "postgresql":
             connection["sslmode"] = "disable"
         private_write(private / f"{engine}-engine.json", json.dumps({
-            "name": f"Hosted SQL pool {engine}", "engine_type": engine, "engine_origin": "general",
+            "name": f"{'Local' if local else 'Hosted'} SQL pool {engine}", "engine_type": engine, "engine_origin": "general",
             "description": "Disposable connection pool acceptance", "connection_info": connection,
         }))
         verify_native_passwords(engine, run_id, rotated_password, next_password, "preflight")
@@ -224,7 +238,7 @@ def verify_mysql_database_grant(preparer, consumer, tenant, engine, pending):
     return command
 
 
-def prepare(private, run_id):
+def prepare(private, run_id, *, local=False):
     consumer = client("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN")
     preparer = client("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN")
     provisioner = client("ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN")
@@ -252,11 +266,12 @@ def prepare(private, run_id):
         private_write(private / "pool-grants.json", json.dumps(grants))
 
     cases = []
-    for engine, (_, _, namespace, term) in PROFILES.items():
+    for engine in ("mysql",) if local else PROFILES:
+        _, _, namespace, term = PROFILES[engine]
         descriptor = REGISTRATION.load_descriptor(private / f"{engine}-engine.json")
         engine_id = REGISTRATION.register_engine(provisioner.base_url, provisioner.token, descriptor)
         scan_id = SUPPORT.wait_for_scan(preparer, engine_id, time.monotonic() + 120)
-        if engine == "mysql":
+        if engine == "mysql" and not local:
             node_grant = verify_mysql_database_grant(preparer, consumer, tenant, engine_id, pending)
             grants[:] = [row for row in grants if row["request_id"] != node_grant]
             private_write(private / "pool-grants.json", json.dumps(grants))
@@ -394,8 +409,9 @@ def credential_fault(engine, private, artifacts, run_id, restore):
 
 def concurrency_barrier(engine, private, artifacts, run_id, operation, purpose="concurrency"):
     source = fixture_identity(engine, run_id)
-    require(bool(re.fullmatch(r"run-[a-z0-9-]+", run_id)), "invalid barrier run identity")
-    marker = "addp_pool_" + run_id + {"concurrency": "", "queue": "_q", "native": "_n"}[purpose]
+    local = re.fullmatch(LOCAL_RUN_PATTERN, run_id)
+    require(local or re.fullmatch(r"run-[a-z0-9-]+", run_id), "invalid barrier run identity")
+    marker = "addp_pool_" + (run_id[-32:] if local else run_id) + {"concurrency": "", "queue": "_q", "native": "_n"}[purpose]
     journal = private / f"{engine}-{purpose}-barrier.json"
     hold_seconds = 90 if purpose == "concurrency" else 220
     if engine == "postgresql":
@@ -610,17 +626,18 @@ def validate_concurrency(case, run_id, executions):
         executions.add(value)
 
 
-def validate_saturation(case, run_id, executions):
+def validate_saturation(case, run_id, executions, *, local=False):
     proof = case["saturation"]
     require(set(proof) == {"configuration", "queue", "holders", "queue_terminal", "released", "queued", "manager_native", "manager_queued", "engine_status",
                            "native", "holder_execution_id", "recovered_execution_id", "recovered_manager_rows"},
             "missing pool saturation evidence")
-    version = case["concurrency"]["configuration"]["after_version"]
-    require(proof["configuration"] == {
+    version = None if local else case["concurrency"]["configuration"]["after_version"]
+    configuration = None if local else {
         "before_version": version, "after_version": version + 1, "phase": "saturation",
         "changed_fields": ["pool_max_open_conns"], "same_engine_confirmed": False, "host": "localhost",
         "database": DATABASE, "reader": READERS[1], "max_open": 1, "max_idle": 1, "connection_online": True,
-    }, "pool saturation did not use one connection in each process")
+    }
+    require(proof["configuration"] == configuration, "unexpected pool saturation configuration evidence")
     anchor = {"engine": case["engine_type"], "run_id": run_id, "source_identity": case["source_identity"]}
     holder = proof["queue"]["holder_id"]
     waiters = proof["holders"]["waiters"]
@@ -792,18 +809,28 @@ def main():
     parser.add_argument("--barrier-operation", choices=("acquire", "observe", "release"))
     parser.add_argument("--barrier-purpose", choices=("concurrency", "queue", "native"), default="concurrency")
     args = parser.parse_args()
-    require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ADDP_ONLINE_HOSTED") == "1"
-            and os.environ.get("ADDP_ONLINE_TEST") == "1" and os.environ.get("ONLINE_SUITE") == NAME,
-            "requires the isolated SQL pool Hosted lifecycle")
     private = Path(SUPPORT.required_environment("ADDP_ONLINE_SECRET_DIR"))
     artifacts = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     run_id = SUPPORT.required_environment("ADDP_ONLINE_TEST_RUN_ID")
+    local = os.environ.get(LOCAL_RUN)
+    if local:
+        require(local == run_id and re.fullmatch(LOCAL_RUN_PATTERN, local)
+                and not any(os.environ.get(key) for key in ("GITHUB_ACTIONS", "ADDP_ONLINE_HOSTED", "ADDP_ONLINE_OWNER_MANAGED"))
+                and args.action in {"start", "prepare", "cleanup", "barrier"}
+                and (args.action != "barrier" or args.engine == "mysql"),
+                "requires the isolated local SQL pool lifecycle")
+        owned = docker("network", "inspect", "--format", '{{index .Labels "' + LOCAL_LABEL + '"}}', run_id).stdout.strip()
+        require(owned == run_id, "local SQL pool network is not owned by this run")
+    else:
+        require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ADDP_ONLINE_HOSTED") == "1"
+                and os.environ.get("ADDP_ONLINE_TEST") == "1" and os.environ.get("ONLINE_SUITE") == NAME,
+                "requires the isolated SQL pool Hosted lifecycle")
     if args.action == "start":
-        start(private, run_id)
+        start(private, run_id, local=bool(local))
     elif args.action == "stop":
         stop(artifacts, run_id)
     elif args.action == "prepare":
-        prepare(private, run_id)
+        prepare(private, run_id, local=bool(local))
     elif args.action == "cleanup":
         cleanup(private, artifacts, run_id)
     elif args.action == "observe":

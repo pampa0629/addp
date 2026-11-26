@@ -23,6 +23,12 @@ PG TCP 含回环 `scram-sha-256`、socket 仅初始化；MySQL 原生密码。�
 
 Manager 获取连接超时的页面验收使用 `addp.sql-pool-console/v8`。对每种引擎各先打开一个预览，隔离夹具在回环地址暂缓该样例的一次成功 Meta 响应。另一预览实际占用唯一连接后，夹具放行响应。先发页面须显示 HTTP 504 和 `preview_connection_acquisition_timeout`，同时核对源库中等待的两个会话身份。占用连接的预览须显示 `preview_sql_execution_timeout`。解锁后，先发页面须读回原样例行。
 
+### MySQL 本机隔离页面验收
+
+`make test-sql-pool-local` 从指定的已提交版本（默认 HEAD）构建本机独占 Compose。平台库为独立 PostgreSQL 容器内的 `addp_test`，MySQL 是仅在本轮网络中可达的合成数据源。Console 使用唯一的 `*.localhost` 来源，页面通过本轮普通账号正常登录。准备身份仅服务于该实例和精确样例授权。
+
+沿用 Hosted 的池饱和浏览器断言及源端观察，MySQL 初始最大连接数为 1。Manager 两个预览分别须返回获取连接和执行 SQL 超时的 HTTP 504。Develop 须显示对应的两类执行诊断。期间验证源端等待者，放锁后读回同一行。测试清理先撤销本轮读取授权并核对拒绝，再销毁独占资源。输出记录固定提交、页面证据和清理结果，属于本机技术验收。
+
 ### MySQL 数据库节点授权
 
 独立准备阶段先给普通用户签发一份 MySQL database 节点 read。以实际 Develop 查询分别读取已有表、获权后新建的表，再访问另一 database 中的同名表，最后撤权并以新 execution 重读。两个库的源账号均有原生 SELECT 权。记录成功时的行值及业务 SELECT、拒绝时的权限原因及零业务 SELECT，输出 `mysql-node-read.json`。命令签发前写入清理清单。此阶段使用独立表名，完成后再进入原连接池验收。

@@ -603,12 +603,16 @@ func run(args []string, environment []string) error {
 		return err
 	}
 
-	if *suite != executionTraceLocalSuite {
+	fixtureDatabase := onlineDatabase
+	localSQLPool := os.Getenv(sqlPoolLocalRun)
+	if localSQLPool != "" {
+		fixtureDatabase = sqlPoolLocalDatabase
+	} else if *suite != executionTraceLocalSuite {
 		commonconfig.LoadEnv()
 	}
 	cfg := config.Load()
-	if cfg.PostgresDB != onlineDatabase {
-		return fmt.Errorf("POSTGRES_DB must be exactly %s", onlineDatabase)
+	if cfg.PostgresDB != fixtureDatabase {
+		return fmt.Errorf("POSTGRES_DB must be exactly %s", fixtureDatabase)
 	}
 	db, err := gorm.Open(postgres.Open(cfg.PostgreSQLDSN()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -620,8 +624,13 @@ func run(args []string, environment []string) error {
 	if err := db.Raw("SELECT current_database()").Scan(&database).Error; err != nil {
 		return fmt.Errorf("resolve current database: %w", err)
 	}
-	if database != onlineDatabase {
-		return fmt.Errorf("connected database must be exactly %s", onlineDatabase)
+	if database != fixtureDatabase {
+		return fmt.Errorf("connected database must be exactly %s", fixtureDatabase)
+	}
+	if localSQLPool != "" {
+		if err := requireSQLPoolLocalDatabase(db, localSQLPool); err != nil {
+			return err
+		}
 	}
 	if *suite == executionTraceLocalSuite {
 		if err := requireExecutionTraceLocalDatabase(db, environment); err != nil {
@@ -1316,6 +1325,9 @@ func validateExternalEnvironment(environment []string, output, suite string) err
 		if found {
 			values[key] = value
 		}
+	}
+	if values[sqlPoolLocalRun] != "" {
+		return validateSQLPoolLocalEnvironment(values, suite, output)
 	}
 	profileCount := 0
 	for _, key := range []string{"ADDP_ONLINE_HOSTED", "ADDP_ONLINE_OWNER_MANAGED"} {

@@ -426,9 +426,8 @@ async function managerTimeout(page, sample, phase, observeAtResponse) {
   return proof
 }
 
-async function saturationProbe(page, operatorPage, sample, operator, consumer, credentials) {
+async function saturationProbe(page, sample, consumer, credentials, configuration) {
   const engine = sample.engine_type
-  const configuration = await saveChange(operatorPage, sample, operator, 'saturation', credentials)
   const managerPage = await page.context().newPage()
   // Chromium serializes identical GETs while a response is pending in one
   // browser cache. The same user signs in separately so each isolated cache
@@ -527,7 +526,10 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
   }
 }
 
-test('System pool edit replaces physical sessions in Manager and Develop for both engines', async ({ browser, page }) => {
+const localRun = process.env.ADDP_SQL_POOL_LOCAL_RUN_ID
+
+test(localRun ? 'Local MySQL pool timeout and recovery' :
+  'System pool edit replaces physical sessions in Manager and Develop for both engines', async ({ browser, page }) => {
   test.setTimeout(810_000)
   const expected = JSON.parse(readFileSync(process.env.ADDP_ONLINE_POOL_EXPECTATIONS, 'utf8'))
   const operatorContext = await browser.newContext()
@@ -553,6 +555,32 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
   const cases = []
   let consumer
   try {
+    if (localRun) {
+      expect(expected.run_id).toBe(localRun)
+      expect(expected.cases).toHaveLength(1)
+      const [sample] = expected.cases
+      expect(sample.engine_type).toBe('mysql')
+      const settings = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${operator}` } })
+      try {
+        const engine = await json(await settings.get(`/api/v1/system/engines/${sample.engine_id}`), 'Local MySQL pool settings')
+        expect(engine.connection_info).toMatchObject({
+          host: `${localRun}-mysql`, database: 'pool_fixture', user: readers[1], [openKey]: 1, [idleKey]: 1,
+        })
+      } finally {
+        await settings.dispose()
+      }
+      const token = await managerPreview(page, sample, () =>
+        login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME, process.env.ADDP_ONLINE_TEST_USER_PASSWORD, previewRoute(sample)))
+      consumer = await checkIdentity(token, expected.tenant_id, expected.permissions)
+      expect(consumer.principalID).toBe(expected.principal_id)
+      const credentials = JSON.parse(readFileSync(resolve(process.env.ADDP_ONLINE_POOL_PRIVATE, 'mysql-credentials.json'), 'utf8'))
+      const saturation = await saturationProbe(page, sample, consumer, credentials, null)
+      writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
+        schema_version: 'addp.sql-pool-console-local/v1', run_id: localRun, consumer_principal_id: consumer.principalID,
+        operator_principal_id: configIdentity.principalID, cases: [{ ...sample, saturation }],
+      }))
+      return
+    }
     for (const sample of expected.cases) {
       const engine = sample.engine_type
       const credentials = JSON.parse(readFileSync(resolve(process.env.ADDP_ONLINE_POOL_PRIVATE, `${engine}-credentials.json`), 'utf8'))
@@ -605,8 +633,10 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
         credentialRecovery(page, operatorPage, sample, operator, consumer, credentials, changes.at(-1)))
       const concurrency = await test.step(`${engine} active query during System pool update`, () =>
         concurrentUpdate(page, operatorPage, sample, operator, consumer, credentials))
-      const saturation = await test.step(`${engine} pool wait and native SQL timeout`, () =>
-        saturationProbe(page, operatorPage, sample, operator, consumer, credentials))
+      const saturation = await test.step(`${engine} pool wait and native SQL timeout`, async () => {
+        const configuration = await saveChange(operatorPage, sample, operator, 'saturation', credentials)
+        return saturationProbe(page, sample, consumer, credentials, configuration)
+      })
       cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery, concurrency, saturation })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({

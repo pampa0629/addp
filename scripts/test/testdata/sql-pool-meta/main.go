@@ -1,4 +1,4 @@
-// Hosted-only timing fixture. Control files live in the suite's private directory.
+// Acceptance timing fixture. Control files live in the suite's private directory.
 package main
 
 import (
@@ -64,21 +64,28 @@ func forwardMeta(upstream *url.URL, dir string) http.Handler {
 }
 
 func main() {
+	if len(os.Args) != 2 && (len(os.Args) != 3 || os.Args[2] != "--compose") {
+		log.Fatal("usage: sql-pool-meta <private-directory> [--compose]")
+	}
 	dir := os.Args[1]
-	// The destination is fixed. Clients cannot select a host or control the gate over HTTP.
-	upstream, _ := url.Parse("http://127.0.0.1:8082")
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	address, destination := "127.0.0.1:0", "http://127.0.0.1:8082"
+	if len(os.Args) == 3 {
+		// The local runner uses a private Compose network and publishes no sidecar port.
+		address, destination = "0.0.0.0:8082", "http://meta-backend:8082"
+	}
+	upstream, _ := url.Parse(destination)
+	listener, err := net.Listen("tcp4", address)
 	if err != nil {
-		log.Fatal("cannot bind Hosted Meta fixture")
+		log.Fatal("cannot bind Meta fixture")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "url.tmp"), []byte("http://"+listener.Addr().String()), 0600); err != nil {
-		log.Fatal("cannot write Hosted Meta fixture URL")
+		log.Fatal("cannot write Meta fixture URL")
 	}
 	if err := os.Rename(filepath.Join(dir, "url.tmp"), filepath.Join(dir, "url")); err != nil {
-		log.Fatal("cannot publish Hosted Meta fixture URL")
+		log.Fatal("cannot publish Meta fixture URL")
 	}
 	server := http.Server{Handler: forwardMeta(upstream, dir), ReadHeaderTimeout: 5 * time.Second, ErrorLog: log.New(io.Discard, "", 0)}
 	if err := server.Serve(listener); err != nil {
-		log.Fatal("Hosted Meta fixture stopped")
+		log.Fatal("Meta fixture stopped")
 	}
 }

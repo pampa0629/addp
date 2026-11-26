@@ -7311,8 +7311,12 @@ def validate_sql_pool_profile(repository: Path, registry: dict[str, object]) -> 
     if (job is None or any(fragment not in job[1] for fragment in required)
             or f"&& inputs.suite != '{suite}'" not in workflow or registry[suite].nightly):
         raise RegistrationError("SQL pool requires its fixed-source manual Hosted job")
-    if not make_target_commands((repository / "Makefile").read_text(), "test-sql-pool-online-runner"):
+    make = (repository / "Makefile").read_text()
+    runner = make_target_commands(make, "test-sql-pool-online-runner")
+    if not runner:
         raise RegistrationError("SQL pool deterministic gate is missing")
+    if "sql-pool-local-gate_test.py" not in runner or not make_target_commands(make, "test-sql-pool-local"):
+        raise RegistrationError("SQL pool local browser acceptance or its deterministic gate is missing")
     lifecycle = (repository / "scripts/test/online-hosted-sql-pool-gate.sh").read_text()
     if not all(part in lifecycle for part in (
             "targets=(-system -security -meta -manager -develop)", 'hosted_prepare_native_targets "${targets[@]}"',

@@ -1305,12 +1305,16 @@ test-ontology-online-runner: ## 核验本体发布与受保护单记录 Agent �
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/ontology-agent-protection-online_test.py scripts/test/online-hosted-ontology-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
-.PHONY: test-sql-pool-online-runner
+.PHONY: test-sql-pool-local test-sql-pool-online-runner
+test-sql-pool-local: check-node-runtime ## 在本机隔离验收 MySQL 页面超时与恢复
+	@python3 scripts/test/sql-pool-local-gate.py --commit "$(or $(SQL_POOL_LOCAL_COMMIT),HEAD)"
+
 test-sql-pool-online-runner: check-node-runtime ## 验证 PostgreSQL 与 MySQL 连接池页面验收的证据约束
 	@go test scripts/test/testdata/sql-pool-meta/main.go scripts/test/testdata/sql-pool-meta/main_test.go
 	@bash -n scripts/test/online-hosted-sql-pool-gate.sh
 	@cd console/frontend && npm exec -- playwright test e2e/online/sql-pool-consumer-flow.spec.js e2e/online/native-preview-authorization.spec.js --config=playwright.online.config.js --list
 	@python3 -m unittest scripts/test/sql-pool-consumer-flow-online_test.py
+	@python3 -m unittest scripts/test/sql-pool-local-gate_test.py
 
 .PHONY: test-workflow-runtime-health-online-runner
 test-workflow-runtime-health-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证三组原生 Runtime 健康故障的隔离、恢复与标准登记
