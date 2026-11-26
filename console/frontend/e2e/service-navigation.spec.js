@@ -198,7 +198,7 @@ test('catalog follows the graph list pagination and distinguishes a failed sourc
 test('tile edit loads the current service and only updates its editable metadata', async ({ page }) => {
   const tile = {
     id: 64, title: 'Original tiles', service_name: 'example_tiles', description: 'Example',
-    keywords: ['one', 'two'], public_access: true, layers: [], protocols: {}, status: 'active'
+    keywords: ['one', 'two'], public_access: true, layers: [], protocols: {}, status: 'error'
   }
   const writes = []
   await page.route('**/api/v1/service/tile/64', async route => {
@@ -223,6 +223,69 @@ test('tile edit loads the current service and only updates its editable metadata
   await expect(page).toHaveURL(`${standaloneURL}#/tile/64`)
   await expect(page.getByRole('heading', { name: 'Updated tiles' })).toBeVisible()
   expect(writes).toEqual(Array(2).fill({ title: 'Updated tiles', description: 'Example', keywords: ['one', 'two'], public_access: true }))
+})
+
+test('tile edit persists publication switches independently and retains protocol settings', async ({ page }) => {
+  const protocols = {
+    xyz: { enabled: true, formats: ['mvt'] },
+    ogc_tiles: { enabled: false, version: '1.0' },
+    tms: { enabled: false }
+  }
+  const tile = {
+    id: 64, title: 'Roads', service_name: 'roads', keywords: [], public_access: true,
+    layers: [], protocols, status: 'active'
+  }
+  const writes = []
+  let refuseFirstSave = true
+  await page.route('**/api/v1/service/tile/64', route => {
+    if (route.request().method() === 'PUT') {
+      const fields = route.request().postDataJSON()
+      writes.push(fields)
+      if (refuseFirstSave) {
+        refuseFirstSave = false
+        return route.fulfill({ status: 503, json: { error: 'fixture unavailable' } })
+      }
+      Object.assign(tile, fields, { protocols: { ...tile.protocols, ...fields.protocols } })
+    }
+    return route.fulfill({ json: tile })
+  })
+  const edit = page.getByRole('button', { name: '编辑', exact: true })
+  const save = page.getByRole('button', { name: '保存', exact: true })
+  const active = page.getByRole('switch', { name: '启用瓦片服务' })
+  const xyz = page.getByRole('checkbox', { name: 'XYZ 瓦片协议' })
+  const ogc = page.getByRole('checkbox', { name: 'OGC Tiles API' })
+  await page.goto(`${standaloneURL}#/tile/64`)
+  await edit.click()
+  await expect(active).toBeChecked()
+  await expect(xyz).toBeChecked()
+  await expect(ogc).not.toBeChecked()
+  await page.locator('.el-switch').filter({ has: active }).click()
+  await page.getByText('OGC Tiles API', { exact: true }).click()
+  await save.click()
+  await expect(page.locator('.el-message--error')).toContainText('fixture unavailable')
+  await expect(active).not.toBeChecked()
+  await expect(ogc).toBeChecked()
+  await save.click()
+  await edit.click()
+  await expect(active).not.toBeChecked()
+  await expect(ogc).toBeChecked()
+  await page.locator('.el-switch').filter({ has: active }).click()
+  await page.getByText('XYZ 瓦片协议', { exact: true }).click()
+  await save.click()
+  await edit.click()
+  await expect(active).toBeChecked()
+  await expect(xyz).not.toBeChecked()
+  await page.getByText('XYZ 瓦片协议', { exact: true }).click()
+  await page.getByText('OGC Tiles API', { exact: true }).click()
+  await save.click()
+  await expect(edit).toBeVisible()
+  expect(writes[0]).toEqual(writes[1])
+  expect(writes.map(w => [w.status, w.protocols])).toEqual([
+    ['inactive', { ogc_tiles: { enabled: true, version: '1.0' } }],
+    ['inactive', { ogc_tiles: { enabled: true, version: '1.0' } }],
+    ['active', { xyz: { enabled: false, formats: ['mvt'] } }],
+    [undefined, { xyz: { enabled: true, formats: ['mvt'] }, ogc_tiles: { enabled: false, version: '1.0' } }]
+  ])
 })
 
 test('tile preview requests OGC tiles when XYZ is off and skips disabled layers', async ({ page }) => {

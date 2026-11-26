@@ -182,12 +182,16 @@
           <el-input v-model="form.keywords" :placeholder="$t('service.tile.keywordsPlaceholder')" />
         </el-form-item>
 
-        <el-divider v-if="!isEditing" content-position="left">{{ $t('service.tile.protocolConfigTitle') }}</el-divider>
-        <el-form-item v-if="!isEditing">
+        <el-form-item v-if="isEditing" :label="$t('service.tile.serviceEnabled')">
+          <el-switch v-model="serviceEnabled" :aria-label="$t('service.tile.serviceEnabled')" />
+        </el-form-item>
+
+        <el-divider content-position="left">{{ $t('service.tile.protocolConfigTitle') }}</el-divider>
+        <el-form-item>
           <div class="protocols-config">
             <el-checkbox v-model="protocols.xyz.enabled">{{ $t('service.tile.xyzProtocol') }}</el-checkbox>
             <el-checkbox v-model="protocols.ogc_tiles.enabled">OGC Tiles API</el-checkbox>
-            <el-checkbox v-model="protocols.tms.enabled">TMS</el-checkbox>
+            <el-checkbox v-if="!isEditing" v-model="protocols.tms.enabled">TMS</el-checkbox>
           </div>
         </el-form-item>
 
@@ -301,6 +305,8 @@ export default {
       loadError: '',
       identity: 0,
       layerType: 'dynamic',
+      loadedService: null,
+      serviceEnabled: false,
       form: {
         serviceName: '',
         title: '',
@@ -354,6 +360,11 @@ export default {
         try {
           const service = await tileServiceAPI.getService(id)
           if (identity !== this.identity) return
+          this.loadedService = service
+          this.serviceEnabled = service.status === 'active'
+          for (const name of ['xyz', 'ogc_tiles']) {
+            this.protocols[name].enabled = service.protocols?.[name]?.enabled === true
+          }
           Object.assign(this.form, {
             serviceName: service.service_name,
             title: service.title,
@@ -503,6 +514,17 @@ export default {
           public_access: this.form.publicAccess
         }
         if (id) {
+          if (this.serviceEnabled !== (this.loadedService.status === 'active')) {
+            fields.status = this.serviceEnabled ? 'active' : 'inactive'
+          }
+          for (const name of ['xyz', 'ogc_tiles']) {
+            const saved = this.loadedService.protocols?.[name]
+            const enabled = this.protocols[name].enabled
+            if (enabled !== (saved?.enabled === true)) {
+              fields.protocols ??= {}
+              fields.protocols[name] = { ...saved, enabled }
+            }
+          }
           await tileServiceAPI.updateService(id, fields)
           if (identity === this.identity) {
             await navigateServiceRoute(this.$router, `/tile/${id}`, { history: 'replace' })
@@ -582,6 +604,8 @@ export default {
 
     createAnother() {
       // 重置表单
+      this.loadedService = null
+      this.serviceEnabled = false
       this.currentStep = 0
       this.createdService = null
       this.form = {

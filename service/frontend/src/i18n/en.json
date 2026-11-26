@@ -718,6 +718,7 @@
       "keywordsLabel": "Keywords",
       "keywordsPlaceholder": "Enter keywords separated by commas",
       "protocolConfigTitle": "Protocol Configuration",
+      "serviceEnabled": "Enable tile service",
       "xyzProtocol": "XYZ Tile Protocol",
       "accessControlTitle": "Access Control",
       "publicAccessLabel": "Public access (no authentication required)",

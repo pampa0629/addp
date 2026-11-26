@@ -718,6 +718,7 @@
       "keywordsLabel": "关键词",
       "keywordsPlaceholder": "输入关键词，用逗号分隔",
       "protocolConfigTitle": "协议配置",
+      "serviceEnabled": "启用瓦片服务",
       "xyzProtocol": "XYZ 瓦片协议",
       "accessControlTitle": "访问控制",
       "publicAccessLabel": "公开访问（无需认证）",
