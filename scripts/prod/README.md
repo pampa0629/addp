@@ -63,6 +63,10 @@ Runtime 选择与观测能力一并冻结到发布清单。所选服务的镜像
 
 ---
 
+### MySQL 限定版 Hosted 验收
+
+在 GitHub Actions 手工运行 Online MySQL platform。该模式从当次固定提交运行 `scripts/prod/deploy.sh`，使用独占 MySQL 8、Redis、MinIO 和 Registry。通过限定版公共地址验证普通租户用户读取资料、修改密码、旧会话失效及新凭据回读。验收记录数据库版本、运行身份的 DDL 拒绝和容器、网络、卷的清理结果。
+
 ## stop.sh
 
 **用途**: 停止平台与内置 Runtime 容器，保留基础设施、Business 服务及全部数据卷

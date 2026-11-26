@@ -24,6 +24,19 @@ REFERENCE = "registry.invalid/addp-fixture@sha256:" + "a" * 64
 IMAGE_ID = "sha256:" + "c" * 64
 
 
+class HostedMySQLReleaseTest(unittest.TestCase):
+    def test_manual_hosted_gate_shell_and_python_syntax(self):
+        entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
+        subprocess.run(["bash", "-n", entry], check=True)
+        parts = entry.read_text().split("<<'PY'\n")
+        self.assertEqual(len(parts), 3)
+        for part in parts[1:]:
+            compile(part.split("\nPY\n", 1)[0], str(entry), "exec")
+        workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
+        self.assertIn("\non:\n  workflow_dispatch:\n\npermissions:\n  contents: read\n", workflow)
+        self.assertIn(f"run: bash {entry.relative_to(ROOT)}", workflow)
+
+
 class ReleaseVerificationTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
