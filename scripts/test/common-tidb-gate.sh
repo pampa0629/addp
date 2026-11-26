@@ -107,4 +107,18 @@ docker run --rm --network "${COMPOSE_PROJECT}_default" \
     source_client -e 'SELECT a.id FROM tidb_scope.node_future a JOIN tidb_outside.node_future b ON a.id=b.id'
     [ "$(count_statements)" = $'4\t1' ]
     echo "TiDB fixture: both namespaces readable; four business SELECTs and one zero-row identity probe verified"
+
+    # Deep scans may read table statistics. Run them after the statement oracle.
+    tidb_mysql <<'SQL'
+CREATE DATABASE tidb_empty;
+GRANT SELECT ON tidb_empty.* TO 'tidb_consumer'@'%';
+CREATE DATABASE tidb_hidden;
+CREATE TABLE tidb_hidden.ungranted (id BIGINT);
+CREATE TABLE tidb_fixture.ungranted (id BIGINT);
+SQL
+    (
+        cd "$ROOT_DIR/meta/backend"
+        ADDP_TEST_TIDB_META_FIXTURE="$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" \
+            go test ./internal/scanadapter -run '^TestIntegrationTiDBAuthorizationFacts$' -count=1 -v
+    )
 )

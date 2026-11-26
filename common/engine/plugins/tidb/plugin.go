@@ -3,6 +3,8 @@ package tidb
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/addp/common/datatype"
@@ -197,7 +199,37 @@ func (p *Plugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig
 }
 
 func (p *Plugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
-	return tidbCatalogFactsDialect.ListNamespaces(ctx, db, root, plugin.EngineCatalogTermDatabase)
+	// TiDB can expose tables to a table-level grantee while omitting their
+	// database from SCHEMATA. Keep visible empty databases as well.
+	systemSchemas := slices.Sorted(maps.Keys(tidbCatalogFactsDialect.SystemSchemas))
+	var rows []struct {
+		Name      string
+		LeafCount int
+	}
+	err := db.WithContext(ctx).Raw(`
+		SELECT name, SUM(leaf_count) AS leaf_count
+		FROM (
+			SELECT schema_name AS name, 0 AS leaf_count
+			FROM information_schema.schemata
+			WHERE schema_name NOT IN ?
+			UNION ALL
+			SELECT table_schema AS name,
+			       COUNT(CASE WHEN table_type = 'BASE TABLE' THEN 1 END) AS leaf_count
+			FROM information_schema.tables
+			WHERE table_schema NOT IN ? AND table_type IN ('BASE TABLE', 'VIEW')
+			GROUP BY table_schema
+		) AS visible_namespaces
+		GROUP BY name
+		ORDER BY name
+	`, systemSchemas, systemSchemas).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list TiDB databases: %w", err)
+	}
+	entries := make([]plugin.EngineCatalogEntry, 0, len(rows))
+	for _, row := range rows {
+		entries = append(entries, plugin.TabularNamespaceCatalogEntry(root, plugin.EngineCatalogTermDatabase, row.Name, row.LeafCount))
+	}
+	return entries, nil
 }
 
 func (p *Plugin) listTables(ctx context.Context, db *gorm.DB, database string) ([]datatype.TableInfo, error) {

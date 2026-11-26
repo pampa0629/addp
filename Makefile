@@ -506,7 +506,7 @@ test-model-mysql: ## 使用一次性 MySQL database 验证数据库无关指标�
 test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provider 契约
 	@bash scripts/test/common-oceanbase-gate.sh
 
-test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指标及 Service 查询契约
+test-common-tidb: ## 使用一次性 TiDB 验证 Provider、Meta 授权事实、Model 指标及 Service 查询契约
 	@bash scripts/test/common-tidb-gate.sh
 
 .PHONY: test-common-nfs-integration
