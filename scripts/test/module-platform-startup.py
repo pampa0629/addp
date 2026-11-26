@@ -30,10 +30,15 @@ if module == "monitor":
     env["GATEWAY_URL"] = "http://127.0.0.1:1"
 env.update(SYSTEM_URL="http://127.0.0.1:1", REDIS_HOST="127.0.0.1", REDIS_PORT="1", GIN_MODE="release")
 
-# Database rejection probes never serve a request. A running developer
-# service must not turn the expected database rejection into a port failure.
+def allocate_loopback_port():
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        return reservation.getsockname()[1]
+
+
+# Some modules validate the configured port before checking the database.
 if sys.argv[2] in ("missing-credentials", "missing", "outdated"):
-    env[module.upper() + "_BACKEND_PORT"] = "0"
+    env[module.upper() + "_BACKEND_PORT"] = str(allocate_loopback_port())
 
 if sys.argv[2] == "missing-credentials":
     # A development checkout may have credentials in its root .env. A service
@@ -87,9 +92,7 @@ def check_http(port):
 
 @contextmanager
 def runtime(label):
-    with socket.socket() as reservation:
-        reservation.bind(("127.0.0.1", 0))
-        port = reservation.getsockname()[1]
+    port = allocate_loopback_port()
     logfile = binary.parent / f"{module}-{label}.log"
     with logfile.open("wb") as log:
         process = subprocess.Popen([binary], cwd=binary.parent, env={
