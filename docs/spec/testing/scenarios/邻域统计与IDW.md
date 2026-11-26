@@ -163,7 +163,7 @@
 
 30 类双语 60 次提交分为 Develop 入口 10 次和 focal 节点 50 次，共1251全检；18COG／源／冻结预期及SHA归档，六仿射CRS／Float64NaN／布局及实际nearest核。数值极限、读块大小／注入仅Native。
 
-**Hosted 首跑失败。** `c5117bb0a` 的合法同路径 NFS 根目录命中 Runtime 临时目录残留检查，在首个业务用例前停止，0 保存链、0 双语拒绝。5 笔授权均已撤销并复核不可见，基础设施零残留。夹具只排除当前已验证的 NFS 根目录，仍拒绝其他匹配的残留，并保留 worker 原始错误。修复的本地 Native 76 项及标准 Runner 通过，正式复验待协调。 [首跑 Job](https://github.com/pampa0629/addp/actions/runs/45838196659/job/139972579555) · [原始归档](https://github.com/pampa0629/addp/actions/runs/45838196659/artifacts/15131262706)
+**Hosted 首跑失败。** `c5117bb0a` 的合法同路径 NFS 根目录命中 Runtime 临时目录残留检查，在首个业务用例前停止，0 保存链、0 双语拒绝。5 笔授权均已撤销并复核不可见，基础设施零残留。夹具只排除当前已验证的 NFS 根目录，仍拒绝其他匹配的残留，并保留 worker 原始错误。方窗夹具修复 `9ea83d4e7` 的本地 Native 76 项及标准 Runner 通过，正式复验待协调。 [夹具修复提交](https://github.com/pampa0629/addp/commit/9ea83d4e7c7387cb12949f56e346ca9c05d24337) · [首跑 Job](https://github.com/pampa0629/addp/actions/runs/45838196659/job/139972579555) · [原始归档](https://github.com/pampa0629/addp/actions/runs/45838196659/artifacts/15131262706)
 
 ## 米制圆形邻域统计独立验收
 
