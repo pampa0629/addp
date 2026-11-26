@@ -1041,12 +1041,21 @@ class _FilePublication:
         binding=obj(evidence.get('binding'),'production scan DataItem binding')
         scan_id=evidence.get('scan_execution_id')
         remaining=self.unbound_scans[identifier]
-        if (evidence.get('reference')!=dict(owner='develop',execution_id=identifier,result_id=result_id)
-                or evidence.get('tenant_id')!=str(self.tenant) or evidence.get('status')!='success'
-                or evidence.get('logical_item_state')!='new' or scan_id not in remaining
-                or evidence.get('engine_version')!=self.approved_versions[(identifier,name)]
-                or binding.get('native_target')!=grant['catalog_path']
-                or any(binding.get(key)!=grant[key] for key in ('item_fingerprint','boundary_hash','file_composition'))):
+        expected_binding = {key: grant[key] for key in ('item_fingerprint', 'boundary_hash', 'file_composition')}
+        checks = {
+            'reference': evidence.get('reference') == dict(owner='develop', execution_id=identifier, result_id=result_id),
+            'tenant': evidence.get('tenant_id') == str(self.tenant),
+            'status': evidence.get('status') == 'success',
+            'new_data_item': evidence.get('logical_item_state') == 'new',
+            'automatic_scan': scan_id in remaining,
+            'approved_engine_version': evidence.get('engine_version') == self.approved_versions[(identifier,name)],
+            # The existing Grant verifier already binds the file composition's
+            # only primary container to the exact approved file path.
+            'file_composition_binding': binding == expected_binding,
+        }
+        if not all(checks.values()):
+            self.record(dict(stage='result_basic_binding_rejected', name=name,
+                             mismatched=[key for key, matches in checks.items() if not matches]))
             raise SuiteError('topology produced file, automatic scan and Grant binding differs')
         remaining.remove(scan_id)
         self.record(dict(stage='result_basic_bound_to_grant',name=name,identification=evidence))

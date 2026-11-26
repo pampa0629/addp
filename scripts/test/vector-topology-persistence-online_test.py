@@ -2244,6 +2244,9 @@ class NodesOnlineTest(unittest.TestCase):
             lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.other'),
             lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
             lambda c:setattr(c,'mutate_scan_binding',lambda evidence:evidence.update(scan_execution_id='other')),
+            lambda c:setattr(c,'mutate_scan_binding',lambda evidence:evidence['binding'].update(native_target={})),
+            lambda c:setattr(c,'mutate_scan_binding',lambda evidence:evidence['binding']['file_composition']['refs'][0].update(primary=False)),
+            lambda c:setattr(c,'mutate_scan_binding',lambda evidence:evidence['binding'].update(boundary_hash='0'*64)),
             lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
             lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])))]
         for change in changes:
@@ -2871,8 +2874,7 @@ def run_formal_multifile(environment, consumer, physical, browser):
         index=next(index for _,index,name in approvals if receipt['catalog_path']['segments'][-1]['name']==name)
         evidence=dict(reference=dict(owner='develop',execution_id=identifier,result_id=result_id),tenant_id='2',
             status='success',logical_item_state='new',engine_version='238',scan_execution_id=consumer.pending_scans[identifier][index],
-            binding={**{key:receipt[key] for key in ('item_fingerprint','boundary_hash','file_composition')},
-                     'native_target':receipt['catalog_path']})
+            binding=copy.deepcopy({key:receipt[key] for key in ('item_fingerprint','boundary_hash','file_composition')}))
         if getattr(consumer,'mutate_scan_binding',None):
             consumer.mutate_scan_binding(evidence)
         return SimpleNamespace(payload=evidence)
