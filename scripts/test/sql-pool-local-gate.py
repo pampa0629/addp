@@ -183,12 +183,30 @@ class LocalPool(CORE.Lifecycle):
             reservation.bind(("127.0.0.1", 0))
             public_port = reservation.getsockname()[1]
         self.env = self.defaults(f"http://pool-{self.run_id[-32:]}.localhost:{public_port}")
+        # Share only downloaded Go modules. The snapshot, compiled artifacts,
+        # and writable compilation cache belong to this invocation.
+        self.env["ADDP_BUILD_GOMODCACHE"] = self.execute(["go", "env", "GOMODCACHE"]).strip()
+        docker = shutil.which("docker", path=self.env["PATH"])
+        require(docker, "Docker executable not found")
+        tools = self.private / "tools"
+        tools.mkdir(mode=0o700)
+        wrapper = tools / "docker"
+        wrapper.write_text(
+            "#!/usr/bin/env python3\nimport os, sys\n"
+            f"docker = {docker!r}\n"
+            "args = sys.argv[1:]\n"
+            f"if args[:1] == ['run']: args[1:1] = ['--label', {LABEL + '=' + self.run_id!r}]\n"
+            "os.execv(docker, [docker, *args])\n"
+        )
+        wrapper.chmod(0o700)
+        build_env = {**self.env, "PATH": str(tools) + os.pathsep + self.env["PATH"]}
         self.announce("build_product")
-        self.execute(["make", "build", f"BUILD_ARGS=--arch {architecture} --services " + ",".join(BACKENDS)], timeout=3600)
+        self.execute(["make", "build", f"BUILD_ARGS=--arch {architecture} --services " + ",".join(BACKENDS)],
+                     environment=build_env, timeout=3600)
         names = BACKENDS + FRONTENDS
         self.images = [f"localhost:5001/addp-{name}:{self.run_id}" for name in names]
         self.execute(["make", "build-images", "IMAGE_BUILD_ARGS=--verify --jobs 2 --services " + ",".join(names)
-                      + f" --registry localhost:5001 --tag {self.run_id}"], timeout=4200)
+                      + f" --registry localhost:5001 --tag {self.run_id}"], environment=build_env, timeout=4200)
         images = {key: self.docker("image", "inspect", tag, "--format", "{{.Id}}").strip() for key, tag in zip(names, self.images)}
         self.announce("build_test_tools")
         gate = self.private / "meta"
