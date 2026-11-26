@@ -296,7 +296,7 @@ SPI拒绝矩阵：双角色波段／面积单位／坡度声明、零负面积�
 
 仍无Hosted完整通过：修复／Platform不补认16／36／712业务矩阵或16原COG归档，清理不抵业务失败。本轮不运行新验收。
 
-**坡度与坡向高程单位夹具。** 固定 `b9681afea` 的[共享 Execution Runner](https://github.com/pampa0629/addp/actions/runs/45870104442/job/140083000003)实际运行 `make test-execution-online-ci-runner`，通过 160 项登记、42 项共享准备及隔离身份 Go T1。正交坡度两轮 Hosted 原始失败及坡度、坡向的独立业务矩阵仍分别按原件认定。
+**坡度与坡向高程单位夹具。** 固定 `b9681afea` 的[共享 Execution Runner](https://github.com/pampa0629/addp/actions/runs/45870104442/job/140083000003)实际运行 `make test-execution-online-ci-runner`，通过 160 项登记、42 项共享准备及隔离身份 Go T1。同一提交的[平台一致性](https://github.com/pampa0629/addp/actions/runs/45870104442/job/140083000201)实际运行 `make test-platform-preflight` 和 `make test-platform-checks` 并通过。[Linux Native](https://github.com/pampa0629/addp/actions/runs/45870104442/job/140083000499)在 Ubuntu 24.04／GDAL 3.8.4 实际运行 `make test-geopython-workflow`，22,120 项通过、141 条警告、1890.39 秒，失败、跳过和筛除均为 0。独立 NetCDF 另有 109 项通过。正交坡度两轮 Hosted 原始失败及坡度、坡向的独立业务矩阵仍分别按原件认定。
 
 ## 正交旋转矩形 DEM 坡向独立 Hosted 验收
 
