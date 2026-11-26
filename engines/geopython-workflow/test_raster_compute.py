@@ -18428,7 +18428,8 @@ def test_focal_circle_weighted_exact_bilingual_rejections_before_output(tmp_path
     monkeypatch.setattr(c, '_numeric_output', lambda *a, **kw: pytest.fail('created output before weight admission'))
     inside, outside = 5., math.nextafter(5., 0.)
     cases = [({}, inside), *[({'weights': weights}, inside) for weights in
-             (None, 'matrix', [[1]], [[1]*5 for _ in range(5)], [[1, 1], [1]*3, [1]*3], [[0]*3 for _ in range(3)])],
+             (None, 1, [1, 0, 1], 'matrix', [[1]], [[1]*5 for _ in range(5)],
+              [[1, 1], [1]*3, [1]*3], [[0]*3 for _ in range(3)])],
              ({'weights': [[1]*3 for _ in range(3)]}, outside)]
     for value in (True, '1', None, {}, -1., math.nan, math.inf, 10**1000):
         cases.append(({'weights': [[0, 0, 0], [0, 1, 0], [0, 0, value]]}, inside))
@@ -18438,6 +18439,10 @@ def test_focal_circle_weighted_exact_bilingual_rejections_before_output(tmp_path
                 raster_focal_statistics(raster_load(source_plan(source)), 1, method=method,
                                         window_type='circle_metres', radius_metres=radius, **arguments)
             assert str(caught.value) == c._FOCAL_MESSAGES['circle_weights'][language == 'en']
+        with pytest.raises(ValueError, match='^band must be a valid one-based index$'):
+            raster_focal_statistics(raster_load(source_plan(source)), 1.5, method=method,
+                                    window_type='circle_metres', radius_metres=inside,
+                                    weights=[[1, 1, 1], [1, 1, 1], [1, 1, 1]])
     assert source.read_bytes() == before
 
 
