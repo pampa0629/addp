@@ -309,7 +309,7 @@ func (s *NotebookSessionAuthorizationService) DeriveExecutionEngineAccess(
 			ExpiresAt:                            expiresAt, CreatedAt: now,
 		}
 		if err := tx.CreateExecutionAuthorization(ctx, authorization, []ExecutionAuthorizationEngineAccess{{
-			EngineID: input.EngineID, Effects: pq.StringArray{"read"},
+			EngineID: input.EngineID, Effects: []string{"read"},
 		}}); err != nil {
 			return err
 		}

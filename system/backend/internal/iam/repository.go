@@ -496,6 +496,16 @@ func (r *Repository) CreateExecutionAuthorization(
 	}
 	err := r.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
 		if createErr := db.Create(authorization).Error; createErr != nil {
+			if db.Dialector.Name() == "mysql" {
+				var mysqlError *mysqldriver.MySQLError
+				if errors.Is(createErr, gorm.ErrDuplicatedKey) ||
+					(errors.As(createErr, &mysqlError) && mysqlError.Number == 1062) {
+					return ErrExecutionAuthorizationConflict
+				}
+				if errors.As(createErr, &mysqlError) && mysqlError.Number == 3819 {
+					return fmt.Errorf("%w: invalid execution authorization boundary", commonapi.ErrBadRequest)
+				}
+			}
 			var postgresError *pgconn.PgError
 			if errors.As(createErr, &postgresError) && postgresError.Code == "23505" &&
 				(postgresError.ConstraintName == "execution_authorizations_audience_execution_id_key" ||

@@ -86,6 +86,7 @@ func installMySQL(target string, output io.Writer) error {
 		migration.MigrateMySQLAccessTargetLocks,
 		migration.MigrateMySQLModuleRegistry,
 		migration.MigrateMySQLEngineCatalog,
+		migration.MigrateMySQLExecutionAuthorization,
 		migration.MigrateMySQLSourceGrantCatalog,
 		migration.MigrateMySQLEngineDelegations,
 		migration.MigrateMySQLCleanupRequests,

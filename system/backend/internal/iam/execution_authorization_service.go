@@ -11,8 +11,8 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 var serviceDefinitionVersionPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -747,7 +747,7 @@ func mapExecutionEffects(values map[string]struct{}) []string {
 func executionAuthorizationAccessRows(accesses []ExecutionEngineAccessScope) []ExecutionAuthorizationEngineAccess {
 	rows := make([]ExecutionAuthorizationEngineAccess, 0, len(accesses))
 	for _, access := range accesses {
-		rows = append(rows, ExecutionAuthorizationEngineAccess{EngineID: access.EngineID, Effects: pq.StringArray(append([]string(nil), access.Effects...))})
+		rows = append(rows, ExecutionAuthorizationEngineAccess{EngineID: access.EngineID, Effects: append(dbtypes.StringArray(nil), access.Effects...)})
 	}
 	return rows
 }

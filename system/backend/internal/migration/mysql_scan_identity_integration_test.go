@@ -4,17 +4,21 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/common/infra/database"
 	platformmysql "github.com/addp/common/infra/database/mysql"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -148,6 +152,9 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 		t.Fatal(err)
 	}
 	assignScanMember(t, repo, tenant.ID, admin.PrincipalID, member.PrincipalID)
+	t.Run("ExecutionAuthorization", func(t *testing.T) {
+		testMySQLExecutionAuthorization(t, db, tenant.ID, admin.PrincipalID)
+	})
 	facts, err := json.Marshal(map[string]int64{"tenant_id": tenant.ID, "principal_id": member.PrincipalID})
 	if err != nil {
 		t.Fatal(err)
@@ -155,4 +162,168 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 	if err := os.WriteFile(path, facts, 0600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testMySQLExecutionAuthorization(t *testing.T, db *gorm.DB, tenantID, adminID int64) {
+	t.Helper()
+	ctx := t.Context()
+	repo := iam.NewRepository(db)
+	user, err := iam.NewIdentityService(repo, nil).CreateLocalUser(ctx, iam.CreateLocalUserInput{
+		Username: "quality-worker-fixture", DisplayName: "Quality operator", Password: rand.Text(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := iam.NewTenantMembershipService(repo, nil).EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
+		TenantID: tenantID, PrincipalID: user.PrincipalID, SourceType: iam.TenantMembershipSourceManual, CreatedByPrincipalID: &adminID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := repo.GetActiveBuiltinRoleByKey(ctx, "tenant.governance_manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := iam.NewTenantRoleService(repo, nil).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+		TenantID: tenantID, MembershipID: member.Membership.ID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "execution authorization gate",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := iam.NewTokenFamilyService(repo, iam.BrowserSessionConfig{ResourceTicketOwners: models.BrowserResourceAccessOwners}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := iam.NewContextSelectionService(repo, tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now, err := repo.CurrentDatabaseTime(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := selection.BeginContextSelection(ctx, iam.BeginContextSelectionInput{
+		PrincipalID: user.PrincipalID,
+		Authentication: iam.SessionAuthentication{
+			Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: now,
+		},
+	})
+	if err != nil || session.Session == nil {
+		t.Fatalf("prepare tenant session: %v", err)
+	}
+
+	var engineIDs []int64
+	for _, name := range []string{"execution-auth-source-a", "execution-auth-source-b"} {
+		const insert = "INSERT INTO engines (tenant_id,name,engine_type,connection_info,identity_key,connection_status) VALUES (?,?,'postgresql','{}',JSON_OBJECT('host',?), 'online')"
+		if err := db.Exec(insert, tenantID, name, name).Error; err != nil {
+			t.Fatal(err)
+		}
+		var engineID int64
+		if err := db.Raw("SELECT id FROM engines WHERE tenant_id=? AND name=?", tenantID, name).Row().Scan(&engineID); err != nil {
+			t.Fatal(err)
+		}
+		engineIDs = append(engineIDs, engineID)
+	}
+	var qualityPrincipalID int64
+	if err := db.Raw("SELECT id FROM service_principals WHERE name='addp-quality'").Row().Scan(&qualityPrincipalID); err != nil {
+		t.Fatal(err)
+	}
+	service, err := iam.NewExecutionAuthorizationService(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkFacts := func(executionID uuid.UUID, wantAuthorizations, wantAccesses, wantAudits int) {
+		t.Helper()
+		var authorizations, accesses, audits int
+		if err := db.Raw(`SELECT
+			(SELECT COUNT(*) FROM execution_authorizations WHERE execution_id=? AND sealed_at IS NOT NULL),
+			(SELECT COUNT(*) FROM execution_authorization_engine_accesses a JOIN execution_authorizations p ON p.id=a.authorization_id WHERE p.execution_id=?),
+			(SELECT COUNT(*) FROM audit_logs WHERE event_name='iam.execution_authorization.issued' AND JSON_UNQUOTE(JSON_EXTRACT(details,'$.execution_id'))=?)`,
+			executionID, executionID, executionID.String()).Row().Scan(&authorizations, &accesses, &audits); err != nil {
+			t.Fatal(err)
+		}
+		if authorizations != wantAuthorizations || accesses != wantAccesses || audits != wantAudits {
+			t.Fatalf("execution %s: sealed=%d accesses=%d issue audits=%d, want %d/%d/%d", executionID, authorizations, accesses, audits, wantAuthorizations, wantAccesses, wantAudits)
+		}
+	}
+	input := iam.IssueExecutionAuthorizationInput{
+		SourceAccessToken: session.Session.AccessToken, Audience: "quality", ExecutionID: uuid.New(),
+		Accesses: []iam.ExecutionEngineAccessScope{
+			{EngineID: engineIDs[0], Effects: []string{"read"}}, {EngineID: engineIDs[1], Effects: []string{"read"}},
+		},
+	}
+	issued, err := service.Issue(ctx, input)
+	if err != nil {
+		t.Fatalf("issue engine-scoped authorization: %v", err)
+	}
+	checkFacts(input.ExecutionID, 1, 2, 1)
+	if _, err := service.Issue(ctx, input); !errors.Is(err, iam.ErrExecutionAuthorizationConflict) {
+		t.Fatalf("duplicate issue error = %v, want conflict", err)
+	}
+	checkFacts(input.ExecutionID, 1, 2, 1)
+
+	invalid := input
+	invalid.ExecutionID = uuid.New()
+	invalid.Accesses = []iam.ExecutionEngineAccessScope{
+		input.Accesses[0], {EngineID: 1 << 60, Effects: []string{"read"}},
+	}
+	if _, err := service.Issue(ctx, invalid); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("issue with missing second engine = %v, want bad request", err)
+	}
+	checkFacts(invalid.ExecutionID, 0, 0, 0)
+	var unsealed int
+	if err := db.Raw("SELECT COUNT(*) FROM execution_authorizations WHERE execution_id=?", invalid.ExecutionID).Row().Scan(&unsealed); err != nil || unsealed != 0 {
+		t.Fatalf("failed issue left an authorization: count=%d err=%v", unsealed, err)
+	}
+	t.Log("issue sealed both access rows and wrote one audit; duplicate conflicted; invalid second access rolled the whole transaction back")
+
+	principalType, contextType := iam.PrincipalTypeServicePrincipal, iam.ContextTypeTenant
+	consume := iam.AuthorizeExecutionEngineAccessInput{
+		AuthorizationID: issued.ID, ExecutionID: issued.ExecutionID, EngineID: engineIDs[0],
+		ServicePrincipalID: qualityPrincipalID, ServiceClientID: "addp-quality", TenantID: tenantID,
+		RequiredEffects: []string{"read"},
+		Audit:           iam.AuditMetadata{PrincipalID: &qualityPrincipalID, PrincipalType: &principalType, ContextType: &contextType, TenantID: &tenantID},
+	}
+	authorized, err := service.AuthorizeEngineAccess(ctx, consume)
+	if err != nil || authorized.EngineID != engineIDs[0] {
+		t.Fatalf("authorization could not be consumed: %v", err)
+	}
+	if err := db.Exec("UPDATE execution_authorizations SET revoked_at=NOW(6), revoked_reason='installation gate' WHERE id=?", issued.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AuthorizeEngineAccess(ctx, consume); !errors.Is(err, iam.ErrExecutionAuthorizationUnavailable) {
+		t.Fatalf("revoked authorization error = %v, want unavailable", err)
+	}
+	if err := db.Exec("UPDATE execution_authorizations SET revoked_at=NULL, revoked_reason=NULL WHERE id=?", issued.ID).Error; err == nil ||
+		!strings.Contains(err.Error(), "execution authorization revocation is immutable") {
+		t.Fatalf("revocation reset error = %v", err)
+	}
+
+	input.ExecutionID, input.ExpiresIn = uuid.New(), time.Second
+	expiring, err := service.Issue(ctx, input)
+	if err != nil {
+		t.Fatalf("issue expiring authorization: %v", err)
+	}
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		now, err := repo.CurrentDatabaseTime(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !now.Before(expiring.ExpiresAt) {
+			break
+		}
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("authorization did not expire against the MySQL clock")
+		}
+	}
+	consume.AuthorizationID, consume.ExecutionID = expiring.ID, expiring.ExecutionID
+	if _, err := service.AuthorizeEngineAccess(ctx, consume); !errors.Is(err, iam.ErrExecutionAuthorizationUnavailable) {
+		t.Fatalf("expired authorization error = %v, want unavailable", err)
+	}
+	t.Log("active authorization accepted; revoked and naturally expired authorizations rejected")
 }

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -658,9 +659,9 @@ type ExecutionAuthorization struct {
 }
 
 type ExecutionAuthorizationEngineAccess struct {
-	AuthorizationID int64          `gorm:"column:authorization_id;primaryKey"`
-	EngineID        int64          `gorm:"column:engine_id;primaryKey"`
-	Effects         pq.StringArray `gorm:"column:effects;type:text[];not null"`
+	AuthorizationID int64               `gorm:"column:authorization_id;primaryKey"`
+	EngineID        int64               `gorm:"column:engine_id;primaryKey"`
+	Effects         dbtypes.StringArray `gorm:"column:effects;not null"`
 }
 
 func (ExecutionAuthorizationEngineAccess) TableName() string {

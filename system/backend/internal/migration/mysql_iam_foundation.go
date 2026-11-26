@@ -17,7 +17,7 @@ import (
 const mysqlIAMFoundationOwner = "system_iam_foundation"
 const mysqlIAMFoundationVersion int64 = 23
 
-//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql
+//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql mysql_execution_authorization/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
 // RequireMySQLIAMFoundation checks the installed owner revision without DDL.
@@ -48,6 +48,9 @@ func CheckMySQLSystemStartup(db *gorm.DB) error {
 		return err
 	}
 	if err := schema.RequireMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion); err != nil {
+		return err
+	}
+	if err := schema.RequireMySQL(db, mysqlExecutionAuthorizationOwner, mysqlExecutionAuthorizationVersion); err != nil {
 		return err
 	}
 	if err := schema.RequireMySQL(db, mysqlSourceGrantCatalogOwner, mysqlSourceGrantCatalogVersion); err != nil {
@@ -103,6 +106,14 @@ const mysqlEngineCatalogVersion int64 = 3
 
 func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 	return migrateSystemMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion, "mysql_engine_catalog", nil)
+}
+
+const mysqlExecutionAuthorizationOwner = "system_execution_authorization"
+const mysqlExecutionAuthorizationVersion = 1
+
+// MigrateMySQLExecutionAuthorization installs the general execution grants after the IAM and engine tables.
+func MigrateMySQLExecutionAuthorization(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlExecutionAuthorizationOwner, mysqlExecutionAuthorizationVersion, "mysql_execution_authorization", nil)
 }
 
 // MigrateMySQLModuleRegistry installs the System registry and its first routing revision.
