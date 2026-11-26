@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Disposable pmtiles workflow, automatic metadata/lineage and Console acceptance.
 # ADDP_ONLINE_SUITES=vector-pmtiles-workflow
+# ADDP_ONLINE_SUITES=vector-pmtiles-service-lifecycle
 # ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64
 set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
-ONLINE_SUITE=vector-pmtiles-workflow
+ONLINE_SUITE=${ONLINE_SUITE_INPUT:-vector-pmtiles-workflow}
+case "$ONLINE_SUITE" in
+  vector-pmtiles-workflow) export ADDP_ONLINE_PMTILES_CASE=workflow ;;
+  vector-pmtiles-service-lifecycle) export ADDP_ONLINE_PMTILES_CASE=service-lifecycle ;;
+  *) echo "Unknown PMTiles suite" >&2; exit 1 ;;
+esac
 HOSTED_FIXTURE_CONTAINERS=(addp-pmtiles-source addp-pmtiles-target addp-pmtiles-fixture-worker addp-pmtiles-registry addp-pmtiles-online-runtime)
 RUNTIME_CONTAINER=addp-pmtiles-online-runtime
 RUNTIME_TAG=pmtiles-online
@@ -53,16 +59,16 @@ application_owned=1
 # Owners install their first protection projection from Security before data reads.
 hosted_start_native_modules -security -develop -manager -monitor -service
 start_online_geopython_runtime "$RUNTIME_TAG"
-case "${ADDP_ONLINE_PMTILES_CASE:-workflow}" in
-  workflow) run_logged python3 -m business.scripts.online-vector-pmtiles-fixture seed ;;
-  service-lifecycle) run_logged python3 -m business.scripts.online-vector-pmtiles-fixture seed-service ;;
-  *) fail "unknown PMTiles acceptance case" ;;
-esac
+seed=seed
+roles=(source target)
+if [[ "$ADDP_ONLINE_PMTILES_CASE" == service-lifecycle ]]; then
+  seed=seed-service
+  roles=(target)
+fi
+run_logged python3 -m business.scripts.online-vector-pmtiles-fixture "$seed"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite vector-pmtiles-workflow --wait-protection-owners develop,manager,service --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
-roles=(target)
-if [[ "${ADDP_ONLINE_PMTILES_CASE:-workflow}" == workflow ]]; then roles=(source target); fi
 for role in "${roles[@]}"; do
   run_logged python3 scripts/test/online-engine-registration.py \
     --descriptor "$ADDP_ONLINE_SECRET_DIR/pmtiles-$role-engine.json" --output "$ENGINE_RESULT_ENV"

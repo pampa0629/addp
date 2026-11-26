@@ -2462,7 +2462,7 @@ def validate_vector_pmtiles_profile(repository: Path, registered: set[str]) -> N
     job = re.search(r"(?ms)^  vector-pmtiles-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     suite = load_suite_registry(repository)["vector-pmtiles-workflow"]
     if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
-        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'vector-pmtiles-workflow'" not in job.group("body")
+        or "if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'vector-pmtiles-workflow' || inputs.suite == 'vector-pmtiles-service-lifecycle')" not in job.group("body")
         or "&& inputs.suite != 'vector-pmtiles-workflow'" not in workflow or suite.nightly
         or ("security", "SECURITY_URL") not in suite.services):
         raise RegistrationError("PMTiles requires a manual isolated Hosted job and Security preflight")

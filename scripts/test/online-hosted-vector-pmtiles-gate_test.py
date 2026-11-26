@@ -49,7 +49,7 @@ class HostedPMTilesGateTest(unittest.TestCase):
             with open(args.output, 'w') as stream: stream.write(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={value}\\n')
         ''')
         fixture = importlib.import_module('scripts.test.online-hosted-hdfs-gate_test')
-        fixture.install_spark_container_fixture(self.host, 'vector-pmtiles-workflow', 'addp-pmtiles-online-runtime')
+        fixture.install_spark_container_fixture(self.host, '${ONLINE_SUITE_INPUT}', 'addp-pmtiles-online-runtime')
         go = self.host.bin / 'go'
         go.write_text(go.read_text().replace('previous=', '''
             echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -115,7 +115,7 @@ class HostedPMTilesGateTest(unittest.TestCase):
         self.assertFalse(self.host.secrets.exists())
 
     def test_service_case_seeds_only_the_published_archive(self):
-        result = self.run_gate(ADDP_ONLINE_PMTILES_CASE='service-lifecycle')
+        result = self.run_gate(ONLINE_SUITE_INPUT='vector-pmtiles-service-lifecycle')
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = self.host.trace.read_text().splitlines()
         self.assertIn('pmtiles-fixture:seed-service', trace)

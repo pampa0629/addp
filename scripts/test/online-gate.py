@@ -116,6 +116,11 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "vector-pmtiles-service-lifecycle": Suite(
+        command=(sys.executable, "-m", "scripts.test.vector-pmtiles-workflow-online", "service-lifecycle"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"),
+                  ("security", "SECURITY_URL"), ("service", "SERVICE_URL")),
+    ),
     "vector-pmtiles-workflow": Suite(
         command=(sys.executable, "-m", "scripts.test.vector-pmtiles-workflow-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

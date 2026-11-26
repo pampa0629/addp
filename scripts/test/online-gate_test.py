@@ -353,6 +353,7 @@ class OnlineGateTest(unittest.TestCase):
                 "raster-focal-statistics-persistence",
                 "raster-zonal-statistics-persistence",
                 "vector-pmtiles-workflow",
+                "vector-pmtiles-service-lifecycle",
                 "vector-topology-persistence",
                 "raster-workflow-capacity",
                 "security-mysql-owner-protection",

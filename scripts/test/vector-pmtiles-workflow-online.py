@@ -220,7 +220,7 @@ def run_service_lifecycle(repository, env, client):
     finally:
         authorization.cleanup()
     client.request('GET', f"/api/v1/meta/items/{item['id']}", (404,))
-    return {'schema_version': 'addp.vector-pmtiles-service-online/v1', 'suite': SUITE, 'case': 'service-lifecycle',
+    return {'schema_version': 'addp.vector-pmtiles-service-online/v1', 'suite': 'vector-pmtiles-service-lifecycle',
             'run_id': evidence['run_id'], 'result': 'passed', 'browser': report,
             'grant': {'request_id': receipt['request_id'], 'catalog_path': target, 'revoked': True, 'meta_after_revoke': 404}}
 
@@ -228,7 +228,7 @@ def run_service_lifecycle(repository, env, client):
 def main():
     env = dict(os.environ)
     client = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
-    scenario = run_service_lifecycle if env.get('ADDP_ONLINE_PMTILES_CASE') == 'service-lifecycle' else run_scenario
+    scenario = run_service_lifecycle if sys.argv[1:] == ['service-lifecycle'] else run_scenario
     print(json.dumps(scenario(Path(__file__).resolve().parents[2], env, client), ensure_ascii=False, sort_keys=True))
 
 
