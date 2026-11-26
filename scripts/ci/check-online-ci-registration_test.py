@@ -1961,6 +1961,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_focal_circle_weighted(self.repository, {'raster-focal-circle-weighted-persistence'})
             target.write_text(original)
+        target = self.repository/'scripts/test/raster-focal-circle-weighted-persistence-online.py'
+        original = target.read_text()
+        target.write_text(original.replace("'band_fraction': 'band'", "'band_zero': 'band'", 1))
+        with self.assertRaisesRegex(CHECK.RegistrationError, '14 entry and 58 focal rejection split changed'):
+            CHECK.validate_raster_focal_circle_weighted(self.repository, {'raster-focal-circle-weighted-persistence'})
 
     def test_square_seven_requires_actual_controls_exact_counts_and_manual_isolation(self):
         for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml',

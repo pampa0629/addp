@@ -49,6 +49,7 @@ class Client:
     rewrite = False
     scan_fault = False
     execution_tenant = 2
+    entry_fault = None
     def __init__(self):
         self.scans, self.executions, self.scan_parents = [], {}, {}
         self.items = {name: {'id': i+10, 'full_name': name, 'item_type': 'file', 'size_bytes': 4096, 'fingerprint': name, 'scanned_at': 'now'} for i,name in enumerate(m.fixture.SOURCES)}
@@ -69,6 +70,26 @@ class Client:
         elif path == '/api/v1/develop/executions' and method == 'POST':
             dag = body['content']['workflow_definition']; target_name = dag['tasks'][-1]['params']['target_name']; success = target_name in m.fixture.CASES
             identifier = str(uuid.UUID(int=len(self.executions)+1)); language = headers['Accept-Language']
+            problem = target_name.removeprefix('failed-').removesuffix(f'-{language}.cog.tif')
+            if problem in m.ENTRY_PARAMETERS:
+                assert expected == (400,)
+                field = f'workflow_definition.tasks[1].params.{m.ENTRY_PARAMETERS[problem]}'
+                msg, prefix = m.ENTRY_MESSAGES[language]
+                entry = {'error': msg, 'error_code': 'invalid_workflow_parameters',
+                         'errors': [{'code': 'parameter_type_invalid', 'path': field, 'message': prefix+field}]}
+                status = 400
+                if self.entry_fault == 'http500': status = 500
+                if self.entry_fault == 'http200': status = 200
+                if self.entry_fault == 'code': entry['error_code'] = 'validation_failed'
+                if self.entry_fault == 'issue': entry['errors'][0]['code'] = 'wrong_issue'
+                if self.entry_fault == 'path': entry['errors'][0]['path'] += '.wrong'
+                if self.entry_fault == 'language': entry['error'] = m.ENTRY_MESSAGES['en'][0]
+                if self.entry_fault == 'extra_field': entry['execution_id'] = identifier
+                if self.entry_fault == 'execution': self.executions[identifier] = {}
+                if self.entry_fault == 'scan': self.scans.append('unexpected-entry-scan')
+                raw = b'{}' if self.entry_fault == 'raw' else json.dumps(entry).encode()
+                return SimpleNamespace(status=status, payload=entry, raw=raw)
+            assert expected == (200,)
             data = {'execution_id':identifier,'module':'develop','task_type':'workflow','status':'success' if success else 'failed','triggered_by':33,
                     'execution_config':{'engine_id':7,'display_language':language,'content':{'workflow_definition':copy.deepcopy(dag)}}, 'error_msg':None if success else 'frozen-'+language,
                     'error_details':{} if success else {'category':'execution_failed'}, 'outputs':{}, 'metadata':{'result':{}}}
@@ -116,6 +137,25 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
         self.env={'ONLINE_SUITE':m.SUITE,'ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_NFS_ENGINE_ID':'3',
                   'ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'600','ADDP_ONLINE_TEST_RUN_ID':'focal-circle-weighted-123-1','ADDP_ONLINE_ARTIFACT_DIR':str(self.root/'evidence')}
         self.relations=[]
+
+    def test_entry_execution_inventory_requires_exact_current_workflow_ids(self):
+        metadata = object.__new__(m.CircleMetadata)
+        metadata.identity = {'tenant_id': '2'}
+        metadata.owner = {'State': {'StartedAt': '2026-11-26T00:00:00Z'}}
+        known = [str(uuid.UUID(int=2)), str(uuid.UUID(int=1))]
+        with patch.object(metadata, 'query', return_value={'execution_ids': sorted(known)}) as read:
+            metadata.check_execution_inventory(known)
+        statement, values, fields = read.call_args.args
+        self.assertIn('BEGIN READ ONLY', statement)
+        self.assertIn("module='develop' AND task_type='workflow'", statement)
+        self.assertEqual(values, {'tenant': '2', 'started_at': metadata.owner['State']['StartedAt']})
+        self.assertEqual(fields, {'execution_ids'})
+        for observed in ([], [known[0]], sorted(known + [str(uuid.UUID(int=3))])):
+            with self.subTest(observed=observed), patch.object(metadata, 'query',
+                    return_value={'execution_ids': observed}), self.assertRaisesRegex(
+                            m.SuiteError, 'changed the current Develop execution inventory'):
+                metadata.check_execution_inventory(known)
+
     def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic, *, metadata_fault=None):
         client=client or Client()
         initializer = SourceInitializer()
@@ -154,6 +194,9 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
                     or terminal['status'] != status or terminal['execution_config'] != expected):
                     raise m.SuiteError('private execution User/Tenant, state or frozen snapshot differs')
                 test.metadata_events.append(('execution', identifier))
+            def check_execution_inventory(self, expected):
+                if sorted(expected) != sorted(client.executions):
+                    raise m.SuiteError('entry rejection changed the current Develop execution inventory')
             def cleanup(self):
                 test.metadata_events.append(('cleanup', None))
                 if metadata_fault == 'revoke':
@@ -183,6 +226,19 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
                          list(client.executions))
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
         self.assertEqual({(x['problem'],x['language']) for x in report['failed_parameters']},{(p,l) for p in m.FAILURES for l in ('zh-cn','en')})
+        self.assertEqual((report['develop_entry_rejections'], report['focal_node_failures'], len(client.executions)), (14,58,85))
+        for row in report['failed_parameters']:
+            if row['problem'] in m.ENTRY_PARAMETERS:
+                self.assertEqual(row['rejection_stage'], 'develop_entry')
+                self.assertIs(row['no_execution_created'], True)
+                self.assertNotIn('execution_id', row)
+                raw = (self.root/'evidence'/row['submission']['path']).read_bytes()
+                self.assertEqual((row['submission']['http_status'], row['submission']['size_bytes'], row['submission']['sha256']),
+                                 (400, len(raw), hashlib.sha256(raw).hexdigest()))
+            else:
+                self.assertEqual(row['rejection_stage'], 'focal_node')
+                self.assertEqual(row['diagnostic']['execution_id'], row['execution_id'])
+        self.assertEqual(len(list((self.root/'evidence').glob('circle-weighted-entry-*.json'))), 14)
         self.assertEqual(len(list((self.root/'evidence/circle-weighted-lineage').iterdir())),27)
         offset=0
         for case in report['cases']:
@@ -236,7 +292,7 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
                 with self.assertRaisesRegex(m.SuiteError, reason):
                     self.run_case(client, metadata_fault=fault)
                 self.assertEqual(self.metadata_events[-1], ('cleanup', None))
-                self.assertEqual(len(client.executions), 0 if fault == 'grant' else 99)
+                self.assertEqual(len(client.executions), 0 if fault == 'grant' else 85)
 
     def test_public_receipts_omit_tenant_and_private_receipts_still_require_it(self):
         class MonitorTenantLeak(Client):
@@ -259,6 +315,18 @@ class ZonalPercentileWorkflowTest(unittest.TestCase):
                     client.execution_tenant = 3
                 with self.assertRaisesRegex(m.SuiteError, pattern):
                     self.run_case(client)
+    def test_entry_rejection_requires_exact_http_language_and_no_execution_or_scan(self):
+        for fault in ('http500', 'http200', 'code', 'issue', 'path', 'language', 'extra_field', 'raw', 'execution', 'scan'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                self.env['ADDP_ONLINE_ARTIFACT_DIR'] = directory
+                client = Client()
+                client.entry_fault = fault
+                reason = ('changed the current Develop execution inventory' if fault == 'execution' else
+                          'failed execution added scan' if fault == 'scan' else 'entry rejection')
+                with self.assertRaisesRegex(m.SuiteError, reason):
+                    self.run_case(client)
+                self.assertFalse(list(Path(directory).glob('circle-weighted-entry-*.json')))
+
     def test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced(self):
         for fault in ('diagnostic','query','scan','edge','identity','parent','budget','cleanup'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
@@ -313,7 +381,7 @@ class CircleContractTest(ZonalPercentileWorkflowTest):
         class Changed(Client):
             def request(self,method,path,expected,body=None,headers=None):
                 result=super().request(method,path,expected,body,headers)
-                if '/meta/items/'in path and len(self.executions)==99 and result.payload.get('full_name','').startswith('outputs/'):
+                if '/meta/items/'in path and len(self.executions)==85 and result.payload.get('full_name','').startswith('outputs/'):
                     result.payload['fingerprint']='changed'
                 return result
         with tempfile.TemporaryDirectory()as path:

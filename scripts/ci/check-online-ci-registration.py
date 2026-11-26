@@ -5477,6 +5477,12 @@ WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weig
                                                                      'physical_calls != 100',
                                                                      'len(cases) != 27',
                                                                      'len(failures) != 72',
+                                                                     'entry_count != 14',
+                                                                     'len(known_executions) != 85',
+                                                                     'metadata.check_execution_inventory(known_executions)',
+                                                                     'invalid_workflow_parameters',
+                                                                     'parameter_type_invalid',
+                                                                     'no_execution_created=True',
                                                                      'exact_cause',
                                                                      'Monitor current output lineage differs',
                                                                      'raster.strict_sizes',
@@ -5505,6 +5511,8 @@ WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weig
                                                                              'test_weighted_circle_hosted_oracle_never_calls_product_kernel_or_reducer',
                                                                              'test_weighted_circle_hosted_actual_grid_witnesses'),
  'scripts/test/raster-focal-circle-weighted-persistence-online_test.py': ('test_full_matrix_27_success_72_failures_2322_checks_and_cleanup',
+                                                                          'test_entry_execution_inventory_requires_exact_current_workflow_ids',
+                                                                          'test_entry_rejection_requires_exact_http_language_and_no_execution_or_scan',
                                                                           'test_every_affine_coefficient_and_type_is_required',
                                                                           'test_source_grants_cleanup_on_partial_preparation_and_revoke_failure_rejects_success',
                                                                           'test_public_receipts_omit_tenant_and_private_receipts_still_require_it',
@@ -5644,6 +5652,14 @@ def validate_raster_focal_circle_weighted(repository: Path, registered: set[str]
     if any(len(nodes) != 1 or repr(ast.literal_eval(nodes[0])) != repr(expected[key])
            for key, nodes in actual.items()):
         raise RegistrationError('weighted circle fixed 27/72 case, kernel or comparison matrix changed')
+    scenario = ast.parse((repository/'scripts/test/raster-focal-circle-weighted-persistence-online.py').read_text())
+    expected_entry = {'weight_null': 'weights', 'weight_scalar': 'weights', 'weight_flat': 'weights',
+                      'circle_window_null': 'window_size', 'radius_null': 'radius_metres',
+                      'radius_bool': 'radius_metres', 'band_fraction': 'band'}
+    entry = [node.value for node in scenario.body if isinstance(node, ast.Assign)
+             and any(isinstance(target, ast.Name) and target.id == 'ENTRY_PARAMETERS' for target in node.targets)]
+    if len(entry) != 1 or ast.literal_eval(entry[0]) != expected_entry:
+        raise RegistrationError('weighted circle fixed 14 entry and 58 focal rejection split changed')
     if any(word in source for word in ('operators.raster_compute', '_focal_weighted_values', '_focal_circle_window', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
         raise RegistrationError('focal circle oracle must remain independent')
 
