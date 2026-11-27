@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	commonquery "github.com/addp/common/query"
 	"github.com/dolthub/vitess/go/vt/sqlparser"
 )
 
@@ -113,6 +115,38 @@ func (p MySQLCompatibleQueryProvenance) ResolveTransactionReadSet(ctx context.Co
 		return nil, err
 	}
 	return p.resolveReadSet(ctx, req, database.String, references, &mysqlCompatibleDatabaseReadCatalog{db: tx})
+}
+
+// CheckTransactionTables compares the actual base tables to the prepared read set
+// on the execution transaction. Each provider owns its native DDL boundary.
+func (p MySQLCompatibleQueryProvenance) CheckTransactionTables(ctx context.Context, tx *sql.Tx, request plugin.QueryRequest, expected *plugin.QueryReadSet) (*plugin.QueryReadSet, error) {
+	actual, err := p.ResolveTransactionReadSet(ctx, tx, request)
+	if err != nil {
+		return nil, err
+	}
+	if !reflect.DeepEqual(expected.Paths, actual.Paths) || len(actual.Paths) > 200 {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	dialect := commonquery.ForDialect(commonquery.DialectMySQL)
+	for _, path := range actual.Paths {
+		database, table := path.Segments[1].Name, path.Segments[2].Name
+		qualified := dialect.QualifiedTable(database, table)
+		rows, err := tx.QueryContext(ctx, "SELECT 1 FROM "+qualified+" LIMIT 0")
+		if err != nil {
+			return nil, fmt.Errorf("%w: bind %s table: %w", plugin.ErrQueryReadSetUnresolved, p.EngineName, err)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		var name, definition string
+		if err := tx.QueryRowContext(ctx, "SHOW CREATE TABLE "+qualified).Scan(&name, &definition); err != nil {
+			return nil, fmt.Errorf("%w: verify %s table: %w", plugin.ErrQueryReadSetUnresolved, p.EngineName, err)
+		}
+		if name != table || !strings.HasPrefix(definition, "CREATE TABLE ") {
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
+	}
+	return actual, nil
 }
 
 func (p MySQLCompatibleQueryProvenance) inspectReadReferences(query string) ([]mysqlCompatibleRelationReference, []string, error) {

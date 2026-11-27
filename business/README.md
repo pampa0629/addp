@@ -32,7 +32,7 @@ bash business/scripts/restart.sh -rustfs
 
 Business MySQL、TiDB 和 OceanBase（MySQL 模式）的 database 节点使用 Catalog 的 `term=database, kind=namespace`。平台库只保存与校验路径形态，System 在签发前按引擎插件目录模型和 Meta 节点事实核对。接入验收应在两个 database 建同名普通表，仅给其中一个 database 授权，并在授权后新建一张表。分别核对可读、同名表拒绝和撤权；整引擎授权另用递归根节点验收。
 
-Develop 原生 SQL 优先核对各表的来源授权。MySQL、TiDB 的固定零行探测与业务读取分别记录，PG 协议读取还需观察承载用户查询的游标。余下原生入口按能力推进：HighGo、openGauss、KingbaseES 可复用 PG 查询准备；OceanBase、StarRocks 已提供来源解析。OceanBase 的节点 Grant 可用于目录可见性与来源裁决，Develop 工作台实际执行的逐表核权仍待接入验收。Oracle、达梦、Doris 还需为原生查询提供可核对的表来源。ClickHouse 缺少该入口要求的受控只读能力；SuperMap SDX+ 的 PostgreSQL 原生 SQL 与 SDX SDK 读取分别验收。统一口径见[授权上下文规范](../docs/spec/addp授权上下文规范.md)。
+Develop 原生 SQL 优先核对各表的来源授权。MySQL、TiDB、OceanBase 的固定零行探测与业务读取分别记录，PG 协议读取还需观察承载用户查询的游标。余下原生入口按能力推进：HighGo、openGauss、KingbaseES 可复用 PG 查询准备；StarRocks 已提供来源解析。OceanBase 工作台在普通只读事务逐表核权，源库 DBA 将改名、同名重建和表视图互换与查询错峰；跨服务验收核对每次执行的源端业务读取。Oracle、达梦、Doris 还需为原生查询提供可核对的表来源。ClickHouse 缺少该入口要求的受控只读能力；SuperMap SDX+ 的 PostgreSQL 原生 SQL 与 SDX SDK 读取分别验收。统一口径见[授权上下文规范](../docs/spec/addp授权上下文规范.md)。
 
 ## 部署来源清单
 

@@ -31,10 +31,11 @@ source_value() {
   docker exec -e MYSQL_PWD "$container_id" obclient -h127.0.0.1 -P2881 -uob_consumer@test -Nse "$1"
 }
 before=$(audit_position)
+source_value 'SELECT 1 FROM sales.node_existing LIMIT 0'
 [ "$(source_value 'SELECT id FROM sales.node_existing')" = 37 ]
 [ "$(source_value 'SELECT id FROM sales.node_future')" = 41 ]
 [ "$(source_value 'SELECT id FROM outside_sales.node_future')" = 83 ]
 reads=$(count_reads "$before")
-[ "$reads" = 3 ] || fail "three real fixture reads counted as $reads"
-[ "$(count_reads "$(audit_position)")" = 0 ] || fail "empty observation window counted business reads"
-echo 'OceanBase disposable source passed: current, future and sibling values, native audit delta 3 and incremental fixture'
+[ "$reads" = $'3\t1' ] || fail "expected three business reads and one identity probe, got $reads"
+[ "$(count_reads "$(audit_position)")" = $'0\t0' ] || fail "empty observation window counted business reads"
+echo 'OceanBase disposable source passed: current, future and sibling values, three business reads, one identity probe, empty window and incremental fixture'

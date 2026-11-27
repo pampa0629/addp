@@ -29,10 +29,22 @@ def counts():
     return business, probes
 
 
-def observe(execute, engine, checks, phase, database, table, expected, statement=None):
+def oceanbase_position():
+    return int(subprocess.check_output(["bash", FLOW.PROFILES["oceanbase"].fixture_script, "position"], text=True))
+
+
+def oceanbase_counts(position):
+    output = subprocess.check_output(["bash", FLOW.PROFILES["oceanbase"].fixture_script, "counts"], text=True,
+                                     env=dict(os.environ, OB_AUDIT_POSITION=str(position)))
+    business, probes = map(int, output.split())
+    return business, probes
+
+
+def observe(execute, engine, checks, phase, database, table, expected, statement=None, *, engine_type="tidb"):
     query = statement or f"SELECT id FROM {database}.{table} ORDER BY id"
     locator = f"addp://engine/{engine}/path/{database}/{table}?type=table"
-    before, probes_before = counts()
+    position = oceanbase_position() if engine_type == "oceanbase" else None
+    before, probes_before = counts() if position is None else (0, 0)
     result = execute(engine, locator, query)
     execution_id = result.get("execution_id")
     previous_ids = {check["execution_id"] for check in checks.values()}
@@ -44,11 +56,13 @@ def observe(execute, engine, checks, phase, database, table, expected, statement
         source_before=before,
     )
     checks[phase] = observation
-    after, probes_after = counts()
+    if position is not None:
+        observation["audit_position"] = position
+    after, probes_after = counts() if position is None else oceanbase_counts(position)
     delta = after - before
     observation.update(source_after=after, source_selects=delta, identity_probes=probes_after - probes_before)
     if not execution_id or execution_id in previous_ids:
-        raise FLOW.SuiteError(f"TiDB {phase}: missing or repeated execution ID")
+        raise FLOW.SuiteError(f"{engine_type} {phase}: missing or repeated execution ID")
     summary = (result.get("metadata") or {}).get("result")
     if expected is None:
         details = result.get("error_details") or {}
@@ -66,10 +80,10 @@ def observe(execute, engine, checks, phase, database, table, expected, statement
             or result.get("rows_affected")
             or delta != 0
         ):
-            raise FLOW.SuiteError(f"TiDB {phase}: expected authorization denial and zero business SELECTs")
+            raise FLOW.SuiteError(f"{engine_type} {phase}: expected authorization denial and zero business SELECTs")
     else:
-        # The fixture's BIGINT primary key has an exact JSON string representation.
-        expected_id = str(expected)
+        # TiDB uses a BIGINT fixture key (JSON string), OceanBase uses INT (JSON number).
+        expected_id = str(expected) if engine_type == "tidb" else expected
         rows = ((summary or {}).get("summary") or {}).get("preview_rows")
         row_count = len(rows) if isinstance(rows, list) else None
         observation.update(expected_id=expected_id, preview_row_count=row_count)
@@ -79,7 +93,7 @@ def observe(execute, engine, checks, phase, database, table, expected, statement
             if type(returned_id) in (str, int) and re.fullmatch(r"-?[0-9]{1,19}", str(returned_id)):
                 observation["returned_id"] = returned_id
         if result.get("status") != "success" or rows != [{"id": expected_id}] or delta != 1:
-            raise FLOW.SuiteError(f"TiDB {phase}: expected one native SELECT and row {expected_id!r}")
+            raise FLOW.SuiteError(f"{engine_type} {phase}: expected one native SELECT and row {expected_id!r}")
 
 
 def revoke(preparer, consumer, entry, *, confirmed=False):
@@ -114,9 +128,8 @@ def cleanup(preparer, consumer, journal, artifacts, engine_type="tidb"):
 
 
 def observe_preview(consumer, engine, checks, phase, database, table, expected):
-    fixture = FLOW.PROFILES["oceanbase"].fixture_script
     locator = f"addp://engine/{engine}/path/{database}/{table}?type=table"
-    position = int(subprocess.check_output(["bash", fixture, "position"], text=True).strip())
+    position = oceanbase_position()
     status = 403 if expected is None else 200
     entry = checks[phase] = dict(locator=locator, audit_position=position, expected_status=status)
     if expected is None:
@@ -127,9 +140,7 @@ def observe_preview(consumer, engine, checks, phase, database, table, expected):
         if columns != ["id"] or rows not in ([{"id": expected}], [{"id": str(expected)}]):
             raise FLOW.SuiteError(f"OceanBase {phase}: wrong Manager preview")
         entry["returned_id"] = expected
-    count = subprocess.check_output(["bash", fixture, "counts"], text=True,
-                                    env=dict(os.environ, OB_AUDIT_POSITION=str(position)))
-    delta = int(count.strip())
+    delta, _ = oceanbase_counts(position)
     entry.update(status=status, source_selects=delta)
     if (expected is None and delta != 0) or (expected is not None and delta < 1):
         raise FLOW.SuiteError(f"OceanBase {phase}: unexpected source business SELECT count {delta}")
@@ -186,7 +197,7 @@ def verify(preparer, consumer, tenant, engine, journal, artifacts, engine_type="
     )
     if manager_preview:
         report["consumer"] = "manager.preview"
-        report["develop_per_table_authorization"] = "not_verified"
+        report["develop_checks"] = {}
         try:
             observe_preview(consumer, engine, checks, "before_grant", database, "node_existing", None)
         finally:
@@ -213,8 +224,7 @@ def verify(preparer, consumer, tenant, engine, journal, artifacts, engine_type="
     def check(phase, namespace, table, expected):
         if manager_preview:
             observe_preview(consumer, engine, checks, phase, namespace, table, expected)
-        else:
-            observe(execute, engine, checks, phase, namespace, table, expected)
+        observe(execute, engine, report.get("develop_checks", checks), phase, namespace, table, expected, engine_type=engine_type)
 
     try:
         check("existing", database, "node_existing", 37)
@@ -222,9 +232,8 @@ def verify(preparer, consumer, tenant, engine, journal, artifacts, engine_type="
         report["future_scan_id"] = FLOW.wait_for_scan(preparer, engine, time.monotonic() + 180)
         check("future", database, "node_future", 41)
         check("same_name_outside", outside, "node_future", None)
-        if not manager_preview:
-            observe(execute, engine, checks, "join_outside", database, "node_future", None,
-                    "SELECT a.id FROM tidb_scope.node_future a JOIN tidb_outside.node_future b ON a.id=b.id")
+        observe(execute, engine, report.get("develop_checks", checks), "join_outside", database, "node_future", None,
+                f"SELECT a.id FROM {database}.node_future a JOIN {outside}.node_future b ON a.id=b.id", engine_type=engine_type)
         revoke(preparer, consumer, pending[-1], confirmed=True)
         check("revoked", database, "node_future", None)
     finally:

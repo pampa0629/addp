@@ -46,6 +46,7 @@ var (
 	_ plugin.BatchReadableProvider                = (*Plugin)(nil)
 	_ plugin.BoundedWatermarkReadProvider         = (*Plugin)(nil)
 	_ plugin.ConnectionPoolPlugin                 = (*Plugin)(nil)
+	_ plugin.GuardedQueryReadSessionProvider      = (*Plugin)(nil)
 	_ plugin.ControlledReadOnlySQLProvider        = (*Plugin)(nil)
 	_ plugin.EngineCatalogFactsProvider           = (*Plugin)(nil)
 	_ plugin.EngineCatalogModelProvider           = (*Plugin)(nil)
@@ -137,6 +138,10 @@ func (p *Plugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.Connec
 func (p *Plugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
 	provenance := p.queryProvenance()
 	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, provenance.ResolveReadSet, provenance.ResolveOutputLineage)
+}
+
+func (p *Plugin) OpenGuardedQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery, authorize plugin.QueryReadAuthorizer) (plugin.GuardedQueryReadSession, error) {
+	return shared.OpenGuardedMySQLCompatibleQueryReadSession(ctx, p, p.BuildDSN, oceanBaseCatalogFieldType, nil, prepared, authorize, p.queryProvenance().CheckTransactionTables)
 }
 
 func (p *Plugin) queryProvenance() shared.MySQLCompatibleQueryProvenance {

@@ -87,6 +87,7 @@ esac""",
                 patch.object(NODE.REG, "initialize_exact_record_read_grants") as exact,
                 patch.object(NODE.FLOW, "wait_for_scan", side_effect=lambda *a: events.append("scan") or "scanned"),
                 patch.object(NODE.subprocess, "run", side_effect=lambda *a, **k: events.append("create")),
+                patch.object(NODE, "observe", side_effect=lambda *a, **kw: events.append("sql-" + a[3])),
                 patch.object(NODE, "observe_preview", side_effect=lambda *a: events.append(a[3])),
             ):
                 NODE.verify(preparer, consumer, 3, 5, journal, root, "oceanbase")
@@ -94,16 +95,41 @@ esac""",
                 (5, "database", "oceanbase_fixture", NODE.FLOW.SOURCE_TABLE),
                 (5, "database", "oceanbase_fixture", NODE.FLOW.TARGET_TABLE),
             ])
-            self.assertEqual(events, ["scan", "before_grant", "grant", "existing", "create",
-                                      "scan", "future", "same_name_outside", "revoke", "revoked"])
+            self.assertEqual(events, ["scan", "before_grant", "grant", "existing", "sql-existing", "create",
+                                      "scan", "future", "sql-future", "same_name_outside", "sql-same_name_outside",
+                                      "sql-join_outside", "revoke", "revoked", "sql-revoked"])
             report = json.loads((root / "oceanbase-node-read.json").read_text())
-            self.assertEqual(report["develop_per_table_authorization"], "not_verified")
+            self.assertIn("develop_checks", report)
+
+    def test_develop_window_uses_the_execution_id_and_observer_anchor(self):
+        denied = dict(execution_id="run-denied", status="failed", error_details={
+            "code": "develop.query.source_read_denied",
+            "diagnostic": {"stage": "authorization", "reason": "permission_denied"},
+        })
+        for business in (0, 1):
+            with self.subTest(business=business), patch.object(
+                NODE.subprocess, "check_output", side_effect=["100", f"{business} 2"]
+            ) as source:
+                checks = {}
+                def observe():
+                    NODE.observe(Mock(return_value=denied), 5, checks, "join_outside", "sales", "node_future",
+                                 None, "SELECT a.id FROM sales.node_future a JOIN outside_sales.node_future b "
+                                       "ON a.id=b.id", engine_type="oceanbase")
+                if business:
+                    with self.assertRaises(NODE.FLOW.SuiteError):
+                        observe()
+                else:
+                    observe()
+                entry = checks["join_outside"]
+                self.assertEqual((entry["execution_id"], entry["audit_position"], entry["source_selects"],
+                                  entry["identity_probes"]), ("run-denied", 100, business, 2))
+                self.assertEqual(source.call_args.kwargs["env"]["OB_AUDIT_POSITION"], "100")
 
     def test_manager_response_and_native_source_counts(self):
         for expected, delta, valid in [(37, 1, True), (37, 0, False), (None, 0, True), (None, 1, False)]:
             checks, consumer = {}, Mock()
             with self.subTest(expected=expected, delta=delta), patch.object(
-                NODE.subprocess, "check_output", side_effect=["127", str(delta)]
+                NODE.subprocess, "check_output", side_effect=["127", f"{delta} 0"]
             ), patch.object(NODE.FLOW.SUPPORT, "preview_rows", return_value=(["id"], [{"id": 37}])):
                 if valid:
                     NODE.observe_preview(consumer, 5, checks, "sample", "sales", "node_existing", expected)

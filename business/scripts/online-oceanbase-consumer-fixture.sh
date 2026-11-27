@@ -111,10 +111,15 @@ count_reads() {
   # A retained anchor on this single observer proves the observation window
   # has not been evicted. Report no count if it has.
   admin_obclient -N -B -Doceanbase <<SQL
-SELECT COUNT(*) FROM GV\$OB_SQL_AUDIT
-WHERE REQUEST_ID > $anchor AND USER_NAME='ob_consumer' AND IS_INNER_SQL=0
-  AND LOWER(TRIM(QUERY_SQL)) LIKE 'select%'
-  AND LOWER(REPLACE(QUERY_SQL,CHAR(96),'')) REGEXP 'from[[:space:]]+((outside_sales|sales)[.])?node_(existing|future)([[:space:];]|$)'
+SELECT COUNT(*) - COALESCE(SUM(identity_probe),0), COALESCE(SUM(identity_probe),0)
+FROM (
+  SELECT LOWER(REPLACE(TRIM(QUERY_SQL),CHAR(96),'')) REGEXP
+         '^select 1 from (sales|outside_sales)[.]node_(existing|future) limit 0$' AS identity_probe
+  FROM GV\$OB_SQL_AUDIT
+  WHERE REQUEST_ID > $anchor AND USER_NAME='ob_consumer' AND IS_INNER_SQL=0
+    AND LOWER(TRIM(QUERY_SQL)) LIKE 'select%'
+    AND LOWER(REPLACE(QUERY_SQL,CHAR(96),'')) REGEXP 'from[[:space:]]+((outside_sales|sales)[.])?node_(existing|future)([[:space:];]|$)'
+) observed
 HAVING EXISTS (SELECT 1 FROM GV\$OB_SQL_AUDIT WHERE REQUEST_ID=$anchor);
 SQL
 }

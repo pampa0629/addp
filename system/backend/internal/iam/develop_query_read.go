@@ -136,7 +136,7 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 		return nil, time.Time{}, ErrExecutionAuthorizationPermissionDenied
 	}
 	var kind string
-	engine := r.db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=? AND engine_type IN ('postgresql','gaussdb','mysql','tidb') AND lifecycle_state='active' AND deleted_at IS NULL", engineID, tenantID)
+	engine := r.db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=? AND engine_type IN ('postgresql','gaussdb','mysql','tidb','oceanbase') AND lifecycle_state='active' AND deleted_at IS NULL", engineID, tenantID)
 	if request.NotebookSessionID == "" {
 		engine = engine.Where("version=? OR (engine_type IN ? AND ? BETWEEN pool_only_since_version AND version)", request.EngineVersion, []string{"postgresql", "mysql"}, request.EngineVersion)
 	} else {
@@ -150,7 +150,7 @@ func (r *Repository) qualifyDevelopQueryRead(ctx context.Context, tenantID int64
 		return nil, time.Time{}, ErrExecutionAuthorizationUnavailable
 	}
 	namespace := "schema"
-	if kind == "mysql" || kind == "tidb" {
+	if kind == "mysql" || kind == "tidb" || kind == "oceanbase" {
 		namespace = "database"
 	}
 	for _, path := range request.ReadSet.Paths {
