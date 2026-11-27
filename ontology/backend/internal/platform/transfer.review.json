@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "64117265b422b4aa255dbc5c5b9650b96eb5c6d0",
-      "sha256": "8ed96ec8fc6a068e534d0f468cf9a667581217cc9f2b4ce78c19a94107232c09",
+      "commit": "4da68f6620c381e05386c80e86f7859617fb95a9",
+      "sha256": "1990df711492c1b866c688c4c174c87ae571cd561dd6606d1e022d6e7b420a6b",
       "use": {
-        "zh-cn": "普通任务定义拒绝提交服务端专用 object_source。手动执行阶段按精确 RustFS 对象办理授权；仍先保存 idle 原生表任务。",
-        "en": "Ordinary definitions reject submitted server-owned object_source. The manual start stage obtains exact RustFS object authorization; native task creation still persists idle definitions."
+        "zh-cn": "普通任务定义拒绝提交服务端专用 object_source。手动执行阶段按精确 RustFS 对象办理授权；仍先保存 idle 原生表任务。查询来源和数据库 CDC 配置校验只读租户引擎描述。",
+        "en": "Ordinary definitions reject submitted server-owned object_source. The manual start stage obtains exact RustFS object authorization; native task creation still persists idle definitions. Query-source and database CDC validation reads only tenant engine descriptors."
       }
     },
     {
@@ -47,11 +47,11 @@
       "kind": "test",
       "path": "transfer/backend/internal/api/delegated_task_test.go",
       "anchor": "func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(",
-      "commit": "138ef83ba657f5554576aed9594e17f88949336a",
-      "sha256": "2b2d78f9ff814637cd3a16ebe8ec05df31c88fece805a4de60f2b9145428dea7",
+      "commit": "4da68f6620c381e05386c80e86f7859617fb95a9",
+      "sha256": "2ee5c2f2802449c72945f05897490bb8260ca42173bb219b677d7d3936d2378a",
       "use": {
-        "zh-cn": "正式委托路由覆盖创建停止态与拒绝错误范围、执行、计划、扫描；新增角色选择请求必须 409，且零本人角色请求、不增加定义或执行。",
-        "en": "The formal delegated route covers stopped creation and rejects wrong scopes, execution, schedules and scanning; a role-choice request must return 409 with no current-user role lookup or additional definition/execution."
+        "zh-cn": "正式委托路由覆盖创建停止态与拒绝错误范围、执行、计划、扫描；新增角色选择请求必须 409，且零本人角色请求、不增加定义或执行。委托查询任务创建通过脱敏引擎描述校验。",
+        "en": "The formal delegated route covers stopped creation and rejects wrong scopes, execution, schedules and scanning; a role-choice request must return 409 with no current-user role lookup or additional definition/execution. Delegated query task creation validates against masked engine descriptors."
       }
     },
     {
