@@ -10,6 +10,8 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	"golang.org/x/crypto/bcrypt"
@@ -38,6 +40,27 @@ func TestTenantServiceAccountServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("apply System migrations: %v", err)
 	}
 
+	exerciseTenantServiceAccount(t, ctx, db)
+}
+
+func TestTenantServiceAccountServiceAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_TENANT_SERVICE_ACCOUNT") != "1" {
+		t.Skip("requires isolated System MySQL installation")
+	}
+	db, err := bootstrap.OpenPlatformRuntime(database.Config{Schema: "system"}, "system", &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	exerciseTenantServiceAccount(t, t.Context(), db)
+}
+
+func exerciseTenantServiceAccount(t *testing.T, ctx context.Context, db *gorm.DB) {
+	t.Helper()
 	repository := NewRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	identityService := NewIdentityService(repository, testDatabaseTime(func() time.Time { return now }))
@@ -87,7 +110,7 @@ func TestTenantServiceAccountServiceAgainstPostgres(t *testing.T) {
 	if created.Account.Status != PrincipalStatusActive || created.Account.MembershipStatus != TenantMembershipStatusActive ||
 		created.Account.CredentialStatus != OAuthClientStatusActive || created.Account.Version != 1 ||
 		!strings.HasPrefix(created.Account.ClientID, tenantServiceClientIDPrefix) || len(created.ClientSecret) < 32 {
-		t.Fatalf("created service account = %#v", created)
+		t.Fatal("created tenant account has unexpected status, version or credential")
 	}
 	var secretHash string
 	if err := db.Raw(`SELECT client_secret_hash FROM system.oauth_clients WHERE service_principal_id = ?`, created.Account.ID).Scan(&secretHash).Error; err != nil {
@@ -137,7 +160,7 @@ func TestTenantServiceAccountServiceAgainstPostgres(t *testing.T) {
 	})
 	if err != nil || rotated.Account.Version != 4 || rotated.ClientSecret == created.ClientSecret ||
 		rotated.Account.CredentialStatus != OAuthClientStatusDisabled {
-		t.Fatalf("rotated service account = %#v, error = %v", rotated, err)
+		t.Fatalf("unexpected tenant credential rotation: %v", err)
 	}
 
 	restored, err := service.Restore(ctx, ChangeTenantServiceAccountStatusInput{

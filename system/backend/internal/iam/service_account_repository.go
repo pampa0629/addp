@@ -7,7 +7,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/lib/pq"
+	"github.com/addp/common/infra/database/dbtypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -169,10 +169,10 @@ func (r *Repository) CreateTenantServiceAccount(
 	if err := r.db.WithContext(ctx).Table("system.oauth_clients").Create(map[string]any{
 		"client_id": clientID, "display_name": name, "client_type": "confidential",
 		"client_secret_hash": clientSecretHash, "service_principal_id": principal.ID,
-		"redirect_uris": pq.StringArray{}, "grant_types": pq.StringArray{"client_credentials"},
-		"response_types": pq.StringArray{}, "allowed_scopes": pq.StringArray{"addp.api"},
-		"allowed_audiences": pq.StringArray{"addp.api"}, "token_endpoint_auth_method": "client_secret_basic",
-		"request_uris": pq.StringArray{}, "status": OAuthClientStatusActive,
+		"redirect_uris": dbtypes.StringArray{}, "grant_types": dbtypes.StringArray{"client_credentials"},
+		"response_types": dbtypes.StringArray{}, "allowed_scopes": dbtypes.StringArray{"addp.api"},
+		"allowed_audiences": dbtypes.StringArray{"addp.api"}, "token_endpoint_auth_method": "client_secret_basic",
+		"request_uris": dbtypes.StringArray{}, "status": OAuthClientStatusActive,
 		"owner_scope": "tenant", "owner_tenant_id": tenantID, "version": int64(1),
 		"created_by_principal_id": actorPrincipalID,
 	}).Error; err != nil {
