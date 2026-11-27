@@ -11,58 +11,91 @@ async function verifyTileService(page, api, evidence) {
   const locator = `${evidence.target_locator}&item_id=${evidence.target_item_id}`
   const published = await json(await api.post('/api/v1/service/tile', { data: {
     service_name: serviceName, title: 'PMTiles 验收', public_access: false,
-    protocols: { xyz: { enabled: true } },
+    protocols: { xyz: { enabled: true }, ogc_tiles: { enabled: true } },
     first_layer: { layer_name: evidence.layer, title: evidence.layer, layer_type: 'static', layer_config: { source: { locator } } }
   } }), 'publish PMTiles')
   expect(published.id).toBeGreaterThan(0)
   expect(published.status).toBe('active')
   expect(published.layers[0].layer_name).toBe(evidence.layer)
-  const url = new URL(`/tiles/${serviceName}/${evidence.layer}/5/26/13.mvt`, process.env.GATEWAY_URL).href
+  const gateway = process.env.GATEWAY_URL
+  const urls = {
+    xyz: new URL(`/tiles/${serviceName}/${evidence.layer}/5/26/13.mvt`, gateway).href,
+    ogc_tiles: new URL(`/ogc/tiles/${serviceName}/tiles/${evidence.layer}/WebMercatorQuad/5/13/26`, gateway).href
+  }
   const report = { run_id: evidence.run_id, principal_id: evidence.principal_id, tenant_id: evidence.tenant_id,
-    service_id: published.id, item_locator: locator, url, archive_tile_sha256: evidence.tile_sha256, reads: [] }
+    service_id: published.id, item_locator: locator, urls, archive_tile_sha256: evidence.tile_sha256, phases: [] }
   const reportPath = resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'pmtiles-service-lifecycle.json')
-  const readTile = async (session, phase, status) => {
-    const response = await session.get(url, { maxRedirects: 0, headers: { 'Cache-Control': 'no-cache' } })
-    const body = await response.body()
-    const read = { phase, status: response.status(), content_type: response.headers()['content-type'] }
-    if (response.status() === 200) {
-      read.bytes = body.length
-      read.sha256 = createHash('sha256').update(body).digest('hex')
-    }
-    report.reads.push(read)
-    writeFileSync(reportPath, JSON.stringify(report, null, 2))
-    expect(response.url()).toBe(url)
-    expect(read.status).toBe(status)
-    if (status === 200) {
-      expect(read.content_type).toContain('application/vnd.mapbox-vector-tile')
-      expect(read.bytes).toBeGreaterThan(0)
-      expect(read.sha256).toBe(evidence.tile_sha256)
-    } else {
-      expect((await response.json()).error).toBeTruthy()
+  const verifyPhase = async (session, name, service, status, enabled) => {
+    expect(service.id).toBe(published.id)
+    expect(service.status).toBe(status)
+    const phase = { name, service_status: service.status, reads: {} }
+    report.phases.push(phase)
+    for (const [protocol, url] of Object.entries(urls)) {
+      expect(service.protocols[protocol]).toEqual({ ...published.protocols[protocol], enabled: enabled[protocol] })
+      const expectedStatus = status === 'inactive' ? 503 : enabled[protocol] ? 200 : 404
+      const response = await session.get(url, { maxRedirects: 0, headers: { 'Cache-Control': 'no-cache' } })
+      const read = { enabled: service.protocols[protocol].enabled, status: response.status(), content_type: response.headers()['content-type'] }
+      if (read.status === 200) {
+        const body = await response.body()
+        read.bytes = body.length
+        read.sha256 = createHash('sha256').update(body).digest('hex')
+      }
+      phase.reads[protocol] = read
+      writeFileSync(reportPath, JSON.stringify(report, null, 2))
+      expect(response.url()).toBe(url)
+      expect(read.status, `${name} ${protocol}`).toBe(expectedStatus)
+      if (expectedStatus === 200) {
+        expect(read.content_type).toContain('application/vnd.mapbox-vector-tile')
+        expect(read.bytes).toBeGreaterThan(0)
+        expect(read.sha256).toBe(evidence.tile_sha256)
+      } else {
+        expect((await response.json()).error).toBeTruthy()
+      }
     }
   }
+
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-  const setActive = async (active) => {
-    await frame.locator('.page-header').getByRole('button', { name: '编辑', exact: true }).click()
-    const control = frame.getByRole('switch', { name: '启用瓦片服务' })
-    await expect(control).toBeChecked({ checked: !active })
-    await frame.locator('.el-switch').filter({ has: control }).click()
+  const editButton = frame.locator('.page-header').getByRole('button', { name: '编辑', exact: true })
+  const expectedUser = { principalID: evidence.principal_id, tenantID: evidence.tenant_id, permissions: evidence.permissions_verified }
+  const both = { xyz: true, ogc_tiles: true }
+  await verifyPhase(api, 'published', published, 'active', both)
+  await page.goto(`/service/tile/${published.id}`)
+  const edits = [
+    { name: 'inactive', field: 'status', value: false, status: 'inactive', enabled: both },
+    { name: 'restored', field: 'status', value: true, status: 'active', enabled: both },
+    { name: 'xyz-disabled', field: 'xyz', value: false, status: 'active', enabled: { ...both, xyz: false } },
+    { name: 'xyz-restored', field: 'xyz', value: true, status: 'active', enabled: both },
+    { name: 'ogc-disabled', field: 'ogc_tiles', value: false, status: 'active', enabled: { ...both, ogc_tiles: false } },
+    { name: 'ogc-restored', field: 'ogc_tiles', value: true, status: 'active', enabled: both }
+  ]
+  for (const { name, field, value, status, enabled } of edits) {
+    await editButton.click()
+    if (field === 'status') {
+      const control = frame.getByRole('switch', { name: '启用瓦片服务' })
+      await expect(control).toBeChecked({ checked: !value })
+      await frame.locator('.el-switch').filter({ has: control }).click()
+    } else {
+      const label = field === 'xyz' ? 'XYZ 瓦片协议' : 'OGC Tiles API'
+      const control = frame.getByRole('checkbox', { name: label, exact: true })
+      await expect(control).toBeChecked({ checked: !value })
+      await frame.locator('label.el-checkbox').filter({ has: control }).click()
+    }
     const saved = page.waitForResponse(resp => new URL(resp.url()).pathname === `/api/v1/service/tile/${published.id}` && resp.request().method() === 'PUT')
     await frame.getByRole('button', { name: '保存', exact: true }).click()
     const response = await saved
-    const result = await json(response, 'save service state')
-    expect(result.status).toBe(active ? 'active' : 'inactive')
-    await expect(frame.locator('.page-header').getByRole('button', { name: '编辑', exact: true })).toBeVisible()
-    return response
-  }
-  await readTile(api, 'published', 200)
-  await page.goto(`/service/tile/${published.id}`)
-  const expectedUser = { principalID: evidence.principal_id, tenantID: evidence.tenant_id, permissions: evidence.permissions_verified }
-  for (const active of [false, true]) {
-    const saved = await setActive(active)
-    const session = await browserAPIFromResponse(saved, process.env.GATEWAY_URL, expectedUser)
+    const result = await json(response, `save ${name}`)
+    const payload = response.request().postDataJSON()
+    if (field === 'status') {
+      expect(payload.status).toBe(status)
+      expect(payload.protocols).toBeUndefined()
+    } else {
+      expect(payload.status).toBeUndefined()
+      expect(payload.protocols).toEqual({ [field]: { ...published.protocols[field], enabled: value } })
+    }
+    await expect(editButton).toBeVisible()
+    const session = await browserAPIFromResponse(response, gateway, expectedUser)
     try {
-      await readTile(session, active ? 'restored' : 'inactive', active ? 200 : 503)
+      await verifyPhase(session, name, result, status, enabled)
     } finally {
       await session.dispose()
     }
