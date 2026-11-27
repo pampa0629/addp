@@ -14,7 +14,7 @@ schemas=(system common meta gateway)
 case "${ADDP_MYSQL_ONLINE_SUITE:-gateway}" in
   gateway) ;;
   service-lineage) ADDP_DEPLOYMENT_MODULES=service; schemas+=(service) ;;
-  manager) ADDP_DEPLOYMENT_MODULES=manager; schemas+=(manager) ;;
+  manager) ADDP_DEPLOYMENT_MODULES=manager,security; schemas+=(manager security) ;;
   *) echo "unknown Hosted MySQL suite" >&2; exit 2 ;;
 esac
 export ADDP_DEPLOYMENT_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -39,7 +39,10 @@ fixture_compose=(docker compose --env-file /dev/null -f "$work/compose.yml")
 fixture() { "${fixture_compose[@]}" "$@"; }
 app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
 if [[ -n "$ADDP_DEPLOYMENT_MODULES" ]]; then
-  app+=(--profile "module-$ADDP_DEPLOYMENT_MODULES")
+  IFS=, read -r -a extra_modules <<< "$ADDP_DEPLOYMENT_MODULES"
+  for module in "${extra_modules[@]}"; do
+    app+=(--profile "module-$module")
+  done
 fi
 infra_started=false
 release_started=false
@@ -123,7 +126,7 @@ done
 unset value
 export MYSQL_FIXTURE_IMAGE MEILISEARCH_FIXTURE_IMAGE
 MYSQL_FIXTURE_IMAGE=$(docker compose -f scripts/test/docker-compose.local-macos-ci.yml config --images mysql)
-if [[ "$ADDP_DEPLOYMENT_MODULES" == manager ]]; then
+if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security ]]; then
   MEILISEARCH_FIXTURE_IMAGE=$(docker compose --env-file .env -f docker-compose.infra.yml config --images meilisearch)
   fixture_compose+=(--profile manager)
 fi
@@ -219,11 +222,13 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON meta.* TO 'platform_runtime'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON gateway.* TO 'platform_runtime'@'%';
 SQL
 if [[ -n "$ADDP_DEPLOYMENT_MODULES" ]]; then
-  admin <<SQL
-CREATE DATABASE $ADDP_DEPLOYMENT_MODULES;
-GRANT ALL ON $ADDP_DEPLOYMENT_MODULES.* TO 'platform_deploy'@'%';
-GRANT SELECT,INSERT,UPDATE,DELETE ON $ADDP_DEPLOYMENT_MODULES.* TO 'platform_runtime'@'%';
+  for module in "${extra_modules[@]}"; do
+    admin <<SQL
+CREATE DATABASE $module;
+GRANT ALL ON $module.* TO 'platform_deploy'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON $module.* TO 'platform_runtime'@'%';
 SQL
+  done
 fi
 for schema in "${schemas[@]}"; do
   [[ $(admin <<<"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$schema'") == 0 ]]
@@ -257,7 +262,7 @@ backends = ["system-backend", "meta-backend", "meta-worker", "gateway"]
 selected_module = os.environ["ADDP_DEPLOYMENT_MODULES"]
 if selected_module:
     assert manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] == selected_module
-    backends.append(f"{selected_module}-backend")
+    backends.extend(f"{module}-backend" for module in selected_module.split(","))
 for name in backends:
     container = services[name]
     settings = dict(value.split("=", 1) for value in container["Config"]["Env"])
@@ -305,6 +310,18 @@ ADDP_TEST_MYSQL_USER=root ADDP_TEST_MYSQL_PASSWORD="$MYSQL_ROOT_PASSWORD" ADDP_T
   GOWORK=off go -C system/backend test ./internal/migration -run '^TestPrepareMySQLGatewayTenant$' -count=1 -v
 [[ -s "$work/tenant.json" ]]
 
+if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security ]]; then
+  stage=manager-protection
+  tenant_id=$(python3 -c 'import json, sys; print(int(json.load(sys.stdin)["tenant_id"]))' < "$work/tenant.json")
+  for ((attempt=0; attempt<45; attempt++)); do
+    initialized=$(runtime <<<"SELECT COUNT(*) FROM manager.protection_projection_checkpoints WHERE tenant_id=$tenant_id AND initialized=TRUE")
+    [[ "$initialized" != 1 ]] || break
+    sleep 2
+  done
+  [[ "$initialized" == 1 ]] || { echo "Manager protection initialization incomplete for Tenant $tenant_id" >&2; exit 1; }
+  printf 'manager_protection_initialized_tenant=%s\n' "$tenant_id" | tee "$artifacts/manager-protection.txt"
+fi
+
 stage=gateway
 python3 - "$work/tenant.json" "$artifacts" <<'PY'
 import json
@@ -331,7 +348,13 @@ def call(label, method, path, expected, body=None, token=None, module="system"):
     except HTTPError as error:
         response = error
     with response:
-        assert response.status == expected, f"{label}: expected HTTP {expected}, got {response.status}"
+        if response.status != expected:
+            error_code = response.headers.get("Content-Type", "")
+            if error_code.startswith("application/json"):
+                value = json.load(response).get("error_code")
+                if isinstance(value, str) and value.replace("_", "").isalnum():
+                    error_code = value[:80]
+            raise AssertionError(f"{label}: expected HTTP {expected}, got {response.status} ({error_code})")
         checks[label] = response.status
         return json.load(response)
 
@@ -360,7 +383,7 @@ assert after["id"] == initial["id"] and after["local_account"] == initial["local
 Path(sys.argv[2], "gateway.json").write_text(json.dumps(checks))
 if os.environ["ADDP_DEPLOYMENT_MODULES"] == "service":
     Path(sys.argv[1]).with_name("lineage-reader.token").write_text(replacement)
-if os.environ["ADDP_DEPLOYMENT_MODULES"] == "manager":
+if os.environ["ADDP_DEPLOYMENT_MODULES"] == "manager,security":
     permissions = identity["authorization"]["role_assignments"][0]["permissions"]
     assert {"manager.data_item.read", "manager.search.execute"} <= set(permissions)
     engines = call("manager_engines", "GET", "/engines", 200, token=replacement, module="manager")
