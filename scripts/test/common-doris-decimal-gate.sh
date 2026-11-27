@@ -22,6 +22,22 @@ case "$MODE" in
     *) exit 2 ;;
 esac
 
+check_owned() {
+    [ "$(docker inspect --format '{{index .Config.Labels "com.addp.online-fixture"}}' "$CONTAINER_NAME")" = "$OWNER" ]
+}
+if [ "$MODE" = online-stop ]; then
+    if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        check_owned
+        volumes=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$CONTAINER_NAME")
+        docker rm -fv "$CONTAINER_NAME" >/dev/null
+        for volume in $volumes; do
+            [ -z "$(docker volume ls -q --filter "name=^$volume$")" ]
+        done
+    fi
+    [ -z "$(docker ps -aq --filter "label=com.addp.online-fixture=$OWNER")" ]
+    echo 'Doris Hosted source cleanup passed'
+    exit 0
+fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-doris-decimal.XXXXXX")
 
 cleanup() {
@@ -48,22 +64,6 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-check_owned() {
-    [ "$(docker inspect --format '{{index .Config.Labels "com.addp.online-fixture"}}' "$CONTAINER_NAME")" = "$OWNER" ]
-}
-if [ "$MODE" = online-stop ]; then
-    if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-        check_owned
-        volumes=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$CONTAINER_NAME")
-        docker rm -fv "$CONTAINER_NAME" >/dev/null
-        for volume in $volumes; do
-            [ -z "$(docker volume ls -q --filter "name=^$volume$")" ]
-        done
-    fi
-    [ -z "$(docker ps -aq --filter "label=com.addp.online-fixture=$OWNER")" ]
-    echo 'Doris Hosted source cleanup passed'
-    exit 0
-fi
 snapshot_audit() {
     local marker
     marker=addp_audit_$(openssl rand -hex 12)

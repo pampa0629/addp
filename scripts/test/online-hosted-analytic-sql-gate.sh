@@ -20,8 +20,8 @@ before_online_application_stop() {
 }
 stop_online_fixture() {
   if [ "$engine_type" = doris ]; then
-    run_logged bash scripts/test/common-doris-decimal-gate.sh online-stop
-    return
+    run_logged bash scripts/test/common-doris-decimal-gate.sh online-stop || return 1
+    return 0
   fi
   run_logged python3 business/starrocks/admission.py stop
   local evidence
