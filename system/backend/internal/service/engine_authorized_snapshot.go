@@ -24,3 +24,9 @@ func (s *EngineService) DecryptAuthorizedExecutionSnapshot(engine *models.Engine
 	copy.ConnectionInfo = connection
 	return &copy, nil
 }
+
+// DecryptTransferFieldConnection projects the encrypted row returned by the
+// current source Grant decision without a second lookup or a cached connection.
+func (s *EngineService) DecryptTransferFieldConnection(engine *models.Engine) (models.ConnectionInfo, error) {
+	return s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)
+}

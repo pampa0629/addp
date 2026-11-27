@@ -569,3 +569,8 @@ other = "基础设施配置暂不可用"
 
 [system.infra_configuration.audit_failed]
 other = "无法记录配置变更审计"
+
+[permissions.system.transfer_field_connection.read.name]
+other = "读取 Transfer 字段推荐专用连接"
+[permissions.system.transfer_field_connection.read.description]
+other = "核验同租户用户和精确源表读权后向 Transfer 下发连接。"

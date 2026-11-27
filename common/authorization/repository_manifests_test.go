@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 555 {
-		t.Fatalf("descriptor count = %d, want 555", len(descriptors))
+	if len(descriptors) != 556 {
+		t.Fatalf("descriptor count = %d, want 556", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if strings.HasPrefix(descriptor.Key, "system.infra_configuration.") &&
@@ -118,8 +118,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "manager.upload_receipt.read" && role.Key != "tenant.meta_runtime" && role.Key != "tenant.system_runtime" {
 				t.Fatalf("unexpected upload receipt reader %q", role.Key)
 			}
-			if key == "meta.inspect.execute" && role.Key != "tenant.transfer_runtime" {
-				t.Fatalf("unexpected Infra inspection role %q", role.Key)
+			if (key == "meta.inspect.execute" || key == "system.transfer_field_connection.read") && role.Key != "tenant.transfer_runtime" {
+				t.Fatalf("unexpected Transfer runtime permission %s on role %s", key, role.Key)
 			}
 			if (key == "meta.data_item_identity.read" || key == "meta.node_identity.read") && role.Key != "tenant.system_runtime" {
 				t.Fatalf("identity enumeration assigned to %s", role.Key)
@@ -354,6 +354,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.task_authorization.execute",
+		"system.transfer_field_connection.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.graph_runtime", []string{
 		"copilot.knowledge_graph.execute",

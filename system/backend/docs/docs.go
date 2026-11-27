@@ -1770,6 +1770,91 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engine-access/connections/transfer-field-recommendation": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Transfer 租户服务可请求；同租户原用户须有建任务权限和源表当前读权，源引擎修订号必须匹配。响应只供本次扫描使用。 | Transfer tenant service only. Requires the original tenant user, task creation permission, current table read Grant and matching engine revision. Use the connection only for this scan.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "获取字段推荐源表连接 | Obtain a source connection for field recommendation",
+                "parameters": [
+                    {
+                        "description": "原用户凭据、表路径和引擎版本 | Original user credential, table path and engine revision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.TransferFieldConnectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.TransferFieldConnection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.transfer_field_connection.read"
+                ]
+            }
+        },
         "/engine-access/metadata-checks/develop-navigation": {
             "post": {
                 "security": [
@@ -20274,6 +20359,28 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/authorizationfacts.Binding"
                     }
+                },
+                "user_credential": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferFieldConnection": {
+            "type": "object",
+            "properties": {
+                "connection_info": {
+                    "$ref": "#/definitions/github_com_addp_common_models.ConnectionInfo"
+                }
+            }
+        },
+        "client.TransferFieldConnectionRequest": {
+            "type": "object",
+            "properties": {
+                "engine_version": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
                 "user_credential": {
                     "type": "string"

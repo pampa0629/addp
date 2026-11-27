@@ -17,6 +17,7 @@ import (
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
+	"github.com/addp/system/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -81,7 +82,7 @@ func sourceReadCheckRouter(t *testing.T, f *sourceReadCheckFixture, current auth
 		t.Fatal(err)
 	}
 	runtime := &IAMRuntime{Authentication: authenticate, UserAccessCredential: userCredential, BusinessCredential: businessCredential, ServiceCredential: serviceCredential}
-	if err := RegisterEngineAccessSourceReadCheckRoutes(router.Group("/api/v1/system"), runtime, &EngineAccessSourceReadCheckHandler{service: f}); err != nil {
+	if err := RegisterEngineAccessSourceReadCheckRoutes(router.Group("/api/v1/system"), runtime, &EngineAccessSourceReadCheckHandler{service: f, decryptConnection: func(engine *models.Engine) (models.ConnectionInfo, error) { return engine.ConnectionInfo, nil }}); err != nil {
 		t.Fatal(err)
 	}
 	// Register the actual adjacent production routes. No handler dependency may
@@ -284,4 +285,9 @@ func (f *sourceReadCheckFixture) CheckDevelopWorkflowResultRead(ctx context.Cont
 
 func (f *sourceReadCheckFixture) CheckTransferFieldRecommendationRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
 	return f.ObserveCurrentSourceRead(ctx, credential, request)
+}
+
+func (f *sourceReadCheckFixture) AuthorizeTransferFieldConnection(ctx context.Context, tenantID int64, request client.TransferFieldConnectionRequest) (*models.Engine, error) {
+	f.calls++
+	return &models.Engine{ConnectionInfo: models.ConnectionInfo{"host": "fixture"}}, nil
 }

@@ -264,7 +264,7 @@ func main() {
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("transfer", commonClient.ModuleRuntimeRoleBackend)
-	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(systemClient, engineDescriptor, metaFacts, systemRuntimeClient, protectionGate)
+	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(engineDescriptor, metaFacts, systemRuntimeClient, protectionGate)
 	router := api.SetupRouter(api.NewCleanupResultHandler(db), taskService, executionService, continuousPolicyService, fieldDefinitionRecommendationService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	listener, err := net.Listen("tcp", addr)

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 50
+manifest_version: 51
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -1394,6 +1394,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.task_authorization.execute.name
     description_i18n_key: permissions.system.task_authorization.execute.description
+  - key: system.transfer_field_connection.read
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.transfer_field_connection.read.name
+    description_i18n_key: permissions.system.transfer_field_connection.read.description
   - key: system.workflow_private_files.execute
     allowed_scope_types: [tenant]
     risk_level: low

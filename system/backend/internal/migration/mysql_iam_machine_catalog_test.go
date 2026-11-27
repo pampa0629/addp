@@ -99,6 +99,10 @@ func assertInstalledMachineCatalog(t *testing.T, db *sql.DB) {
 		t.Fatal(err)
 	}
 	for _, r := range catalog.Roles {
+		if r.Key == "tenant.transfer_runtime" {
+			r.Permissions = append(r.Permissions, "system.transfer_field_connection.read")
+			slices.Sort(r.Permissions)
+		}
 		if r.Key == "tenant.spark_runtime" {
 			r.Permissions = []string{"system.engine_catalog.read", "system.execution_authorization.execute"}
 		}

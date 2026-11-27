@@ -52,9 +52,12 @@ type recommendationSource struct {
 }
 
 func (*recommendationSource) Type() string { return "recommendation-test-source" }
-func (s *recommendationSource) OpenTableReadSession(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+func (s *recommendationSource) OpenTableReadSession(_ context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
 	if !reflect.DeepEqual(path, plugin.TabularItemPath(8, "schema", "public", "amounts")) {
 		return nil, fmt.Errorf("unexpected source path: %v", path)
+	}
+	if info["password"] != "scan-only-fixture" {
+		return nil, fmt.Errorf("dedicated connection missing")
 	}
 	s.opens.Add(1)
 	return &recommendationRows{source: s}, nil
@@ -82,11 +85,12 @@ func (recommendationTokenSource) Token(_ context.Context, tenant uint) (string, 
 	return fmt.Sprintf("tenant-%d", tenant), nil
 }
 
-func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
+func TestFieldRecommendationIssuesConnectionOnlyForAuthorizedScan(t *testing.T) {
 	const descriptorPath = "/api/v1/system/runtime/engine-descriptors/9"
 	const checkPath = "/api/v1/system/engine-access/read-checks/transfer-field-recommendation"
 	const itemPath = "/api/v1/meta/items/60"
-	const sourcePath = "/api/v1/system/engines/8"
+	const sourcePath = "/api/v1/system/runtime/engine-descriptors/8"
+	const openPath = "/api/v1/system/engine-access/connections/transfer-field-recommendation"
 	source := &recommendationSource{}
 	plugin.Register(source)
 	t.Cleanup(func() { plugin.Unregister(source.Type()) })
@@ -105,6 +109,7 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 		{"no decimal limit", "postgresql", "online", 200, ErrFieldRecommendationUnsupported, nil, ""},
 		{"missing read", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, []int{403}, ""},
 		{"revoked at release", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, []int{200, 403}, ""},
+		{"source Grant expired during scan", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, []int{200, 403}, ""},
 		{"expired user", "mysql", "online", 200, client.ErrManagerPreviewCredentialRejected, []int{200, 401}, ""},
 		{"unavailable at release", "mysql", "online", 200, client.ErrManagerPreviewReadUnavailable, []int{200, 503}, ""},
 		{"item does not match native leaf", "mysql", "online", 200, client.ErrManagerPreviewReadDenied, nil, "name"},
@@ -129,23 +134,35 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 			}
 			var paths []string
 			checks := 0
+			issued := 0
 			source.opens.Store(0)
 			source.finished.Store(false)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				paths = append(paths, r.URL.Path)
-				if r.URL.Path == checkPath {
-					if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer addp_at_current" || checks >= len(tc.checks) {
-						t.Error("unexpected source observation identity or count")
-						w.WriteHeader(403)
-						return
-					}
-					var body struct {
-						Targets []plugin.EngineCatalogPath `json:"targets"`
-					}
-					if json.NewDecoder(r.Body).Decode(&body) != nil || !reflect.DeepEqual(body.Targets, []plugin.EngineCatalogPath{plugin.TabularItemPath(8, "schema", "public", "amounts")}) {
-						t.Error("source observation path mismatch")
+				if r.URL.Path == openPath || r.URL.Path == checkPath {
+					opening := r.URL.Path == openPath
+					if checks >= len(tc.checks) || opening != (checks == 0) || r.Method != "POST" {
+						t.Error("unexpected source authorization request")
 						w.WriteHeader(400)
 						return
+					}
+					targetPath := plugin.TabularItemPath(8, "schema", "public", "amounts")
+					if opening {
+						var body client.TransferFieldConnectionRequest
+						if json.NewDecoder(r.Body).Decode(&body) != nil || r.Header.Get("Authorization") != "Bearer tenant-7" || body.UserCredential != "addp_at_current" || body.EngineVersion != 3 || !reflect.DeepEqual(body.Target, targetPath) {
+							t.Error("wrong user, service, version or table at open")
+							w.WriteHeader(403)
+							return
+						}
+					} else {
+						var body struct {
+							Targets []plugin.EngineCatalogPath `json:"targets"`
+						}
+						if json.NewDecoder(r.Body).Decode(&body) != nil || r.Header.Get("Authorization") != "Bearer addp_at_current" || !reflect.DeepEqual(body.Targets, []plugin.EngineCatalogPath{targetPath}) {
+							t.Error("wrong release check")
+							w.WriteHeader(403)
+							return
+						}
 					}
 					if (checks == 1) != source.finished.Load() {
 						t.Error("source check performed at the wrong phase")
@@ -154,7 +171,10 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 					checks++
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(status)
-					if status == 200 {
+					if status == 200 && opening {
+						issued++
+						_ = json.NewEncoder(w).Encode(client.TransferFieldConnection{ConnectionInfo: commonmodels.ConnectionInfo{"password": "scan-only-fixture"}})
+					} else if status == 200 {
 						_, _ = w.Write([]byte(`{"observed_at":"2026-11-24T00:00:00Z"}`))
 					}
 					return
@@ -183,17 +203,16 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 					}
 					_ = json.NewEncoder(w).Encode(commonmodels.MetaItem{ID: 60, TenantID: 7, EngineID: 8, Name: name, FullName: "public.amounts", Fingerprint: fingerprint, ItemType: "table"})
 				case sourcePath:
-					tenant := uint(7)
-					_ = json.NewEncoder(w).Encode(commonmodels.Engine{ID: 8, TenantID: &tenant, EngineType: source.Type(), LifecycleState: "active", ConnectionStatus: "online"})
+					_ = json.NewEncoder(w).Encode(commonmodels.EngineRuntimeDescriptor{ID: 8, Version: 3, EngineType: source.Type(), LifecycleState: "active", ConnectionStatus: "online"})
 				default:
 					http.NotFound(w, r)
 				}
 			}))
 			defer server.Close()
 			tokens := recommendationTokenSource{}
-			engines := client.NewSystemClient(server.URL, tokens)
+
 			descriptor := protection.EngineDescriptorLookup(client.NewSystemServiceClient(server.URL, tokens, server.Client()))
-			svc := NewFieldDefinitionRecommendationService(engines, descriptor, client.NewMetaClient(server.URL, tokens), client.NewSystemServiceClient(server.URL, nil, server.Client()), allowFieldRecommendationProtectionGate{})
+			svc := NewFieldDefinitionRecommendationService(descriptor, client.NewMetaClient(server.URL, tokens), client.NewSystemServiceClient(server.URL, tokens, server.Client()), allowFieldRecommendationProtectionGate{})
 			got, err := svc.Recommend(context.Background(), 7, "addp_at_current", FieldDefinitionRecommendationRequest{SourceLocator: "addp://engine/8/path/public/amounts?type=table&item_id=60", SourceFields: []string{"amount"}, TargetEngineID: 9})
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("recommendation error = %v, want %v", err, tc.wantErr)
@@ -206,13 +225,17 @@ func TestFieldRecommendationUsesTargetDescriptorAndSourceDetail(t *testing.T) {
 				if i > 0 {
 					wantPaths = append(wantPaths, itemPath)
 				}
-				wantPaths = append(wantPaths, checkPath)
+				if i == 0 {
+					wantPaths = append(wantPaths, openPath)
+				} else {
+					wantPaths = append(wantPaths, checkPath)
+				}
 			}
 			wantOpens := int32(0)
 			if len(tc.checks) > 0 && tc.checks[0] == 200 {
 				wantOpens = 1
 			}
-			if source.opens.Load() != wantOpens || (tc.wantErr != nil && got != nil) {
+			if int32(issued) != wantOpens || source.opens.Load() != wantOpens || (tc.wantErr != nil && got != nil) {
 				t.Fatalf("opens=%d, want %d; result=%+v", source.opens.Load(), wantOpens, got)
 			}
 			if tc.wantErr == nil {

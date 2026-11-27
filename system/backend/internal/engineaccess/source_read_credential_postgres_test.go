@@ -81,8 +81,21 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			}
 			session, _ := issue(t, user, time.Minute)
 			request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
+			engine, err := repo.engine(ctx, tenantID, int64(path.EngineID), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			open := client.TransferFieldConnectionRequest{UserCredential: session.AccessToken, Target: path, EngineVersion: engine.Version}
 			check := func(want error) {
 				t.Helper()
+				snapshot, err := service.AuthorizeTransferFieldConnection(ctx, tenantID, open)
+				if want == nil {
+					if err != nil || snapshot == nil || snapshot.ID != path.EngineID {
+						t.Fatal("missing authorized source", err)
+					}
+				} else if snapshot != nil || !errors.Is(err, want) {
+					t.Fatal("unqualified source connection", err)
+				}
 				result, err := service.CheckTransferFieldRecommendationRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request)
 				if want == nil {
 					if err != nil || result == nil {
@@ -95,7 +108,24 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			check(commonapi.ErrForbidden)
 			id := grant(t, "user", user.PrincipalID, nil)
 			check(nil)
+			open.EngineVersion++
+			if snapshot, err := service.AuthorizeTransferFieldConnection(ctx, tenantID, open); snapshot != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatal("stale version", err)
+			}
+			open.EngineVersion--
+			if snapshot, err := service.AuthorizeTransferFieldConnection(ctx, tenantID+1, open); snapshot != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatal("cross tenant", err)
+			}
 			revoke(t, id)
+			check(commonapi.ErrForbidden)
+			now, err := repo.wallClock(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expiry := now.Add(time.Second)
+			grant(t, "user", user.PrincipalID, &expiry)
+			check(nil)
+			time.Sleep(time.Until(expiry) + 20*time.Millisecond)
 			check(commonapi.ErrForbidden)
 		})
 		t.Run("Develop workflow result current User grants and withdrawal", func(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 )
 
 // Every fixed consumer uses this one credential and rule snapshot after Meta
@@ -19,6 +20,8 @@ type sourceReadEngineVersion struct {
 	ID      uint
 	Version int64
 	PG      bool
+	// Capture the versioned, still-encrypted source row for a single authorized Transfer handoff.
+	transferTable func(*models.Engine)
 }
 
 func (r *Repository) observeSourceRules(ctx context.Context, credential, action string, targets []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
@@ -83,12 +86,18 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 		if tenantID != expectedTenantID {
 			return commonapi.ErrForbidden
 		}
+		var table *models.Engine
 		if expectedEngine != nil {
 			engine, err := tx.engine(ctx, tenantID, int64(expectedEngine.ID), false)
 			if err != nil {
 				return err
 			}
-			if expectedEngine.PG {
+			if expectedEngine.transferTable != nil {
+				if engine.Version != expectedEngine.Version || engine.LifecycleState != "active" || engine.DeletedAt != nil {
+					return commonapi.ErrForbidden
+				}
+				table = engine
+			} else if expectedEngine.PG {
 				if engine.EngineType != "postgresql" || engine.LifecycleState != "active" || engine.DeletedAt != nil {
 					return commonapi.ErrForbidden
 				}
@@ -136,6 +145,12 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 		}
 		if err := tx.captureSearchObservation(ctx, current, observation.ObservedAt); err != nil {
 			return err
+		}
+		if table != nil && observation.Covered {
+			if observation.ExpiresAt != nil && !observation.ExpiresAt.After(now) {
+				return commonapi.ErrForbidden
+			}
+			expectedEngine.transferTable(table)
 		}
 		result = observation
 		return nil

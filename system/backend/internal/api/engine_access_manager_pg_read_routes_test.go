@@ -12,13 +12,13 @@ import (
 	"github.com/addp/system/internal/middleware"
 )
 
-func TestManagerPGHandoffRequiresExactMachineQualification(t *testing.T) {
+func TestSourceReadHandoffsRequireExactMachineQualification(t *testing.T) {
 	binding, err := authorizationfacts.NativeCandidateBinding(plugin.TabularItemPath(12, "schema", "public", "C"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(client.ManagerPGReadCheckRequest{UserCredential: "addp_at_test", Sources: []authorizationfacts.Binding{binding}})
-	for _, route := range []string{"manager-pg-preview", "manager-pg-profile-result"} {
+	for _, route := range []string{"manager-pg-preview", "manager-pg-profile-result", "transfer-field-recommendation"} {
 		for _, scenario := range []string{"allowed", "human", "other-client", "no-permission", "platform", "expired", "query", "unknown-field", "missing-user"} {
 			t.Run(route+"/"+scenario, func(t *testing.T) {
 				current := sourceReadCheckAuth()
@@ -30,6 +30,14 @@ func TestManagerPGHandoffRequiresExactMachineQualification(t *testing.T) {
 				token := "addp_at_test"
 				suffix := ""
 				payload := string(body)
+				path := "/api/v1/system/engine-access/read-checks/" + route
+				if route == "transfer-field-recommendation" {
+					clientID = "addp-transfer"
+					path = "/api/v1/system/engine-access/connections/" + route
+					current.Authorization.RoleAssignments[0].Permissions = []string{"system.transfer_field_connection.read"}
+					data, _ := json.Marshal(client.TransferFieldConnectionRequest{UserCredential: "addp_at_test", Target: binding.NativeTarget, EngineVersion: 1})
+					payload = string(data)
+				}
 				switch scenario {
 				case "human":
 					current.Principal.Type = "user"
@@ -54,7 +62,7 @@ func TestManagerPGHandoffRequiresExactMachineQualification(t *testing.T) {
 				}
 				fixture := &sourceReadCheckFixture{}
 				router := sourceReadCheckRouter(t, fixture, current)
-				req := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/"+route+suffix, strings.NewReader(payload))
+				req := httptest.NewRequest("POST", path+suffix, strings.NewReader(payload))
 				req.Header.Set("Authorization", "Bearer "+token)
 				response := httptest.NewRecorder()
 				router.ServeHTTP(response, req)

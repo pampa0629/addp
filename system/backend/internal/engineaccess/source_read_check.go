@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/client"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 )
 
 // Reference to Manager's existing Permission, not a new System Permission.
@@ -186,7 +187,50 @@ func (s *Service) CheckTransferFieldRecommendationRead(ctx context.Context, cred
 	if len(segments) != 3 || segments[2].Term != engineplugin.EngineCatalogTermTable {
 		return nil, commonapi.ErrBadRequest
 	}
-	return s.checkSourceRead(ctx, credential, request, false, func(current commonauth.AuthContext) error {
-		return qualifyOrdinarySourceUser(current, "transfer.task.create")
-	})
+	return s.checkSourceRead(ctx, credential, request, false, qualifyTransferFieldUser)
+}
+
+func qualifyTransferFieldUser(current commonauth.AuthContext) error {
+	return qualifyOrdinarySourceUser(current, "transfer.task.create")
+}
+
+// AuthorizeTransferFieldConnection returns only the encrypted row observed in the
+// same snapshot as the user's current source Grant. The handler decrypts on success.
+func (s *Service) AuthorizeTransferFieldConnection(ctx context.Context, tenantID int64, request client.TransferFieldConnectionRequest) (*models.Engine, error) {
+	path := request.Target
+	if request.EngineVersion <= 0 || len(path.Segments) != 3 || path.Segments[2].Term != engineplugin.EngineCatalogTermTable {
+		return nil, commonapi.ErrBadRequest
+	}
+	paths, _, err := encodeSourceReadTargets([]engineplugin.EngineCatalogPath{path})
+	if err != nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	resolve := func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
+		return auth.ResolveUserAccessToken(ctx, request.UserCredential)
+	}
+	userTenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyTransferFieldUser)
+	if err != nil {
+		return nil, err
+	}
+	if userTenant != tenantID {
+		return nil, commonapi.ErrForbidden
+	}
+	bindings, err := s.resolveReadBindings(ctx, tenantID, paths)
+	if err != nil {
+		return nil, err
+	}
+	var table *models.Engine
+	// resolveReadBindings has proved this sole, canonical native target with Meta.
+	if len(bindings) != 1 || bindings[0].Scope != nil || bindings[0].FileComposition != nil || bindings[0].MetadataTarget != nil {
+		return nil, commonapi.ErrForbidden
+	}
+	batch := []sourceRuleTarget{{Binding: bindings[0], Action: commonauth.SourceAccessRead}}
+	observation, err := s.repository.observePreparedSourceRules(ctx, commonauth.SourceAccessRead, paths, bindings, batch, tenantID, resolve, qualifyTransferFieldUser, &sourceReadEngineVersion{ID: path.EngineID, Version: request.EngineVersion, transferTable: func(engine *models.Engine) { table = engine }})
+	if err != nil {
+		return nil, err
+	}
+	if table == nil || !observation.Covered {
+		return nil, commonapi.ErrForbidden
+	}
+	return table, nil
 }

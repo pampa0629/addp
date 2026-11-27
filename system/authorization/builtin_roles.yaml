@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 158
+manifest_version: 159
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -1330,3 +1330,4 @@ roles:
       - system.engine_descriptor.read
       - system.execution_authorization.execute
       - system.task_authorization.execute
+      - system.transfer_field_connection.read

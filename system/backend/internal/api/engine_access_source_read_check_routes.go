@@ -13,10 +13,12 @@ import (
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
+	"github.com/addp/system/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
 type sourceReadCheckService interface {
+	AuthorizeTransferFieldConnection(context.Context, int64, client.TransferFieldConnectionRequest) (*models.Engine, error)
 	CheckTransferFieldRecommendationRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 	ObserveCurrentSourceRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 	CheckManagerPGRead(context.Context, int64, client.ManagerPGReadCheckRequest, bool) (*engineaccess.SourceReadCheck, error)
@@ -24,11 +26,12 @@ type sourceReadCheckService interface {
 }
 
 type EngineAccessSourceReadCheckHandler struct {
-	service sourceReadCheckService
+	service           sourceReadCheckService
+	decryptConnection func(*models.Engine) (models.ConnectionInfo, error)
 }
 
 func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IAMRuntime, handler *EngineAccessSourceReadCheckHandler) error {
-	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil || handler == nil || handler.service == nil {
+	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil || handler == nil || handler.service == nil || handler.decryptConnection == nil {
 		return errors.New("source read check dependencies required")
 	}
 	tenant, err := middleware.NewIAMContextGuard("tenant")
@@ -73,6 +76,15 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 	if err != nil {
 		return err
 	}
+	transfer, err := middleware.NewIAMClientGuard("addp-transfer")
+	if err != nil {
+		return err
+	}
+	connectionPermission, err := middleware.NewIAMPermissionGuard("system.transfer_field_connection.read")
+	if err != nil {
+		return err
+	}
+	api.POST("/engine-access/connections/transfer-field-recommendation", runtime.Authentication, runtime.ServiceCredential, service, transfer, connectionPermission, handler.OpenTransferFieldConnection)
 	routes.POST("/transfer-field-recommendation", runtime.Authentication, runtime.UserAccessCredential, tenant, transferPermission, handler.CheckTransferFieldRecommendation)
 	api.POST("/engine-access/read-checks/develop-workflow-result", runtime.Authentication, runtime.UserAccessCredential, tenant, developPermission, handler.CheckDevelopWorkflowResult)
 	return nil
@@ -185,4 +197,43 @@ func (h *EngineAccessSourceReadCheckHandler) CheckDevelopWorkflowResult(c *gin.C
 // @Router /engine-access/read-checks/transfer-field-recommendation [post]
 func (h *EngineAccessSourceReadCheckHandler) CheckTransferFieldRecommendation(c *gin.Context) {
 	h.check(c, h.service.CheckTransferFieldRecommendationRead)
+}
+
+// OpenTransferFieldConnection godoc
+// @Summary 获取字段推荐源表连接 | Obtain a source connection for field recommendation
+// @Description 仅 Transfer 租户服务可请求；同租户原用户须有建任务权限和源表当前读权，源引擎修订号必须匹配。响应只供本次扫描使用。 | Transfer tenant service only. Requires the original tenant user, task creation permission, current table read Grant and matching engine revision. Use the connection only for this scan.
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body client.TransferFieldConnectionRequest true "原用户凭据、表路径和引擎版本 | Original user credential, table path and engine revision"
+// @Success 200 {object} client.TransferFieldConnection
+// @Failure 400,401,403,404,409,500,503 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.transfer_field_connection.read"]
+// @Router /engine-access/connections/transfer-field-recommendation [post]
+func (h *EngineAccessSourceReadCheckHandler) OpenTransferFieldConnection(c *gin.Context) {
+	var request client.TransferFieldConnectionRequest
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
+	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil || request.UserCredential == "" {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	_, tenant, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engine, err := h.service.AuthorizeTransferFieldConnection(c.Request.Context(), int64(tenant), request)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	conn, err := h.decryptConnection(engine)
+	if err != nil {
+		respondIAMError(c, errors.New("source connection unavailable"))
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, client.TransferFieldConnection{ConnectionInfo: conn})
 }

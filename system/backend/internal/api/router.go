@@ -142,7 +142,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, redisClient *redis.Client, mod
 	if err := registerManagerImageSegmentationRoutes(api, runtime, fulfillmentService); err != nil {
 		panic(err)
 	}
-	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService}); err != nil {
+	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService, decryptConnection: engineService.DecryptTransferFieldConnection}); err != nil {
 		panic(err)
 	}
 	if err := RegisterEngineAccessMetadataCheckRoutes(api, runtime, &EngineAccessMetadataCheckHandler{service: fulfillmentService}); err != nil {

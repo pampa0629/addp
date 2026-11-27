@@ -93,10 +93,19 @@ func installMySQLIAMCatalog(tx *gorm.DB, from int64) error {
 		}
 	}
 	if from < 20 {
-		return tx.Exec(`DELETE FROM role_permissions
+		if err := tx.Exec(`DELETE FROM role_permissions
 			WHERE role_id = (SELECT id FROM roles WHERE tenant_id IS NULL AND role_key='tenant.spark_runtime')
 			  AND permission_id = (SELECT id FROM permissions WHERE permission_key='system.engine.read')
-			  AND source_type='product'`).Error
+			  AND source_type='product'`).Error; err != nil {
+			return err
+		}
+	}
+	if from < 24 {
+		if err := tx.Exec(`INSERT INTO permissions(permission_key,owner_module,action,risk_level,allowed_scope_types,tenant_customizable,delegable,status,name_i18n_key,description_i18n_key)
+VALUES ('system.transfer_field_connection.read','system','read','high',JSON_ARRAY('tenant'),false,false,'active','permissions.system.transfer_field_connection.read.name','permissions.system.transfer_field_connection.read.description')`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`INSERT INTO role_permissions(role_id,permission_id,source_type) SELECT r.id,p.id,'product' FROM roles r JOIN permissions p ON p.permission_key='system.transfer_field_connection.read' WHERE r.tenant_id IS NULL AND r.role_key='tenant.transfer_runtime'`).Error
 	}
 	return nil
 }

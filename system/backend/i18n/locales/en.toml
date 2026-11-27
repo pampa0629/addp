@@ -569,3 +569,8 @@ other = "Infrastructure configuration is unavailable"
 
 [system.infra_configuration.audit_failed]
 other = "Could not record the configuration change audit"
+
+[permissions.system.transfer_field_connection.read.name]
+other = "Read Transfer field recommendation connection"
+[permissions.system.transfer_field_connection.read.description]
+other = "Release a connection only for a verified tenant user and source table."
