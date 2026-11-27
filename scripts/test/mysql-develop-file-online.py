@@ -18,7 +18,7 @@ SuiteError = raster.SuiteError
 PROFILE = fixture.network_profile(fixture.NORMALIZE_CASE)
 ACTOR_PERMISSIONS = {
     'develop.task.read', 'develop.task.execute', 'develop.data_read.execute', 'develop.data_write.execute',
-    'system.execution_authorization.create', 'meta.catalog.read',
+    'system.execution_authorization.create', 'meta.catalog.read', 'manager.data_item.read',
 }
 WRONG_OWNER_TARGET = 'wrong-owner.gpkg'
 UNAPPROVED_TARGET = 'not-approved.gpkg'
@@ -198,12 +198,13 @@ def run(nfs, secret, run_id, artifacts):
     try:
         basic = support.wait_for_meta_scan(approver, engine, time.monotonic() + 150,
                                           depth='basic', scope={'targets': [scope]})
+        record({'stage': 'source_basic_scanned', 'basic_scan': basic})
         grants.grant(engine, source_name)
         deep = support.wait_for_meta_scan(approver, engine, time.monotonic() + 150,
                                          scope={'targets': [scope]})
         item = support.find_fixture_item(actor, engine, source_name, 'Develop file source')
         source_locator = f'{scope}&item_id={item["id"]}'
-        record(dict(stage='source_granted', basic_scan=basic, deep_scan=deep, source_item_id=item['id']))
+        record(dict(stage='source_granted', deep_scan=deep, source_item_id=item['id']))
 
         deadline = time.monotonic() + 120
         while True:

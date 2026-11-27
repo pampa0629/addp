@@ -218,7 +218,7 @@ func prepareMySQLDevelopFileTenant(t *testing.T, repo *iam.Repository, creator i
 	}{
 		{"develop-file-actor", "ADDP_TEST_MYSQL_DEVELOP_ACTOR_PASSWORD", "", []string{
 			"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
-			"system.execution_authorization.create", "meta.catalog.read",
+			"system.execution_authorization.create", "meta.catalog.read", "manager.data_item.read",
 		}},
 		{"develop-file-approver", "ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD", "tenant.engine_access_delegation_administrator", []string{
 			"meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create",
