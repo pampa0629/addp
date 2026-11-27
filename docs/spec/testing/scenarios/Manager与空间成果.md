@@ -218,6 +218,8 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 **镜像初始化修正。** 隔离 Linux 的原生 loop／ext4 复现了相同的分配下降。默认格式化留下 32 组延迟初始化的 inode 表，挂载后完成初始化时，loop 把允许释放的写零请求转换为镜像打孔。夹具通过 `nodiscard,lazy_itable_init=0` 在格式化时同步初始化，隔离 Linux 对照在挂载后持续保留实际分配。4 GiB 逻辑和分配断言、8 条执行和 600 秒预算继续适用。 [mke2fs 参数](https://man7.org/linux/man-pages/man8/mke2fs.8.html) · [Linux loop 写零行为](https://github.com/torvalds/linux/blob/v6.14/drivers/block/loop.c#L472-L485)。
 
+**夹具修正的固定 CI。** `c2933c2a7` 的[Execution Runner](https://github.com/pampa0629/addp/actions/runs/45993045169/job/140485449300)实际通过 21 项低盘专项、160 项登记、42 项共享准备及隔离身份 Go 测试。[Linux Native](https://github.com/pampa0629/addp/actions/runs/45993045169/job/140485450393)在 Ubuntu 24.04／GDAL 3.8.4 执行标准全量，22,120 项通过、141 条警告、1565.09 秒，失败、跳过和筛除均为 0；独立 NetCDF 专项另有 109 项通过。[平台一致性](https://github.com/pampa0629/addp/actions/runs/45993045169/job/140485450283)通过标准检查。真实低盘业务仍待正式 Hosted 归档。
+
 
 ## 水文与分区统计专项共同要求
 
