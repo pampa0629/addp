@@ -47,11 +47,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/repository/task_repository.go",
       "anchor": "func (r *TaskRepository) ClaimExecutionWithReview(",
-      "commit": "8c02fd8f11ede38fb99487a0a22e6ae0e8146715",
-      "sha256": "a35f9beb6aa5966327742729912d2688ed357c3d8f4bf69b04f843316ad7fdf8",
+      "commit": "09f4bf0cafa8d0acf981514eafe733abfee29664",
+      "sha256": "6d253a941b59fc2e3058fe965457a1dfe14468b90beeb8930059eacdacac564d",
       "use": {
-        "zh-cn": "同步位点按任务、来源身份和分区加锁，两个平台库均由 GORM 引用分区列；审批消费与执行仍在同一事务中。",
-        "en": "Both providers quote the partition column when locking the task and source checkpoint. Approval consumption and execution creation share the transaction."
+        "zh-cn": "同步位点按任务、来源身份和分区加锁，两个平台库均由 GORM 引用分区列；审批消费与执行仍在同一事务中。此次任务调度初始化只补齐尚未初始化的记录。",
+        "en": "Both providers quote the partition column when locking the task and source checkpoint. Approval consumption and execution creation share the transaction. Scheduler initialization fills only missing run times for the same enabled task and schedule."
       }
     },
     {
