@@ -100,6 +100,13 @@ def verify_pending(snapshot, authorization):
             'a partially approved execution did not remain unclaimed')
 
 
+def verify_one_approval(first, second, execution, approval_id, binding):
+    require(first['state'] == 'approved' and first['approval']['approval_id'] == approval_id
+            and second['state'] == 'awaiting_approval' and 'approval' not in second
+            and all((view['authorization_id'], view['scope_digest']) == binding and view['execution_id'] == execution
+                    for view in (first, second)), 'expected precisely the first target approval on the original scope')
+
+
 def verify_worker_result(snapshot, status, receipt_ids):
     require(snapshot['status'] == status and snapshot['attempt'] == 1 and not snapshot['unstarted']
             and snapshot['lease_absent'] and snapshot['admission_state'] == 'ready'
@@ -283,11 +290,7 @@ def run_approval_scenario(actor, approver, grants, mysql, tenant, engine, runtim
     first_view = approver.request('GET', f'/api/v1/system/execution-authorizations/develop-file-workflows/{execution}/create-approval-context?target_index=0', (200,)).payload
     second_view = approver.request('GET', f'/api/v1/system/execution-authorizations/develop-file-workflows/{execution}/create-approval-context?target_index=1', (200,)).payload
     authorization, scope_digest = approver_binding[execution]
-    require(first_view['state'] == 'approved' and first_view['approval']['approval_id'] == first['approval_id']
-            and second_view['state'] == 'awaiting_approval' and second_view['approval'] is None
-            and all((view['authorization_id'], view['scope_digest']) == (authorization, scope_digest)
-                    and view['execution_id'] == execution for view in (first_view, second_view)),
-            'expected precisely the first target approval on the original scope')
+    verify_one_approval(first_view, second_view, execution, first['approval_id'], (authorization, scope_digest))
     rejected = approver.request(
         'POST', f'/api/v1/system/execution-authorizations/{authorization}/develop-geopackage-create-approvals',
         (403,), {'target_index': len(PROFILE['targets']), 'scope_digest': scope_digest,

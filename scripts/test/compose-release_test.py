@@ -137,6 +137,16 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         '''], check=True)
         self.assertNotRegex(entry, r"(?m)^\s*export .*\bADDP_ONLINE_(?:HOST|HOSTED)=")
 
+    def test_develop_partial_approval_uses_the_public_omitted_receipt(self):
+        develop = importlib.import_module("scripts.test.mysql-develop-file-online")
+        original = dict(authorization_id="7", scope_digest="authority", execution_id="original")
+        first = original | dict(state="approved", approval={"approval_id": "receipt"})
+        second = original | dict(state="awaiting_approval")
+        develop.verify_one_approval(first, second, "original", "receipt", ("7", "authority"))
+        for value in (dict(approval=first["approval"]), dict(state="approved"), dict(execution_id="other")):
+            with self.subTest(value=value), self.assertRaises(develop.SuiteError):
+                develop.verify_one_approval(first, second | value, "original", "receipt", ("7", "authority"))
+
     def test_develop_nfs_exports_only_to_the_owned_bridge_and_loopback(self):
         nfs = importlib.import_module("scripts.utils.online_nfs_fixture")
         network = {"Name": "fixture-bridge", "Driver": "bridge", "Scope": "local",
