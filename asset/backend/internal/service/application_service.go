@@ -182,15 +182,8 @@ func (s *ApplicationService) ListForApplicant(tenantID uint, applicantID int64, 
 	return s.list(tenantID, &applicantID, params)
 }
 
-func (s *ApplicationService) list(tenantID uint, applicantID *int64, params ApplicationListParams) ([]ApplicationWithAuth, int64, error) {
-	if params.Page <= 0 {
-		params.Page = 1
-	}
-	if params.PageSize <= 0 {
-		params.PageSize = 20
-	}
-
-	query := s.db.Table("asset.applications app").
+func (s *ApplicationService) applicationsWithAuth() *gorm.DB {
+	return s.db.Table("asset.applications app").
 		Select(`app.*,
 			a.name AS asset_name,
 			td.code AS asset_type_code,
@@ -199,10 +192,21 @@ func (s *ApplicationService) list(tenantID uint, applicantID *int64, params Appl
 			auth.expires_at AS auth_expires_at,
 			auth.revoked_at AS auth_revoked_at,
 			CASE WHEN auth.status = 'effective' AND auth.target_module = 'workbench' AND auth.target_resource_type = 'data_application'
-			     THEN '/data-apps/' || auth.target_resource_id ELSE '' END AS open_path`).
+			     THEN CONCAT('/data-apps/', auth.target_resource_id) ELSE '' END AS open_path`).
 		Joins("LEFT JOIN asset.assets a ON a.id = app.asset_id").
 		Joins("LEFT JOIN asset.type_definitions td ON td.id = a.type_id").
-		Joins("LEFT JOIN asset.authorizations auth ON auth.application_id = app.id").
+		Joins("LEFT JOIN asset.authorizations auth ON auth.application_id = app.id")
+}
+
+func (s *ApplicationService) list(tenantID uint, applicantID *int64, params ApplicationListParams) ([]ApplicationWithAuth, int64, error) {
+	if params.Page <= 0 {
+		params.Page = 1
+	}
+	if params.PageSize <= 0 {
+		params.PageSize = 20
+	}
+
+	query := s.applicationsWithAuth().
 		Where("app.tenant_id = ?", tenantID)
 
 	// display_status 优先，映射为具体 SQL 条件
@@ -248,19 +252,7 @@ func (s *ApplicationService) list(tenantID uint, applicantID *int64, params Appl
 // Get 获取单条申请详情（含关联授权信息）
 func (s *ApplicationService) Get(tenantID uint, id int64) (*ApplicationWithAuth, error) {
 	var result ApplicationWithAuth
-	err := s.db.Table("asset.applications app").
-		Select(`app.*,
-			a.name AS asset_name,
-			td.code AS asset_type_code,
-			auth.id AS auth_id,
-			auth.status AS auth_status,
-			auth.expires_at AS auth_expires_at,
-			auth.revoked_at AS auth_revoked_at,
-			CASE WHEN auth.status = 'effective' AND auth.target_module = 'workbench' AND auth.target_resource_type = 'data_application'
-			     THEN '/data-apps/' || auth.target_resource_id ELSE '' END AS open_path`).
-		Joins("LEFT JOIN asset.assets a ON a.id = app.asset_id").
-		Joins("LEFT JOIN asset.type_definitions td ON td.id = a.type_id").
-		Joins("LEFT JOIN asset.authorizations auth ON auth.application_id = app.id").
+	err := s.applicationsWithAuth().
 		Where("app.id = ? AND app.tenant_id = ?", id, tenantID).
 		Scan(&result).Error
 	if err != nil {
