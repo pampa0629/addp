@@ -27,7 +27,7 @@ func graphQuiescent(tx *gorm.DB, kg *models.KnowledgeGraph) error {
 // takes another execution lock; only this Cleanup C may be excluded.
 func CheckCleanupQuiescence(tx *gorm.DB, kg *models.KnowledgeGraph, cleanupExecutionID string) error {
 	var count int64
-	tasks := tx.Model(&models.BuildTask{}).Select("CAST(id AS TEXT)").Where("tenant_id = ? AND graph_id = ?", kg.TenantID, kg.ID)
+	tasks := tx.Model(&models.BuildTask{}).Select("CONCAT('', id)").Where("tenant_id = ? AND graph_id = ?", kg.TenantID, kg.ID)
 	if err := tx.Model(&execution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id IN (?) AND status IN ?", kg.TenantID, execution.ModuleGraph, execution.TaskTypeKGBuild, tasks, []string{execution.ExecutionStatusPending, execution.ExecutionStatusRunning}).Count(&count).Error; err != nil {
 		return err
 	}
