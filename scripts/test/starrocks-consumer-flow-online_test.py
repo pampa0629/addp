@@ -75,6 +75,22 @@ class StarRocksConsumerTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(FLOW.API.SuiteError):
                 FLOW.validate_browser_report(bad, report, PROFILE)
 
+    def test_doris_dispatcher_receives_a_single_json_report_line(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        report = {"checks": {"authorized": {"source_selects": 1}}}
+        output = StringIO()
+        with patch.object(FLOW.sys, "argv", ["consumer", "--engine-type", "doris"]), patch.dict(
+            FLOW.os.environ, {"ADDP_ONLINE_HOSTED": "1", "ADDP_ONLINE_TEST": "1",
+                              "ADDP_ONLINE_TEST_TENANT_ID": "2", "ADDP_ONLINE_CONSUMER_ENGINE_ID": "17",
+                              "GATEWAY_URL": "http://127.0.0.1:8000", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "example",
+                              "ADDP_ONLINE_ARTIFACT_DIR": "/tmp"}
+        ), patch.object(FLOW, "verify_analytic_reads", return_value=report), redirect_stdout(output):
+            self.assertEqual(FLOW.main(), 0)
+        self.assertEqual(len(output.getvalue().splitlines()), 1)
+        self.assertEqual(FLOW.json.loads(output.getvalue()), report)
+
     def test_native_audit_window_matches_reader_selects_and_requires_retained_anchor(self):
         before = "previous audit line"
         metadata = "|User=business_reader|Db=business|State=EOF|QueryId=fixture-id"

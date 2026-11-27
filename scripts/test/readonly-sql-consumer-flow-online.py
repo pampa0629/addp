@@ -432,6 +432,7 @@ def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
                 require(not ids, 'denied execution emitted a business SELECT')
     finally:
         evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2))
+    return evidence
 
 
 def main():
@@ -460,8 +461,8 @@ def main():
     client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
     directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
     if profile.engine_type == 'doris':
-        verify_analytic_reads(profile, client, tenant, engine, directory, revoked=False)
-        print((directory / 'doris-develop-source-reads.json').read_text())
+        report = verify_analytic_reads(profile, client, tenant, engine, directory, revoked=False)
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
         return 0
     report=run(client,tenant,engine,float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','900')),profile)
     (directory / (profile.engine_type+'-consumer-flow.json')).write_text(json.dumps(report,ensure_ascii=False,indent=2))
