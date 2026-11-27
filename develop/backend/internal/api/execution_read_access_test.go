@@ -65,6 +65,9 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 		}
 		switch row.ExecutionID {
 		case "saved":
+			row.ExecutionConfig["content"] = map[string]interface{}{"workflow_definition": map[string]interface{}{
+				"tasks": []map[string]interface{}{{"id": "frozen-load", "operator": "load", "params": map[string]interface{}{"locator": "private-parameter"}}},
+			}}
 			row.Metadata["result"].(map[string]interface{})["logs"] = []interface{}{map[string]interface{}{"timestamp": "2026-11-17T08:00:00Z", "level": "INFO", "event": "workflow_started"}}
 		case "notebook":
 			row.Metadata["result"].(map[string]interface{})["logs"] = []string{"private-placeholder"}
@@ -123,6 +126,7 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 		{"all", "/executions/other/result", 404}, {"all", "/executions/cross-tenant/result", 404}, {"all", "/executions/wrong-membership/result", 404},
 		{"revoked", "/executions/mine/result", 404}, {"read-only", "/executions/mine/result", 404}, {"data-only", "/executions/mine/result", 403},
 		{"all", "/executions/saved/result", 409}, {"all", "/executions/notebook/result", 403}, {"all", "/executions/saved", 200}, {"all", "/executions/notebook", 200},
+		{"read-only", "/executions/saved", 404}, {"revoked", "/executions/saved", 404}, {"data-only", "/executions/saved", 403},
 		{"all", "/executions/other", 404}, {"all", "/executions/cross-tenant", 404}, {"all", "/executions/missing-origin", 404}, {"all", "/executions/wrong-membership", 404}, {"all", "/executions/other-module", 404},
 		{"all", "/executions/saved/logs", 200}, {"all", "/executions/mine/logs", 200}, {"all", "/executions/notebook/logs", 503}, {"read-only", "/executions/saved/logs", 404}, {"revoked", "/executions/saved/logs", 404}, {"all", "/executions/other/logs", 404}, {"read-only", "/executions/mine", 404}, {"data-only", "/executions/mine", 403}, {"revoked", "/executions/mine", 404},
 		{"all", "/executions", 200}, {"all", "/executions/statistics", 200}, {"read-only", "/executions", 200}, {"revoked", "/executions/statistics", 200},
@@ -135,6 +139,22 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 			router.ServeHTTP(response, request)
 			if response.Code != test.status {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if test.path == "/executions/saved" && test.status == 200 {
+				var body struct {
+					Process json.RawMessage `json:"workflow_process"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if got := string(body.Process); got != `{"nodes":[{"id":"frozen-load","operator":"load","status":"unknown"}],"definition_links":[]}` {
+					t.Fatalf("unexpected frozen process: %s", got)
+				}
+				if response.Header().Get("Cache-Control") != "no-store" {
+					t.Fatal("execution detail can be cached")
+				}
+			} else if strings.Contains(response.Body.String(), `"workflow_process"`) {
+				t.Fatal("workflow process is visible outside authorized workflow detail")
 			}
 			if strings.HasSuffix(test.path, "/logs") && test.status == 200 {
 				var body ExecutionLogsResponse

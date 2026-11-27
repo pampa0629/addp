@@ -616,6 +616,28 @@
       "triggerManual": "手动",
       "triggerSchedule": "定时"
     },
+    "workflowProcess": {
+      "tab": "加工过程",
+      "nodes": "实际节点状态",
+      "node": "节点 ID",
+      "operator": "算子 ID",
+      "observedStatus": "运行证据",
+      "links": "冻结端口连线",
+      "linkMeaning": "以下连线来自本次执行快照，表示定义中的数据引用。实际节点状态见上表。",
+      "fromNode": "来源节点",
+      "outputPort": "输出端口",
+      "toNode": "目标节点",
+      "inputParameter": "输入参数",
+      "defaultPort": "由运行时选择",
+      "noLinks": "本次定义无数据引用",
+      "noSnapshot": "本次执行的工作流快照不可用",
+      "status": {
+        "unknown": "无运行证据",
+        "observed": "有运行记录",
+        "succeeded": "算子执行成功",
+        "failed": "算子执行失败"
+      }
+    },
     "executionDetail": {
       "recentVisitTitle": "开发执行结果",
       "title": "执行结果",

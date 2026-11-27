@@ -11,7 +11,7 @@ const live = (id, deadline) => ({ ...history(id), metadata: { result: { final_re
   schema_version: 'addp.workflow.table-result/v1', columns: ['instance_id', 'score', 'footprint'], rows, row_count: 50
 }, professional_result_expires_at: deadline } } })
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
-async function fixture(page, locale = 'zh-cn', resultHandler) {
+async function fixture(page, locale = 'zh-cn', resultHandler, executionHandler = (route, id) => json(route, history(id))) {
   await page.addInitScript(locale => localStorage.setItem('addp-lang', locale), locale)
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -21,10 +21,70 @@ async function fixture(page, locale = 'zh-cn', resultHandler) {
     if (path === '/api/v1/meta/engines') return json(route, [])
     if (path.endsWith('/result')) return resultHandler(route)
     if (path.endsWith('/logs')) return json(route, { execution_id: path.split('/').at(-2), logs: [] })
-    if (path.startsWith('/api/v1/develop/executions/')) return json(route, history(path.split('/').pop()))
+    if (path.startsWith('/api/v1/develop/executions/')) return executionHandler(route, path.split('/').pop())
     return json(route, {})
   })
 }
+
+test('workflow processing restores its tab and separates frozen references from node observations', async ({ page }) => {
+  const queryId = '22222222-2222-4222-8222-222222222222'
+  const deniedId = '33333333-3333-4333-8333-333333333333'
+  const noSnapshotId = '44444444-4444-4444-8444-444444444444'
+  let denied = false
+  const mutations = []
+  page.on('request', request => {
+    if (!['GET', 'HEAD'].includes(request.method()) && new URL(request.url()).pathname.startsWith('/api/v1/develop/')) {
+      mutations.push(request.method())
+    }
+  })
+  await fixture(page, 'zh-cn', () => { throw new Error('processing must not read professional result rows') }, (route, id) => {
+    if (id === deniedId || denied) return json(route, { error_code: 'execution_not_found' }, 404)
+    if (id === queryId) return json(route, { ...history(id), task_type: 'query' })
+    if (id === noSnapshotId) return json(route, history(id))
+    return json(route, {
+      ...history(id), status: 'failed',
+      dev_task: { content: { workflow_definition: { tasks: [{ id: 'current-edited-task' }] } } },
+      workflow_process: {
+        nodes: [
+          { id: 'load-source', operator: 'load', status: 'observed' },
+          { id: 'frozen-dissolve', operator: 'dissolve', status: 'failed' },
+          { id: 'save-members', operator: 'save', status: 'unknown' }
+        ],
+        definition_links: [
+          { from_node: 'load-source', to_node: 'frozen-dissolve', input_parameter: 'input_gdf' },
+          { from_node: 'frozen-dissolve', output_port: 'members', to_node: 'save-members', input_parameter: 'input_df' }
+        ]
+      }
+    })
+  })
+  await page.goto(`/executions/${ID}?tab=process`)
+  await expect(page.getByRole('tab', { name: '加工过程' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('heading', { name: '实际节点状态' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '冻结端口连线' })).toBeVisible()
+  const nodes = page.getByTestId('workflow-process-nodes')
+  await expect(nodes.getByRole('row').filter({ hasText: 'load-source' })).toContainText('有运行记录')
+  await expect(nodes.getByRole('row').filter({ hasText: 'frozen-dissolve' })).toContainText('算子执行失败')
+  await expect(nodes.getByRole('row').filter({ hasText: 'save-members' })).toContainText('无运行证据')
+  await expect(nodes).not.toContainText('current-edited-task')
+  const links = page.getByTestId('workflow-process-links')
+  await expect(links.getByRole('row').filter({ hasText: 'input_gdf' })).toContainText('由运行时选择')
+  await expect(links.getByRole('cell', { name: 'members', exact: true })).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(links).toBeVisible()
+  await expect(links.evaluate(el => el.getBoundingClientRect().right <= window.innerWidth + 1)).resolves.toBe(true)
+
+  denied = true
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByRole('tab', { name: '加工过程' })).toHaveCount(0)
+  await expect(nodes).toHaveCount(0)
+  denied = false
+  await page.goto(`/executions/${noSnapshotId}?tab=process`)
+  await expect(page.getByText('本次执行的工作流快照不可用')).toBeVisible()
+  await page.goto(`/executions/${queryId}?tab=process`)
+  await expect(page.getByRole('tab', { name: '加工过程' })).toHaveCount(0)
+  await expect(page).toHaveURL(new RegExp(`/executions/${queryId}$`))
+  expect(mutations).toEqual([])
+})
 async function expectTopTabs(page) {
   const tabs = page.locator('.content-area > .el-tabs')
   const header = await tabs.locator(':scope > .el-tabs__header').boundingBox()

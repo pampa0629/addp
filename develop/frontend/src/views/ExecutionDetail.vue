@@ -157,7 +157,13 @@
           </div>
         </el-tab-pane>
 
-        <!-- Tab 2: 执行日志 -->
+        <el-tab-pane v-if="execution?.task_type === 'workflow'" :label="t('develop.workflowProcess.tab')" name="process" lazy>
+          <div class="tab-content">
+            <WorkflowProcessView :process="execution.workflow_process" />
+          </div>
+        </el-tab-pane>
+
+        <!-- 执行日志 -->
         <el-tab-pane :label="t('develop.executionDetail.tabLogs')" name="logs">
           <div class="tab-content">
             <template v-if="execution?.task_type !== 'query' && executionResult?.traceback">
@@ -218,6 +224,7 @@ import {
   retryExecution
 } from '@/api/execution'
 import QueryResult from '@/components/QueryResult.vue'
+import WorkflowProcessView from '@/components/workflow/WorkflowProcessView.vue'
 import client from '@/api/client'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
@@ -395,9 +402,11 @@ async function loadProfessionalResult() {
 const loadExecution = async (silent = false) => {
   if (!silent) stopProfessionalResult()
   const generation = ++executionReadGeneration
+  const id = executionId.value
   try {
-    const data = await getExecution(executionId.value)
+    const data = await getExecution(id)
     if (generation !== executionReadGeneration) return
+    if (id !== executionId.value || data.execution_id !== id) return
     execution.value = data
 
   } catch (error) {
@@ -538,7 +547,7 @@ const handleRefresh = async () => {
 
 const handleTabChange = async (tab) => {
   if (tab !== 'result') stopProfessionalResult()
-  const routeState = resolveExecutionDetailRouteState({ ...route.query, tab })
+  const routeState = resolveExecutionDetailRouteState({ ...route.query, tab }, execution.value?.task_type)
   const location = { path: route.path, query: routeState.query }
   if (router.resolve(location).fullPath !== route.fullPath) {
     await navigateDevelopRoute(router, location, { history: 'replace' })
@@ -546,7 +555,7 @@ const handleTabChange = async (tab) => {
 }
 
 async function restoreExecutionRoute() {
-  const routeState = resolveExecutionDetailRouteState(route.query)
+  const routeState = resolveExecutionDetailRouteState(route.query, execution.value?.task_type)
   activeTab.value = routeState.tab
   if (routeState.changed) {
     await navigateDevelopRoute(router, {
@@ -592,36 +601,37 @@ watch(() => route.query, () => {
 })
 
 watch(activeTab, tab => { if (tab !== 'result') stopProfessionalResult() })
-watch(() => JSON.stringify(authStore.authContext), () => {
+watch([executionId, () => JSON.stringify(authStore.authContext)], async ([id], [previousID]) => {
+  const taskType = id === previousID ? execution.value?.task_type : undefined
   stopProfessionalResult()
-  logsReadGeneration++
-  logs.value = []
-  logsStatus.value = 'idle'
-})
-
-watch(executionId, async () => {
-  stopProfessionalResult()
-  if (!routeDataReady) return
   stopAutoRefresh()
+  executionReadGeneration++
+  logsReadGeneration++
   execution.value = null
   logs.value = []
+  logsStatus.value = 'idle'
+  if (!routeDataReady || !executionId.value || !authStore.authContext) return
+  if (!authStore.hasPermission('develop.task.read')) return
+  if (['query', 'workflow'].includes(taskType) && !authStore.hasPermission('develop.data_read.execute')) return
+  if (taskType === 'script' && !authStore.hasPermission('develop.notebook.read')) return
   await loadExecution()
   await loadLogs()
   await restoreExecutionRoute()
   startAutoRefresh()
-})
+}, { flush: 'sync' })
 
 // 生命周期
 onMounted(async () => {
+  routeDataReady = true
   await loadExecution()
   await loadLogs()
   if (execution.value?.task_type === 'workflow') await loadResourceEngines()
-  routeDataReady = true
   await restoreExecutionRoute()
   startAutoRefresh()
 })
 
 onUnmounted(() => {
+  executionReadGeneration++
   logsReadGeneration++
   professionalRefresh.dispose()
   professionalRequests.dispose()

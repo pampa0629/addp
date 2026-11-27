@@ -93,6 +93,26 @@ type ExecutionWithDevTask struct {
 	ExecutionConfig commonModels.JSONMap `json:"execution_config,omitempty"`
 	DevTask         *DevTask             `json:"dev_task,omitempty"`
 	Outputs         commonModels.JSONMap `json:"outputs,omitempty"`
+	WorkflowProcess *WorkflowProcess     `json:"workflow_process,omitempty"`
+}
+
+// WorkflowProcess separates frozen data references from observed node status.
+type WorkflowProcess struct {
+	Nodes           []WorkflowProcessNode `json:"nodes"`
+	DefinitionLinks []WorkflowProcessLink `json:"definition_links"`
+}
+
+type WorkflowProcessNode struct {
+	ID       string `json:"id"`
+	Operator string `json:"operator"`
+	Status   string `json:"status" enums:"unknown,observed,succeeded,failed"`
+}
+
+type WorkflowProcessLink struct {
+	FromNode       string `json:"from_node"`
+	OutputPort     string `json:"output_port,omitempty"`
+	ToNode         string `json:"to_node"`
+	InputParameter string `json:"input_parameter"`
 }
 
 // ListExecutionsResponse 执行列表响应

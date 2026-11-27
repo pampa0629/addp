@@ -605,6 +605,28 @@
       "triggerManual": "Manual",
       "triggerSchedule": "Scheduled"
     },
+    "workflowProcess": {
+      "tab": "Processing",
+      "nodes": "Observed node status",
+      "node": "Node ID",
+      "operator": "Operator ID",
+      "observedStatus": "Execution evidence",
+      "links": "Frozen port links",
+      "linkMeaning": "These links show data references in the execution snapshot. Observed node status is shown above.",
+      "fromNode": "Source node",
+      "outputPort": "Output port",
+      "toNode": "Target node",
+      "inputParameter": "Input parameter",
+      "defaultPort": "Selected by runtime",
+      "noLinks": "No data references in this definition",
+      "noSnapshot": "The workflow snapshot for this execution is unavailable",
+      "status": {
+        "unknown": "No execution evidence",
+        "observed": "Execution recorded",
+        "succeeded": "Operator succeeded",
+        "failed": "Operator failed"
+      }
+    },
     "executionDetail": {
       "recentVisitTitle": "Development execution results",
       "title": "Execution results",

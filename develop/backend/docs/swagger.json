@@ -714,7 +714,7 @@
         },
         "/executions/{execution_id}": {
             "get": {
-                "description": "专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.\n查询失败的 error_details.diagnostic 使用 schema_version=addp.execution-failure/v3、stage 和 reason 闭合码；可选 sql.object(kind/name) 与 sql.position(line/column) 仅含 Provider 确认的对象名及原查询位置，不返回原始错误正文。| Query failure error_details.diagnostic uses schema_version=addp.execution-failure/v3 and closed stage/reason codes; optional sql.object(kind/name) and sql.position(line/column) contain only provider-confirmed identifiers and original-source positions, without raw error text.\n工作流类型化参数错误使用同一受控诊断及operator上下文，仅含经冻结定义确认的节点序号、登记算子/参数和固定冲突字段；不回显原始Runtime错误。| Typed workflow input failures use the same controlled diagnostic with an operator context containing only a frozen-definition node index, registered operator/parameter and fixed conflicting field, without raw runtime errors.",
+                "description": "专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.\n查询失败的 error_details.diagnostic 使用 schema_version=addp.execution-failure/v3、stage 和 reason 闭合码；可选 sql.object(kind/name) 与 sql.position(line/column) 仅含 Provider 确认的对象名及原查询位置，不返回原始错误正文。| Query failure error_details.diagnostic uses schema_version=addp.execution-failure/v3 and closed stage/reason codes; optional sql.object(kind/name) and sql.position(line/column) contain only provider-confirmed identifiers and original-source positions, without raw error text.\n工作流类型化参数错误使用同一受控诊断及operator上下文，仅含经冻结定义确认的节点序号、登记算子/参数和固定冲突字段；不回显原始Runtime错误。| Typed workflow input failures use the same controlled diagnostic with an operator context containing only a frozen-definition node index, registered operator/parameter and fixed conflicting field, without raw runtime errors.\n工作流详情的 workflow_process 分别返回冻结端口引用及有证据的节点状态；无快照时省略。| Workflow details may include workflow_process with separate frozen port references and observed node states. Omitted when the snapshot is unavailable.",
                 "produces": [
                     "application/json"
                 ],
@@ -735,7 +735,7 @@
                     "200": {
                         "description": "执行详情 | Execution details",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger"
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionDetailSwagger"
                         }
                     },
                     "403": {
@@ -5514,6 +5514,126 @@
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.ExecutionDetailSwagger": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "dev_task": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "workflow_process": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowProcess"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.ExecutionStartedResponse": {
             "type": "object",
             "properties": {
@@ -6240,6 +6360,60 @@
                 "spark_cluster_id": {
                     "type": "integer",
                     "example": 34
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.WorkflowProcess": {
+            "type": "object",
+            "properties": {
+                "definition_links": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowProcessLink"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.WorkflowProcessNode"
+                    }
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.WorkflowProcessLink": {
+            "type": "object",
+            "properties": {
+                "from_node": {
+                    "type": "string"
+                },
+                "input_parameter": {
+                    "type": "string"
+                },
+                "output_port": {
+                    "type": "string"
+                },
+                "to_node": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.WorkflowProcessNode": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "observed",
+                        "succeeded",
+                        "failed"
+                    ]
                 }
             }
         },

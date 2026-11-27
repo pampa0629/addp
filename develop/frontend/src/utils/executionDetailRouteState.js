@@ -2,9 +2,9 @@ import { resolveCanonicalTabRouteState } from '@common-ui/utils/recoverableRoute
 
 const BASE_TABS = ['result', 'logs', 'inputs']
 
-export function resolveExecutionDetailRouteState(routeQuery = {}) {
+export function resolveExecutionDetailRouteState(routeQuery = {}, taskType) {
   const { return_to, ...tabQuery } = routeQuery
-  const allowedTabs = BASE_TABS
+  const allowedTabs = taskType === undefined || taskType === 'workflow' ? [...BASE_TABS, 'process'] : BASE_TABS
 
   const state = resolveCanonicalTabRouteState({
     allowedTabs,

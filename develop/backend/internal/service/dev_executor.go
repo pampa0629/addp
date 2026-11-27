@@ -1158,6 +1158,7 @@ func (e *DevExecutor) GetExecution(ctx context.Context, executionID string, tena
 	}
 
 	result := professionalExecutionResponse(execution)
+	result.WorkflowProcess = workflowProcess(execution, result.Observation)
 
 	// 加载关联的开发任务
 	if execution.SourceTaskID != nil && e.devTaskRepo != nil {

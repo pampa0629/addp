@@ -188,6 +188,18 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 ## 工作流任务执行输入与输出
 
+### 工作流加工过程视图
+
+本人工作流执行详情 `GET /api/v1/develop/executions/{execution_id}` 可返回 `workflow_process`。与原详情共用当前 Tenant、Principal、Membership、授权版本及 `develop.task.read + develop.data_read.execute` 校验。投影随详情按次读取且禁止 HTTP 缓存，仅 Develop 人员详情和执行页“加工过程”使用。非工作流或缺少有效冻结节点及引用时省略字段，页面提示无快照。
+
+| 字段 | 规则 |
+| --- | --- |
+| `nodes` | 按该次 `execution_config.content.workflow_definition.tasks` 原序投影节点 `id`、`operator` 和 `status`。当前任务定义与算子目录不参与历史重建。 |
+| `definition_links` | 从冻结参数里的 `$ref` 递归取数据引用，每个源节点、显式输出端口、目标节点、顶层参数名组合保留一次。字段为 `from_node`、`output_port`、`to_node`、`input_parameter`。省略 `output_port` 表示由 Runtime 按其默认选择规则解析。仅 `depends_on` 的顺序约束不形成数据连线。 |
+| `nodes[].status` | `unknown` 表示缺少可归属的证据。当前首个 attempt 的已验证结构化 Runtime 日志中，命中冻结节点的 `task_progress` 给出 `observed`。同批日志以 `workflow_succeeded` 结束时，已观测节点可标 `succeeded`。以 `workflow_failed` 结束时，首因的受控算子诊断同时匹配最后观测节点的冻结序号与算子 ID，才标该节点 `failed`。其他节点保留自身证据等级。无法绑定 attempt 或日志无效时保留未知。节点执行成功与 Owner 发布成果是不同事实。 |
+
+页面分别展示实际节点状态和冻结端口连线，切换执行或当前授权变化时清空旧视图并丢弃迟到响应。无证据不推定未执行或成功，定义引用不证明真实消费；参数值、数据行、字段值、临时对象、内部连接、授权引用和原始 Runtime 正文均不进入此投影。加工过程由 Develop Owner 表达，本期不扩展 Meta DataItem 血缘、Monitor 通用投影或 TaskProvider，也不采集端口实际贡献及行级、字段级血缘。
+
 ### 受控文件输入与执行私有意图
 
 受控文件签发的身份入口分别为 User 的 `POST /auth/execution-authorizations/develop-file-workflows` 与固定 Develop Service 的 `POST /runtime/execution-authorizations/develop-file-workflows`，各自使用现有身份与功能权限 Guard，进入同一 Intent／Scope 封存机制。不得把 User 功能权限与机器权限声明为 any-of，不保留 GeoJSON 专线。

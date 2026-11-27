@@ -233,6 +233,12 @@ type ExecutionWithDevTaskSwagger struct {
 	Outputs         commonModels.JSONMap   `json:"outputs,omitempty"`
 }
 
+// ExecutionDetailSwagger documents the single-execution personnel response.
+type ExecutionDetailSwagger struct {
+	ExecutionWithDevTaskSwagger
+	WorkflowProcess *WorkflowProcess `json:"workflow_process,omitempty"`
+}
+
 // ListExecutionsSwaggerResponse 执行列表 Swagger 响应。
 type ListExecutionsSwaggerResponse struct {
 	Executions []ExecutionWithDevTaskSwagger `json:"executions"`
