@@ -17,7 +17,8 @@ services:
       timeout: 3s
       retries: 45
   redis:
-    image: public.ecr.aws/docker/library/redis:7.2.13@sha256:37aa82f9fdff30517603b2e2c5376b34b106d353c2b508262260d3bb0d2c21ba
+    # GitHub-hosted runners can pull public Docker Hub images without its pull quota.
+    image: docker.io/library/redis:7.2.13@sha256:37aa82f9fdff30517603b2e2c5376b34b106d353c2b508262260d3bb0d2c21ba
     command: ["sh", "/addp/redis-authentication.sh", "infra"]
     environment:
       REDIS_PASSWORD: ${ADDP_INFRA_GATE_PASSWORD:?disposable gate password required}
