@@ -34,6 +34,11 @@ func TestIntegrationPostgresAcceptanceIsVersionedAndSurvivesReconciliation(t *te
 	if err = qualityMigration.NewRunner(db).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	checkIssueAcceptanceReconciliation(t, db)
+}
+
+func checkIssueAcceptanceReconciliation(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	tenant := time.Now().UnixNano()%100000000 + 980000000
 	defer func() {
 		for _, model := range []interface{}{&models.IssueAction{}, &models.Issue{}, &models.PlanCheckItem{}, &models.QualityPlan{}} {
@@ -43,17 +48,17 @@ func TestIntegrationPostgresAcceptanceIsVersionedAndSurvivesReconciliation(t *te
 		}
 	}()
 	plan := models.QualityPlan{TenantID: tenant, Code: "acceptance", Name: "acceptance", Version: 1, TableBindings: []byte(`[{"alias":"a","locator":""}]`)}
-	if err = db.Create(&plan).Error; err != nil {
+	if err := db.Create(&plan).Error; err != nil {
 		t.Fatal(err)
 	}
 	r := NewIssueRepository(db)
 	ctx := context.Background()
 	o := models.IssueObservation{TargetKey: strings.Repeat("a", 64), PlanID: plan.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "foreign_key", Severity: "warning", FailedCount: 1, TotalCount: 2, PassRate: 50, Evidence: &models.FailureEvidence{Scope: strings.Repeat("b", 64), Keys: []string{strings.Repeat("c", 64)}}}
-	if err = r.Reconcile(ctx, tenant, "first", []models.IssueObservation{o}, time.Now()); err != nil {
+	if err := r.Reconcile(ctx, tenant, "first", []models.IssueObservation{o}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var issue models.Issue
-	if err = db.Where("tenant_id=?", tenant).First(&issue).Error; err != nil {
+	if err := db.Where("tenant_id=?", tenant).First(&issue).Error; err != nil {
 		t.Fatal(err)
 	}
 	start := make(chan struct{})
@@ -80,7 +85,7 @@ func TestIntegrationPostgresAcceptanceIsVersionedAndSurvivesReconciliation(t *te
 	if ok != 1 || conflict != 1 {
 		t.Fatalf("concurrent actions=%d conflicts=%d", ok, conflict)
 	}
-	if err = r.Reconcile(ctx, tenant, "second", []models.IssueObservation{o}, time.Now()); err != nil {
+	if err := r.Reconcile(ctx, tenant, "second", []models.IssueObservation{o}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	accepted, err := r.Get(issue.ID, tenant)
@@ -91,7 +96,7 @@ func TestIntegrationPostgresAcceptanceIsVersionedAndSurvivesReconciliation(t *te
 		t.Fatalf("accepted=%+v", accepted)
 	}
 	o.Evidence.Keys = []string{strings.Repeat("d", 64)}
-	if err = r.Reconcile(ctx, tenant, "third", []models.IssueObservation{o}, time.Now()); err != nil {
+	if err := r.Reconcile(ctx, tenant, "third", []models.IssueObservation{o}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	opened, err := r.Get(issue.ID, tenant)

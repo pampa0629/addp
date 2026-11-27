@@ -46,6 +46,9 @@ func TestInstalledQualityStorage(t *testing.T) {
 	if _, err := repo.Get(ctx, 18, rule.ID); !errors.Is(err, commonapi.ErrNotFound) {
 		t.Fatalf("other tenant rule: %v", err)
 	}
+	t.Run("issue acceptance survives reconciliation", func(t *testing.T) {
+		checkIssueAcceptanceReconciliation(t, db)
+	})
 	checkQualityOverview(t, db)
 	t.Run("duplicate plan target is excluded while active", func(t *testing.T) {
 		const tenant = 18
