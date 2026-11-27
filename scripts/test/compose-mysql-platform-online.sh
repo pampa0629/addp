@@ -326,11 +326,13 @@ containers = json.loads(subprocess.check_output(["docker", "inspect", *ids], tex
 services = {item["Config"]["Labels"]["com.docker.compose.service"]: item for item in containers}
 assert set(services) == set(manifest["projects"]["platform"])
 backends = ["system-backend", "meta-backend", "meta-worker", "gateway"]
-selected_module = os.environ["ADDP_DEPLOYMENT_MODULES"]
-if selected_module:
-    assert manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] == selected_module
-    backends.extend(f"{module}-backend" for module in selected_module.split(","))
-if selected_module == 'quality,monitor':
+requested = os.environ["ADDP_DEPLOYMENT_MODULES"]
+requested_modules = requested.split(",") if requested else []
+manifest_modules = manifest["selection"].get("ADDP_DEPLOYMENT_MODULES")
+assert sorted(requested_modules) == (manifest_modules.split(",") if manifest_modules else []), "release modules differ from the Hosted selection"
+backends.extend(f"{module}-backend" for module in requested_modules)
+quality_worker_suite = os.environ.get("ADDP_MYSQL_ONLINE_SUITE") == "quality-worker"
+if quality_worker_suite:
     backends.append("quality-worker")
 for name in backends:
     container = services[name]
@@ -345,7 +347,7 @@ for name in backends:
     assert container["State"]["Running"] and container["State"].get("Health", {}).get("Status", "none") != "unhealthy", name
     if name == "manager-backend":
         assert container["State"]["Health"]["Status"] == "healthy"
-    if selected_module == "quality,monitor" and name in {"quality-backend", "quality-worker", "monitor-backend"}:
+    if quality_worker_suite and name in {"quality-backend", "quality-worker", "monitor-backend"}:
         assert settings["TZ"] == "UTC", name
 Path(sys.argv[1], "runtime.json").write_text(json.dumps({"provider": "mysql", "verified_services": sorted(services)}))
 PY

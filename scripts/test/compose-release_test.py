@@ -99,6 +99,31 @@ class HostedMySQLReleaseTest(unittest.TestCase):
             self.assertIn("\nTZ=UTC\n", path.read_text())
             self.assertNotIn("ADDP_DATABASE_DEPLOY_", path.read_text())
 
+    def test_hosted_runtime_accepts_the_normalized_multi_module_manifest(self):
+        entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
+        check = entry.read_text().split("stage=runtime\n", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        env = dict(ADDP_DEPLOYMENT_SCOPE="system-meta-gateway", ADDP_DEPLOYMENT_MODULES="quality,monitor",
+                   ADDP_MYSQL_ONLINE_SUITE="quality-worker", ADDP_INFRA_DATABASE_PROVIDER="mysql",
+                   ADDP_DEPLOYMENT_PROJECT="test-scoped", ADDP_DATABASE_RUNTIME_PASSWORD="fixture", GITHUB_SHA="fixture")
+        settings = ["ADDP_INFRA_DATABASE_PROVIDER=mysql", "ADDP_MYSQL_HOST=mysql", "REDIS_HOST=redis",
+                    "REDIS_PORT=6379", "ADDP_DATABASE_RUNTIME_USER=platform_runtime",
+                    "ADDP_DATABASE_RUNTIME_PASSWORD=fixture", "TZ=UTC"]
+        names = ("system-backend", "meta-backend", "meta-worker", "gateway", "quality-backend", "quality-worker", "monitor-backend")
+        containers = [dict(Config=dict(Labels={"com.docker.compose.service": name}, Env=settings),
+                           Image=IMAGE_ID, State=dict(Running=True)) for name in names]
+        manifest = dict(source_commit=env["GITHUB_SHA"], selection=release.selection(env),
+                        projects={"platform": dict.fromkeys(names, REFERENCE)}, image_ids={REFERENCE: IMAGE_ID})
+        with tempfile.TemporaryDirectory() as work, patch.dict(os.environ, env), patch.object(sys, "argv", [str(entry), work]):
+            with patch.object(Path, "read_text", return_value=json.dumps(manifest)), \
+                    patch.object(subprocess, "check_output", side_effect=["owned", json.dumps(containers)]):
+                exec(compile(check, str(entry), "exec"), {})
+            self.assertEqual(json.loads(Path(work, "runtime.json").read_text())["verified_services"], sorted(names))
+            manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] = "monitor,standard"
+            with patch.object(Path, "read_text", return_value=json.dumps(manifest)), \
+                    patch.object(subprocess, "check_output", side_effect=["owned", json.dumps(containers)]), \
+                    self.assertRaisesRegex(AssertionError, "release modules differ"):
+                exec(compile(check, str(entry), "exec"), {})
+
     def test_manual_hosted_gate_shell_and_python_syntax(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
         subprocess.run(["bash", "-n", entry], check=True)
