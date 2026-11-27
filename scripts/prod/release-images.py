@@ -91,7 +91,7 @@ def selection(env):
         values["ADDP_DEPLOYMENT_MODULES"] = ",".join(sorted(modules))
     for key, supported in INFRA_PROVIDERS.items():
         configured = env.get(key, supported)
-        supported_mysql = key == "ADDP_INFRA_DATABASE_PROVIDER" and scope == "system-meta-gateway" and configured == "mysql"
+        supported_mysql = key == "ADDP_INFRA_DATABASE_PROVIDER" and configured == "mysql"
         if configured != supported and not supported_mysql:
             raise ValueError(f"{key}={configured!r} is not supported by the {scope} Compose release")
         values[key] = configured
@@ -132,6 +132,8 @@ def compose_model(project, env, override=None):
         command += ["-f", str(override)]
     active = output(command + ["config", "--services"], env).splitlines()
     model = json.loads(output(command + ["config", "--format", "json"], env))
+    if project == "infra" and override is None and selection(env)["ADDP_INFRA_DATABASE_PROVIDER"] == "mysql":
+        active.remove("postgres")
     return {name: model["services"][name] for name in active}
 
 
@@ -239,8 +241,10 @@ def prepare_metric_sources(env, platform, registry, version):
     return sources
 
 
-def write_override(path, services):
+def write_override(path, services, *, external_mysql=False):
     lines = ["services:"]
+    if external_mysql:
+        lines.append("  postgres: !reset null")
     for name, reference in sorted(services.items()):
         lines += [f"  {json.dumps(name)}:", f"    image: {json.dumps(reference)}",
                   "    build: !reset null", "    profiles: !reset []", "    pull_policy: never"]
@@ -313,7 +317,11 @@ def prepare(version, registry):
     with tempfile.TemporaryDirectory(prefix=".prepare-", dir=destination.parent) as temporary:
         directory = Path(temporary)
         for project, services in projects.items():
-            write_override(directory / (project + "-images.yml"), {name: image_ids[ref] for name, ref in services.items()})
+            write_override(
+                directory / (project + "-images.yml"),
+                {name: image_ids[ref] for name, ref in services.items()},
+                external_mysql=project == "infra" and bool(services) and selection(env)["ADDP_INFRA_DATABASE_PROVIDER"] == "mysql",
+            )
         manifest = {"schema": "addp.compose-release/v1", "source_commit": commit, "build_root": str(ROOT),
                     "platform": platform, "version": version, "registry": registry,
                     "selection": selection(env), "inputs": input_fingerprints(env),

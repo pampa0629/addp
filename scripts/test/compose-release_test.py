@@ -336,7 +336,7 @@ docker() {
             with self.subTest(settings=settings):
                 env = dict(PATH=os.environ["PATH"], ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
                            ADDP_DEPLOYMENT_PROJECT="fixture", ADDP_DEPLOYMENT_NETWORK="fixture-net", **settings)
-                result = subprocess.run(["bash", "-ec", prefix + 'addp_select_scoped_database && echo "$ADDP_INFRA_DATABASE_PROVIDER"',
+                result = subprocess.run(["bash", "-ec", prefix + 'addp_select_release_database && echo "$ADDP_INFRA_DATABASE_PROVIDER"',
                                          "_", str(ROOT / "scripts/infra/platform-database.sh")],
                                         env=env, text=True, capture_output=True)
                 if expected:
@@ -352,8 +352,7 @@ docker() {
             self.assertEqual(release.selection(env)["ADDP_INFRA_DATABASE_PROVIDER"], provider)
             for project in ("infra", "runtimes"):
                 self.assertEqual(release.compose_model(project, env), {})
-        with self.assertRaisesRegex(ValueError, "ADDP_INFRA_DATABASE_PROVIDER"):
-            release.selection({"ADDP_INFRA_DATABASE_PROVIDER": "mysql"})
+        self.assertEqual(release.selection({"ADDP_INFRA_DATABASE_PROVIDER": "mysql"})["ADDP_INFRA_DATABASE_PROVIDER"], "mysql")
 
     def test_capability_change_requires_another_prepared_release(self):
         with self.assertRaisesRegex(ValueError, "Capability selection"):
@@ -602,6 +601,8 @@ class RuntimeHealthSelectionTest(unittest.TestCase):
                 (root / filename).write_text("services:\n" + services)
             override = root / "dist/compose-release/runtimes-images.yml"
             override.parent.mkdir(parents=True)
+            for project in ("infra", "platform"):
+                release.write_override(override.parent / f"{project}-images.yml", {"fixture": IMAGE_ID})
             if not missing_override:
                 selected = {"fixture": IMAGE_ID}
                 if enabled:

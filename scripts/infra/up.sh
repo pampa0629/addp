@@ -18,7 +18,7 @@ cd "${PROJECT_ROOT}"
 COMPOSE_FILES=(-f docker-compose.infra.yml)
 TRACE_CONFIG_READY=false
 BUILD_REPOSITORY_POSTGRES_IMAGE=false
-CORE_SERVICES=(postgres redis falkordb minio meilisearch redpanda redpanda-init kafka-connect)
+CORE_SERVICES=(redis falkordb minio meilisearch redpanda redpanda-init kafka-connect)
 METRICS_ONLY=false
 case "$#:${1-}" in
   0:) ;;
@@ -155,8 +155,17 @@ if sys.argv[3] != f'{owner.st_uid}:{owner.st_gid}':
     raise SystemExit('ADDP_RUNTIME_LOG_OWNER must match source directory ownership')
 PYLOGDIR
 
-# Detect CPU architecture and select the single supported PostgreSQL image path.
-if [ -z "${POSTGRES_IMAGE:-}" ]; then
+require_docker
+if [[ "${ADDP_ONLINE_HOST:-0}" != 1 || -n "${ADDP_RELEASE_MANIFEST:-}" ]]; then
+  source "$PROJECT_ROOT/scripts/infra/platform-database.sh"
+  addp_select_managed_database "$PROJECT_ROOT"
+fi
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres ]]; then
+  CORE_SERVICES=(postgres "${CORE_SERVICES[@]}")
+fi
+
+# Select the managed PostgreSQL image only for a PostgreSQL deployment.
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres && -z "${POSTGRES_IMAGE:-}" ]]; then
     ARCH=$(uname -m)
     case "${ARCH}" in
         x86_64)
@@ -201,12 +210,6 @@ if [ -z "${DOCKER_DEFAULT_PLATFORM:-}" ]; then
     fi
 fi
 
-require_docker
-if [[ "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
-  source "$PROJECT_ROOT/scripts/infra/platform-database.sh"
-  addp_select_managed_database "$PROJECT_ROOT"
-fi
-
 source "${SCRIPT_DIR}/ports.sh"
 echo -e "${YELLOW}▶ 解析 ADDP Infra 宿主机端口${NC}"
 if addp_manager_search_cache_selected; then
@@ -235,7 +238,10 @@ if addp_infra_ready core; then
   ALL_SERVICES_RUNNING=true
 fi
 
-echo "  PostgreSQL: ${POSTGRES_PORT}  Redis: ${REDIS_PORT}  FalkorDB: ${FALKORDB_PORT}"
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres ]]; then
+  echo "  PostgreSQL: ${POSTGRES_PORT}"
+fi
+echo "  Redis: ${REDIS_PORT}  FalkorDB: ${FALKORDB_PORT}"
 echo "  MinIO: ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}  Meilisearch: ${MEILISEARCH_PORT}"
 echo "  Infra Kafka: ${INFRA_KAFKA_PORT}  Kafka Connect: ${KAFKA_CONNECT_PORT}"
 echo ""
@@ -307,7 +313,9 @@ if [ "$ALL_SERVICES_RUNNING" = "true" ]; then
   echo -e "${GREEN}✓ 基础设施长期服务已在运行，将幂等校验一次性初始化服务${NC}"
 fi
 echo -e "${YELLOW}▶ 启动或校验基础设施容器${NC}"
-python3 "$SCRIPT_DIR/metrics-sources.py" down --resolved-env --scope infra --kind postgresql --kind redis || echo 'Previous metrics source shutdown incomplete; core startup continues' >&2
+metrics_kinds=(--kind redis)
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres ]]; then metrics_kinds+=(--kind postgresql); fi
+python3 "$SCRIPT_DIR/metrics-sources.py" down --resolved-env --scope infra "${metrics_kinds[@]}" || echo 'Previous metrics source shutdown incomplete; core startup continues' >&2
 compose up -d "${CORE_SERVICES[@]}"
 ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 echo ""
@@ -315,22 +323,24 @@ echo -e "${YELLOW}等待服务就绪...${NC}"
 
 max_wait=180
 
-# PostgreSQL
-printf "%s" "- PostgreSQL "
-for i in $(seq 1 ${max_wait}); do
-  if compose exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC}"
-    break
-  fi
-  sleep 1; printf "%s" "."
-  if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ PostgreSQL 等待超时${NC}"; exit 1; fi
-done
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres ]]; then
+  # PostgreSQL
+  printf "%s" "- PostgreSQL "
+  for i in $(seq 1 ${max_wait}); do
+    if compose exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
+      echo -e "${GREEN}✓${NC}"
+      break
+    fi
+    sleep 1; printf "%s" "."
+    if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ PostgreSQL 等待超时${NC}"; exit 1; fi
+  done
 
-# Initialize PostgreSQL (pg_hba.conf + extensions + schemas)
-if [[ "${SKIP_POSTGRESQL_INIT:-0}" != "1" ]]; then
-  bash "${SCRIPT_DIR}/init-postgresql.sh"
-else
-  echo -e "${YELLOW}▶ 跳过 PostgreSQL 初始化（SKIP_POSTGRESQL_INIT=1）${NC}"
+  # Initialize PostgreSQL (pg_hba.conf + extensions + schemas)
+  if [[ "${SKIP_POSTGRESQL_INIT:-0}" != "1" ]]; then
+    bash "${SCRIPT_DIR}/init-postgresql.sh"
+  else
+    echo -e "${YELLOW}▶ 跳过 PostgreSQL 初始化（SKIP_POSTGRESQL_INIT=1）${NC}"
+  fi
 fi
 
 # Redis

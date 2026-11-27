@@ -19,20 +19,22 @@ REDIS_PASSWORD="${REDIS_PASSWORD:-addp_redis}"
 MINIO_API_PORT="${MINIO_API_PORT:-19000}"
 MEILISEARCH_PORT="${MEILISEARCH_PORT:-17700}"
 
-echo "等待 PostgreSQL 就绪..."
 timeout=90
-counter=0
-until core_compose exec -T postgres env PGPASSWORD="${POSTGRES_PASSWORD}" \
-  psql -h 127.0.0.1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB:-addp}" -c "select 1" > /dev/null 2>&1; do
-  sleep 2
-  counter=$((counter + 2))
-  if [ $counter -ge $timeout ]; then
-    echo "错误: PostgreSQL 启动超时或密码不匹配"
-    echo "请确认 .env 中 POSTGRES_PASSWORD 与已有 PostgreSQL 数据卷初始化密码一致。"
-    exit 1
-  fi
-done
-echo "✓ PostgreSQL 已就绪"
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres ]]; then
+  echo "等待 PostgreSQL 就绪..."
+  counter=0
+  until core_compose exec -T postgres env PGPASSWORD="${POSTGRES_PASSWORD}" \
+    psql -h 127.0.0.1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB:-addp}" -c "select 1" > /dev/null 2>&1; do
+    sleep 2
+    counter=$((counter + 2))
+    if [ $counter -ge $timeout ]; then
+      echo "错误: PostgreSQL 启动超时或密码不匹配"
+      echo "请确认 .env 中 POSTGRES_PASSWORD 与已有 PostgreSQL 数据卷初始化密码一致。"
+      exit 1
+    fi
+  done
+  echo "✓ PostgreSQL 已就绪"
+fi
 
 echo "等待 Redis 就绪..."
 counter=0

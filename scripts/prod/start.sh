@@ -65,7 +65,7 @@ echo -e "${YELLOW}[1/4] 启动基础设施层...${NC}"
 source scripts/utils/observability-env.sh
 addp_prepare_observability_env "$PROJECT_ROOT/.env"
 source "$ROOT_DIR/scripts/infra/platform-database.sh"
-addp_select_scoped_database
+addp_select_release_database
 export ADDP_RELEASE_MANIFEST
 ADDP_RELEASE_MANIFEST="$(python3 scripts/prod/release-images.py verify)"
 export ADDP_RELEASE_DIR="$(dirname "$ADDP_RELEASE_MANIFEST")"

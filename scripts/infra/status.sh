@@ -42,7 +42,6 @@ get_port() {
   docker port "addp-$svc" "$p/tcp" 2>/dev/null | head -n 1 | sed 's/.*://'
 }
 
-PG_PORT=$(get_port postgres 5432 || true)
 REDIS_PORT=$(get_port redis 6379 || true)
 MINIO_API_PORT=$(get_port minio 9000 || true)
 MINIO_CONSOLE_PORT=$(get_port minio 9001 || true)
@@ -50,12 +49,16 @@ KAFKA_PORT=$(get_port redpanda 9092 || true)
 KAFKA_CONNECT_PORT=$(get_port kafka-connect 8083 || true)
 FALKORDB_PORT=$(get_port falkordb 6379 || true)
 
-# Postgres
-printf "%s" "- PostgreSQL (localhost:${PG_PORT}):  "
-if docker exec addp-postgres pg_isready -U addp >/dev/null 2>&1; then
-  echo -e "${GREEN}Healthy${NC}"
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == mysql ]]; then
+  echo "- MySQL 平台库为外置实例 (${ADDP_MYSQL_HOST:-未配置}:${ADDP_MYSQL_PORT:-未配置})"
 else
-  echo -e "${RED}Unhealthy${NC}"
+  PG_PORT=$(get_port postgres 5432 || true)
+  printf "%s" "- PostgreSQL (localhost:${PG_PORT}):  "
+  if docker exec addp-postgres pg_isready -U addp >/dev/null 2>&1; then
+    echo -e "${GREEN}Healthy${NC}"
+  else
+    echo -e "${RED}Unhealthy${NC}"
+  fi
 fi
 
 # Redis

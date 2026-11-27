@@ -9,11 +9,13 @@ failed=0
 compose() {
   local compose_file="$1"
   shift
-  local args=(-f "$compose_file")
-  if [ "$compose_file" = docker-compose.runtimes.yml ]; then
-    args+=(-f dist/compose-release/runtimes-images.yml)
-  fi
-  docker compose "${args[@]}" "$@"
+  local images
+  case "$compose_file" in
+    docker-compose.infra.yml) images=infra ;;
+    docker-compose.yml) images=platform ;;
+    docker-compose.runtimes.yml) images=runtimes ;;
+  esac
+  docker compose -f "$compose_file" -f "dist/compose-release/$images-images.yml" "$@"
 }
 
 check_service() {
@@ -48,7 +50,7 @@ for compose_file in docker-compose.infra.yml docker-compose.yml docker-compose.r
   done <<< "$services"
 done
 
-published_port="$(docker compose -f docker-compose.yml port nginx 80 2>/dev/null | sed 's/.*://')"
+published_port="$(compose docker-compose.yml port nginx 80 2>/dev/null | sed 's/.*://')"
 if [ -n "$published_port" ] && curl -fsS "http://127.0.0.1:${published_port}/health" > /dev/null 2>&1; then
   echo "✓ Nginx 入口: http://127.0.0.1:${published_port}/health"
 else

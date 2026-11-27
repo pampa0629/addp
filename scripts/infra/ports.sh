@@ -27,8 +27,10 @@ addp_infra_port_specs() {
   if addp_manager_search_cache_selected; then
     echo 'manager-search-redis MANAGER_SEARCH_REDIS_PORT 6379 16380 addp-manager-search-redis'
   fi
+  if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" != mysql ]]; then
+    echo 'postgres POSTGRES_PORT 5432 15432 addp-postgres'
+  fi
   cat <<'EOF'
-postgres POSTGRES_PORT 5432 15432 addp-postgres
 redis REDIS_PORT 6379 16379 addp-redis
 falkordb FALKORDB_PORT 6379 16479 addp-falkordb
 minio MINIO_API_PORT 9000 19000 addp-minio

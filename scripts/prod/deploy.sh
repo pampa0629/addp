@@ -28,7 +28,7 @@ source scripts/utils/observability-env.sh
 addp_prepare_observability_env "$ROOT_DIR/.env"
 if [[ "$skip_deploy" == false ]]; then
   source "$ROOT_DIR/scripts/infra/platform-database.sh"
-  addp_select_scoped_database
+  addp_select_release_database
 fi
 python3 scripts/prod/release-images.py prepare --tag "$version" --registry "$registry"
 if [[ "$skip_deploy" == false ]]; then
