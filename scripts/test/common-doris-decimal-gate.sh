@@ -70,7 +70,7 @@ snapshot_audit() {
     docker exec "$CONTAINER_NAME" mysql -h127.0.0.1 -P9030 -uroot -N -B -e "SELECT 1 AS $marker" >/dev/null
     for _ in $(seq 1 25); do
         docker exec "$CONTAINER_NAME" cat /opt/apache-doris/fe/log/fe.audit.log > "$WORK_DIR/fe-audit.log"
-        if rg -Fq "$marker" "$WORK_DIR/fe-audit.log"; then
+        if grep -Fq "$marker" "$WORK_DIR/fe-audit.log"; then
             return
         fi
         sleep 1
