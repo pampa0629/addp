@@ -93,22 +93,27 @@ func TestPostgresPhysicalTargetClaimIsUniqueAcrossTenants(t *testing.T) {
 
 func TestPostgresLogicalTableAggregateRejectsStaleFieldAndTableWrites(t *testing.T) {
 	tx, tenantID := beginModelAggregatePostgresTransaction(t)
+	exerciseLogicalTableFieldVersion(t, tx, tenantID)
+}
+
+func exerciseLogicalTableFieldVersion(t *testing.T, tx *gorm.DB, tenantID int64) {
+	t.Helper()
 	userID := tenantID + 1
 	layerRepo := repository.NewDWLayerRepository(tx)
 	if err := layerRepo.Create(&models.DWLayer{
-		TenantID: tenantID, LayerCode: "pg_dwd", LayerName: "PostgreSQL DWD", Version: 1,
+		TenantID: tenantID, LayerCode: "dwd", LayerName: "DWD", Version: 1,
 	}); err != nil {
-		t.Fatalf("create PostgreSQL DW layer: %v", err)
+		t.Fatalf("create DW layer: %v", err)
 	}
 
 	tableRepo := repository.NewLogicalTableRepository(tx)
 	svc := NewLogicalTableService(tableRepo, layerRepo)
 	table, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
-		Name: "PostgreSQL Orders", Code: "pg_orders", TableType: "entity", Layer: "pg_dwd",
+		Name: "Orders", Code: "orders", TableType: "entity", Layer: "dwd",
 		Materialization: map[string]interface{}{},
 	}, tenantID, userID)
 	if err != nil {
-		t.Fatalf("create PostgreSQL logical table: %v", err)
+		t.Fatalf("create logical table: %v", err)
 	}
 	if table.Version != 1 {
 		t.Fatalf("created logical table version = %d, want 1", table.Version)
@@ -119,7 +124,7 @@ func TestPostgresLogicalTableAggregateRejectsStaleFieldAndTableWrites(t *testing
 		IsPK: true, FieldRole: "regular",
 	})
 	if err != nil {
-		t.Fatalf("create first PostgreSQL logical field: %v", err)
+		t.Fatalf("create first logical field: %v", err)
 	}
 	if firstField.Version != 2 {
 		t.Fatalf("version after first field = %d, want 2", firstField.Version)
@@ -150,7 +155,7 @@ func TestPostgresLogicalTableAggregateRejectsStaleFieldAndTableWrites(t *testing
 		FieldRole: "regular", SortOrder: 1,
 	})
 	if err != nil {
-		t.Fatalf("retry second PostgreSQL logical field: %v", err)
+		t.Fatalf("retry second logical field: %v", err)
 	}
 	if secondField.Version != 3 {
 		t.Fatalf("version after retried field = %d, want 3", secondField.Version)
@@ -179,6 +184,59 @@ func TestPostgresLogicalTableAggregateRejectsStaleFieldAndTableWrites(t *testing
 	}
 	if updatedTable.Version != 4 || updatedTable.Description != "current table description" {
 		t.Fatalf("updated logical table = %+v, want version 4 and current description", updatedTable)
+	}
+
+	fieldID := secondField.Field.ID
+	nullable, pk, position := true, false, 1
+	edit := models.UpdateLogicalFieldRequest{
+		Version: secondField.Version, Name: "Customer Order Code", ColumnName: "customer_order_code",
+		DataType: "string", FieldRole: "regular", Nullable: &nullable, IsPK: &pk, SortOrder: &position,
+	}
+	_, err = svc.UpdateField(fieldID, table.ID, tenantID, &edit)
+	requireDomainErrorCode(t, err, "resource_version_conflict")
+	_, err = svc.DeleteField(fieldID, table.ID, tenantID, edit.Version)
+	requireDomainErrorCode(t, err, "resource_version_conflict")
+	err = svc.DeleteLogicalTable(table.ID, tenantID, edit.Version)
+	requireDomainErrorCode(t, err, "resource_version_conflict")
+
+	checkFieldState := func(version int64, column string) {
+		t.Helper()
+		current, err := tableRepo.GetByID(table.ID, tenantID)
+		if err != nil || current.Version != version || current.Description != updatedTable.Description {
+			t.Fatalf("table after field operation: %+v err=%v", current, err)
+		}
+		fields, err := svc.GetFields(table.ID, tenantID)
+		if err != nil || len(fields) != 2 || fields[0].ID != firstField.Field.ID ||
+			fields[1].ID != fieldID || fields[1].ColumnName != column {
+			t.Fatalf("unexpected persisted fields: %+v err=%v", fields, err)
+		}
+	}
+	checkFieldState(updatedTable.Version, secondField.Field.ColumnName)
+	edit.Version = updatedTable.Version
+	changed, err := svc.UpdateField(fieldID, table.ID, tenantID, &edit)
+	if err != nil || changed.Version != 5 {
+		t.Fatalf("update field at current version: %+v err=%v", changed, err)
+	}
+	checkFieldState(changed.Version, edit.ColumnName)
+
+	deleted, err := svc.DeleteField(fieldID, table.ID, tenantID, changed.Version)
+	if err != nil || deleted.Version != 6 {
+		t.Fatalf("delete field at current version: %+v err=%v", deleted, err)
+	}
+	err = svc.DeleteLogicalTable(table.ID, tenantID, changed.Version)
+	requireDomainErrorCode(t, err, "resource_version_conflict")
+	fields, err := svc.GetFields(table.ID, tenantID)
+	if err != nil || len(fields) != 1 || fields[0].ID != firstField.Field.ID {
+		t.Fatalf("unexpected fields before deleting table: %+v err=%v", fields, err)
+	}
+	if err := svc.DeleteLogicalTable(table.ID, tenantID, deleted.Version); err != nil {
+		t.Fatalf("delete table at current version: %v", err)
+	}
+	_, err = svc.GetLogicalTable(table.ID, tenantID)
+	requireDomainErrorCode(t, err, "logical_table_not_found")
+	var remaining int64
+	if err := tx.Model(&models.LogicalField{}).Where("table_id = ?", table.ID).Count(&remaining).Error; err != nil || remaining != 0 {
+		t.Fatalf("fields after table deletion: %d err=%v", remaining, err)
 	}
 }
 

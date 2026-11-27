@@ -51,6 +51,9 @@ func TestInstalledModelEntity(t *testing.T) {
 		t.Fatalf("unexpected Catalog changes: %+v", changes)
 	}
 	verifyInstalledModelConstraints(t, db, e.ID)
+	t.Run("logical_table_field_version", func(t *testing.T) {
+		exerciseLogicalTableFieldVersion(t, db, 12)
+	})
 	t.Run("entity_relation_revision", func(t *testing.T) {
 		const relationTenant = 11
 		exerciseEntityRelationRevision(t, db, relationTenant)
