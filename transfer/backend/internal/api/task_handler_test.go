@@ -19,6 +19,7 @@ import (
 	"github.com/addp/common/format"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/transfer/internal/enginetest"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -78,7 +79,7 @@ func TestCreateTaskSQLSourceRequiresDeclaredReadSession(t *testing.T) {
 					t.Fatal("registered SQL engine must declare query read_session")
 				}
 				caps.Compute.Query.ReadSession = readSession
-				svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: engineType, EngineID: 1, Capabilities: &caps}})
+				svc.SetEngineDescriptorLookup(enginetest.Descriptors(planner.StaticEngineResolver{1: {Type: engineType, EngineID: 1, Capabilities: &caps}}))
 				router := SetupRouter(NewCleanupResultHandler(nil), svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 				request := httptest.NewRequest(http.MethodPost, "/api/v1/transfer/task-definitions", strings.NewReader(string(body)))
 				request.Header.Set("Content-Type", "application/json")

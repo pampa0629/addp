@@ -20,6 +20,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/transfer/internal/capture"
 	transferconfig "github.com/addp/transfer/internal/config"
+	"github.com/addp/transfer/internal/enginetest"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -172,6 +173,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	taskService := service.NewTaskService(infraDB, nil, &transferconfig.Config{
 		ContinuousRuntimeStopTimeout: 5 * time.Second, ContinuousRuntimeStopPollInterval: 50 * time.Millisecond,
 	})
+	taskService.SetEngineDescriptorLookup(enginetest.Descriptors(resolver))
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)

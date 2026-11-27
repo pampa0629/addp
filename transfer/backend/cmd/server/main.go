@@ -183,6 +183,7 @@ func main() {
 	}))
 	taskService := service.NewTaskService(db, executionEngineService, cfg)
 	taskService.SetTaskSubjectAuthorizer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil))
+	taskService.SetEngineDescriptorLookup(engineDescriptor)
 	taskService.SetEngineResolver(planner.NewSystemEngineResolver(systemClient))
 	metaFacts := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
 	taskService.SetTaskConfigChecker(service.NewTaskConfigCheckService(engineDescriptor, metaFacts))

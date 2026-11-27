@@ -20,6 +20,7 @@ import (
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/addp/transfer/internal/protection"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -75,6 +76,7 @@ type TaskService struct {
 	cfg                 *config.Config
 	captureControl      CaptureControl
 	taskCleanup         TaskOwnedResourceCleanup
+	engineDescriptor    protection.EngineDescriptorGetter
 	engineResolver      planner.EngineResolver
 	schemaInspector     SchemaChangeInspector
 	metaClient          *commonClient.MetaClient
@@ -92,6 +94,10 @@ func (s *TaskService) SetCaptureControl(control CaptureControl) {
 
 func (s *TaskService) SetTaskOwnedResourceCleanup(cleanup TaskOwnedResourceCleanup) {
 	s.taskCleanup = cleanup
+}
+
+func (s *TaskService) SetEngineDescriptorLookup(lookup protection.EngineDescriptorGetter) {
+	s.engineDescriptor = lookup
 }
 
 func (s *TaskService) SetEngineResolver(resolver planner.EngineResolver) {
@@ -418,7 +424,7 @@ func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
 	}
 }
 
-func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, config map[string]interface{}, batchSize int) error {
+func (s *TaskService) validateTaskConfig(ctx context.Context, tenantID uint, config map[string]interface{}, batchSize int) error {
 	if _, present := config["workflow_result"]; present {
 		return ErrInvalidTaskConfig
 	}
@@ -431,8 +437,8 @@ func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, confi
 	if err := validateNewTaskConfig(config, batchSize); err != nil {
 		return err
 	}
+	resolver := planner.DescriptorEngineResolver{Context: ctx, TenantID: tenantID, Lookup: s.engineDescriptor}
 	if spec, err := planner.ParseTableExportTaskSpec(config, batchSize); err == nil && spec.Source.Query != nil {
-		resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
 		if err := planner.ValidateTableQuerySourceBinding(spec, resolver); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
 		}
@@ -441,7 +447,6 @@ func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, confi
 	if err != nil {
 		return nil
 	}
-	resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
 	if _, err := planner.ResolveDatabaseCDCBindings(spec, resolver); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
 	}

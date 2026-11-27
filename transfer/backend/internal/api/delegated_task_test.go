@@ -12,6 +12,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/transfer/internal/enginetest"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/service"
@@ -95,7 +96,7 @@ func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(t *testing.T) {
 			}
 			svc := service.NewTaskService(db, nil, nil)
 			svc.SetRoleProtection(service.NewRoleProtectionService(commonClient.NewSystemServiceClient(system.URL, nil, system.Client()), nil, nil))
-			svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: "mongodb"}})
+			svc.SetEngineDescriptorLookup(enginetest.Descriptors(planner.StaticEngineResolver{1: {Type: "mongodb"}}))
 			router := SetupRouter(NewCleanupResultHandler(nil), svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 			method := tc.method
 			if method == "" {

@@ -18,6 +18,7 @@ import (
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/pdf"
 	"github.com/addp/common/taskprovider"
+	"github.com/addp/transfer/internal/enginetest"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/testpg"
@@ -299,9 +300,9 @@ func TestTargetOverrideRequiresOrchestratorParent(t *testing.T) {
 func TestCreateTaskRejectsQueryLanguageOutsideSourceCapability(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskService := NewTaskService(db, nil, nil)
-	taskService.SetEngineResolver(planner.StaticEngineResolver{
+	taskService.SetEngineDescriptorLookup(enginetest.Descriptors(planner.StaticEngineResolver{
 		1: {Type: "postgresql", EngineID: 1},
-	})
+	}))
 
 	_, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name: "invalid-query-language", TaskType: commonExecution.TaskTypeSync,
@@ -391,10 +392,10 @@ func TestValidateNewTaskConfigAcceptsPostgreSQLCDCAfterDataPlaneIsAvailable(t *t
 func TestTaskServiceAcceptsMySQLCDCThroughDatabaseCDCParser(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskSvc := NewTaskService(db, nil, nil)
-	taskSvc.SetEngineResolver(planner.StaticEngineResolver{
+	taskSvc.SetEngineDescriptorLookup(enginetest.Descriptors(planner.StaticEngineResolver{
 		12: {Type: "mysql", EngineID: 12},
 		20: {Type: "postgresql", EngineID: 20},
-	})
+	}))
 	config := validPostgreSQLCDCTaskConfig()
 	config["source"].(map[string]interface{})["locator"] = "addp://engine/12/path/business/orders?type=table"
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
@@ -650,10 +651,10 @@ func TestPostgreSQLCDCTaskStartsCaptureBeforeRuntimeAndResumesGeneration(t *test
 	db := newTransferTaskServiceTestDB(t)
 	control := &fakeCaptureControl{}
 	taskSvc := NewTaskService(db, nil, nil)
-	taskSvc.SetEngineResolver(planner.StaticEngineResolver{
+	taskSvc.SetEngineDescriptorLookup(enginetest.Descriptors(planner.StaticEngineResolver{
 		12: {Type: "postgresql", EngineID: 12},
 		20: {Type: "postgresql", EngineID: 20},
-	})
+	}))
 	taskSvc.SetCaptureControl(control)
 	taskSvc.SetExecutionService(NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db)))
 	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
@@ -1007,7 +1008,7 @@ func TestStartRejectsUnverifiedOriginBeforeCaptureOrExecutionWrite(t *testing.T)
 		t.Fatal(err)
 	}
 	svc := NewTaskService(db, nil, nil)
-	svc.SetEngineResolver(planner.StaticEngineResolver{12: {Type: "postgresql", EngineID: 12}, 20: {Type: "postgresql", EngineID: 20}})
+	svc.SetEngineDescriptorLookup(enginetest.Descriptors(planner.StaticEngineResolver{12: {Type: "postgresql", EngineID: 12}, 20: {Type: "postgresql", EngineID: 20}}))
 	svc.SetCaptureControl(control)
 	for _, userID := range []uint{0, 9} {
 		if _, err := svc.StartTask(context.Background(), task.ID, 7, userID); !errors.Is(err, commonAPI.ErrForbidden) {

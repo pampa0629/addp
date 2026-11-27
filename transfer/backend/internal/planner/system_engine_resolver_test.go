@@ -93,3 +93,29 @@ func TestAuthorizedEngineBindingPreservesWriteVersion(t *testing.T) {
 		t.Fatalf("engine version lost: %+v %v", binding, err)
 	}
 }
+
+func TestDescriptorEngineResolverUsesOnlyTaskValidationFacts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d := &commonmodels.EngineRuntimeDescriptor{
+		ID: 7, Version: 41, EngineType: "postgresql", LifecycleState: "active", ConnectionStatus: "online",
+		RuntimeEndpoint: &commonmodels.EngineRuntimeEndpoint{Host: "runtime.example"},
+	}
+	r := DescriptorEngineResolver{Context: ctx, TenantID: 3, Lookup: func(request context.Context, tenant, engine uint) (*commonmodels.EngineRuntimeDescriptor, error) {
+		if request != ctx || tenant != 3 || engine != 7 {
+			t.Fatal("incorrect lookup context, tenant or engine")
+		}
+		return d, nil
+	}}
+	b, err := r.ResolveEngine(EngineRef{ID: 7, Type: "postgresql"})
+	if err != nil || b.EngineID != 7 || b.EngineVersion != 41 || b.Type != "postgresql" || b.ConnInfo != nil {
+		t.Fatalf("unexpected task validation binding %+v, error %v", b, err)
+	}
+	if _, err := r.ResolveEngine(EngineRef{ID: 7, Type: "mysql"}); err == nil {
+		t.Fatal("accepted mismatched engine type")
+	}
+	d.ID = 8
+	if _, err := r.ResolveEngine(EngineRef{ID: 7}); err == nil {
+		t.Fatal("accepted descriptor for another engine")
+	}
+}

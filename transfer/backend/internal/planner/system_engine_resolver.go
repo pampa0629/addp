@@ -54,6 +54,38 @@ func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, erro
 	if err != nil {
 		return EngineBinding{}, err
 	}
+	binding, err := availableEngineBinding(ref, engine)
+	if err == nil {
+		binding.ConnInfo = toEnginePluginConnInfo(engine.ConnectionInfo)
+	}
+	return binding, err
+}
+
+// DescriptorEngineResolver supplies only control-plane facts for task validation.
+type DescriptorEngineResolver struct {
+	Context  context.Context
+	TenantID uint
+	Lookup   func(context.Context, uint, uint) (*commonmodels.EngineRuntimeDescriptor, error)
+}
+
+func (r DescriptorEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, error) {
+	if r.Lookup == nil || r.TenantID == 0 || ref.ID == 0 {
+		return EngineBinding{}, fmt.Errorf("task validation requires a tenant and an engine descriptor")
+	}
+	d, err := r.Lookup(r.Context, r.TenantID, ref.ID)
+	if err != nil {
+		return EngineBinding{}, err
+	}
+	if d == nil || d.ID != ref.ID {
+		return EngineBinding{}, fmt.Errorf("missing descriptor for engine %d", ref.ID)
+	}
+	return availableEngineBinding(ref, &commonmodels.Engine{
+		ID: d.ID, Version: d.Version, EngineType: d.EngineType,
+		LifecycleState: d.LifecycleState, ConnectionStatus: d.ConnectionStatus, Capabilities: d.Capabilities,
+	})
+}
+
+func availableEngineBinding(ref EngineRef, engine *commonmodels.Engine) (EngineBinding, error) {
 	if engine == nil {
 		return EngineBinding{}, fmt.Errorf("engine %d not found", ref.ID)
 	}
@@ -75,7 +107,6 @@ func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, erro
 	}
 	return EngineBinding{
 		Type:          engineType,
-		ConnInfo:      toEnginePluginConnInfo(engine.ConnectionInfo),
 		EngineID:      engine.ID,
 		EngineVersion: engine.Version,
 		Capabilities:  capabilities,

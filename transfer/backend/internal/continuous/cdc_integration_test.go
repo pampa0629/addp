@@ -27,6 +27,7 @@ import (
 	transferapi "github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/capture"
 	transferconfig "github.com/addp/transfer/internal/config"
+	"github.com/addp/transfer/internal/enginetest"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -217,6 +218,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	}
 	taskConfig.SystemServiceURL = systemServer.URL
 	taskService := service.NewTaskService(infraDB, nil, taskConfig)
+	taskService.SetEngineDescriptorLookup(enginetest.Descriptors(resolver))
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
