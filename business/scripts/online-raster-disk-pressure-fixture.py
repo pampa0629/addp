@@ -46,7 +46,17 @@ def state_path(secret):
     return secret / 'disk-pressure-storage.json'
 
 
-def storage(secret, *, mounted=True):
+def verify_image_allocation(image, stage):
+    info = image.stat()
+    allocated = info.st_blocks * 512
+    if info.st_size != IMAGE_BYTES or allocated < IMAGE_BYTES:
+        raise FixtureError(
+            f'pressure image is not the bounded allocated file: stage={stage}, expected_bytes={IMAGE_BYTES}, '
+            f'logical_bytes={info.st_size}, allocated_bytes={allocated}')
+    return {'logical_bytes': info.st_size, 'allocated_bytes': allocated}
+
+
+def storage(secret, *, mounted=True, stage='mounted'):
     path = state_path(secret)
     if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:
         raise FixtureError('invalid private storage state')
@@ -63,9 +73,9 @@ def storage(secret, *, mounted=True):
         or (image.exists() and (not image.is_file() or image.stat().st_uid != os.getuid()))
         or (state.get('device') and not image.is_file())):
         raise FixtureError('foreign storage image or mount')
+    allocation = None
     if mounted:
-        if image.stat().st_size != IMAGE_BYTES or image.stat().st_blocks*512 < IMAGE_BYTES:
-            raise FixtureError('pressure image is not the bounded allocated file')
+        allocation = verify_image_allocation(image, stage)
         device = state.get('device', '')
         if not re.fullmatch(r'/dev/loop[0-9]+', device):
             raise FixtureError('invalid owned loop device')
@@ -82,7 +92,7 @@ def storage(secret, *, mounted=True):
             raise FixtureError('pressure filesystem capacity differs from bounded image')
         if (mount/'.addp-online-owner').read_text() != os.environ['ADDP_ONLINE_TEST_RUN_ID']:
             raise FixtureError('mounted filesystem ownership differs')
-    return state, root, mount
+    return state, root, mount, allocation
 
 
 def start_storage(secret):
@@ -100,6 +110,7 @@ def start_storage(secret):
     with image.open('xb') as f:
         os.posix_fallocate(f.fileno(), 0, IMAGE_BYTES)
     image.chmod(0o600)
+    preallocated = verify_image_allocation(image, 'after-preallocation')
     (root/'mount').mkdir()
     device = command(['sudo', 'losetup', '--find', '--show', str(image)])
     state['device'] = device; path.write_text(json.dumps(state))
@@ -111,16 +122,17 @@ def start_storage(secret):
     command(['sudo', 'chown', f'{os.getuid()}:{os.getgid()}', str(root/'mount')])
     (root/'mount'/'.addp-online-owner').write_text(os.environ['ADDP_ONLINE_TEST_RUN_ID'])
     (root/'mount'/'execution').mkdir()
-    storage(secret)
+    _, _, _, mounted = storage(secret, stage='after-mount')
     (secret/'disk-pressure-tmp-root').write_text(str(root/'mount'/'execution'))
-    return {'filesystem': 'ext4', 'image_bytes': IMAGE_BYTES, 'separate_filesystem': True}
+    return {'filesystem': 'ext4', 'image_bytes': IMAGE_BYTES, 'separate_filesystem': True,
+            'allocation_after_preallocation': preallocated, 'allocation_after_mount': mounted}
 
 
 def stop_storage(secret):
     path = state_path(secret)
     if not path.exists():
         return {'storage_cleanup': 'not_started'}
-    state, root, mount = storage(secret, mounted=False)
+    state, root, mount, _ = storage(secret, mounted=False)
     device = state.get('device')
     if device:
         loops = json.loads(command(['sudo', 'losetup', '--json', '--list', '--output', 'NAME,BACK-FILE']))['loopdevices']
@@ -147,7 +159,9 @@ def stop_storage(secret):
 
 
 def pressure(secret, phase):
-    _, _, mount = storage(secret)
+    if phase not in ('release', *PRESSURE_FREE):
+        raise FixtureError('unknown pressure phase')
+    _, _, mount, allocation = storage(secret, stage='pressure-' + phase)
     work = mount/'execution'
     if list(work.iterdir()):
         raise FixtureError('refusing pressure adjustment while workspace remains')
@@ -155,8 +169,6 @@ def pressure(secret, phase):
     if filler.is_symlink():
         raise FixtureError('refusing symlink filler')
     filler.unlink(missing_ok=True)
-    if phase not in ('release', *PRESSURE_FREE):
-        raise FixtureError('unknown pressure phase')
     if phase != 'release':
         desired = PRESSURE_FREE[phase]
         count = shutil.disk_usage(work).free - desired
@@ -169,12 +181,13 @@ def pressure(secret, phase):
             raise FixtureError('actual filesystem free space outside pressure window')
     return {'phase': phase, 'available_bytes': shutil.disk_usage(work).free,
             'filesystem_bytes': shutil.disk_usage(work).total,
+            'image_allocation': allocation,
             'filler_allocated_bytes': filler.stat().st_blocks*512 if filler.exists() else 0}
 
 
 def runtime_identity():
     info = json.loads(command(['docker', 'inspect', RUNTIME]))[0]
-    _, _, mount = storage(guard())
+    _, _, mount, _ = storage(guard(), stage='runtime-identity')
     if (info['Config']['Labels'].get('com.addp.online-runtime') != SUITE
         or info['Config']['Labels'].get('com.addp.online-run-id') != os.environ['ADDP_ONLINE_TEST_RUN_ID']
         or info['Config']['Cmd'] != ['sh', 'container_entrypoint.sh']

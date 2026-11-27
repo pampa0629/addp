@@ -15,18 +15,38 @@ class DiskPressureFixtureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             runner = Path(d).resolve(); secret = runner/'secret'; secret.mkdir()
             calls = []
+            full = {'logical_bytes': m.IMAGE_BYTES, 'allocated_bytes': m.IMAGE_BYTES}
+            mounted = {**full, 'allocated_bytes': m.IMAGE_BYTES + 4096}
             def command(args, **kwargs):
                 calls.append(args)
                 return '/dev/loop7' if 'losetup' in args else ''
             with patch.dict(os.environ, {'RUNNER_TEMP': str(runner), 'ADDP_ONLINE_TEST_RUN_ID': 'disk-pressure-1-1'}), \
                  patch.object(m.shutil, 'disk_usage', return_value=SimpleNamespace(free=9*m.GIB)), \
                  patch.object(m.os, 'posix_fallocate', create=True) as allocate, patch.object(m, 'command', side_effect=command), \
-                 patch.object(m, 'storage'):
+                 patch.object(m, 'verify_image_allocation', return_value=full) as check_allocated, \
+                 patch.object(m, 'storage', return_value=({}, runner, runner/'mount', mounted)) as check_mounted:
                 result = m.start_storage(secret)
             self.assertEqual(result['image_bytes'], 4*m.GIB)
             self.assertEqual(allocate.call_args.args[1:], (0, 4*m.GIB))
+            self.assertEqual(result['allocation_after_preallocation'], full)
+            self.assertEqual(result['allocation_after_mount'], mounted)
+            self.assertEqual(check_allocated.call_args.args[1], 'after-preallocation')
+            check_mounted.assert_called_once_with(secret, stage='after-mount')
             mkfs = next(v for v in calls if 'mkfs.ext4' in v)
             self.assertEqual(mkfs[mkfs.index('-E')+1], 'nodiscard')
+
+    def test_image_length_and_allocated_blocks_use_one_snapshot_and_report_both(self):
+        blocks = m.IMAGE_BYTES // 512
+        for length, counted_blocks in ((m.IMAGE_BYTES - 4096, blocks), (m.IMAGE_BYTES, blocks - 8)):
+            image = SimpleNamespace()
+            with self.subTest(length=length, blocks=counted_blocks), \
+                 patch.object(image, 'stat', create=True, return_value=SimpleNamespace(
+                     st_size=length, st_blocks=counted_blocks)) as stat:
+                with self.assertRaisesRegex(m.FixtureError,
+                        f'stage=runtime-identity, expected_bytes={m.IMAGE_BYTES}, '
+                        f'logical_bytes={length}, allocated_bytes={counted_blocks * 512}'):
+                    m.verify_image_allocation(image, 'runtime-identity')
+                stat.assert_called_once_with()
 
     def test_actual_space_window_uses_allocated_file_and_release_removes_it(self):
         with tempfile.TemporaryDirectory() as d:
@@ -34,24 +54,26 @@ class DiskPressureFixtureTest(unittest.TestCase):
             for phase in ('distance', 'encoding'):
                 desired = m.PRESSURE_FREE[phase]
                 reads = iter([desired+10000, desired, desired, desired])
-                with patch.object(m, 'storage', return_value=({}, root, root)), \
+                allocation = {'logical_bytes': m.IMAGE_BYTES, 'allocated_bytes': m.IMAGE_BYTES}
+                with patch.object(m, 'storage', return_value=({}, root, root, allocation)), \
                      patch.object(m.shutil, 'disk_usage', side_effect=lambda p: SimpleNamespace(free=next(reads), total=m.IMAGE_BYTES)), \
                      patch.object(m.os, 'posix_fallocate', create=True) as allocate:
                     result = m.pressure(None, phase)
                     self.assertEqual(allocate.call_args.args[1:], (0, 10000))
                     self.assertEqual(result['available_bytes'], desired)
-                with patch.object(m, 'storage', return_value=({}, root, root)):
+                    self.assertEqual(result['image_allocation'], allocation)
+                with patch.object(m, 'storage', return_value=({}, root, root, allocation)):
                     m.pressure(None, 'release')
                 self.assertFalse((root/'pressure.bin').exists())
 
     def test_pressure_refuses_live_workspaces_and_symlink_filler(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d); work = root/'execution'; work.mkdir(); (work/'active').mkdir()
-            with patch.object(m, 'storage', return_value=({}, root, root)), self.assertRaises(m.FixtureError):
+            with patch.object(m, 'storage', return_value=({}, root, root, {})), self.assertRaises(m.FixtureError):
                 m.pressure(None, 'distance')
             (work/'active').rmdir(); outside = root/'outside'; outside.write_bytes(b'preserve')
             (root/'pressure.bin').symlink_to(outside)
-            with patch.object(m, 'storage', return_value=({}, root, root)), self.assertRaises(m.FixtureError):
+            with patch.object(m, 'storage', return_value=({}, root, root, {})), self.assertRaises(m.FixtureError):
                 m.pressure(None, 'release')
             self.assertEqual(outside.read_bytes(), b'preserve')
 
@@ -77,7 +99,7 @@ class DiskPressureFixtureTest(unittest.TestCase):
                 if '--detach' in args: attached = False
                 return ''
             mounts = iter([True, False])
-            with patch.object(m, 'storage', return_value=({'device': '/dev/loop7'}, root, mount)), \
+            with patch.object(m, 'storage', return_value=({'device': '/dev/loop7'}, root, mount, None)), \
                  patch.object(m, 'command', side_effect=command), patch.object(m.os.path, 'ismount', side_effect=lambda p: next(mounts)):
                 result = m.stop_storage(secret)
             self.assertTrue(result['loop_detached']); self.assertFalse(root.exists())
@@ -91,7 +113,7 @@ class DiskPressureFixtureTest(unittest.TestCase):
             def command(args, **kw):
                 calls.append(args)
                 return json.dumps({'loopdevices': [{'name': '/dev/loop7', 'back-file': '/foreign/image'}]})
-            with patch.object(m, 'storage', return_value=({'device': '/dev/loop7'}, root, mount)), \
+            with patch.object(m, 'storage', return_value=({'device': '/dev/loop7'}, root, mount, None)), \
                  patch.object(m, 'command', side_effect=command), self.assertRaises(m.FixtureError):
                 m.stop_storage(root)
             self.assertFalse(any('umount' in v or '--detach' in v for v in calls))
@@ -100,7 +122,7 @@ class DiskPressureFixtureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)/'owned'; root.mkdir(); secret = Path(d)/'secret'; secret.mkdir()
             m.state_path(secret).write_text('{}')
-            with patch.object(m, 'storage', return_value=({'device': None}, root, root/'mount')):
+            with patch.object(m, 'storage', return_value=({'device': None}, root, root/'mount', None)):
                 result = m.stop_storage(secret)
             self.assertTrue(result['image_removed']); self.assertFalse(root.exists())
 
@@ -132,7 +154,7 @@ class DiskPressureFixtureTest(unittest.TestCase):
             def command(args, **kwargs):
                 return json.dumps([info]) if args[:2] == ['docker', 'inspect'] else json.dumps([[1, '1']] if change == 'worker' else [[1, '1'], [2, '2']])
             with patch.dict(os.environ, {'ADDP_ONLINE_TEST_RUN_ID': 'disk-pressure-1-1'}), patch.object(m, 'guard'), \
-                 patch.object(m, 'storage', return_value=({}, Path('/owned'), Path('/owned/mount'))), patch.object(m, 'command', side_effect=command):
+                 patch.object(m, 'storage', return_value=({}, Path('/owned'), Path('/owned/mount'), {})), patch.object(m, 'command', side_effect=command):
                 if change == 'none': self.assertEqual(m.runtime_identity()['container_id'], 'container')
                 else:
                     with self.subTest(change=change), self.assertRaises(m.FixtureError): m.runtime_identity()
