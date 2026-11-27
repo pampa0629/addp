@@ -328,8 +328,13 @@ func verifyTaskDefinitionLifecycle(t *testing.T, db *gorm.DB, tenantID uint) {
 		Enabled:  true,
 		Config:   task.Config,
 	}
-	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileSetGeneration, duplicateTask); err == nil {
-		t.Fatal("duplicate task semantic identity was accepted")
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileSetGeneration, duplicateTask); !IsTaskSemanticConflict(err, commonExecution.TaskTypeVectorTileSetGeneration) {
+		t.Fatalf("expected a reusable task semantic conflict, got %v", err)
+	}
+
+	existing, err := NewVectorTileSetRepository(db).GetTaskBySemanticHash(context.Background(), tenantID, task.SemanticKey, 0)
+	if err != nil || existing == nil || existing.ID != task.ID {
+		t.Fatalf("lookup after semantic conflict returned %v, error %v; expected original task %d", existing, err, task.ID)
 	}
 
 	var bindingCount int64

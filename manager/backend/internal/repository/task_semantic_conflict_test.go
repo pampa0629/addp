@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -26,7 +27,15 @@ func TestTaskSemanticConflict(t *testing.T) {
 					t.Fatalf("semantic constraint %s was not recognized", constraint)
 				}
 			}
+			mysqlMessage := "Duplicate entry 'x' for key 'task_definitions.uq_manager_task_definition_semantic'"
+			if !IsTaskSemanticConflict(fmt.Errorf("create: %w", &mysql.MySQLError{Number: 1062, Message: mysqlMessage}), taskType) {
+				t.Fatal("MySQL task semantic constraint was not recognized")
+			}
 			for _, err := range []error{
+				&mysql.MySQLError{Number: 1062, Message: "Duplicate entry 'task_definitions.uq_manager_task_definition_semantic' for key 'task_definitions.PRIMARY'"},
+				&mysql.MySQLError{Number: 1062, Message: "Duplicate entry 'x' for key 'other.uq_manager_task_definition_semantic'"},
+				&mysql.MySQLError{Number: 1452, Message: mysqlMessage},
+				errors.New(mysqlMessage),
 				nil,
 				errors.New("23505 uq_manager_task_definition_semantic"),
 				&pgconn.PgError{Code: "23503", SchemaName: "manager", TableName: "task_definitions", ConstraintName: index},
