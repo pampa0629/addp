@@ -116,3 +116,22 @@ python3 arm64/k3s-pilot.py inspect-service \
 扩展到 Manager 等已部署模块时，先从站点交付记录取得获准的 Service 名、UID 和端口名，用同一条 `inspect-service` 命令核对。部署管理员将该 Service 名加入本 namespace 发现 Role 的 services 规则 resourceNames，保留 list、watch；EndpointSlice 规则和 RoleBinding 沿用原配置。将新增模块的绑定与现有绑定合并到新建的不可变 ConfigMap，更新 System Deployment 的投射卷引用，等所有 System 副本采用新配置并 Ready 后验收。Service 被同名重建时需重新确认新 UID。
 
 Manager 验收先保留切换前的导出和 CSV 摘要。切换后用 Transfer 自身的平台服务身份查询 Manager 端点，核对 Pod UID、具名端口和地址，再通过 Gateway 完成同一测试表的导出并比较 CSV。临时撤回隔离试点的 Manager 端点时，Transfer 查询应返回空数组，Gateway 的 Manager 业务请求应返回 503。同期真实 Manager 进程继续向 System 续租。恢复原 Service 选择器后，应再次观察到可用端点和成功的业务请求。
+
+### 双节点回归使用的隔离租户
+
+双节点回归可以在单独的 PostgreSQL 实例中准备合成租户。命名空间使用
+`addp-ha-test-<UUID>`，PostgreSQL 的 `cluster_name` 与该命名空间同名，
+数据库为 `addp_test`。初始化前库中应有相同源码版本的 System 迁移，人员和租户均为空。
+通过 Downward API 将实际命名空间投影到数据库 Pod 的
+`/run/addp-ha-fixture/namespace`，同目录只读挂载本次生成的两个独立随机口令
+`preparer-password` 和 `consumer-password`（各不少于 32 字节）。
+这些文件仅供测试准备步骤使用。
+
+从同一源码的 `system/backend` 单独构建 `./cmd/online-test-fixture`。
+在该数据库 Pod 内运行 `online-test-fixture --suite k3s-ha-tenant`。
+工具通过 Unix socket 连接本机测试库并核对服务端身份，在一个事务中创建
+`ha-preparer`、`ha-consumer` 和 `ha-acceptance` 租户。再次对已使用的库运行时，工具会拒绝写入。
+前者是该租户的初始管理员，负责配置合成业务资源。后者取得该租户的成员资格，
+业务权限和数据授权由准备者通过正常产品接口分配。后续验收复用这两个租户身份，
+通过 Gateway 正常登录。工具与口令均不进入产品镜像、发布包或验收报告。
+为准备账号分配需要增强认证的内置角色时，由该测试租户管理员按产品流程完成 MFA。日常业务回归使用已获相应授权的测试成员。

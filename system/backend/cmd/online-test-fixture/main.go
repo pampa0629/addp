@@ -590,6 +590,12 @@ func run(args []string, environment []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if *suite == k3sHATenantSuite {
+		if len(args) != 2 || args[0] != "--suite" || args[1] != k3sHATenantSuite {
+			return errors.New("K3s HA fixture accepts only --suite k3s-ha-tenant")
+		}
+		return runK3sHATenant()
+	}
 	if httpQualityLocalSelected(environment, *suite) {
 		if flags.NArg() != 0 || *observe != "" || *waitOwners != "" || *releaseCatalog != "" {
 			return errors.New("invalid HTTP local fixture arguments")
