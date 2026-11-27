@@ -47,11 +47,11 @@ def verify_failure_message(message, phase, observation, language):
     task = 'compute' if phase == 'distance' else 'save'
     cause = {'zh-cn': f'栅格临时磁盘空间不足（阶段：{expected_phase}）：',
              'en': f'Insufficient raster temporary disk space during {expected_phase}: '}[language]
-    prefix = f'工作流运行时执行失败: EXECUTION_FAILED: 任务 {task} 执行失败: {cause}'
+    prefix = f'任务 {task} 执行失败: {cause}'
     keys = ('required_bytes', 'available_bytes', 'pending_bytes', 'safety_bytes')
     match = re.fullmatch(re.escape(prefix) + ', '.join(rf'{key}=(\d+)' for key in keys), message)
     if match is None:
-        raise SuiteError('original Develop log does not show the expected task, phase and submitted language')
+        raise SuiteError('Runtime diagnostic does not show the expected task, phase and submitted language')
     values = dict(zip(keys, map(int, match.groups())))
     pixels = fixture.WIDTH*fixture.HEIGHT
     # Independent fixed-grid arithmetic, not imports of private product estimates.
@@ -63,7 +63,7 @@ def verify_failure_message(message, phase, observation, language):
         or abs(values['available_bytes']-observation['available_bytes']) > 8*1024**2
         or values['available_bytes'] >= sum(values[k] for k in ('required_bytes', 'pending_bytes', 'safety_bytes'))):
         raise SuiteError('actual filesystem capacity and guard budget disagree')
-    return {'phase': expected_phase, **values, 'language': language, 'source': 'develop_runtime_log'}
+    return {'phase': expected_phase, **values, 'language': language}
 
 
 def read_failure_diagnostic(repository, env, identifier, phase, observation, language, deadline):
@@ -82,9 +82,13 @@ def read_failure_diagnostic(repository, env, identifier, phase, observation, lan
                     message = event.get('message')
                     if not isinstance(message, str):
                         continue
-                    _, found, cause = message.partition(marker)
+                    _, found, error = message.partition(marker)
                     if found:
-                        return verify_failure_message(cause, phase, observation, language)
+                        prefix = '工作流运行时执行失败: EXECUTION_FAILED: '
+                        if not error.startswith(prefix):
+                            raise SuiteError('original Develop log does not show a Runtime execution failure')
+                        diagnostic = verify_failure_message(error.removeprefix(prefix), phase, observation, language)
+                        return {**diagnostic, 'source': 'develop_runtime_log'}
         time.sleep(min(1, max(0, deadline-time.monotonic())))
     raise SuiteError('missing original Develop disk guard diagnostic for the current execution')
 

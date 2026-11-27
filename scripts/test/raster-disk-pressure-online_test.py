@@ -44,8 +44,9 @@ class Client:
                 text = (f'栅格临时磁盘空间不足（阶段：{stage}）：' if language == 'zh-cn' or self.fault == 'language'
                         else f'Insufficient raster temporary disk space during {stage}: ')
                 counts = f'required_bytes={required}, available_bytes={m.fixture.PRESSURE_FREE[phase]}, pending_bytes={working if phase == "distance" else 0}, safety_bytes={m.fixture.SAFETY}'
+                code = 'NO_SPACE_LEFT' if self.fault == 'runtime-code' else 'EXECUTION_FAILED'
                 message = (f'❌ [DevExecutor] 工作流引擎调用失败: execution_id={identifier} err=工作流运行时执行失败: '
-                           f'EXECUTION_FAILED: 任务 {task} 执行失败: {text}{counts}')
+                           f'{code}: 任务 {task} 执行失败: {text}{counts}')
                 with self.log_path.open('a', encoding='utf-8') as target:
                     target.write(json.dumps({'module_name': 'develop', 'role': 'backend', 'message': message})+'\n')
                 data = {'status': 'failed', 'execution_id': identifier, 'module': 'develop',
@@ -120,7 +121,7 @@ class DiskPressureOnlineTest(unittest.TestCase):
         self.assertEqual(self.snapshots, 9)
 
     def test_wrong_phase_language_publication_scan_actor_size_and_restart_are_not_accepted(self):
-        for fault in ('phase', 'task', 'language', 'reread', 'publish', 'scan', 'actor', 'size', 'restart'):
+        for fault in ('phase', 'task', 'language', 'runtime-code', 'reread', 'publish', 'scan', 'actor', 'size', 'restart'):
             self.setUp(); client, env = self.new_client(); client.fault = fault; self.client = client; self.restart = fault == 'restart'
             with self.subTest(fault=fault), self.assertRaises(m.SuiteError):
                 m.run_scenario(Path('.'), env, client, self.operate)
@@ -128,7 +129,7 @@ class DiskPressureOnlineTest(unittest.TestCase):
 
     def test_no_physical_or_budget_assertion_is_replaced_by_successful_http(self):
         working = 2*(16*(256**2*9+64))+8*1024**2
-        message = ('工作流运行时执行失败: EXECUTION_FAILED: 任务 compute 执行失败: 栅格临时磁盘空间不足（阶段：distance transform）：'
+        message = ('任务 compute 执行失败: 栅格临时磁盘空间不足（阶段：distance transform）：'
                    f'required_bytes={32*1024**2}, available_bytes={m.fixture.PRESSURE_FREE["distance"]}, '
                    f'pending_bytes={working}, safety_bytes={m.fixture.SAFETY}')
         observation = {'available_bytes': m.fixture.PRESSURE_FREE['distance']}

@@ -62,8 +62,9 @@ def test_pressure_native_exact_phase_rejection_and_same_process_recovery(pressur
     monkeypatch.setattr(compute.shutil, 'disk_usage', lambda path: SimpleNamespace(free=fixture.PRESSURE_FREE[phase]))
     result = execute_workflow(native_definition(root, op, phase))
     assert result['status'] == 'failed', result
-    evidence = scene.verify_failure({'status': 'failed', 'error_msg': result['error'], 'metadata': {}, 'outputs': {}},
-                                    phase, {'available_bytes': fixture.PRESSURE_FREE[phase]}, 'zh-cn')
+    assert result['error_code'] == 'EXECUTION_FAILED'
+    evidence = scene.verify_failure_message(result['error'], phase,
+                                            {'available_bytes': fixture.PRESSURE_FREE[phase]}, 'zh-cn')
     assert evidence['phase'] == ('distance transform' if phase == 'distance' else 'raster encoding')
     assert not compute._DISK_RESERVATIONS
     assert fixture.verify(root, ['nibble-baseline.cog.tif', 'proximity-baseline.cog.tif']) == prior
